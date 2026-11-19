@@ -298,3 +298,280 @@ begin
   update public.supervisor_runs set status = 'running', updated_at = now() where id = r.id;
   return to_jsonb(s);
 end $$;
+
+-- Use the same job table and its existing unique running-thread index. The
+-- v2 job lease belongs to the scoped owner_turn step, not to an untrusted
+-- browser or a second worker. Old job RPCs cannot finish/restart its row.
+alter table public.ai_agent_jobs add column durable_run_id uuid,
+ add column durable_claim_token uuid;
+-- New private column is not returned to the browser by the existing job API.
+-- Owner-facing readers need the linked run ID, not the execution credential.
+revoke select on public.ai_agent_jobs from authenticated;
+grant select(id,business_id,owner_user_id,thread_id,owner_message_id,status,attempt,
+ error_code,reply_message_id,progress,inbox,consumed,heartbeat_at,created_at,
+ updated_at,finished_at,durable_run_id) on public.ai_agent_jobs to authenticated;
+
+create function public.supervisor_owner_job_fence_v2(
+ p_business_id uuid,p_owner_user_id uuid,p_thread_id uuid,p_run_id uuid,p_claim_token uuid
+) returns boolean language sql security invoker set search_path=public as $$
+ select coalesce(auth.role(),'')='service_role'
+  and public.supervisor_routine_owner_authorized(p_business_id,p_owner_user_id,p_thread_id)
+  and exists(select 1 from public.supervisor_runs r join public.supervisor_run_steps s
+    on s.business_id=r.business_id and s.run_id=r.id
+    where r.id=p_run_id and r.business_id=p_business_id
+     and r.owner_user_id=p_owner_user_id and r.thread_id=p_thread_id
+     and r.execution_version=2 and r.status='running' and s.step_key='owner_turn'
+     and s.status='leased' and s.claim_token=p_claim_token and s.lease_until>clock_timestamp());
+$$;
+revoke all on function public.supervisor_owner_job_fence_v2(uuid,uuid,uuid,uuid,uuid) from public,anon,authenticated;
+grant execute on function public.supervisor_owner_job_fence_v2(uuid,uuid,uuid,uuid,uuid) to service_role;
+
+create function public.supervisor_start_owner_job_v2(
+ p_business_id uuid,p_owner_user_id uuid,p_thread_id uuid,p_run_id uuid,p_claim_token uuid
+) returns jsonb language plpgsql security invoker set search_path=public as $$
+declare r public.supervisor_runs;j public.ai_agent_jobs;other public.ai_agent_jobs;v_attempt bigint;
+begin
+ if coalesce(auth.role(),'')<>'service_role' then raise exception 'service_role_only'; end if;
+ perform pg_advisory_xact_lock(hashtextextended('ai_agent_job:'||p_thread_id::text,0));
+ select * into r from public.supervisor_runs where id=p_run_id and business_id=p_business_id
+   and owner_user_id=p_owner_user_id and thread_id=p_thread_id for update;
+ if not found or not public.supervisor_owner_job_fence_v2(p_business_id,p_owner_user_id,p_thread_id,p_run_id,p_claim_token)
+   then raise exception 'durable_job_lease_lost' using errcode='40001'; end if;
+ select attempts into v_attempt from public.supervisor_run_steps where run_id=r.id
+   and business_id=r.business_id and step_key='owner_turn' for update;
+ -- Strict ordering between durable owner messages in this thread.
+ if exists(select 1 from public.supervisor_runs earlier where earlier.business_id=r.business_id
+   and earlier.owner_user_id=r.owner_user_id and earlier.thread_id=r.thread_id
+   and earlier.execution_version=2 and earlier.status in ('pending','running')
+   and (earlier.created_at,earlier.id)<(r.created_at,r.id)) then return null; end if;
+ select * into j from public.ai_agent_jobs where owner_message_id=r.request_key for update;
+ if found and (j.durable_run_id is distinct from r.id or j.business_id<>r.business_id
+   or j.owner_user_id<>r.owner_user_id or j.thread_id<>r.thread_id)
+   then raise exception 'durable_job_conflict'; end if;
+ if j.status='done' then return to_jsonb(j)-'durable_claim_token'; end if;
+ select * into other from public.ai_agent_jobs where thread_id=r.thread_id and status='running'
+   and id is distinct from j.id for update;
+ if found then
+   -- Do not absorb another owner's message or revive an uncertain legacy turn.
+   if other.durable_run_id is not null or other.heartbeat_at>=clock_timestamp()-interval '180 seconds'
+      then return null; end if;
+   update public.ai_agent_jobs set status='failed',error_code='timeout',finished_at=clock_timestamp(),
+     updated_at=clock_timestamp() where id=other.id;
+ end if;
+ if j.id is null then
+   insert into public.ai_agent_jobs(business_id,owner_user_id,thread_id,owner_message_id,durable_run_id,durable_claim_token)
+     values(r.business_id,r.owner_user_id,r.thread_id,r.request_key,r.id,p_claim_token)
+     returning * into j;
+ else
+   update public.ai_agent_jobs set status='running',attempt=least(5,greatest(attempt,v_attempt)),
+     durable_claim_token=p_claim_token,error_code=null,finished_at=null,heartbeat_at=clock_timestamp(),updated_at=clock_timestamp()
+     where id=j.id returning * into j;
+ end if;
+ return to_jsonb(j)-'durable_claim_token';
+end $$;
+revoke all on function public.supervisor_start_owner_job_v2(uuid,uuid,uuid,uuid,uuid) from public,anon,authenticated;
+grant execute on function public.supervisor_start_owner_job_v2(uuid,uuid,uuid,uuid,uuid) to service_role;
+
+-- Single fenced status/progress writer. An expired worker cannot change the
+-- replacement job. Terminal success checks a canonical scoped reply, not text.
+create function public.supervisor_update_owner_job_v2(
+ p_business_id uuid,p_owner_user_id uuid,p_thread_id uuid,p_run_id uuid,p_claim_token uuid,
+ p_job_id uuid,p_action text,p_step jsonb,p_reply_id uuid,p_error_code text
+) returns boolean language plpgsql security invoker set search_path=public as $$
+declare r public.supervisor_runs;j public.ai_agent_jobs;
+begin
+ if coalesce(auth.role(),'')<>'service_role' or p_action is null
+   or p_action not in ('progress','done','failed','heartbeat') then raise exception 'invalid_durable_job_update'; end if;
+ perform pg_advisory_xact_lock(hashtextextended('ai_agent_job:'||p_thread_id::text,0));
+ select * into r from public.supervisor_runs where id=p_run_id and business_id=p_business_id
+   and owner_user_id=p_owner_user_id and thread_id=p_thread_id for update;
+ if not found or not public.supervisor_owner_job_fence_v2(p_business_id,p_owner_user_id,p_thread_id,p_run_id,p_claim_token)
+   then return false; end if;
+ perform 1 from public.supervisor_run_steps where run_id=r.id and business_id=r.business_id and step_key='owner_turn' for update;
+ select * into j from public.ai_agent_jobs where id=p_job_id and durable_run_id=r.id
+   and owner_message_id=r.request_key and business_id=r.business_id and owner_user_id=r.owner_user_id
+   and thread_id=r.thread_id and durable_claim_token=p_claim_token and status='running' for update;
+ if not found then return false; end if;
+ if p_action='progress' then
+   if p_step is null or jsonb_typeof(p_step)<>'object' or octet_length(p_step::text)>200
+     then raise exception 'invalid_job_step'; end if;
+   update public.ai_agent_jobs set progress=case when jsonb_array_length(progress)<12
+     then progress||jsonb_build_array(p_step) else progress end where id=j.id;
+ elsif p_action='done' then
+   if not exists(select 1 from public.ai_messages m where m.id=p_reply_id and m.business_id=r.business_id
+     and m.thread_id=r.thread_id and m.owner_user_id=r.owner_user_id and m.role='supervisor'
+     and m.grounding->>'ownerMessageId'=r.request_key::text
+     and m.grounding#>>'{agentMetadata,endReason}'='complete')
+     then raise exception 'owner_turn_receipt_not_verified'; end if;
+   update public.ai_agent_jobs set status='done',reply_message_id=p_reply_id,finished_at=clock_timestamp() where id=j.id;
+ elsif p_action='failed' then
+   if p_error_code is null or p_error_code !~ '^[a-z_]{1,60}$' then raise exception 'invalid_job_error'; end if;
+   update public.ai_agent_jobs set status='failed',error_code=p_error_code,finished_at=clock_timestamp() where id=j.id;
+ end if;
+ update public.ai_agent_jobs set heartbeat_at=clock_timestamp(),updated_at=clock_timestamp() where id=j.id;
+ return true;
+end $$;
+revoke all on function public.supervisor_update_owner_job_v2(uuid,uuid,uuid,uuid,uuid,uuid,text,jsonb,uuid,text) from public,anon,authenticated;
+grant execute on function public.supervisor_update_owner_job_v2(uuid,uuid,uuid,uuid,uuid,uuid,text,jsonb,uuid,text) to service_role;
+
+create or replace function public.ai_agent_job_start(
+  p_business_id uuid, p_owner_user_id uuid, p_thread_id uuid, p_owner_message_id uuid
+) returns jsonb
+language plpgsql security definer set search_path = public as $$
+declare
+  mine public.ai_agent_jobs;
+  other public.ai_agent_jobs;
+begin
+  if auth.role() <> 'service_role' then raise exception 'service_role_only'; end if;
+  if not exists (select 1 from public.ai_messages m
+      where m.id = p_owner_message_id and m.thread_id = p_thread_id
+        and m.business_id = p_business_id and m.owner_user_id = p_owner_user_id
+        and m.role = 'owner')
+  then raise exception 'owner_message_not_found'; end if;
+
+  -- Serialize starts per thread so two tabs cannot both start a turn.
+  perform pg_advisory_xact_lock(hashtextextended('ai_agent_job:' || p_thread_id::text, 0));
+
+  if exists(select 1 from public.supervisor_runs r where r.business_id=p_business_id
+    and r.owner_user_id=p_owner_user_id and r.thread_id=p_thread_id
+    and r.request_key=p_owner_message_id and r.execution_version=2)
+    then raise exception 'durable_job_owned' using errcode='55000'; end if;
+  -- A turn whose server died (no heartbeat for 180s) is failed, never left spinning.
+  update public.ai_agent_jobs
+     set status = 'failed', error_code = 'timeout', finished_at = now(), updated_at = now()
+   where thread_id = p_thread_id and status = 'running' and durable_run_id is null
+     and heartbeat_at < now() - interval '180 seconds';
+
+  select * into mine from public.ai_agent_jobs where owner_message_id = p_owner_message_id;
+  if found and mine.status = 'running' then
+    return jsonb_build_object('mode', 'running', 'job', to_jsonb(mine));
+  elsif found and mine.status = 'done' then
+    return jsonb_build_object('mode', 'done', 'job', to_jsonb(mine));
+  end if;
+
+  select * into other from public.ai_agent_jobs
+   where thread_id = p_thread_id and p_owner_message_id = any(consumed) and status <> 'failed'
+   order by created_at desc limit 1;
+  if found then return jsonb_build_object('mode', 'absorbed', 'job', to_jsonb(other)); end if;
+
+  select * into other from public.ai_agent_jobs
+   where thread_id = p_thread_id and status = 'running' for update;
+  if found then
+    if other.durable_run_id is not null then
+      return jsonb_build_object('mode','busy','job',to_jsonb(other));
+    end if;
+    if p_owner_message_id = any(other.inbox) then
+      return jsonb_build_object('mode', 'attached', 'job', to_jsonb(other));
+    end if;
+    if cardinality(other.inbox) >= 10 then
+      return jsonb_build_object('mode', 'busy', 'job', to_jsonb(other));
+    end if;
+    update public.ai_agent_jobs
+       set inbox = inbox || p_owner_message_id, updated_at = now()
+     where id = other.id returning * into other;
+    return jsonb_build_object('mode', 'attached', 'job', to_jsonb(other));
+  end if;
+
+  if mine.id is not null then
+    -- Owner pressed retry on a failed turn.
+    if mine.attempt >= 5 then return jsonb_build_object('mode', 'failed', 'job', to_jsonb(mine)); end if;
+    update public.ai_agent_jobs
+       set status = 'running', attempt = attempt + 1, error_code = null, reply_message_id = null,
+           progress = '[]'::jsonb, inbox = '{}', consumed = '{}',
+           heartbeat_at = now(), updated_at = now(), finished_at = null
+     where id = mine.id returning * into mine;
+    return jsonb_build_object('mode', 'started', 'job', to_jsonb(mine));
+  end if;
+
+  insert into public.ai_agent_jobs (business_id, owner_user_id, thread_id, owner_message_id)
+  values (p_business_id, p_owner_user_id, p_thread_id, p_owner_message_id)
+  returning * into mine;
+  return jsonb_build_object('mode', 'started', 'job', to_jsonb(mine));
+end $$;
+create or replace function public.ai_agent_job_progress(p_job_id uuid, p_step jsonb)
+returns void
+language plpgsql security definer set search_path = public as $$
+begin
+  if auth.role() <> 'service_role' then raise exception 'service_role_only'; end if;
+  if jsonb_typeof(p_step) <> 'object' or octet_length(p_step::text) > 200 then
+    raise exception 'invalid_job_step';
+  end if;
+  update public.ai_agent_jobs
+     set progress = case when jsonb_array_length(progress) < 12 then progress || jsonb_build_array(p_step)
+                         else progress end,
+         heartbeat_at = now(), updated_at = now()
+   where id = p_job_id and status = 'running' and durable_run_id is null;
+end $$;
+create or replace function public.ai_agent_job_take_inbox(p_job_id uuid, p_limit integer)
+returns jsonb
+language plpgsql security definer set search_path = public as $$
+declare
+  j public.ai_agent_jobs;
+  fresh uuid[];
+begin
+  if auth.role() <> 'service_role' then raise exception 'service_role_only'; end if;
+  select * into j from public.ai_agent_jobs where id = p_job_id for update;
+  if not found or j.status <> 'running' or j.durable_run_id is not null then return '[]'::jsonb; end if;
+  select coalesce(array_agg(m.id order by m.created_at, m.id), '{}') into fresh
+    from (select m.id, m.created_at from public.ai_messages m
+           where m.id = any(j.inbox) and not (m.id = any(j.consumed))
+             and m.thread_id = j.thread_id and m.role = 'owner'
+           order by m.created_at, m.id
+           limit greatest(0, least(coalesce(p_limit, 0), 10))) m;
+  update public.ai_agent_jobs
+     set heartbeat_at = now(), updated_at = now()
+   where id = j.id;
+  return coalesce((select jsonb_agg(jsonb_build_object('id', m.id, 'text', m.text_content)
+                     order by m.created_at, m.id)
+                     from public.ai_messages m where m.id = any(fresh)), '[]'::jsonb);
+end $$;
+create or replace function public.ai_agent_job_finish(
+  p_job_id uuid, p_status text, p_reply_message_id uuid, p_error_code text,
+  p_absorbed_ids uuid[]
+) returns jsonb
+language plpgsql security definer set search_path = public as $$
+declare
+  j public.ai_agent_jobs;
+  next_job public.ai_agent_jobs;
+  leftovers uuid[];
+begin
+  if auth.role() <> 'service_role' then raise exception 'service_role_only'; end if;
+  if p_status not in ('done', 'failed') then raise exception 'invalid_job_status'; end if;
+  -- Same lock order as ai_agent_job_start (thread lock, then row) to avoid deadlocks.
+  select * into j from public.ai_agent_jobs where id = p_job_id;
+  if not found then raise exception 'job_not_found'; end if;
+  perform pg_advisory_xact_lock(hashtextextended('ai_agent_job:' || j.thread_id::text, 0));
+  select * into j from public.ai_agent_jobs where id = p_job_id for update;
+  if j.status <> 'running' or j.durable_run_id is not null then
+    return jsonb_build_object('job', to_jsonb(j), 'continuation', null);
+  end if;
+  -- Only IDs observed by a completed model response and persisted to the reply
+  -- are acknowledged. A timed-out inbox RPC or model failure cannot claim them.
+  if p_status = 'done' and (
+      cardinality(coalesce(p_absorbed_ids, '{}'::uuid[])) > 5 or
+      not (coalesce(p_absorbed_ids, '{}'::uuid[]) <@ j.inbox)
+  ) then raise exception 'invalid_absorbed_ids'; end if;
+  update public.ai_agent_jobs
+     set consumed = case when p_status = 'done'
+                         then coalesce(p_absorbed_ids, '{}'::uuid[])
+                         else '{}'::uuid[] end,
+         status = p_status,
+         reply_message_id = case when p_status = 'done' then p_reply_message_id end,
+         error_code = case when p_status = 'failed' then coalesce(p_error_code, 'agent_turn_failed') end,
+         finished_at = now(), heartbeat_at = now(), updated_at = now()
+   where id = j.id returning * into j;
+
+  if p_status = 'done' then
+    select coalesce(array_agg(m.id order by m.created_at, m.id), '{}') into leftovers
+      from public.ai_messages m
+     where m.id = any(j.inbox) and not (m.id = any(j.consumed)) and m.role = 'owner';
+    if cardinality(leftovers) > 0 then
+      insert into public.ai_agent_jobs (business_id, owner_user_id, thread_id, owner_message_id, inbox)
+      values (j.business_id, j.owner_user_id, j.thread_id, leftovers[1], leftovers[2:])
+      on conflict (owner_message_id) do nothing
+      returning * into next_job;
+    end if;
+  end if;
+  return jsonb_build_object('job', to_jsonb(j),
+    'continuation', case when next_job.id is null then null else to_jsonb(next_job) end);
+end $$;
