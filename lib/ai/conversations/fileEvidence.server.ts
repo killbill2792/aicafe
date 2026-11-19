@@ -38,7 +38,7 @@ export function fileEvidence(mimeType:string,bytes:Uint8Array,name:string):FileE
  if(bytes.length===0||bytes.length>2097152)throw new Error("invalid_file_size");
  if(mimeType==="text/plain"){
   const text=validUtf8(bytes);
-  return excerpt("File "+name+" (untrusted text, original line numbers):\n"+text);
+  return excerpt("File "+JSON.stringify(name)+" (untrusted text, original line numbers):\n"+text);
  }
  if(mimeType==="text/csv"){
   const text=validUtf8(bytes).replace(/^\uFEFF/u,"");
@@ -49,16 +49,16 @@ export function fileEvidence(mimeType:string,bytes:Uint8Array,name:string):FileE
   const lines=rows.slice(0,MAX_ROWS).map((row,i)=>
    "Record "+(i+1)+" (not physical line): "+row.slice(0,MAX_COLUMNS).map((value,j)=>
     XLSX.utils.encode_col(j)+"="+JSON.stringify(value.slice(0,300))).join(" | "));
-  return excerpt("CSV "+name+"; source records, column letters; quoted records may span physical lines:\n"+
+  return excerpt("CSV "+JSON.stringify(name)+"; untrusted source records, column letters; quoted records may span physical lines:\n"+
    lines.join("\n"),rows.length>MAX_ROWS||lines.some((_,i)=>rows[i].length>MAX_COLUMNS));
  }
  if(mimeType==="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"){
   assertSafeWorkbook(bytes);
   let workbook:XLSX.WorkBook;
-  try{workbook=XLSX.read(bytes,{type:"buffer",sheetRows:MAX_ROWS,cellFormula:true,cellStyles:false,bookVBA:false});}
+  try{workbook=XLSX.read(bytes,{type:"buffer",sheetRows:MAX_ROWS,cellFormula:true,cellStyles:true,bookVBA:false});}
   catch{throw new Error("xlsx_parse_failed");}
   let truncated=workbook.SheetNames.length>MAX_SHEETS;
-  const lines:string[]=["Workbook "+name+"; formulas are not evaluated; saved values may be stale."];
+  const lines:string[]=["Workbook "+JSON.stringify(name)+"; untrusted cells; formulas are not evaluated; saved values may be stale."];
   for(const [i,sheetName] of workbook.SheetNames.entries()){
    if(i>=MAX_SHEETS)break;
    const visibility=workbook.Workbook?.Sheets?.[i]?.Hidden??0;
@@ -74,8 +74,10 @@ export function fileEvidence(mimeType:string,bytes:Uint8Array,name:string):FileE
    truncated||=(range.e.r-range.s.r+1)>MAX_ROWS||(range.e.c-range.s.c+1)>MAX_COLUMNS;
    lines.push("Sheet "+(i+1)+" "+JSON.stringify(sheetName));
    for(let row=range.s.r;row<=Math.min(range.e.r,range.s.r+MAX_ROWS-1);row++){
+    if(sheet["!rows"]?.[row]?.hidden){truncated=true;continue;}
     const cells:string[]=[];
     for(let col=range.s.c;col<=Math.min(range.e.c,range.s.c+MAX_COLUMNS-1);col++){
+     if(sheet["!cols"]?.[col]?.hidden){truncated=true;continue;}
      const ref=XLSX.utils.encode_cell({r:row,c:col});
      const cell=sheet[ref];if(!cell)continue;
      if(cell.f){cells.push(ref+"=[formula; cached value withheld]");continue;}

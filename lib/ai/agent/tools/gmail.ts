@@ -15,7 +15,7 @@ export const gmailTools={
     execute:async(raw:unknown,ctx:AgentToolContext):Promise<AgentToolResult>=>{
       const input=gmailTools.search_gmail.schema.parse(raw);
       if(!ctx.gmail)return {source:"gmail",period:null,missing:["gmail_not_connected"]};
-      try{return {source:"gmail",period:null,agentId:"alex",missing:[],...await ctx.gmail.search(input.query,input.limit)};}
+      try{return {source:"gmail",period:null,agentId:"alex",missing:[],...await ctx.gmail.search(input.query,input.limit),trust:"external_evidence",senderAuthority:"unverified"};}
       catch{return {source:"gmail",period:null,missing:["gmail_read_unavailable"]};}
     }},
   list_gmail_labels:{agentId:"alex",schema:z.strictObject({}),
@@ -23,7 +23,7 @@ export const gmailTools={
     execute:async(raw:unknown,ctx:AgentToolContext):Promise<AgentToolResult>=>{
       gmailTools.list_gmail_labels.schema.parse(raw);
       if(!ctx.gmail)return {source:"gmail",period:null,missing:["gmail_not_connected"]};
-      try{return {source:"gmail",period:null,missing:[],...await ctx.gmail.labels()};}
+      try{return {source:"gmail",period:null,missing:[],...await ctx.gmail.labels(),trust:"external_evidence",senderAuthority:"unverified"};}
       catch{return {source:"gmail",period:null,missing:["gmail_labels_unavailable"]};}
     }},
   read_gmail:{agentId:"alex",schema:z.strictObject({message_id:z.string().min(8).max(100)}),
@@ -31,7 +31,7 @@ export const gmailTools={
     execute:async(raw:unknown,ctx:AgentToolContext):Promise<AgentToolResult>=>{
       const input=gmailTools.read_gmail.schema.parse(raw);
       if(!ctx.gmail)return {source:"gmail",period:null,missing:["gmail_not_connected"]};
-      try{return {source:"gmail",period:null,agentId:"alex",missing:[],...await ctx.gmail.read(input.message_id)};}
+      try{return {source:"gmail",period:null,agentId:"alex",missing:[],...await ctx.gmail.read(input.message_id),trust:"external_evidence",senderAuthority:"unverified"};}
       catch{return {source:"gmail",period:null,missing:["gmail_read_unavailable"]};}
     }},
   read_gmail_thread:{agentId:"alex",schema:z.strictObject({thread_id:z.string().min(8).max(100)}),
@@ -39,7 +39,7 @@ export const gmailTools={
     execute:async(raw:unknown,ctx:AgentToolContext):Promise<AgentToolResult>=>{
       const {thread_id}=gmailTools.read_gmail_thread.schema.parse(raw);
       if(!ctx.gmail)return {source:"gmail",period:null,missing:["gmail_not_connected"]};
-      try{return {source:"gmail",period:null,missing:[],...await ctx.gmail.thread(thread_id)};}
+      try{return {source:"gmail",period:null,missing:[],...await ctx.gmail.thread(thread_id),trust:"external_evidence",senderAuthority:"unverified"};}
       catch{return {source:"gmail",period:null,missing:["gmail_thread_unavailable"]};}
     }},
   read_gmail_attachment:{agentId:"alex",schema:z.strictObject({
@@ -49,7 +49,7 @@ export const gmailTools={
       const {message_id,attachment_id}=gmailTools.read_gmail_attachment.schema.parse(raw);
       if(!ctx.gmail)return {source:"gmail_attachment",period:null,missing:["gmail_not_connected"]};
       try{return {source:"gmail_attachment",period:null,missing:[],
-        ...await ctx.gmail.attachment(message_id,attachment_id)};}
+        ...await ctx.gmail.attachment(message_id,attachment_id),trust:"external_evidence",senderAuthority:"unverified"};}
       catch{return {source:"gmail_attachment",period:null,missing:["gmail_attachment_unavailable_or_unsupported"]};}
     }},
   propose_gmail_action:{agentId:"alex",schema:gmailProposalToolSchema,

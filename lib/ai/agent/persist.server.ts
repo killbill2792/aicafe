@@ -131,6 +131,7 @@ export function agentReplyPayload(turn: AgentTurn) {
   return { reply, metadata: {
     unverified, endReason: turn.endReason, evidence:turn.evidence??[],explain:safeExplain,agentIds:turn.agentIds??[],
     sources: turn.results.map(r => ({ source:r.source, period:r.period, missing:r.missing })),
+    ...(typeof turn.externalEvidence==="boolean"?{externalEvidence:turn.externalEvidence}:{}),
     usage: { ...turn.usage },
     // Owner messages answered inside this reply (mid-run follow-ups).
     ...(turn.absorbedOwnerMessageIds?.length?{absorbedOwnerMessageIds:[...turn.absorbedOwnerMessageIds]}:{}),

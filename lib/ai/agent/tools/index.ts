@@ -88,6 +88,8 @@ export type AgentToolContext = {
   /** Prior owner utterances for verifying explicit pricing percentages. */
   ownerMessages?:readonly string[];
   ownerText?:string;
+  /** True only for an authenticated turn that admitted external evidence. */
+  externalEvidencePresent?:()=>boolean;
   turnResults?:()=>ReadonlyArray<{name:string;result:AgentToolResult}>;
   resolveState?:import("../resolve").ResolveState;
   asOf: string; locale: AgentLocale;
@@ -290,7 +292,26 @@ function absent(source: string, period: CafeStatePeriod | null, missing: string[
   return { source, period, agentId:source==="profitability"?"leo":"alex",
     missing: missing.length ? missing : ["sourceUnavailable"] };
 }
+/**
+ * This is a conservative deny boundary for mixed-trust turns, not a second
+ * authorization system. Existing gateway approval/receipt rules remain mandatory.
+ * Internal direct mutations must have a fresh owner-only turn; a supplier letter
+ * cannot silently reschedule the owner's routines or create/close commitments.
+ */
+export function blocksExternalControlMutation(name:string,raw:unknown,ownerText:string):boolean{
+ const action=raw&&typeof raw==="object"&&"action" in raw?raw.action:null;
+ if((name==="manage_routine"||name==="manage_commitment")&&action!=="list")return true;
+ if(name==="record_checkin"||name==="remember_cafe_fact")return true;
+ // A clear owner restriction is a deny, never a grant of authority.
+ const readOnly=/\b(?:read|review|summarize|inspect|compare|explain)\s+only\b|\b(?:do not|don't|never|without)\s+(?:send|approve|change|create|order|record|update|save|modify|draft|make changes)\b/iu.test(ownerText);
+ const simpleRead=/^\s*(?:please\s+)?(?:read|review|summarize|inspect|compare|explain|show|check)\b/iu.test(ownerText)&&
+   !/\b(?:and|then)\s+(?:draft|prepare|propose|send|create|record|update|change|order)\b/iu.test(ownerText);
+ return (readOnly||simpleRead)&&(name.startsWith("propose_")||name==="draft_week_schedule"||
+   name==="record_supplier_order_outcome");
+}
 export async function executeAgentTool(name: string, raw: unknown, ctx: AgentToolContext): Promise<AgentToolResult> {
+  if(ctx.externalEvidencePresent?.()&&blocksExternalControlMutation(name,raw,ctx.ownerText??""))
+    return {source:name,period:null,missing:["owner_action_confirmation_required"]};
   // Flag-gated extra tool: only offered to the model when CHAT_MEMORY is on.
   if(name==="remember_cafe_fact")return memoryTools.remember_cafe_fact.execute(raw,ctx);
   if (!Object.hasOwn(schemas, name)) throw new ToolError("not_supported");

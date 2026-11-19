@@ -14,10 +14,10 @@ export class PublicWebPermissionError extends Error{
     super(reason);this.name="PublicWebPermissionError";
   }
 }
-async function assertOwnerPublicWeb(scope:ConnectorOwner):Promise<void>{
+async function assertOwnerPublicWeb(scope:ConnectorOwner):Promise<number>{
   try{
     await assertCafeAiAccess(scope.businessId);
-    await assertExternalAccess(scope,"public_web",WEB_RESOURCE);
+    return await assertExternalAccess(scope,"public_web",WEB_RESOURCE);
   }catch(error){
     throw new PublicWebPermissionError(error instanceof Error&&
       error.message==="public_web_access_revoked"?"permissionDenied":"permissionsUnavailable");
@@ -32,8 +32,10 @@ export function withOwnerPublicWebScope<T>(scope:ConnectorOwner,work:()=>T):T{
 export async function ownerPublicWebSearch(scope:ConnectorOwner,
   search:()=>Promise<WebSearchResult>):Promise<WebSearchResult>{
   try{
-    await assertOwnerPublicWeb(scope);
-    return await withOwnerPublicWebScope(scope,search);
+    const revision=await assertOwnerPublicWeb(scope);
+    const answer=await withOwnerPublicWebScope(scope,search);
+    if(await assertOwnerPublicWeb(scope)!==revision)throw new PublicWebPermissionError("permissionDenied");
+    return answer;
   }catch(error){
     if(error instanceof PublicWebPermissionError)return {available:false,reason:error.reason};
     throw error;
@@ -46,6 +48,10 @@ export async function ownerPublicWebSearch(scope:ConnectorOwner,
 export const ownerPublicWebFetch:typeof fetch=async(input,init)=>{
   const scope=scopeContext.getStore();
   if(!scope)throw new PublicWebPermissionError("permissionsUnavailable");
-  await assertOwnerPublicWeb(scope);
-  return fetch(input,init);
+  const revision=await assertOwnerPublicWeb(scope);
+  const response=await fetch(input,init);
+  try{
+    if(await assertOwnerPublicWeb(scope)!==revision)throw new PublicWebPermissionError("permissionDenied");
+    return response;
+  }catch(error){await response.body?.cancel().catch(()=>undefined);throw error;}
 };

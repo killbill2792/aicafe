@@ -4,7 +4,7 @@ set lock_timeout='3s';
 set statement_timeout='30s';
 
 alter table public.uploads
- add column financial_owner_user_id uuid references auth.users(id) on delete cascade,
+ add column financial_owner_user_id uuid,
  add column financial_source_sha256 text,
  add column financial_account_key text,
  add column financial_currency text,
@@ -13,6 +13,9 @@ alter table public.uploads
  add column financial_opening_cents bigint,
  add column financial_closing_cents bigint,
  add column financial_transactions jsonb;
+alter table public.uploads add constraint uploads_financial_owner_fk
+ foreign key(financial_owner_user_id) references auth.users(id) on delete cascade not valid;
+alter table public.uploads validate constraint uploads_financial_owner_fk;
 alter table public.uploads add constraint uploads_financial_evidence_shape check (
  (num_nonnulls(financial_owner_user_id,financial_source_sha256,financial_account_key,
   financial_currency,financial_from,financial_to,financial_opening_cents,financial_closing_cents,
@@ -26,7 +29,8 @@ alter table public.uploads add constraint uploads_financial_evidence_shape check
   and financial_closing_cents between -9007199254740991 and 9007199254740991
   and jsonb_typeof(financial_transactions)='array'
   and jsonb_array_length(financial_transactions) between 2 and 10000) is true)
-);
+) not valid;
+alter table public.uploads validate constraint uploads_financial_evidence_shape;
 create unique index uploads_financial_source_uq on public.uploads
  (business_id,financial_owner_user_id,financial_source_sha256);
 create index uploads_financial_account_idx on public.uploads
@@ -171,20 +175,31 @@ revoke all on function public.supervisor_sync_financial_review(uuid,uuid,timesta
 grant execute on function public.supervisor_sync_financial_review(uuid,uuid,timestamptz) to service_role;
 
 -- Extend the existing document identity rather than synthesize a PO or another ledger.
+-- Reason: approved standalone document support; existing PO-specific foreign keys and readers remain, new standalone owner policies and parent validation below.
+-- squawk-ignore ban-drop-not-null
 alter table public.supplier_invoices alter column purchase_order_id drop not null;
+-- Reason: approved standalone document support; existing PO-specific foreign keys and readers remain, new standalone owner policies and parent validation below.
+-- squawk-ignore ban-drop-not-null
 alter table public.supplier_invoice_lines alter column purchase_order_id drop not null;
+-- Reason: approved standalone document support; existing PO-specific foreign keys and readers remain, new standalone owner policies and parent validation below.
+-- squawk-ignore ban-drop-not-null
 alter table public.purchase_reconciliation_events alter column purchase_order_id drop not null;
 alter table public.supplier_invoices add constraint supplier_invoice_cafe_supplier
- foreign key(business_id,supplier_id) references public.cafe_suppliers(business_id,id);
+ foreign key(business_id,supplier_id) references public.cafe_suppliers(business_id,id) not valid;
+alter table public.supplier_invoices validate constraint supplier_invoice_cafe_supplier;
 alter table public.supplier_invoices add constraint supplier_invoice_standalone_claim_only
- check(purchase_order_id is not null or canonical_expense_id is null);
-alter table public.supplier_invoices add constraint supplier_invoice_cafe_id unique(business_id,id);
+ check(purchase_order_id is not null or canonical_expense_id is null) not valid;
+alter table public.supplier_invoices validate constraint supplier_invoice_standalone_claim_only;
+create unique index supplier_invoice_cafe_id on public.supplier_invoices(business_id,id);
 alter table public.supplier_invoice_lines add constraint supplier_invoice_line_parent
- foreign key(business_id,invoice_id) references public.supplier_invoices(business_id,id);
+ foreign key(business_id,invoice_id) references public.supplier_invoices(business_id,id) not valid;
+alter table public.supplier_invoice_lines validate constraint supplier_invoice_line_parent;
 alter table public.supplier_invoice_lines add constraint supplier_invoice_line_standalone
- check(purchase_order_id is not null or (order_line_id is null and ingredient_id is null));
+ check(purchase_order_id is not null or (order_line_id is null and ingredient_id is null)) not valid;
+alter table public.supplier_invoice_lines validate constraint supplier_invoice_line_standalone;
 alter table public.purchase_reconciliation_events add constraint supplier_event_cafe_supplier
- foreign key(business_id,supplier_id) references public.cafe_suppliers(business_id,id);
+ foreign key(business_id,supplier_id) references public.cafe_suppliers(business_id,id) not valid;
+alter table public.purchase_reconciliation_events validate constraint supplier_event_cafe_supplier;
 create unique index supplier_standalone_event_key on public.purchase_reconciliation_events(business_id,supplier_id,event_key)
  where purchase_order_id is null;
 create policy standalone_invoice_owner_read on public.supplier_invoices for select to authenticated
@@ -464,5 +479,3 @@ $$;
 revoke all on function public.supervisor_supplier_invoice_effect_proof(uuid,uuid,text)
  from public,anon,authenticated;
 grant execute on function public.supervisor_supplier_invoice_effect_proof(uuid,uuid,text) to service_role;
-
-
