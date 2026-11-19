@@ -180,3 +180,74 @@ describe("Task 15C durable SQL lease process death (not full Supervisor restart)
     }
   }, 30000);
 });
+
+describe("Task 15C fleet dispatch on migrated PostgreSQL", () => {
+  (sandbox ? it : it.skip)("serves 100 cafés despite a 10,000-run noisy fleet, fences concurrency and preserves recovery", async () => {
+    const admin = await connect();
+    const cafes = Array.from({ length: 100 }, () => randomUUID());
+    const owners = cafes.map(() => randomUUID()), threads = cafes.map(() => randomUUID());
+    let a: Client | undefined, b: Client | undefined, denied: Client | undefined;
+    try {
+      // Bulk-create relational synthetic fixtures; no external provider or production data.
+      await admin.query(`insert into auth.users(id,instance_id,aud,role,email,encrypted_password,created_at,updated_at)
+        select id,'00000000-0000-0000-0000-000000000000','authenticated','authenticated',
+          'fleet-'||id::text||'@example.invalid','',now(),now() from unnest($1::uuid[]) as x(id)`, [owners]);
+      await admin.query(`insert into public.businesses(id,name,timezone,is_demo)
+        select id,'Disposable fleet '||id::text,current_setting('TimeZone'),false from unnest($1::uuid[]) as x(id)`, [cafes]);
+      await admin.query(`insert into public.memberships(business_id,user_id,role)
+        select cafe,owner,'owner' from unnest($1::uuid[],$2::uuid[]) as x(cafe,owner)`, [cafes,owners]);
+      await admin.query(`insert into public.ai_threads(id,business_id,owner_user_id,client_request_id)
+        select thread,cafe,owner,gen_random_uuid() from unnest($1::uuid[],$2::uuid[],$3::uuid[]) as x(cafe,owner,thread)`,
+        [cafes,owners,threads]);
+      await admin.query(`insert into public.supervisor_runs(business_id,owner_user_id,thread_id,request_key,plan_hash,updated_at)
+        select cafe,owner,thread,gen_random_uuid(),repeat('a',64),now()
+        from unnest($1::uuid[],$2::uuid[],$3::uuid[]) as x(cafe,owner,thread)
+        cross join lateral generate_series(1,case when cafe=$4 then 9901 else 1 end)`, [cafes,owners,threads,cafes[0]]);
+      await admin.query(`insert into public.supervisor_run_steps(business_id,run_id,step_key,step_index,retry_mode)
+        select business_id,id,'owner_turn',1,'reconcile' from public.supervisor_runs where business_id=any($1::uuid[])`, [cafes]);
+      const special = (await admin.query("select id from public.supervisor_runs where business_id=$1 order by id limit 3", [cafes[0]])).rows.map(row=>row.id);
+      const [recovery,cancelled,leased] = special;
+      await admin.query("update public.supervisor_runs set status='blocked',updated_at=now()-interval '1 day' where id=any($1::uuid[])", [[recovery,cancelled]]);
+      await admin.query("update public.supervisor_run_steps set status='blocked',error_code='lease_expired' where run_id=$1", [recovery]);
+      await admin.query("update public.supervisor_run_steps set status='blocked',error_code='cancelled' where run_id=$1", [cancelled]);
+      await admin.query("update public.supervisor_runs set status='running',updated_at=now()-interval '2 days' where id=$1", [leased]);
+      await admin.query("update public.supervisor_run_steps set status='leased',worker_id=gen_random_uuid(),claim_token=gen_random_uuid(),lease_until=now()+interval '10 minutes' where run_id=$1", [leased]);
+      expect((await admin.query("select count(*)::int n from public.supervisor_runs where business_id=any($1::uuid[])", [cafes])).rows[0].n).toBe(10000);
+      a=await connect(true); b=await connect(true);
+      denied=await connect();
+      await denied.query("set role authenticated");
+      await expect(call(denied,"supervisor_select_next_durable_run",[])).rejects.toThrow();
+      const first=await call(a,"supervisor_select_next_durable_run",[]);
+      expect(first).toEqual({run_id:recovery,recovery:true});
+      const seen=new Set<string>([cafes[0]]), reserved=new Set<string>([recovery]);
+      for(let n=1;n<cafes.length;n++){
+        const selected=await call(a,"supervisor_select_next_durable_run",[]);
+        expect(selected).not.toBeNull();
+        expect(reserved.has(selected.run_id)).toBe(false);
+        const row=(await admin.query("select business_id from public.supervisor_runs where id=$1",[selected.run_id])).rows[0];
+        expect(cafes).toContain(row.business_id);
+        expect(seen.has(row.business_id)).toBe(false);
+        seen.add(row.business_id);reserved.add(selected.run_id);
+      }
+      expect(seen.size).toBe(100);
+      // More work remains eligible: competing selector transactions may return
+      // no work, but must never reserve the same run or choose blocked/cancelled/live leases.
+      const concurrent=(await Promise.all([call(a,"supervisor_select_next_durable_run",[]),call(b,"supervisor_select_next_durable_run",[])])).filter(Boolean);
+      expect(concurrent.length).toBeGreaterThan(0);
+      expect(new Set(concurrent.map(x=>x.run_id)).size).toBe(concurrent.length);
+      for(const selected of concurrent){
+        expect(reserved.has(selected.run_id)).toBe(false);
+        expect([cancelled,leased]).not.toContain(selected.run_id);
+      }
+      // Simulate expiry of the dispatch reservation only. The separate real
+      // process-death test waits for the actual execution lease to expire.
+      await admin.query("update public.supervisor_runs set dispatch_after=now()-interval '1 second' where id=$1",[recovery]);
+      expect(await call(a,"supervisor_select_next_durable_run",[])).toEqual({run_id:recovery,recovery:true});
+    } finally {
+      await Promise.all([a?.end(),b?.end(),denied?.end()]);
+      await admin.query("delete from public.businesses where id=any($1::uuid[])",[cafes]);
+      await admin.query("delete from auth.users where id=any($1::uuid[])",[owners]);
+      await admin.end();
+    }
+  },120000);
+});
