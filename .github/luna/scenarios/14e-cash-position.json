@@ -35,7 +35,7 @@
       "maxCount": 1
     },
     {
-      "name": "initialReplyId",
+      "name": "initial-owner-reply",
       "kind": "owner",
       "table": "public.ai_messages",
       "where": {
@@ -56,7 +56,7 @@
       "maxCount": 1
     },
     {
-      "name": "datedReplyId",
+      "name": "dated-owner-reply",
       "kind": "owner",
       "table": "public.ai_messages",
       "where": {
