@@ -110,7 +110,8 @@ describe("modern Supervisor conversation shell", () => {
     expect(source).toContain('message.role === "owner"');
     expect(source).toContain("answeredOwnerIds");
     expect(source).toContain("pendingOwnerIds.has(message.id)");
-    expect(source).toContain('sendText(message.text ?? "", message.clientMessageId ?? undefined)');
+    expect(source).toContain('sendText(message.text ?? "", message.clientMessageId ?? undefined,undefined,undefined,message.ownerInputResponse)');
+    expect(source).toContain("retryResponse.current?.key===clientMessageId");
     expect(source).toContain("sendKey(existingKey, retryId.current, () => crypto.randomUUID())");
   });
   it("keeps the chat-start summary outside the independently scrolling transcript",()=>{

@@ -13,13 +13,24 @@ const statusIcon = (status: OwnerWorkStatus) => {
   return <CircleDot size={17} aria-hidden="true" className="text-ink-muted" />;
 };
 
-/** A read-only transcript companion, not a second approval, scheduler or
- * provider execution control. The existing proposal cards own owner action. */
+/** Persisted Work companion. The existing proposal cards still own provider
+ * approval; the only run-control action here is the scoped cancellation RPC. */
 export default function SupervisorWorkStatus({ items, unavailable, loading=false, showEmpty=false, onOpen, disabled=false }: {
   items: OwnerWorkItem[]; unavailable: boolean; loading?:boolean; showEmpty?:boolean;
   onOpen?:(item:OwnerWorkItem)=>void; disabled?:boolean;
 }) {
   const [shown, setShown] = useState(5);
+  const [cancelStates,setCancelStates]=useState<Record<string,string>>({});
+  async function cancel(item:OwnerWorkItem){
+    if(!item.threadId||!item.cancelAllowed||cancelStates[item.id]==="pending")return;
+    setCancelStates(s=>({...s,[item.id]:"pending"}));
+    try{
+      const res=await fetch("/api/ai/threads/"+encodeURIComponent(item.threadId)+"/work",{method:"POST",credentials:"same-origin",headers:{"Content-Type":"application/json"},body:JSON.stringify({action:"cancel",runId:item.id.slice(4)})});
+      if(!res.ok)throw Error("cancel_failed");
+      const data=await res.json() as {state?:string};
+      setCancelStates(s=>({...s,[item.id]:data.state??"failed"}));
+    }catch{setCancelStates(s=>({...s,[item.id]:"failed"}));}
+  }
   const active = items.filter(item => !["answer_ready", "verified_complete", "source_resolved", "cancelled"].includes(item.status));
   const recent = items.filter(item => ["answer_ready", "verified_complete", "source_resolved", "cancelled"].includes(item.status)).slice(0, 2);
   const display = [...active.slice(0, shown), ...recent].slice(0, shown + 2);
@@ -49,6 +60,13 @@ export default function SupervisorWorkStatus({ items, unavailable, loading=false
           {item.proof.kind === "verified_effect"
             ? en.SupervisorWork.effectReceipt : en.SupervisorWork.replyReceipt}
           {" "}{item.proof.ref}
+        </p>}
+        {item.cancelAllowed&&item.threadId&&<button type="button" disabled={unavailable||["pending","cancelled","uncertain","completed"].includes(cancelStates[item.id]??"")}
+          onClick={()=>void cancel(item)} className="min-h-12 rounded-lg border border-line px-3 text-sm font-semibold text-ink disabled:opacity-50">
+          {cancelStates[item.id]==="pending"?en.SupervisorDurableWork.cancelPending:en.SupervisorDurableWork.cancelAction}
+        </button>}
+        {cancelStates[item.id]&&cancelStates[item.id]!=="pending"&&<p role="status" className="text-sm text-ink-muted">
+          {cancelStates[item.id]==="cancelled"?en.SupervisorDurableWork.runCancelled:cancelStates[item.id]==="uncertain"?en.SupervisorDurableWork.cancelUncertain:cancelStates[item.id]==="completed"?en.SupervisorDurableWork.cancelCompleted:en.SupervisorDurableWork.cancelFailed}
         </p>}
         {onOpen && item.threadId && <button type="button" disabled={disabled || unavailable}
           aria-label={en.SupervisorChat.taskOpen+": "+(item.threadTitle??item.title)}

@@ -213,7 +213,8 @@ describe("redesign 16 cleanup integration", () => {
       return Object.entries(messages)
         .flatMap(([namespace, values]) => Object.keys(values).map(key => `${namespace}.${key}`))
         .filter(key => !englishOnly.test(key) && !approvedTask14bSet.has(key)
-          && !approvedTask14cSet.has(key) && !approvedTask15bSet.has(key) && !approvedTask16aSet.has(key) && !approvedTask16cSet.has(key) && !approvedTask14eSet.has(key))
+          && !approvedTask14cSet.has(key) && !approvedTask15bSet.has(key) && !approvedTask16aSet.has(key) && !approvedTask16cSet.has(key) && !approvedTask14eSet.has(key)
+          && !["runAwaitingOwner","runAwaitingOwnerNext","runCancelled","runRetrying","cancelAction","cancelPending","cancelUncertain","cancelCompleted","cancelFailed"].some(name=>key==="SupervisorDurableWork."+name))
         .sort();
     };
     expect(keys("es")).toEqual(keys("en"));
@@ -278,6 +279,14 @@ describe("redesign 16 cleanup integration", () => {
       expect(es[namespace]).toBeUndefined();
       expect(ar[namespace]).toBeUndefined();
     }
+  });
+
+  it("pins exactly the new English-only durable owner work copy",()=>{
+    const en=localeMessages("en"),es=localeMessages("es"),ar=localeMessages("ar");
+    const keys=["runAwaitingOwner","runAwaitingOwnerNext","runCancelled","runRetrying","cancelAction","cancelPending","cancelUncertain","cancelCompleted","cancelFailed"];
+    expect(Object.keys(en.SupervisorDurableWork??{}).sort()).toEqual(keys.sort());
+    for(const key of keys)expect(en.SupervisorDurableWork[key].trim().length).toBeGreaterThan(0);
+    expect(es.SupervisorDurableWork).toBeUndefined();expect(ar.SupervisorDurableWork).toBeUndefined();
   });
 
   it("requires complete English-only Task 16B status copy rather than hiding missing keys", () => {

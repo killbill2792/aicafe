@@ -60,7 +60,7 @@ export function activeOwnerQuestionMessageId(messages:readonly ConversationMessa
 }
 
 /** A clarify card can be answered only once, by the immediately following owner turn. */
-export function clarifyCardState(messages:readonly ConversationMessage[],index:number){
+export function clarifyCardState(messages:readonly ConversationMessage[],index:number,activeDurableQuestions?:ReadonlySet<string>){
   const message=messages[index];
   const card=message?.blocks?.find(b=>b&&typeof b==="object"&&"type" in b&&b.type==="clarify");
   if(!card||typeof card!=="object")return {state:"hidden" as const,choice:null};
@@ -68,6 +68,12 @@ export function clarifyCardState(messages:readonly ConversationMessage[],index:n
   // alone (no text block), so hiding a card would leave an empty answer bubble.
   // Typed-answer cards (facts, fill) have no options to match a reply against.
   const options="options" in card&&Array.isArray(card.options)?card.options:[];
+  const durableId=message.grounding?.durableQuestionId;
+  if(typeof durableId==="string"){
+    const matched=messages.slice(index+1).find(m=>m.role==="owner"&&m.ownerInputResponse?.questionId===durableId);
+    if(matched)return {state:"chosen" as const,choice:matched.text};
+    return activeDurableQuestions?.has(durableId)?{state:"active" as const,choice:null}:{state:"skipped" as const,choice:null};
+  }
   const next=messages.slice(index+1).find(m=>m.role==="owner");
   if(next){
     const label=options.find(o=>o&&typeof o==="object"&&"label" in o&&o.label===next.text);

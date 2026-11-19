@@ -231,6 +231,38 @@ test("@home Task 16B persists real Supervisor work through reload, uncertainty a
       const bounds = await work.boundingBox();
       expect(bounds).not.toBeNull();
       expect(bounds.x+ bounds.width).toBeLessThanOrEqual(391);
+
+      // Exercise the actual v2 admission/question/cancellation RPCs in this
+      // disposable database. This is Work/browser proof, not a real model
+      // or scheduled producer test. No provider invocation or flag change.
+      const ownerMessage=randomUUID(),questionId=randomUUID();
+      await db.query("insert into public.ai_messages(id,business_id,owner_user_id,thread_id,author_user_id,role,content_type,text_content,client_message_id) values($1,$2,$3,$4,$3,'owner','text','Prepare a report',$5)",
+        [ownerMessage,own.businessId,own.owner.userId,threadId,randomUUID()]);
+      await db.query("select set_config('request.jwt.claim.role','service_role',false)");
+      const scope=[own.businessId,own.owner.userId,threadId];
+      const rpc=async(name,args)=>(await db.query("select public."+name+"("+args.map((_,i)=>"$"+(i+1)).join(",")+") as value",args)).rows[0].value;
+      const assignment=await rpc("supervisor_admit_owner_run_v2",[...scope,ownerMessage,"d".repeat(64),"en",[]]);
+      const authorized=await rpc("supervisor_run_claim",[...scope,assignment.id,randomUUID(),30]);
+      await rpc("supervisor_run_complete_step",[...scope,assignment.id,"authorize_owner",authorized.step.claim_token,"owner:"+ownerMessage]);
+      const ownerClaim=await rpc("supervisor_run_claim",[...scope,assignment.id,randomUUID(),30]);
+      const job=await rpc("supervisor_start_owner_job_v2",[...scope,assignment.id,ownerClaim.step.claim_token]);
+      const blocks=[{type:"clarify",question:"Which saved period?",options:[{label:"Today only",value:"today"},{label:"Last week",value:"week"}],allowOther:true}];
+      await rpc("supervisor_publish_owner_question_v2",[...scope,assignment.id,ownerClaim.step.claim_token,job.id,questionId,JSON.stringify(blocks),JSON.stringify({status:"requires_owner_input",ownerMessageId:ownerMessage,durableRunId:assignment.id,durableQuestionId:questionId})]);
+      await db.query("insert into public.ai_messages(id,business_id,owner_user_id,thread_id,author_user_id,role,content_type,text_content,client_message_id) values($1,$2,$3,$4,$3,'owner','text','An unrelated question',$5)",
+        [randomUUID(),...scope,randomUUID()]);
+      await page.reload();
+      const persisted=work.locator('[data-work-id="run:'+assignment.id+'"]');
+      await expect(persisted).toHaveAttribute("data-work-status","approval_required");
+      await expect(persisted).toContainText("Waiting for your answer to the saved question");
+      await expect(page.getByText("Which saved period?",{exact:true})).toBeVisible();
+      await expect(work.locator('[data-work-id="job:'+job.id+'"]')).toHaveCount(0);
+      await persisted.getByRole("button",{name:"Stop assignment",exact:true}).click();
+      await expect(persisted.getByText("This assignment was cancelled.",{exact:true}).first()).toBeVisible();
+      await page.reload();
+      const savedWork=(await (await context.request.get("/api/ai/threads/"+threadId+"/work")).json()).work;
+      expect(savedWork.find(item=>item.id==="run:"+assignment.id)).toMatchObject({status:"cancelled",questionId:null,cancelAllowed:false});
+      expect((await db.query("select status,awaiting_question_id from public.supervisor_runs where id=$1",[assignment.id])).rows[0]).toEqual({status:"blocked",awaiting_question_id:null});
+      await expect(page.getByRole("button",{name:"Today only",exact:true})).toHaveCount(0);
     } finally { await context.close(); }
   } finally {
     if (connected) {

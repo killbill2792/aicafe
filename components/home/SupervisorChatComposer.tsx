@@ -302,6 +302,8 @@ export default function SupervisorChatComposer({
   const [showNewMessage, setShowNewMessage] = useState(false);
   const messageContent = useRef<HTMLDivElement | null>(null);
   const retryId = useRef<string | null>(null);
+  const retryResponse=useRef<{key:string;response:import("@/lib/ai/supervisor/ownerInput/contracts").OwnerInputResponse}|null>(null);
+  const [acceptedDurableIds,setAcceptedDurableIds]=useState<string[]>([]);
   const threadRequestId = useRef<string | null>(null);
   const eventThreadIds=useRef(new Map<string,string>());
   const openingEvent=useRef(false);
@@ -321,6 +323,9 @@ export default function SupervisorChatComposer({
     if (job.status === "failed") { setFailureCode(job.errorCode ?? "agent_turn_failed"); setError(true); }
   });
   const supervisorWork = useSupervisorWork(threadId, Boolean(threadId));
+  const durableWork=supervisorWork.items.filter(item=>item.executionVersion===2);
+  const activeDurableQuestions=new Set(durableWork.flatMap(item=>item.questionId?[item.questionId]:[]));
+  const durableSignature=JSON.stringify(durableWork.map(item=>[item.id,item.status,item.questionId,item.proof?.ref,item.relatedOwnerMessageIds]));
   const resumedRunning = !sending && shouldShowRunningJob(watcher.job,messages);
 
   function cleanupRecording() {
@@ -443,7 +448,7 @@ export default function SupervisorChatComposer({
           title?eventContextFromTitle(title,threadId):null);
       }).catch(() => { if (!controller.signal.aborted) setError(true); });
     return () => controller.abort();
-  }, [enabled, threadId, sending, threads, reloadVersion]);
+  }, [enabled, threadId, sending, threads, reloadVersion,durableSignature]);
   useEffect(() => {
     if (!enabled || !threadId || sending) return;
     const controller = new AbortController();
@@ -572,13 +577,13 @@ export default function SupervisorChatComposer({
     }
   }
   async function sendText(value: string, existingKey?: string, targetThreadId?: string,
-    attachmentOverride?:readonly StoredAttachment[]) {
+    attachmentOverride?:readonly StoredAttachment[],ownerInputResponse?:import("@/lib/ai/supervisor/ownerInput/contracts").OwnerInputResponse) {
     const inputText=value.trim() || (attachments.length>0?copy.photoRequest:"");
     const context=eventContext?.threadId===(targetThreadId??threadId)?eventContext:null;
-    const text=eventOwnerMessage(inputText,context);
+    const text=ownerInputResponse?inputText:eventOwnerMessage(inputText,context);
     // A confirmed background job accepts follow-ups while the first response streams.
     // The main-turn double-tap guard must not intercept this separate path.
-    if (!targetThreadId && !existingKey && enabled && canUseAi && text && (sending ? Boolean(liveJobId) : resumedRunning) &&
+    if (!ownerInputResponse && !targetThreadId && !existingKey && enabled && canUseAi && text && (sending ? Boolean(liveJobId) : resumedRunning) &&
       !uploading && !recorder.current && dictation !== "recognizing" && text.length <= 4000)
       return sendFollowUp(text);
     if(sendOnce.current)return;
@@ -586,6 +591,8 @@ export default function SupervisorChatComposer({
     sendOnce.current=true;
     const clientMessageId = sendKey(existingKey, retryId.current, () => crypto.randomUUID());
     retryId.current = clientMessageId;
+    const matchedResponse=ownerInputResponse??(retryResponse.current?.key===clientMessageId?retryResponse.current.response:undefined);
+    if(matchedResponse)retryResponse.current={key:clientMessageId,response:matchedResponse};
     if (!existingKey) {
       // Optimistic view only: the server owns persistence and idempotency.
       setOptimisticOwner(beginOptimisticOwner(text, clientMessageId));
@@ -598,13 +605,13 @@ export default function SupervisorChatComposer({
     let attemptedThreadId: string | null = null;
     // Set once the server confirms a background job; from then on a dropped
     // connection is not a failure because the answer keeps being written.
-    let jobConfirmed = false, serverError = false;
+    let jobConfirmed = false, serverError = false, durableConfirmed=false;
     try {
       const id = targetThreadId ?? await ensureThread();
       attemptedThreadId = id;
       const response = await fetch("/api/ai/threads/" + encodeURIComponent(id) + "/agent", {
         method: "POST", headers: { "content-type": "application/json" },
-        body: JSON.stringify(buildAgentSendBody(clientMessageId,text,locale,attachmentOverride??attachments)),
+        body: JSON.stringify(buildAgentSendBody(clientMessageId,text,locale,attachmentOverride??attachments,matchedResponse)),
       });
       if (!response.ok || !response.body) throw new Error("agent_request_failed");
       const reader = response.body.getReader();
@@ -618,8 +625,14 @@ export default function SupervisorChatComposer({
           buffer = read.rest;
           for (const { type, data } of read.frames) {
             const event = data as { text?: string; code?: string; discardChars?: number; agentId?: string;
-              name?: string; jobId?: string; mode?: string };
-            if (type === "ack" && typeof event.jobId === "string") {
+              name?: string; jobId?: string; mode?: string; runId?:string;ownerMessageId?:string };
+            if(type==="ack"&&typeof event.runId==="string"){
+              durableConfirmed=true;jobConfirmed=true;finished=true;
+              if(event.ownerMessageId)setAcceptedDurableIds(ids=>[...new Set([...ids,event.ownerMessageId!])]);
+              setLiveNote(liveCopy.followUpQueued);
+            } else if(type==="queued"&&durableConfirmed){
+              finished=true;
+            } else if (type === "ack" && typeof event.jobId === "string") {
               jobConfirmed = true;
               setLiveJobId(event.jobId);
               if (event.mode === "continuation") {
@@ -645,6 +658,7 @@ export default function SupervisorChatComposer({
               event.discardChars !== undefined && event.discardChars >= 0) {
               setStreamedText(current => current.slice(0, Math.max(0, current.length - event.discardChars!)));
             } else if (type === "error") {
+              if(durableConfirmed){finished=true;continue;}
               serverError = true;
               throw new Error(event.code ?? "agent_turn_failed");
             } else if (type === "done") {
@@ -666,10 +680,10 @@ export default function SupervisorChatComposer({
       setNextOffset(page.nextOffset);
       setOptimisticOwner(null);
       await refreshThreads();
-      retryId.current = null; setStreamedText("");
+      retryId.current = null; retryResponse.current=null;setStreamedText("");
       dispatchDictation({ type: "reset" }); setMediaNotice(""); setAttachments([]);
     } catch (failure) {
-      if (existingKey) retryId.current = null;
+      if (existingKey&&!matchedResponse) retryId.current = null;
       // Server may have persisted the owner turn before the response failed.
       if (attemptedThreadId) {
         try {
@@ -679,7 +693,7 @@ export default function SupervisorChatComposer({
       }
       if (jobConfirmed && !serverError) {
         // Connection dropped but the job keeps running: the watcher resumes it.
-        setOptimisticOwner(null); retryId.current = null;
+        setOptimisticOwner(null); retryId.current = null;retryResponse.current=null;
       } else {
         if (!existingKey) {
           setOptimisticOwner(null);
@@ -743,7 +757,7 @@ export default function SupervisorChatComposer({
     setEventContext(id&&title?eventContextFromTitle(title,id):null);
     setDraft(""); setMediaNotice(""); setError(false);
     setFailureCode(null); setQueuedOwner([]);
-    retryId.current = null; threadRequestId.current = null;
+    retryId.current = null; retryResponse.current=null;threadRequestId.current = null;setAcceptedDurableIds([]);
     composer.current?.focus();
   }
   function openWork(item:OwnerWorkItem){
@@ -910,7 +924,9 @@ export default function SupervisorChatComposer({
   const startReady=!threadId||loadedThreadId===threadId||hasChatMessages;
   const answeredOwnerIds = answeredOwnerMessageIds(messages);
   const inFlightOwnerIds = inFlightOwnerMessageIds(watcher.job);
-  const pendingOwnerIds = new Set(!sending ? messages
+  for(const item of durableWork){if(item.ownerMessageId)inFlightOwnerIds.add(item.ownerMessageId);for(const id of item.relatedOwnerMessageIds??[])inFlightOwnerIds.add(id);}
+  for(const id of acceptedDurableIds)inFlightOwnerIds.add(id);
+  const pendingOwnerIds = new Set(!sending && !supervisorWork.loading ? messages
     .filter((message) => message.role === "owner" && Boolean(message.clientMessageId) &&
       !answeredOwnerIds.has(message.id) && !inFlightOwnerIds.has(message.id))
     .map((message) => message.id) : []);
@@ -1038,10 +1054,10 @@ export default function SupervisorChatComposer({
         <SupervisorMessage message={message} copy={copy} locale={locale} cafeCurrency={cafeCurrency}
           linkedThreadId={threadId===initialThreadId?initialThreadId:undefined}
           linkedProposalId={threadId===initialThreadId?initialProposalId:undefined}
-          clarifyState={chosenClarify[message.id]&&clarifyCardState(clarifyVisibilityMessages,messageIndex).state==="skipped"?
-            "chosen":clarifyCardState(clarifyVisibilityMessages,messageIndex).state}
-          clarifyChoice={chosenClarify[message.id]??clarifyCardState(clarifyVisibilityMessages,messageIndex).choice}
-          onClarify={value=>{setChosenClarify(old=>({...old,[message.id]:value}));void sendText(value);}}
+          clarifyState={chosenClarify[message.id]&&clarifyCardState(clarifyVisibilityMessages,messageIndex,activeDurableQuestions).state==="skipped"?
+            "chosen":clarifyCardState(clarifyVisibilityMessages,messageIndex,activeDurableQuestions).state}
+          clarifyChoice={chosenClarify[message.id]??clarifyCardState(clarifyVisibilityMessages,messageIndex,activeDurableQuestions).choice}
+          onClarify={value=>{setChosenClarify(old=>({...old,[message.id]:value}));void sendText(value,undefined,undefined,undefined,typeof message.grounding?.durableQuestionId==="string"?{questionId:message.grounding.durableQuestionId,action:"supply"}:undefined);}}
           onFacts={async(questionId,answers)=>{
             if(!threadId||message.threadId!==threadId)throw new Error("thread_unavailable");
             const response=await fetch("/api/ai/threads/"+encodeURIComponent(threadId)+"/owner-answer",{
@@ -1065,10 +1081,11 @@ export default function SupervisorChatComposer({
               label:fields.find(field=>field.key===answer.fieldKey)?.label??answer.fieldKey,
               value:answer.forget?savedCopy.forgottenValue:answer.value
             }));
-            await sendText(resumeOwnerQuestion(original,responseText,facts));
+            const durableId=message.grounding?.durableQuestionId;
+            await sendText(resumeOwnerQuestion(typeof durableId==="string"?null:original,responseText,facts),undefined,undefined,undefined,typeof durableId==="string"?{questionId:durableId,action:"supply"}:undefined);
           }}
           disabled={sending||!enabled||!canUseAi||
-          (message.role==="supervisor"&&message.id!==activeQuestionMessageId&&clarifyCardState(clarifyVisibilityMessages,messageIndex).state!=="active")}
+          (message.role==="supervisor"&&message.id!==activeQuestionMessageId&&clarifyCardState(clarifyVisibilityMessages,messageIndex,activeDurableQuestions).state!=="active")}
           onOwnerResponse={(origin,value,isOption,dismiss=false)=>{
             if(sending||!enabled||!canUseAi||origin.id!==activeQuestionMessageId)return;
             const question=ownerQuestionSchema.safeParse((origin.blocks??[]).find(b=>
@@ -1096,7 +1113,7 @@ export default function SupervisorChatComposer({
         {pendingOwnerIds.has(message.id) && <div className="flex max-w-[94%] items-center gap-3 rounded-xl border border-line bg-warn-soft p-3 text-[15px] text-ink" role="alert">
           <AlertCircle size={18} aria-hidden="true" />
           <span className="flex-1">{shownFailure ? failureLine(shownFailure, liveCopy) : copy.answerFailed}</span>
-          <button type="button" onClick={() => void sendText(message.text ?? "", message.clientMessageId ?? undefined)}
+          <button type="button" onClick={() => void sendText(message.text ?? "", message.clientMessageId ?? undefined,undefined,undefined,message.ownerInputResponse)}
             disabled={!canUseAi} className="min-h-10 rounded-xl bg-accent px-3 font-bold text-on-accent disabled:opacity-50">{copy.retryAnswer}</button>
         </div>}
       </div>)}

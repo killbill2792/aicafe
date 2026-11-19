@@ -1,0 +1,116 @@
+{
+  "id": "6-15c-owner-run",
+  "mode": "generic",
+  "engine": "vitest",
+  "entrypoint": "lib/ai/supervisor/runs/durableOwnerRun.live.test.ts",
+  "proof": "6-15c-owner-run-proof.json",
+  "scope": "6-15c-owner-run-scope.json",
+  "expectedTools": [
+    "calculate",
+    "get_supervisor_permissions"
+  ],
+  "assertions": [
+    {
+      "name": "same-assignment-completed",
+      "kind": "owner",
+      "table": "public.supervisor_runs",
+      "where": {
+        "id": {
+          "scope": "runId"
+        },
+        "business_id": {
+          "scope": "businessId"
+        },
+        "owner_user_id": {
+          "scope": "ownerUserId"
+        },
+        "thread_id": {
+          "scope": "threadId"
+        },
+        "request_key": {
+          "scope": "ownerMessageId"
+        },
+        "status": {
+          "eq": "completed"
+        },
+        "final_report_ref": {
+          "scope": "replyId"
+        }
+      },
+      "minCount": 1,
+      "maxCount": 1
+    },
+    {
+      "name": "one-final-owner-reply",
+      "kind": "owner",
+      "table": "public.ai_messages",
+      "where": {
+        "id": {
+          "scope": "replyId"
+        },
+        "business_id": {
+          "scope": "businessId"
+        },
+        "owner_user_id": {
+          "scope": "ownerUserId"
+        },
+        "thread_id": {
+          "scope": "threadId"
+        },
+        "role": {
+          "eq": "supervisor"
+        }
+      },
+      "minCount": 1,
+      "maxCount": 1
+    },
+    {
+      "name": "one-registered-job",
+      "kind": "source",
+      "table": "public.ai_agent_jobs",
+      "where": {
+        "id": {
+          "scope": "jobId"
+        },
+        "business_id": {
+          "scope": "businessId"
+        },
+        "durable_run_id": {
+          "scope": "runId"
+        },
+        "status": {
+          "eq": "done"
+        }
+      },
+      "minCount": 1,
+      "maxCount": 1
+    },
+    {
+      "name": "no-unapproved-effect",
+      "kind": "source",
+      "table": "public.supervisor_effect_attempts",
+      "where": {
+        "business_id": {
+          "scope": "businessId"
+        }
+      },
+      "minCount": 0,
+      "maxCount": 0
+    },
+    {
+      "name": "no-cross-cafe-run",
+      "kind": "isolation",
+      "table": "public.supervisor_runs",
+      "where": {
+        "id": {
+          "scope": "runId"
+        },
+        "business_id": {
+          "scope": "foreignBusinessId"
+        }
+      },
+      "minCount": 0,
+      "maxCount": 0
+    }
+  ]
+}

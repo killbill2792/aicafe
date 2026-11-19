@@ -69,13 +69,65 @@ export async function POST(request: Request, context: RouteContext) {
     const base = { scope, threadId: id, owner, ownerText: input.text, locale: input.locale, service,
       attachmentIds:input.attachmentIds??[] };
 
-    if (prior) return sseStream((emit, close) => { emit("done", { reply: prior, replayed: true }); close(); });
+    if (prior&&!prior.grounding?.durableRunId) return sseStream((emit, close) => { emit("done", { reply: prior, replayed: true }); close(); });
 
+    // Admission is durable before any acknowledgement or execution. The
+    // foreground path below and the existing scheduled worker race for the
+    // SAME scoped lease, never for independent agent turns.
+    if(process.env.SUPERVISOR_RUN_WORKER_ENABLED==="true"&&process.env.SUPERVISOR_DURABLE_CHAT_ENABLED==="true"){
+      const worker=await import("@/lib/ai/supervisor/runs/worker.server");
+      let run:Awaited<ReturnType<typeof worker.admitDurableChat>>;
+      try{
+        if(input.ownerInputResponse){
+          if(input.ownerInputResponse.action!=="supply"||input.attachmentIds?.length)throw new ConversationApiError(422,"invalid_owner_answer");
+          const {answerOwnerRun}=await import("@/lib/ai/supervisor/runs/repository.server");
+          run=await answerOwnerRun({...scope,threadId:id},input.ownerInputResponse.questionId,owner.id,input.ownerInputResponse);
+        }else run=await worker.admitDurableChat({...scope,threadId:id},owner,{locale:input.locale,attachmentIds:input.attachmentIds??[]});
+      }
+      catch(error){
+        if(error instanceof ConversationApiError)throw error;
+        const cause=error instanceof Error?error.cause:null;
+        const code=cause&&typeof cause==="object"&&"code" in cause?String(cause.code):"";
+        throw new ConversationApiError(code==="23505"?409:503,code==="23505"?"idempotency_conflict":"conversation_storage_unavailable");
+      }
+      if(prior)return sseStream((emit,close)=>{emit("done",{reply:prior,replayed:true});close();});
+      const jobs=await import("@/lib/ai/agent/jobs.server");
+      const sink=createTurnSink();
+      return sseStream((emit,close,onCancel)=>{
+        emit("ack",{runId:run.id,ownerMessageId:owner.id,mode:"queued"});
+        const detach=sink.attach({emit,close});onCancel(detach);
+        const work=(async()=>{
+          try{
+            let sentReply=false;
+            const state=await worker.processDurableRun(run.id,(type,data)=>{if(type==="done")sentReply=true;sink.emit(type,data);});
+            if(state==="busy"&&!sentReply)sink.emit("queued",{runId:run.id});
+            else if(state==="blocked")sink.emit("error",{code:"agent_turn_failed",retryable:false,runId:run.id});
+            else if(!sentReply) {
+              // An earlier worker may have completed the reply between
+              // admission and claim. Replay only the canonical saved answer.
+              const {getExistingSupervisorReply}=await import("@/lib/ai/conversations/replyWriter.server");
+              const original=run.requestKey===owner.id?owner:await jobs.readOwnerMessage(scope,id,run.requestKey);
+              const completed=await getExistingSupervisorReply(scope,original);
+              if(completed)sink.emit("done",{reply:completed,replayed:true});
+            }
+          }catch{sink.emit("error",{code:"agent_turn_failed",retryable:true,runId:run.id});}
+          finally{sink.close();}
+        })();
+        jobs.keepTurnAlive(work);
+      });
+    }
+    // A disabled rollout does not grant authority to replay an admitted v2
+    // message through the legacy pipeline.
+    if(prior)return sseStream((emit,close)=>{emit("done",{reply:prior,replayed:true});close();});
+
+    if(input.ownerInputResponse)throw new ConversationApiError(503,"conversation_storage_unavailable");
     // Background jobs are always on; unavailable job storage falls back inline.
     const jobs = await import("@/lib/ai/agent/jobs.server");
     let started: Awaited<ReturnType<JobsModule["startAgentJob"]>>;
     try { started = await jobs.startAgentJob(scope, id, owner.id); }
-    catch {
+    catch (error) {
+      if(error&&typeof error==="object"&&"message" in error&&error.message==="durable_job_owned")
+        throw new ConversationApiError(503,"conversation_storage_unavailable");
       // Jobs table unavailable: still answer, inline (never fail silently, never drop the turn).
       console.error("agent_job_start_failed");
       return sseStream(async (emit, close) => {

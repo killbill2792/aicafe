@@ -137,7 +137,18 @@
     "claimHelp": "Only record what the technician or staff reported. This does not close the issue.",
     "verifyHelp": "Confirm operational condition from your own check, not only the technician's claim."
   },
-    "SupervisorWork": {
+    "SupervisorDurableWork": {
+    "runAwaitingOwner": "Waiting for your answer to the saved question.",
+    "runAwaitingOwnerNext": "Answer the question in this conversation to continue the same assignment.",
+    "runCancelled": "This assignment was cancelled.",
+    "runRetrying": "Progress is saved. Supervisor will retry this assignment safely.",
+    "cancelAction": "Stop assignment",
+    "cancelPending": "Stopping assignment…",
+    "cancelUncertain": "Further work stopped. An action already started may have happened.",
+    "cancelCompleted": "This assignment already finished.",
+    "cancelFailed": "Cancellation could not be confirmed. Check the latest saved work status."
+  },
+  "SupervisorWork": {
     "heading": "Supervisor work",
     "stale": "Current status cannot be verified. Saved work may still be running; no action has been repeated.",
     "more": "Show more saved work",

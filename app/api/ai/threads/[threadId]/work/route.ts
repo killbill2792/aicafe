@@ -1,6 +1,7 @@
-import { authenticatedConversationContext } from "@/lib/ai/conversations/auth.server";
+import {z} from "zod";
+import { authenticatedConversationContext, ConversationApiError } from "@/lib/ai/conversations/auth.server";
 import { threadIdInput } from "@/lib/ai/conversations/contracts";
-import { conversationError, conversationJson, parseInput } from "@/lib/ai/conversations/http.server";
+import { conversationError, conversationJson, parseInput, requireSameOrigin, readBoundedJson } from "@/lib/ai/conversations/http.server";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
 import {
   projectOwnerWork, type RunRow, type StepRow, type ProposalRow, type AttemptRow, type JobRow, type InvestigationRow,
@@ -35,7 +36,9 @@ export async function GET(request: Request, context: RouteContext) {
     // The owner-wide view is anchored in an authenticated thread; caller cannot supply a café or owner.
     const ownerWide = new URL(request.url).searchParams.get("scope") === "owner";
     const db = await createServerSupabaseClient();
-    const runFields = "thread_id,id,request_key,status,final_report_ref,updated_at,finished_at";
+    // Execution flags control admission/dispatch, not an owner's right to read
+    // or cancel an existing assignment after a rollout is paused.
+    const runFields = "thread_id,id,request_key,status,final_report_ref,updated_at,finished_at,execution_version,awaiting_question_id,owner_answer_ids";
     const jobFields = "thread_id,id,owner_message_id,status,reply_message_id,error_code,attempt,heartbeat_at,created_at";
     const proposalFields = "thread_id,id,status,capability_id,effect_hash,updated_at";
     const investigationFields = "thread_id,episode_id,phase,failure_count,lease_token,lease_until,last_error,updated_at";
@@ -43,7 +46,8 @@ export async function GET(request: Request, context: RouteContext) {
       {
         const query = db.from(table).select(fields).eq("business_id", scope.businessId)
           .eq("owner_user_id", scope.ownerUserId);
-        return ownerWide ? query : query.eq("thread_id", id);
+        const scoped=ownerWide ? query : query.eq("thread_id", id);
+        return table==="ai_agent_jobs"?scoped.is("durable_run_id",null):scoped;
       };
 
     // Historical *completed* items are bounded. Every unfinished record,
@@ -82,10 +86,10 @@ export async function GET(request: Request, context: RouteContext) {
     // each nested ledger remains business-scoped and independently RLS-bound.
     const steps: StepRow[] = [], attempts: AttemptRow[] = [];
     for (let n=0; n<runs.length; n+=100) {
+      const ids=runs.slice(n,n+100).map(r=>r.id);
       const res = await db.from("supervisor_run_steps")
-        .select("run_id,step_key,step_index,status,attempts,error_code,updated_at,retry_mode,lease_until")
-        .eq("business_id",scope.businessId).in("run_id",runs.slice(n,n+100).map(r=>r.id))
-        .order("step_index",{ascending:true});
+        .select("run_id,step_key,step_index,status,attempts,error_code,updated_at,retry_mode,lease_until,checkpoint_phase,next_retry_at")
+        .eq("business_id",scope.businessId).in("run_id",ids).order("step_index",{ascending:true});
       if (res.error) throw new Error("owner_work_evidence_unavailable");
       steps.push(...(res.data ?? []) as StepRow[]);
     }
@@ -115,4 +119,21 @@ export async function GET(request: Request, context: RouteContext) {
   } catch (error) {
     return conversationError(error);
   }
+}
+
+/** Explicit owner control on existing Work endpoint. Cancellation is not an
+ * undo of any already authorized provider action or a separate approval. */
+export async function POST(request:Request,context:RouteContext){
+  try{
+    requireSameOrigin(request);
+    const {threadId}=await context.params;
+    const id=parseInput(threadIdInput,threadId);
+    const input=parseInput(z.strictObject({action:z.literal("cancel"),runId:z.uuid()}),await readBoundedJson(request));
+    const {scope,service}=await authenticatedConversationContext();
+    await service.getThread(id);
+    const {cancelOwnerRun}=await import("@/lib/ai/supervisor/runs/repository.server");
+    const state=await cancelOwnerRun({...scope,threadId:id},input.runId);
+    if(state==="not_found")throw new ConversationApiError(404,"thread_not_found");
+    return conversationJson({state,runId:input.runId});
+  }catch(error){return conversationError(error);}
 }

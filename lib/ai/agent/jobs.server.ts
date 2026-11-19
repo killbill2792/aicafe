@@ -71,3 +71,24 @@ export function keepTurnAlive(work: Promise<unknown>): void {
   try { after(work); }
   catch { /* outside a request scope (tests/scripts): the promise still runs to completion */ }
 }
+
+/** A durable owner run uses the same chat job but must hold its current
+ * persisted execution lease. Do not use the legacy un-tokened finish RPC. */
+export type DurableJobIdentity=ConversationScope&{threadId:string;runId:string;claimToken:string};
+const durableJobParams=(id:DurableJobIdentity)=>({
+  p_business_id:id.businessId,p_owner_user_id:id.ownerUserId,p_thread_id:id.threadId,
+  p_run_id:id.runId,p_claim_token:id.claimToken,
+});
+export async function startDurableAgentJob(id:DurableJobIdentity):Promise<AgentJob|null>{
+  const {data,error}=await createAdminSupabaseClient().rpc("supervisor_start_owner_job_v2",durableJobParams(id));
+  if(error)throw error;
+  return data?toAgentJob(data):null;
+}
+export async function updateDurableAgentJob(id:DurableJobIdentity,jobId:string,
+  action:"progress"|"failed"|"heartbeat",value?:AgentJobStep|string):Promise<void>{
+  const {data,error}=await createAdminSupabaseClient().rpc("supervisor_update_owner_job_v2",{
+    ...durableJobParams(id),p_job_id:jobId,p_action:action,
+    p_step:action==="progress"?value:null,p_reply_id:null,p_error_code:action==="failed"?value:null,
+  });
+  if(error||data!==true)throw new Error("durable_job_lease_lost");
+}

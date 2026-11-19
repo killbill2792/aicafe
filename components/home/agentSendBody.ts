@@ -1,3 +1,3 @@
-export function buildAgentSendBody(clientMessageId:string,text:string,locale:"en"|"es"|"ar",attachments:readonly {id:string;mediaType:string}[]){
- return {clientMessageId,text,locale,attachmentIds:attachments.filter(file=>["image/jpeg","image/png","image/webp","application/pdf","text/plain","text/csv","application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"].includes(file.mediaType)).slice(0,3).map(file=>file.id)};
+export function buildAgentSendBody(clientMessageId:string,text:string,locale:"en"|"es"|"ar",attachments:readonly {id:string;mediaType:string}[],ownerInputResponse?:import("@/lib/ai/supervisor/ownerInput/contracts").OwnerInputResponse){
+ return {clientMessageId,text,locale,...(ownerInputResponse?{ownerInputResponse}:{}),attachmentIds:(ownerInputResponse?[]:attachments).filter(file=>["image/jpeg","image/png","image/webp","application/pdf","text/plain","text/csv","application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"].includes(file.mediaType)).slice(0,3).map(file=>file.id)};
 }

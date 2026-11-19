@@ -5,7 +5,7 @@ import {redactToolFailure,redactedErrorStack} from "./redactToolError";
 import {safeToolError} from "./toolErrors";
 import {createHash} from "node:crypto";
 import { configuredSupervisorModel, PRODUCTION_SUPERVISOR_OPENAI_MODEL } from "@/lib/ai/conversations/modelConfig";
-import { agentToolDefinitions, investigationToolDefinition, agentLabelsPrompt, agentForTool, executeAgentTool, type AgentToolContext, type AgentToolResult, type AgentToolName } from "./tools";
+import { agentToolDefinitions, investigationToolDefinition, agentLabelsPrompt, agentForTool, executeAgentTool, isRepeatSafeOwnerTool, observeDurableToolEffect, type AgentToolContext, type AgentToolResult, type AgentToolName } from "./tools";
 import { statusFromResults } from "./status";
 import { checkNumbers,numberProvenance,compactEvidence,type NumericEvidence } from "./checkNumbers";
 import {usageEvidenceRefresh} from "./usageEvidence";
@@ -16,6 +16,7 @@ import {verifiedRecommendedPriceInReply} from "./pricingReply";
 import {injectSavedOwnerInputs,formatSavedOwnerFacts,type SavedFact} from "@/lib/ownerFacts/inject";
 import {questionFromReasons} from "@/lib/ownerFacts/questions";
 import {withoutSavedFactFields} from "@/lib/ownerFacts/askGuard";
+import {ownerRunStatement,type OwnerRunCheckpoint,type MatchedOwnerAnswer} from "@/lib/ai/supervisor/runs/contracts";
 
 export type EndReason = "complete" | "budget" | "timeout" | "provider_error" | "tool_errors";
 type ToolCall = { type: "function_call"; name: string; arguments: string; call_id: string };
@@ -170,6 +171,8 @@ export async function runAgentTurn(args: {
   deferSensitiveOutput?:()=>boolean;
   /** A scheduled synopsis is not an authenticated owner statement. */
   serviceOrigin?:boolean;
+  checkpoint?:OwnerRunCheckpoint;
+  matchedOwnerAnswers?:readonly MatchedOwnerAnswer[];
 }): Promise<AgentTurn> {
   if(!args.context.timezone)throw new Error("cafe_timezone_required");
   const now = args.now ?? Date.now, started = now();
@@ -183,7 +186,9 @@ export async function runAgentTurn(args: {
   const provider = args.provider ?? openAIProvider;
   const localDay=new Date(args.context.asOf+"T12:00:00Z");
   const weekday=new Intl.DateTimeFormat("en-US",{weekday:"long",timeZone:"UTC"}).format(localDay);
+  const continuation=await args.checkpoint?.resumeContext();
   const input: unknown[] = [
+    ...(continuation?[{role:"developer",content:continuation}]:[]),
     ...(args.memoryFacts ? [{ role: "developer", content: args.memoryFacts }] : []),
     ...(args.cafeProfile ? [{ role: "developer", content: args.cafeProfile }] : []),
     ...(args.ownerFacts?.length ? [{role:"developer",content:formatSavedOwnerFacts(args.ownerFacts)}] : []),
@@ -199,6 +204,9 @@ export async function runAgentTurn(args: {
        ...(args.ownerPdfs??[]).map(pdf=>({
         type:"input_file",filename:pdf.filename,file_data:"data:application/pdf;base64,"+pdf.base64,detail:"high"
        }))]:args.ownerText }];
+  const matched=args.matchedOwnerAnswers??[];
+  const matchedHistory=matched.flatMap(pair=>[{role:"assistant" as const,content:pair.question},{role:"user" as const,content:pair.answer}]);
+  input.push(...matchedHistory);
   const absorbed: OwnerFollowUp[] = [];
   // Mark inbox messages answered only when a model response has completed.
   const deliveredIds = new Set<string>();
@@ -227,9 +235,11 @@ export async function runAgentTurn(args: {
     if (fresh.length) args.onFollowUp?.(fresh.length);
     return fresh.length;
   };
-  const resolveState=newResolveState(args.ownerText,args.history);
+  const resolveState=matched.length
+    ?newResolveState(matched[matched.length-1].answer,[...(args.history??[]),{role:"user",content:args.ownerText},...matchedHistory.slice(0,-1)])
+    :newResolveState(args.ownerText,args.history);
   args.context.resolveState=resolveState;
-  args.context.ownerMessages=(args.history??[]).filter(m=>m.role==="user").map(m=>m.content);
+  args.context.ownerMessages=[...(args.history??[]).filter(m=>m.role==="user").map(m=>m.content),...matched.map(pair=>pair.answer)];
   // Tool context is authenticated; owner facts are loaded once per turn.
   Object.assign(args.context,{savedOwnerFacts:args.ownerFacts??[]});
   const results: Array<{callId: string; name: string; arguments: string; result: AgentToolResult}> = [];
@@ -240,14 +250,29 @@ export async function runAgentTurn(args: {
   // Every actual Responses transport goes through the same durable reservation
   // boundary, including the final recovery request. Ordinary chat and the
   // already-metered scheduled investigation have no durable owner-turn scope.
+  // Durable storage/fencing failures are not model or tool errors. They must
+  // escape recovery rather than cause another provider/effect dispatch.
+  class CheckpointFailure extends Error {constructor(cause:unknown){super("durable_checkpoint_failed",{cause});}}
+  const boundary=async<T>(work:()=>Promise<T>):Promise<T>=>{
+    try{return await work();}catch(error){throw new CheckpointFailure(error);}
+  };
   const meteredProvider:AgentProvider=async function*(params,signal){
-    const reservation=await reserveDurableProviderRequest(params);
-    if(signal.aborted)throw new Error("provider_timeout");
-    reservation?.launched();usage.modelCalls++;
-    for await(const event of provider(params,signal)){
-      if(event.type==="response.completed"&&reservation)
-        await reservation.complete((event.response??{}) as {model?:unknown;service_tier?:unknown;usage?:unknown});
-      yield event;
+    const checkpoint=args.checkpoint;
+    if(checkpoint)await boundary(()=>checkpoint.beginProvider());
+    let ended=false;
+    try{
+      const reservation=await reserveDurableProviderRequest(params);
+      if(signal.aborted)throw new Error("provider_timeout");
+      reservation?.launched();usage.modelCalls++;
+      for await(const event of provider(params,signal)){
+        if(event.type==="response.completed"){
+          if(reservation)await reservation.complete((event.response??{}) as {model?:unknown;service_tier?:unknown;usage?:unknown});
+          if(checkpoint){ended=true;await boundary(()=>checkpoint.endProvider(true));}
+        }
+        yield event;
+      }
+    }finally{
+      if(checkpoint&&!ended)await boundary(()=>checkpoint.endProvider(false));
     }
   };
   // Reserve unknown Luna output for subsequent work without reporting it as billed usage.
@@ -292,7 +317,7 @@ export async function runAgentTurn(args: {
     return typeof u==="number"&&Number.isSafeInteger(u)&&u>=0&&u<=1_000_000;
   };
   const underlyingWebSearch=args.context.webSearch;
-  args.context.ownerText=args.serviceOrigin?"":args.ownerText;
+  args.context.ownerText=args.serviceOrigin?"":ownerRunStatement(args.ownerText,matched);
   args.context.turnResults=()=>results.filter(r=>r.name!=="calculate").map(r=>({name:r.name,result:r.result}));
   const toolContext:AgentToolContext=underlyingWebSearch?{
     ...args.context,
@@ -354,7 +379,8 @@ export async function runAgentTurn(args: {
     ...(approvedLocalTask14b?{store:false as const}:{}),
     // The complete ordered registry is identical for every owner request.
     // The model itself decides whether a draft, an inspection or neither fits.
-    tools: [...agentToolDefinitions.filter(t=>!args.toolNames||args.toolNames.includes(t.name as AgentToolName)),
+    tools: [...agentToolDefinitions.filter(t=>(!args.toolNames||args.toolNames.includes(t.name as AgentToolName))&&
+      (!args.checkpoint||t.name!=="record_maintenance_repair_claim")),
       ...(args.toolNames?.includes("get_investigation_source")&&args.context.investigation
         ? [investigationToolDefinition] : []),
       ...(args.toolNames?[]:args.extraTools??[])],
@@ -439,6 +465,39 @@ export async function runAgentTurn(args: {
     }
   };
   try {
+    // Recover only previously selected canonical read references, in the same
+    // scoped registry/budget. No provider transport and no autonomous writes.
+    // Leave at least half the tool allowance available to advance the assignment.
+    const priorReads=args.checkpoint?.readReferences?.()??[];
+    const replayCap=Math.min(3,Math.floor((workerBudget?.maxToolCalls??8)/2));
+    for(const saved of priorReads.slice(-replayCap)){
+      if(replayCap===0||budgetStop()||workDeadline-now()<5000)break;
+      if(args.toolNames&&!args.toolNames.includes(saved.name as AgentToolName))continue;
+      if(!isRepeatSafeOwnerTool(saved.name,saved.selector))continue;
+      await args.beforeAcceptResult?.();
+      await boundary(()=>args.checkpoint!.assertLive());
+      usage.toolCalls++;
+      const callId="call_recovered_"+usage.toolCalls;
+      const wire=JSON.stringify(saved.selector);
+      let timer:ReturnType<typeof setTimeout>|undefined;
+      let result:AgentToolResult;
+      try{
+        result=await Promise.race([executeAgentTool(saved.name,saved.selector,toolContext),
+          new Promise<never>((_,reject)=>{timer=setTimeout(()=>reject(Error("deadline")),Math.min(2500,workDeadline-now()));})]);
+      }catch{
+        result={source:saved.name,period:null,missing:["recovery_read_unavailable"]};
+      }finally{clearTimeout(timer);}
+      await args.beforeAcceptResult?.();
+      await boundary(()=>args.checkpoint!.assertLive());
+      results.push({callId,name:saved.name,arguments:wire,result});
+      observeToolResult(resolveState,result);
+      // A fresh real tool read, represented in the provider's native tool
+      // message format. It is not a new owner instruction or a model selection.
+      input.push({type:"function_call",call_id:callId,name:saved.name,arguments:wire},
+        {type:"function_call_output",call_id:callId,output:JSON.stringify(result)});
+      audit({kind:"tool_call",toolName:saved.name,inputSummary:"Recovered scoped reference",
+        outputSummary:result.missing.length?"Missing input(s)":"Refreshed",durationMs:0});
+    }
     for (let round = 0; round < maxModelToolCalls(); round++) {
       if (now() >= workDeadline) { endReason = "timeout"; break; }
       const cap = budgetStop();
@@ -450,7 +509,7 @@ export async function runAgentTurn(args: {
       // it must escape the loop so no final request can resend private evidence.
       await args.beforeProviderRequest?.();
       try { calls = await call(false); }
-      catch { await args.beforeAcceptResult?.(); endReason = now() >= workDeadline || controller.signal.aborted ? "timeout" : "provider_error"; break; }
+      catch (error) { if(error instanceof CheckpointFailure)throw error; await args.beforeAcceptResult?.(); endReason = now() >= workDeadline || controller.signal.aborted ? "timeout" : "provider_error"; break; }
       await args.beforeAcceptResult?.();
       if (!calls.length) {
         const cap = budgetStop();
@@ -483,19 +542,28 @@ export async function runAgentTurn(args: {
         let result: AgentToolResult;
         const toolStart = now();
         let toolError: string | undefined;
+        let checkpointOpened=false;
+        let observedEffect:ReturnType<typeof observeDurableToolEffect>|undefined;
         let toolTimer: ReturnType<typeof setTimeout> | undefined;
         try {
-          if(args.toolNames&&!args.toolNames.includes(tool.name as AgentToolName))
+          if((args.toolNames&&!args.toolNames.includes(tool.name as AgentToolName))||(args.checkpoint&&tool.name==="record_maintenance_repair_claim"))
             throw new Error("tool_not_available");
           const parsedArgs=JSON.parse(tool.arguments);
           const questionArgs=tool.name==="ask_owner"?
             withoutSavedFactFields(parsedArgs,args.ownerFacts??[]):parsedArgs;
-          result = await Promise.race([questionArgs===null?
+          const effectiveArgs=questionArgs===null?null:injectSavedOwnerInputs(questionArgs,args.ownerFacts??[],
+            Boolean((agentToolDefinitions.find(d=>d.name===tool.name)?.parameters as {
+              properties?:Record<string,unknown>}|undefined)?.properties?.ownerInputs));
+          const recovered=args.checkpoint&&effectiveArgs!==null
+            ?await boundary(()=>args.checkpoint!.beginTool(tool.name,effectiveArgs,isRepeatSafeOwnerTool(tool.name,effectiveArgs)))
+            :null;
+          checkpointOpened=Boolean(args.checkpoint&&effectiveArgs!==null);
+          if(checkpointOpened&&!recovered&&effectiveArgs!==null&&!isRepeatSafeOwnerTool(tool.name,effectiveArgs))
+            observedEffect=observeDurableToolEffect(tool.name,toolContext,()=>boundary(()=>args.checkpoint!.assertLive()));
+          result = recovered??await Promise.race([effectiveArgs===null?
             Promise.resolve({source:"ask_owner",period:null,missing:["alreadySaved"],
               error:"ownerFactAlreadySaved"} as AgentToolResult):
-            executeAgentTool(tool.name,injectSavedOwnerInputs(questionArgs,args.ownerFacts??[],
-              Boolean((agentToolDefinitions.find(d=>d.name===tool.name)?.parameters as {
-                properties?:Record<string,unknown>}|undefined)?.properties?.ownerInputs)),toolContext),
+            executeAgentTool(tool.name,effectiveArgs,observedEffect?.context??toolContext).finally(()=>observedEffect?.settle()),
             new Promise<never>((_, reject) => {
               const left = workDeadline - now();
               if (left <= 0) reject(new Error("deadline"));
@@ -503,6 +571,7 @@ export async function runAgentTurn(args: {
             })]);
           failures = 0;
         } catch (error) {
+          if(error instanceof CheckpointFailure)throw error;
           failures++;
           const failedPeriod=(()=>{
             try{
@@ -531,7 +600,7 @@ export async function runAgentTurn(args: {
             period:failedPeriod?{from:failedPeriod.from,to:failedPeriod.to}:null,
             missing: [detail.error],what:mapped.what, ...detail };
           toolError = diagnostic;
-        } finally { clearTimeout(toolTimer); }
+        } finally { observedEffect?.close();clearTimeout(toolTimer); }
         await args.beforeAcceptResult?.();
         // A rejected model-generated global cost card must still trigger the
         // code-owned recovery with a scoped item key (or a generic question).
@@ -575,6 +644,7 @@ export async function runAgentTurn(args: {
             }
           }
         }catch{ /* Invalid tool arguments already have a localized failure. */ }
+        if(checkpointOpened)await boundary(()=>args.checkpoint!.endTool(result,observedEffect?.noEffect()??false));
         results.push({ callId: tool.call_id, name: tool.name, arguments: tool.arguments, result });
         observeToolResult(resolveState,result);
         input.push({ type: "function_call_output", call_id: tool.call_id, output: JSON.stringify(result) });
@@ -690,7 +760,7 @@ export async function runAgentTurn(args: {
               outputSummary: completed ? "Completed" : "Incomplete", durationMs: Math.max(0, now() - finalStart), error: finalError });
           }
         }
-      } catch { endReason = now() >= deadline ? "timeout" : "provider_error"; }
+      } catch (error) { if(error instanceof CheckpointFailure)throw error; endReason = now() >= deadline ? "timeout" : "provider_error"; }
     }
   } finally { controller.abort(); }
   usage.latencyMs = now() - started;
@@ -702,8 +772,12 @@ export async function runAgentTurn(args: {
   await args.beforeAcceptResult?.();
   const status = statusFromResults(results);
   const ownerStatements=[...(args.history??[]).filter(m=>m.role==="user").map(m=>m.content),
-    ...(args.serviceOrigin?[]:[args.ownerText]),...absorbed.map(m=>m.text)].join("\n");
-  const toolResults=results.map(r=>r.result);
+    ...(args.serviceOrigin?[]:[args.ownerText]),...matched.map(pair=>pair.answer),...absorbed.map(m=>m.text)].join("\n");
+  const restored=await args.checkpoint?.restoredResults?.()??[];
+  // Restored cards are canonical row references, not replayed model text.
+  // They remain part of the final grounded reply even when the model did not
+  // call their writer again after recovery. The existing card builder dedupes IDs.
+  const toolResults=[...restored,...results.map(r=>r.result)];
   const verificationResults=usageEvidenceRefresh(toolResults,args.previousEvidence);
   const unverified=checkNumbers(text,ownerStatements,verificationResults,args.context.locale,args.previousEvidence);
   const evidence=compactEvidence(verificationResults);

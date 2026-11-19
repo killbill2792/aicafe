@@ -25,10 +25,12 @@ export type OwnerWorkItem = {
   errorCode: string | null;
   proof: { kind: "verified_reply" | "verified_effect"; ref: string; at: string | null } | null;
   proposalId: string | null;
+  executionVersion?:number; questionId?:string|null; relatedOwnerMessageIds?:string[]; cancelAllowed?:boolean;
 };
 
 export type RunRow = {
   thread_id?: string | null;
+  execution_version?:number; awaiting_question_id?:string|null; owner_answer_ids?:string[];
   id: string; request_key: string; status: "pending" | "running" | "blocked" | "completed";
   final_report_ref: string | null; updated_at: string; finished_at: string | null;
 };
@@ -36,6 +38,7 @@ export type StepRow = {
   run_id: string; step_key: string; step_index: number; status: "pending" | "leased" | "blocked" | "completed";
   attempts: number; error_code: string | null; updated_at: string;
   retry_mode: "idempotent" | "reconcile"; lease_until: string | null;
+  checkpoint_phase?:"ready"|"provider_pending"|"read_pending"|"effect_pending";next_retry_at?:string|null;
 };
 export type JobRow = {
   thread_id?: string | null;
@@ -63,6 +66,7 @@ export type InvestigationRow = {
 // All owner-visible phrasing comes from the required English message catalog.
 // Never let a server or model-authored work state bypass this locale source.
 const copy = english.SupervisorWork.copy;
+const durableCopy = english.SupervisorDurableWork;
 
 const stepNames: Record<string, string> = {
   authorize_owner: copy.stepAuthorizeOwner,
@@ -79,28 +83,31 @@ export function projectOwnerWork(input: {
   for (const run of input.runs) {
     const next = (steps.get(run.id) ?? []).sort((a, b) => a.step_index - b.step_index)
       .find(s => s.status !== "completed");
-    const expired = run.status === "blocked" && (next?.error_code === "lease_expired"
+    const expired = run.status === "blocked" && (next?.error_code === "effect_uncertain" || next?.error_code === "cancelled_effect_uncertain" || next?.error_code === "lease_expired"
       || (next?.retry_mode === "reconcile" && ["turn_failed", "turn_incomplete"].includes(next.error_code ?? "")));
     // A leased row can outlive a dead process. Before the next worker tick,
     // do not claim it is working or that an effect is safe to repeat.
     const leaseEnd = next?.lease_until ? Date.parse(next.lease_until) : NaN;
     const staleLease = next?.status === "leased" && (!Number.isFinite(leaseEnd) || leaseEnd <= nowMs);
-    const status: OwnerWorkStatus = run.status === "pending" ? "queued"
+    const waiting=run.execution_version===2&&run.status==="blocked"&&next?.error_code==="awaiting_owner";
+    const cancelled=run.status==="blocked"&&next?.error_code==="cancelled";
+    const safeRetry=run.execution_version===2&&next?.checkpoint_phase!==undefined&&next.checkpoint_phase!=="effect_pending";
+    const status: OwnerWorkStatus = waiting?"approval_required":cancelled?"cancelled":run.status === "pending" ? (next?.next_retry_at?"retrying":"queued")
       : run.status === "completed" && run.final_report_ref ? "answer_ready"
       : run.status === "completed" ? "uncertain"
       : run.status === "blocked" ? expired ? "uncertain" : "failed"
-      : staleLease ? (next?.retry_mode === "idempotent" ? "queued" : "uncertain")
+      : staleLease ? (safeRetry?"retrying":next?.retry_mode === "idempotent" ? "queued" : "uncertain")
       : next?.status === "leased" && next.attempts > 1 ? "retrying" : "running";
     work.push({
       id: "run:" + run.id, threadId: run.thread_id ?? null, kind: "durable_run", status, title: copy.runTitle,
-      detail: status === "answer_ready"
+      detail: waiting?durableCopy.runAwaitingOwner:cancelled?durableCopy.runCancelled:status === "retrying"?durableCopy.runRetrying:status === "answer_ready"
         ? copy.runAnswerReady
         : status === "uncertain" ? copy.runUncertain
         : status === "failed" ? copy.runFailed
         : status === "queued" ? copy.runQueued
         : next ? (stepNames[next.step_key] ?? copy.runGeneric)
         : copy.runChecking,
-      nextStep: status === "uncertain" ? copy.runUncertainNext
+      nextStep: waiting?durableCopy.runAwaitingOwnerNext:cancelled?durableCopy.runCancelled:status === "uncertain" ? copy.runUncertainNext
         : status === "failed" ? copy.runFailedNext
         : status === "answer_ready" ? copy.runAnswerNext
         : copy.runActiveNext,
@@ -110,6 +117,8 @@ export function projectOwnerWork(input: {
       proof: status === "answer_ready" && run.final_report_ref
         ? { kind: "verified_reply", ref: run.final_report_ref, at: run.finished_at } : null,
       proposalId: null,
+      ...(run.execution_version===2?{executionVersion:2,questionId:waiting?run.awaiting_question_id??null:null,
+        relatedOwnerMessageIds:run.owner_answer_ids??[],cancelAllowed:["queued","running","retrying"].includes(status)||waiting}:{}),
     });
   }
   const ownerRuns = new Set(input.runs.map(run => (run.thread_id ?? "") + ":" + run.request_key));
@@ -208,5 +217,9 @@ export function projectOwnerWork(input: {
   const settled = (s: OwnerWorkStatus) =>
     ["verified_complete","answer_ready","source_resolved","cancelled"].includes(s);
   // Keep ALL unresolved work addressable; only confirmed past results are bounded.
-  return [...sorted.filter(x => !settled(x.status)), ...sorted.filter(x => settled(x.status)).slice(0,2)];
+  // Settled history is chronological, not status-ranked: a just-cancelled
+  // assignment must not vanish behind older successful replies or incidents.
+  const recent=sorted.filter(x=>settled(x.status)).sort((a,b)=>
+    (Date.parse(b.updatedAt)||0)-(Date.parse(a.updatedAt)||0)||a.id.localeCompare(b.id));
+  return [...sorted.filter(x => !settled(x.status)), ...recent.slice(0,2)];
 }

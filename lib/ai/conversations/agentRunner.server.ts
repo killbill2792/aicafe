@@ -6,7 +6,11 @@ import {recordedWhatsAppImageIds} from "@/lib/ai/conversations/authorizedTurn.se
 import {fileEvidence} from "@/lib/ai/conversations/fileEvidence.server";
 import {possiblePriorReceipt} from "@/lib/ai/conversations/receiptDuplicate";
 import {verifySignature,MAX_UPLOAD_BYTES} from "@/lib/ai/conversations/attachments";
-import {getWeekSchedule as scopedWeekSchedule} from "@/lib/data/staffSchedule.server";
+import {getWeekSchedule as scopedWeekSchedule,getShiftCost as scopedShiftCost} from "@/lib/data/staffSchedule.server";
+import {getTeamRules as scopedTeamRules} from "@/lib/data/staffRules.server";
+import {readStaffMessagesForVerifiedOwner} from "@/lib/staffCommunication/channel.server";
+import {readClaimedStaffCoordination} from "@/lib/staffCoordination/cases.server";
+import {withDurableOliviaReadScope} from "@/lib/scheduling/oliviaReadScope.server";
 import {TeamRulesService} from "@/lib/ai/policies/service";
 import {SupabaseTeamRulesRepository} from "@/lib/ai/policies/repository.server";
 import {getWeekSchedule} from "@/lib/actions/schedule";
@@ -51,6 +55,8 @@ import {requirePositivePriceIncrease} from "@/lib/ai/agent/tools/priceExperiment
 import {BOARD_PROPOSAL_STATUSES,BOARD_REPORT_STATUSES} from "@/lib/operating/board";
 import {metricCatalog} from "@/lib/calc/metrics/catalog";
 import type { NumericEvidence } from "@/lib/ai/agent/checkNumbers";
+import {ownerRunStatement,type OwnerRunCheckpoint} from "@/lib/ai/supervisor/runs/contracts";
+import type {DurableReplyFence} from "./replyWriter.server";
 import { runAgentTurn, type OwnerFollowUp } from "@/lib/ai/agent/loop.server";
 import {createOwnerCommitment,listOwnerCommitments,closeOwnerCommitment} from "@/lib/operating/commitments.server";
 import {createOwnerRoutine,listOwnerRoutines,changeOwnerRoutine} from "@/lib/ai/supervisor/routines/repository.server";
@@ -96,6 +102,10 @@ type TurnParams = {
   service: ConversationService;
   emit: Emit; job: AgentJob | null; jobs: JobsModule | null;
   attachmentIds?:string[];
+  checkpoint?:OwnerRunCheckpoint;
+  matchedAnswers?:import("@/lib/ai/supervisor/runs/contracts").MatchedOwnerAnswer[];
+  durableFence?:DurableReplyFence;
+  recordDurableStep?:(step:import("@/lib/ai/agent/jobState").AgentJobStep)=>Promise<void>;
   /** Only a caller that reverified a signed, consented Meta owner binding can supply this. */
   externalClient?:SupabaseClient;
 };
@@ -146,7 +156,7 @@ async function readOwnerAttachments(scope:ConversationScope,threadId:string,ids:
  return {images,pdfs,evidence,contentSha256:fingerprint.digest("hex")};
 }
 /** One owner turn: tools → loop → persist → usage. Emits done/error and never throws. */
-export async function runOneTurn(p: TurnParams): Promise<{ replyId: string; replyText:string; absorbedOwnerMessageIds: string[] } | { errorCode: string }> {
+export async function runOneTurn(p: TurnParams): Promise<{ replyId: string; replyText:string; absorbedOwnerMessageIds: string[]; awaitingOwner?:boolean; incompleteReport?:boolean } | { errorCode: string; technicalYield?:boolean }> {
   const { scope, threadId: id, owner, emit, job, jobs } = p;
   let logged = false;
   const startedAt = Date.now();
@@ -158,6 +168,11 @@ export async function runOneTurn(p: TurnParams): Promise<{ replyId: string; repl
   try {
     if(owner.role!=="owner"||owner.contentType!=="text"||owner.threadId!==id||!owner.clientMessageId||owner.text!==p.ownerText)
       throw new ConversationApiError(403,"owner_access_required");
+    if(p.matchedAnswers?.length&&(!p.durableFence||!p.checkpoint||!job||job.id!==p.durableFence.jobId||job.ownerMessageId!==owner.id||job.threadId!==id))
+      throw new ConversationApiError(403,"owner_access_required");
+    // The original message remains the job/source identity. Only exact saved
+    // answers revalidated by the durable worker extend the present owner statement.
+    const currentOwnerStatement=ownerRunStatement(p.ownerText,p.matchedAnswers);
     const external=p.externalClient!==undefined;
     // Browser work keeps its previous lazy RLS reads. External jobs use a
     // verified, explicitly scoped admin client without forging a session.
@@ -174,7 +189,9 @@ export async function runOneTurn(p: TurnParams): Promise<{ replyId: string; repl
     // assistant summaries remain owner-visible but are not re-admitted to the model.
     const reusable=(m:ConversationMessage)=>m.role==="owner"||
       (m.grounding?.agentMetadata as {externalEvidence?:unknown}|undefined)?.externalEvidence===false;
-    const priorAssistant=page.items.filter(m=>m.role==="supervisor"&&m.id!==owner.id&&reusable(m)).slice(-8);
+    const ownerAt = Date.parse(owner.createdAt);
+    const priorAssistant=page.items.filter(m=>m.role==="supervisor"&&m.id!==owner.id&&reusable(m)&&
+      (!p.durableFence||Date.parse(m.createdAt)<=ownerAt)).slice(-8);
     const previousEvidence:NumericEvidence[]=priorAssistant.flatMap(m=>{
       const candidate=m.grounding?.agentMetadata;
       if(!candidate||typeof candidate!=="object"||!Object.hasOwn(candidate,"evidence"))return [];
@@ -186,10 +203,9 @@ export async function runOneTurn(p: TurnParams): Promise<{ replyId: string; repl
     // Previous assistant prose is conversation context, never source evidence.
     // Retain only typed evidence from successful tool reads. Messages queued for a
     // running job (sent after this one) are excluded: they arrive as follow-ups.
-    const ownerAt = Date.parse(owner.createdAt);
     const history = page.items.filter(m => m.id !== owner.id &&
       (m.role === "owner" || m.role === "supervisor") && reusable(m) &&
-      !(job && m.role === "owner" && Number.isFinite(ownerAt) && Date.parse(m.createdAt) > ownerAt)).slice(-8)
+      !(job && (p.durableFence||m.role === "owner") && Number.isFinite(ownerAt) && Date.parse(m.createdAt) > ownerAt)).slice(-8)
       .map(m => ({ role: m.role === "owner" ? "user" as const : "assistant" as const,
         content: historyContent(m) })).filter(m => m.content);
     const proposalScope={...scope,threadId:id,locale:p.locale,
@@ -198,6 +214,7 @@ export async function runOneTurn(p: TurnParams): Promise<{ replyId: string; repl
     // Per-turn checks bind admitted evidence to server-owned scope and revision.
     const sourceChecks=new Map<string,()=>Promise<void>>();
     const assertTurnSources=async()=>{
+      await p.checkpoint?.assertLive();
       if(external){
         await assertConnectorOwnerLive(scope);
         await p.service.getThread(id);
@@ -227,17 +244,18 @@ export async function runOneTurn(p: TurnParams): Promise<{ replyId: string; repl
       sourceChecks.set("gmail",check);
       return value;
     };
+    const durableRead=p.durableFence&&p.externalClient?{...scope,threadId:id,...p.durableFence,client:p.externalClient}:null;
     const context: AgentToolContext = { tools, asOf: identity.asOf, locale: p.locale,timezone:identity.timezone,currency:identity.currency,
-      ownerText:p.ownerText,
+      ownerText:currentOwnerStatement,
       externalEvidencePresent:()=>sourceChecks.size>0,
       readPermissions:()=>new SupervisorEffectGateway().listMandates({businessId:scope.businessId,ownerUserId:scope.ownerUserId}),
       canonicalData:async()=>({db:await getDb(),businessId:scope.businessId}),
       maintenance:{
-        staff:async caseId=>maintenanceContext(await getDb(),proposalScope,{ownerMessage:{id:owner.id,text:p.ownerText}}).staff(caseId),
-        proposeStaff:async input=>maintenanceContext(await getDb(),proposalScope,{ownerMessage:{id:owner.id,text:p.ownerText}}).proposeStaff(input),
+        staff:async caseId=>maintenanceContext(await getDb(),proposalScope,{ownerMessage:{id:owner.id,text:currentOwnerStatement}}).staff(caseId),
+        proposeStaff:async input=>maintenanceContext(await getDb(),proposalScope,{ownerMessage:{id:owner.id,text:currentOwnerStatement}}).proposeStaff(input),
         recordRepairClaim:async()=>{throw new Error("maintenance_worker_only");},
-        search:async(caseId,query)=>withGmailEvidence(async()=>maintenanceContext(await getDb(),proposalScope,{ownerMessage:{id:owner.id,text:p.ownerText}}).search(caseId,query)),
-        propose:async input=>maintenanceContext(await getDb(),proposalScope,{ownerMessage:{id:owner.id,text:p.ownerText}}).propose(input),
+        search:async(caseId,query)=>withGmailEvidence(async()=>maintenanceContext(await getDb(),proposalScope,{ownerMessage:{id:owner.id,text:currentOwnerStatement}}).search(caseId,query)),
+        propose:async input=>maintenanceContext(await getDb(),proposalScope,{ownerMessage:{id:owner.id,text:currentOwnerStatement}}).propose(input),
       },
       menuPriceEvidence:items=>readMenuPriceEvidence(scope.businessId,items,identity.asOf,p.externalClient),
       readEconomics:async()=>readSupervisorEconomics(await getDb(),scope.businessId,identity.asOf),
@@ -260,7 +278,7 @@ export async function runOneTurn(p: TurnParams): Promise<{ replyId: string; repl
       webSearch:(query,budget)=>ownerPublicWebSearch(scope,async()=>{
          const revision=await assertExternalAccess(scope,"public_web",WEB_RESOURCE);
          const place=await readCafeLocation(await getDb(),scope.businessId,ownerFactRead.facts);
-         const publicTerms=projectOwnerPublicQuery(query,p.ownerText,place?.city);
+         const publicTerms=projectOwnerPublicQuery(query,currentOwnerStatement,place?.city);
          if(!publicTerms)return {available:false as const,reason:"unsafeQuery" as const};
          const check=async()=>{
            if(await assertExternalAccess(scope,"public_web",WEB_RESOURCE)!==revision)
@@ -277,6 +295,17 @@ export async function runOneTurn(p: TurnParams): Promise<{ replyId: string; repl
       readWeekSchedule:weekStart=>external?
         getDb().then(client=>scopedWeekSchedule({weekStart},{client,businessId:scope.businessId,ownerUserId:scope.ownerUserId})):
         getWeekSchedule({weekStart}),
+      ...(durableRead?{
+        readShiftCost:raw=>scopedShiftCost(raw,durableRead),
+        readLaborRules:()=>scopedTeamRules(durableRead),
+        staffMessages:{read:()=>readStaffMessagesForVerifiedOwner(durableRead.client,scope.businessId,scope.ownerUserId)},
+        staffCoordinationRead:()=>readClaimedStaffCoordination(durableRead.client,scope),
+        oliviaPreview:{
+          week:raw=>withDurableOliviaReadScope(durableRead,async()=> (await import("@/lib/actions/oliviaPlanning")).previewOliviaWeek(raw)),
+          absence:raw=>withDurableOliviaReadScope(durableRead,async()=> (await import("@/lib/actions/oliviaPlanning")).previewOliviaAbsenceWhatIf(raw)),
+          ownerSavings:raw=>withDurableOliviaReadScope(durableRead,async()=> (await import("@/lib/actions/oliviaPlanning")).previewOliviaOwnerSavings(raw)),
+        },
+      }:{}),
       ownerFacts:ownerFactRead.facts,
       // Use the same verified café/owner/thread in browser and WhatsApp turns.
       // An external Meta turn has no browser cookies and needs no reauth.
@@ -418,13 +447,13 @@ export async function runOneTurn(p: TurnParams): Promise<{ replyId: string; repl
           // still be the same saved authenticated message, not model text.
           if(!authenticatedSupplierOwnerTurn({
             owner,ownerText:p.ownerText,threadId:id,job
-          })||input.note!==p.ownerText.trim())
+          })||input.note!==currentOwnerStatement.trim())
             throw new ToolError("unauthorized","supplier_owner_statement_required");
           const {client}=await simulationOwnerReader(proposalScope);
           // An explicit PO identifier always wins over a model-selected one.
           // An unrelated UUID must never be silently interpreted as "this PO".
           const explicitPo=explicitSingleOwnerPurchaseOrder(
-            p.ownerText,input.purchaseOrderId);
+            currentOwnerStatement,input.purchaseOrderId);
           if(explicitPo===false)
             throw new ToolError("validation",
               "This owner message names multiple or mismatched purchase orders; report one exact PO at a time.");
@@ -534,9 +563,11 @@ export async function runOneTurn(p: TurnParams): Promise<{ replyId: string; repl
         recordCheckin:async(goalId,date,answer,note)=>{
           // Only a goal this owner owns, read with the owner's own session.
           const owner={businessId:scope.businessId,ownerUserId:scope.ownerUserId};
-          if(external)return {missing:["requiresWebsiteReview"]};
+          if(external&&!p.durableFence)return {missing:["requiresWebsiteReview"]};
+          await assertTurnSources();
           const [goal]=await readOwnerProposals(await getDb(),owner,{id:goalId,limit:1});
           if(!goal||goal.capability_id!==goalCapabilityId)return {missing:["goalNotFound"]};
+          await assertTurnSources();
           const saved=await recordGoalCheckin(createAdminSupabaseClient(),owner,goalId,{date,answer,note});
           return saved?{saved:true,checkin:saved}:{missing:["noOpenCheckin"]};
         },
@@ -626,9 +657,9 @@ export async function runOneTurn(p: TurnParams): Promise<{ replyId: string; repl
             // for the review card, but save through the canonical stock-only source.
             const attached=(p.attachmentIds?.length??0)>0;
             const stockOnlyReceipt=input.source==="receipt_chat"&&attached&&
-              authorizesInventoryWrite(p.ownerText,attached)&&
-              receivedPurchaseDocument(input.documentKind,p.ownerText)&&
-              !/\b(expense|accounting|bookkeeping|payable|pay the bill)\b/iu.test(p.ownerText);
+              authorizesInventoryWrite(currentOwnerStatement,attached)&&
+              receivedPurchaseDocument(input.documentKind,currentOwnerStatement)&&
+              !/\b(expense|accounting|bookkeeping|payable|pay the bill)\b/iu.test(currentOwnerStatement);
             const sourceForEffect=stockOnlyReceipt?"chat_text":input.source;
             const proposal=await proposeLoop(proposalScope,supervisorLoopRegistry,
               new SupabaseLoopRepository(),purchaseCapabilityId,{...line,source:sourceForEffect,
@@ -643,13 +674,13 @@ export async function runOneTurn(p: TurnParams): Promise<{ replyId: string; repl
             const ambiguousPriorLine=input.source==="receipt_chat"&&
               ambiguousEarlierReceiptIngredient(existing,requestKey,line);
             const authorized=!previouslyRecorded&&!possiblyRephotographed&&!ambiguousPriorLine&&
-              authorizesInventoryWrite(p.ownerText,attached)&&
-              !/\b(not received|not delivered|ordered only|pending delivery|quote)\b/iu.test(p.ownerText)&&
+              authorizesInventoryWrite(currentOwnerStatement,attached)&&
+              !/\b(not received|not delivered|ordered only|pending delivery|quote)\b/iu.test(currentOwnerStatement)&&
               (input.source==="receipt_chat"
                 ?stockOnlyReceipt&&Boolean(input.receiptVendor&&input.receiptTotalCents)&&
                  line.costCents!==null
-                :!attached&&ownerTextSupportsTypedLine(p.ownerText,line)&&
-                  ownerTextSupportsTypedFinancials(p.ownerText,line,identity.asOf,input.lines.length,identity.currency))&&
+                :!attached&&ownerTextSupportsTypedLine(currentOwnerStatement,line)&&
+                  ownerTextSupportsTypedFinancials(currentOwnerStatement,line,identity.asOf,input.lines.length,identity.currency))&&
               Boolean((proposal.canonicalEffectPayload as {ingredientId?:string|null}).ingredientId);
             if(ambiguousPriorLine){
               output.push({proposalId:proposal.id,revision:proposal.revision,name:line.name,
@@ -724,16 +755,18 @@ export async function runOneTurn(p: TurnParams): Promise<{ replyId: string; repl
     failureStage = "model";
     const result = await runAgentTurn({ ownerText: p.ownerText, ownerImages:selected.images,
        ownerPdfs:selected.pdfs,ownerEvidence:selected.evidence,
-       history, context,cafeProfile,businessId:scope.businessId,requestId:owner.id,
+       history, matchedOwnerAnswers:p.matchedAnswers,context,cafeProfile,businessId:scope.businessId,requestId:owner.id,
        onAuditStep: step => { if (auditSteps.length < 64) auditSteps.push(step); },
        beforeProviderRequest:assertTurnSources,
+       ...(p.checkpoint?{checkpoint:p.checkpoint}:{}),
        beforeAcceptResult:assertTurnSources,
        deferSensitiveOutput:()=>true,
       previousEvidence, ownerFacts:ownerFactRead.facts, ownerFactsReadFailed:ownerFactRead.failed,
       onTool:(name,agentId)=>{
         emit("tool",{name,agentId});
         // Ordered, best-effort persistence so a reloaded page can show the same steps.
-        if (job && jobs && isJobStepAgent(agentId)) steps = steps.then(() => jobs.recordAgentJobStep(job.id, { tool: name, agent: agentId }));
+        if (job && jobs && isJobStepAgent(agentId)) steps = steps.then(() => p.recordDurableStep
+          ?p.recordDurableStep({tool:name,agent:agentId}):jobs.recordAgentJobStep(job.id, { tool: name, agent: agentId }));
       },
       onDelta: delta => emit("delta", { text: delta }),
       onReset: discardChars => emit("reset", { discardChars }),
@@ -751,6 +784,7 @@ export async function runOneTurn(p: TurnParams): Promise<{ replyId: string; repl
          },
         onFollowUp: (count: number) => emit("followup", { count }),
       } : {}) });
+    if(p.matchedAnswers?.length)result.absorbedOwnerMessageIds=[...new Set([...(result.absorbedOwnerMessageIds??[]),...p.matchedAnswers.map(a=>a.answerId)])];
     result.externalEvidence=sourceChecks.size>0;
     completedTurn = result;
     failureStage = "persist";
@@ -758,7 +792,11 @@ export async function runOneTurn(p: TurnParams): Promise<{ replyId: string; repl
     try {
       if (!result.text.trim()) throw new AgentEmptyReplyError();
       await assertTurnSources();
-      reply = await persistAgentReply(scope, owner, result);
+      // Keep transient or budget-limited slices nonterminal. Their real
+      // provider usage is recorded by the existing finally block below.
+      if(p.durableFence&&!result.results.some(r=>r.source==="ask_owner"&&r.missing.length===0)&&result.endReason!=="complete")
+        throw new Error("durable_retry_pending");
+      reply = p.durableFence?await persistAgentReply(scope, owner, result,p.durableFence):await persistAgentReply(scope, owner, result);
     } finally {
       // Billable usage must be counted even for blank, oversized or failed writes.
       try { await recordAgentTurnUsage(scope, owner, result); }
@@ -783,11 +821,11 @@ export async function runOneTurn(p: TurnParams): Promise<{ replyId: string; repl
       unverified: result.unverified, usage: result.usage,
       ...(result.providerFailureCodes?{diagnosticProviderFailures:result.providerFailureCodes}:{}),
       ...(job ? { jobId: job.id, absorbedOwnerMessageIds: result.absorbedOwnerMessageIds ?? [] } : {}) });
-    return { replyId: reply.id, replyText:result.text, absorbedOwnerMessageIds: result.absorbedOwnerMessageIds ?? [] };
+    return { replyId: reply.id, replyText:result.text, absorbedOwnerMessageIds: result.absorbedOwnerMessageIds ?? [], ...(p.durableFence&&reply.grounding?.status==="requires_owner_input"?{awaitingOwner:true}:p.durableFence&&reply.grounding?.status!=="verified"?{incompleteReport:true}:{}) };
   } catch (error) {
     if(!logged)console.info("agent_turn",{turn:"agent",endReason:"error",status:"unavailable",
       modelCalls:0,toolCalls:0,tools:[],latencyMs:Date.now()-startedAt,unverifiedCount:0});
-    const code = errorCode(error);
+    const code = p.durableFence&&error instanceof Error&&error.message==="durable_retry_pending"?"durable_retry_pending":errorCode(error);
     console.error("agent_sse_error",{code});
     scheduleTurnAudit({ scope, owner, startedAt, endedAt: Date.now(), turn: completedTurn,
       answer: completedTurn?.text, steps: auditSteps,
@@ -802,10 +840,10 @@ export async function runOneTurn(p: TurnParams): Promise<{ replyId: string; repl
             diagnosticModelCalls: completedTurn.usage.modelCalls,
             ...(completedTurn.providerFailureCodes?{diagnosticProviderFailures:completedTurn.providerFailureCodes}:{}) } : {}) }
       : {};
-    emit("error", { code, ...localDiagnostic,
+    if(code!=="durable_retry_pending")emit("error", { code, ...localDiagnostic,
       ...(error instanceof AgentEmptyReplyError ? { retryable: true } : {}),
       ...(job ? { jobId: job.id } : {}) });
-    return { errorCode: code };
+    return { errorCode: code, ...(p.durableFence&&code==="durable_retry_pending"&&completedTurn?.endReason==="budget"?{technicalYield:true}:{}) };
   } finally { await steps.catch(() => undefined); }
 }
 
