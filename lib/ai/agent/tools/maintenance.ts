@@ -13,7 +13,7 @@ export const maintenanceTools={
       const input=maintenanceTools.search_maintenance_vendor.schema.parse(raw);
       try{
         if(!ctx.maintenance)throw new Error("unavailable");
-        return {source:"maintenance_vendor_search",period:null,agentId:"leo",missing:[],...await ctx.maintenance.search(input.caseId,input.query)};
+        return {...await ctx.maintenance.search(input.caseId,input.query),source:"maintenance_vendor_search",period:null,agentId:"leo",missing:[]};
       }catch{return {source:"maintenance_vendor_search",period:null,agentId:"leo",missing:["maintenance_vendor_search_unavailable"]};}
     }},
   propose_maintenance_vendor_request:{agentId:"leo",schema:z.strictObject({

@@ -237,3 +237,57 @@ end $$;
 revoke all on function public.maintenance_vendor_receipt() from public,anon,authenticated;
 create trigger maintenance_vendor_receipt_record after update of status on public.supervisor_proposals
  for each row execute function public.maintenance_vendor_receipt();
+
+-- The existing leased worker is the only caller. This is an archive of a
+-- provider read, not an outbound effect or proof that equipment works.
+create function public.maintenance_record_vendor_reply(
+ p_business_id uuid,p_owner_user_id uuid,p_thread_id uuid,p_task_id text,p_lease_token uuid,
+ p_receipt_id uuid,p_provider_thread_id text,p_message_id text,p_sender text,
+ p_received_at timestamptz,p_note text
+) returns boolean language plpgsql security definer set search_path=public,pg_temp as $$
+declare v_case public.operating_tasks; v_receipt public.connector_provider_receipts;
+begin
+ if auth.role() is distinct from 'service_role' or not exists(
+   select 1 from public.memberships m where m.business_id=p_business_id
+    and m.user_id=p_owner_user_id and m.role='owner'
+ ) or not exists(
+   select 1 from public.supervisor_investigations i
+    where i.business_id=p_business_id and i.owner_user_id=p_owner_user_id and i.thread_id=p_thread_id
+      and i.source_type='operating_task' and i.source_id=p_task_id and i.lease_token=p_lease_token
+      and i.lease_until>statement_timestamp() and i.phase='awaiting_owner'
+ ) then raise exception 'Maintenance worker not authorized' using errcode='42501';end if;
+ if p_message_id is null or p_message_id !~ '^[a-zA-Z0-9_-]{8,100}$' or
+   p_received_at is null or p_received_at>statement_timestamp()+interval '5 minutes' or
+   length(coalesce(p_note,''))>1200 then
+  raise exception 'Invalid vendor reply' using errcode='22023';end if;
+ select * into v_case from public.operating_tasks t where t.business_id=p_business_id
+   and t.id=p_task_id and t.owner_user_id=p_owner_user_id and t.kind='maintenance_issue' for update;
+ if not found or v_case.status not in ('needs_owner','needs_response','watching') then
+  raise exception 'Maintenance case unavailable' using errcode='42501';end if;
+ select r.* into v_receipt from public.connector_provider_receipts r
+  join public.supervisor_proposals p on p.business_id=r.business_id and p.id=r.proposal_id
+    and p.owner_user_id=r.owner_user_id and p.effect_hash=r.effect_hash
+  join public.maintenance_case_events e on e.business_id=r.business_id
+    and e.task_id=p_task_id and e.kind='vendor_send_verified' and e.source_id=r.id::text
+  where r.business_id=p_business_id and r.owner_user_id=p_owner_user_id and r.id=p_receipt_id
+    and r.state='verified' and r.operation='send' and r.provider_thread_id=p_provider_thread_id
+    and r.provider_message_id<>p_message_id and r.provider_accepted_at<p_received_at
+    and p.capability_id='alex.gmail_effect.v1' and p.canonical_effect_payload->>'maintenanceCaseId'=p_task_id
+    and lower(p.canonical_effect_payload->'to'->>0)=lower(p_sender);
+ if not found then raise exception 'Vendor reply not linked to a verified send' using errcode='42501';end if;
+ insert into public.maintenance_case_events
+  (business_id,task_id,idempotency_key,kind,actor_kind,source_kind,source_id,note,occurred_at)
+ values(p_business_id,p_task_id,'gmail-reply:'||v_receipt.account_id::text||':'||p_message_id,
+  'vendor_reply','supervisor','vendor_reply',p_message_id,p_note,p_received_at)
+ on conflict(business_id,task_id,idempotency_key) do nothing;
+ if not found then return false;end if;
+ perform set_config('app.maintenance_case_transition','allowed',true);
+ update public.operating_tasks set status='needs_owner',
+  evidence=evidence||jsonb_build_array(jsonb_build_object('source','gmail',
+   'facts',jsonb_build_object('messageId',p_message_id,'replyReceived',true,'repairVerified',false))),
+  updated_at=statement_timestamp() where business_id=p_business_id and id=p_task_id;
+ perform set_config('app.maintenance_case_transition','',true);
+ return true;
+end $$;
+revoke all on function public.maintenance_record_vendor_reply(uuid,uuid,uuid,text,uuid,uuid,text,text,text,timestamptz,text) from public,anon,authenticated;
+grant execute on function public.maintenance_record_vendor_reply(uuid,uuid,uuid,text,uuid,uuid,text,text,text,timestamptz,text) to service_role;

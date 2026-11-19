@@ -5,7 +5,6 @@ import {gmailCapabilityId,readMaintenanceCase,type GmailProposalInput} from "./g
 import {gmailRead,gmailSearch,gmailReadThread} from "@/lib/connectors/gmail/provider.server";
 import {getConnectorAccount,allowsGmail} from "@/lib/connectors/registry.server";
 import {proposeLoop,type OwnerLoopScope} from "./engine";
-import {supervisorLoopRegistry} from "./priceExperiment.server";
 import {SupabaseLoopRepository} from "./supabase.server";
 import {proposalRequestKey} from "./requestKeys";
 
@@ -66,6 +65,7 @@ export function maintenanceContext(db:SupabaseClient,scope:OwnerLoopScope,option
    const effect:GmailProposalInput={operation:"send",action:null,to:[recipient],cc:[],bcc:[],
     subject:input.subject,body:input.body,messageId:null,threadId:null,labelId:null,labelName:null,
     maintenanceCaseId:input.caseId,maintenanceCaseRevision:row.updated_at,maintenanceDueAt:input.dueAt};
+   const {supervisorLoopRegistry}=await import("./priceExperiment.server");
    const p=await proposeLoop(scope,supervisorLoopRegistry,new SupabaseLoopRepository(),gmailCapabilityId,effect,key);
    if(p.status!=="draft")throw new Error("maintenance_approval_not_draft");
    return {proposalId:p.id,revision:p.revision,caseId:input.caseId};

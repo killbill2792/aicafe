@@ -17,7 +17,7 @@ import {purchaseCapabilityId} from "@/lib/ai/supervisor/loop/purchases.server";
 import {supplierPurchaseOrderCapabilityId} from "@/lib/ai/supervisor/loop/purchaseOrders.server";
 import {goalCapabilityId} from "@/lib/ai/supervisor/loop/goal.server";
 import {eventReadinessCapabilityId} from "@/lib/ai/supervisor/loop/eventReadiness.server";
-import {gmailCapabilityId,gmailEffectSchema} from "@/lib/ai/supervisor/loop/gmail.server";
+import {gmailCapabilityId,gmailEffectSchema,readMaintenanceCase} from "@/lib/ai/supervisor/loop/gmail.server";
 import {SupervisorEffectGateway} from "@/lib/ai/supervisor/loop/effectGateway.server";
 import {createServerSupabaseClient} from "@/lib/supabase/server";
 import {publishApprovedStaffSchedule,cancelStaffPublication} from "@/lib/scheduling/staffPublication.server";
@@ -259,6 +259,13 @@ export async function POST(request:Request,{params}:Params){
       if(input.action!=="approve")return conversationJson({error:"gmail_action_not_supported"},422);
       // A specific owner click on this immutable card is the only outbound authority.
       try{
+        const effect=gmailEffectSchema.parse(p.canonicalEffectPayload);
+        if(effect.maintenanceCaseId){
+          const current=await readMaintenanceCase(scope,await createServerSupabaseClient(),effect.maintenanceCaseId);
+          if(current.updated_at!==effect.maintenanceCaseRevision||
+            (effect.maintenanceDueAt&&Date.parse(effect.maintenanceDueAt)<=Date.now()))
+            return conversationJson({state:"conflict",error:"maintenance_case_changed",proposal:await view(scope,repo,p)},409);
+        }
         const approved=await approveLoop(scope,repo,p.id,p.revision,supervisorLoopRegistry);
         const finished=await commitLoop(scope,supervisorLoopRegistry,repo,p.id,approved.revision,"click");
         return conversationJson({proposal:await view(scope,repo,finished.proposal)});
