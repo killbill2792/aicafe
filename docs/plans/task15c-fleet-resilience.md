@@ -31,3 +31,25 @@ Record real process IDs/exit signal, original work IDs, independent database rea
 
 ## Initial scope
 The first change will address recovery starvation in the existing durable worker, without relaxing effect reconciliation. Further approved scope includes existing runs/routines/job/usage/health/projection paths, one additive migration with reserved timestamp, and dedicated feature tests/harness. Record each change and incomplete gate in the PR; no edits to PROGRESS.md. Do not merge until required baseline, actual restart/fleet/Luna evidence and exact-head Codex review pass.
+
+## Owner-approved continuation (November 18)
+The owner explicitly approved the `big-ok` size exception and the additional
+`lib/ai/agent/loop.server.ts` scope. Coordinate its small dispatch hook with
+#509's independent pre-provider private-evidence authorization check.
+No registry/tool-routing changes or replacement provider path.
+The existing `supervisor_system_usage_events` ledger now also records durable
+owner-run attempts before transport, fenced by café/owner/thread, run/step
+lease, current owner message and running chat job. The existing owner usage
+summary remains intact; exact already-reserved call IDs are accounted
+atomically so the joint quota cannot double count, including across UTC
+midnight. Missing or interrupted attempts retain their conservative input,
+output, cost and call reservations for the run rather than being refunded.
+The reserve ceilings are server-configured: 600,000 serialized-input reserve
+units and 200,000 cost micros per run by default, in addition to the existing
+measured token, output, tool, call and elapsed limits. Reserved units are
+conservative estimates, not provider invoice or exact tokenizer counts.
+Hosted web retrieval additionally requires an explicitly configured positive
+`SUPERVISOR_WORKER_HOSTED_WEB_RESERVE_MICROS` fee reserve; unknown pricing
+fails closed in unattended durable turns only. Ordinary interactive chat
+and investigation transport retain their existing scope/behavior.
+No production migration/configuration/provider run is authorized here.

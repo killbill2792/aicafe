@@ -7,7 +7,7 @@ import { authorizedExternalConversation } from "@/lib/ai/conversations/authorize
 import { readOwnerMessage } from "@/lib/ai/agent/jobs.server";
 import { runOneTurn, errorCode as agentTurnErrorCode } from "@/lib/ai/conversations/agentRunner.server";
 import { assertCafeAiAccess } from "@/lib/access/access.server";
-import { assertOwnerAgentTurnAvailable } from "@/lib/ai/conversations/usage.server";
+import { assertOwnerAgentTurnAvailable,ownerModelCallsLimit } from "@/lib/ai/conversations/usage.server";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { AgentJob } from "@/lib/ai/agent/jobState";
 import type { ConversationMessage } from "@/lib/ai/conversations/contracts";
@@ -15,7 +15,7 @@ import { resumeSupervisorRun } from "./resume";
 import { selectNextDurableRun, SupabaseDurableRunRepository } from "./repository.server";
 import { runScopeSchema, type DurableRun, type DurableRunRepository, type RunScope } from "./contracts";
 import { withWorkerBudget, usageStopReason, currentWorkerUsage, workerBudgetExhausted,
-  type WorkerBudget, type WorkerUsage } from "./usage.server"; const uuid = z.uuid(); const plan = [
+  withDurableProviderTurn,type WorkerBudget, type WorkerUsage } from "./usage.server"; const uuid = z.uuid(); const plan = [
   { key: "authorize_owner", retry: "idempotent" as const },
   // An uncertain effect can never be blindly repeated.
   { key: "owner_turn", retry: "reconcile" as const }, { key: "verify_report", retry: "idempotent" as const },
@@ -67,7 +67,7 @@ async function blockRun(run: WorkerRun, reason: string, token?: string, stepKey?
 }
 
 export type WorkerDependencies = { repository: DurableRunRepository; authorize: () => Promise<void>;
-  verified: () => Promise<VerifiedReply | null>; executeTurn: () => Promise<void>;
+  verified: () => Promise<VerifiedReply | null>; executeTurn: (claimToken:string,budget:WorkerBudget) => Promise<void>;
   cancelled: () => Promise<boolean>; stop: (reason: string, token?: string, key?: string) => Promise<void>;
   clock?: () => number; };
 /** Uses PR5's fenced resume runner, not a second lease implementation.
@@ -96,7 +96,7 @@ export async function executeDurableRun(
             // deadline. All continuation turns share what is left.
             const remaining = { ...budget,
               maxElapsedMs: Math.max(0, budget.maxElapsedMs - Math.max(0, now() - started)) };
-            await withWorkerBudget(remaining, async () => { await deps.executeTurn();
+            await withWorkerBudget(remaining, async () => { await deps.executeTurn(claim.claimToken,budget);
               const spent = currentWorkerUsage(); if (spent) {
                 const aggregate = { ...spent, elapsedMs: Math.max(spent.elapsedMs, now() - started) };
                 const exceeded = usageStopReason(aggregate, budget);
@@ -222,7 +222,7 @@ export async function processDurableRun(runId: string): Promise<WorkerOutcome> {
         .eq("id", run.id).eq("business_id", run.scope.businessId).maybeSingle();
       if (check.error || !check.data) throw new Error("supervisor_run_status_unavailable");
       return check.data.status === "blocked"; },
-    stop: (reason, token, key) => blockRun(run, reason, token, key), executeTurn: async () => {
+    stop: (reason, token, key) => blockRun(run, reason, token, key), executeTurn: async (claimToken,budget) => {
       const scope = run.scope, service = await authorizedExternalConversation(scope, scope.threadId);
       const owner = await readOwnerMessage(scope, scope.threadId, run.requestKey);
       const client = createAdminSupabaseClient(); const assertPaidAllowed = async () => {
@@ -237,9 +237,15 @@ export async function processDurableRun(runId: string): Promise<WorkerOutcome> {
       if (started.mode === "done") return; // canonical reply verified independently
       if (started.mode !== "started") throw new Error("supervisor_existing_job_unfinished");
       await runDurableJobChain({ scope, owner, initialJob: started.job, jobs, assertPaidAllowed,
-        runTurn: (nextOwner, job) => runOneTurn({ scope, threadId: scope.threadId, owner: nextOwner,
+        runTurn: (nextOwner, job) => withDurableProviderTurn({
+          db:client,...scope,runId:run.id,ownerMessageId:nextOwner.id,jobId:job.id,claimToken,budget,
+          ownerDailyCap:ownerModelCallsLimit(),authorize:async()=>{
+            await authorizedExternalConversation(scope,scope.threadId);
+            await assertCafeAiAccess(scope.businessId);
+          },
+        },()=>runOneTurn({ scope, threadId: scope.threadId, owner: nextOwner,
           ownerText: nextOwner.text ?? "", locale: "en", service,
-          emit: () => {}, job, jobs, externalClient: client, }), }); }, }); }
+          emit: () => {}, job, jobs, externalClient: client, })), }); }, }); }
 export async function processOldestDurableRun(): Promise<{ processed: number; state: WorkerOutcome | null }> {
   const candidate = await selectNextDurableRun();
   if (!candidate) return { processed: 0, state: null };
