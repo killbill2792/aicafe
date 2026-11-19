@@ -117,7 +117,7 @@ create policy supervisor_8a_windows_owner_read
 create or replace function public.supervisor_8a_claim_notice(
  p_business_id uuid,p_owner_user_id uuid,p_source_id uuid,
  p_kind text,p_local_date date,p_slot smallint
-) returns uuid language plpgsql security definer set search_path=public as $
+) returns uuid language plpgsql security definer set search_path=public as $$
 declare v_id uuid;v_sent integer;v_existing public.supervisor_experiment_notice_receipts;
 begin
  if auth.role() is distinct from 'service_role' then
@@ -207,7 +207,7 @@ begin
   values(p_business_id,p_owner_user_id,p_source_id,p_kind,p_local_date,p_slot)
   returning id into v_id;
  return v_id;
-end;$;
+end;$$;
 revoke all on function public.supervisor_8a_claim_notice(
  uuid,uuid,uuid,text,date,smallint) from public,anon,authenticated;
 grant execute on function public.supervisor_8a_claim_notice(
@@ -219,7 +219,7 @@ grant execute on function public.supervisor_8a_claim_notice(
 -- a later source event never restarts a previously pinned experiment.
 create function public.supervisor_8a_due_toast_observations(p_now timestamptz,p_limit integer)
  returns table(history_id uuid,business_id uuid,enabled_at timestamptz)
- language plpgsql security invoker set search_path='' as $
+ language plpgsql security invoker set search_path='' as $$
 begin
  if auth.role() is distinct from 'service_role' then
   raise exception 'service_role_only' using errcode='42501';end if;
@@ -257,7 +257,7 @@ begin
       and a.source_id=p.id and a.window_index=0))
  order by coalesce(w.updated_at,h.toast_publication_completed_at),h.id
  limit p_limit;
-end;$;
+end;$$;
 revoke all on function public.supervisor_8a_due_toast_observations(timestamptz,integer)
  from public,anon,authenticated;
 grant execute on function public.supervisor_8a_due_toast_observations(timestamptz,integer) to service_role;
@@ -266,7 +266,7 @@ grant execute on function public.supervisor_8a_due_toast_observations(timestampt
 -- existing claim. A delayed previous worker must never borrow a new lease.
 create function public.supervisor_8a_claim_observation_notice(
  p_business_id uuid,p_owner_user_id uuid,p_source_id uuid,p_kind text,p_local_date date,p_slot smallint
-) returns table(receipt_id uuid,attempt bigint) language plpgsql security invoker set search_path='' as $
+) returns table(receipt_id uuid,attempt bigint) language plpgsql security invoker set search_path='' as $$
 declare v_id uuid;
 begin
  if auth.role() is distinct from 'service_role' then
@@ -276,7 +276,7 @@ begin
  v_id:=public.supervisor_8a_claim_notice(p_business_id,p_owner_user_id,p_source_id,p_kind,p_local_date,p_slot);
  if v_id is null then return;end if;
  return query select n.id,n.attempts from public.supervisor_experiment_notice_receipts n where n.id=v_id;
-end;$;
+end;$$;
 revoke all on function public.supervisor_8a_claim_observation_notice(uuid,uuid,uuid,text,date,smallint) from public,anon,authenticated;
 grant execute on function public.supervisor_8a_claim_observation_notice(uuid,uuid,uuid,text,date,smallint) to service_role;
 
@@ -285,7 +285,7 @@ grant execute on function public.supervisor_8a_claim_observation_notice(uuid,uui
 create function public.supervisor_8a_post_observation_notice(
  p_receipt_id uuid,p_attempt bigint,p_thread_id uuid,p_task_id text,p_message_id uuid,
  p_timezone text,p_payload jsonb,p_text text,p_confidence text
-) returns boolean language plpgsql security invoker set search_path='' as $
+) returns boolean language plpgsql security invoker set search_path='' as $$
 declare n public.supervisor_experiment_notice_receipts; h public.menu_price_history;
 begin
  if auth.role() is distinct from 'service_role' then
@@ -344,7 +344,7 @@ begin
   updated_at=clock_timestamp()
   where id=n.id and attempts=p_attempt and state='claimed';
  return found;
-end;$;
+end;$$;
 revoke all on function public.supervisor_8a_post_observation_notice(uuid,bigint,uuid,text,uuid,text,jsonb,text,text)
  from public,anon,authenticated;
 grant execute on function public.supervisor_8a_post_observation_notice(uuid,bigint,uuid,text,uuid,text,jsonb,text,text)
