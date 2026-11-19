@@ -25,10 +25,12 @@ function transact(path,fn){
 }
 export function importMuseQuestions(state,facts,now=new Date().toISOString()){
  const next=structuredClone(state);
+ if(facts?.version!==1||!Array.isArray(facts.prs))return next;
  // Missing, edited, closed or deleted GitHub records do not answer a request.
  for(const p of facts?.prs||[]){
   for(const q of p.owner_requests||[]){
    if(!idValid(q.id)||q.pr_number!==p.number||!text(q.question)||
+    !/^https:\/\/github\.com\/[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+\/pull\/\d+$/.test(p.url||'')||
     !/^[a-f0-9]{40}$/.test(q.head_sha||'')||
     !q.url?.startsWith(p.url+'#issuecomment-')||q.url.split('#issuecomment-')[1]!==q.id.slice(8))continue;
    const old=next.entries[q.id];
@@ -57,8 +59,8 @@ export function applyQuestionEdit(state,edit,{role,now=new Date().toISOString(),
   const links=[...new Set(Object.values(notes?.entries||{}).filter(e=>e.pr_number===q.pr_number).map(e=>e.chat_url).filter(Boolean))];
   if(links.length!==1||!validChatUrl(links[0]))throw Error('One verified chat link required');
   q.status='delivery_uncertain';q.delivery_chat_url=links[0];
- }else if(action==='confirm_delivery'&&q.status==='delivery_uncertain'&&!q.source_changed){q.status='delivered';q.delivery_receipt=edit.detail;}
- else if(action==='confirm_not_sent'&&q.status==='delivery_uncertain'&&!q.source_changed){q.status='answered';delete q.delivery_chat_url;}
+ }else if(action==='confirm_delivery'&&q.status==='delivery_uncertain'){q.status='delivered';q.delivery_receipt=edit.detail;}
+ else if(action==='confirm_not_sent'&&q.status==='delivery_uncertain'){q.status='answered';delete q.delivery_chat_url;}
  else if(action==='close'&&['open','answered','delivered'].includes(q.status)){q.status='closed';q.closure=edit.detail;}
  else throw Error('Invalid question transition; do not replay uncertain delivery or use edited questions');
  q.revision++;q.history.push({at:now,actor:role,event:action,detail:edit.detail});
