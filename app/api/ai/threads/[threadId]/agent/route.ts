@@ -66,6 +66,24 @@ export async function POST(request: Request, context: RouteContext) {
     const { owner, prior } = await registerAuthorizedSupervisorTurn({
       scope, service, threadId: id, clientMessageId: input.clientMessageId, text: input.text,
     });
+    // Reuse the same authenticated message and structured response contract
+    // for scheduled investigations. No synthetic owner run.
+    if(owner.ownerInputResponse&&input.ownerInputResponse&&(owner.ownerInputResponse.questionId!==input.ownerInputResponse.questionId||owner.ownerInputResponse.action!==input.ownerInputResponse.action||owner.ownerInputResponse.value!==input.ownerInputResponse.value))
+      throw new ConversationApiError(409,"idempotency_conflict");
+    const response=owner.ownerInputResponse??input.ownerInputResponse;
+    if(response){
+      if(input.attachmentIds?.length&&response.action==="supply")
+        throw new ConversationApiError(422,"invalid_owner_answer");
+      const admin=createAdminSupabaseClient();
+      const {data:episode,error}=await admin.rpc("supervisor_answer_investigation_question",{
+        p_business_id:scope.businessId,p_owner_user_id:scope.ownerUserId,p_thread_id:id,
+        p_question_id:response.questionId,p_answer_id:owner.id,p_response:response,
+      });
+      if(error)throw new ConversationApiError(error.code==="23505"?409:503,error.code==="23505"?"idempotency_conflict":"conversation_storage_unavailable");
+      if(typeof episode==="string")return sseStream((emit,close)=>{
+        emit("ack",{investigationId:episode,ownerMessageId:owner.id,mode:"queued"});close();
+      });
+    }
     const base = { scope, threadId: id, owner, ownerText: input.text, locale: input.locale, service,
       attachmentIds:input.attachmentIds??[] };
 
@@ -78,10 +96,10 @@ export async function POST(request: Request, context: RouteContext) {
       const worker=await import("@/lib/ai/supervisor/runs/worker.server");
       let run:Awaited<ReturnType<typeof worker.admitDurableChat>>;
       try{
-        if(input.ownerInputResponse){
-          if(input.ownerInputResponse.action!=="supply"||input.attachmentIds?.length)throw new ConversationApiError(422,"invalid_owner_answer");
+        if(response){
+          if(response.action!=="supply"||input.attachmentIds?.length)throw new ConversationApiError(422,"invalid_owner_answer");
           const {answerOwnerRun}=await import("@/lib/ai/supervisor/runs/repository.server");
-          run=await answerOwnerRun({...scope,threadId:id},input.ownerInputResponse.questionId,owner.id,input.ownerInputResponse);
+          run=await answerOwnerRun({...scope,threadId:id},response.questionId,owner.id,response);
         }else run=await worker.admitDurableChat({...scope,threadId:id},owner,{locale:input.locale,attachmentIds:input.attachmentIds??[]});
       }
       catch(error){

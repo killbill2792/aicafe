@@ -17,7 +17,7 @@ import {dispatchRoutinesForBusiness,readActionablePriorities} from "./dispatch.s
 import {choosePriorities} from "./priority";
 function db(params?:{routines?:Record<string,unknown>[];owners?:{user_id:string}[];
   threads?:{id:string;owner_user_id:string}[];alerts?:Record<string,unknown>[];
-  tasks?:Record<string,unknown>[];proposals?:Record<string,unknown>[]}) {
+  tasks?:Record<string,unknown>[];proposals?:Record<string,unknown>[];newThread?:string;revokedThreadOwner?:string}) {
   const rows:Record<string,Record<string,unknown>[]>={
     memberships:params?.owners??[{user_id:"owner"}],
     ai_threads:params?.threads??[{id:"thread",owner_user_id:"owner"}],
@@ -26,7 +26,8 @@ function db(params?:{routines?:Record<string,unknown>[];owners?:{user_id:string}
     operating_tasks:params?.tasks??[],
     supervisor_proposals:params?.proposals??[],
   };
-  return {rpc:async(name:string)=>{
+  return {rpc:async(name:string,args?:{p_owner_user_id?:string})=>{
+    if(name==="supervisor_ensure_proactive_thread")return {data:params?.newThread??null,error:params?.revokedThreadOwner&&args?.p_owner_user_id===params.revokedThreadOwner?{code:"42501"}:null};
     if(name==="staff_coordination_reconcile")return mocks.reconcile();
     if(!["staff_channel_sync_shift_requests","staff_channel_escalate_unanswered","supervisor_sync_supplier_receiving_tasks","supervisor_sync_financial_review"].includes(name))
       throw new Error("unexpected staff channel RPC "+name);
@@ -128,7 +129,7 @@ describe("bounded independent routine dispatch",()=>{
   });
   it("one revoked owner's missing thread cannot halt other owners",async()=>{
     const result=await dispatchRoutinesForBusiness(db({
-      owners:[{user_id:"owner"},{user_id:"no-thread"}],
+      owners:[{user_id:"owner"},{user_id:"no-thread"}],revokedThreadOwner:"no-thread",
     }),"cafe","America/Los_Angeles",new Date("2026-11-11T18:00:00Z"));
     expect(result.failed).toBe(1);
     expect(mocks.staff).toHaveBeenCalledWith(expect.anything(),"cafe","2026-11-11");
@@ -233,4 +234,19 @@ describe("bounded independent routine dispatch",()=>{
       new Date("2026-11-11T00:00:00Z"));
     expect(decisions).toEqual([]);
   });
+});
+
+ it("discovers work for an owner without a previous conversation",async()=>{
+  const source=db({threads:[],newThread:"created-thread",alerts:[{id:"a",kind:"business_anomaly",status:"new",payload:{dedupeKey:"sales_decline:cafe"},created_at:"2026-11-10T00:00:00Z"}]});
+  const enqueue=vi.fn(async()=>1);mocks.notice.mockResolvedValue("posted");
+  const outcome=await dispatchRoutinesForBusiness(source,"cafe","America/Los_Angeles",new Date("2026-11-11T16:00:00Z"),enqueue);
+  expect(enqueue).toHaveBeenCalledWith(source,expect.objectContaining({ownerUserId:"owner",threadId:"created-thread"}),expect.any(Date));
+  expect(outcome.investigationsQueued).toBe(1);
+ });
+
+it("does not treat a healthy owner without chat or actionable work as a failure",async()=>{
+ const enqueue=vi.fn(async()=>0);
+ const result=await dispatchRoutinesForBusiness(db({threads:[]}),"cafe","America/Los_Angeles",new Date("2026-11-11T16:00:00Z"),enqueue);
+ expect(result.failed).toBe(0);
+ expect(enqueue).not.toHaveBeenCalled();
 });

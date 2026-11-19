@@ -214,11 +214,21 @@ describe("redesign 16 cleanup integration", () => {
         .flatMap(([namespace, values]) => Object.keys(values).map(key => `${namespace}.${key}`))
         .filter(key => !englishOnly.test(key) && !approvedTask14bSet.has(key)
           && !approvedTask14cSet.has(key) && !approvedTask15bSet.has(key) && !approvedTask16aSet.has(key) && !approvedTask16cSet.has(key) && !approvedTask14eSet.has(key)
-          && !["runAwaitingOwner","runAwaitingOwnerNext","runCancelled","runRetrying","cancelAction","cancelPending","cancelUncertain","cancelCompleted","cancelFailed"].some(name=>key==="SupervisorDurableWork."+name))
+          && !["runAwaitingOwner","runAwaitingOwnerNext","runCancelled","runRetrying","cancelAction","cancelPending","cancelUncertain","cancelCompleted","cancelFailed"].some(name=>key==="SupervisorDurableWork."+name)
+          && !/^SupervisorUsage\.(?:help|max|month|proactive|requests|title|unavailable)$/.test(key))
         .sort();
     };
     expect(keys("es")).toEqual(keys("en"));
     expect(keys("ar")).toEqual(keys("en"));
+  });
+
+  it("pins the seven approved Max usage labels in English only",()=>{
+    const en=localeMessages("en"),es=localeMessages("es"),ar=localeMessages("ar");
+    const usageKeys=["help","max","month","proactive","requests","title","unavailable"];
+    expect(Object.keys(en.SupervisorUsage??{}).sort()).toEqual(usageKeys);
+    for(const key of usageKeys)expect(en.SupervisorUsage[key].trim().length).toBeGreaterThan(0);
+    expect(es.SupervisorUsage).toBeUndefined();
+    expect(ar.SupervisorUsage).toBeUndefined();
   });
 
   it("pins every Task 16A owner permission label without weakening translation parity", () => {

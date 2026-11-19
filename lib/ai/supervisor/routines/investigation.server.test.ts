@@ -2,7 +2,7 @@ import {beforeEach,afterEach,describe,expect,it,vi} from "vitest";
 vi.mock("server-only",()=>({}));
 const mocks=vi.hoisted(()=>({
   model:vi.fn(),access:vi.fn(),tools:vi.fn(),identity:vi.fn(),
-  budget:vi.fn(),notify:vi.fn(),priorities:vi.fn(),paidGate:vi.fn(),
+  budget:vi.fn(),notify:vi.fn(),priorities:vi.fn(),paidGate:vi.fn(),stockDraft:vi.fn(),
 }));
 vi.mock("@/lib/access/access.server",()=>({assertCafeAiAccess:mocks.access}));
 vi.mock("@/lib/ai/cafeTools.server",()=>({
@@ -16,6 +16,7 @@ vi.mock("@/lib/ai/supervisor/runs/worker.server",()=>({
 vi.mock("@/lib/ai/supervisor/runs/usage.server",()=>({withWorkerBudget:mocks.budget}));
 vi.mock("@/lib/operating/notifyOwner.server",()=>({notifyOwner:mocks.notify}));
 vi.mock("./dispatch.server",()=>({readActionablePriorities:mocks.priorities}));
+vi.mock("./stockDraft.server",()=>({prepareProactiveStockDraft:mocks.stockDraft}));
 import {enqueueInvestigationsForOwner,processNextInvestigation,processDueInvestigations}
   from "./investigation.server";
 const source={kind:"sales_anomaly",status:"new",payload:{
@@ -116,6 +117,7 @@ beforeEach(()=>{
     ({decision:"posted",result:await write()}));
   mocks.model.mockResolvedValue(agentResult());
   mocks.priorities.mockResolvedValue([]);
+  mocks.stockDraft.mockReset().mockResolvedValue({state:"missing"});
 });
 afterEach(()=>{if(previousKey===undefined)delete process.env.OPENAI_API_KEY;
   else process.env.OPENAI_API_KEY=previousKey;});
@@ -387,6 +389,31 @@ describe("Task 15A operational end-to-end orchestration (recorded source/model)"
     expect(mocks.notify).not.toHaveBeenCalled();
     expect(d.calls.find(x=>x.name==="supervisor_fail_investigation")?.args.p_error)
       .toBe("evidence_incomplete");
+  });
+  it.each([
+    {name:"new draft",draft:{state:"draft",proposalId:"draft-a"},status:"A supplier order draft is available",expected:{stockPurchaseProposalId:"draft-a"}},
+    {name:"existing order",draft:{state:"existing",summary:"Partial receipt is verified; delivery is not complete.",emailProposalId:"email-a",question:"Can you verify the remaining receipt?"},status:"Partial receipt is verified",expected:{stockEmailProposalId:"email-a",ownerQuestion:"Can you verify the remaining receipt?"}},
+    {name:"missing evidence",draft:{state:"missing"},status:"Please confirm the missing stock count",expected:{missing:["stock_purchase_evidence_missing"]}},
+    {name:"unverified draft",draft:null,status:"I could not verify the purchase draft",expected:{missing:["stock_purchase_draft_unverified"]}},
+  ])("preserves the whole verified stock report and stores separate procurement status: $name",async({draft,status,expected})=>{
+    const text="Observed evidence. ".repeat(90)+"The closing qualification must remain intact; delivery is not independently verified.";
+    expect(text.length).toBeGreaterThan(1300);
+    expect(text.length).toBeLessThanOrEqual(1800);
+    const selectors={family:"stockout_risk",subject:"ingredient-a"};
+    const exact={source:"investigation_source",period:null,missing:[],sourceType:"alert",sourceId:"alert-a",incidentKind:"business_anomaly",selectors};
+    const inventory={source:"inventory",period:null,missing:[],rows:[{id:"ingredient-a",quantity:2}]};
+    const costs={source:"ingredient_costs",period:null,missing:[],rows:[{id:"ingredient-a",unitCostCents:10}]};
+    mocks.model.mockResolvedValue(agentResult({text,results:[exact,inventory,costs],toolInvocations:[
+      {name:"get_investigation_source",result:exact},{name:"get_inventory",result:inventory},{name:"get_ingredient_costs",result:costs},
+    ]}));
+    if(draft)mocks.stockDraft.mockResolvedValue(draft);
+    else mocks.stockDraft.mockRejectedValue(Error("draft not verified"));
+    const d=db([{...investigating}],{sourceKind:"business_anomaly",alertPayload:{...selectors,quality:"verified"}});
+    expect(await processNextInvestigation(d.client,now)).toMatchObject({processed:1,investigated:1,failed:0});
+    expect(mocks.stockDraft).toHaveBeenCalledOnce();
+    const saved=d.calls.find(x=>x.name==="supervisor_finish_investigation")?.args;
+    expect(saved?.p_narrative).toBe(text);
+    expect(saved?.p_evidence).toMatchObject({...expected,stockProcurementStatus:expect.stringContaining(status)});
   });
   it("logs a real provider rejection as retryable provider unavailability, never a database outage",async()=>{
     mocks.model.mockRejectedValue(new Error("provider_error"));

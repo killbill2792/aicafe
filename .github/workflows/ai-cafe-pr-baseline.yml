@@ -282,11 +282,13 @@ jobs:
           // acceptance without distributing or hardcoding a reusable secret.
           const {randomBytes}=await import("node:crypto");
           const localCronSecret=randomBytes(32).toString("hex");
+          const {TEST_CAFES}=await import("./scripts/seed/cafes.mjs");
           appendFileSync(process.env.GITHUB_ENV,
             "NEXT_PUBLIC_SUPABASE_URL=http://127.0.0.1:54321\n" +
             "NEXT_PUBLIC_SUPABASE_ANON_KEY=" + anon + "\n" +
             "SUPABASE_SERVICE_ROLE_KEY=" + service + "\n" +
-            "CRON_SECRET=" + localCronSecret + "\n");
+            "CRON_SECRET=" + localCronSecret + "\n" +
+            "ADMIN_EMAILS=" + TEST_CAFES[0].owner.email + "\n");
           NODE
       - name: Start locally bound Next.js and verify login route readiness
         run: |

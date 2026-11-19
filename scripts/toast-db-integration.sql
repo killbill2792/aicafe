@@ -1011,4 +1011,46 @@ BEGIN
   'poisoned diagnostic cash value must NEVER appear as a real cash row');
 END $optional_views$;
 
+-- Scheduled reads must not require an interactive JWT subject.
+SELECT pg_temp.assert_true(has_function_privilege('service_role',
+ 'public.toast_unverified_sales_dates(uuid,date,date)','EXECUTE'),
+ 'cron service role can execute coverage read');
+SELECT set_config('request.jwt.claim.role','service_role',true);
+SELECT set_config('request.jwt.claim.sub','',true);
+SELECT pg_temp.assert_true((SELECT count(*)>=0 FROM public.toast_unverified_sales_dates(
+ 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa','2025-01-01','2025-01-14')),
+ 'service identity can read bounded canonical coverage');
+SELECT set_config('request.jwt.claim.role','authenticated',true);
+SELECT pg_temp.must_fail($q$ SELECT * FROM public.toast_unverified_sales_dates(
+ 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa','2025-01-01','2025-01-14') $q$);
+-- Disposable history fixture: never backdate live history to manufacture proof.
+SELECT set_config('request.jwt.claim.role','service_role',true);
+DO $catalog_history$
+DECLARE b uuid:=gen_random_uuid(); m uuid:=gen_random_uuid(); i uuid:=gen_random_uuid(); o uuid:=gen_random_uuid(); d date:='2026-10-20';
+BEGIN
+ insert into public.businesses(id,name,is_demo,timezone) values(b,'Catalog history fixture',false,'UTC');
+ insert into public.menu_items(id,business_id,name,base_name,price_cents) values(m,b,'Test cup','Test cup',300);
+ insert into public.ingredients(id,business_id,name,base_unit) values(i,b,'Test ingredient','g');
+ insert into public.ingredient_prices(ingredient_id,effective_from,cost_per_base_unit_micros,source) values(i,d-1,50000000,'manual');
+ insert into public.recipe_lines(menu_item_id,ingredient_id,quantity) values(m,i,2);
+ perform pg_temp.assert_true(public.supervisor_capture_catalog_cost_baseline(b),'first actual baseline recorded');
+ perform pg_temp.assert_true(not public.supervisor_capture_catalog_cost_baseline(b),'repeated baseline does not duplicate observations');
+ insert into public.orders(id,business_id,pos_order_id,closed_at,business_date,gross_sales_cents,net_sales_cents)
+ values(o,b,'synthetic-catalog-proof','2026-10-20T18:00:00Z',d,600,600);
+ insert into public.order_lines(order_id,menu_item_id,name,quantity,net_sales_cents,voided,modifiers)
+ values(o,m,'Test cup',2,600,false,'[]'::jsonb);
+ insert into public.daily_rollups(business_id,business_date,net_sales_cents,orders_count,drinks_count,ingredients_cents,staff_wages_cents,staff_tax_cents,card_fees_cents,voids_cents,sales_data_status)
+ values(b,d,600,1,2,200,0,0,0,0,'actual');
+ perform pg_temp.assert_true(not exists(select 1 from public.read_historical_ingredient_cost_proof(b,d,d)),'before baseline cannot be certified');
+ -- Only within this rolled-back local fixture, simulate a previous observation.
+ update public.catalog_cost_history_start set observed_at='2026-10-19T12:00:00Z' where business_id=b;
+ update public.catalog_cost_history set observed_at='2026-10-19T12:00:00Z' where business_id=b;
+ perform pg_temp.assert_true((select ingredients_cents=200 from public.read_historical_ingredient_cost_proof(b,d,d)),'exact historical recipe and rollup reconcile');
+ update public.recipe_lines set quantity=3 where menu_item_id=m and ingredient_id=i;
+ perform pg_temp.assert_true((select ingredients_cents=200 from public.read_historical_ingredient_cost_proof(b,d,d)),'later recipe edit cannot change a historical observation');
+ update public.daily_rollups set ingredients_cents=201 where business_id=b and business_date=d;
+ perform pg_temp.assert_true(not exists(select 1 from public.read_historical_ingredient_cost_proof(b,d,d)),'rollup mismatch cannot be certified');
+ perform pg_temp.assert_true(not has_table_privilege('authenticated','public.catalog_cost_history','UPDATE'),'owner cannot rewrite historical observations');
+ perform pg_temp.assert_true(not has_function_privilege('anon','public.read_historical_ingredient_cost_proof(uuid,date,date)','EXECUTE'),'anonymous history reader denied');
+END $catalog_history$;
 ROLLBACK;

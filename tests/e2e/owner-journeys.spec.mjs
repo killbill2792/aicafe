@@ -1407,3 +1407,80 @@ test("@money historical statement imports work without a bank connection and per
   },{timeout:20000}).toEqual([[cafe.currency,"2026-01-02",105000,cafe.owner.userId]]);
  }finally{await db.query("delete from public.uploads where business_id=$1 and financial_source_sha256=$2",[cafe.businessId,digest]);await db.end();}
 });
+
+test("@gmail Task15A authenticated usage and admin cost ledger are scoped",async({browser})=>{
+  test.setTimeout(120_000);
+  const owner=seededCafe(0),foreign=seededCafe(1),thread=randomUUID(),attempt=randomUUID(),source=randomUUID();
+  const db=new pg.Client({host:"127.0.0.1",port:54322,database:"postgres",user:"postgres",password:"postgres",connectionTimeoutMillis:5000});
+  const a=await browser.newContext({baseURL:"http://127.0.0.1:3000",serviceWorkers:"block"}),b=await browser.newContext({baseURL:"http://127.0.0.1:3000",serviceWorkers:"block"});
+  try{
+    await db.connect();
+    await db.query("insert into public.ai_threads(id,business_id,owner_user_id,client_request_id,title) values ($1,$2,$3,$4,$5)",[thread,owner.businessId,owner.owner.userId,randomUUID(),"Usage verification"]);
+    await db.query("insert into public.supervisor_system_usage_events(attempt_id,business_id,owner_user_id,thread_id,source_type,source_id,model,attempt_day,reserved_input_upper,reserved_output_cap,status) values ($1,$2,$3,$4,'alert',$5,'gpt-6-luna',(now() at time zone 'UTC')::date,100,50,'attempted')",[attempt,owner.businessId,owner.owner.userId,thread,source]);
+    const count=async(cafe)=>Number((await db.query("select count(distinct (source_type,source_id)) n from public.supervisor_system_usage_events where business_id=$1 and owner_user_id=$2 and source_type in ('alert','operating_task') and attempt_day>=date_trunc('month',now() at time zone 'UTC')::date",[cafe.businessId,cafe.owner.userId])).rows[0].n);
+    for(const [context,cafe] of [[a,owner],[b,foreign]]){
+      const page=await context.newPage();
+      await login(page,cafe);
+      await openOwnedPage(page,cafe,"more/supervisor-access");
+      const usage=page.getByRole("region",{name:"Supervisor usage"});
+      await expect(usage.getByText("Max · Unlimited",{exact:true})).toBeVisible();
+      await expect(usage.getByText("Proactive work items",{exact:true}).locator("..").locator("dd")).toHaveText((await count(cafe)).toLocaleString("en-US"));
+      await expect(usage.getByText("Owner requests",{exact:true})).toBeVisible();
+      await page.goto("/admin/costs");
+      if(cafe===owner){
+        const ledger=page.locator("section").filter({has:page.getByRole("heading",{name:"Supervisor metered activity"})});
+        await expect(ledger.getByRole("row").filter({hasText:cafe.name}).filter({hasText:"Proactive"})).toContainText("calls unknown");
+      }else{
+        await expect(page.getByRole("heading",{name:"Supervisor metered activity"})).toHaveCount(0);
+      }
+    }
+  }finally{
+    await a.close();await b.close();
+    await db.query("delete from public.supervisor_system_usage_events where attempt_id=$1",[attempt]).catch(()=>{});
+    await db.query("delete from public.ai_threads where id=$1",[thread]).catch(()=>{});
+    await db.end();
+  }
+});
+
+test("@home Task15A scheduler detects reduced sales from actual daily source rows",async({browser})=>{
+ test.setTimeout(180_000);
+ const own=seededCafe(0);
+ const db=new pg.Client({host:"127.0.0.1",port:54322,database:"postgres",user:"postgres",password:"postgres",connectionTimeoutMillis:5000});
+ const context=await browser.newContext({baseURL:"http://127.0.0.1:3000",serviceWorkers:"block"});
+ let original=[],activeSchedules=[],connected=false;
+ const today=new Intl.DateTimeFormat("en-CA",{timeZone:own.timezone,year:"numeric",month:"2-digit",day:"2-digit"}).format(new Date());
+ const date=(n)=>new Date(Date.parse(today+"T12:00:00Z")+n*86400000).toISOString().slice(0,10);
+ const start=date(-14),end=date(-1);
+ if(!process.env.CRON_SECRET)throw Error("Task15A local cron credential unavailable");
+ try{
+  await db.connect();connected=true;
+  original=(await db.query("select to_jsonb(d) row from public.daily_rollups d where business_id=$1 and business_date between $2 and $3",[own.businessId,start,end])).rows.map(x=>x.row);
+  // Isolate stored actual daily source facts from unrelated schedule materialization.
+  activeSchedules=(await db.query("select id from public.staff_schedules where business_id=$1 and active",[own.businessId])).rows.map(row=>row.id);
+  await db.query("update public.staff_schedules set active=false where business_id=$1 and id=any($2::uuid[])",[own.businessId,activeSchedules]);
+  const prior=await db.query("select id from public.alerts where business_id=$1 and kind='business_anomaly' and payload->>'dedupeKey'='sales_decline:cafe'",[own.businessId]);
+  await db.query("insert into public.daily_rollups(business_id,business_date,net_sales_cents,orders_count,drinks_count,ingredients_cents,staff_wages_cents,staff_tax_cents,card_fees_cents,voids_cents,sales_data_status) select $1,d::date,case when d::date<=$3::date then 100000 else 60000 end,50,50,10000,10000,1000,1000,0,'actual' from generate_series($2::date,$4::date,interval '1 day') d on conflict(business_id,business_date) do update set net_sales_cents=excluded.net_sales_cents,sales_data_status='actual'",[own.businessId,start,date(-8),end]);
+  const tick=()=>context.request.get("/api/cron/refresh-derived",{headers:{Authorization:"Bearer "+process.env.CRON_SECRET},timeout:100_000});
+  expect([200,207]).toContain((await tick()).status());
+  const active=()=>db.query("select id,status,payload from public.alerts where business_id=$1 and kind='business_anomaly' and status in ('new','seen') and payload->>'dedupeKey'='sales_decline:cafe'",[own.businessId]).then(r=>r.rows);
+  const facts=await db.query("select sum(net_sales_cents) filter(where business_date < $2::date)::int previous,sum(net_sales_cents) filter(where business_date >= $2::date)::int current,count(*) filter(where sales_data_status='actual')::int covered from public.daily_rollups where business_id=$1 and business_date between $3 and $4",[own.businessId,date(-7),start,end]);
+  expect(facts.rows[0]).toEqual({previous:700000,current:420000,covered:14});
+  const rows=await active();expect(rows).toHaveLength(1);
+  expect(rows[0].payload).toMatchObject({current:420000,previous:700000,unit:"cents",family:"sales_decline"});
+  const page=await context.newPage();await login(page,own);await openOwnedPage(page,own,"more/alerts");
+  await expect(page.getByText("Sales declined",{exact:true}).first()).toBeVisible({timeout:30000});
+  // Restore known healthy comparable source facts rather than marking the alert handled manually.
+  await db.query("update public.daily_rollups set net_sales_cents=100000 where business_id=$1 and business_date between $2 and $3",[own.businessId,date(-7),end]);
+  expect([200,207]).toContain((await tick()).status());expect(await active()).toHaveLength(0);
+  // No fixture downstream of the real detector; rollback source data in finally.
+  if(!prior.rows.some(x=>x.id===rows[0].id))await db.query("delete from public.alerts where business_id=$1 and id=$2",[own.businessId,rows[0].id]);
+ }finally{
+  await context.close();
+  if(connected){
+   await db.query("delete from public.daily_rollups where business_id=$1 and business_date between $2 and $3",[own.businessId,start,end]);
+   if(original.length)await db.query("insert into public.daily_rollups select * from jsonb_populate_recordset(null::public.daily_rollups,$1::jsonb)",[JSON.stringify(original)]);
+   await db.query("update public.staff_schedules set active=true where business_id=$1 and id=any($2::uuid[])",[own.businessId,activeSchedules]);
+   await db.end();
+  }
+ }
+});

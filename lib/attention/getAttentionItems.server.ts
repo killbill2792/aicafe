@@ -164,7 +164,7 @@ export async function readInbox(args:AttentionArgs={}):Promise<Inbox>{
     Number.isSafeInteger(task.payload.stepVersion)&&task.payload.stepVersion>0;
   const team=projectOperatingTasks(settleInboxTasks(
     stored.filter(task=>retainActionablePrioritySource(task)||isVerifiedInvestigationReport(task)),
-    derived,new Date(),today));
+    derived,new Date(),today,new Set(menu.filter(item=>item.pricing?.status==="KEEP_CURRENT_PRICE").map(item=>item.id))));
   const agentNames: Record<AgentId, string> = { alex: "Alex", olivia: "Olivia", maya: "Maya", leo: "Leo" };
   const taskPreview = (task: OperatingTask): HomeTaskPreviewItem => {
     const itemName = String(task.payload.itemName ?? "").replace(" · ", " ");

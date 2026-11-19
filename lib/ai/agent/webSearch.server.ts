@@ -68,7 +68,7 @@ export function extractWebSearchAnswer(body:unknown):{answer:string;sources:Arra
   return answer?{answer,sources}:null;
 }
 
-export function createWebSearch(deps:{fetch?:Fetch;apiKey?:string;model?:string;now?:()=>number}={}){
+export function createWebSearch(deps:{fetch?:Fetch;apiKey?:string;model?:string;now?:()=>number;reserveTransport?:(params:Record<string,unknown>)=>Promise<(response:unknown)=>Promise<void>>}={}){
   const doFetch=deps.fetch??ownerPublicWebFetch,now=deps.now??Date.now;
   return async(query:string,budget?:WebSearchBudget):Promise<WebSearchResult>=>{
     const key=deps.apiKey??process.env.OPENAI_API_KEY;
@@ -78,15 +78,16 @@ export function createWebSearch(deps:{fetch?:Fetch;apiKey?:string;model?:string;
     if(budget&&!budget.reserveModelCall())return {available:false,reason:"budget"};
     const started=now();
     try{
-      const response=await doFetch("https://api.openai.com/v1/responses",{
-        method:"POST",signal:AbortSignal.timeout(WEB_SEARCH_TIMEOUT_MS),
-        headers:{"content-type":"application/json",Authorization:"Bearer "+key},
-        body:JSON.stringify({
+      const params={
           model:deps.model??configuredSupervisorModel(),
           store:false,max_output_tokens:WEB_SEARCH_OUTPUT_TOKENS,
           tools:[{type:"web_search"}],
           input:"Search for current, public information on this question. Summarize only what sources support and cite their URLs. Question: "+query,
-        }),
+        };
+      const finish=await deps.reserveTransport?.(params);
+      const response=await doFetch("https://api.openai.com/v1/responses",{
+        method:"POST",signal:AbortSignal.timeout(WEB_SEARCH_TIMEOUT_MS),
+        headers:{"content-type":"application/json",Authorization:"Bearer "+key},body:JSON.stringify(params),
       });
       const durationMs=now()-started;
       if(!response.ok){
@@ -94,6 +95,7 @@ export function createWebSearch(deps:{fetch?:Fetch;apiKey?:string;model?:string;
         return {available:false,reason:"providerFailed"};
       }
       const body:unknown=await response.json();
+      await finish?.(body);
       budget?.recordUsage(webSearchUsage(body));
       const parsed=extractWebSearchAnswer(body);
       if(!parsed){

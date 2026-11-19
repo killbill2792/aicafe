@@ -75,8 +75,8 @@ export type PeriodItemSalesEvidence = {
   soldItems:Array<{id:string;units:number}>;
   /** Only explicit historical rollup/recipe/price reconciliation, never today's
    * costStatus, can attest that prior-date ingredient costs were complete.
-   * The current schema has no persisted recipe revisions or proof marker; live
-   * readers must leave this absent until genuine historical proof exists. */
+   * Persisted catalog observations start at actual capture, never prove earlier
+   * days retroactively; unsupported sales and missing periods stay unknown. */
   historicalIngredientCostProof?: {
     source:"historical_recomputation";
     days:Array<{date:string;ingredientsCents:number}>;

@@ -13,12 +13,14 @@ export const investigationReadTools=[
 ] as const satisfies readonly AgentToolName[];
 /** The only system-triggered write permitted here is an inert approval
  * draft. The existing owner-click gateway is still the only effect authority. */
+export const supplierResearchInvestigationTools=[...investigationReadTools,"web_search"] as const satisfies readonly AgentToolName[];
 export const maintenanceInvestigationTools=[...investigationReadTools,
   "get_maintenance_staff_candidates","propose_maintenance_staff_assignment","record_maintenance_repair_claim",
   "search_maintenance_vendor","propose_maintenance_vendor_request"] as const satisfies readonly AgentToolName[];
 /** Requiring kind-specific independent corroboration keeps an agent from
  * reading two irrelevant sales/expense totals for an employee incident. */
 const relevantByKind:Record<string,readonly AgentToolName[]>={
+  business_anomaly:["get_sales","get_peak_hours","get_profit","get_labor","get_expenses","get_bills","get_ingredient_costs","get_product_costs","get_inventory","get_usage_variance","get_item_sales","get_menu_items","get_schedule","get_week_schedule"],
   meal_break:["get_labor","get_payroll_facts","get_schedule","get_week_schedule"],
   staff_coverage:["get_staff_messages","get_staff_coordination_cases","get_labor","get_schedule","get_coverage_gaps","get_week_schedule"],
   staff_coordination:["get_staff_coordination_cases","get_staff_messages","get_schedule","get_week_schedule","get_coverage_gaps"],
@@ -119,6 +121,12 @@ export type InvestigationCheckpoint={
   unchangedChecks?:number;
   maintenanceReadMissing?:string[];
   receivingFollowupProposalId?:string;
+  stockPurchaseProposalId?:string;
+  ownerQuestion?:string;
+  sourceRevision?:string;
+  stockEmailProposalId?:string;
+  /** Server-observed procurement status, never part of the model narrative. */
+  stockProcurementStatus?:string;
   receivingClosureEvidence?:{poRevision:number;receiptVersions:number;invoiceVersions:number};
 };
 /** Source names and payloads may contain untrusted text. The model receives a
@@ -218,6 +226,7 @@ export function investigationPrompt(source:SourceSynopsis,followUp:boolean,
     "for incident-specific evidence. For this incident, relevant tools include: " +
     relevantInvestigationTools(source.kind).join(", ")+". " +
     (["money_update","missing_bill"].includes(source.kind)?"Finance: check actual available statement/invoice evidence plus independent recorded bills, expenses, sales or labor. If integrations are absent, use surviving facts and explicit uncertainty. Separate dated balances, bill amounts and payment status; no payment actions. ":"") +
+    (source.kind==="business_anomaly"?"Use the exact incident family, subject, unit and comparison dates supplied by get_investigation_source. Recorded expenses are observed entries, not complete spending; stockout risk is a forecast not a confirmed shortage. Hourly staff pressure uses a reconciled allocation of recorded daily wages and tax, not an actual per-hour provider payroll figure, and does not prove a specific employee or shift is unnecessary. For stockout risk, physical shortage or supplier quote issues, after the source read use the available web_search tool for public supplier leads if current saved offers are insufficient. Public descriptions or prices are UNVERIFIED leads, never firm offers, stock or guaranteed delivery. Do not repeat private data in public search terms. Cite actual links only; if no lead or permission, ask for the missing supplier confirmation. For data gaps explicitly ask for the missing evidence. ":"") +
     "Use canonical numbers, coverage and timestamps; " +
     "do not infer zero from missing or stale evidence. Explain what changed, what is " +
     "known, what is unknown, and the smallest useful multi-step plan. Give the owner " +
@@ -290,7 +299,7 @@ export function verifyInvestigationTurn(turn:AgentTurn,expected:ExpectedInvestig
     turn.unverified.length>0||unsupportedExternalEffectClaim(text))
     return {ok:false,reason:"model_incomplete"};
   const calls=turn.toolInvocations??[];
-  const allowedSet=new Set<string>(expected.kind==="maintenance_issue"?maintenanceInvestigationTools:investigationReadTools);
+  const allowedSet=new Set<string>(expected.kind==="maintenance_issue"?maintenanceInvestigationTools:expected.kind==="business_anomaly"?supplierResearchInvestigationTools:investigationReadTools);
   if(expected.kind==="supplier_receiving")allowedSet.add("propose_supplier_discrepancy_followup");
   if(calls.some(call=>!allowedSet.has(call.name)))
     return {ok:false,reason:"model_incomplete"};
@@ -311,7 +320,9 @@ export function verifyInvestigationTurn(turn:AgentTurn,expected:ExpectedInvestig
   // Distinguish a qualified report from an affirmative assertion of repair.
   if(expected.kind==="maintenance_issue"&&unsupportedMaintenanceRepairClaim(text))
     return {ok:false,reason:"model_incomplete"};
-  const allowed=new Set<string>(relevantInvestigationTools(expected.kind));
+  const selectors=source.result.selectors as {family?:string}|undefined;
+  const familyTools:Record<string,readonly AgentToolName[]>={sales_decline:["get_sales","get_profit","get_labor","get_item_sales"],sales_growth:["get_sales","get_profit","get_labor","get_item_sales"],labor_cost:["get_labor","get_sales","get_profit"],recorded_expense_rise:["get_expenses","get_bills","get_profit"],recorded_refund_rise:["get_sales","get_profit","get_item_sales"],order_refund_rise:["get_sales","get_profit","get_item_sales"],ingredient_cost:["get_ingredient_costs","get_product_costs","get_menu_items"],product_cost:["get_product_costs","get_ingredient_costs","get_menu_items"],product_contribution:["get_product_costs","get_ingredient_costs","get_item_sales"],high_contribution:["get_product_costs","get_item_sales"],operating_margin:["get_profit","get_sales","get_expenses","get_labor"],cost_recovery_lag:["get_profit","get_bills","get_expenses","get_sales"],cost_recovery_ahead:["get_profit","get_bills","get_expenses","get_sales"],stock_shortage:["get_inventory","get_usage_variance","get_ingredient_costs"],stockout_risk:["get_inventory","get_usage_variance","get_ingredient_costs"],consumption_variance:["get_usage_variance","get_ingredient_costs","get_item_sales"],overstaffed_hour:["get_labor","get_peak_hours","get_sales","get_schedule","get_week_schedule"],early_clock_in:["get_labor","get_schedule","get_week_schedule"],missed_clock_evidence:["get_labor","get_schedule","get_week_schedule"],supplier_quote:["get_ingredient_costs","get_product_costs","get_inventory"]};
+  const allowed=new Set<string>(expected.kind==="business_anomaly"&&selectors?.family&&familyTools[selectors.family]?familyTools[selectors.family]:relevantInvestigationTools(expected.kind));
   const corroborated=calls.filter(call=>allowed.has(call.name)&&
     call.result.source!=="investigation_source"&&
     typeof call.result.source==="string"&&call.result.source.length>0&&

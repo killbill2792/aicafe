@@ -64,7 +64,7 @@ describe("inbox lifecycle (read-only)", () => {
   it("shows a computed price review that is not stored yet and expires a stored one that no longer applies", () => {
     const review = (id: string): OperatingTask => task(id, { kind: "price_review", entityType: "menu_item", entityId: id,
       payload: { itemName: "Latte", currentPriceCents: 500, suggestedPriceCents: 560 } });
-    const settled = settleInboxTasks([review("price:old:500:560")], [review("price:new:500:560")], NOW, TODAY);
+    const settled = settleInboxTasks([review("price:old:500:560")], [review("price:new:500:560")], NOW, TODAY,new Set(["price:old:500:560"]));
     expect(Object.fromEntries(settled.map((t) => [t.id, t.status]))).toEqual({ "price:new:500:560": "needs_owner", "price:old:500:560": "expired" });
   });
 
