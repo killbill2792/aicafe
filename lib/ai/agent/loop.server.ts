@@ -159,6 +159,9 @@ export async function runAgentTurn(args: {
   onFollowUp?: (count: number) => void;
   /** Redacted, synchronous event collector. Never persists while the loop is running. */
   onAuditStep?: (step: AgentAuditStep) => void;
+  /** Recheck owner-scoped private evidence before EVERY provider request,
+   * including later model tool steps, web lookups and final recovery calls. */
+  beforeProviderRequest?:()=>Promise<void>;
 }): Promise<AgentTurn> {
   if(!args.context.timezone)throw new Error("cafe_timezone_required");
   const now = args.now ?? Date.now, started = now();
@@ -290,6 +293,7 @@ export async function runAgentTurn(args: {
       let reserved=false,completed=false,reported=false;
       let measured:{input_tokens:number;output_tokens:number;input_tokens_details:{cached_tokens:number}}|undefined;
       try{
+        await args.beforeProviderRequest?.();
         if(usage.modelCalls>=maxModelToolCalls()||now()>=workDeadline||budgetStop()||
            (expandedLuna&&outputRemaining(false)<finalOutputReserve))
           return {available:false,reason:"budget"};
@@ -431,6 +435,9 @@ export async function runAgentTurn(args: {
       if (round > 0) await readFollowUps();
       if(usage.modelCalls>=maxModelToolCalls()||outputLimit(false)<=0){endReason="budget";break;}
       let calls: ToolCall[];
+      // Permission loss is an authorization failure, NOT a provider error:
+      // it must escape the loop so no final request can resend private evidence.
+      await args.beforeProviderRequest?.();
       try { calls = await call(false); }
       catch { endReason = now() >= workDeadline || controller.signal.aborted ? "timeout" : "provider_error"; break; }
       if (!calls.length) {
@@ -611,6 +618,8 @@ export async function runAgentTurn(args: {
       await readFollowUps();
       // Exactly one final no-tool request; never allow another model tool call.
       // Recovery is bounded even after provider disconnect/incomplete response.
+      // Keep the check OUTSIDE the provider-error catch to fail closed.
+      await args.beforeProviderRequest?.();
       try {
         const finalController = new AbortController();
         const left = deadline - now();

@@ -7,6 +7,7 @@ import {createAuthenticatedCafeTools,readSupervisorCafeIdentity} from "@/lib/ai/
 import {loadOwnerFacts} from "@/lib/ownerFacts/store.server";
 import {readCafeLocation} from "@/lib/data/cafeLocation.server";
 import {searchNearbyEvents} from "@/lib/events/nearbyEventsSearch.server";
+import {ownerPublicWebAllowed,withOwnerPublicWebScope} from "@/lib/connectors/publicWeb.server";
 import {buildEventsOutlook,hourlyOutlookRead} from "@/lib/events/outlook";
 
 export const runtime="nodejs";export const dynamic="force-dynamic";
@@ -25,7 +26,9 @@ export async function GET(request:Request){
       loadOwnerFacts(scope.businessId).catch(()=>[])]);
     const outlook=await buildEventsOutlook({today:identity.asOf,timezone:identity.timezone,locale:lang,
       readLocation:async()=>readCafeLocation(await createServerSupabaseClient(),scope.businessId,facts),
-      search:searchNearbyEvents,
+      search:async input=>await ownerPublicWebAllowed(scope)?
+        withOwnerPublicWebScope(scope,()=>searchNearbyEvents(input)):
+        {available:false,outcome:"failed",reason:"searchFailed"},
       readHourlySales:async(from,to)=>{
         const slice=await tools.getPeakHours({from,to});
         return hourlyOutlookRead(slice);

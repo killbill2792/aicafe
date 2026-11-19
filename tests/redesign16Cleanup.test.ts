@@ -109,6 +109,10 @@ const approvedTask14cSet = new Set(Object.entries(approvedTask14cEnglishOnly)
   .flatMap(([namespace, keys]) => keys.map(key => namespace+"."+key)));
 const task15bMaintenanceKeys = ["assignmentSaved","assignmentHeading","staffUnavailable","staffEmpty","employee","chooseEmployee","assignmentInstructions","approveAndAssign","crewEquipment","crewUrgency","crewUnknown","crewNormal","crewHigh","crewCritical","crewReportLimit","crewWorking","crewNotWorking","crewWorkingReceipt","crewNotWorkingReceipt","linkedCase","requestOnly","reviewBy","noDeadline","staffApproval","independentCheck","assignmentTitle","assignedUnverified","ownerApproval","approvalEquipment","exactInstructions","followUpDue","approvalHelp","approveAssignment","declineAssignment","checkReceipt","assignmentError","approvalName","block","caseTitle","claimHelp","critical","equipment","followUp","heading","high","intro","normal","notSent","note","openCase","problem","reopen","repairClaim","reportError","reportSaved","save","saving","severity","stage","stageAssigned","stageAwaiting","stageBlocked","stageClaimed","stageInvestigating","stageReopened","stageReported","stageSent","stageVerified","submit","submitting","unknown","updateError","updateSaved","verifyHelp","verifyWorking"];
 const approvedTask15bSet = new Set(task15bMaintenanceKeys.map(key=>"Maintenance."+key));
+// Task16C adds English-only owner controls. Enumerate exact keys so the
+// existing translation-parity guard still rejects every unexpected addition.
+const approvedTask16cEnglishOnly = ["title","subtitle","publicWeb","publicWebHelp","fileRead","fileReadHelp","fileList","fileListHelp","fileRevoked","filePaused","fileAllowed","revokeFile","revokeConfirm","loadMore","computer","computerUnavailable","loading","loadFailed","saveFailed","refresh","on","off","changePending","noFiles","gmailIntro","fileAccessRevokedMessage","statusUnavailableMessage","ownerAccessRevokedMessage"];
+const approvedTask16cSet = new Set(approvedTask16cEnglishOnly.map(key=>"SupervisorAccess."+key));
 const approvedTask14bSet = new Set(Object.entries(approvedTask14bEnglishOnly)
   .flatMap(([namespace, keys]) => keys.map(key => namespace+"."+key)));
 
@@ -198,7 +202,7 @@ describe("redesign 16 cleanup integration", () => {
       return Object.entries(messages)
         .flatMap(([namespace, values]) => Object.keys(values).map(key => `${namespace}.${key}`))
         .filter(key => !englishOnly.test(key) && !approvedTask14bSet.has(key)
-          && !approvedTask14cSet.has(key) && !approvedTask15bSet.has(key) && !approvedTask16aSet.has(key))
+          && !approvedTask14cSet.has(key) && !approvedTask15bSet.has(key) && !approvedTask16aSet.has(key) && !approvedTask16cSet.has(key))
         .sort();
     };
     expect(keys("es")).toEqual(keys("en"));
@@ -240,6 +244,17 @@ describe("redesign 16 cleanup integration", () => {
       expect(ar[namespace]).toBeUndefined();
     }
   });
+  it("requires exactly the authorized Task16C English keys without touching other locales",()=> {
+    const english=localeMessages("en"), spanish=localeMessages("es"), arabic=localeMessages("ar");
+    expect(Object.keys(english.SupervisorAccess??{}).sort()).toEqual([...approvedTask16cEnglishOnly].sort());
+    expect(spanish.SupervisorAccess).toBeUndefined();
+    expect(arabic.SupervisorAccess).toBeUndefined();
+    for(const key of approvedTask16cEnglishOnly){
+      expect(english.SupervisorAccess[key],key).toEqual(expect.any(String));
+      expect(english.SupervisorAccess[key].trim().length,key).toBeGreaterThan(0);
+    }
+  });
+
   it("requires every Task 14B purchasing key in en and forbids silently expanding the exception", () => {
     const en = localeMessages("en"), es = localeMessages("es"), ar = localeMessages("ar");
     for (const [namespace, allowedKeys] of Object.entries(approvedTask14bEnglishOnly)) {

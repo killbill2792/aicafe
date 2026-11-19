@@ -1,10 +1,11 @@
 import "server-only";
+import {ownerPublicWebFetch,PublicWebPermissionError} from "@/lib/connectors/publicWeb.server";
 import {configuredSupervisorModel} from "@/lib/ai/conversations/modelConfig";
 
 /** Read-only public web lookup for the authenticated Supervisor chat. */
 export type WebSearchResult =
   | {available:true;answer:string;sources:Array<{title:string;url:string}>}
-  | {available:false;reason:"notConfigured"|"timeout"|"providerFailed"|"unreadable"|"budget"};
+  | {available:false;reason:"notConfigured"|"timeout"|"providerFailed"|"unreadable"|"budget"|"permissionDenied"|"permissionsUnavailable"};
 
 export type WebSearchUsage={inputTokens:number;cachedTokens:number;outputTokens:number};
 /** The outer agent reserves a model call before the request and records token usage. */
@@ -68,7 +69,7 @@ export function extractWebSearchAnswer(body:unknown):{answer:string;sources:Arra
 }
 
 export function createWebSearch(deps:{fetch?:Fetch;apiKey?:string;model?:string;now?:()=>number}={}){
-  const doFetch=deps.fetch??fetch,now=deps.now??Date.now;
+  const doFetch=deps.fetch??ownerPublicWebFetch,now=deps.now??Date.now;
   return async(query:string,budget?:WebSearchBudget):Promise<WebSearchResult>=>{
     const key=deps.apiKey??process.env.OPENAI_API_KEY;
     if(!key)return {available:false,reason:"notConfigured"};
@@ -102,6 +103,7 @@ export function createWebSearch(deps:{fetch?:Fetch;apiKey?:string;model?:string;
       console.info("agent_web_search_completed",{durationMs,sources:parsed.sources.length});
       return {available:true,...parsed};
     }catch(error){
+      if(error instanceof PublicWebPermissionError)return {available:false,reason:error.reason};
       const timedOut=error instanceof Error&&(error.name==="TimeoutError"||error.name==="AbortError");
       console.error("agent_web_search_failed",{category:timedOut?"timeout":"network",durationMs:now()-started});
       return {available:false,reason:timedOut?"timeout":"providerFailed"};

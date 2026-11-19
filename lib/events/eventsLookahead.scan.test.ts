@@ -2,6 +2,9 @@ import {beforeEach,describe,expect,it,vi} from "vitest";
 import type {SupabaseClient} from "@supabase/supabase-js";
 
 const search=vi.hoisted(()=>vi.fn());
+const webPermission=vi.hoisted(()=>vi.fn());
+vi.mock("@/lib/access/access.server",()=>({assertCafeAiAccess:vi.fn(async()=>{})}));
+vi.mock("@/lib/connectors/access.server",()=>({assertExternalAccess:webPermission,WEB_RESOURCE:"public"}));
 
 vi.mock("@/lib/ownerFacts/store.server",()=>({loadOwnerFacts:vi.fn().mockResolvedValue([])}));
 vi.mock("@/lib/data/cafeLocation.server",()=>({readCafeLocation:vi.fn().mockResolvedValue({
@@ -54,7 +57,20 @@ function fixture(){
     run:(day:string)=>scanCafe(db,business,day,search)};
 }
 describe("cron-only discovery and preservation",()=>{
-  beforeEach(()=>{search.mockReset();});
+  beforeEach(()=>{search.mockReset();webPermission.mockReset().mockResolvedValue(0);});
+  it("skips owner-blocked discovery and never certifies a search cursor",async()=>{
+    const f=fixture();
+    const owner={businessId:business.id,ownerUserId:"owner-a"};
+    webPermission.mockRejectedValue(new Error("public_web_access_revoked"));
+    expect(await scanCafe(f.db,business,"2026-11-03",search,undefined,owner)).toBe(0);
+    expect(search).not.toHaveBeenCalled();
+    expect(f.getState()).toBeNull();
+    expect(webPermission).toHaveBeenCalledWith(owner,"public_web","public");
+    webPermission.mockResolvedValue(0);
+    await scanCafe(f.db,business,"2026-11-03",search,undefined,owner);
+    expect(search).toHaveBeenCalledTimes(1);
+    expect(f.getState()).toMatchObject({scanned_through_date:"2026-11-16"});
+  });
   it("scans all 14 days on first Tuesday, records even an empty successful search, then one day only",async()=>{
     const f=fixture();
     await f.run("2026-11-03");

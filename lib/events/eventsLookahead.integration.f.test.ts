@@ -5,7 +5,7 @@ import type {CafeEvent,SavedEventTimeline} from "@/lib/data/cafeEvents.server";
 const mocks=vi.hoisted(()=>({
   agent:vi.fn(),evidence:vi.fn(),location:vi.fn(),profile:vi.fn(),
   canonical:vi.fn(),canonicalEvents:vi.fn(),propose:vi.fn(),
-  reply:vi.fn(),monitor:vi.fn(),
+  reply:vi.fn(),monitor:vi.fn(),web:vi.fn(),webPermission:vi.fn(),
 }));
 vi.mock("server-only",()=>({}));
 vi.mock("@/lib/data/eventDemandEvidence.server",()=>({
@@ -20,9 +20,9 @@ vi.mock("@/lib/data/cafeEvents.server",()=>({
 }));
 vi.mock("@/lib/ai/agent/loop.server",()=>({runAgentTurn:mocks.agent}));
 vi.mock("@/lib/ai/agent/persist.server",()=>({agentReplyPayload:mocks.reply}));
-vi.mock("@/lib/ai/agent/webSearch.server",()=>({
-  searchWeb:vi.fn(async()=>({available:false,reason:"budget"})),
-}));
+vi.mock("@/lib/access/access.server",()=>({assertCafeAiAccess:vi.fn(async()=>{})}));
+vi.mock("@/lib/connectors/access.server",()=>({assertExternalAccess:mocks.webPermission,WEB_RESOURCE:"public"}));
+vi.mock("@/lib/ai/agent/webSearch.server",()=>({searchWeb:mocks.web}));
 vi.mock("@/lib/ai/supervisor/loop/engine",async importOriginal=>{
   const actual=await importOriginal<typeof import("@/lib/ai/supervisor/loop/engine")>();
   return {...actual,proposeLoop:mocks.propose,monitorLoop:mocks.monitor};
@@ -107,6 +107,8 @@ const business={id:"55555555-5555-4555-8555-555555555555",
 
 beforeEach(()=>{
   vi.resetAllMocks();
+  mocks.webPermission.mockResolvedValue(0);
+  mocks.web.mockResolvedValue({available:false,reason:"budget"});
   mocks.canonical.mockResolvedValue(timeline);
   mocks.canonicalEvents.mockResolvedValue(events);
   mocks.profile.mockResolvedValue({open_hours:{thu:[["07:00","16:00"]]}});
@@ -118,6 +120,22 @@ beforeEach(()=>{
 });
 
 describe("E saved facts + D performance → scheduled Supervisor → same loop records",()=>{
+ it("scheduled registered web tool rechecks owner permission and does not launch blocked lookups",async()=>{
+   const {db}=store();
+   mocks.agent.mockImplementation(async args=>{
+     expect(await args.context.webSearch("first public lookup")).toEqual({available:false,reason:"budget"});
+     mocks.webPermission.mockRejectedValueOnce(new Error("public_web_access_revoked"));
+     expect(await args.context.webSearch("after revocation")).toEqual({available:false,reason:"permissionDenied"});
+     mocks.webPermission.mockRejectedValueOnce(new Error("external_access_unavailable"));
+     expect(await args.context.webSearch("unavailable permission")).toEqual({available:false,reason:"permissionsUnavailable"});
+     return {text:"Research unavailable.",endReason:"provider_error",results:[]};
+   });
+   expect(await draftDay(db,business,"owner-one","en","2026-11-03",
+     assessment,[],timeline,sourceHash)).toBe(false);
+   expect(mocks.web).toHaveBeenCalledTimes(1);
+   expect(mocks.webPermission).toHaveBeenCalledWith({businessId:business.id,ownerUserId:"owner-one",threadId,locale:"en"},"public_web","public");
+   expect(mocks.propose).not.toHaveBeenCalled();
+ });
  it("selects ONE relevant event of two, persists existing proposal/message/inbox and assessment",async()=>{
    const observed:{prompt?:Record<string,unknown>}={};
    mocks.agent.mockImplementation(async args=>{

@@ -21,7 +21,13 @@ export const SUITES=Object.freeze({
  staffing:["lib/ai/agent/tools/staffProposals.test.ts","lib/ai/supervisor/loop/staffProposals.partialWages.test.ts"],
  gmail:["lib/ai/agent/tools/gmail.test.ts","lib/connectors/gmail/oauth.test.ts",
    "app/api/connectors/gmail/routes.test.ts","lib/connectors/gmail/provider.test.ts",
-   "lib/connectors/access.test.ts","lib/connectors/registry.live.test.ts"],
+   "lib/connectors/access.test.ts","lib/connectors/registry.live.test.ts",
+   "app/api/supervisor/access/route.test.ts",
+   "app/api/connectors/gmail/permissions/route.test.ts",
+   // Shared external-access contract also covers owner-scoped public web work.
+   "lib/connectors/publicWeb.test.ts","lib/events/eventsLookahead.scan.test.ts",
+   "lib/events/eventVerification.server.test.ts","lib/events/eventsLookahead.integration.f.test.ts",
+   "app/api/events/outlook/route.test.ts"],
  routines:["lib/ai/agent/tools/routines.test.ts","lib/ai/supervisor/routines/dispatch.test.ts",
   "lib/ai/agent/tools/incidentEvidence.test.ts",
   "lib/ai/agent/tools/investigationScheduleScope.test.ts",
@@ -43,7 +49,7 @@ export function domainsForPaths(paths){
  const found=new Set();
  for(const p of paths){
   const sharedConnector=/^lib\/connectors\/(?:crypto|registry)(?:\.server|\.test|\.live\.test)?\.[cm]?[jt]s$/.test(p) ||
-    /^lib\/connectors\/access(?:\.server|\.test)\.ts$/.test(p);
+    /^lib\/connectors\/(?:access|publicWeb)(?:\.server|\.test)\.ts$/.test(p);
   if(/^lib\/connectors\/|^app\/api\/connectors\//.test(p) &&
      !includes(p,/gmail/)&&!sharedConnector)
    fail("unknown_connector_contract");

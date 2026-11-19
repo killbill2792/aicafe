@@ -38,7 +38,9 @@ export const webSearchTools={
         return {source:"public_page",period:null,agentId:"alex",missing:["owner_public_page_required"]};
       const found=await ctx.webSearch("Summarize only source-grounded facts from this exact public page: "+target);
       if(!found.available)
-        return {source:"public_page",period:null,agentId:"alex",missing:["public_page_unavailable"]};
+        return {source:"public_page",period:null,agentId:"alex",
+         missing:[found.reason==="permissionDenied"?"public_web_access_revoked":
+           found.reason==="permissionsUnavailable"?"public_web_permissions_unavailable":"public_page_unavailable"]};
       const matches=found.sources.filter(source=>ownerPublicPage(source.url,url)===target);
       if(!matches.length)
         return {source:"public_page",period:null,agentId:"alex",missing:["exact_page_not_verified"]};

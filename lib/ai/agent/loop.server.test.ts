@@ -64,6 +64,35 @@ describe("recorded Responses streaming fixtures", () => {
     expect(result.text).toBe("I can read the receipt.");
   });
 
+  it("stops an in-flight private PDF turn before any second model transmission after revocation",async()=>{
+    let requests=0,checks=0;
+    const provider:AgentProvider=async function*(){
+      requests++;
+      yield call("get_menu_items",'{"query":null,"limit":null}',"first");
+      yield completed;
+    };
+    await expect(runAgentTurn({ownerText:"Inspect selected invoice",
+      ownerPdfs:[{filename:"invoice.pdf",base64:"cHJpdmF0ZQ=="}],
+      context,provider,
+      beforeProviderRequest:async()=>{if(++checks>1)throw Error("attachment_access_revoked");},
+    })).rejects.toThrow("attachment_access_revoked");
+    expect(requests).toBe(1);
+    expect(checks).toBe(2);
+  });
+  it("does not make a forced final-answer model call after file permission is lost",async()=>{
+    let requests=0,checks=0;
+    const provider:AgentProvider=async function*(){
+      requests++;
+      yield call("get_menu_items",'{"wrong":true}',"bad-"+requests);
+      yield completed;
+    };
+    await expect(runAgentTurn({ownerText:"Inspect invoice",context,provider,
+      ownerEvidence:["private file evidence"],
+      beforeProviderRequest:async()=>{if(++checks>2)throw Error("file_read_access_revoked");},
+    })).rejects.toThrow("file_read_access_revoked");
+    expect(requests).toBe(2);
+    expect(checks).toBe(3);
+  });
   it("sends café-local date and timezone as a developer input, not cached instructions",async()=>{
     const seen:Record<string,unknown>[]=[];
     const provider:AgentProvider=async function*(params){

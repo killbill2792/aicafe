@@ -1,4 +1,5 @@
 import "server-only";
+import {ownerPublicWebFetch} from "@/lib/connectors/publicWeb.server";
 import {DEFAULT_SUPERVISOR_OPENAI_MODEL} from "@/lib/ai/conversations/modelConfig";
 import {responseOutputText} from "./nearbyEvents";
 import {canonicalSourceUrl,assertDay} from "./cityEventIdentity";
@@ -77,7 +78,7 @@ function parse(body:unknown,input:EventEnrichmentInput):ConfirmedEventEnrichment
 export function createCityEventEnrichment(deps:{
   fetch?:typeof fetch;apiKey?:string;model?:string;
 }={}){
-  const request=deps.fetch??fetch;
+  const request=deps.fetch??ownerPublicWebFetch;
   return async(input:EventEnrichmentInput):Promise<ConfirmedEventEnrichment|null>=>{
     const apiKey=deps.apiKey??process.env.OPENAI_API_KEY;
     if(!apiKey)return null;

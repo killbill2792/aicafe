@@ -55,10 +55,18 @@ export function progressLines(steps: AgentJobStep[], copy: ChatExperienceCopy): 
   return lines.slice(-6);
 }
 
+/** New permission denials belong to the approved English-only Task16C copy
+ * namespace, not to legacy ChatExperience: existing locale key parity stays
+ * unchanged and nobody sees a generic retry for revoked private access. */
+const externalFailures:Record<string,string>={
+  supervisor_file_access_revoked:en.SupervisorAccess.fileAccessRevokedMessage,
+  supervisor_permission_status_unavailable:en.SupervisorAccess.statusUnavailableMessage,
+  supervisor_owner_access_revoked:en.SupervisorAccess.ownerAccessRevokedMessage,
+};
 /** A single sentence for every known failure; unknown codes get the generic one. */
 export function failureLine(code: string | null | undefined, copy: ChatExperienceCopy): string {
   const failures = copy.failures as Record<string, string>;
-  return (code && failures[code]) || copy.failures.agent_turn_failed;
+  return (code && (externalFailures[code]??failures[code])) || copy.failures.agent_turn_failed;
 }
 
 export type SseFrame = { type: string; data: Record<string, unknown> };

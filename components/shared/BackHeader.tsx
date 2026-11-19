@@ -6,11 +6,13 @@ export default function BackHeader({
   subtitle,
   backHref = "/",
   backLabel,
+  titleAsHeading = false,
 }: {
   title: string;
   subtitle?: string;
   backHref?: string;
   backLabel: string;
+  titleAsHeading?: boolean;
 }) {
   return (
     <div className="flex items-center gap-2">
@@ -22,7 +24,9 @@ export default function BackHeader({
         <ChevronLeft aria-hidden="true" size={22} />
       </Link>
       <div className="flex flex-col">
-        <div className="text-xl font-bold text-ink">{title}</div>
+        {titleAsHeading
+          ? <h1 className="text-xl font-bold text-ink">{title}</h1>
+          : <div className="text-xl font-bold text-ink">{title}</div>}
         {subtitle && <div className="text-sm font-medium text-ink-muted">{subtitle}</div>}
       </div>
     </div>
