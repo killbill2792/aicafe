@@ -1,6 +1,7 @@
 import "server-only";
 import {z} from "zod";
 import {effectHash,registerLoopCapability,proposeLoop,type OwnerLoopScope} from "./engine";
+import {readFinancialStatement} from "@/lib/data/financialEvidence.server";
 import {readSupplierReconciliation} from "@/lib/data/supplierReceiving.server";
 import {proposalRequestKey} from "./requestKeys";
 import {simulationOwnerReader} from "./simulationOwner.server";
@@ -243,4 +244,80 @@ export const supplierInvoiceCapability=registerLoopCapability({
  },
  monitor:async()=>null,
  report:async()=>({status:"complete",result:{},recommendation:"keep",source:"supplier_invoices"})
+});
+
+/** Existing effect registry/gateway; evidence allocation only, never a payment.
+ * The model selects exact saved identifiers; server derives all source values.
+ */
+export const financialSettlementCapabilityId="leo.financial_settlement.v1";
+export const financialSettlementInputSchema=z.strictObject({
+ financialKind:z.enum(["settlement_evidence_linked","settlement_evidence_reversed"]),
+ invoiceId:z.uuid(),invoiceRevision:z.number().int().positive().safe(),
+ uploadId:z.uuid(),rowIndex:z.number().int().nonnegative().max(9999),
+ allocationCents:z.number().int().positive().safe(),reversesId:z.uuid().nullable()
+});
+export type FinancialSettlementInput=z.infer<typeof financialSettlementInputSchema>;
+const signedCents=z.number().int().safe();
+const settlementEffectSchema=z.strictObject({...financialSettlementInputSchema.shape,
+ supplierId:z.uuid(),supplierName:z.string().min(1).max(120),invoiceReference:ref,
+ invoiceTotalCents:cents,currency:z.string().regex(/^[A-Z]{3}$/),
+ sourceHash:z.string().regex(/^[a-f0-9]{64}$/),accountKey:z.string().regex(/^[a-f0-9]{64}$/),
+ transactionDate:z.iso.date(),transactionAmountCents:signedCents,transactionBalanceCents:signedCents
+});
+export const financialSettlementCapability=registerLoopCapability({
+ id:financialSettlementCapabilityId,version:1,inputSchema:financialSettlementInputSchema,effectSchema:settlementEffectSchema,
+ proposalDescription:"Document verified statement debit allocation or credit reversal against an exact invoice revision. Owner must confirm the association; never sends money or marks unknown payments paid.",
+ dependencyScope:e=>({kind:"financial_settlement",invoiceId:e.invoiceId}),
+ simulate:async(scope,input)=>{
+  const {client}=await simulationOwnerReader(scope);
+  const read=await client.from("supplier_invoices")
+   .select("id,supplier_id,invoice_reference,revision,total_cents,currency_code")
+   .eq("business_id",scope.businessId).eq("owner_user_id",scope.ownerUserId).eq("id",input.invoiceId).maybeSingle();
+  const invoice=read.data;
+  if(read.error||!invoice||Number(invoice.revision)!==input.invoiceRevision)throw Error("financial_invoice_revision_changed");
+  const supplier=await client.from("cafe_suppliers").select("display_name").eq("business_id",scope.businessId).eq("id",invoice.supplier_id).maybeSingle();
+  if(supplier.error||!supplier.data?.display_name)throw Error("financial_supplier_unavailable");
+  const source=await readFinancialStatement(scope,input.uploadId),tx=source.transactions.find(r=>r.i===input.rowIndex);
+  if(!tx||source.currency!==invoice.currency_code||input.allocationCents>Math.abs(tx.amountCents))
+   throw Error("financial_statement_allocation_invalid");
+  if(input.financialKind==="settlement_evidence_linked"){
+   if(tx.amountCents>=0||input.reversesId!==null)throw Error("financial_debit_required");
+   const latest=await client.from("supplier_invoices").select("id")
+    .eq("business_id",scope.businessId).eq("owner_user_id",scope.ownerUserId).eq("supplier_id",invoice.supplier_id)
+    .eq("invoice_reference",invoice.invoice_reference).order("revision",{ascending:false}).limit(1);
+   if(latest.error||latest.data?.[0]?.id!==invoice.id)throw Error("financial_invoice_revision_changed");
+  }else{
+   if(tx.amountCents<=0||!input.reversesId)throw Error("financial_credit_and_original_link_required");
+   const original=await client.from("purchase_reconciliation_events")
+    .select("financial_invoice_id,financial_kind,financial_allocation_cents,financial_tx_date,financial_upload_id")
+    .eq("business_id",scope.businessId).eq("owner_user_id",scope.ownerUserId).eq("id",input.reversesId).maybeSingle();
+   if(original.error||!original.data||original.data.financial_kind!=="settlement_evidence_linked"||
+    original.data.financial_invoice_id!==invoice.id||Number(original.data.financial_allocation_cents)<input.allocationCents||
+    tx.date<original.data.financial_tx_date)throw Error("financial_reversal_evidence_invalid");
+   const oldSource=await readFinancialStatement(scope,original.data.financial_upload_id);
+   if(oldSource.accountKey!==source.accountKey||oldSource.currency!==source.currency)throw Error("financial_reversal_account_mismatch");
+  }
+  await simulationOwnerReader(scope);
+  return {effect:settlementEffectSchema.parse({...input,supplierId:invoice.supplier_id,supplierName:supplier.data.display_name,
+   invoiceReference:invoice.invoice_reference,invoiceTotalCents:Number(invoice.total_cents),currency:source.currency,
+   sourceHash:source.sourceHash,accountKey:source.accountKey,transactionDate:tx.date,
+   transactionAmountCents:tx.amountCents,transactionBalanceCents:tx.balanceCents}),
+   baseline:{documentaryEvidenceOnly:true,noMoneyMovement:true,ownerMustConfirmAssociation:true},
+   monitorSpec:{durationDays:1,metricScope:"financial_settlement"}};
+ },
+ commit:async(scope,effect,proposalId)=>{
+  if(!proposalId)throw Error("financial_proposal_required");
+  const db=await createServerSupabaseClient();
+  const {data:{user},error:authError}=await db.auth.getUser();
+  if(authError||user?.id!==scope.ownerUserId)throw Error("financial_owner_required");
+  const {data,error}=await db.rpc("supervisor_commit_financial_settlement",{
+   p_business_id:scope.businessId,p_thread_id:scope.threadId,p_proposal_id:proposalId,p_effect_hash:effectHash(effect)});
+  if(error||typeof data!=="string")throw Error("financial_settlement_effect_unverified");
+  const proof=await createAdminSupabaseClient().rpc("supervisor_financial_settlement_proof",{
+   p_business_id:scope.businessId,p_proposal_id:proposalId,p_effect_hash:effectHash(effect)});
+  if(proof.error||proof.data!==data)throw Error("financial_settlement_receipt_unverified");
+  return {status:"verified",evidenceSource:"purchase_reconciliation_events+uploads+supplier_invoices"};
+ },
+ monitor:async()=>null,
+ report:async()=>({status:"complete",result:{},recommendation:"keep",source:"purchase_reconciliation_events"})
 });

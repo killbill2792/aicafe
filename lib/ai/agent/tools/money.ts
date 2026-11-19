@@ -3,6 +3,7 @@ import es from "@/messages/es.json";
 import ar from "@/messages/ar.json";
 import {localizedMetricReason} from "@/lib/ai/agent/metricReasons";
 import { z } from "zod";
+import {financialSettlementInputSchema} from "@/lib/ai/supervisor/loop/supplierReceiving.server";
 import type { AgentToolContext, AgentToolResult } from "./index";
 import { requestedPeriod } from "./period";
 import {resolveOwnerPeriod,resolveEntity,choicePayload,periodChoicePayload} from "../resolve";
@@ -223,6 +224,16 @@ export const moneyTools={
         return {...base,recordedClaimCount:null,recordedClaimTotalsByCurrency:[],claims:[],
           missing:[...missing,"supplierInvoiceEvidenceUnavailable"]};
       }
+    },
+  },
+  propose_financial_settlement:{
+    agentId:"leo",schema:financialSettlementInputSchema,
+    description:"Draft documentary debit allocation or credit reversal for exact invoice revision and statement row; owner confirms. No money movement or unverified paid claim.",
+    execute:async(raw:unknown,ctx:AgentToolContext):Promise<AgentToolResult>=>{
+      const input=financialSettlementInputSchema.parse(raw);
+      if(!ctx.financialSettlementPropose)return {source:"supplier_purchase_proposal",period:null,agentId:"leo",missing:["financialSettlementUnavailable"],draft:false,paymentMade:false};
+      return {source:"supplier_purchase_proposal",proposalKind:"financial_settlement",period:null,agentId:"leo",
+        missing:[],draft:true,saved:false,approvalRequired:true,paymentMade:false,...await ctx.financialSettlementPropose(input)};
     },
   },
   get_break_even:{

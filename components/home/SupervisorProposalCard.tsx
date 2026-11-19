@@ -18,6 +18,9 @@ export type ProposalView={proposalId:string;revision:number;state:string;capabil
   currentPriceCents?:number|null;editedByOwner?:boolean;subjectName?:string|null;
   purchase?:{name:string;ingredientId:string|null;quantity:number;unit:string;costCents:number|null;date:string;source:string;
     receiptGroupId?:string|null;receiptLineIndex?:number|null;receiptVendor?:string|null;receiptTotalCents?:number|null};
+  settlement?:{financialKind:string;invoiceId:string;invoiceRevision:number;supplierName:string;invoiceReference:string;
+    invoiceTotalCents:number;currency:string;uploadId:string;rowIndex:number;allocationCents:number;reversesId:string|null;
+    transactionDate:string;transactionAmountCents:number;transactionBalanceCents:number};
   invoice?:{purchaseOrderId:string|null;supplierName:string;invoiceReference:string;expectedInvoiceRevision:number;
     issuedOn:string;dueOn:string|null;currency:string;subtotalCents:number;taxCents:number|null;
     freightCents:number|null;discountCents:number|null;totalCents:number;expenseDate:string|null;existingExpenseId:string|null;
@@ -182,6 +185,30 @@ export default function SupervisorProposalCard({threadId,proposalId,locale}:{
   const goal=value.capabilityId==="leo.goal.v1";
   const eventPlan=value.capabilityId==="alex.event_readiness.v1";
   const staffCopy=dict[locale].StaffApprovalCard;
+  if(value.capabilityId==="leo.financial_settlement.v1"&&value.settlement){
+    const s=value.settlement,reversal=s.financialKind==="settlement_evidence_reversed";
+    const amount=(n:number)=>new Intl.NumberFormat(locale,{style:"currency",currency:s.currency}).format(n/100);
+    return <section aria-label="Financial evidence confirmation" dir={locale==="ar"?"rtl":"ltr"}
+      className="w-full min-w-0 max-w-2xl rounded-[22px] border border-line bg-surface p-5 text-ink shadow-sm">
+      <h3 className="text-xl font-bold">{reversal?"Review statement credit reversal":"Review statement debit allocation"}</h3>
+      <p role="status" className="mt-2 font-semibold">{value.state==="applied"?"Documentary allocation recorded":value.state}</p>
+      <dl className="mt-3 grid gap-2 rounded-xl bg-surface2 p-3">
+        <div><dt className="text-ink-muted">Supplier and invoice</dt><dd className="break-words">{s.supplierName} · {s.invoiceReference} · Revision {s.invoiceRevision}</dd></div>
+        <div><dt className="text-ink-muted">Recorded invoice claim</dt><dd>{amount(s.invoiceTotalCents)}</dd></div>
+        <div><dt className="text-ink-muted">Statement transaction</dt><dd>{s.transactionDate} · {amount(s.transactionAmountCents)} · Closing balance {amount(s.transactionBalanceCents)}</dd></div>
+        <div><dt className="text-ink-muted">Statement source and row</dt><dd className="break-all">{s.uploadId} · Original row {s.rowIndex+2}</dd></div>
+        {reversal&&<div><dt className="text-ink-muted">Reversed evidence link</dt><dd className="break-all">{s.reversesId}</dd></div>}
+        <div><dt className="text-ink-muted">Documented allocation amount</dt><dd className="font-bold">{amount(s.allocationCents)}</dd></div>
+      </dl>
+      <p className="mt-3 text-sm text-ink-muted">Confirm only if the original statement transaction refers to this exact invoice. This records evidence, not a payment, transfer, refund or confirmation of live bank cash.</p>
+      {value.state==="pending"&&<div className="mt-4 flex flex-wrap gap-3">
+        <button type="button" disabled={busy} onClick={()=>void invoke("approve")} className="min-h-12 rounded-xl bg-accent px-5 font-bold text-on-accent disabled:opacity-50">Confirm evidence link</button>
+        <button type="button" disabled={busy} onClick={()=>void invoke("cancel")} className="min-h-12 rounded-xl border border-line px-5 font-bold disabled:opacity-50">Decline</button>
+      </div>}
+      {value.state==="uncertain"&&<button type="button" disabled={busy} onClick={()=>void invoke("reconcile")} className="mt-4 min-h-12 rounded-xl border border-line px-5 font-bold disabled:opacity-50">Check existing evidence link</button>}
+      {error&&<p role="alert" className="mt-3 text-neg">Could not verify this evidence link. Do not record it again.</p>}
+    </section>;
+  }
   if(value.capabilityId==="maya.supplier_invoice.v1"&&value.invoice){
     const i=value.invoice;
     const amount=(n:number|null)=>n===null?"Unknown":new Intl.NumberFormat(locale,{style:"currency",currency:i.currency}).format(n/100);

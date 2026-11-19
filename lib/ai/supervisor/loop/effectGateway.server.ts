@@ -101,7 +101,7 @@ export class SupervisorEffectGateway{
   if(error||!data)fail(error,"Receiving effect reconciliation failed");
   const proposal=decode(data as ProposalRow);
   if(proposal.id!==id||proposal.businessId!==scope.businessId||proposal.ownerUserId!==scope.ownerUserId||
-    proposal.threadId!==scope.threadId||!["maya.supplier_receiving.v1","maya.supplier_invoice.v1"].includes(proposal.capabilityId)||
+    proposal.threadId!==scope.threadId||!["maya.supplier_receiving.v1","maya.supplier_invoice.v1","leo.financial_settlement.v1"].includes(proposal.capabilityId)||
     !["executing","committed"].includes(proposal.status))
    throw new Error("Receiving reconciliation returned invalid scoped proof");
   return proposal;
