@@ -44,9 +44,10 @@ describe("owner-only routine mutation port",()=>{
   it("retries only with the same immutable occurrence identity",async()=>{
     const rpc=vi.fn(async()=>({data:{run_id:uuid,lease_token:uuid,revision:2},error:null}));
     const first=await claimRoutineOccurrence({rpc} as never,{
-      businessId:"business",routineId:uuid,localDate:"2026-11-11",
+      businessId:"business",routineId:uuid,revision:2,localDate:"2026-11-11",
       dueAt:new Date("2026-11-11T08:00:00Z"),now:new Date("2026-11-11T08:05:00Z")});
     expect(first?.runId).toBe(uuid);
+    expect(rpc).toHaveBeenCalledWith("supervisor_claim_current_routine_occurrence",expect.objectContaining({p_revision:2}));
     expect(rpc).toHaveBeenCalledTimes(1);
   });
 });
