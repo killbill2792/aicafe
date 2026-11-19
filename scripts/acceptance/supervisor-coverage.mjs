@@ -45,7 +45,7 @@ export function makeInventory(rows){
  if(!rows.length)throw Error("empty_census");
  return [...rows].sort((a,b)=>a.id<b.id?-1:a.id>b.id?1:0);
 }
-export function manifestIndex(root,paths){
+export function manifestIndex(root,paths,legacyTools={}){
  const index=new Map(),ids=new Set();
  for(const path of paths){
   if(!/^\.github\/luna\/scenarios\/[a-z0-9-]+\.json$/.test(path))throw Error("invalid_manifest_path");
@@ -55,7 +55,7 @@ export function manifestIndex(root,paths){
   const entry=manifest.entrypoint;
   if(typeof entry!=="string"||isAbsolute(entry)||relative(root,resolve(root,entry)).startsWith("..")||!existsSync(resolve(root,entry)))
     throw Error("missing_manifest_entrypoint:"+manifest.id);
-  for(const tool of manifest.expectedTools??[]){
+  for(const tool of manifest.expectedTools??legacyTools[manifest.id]??[]){
    if(typeof tool!=="string"||!tool)throw Error("invalid_manifest_tool");
    const refs=index.get(tool)??[];
    refs.push(manifest.id);index.set(tool,refs);
@@ -65,6 +65,8 @@ export function manifestIndex(root,paths){
 }
 /** A mapping alone never represents an executed test. Bootstrap records every
  * gap; the release check deliberately rejects even one UNTESTED row. */
+/** @param {any[]} rows @param {any} manifests
+ * @param {{head?:string,runId?:string|null,deterministicMetrics?:string[]}} options */
 export function buildCensusReport(rows,manifests,{head,runId=null,deterministicMetrics=[]}={}){
  if(!/^[a-f0-9]{40}$/.test(head??""))throw Error("invalid_head");
  const inventory=makeInventory(rows);
@@ -86,12 +88,20 @@ export function inventoryDelta(previous,current){
  return {added:[...c.keys()].filter(id=>!p.has(id)),removed:[...p.keys()].filter(id=>!c.has(id)),
  changed:[...c.keys()].filter(id=>p.has(id)&&p.get(id).fingerprint!==c.get(id).fingerprint)};
 }
+/** Freeze the initial outstanding inventory; a change requires review.
+ * This never grants acceptance to the baseline gaps. */
+export function verifyBootstrapSnapshot(report,mapping){
+ if(mapping?.schemaVersion!==1||mapping?.baselineInventoryDigest!==report.inventoryDigest||
+  mapping?.baselineRows!==report.rows.length||report.unknownManifestTools?.length)
+   throw Error("supervisor_coverage_drift: review newly added/removed/changed rows and executable oracles; census artifact is available");
+}
 export function requireComplete(report){
  if(!report||!Array.isArray(report.rows)||!report.rows.length||
  report.complete!==true||report.providerModelProof!==true||report.unknownManifestTools?.length||
  report.rows.some(r=>r.status!=="PASS"&&r.status!=="UNSUPPORTED"))
    throw Error("supervisor_acceptance_not_proven");
- // This is a structural prerequisite, NOT a trusted receipt verifier.
- // The existing shared-runner receipt verifier must separately establish provenance.
+ // A mutable candidate report cannot establish trusted-provider provenance.
+ // Until independent exact-head receipt reconciliation is integrated, fail closed.
+ throw Error("supervisor_acceptance_not_proven:trusted_receipt_reconciliation_pending");
 }
 export function writeCensus(path,report){mkdirSync(dirname(path),{recursive:true});writeFileSync(path,JSON.stringify(report,null,2)+"\n",{mode:0o600});}

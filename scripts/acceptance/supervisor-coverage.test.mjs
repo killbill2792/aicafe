@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import {row,schemaCases,makeInventory,buildCensusReport,inventoryDelta,requireComplete} from "./supervisor-coverage.mjs";
+import {row,schemaCases,makeInventory,buildCensusReport,inventoryDelta,requireComplete,verifyBootstrapSnapshot} from "./supervisor-coverage.mjs";
 const head="a".repeat(40);
 const tool=row("tool","manage_routine",{type:"object"});
 const metric=row("metric","profit",{unit:"cents"});
@@ -31,4 +31,18 @@ test("unknown manifest tools are reported rather than counted as coverage",()=>{
  assert.deepEqual(r.unknownManifestTools,["unknown"]);
  assert.throws(()=>requireComplete(r));
  assert.throws(()=>buildCensusReport([tool],manifests,{head:"wrong"}),/invalid_head/);
+});
+
+test("frozen bootstrap snapshot rejects new or changed coverage debt",()=>{
+ const report=buildCensusReport([tool,metric],manifests,{head});
+ const mapping={schemaVersion:1,baselineInventoryDigest:report.inventoryDigest,baselineRows:2};
+ assert.doesNotThrow(()=>verifyBootstrapSnapshot(report,mapping));
+ for(const rows of [[tool,metric,row("tool","new_tool",{})],[row("tool","manage_routine",{changed:true}),metric],[tool]]){
+  const changed=buildCensusReport(rows,manifests,{head});
+  assert.throws(()=>verifyBootstrapSnapshot(changed,mapping),/coverage_drift/);
+ }
+});
+test("forged all-green candidate result never clears trusted acceptance",()=>{
+ const report=buildCensusReport([tool],manifests,{head});
+ assert.throws(()=>requireComplete({...report,complete:true,providerModelProof:true,rows:report.rows.map(r=>({...r,status:"PASS"}))}),/trusted_receipt_reconciliation_pending/);
 });

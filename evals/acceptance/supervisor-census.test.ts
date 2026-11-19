@@ -11,8 +11,10 @@ import {routineStatusSchema,routineScheduleSchema} from "@/lib/ai/supervisor/rou
 import {metricCatalog,metricKeySchema,computeMetric,type MetricKey,type MetricDailyInput} from "@/lib/calc/metrics/catalog";
 import {canonicalDictionary,canonicalViewNames,toastOfficialFieldCatalog,isDataField} from "@/lib/data/canonical/dictionary";
 import {connectorOperations} from "@/lib/connectors/registry.server";
-import {row,schemaCases,manifestIndex,makeInventory,buildCensusReport,writeCensus} from "../../scripts/acceptance/supervisor-coverage.mjs";
+import {row,schemaCases,manifestIndex,makeInventory,buildCensusReport,writeCensus,verifyBootstrapSnapshot} from "../../scripts/acceptance/supervisor-coverage.mjs";
 import truth from "./fixtures/task17b-business-truth.json";
+import coverageMap from "./fixtures/task17b-coverage-map.json";
+const deterministicMetrics:string[]=[];
 
 const git=(...args:string[])=>execFileSync("git",args,{encoding:"utf8"}).trim();
 const root=git("rev-parse","--show-toplevel");
@@ -29,6 +31,20 @@ const fingerprintedExports=(path:string)=>{
  });
 };
 describe("Task17B first-party changing capability inventory (no provider)",()=>{
+ it("independent arithmetic truth covers every currently registered metric, including no-data negatives",()=>{
+  const day=truth.day as MetricDailyInput;
+  expect(Object.keys(truth.expected).sort()).toEqual(Object.keys(metricCatalog).sort());
+  for(const [key,entry] of Object.entries(truth.expected)){
+   const result=computeMetric(key as MetricKey,entry.params,day);
+   expect(result.value,key).toBe(entry.value);
+   expect(result.coverage,key).toBe(1);
+   expect(metricCatalog[key as MetricKey].unit,key).toBe(entry.unit);
+   const unknown=computeMetric(key as MetricKey,entry.params,{date:day.date});
+   expect(unknown.value,key+" missing").toBeNull();
+   expect(unknown.coverage,key+" missing").toBeLessThan(1);
+   deterministicMetrics.push(key);
+  }
+ });
  it("censuses actual registered tools, gated operations, canonical fields, effects and surfaces",()=>{
   const visible=new Map([...agentToolDefinitions,...gmailToolDefinitions,investigationToolDefinition,routineToolDefinition].map(t=>[t.name,t]));
   const rows=Object.entries(schemas).flatMap(([name,entry])=>{
@@ -66,24 +82,12 @@ describe("Task17B first-party changing capability inventory (no provider)",()=>{
   }
   const inventory=makeInventory(rows);
   const manifestPaths=paths.filter(p=>p.startsWith(".github/luna/scenarios/")&&p.endsWith(".json"));
-  const manifests=manifestIndex(root,manifestPaths);
-  const report=buildCensusReport(inventory,manifests,{head:git("rev-parse","HEAD"),runId:process.env.GITHUB_RUN_ID??null,deterministicMetrics:[]});
+  const manifests=manifestIndex(root,manifestPaths,coverageMap.legacyTools);
+  const report=buildCensusReport(inventory,manifests,{head:git("rev-parse","HEAD"),runId:process.env.GITHUB_RUN_ID??null,deterministicMetrics});
   if(process.env.AICAFE_CENSUS_OUTPUT)writeCensus(process.env.AICAFE_CENSUS_OUTPUT,report);
   expect(report.totals.UNTESTED).toBe(inventory.length);
   expect(report.complete).toBe(false);
+  verifyBootstrapSnapshot(report,coverageMap);
   console.log("Task17B census (discovery only):",JSON.stringify({head:report.head,totals:report.totals,byKind:report.byKind,manifests:report.manifests,unknownManifestTools:report.unknownManifestTools}));
- });
- it("independent arithmetic truth covers every currently registered metric, including no-data negatives",()=>{
-  const day=truth.day as MetricDailyInput;
-  expect(Object.keys(truth.expected).sort()).toEqual(Object.keys(metricCatalog).sort());
-  for(const [key,entry] of Object.entries(truth.expected)){
-   const result=computeMetric(key as MetricKey,entry.params,day);
-   expect(result.value,key).toBe(entry.value);
-   expect(result.coverage,key).toBe(1);
-   expect(metricCatalog[key as MetricKey].unit,key).toBe(entry.unit);
-   const unknown=computeMetric(key as MetricKey,entry.params,{date:day.date});
-   expect(unknown.value,key+" missing").toBeNull();
-   expect(unknown.coverage,key+" missing").toBeLessThan(1);
-  }
  });
 });
