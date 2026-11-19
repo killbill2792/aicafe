@@ -379,7 +379,8 @@ it("customer investigations require an actual scoped aggregate and an independen
  const target={sourceType:"alert" as const,sourceId:"customer-case",kind:"business_anomaly"};
  const src={name:"get_investigation_source",result:{source:"investigation_source",period:null,missing:[],
   sourceType:"alert",sourceId:"customer-case",incidentKind:"business_anomaly",
-  selectors:{family:"customer_trend",subject:"returning_visit_share",from:"2026-11-12",to:"2026-11-18"}}};
+  selectors:{family:"customer_trend",subject:"returning_visit_share",from:"2026-11-12",to:"2026-11-18",current:.25,previous:.5,unit:"observed_visit_ratio"},
+  customerTrendProof:{key:"returning_visit_share",current:.25,previous:.5,unit:"observed_visit_ratio",active:true}}};
  const customer={name:"query_data",result:{source:"canonical_data",view:"cv_customer_visits",
   aggregateOnly:true,customerEvidence:true,period:{from:"2026-11-12",to:"2026-11-18"},
   missing:[],rows:[{sum_returning_visit:20,count_source_ref:80}],empty:false,truncated:false,
@@ -388,6 +389,9 @@ it("customer investigations require an actual scoped aggregate and an independen
  const schema={name:"describe_data",result:{source:"toast_fields",period:null,missing:[],retainedFields:30,fields:[{field:"data.customer.guid"}]}};
  const verify=(...calls:unknown[])=>verifyInvestigationTurn(turn({toolInvocations:[src,...calls]}),target);
  expect(verify(customer,labor).ok).toBe(true);
+ for(const proof of [null,{...src.result.customerTrendProof,key:"average_visit_spend"},{...src.result.customerTrendProof,current:.4},{...src.result.customerTrendProof,previous:.4},{...src.result.customerTrendProof,active:false}]){
+  expect(verifyInvestigationTurn(turn({toolInvocations:[{...src,result:{...src.result,customerTrendProof:proof}},customer,labor]}),target).ok).toBe(false);
+ }
  for(const coverage of [{linkedChecks:20},{linkedChecks:50},{eligibleChecks:0,linkedChecks:0},
   {linkedChecks:91},{expectedLocationDays:0,completeLocationDays:0},{completeLocationDays:6},
   {scope:"filtered_subtotal"}]){
