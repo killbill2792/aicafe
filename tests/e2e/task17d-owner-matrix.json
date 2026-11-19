@@ -8,22 +8,55 @@
     {
       "id": "D01",
       "name": "saved conversation and routine identity",
-      "evidence": "fixture_presentation"
+      "evidence": "fixture_presentation",
+      "families": [
+        "D01",
+        "D06"
+      ]
     },
     {
       "id": "D02",
       "name": "proactive private notice and foreign tenant denial",
-      "evidence": "fixture_presentation"
+      "evidence": "fixture_presentation",
+      "families": [
+        "D02"
+      ]
     },
     {
       "id": "D03",
       "name": "offline work and two-tab recovery without effect",
-      "evidence": "fixture_presentation"
+      "evidence": "fixture_presentation",
+      "families": [
+        "D03",
+        "D07",
+        "D09"
+      ]
     },
     {
       "id": "D04",
       "name": "private upload, readback, reselect and tenant denial",
-      "evidence": "actual_local_storage"
+      "evidence": "actual_local_storage",
+      "families": [
+        "D01",
+        "D06"
+      ]
+    },
+    {
+      "id": "D05",
+      "name": "owner decline, stale tab approval and tenant denial",
+      "evidence": "actual_local_decision_no_effect",
+      "families": [
+        "D04",
+        "D07"
+      ]
+    },
+    {
+      "id": "D06",
+      "name": "keyboard focus trap and 320px reflow",
+      "evidence": "actual_browser_interaction",
+      "families": [
+        "D08"
+      ]
     }
   ],
   "integration": {
