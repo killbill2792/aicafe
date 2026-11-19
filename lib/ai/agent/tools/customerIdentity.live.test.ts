@@ -181,8 +181,8 @@ live("retained customer identity or observed trend, real model investigation, is
     expect(providerCompletions).toBe(ledger.calls);expect(ledger.calls).toBeGreaterThanOrEqual(2);
     const proof={schema_version:1,task:scenario,head_sha:head,status:"passed",observed_model:"gpt-6-luna",provider:"openai_responses",provider_calls:ledger.calls,provider_completions:providerCompletions,tool_names:toolNames,authenticated_scope:true,independent_oracle:true,distinct_same_name_references:true,matured_cohort_oracle:true,no_unapproved_effect:true,feature_proven:false,integrated_proven:false,released_proven:false};
     mkdirSync("test-results/acceptance",{recursive:true});
-    writeFileSync("test-results/acceptance/"+scenario+"-proof.json",JSON.stringify(proof)+"\\n",{mode:0o600,flag:"wx"});
-    writeFileSync("test-results/acceptance/"+scenario+"-scope.json",JSON.stringify({...scope,foreignBusinessId,queryOwnerId,restaurant,expectedProviderCalls:ledger.calls})+"\\n",{mode:0o600,flag:"wx"});
+    writeFileSync("test-results/acceptance/"+scenario+"-proof.json",JSON.stringify(proof)+"\n",{mode:0o600,flag:"wx"});
+    writeFileSync("test-results/acceptance/"+scenario+"-scope.json",JSON.stringify({...scope,foreignBusinessId,queryOwnerId,restaurant,expectedProviderCalls:ledger.calls})+"\n",{mode:0o600,flag:"wx"});
     return;
    }
    const turn=await runAgentTurn({context,provider,toolNames:["query_data","describe_data"],
