@@ -36,11 +36,11 @@
   "scenarioCandidates": [
     {
       "id": "17b-owner-security",
-      "entrypoint": "evals/acceptance/live/task17b-cross-domain.mjs",
       "mapped": [
         "tool:manage_routine",
         "tool:get_supervisor_permissions",
-        "owner-selected CSV",
+        "attachment read",
+        "explicit trusted owner instruction",
         "create",
         "edit",
         "pause",
@@ -50,7 +50,59 @@
         "attachment denial"
       ],
       "state": "UNTESTED",
-      "limitations": "Final source state and provider-selected tools have host manifest assertions; no autonomous execution, external delivery or independent browser proof yet."
+      "limitations": "external content is read-only; owner repeats exact instructions in separate turn. Intermediate source and UI candidate checks; trusted host final-state only."
+    },
+    {
+      "id": "17b-sales-labor",
+      "mapped": [
+        "tool:get_sales",
+        "tool:get_labor",
+        "tool:query_data",
+        "historical sales and labor",
+        "correction",
+        "discount/refund/tip/tax/fee arithmetic"
+      ],
+      "state": "UNTESTED"
+    },
+    {
+      "id": "17b-supply-finance",
+      "mapped": [
+        "tool:get_menu_items",
+        "tool:get_product_costs",
+        "tool:get_bills",
+        "tool:get_expenses",
+        "tool:get_cashflow_evidence",
+        "menu/recipe unit margin",
+        "recurring bills and documented expenses",
+        "missing bank balance"
+      ],
+      "state": "UNTESTED"
     }
-  ]
+  ],
+  "reviewedMemorySchema": {
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "type": "object",
+    "properties": {
+      "fact": {
+        "type": "string",
+        "minLength": 5,
+        "maxLength": 300
+      },
+      "applies_to": {
+        "type": "string",
+        "enum": [
+          "supervisor",
+          "alex",
+          "olivia",
+          "maya",
+          "leo"
+        ]
+      }
+    },
+    "required": [
+      "fact",
+      "applies_to"
+    ],
+    "additionalProperties": false
+  }
 }

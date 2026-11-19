@@ -46,3 +46,12 @@ test("forged all-green candidate result never clears trusted acceptance",()=>{
  const report=buildCensusReport([tool],manifests,{head});
  assert.throws(()=>requireComplete({...report,complete:true,providerModelProof:true,rows:report.rows.map(r=>({...r,status:"PASS"}))}),/trusted_receipt_reconciliation_pending/);
 });
+
+test("the reviewed addition must be present with its exact contract, not merely an allowed name",()=>{
+ const original=buildCensusReport([tool,metric],manifests,{head});
+ const memory=row("tool","remember_cafe_fact",{scope:"owner"});
+ const mapping={schemaVersion:1,baselineRows:2,baselineInventoryDigest:original.inventoryDigest,reviewedAdditions:[memory]};
+ assert.doesNotThrow(()=>verifyBootstrapSnapshot(buildCensusReport([tool,metric,memory],manifests,{head}),mapping));
+ assert.throws(()=>verifyBootstrapSnapshot(original,mapping),/coverage_drift/);
+ assert.throws(()=>verifyBootstrapSnapshot(buildCensusReport([tool,metric,row("tool",memory.key,{scope:"any"})],manifests,{head}),mapping),/coverage_drift/);
+});

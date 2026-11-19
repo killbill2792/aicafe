@@ -66,14 +66,15 @@ export function manifestIndex(root,paths,legacyTools={}){
 /** A mapping alone never represents an executed test. Bootstrap records every
  * gap; the release check deliberately rejects even one UNTESTED row. */
 /** @param {any[]} rows @param {any} manifests
- * @param {{head?:string,runId?:string|null,deterministicMetrics?:string[]}} options */
-export function buildCensusReport(rows,manifests,{head,runId=null,deterministicMetrics=[]}={}){
+ * @param {{head?:string,runId?:string|null,deterministicMetrics?:string[],testReferences?:Map<string,{path:string,title:string}[]>}} options */
+export function buildCensusReport(rows,manifests,{head,runId=null,deterministicMetrics=[],testReferences=new Map()}={}){
  if(!/^[a-f0-9]{40}$/.test(head??""))throw Error("invalid_head");
  const inventory=makeInventory(rows);
  const tools=new Set(inventory.filter(r=>r.kind==="tool").map(r=>r.key));
  const unknownManifestTools=[...manifests.index.keys()].filter(t=>!tools.has(t)).sort();
  const mapped=inventory.map(r=>({...r,
    candidateScenarios:r.kind==="tool"?[...(manifests.index.get(r.key)??[])].sort():[],
+   candidateDeterministicCases:r.kind==="tool"?testReferences.get(r.key)??[]:[],
    deterministicMetricOracle:r.kind==="metric"&&deterministicMetrics.includes(r.key)?"PASS":"UNTESTED",
    status:"UNTESTED",reason:"independent_end_to_end_receipt_not_verified"}));
  const byKind={};
@@ -91,8 +92,15 @@ export function inventoryDelta(previous,current){
 /** Freeze the initial outstanding inventory; a change requires review.
  * This never grants acceptance to the baseline gaps. */
 export function verifyBootstrapSnapshot(report,mapping){
- if(mapping?.schemaVersion!==1||mapping?.baselineInventoryDigest!==report.inventoryDigest||
-  mapping?.baselineRows!==report.rows.length||report.unknownManifestTools?.length)
+ // A separately reviewed addition is an explicit contract, not a blanket
+ // permission to reset the baseline hash. Compare old rows unchanged.
+ const additions=mapping?.reviewedAdditions??[];
+ const ids=new Set(additions.map(r=>r.id));
+ const actual=report.rows.filter(r=>ids.has(r.id)).map(({id,kind,key,fingerprint})=>({id,kind,key,fingerprint}));
+ const baseline=report.rows.filter(r=>!ids.has(r.id)).map(({id,kind,key,fingerprint})=>({id,kind,key,fingerprint}));
+ if(mapping?.schemaVersion!==1||mapping?.baselineInventoryDigest!==fingerprint(makeInventory(baseline))||
+  mapping?.baselineRows!==baseline.length||report.unknownManifestTools?.length||
+  (additions.length>0&&(actual.length!==additions.length||fingerprint(makeInventory(actual))!==fingerprint(makeInventory(additions)))))
    throw Error("supervisor_coverage_drift: review newly added/removed/changed rows and executable oracles; census artifact is available");
 }
 export function requireComplete(report){

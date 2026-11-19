@@ -1,0 +1,185 @@
+{
+  "id": "17b-supply-finance",
+  "mode": "generic",
+  "engine": "node-server",
+  "entrypoint": "evals/acceptance/live/task17b-cross-domain.mjs",
+  "proof": "17b-supply-finance-proof.json",
+  "scope": "17b-supply-finance-scope.json",
+  "expectedTools": [
+    "get_menu_items",
+    "get_product_costs",
+    "get_expenses",
+    "get_bills",
+    "get_cashflow_evidence"
+  ],
+  "assertions": [
+    {
+      "name": "menu-source",
+      "kind": "source",
+      "table": "public.menu_items",
+      "where": {
+        "business_id": {
+          "scope": "businessId"
+        },
+        "id": {
+          "scope": "menuItemId"
+        },
+        "price_cents": {
+          "scope": "menuPrice"
+        },
+        "is_active": {
+          "eq": "true"
+        }
+      },
+      "minCount": 1,
+      "maxCount": 1
+    },
+    {
+      "name": "recipe-source",
+      "kind": "source",
+      "table": "public.recipe_lines",
+      "where": {
+        "menu_item_id": {
+          "scope": "menuItemId"
+        }
+      },
+      "minCount": 1,
+      "maxCount": 100
+    },
+    {
+      "name": "dated-expense-source",
+      "kind": "source",
+      "table": "public.expenses",
+      "where": {
+        "business_id": {
+          "scope": "businessId"
+        },
+        "spent_on": {
+          "scope": "expenseDay"
+        },
+        "status": {
+          "eq": "actual"
+        }
+      },
+      "minCount": 1,
+      "maxCount": 10000
+    },
+    {
+      "name": "foreign-menu-denied",
+      "kind": "isolation",
+      "table": "public.menu_items",
+      "where": {
+        "business_id": {
+          "scope": "foreignBusinessId"
+        },
+        "id": {
+          "scope": "menuItemId"
+        }
+      },
+      "minCount": 0,
+      "maxCount": 0
+    },
+    {
+      "name": "owner-reply-1",
+      "kind": "owner",
+      "table": "public.ai_messages",
+      "where": {
+        "business_id": {
+          "scope": "businessId"
+        },
+        "owner_user_id": {
+          "scope": "ownerUserId"
+        },
+        "thread_id": {
+          "scope": "threadId"
+        },
+        "id": {
+          "scope": "reply1"
+        },
+        "role": {
+          "eq": "supervisor"
+        }
+      },
+      "minCount": 1,
+      "maxCount": 1
+    },
+    {
+      "name": "owner-reply-2",
+      "kind": "owner",
+      "table": "public.ai_messages",
+      "where": {
+        "business_id": {
+          "scope": "businessId"
+        },
+        "owner_user_id": {
+          "scope": "ownerUserId"
+        },
+        "thread_id": {
+          "scope": "threadId"
+        },
+        "id": {
+          "scope": "reply2"
+        },
+        "role": {
+          "eq": "supervisor"
+        }
+      },
+      "minCount": 1,
+      "maxCount": 1
+    },
+    {
+      "name": "owner-reply-3",
+      "kind": "owner",
+      "table": "public.ai_messages",
+      "where": {
+        "business_id": {
+          "scope": "businessId"
+        },
+        "owner_user_id": {
+          "scope": "ownerUserId"
+        },
+        "thread_id": {
+          "scope": "threadId"
+        },
+        "id": {
+          "scope": "reply3"
+        },
+        "role": {
+          "eq": "supervisor"
+        }
+      },
+      "minCount": 1,
+      "maxCount": 1
+    },
+    {
+      "name": "no-read-only-effect",
+      "kind": "source",
+      "table": "public.supervisor_proposals",
+      "where": {
+        "business_id": {
+          "scope": "businessId"
+        },
+        "thread_id": {
+          "scope": "threadId"
+        }
+      },
+      "minCount": 0,
+      "maxCount": 0
+    },
+    {
+      "name": "foreign-thread-denied",
+      "kind": "isolation",
+      "table": "public.ai_messages",
+      "where": {
+        "business_id": {
+          "scope": "foreignBusinessId"
+        },
+        "thread_id": {
+          "scope": "threadId"
+        }
+      },
+      "minCount": 0,
+      "maxCount": 0
+    }
+  ]
+}
