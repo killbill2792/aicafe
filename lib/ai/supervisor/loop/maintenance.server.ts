@@ -4,12 +4,58 @@ import type {SupabaseClient} from "@supabase/supabase-js";
 import {gmailCapabilityId,readMaintenanceCase,type GmailProposalInput} from "./gmail.server";
 import {gmailRead,gmailSearch,gmailReadThread} from "@/lib/connectors/gmail/provider.server";
 import {getConnectorAccount,allowsGmail} from "@/lib/connectors/registry.server";
-import {proposeLoop,type OwnerLoopScope} from "./engine";
+import {proposeLoop,registerLoopCapability,effectHash,type OwnerLoopScope} from "./engine";
+import {simulationOwnerReader} from "./simulationOwner.server";
+import {createAdminSupabaseClient} from "@/lib/supabase/admin";
 import {SupabaseLoopRepository} from "./supabase.server";
 import {proposalRequestKey} from "./requestKeys";
 
 export type MaintenanceVendorRequest={caseId:string;recipient:string;contactMessageId:string|null;
  subject:string;body:string;dueAt:string|null};
+export const maintenanceStaffCapabilityId="leo.maintenance_staff_assignment.v1";
+export const maintenanceAssignmentInput=z.strictObject({
+ maintenanceCaseId:z.string().regex(/^maintenance:[0-9a-f-]{36}$/i),
+ employeeId:z.uuid(),prompt:z.string().trim().min(1).max(1200),
+ purpose:z.enum(["task","verify_working"]),dueAt:z.iso.datetime({offset:true}).nullable()
+});
+export const maintenanceAssignmentEffect=maintenanceAssignmentInput.extend({
+ maintenanceCaseRevision:z.iso.datetime({offset:true}),employeeName:z.string().min(1).max(200),
+ equipmentLabel:z.string().min(1).max(120),
+});
+export type MaintenanceStaffRequest=z.infer<typeof maintenanceAssignmentInput>;
+export const maintenanceStaffCapability=registerLoopCapability({
+ id:maintenanceStaffCapabilityId,version:1,inputSchema:maintenanceAssignmentInput,effectSchema:maintenanceAssignmentEffect,
+ proposalDescription:"Prepare exact staff task or independent operational check for owner approval, never dispatch automatically.",
+ dependencyScope:e=>({maintenanceCaseId:e.maintenanceCaseId,employeeId:e.employeeId,hash:effectHash(e)}),
+ simulate:async(scope,input)=>{
+  const {client}=await simulationOwnerReader(scope);
+  const row=await readMaintenanceCase(scope,client,input.maintenanceCaseId);
+  const employee=await client.from("employees").select("id,display_name,active,staff_auth_user_id")
+   .eq("business_id",scope.businessId).eq("id",input.employeeId).maybeSingle();
+  if(employee.error||!employee.data?.active||!employee.data.staff_auth_user_id||
+     (input.purpose==="verify_working"&&row.payload?.maintenanceStage!=="repair_claimed")||
+     (input.dueAt&&Date.parse(input.dueAt)<=Date.now()))throw new Error("maintenance_assignment_source_unavailable");
+  const effect={...input,maintenanceCaseRevision:row.updated_at,employeeName:employee.data.display_name,
+   equipmentLabel:String(row.payload?.equipmentLabel??"Equipment")};
+  return {effect,baseline:{source:"maintenance_staff_assignment",employeeName:effect.employeeName},
+   monitorSpec:{durationDays:1,metricScope:"maintenance_staff_receipt"}};
+ },
+ commit:async(scope,effect,proposalId)=>{
+  if(!proposalId)throw new Error("maintenance_assignment_proposal_required");
+  const {data,error}=await createAdminSupabaseClient().rpc("maintenance_commit_staff_assignment",{
+   p_business_id:scope.businessId,p_owner_user_id:scope.ownerUserId,p_thread_id:scope.threadId,
+   p_proposal_id:proposalId,p_effect_hash:effectHash(effect)
+  });
+  if(error?.code==="40001"){
+   const stale=new Error("maintenance_case_changed");stale.name="StaleProposalError";throw stale;
+  }
+  if(error||typeof data?.id!=="string")throw new Error("maintenance_assignment_not_verified");
+  return {status:"verified",evidenceSource:"staff_communication_requests"};
+ },
+ monitor:async()=>null,
+ report:async()=>({status:"complete",result:{assignmentReceiptOnly:true,repairVerified:false},
+  recommendation:"keep",source:"staff_communication_requests"}),
+});
 export type MaintenanceLease={caseId:string;token:string;revisionHash:string};
 type MaintenanceContextOptions={lease?:MaintenanceLease;ownerMessage?:{id:string;text:string}};
 /** Exact mailbox, no display-name guesses, header lists or embedded commands. */
@@ -35,6 +81,25 @@ export function maintenanceContext(db:SupabaseClient,scope:OwnerLoopScope,option
   return readMaintenanceCase(scope,db,id);
  };
  return {
+  staff:async(caseId:string)=>{
+   await check(caseId);
+   const rows=await db.from("employees").select("id,display_name").eq("business_id",scope.businessId)
+    .eq("active",true).not("staff_auth_user_id","is",null).order("display_name").limit(51);
+   if(rows.error)throw rows.error;
+   await check(caseId);
+   return {employees:(rows.data??[]).slice(0,50).map(e=>({id:e.id,name:e.display_name})),
+    truncated:(rows.data??[]).length>50};
+  },
+  proposeStaff:async(input:MaintenanceStaffRequest)=>{
+   await check(input.maintenanceCaseId);
+   const {supervisorLoopRegistry}=await import("./priceExperiment.server");
+   const key=proposalRequestKey(scope.threadId,JSON.stringify(options.lease?
+    {maintenance:input.maintenanceCaseId,revision:options.lease.revisionHash,kind:"staff"}:
+    {maintenance:input.maintenanceCaseId,ownerMessageId:options.ownerMessage?.id,kind:"staff",input}));
+   const p=await proposeLoop(scope,supervisorLoopRegistry,new SupabaseLoopRepository(),maintenanceStaffCapabilityId,input,key);
+   if(p.status!=="draft")throw new Error("maintenance_approval_not_draft");
+   return {proposalId:p.id,revision:p.revision,caseId:input.maintenanceCaseId};
+  },
   search:async(caseId:string,query:string)=>{
    await check(caseId);
    const result=await gmailSearch(scope,query,5);

@@ -14,6 +14,7 @@ export const investigationReadTools=[
 /** The only system-triggered write permitted here is an inert approval
  * draft. The existing owner-click gateway is still the only effect authority. */
 export const maintenanceInvestigationTools=[...investigationReadTools,
+  "get_maintenance_staff_candidates","propose_maintenance_staff_assignment",
   "search_maintenance_vendor","propose_maintenance_vendor_request"] as const satisfies readonly AgentToolName[];
 /** Requiring kind-specific independent corroboration keeps an agent from
  * reading two irrelevant sales/expense totals for an employee incident. */
@@ -190,6 +191,7 @@ export function investigationPrompt(source:SourceSynopsis,followUp:boolean,
     "Supervisor conversation, not a claim that a message was sent. For a technician, "+
     "search_maintenance_vendor can find a previous verified sender; call propose_maintenance_vendor_request "+
     "when the actual contact is known to persist the inert approval on the maintenance case. "+
+    "If linked staff can carry out a useful task, use get_maintenance_staff_candidates and propose_maintenance_staff_assignment for an exact owner click. After a repair is claimed, request an independent working-equipment check using purpose verify_working. Never treat staff task completion as a working check. "+
     "No spending, repair booking or sending is permitted in this turn. "+
     "If vendor contact details or communication channel are missing, explicitly "+
     "ask the owner for the missing detail and keep investigating other leads. ":"";

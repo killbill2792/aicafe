@@ -194,6 +194,8 @@ export const resolverExemptions:Partial<Record<AgentToolName,readonly string[]>>
   web_search:["query"],
   // Free-form Gmail search is owner text, not an internal catalogue identity.
   search_gmail:["query"],search_maintenance_vendor:["query"],
+  // Exact case-linked employee IDs are resolved by the scoped maintenance candidate reader.
+  propose_maintenance_staff_assignment:["employeeId"],
   inspect_public_page:["url"],
   propose_event_plan:["summary","actions","expectedBusyHours"],
   manage_commitment:["title","due_date","due_time","origin","commitment_id"],
@@ -258,6 +260,8 @@ export async function executeAgentTool(name: string, raw: unknown, ctx: AgentToo
   if(name==="read_gmail_attachment")return gmailTools.read_gmail_attachment.execute(raw,ctx);
   if(name==="propose_gmail_action")return gmailTools.propose_gmail_action.execute(raw,ctx);
   if(name==="get_maintenance_cases")return maintenanceTools.get_maintenance_cases.execute(raw,ctx);
+  if(name==="get_maintenance_staff_candidates")return maintenanceTools.get_maintenance_staff_candidates.execute(raw,ctx);
+  if(name==="propose_maintenance_staff_assignment")return maintenanceTools.propose_maintenance_staff_assignment.execute(raw,ctx);
   if(name==="search_maintenance_vendor")return maintenanceTools.search_maintenance_vendor.execute(raw,ctx);
   if(name==="propose_maintenance_vendor_request")return maintenanceTools.propose_maintenance_vendor_request.execute(raw,ctx);
   if(name==="describe_data"){
