@@ -79,7 +79,13 @@ export async function executeDurableRun(
   const stop = async (reason: string, token?: string, key?: string): Promise<never> => {
     await deps.stop(reason, token, key); throw new Error("supervisor_worker_" + reason); };
   const check = async (token?: string, key?: string) => { try { await deps.authorize(); }
-    catch { await stop("authorization_revoked", token, key); }
+    catch (error) {
+      // An unavailable authorization read is not proof of revocation. Retain
+      // the current fenced lease and let its safe recovery path handle it.
+      if (error instanceof Error && error.message === "owner_revoked")
+        await stop("authorization_revoked", token, key);
+      throw error;
+    }
     if (await deps.cancelled()) await stop("cancelled", token, key);
     const u = (await deps.verified())?.usage ?? {
       elapsedMs: 0, modelCalls: 0, toolCalls: 0, inputTokens: 0, outputTokens: 0, };
@@ -101,7 +107,15 @@ export async function executeDurableRun(
                 const aggregate = { ...spent, elapsedMs: Math.max(spent.elapsedMs, now() - started) };
                 const exceeded = usageStopReason(aggregate, budget);
                 if (exceeded) throw new Error("supervisor_worker_chain_" + exceeded); }
-            }); } catch (error) { await deps.stop("turn_failed", claim.claimToken, claim.key); throw error; }
+            }); } catch (error) {
+              const code = error instanceof Error ? error.message : "";
+              // Explicit exhausted budgets are terminal; a lost acknowledgement
+              // is uncertain and may only reconcile against the canonical reply.
+              await deps.stop(code === "supervisor_worker_chain_budget" ? "budget_exceeded"
+                : code === "supervisor_worker_chain_timeout" ? "time_exceeded"
+                : "turn_failed", claim.claimToken, claim.key);
+              throw error;
+            }
           receipt = await deps.verified(); }
         if (!receipt || receipt.endReason !== "complete" || receipt.ref !== finalRef)
           return stop("turn_incomplete", claim.claimToken, claim.key);
@@ -116,12 +130,12 @@ export async function executeDurableRun(
           return stop("report_unverified", claim.claimToken, claim.key); return receipt.ref; }
       return stop("unknown_step", claim.claimToken, claim.key); }); }
 /** A crashed worker is never replayed for an uncertain effect.
- * Reconcile ONLY a PR5 lease-expiry with a verified scoped canonical receipt.
+ * Reconcile only an expired or unconfirmed turn with a verified scoped canonical reply.
  * Owner cancellation and other blocked statuses never become runnable here. */
 export async function reconcileVerifiedOwnerStep(
   run: WorkerRun, repository: DurableRunRepository, reason: string | null,
   authorize: () => Promise<void>, verified: () => Promise<VerifiedReply | null>, ): Promise<boolean> {
-  if (reason !== "lease_expired") return false; try { await authorize(); }
+  if (reason !== "lease_expired" && reason !== "turn_failed") return false; try { await authorize(); }
   catch { return false; } // revoked or unverifiable owners never resume an effect
   const receipt = await verified();
   const { supervisorReplyIdFor } = await import("@/lib/ai/conversations/replyValidation");
@@ -207,11 +221,21 @@ export async function processDurableRun(runId: string): Promise<WorkerOutcome> {
     .order("step_index", { ascending: true });
   if (stored.error || JSON.stringify((stored.data ?? []).map(s => ({ key: s.step_key, retry: s.retry_mode }))) !== JSON.stringify(plan))
     throw new Error("supervisor_worker_plan_unrecognized"); const authorize = async () => {
-    await authorizedExternalConversation(run.scope, run.scope.threadId);
-    await readOwnerMessage(run.scope, run.scope.threadId, run.requestKey); };
+    const { businessId, ownerUserId, threadId } = run.scope;
+    const authorized = await db.rpc("supervisor_routine_owner_authorized", {
+      p_business_id: businessId, p_owner_user_id: ownerUserId, p_thread_id: threadId,
+    });
+    if (authorized.error) throw new Error("worker_authorization_unavailable", { cause: authorized.error });
+    if (authorized.data !== true) throw new Error("owner_revoked");
+    const message = await db.from("ai_messages").select("id").eq("id", run.requestKey)
+      .eq("business_id", businessId).eq("owner_user_id", ownerUserId).eq("thread_id", threadId)
+      .eq("role", "owner").eq("content_type", "text").maybeSingle();
+    if (message.error) throw new Error("worker_authorization_unavailable", { cause: message.error });
+    if (!message.data) throw new Error("owner_revoked");
+  };
   const repository = new SupabaseDurableRunRepository(); if (row.status === "blocked") {
-    // Only an expired uncertain claim with an independently verified canonical
-    // reply may be reconciled. Cancellation/revocation/failed responses stay blocked.
+    // Only an expired or unconfirmed turn with an independently verified canonical
+    // reply may be reconciled. Cancellation/revocation/budget stops stay blocked.
     const blocked = (stored.data ?? []).filter(step => step.status === "blocked");
     if (blocked.length !== 1 || blocked[0].step_key !== "owner_turn" ||
       !(await reconcileVerifiedOwnerStep(run, repository, blocked[0].error_code,

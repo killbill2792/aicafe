@@ -40,6 +40,10 @@ describe("Task 16B persisted agentic work", () => {
     const r = { ...run, status: "blocked" } as RunRow;
     expect(view({ runs: [r], steps: [{ ...step, status: "blocked", error_code: "lease_expired" }] })[0].status).toBe("uncertain");
     expect(view({ runs: [r], steps: [{ ...step, status: "blocked", error_code: "authorization_revoked" }] })[0].status).toBe("failed");
+    for (const error_code of ["turn_failed", "turn_incomplete"]) {
+      const item = view({ runs: [r], steps: [{ ...step, status: "blocked", error_code }] })[0];
+      expect(item.status).toBe("uncertain"); expect(item.proof).toBeNull();
+    }
   });
   it("shows persisted 15A monitoring and source closure without inventing an effect", () => {
     const inv = { episode_id: "e", phase: "collect" as const, failure_count: 0,

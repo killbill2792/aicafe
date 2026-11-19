@@ -131,7 +131,7 @@ begin
       or (r.status='blocked' and exists (
         select 1 from public.supervisor_run_steps t
           where t.business_id=r.business_id and t.run_id=r.id
-            and t.status='blocked' and t.step_key='owner_turn' and t.error_code='lease_expired')))
+            and t.status='blocked' and t.step_key='owner_turn' and t.error_code in ('lease_expired','turn_failed'))))
     order by s.served asc nulls first,r.updated_at asc,r.id asc
     for update of r skip locked limit 1;
   if not found then return null; end if;
@@ -730,3 +730,36 @@ revoke all on function public.supervisor_reserve_investigation_model_call(
 grant execute on function public.supervisor_reserve_investigation_model_call(
   uuid,uuid,uuid,uuid,text,text,uuid,text,integer,integer,integer)
   to service_role;
+
+-- Reconcile only independently persisted complete owner replies after uncertain turns.
+create or replace function public.supervisor_run_reconcile(
+  p_business_id uuid, p_owner_user_id uuid, p_thread_id uuid, p_run_id uuid, p_step_key text, p_verified_result_ref text
+) returns jsonb language plpgsql security definer set search_path = public as $$
+declare r public.supervisor_runs; s public.supervisor_run_steps;
+begin
+  if coalesce(auth.role(),'') <> 'service_role' then raise exception 'service_role_only'; end if;
+  if p_verified_result_ref is null or char_length(p_verified_result_ref) not between 1 and 256
+    then raise exception 'invalid_result_ref'; end if;
+  select * into r from public.supervisor_runs where business_id = p_business_id
+    and owner_user_id = p_owner_user_id and thread_id = p_thread_id
+    and id = p_run_id for update;
+  if not found or r.status <> 'blocked' then raise exception 'run_not_blocked'; end if;
+  select * into s from public.supervisor_run_steps where business_id = p_business_id
+    and run_id = p_run_id and step_key = p_step_key for update;
+  if not found or s.status <> 'blocked' or s.retry_mode <> 'reconcile'
+    then raise exception 'step_not_reconcilable'; end if;
+  -- Canonical owner turns may recover only an uncertain result and only with
+  -- the exact persisted scoped reply. A reply never proves an external effect.
+  if p_step_key='owner_turn' and (s.error_code is null or s.error_code not in ('lease_expired','turn_failed')
+    or not public.supervisor_routine_owner_authorized(p_business_id,p_owner_user_id,p_thread_id)
+    or not exists(select 1 from public.ai_messages m where m.id::text=p_verified_result_ref
+      and m.business_id=p_business_id and m.owner_user_id=p_owner_user_id and m.thread_id=p_thread_id
+      and m.role='supervisor' and m.grounding->>'ownerMessageId'=r.request_key::text
+      and m.grounding->>'status'='verified' and m.grounding#>>'{agentMetadata,endReason}'='complete'))
+    then raise exception 'owner_turn_receipt_not_verified'; end if;
+  update public.supervisor_run_steps set status = 'completed', result_ref = p_verified_result_ref,
+    completed_at = now(), error_code = null, updated_at = now()
+    where id = s.id returning * into s;
+  update public.supervisor_runs set status = 'running', updated_at = now() where id = r.id;
+  return to_jsonb(s);
+end $$;
