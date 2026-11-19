@@ -25,7 +25,7 @@ import type {SupabaseClient} from "@supabase/supabase-js";
 import type {LoopProposal,LoopRepository,OwnerLoopScope,LoopReport} from "./engine";
 import {readVerifiedToastPriceEvidence,matchCompletedToastObservation,type CompletedToastHistory,type VerifiedToastPriceEvidence} from "./toastPriceEvidence.server";
 import {readElapsedWindowObservations,planElapsed24HourWindows} from "./rollingExperimentSales.server";
-import {postVerifiedSourceReminder,postToastObservationNotice,toastObservationNoticeKey,stableNoticeUuid} from "./experimentNotices.server";
+import {postVerifiedSourceReminder,postToastObservationNotice,toastObservationNoticeKey,stableNoticeUuid,postToastObservationDigest,type ObservationNoticeInput} from "./experimentNotices.server";
 
 import {formatInTimeZone} from "date-fns-tz";
 import {getPricingInputs} from "@/lib/data/getPricingInputs";
@@ -502,6 +502,7 @@ export async function remindPendingToastPrice(db:SupabaseClient,row:PriceRow,
 
 
 type ObservationDue={history_id:string;business_id:string;enabled_at:string};
+type ObservationPlan={notices:ObservationNoticeInput[];finish:(delivered:boolean)=>Promise<void>;fail:()=>Promise<void>};
 type ObservationMeasurement={
  index:number;startAt:string;endAt:string;segmentEndAt:string;
  status:"actual"|"insufficient_evidence";units:number|null;revenueCents:number|null;
@@ -522,6 +523,7 @@ export async function runToastObservationBatch(db:SupabaseClient,now:string):
  const result={checked:0,reported:0,failed:0};
  const due=await db.rpc("supervisor_8a_due_toast_observations",{p_now:now,p_limit:10});
  if(due.error)throw new Error("toast_observation_discovery_failed");
+ const plans:ObservationPlan[]=[];
  for(const row of (due.data??[]) as ObservationDue[]){
   result.checked++;
   let token:string|null=null;
@@ -529,15 +531,48 @@ export async function runToastObservationBatch(db:SupabaseClient,now:string):
    const claim=await db.rpc("supervisor_8a_claim_observation_work",{p_business_id:row.business_id,p_history_id:row.history_id,p_now:now});
    if(claim.error)throw new Error("observation_work_claim_failed");
    token=claim.data;
-   if(token)result.reported+=await runCompletedToastObservation(db,row,now,token);
+   if(token)plans.push(await prepareCompletedToastObservation(db,row,now,token));
   }catch{
    result.failed++;
    if(token)await db.rpc("supervisor_8a_finish_observation_work",{p_business_id:row.business_id,p_history_id:row.history_id,p_token:token,p_ref:null,p_failed:true});
   }
  }
+ const failed=new Set<ObservationPlan>();
+ const groups=new Map<string,{plan:ObservationPlan;notice:ObservationNoticeInput}[]>();
+ for(const plan of plans)for(const notice of plan.notices){
+  if(notice.prior){
+   try{if(await postToastObservationNotice(db,notice)!=="posted")failed.add(plan);}
+   catch{failed.add(plan);}
+   continue;
+  }
+  const key=notice.key.businessId+":"+notice.key.ownerUserId+":"+notice.threadId;
+  const group=groups.get(key)??[];group.push({plan,notice});groups.set(key,group);
+ }
+ for(const group of groups.values()){
+  try{
+   if(new Set(group.map(x=>x.notice.key.sourceId)).size>1){
+    const posted=await postToastObservationDigest(db,group.map(x=>x.notice));
+    for(const {plan,notice} of group){
+     const k=notice.key,id="toast-price-observation:"+k.ownerUserId+":"+k.sourceId+":"+k.kind+":"+k.slot;
+     if(posted.has(id))result.reported++;else failed.add(plan);
+    }
+   }else{
+    for(const {plan,notice} of group){
+     if(await postToastObservationNotice(db,notice)==="posted")result.reported++;
+     else failed.add(plan);
+    }
+   }
+  }catch{for(const {plan} of group)failed.add(plan);}
+ }
+ for(const plan of plans){
+  try{
+   if(failed.has(plan)){result.failed++;await plan.fail();}
+   else await plan.finish(true);
+  }catch{result.failed++;}
+ }
  return result;
 }
-async function runCompletedToastObservation(db:SupabaseClient,due:ObservationDue,now:string,workerToken:string):Promise<number>{
+async function prepareCompletedToastObservation(db:SupabaseClient,due:ObservationDue,now:string,workerToken:string):Promise<ObservationPlan>{
  const {business_id:businessId,history_id:sourceId}=due;
  const source=await db.from("menu_price_history").select(observationColumns)
   .eq("business_id",businessId).eq("id",sourceId).maybeSingle();
@@ -660,7 +695,8 @@ async function runCompletedToastObservation(db:SupabaseClient,due:ObservationDue
   contributionChange!==null&&contributionChange>0?"Estimated contribution improved. Consider retaining the price after checking demand and actual costs.":
   "Review volume and contribution before deciding whether to retain the price.";
  const date=(s:string)=>formatInTimeZone(new Date(s),timezone,"yyyy-MM-dd");
- let posted=0,allDelivered=true;
+ const notices:ObservationNoticeInput[]=[];
+ let allDelivered=true;
  for(const owner of owners.data){
   const thread=await db.rpc("supervisor_8a_observation_thread",{p_business_id:businessId,p_owner_user_id:owner.user_id,
    p_history_id:sourceId,p_token:workerToken,p_request_id:stableNoticeUuid("toast-observation-thread:"+businessId+":"+owner.user_id)});
@@ -674,11 +710,10 @@ async function runCompletedToastObservation(db:SupabaseClient,due:ObservationDue
    if(prior.error)throw new Error("observation_notice_read_failed");
    if(prior.data&&key.kind==="toast_price_initial")return;
    if(prior.data&&!prior.data.message_id)throw new Error("observation_posted_receipt_missing_message");
-   const result=await postToastObservationNotice(db,{key,threadId:thread.data,timezone,
+   notices.push({key,threadId:thread.data,timezone,
     prior:prior.data??undefined,measurementAsOf:now,workerToken,
     payload:{...payload,itemName,oldPriceCents:receipt.oldPriceCents,newPriceCents:receipt.newPriceCents,currency,observationOnly:true},
     text,confidence});
-   if(result==="posted"){if(!prior.data)posted++;}else allDelivered=false;
   };
   await send(0,receipt.observedAt,false,{title:"Toast price change detected",nonCausal:true},
    "Toast confirmed a published price change for "+itemName+" from "+format(receipt.oldPriceCents)+" to "+format(receipt.newPriceCents)+
@@ -703,12 +738,14 @@ async function runCompletedToastObservation(db:SupabaseClient,due:ObservationDue
  }
  // Keep checking corrections for the existing fourteen-day correction period.
  // A missing owner thread or undelivered receipt remains actionable backlog.
- const settled=finalDue&&allDelivered&&Date.parse(now)>Date.parse(endAt)+14*observationDayMs;
- const anchor=await db.rpc("supervisor_8a_finish_observation_work",{
-  p_business_id:businessId,p_history_id:sourceId,p_token:workerToken,p_failed:false,
-  p_ref:{...ref,...(measurements[0]?{measurement:measurements[0]}:{}),cumulative,finalDue,
-   ...(settled?{closedAt:now}:{})},
- });
- if(anchor.error||anchor.data!==true)throw new Error("observation_anchor_lease_lost");
- return posted;
+ const finish=async(delivered:boolean)=>{
+  const settled=finalDue&&allDelivered&&delivered&&Date.parse(now)>Date.parse(endAt)+14*observationDayMs;
+  const anchor=await db.rpc("supervisor_8a_finish_observation_work",{
+   p_business_id:businessId,p_history_id:sourceId,p_token:workerToken,p_failed:!delivered,
+   p_ref:{...ref,...(measurements[0]?{measurement:measurements[0]}:{}),cumulative,finalDue,
+    ...(settled?{closedAt:now}:{})},
+  });
+  if(anchor.error||anchor.data!==true)throw new Error("observation_anchor_lease_lost");
+ };
+ return {notices,finish,fail:()=>finish(false)};
 }
