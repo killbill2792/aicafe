@@ -140,7 +140,7 @@ export function agentReplyPayload(turn: AgentTurn) {
 export async function persistAgentReply(scope: ConversationScope, owner: ConversationMessage, turn: AgentTurn, durableFence?:DurableReplyFence) {
   const { reply, metadata } = agentReplyPayload(turn);
   let saved: ConversationMessage;
-  if(durableFence&&(turn.endReason!=="complete"||reply.status!=="verified"))throw new AgentEmptyReplyError();
+  if(durableFence&&reply.status!=="requires_owner_input"&&(turn.endReason!=="complete"||reply.status!=="verified"))throw new AgentEmptyReplyError();
   try { saved = await (durableFence ? persistGroundedSupervisorReply(scope, owner, reply, metadata, durableFence) : persistGroundedSupervisorReply(scope, owner, reply, metadata)); }
   catch (error) {
     // Field paths and issue codes only (never reply text), so a rejected card can be traced.
