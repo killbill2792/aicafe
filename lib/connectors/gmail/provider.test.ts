@@ -20,7 +20,7 @@ const effect:GmailEffect={accountId:account.id,generation:1,from:account.email,o
  messageId:null,threadId:null,labelId:null,labelName:null};
 const credentials={generation:1,access_token_enc:"encrypted",refresh_token_enc:"encrypted",
  token_expires_at:new Date(Date.now()+3600000).toISOString()};
-function db(receipt?:Record<string,unknown>,duplicate=false,hasClaim=true){
+function db(receipt?:Record<string,unknown>,duplicate=false,hasClaim=true,approved:GmailEffect=effect){
  const writes:Array<{table:string;operation:string;data:unknown}>=[];
  deps.dbFrom.mockImplementation((table:string)=>{
    const chain={
@@ -31,8 +31,7 @@ function db(receipt?:Record<string,unknown>,duplicate=false,hasClaim=true){
        if(table==="connector_credentials")return {data:credentials,error:null};
        if(table==="supervisor_proposals")return {data:{id:proposal,status:"executing",
          capability_id:"alex.gmail_effect.v1",capability_version:1,
-         effect_hash:effectHash,canonical_effect_payload:{accountId:account.id,
-           generation:1,from:account.email}},error:null};
+         effect_hash:effectHash,canonical_effect_payload:approved},error:null};
        if(table==="supervisor_effect_attempts")return {data:hasClaim?
          {state:"executing",authorization_kind:"click"}:null,error:null};
        if(table==="connector_provider_receipts"){
@@ -70,6 +69,28 @@ describe("Gmail provider proof and no duplicate sends",()=>{
    expect(writes).toEqual([]);
    expect(fetch).not.toHaveBeenCalled();
  });
+ it("rejects altered approved Gmail payload before any provider request or reservation",async()=>{
+   const writes=db();const fetch=vi.fn();vi.stubGlobal("fetch",fetch);
+   for(const altered of [{...effect,to:["attacker@example.net"]},{...effect,bcc:["attacker@example.net"]},
+     {...effect,body:"Confidential data"},{...effect,operation:"draft" as const}]){
+     await expect(performGmailEffect(scope,altered,proposal,effectHash)).rejects.toThrow("gmail_approved_payload_changed");
+   }
+   expect(writes).toEqual([]);expect(fetch).not.toHaveBeenCalled();
+ });
+ it("withholds ambiguous or multiline sender and receipt identity headers",()=>{
+   const msg=safeMessage({id:"message123",payload:{headers:[
+     {name:"From",value:"owner@example.com"},{name:"from",value:"attacker@example.net"},
+     {name:"Message-ID",value:"<a@example.com>\r\nFrom: owner@example.com"},
+     {name:"Subject",value:"Real invoice"}]}});
+   expect(msg.headers).toEqual({subject:"Real invoice"});
+ });
+ it("rejects a mailbox-subject swap before any subsequent provider request",async()=>{
+   db();deps.getAccount.mockResolvedValueOnce(account)
+     .mockResolvedValueOnce({...account,provider_subject:"other-subject"});
+   const fetch=vi.fn();vi.stubGlobal("fetch",fetch);
+   await expect(gmailSearch(scope,"invoice")).rejects.toThrow("gmail_permission_changed");
+   expect(fetch).not.toHaveBeenCalled();
+ });
  it("sends once only after reserving durable receipt, then verifies Gmail SENT postcondition",async()=>{
    const writes=db();
    const posted:{raw:string}[]=[];
@@ -96,18 +117,19 @@ describe("Gmail provider proof and no duplicate sends",()=>{
    expect((writes[2].data as {state:string}).state).toBe("verified");
  });
  it("blocks an orphan vendor Gmail draft before its unique PO dispatch record exists",async()=>{
-  const writes=db();const fetch=vi.fn();vi.stubGlobal("fetch",fetch);
   const attempted={...effect,subject:"Purchase order 77777777-7777-4777-8777-777777777777",
     body:"Purchase order ID: 77777777-7777-4777-8777-777777777777"};
+  const writes=db(undefined,false,true,attempted);const fetch=vi.fn();vi.stubGlobal("fetch",fetch);
   await expect(performGmailEffect(scope,attempted,proposal,effectHash))
     .rejects.toThrow("supplier_dispatch_binding_missing");
   expect(writes).toEqual([]);
   expect(fetch).not.toHaveBeenCalled();
  });
  it("rechecks accepted/declined supplier reports after the one-shot PO reservation but before Gmail POST",async()=>{
-  const writes=db();
-  const original=deps.dbFrom.getMockImplementation() as (table:string)=>unknown;
   const poId="77777777-7777-4777-8777-777777777777";
+  const outbound={...effect,subject:"Purchase order "+poId,body:"Purchase order ID: "+poId};
+  const writes=db(undefined,false,true,outbound);
+  const original=deps.dbFrom.getMockImplementation() as (table:string)=>unknown;
   const contactId="88888888-8888-4888-8888-888888888888";
   const dispatchId="99999999-9999-4999-8999-999999999999";
   const stubSingle=(data:Record<string,unknown>)=>{
@@ -138,8 +160,6 @@ describe("Gmail provider proof and no duplicate sends",()=>{
     return original(table);
   });
   const fetch=vi.fn();vi.stubGlobal("fetch",fetch);
-  const outbound={...effect,subject:"Purchase order "+poId,
-    body:"Purchase order ID: "+poId};
   await expect(performGmailEffect(scope,outbound,proposal,effectHash))
     .rejects.toThrow("supplier_send_authorization_revoked_before_post");
   expect(deps.dbRpc).toHaveBeenCalledWith("supervisor_reserve_supplier_gmail_send",
@@ -185,8 +205,8 @@ describe("Gmail provider proof and no duplicate sends",()=>{
    expect(fetch).not.toHaveBeenCalled();
  });
  it("does not treat a created Gmail label as verified until exact provider readback",async()=>{
-   const writes=db();
    const label={...effect,operation:"create_label" as const,labelName:"Suppliers"};
+   const writes=db(undefined,false,true,label);
    const fetch=vi.fn(async(url:string,init:Record<string,unknown>)=>{
      if(url.endsWith("/labels")&&init.method==="POST")
        return {ok:true,status:200,json:async()=>({id:"Label_42"})};

@@ -694,7 +694,7 @@ export async function runOneTurn(p: TurnParams): Promise<{ replyId: string; repl
        onAuditStep: step => { if (auditSteps.length < 64) auditSteps.push(step); },
        beforeProviderRequest:assertTurnSources,
        beforeAcceptResult:assertTurnSources,
-       deferSensitiveOutput:()=>sourceChecks.size>0,
+       deferSensitiveOutput:()=>true,
       previousEvidence, ownerFacts:ownerFactRead.facts, ownerFactsReadFailed:ownerFactRead.failed,
       onTool:(name,agentId)=>{
         emit("tool",{name,agentId});

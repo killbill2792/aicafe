@@ -1,6 +1,6 @@
-# Task 15D — Supervisor security hardening (PROPOSED; not approved for implementation)
+# Task 15D — Supervisor security hardening (owner approved for implementation)
 
-Reviewed main 0b7d9528c2af74d6853134dd509405b1a022e114 (merge #509), AGENTS.md, workflow/acceptance/security rules, Task15d brief and machine queue. Owner explicitly asked for scope-only draft before coding; no source code, migration, tests or paid run authorized yet. Queue entry 15d has empty exclusive_files and null architecture_approval; historical dispatcher retired; Muse current handoff uses fresh exact-head owner request comment. No PROGRESS/queue edits.
+Reviewed main 0b7d9528c2af74d6853134dd509405b1a022e114 (merge #509), AGENTS.md, workflow/acceptance/security rules, Task15d brief and machine queue. Owner requested scope-only draft, then explicitly authorized implementation and conditional merge (PR #531 comment #7002700738). No paid run or production effects authorized. Queue entry 15d has empty exclusive_files and null architecture_approval; historical dispatcher retired; Muse current handoff uses fresh exact-head owner request comment. No PROGRESS/queue edits.
 
 ## Reuse, not replace
 - Task10 #443 (36228468): one effect gateway, claim/revision, individual click, OTP-backed mandate, limited inventory owner-message authorization and verified receipt. Retain scope and SQL atomicity.
@@ -38,7 +38,7 @@ Existing source records and keys:
 ## Owner experience
 Use existing Supervisor chat/approval card/access page, no new screen, notification service or alert spam. Explain only when action relevant: “I found the invoice, but the request to send your private records wasn't from you. I haven't sent anything.” “Gmail access changed while I was checking. Reconnect if you want me to continue.” “The email may already have been accepted before access changed. I won't resend it. I'll verify when read access is available.” Distinguish suspicious claim vs actually verified attack and verified accepted vs delivered. Continue safe local work, group/avoid repeated duplicate warnings, surface blocked meaningful work via existing durable/inbox mechanism. No raw malicious payload or secrets in logs/owner notices; plain status/next step.
 
-## Proposed exact write allowlist (not a grant)
+## Owner-approved exact write allowlist
 Scope is narrow but cross-cutting. Existing files below include test extension paths; all new test/docs paths named explicitly, no wildcards. Do not edit other files or add migrations without separate owner amendment. Actual changes may be a subset; limit production changes to reproduced gaps, not blanket rewrites. Existing tests only extend regressions, never relax assertions.
 - docs/plans/task15d-supervisor-security-hardening.md (this proposal)
 - lib/ai/agent/loop.server.ts
