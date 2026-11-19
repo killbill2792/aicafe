@@ -307,7 +307,7 @@ export async function processDurableRun(runId: string,emit:(type:string,data:unk
           durableFence:{runId:run.id,jobId:job.id,claimToken},
           recordDurableStep:step=>jobs.updateDurableAgentJob(identity,job.id,"progress",step).catch(()=>undefined),
         }));
-        if("replyId" in outcome)return outcome.awaitingOwner?"yielded":undefined;
+        if("replyId" in outcome)return outcome.awaitingOwner||outcome.incompleteReport?"yielded":undefined;
         // No automatic retry after an uncertain effect, cancellation, or
         // revoked authority. Retry only a safe boundary, using the SAME run.
         const retryable=["durable_retry_pending","agent_turn_failed","reply_storage_failed","attachment_unavailable",

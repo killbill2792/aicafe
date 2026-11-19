@@ -620,7 +620,7 @@ begin
  if coalesce(auth.role(),'')<>'service_role' or p_reply_id is null
    or jsonb_typeof(p_blocks) is distinct from 'array' or jsonb_array_length(p_blocks) not between 1 and 30
    or jsonb_typeof(p_grounding) is distinct from 'object'
-   or p_grounding->>'status' is distinct from 'verified'
+   or coalesce(p_grounding->>'status','') not in ('verified','partial','unavailable','insufficient_evidence','estimated')
    or p_grounding#>>'{agentMetadata,endReason}' is distinct from 'complete'
    or octet_length(p_blocks::text)>150000 or octet_length(p_grounding::text)>150000
    then raise exception 'durable_reply_invalid' using errcode='22023'; end if;
@@ -650,12 +650,20 @@ begin
  select * into m from public.ai_messages where id=p_reply_id and business_id=r.business_id
    and owner_user_id=r.owner_user_id and thread_id=r.thread_id and role='supervisor'
    and grounding->>'ownerMessageId'=r.request_key::text
-   and grounding->>'durableRunId'=r.id::text and grounding->>'status'='verified'
+   and grounding->>'durableRunId'=r.id::text and grounding->>'status'=p_grounding->>'status'
    and grounding#>>'{agentMetadata,endReason}'='complete';
  if not found then raise exception 'durable_reply_conflict'; end if;
  update public.ai_agent_jobs set status='done',reply_message_id=m.id,error_code=null,
    finished_at=coalesce(finished_at,clock_timestamp()),updated_at=clock_timestamp(),heartbeat_at=clock_timestamp()
    where id=j.id;
+ -- A completed attempt may have honestly reported missing evidence. Save
+ -- that report, but do not acknowledge successful completion or re-spend
+ -- tokens indefinitely seeking data which does not exist.
+ if m.grounding->>'status'<>'verified' then
+   update public.supervisor_run_steps set status='blocked',error_code='report_incomplete',
+     claim_token=null,worker_id=null,lease_until=null,updated_at=clock_timestamp() where id=s.id;
+   update public.supervisor_runs set status='blocked',updated_at=clock_timestamp() where id=r.id;
+ end if;
  return to_jsonb(m);
 end $$;
 revoke all on function public.supervisor_publish_owner_reply_v2(uuid,uuid,uuid,uuid,uuid,uuid,uuid,jsonb,jsonb) from public,anon,authenticated;

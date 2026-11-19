@@ -516,6 +516,18 @@ describe("Task 6/15C exact matched owner clarification and final reply",()=>{
     await due();
    }
    expect(await call(a,"supervisor_run_claim",[...scope,long.id,randomUUID(),30])).toEqual({kind:"blocked"});
+   const partialId=randomUUID();await insert(partialId,"Find missing data");
+   const partial=await call(a,"supervisor_admit_owner_run_v2",[...scope,partialId,"f".repeat(64),"en",[]]);
+   const author=await call(a,"supervisor_run_claim",[...scope,partial.id,randomUUID(),30]);
+   await call(a,"supervisor_run_complete_step",[...scope,partial.id,"authorize_owner",author.step.claim_token,"owner:"+partialId]);
+   const turn=await call(a,"supervisor_run_claim",[...scope,partial.id,randomUUID(),30]);
+   const partialJob=await call(a,"supervisor_start_owner_job_v2",[...scope,partial.id,turn.step.claim_token]);
+   const partialReply=supervisorReplyIdFor(partialId);
+   const incomplete=JSON.stringify({status:"partial",ownerMessageId:partialId,durableRunId:partial.id,agentMetadata:{endReason:"complete"}});
+   expect((await call(a,"supervisor_publish_owner_reply_v2",[...scope,partial.id,turn.step.claim_token,partialJob.id,partialReply,blocks,incomplete])).id).toBe(partialReply);
+   expect(await call(a,"supervisor_run_claim",[...scope,partial.id,randomUUID(),30])).toEqual({kind:"blocked"});
+   expect((await admin.query("select status,final_report_ref from public.supervisor_runs where id=$1",[partial.id])).rows).toEqual([{status:"blocked",final_report_ref:null}]);
+
 
   }finally{
    await a?.end();await admin.query("delete from public.businesses where id=$1",[businessId]);
