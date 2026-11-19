@@ -222,6 +222,9 @@ export async function dispatchRoutinesForBusiness(db:SupabaseClient,businessId:s
     const unanswered=await db.rpc("staff_channel_escalate_unanswered",{p_business_id:businessId});
     if(unanswered.error)result.failed++;
   }
+  // Task13D source-verifies approved leave and expires recruitment references in this same tick.
+  const coordinated=await db.rpc("staff_coordination_reconcile",{p_business_id:businessId});
+  if(coordinated.error)result.failed++;
   // Source-change notices remain independent from the due schedule.
   for(const ownerUserId of owners){
     const threadId=threads.get(ownerUserId);

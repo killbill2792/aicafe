@@ -3,6 +3,7 @@ vi.mock("server-only",()=>({}));
 const mocks=vi.hoisted(()=>({
   claim:vi.fn(),finish:vi.fn(),notice:vi.fn(),
   staff:vi.fn(async()=>({published:0,attempted:0,blocked:0})),
+  reconcile:vi.fn(async()=>({data:{completed:0,expired:0},error:null})),
 }));
 vi.mock("./repository.server",()=>({
   claimRoutineOccurrence:mocks.claim,finishRoutineOccurrence:mocks.finish,
@@ -25,6 +26,7 @@ function db(params?:{routines?:Record<string,unknown>[];owners?:{user_id:string}
     supervisor_proposals:params?.proposals??[],
   };
   return {rpc:async(name:string)=>{
+    if(name==="staff_coordination_reconcile")return mocks.reconcile();
     if(!["staff_channel_sync_shift_requests","staff_channel_escalate_unanswered"].includes(name))
       throw new Error("unexpected staff channel RPC "+name);
     return {data:0,error:null};
@@ -78,6 +80,7 @@ describe("bounded independent routine dispatch",()=>{
     }]}),"cafe","America/Los_Angeles",new Date("2026-11-11T16:00:00Z"));
     expect(result.notices).toBe(1);
     expect(result.runs).toBe(0);
+    expect(mocks.reconcile).toHaveBeenCalledTimes(1);
     expect(mocks.notice).toHaveBeenCalledTimes(1);
   });
   it("preserves Task 13B staff publication and Task 15A durable discovery in one cron",async()=>{

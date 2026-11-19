@@ -10,6 +10,7 @@ import StaffPublicationStatus from "@/components/staff/StaffPublicationStatus";
 import StaffStandingMandatePanel from "@/components/staff/StaffStandingMandatePanel";
 import StaffLoginLinkPanel from "@/components/staff/StaffLoginLinkPanel";
 import StaffResponseInbox from "@/components/staff/StaffResponseInbox";
+import StaffCoordinationPanel from "@/components/staff/StaffCoordinationPanel";
 import PageShell from "@/components/shared/PageShell";
 import TeamLegacyMetrics from "@/components/staff/TeamLegacyMetrics";
 import {createStaffScreenshotFixture} from "@/lib/calc/scheduling/staffScreenshotFixture";
@@ -46,6 +47,7 @@ export default async function StaffPage({params,searchParams}:{params:Promise<{l
   {!useFixture&&scope.ok&&!scope.readOnly&&<>
     <StaffLoginLinkPanel/>
     <StaffResponseInbox/>
+    <StaffCoordinationPanel people={result.data.team.map(person=>({id:person.id,name:person.name}))}/>
   </>}
   {(showSendFixture||(!useFixture&&Boolean(proposalId)))&&<OwnerScheduleSendPanel
     {...(!useFixture&&proposalId?{proposalId}:{week:selected})}
