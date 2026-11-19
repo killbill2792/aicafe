@@ -12,8 +12,8 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import type { AgentJob } from "@/lib/ai/agent/jobState";
 import type { ConversationMessage } from "@/lib/ai/conversations/contracts";
 import { resumeSupervisorRun } from "./resume";
-import { selectNextDurableRun, SupabaseDurableRunRepository } from "./repository.server";
-import { runScopeSchema, type DurableRun, type DurableRunRepository, type RunScope } from "./contracts";
+import { selectNextDurableRun, SupabaseDurableRunRepository, admitOwnerRun, openOwnerRunCheckpoint } from "./repository.server";
+import { runScopeSchema, ownerRunInputSchema, type OwnerRunInput, type DurableRun, type DurableRunRepository, type RunScope } from "./contracts";
 import { withWorkerBudget, usageStopReason, currentWorkerUsage, workerBudgetExhausted,
   withDurableProviderTurn,type WorkerBudget, type WorkerUsage } from "./usage.server"; const uuid = z.uuid(); const plan = [
   { key: "authorize_owner", retry: "idempotent" as const },
@@ -21,10 +21,18 @@ import { withWorkerBudget, usageStopReason, currentWorkerUsage, workerBudgetExha
   { key: "owner_turn", retry: "reconcile" as const }, { key: "verify_report", retry: "idempotent" as const },
 ]; const rowSchema = z.object({ id: z.uuid(), business_id: z.uuid(), owner_user_id: z.uuid(),
   thread_id: z.uuid(), request_key: z.uuid(), status: z.enum(["pending", "running", "blocked", "completed"]),
+  execution_version:z.number().int().min(1).max(2).default(1),input_locale:z.string().nullable().optional(),
+  input_attachment_ids:z.array(z.uuid()).max(3).optional(),
 });
 export type WorkerRun = { id: string; scope: RunScope; requestKey: string };
 export type VerifiedReply = { ref: string; endReason: string; usage: WorkerUsage };
 export type WorkerOutcome = "completed" | "busy" | "blocked";
+export const durableChatEnabled=()=>process.env.SUPERVISOR_RUN_WORKER_ENABLED==="true"&&process.env.SUPERVISOR_DURABLE_CHAT_ENABLED==="true";
+export async function admitDurableChat(scope:RunScope,owner:ConversationMessage,input:OwnerRunInput):Promise<DurableRun>{
+  if(!durableChatEnabled()||owner.role!=="owner"||owner.threadId!==scope.threadId||!owner.clientMessageId)
+    throw new Error("durable_admission_denied");
+  return admitOwnerRun(scope,owner.id,input,plan);
+}
 /** Only an authenticated, already saved owner message may become a durable
  * run. Its UUID is the request key; the plan and scope are not caller data. */
 export async function startDurableOwnerRun(ownerMessageId: string): Promise<DurableRun> {
@@ -67,7 +75,8 @@ async function blockRun(run: WorkerRun, reason: string, token?: string, stepKey?
 }
 
 export type WorkerDependencies = { repository: DurableRunRepository; authorize: () => Promise<void>;
-  verified: () => Promise<VerifiedReply | null>; executeTurn: (claimToken:string,budget:WorkerBudget) => Promise<void>;
+  verified: () => Promise<VerifiedReply | null>; executeTurn: (claimToken:string,budget:WorkerBudget) => Promise<void|"yielded">;
+  version2?:boolean;
   cancelled: () => Promise<boolean>; stop: (reason: string, token?: string, key?: string) => Promise<void>;
   clock?: () => number; };
 /** Uses PR5's fenced resume runner, not a second lease implementation.
@@ -89,7 +98,7 @@ export async function executeDurableRun(
     if (await deps.cancelled()) await stop("cancelled", token, key);
     const u = (await deps.verified())?.usage ?? {
       elapsedMs: 0, modelCalls: 0, toolCalls: 0, inputTokens: 0, outputTokens: 0, };
-    const exceeded = usageStopReason({ ...u, elapsedMs: Math.max(u.elapsedMs, now() - started) }, budget);
+    const exceeded = deps.version2?null:usageStopReason({ ...u, elapsedMs: Math.max(u.elapsedMs, now() - started) }, budget);
     if (exceeded) await stop(exceeded === "timeout" ? "time_exceeded" : "budget_exceeded", token, key); };
   await check(); const { supervisorReplyIdFor } = await import("@/lib/ai/conversations/replyValidation");
   const finalRef = supervisorReplyIdFor(run.requestKey);
@@ -102,12 +111,15 @@ export async function executeDurableRun(
             // deadline. All continuation turns share what is left.
             const remaining = { ...budget,
               maxElapsedMs: Math.max(0, budget.maxElapsedMs - Math.max(0, now() - started)) };
-            await withWorkerBudget(remaining, async () => { await deps.executeTurn(claim.claimToken,budget);
-              const spent = currentWorkerUsage(); if (spent) {
+            const outcome=await withWorkerBudget(remaining, async () => {
+              const outcome=await deps.executeTurn(claim.claimToken,budget);
+              const spent = currentWorkerUsage(); if (spent&&!deps.version2) {
                 const aggregate = { ...spent, elapsedMs: Math.max(spent.elapsedMs, now() - started) };
                 const exceeded = usageStopReason(aggregate, budget);
                 if (exceeded) throw new Error("supervisor_worker_chain_" + exceeded); }
-            }); } catch (error) {
+              return outcome;
+            });
+            if(outcome==="yielded")return null; } catch (error) {
               const code = error instanceof Error ? error.message : "";
               // Explicit exhausted budgets are terminal; a lost acknowledgement
               // is uncertain and may only reconcile against the canonical reply.
@@ -119,7 +131,7 @@ export async function executeDurableRun(
           receipt = await deps.verified(); }
         if (!receipt || receipt.endReason !== "complete" || receipt.ref !== finalRef)
           return stop("turn_incomplete", claim.claimToken, claim.key);
-        const reason = usageStopReason(receipt.usage, budget);
+        const reason = deps.version2?null:usageStopReason(receipt.usage, budget);
         if (reason) await stop(reason === "timeout" ? "time_exceeded" : "budget_exceeded", claim.claimToken, claim.key);
         // Owner access/cancellation may change while the model or tool runs.
         // Recheck before acknowledging the outcome in durable storage.
@@ -207,12 +219,15 @@ export async function runDurableJobChain(input: { scope: RunScope; owner: Conver
 }
 /** Reads identities from durable storage. Only the fixed approved three-step
  * plan may drive the existing chat loop; arbitrary plans fail closed. */
-export async function processDurableRun(runId: string): Promise<WorkerOutcome> {
+export async function processDurableRun(runId: string,emit:(type:string,data:unknown)=>void=()=>{}): Promise<WorkerOutcome> {
   const id = uuid.parse(runId), db = createAdminSupabaseClient();
   const { data, error } = await db.from("supervisor_runs")
-    .select("id,business_id,owner_user_id,thread_id,request_key,status")
+    .select("id,business_id,owner_user_id,thread_id,request_key,status,execution_version,input_locale,input_attachment_ids")
     .eq("id", id).single(); if (error || !data) throw new Error("supervisor_run_unavailable");
   const row = rowSchema.parse(data); if (row.status === "completed") return "completed";
+  const version2=row.execution_version===2;
+  if(version2&&!durableChatEnabled())return "busy";
+  const selected=version2?ownerRunInputSchema.parse({locale:row.input_locale,attachmentIds:row.input_attachment_ids}):null;
   const run: WorkerRun = { id: row.id,
     scope: { businessId: row.business_id, ownerUserId: row.owner_user_id, threadId: row.thread_id },
     requestKey: row.request_key };
@@ -240,7 +255,7 @@ export async function processDurableRun(runId: string): Promise<WorkerOutcome> {
     if (blocked.length !== 1 || blocked[0].step_key !== "owner_turn" ||
       !(await reconcileVerifiedOwnerStep(run, repository, blocked[0].error_code,
         authorize, () => verifiedReply(run)))) return "blocked"; }
-  return executeDurableRun(run, configuredBudget(), { repository, authorize,
+  return executeDurableRun(run, configuredBudget(), { repository, authorize,version2,
     verified: () => verifiedReply(run), cancelled: async () => {
       const check = await db.from("supervisor_runs").select("status")
         .eq("id", run.id).eq("business_id", run.scope.businessId).maybeSingle();
@@ -257,6 +272,45 @@ export async function processDurableRun(runId: string): Promise<WorkerOutcome> {
       // Check before even creating a running agent job. Recheck immediately
       // before each paid model call through the shared runner below.
       await assertPaidAllowed(); const jobs = await import("@/lib/ai/agent/jobs.server");
+      if(version2&&selected){
+        const identity={...scope,runId:run.id,claimToken};
+        const job=await jobs.startDurableAgentJob(identity);
+        if(!job){
+          const step=await client.from("supervisor_run_steps").select("checkpoint_seq")
+            .eq("business_id",scope.businessId).eq("run_id",run.id).eq("step_key","owner_turn").single();
+          if(step.error||!step.data)throw Error("checkpoint_storage_unavailable");
+          const {data,error}=await client.rpc("supervisor_yield_owner_run_v2",{
+            p_business_id:scope.businessId,p_owner_user_id:scope.ownerUserId,p_thread_id:scope.threadId,
+            p_run_id:run.id,p_claim_token:claimToken,p_expected_seq:step.data.checkpoint_seq,p_delay_seconds:30,
+          });
+          if(error||data!==true)throw Error("durable_job_lease_lost");
+          return "yielded";
+        }
+        emit("ack",{jobId:job.id,runId:run.id,mode:job.status==="done"?"done":"started"});
+        if(job.status==="done")return;
+        const checkpoint=await openOwnerRunCheckpoint(scope,run.id,claimToken,job.id);
+        const outcome=await withDurableProviderTurn({
+          db:client,...scope,runId:run.id,ownerMessageId:owner.id,jobId:job.id,claimToken,budget,
+          ownerDailyCap:ownerModelCallsLimit(),authorize:async()=>{
+            await checkpoint.assertLive();await assertPaidAllowed();
+          },
+        },()=>runOneTurn({scope,threadId:scope.threadId,owner,ownerText:owner.text??"",locale:selected.locale,
+          attachmentIds:selected.attachmentIds,service,emit,job,jobs,externalClient:client,checkpoint,
+          durableFence:{runId:run.id,jobId:job.id,claimToken},
+          recordDurableStep:step=>jobs.updateDurableAgentJob(identity,job.id,"progress",step).catch(()=>undefined),
+        }));
+        if("replyId" in outcome)return;
+        // No automatic retry after an uncertain effect, cancellation, or
+        // revoked authority. Retry only a safe boundary, using the SAME run.
+        const retryable=["durable_retry_pending","agent_turn_failed","reply_storage_failed","attachment_unavailable",
+          "usage_unavailable","supervisor_permission_status_unavailable"].includes(outcome.errorCode);
+        if(retryable&&checkpoint.canYield()){
+          const delay=Math.min(900,30*2**Math.max(0,job.attempt-1));
+          if(await checkpoint.yieldForRetry(delay))return "yielded";
+        }
+        await jobs.updateDurableAgentJob(identity,job.id,"failed",outcome.errorCode).catch(()=>undefined);
+        throw new Error("supervisor_agent_turn_failed");
+      }
       const started = await jobs.startAgentJob(scope, scope.threadId, owner.id);
       if (started.mode === "done") return; // canonical reply verified independently
       if (started.mode !== "started") throw new Error("supervisor_existing_job_unfinished");
