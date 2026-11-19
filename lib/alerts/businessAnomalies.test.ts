@@ -113,7 +113,8 @@ it("the scheduled anomaly pass reconciles only comparable customer evidence and 
   if(optionalFailure&&p.metrics.some(m=>m.column==="historical_recipe_contribution_cents"))
    return {rows:[],missing:["source_read_failed"],error:"source_read_failed",truncated:false};
   if(p.view==="cv_customer_products"){
-   if(p.group_by?.[0]==="product_ref"){
+   if(!p.group_by?.length)return {rows:[{count_source_ref:100,count_quantity:100,sum_quantity:recent&&changed?250:150}],missing:[],truncated:false,error:undefined,customerCoverage:{complete:true}};
+   if(p.group_by?.[0]==="product_ref"&&p.group_by.length===1){
     const ids=["11111111-1111-4111-8111-111111111111","22222222-2222-4222-8222-222222222222"];
     const a=recent&&changed?80:40;
     return {rows:ids.map((product_ref,i)=>({product_ref,sum_quantity:i===0?a:100-a,count_quantity:20,count_source_ref:20})),
@@ -122,7 +123,8 @@ it("the scheduled anomaly pass reconciles only comparable customer evidence and 
    return {rows:[],missing:["empty"],truncated:false,error:undefined,customerCoverage:{complete:true}};
   }
   const row:Record<string,number> =p.view==="cv_toast_records"?
-   {count_source_ref:100,"count_data.aiCafeCustomer.identityRef":low&&recent?5:90,"count_data.aiCafeCustomer.displayName":80}:
+   {count_source_ref:100,"count_data.aiCafeCustomer.identityRef":low&&recent?5:90,"count_data.aiCafeCustomer.displayName":80,
+    "count_data.aiCafeCustomer.netSalesCents":100,"sum_data.aiCafeCustomer.netSalesCents":recent&&changed?60000:100000}:
    p.metrics.some(m=>m.column==="historical_recipe_contribution_cents")?
     {count_historical_recipe_contribution_cents:80,avg_historical_recipe_contribution_cents:recent&&changed?200:400}:
    p.metrics.some(m=>m.column==="observed_lapse_flag"||m.column==="observed_reappearance_flag")?
@@ -158,6 +160,8 @@ it("the scheduled anomaly pass reconciles only comparable customer evidence and 
   expect(incidents.get("customer_trend:average_recipe_contribution")).toBe(true);
   optionalFailure=false;low=true;rpc.mockClear();await run();
   expect(incidents.get("data_gap:customer_identity_coverage")).toBe(true);
+  expect(rpc).toHaveBeenCalledWith("supervisor_reconcile_business_anomaly",expect.objectContaining({p_key:"customer_trend:anonymous_check_spend",p_active:true}));
+  expect(rpc).toHaveBeenCalledWith("supervisor_reconcile_business_anomaly",expect.objectContaining({p_key:"customer_trend:anonymous_items_per_check",p_active:true}));
   expect(incidents.get("customer_trend:returning_visit_share")).toBe(true);
   expect(rpc.mock.calls.some(([,p])=>p.p_key==="customer_trend:returning_visit_share")).toBe(false);
   low=false;emptySource=true;rpc.mockClear();await run();
