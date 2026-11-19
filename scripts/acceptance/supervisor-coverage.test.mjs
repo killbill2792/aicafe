@@ -55,3 +55,11 @@ test("the reviewed addition must be present with its exact contract, not merely 
  assert.throws(()=>verifyBootstrapSnapshot(original,mapping),/coverage_drift/);
  assert.throws(()=>verifyBootstrapSnapshot(buildCensusReport([tool,metric,row("tool",memory.key,{scope:"any"})],manifests,{head}),mapping),/coverage_drift/);
 });
+
+test("a registered schema omitted from the actual model list is retained as a failure, not untested or unsupported",()=>{
+ const report=buildCensusReport([tool,metric],manifests,{head,registrationGaps:[tool.key]});
+ assert.deepEqual(report.registrationGaps,[tool.key]);
+ assert.equal(report.rows.find(r=>r.id===tool.id).status,"FAIL");
+ assert.deepEqual(report.totals,{PASS:0,FAIL:1,UNTESTED:1,UNSUPPORTED:0});
+ assert.throws(()=>requireComplete(report),/not_proven/);
+});

@@ -82,7 +82,7 @@ describe("Task17B first-party changing capability inventory (no provider)",()=>{
  it("censuses actual registered tools, gated operations, canonical fields, effects and surfaces",()=>{
   const visible=new Map(fullDefinitions.map(t=>[t.name,t]));
   expect(visible.size).toBe(fullDefinitions.length);
-  expect([...visible.keys()].sort()).toEqual(Object.keys(fullSchemas).sort());
+  const registrationGaps=Object.keys(fullSchemas).filter(name=>!visible.has(name)).sort();
   const rows=Object.entries(fullSchemas).flatMap(([name,entry])=>{
    const schema="schema" in entry?entry.schema:entry;
    const json=schemaJson(schema);
@@ -119,9 +119,9 @@ describe("Task17B first-party changing capability inventory (no provider)",()=>{
   const inventory=makeInventory(rows);
   const manifestPaths=paths.filter(p=>p.startsWith(".github/luna/scenarios/")&&p.endsWith(".json"));
   const manifests=manifestIndex(root,manifestPaths,coverageMap.legacyTools);
-  const report=buildCensusReport(inventory,manifests,{head:git("rev-parse","HEAD"),runId:process.env.GITHUB_RUN_ID??null,deterministicMetrics,testReferences:findTestReferences(new Set(visible.keys()))});
+  const report=buildCensusReport(inventory,manifests,{head:git("rev-parse","HEAD"),runId:process.env.GITHUB_RUN_ID??null,deterministicMetrics,registrationGaps,testReferences:findTestReferences(new Set(Object.keys(fullSchemas)))});
   if(process.env.AICAFE_CENSUS_OUTPUT)writeCensus(process.env.AICAFE_CENSUS_OUTPUT,report);
-  expect(report.totals.UNTESTED).toBe(inventory.length);
+  expect(report.totals.UNTESTED+report.totals.FAIL).toBe(inventory.length);
   expect(report.complete).toBe(false);
   // The omitted memory tool is an explicit independently reviewed addition.
   const expectedMemory=coverageMap.reviewedMemorySchema;
@@ -131,7 +131,8 @@ describe("Task17B first-party changing capability inventory (no provider)",()=>{
     row("tool",memoryToolDefinition.name,{input:expectedMemory,advertised:true}),
     ...schemaCases("tool-input",memoryToolDefinition.name,expectedMemory),
   ]});
-  console.log("Task17B census (discovery only):",JSON.stringify({head:report.head,totals:report.totals,byKind:report.byKind,manifests:report.manifests,unknownManifestTools:report.unknownManifestTools}));
+  console.log("Task17B census (discovery only):",JSON.stringify({head:report.head,totals:report.totals,byKind:report.byKind,manifests:report.manifests,unknownManifestTools:report.unknownManifestTools,registrationGaps:report.registrationGaps}));
+  expect(registrationGaps,"defined but not advertised to the actual model; do not accept hidden tools").toEqual([]);
  });
 
  it("checks each actual registered schema rejects unexpected tenant authority",()=>{

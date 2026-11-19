@@ -66,21 +66,22 @@ export function manifestIndex(root,paths,legacyTools={}){
 /** A mapping alone never represents an executed test. Bootstrap records every
  * gap; the release check deliberately rejects even one UNTESTED row. */
 /** @param {any[]} rows @param {any} manifests
- * @param {{head?:string,runId?:string|null,deterministicMetrics?:string[],testReferences?:Map<string,{path:string,title:string}[]>}} options */
-export function buildCensusReport(rows,manifests,{head,runId=null,deterministicMetrics=[],testReferences=new Map()}={}){
+ * @param {{head?:string,runId?:string|null,deterministicMetrics?:string[],testReferences?:Map<string,{path:string,title:string}[]>,registrationGaps?:string[]}} options */
+export function buildCensusReport(rows,manifests,{head,runId=null,deterministicMetrics=[],testReferences=new Map(),registrationGaps=[]}={}){
  if(!/^[a-f0-9]{40}$/.test(head??""))throw Error("invalid_head");
  const inventory=makeInventory(rows);
  const tools=new Set(inventory.filter(r=>r.kind==="tool").map(r=>r.key));
  const unknownManifestTools=[...manifests.index.keys()].filter(t=>!tools.has(t)).sort();
+ const gaps=new Set(registrationGaps);
  const mapped=inventory.map(r=>({...r,
    candidateScenarios:r.kind==="tool"?[...(manifests.index.get(r.key)??[])].sort():[],
    candidateDeterministicCases:r.kind==="tool"?testReferences.get(r.key)??[]:[],
    deterministicMetricOracle:r.kind==="metric"&&deterministicMetrics.includes(r.key)?"PASS":"UNTESTED",
-   status:"UNTESTED",reason:"independent_end_to_end_receipt_not_verified"}));
- const byKind={};
- for(const r of mapped){const a=byKind[r.kind]??={PASS:0,FAIL:0,UNTESTED:0,UNSUPPORTED:0};a[r.status]++;}
+   status:r.kind==="tool"&&gaps.has(r.key)?"FAIL":"UNTESTED",reason:r.kind==="tool"&&gaps.has(r.key)?"defined_and_dispatched_but_not_advertised_to_registered_model":"independent_end_to_end_receipt_not_verified"}));
+ const byKind={},totals={PASS:0,FAIL:0,UNTESTED:0,UNSUPPORTED:0};
+ for(const r of mapped){const a=byKind[r.kind]??={PASS:0,FAIL:0,UNTESTED:0,UNSUPPORTED:0};a[r.status]++;totals[r.status]++;}
  return {schemaVersion:1,head,runId,providerModelProof:false,complete:false,
-  manifests:manifests.ids,unknownManifestTools,totals:{PASS:0,FAIL:0,UNTESTED:mapped.length,UNSUPPORTED:0},
+  manifests:manifests.ids,unknownManifestTools,registrationGaps:[...gaps].sort(),totals,
   byKind,inventoryDigest:fingerprint(inventory),rows:mapped};
 }
 export function inventoryDelta(previous,current){
