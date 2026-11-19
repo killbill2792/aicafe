@@ -23,9 +23,12 @@ export const shadowPriceWriterEnabled=(_mode:ExperimentCutoverMode)=>false;
 
 import type {SupabaseClient} from "@supabase/supabase-js";
 import type {LoopProposal,LoopRepository,OwnerLoopScope,LoopReport} from "./engine";
-import {readVerifiedToastPriceEvidence,type VerifiedToastPriceEvidence} from "./toastPriceEvidence.server";
+import {readVerifiedToastPriceEvidence,matchCompletedToastObservation,type CompletedToastHistory,type VerifiedToastPriceEvidence} from "./toastPriceEvidence.server";
 import {readElapsedWindowObservations,planElapsed24HourWindows} from "./rollingExperimentSales.server";
-import {postVerifiedSourceReminder} from "./experimentNotices.server";
+import {postVerifiedSourceReminder,postToastObservationNotice,toastObservationNoticeKey} from "./experimentNotices.server";
+
+import {formatInTimeZone} from "date-fns-tz";
+import {getPricingInputs} from "@/lib/data/getPricingInputs";
 
 export const priceCapabilityIds=[
  "alex.drink_price_experiment.v1","alex.menu_price_change.v1"] as const;
@@ -458,4 +461,204 @@ export async function remindPendingToastPrice(db:SupabaseClient,row:PriceRow,
   currency:effect.currency,approvedAt:row.approved_at,now,timezone,
   sourceVerified:false,cancelled:false,
  });
+}
+
+
+type ObservationDue={history_id:string;business_id:string;enabled_at:string};
+type ObservationMeasurement={
+ index:number;startAt:string;endAt:string;segmentEndAt:string;
+ status:"actual"|"insufficient_evidence";units:number|null;revenueCents:number|null;
+ baselineUnits:number|null;baselineRevenueCents:number|null;
+ contributionEstimateCents:number|null;unitCostEstimateCents:number|null;
+};
+const observationDayMs=86400000;
+const observationColumns="id,business_id,menu_item_id,old_price_cents,new_price_cents,source_type,source_provider,toast_restaurant_guid,toast_publication_version,toast_observed_at,toast_effective_at,changed_at,toast_publication_completed_at,toast_publication_pos_item_id";
+
+/** The existing authenticated experiment cron, not a second agent or job.
+ * Independent watches are never proposals, never trigger a price write, and
+ * are gated separately from already-enabled approved experiments. */
+export async function runToastObservationBatch(db:SupabaseClient,now:string):
+ Promise<{checked:number;reported:number;failed:number}>{
+ const result={checked:0,reported:0,failed:0};
+ const due=await db.rpc("supervisor_8a_due_toast_observations",{p_now:now,p_limit:10});
+ if(due.error)throw new Error("toast_observation_discovery_failed");
+ for(const row of (due.data??[]) as ObservationDue[]){
+  result.checked++;
+  try{result.reported+=await runCompletedToastObservation(db,row,now);}
+  catch{result.failed++;}
+ }
+ return result;
+}
+async function runCompletedToastObservation(db:SupabaseClient,due:ObservationDue,now:string):Promise<number>{
+ const {business_id:businessId,history_id:sourceId}=due;
+ const source=await db.from("menu_price_history").select(observationColumns)
+  .eq("business_id",businessId).eq("id",sourceId).maybeSingle();
+ if(source.error||!source.data)throw new Error("observation_source_missing");
+ const event=source.data as CompletedToastHistory;
+ const [location,cafe,owners,current,existing]=await Promise.all([
+  db.from("toast_location_mappings").select("restaurant_guid,verified_at")
+   .eq("business_id",businessId).eq("restaurant_guid",event.toast_restaurant_guid).maybeSingle(),
+  db.from("businesses").select("timezone,currency").eq("id",businessId).single(),
+  db.from("memberships").select("user_id",{count:"exact"}).eq("business_id",businessId)
+   .eq("role","owner").order("user_id").limit(100),
+  db.from("menu_items").select("name,catalog_source,is_active,pos_item_id,price_cents,toast_publication_state,pos_pricing_strategy,toast_publication_observed_at")
+   .eq("business_id",businessId).eq("id",event.menu_item_id).maybeSingle(),
+  db.from("supervisor_monitor_windows").select("owner_user_id,source_reference")
+   .eq("business_id",businessId).eq("monitor_kind","toast_price_observation")
+   .eq("source_id",sourceId).eq("window_index",0).maybeSingle(),
+ ]);
+ if(location.error||cafe.error||owners.error||current.error||existing.error||
+   owners.count!==(owners.data?.length??0)||!cafe.data?.timezone||!cafe.data?.currency)
+  throw new Error("observation_scope_unavailable");
+ if(!owners.data?.length)return 0;
+ const receipt=matchCompletedToastObservation({businessId,historyId:sourceId,
+  notBefore:due.enabled_at,asOf:now,event,location:location.data});
+ if(receipt.status!=="verified")throw new Error("invalid_observation_source");
+ const timezone=cafe.data.timezone,currency=cafe.data.currency;
+ const itemName=typeof current.data?.name==="string"?current.data.name:"Menu item";
+ const windows=planElapsed24HourWindows(receipt.startAt,7);
+ const finalEndAt=windows[6].endAt;
+ const [later,context,baselineChanges]=await Promise.all([
+  db.from("menu_price_history").select("toast_observed_at,toast_effective_at,toast_publication_completed_at,new_price_cents",{count:"exact"})
+   .eq("business_id",businessId).eq("menu_item_id",receipt.menuItemId)
+   .eq("source_type","connected_pos").eq("source_provider","toast")
+   .eq("toast_restaurant_guid",receipt.restaurantGuid)
+   .gt("toast_observed_at",receipt.observedAt).lte("toast_observed_at",now)
+   .order("toast_observed_at").limit(100),
+  db.from("supervisor_toast_price_context_changes")
+   .select("observed_at,new_pos_item_id,new_pricing_strategy,new_catalog_source,new_is_active,old_price_cents,new_price_cents,old_publication_state,new_publication_state",{count:"exact"})
+   .eq("business_id",businessId).eq("menu_item_id",receipt.menuItemId)
+   .gte("observed_at",receipt.observedAt).lt("observed_at",finalEndAt)
+   .lte("observed_at",now).order("observed_at").limit(1000),
+  db.from("menu_price_history").select("id",{head:true,count:"exact"})
+   .eq("business_id",businessId).eq("menu_item_id",receipt.menuItemId)
+   .gte("changed_at",new Date(Date.parse(receipt.startAt)-7*observationDayMs).toISOString())
+   .lt("changed_at",receipt.startAt).neq("id",receipt.historyId),
+ ]);
+ if(later.error||context.error||baselineChanges.error||
+   later.count!==(later.data?.length??0)||context.count!==(context.data?.length??0)||baselineChanges.count===null)
+  throw new Error("observation_continuity_unavailable");
+ const first=later.data?.[0];
+ const nextAt=first?.toast_publication_completed_at?(first.toast_effective_at??first.toast_observed_at):
+  first?.toast_observed_at??null;
+ const prior=existing.data?.source_reference?.interruptedAt;
+ const continuity=trialSourceInterruption({receipt,finalEndAt,asOf:now,current:current.data,
+  firstPriceChangeAt:nextAt,firstContextChangeAt:(context.data??[]).find(c=>contextChangeBreaksApprovedPrice(c,receipt))?.observed_at??null,
+  priorInterruptionAt:typeof prior==="string"?prior:null});
+ const cut=continuity.at;
+ const endAt=cut??finalEndAt;
+ const ref={...activationReference(receipt),itemName,currency,interruptedAt:cut,
+  sourceContinuity:continuity.reason??"verified",asOf:now};
+ const measurementOwner=existing.data?.owner_user_id??owners.data[0].user_id;
+ // Establish the seven durable slots before delivery. Retrying a discovery
+ // can never create a second independent watch for the same history UUID.
+ const initialized=await db.from("supervisor_monitor_windows").upsert(windows.map(window=>({
+  business_id:businessId,owner_user_id:measurementOwner,monitor_kind:"toast_price_observation",
+  source_id:sourceId,window_index:window.index,source_reference:ref,
+  start_at:window.startAt,end_at:window.endAt,
+ })),{onConflict:"business_id,monitor_kind,source_id,window_index",ignoreDuplicates:true});
+ if(initialized.error)throw new Error("observation_window_initialization_failed");
+ const measurements:ObservationMeasurement[]=[];
+ let unitCost:number|null=null;
+ if(windows.some(w=>Date.parse(w.startAt)<Date.parse(endAt)&&
+   Date.parse(now)>=Math.min(Date.parse(w.endAt),Date.parse(endAt)))){
+  // Current recipe/fallback inputs are not historical COGS. Even an actual
+  // current unit cost is explicitly an estimate of historical contribution.
+  try{
+   const inputs=await getPricingInputs(db,businessId,{profile:"Menu"});
+   const item=inputs.items.find(i=>i.id===receipt.menuItemId);
+   if(item?.productCostStatus==="READY"&&Number.isFinite(item.productCostCents)&&item.productCostCents>0)
+    unitCost=item.productCostCents;
+  }catch{/* Product economics unknown; do not replace missing cost with zero. */}
+ }
+ for(const window of windows){
+  if(Date.parse(window.startAt)>=Date.parse(endAt))break;
+  const segmentEndAt=new Date(Math.min(Date.parse(window.endAt),Date.parse(endAt))).toISOString();
+  if(Date.parse(now)<Date.parse(segmentEndAt))break;
+  const partial=Date.parse(segmentEndAt)<Date.parse(window.endAt);
+  const measured=await readElapsedWindowObservations(db,businessId,receipt.menuItemId,window,now,timezone,
+   partial?segmentEndAt:undefined);
+  const baselineWindow={index:window.index,startAt:new Date(Date.parse(window.startAt)-7*observationDayMs).toISOString(),
+   endAt:new Date(Date.parse(window.endAt)-7*observationDayMs).toISOString()};
+  const baseline=baselineChanges.count===0?await readElapsedWindowObservations(db,businessId,receipt.menuItemId,
+   baselineWindow,now,timezone,partial?new Date(Date.parse(segmentEndAt)-7*observationDayMs).toISOString():undefined):null;
+  const measurement:ObservationMeasurement={index:window.index,startAt:window.startAt,endAt:window.endAt,
+   segmentEndAt,status:measured.status,units:measured.units,revenueCents:measured.revenueCents,
+   baselineUnits:baseline?.units??null,baselineRevenueCents:baseline?.revenueCents??null,
+   unitCostEstimateCents:unitCost,contributionEstimateCents:measured.units!==null&&measured.revenueCents!==null&&unitCost!==null?
+    Math.round(measured.revenueCents-measured.units*unitCost):null};
+  const saved=await db.from("supervisor_monitor_windows").upsert({
+   business_id:businessId,owner_user_id:measurementOwner,monitor_kind:"toast_price_observation",
+   source_id:sourceId,window_index:window.index,source_reference:{...ref,measurement},
+   start_at:window.startAt,end_at:window.endAt,
+   coverage_status:!partial&&measured.status==="actual"?"actual":"partial",
+   units:partial?null:measured.units,revenue_cents:partial?null:measured.revenueCents,
+   unknown_time_lines:measured.unknownTimeLines,
+   evaluation_status:!partial&&measured.status==="actual"?"complete":"insufficient_evidence",
+   updated_at:now,
+  },{onConflict:"business_id,monitor_kind,source_id,window_index"});
+  if(saved.error)throw new Error("observation_measurement_write_failed");
+  measurements.push(measurement);
+ }
+ const total=(key:"units"|"revenueCents"|"baselineUnits"|"baselineRevenueCents"|"contributionEstimateCents")=>
+  measurements.length&&measurements.every(m=>m[key]!==null)?measurements.reduce((sum,m)=>sum+m[key]!,0):null;
+ const finalDue=Date.parse(now)>=Date.parse(endAt);
+ const cumulative={observedUnits:total("units"),observedRevenueCents:total("revenueCents"),
+  baselineUnits:total("baselineUnits"),baselineRevenueCents:total("baselineRevenueCents"),
+  contributionEstimateCents:total("contributionEstimateCents"),costBasis:unitCost===null?"missing":"current_cost_estimate",
+  completedExposureWindows:measurements.length,interruptedAt:cut,nonCausal:true};
+ const format=(cents:number|null)=>cents===null?"unknown":new Intl.NumberFormat("en-US",{style:"currency",currency}).format(cents/100);
+ const advice=(revenue:number|null,baseline:number|null)=>
+  revenue===null||baseline===null?"Wait for complete comparable evidence before deciding.":
+  revenue<baseline?"Revenue was lower than the comparison period. Review traffic, discounts and costs before considering another price change.":
+  "Review volume and contribution before deciding whether to retain the price.";
+ const date=(s:string)=>formatInTimeZone(new Date(s),timezone,"yyyy-MM-dd");
+ let posted=0,allDelivered=true;
+ for(const owner of owners.data){
+  const thread=await db.from("ai_threads").select("id").eq("business_id",businessId)
+   .eq("owner_user_id",owner.user_id).order("updated_at",{ascending:false}).order("id").limit(1).maybeSingle();
+  if(thread.error)throw new Error("observation_owner_thread_read_failed");
+  if(!thread.data){allDelivered=false;continue;}
+  const send=async(index:number,at:string,final:boolean,payload:Record<string,string|number|boolean|null>,text:string,confidence:"high"|"low")=>{
+   const key=toastObservationNoticeKey({businessId,ownerUserId:owner.user_id,priceHistoryId:sourceId,
+    windowIndex:index,localDate:date(at),final});
+   const prior=await db.from("supervisor_experiment_notice_receipts").select("id").eq("business_id",businessId)
+    .eq("owner_user_id",owner.user_id).eq("source_id",sourceId).eq("kind",key.kind).eq("slot",key.slot).eq("state","posted").limit(1).maybeSingle();
+   if(prior.error)throw new Error("observation_notice_read_failed");
+   if(prior.data)return;
+   const result=await postToastObservationNotice(db,{key,threadId:thread.data!.id,timezone,
+    payload:{...payload,itemName,oldPriceCents:receipt.oldPriceCents,newPriceCents:receipt.newPriceCents,currency,observationOnly:true},
+    text,confidence});
+   if(result==="posted")posted++;else allDelivered=false;
+  };
+  await send(0,receipt.observedAt,false,{title:"Toast price change detected",nonCausal:true},
+   "Toast confirmed a published price change for "+itemName+" from "+format(receipt.oldPriceCents)+" to "+format(receipt.newPriceCents)+
+   ". I will observe seven elapsed days unless the source price changes again. This is monitoring, not an approved experiment or a price write.","high");
+  for(const m of measurements){
+   await send(m.index+1,m.segmentEndAt,false,{title:"Toast price observation day "+(m.index+1),units:m.units,
+    revenueCents:m.revenueCents,baselineRevenueCents:m.baselineRevenueCents,contributionEstimateCents:m.contributionEstimateCents,
+    segmentEndAt:m.segmentEndAt,nonCausal:true},
+    itemName+": observation day "+(m.index+1)+" ending "+m.segmentEndAt+
+    ". "+(m.units===null?"Sales coverage is incomplete.":m.units+" units, net revenue "+format(m.revenueCents)+".")+
+    " Comparable prior revenue: "+format(m.baselineRevenueCents)+". Estimated contribution using current cost: "+format(m.contributionEstimateCents)+
+    ". "+advice(m.revenueCents,m.baselineRevenueCents)+" This does not establish causation.",m.status==="actual"?"high":"low");
+  }
+  if(finalDue)await send(7,endAt,true,{title:"Toast price observation summary",...cumulative},
+   itemName+": "+(cut?"Price exposure was interrupted; ":"Seven elapsed days ended; ")+
+   "observed units "+(cumulative.observedUnits??"unknown")+", net revenue "+format(cumulative.observedRevenueCents)+
+   ", comparable prior revenue "+format(cumulative.baselineRevenueCents)+
+   ", estimated contribution using current cost "+format(cumulative.contributionEstimateCents)+
+   ". "+advice(cumulative.observedRevenueCents,cumulative.baselineRevenueCents)+
+   " No causal conclusion or price action has been made.",cumulative.observedRevenueCents===null?"low":"high");
+ }
+ // Keep checking corrections for the existing fourteen-day correction period.
+ // A missing owner thread or undelivered receipt remains actionable backlog.
+ const settled=finalDue&&allDelivered&&Date.parse(now)>Date.parse(endAt)+14*observationDayMs;
+ const anchor=await db.from("supervisor_monitor_windows").update({
+  source_reference:{...ref,...(measurements[0]?{measurement:measurements[0]}:{}),cumulative,finalDue,
+   ...(settled?{closedAt:now}:{})},updated_at:now,
+ }).eq("business_id",businessId).eq("monitor_kind","toast_price_observation")
+ .eq("source_id",sourceId).eq("window_index",0);
+ if(anchor.error)throw new Error("observation_anchor_write_failed");
+ return posted;
 }
