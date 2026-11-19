@@ -86,7 +86,7 @@ export const checkpointRowSchema=z.object({
   checkpoint_tool:z.string().nullable(),
   checkpoint_receipts:z.array(z.object({
     operation:z.uuid(),phase:z.enum(["provider_pending","read_pending","effect_pending"]),
-    tool:z.string().nullable(),receipt:z.string().max(201),
+    tool:z.string().nullable(),receipt:z.string().max(400),
   })).max(256),
 });
 export type CheckpointRow=z.infer<typeof checkpointRowSchema>;
@@ -100,6 +100,7 @@ export type OwnerRunCheckpoint = {
   beginTool:(name:string,raw:unknown,repeatSafe:boolean)=>Promise<import("@/lib/ai/agent/tools").AgentToolResult|null>;
   endTool:(result:import("@/lib/ai/agent/tools").AgentToolResult)=>Promise<void>;
   resumeContext:()=>Promise<string|null>;
+  restoredResults?:()=>Promise<import("@/lib/ai/agent/tools").AgentToolResult[]>;
   canYield:()=>boolean;
   yieldForRetry:(seconds:number)=>Promise<boolean>;
 };

@@ -105,7 +105,8 @@ export async function POST(request: Request, context: RouteContext) {
               // An earlier worker may have completed the reply between
               // admission and claim. Replay only the canonical saved answer.
               const {getExistingSupervisorReply}=await import("@/lib/ai/conversations/replyWriter.server");
-              const completed=await getExistingSupervisorReply(scope,owner);
+              const original=run.requestKey===owner.id?owner:await jobs.readOwnerMessage(scope,id,run.requestKey);
+              const completed=await getExistingSupervisorReply(scope,original);
               if(completed)sink.emit("done",{reply:completed,replayed:true});
             }
           }catch{sink.emit("error",{code:"agent_turn_failed",retryable:true,runId:run.id});}

@@ -730,7 +730,11 @@ export async function runAgentTurn(args: {
   const status = statusFromResults(results);
   const ownerStatements=[...(args.history??[]).filter(m=>m.role==="user").map(m=>m.content),
     ...(args.serviceOrigin?[]:[args.ownerText]),...absorbed.map(m=>m.text)].join("\n");
-  const toolResults=results.map(r=>r.result);
+  const restored=await args.checkpoint?.restoredResults?.()??[];
+  // Restored cards are canonical row references, not replayed model text.
+  // They remain part of the final grounded reply even when the model did not
+  // call their writer again after recovery. The existing card builder dedupes IDs.
+  const toolResults=[...restored,...results.map(r=>r.result)];
   const verificationResults=usageEvidenceRefresh(toolResults,args.previousEvidence);
   const unverified=checkNumbers(text,ownerStatements,verificationResults,args.context.locale,args.previousEvidence);
   const evidence=compactEvidence(verificationResults);

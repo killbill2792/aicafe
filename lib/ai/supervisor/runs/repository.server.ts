@@ -124,6 +124,9 @@ const proposalSources:Record<string,string>={
   propose_price_change:"price_change_proposal",propose_price_experiment:"price_experiment_proposal",
   propose_staff_change:"staff_proposal",propose_add_staff:"staff_proposal",propose_schedule:"staff_proposal",
   propose_shift_change:"staff_proposal",propose_availability_change:"staff_proposal",
+  propose_rule_change:"staff_proposal",propose_send_schedule:"staff_proposal",
+  draft_week_schedule:"staff_proposal",propose_maintenance_staff_assignment:"staff_proposal",
+  propose_maintenance_vendor_request:"gmail_proposal",propose_supplier_vendor_email:"gmail_proposal",
   propose_goal:"goal_proposal",propose_event_plan:"event_plan_proposal",
   propose_supplier_purchase_order:"supplier_purchase_proposal",propose_purchase_receiving:"supplier_purchase_proposal",
   propose_invoice_reconciliation:"supplier_purchase_proposal",propose_financial_settlement:"supplier_purchase_proposal",
@@ -173,19 +176,53 @@ export async function openOwnerRunCheckpoint(scope:RunScope,runId:string,token:s
     await change(current.checkpoint_operation,"complete",null,receipt);
   };
   const scopedProposal=async(ref:string)=>{
-    const result=await db.from("supervisor_proposals").select("id,status,revision,capability_id")
+    const result=await db.from("supervisor_proposals").select("id,status,revision,capability_id,effect_hash")
       .eq("business_id",s.businessId).eq("owner_user_id",s.ownerUserId).eq("thread_id",s.threadId)
       .eq("id",uuid.parse(ref)).maybeSingle();
     if(result.error||!result.data)throw new Error("checkpoint_receipt_unavailable");
     return result.data;
   };
   const recoverEffect=async(name:string,ref:string):Promise<ToolResult>=>{
-    const [kind,value]=ref.split(":");
+    const separator=ref.indexOf(":");
+    const kind=ref.slice(0,separator),value=ref.slice(separator+1);
     if(kind==="proposal"&&proposalSources[name]){
       const p=await scopedProposal(value);
       return {source:proposalSources[name],period:null,missing:p.status==="draft"?[]:["prior_operation_already_recorded"],
         draft:p.status==="draft",saved:false,proposalId:p.id,revision:p.revision,proposalStatus:p.status,
         capabilityId:p.capability_id};
+    }
+    if(kind==="purchase_batch"&&name==="propose_purchases"){
+      const ids=value.split(",");
+      if(ids.length<1||ids.length>10||new Set(ids).size!==ids.length)throw new Error("checkpoint_receipt_invalid");
+      const proposals=await Promise.all(ids.map(async proposalId=>{
+        const p=await scopedProposal(proposalId);
+        // A committed proposal is not a stock receipt. Re-read the exact
+        // canonical effect hash, never infer an effect from the proposal state.
+        const effect=await db.from("supervisor_effect_attempts").select("state,receipt_ref,verified_at")
+          .eq("business_id",s.businessId).eq("proposal_id",p.id).eq("effect_hash",p.effect_hash).maybeSingle();
+        if(effect.error)throw new Error("checkpoint_receipt_unavailable");
+        const saved=p.status==="committed"&&effect.data?.state==="verified"&&
+          Boolean(effect.data.receipt_ref)&&Boolean(effect.data.verified_at);
+        return {proposalId:p.id,revision:p.revision,status:p.status,saved,
+          ...(saved?{}:{error:p.status==="draft"?"review_required":"outcome_not_verified"})};
+      }));
+      return {source:"purchase_proposal",period:null,missing:proposals.every(p=>p.saved)?[]:["someLinesNeedReview"],
+        draft:proposals.some(p=>p.status==="draft"),saved:proposals.every(p=>p.saved),proposals};
+    }
+    if(kind==="memory"&&name==="remember_cafe_fact"){
+      const rule=await db.from("ai_team_rules").select("id,status,version,agent_id")
+        .eq("business_id",s.businessId).eq("id",uuid.parse(value)).maybeSingle();
+      if(rule.error||!rule.data)throw new Error("checkpoint_receipt_unavailable");
+      return {source:"memory_proposal",period:null,missing:rule.data.status==="draft"?[]:["prior_operation_already_recorded"],
+        ruleId:rule.data.id,version:rule.data.version,ruleStatus:rule.data.status,draft:rule.data.status==="draft",saved:false};
+    }
+    if(kind==="supplier_report"&&name==="record_supplier_order_outcome"){
+      const report=await db.from("purchase_order_channel_reports").select("id,outcome,reported_at")
+        .eq("business_id",s.businessId).eq("owner_user_id",s.ownerUserId).eq("id",uuid.parse(value)).maybeSingle();
+      if(report.error||!report.data)throw new Error("checkpoint_receipt_unavailable");
+      return {source:"supplier_owner_report",period:null,missing:[],reportId:report.data.id,
+        reportedAt:report.data.reported_at,outcome:report.data.outcome,saved:true,reported:true,
+        supplierAcceptanceSource:"owner_reported",providerVerified:false};
     }
     if(kind==="routine"&&name==="manage_routine"){
       const r=await db.from("supervisor_routines").select("id,status,revision")
@@ -250,6 +287,13 @@ export async function openOwnerRunCheckpoint(scope:RunScope,runId:string,token:s
       let ref:string|null=null;
       if(typeof result.proposalId==="string"&&uuid.safeParse(result.proposalId).success&&proposalSources[name]){
         await scopedProposal(result.proposalId);ref="proposal:"+result.proposalId;
+      }else if(name==="propose_purchases"&&Array.isArray(result.proposals)&&result.proposals.length){
+        const parsed=z.array(z.object({proposalId:uuid})).min(1).max(10).safeParse(result.proposals);
+        if(parsed.success)ref="purchase_batch:"+[...new Set(parsed.data.map(p=>p.proposalId))].join(",");
+      }else if(name==="remember_cafe_fact"&&uuid.safeParse(result.ruleId).success){
+        ref="memory:"+result.ruleId;
+      }else if(name==="record_supplier_order_outcome"&&uuid.safeParse(result.reportId).success){
+        ref="supplier_report:"+result.reportId;
       }else if(name==="manage_routine"&&result.routine&&typeof result.routine==="object"){
         const key=(result.routine as {id?:unknown}).id;if(typeof key==="string")ref="routine:"+key;
       }else if(name==="manage_commitment"){
@@ -259,6 +303,7 @@ export async function openOwnerRunCheckpoint(scope:RunScope,runId:string,token:s
       if(!ref)throw new Error("checkpoint_effect_receipt_unclassified");
       await recoverEffect(name,ref);await finish(ref);
     },
+    restoredResults:async()=>Promise.all(priorEffects.map(e=>recoverEffect(e.tool??"",e.receipt))),
     resumeContext:async()=>{
       if(!current.checkpoint_receipts.length)return null;
       const receipts=await Promise.all(priorEffects.map(async e=>({tool:e.tool,verified:await recoverEffect(e.tool??"",e.receipt)})));

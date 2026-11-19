@@ -621,6 +621,10 @@ const repeatSafeOwnerTools:ReadonlySet<string>=new Set([
 ]);
 export function isRepeatSafeOwnerTool(name:string,input:unknown):boolean{
  if(repeatSafeOwnerTools.has(name))return true;
+ if(name==="draft_week_schedule"){
+   const parsed=draftScheduleTools.draft_week_schedule.schema.safeParse(input);
+   return parsed.success&&["owner_savings","compare_only","cash_preview","owner_time_preview"].includes(parsed.data.purpose);
+ }
  if(name==="manage_routine"||name==="manage_commitment"){
    const schema=name==="manage_routine"?routineTools.manage_routine.schema:commitmentTools.manage_commitment.schema;
    const parsed=schema.safeParse(input);
