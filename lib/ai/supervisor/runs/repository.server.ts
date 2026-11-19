@@ -96,3 +96,33 @@ export class SupabaseDurableRunRepository implements DurableRunRepository {
     });
   }
 }
+
+/** Select the oldest candidate across both existing runnable and receipt
+ * reconciliation lanes. This does NOT grant a lease or authorize an effect;
+ * the existing per-run SQL claim/reconcile functions remain authoritative.
+ * Querying both lanes prevents an endless stream of new jobs from hiding
+ * an older abandoned effect. The caller rotates blocked/busy candidates. */
+export async function selectNextDurableRun(): Promise<{ runId: string; recovery: boolean } | null> {
+  const db = createAdminSupabaseClient();
+  const [runnable, recovery] = await Promise.all([
+    db.from("supervisor_runs").select("id,updated_at")
+      .in("status", ["pending", "running"]).order("updated_at", { ascending: true })
+      .order("id", { ascending: true }).limit(1),
+    db.from("supervisor_run_steps").select("run_id,updated_at")
+      .eq("status", "blocked").eq("step_key", "owner_turn")
+      .eq("error_code", "lease_expired").order("updated_at", { ascending: true })
+      .order("run_id", { ascending: true }).limit(1),
+  ]);
+  if (runnable.error) throw new Error("supervisor_worker_queue_unavailable");
+  if (recovery.error) throw new Error("supervisor_worker_recovery_unavailable");
+  const normal = runnable.data?.[0];
+  const expired = recovery.data?.[0];
+  const timestamp = (value: string) => {
+    const millis = Date.parse(value);
+    if (!Number.isFinite(millis)) throw new Error("supervisor_worker_candidate_invalid");
+    return millis;
+  };
+  if (expired && (!normal || timestamp(expired.updated_at) <= timestamp(normal.updated_at)))
+    return { runId: uuid.parse(expired.run_id), recovery: true };
+  return normal ? { runId: uuid.parse(normal.id), recovery: false } : null;
+}
