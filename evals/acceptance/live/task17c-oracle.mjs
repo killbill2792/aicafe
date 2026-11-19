@@ -50,3 +50,18 @@ export function assessCoverage({head,inventoryFamilies=[],receipts=[]}){
  // Empty or unavailable registry census is itself a blocking gap.
  return {head,rows,integratedProven:inventoryFamilies.length>0&&rows.every(r=>r.status==="PASS")};
 }
+
+export function verifyScheduledOccurrence({expected,firstPid,secondPid,before,after}){
+ assert.ok(Number.isSafeInteger(firstPid)&&firstPid>0);
+ assert.ok(Number.isSafeInteger(secondPid)&&secondPid>0&&secondPid!==firstPid,"different worker process");
+ assert.equal(before.length,1,"one due occurrence must actually complete");
+ const occurrence=before[0];
+ assert.match(occurrence.run_id,/^[0-9a-f-]{36}$/i);
+ assert.equal(occurrence.local_date,expected.localDate);
+ assert.equal(Number(occurrence.revision),1);
+ assert.equal(Number(occurrence.attempts),1);
+ assert.equal(occurrence.state,"completed");
+ assert.match(occurrence.receipt_ref,/^priority-check:[0-9]+$/);
+ assert.deepEqual(after,before,"duplicate tick must not change run, receipt or attempts");
+ return occurrence.run_id;
+}
