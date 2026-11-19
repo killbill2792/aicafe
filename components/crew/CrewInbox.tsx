@@ -185,7 +185,12 @@ export default function CrewInbox({name,requests,messages,authUserId}:{
        className="min-h-12 rounded-full bg-accent px-5 py-2 font-semibold text-on-accent disabled:opacity-50">Confirm</button>
        <button disabled={Boolean(busy)||pending} onClick={()=>send(req.id,"decline",notes[req.id]?.trim()||null)}
         className="min-h-12 rounded-full border border-line px-5 py-2 font-semibold disabled:opacity-50">Cannot work</button></>
-      :<button disabled={Boolean(busy)||pending} onClick={()=>send(req.id,"complete",notes[req.id]?.trim()||null)}
+      :req.source_type==="maintenance_verify"?<>
+        <button disabled={Boolean(busy)||pending} onClick={()=>send(req.id,"complete","I physically tested the equipment and confirm it is working.")}
+          className="min-h-12 rounded-full bg-accent px-5 py-2 font-semibold text-on-accent disabled:opacity-50">I physically tested it — working</button>
+        <button disabled={Boolean(busy)||pending} onClick={()=>send(req.id,"message","Equipment is still not working. "+(notes[req.id]?.trim()||""))}
+          className="min-h-12 rounded-full border border-line px-5 py-2 font-semibold disabled:opacity-50">Still not working</button>
+      </>:<button disabled={Boolean(busy)||pending} onClick={()=>send(req.id,"complete",notes[req.id]?.trim()||null)}
         className="min-h-12 rounded-full bg-accent px-5 py-2 font-semibold text-on-accent disabled:opacity-50">Mark complete</button>)}
      <button disabled={Boolean(busy)||pending||!notes[req.id]?.trim()}
       onClick={()=>send(req.id,"message",notes[req.id]?.trim()||null)}
