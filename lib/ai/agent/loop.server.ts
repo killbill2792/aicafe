@@ -5,7 +5,7 @@ import {redactToolFailure,redactedErrorStack} from "./redactToolError";
 import {safeToolError} from "./toolErrors";
 import {createHash} from "node:crypto";
 import { configuredSupervisorModel, PRODUCTION_SUPERVISOR_OPENAI_MODEL } from "@/lib/ai/conversations/modelConfig";
-import { agentToolDefinitions, investigationToolDefinition, agentLabelsPrompt, agentForTool, executeAgentTool, type AgentToolContext, type AgentToolResult, type AgentToolName } from "./tools";
+import { agentToolDefinitions, investigationToolDefinition, agentLabelsPrompt, agentForTool, executeAgentTool, isRepeatSafeOwnerTool, type AgentToolContext, type AgentToolResult, type AgentToolName } from "./tools";
 import { statusFromResults } from "./status";
 import { checkNumbers,numberProvenance,compactEvidence,type NumericEvidence } from "./checkNumbers";
 import {usageEvidenceRefresh} from "./usageEvidence";
@@ -16,6 +16,7 @@ import {verifiedRecommendedPriceInReply} from "./pricingReply";
 import {injectSavedOwnerInputs,formatSavedOwnerFacts,type SavedFact} from "@/lib/ownerFacts/inject";
 import {questionFromReasons} from "@/lib/ownerFacts/questions";
 import {withoutSavedFactFields} from "@/lib/ownerFacts/askGuard";
+import type {OwnerRunCheckpoint} from "@/lib/ai/supervisor/runs/contracts";
 
 export type EndReason = "complete" | "budget" | "timeout" | "provider_error" | "tool_errors";
 type ToolCall = { type: "function_call"; name: string; arguments: string; call_id: string };
@@ -170,6 +171,7 @@ export async function runAgentTurn(args: {
   deferSensitiveOutput?:()=>boolean;
   /** A scheduled synopsis is not an authenticated owner statement. */
   serviceOrigin?:boolean;
+  checkpoint?:OwnerRunCheckpoint;
 }): Promise<AgentTurn> {
   if(!args.context.timezone)throw new Error("cafe_timezone_required");
   const now = args.now ?? Date.now, started = now();
@@ -183,7 +185,9 @@ export async function runAgentTurn(args: {
   const provider = args.provider ?? openAIProvider;
   const localDay=new Date(args.context.asOf+"T12:00:00Z");
   const weekday=new Intl.DateTimeFormat("en-US",{weekday:"long",timeZone:"UTC"}).format(localDay);
+  const continuation=await args.checkpoint?.resumeContext();
   const input: unknown[] = [
+    ...(continuation?[{role:"developer",content:continuation}]:[]),
     ...(args.memoryFacts ? [{ role: "developer", content: args.memoryFacts }] : []),
     ...(args.cafeProfile ? [{ role: "developer", content: args.cafeProfile }] : []),
     ...(args.ownerFacts?.length ? [{role:"developer",content:formatSavedOwnerFacts(args.ownerFacts)}] : []),
@@ -240,14 +244,29 @@ export async function runAgentTurn(args: {
   // Every actual Responses transport goes through the same durable reservation
   // boundary, including the final recovery request. Ordinary chat and the
   // already-metered scheduled investigation have no durable owner-turn scope.
+  // Durable storage/fencing failures are not model or tool errors. They must
+  // escape recovery rather than cause another provider/effect dispatch.
+  class CheckpointFailure extends Error {constructor(cause:unknown){super("durable_checkpoint_failed",{cause});}}
+  const boundary=async<T>(work:()=>Promise<T>):Promise<T>=>{
+    try{return await work();}catch(error){throw new CheckpointFailure(error);}
+  };
   const meteredProvider:AgentProvider=async function*(params,signal){
-    const reservation=await reserveDurableProviderRequest(params);
-    if(signal.aborted)throw new Error("provider_timeout");
-    reservation?.launched();usage.modelCalls++;
-    for await(const event of provider(params,signal)){
-      if(event.type==="response.completed"&&reservation)
-        await reservation.complete((event.response??{}) as {model?:unknown;service_tier?:unknown;usage?:unknown});
-      yield event;
+    const checkpoint=args.checkpoint;
+    if(checkpoint)await boundary(()=>checkpoint.beginProvider());
+    let ended=false;
+    try{
+      const reservation=await reserveDurableProviderRequest(params);
+      if(signal.aborted)throw new Error("provider_timeout");
+      reservation?.launched();usage.modelCalls++;
+      for await(const event of provider(params,signal)){
+        if(event.type==="response.completed"){
+          if(reservation)await reservation.complete((event.response??{}) as {model?:unknown;service_tier?:unknown;usage?:unknown});
+          if(checkpoint){ended=true;await boundary(()=>checkpoint.endProvider(true));}
+        }
+        yield event;
+      }
+    }finally{
+      if(checkpoint&&!ended)await boundary(()=>checkpoint.endProvider(false));
     }
   };
   // Reserve unknown Luna output for subsequent work without reporting it as billed usage.
@@ -450,7 +469,7 @@ export async function runAgentTurn(args: {
       // it must escape the loop so no final request can resend private evidence.
       await args.beforeProviderRequest?.();
       try { calls = await call(false); }
-      catch { await args.beforeAcceptResult?.(); endReason = now() >= workDeadline || controller.signal.aborted ? "timeout" : "provider_error"; break; }
+      catch (error) { if(error instanceof CheckpointFailure)throw error; await args.beforeAcceptResult?.(); endReason = now() >= workDeadline || controller.signal.aborted ? "timeout" : "provider_error"; break; }
       await args.beforeAcceptResult?.();
       if (!calls.length) {
         const cap = budgetStop();
@@ -483,6 +502,7 @@ export async function runAgentTurn(args: {
         let result: AgentToolResult;
         const toolStart = now();
         let toolError: string | undefined;
+        let checkpointOpened=false;
         let toolTimer: ReturnType<typeof setTimeout> | undefined;
         try {
           if(args.toolNames&&!args.toolNames.includes(tool.name as AgentToolName))
@@ -490,12 +510,17 @@ export async function runAgentTurn(args: {
           const parsedArgs=JSON.parse(tool.arguments);
           const questionArgs=tool.name==="ask_owner"?
             withoutSavedFactFields(parsedArgs,args.ownerFacts??[]):parsedArgs;
-          result = await Promise.race([questionArgs===null?
+          const effectiveArgs=questionArgs===null?null:injectSavedOwnerInputs(questionArgs,args.ownerFacts??[],
+            Boolean((agentToolDefinitions.find(d=>d.name===tool.name)?.parameters as {
+              properties?:Record<string,unknown>}|undefined)?.properties?.ownerInputs));
+          const recovered=args.checkpoint&&effectiveArgs!==null
+            ?await boundary(()=>args.checkpoint!.beginTool(tool.name,effectiveArgs,isRepeatSafeOwnerTool(tool.name,effectiveArgs)))
+            :null;
+          checkpointOpened=Boolean(args.checkpoint&&effectiveArgs!==null);
+          result = recovered??await Promise.race([effectiveArgs===null?
             Promise.resolve({source:"ask_owner",period:null,missing:["alreadySaved"],
               error:"ownerFactAlreadySaved"} as AgentToolResult):
-            executeAgentTool(tool.name,injectSavedOwnerInputs(questionArgs,args.ownerFacts??[],
-              Boolean((agentToolDefinitions.find(d=>d.name===tool.name)?.parameters as {
-                properties?:Record<string,unknown>}|undefined)?.properties?.ownerInputs)),toolContext),
+            executeAgentTool(tool.name,effectiveArgs,toolContext),
             new Promise<never>((_, reject) => {
               const left = workDeadline - now();
               if (left <= 0) reject(new Error("deadline"));
@@ -503,6 +528,7 @@ export async function runAgentTurn(args: {
             })]);
           failures = 0;
         } catch (error) {
+          if(error instanceof CheckpointFailure)throw error;
           failures++;
           const failedPeriod=(()=>{
             try{
@@ -575,6 +601,7 @@ export async function runAgentTurn(args: {
             }
           }
         }catch{ /* Invalid tool arguments already have a localized failure. */ }
+        if(checkpointOpened)await boundary(()=>args.checkpoint!.endTool(result));
         results.push({ callId: tool.call_id, name: tool.name, arguments: tool.arguments, result });
         observeToolResult(resolveState,result);
         input.push({ type: "function_call_output", call_id: tool.call_id, output: JSON.stringify(result) });
@@ -690,7 +717,7 @@ export async function runAgentTurn(args: {
               outputSummary: completed ? "Completed" : "Incomplete", durationMs: Math.max(0, now() - finalStart), error: finalError });
           }
         }
-      } catch { endReason = now() >= deadline ? "timeout" : "provider_error"; }
+      } catch (error) { if(error instanceof CheckpointFailure)throw error; endReason = now() >= deadline ? "timeout" : "provider_error"; }
     }
   } finally { controller.abort(); }
   usage.latencyMs = now() - started;
