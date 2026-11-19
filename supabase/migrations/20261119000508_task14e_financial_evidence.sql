@@ -226,6 +226,8 @@ begin
   where x.business_id=p_business_id and x.proposal_id=p.id and x.owner_user_id=v_owner
   and x.effect_hash=p.effect_hash and x.authorization_kind='click' and x.approved_revision=p.revision-2)
  then raise exception 'invoice_click_required' using errcode='42501';end if;
+ perform 1 from public.memberships where business_id=p_business_id and user_id=v_owner and role='owner' for share;
+ if not found then raise exception 'invoice_owner_required' using errcode='42501';end if;
  e:=p.canonical_effect_payload;
  if e->>'purchaseOrderId' is null then
   if e->>'poRevision' is not null or e->>'expenseDate' is not null
