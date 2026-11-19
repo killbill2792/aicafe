@@ -8,7 +8,7 @@ const run: RunRow = {
 };
 const step: StepRow = {
   run_id: "r", step_key: "owner_turn", step_index: 2, status: "pending",
-  attempts: 0, error_code: null, updated_at: when,
+  attempts: 0, error_code: null, updated_at: when, retry_mode: "reconcile", lease_until: null,
 };
 const proposal: ProposalRow = {
   id: "p", status: "draft", capability_id: "purchase", effect_hash: "hash", updated_at: when,
@@ -23,8 +23,18 @@ const view = (opts: Partial<Parameters<typeof projectOwnerWork>[0]> = {}) =>
 describe("Task 16B persisted agentic work", () => {
   it("shows queued, actual leased and retrying durable steps", () => {
     expect(view({ runs: [run], steps: [step] })[0].status).toBe("queued");
-    expect(view({ runs: [{ ...run, status: "running" }], steps: [{ ...step, status: "leased", attempts: 1 }] })[0].status).toBe("running");
-    expect(view({ runs: [{ ...run, status: "running" }], steps: [{ ...step, status: "leased", attempts: 2 }] })[0].status).toBe("retrying");
+    expect(view({ runs: [{ ...run, status: "running" }], steps: [{ ...step, status: "leased", attempts: 1, lease_until: "2026-11-14T10:01:00.000Z" }] })[0].status).toBe("running");
+    expect(view({ runs: [{ ...run, status: "running" }], steps: [{ ...step, status: "leased", attempts: 2, lease_until: "2026-11-14T10:01:00.000Z" }] })[0].status).toBe("retrying");
+  });
+  it("reports expired persisted leases truthfully even before the worker runs again", () => {
+    const running = { ...run, status: "running" } as RunRow;
+    const dead = { ...step, status: "leased" as const, attempts: 1, lease_until: when };
+    const unsafe = view({ runs: [running], steps: [dead] })[0];
+    expect(unsafe.status).toBe("uncertain");
+    expect(unsafe.proof).toBeNull();
+    const replayable = view({ runs: [running], steps: [{ ...dead, retry_mode: "idempotent" }] })[0];
+    expect(replayable.status).toBe("queued");
+    expect(replayable.id).toBe(unsafe.id);
   });
   it("holds lease expiry as uncertain and other blocked work as failed", () => {
     const r = { ...run, status: "blocked" } as RunRow;
