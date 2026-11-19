@@ -32,7 +32,7 @@ export type SupplierOrderStatus={
  subtotalCents:number;neededBy:string|null;approvedAt:string;
  lines:Array<{itemName:string;packs:number;packUnit:string;packQuantity:number;
   lineSubtotalCents:number;quotedOn:string}>;
- sentToSupplier:false;receivedIntoInventory:false;
+ sentToSupplier:boolean;receivedIntoInventory:false;
 };
 /** The same authenticated read path used by Supervisor: no separate owner PO store.
  * Approved-for-ordering means prepared internally, never sent or delivered. */
@@ -51,6 +51,10 @@ export async function readSupplierPurchaseOrders(db:SupabaseClient,businessId:st
   .order("ordinal",{ascending:true}).limit(401);
  if(lines.error)throw new Error("supplier_purchase_order_lines_unavailable");
  if((lines.data??[]).length>400)throw new Error("supplier_purchase_order_lines_truncated");
+ const dispatches=await db.from("purchase_order_dispatches")
+   .select("purchase_order_id,state,provider_receipt_id").eq("business_id",businessId)
+   .eq("owner_user_id",ownerUserId).in("purchase_order_id",orders.map(x=>x.id)).limit(41);
+ if(dispatches.error)throw new Error("supplier_purchase_dispatch_status_unavailable");
  return {orders:orders.map(row=>({
   id:row.id,status:row.status,revision:row.revision,supplierName:row.supplier_name_snapshot,
   currency:row.currency_code,subtotalCents:row.subtotal_cents,neededBy:row.needed_by,
@@ -60,6 +64,79 @@ export async function readSupplierPurchaseOrders(db:SupabaseClient,businessId:st
    packUnit:line.pack_unit,packQuantity:line.pack_quantity,
    lineSubtotalCents:line.subtotal_cents,quotedOn:line.quoted_on
   })),
-  sentToSupplier:false as const,receivedIntoInventory:false as const,
+  sentToSupplier:(dispatches.data??[]).some(d=>d.purchase_order_id===row.id&&
+    d.state==="provider_accepted"&&Boolean(d.provider_receipt_id)),
+  receivedIntoInventory:false as const,
  })),truncated:(result.data??[]).length>40};
+}
+
+/** The owner-question answer is a projection of verified source and explicitly
+ * attributed owner reports. A terminal supplier outcome is final for this PO
+ * even if Gmail is disconnected or no provider dispatch was ever prepared. */
+export function supplierCommunicationOwnerQuestion(input:{
+ contactVerified:boolean;channel:string|null;state:string;
+ ownerReportedOutcome:string|null
+}):string|null{
+ const {contactVerified,channel,state,ownerReportedOutcome}=input;
+ if(ownerReportedOutcome==="supplier_accepted"||ownerReportedOutcome==="supplier_declined")return null;
+ if(!contactVerified)
+   return "Which channel do you use for this supplier: Gmail, phone, portal or something else? Please confirm the ordering contact.";
+ if(channel!=="gmail")
+   return "This supplier uses "+channel+". Was the order placed there, and what did they confirm?";
+ if(state==="not_prepared")
+   return "Shall I prepare this saved order as a Gmail send for your separate approval?";
+ if(state==="prepared")
+   return "The vendor email is drafted. Please approve it before any send.";
+ if(state==="send_uncertain")
+   return "Gmail outcome is uncertain. Please check the original email or help reconcile; I will not resend.";
+ return "Gmail accepted the message, but did the supplier actually accept the order?";
+}
+
+/** The ONLY communication-status reader for those same saved POs. A reserved
+ * Gmail POST with no verified receipt is uncertain, never "not sent". Off-Gmail
+ * claims remain explicitly owner-reported and cannot prove provider delivery. */
+export async function readSupplierOrderCommunications(
+ db:SupabaseClient,businessId:string,ownerUserId:string,orderIds:string[]
+):Promise<Array<{purchaseOrderId:string;state:string;channel:string|null;
+ recipient:string|null;contactVerified:boolean;ownerReportedOutcome:string|null;
+ providerVerified:boolean;ownerQuestion:string|null}>>{
+ if(orderIds.length===0)return [];
+ if(orderIds.length>40)throw new Error("vendor_order_scope_too_large");
+ const orders=await db.from("purchase_orders").select("id,supplier_id")
+   .eq("business_id",businessId).eq("owner_user_id",ownerUserId).in("id",orderIds);
+ if(orders.error||orders.data?.length!==orderIds.length)
+   throw new Error("vendor_order_status_unavailable");
+ const supplierIds=[...new Set((orders.data??[]).map(o=>o.supplier_id))];
+ const [contacts,dispatches,reports]=await Promise.all([
+  db.from("cafe_supplier_order_contacts")
+   .select("supplier_id,channel,email,verified_at,revoked_at")
+   .eq("business_id",businessId).eq("owner_user_id",ownerUserId).in("supplier_id",supplierIds),
+  db.from("purchase_order_dispatches").select("purchase_order_id,state,recipient_email,provider_receipt_id")
+   .eq("business_id",businessId).eq("owner_user_id",ownerUserId).in("purchase_order_id",orderIds),
+  db.from("purchase_order_channel_reports").select("purchase_order_id,outcome,reported_at")
+   .eq("business_id",businessId).eq("owner_user_id",ownerUserId)
+   .in("purchase_order_id",orderIds).order("reported_at",{ascending:false}).limit(400),
+ ]);
+ if(contacts.error||dispatches.error||reports.error)
+   throw new Error("vendor_communication_status_unavailable");
+ return (orders.data??[]).map(order=>{
+  const contact=(contacts.data??[]).find(c=>c.supplier_id===order.supplier_id);
+  const dispatch=(dispatches.data??[]).find(d=>d.purchase_order_id===order.id);
+  const ownerReports=(reports.data??[]).filter(r=>r.purchase_order_id===order.id);
+  // Terminal acceptance or decline must not be overwritten by later notes
+  // labeled unknown/acknowledged. A correction needs an explicit owner action.
+  const report=ownerReports.find(r=>r.outcome==="supplier_accepted"||r.outcome==="supplier_declined")
+    ??ownerReports[0];
+  const current=Boolean(contact?.verified_at&&!contact?.revoked_at);
+  const state=dispatch?.state==="reserved"?"send_uncertain":dispatch?.state??"not_prepared";
+  const question=supplierCommunicationOwnerQuestion({
+   contactVerified:current,channel:contact?.channel??null,state,
+   ownerReportedOutcome:report?.outcome??null
+  });
+  return {purchaseOrderId:order.id,state,channel:current?contact!.channel:null,
+   recipient:current&&contact?.channel==="gmail"?contact.email:null,
+   contactVerified:current,ownerReportedOutcome:report?.outcome??null,
+   providerVerified:state==="provider_accepted"&&Boolean(dispatch?.provider_receipt_id),
+   ownerQuestion:question};
+ });
 }

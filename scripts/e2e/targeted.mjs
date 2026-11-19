@@ -46,6 +46,7 @@ export function scenariosForPath(path) {
       path === "components/operations/MaintenanceCaseCard.test.tsx")
     return ["home"];
   if (path === "components/operations/SupplierEvidenceManager.tsx" ||
+      path === "components/operations/SupplierVendorCommunicationManager.tsx" ||
       path === "app/[locale]/operations/suppliers/page.tsx")
     return ["purchasing"];
   if (path.startsWith("components/home/")) return ["home"];
