@@ -96,7 +96,7 @@ select :'vp',business_id,owner_user_id,:'th',gen_random_uuid(),'alex.gmail_effec
  'maintenanceDueAt',statement_timestamp()+interval '1 day'),repeat('c',64),'{}',
  '{"durationDays":1,"metricScope":"gmail_provider_receipt"}','en'
 from public.operating_tasks where business_id=:'biz' and id='maintenance:'||:'msg';
-do $
+do $$
 declare b uuid:=current_setting('test.maintenance15b.biz')::uuid;
  o uuid:=current_setting('test.maintenance15b.owner')::uuid;
  th uuid:=current_setting('test.maintenance15b.thread')::uuid;
@@ -138,7 +138,7 @@ begin
    'maintenance-fixture-thread','fixture-reply-message','repair@example.invalid',statement_timestamp(),'Repaired');
   raise exception 'unleased reply archived';
  exception when insufficient_privilege then null;end;
-end $;
+end $$;
 -- Technician claim does not establish operational verification.
 set local role authenticated;
 select set_config('request.jwt.claim.role','authenticated',true),set_config('request.jwt.claim.sub',:'owner_id',true);
@@ -153,7 +153,7 @@ select :'sp',business_id,owner_user_id,:'th',gen_random_uuid(),'leo.maintenance_
  'purpose','verify_working','dueAt',null),repeat('d',64),'{}',
  '{"durationDays":1,"metricScope":"maintenance_staff_receipt"}','en'
 from public.operating_tasks where business_id=:'biz' and id='maintenance:'||:'msg';
-do $
+do $$
 declare b uuid:=current_setting('test.maintenance15b.biz')::uuid;
  o uuid:=current_setting('test.maintenance15b.owner')::uuid;
  th uuid:=current_setting('test.maintenance15b.thread')::uuid;
@@ -176,20 +176,20 @@ begin
  if r->>'id' is distinct from replay->>'id' then raise exception 'assignment replay duplicated';end if;
  perform set_config('test.maintenance15b.verify_request',r->>'id',true);
  perform public.supervisor_finish_effect_attempt(b,o,th,p,attempt,rev,'verified','committed',current_date);
-end $;
+end $$;
 set local role authenticated;
 select set_config('request.jwt.claim.role','authenticated',true),set_config('request.jwt.claim.sub',:'staff_user',true);
 select public.staff_channel_submit(current_setting('test.maintenance15b.verify_request')::uuid,'complete',
  'I physically tested the equipment and confirm it is working.',gen_random_uuid());
 select set_config('request.jwt.claim.sub',:'owner_id',true);
-do $
+do $$
 begin
  if not exists(select 1 from public.operating_tasks where id=current_setting('test.maintenance15b.case')
  and status='handled' and payload->>'repairVerified'='true') then raise exception 'independent verification did not close';end if;
  if (select count(*) from public.maintenance_case_events where task_id=current_setting('test.maintenance15b.case')
  and kind='operational_verification' and source_kind='staff_operational_check')<>1 then
  raise exception 'independent staff check receipt missing';end if;
-end $;
+end $$;
 
 select set_config('request.jwt.claim.sub',:'other_owner',true);
 do $$
