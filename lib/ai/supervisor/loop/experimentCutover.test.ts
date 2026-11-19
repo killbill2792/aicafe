@@ -10,7 +10,7 @@ vi.mock("./rollingExperimentSales.server",async importOriginal=>{
  const real=await importOriginal<typeof import("./rollingExperimentSales.server")>();
  return {...real,readElapsedWindowObservations:(...args:unknown[])=>testReader.elapsed(...args)};
 });
-import {resolveExperimentCutoverMode,readVerifiedActivationAnchor,runVerifiedToastPriceTick,trialSourceInterruption,contextChangeBreaksApprovedPrice} from "./experimentCutover.server";
+import {resolveExperimentCutoverMode,readVerifiedActivationAnchor,runVerifiedToastPriceTick,trialSourceInterruption,contextChangeBreaksApprovedPrice,subsequentToastPriceBoundary,priceExposureBoundary,windowHasSourceGap} from "./experimentCutover.server";
 
 describe("Task 8a experiment single-writer cutover",()=>{
  it("defaults to legacy when release evidence is absent",()=>{
@@ -221,6 +221,30 @@ describe("Task 8a exact interval and source pricing continuity",()=>{
   expect(trialSourceInterruption({...base,
    firstPriceChangeAt:"2026-11-12T07:00:00Z"})).toMatchObject({
     at:"2026-11-12T07:00:00.000Z",reason:"verified_price_changed"});
+ });
+ it("keeps a partial second publication retryable and only ends early after full exact-item proof",()=>{
+  const observed="2026-11-12T07:00:00Z";
+  const pending={toast_observed_at:observed,toast_effective_at:null,toast_publication_completed_at:null,
+   toast_publication_pos_item_id:null,old_price_cents:550,new_price_cents:500};
+  const changed={...base,current:{...current,price_cents:500,toast_publication_observed_at:observed}};
+  const gap=trialSourceInterruption({...changed,...subsequentToastPriceBoundary(pending,receipt,changed.asOf)});
+  expect(gap).toEqual({at:"2026-11-12T07:00:00.000Z",reason:"unverified_gap"});
+  expect(priceExposureBoundary(gap,base.finalEndAt)).toEqual({interruptedAt:null,sourceGapAt:gap.at,endAt:base.finalEndAt});
+  expect(windowHasSourceGap(base.finalEndAt,gap.at)).toBe(true);
+  expect(windowHasSourceGap(observed,gap.at)).toBe(false);
+  const complete={...pending,toast_publication_completed_at:"2026-11-12T09:00:00Z",toast_publication_pos_item_id:receipt.posItemId};
+  for(const invalid of [
+   {...complete,toast_publication_completed_at:"2026-11-14T09:00:00Z"},
+   {...complete,toast_publication_pos_item_id:receipt.posItemId+":size:ffffffff-ffff-4fff-8fff-ffffffffffff"},
+   {...complete,old_price_cents:450},
+  ]){
+   const unverified=trialSourceInterruption({...changed,...subsequentToastPriceBoundary(invalid,receipt,changed.asOf)});
+   expect(priceExposureBoundary(unverified,base.finalEndAt)).toEqual({interruptedAt:null,sourceGapAt:gap.at,endAt:base.finalEndAt});
+  }
+  const settled=trialSourceInterruption({...changed,priorInterruptionAt:gap.at,
+   ...subsequentToastPriceBoundary(complete,receipt,changed.asOf)});
+  expect(settled).toEqual({at:gap.at,reason:"verified_price_changed"});
+  expect(priceExposureBoundary(settled,base.finalEndAt)).toEqual({interruptedAt:gap.at,sourceGapAt:null,endAt:gap.at});
  });
  it("treats contextual pricing as an interruption even when the numeric base stays unchanged",()=>{
   expect(trialSourceInterruption({...base,
