@@ -8,7 +8,8 @@ import {pathToFileURL} from "node:url";
 import {parseNameStatus} from "../e2e/targeted.mjs";
 
 export const SUITES=Object.freeze({
- supervisor:["lib/ai/agent/loop.server.test.ts","lib/ai/agent/tools/dataQuery.registered.test.ts"],
+ supervisor:["lib/ai/agent/loop.server.test.ts","lib/ai/agent/tools/dataQuery.registered.test.ts",
+   "lib/ai/agent/task15dSecurity.test.ts"],
  inventory:["lib/ai/agent/tools/purchases.test.ts","lib/inventory/recordPurchases.server.test.ts"],
  purchasing:["lib/purchasing/planOrder.test.ts","lib/ai/agent/tools/supplierPurchasing.test.ts",
    "lib/ai/agent/persist.server.test.ts",

@@ -106,9 +106,10 @@ export async function GET(request: Request, context: RouteContext) {
         if (res.error) throw new Error("owner_work_context_unavailable");
         for (const thread of res.data ?? []) titles.set(thread.id,thread.title);
       }
-      // Never navigate to a thread that the current owner cannot read.
-      return conversationJson({ work: work.filter(item => item.threadId && titles.has(item.threadId))
-        .map(item => ({...item,threadTitle:titles.get(item.threadId!) ?? null})) });
+      // An investigation may not have a conversation yet; keep it visible.
+      // Never navigate to a thread the current owner cannot read.
+      return conversationJson({ work: work.filter(item => !item.threadId || titles.has(item.threadId))
+        .map(item => ({...item,threadTitle:item.threadId ? titles.get(item.threadId) ?? null : null})) });
     }
     return conversationJson({ work });
   } catch (error) {

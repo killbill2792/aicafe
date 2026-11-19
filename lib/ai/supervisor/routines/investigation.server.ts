@@ -15,6 +15,7 @@ import {prepareSupplierDiscrepancyFollowup} from "@/lib/ai/supervisor/loop/suppl
 import {readStaffMessagesForVerifiedOwner} from "@/lib/staffCommunication/channel.server";
 import {getWeekSchedule as readScopedWeekSchedule} from "@/lib/data/staffSchedule.server";
 import {alreadyNotifiedTaskKinds} from "./priority";
+import {getConnectorAccount,allowsGmail} from "@/lib/connectors/registry.server";
 import {maintenanceContext,pollMaintenanceVendorReplies} from "@/lib/ai/supervisor/loop/maintenance.server";
 import {investigationPrompt,investigationReadTools,maintenanceInvestigationTools,verifyInvestigationTurn,
   unsupportedExternalEffectClaim,type InvestigationCheckpoint,type SourceSynopsis} from "./investigation";
@@ -293,11 +294,24 @@ export async function processNextInvestigation(db:SupabaseClient,now:Date,
     },provider??openAIProvider);
     const identity=await readSupervisorCafeIdentity(c.business_id,db);
     const scope={businessId:c.business_id,ownerUserId:c.owner_user_id};
+    const maintenance=maintenanceContext(db,maintenanceScope,{lease:maintenanceLease});
+    let mailbox:Awaited<ReturnType<typeof getConnectorAccount>>=null;
+    const checkMailbox=async()=>{
+      if(!mailbox)return;
+      const live=await getConnectorAccount(scope);
+      if(!live||!allowsGmail(live,"read")||live.id!==mailbox.id||live.generation!==mailbox.generation||
+        live.provider_subject!==mailbox.provider_subject)throw Error("authorization_revoked");
+    };
     const context={
       tools:createOwnerScopedCafeTools(scope,db),locale:"en" as const,
       asOf:identity.asOf,timezone:identity.timezone,currency:identity.currency,
       canonicalData:async()=>({db,businessId:c.business_id}),
-      ...(synopsis.kind==="maintenance_issue"?{maintenance:maintenanceContext(db,maintenanceScope,{lease:maintenanceLease})}:{}),
+      ...(synopsis.kind==="maintenance_issue"?{maintenance:{...maintenance,search:async(...args:Parameters<typeof maintenance.search>)=>{
+        await checkMailbox();
+        const account=await getConnectorAccount(scope);
+        if(!account||!allowsGmail(account,"read"))throw Error("authorization_revoked");
+        const found=await maintenance.search(...args);mailbox??=account;await checkMailbox();return found;
+      }}}:{}),
       ...(synopsis.kind==="supplier_receiving"?{receivingRead:async(purchaseOrderId:string)=>{
         // Never let an unattended model use a different PO from its SQL claim.
         const source=await readIncidentEvidence(db,c);
@@ -333,8 +347,9 @@ export async function processNextInvestigation(db:SupabaseClient,now:Date,
       maxElapsedMs:55_000,maxModelCalls:6,maxToolCalls:7,
       maxInputTokens:72_000,maxOutputTokens:4800,
     },()=>runAgentTurn({
-      provider:metered.provider,ownerText:investigationPrompt(synopsis,c.phase==="awaiting_owner",
-        c.narrative??null),
+      serviceOrigin:true,provider:metered.provider,ownerText:investigationPrompt(synopsis,c.phase==="awaiting_owner",
+        synopsis.kind==="maintenance_issue"?null:c.narrative??null),
+      beforeProviderRequest:checkMailbox,beforeAcceptResult:checkMailbox,
       context,toolNames:synopsis.kind==="maintenance_issue"?maintenanceInvestigationTools:synopsis.kind==="supplier_receiving"?
         [...investigationReadTools,"propose_supplier_discrepancy_followup"]:investigationReadTools,businessId:c.business_id,
       requestId:c.stable_key,
@@ -401,7 +416,7 @@ export async function processNextInvestigation(db:SupabaseClient,now:Date,
       threadId:c.thread_id,kind:"priority_investigation",
       taskId:"investigation:"+c.stable_key+":"+c.episode_id+":"+(c.step_version+1),
       localDate:identity.asOf,important:true,
-    },()=>finish(db,c,new Date(),outcome,next,verified.text));
+    },async()=>{await checkMailbox();return finish(db,c,new Date(),outcome,next,verified.text);});
     if(notice.decision!=="posted"||notice.result!==true)
       throw new Error("storage_failed");
     if(closePoId&&next.receivingClosureEvidence){

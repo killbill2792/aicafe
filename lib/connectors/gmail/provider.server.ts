@@ -18,7 +18,7 @@ export async function authorizedGmail(scope:ConnectorOwner,operation:ConnectorOp
   // Refresh is itself a Google operation: a stale worker or revoked owner
   // must not refresh a token just because it read credentials earlier.
   const beforeRefresh=await getConnectorAccount(scope);
-  if(beforeRefresh?.id!==account.id||beforeRefresh.generation!==account.generation||
+  if(beforeRefresh?.id!==account.id||beforeRefresh.generation!==account.generation||beforeRefresh.provider_subject!==account.provider_subject||
      !allowsGmail(beforeRefresh,operation))throw new Error("gmail_permission_changed");
   let refreshed;
   try{refreshed=await tokenRequest({grant_type:"refresh_token",refresh_token:decryptToken(secret.refresh_token_enc)});}
@@ -38,7 +38,7 @@ export async function authorizedGmail(scope:ConnectorOwner,operation:ConnectorOp
   if(updated.error||!updated.data)throw new Error("gmail_refresh_conflict");
   // A concurrent owner disconnect may have invalidated the refreshed credentials.
   const still=await getConnectorAccount(scope);
-  if(still?.id!==account.id||still?.generation!==account.generation||!allowsGmail(still,operation))
+  if(still?.id!==account.id||still?.generation!==account.generation||still.provider_subject!==account.provider_subject||!allowsGmail(still,operation))
     throw new Error("gmail_connection_changed");
   return {account,token:refreshed.access_token};
 }
@@ -74,7 +74,7 @@ async function scopedGmailApi(scope:ConnectorOwner,account:ConnectorAccount,
  init?:{method?:"GET"|"POST"|"PUT"|"DELETE";body?:unknown}):Promise<unknown>{
  const assertCurrent=async()=>{
   const live=await getConnectorAccount(scope);
-  if(live?.id!==account.id||live.generation!==account.generation||!allowsGmail(live,operation))
+  if(live?.id!==account.id||live.generation!==account.generation||live.provider_subject!==account.provider_subject||!allowsGmail(live,operation))
     throw new Error("gmail_permission_changed");
  };
  await assertCurrent();
@@ -90,9 +90,9 @@ export type GmailMessage={id:string;threadId?:string;snippet?:string;internalDat
     parts?:Array<{mimeType?:string;filename?:string;body?:{data?:string;attachmentId?:string;size?:number}}>};
   labelIds?:string[]};
 export function safeMessage(message:GmailMessage){
-  const headers=Object.fromEntries((message.payload?.headers??[])
-    .filter(h=>/^(from|to|cc|subject|date|message-id)$/i.test(h.name))
-    .map(h=>[h.name.toLowerCase(),h.value.slice(0,500)]));
+  const headers=Object.fromEntries(Object.entries(headersOf(message))
+    .filter(([name])=>/^(from|to|cc|subject|date|message-id)$/.test(name))
+    .map(([name,value])=>[name,value.slice(0,500)]));
   const allParts:Array<{mimeType?:string;filename?:string;body?:{data?:string;attachmentId?:string;size?:number}}>= [];
   const walk=(part:NonNullable<GmailMessage["payload"]>,depth:number)=>{
     if(depth>6||allParts.length>60)return;
@@ -124,8 +124,12 @@ export async function gmailSearch(scope:ConnectorOwner,query:string,limit=12){
   const list=await scopedGmailApi(scope,account,"read",token,"/messages?"+params) as {messages?:Array<{id:string;threadId:string}>;resultSizeEstimate?:number};
   const messages=await Promise.all((list.messages??[]).slice(0,20).map(async m=>{
     const msg=await scopedGmailApi(scope,account,"read",token,"/messages/"+encodeURIComponent(m.id)+"?format=full") as GmailMessage;
+    if(msg.id!==m.id)throw new Error("gmail_message_identity_mismatch");
     return safeMessage(msg);
   }));
+  const live=await getConnectorAccount(scope);
+  if(live?.id!==account.id||live.generation!==account.generation||live.provider_subject!==account.provider_subject||!allowsGmail(live,"read"))
+    throw new Error("gmail_permission_changed");
   return {account:account.email,source:"gmail",asOf:new Date().toISOString(),messages:messages.map(m=>({
     id:m.id,threadId:m.threadId,headers:m.headers,snippet:m.snippet,receivedAt:m.receivedAt,attachments:m.attachments}))};
 }
@@ -141,6 +145,7 @@ export async function gmailRead(scope:ConnectorOwner,messageId:string){
   if(!/^[a-zA-Z0-9_-]{8,100}$/.test(messageId))throw new Error("gmail_invalid_message_id");
   const {token,account}=await authorizedGmail(scope,"read");
   const message=await scopedGmailApi(scope,account,"read",token,"/messages/"+encodeURIComponent(messageId)+"?format=full") as GmailMessage;
+  if(message.id!==messageId)throw new Error("gmail_message_identity_mismatch");
   return {account:account.email,source:"gmail",asOf:new Date().toISOString(),message:safeMessage(message)};
 }
 export async function gmailReadThread(scope:ConnectorOwner,threadId:string){
@@ -156,6 +161,7 @@ export async function gmailReadAttachment(scope:ConnectorOwner,messageId:string,
     throw new Error("gmail_invalid_attachment_id");
   const {token,account}=await authorizedGmail(scope,"read");
   const message=await scopedGmailApi(scope,account,"read",token,"/messages/"+encodeURIComponent(messageId)+"?format=full") as GmailMessage;
+  if(message.id!==messageId)throw new Error("gmail_message_identity_mismatch");
   const parts:Array<{mimeType?:string;filename?:string;body?:{attachmentId?:string;size?:number};parts?:unknown[]}>= [];
   const walk=(node:NonNullable<GmailMessage["payload"]>,depth:number)=>{
     if(depth>6||parts.length>60)return;
@@ -219,8 +225,18 @@ function labelChanges(e:GmailEffect):{addLabelIds:string[];removeLabelIds:string
   if(add.length+remove.length!==1)throw new Error("gmail_invalid_label_operation");
   return {addLabelIds:add,removeLabelIds:remove};
 }
-function headersOf(msg:GmailMessage){return Object.fromEntries((msg.payload?.headers??[])
-  .map(h=>[h.name.toLowerCase(),h.value]));}
+function headersOf(msg:GmailMessage):Record<string,string>{
+  const headers:Record<string,string>=Object.create(null);
+  const seen=new Set<string>();
+  for(const h of msg.payload?.headers??[]){
+    if(typeof h.name!=="string"||typeof h.value!=="string")continue;
+    const name=h.name.toLowerCase();
+    // Ambiguous and multiline identity headers are not valid receipt/reply identity.
+    if(seen.has(name)||/[\r\n\u0000]/.test(h.value)){delete headers[name];seen.add(name);continue;}
+    seen.add(name);headers[name]=h.value;
+  }
+  return headers;
+}
 /** Receipt verification is READ-ONLY. Once a provider accepts a write, a
  * later operation switch must not erase that fact or reopen send authority. */
 async function verifyReceipt(scope:ConnectorOwner,account:ConnectorAccount,e:GmailEffect,returnedId:string,rfc:string|null):Promise<{messageId:string;threadId:string|null}>{
@@ -283,16 +299,16 @@ export async function performGmailEffect(scope:ConnectorOwner,effect:GmailEffect
       followup.contactId!==savedFollowup.contactId||followup.poRevision!==savedFollowup.poRevision||
       followup.receiptVersions!==savedFollowup.receiptVersions||followup.invoiceVersions!==savedFollowup.invoiceVersions)))
     throw new Error("supplier_followup_binding_changed");
-  // The provider must execute the exact approved preview, not a caller-supplied
-  // replacement recipient, body or reply target carrying the same binding.
-  if(followup){
+  // Every Gmail operation must execute the exact approved preview, not a
+  // caller-supplied recipient, body, operation or target carrying the same hash.
+  {
     const approved=bound as Partial<GmailEffect>;
     for(const key of ["operation","action","subject","body","messageId","threadId","labelId","labelName"] as const){
-      if(approved[key]!==effect[key])throw new Error("supplier_followup_payload_changed");
+      if(approved[key]!==effect[key])throw new Error(followup?"supplier_followup_payload_changed":"gmail_approved_payload_changed");
     }
     for(const key of ["to","cc","bcc"] as const){
       if(!Array.isArray(approved[key])||JSON.stringify(approved[key])!==JSON.stringify(effect[key]))
-        throw new Error("supplier_followup_payload_changed");
+        throw new Error(followup?"supplier_followup_payload_changed":"gmail_approved_payload_changed");
     }
   }
   if(/^Purchase order follow-up [a-f0-9-]{36}$/i.test(effect.subject)&&!followup)
@@ -349,7 +365,7 @@ export async function performGmailEffect(scope:ConnectorOwner,effect:GmailEffect
   }
   const ensureLive=async()=>{
     const live=await getConnectorAccount(scope);
-    if(live?.id!==account.id||live.generation!==account.generation||!allowsGmail(live,required))
+    if(live?.id!==account.id||live.generation!==account.generation||live.provider_subject!==account.provider_subject||!allowsGmail(live,required))
       throw new Error(effect.operation==="send"?
         "gmail_connection_revoked_before_send":"gmail_connection_revoked_before_effect");
     // Permission can be withdrawn without changing the account generation.
@@ -362,7 +378,7 @@ export async function performGmailEffect(scope:ConnectorOwner,effect:GmailEffect
   if(effect.operation==="send"||effect.operation==="draft"){
     if(effect.messageId){
       const source=await scopedGmailApi(scope,account,required,token,"/messages/"+encodeURIComponent(effect.messageId)+"?format=metadata") as GmailMessage;
-      if(!source.id||!source.threadId)throw new Error("gmail_reply_source_unavailable");
+      if(source.id!==effect.messageId||!source.threadId)throw new Error("gmail_reply_source_unavailable");
       if(effect.threadId&&effect.threadId!==source.threadId)throw new Error("gmail_reply_thread_mismatch");
       verifiedThreadId=source.threadId;
       referenceId=headersOf(source)["message-id"]??null;
