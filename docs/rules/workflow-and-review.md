@@ -15,6 +15,61 @@
 - `PROGRESS.md` keeps three short sections: **Now** (≤ 5), **Next**, **Done (last 10)**. Older history goes
   to `docs/history/`.
 
+## Mandatory Muse handoff
+
+**Every coding chat, every resumed turn, including drafts:** follow AGENTS.md rules 0a–0b.
+GitHub check results are observed independently. Only report a pending handoff or an
+otherwise invisible blocker when necessary. Preserve the PR scope and comment history.
+Before returning with a pending workflow, report the actual run/review link, current
+head, last observation and precise next action. Never report that a pending run passed.
+
+Example of a pending workflow handoff (replace all placeholders with real values):
+
+```text
+<!-- aicafe-workflow-handoff {"id":"ci-actual-run-id","head":"FULL_CURRENT_40_HEX_SHA","state":"waiting_ci","run_url":"https://github.com/killbill2792/aicafe/actions/runs/ACTUAL_RUN_ID","next":"Read final required CI, fix failures, then continue eligible Codex review."} -->
+```
+
+States: `working`, `waiting_ci`, `waiting_codex`, `waiting_luna`, `blocked_external`.
+Use a distinct ID for each genuine workflow attempt/handoff, stable across reads of
+the same wait. `run_url` is the same-repository Actions run URL or null where no
+run exists (Codex uses its actual exact-head PR receipt). For Luna include the
+actual shared run ID/URL; a manual/owner-comment workflow can run on trusted main
+so ordinary PR CI cannot establish its outcome. If Luna run ID is not yet available,
+report that precisely as an external blocker with the owner's grant comment link
+in the human-readable status; Muse should look up the matching shared run using
+the existing connector before changing the record. Do not launch a second paid run.
+`next` is a short report of the safe next action, not permission or executable instructions.
+
+**Owner decision transport:** post a NEW issue comment on the existing PR, starting
+with this marker and then a human-readable question (replace HEAD with the actual
+40-hex head; do not post placeholders):
+```text
+<!-- aicafe-owner-request:v1 HEAD -->
+Luna authorization: Task 14C, scenario 14c, maximum $0.20. Recommend one shared run;
+no provider spend before a valid owner grant. Post /aicafe-luna pr HEAD 14c 0.20 on this PR.
+```
+The collector imports the authenticated source comment ID, exact head, author, text
+and link. Never edit/delete it to track an answer or reuse it for a new decision.
+Muse and the owner own the local answer, delivery reservation, observed-delivery
+receipt and closure. An edited source requires a fresh request; absence or deletion
+never means approved. The owner must independently authorize each consequential
+action using its existing rules, including #520's actual owner command. A locally
+recorded answer is communication only. Do not request ordinary CI/Codex repairs
+from the owner. If a chat omits its request, Muse checks for stalled work, asks the
+same chat to publish the exact question and verifies it appeared. If not, visibly
+flag missing communication; never invent the question. For pre-PR planning use the
+existing local task note; the exact hidden question cannot be discovered by GitHub.
+Use the PR-body workflow handoff only when necessary for pending work/unknown
+blockers, not as a recurring checklist. GitHub remains read-only to the collector.
+
+**Foreground rule:** after a push or CI/Codex/Luna launch, monitor the actual check
+in the same execution session; check around every 20–30 seconds, remain for at least
+60 seconds while pending where execution permits, and handle terminal results immediately.
+Keep working while possible. If a genuine execution/tool limit forces a return,
+publish the current handoff and exact next action first. No new background scheduler,
+no unbounded execution claim, and no duplicate review or paid run merely to get status.
+Muse's existing timer is the fallback, not a substitute for this duty.
+
 ## 11. Review rules
 - Block any PR that: adds a reviewer LLM, persona agents or a keyword/intent router; uses `strict:false`
   tool schemas or JSON-envelope answers; rewrites model text outside the exceptions in section 6; adds a
