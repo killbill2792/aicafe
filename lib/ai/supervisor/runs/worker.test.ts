@@ -365,7 +365,17 @@ it("binds resumed context to the exact persisted question and authenticated answ
  const questionId=randomUUID(),answerId=randomUUID(),r={...run,id:randomUUID(),requestKey:randomUUID()};
  const q={id:questionId,role:"supervisor",text_content:null,structured_content:[{type:"clarify",question:"Which supplier?"}],grounding:{durableRunId:r.id,ownerMessageId:r.requestKey,durableQuestionId:questionId,status:"requires_owner_input"},owner_input_response:null,owner_input_prompt_message_id:null};
  const a={id:answerId,role:"owner",text_content:"The existing coffee supplier",structured_content:null,grounding:null,owner_input_response:{questionId,action:"supply"},owner_input_prompt_message_id:questionId};
- expect(decodeMatchedOwnerAnswer(r,questionId,answerId,q,a)).toEqual({questionId,answerId,question:"Which supplier?",answer:"The existing coffee supplier"});
+ expect(decodeMatchedOwnerAnswer(r,questionId,answerId,q,a)).toEqual({questionId,answerId,question:"Question card (owner answers in its form): Which supplier?",answer:"The existing coffee supplier"});
  expect(()=>decodeMatchedOwnerAnswer(r,questionId,answerId,{...q,grounding:{...q.grounding,durableRunId:randomUUID()}},a)).toThrow();
  expect(()=>decodeMatchedOwnerAnswer(r,questionId,answerId,q,{...a,owner_input_prompt_message_id:randomUUID()})).toThrow();
+});
+
+it("sends the original assignment before the exact matched clarification and preserves its selected record for tool resolution",async()=>{
+ const chosen=randomUUID();let saw:unknown;
+ const ctx={timezone:"UTC",asOf:"2026-11-10",locale:"en",tools:{}} as AgentToolContext;
+ const provider:AgentProvider=async function*(params){saw=params.input;yield {type:"response.output_text.delta",delta:"The selected record."};yield {type:"response.completed",response:{usage:{input_tokens:30,output_tokens:4,input_tokens_details:{cached_tokens:0}}}};};
+ const intent="Prepare a price draft",question="Asked: Which product? Options: Regular ("+chosen+"); Other ("+randomUUID()+")";
+ await runAgentTurn({ownerText:intent,context:ctx,provider,matchedOwnerAnswers:[{questionId:randomUUID(),answerId:randomUUID(),question,answer:"Regular"}]});
+ expect((saw as unknown[]).slice(-3)).toEqual([{role:"user",content:intent},{role:"assistant",content:question},{role:"user",content:"Regular"}]);
+ expect(ctx.resolveState?.chosenIds.has(chosen)).toBe(true);
 });

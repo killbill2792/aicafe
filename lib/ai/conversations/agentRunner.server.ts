@@ -203,9 +203,6 @@ export async function runOneTurn(p: TurnParams): Promise<{ replyId: string; repl
       !(job && (p.durableFence||m.role === "owner") && Number.isFinite(ownerAt) && Date.parse(m.createdAt) > ownerAt)).slice(-8)
       .map(m => ({ role: m.role === "owner" ? "user" as const : "assistant" as const,
         content: historyContent(m) })).filter(m => m.content);
-    for(const answer of p.matchedAnswers??[]){
-      history.push({role:"assistant",content:answer.question},{role:"user",content:answer.answer});
-    }
     const proposalScope={...scope,threadId:id,locale:p.locale,
       ...(external?{verifiedReadClient:p.externalClient}: {})};
     let selectedContentSha256:string|null=null;
@@ -753,7 +750,7 @@ export async function runOneTurn(p: TurnParams): Promise<{ replyId: string; repl
     failureStage = "model";
     const result = await runAgentTurn({ ownerText: p.ownerText, ownerImages:selected.images,
        ownerPdfs:selected.pdfs,ownerEvidence:selected.evidence,
-       history, context,cafeProfile,businessId:scope.businessId,requestId:owner.id,
+       history, matchedOwnerAnswers:p.matchedAnswers,context,cafeProfile,businessId:scope.businessId,requestId:owner.id,
        onAuditStep: step => { if (auditSteps.length < 64) auditSteps.push(step); },
        beforeProviderRequest:assertTurnSources,
        ...(p.checkpoint?{checkpoint:p.checkpoint}:{}),

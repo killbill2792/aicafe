@@ -1,6 +1,7 @@
 import "server-only";
 import { randomUUID } from "node:crypto";
 import { z } from "zod";
+import {historyContent} from "@/lib/ai/agent/history";
 import { createAdminSupabaseClient } from "@/lib/supabase/admin";
 import { getExistingSupervisorReply } from "@/lib/ai/conversations/replyWriter.server";
 import { authorizedExternalConversation } from "@/lib/ai/conversations/authorizedTurn.server";
@@ -237,7 +238,9 @@ export function decodeMatchedOwnerAnswer(run:WorkerRun,questionId:string,answerI
     answer.owner_input_prompt_message_id!==questionId||!response.success||response.data.questionId!==questionId)
    throw Error("owner_answer_scope_mismatch");
  const blocks=z.array(z.object({type:z.string(),question:z.string().optional()})).parse(question.structured_content);
- const prompt=blocks.find(b=>b.type==="clarify")?.question;
+ const clarify=blocks.findIndex(b=>b.type==="clarify"&&typeof b.question==="string");
+ if(clarify<0)throw Error("owner_answer_scope_mismatch");
+ const prompt=historyContent({text:null,blocks:[(question.structured_content as unknown[])[clarify]]});
  return matchedOwnerAnswerSchema.parse({questionId,answerId,question:prompt,answer:answer.text_content});
 }
 export async function processDurableRun(runId: string,emit:(type:string,data:unknown)=>void=()=>{}): Promise<WorkerOutcome> {

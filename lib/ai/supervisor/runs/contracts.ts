@@ -106,5 +106,5 @@ export type OwnerRunCheckpoint = {
 };
 
 /** The database binds the original question to the explicit owner response. */
-export const matchedOwnerAnswerSchema=z.object({questionId:z.uuid(),answerId:z.uuid(),question:z.string().trim().min(1).max(2400),answer:z.string().trim().min(1).max(4000)});
+export const matchedOwnerAnswerSchema=z.object({questionId:z.uuid(),answerId:z.uuid(),question:z.string().trim().min(1).max(8000),answer:z.string().trim().min(1).max(4000)});
 export type MatchedOwnerAnswer=z.infer<typeof matchedOwnerAnswerSchema>;

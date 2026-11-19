@@ -16,7 +16,7 @@ import {verifiedRecommendedPriceInReply} from "./pricingReply";
 import {injectSavedOwnerInputs,formatSavedOwnerFacts,type SavedFact} from "@/lib/ownerFacts/inject";
 import {questionFromReasons} from "@/lib/ownerFacts/questions";
 import {withoutSavedFactFields} from "@/lib/ownerFacts/askGuard";
-import type {OwnerRunCheckpoint} from "@/lib/ai/supervisor/runs/contracts";
+import type {OwnerRunCheckpoint,MatchedOwnerAnswer} from "@/lib/ai/supervisor/runs/contracts";
 
 export type EndReason = "complete" | "budget" | "timeout" | "provider_error" | "tool_errors";
 type ToolCall = { type: "function_call"; name: string; arguments: string; call_id: string };
@@ -172,6 +172,7 @@ export async function runAgentTurn(args: {
   /** A scheduled synopsis is not an authenticated owner statement. */
   serviceOrigin?:boolean;
   checkpoint?:OwnerRunCheckpoint;
+  matchedOwnerAnswers?:readonly MatchedOwnerAnswer[];
 }): Promise<AgentTurn> {
   if(!args.context.timezone)throw new Error("cafe_timezone_required");
   const now = args.now ?? Date.now, started = now();
@@ -203,6 +204,9 @@ export async function runAgentTurn(args: {
        ...(args.ownerPdfs??[]).map(pdf=>({
         type:"input_file",filename:pdf.filename,file_data:"data:application/pdf;base64,"+pdf.base64,detail:"high"
        }))]:args.ownerText }];
+  const matched=args.matchedOwnerAnswers??[];
+  const matchedHistory=matched.flatMap(pair=>[{role:"assistant" as const,content:pair.question},{role:"user" as const,content:pair.answer}]);
+  input.push(...matchedHistory);
   const absorbed: OwnerFollowUp[] = [];
   // Mark inbox messages answered only when a model response has completed.
   const deliveredIds = new Set<string>();
@@ -231,9 +235,11 @@ export async function runAgentTurn(args: {
     if (fresh.length) args.onFollowUp?.(fresh.length);
     return fresh.length;
   };
-  const resolveState=newResolveState(args.ownerText,args.history);
+  const resolveState=matched.length
+    ?newResolveState(matched[matched.length-1].answer,[...(args.history??[]),{role:"user",content:args.ownerText},...matchedHistory.slice(0,-1)])
+    :newResolveState(args.ownerText,args.history);
   args.context.resolveState=resolveState;
-  args.context.ownerMessages=(args.history??[]).filter(m=>m.role==="user").map(m=>m.content);
+  args.context.ownerMessages=[...(args.history??[]).filter(m=>m.role==="user").map(m=>m.content),...matched.map(pair=>pair.answer)];
   // Tool context is authenticated; owner facts are loaded once per turn.
   Object.assign(args.context,{savedOwnerFacts:args.ownerFacts??[]});
   const results: Array<{callId: string; name: string; arguments: string; result: AgentToolResult}> = [];
@@ -732,7 +738,7 @@ export async function runAgentTurn(args: {
   await args.beforeAcceptResult?.();
   const status = statusFromResults(results);
   const ownerStatements=[...(args.history??[]).filter(m=>m.role==="user").map(m=>m.content),
-    ...(args.serviceOrigin?[]:[args.ownerText]),...absorbed.map(m=>m.text)].join("\n");
+    ...(args.serviceOrigin?[]:[args.ownerText]),...matched.map(pair=>pair.answer),...absorbed.map(m=>m.text)].join("\n");
   const restored=await args.checkpoint?.restoredResults?.()??[];
   // Restored cards are canonical row references, not replayed model text.
   // They remain part of the final grounded reply even when the model did not
