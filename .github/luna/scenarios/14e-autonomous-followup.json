@@ -1,0 +1,207 @@
+{
+  "id": "14e-autonomous-followup",
+  "mode": "generic",
+  "engine": "node-server",
+  "entrypoint": "evals/acceptance/live/task14e-autonomous-followup.mjs",
+  "proof": "14e-autonomous-followup-proof.json",
+  "scope": "14e-autonomous-followup-scope.json",
+  "expectedTools": [
+    "get_investigation_source",
+    "get_cashflow_evidence",
+    "get_bills"
+  ],
+  "assertions": [
+    {
+      "name": "durable-financial-review",
+      "kind": "source",
+      "table": "public.supervisor_investigations",
+      "where": {
+        "business_id": {
+          "scope": "businessId"
+        },
+        "owner_user_id": {
+          "scope": "ownerUserId"
+        },
+        "thread_id": {
+          "scope": "threadId"
+        },
+        "source_id": {
+          "scope": "taskId"
+        },
+        "episode_id": {
+          "scope": "episodeId"
+        },
+        "phase": {
+          "eq": "awaiting_owner"
+        }
+      },
+      "minCount": 1,
+      "maxCount": 1
+    },
+    {
+      "name": "source-watch-remains-open",
+      "kind": "source",
+      "table": "public.operating_tasks",
+      "where": {
+        "business_id": {
+          "scope": "businessId"
+        },
+        "id": {
+          "scope": "taskId"
+        },
+        "status": {
+          "eq": "watching"
+        }
+      },
+      "minCount": 1,
+      "maxCount": 1
+    },
+    {
+      "name": "first-dated-evidence",
+      "kind": "source",
+      "table": "public.uploads",
+      "where": {
+        "business_id": {
+          "scope": "businessId"
+        },
+        "id": {
+          "scope": "firstUploadId"
+        },
+        "financial_closing_cents": {
+          "eq": "10000"
+        }
+      },
+      "minCount": 1,
+      "maxCount": 1
+    },
+    {
+      "name": "changed-dated-evidence",
+      "kind": "source",
+      "table": "public.uploads",
+      "where": {
+        "business_id": {
+          "scope": "businessId"
+        },
+        "id": {
+          "scope": "secondUploadId"
+        },
+        "financial_closing_cents": {
+          "eq": "30000"
+        }
+      },
+      "minCount": 1,
+      "maxCount": 1
+    },
+    {
+      "name": "owner-update",
+      "kind": "owner",
+      "table": "public.ai_messages",
+      "where": {
+        "business_id": {
+          "scope": "businessId"
+        },
+        "thread_id": {
+          "scope": "threadId"
+        },
+        "id": {
+          "scope": "ownerNoticeId"
+        },
+        "role": {
+          "eq": "supervisor"
+        }
+      },
+      "minCount": 1,
+      "maxCount": 1
+    },
+    {
+      "name": "no-owner-prompt",
+      "kind": "source",
+      "table": "public.ai_messages",
+      "where": {
+        "business_id": {
+          "scope": "businessId"
+        },
+        "role": {
+          "eq": "owner"
+        }
+      },
+      "minCount": 0,
+      "maxCount": 0
+    },
+    {
+      "name": "interrupted-reservation",
+      "kind": "source",
+      "table": "public.supervisor_system_usage_events",
+      "where": {
+        "business_id": {
+          "scope": "businessId"
+        },
+        "status": {
+          "eq": "attempted"
+        },
+        "model": {
+          "eq": "gpt-6-luna"
+        }
+      },
+      "minCount": 1,
+      "maxCount": 1
+    },
+    {
+      "name": "real-model-completions",
+      "kind": "source",
+      "table": "public.supervisor_system_usage_events",
+      "where": {
+        "business_id": {
+          "scope": "businessId"
+        },
+        "status": {
+          "eq": "completed"
+        },
+        "model": {
+          "eq": "gpt-6-luna"
+        }
+      },
+      "minCount": 4,
+      "maxCount": 18
+    },
+    {
+      "name": "no-external-effect",
+      "kind": "source",
+      "table": "public.connector_provider_receipts",
+      "where": {
+        "business_id": {
+          "scope": "businessId"
+        }
+      },
+      "minCount": 0,
+      "maxCount": 0
+    },
+    {
+      "name": "no-expense-effect",
+      "kind": "source",
+      "table": "public.expenses",
+      "where": {
+        "business_id": {
+          "scope": "businessId"
+        }
+      },
+      "minCount": 0,
+      "maxCount": 0
+    },
+    {
+      "name": "foreign-evidence-denied",
+      "kind": "isolation",
+      "table": "public.uploads",
+      "where": {
+        "business_id": {
+          "scope": "otherCafeId"
+        },
+        "id": {
+          "scope": "secondUploadId"
+        }
+      },
+      "minCount": 0,
+      "maxCount": 0
+    }
+  ]
+}
