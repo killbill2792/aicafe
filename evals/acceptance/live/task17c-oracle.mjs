@@ -65,3 +65,63 @@ export function verifyScheduledOccurrence({expected,firstPid,secondPid,before,af
  assert.deepEqual(after,before,"duplicate tick must not change run, receipt or attempts");
  return occurrence.run_id;
 }
+
+export function verifyOperatingWorld({world,evidence:e}){
+ const {staff,finance}=world;
+ assert.notEqual(staff.businessId,finance.businessId);
+ assert.notEqual(staff.ownerUserId,finance.ownerUserId);
+ const byTarget=(list,t)=>{
+  const matches=list.filter(x=>x.business_id===t.businessId&&x.source_id===t.taskId);
+  assert.equal(matches.length,1,"one durable investigation per source");
+  return matches[0];
+ };
+ for(const list of [e.queued,e.recovered,e.followed])assert.equal(list.length,2,"two scoped incidents");
+ const staffEpisode=byTarget(e.queued,staff).episode_id,financeEpisode=byTarget(e.queued,finance).episode_id;
+ assert.notEqual(staffEpisode,financeEpisode);
+ assert.ok([staffEpisode,financeEpisode].includes(e.interruptedEpisode));
+ assert.ok(Number.isSafeInteger(e.originalPid)&&e.originalPid>0&&Number.isSafeInteger(e.recoveryPid)&&e.recoveryPid>0&&e.originalPid!==e.recoveryPid);
+ for(const t of [staff,finance]){
+  const id=byTarget(e.queued,t).episode_id;
+  for(const list of [e.recovered,e.followed]){
+   const item=byTarget(list,t);
+   assert.equal(item.episode_id,id,"must resume same episode");
+   assert.equal(item.phase,"awaiting_owner","no invented resolution");
+   assert.equal(item.lease_token,null);
+   const tools=item.evidence.modelTools;
+   assert.ok(Array.isArray(tools)&&tools.includes("get_investigation_source"));
+   if(t===staff){
+    assert.ok(tools.includes("get_staff_messages"));
+    assert.ok(tools.some(n=>["get_schedule","get_week_schedule","get_coverage_gaps"].includes(n)));
+   }else{
+    assert.ok(tools.includes("get_cashflow_evidence")&&tools.includes("get_bills"));
+   }
+  }
+ }
+ assert.equal(e.staffNotices.length,1,"no repeated notice for unchanged staff incident");
+ assert.equal(e.financeBefore.length,1);
+ assert.equal(e.financeNew.length,1,"one updated notice for changed source");
+ assert.notEqual(e.financeBefore[0].id,e.financeNew[0].id);
+ assert.equal(e.ownerRows.length,0,"no owner prompt");
+ assert.equal(e.effects.length,0,"no unauthorized effect");
+ assert.equal(e.proposals.length,0,"no invented proposal");
+ assert.deepEqual(e.shifts,[{id:staff.shiftId,employee_id:staff.employeeId,status:"sent"}]);
+ assert.equal(e.sources.length,2);
+ for(const [id,cents] of [[finance.firstUploadId,world.initialCash],[e.secondUploadId,world.laterCash]]){
+  const row=e.sources.find(x=>x.id===id);
+  assert.ok(row);
+  assert.equal(row.business_id,finance.businessId);
+  assert.equal(Number(row.financial_closing_cents),cents);
+ }
+ const abandoned=e.usage.filter(x=>x.status==="attempted");
+ assert.equal(abandoned.length,1,"one abandoned reservation");
+ assert.equal(abandoned[0].model,"gpt-6-luna");
+ assert.equal(abandoned[0].input_tokens,null);
+ assert.equal(abandoned[0].business_id,e.interruptedEpisode===staffEpisode?staff.businessId:finance.businessId);
+ const completed=e.usage.filter(x=>x.status==="completed");
+ assert.equal(e.usage.length,completed.length+1);
+ assert.ok(completed.length>=4&&completed.length<=18,"bounded completed Luna provider calls");
+ assert.ok(completed.every(x=>x.model==="gpt-6-luna"&&Number(x.input_tokens)>0));
+ assert.ok([staff,finance].every(t=>completed.some(x=>x.business_id===t.businessId)));
+ return {providerCalls:completed.length,staffEpisodeId:staffEpisode,financeEpisodeId:financeEpisode,
+  staffNoticeId:e.staffNotices[0].id,financeFirstNoticeId:e.financeBefore[0].id,financeFollowupNoticeId:e.financeNew[0].id};
+}
