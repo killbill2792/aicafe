@@ -152,7 +152,7 @@ async function readOwnerAttachments(scope:ConversationScope,threadId:string,ids:
  return {images,pdfs,evidence,contentSha256:fingerprint.digest("hex")};
 }
 /** One owner turn: tools → loop → persist → usage. Emits done/error and never throws. */
-export async function runOneTurn(p: TurnParams): Promise<{ replyId: string; replyText:string; absorbedOwnerMessageIds: string[]; awaitingOwner?:boolean } | { errorCode: string }> {
+export async function runOneTurn(p: TurnParams): Promise<{ replyId: string; replyText:string; absorbedOwnerMessageIds: string[]; awaitingOwner?:boolean } | { errorCode: string; technicalYield?:boolean }> {
   const { scope, threadId: id, owner, emit, job, jobs } = p;
   let logged = false;
   const startedAt = Date.now();
@@ -820,7 +820,7 @@ export async function runOneTurn(p: TurnParams): Promise<{ replyId: string; repl
     if(code!=="durable_retry_pending")emit("error", { code, ...localDiagnostic,
       ...(error instanceof AgentEmptyReplyError ? { retryable: true } : {}),
       ...(job ? { jobId: job.id } : {}) });
-    return { errorCode: code };
+    return { errorCode: code, ...(p.durableFence&&code==="durable_retry_pending"&&completedTurn?.endReason==="budget"?{technicalYield:true}:{}) };
   } finally { await steps.catch(() => undefined); }
 }
 

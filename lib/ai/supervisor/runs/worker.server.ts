@@ -288,7 +288,7 @@ export async function processDurableRun(runId: string,emit:(type:string,data:unk
           if(step.error||!step.data)throw Error("checkpoint_storage_unavailable");
           const {data,error}=await client.rpc("supervisor_yield_owner_run_v2",{
             p_business_id:scope.businessId,p_owner_user_id:scope.ownerUserId,p_thread_id:scope.threadId,
-            p_run_id:run.id,p_claim_token:claimToken,p_expected_seq:step.data.checkpoint_seq,p_delay_seconds:30,
+            p_run_id:run.id,p_claim_token:claimToken,p_expected_seq:step.data.checkpoint_seq,p_delay_seconds:30,p_yield_kind:"contended",
           });
           if(error||data!==true)throw Error("durable_job_lease_lost");
           return "yielded";
@@ -314,7 +314,7 @@ export async function processDurableRun(runId: string,emit:(type:string,data:unk
           "usage_unavailable","supervisor_permission_status_unavailable"].includes(outcome.errorCode);
         if(retryable&&checkpoint.canYield()){
           const delay=Math.min(900,30*2**Math.max(0,job.attempt-1));
-          if(await checkpoint.yieldForRetry(delay))return "yielded";
+          if(await checkpoint.yieldForRetry(delay,outcome.technicalYield?"technical":"retry"))return "yielded";
         }
         await jobs.updateDurableAgentJob(identity,job.id,"failed",outcome.errorCode).catch(()=>undefined);
         throw new Error("supervisor_agent_turn_failed");

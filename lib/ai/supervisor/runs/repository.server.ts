@@ -248,6 +248,7 @@ export async function openOwnerRunCheckpoint(scope:RunScope,runId:string,token:s
     await finish("abandoned:"+current.checkpoint_operation);
   const priorEffects=current.checkpoint_receipts.filter(x=>x.phase==="effect_pending");
   let replayed=false;
+  let currentReadKey:string|null=null;
   return {
     assertLive,
     beginProvider:async()=>{
@@ -262,6 +263,7 @@ export async function openOwnerRunCheckpoint(scope:RunScope,runId:string,token:s
       await assertLive();
       replayed=false;
       const op=repeatSafe?randomUUID():operationKey(id,name,raw);
+      currentReadKey=repeatSafe?operationKey(id,name,raw).replaceAll("-",""):null;
       const previous=current.checkpoint_receipts.find(x=>x.operation===op);
       if(previous){
         if(previous.phase!=="effect_pending"||previous.tool!==name)throw new Error("checkpoint_operation_conflict");
@@ -280,7 +282,8 @@ export async function openOwnerRunCheckpoint(scope:RunScope,runId:string,token:s
       await assertLive();
       if(replayed){replayed=false;return;}
       if(current.checkpoint_phase==="read_pending"){
-        await finish("read:"+createHash("sha256").update(JSON.stringify(result)).digest("hex"));return;
+        if(!currentReadKey)throw Error("checkpoint_operation_missing");
+        await finish("read:"+currentReadKey+"_"+createHash("sha256").update(JSON.stringify(result)).digest("hex"));return;
       }
       if(current.checkpoint_phase!=="effect_pending")throw new Error("checkpoint_operation_conflict");
       const name=current.checkpoint_tool??"";
@@ -313,7 +316,7 @@ export async function openOwnerRunCheckpoint(scope:RunScope,runId:string,token:s
         JSON.stringify({completedOperations:receipts,previousReads:reads});
     },
     canYield:()=>current.checkpoint_phase!=="effect_pending",
-    yieldForRetry:seconds=>callRpc("supervisor_yield_owner_run_v2",{...identity,p_expected_seq:current.checkpoint_seq,p_delay_seconds:seconds},v=>z.boolean().parse(v)),
+    yieldForRetry:(seconds,kind="retry")=>callRpc("supervisor_yield_owner_run_v2",{...identity,p_expected_seq:current.checkpoint_seq,p_delay_seconds:seconds,p_yield_kind:kind},v=>z.boolean().parse(v)),
   };
 }
 

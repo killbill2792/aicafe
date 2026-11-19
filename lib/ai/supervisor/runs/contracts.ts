@@ -102,5 +102,5 @@ export type OwnerRunCheckpoint = {
   resumeContext:()=>Promise<string|null>;
   restoredResults?:()=>Promise<import("@/lib/ai/agent/tools").AgentToolResult[]>;
   canYield:()=>boolean;
-  yieldForRetry:(seconds:number)=>Promise<boolean>;
+  yieldForRetry:(seconds:number,kind?:"retry"|"technical"|"contended")=>Promise<boolean>;
 };

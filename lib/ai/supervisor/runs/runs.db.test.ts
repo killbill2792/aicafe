@@ -431,7 +431,10 @@ describe("Task 6/15C v2 durable owner admission and checkpoint fencing",()=>{
       await call(b,"supervisor_checkpoint_owner_run_v2",checkpoint(token,4,effect,"begin_effect","propose_supplier_purchase_order",null));
       expect(await call(b,"supervisor_yield_owner_run_v2",[...scope,run.id,token,5,15])).toBe(false);
       await expect(call(b,"supervisor_checkpoint_owner_run_v2",checkpoint(token,5,randomUUID(),"begin_read","get_sales",null))).rejects.toThrow("checkpoint_operation_conflict");
-      expect(await call(b,"supervisor_stop_durable_run",[...scope,run.id,"cancelled","owner_turn",token])).toBe(true);
+      await expect(call(b,"supervisor_cancel_owner_run_v2",[randomUUID(),ownerId,threadId,run.id])).rejects.toThrow();
+      expect(await call(b,"supervisor_cancel_owner_run_v2",[...scope,run.id])).toBe("uncertain");
+      expect(await call(b,"supervisor_cancel_owner_run_v2",[...scope,run.id])).toBe("uncertain");
+      expect(await call(a,"supervisor_owner_job_fence_v2",[...scope,run.id,token])).toBe(false);
       await expect(call(a,"supervisor_checkpoint_owner_run_v2",checkpoint(token,5,effect,"complete",null,"effect:"+randomUUID()))).rejects.toThrow("checkpoint_run_unavailable");
       const saved=await admin.query("select r.status,s.checkpoint_seq,s.checkpoint_phase,s.checkpoint_receipts from public.supervisor_runs r join public.supervisor_run_steps s on s.run_id=r.id and s.business_id=r.business_id where r.id=$1 and s.step_key='owner_turn'",[run.id]);
       expect(saved.rows).toMatchObject([{status:"blocked",checkpoint_seq:"5",checkpoint_phase:"effect_pending",checkpoint_receipts:[{operation,receipt},{operation:providerOp}]}]);
