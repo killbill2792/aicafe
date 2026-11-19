@@ -77,7 +77,7 @@ describe("Task 8a actual source-timed 24-hour periods",()=>{
   const cut="2026-03-08T12:00:00Z";
   expect(summarizeElapsedWindow(window,[item(),
    item({id:"later",orderedAt:cut,closedAt:"2026-03-08T12:30:00Z"})],true,
-   "2026-03-09T00:00:00Z",cut)).toMatchObject({window,segmentEndAt:cut,status:"actual",units:1,revenueCents:650});
+   "2026-03-09T00:00:00Z",cut)).toMatchObject({window,segmentEndAt:new Date(cut).toISOString(),status:"actual",units:1,revenueCents:650});
   expect(()=>summarizeElapsedWindow(window,[],true,window.endAt,window.startAt)).toThrow();
  });
 
