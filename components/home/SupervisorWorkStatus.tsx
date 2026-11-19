@@ -13,8 +13,8 @@ const statusIcon = (status: OwnerWorkStatus) => {
   return <CircleDot size={17} aria-hidden="true" className="text-ink-muted" />;
 };
 
-/** A read-only transcript companion, not a second approval, scheduler or
- * provider execution control. The existing proposal cards own owner action. */
+/** Persisted Work companion. The existing proposal cards still own provider
+ * approval; the only run-control action here is the scoped cancellation RPC. */
 export default function SupervisorWorkStatus({ items, unavailable, loading=false, showEmpty=false, onOpen, disabled=false }: {
   items: OwnerWorkItem[]; unavailable: boolean; loading?:boolean; showEmpty?:boolean;
   onOpen?:(item:OwnerWorkItem)=>void; disabled?:boolean;

@@ -296,7 +296,15 @@ export async function processDurableRun(runId: string,emit:(type:string,data:unk
         emit("ack",{jobId:job.id,runId:run.id,mode:job.status==="done"?"done":"started"});
         if(job.status==="done")return;
         const checkpoint=await openOwnerRunCheckpoint(scope,run.id,claimToken,job.id);
-        const matchedAnswers=await Promise.all((row.owner_answer_ids??[]).map(id=>readOwnerMessage(scope,scope.threadId,id)));
+        // Re-read matched answers AFTER acquiring the claim. A worker may have
+        // been queued while a previous claim published a question and its
+        // owner answer resumed the same run.
+        const fresh=await client.from("supervisor_runs").select("owner_answer_ids").eq("id",run.id)
+          .eq("business_id",scope.businessId).eq("owner_user_id",scope.ownerUserId).eq("thread_id",scope.threadId).single();
+        if(fresh.error||!fresh.data)throw Error("checkpoint_storage_unavailable");
+        await checkpoint.assertLive();
+        const answers=z.array(z.uuid()).max(20).parse(fresh.data.owner_answer_ids);
+        const matchedAnswers=await Promise.all(answers.map(id=>readOwnerMessage(scope,scope.threadId,id)));
         const outcome=await withDurableProviderTurn({
           db:client,...scope,runId:run.id,ownerMessageId:owner.id,jobId:job.id,claimToken,budget,
           ownerDailyCap:ownerModelCallsLimit(),authorize:async()=>{
