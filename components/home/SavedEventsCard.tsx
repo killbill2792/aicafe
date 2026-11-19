@@ -117,7 +117,14 @@ export function eventLifecycle(event:Pick<CafeEvent,"startDate"|"endDate"|"statu
 }
 function lifecycleLabel(event:CafeEvent,today:string,locale:Locale,t:T){
   const key=eventLifecycle(event,today);
-  return t(locale==="en"?key:key==="eventCompleted"?"past":key.startsWith("event")?"now":key);
+  const messages={en,es,ar}[locale];
+  switch(key){
+    case "eventStarting":return messages.SchedulingAvailability.start+" · "+t("now");
+    case "eventEnding":return messages.SchedulingAvailability.end+" · "+t("now");
+    case "eventOngoing":return messages.SchedulingAvailability.ongoing;
+    case "eventCompleted":return messages.Experiments.past;
+    default:return t(key);
+  }
 }
 export function cityEventChatTarget(item:CityCatalogPage["items"][number]){
   // Keep the existing café thread key, but NEVER drop the shared city UUID:
@@ -420,7 +427,7 @@ export function CityCatalogView({today,locale,t,chatDisabled,onAsk}:{
       <button type="submit" className={button+" self-end"}>{t("searchButton")}</button>
       {!!(searchInput||search)&&<button type="button" className={button+" self-end"} onClick={()=>{
         beginRefresh();setSearchInput("");setSearch("");setPage(0);setSelected(null);setRetry(v=>v+1);
-      }}>{locale==="en"?t("clearEventSearch"):t("all")}</button>}
+      }}>{{en,es,ar}[locale].StaffSchedule.clear}</button>}
     </form>
     {coverage&&!loading&&!error&&<div role="status" className="rounded-xl bg-surface2 p-3 text-[15px]">
       <p className="font-semibold">{t(coverage.status==="complete"?"cityCoverageRecorded":"cityCoverageIncomplete")}</p>

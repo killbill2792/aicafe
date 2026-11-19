@@ -119,8 +119,6 @@ export async function readEventDemandEvidence(db:SupabaseClient,scope:OwnerScope
         stock_status,source_as_of,evidence_state})=>({source,ingredient_name,menu_item_ref,
         quantity,quantity_unit,stock_status,source_as_of,evidence_state})),
       missing:[...projected.missing,...(stock?.notes??[])]}};
-  if(readiness.staffing.coverage!=="recorded")missing.push("event_staffing_coverage_incomplete");
-  if(readiness.inventory.coverage!=="recorded")missing.push("event_inventory_coverage_incomplete");
   return {...assembleEventDemandEvidence(request,{
     daily:ok(days,[]),hourly:hourly?.available&&hourly.value?hourly.value.hours:[],
     baselineEvents:ok(baselineEvents,[]),dayEvents:ok(dayEvents,[]),

@@ -11,7 +11,7 @@ export type EventPlanPort={
 export const eventPlanTools={
   propose_event_plan:{
     agentId:"alex",schema:eventReadinessInput,
-    description:"Draft an event-readiness plan for one date or a verified multi-day occurrence when the same preparation is applicable throughout, using saved event UUIDs. Give café-specific importance, a brief summary, date-specific estimated busy hours only when justified, and 1–3 specific actions with reasons. Reuse unchanged prior preparation decisions; do not repeat owner approval. This is an inert plan, not an executed shift/order/menu/POS change. The owner decides whether to use it.",
+    description:"Draft inert preparation for confirmed event UUIDs, one date or a verified span with unchanged actions. Give café importance, summary, justified date-specific busy hours and 1–3 reasoned actions. Reuse prior decisions. No business change without owner approval.",
     execute:async(raw:unknown,ctx:AgentToolContext):Promise<AgentToolResult>=>{
       const input=eventReadinessInput.parse(raw);
       if(!ctx.eventPlans)return {source:"event_plan_proposal",period:null,missing:["eventPlanningUnavailable"]};

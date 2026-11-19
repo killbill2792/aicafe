@@ -215,6 +215,39 @@ async function persistCandidate(db:Db,scope:CityScope,kind:CityEventKind,
     assertOk(update.error);
   }
 }
+/** Retry incomplete source enrichment independently of the discovery ledger.
+ * A completed search is not a completed duration/venue assessment. Reuse its
+ * exact cited candidate and the same existing budget; no duplicate search. */
+const enrichmentKey=(scope:CityScope,e:{name:string;startDate:string;sourceUrl:string})=>
+  "enrich|"+cityScopeKey(scope)+"|"+e.startDate+"|"+e.name+"|"+e.sourceUrl;
+async function attemptEnrichment(scope:CityScope,event:{name:string;startDate:string;sourceUrl:string},budget:LdiBudget){
+  const key=enrichmentKey(scope,event);
+  if(budget.enrichmentsRemaining<=0||budget.attempted.has(key))return null;
+  budget.attempted.add(key);budget.enrichmentsRemaining--;
+  return enrichCityEventFact({...scope,...event});
+}
+async function retryCityEnrichment(db:Db,scope:CityScope,from:string,to:string,budget:LdiBudget){
+  if(budget.enrichmentsRemaining<=0)return;
+  const candidates=await rows<{id:string;name:string;kind:CityEventKind;start_date:string;
+    end_date:string;duration_verified_at:string|null;last_enriched_at:string|null}>(
+    (offset,end)=>db.from("city_events").select("id,name,kind,start_date,end_date,duration_verified_at,last_enriched_at")
+      .eq("city_key",cityScopeKey(scope)).lte("start_date",to).gte("end_date",from)
+      .order("id").range(offset,end),1000);
+  const missing=candidates.filter(e=>!e.duration_verified_at||!e.last_enriched_at);
+  if(!missing.length)return;
+  const urls=await rows<{city_event_id:string;source_url:string}>(
+    (offset,end)=>db.from("city_event_sources").select("city_event_id,source_url")
+      .in("city_event_id",missing.map(e=>e.id)).order("city_event_id").order("source_url").range(offset,end),2000);
+  for(const row of missing){
+    if(budget.enrichmentsRemaining<=0)break;
+    const sourceUrl=urls.find(u=>u.city_event_id===row.id)?.source_url;
+    if(!sourceUrl)continue;
+    const candidate={name:row.name,startDate:row.start_date,sourceUrl};
+    if(budget.attempted.has(enrichmentKey(scope,candidate)))continue;
+    const enriched=await attemptEnrichment(scope,candidate,budget);
+    if(enriched)await persistCandidate(db,scope,row.kind,candidate,new Date().toISOString(),enriched);
+  }
+}
 async function studyOne(db:Db,scope:CityScope,source:CityResearchSource,
   from:string,to:string,reason:EventScanWindow["reason"],key:string,
   budget:LdiBudget){
@@ -229,8 +262,7 @@ async function studyOne(db:Db,scope:CityScope,source:CityResearchSource,
         let enrichment:ConfirmedEventEnrichment|null=null;
         if(budget.enrichmentsRemaining>0&&
           (source.kind==="city_calendar"||source.kind==="venue")){
-          budget.enrichmentsRemaining--;
-          enrichment=await enrichCityEventFact({...scope,...event});
+          enrichment=await attemptEnrichment(scope,event,budget);
         }
         await persistCandidate(db,scope,eventKind(),event,checkedAt,enrichment);
         saved++;
@@ -486,8 +518,7 @@ async function studyBatchedDays(db:Db,scope:CityScope,job:CityResearchJob,
         let enrichment:ConfirmedEventEnrichment|null=null;
         if(budget.enrichmentsRemaining>0&&
           (job.source.kind==="city_calendar"||job.source.kind==="venue")){
-          budget.enrichmentsRemaining--;
-          enrichment=await enrichCityEventFact({...scope,...event});
+          enrichment=await attemptEnrichment(scope,event,budget);
         }
         await persistCandidate(db,scope,eventKind(),event,checkedAt,enrichment);
         saved++;
@@ -681,6 +712,7 @@ export async function scanSharedResearch(db:Db,input:{
     return row?row.is_scan_root&&complete(row.status):
       window.reason==="new_day"&&coveredByCompletedRoots(all,item.key,item.from,item.to);
   });
+  await retryCityEnrichment(db,scope,requestedWindow.from,requestedWindow.to,input.budget);
   // B may have completed new entering roots while retrying an older window.
   // Associate the whole requested range even before the older root finishes.
   const associations=await associateCityFacts(db,input.businessId,cityKey,
