@@ -49,11 +49,15 @@ childTest("interrupted investigation worker",async()=>{
  const db=createClient(api,key,{auth:{persistSession:false,autoRefreshToken:false}});
  const collect=await processNextInvestigation(db,new Date());
  expect(collect).toMatchObject({processed:1,collected:1,failed:0});
- const interrupted:AgentProvider=async function*(){
-   writeFileSync(childMarker+".tmp",JSON.stringify({pid:process.pid}),{flag:"wx",mode:0o600});
-   renameSync(childMarker+".tmp",childMarker);
-   yield* await new Promise<never>((_resolve,reject)=>setTimeout(()=>reject(Error("15c_expected_worker_kill")),240_000));
- };
+ const interrupted:AgentProvider=()=>({
+   [Symbol.asyncIterator](){
+     return {next:async()=>{
+       writeFileSync(childMarker+".tmp",JSON.stringify({pid:process.pid}),{flag:"wx",mode:0o600});
+       renameSync(childMarker+".tmp",childMarker);
+       return await new Promise<never>((_resolve,reject)=>setTimeout(()=>reject(Error("15c_expected_worker_kill")),240_000));
+     }};
+   },
+ });
  await processNextInvestigation(db,new Date(),interrupted);
  throw Error("15c_interrupted_process_should_not_return");
 },270_000);
