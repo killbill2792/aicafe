@@ -12,27 +12,70 @@ alter table public.uploads
  add column financial_to date,
  add column financial_opening_cents bigint,
  add column financial_closing_cents bigint,
- add column financial_transactions jsonb;
+ add column financial_transactions jsonb,
+ add column financial_bill_payee text,
+ add column financial_bill_payee_key text,
+ add column financial_bill_reference text,
+ add column financial_bill_revision bigint,
+ add column financial_bill_issued_on date,
+ add column financial_bill_due_on date,
+ add column financial_bill_amount_cents bigint,
+ add column financial_bill_source_kind text,
+ add column financial_bill_source_ref text,
+ add column financial_bill_proposal_id uuid;
 -- Newly added columns are NULL for all old rows; NOT VALID enforces new writes immediately.
 -- Do not scan old tables inside this lock-bounded transactional migration.
 alter table public.uploads add constraint uploads_financial_owner_fk
  foreign key(financial_owner_user_id) references auth.users(id) on delete cascade not valid;
 alter table public.uploads add constraint uploads_financial_evidence_shape check (
- (num_nonnulls(financial_owner_user_id,financial_source_sha256,financial_account_key,
+ ((kind<>'bill_claim' and num_nonnulls(financial_owner_user_id,financial_source_sha256,financial_account_key,
   financial_currency,financial_from,financial_to,financial_opening_cents,financial_closing_cents,
-  financial_transactions)=0)
- or ((num_nonnulls(financial_owner_user_id,financial_source_sha256,financial_account_key,
+  financial_transactions,financial_bill_payee,financial_bill_payee_key,financial_bill_reference,financial_bill_revision,
+  financial_bill_issued_on,financial_bill_due_on,financial_bill_amount_cents,financial_bill_source_kind,
+  financial_bill_source_ref,financial_bill_proposal_id)=0)
+ or (num_nonnulls(financial_owner_user_id,financial_source_sha256,financial_account_key,
   financial_currency,financial_from,financial_to,financial_opening_cents,financial_closing_cents,
   financial_transactions)=9 and kind='statement' and status='done'
+  and num_nonnulls(financial_bill_payee,financial_bill_payee_key,financial_bill_reference,financial_bill_revision,
+  financial_bill_issued_on,financial_bill_due_on,financial_bill_amount_cents,financial_bill_source_kind,
+  financial_bill_source_ref,financial_bill_proposal_id)=0
   and financial_source_sha256 ~ '^[0-9a-f]{64}$' and financial_account_key ~ '^[0-9a-f]{64}$'
   and financial_currency ~ '^[A-Z]{3}$' and financial_from<=financial_to
   and financial_opening_cents between -9007199254740991 and 9007199254740991
   and financial_closing_cents between -9007199254740991 and 9007199254740991
   and jsonb_typeof(financial_transactions)='array'
-  and jsonb_array_length(financial_transactions) between 2 and 10000) is true)
+  and jsonb_array_length(financial_transactions) between 2 and 10000)
+ or (kind='bill_claim' and status='done'
+  and num_nonnulls(financial_owner_user_id,financial_source_sha256,financial_currency,
+   financial_bill_payee,financial_bill_payee_key,financial_bill_reference,financial_bill_revision,
+   financial_bill_issued_on,financial_bill_amount_cents,financial_bill_source_kind,financial_bill_source_ref,
+   financial_bill_proposal_id)=12
+  and num_nonnulls(financial_account_key,financial_from,financial_to,financial_opening_cents,
+   financial_closing_cents,financial_transactions)=0
+  and financial_source_sha256 ~ '^[0-9a-f]{64}$' and financial_currency ~ '^[A-Z]{3}$'
+  and length(financial_bill_payee) between 2 and 120
+  and financial_bill_payee_key=lower(btrim(financial_bill_payee))
+  and length(financial_bill_reference) between 1 and 160
+  and financial_bill_reference=lower(btrim(financial_bill_reference))
+  and financial_bill_revision between 1 and 9007199254740991
+  and financial_bill_amount_cents between 1 and 9007199254740991
+  and (financial_bill_due_on is null or financial_bill_due_on>=financial_bill_issued_on)
+  and financial_bill_source_kind in ('owner_report','owner_attachment')
+  and length(financial_bill_source_ref) between 1 and 400)) is true
 ) not valid;
+-- Reason: widen the existing upload kind constraint by one documented, owner-only bill evidence kind; all prior kinds remain accepted and the finance shape independently forbids unscoped bill rows.
+-- squawk-ignore ban-drop-constraint
+alter table public.uploads drop constraint uploads_kind_check;
+alter table public.uploads add constraint uploads_kind_check check(kind in
+ ('statement','receipt','pos_csv','sales_csv','labor_csv','ingredients_csv','processing_fees_csv','bill_claim')) not valid;
 create unique index uploads_financial_source_uq on public.uploads
- (business_id,financial_owner_user_id,financial_source_sha256);
+ (business_id,financial_owner_user_id,financial_source_sha256) where kind='statement';
+create unique index uploads_financial_bill_identity_uq on public.uploads
+ (business_id,financial_bill_payee_key,financial_bill_reference,financial_bill_revision) where kind='bill_claim';
+create unique index uploads_financial_bill_proposal_uq on public.uploads(business_id,financial_bill_proposal_id)
+ where kind='bill_claim';
+alter table public.uploads add constraint uploads_financial_bill_proposal_fk
+ foreign key(business_id,financial_bill_proposal_id) references public.supervisor_proposals(business_id,id) not valid;
 create index uploads_financial_account_idx on public.uploads
  (business_id,financial_owner_user_id,financial_account_key,financial_to desc)
  where financial_owner_user_id is not null;
@@ -102,10 +145,10 @@ begin
   financial_closing_cents,financial_transactions)
  values(p_business_id,'statement','done',p_owner_user_id,p_source_sha256,p_account_key,p_currency,
   p_from,p_to,p_opening_cents,p_closing_cents,p_transactions)
- on conflict(business_id,financial_owner_user_id,financial_source_sha256) do nothing returning id into v_id;
+ on conflict(business_id,financial_owner_user_id,financial_source_sha256) where kind='statement' do nothing returning id into v_id;
  if v_id is not null then return v_id;end if;
  select * into v_existing from public.uploads where business_id=p_business_id
-  and financial_owner_user_id=p_owner_user_id and financial_source_sha256=p_source_sha256;
+  and financial_owner_user_id=p_owner_user_id and financial_source_sha256=p_source_sha256 and kind='statement';
  if not found or v_existing.financial_account_key is distinct from p_account_key
   or v_existing.financial_currency is distinct from p_currency
   or v_existing.financial_from is distinct from p_from or v_existing.financial_to is distinct from p_to
@@ -667,6 +710,99 @@ create function public.supervisor_financial_settlement_proof(p_business_id uuid,
 $$;
 revoke all on function public.supervisor_financial_settlement_proof(uuid,uuid,text) from public,anon,authenticated;
 grant execute on function public.supervisor_financial_settlement_proof(uuid,uuid,text) to service_role;
+
+-- Separate documentary bills, not recurring configuration, invoices or expenses.
+-- The exact owner click captures the dated claim under its real source identity.
+create function public.supervisor_commit_financial_bill(
+ p_business_id uuid,p_thread_id uuid,p_proposal_id uuid,p_effect_hash text
+) returns uuid language plpgsql security definer set search_path=public as $$
+declare
+ v_owner uuid:=auth.uid();p public.supervisor_proposals;a public.supervisor_effect_attempts;
+ prev public.uploads;old public.uploads;e jsonb;v_msg uuid;v_day date;v_ref text;v_payee text;
+ v_key text;v_date date;v_due date;v_rev bigint;v_amount bigint;v_id uuid;
+begin
+ if v_owner is null then raise exception 'financial_owner_required' using errcode='42501';end if;
+ perform 1 from public.memberships m join public.businesses b on b.id=m.business_id
+ where m.business_id=p_business_id and m.user_id=v_owner and m.role='owner' and not b.is_demo for share of m;
+ if not found then raise exception 'financial_owner_required' using errcode='42501';end if;
+ select * into p from public.supervisor_proposals where business_id=p_business_id and owner_user_id=v_owner
+  and thread_id=p_thread_id and id=p_proposal_id for update;
+ if p.id is null or p.capability_id<>'leo.financial_bill.v1' or p.capability_version<>1
+  or p.status<>'executing' or p.effect_hash is distinct from p_effect_hash
+ then raise exception 'financial_bill_claim_required' using errcode='42501';end if;
+ select * into a from public.supervisor_effect_attempts where business_id=p_business_id and proposal_id=p.id
+  and effect_hash=p_effect_hash and authorization_kind='click' and state='executing' for update;
+ if a.id is null or not exists(select 1 from public.supervisor_approvals x
+  where x.business_id=p_business_id and x.proposal_id=p.id and x.owner_user_id=v_owner
+  and x.effect_hash=p_effect_hash and x.authorization_kind='click' and x.approved_revision=p.revision-2)
+ then raise exception 'financial_bill_click_required' using errcode='42501';end if;
+ perform pg_advisory_xact_lock(hashtextextended('financial-invoice:'||p_business_id::text,0));
+ e:=p.canonical_effect_payload;
+ v_payee:=btrim(e->>'payee');v_key:=lower(v_payee);v_ref:=e->>'reference';
+ v_date:=(e->>'issuedOn')::date;v_due:=(e->>'dueOn')::date;
+ v_rev:=(e->>'expectedRevision')::bigint;v_amount:=(e->>'amountCents')::bigint;
+ select (now() at time zone b.timezone)::date into v_day from public.businesses b where b.id=p_business_id;
+ if v_payee is null or length(v_payee) not between 2 and 120 or v_ref is null or length(v_ref) not between 1 and 160
+  or v_ref<>lower(btrim(v_ref)) or v_day is null or v_date is null or v_date>v_day or v_due<v_date
+  or v_rev is null or v_rev not between 0 and 9007199254740990
+  or v_amount is null or v_amount not between 1 and 9007199254740991
+  or e->>'currency' is null or e->>'currency' !~ '^[A-Z]{3}$'
+  or e->>'sourceSha256' is null or e->>'sourceSha256' !~ '^[a-f0-9]{64}$'
+  or e->>'sourceKind' is null or e->>'sourceKind' not in ('owner_report','owner_attachment')
+  or e->>'sourceRef' is null
+ then raise exception 'financial_bill_invalid' using errcode='22023';end if;
+ v_msg:=split_part(e->>'sourceRef',':',2)::uuid;
+ if split_part(e->>'sourceRef',':',1) is distinct from case when e->>'sourceKind'='owner_report' then 'owner-message' else 'owner-attachment' end
+  or not exists(select 1 from public.ai_messages m where m.id=v_msg and m.business_id=p_business_id
+   and m.owner_user_id=v_owner and m.thread_id=p_thread_id and m.role='owner' and m.author_user_id=v_owner)
+ then raise exception 'financial_bill_source_unverified' using errcode='42501';end if;
+ -- A known supplier uses the existing supplier-invoice path to prevent
+ -- creating two claims from the same invoice in different sources.
+ if exists(select 1 from public.cafe_suppliers s where s.business_id=p_business_id and s.normalized_name=v_key)
+ then raise exception 'financial_bill_use_supplier_invoice' using errcode='P0001';end if;
+ select * into old from public.uploads where business_id=p_business_id and financial_owner_user_id=v_owner
+  and kind='bill_claim' and financial_bill_proposal_id=p.id;
+ if old.id is not null then return old.id;end if;
+ select * into prev from public.uploads where business_id=p_business_id and kind='bill_claim'
+  and financial_bill_payee_key=v_key and financial_bill_reference=v_ref order by financial_bill_revision desc limit 1;
+ if coalesce(prev.financial_bill_revision,0)<>v_rev or
+  (prev.id is not null and (prev.financial_owner_user_id<>v_owner or prev.financial_currency<>e->>'currency'))
+ then raise exception 'financial_bill_revision_changed' using errcode='P0001';end if;
+ if exists(select 1 from public.uploads u where u.business_id=p_business_id and u.kind='bill_claim'
+  and u.financial_source_sha256=e->>'sourceSha256'
+  and (u.financial_bill_payee_key<>v_key or u.financial_bill_reference<>v_ref))
+ then raise exception 'financial_bill_source_duplicate_review' using errcode='P0001';end if;
+ insert into public.uploads(business_id,kind,status,financial_owner_user_id,financial_source_sha256,financial_currency,
+  financial_bill_payee,financial_bill_payee_key,financial_bill_reference,financial_bill_revision,financial_bill_issued_on,
+  financial_bill_due_on,financial_bill_amount_cents,financial_bill_source_kind,financial_bill_source_ref,financial_bill_proposal_id)
+ values(p_business_id,'bill_claim','done',v_owner,e->>'sourceSha256',e->>'currency',v_payee,v_key,v_ref,v_rev+1,
+  v_date,v_due,v_amount,e->>'sourceKind',e->>'sourceRef',p.id)
+ returning id into v_id;
+ return v_id;
+end $$;
+revoke all on function public.supervisor_commit_financial_bill(uuid,uuid,uuid,text) from public,anon,authenticated,service_role;
+grant execute on function public.supervisor_commit_financial_bill(uuid,uuid,uuid,text) to authenticated;
+create function public.supervisor_financial_bill_proof(p_business_id uuid,p_proposal_id uuid,p_effect_hash text)
+ returns uuid language sql stable security invoker set search_path=public as $$
+ select u.id from public.uploads u join public.supervisor_proposals p on p.business_id=u.business_id
+ and p.id=u.financial_bill_proposal_id and p.owner_user_id=u.financial_owner_user_id
+ where u.business_id=p_business_id and p.id=p_proposal_id and p.effect_hash=p_effect_hash
+ and p.capability_id='leo.financial_bill.v1' and u.kind='bill_claim' and u.status='done'
+ and u.financial_bill_payee=p.canonical_effect_payload->>'payee'
+ and u.financial_bill_reference=p.canonical_effect_payload->>'reference'
+ and u.financial_bill_revision=(p.canonical_effect_payload->>'expectedRevision')::bigint+1
+ and u.financial_bill_issued_on::text=p.canonical_effect_payload->>'issuedOn'
+ and u.financial_bill_due_on::text is not distinct from p.canonical_effect_payload->>'dueOn'
+ and u.financial_bill_amount_cents=(p.canonical_effect_payload->>'amountCents')::bigint
+ and u.financial_currency=p.canonical_effect_payload->>'currency'
+ and u.financial_source_sha256=p.canonical_effect_payload->>'sourceSha256'
+ and u.financial_bill_source_kind=p.canonical_effect_payload->>'sourceKind'
+ and u.financial_bill_source_ref=p.canonical_effect_payload->>'sourceRef'
+ limit 1
+$$;
+revoke all on function public.supervisor_financial_bill_proof(uuid,uuid,text) from public,anon,authenticated;
+grant execute on function public.supervisor_financial_bill_proof(uuid,uuid,text) to service_role;
+
 create or replace function public.supervisor_reconcile_supplier_receiving(
  p_business_id uuid,p_owner_user_id uuid,p_thread_id uuid,p_proposal_id uuid,p_revision integer
 ) returns public.supervisor_proposals language plpgsql security definer set search_path=public as $$
@@ -677,7 +813,7 @@ begin
  then raise exception 'receiving_owner_required' using errcode='42501';end if;
  select * into p from public.supervisor_proposals where id=p_proposal_id
   and business_id=p_business_id and owner_user_id=p_owner_user_id and thread_id=p_thread_id for update;
- if p.id is null or p.revision<>p_revision or p.capability_id not in ('maya.supplier_receiving.v1','maya.supplier_invoice.v1','leo.financial_settlement.v1')
+ if p.id is null or p.revision<>p_revision or p.capability_id not in ('maya.supplier_receiving.v1','maya.supplier_invoice.v1','leo.financial_settlement.v1','leo.financial_bill.v1')
   or p.capability_version<>1 then raise exception 'receiving_claim_required' using errcode='42501';end if;
  select * into a from public.supervisor_effect_attempts where business_id=p_business_id
   and proposal_id=p.id and effect_hash=p.effect_hash and authorization_kind='click' for update;
@@ -686,7 +822,9 @@ begin
  then raise exception 'receiving_claim_required' using errcode='42501';end if;
  -- A live attempt is never taken over. Only the existing proof can settle.
  if a.state='executing' and a.created_at>now()-interval '5 minutes' then return p;end if;
- if p.capability_id='leo.financial_settlement.v1' then
+ if p.capability_id='leo.financial_bill.v1' then
+  proof:=public.supervisor_financial_bill_proof(p_business_id,p.id,p.effect_hash);
+ elsif p.capability_id='leo.financial_settlement.v1' then
   proof:=public.supervisor_financial_settlement_proof(p_business_id,p.id,p.effect_hash);
  elsif p.capability_id='maya.supplier_invoice.v1' then
   proof:=public.supervisor_supplier_invoice_effect_proof(p_business_id,p.id,p.effect_hash);
@@ -697,7 +835,7 @@ begin
   update public.supervisor_effect_attempts set state='uncertain' where id=a.id and state='executing';
   return p;
  end if;
- update public.supervisor_effect_attempts set state='verified',receipt_ref=(case when p.capability_id='leo.financial_settlement.v1' then 'purchase_reconciliation_events:' when p.capability_id='maya.supplier_invoice.v1' then 'supplier_invoices:' else 'purchase_receipts:' end)||proof::text,
+ update public.supervisor_effect_attempts set state='verified',receipt_ref=(case when p.capability_id='leo.financial_bill.v1' then 'uploads:' when p.capability_id='leo.financial_settlement.v1' then 'purchase_reconciliation_events:' when p.capability_id='maya.supplier_invoice.v1' then 'supplier_invoices:' else 'purchase_receipts:' end)||proof::text,
   verified_at=now() where id=a.id;
  update public.supervisor_proposals set status='committed',revision=revision+1,committed_at=now(),
   monitoring_start_date=a.business_date+1,updated_at=now() where id=p.id returning * into p;
