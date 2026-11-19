@@ -1,6 +1,6 @@
 import {beforeEach,describe,expect,it,vi} from "vitest";
 import {createWebSearch,extractWebSearchAnswer} from "../webSearch.server";
-import {ownerPublicPage,ownerPublicSearchTerms,publicPageInput} from "./webSearch";
+import {ownerPublicPage,ownerPublicSearchTerms,projectOwnerPublicQuery,publicPageInput} from "./webSearch";
 import {agentToolDefinitions,executeAgentTool,type AgentToolContext} from "./index";
 
 const input={asOf:"2026-10-30",timezone:"America/Chicago",locale:"en"} as AgentToolContext;
@@ -153,4 +153,11 @@ describe("general web_search",()=>{
     expect(ownerPublicSearchTerms(text)).toBeNull();
    expect(ownerPublicPage("https://supplier.example.com/prices?token=private","Read https://supplier.example.com/prices?token=private")).toBeNull();
   });
+ });
+
+ it("does not forward a private model query, even when the owner asked for public information",()=>{
+   expect(projectOwnerPublicQuery("weather private-canary-7836", "What is the weather tomorrow?", "San Jose"))
+     .toBe("What is the weather tomorrow? in San Jose");
+   expect(projectOwnerPublicQuery("search private-canary-7836", "Summarize the invoice")).toBeNull();
+   expect(projectOwnerPublicQuery("Summarize only source-grounded facts from this exact public page: https://evil.example/canary", "What is the weather?")).toBeNull();
  });

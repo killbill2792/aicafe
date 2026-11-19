@@ -67,7 +67,7 @@ import {loadOwnerFacts} from "@/lib/ownerFacts/store.server";
 import {readCafeLocation} from "@/lib/data/cafeLocation.server";
 import {searchWeb} from "@/lib/ai/agent/webSearch.server";
 import {assertSelectedAttachmentAccess,assertExternalAccess,FILE_RESOURCE,WEB_RESOURCE} from "@/lib/connectors/access.server";
-import {ownerPublicPage,ownerPublicSearchTerms} from "@/lib/ai/agent/tools/webSearch";
+import {projectOwnerPublicQuery} from "@/lib/ai/agent/tools/webSearch";
 import {ownerPublicWebSearch} from "@/lib/connectors/publicWeb.server";
 import {readSavedEventTimeline} from "@/lib/data/cafeEvents.server";
 import {ConversationApiError} from "@/lib/ai/conversations/auth.server";
@@ -155,6 +155,8 @@ export async function runOneTurn(p: TurnParams): Promise<{ replyId: string; repl
   let failureStage: "setup" | "model" | "persist" | "finish" = "setup";
   let steps: Promise<void> = Promise.resolve();
   try {
+    if(owner.role!=="owner"||owner.contentType!=="text"||owner.threadId!==id||!owner.clientMessageId||owner.text!==p.ownerText)
+      throw new ConversationApiError(403,"owner_access_required");
     const external=p.externalClient!==undefined;
     // Browser work keeps its previous lazy RLS reads. External jobs use a
     // verified, explicitly scoped admin client without forging a session.
@@ -216,13 +218,14 @@ export async function runOneTurn(p: TurnParams): Promise<{ replyId: string; repl
     };
     const context: AgentToolContext = { tools, asOf: identity.asOf, locale: p.locale,timezone:identity.timezone,currency:identity.currency,
       ownerText:p.ownerText,
+      externalEvidencePresent:()=>sourceChecks.size>0,
       readPermissions:()=>new SupervisorEffectGateway().listMandates({businessId:scope.businessId,ownerUserId:scope.ownerUserId}),
       canonicalData:async()=>({db:await getDb(),businessId:scope.businessId}),
       maintenance:{
         staff:async caseId=>maintenanceContext(await getDb(),proposalScope,{ownerMessage:{id:owner.id,text:p.ownerText}}).staff(caseId),
         proposeStaff:async input=>maintenanceContext(await getDb(),proposalScope,{ownerMessage:{id:owner.id,text:p.ownerText}}).proposeStaff(input),
         recordRepairClaim:async()=>{throw new Error("maintenance_worker_only");},
-        search:async(caseId,query)=>maintenanceContext(await getDb(),proposalScope,{ownerMessage:{id:owner.id,text:p.ownerText}}).search(caseId,query),
+        search:async(caseId,query)=>withGmailEvidence(async()=>maintenanceContext(await getDb(),proposalScope,{ownerMessage:{id:owner.id,text:p.ownerText}}).search(caseId,query)),
         propose:async input=>maintenanceContext(await getDb(),proposalScope,{ownerMessage:{id:owner.id,text:p.ownerText}}).propose(input),
       },
       menuPriceEvidence:items=>readMenuPriceEvidence(scope.businessId,items,identity.asOf,p.externalClient),
@@ -243,10 +246,8 @@ export async function runOneTurn(p: TurnParams): Promise<{ replyId: string; repl
       // Saved event answers never initiate the paid nearby-event discovery job.
       webSearch:(query,budget)=>ownerPublicWebSearch(scope,async()=>{
          const revision=await assertExternalAccess(scope,"public_web",WEB_RESOURCE);
-         const prefix="Summarize only source-grounded facts from this exact public page: ";
-         const target=query.startsWith(prefix)?ownerPublicPage(query.slice(prefix.length),p.ownerText):null;
          const place=await readCafeLocation(await getDb(),scope.businessId,ownerFactRead.facts);
-         const publicTerms=target?prefix+target:ownerPublicSearchTerms(p.ownerText,place?.city);
+         const publicTerms=projectOwnerPublicQuery(query,p.ownerText,place?.city);
          if(!publicTerms)return {available:false as const,reason:"unsafeQuery" as const};
          const check=async()=>{
            if(await assertExternalAccess(scope,"public_web",WEB_RESOURCE)!==revision)

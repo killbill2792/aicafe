@@ -17,6 +17,16 @@ export function ownerPublicSearchTerms(ownerText:string,city?:string|null):strin
  return place&&/^[\p{L}\p{M} .'-]{1,80}$/u.test(place)&&terms.length+place.length+4<=250
    ?terms+" in "+place:terms;
 }
+/** The provider receives only the owner-selected page or safe current public
+ * terms. The model's arbitrary query string is never sent to the provider. */
+export function projectOwnerPublicQuery(modelQuery:string,ownerText:string,city?:string|null):string|null{
+ const prefix="Summarize only source-grounded facts from this exact public page: ";
+ if(modelQuery.startsWith(prefix)){
+  const url=ownerPublicPage(modelQuery.slice(prefix.length),ownerText);
+  return url?prefix+url:null;
+ }
+ return ownerPublicSearchTerms(ownerText,city);
+}
 export const webSearchInput=z.strictObject({query:z.string().trim().min(2).max(250)});
 
 /** Only the exact public page link that the owner supplied in this turn may be inspected.
