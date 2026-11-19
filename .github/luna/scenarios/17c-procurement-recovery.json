@@ -223,6 +223,132 @@
       },
       "minCount": 0,
       "maxCount": 0
+    },
+    {
+      "name": "original-draft-reminder-closed",
+      "kind": "owner",
+      "table": "public.operating_tasks",
+      "where": {
+        "business_id": {
+          "scope": "businessId"
+        },
+        "owner_user_id": {
+          "scope": "ownerUserId"
+        },
+        "id": {
+          "scope": "draftNoticeId"
+        },
+        "kind": {
+          "eq": "priority_notice"
+        },
+        "status": {
+          "eq": "handled"
+        }
+      },
+      "minCount": 1,
+      "maxCount": 1
+    },
+    {
+      "name": "approved-order-reminder-open",
+      "kind": "owner",
+      "table": "public.operating_tasks",
+      "where": {
+        "business_id": {
+          "scope": "businessId"
+        },
+        "owner_user_id": {
+          "scope": "ownerUserId"
+        },
+        "id": {
+          "scope": "dispatchNoticeId"
+        },
+        "kind": {
+          "eq": "priority_notice"
+        },
+        "status": {
+          "eq": "needs_owner"
+        }
+      },
+      "minCount": 1,
+      "maxCount": 1
+    },
+    {
+      "name": "original-draft-reminder-message",
+      "kind": "owner",
+      "table": "public.ai_messages",
+      "where": {
+        "business_id": {
+          "scope": "businessId"
+        },
+        "owner_user_id": {
+          "scope": "ownerUserId"
+        },
+        "thread_id": {
+          "scope": "threadId"
+        },
+        "id": {
+          "scope": "draftNoticeMessageId"
+        },
+        "role": {
+          "eq": "supervisor"
+        }
+      },
+      "minCount": 1,
+      "maxCount": 1
+    },
+    {
+      "name": "approved-order-reminder-message",
+      "kind": "owner",
+      "table": "public.ai_messages",
+      "where": {
+        "business_id": {
+          "scope": "businessId"
+        },
+        "owner_user_id": {
+          "scope": "ownerUserId"
+        },
+        "thread_id": {
+          "scope": "threadId"
+        },
+        "id": {
+          "scope": "dispatchNoticeMessageId"
+        },
+        "role": {
+          "eq": "supervisor"
+        }
+      },
+      "minCount": 1,
+      "maxCount": 1
+    },
+    {
+      "name": "reminder-never-sends-order",
+      "kind": "source",
+      "table": "public.purchase_order_dispatches",
+      "where": {
+        "business_id": {
+          "scope": "businessId"
+        },
+        "purchase_order_id": {
+          "scope": "orderId"
+        }
+      },
+      "minCount": 0,
+      "maxCount": 0
+    },
+    {
+      "name": "foreign-reminder-denied",
+      "kind": "isolation",
+      "table": "public.operating_tasks",
+      "where": {
+        "business_id": {
+          "scope": "foreignBusinessId"
+        },
+        "id": {
+          "scope": "dispatchNoticeId"
+        }
+      },
+      "minCount": 0,
+      "maxCount": 0
     }
   ]
 }
