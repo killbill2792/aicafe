@@ -35,7 +35,8 @@ export async function GET(request: Request, context: RouteContext) {
     // The owner-wide view is anchored in an authenticated thread; caller cannot supply a café or owner.
     const ownerWide = new URL(request.url).searchParams.get("scope") === "owner";
     const db = await createServerSupabaseClient();
-    const runFields = "thread_id,id,request_key,status,final_report_ref,updated_at,finished_at";
+    const v2=process.env.SUPERVISOR_DURABLE_CHAT_ENABLED==="true";
+    const runFields = "thread_id,id,request_key,status,final_report_ref,updated_at,finished_at"+(v2?",execution_version":"");
     const jobFields = "thread_id,id,owner_message_id,status,reply_message_id,error_code,attempt,heartbeat_at,created_at";
     const proposalFields = "thread_id,id,status,capability_id,effect_hash,updated_at";
     const investigationFields = "thread_id,episode_id,phase,failure_count,lease_token,lease_until,last_error,updated_at";
@@ -83,7 +84,7 @@ export async function GET(request: Request, context: RouteContext) {
     const steps: StepRow[] = [], attempts: AttemptRow[] = [];
     for (let n=0; n<runs.length; n+=100) {
       const res = await db.from("supervisor_run_steps")
-        .select("run_id,step_key,step_index,status,attempts,error_code,updated_at,retry_mode,lease_until")
+        .select("run_id,step_key,step_index,status,attempts,error_code,updated_at,retry_mode,lease_until"+(v2?",checkpoint_phase,next_retry_at":""))
         .eq("business_id",scope.businessId).in("run_id",runs.slice(n,n+100).map(r=>r.id))
         .order("step_index",{ascending:true});
       if (res.error) throw new Error("owner_work_evidence_unavailable");
