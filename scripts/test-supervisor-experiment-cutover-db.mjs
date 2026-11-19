@@ -374,6 +374,38 @@ async function run(){
  const otherWindow=await role(workerA,"authenticated",ids.foreignOwner,async c=>
   one(c,"select count(*)::int as n from public.supervisor_monitor_windows where business_id=$1",[ids.business]));
  check(otherWindow.n===0,"other owner cannot see pinned receipt");
+ // A second actual publication event shares ONE immutable owner digest.
+ // Its independent receipt/task persists and a failed generation rolls back
+ // even the first entry rather than exposing a partial digest.
+ const anotherItem=randomUUID(),anotherHistory=randomUUID(),anotherVersion="digest-"+randomUUID();
+ const anotherPos="toast:"+ids.restaurant+":"+randomUUID();
+ await admin.query("insert into public.menu_items(id,business_id,pos_item_id,name,base_name,price_cents,catalog_source,is_active,pos_pricing_strategy,toast_publication_state,toast_publication_version,toast_publication_observed_at) values($1,$2,$3,'Digest Tea','Digest Tea',600,'toast',true,'BASE_PRICE','active',$4,$5)",[anotherItem,ids.business,anotherPos,anotherVersion,observed]);
+ await admin.query("insert into public.menu_price_history(id,business_id,menu_item_id,old_price_cents,new_price_cents,source_type,source_provider,changed_at,toast_restaurant_guid,toast_publication_version,toast_observed_at) values($1,$2,$3,550,600,'connected_pos','toast',$4,$5,$6,$4)",[anotherHistory,ids.business,anotherItem,observed,ids.restaurant,anotherVersion]);
+ await admin.query("update public.toast_optional_sync_state set menu_last_updated=$3,menu_copied_at=$4,menu_checked_local_day=null where business_id=$1 and restaurant_guid=$2",[ids.business,ids.restaurant,anotherVersion,observed]);
+ await admin.query("update public.toast_optional_sync_state set menu_checked_local_day=current_date,menu_copied_at=clock_timestamp() where business_id=$1 and restaurant_guid=$2",[ids.business,ids.restaurant]);
+ const d1=(await work(workerA)).token;
+ const d2=(await role(workerB,"service_role",null,c=>one(c,
+  "select public.supervisor_8a_claim_observation_work($1,$2,now()) as token",[ids.business,anotherHistory]))).token;
+ check(Boolean(d1)&&Boolean(d2),"two source events own independent work leases");
+ const secondClaim=await claim(workerA,anotherHistory,"toast_price_initial",0);
+ check(Boolean(secondClaim),"second event has a separate initial notice claim");
+ const digestId=randomUUID();
+ const entry=(history,receiptId,workerToken)=>({receiptId,attempt:1,
+  taskId:"toast-price-observation:"+ids.owner+":"+history+":toast_price_initial:0",
+  timezone:"America/Los_Angeles",payload:{title:"Toast price detected"},
+  confidence:"high",measurementAsOf:new Date().toISOString(),workerToken});
+ const entries=[entry(observedHistory,observedClaim,d1),entry(anotherHistory,secondClaim,d2)];
+ const digest=(rows)=>role(workerA,"service_role",null,c=>one(c,
+  "select public.supervisor_8a_post_observation_digest($1,$2,$3,$4,'Two price changes',$5::jsonb) as ok",
+  [ids.business,ids.owner,ids.thread,digestId,JSON.stringify(rows)]));
+ let rolledBack=false;
+ try{await digest([entries[0],{...entries[1],workerToken:randomUUID()}]);}
+ catch(e){rolledBack=e.code==="40001";}
+ check(rolledBack,"stale digest entry fails entire transaction");
+ check((await one(admin,"select count(*)::int n from public.ai_messages where id=$1",[digestId])).n===0,"failed group produces no partial chat message");
+ check((await digest(entries)).ok===true,"atomic digest posts both valid generations");
+ check((await one(admin,"select count(*)::int n from public.supervisor_experiment_notice_receipts where message_id=$1 and state='posted'",[digestId])).n===2,"both independent receipts reference one chat digest");
+ check((await one(admin,"select count(*)::int n from public.ai_messages where id=$1",[digestId])).n===1,"one digest message, not one message per product");
  console.log("PASS Task8a migrated SQL acceptance: "+assertions+
   " checks (source guard, pinned recovery, RLS/tenant, claims, real two-session race)");
 }
