@@ -26,13 +26,14 @@ import { missingCostDestination } from "@/lib/expenses/expectedCosts";
 import { priceReviewDirection, priceReviewHref } from "@/lib/viewmodels/priceReviewTask";
 import {staffScheduleHref} from "@/lib/scheduling/staffScheduleLinks";
 import MaintenanceCaseCard from "@/components/operations/MaintenanceCaseCard";
+import {ownerStaffLoginList} from "@/lib/staffCommunication/channel.server";
 import enMessages from "@/messages/en.json";
 
 export const dynamic = "force-dynamic";
 const parsePeriod = (value?: string): Period => value === "week" || value === "month" ? value : "today";
 type ExpiredNeed = AttentionItem & { expired: true };
 const isNeed = (row: OperatingTask | NeedsYouItem | ExpiredNeed): row is NeedsYouItem | ExpiredNeed => "displayTitle" in row;
-type CardMeta = { today: string; locale: string; currency: string | null };
+type CardMeta = { today: string; locale: string; currency: string | null; maintenanceStaff?:{id:string;name:string}[] };
 type OperationsT = Awaited<ReturnType<typeof getTranslations<"Operations">>>;
 
 export default async function OperationsPage({ searchParams }: { searchParams: Promise<{ agent?: string; status?: string; task?: string; period?: string }> }) {
@@ -49,7 +50,8 @@ export default async function OperationsPage({ searchParams }: { searchParams: P
   const inbox = await readInbox({ period, menu, snapshot });
   const team = projectOperatingTasks([...inbox.tasks.needsYou, ...inbox.tasks.watching, ...inbox.tasks.handled]);
   const needs = needsYouFromAttention(inbox.items, team.needsYou);
-  const meta: CardMeta = { today: snapshot.todayDateStr, locale, currency: snapshot.business.currency ?? null };
+  const maintenanceStaff=await ownerStaffLoginList().then(rows=>rows.filter(row=>row.active&&row.linked).map(({id,name})=>({id,name}))).catch(()=>undefined);
+  const meta: CardMeta = { today: snapshot.todayDateStr, locale, currency: snapshot.business.currency ?? null, maintenanceStaff };
   const tops = topChatStartItems(inbox.items);
   const names: Record<AgentId, string> = { alex: "Alex", olivia: "Olivia", maya: "Maya", leo: "Leo" };
   const roles: Record<AgentId, string> = { alex: t("alexRole"), olivia: t("oliviaRole"), maya: t("mayaRole"), leo: t("leoRole") };
@@ -251,7 +253,7 @@ function TaskCard({ row: task, names, t, tExperiment, tBrief, tGoals, category, 
         task.payload.recommendation==="keep"?"keep":task.payload.recommendation==="revert"?"revert":"adjust")})}</p>}
       {!midRun&&<p className="text-ink-muted">{tExperiment(task.payload.outcomeStatus==="complete"?"reportCompletedCaveat":"reportUncertain")}</p>}
     </div>}
-    {task.kind==="maintenance_issue"&&<MaintenanceCaseCard copy={maintenanceCopy}
+    {task.kind==="maintenance_issue"&&<MaintenanceCaseCard copy={maintenanceCopy} staff={meta.maintenanceStaff}
       caseData={{taskId:task.id,equipmentLabel:String(task.payload.equipmentLabel??""),
         stage:String(task.payload.maintenanceStage??"reported"),
         symptom:String(task.payload.symptom??"")}} />}

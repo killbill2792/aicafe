@@ -15,6 +15,8 @@ export default function CrewInbox({name,requests,messages,authUserId}:{
  const [pending,setPending]=useState(false);
  const [notes,setNotes]=useState<Record<string,string>>({});
  const [report,setReport]=useState("");
+ const [equipment,setEquipment]=useState("");
+ const [severity,setSeverity]=useState("unknown");
  const [busy,setBusy]=useState(""),[feedback,setFeedback]=useState("");
  const retryPending=useCallback(async()=>{
   const operation=pendingRef.current;
@@ -80,7 +82,7 @@ export default function CrewInbox({name,requests,messages,authUserId}:{
    pendingRef.current=null;
    setPending(false);
    if(operation.requestId)setNotes(value=>({...value,[operation.requestId!]:""}));
-   else setReport("");
+   else {setReport("");setEquipment("");setSeverity("unknown");}
    setFeedback("Response saved. Your café supervisor can now review it.");
    router.refresh();
   }finally{sending.current=false;setBusy("");}
@@ -199,8 +201,20 @@ export default function CrewInbox({name,requests,messages,authUserId}:{
    <textarea id="crew-report" rows={4} maxLength={2000} required disabled={pending} value={report}
     onChange={e=>setReport(e.target.value)} placeholder="Describe what you noticed…"
     className="w-full rounded-xl border border-line bg-white p-3 text-ink"/>
-   <button disabled={Boolean(busy)||pending||!report.trim()}
-    onClick={()=>send(null,"report",report.trim())}
+   <label className="block text-sm">Equipment name (optional, for maintenance reports)
+    <input value={equipment} onChange={e=>setEquipment(e.target.value.replace(/[\r\n]/g," "))} maxLength={120}
+     disabled={pending} className="mt-1 w-full rounded-xl border border-line p-3"/>
+   </label>
+   {equipment.trim()&&<label className="block text-sm">Urgency
+    <select value={severity} onChange={e=>setSeverity(e.target.value)} disabled={pending}
+     className="mt-1 w-full rounded-xl border border-line p-3">
+     <option value="unknown">Not sure</option><option value="normal">Normal</option>
+     <option value="high">High</option><option value="critical">Critical</option>
+    </select>
+   </label>}
+   {equipment.trim()&&report.trim().length>1200&&<p className="text-sm">Maintenance reports must be 1200 characters or fewer.</p>}
+   <button disabled={Boolean(busy)||pending||!report.trim()||Boolean(equipment.trim()&&report.trim().length>1200)}
+    onClick={()=>send(null,"report",equipment.trim()?["Maintenance report v1",equipment.trim(),severity,report.trim()].join("\n"):report.trim())}
     className="min-h-12 rounded-full bg-accent px-5 py-2 font-semibold text-on-accent disabled:opacity-50">Send report</button>
   </section>
   <section className="space-y-3" aria-labelledby="crew-history">
