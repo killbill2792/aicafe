@@ -29,6 +29,7 @@ export type OwnerWorkItem = {
 
 export type RunRow = {
   thread_id?: string | null;
+  execution_version?:number;
   id: string; request_key: string; status: "pending" | "running" | "blocked" | "completed";
   final_report_ref: string | null; updated_at: string; finished_at: string | null;
 };
@@ -36,6 +37,7 @@ export type StepRow = {
   run_id: string; step_key: string; step_index: number; status: "pending" | "leased" | "blocked" | "completed";
   attempts: number; error_code: string | null; updated_at: string;
   retry_mode: "idempotent" | "reconcile"; lease_until: string | null;
+  checkpoint_phase?:"ready"|"provider_pending"|"read_pending"|"effect_pending";next_retry_at?:string|null;
 };
 export type JobRow = {
   thread_id?: string | null;
@@ -85,22 +87,25 @@ export function projectOwnerWork(input: {
     // do not claim it is working or that an effect is safe to repeat.
     const leaseEnd = next?.lease_until ? Date.parse(next.lease_until) : NaN;
     const staleLease = next?.status === "leased" && (!Number.isFinite(leaseEnd) || leaseEnd <= nowMs);
-    const status: OwnerWorkStatus = run.status === "pending" ? "queued"
+    const waiting=run.execution_version===2&&run.status==="blocked"&&next?.error_code==="awaiting_owner";
+    const cancelled=run.status==="blocked"&&next?.error_code==="cancelled";
+    const safeRetry=run.execution_version===2&&next?.checkpoint_phase!==undefined&&next.checkpoint_phase!=="effect_pending";
+    const status: OwnerWorkStatus = waiting?"approval_required":cancelled?"cancelled":run.status === "pending" ? (next?.next_retry_at?"retrying":"queued")
       : run.status === "completed" && run.final_report_ref ? "answer_ready"
       : run.status === "completed" ? "uncertain"
       : run.status === "blocked" ? expired ? "uncertain" : "failed"
-      : staleLease ? (next?.retry_mode === "idempotent" ? "queued" : "uncertain")
+      : staleLease ? (safeRetry?"retrying":next?.retry_mode === "idempotent" ? "queued" : "uncertain")
       : next?.status === "leased" && next.attempts > 1 ? "retrying" : "running";
     work.push({
       id: "run:" + run.id, threadId: run.thread_id ?? null, kind: "durable_run", status, title: copy.runTitle,
-      detail: status === "answer_ready"
+      detail: waiting?copy.runAwaitingOwner:cancelled?copy.runCancelled:status === "retrying"?copy.runRetrying:status === "answer_ready"
         ? copy.runAnswerReady
         : status === "uncertain" ? copy.runUncertain
         : status === "failed" ? copy.runFailed
         : status === "queued" ? copy.runQueued
         : next ? (stepNames[next.step_key] ?? copy.runGeneric)
         : copy.runChecking,
-      nextStep: status === "uncertain" ? copy.runUncertainNext
+      nextStep: waiting?copy.runAwaitingOwnerNext:cancelled?copy.runCancelled:status === "uncertain" ? copy.runUncertainNext
         : status === "failed" ? copy.runFailedNext
         : status === "answer_ready" ? copy.runAnswerNext
         : copy.runActiveNext,
