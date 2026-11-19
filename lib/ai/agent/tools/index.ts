@@ -30,6 +30,7 @@ import type {PurchasePlan} from "@/lib/purchasing/planOrder";
 import type {SupplierOrderStatus} from "@/lib/data/supplierPurchasing.server";
 import {priceExperimentTools} from "./priceExperiment";
 import {priceMonitorTools} from "./priceMonitor";
+import type {OwnerToastObservation} from "@/lib/ai/supervisor/loop/reads.server";
 import {ownerInputsSchema,ownerAmountForPeriod,ownerConflict} from "./ownerInputs";
 import {moneyChoiceCandidates,chosenMoneySource,replayedMoneyChoice} from "../resolveMoney";
 import {staffProposalTools} from "./staffProposals";
@@ -175,7 +176,7 @@ export type AgentToolContext = {
   readWeekSchedule?:(weekStart:string)=>ReturnType<typeof import("@/lib/actions/schedule").getWeekSchedule>;
   ownerFacts?:readonly import("@/lib/ownerFacts/inject").SavedFact[];
   menuPriceEvidence?:(items:ReadonlyArray<{id:string;priceCents:number}>)=>Promise<Record<string,import("@/lib/data/menuPriceEvidence.server").MenuPriceEvidence>>;
-  readPriceMonitors?:()=>Promise<Array<{proposalId:string;threadId:string;productName:string;status:string;startDate:string|null;durationDays:number|null;day:number|null;oldPriceCents:number|null;newPriceCents:number|null;reportStatus:string|null}>>;
+  readPriceMonitors?:()=>Promise<Array<OwnerToastObservation|{proposalId:string;threadId:string;productName:string;status:string;startDate:string|null;durationDays:number|null;day:number|null;oldPriceCents:number|null;newPriceCents:number|null;reportStatus:string|null}>>;
   proposals?: {proposePriceChange(input:{productId:string;newPriceCents:number}):Promise<{proposalId:string;revision:number;productName:string;oldPriceCents:number;newPriceCents:number}>;
     proposePriceExperiment?(input:{productId:string;newPriceCents:number|null;increaseCents:number|null;days:number}):Promise<{proposalId:string;revision:number;productName:string;oldPriceCents:number;newPriceCents:number}>;
     proposeStaff?(input:{name:import("./staffProposals").StaffProposalName;input:unknown}):Promise<{proposalId:string;revision:number;capabilityId:string}>;
