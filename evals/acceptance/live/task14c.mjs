@@ -50,7 +50,7 @@ async function ownerTurn(page,thread,text,phase){
  const result=await page.evaluate(async({thread,text,clientMessageId})=>{
   const ac=new AbortController(),timer=setTimeout(()=>ac.abort(),180000);
   let buffer="",done=null,error=null;const names=[];
-  let diagnosticStage=null,diagnosticEndReason=null,diagnosticModelCalls=null;
+  let diagnosticStage=null,diagnosticEndReason=null,diagnosticModelCalls=null,diagnosticProviderFailures=null;
   try{
    const response=await fetch("/api/ai/threads/"+thread+"/agent",{
     method:"POST",credentials:"same-origin",signal:ac.signal,
@@ -71,14 +71,15 @@ async function ownerTurn(page,thread,text,phase){
      if(ev==="error"){
       error=data?.code??"agent_error";diagnosticStage=data?.diagnosticStage??null;
       diagnosticEndReason=data?.diagnosticEndReason??null;
-      diagnosticModelCalls=data?.diagnosticModelCalls??null;break;
+      diagnosticModelCalls=data?.diagnosticModelCalls??null;
+      diagnosticProviderFailures=data?.diagnosticProviderFailures??null;break;
      }
     }
    }
    await reader.cancel().catch(()=>{});
    return {names,done,error:error??(done?null:"missing_completed_turn"),
-    diagnosticStage,diagnosticEndReason,diagnosticModelCalls};
-  }catch{return {names,done,error:"transport_failed",diagnosticStage,diagnosticEndReason,diagnosticModelCalls}}
+    diagnosticStage,diagnosticEndReason,diagnosticModelCalls,diagnosticProviderFailures};
+  }catch{return {names,done,error:"transport_failed",diagnosticStage,diagnosticEndReason,diagnosticModelCalls,diagnosticProviderFailures}}
   finally{clearTimeout(timer)}
  },{thread,text,clientMessageId});
  if(result.error||result.done?.endReason!=="complete"||
@@ -90,10 +91,15 @@ async function ownerTurn(page,thread,text,phase){
   const code=validCode?result.error:
    endReason!=="unknown"&&endReason!=="complete"?endReason:"model_incomplete";
   const calls=result.done?.usage?.modelCalls??result.diagnosticModelCalls;
+  const reasons=result.done?.diagnosticProviderFailures??result.diagnosticProviderFailures;
+  const providerFailures=Array.isArray(reasons)?reasons.slice(0,8).map(x=>[
+   "max_output_tokens","content_filter","incomplete_other","missing_terminal","provider_failed","stream_error"
+  ].includes(x)?x:"unknown"):[];
   console.log("task14c_safe_model_failure",JSON.stringify({
    phase,code,endReason,stage:["setup","model","persist","finish"].includes(result.diagnosticStage)?
      result.diagnosticStage:result.done?"completed_frame":"unknown",
    calls:Number.isSafeInteger(calls)&&calls>=0?calls:null,
+   providerFailures,
    tools:result.names.filter(n=>[
     "get_supplier_purchase_orders","propose_supplier_vendor_email","record_supplier_order_outcome"].includes(n))
   }));

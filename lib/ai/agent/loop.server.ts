@@ -20,6 +20,12 @@ import {withoutSavedFactFields} from "@/lib/ownerFacts/askGuard";
 export type EndReason = "complete" | "budget" | "timeout" | "provider_error" | "tool_errors";
 type ToolCall = { type: "function_call"; name: string; arguments: string; call_id: string };
 type Event = { type: string; [key: string]: unknown };
+type ProviderFailureCode = "max_output_tokens" | "content_filter" | "incomplete_other" |
+  "missing_terminal" | "provider_failed" | "stream_error";
+function incompleteProviderCode(event:Event):ProviderFailureCode{
+  const reason=(event.response as {incomplete_details?:{reason?:unknown}}|undefined)?.incomplete_details?.reason;
+  return reason==="max_output_tokens"||reason==="content_filter"?reason:"incomplete_other";
+}
 /** Disposable Task14B proxy only: carry forward self-contained model output.
  * Reasoning-model tool calls require stateless encrypted reasoning in original
  * order alongside their tool results. Only same-run trusted-host verified
@@ -71,7 +77,9 @@ export type AgentTurn = { text: string; endReason: EndReason; status: ReturnType
   unverified: ReturnType<typeof checkNumbers>; provenance?:ReturnType<typeof numberProvenance>; results: AgentToolResult[]; toolInvocations?:{name:string;result:AgentToolResult}[]; evidence?: NumericEvidence[]; explain?:ExplainLine[]; tools?:string[]; agentIds?:string[];
   usage: { modelCalls: number; toolCalls: number; inputTokens: number; cachedTokens: number; outputTokens: number; latencyMs: number; model?:string };
   /** Owner messages sent while this turn ran and read by the model before a later step. */
-  absorbedOwnerMessageIds?: string[] };
+  absorbedOwnerMessageIds?: string[];
+  /** Fixed categories for the isolated local acceptance boundary only. */
+  providerFailureCodes?: ProviderFailureCode[] };
 /** A message the owner sent while the turn was running. */
 export type OwnerFollowUp = { id: string; text: string };
 /** Stable instruction prefix. Style rules are appended (not per-turn data), so the
@@ -287,11 +295,24 @@ export async function runAgentTurn(args: {
     tool_choice: final ? "none" : "auto", stream: true,
     max_output_tokens: Math.max(1,Math.min(1200,workerBudget ? workerBudget.maxOutputTokens - usage.outputTokens : 1200)), prompt_cache_key: agentPromptCacheKey(), input,
   });
+  const providerFailureCodes:ProviderFailureCode[]=[];
+  const recordIncompleteUsage=(event:Event)=>{
+    // Incomplete responses can still consume billed tokens. Count only safe
+    // integer provider usage; never attest model identity from an incomplete turn.
+    const u=(event.response as {usage?:{input_tokens?:unknown;output_tokens?:unknown;
+      input_tokens_details?:{cached_tokens?:unknown}}}|undefined)?.usage;
+    const count=(n:unknown)=>typeof n==="number"&&Number.isSafeInteger(n)&&n>=0&&n<=1_000_000?n:0;
+    const input=count(u?.input_tokens);
+    usage.inputTokens+=input;
+    usage.outputTokens+=count(u?.output_tokens);
+    usage.cachedTokens+=Math.min(input,count(u?.input_tokens_details?.cached_tokens));
+  };
   const call = async (final: boolean) => {
     const calls: ToolCall[] = [], output: unknown[] = [];
     const callTextStart = text.length;
     const modelStart = now();
     let modelError: string | undefined;
+    let failureCode:ProviderFailureCode="stream_error";
     let completed = false;
     const remaining = (final ? deadline : workDeadline) - now();
     if (remaining <= 0) throw new Error("deadline");
@@ -320,9 +341,15 @@ export async function runAgentTurn(args: {
           usage.outputTokens += u?.output_tokens ?? 0;
           usage.cachedTokens += u?.input_tokens_details?.cached_tokens ?? 0;
         }
-        if (event.type === "response.failed" || event.type === "error") throw new Error("provider_error");
+        if(event.type==="response.incomplete"){
+          failureCode=incompleteProviderCode(event);recordIncompleteUsage(event);
+          throw new Error("provider_incomplete");
+        }
+        if (event.type === "response.failed" || event.type === "error") {
+          failureCode="provider_failed";throw new Error("provider_error");
+        }
       }
-      if (!completed) throw new Error("provider_incomplete");
+      if (!completed) {failureCode="missing_terminal";throw new Error("provider_incomplete");}
       input.push(...(approvedLocalTask14b?task14bInlineContinuation(output):output));
       // A tool-only response is not an answer. Keep those follow-ups unclaimed
       // until a completed text response can be persisted.
@@ -331,6 +358,7 @@ export async function runAgentTurn(args: {
       return calls;
     } catch (error) {
       modelError = "model_call_failed";
+      if(approvedLocalTask14b)providerFailureCodes.push(failureCode);
       const discardChars = text.length - callTextStart;
       if (discardChars > 0) {
         text = text.slice(0, callTextStart); // allowed: discard incomplete model stream on provider failure
@@ -541,10 +569,17 @@ export async function runAgentTurn(args: {
           const finalStart = now();
           let completed = false;
           let finalError: string | undefined;
+          let failureCode:ProviderFailureCode="stream_error";
           try {
             usage.modelCalls++;
             for await (const event of provider(request(true), finalController.signal)) {
-              if (event.type === "response.failed" || event.type === "error") throw new Error("provider_error");
+              if(event.type==="response.incomplete"){
+                failureCode=incompleteProviderCode(event);recordIncompleteUsage(event);
+                throw new Error("provider_incomplete");
+              }
+              if (event.type === "response.failed" || event.type === "error") {
+                failureCode="provider_failed";throw new Error("provider_error");
+              }
               if (now() >= deadline) throw new Error("deadline");
               if (event.type === "response.output_text.delta" && typeof event.delta === "string") {
                 text += event.delta; args.onDelta?.(event.delta);
@@ -558,11 +593,12 @@ export async function runAgentTurn(args: {
                 usage.cachedTokens += u?.input_tokens_details?.cached_tokens ?? 0;
               }
             }
-            if (!completed) throw new Error("provider_incomplete");
+            if (!completed) {failureCode="missing_terminal";throw new Error("provider_incomplete");}
             if (text.length > finalTextStart)
               for (const message of absorbed) deliveredIds.add(message.id);
           } catch (error) {
             finalError = "model_call_failed";
+            if(approvedLocalTask14b)providerFailureCodes.push(failureCode);
             const discardChars = text.length - finalTextStart;
             if (discardChars > 0) {
               text = text.slice(0, finalTextStart); // allowed: discard incomplete model stream on provider failure
@@ -617,7 +653,8 @@ export async function runAgentTurn(args: {
     tools:[...new Set(startedTools)],agentIds:[...new Set(startedTools.map(name=>agentForTool(name)))],
     results:toolResults,
     toolInvocations:results.map(r=>({name:r.name,result:r.result})),usage,
-    ...(deliveredIds.size ? { absorbedOwnerMessageIds: [...deliveredIds] } : {}) };
+    ...(deliveredIds.size ? { absorbedOwnerMessageIds: [...deliveredIds] } : {}),
+    ...(providerFailureCodes.length?{providerFailureCodes}: {}) };
 }
 
 const OLIVIA_SCHEDULING_RULES = "For staffing, these instructions supersede older scheduling mappings. The existing draft_week_schedule tool is the only weekly roster planner: purpose=draft prepares its default roster and ONE owner proposal card. A request to actually prepare a lower modeled cash-cost, fewer owner-hours or balanced plan uses purpose=cash_cost, owner_time or balanced respectively, still only one card. Questions to compare, explain, simulate or see an option first use purpose=compare_only, cash_preview or owner_time_preview and MUST NOT create an approval card. For an owner-specified ONE-WEEK scheduling constraint such as 'make next week's schedule but leave Sarah off Tuesday', call draft_week_schedule with temporary_absence={employee_name:'Sarah',weekday:2} and purpose=draft or a preview purpose. This produces a roster respecting that requested day without changing saved employee availability; disambiguate identical staff names instead of guessing. For a specific worker's hypothetical day off (such as 'what if Sarah cannot work Tuesday'), use simulate_staff_absence, which never saves availability or publishes anything; if multiple workers fit, ask the owner to choose, and reuse that exact verified choice. When the owner explicitly requests a real availability change, use propose_availability_change. Unpaid-owner shift replacement uses purpose=owner_savings and remains read-only. NEVER call propose_schedule after draft_week_schedule creates a proposal card. A manually specified dated shift table may use propose_schedule only when no card exists for the same request. Do not confuse historic close-hour sales with customer arrivals, unknown wages with zero, or a preview with approved, published, delivered or accepted shifts.";

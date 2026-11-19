@@ -338,3 +338,72 @@ describe("mid-run follow-ups ()", () => {
     expect(requests.length).toBeLessThanOrEqual(6);
   });
 });
+
+describe("incomplete provider response diagnostics and fail-closed tool recovery",()=>{
+  function isolated(){
+    vi.stubEnv("AI_CAFE_LIVE_ACCEPTANCE","OWNER_APPROVED_LOCAL_ONLY");
+    vi.stubEnv("APP_URL","http://127.0.0.1:3000");
+    vi.stubEnv("NEXT_PUBLIC_SUPABASE_URL","http://127.0.0.1:54321");
+    vi.stubEnv("AICAFE_14B_BROKER_TOKEN","z".repeat(64));
+    vi.stubEnv("AICAFE_TASK14B_BUDGET_LEDGER","");
+  }
+  it("charges explicit incomplete usage, discards all partial output and never executes its tools",async()=>{
+    isolated();
+    try{
+      const {requests,provider}=recording([
+        [text("Unverified partial text"),call("get_menu_items",'{"query":null,"limit":null}',"partial_call"),
+          {type:"response.incomplete",response:{incomplete_details:{reason:"max_output_tokens"},
+            model:"unverified_model",usage:{input_tokens:100,output_tokens:1200,input_tokens_details:{cached_tokens:20}}}}],
+        [text("I could not verify the requested information."),completed]
+      ]);
+      const tools=vi.fn(),reset=vi.fn();
+      const result=await runAgentTurn({ownerText:"What milk products do I have?",context:{...context},
+        provider,onTool:tools,onReset:reset});
+      expect(result.endReason).toBe("provider_error");
+      expect(result.providerFailureCodes).toEqual(["max_output_tokens"]);
+      expect(result.text).toBe("I could not verify the requested information.");
+      expect(reset).toHaveBeenCalledWith("Unverified partial text".length);
+      expect(tools).not.toHaveBeenCalled();
+      expect(result.results).toEqual([]);
+      expect(result.usage).toMatchObject({modelCalls:2,toolCalls:0,inputTokens:140,outputTokens:1208,cachedTokens:30});
+      expect(result.usage.model).not.toBe("unverified_model");
+      expect(requests).toHaveLength(2);
+      expect(requests[1].tool_choice).toBe("none");
+      expect(JSON.stringify(requests[1].input)).not.toContain("partial_call");
+    }finally{vi.unstubAllEnvs()}
+  });
+  it.each([
+    ["content_filter","content_filter"],
+    ["untrusted private upstream detail","incomplete_other"]
+  ])("reports only fixed incomplete reasons (%s)",async(reason,expected)=>{
+    isolated();
+    try{
+      const {provider}=recording([[{type:"response.incomplete",response:{incomplete_details:{reason}}}],
+        [text("Recovery answer."),completed]]);
+      const result=await runAgentTurn({ownerText:"Help with supplier order.",context:{...context},provider});
+      expect(result.providerFailureCodes).toEqual([expected]);
+      expect(result.endReason).toBe("provider_error");
+    }finally{vi.unstubAllEnvs()}
+  });
+  it("distinguishes a missing terminal frame from a failed recovery request",async()=>{
+    isolated();
+    try{
+      const {provider,requests}=recording([[text("Partial")],[{type:"response.failed"}]]);
+      const result=await runAgentTurn({ownerText:"Help with supplier order.",context:{...context},provider});
+      expect(result.providerFailureCodes).toEqual(["missing_terminal","provider_failed"]);
+      expect(result.endReason).toBe("provider_error");
+      expect(result.text).toBe("");
+      expect(requests).toHaveLength(2);
+    }finally{vi.unstubAllEnvs()}
+  });
+  it("does not return diagnostic categories in ordinary owner turns",async()=>{
+    vi.stubEnv("AI_CAFE_LIVE_ACCEPTANCE","");
+    try{
+      const {provider}=recording([[{type:"response.incomplete",response:{incomplete_details:{reason:"content_filter"}}}],
+        [text("Recovery answer."),completed]]);
+      const result=await runAgentTurn({ownerText:"Help with supplier order.",context:{...context},provider});
+      expect(result.providerFailureCodes).toBeUndefined();
+      expect(result.endReason).toBe("provider_error");
+    }finally{vi.unstubAllEnvs()}
+  });
+});

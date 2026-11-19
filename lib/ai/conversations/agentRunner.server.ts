@@ -614,6 +614,7 @@ export async function runOneTurn(p: TurnParams): Promise<{ replyId: string; repl
       ...(result.endReason === "complete" ? {} : { error: result.endReason }) });
     emit("done", { reply, status: result.status, endReason: result.endReason,
       unverified: result.unverified, usage: result.usage,
+      ...(result.providerFailureCodes?{diagnosticProviderFailures:result.providerFailureCodes}:{}),
       ...(job ? { jobId: job.id, absorbedOwnerMessageIds: result.absorbedOwnerMessageIds ?? [] } : {}) });
     return { replyId: reply.id, replyText:result.text, absorbedOwnerMessageIds: result.absorbedOwnerMessageIds ?? [] };
   } catch (error) {
@@ -631,7 +632,8 @@ export async function runOneTurn(p: TurnParams): Promise<{ replyId: string; repl
       process.env.NEXT_PUBLIC_SUPABASE_URL === "http://127.0.0.1:54321"
       ? { diagnosticStage: failureStage,
           ...(completedTurn ? { diagnosticEndReason: completedTurn.endReason,
-            diagnosticModelCalls: completedTurn.usage.modelCalls } : {}) }
+            diagnosticModelCalls: completedTurn.usage.modelCalls,
+            ...(completedTurn.providerFailureCodes?{diagnosticProviderFailures:completedTurn.providerFailureCodes}:{}) } : {}) }
       : {};
     emit("error", { code, ...localDiagnostic,
       ...(error instanceof AgentEmptyReplyError ? { retryable: true } : {}),
