@@ -75,6 +75,12 @@
         },
         "status": {
           "eq": "approved_for_ordering"
+        },
+        "effect_hash": {
+          "scope": "effectHash"
+        },
+        "currency_code": {
+          "scope": "currency"
         }
       },
       "minCount": 1,
@@ -123,6 +129,90 @@
       "name": "no-cross-cafe-order",
       "kind": "isolation",
       "table": "public.purchase_orders",
+      "where": {
+        "business_id": {
+          "scope": "foreignBusinessId"
+        },
+        "proposal_id": {
+          "scope": "proposalId"
+        }
+      },
+      "minCount": 0,
+      "maxCount": 0
+    },
+    {
+      "name": "verified-single-click-receipt",
+      "kind": "source",
+      "table": "public.supervisor_effect_attempts",
+      "where": {
+        "business_id": {
+          "scope": "businessId"
+        },
+        "proposal_id": {
+          "scope": "proposalId"
+        },
+        "attempt_key": {
+          "scope": "attemptKey"
+        },
+        "effect_hash": {
+          "scope": "effectHash"
+        },
+        "authorization_kind": {
+          "eq": "click"
+        },
+        "state": {
+          "eq": "verified"
+        },
+        "receipt_ref": {
+          "scope": "receiptRef"
+        }
+      },
+      "minCount": 1,
+      "maxCount": 1
+    },
+    {
+      "name": "one-effect-attempt",
+      "kind": "source",
+      "table": "public.supervisor_effect_attempts",
+      "where": {
+        "business_id": {
+          "scope": "businessId"
+        },
+        "proposal_id": {
+          "scope": "proposalId"
+        }
+      },
+      "minCount": 1,
+      "maxCount": 1
+    },
+    {
+      "name": "one-authenticated-approval",
+      "kind": "owner",
+      "table": "public.supervisor_approvals",
+      "where": {
+        "business_id": {
+          "scope": "businessId"
+        },
+        "proposal_id": {
+          "scope": "proposalId"
+        },
+        "owner_user_id": {
+          "scope": "ownerUserId"
+        },
+        "authorization_kind": {
+          "eq": "click"
+        },
+        "effect_hash": {
+          "scope": "effectHash"
+        }
+      },
+      "minCount": 1,
+      "maxCount": 1
+    },
+    {
+      "name": "foreign-no-effect-attempt",
+      "kind": "isolation",
+      "table": "public.supervisor_effect_attempts",
       "where": {
         "business_id": {
           "scope": "foreignBusinessId"
