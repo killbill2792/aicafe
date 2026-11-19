@@ -116,6 +116,20 @@ async function seed(){
 }
 async function run(){
  await seed();
+ const completion=()=>one(admin,"select toast_publication_completed_at,toast_publication_pos_item_id from public.menu_price_history where id=$1",[ids.history]);
+ check((await completion()).toast_publication_completed_at===null,
+  "pending per-item receipt cannot become a completed publication");
+ await role(workerA,"service_role",null,c=>c.query(
+  "update public.toast_optional_sync_state set menu_checked_local_day=current_date,menu_copied_at=clock_timestamp() where business_id=$1 and restaurant_guid=$2",
+  [ids.business,ids.restaurant]));
+ const proof=await completion();
+ check(proof.toast_publication_completed_at!==null&&proof.toast_publication_pos_item_id===pos,
+  "actual completion checkpoint atomically stamps exact item identity");
+ await role(workerA,"service_role",null,c=>c.query(
+  "update public.toast_optional_sync_state set menu_checked_local_day=current_date+1 where business_id=$1 and restaurant_guid=$2",
+  [ids.business,ids.restaurant]));
+ check((await completion()).toast_publication_completed_at.getTime()===proof.toast_publication_completed_at.getTime(),
+  "metadata-only refresh never restamps the historical completion");
  check((await one(admin,"select count(*)::int as n from public.supervisor_monitor_windows where business_id=$1",
   [ids.business])).n===0,"no synthetic window exists before activation");
  // Owner and tenant RLS: owner can see own gate, not another café;
