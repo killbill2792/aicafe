@@ -115,7 +115,8 @@ live("retained customer identity or observed trend, real model investigation, is
     canonicalData:async()=>({db:ownerDb,businessId})} as AgentToolContext;
    const turn=await runAgentTurn({context,provider,toolNames:["query_data","describe_data"],
     ownerText:"From "+date(-14)+" through "+date(-1)+", using the retained customer evidence, how many distinct observed account references, linked order visits, returning linked visits, and net sales in integer cents were recorded? Return exact labeled integers: References, Visits, Returning, Net cents. Explain whether these are unique people and the identity coverage."});
-   expect(turn.endReason).toBe("complete");expect(turn.tools).toContain("query_data");
+   const turnTools=turn.tools??[];
+   expect(turn.endReason).toBe("complete");expect(turnTools).toContain("query_data");
    for(const [label,value] of [["References",expected.references],["Visits",expected.visits],["Returning",expected.returning],["Net cents",expected.net]] as const){
     const match=turn.text.match(new RegExp(label+"[\\s*]*[:=][\\s*]*([0-9,]+)","i"));
     expect(match?.[1]&&Number(match[1].replace(/,/g,""))).toBe(value);
@@ -167,7 +168,7 @@ live("retained customer identity or observed trend, real model investigation, is
    const after=(await admin.query("select episode_id from public.supervisor_investigations where business_id=$1 and source_id=$2",[businessId,sourceId])).rows;
    expect(after).toEqual([{episode_id:episode.episode_id}]);
    expect((await admin.query("select count(*)::int n from public.supervisor_effect_attempts where business_id=$1",[businessId])).rows[0].n).toBe(0);
-   const toolNames=[...new Set([...turn.tools,...workerTools])];
+   const toolNames=[...new Set([...turnTools,...workerTools])];
    expect(providerCompletions).toBe(ledger.calls);expect(ledger.calls).toBeGreaterThanOrEqual(3);
    const proof={schema_version:1,task:scenario,head_sha:head,status:"passed",observed_model:"gpt-6-luna",provider:"openai_responses",provider_calls:ledger.calls,provider_completions:providerCompletions,tool_names:toolNames,actual_source_detector:true,authenticated_scope:true,independent_oracle:true,source_corrected:true,no_unapproved_effect:true,feature_proven:false,integrated_proven:false,released_proven:false};
    mkdirSync("test-results/acceptance",{recursive:true});
