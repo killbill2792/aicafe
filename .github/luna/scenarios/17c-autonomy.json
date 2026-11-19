@@ -1,0 +1,313 @@
+{
+  "id": "17c-autonomy",
+  "mode": "generic",
+  "engine": "node-server",
+  "entrypoint": "evals/acceptance/live/task17c.mjs",
+  "proof": "17c-autonomy-proof.json",
+  "scope": "17c-autonomy-scope.json",
+  "expectedTools": [
+    "get_investigation_source",
+    "get_staff_messages",
+    "get_cashflow_evidence",
+    "get_bills"
+  ],
+  "assertions": [
+    {
+      "name": "staff-source",
+      "kind": "source",
+      "table": "public.staff_communication_messages",
+      "where": {
+        "business_id": {
+          "scope": "businessId"
+        },
+        "id": {
+          "scope": "staffMessageId"
+        },
+        "actor": {
+          "eq": "employee"
+        },
+        "response_code": {
+          "eq": "decline"
+        }
+      },
+      "minCount": 1,
+      "maxCount": 1
+    },
+    {
+      "name": "staff-stable-episode",
+      "kind": "source",
+      "table": "public.supervisor_investigations",
+      "where": {
+        "business_id": {
+          "scope": "businessId"
+        },
+        "owner_user_id": {
+          "scope": "ownerUserId"
+        },
+        "thread_id": {
+          "scope": "threadId"
+        },
+        "source_id": {
+          "scope": "staffSourceId"
+        },
+        "episode_id": {
+          "scope": "staffEpisodeId"
+        },
+        "phase": {
+          "eq": "awaiting_owner"
+        }
+      },
+      "minCount": 1,
+      "maxCount": 1
+    },
+    {
+      "name": "finance-stable-episode",
+      "kind": "source",
+      "table": "public.supervisor_investigations",
+      "where": {
+        "business_id": {
+          "scope": "foreignBusinessId"
+        },
+        "owner_user_id": {
+          "scope": "financeOwnerUserId"
+        },
+        "thread_id": {
+          "scope": "financeThreadId"
+        },
+        "source_id": {
+          "scope": "financeSourceId"
+        },
+        "episode_id": {
+          "scope": "financeEpisodeId"
+        },
+        "phase": {
+          "eq": "awaiting_owner"
+        }
+      },
+      "minCount": 1,
+      "maxCount": 1
+    },
+    {
+      "name": "initial-statement",
+      "kind": "source",
+      "table": "public.uploads",
+      "where": {
+        "business_id": {
+          "scope": "foreignBusinessId"
+        },
+        "id": {
+          "scope": "firstUploadId"
+        }
+      },
+      "minCount": 1,
+      "maxCount": 1
+    },
+    {
+      "name": "changed-statement",
+      "kind": "source",
+      "table": "public.uploads",
+      "where": {
+        "business_id": {
+          "scope": "foreignBusinessId"
+        },
+        "id": {
+          "scope": "secondUploadId"
+        }
+      },
+      "minCount": 1,
+      "maxCount": 1
+    },
+    {
+      "name": "staff-owner-notice",
+      "kind": "owner",
+      "table": "public.ai_messages",
+      "where": {
+        "business_id": {
+          "scope": "businessId"
+        },
+        "owner_user_id": {
+          "scope": "ownerUserId"
+        },
+        "thread_id": {
+          "scope": "threadId"
+        },
+        "id": {
+          "scope": "staffNoticeId"
+        },
+        "role": {
+          "eq": "supervisor"
+        }
+      },
+      "minCount": 1,
+      "maxCount": 1
+    },
+    {
+      "name": "finance-owner-notice",
+      "kind": "owner",
+      "table": "public.ai_messages",
+      "where": {
+        "business_id": {
+          "scope": "foreignBusinessId"
+        },
+        "owner_user_id": {
+          "scope": "financeOwnerUserId"
+        },
+        "thread_id": {
+          "scope": "financeThreadId"
+        },
+        "id": {
+          "scope": "financeFirstNoticeId"
+        },
+        "role": {
+          "eq": "supervisor"
+        }
+      },
+      "minCount": 1,
+      "maxCount": 1
+    },
+    {
+      "name": "finance-followup-notice",
+      "kind": "owner",
+      "table": "public.ai_messages",
+      "where": {
+        "business_id": {
+          "scope": "foreignBusinessId"
+        },
+        "owner_user_id": {
+          "scope": "financeOwnerUserId"
+        },
+        "thread_id": {
+          "scope": "financeThreadId"
+        },
+        "id": {
+          "scope": "financeFollowupNoticeId"
+        },
+        "role": {
+          "eq": "supervisor"
+        }
+      },
+      "minCount": 1,
+      "maxCount": 1
+    },
+    {
+      "name": "staff-no-owner-turn",
+      "kind": "owner",
+      "table": "public.ai_messages",
+      "where": {
+        "business_id": {
+          "scope": "businessId"
+        },
+        "role": {
+          "eq": "owner"
+        }
+      },
+      "minCount": 0,
+      "maxCount": 0
+    },
+    {
+      "name": "finance-no-owner-turn",
+      "kind": "owner",
+      "table": "public.ai_messages",
+      "where": {
+        "business_id": {
+          "scope": "foreignBusinessId"
+        },
+        "role": {
+          "eq": "owner"
+        }
+      },
+      "minCount": 0,
+      "maxCount": 0
+    },
+    {
+      "name": "staff-no-effect",
+      "kind": "owner",
+      "table": "public.supervisor_effect_attempts",
+      "where": {
+        "business_id": {
+          "scope": "businessId"
+        }
+      },
+      "minCount": 0,
+      "maxCount": 0
+    },
+    {
+      "name": "finance-no-effect",
+      "kind": "owner",
+      "table": "public.supervisor_effect_attempts",
+      "where": {
+        "business_id": {
+          "scope": "foreignBusinessId"
+        }
+      },
+      "minCount": 0,
+      "maxCount": 0
+    },
+    {
+      "name": "foreign-staff-episode",
+      "kind": "isolation",
+      "table": "public.supervisor_investigations",
+      "where": {
+        "business_id": {
+          "scope": "foreignBusinessId"
+        },
+        "episode_id": {
+          "scope": "staffEpisodeId"
+        }
+      },
+      "minCount": 0,
+      "maxCount": 0
+    },
+    {
+      "name": "foreign-finance-statement",
+      "kind": "isolation",
+      "table": "public.uploads",
+      "where": {
+        "business_id": {
+          "scope": "businessId"
+        },
+        "id": {
+          "scope": "secondUploadId"
+        }
+      },
+      "minCount": 0,
+      "maxCount": 0
+    },
+    {
+      "name": "staff-real-provider",
+      "kind": "source",
+      "table": "public.supervisor_system_usage_events",
+      "where": {
+        "business_id": {
+          "scope": "businessId"
+        },
+        "status": {
+          "eq": "completed"
+        },
+        "model": {
+          "eq": "gpt-6-luna"
+        }
+      },
+      "minCount": 2,
+      "maxCount": 18
+    },
+    {
+      "name": "finance-real-provider",
+      "kind": "source",
+      "table": "public.supervisor_system_usage_events",
+      "where": {
+        "business_id": {
+          "scope": "foreignBusinessId"
+        },
+        "status": {
+          "eq": "completed"
+        },
+        "model": {
+          "eq": "gpt-6-luna"
+        }
+      },
+      "minCount": 2,
+      "maxCount": 18
+    }
+  ]
+}
