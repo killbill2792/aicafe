@@ -12,7 +12,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import type { AgentJob } from "@/lib/ai/agent/jobState";
 import type { ConversationMessage } from "@/lib/ai/conversations/contracts";
 import { resumeSupervisorRun } from "./resume";
-import { SupabaseDurableRunRepository } from "./repository.server";
+import { selectNextDurableRun, SupabaseDurableRunRepository } from "./repository.server";
 import { runScopeSchema, type DurableRun, type DurableRunRepository, type RunScope } from "./contracts";
 import { withWorkerBudget, usageStopReason, currentWorkerUsage, workerBudgetExhausted,
   type WorkerBudget, type WorkerUsage } from "./usage.server"; const uuid = z.uuid(); const plan = [
@@ -256,21 +256,11 @@ export async function processDurableRun(runId: string): Promise<WorkerOutcome> {
           ownerText: nextOwner.text ?? "", locale: "en", service,
           emit: () => {}, job, jobs, externalClient: client, }), }); }, }); }
 export async function processOldestDurableRun(): Promise<{ processed: number; state: WorkerOutcome | null }> {
+  const candidate = await selectNextDurableRun();
+  if (!candidate) return { processed: 0, state: null };
   const db = createAdminSupabaseClient();
-  const { data, error } = await db.from("supervisor_runs").select("id")
-    .in("status", ["pending", "running"]).order("updated_at", { ascending: true })
-    .order("id", { ascending: true }).limit(1);
-  if (error) throw new Error("supervisor_worker_queue_unavailable");
-  let runId: string | undefined = data?.[0]?.id; let recovery = false; if (!runId) {
-    // Sweep only the explicitly reconcilable lease-expiry queue when normal
-    // work is idle. Never retry cancelled or budget-blocked owner turns.
-    const pending = await db.from("supervisor_run_steps").select("run_id")
-      .eq("status", "blocked").eq("step_key", "owner_turn")
-      .eq("error_code", "lease_expired")
-      .order("updated_at", { ascending: true }).limit(1);
-    if (pending.error) throw new Error("supervisor_worker_recovery_unavailable");
-    runId = pending.data?.[0]?.run_id; recovery = Boolean(runId); }
-  if (!runId) return { processed: 0, state: null }; const state = await processDurableRun(runId);
+  const { runId, recovery } = candidate;
+  const state = await processDurableRun(runId);
   // Rotate held leases and uncertain receipts; neither may monopolize a café
   // queue. Only canonical SQL reconciliation can unblock expired effects.
   if (state === "busy" && !recovery) { const moved = await db.from("supervisor_runs")
