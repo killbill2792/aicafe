@@ -215,6 +215,7 @@ function TaskCard({ row: task, names, t, tExperiment, tBrief, tGoals, category, 
       case "data_quality": return { title: t("missingCategory", { category: category(String(task.payload.categoryCode)) }), detail: t("addCategoryPrompt", { category: category(String(task.payload.categoryCode)) }), action: t("openBills") };
       case "staff_coverage": return { title: t("staffTaskNamed", { issue: String(task.payload.issue ?? task.payload.requestType ?? t("staffCoverageIssue")) }), detail: t("staffTaskReason"), action: t("openStaff") };
       case "staff_coordination": return { title: String(task.payload.title ?? "Staff coordination needs review"), detail: "Review the saved personnel request and evidence. Owner approval alone does not make a change.", action: t("openStaff") };
+      case "supplier_receiving": return { title: String(task.payload.title ?? "Supplier delivery and invoice review"), detail: "Review the recorded delivery and invoice evidence.", action: t("openEventThread") };
       case "supply_check": return { title: t("mayaWatching"), detail: t("supplySignal"), action: t("openIngredientCosts") };
       case "money_update": return { title: t("homeMoneyUpdate"), detail: "", action: t("openBills") };
       case "maintenance_issue": return {

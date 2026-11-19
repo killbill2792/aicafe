@@ -1,6 +1,7 @@
 import "server-only";
 import type {SupabaseClient} from "@supabase/supabase-js";
 import type {Ingredient,SupplierQuote} from "@/lib/purchasing/planOrder";
+import {packBaseQuantity,type BaseUnit} from "@/lib/calc/recipeUnits";
 
 /** The sole purchasing evidence reader. Café identity and owner membership are
  * validated by simulationOwnerReader before this function is called. Never
@@ -29,24 +30,29 @@ export async function readSupplierPurchasingEvidence(db:SupabaseClient,businessI
 
 export type SupplierOrderStatus={
  id:string;status:string;revision:number;supplierName:string;currency:string;
+ supplierId?:string;
  subtotalCents:number;neededBy:string|null;approvedAt:string;
  lines:Array<{itemName:string;packs:number;packUnit:string;packQuantity:number;
-  lineSubtotalCents:number;quotedOn:string}>;
- sentToSupplier:boolean;receivedIntoInventory:false;
+  lineSubtotalCents:number;quotedOn:string;
+  orderLineId?:string;ingredientId?:string;baseUnit?:BaseUnit;orderedBaseQuantity?:number|null;
+  unitPriceCents?:number;expectedDeliveryOn?:string|null}>;
+ sentToSupplier:boolean;receivedIntoInventory:boolean;
+ receivingEvidence?: "unavailable"|"not_yet_verified"|"partial_verified"|"complete_verified";
 };
 /** The same authenticated read path used by Supervisor: no separate owner PO store.
  * Approved-for-ordering means prepared internally, never sent or delivered. */
-export async function readSupplierPurchaseOrders(db:SupabaseClient,businessId:string,ownerUserId:string):
+export async function readSupplierPurchaseOrders(db:SupabaseClient,businessId:string,ownerUserId:string,purchaseOrderId?:string):
  Promise<{orders:SupplierOrderStatus[];truncated:boolean}>{
- const result=await db.from("purchase_orders")
-  .select("id,status,revision,supplier_name_snapshot,currency_code,subtotal_cents,needed_by,approved_at")
-  .eq("business_id",businessId).eq("owner_user_id",ownerUserId)
-  .order("approved_at",{ascending:false}).limit(41);
+ let query=db.from("purchase_orders")
+  .select("id,status,revision,supplier_id,supplier_name_snapshot,currency_code,subtotal_cents,needed_by,approved_at")
+  .eq("business_id",businessId).eq("owner_user_id",ownerUserId);
+ if(purchaseOrderId)query=query.eq("id",purchaseOrderId);
+ const result=await query.order("approved_at",{ascending:false}).limit(41);
  if(result.error)throw new Error("supplier_purchase_orders_unavailable");
  const orders=(result.data??[]).slice(0,40);
  if(!orders.length)return {orders:[],truncated:false};
  const lines=await db.from("purchase_order_lines")
-  .select("purchase_order_id,item_name_snapshot,packs,pack_unit,pack_quantity,subtotal_cents,quoted_on,ordinal")
+  .select("id,purchase_order_id,ingredient_id,base_unit,item_name_snapshot,packs,pack_unit,pack_quantity,unit_price_cents,subtotal_cents,quoted_on,delivery_on,ordinal")
   .eq("business_id",businessId).in("purchase_order_id",orders.map(x=>x.id))
   .order("ordinal",{ascending:true}).limit(401);
  if(lines.error)throw new Error("supplier_purchase_order_lines_unavailable");
@@ -55,18 +61,79 @@ export async function readSupplierPurchaseOrders(db:SupabaseClient,businessId:st
    .select("purchase_order_id,state,provider_receipt_id").eq("business_id",businessId)
    .eq("owner_user_id",ownerUserId).in("purchase_order_id",orders.map(x=>x.id)).limit(41);
  if(dispatches.error)throw new Error("supplier_purchase_dispatch_status_unavailable");
+ // Batched receipt and Pantry source reads, bounded and owner scoped.
+ const receiptEvidence=await db.from("purchase_receipts")
+  .select("id,purchase_order_id,receiving_reference,revision,received_on")
+  .eq("business_id",businessId).eq("owner_user_id",ownerUserId)
+  .in("purchase_order_id",orders.map(o=>o.id)).limit(401);
+ const allReceipts=receiptEvidence.data??[];
+ const latest=new Map<string,(typeof allReceipts)[number]>();
+ for(const r of allReceipts){
+  const key=r.purchase_order_id+":"+r.receiving_reference;
+  if(!latest.has(key)||Number(r.revision)>Number(latest.get(key)!.revision))latest.set(key,r);
+ }
+ const currentReceipts=[...latest.values()];
+ const receiptLines=currentReceipts.length?await db.from("purchase_receipt_lines")
+  .select("receipt_id,purchase_order_id,order_line_id,ingredient_id,accepted_base4,canonical_stock_line_id")
+  .eq("business_id",businessId).in("receipt_id",currentReceipts.map(r=>r.id)).limit(801):
+  {data:[],error:null};
+ const stockIds=[...new Set<string>((receiptLines.data??[]).flatMap(l=>l.canonical_stock_line_id?[String(l.canonical_stock_line_id)]:[]))];
+ const stock=stockIds.length?await db.from("pantry_stock_purchases")
+  .select("line_id,ingredient_id,purchase_date,quantity_base,source,source_ref,voided_at")
+  .eq("business_id",businessId).in("line_id",stockIds).limit(801):{data:[],error:null};
+ const statusFor=(id:string):SupplierOrderStatus["receivingEvidence"]=>{
+  if(receiptEvidence.error||allReceipts.length>400||receiptLines.error||
+    (receiptLines.data??[]).length>800||stock.error)return "unavailable";
+  const receiptIds=new Set(currentReceipts.filter(r=>r.purchase_order_id===id).map(r=>r.id));
+  if(!receiptIds.size)return "not_yet_verified";
+  const accepted=new Map<string,number>();
+  const selected=(receiptLines.data??[]).filter(l=>receiptIds.has(l.receipt_id));
+  if(!selected.length)return "unavailable";
+  for(const l of selected){
+   const qty=Number(l.accepted_base4);
+   if(l.accepted_base4===null||!Number.isSafeInteger(qty)||qty<0||!l.order_line_id)return "unavailable";
+   if(!qty){if(l.canonical_stock_line_id)return "unavailable";continue;}
+   const s=(stock.data??[]).find(r=>r.line_id===l.canonical_stock_line_id);
+   const r=currentReceipts.find(rec=>rec.id===l.receipt_id);
+   if(!s||!r||s.voided_at!==null||s.ingredient_id!==l.ingredient_id||
+     s.purchase_date!==r.received_on||s.source!=="chat_text"||
+     s.source_ref!=="supplier-receiving:"+id+":"+s.line_id||
+     Math.round(Number(s.quantity_base)*10000)!==qty)return "unavailable";
+   const total=(accepted.get(l.order_line_id)??0)+qty;
+   if(!Number.isSafeInteger(total))return "unavailable";
+   accepted.set(l.order_line_id,total);
+  }
+  if(!accepted.size)return "not_yet_verified";
+  const ordered=(lines.data??[]).filter(l=>l.purchase_order_id===id);
+  const equal=ordered.length>0&&ordered.every(l=>{
+   const perPack=packBaseQuantity(Number(l.pack_quantity),l.pack_unit==="liter"?"l":l.pack_unit,l.base_unit as BaseUnit);
+   return perPack!==null&&(accepted.get(l.id)??0)===Math.round(perPack*Number(l.packs)*10000);
+  });
+  return equal?"complete_verified":"partial_verified";
+ };
  return {orders:orders.map(row=>({
   id:row.id,status:row.status,revision:row.revision,supplierName:row.supplier_name_snapshot,
+  supplierId:row.supplier_id,
   currency:row.currency_code,subtotalCents:row.subtotal_cents,neededBy:row.needed_by,
   approvedAt:row.approved_at,
-  lines:(lines.data??[]).filter(line=>line.purchase_order_id===row.id).map(line=>({
-   itemName:line.item_name_snapshot,packs:line.packs,
-   packUnit:line.pack_unit,packQuantity:line.pack_quantity,
-   lineSubtotalCents:line.subtotal_cents,quotedOn:line.quoted_on
-  })),
+  lines:(lines.data??[]).filter(line=>line.purchase_order_id===row.id).map(line=>{
+   // Reuse 14B pack conversion; needed quantity is not ordered quantity.
+   // Preserve a missing/invalid conversion as unknown.
+   const unit=line.base_unit as BaseUnit;
+   const perPack=packBaseQuantity(Number(line.pack_quantity),
+     line.pack_unit==="liter"?"l":line.pack_unit,unit);
+   const scaled=perPack===null?null:Math.round(perPack*Number(line.packs)*10000);
+   return {itemName:line.item_name_snapshot,packs:line.packs,
+    packUnit:line.pack_unit,packQuantity:line.pack_quantity,
+    lineSubtotalCents:line.subtotal_cents,quotedOn:line.quoted_on,
+    orderLineId:line.id,ingredientId:line.ingredient_id,baseUnit:unit,
+    orderedBaseQuantity:scaled!==null&&Number.isSafeInteger(scaled)&&scaled>0?scaled/10000:null,
+    unitPriceCents:line.unit_price_cents,expectedDeliveryOn:line.delivery_on};
+  }),
   sentToSupplier:(dispatches.data??[]).some(d=>d.purchase_order_id===row.id&&
     d.state==="provider_accepted"&&Boolean(d.provider_receipt_id)),
-  receivedIntoInventory:false as const,
+  receivedIntoInventory:statusFor(row.id)==="complete_verified"||statusFor(row.id)==="partial_verified",
+  receivingEvidence:statusFor(row.id),
  })),truncated:(result.data??[]).length>40};
 }
 

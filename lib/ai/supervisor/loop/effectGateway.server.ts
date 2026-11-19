@@ -94,6 +94,18 @@ export class SupervisorEffectGateway{
    throw new Error("Purchase order reconciliation returned an invalid scoped proposal");
   return proposal;
  }
+ async reconcileSupplierReceiving(scope:OwnerLoopScope,id:string,revision:number):Promise<LoopProposal>{
+  const {data,error}=await createAdminSupabaseClient().rpc("supervisor_reconcile_supplier_receiving",{
+   p_business_id:scope.businessId,p_owner_user_id:scope.ownerUserId,p_thread_id:scope.threadId,
+   p_proposal_id:id,p_revision:revision});
+  if(error||!data)fail(error,"Receiving effect reconciliation failed");
+  const proposal=decode(data as ProposalRow);
+  if(proposal.id!==id||proposal.businessId!==scope.businessId||proposal.ownerUserId!==scope.ownerUserId||
+    proposal.threadId!==scope.threadId||!["maya.supplier_receiving.v1","maya.supplier_invoice.v1"].includes(proposal.capabilityId)||
+    !["executing","committed"].includes(proposal.status))
+   throw new Error("Receiving reconciliation returned invalid scoped proof");
+  return proposal;
+ }
  async reconcileGmail(scope:OwnerLoopScope,id:string,revision:number):Promise<LoopProposal>{
   const db=createAdminSupabaseClient();
   const {data:row,error:readError}=await db.from("supervisor_proposals").select("*")

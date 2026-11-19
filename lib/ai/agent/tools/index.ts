@@ -113,6 +113,11 @@ export type AgentToolContext = {
     propose(input:import("@/lib/ai/supervisor/loop/gmail.server").GmailProposalInput):Promise<{proposalId:string;revision:number;account:string}>};
   maintenance?:ReturnType<typeof import("@/lib/ai/supervisor/loop/maintenance.server").maintenanceContext>;
   /** Owner-scoped purchasing capability in the ONE Supervisor. No model-supplied café IDs or approvals. */
+  /** Owner/cafe scoped receiving evidence; no mutation or payment authority. */
+  invoicePropose?:(input:import("@/lib/ai/supervisor/loop/supplierReceiving.server").InvoiceToolInput)=>Promise<{proposalId:string;revision:number}>;
+  receivingPropose?:(input:import("@/lib/ai/supervisor/loop/supplierReceiving.server").ReceivingInput)=>Promise<{proposalId:string;revision:number}>;
+  receivingFollowup?:(purchaseOrderId:string)=>Promise<{proposalId:string;revision:number;purchaseOrderId:string;recipient:string}>;
+  receivingRead?:(purchaseOrderId:string)=>ReturnType<typeof import("@/lib/data/supplierReceiving.server").readSupplierReconciliation>;
   purchasing?:{
     list():Promise<{orders:SupplierOrderStatus[];truncated:boolean;
       drafts:Array<{id:string;revision:number;supplierName:string;itemNames:string[];
@@ -322,6 +327,10 @@ export async function executeAgentTool(name: string, raw: unknown, ctx: AgentToo
   if(name==="propose_price_change")return proposalTools.propose_price_change.execute(raw,ctx);
    if(name==="propose_purchases")return purchasesTools.propose_purchases.execute(raw,ctx);
   if(name==="get_supplier_purchase_orders")return supplierPurchasingTools.get_supplier_purchase_orders.execute(raw,ctx);
+  if(name==="inspect_purchase_reconciliation")return supplierPurchasingTools.inspect_purchase_reconciliation.execute(raw,ctx);
+  if(name==="propose_purchase_receiving")return supplierPurchasingTools.propose_purchase_receiving.execute(raw,ctx);
+  if(name==="propose_supplier_discrepancy_followup")return supplierPurchasingTools.propose_supplier_discrepancy_followup.execute(raw,ctx);
+  if(name==="propose_invoice_reconciliation")return supplierPurchasingTools.propose_invoice_reconciliation.execute(raw,ctx);
   if(name==="inspect_supplier_purchase")return supplierPurchasingTools.inspect_supplier_purchase.execute(raw,ctx);
   if(name==="propose_supplier_purchase_order")return supplierPurchasingTools.propose_supplier_purchase_order.execute(raw,ctx);
   if(name==="record_supplier_order_outcome")return supplierPurchasingTools.record_supplier_order_outcome.execute(raw,ctx);

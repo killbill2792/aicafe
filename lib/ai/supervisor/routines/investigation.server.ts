@@ -10,6 +10,8 @@ import {withWorkerBudget} from "@/lib/ai/supervisor/runs/usage.server";
 import {notifyOwner} from "@/lib/operating/notifyOwner.server";
 import {readActionablePriorities} from "./dispatch.server";
 import {readClaimedStaffCoordination} from "@/lib/staffCoordination/cases.server";
+import {readSupplierReconciliation} from "@/lib/data/supplierReceiving.server";
+import {prepareSupplierDiscrepancyFollowup} from "@/lib/ai/supervisor/loop/supplierReceiving.server";
 import {readStaffMessagesForVerifiedOwner} from "@/lib/staffCommunication/channel.server";
 import {getWeekSchedule as readScopedWeekSchedule} from "@/lib/data/staffSchedule.server";
 import {alreadyNotifiedTaskKinds} from "./priority";
@@ -296,6 +298,22 @@ export async function processNextInvestigation(db:SupabaseClient,now:Date,
       asOf:identity.asOf,timezone:identity.timezone,currency:identity.currency,
       canonicalData:async()=>({db,businessId:c.business_id}),
       ...(synopsis.kind==="maintenance_issue"?{maintenance:maintenanceContext(db,maintenanceScope,{lease:maintenanceLease})}:{}),
+      ...(synopsis.kind==="supplier_receiving"?{receivingRead:async(purchaseOrderId:string)=>{
+        // Never let an unattended model use a different PO from its SQL claim.
+        const source=await readIncidentEvidence(db,c);
+        const selectors=object(source.selectors);
+        if(source.incidentKind!=="supplier_receiving"||source.missing.length||
+          selectors?.entityType!=="purchase_order"||selectors.entityId!==purchaseOrderId)
+          return {missing:["receiving_claim_scope_mismatch"],reconciliation:null};
+        return readSupplierReconciliation(db,c.business_id,c.owner_user_id,purchaseOrderId);
+      },receivingFollowup:async(purchaseOrderId:string)=>{
+        const source=await readIncidentEvidence(db,c);
+        const selectors=object(source.selectors);
+        if(source.incidentKind!=="supplier_receiving"||source.missing.length||
+          selectors?.entityType!=="purchase_order"||selectors.entityId!==purchaseOrderId)
+          throw new Error("receiving_claim_scope_mismatch");
+        return prepareSupplierDiscrepancyFollowup({...scope,threadId:c.thread_id,locale:"en",verifiedReadClient:db},purchaseOrderId);
+      }}:{}),
       staffCoordinationRead:()=>readClaimedStaffCoordination(db,scope),
       staffMessages:{read:()=>readStaffMessagesForVerifiedOwner(
         db,c.business_id,c.owner_user_id,40)},
@@ -317,7 +335,8 @@ export async function processNextInvestigation(db:SupabaseClient,now:Date,
     },()=>runAgentTurn({
       provider:metered.provider,ownerText:investigationPrompt(synopsis,c.phase==="awaiting_owner",
         c.narrative??null),
-      context,toolNames:synopsis.kind==="maintenance_issue"?maintenanceInvestigationTools:investigationReadTools,businessId:c.business_id,
+      context,toolNames:synopsis.kind==="maintenance_issue"?maintenanceInvestigationTools:synopsis.kind==="supplier_receiving"?
+        [...investigationReadTools,"propose_supplier_discrepancy_followup"]:investigationReadTools,businessId:c.business_id,
       requestId:c.stable_key,
     }));
     if(metered.problem())throw new Error(metered.problem()!);
@@ -349,6 +368,33 @@ export async function processNextInvestigation(db:SupabaseClient,now:Date,
       lastOwnerUpdate:new Date().toISOString(),unchangedChecks:0,
       ...(synopsis.kind==="maintenance_issue"?{maintenanceReadMissing:vendorPoll.missing}:{}),
     };
+    // Only a model-observed, exact PO with complete reconciliation is eligible.
+    // Re-read independently before recording a closure checkpoint; a changed
+    // receipt, invoice or canonical effect remains open for a fresh episode.
+    const followup=turn.toolInvocations?.find(x=>x.name==="propose_supplier_discrepancy_followup"&&x.result.proposalCreated===true);
+    if(synopsis.kind==="supplier_receiving"&&typeof followup?.result.proposalId==="string")
+      next.receivingFollowupProposalId=followup.result.proposalId;
+    let closePoId:string|null=null;
+    if(synopsis.kind==="supplier_receiving"&&c.source_type==="operating_task"){
+      const source=await readIncidentEvidence(db,c);
+      const selectors=object(source.selectors);
+      const poId=selectors?.entityType==="purchase_order"&&typeof selectors.entityId==="string"
+        ?selectors.entityId:null;
+      const observed=turn.toolInvocations?.filter(call=>call.name==="inspect_purchase_reconciliation")
+        .map(call=>object(call.result.reconciliation))
+        .find(r=>r?.purchaseOrderId===poId&&r.closureEvidenceReady===true);
+      if(poId&&observed){
+        const fresh=await readSupplierReconciliation(db,c.business_id,c.owner_user_id,poId);
+        const fact=fresh.reconciliation;
+        if(!fresh.missing.length&&fact?.closureEvidenceReady&&fact.poRevision===observed.poRevision
+          &&fact.receiptVersionCount===observed.receiptVersionCount
+          &&fact.invoiceVersionCount===observed.invoiceVersionCount){
+          next.receivingClosureEvidence={poRevision:fact.poRevision,receiptVersions:fact.receiptVersionCount,
+            invoiceVersions:fact.invoiceVersionCount};
+          closePoId=poId;
+        }
+      }
+    }
     const outcome=c.phase==="investigate"?"investigated":"followed_up";
     const notice=await notifyOwner(db,{
       businessId:c.business_id,ownerUserId:c.owner_user_id,
@@ -358,6 +404,16 @@ export async function processNextInvestigation(db:SupabaseClient,now:Date,
     },()=>finish(db,c,new Date(),outcome,next,verified.text));
     if(notice.decision!=="posted"||notice.result!==true)
       throw new Error("storage_failed");
+    if(closePoId&&next.receivingClosureEvidence){
+      const p=next.receivingClosureEvidence;
+      // The existing source-task lifecycle settles work only after exact
+      // approved-effect proofs; failed closure leaves the investigation open.
+      await db.rpc("supervisor_verify_supplier_reconciliation_closure",{
+        p_business_id:c.business_id,p_owner_user_id:c.owner_user_id,p_thread_id:c.thread_id,
+        p_purchase_order_id:closePoId,p_episode_id:c.episode_id,p_step_version:c.step_version+1,
+        p_po_revision:p.poRevision,p_receipt_versions:p.receiptVersions,p_invoice_versions:p.invoiceVersions,
+      });
+    }
     if(c.phase==="investigate")result.investigated=1;
     else result.followUps=1;
   }catch(e){

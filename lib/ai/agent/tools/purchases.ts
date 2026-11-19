@@ -21,6 +21,9 @@ export const purchasesTools={propose_purchases:{
  description:"When an owner says they bought stock or sends a purchase receipt, prepare validated per-line inventory purchases through the existing proposal gateway. An explicitly authorized owner instruction may complete the purchase immediately; all other lines remain inert owner-review proposals. Use owner-given quantity, unit, date, and cost only; omit unknown cost as null. Find a real matching ingredient UUID from read tools, or pass null and name for a New item needing review. For receipt_chat, include the receipt vendor and exact printed receipt total in integer cents when legible; otherwise use null and the owner must complete them in the approval card. For chat_text, set receiptVendor and receiptTotalCents to null. Set documentKind to receipt only when visible source is clearly an actual shopping receipt, purchase_order for an order that is not evidence of delivery, otherwise unknown. Never estimate taxes, gratuities, units or missing totals. The server independently checks the actual owner message for direct authorization and verifies any database write; otherwise each line remains an approval proposal.",
  execute:async(raw:unknown,ctx:AgentToolContext):Promise<AgentToolResult>=>{
   const input=purchaseToolInput.parse(raw);
+  if(input.documentKind==="invoice"||input.documentKind==="purchase_order")
+   return {source:"purchase_proposal",period:null,agentId:"maya",draft:false,saved:false,
+    missing:["document_does_not_prove_physical_receipt"],proposals:[]};
   // A correction must edit/reconcile the ORIGINAL stock line, never create a
   // second additive line even when the model calls this proposal tool.
   if(isPurchaseCorrection(ctx.ownerText??""))

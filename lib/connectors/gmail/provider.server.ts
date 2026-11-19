@@ -188,7 +188,8 @@ export type GmailEffect={accountId:string;generation:number;from:string;
   operation:"send"|"draft"|"modify"|"trash"|"restore"|"create_label";
   action:"mark_read"|"mark_unread"|"star"|"unstar"|"archive"|"unarchive"|"add_label"|"remove_label"|null;
   to:string[];cc:string[];bcc:string[];subject:string;body:string;
-  messageId:string|null;threadId:string|null;labelId:string|null;labelName:string|null};
+  messageId:string|null;threadId:string|null;labelId:string|null;labelName:string|null;
+  supplierFollowup?:{purchaseOrderId:string;contactId:string;poRevision:number;receiptVersions:number;invoiceVersions:number}};
 const header=(value:string)=>value.replace(/[\r\n]+/g," ").slice(0,1000);
 const subjectHeader=(value:string)=>"=?UTF-8?B?"+Buffer.from(header(value),"utf8").toString("base64")+"?=";
 export function gmailRfcId(proposalId:string,mailbox:string):string{
@@ -269,12 +270,43 @@ export async function performGmailEffect(scope:ConnectorOwner,effect:GmailEffect
     .eq("business_id",scope.businessId).eq("owner_user_id",scope.ownerUserId)
     .eq("id",proposalId).maybeSingle();
   const bound=proposal?.canonical_effect_payload as
-    {accountId?:string;generation?:number;from?:string}|null;
+    {accountId?:string;generation?:number;from?:string;supplierFollowup?:GmailEffect["supplierFollowup"]}|null;
   if(proposalError||!proposal||proposal.status!=="executing"||
      proposal.capability_id!=="alex.gmail_effect.v1"||proposal.capability_version!==1||
      proposal.effect_hash!==effectHash||bound?.accountId!==effect.accountId||
      bound.generation!==effect.generation||bound.from!==effect.from)
     throw new Error("gmail_gateway_proposal_required");
+  const followup=effect.supplierFollowup;
+  const savedFollowup=bound?.supplierFollowup;
+  if(Boolean(followup)!==Boolean(savedFollowup)||
+    (followup&&(!savedFollowup||followup.purchaseOrderId!==savedFollowup.purchaseOrderId||
+      followup.contactId!==savedFollowup.contactId||followup.poRevision!==savedFollowup.poRevision||
+      followup.receiptVersions!==savedFollowup.receiptVersions||followup.invoiceVersions!==savedFollowup.invoiceVersions)))
+    throw new Error("supplier_followup_binding_changed");
+  // The provider must execute the exact approved preview, not a caller-supplied
+  // replacement recipient, body or reply target carrying the same binding.
+  if(followup){
+    const approved=bound as Partial<GmailEffect>;
+    for(const key of ["operation","action","subject","body","messageId","threadId","labelId","labelName"] as const){
+      if(approved[key]!==effect[key])throw new Error("supplier_followup_payload_changed");
+    }
+    for(const key of ["to","cc","bcc"] as const){
+      if(!Array.isArray(approved[key])||JSON.stringify(approved[key])!==JSON.stringify(effect[key]))
+        throw new Error("supplier_followup_payload_changed");
+    }
+  }
+  if(/^Purchase order follow-up [a-f0-9-]{36}$/i.test(effect.subject)&&!followup)
+    throw new Error("supplier_followup_binding_missing");
+  const guardFollowup=async(reserve:boolean)=>{
+    if(!followup)return;
+    if(effect.operation!=="send"||effect.subject!=="Purchase order follow-up "+followup.purchaseOrderId)
+      throw new Error("supplier_followup_invalid_operation");
+    const checked=await db.rpc("supervisor_guard_supplier_followup_send",{
+      p_business_id:scope.businessId,p_owner_user_id:scope.ownerUserId,p_proposal_id:proposalId,
+      p_effect_hash:effectHash,p_reserve:reserve
+    });
+    if(checked.error||checked.data!==true)throw new Error("supplier_followup_authorization_changed");
+  };
   // Task14C reuses this provider; supplier orders require an additional
   // unique, source-backed PO reservation before any outbound provider POST.
   const vendor=await db.from("purchase_order_dispatches")
@@ -304,6 +336,7 @@ export async function performGmailEffect(scope:ConnectorOwner,effect:GmailEffect
     if(reservation.error||reservation.data!==true)
       throw new Error("supplier_send_reservation_failed");
   }
+  await guardFollowup(true);
   const rfc=effect.operation==="send"?gmailRfcId(proposalId,effect.from):null;
   const receipt={account_id:account.id,business_id:scope.businessId,owner_user_id:scope.ownerUserId,
     proposal_id:proposalId,effect_hash:effectHash,account_generation:account.generation,
@@ -364,6 +397,7 @@ export async function performGmailEffect(scope:ConnectorOwner,effect:GmailEffect
           contact.data.supplier_id!==po.data?.supplier_id||dispatch.data?.state!=="reserved")
           throw new Error("supplier_send_authorization_revoked_before_post");
       }
+      await guardFollowup(false);
       response=await scopedGmailApi(scope,account,required,token,"/messages/send",{method:"POST",body:{
         raw,...(threadId?{threadId}:{})}}) as {id?:string;threadId?:string};
     }else{
