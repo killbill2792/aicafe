@@ -49,7 +49,7 @@ function local(value:string|undefined,port:string,protocol:string){
   }
   await db.query("insert into public.ai_threads(id,business_id,owner_user_id,client_request_id) values ($1,$2,$3,$4)",[threadId,businessId,ownerUserId,randomUUID()]);
   const service=await authorizedExternalConversation(scope,threadId);
-  const message=await service.addOwnerMessage(threadId,randomUUID(),"I sold 17 cups in the morning and 23 cups later. Use the calculate tool to add these two owner-provided counts. Tell me the total as cups.");
+  const message=await service.addOwnerMessage(threadId,randomUUID(),"I sold 17 cups in the morning and 23 cups later. Use the calculate tool to add these two owner-provided counts. Tell me the total as cups. Also use get_supervisor_permissions to report whether any standing permissions are active. Do not perform any external action.");
   const input={locale:"en" as const,attachmentIds:[]};
   const run=await admitDurableChat(scope,message,input);
   expect((await admitDurableChat(scope,message,input)).id).toBe(run.id);
@@ -77,13 +77,15 @@ function local(value:string|undefined,port:string,protocol:string){
   expect(reply?.grounding?.status).toBe("verified");
   expect(JSON.stringify(reply?.blocks)).toMatch(/\b40\b/);
   expect(meta?.usage?.model).toBe("gpt-6-luna");
-  const toolNames=(meta?.sources??[]).map(s=>s.source);
-  expect(toolNames).toContain("calculate");
+  const sources=(meta?.sources??[]).map(s=>s.source);
+  expect(sources).toContain("calculate");
+  expect(sources).toContain("supervisor_mandates");
   const state=(await db.query("select status,final_report_ref from public.supervisor_runs where id=$1",[run.id])).rows;
   expect(state).toEqual([{status:"completed",final_report_ref:reply!.id}]);
   const step=(await db.query("select attempts,checkpoint_receipts from public.supervisor_run_steps where run_id=$1 and step_key='owner_turn'",[run.id])).rows[0];
   expect(step.attempts).toBeGreaterThanOrEqual(2);
-  expect(step.checkpoint_receipts).toEqual(expect.arrayContaining([expect.objectContaining({tool:"calculate",phase:"read_pending"})]));
+  expect(step.checkpoint_receipts).toEqual(expect.arrayContaining([expect.objectContaining({tool:"calculate",phase:"read_pending"}),expect.objectContaining({tool:"get_supervisor_permissions",phase:"read_pending"})]));
+  const toolNames=[...new Set((step.checkpoint_receipts as {tool:string|null}[]).flatMap(x=>x.tool?[x.tool]:[]))];
   const jobs=(await db.query("select id,status from public.ai_agent_jobs where durable_run_id=$1",[run.id])).rows;
   expect(jobs).toHaveLength(1);expect(jobs[0].status).toBe("done");
   expect((await db.query("select count(*)::int as n from public.supervisor_effect_attempts where business_id=$1",[businessId])).rows[0].n).toBe(0);
