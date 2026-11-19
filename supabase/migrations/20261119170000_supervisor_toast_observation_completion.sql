@@ -219,6 +219,13 @@ grant execute on function public.supervisor_8a_claim_notice(
  uuid,uuid,uuid,text,date,smallint) to service_role;
 
 
+-- Lease the existing anchor, not a new task queue. Failed/cancelled workers
+-- leave a durable fair retry position and cannot overwrite a newer generation.
+alter table public.supervisor_monitor_windows
+ add column observation_worker_token uuid,
+ add column observation_worker_until timestamptz,
+ add column observation_retry_at timestamptz;
+
 -- Bounded fair enumeration. A pinned approved proposal already owns its
 -- measurement. An eligible matching pending proposal gets first refusal;
 -- a later source event never restarts a previously pinned experiment.
@@ -245,7 +252,9 @@ begin
   and h.toast_observed_at>=g.toast_observation_enabled_at
   and l.verified_at is not null
   and exists(select 1 from public.memberships m where m.business_id=h.business_id and m.role='owner')
-  and (w.id is null or w.source_reference->>'closedAt' is null)
+  and (w.id is null or (w.source_reference->>'closedAt' is null
+    and (w.observation_worker_until is null or w.observation_worker_until<=clock_timestamp())
+    and (w.observation_retry_at is null or w.observation_retry_at<=clock_timestamp())))
   and not exists(select 1 from public.supervisor_monitor_windows a
     where a.business_id=h.business_id and a.monitor_kind='approved_price'
     and a.window_index=0 and a.source_reference->>'historyId'=h.id::text)
@@ -266,6 +275,92 @@ end;$$;
 revoke all on function public.supervisor_8a_due_toast_observations(timestamptz,integer)
  from public,anon,authenticated;
 grant execute on function public.supervisor_8a_due_toast_observations(timestamptz,integer) to service_role;
+
+-- Serialize discovery of a single source event. The anchor is initialized
+-- before any expensive reads so even a repeated source read failure rotates.
+create function public.supervisor_8a_claim_observation_work(
+ p_business_id uuid,p_history_id uuid,p_now timestamptz
+) returns uuid language plpgsql security invoker set search_path='' as $$
+declare h public.menu_price_history;w public.supervisor_monitor_windows;
+ v_token uuid;v_owner uuid;v_name text;v_currency text;v_start timestamptz;
+begin
+ if auth.role() is distinct from 'service_role' then raise exception 'service_role_only' using errcode='42501';end if;
+ perform pg_catalog.pg_advisory_xact_lock(pg_catalog.hashtextextended(p_business_id::text||':'||p_history_id::text,0));
+ if not exists(select 1 from public.supervisor_8a_due_toast_observations(p_now,100) d
+  where d.business_id=p_business_id and d.history_id=p_history_id) then return null;end if;
+ select * into h from public.menu_price_history where id=p_history_id and business_id=p_business_id;
+ select m.user_id into v_owner from public.memberships m where m.business_id=p_business_id
+  and m.role='owner' order by m.user_id limit 1;
+ select name into v_name from public.menu_items where id=h.menu_item_id and business_id=p_business_id;
+ select currency into v_currency from public.businesses where id=p_business_id;
+ if v_owner is null then return null;end if;
+ v_start:=coalesce(h.toast_effective_at,h.toast_observed_at);
+ if v_start is null or v_start>h.toast_observed_at then return null;end if;
+ insert into public.supervisor_monitor_windows(business_id,owner_user_id,monitor_kind,source_id,window_index,
+  source_reference,start_at,end_at)
+ values(p_business_id,v_owner,'toast_price_observation',p_history_id,0,
+  jsonb_build_object('businessId',p_business_id,'historyId',h.id,'menuItemId',h.menu_item_id,
+  'restaurantGuid',h.toast_restaurant_guid,'posItemId',h.toast_publication_pos_item_id,
+  'oldPriceCents',h.old_price_cents,'newPriceCents',h.new_price_cents,'publicationVersion',h.toast_publication_version,
+  'observedAt',h.toast_observed_at,'startBasis',case when h.toast_effective_at is null then 'first_verified_observation' else 'source_effective' end,
+  'itemName',coalesce(v_name,'Menu item'),'currency',v_currency),
+  v_start,v_start+interval '24 hours') on conflict(business_id,monitor_kind,source_id,window_index) do nothing;
+ select * into w from public.supervisor_monitor_windows where business_id=p_business_id
+  and monitor_kind='toast_price_observation' and source_id=p_history_id and window_index=0 for update;
+ if w.source_reference->>'closedAt' is not null or w.observation_worker_until>clock_timestamp()
+  or w.observation_retry_at>clock_timestamp() then return null;end if;
+ v_token:=gen_random_uuid();
+ update public.supervisor_monitor_windows set observation_worker_token=v_token,
+  observation_worker_until=clock_timestamp()+interval '5 minutes',updated_at=clock_timestamp()
+  where id=w.id;
+ return v_token;
+end;$$;
+revoke all on function public.supervisor_8a_claim_observation_work(uuid,uuid,timestamptz) from public,anon,authenticated;
+grant execute on function public.supervisor_8a_claim_observation_work(uuid,uuid,timestamptz) to service_role;
+
+create function public.supervisor_8a_write_observation_window(
+ p_business_id uuid,p_history_id uuid,p_token uuid,p_index bigint,p_ref jsonb,
+ p_coverage text,p_units numeric,p_revenue bigint,p_unknown bigint,p_evaluation text
+) returns boolean language plpgsql security invoker set search_path='' as $$
+declare w public.supervisor_monitor_windows; v_start timestamptz;
+begin
+ if auth.role() is distinct from 'service_role' then raise exception 'service_role_only' using errcode='42501';end if;
+ if p_index not between 0 and 6 then raise exception 'invalid_observation_window' using errcode='22023';end if;
+ select * into w from public.supervisor_monitor_windows where business_id=p_business_id
+  and monitor_kind='toast_price_observation' and source_id=p_history_id and window_index=0
+  and observation_worker_token=p_token and observation_worker_until>clock_timestamp() for update;
+ if not found then return false;end if;
+ v_start:=w.start_at+p_index*interval '24 hours';
+ insert into public.supervisor_monitor_windows(business_id,owner_user_id,monitor_kind,source_id,window_index,
+  source_reference,start_at,end_at,coverage_status,units,revenue_cents,unknown_time_lines,evaluation_status)
+ values(p_business_id,w.owner_user_id,'toast_price_observation',p_history_id,p_index,
+  p_ref,v_start,v_start+interval '24 hours',p_coverage,p_units,p_revenue,p_unknown,p_evaluation)
+ on conflict(business_id,monitor_kind,source_id,window_index) do update
+  set source_reference=excluded.source_reference,coverage_status=excluded.coverage_status,
+  units=excluded.units,revenue_cents=excluded.revenue_cents,unknown_time_lines=excluded.unknown_time_lines,
+  evaluation_status=excluded.evaluation_status,updated_at=clock_timestamp()
+  where p_evaluation<>'in_progress';
+ return true;
+end;$$;
+revoke all on function public.supervisor_8a_write_observation_window(uuid,uuid,uuid,bigint,jsonb,text,numeric,bigint,bigint,text) from public,anon,authenticated;
+grant execute on function public.supervisor_8a_write_observation_window(uuid,uuid,uuid,bigint,jsonb,text,numeric,bigint,bigint,text) to service_role;
+
+create function public.supervisor_8a_finish_observation_work(
+ p_business_id uuid,p_history_id uuid,p_token uuid,p_ref jsonb,p_failed boolean
+) returns boolean language plpgsql security invoker set search_path='' as $$
+begin
+ if auth.role() is distinct from 'service_role' then raise exception 'service_role_only' using errcode='42501';end if;
+ update public.supervisor_monitor_windows set source_reference=coalesce(p_ref,source_reference),
+  observation_worker_token=null,observation_worker_until=null,
+  observation_retry_at=case when p_failed then clock_timestamp()+interval '10 minutes' else null end,
+  updated_at=clock_timestamp()
+ where business_id=p_business_id and monitor_kind='toast_price_observation'
+  and source_id=p_history_id and window_index=0 and observation_worker_token=p_token
+  and observation_worker_until>clock_timestamp();
+ return found;
+end;$$;
+revoke all on function public.supervisor_8a_finish_observation_work(uuid,uuid,uuid,jsonb,boolean) from public,anon,authenticated;
+grant execute on function public.supervisor_8a_finish_observation_work(uuid,uuid,uuid,jsonb,boolean) to service_role;
 
 -- Capture the specific lease generation in the same transaction as the
 -- existing claim. A delayed previous worker must never borrow a new lease.
@@ -290,7 +385,8 @@ grant execute on function public.supervisor_8a_claim_observation_notice(uuid,uui
 create function public.supervisor_8a_post_observation_notice(
  p_receipt_id uuid,p_attempt bigint,p_thread_id uuid,p_task_id text,p_message_id uuid,
  p_timezone text,p_payload jsonb,p_text text,p_confidence text,
- p_prior_message_id uuid default null,p_measurement_as_of timestamptz default null
+ p_prior_message_id uuid default null,p_measurement_as_of timestamptz default null,
+ p_worker_token uuid default null
 ) returns boolean language plpgsql security invoker set search_path='' as $$
 declare n public.supervisor_experiment_notice_receipts; h public.menu_price_history;
  v_payload jsonb;v_previous jsonb;v_correction boolean;
@@ -304,6 +400,12 @@ begin
      (state='posted' and message_id=p_prior_message_id and p_measurement_as_of is not null))
   for update;
  if not found then return false;end if;
+ if p_worker_token is not null then
+  perform 1 from public.supervisor_monitor_windows w where w.business_id=n.business_id
+   and w.monitor_kind='toast_price_observation' and w.source_id=n.source_id and w.window_index=0
+   and w.observation_worker_token=p_worker_token and w.observation_worker_until>clock_timestamp() for update;
+  if not found then return false;end if;
+ end if;
  v_correction:=n.state='posted';
  if v_correction and n.kind='toast_price_initial' then return true;end if;
  perform 1 from public.memberships m where m.business_id=n.business_id
@@ -369,9 +471,9 @@ begin
   where id=n.id and attempts=p_attempt and state=n.state;
  return found;
 end;$$;
-revoke all on function public.supervisor_8a_post_observation_notice(uuid,bigint,uuid,text,uuid,text,jsonb,text,text,uuid,timestamptz)
+revoke all on function public.supervisor_8a_post_observation_notice(uuid,bigint,uuid,text,uuid,text,jsonb,text,text,uuid,timestamptz,uuid)
  from public,anon,authenticated;
-grant execute on function public.supervisor_8a_post_observation_notice(uuid,bigint,uuid,text,uuid,text,jsonb,text,text,uuid,timestamptz)
+grant execute on function public.supervisor_8a_post_observation_notice(uuid,bigint,uuid,text,uuid,text,jsonb,text,text,uuid,timestamptz,uuid)
  to service_role;
 
 create or replace function public.supervisor_8a_guard_toast_manual_confirmation()
