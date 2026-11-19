@@ -103,10 +103,13 @@ it("the scheduled anomaly pass reconciles only comparable customer evidence and 
  inputs.usage.mockResolvedValue({rows:[],provenance:{coverage:"incomplete"}});
  inputs.quotes.mockResolvedValue({quotes:[],ingredients:[],currency:"USD",truncated:false});
  inputs.snapshot.mockResolvedValue({});
- let low=false,changed=true;
+ let low=false,changed=true,emptySource=false,emptyComplete=false;
  const implementation=async(raw:unknown)=>{
   const p=raw as {view:string;date_from:string;group_by?:string[];metrics:Array<{column:string}>};
   const recent=p.date_from==="2026-11-12"||p.date_from==="2026-08-21";
+  if(emptySource)return {rows:[{count_source_ref:0,"count_data.aiCafeCustomer.identityRef":0,
+   "count_data.aiCafeCustomer.displayName":0}],missing:["empty"],truncated:false,error:undefined,
+   customerCoverage:{complete:emptyComplete,eligibleChecks:0,linkedChecks:0,expectedLocationDays:7}};
   if(p.view==="cv_customer_products"){
    if(p.group_by?.[0]==="product_ref"){
     const ids=["11111111-1111-4111-8111-111111111111","22222222-2222-4222-8222-222222222222"];
@@ -149,7 +152,13 @@ it("the scheduled anomaly pass reconciles only comparable customer evidence and 
   expect(incidents.get("data_gap:customer_identity_coverage")).toBe(true);
   expect(incidents.get("customer_trend:returning_visit_share")).toBe(true);
   expect(rpc.mock.calls.some(([,p])=>p.p_key==="customer_trend:returning_visit_share")).toBe(false);
-  low=false;changed=false;await run();
+  low=false;emptySource=true;rpc.mockClear();await run();
+  expect(rpc).toHaveBeenCalledWith("supervisor_reconcile_business_anomaly",expect.objectContaining({p_key:"data_gap:customer_identity_coverage",p_active:true}));
+  expect(rpc.mock.calls.some(([,p])=>p.p_key==="customer_trend:returning_visit_share")).toBe(false);
+  emptyComplete=true;rpc.mockClear();await run();
+  expect(rpc.mock.calls.some(([,p])=>p.p_key==="data_gap:customer_identity_coverage")).toBe(false);
+  expect(incidents.get("data_gap:customer_identity_coverage")).toBe(true);
+  emptySource=false;changed=false;await run();
   expect(incidents.get("data_gap:customer_identity_coverage")).toBe(false);
   expect(incidents.get("customer_trend:returning_visit_share")).toBe(false);
   expect(incidents.get("customer_trend:linked_revenue_concentration")).toBe(false);
