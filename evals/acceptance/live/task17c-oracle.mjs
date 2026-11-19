@@ -125,3 +125,68 @@ export function verifyOperatingWorld({world,evidence:e}){
  return {providerCalls:completed.length,staffEpisodeId:staffEpisode,financeEpisodeId:financeEpisode,
   staffNoticeId:e.staffNotices[0].id,financeFirstNoticeId:e.financeBefore[0].id,financeFollowupNoticeId:e.financeNew[0].id};
 }
+
+export function verifyProcurementOutcome(x){
+ const {expected:e,proposal:p}=x;
+ const payload=p.canonical_effect_payload;
+ assert.equal(p.status,"draft");
+ assert.equal(p.capability_id,"maya.supplier_purchase_order.v1");
+ assert.equal(payload.supplierName,e.supplier);
+ assert.equal(payload.currency,e.currency);
+ assert.equal(payload.subtotalCents,e.packs*e.price);
+ assert.equal(payload.lines.length,1);
+ assert.equal(payload.lines[0].quoteId,e.quoteId);
+ assert.equal(payload.lines[0].packs,e.packs);
+ assert.equal(x.preOrders.length,0);
+ assert.ok([401,403,404].includes(x.foreignStatus));
+ assert.equal(x.foreignOrders.length,0);
+ assert.equal(x.committed.length,1);
+ const order=x.committed[0];
+ assert.equal(order.proposal_id,p.id);
+ assert.equal(order.status,"approved_for_ordering");
+ assert.equal(Number(order.subtotal_cents),e.packs*e.price);
+ assert.equal(order.currency_code,e.currency);
+ assert.equal(order.effect_hash,p.effect_hash);
+ assert.ok([200,409,422].includes(x.replayStatus));
+ assert.deepEqual(x.after,x.committed,"replayed approval cannot duplicate or mutate order");
+ assert.deepEqual(x.finalProposal,[{id:p.id,status:"committed",effect_hash:p.effect_hash}]);
+ assert.deepEqual(x.afterCounts,x.before,"PO approval is neither delivery, stock receipt nor payment");
+ return order.id;
+}
+export function verifyRevocationOutcome(x){
+ const good=JSON.stringify(x.good??[]),after=JSON.stringify(x.after??[]);
+ assert.ok(good.includes(x.canary)&&/oat milk/i.test(good));
+ // Remove the UUID before searching for a quantity: its digits must not
+ // accidentally satisfy the independent quantity oracle.
+ assert.ok(new RegExp("(?:^|[^0-9])"+x.qty+"(?:[^0-9]|$)").test(good.replaceAll(x.canary,"")));
+ assert.equal(x.blocked,"supervisor_file_access_revoked");
+ assert.ok([401,403,404].includes(x.foreignStatus));
+ assert.ok(after.length>2);
+ assert.ok(!after.includes(x.canary),"revoked private reference cannot recur");
+ assert.deepEqual(x.access,[{allowed:false}]);
+ assert.equal(x.proposals.length,0);
+ assert.deepEqual(x.afterCounts,x.before);
+}
+export function verifyMonitorOutcome(x){
+ const expected={id:x.alertId,business_id:x.businessId,status:"new"};
+ assert.deepEqual(x.opened,[expected],"only the affected cafe may produce a missing bill alert");
+ assert.deepEqual(x.repeated,x.opened,"repeated refresh must not create another alert");
+ assert.equal(x.pending.length,1);
+ const episode=x.pending[0];
+ assert.equal(episode.phase,"awaiting_owner");
+ assert.ok(["get_investigation_source","get_expenses","get_bills"].every(t=>episode.evidence.modelTools.includes(t)));
+ assert.deepEqual(x.closed,[{...expected,status:"resolved"}]);
+ assert.equal(x.finished.length,1);
+ assert.equal(x.finished[0].episode_id,episode.episode_id);
+ assert.equal(x.finished[0].phase,"resolved");
+ assert.equal(x.beforeNotices.length,1);
+ assert.equal(x.afterNotices.length,1);
+ assert.notEqual(x.beforeNotices[0].id,x.afterNotices[0].id);
+ assert.equal(x.ownerRows.length,0);
+ assert.equal(x.effects.length,0);
+ assert.equal(x.expenses.length,2);
+ for(const id of [x.oldExpenseId,x.newExpenseId])assert.equal(Number(x.expenses.find(e=>e.id===id)?.amount_cents),x.amount);
+ assert.ok(x.usage.length>=2&&x.usage.length<=18);
+ assert.ok(x.usage.every(r=>r.status==="completed"&&r.model==="gpt-6-luna"&&Number(r.input_tokens)>0));
+ return {episodeId:episode.episode_id,noticeId:x.beforeNotices[0].id,resolutionNoticeId:x.afterNotices[0].id,providerCalls:x.usage.length};
+}
