@@ -166,9 +166,9 @@ begin
   v_today:=(p_now at time zone v.timezone)::date;
   v_start:=(v.updated_at at time zone v.timezone)::date;
   return query
-    select dates.day,dates.due from (
+    select dates.candidate_date,dates.candidate_due from (
       -- Existing retry identity survives; use its original scheduled instant.
-      select o.local_date day,o.scheduled_for_utc due
+      select o.local_date as candidate_date,o.scheduled_for_utc as candidate_due
         from public.supervisor_routine_occurrences o
         where o.business_id=v.business_id and o.routine_id=v.id
           and o.revision=v.revision and o.scheduled_for_utc<=p_now
@@ -179,13 +179,13 @@ begin
       -- Include all unmaterialized eligible days after the revision began,
       -- including holes from an earlier outage before a later successful tick.
       -- TS uses the existing DST-aware civil-time resolver for new dates.
-      select d.day::date,null::timestamptz
-        from generate_series(v_start::timestamp,v_today::timestamp,interval '1 day') d(day)
-        where (v.cadence='daily' or extract(isodow from d.day)=any(v.weekdays))
+      select d.civil_date::date,null::timestamptz
+        from generate_series(v_start::timestamp,v_today::timestamp,interval '1 day') as d(civil_date)
+        where (v.cadence='daily' or extract(isodow from d.civil_date)=any(v.weekdays))
           and not exists (
             select 1 from public.supervisor_routine_occurrences o
-              where o.business_id=v.business_id and o.routine_id=v.id and o.local_date=d.day::date)
-    ) dates order by dates.day asc limit 5;
+              where o.business_id=v.business_id and o.routine_id=v.id and o.local_date=d.civil_date::date)
+    ) as dates order by dates.candidate_date asc limit 5;
 end $$;
 revoke all on function public.supervisor_due_routine_dates(uuid,uuid,bigint,timestamptz) from public,anon,authenticated;
 grant execute on function public.supervisor_due_routine_dates(uuid,uuid,bigint,timestamptz) to service_role;
