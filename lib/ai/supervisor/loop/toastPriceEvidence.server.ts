@@ -243,3 +243,44 @@ export async function readVerifiedToastPriceEvidence(db:SupabaseClient,
   menu:item,receipt:{...location.data,...checkpoint.data},
   history:prices.data??[]});
 }
+
+/** Full-copy completion and exact POS identity remain on the original history
+ * event. A later menu version must neither erase nor rewrite that evidence.
+ * The source-provenance trigger stamps these fields only when the existing
+ * importer's pending checkpoint becomes complete. */
+export type CompletedToastHistory=Candidate["history"][number]&{
+ toast_publication_completed_at:string|null;
+ toast_publication_pos_item_id:string|null;
+};
+export function matchCompletedToastObservation(input:{
+ businessId:string;historyId:string;notBefore:string;asOf:string;
+ event:CompletedToastHistory;
+ location:{restaurant_guid:string;verified_at:string|null}|null;
+}):VerifiedToastPriceEvidence|UnverifiedToastPriceEvidence{
+ const deny=(reason:string):UnverifiedToastPriceEvidence=>({status:"unverified",reason});
+ const {event,location}=input;
+ const time=(s:string|null|undefined)=>typeof s==="string"&&/(Z|[+-]\d{2}:?\d{2})$/.test(s)?Date.parse(s):NaN;
+ const observed=time(event.toast_observed_at), completed=time(event.toast_publication_completed_at);
+ const earliest=time(input.notBefore),now=time(input.asOf),start=time(event.toast_effective_at??event.toast_observed_at);
+ const parsed=event.toast_publication_pos_item_id?.match(posPattern);
+ if(event.id!==input.historyId||event.business_id!==input.businessId||
+  event.source_type!=="connected_pos"||event.source_provider!=="toast"||
+  !event.menu_item_id||!event.toast_publication_version||
+  event.toast_publication_version.startsWith("pending:")||
+  !parsed||!location||!validTime(location.verified_at)||
+  parsed[1].toLowerCase()!==location.restaurant_guid.toLowerCase()||
+  event.toast_restaurant_guid?.toLowerCase()!==parsed[1].toLowerCase()||
+  !Number.isSafeInteger(event.old_price_cents)||event.old_price_cents!<=0||
+  !Number.isSafeInteger(event.new_price_cents)||event.new_price_cents!<=0||
+  event.old_price_cents===event.new_price_cents)
+  return deny("invalid_completed_toast_identity");
+ if(![earliest,now,start,observed,completed].every(Number.isFinite)||
+  earliest>observed||start>observed||observed>completed||completed>now)
+  return deny("incomplete_or_out_of_scope_toast_publication");
+ return {status:"verified",businessId:input.businessId,historyId:event.id,
+  menuItemId:event.menu_item_id,posItemId:event.toast_publication_pos_item_id!,
+  restaurantGuid:location.restaurant_guid,publicationVersion:event.toast_publication_version,
+  oldPriceCents:event.old_price_cents!,newPriceCents:event.new_price_cents!,
+  observedAt:new Date(observed).toISOString(),startAt:new Date(start).toISOString(),
+  startBasis:event.toast_effective_at===null?"first_verified_observation":"source_effective"};
+}
