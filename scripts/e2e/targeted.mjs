@@ -81,7 +81,7 @@ export function scenariosForPath(path) {
       path === "components/menu/PantryWorkspace.tsx" ||
       path === "components/menu/MenuCatalog.tsx" ||
       path.startsWith("lib/viewmodels/menu")) return ["menu"];
-  if (path === "app/[locale]/money/page.tsx" ||
+  if (path === "components/addcost/StatementUploader.tsx" || path === "app/[locale]/money/page.tsx" ||
       path === "components/money/MoneyViewSwitch.tsx" ||
       path.startsWith("lib/viewmodels/money")) return ["money"];
   if (path.startsWith("app/api/")) return [];

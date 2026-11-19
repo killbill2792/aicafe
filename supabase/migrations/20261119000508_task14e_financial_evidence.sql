@@ -114,3 +114,58 @@ end $$;
 revoke all on function public.supervisor_record_statement_evidence(uuid,uuid,text,text,text,date,date,bigint,bigint,jsonb)
  from public,anon,authenticated;
 grant execute on function public.supervisor_record_statement_evidence(uuid,uuid,text,text,text,date,date,bigint,bigint,jsonb) to service_role;
+
+
+-- One stable money review episode per owner; source changes drive existing
+-- investigations. A past due date alone never establishes overdue payment.
+create policy financial_review_owner_read on public.operating_tasks as restrictive for select to authenticated
+ using(id not like 'financial-review:%' or (owner_user_id=(select auth.uid()) and exists(
+  select 1 from public.memberships m where m.business_id=operating_tasks.business_id
+   and m.user_id=(select auth.uid()) and m.role='owner')));
+create policy financial_review_no_direct_insert on public.operating_tasks as restrictive for insert to authenticated
+ with check(id not like 'financial-review:%');
+create policy financial_review_no_direct_update on public.operating_tasks as restrictive for update to authenticated
+ using(id not like 'financial-review:%') with check(id not like 'financial-review:%');
+create policy financial_review_no_direct_delete on public.operating_tasks as restrictive for delete to authenticated
+ using(id not like 'financial-review:%');
+create function public.supervisor_sync_financial_review(p_business_id uuid,p_owner_user_id uuid,p_now timestamptz)
+ returns integer language plpgsql security invoker set search_path=public as $$
+declare v_day date;v_facts jsonb;v_count integer;v_invoice_count bigint;v_statement_count bigint;
+ v_invoice_version text;v_statement_version text;
+begin
+ if auth.role() is distinct from 'service_role' then raise exception 'service_role_only' using errcode='42501';end if;
+ perform 1 from public.memberships m where m.business_id=p_business_id and m.user_id=p_owner_user_id and m.role='owner' for share;
+ if not found then raise exception 'financial_owner_required' using errcode='42501';end if;
+ select (p_now at time zone b.timezone)::date into v_day from public.businesses b where b.id=p_business_id and not b.is_demo;
+ if v_day is null then raise exception 'financial_context_missing';end if;
+ -- Current revisions only. Digests track material source changes, not the tick timestamp.
+ with current_claims as (
+  select distinct on(supplier_id,invoice_reference) id,revision,issued_on,due_on
+  from public.supplier_invoices where business_id=p_business_id and owner_user_id=p_owner_user_id
+  order by supplier_id,invoice_reference,revision desc
+ )
+ select count(*),md5(coalesce(string_agg(id::text||':'||revision::text||':'||
+  case when due_on is null then 'undated' when due_on<v_day then 'past_date' else 'coming_due' end,
+  ',' order by id),''))
+ into v_invoice_count,v_invoice_version from current_claims where issued_on<=v_day and (due_on is null or due_on<=v_day+7);
+ select count(*),md5(coalesce(string_agg(id::text,',' order by id),''))
+ into v_statement_count,v_statement_version from public.uploads
+ where business_id=p_business_id and financial_owner_user_id=p_owner_user_id
+ and financial_to<=v_day and kind='statement' and status='done';
+ if v_invoice_count=0 and v_statement_count=0 then return 0;end if;
+ v_facts:=jsonb_build_array(jsonb_build_object('source','financial_evidence','facts',jsonb_build_object(
+  'invoiceClaimsNeedingReview',v_invoice_count,'statementDocuments',v_statement_count,
+  'invoiceSourceVersion',v_invoice_version,'statementSourceVersion',v_statement_version,
+  'paymentStatusKnown',false,'liveCashKnown',false)));
+ insert into public.operating_tasks(business_id,id,owner_user_id,agent_id,kind,entity_type,
+  entity_id,status,confidence,payload,evidence,created_at)
+ values(p_business_id,'financial-review:'||p_owner_user_id::text,p_owner_user_id,'leo','money_update',
+  'financial_review',p_owner_user_id::text,'watching','low',
+  jsonb_build_object('title','Financial evidence review','paymentStatusKnown',false,'liveCashKnown',false),v_facts,p_now)
+ on conflict(business_id,id) do update set evidence=excluded.evidence,status='watching',resolved_at=null,updated_at=p_now
+ where operating_tasks.kind='money_update' and operating_tasks.owner_user_id=p_owner_user_id
+  and operating_tasks.evidence is distinct from excluded.evidence;
+ get diagnostics v_count=row_count;return v_count;
+end $$;
+revoke all on function public.supervisor_sync_financial_review(uuid,uuid,timestamptz) from public,anon,authenticated;
+grant execute on function public.supervisor_sync_financial_review(uuid,uuid,timestamptz) to service_role;

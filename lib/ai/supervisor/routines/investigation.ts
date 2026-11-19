@@ -216,6 +216,7 @@ export function investigationPrompt(source:SourceSynopsis,followUp:boolean,
     "Only the supplier-receiving exception below permits an inert draft; never execute effects. ":"")+"Do NOT substitute unrelated sales reads " +
     "for incident-specific evidence. For this incident, relevant tools include: " +
     relevantInvestigationTools(source.kind).join(", ")+". " +
+    (["money_update","missing_bill"].includes(source.kind)?"Finance: check actual available statement/invoice evidence plus independent recorded bills, expenses, sales or labor. If integrations are absent, use surviving facts and explicit uncertainty. Separate dated balances, bill amounts and payment status; no payment actions. ":"") +
     "Use canonical numbers, coverage and timestamps; " +
     "do not infer zero from missing or stale evidence. Explain what changed, what is " +
     "known, what is unknown, and the smallest useful multi-step plan. Give the owner " +

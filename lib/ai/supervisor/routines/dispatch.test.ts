@@ -28,7 +28,7 @@ function db(params?:{routines?:Record<string,unknown>[];owners?:{user_id:string}
   };
   return {rpc:async(name:string)=>{
     if(name==="staff_coordination_reconcile")return mocks.reconcile();
-    if(!["staff_channel_sync_shift_requests","staff_channel_escalate_unanswered","supervisor_sync_supplier_receiving_tasks"].includes(name))
+    if(!["staff_channel_sync_shift_requests","staff_channel_escalate_unanswered","supervisor_sync_supplier_receiving_tasks","supervisor_sync_financial_review"].includes(name))
       throw new Error("unexpected staff channel RPC "+name);
     return {data:0,error:null};
   },from:(table:string)=>{
