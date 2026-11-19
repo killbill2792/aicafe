@@ -185,6 +185,15 @@ describe("numbers, statuses, and strict tool contracts", () => {
     expect(requestedPeriod("week","2026-10-21")).toEqual({from:"2026-10-15",to:"2026-10-21"});
     expect(requestedPeriod("month","2026-10-21")).toEqual({from:"2026-10-01",to:"2026-10-21"});
   });
+  it("compacts nullable primitives without dropping provider constraints or strict validation",()=>{
+    const vendor=agentToolDefinitions.find(t=>t.name==="propose_maintenance_vendor_request")!;
+    const properties=vendor.parameters.properties as Record<string,unknown>;
+    expect(properties.contactMessageId).toMatchObject({type:["string","null"],minLength:8,maxLength:100});
+    expect(properties.dueAt).toMatchObject({type:["string","null"],format:"date-time"});
+    expect(properties.recipient).toMatchObject({type:"string",format:"email"});
+    expect(vendor.parameters.required).toEqual(Object.keys(properties));
+    expect(vendor.parameters.additionalProperties).toBe(false);
+  });
   it("lists every property as required in nested objects too (OpenAI strict mode rejects the whole request otherwise)", () => {
     const gaps:string[]=[];
     const walk=(node:unknown,path:string)=>{

@@ -233,6 +233,27 @@ function requireEveryProperty(node:unknown):unknown{
   for(const [key,value] of Object.entries(node))out[key]=requireEveryProperty(value);
   if(out.properties&&typeof out.properties==="object"&&!Array.isArray(out.properties))
     out.required=Object.keys(out.properties);
+  // JSON Schema's nullable primitive type array is equivalent to the
+  // two-branch union. Preserve every constraint and enum member. Avoid
+  // rewriting objects, arrays, references or complex combinators.
+  // This keeps the complete registry in the bounded broker request.
+  if(Object.keys(out).length===1&&Array.isArray(out.anyOf)&&out.anyOf.length===2){
+    const alternatives=out.anyOf as Record<string,unknown>[];
+    const nil=alternatives.find(x=>x&&Object.keys(x).length===1&&x.type==="null");
+    const value=alternatives.find(x=>x!==nil);
+    const allowed:Record<string,readonly string[]>={
+      string:["type","format","pattern","minLength","maxLength","description","enum"],
+      number:["type","minimum","maximum","exclusiveMinimum","exclusiveMaximum","multipleOf","description","enum"],
+      integer:["type","minimum","maximum","exclusiveMinimum","exclusiveMaximum","multipleOf","description","enum"],
+      boolean:["type","description","enum"],
+    };
+    if(nil&&value&&typeof value.type==="string"&&Object.hasOwn(allowed,value.type)&&
+       Object.keys(value).every(key=>allowed[value.type as string].includes(key))&&
+       (!Object.hasOwn(value,"enum")||Array.isArray(value.enum))){
+      const compact={...value,type:[value.type,"null"]};
+      return Array.isArray(value.enum)?{...compact,enum:[...value.enum,null]}:compact;
+    }
+  }
   return out;
 }
 const baseToolDefinitions = (Object.keys(schemas) as AgentToolName[]).map(name => {
