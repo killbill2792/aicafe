@@ -157,7 +157,7 @@ export async function createOperatingWorld(sql){
  const staff=await cafe(first,"staff"),finance=await cafe(foreign,"finance");
  const employee=await user("staff-employee");
  const employeeId=randomUUID(),replacementId=randomUUID(),shiftId=randomUUID();
- const day=(cafe,n)=>new Intl.DateTimeFormat("en-CA",{timeZone:cafe.timezone,year:"numeric",month:"2-digit",day:"2-digit"}).format(new Date(Date.now()+n*86400000));
+ const day=(cafe,n)=>{const p=Object.fromEntries(new Intl.DateTimeFormat("en-CA",{timeZone:cafe.timezone,year:"numeric",month:"2-digit",day:"2-digit"}).formatToParts(new Date(Date.now()+n*86400000)).map(x=>[x.type,x.value]));return p.year+"-"+p.month+"-"+p.day;};
  const shiftDate=day(staff,1);
  await sql.query("insert into public.employees(id,business_id,display_name,active,wage_period,wage_amount_cents,staff_auth_user_id) values($1,$2,'Opening barista',true,'hour',$3,$4),($5,$2,'Available barista',true,'hour',$6,null)",
   [employeeId,staff.businessId,Math.round(staff.profile.employees[0].wage*staff.profile.wageScale),employee.id,replacementId,Math.round(staff.profile.employees[1].wage*staff.profile.wageScale)]);
@@ -227,7 +227,7 @@ export async function exerciseOperatingWorld(sql,world){
  const staffNotices=await rows(sql,"select id from public.ai_messages where business_id=$1 and thread_id=$2 and role='supervisor' and grounding->>'intent'='priority_investigation'",[staff.businessId,staff.threadId]);
  const financeNew=financeAfter.filter(a=>!financeBefore.some(b=>b.id===a.id));
  const ownerRows=await rows(sql,"select id from public.ai_messages where business_id in ($1,$2) and role='owner'",scopes.map(s=>s.businessId));
- const effects=await rows(sql,"select id from public.supervisor_effect_attempts where business_id in ($1,$2)",scopes.map(s=>s.businessId));
+ const effects=await rows(sql,"select 1 from public.supervisor_effect_attempts where business_id in ($1,$2)",scopes.map(s=>s.businessId));
  const proposals=await rows(sql,"select id from public.supervisor_proposals where business_id in ($1,$2)",scopes.map(s=>s.businessId));
  const usage=await rows(sql,"select business_id,model,status,input_tokens from public.supervisor_system_usage_events where business_id in ($1,$2)",scopes.map(s=>s.businessId));
  const sources=await rows(sql,"select id,business_id,financial_closing_cents from public.uploads where id in ($1,$2)",[finance.firstUploadId,secondUploadId]);
