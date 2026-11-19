@@ -1,5 +1,5 @@
 import {describe,it,expect} from "vitest";
-import {compareCustomerPeriods,compareCustomerCohorts,compareCustomerDistributions,compareCustomerCadence,compareAnonymousCustomerPeriods,customerCoverageReady,identityCoverage,type CustomerPeriod} from "./customers";
+import {compareCustomerPeriods,compareCustomerCohorts,compareCustomerDistributions,compareCustomerCadence,compareAnonymousCustomerPeriods,customerTrendEvidenceFields,customerCoverageReady,identityCoverage,type CustomerPeriod} from "./customers";
 const base:CustomerPeriod={checks:100,linkedChecks:90,namedChecks:80,visits:80,references:60,
  firstVisits:60,returningVisits:20,knownMoneyVisits:80,averageSpendCents:900,complete:true};
 describe("customer monitoring evidence gates",()=>{
@@ -86,4 +86,22 @@ it("historical value is compared only with all active references costed in recor
  const a={...base,knownHistoryAccounts:60,averageHistoryAccountCents:2000},b={...base,knownHistoryAccounts:60,averageHistoryAccountCents:1000};
  expect(compareCustomerPeriods(a,b)).toContainEqual(expect.objectContaining({key:"observed_history_value",current:2000,previous:1000,active:true}));
  expect(compareCustomerPeriods({...a,knownHistoryAccounts:59},b).some(x=>x.key==="observed_history_value")).toBe(false);
+});
+
+it("every emitted customer monitor has an explicit numeric corroboration dependency",()=>{
+ const a={...base,knownHistoryAccounts:60,averageHistoryAccountCents:2000,linkedRevenueConcentration:.4,
+  observedDiscountShare:.4,observedLoyaltyShare:.5,recordedRefundCentsPerCheck:100,
+  observedMeanOrderDurationSeconds:600,knownContributionVisits:80,averageRecipeContributionCents:300};
+ const sample={eligible:40,flagged:8,complete:true};
+ const measures=[...compareCustomerPeriods(a,a),
+  ...compareAnonymousCustomerPeriods({checks:100,knownMoneyChecks:100,netCents:1000,itemUnits:100,complete:true},{checks:100,knownMoneyChecks:100,netCents:1000,itemUnits:100,complete:true}),
+  ...(["product","modifier","basket","weekday","channel","daypart"] as const).flatMap(dimension=>{
+   const d={dimension,buckets:{a:40,b:60},total:100,complete:true};
+   return compareCustomerDistributions(d,d,a,a);
+  }),
+  ...([7,30,60,90] as const).map(h=>compareCustomerCohorts({matured:40,observedReturns:20,complete:true},{matured:40,observedReturns:20,complete:true},a,a,h)),
+  compareCustomerCadence("lapse",sample,sample,a,a),compareCustomerCadence("reappearance",sample,sample,a,a)];
+ expect(measures.length).toBeGreaterThan(25);
+ for(const m of measures){expect(m).not.toBeNull();expect(customerTrendEvidenceFields(m!.key).length,m!.key).toBeGreaterThan(0);}
+ expect(customerTrendEvidenceFields("unrecognized_customer_trend")).toEqual([]);
 });
