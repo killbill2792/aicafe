@@ -169,6 +169,33 @@ export type SourceSynopsis={
   relatedAlerts:readonly string[];relatedTasks:readonly string[];
   maintenanceDueAt?:string|null;maintenanceOverdue?:boolean;
 };
+/** The server derives this from a prior durable report, not a model argument.
+ * It is conversational provenance only, never authority to execute an effect. */
+export type CustomerInvestigationOrigin={
+  sourceId:string;sourceRevision:string;episodeId:string;
+  reportMessageId:string;ownerMessageId:string;
+};
+export type CustomerActionObservation={
+  proposalId:string;capabilityId:string;status:string;revision:number;attemptState:string|null;
+};
+export function precedingInvestigationReport<T extends {id:string;role:string;threadId:string;createdAt:string;grounding:Record<string,unknown>|null}>(
+  messages:readonly T[],owner:{id:string;threadId:string;createdAt:string}):
+  {report:T;sourceId:string;sourceRevision:string}|null{
+  const ownerAt=Date.parse(owner.createdAt);
+  if(!Number.isFinite(ownerAt))return null;
+  const previous=messages.filter(m=>m.id!==owner.id&&m.threadId===owner.threadId&&Date.parse(m.createdAt)<ownerAt)
+    .sort((a,b)=>Date.parse(b.createdAt)-Date.parse(a.createdAt));
+  const report=previous[0];
+  if(!report||report.role!=="supervisor"||report.grounding?.intent!=="priority_investigation"||
+    report.grounding.status!=="verified"||
+    (previous[1]&&previous[1].createdAt===report.createdAt))return null;
+  const evidence=report.grounding.evidence;
+  if(!Array.isArray(evidence)||evidence.length!==1)return null;
+  const ref=evidence[0] as {source?:unknown;identifier?:unknown;revisionHash?:unknown};
+  if(ref?.source!=="alert"||typeof ref.identifier!=="string"||
+    typeof ref.revisionHash!=="string"||!ref.revisionHash)return null;
+  return {report,sourceId:ref.identifier,sourceRevision:ref.revisionHash};
+}
 export type InvestigationCheckpoint={
   source:SourceSynopsis;
   collectedAt:string;
@@ -184,6 +211,7 @@ export type InvestigationCheckpoint={
   ownerQuestion?:string;
   sourceRevision?:string;
   stockEmailProposalId?:string;
+  customerLinkedActions?:CustomerActionObservation[];
   /** Server-observed procurement status, never part of the model narrative. */
   stockProcurementStatus?:string;
   receivingClosureEvidence?:{poRevision:number;receiptVersions:number;invoiceVersions:number};
