@@ -135,8 +135,14 @@ live("retained customer identity or observed trend, real model investigation, is
    expect(fallback.tools??[]).toContain("query_data");
    const fallbackMatch=fallback.text.match(/Preference checks[\s*]*[:=][\s*]*([0-9,]+)/i);
    expect(fallbackMatch?.[1]&&Number(fallbackMatch[1].replace(/,/g,""))).toBe(expected.preference);
-   expect(fallback.toolInvocations?.some(call=>call.name==="query_data"&&
-    JSON.stringify(call.result).includes(expected.preference.toString())&&call.result.customerEvidence===true)).toBe(true);
+   expect(fallback.toolInvocations?.some(call=>call.name==="describe_data"&&
+    Array.isArray(call.result.fields)&&call.result.fields.some(field=>field?.field==="data.customer.visitPreference.favoriteDrink"))).toBe(true);
+   expect(fallback.toolInvocations?.some(call=>{
+    if(call.name!=="query_data"||call.result.customerEvidence!==true||call.result.view!=="cv_toast_records"||
+     !Array.isArray(call.result.rows)||call.result.truncated===true)return false;
+    return call.result.rows.some(row=>row&&typeof row==="object"&&
+     Object.entries(row).some(([key,value])=>key.startsWith("count_")&&Number(value)===expected.preference));
+   })).toBe(true);
    const foreignOrder=randomUUID(),foreignPayload=JSON.stringify({guid:foreignOrder,checks:[{guid:randomUUID(),amount:5,customer:{guid:randomUUID()}}]});
    await admin.query("insert into public.toast_raw_records(business_id,restaurant_guid,entity,business_date,payload,payload_sha256,capture_key) values($1,$2,'order',$3,$4,$5,$6)",[foreignBusinessId,foreignRestaurant,date(-3),foreignPayload,createHash("sha256").update(foreignPayload).digest("hex"),"live:"+foreignOrder]);
    expect((await admin.query("select count(*)::int n from public.customer_visits_for($1,$2,$3)",[foreignBusinessId,date(-14),date(-1)])).rows[0].n).toBe(1);
