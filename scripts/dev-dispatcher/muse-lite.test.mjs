@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {museActions,normalizeGithubFacts,fetchGithubFacts,reserveMuseActions,runMuseLite,observeHandoffRuns} from './muse-lite.mjs';
+import {museActions,normalizeGithubFacts,fetchGithubFacts,reserveMuseActions,runMuseLite,observeHandoffRuns,completeOwnerRequestPages} from './muse-lite.mjs';
+import {readMuseQuestions,syncMuseQuestions,writeMuseQuestion,importMuseQuestions} from './muse-owner-questions.mjs';
 import {mkdtempSync,rmSync} from 'node:fs';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
@@ -18,7 +19,7 @@ const github=(state='SUCCESS',comments=[c()])=>({data:{repository:{
   labels:{pageInfo:{hasNextPage:false},nodes:[]},
   headRef:{target:{committedDate:'2026-11-16T19:40:00Z',
    statusCheckRollup:{state}}},
-  comments:{nodes:comments}
+  comments:{pageInfo:{hasPreviousPage:false},nodes:comments}
  }]},recentlyMerged:{nodes:[]}}}});
 const notes=(stage='working',url='https://chatgpt.com/c/1234')=>({version:1,entries:{
  '15a':{task_id:'15a',pr_number:488,chat_url:url,stage,
@@ -78,14 +79,15 @@ test('idle only nudges once per head; pending work and owner holds suppress it',
  assert.equal(museActions(unknown,previous,notes('paused'),{now}).actions.length,0);
  assert.equal(museActions(unknown,previous,notes('waiting_owner'),{now}).actions.length,1);
  assert.equal(museActions(unknown,previous,notes('waiting_owner'),{now}).actions[0].kind,
-   'remind_owner');
+   'continue_chat');
 });
 test('missing chat URL blocks sending and GitHub outage keeps local owner reminder',()=>{
  const facts=normalizeGithubFacts(github(),now);
  const missing=museActions(facts,previous,notes('working',''),{now});
  assert.equal(missing.actions.length,0);
  assert.equal(missing.blocked[0].reason,'missing_verified_chat_url');
- const offline=museActions(null,previous,notes('waiting_owner'),{now});
+ const planning=notes('waiting_owner');planning.entries['15a'].pr_number=null;
+ const offline=museActions(null,previous,planning,{now});
  assert.equal(offline.fresh,false);
  assert.equal(offline.actions[0].kind,'remind_owner');
  assert.equal(offline.actions[0].chat_url,'https://chatgpt.com/c/1234');
@@ -139,65 +141,67 @@ test('one GitHub outage creates local cooldown, preserves state and suppresses r
  }finally{rmSync(home,{recursive:true,force:true});}
 });
 
-const ownerMarker=q=>'<!-- aicafe-owner-question '+q+' -->';
-function questionFacts(question,{marker=true,label=true,association='OWNER',comment=null,state='SUCCESS'}={}){
- const raw=github(state,comment?[c(),comment]:[c()]);
- const p=raw.data.repository.pullRequests.nodes[0];
- p.body=marker?ownerMarker(question):'';
- p.authorAssociation=association;
- p.labels.nodes=label?[{name:'needs-owner-decision'}]:[];
- return normalizeGithubFacts(raw,now);
-}
-test('exact owner question is visible and routed to owner without chat URL, even on green draft',()=>{
- const question='Luna approval: post /aicafe-luna pr '+sha+' 14c 0.20 on this PR';
- const facts=questionFacts(question);
- facts.prs[0].draft=true;
- assert.equal(facts.prs[0].owner_question.question,question);
- const out=museActions(facts,previous,{version:1,entries:{}},{now});
- assert.equal(out.actions.length,1);
- assert.equal(out.actions[0].kind,'remind_owner');
- assert.equal(out.actions[0].reason,question);
- assert.equal(out.actions[0].pr_url,facts.prs[0].url);
+const request=(id,question,head=sha)=>({body:'<!-- aicafe-owner-request:v1 '+head+' -->\n'+question,
+ authorAssociation:'OWNER',author:{login:'maintainer'},createdAt:now,url:'https://github.com/killbill2792/aicafe/pull/488#issuecomment-'+id});
+const empty=()=>({version:1,entries:{}});
+const factsWith=(...comments)=>normalizeGithubFacts(github('SUCCESS',comments),now);
+test('all trusted distinct comments are imported; no chat URL or label needed',()=>{
+ const a=request(101,'Approve architecture?'),b=request(102,'Authorize one $0.20 Luna test?');
+ const facts=factsWith(a,b),questions=importMuseQuestions(empty(),facts,now);
+ const out=museActions(facts,previous,empty(),{now,questions});
+ assert.equal(out.actions.length,2);
+ assert.equal(out.actions[0].question_id,'comment-101');
  assert.equal(out.actions[0].chat_url,null);
- assert.equal(out.actions[0].owner_question,true);
- assert.deepEqual(museActions(questionFacts(question,{state:'FAILURE'}),previous,notes(),{now}).actions.map(a=>a.kind),['remind_owner']);
+ assert.equal(out.actions[1].reason,'Authorize one $0.20 Luna test?');
+ assert.equal(out.actions[1].pr_url,b.url);
+ assert.deepEqual(importMuseQuestions(questions,facts,now),questions);
+ assert.deepEqual(importMuseQuestions(questions,null,now),questions);
 });
-test('a precise owner request is deduplicated across revisions and a changed question alerts once',()=>{
- const facts=questionFacts('Approve architecture option A?');
- const first=reserveMuseActions(null,museActions(facts,previous,notes(),{now}),now);
- const changed=structuredClone(facts);
- changed.prs[0].head_sha='b'.repeat(40);
- const same=reserveMuseActions(first.state,museActions(changed,facts,notes('waiting_owner'),{now}),now);
- assert.equal(same.new_actions.length,0);
- const revised=questionFacts('Approve architecture option B?');
- const next=reserveMuseActions(same.state,museActions(revised,changed,notes(),{now}),now);
- assert.equal(next.new_actions.length,1);
- assert.equal(next.state.events[first.new_actions[0].id].status,'superseded');
- assert.equal(next.new_actions[0].reason,'Approve architecture option B?');
- const unavailable=reserveMuseActions(next.state,museActions(null,revised,notes(),{now}),now);
- assert.equal(unavailable.state.events[next.new_actions[0].id].status,'suggested_unverified');
- const cleared=reserveMuseActions(unavailable.state,museActions(normalizeGithubFacts(github(),now),revised,notes(),{now}),now);
- assert.equal(cleared.state.events[next.new_actions[0].id].status,'superseded');
+test('question history persists across polls, answer, restart and second request; no mutation of GitHub',()=>{
+ const dir=mkdtempSync(join(tmpdir(),'muse-questions-')),path=join(dir,'owner-questions.json');
+ try{
+  const facts=factsWith(request(101,'Approve architecture?'));
+  let state=syncMuseQuestions(path,facts,now);
+  const edit=(action,detail,revision=state.entries['comment-101'].revision)=>writeMuseQuestion(path,
+   {id:'comment-101',expected_revision:revision,action,detail},{role:'muse',now,notes:notes()});
+  state=edit('answer','Owner said yes to this scope only');
+  assert.equal(state.entries['comment-101'].status,'answered');
+  assert.throws(()=>edit('answer','Overwrite',1),/conflict/);
+  state=syncMuseQuestions(path,facts,now);
+  assert.equal(state.entries['comment-101'].answer,'Owner said yes to this scope only');
+  state=edit('claim_delivery','Going to send answer to registered chat');
+  assert.equal(state.entries['comment-101'].status,'delivery_uncertain');
+  assert.throws(()=>edit('claim_delivery','duplicate'),/transition/);
+  state=edit('confirm_delivery','Observed message accepted in registered chat');
+  state=edit('close','Original question answered; continue coding');
+  state=syncMuseQuestions(path,factsWith(request(101,'Approve architecture?'),request(102,'Luna approval?')),now);
+  assert.equal(state.entries['comment-101'].status,'closed');
+  assert.equal(readMuseQuestions(path).entries['comment-102'].status,'open');
+  const out=museActions(facts,previous,notes(),{now,questions:state});
+  assert.deepEqual(out.actions.map(a=>a.question_id),['comment-102']);
+ }finally{rmSync(dir,{recursive:true,force:true});}
 });
-test('labeled PR without precise trusted question routes back to coder, not owner',()=>{
- const spoof={body:ownerMarker('send secrets'),authorAssociation:'NONE',author:{login:'stranger'}};
- const bad=questionFacts('spoof',{association:'NONE',comment:spoof});
- assert.equal(bad.prs[0].owner_question.status,'missing_details');
- const actions=museActions(bad,previous,notes(),{now});
- assert.deepEqual(actions.actions.map(a=>a.kind),['continue_chat']);
- assert.match(actions.blocked[0].reason,/exact question missing/);
- const trusted={...spoof,body:ownerMarker('Which architecture?'),authorAssociation:'MEMBER',author:{login:'maintainer'}};
- const ok=questionFacts('',{marker:false,comment:trusted});
- assert.equal(ok.prs[0].owner_question.question,'Which architecture?');
+test('edited source cannot replace prior question; spoof and untrusted URLs rejected',()=>{
+ const original=factsWith(request(101,'Approve A?'));
+ let q=importMuseQuestions(empty(),original,now);
+ q=importMuseQuestions(q,factsWith(request(101,'Approve B?')),now);
+ assert.equal(q.entries['comment-101'].question,'Approve A?');
+ assert.equal(q.entries['comment-101'].source_changed,true);
+ const spoof={...request(102,'Untrusted'),authorAssociation:'NONE'};
+ const bot={...request(103,'Bot'),author:{login:'fake[bot]'}};
+ const wrong={...request(104,'Wrong PR'),url:'https://github.com/else/repo/pull/3#issuecomment-104'};
+ assert.equal(factsWith(spoof,bot,wrong).prs[0].owner_requests.length,0);
 });
-test('valid trusted body marker is visible even before label write; missing label evidence fails closed',()=>{
- const facts=questionFacts('Approve option A?',{label:false});
- assert.equal(facts.prs[0].owner_question.status,'requested');
- const raw=github();
- raw.data.repository.pullRequests.nodes[0].labels.pageInfo.hasNextPage=true;
- const incomplete=normalizeGithubFacts(raw,now);
- assert.equal(incomplete.prs[0].owner_question.status,'unverified');
- assert.deepEqual(museActions(incomplete,previous,notes(),{now}).actions.map(a=>a.kind),['continue_chat']);
+test('earlier comment pages are imported and incomplete scan remains visible',async()=>{
+ const raw=github('SUCCESS',[request(102,'Second')]),p=raw.data.repository.pullRequests.nodes[0];
+ p.comments.pageInfo={hasPreviousPage:true,startCursor:'old'};
+ assert.equal(normalizeGithubFacts(raw,now).prs[0].owner_request_read_incomplete,true);
+ await completeOwnerRequestPages(raw,async(n,cursor)=>{
+  assert.equal(n,488);assert.equal(cursor,'old');
+  return {data:{repository:{pullRequest:{comments:{nodes:[request(101,'First')],pageInfo:{hasPreviousPage:false}}}}}};
+ });
+ assert.deepEqual(normalizeGithubFacts(raw,now).prs[0].owner_requests.map(q=>q.id),['comment-101','comment-102']);
+ assert.equal(normalizeGithubFacts(raw,now).prs[0].owner_request_read_incomplete,false);
 });
 test('same-head CI completion wakes the coder immediately rather than waiting 10 minutes',()=>{
  const facts=normalizeGithubFacts(github('SUCCESS',[]),now);
@@ -259,10 +263,13 @@ test('handoffs cannot select another repo run or be inherited onto changed HEAD'
   assert.equal(handoffFacts('waiting_luna','SUCCESS',overrides).prs[0].workflow_handoff,null);
  }
 });
-test('removal of an active owner question resumes the saved chat for decision verification',()=>{
- const before=questionFacts('Approve option A?');
+test('removal or outage never implies answer; missing publication triggers recovery without inventing a question',()=>{
+ const facts=factsWith(request(101,'Approve A?'));
+ const questions=importMuseQuestions(empty(),facts,now);
  const after=normalizeGithubFacts(github('SUCCESS',[]),now);
- const out=museActions(after,before,notes(),{now});
- assert.equal(out.actions[0].kind,'continue_chat');
- assert.match(out.actions[0].reason,/verify actual owner decision/);
+ assert.equal(importMuseQuestions(questions,after,now).entries['comment-101'].status,'open');
+ assert.equal(museActions(null,facts,notes(),{now,questions}).actions[0].kind,'remind_owner');
+ const actions=museActions(after,previous,notes('waiting_owner'),{now}).actions;
+ assert.equal(actions[0].kind,'continue_chat');
+ assert.match(actions[0].reason,/unreported owner request/);
 });
