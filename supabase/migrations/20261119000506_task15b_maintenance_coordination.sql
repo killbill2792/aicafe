@@ -467,3 +467,45 @@ begin
   raise exception 'maintenance_reconciler_contract_changed';end if;
  execute replace(function_sql,old_branch,new_branch);
 end $migration$;
+
+-- Classify a real archived reply as a claim only; never invent a repair receipt.
+create function public.maintenance_record_evidence_claim(
+ p_business_id uuid,p_owner_user_id uuid,p_thread_id uuid,p_task_id text,p_lease_token uuid,p_event_id uuid
+) returns boolean language plpgsql security definer set search_path=public,pg_temp as $$
+declare v_case public.operating_tasks; v_event public.maintenance_case_events;
+begin
+ if auth.role() is distinct from 'service_role' or not exists(
+   select 1 from public.memberships m where m.business_id=p_business_id and m.user_id=p_owner_user_id and m.role='owner'
+ ) or not exists(
+   select 1 from public.supervisor_investigations i where i.business_id=p_business_id and i.owner_user_id=p_owner_user_id
+    and i.thread_id=p_thread_id and i.source_type='operating_task' and i.source_id=p_task_id
+    and i.lease_token=p_lease_token and i.lease_until>statement_timestamp()
+    and i.phase in ('investigate','awaiting_owner')
+ ) then raise exception 'Maintenance worker not authorized' using errcode='42501';end if;
+ select * into v_case from public.operating_tasks t where t.business_id=p_business_id and t.id=p_task_id
+   and t.owner_user_id=p_owner_user_id and t.kind='maintenance_issue' for update;
+ if not found or v_case.status not in ('needs_owner','needs_response','watching') then
+  raise exception 'Maintenance case unavailable' using errcode='42501';end if;
+ select * into v_event from public.maintenance_case_events e where e.business_id=p_business_id
+  and e.task_id=p_task_id and e.id=p_event_id and ((e.kind='vendor_reply' and e.source_kind='vendor_reply')
+   or (e.kind='follow_up' and e.source_kind='staff_report')) and char_length(btrim(coalesce(e.note,'')))>0;
+ if not found or exists(select 1 from public.maintenance_case_events e
+  where e.business_id=p_business_id and e.task_id=p_task_id and e.kind='reopened' and e.occurred_at>=v_event.occurred_at)
+ then raise exception 'Repair claim evidence unavailable' using errcode='42501';end if;
+ insert into public.maintenance_case_events
+  (business_id,task_id,idempotency_key,kind,actor_kind,actor_user_id,source_kind,source_id,note,working_confirmed,occurred_at)
+ values(p_business_id,p_task_id,'evidence-claim:'||p_event_id::text,'repair_claim','supervisor',
+  p_owner_user_id,v_event.source_kind,v_event.id::text,v_event.note,false,v_event.occurred_at)
+ on conflict (business_id,task_id,idempotency_key) do nothing;
+ if not found then return true;end if;
+ perform set_config('app.maintenance_case_transition','allowed',true);
+ update public.operating_tasks set status='needs_owner',
+  payload=payload||jsonb_build_object('maintenanceStage','repair_claimed','repairVerified',false),
+  evidence=evidence||jsonb_build_array(jsonb_build_object('source','maintenance_case_events',
+   'facts',jsonb_build_object('claimEventId',p_event_id,'repairVerified',false))),
+  updated_at=statement_timestamp() where business_id=p_business_id and id=p_task_id;
+ perform set_config('app.maintenance_case_transition','',true);
+ return true;
+end $$;
+revoke all on function public.maintenance_record_evidence_claim(uuid,uuid,uuid,text,uuid,uuid) from public,anon,authenticated;
+grant execute on function public.maintenance_record_evidence_claim(uuid,uuid,uuid,text,uuid,uuid) to service_role;

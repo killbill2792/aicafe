@@ -100,6 +100,16 @@ export function maintenanceContext(db:SupabaseClient,scope:OwnerLoopScope,option
    if(p.status!=="draft")throw new Error("maintenance_approval_not_draft");
    return {proposalId:p.id,revision:p.revision,caseId:input.maintenanceCaseId};
   },
+  recordRepairClaim:async(caseId:string,eventId:string)=>{
+   if(!options.lease)throw new Error("maintenance_worker_only");
+   await check(caseId);
+   const {data,error}=await db.rpc("maintenance_record_evidence_claim",{
+    p_business_id:scope.businessId,p_owner_user_id:scope.ownerUserId,p_thread_id:scope.threadId,
+    p_task_id:caseId,p_lease_token:options.lease.token,p_event_id:eventId
+   });
+   if(error||data!==true)throw new Error("maintenance_claim_unavailable");
+   return {caseId,repairClaimRecorded:true,repairVerified:false};
+  },
   search:async(caseId:string,query:string)=>{
    await check(caseId);
    const result=await gmailSearch(scope,query,5);

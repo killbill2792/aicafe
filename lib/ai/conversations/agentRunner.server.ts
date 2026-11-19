@@ -177,6 +177,7 @@ export async function runOneTurn(p: TurnParams): Promise<{ replyId: string; repl
       maintenance:{
         staff:async caseId=>maintenanceContext(await getDb(),proposalScope,{ownerMessage:{id:owner.id,text:p.ownerText}}).staff(caseId),
         proposeStaff:async input=>maintenanceContext(await getDb(),proposalScope,{ownerMessage:{id:owner.id,text:p.ownerText}}).proposeStaff(input),
+        recordRepairClaim:async()=>{throw new Error("maintenance_worker_only");},
         search:async(caseId,query)=>maintenanceContext(await getDb(),proposalScope,{ownerMessage:{id:owner.id,text:p.ownerText}}).search(caseId,query),
         propose:async input=>maintenanceContext(await getDb(),proposalScope,{ownerMessage:{id:owner.id,text:p.ownerText}}).propose(input),
       },

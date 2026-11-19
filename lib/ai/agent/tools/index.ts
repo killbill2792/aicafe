@@ -262,6 +262,7 @@ export async function executeAgentTool(name: string, raw: unknown, ctx: AgentToo
   if(name==="get_maintenance_cases")return maintenanceTools.get_maintenance_cases.execute(raw,ctx);
   if(name==="get_maintenance_staff_candidates")return maintenanceTools.get_maintenance_staff_candidates.execute(raw,ctx);
   if(name==="propose_maintenance_staff_assignment")return maintenanceTools.propose_maintenance_staff_assignment.execute(raw,ctx);
+  if(name==="record_maintenance_repair_claim")return maintenanceTools.record_maintenance_repair_claim.execute(raw,ctx);
   if(name==="search_maintenance_vendor")return maintenanceTools.search_maintenance_vendor.execute(raw,ctx);
   if(name==="propose_maintenance_vendor_request")return maintenanceTools.propose_maintenance_vendor_request.execute(raw,ctx);
   if(name==="describe_data"){
