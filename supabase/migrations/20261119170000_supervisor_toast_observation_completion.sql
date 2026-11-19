@@ -289,17 +289,23 @@ grant execute on function public.supervisor_8a_claim_observation_notice(uuid,uui
 -- no price proposal, and no external transport is made by this function.
 create function public.supervisor_8a_post_observation_notice(
  p_receipt_id uuid,p_attempt bigint,p_thread_id uuid,p_task_id text,p_message_id uuid,
- p_timezone text,p_payload jsonb,p_text text,p_confidence text
+ p_timezone text,p_payload jsonb,p_text text,p_confidence text,
+ p_prior_message_id uuid default null,p_measurement_as_of timestamptz default null
 ) returns boolean language plpgsql security invoker set search_path='' as $$
 declare n public.supervisor_experiment_notice_receipts; h public.menu_price_history;
+ v_payload jsonb;v_previous jsonb;v_correction boolean;
 begin
  if auth.role() is distinct from 'service_role' then
   raise exception 'service_role_only' using errcode='42501';end if;
  select * into n from public.supervisor_experiment_notice_receipts
   where id=p_receipt_id and kind in ('toast_price_initial','toast_price_daily','toast_price_final')
-   and state='claimed' and attempts=p_attempt and claimed_at>clock_timestamp()-interval '5 minutes'
+   and attempts=p_attempt and ((state='claimed' and p_prior_message_id is null
+     and claimed_at>clock_timestamp()-interval '5 minutes') or
+     (state='posted' and message_id=p_prior_message_id and p_measurement_as_of is not null))
   for update;
  if not found then return false;end if;
+ v_correction:=n.state='posted';
+ if v_correction and n.kind='toast_price_initial' then return true;end if;
  perform 1 from public.memberships m where m.business_id=n.business_id
   and m.user_id=n.owner_user_id and m.role='owner' for share;
  if not found then return false;end if;
@@ -319,13 +325,26 @@ begin
   or p_text is null or length(trim(p_text))=0 or length(p_text)>1200
   or p_timezone is null or p_confidence not in ('high','low')
  then raise exception 'invalid_observation_delivery' using errcode='22023';end if;
+ v_payload:=p_payload||jsonb_build_object('observationOnly',true,'priceHistoryId',h.id,
+    'threadId',p_thread_id,'ownerNoticeDate',n.local_date,'windowIndex',n.slot,
+    'measurementAsOf',p_measurement_as_of);
+ if v_correction then
+  select t.payload into v_previous from public.operating_tasks t
+   where t.business_id=n.business_id and t.id=p_task_id and t.owner_user_id=n.owner_user_id
+   for update;
+  if not found then return false;end if;
+  if (v_previous->>'measurementAsOf')::timestamptz>p_measurement_as_of then return false;end if;
+  if v_previous-'measurementAsOf'-'costEstimateAsOf' = v_payload-'measurementAsOf'-'costEstimateAsOf'
+   then return true;end if;
+  update public.operating_tasks set payload=v_payload,confidence=p_confidence,updated_at=clock_timestamp()
+   where business_id=n.business_id and id=p_task_id and owner_user_id=n.owner_user_id;
+ end if;
  insert into public.operating_tasks(
   business_id,id,agent_id,owner_user_id,kind,status,confidence,entity_type,entity_id,
   payload,evidence)
  values(n.business_id,p_task_id,'alex',n.owner_user_id,'priority_notice','watching',
   p_confidence,'menu_item',h.menu_item_id,
-  p_payload||jsonb_build_object('observationOnly',true,'priceHistoryId',h.id,
-    'threadId',p_thread_id,'ownerNoticeDate',n.local_date,'windowIndex',n.slot),
+  v_payload,
   jsonb_build_array(jsonb_build_object('source','menu_price_history','facts',
     jsonb_build_object('sourceId',h.id,'publicationVersion',h.toast_publication_version))))
  on conflict(business_id,id) do nothing;
@@ -347,12 +366,12 @@ begin
  update public.supervisor_experiment_notice_receipts set state='posted',
   posted_at=clock_timestamp(),task_id=p_task_id,message_id=p_message_id,
   updated_at=clock_timestamp()
-  where id=n.id and attempts=p_attempt and state='claimed';
+  where id=n.id and attempts=p_attempt and state=n.state;
  return found;
 end;$$;
-revoke all on function public.supervisor_8a_post_observation_notice(uuid,bigint,uuid,text,uuid,text,jsonb,text,text)
+revoke all on function public.supervisor_8a_post_observation_notice(uuid,bigint,uuid,text,uuid,text,jsonb,text,text,uuid,timestamptz)
  from public,anon,authenticated;
-grant execute on function public.supervisor_8a_post_observation_notice(uuid,bigint,uuid,text,uuid,text,jsonb,text,text)
+grant execute on function public.supervisor_8a_post_observation_notice(uuid,bigint,uuid,text,uuid,text,jsonb,text,text,uuid,timestamptz)
  to service_role;
 
 create or replace function public.supervisor_8a_guard_toast_manual_confirmation()
