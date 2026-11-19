@@ -85,7 +85,7 @@ async function refreshMusePrs(){
   return '<tr><td><a target="_blank" rel="noopener noreferrer" href="'+esc(p.url)+'">#'+esc(p.number)+'</a> '+esc(p.title)+'</td>'+
     '<td>'+esc(p.head_sha?.slice(0,8))+' · '+age(p.committed_at)+'</td>'+
     '<td>'+esc(p.ci)+(fresh?'':' (stale)')+'</td><td>'+esc(p.codex)+(fresh?'':' (stale)')+'</td>'+
-    '<td>'+(p.owner_request_read_incomplete?'<strong>Question scan incomplete — inspect earlier comments</strong>':'')+
+    '<td>'+(p.owner_request_read_incomplete!==false?'<strong>Question scan incomplete — inspect earlier comments</strong>':'')+
     (p.workflow_handoff?'<p>Coder report: '+esc(p.workflow_handoff.state)+' · '+esc(p.workflow_handoff.next)+
      (p.workflow_handoff.observed?' · Luna '+esc(p.workflow_handoff.observed)+' '+esc(p.workflow_handoff.conclusion||''):'')+
      '</p>':'')+(fresh?'':'<small>Stale: verify on PR before acting</small>')+'</td>'+
