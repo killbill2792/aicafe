@@ -15,6 +15,59 @@
 - `PROGRESS.md` keeps three short sections: **Now** (≤ 5), **Next**, **Done (last 10)**. Older history goes
   to `docs/history/`.
 
+## Mandatory Muse handoff
+
+**Every coding chat, every resumed turn, including drafts:** follow AGENTS.md rules 0a–0b.
+The existing PR body is the shared status record (not a new database/queue).
+Maintain ONE active human-readable status section and ONE machine-readable marker,
+editing only the record and preserving the scope, history and comment disposition.
+Before launching work, after every meaningful outcome, and before ending the turn,
+report the current full head SHA, what is actually happening, run/review link, last
+observed evidence and concrete next action. Never report that a pending run passed.
+
+Example of a pending workflow handoff (replace all placeholders with real values):
+
+```text
+<!-- aicafe-workflow-handoff {"id":"ci-actual-run-id","head":"FULL_CURRENT_40_HEX_SHA","state":"waiting_ci","run_url":"https://github.com/killbill2792/aicafe/actions/runs/ACTUAL_RUN_ID","next":"Read final required CI, fix failures, then continue eligible Codex review."} -->
+```
+
+States: `working`, `waiting_ci`, `waiting_codex`, `waiting_luna`, `blocked_external`.
+Use a distinct ID for each genuine workflow attempt/handoff, stable across reads of
+the same wait. `run_url` is the same-repository Actions run URL or null where no
+run exists (Codex uses its actual exact-head PR receipt). For Luna include the
+actual shared run ID/URL; a manual/owner-comment workflow can run on trusted main
+so ordinary PR CI cannot establish its outcome. If Luna run ID is not yet available,
+report that precisely as an external blocker with the owner's grant comment link
+in the human-readable status; Muse should look up the matching shared run using
+the existing connector before changing the record. Do not launch a second paid run.
+`next` is a short report of the safe next action, not permission or executable instructions.
+
+When an owner decision is actually required, put ONE existing marker in the PR body
+and add `needs-owner-decision`. Example:
+
+```text
+<!-- aicafe-owner-question Luna test authorization: Task 14C; exact head FULL_SHA, scenario 14c, maximum $0.20. Recommend one shared run; no provider spend until you approve. Post /aicafe-luna pr FULL_SHA 14c 0.20 on this PR. -->
+```
+
+The real SHA/scenario/budget must match the actual request and shared runner contract.
+For architecture or merge-only authorization describe exactly what is being approved,
+why needed, recommendation and consequences. Do NOT ask the owner to fix ordinary
+CI/Codex failures. Muse reads the exact PR marker and can relay the request even
+without any saved chat URL. A request is not approval; only actual owner decisions
+under existing gates authorize consequential actions. No secret/personal data in PR text.
+Once verified, remove the active question marker and label and preserve the original
+decision/evidence in Comment disposition; update the workflow handoff. Muse then resumes
+the same saved chat. For an actual workflow terminal result the coding chat must
+verify full evidence and continue, never substitute a status suggestion for acceptance.
+
+**Foreground rule:** after a push or CI/Codex/Luna launch, monitor the actual check
+in the same execution session; check around every 20–30 seconds, remain for at least
+60 seconds while pending where execution permits, and handle terminal results immediately.
+Keep working while possible. If a genuine execution/tool limit forces a return,
+publish the current handoff and exact next action first. No new background scheduler,
+no unbounded execution claim, and no duplicate review or paid run merely to get status.
+Muse's existing timer is the fallback, not a substitute for this duty.
+
 ## 11. Review rules
 - Block any PR that: adds a reviewer LLM, persona agents or a keyword/intent router; uses `strict:false`
   tool schemas or JSON-envelope answers; rewrites model text outside the exceptions in section 6; adds a
