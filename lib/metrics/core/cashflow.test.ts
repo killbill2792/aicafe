@@ -114,3 +114,24 @@ it("estimates only conditional dated cash exposure and never adds overlapping so
  expect(projected[1]).toMatchObject({sourceClass:"dated_bill_claims",conditionalRemainingCents:800});
  expect(projected[0].assumptions).toContain("account and payment coverage unknown");
 });
+
+it("prioritizes an actionable standalone invoice over twenty covered earlier claims and pages the rest",()=>{
+ const covered=Array.from({length:20},(_,i)=>({...a,id:"covered-"+String(i).padStart(2,"0"),
+  invoice_reference:"covered-"+i,due_on:"2026-11-02",purchase_order_id:null}));
+ const open={...a,id:"actionable",invoice_reference:"open-later",due_on:"2026-11-20",purchase_order_id:null};
+ const rows=[...covered,open];
+ const events=covered.map((r,i)=>({id:"event-"+i,financial_invoice_id:r.id,
+  financial_kind:"settlement_evidence_linked" as const,financial_allocation_cents:10000,
+  financial_reverses_id:null,source_revision:1,financial_tx_date:"2026-11-02",
+  financial_upload_id:"statement",financial_row_index:i}));
+ const first=summarizeInvoiceClaims(rows,asOf,false,events);
+ expect(first.claims[0]).toMatchObject({invoiceId:"actionable",paymentStatus:"unknown",purchaseOrderId:null});
+ expect(first.claimNextOffset).toBe(20);
+ const next=summarizeInvoiceClaims(rows,asOf,false,events,first.claimNextOffset!);
+ expect(next.claims).toHaveLength(1);expect(next.claims[0].paymentStatus).toBe("documented_covered");
+ expect(next.claimNextOffset).toBeNull();
+ expect(new Set([...first.claims,...next.claims].map(c=>c.invoiceId)).size).toBe(21);
+ expect(next.recordedClaimTotalsByCurrency).toEqual(first.recordedClaimTotalsByCurrency);
+ expect(next.documentedSettlementLinks[0].invoiceId).toBe(next.claims[0].invoiceId);
+ expect(next.claimDetailsTruncated).toBe(true);
+});

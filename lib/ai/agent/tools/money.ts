@@ -206,10 +206,10 @@ export const moneyTools={
     },
   },
   get_cashflow_evidence:{
-    agentId:"leo",schema:z.strictObject({statementUploadId:z.uuid().nullable().optional(),rowOffset:z.number().int().nonnegative().max(10000).nullable().optional(),horizonDays:z.number().int().min(1).max(90).nullable().optional()}),
-    description:"Dated cash, invoice and bill claims, settlement allocations, recurring dates, conditional separate stress tests (horizonDays 1–90). Optional statementUploadId for source rows; rowOffset pages. Not live cash/unpaid debt.",
+    agentId:"leo",schema:z.strictObject({statementUploadId:z.uuid().nullable().optional(),rowOffset:z.number().int().nonnegative().max(10000).nullable().optional(),horizonDays:z.number().int().min(1).max(90).nullable().optional(),invoiceOffset:z.number().int().nonnegative().max(500).nullable().optional(),invoiceReference:z.string().trim().min(1).max(160).nullable().optional()}),
+    description:"Dated cash, claims, allocations, recurring dates, conditional stress (horizonDays 1–90). statementUploadId/rowOffset for rows; exact invoiceReference or invoiceOffset=claimNextOffset for claims. Not live cash/unpaid debt.",
     execute:async(raw:unknown,ctx:AgentToolContext):Promise<AgentToolResult>=>{
-      const selection=z.strictObject({statementUploadId:z.uuid().nullable().optional(),rowOffset:z.number().int().nonnegative().max(10000).nullable().optional(),horizonDays:z.number().int().min(1).max(90).nullable().optional()}).parse(raw);
+      const selection=z.strictObject({statementUploadId:z.uuid().nullable().optional(),rowOffset:z.number().int().nonnegative().max(10000).nullable().optional(),horizonDays:z.number().int().min(1).max(90).nullable().optional(),invoiceOffset:z.number().int().nonnegative().max(500).nullable().optional(),invoiceReference:z.string().trim().min(1).max(160).nullable().optional()}).parse(raw);
       const base={source:"cashflow_evidence",period:null,agentId:"leo" as const,
         asOf:ctx.timezone?ctx.asOf:null,currency:ctx.currency??null,
         availableCashCents:null,outstandingPaymentCents:null,settledPaymentCents:null,

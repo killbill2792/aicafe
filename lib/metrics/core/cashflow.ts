@@ -29,13 +29,14 @@ export type SettlementEvidenceRow={
  financial_tx_date:string;financial_upload_id:string;financial_row_index:number|string;
 };
 export function summarizeInvoiceClaims(rows:readonly InvoiceClaimRow[],asOf:string,truncated:boolean,
- settlements:readonly SettlementEvidenceRow[]|null=null){
+ settlements:readonly SettlementEvidenceRow[]|null=null,claimOffset=0){
  const unavailable=(reason:string)=>({coverage:"incomplete" as const,missing:[reason],
-   recordedClaimCount:null,claims:[] as Claim[],claimDetailsTruncated:false,documentedSettlementLinks:[] as {eventId:string;invoiceId:string;uploadId:string;rowIndex:number|null;transactionDate:string;linkedCents:number;documentedRemainingCents:number}[],
+   recordedClaimCount:null,claims:[] as Claim[],claimDetailsTruncated:false,claimNextOffset:null as number|null,documentedSettlementLinks:[] as {eventId:string;invoiceId:string;uploadId:string;rowIndex:number|null;transactionDate:string;linkedCents:number;documentedRemainingCents:number}[],
    recordedClaimTotalsByCurrency:[] as {currency:string;recordedClaimCents:number}[],
    outstandingPaymentCents:null,settledPaymentCents:null});
  if(truncated)return unavailable("supplier_invoice_history_truncated");
  if(!validDate(asOf))return unavailable("cafe_date_unavailable");
+ if(!Number.isSafeInteger(claimOffset)||claimOffset<0)return unavailable("supplier_invoice_offset_invalid");
  const latest=new Map<string,Claim>();
  for(const row of rows){
   const revision=exactInteger(row.revision),total=exactInteger(row.total_cents);
@@ -97,7 +98,16 @@ export function summarizeInvoiceClaims(rows:readonly InvoiceClaimRow[],asOf:stri
   claim.uncoveredRecordedClaimCents=claim.recordedClaimCents-allocated;
   claim.paymentStatus=allocated===0?"unknown":allocated===claim.recordedClaimCents?"documented_covered":"documented_partial";
  }
- const linkDetails=settlementValid?[...links.entries()].filter(([,v])=>v.amount>v.reversed).slice(0,20).map(([eventId,v])=>({
+ // Put unresolved/current work before settled history, then use the stable
+ // due-date/ID order. Select the page after computing payment evidence.
+ all.sort((a,b)=>Number(a.paymentStatus==="documented_covered")-Number(b.paymentStatus==="documented_covered")||
+  (a.dueOn??"").localeCompare(b.dueOn??"")||a.invoiceId.localeCompare(b.invoiceId));
+ const page=all.slice(claimOffset,claimOffset+20);
+ const pageIdentities=new Set(page.map(c=>JSON.stringify([c.supplierId,c.invoiceReference])));
+ const linkDetails=settlementValid?[...links.entries()].filter(([,v])=>{
+  const row=rowById.get(v.row.financial_invoice_id);
+  return v.amount>v.reversed&&row&&pageIdentities.has(JSON.stringify([row.supplier_id,row.invoice_reference]));
+ }).sort(([a],[b])=>a.localeCompare(b)).slice(0,20).map(([eventId,v])=>({
   eventId,invoiceId:v.row.financial_invoice_id,uploadId:v.row.financial_upload_id,
   rowIndex:exactInteger(v.row.financial_row_index),transactionDate:v.row.financial_tx_date,
   linkedCents:v.amount,documentedRemainingCents:v.amount-v.reversed})):[];
@@ -107,7 +117,8 @@ export function summarizeInvoiceClaims(rows:readonly InvoiceClaimRow[],asOf:stri
   totals.set(claim.currency,total);
  }
  return {coverage:"recorded_claims_only" as const,missing:[...new Set([...settlementMissing,"allObligationsCoverageUnknown","unrecordedPaymentCoverageUnknown",...(settlementValid?[]:["settlementEvidenceMissing"])])],documentedSettlementLinks:linkDetails,
-   recordedClaimCount:all.length,claims:all.slice(0,20),claimDetailsTruncated:all.length>20,
+   recordedClaimCount:all.length,claims:page,claimDetailsTruncated:page.length<all.length,
+   claimNextOffset:claimOffset+20<all.length?claimOffset+20:null,
    recordedClaimTotalsByCurrency:[...totals].sort(([a],[b])=>a.localeCompare(b))
       .map(([currency,recordedClaimCents])=>({currency,recordedClaimCents})),
    outstandingPaymentCents:null,settledPaymentCents:null};
