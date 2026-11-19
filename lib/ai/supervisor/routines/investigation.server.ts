@@ -243,7 +243,7 @@ export async function processNextInvestigation(db:SupabaseClient,now:Date,
     const maintenanceScope={businessId:c.business_id,ownerUserId:c.owner_user_id,
       threadId:c.thread_id,locale:"en" as const,verifiedReadClient:db};
     const maintenanceLease={caseId:c.source_id,token:c.lease_token,revisionHash:c.revision_hash};
-    const vendorPoll=synopsis.kind==="maintenance_issue"&&c.phase==="awaiting_owner"?
+    const vendorPoll=synopsis.kind==="maintenance_issue"?
       await pollMaintenanceVendorReplies(db,maintenanceScope,maintenanceLease):{added:0,missing:[]};
     const checkpoint=previousCheckpoint(c);
     if(!checkpoint)throw new Error("evidence_incomplete");

@@ -353,7 +353,7 @@ begin
    select 1 from public.supervisor_investigations i
     where i.business_id=p_business_id and i.owner_user_id=p_owner_user_id and i.thread_id=p_thread_id
       and i.source_type='operating_task' and i.source_id=p_task_id and i.lease_token=p_lease_token
-      and i.lease_until>statement_timestamp() and i.phase='awaiting_owner'
+      and i.lease_until>statement_timestamp() and i.phase in ('investigate','awaiting_owner')
  ) then raise exception 'Maintenance worker not authorized' using errcode='42501';end if;
  if p_message_id is null or p_message_id !~ '^[a-zA-Z0-9_-]{8,100}$' or
    p_received_at is null or p_received_at>statement_timestamp()+interval '5 minutes' or
