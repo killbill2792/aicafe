@@ -12,7 +12,7 @@ async function main(){
  const env=process.env;
  assertLocalLiveEnvironment(env);verifyCheckoutHead(env.HEAD_SHA);
  ensure(env.AICAFE_SHARED_LUNA==="1"&&env.AICAFE_SHARED_LUNA_SCENARIO==="17d"&&
-    env.AICAFE_SHARED_LUNA_CANDIDATE==="1","trusted_shared_runner_required");
+    env.AICAFE_SHARED_LUNA_CANDIDATE==="1"&&env.AICAFE_SHARED_LUNA_HEAD===env.HEAD_SHA,"trusted_shared_runner_required");
  const args=process.argv.slice(2);
  ensure(args.length===4&&args[0]==="--output"&&args[2]==="--scope-output","fresh_outputs_required");
  const outputs=[resolve(args[1]),resolve(args[3])],root=realpathSync(process.cwd());

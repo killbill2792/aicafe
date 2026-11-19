@@ -77,9 +77,6 @@
         },
         "id": {
           "scope": "attachmentId"
-        },
-        "original_name": {
-          "eq": "owner-evidence.csv"
         }
       },
       "minCount": 1,
