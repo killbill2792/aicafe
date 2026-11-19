@@ -382,7 +382,9 @@ it("customer investigations require an actual scoped aggregate and an independen
   selectors:{family:"customer_trend",subject:"returning_visit_share",from:"2026-11-12",to:"2026-11-18"}}};
  const customer={name:"query_data",result:{source:"canonical_data",view:"cv_customer_visits",
   aggregateOnly:true,customerEvidence:true,period:{from:"2026-11-12",to:"2026-11-18"},
-  missing:[],rows:[{sum_returning_visit:20,count_source_ref:80}],empty:false,truncated:false}};
+  missing:[],rows:[{sum_returning_visit:20,count_source_ref:80}],empty:false,truncated:false,
+  customerCoverage:{scope:"all_eligible_checks_in_period",eligibleChecks:90,linkedChecks:80,namedChecks:80,
+    expectedLocationDays:7,completeLocationDays:7,complete:true}}};
  const schema={name:"describe_data",result:{source:"toast_fields",period:null,missing:[],retainedFields:30,fields:[{field:"data.customer.guid"}]}};
  const verify=(...calls:unknown[])=>verifyInvestigationTurn(turn({toolInvocations:[src,...calls]}),target);
  expect(verify(customer,labor).ok).toBe(true);
@@ -396,6 +398,22 @@ it("customer investigations require an actual scoped aggregate and an independen
   expect(verify(customer,{...event,result:{...event.result,events:[{...event.result.events[0],...change}]}}).ok).toBe(false);
  }
  expect(verify(customer,{...event,result:{...event.result,events:[],cityEventTotal:20}}).ok).toBe(false);
+ // An event in the incident window but outside the actual query window
+ // cannot be counted as observed evidence from that query.
+ expect(verify(customer,{...event,result:{...event.result,period:{from:"2026-11-16",to:"2026-11-18"}}}).ok).toBe(false);
+ expect(verify(customer,{...event,result:{...event.result,missing:["source_read_failed"]}}).ok).toBe(false);
+ expect(verify({...customer,result:{...customer.result,period:{from:"2026-11-18",to:"2026-11-18"}}},labor).ok).toBe(false);
+ expect(verify({...customer,result:{...customer.result,customerCoverage:{...customer.result.customerCoverage,complete:false}}},labor).ok).toBe(false);
+ const gap={...src,result:{...src.result,selectors:{family:"data_gap",subject:"customer_identity_coverage",from:"",to:""}}};
+ const verifyGap=(call:unknown)=>verifyInvestigationTurn(turn({toolInvocations:[gap,call,labor]}),target);
+ const noOrders={...customer,result:{...customer.result,view:"cv_toast_records",empty:true,rows:[],missing:["empty"],
+  customerCoverage:{...customer.result.customerCoverage,eligibleChecks:0,linkedChecks:0,namedChecks:0,
+   expectedLocationDays:7,completeLocationDays:2,complete:false}}};
+ expect(verifyGap(noOrders).ok).toBe(true);
+ expect(verifyGap({...noOrders,result:{...noOrders.result,customerCoverage:{...noOrders.result.customerCoverage,complete:true,completeLocationDays:7}}}).ok).toBe(false);
+ expect(verifyGap({...noOrders,result:{...noOrders.result,customerCoverage:{...noOrders.result.customerCoverage,expectedLocationDays:0,completeLocationDays:0}}}).ok).toBe(false);
+ expect(verifyGap({...noOrders,result:{...noOrders.result,error:"source_read_failed"}}).ok).toBe(false);
+ expect(verifyGap(customer).ok).toBe(false);
  expect(verify(customer,sales).ok).toBe(false);
  expect(verify(schema,labor).ok).toBe(false);
  expect(verify({...customer,result:{...customer.result,rows:[],rowCount:0}},labor).ok).toBe(false);
