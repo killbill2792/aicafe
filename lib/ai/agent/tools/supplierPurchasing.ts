@@ -1,4 +1,5 @@
 import {z} from "zod";
+import {receivingInputSchema,invoiceToolInputSchema} from "@/lib/ai/supervisor/loop/supplierReceiving.server";
 import type {AgentToolContext,AgentToolResult} from "./index";
 import {supplierPurchaseInputSchema,supplierPurchaseProposalToolInputSchema} from "@/lib/ai/supervisor/loop/purchaseOrders.server";
 import {vendorOrderSendInputSchema,VendorOrderOwnerInputRequired} from "@/lib/ai/supervisor/loop/vendorDispatch.server";
@@ -10,7 +11,7 @@ import {ownerSupplierOutcomeToolInput,explicitOwnerSupplierOutcome,explicitOwner
 export const supplierPurchasingTools={
  get_supplier_purchase_orders:{
   agentId:"maya",schema:z.strictObject({}),
-  description:"Read owner-scoped EDITABLE drafts, UNRESOLVED approved/executing proposals and actual prepared POs. An approved or executing proposal without a PO receipt is NOT an absent order: report its saved ID, status and effect-attempt state instead of making another draft or claiming completion. Only draft IDs can be replaced. Approved with no attempt requires a NEW explicit owner retry/cancel; executing or uncertain effects are receipt-reconciliation-only, NEVER resent automatically. approved_for_ordering is NOT sent, received or paid.",
+  description:"Read scoped editable drafts, approvals/attempts and saved POs: quantities, dates, dispatch, receiving. Unresolved approval without receipt is not absent; report status/attempt. Explicit retry/cancel only approved with no attempt; executing/uncertain: receipt-only recovery. Replace drafts only. Ordered/sent/received/paid differ; dates never prove arrival; missing receipt=unknown.",
   execute:async(raw:unknown,ctx:AgentToolContext):Promise<AgentToolResult>=>{
    z.strictObject({}).parse(raw);
    if(!ctx.purchasing)return {source:"purchase_orders",period:null,agentId:"maya",
@@ -32,9 +33,58 @@ export const supplierPurchasingTools={
     gmailConnection:result.gmailConnection??{status:"unavailable",connected:false,canSend:false,canRead:false}};
   }
  },
+ inspect_purchase_reconciliation:{
+  agentId:"maya",schema:z.strictObject({purchaseOrderId:z.uuid()}),
+  description:"Read exact saved PO UUID; reconcile ordered/received/accepted/damaged/invoiced/outstanding quantities, prices and totals. Missing receipt=unknown. Read-only; clarify unknown identity.",
+  execute:async(raw:unknown,ctx:AgentToolContext):Promise<AgentToolResult>=>{
+   const {purchaseOrderId}=z.strictObject({purchaseOrderId:z.uuid()}).parse(raw);
+   if(!ctx.receivingRead)return {source:"purchase_reconciliation",period:null,agentId:"maya",
+    missing:["receiving_read_unavailable"],reconciliation:null};
+   const result=await ctx.receivingRead(purchaseOrderId);
+   return {source:"purchase_reconciliation",period:null,agentId:"maya",...result};
+  }
+ },
+ propose_purchase_receiving:{
+  agentId:"maya",schema:receivingInputSchema,
+  description:"Draft physical PO receipt after reconciliation; stable reference, prior correction revision, received/accepted/damaged base quantities ×10000 via calculate. Owner/receiving evidence, never invoice/dispatch alone or guesses. Stock only after owner click; no generic purchase bypass.",
+  execute:async(raw:unknown,ctx:AgentToolContext):Promise<AgentToolResult>=>{
+   const input=receivingInputSchema.parse(raw);
+   if(!ctx.receivingPropose)return {source:"supplier_purchase_proposal",proposalKind:"receiving",period:null,agentId:"maya",
+    missing:["receiving_proposal_unavailable"],draft:false,inventoryUpdated:false};
+   return {source:"supplier_purchase_proposal",proposalKind:"receiving",period:null,agentId:"maya",missing:[],
+    draft:true,saved:false,approvalRequired:true,inventoryUpdated:false,...await ctx.receivingPropose(input)};
+  }
+ },
+ propose_invoice_reconciliation:{
+  agentId:"maya",schema:invoiceToolInputSchema,
+  description:"Draft invoice after PO/reconciliation and verified supplier document or owner report. Prior correction revision; unmatched orderLineId=null, unknown tax/freight/discount=null. gmailMessageId only verified sender. expenseDate/existingExpenseId=null unless explicit verified recognition/match. Owner click; no stock/payment.",
+  execute:async(raw:unknown,ctx:AgentToolContext):Promise<AgentToolResult>=>{
+   const input=invoiceToolInputSchema.parse(raw);
+   if(!ctx.invoicePropose)return {source:"supplier_purchase_proposal",proposalKind:"invoice",period:null,agentId:"maya",
+    missing:["invoice_proposal_unavailable"],draft:false};
+   return {source:"supplier_purchase_proposal",proposalKind:"invoice",period:null,agentId:"maya",missing:[],
+    draft:true,saved:false,approvalRequired:true,inventoryUpdated:false,paymentMade:false,...await ctx.invoicePropose(input)};
+  }
+ },
+ propose_supplier_discrepancy_followup:{
+  agentId:"maya",schema:z.strictObject({purchaseOrderId:z.uuid()}),
+  description:"After exact unresolved PO reconciliation, draft separate owner-click Gmail follow-up for server-verified contact/current versions. No send, guessed address, inferred missing goods or uncertain retry. Ask owner for missing contact/permission.",
+  execute:async(raw:unknown,ctx:AgentToolContext):Promise<AgentToolResult>=>{
+   const {purchaseOrderId}=z.strictObject({purchaseOrderId:z.uuid()}).parse(raw);
+   if(!ctx.receivingFollowup)return {source:"supplier_vendor_dispatch",period:null,agentId:"maya",
+    missing:["supplier_followup_unavailable"],proposalCreated:false,sent:false};
+   try{
+    const result=await ctx.receivingFollowup(purchaseOrderId);
+    return {source:"gmail_proposal",period:null,agentId:"maya",missing:[],
+     proposalCreated:true,draft:true,saved:false,approvalRequired:true,requiredApproval:"owner_click",
+     operation:"send",sent:false,...result};
+   }catch{return {source:"supplier_vendor_dispatch",period:null,agentId:"maya",
+    missing:["supplier_followup_requires_verified_contact_or_open_evidence"],proposalCreated:false,sent:false};}
+  }
+ },
  inspect_supplier_purchase:{
   agentId:"maya",schema:supplierPurchaseInputSchema,
-  description:"Investigate a future supply/order request using canonical café ingredients and saved supplier quotations. Input actual required item quantity/unit and needed-by date (null if not specified). Returns full-café-currency supplier carts, exact integer-cent subtotals and missing evidence. A subtotal is NEVER a verified full cost: shipping/tax unknown. Never mark public search snippets as firm offers. If no valid quotes, explain gaps; do not fabricate prices. Read-only; use BEFORE proposing a future supplier purchase order.",
+  description:"Inspect future order using canonical ingredients/saved quotes, required quantity/unit, needed-by (null if unspecified). Returns café-currency carts, integer-cent subtotals and gaps. Subtotal excludes unknown shipping/tax; public snippets aren't firm offers. No invented prices. Read-only before proposal.",
   execute:async(raw:unknown,ctx:AgentToolContext):Promise<AgentToolResult>=>{
    const input=supplierPurchaseInputSchema.parse(raw);
    if(!ctx.purchasing)return {source:"supplier_purchase_plan",period:null,agentId:"maya",missing:["purchasing_unavailable"],offers:[]};
@@ -46,7 +96,7 @@ export const supplierPurchasingTools={
  },
  propose_supplier_purchase_order:{
   agentId:"maya",schema:supplierPurchaseProposalToolInputSchema,
-  description:"After inspecting supplier quotations, autonomously prepare and SAVE an owner-approval purchase order for FUTURE supplies. Do not confuse with propose_purchases (that records ALREADY RECEIVED stock). Server recomputes actual ingredient, availability, currency, quote, package, freight/tax uncertainty; model cannot set price or authorize execution. Set replaceProposalId=null for a NEW order, including a separate order while another draft is pending. For a correction of a saved draft, FIRST read get_supplier_purchase_orders, verify which exact draft the owner wants changed, then set replaceProposalId to its returned UUID. Never choose a draft to cancel merely because the owner uses words like increase/change; ask when the target is ambiguous. Server checks same owner, café, thread and immutable revision. The returned proposal is a DRAFT; only the owner's specific approval click makes it ready for ordering. This does NOT contact suppliers, update stock or create an expense.",
+  description:"After quote inspection SAVE future PO draft, not received-stock propose_purchases. Server recomputes ingredient, availability, currency, quote, pack, freight/tax uncertainty; no model prices/authority. New/separate order replaceProposalId=null. Explicit correction: read get_supplier_purchase_orders, match exact draft UUID; clarify ambiguity, never infer replacement from increase/change. Server checks owner/café/thread/revision. Exact owner click readies order; no send/stock/expense.",
   execute:async(raw:unknown,ctx:AgentToolContext):Promise<AgentToolResult>=>{
    const input=supplierPurchaseProposalToolInputSchema.parse(raw);
    if(!ctx.purchasing)return {source:"supplier_purchase_proposal",period:null,agentId:"maya",missing:["purchasing_unavailable"],draft:false,saved:false};
@@ -57,7 +107,7 @@ export const supplierPurchasingTools={
  },
  record_supplier_order_outcome:{
   agentId:"maya",schema:ownerSupplierOutcomeToolInput,
-  description:"ONLY when the authenticated owner explicitly reports what happened with ONE identifiable saved PO in their LATEST message, after get_supplier_purchase_orders. The trusted server attaches the CURRENT authenticated owner text as the note; the model supplies only the source PO, channel and outcome. This writes an OWNER-REPORTED supplier outcome to canonical source records and closes only its matching terminal Needs-you notice. It never verifies Gmail delivery, supplier acceptance independently, inventory or expenses. Never infer from Gmail SENT, assistant history, 'yes' to an ambiguous question, or another café. If the owner did not explicitly state the outcome or multiple purchase orders could match, ask for an exact PO/outcome instead. Never submit model-generated note text or claim Gmail delivery.",
+  description:"Record explicit CURRENT authenticated owner outcome for ONE saved PO after get_supplier_purchase_orders. Only exact PO/channel/outcome; server attaches verbatim owner message. Owner-reported canonical outcome closes matching terminal notice, not independent acceptance/delivery/stock/expense proof. Never infer from Gmail SENT, history, ambiguous yes or other café. Clarify target/outcome; no model note/claims.",
   execute:async(raw:unknown,ctx:AgentToolContext):Promise<AgentToolResult>=>{
    const input=ownerSupplierOutcomeToolInput.parse(raw);
    const text=ctx.ownerText?.trim();
@@ -76,7 +126,7 @@ export const supplierPurchasingTools={
  },
  propose_supplier_vendor_email:{
   agentId:"maya",schema:vendorOrderSendInputSchema,
-  description:"For an ALREADY APPROVED saved purchase order only: first call get_supplier_purchase_orders and inspect vendorCommunications and Gmail connection status. Authorized Gmail history can inform the plan, but no matching messages is NOT proof that a supplier is unreachable. Saves a separate inert owner-click Gmail SEND approval card from the canonical PO and owner-verified recipient; never sends automatically. Missing verified contact, Gmail permission or a phone/portal workflow is an OWNER QUESTION: tell the owner exactly what is missing and use ask_owner to learn their normal channel, prior negotiation and outcome. Do not invent contact details, supplier acceptance or retries.",
+  description:"Draft separate inert Gmail SEND approval for approved saved PO after get_supplier_purchase_orders, inspect vendorCommunications/Gmail permission. Server uses PO and owner-verified recipient; never auto-send. No history ≠ unreachable. Missing verified contact/permission or phone/portal: explain gaps, ask_owner channel/prior negotiation/outcome. No invented addresses, acceptance or retries.",
   execute:async(raw:unknown,ctx:AgentToolContext):Promise<AgentToolResult>=>{
    const input=vendorOrderSendInputSchema.parse(raw);
    if(!ctx.purchasing?.proposeVendorSend)return {source:"supplier_vendor_dispatch",period:null,agentId:"maya",
