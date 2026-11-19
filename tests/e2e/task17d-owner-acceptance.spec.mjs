@@ -85,7 +85,8 @@ for(const width of [390,1440]) {
         await expect(p.getByText("Effect verified",{exact:true})).toHaveCount(0);
       }
       expect(await query("select id,status from public.supervisor_runs where business_id=$1 and request_key=$2",[cafe.businessId,request])).toEqual([{id:run,status:"blocked"}]);
-      expect(await query("select status,error_code,attempts from public.supervisor_run_steps where business_id=$1 and run_id=$2",[cafe.businessId,run])).toEqual([{status:"blocked",error_code:"lease_expired",attempts:0}]);
+      const steps=await query("select status,error_code,attempts from public.supervisor_run_steps where business_id=$1 and run_id=$2",[cafe.businessId,run]);
+      expect(steps.map(s=>({...s,attempts:Number(s.attempts)}))).toEqual([{status:"blocked",error_code:"lease_expired",attempts:0}]);
       expect(await query("select id from public.supervisor_proposals where business_id=$1 and thread_id=$2",[cafe.businessId,t.id])).toEqual([]);
     });
   });
