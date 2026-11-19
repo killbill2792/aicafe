@@ -418,7 +418,7 @@ create function public.supervisor_8a_post_observation_notice(
  p_worker_token uuid default null
 ) returns boolean language plpgsql security invoker set search_path='' as $$
 declare n public.supervisor_experiment_notice_receipts; h public.menu_price_history;
- v_payload jsonb;v_previous jsonb;v_correction boolean;
+ v_payload jsonb;v_previous jsonb;v_correction boolean;v_task_id text;
 begin
  if auth.role() is distinct from 'service_role' then
   raise exception 'service_role_only' using errcode='42501';end if;
@@ -459,16 +459,21 @@ begin
  v_payload:=p_payload||jsonb_build_object('observationOnly',true,'priceHistoryId',h.id,
     'threadId',p_thread_id,'ownerNoticeDate',n.local_date,'windowIndex',n.slot,
     'measurementAsOf',p_measurement_as_of);
+ v_task_id:=p_task_id;
  if v_correction then
   select t.payload into v_previous from public.operating_tasks t
-   where t.business_id=n.business_id and t.id=p_task_id and t.owner_user_id=n.owner_user_id
+   where t.business_id=n.business_id and t.id=n.task_id and t.owner_user_id=n.owner_user_id
    for update;
   if not found then return false;end if;
   if (v_previous->>'measurementAsOf')::timestamptz>p_measurement_as_of then return false;end if;
   if v_previous-'measurementAsOf'-'costEstimateAsOf'-'threadId' = v_payload-'measurementAsOf'-'costEstimateAsOf'-'threadId'
    then return true;end if;
-  update public.operating_tasks set payload=v_payload,confidence=p_confidence,updated_at=clock_timestamp()
-   where business_id=n.business_id and id=p_task_id and owner_user_id=n.owner_user_id;
+  -- Priority notices intentionally have immutable content. Preserve the old
+  -- evidence and close it through its permitted needs_owner -> handled path.
+  -- The same logical receipt points at the latest immutable revision.
+  update public.operating_tasks set status='handled',updated_at=clock_timestamp()
+   where business_id=n.business_id and id=n.task_id and owner_user_id=n.owner_user_id and status='needs_owner';
+  v_task_id:=p_task_id||':correction:'||p_message_id::text;
  end if;
  insert into public.operating_tasks(
   business_id,id,agent_id,owner_user_id,kind,status,confidence,entity_type,entity_id,
@@ -485,17 +490,17 @@ begin
   jsonb_build_array(jsonb_build_object('type','text','text',p_text)),
   jsonb_build_object('status',case when p_confidence='high' then 'estimated' else 'insufficient_evidence' end,
    'intent','menu_pricing','evidence',jsonb_build_array(jsonb_build_object(
-    'source','operating_tasks','identifier',p_task_id,'asOf',n.local_date))))
+    'source','operating_tasks','identifier',v_task_id,'asOf',n.local_date))))
  on conflict(id) do nothing;
  if not exists(select 1 from public.operating_tasks t where t.business_id=n.business_id
-   and t.id=p_task_id and t.owner_user_id=n.owner_user_id
+   and t.id=v_task_id and t.owner_user_id=n.owner_user_id
    and t.payload->>'priceHistoryId'=n.source_id::text)
   or not exists(select 1 from public.ai_messages m where m.id=p_message_id
    and m.business_id=n.business_id and m.owner_user_id=n.owner_user_id
    and m.thread_id=p_thread_id and m.role='supervisor')
  then raise exception 'observation_notice_delivery_identity_conflict' using errcode='23514';end if;
  update public.supervisor_experiment_notice_receipts set state='posted',
-  posted_at=clock_timestamp(),task_id=p_task_id,message_id=p_message_id,
+  posted_at=clock_timestamp(),task_id=v_task_id,message_id=p_message_id,
   updated_at=clock_timestamp()
   where id=n.id and attempts=p_attempt and state=n.state;
  return found;
