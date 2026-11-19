@@ -7,7 +7,8 @@
   "scope": "pos0ef-customer-trends-scope.json",
   "expectedTools": [
     "query_data",
-    "get_investigation_source"
+    "get_investigation_source",
+    "describe_data"
   ],
   "assertions": [
     {
