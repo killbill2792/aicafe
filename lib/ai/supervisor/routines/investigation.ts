@@ -14,6 +14,7 @@ export const investigationReadTools=[
 ] as const satisfies readonly AgentToolName[];
 /** The only system-triggered write permitted here is an inert approval
  * draft. The existing owner-click gateway is still the only effect authority. */
+export const customerInvestigationTools=[...investigationReadTools,"get_events"] as const satisfies readonly AgentToolName[];
 export const supplierResearchInvestigationTools=[...investigationReadTools,"web_search"] as const satisfies readonly AgentToolName[];
 export const maintenanceInvestigationTools=[...investigationReadTools,
   "get_maintenance_staff_candidates","propose_maintenance_staff_assignment","record_maintenance_repair_claim",
@@ -61,7 +62,7 @@ const canonicalEvidenceDomain:Partial<Record<AgentToolName,string>>={
   inspect_purchase_reconciliation:"receiving_and_invoice_source",
   get_ingredient_costs:"ingredient_prices",get_product_costs:"recipe_costs",
   get_menu_items:"menu_catalog",get_price_monitor_status:"price_monitor",
-  get_profit:"profitability",
+  get_profit:"profitability",get_events:"verified_saved_local_events",
 };
 /** Read-only tool names and source labels do NOT establish evidence. Readers
  * frequently return a valid source name with only missing/error reasons. A
@@ -97,6 +98,13 @@ function hasObservedEvidence(result:AgentToolResult):boolean{
       /^(count|count_distinct|sum|avg|min|max)_/.test(key)&&
       (typeof v==="number"&&Number.isFinite(v)||typeof v==="string"&&v.trim()!==""&&Number.isFinite(Number(v)))));
   }
+  if(result.source==="cafe_events")return Array.isArray(result.events)&&result.events.some(event=>{
+    if(!event||typeof event!=="object")return false;
+    return event.status==="found"&&typeof event.lastVerifiedAt==="string"&&Number.isFinite(Date.parse(event.lastVerifiedAt))&&
+      typeof event.startDate==="string"&&typeof event.endDate==="string"&&!!result.period&&
+      event.startDate<=result.period.to&&event.endDate>=result.period.from&&
+      (!event.verificationFailedAt||Date.parse(event.verificationFailedAt)<=Date.parse(event.lastVerifiedAt));
+  });
   if(result.source==="cashflow_evidence")return (Array.isArray(result.documentedAccountBalances)&&result.documentedAccountBalances.length>0)||
     (typeof result.recordedClaimCount==="number"&&result.recordedClaimCount>0)||
     (typeof result.billClaimCount==="number"&&result.billClaimCount>0);
@@ -236,7 +244,7 @@ export function investigationPrompt(source:SourceSynopsis,followUp:boolean,
     "for incident-specific evidence. For this incident, relevant tools include: " +
     relevantInvestigationTools(source.kind).join(", ")+". " +
     (["money_update","missing_bill"].includes(source.kind)?"Finance: check actual available statement/invoice evidence plus independent recorded bills, expenses, sales or labor. If integrations are absent, use surviving facts and explicit uncertainty. Separate dated balances, bill amounts and payment status; no payment actions. ":"") +
-    (source.kind==="business_anomaly"?"Use the exact incident family, subject, unit and comparison dates supplied by get_investigation_source. Recorded expenses are observed entries, not complete spending; stockout risk is a forecast not a confirmed shortage. Hourly staff pressure uses a reconciled allocation of recorded daily wages and tax, not an actual per-hour provider payroll figure, and does not prove a specific employee or shift is unnecessary. For stockout risk, physical shortage or supplier quote issues, after the source read use the available web_search tool for public supplier leads if current saved offers are insufficient. Public descriptions or prices are UNVERIFIED leads, never firm offers, stock or guaranteed delivery. Do not repeat private data in public search terms. Cite actual links only; if no lead or permission, ask for the missing supplier confirmation. For data gaps identify the missing source evidence. For customer_trend or customer identity coverage, use query_data numeric check/visit/product aggregates, not names; check source coverage and matured denominators, then independent staffing, inventory, menu/price or expense evidence. Use describe_data for unfamiliar retained fields, including optional fields without dedicated views. Do not treat two sales projections as independent, or missing identity as churn. Investigate the existing Toast source before asking the owner; do not ask them to supply stored POS facts. Notify only useful aggregate findings, no personal names/contact or account IDs. Correlation is not causation. ":"") +
+    (source.kind==="business_anomaly"?"Use the exact incident family, subject, unit and comparison dates supplied by get_investigation_source. Recorded expenses are observed entries, not complete spending; stockout risk is a forecast not a confirmed shortage. Hourly staff pressure uses a reconciled allocation of recorded daily wages and tax, not an actual per-hour provider payroll figure, and does not prove a specific employee or shift is unnecessary. For stockout risk, physical shortage or supplier quote issues, after the source read use the available web_search tool for public supplier leads if current saved offers are insufficient. Public descriptions or prices are UNVERIFIED leads, never firm offers, stock or guaranteed delivery. Do not repeat private data in public search terms. Cite actual links only; if no lead or permission, ask for the missing supplier confirmation. For data gaps identify the missing source evidence. For customer_trend or customer identity coverage, use query_data numeric check/visit/product aggregates, not names; check source coverage and matured denominators, then independent staffing, inventory, menu/price or expense evidence. For customer trends around holidays or local events, use get_events for the same comparison dates when available; distinguish verified saved occurrence evidence from unverified listings, and do not infer attendance, customer acquisition or causation from an event listing. Use describe_data for unfamiliar retained fields, including optional fields without dedicated views. Do not treat two sales projections as independent, or missing identity as churn. Investigate the existing Toast source before asking the owner; do not ask them to supply stored POS facts. Notify only useful aggregate findings, no personal names/contact or account IDs. Correlation is not causation. ":"") +
     "Use canonical numbers, coverage and timestamps; " +
     "do not infer zero from missing or stale evidence. Explain what changed, what is " +
     "known, what is unknown, and the smallest useful multi-step plan. Give the owner " +
@@ -309,7 +317,7 @@ export function verifyInvestigationTurn(turn:AgentTurn,expected:ExpectedInvestig
     turn.unverified.length>0||unsupportedExternalEffectClaim(text))
     return {ok:false,reason:"model_incomplete"};
   const calls=turn.toolInvocations??[];
-  const allowedSet=new Set<string>(expected.kind==="maintenance_issue"?maintenanceInvestigationTools:expected.kind==="business_anomaly"?supplierResearchInvestigationTools:investigationReadTools);
+  const allowedSet=new Set<string>(expected.kind==="maintenance_issue"?maintenanceInvestigationTools:expected.kind==="business_anomaly"?[...supplierResearchInvestigationTools,"get_events"]:investigationReadTools);
   if(expected.kind==="supplier_receiving")allowedSet.add("propose_supplier_discrepancy_followup");
   if(calls.some(call=>!allowedSet.has(call.name)))
     return {ok:false,reason:"model_incomplete"};
@@ -333,14 +341,21 @@ export function verifyInvestigationTurn(turn:AgentTurn,expected:ExpectedInvestig
   const selectors=source.result.selectors as {family?:string;subject?:string;from?:string;to?:string}|undefined;
   const customerIncident=expected.kind==="business_anomaly"&&(selectors?.family==="customer_trend"||
     selectors?.family==="data_gap"&&["customer_identity_coverage","reader_unavailable:customer_intelligence"].includes(selectors.subject??""));
-  const customerTools:readonly AgentToolName[]=["query_data","get_labor","get_schedule","get_week_schedule",
+  if(!customerIncident&&calls.some(call=>call.name==="get_events"))return {ok:false,reason:"model_incomplete"};
+  const customerTools:readonly AgentToolName[]=["get_events","query_data","get_labor","get_schedule","get_week_schedule",
     "get_inventory","get_usage_variance","get_menu_items","get_price_monitor_status","get_ingredient_costs","get_expenses","get_bills"];
   const familyTools:Record<string,readonly AgentToolName[]>={sales_decline:["get_sales","get_profit","get_labor","get_item_sales"],sales_growth:["get_sales","get_profit","get_labor","get_item_sales"],labor_cost:["get_labor","get_sales","get_profit"],recorded_expense_rise:["get_expenses","get_bills","get_profit"],recorded_refund_rise:["get_sales","get_profit","get_item_sales"],order_refund_rise:["get_sales","get_profit","get_item_sales"],ingredient_cost:["get_ingredient_costs","get_product_costs","get_menu_items"],product_cost:["get_product_costs","get_ingredient_costs","get_menu_items"],product_contribution:["get_product_costs","get_ingredient_costs","get_item_sales"],high_contribution:["get_product_costs","get_item_sales"],operating_margin:["get_profit","get_sales","get_expenses","get_labor"],cost_recovery_lag:["get_profit","get_bills","get_expenses","get_sales"],cost_recovery_ahead:["get_profit","get_bills","get_expenses","get_sales"],stock_shortage:["get_inventory","get_usage_variance","get_ingredient_costs"],stockout_risk:["get_inventory","get_usage_variance","get_ingredient_costs"],consumption_variance:["get_usage_variance","get_ingredient_costs","get_item_sales"],overstaffed_hour:["get_labor","get_peak_hours","get_sales","get_schedule","get_week_schedule"],early_clock_in:["get_labor","get_schedule","get_week_schedule"],missed_clock_evidence:["get_labor","get_schedule","get_week_schedule"],supplier_quote:["get_ingredient_costs","get_product_costs","get_inventory"]};
   const allowed=new Set<string>(customerIncident?customerTools:expected.kind==="business_anomaly"&&selectors?.family&&familyTools[selectors.family]?familyTools[selectors.family]:relevantInvestigationTools(expected.kind));
   const corroborated=calls.filter(call=>allowed.has(call.name)&&
     call.result.source!=="investigation_source"&&
     typeof call.result.source==="string"&&call.result.source.length>0&&
-    hasObservedEvidence(call.result));
+    hasObservedEvidence(call.result)&&
+    (call.name!=="get_events"||selectors?.family==="customer_trend"&&typeof selectors.from==="string"&&typeof selectors.to==="string"&&
+      !!call.result.period&&call.result.period.from<=selectors.to&&call.result.period.to>=selectors.from&&
+      Array.isArray(call.result.events)&&call.result.events.some(event=>event&&event.status==="found"&&
+        typeof event.lastVerifiedAt==="string"&&Number.isFinite(Date.parse(event.lastVerifiedAt))&&
+        (!event.verificationFailedAt||Date.parse(event.verificationFailedAt)<=Date.parse(event.lastVerifiedAt))&&
+        typeof event.startDate==="string"&&typeof event.endDate==="string"&&event.startDate<=selectors.to!&&event.endDate>=selectors.from!)));
   if(customerIncident&&!corroborated.some(call=>{
     if(call.name!=="query_data"||call.result.customerEvidence!==true||call.result.aggregateOnly!==true||
       !["cv_toast_records","cv_customer_visits","cv_customer_products"].includes(String(call.result.view)))return false;
