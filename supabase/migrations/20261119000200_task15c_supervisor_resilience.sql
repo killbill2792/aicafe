@@ -763,3 +763,72 @@ begin
   update public.supervisor_runs set status = 'running', updated_at = now() where id = r.id;
   return to_jsonb(s);
 end $$;
+
+-- A verified source may close while the assigned owner is offline. Preserve
+-- the existing canonical source trigger, exact recipient scope and one
+-- deterministic resolution notice ID; never grant an external effect.
+create or replace function public.supervisor_settle_investigation_on_source()
+returns trigger language plpgsql security definer set search_path=public as $$
+declare v public.supervisor_investigations;v_type text;v_hash text;v_msg uuid;
+begin
+  if tg_table_name='alerts' then
+    if new.status in ('new','seen') then return new; end if;
+    v_type:='alert';
+  else
+    -- Owner intent or snooze is not an applied change. A watching task is
+    -- open until a trusted status transition actually handles/expires it.
+    if new.kind='priority_notice' or new.status in ('needs_owner','needs_response','watching')
+    then return new; end if;
+    v_type:='operating_task';
+  end if;
+  for v in select * from public.supervisor_investigations
+    where business_id=new.business_id and source_type=v_type
+      and source_id=new.id::text and phase not in ('resolved','blocked')
+    for update
+  loop
+    update public.supervisor_investigations set
+      phase='resolved',lease_token=null,lease_until=null,
+      last_error='source_closed',updated_at=now()
+    where business_id=v.business_id and owner_user_id=v.owner_user_id
+      and source_type=v.source_type and source_id=v.source_id;
+    -- A real source closure settles EVERY open report/follow-up from the
+    -- incident, not merely the last message. Keep all records for audit.
+    -- The priority_notice trigger returns immediately, avoiding recursion.
+    update public.operating_tasks set status='handled',
+      resolved_at=coalesce(resolved_at,now())
+      where business_id=v.business_id and owner_user_id=v.owner_user_id
+        and kind='priority_notice' and status in ('needs_owner','needs_response','watching')
+        and payload->>'intent'='priority_investigation'
+        and payload->>'sourceType'=v.source_type
+        and payload->>'sourceId'=v.source_id;
+    -- This internal trigger runs only after a permitted canonical source
+    -- update. Its recipient is the durable investigation owner, not the
+    -- actor who closed the source (e.g. another authorized café member).
+    -- Do not alter the caller-bound authorization helper or grant any RPC
+    -- privileges. Recheck current membership, exact private thread and
+    -- task ownership before writing to the recipient's existing inbox.
+    if not exists(select 1 from public.memberships m
+      where m.business_id=v.business_id and m.user_id=v.owner_user_id and m.role='owner')
+      or not exists(select 1 from public.ai_threads t
+        where t.business_id=v.business_id and t.id=v.thread_id and t.owner_user_id=v.owner_user_id)
+      or (v_type='operating_task' and not exists(
+        select 1 from public.operating_tasks t
+        where t.business_id=v.business_id and t.id=v.source_id
+          and (t.owner_user_id is null or t.owner_user_id=v.owner_user_id)))
+      then continue; end if;
+    v_hash:=md5('investigation-resolved:'||v.business_id::text||':'||v.owner_user_id::text||
+      ':'||v.source_type||':'||v.source_id||':'||v.revision_hash||':'||v.episode_id::text);
+    v_msg:=(substr(v_hash,1,8)||'-'||substr(v_hash,9,4)||'-4'||
+      substr(v_hash,14,3)||'-a'||substr(v_hash,18,3)||'-'||substr(v_hash,21,12))::uuid;
+    insert into public.ai_messages(id,business_id,thread_id,owner_user_id,role,
+      content_type,structured_content,grounding)
+    values(v_msg,v.business_id,v.thread_id,v.owner_user_id,'supervisor','blocks',
+      jsonb_build_array(jsonb_build_object('type','text','text',
+        'Follow-up: the original café issue is now closed in its source. I verified that status; this does not prove any external action succeeded.')),
+      jsonb_build_object('status','verified','intent','priority_investigation_resolution',
+        'evidence',jsonb_build_array(jsonb_build_object('source',v.source_type,
+          'identifier',v.source_id,'asOf',now()::text))))
+    on conflict(id) do nothing;
+  end loop;
+  return new;
+end $$;
