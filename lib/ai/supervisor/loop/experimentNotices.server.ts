@@ -159,17 +159,13 @@ export async function postToastObservationNotice(db:SupabaseClient,input:{
 }):Promise<"posted"|"not_claimed"|"not_authorized">{
  const k=input.key;
  if(k.kind==="price_reminder")throw new Error("wrong_observation_notice_kind");
- const {data:claim,error}=await db.rpc("supervisor_8a_claim_notice",{
+ const {data:claim,error}=await db.rpc("supervisor_8a_claim_observation_notice",{
   p_business_id:k.businessId,p_owner_user_id:k.ownerUserId,p_source_id:k.sourceId,
   p_kind:k.kind,p_local_date:k.localDate,p_slot:k.slot,
  });
  if(error)throw new Error("observation_notice_claim_failed");
- if(!claim)return "not_claimed";
- const {data:lease,error:leaseError}=await db.from("supervisor_experiment_notice_receipts")
-  .select("attempts,state").eq("id",claim).eq("business_id",k.businessId)
-  .eq("owner_user_id",k.ownerUserId).maybeSingle();
- if(leaseError||!lease)throw new Error("observation_notice_lease_unavailable");
- if(lease.state!=="claimed")return "not_claimed";
+ const lease=claim?.[0];
+ if(!lease)return "not_claimed";
  const id="toast-price-observation:"+k.ownerUserId+":"+k.sourceId+":"+k.kind+":"+k.slot;
  const messageId=stableNoticeUuid(k.businessId+":"+id);
  const result=await notifyOwner(db,{
@@ -177,7 +173,7 @@ export async function postToastObservationNotice(db:SupabaseClient,input:{
   taskId:id,kind:"priority_notice",localDate:k.localDate,important:true,required:true,
  },async()=>{
   const saved=await db.rpc("supervisor_8a_post_observation_notice",{
-   p_receipt_id:claim,p_attempt:lease.attempts,p_thread_id:input.threadId,
+   p_receipt_id:lease.receipt_id,p_attempt:lease.attempt,p_thread_id:input.threadId,
    p_task_id:id,p_message_id:messageId,p_timezone:input.timezone,p_payload:input.payload,
    p_text:input.text,p_confidence:input.confidence,
   });
