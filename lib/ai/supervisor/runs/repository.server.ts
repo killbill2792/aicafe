@@ -96,3 +96,12 @@ export class SupabaseDurableRunRepository implements DurableRunRepository {
     });
   }
 }
+
+/** Existing SQL scheduler reserves one fair dispatch opportunity. Its
+ * bounded reservation is independent of the scoped execution lease. */
+export async function selectNextDurableRun(): Promise<{ runId: string; recovery: boolean } | null> {
+  return callRpc("supervisor_select_next_durable_run", {}, value => {
+    const candidate = z.object({ run_id: uuid, recovery: z.boolean() }).nullable().parse(value);
+    return candidate ? { runId: candidate.run_id, recovery: candidate.recovery } : null;
+  });
+}

@@ -110,6 +110,26 @@ describe("durable owner worker (uses Task 5 fenced repository)", () => {
       env.setReply({ ref: reportRef, endReason: "complete", usage }); ownerAuthorized = false; };
     await expect(executeDurableRun(run, budget, env.deps)) .rejects.toThrow("supervisor_worker_authorization_revoked");
     expect(db.status).toBe("blocked"); expect(db.rows[1].state).toBe("blocked"); expect(db.finalRef).toBeNull(); });
+  it("retains a retryable run during an unavailable authorization read", async () => {
+    const db = new Ledger(), env = setup(db);
+    env.deps.authorize = vi.fn().mockRejectedValueOnce(new Error("worker_authorization_unavailable"));
+    await expect(executeDurableRun(run, budget, env.deps)).rejects.toThrow("worker_authorization_unavailable");
+    expect(db.status).toBe("pending"); expect(db.errors).toEqual([]);
+    env.deps.authorize = async () => {};
+    expect(await executeDurableRun(run, budget, env.deps)).toBe("completed");
+    expect(env.calls.execute).toBe(1);
+  });
+  it("reconciles a lost turn acknowledgement only after a verified canonical reply", async () => {
+    const db = new Ledger(), env = setup(db);
+    env.deps.executeTurn = async () => { env.calls.execute++; throw new Error("storage_unavailable"); };
+    await expect(executeDurableRun(run, budget, env.deps)).rejects.toThrow("storage_unavailable");
+    expect(db.errors).toEqual(["turn_failed"]);
+    expect(await reconcileVerifiedOwnerStep(run, db, "turn_failed", env.deps.authorize, env.deps.verified)).toBe(false);
+    env.setReply({ ref: reportRef, endReason: "complete", usage });
+    expect(await reconcileVerifiedOwnerStep(run, db, "turn_failed", env.deps.authorize, env.deps.verified)).toBe(true);
+    expect(await executeDurableRun(run, budget, env.deps)).toBe("completed");
+    expect(env.calls.execute).toBe(1);
+  });
   it("incomplete model response is blocked; its text is not proof of success", async () => { const db = new Ledger(), env = setup(db);
     env.deps.executeTurn = async () => { env.calls.execute++; env.setReply({ ref: reportRef, endReason: "budget", usage }); };
     await expect(executeDurableRun(run, budget, env.deps)).rejects.toThrow("supervisor_worker_turn_incomplete");

@@ -32,6 +32,7 @@ export type RunRow = {
 export type StepRow = {
   run_id: string; step_key: string; step_index: number; status: "pending" | "leased" | "blocked" | "completed";
   attempts: number; error_code: string | null; updated_at: string;
+  retry_mode: "idempotent" | "reconcile"; lease_until: string | null;
 };
 export type JobRow = {
   id: string; owner_message_id: string; status: "running" | "done" | "failed";
@@ -72,11 +73,17 @@ export function projectOwnerWork(input: {
   for (const run of input.runs) {
     const next = (steps.get(run.id) ?? []).sort((a, b) => a.step_index - b.step_index)
       .find(s => s.status !== "completed");
-    const expired = run.status === "blocked" && next?.error_code === "lease_expired";
+    const expired = run.status === "blocked" && (next?.error_code === "lease_expired"
+      || (next?.retry_mode === "reconcile" && ["turn_failed", "turn_incomplete"].includes(next.error_code ?? "")));
+    // A leased row can outlive a dead process. Before the next worker tick,
+    // do not claim it is working or that an effect is safe to repeat.
+    const leaseEnd = next?.lease_until ? Date.parse(next.lease_until) : NaN;
+    const staleLease = next?.status === "leased" && (!Number.isFinite(leaseEnd) || leaseEnd <= nowMs);
     const status: OwnerWorkStatus = run.status === "pending" ? "queued"
       : run.status === "completed" && run.final_report_ref ? "answer_ready"
       : run.status === "completed" ? "uncertain"
       : run.status === "blocked" ? expired ? "uncertain" : "failed"
+      : staleLease ? (next?.retry_mode === "idempotent" ? "queued" : "uncertain")
       : next?.status === "leased" && next.attempts > 1 ? "retrying" : "running";
     work.push({
       id: "run:" + run.id, kind: "durable_run", status, title: copy.runTitle,

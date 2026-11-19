@@ -156,6 +156,26 @@ describe("GET /work owner isolation and receipt verification", () => {
     expect(work.some((w:{id:string})=>w.id==="investigation:foreign")).toBe(false);
     expect(work.some((w:{proof?:{kind:string}|null})=>w.proof?.kind==="verified_effect")).toBe(false);
   });
+  it("reports expired uncertain work without treating it as an active worker", async () => {
+    const { db, source } = database();
+    const now = Date.now();
+    const earlier = new Date(now - 60_000).toISOString();
+    const later = new Date(now + 60_000).toISOString();
+    source.supervisor_runs = [{ id: "run-a", request_key: "owner-message", status: "running",
+      final_report_ref: null, updated_at: earlier, finished_at: null }];
+    const step = { run_id: "run-a", step_key: "owner_turn", step_index: 1, status: "leased",
+      attempts: 1, error_code: null, updated_at: earlier, retry_mode: "reconcile", lease_until: earlier };
+    source.supervisor_run_steps = [step];
+    client.mockResolvedValue(db);
+    const read = () => GET(new Request("https://example.org"), { params: Promise.resolve({ threadId: thread }) });
+    const failedLease = await read();
+    expect(failedLease.status).toBe(200);
+    expect((await failedLease.json()).work).toMatchObject([{ id: "run:run-a", status: "uncertain", proof: null }]);
+    source.supervisor_run_steps = [{ ...step, lease_until: later, attempts: 2 }];
+    const recovered = await read();
+    expect(recovered.status).toBe(200);
+    expect((await recovered.json()).work).toMatchObject([{ id: "run:run-a", status: "retrying", proof: null }]);
+  });
   it("never leaks work after a thread lookup denies ownership", async () => {
     const { db } = database();
     client.mockResolvedValue(db);

@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 const fake = vi.hoisted(() => ({
-  entries: [] as Array<{day:string;model_call_count:number}>,
+  entries: [] as Array<{day:string;model_call_count:number;reserved_model_call_count?:number}>,
   systemEntries: [] as Array<{day:string;model_call_count:number}>,
   queriedBusiness: "", queriedOwner: "", queriedDay: "",
   failure: false,
@@ -19,7 +19,8 @@ vi.mock("@/lib/supabase/server", () => ({
         throw Error("Unexpected table");
       return {
         select: (column:string) => {
-          if (column !== "model_call_count") throw Error("Missing model usage");
+          if (column !== (name==="ai_usage_events"?"model_call_count,reserved_model_call_count":"model_call_count"))
+            throw Error("Missing model usage");
           return {
             eq: (key:string,value:string) => {
               if(key==="business_id") fake.queriedBusiness=value;
@@ -35,6 +36,8 @@ vi.mock("@/lib/supabase/server", () => ({
                         : {data:(name==="ai_usage_events"?fake.entries:fake.systemEntries)
                             .filter(e=>e.day===value3).map(e=>({
                             model_call_count:e.model_call_count,
+                            ...(name==="ai_usage_events"?{reserved_model_call_count:
+                              "reserved_model_call_count" in e?e.reserved_model_call_count??0:0}:{}),
                           })),error:null});
                     },
                   };
@@ -82,6 +85,14 @@ describe("owner daily model-call allowance", () => {
     await expect(assertOwnerAgentTurnAvailable(owner)).rejects.toMatchObject({
       status:429,code:"owner_usage_limit_reached",
     });
+  });
+  it("does not double count durable calls summarized after individual reservation",async()=>{
+    const day=new Date().toISOString().slice(0,10);
+    fake.entries=[{day,model_call_count:599,reserved_model_call_count:2}];
+    fake.systemEntries=[{day,model_call_count:1},{day,model_call_count:1}];
+    await expect(assertOwnerAgentTurnAvailable(owner)).resolves.toBeUndefined();
+    fake.systemEntries.push({day,model_call_count:1});
+    await expect(assertOwnerAgentTurnAvailable(owner)).rejects.toMatchObject({status:429});
   });
   it("uses a validated environment override without accepting invalid caps", async () => {
     expect(ownerModelCallsLimit("350")).toBe(350);
