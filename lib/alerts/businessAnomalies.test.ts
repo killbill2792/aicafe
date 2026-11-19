@@ -120,6 +120,14 @@ it("the scheduled anomaly pass reconciles only comparable customer evidence and 
     return {rows:ids.map((product_ref,i)=>({product_ref,sum_quantity:i===0?a:100-a,count_quantity:20,count_source_ref:20})),
      missing:[],truncated:false,error:undefined,customerCoverage:{complete:true}};
    }
+   if(p.group_by?.[0]==="modifier_ref"){
+    const modifier_ref="33333333-3333-4333-8333-333333333333",other="44444444-4444-4444-8444-444444444444",a=recent&&changed?80:40;
+    return {rows:[modifier_ref,other].map((id,i)=>({modifier_ref:id,sum_quantity:i===0?a:100-a,count_quantity:20,count_source_ref:20})),missing:[],truncated:false,error:undefined,customerCoverage:{complete:true}};
+   }
+   if(p.group_by?.length===2&&p.group_by[1]==="paired_product_ref"){
+    const product_ref="11111111-1111-4111-8111-111111111111",a=recent&&changed?80:40;
+    return {rows:["22222222-2222-4222-8222-222222222222","33333333-3333-4333-8333-333333333333"].map((paired_product_ref,i)=>({product_ref,paired_product_ref,sum_pair_occurrence:i===0?a:100-a,count_pair_occurrence:20,count_source_ref:20})),missing:[],truncated:false,error:undefined,customerCoverage:{complete:true}};
+   }
    return {rows:[],missing:["empty"],truncated:false,error:undefined,customerCoverage:{complete:true}};
   }
   if(p.metrics.some(m=>m.column==="data.quantity"))return {rows:[{count_source_ref:100,"count_data.quantity":100,"sum_data.quantity":recent&&changed?250:150}],missing:[],truncated:false,error:undefined,customerCoverage:{complete:true}};
@@ -155,6 +163,11 @@ it("the scheduled anomaly pass reconciles only comparable customer evidence and 
   expect(incidents.get("customer_trend:observed_long_gap_share")).toBe(true);
   expect(incidents.get("customer_trend:observed_reappearance_share")).toBe(true);
   expect(incidents.get("customer_trend:returning_product_mix:11111111-1111-4111-8111-111111111111")).toBe(true);
+  const modifier="returning_modifier_mix:33333333-3333-4333-8333-333333333333";
+  const basket="returning_basket_mix:11111111-1111-4111-8111-111111111111:22222222-2222-4222-8222-222222222222";
+  expect(incidents.get("customer_trend:"+modifier)).toBe(true);
+  expect(incidents.get("customer_trend:"+basket)).toBe(true);
+  for(const subject of [modifier,basket])expect(await readCustomerTrendComparison({rpc} as never,"cafe",subject,{from:"2026-11-12",to:"2026-11-18"})).toMatchObject({key:subject,current:.8,previous:.4,active:true});
   for(const horizon of [7,30,60,90])expect(incidents.get(`customer_trend:observed_return_${horizon}d`)).toBe(false);
   optionalFailure=true;rpc.mockClear();
   await expect(run()).rejects.toThrow("business_anomaly_refresh_incomplete");
@@ -184,6 +197,8 @@ it("the scheduled anomaly pass reconciles only comparable customer evidence and 
   expect(incidents.get("customer_trend:observed_long_gap_share")).toBe(false);
   expect(incidents.get("customer_trend:observed_reappearance_share")).toBe(false);
   expect(incidents.get("customer_trend:returning_product_mix:11111111-1111-4111-8111-111111111111")).toBe(false);
+  expect(incidents.get("customer_trend:"+modifier)).toBe(false);
+  expect(incidents.get("customer_trend:"+basket)).toBe(false);
  }finally{
   inputs.customer.mockImplementation(async()=>({rows:[{count_source_ref:0,"count_data.aiCafeCustomer.identityRef":0,"count_data.aiCafeCustomer.displayName":0}],missing:[],truncated:false,error:undefined}));
  }
