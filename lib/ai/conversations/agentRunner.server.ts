@@ -333,7 +333,7 @@ export async function runOneTurn(p: TurnParams): Promise<{ replyId: string; repl
         if(draft.status!=="draft")throw new ToolError("validation","Receiving proposal no longer editable.");
         return {proposalId:draft.id,revision:draft.revision};
       },
-      financialEvidenceRead:()=>readFinancialEvidence(proposalScope,identity.asOf),
+      financialEvidenceRead:selection=>readFinancialEvidence(proposalScope,identity.asOf,selection),
       receivingRead:async purchaseOrderId=>{
         const {client}=await simulationOwnerReader(proposalScope);
         return readSupplierReconciliation(client,scope.businessId,scope.ownerUserId,purchaseOrderId);

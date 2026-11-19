@@ -307,7 +307,7 @@ export async function processNextInvestigation(db:SupabaseClient,now:Date,
       tools:createOwnerScopedCafeTools(scope,db),locale:"en" as const,
       asOf:identity.asOf,timezone:identity.timezone,currency:identity.currency,
       canonicalData:async()=>({db,businessId:c.business_id}),
-      ...(["money_update","missing_bill"].includes(synopsis.kind)?{financialEvidenceRead:()=>readFinancialEvidence({...scope,verifiedReadClient:db},identity.asOf)}:{}),
+      ...(["money_update","missing_bill"].includes(synopsis.kind)?{financialEvidenceRead:(selection?:import("@/lib/data/financialEvidence.server").FinanceSelection)=>readFinancialEvidence({...scope,verifiedReadClient:db},identity.asOf,selection)}:{}),
       ...(synopsis.kind==="maintenance_issue"?{maintenance:{...maintenance,search:async(...args:Parameters<typeof maintenance.search>)=>{
         await checkMailbox();
         const account=await getConnectorAccount(scope);

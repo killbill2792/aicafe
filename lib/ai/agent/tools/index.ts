@@ -119,7 +119,7 @@ export type AgentToolContext = {
   invoicePropose?:(input:import("@/lib/ai/supervisor/loop/supplierReceiving.server").InvoiceToolInput)=>Promise<{proposalId:string;revision:number}>;
   receivingPropose?:(input:import("@/lib/ai/supervisor/loop/supplierReceiving.server").ReceivingInput)=>Promise<{proposalId:string;revision:number}>;
   receivingFollowup?:(purchaseOrderId:string)=>Promise<{proposalId:string;revision:number;purchaseOrderId:string;recipient:string}>;
-  financialEvidenceRead?:()=>ReturnType<typeof import("@/lib/data/financialEvidence.server").readFinancialEvidence>;
+  financialEvidenceRead?:(selection?:import("@/lib/data/financialEvidence.server").FinanceSelection)=>ReturnType<typeof import("@/lib/data/financialEvidence.server").readFinancialEvidence>;
   receivingRead?:(purchaseOrderId:string)=>ReturnType<typeof import("@/lib/data/supplierReceiving.server").readSupplierReconciliation>;
   purchasing?:{
     list():Promise<{orders:SupplierOrderStatus[];truncated:boolean;

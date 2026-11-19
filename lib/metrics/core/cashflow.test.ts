@@ -1,5 +1,5 @@
 import {describe,expect,it} from "vitest";
-import {summarizeInvoiceClaims,summarizeStatementBalances,type InvoiceClaimRow} from "./cashflow";
+import {summarizeInvoiceClaims,summarizeStatementBalances,summarizeRecurringObligations,type InvoiceClaimRow} from "./cashflow";
 const asOf="2026-11-18";
 const a:InvoiceClaimRow={id:"first",supplier_id:"supplier",purchase_order_id:"po",
  invoice_reference:"invoice",revision:1,issued_on:"2026-11-01",due_on:"2026-11-17",
@@ -60,4 +60,35 @@ describe("historical statement evidence",()=>{
 
 it("excludes invoice claims not yet issued on the requested as-of date",()=>{
  expect(summarizeInvoiceClaims([{...a,issued_on:"2026-11-19"}],asOf,false).recordedClaimCount).toBe(0);
+});
+
+describe("documented invoice settlement and recurring dates",()=>{
+ const debit={id:"debit",financial_invoice_id:a.id,financial_kind:"settlement_evidence_linked" as const,
+  financial_allocation_cents:5000,financial_reverses_id:null,source_revision:1,financial_tx_date:"2026-11-10",
+  financial_upload_id:"statement",financial_row_index:0};
+ const credit={...debit,id:"credit",financial_kind:"settlement_evidence_reversed" as const,
+  financial_allocation_cents:1000,financial_reverses_id:debit.id,financial_row_index:1,financial_tx_date:"2026-11-11"};
+ it("reports only documented partial/covered quantities; never all-business outstanding cash",()=>{
+  const partial=summarizeInvoiceClaims([a],asOf,false,[debit,credit]);
+  expect(partial.claims[0]).toMatchObject({paymentStatus:"documented_partial",documentedAllocatedCents:4000,uncoveredRecordedClaimCents:6000});
+  expect(partial.outstandingPaymentCents).toBeNull();
+  expect(summarizeInvoiceClaims([a],asOf,false,[{...debit,financial_allocation_cents:10000}]).claims[0].paymentStatus).toBe("documented_covered");
+ });
+ it("does not inherit earlier allocations after a revision",()=>{
+  expect(summarizeInvoiceClaims([a,{...a,id:"new",revision:2}],asOf,false,[debit]).claims[0]).toMatchObject({
+   paymentStatus:"revision_review",documentedAllocatedCents:null,uncoveredRecordedClaimCents:null});
+ });
+ it("fails closed on unsupported reversal and excessive allocations",()=>{
+  for(const events of [[credit],[{...debit,financial_allocation_cents:20000}],[debit,{...credit,financial_allocation_cents:5001}]]){
+   expect(summarizeInvoiceClaims([a],asOf,false,events).claims[0].documentedAllocatedCents).toBeNull();
+  }
+ });
+ it("keeps unambiguous monthly due dates projected and other terms undated",()=>{
+  const bill={id:"rent",label:"Rent",amount_cents:10000,frequency:"monthly",due_day:31,is_estimate:false,
+   active_from:"2026-01-01",active_to:null};
+  const r=summarizeRecurringObligations([bill,{...bill,id:"weekly",frequency:"weekly"}],"2026-02-15",false);
+  expect(r.recurringObligations.find(v=>v.id==="rent")).toMatchObject({nextProjectedDueOn:"2026-03-31",paymentStatus:"unknown"});
+  expect(r.recurringObligations.find(v=>v.id==="weekly")?.nextProjectedDueOn).toBeNull();
+  expect(r.recurringMissing).toContain("recurringDueDateUnknown");
+ });
 });

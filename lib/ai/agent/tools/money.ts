@@ -205,10 +205,10 @@ export const moneyTools={
     },
   },
   get_cashflow_evidence:{
-    agentId:"leo",schema:empty,
-    description:"Dated statement balances and invoice claims, not live cash or unpaid debt.",
+    agentId:"leo",schema:z.strictObject({statementUploadId:z.uuid().nullable().optional(),rowOffset:z.number().int().nonnegative().max(10000).nullable().optional()}),
+    description:"Dated cash, invoice claims, settlement allocations, recurring dates. Optional statementUploadId for source rows; rowOffset pages. Not live cash/unpaid debt.",
     execute:async(raw:unknown,ctx:AgentToolContext):Promise<AgentToolResult>=>{
-      empty.parse(raw);
+      const selection=z.strictObject({statementUploadId:z.uuid().nullable().optional(),rowOffset:z.number().int().nonnegative().max(10000).nullable().optional()}).parse(raw);
       const base={source:"cashflow_evidence",period:null,agentId:"leo" as const,
         asOf:ctx.timezone?ctx.asOf:null,currency:ctx.currency??null,
         availableCashCents:null,outstandingPaymentCents:null,settledPaymentCents:null,
@@ -217,7 +217,7 @@ export const moneyTools={
       if(!ctx.financialEvidenceRead||!ctx.timezone)return {...base,recordedClaimCount:null,
         recordedClaimTotalsByCurrency:[],claims:[],missing:[...missing,"supplierInvoiceEvidenceUnavailable"]};
       try{
-        const evidence=await ctx.financialEvidenceRead();
+        const evidence=await ctx.financialEvidenceRead(selection);
         return {...base,...evidence,missing:[...missing,...evidence.missing]};
       }catch{
         return {...base,recordedClaimCount:null,recordedClaimTotalsByCurrency:[],claims:[],
