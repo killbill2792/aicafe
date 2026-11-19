@@ -7,6 +7,7 @@ import {readFileSync,existsSync} from 'node:fs';
 import {join,dirname} from 'node:path';
 import {homedir} from 'node:os';
 import {readMuseNotes,writeMuseNote} from './muse-local-notes.mjs';
+import {readMuseQuestions,syncMuseQuestions,writeMuseQuestion} from './muse-owner-questions.mjs';
 import {timingSafeEqual} from 'node:crypto';
 import {GitHubLedger} from './ledger.mjs';
 import {settings} from './settings.mjs';
@@ -39,7 +40,7 @@ function roleFor(req,ownerPassword,musePassword){
  if(user==='muse'&&musePassword&&safeEqual(password,musePassword))return 'muse';
  return null;
 }
-export function ownerDashboardHandler({readState,editState,readNotes,saveNote,readFacts,readActions,ownerPassword,musePassword,
+export function ownerDashboardHandler({readState,editState,readNotes,saveNote,readFacts,readActions,readQuestions,saveQuestion,ownerPassword,musePassword,
  html=readFileSync(new URL('./owner-dashboard-v3.html',import.meta.url),'utf8')}={}){
  const strong=p=>typeof p==='string'&&p.length>=16;
  if(typeof readState!=='function'||typeof editState!=='function'||
@@ -71,12 +72,18 @@ export function ownerDashboardHandler({readState,editState,readNotes,saveNote,re
     if(facts?.version!==1||!Array.isArray(facts.prs))throw Error('Invalid Muse monitor snapshot');
     return reply(res,200,'application/json',JSON.stringify(facts));
    }
+   if(req.method==='GET'&&req.url==='/api/muse-questions'){
+    if(!readQuestions)throw Error('Owner questions unavailable');
+    return reply(res,200,'application/json',JSON.stringify(await readQuestions()));
+   }
    if(req.method==='GET'&&req.url==='/api/notes'){
     if(!readNotes)return reply(res,503,'application/json',JSON.stringify({error:'Notes unavailable'}));
     return reply(res,200,'application/json',JSON.stringify(await readNotes()));
    }
-   if(req.method==='POST'&&req.url==='/api/notes'){
-    if(!saveNote)return reply(res,503,'application/json',JSON.stringify({error:'Notes unavailable'}));
+   if(req.method==='POST'&&['/api/notes','/api/muse-questions'].includes(req.url)){
+    const questions=req.url==='/api/muse-questions';
+    const save=questions?saveQuestion:saveNote;
+    if(!save)return reply(res,503,'application/json',JSON.stringify({error:'Notes unavailable'}));
     const origin=req.headers.origin;
     if(origin&&!/^http:\/\/(?:127\.0\.0\.1|localhost):[0-9]{2,5}$/.test(origin))
       return reply(res,403,'application/json',JSON.stringify({error:'Cross-origin edit refused'}));
@@ -89,9 +96,9 @@ export function ownerDashboardHandler({readState,editState,readNotes,saveNote,re
     }
     let edit;try{edit=JSON.parse(text);}catch{
       return reply(res,400,'application/json',JSON.stringify({error:'Invalid JSON'}));}
-    const next=await saveNote(edit,{role});
+    const next=await save(edit,{role});
     return reply(res,200,'application/json',JSON.stringify({saved:true,
-      entry:next.entries[edit.task_id]}));
+      entry:next.entries[questions?edit.id:edit.task_id]}));
    }
    if(req.method==='GET'&&req.url==='/api/state'){
     if(!ownerPassword)return reply(res,503,'application/json',JSON.stringify({error:'Legacy dispatcher unavailable in Muse-only mode'}));
@@ -145,7 +152,14 @@ export function startOwnerDashboard({ownerPassword,musePassword,ledger,port=7359
      join(homedir(),'.local','state','aicafe-muse','notes.json')}={}){
  // A read-only Muse PR cache and private notes remain usable when the old
  // Git-backed dispatcher or its token is unavailable.
+ const questionPath=join(dirname(notesPath),'owner-questions.json');
  const handler=ownerDashboardHandler({
+  readQuestions:async()=>{
+   const path=join(dirname(notesPath),'github-facts.json');
+   const facts=existsSync(path)?JSON.parse(readFileSync(path,'utf8')):null;
+   return facts?syncMuseQuestions(questionPath,facts):readMuseQuestions(questionPath);
+  },
+  saveQuestion:async(edit,opts)=>writeMuseQuestion(questionPath,edit,{...opts,notes:readMuseNotes(notesPath)}),
   readFacts:async()=>{
    const path=join(dirname(notesPath),'github-facts.json');
    if(!existsSync(path))throw Error('Muse monitor not yet run');
