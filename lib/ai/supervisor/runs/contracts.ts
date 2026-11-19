@@ -71,3 +71,35 @@ export interface DurableRunRepository {
   reconcile(scope: RunScope, runId: string, key: string, verifiedResultRef: string): Promise<void>;
   finish(scope: RunScope, runId: string, finalReportRef: string): Promise<DurableRun>;
 }
+
+export const ownerRunInputSchema = z.strictObject({
+  locale: z.enum(["en","es","ar"]),
+  attachmentIds: z.array(z.uuid()).max(3).refine(ids=>new Set(ids).size===ids.length),
+});
+export type OwnerRunInput=z.infer<typeof ownerRunInputSchema>;
+
+const checkpointPhaseSchema=z.enum(["ready","provider_pending","read_pending","effect_pending"]);
+export const checkpointRowSchema=z.object({
+  checkpoint_seq:z.number().int().nonnegative(),
+  checkpoint_phase:checkpointPhaseSchema,
+  checkpoint_operation:z.uuid().nullable(),
+  checkpoint_tool:z.string().nullable(),
+  checkpoint_receipts:z.array(z.object({
+    operation:z.uuid(),phase:z.enum(["provider_pending","read_pending","effect_pending"]),
+    tool:z.string().nullable(),receipt:z.string().max(201),
+  })).max(256),
+});
+export type CheckpointRow=z.infer<typeof checkpointRowSchema>;
+
+/** Passed into the existing one-agent loop, never model-controlled. A failure
+ * at a checkpoint boundary must escape tool/provider error recovery. */
+export type OwnerRunCheckpoint = {
+  assertLive:()=>Promise<void>;
+  beginProvider:()=>Promise<void>;
+  endProvider:(completed:boolean)=>Promise<void>;
+  beginTool:(name:string,raw:unknown,repeatSafe:boolean)=>Promise<import("@/lib/ai/agent/tools").AgentToolResult|null>;
+  endTool:(result:import("@/lib/ai/agent/tools").AgentToolResult)=>Promise<void>;
+  resumeContext:()=>Promise<string|null>;
+  canYield:()=>boolean;
+  yieldForRetry:(seconds:number)=>Promise<boolean>;
+};
