@@ -57,30 +57,15 @@ async function verifiedReply(run: WorkerRun): Promise<VerifiedReply | null> {
  * and rejects blocked runs; late workers cannot report an uncertain effect
  * completed. An independently verified effect receipt is needed to unblock. */
 async function blockRun(run: WorkerRun, reason: string, token?: string, stepKey?: string) {
-  const db = createAdminSupabaseClient(); const { data, error } = await db.from("supervisor_runs")
-    .update({ status: "blocked", updated_at: new Date().toISOString() })
-    .eq("id", run.id).eq("business_id", run.scope.businessId)
-    .eq("owner_user_id", run.scope.ownerUserId).eq("thread_id", run.scope.threadId)
-    .in("status", ["pending", "running"]).select("id").maybeSingle();
-  if (error) throw new Error("worker_stop_not_persisted", { cause: error }); if (!data) {
-    const check = await db.from("supervisor_runs").select("status")
-      .eq("id", run.id).eq("business_id", run.scope.businessId)
-      .eq("owner_user_id", run.scope.ownerUserId).eq("thread_id", run.scope.threadId).maybeSingle();
-    if (check.error || check.data?.status !== "blocked") throw new Error("worker_stop_conflict"); }
-  // Persist a reason even when cancellation/budget denial precedes a claim.
-  // The run is already blocked; no later claim or completion may succeed.
-  const first = token && stepKey ? { step_key: stepKey } :
-    (await db.from("supervisor_run_steps").select("step_key").eq("business_id", run.scope.businessId)
-      .eq("run_id", run.id).neq("status", "completed")
-      .order("step_index", { ascending: true }).limit(1)).data?.[0]; if (first) {
-    let step = db.from("supervisor_run_steps").update({
-      status: "blocked", error_code: reason, worker_id: null, claim_token: null,
-      lease_until: null, updated_at: new Date().toISOString(),
-    }).eq("business_id", run.scope.businessId).eq("run_id", run.id)
-      .eq("step_key", first.step_key); step = token ? step.eq("claim_token", token).eq("status", "leased") :
-      step.eq("status", "pending"); const { error: stepError } = await step;
-    if (stepError) throw new Error("worker_stop_step_unavailable", { cause: stepError }); }
+  const { data, error } = await createAdminSupabaseClient().rpc("supervisor_stop_durable_run", {
+    p_business_id: run.scope.businessId, p_owner_user_id: run.scope.ownerUserId,
+    p_thread_id: run.scope.threadId, p_run_id: run.id, p_error_code: reason,
+    p_step_key: stepKey ?? null, p_claim_token: token ?? null,
+  });
+  if (error) throw new Error("worker_stop_not_persisted", { cause: error });
+  if (data !== true) throw new Error("worker_stop_conflict");
 }
+
 export type WorkerDependencies = { repository: DurableRunRepository; authorize: () => Promise<void>;
   verified: () => Promise<VerifiedReply | null>; executeTurn: () => Promise<void>;
   cancelled: () => Promise<boolean>; stop: (reason: string, token?: string, key?: string) => Promise<void>;
