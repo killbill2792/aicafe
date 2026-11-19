@@ -121,6 +121,11 @@ export async function executeDurableRun(
               return outcome;
             });
             if(outcome==="yielded")return null; } catch (error) {
+              // A v2 transport/storage failure is not proof of an effect or a
+              // terminal task failure. Keep the persisted fenced lease: claim
+              // recovery re-reads the checkpoint and only reclaims safe phases.
+              // An effect_pending lease is quarantined instead of replayed.
+              if(deps.version2)throw error;
               const code = error instanceof Error ? error.message : "";
               // Explicit exhausted budgets are terminal; a lost acknowledgement
               // is uncertain and may only reconcile against the canonical reply.

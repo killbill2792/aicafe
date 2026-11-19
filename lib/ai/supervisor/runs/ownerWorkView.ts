@@ -82,7 +82,7 @@ export function projectOwnerWork(input: {
   for (const run of input.runs) {
     const next = (steps.get(run.id) ?? []).sort((a, b) => a.step_index - b.step_index)
       .find(s => s.status !== "completed");
-    const expired = run.status === "blocked" && (next?.error_code === "lease_expired"
+    const expired = run.status === "blocked" && (next?.error_code === "effect_uncertain" || next?.error_code === "lease_expired"
       || (next?.retry_mode === "reconcile" && ["turn_failed", "turn_incomplete"].includes(next.error_code ?? "")));
     // A leased row can outlive a dead process. Before the next worker tick,
     // do not claim it is working or that an effect is safe to repeat.

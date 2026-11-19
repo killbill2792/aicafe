@@ -305,3 +305,38 @@ describe("v2 checkpoint boundaries in the actual agent loop",()=>{
     expect(db.finalRef).toBeNull();
   });
 });
+
+describe("durable failure classification",()=>{
+  it("retains the v2 lease after a transient execution exception for SQL recovery",async()=>{
+    const db=new Ledger(),env=setup(db);
+    env.deps.version2=true;
+    env.deps.executeTurn=async()=>{throw Error("checkpoint_storage_unavailable");};
+    await expect(executeDurableRun(run,budget,env.deps)).rejects.toThrow("checkpoint_storage_unavailable");
+    expect(db.rows.find(x=>x.key==="owner_turn")?.state).toBe("leased");
+    expect(db.errors).toEqual([]);
+    expect(db.finalRef).toBeNull();
+  });
+  it("retains the version-one reconciliation-only stop behavior",async()=>{
+    const db=new Ledger(),env=setup(db);
+    env.deps.executeTurn=async()=>{throw Error("worker transport unavailable");};
+    await expect(executeDurableRun(run,budget,env.deps)).rejects.toThrow("worker transport unavailable");
+    expect(db.errors).toEqual(["turn_failed"]);
+  });
+  it("retains recovered canonical card references in the finished turn",async()=>{
+    const id=randomUUID();
+    const checkpoint:import("./contracts").OwnerRunCheckpoint={
+      assertLive:async()=>{},beginProvider:async()=>{},endProvider:async()=>{},
+      beginTool:async()=>null,endTool:async()=>{},resumeContext:async()=>null,
+      restoredResults:async()=>[{source:"staff_proposal",period:null,missing:[],draft:true,saved:false,proposalId:id}],
+      canYield:()=>true,yieldForRetry:async()=>true,
+    };
+    const provider:AgentProvider=async function*(){
+      yield {type:"response.output_text.delta",delta:"Your draft is ready."};
+      yield {type:"response.completed",response:{usage:{input_tokens:30,output_tokens:4,input_tokens_details:{cached_tokens:0}}}};
+    };
+    const context={timezone:"UTC",asOf:"2026-11-10",locale:"en",tools:{}} as AgentToolContext;
+    const result=await runAgentTurn({ownerText:"Prepare the roster",context,provider,checkpoint});
+    const {agentReplyPayload}=await import("@/lib/ai/agent/persist.server");
+    expect(agentReplyPayload(result).reply.blocks).toContainEqual({type:"proposal_card",proposalId:id});
+  });
+});

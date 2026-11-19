@@ -209,7 +209,7 @@ begin
   if s.status = 'leased' and s.retry_mode = 'reconcile'
     and not (r.execution_version=2 and s.step_key='owner_turn'
       and s.checkpoint_phase in ('ready','provider_pending','read_pending')) then
-    update public.supervisor_run_steps set status = 'blocked', error_code = 'lease_expired',
+    update public.supervisor_run_steps set status = 'blocked', error_code = case when r.execution_version=2 and s.checkpoint_phase='effect_pending' then 'effect_uncertain' else 'lease_expired' end,
       worker_id = null, claim_token = null, lease_until = null, updated_at = v_now
       where id = s.id;
     update public.supervisor_runs set status = 'blocked', updated_at = v_now where id = r.id;
