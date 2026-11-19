@@ -1044,9 +1044,15 @@ begin
  into v_mix using p_business_id;
  -- Customer denominator is the full selected period, not the filtered
  -- subset; never imply all-café coverage from a single identity or product.
- if (p_view in ('cv_customer_visits','cv_customer_products') or (p_view='cv_toast_records' and
-  position('data.aiCafeCustomer.' in coalesce(p_columns::text,'')||coalesce(p_group_by::text,'')||
-    coalesce(p_filters::text,'')||coalesce(p_metrics::text,''))>0))
+ if p_view in ('cv_customer_visits','cv_customer_products') or (p_view='cv_toast_records' and exists(
+  select 1 from (
+   select unnest(coalesce(p_columns,array[]::text[])) field
+   union all select unnest(coalesce(p_group_by,array[]::text[]))
+   union all select f->>'column' from jsonb_array_elements(coalesce(p_filters,'[]'::jsonb)) f
+   union all select m->>'column' from jsonb_array_elements(coalesce(p_metrics,'[]'::jsonb)) m
+  ) requested
+  where requested.field like 'data.aiCafeCustomer.%'
+   or requested.field ~* '(^|\.)(customer|appliedLoyaltyInfo|tabName|cardholder|cardholderName|cardPaymentId|loyaltyIdentifier)(\.|$)'))
   then
   v_customer_coverage:=public.customer_query_coverage(p_business_id,p_date_from,p_date_to);
  end if;

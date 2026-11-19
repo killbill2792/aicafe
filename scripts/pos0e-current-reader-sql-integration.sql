@@ -613,7 +613,7 @@ BEGIN
 
  -- Real browser-equivalent authenticated role, not a postgres/service-only
  -- approximation. Protected mapping and credential tables stay inaccessible.
- DECLARE owner_a uuid:=gen_random_uuid(); own_response jsonb; foreign_response jsonb; own_cov jsonb; foreign_cov jsonb;
+ DECLARE owner_a uuid:=gen_random_uuid(); own_response jsonb; foreign_response jsonb; own_cov jsonb; foreign_cov jsonb; raw_response jsonb;
  BEGIN
   insert into auth.users(id,instance_id,aud,role,email,encrypted_password,created_at,updated_at)
    values(owner_a,'00000000-0000-0000-0000-000000000000','authenticated','authenticated',owner_a||'@example.invalid','',now(),now());
@@ -626,12 +626,17 @@ BEGIN
    '[{"fn":"count","column":"source_ref"}]'::jsonb,d,d,null,100);
   foreign_response:=public.ai_query_view(b,'cv_customer_visits',null::text[],'[]'::jsonb,null::text[],
    '[{"fn":"count","column":"source_ref"}]'::jsonb,d,d,null,100);
+  raw_response:=public.ai_query_view(a,'cv_toast_records',null::text[],
+   '[{"column":"record_type","op":"=","value":"check"}]'::jsonb,null::text[],
+   '[{"fn":"count","column":"data.customer.guid"}]'::jsonb,d,d,null,100);
   own_cov:=public.customer_query_coverage(a,d,d);
   foreign_cov:=public.customer_query_coverage(b,d,d);
   execute 'reset role';
   perform pg_temp.pos0e_assert(own_response->'rows'->0->>'count_source_ref'='3'
    and own_cov->>'eligibleChecks'='5' and own_response->'customerCoverage'=own_cov,
    'authenticated owner can query same scoped visit counts and full coverage');
+  perform pg_temp.pos0e_assert(raw_response->'customerCoverage'=own_cov,
+   'ordinary retained customer named-path query includes the full coverage denominator without a specialized view');
   perform pg_temp.pos0e_assert((foreign_response->>'sourceCount')::int=0 and not(foreign_response?'customerCoverage') and foreign_cov is null,
    'foreign owner scope cannot read visit or coverage facts');
   perform pg_temp.pos0e_assert(not has_table_privilege('authenticated','public.toast_location_mappings','SELECT')

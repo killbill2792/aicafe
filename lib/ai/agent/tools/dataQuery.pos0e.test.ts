@@ -11,7 +11,7 @@ vi.mock("@/lib/data/toastDayTrust.server",()=>({
 import {dataQueryTools,officialToastFields} from "./dataQuery";
 import {runAgentTurn,type AgentProvider} from "../loop.server";
 import {agentToolDefinitions,type AgentToolContext} from "./index";
-import {toastOfficialFieldCatalog} from "@/lib/data/canonical/dictionary";
+import {toastOfficialFieldCatalog,canonicalDictionary} from "@/lib/data/canonical/dictionary";
 import {createToastAdapter} from "@/lib/pos/toast/adapter";
 
 const cafeA="aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
@@ -378,4 +378,28 @@ it("bounds the implicit projection for the wider customer visit view",async()=>{
  const args=(rpc.mock.calls[0] as unknown as [string,{p_columns:string[]}])[1];
  expect(args.p_columns.length).toBeLessThanOrEqual(20);
  expect(args.p_columns).toContain("identity_ref");
+});
+
+// Exercise every advertised customer canonical column through the same registered
+// schema/dispatch, not a fixed list of convenient questions. Independent SQL
+// fixture tests validate data semantics; this test validates request grammar.
+it("keeps every published customer field discoverable and queryable in the registered tool",async()=>{
+ const rpc=vi.fn(async(_name:string,_args:Record<string,unknown>)=>({data:{rows:[],sourceCount:0,truncated:false},error:null}));
+ const ctx={db:{rpc} as never,businessId:cafeA};
+ for(const view of ["cv_customer_visits","cv_customer_products"] as const){
+  const keys=Object.keys(canonicalDictionary[view].columns);
+  expect(keys.length).toBeGreaterThan(20);
+  const catalog=await dataQueryTools.describe_data.execute({view},ctx);
+  expect(catalog.views).toEqual(expect.arrayContaining([expect.objectContaining({name:view,
+   columns:expect.arrayContaining(keys.map(name=>expect.objectContaining({name})))})]));
+  for(const field of keys){
+   const result=await dataQueryTools.query_data.execute({...query,view,columns:null,filters:null,group_by:null,
+    metrics:[{fn:"count",column:field}]},ctx);
+   expect(result.error,view+"."+field).toBeUndefined();
+   expect(rpc).toHaveBeenLastCalledWith("ai_query_view",expect.objectContaining({p_business_id:cafeA,p_view:view,
+    p_metrics:[{fn:"count",column:field}]}));
+  }
+ }
+ expect(rpc).toHaveBeenCalledTimes(Object.keys(canonicalDictionary.cv_customer_visits.columns).length+
+  Object.keys(canonicalDictionary.cv_customer_products.columns).length);
 });
