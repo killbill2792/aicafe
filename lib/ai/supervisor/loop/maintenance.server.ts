@@ -61,7 +61,7 @@ type MaintenanceContextOptions={lease?:MaintenanceLease;ownerMessage?:{id:string
 /** Exact mailbox, no display-name guesses, header lists or embedded commands. */
 export function singleMailbox(raw:string|undefined):string|null{
  if(!raw||/[\r\n]/u.test(raw))return null;
- const bracket=raw.match(/^[^<>]*<([^<>]+)>\s*$/u);
+ const bracket=raw.match(/^[^<>,;]*<([^<>]+)>\s*$/u);
  const email=(bracket?.[1]??raw).trim().toLowerCase();
  if(!z.email().safeParse(email).success)return null;
  return email;

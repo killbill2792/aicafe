@@ -90,7 +90,7 @@ export const maintenanceTools={
           if(seen.length<5)seen.push({kind:event.kind,
             sourceKind:event.source_kind,
             independentlyWorking:event.kind==="operational_verification"&&
-              event.source_kind==="owner_operational_check"&&event.working_confirmed===true,
+              ["owner_operational_check","staff_operational_check"].includes(event.source_kind)&&event.working_confirmed===true,
             observedAt:event.occurred_at});
           byCase.set(event.task_id,seen);
         }

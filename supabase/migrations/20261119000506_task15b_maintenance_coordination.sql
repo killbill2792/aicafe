@@ -2,14 +2,17 @@
 set lock_timeout='3s';
 set statement_timeout='30s';
 
+-- Reason: Widen the existing check atomically; every formerly allowed value remains allowed and no historical rows need scanning.
+-- squawk-ignore ban-drop-constraint
 alter table public.maintenance_case_events drop constraint maintenance_case_events_kind_check;
 alter table public.maintenance_case_events add constraint maintenance_case_events_kind_check
  check(kind in ('report','repair_claim','operational_verification','blocked','reopened','follow_up','staff_assignment','vendor_send_verified','vendor_reply')) not valid;
-alter table public.maintenance_case_events validate constraint maintenance_case_events_kind_check;
+-- Existing rows are guaranteed by the preceding, narrower constraint. New writes are checked immediately.
+-- Reason: The replacement is a strict superset of the original source-kind check in the same transaction.
+-- squawk-ignore ban-drop-constraint
 alter table public.maintenance_case_events drop constraint maintenance_case_events_source_kind_check;
 alter table public.maintenance_case_events add constraint maintenance_case_events_source_kind_check
  check(source_kind in ('owner_report','owner_relay','owner_operational_check','system_follow_up','staff_report','approved_staff_assignment','gmail_effect_receipt','vendor_reply','staff_operational_check')) not valid;
-alter table public.maintenance_case_events validate constraint maintenance_case_events_source_kind_check;
 
 -- A second owner of the same business must not see another owner's private
 -- case history through an otherwise permissive business-level policy.
