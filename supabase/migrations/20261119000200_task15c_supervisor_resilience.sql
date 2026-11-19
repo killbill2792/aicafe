@@ -285,3 +285,24 @@ revoke all on function public.finish_supervisor_routine_occurrence(uuid,uuid,uui
   from public,anon,authenticated;
 grant execute on function public.finish_supervisor_routine_occurrence(uuid,uuid,uuid,uuid,boolean,text,timestamptz)
   to service_role;
+
+-- The current dispatcher pins the revision across date selection and claim;
+-- retain the original RPC during rollout, but delegate to the single existing
+-- claim transaction after taking the same routine row lock.
+create function public.supervisor_claim_current_routine_occurrence(
+  p_business_id uuid,p_routine_id uuid,p_revision bigint,p_local_date date,
+  p_scheduled_for_utc timestamptz,p_now timestamptz
+) returns jsonb language plpgsql security invoker set search_path=public as $$
+begin
+  if coalesce(auth.role(),'')<>'service_role' then
+    raise exception 'Service role required' using errcode='42501'; end if;
+  perform 1 from public.supervisor_routines where business_id=p_business_id
+    and id=p_routine_id and revision=p_revision and status='active' for update;
+  if not found then return null; end if;
+  return public.claim_supervisor_routine_occurrence(
+    p_business_id,p_routine_id,p_local_date,p_scheduled_for_utc,p_now);
+end $$;
+revoke all on function public.supervisor_claim_current_routine_occurrence(uuid,uuid,bigint,date,timestamptz,timestamptz)
+  from public,anon,authenticated;
+grant execute on function public.supervisor_claim_current_routine_occurrence(uuid,uuid,bigint,date,timestamptz,timestamptz)
+  to service_role;
