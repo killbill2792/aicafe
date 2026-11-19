@@ -2,7 +2,7 @@ import {beforeEach,afterEach,describe,expect,it,vi} from "vitest";
 vi.mock("server-only",()=>({}));
 const mocks=vi.hoisted(()=>({
   model:vi.fn(),access:vi.fn(),tools:vi.fn(),identity:vi.fn(),
-  budget:vi.fn(),notify:vi.fn(),priorities:vi.fn(),paidGate:vi.fn(),stockDraft:vi.fn(),
+  budget:vi.fn(),notify:vi.fn(),priorities:vi.fn(),paidGate:vi.fn(),stockDraft:vi.fn(),linkedProposals:vi.fn(),attempt:vi.fn(),
 }));
 vi.mock("@/lib/access/access.server",()=>({assertCafeAiAccess:mocks.access}));
 vi.mock("@/lib/ai/cafeTools.server",()=>({
@@ -17,6 +17,8 @@ vi.mock("@/lib/ai/supervisor/runs/usage.server",()=>({withWorkerBudget:mocks.bud
 vi.mock("@/lib/operating/notifyOwner.server",()=>({notifyOwner:mocks.notify}));
 vi.mock("./dispatch.server",()=>({readActionablePriorities:mocks.priorities}));
 vi.mock("./stockDraft.server",()=>({prepareProactiveStockDraft:mocks.stockDraft}));
+vi.mock("@/lib/ai/supervisor/loop/reads.server",()=>({readOwnerProposals:mocks.linkedProposals}));
+vi.mock("@/lib/ai/supervisor/loop/effectGateway.server",()=>({SupervisorEffectGateway:class{readAttempt=mocks.attempt;}}));
 import {enqueueInvestigationsForOwner,processNextInvestigation,processDueInvestigations}
   from "./investigation.server";
 const source={kind:"sales_anomaly",status:"new",payload:{
@@ -118,6 +120,8 @@ beforeEach(()=>{
   mocks.model.mockResolvedValue(agentResult());
   mocks.priorities.mockResolvedValue([]);
   mocks.stockDraft.mockReset().mockResolvedValue({state:"missing"});
+  mocks.linkedProposals.mockReset().mockResolvedValue([]);
+  mocks.attempt.mockReset().mockResolvedValue(null);
 });
 afterEach(()=>{if(previousKey===undefined)delete process.env.OPENAI_API_KEY;
   else process.env.OPENAI_API_KEY=previousKey;});
@@ -253,6 +257,32 @@ describe("Task 15A operational end-to-end orchestration (recorded source/model)"
     expect(d.calls.find(x=>x.name==="supervisor_finish_investigation")?.args)
       .toMatchObject({p_outcome:"rechecked",p_narrative:null,
         p_evidence:expect.objectContaining({unchangedChecks:1})});
+  });
+  it("rechecks a customer's durable investigation when an owner-linked gateway attempt changes, without performing an effect",async()=>{
+    const previous={proposalId:"proposal-a",capabilityId:"alex.price",status:"draft",revision:1,attemptState:null};
+    const sourceSynopsis={...synopsis,kind:"business_anomaly"};
+    const claim={...following,last_error:null,evidence:{...following.evidence,source:sourceSynopsis,
+      sourceRevision:base.revision_hash,lastOwnerUpdate:now.toISOString(),customerLinkedActions:[previous]}};
+    const options={sourceKind:"business_anomaly",alertPayload:{family:"customer_trend",subject:"returning_visit_share",quality:"verified",severity:"high"}};
+    mocks.linkedProposals.mockResolvedValue([{id:"proposal-a",capability_id:"alex.price",status:"draft",revision:1}]);
+    const stable=db([claim],options);
+    expect(await processNextInvestigation(stable.client,now)).toMatchObject({rechecked:1,failed:0});
+    expect(mocks.model).not.toHaveBeenCalled();
+    mocks.linkedProposals.mockResolvedValue([{id:"proposal-a",capability_id:"alex.price",status:"committed",revision:2}]);
+    mocks.attempt.mockResolvedValue({state:"verified"});
+    const changed=db([claim],options);
+    // A deliberately incomplete model response must not fabricate causal proof.
+    mocks.model.mockResolvedValue(agentResult({text:"I cannot independently establish the current customer trend."}));
+    await processNextInvestigation(changed.client,now);
+    expect(mocks.model).toHaveBeenCalledOnce();
+    expect(mocks.linkedProposals).toHaveBeenLastCalledWith(changed.client,
+      expect.objectContaining({businessId:"cafe-a",ownerUserId:"owner-a",threadId:"thread-a"}),
+      {threadId:"thread-a",customerInvestigationContext:{episodeId:base.episode_id,sourceId:base.source_id},limit:21});
+    expect(mocks.attempt).toHaveBeenLastCalledWith(expect.objectContaining({businessId:"cafe-a",ownerUserId:"owner-a",threadId:"thread-a"}),"proposal-a");
+    const actual=await mocks.model.mock.calls[0][0].context.investigation.read();
+    expect(actual.customerLinkedActions).toEqual([{capabilityId:"alex.price",status:"committed",attemptState:"verified"}]);
+    expect(mocks.model.mock.calls[0][0].toolNames).not.toContain("propose_price_change");
+    expect(changed.calls.every(x=>!x.name.includes("commit_effect")&&!x.name.includes("approve"))).toBe(true);
   });
   it("never treats its own saved priority notices as new café evidence six hours later",async()=>{
     const original={...following,last_error:null,evidence:{
