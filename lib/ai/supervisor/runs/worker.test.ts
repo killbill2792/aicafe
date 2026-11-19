@@ -390,3 +390,30 @@ it("stores only reviewed canonical read selectors; never arbitrary source conten
  expect(recoverableReadSelector("propose_purchases",{})).toBeNull();
  expect(recoverableReadSelector("get_inventory",{secret:"private"})).toBeNull();
 });
+
+it("refreshes a prior scoped read before the next model request and charges the slice tool budget",async()=>{
+ const trace:string[]=[];
+ const getCurrentStaff=vi.fn(async()=>({available:true,value:{count:2,people:[],asOf:"2026-11-19T00:00:00Z"},quality:{missingInputs:[]}}));
+ const getStaffAttendance=vi.fn(async()=>({available:true,value:{attendanceTracked:true,onClockCount:2},quality:{missingInputs:[]}}));
+ const context={timezone:"UTC",asOf:"2026-11-19",locale:"en",tools:{getCurrentStaff,getStaffAttendance}} as unknown as AgentToolContext;
+ const checkpoint:import("./contracts").OwnerRunCheckpoint={
+   assertLive:async()=>{trace.push("fenced");},beginProvider:async()=>{trace.push("reserve");},
+   endProvider:async()=>{},beginTool:async()=>null,endTool:async()=>{},
+   resumeContext:async()=>null,readReferences:()=>[{name:"get_staff",selector:{}}],
+   canYield:()=>true,yieldForRetry:async()=>true,
+ };
+ const provider:AgentProvider=async function*(params){
+   trace.push("transport");
+   const items=params.input as Array<Record<string,unknown>>;
+   const call=items.find(x=>x.type==="function_call"&&x.name==="get_staff");
+   const output=items.find(x=>x.type==="function_call_output"&&x.call_id===call?.call_id);
+   expect(JSON.parse(String(output?.output))).toMatchObject({source:"current_staff",count:2,missing:[]});
+   yield {type:"response.output_text.delta",delta:"Two people are working."};
+   yield {type:"response.completed",response:{usage:{input_tokens:30,output_tokens:4,input_tokens_details:{cached_tokens:0}}}};
+ };
+ const result=await runAgentTurn({ownerText:"Continue the staffing report",context,provider,checkpoint});
+ expect(getCurrentStaff).toHaveBeenCalledOnce();expect(getStaffAttendance).toHaveBeenCalledOnce();
+ expect(trace.slice(0,4)).toEqual(["fenced","fenced","reserve","transport"]);
+ expect(result.usage.toolCalls).toBe(1);
+ expect(result.results).toContainEqual(expect.objectContaining({source:"current_staff",count:2}));
+});
