@@ -1,6 +1,6 @@
 import {describe,expect,it,vi} from "vitest";
 vi.mock("server-only",()=>({}));
-import {matchVerifiedToastPriceEvidence,matchVerifiedHistoricToastActivation} from "./toastPriceEvidence.server";
+import {matchVerifiedToastPriceEvidence,matchVerifiedHistoricToastActivation,matchVerifiedToastObservation} from "./toastPriceEvidence.server";
 const business="aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
 const restaurant="bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb";
 const itemId="cccccccc-cccc-4ccc-8ccc-cccccccccccc";
@@ -114,5 +114,31 @@ describe("Task 8a approved Toast historical activation survives a later unrelate
    ...latest.history,{...latest.history[0],
     id:"ffffffff-ffff-4fff-8fff-ffffffffffff"}]})).toMatchObject({
      status:"unverified",reason:"ambiguous_activation_history"});
+ });
+});
+
+describe("independent Toast observation eligibility",()=>{
+ const event=original.history[0];
+ const input={...original,historyId:event.id,
+  notBefore:"2026-11-11T17:00:00Z",asOf:"2026-11-11T19:00:00Z"};
+ it("accepts a completed publication without a proposal or approval",()=>{
+  expect(matchVerifiedToastObservation(input)).toMatchObject({
+   status:"verified",historyId:event.id,startAt:event.toast_observed_at});
+ });
+ it("does not treat a partially stamped import as a completed publication",()=>{
+  expect(matchVerifiedToastObservation({...input,receipt:{
+   ...input.receipt,menu_copied_at:null}}).status).toBe("unverified");
+ });
+ it("requires the precise history event and the configured discovery boundary",()=>{
+  expect(matchVerifiedToastObservation({...input,historyId:"different"}).status).toBe("unverified");
+  expect(matchVerifiedToastObservation({...input,notBefore:"2026-11-11T18:02:00Z"}).status).toBe("unverified");
+  expect(matchVerifiedToastObservation({...input,asOf:"2026-11-11T18:01:30Z"}).status).toBe("unverified");
+ });
+ it("cannot turn an initial, local, or contextual price into a watch",()=>{
+  for(const history of [[{...event,old_price_cents:null}],
+   [{...event,source_type:"owner_manual"}]])
+   expect(matchVerifiedToastObservation({...input,history}).status).toBe("unverified");
+  expect(matchVerifiedToastObservation({...input,menu:{
+   ...input.menu,pos_pricing_strategy:"TIME_SPECIFIC_PRICE"}}).status).toBe("unverified");
  });
 });
