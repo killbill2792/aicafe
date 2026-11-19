@@ -75,6 +75,23 @@ describe("routine SQL security contract",()=>{
       // production timestamps or pretending a past cron ran in real life.
       await admin.query("update public.supervisor_routines set updated_at='2026-01-01T00:00:00Z' where business_id=$1",
         [business]);
+      // An outage spans local dates; the existing occurrence identity remains
+      // the dedupe boundary. Source checks are made on recovery, not backdated.
+      const catchUpNow="2026-11-06T18:00:00Z";
+      await admin.query("update public.supervisor_routines set updated_at='2026-11-01T00:00:00Z' where business_id=$1 and id=$2",[business,routineId]);
+      const candidateArgs=[business,routineId,1,catchUpNow];
+      const candidates=await workerA.query("select local_date::text,scheduled_for_utc from public.supervisor_due_routine_dates($1,$2,$3,$4)",candidateArgs);
+      expect(candidates.rows.map(x=>x.local_date)).toEqual(["2026-10-31","2026-11-01","2026-11-02","2026-11-03","2026-11-04"]);
+      expect(candidates.rows.every(x=>x.scheduled_for_utc===null)).toBe(true);
+      await expect(owner.query("select * from public.supervisor_due_routine_dates($1,$2,$3,$4)",candidateArgs)).rejects.toThrow();
+      expect(await call(workerA,"supervisor_claim_current_routine_occurrence",[business,routineId,999,"2026-11-02","2026-11-02T16:00:00Z",catchUpNow])).toBeNull();
+      const abandoned=await call(workerA,"supervisor_claim_current_routine_occurrence",[business,routineId,1,"2026-11-02","2026-11-02T16:00:00Z",catchUpNow]);
+      expect(abandoned).not.toBeNull();
+      await admin.query("update public.supervisor_routine_occurrences set lease_until='2026-11-06T17:59:00Z',attempts=5 where business_id=$1 and run_id=$2",[business,abandoned.run_id]);
+      const retryDates=await workerA.query("select local_date::text,scheduled_for_utc from public.supervisor_due_routine_dates($1,$2,$3,$4)",candidateArgs);
+      expect(retryDates.rows.find(x=>x.local_date==="2026-11-02")?.scheduled_for_utc.toISOString()).toBe("2026-11-02T16:00:00.000Z");
+      expect(await call(workerB,"supervisor_claim_current_routine_occurrence",[business,routineId,1,"2026-11-02","2026-11-02T16:00:00Z",catchUpNow])).toBeNull();
+      expect((await admin.query("select state,last_error,lease_token from public.supervisor_routine_occurrences where business_id=$1 and run_id=$2",[business,abandoned.run_id])).rows).toEqual([{state:"failed",last_error:"lease_expired",lease_token:null}]);
       const claimArgs=[business,routineId,"2026-11-01","2026-11-01T16:00:00Z","2026-11-01T16:02:00Z"];
       const [a,b]=await Promise.all([
         call(workerA,"claim_supervisor_routine_occurrence",claimArgs),
