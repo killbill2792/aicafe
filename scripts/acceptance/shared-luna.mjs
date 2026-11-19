@@ -452,6 +452,8 @@ function attest(){
   });
   const safe={scenario:id,head:audit.head,provider:"openai_responses",model:"gpt-6-luna",
     attempts:audit.attempts,reservedUpperUSD:audit.reservedMicros/1_000_000,
+    actualInputTokens:audit.receipts.reduce((sum,r)=>sum+r.actualInputTokens,0),
+    actualOutputTokens:audit.receipts.reduce((sum,r)=>sum+r.actualOutputTokens,0),
     providerSelectedTools:[...new Set(observed)].sort(),
     independentDatabaseReadbacks:checks,realModelAndDatabaseProof:true,
     independentOwnerUIAttestation:false,fullTask17IntegrationProof:false,
