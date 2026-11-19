@@ -2,6 +2,7 @@
 import {useEffect,useRef,useState,type FormEvent} from "react";
 import {useLocale} from "next-intl";
 import en from "@/messages/en.json";
+import SupplierVendorCommunicationManager from "./SupplierVendorCommunicationManager";
 import {parseSupplierDollars,compareSupplierQuotePrices} from "@/lib/calc/supplierQuotes";
 import type {PublicSource} from "@/lib/ai/suppliers/contracts";
 type Quote={id:string;supplierName:string;itemName:string;priceCents:number;
@@ -167,6 +168,7 @@ export default function SupplierEvidenceManager({copy,today,currency}:{copy:Supp
     <p className="text-sm text-ink-muted">{copy.notVerified} · {source.queriedAt}</p>
    </li>)}</ul>
   </section>
+  <SupplierVendorCommunicationManager/>
   <p role="status" aria-live="polite" className="text-[17px] text-ink">{notice}</p>
  </div>;
 }

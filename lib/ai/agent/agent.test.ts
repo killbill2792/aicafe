@@ -174,7 +174,7 @@ describe("numbers, statuses, and strict tool contracts", () => {
       "get_break_even","get_cost_summary","get_usage_variance","get_product_costs","get_ingredient_costs","get_inventory",
       "get_item_sales","get_price_recommendation","get_today_so_far","draft_week_schedule","simulate_staff_absence","suggest_new_item_price","milk_swap_price","simulate_scenario","calculate","propose_price_change","propose_price_experiment","get_price_monitor_status","propose_goal","record_checkin","get_goal_status",
       "propose_schedule","propose_shift_change","propose_add_staff","propose_staff_change",
-      "propose_availability_change","propose_rule_change","propose_send_schedule","propose_purchases","get_supplier_purchase_orders","inspect_supplier_purchase","propose_supplier_purchase_order","get_nearby_events","get_events","propose_event_plan","inspect_public_page","web_search","manage_commitment","get_supervisor_permissions"]);
+      "propose_availability_change","propose_rule_change","propose_send_schedule","propose_purchases","get_supplier_purchase_orders","inspect_supplier_purchase","propose_supplier_purchase_order","record_supplier_order_outcome","propose_supplier_vendor_email","get_nearby_events","get_events","propose_event_plan","inspect_public_page","web_search","manage_commitment","get_supervisor_permissions"]);
     expect(agentToolDefinitions.every(t=>t.strict)).toBe(true);
     for (const tool of agentToolDefinitions) {
       expect(Object.hasOwn(tool.parameters,"$schema")).toBe(false);
