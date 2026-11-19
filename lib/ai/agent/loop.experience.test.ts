@@ -205,13 +205,13 @@ describe("answer style ()", () => {
   it("adds the style rules with a new cache key when on", async () => {
     const { requests, provider } = recording([[text("Hi."), completed]]);
     await runAgentTurn({ ownerText: "Hi", context, provider });
-    expect(requests[0].prompt_cache_key).toBe("cafe-agent-v12-vendor-owner-permissions");
+    expect(requests[0].prompt_cache_key).toBe("cafe-agent-v13-vendor-next-step");
     expect(String(requests[0].instructions)).toContain(STYLE_RULES);
     expect(String(requests[0].instructions)).toContain("replaceProposalId=null");
     expect(String(requests[0].instructions)).toContain("NEVER infer replacement authority");
     expect(String(requests[0].instructions)).toContain("call get_supervisor_permissions");
     expect(String(requests[0].instructions)).toContain("A genuinely uncertain result requires receipt-only reconciliation");
-    expect(agentPromptCacheKey()).toBe("cafe-agent-v12-vendor-owner-permissions");
+    expect(agentPromptCacheKey()).toBe("cafe-agent-v13-vendor-next-step");
   });
 });
 
@@ -467,5 +467,60 @@ describe("Luna tool reasoning shares the old aggregate output allowance",()=>{
       await runAgentTurn({ownerText:"Read the menu.",context:{...context},provider});
       expect(limits(requests)).toEqual([["auto",1200],["none",1200]]);
     }finally{vi.unstubAllEnvs()}
+  });
+});
+
+describe("saved supplier order communication is distinct from creating a new PO",()=>{
+  const po="77777777-7777-4777-8777-777777777777";
+  function purchasing(){
+    return {
+      list:vi.fn().mockResolvedValue({
+        orders:[{id:po,status:"approved_for_ordering"}],truncated:false,drafts:[],
+        draftsTruncated:false,unresolvedApprovals:[],unresolvedApprovalsTruncated:false,
+        vendorCommunications:[{purchaseOrderId:po,channel:"gmail",state:"not_prepared",providerVerified:false}],
+        gmailConnection:{status:"active",connected:true,canRead:true,canSend:true}
+      }),inspect:vi.fn(),propose:vi.fn(),recordOwnerOutcome:vi.fn(),
+      proposeVendorSend:vi.fn().mockResolvedValue({proposalId:"33333333-3333-4333-8333-333333333333",
+        revision:1,purchaseOrderId:po,supplierName:"Sample Dairy",
+        recipient:"verified@supplier.example",account:"owner@example.com",note:"Awaiting owner click"})
+    };
+  }
+  it("sends coherent stable instructions and executes a recorded read/prepare sequence without creating a PO",async()=>{
+    const ports=purchasing();
+    const {requests,provider}=recording([[call("get_supplier_purchase_orders","{}","read_po"),completed],
+      [call("propose_supplier_vendor_email",JSON.stringify({purchaseOrderId:po}),"draft_email"),completed],
+      [text("The email approval is prepared. Nothing has been sent."),completed]]);
+    const result=await runAgentTurn({ownerText:"Prepare an email approval for my existing approved order "+po+
+      ". Do not create another order or send anything.",
+      context:{...context,purchasing:ports} as unknown as AgentToolContext,provider});
+    expect(result.tools).toEqual(["get_supplier_purchase_orders","propose_supplier_vendor_email"]);
+    expect(ports.list).toHaveBeenCalledTimes(1);
+    expect(ports.proposeVendorSend).toHaveBeenCalledExactlyOnceWith({purchaseOrderId:po});
+    expect(ports.propose).not.toHaveBeenCalled();
+    expect(ports.inspect).not.toHaveBeenCalled();
+    expect(ports.recordOwnerOutcome).not.toHaveBeenCalled();
+    expect(result.results).toContainEqual(expect.objectContaining({
+      source:"supplier_vendor_dispatch",proposalCreated:true,sent:false,approvalRequired:true}));
+    expect(requests[0].tool_choice).toBe("auto");
+    expect(requests[0].instructions).toBe(agentInstructions());
+    expect(String(requests[0].instructions)).toContain("That prohibition does not forbid a separately requested, inert communication approval");
+    expect(String(requests[0].instructions)).toContain("Only the exact separate owner click can authorize sending");
+    expect(String(requests[0].instructions)).not.toContain("or an explicit 'do not create an order', use read-only tools only");
+    const names=(requests[0].tools as Array<{name:string}>).map(x=>x.name);
+    expect(names).toEqual((requests[1].tools as Array<{name:string}>).map(x=>x.name));
+    expect(names).toEqual(expect.arrayContaining(["get_supplier_purchase_orders","propose_supplier_purchase_order","propose_supplier_vendor_email","get_menu_items"]));
+  });
+  it("preserves read-only comparison/status requests without preparing any action",async()=>{
+    const ports=purchasing();
+    const {requests,provider}=recording([[call("get_supplier_purchase_orders","{}","read_po"),completed],
+      [text("The order is saved and approved internally."),completed]]);
+    const r=await runAgentTurn({ownerText:"Review my saved order status only, no action.",
+      context:{...context,purchasing:ports} as unknown as AgentToolContext,provider});
+    expect(r.tools).toEqual(["get_supplier_purchase_orders"]);
+    expect(ports.propose).not.toHaveBeenCalled();
+    expect(ports.proposeVendorSend).not.toHaveBeenCalled();
+    expect(ports.recordOwnerOutcome).not.toHaveBeenCalled();
+    expect(requests[0].instructions).toBe(agentInstructions());
+    expect(String(requests[0].instructions)).toContain("For comparison-only requests use read-only tools only.");
   });
 });
