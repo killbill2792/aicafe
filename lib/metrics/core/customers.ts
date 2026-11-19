@@ -140,3 +140,36 @@ export function compareAnonymousCustomerPeriods(a:AnonymousCustomerPeriod,b:Anon
  ];
  return out.filter((x):x is CustomerMeasure=>x!==null);
 }
+
+/** A metric dependency registry for the exact monitor subjects. It is not an
+ * intent router: owner chat still discovers all authorized raw fields. A
+ * report must independently reproduce the incident and select a relevant
+ * numeric aggregate, rather than count arbitrary customer columns as proof. */
+const customerTrendDependencies:Record<string,readonly string[]>={
+ observed_references:["identity_ref"],observed_first_visits:["first_observed_visit"],
+ returning_visit_share:["returning_visit"],visits_per_reference:["identity_ref","period_account_visits"],
+ period_net_per_reference:["period_account_net_sales_cents","net_sales_cents"],
+ observed_history_value:["history_account_net_sales_cents"],
+ linked_revenue_concentration:["period_account_revenue_share_squared"],
+ observed_discount_participation:["data.aiCafeCustomer.discountParticipation"],
+ observed_loyalty_participation:["data.aiCafeCustomer.loyaltyParticipation"],
+ observed_order_duration:["order_duration_seconds","data.aiCafeCustomer.orderDurationSeconds"],
+ recorded_refund_per_linked_check:["data.aiCafeCustomer.recordedRefundCents"],
+ average_recipe_contribution:["historical_recipe_contribution_cents"],
+ average_visit_spend:["net_sales_cents"],
+ observed_long_gap_share:["observed_lapse_flag"],observed_reappearance_share:["observed_reappearance_flag"],
+ anonymous_check_spend:["data.aiCafeCustomer.netSalesCents"],
+ anonymous_items_per_check:["quantity","data.quantity"],
+};
+export function customerTrendEvidenceFields(subject:string):readonly string[]{
+ if(Object.hasOwn(customerTrendDependencies,subject))return customerTrendDependencies[subject];
+ if(/^observed_return_(7|30|60|90)d$/.test(subject))return [subject];
+ const dimension=/^returning_(product|modifier|basket|channel|daypart|weekday)_mix:/.exec(subject)?.[1];
+ if(dimension==="product")return ["product_ref"];
+ if(dimension==="modifier")return ["modifier_ref"];
+ if(dimension==="basket")return ["product_ref","paired_product_ref"];
+ if(dimension==="channel")return ["order_channel"];
+ if(dimension==="daypart")return ["local_hour"];
+ if(dimension==="weekday")return ["business_weekday"];
+ return [];
+}
