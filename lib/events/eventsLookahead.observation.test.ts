@@ -96,6 +96,16 @@ describe("automatic café-local final event observation",()=>{
     expect(vi.mocked(monitorLoop).mock.calls.every(args=>
       args[3].id===draft.id&&args[3].status==="committed")).toBe(true);
   });
+  it("does not sample overlapping cafe-date windows twice",async()=>{
+    const span=row("2026-10-30");
+    span.canonical_effect_payload.endDate="2026-11-01";
+    span.effect_hash=effectHash(span.canonical_effect_payload);span.monitor_spec.durationDays=3;
+    const overlap={...row("2026-10-31"),id:"66666666-6666-4666-8666-666666666666"};
+    await reportSavedEventDays(fake([span,overlap]),businessId,ownerId,"2026-11-02");
+    const calls=vi.mocked(monitorLoop).mock.calls;
+    expect(calls.map(a=>a[4])).toEqual(["2026-10-30","2026-10-31","2026-11-01"]);
+    expect(calls.every(a=>a[3].id===span.id)).toBe(true);
+  });
   it("does not resurrect an event whose final date predates the correction horizon",async()=>{
     const draft=row("2026-10-01");
     expect(await reportSavedEventDays(fake([draft]),businessId,ownerId,

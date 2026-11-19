@@ -65,6 +65,16 @@ describe("saved event observation is never owner approval",()=>{
     expect(selectEventObservations([later,earlier],ids).map(x=>x.id)).toEqual(
       [earlier.id]);
   });
+  it("allocates overlap to a single café-date monitor and honors already sampled dates",()=>{
+    const longEffect={...effect,endDate:"2026-11-02"};
+    const span={...proposal("draft","span"),canonicalEffectPayload:longEffect,
+      effectHash:effectHash(longEffect),monitorSpec:{durationDays:3,metricScope:"event"}};
+    const secondEffect={...effect,startDate:"2026-11-01",endDate:"2026-11-01"};
+    const second={...proposal("draft","second"),canonicalEffectPayload:secondEffect,effectHash:effectHash(secondEffect)};
+    expect(selectEventObservations([second,span],new Set(),"2026-11-01").map(x=>x.id)).toEqual(["span"]);
+    expect(selectEventObservations([second,span],new Set(["span"]),"2026-11-01",new Set(["second"])).map(x=>x.id)).toEqual(["second"]);
+    expect(selectEventObservations([second,span],new Set(),"2026-11-02").map(x=>x.id)).toEqual(["span"]);
+  });
   it("does not multiply a day monitor when cron receives duplicate saved drafts",()=>{
     expect(selectEventObservations([proposal("draft","older"),proposal("draft","newer")]))
       .toHaveLength(1);

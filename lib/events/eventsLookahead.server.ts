@@ -22,7 +22,7 @@ import {stableMessageId,SupabaseLoopRepository} from "@/lib/ai/supervisor/loop/s
 import {notifyOwner} from "@/lib/operating/notifyOwner.server";
 import {effectHash,proposeLoop,monitorLoop,type LoopProposal,type OwnerLoopScope} from "@/lib/ai/supervisor/loop/engine";
 import {supervisorLoopRegistry} from "@/lib/ai/supervisor/loop/priceExperiment.server";
-import {authorizedScheduledEventScope,eventPlanFacts,selectedEventPlanFacts,eventReadinessCapabilityId,selectEventObservations,observedEventProposalIds}
+import {authorizedScheduledEventScope,eventPlanFacts,selectedEventPlanFacts,eventReadinessCapabilityId,eventReadinessEffect,selectEventObservations,observedEventProposalDates}
   from "@/lib/ai/supervisor/loop/eventReadiness.server";
 import {runAgentTurn} from "@/lib/ai/agent/loop.server";
 import {searchWeb} from "@/lib/ai/agent/webSearch.server";
@@ -526,12 +526,24 @@ export async function reportSavedEventDays(db:Db,businessId:string,ownerId:strin
   }));
   let checked=0,reported=0,failed=0;
   const repo=new SupabaseLoopRepository();
-  const observedIds=await observedEventProposalIds(db,businessId,
-    proposals.map(p=>p.id));
-  const eligible=selectEventObservations(proposals,observedIds)
-    .map(proposal=>({proposal,days:closedEventObservationDays(
-      proposal.monitoringStartDate!,proposal.monitorSpec.durationDays,today)}))
-    .filter(item=>item.days.length>0).slice(0,6);
+  const observed=await observedEventProposalDates(db,businessId,proposals.map(p=>p.id));
+  const candidateDates=new Set<string>();
+  for(const proposal of proposals){
+    const parsed=eventReadinessEffect.safeParse(proposal.canonicalEffectPayload);
+    if(!parsed.success)continue;
+    for(const date of closedEventObservationDays(parsed.data.startDate,proposal.monitorSpec.durationDays,today))
+      candidateDates.add(date);
+  }
+  const eligibleById=new Map<string,{proposal:LoopProposal;days:string[]}>();
+  for(const date of [...candidateDates].sort()){
+    const [proposal]=selectEventObservations(proposals,observed.ids,date,observed.byDate.get(date));
+    if(!proposal)continue;
+    const group=eligibleById.get(proposal.id)??{proposal,days:[]};
+    group.days.push(date);eligibleById.set(proposal.id,group);
+  }
+  const groups=[...eligibleById.values()];
+  // Rotate bounded work each café-local day; newer proposals cannot starve older ones.
+  const eligible=dailyCafeScanOrder(groups,new Date(today+"T00:00:00Z")).slice(0,6);
   for(const {proposal:p,days} of eligible){
     checked++;
     try{
@@ -544,8 +556,13 @@ export async function reportSavedEventDays(db:Db,businessId:string,ownerId:strin
         const result=await monitorLoop(scope,supervisorLoopRegistry,repo,p,day);
         if(result)reported++;
       }
-      // The final observed day above already generates the terminal report.
-      // Replaying that day on later crons refreshes corrected Toast evidence.
+      // If another primary proposal owns the final day, finalize this partial
+      // window without sampling that date again. Preserve previous approval/history.
+      const end=addDays(p.monitoringStartDate!,p.monitorSpec.durationDays-1);
+      if(end<today&&!days.includes(end)){
+        const result=await monitorLoop(scope,supervisorLoopRegistry,repo,p,addDays(end,1));
+        if(result)reported++;
+      }
     }catch{
       failed++;
       console.warn("events_observation_report_failed");

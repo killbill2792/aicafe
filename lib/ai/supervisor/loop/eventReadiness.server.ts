@@ -67,43 +67,60 @@ export function readOnlyEventObservation(p:LoopProposal):LoopProposal|null{
 /** One canonical monitored plan per event-day. A committed owner choice wins over
  * an unapproved revised draft; reruns never generate parallel report threads. */
 export function selectEventObservations(proposals:readonly LoopProposal[],
-  observedIds:ReadonlySet<string>=new Set()):LoopProposal[]{
+  observedIds:ReadonlySet<string>=new Set(),businessDate?:string,
+  sampledOnDate:ReadonlySet<string>=new Set()):LoopProposal[]{
   const priority=(p:LoopProposal)=>{
     // Once a day's monitor has emitted a sample, its proposal ID is sticky.
     // Changing draft facts cannot create a second mid-run notice/inbox thread.
+    if(sampledOnDate.has(p.id))return 20;
     if(observedIds.has(p.id))return 10;
     return p.status==="committed"||p.status==="manual_confirmed"?2:
       p.status==="approved"?1:0;
   };
   const chosen=new Map<string,LoopProposal>();
   for(const original of [...proposals].sort((a,b)=>
-    priority(b)-priority(a)||b.createdAt.localeCompare(a.createdAt)||
+    priority(b)-priority(a)||b.monitorSpec.durationDays-a.monitorSpec.durationDays||b.createdAt.localeCompare(a.createdAt)||
     b.id.localeCompare(a.id))){
     const observation=readOnlyEventObservation(original);
     if(!observation)continue;
     const start=observation.monitoringStartDate!;
-    if(!chosen.has(start))chosen.set(start,observation);
+    if(businessDate){
+      if(businessDate<start||businessDate>utcDateOffset(start,observation.monitorSpec.durationDays-1))continue;
+      // Sales are café-day facts, not per-event sales. One primary window owns
+      // the date even if multiple events and approvals overlap.
+      const key=observation.businessId+"|"+businessDate;
+      if(!chosen.has(key))chosen.set(key,observation);
+    }else if(!chosen.has(start))chosen.set(start,observation);
   }
   return [...chosen.values()];
 }
 /** Bounded, persisted monitor identity, shared by the live and report crons.
  * Fail closed when it cannot be read: guessing a new ID can duplicate notices. */
-export async function observedEventProposalIds(
+export async function observedEventProposalDates(
   db:ReturnType<typeof createAdminSupabaseClient>,businessId:string,
-  ids:readonly string[]):Promise<Set<string>>{
-  if(!ids.length)return new Set();
-  const found=new Set<string>();
+  ids:readonly string[]):Promise<{ids:Set<string>;byDate:Map<string,Set<string>>}>{
+  const found=new Set<string>(),byDate=new Map<string,Set<string>>();
+  if(!ids.length)return {ids:found,byDate};
   const unique=[...new Set(ids)].slice(0,100);
   // One event proposal has at most 14 observed business days. Chunks of 40
   // cannot silently hit the canonical 1,000-row provider cap.
   for(let i=0;i<unique.length;i+=40){
     const {data,error}=await db.from("supervisor_monitor_samples")
-      .select("proposal_id").eq("business_id",businessId)
+      .select("proposal_id,business_date").eq("business_id",businessId)
       .in("proposal_id",unique.slice(i,i+40)).limit(1000);
     if(error||!data)throw new Error("Event monitoring history unavailable");
-    for(const row of data)found.add(row.proposal_id as string);
+    for(const row of data){
+      const id=String(row.proposal_id);found.add(id);
+      if(typeof row.business_date!=="string")continue;
+      const dates=byDate.get(row.business_date)??new Set<string>();
+      dates.add(id);byDate.set(row.business_date,dates);
+    }
   }
-  return found;
+  return {ids:found,byDate};
+}
+export async function observedEventProposalIds(db:ReturnType<typeof createAdminSupabaseClient>,
+  businessId:string,ids:readonly string[]):Promise<Set<string>>{
+  return (await observedEventProposalDates(db,businessId,ids)).ids;
 }
 
 /** Read the already canonicalized, café-scoped Toast evidence only.
