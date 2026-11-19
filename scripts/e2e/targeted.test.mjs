@@ -121,3 +121,11 @@ test("Task14B supplier UI and approval card require actual purchasing browser pr
   ["gmail","purchasing"]);
  assert.equal(summarizeReport(report([["home","passed"]]),["purchasing"]).status,"failed");
 });
+
+test("newly covered exact owner route groups select their browser cases",()=>{
+ assert.deepEqual(classifyPaths(["app/[locale]/more/financial-settings/page.tsx"]).scenarios,["money"]);
+ assert.deepEqual(classifyPaths(["app/[locale]/menu/import-review/page.tsx"]).scenarios,["menu"]);
+ assert.deepEqual(classifyPaths(["app/[locale]/operations/experiments/page.tsx"]).scenarios,["staff"]);
+ assert.deepEqual(classifyPaths(["app/[locale]/more/uploads/sales/page.tsx"]).scenarios,["gmail"]);
+ assert.deepEqual(classifyPaths(["app/[locale]/new-unknown/page.tsx"]).unmapped,["app/[locale]/new-unknown/page.tsx"]);
+});

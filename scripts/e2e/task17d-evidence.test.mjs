@@ -42,3 +42,13 @@ test("unmapped new upstream registry/operation never becomes owner acceptance",(
   assert.throws(()=>assessCensus(census,[],contract),/Missing upstream/);
   assert.throws(()=>assessCensus(census,["chat_routine"],{...contract,censusCandidates:{"tool:manage_routine":["D99"]}}),/Unknown browser/);
 });
+
+test("new owner screens and retired route reviews cannot disappear from the census",()=>{
+ const a={id:"screen-candidate:new/page.tsx",kind:"screen-candidate",key:"new/page.tsx",fingerprint:"a".repeat(64)};
+ const result=assessCensus({head:"b".repeat(40),rows:[a]},["chat_routine"],
+   {cases:[{id:"D01"}],routeReview:{"old/page.tsx":{state:"navigation_case_authored",cases:["D01"]}}});
+ assert.deepEqual(result.missingRouteReviews,[a.id]);
+ assert.deepEqual(result.retiredRouteReviews,["old/page.tsx"]);
+ assert.equal(result.screens[0].status,"UNTESTED");
+ assert.equal(result.integrated_proven,false);
+});

@@ -3,6 +3,7 @@ import {appendFileSync, mkdirSync, readFileSync, writeFileSync} from "node:fs";
 import {dirname} from "node:path";
 import {pathToFileURL} from "node:url";
 import {verifyOwnerCases} from "./task17d-evidence.mjs";
+const ownerRouteGroups=JSON.parse(readFileSync(new URL("../../tests/e2e/task17d-owner-matrix.json",import.meta.url),"utf8")).routeGroups??[];
 
 export const SCENARIOS = Object.freeze(["home", "staff", "menu", "money", "gmail", "purchasing"]);
 const ALL = SCENARIOS;
@@ -86,6 +87,8 @@ export function scenariosForPath(path) {
       path === "app/[locale]/more/bills/page.tsx" || path === "components/bills/BillsManager.tsx" ||
       path === "components/money/MoneyViewSwitch.tsx" ||
       path.startsWith("lib/viewmodels/money")) return ["money"];
+  const direct=ownerRouteGroups.filter(group=>group.routes.some(([route])=>path==="app/[locale]"+route+"/page.tsx")).map(group=>group.tag);
+  if(direct.length)return [...new Set(direct)];
   if (path.startsWith("app/api/")) return [];
   if (/^app\/\[locale\]\//.test(path) ||
       path.startsWith("components/") ||

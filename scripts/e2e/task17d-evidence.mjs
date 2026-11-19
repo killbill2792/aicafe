@@ -62,7 +62,16 @@ export function assessCensus(census, families, contract=matrix) {
     reason:"real_autonomous_receipt_and_owner_browser_match_not_reconciled"}));
   const staleMappings=[...Object.keys(map).filter(id=>!ids.has(id)),
     ...Object.keys(autonomy).filter(id=>!families.includes(id)).map(id=>"autonomy:"+id)];
+  const routeReview=contract.routeReview??{};
+  const screens=rows.filter(r=>r.id.startsWith("screen-candidate:")).map(r=>{
+    const path=r.id.slice("screen-candidate:".length),review=routeReview[path];
+    return {id:r.id,classification:review?.state??"gap_unclassified",
+      cases:validRefs(review?.cases??[]),remaining:review?.remaining??"new route requires owner review",status:"UNTESTED"};
+  });
+  const missingRouteReviews=screens.filter(r=>r.classification==="gap_unclassified").map(r=>r.id);
+  const retiredRouteReviews=Object.keys(routeReview).filter(path=>!ids.has("screen-candidate:"+path));
   return {head:census.head,inventoryDigest:census.inventoryDigest??null,
+    screens,missingRouteReviews,retiredRouteReviews,
     rows,autonomyRows,staleMappings,
     unmapped:rows.filter(r=>!r.candidateCases.length).length,
     unmappedAutonomy:autonomyRows.filter(r=>!r.candidateCases.length).length,

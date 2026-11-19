@@ -1,6 +1,9 @@
 import {test,expect} from "@playwright/test";
 import {randomUUID,createHash} from "node:crypto";
+import {readFileSync} from "node:fs";
 import {withOwner,controls} from "./task17d-owner-fixtures.mjs";
+
+const matrix=JSON.parse(readFileSync(new URL("./task17d-owner-matrix.json",import.meta.url),"utf8"));
 
 for(const width of [390,1440]) {
   test("@home 17D:D01-"+width+" saved conversation and routine identity",async({browser})=>{
@@ -369,4 +372,26 @@ for(const width of [390,1440]) {
       expect(rows).toEqual([{id:run,thread_id:second.id,status:"pending"}]);
     });
   });
+
+  for(const group of matrix.routeGroups){
+    test("@"+group.tag+" 17D:"+group.id+"-"+width+" "+group.name,async({browser})=>{
+      test.setTimeout(240_000);
+      await withOwner(browser,width,async({cafe,session})=>{
+        const {page}=await session(cafe);
+        for(const [path,marker,redirect,search,hash] of group.routes){
+          await test.step(path,async()=>{
+            const response=await page.goto("/en"+path,{waitUntil:"domcontentloaded"});
+            expect(response?.status()).toBe(200);
+            const final=new URL(page.url());
+            expect(final.pathname).toBe("/en"+(redirect??path));
+            if(search)expect(final.searchParams.toString()).toContain(search);
+            if(hash)expect(final.hash).toBe(hash);
+            await expect(page.getByText(marker,{exact:true}).first()).toBeVisible({timeout:30000});
+            expect(await page.evaluate(()=>innerWidth)).toBe(width);
+            expect(await page.evaluate(()=>document.documentElement.scrollWidth)).toBeLessThanOrEqual(width);
+          });
+        }
+      });
+    });
+  }
 }

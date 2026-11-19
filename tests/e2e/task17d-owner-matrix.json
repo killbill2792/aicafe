@@ -126,6 +126,46 @@
         "D03",
         "D07"
       ]
+    },
+    {
+      "id": "D13",
+      "tag": "money",
+      "name": "financial planning, cost entry and settings routes",
+      "evidence": "actual_authenticated_route_reachability_only",
+      "families": [
+        "D05",
+        "D08"
+      ]
+    },
+    {
+      "id": "D14",
+      "tag": "menu",
+      "name": "catalog, pantry and source correction route reachability",
+      "evidence": "actual_authenticated_route_reachability_only",
+      "families": [
+        "D05",
+        "D08"
+      ]
+    },
+    {
+      "id": "D15",
+      "tag": "staff",
+      "name": "staff, rules and operations source navigation",
+      "evidence": "actual_authenticated_route_reachability_only",
+      "families": [
+        "D05",
+        "D08"
+      ]
+    },
+    {
+      "id": "D16",
+      "tag": "gmail",
+      "name": "owner account, POS and file import route reachability",
+      "evidence": "actual_authenticated_route_reachability_only",
+      "families": [
+        "D05",
+        "D08"
+      ]
     }
   ],
   "integration": {
@@ -158,7 +198,8 @@
       "D02"
     ],
     "screen-candidate:app/[locale]/more/page.tsx": [
-      "D08"
+      "D08",
+      "D16"
     ],
     "screen-candidate:app/[locale]/more/bills/page.tsx": [
       "D09"
@@ -198,6 +239,105 @@
     ],
     "routine-status:revoked": [
       "luna:17d"
+    ],
+    "screen-candidate:app/[locale]/money/page.tsx": [
+      "D13"
+    ],
+    "screen-candidate:app/[locale]/more/plan/page.tsx": [
+      "D13"
+    ],
+    "screen-candidate:app/[locale]/more/break-even/page.tsx": [
+      "D13"
+    ],
+    "screen-candidate:app/[locale]/more/economics/page.tsx": [
+      "D13"
+    ],
+    "screen-candidate:app/[locale]/more/try-scenario/page.tsx": [
+      "D13"
+    ],
+    "screen-candidate:app/[locale]/more/financial-settings/page.tsx": [
+      "D13"
+    ],
+    "screen-candidate:app/[locale]/more/processing-fees/page.tsx": [
+      "D13"
+    ],
+    "screen-candidate:app/[locale]/add-cost/page.tsx": [
+      "D13"
+    ],
+    "screen-candidate:app/[locale]/add-cost/type/page.tsx": [
+      "D13"
+    ],
+    "screen-candidate:app/[locale]/add-cost/receipt/page.tsx": [
+      "D13"
+    ],
+    "screen-candidate:app/[locale]/add-cost/voice/page.tsx": [
+      "D13"
+    ],
+    "screen-candidate:app/[locale]/add-cost/statement/page.tsx": [
+      "D13"
+    ],
+    "screen-candidate:app/[locale]/menu/page.tsx": [
+      "D14"
+    ],
+    "screen-candidate:app/[locale]/menu/pantry/page.tsx": [
+      "D14"
+    ],
+    "screen-candidate:app/[locale]/menu/manage/page.tsx": [
+      "D14"
+    ],
+    "screen-candidate:app/[locale]/menu/import-review/page.tsx": [
+      "D14"
+    ],
+    "screen-candidate:app/[locale]/menu/new/page.tsx": [
+      "D14"
+    ],
+    "screen-candidate:app/[locale]/staff/page.tsx": [
+      "D15"
+    ],
+    "screen-candidate:app/[locale]/staff/rules/page.tsx": [
+      "D15"
+    ],
+    "screen-candidate:app/[locale]/operations/rules/page.tsx": [
+      "D15"
+    ],
+    "screen-candidate:app/[locale]/more/manage-staff/page.tsx": [
+      "D15"
+    ],
+    "screen-candidate:app/[locale]/operations/experiments/page.tsx": [
+      "D15"
+    ],
+    "screen-candidate:app/[locale]/operations/suppliers/page.tsx": [
+      "D15"
+    ],
+    "screen-candidate:app/[locale]/more/cafe-profile/page.tsx": [
+      "D16"
+    ],
+    "screen-candidate:app/[locale]/more/toast/page.tsx": [
+      "D16"
+    ],
+    "screen-candidate:app/[locale]/more/alerts/page.tsx": [
+      "D16"
+    ],
+    "screen-candidate:app/[locale]/more/uploads/page.tsx": [
+      "D16"
+    ],
+    "screen-candidate:app/[locale]/more/uploads/history/page.tsx": [
+      "D16"
+    ],
+    "screen-candidate:app/[locale]/more/uploads/ingredients/page.tsx": [
+      "D16"
+    ],
+    "screen-candidate:app/[locale]/more/uploads/labor/page.tsx": [
+      "D16"
+    ],
+    "screen-candidate:app/[locale]/more/uploads/processing-fees/page.tsx": [
+      "D16"
+    ],
+    "screen-candidate:app/[locale]/more/uploads/sales/page.tsx": [
+      "D16"
+    ],
+    "screen-candidate:app/[locale]/more/delete-account/page.tsx": [
+      "D16"
     ]
   },
   "autonomyCandidates": {
@@ -258,5 +398,521 @@
     "authorized_effect_recovery": [
       "D05"
     ]
+  },
+  "routeGroups": [
+    {
+      "id": "D13",
+      "tag": "money",
+      "name": "financial planning, cost entry and settings routes",
+      "routes": [
+        [
+          "/money",
+          "Money"
+        ],
+        [
+          "/more/plan",
+          "Plan & goals"
+        ],
+        [
+          "/more/break-even",
+          "Plan & goals",
+          "/more/plan",
+          "tab=break-even"
+        ],
+        [
+          "/more/economics",
+          "Plan & goals",
+          "/more/plan",
+          "tab=profit-goal"
+        ],
+        [
+          "/more/try-scenario",
+          "Plan & goals",
+          "/more/plan",
+          "tab=what-if"
+        ],
+        [
+          "/more/financial-settings",
+          "Financial assumptions"
+        ],
+        [
+          "/more/processing-fees",
+          "Processing fees"
+        ],
+        [
+          "/add-cost",
+          "Add a cost"
+        ],
+        [
+          "/add-cost/type",
+          "Type it"
+        ],
+        [
+          "/add-cost/receipt",
+          "Photo of receipt"
+        ],
+        [
+          "/add-cost/voice",
+          "Say it"
+        ],
+        [
+          "/add-cost/statement",
+          "Upload bank statement"
+        ]
+      ]
+    },
+    {
+      "id": "D14",
+      "tag": "menu",
+      "name": "catalog, pantry and source correction route reachability",
+      "routes": [
+        [
+          "/menu",
+          "Menu"
+        ],
+        [
+          "/menu/pantry",
+          "Pantry"
+        ],
+        [
+          "/menu/manage",
+          "Menu",
+          "/menu"
+        ],
+        [
+          "/menu/import-review",
+          "Match items"
+        ],
+        [
+          "/menu/new",
+          "Add a drink or food item"
+        ]
+      ]
+    },
+    {
+      "id": "D15",
+      "tag": "staff",
+      "name": "staff, rules and operations source navigation",
+      "routes": [
+        [
+          "/staff",
+          "Schedule"
+        ],
+        [
+          "/staff/rules",
+          "Rules & costs"
+        ],
+        [
+          "/operations/rules",
+          "Rules & costs",
+          "/staff/rules"
+        ],
+        [
+          "/more/manage-staff",
+          "Team",
+          "/staff"
+        ],
+        [
+          "/operations/experiments",
+          "Experiments"
+        ],
+        [
+          "/operations/suppliers",
+          "Supplier sources"
+        ]
+      ]
+    },
+    {
+      "id": "D16",
+      "tag": "gmail",
+      "name": "owner account, POS and file import route reachability",
+      "routes": [
+        [
+          "/more",
+          "More"
+        ],
+        [
+          "/more/cafe-profile",
+          "Café profile"
+        ],
+        [
+          "/more/toast",
+          "Connect Toast"
+        ],
+        [
+          "/more/alerts",
+          "Alerts"
+        ],
+        [
+          "/more/uploads",
+          "Upload history"
+        ],
+        [
+          "/more/uploads/history",
+          "Upload history",
+          "/more/uploads",
+          null,
+          "#upload-history"
+        ],
+        [
+          "/more/uploads/ingredients",
+          "Import ingredient costs"
+        ],
+        [
+          "/more/uploads/labor",
+          "Import labor / time entries"
+        ],
+        [
+          "/more/uploads/processing-fees",
+          "Import processing fees"
+        ],
+        [
+          "/more/uploads/sales",
+          "Import sales report"
+        ],
+        [
+          "/more/delete-account",
+          "Delete account"
+        ]
+      ]
+    }
+  ],
+  "routeReview": {
+    "app/[locale]/page.tsx": {
+      "state": "behavior_case_authored",
+      "cases": [
+        "D01",
+        "D03",
+        "D04",
+        "D05",
+        "D06",
+        "D07",
+        "D08",
+        "D11",
+        "D12"
+      ],
+      "remaining": "all source and effect parity, independent live proof"
+    },
+    "app/[locale]/operations/page.tsx": {
+      "state": "behavior_case_authored",
+      "cases": [
+        "D02"
+      ],
+      "remaining": "all actionable incident families, real autonomous receipt"
+    },
+    "app/[locale]/more/bills/page.tsx": {
+      "state": "behavior_case_authored",
+      "cases": [
+        "D09"
+      ],
+      "remaining": "owner bill editing, real Luna parity"
+    },
+    "app/[locale]/more/supervisor-access/page.tsx": {
+      "state": "behavior_case_authored",
+      "cases": [
+        "D10"
+      ],
+      "remaining": "all connector/revocation and real resumed-work scenarios"
+    },
+    "app/[locale]/login/page.tsx": {
+      "state": "behavior_case_authored",
+      "cases": [
+        "D08"
+      ],
+      "remaining": "login failures and account recovery"
+    },
+    "app/[locale]/more/gmail/page.tsx": {
+      "state": "existing_regression_candidate",
+      "cases": [],
+      "remaining": "existing Task16C failure, actual authorized provider delivery"
+    },
+    "app/[locale]/menu/[itemId]/page.tsx": {
+      "state": "gap_dynamic_source",
+      "cases": [],
+      "remaining": "real menu item and foreign item identity, price/recipe parity"
+    },
+    "app/[locale]/more/alerts/[id]/page.tsx": {
+      "state": "gap_dynamic_source",
+      "cases": [],
+      "remaining": "canonical alert identity and source resolution"
+    },
+    "app/[locale]/more/uploads/[uploadId]/page.tsx": {
+      "state": "gap_dynamic_source",
+      "cases": [],
+      "remaining": "actual upload results, rejection, and foreign-ID denial"
+    },
+    "app/[locale]/forgot-password/page.tsx": {
+      "state": "gap_public_account",
+      "cases": [],
+      "remaining": "isolated reset transport, no actual delivery"
+    },
+    "app/[locale]/reset-password/page.tsx": {
+      "state": "gap_public_account",
+      "cases": [],
+      "remaining": "isolated valid/expired reset tokens"
+    },
+    "app/[locale]/signup/page.tsx": {
+      "state": "gap_public_account",
+      "cases": [],
+      "remaining": "new disposable account, onboarding and duplicates"
+    },
+    "app/[locale]/onboarding/page.tsx": {
+      "state": "gap_public_account",
+      "cases": [],
+      "remaining": "new account setup and demo/own-cafe distinction"
+    },
+    "app/[locale]/pricing/page.tsx": {
+      "state": "gap_account_billing",
+      "cases": [],
+      "remaining": "read-only presentation and safe entitlement conditions"
+    },
+    "app/[locale]/more/access/page.tsx": {
+      "state": "gap_account_billing",
+      "cases": [],
+      "remaining": "legacy redirect to pricing"
+    },
+    "app/[locale]/privacy/page.tsx": {
+      "state": "gap_public_account",
+      "cases": [],
+      "remaining": "public privacy document reachability"
+    },
+    "app/[locale]/money/page.tsx": {
+      "state": "navigation_case_authored",
+      "cases": [
+        "D13"
+      ],
+      "remaining": "full source/action parity and applicable real Luna proof"
+    },
+    "app/[locale]/more/plan/page.tsx": {
+      "state": "navigation_case_authored",
+      "cases": [
+        "D13"
+      ],
+      "remaining": "full source/action parity and applicable real Luna proof"
+    },
+    "app/[locale]/more/break-even/page.tsx": {
+      "state": "navigation_case_authored",
+      "cases": [
+        "D13"
+      ],
+      "remaining": "full source/action parity and applicable real Luna proof"
+    },
+    "app/[locale]/more/economics/page.tsx": {
+      "state": "navigation_case_authored",
+      "cases": [
+        "D13"
+      ],
+      "remaining": "full source/action parity and applicable real Luna proof"
+    },
+    "app/[locale]/more/try-scenario/page.tsx": {
+      "state": "navigation_case_authored",
+      "cases": [
+        "D13"
+      ],
+      "remaining": "full source/action parity and applicable real Luna proof"
+    },
+    "app/[locale]/more/financial-settings/page.tsx": {
+      "state": "navigation_case_authored",
+      "cases": [
+        "D13"
+      ],
+      "remaining": "full source/action parity and applicable real Luna proof"
+    },
+    "app/[locale]/more/processing-fees/page.tsx": {
+      "state": "navigation_case_authored",
+      "cases": [
+        "D13"
+      ],
+      "remaining": "full source/action parity and applicable real Luna proof"
+    },
+    "app/[locale]/add-cost/page.tsx": {
+      "state": "navigation_case_authored",
+      "cases": [
+        "D13"
+      ],
+      "remaining": "full source/action parity and applicable real Luna proof"
+    },
+    "app/[locale]/add-cost/type/page.tsx": {
+      "state": "navigation_case_authored",
+      "cases": [
+        "D13"
+      ],
+      "remaining": "full source/action parity and applicable real Luna proof"
+    },
+    "app/[locale]/add-cost/receipt/page.tsx": {
+      "state": "navigation_case_authored",
+      "cases": [
+        "D13"
+      ],
+      "remaining": "full source/action parity and applicable real Luna proof"
+    },
+    "app/[locale]/add-cost/voice/page.tsx": {
+      "state": "navigation_case_authored",
+      "cases": [
+        "D13"
+      ],
+      "remaining": "full source/action parity and applicable real Luna proof"
+    },
+    "app/[locale]/add-cost/statement/page.tsx": {
+      "state": "navigation_case_authored",
+      "cases": [
+        "D13"
+      ],
+      "remaining": "full source/action parity and applicable real Luna proof"
+    },
+    "app/[locale]/menu/page.tsx": {
+      "state": "navigation_case_authored",
+      "cases": [
+        "D14"
+      ],
+      "remaining": "full source/action parity and applicable real Luna proof"
+    },
+    "app/[locale]/menu/pantry/page.tsx": {
+      "state": "navigation_case_authored",
+      "cases": [
+        "D14"
+      ],
+      "remaining": "full source/action parity and applicable real Luna proof"
+    },
+    "app/[locale]/menu/manage/page.tsx": {
+      "state": "navigation_case_authored",
+      "cases": [
+        "D14"
+      ],
+      "remaining": "full source/action parity and applicable real Luna proof"
+    },
+    "app/[locale]/menu/import-review/page.tsx": {
+      "state": "navigation_case_authored",
+      "cases": [
+        "D14"
+      ],
+      "remaining": "full source/action parity and applicable real Luna proof"
+    },
+    "app/[locale]/menu/new/page.tsx": {
+      "state": "navigation_case_authored",
+      "cases": [
+        "D14"
+      ],
+      "remaining": "full source/action parity and applicable real Luna proof"
+    },
+    "app/[locale]/staff/page.tsx": {
+      "state": "navigation_case_authored",
+      "cases": [
+        "D15"
+      ],
+      "remaining": "full source/action parity and applicable real Luna proof"
+    },
+    "app/[locale]/staff/rules/page.tsx": {
+      "state": "navigation_case_authored",
+      "cases": [
+        "D15"
+      ],
+      "remaining": "full source/action parity and applicable real Luna proof"
+    },
+    "app/[locale]/operations/rules/page.tsx": {
+      "state": "navigation_case_authored",
+      "cases": [
+        "D15"
+      ],
+      "remaining": "full source/action parity and applicable real Luna proof"
+    },
+    "app/[locale]/more/manage-staff/page.tsx": {
+      "state": "navigation_case_authored",
+      "cases": [
+        "D15"
+      ],
+      "remaining": "full source/action parity and applicable real Luna proof"
+    },
+    "app/[locale]/operations/experiments/page.tsx": {
+      "state": "navigation_case_authored",
+      "cases": [
+        "D15"
+      ],
+      "remaining": "full source/action parity and applicable real Luna proof"
+    },
+    "app/[locale]/operations/suppliers/page.tsx": {
+      "state": "navigation_case_authored",
+      "cases": [
+        "D15"
+      ],
+      "remaining": "full source/action parity and applicable real Luna proof"
+    },
+    "app/[locale]/more/page.tsx": {
+      "state": "navigation_case_authored",
+      "cases": [
+        "D16"
+      ],
+      "remaining": "full source/action parity and applicable real Luna proof"
+    },
+    "app/[locale]/more/cafe-profile/page.tsx": {
+      "state": "navigation_case_authored",
+      "cases": [
+        "D16"
+      ],
+      "remaining": "full source/action parity and applicable real Luna proof"
+    },
+    "app/[locale]/more/toast/page.tsx": {
+      "state": "navigation_case_authored",
+      "cases": [
+        "D16"
+      ],
+      "remaining": "full source/action parity and applicable real Luna proof"
+    },
+    "app/[locale]/more/alerts/page.tsx": {
+      "state": "navigation_case_authored",
+      "cases": [
+        "D16"
+      ],
+      "remaining": "full source/action parity and applicable real Luna proof"
+    },
+    "app/[locale]/more/uploads/page.tsx": {
+      "state": "navigation_case_authored",
+      "cases": [
+        "D16"
+      ],
+      "remaining": "full source/action parity and applicable real Luna proof"
+    },
+    "app/[locale]/more/uploads/history/page.tsx": {
+      "state": "navigation_case_authored",
+      "cases": [
+        "D16"
+      ],
+      "remaining": "full source/action parity and applicable real Luna proof"
+    },
+    "app/[locale]/more/uploads/ingredients/page.tsx": {
+      "state": "navigation_case_authored",
+      "cases": [
+        "D16"
+      ],
+      "remaining": "full source/action parity and applicable real Luna proof"
+    },
+    "app/[locale]/more/uploads/labor/page.tsx": {
+      "state": "navigation_case_authored",
+      "cases": [
+        "D16"
+      ],
+      "remaining": "full source/action parity and applicable real Luna proof"
+    },
+    "app/[locale]/more/uploads/processing-fees/page.tsx": {
+      "state": "navigation_case_authored",
+      "cases": [
+        "D16"
+      ],
+      "remaining": "full source/action parity and applicable real Luna proof"
+    },
+    "app/[locale]/more/uploads/sales/page.tsx": {
+      "state": "navigation_case_authored",
+      "cases": [
+        "D16"
+      ],
+      "remaining": "full source/action parity and applicable real Luna proof"
+    },
+    "app/[locale]/more/delete-account/page.tsx": {
+      "state": "navigation_case_authored",
+      "cases": [
+        "D16"
+      ],
+      "remaining": "destructive action not executed; separately scoped disposable account deletion and safety confirmation"
+    }
   }
 }
