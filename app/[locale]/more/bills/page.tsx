@@ -1,6 +1,8 @@
 import { getTranslations } from "next-intl/server";
 import { requireOwnBusiness } from "@/lib/auth/requireUser";
 import { getRecurringCosts } from "@/lib/data/getRecurringCosts";
+import { getActiveBusinessId } from "@/lib/data/getActiveBusinessId";
+import { readSupervisorCafeIdentity } from "@/lib/ai/cafeTools.server";
 import BackHeader from "@/components/shared/BackHeader";
 import BillsManager from "@/components/bills/BillsManager";
 import { EXPENSE_CATEGORY_CODES, type ExpenseCategoryCode } from "@/lib/constants";
@@ -11,8 +13,9 @@ import { isBillCategory } from "@/lib/expenses/expectedCosts";
 export const dynamic = "force-dynamic";
 
 export default async function BillsPage({ searchParams }: { searchParams: Promise<{ category?: string }> }) {
-  await requireOwnBusiness();
-  const [{ category }, bills] = await Promise.all([searchParams, getRecurringCosts()]);
+  const user = await requireOwnBusiness();
+  const [{ category }, bills, identity] = await Promise.all([searchParams, getRecurringCosts(),
+    user ? getActiveBusinessId(user.id).then(id=>readSupervisorCafeIdentity(id)).catch(()=>null) : null]);
   const t = await getTranslations("Bills");
   const tCommon = await getTranslations("Common");
   const tCategories = await getTranslations("Categories");
@@ -27,6 +30,8 @@ export default async function BillsPage({ searchParams }: { searchParams: Promis
       <BackHeader title={t("title")} subtitle={t("subtitle")} backHref="/more" backLabel={tCommon("back")} />
       <BillsManager key={category ?? "none"}
         bills={bills}
+        currency={identity?.currency??null}
+        currencyMissingLabel={tCommon("currencyNotSet")}
         initialCategory={EXPENSE_CATEGORY_CODES.includes(category as ExpenseCategoryCode) && isBillCategory(category as ExpenseCategoryCode) ? category as ExpenseCategoryCode : null}
         categoryLabels={categoryLabels}
         labels={{

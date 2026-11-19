@@ -41,9 +41,12 @@ for(const width of [390,1440]) {
         [cafe.businessId,id,cafe.owner.userId,JSON.stringify(payload),id]);
       try {
         const {page}=await session();
+        await page.setViewportSize({width:1440,height:900});
         await page.goto("/en/operations?agent=leo&status=needs_you&task="+encodeURIComponent(id));
+        await expect(page.getByText(cafe.name,{exact:true}).first()).toBeVisible({timeout:30000});
+        await page.setViewportSize({width,height:width===390?844:900});
         const card=page.locator('article[data-task-kind="priority_notice"]').filter({hasText:title});
-        await expect(card).toHaveCount(1);await expect(card).toBeVisible();
+        await expect(card).toHaveCount(1,{timeout:30000});await expect(card).toBeVisible();
         const rows=await query("select status,payload,owner_user_id from public.operating_tasks where business_id=$1 and id=$2",[cafe.businessId,id]);
         expect(rows).toEqual([{status:"needs_owner",payload,owner_user_id:cafe.owner.userId}]);
         await card.getByRole("link",{name:/open in chat/i}).click();
@@ -209,7 +212,8 @@ for(const width of [390,1440]) {
       const t=await thread(),episode=randomUUID(),source=randomUUID(),run=randomUUID();
       const hash=createHash("sha256").update(source).digest("hex");
       await query("insert into public.supervisor_investigations(business_id,owner_user_id,thread_id,source_type,source_id,revision_hash,stable_key,episode_id,phase,last_error) values($1,$2,$3,'alert',$4,$5,$5,$6,'blocked','source_missing')",[cafe.businessId,cafe.owner.userId,t.id,source,hash,episode]);
-      await query("insert into public.supervisor_runs(id,business_id,owner_user_id,thread_id,request_key,plan_hash,status,finished_at) values($1,$2,$3,$4,$5,$6,'completed',now())",[run,cafe.businessId,cafe.owner.userId,t.id,randomUUID(),hash]);
+      await query("insert into public.supervisor_runs(id,business_id,owner_user_id,thread_id,request_key,plan_hash,status) values($1,$2,$3,$4,$5,$6,'blocked')",[run,cafe.businessId,cafe.owner.userId,t.id,randomUUID(),hash]);
+      await query("insert into public.supervisor_run_steps(business_id,run_id,step_key,step_index,retry_mode,status,error_code) values($1,$2,'owner_turn',1,'reconcile','blocked','lease_expired')",[cafe.businessId,run]);
       const {page}=await session();await open(page,t);
       const investigation=page.locator('[data-work-id="investigation:'+episode+'"]');
       const durable=page.locator('[data-work-id="run:'+run+'"]');
@@ -269,7 +273,7 @@ for(const width of [390,1440]) {
         const {page}=await session(who);await page.goto("/en/more/bills");
         const totalSection=page.locator("section").filter({hasText:"Total monthly bills"});
         await expect(totalSection).toHaveCount(1);
-        // Keep this assertion even when the old Bills screen assumes USD.
+        // Compare the actual active café currency, not a browser or default currency.
         await expect.soft(totalSection).toContainText(money(total));
         const estimated=costs.find(row=>row.category_code==="utilities_power"&&row.is_estimate);
         expect(estimated).toBeTruthy();
@@ -324,6 +328,45 @@ for(const width of [390,1440]) {
         await query("delete from public.supervisor_external_access_audit where business_id=$1 and owner_user_id=$2 and kind='attachment' and resource_key=$3",[cafe.businessId,cafe.owner.userId,file]);
         await query("delete from public.supervisor_external_access where business_id=$1 and owner_user_id=$2 and kind='attachment' and resource_key=$3",[cafe.businessId,cafe.owner.userId,file]);
       }
+    });
+  });
+
+  test("@home 17D:D11-"+width+" standing permission read failure, retry and no grant without MFA",async({browser})=>{
+    test.setTimeout(120_000);
+    await withOwner(browser,width,async({cafe,query,session,thread,open})=>{
+      const t=await thread(),{page}=await session();await open(page,t);
+      const before=await query("select id,revision,capability_id,revoked_at from public.supervisor_mandates where business_id=$1 and owner_user_id=$2 order by id,revision",[cafe.businessId,cafe.owner.userId]);
+      await page.route("**/api/ai/threads/*/mandates**",route=>route.fulfill({status:503,contentType:"application/json",body:'{"error":"unavailable"}'}));
+      const panel=await controls(page,"Permissions");
+      await expect(panel.getByText("Permissions could not be verified. Do not assume any authorization is active.",{exact:true})).toBeVisible();
+      await page.unroute("**/api/ai/threads/*/mandates**");
+      await panel.getByRole("button",{name:"Refresh status",exact:true}).click();
+      await expect(panel.getByText("No standing permissions have been granted.",{exact:true})).toBeVisible();
+      await expect(panel.getByText(/No permission here authorizes payments/)).toBeVisible();
+      expect(await query("select id,revision,capability_id,revoked_at from public.supervisor_mandates where business_id=$1 and owner_user_id=$2 order by id,revision",[cafe.businessId,cafe.owner.userId])).toEqual(before);
+      expect(before).toEqual([]);
+      await page.keyboard.press("Escape");await expect(panel).toHaveCount(0);
+    });
+  });
+
+  test("@home 17D:D12-"+width+" owner opens saved work from another conversation and returns to library",async({browser})=>{
+    test.setTimeout(120_000);
+    await withOwner(browser,width,async({cafe,query,session,thread,open})=>{
+      const first=await thread(),second=await thread(),run=randomUUID();
+      await query("insert into public.supervisor_runs(id,business_id,owner_user_id,thread_id,request_key,plan_hash,status) values($1,$2,$3,$4,$5,$6,'pending')",[run,cafe.businessId,cafe.owner.userId,second.id,randomUUID(),createHash("sha256").update(run).digest("hex")]);
+      const {page}=await session();await open(page,first);
+      const panel=await controls(page,"Library");
+      await panel.getByRole("button",{name:second.title,exact:true}).click();
+      await expect(panel).toHaveCount(0);
+      await expect(page).toHaveURL(new RegExp("thread="+second.id));
+      await expect(page.locator('[data-work-id="run:'+run+'"]')).toHaveAttribute("data-work-status","queued");
+      await page.reload();
+      await expect(page.locator('[data-work-id="run:'+run+'"]')).toHaveAttribute("data-work-status","queued");
+      const library=await controls(page,"Library");
+      await library.getByRole("button",{name:first.title,exact:true}).click();
+      await expect(page).toHaveURL(new RegExp("thread="+first.id));
+      const rows=await query("select id,thread_id,status from public.supervisor_runs where business_id=$1 and id=$2",[cafe.businessId,run]);
+      expect(rows).toEqual([{id:run,thread_id:second.id,status:"pending"}]);
     });
   });
 }

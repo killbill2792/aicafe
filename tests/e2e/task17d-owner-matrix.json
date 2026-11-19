@@ -105,6 +105,27 @@
         "D07",
         "D09"
       ]
+    },
+    {
+      "id": "D11",
+      "tag": "home",
+      "name": "permission read failure and verified retry, no grant",
+      "evidence": "actual_browser_fault_no_effect",
+      "families": [
+        "D06",
+        "D09"
+      ]
+    },
+    {
+      "id": "D12",
+      "tag": "home",
+      "name": "owner cross-conversation library navigation and saved work",
+      "evidence": "fixture_presentation",
+      "families": [
+        "D01",
+        "D03",
+        "D07"
+      ]
     }
   ],
   "integration": {
@@ -129,7 +150,9 @@
       "D05",
       "D06",
       "D07",
-      "D08"
+      "D08",
+      "D11",
+      "D12"
     ],
     "screen-candidate:app/[locale]/operations/page.tsx": [
       "D02"
@@ -225,10 +248,12 @@
     ],
     "duplicate_event": [],
     "revoked_access": [
-      "D10"
+      "D10",
+      "D11"
     ],
     "offline_owner": [
-      "D03"
+      "D03",
+      "D12"
     ],
     "authorized_effect_recovery": [
       "D05"
