@@ -34,4 +34,10 @@ describe("mid-run update delivery",()=>{
     await new SupabaseLoopRepository().saveReport(scope,p,report);
     expect(writes.rows.map(w=>w.table)).toEqual(["supervisor_reports"]);
   });
+  it("does not overwrite a terminal report when replaying a distinct elapsed-day notice",async()=>{
+    await new SupabaseLoopRepository().saveReport(scope,p,{...report,midRunKey:"verified-source-day-3"},{midRun:true});
+    expect(writes.rows.some(w=>w.table==="supervisor_reports")).toBe(false);
+    expect(writes.rows.find(w=>w.table==="ai_messages")?.row.id).toBe(stableMessageId("supervisor-midrun:"+p.id+":verified-source-day-3"));
+  });
+
 });
