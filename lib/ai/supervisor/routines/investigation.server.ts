@@ -335,7 +335,7 @@ export async function processNextInvestigation(db:SupabaseClient,now:Date,
     const context={
       tools:createOwnerScopedCafeTools(scope,db),locale:"en" as const,
       asOf:identity.asOf,timezone:identity.timezone,currency:identity.currency,
-      canonicalData:async()=>({db,businessId:c.business_id}),
+      canonicalData:async()=>({db,businessId:c.business_id,aggregateOnly:true}),
       ...(supplierResearch?{webSearch:async(_modelQuery:string,budget?:WebSearchBudget)=>{
         if(searched)return {available:false as const,reason:"budget" as const};
         searched=true;
@@ -413,6 +413,7 @@ export async function processNextInvestigation(db:SupabaseClient,now:Date,
     // Do not publish unverified model assertions. But an exact source-bound read
     // with missing corroboration can still generate a deterministic owner question.
     // The existing awaiting_owner checkpoint and notification transaction carry it.
+    const customerIncident=synopsis.kind==="business_anomaly"&&(claimSelector?.family==="customer_trend"||claimSelector?.family==="data_gap"&&["customer_identity_coverage","reader_unavailable:customer_intelligence"].includes(String(claimSelector?.subject)));
     let report=verified.ok?verified:null;
     if(!verified.ok&&synopsis.kind==="business_anomaly"&&verified.reason==="evidence_incomplete"){
       const source=await readIncidentEvidence(db,c);
@@ -421,7 +422,7 @@ export async function processNextInvestigation(db:SupabaseClient,now:Date,
       if(source.missing.length===0&&typeof family==="string"){
         const questions:Record<string,string>={data_gap:"Can you confirm or supply the missing business evidence in the relevant source screen?",stock_shortage:"Can you confirm the latest physical count and whether an order is already on its way?",stockout_risk:"Can you confirm the latest physical count and when your next delivery is due?",supplier_quote:"Can you confirm the latest comparable supplier quote and delivery terms?",early_clock_in:"Can you confirm the published shift and actual attendance record?"};
         const question=questions[family]??"Can you confirm the relevant source records so I can finish checking this change?";
-        report={ok:true,text:"I could not independently corroborate all the evidence for this business observation. "+question+" I will keep checking the source records. No external action was taken.",tools:["get_investigation_source"],missing:["independent_corroboration_missing"]};
+        report={ok:true,text:customerIncident?"I could not verify enough customer evidence to make a reliable customer trend claim. I will recheck the retained Toast records and available source evidence, and keep this unresolved until I can verify it. No action was taken.":"I could not independently corroborate all the evidence for this business observation. "+question+" I will keep checking the source records. No external action was taken.",tools:["get_investigation_source"],missing:["independent_corroboration_missing"]};
       }
     }
     if(!report)throw new Error(verified.ok?"evidence_incomplete":verified.reason);
@@ -458,7 +459,7 @@ export async function processNextInvestigation(db:SupabaseClient,now:Date,
           report={...report,missing:[...new Set([...report.missing,"stock_purchase_draft_unverified"])]};
         }
       }
-      if(report.missing.length&&!ownerQuestion&&!stockPurchaseProposalId&&!stockEmailProposalId){
+      if(!customerIncident&&report.missing.length&&!ownerQuestion&&!stockPurchaseProposalId&&!stockEmailProposalId){
         const family=String(selector?.family??"");
         ownerQuestion=family==="stockout_risk"||family==="stock_shortage"?
           "What is the latest stock count, confirmed incoming delivery or current firm supplier quote?":
@@ -467,7 +468,7 @@ export async function processNextInvestigation(db:SupabaseClient,now:Date,
           "What missing source details can you confirm for this business observation?";
       }
     }
-    if(!ownerQuestion&&report.missing.length&&!stockPurchaseProposalId&&!stockEmailProposalId)
+    if(!customerIncident&&!ownerQuestion&&report.missing.length&&!stockPurchaseProposalId&&!stockEmailProposalId)
       ownerQuestion="What additional information can you confirm so I can continue checking this issue?";
     // The agent's complete, number-checked reply is the only owner-visible
     // result. An incomplete response is NEVER recorded as investigation done.

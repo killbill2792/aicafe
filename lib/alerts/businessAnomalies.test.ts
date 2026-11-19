@@ -3,7 +3,8 @@ vi.mock("server-only",()=>({}));
 vi.mock("@/lib/data/timecardsForInterval.server",()=>({readTimecardsForInterval:async()=>[]}));
 vi.mock("@/lib/data/posFactReaders.server",()=>({posFactReaders:()=>({peakHours:async()=>({available:false,value:null,quality:{missingInputs:["hours"],estimatedInputs:[],staleInputs:[]}})})}));
 vi.mock("@/lib/data/todayLive.server",()=>({readSavedTodayLive:async()=>null,TODAY_LIVE_FRESH_MS:900000}));
-const inputs=vi.hoisted(()=>({sales:vi.fn(),wages:vi.fn(),expenses:vi.fn(),costs:vi.fn(),products:vi.fn(),stock:vi.fn(),usage:vi.fn(),quotes:vi.fn(),snapshot:vi.fn(),menu:vi.fn()}));
+const inputs=vi.hoisted(()=>({customer:vi.fn(async(_raw:unknown)=>({rows:[{count_source_ref:0,"count_data.aiCafeCustomer.identityRef":0,"count_data.aiCafeCustomer.displayName":0}],missing:[] as string[],truncated:false,error:undefined})),sales:vi.fn(),wages:vi.fn(),expenses:vi.fn(),costs:vi.fn(),products:vi.fn(),stock:vi.fn(),usage:vi.fn(),quotes:vi.fn(),snapshot:vi.fn(),menu:vi.fn()}));
+vi.mock("@/lib/ai/agent/tools/dataQuery",()=>({dataQueryTools:{query_data:{execute:inputs.customer}}}));
 vi.mock("@/lib/ai/supervisorReads.server",()=>({supervisorHistoricalReaders:()=>({salesTrend:inputs.sales})}));
 vi.mock("@/lib/ai/supervisorFacts.server",()=>({supervisorFactReaders:()=>({recordedExpenses:inputs.expenses,productSales:inputs.products})}));
 vi.mock("@/lib/data/agentReadSources.server",()=>({agentSourceReaders:()=>({ingredientCosts:inputs.costs})}));
@@ -89,4 +90,74 @@ it("uses observed old recipe quantities and never resolves their incident on mis
  expect(rpc).toHaveBeenCalledWith("supervisor_reconcile_business_anomaly",expect.objectContaining({p_key:"data_gap:product_recipe_history",p_active:true}));
  history=[{product_id:"product",ingredient_id:"ing",quantity:150,price_micros:1000000}];rpc.mockClear();await run();
  expect(rpc).toHaveBeenCalledWith("supervisor_reconcile_business_anomaly",expect.objectContaining({p_key:"product_cost:product",p_active:false}));
+});
+
+it("the scheduled anomaly pass reconciles only comparable customer evidence and retains trends through low coverage",async()=>{
+ const q={missingInputs:[],estimatedInputs:[],staleInputs:[]};
+ inputs.sales.mockResolvedValue({available:false,value:null,quality:q});
+ inputs.expenses.mockResolvedValue({available:false,value:null,quality:q});
+ inputs.costs.mockResolvedValue({value:{items:[]},quality:q});
+ inputs.products.mockResolvedValue({available:false,value:null,quality:q});
+ inputs.menu.mockResolvedValue({items:[]});inputs.wages.mockResolvedValue([]);
+ inputs.stock.mockResolvedValue({rows:[],error:null,truncated:false});
+ inputs.usage.mockResolvedValue({rows:[],provenance:{coverage:"incomplete"}});
+ inputs.quotes.mockResolvedValue({quotes:[],ingredients:[],currency:"USD",truncated:false});
+ inputs.snapshot.mockResolvedValue({});
+ let low=false,changed=true;
+ const implementation=async(raw:unknown)=>{
+  const p=raw as {view:string;date_from:string;group_by?:string[];metrics:Array<{column:string}>};
+  const recent=p.date_from==="2026-11-12"||p.date_from==="2026-08-21";
+  if(p.view==="cv_customer_products"){
+   if(p.group_by?.[0]==="product_ref"){
+    const ids=["11111111-1111-4111-8111-111111111111","22222222-2222-4222-8222-222222222222"];
+    const a=recent&&changed?80:40;
+    return {rows:ids.map((product_ref,i)=>({product_ref,sum_quantity:i===0?a:100-a,count_quantity:20,count_source_ref:20})),
+     missing:[],truncated:false,error:undefined,customerCoverage:{complete:true}};
+   }
+   return {rows:[],missing:["empty"],truncated:false,error:undefined,customerCoverage:{complete:true}};
+  }
+  const row:Record<string,number> =p.view==="cv_toast_records"?
+   {count_source_ref:100,"count_data.aiCafeCustomer.identityRef":low&&recent?5:90,"count_data.aiCafeCustomer.displayName":80}:
+   p.metrics.some(m=>m.column==="historical_recipe_contribution_cents")?
+    {count_historical_recipe_contribution_cents:80,avg_historical_recipe_contribution_cents:recent&&changed?200:400}:
+   p.metrics.some(m=>m.column==="observed_lapse_flag"||m.column==="observed_reappearance_flag")?
+    Object.fromEntries(p.metrics.map((m,i)=>[(i===0?"count_":"sum_")+m.column,i===0?40:recent&&changed?20:8])):
+   p.metrics.some(m=>m.column.startsWith("observed_return_"))?
+    Object.fromEntries(p.metrics.map(m=>[`${m.column&&m===p.metrics[0]?"count":"sum"}_${m.column}`,m===p.metrics[0]?40:24])):
+
+    {count_source_ref:80,count_distinct_identity_ref:60,sum_first_observed_visit:recent&&changed?40:60,
+     sum_returning_visit:recent&&changed?40:20,count_net_sales_cents:80,avg_net_sales_cents:900,
+     count_period_account_revenue_share_squared:60,sum_period_account_revenue_share_squared:recent&&changed?.3:.15};
+  return {rows:[row],missing:[],truncated:false,error:undefined,customerCoverage:{complete:true,eligibleChecks:100,linkedChecks:90}};
+ };
+ inputs.customer.mockImplementation(implementation as never);
+ const incidents=new Map<string,boolean>();
+ const rpc=vi.fn(async(name:string,args:{p_key:string;p_active:boolean})=>{
+  if(name==="supervisor_reconcile_business_anomaly")incidents.set(args.p_key,args.p_active);
+  return {data:name==="supervisor_prior_recipe_evidence"?[]:true,error:null};
+ });
+ const run=()=>refreshBusinessAnomalies({rpc} as never,"cafe","2026-11-19","America/Los_Angeles",new Date("2026-11-19T20:00:00Z"));
+ try{
+  await run();expect(incidents.get("customer_trend:returning_visit_share")).toBe(true);
+  expect(incidents.get("customer_trend:linked_revenue_concentration")).toBe(true);
+  expect(incidents.get("customer_trend:average_recipe_contribution")).toBe(true);
+  expect(incidents.get("customer_trend:observed_long_gap_share")).toBe(true);
+  expect(incidents.get("customer_trend:observed_reappearance_share")).toBe(true);
+  expect(incidents.get("customer_trend:returning_product_mix:11111111-1111-4111-8111-111111111111")).toBe(true);
+  for(const horizon of [7,30,60,90])expect(incidents.get(`customer_trend:observed_return_${horizon}d`)).toBe(false);
+  low=true;rpc.mockClear();await run();
+  expect(incidents.get("data_gap:customer_identity_coverage")).toBe(true);
+  expect(incidents.get("customer_trend:returning_visit_share")).toBe(true);
+  expect(rpc.mock.calls.some(([,p])=>p.p_key==="customer_trend:returning_visit_share")).toBe(false);
+  low=false;changed=false;await run();
+  expect(incidents.get("data_gap:customer_identity_coverage")).toBe(false);
+  expect(incidents.get("customer_trend:returning_visit_share")).toBe(false);
+  expect(incidents.get("customer_trend:linked_revenue_concentration")).toBe(false);
+  expect(incidents.get("customer_trend:average_recipe_contribution")).toBe(false);
+  expect(incidents.get("customer_trend:observed_long_gap_share")).toBe(false);
+  expect(incidents.get("customer_trend:observed_reappearance_share")).toBe(false);
+  expect(incidents.get("customer_trend:returning_product_mix:11111111-1111-4111-8111-111111111111")).toBe(false);
+ }finally{
+  inputs.customer.mockImplementation(async()=>({rows:[{count_source_ref:0,"count_data.aiCafeCustomer.identityRef":0,"count_data.aiCafeCustomer.displayName":0}],missing:[],truncated:false,error:undefined}));
+ }
 });

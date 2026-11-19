@@ -374,3 +374,23 @@ describe("Task 15A genuine multi-step agentic acceptance",()=>{
       .toMatchObject({ok:false});
   });
 });
+
+it("customer investigations require an actual scoped aggregate and an independent domain",()=>{
+ const target={sourceType:"alert" as const,sourceId:"customer-case",kind:"business_anomaly"};
+ const src={name:"get_investigation_source",result:{source:"investigation_source",period:null,missing:[],
+  sourceType:"alert",sourceId:"customer-case",incidentKind:"business_anomaly",
+  selectors:{family:"customer_trend",subject:"returning_visit_share",from:"2026-11-12",to:"2026-11-18"}}};
+ const customer={name:"query_data",result:{source:"canonical_data",view:"cv_customer_visits",
+  aggregateOnly:true,customerEvidence:true,period:{from:"2026-11-12",to:"2026-11-18"},
+  missing:[],rows:[{sum_returning_visit:20,count_source_ref:80}],empty:false,truncated:false}};
+ const schema={name:"describe_data",result:{source:"toast_fields",period:null,missing:[],retainedFields:30,fields:[{field:"data.customer.guid"}]}};
+ const verify=(...calls:unknown[])=>verifyInvestigationTurn(turn({toolInvocations:[src,...calls]}),target);
+ expect(verify(customer,labor).ok).toBe(true);
+ expect(verify(customer,sales).ok).toBe(false);
+ expect(verify(schema,labor).ok).toBe(false);
+ expect(verify({...customer,result:{...customer.result,rows:[],rowCount:0}},labor).ok).toBe(false);
+ expect(verify({...customer,result:{...customer.result,truncated:true}},labor).ok).toBe(false);
+ expect(verify({...customer,result:{...customer.result,period:{from:"2026-08-01",to:"2026-08-07"}}},labor).ok).toBe(false);
+ expect(investigationReadTools).toContain("describe_data");
+ expect(investigationReadTools).toContain("query_data");
+});

@@ -291,3 +291,91 @@ describe("POS0e retained current-source dictionary and shared reader",()=>{
   expect(result.rows).toEqual([{"data.type":"CASH_IN","sum_data.amount":null}]);
  });
 });
+
+describe("POS0EF customer evidence",()=>{
+ it("distinguishes an absent customer prefix from unrelated observed fields",async()=>{
+  const rpc=vi.fn(async()=>({data:[{field:"data.amount",type:"number",source:"retained_current"}],error:null}));
+  const answer=await dataQueryTools.describe_data.execute({record_type:"check",
+   view:null,field_prefix:"data.customer"},{db:{rpc} as never,businessId:cafeA});
+  expect(answer.missing).toContain("source_not_observed");
+  expect(answer.missing).toContain("schema_grants_unverified");
+  expect(answer).toMatchObject({retainedFields:1,matchingRetainedFields:0});
+  expect(answer.fields).toEqual(expect.arrayContaining([
+   expect.objectContaining({field:"data.customer.guid",observed:false,grant:"not_verified"})]));
+ });
+ it("discovers derived references without inventing observed identities or child money",async()=>{
+  const rpc=vi.fn(async()=>({data:[],error:null}));
+  const ctx={db:{rpc} as never,businessId:cafeA};
+  const check=await dataQueryTools.describe_data.execute({record_type:"check",field_prefix:"data.aiCafeCustomer."},ctx);
+  expect(check.missing).toContain("source_not_observed");
+  expect(check.fields).toEqual(expect.arrayContaining([
+   expect.objectContaining({field:"data.aiCafeCustomer.identityRef",source:"canonical_derivation",observed:false}),
+   expect.objectContaining({field:"data.aiCafeCustomer.netSalesCents",source:"canonical_derivation",observed:false})]));
+  const item=await dataQueryTools.describe_data.execute({record_type:"item",field_prefix:"data.aiCafeCustomer."},ctx);
+  expect(item.fields).toEqual(expect.arrayContaining([expect.objectContaining({field:"data.aiCafeCustomer.visitRef"})]));
+  expect(item.fields).not.toEqual(expect.arrayContaining([expect.objectContaining({field:"data.aiCafeCustomer.netSalesCents"})]));
+ });
+ it("uses one existing scoped aggregate RPC and explains identity limits",async()=>{
+  const rpc=vi.fn(async()=>({data:{rows:[{"count_distinct_data.aiCafeCustomer.visitRef":2}],
+   sourceCount:5,sourceMix:{toast:5},truncated:false},error:null}));
+  const result=await dataQueryTools.query_data.execute({...query,group_by:null,columns:null,
+   filters:[{column:"record_type",op:"=",value:"check"},{column:"counts_in_sales",op:"=",value:true}],
+   metrics:[{fn:"count_distinct",column:"data.aiCafeCustomer.visitRef"}]},
+   {db:{rpc} as never,businessId:cafeA});
+  expect(result.aggregate).toMatchObject({value:2});
+  expect(result.scopeWarning).toContain("Null unresolved references are not new customers");
+  expect(rpc).toHaveBeenCalledExactlyOnceWith("ai_query_view",expect.objectContaining({
+   p_business_id:cafeA,p_metrics:[{fn:"count_distinct",column:"data.aiCafeCustomer.visitRef"}]}));
+ });
+ it("keeps unfamiliar raw field paths available through existing query_data",async()=>{
+  const rpc=vi.fn(async()=>({data:{rows:[{"data.optionalGuestPreference":null}],sourceCount:1,sourceMix:{toast:1},truncated:false},error:null}));
+  const result=await dataQueryTools.query_data.execute({...query,group_by:null,metrics:null,
+   columns:["data.optionalGuestPreference"],filters:[{column:"record_type",op:"=",value:"check"}]},
+   {db:{rpc} as never,businessId:cafeA});
+  expect(result.rows).toEqual([{"data.optionalGuestPreference":null}]);
+  expect(result.error).toBeUndefined();
+  expect(rpc).toHaveBeenCalledExactlyOnceWith("ai_query_view",expect.objectContaining({p_columns:["data.optionalGuestPreference"]}));
+ });
+});
+
+it("uses the existing registered grammar for visit cohorts and exposes population caveats",async()=>{
+ const rpc=vi.fn(async()=>({data:{rows:[{"avg_observed_return_7d":0.5,"count_observed_return_7d":20}],
+  sourceCount:20,sourceMix:{toast:20},truncated:false},error:null}));
+ const ctx={db:{rpc} as never,businessId:cafeA};
+ const catalog=await dataQueryTools.describe_data.execute({view:"cv_customer_visits"},ctx);
+ expect(catalog.views).toEqual(expect.arrayContaining([expect.objectContaining({name:"cv_customer_visits"})]));
+ const result=await dataQueryTools.query_data.execute({...query,view:"cv_customer_visits",group_by:null,columns:null,
+  filters:null,metrics:[{fn:"avg",column:"observed_return_7d"},{fn:"count",column:"observed_return_7d"}]},ctx);
+ expect(result.rows).toEqual([{"avg_observed_return_7d":0.5,"count_observed_return_7d":20}]);
+ expect(result.scopeWarning).toContain("not unique-human coverage");
+ expect(rpc).toHaveBeenCalledExactlyOnceWith("ai_query_view",expect.objectContaining({p_business_id:cafeA,p_view:"cv_customer_visits"}));
+});
+
+it("unattended canonical reads are aggregate-only, never personal records, groups or filter values",async()=>{
+ const rpc=vi.fn(async()=>({data:{rows:[{"count_data.aiCafeCustomer.identityRef":2}],sourceCount:5,sourceMix:{toast:5}},error:null}));
+ const base={...query,view:"cv_toast_records",group_by:null,columns:null,
+  filters:[{column:"record_type",op:"=",value:"check"}],
+  metrics:[{fn:"count",column:"data.aiCafeCustomer.identityRef"}]};
+ const ctx={db:{rpc} as never,businessId:cafeA,aggregateOnly:true};
+ const observed=await dataQueryTools.query_data.execute(base,ctx);
+ expect(observed).toMatchObject({customerEvidence:true,aggregateOnly:true,view:"cv_toast_records",rows:[{"count_data.aiCafeCustomer.identityRef":2}]});
+ for(const attempt of [
+  {...base,metrics:null,columns:["data.customer.email"]},
+  {...base,group_by:["data.aiCafeCustomer.identityRef"]},
+  {...base,filters:[{column:"data.customer.email",op:"=",value:"example@invalid.test"}]}
+ ]){
+  expect((await dataQueryTools.query_data.execute(attempt,ctx)).error).toBe("unattended_aggregate_required");
+ }
+ expect(rpc).toHaveBeenCalledTimes(1);
+ const owner=await dataQueryTools.query_data.execute({...base,metrics:null,columns:["data.customer.email"]},{db:{rpc} as never,businessId:cafeA});
+ expect(owner.error).toBeUndefined();
+ expect(rpc).toHaveBeenCalledTimes(2);
+});
+
+it("bounds the implicit projection for the wider customer visit view",async()=>{
+ const rpc=vi.fn(async()=>({data:{rows:[],sourceCount:0,truncated:false},error:null}));
+ await dataQueryTools.query_data.execute({...query,view:"cv_customer_visits",columns:null,group_by:null,metrics:null,filters:null},{db:{rpc} as never,businessId:cafeA});
+ const args=(rpc.mock.calls[0] as unknown as [string,{p_columns:string[]}])[1];
+ expect(args.p_columns.length).toBeLessThanOrEqual(20);
+ expect(args.p_columns).toContain("identity_ref");
+});
