@@ -1,5 +1,5 @@
 import {describe,expect,it} from "vitest";
-import {summarizeInvoiceClaims,summarizeStatementBalances,summarizeRecurringObligations,summarizeBillClaims,type InvoiceClaimRow} from "./cashflow";
+import {summarizeInvoiceClaims,summarizeStatementBalances,summarizeRecurringObligations,summarizeBillClaims,historicalCashStress,type InvoiceClaimRow} from "./cashflow";
 const asOf="2026-11-18";
 const a:InvoiceClaimRow={id:"first",supplier_id:"supplier",purchase_order_id:"po",
  invoice_reference:"invoice",revision:1,issued_on:"2026-11-01",due_on:"2026-11-17",
@@ -100,4 +100,17 @@ it("keeps dated bill claims separate from recurring settings and retains unknown
  expect(result.billClaimCount).toBe(1);
  expect(result.billClaims[0]).toMatchObject({uploadId:"two",recordedClaimCents:4500,paymentStatus:"unknown"});
  expect(summarizeBillClaims([bill],asOf,true).billClaimCount).toBeNull();
+});
+
+it("estimates only conditional dated cash exposure and never adds overlapping source classes",()=>{
+ const cash=summarizeStatementBalances([{id:"s",financial_account_key:"a".repeat(64),financial_currency:"CAD",
+  financial_from:"2026-10-01",financial_to:"2026-10-31",financial_closing_cents:5000,financial_source_sha256:"b".repeat(64)}],asOf,false);
+ const bill={id:"claim",financial_bill_payee:"municipality",financial_bill_reference:"ref",financial_bill_revision:1,
+  financial_bill_issued_on:"2026-11-01",financial_bill_due_on:"2026-11-20",financial_bill_amount_cents:4200,financial_currency:"CAD"};
+ const projected=historicalCashStress(asOf,30,cash,summarizeInvoiceClaims([a],asOf,false,[]),
+  summarizeBillClaims([bill],asOf,false),summarizeRecurringObligations([],asOf,false));
+ expect(projected).toHaveLength(2);
+ expect(projected[0]).toMatchObject({sourceClass:"supplier_claims",conditionalShortfallCents:5000,balanceAsOf:"2026-10-31"});
+ expect(projected[1]).toMatchObject({sourceClass:"dated_bill_claims",conditionalRemainingCents:800});
+ expect(projected[0].assumptions).toContain("account and payment coverage unknown");
 });

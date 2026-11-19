@@ -28,7 +28,7 @@ describe("Leo scoped money reads",()=>{
       purchase_order_id:"order",invoice_reference:"ref",revision:1,issued_on:"2026-10-01",
       due_on:"2026-10-20",currency_code:"CAD",total_cents:2500}],"2026-10-22",false);
     const r=await moneyTools.get_cashflow_evidence.execute({},{
-      ...ctx({}),currency:"CAD",financialEvidenceRead:async()=>({...evidence,...summarizeStatementBalances([],"2026-10-22",false),recurringObligations:[],recurringMissing:[],billClaimCount:0,billClaims:[],billClaimDetailsTruncated:false,billClaimMissing:[],selectedStatement:null})});
+      ...ctx({}),currency:"CAD",financialEvidenceRead:async()=>({...evidence,...summarizeStatementBalances([],"2026-10-22",false),recurringObligations:[],recurringMissing:[],billClaimCount:0,billClaims:[],billClaimDetailsTruncated:false,billClaimMissing:[],selectedStatement:null,conditionalStress:[]})});
     expect(r.recordedClaimTotalsByCurrency).toEqual([{currency:"CAD",recordedClaimCents:2500}]);
     expect(r.availableCashCents).toBeNull();
     expect(r.outstandingPaymentCents).toBeNull();

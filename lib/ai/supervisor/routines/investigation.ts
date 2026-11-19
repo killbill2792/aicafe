@@ -323,6 +323,7 @@ export function verifyInvestigationTurn(turn:AgentTurn,expected:ExpectedInvestig
     canonicalEvidenceDomain[c.name as AgentToolName]).filter(
       (domain):domain is string=>typeof domain==="string"&&domain.length>0));
   if(names.length<2||domains.size<2)return {ok:false,reason:"evidence_incomplete"};
+  if(expected.kind==="money_update"&&expected.sourceId.startsWith("financial-review:")&&!names.includes("get_cashflow_evidence"))return {ok:false,reason:"evidence_incomplete"};
   if(expected.kind==="supplier_receiving"){
     const selectors=source.result.selectors;
     const expectedPo=selectors&&typeof selectors==="object"&&"entityId" in selectors?selectors.entityId:null;

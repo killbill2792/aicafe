@@ -227,3 +227,42 @@ export function summarizeBillClaims(rows:readonly BillClaimRow[],asOf:string,tru
  return {billClaimCount:all.length,billClaims:all.slice(0,20),billClaimDetailsTruncated:all.length>20,
   billClaimMissing:["nonSupplierBillPaymentCoverageUnknown",...(all.length>20?["datedBillDetailsTruncated"]:[])]};
 }
+
+/** A deliberately conditional stress test, never a prediction of present cash.
+ * Compare individually with distinct source classes: bill claims and recurring
+ * configuration can describe the same cost. Do not sum these scenarios or accounts.
+ */
+export function historicalCashStress(asOf:string,horizonDays:number,
+ cash:ReturnType<typeof summarizeStatementBalances>,invoices:ReturnType<typeof summarizeInvoiceClaims>,
+ bills:ReturnType<typeof summarizeBillClaims>,recurring:ReturnType<typeof summarizeRecurringObligations>){
+ if(!validDate(asOf)||!Number.isInteger(horizonDays)||horizonDays<1||horizonDays>90)return [];
+ const end=new Date(asOf+"T12:00:00Z");end.setUTCDate(end.getUTCDate()+horizonDays);
+ const through=end.toISOString().slice(0,10);
+ const results:Array<{uploadId:string;currency:string;balanceAsOf:string;through:string;startDocumentedCents:number;
+  sourceClass:"supplier_claims"|"dated_bill_claims"|"recurring_configuration";conditionalExposureCents:number;
+  conditionalRemainingCents:number;conditionalShortfallCents:number;assumptions:string[]}>=[];
+ for(const balance of cash.documentedAccountBalances){
+  const sources=[
+   {kind:"supplier_claims" as const,complete:invoices.recordedClaimCount!==null&&!invoices.claimDetailsTruncated,
+    rows:invoices.claims.filter(c=>c.currency===balance.currency&&c.dueOn!==null&&c.dueOn<=through&&c.paymentStatus!=="documented_covered")
+     .map(c=>c.uncoveredRecordedClaimCents??c.recordedClaimCents)},
+   {kind:"dated_bill_claims" as const,complete:bills.billClaimCount!==null&&!bills.billClaimDetailsTruncated,
+    rows:bills.billClaims.filter(c=>c.currency===balance.currency&&c.dueOn!==null&&c.dueOn<=through).map(c=>c.recordedClaimCents)},
+  ];
+  for(const s of sources){
+   if(!s.complete||!s.rows.length)continue;
+   const exposure=s.rows.reduce((a,b)=>a+BigInt(b),0n),remaining=BigInt(balance.closingCents)-exposure;
+   if(exposure>BigInt(Number.MAX_SAFE_INTEGER)||remaining<BigInt(Number.MIN_SAFE_INTEGER))continue;
+   results.push({uploadId:balance.uploadId,currency:balance.currency,balanceAsOf:balance.asOf,through,
+    startDocumentedCents:balance.closingCents,sourceClass:s.kind,conditionalExposureCents:Number(exposure),
+    conditionalRemainingCents:Number(remaining),conditionalShortfallCents:remaining<0n?Number(-remaining):0,
+    assumptions:["if historical balance remained unchanged","if listed amounts still require cash settlement from this account",
+     "no additional deposits or other outflows assumed","undated obligations excluded","separate scenarios may overlap; do not sum",
+     "account and payment coverage unknown"]});
+  }
+  // No currency is stored per recurring cost: without the café currency binding,
+  // recurring amounts remain separately available, not included in any scenario.
+ }
+ void recurring;
+ return results;
+}

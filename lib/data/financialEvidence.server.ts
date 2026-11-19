@@ -1,11 +1,11 @@
 import "server-only";
 import type {SupabaseClient} from "@supabase/supabase-js";
 import {simulationOwnerReader} from "@/lib/ai/supervisor/loop/simulationOwner.server";
-import {summarizeInvoiceClaims,summarizeStatementBalances,summarizeRecurringObligations,summarizeBillClaims,statementTransactions,
+import {summarizeInvoiceClaims,summarizeStatementBalances,summarizeRecurringObligations,summarizeBillClaims,historicalCashStress,statementTransactions,
  type InvoiceClaimRow,type StatementBalanceRow,type SettlementEvidenceRow,type RecurringObligationRow,type BillClaimRow} from "@/lib/metrics/core/cashflow";
 
 type Scope={businessId:string;ownerUserId:string;verifiedReadClient?:SupabaseClient};
-export type FinanceSelection={statementUploadId?:string|null;rowOffset?:number|null};
+export type FinanceSelection={statementUploadId?:string|null;rowOffset?:number|null;horizonDays?:number|null};
 export async function readFinancialStatement(scope:Scope,uploadId:string){
  const {client}=await simulationOwnerReader(scope);
  const {data,error}=await client.from("uploads").select("id,financial_source_sha256,financial_account_key,financial_currency,financial_transactions,financial_to")
@@ -65,7 +65,8 @@ export async function readFinancialEvidence(scope:Scope,asOf:string,selection:Fi
  const datedOk=datedBills.status==="fulfilled"&&!datedBills.value.error;
  const dated=(datedOk?datedBills.value.data??[]:[]) as BillClaimRow[];
  const billClaims=summarizeBillClaims(dated,asOf,!datedOk||dated.length>limit);
- return {...claims,...cash,...recurring,...billClaims,selectedStatement,
+ const conditionalStress=historicalCashStress(asOf,selection.horizonDays??30,cash,claims,billClaims,recurring);
+ return {...claims,...cash,...recurring,...billClaims,selectedStatement,conditionalStress,
   missing:[...(invoiceOk?claims.missing:["supplierInvoiceEvidenceUnavailable"]),
   ...cash.statementMissing,...recurring.recurringMissing,...billClaims.billClaimMissing,...selectedMissing,...(statementOk?[]:["statementEvidenceUnavailable"])]};
 }
