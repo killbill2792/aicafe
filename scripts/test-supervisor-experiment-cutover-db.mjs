@@ -319,6 +319,31 @@ async function run(){
  await admin.query("update public.toast_optional_sync_state set menu_checked_local_day=current_date,menu_copied_at=clock_timestamp() where business_id=$1 and restaurant_guid=$2",[ids.business,ids.restaurant]);
  check((await due()).some(x=>x.history_id===observedHistory),"completed source enters independent discovery");
  await admin.query("insert into public.supervisor_monitor_windows(business_id,owner_user_id,monitor_kind,source_id,window_index,start_at,end_at,coverage_status,evaluation_status,units,revenue_cents) values($1,$2,'toast_price_observation',$3,0,$4::timestamptz,$4::timestamptz+interval '24 hours','actual','complete',1,550)",[ids.business,ids.owner,observedHistory,observed]);
+ // Independent work itself is fenced, not merely the outgoing notice.
+ const work=(client)=>role(client,"service_role",null,c=>one(c,
+  "select public.supervisor_8a_claim_observation_work($1,$2,now()) as token",[ids.business,observedHistory]));
+ const [wa,wb]=await Promise.all([work(workerA),work(workerB)]);
+ const token=wa.token??wb.token;
+ check(Boolean(token)&&Boolean(wa.token)!==Boolean(wb.token),"only one concurrent observation worker owns the lease");
+ check(!(await due()).some(x=>x.history_id===observedHistory),"claimed event is excluded from discovery");
+ await admin.query("update public.supervisor_monitor_windows set observation_worker_until=now()-interval '1 minute' where business_id=$1 and source_id=$2 and window_index=0",[ids.business,observedHistory]);
+ const reclaimed=(await work(workerB)).token;
+ check(Boolean(reclaimed)&&reclaimed!==token,"expired worker is recovered with a different generation");
+ const writeWindow=(generation)=>role(workerA,"service_role",null,c=>one(c,
+  "select public.supervisor_8a_write_observation_window($1,$2,$3,0,'{}'::jsonb,'actual',1,550,0,'complete') as ok",
+  [ids.business,observedHistory,generation]));
+ check((await writeWindow(token)).ok===false,"stale worker cannot overwrite a measured window");
+ check((await writeWindow(reclaimed)).ok===true,"new generation writes actual measurement");
+ const threadKey=randomUUID();
+ const thread=(owner)=>role(workerA,"service_role",null,c=>one(c,
+  "select public.supervisor_8a_observation_thread($1,$2,$3,$4,$5) as id",
+  [ids.business,owner,observedHistory,reclaimed,threadKey]));
+ check((await thread(ids.owner)).id===ids.thread,"existing owner thread is reused");
+ check((await thread(ids.foreignOwner)).id===null,"foreign owner cannot obtain observation thread");
+ const finished=await role(workerA,"service_role",null,c=>one(c,
+  "select public.supervisor_8a_finish_observation_work($1,$2,$3,null,false) as ok",
+  [ids.business,observedHistory,reclaimed]));
+ check(finished.ok===true,"worker releases durable generation after success");
  const observedClaim=await claim(workerA,observedHistory,"toast_price_initial",0);
  check(typeof observedClaim==="string","completed unsolicited observation is separately keyed");
  check((await claim(workerA,observedHistory,"toast_price_initial",0,ids.business,ids.owner,nextNoticeDay))===null,
@@ -333,6 +358,16 @@ async function run(){
  check((await one(admin,"select count(*)::int n from public.ai_messages where id=$1 and business_id=$2 and owner_user_id=$3",[messageId,ids.business,ids.owner])).n===1,"exactly one genuine observation chat row");
  check((await one(admin,"select count(*)::int n from public.operating_tasks where id=$1 and business_id=$2 and owner_user_id=$3",[taskId,ids.business,ids.owner])).n===1,"exactly one genuine observation task row");
  check((await claim(workerA,observedHistory,"toast_price_daily",1,ids.business,ids.owner,nextNoticeDay))===null,"daily index cannot duplicate following timezone/date change");
+ const correctionId=randomUUID();
+ const correct=(prior,id,title)=>role(workerA,"service_role",null,c=>one(c,
+  "select public.supervisor_8a_post_observation_notice($1,$2,$3,$4,$5,'America/Los_Angeles',jsonb_build_object('title',$6::text),'Corrected observation','high',$7,now()) as posted",
+  [daily.receipt_id,Number(daily.attempt),ids.thread,taskId,id,title,prior]));
+ check((await correct(messageId,correctionId,"Corrected revenue")).posted===true,"material correction updates existing posted receipt");
+ check((await correct(messageId,randomUUID(),"Old stale revision")).posted===false,"previous correction generation cannot overwrite current report");
+ check((await correct(correctionId,randomUUID(),"Corrected revenue")).posted===true,"unchanged replay returns successfully without another message");
+ check((await one(admin,"select count(*)::int n from public.ai_messages where business_id=$1 and id in ($2,$3)",[ids.business,messageId,correctionId])).n===2,"original and exactly one corrected chat message are preserved");
+ check((await one(admin,"select payload->>'title' as title from public.operating_tasks where business_id=$1 and id=$2",[ids.business,taskId])).title==="Corrected revenue","one existing inbox card shows corrected content");
+
  const ownWindow=await role(workerA,"authenticated",ids.owner,async c=>
   one(c,"select count(*)::int as n from public.supervisor_monitor_windows where business_id=$1",[ids.business]));
  check(ownWindow.n===2,"correct owner reads pinned approved receipt and observation");
