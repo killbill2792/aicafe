@@ -19,10 +19,10 @@ export const proactiveRequirements=Object.freeze([
  ["supplier_quote_change","SUPPLIER_COST_CHANGED","",["14b","17c-procurement-recovery"],"trigger_gap"],
  ["missing_or_stale_source","DATA_INCOMPLETE","data_quality",["15c"],"partial"],
  ["missing_bill_autonomous_resolution","","",["17c-business-monitors"],"registered"],
- ["unusual_voids_verified_coverage","","",[],"missing_live_case"],
- ["meal_break_actual_not_schedule","","",[],"missing_live_case"],
+ ["unusual_voids_verified_coverage","","",["17c-business-monitors"],"source_only"],
+ ["meal_break_actual_not_schedule","","",["17c-business-monitors"],"source_only"],
  ["refund_spike","","",[],"trigger_gap"],
- ["no_clock_in_at_shift_start","","staff_coverage",["13c","15c"],"partial"],
+ ["no_clock_in_at_shift_start","","staff_coverage",["13c","15c"],"trigger_gap"],
  ["early_clock_in","","",[],"trigger_gap"],
  ["overstaffed_hour","","",[],"trigger_gap"],
  ["faster_cost_recovery","","",[],"trigger_gap"],
@@ -76,7 +76,8 @@ export const cronProactiveCoverage=Object.freeze({
  "data-health":["missing_or_stale_source","pos_disconnect_stale_partial_recovery"],
  "menu-labels":["missing_or_stale_source"]
 });
-export function auditProactiveInventory({signals,taskKinds,cronPaths,manifestIds}){
+export const manualCronCoverage=Object.freeze({"supervisor-run-worker":["worker_restart","offline_owner","authorized_effect_recovery"]});
+export function auditProactiveInventory({signals,taskKinds,cronPaths,routePaths=cronPaths,manifestIds}){
  const required=new Set(proactiveRequirements.map(x=>x.family));
  assert.equal(required.size,proactiveRequirements.length,"duplicate proactive requirement");
  const absent=(expected,actual)=>[...new Set(expected)].filter(x=>!actual.has(x)).sort();
@@ -84,9 +85,13 @@ export function auditProactiveInventory({signals,taskKinds,cronPaths,manifestIds
  const mappedKinds=new Set(proactiveRequirements.map(x=>x.taskKind).filter(Boolean));
  const cronNames=new Set(Object.keys(cronProactiveCoverage));
  const actualCrons=cronPaths.map(p=>p.replace(/^\/api\/cron\//,""));
+ const actualRoutes=routePaths.map(p=>p.replace(/^\/api\/cron\//,""));
+ const designedRoutes=new Set([...cronNames,...Object.keys(manualCronCoverage)]);
  const missingCandidates=proactiveRequirements.flatMap(x=>x.candidates.filter(id=>!manifestIds.includes(id)).map(id=>x.family+":"+id));
  return {missingSignals:absent(signals,mappedSignals),missingTaskKinds:absent(taskKinds,mappedKinds),
   missingCrons:absent(actualCrons,cronNames),retiredCrons:absent([...cronNames],new Set(actualCrons)),
+  missingRoutes:absent(actualRoutes,designedRoutes),retiredRoutes:absent([...designedRoutes],new Set(actualRoutes)),
+  unscheduledWorkers:Object.keys(manualCronCoverage).filter(x=>!actualCrons.includes(x)),
   missingCandidates:[...new Set(missingCandidates)].sort(),
   unregistered:proactiveRequirements.filter(x=>x.state!=="registered").map(x=>({family:x.family,state:x.state})),
   complete:false}; // inventory alone can NEVER prove proactive behavior
@@ -325,4 +330,25 @@ export function verifySupplierReminderOutcome(x){
  assert.deepEqual(x.countsAfter,x.countsBefore);
  return {draftNoticeId:x.draftNotice[0].id,draftNoticeMessageId:x.draftMessage[0].id,
   dispatchNoticeId:x.dispatchNotice[0].id,dispatchNoticeMessageId:x.dispatchMessage[0].id};
+}
+
+export function verifySourceAlertLifecycle(x){
+ assert.deepEqual(x.negative,[],"unknown void coverage and planned attendance cannot trigger an alert");
+ assert.equal(x.opened.length,2);
+ const meal=x.opened.find(a=>a.kind==="meal_break"),voids=x.opened.find(a=>a.kind==="voids");
+ assert.ok(meal&&voids);
+ assert.equal(meal.status,"new");
+ assert.equal(voids.status,"new");
+ assert.equal(meal.payload.timecardId,x.actualTimecard);
+ assert.notEqual(meal.payload.timecardId,x.plannedTimecard);
+ assert.equal(Number(meal.impact_cents),x.wage);
+ assert.equal(Number(voids.impact_cents),x.voidCents);
+ assert.equal(voids.payload.voidsThisMonthCents,x.voidCents);
+ assert.equal(voids.payload.avgVoidsPrevious3MonthsCents,0);
+ assert.deepEqual(x.repeated,x.opened);
+ assert.deepEqual(x.closed,x.opened.map(a=>({...a,status:"resolved"})),"only authoritative correction resolves alert");
+ assert.deepEqual(x.repeatedClosed,x.closed);
+ assert.deepEqual(x.effects,[]);
+ assert.deepEqual(x.ownerRows,[]);
+ return {mealAlertId:meal.id,voidAlertId:voids.id};
 }
