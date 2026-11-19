@@ -24,7 +24,9 @@ alter table public.menu_price_history
     and old_price_cents is not null and old_price_cents>0
     and new_price_cents is not null and new_price_cents>0
     and old_price_cents<>new_price_cents)) not valid;
-alter table public.menu_price_history validate constraint supervisor_8a_completed_publication_identity;
+-- Existing rows have both newly added fields NULL, satisfying this check.
+-- Keep NOT VALID to avoid scanning retained history under the migration lock.
+-- PostgreSQL enforces the check for all new writes.
 create index supervisor_8a_completed_toast_history
  on public.menu_price_history(business_id,toast_publication_completed_at,id)
  where toast_publication_completed_at is not null;
@@ -95,21 +97,30 @@ create trigger supervisor_8a_stamp_completed_toast_history
 -- Retain old slot-zero observation records if any exist, but all new daily
 -- claims use their elapsed-window index, independent of café timezone/date.
 alter table public.supervisor_experiment_notice_receipts
- drop constraint supervisor_experiment_notice_receipts_slot_check,
- drop constraint supervisor_experiment_notice_receipts_check;
-alter table public.supervisor_experiment_notice_receipts
  add constraint supervisor_8a_notice_slot_range check(
  (kind='price_reminder' and slot in (1,2)) or
  (kind in ('toast_price_initial','toast_price_final') and slot=0) or
  (kind='toast_price_daily' and slot between 0 and 7)) not valid;
-alter table public.supervisor_experiment_notice_receipts validate constraint supervisor_8a_notice_slot_range;
+-- The previous checks guarantee existing rows satisfy the replacement.
+-- Install the replacement first, avoiding a full scan under migration lock.
+-- Reason: widen daily observation slots; all other kind/slot restrictions
+-- are preserved by supervisor_8a_notice_slot_range above.
+-- squawk-ignore ban-drop-constraint
+alter table public.supervisor_experiment_notice_receipts
+ drop constraint supervisor_experiment_notice_receipts_slot_check;
+-- Reason: the same replacement preserves the original kind/slot restrictions
+-- except for the intentionally widened elapsed-day index.
+-- squawk-ignore ban-drop-constraint
+alter table public.supervisor_experiment_notice_receipts
+ drop constraint supervisor_experiment_notice_receipts_check;
 
 -- Observation measurements are café facts; approved proposal results remain
 -- private to the owner who authorized them. Delivery stays owner-specific.
-drop policy supervisor_8a_windows_owner_read on public.supervisor_monitor_windows;
-create policy supervisor_8a_windows_owner_read
+-- Keep the original owner-only proposal policy; this permissive policy
+-- adds only café-owner visibility for independent observation facts.
+create policy supervisor_8a_observation_cafe_owner_read
  on public.supervisor_monitor_windows for select to authenticated
- using ((monitor_kind='toast_price_observation' or owner_user_id=(select auth.uid())) and exists(
+ using (monitor_kind='toast_price_observation' and exists(
   select 1 from public.memberships m
   where m.business_id=supervisor_monitor_windows.business_id
    and m.user_id=(select auth.uid()) and m.role='owner'));
