@@ -34,7 +34,7 @@ section{margin-top:18px}details{padding:7px;border-bottom:1px solid #e2e2e2}
 <section>
 <h2>Muse's direct PR monitor</h2>
 <p id="muse-pr-freshness">Loading last read-only GitHub snapshot…</p>
-<div class="tablewrap"><table><thead><tr><th>PR</th><th>Last commit</th><th>Observed CI</th><th>Codex</th><th>ChatGPT</th></tr></thead><tbody id="muse-prs"></tbody></table></div>
+<div class="tablewrap"><table><thead><tr><th>PR</th><th>Last commit</th><th>Observed CI</th><th>Codex</th><th>Owner decision / workflow handoff</th><th>ChatGPT</th></tr></thead><tbody id="muse-prs"></tbody></table></div>
 <div id="muse-merges"></div>
 <h3>Muse next suggested actions</h3><div id="muse-actions"></div>
 <p>These are observed GitHub facts, not approval or guaranteed merge readiness. If monitoring fails, the last observation is labeled stale; local notes remain editable.</p>
@@ -76,8 +76,12 @@ async function refreshMusePrs(){
   return '<tr><td><a target="_blank" rel="noopener noreferrer" href="'+esc(p.url)+'">#'+esc(p.number)+'</a> '+esc(p.title)+'</td>'+
     '<td>'+esc(p.head_sha?.slice(0,8))+' · '+age(p.committed_at)+'</td>'+
     '<td>'+esc(p.ci)+(fresh?'':' (stale)')+'</td><td>'+esc(p.codex)+(fresh?'':' (stale)')+'</td>'+
+    '<td>'+(p.owner_question?'<strong>'+esc(p.owner_question.status==='requested'?'OWNER DECISION REQUIRED':'Owner-question evidence incomplete')+'</strong><p>'+esc(p.owner_question.question)+'</p>':'')+
+    (p.workflow_handoff?'<p>Coder report: '+esc(p.workflow_handoff.state)+' · '+esc(p.workflow_handoff.next)+
+     (p.workflow_handoff.observed?' · Luna '+esc(p.workflow_handoff.observed)+' '+esc(p.workflow_handoff.conclusion||''):'')+
+     '</p>':'')+(fresh?'':'<small>Stale: verify on PR before acting</small>')+'</td>'+
     '<td>'+(matching?.chat_url?'<a target="_blank" rel="noopener noreferrer" href="'+esc(matching.chat_url)+'">Open saved chat</a>':'Not registered')+'</td></tr>';
- }).join('')||'<tr><td colspan="5">No open PRs observed</td></tr>';
+ }).join('')||'<tr><td colspan="6">No open PRs observed</td></tr>';
  el('muse-merges').textContent='Recently merged (observed): '+
   (facts.merged_prs||[]).slice(0,8).map(x=>'#'+x.number).join(', ');
 }
@@ -88,6 +92,7 @@ async function refreshMuseActions(){
  el('muse-actions').innerHTML=(value.events||[]).slice(0,15).map(a=>
   '<p>'+esc(a.kind)+' · '+esc(a.task_id||('PR #'+(a.pr_number||'—')))+
   ' · '+esc(a.status)+' · '+esc(a.reason||'')+
+  (a.owner_question?' · Owner decision; verify on PR #'+esc(a.pr_number):'')+
   (a.chat_url?'<a target="_blank" rel="noopener noreferrer" href="'+esc(a.chat_url)+'"> Open chat</a>':'')+'</p>'
  ).join('')||'<p>None recorded yet.</p>';
 }
