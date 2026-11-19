@@ -133,8 +133,9 @@ describe("Phase 2 snapshot-to-CafeState truth boundary", () => {
     expect(estimated.businessCosts.estimatedInputs).toEqual(expect.arrayContaining(expected));
     expect(estimated.profitability.quality.estimatedInputs).toEqual(expect.arrayContaining(expected));
     // A fully participating day with legacy/untyped fees is still an estimate.
-    expect(run({...base,cardFeesStatus:undefined}).businessCosts.estimatedInputs)
-      .toContain("cardFees:derivedEstimate");
+    const legacy=run({...base,cardFeesStatus:undefined});
+    expect(legacy.businessCosts.estimatedInputs).toContain("cardFees:derivedEstimate");
+    expect(legacy.profitability.quality.estimatedInputs).toContain("cardFees:derivedEstimate");
   });
 
   it("blocks profitability when a sold item has unknown product cost", () => {

@@ -170,9 +170,15 @@ export function cafeStateFromSnapshot(
   const feeMissing = days
     .filter((day) => day.netSalesCents > 0 && day.cardFeesStatus === "missing")
     .map((day) => `cardFees:${day.date}`);
-  const feeEstimated = days
-    .filter((day) => day.cardFeesStatus === "estimated")
-    .map((day) => `cardFees:${day.date}`);
+  const feePlans=(snapshot as BusinessSnapshot&{ownerFeePlans?:OwnerFeePlan[]}).ownerFeePlans;
+  const feeResult=cardFeesForDays(days,feePlans??null);
+  const derivedFeeEstimateInputs=historical&&feeResult.estimatedDays>0&&feeResult.basis!=="actual"?
+    [...(feeResult.notes.includes("feeDefaultEstimateAskRate")?["cardFees:defaultRate"]:[]),
+      feeResult.basis==="owner_plan"?"cardFees:ownerPlan":"cardFees:derivedEstimate"]:[];
+  const feeEstimated = [
+    ...days.filter((day) => day.cardFeesStatus === "estimated").map((day) => `cardFees:${day.date}`),
+    ...derivedFeeEstimateInputs,
+  ];
   const unknownLabor = recorded.filter(day=>!laborKnown(day));
   const wageEstimated = recorded.filter(day=>day.laborWageStatus==="estimate");
   const taxEstimated = recorded
@@ -249,8 +255,6 @@ export function cafeStateFromSnapshot(
     amountCents:historical!==undefined?allocated.get(line.categoryCode)??0:
       line.isMissing?0:allocated.get(line.categoryCode)??0,
   }));
-  const feePlans=(snapshot as BusinessSnapshot&{ownerFeePlans?:OwnerFeePlan[]}).ownerFeePlans;
-  const feeResult=cardFeesForDays(days,feePlans??null);
   const laborResult=laborForPeriod(
     Array.from({length:expectedDays},(_,index)=>({
       date:new Date(Date.parse(effectivePeriod.from+"T12:00:00Z")+index*86400000).toISOString().slice(0,10),
@@ -274,8 +278,7 @@ export function cafeStateFromSnapshot(
       ...businessCosts.estimatedInputs,
       ...(feeResult.notes.includes("feeDefaultEstimateAskRate")?["cardFees:defaultRate"]:[]),
       // Owner-plan or legacy fees are computed estimates, not paid receipts.
-      ...(historical&&feeResult.estimatedDays>0&&feeResult.basis!=="actual"?
-        [feeResult.basis==="owner_plan"?"cardFees:ownerPlan":"cardFees:derivedEstimate"]:[]),
+      ...derivedFeeEstimateInputs,
     ])],
     knownTotalCents:Math.round(Object.values(profitResult.partsUsed).reduce((a,b)=>a+b,0)),
     components:{ingredientsCents:profitResult.partsUsed.productCostsCents,
