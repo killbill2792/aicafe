@@ -42,12 +42,19 @@ try{
  });
  outsider=await openOwner(browser,foreign);
  const rejected=await outsider.context.request.get("/api/ai/threads/"+threadId);
- if(![403,404].includes(rejected.status()))throw Error("task17c:foreign_thread_denial_unverified");
+ if(![401,403,404].includes(rejected.status()))throw Error("task17c:foreign_thread_denial_unverified");
  // Real saved work and owner-visible routine must survive a fresh login.
  owner=await openOwner(browser,first);
  await owner.page.goto("/en?thread="+encodeURIComponent(threadId));
+ await owner.page.setViewportSize({width:390,height:844});
  await owner.page.getByRole("button",{name:"Library, routines and permissions"}).click({timeout:30000});
- await owner.page.getByText(expected.title,{exact:true}).waitFor({timeout:30000});
+ const panel=owner.page.getByRole("dialog",{name:"Supervisor controls"});
+ await panel.getByRole("button",{name:"Routines",exact:true}).click({timeout:30000});
+ await panel.getByText(expected.title,{exact:true}).waitFor({timeout:30000});
+ const foreignRoutines=await outsider.context.request.get("/api/ai/supervisor/routines");
+ if(foreignRoutines.status()!==200)throw Error("task17c:foreign_routine_reader_failed");
+ const other=await foreignRoutines.json();
+ if(!Array.isArray(other.routines)||other.routines.some(row=>row.id===routineId))throw Error("task17c:foreign_routine_leak");
  const providerCalls=Number(usage.model_call_count);
  if(providerCalls>18)throw Error("task17c:shared_call_cap_exceeded");
  const proof={schema_version:1,task:"17c",lane:"chat-routine-file-delegation",head_sha:env.HEAD_SHA,
