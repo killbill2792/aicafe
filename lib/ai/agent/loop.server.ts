@@ -271,7 +271,10 @@ export async function runAgentTurn(args: {
     workerBudget?workerBudget.maxOutputTokens-meteredOutput():Infinity,
     expandedLuna?lunaTurnOutputCap-meteredOutput()-
       (final?0:finalOutputReserve):Infinity));
-  const outputLimit=(final:boolean)=>Math.min(expandedLuna&&!final?lunaToolOutputCap:finalOutputReserve,
+  // The expanded reasoning allowance is for interactive turns only. Every
+  // unattended worker, including the separately metered scheduled investigation,
+  // retains its existing per-request ceiling as well as its remaining turn budget.
+  const outputLimit=(final:boolean)=>Math.min(expandedLuna&&!final&&!workerBudget?lunaToolOutputCap:finalOutputReserve,
     currentDurableProviderOutputCap()??Infinity,outputRemaining(final));
   const reportedOutput=(event:Event)=> {
     const u=(event.response as {usage?:{output_tokens?:unknown}}|undefined)?.usage?.output_tokens;

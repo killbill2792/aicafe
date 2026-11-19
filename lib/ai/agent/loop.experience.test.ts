@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 import { agentInstructions, agentPromptCacheKey, runAgentTurn, task14bInlineContinuation, type AgentProvider, type OwnerFollowUp } from "./loop.server";
 import { STYLE_RULES } from "./style";
 import { withWorkerBudget,withDurableProviderTurn } from "@/lib/ai/supervisor/runs/usage.server";
+import { meteredInvestigationProvider } from "@/lib/ai/supervisor/routines/investigationUsage.server";
 import { memoryToolDefinition } from "./tools/memory";
 import { routineToolDefinition } from "./tools/routines";
 import type { AgentToolContext } from "./tools";
@@ -446,7 +447,7 @@ describe("Luna tool reasoning stays within the owner-approved aggregate output a
       const {requests,provider}=recording([[menu("a"),doneWith(900)],[text("Summary."),doneWith(800)]]);
       const r=await withWorkerBudget({maxElapsedMs:60000,maxModelCalls:6,maxToolCalls:8,maxInputTokens:100000,maxOutputTokens:1700},
         ()=>runAgentTurn({ownerText:"Read the menu.",context:{...context},provider}));
-      expect(limits(requests)).toEqual([["auto",1700],["auto",800]]);
+      expect(limits(requests)).toEqual([["auto",1200],["auto",800]]);
       expect(r.usage.outputTokens).toBe(1700);
     }finally{vi.unstubAllEnvs()}
   });
@@ -472,6 +473,35 @@ describe("Luna tool reasoning stays within the owner-approved aggregate output a
       expect(rpc.mock.calls).toHaveLength(4);
       expect(rpc).toHaveBeenCalledWith("supervisor_reserve_durable_model_call",expect.objectContaining({p_output_cap:1200}));
       expect(rpc).toHaveBeenCalledWith("supervisor_complete_investigation_model_call",expect.objectContaining({p_output_tokens:900}));
+    }finally{vi.unstubAllEnvs()}
+  });
+  it.each([false,true])("preserves the actual scheduled investigation reservation and recovery caps (fault=%s)",async(fault)=>{
+    vi.stubEnv("SUPERVISOR_OPENAI_MODEL","gpt-6-luna");
+    const rpc=vi.fn(async()=>({data:null,error:null}));
+    const db={rpc} as unknown as import("@supabase/supabase-js").SupabaseClient;
+    const scope={businessId:"00000000-0000-4000-8000-000000000001",
+      ownerUserId:"00000000-0000-4000-8000-000000000002",
+      threadId:"00000000-0000-4000-8000-000000000003",
+      sourceType:"alert" as const,sourceId:"00000000-0000-4000-8000-000000000004",
+      leaseToken:"00000000-0000-4000-8000-000000000005"};
+    try{
+      const responses=recording(fault?
+        [[{type:"response.failed"}],[text("Investigation summary."),doneWith(100)]]:
+        [[menu("a"),doneWith(900)],[text("Investigation summary."),doneWith(100)]]);
+      const metered=meteredInvestigationProvider(db,scope,responses.provider);
+      const r=await withWorkerBudget({maxElapsedMs:55000,maxModelCalls:6,maxToolCalls:7,
+        maxInputTokens:72000,maxOutputTokens:4800},()=>runAgentTurn({
+          ownerText:"Investigate the saved alert.",context:{...context},provider:metered.provider,
+          toolNames:["get_menu_items"]}));
+      expect(metered.problem()).toBeNull();
+      expect(limits(responses.requests)).toEqual([["auto",1200],[fault?"none":"auto",1200]]);
+      expect(r.usage.modelCalls).toBe(2);
+      expect(r.endReason).toBe(fault?"provider_error":"complete");
+      expect(rpc).toHaveBeenCalledWith("supervisor_reserve_investigation_model_call",
+        expect.objectContaining({p_output_cap:1200,p_source_id:scope.sourceId,p_lease_token:scope.leaseToken}));
+      expect(rpc).toHaveBeenCalledWith("supervisor_complete_investigation_model_call",
+        expect.objectContaining({p_output_tokens:100}));
+      expect(rpc.mock.calls).toHaveLength(fault?3:4);
     }finally{vi.unstubAllEnvs()}
   });
   it("reserves unknown completed usage conservatively instead of claiming billed tokens",async()=>{
