@@ -53,11 +53,11 @@ try{
   taxCents:0,freightCents:0,discountCents:0,totalCents:10000,sourceKind:"owner_report",sourceRef:"owner-message:"+message,
   sourceSha256:"a".repeat(64),expenseDate:null,existingExpenseId:null,expenseDedupeKey:null,
   lines:[{sourceItemName:"Rent",orderLineId:null,ingredientId:null,baseUnit:null,quantityBase4:null,subtotalCents:10000}]};
- async function draftInvoice(e){
+ async function draftInvoice(e,capability='maya.supplier_invoice.v1'){
   await db.query("RESET ROLE");
   const id=randomUUID(),hash=createHash("sha256").update(JSON.stringify(e)).digest("hex");
-  await db.query("insert into public.supervisor_proposals(id,business_id,owner_user_id,thread_id,request_key,capability_id,capability_version,canonical_effect_payload,effect_hash,baseline,monitor_spec,locale,status,revision) values($1,$2,$3,$4,$5,'maya.supplier_invoice.v1',1,$6::jsonb,$7,'{}'::jsonb,'{\"durationDays\":1,\"metricScope\":\"supplier_invoice\"}'::jsonb,'en','draft',1)",
-   [id,a.business,a.owner,thread,randomUUID(),JSON.stringify(e),hash]);
+  await db.query("insert into public.supervisor_proposals(id,business_id,owner_user_id,thread_id,request_key,capability_id,capability_version,canonical_effect_payload,effect_hash,baseline,monitor_spec,locale,status,revision) values($1,$2,$3,$4,$5,$8,1,$6::jsonb,$7,'{}'::jsonb,'{\"durationDays\":1,\"metricScope\":\"supplier_invoice\"}'::jsonb,'en','draft',1)",
+   [id,a.business,a.owner,thread,randomUUID(),JSON.stringify(e),hash,capability]);
   return {id,hash};
  }
  async function claimInvoice(p){
@@ -85,9 +85,57 @@ try{
  const revision=(await one(commit,commitArgs(revised))).value;assert.equal(revision.revision,2);
  assert.equal(Number((await one("select total_cents from public.supplier_invoices where business_id=$1 and id=$2",[a.business,revision.invoiceId])).total_cents),11000);
  await role("authenticated",b.owner);assert.equal(await one("select id from public.supplier_invoices where business_id=$1 and id=$2",[a.business,revision.invoiceId]),null);
+ // Documentary settlement uses the same owner-click proposal/attempt, not direct DB mutation.
+ const effectSettlement={financialKind:"settlement_evidence_linked",invoiceId:revision.invoiceId,invoiceRevision:2,
+  supplierId:supplier,supplierName:"Local rent supplier",invoiceReference:"standalone-rent",invoiceTotalCents:11000,
+  uploadId:saved.id,rowIndex:0,allocationCents:600,reversesId:null,currency:"CAD",sourceHash:args[2],accountKey:args[3],
+  transactionDate:rows[0].date,transactionAmountCents:rows[0].amountCents,transactionBalanceCents:rows[0].balanceCents};
+ const settlement="select public.supervisor_commit_financial_settlement($1,$2,$3,$4) id";
+ const settlementProof="select public.supervisor_financial_settlement_proof($1,$2,$3) id";
+ const draftSettlement=e=>draftInvoice(e,"leo.financial_settlement.v1");
+ const link=await draftSettlement(effectSettlement);
+ await role("authenticated",a.owner);await denied(()=>one(settlement,commitArgs(link)));
+ await role("service_role");
+ await denied(()=>one("select public.supervisor_claim_effect($1,$2,$3,$4,1,'mandate')",[a.business,a.owner,thread,link.id]));
+ await claimInvoice(link);await role("authenticated",b.owner);await denied(()=>one(settlement,commitArgs(link)));
+ await role("authenticated",a.owner);const first=(await one(settlement,commitArgs(link))).id;
+ assert.ok(first);assert.equal((await one(settlement,commitArgs(link))).id,first);
+ await role("service_role");assert.equal((await one(settlementProof,[a.business,link.id,link.hash])).id,first);
+ const attempt=(await one("select attempt_key from public.supervisor_effect_attempts where business_id=$1 and proposal_id=$2",[a.business,link.id]));
+ const proposal=(await one("select revision from public.supervisor_proposals where business_id=$1 and id=$2",[a.business,link.id]));
+ await one("select public.supervisor_finish_effect_attempt($1,$2,$3,$4,$5,$6,'uncertain',null,null)",[a.business,a.owner,thread,link.id,attempt.attempt_key,proposal.revision]);
+ assert.equal((await one("select to_jsonb(public.supervisor_reconcile_supplier_receiving($1,$2,$3,$4,$5)) p",[a.business,a.owner,thread,link.id,proposal.revision])).p.status,"committed");
+ const over=await draftSettlement({...effectSettlement,allocationCents:500});
+ await claimInvoice(over);await role("authenticated",a.owner);await denied(()=>one(settlement,commitArgs(over)));
+ const second=await draftSettlement({...effectSettlement,allocationCents:400});
+ await claimInvoice(second);await role("authenticated",a.owner);assert.ok((await one(settlement,commitArgs(second))).id);
+ await role("service_role");
+ const repeated=(await one(capture,[...args.slice(0,2),"e".repeat(64),"f".repeat(64),...args.slice(4)])).id;
+ const overlapping=await draftSettlement({...effectSettlement,uploadId:repeated,sourceHash:"e".repeat(64),accountKey:"f".repeat(64),allocationCents:1});
+ await claimInvoice(overlapping);await role("authenticated",a.owner);await denied(()=>one(settlement,commitArgs(overlapping)));
+ const reversal={...effectSettlement,financialKind:"settlement_evidence_reversed",rowIndex:1,allocationCents:300,reversesId:first,
+  transactionDate:rows[1].date,transactionAmountCents:rows[1].amountCents,transactionBalanceCents:rows[1].balanceCents};
+ const rev=await draftSettlement(reversal);
+ await claimInvoice(rev);await role("authenticated",a.owner);assert.ok((await one(settlement,commitArgs(rev))).id);
+ const excessiveReversal=await draftSettlement({...reversal,allocationCents:301});
+ await claimInvoice(excessiveReversal);await role("authenticated",a.owner);await denied(()=>one(settlement,commitArgs(excessiveReversal)));
+ const totals=await one("select sum(case when financial_kind='settlement_evidence_linked' then financial_allocation_cents else -financial_allocation_cents end) n,count(*) as count from public.purchase_reconciliation_events where business_id=$1 and financial_invoice_id=$2",[a.business,revision.invoiceId]);
+ assert.equal(Number(totals.n),700);assert.equal(Number(totals.count),3);
+ await role("authenticated",b.owner);assert.equal(await one("select id from public.purchase_reconciliation_events where id=$1",[first]),null);
+ // A new revision must not inherit old evidence or allocate another posting over it.
+ const newRevision=await draftInvoice({...effect,expectedInvoiceRevision:2,totalCents:12000,subtotalCents:12000,lines:[{...effect.lines[0],subtotalCents:12000}]});
+ await claimInvoice(newRevision);await role("authenticated",a.owner);const newInvoice=(await one(commit,commitArgs(newRevision))).value;
+ const staleLink=await draftSettlement({...effectSettlement,allocationCents:1});
+ await claimInvoice(staleLink);await role("authenticated",a.owner);await denied(()=>one(settlement,commitArgs(staleLink)));
+ await role("service_role");
+ const newSourceRows=[{i:0,date:"2026-01-03",amountCents:-500,balanceCents:10500},{i:1,date:"2026-01-04",amountCents:1,balanceCents:10501}];
+ const newSource=(await one(capture,[a.business,a.owner,"9".repeat(64),args[3],"CAD","2026-01-03","2026-01-04",11000,10501,JSON.stringify(newSourceRows)])).id;
+ const changed=await draftSettlement({...effectSettlement,invoiceId:newInvoice.invoiceId,invoiceRevision:3,invoiceTotalCents:12000,uploadId:newSource,sourceHash:"9".repeat(64),
+  allocationCents:500,transactionDate:"2026-01-03",transactionAmountCents:-500,transactionBalanceCents:10500});
+ await claimInvoice(changed);await role("authenticated",a.owner);await denied(()=>one(settlement,commitArgs(changed)));
  await role("service_role");
  await db.query("delete from public.memberships where business_id=$1 and user_id=$2",[a.business,a.owner]);
  await denied(()=>one(capture,args));
  assert.equal(Number((await one("select count(*) n from public.expenses where business_id=$1",[a.business])).n),0);
- console.log("Task14E statement chain, standalone invoice gateway, idempotency, worker trigger and owner scope passed");
+ console.log("Task14E statement chain, standalone invoice and documentary settlement/reversal gateway, recovery, worker trigger and owner scope passed");
 }finally{await db.query("ROLLBACK").catch(()=>{});await db.end();}
