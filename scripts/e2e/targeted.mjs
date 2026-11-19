@@ -3,7 +3,8 @@ import {appendFileSync, mkdirSync, readFileSync, writeFileSync} from "node:fs";
 import {dirname} from "node:path";
 import {pathToFileURL} from "node:url";
 import {verifyOwnerCases} from "./task17d-evidence.mjs";
-const ownerRouteGroups=JSON.parse(readFileSync(new URL("../../tests/e2e/task17d-owner-matrix.json",import.meta.url),"utf8")).routeGroups??[];
+const ownerMatrix=JSON.parse(readFileSync(new URL("../../tests/e2e/task17d-owner-matrix.json",import.meta.url),"utf8"));
+const ownerRouteGroups=ownerMatrix.routeGroups??[];
 
 export const SCENARIOS = Object.freeze(["home", "staff", "menu", "money", "gmail", "purchasing"]);
 const ALL = SCENARIOS;
@@ -87,8 +88,6 @@ export function scenariosForPath(path) {
       path === "app/[locale]/more/bills/page.tsx" || path === "components/bills/BillsManager.tsx" ||
       path === "components/money/MoneyViewSwitch.tsx" ||
       path.startsWith("lib/viewmodels/money")) return ["money"];
-  const direct=ownerRouteGroups.filter(group=>group.routes.some(([route])=>path==="app/[locale]"+route+"/page.tsx")).map(group=>group.tag);
-  if(direct.length)return [...new Set(direct)];
   if (path.startsWith("app/api/")) return [];
   if (/^app\/\[locale\]\//.test(path) ||
       path.startsWith("components/") ||
@@ -101,8 +100,11 @@ export function classifyPaths(paths) {
   const selected = new Set(), unmapped = [];
   for (const path of paths) {
     const scenarios = scenariosForPath(path);
-    if (scenarios === null) unmapped.push(path);
-    else for (const scenario of scenarios) selected.add(scenario);
+    const navigation=ownerRouteGroups.filter(group=>group.routes.some(([route])=>path==="app/[locale]"+route+"/page.tsx")).map(group=>group.tag);
+    const dynamic=(ownerMatrix.routeReview?.[path]?.cases??[]).filter(id=>["D17","D18","D19"].includes(id)).map(id=>ownerMatrix.cases.find(c=>c.id===id)?.tag);
+    const additional=[...navigation,...dynamic].filter(Boolean);
+    if (scenarios === null && !additional.length) unmapped.push(path);
+    else for (const scenario of [...(scenarios??[]),...additional]) selected.add(scenario);
   }
   return {
     scenarios: SCENARIOS.filter(scenario => selected.has(scenario)),

@@ -57,8 +57,8 @@ test("unknown browser UI cannot silently skip required proof", () => {
     "app/[locale]/onboarding/new-flow/page.tsx",
   ]);
   assert.equal(unexercised.required, true);
-  assert.deepEqual(unexercised.scenarios, []);
-  assert.equal(unexercised.unmapped.length, 4);
+  assert.deepEqual(unexercised.scenarios, ["staff","menu"]);
+  assert.deepEqual(unexercised.unmapped,["app/[locale]/onboarding/new-flow/page.tsx","components/money/ProfitCostsView.tsx"]);
 });
 
 test("rename tracks both old and new UI/browser paths", () => {
@@ -116,7 +116,7 @@ test("every selected journey needs its own actually executed case", () => {
 
 test("Task14B supplier UI and approval card require actual purchasing browser proof",()=>{
  assert.deepEqual(classifyPaths(["components/operations/SupplierEvidenceManager.tsx"]).scenarios,["purchasing"]);
- assert.deepEqual(classifyPaths(["app/[locale]/operations/suppliers/page.tsx"]).scenarios,["purchasing"]);
+ assert.deepEqual(classifyPaths(["app/[locale]/operations/suppliers/page.tsx"]).scenarios,["staff","purchasing"]);
  assert.deepEqual(classifyPaths(["components/home/SupervisorProposalCard.tsx"]).scenarios,
   ["gmail","purchasing"]);
  assert.equal(summarizeReport(report([["home","passed"]]),["purchasing"]).status,"failed");
@@ -128,4 +128,10 @@ test("newly covered exact owner route groups select their browser cases",()=>{
  assert.deepEqual(classifyPaths(["app/[locale]/operations/experiments/page.tsx"]).scenarios,["staff"]);
  assert.deepEqual(classifyPaths(["app/[locale]/more/uploads/sales/page.tsx"]).scenarios,["gmail"]);
  assert.deepEqual(classifyPaths(["app/[locale]/new-unknown/page.tsx"]).unmapped,["app/[locale]/new-unknown/page.tsx"]);
+});
+
+test("dynamic source selectors keep their exact registered new owner tests",()=>{
+ assert.deepEqual(classifyPaths(["app/[locale]/menu/[itemId]/page.tsx"]).scenarios,["menu"]);
+ assert.deepEqual(classifyPaths(["app/[locale]/more/alerts/[id]/page.tsx"]).scenarios,["home"]);
+ assert.deepEqual(classifyPaths(["app/[locale]/more/uploads/[uploadId]/page.tsx"]).scenarios,["gmail"]);
 });

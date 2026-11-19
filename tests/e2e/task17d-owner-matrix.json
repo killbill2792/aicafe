@@ -166,6 +166,39 @@
         "D05",
         "D08"
       ]
+    },
+    {
+      "id": "D17",
+      "tag": "menu",
+      "name": "source price, currency and foreign item isolation",
+      "evidence": "actual_source_screen_parity",
+      "families": [
+        "D05",
+        "D06",
+        "D09"
+      ]
+    },
+    {
+      "id": "D18",
+      "tag": "home",
+      "name": "actual owner alert disposition, correct currency and foreign denial",
+      "evidence": "actual_local_owner_decision",
+      "families": [
+        "D05",
+        "D06",
+        "D09"
+      ]
+    },
+    {
+      "id": "D19",
+      "tag": "gmail",
+      "name": "private persisted import results and foreign denial",
+      "evidence": "fixture_presentation",
+      "families": [
+        "D05",
+        "D06",
+        "D09"
+      ]
     }
   ],
   "integration": {
@@ -338,11 +371,22 @@
     ],
     "screen-candidate:app/[locale]/more/delete-account/page.tsx": [
       "D16"
+    ],
+    "screen-candidate:app/[locale]/menu/[itemId]/page.tsx": [
+      "D17"
+    ],
+    "screen-candidate:app/[locale]/more/alerts/[id]/page.tsx": [
+      "D18"
+    ],
+    "screen-candidate:app/[locale]/more/uploads/[uploadId]/page.tsx": [
+      "D19"
     ]
   },
   "autonomyCandidates": {
     "sales_decline": [],
-    "inventory_depletion": [],
+    "inventory_depletion": [
+      "D17"
+    ],
     "supplier_cost_change": [],
     "late_purchase_order": [],
     "receiving_invoice_discrepancy": [],
@@ -351,7 +395,8 @@
     "equipment_failure": [],
     "pricing_experiment": [],
     "cashflow": [
-      "D09"
+      "D09",
+      "D18"
     ],
     "event_goals_briefs": [],
     "chat_routine": [
@@ -386,7 +431,9 @@
       "D03",
       "D07"
     ],
-    "duplicate_event": [],
+    "duplicate_event": [
+      "D18"
+    ],
     "revoked_access": [
       "D10",
       "D11"
@@ -627,19 +674,25 @@
       "remaining": "existing Task16C failure, actual authorized provider delivery"
     },
     "app/[locale]/menu/[itemId]/page.tsx": {
-      "state": "gap_dynamic_source",
-      "cases": [],
-      "remaining": "real menu item and foreign item identity, price/recipe parity"
+      "state": "behavior_case_authored",
+      "cases": [
+        "D17"
+      ],
+      "remaining": "actual recipe/cost edits and chat parity"
     },
     "app/[locale]/more/alerts/[id]/page.tsx": {
-      "state": "gap_dynamic_source",
-      "cases": [],
-      "remaining": "canonical alert identity and source resolution"
+      "state": "behavior_case_authored",
+      "cases": [
+        "D18"
+      ],
+      "remaining": "real autonomous source closure, all alert types"
     },
     "app/[locale]/more/uploads/[uploadId]/page.tsx": {
-      "state": "gap_dynamic_source",
-      "cases": [],
-      "remaining": "actual upload results, rejection, and foreign-ID denial"
+      "state": "behavior_case_authored",
+      "cases": [
+        "D19"
+      ],
+      "remaining": "actual importer execution, all import families and repair flows"
     },
     "app/[locale]/forgot-password/page.tsx": {
       "state": "gap_public_account",

@@ -394,4 +394,85 @@ for(const width of [390,1440]) {
       });
     });
   }
+
+  test("@menu 17D:D17-"+width+" product detail uses correct source price and denies a foreign item ID",async({browser})=>{
+    test.setTimeout(180_000);
+    await withOwner(browser,width,async({cafe,other,query,session})=>{
+      const own=await session(cafe),foreign=await session(other);
+      for(const [who,active,denied] of [[cafe,own,foreign],[other,foreign,own]]){
+        const items=await query("select id,name,coalesce(base_name,name) as base_name,price_cents from public.menu_items where business_id=$1 and is_active and price_cents>0 and size_label is null order by id limit 1",[who.businessId]);
+        expect(items).toHaveLength(1);
+        const item=items[0],url="/en/menu/"+item.id;
+        const result=await active.page.goto(url);
+        expect(result?.status()).toBe(200);
+        await expect(active.page.getByRole("heading",{name:item.base_name,exact:true})).toBeVisible();
+        const money=new Intl.NumberFormat("en",{style:"currency",currency:who.currency}).format(Number(item.price_cents)/100);
+        // Independent currency and cents are checked even if legacy formatting
+        // assumes USD. The test never changes prices or calls a payment tool.
+        await expect.soft(active.page.getByRole("button",{name:money,exact:true}).first()).toBeVisible();
+        const deniedResult=await denied.page.goto(url);
+        expect(deniedResult?.status()).toBe(404);
+        await expect(denied.page.getByRole("heading",{name:item.base_name,exact:true})).toHaveCount(0);
+        expect(await query("select id,price_cents from public.menu_items where business_id=$1 and id=$2",[who.businessId,item.id])).toEqual([{id:item.id,price_cents:item.price_cents}]);
+      }
+    });
+  });
+
+  test("@home 17D:D18-"+width+" exact alert source, owner disposition and cross-cafe isolation",async({browser})=>{
+    test.setTimeout(180_000);
+    await withOwner(browser,width,async({cafe,other,query,session})=>{
+      const id=randomUUID(),marker="Private unmapped sale "+id.slice(0,8),payload={itemNames:[marker]};
+      const cents=7123;
+      // Owner's actual UI must show a genuine EUR source amount, not USD.
+      await query("insert into public.alerts(id,business_id,kind,impact_cents,payload,status) values($1,$2,'unmatched_sales_items',$3,$4::jsonb,'new')",[id,other.businessId,cents,JSON.stringify(payload)]);
+      try{
+        const owner=await session(other),foreign=await session(cafe),url="/en/more/alerts/"+id;
+        const denied=await foreign.page.goto(url);
+        expect(denied?.status()).toBe(404);
+        await expect(foreign.page.getByText(marker,{exact:false})).toHaveCount(0);
+        expect(await query("select status from public.alerts where id=$1 and business_id=$2",[id,other.businessId])).toEqual([{status:"new"}]);
+        const response=await owner.page.goto(url);
+        expect(response?.status()).toBe(200);
+        await expect(owner.page.getByText(marker,{exact:false})).toBeVisible();
+        await expect.soft(owner.page.getByText(new Intl.NumberFormat("en",{style:"currency",currency:other.currency}).format(cents/100),{exact:true})).toBeVisible();
+        expect(await query("select status from public.alerts where id=$1 and business_id=$2",[id,other.businessId])).toEqual([{status:"seen"}]);
+        await owner.page.getByRole("button",{name:"Done",exact:true}).click();
+        await expect(owner.page).toHaveURL(/\/more\/alerts$/);
+        const saved=await query("select status,payload,impact_cents from public.alerts where id=$1 and business_id=$2",[id,other.businessId]);
+        expect(saved).toHaveLength(1);
+        expect(saved[0].status).toBe("resolved");
+        expect(saved[0].payload).toEqual({...payload,dispositionSource:"owner"});
+        expect(Number(saved[0].impact_cents)).toBe(cents);
+        // Owner marked the alert reviewed; do not infer source data was repaired.
+        await expect(owner.page.getByText(marker,{exact:false})).toHaveCount(0);
+      }finally{await query("delete from public.alerts where business_id=$1 and id=$2",[other.businessId,id]);}
+    });
+  });
+
+  test("@gmail 17D:D19-"+width+" saved import outcome and private upload ID denial",async({browser})=>{
+    test.setTimeout(180_000);
+    await withOwner(browser,width,async({cafe,other,query,session})=>{
+      const id=randomUUID(),marker="Imported source "+id.slice(0,8);
+      const summary={rowsInFile:3,imported:2,newIngredients:[marker]};
+      // Persisted source summary fixture only; actual importer execution is
+      // a different scenario and must be reconciled with 17B.
+      await query("insert into public.uploads(id,business_id,kind,status,summary) values($1,$2,'ingredients_csv','done',$3::jsonb)",[id,cafe.businessId,JSON.stringify(summary)]);
+      try{
+        const owner=await session(),foreign=await session(other),url="/en/more/uploads/"+id;
+        await owner.page.goto("/en/more/uploads");
+        const link=owner.page.locator('a[href="'+url+'"]');
+        await expect(link).toHaveCount(1);await link.click();
+        await expect(owner.page).toHaveURL(new RegExp("/more/uploads/"+id+"$"));
+        await expect(owner.page.getByRole("heading",{name:"Ingredient costs",exact:true})).toBeVisible();
+        await expect(owner.page.getByText("2 of 3 rows",{exact:true})).toBeVisible();
+        await expect(owner.page.getByText(marker,{exact:true})).toBeVisible();
+        const denied=await foreign.page.goto(url);
+        expect(denied?.status()).toBe(404);
+        await expect(foreign.page.getByText(marker,{exact:true})).toHaveCount(0);
+        await owner.page.reload();
+        await expect(owner.page.getByText(marker,{exact:true})).toBeVisible();
+        expect(await query("select id,status,summary from public.uploads where business_id=$1 and id=$2",[cafe.businessId,id])).toEqual([{id,status:"done",summary}]);
+      }finally{await query("delete from public.uploads where business_id=$1 and id=$2",[cafe.businessId,id]);}
+    });
+  });
 }
