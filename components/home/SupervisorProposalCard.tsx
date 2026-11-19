@@ -38,14 +38,14 @@ const dict={en,es,ar} as const;
 export function GmailApprovalDetails({effect,locale="en"}:{
   effect:NonNullable<ProposalView["gmail"]>;locale?:Locale
 }){
-  const g=effect,c=en.GmailApprovalCard;
+  const g=effect,c=en.GmailApprovalCard,m=en.Maintenance;
   const sending=g.operation==="send",drafting=g.operation==="draft";
   const previewLabel=g.operation==="modify"&&g.action?g.action.replaceAll("_"," "):g.operation.replaceAll("_"," ");
   return <>
       <dl className="mt-4 grid gap-3 rounded-xl bg-surface2 p-4 text-base">
         <div><dt className="text-sm text-ink-muted">{c.action}</dt><dd className="font-semibold capitalize">{previewLabel}</dd></div>
-        {g.maintenanceCaseId&&<div><dt className="text-sm text-ink-muted">Linked maintenance case</dt><dd className="break-all">{g.maintenanceCaseId}</dd>
-          <p className="text-sm">Request only, not authorization for repair costs. {g.maintenanceDueAt?"Review again by "+g.maintenanceDueAt:"No explicit deadline."}</p></div>}
+        {g.maintenanceCaseId&&<div><dt className="text-sm text-ink-muted">{m.linkedCase}</dt><dd className="break-all">{g.maintenanceCaseId}</dd>
+          <p className="text-sm">{m.requestOnly} {g.maintenanceDueAt?m.reviewBy+" "+g.maintenanceDueAt:m.noDeadline}</p></div>}
         <div><dt className="text-sm text-ink-muted">{c.from}</dt><dd className="break-all" dir="auto">{g.from}</dd></div>
         {(sending||drafting)&&<>
           <div><dt className="text-sm text-ink-muted">{c.to}</dt><dd className="break-all" dir="auto">{g.to.join(", ")||c.none}</dd></div>
@@ -213,23 +213,23 @@ export default function SupervisorProposalCard({threadId,proposalId,locale}:{
     </section>;
   }
   if(value.maintenanceAssignment){
-    const a=value.maintenanceAssignment;
-    return <section aria-label="Maintenance staff approval" className="w-full min-w-0 max-w-2xl rounded-[22px] border border-line bg-surface p-5 text-ink shadow-sm">
-      <h3 className="text-xl font-bold">{a.purpose==="verify_working"?"Independent equipment check":"Maintenance assignment"}</h3>
-      <p role="status" className="mt-2 font-semibold">{value.state==="applied"?"Assigned · repair not established by assignment":value.state==="pending"?"Owner approval required":value.state}</p>
+    const a=value.maintenanceAssignment,m=en.Maintenance;
+    return <section aria-label={m.staffApproval} className="w-full min-w-0 max-w-2xl rounded-[22px] border border-line bg-surface p-5 text-ink shadow-sm">
+      <h3 className="text-xl font-bold">{a.purpose==="verify_working"?m.independentCheck:m.assignmentTitle}</h3>
+      <p role="status" className="mt-2 font-semibold">{value.state==="applied"?m.assignedUnverified:value.state==="pending"?m.ownerApproval:value.state}</p>
       <dl className="mt-3 space-y-2">
-        <div><dt className="text-sm text-ink-muted">Equipment</dt><dd>{a.equipmentLabel}</dd></div>
-        <div><dt className="text-sm text-ink-muted">Employee</dt><dd>{a.employeeName}</dd></div>
-        <div><dt className="text-sm text-ink-muted">Exact instructions</dt><dd className="whitespace-pre-wrap break-words">{a.prompt}</dd></div>
-        <div><dt className="text-sm text-ink-muted">Follow-up due</dt><dd>{a.dueAt??"No explicit deadline"}</dd></div>
+        <div><dt className="text-sm text-ink-muted">{m.approvalEquipment}</dt><dd>{a.equipmentLabel}</dd></div>
+        <div><dt className="text-sm text-ink-muted">{m.employee}</dt><dd>{a.employeeName}</dd></div>
+        <div><dt className="text-sm text-ink-muted">{m.exactInstructions}</dt><dd className="whitespace-pre-wrap break-words">{a.prompt}</dd></div>
+        <div><dt className="text-sm text-ink-muted">{m.followUpDue}</dt><dd>{a.dueAt??m.noDeadline}</dd></div>
       </dl>
-      <p className="mt-3 text-sm text-ink-muted">Approval creates a private staff request, not a repair or expense authorization.</p>
+      <p className="mt-3 text-sm text-ink-muted">{m.approvalHelp}</p>
       {value.state==="pending"&&<div className="mt-4 flex flex-wrap gap-2">
-        <button type="button" disabled={busy} onClick={()=>void invoke("approve")} className="min-h-12 rounded-xl bg-accent px-4 font-bold text-on-accent disabled:opacity-50">Approve assignment</button>
-        <button type="button" disabled={busy} onClick={()=>void invoke("cancel")} className="min-h-12 rounded-xl border border-line px-4 font-bold disabled:opacity-50">Decline</button>
+        <button type="button" disabled={busy} onClick={()=>void invoke("approve")} className="min-h-12 rounded-xl bg-accent px-4 font-bold text-on-accent disabled:opacity-50">{m.approveAssignment}</button>
+        <button type="button" disabled={busy} onClick={()=>void invoke("cancel")} className="min-h-12 rounded-xl border border-line px-4 font-bold disabled:opacity-50">{m.declineAssignment}</button>
       </div>}
-      {value.state==="uncertain"&&<button type="button" disabled={busy} onClick={()=>void invoke("reconcile")} className="mt-3 min-h-12 rounded-xl border border-line px-4 font-bold">Check receipt</button>}
-      {error&&<p role="alert" className="mt-3 text-neg">Assignment could not be confirmed. Review the current card before retrying.</p>}
+      {value.state==="uncertain"&&<button type="button" disabled={busy} onClick={()=>void invoke("reconcile")} className="mt-3 min-h-12 rounded-xl border border-line px-4 font-bold">{m.checkReceipt}</button>}
+      {error&&<p role="alert" className="mt-3 text-neg">{m.assignmentError}</p>}
     </section>;
   }
   if(gmail&&value.gmail){

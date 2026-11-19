@@ -75,7 +75,7 @@ export default function MaintenanceCaseCard({copy,caseData,staff,vendorApprovals
         nonce:key,prompt:assignment});
       if(!result.ok){setMessage(copy.updateError);return;}
       setAssignmentNonce("");setAssignment("");setEmployee("");
-      setMessage("Assignment saved in the employee's private inbox. Repair is not verified.");
+      setMessage(copy.assignmentSaved);
       router.refresh();
     }catch{setMessage(copy.updateError);}
     finally{setBusy(false);}
@@ -143,22 +143,22 @@ export default function MaintenanceCaseCard({copy,caseData,staff,vendorApprovals
           {copy.followUp}</button>}
     </div>
     {stage!=="verified_repaired"&&<form onSubmit={assign} className="mt-3 space-y-2 border-t border-line pt-3">
-      <p className="font-semibold">Assign maintenance work</p>
-      {staff===undefined?<p className="text-sm">Staff access could not be verified.</p>:staff.length===0?
-        <p className="text-sm">No linked active staff. Link an employee in Staff first.</p>:<>
-        <label className="block text-sm">Employee
+      <p className="font-semibold">{copy.assignmentHeading}</p>
+      {staff===undefined?<p className="text-sm">{copy.staffUnavailable}</p>:staff.length===0?
+        <p className="text-sm">{copy.staffEmpty}</p>:<>
+        <label className="block text-sm">{copy.employee}
           <select value={employee} onChange={e=>{setEmployee(e.target.value);setAssignmentNonce("");}} disabled={busy}
             className="block w-full rounded-xl border border-line p-2" required>
-            <option value="">Choose employee</option>{staff.map(s=><option key={s.id} value={s.id}>{s.name}</option>)}
+            <option value="">{copy.chooseEmployee}</option>{staff.map(s=><option key={s.id} value={s.id}>{s.name}</option>)}
           </select>
         </label>
-        <label className="block text-sm">Exact work to assign
+        <label className="block text-sm">{copy.assignmentInstructions}
           <textarea value={assignment} onChange={e=>{setAssignment(e.target.value);setAssignmentNonce("");}}
            disabled={busy} required maxLength={1200} className="block w-full rounded-xl border border-line p-2"/>
         </label>
         <button type="submit" disabled={busy||!employee||!assignment.trim()}
           className="min-h-12 rounded-full border border-ink px-3 font-semibold disabled:opacity-50">
-          Approve and assign work
+          {copy.approveAndAssign}
         </button>
       </>}
     </form>}

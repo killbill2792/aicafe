@@ -56,6 +56,19 @@ describe("Task15B agent-directed and independently checked maintenance investiga
     expect(verifyInvestigationTurn(turn([incident,sales,schedule],
       "The equipment is not verified working. Ask staff for an independent check."),expected).ok).toBe(true);
   });
+  it("allows attributed or explicitly uncertain repair claims, but not an independent affirmative assertion",()=>{
+    for(const text of [
+      "The technician says the machine is repaired, but this is unverified; please approve an independent physical check.",
+      "We cannot confirm the machine is fixed until an employee tests it.",
+      "The vendor reports that the equipment was fixed. An independent check remains required.",
+      "Check whether the boiler is repaired before resuming service.",
+    ])expect(verifyInvestigationTurn(turn([incident,sales,schedule],text),expected).ok,text).toBe(true);
+    for(const text of [
+      "The technician says the machine is repaired, but the equipment is now verified working.",
+      "We cannot confirm the machine is fixed. The case is closed.",
+      "The machine itself was successfully repaired.",
+    ])expect(verifyInvestigationTurn(turn([incident,sales,schedule],text),expected),text).toEqual({ok:false,reason:"model_incomplete"});
+  });
   it("instructs model to replan when a vendor contact is missing, without inventing a send",()=>{
     const first=investigationPrompt(source,false);
     const follow=investigationPrompt(source,true,"Need email of verified technician");

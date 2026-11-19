@@ -18,6 +18,7 @@ import {supplierPurchaseOrderCapabilityId} from "@/lib/ai/supervisor/loop/purcha
 import {goalCapabilityId} from "@/lib/ai/supervisor/loop/goal.server";
 import {eventReadinessCapabilityId} from "@/lib/ai/supervisor/loop/eventReadiness.server";
 import {gmailCapabilityId,gmailEffectSchema,readMaintenanceCase} from "@/lib/ai/supervisor/loop/gmail.server";
+import en from "@/messages/en.json";
 import {maintenanceStaffCapabilityId,maintenanceAssignmentEffect} from "@/lib/ai/supervisor/loop/maintenance.server";
 import {SupervisorEffectGateway} from "@/lib/ai/supervisor/loop/effectGateway.server";
 import {createServerSupabaseClient} from "@/lib/supabase/server";
@@ -142,7 +143,7 @@ async function view(scope:OwnerLoopScope,repo:SupabaseLoopRepository,p:LoopPropo
   if(p.capabilityId===maintenanceStaffCapabilityId){
     const effect=maintenanceAssignmentEffect.parse(p.canonicalEffectPayload);
     return {...card(p,p.status==="executing"?executionState:p.status==="approved"?"pending":undefined),
-      maintenanceAssignment:effect,productName:"Maintenance · "+effect.equipmentLabel};
+      maintenanceAssignment:effect,productName:en.Maintenance.approvalName+" · "+effect.equipmentLabel};
   }
   if(p.capabilityId===gmailCapabilityId){
     const effect=gmailEffectSchema.parse(p.canonicalEffectPayload);
