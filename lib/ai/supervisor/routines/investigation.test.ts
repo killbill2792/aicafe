@@ -388,6 +388,14 @@ it("customer investigations require an actual scoped aggregate and an independen
  const schema={name:"describe_data",result:{source:"toast_fields",period:null,missing:[],retainedFields:30,fields:[{field:"data.customer.guid"}]}};
  const verify=(...calls:unknown[])=>verifyInvestigationTurn(turn({toolInvocations:[src,...calls]}),target);
  expect(verify(customer,labor).ok).toBe(true);
+ for(const coverage of [{linkedChecks:20},{linkedChecks:50},{eligibleChecks:0,linkedChecks:0},
+  {linkedChecks:91},{expectedLocationDays:0,completeLocationDays:0},{completeLocationDays:6},
+  {scope:"filtered_subtotal"}]){
+  expect(verify({...customer,result:{...customer.result,customerCoverage:{...customer.result.customerCoverage,...coverage}}},labor).ok).toBe(false);
+ }
+ const historicalLabor={...labor,result:{...labor.result,period:{from:"2026-10-01",to:"2026-10-07"}}};
+ expect(verify(customer,historicalLabor).ok).toBe(false);
+ expect(verify(customer,{...labor,result:{...labor.result,period:{from:"2026-11-12",to:"2026-11-18"}}}).ok).toBe(true);
  const event={name:"get_events",result:{source:"cafe_events",period:{from:"2026-11-12",to:"2026-11-18"},missing:[],
   events:[{name:"Fixture event",status:"found",startDate:"2026-11-14",endDate:"2026-11-15",lastVerifiedAt:"2026-11-13T08:00:00Z"}]}};
  expect(customerInvestigationTools).toContain("get_events");
@@ -410,6 +418,10 @@ it("customer investigations require an actual scoped aggregate and an independen
   customerCoverage:{...customer.result.customerCoverage,eligibleChecks:0,linkedChecks:0,namedChecks:0,
    expectedLocationDays:7,completeLocationDays:2,complete:false}}};
  expect(verifyGap(noOrders).ok).toBe(true);
+ const datedGap={...gap,result:{...gap.result,selectors:{...gap.result.selectors,from:"2026-11-12",to:"2026-11-18"}}};
+ const verifyDatedGap=(call:unknown)=>verifyInvestigationTurn(turn({toolInvocations:[datedGap,call,labor]}),target);
+ expect(verifyDatedGap(noOrders).ok).toBe(true);
+ expect(verifyDatedGap({...noOrders,result:{...noOrders.result,period:{from:"2026-11-17",to:"2026-11-18"}}}).ok).toBe(false);
  expect(verifyGap({...noOrders,result:{...noOrders.result,customerCoverage:{...noOrders.result.customerCoverage,complete:true,completeLocationDays:7}}}).ok).toBe(false);
  expect(verifyGap({...noOrders,result:{...noOrders.result,customerCoverage:{...noOrders.result.customerCoverage,expectedLocationDays:0,completeLocationDays:0}}}).ok).toBe(false);
  expect(verifyGap({...noOrders,result:{...noOrders.result,error:"source_read_failed"}}).ok).toBe(false);
