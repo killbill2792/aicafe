@@ -145,11 +145,14 @@
         "id": {
           "scope": "proposalId"
         },
-        "capability_id": {
-          "eq": "alex.gmail_effect.v1"
-        },
         "status": {
           "eq": "committed"
+        },
+        "owner_user_id": {
+          "scope": "ownerUserId"
+        },
+        "thread_id": {
+          "scope": "threadId"
         }
       },
       "minCount": 1,
