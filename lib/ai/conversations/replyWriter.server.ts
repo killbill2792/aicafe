@@ -3,6 +3,8 @@ import { createAdminSupabaseClient } from "@/lib/supabase/admin";
 import type { ConversationMessage, ConversationScope, GroundedSupervisorReply } from "./contracts";
 import { supervisorReplyIdFor, validateGroundedReply } from "./replyValidation";
 
+export type DurableReplyFence={runId:string;jobId:string;claimToken:string};
+
 const COLUMNS = "id, thread_id, role, content_type, text_content, structured_content, grounding, client_message_id, created_at";
 
 function convertRow(row: Record<string, unknown>): ConversationMessage {
@@ -43,6 +45,7 @@ export async function persistGroundedSupervisorReply(
   ownerMessage: ConversationMessage,
   reply: GroundedSupervisorReply,
   agentMetadata?: Record<string, unknown>,
+  durableFence?:DurableReplyFence,
 ): Promise<ConversationMessage> {
   if (ownerMessage.role !== "owner" || ownerMessage.contentType !== "text" ||
       !ownerMessage.clientMessageId) throw new Error("Cannot respond without an owner message");
@@ -50,7 +53,7 @@ export async function persistGroundedSupervisorReply(
   if(safe.investigationMemory && safe.investigationMemory.businessId!==scope.businessId)
     throw new Error("Conversation memory scope mismatch");
   const existing = await getExistingSupervisorReply(scope, ownerMessage);
-  if (existing) return existing;
+  if (existing&&!durableFence) return existing;
   const admin = createAdminSupabaseClient();
   const id = supervisorReplyIdFor(ownerMessage.id);
   const grounding = {
@@ -62,7 +65,19 @@ export async function persistGroundedSupervisorReply(
     ...(safe.investigationMemory?{investigationMemory:safe.investigationMemory}:{}),
     ...(safe.ownerInput?{ownerInput:safe.ownerInput}:{}),
     ...(agentMetadata ? { agentMetadata } : {}),
+    ...(durableFence?{durableRunId:durableFence.runId}:{}),
   };
+  if(durableFence){
+    const {data,error}=await admin.rpc("supervisor_publish_owner_reply_v2",{
+      p_business_id:scope.businessId,p_owner_user_id:scope.ownerUserId,p_thread_id:ownerMessage.threadId,
+      p_run_id:durableFence.runId,p_claim_token:durableFence.claimToken,p_job_id:durableFence.jobId,
+      p_reply_id:id,p_blocks:safe.blocks,p_grounding:grounding,
+    });
+    if(error)throw error;
+    if(!data||data.id!==id||data.role!=="supervisor"||data.grounding?.ownerMessageId!==ownerMessage.id||
+      data.grounding?.durableRunId!==durableFence.runId)throw new Error("Supervisor durable reply provenance mismatch");
+    return convertRow(data);
+  }
   const { data, error } = await admin.from("ai_messages").insert({
     id, business_id: scope.businessId, owner_user_id: scope.ownerUserId,
     thread_id: ownerMessage.threadId, author_user_id: null,
