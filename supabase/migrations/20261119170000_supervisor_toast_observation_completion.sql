@@ -478,7 +478,7 @@ begin
  insert into public.operating_tasks(
   business_id,id,agent_id,owner_user_id,kind,status,confidence,entity_type,entity_id,
   payload,evidence)
- values(n.business_id,p_task_id,'alex',n.owner_user_id,'priority_notice','watching',
+ values(n.business_id,v_task_id,'alex',n.owner_user_id,'priority_notice','needs_owner',
   p_confidence,'menu_item',h.menu_item_id,
   v_payload,
   jsonb_build_array(jsonb_build_object('source','menu_price_history','facts',
