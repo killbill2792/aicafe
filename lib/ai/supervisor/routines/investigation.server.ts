@@ -308,9 +308,9 @@ export async function processNextInvestigation(db:SupabaseClient,now:Date,
       canonicalData:async()=>({db,businessId:c.business_id}),
       ...(synopsis.kind==="maintenance_issue"?{maintenance:{...maintenance,search:async(...args:Parameters<typeof maintenance.search>)=>{
         await checkMailbox();
-        mailbox=await getConnectorAccount(scope);
-        if(!mailbox||!allowsGmail(mailbox,"read"))throw Error("authorization_revoked");
-        const found=await maintenance.search(...args);await checkMailbox();return found;
+        const account=await getConnectorAccount(scope);
+        if(!account||!allowsGmail(account,"read"))throw Error("authorization_revoked");
+        const found=await maintenance.search(...args);mailbox??=account;await checkMailbox();return found;
       }}}:{}),
       ...(synopsis.kind==="supplier_receiving"?{receivingRead:async(purchaseOrderId:string)=>{
         // Never let an unattended model use a different PO from its SQL claim.
