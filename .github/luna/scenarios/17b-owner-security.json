@@ -27,9 +27,6 @@
         "id": {
           "scope": "routineId"
         },
-        "title": {
-          "eq": "QuoteReview17B"
-        },
         "revision": {
           "eq": "5"
         },
@@ -41,6 +38,30 @@
         },
         "local_time": {
           "eq": "10:15:00"
+        }
+      },
+      "minCount": 1,
+      "maxCount": 1
+    },
+    {
+      "name": "routine-source-name",
+      "kind": "source",
+      "table": "public.supervisor_routines",
+      "where": {
+        "business_id": {
+          "scope": "businessId"
+        },
+        "owner_user_id": {
+          "scope": "ownerUserId"
+        },
+        "thread_id": {
+          "scope": "threadId"
+        },
+        "id": {
+          "scope": "routineId"
+        },
+        "title": {
+          "eq": "QuoteReview17B"
         }
       },
       "minCount": 1,
