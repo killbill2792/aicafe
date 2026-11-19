@@ -15,7 +15,7 @@ vi.mock("@/lib/data/usageVariance.server",()=>({readUsageVariance:inputs.usage})
 vi.mock("@/lib/data/supplierPurchasing.server",()=>({readSupplierPurchasingEvidence:inputs.quotes}));
 vi.mock("@/lib/data/snapshot.server",()=>({getBusinessSnapshotFromDb:inputs.snapshot}));
 vi.mock("@/lib/operating/cafeState",()=>({cafeStateFromSnapshot:()=>({profitability:{available:false,value:null,quality:{missingInputs:["historical"],estimatedInputs:[],staleInputs:[]}}})}));
-import {compareBusinessFacts,compareCheckedRefunds,refreshBusinessAnomalies} from "./businessAnomalies.server";
+import {compareBusinessFacts,compareCheckedRefunds,refreshBusinessAnomalies,readCustomerTrendComparison} from "./businessAnomalies.server";
 describe("canonical observation boundaries",()=>{
  it("distinguishes certified zero refunds, missing coverage and positive recovery",()=>{
   const check=(a:number|null,b:number|null)=>compareCheckedRefunds(a,b,"2026-11-12","2026-11-18");
@@ -122,6 +122,7 @@ it("the scheduled anomaly pass reconciles only comparable customer evidence and 
    }
    return {rows:[],missing:["empty"],truncated:false,error:undefined,customerCoverage:{complete:true}};
   }
+  if(p.metrics.some(m=>m.column==="data.quantity"))return {rows:[{count_source_ref:100,"count_data.quantity":100,"sum_data.quantity":recent&&changed?250:150}],missing:[],truncated:false,error:undefined,customerCoverage:{complete:true}};
   const row:Record<string,number> =p.view==="cv_toast_records"?
    {count_source_ref:100,"count_data.aiCafeCustomer.identityRef":low&&recent?5:90,"count_data.aiCafeCustomer.displayName":80,
     "count_data.aiCafeCustomer.netSalesCents":100,"sum_data.aiCafeCustomer.netSalesCents":recent&&changed?60000:100000}:
@@ -146,6 +147,9 @@ it("the scheduled anomaly pass reconciles only comparable customer evidence and 
  const run=()=>refreshBusinessAnomalies({rpc} as never,"cafe","2026-11-19","America/Los_Angeles",new Date("2026-11-19T20:00:00Z"));
  try{
   await run();expect(incidents.get("customer_trend:returning_visit_share")).toBe(true);
+  const reread=()=>readCustomerTrendComparison({rpc} as never,"cafe","returning_visit_share",{from:"2026-11-12",to:"2026-11-18"});
+  expect(await reread()).toMatchObject({key:"returning_visit_share",current:.5,previous:.25,active:true});
+  expect(await readCustomerTrendComparison({rpc} as never,"cafe","returning_visit_share",{from:"2026-11-13",to:"2026-11-18"})).toBeNull();
   expect(incidents.get("customer_trend:linked_revenue_concentration")).toBe(true);
   expect(incidents.get("customer_trend:average_recipe_contribution")).toBe(true);
   expect(incidents.get("customer_trend:observed_long_gap_share")).toBe(true);
@@ -164,6 +168,7 @@ it("the scheduled anomaly pass reconciles only comparable customer evidence and 
   expect(rpc).toHaveBeenCalledWith("supervisor_reconcile_business_anomaly",expect.objectContaining({p_key:"customer_trend:anonymous_items_per_check",p_active:true}));
   expect(incidents.get("customer_trend:returning_visit_share")).toBe(true);
   expect(rpc.mock.calls.some(([,p])=>p.p_key==="customer_trend:returning_visit_share")).toBe(false);
+  expect(await reread()).toBeNull();
   low=false;emptySource=true;rpc.mockClear();await run();
   expect(rpc).toHaveBeenCalledWith("supervisor_reconcile_business_anomaly",expect.objectContaining({p_key:"data_gap:customer_identity_coverage",p_active:true}));
   expect(rpc.mock.calls.some(([,p])=>p.p_key==="customer_trend:returning_visit_share")).toBe(false);
@@ -171,6 +176,7 @@ it("the scheduled anomaly pass reconciles only comparable customer evidence and 
   expect(rpc.mock.calls.some(([,p])=>p.p_key==="data_gap:customer_identity_coverage")).toBe(false);
   expect(incidents.get("data_gap:customer_identity_coverage")).toBe(true);
   emptySource=false;changed=false;await run();
+  expect(await reread()).toMatchObject({active:false,current:.25,previous:.25});
   expect(incidents.get("data_gap:customer_identity_coverage")).toBe(false);
   expect(incidents.get("customer_trend:returning_visit_share")).toBe(false);
   expect(incidents.get("customer_trend:linked_revenue_concentration")).toBe(false);
