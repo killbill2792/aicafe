@@ -290,3 +290,39 @@ describe("Task 8a append-only context audit",()=>{
    old_publication_state:"active",new_publication_state:"inactive"},receipt)).toBe(true);
  });
 });
+
+
+/** Deterministic-clock, real migrated-DB worker bridge for the shared owner
+ * browser/Luna scenarios. Ordinary free unit CI never touches this fixture.
+ * No model call, provider API, fake worker result or production DB. */
+it.skipIf(process.env.AICAFE_8A_DISPOSABLE_WORKER!=="1")("8a disposable real cron worker",async()=>{
+ if(process.env.NEXT_PUBLIC_SUPABASE_URL!=="http://127.0.0.1:54321"||
+    process.env.ACCEPTANCE_DATABASE_URL!=="postgresql://postgres:postgres@127.0.0.1:54322/postgres"||
+    process.env.AI_CAFE_LIVE_ACCEPTANCE!=="OWNER_APPROVED_LOCAL_ONLY"||
+    !process.env.SUPABASE_SERVICE_ROLE_KEY)throw Error("8a_disposable_environment_required");
+ const mode=process.env.AICAFE_8A_WORKER_MODE;
+ // Restore real collaborators, not the unit doubles defined above.
+ vi.doUnmock("./toastPriceEvidence.server");
+ vi.doUnmock("./rollingExperimentSales.server");
+ vi.resetModules();
+ const {createAdminSupabaseClient}=await import("@/lib/supabase/admin");
+ const {runToastObservationBatch}=await import("./experimentCutover.server");
+ const db=createAdminSupabaseClient();
+ if(mode==="observation"){
+  const asOf=process.env.AICAFE_8A_AS_OF;
+  if(!asOf||!Number.isFinite(Date.parse(asOf)))throw Error("8a_asof_required");
+  const outcome=await runToastObservationBatch(db,asOf);
+  expect(outcome.failed).toBe(0);
+ }else if(mode==="approved"){
+  // Exercise the genuine authenticated production route, not a hand-built
+  // report or synthetic result. Task17C separately proves scheduling/HTTP.
+  const {GET}=await import("@/app/api/cron/supervisor-experiments/route");
+  const {randomUUID}=await import("node:crypto");
+  const secret=randomUUID();process.env.CRON_SECRET=secret;
+  const response=await GET(new Request("http://127.0.0.1:3000/api/cron/supervisor-experiments",{
+   headers:{authorization:"Bearer "+secret}}));
+  const result=await response.json();
+  expect(response.status).toBe(200);
+  expect(result.failed).toBe(0);
+ }else throw Error("8a_worker_mode_invalid");
+},120000);
