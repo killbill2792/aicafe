@@ -20,3 +20,10 @@ test("missing, duplicate, unknown, skipped, expected-failure and retry cannot sa
     report(spec("D01-390"),spec("D01-1440","passed",{results:[{status:"failed"},{status:"passed"}]})),
   ])assert.equal(verifyOwnerCases(bad,matrix).status,"failed");
 });
+
+test("domain-specific selection must enforce its own 17D cases without claiming overall proof",()=>{
+  const contract={viewports:[390,1440],cases:[{id:"D01",tag:"home"},{id:"D09",tag:"money"}]};
+  assert.equal(verifyOwnerCases(report(spec("D09-390"),spec("D09-1440")),contract,["money"]).status,"passed");
+  assert.equal(verifyOwnerCases(report(spec("D01-390"),spec("D01-1440")),contract,["money"]).status,"failed");
+  assert.equal(verifyOwnerCases(report(),contract,["staff"]).status,"not_selected");
+});

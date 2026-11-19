@@ -12,7 +12,8 @@
       "families": [
         "D01",
         "D06"
-      ]
+      ],
+      "tag": "home"
     },
     {
       "id": "D02",
@@ -20,7 +21,8 @@
       "evidence": "fixture_presentation",
       "families": [
         "D02"
-      ]
+      ],
+      "tag": "home"
     },
     {
       "id": "D03",
@@ -30,7 +32,8 @@
         "D03",
         "D07",
         "D09"
-      ]
+      ],
+      "tag": "home"
     },
     {
       "id": "D04",
@@ -39,7 +42,8 @@
       "families": [
         "D01",
         "D06"
-      ]
+      ],
+      "tag": "home"
     },
     {
       "id": "D05",
@@ -48,7 +52,8 @@
       "families": [
         "D04",
         "D07"
-      ]
+      ],
+      "tag": "home"
     },
     {
       "id": "D06",
@@ -56,6 +61,49 @@
       "evidence": "actual_browser_interaction",
       "families": [
         "D08"
+      ],
+      "tag": "home"
+    },
+    {
+      "id": "D07",
+      "tag": "home",
+      "name": "missing source, retry and source-resolution honesty",
+      "evidence": "fixture_presentation",
+      "families": [
+        "D03",
+        "D09"
+      ]
+    },
+    {
+      "id": "D08",
+      "tag": "home",
+      "name": "actual signout, private thread denial and relogin",
+      "evidence": "actual_local_auth",
+      "families": [
+        "D01",
+        "D06",
+        "D07"
+      ]
+    },
+    {
+      "id": "D09",
+      "tag": "money",
+      "name": "monthly bill arithmetic, estimates, USD and EUR",
+      "evidence": "actual_source_screen_parity",
+      "families": [
+        "D05",
+        "D09"
+      ]
+    },
+    {
+      "id": "D10",
+      "tag": "gmail",
+      "name": "actual file revocation, endpoint failure and stale owner revision",
+      "evidence": "actual_local_permission",
+      "families": [
+        "D06",
+        "D07",
+        "D09"
       ]
     }
   ],

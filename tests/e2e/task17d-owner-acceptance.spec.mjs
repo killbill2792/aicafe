@@ -202,4 +202,128 @@ for(const width of [390,1440]) {
       await page.keyboard.press("Escape");await expect(trigger).toBeFocused();
     });
   });
+
+  test("@home 17D:D07-"+width+" source loss, retry and resolved investigation never imply external completion",async({browser})=>{
+    test.setTimeout(120_000);
+    await withOwner(browser,width,async({cafe,query,session,thread,open})=>{
+      const t=await thread(),episode=randomUUID(),source=randomUUID(),run=randomUUID();
+      const hash=createHash("sha256").update(source).digest("hex");
+      await query("insert into public.supervisor_investigations(business_id,owner_user_id,thread_id,source_type,source_id,revision_hash,stable_key,episode_id,phase,last_error) values($1,$2,$3,'alert',$4,$5,$5,$6,'blocked','source_missing')",[cafe.businessId,cafe.owner.userId,t.id,source,hash,episode]);
+      await query("insert into public.supervisor_runs(id,business_id,owner_user_id,thread_id,request_key,plan_hash,status) values($1,$2,$3,$4,$5,$6,'completed')",[run,cafe.businessId,cafe.owner.userId,t.id,randomUUID(),hash]);
+      const {page}=await session();await open(page,t);
+      const investigation=page.locator('[data-work-id="investigation:'+episode+'"]');
+      const durable=page.locator('[data-work-id="run:'+run+'"]');
+      await expect(investigation).toHaveAttribute("data-work-status","uncertain");
+      await expect(investigation).toContainText("original issue is missing or reassigned");
+      await expect(durable).toHaveAttribute("data-work-status","uncertain");
+      await expect(durable).not.toContainText("Saved reply reference");
+      await query("update public.supervisor_investigations set phase='collect',failure_count=1,last_error='source_unavailable',updated_at=now() where business_id=$1 and episode_id=$2",[cafe.businessId,episode]);
+      await page.reload();await expect(investigation).toHaveAttribute("data-work-status","retrying");
+      // This is a presentation fixture for a source transition, not proof the
+      // worker really resolved it. 17C owns the source-trigger/closure evidence.
+      await query("update public.supervisor_investigations set phase='resolved',last_error=null,failure_count=0,updated_at=now() where business_id=$1 and episode_id=$2",[cafe.businessId,episode]);
+      await page.reload();await expect(investigation).toHaveAttribute("data-work-status","source_resolved");
+      await expect(investigation).toContainText("does not prove an external effect");
+      await expect(page.getByText("Effect verified",{exact:true})).toHaveCount(0);
+      const rows=await query("select episode_id,source_id,phase from public.supervisor_investigations where business_id=$1 and thread_id=$2",[cafe.businessId,t.id]);
+      expect(rows).toEqual([{episode_id:episode,source_id:source,phase:"resolved"}]);
+      expect(await query("select id,final_report_ref from public.supervisor_runs where business_id=$1 and id=$2",[cafe.businessId,run])).toEqual([{id:run,final_report_ref:null}]);
+    });
+  });
+
+  test("@home 17D:D08-"+width+" sign out removes owner session and private thread access",async({browser})=>{
+    test.setTimeout(120_000);
+    await withOwner(browser,width,async({cafe,other,query,session,thread,open})=>{
+      const t=await thread(),id=randomUUID(),text="Private owner question "+id;
+      await query("insert into public.ai_messages(id,business_id,thread_id,owner_user_id,author_user_id,role,content_type,text_content,client_message_id) values($1,$2,$3,$4,$4,'owner','text',$5,$6)",[id,cafe.businessId,t.id,cafe.owner.userId,text,randomUUID()]);
+      const {page,ctx}=await session();
+      await open(page,t);
+      await expect(page.locator('[data-work-message="'+id+'"]')).toContainText(text);
+      await page.goto("/en/more");
+      await page.getByRole("button",{name:"Sign Out",exact:true}).click();
+      await expect(page).toHaveURL(/\/login(?:\?|$)/);
+      const endpoint="/api/ai/threads/"+t.id+"/messages";
+      expect([401,403,404]).toContain((await ctx.request.get(endpoint)).status());
+      await page.goto("/en?thread="+t.id);
+      await expect(page).toHaveURL(/\/login(?:\?|$)/);
+      const foreign=await session(other);
+      expect([401,403,404]).toContain((await foreign.ctx.request.get(endpoint)).status());
+      await open(foreign.page,t,other);
+      await expect(foreign.page.getByText(text,{exact:true})).toHaveCount(0);
+      const restored=await session();await open(restored.page,t);
+      await expect(restored.page.locator('[data-work-message="'+id+'"]')).toContainText(text);
+      expect(await query("select id,text_content from public.ai_messages where business_id=$1 and thread_id=$2 and id=$3",[cafe.businessId,t.id,id])).toEqual([{id,text_content:text}]);
+    });
+  });
+
+  test("@money 17D:D09-"+width+" monthly bills match independent recurring-source arithmetic and cafe currency",async({browser})=>{
+    test.setTimeout(120_000);
+    await withOwner(browser,width,async({cafe,other,query,session})=>{
+      // Independent arithmetic from saved source rows, not the Money viewmodel.
+      for(const who of [cafe,other]){
+        const costs=await query("select id,amount_cents,frequency,is_estimate,category_code from public.recurring_costs where business_id=$1 and active_to is null",[who.businessId]);
+        expect(costs.length).toBeGreaterThan(1);
+        const equivalents={monthly:n=>n,weekly:n=>Math.round(n*52/12),quarterly:n=>Math.round(n/3),yearly:n=>Math.round(n/12)};
+        const total=costs.reduce((n,row)=>n+equivalents[row.frequency](Number(row.amount_cents)),0);
+        const money=n=>new Intl.NumberFormat("en",{style:"currency",currency:who.currency}).format(n/100);
+        const {page}=await session(who);await page.goto("/en/more/bills");
+        const totalSection=page.locator("section").filter({hasText:"Total monthly bills"});
+        await expect(totalSection).toHaveCount(1);
+        // Keep this assertion even when the old Bills screen assumes USD.
+        await expect.soft(totalSection).toContainText(money(total));
+        const estimated=costs.find(row=>row.category_code==="utilities_power"&&row.is_estimate);
+        expect(estimated).toBeTruthy();
+        const estimate=page.getByRole("button",{name:/Electricity/i}).filter({hasText:"Estimate"});
+        await expect(estimate).toHaveCount(1);
+        await expect.soft(estimate).toContainText(money(Number(estimated.amount_cents)));
+        expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);
+      }
+    });
+  });
+
+  test("@gmail 17D:D10-"+width+" file-specific revocation persists, stale retry denied, failure never implies permission",async({browser})=>{
+    test.setTimeout(120_000);
+    await withOwner(browser,width,async({cafe,other,query,session,thread})=>{
+      const t=await thread(),file=randomUUID(),name="17D-private-"+file.slice(0,8)+".csv";
+      const route="/api/supervisor/access";
+      await query("insert into public.ai_attachments(id,business_id,owner_user_id,thread_id,object_path,original_name,media_type,bytes) values($1,$2,$3,$4,$5,$6,'text/csv',12)",[file,cafe.businessId,cafe.owner.userId,t.id,[cafe.businessId,cafe.owner.userId,t.id,file,name].join("/"),name]);
+      const read=()=>query("select allowed,revision from public.supervisor_external_access where business_id=$1 and owner_user_id=$2 and kind='attachment' and resource_key=$3",[cafe.businessId,cafe.owner.userId,file]);
+      try{
+        const {ctx,page}=await session();await page.goto("/en/more/supervisor-access");
+        const group=page.getByRole("group",{name,exact:true});
+        await expect(group).toBeVisible();expect(await read()).toEqual([]);
+        await expect(page.getByText("Not connected. Supervisor cannot log in to websites, operate a computer or submit forms through this setting.",{exact:true})).toBeVisible();
+        const second=await ctx.newPage();await second.setViewportSize({width,height:width===390?844:900});await second.goto("/en/more/supervisor-access");
+        await expect(second.getByRole("group",{name,exact:true}).getByRole("button",{name:"Revoke future access"})).toBeEnabled();
+        // Network fault is deliberate: no server mutation must take place.
+        await page.route("**"+route,request=>request.request().method()==="POST"?request.fulfill({status:503,body:"{}"}):request.continue());
+        page.once("dialog",dialog=>void dialog.accept());
+        await group.getByRole("button",{name:"Revoke future access"}).click();
+        await expect(page.getByRole("alert").filter({hasText:"Could not verify the change"})).toBeVisible();
+        expect(await read()).toEqual([]);
+        await page.unroute("**"+route);
+        page.once("dialog",dialog=>void dialog.accept());
+        await group.getByRole("button",{name:"Revoke future access"}).click();
+        await expect(group).toContainText("Future Supervisor access revoked");
+        const saved=await read();expect(saved).toHaveLength(1);
+        expect(saved[0].allowed).toBe(false);expect(Number(saved[0].revision)).toBe(1);
+        const stale=await second.request.post(route,{headers:{Origin:"http://127.0.0.1:3000"},data:{kind:"attachment",attachmentId:file,enabled:false,revision:0}});
+        expect(stale.status()).toBe(409);
+        await second.reload();await expect(second.getByRole("group",{name,exact:true})).toContainText("Future Supervisor access revoked");
+        await expect(group.getByRole("button",{name:"Revoke future access"})).toHaveCount(0);
+        const foreign=await session(other);await foreign.page.goto("/en/more/supervisor-access");
+        await expect(foreign.page.getByRole("heading",{name:"Website and computer control"})).toBeVisible();
+        await expect(foreign.page.getByRole("group",{name,exact:true})).toHaveCount(0);
+        const denied=await foreign.ctx.request.post(route,{headers:{Origin:"http://127.0.0.1:3000"},data:{kind:"attachment",attachmentId:file,enabled:false,revision:0}});
+        expect(denied.ok()).toBe(false);
+        expect(await read()).toEqual(saved);
+        expect(await query("select id from public.ai_attachments where business_id=$1 and id=$2",[cafe.businessId,file])).toEqual([{id:file}]);
+        const audit=await query("select allowed from public.supervisor_external_access_audit where business_id=$1 and owner_user_id=$2 and kind='attachment' and resource_key=$3",[cafe.businessId,cafe.owner.userId,file]);
+        expect(audit).toEqual([{allowed:false}]);
+      }finally{
+        await query("delete from public.supervisor_external_access_audit where business_id=$1 and owner_user_id=$2 and kind='attachment' and resource_key=$3",[cafe.businessId,cafe.owner.userId,file]);
+        await query("delete from public.supervisor_external_access where business_id=$1 and owner_user_id=$2 and kind='attachment' and resource_key=$3",[cafe.businessId,cafe.owner.userId,file]);
+      }
+    });
+  });
 }

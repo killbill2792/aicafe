@@ -1,14 +1,15 @@
 import {readFileSync} from "node:fs";
 const matrix=JSON.parse(readFileSync(new URL("../../tests/e2e/task17d-owner-matrix.json",import.meta.url),"utf8"));
 
-export function verifyOwnerCases(report, contract=matrix) {
+export function verifyOwnerCases(report, contract=matrix, selected=null) {
   const expected=new Set();
-  for(const c of contract.cases) for(const w of contract.viewports) {
+  for(const c of contract.cases.filter(c=>!selected||selected.includes(c.tag??"home"))) for(const w of contract.viewports) {
     const key=c.id+"-"+w;
     if(expected.has(key)) throw Error("Duplicate owner matrix case "+key);
     expected.add(key);
   }
-  if(!expected.size) throw Error("Empty 17D matrix");
+  if(!contract.cases.length||!contract.viewports.length)throw Error("Empty 17D matrix");
+  if(!expected.size) return {status:"not_selected",expected:0,cases:[],errors:[],integrated_proven:false,live_model_proof:false};
   const observed=new Map(), errors=[];
   function walk(suite) {
     for(const spec of suite.specs??[]) {

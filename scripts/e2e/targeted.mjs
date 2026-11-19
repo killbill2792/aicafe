@@ -83,6 +83,7 @@ export function scenariosForPath(path) {
       path === "components/menu/MenuCatalog.tsx" ||
       path.startsWith("lib/viewmodels/menu")) return ["menu"];
   if (path === "components/addcost/StatementUploader.tsx" || path === "app/[locale]/money/page.tsx" ||
+      path === "app/[locale]/more/bills/page.tsx" || path === "components/bills/BillsManager.tsx" ||
       path === "components/money/MoneyViewSwitch.tsx" ||
       path.startsWith("lib/viewmodels/money")) return ["money"];
   if (path.startsWith("app/api/")) return [];
@@ -212,10 +213,8 @@ function verify() {
   if (!/^[a-f0-9]{40}$/.test(head ?? "")) throw new Error("Missing exact head SHA");
   const report = JSON.parse(readFileSync(result, "utf8"));
   const proof = summarizeReport(report, selected);
-  if (selected.includes("home")) {
-    proof.owner_17d = verifyOwnerCases(report);
-    if (proof.owner_17d.status !== "passed") proof.status = "failed";
-  }
+  proof.owner_17d = verifyOwnerCases(report,undefined,selected);
+  if (proof.owner_17d.status === "failed") proof.status = "failed";
   const receipt = {
     schema_version: 1,
     head_sha: head,
