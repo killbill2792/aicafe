@@ -10,7 +10,8 @@ import {isAbsolute} from "node:path";
 export const TASK14B_MAX_RESERVED_MICROS=180_000; // eighteen-cent reserve under the owner's spending ceiling
 export const TASK14B_MAX_PAID_CALLS=18;
 export const TASK14B_MAX_REQUEST_BYTES=120_000;
-export const TASK14B_MAX_RESPONSE_TOKENS=1_200;
+export const TASK14B_MAX_RESPONSE_TOKENS=4_096;
+export const TASK14B_MAX_FINAL_RESPONSE_TOKENS=1_200;
 export type PaidBudgetRecord={head:string;attempts:number;reservedMicros:number};
 export function paidRequestReservation(params:Record<string,unknown>,json:string){
  if(params.model!=="gpt-6-luna")throw Error("task14b_budget:unexpected_live_model");
@@ -22,7 +23,8 @@ export function paidRequestReservation(params:Record<string,unknown>,json:string
     (t as {type?:unknown}).type!=="function"))
   throw Error("task14b_budget:unpriced_provider_tool");
  const output=params.max_output_tokens;
- if(!Number.isSafeInteger(output)||Number(output)<=0||Number(output)>TASK14B_MAX_RESPONSE_TOKENS)
+ const limit=params.tool_choice==="auto"?TASK14B_MAX_RESPONSE_TOKENS:TASK14B_MAX_FINAL_RESPONSE_TOKENS;
+ if(!Number.isSafeInteger(output)||Number(output)<=0||Number(output)>limit)
   throw Error("task14b_budget:response_limit");
  const bytes=Buffer.byteLength(json,"utf8");
  if(bytes<=0||bytes>TASK14B_MAX_REQUEST_BYTES)
