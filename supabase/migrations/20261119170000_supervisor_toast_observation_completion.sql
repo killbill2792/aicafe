@@ -262,6 +262,24 @@ revoke all on function public.supervisor_8a_due_toast_observations(timestamptz,i
  from public,anon,authenticated;
 grant execute on function public.supervisor_8a_due_toast_observations(timestamptz,integer) to service_role;
 
+-- Capture the specific lease generation in the same transaction as the
+-- existing claim. A delayed previous worker must never borrow a new lease.
+create function public.supervisor_8a_claim_observation_notice(
+ p_business_id uuid,p_owner_user_id uuid,p_source_id uuid,p_kind text,p_local_date date,p_slot smallint
+) returns table(receipt_id uuid,attempt bigint) language plpgsql security invoker set search_path='' as $
+declare v_id uuid;
+begin
+ if auth.role() is distinct from 'service_role' then
+  raise exception 'service_role_only' using errcode='42501';end if;
+ if p_kind not in ('toast_price_initial','toast_price_daily','toast_price_final') then
+  raise exception 'invalid_observation_notice_kind' using errcode='22023';end if;
+ v_id:=public.supervisor_8a_claim_notice(p_business_id,p_owner_user_id,p_source_id,p_kind,p_local_date,p_slot);
+ if v_id is null then return;end if;
+ return query select n.id,n.attempts from public.supervisor_experiment_notice_receipts n where n.id=v_id;
+end;$;
+revoke all on function public.supervisor_8a_claim_observation_notice(uuid,uuid,uuid,text,date,smallint) from public,anon,authenticated;
+grant execute on function public.supervisor_8a_claim_observation_notice(uuid,uuid,uuid,text,date,smallint) to service_role;
+
 -- Atomic fenced in-app delivery for observation receipts. No provider call,
 -- no price proposal, and no external transport is made by this function.
 create function public.supervisor_8a_post_observation_notice(
