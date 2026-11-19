@@ -1,0 +1,221 @@
+{
+  "id": "15c",
+  "mode": "generic",
+  "engine": "vitest",
+  "entrypoint": "lib/ai/supervisor/runs/fleetResilience.live.test.ts",
+  "proof": "15c-proof.json",
+  "scope": "15c-scope.json",
+  "expectedTools": [
+    "get_investigation_source",
+    "get_staff_messages"
+  ],
+  "assertions": [
+    {
+      "name": "same-episode-resolved",
+      "kind": "source",
+      "table": "public.supervisor_investigations",
+      "where": {
+        "business_id": {
+          "scope": "businessId"
+        },
+        "owner_user_id": {
+          "scope": "ownerUserId"
+        },
+        "thread_id": {
+          "scope": "threadId"
+        },
+        "episode_id": {
+          "scope": "episodeId"
+        },
+        "source_id": {
+          "scope": "taskId"
+        },
+        "phase": {
+          "eq": "resolved"
+        }
+      },
+      "minCount": 1,
+      "maxCount": 1
+    },
+    {
+      "name": "canonical-source-handled",
+      "kind": "source",
+      "table": "public.operating_tasks",
+      "where": {
+        "business_id": {
+          "scope": "businessId"
+        },
+        "id": {
+          "scope": "taskId"
+        },
+        "status": {
+          "eq": "handled"
+        }
+      },
+      "minCount": 1,
+      "maxCount": 1
+    },
+    {
+      "name": "owner-source-employee-reply",
+      "kind": "source",
+      "table": "public.staff_communication_messages",
+      "where": {
+        "business_id": {
+          "scope": "businessId"
+        },
+        "id": {
+          "scope": "messageId"
+        },
+        "actor": {
+          "eq": "employee"
+        },
+        "response_code": {
+          "eq": "decline"
+        }
+      },
+      "minCount": 1,
+      "maxCount": 1
+    },
+    {
+      "name": "verified-human-roster-correction",
+      "kind": "source",
+      "table": "public.scheduled_shifts",
+      "where": {
+        "business_id": {
+          "scope": "businessId"
+        },
+        "id": {
+          "scope": "shiftId"
+        },
+        "employee_id": {
+          "scope": "replacementEmployeeId"
+        }
+      },
+      "minCount": 1,
+      "maxCount": 1
+    },
+    {
+      "name": "owner-recovery-and-followup",
+      "kind": "owner",
+      "table": "public.ai_messages",
+      "where": {
+        "business_id": {
+          "scope": "businessId"
+        },
+        "owner_user_id": {
+          "scope": "ownerUserId"
+        },
+        "thread_id": {
+          "scope": "threadId"
+        },
+        "role": {
+          "eq": "supervisor"
+        }
+      },
+      "minCount": 3,
+      "maxCount": 3
+    },
+    {
+      "name": "no-fabricated-owner-request",
+      "kind": "owner",
+      "table": "public.ai_messages",
+      "where": {
+        "business_id": {
+          "scope": "businessId"
+        },
+        "thread_id": {
+          "scope": "threadId"
+        },
+        "role": {
+          "eq": "owner"
+        }
+      },
+      "minCount": 0,
+      "maxCount": 0
+    },
+    {
+      "name": "interrupted-reservation-survives",
+      "kind": "source",
+      "table": "public.supervisor_system_usage_events",
+      "where": {
+        "business_id": {
+          "scope": "businessId"
+        },
+        "owner_user_id": {
+          "scope": "ownerUserId"
+        },
+        "status": {
+          "eq": "attempted"
+        },
+        "model": {
+          "eq": "gpt-6-luna"
+        }
+      },
+      "minCount": 1,
+      "maxCount": 1
+    },
+    {
+      "name": "actual-model-use-recorded",
+      "kind": "source",
+      "table": "public.supervisor_system_usage_events",
+      "where": {
+        "business_id": {
+          "scope": "businessId"
+        },
+        "owner_user_id": {
+          "scope": "ownerUserId"
+        },
+        "status": {
+          "eq": "completed"
+        },
+        "model": {
+          "eq": "gpt-6-luna"
+        }
+      },
+      "minCount": 2,
+      "maxCount": 18
+    },
+    {
+      "name": "no-unapproved-effect",
+      "kind": "owner",
+      "table": "public.supervisor_effect_attempts",
+      "where": {
+        "business_id": {
+          "scope": "businessId"
+        }
+      },
+      "minCount": 0,
+      "maxCount": 0
+    },
+    {
+      "name": "foreign-cafe-no-source-copy",
+      "kind": "isolation",
+      "table": "public.supervisor_investigations",
+      "where": {
+        "business_id": {
+          "scope": "foreignBusinessId"
+        },
+        "source_id": {
+          "scope": "taskId"
+        }
+      },
+      "minCount": 0,
+      "maxCount": 0
+    },
+    {
+      "name": "foreign-cafe-no-private-report",
+      "kind": "isolation",
+      "table": "public.ai_messages",
+      "where": {
+        "business_id": {
+          "scope": "foreignBusinessId"
+        },
+        "role": {
+          "eq": "supervisor"
+        }
+      },
+      "minCount": 0,
+      "maxCount": 0
+    }
+  ]
+}

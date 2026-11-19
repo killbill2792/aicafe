@@ -2,7 +2,7 @@ import "server-only";
 import type {SupabaseClient} from "@supabase/supabase-js";
 import {localDateAt,dueScheduleOnDate} from "./calendar";
 import {choosePriorities} from "./priority";
-import {claimRoutineOccurrence,finishRoutineOccurrence} from "./repository.server";
+import {claimRoutineOccurrence,finishRoutineOccurrence,listRoutineOccurrenceCandidates} from "./repository.server";
 import {postPriorityNotice} from "./notices.server";
 import {followUpStaffPublicationForBusiness} from "@/lib/scheduling/staffPublication.server";
 import type {PriorityDecision,PrioritySource,RoutineRecord} from "./contracts";
@@ -190,6 +190,10 @@ export async function dispatchRoutinesForBusiness(db:SupabaseClient,businessId:s
   enqueueInvestigations?:(db:SupabaseClient,scope:Scope,now:Date)=>Promise<number>,
 ):Promise<RoutineDispatchResult>{
   if(!Number.isFinite(now.getTime()))throw new Error("Invalid routine now");
+  const started=Date.now();
+  // Keep the scheduler's supplied instant, but account for real elapsed
+  // execution when issuing/acknowledging leases later in this invocation.
+  const tickNow=()=>new Date(now.getTime()+Math.max(0,Date.now()-started));
   const localDate=localDateAt(now,timezone);
   const result:RoutineDispatchResult={routinesChecked:0,runs:0,notices:0,failed:0,evidenceChecks:0,investigationsQueued:0};
   const [ownerRows,threadRows,routineRows]=await Promise.all([
@@ -247,38 +251,53 @@ export async function dispatchRoutinesForBusiness(db:SupabaseClient,businessId:s
     if(!owners.has(routine.ownerUserId)||routine.timezone!==timezone){
       result.failed++;continue;
     }
-    let lease:{runId:string;leaseToken:string;revision:number}|null=null;
+    // Read persisted retries and missed dates, not just today's date. Each
+    // candidate uses the same occurrence identity and fenced claim as before.
+    // At most five candidates per routine per tick; later ticks catch up.
+    let candidates:Awaited<ReturnType<typeof listRoutineOccurrenceCandidates>>;
     try{
-      const due=dueScheduleOnDate(routine,routine.timezone,localDate,now);
-      if(!due)continue;
-      lease=await claimRoutineOccurrence(db,{businessId,routineId:routine.id,
-        localDate,dueAt:due,now});
-      if(!lease)continue;
-      // A routine check is an internal read/notice operation; never start a
-      // synthetic owner turn or send an external provider effect.
-      const done=await postForOwner(db,{
-        businessId,ownerUserId:routine.ownerUserId,threadId:routine.threadId,
-        localDate,
-      },now,{routine:{id:routine.id,runId:lease.runId,leaseToken:lease.leaseToken}});
-      const finished=await finishRoutineOccurrence(db,{
-        businessId,routineId:routine.id,runId:lease.runId,
-        leaseToken:lease.leaseToken,success:true,
-        receiptRef:"priority-check:"+done.checked,now:new Date(),
+      candidates=await listRoutineOccurrenceCandidates(db,{
+        businessId,routineId:routine.id,revision:routine.revision,now,
       });
-      if(!finished)throw new Error("Routine lease lost before completion");
-      result.runs++;
-      result.notices+=done.posted;
-      result.evidenceChecks+=done.checked;
-    }catch{
-      result.failed++;
-      if(lease){
-        try{
-          await finishRoutineOccurrence(db,{
-            businessId,routineId:routine.id,runId:lease.runId,
-            leaseToken:lease.leaseToken,success:false,
-            receiptRef:"bounded_check_failed",now:new Date(),
-          });
-        }catch{result.failed++;}
+    }catch{result.failed++;continue;}
+    for(const candidate of candidates){
+      let lease:{runId:string;leaseToken:string;revision:number}|null=null;
+      try{
+        const claimAt=tickNow();
+        const due=candidate.scheduledForUtc?new Date(candidate.scheduledForUtc):
+          dueScheduleOnDate(routine,routine.timezone,candidate.localDate,claimAt);
+        if(!due||!Number.isFinite(due.getTime())||due.getTime()<Date.parse(routine.updatedAt)||
+          due.getTime()>claimAt.getTime())continue;
+        lease=await claimRoutineOccurrence(db,{businessId,routineId:routine.id,
+          revision:routine.revision,localDate:candidate.localDate,dueAt:due,now:claimAt});
+        if(!lease)continue;
+        // A missed occurrence is a check of CURRENT evidence, never a claim
+        // we checked historically or a replay of a prior external action.
+        const asOf=tickNow();
+        const done=await postForOwner(db,{
+          businessId,ownerUserId:routine.ownerUserId,threadId:routine.threadId,
+          localDate:localDateAt(asOf,timezone),
+        },asOf,{routine:{id:routine.id,runId:lease.runId,leaseToken:lease.leaseToken}});
+        const finished=await finishRoutineOccurrence(db,{
+          businessId,routineId:routine.id,runId:lease.runId,
+          leaseToken:lease.leaseToken,success:true,
+          receiptRef:"priority-check:"+done.checked,now:tickNow(),
+        });
+        if(!finished)throw new Error("Routine lease lost before completion");
+        result.runs++;
+        result.notices+=done.posted;
+        result.evidenceChecks+=done.checked;
+      }catch{
+        result.failed++;
+        if(lease){
+          try{
+            await finishRoutineOccurrence(db,{
+              businessId,routineId:routine.id,runId:lease.runId,
+              leaseToken:lease.leaseToken,success:false,
+              receiptRef:"bounded_check_failed",now:tickNow(),
+            });
+          }catch{result.failed++;}
+        }
       }
     }
   }

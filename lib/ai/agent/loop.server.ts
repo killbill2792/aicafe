@@ -1,6 +1,6 @@
 import { ZodError } from "zod";
 import {reserveTask14bPaidRequest} from "./task14bPaidBudget.server";
-import { currentWorkerBudget, recordWorkerTurnUsage, usageStopReason } from "@/lib/ai/supervisor/runs/usage.server";
+import { currentWorkerBudget, recordWorkerTurnUsage, usageStopReason,reserveDurableProviderRequest } from "@/lib/ai/supervisor/runs/usage.server";
 import {redactToolFailure,redactedErrorStack} from "./redactToolError";
 import {safeToolError} from "./toolErrors";
 import {createHash} from "node:crypto";
@@ -226,6 +226,19 @@ export async function runAgentTurn(args: {
     result:{source:'owner_facts',period:null,missing:['ownerFactsReadFailed'],error:'owner_facts_read_failed'}});
   const startedTools: string[] = [];
   const usage = { modelCalls: 0, toolCalls: 0, inputTokens: 0, cachedTokens: 0, outputTokens: 0, latencyMs: 0, model: undefined as string|undefined };
+  // Every actual Responses transport goes through the same durable reservation
+  // boundary, including the final recovery request. Ordinary chat and the
+  // already-metered scheduled investigation have no durable owner-turn scope.
+  const meteredProvider:AgentProvider=async function*(params,signal){
+    const reservation=await reserveDurableProviderRequest(params);
+    if(signal.aborted)throw new Error("provider_timeout");
+    reservation?.launched();usage.modelCalls++;
+    for await(const event of provider(params,signal)){
+      if(event.type==="response.completed"&&reservation)
+        await reservation.complete((event.response??{}) as {model?:unknown;service_tier?:unknown;usage?:unknown});
+      yield event;
+    }
+  };
   // Reserve unknown Luna output for subsequent work without reporting it as billed usage.
   let unreportedOutput=0;
   const meteredOutput=()=>usage.outputTokens+unreportedOutput;
@@ -272,12 +285,24 @@ export async function runAgentTurn(args: {
     webSearch:async query=>{
       const searchStarted=now();
       let reserved=false,completed=false,reported=false;
+      let measured:{input_tokens:number;output_tokens:number;input_tokens_details:{cached_tokens:number}}|undefined;
       try{
+        if(usage.modelCalls>=maxModelToolCalls()||now()>=workDeadline||budgetStop()||
+           (expandedLuna&&outputRemaining(false)<finalOutputReserve))
+          return {available:false,reason:"budget"};
+        let reservation:Awaited<ReturnType<typeof reserveDurableProviderRequest>>;
+        try{reservation=await reserveDurableProviderRequest({
+          model,max_output_tokens:1200,input:query,tools:[{type:"web_search"}],
+        },"hosted_web");}catch(error){
+          if(error instanceof Error&&error.message==="durable_hosted_web_unpriced")
+            return {available:false,reason:"budget"};
+          throw error;
+        }
         const result=await underlyingWebSearch(query,{
           reserveModelCall:()=>{
             if(usage.modelCalls>=maxModelToolCalls()||now()>=workDeadline||budgetStop()||
                (expandedLuna&&outputRemaining(false)<finalOutputReserve))return false;
-            usage.modelCalls++;
+            reservation?.launched();usage.modelCalls++;
             reserved=true;
             return true;
           },
@@ -286,8 +311,11 @@ export async function runAgentTurn(args: {
             usage.cachedTokens+=bill.cachedTokens;
             usage.outputTokens+=bill.outputTokens;
             reported=Number.isSafeInteger(bill.outputTokens)&&bill.outputTokens>0;
+            if(bill.inputTokens>0)measured={input_tokens:bill.inputTokens,output_tokens:bill.outputTokens,
+              input_tokens_details:{cached_tokens:bill.cachedTokens}};
           },
         });
+        if(reserved&&reservation&&measured)await reservation.complete({model,usage:measured});
         completed=result.available;
         return result;
       }finally{
@@ -343,8 +371,7 @@ export async function runAgentTurn(args: {
     if (budgetStop()||outputCap<=0) throw new Error("worker_budget");
     const timeout = setTimeout(() => controller.abort(), remaining);
     try {
-      usage.modelCalls++;
-      for await (const event of provider(request(final,outputCap), controller.signal)) {
+      for await (const event of meteredProvider(request(final,outputCap), controller.signal)) {
         if (now() >= (final ? deadline : workDeadline)) throw new Error("deadline");
         if (event.type === "response.output_text.delta" && typeof event.delta === "string") {
           text += event.delta;
@@ -595,8 +622,7 @@ export async function runAgentTurn(args: {
           let finalError: string | undefined;
           let failureCode:ProviderFailureCode="stream_error";
           try {
-            usage.modelCalls++;
-            for await (const event of provider(request(true,outputCap), finalController.signal)) {
+            for await (const event of meteredProvider(request(true,outputCap), finalController.signal)) {
               if(event.type==="response.incomplete"){
                 failureCode=incompleteProviderCode(event);outputReported=reportedOutput(event);recordReportedUsage(event);
                 throw new Error("provider_incomplete");
