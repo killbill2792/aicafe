@@ -329,26 +329,30 @@ export async function runVerifiedToastPriceTick(db:SupabaseClient,repo:LoopRepos
   if(saved.error)throw new Error("source_interruption_receipt_failed");
  }
  const complete=[] as Awaited<ReturnType<typeof readElapsedWindowObservations>>[];
+ const exposureEnd=interruptionAt??finalEndAt;
  for(const window of windows){
-  if(Date.parse(window.endAt)>Date.parse(now))break;
-  // A window overlapping a subsequent source price change cannot be
-  // valued at the original approved price, even if lines have timestamps.
-  const cut=interruptionAt!==null&&Date.parse(window.endAt)>Date.parse(interruptionAt);
-  const measured=cut?{
-   window,status:"insufficient_evidence" as const,
+  if(Date.parse(window.startAt)>=Date.parse(exposureEnd))break;
+  const segmentEnd=new Date(Math.min(Date.parse(window.endAt),Date.parse(exposureEnd))).toISOString();
+  if(Date.parse(segmentEnd)>Date.parse(now))break;
+  const partial=Date.parse(segmentEnd)<Date.parse(window.endAt);
+  // A verified later price change bounds an observed partial segment.
+  // An unverified context gap is not evidence of a continuous partial exposure.
+  const measured=partial&&continuity.reason==="unverified_gap"?{
+   window,status:"insufficient_evidence" as const,segmentEndAt:segmentEnd,
    units:null,revenueCents:null,countedLines:0,unknownTimeLines:1,
    source:"order_lines.ordered_at" as const,asOf:now,
   }:await readElapsedWindowObservations(db,row.business_id,
-   effect.productId,window,now,timezone);
+   effect.productId,window,now,timezone,partial?segmentEnd:undefined);
   const written=await db.from("supervisor_monitor_windows").upsert({
    business_id:row.business_id,owner_user_id:row.owner_user_id,
    monitor_kind:"approved_price",source_id:row.id,window_index:window.index,
-   source_reference:sourceReference,
+   source_reference:{...sourceReference,...(partial?{partialExposure:{
+    segmentEndAt:segmentEnd,status:measured.status,units:measured.units,revenueCents:measured.revenueCents}}:{})},
    start_at:window.startAt,end_at:window.endAt,
-   coverage_status:measured.status==="actual"?"actual":"partial",
+   coverage_status:!partial&&measured.status==="actual"?"actual":"partial",
    unknown_time_lines:measured.unknownTimeLines,
-   units:measured.units,revenue_cents:measured.revenueCents,
-   evaluation_status:measured.status==="actual"?"complete":"insufficient_evidence",
+   units:partial?null:measured.units,revenue_cents:partial?null:measured.revenueCents,
+   evaluation_status:!partial&&measured.status==="actual"?"complete":"insufficient_evidence",
    updated_at:new Date().toISOString(),
   },{onConflict:"business_id,monitor_kind,source_id,window_index"});
   if(written.error)throw new Error("verified_window_write_failed");
@@ -358,6 +362,7 @@ export async function runVerifiedToastPriceTick(db:SupabaseClient,repo:LoopRepos
  // Catch-up uses the original window index instead of today's local date.
  // A day-specific update never overwrites a previously stored final report.
  for(const m of complete){
+  if(m.segmentEndAt)continue; // partial exposure belongs in the interrupted final report
   const day=m.window.index+1;
   const actual=m.status==="actual";
   const interim:LoopReport={
@@ -386,28 +391,62 @@ export async function runVerifiedToastPriceTick(db:SupabaseClient,repo:LoopRepos
   };
   await repo.saveReport(scope,proposal,interim,{midRun:true});
  }
- if(complete.length!==days)return "monitoring";
- const actual=!interruptionAt&&complete.every(c=>c.status==="actual");
- const units=actual?complete.reduce((a,b)=>a+(b.units??0),0):null;
- const revenue=actual?complete.reduce((a,b)=>a+(b.revenueCents??0),0):null;
+ if(Date.parse(now)<Date.parse(exposureEnd))return "monitoring";
+ const actual=!interruptionAt&&complete.length===days&&complete.every(c=>c.status==="actual");
+ const exposureKnown=complete.length>0&&complete.every(c=>c.status==="actual");
+ const units=exposureKnown?complete.reduce((a,b)=>a+(b.units??0),0):null;
+ const revenue=exposureKnown?complete.reduce((a,b)=>a+(b.revenueCents??0),0):null;
+ // A same-weekday comparison must not overlap the approved exposure.
+ // Reject prior changes rather than interpreting mixed baseline prices as clean.
+ const offset=Math.ceil(days/7)*7*86400000;
+ const baselineStart=new Date(Date.parse(receipt.startAt)-offset).toISOString();
+ const baselineEnd=new Date(Date.parse(exposureEnd)-offset).toISOString();
+ let baselineUnits:number|null=null,baselineRevenue:number|null=null,unitCost:number|null=null;
+ if(exposureKnown){
+  const history=await db.from("menu_price_history").select("id",{head:true,count:"exact"})
+   .eq("business_id",row.business_id).eq("menu_item_id",effect.productId)
+   .gte("changed_at",baselineStart).lt("changed_at",receipt.startAt).neq("id",receipt.historyId);
+  if(!history.error&&history.count===0){
+   const base=await Promise.all(complete.map(m=>readElapsedWindowObservations(db,row.business_id,effect.productId,{
+    index:m.window.index,startAt:new Date(Date.parse(m.window.startAt)-offset).toISOString(),
+    endAt:new Date(Date.parse(m.window.endAt)-offset).toISOString()
+   },now,timezone,m.segmentEndAt?new Date(Date.parse(m.segmentEndAt)-offset).toISOString():undefined)));
+   if(base.every(m=>m.status==="actual")){
+    baselineUnits=base.reduce((sum,m)=>sum+(m.units??0),0);
+    baselineRevenue=base.reduce((sum,m)=>sum+(m.revenueCents??0),0);
+   }
+  }
+  try{
+   const cost=(await getPricingInputs(db,row.business_id,{profile:"Menu"})).items.find(i=>i.id===effect.productId);
+   if(cost?.productCostStatus==="READY"&&Number.isFinite(cost.productCostCents)&&cost.productCostCents>0)
+    unitCost=cost.productCostCents;
+  }catch{/* Cost unavailable; sales evidence remains available. */}
+ }
+ const comparison=comparePriceExposure({units,revenueCents:revenue,baselineUnits,baselineRevenueCents:baselineRevenue,unitCostEstimateCents:unitCost});
+ const recommendation=actual&&comparison.recommendation==="review_keep"?"keep":
+  actual&&comparison.recommendation==="review_revert"?"revert":"adjust";
+
  const result={productId:effect.productId,productName:effect.productName,
   oldPriceCents:effect.oldPriceCents,newPriceCents:effect.newPriceCents,
-  observedUnits:units,observedRevenueCents:revenue,coveredWindows:complete.filter(
-   c=>c.status==="actual").length,totalWindows:days,windowStartAt:receipt.startAt,
-  windowEndAt:windows.at(-1)!.endAt,sourceBasis:receipt.startBasis,
+  ...comparison,actualHistoricalCogsCents:null,netCafeProfitCents:null,
+  baselineStartAt:baselineStart,baselineEndAt:baselineEnd,exposureEndAt:exposureEnd,
+  coveredWindows:complete.filter(c=>c.status==="actual"&&!c.segmentEndAt).length,
+  partialExposure:complete.find(c=>c.segmentEndAt)??null,totalWindows:days,windowStartAt:receipt.startAt,
+  windowEndAt:finalEndAt,sourceBasis:receipt.startBasis,
   extraTradingInterval:{status:"not_verified",revenueCents:null},
   nonCausal:true,sourcePublicationVersion:receipt.publicationVersion,
   sourceContinuity:interruptionAt?"interrupted":"verified",interruptedAt:interruptionAt};
  const status=actual?"complete":"insufficient_evidence";
- const report:LoopReport={status,result,recommendation:"adjust",
+ const report:LoopReport={status,result,recommendation,
   source:"order_lines.ordered_at+orders.closed_at",
   delivery:{agentId:"alex",taskKind:"price_experiment_report",
    entityType:"menu_item",entityId:effect.productId,
    payload:{productId:effect.productId,productName:effect.productName,
-    itemName:effect.productName,outcomeStatus:status,recommendation:"adjust",
+    itemName:effect.productName,outcomeStatus:status,recommendation,
     oldPriceCents:effect.oldPriceCents,newPriceCents:effect.newPriceCents,
-    observedUnits:units,observedRevenueCents:revenue,
-    coveredWindows:result.coveredWindows,totalWindows:days,
+    observedUnits:units,observedRevenueCents:revenue,baselineUnits,baselineRevenueCents:baselineRevenue,
+    contributionEstimateCents:comparison.contributionEstimateCents,contributionChangeEstimateCents:comparison.contributionChangeEstimateCents,
+    exposureEndAt:exposureEnd,coveredWindows:result.coveredWindows,totalWindows:days,
     windowStartAt:receipt.startAt,windowEndAt:windows.at(-1)!.endAt,
     sourceBasis:receipt.startBasis,sourceCoverage:status,
     extraTradingStatus:"not_verified",nonCausal:true,
@@ -422,16 +461,16 @@ export async function runVerifiedToastPriceTick(db:SupabaseClient,repo:LoopRepos
     " elapsed 24-hour sales windows. "+(actual?
     "The recorded lines were complete for those windows.":
     interruptionAt?
-    "A later source price change or unverifiable price gap interrupted this phase.":
+    "A later source price change or unverifiable price gap interrupted this phase. Please decide whether to stop or authorize a separate new phase.":
     "Some source timestamps or certified coverage were missing.")+
-    " These are observed sales, not proof that the price change caused them. "+
+    " Recommendation: "+recommendation+"; historical product cost and net café profit remain unverified. Contribution comparisons use an explicitly estimated current cost. These are observed sales, not proof that the price change caused them. "+
     "Any trading after the final window remains separately unverified.",
   }};
  await repo.saveReport(scope,proposal,report);
  // Match the existing monitor correction grace and seal only after the
  // terminal report was durably saved. A newly transitioned proposal will
  // be checked with its current revision on the next authenticated tick.
- if(row.status!=="manual_pending"&&Date.parse(now)>Date.parse(finalEndAt)+14*86400000)
+ if(row.status!=="manual_pending"&&Date.parse(now)>Date.parse(exposureEnd)+14*86400000)
   await repo.transition(scope,row.id,row.revision,"finish_monitor");
  return "reported";
 }
