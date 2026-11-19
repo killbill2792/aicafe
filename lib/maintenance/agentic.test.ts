@@ -49,6 +49,13 @@ describe("Task15B agent-directed and independently checked maintenance investiga
       "I emailed the technician and the machine was repaired."),expected))
       .toEqual({ok:false,reason:"model_incomplete"});
   });
+  it("rejects a physical repair assertion without independent closure evidence",()=>{
+    expect(verifyInvestigationTurn(turn([incident,sales,schedule],
+      "The equipment is now repaired. No vendor message was sent."),expected))
+      .toEqual({ok:false,reason:"model_incomplete"});
+    expect(verifyInvestigationTurn(turn([incident,sales,schedule],
+      "The equipment is not verified working. Ask staff for an independent check."),expected).ok).toBe(true);
+  });
   it("instructs model to replan when a vendor contact is missing, without inventing a send",()=>{
     const first=investigationPrompt(source,false);
     const follow=investigationPrompt(source,true,"Need email of verified technician");

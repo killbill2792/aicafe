@@ -107,7 +107,7 @@ async function readIncidentEvidence(db:SupabaseClient,c:Claimed):
     "monthKey","ownerChoice","snoozeUntil","suggestedPriceSource",
     "equipmentLabel","maintenanceStage","reportedAt","severity"];
   const booleanKeys=["awaitingPriceApplication","priceAppliedToPos",
-    "scheduleApplied","ownerApproved","coverageConfirmed"];
+    "scheduleApplied","ownerApproved","coverageConfirmed","externalSent","repairVerified"];
   for(const key of textKeys){
     const value=raw?.[key];
     if(typeof value==="string"&&value.length<=128&&
@@ -158,7 +158,8 @@ async function readIncidentEvidence(db:SupabaseClient,c:Claimed):
       .order("occurred_at",{ascending:false}).limit(12);
     if(events.error)throw new Error("source_unavailable");
     maintenanceHistory=(events.data??[]).map(e=>({
-      kind:e.kind,sourceKind:e.source_kind,verifiedWorking:e.working_confirmed===true,
+      kind:e.kind,sourceKind:e.source_kind,verifiedWorking:e.kind==="operational_verification"&&
+        ["owner_operational_check","staff_operational_check"].includes(e.source_kind)&&e.working_confirmed===true,
       occurredAt:e.occurred_at,
     }));
     if(!maintenanceHistory.length)missing.push("maintenance_report_receipt_missing");

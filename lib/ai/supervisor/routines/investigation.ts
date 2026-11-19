@@ -266,6 +266,10 @@ export function verifyInvestigationTurn(turn:AgentTurn,expected:ExpectedInvestig
     call.result.incidentKind===expected.kind&&
     call.result.missing.length===0);
   if(!source)return {ok:false,reason:"evidence_incomplete"};
+  // An open maintenance incident cannot be closed by a narrative. A vendor
+  // claim or a staff task completion is not independent equipment verification.
+  if(expected.kind==="maintenance_issue"&&/\b(?:machine|equipment|appliance|refrigerator|freezer|boiler|repair|case)\b[^.!?\n]{0,70}\b(?:is|has been|was)\s+(?:now\s+|fully\s+|successfully\s+)?(?:fixed|repaired|resolved|closed|verified working|back in service)\b/iu.test(text))
+    return {ok:false,reason:"model_incomplete"};
   const allowed=new Set<string>(relevantInvestigationTools(expected.kind));
   const corroborated=calls.filter(call=>allowed.has(call.name)&&
     call.result.source!=="investigation_source"&&
