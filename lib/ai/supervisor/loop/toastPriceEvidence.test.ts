@@ -120,6 +120,7 @@ describe("Task 8a approved Toast historical activation survives a later unrelate
 describe("independent Toast observation eligibility",()=>{
  const event=original.history[0];
  const input={...original,historyId:event.id,
+  receipt:{...original.receipt,menu_checked_local_day:"2026-11-11"},
   notBefore:"2026-11-11T17:00:00Z",asOf:"2026-11-11T19:00:00Z"};
  it("accepts a completed publication without a proposal or approval",()=>{
   expect(matchVerifiedToastObservation(input)).toMatchObject({
@@ -127,7 +128,7 @@ describe("independent Toast observation eligibility",()=>{
  });
  it("does not treat a partially stamped import as a completed publication",()=>{
   expect(matchVerifiedToastObservation({...input,receipt:{
-   ...input.receipt,menu_copied_at:null}}).status).toBe("unverified");
+   ...input.receipt,menu_checked_local_day:null}}).status).toBe("unverified");
  });
  it("requires the precise history event and the configured discovery boundary",()=>{
   expect(matchVerifiedToastObservation({...input,historyId:"different"}).status).toBe("unverified");
