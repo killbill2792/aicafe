@@ -1,0 +1,110 @@
+{
+  "id": "14e-cash-position",
+  "mode": "generic",
+  "engine": "node-server",
+  "entrypoint": "evals/acceptance/live/task14e-cash-position.mjs",
+  "proof": "14e-cash-position-proof.json",
+  "scope": "14e-cash-position-scope.json",
+  "expectedTools": [
+    "get_cashflow_evidence",
+    "get_bills"
+  ],
+  "assertions": [
+    {
+      "name": "historical-statement-source",
+      "kind": "source",
+      "table": "public.uploads",
+      "where": {
+        "business_id": {
+          "scope": "businessId"
+        },
+        "id": {
+          "scope": "uploadId"
+        },
+        "financial_owner_user_id": {
+          "scope": "ownerUserId"
+        },
+        "financial_closing_cents": {
+          "eq": "1234567"
+        },
+        "status": {
+          "eq": "done"
+        }
+      },
+      "minCount": 1,
+      "maxCount": 1
+    },
+    {
+      "name": "initialReplyId",
+      "kind": "owner",
+      "table": "public.ai_messages",
+      "where": {
+        "business_id": {
+          "scope": "businessId"
+        },
+        "thread_id": {
+          "scope": "threadId"
+        },
+        "id": {
+          "scope": "initialReplyId"
+        },
+        "role": {
+          "eq": "supervisor"
+        }
+      },
+      "minCount": 1,
+      "maxCount": 1
+    },
+    {
+      "name": "datedReplyId",
+      "kind": "owner",
+      "table": "public.ai_messages",
+      "where": {
+        "business_id": {
+          "scope": "businessId"
+        },
+        "thread_id": {
+          "scope": "threadId"
+        },
+        "id": {
+          "scope": "datedReplyId"
+        },
+        "role": {
+          "eq": "supervisor"
+        }
+      },
+      "minCount": 1,
+      "maxCount": 1
+    },
+    {
+      "name": "foreign-statement-denied",
+      "kind": "isolation",
+      "table": "public.uploads",
+      "where": {
+        "business_id": {
+          "scope": "otherCafeId"
+        },
+        "id": {
+          "scope": "uploadId"
+        }
+      },
+      "minCount": 0,
+      "maxCount": 0
+    },
+    {
+      "name": "no-payment-or-financial-proposal",
+      "kind": "source",
+      "table": "public.supervisor_proposals",
+      "where": {
+        "business_id": {
+          "scope": "businessId"
+        },
+        "thread_id": {
+          "scope": "threadId"
+        }
+      },
+      "minCount": 0,
+      "maxCount": 0
+    }
+  ]
+}
