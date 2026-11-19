@@ -163,7 +163,8 @@ describe("durable owner admission",()=>{
     const out=events(await (await post()).text());
     expect(durable.admit).toHaveBeenCalledWith({businessId:"business-1",ownerUserId:"owner-1",threadId:THREAD},
       expect.objectContaining({id:"msg-1",role:"owner"}),{locale:"en",attachmentIds:[]});
-    expect(out.map(e=>e.type)).toEqual(["ack","done"]);
+    expect(out.map(e=>e.type)).toEqual(["ack","ack","done"]);
+    expect(out[0]).toEqual({type:"ack",data:{runId:NEXT,ownerMessageId:"msg-1",mode:"queued"}});
     expect(fake.loopArgs).toHaveLength(0);
     expect(fake.kept).toBe(1);
   });
@@ -177,7 +178,7 @@ describe("durable owner admission",()=>{
   it("reports queued work without inventing a completed reply",async()=>{
     durable.process.mockResolvedValue("busy");
     const out=events(await (await post()).text());
-    expect(out).toEqual([{type:"queued",data:{runId:NEXT}}]);
+    expect(out).toEqual([{type:"ack",data:{runId:NEXT,ownerMessageId:"msg-1",mode:"queued"}},{type:"queued",data:{runId:NEXT}}]);
     expect(fake.loopArgs).toHaveLength(0);
   });
 });

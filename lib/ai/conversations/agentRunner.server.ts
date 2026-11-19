@@ -559,9 +559,11 @@ export async function runOneTurn(p: TurnParams): Promise<{ replyId: string; repl
         recordCheckin:async(goalId,date,answer,note)=>{
           // Only a goal this owner owns, read with the owner's own session.
           const owner={businessId:scope.businessId,ownerUserId:scope.ownerUserId};
-          if(external)return {missing:["requiresWebsiteReview"]};
+          if(external&&!p.durableFence)return {missing:["requiresWebsiteReview"]};
+          await assertTurnSources();
           const [goal]=await readOwnerProposals(await getDb(),owner,{id:goalId,limit:1});
           if(!goal||goal.capability_id!==goalCapabilityId)return {missing:["goalNotFound"]};
+          await assertTurnSources();
           const saved=await recordGoalCheckin(createAdminSupabaseClient(),owner,goalId,{date,answer,note});
           return saved?{saved:true,checkin:saved}:{missing:["noOpenCheckin"]};
         },

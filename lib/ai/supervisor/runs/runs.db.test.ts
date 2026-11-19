@@ -478,6 +478,10 @@ describe("Task 6/15C exact matched owner clarification and final reply",()=>{
    const resumed=await call(a,"supervisor_answer_owner_run_v2",[...scope,questionId,answerId]);
    expect(resumed).toMatchObject({id:run.id,request_key:messageId,status:"pending",owner_answer_ids:[answerId]});
    expect((await call(a,"supervisor_answer_owner_run_v2",[...scope,questionId,answerId])).id).toBe(run.id);
+   const binding=(await admin.query("select owner_input_prompt_message_id,owner_input_response from public.ai_messages where id=$1",[answerId])).rows[0];
+   expect(binding).toEqual({owner_input_prompt_message_id:questionId,owner_input_response:{questionId,action:"supply"}});
+   await expect(call(a,"supervisor_answer_owner_run_v2",[...scope,questionId,answerId,JSON.stringify({questionId,action:"supply",value:"different"})])).rejects.toThrow();
+   await expect(call(a,"ai_agent_job_start",[...scope,answerId])).rejects.toThrow("durable_job_owned");
    const secondAnswer=randomUUID();await insert(secondAnswer,"Tomorrow");
    await expect(call(a,"supervisor_answer_owner_run_v2",[...scope,questionId,secondAnswer])).rejects.toThrow("owner_question_already_answered");
    const next=await call(a,"supervisor_run_claim",[...scope,run.id,randomUUID(),30]);

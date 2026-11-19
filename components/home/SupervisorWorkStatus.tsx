@@ -61,12 +61,12 @@ export default function SupervisorWorkStatus({ items, unavailable, loading=false
             ? en.SupervisorWork.effectReceipt : en.SupervisorWork.replyReceipt}
           {" "}{item.proof.ref}
         </p>}
-        {item.cancelAllowed&&item.threadId&&<button type="button" disabled={unavailable||["pending","cancelled","cancelled_effect_uncertain","completed"].includes(cancelStates[item.id]??"")}
+        {item.cancelAllowed&&item.threadId&&<button type="button" disabled={unavailable||["pending","cancelled","uncertain","completed"].includes(cancelStates[item.id]??"")}
           onClick={()=>void cancel(item)} className="min-h-12 rounded-lg border border-line px-3 text-sm font-semibold text-ink disabled:opacity-50">
           {cancelStates[item.id]==="pending"?en.SupervisorDurableWork.cancelPending:en.SupervisorDurableWork.cancelAction}
         </button>}
         {cancelStates[item.id]&&cancelStates[item.id]!=="pending"&&<p role="status" className="text-sm text-ink-muted">
-          {cancelStates[item.id]==="cancelled"?en.SupervisorDurableWork.runCancelled:cancelStates[item.id]==="cancelled_effect_uncertain"?en.SupervisorDurableWork.cancelUncertain:cancelStates[item.id]==="completed"?en.SupervisorDurableWork.cancelCompleted:en.SupervisorDurableWork.cancelFailed}
+          {cancelStates[item.id]==="cancelled"?en.SupervisorDurableWork.runCancelled:cancelStates[item.id]==="uncertain"?en.SupervisorDurableWork.cancelUncertain:cancelStates[item.id]==="completed"?en.SupervisorDurableWork.cancelCompleted:en.SupervisorDurableWork.cancelFailed}
         </p>}
         {onOpen && item.threadId && <button type="button" disabled={disabled || unavailable}
           aria-label={en.SupervisorChat.taskOpen+": "+(item.threadTitle??item.title)}

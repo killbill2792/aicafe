@@ -131,3 +131,5 @@ it("shows awaiting-owner and retrying v2 work without inventing completion",()=>
  expect(view({runs:[{...v2,status:"running"}],steps:[dead]})[0].status).toBe("retrying");
  expect(view({runs:[{...v2,status:"running"}],steps:[{...dead,checkpoint_phase:"effect_pending"}]})[0].status).toBe("uncertain");
 });
+
+it("only offers cancellation and exact question binding on live v2 assignments",()=>{const r={...run,execution_version:2,awaiting_question_id:"q",owner_answer_ids:["a"],status:"blocked" as const};const waiting=view({runs:[r],steps:[{...step,status:"blocked",error_code:"awaiting_owner"}]})[0];expect(waiting).toMatchObject({executionVersion:2,questionId:"q",relatedOwnerMessageIds:["a"],cancelAllowed:true});const stopped=view({runs:[r],steps:[{...step,status:"blocked",error_code:"cancelled_effect_uncertain"}]})[0];expect(stopped).toMatchObject({questionId:null,cancelAllowed:false,status:"uncertain"});});

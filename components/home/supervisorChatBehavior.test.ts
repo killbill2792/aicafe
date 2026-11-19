@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { ConversationMessage } from "@/lib/ai/conversations/contracts";
-import { activeOwnerQuestionMessageId, beginOptimisticOwner, sendKey, visibleConversationMessages,
+import { clarifyCardState, activeOwnerQuestionMessageId, beginOptimisticOwner, sendKey, visibleConversationMessages,
   hasInsertedHistoryPage, isTranscriptNearBottom, transcriptScrollTarget, isDuplicateLinkedExperimentCard } from "./supervisorChatBehavior";
 
 const owner: ConversationMessage = {
@@ -105,3 +105,5 @@ describe("Supervisor chat turn and scroll behavior", () => {
 
   });
 });
+
+it("keeps a durable question active across unrelated messages and consumes only the exact saved answer",()=>{const question={...answer,id:"q",grounding:{durableQuestionId:"q"},blocks:[{type:"clarify",question:"Which day?"}]};const unrelated={...owner,id:"other"};const matched={...owner,id:"matched",text:"Tomorrow",ownerInputResponse:{questionId:"q",action:"supply" as const}};expect(clarifyCardState([question,unrelated],0,new Set(["q"]))).toEqual({state:"active",choice:null});expect(clarifyCardState([question,unrelated,matched],0,new Set())).toEqual({state:"chosen",choice:"Tomorrow"});expect(clarifyCardState([question,unrelated],0,new Set())).toEqual({state:"skipped",choice:null});});
