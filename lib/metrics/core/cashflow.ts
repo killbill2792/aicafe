@@ -251,11 +251,11 @@ export function historicalCashStress(asOf:string,horizonDays:number,
   ];
   for(const s of sources){
    if(!s.complete||!s.rows.length)continue;
-   const exposure=s.rows.reduce((a,b)=>a+BigInt(b),0n),remaining=BigInt(balance.closingCents)-exposure;
+   const exposure=s.rows.reduce((a,b)=>a+BigInt(b),BigInt(0)),remaining=BigInt(balance.closingCents)-exposure;
    if(exposure>BigInt(Number.MAX_SAFE_INTEGER)||remaining<BigInt(Number.MIN_SAFE_INTEGER))continue;
    results.push({uploadId:balance.uploadId,currency:balance.currency,balanceAsOf:balance.asOf,through,
     startDocumentedCents:balance.closingCents,sourceClass:s.kind,conditionalExposureCents:Number(exposure),
-    conditionalRemainingCents:Number(remaining),conditionalShortfallCents:remaining<0n?Number(-remaining):0,
+    conditionalRemainingCents:Number(remaining),conditionalShortfallCents:remaining<BigInt(0)?Number(-remaining):0,
     assumptions:["if historical balance remained unchanged","if listed amounts still require cash settlement from this account",
      "no additional deposits or other outflows assumed","undated obligations excluded","separate scenarios may overlap; do not sum",
      "account and payment coverage unknown"]});

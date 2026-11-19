@@ -86,7 +86,8 @@ function observedValue(value:unknown,depth=0):boolean{
 function hasObservedEvidence(result:AgentToolResult):boolean{
   if(!Array.isArray(result.missing))return false;
   if(result.source==="cashflow_evidence")return (Array.isArray(result.documentedAccountBalances)&&result.documentedAccountBalances.length>0)||
-    (typeof result.recordedClaimCount==="number"&&result.recordedClaimCount>0);
+    (typeof result.recordedClaimCount==="number"&&result.recordedClaimCount>0)||
+    (typeof result.billClaimCount==="number"&&result.billClaimCount>0);
   const readerFailed=result.missing.some(reason=>
     /(?:unavailable|readfailed|readerfailed|readerror|unauthorized|denied)/iu.test(reason));
   return Object.entries(result).some(([key,value])=>{

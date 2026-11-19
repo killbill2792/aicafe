@@ -174,7 +174,7 @@ create function public.supervisor_sync_financial_review(p_business_id uuid,p_own
  returns integer language plpgsql security invoker set search_path=public as $$
 declare v_day date;v_facts jsonb;v_count integer;v_changed integer;v_invoice_count bigint;v_statement_count bigint;
  v_bill_count bigint;v_invoice_version text;v_statement_version text;v_bill_version text;v_event_version text;
- v_cost_version text;v_expense_version text;v_claim record;v_task_id text;v_closed boolean;v_linked numeric;v_unverified boolean;
+ v_cost_version text;v_expense_version text;v_claim record;v_task_id text;v_closed boolean;v_linked numeric;v_unverified boolean;v_claim_event_version text;
 begin
  if auth.role() is distinct from 'service_role' then raise exception 'service_role_only' using errcode='42501';end if;
  perform 1 from public.memberships m where m.business_id=p_business_id and m.user_id=p_owner_user_id and m.role='owner' for share;
@@ -244,7 +244,8 @@ begin
    filter(where f.financial_invoice_id=v_claim.id),0),
    coalesce(bool_or(p.id is null or p.status<>'committed' or a.state is distinct from 'verified'
       or public.supervisor_financial_settlement_proof(p_business_id,p.id,p.effect_hash) is distinct from f.id),false)
-   into v_linked,v_unverified
+   ,md5(coalesce(string_agg(f.id::text||':'||coalesce(p.status,'missing')||':'||coalesce(a.state,'missing'),',' order by f.id),''))
+   into v_linked,v_unverified,v_claim_event_version
    from public.purchase_reconciliation_events f
    join public.supplier_invoices i on i.business_id=f.business_id and i.id=f.financial_invoice_id
    left join public.supervisor_proposals p on p.business_id=f.business_id and f.event_key='financial-settlement:'||p.id::text
@@ -262,7 +263,7 @@ begin
         from public.purchase_reconciliation_events rev where rev.business_id=p_business_id and rev.financial_reverses_id=f.id));
   v_facts:=jsonb_build_array(jsonb_build_object('source','financial_invoice_review','facts',jsonb_build_object(
     'invoiceId',v_claim.id,'revision',v_claim.revision,'documentedCoverageVerified',v_closed,
-    'settlementSourceVersion',v_event_version,'dueDatePosition',case when v_claim.due_on is null then 'undated' when v_claim.due_on<v_day then 'past_date' else 'coming_due' end)));
+    'settlementSourceVersion',v_claim_event_version,'dueDatePosition',case when v_claim.due_on is null then 'undated' when v_claim.due_on<v_day then 'past_date' else 'coming_due' end)));
   insert into public.operating_tasks(business_id,id,owner_user_id,agent_id,kind,entity_type,entity_id,status,confidence,payload,evidence,created_at,resolved_at)
   values(p_business_id,v_task_id,p_owner_user_id,'leo','money_update','supplier_invoice',v_claim.id::text,
     case when v_closed then 'handled' else 'watching' end,'low',
