@@ -1,6 +1,6 @@
 import {describe,expect,it,vi} from "vitest";
 vi.mock("server-only",()=>({}));
-import {matchVerifiedToastPriceEvidence,matchVerifiedHistoricToastActivation} from "./toastPriceEvidence.server";
+import {matchVerifiedToastPriceEvidence,matchVerifiedHistoricToastActivation,matchVerifiedToastObservation,matchCompletedToastObservation} from "./toastPriceEvidence.server";
 const business="aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
 const restaurant="bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb";
 const itemId="cccccccc-cccc-4ccc-8ccc-cccccccccccc";
@@ -114,5 +114,54 @@ describe("Task 8a approved Toast historical activation survives a later unrelate
    ...latest.history,{...latest.history[0],
     id:"ffffffff-ffff-4fff-8fff-ffffffffffff"}]})).toMatchObject({
      status:"unverified",reason:"ambiguous_activation_history"});
+ });
+});
+
+describe("independent Toast observation eligibility",()=>{
+ const event=original.history[0];
+ const input={...original,historyId:event.id,
+  receipt:{...original.receipt,menu_checked_local_day:"2026-11-11"},
+  notBefore:"2026-11-11T17:00:00Z",asOf:"2026-11-11T19:00:00Z"};
+ it("accepts a completed publication without a proposal or approval",()=>{
+  expect(matchVerifiedToastObservation(input)).toMatchObject({
+   status:"verified",historyId:event.id,startAt:event.toast_observed_at});
+ });
+ it("does not treat a partially stamped import as a completed publication",()=>{
+  expect(matchVerifiedToastObservation({...input,receipt:{
+   ...input.receipt,menu_checked_local_day:null}}).status).toBe("unverified");
+ });
+ it("requires the precise history event and the configured discovery boundary",()=>{
+  expect(matchVerifiedToastObservation({...input,historyId:"different"}).status).toBe("unverified");
+  expect(matchVerifiedToastObservation({...input,notBefore:"2026-11-11T18:02:00Z"}).status).toBe("unverified");
+  expect(matchVerifiedToastObservation({...input,asOf:"2026-11-11T18:01:30Z"}).status).toBe("unverified");
+ });
+ it("cannot turn an initial, local, or contextual price into a watch",()=>{
+  for(const history of [[{...event,old_price_cents:null}],
+   [{...event,source_type:"owner_manual"}]])
+   expect(matchVerifiedToastObservation({...input,history}).status).toBe("unverified");
+  expect(matchVerifiedToastObservation({...input,menu:{
+   ...input.menu,pos_pricing_strategy:"TIME_SPECIFIC_PRICE"}}).status).toBe("unverified");
+ });
+});
+
+describe("durable completed price receipt",()=>{
+ const event={...original.history[0],toast_publication_completed_at:"2026-11-11T18:02:00Z",
+  toast_publication_pos_item_id:original.menu.pos_item_id};
+ const input={businessId:business,historyId:event.id,notBefore:"2026-11-11T17:00:00Z",
+  asOf:"2026-11-11T19:00:00Z",event,location:{restaurant_guid:restaurant,verified_at:"2026-11-01T12:00:00Z"}};
+ it("is independent of any mutable current menu or proposal",()=>{
+  expect(matchCompletedToastObservation(input)).toMatchObject({
+   status:"verified",historyId:event.id,posItemId:original.menu.pos_item_id,
+   startAt:"2026-11-11T18:01:00.000Z"});
+ });
+ it("fails closed on absent completion, identity mismatch or events before activation",()=>{
+  for(const candidate of [
+   {...input,event:{...event,toast_publication_completed_at:null}},
+   {...input,event:{...event,toast_publication_completed_at:"2026-11-11T18:00:00Z"}},
+   {...input,event:{...event,toast_publication_pos_item_id:"toast:wrong:item"}},
+   {...input,event:{...event,toast_effective_at:"2026-11-11T18:04:00Z"}},
+   {...input,location:null},
+   {...input,notBefore:"2026-11-11T18:01:01Z"},
+  ])expect(matchCompletedToastObservation(candidate).status).toBe("unverified");
  });
 });
