@@ -104,3 +104,7 @@ export type OwnerRunCheckpoint = {
   canYield:()=>boolean;
   yieldForRetry:(seconds:number,kind?:"retry"|"technical"|"contended")=>Promise<boolean>;
 };
+
+/** The database binds the original question to the explicit owner response. */
+export const matchedOwnerAnswerSchema=z.object({questionId:z.uuid(),answerId:z.uuid(),question:z.string().trim().min(1).max(2400),answer:z.string().trim().min(1).max(4000)});
+export type MatchedOwnerAnswer=z.infer<typeof matchedOwnerAnswerSchema>;

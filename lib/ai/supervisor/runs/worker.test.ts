@@ -359,3 +359,13 @@ describe("observed pre-effect refusal",()=>{
     unknown.settle();expect(unknown.noEffect()).toBe(false);
   });
 });
+
+it("binds resumed context to the exact persisted question and authenticated answer, not another run",async()=>{
+ const {decodeMatchedOwnerAnswer}=await import("./worker.server");
+ const questionId=randomUUID(),answerId=randomUUID(),r={...run,id:randomUUID(),requestKey:randomUUID()};
+ const q={id:questionId,role:"supervisor",text_content:null,structured_content:[{type:"clarify",question:"Which supplier?"}],grounding:{durableRunId:r.id,ownerMessageId:r.requestKey,durableQuestionId:questionId,status:"requires_owner_input"},owner_input_response:null,owner_input_prompt_message_id:null};
+ const a={id:answerId,role:"owner",text_content:"The existing coffee supplier",structured_content:null,grounding:null,owner_input_response:{questionId,action:"supply"},owner_input_prompt_message_id:questionId};
+ expect(decodeMatchedOwnerAnswer(r,questionId,answerId,q,a)).toEqual({questionId,answerId,question:"Which supplier?",answer:"The existing coffee supplier"});
+ expect(()=>decodeMatchedOwnerAnswer(r,questionId,answerId,{...q,grounding:{...q.grounding,durableRunId:randomUUID()}},a)).toThrow();
+ expect(()=>decodeMatchedOwnerAnswer(r,questionId,answerId,q,{...a,owner_input_prompt_message_id:randomUUID()})).toThrow();
+});

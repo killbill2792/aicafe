@@ -103,7 +103,7 @@ type TurnParams = {
   emit: Emit; job: AgentJob | null; jobs: JobsModule | null;
   attachmentIds?:string[];
   checkpoint?:OwnerRunCheckpoint;
-  matchedAnswers?:ConversationMessage[];
+  matchedAnswers?:import("@/lib/ai/supervisor/runs/contracts").MatchedOwnerAnswer[];
   durableFence?:DurableReplyFence;
   recordDurableStep?:(step:import("@/lib/ai/agent/jobState").AgentJobStep)=>Promise<void>;
   /** Only a caller that reverified a signed, consented Meta owner binding can supply this. */
@@ -184,7 +184,9 @@ export async function runOneTurn(p: TurnParams): Promise<{ replyId: string; repl
     // assistant summaries remain owner-visible but are not re-admitted to the model.
     const reusable=(m:ConversationMessage)=>m.role==="owner"||
       (m.grounding?.agentMetadata as {externalEvidence?:unknown}|undefined)?.externalEvidence===false;
-    const priorAssistant=page.items.filter(m=>m.role==="supervisor"&&m.id!==owner.id&&reusable(m)).slice(-8);
+    const ownerAt = Date.parse(owner.createdAt);
+    const priorAssistant=page.items.filter(m=>m.role==="supervisor"&&m.id!==owner.id&&reusable(m)&&
+      (!p.durableFence||Date.parse(m.createdAt)<=ownerAt)).slice(-8);
     const previousEvidence:NumericEvidence[]=priorAssistant.flatMap(m=>{
       const candidate=m.grounding?.agentMetadata;
       if(!candidate||typeof candidate!=="object"||!Object.hasOwn(candidate,"evidence"))return [];
@@ -196,15 +198,13 @@ export async function runOneTurn(p: TurnParams): Promise<{ replyId: string; repl
     // Previous assistant prose is conversation context, never source evidence.
     // Retain only typed evidence from successful tool reads. Messages queued for a
     // running job (sent after this one) are excluded: they arrive as follow-ups.
-    const ownerAt = Date.parse(owner.createdAt);
     const history = page.items.filter(m => m.id !== owner.id &&
       (m.role === "owner" || m.role === "supervisor") && reusable(m) &&
       !(job && (p.durableFence||m.role === "owner") && Number.isFinite(ownerAt) && Date.parse(m.createdAt) > ownerAt)).slice(-8)
       .map(m => ({ role: m.role === "owner" ? "user" as const : "assistant" as const,
         content: historyContent(m) })).filter(m => m.content);
     for(const answer of p.matchedAnswers??[]){
-      if(answer.role!=="owner"||answer.threadId!==id||answer.contentType!=="text"||!answer.text)throw new Error("owner_answer_scope_mismatch");
-      history.push({role:"user",content:"Answer to the persisted clarification for this assignment: "+answer.text});
+      history.push({role:"assistant",content:answer.question},{role:"user",content:answer.answer});
     }
     const proposalScope={...scope,threadId:id,locale:p.locale,
       ...(external?{verifiedReadClient:p.externalClient}: {})};
@@ -782,7 +782,7 @@ export async function runOneTurn(p: TurnParams): Promise<{ replyId: string; repl
          },
         onFollowUp: (count: number) => emit("followup", { count }),
       } : {}) });
-    if(p.matchedAnswers?.length)result.absorbedOwnerMessageIds=[...new Set([...(result.absorbedOwnerMessageIds??[]),...p.matchedAnswers.map(a=>a.id)])];
+    if(p.matchedAnswers?.length)result.absorbedOwnerMessageIds=[...new Set([...(result.absorbedOwnerMessageIds??[]),...p.matchedAnswers.map(a=>a.answerId)])];
     result.externalEvidence=sourceChecks.size>0;
     completedTurn = result;
     failureStage = "persist";

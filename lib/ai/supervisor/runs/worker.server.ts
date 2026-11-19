@@ -13,7 +13,7 @@ import type { AgentJob } from "@/lib/ai/agent/jobState";
 import type { ConversationMessage } from "@/lib/ai/conversations/contracts";
 import { resumeSupervisorRun } from "./resume";
 import { selectNextDurableRun, SupabaseDurableRunRepository, admitOwnerRun, openOwnerRunCheckpoint } from "./repository.server";
-import { runScopeSchema, ownerRunInputSchema, type OwnerRunInput, type DurableRun, type DurableRunRepository, type RunScope } from "./contracts";
+import { runScopeSchema, ownerRunInputSchema, type OwnerRunInput, matchedOwnerAnswerSchema, type DurableRun, type DurableRunRepository, type RunScope } from "./contracts";
 import { withWorkerBudget, usageStopReason, currentWorkerUsage, workerBudgetExhausted,
   withDurableProviderTurn,type WorkerBudget, type WorkerUsage } from "./usage.server"; const uuid = z.uuid(); const plan = [
   { key: "authorize_owner", retry: "idempotent" as const },
@@ -225,6 +225,21 @@ export async function runDurableJobChain(input: { scope: RunScope; owner: Conver
 }
 /** Reads identities from durable storage. Only the fixed approved three-step
  * plan may drive the existing chat loop; arbitrary plans fail closed. */
+/** Validate the real question/answer pair, not the most recent transcript card. */
+export function decodeMatchedOwnerAnswer(run:WorkerRun,questionId:string,answerId:string,q:unknown,a:unknown){
+ const row=z.object({id:z.uuid(),role:z.string(),text_content:z.string().nullable(),structured_content:z.unknown(),
+   grounding:z.record(z.string(),z.unknown()).nullable(),owner_input_response:z.unknown(),owner_input_prompt_message_id:z.string().nullable()});
+ const question=row.parse(q), answer=row.parse(a);
+ const response=z.object({questionId:z.uuid(),action:z.literal("supply")}).safeParse(answer.owner_input_response);
+ if(question.id!==questionId||question.role!=="supervisor"||question.grounding?.durableRunId!==run.id||
+    question.grounding?.ownerMessageId!==run.requestKey||question.grounding?.durableQuestionId!==questionId||
+    question.grounding?.status!=="requires_owner_input"||answer.id!==answerId||answer.role!=="owner"||
+    answer.owner_input_prompt_message_id!==questionId||!response.success||response.data.questionId!==questionId)
+   throw Error("owner_answer_scope_mismatch");
+ const blocks=z.array(z.object({type:z.string(),question:z.string().optional()})).parse(question.structured_content);
+ const prompt=blocks.find(b=>b.type==="clarify")?.question;
+ return matchedOwnerAnswerSchema.parse({questionId,answerId,question:prompt,answer:answer.text_content});
+}
 export async function processDurableRun(runId: string,emit:(type:string,data:unknown)=>void=()=>{}): Promise<WorkerOutcome> {
   const id = uuid.parse(runId), db = createAdminSupabaseClient();
   const { data, error } = await db.from("supervisor_runs")
@@ -299,12 +314,21 @@ export async function processDurableRun(runId: string,emit:(type:string,data:unk
         // Re-read matched answers AFTER acquiring the claim. A worker may have
         // been queued while a previous claim published a question and its
         // owner answer resumed the same run.
-        const fresh=await client.from("supervisor_runs").select("owner_answer_ids").eq("id",run.id)
+        const fresh=await client.from("supervisor_runs").select("owner_answer_ids,answered_question_ids").eq("id",run.id)
           .eq("business_id",scope.businessId).eq("owner_user_id",scope.ownerUserId).eq("thread_id",scope.threadId).single();
         if(fresh.error||!fresh.data)throw Error("checkpoint_storage_unavailable");
         await checkpoint.assertLive();
         const answers=z.array(z.uuid()).max(20).parse(fresh.data.owner_answer_ids);
-        const matchedAnswers=await Promise.all(answers.map(id=>readOwnerMessage(scope,scope.threadId,id)));
+        const questions=z.array(z.uuid()).max(20).parse(fresh.data.answered_question_ids);
+        if(answers.length!==questions.length)throw Error("owner_answer_scope_mismatch");
+        const matchedAnswers=await Promise.all(answers.map(async(answerId,i)=>{
+          const questionId=questions[i];
+          const result=await client.from("ai_messages").select("id,role,text_content,structured_content,grounding,owner_input_response,owner_input_prompt_message_id")
+            .eq("business_id",scope.businessId).eq("owner_user_id",scope.ownerUserId).eq("thread_id",scope.threadId).in("id",[questionId,answerId]);
+          if(result.error||result.data?.length!==2)throw Error("owner_answer_scope_mismatch");
+          const q=result.data.find(m=>m.id===questionId),a=result.data.find(m=>m.id===answerId);
+          return decodeMatchedOwnerAnswer(run,questionId,answerId,q,a);
+        }));
         const outcome=await withDurableProviderTurn({
           db:client,...scope,runId:run.id,ownerMessageId:owner.id,jobId:job.id,claimToken,budget,
           ownerDailyCap:ownerModelCallsLimit(),authorize:async()=>{
