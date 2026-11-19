@@ -75,8 +75,9 @@ export const supplierPurchasingTools={
     missing:["supplier_followup_unavailable"],proposalCreated:false,sent:false};
    try{
     const result=await ctx.receivingFollowup(purchaseOrderId);
-    return {source:"supplier_vendor_dispatch",period:null,agentId:"maya",missing:[],
-     proposalCreated:true,approvalRequired:true,sent:false,...result};
+    return {source:"gmail_proposal",period:null,agentId:"maya",missing:[],
+     proposalCreated:true,draft:true,saved:false,approvalRequired:true,requiredApproval:"owner_click",
+     operation:"send",sent:false,...result};
    }catch{return {source:"supplier_vendor_dispatch",period:null,agentId:"maya",
     missing:["supplier_followup_requires_verified_contact_or_open_evidence"],proposalCreated:false,sent:false};}
   }
