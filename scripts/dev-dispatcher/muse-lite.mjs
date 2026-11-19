@@ -182,7 +182,7 @@ export function museActions(facts,previous,notes,{now=new Date().toISOString(),
    emit('remind_owner',task,null,null,e.chat_url||null,'Review planning blocker in existing local notes',String(e.revision));
  }
  if(!fresh)return {fresh:false,actions,blocked:[...blocked,{reason:'github_evidence_stale_or_unavailable'}]};
- for(const p of facts.prs||[])if(p.owner_request_read_incomplete)
+ for(const p of facts.prs||[])if(p.owner_request_read_incomplete!==false)
   blocked.push({pr_number:p.number,reason:'Owner question scan incomplete; fetch earlier PR comments; never assume no requests'});
  for(const entry of Object.values(records)){
   if(!entry.pr_number||entry.stage==='paused')continue;
@@ -193,7 +193,7 @@ export function museActions(facts,previous,notes,{now=new Date().toISOString(),
      reason:'pr_missing_or_closed_unmerged_verify_github'});
    continue;
   }
-  if(held.has(p.number))continue;
+  if(held.has(p.number)||p.owner_request_read_incomplete!==false)continue;
   const head=p.head_sha;
   const before=seen.find(v=>v.number===p.number),h=p.workflow_handoff;
 
