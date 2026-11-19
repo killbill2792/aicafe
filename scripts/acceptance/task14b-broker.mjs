@@ -20,7 +20,7 @@ export const MAX_CALLS=18;
 // This is a hard 192KB UTF-8 cap, still charged one billable input token PER
 // byte before transport under the unchanged $0.18 / 18-call total ceiling.
 export const MAX_BODY_BYTES=192_000;
-export const MAX_OUTPUT_TOKENS=4_096;
+export const MAX_OUTPUT_TOKENS=16_384;
 export const MAX_FINAL_OUTPUT_TOKENS=1_200;
 const fail=(code)=>{throw new Error("task14b_trusted_broker:"+code);};
 const isObject=x=>x!==null&&typeof x==="object"&&!Array.isArray(x);
