@@ -90,10 +90,11 @@ export async function POST(request: Request, context: RouteContext) {
         const detach=sink.attach({emit,close});onCancel(detach);
         const work=(async()=>{
           try{
-            const state=await worker.processDurableRun(run.id,sink.emit);
+            let sentReply=false;
+            const state=await worker.processDurableRun(run.id,(type,data)=>{if(type==="done")sentReply=true;sink.emit(type,data);});
             if(state==="busy")sink.emit("queued",{runId:run.id});
             else if(state==="blocked")sink.emit("error",{code:"agent_turn_failed",retryable:false,runId:run.id});
-            else {
+            else if(!sentReply) {
               // An earlier worker may have completed the reply between
               // admission and claim. Replay only the canonical saved answer.
               const {getExistingSupervisorReply}=await import("@/lib/ai/conversations/replyWriter.server");
