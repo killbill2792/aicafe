@@ -144,7 +144,45 @@ export function toastObservationNoticeKey(input:{
  if(!Number.isSafeInteger(windowIndex)||windowIndex<0||windowIndex>7)
   throw new Error("invalid_toast_observation_index");
  return {businessId:input.businessId,ownerUserId:input.ownerUserId,
-  sourceId:input.priceHistoryId,localDate:input.localDate,slot:0,
+  sourceId:input.priceHistoryId,localDate:input.localDate,
+  slot:input.final?0:windowIndex,
   kind:input.final?"toast_price_final":windowIndex===0?
    "toast_price_initial":"toast_price_daily"};
+}
+
+/** A database lease is not a delivery receipt. Recheck membership, the exact
+ * owner thread, gate and lease generation inside the atomic existing-output
+ * transaction. A process dying before commit leaves the same claim retryable. */
+export async function postToastObservationNotice(db:SupabaseClient,input:{
+ key:OwnerNoticeKey;threadId:string;timezone:string;
+ payload:Record<string,string|number|boolean|null>;text:string;confidence:"high"|"low";
+}):Promise<"posted"|"not_claimed"|"not_authorized">{
+ const k=input.key;
+ if(k.kind==="price_reminder")throw new Error("wrong_observation_notice_kind");
+ const {data:claim,error}=await db.rpc("supervisor_8a_claim_notice",{
+  p_business_id:k.businessId,p_owner_user_id:k.ownerUserId,p_source_id:k.sourceId,
+  p_kind:k.kind,p_local_date:k.localDate,p_slot:k.slot,
+ });
+ if(error)throw new Error("observation_notice_claim_failed");
+ if(!claim)return "not_claimed";
+ const {data:lease,error:leaseError}=await db.from("supervisor_experiment_notice_receipts")
+  .select("attempts,state").eq("id",claim).eq("business_id",k.businessId)
+  .eq("owner_user_id",k.ownerUserId).maybeSingle();
+ if(leaseError||!lease)throw new Error("observation_notice_lease_unavailable");
+ if(lease.state!=="claimed")return "not_claimed";
+ const id="toast-price-observation:"+k.ownerUserId+":"+k.sourceId+":"+k.kind+":"+k.slot;
+ const messageId=stableNoticeUuid(k.businessId+":"+id);
+ const result=await notifyOwner(db,{
+  businessId:k.businessId,ownerUserId:k.ownerUserId,threadId:input.threadId,
+  taskId:id,kind:"priority_notice",localDate:k.localDate,important:true,required:true,
+ },async()=>{
+  const saved=await db.rpc("supervisor_8a_post_observation_notice",{
+   p_receipt_id:claim,p_attempt:lease.attempts,p_thread_id:input.threadId,
+   p_task_id:id,p_message_id:messageId,p_timezone:input.timezone,p_payload:input.payload,
+   p_text:input.text,p_confidence:input.confidence,
+  });
+  if(saved.error)throw new Error("observation_notice_delivery_failed");
+  return saved.data===true;
+ });
+ return result.result===true?"posted":"not_authorized";
 }
