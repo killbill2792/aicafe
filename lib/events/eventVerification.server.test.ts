@@ -158,6 +158,16 @@ describe("persisted change alerts through the existing inbox and chat",()=>{
      w.filters.some(([key,value])=>key==="id"&&value===next.id))).toBe(true);
    expect(writes.filter(w=>w.table==="operating_tasks")).toHaveLength(1);
  });
+ it("does not research an unrelated event solely because an exact-ID plan shares its date",async()=>{
+   const {db,writes}=fakeDb(),check=vi.fn(async()=>null);
+   const unrelated={...event,id:"00000000-0000-4000-8000-000000000099"};
+   await verifyUpcomingEventChanges(db,"cafe-one","owner-one","UTC","2026-11-01",
+     {events:[unrelated,event],plans:[{...plan,eventIds:[event.id]}]},
+     new Date("2026-11-01T12:00:00Z"),check);
+   expect(check).toHaveBeenCalledTimes(1);
+   expect(check).toHaveBeenCalledWith(event);
+   expect(writes[0].filters).toContainEqual(["id",event.id]);
+ });
  it("does not replay an already-delivered notice or recheck immediately",async()=>{
    const {db,writes}=fakeDb();
    const old={...event,status:"cancelled" as const,

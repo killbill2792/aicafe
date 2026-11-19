@@ -35,7 +35,9 @@ describe("event_readiness uses the shared Supervisor lifecycle",()=>{
    observation:{coverage:"actual",actualCents:130000,typicalCents:null}};
   const result=await eventReadinessCapability.report(scope,effect,[sample],true);
   expect(result).toMatchObject({status:"insufficient_evidence",recommendation:"adjust",
-   result:{observedDays:1,expectedDays:2,missingBaselineDays:["2026-10-31"]}});
+   result:{observedDays:1,expectedDays:2,missingBaselineDays:["2026-10-31"],
+     salesSummary:{observedSalesCents:130000,observedSalesDays:1,comparableDays:0,
+       comparableActualCents:null,comparableTypicalCents:null,changePercent:null}}});
   const early=await eventReadinessCapability.report(scope,effect,[sample],false);
   expect(early.status).toBe("in_progress");
  });
@@ -52,8 +54,10 @@ describe("event_readiness uses the shared Supervisor lifecycle",()=>{
   const sample=(date:string)=>({businessDate:date,source:"hourly_sales_rollup+daily_rollups",
     observation:{coverage:"actual",actualCents:130000,typicalCents:100000}});
   const report=await eventReadinessCapability.report(scope,effect,
-    [sample("2026-11-01"),sample("2026-10-31")],true);
+    [sample("2026-11-01"),sample("2026-10-31"),sample("2026-10-31")],true);
   expect(report).toMatchObject({status:"complete",source:"hourly_sales_rollup+daily_rollups",
-   result:{observedDays:2,expectedDays:2,days:[{date:"2026-10-31"},{date:"2026-11-01"}]}});
+   result:{observedDays:2,expectedDays:2,days:[{date:"2026-10-31"},{date:"2026-11-01"}],
+     salesSummary:{observedSalesCents:260000,observedSalesDays:2,comparableDays:2,
+       comparableActualCents:260000,comparableTypicalCents:200000,changePercent:30}}});
  });
 });

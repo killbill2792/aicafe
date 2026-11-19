@@ -342,7 +342,26 @@ export const eventReadinessCapability=registerLoopCapability({
    const observed=samples.filter(s=>s.businessDate>=effect.startDate&&s.businessDate<=effect.endDate)
      .sort((a,b)=>a.businessDate.localeCompare(b.businessDate));
    const expected=Math.round((Date.parse(effect.endDate)-Date.parse(effect.startDate))/86400000)+1;
-   const actual=observed.filter(s=>s.observation.coverage==="actual");
+   const actual=[...new Map(observed.filter(s=>s.observation.coverage==="actual")
+     .map(s=>[s.businessDate,s])).values()];
+   // Compare matched days only. A missing day is not a zero-sales day and
+   // an observed total must not masquerade as the complete event total.
+   const measured=actual.filter(s=>typeof s.observation.actualCents==="number"&&
+     Number.isSafeInteger(s.observation.actualCents));
+   const comparable=measured.filter(s=>typeof s.observation.typicalCents==="number"&&
+     Number.isSafeInteger(s.observation.typicalCents));
+   const total=(rows:typeof actual,key:"actualCents"|"typicalCents")=>{
+     if(!rows.length)return null;
+     const sum=rows.reduce((acc,row)=>acc+Number(row.observation[key]),0);
+     return Number.isSafeInteger(sum)?sum:null;
+   };
+   const observedSalesCents=total(measured,"actualCents");
+   const comparableActualCents=total(comparable,"actualCents");
+   const comparableTypicalCents=total(comparable,"typicalCents");
+   const salesSummary={observedSalesCents,observedSalesDays:measured.length,
+     comparableDays:comparable.length,comparableActualCents,comparableTypicalCents,
+     changePercent:comparableActualCents!==null&&comparableTypicalCents!==null?
+       changePercent(comparableActualCents,comparableTypicalCents):null};
    // A completed business day can have actual sales but missing item/discount
    // details. Keep that distinction in the same saved Supervisor report.
    const toastEvidence=windowComplete&&window?.proposalId?await Promise.resolve()
@@ -358,8 +377,7 @@ export const eventReadinessCapability=registerLoopCapability({
        recommendedDiscountImplemented:"unverified" as const,
        physicalPreparationImplemented:"unverified" as const,
      })):null;
-   const complete=windowComplete&&actual.length===expected&&
-     actual.every(s=>typeof s.observation.typicalCents==="number");
+   const complete=windowComplete&&measured.length===expected&&comparable.length===expected;
    const live=!windowComplete?[...observed].reverse().find(s=>
      s.businessDate===window?.through&&s.observation.coverage==="provisional"):undefined;
    const o=live?.observation;
@@ -399,7 +417,7 @@ export const eventReadinessCapability=registerLoopCapability({
    const result={
      eventIds:effect.eventIds,startDate:effect.startDate,endDate:effect.endDate,
      factsHash:effect.factsHash,observedDays:actual.length,expectedDays:expected,
-     checklist,liveWatch,toastEvidence,
+     checklist,liveWatch,toastEvidence,salesSummary,
      missingBaselineDays:actual.filter(s=>s.observation.typicalCents===null).map(s=>s.businessDate),
      days:actual.map(s=>({date:s.businessDate,...s.observation})),
      caveat:"Event-day sales are observational, not proof of event causality. Recorded item sales, discount totals and staff timecards do not prove a proposed combo, discount or physical preparation was implemented; owner checklist markers are not POS evidence.",

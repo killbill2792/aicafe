@@ -8,7 +8,7 @@ import {agentReplyPayload} from "@/lib/ai/agent/persist.server";
 import {stableMessageId} from "@/lib/ai/supervisor/loop/supabase.server";
 import {notifyOwner} from "@/lib/operating/notifyOwner.server";
 import type {CafeEvent,SavedEventTimeline} from "@/lib/data/cafeEvents.server";
-import {credibleEventEvidence,importantVerificationQueue,verifiedEventChange,
+import {credibleEventEvidence,importantVerificationQueue,verifiedEventChange,planMatchesEvent,
   type EventEvidence,type EventVerdict,type VerifiedChange} from "./eventVerification";
 
 type Db=SupabaseClient;
@@ -192,9 +192,8 @@ export async function verifyUpcomingEventChanges(db:Db,businessId:string,ownerId
   timezone:string,today:string,timeline:SavedEventTimeline,now=new Date(),
   check:(event:CafeEvent)=>Promise<CheckResult>=verifyEventSource):Promise<number>{
   let changed=0;
-  const planned=(event:CafeEvent)=>timeline.plans.find(p=>
-    p.startDate<=event.endDate&&p.endDate>=event.startDate&&
-    p.status!=="rejected"&&p.status!=="expired");
+  const planned=(event:CafeEvent)=>timeline.plans.find(p=>p.eventIds?.includes(event.id)&&planMatchesEvent(event,p))??
+    timeline.plans.find(p=>!p.eventIds?.length&&planMatchesEvent(event,p));
   for(const event of timeline.events){
     const pending=storedChange(event);
     const plan=planned(event);

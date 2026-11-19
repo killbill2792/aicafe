@@ -56,11 +56,15 @@ export function eventVerificationDue(event:CafeEvent,today:string,now:Date):bool
   const gapMs=20*3600000;
   return !Number.isFinite(attempt)||now.getTime()-attempt>=gapMs;
 }
+export function planMatchesEvent(event:CafeEvent,plan:{startDate:string;endDate:string;status:string;eventIds?:string[]}){
+  return plan.status!=="rejected"&&plan.status!=="expired"&&
+    (plan.eventIds?.length?plan.eventIds.includes(event.id):
+      plan.startDate<=event.endDate&&plan.endDate>=event.startDate);
+}
 export function importantVerificationQueue(events:readonly CafeEvent[],
-  plans:readonly {startDate:string;endDate:string;status:string}[],
+  plans:readonly {startDate:string;endDate:string;status:string;eventIds?:string[]}[],
   today:string,now:Date,limit=3):CafeEvent[]{
-  return events.filter(e=>plans.some(p=>p.status!=="rejected"&&p.status!=="expired"&&
-    p.startDate<=e.endDate&&p.endDate>=e.startDate)&&
+  return events.filter(e=>plans.some(p=>planMatchesEvent(e,p))&&
     eventVerificationDue(e,today,now))
     // With a bounded daily budget, prioritize never-checked / oldest attempts,
     // otherwise crowded calendars can starve later events forever.

@@ -15,6 +15,8 @@ type EventResult={
     changePercent?:number|null;hours?:Array<{hourLocal:number;actualCents:number;
       usualCents:number|null;changePercent:number|null}>}>;
   caveat:string;
+  salesSummary?:{observedSalesCents:number|null;observedSalesDays:number;comparableDays:number;
+    comparableActualCents:number|null;comparableTypicalCents:number|null;changePercent:number|null};
   toastEvidence?:{
     itemSales:{coverage:string;items:Array<{name:string;quantity:number}>};
     namedDiscounts:{coverage:string;names:string[];matchedRecommendationNames?:string[]};
@@ -53,6 +55,15 @@ export function eventReportNumericEvidence(result:EventResult):NumericEvidence[]
   add("event/expectedDays",result.expectedDays,"count");
   add("event/checklist/done/count",result.checklist.done,"count");
   add("event/checklist/total/count",result.checklist.total,"count");
+  if(result.salesSummary){
+    const s=result.salesSummary;
+    add("event/observedSalesCents",s.observedSalesCents,"cents");
+    add("event/observedSalesDays",s.observedSalesDays,"count");
+    add("event/comparableDays",s.comparableDays,"count");
+    add("event/comparableActualCents",s.comparableActualCents,"cents");
+    add("event/comparableTypicalCents",s.comparableTypicalCents,"cents");
+    if(s.changePercent!==null)add("event/comparableChangeBps",s.changePercent*100,"bps");
+  }
   for(const day of result.days){
     add(day.date+"/actualCents",day.actualCents,"cents");
     add(day.date+"/typicalCents",day.typicalCents,"cents");
@@ -121,6 +132,15 @@ export async function eventFinalNarrative(scope:OwnerLoopScope,proposalId:string
     ownerMarkedChecklist:result.checklist,observedDays:result.observedDays,
     toastEvidence:result.toastEvidence??null,
     expectedDays:result.expectedDays,
+    salesSummary:result.salesSummary?{
+      observedSales:money(result.salesSummary.observedSalesCents),
+      observedSalesDays:result.salesSummary.observedSalesDays,
+      comparableDays:result.salesSummary.comparableDays,
+      comparableActual:money(result.salesSummary.comparableActualCents),
+      comparableTypical:money(result.salesSummary.comparableTypicalCents),
+      changePercent:result.salesSummary.changePercent,
+      comparisonScope:"Matched certified dates only; observed sales are not full-event totals unless all expected dates are covered.",
+    }:null,
     days:result.days.map(day=>({
       date:day.date,actual:money(day.actualCents),
       usual:money(day.typicalCents),changePercent:day.changePercent??null,
