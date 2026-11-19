@@ -59,7 +59,8 @@ export function scenariosForPath(path) {
   if (path.startsWith("app/crew/") || path.startsWith("components/crew/") ||
       path === "components/staff/StaffLoginLinkPanel.tsx" ||
       path === "components/staff/StaffResponseInbox.tsx" ||
-      path === "components/staff/StaffReplyComposer.tsx") return ["staff"];
+      path === "components/staff/StaffReplyComposer.tsx" ||
+      path === "components/staff/StaffCoordinationPanel.tsx") return ["staff"];
   if (path === "app/[locale]/onboarding/page.tsx") return ["staff"];
   if (path === "app/[locale]/pricing/page.tsx") return ["staff"];
   if (path === "app/[locale]/staff/page.tsx" ||

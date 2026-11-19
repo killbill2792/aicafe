@@ -9,6 +9,7 @@ import type {AgentToolResult} from "@/lib/ai/agent/tools";
 import {withWorkerBudget} from "@/lib/ai/supervisor/runs/usage.server";
 import {notifyOwner} from "@/lib/operating/notifyOwner.server";
 import {readActionablePriorities} from "./dispatch.server";
+import {readClaimedStaffCoordination} from "@/lib/staffCoordination/cases.server";
 import {readStaffMessagesForVerifiedOwner} from "@/lib/staffCommunication/channel.server";
 import {getWeekSchedule as readScopedWeekSchedule} from "@/lib/data/staffSchedule.server";
 import {alreadyNotifiedTaskKinds} from "./priority";
@@ -283,6 +284,7 @@ export async function processNextInvestigation(db:SupabaseClient,now:Date,
       tools:createOwnerScopedCafeTools(scope,db),locale:"en" as const,
       asOf:identity.asOf,timezone:identity.timezone,currency:identity.currency,
       canonicalData:async()=>({db,businessId:c.business_id}),
+      staffCoordinationRead:()=>readClaimedStaffCoordination(db,scope),
       staffMessages:{read:()=>readStaffMessagesForVerifiedOwner(
         db,c.business_id,c.owner_user_id,40)},
       investigation:{

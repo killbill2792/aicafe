@@ -8,19 +8,20 @@ export const investigationReadTools=[
   "get_investigation_source","get_sales","get_profit","get_labor","get_expenses",
   "get_bills","get_cost_summary","get_item_sales","get_ingredient_costs",
   "get_product_costs","get_menu_items","get_price_monitor_status",
-  "get_peak_hours","get_payroll_facts","get_staff_messages","get_schedule","get_week_schedule",
+  "get_peak_hours","get_payroll_facts","get_staff_messages","get_staff_coordination_cases","get_schedule","get_week_schedule",
   "get_coverage_gaps","get_inventory","get_usage_variance","calculate",
 ] as const satisfies readonly AgentToolName[];
 /** Requiring kind-specific independent corroboration keeps an agent from
  * reading two irrelevant sales/expense totals for an employee incident. */
 const relevantByKind:Record<string,readonly AgentToolName[]>={
   meal_break:["get_labor","get_payroll_facts","get_schedule","get_week_schedule"],
-  staff_coverage:["get_staff_messages","get_labor","get_schedule","get_coverage_gaps","get_week_schedule"],
+  staff_coverage:["get_staff_messages","get_staff_coordination_cases","get_labor","get_schedule","get_coverage_gaps","get_week_schedule"],
+  staff_coordination:["get_staff_coordination_cases","get_staff_messages","get_schedule","get_week_schedule","get_coverage_gaps"],
   price_review:["get_menu_items","get_product_costs","get_item_sales","get_price_monitor_status"],
   missing_bill:["get_expenses","get_bills","get_cost_summary"],
   voids:["get_sales","get_peak_hours","get_profit"],
   supply_check:["get_inventory","get_usage_variance","get_ingredient_costs"],
-  data_quality:["get_staff_messages","get_sales","get_labor","get_expenses","get_inventory","get_item_sales"],
+  data_quality:["get_staff_messages","get_staff_coordination_cases","get_sales","get_labor","get_expenses","get_inventory","get_item_sales"],
   // Maintenance impact uses independent operational facts. A cash/roster read
   // is NEVER confirmation that the physical machine works.
   maintenance_issue:["get_sales","get_item_sales","get_peak_hours",
@@ -41,6 +42,7 @@ const canonicalEvidenceDomain:Partial<Record<AgentToolName,string>>={
   get_peak_hours:"recorded_sales",
   get_labor:"attendance_and_labor",get_payroll_facts:"attendance_and_labor",
   get_staff_messages:"verified_staff_messages",
+  get_staff_coordination_cases:"recorded_staff_coordination",
   get_schedule:"dated_schedule",get_week_schedule:"dated_schedule",
   get_coverage_gaps:"dated_schedule",
   get_expenses:"recorded_expenses",get_cost_summary:"recorded_expenses",

@@ -130,6 +130,7 @@ function taskHref(task: OperatingTask): string {
     return "/operations?agent=alex&status=needs_you&task="+encodeURIComponent(task.id);
   }
   if (task.kind === "price_review" && task.entityId) return priceReviewHref(task.entityId);
+  if (task.kind === "staff_coordination") return "/staff";
   if (task.kind === "staff_coverage") {
     const shiftDate=task.payload.shiftDate??task.payload.businessDate;
     return staffScheduleHref({employee:task.entityId,date:typeof shiftDate==="string"?shiftDate:undefined});
@@ -199,6 +200,7 @@ function TaskCard({ row: task, names, t, tExperiment, tBrief, tGoals, category, 
       case "price_review": return { title: t(direction === "low" ? "priceTaskSentenceLow" : "priceTaskSentenceHigh", { item: itemName }), detail: t("priceTaskReason"), action: t("reviewItem", { item: String(task.payload.itemName).split(" · ")[0] }) };
       case "data_quality": return { title: t("missingCategory", { category: category(String(task.payload.categoryCode)) }), detail: t("addCategoryPrompt", { category: category(String(task.payload.categoryCode)) }), action: t("openBills") };
       case "staff_coverage": return { title: t("staffTaskNamed", { issue: String(task.payload.issue ?? task.payload.requestType ?? t("staffCoverageIssue")) }), detail: t("staffTaskReason"), action: t("openStaff") };
+      case "staff_coordination": return { title: String(task.payload.title ?? "Staff coordination needs review"), detail: "Review the saved personnel request and evidence. Owner approval alone does not make a change.", action: t("openStaff") };
       case "supply_check": return { title: t("mayaWatching"), detail: t("supplySignal"), action: t("openIngredientCosts") };
       case "money_update": return { title: t("homeMoneyUpdate"), detail: "", action: t("openBills") };
       case "maintenance_issue": return {
