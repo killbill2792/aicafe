@@ -6,6 +6,7 @@ on:
     paths:
       - '.github/luna/scenarios/**'
       - 'scripts/acceptance/shared-luna*.mjs'
+      - 'scripts/acceptance/task14b-broker*.mjs'
       - 'scripts/acceptance/luna-attest-*.mjs'
       - '.github/workflows/ai-cafe-luna-*.yml'
   push:
@@ -13,6 +14,7 @@ on:
     paths:
       - '.github/luna/scenarios/**'
       - 'scripts/acceptance/shared-luna*.mjs'
+      - 'scripts/acceptance/task14b-broker*.mjs'
       - 'scripts/acceptance/luna-attest-*.mjs'
       - '.github/workflows/ai-cafe-luna-*.yml'
 permissions:
@@ -37,5 +39,5 @@ jobs:
         run: node scripts/acceptance/shared-luna.mjs validate-all
       - name: Run fail-closed declarative scenario and one-shot replay tests
         run: node --test scripts/acceptance/shared-luna.test.mjs
-      - name: Check unchanged key-isolated provider broker denial logic
+      - name: Check key-isolated provider broker reservation and denial logic
         run: node --test scripts/acceptance/task14b-broker.test.mjs

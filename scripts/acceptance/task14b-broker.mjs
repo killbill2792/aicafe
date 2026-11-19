@@ -20,7 +20,8 @@ export const MAX_CALLS=18;
 // This is a hard 192KB UTF-8 cap, still charged one billable input token PER
 // byte before transport under the unchanged $0.18 / 18-call total ceiling.
 export const MAX_BODY_BYTES=192_000;
-export const MAX_OUTPUT_TOKENS=1_200;
+export const MAX_OUTPUT_TOKENS=4_096;
+export const MAX_FINAL_OUTPUT_TOKENS=1_200;
 const fail=(code)=>{throw new Error("task14b_trusted_broker:"+code);};
 const isObject=x=>x!==null&&typeof x==="object"&&!Array.isArray(x);
 const onlyKeys=(obj,keys)=>Object.keys(obj).every(key=>keys.includes(key));
@@ -137,7 +138,7 @@ export function reservationForRequest(body,reasoningRegistry=new Map()) {
  if(stats.reasoningItems>0&&p.store!==false)fail("stateless_reasoning_required");
  if(p.model!=="gpt-6-luna")fail("unexpected_model");
  if(!Number.isSafeInteger(p.max_output_tokens)||p.max_output_tokens<1||
-    p.max_output_tokens>MAX_OUTPUT_TOKENS)fail("output_cap");
+    p.max_output_tokens>(p.tool_choice==="auto"?MAX_OUTPUT_TOKENS:MAX_FINAL_OUTPUT_TOKENS))fail("output_cap");
  if(p.service_tier!==undefined&&!["standard","default","auto"].includes(p.service_tier))
   fail("unpriced_service_tier");
  if(p.background===true||p.stream!==true)fail("must_stream_foreground");

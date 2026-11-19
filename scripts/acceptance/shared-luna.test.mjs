@@ -450,7 +450,9 @@ test("shared live preflight actually executes trusted broker tests in split chec
       env:{...process.env,NODE_TEST_CONTEXT:undefined}});
     assert.equal(ok.status,0,"Live preflight broker tests failed in split checkout:\n"+
       (ok.stderr||"")+"\n"+(ok.stdout||"").slice(-1500));
-    assert.match(ok.stdout,/# pass 16/,"Actual trusted broker suite must pass all 16 tests");
+    assert.match(ok.stdout,/^# tests 17$/m,"Actual trusted broker suite must execute all 17 tests");
+    assert.match(ok.stdout,/^# pass 17$/m,"Actual trusted broker suite must pass all 17 tests");
+    assert.match(ok.stdout,/^# fail 0$/m);
     // Historical regression: the same actual tests executed from workspace
     // root cannot resolve their own .github/workflows or fetch shim fixture.
     const broken=spawnSync(process.execPath,["--test",
