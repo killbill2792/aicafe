@@ -403,3 +403,21 @@ it("keeps every published customer field discoverable and queryable in the regis
  expect(rpc).toHaveBeenCalledTimes(Object.keys(canonicalDictionary.cv_customer_visits.columns).length+
   Object.keys(canonicalDictionary.cv_customer_products.columns).length);
 });
+
+it("allows unattended coverage counts but blocks numeric reductions of arbitrary personal raw fields",async()=>{
+ const rpc=vi.fn(async()=>({data:{rows:[],sourceCount:0,truncated:false},error:null}));
+ const ctx={db:{rpc} as never,businessId:cafeA,aggregateOnly:true};
+ const base={...query,view:"cv_toast_records",columns:null,group_by:null,filters:null,order_by:null};
+ for(const field of ["data.customer.phone","data.guest.externalCustomerNumber","data.customer.email","data.aiCafeCustomer.identityRef"]){
+  for(const fn of ["min","max","sum","avg"]){
+   expect((await dataQueryTools.query_data.execute({...base,metrics:[{fn,column:field}]},ctx)).error)
+    .toBe("unattended_aggregate_required");
+  }
+ }
+ expect(rpc).not.toHaveBeenCalled();
+ for(const [fn,column] of [["count","data.customer.phone"],["count_distinct","data.aiCafeCustomer.identityRef"],
+  ["sum","data.aiCafeCustomer.netSalesCents"],["avg","data.quantity"]]){
+  expect((await dataQueryTools.query_data.execute({...base,metrics:[{fn,column}]},ctx)).error).toBeUndefined();
+ }
+ expect(rpc).toHaveBeenCalledTimes(4);
+});
