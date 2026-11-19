@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import {assessCoverage,requiredFamilies,verifyRoutineAndFile,verifyScheduledOccurrence} from "./task17c-oracle.mjs";
+import {assessCoverage,requiredFamilies,verifyRoutineAndFile,verifyScheduledOccurrence,verifyOperatingWorld} from "./task17c-oracle.mjs";
 const head="a".repeat(40);
 test("missing, stale or candidate-only receipt cannot pass",()=>{
  const base={family:"chat_routine",head,model:"gpt-6-luna",status:"PASS"};
@@ -38,5 +38,25 @@ test("separate worker ticks must complete and retain one stable occurrence",()=>
  assert.equal(verifyScheduledOccurrence(good),row.run_id);
  for(const mutate of [x=>x.before=[],x=>x.after[0].attempts=2,x=>x.secondPid=100,x=>x.before[0].state="pending",x=>x.after[0].run_id="changed",x=>x.before[0].receipt_ref=null]){
   const copy=structuredClone(good);mutate(copy);assert.throws(()=>verifyScheduledOccurrence(copy));
+ }
+});
+
+test("operating-world proof rejects restarted identity, missing follow-up, unauthorized effect and fabricated usage",()=>{
+ const staff={businessId:"staff",ownerUserId:"s-owner",taskId:"staff-source",shiftId:"shift",employeeId:"absent"};
+ const finance={businessId:"finance",ownerUserId:"f-owner",taskId:"finance-source",firstUploadId:"upload1"};
+ const staffRow={business_id:"staff",source_id:"staff-source",episode_id:"staff-episode",phase:"awaiting_owner",lease_token:null,evidence:{modelTools:["get_investigation_source","get_staff_messages","get_schedule"]}};
+ const financeRow={business_id:"finance",source_id:"finance-source",episode_id:"finance-episode",phase:"awaiting_owner",lease_token:null,evidence:{modelTools:["get_investigation_source","get_cashflow_evidence","get_bills"]}};
+ const usage=["staff","staff","finance","finance"].map(business_id=>({business_id,model:"gpt-6-luna",status:"completed",input_tokens:100}));
+ const good={world:{staff,finance,initialCash:200,laterCash:500},evidence:{
+  queued:[staffRow,financeRow],recovered:[staffRow,financeRow],followed:[staffRow,financeRow],
+  originalPid:123,recoveryPid:124,interruptedEpisode:"staff-episode",
+  staffNotices:[{id:"staff-notice"}],financeBefore:[{id:"f1"}],financeNew:[{id:"f2"}],
+  ownerRows:[],effects:[],proposals:[],shifts:[{id:"shift",employee_id:"absent",status:"sent"}],
+  sources:[{id:"upload1",business_id:"finance",financial_closing_cents:200},{id:"upload2",business_id:"finance",financial_closing_cents:500}],secondUploadId:"upload2",
+  usage:[...usage,{business_id:"staff",model:"gpt-6-luna",status:"attempted",input_tokens:null}]
+ }};
+ assert.equal(verifyOperatingWorld(good).providerCalls,4);
+ for(const mutate of [x=>x.recovered=[{...x.recovered[0],episode_id:"new"},x.recovered[1]],x=>x.financeNew=[],x=>x.effects=[{}],x=>x.usage[0].model="fallback",x=>x.sources[1].financial_closing_cents=600,x=>x.ownerRows=[{}],x=>x.staffNotices.push({id:"duplicate"}),x=>x.recoveryPid=x.originalPid]){
+  const copy=structuredClone(good);mutate(copy.evidence);assert.throws(()=>verifyOperatingWorld(copy));
  }
 });
