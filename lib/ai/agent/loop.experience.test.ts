@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import { agentInstructions, agentPromptCacheKey, runAgentTurn, task14bInlineContinuation, type AgentProvider, type OwnerFollowUp } from "./loop.server";
 import { STYLE_RULES } from "./style";
-import { withWorkerBudget } from "@/lib/ai/supervisor/runs/usage.server";
+import { withWorkerBudget,withDurableProviderTurn } from "@/lib/ai/supervisor/runs/usage.server";
 import { memoryToolDefinition } from "./tools/memory";
 import { routineToolDefinition } from "./tools/routines";
 import type { AgentToolContext } from "./tools";
@@ -448,6 +448,30 @@ describe("Luna tool reasoning stays within the owner-approved aggregate output a
         ()=>runAgentTurn({ownerText:"Read the menu.",context:{...context},provider}));
       expect(limits(requests)).toEqual([["auto",1700],["auto",800]]);
       expect(r.usage.outputTokens).toBe(1700);
+    }finally{vi.unstubAllEnvs()}
+  });
+  it("keeps the durable reservation ceiling while interactive Luna has the expanded allowance",async()=>{
+    vi.stubEnv("SUPERVISOR_OPENAI_MODEL","gpt-6-luna");
+    const rpc=vi.fn(async()=>({data:null,error:null}));
+    const scope={db:{rpc} as unknown as import("@supabase/supabase-js").SupabaseClient,
+      businessId:"00000000-0000-4000-8000-000000000001",
+      ownerUserId:"00000000-0000-4000-8000-000000000002",
+      threadId:"00000000-0000-4000-8000-000000000003",
+      runId:"00000000-0000-4000-8000-000000000004",
+      ownerMessageId:"00000000-0000-4000-8000-000000000005",
+      jobId:"00000000-0000-4000-8000-000000000006",
+      claimToken:"00000000-0000-4000-8000-000000000007",
+      budget:{maxElapsedMs:60000,maxModelCalls:6,maxToolCalls:8,maxInputTokens:60000,maxOutputTokens:7200},
+      ownerDailyCap:600,authorize:async()=>{}};
+    try{
+      const {requests,provider}=recording([[menu("a"),doneWith(900)],[text("Summary."),doneWith(100)]]);
+      const r=await withDurableProviderTurn(scope,()=>withWorkerBudget(scope.budget,
+        ()=>runAgentTurn({ownerText:"Read my menu.",context:{...context},provider})));
+      expect(r.endReason).toBe("complete");
+      expect(limits(requests)).toEqual([["auto",1200],["auto",1200]]);
+      expect(rpc.mock.calls).toHaveLength(4);
+      expect(rpc).toHaveBeenCalledWith("supervisor_reserve_durable_model_call",expect.objectContaining({p_output_cap:1200}));
+      expect(rpc).toHaveBeenCalledWith("supervisor_complete_investigation_model_call",expect.objectContaining({p_output_tokens:900}));
     }finally{vi.unstubAllEnvs()}
   });
   it("reserves unknown completed usage conservatively instead of claiming billed tokens",async()=>{

@@ -1,6 +1,6 @@
 import { ZodError } from "zod";
 import {reserveTask14bPaidRequest} from "./task14bPaidBudget.server";
-import { currentWorkerBudget, recordWorkerTurnUsage, usageStopReason,reserveDurableProviderRequest } from "@/lib/ai/supervisor/runs/usage.server";
+import { currentWorkerBudget, recordWorkerTurnUsage, usageStopReason,reserveDurableProviderRequest,currentDurableProviderOutputCap } from "@/lib/ai/supervisor/runs/usage.server";
 import {redactToolFailure,redactedErrorStack} from "./redactToolError";
 import {safeToolError} from "./toolErrors";
 import {createHash} from "node:crypto";
@@ -272,7 +272,7 @@ export async function runAgentTurn(args: {
     expandedLuna?lunaTurnOutputCap-meteredOutput()-
       (final?0:finalOutputReserve):Infinity));
   const outputLimit=(final:boolean)=>Math.min(expandedLuna&&!final?lunaToolOutputCap:finalOutputReserve,
-    outputRemaining(final));
+    currentDurableProviderOutputCap()??Infinity,outputRemaining(final));
   const reportedOutput=(event:Event)=> {
     const u=(event.response as {usage?:{output_tokens?:unknown}}|undefined)?.usage?.output_tokens;
     return typeof u==="number"&&Number.isSafeInteger(u)&&u>=0&&u<=1_000_000;
