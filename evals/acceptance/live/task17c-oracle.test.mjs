@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import {readFileSync,readdirSync} from "node:fs";
-import {assessCoverage,requiredFamilies,proactiveRequirements,auditProactiveInventory,verifyRoutineAndFile,verifyScheduledOccurrence,verifyOperatingWorld,verifyProcurementOutcome,verifyRevocationOutcome,verifyMonitorOutcome} from "./task17c-oracle.mjs";
+import {assessCoverage,requiredFamilies,proactiveRequirements,auditProactiveInventory,verifyRoutineAndFile,verifyScheduledOccurrence,verifyOperatingWorld,verifyProcurementOutcome,verifyRevocationOutcome,verifyMonitorOutcome,verifySupplierReminderOutcome} from "./task17c-oracle.mjs";
 const head="a".repeat(40);
 test("missing, stale or candidate-only receipt cannot pass",()=>{
  const base={family:"chat_routine",head,model:"gpt-6-luna",status:"PASS"};
@@ -101,9 +101,9 @@ test("proactive register covers actual signal, task and scheduled job inventorie
  const taskKinds=quoted(read("lib/operating/tasks.ts").match(/export type OperatingTaskKind\s*=\s*([^;]+);/)[1]);
  const cronPaths=JSON.parse(read("vercel.json")).crons.map(c=>c.path);
  const manifestIds=readdirSync(new URL(".github/luna/scenarios/",root)).filter(x=>x.endsWith(".json")).map(x=>x.slice(0,-5));
- const input={signals,taskKinds,cronPaths,manifestIds:[...new Set([...manifestIds,"17b-sales-labor","17b-supply-finance","17b-owner-security"])]};
+ const input={signals,taskKinds,cronPaths,manifestIds};
  const audit=auditProactiveInventory(input);
- assert.equal(signals.length,14); // reviewed source baseline; new families need review
+ assert.ok(signals.length>=14); // all additions must also appear in the obligation list
  assert.ok(taskKinds.length>=16&&cronPaths.length>=12);
  assert.deepEqual(audit.missingSignals,[]);
  assert.deepEqual(audit.missingTaskKinds,[]);
@@ -119,4 +119,15 @@ test("proactive register covers actual signal, task and scheduled job inventorie
  assert.deepEqual(drift.missingTaskKinds,["new_task"]);
  assert.deepEqual(drift.missingCrons,["new-monitor"]);
  assert.ok(drift.missingCandidates.length>0);
+});
+
+test("overdue draft and unsent order notices need exact original thread, no duplicate or side effect",()=>{
+ const draft={id:"draft-notice",thread_id:"t",status:"needs_owner"},sent={id:"dispatch-notice",thread_id:"t",status:"needs_owner"};
+ const dm={id:"draft-message",thread_id:"t",structured_content:[{text:"Supplier purchase-order draft needs your approval"}]};
+ const sm={id:"dispatch-message",thread_id:"t",structured_content:[{text:"Approved order unresolved: was the supplier contacted?"}]};
+ const fixture={threadId:"t",earlyDraft:[],draftNotice:[draft],draftMessage:[dm],repeatedDraft:[{...draft}],repeatedDraftMessage:[{...dm}],handledDraft:[{...draft,status:"handled"}],earlyDispatch:[],dispatchNotice:[sent],dispatchMessage:[sm],repeatedDispatch:[{...sent}],repeatedDispatchMessage:[{...sm}],ownerBefore:[{id:"owner"}],ownerAfter:[{id:"owner"}],delivery:[],ordersBefore:[{id:"po"}],ordersAfter:[{id:"po"}],attemptsBefore:[{id:"attempt"}],attemptsAfter:[{id:"attempt"}],countsBefore:{stock:1,expenses:2,remote:0},countsAfter:{stock:1,expenses:2,remote:0}};
+ assert.equal(verifySupplierReminderOutcome(fixture).dispatchNoticeId,"dispatch-notice");
+ for(const mutate of [x=>x.earlyDraft.push({}),x=>x.draftNotice[0].thread_id="wrong",x=>x.handledDraft[0].status="needs_owner",x=>x.dispatchMessage[0].structured_content=[{text:"I sent the order"}],x=>x.repeatedDispatch.push(sent),x=>x.ownerAfter.push({id:"prompt"}),x=>x.delivery.push({}),x=>x.attemptsAfter.push({}),x=>x.countsAfter.remote++]){
+  const bad=structuredClone(fixture);mutate(bad);assert.throws(()=>verifySupplierReminderOutcome(bad));
+ }
 });
