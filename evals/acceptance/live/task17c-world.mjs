@@ -1,8 +1,9 @@
-import {randomUUID,randomInt} from "node:crypto";
+import {randomUUID,randomInt,createHash} from "node:crypto";
 import {spawn} from "node:child_process";
 import {once} from "node:events";
-import {writeFileSync,unlinkSync} from "node:fs";
-import {resolve} from "node:path";
+import {writeFileSync,unlinkSync,mkdtempSync,existsSync,rmSync} from "node:fs";
+import {resolve,join} from "node:path";
+import {tmpdir} from "node:os";
 import {TEST_CAFES} from "../../../scripts/seed/cafes.mjs";
 const local="http://127.0.0.1:3000";
 const check=(condition,code)=>{if(!condition)throw Error("task17c:"+code);};
@@ -80,24 +81,29 @@ export async function delegate(page,thread,attachmentId,expected){
  * the repository's existing aliases and TS transform. No replacement scheduler.
  * The generated config is private temporary test configuration, not a tracked
  * production file. It selects just this test-only worker entrypoint. */
-export async function scheduledTick(scope,timezone){
+function launchWorker(input){
  const config=resolve(".task17c-"+randomUUID()+".config.mts");
  writeFileSync(config,'import base from "./vitest.config.ts";\nexport default {...base,test:{...base.test,include:["evals/acceptance/live/task17c-world.mjs"],maxWorkers:1}};\n',{flag:"wx",mode:0o600});
- let child;
+ const child=spawn(process.execPath,[resolve("node_modules/vitest/vitest.mjs"),"run","--config",config,"--pool=threads","--maxWorkers=1"],
+  {cwd:process.cwd(),detached:true,stdio:"ignore",env:{...process.env,AICAFE_17C_TICK:JSON.stringify(input)}});
+ const exit=once(child,"exit");void exit.catch(()=>{});
+ const close=async()=>{
+  if(child.pid&&child.exitCode===null&&child.signalCode===null)process.kill(-child.pid,"SIGKILL");
+  await exit.catch(()=>{});unlinkSync(config);
+ };
+ return {child,exit,close};
+}
+async function runWorker(input,timeout=165000){
+ const session=launchWorker(input);
+ const timer=setTimeout(()=>{if(session.child.pid&&session.child.exitCode===null&&session.child.signalCode===null)process.kill(-session.child.pid,"SIGKILL");},timeout);
  try{
-  child=spawn(process.execPath,[resolve("node_modules/vitest/vitest.mjs"),"run","--config",config,"--pool=threads","--maxWorkers=1"],
-    {cwd:process.cwd(),detached:true,stdio:"ignore",env:{...process.env,AICAFE_17C_TICK:JSON.stringify({businessId:scope.businessId,timezone})}});
-  const exit=once(child,"exit");void exit.catch(()=>{});
-  const timer=setTimeout(()=>{if(child.pid&&child.exitCode===null&&child.signalCode===null)process.kill(-child.pid,"SIGKILL");},120000);
-  try{
-   const [code,signal]=await exit;
-   check(child.pid!==process.pid&&code===0&&!signal,"scheduled_worker_failed");
-   return child.pid;
-  }finally{clearTimeout(timer);}
- }finally{
-  if(child?.pid&&child.exitCode===null&&child.signalCode===null)process.kill(-child.pid,"SIGKILL");
-  unlinkSync(config);
- }
+  const [code,signal]=await session.exit;
+  check(session.child.pid!==process.pid&&code===0&&!signal,"scheduled_worker_failed");
+  return session.child.pid;
+ }finally{clearTimeout(timer);await session.close();}
+}
+export async function scheduledTick(scope,timezone){
+ return runWorker({mode:"routine",scopes:[{businessId:scope.businessId,timezone}]},120000);
 }
 export async function observeDueOccurrence(db,scope,expected,routineId){
  // No fake time, seeded occurrence, or altered lease. Wait on PostgreSQL time,
@@ -118,22 +124,162 @@ export async function observeDueOccurrence(db,scope,expected,routineId){
  const after=await read();
  return {firstPid,secondPid,before,after};
 }
+/** Both operating incidents originate from actual source services (never insert
+ * an alert, proposal, investigation, owner message or successful effect). */
+export async function createOperatingWorld(sql){
+ const {createClient}=await import("@supabase/supabase-js");
+ const options={auth:{persistSession:false,autoRefreshToken:false}};
+ const api=process.env.NEXT_PUBLIC_SUPABASE_URL,anon=process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+ const service=createClient(api,process.env.SUPABASE_SERVICE_ROLE_KEY,options);
+ async function rpc(client,name,args){
+  const {data,error}=await client.rpc(name,args);
+  check(!error,"source_rpc_"+name);return data;
+ }
+ async function user(prefix){
+  const email=prefix+"-"+randomUUID()+"@example.invalid",password="Disposable17C-"+randomUUID();
+  const created=await service.auth.admin.createUser({email,password,email_confirm:true});
+  check(!created.error&&created.data.user?.id,"local_user_failed");
+  const client=createClient(api,anon,options);
+  const login=await client.auth.signInWithPassword({email,password});
+  check(!login.error&&login.data.user.id===created.data.user.id,"source_authentication_failed");
+  return {id:created.data.user.id,client,email,password};
+ }
+ async function cafe(profile,prefix){
+  const owner=await user(prefix+"-owner"),businessId=randomUUID(),threadId=randomUUID();
+  const name="Disposable "+prefix+" "+businessId.slice(0,8);
+  await sql.query("insert into public.businesses(id,name,timezone,currency,is_demo) values($1,$2,$3,$4,false)",[businessId,name,profile.timezone,profile.currency]);
+  await sql.query("insert into public.cafe_access(business_id,mode) values($1,'grandfathered') on conflict(business_id) do update set mode='grandfathered',access_end=null",[businessId]);
+  await sql.query("insert into public.memberships(business_id,user_id,role) values($1,$2,'owner')",[businessId,owner.id]);
+  await sql.query("insert into public.ai_threads(id,business_id,owner_user_id,client_request_id) values($1,$2,$3,$4)",[threadId,businessId,owner.id,randomUUID()]);
+  return {businessId,threadId,ownerUserId:owner.id,timezone:profile.timezone,currency:profile.currency,name,owner,profile};
+ }
+ const {first,foreign}=profiles();
+ const staff=await cafe(first,"staff"),finance=await cafe(foreign,"finance");
+ const employee=await user("staff-employee");
+ const employeeId=randomUUID(),replacementId=randomUUID(),shiftId=randomUUID();
+ const day=(cafe,n)=>new Intl.DateTimeFormat("en-CA",{timeZone:cafe.timezone,year:"numeric",month:"2-digit",day:"2-digit"}).format(new Date(Date.now()+n*86400000));
+ const shiftDate=day(staff,1);
+ await sql.query("insert into public.employees(id,business_id,display_name,active,wage_period,wage_amount_cents,staff_auth_user_id) values($1,$2,'Opening barista',true,'hour',$3,$4),($5,$2,'Available barista',true,'hour',$6,null)",
+  [employeeId,staff.businessId,Math.round(staff.profile.employees[0].wage*staff.profile.wageScale),employee.id,replacementId,Math.round(staff.profile.employees[1].wage*staff.profile.wageScale)]);
+ await sql.query("insert into public.scheduled_shifts(id,business_id,employee_id,local_date,start_local,end_local,source,status) values($1,$2,$3,$4,'07:00','14:00','owner','sent')",[shiftId,staff.businessId,employeeId,shiftDate]);
+ check(Number(await rpc(service,"staff_channel_sync_shift_requests",{p_business_id:staff.businessId}))===1,"published_shift_request_missing");
+ const [req]=await rows(sql,"select id from public.staff_communication_requests where business_id=$1 and employee_id=$2 and kind='shift_confirmation'",[staff.businessId,employeeId]);
+ check(req?.id,"staff_source_request_missing");
+ const messageArgs={p_request_id:req.id,p_response:"decline",p_body:"I have a fever and cannot work the opening shift. Please find cover.",p_nonce:randomUUID()};
+ const firstReply=await rpc(employee.client,"staff_channel_submit",messageArgs),replay=await rpc(employee.client,"staff_channel_submit",messageArgs);
+ check(firstReply?.id&&firstReply.replayed===false&&replay?.id===firstReply.id&&replay.replayed===true,"duplicate_staff_source_not_idempotent");
+ const [staffTask]=await rows(sql,"select id,status from public.operating_tasks where business_id=$1 and entity_type='staff_message' and entity_id=$2",[staff.businessId,firstReply.id]);
+ check(staffTask?.id&&staffTask.status==="needs_owner","real_staff_incident_missing");
+ const rent=randomInt(200,401)*100,initialCash=Math.floor(rent/2),laterCash=rent+10000,accountKey=createHash("sha256").update(randomUUID()).digest("hex");
+ await sql.query("insert into public.recurring_costs(business_id,category_code,label,amount_cents,frequency,is_estimate,active_from,due_day) values($1,'rent','Monthly rent',$2,'monthly',false,$3,1)",[finance.businessId,rent,day(finance,-90)]);
+ async function statement(from,to,opening,closing){
+  const tx=[{i:0,date:from,amountCents:100,balanceCents:opening+100},{i:1,date:to,amountCents:closing-opening-100,balanceCents:closing}];
+  return rpc(service,"supervisor_record_statement_evidence",{p_business_id:finance.businessId,p_owner_user_id:finance.ownerUserId,
+   p_source_sha256:createHash("sha256").update(JSON.stringify(tx)).digest("hex"),p_account_key:accountKey,p_currency:finance.currency,
+   p_from:from,p_to:to,p_opening_cents:opening,p_closing_cents:closing,p_transactions:tx});
+ }
+ const firstUploadId=await statement(day(finance,-4),day(finance,-3),initialCash+100,initialCash);
+ check(typeof firstUploadId==="string","finance_statement_not_saved");
+ return {staff:{...staff,taskId:staffTask.id,messageId:firstReply.id,employeeId,shiftId},finance:{...finance,taskId:"financial-review:"+finance.ownerUserId,firstUploadId},
+  initialCash,laterCash,async nextStatement(){return statement(day(finance,-2),day(finance,-1),initialCash,laterCash);}};
+}
+const workerScopes=world=>[world.staff,world.finance].map(s=>({businessId:s.businessId,timezone:s.timezone}));
+const delay=ms=>new Promise(r=>setTimeout(r,ms));
+async function until(checkNow,ms,code){
+ const deadline=Date.now()+ms;
+ while(Date.now()<deadline){if(await checkNow())return;await delay(250);}
+ throw Error("task17c:"+code);
+}
+export async function exerciseOperatingWorld(sql,world){
+ const scopes=workerScopes(world),targets=[world.staff,world.finance];
+ const episodes=()=>rows(sql,"select business_id,source_id,episode_id,phase,step_version,lease_token,lease_until<=clock_timestamp() as expired,evidence from public.supervisor_investigations where business_id in ($1,$2) order by business_id,source_id",scopes.map(s=>s.businessId));
+ await runWorker({mode:"dispatch",scopes});
+ const queued=await episodes();
+ check(queued.length===2&&targets.every(t=>queued.some(e=>e.business_id===t.businessId&&e.source_id===t.taskId)),"two_independent_incidents_not_enqueued");
+ const dir=mkdtempSync(join(tmpdir(),"task17c-crash-")),marker=join(dir,"reserved");
+ const interrupted=launchWorker({mode:"interrupt",scopes,marker});
+ let held;
+ try{
+  await until(async()=>{check(interrupted.child.exitCode===null&&interrupted.child.signalCode===null,"worker_exited_before_reservation");return existsSync(marker);},60000,"pretransport_checkpoint_timeout");
+  const leases=(await episodes()).filter(e=>e.lease_token);
+  check(leases.length===1&&leases[0].phase==="investigate","interrupted_lease_missing");
+  held=leases[0];
+  const attempts=await rows(sql,"select business_id,status,model from public.supervisor_system_usage_events where business_id in ($1,$2) and status='attempted'",scopes.map(s=>s.businessId));
+  check(attempts.length===1&&attempts[0].business_id===held.business_id&&attempts[0].model==="gpt-6-luna","reservation_not_persisted_before_crash");
+  process.kill(-interrupted.child.pid,"SIGKILL");
+  const [code,signal]=await interrupted.exit;
+  check(code===null&&signal==="SIGKILL","real_worker_kill_not_observed");
+  await until(async()=>{
+   const recovered=(await episodes()).find(e=>e.episode_id===held.episode_id);
+   check(recovered?.lease_token===held.lease_token,"abandoned_lease_replaced_before_expiry");return recovered.expired===true;
+  },195000,"actual_database_lease_did_not_expire");
+ }finally{await interrupted.close();rmSync(dir,{recursive:true,force:true});}
+ const recoveryPid=await runWorker({mode:"investigate",scopes},240000);
+ check(recoveryPid!==interrupted.child.pid,"replacement_process_identity_missing");
+ const recovered=await episodes();
+ const staff=world.staff,finance=world.finance;
+ const financeBefore=await rows(sql,"select id from public.ai_messages where business_id=$1 and thread_id=$2 and role='supervisor' and grounding->>'intent'='priority_investigation'",[finance.businessId,finance.threadId]);
+ const secondUploadId=await world.nextStatement();
+ await runWorker({mode:"dispatch",scopes});
+ await runWorker({mode:"investigate",scopes},180000);
+ const followed=await episodes();
+ const financeAfter=await rows(sql,"select id from public.ai_messages where business_id=$1 and thread_id=$2 and role='supervisor' and grounding->>'intent'='priority_investigation'",[finance.businessId,finance.threadId]);
+ const staffNotices=await rows(sql,"select id from public.ai_messages where business_id=$1 and thread_id=$2 and role='supervisor' and grounding->>'intent'='priority_investigation'",[staff.businessId,staff.threadId]);
+ const financeNew=financeAfter.filter(a=>!financeBefore.some(b=>b.id===a.id));
+ const ownerRows=await rows(sql,"select id from public.ai_messages where business_id in ($1,$2) and role='owner'",scopes.map(s=>s.businessId));
+ const effects=await rows(sql,"select id from public.supervisor_effect_attempts where business_id in ($1,$2)",scopes.map(s=>s.businessId));
+ const proposals=await rows(sql,"select id from public.supervisor_proposals where business_id in ($1,$2)",scopes.map(s=>s.businessId));
+ const usage=await rows(sql,"select business_id,model,status,input_tokens from public.supervisor_system_usage_events where business_id in ($1,$2)",scopes.map(s=>s.businessId));
+ const sources=await rows(sql,"select id,business_id,financial_closing_cents from public.uploads where id in ($1,$2)",[finance.firstUploadId,secondUploadId]);
+ const shifts=await rows(sql,"select id,employee_id,status from public.scheduled_shifts where business_id=$1 and id=$2",[staff.businessId,staff.shiftId]);
+ const foreignRead=await finance.owner.client.from("supervisor_investigations").select("episode_id").eq("business_id",staff.businessId);
+ check(!foreignRead.error&&foreignRead.data.length===0,"cross_tenant_investigation_read");
+ return {queued,recovered,followed,financeBefore,financeNew,staffNotices,ownerRows,effects,proposals,usage,sources,shifts,secondUploadId,
+  originalPid:interrupted.child.pid,recoveryPid,interruptedEpisode:held.episode_id};
+}
 if(process.env.AICAFE_17C_TICK){
  const {it,expect}=await import("vitest");
- it("real scheduled check while owner is offline",async()=>{
+ it("actual Supervisor scheduled and investigation worker",async()=>{
   const {assertLocalLiveEnvironment}=await import("./preflight.mjs");
   const {verifyCheckoutHead}=await import("./runner.mjs");
   assertLocalLiveEnvironment(process.env);verifyCheckoutHead(process.env.HEAD_SHA);
-  check(process.env.AICAFE_SHARED_LUNA==="1"&&process.env.AICAFE_SHARED_LUNA_CANDIDATE==="1"&&process.env.AICAFE_SHARED_LUNA_SCENARIO==="17c","worker_trusted_runner_required");
-  const scope=JSON.parse(process.env.AICAFE_17C_TICK);
+  check(process.env.AICAFE_SHARED_LUNA==="1"&&process.env.AICAFE_SHARED_LUNA_CANDIDATE==="1"&&["17c","17c-autonomy"].includes(process.env.AICAFE_SHARED_LUNA_SCENARIO),"worker_trusted_runner_required");
+  const input=JSON.parse(process.env.AICAFE_17C_TICK);
   const {createClient}=await import("@supabase/supabase-js");
   const {dispatchRoutinesForBusiness}=await import("../../../lib/ai/supervisor/routines/dispatch.server.ts");
-  const {enqueueInvestigationsForOwner}=await import("../../../lib/ai/supervisor/routines/investigation.server.ts");
+  const {enqueueInvestigationsForOwner,processNextInvestigation}=await import("../../../lib/ai/supervisor/routines/investigation.server.ts");
   const db=createClient(process.env.NEXT_PUBLIC_SUPABASE_URL,process.env.SUPABASE_SERVICE_ROLE_KEY,{auth:{persistSession:false,autoRefreshToken:false}});
-  const actual=await dispatchRoutinesForBusiness(db,scope.businessId,scope.timezone,new Date(),enqueueInvestigationsForOwner);
-  expect(actual.failed).toBe(0);
-  expect(actual.routinesChecked).toBeGreaterThanOrEqual(1);
-  // The real routine only checks recorded evidence and enqueues investigations.
-  // This lane does not claim Luna investigated an unattended incident.
- },100000);
+  if(input.mode==="routine"||input.mode==="dispatch"){
+   const results=await Promise.all(input.scopes.map(s=>dispatchRoutinesForBusiness(db,s.businessId,s.timezone,new Date(),enqueueInvestigationsForOwner)));
+   expect(results.every(x=>x.failed===0)).toBe(true);
+   if(input.mode==="routine")expect(results[0].routinesChecked).toBeGreaterThanOrEqual(1);
+   return;
+  }
+  if(input.mode==="interrupt"){
+   const interrupted=()=>({[Symbol.asyncIterator](){return {next:async()=>{
+    writeFileSync(input.marker,"reserved\n",{flag:"wx",mode:0o600});
+    return new Promise((_resolve,reject)=>setTimeout(()=>reject(Error("expected_kill")),240000));
+   }};}});
+   for(let i=0;i<5;i++){
+    const actual=await processNextInvestigation(db,new Date(),interrupted);
+    expect(actual.failed).toBe(0);expect(actual.processed).toBe(1);
+   }
+   throw Error("worker_never_reached_reserved_transport");
+  }
+  check(input.mode==="investigate","unknown_worker_mode");
+  const {openAIProvider}=await import("../../../lib/ai/agent/loop.server.ts");
+  const provider=async function*(params,signal){
+   check(params.model==="gpt-6-luna"&&Number.isSafeInteger(params.max_output_tokens),"actual_luna_model_required");
+   for await(const ev of openAIProvider({...params,max_output_tokens:Math.min(params.max_output_tokens,1200)},signal)){
+    if(ev.type==="response.completed")check(ev.response?.model==="gpt-6-luna","unexpected_provider_model");
+    yield ev;
+   }
+  };
+  for(let i=0;i<8;i++){
+   const actual=await processNextInvestigation(db,new Date(),provider);
+   expect(actual.failed).toBe(0);
+   if(!actual.processed)return;
+  }
+  throw Error("unbounded_worker_backlog");
+ },225000);
 }
