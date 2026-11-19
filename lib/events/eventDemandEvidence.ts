@@ -30,6 +30,12 @@ export type EventDemandEvidence={
   ownerObservations:Array<{key:string;value:unknown;recordedAt:string;origin:"owner_reported"}>;
   otherKnownEvents:string[];
   coverage:{dailyActualDays:number;hourlyReconciledDays:number;missing:string[];caveats:string[]};
+  readiness?:{staffing:{date:string;source:"cv_shifts";coverage:"unknown"|"partial"|"recorded";
+      shifts:Array<{source:"app"|"toast";status:string;start:string|null;end:string|null}>};
+    inventory:{asOfDate:string;source:"cv_inventory";coverage:"unknown"|"partial"|"recorded";
+      items:Array<Pick<import("../calc/inventoryEvidence").InventoryEvidenceRow,
+        "source"|"ingredient_name"|"menu_item_ref"|"quantity"|"quantity_unit"|"stock_status"|"source_as_of"|"evidence_state">>;
+      missing:string[]}};
   attribution:"not_established";
 };
 
@@ -116,7 +122,9 @@ export function assembleEventDemandEvidence(input:EventDemandRequest,sources:{
     }
   }
   const comparable=certified.filter(d=>d.date>=window.from&&d.date<=window.through);
-  const usual=typicalDaySales(comparable,input.eventDate,window.before,{exclude:excluded});
+  const exclusionUnavailable=sources.missing?.includes("baseline_event_exclusions_unavailable");
+  const usual=exclusionUnavailable?{typicalCents:null,sampleDays:0,from:window.from,to:window.through}:
+    typicalDaySales(comparable,input.eventDate,window.before,{exclude:excluded});
   const missing=[...(sources.missing??[])];
   const caveats=[...(sources.caveats??[])];
   if(usual.typicalCents===null)missing.push("insufficient_comparable_actual_weekdays");
@@ -136,7 +144,7 @@ export function assembleEventDemandEvidence(input:EventDemandRequest,sources:{
     caveats.push("live_reading_incomplete_or_stale");
 
   let usualHours:EventDemandEvidence["usualHours"]=[],hourlyReconciledDays=0;
-  if(!missing.includes("hourly_source_unavailable")&&!missing.includes("hourly_source_truncated")){
+  if(!exclusionUnavailable&&!missing.includes("hourly_source_unavailable")&&!missing.includes("hourly_source_truncated")){
     try{
       const grouped=indexHourlyRevenue(sources.hourly);
       const fullDays=new Set(comparable.filter(d=>

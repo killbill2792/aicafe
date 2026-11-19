@@ -111,8 +111,8 @@ export async function observedEventProposalIds(
  * or an order-level discount total; neither proves that physical work occurred. */
 export async function eventToastEvidence(db:ReturnType<typeof createAdminSupabaseClient>,
   businessId:string,day:string,
-  actions:readonly {area:string;action:string}[]=[]){
-  const range={dateFrom:day,dateTo:day};
+  actions:readonly {area:string;action:string}[]=[],through=day){
+  const range={dateFrom:day,dateTo:through};
   const [items,discounts,shifts,menu]=await Promise.all([
     readItemSales(db,businessId,range).catch(()=>({rows:[],truncated:true,error:"unavailable"})),
     readDiscounts(db,businessId,range).catch(()=>({rows:[],truncated:true,error:"unavailable"})),
@@ -124,13 +124,17 @@ export async function eventToastEvidence(db:ReturnType<typeof createAdminSupabas
   const menuNames=new Set(menu.rows.filter(r=>r.source==="toast"&&r.status==="actual")
     .map(r=>(r.data as {name?:unknown}|null)?.name)
     .filter((v):v is string=>typeof v==="string"));
-  const sold=itemRows.flatMap(r=>{
+  const soldRows=itemRows.flatMap(r=>{
     const data=r.data as {name?:unknown;quantity?:unknown}|null;
     return typeof data?.name==="string"&&
       typeof data.quantity==="number"&&Number.isFinite(data.quantity)&&
       data.quantity>0&&menuNames.has(data.name)
       ?[{name:data.name,quantity:data.quantity}]:[];
   });
+  const quantities=new Map<string,number>();
+  for(const item of soldRows)quantities.set(item.name,(quantities.get(item.name)??0)+item.quantity);
+  const sold=[...quantities].map(([name,quantity])=>({name,quantity}))
+    .sort((a,b)=>b.quantity-a.quantity||a.name.localeCompare(b.name));
   // The current canonical view includes typed *check* and *item* discounts.
   // Empty/malformed names are not evidence of an applied named promotion.
   const recordedDiscounts=discounts.rows.filter(r=>r.source==="toast"&&
@@ -366,7 +370,7 @@ export const eventReadinessCapability=registerLoopCapability({
    // details. Keep that distinction in the same saved Supervisor report.
    const toastEvidence=windowComplete&&window?.proposalId?await Promise.resolve()
      .then(()=>eventToastEvidence(createAdminSupabaseClient(),
-       scope.businessId,effect.endDate,effect.actions)).catch(()=>({
+       scope.businessId,effect.startDate,effect.actions,effect.endDate)).catch(()=>({
        itemSales:{coverage:"missing" as const,items:[]},
        namedDiscounts:{coverage:"missing" as const,names:[],
          matchedRecommendationNames:[]},
@@ -418,6 +422,7 @@ export const eventReadinessCapability=registerLoopCapability({
      eventIds:effect.eventIds,startDate:effect.startDate,endDate:effect.endDate,
      factsHash:effect.factsHash,observedDays:actual.length,expectedDays:expected,
      checklist,liveWatch,toastEvidence,salesSummary,
+     toastEvidenceWindow:{from:effect.startDate,to:effect.endDate},
      missingBaselineDays:actual.filter(s=>s.observation.typicalCents===null).map(s=>s.businessDate),
      days:actual.map(s=>({date:s.businessDate,...s.observation})),
      caveat:"Event-day sales are observational, not proof of event causality. Recorded item sales, discount totals and staff timecards do not prove a proposed combo, discount or physical preparation was implemented; owner checklist markers are not POS evidence.",

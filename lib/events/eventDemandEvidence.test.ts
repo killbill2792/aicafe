@@ -50,6 +50,11 @@ describe("LDI D — pure canonical performance evidence",()=>{
     expect(unreconciled.usualHours).toEqual([]);
     expect(unreconciled.coverage.hourlyReconciledDays).toBe(2);
   });
+  it("withholds an event-adjusted baseline when the exclusion source fails",()=>{
+    const result=assembleEventDemandEvidence(request,inputs({missing:["baseline_event_exclusions_unavailable"]}));
+    expect(result.normal.netSalesCents).toBeNull();
+    expect(result.usualHours).toEqual([]);
+  });
   it("excludes known event days, not arbitrary dates, from the comparable baseline",()=>{
     const result=assembleEventDemandEvidence(request,inputs({
       baselineEvents:[event("past-event","Another public event","2026-10-12")],

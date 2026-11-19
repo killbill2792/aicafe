@@ -17,6 +17,7 @@ type EventResult={
   caveat:string;
   salesSummary?:{observedSalesCents:number|null;observedSalesDays:number;comparableDays:number;
     comparableActualCents:number|null;comparableTypicalCents:number|null;changePercent:number|null};
+  toastEvidenceWindow?:{from:string;to:string};
   toastEvidence?:{
     itemSales:{coverage:string;items:Array<{name:string;quantity:number}>};
     namedDiscounts:{coverage:string;names:string[];matchedRecommendationNames?:string[]};
@@ -131,6 +132,7 @@ export async function eventFinalNarrative(scope:OwnerLoopScope,proposalId:string
     // A tick is an owner-entered marker, not proof of implementation.
     ownerMarkedChecklist:result.checklist,observedDays:result.observedDays,
     toastEvidence:result.toastEvidence??null,
+    toastEvidenceWindow:result.toastEvidenceWindow??null,
     expectedDays:result.expectedDays,
     salesSummary:result.salesSummary?{
       observedSales:money(result.salesSummary.observedSalesCents),

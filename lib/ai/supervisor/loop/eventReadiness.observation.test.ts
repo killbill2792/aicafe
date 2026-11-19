@@ -107,6 +107,18 @@ describe("canonical Toast item/discount/shift evidence",()=>{
     expect(evidence.recommendedDiscountImplemented).toBe("verified");
     expect(evidence.physicalPreparationImplemented).toBe("unverified");
   });
+  it("reads non-sales evidence across every event date and retains independent facts on one source failure",async()=>{
+    const rows=[{source:"toast",status:"actual",data:{name:"Latte",quantity:2}},
+      {source:"toast",status:"actual",data:{name:"Latte",quantity:3}}];
+    vi.mocked(readItemSales).mockResolvedValue(ready(rows));
+    vi.mocked(readMenu).mockResolvedValue(ready([{source:"toast",status:"actual",data:{name:"Latte"}}]));
+    vi.mocked(readLaborEntries).mockResolvedValue(ready([]));
+    vi.mocked(readDiscounts).mockRejectedValue(new Error("source unavailable"));
+    const evidence=await eventToastEvidence({} as never,proposal().businessId,date,[],"2026-11-02");
+    expect(readItemSales).toHaveBeenCalledWith({},proposal().businessId,{dateFrom:date,dateTo:"2026-11-02"});
+    expect(evidence.itemSales).toEqual({coverage:"verified",items:[{name:"Latte",quantity:5}]});
+    expect(evidence.namedDiscounts.coverage).toBe("partial");
+  });
   it("does not assert full item coverage on a capped Toast read",async()=>{
     vi.mocked(readItemSales).mockResolvedValue(ready([
       {source:"toast",status:"actual",data:{name:"Latte",quantity:1}},
