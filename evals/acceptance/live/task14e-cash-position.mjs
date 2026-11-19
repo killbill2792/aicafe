@@ -1,8 +1,8 @@
 #!/usr/bin/env node
 /** Actual registered Task14E cash position owner/browser journey. Only disposable shared
  * Luna runner; no external supplier request, real payment or production data.
- * Host attestation independently checks selected model tools, persisted invoice,
- * owner click, canonical partial and installment stock, and tenant isolation. */
+ * Host attestation independently checks selected model tools, source evidence,
+ * owner messages, and tenant isolation. */
 import {randomUUID,createHash} from "node:crypto";
 import {existsSync,realpathSync,writeFileSync} from "node:fs";
 import {resolve,dirname,sep} from "node:path";
@@ -41,7 +41,7 @@ async function createThread(context){
  return data.thread.id;
 }
 async function ownerTurn(page,thread,text,phase){
- if(!["no_source","dated_source"].includes(phase))fail("invalid_turn_phase");
+ if(!/^[a-z_]{1,50}$/.test(phase))fail("invalid_turn_phase");
  const clientMessageId=randomUUID();
  const result=await page.evaluate(async({thread,text,clientMessageId})=>{
   const ac=new AbortController(),timer=setTimeout(()=>ac.abort(),180000);
@@ -186,3 +186,97 @@ async function main(){
 }
 if(process.argv[1]&&import.meta.url===pathToFileURL(resolve(process.argv[1])).href)
  main().catch(e=>{console.error(e instanceof Error?e.message:"task14e_cash_position:unknown");process.exitCode=1});
+
+/** Shared helpers for the other approved Task14E browser scenarios. No provider
+ * substitution or seeded effect success; every model turn goes through the real
+ * owner session and every new effect is committed through the owner card. */
+export async function withFinanceJourney(id,body){
+ const env=process.env;
+ assertLocalLiveEnvironment(env);verifyCheckoutHead(env.HEAD_SHA);
+ if(env.AICAFE_SHARED_LUNA!=="1"||env.AICAFE_SHARED_LUNA_SCENARIO!==id||
+    env.AICAFE_SHARED_LUNA_CANDIDATE!=="1")fail("trusted_shared_luna_candidate_required");
+ const args=process.argv.slice(2);
+ if(args.length!==4||args[0]!=="--output"||args[2]!=="--scope-output")fail("output_and_scope_required");
+ const file=resolve(args[1]),scopeFile=resolve(args[3]),root=realpathSync(process.cwd());
+ for(const f of [file,scopeFile]){
+  const parent=realpathSync(dirname(f));
+  if(parent===root||parent.startsWith(root+sep)||existsSync(f))fail("fresh_private_output_outside_repo_required");
+ }
+ if(file===scopeFile)fail("distinct_evidence_paths_required");
+ const [{default:pg},{chromium}]=await Promise.all([import("pg"),import("@playwright/test")]);
+ const db=new pg.Client({connectionString:env.ACCEPTANCE_DATABASE_URL});
+ const browser=await chromium.launch({headless:true});
+ const cafe=TEST_CAFES[0],otherCafe=TEST_CAFES[1];
+ if(!cafe?.owner||!otherCafe?.owner||cafe.businessId===otherCafe.businessId)fail("two_disposable_cafes_required");
+ let connection=null,foreign=null,modelCalls=0,model=null;
+ await db.connect();
+ try{
+  connection=await login(browser,cafe);foreign=await login(browser,otherCafe);
+  const threadId=await createThread(connection.context);
+  const scope={businessId:cafe.businessId,ownerUserId:cafe.owner.userId,threadId,otherCafeId:otherCafe.businessId};
+  const read=(statement,args=[])=>query(db,statement,args);
+  const count=async(statement,args=[])=>Number((await read(statement,args))[0].n);
+  const expenses=()=>count("select count(*) n from public.expenses where business_id=$1",[scope.businessId]);
+  const stock=()=>count("select count(*) n from public.pantry_stock_purchases where business_id=$1",[scope.businessId]);
+  const receipts=()=>count("select count(*) n from public.connector_provider_receipts where business_id=$1",[scope.businessId]);
+  const initial=[await expenses(),await stock(),await receipts()];
+  const today=day(new Date(),cafe.timezone);
+  const turn=async(prompt,phase,required,capability=null)=>{
+   const result=await ownerTurn(connection.page,threadId,prompt,phase);
+   for(const name of required)if(!result.names.includes(name))fail("registered_tool_missing_"+name);
+   const owner=(await read("select id from public.ai_messages where business_id=$1 and thread_id=$2 and client_message_id=$3 and role='owner'",
+     [scope.businessId,threadId,result.clientMessageId]))[0];
+   if(!owner)fail("owner_message_not_persisted");
+   const usage=await readPersistedModelUsage(db,scope.businessId,owner.id);
+   requireObservedProductionModel(usage.model,"gpt-6-luna");model=usage.model;
+   if(Number(usage.model_call_count)<2||Number(usage.input_tokens)<=0)fail("real_multistep_model_usage_missing");
+   modelCalls+=Number(usage.model_call_count);
+   const reply=(await read("select id,text_content,structured_content from public.ai_messages where business_id=$1 and thread_id=$2 and id=$3 and role='supervisor'",[scope.businessId,threadId,result.done.reply.id]))[0];
+   if(!reply)fail("owner_reply_missing");
+   const cards=reply.structured_content?.filter(b=>b.type==="proposal_card")??[];
+   if(!capability){if(cards.length)fail("unexpected_effect_draft");return {replyId:reply.id,answer:reply.text_content??"",proposal:null};}
+   if(cards.length!==1)fail("exact_owner_card_missing");
+   const proposal=(await read("select id,status,revision,capability_id,canonical_effect_payload from public.supervisor_proposals where business_id=$1 and owner_user_id=$2 and thread_id=$3 and id=$4",
+      [scope.businessId,scope.ownerUserId,threadId,cards[0].proposalId]))[0];
+   if(!proposal||proposal.status!=="draft"||proposal.capability_id!==capability)fail("inert_owner_proposal_missing");
+   if((await foreign.context.request.get("/api/ai/threads/"+threadId+"/proposals?ids="+proposal.id)).status()===200)fail("foreign_finance_card_visible");
+   return {replyId:reply.id,answer:reply.text_content??"",proposal};
+  };
+  const click=async(proposal,region,label,done)=>{
+   await connection.page.goto("/en?thread="+encodeURIComponent(threadId));
+   const card=connection.page.getByRole("region",{name:region}).filter({has:connection.page.getByRole("button",{name:label})});
+   await card.getByRole("button",{name:label}).waitFor({timeout:30000});
+   if(await card.count()!==1)fail("ambiguous_owner_card");
+   await card.getByRole("button",{name:label}).click();
+   await connection.page.getByRole("region",{name:region}).getByText(done,{exact:true}).last().waitFor({timeout:30000});
+   const saved=(await read("select status from public.supervisor_proposals where business_id=$1 and id=$2",[scope.businessId,proposal.id]))[0];
+   if(saved?.status!=="committed")fail("owner_click_effect_not_committed");
+  };
+  const statement=async(csv,nickname)=>{
+   const hash=createHash("sha256").update(csv).digest("hex");
+   await connection.page.goto("/en/add-cost/statement");
+   await connection.page.locator('input[type=file]').setInputFiles({name:"finance-evidence.csv",mimeType:"text/csv",buffer:Buffer.from(csv)});
+   await connection.page.getByText("Balance checks out",{exact:true}).waitFor({timeout:30000});
+   await connection.page.getByRole("checkbox",{name:/Use this original statement/}).check();
+   await connection.page.getByRole("textbox",{name:/Account nickname/}).fill(nickname);
+   // Bank statement cash proof is deliberately independent of expense review.
+   // Exclude each debit from incidental expense recognition before saving.
+   for(const box of await connection.page.getByRole("checkbox",{name:/exclude/i}).all())await box.check();
+   await connection.page.getByRole("button",{name:"Save all",exact:true}).click();
+   await connection.page.getByText("Saved",{exact:true}).waitFor({timeout:30000});
+   const row=(await read("select id,financial_owner_user_id,financial_closing_cents from public.uploads where business_id=$1 and financial_source_sha256=$2",[scope.businessId,hash]))[0];
+   if(!row||row.financial_owner_user_id!==scope.ownerUserId)fail("statement_not_owner_scoped");
+   return row;
+  };
+  const outcome=await body({scope,db,cafe,otherCafe,today,shift,read,count,turn,click,statement,fail,connection,foreign});
+  const final=[await expenses(),await stock(),await receipts()];
+  if(JSON.stringify(final)!==JSON.stringify(initial))fail("unexpected_financial_stock_expense_or_external_effect");
+  if(!model||modelCalls<2)fail("no_actual_model_proof");
+  writeFileSync(file,JSON.stringify({schema_version:1,id,head_sha:env.HEAD_SHA,status:"passed",observed_model:model,
+    modelCalls,checks:{...outcome.checks,noStockExpenseOrExternalEffect:true,foreignCafeDenied:true}},null,2)+"\n",{mode:0o600,flag:"wx"});
+  writeFileSync(scopeFile,JSON.stringify({...scope,...outcome.scope,expectedProviderCalls:modelCalls},null,2)+"\n",{mode:0o600,flag:"wx"});
+ }finally{
+  await foreign?.context.close().catch(()=>{});await connection?.context.close().catch(()=>{});
+  await browser.close().catch(()=>{});await db.end().catch(()=>{});
+ }
+}
