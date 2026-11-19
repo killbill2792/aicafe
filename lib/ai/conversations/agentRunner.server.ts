@@ -45,7 +45,7 @@ import {todaySoFarForBusiness,TODAY_LIVE_FRESH_MS} from "@/lib/data/todayLive.se
 import {goalCapabilityId} from "@/lib/ai/supervisor/loop/goal.server";
 import {listOwnerGoals,readGoalStatus,roundForUnit} from "@/lib/ai/supervisor/loop/goalReads.server";
 import {recordGoalCheckin} from "@/lib/ai/supervisor/loop/goalCheckins.server";
-import {readOwnerProposals,readOwnerPriceMonitorReports,readOwnerPriceMonitorProposals,readOwnerToastObservations} from "@/lib/ai/supervisor/loop/reads.server";
+import {readOwnerProposals,readOwnerPriceMonitorReports,readOwnerPriceMonitorProposals,readOwnerVerifiedPriceWindows,readOwnerToastObservations} from "@/lib/ai/supervisor/loop/reads.server";
 import {mapPriceMonitorRows} from "@/lib/ai/agent/tools/priceMonitor";
 import {requirePositivePriceIncrease} from "@/lib/ai/agent/tools/priceExperiment";
 import {BOARD_PROPOSAL_STATUSES,BOARD_REPORT_STATUSES} from "@/lib/operating/board";
