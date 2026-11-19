@@ -733,7 +733,7 @@ begin
  if not found then raise exception 'owner_question_unavailable' using errcode='42501'; end if;
  select * into a from public.ai_messages where id=p_answer_id and business_id=p_business_id
    and owner_user_id=p_owner_user_id and thread_id=p_thread_id and role='owner' and content_type='text'
-   and created_at>=q.created_at;
+   and created_at>=q.created_at for update;
  if not found then raise exception 'owner_answer_unavailable' using errcode='42501'; end if;
  select * into r from public.supervisor_runs where id::text=q.grounding->>'durableRunId'
    and business_id=p_business_id and owner_user_id=p_owner_user_id and thread_id=p_thread_id
@@ -752,6 +752,7 @@ begin
  end if;
  if r.status<>'blocked' or r.awaiting_question_id is distinct from p_question_id
    or cardinality(r.owner_answer_ids)>=20 or p_answer_id=any(r.owner_answer_ids)
+   or exists(select 1 from public.ai_agent_jobs j where j.business_id=p_business_id and j.owner_user_id=p_owner_user_id and j.thread_id=p_thread_id and j.owner_message_id=p_answer_id)
    or exists(select 1 from public.supervisor_runs x where x.business_id=p_business_id
      and x.owner_user_id=p_owner_user_id and (x.request_key=p_answer_id or p_answer_id=any(x.owner_answer_ids)))
    then raise exception 'owner_question_stale' using errcode='23505'; end if;

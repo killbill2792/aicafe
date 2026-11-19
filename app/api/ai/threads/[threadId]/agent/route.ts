@@ -120,6 +120,7 @@ export async function POST(request: Request, context: RouteContext) {
     // message through the legacy pipeline.
     if(prior)return sseStream((emit,close)=>{emit("done",{reply:prior,replayed:true});close();});
 
+    if(input.ownerInputResponse)throw new ConversationApiError(503,"conversation_storage_unavailable");
     // Background jobs are always on; unavailable job storage falls back inline.
     const jobs = await import("@/lib/ai/agent/jobs.server");
     let started: Awaited<ReturnType<JobsModule["startAgentJob"]>>;

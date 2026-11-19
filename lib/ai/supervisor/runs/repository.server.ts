@@ -231,7 +231,7 @@ export async function openOwnerRunCheckpoint(scope:RunScope,runId:string,token:s
       if(r.error||!r.data)throw new Error("checkpoint_receipt_unavailable");
       return {source:"supervisor_routines",period:null,missing:[],routine:r.data};
     }
-    if(kind==="goal_checkin"&&name==="record_goal_checkin"){
+    if(kind==="goal_checkin"&&name==="record_checkin"){
       const t=await db.from("operating_tasks").select("id,status,payload,entity_id")
         .eq("business_id",s.businessId).eq("id",value).eq("kind","goal_checkin").maybeSingle();
       if(t.error||!t.data||t.data.status!=="handled"||typeof t.data.payload?.answer!=="string")throw new Error("checkpoint_receipt_unavailable");
@@ -308,7 +308,7 @@ export async function openOwnerRunCheckpoint(scope:RunScope,runId:string,token:s
         ref="supplier_report:"+result.reportId;
       }else if(name==="manage_routine"&&result.routine&&typeof result.routine==="object"){
         const key=(result.routine as {id?:unknown}).id;if(typeof key==="string")ref="routine:"+key;
-      }else if(name==="record_goal_checkin"){
+      }else if(name==="record_checkin"){
         const key=(result.checkin as {id?:unknown}|undefined)?.id;if(typeof key==="string")ref="goal_checkin:"+key;
       }else if(name==="manage_commitment"){
         const key=result.commitmentId??(result.commitment as {id?:unknown}|undefined)?.id;

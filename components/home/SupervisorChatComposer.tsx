@@ -580,7 +580,7 @@ export default function SupervisorChatComposer({
     attachmentOverride?:readonly StoredAttachment[],ownerInputResponse?:import("@/lib/ai/supervisor/ownerInput/contracts").OwnerInputResponse) {
     const inputText=value.trim() || (attachments.length>0?copy.photoRequest:"");
     const context=eventContext?.threadId===(targetThreadId??threadId)?eventContext:null;
-    const text=eventOwnerMessage(inputText,context);
+    const text=ownerInputResponse?inputText:eventOwnerMessage(inputText,context);
     // A confirmed background job accepts follow-ups while the first response streams.
     // The main-turn double-tap guard must not intercept this separate path.
     if (!ownerInputResponse && !targetThreadId && !existingKey && enabled && canUseAi && text && (sending ? Boolean(liveJobId) : resumedRunning) &&
@@ -683,7 +683,7 @@ export default function SupervisorChatComposer({
       retryId.current = null; retryResponse.current=null;setStreamedText("");
       dispatchDictation({ type: "reset" }); setMediaNotice(""); setAttachments([]);
     } catch (failure) {
-      if (existingKey) retryId.current = null;
+      if (existingKey&&!matchedResponse) retryId.current = null;
       // Server may have persisted the owner turn before the response failed.
       if (attemptedThreadId) {
         try {
@@ -693,7 +693,7 @@ export default function SupervisorChatComposer({
       }
       if (jobConfirmed && !serverError) {
         // Connection dropped but the job keeps running: the watcher resumes it.
-        setOptimisticOwner(null); retryId.current = null;
+        setOptimisticOwner(null); retryId.current = null;retryResponse.current=null;
       } else {
         if (!existingKey) {
           setOptimisticOwner(null);
@@ -757,7 +757,7 @@ export default function SupervisorChatComposer({
     setEventContext(id&&title?eventContextFromTitle(title,id):null);
     setDraft(""); setMediaNotice(""); setError(false);
     setFailureCode(null); setQueuedOwner([]);
-    retryId.current = null; threadRequestId.current = null;
+    retryId.current = null; retryResponse.current=null;threadRequestId.current = null;setAcceptedDurableIds([]);
     composer.current?.focus();
   }
   function openWork(item:OwnerWorkItem){
