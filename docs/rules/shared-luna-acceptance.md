@@ -2,12 +2,14 @@
 
 ## Owner-approved design
 
-Owner request (Nov 17, 2026): keep parallel feature PRs coding while avoiding
-a separate PR merely to authorize every feature's paid real-Luna test. Keep
-genuine first-party feature acceptance before merging active AI behavior and
-add separate grouped/cross-domain integration proof later. Do not run paid
-Luna on every push. No new production data source, table, operator agent,
-authorization bypass, or development dispatcher is introduced.
+Owner request (Nov 18, 2026), updating Nov 17: keep parallel feature PRs coding
+and register all applicable executable scenarios in the existing runner.
+Consolidate paid execution on a stable functional group, before Task17 or
+during Task17, by owner choice. Follow the binding release-isolation and
+enforcement prerequisite in acceptance-quality.md before deferring live
+execution at coding merge; otherwise retain existing pre-merge live gates
+for production-exposed changes. No paid run on every push, new production
+data source, table, operator agent, authorization bypass or dev dispatcher.
 
 The single trusted entry point is GitHub Actions:
 **AI CAFE Shared Owner-Gated Luna Scenarios**
@@ -198,20 +200,29 @@ remain required where relevant.
 
 1. Merge the **one shared infrastructure PR** after normal exact-head CI
    and clean Codex. Until then the new workflow is not available from main.
-2. A feature developer keeps working on their existing PR and adds only
-   the matching scenario manifest + live test. Normal CI can stay parallel.
-3. When the AI feature is stable and free CI is green, the owner posts
+2. A feature developer keeps working on their existing PR and adds all
+   applicable scenario manifests + executable live tests. Normal CI can stay
+   parallel. Each case stays NOT_PROVEN until verified real execution.
+3. For an optional early single-feature run or a required production-exposed
+   pre-merge case, when code is stable and free CI is green, the owner posts
    /aicafe-luna pr HEAD_SHA SCENARIO 0.20 on THAT SAME PR, or selects
    GitHub Actions > AI CAFE Shared Owner-Gated Luna Scenarios > Run
    workflow on main and supplies matching inputs. The owner comment
    or manual dispatch is the paid approval. It must be independent of
-   untrusted candidate code. Codex final-head security review and verified
-   model evidence are both required before merging active AI behavior.
-4. For one coordinated run of all registered merged-main scenarios, use
-   /aicafe-luna main HEAD_SHA all 0.36 (currently two scenarios), or
-   manually dispatch with pr_number=0, scenario=all, and a sufficient
-   explicitly approved max_budget_usd. A $0.20 grant will NOT run
-   these two tests together. Unmerged or unregistered cases remain NOT_PROVEN.
+   untrusted candidate code. Codex final-head security review is required for
+   coding integration; verified model evidence is required before exposure.
+   Deferred merges require independently proven release isolation and the
+   trusted enforcement specified in acceptance-quality.md.
+4. For consolidated acceptance, select the stable approved group or bounded
+   subset when supported by the trusted selector; until implemented, the
+   existing runner accepts only one scenario or all. For all registered
+   scenarios on current main, use /aicafe-luna main HEAD_SHA all BUDGET or
+   manual dispatch with pr_number=0 and scenario=all. Compute the ceiling from
+   the actual number of cases (18 cents reserved per scenario, at most 20)
+   before requesting a new explicit owner grant. Do not launch paid batches
+   automatically. Missing/unregistered cases remain NOT_PROVEN. Use only the
+   runner's supported source and scenario inputs; no isolated-branch support
+   is implied until implemented and independently reviewed.
 5. A combined 13A/B/C/D journey is its own case using the entire app
    and tools; similarly for Task14 and cross-domain 13+14. ALL executes
    the inventory, but is **not itself** an inter-feature scenario.
