@@ -1,0 +1,159 @@
+{
+  "id": "14e-settlement-boundary",
+  "mode": "generic",
+  "engine": "node-server",
+  "entrypoint": "evals/acceptance/live/task14e-settlement-boundary.mjs",
+  "proof": "14e-settlement-boundary-proof.json",
+  "scope": "14e-settlement-boundary-scope.json",
+  "expectedTools": [
+    "get_cashflow_evidence",
+    "propose_invoice_reconciliation",
+    "propose_financial_settlement"
+  ],
+  "assertions": [
+    {
+      "name": "confirmed-statement",
+      "kind": "source",
+      "table": "public.uploads",
+      "where": {
+        "business_id": {
+          "scope": "businessId"
+        },
+        "id": {
+          "scope": "uploadId"
+        },
+        "financial_owner_user_id": {
+          "scope": "ownerUserId"
+        }
+      },
+      "minCount": 1,
+      "maxCount": 1
+    },
+    {
+      "name": "partial-allocated",
+      "kind": "source",
+      "table": "public.purchase_reconciliation_events",
+      "where": {
+        "business_id": {
+          "scope": "businessId"
+        },
+        "id": {
+          "scope": "linkId"
+        },
+        "financial_invoice_id": {
+          "scope": "invoiceId"
+        },
+        "financial_kind": {
+          "eq": "settlement_evidence_linked"
+        },
+        "financial_allocation_cents": {
+          "eq": "10000"
+        }
+      },
+      "minCount": 1,
+      "maxCount": 1
+    },
+    {
+      "name": "partial-reversed",
+      "kind": "source",
+      "table": "public.purchase_reconciliation_events",
+      "where": {
+        "business_id": {
+          "scope": "businessId"
+        },
+        "id": {
+          "scope": "reversalId"
+        },
+        "financial_reverses_id": {
+          "scope": "linkId"
+        },
+        "financial_kind": {
+          "eq": "settlement_evidence_reversed"
+        },
+        "financial_allocation_cents": {
+          "eq": "2000"
+        }
+      },
+      "minCount": 1,
+      "maxCount": 1
+    },
+    {
+      "name": "committed-link",
+      "kind": "source",
+      "table": "public.supervisor_proposals",
+      "where": {
+        "business_id": {
+          "scope": "businessId"
+        },
+        "id": {
+          "scope": "linkProposalId"
+        },
+        "owner_user_id": {
+          "scope": "ownerUserId"
+        },
+        "status": {
+          "eq": "committed"
+        }
+      },
+      "minCount": 1,
+      "maxCount": 1
+    },
+    {
+      "name": "committed-reversal",
+      "kind": "source",
+      "table": "public.supervisor_proposals",
+      "where": {
+        "business_id": {
+          "scope": "businessId"
+        },
+        "id": {
+          "scope": "reversalProposalId"
+        },
+        "owner_user_id": {
+          "scope": "ownerUserId"
+        },
+        "status": {
+          "eq": "committed"
+        }
+      },
+      "minCount": 1,
+      "maxCount": 1
+    },
+    {
+      "name": "owner-finance-reply",
+      "kind": "owner",
+      "table": "public.ai_messages",
+      "where": {
+        "business_id": {
+          "scope": "businessId"
+        },
+        "thread_id": {
+          "scope": "threadId"
+        },
+        "id": {
+          "scope": "reportReplyId"
+        },
+        "role": {
+          "eq": "supervisor"
+        }
+      },
+      "minCount": 1,
+      "maxCount": 1
+    },
+    {
+      "name": "foreign-allocation",
+      "kind": "isolation",
+      "table": "public.purchase_reconciliation_events",
+      "where": {
+        "business_id": {
+          "scope": "otherCafeId"
+        },
+        "id": {
+          "scope": "linkId"
+        }
+      },
+      "minCount": 0,
+      "maxCount": 0
+    }
+  ]
+}

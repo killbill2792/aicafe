@@ -3,6 +3,7 @@ import es from "@/messages/es.json";
 import ar from "@/messages/ar.json";
 import {localizedMetricReason} from "@/lib/ai/agent/metricReasons";
 import { z } from "zod";
+import {financialSettlementInputSchema,financialBillInputSchema} from "@/lib/ai/supervisor/loop/supplierReceiving.server";
 import type { AgentToolContext, AgentToolResult } from "./index";
 import { requestedPeriod } from "./period";
 import {resolveOwnerPeriod,resolveEntity,choicePayload,periodChoicePayload} from "../resolve";
@@ -204,8 +205,49 @@ export const moneyTools={
         monthlyEquivalentCents:s.available?s.value.totalCents:null,estimated:s.quality.estimatedInputs.length>0};
     },
   },
+  get_cashflow_evidence:{
+    agentId:"leo",schema:z.strictObject({statementUploadId:z.uuid().nullable().optional(),rowOffset:z.number().int().nonnegative().max(10000).nullable().optional(),horizonDays:z.number().int().min(1).max(90).nullable().optional(),invoiceOffset:z.number().int().nonnegative().max(500).nullable().optional(),invoiceReference:z.string().trim().min(1).max(160).nullable().optional()}),
+    description:"Dated cash, claims, allocations, recurring dates, conditional stress (horizonDays 1–90). statementUploadId/rowOffset for rows; exact invoiceReference or invoiceOffset=claimNextOffset for claims. Not live cash/unpaid debt.",
+    execute:async(raw:unknown,ctx:AgentToolContext):Promise<AgentToolResult>=>{
+      const selection=z.strictObject({statementUploadId:z.uuid().nullable().optional(),rowOffset:z.number().int().nonnegative().max(10000).nullable().optional(),horizonDays:z.number().int().min(1).max(90).nullable().optional(),invoiceOffset:z.number().int().nonnegative().max(500).nullable().optional(),invoiceReference:z.string().trim().min(1).max(160).nullable().optional()}).parse(raw);
+      const base={source:"cashflow_evidence",period:null,agentId:"leo" as const,
+        asOf:ctx.timezone?ctx.asOf:null,currency:ctx.currency??null,
+        availableCashCents:null,outstandingPaymentCents:null,settledPaymentCents:null,
+        expectedDepositsCents:null,documentedAccountBalances:[]};
+      const missing=["currentCashEvidenceMissing","expectedDepositEvidenceMissing"];
+      if(!ctx.financialEvidenceRead||!ctx.timezone)return {...base,recordedClaimCount:null,
+        recordedClaimTotalsByCurrency:[],claims:[],missing:[...missing,"supplierInvoiceEvidenceUnavailable"]};
+      try{
+        const evidence=await ctx.financialEvidenceRead(selection);
+        return {...base,...evidence,missing:[...missing,...evidence.missing]};
+      }catch{
+        return {...base,recordedClaimCount:null,recordedClaimTotalsByCurrency:[],claims:[],
+          missing:[...missing,"supplierInvoiceEvidenceUnavailable"]};
+      }
+    },
+  },
+  propose_financial_settlement:{
+    agentId:"leo",schema:financialSettlementInputSchema,
+    description:"Draft documentary debit allocation or credit reversal for exact invoice revision and statement row; owner confirms. No money movement or unverified paid claim.",
+    execute:async(raw:unknown,ctx:AgentToolContext):Promise<AgentToolResult>=>{
+      const input=financialSettlementInputSchema.parse(raw);
+      if(!ctx.financialSettlementPropose)return {source:"supplier_purchase_proposal",period:null,agentId:"leo",missing:["financialSettlementUnavailable"],draft:false,paymentMade:false};
+      return {source:"supplier_purchase_proposal",proposalKind:"financial_settlement",period:null,agentId:"leo",
+        missing:[],draft:true,saved:false,approvalRequired:true,paymentMade:false,...await ctx.financialSettlementPropose(input)};
+    },
+  },
+  propose_financial_bill:{
+    agentId:"leo",schema:financialBillInputSchema,
+    description:"Draft an owner-confirmed dated non-supplier bill claim, not configured recurring rent, expense or payment. Exact payee, document reference, date, currency and amount required.",
+    execute:async(raw:unknown,ctx:AgentToolContext):Promise<AgentToolResult>=>{
+      const input=financialBillInputSchema.parse(raw);
+      if(!ctx.financialBillPropose)return {source:"supplier_purchase_proposal",period:null,agentId:"leo",missing:["financialBillUnavailable"],draft:false,paymentMade:false};
+      return {source:"supplier_purchase_proposal",proposalKind:"financial_bill",period:null,agentId:"leo",
+       missing:[],draft:true,saved:false,approvalRequired:true,paymentMade:false,...await ctx.financialBillPropose(input)};
+    }
+  },
   get_break_even:{
-    agentId:"leo",schema:breakEvenInput,description:"Canonical break-even from the SAME saved financial snapshot and core calculator as Money and Plan. period=month (default) forecasts the full calendar month; month_to_date uses ONLY elapsed recorded wages and prorated fixed bills, NEVER future labor; today calculates the current day's cost target (provisional if today has no recorded labor), NOT the monthly average. Quote periodBreakEvenCents for today/MTD and monthlyBreakEvenCents only for the full-month forecast; use dailyBreakEvenCents as the relevant per-open-day target. Historical Toast processing fees are actual when feeStatus=actual; a fee rate extrapolated to FUTURE sales is a forecast, not missing/estimated imported fees. Employer payroll tax may be a saved-rate estimate even with actual Toast wages. Reuse saved ingredient/packaging percent when recipes are incomplete. Never ask for actual Toast wages/fees already imported or an owner input that the result already has; ask only a truly missing ingredient rate or recorded fact. Pass owner overrides only when the owner explicitly says them. Return structured evidence; do not recalculate break-even in the model.",
+    agentId:"leo",schema:breakEvenInput,description:"Canonical Money/Plan break-even. month forecasts full month; month_to_date uses elapsed wages/prorated bills, never future labor; today uses today's costs, not monthly average. Quote periodBreakEvenCents for today/MTD, monthlyBreakEvenCents for month, dailyBreakEvenCents per open day. Historical Toast fees may be actual; future rates/payroll tax may be estimates. Reuse saved ingredient rate. Never re-ask imported wages/fees or returned inputs. Only explicit owner overrides; never recalculate.",
     execute:async(raw:unknown,ctx:AgentToolContext):Promise<AgentToolResult>=>{
       const owner=breakEvenInput.parse(raw),provided=owner.ownerInputs;
       if(ctx.readEconomics){

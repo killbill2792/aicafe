@@ -1349,3 +1349,29 @@ test("@home Task16D authenticated responsive Supervisor work across conversation
     }
   }
 });
+
+test("@money historical statement imports work without a bank connection and persist only owner-confirmed balances",async({page})=>{
+ test.setTimeout(90000);
+ const cafe=seededCafe(0),alias="checking "+randomUUID().slice(0,8).replace(/[0-9]/g,"a");
+ const csv="Date,Description,Amount,Balance\n2026-01-01,Test deposit "+alias+",100,1000\n2026-01-02,Test deposit "+alias+",50,1050\n";
+ const db=new pg.Client({host:"127.0.0.1",port:54322,database:"postgres",user:"postgres",password:"postgres",connectionTimeoutMillis:5000});
+ const digest=createHash("sha256").update(csv).digest("hex");
+ await db.connect();
+ try{
+  await login(page,cafe);
+  await page.goto("/en/add-cost/statement");
+  await page.locator('input[type=file]').setInputFiles({name:"statement.csv",mimeType:"text/csv",buffer:Buffer.from(csv)});
+  await expect(page.getByText("Balance checks out")).toBeVisible();
+  const confirm=page.getByRole("checkbox",{name:/Use this original statement as historical cash evidence/});
+  await expect(confirm).not.toBeChecked();
+  await confirm.check();
+  await page.getByRole("textbox",{name:/Account nickname/}).fill(alias);
+  await page.setViewportSize({width:390,height:844});
+  await expect(page.getByText(/Not a live balance or proof of all accounts/)).toBeVisible();
+  await page.getByRole("button",{name:"Save all",exact:true}).click();
+  await expect.poll(async()=>{
+   const {rows}=await db.query("select financial_currency,financial_to::text,financial_closing_cents,financial_owner_user_id from public.uploads where business_id=$1 and financial_source_sha256=$2",[cafe.businessId,digest]);
+   return rows.map(r=>[r.financial_currency,r.financial_to,Number(r.financial_closing_cents),r.financial_owner_user_id]);
+  },{timeout:20000}).toEqual([[cafe.currency,"2026-01-02",105000,cafe.owner.userId]]);
+ }finally{await db.query("delete from public.uploads where business_id=$1 and financial_source_sha256=$2",[cafe.businessId,digest]);await db.end();}
+});

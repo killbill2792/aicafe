@@ -246,6 +246,10 @@ export async function dispatchRoutinesForBusiness(db:SupabaseClient,businessId:s
       });
       if(receiving.error)result.failed++;
     }catch{result.failed++;}
+    try{
+      const finance=await db.rpc("supervisor_sync_financial_review",{p_business_id:businessId,p_owner_user_id:ownerUserId,p_now:now.toISOString()});
+      if(finance.error)result.failed++;
+    }catch{result.failed++;}
     // This is the SAME verified owner/thread selected for the notice scanner.
     // A failed notice cannot prevent persistent investigation, and vice versa.
     if(enqueueInvestigations){

@@ -2,9 +2,9 @@ import Papa from "papaparse";
 
 export type ParsedStatementLine = {
   i: number;
-  date: string; // YYYY-MM-DD, best-effort
+  date: string;
   description: string;
-  amountCents: number; // negative = money out, per docs/06-integrations.md
+  amountCents: number; // negative = money out
   balanceCents: number | null;
 };
 
@@ -12,93 +12,87 @@ export type ParsedStatement = {
   lines: ParsedStatementLine[];
   balanceCheck: { openingCents: number; closingCents: number; sumCents: number; ok: boolean } | null;
   unrecognizedColumns: boolean;
+  invalidRows: number[];
+  sourceErrors: boolean;
+  /** Ordered original rows only; never reconstructed from edited expenses. */
+  statementEvidence: { from: string; to: string; openingCents: number; closingCents: number;
+    transactions: { i: number; date: string; amountCents: number; balanceCents: number }[] } | null;
 };
 
-function findColumn(headers: string[], patterns: RegExp[]): string | null {
-  for (const pattern of patterns) {
-    const hit = headers.find((h) => pattern.test(h));
-    if (hit) return hit;
-  }
-  return null;
-}
-
-function toDateStr(raw: string): string {
+function toDateStr(raw: string): string | null {
   const trimmed = raw.trim();
-  // MM/DD/YYYY or M/D/YY (common US bank export format)
-  const us = trimmed.match(/^(\d{1,2})\/(\d{1,2})\/(\d{2,4})$/);
-  if (us) {
-    const [, m, d, y] = us;
-    const year = y.length === 2 ? `20${y}` : y;
-    return `${year}-${m.padStart(2, "0")}-${d.padStart(2, "0")}`;
-  }
-  // Already ISO-ish
-  if (/^\d{4}-\d{2}-\d{2}/.test(trimmed)) return trimmed.slice(0, 10);
-  const parsed = new Date(trimmed);
-  if (!Number.isNaN(parsed.getTime())) {
-    return `${parsed.getFullYear()}-${String(parsed.getMonth() + 1).padStart(2, "0")}-${String(parsed.getDate()).padStart(2, "0")}`;
-  }
-  return trimmed;
+  const us = trimmed.match(/^(\d{1,2})\/(\d{1,2})\/(\d{2}|\d{4})$/);
+  const value = us ? (us[3].length === 2 ? "20"+us[3] : us[3])+"-"+us[1].padStart(2,"0")+"-"+us[2].padStart(2,"0") : trimmed;
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) return null;
+  const date = new Date(value+"T00:00:00Z");
+  return Number.isFinite(date.getTime()) && date.toISOString().slice(0,10) === value ? value : null;
 }
 
-function toCents(raw: string): number {
-  const cleaned = raw.replace(/[$,\s]/g, "");
-  const negative = /^\(.*\)$/.test(cleaned); // "(123.45)" accounting notation for negative
-  const numeric = Number(cleaned.replace(/[()]/g, ""));
-  if (Number.isNaN(numeric)) return 0;
-  const cents = Math.round(numeric * 100);
-  return negative ? -Math.abs(cents) : cents;
+function toCents(raw: string): number | null {
+  let value = raw.trim();
+  const accounting = /^\(.*\)$/.test(value);
+  if(accounting)value=value.slice(1,-1).trim();
+  const match=value.match(/^([+-]?)\$?(\d+|\d{1,3}(?:,\d{3})+)(?:\.(\d{1,2}))?$/);
+  if(!match||(accounting&&match[1]))return null;
+  const whole=Number(match[2].replace(/,/g,""));
+  const cents=whole*100+Number((match[3]??"").padEnd(2,"0"));
+  return Number.isSafeInteger(cents)?(accounting||match[1]==="-"?-cents:cents):null;
 }
 
-/** Detects date/description/amount (or debit+credit) columns and handles common US bank CSV exports. */
+/** Reject ambiguous or malformed transaction rows instead of turning them into zeros. */
 export function parseStatementCsv(csvText: string): ParsedStatement {
-  const parsed = Papa.parse<Record<string, string>>(csvText, { header: true, skipEmptyLines: true });
-  const headers = (parsed.meta.fields ?? []).map((h) => h.trim());
-  const lowerHeaders = headers.map((h) => h.toLowerCase());
-
-  const dateCol = findColumn(lowerHeaders, [/^date$/, /trans.*date/, /posted/, /^date posted$/]);
-  const descCol = findColumn(lowerHeaders, [/^description$/, /desc/, /memo/, /payee/, /^name$/, /transaction/]);
-  const amountCol = findColumn(lowerHeaders, [/^amount$/]);
-  const debitCol = findColumn(lowerHeaders, [/^debit$/, /withdrawal/]);
-  const creditCol = findColumn(lowerHeaders, [/^credit$/, /deposit/]);
-  const balanceCol = findColumn(lowerHeaders, [/balance/]);
-
-  const headerByLower = new Map(headers.map((h) => [h.toLowerCase(), h]));
-  const col = (name: string | null) => (name ? headerByLower.get(name) : undefined);
-
-  const dateHeader = col(dateCol);
-  const descHeader = col(descCol);
-  const amountHeader = col(amountCol);
-  const debitHeader = col(debitCol);
-  const creditHeader = col(creditCol);
-  const balanceHeader = col(balanceCol);
-
-  const unrecognizedColumns = !dateHeader || !descHeader || (!amountHeader && !debitHeader && !creditHeader);
-
-  const lines: ParsedStatementLine[] = (parsed.data as Record<string, string>[]).map((row, i) => {
-    const date = dateHeader ? toDateStr(row[dateHeader] ?? "") : "";
-    const description = descHeader ? (row[descHeader] ?? "").trim() : Object.values(row).join(" ").trim();
-
-    let amountCents = 0;
-    if (amountHeader) {
-      amountCents = toCents(row[amountHeader] ?? "0");
-    } else {
-      const debit = debitHeader ? toCents(row[debitHeader] ?? "0") : 0;
-      const credit = creditHeader ? toCents(row[creditHeader] ?? "0") : 0;
-      amountCents = credit - Math.abs(debit); // debit column is money out
+  const parsed=Papa.parse<Record<string,string>>(csvText,{header:true,skipEmptyLines:"greedy",transformHeader:h=>h.trim().toLowerCase()});
+  const headers=parsed.meta.fields??[];
+  const find=(patterns:RegExp[])=>patterns.map(p=>headers.find(h=>p.test(h))).find(Boolean);
+  const dateHeader=find([/^date$/, /trans.*date/, /posted/]);
+  const descHeader=find([/^description$/, /desc/, /memo/, /payee/, /^name$/, /^transaction$/]);
+  const amountHeader=find([/^amount$/]);
+  const debitHeader=find([/^debit$/, /withdrawal/]);
+  const creditHeader=find([/^credit$/, /deposit/]);
+  const balanceHeader=find([/^balance$/, /^running balance$/, /^closing balance$/]);
+  const unrecognizedColumns=!dateHeader||!descHeader||(!amountHeader&&!debitHeader&&!creditHeader);
+  const sourceErrors=parsed.errors.length>0||Boolean(parsed.meta.renamedHeaders&&Object.keys(parsed.meta.renamedHeaders).length);
+  const invalidRows:number[]=[];
+  const lines:ParsedStatementLine[]=[];
+  if(!unrecognizedColumns)parsed.data.forEach((row,i)=>{
+    const date=toDateStr(row[dateHeader]??"");
+    const description=(row[descHeader]??"").trim();
+    let amountCents:number|null=null;
+    if(amountHeader)amountCents=toCents(row[amountHeader]??"");
+    else{
+      const debit=debitHeader?(row[debitHeader]??"").trim():"";
+      const credit=creditHeader?(row[creditHeader]??"").trim():"";
+      const d=debit?toCents(debit):0,c=credit?toCents(credit):0;
+      if((debit||credit)&&d!==null&&c!==null&&c>=0&&!(d!==0&&c!==0))amountCents=c-Math.abs(d);
     }
-
-    const balanceCents = balanceHeader && row[balanceHeader] ? toCents(row[balanceHeader]) : null;
-    return { i, date, description, amountCents, balanceCents };
+    const balance=balanceHeader?(row[balanceHeader]??"").trim():"";
+    const balanceCents=balance?toCents(balance):null;
+    if(!date||!description||amountCents===null||!Number.isSafeInteger(amountCents)||(balance&&balanceCents===null)){
+      invalidRows.push(i+2);return;
+    }
+    lines.push({i,date,description,amountCents,balanceCents});
   });
-
-  let balanceCheck: ParsedStatement["balanceCheck"] = null;
-  const balances = lines.map((l) => l.balanceCents).filter((b): b is number => b !== null);
-  if (balances.length >= 2) {
-    const openingCents = balances[0] - lines[0].amountCents; // balance after first line minus its own delta
-    const closingCents = balances[balances.length - 1];
-    const sumCents = lines.reduce((s, l) => s + l.amountCents, 0);
-    balanceCheck = { openingCents, closingCents, sumCents, ok: openingCents + sumCents === closingCents };
+  let balanceCheck:ParsedStatement["balanceCheck"]=null;
+  let statementEvidence:ParsedStatement["statementEvidence"]=null;
+  if(!sourceErrors&&!invalidRows.length&&lines.length>=2&&lines.every(l=>l.balanceCents!==null)){
+    const check=(ordered:ParsedStatementLine[])=>{
+      const openingCents=ordered[0].balanceCents!-ordered[0].amountCents;
+      const closingCents=ordered.at(-1)!.balanceCents!;
+      let sumCents=0, running=openingCents, ok=Number.isSafeInteger(openingCents);
+      ordered.forEach((l,i)=>{
+        sumCents+=l.amountCents;running+=l.amountCents;
+        ok=ok&&Number.isSafeInteger(sumCents)&&Number.isSafeInteger(running)&&running===l.balanceCents&&
+          (i===0||ordered[i-1].date<=l.date);
+      });
+      return {openingCents,closingCents,sumCents,ok};
+    };
+    const reverse=[...lines].reverse(), forward=check(lines), backward=check(reverse);
+    const ordered=forward.ok?lines:reverse;
+    balanceCheck=forward.ok?forward:backward.ok?backward:forward;
+    if(balanceCheck.ok&&(!forward.ok||!backward.ok||forward.closingCents===backward.closingCents)){
+      statementEvidence={from:ordered[0].date,to:ordered.at(-1)!.date,openingCents:balanceCheck.openingCents,
+        closingCents:balanceCheck.closingCents,transactions:ordered.map(l=>({i:l.i,date:l.date,amountCents:l.amountCents,balanceCents:l.balanceCents!}))};
+    }
   }
-
-  return { lines, balanceCheck, unrecognizedColumns };
+  return {lines,balanceCheck,unrecognizedColumns,invalidRows,sourceErrors,statementEvidence};
 }

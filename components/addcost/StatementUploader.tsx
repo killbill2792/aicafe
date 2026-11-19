@@ -2,8 +2,8 @@
 
 import { useRef, useState, useTransition } from "react";
 import { useRouter } from "@/i18n/navigation";
-import { useLocale } from "next-intl";
-import { reviewStatementCsv } from "@/lib/actions/statementReview";
+import { useLocale,useTranslations } from "next-intl";
+import { reviewStatementCsv, saveConfirmedStatementEvidence } from "@/lib/actions/statementReview";
 import { saveCategorizedLines, type ReviewLine } from "@/lib/actions/expenses";
 import { readUploadedFileAsCsvText, UPLOAD_FILE_ACCEPT } from "@/lib/pos/csv/readUploadedFile";
 import { EXPENSE_CATEGORY_CODES, type ExpenseCategoryCode } from "@/lib/constants";
@@ -13,7 +13,7 @@ import { makeMissingStatementLine } from "@/components/addcost/statementMissingL
 type ReviewableLine = ReviewLine & { correctedCategory?: ExpenseCategoryCode };
 type BalanceCheck = { openingCents: number; closingCents: number; sumCents: number; ok: boolean };
 type ReviewState =
-  | { ok: true; lines: ReviewableLine[]; balanceCheck: BalanceCheck | null; unrecognizedColumns: boolean }
+  | { ok: true; lines: ReviewableLine[]; balanceCheck: BalanceCheck | null; unrecognizedColumns: boolean; currency?: string | null; cashEvidence?: {sourceHash:string;asOf:string;closingCents:number}|null }
   | { ok: false; error: string };
 
 export default function StatementUploader({
@@ -48,9 +48,15 @@ export default function StatementUploader({
 }) {
   const router = useRouter();
   const locale = useLocale();
+  const t=useTranslations("AddCost");
   const safeReturnTo = validReturnTo(returnTo ?? undefined) ?? "/money";
-  const formatAmount = (cents: number) => new Intl.NumberFormat(locale, { style: "currency", currency: "USD" }).format(cents / 100);
   const [state, setState] = useState<ReviewState | null>(null);
+  const currency=state?.ok?state.currency:null;
+  const formatAmount=(cents:number)=>new Intl.NumberFormat(locale,currency?{style:"currency",currency}:{minimumFractionDigits:2,maximumFractionDigits:2}).format(cents/100);
+  const originalCsv=useRef("");
+  const [confirmCash,setConfirmCash]=useState(false);
+  const [accountAlias,setAccountAlias]=useState("");
+  const [cashError,setCashError]=useState(false);
   const [isPending, startTransition] = useTransition();
   const [missingLine, setMissingLine] = useState(false);
   const [missingDescription, setMissingDescription] = useState("");
@@ -73,6 +79,8 @@ export default function StatementUploader({
       try {
         const text = await readUploadedFileAsCsvText(file);
         const result = await reviewStatementCsv(text);
+        originalCsv.current=text;
+        setConfirmCash(false);setAccountAlias("");setCashError(false);
         setMissingLine(false);
         setSaveStatus("idle");
         setState(result);
@@ -107,12 +115,21 @@ export default function StatementUploader({
 
   function handleSaveAll() {
     if (!state?.ok || missingLine || isSavingOrSaved || saveLock.current) return;
+    if(confirmCash&&!/^[a-z][a-z -]{1,59}$/i.test(accountAlias.trim())){setCashError(true);return;}
     saveLock.current = true;
-    setSaveStatus("saving");
+    setSaveStatus("saving");setCashError(false);
     startTransition(async () => {
       try {
+        // Capture the independent statement confirmation before saving editable expenses.
+        // A retry is idempotent; incomplete evidence can be skipped to save expenses alone.
+        if(confirmCash&&state.cashEvidence&&state.currency){
+          const saved=await saveConfirmedStatementEvidence({csvText:originalCsv.current,sourceHash:state.cashEvidence.sourceHash,
+            accountAlias,currency:state.currency,confirmed:true});
+          if(!saved.ok){setCashError(true);setSaveStatus("error");saveLock.current=false;return;}
+        }
         const result = await saveCategorizedLines("statement", state.lines);
         if (result.ok) {
+          originalCsv.current="";
           setSaveStatus("saved");
           setTimeout(() => {
           // next-intl would add a second locale prefix to an already localized return path.
@@ -224,6 +241,11 @@ export default function StatementUploader({
           );
         })}
       </div>
+      {state.cashEvidence&&state.currency&&<div className="flex flex-col gap-2 rounded-card-lg border border-line bg-card p-4">
+        <label className="flex gap-2 text-ink"><input type="checkbox" checked={confirmCash} disabled={isSavingOrSaved} onChange={e=>setConfirmCash(e.target.checked)}/><span>{t("statementCashConfirm",{currency:state.currency})}</span></label>
+        {confirmCash&&<><p className="text-ink-muted">{t("statementCashDated",{amount:formatAmount(state.cashEvidence.closingCents),date:state.cashEvidence.asOf})}</p><label className="flex flex-col gap-1">{t("statementCashNickname")}<input value={accountAlias} maxLength={60} disabled={isSavingOrSaved} onChange={e=>setAccountAlias(e.target.value)} className="min-h-12 rounded-xl border border-line px-3" /></label></>}
+      </div>}
+      {cashError&&<p role="alert" className="text-warn">{t("statementCashError")}</p>}
       {saveStatus === "error" && <p role="alert" className="text-[17px] text-warn">{labels.saveError}</p>}
       <button
         type="button"
