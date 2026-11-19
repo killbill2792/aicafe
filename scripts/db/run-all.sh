@@ -172,6 +172,7 @@ supabase_lane() {
   sql_step task13b-staff-standing-mandate.sql "Task13B phone-MFA staff mandate: exact week, recipient cap, scope, revocation, receipt"
   sql_step task13c-staff-channel-db.sql "Task13C worker-auth two-cafe RLS, free text, idempotency and owner notices"
   sql_step task13d-staff-coordination-db.sql "Task13D two-cafe intake, leave evidence, personnel decisions, RLS and retention"
+  sql_step task15b-maintenance-coordination-db.sql "Task15B worker report, owner assignment, reply dedupe and private history"
   sql_step staff-approval-atomic.sql "Staff approvals: atomic, stale CAS, rollback"
   sql_step staff-approval-scoped.sql "Staff approvals: scoped CAS, independent approvals"
   sql_step ldi-e-db-contract.sql "Events (LDI E): canonical RPC and two-café RLS"
