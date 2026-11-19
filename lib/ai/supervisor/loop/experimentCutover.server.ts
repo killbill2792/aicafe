@@ -29,6 +29,7 @@ import {postVerifiedSourceReminder,postToastObservationNotice,toastObservationNo
 
 import {formatInTimeZone} from "date-fns-tz";
 import {getPricingInputs} from "@/lib/data/getPricingInputs";
+import {comparePriceExposure} from "@/lib/calc/priceExperiment";
 
 export const priceCapabilityIds=[
  "alex.drink_price_experiment.v1","alex.menu_price_change.v1"] as const;
@@ -467,6 +468,9 @@ type ObservationMeasurement={
  status:"actual"|"insufficient_evidence";units:number|null;revenueCents:number|null;
  baselineUnits:number|null;baselineRevenueCents:number|null;
  contributionEstimateCents:number|null;unitCostEstimateCents:number|null;
+ volumeChangeBps:number|null;revenueChangeBps:number|null;
+ contributionMarginEstimateBps:number|null;contributionChangeEstimateCents:number|null;
+ baselineContributionEstimateCents:number|null;
 };
 const observationDayMs=86400000;
 const observationColumns="id,business_id,menu_item_id,old_price_cents,new_price_cents,source_type,source_provider,toast_restaurant_guid,toast_publication_version,toast_observed_at,toast_effective_at,changed_at,toast_publication_completed_at,toast_publication_pos_item_id";
@@ -579,11 +583,16 @@ async function runCompletedToastObservation(db:SupabaseClient,due:ObservationDue
    endAt:new Date(Date.parse(window.endAt)-7*observationDayMs).toISOString()};
   const baseline=baselineChanges.count===0?await readElapsedWindowObservations(db,businessId,receipt.menuItemId,
    baselineWindow,now,timezone,partial?new Date(Date.parse(segmentEndAt)-7*observationDayMs).toISOString():undefined):null;
+  const comparison=comparePriceExposure({units:measured.units,revenueCents:measured.revenueCents,
+   baselineUnits:baseline?.units??null,baselineRevenueCents:baseline?.revenueCents??null,unitCostEstimateCents:unitCost});
   const measurement:ObservationMeasurement={index:window.index,startAt:window.startAt,endAt:window.endAt,
    segmentEndAt,status:measured.status,units:measured.units,revenueCents:measured.revenueCents,
    baselineUnits:baseline?.units??null,baselineRevenueCents:baseline?.revenueCents??null,
-   unitCostEstimateCents:unitCost,contributionEstimateCents:measured.units!==null&&measured.revenueCents!==null&&unitCost!==null?
-    Math.round(measured.revenueCents-measured.units*unitCost):null};
+   unitCostEstimateCents:unitCost,contributionEstimateCents:comparison.contributionEstimateCents,
+   baselineContributionEstimateCents:comparison.baselineContributionEstimateCents,
+   contributionChangeEstimateCents:comparison.contributionChangeEstimateCents,
+   contributionMarginEstimateBps:comparison.contributionMarginEstimateBps,
+   volumeChangeBps:comparison.volumeChangeBps,revenueChangeBps:comparison.revenueChangeBps};
   const saved=await db.from("supervisor_monitor_windows").upsert({
    business_id:businessId,owner_user_id:measurementOwner,monitor_kind:"toast_price_observation",
    source_id:sourceId,window_index:window.index,source_reference:{...ref,measurement},
@@ -600,14 +609,17 @@ async function runCompletedToastObservation(db:SupabaseClient,due:ObservationDue
  const total=(key:"units"|"revenueCents"|"baselineUnits"|"baselineRevenueCents"|"contributionEstimateCents")=>
   measurements.length&&measurements.every(m=>m[key]!==null)?measurements.reduce((sum,m)=>sum+m[key]!,0):null;
  const finalDue=Date.parse(now)>=Date.parse(endAt);
- const cumulative={observedUnits:total("units"),observedRevenueCents:total("revenueCents"),
-  baselineUnits:total("baselineUnits"),baselineRevenueCents:total("baselineRevenueCents"),
-  contributionEstimateCents:total("contributionEstimateCents"),costBasis:unitCost===null?"missing":"current_cost_estimate",
-  completedExposureWindows:measurements.length,interruptedAt:cut,nonCausal:true};
+ const comparison=comparePriceExposure({units:total("units"),revenueCents:total("revenueCents"),
+  baselineUnits:total("baselineUnits"),baselineRevenueCents:total("baselineRevenueCents"),unitCostEstimateCents:unitCost});
+ const cumulative={...comparison,completedExposureWindows:measurements.length,interruptedAt:cut,nonCausal:true,
+  costEstimateAsOf:unitCost===null?null:now,actualHistoricalCogsCents:null,netCafeProfitCents:null};
  const format=(cents:number|null)=>cents===null?"unknown":new Intl.NumberFormat("en-US",{style:"currency",currency}).format(cents/100);
- const advice=(revenue:number|null,baseline:number|null)=>
+ const pct=(bps:number|null)=>bps===null?"unknown":new Intl.NumberFormat("en-US",{style:"percent",maximumFractionDigits:1}).format(bps/10000);
+ const advice=(revenue:number|null,baseline:number|null,contributionChange:number|null)=>
   revenue===null||baseline===null?"Wait for complete comparable evidence before deciding.":
+  contributionChange!==null&&contributionChange<0?"Estimated product contribution fell. Review traffic, discounts and costs; consider reverting the price only after owner review.":
   revenue<baseline?"Revenue was lower than the comparison period. Review traffic, discounts and costs before considering another price change.":
+  contributionChange!==null&&contributionChange>0?"Estimated contribution improved. Consider retaining the price after checking demand and actual costs.":
   "Review volume and contribution before deciding whether to retain the price.";
  const date=(s:string)=>formatInTimeZone(new Date(s),timezone,"yyyy-MM-dd");
  let posted=0,allDelivered=true;
@@ -634,18 +646,19 @@ async function runCompletedToastObservation(db:SupabaseClient,due:ObservationDue
   for(const m of measurements){
    await send(m.index+1,m.segmentEndAt,false,{title:"Toast price observation day "+(m.index+1),units:m.units,
     revenueCents:m.revenueCents,baselineRevenueCents:m.baselineRevenueCents,contributionEstimateCents:m.contributionEstimateCents,
-    segmentEndAt:m.segmentEndAt,nonCausal:true},
+    segmentEndAt:m.segmentEndAt,baselineUnits:m.baselineUnits,volumeChangeBps:m.volumeChangeBps,revenueChangeBps:m.revenueChangeBps,
+    contributionMarginEstimateBps:m.contributionMarginEstimateBps,contributionChangeEstimateCents:m.contributionChangeEstimateCents,nonCausal:true},
     itemName+": observation day "+(m.index+1)+" ending "+m.segmentEndAt+
     ". "+(m.units===null?"Sales coverage is incomplete.":m.units+" units, net revenue "+format(m.revenueCents)+".")+
     " Comparable prior revenue: "+format(m.baselineRevenueCents)+". Estimated contribution using current cost: "+format(m.contributionEstimateCents)+
-    ". "+advice(m.revenueCents,m.baselineRevenueCents)+" This does not establish causation.",m.status==="actual"?"high":"low");
+    ". Volume change "+pct(m.volumeChangeBps)+", revenue change "+pct(m.revenueChangeBps)+", estimated contribution margin "+pct(m.contributionMarginEstimateBps)+". "+advice(m.revenueCents,m.baselineRevenueCents,m.contributionChangeEstimateCents)+" This does not establish causation.",m.status==="actual"?"high":"low");
   }
   if(finalDue)await send(7,endAt,true,{title:"Toast price observation summary",...cumulative},
    itemName+": "+(cut?"Price exposure was interrupted; ":"Seven elapsed days ended; ")+
    "observed units "+(cumulative.observedUnits??"unknown")+", net revenue "+format(cumulative.observedRevenueCents)+
    ", comparable prior revenue "+format(cumulative.baselineRevenueCents)+
    ", estimated contribution using current cost "+format(cumulative.contributionEstimateCents)+
-   ". "+advice(cumulative.observedRevenueCents,cumulative.baselineRevenueCents)+
+   ". Volume change "+pct(cumulative.volumeChangeBps)+", revenue change "+pct(cumulative.revenueChangeBps)+", estimated contribution margin "+pct(cumulative.contributionMarginEstimateBps)+". "+advice(cumulative.observedRevenueCents,cumulative.baselineRevenueCents,cumulative.contributionChangeEstimateCents)+
    " No causal conclusion or price action has been made.",cumulative.observedRevenueCents===null?"low":"high");
  }
  // Keep checking corrections for the existing fourteen-day correction period.
