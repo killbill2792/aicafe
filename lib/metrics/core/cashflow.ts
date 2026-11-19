@@ -201,3 +201,29 @@ export function statementTransactions(value:unknown):StatementTransaction[]|null
  }
  return rows;
 }
+
+export type BillClaimRow={id:string;financial_bill_payee:string;financial_bill_reference:string;
+ financial_bill_revision:number|string;financial_bill_issued_on:string;financial_bill_due_on:string|null;
+ financial_bill_amount_cents:number|string;financial_currency:string};
+export function summarizeBillClaims(rows:readonly BillClaimRow[],asOf:string,truncated:boolean){
+ type Bill={uploadId:string;payee:string;reference:string;revision:number;issuedOn:string;dueOn:string|null;
+  recordedClaimCents:number;currency:string;paymentStatus:"unknown"};
+ const unavailable=()=>({billClaimCount:null,billClaims:[] as Bill[],billClaimDetailsTruncated:false,billClaimMissing:["datedBillEvidenceUnavailable"]});
+ if(truncated||!validDate(asOf))return unavailable();
+ const latest=new Map<string,Bill>();
+ for(const r of rows){
+  const amount=exactInteger(r.financial_bill_amount_cents),revision=exactInteger(r.financial_bill_revision);
+  if(!r.id||!r.financial_bill_payee||!r.financial_bill_reference||!revision||!amount||!validDate(r.financial_bill_issued_on)
+   ||(r.financial_bill_due_on!==null&&(!validDate(r.financial_bill_due_on)||r.financial_bill_due_on<r.financial_bill_issued_on))
+   ||!/^[A-Z]{3}$/.test(r.financial_currency))return unavailable();
+  if(r.financial_bill_issued_on>asOf)continue;
+  const key=JSON.stringify([r.financial_bill_payee.toLowerCase(),r.financial_bill_reference]),old=latest.get(key);
+  if(old&&(old.currency!==r.financial_currency||old.revision===revision))return unavailable();
+  if(old&&old.revision>revision)continue;
+  latest.set(key,{uploadId:r.id,payee:r.financial_bill_payee,reference:r.financial_bill_reference,revision,
+   issuedOn:r.financial_bill_issued_on,dueOn:r.financial_bill_due_on,recordedClaimCents:amount,currency:r.financial_currency,paymentStatus:"unknown"});
+ }
+ const all=[...latest.values()].sort((a,b)=>(a.dueOn??"9999").localeCompare(b.dueOn??"9999")||a.uploadId.localeCompare(b.uploadId));
+ return {billClaimCount:all.length,billClaims:all.slice(0,20),billClaimDetailsTruncated:all.length>20,
+  billClaimMissing:["nonSupplierBillPaymentCoverageUnknown",...(all.length>20?["datedBillDetailsTruncated"]:[])]};
+}

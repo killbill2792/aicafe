@@ -1,5 +1,5 @@
 import {describe,expect,it} from "vitest";
-import {summarizeInvoiceClaims,summarizeStatementBalances,summarizeRecurringObligations,type InvoiceClaimRow} from "./cashflow";
+import {summarizeInvoiceClaims,summarizeStatementBalances,summarizeRecurringObligations,summarizeBillClaims,type InvoiceClaimRow} from "./cashflow";
 const asOf="2026-11-18";
 const a:InvoiceClaimRow={id:"first",supplier_id:"supplier",purchase_order_id:"po",
  invoice_reference:"invoice",revision:1,issued_on:"2026-11-01",due_on:"2026-11-17",
@@ -91,4 +91,13 @@ describe("documented invoice settlement and recurring dates",()=>{
   expect(r.recurringObligations.find(v=>v.id==="weekly")?.nextProjectedDueOn).toBeNull();
   expect(r.recurringMissing).toContain("recurringDueDateUnknown");
  });
+});
+
+it("keeps dated bill claims separate from recurring settings and retains unknown payment",()=>{
+ const bill={id:"one",financial_bill_payee:"municipality",financial_bill_reference:"ref",financial_bill_revision:1,
+  financial_bill_issued_on:"2026-11-01",financial_bill_due_on:"2026-11-20",financial_bill_amount_cents:4200,financial_currency:"CAD"};
+ const result=summarizeBillClaims([bill,{...bill,id:"two",financial_bill_revision:2,financial_bill_amount_cents:4500}],asOf,false);
+ expect(result.billClaimCount).toBe(1);
+ expect(result.billClaims[0]).toMatchObject({uploadId:"two",recordedClaimCents:4500,paymentStatus:"unknown"});
+ expect(summarizeBillClaims([bill],asOf,true).billClaimCount).toBeNull();
 });

@@ -27,7 +27,7 @@ describe("finance source owner boundary",()=>{
  it("filters both café and owner, reauthorizes and preserves unknown payment",async()=>{
   const db=database();auth.mockReset().mockResolvedValue({client:db.client});
   const r=await readFinancialEvidence(scope,"2026-11-18");
-  expect(db.eq.mock.calls).toEqual([["business_id","cafe"],["owner_user_id","owner"],["business_id","cafe"],["financial_owner_user_id","owner"],["kind","statement"],["status","done"],["business_id","cafe"],["owner_user_id","owner"],["business_id","cafe"]]);
+  expect(db.eq.mock.calls).toEqual([["business_id","cafe"],["owner_user_id","owner"],["business_id","cafe"],["financial_owner_user_id","owner"],["kind","statement"],["status","done"],["business_id","cafe"],["owner_user_id","owner"],["business_id","cafe"],["business_id","cafe"],["financial_owner_user_id","owner"],["kind","bill_claim"],["status","done"]]);
   expect(auth).toHaveBeenCalledTimes(2);
   expect(r.claims).toHaveLength(1);
   expect(r.claims[0]).toMatchObject({invoiceId:"invoice",dueDatePosition:"on_as_of",paymentStatus:"unknown"});

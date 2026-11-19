@@ -1,8 +1,8 @@
 import "server-only";
 import type {SupabaseClient} from "@supabase/supabase-js";
 import {simulationOwnerReader} from "@/lib/ai/supervisor/loop/simulationOwner.server";
-import {summarizeInvoiceClaims,summarizeStatementBalances,summarizeRecurringObligations,statementTransactions,
- type InvoiceClaimRow,type StatementBalanceRow,type SettlementEvidenceRow,type RecurringObligationRow} from "@/lib/metrics/core/cashflow";
+import {summarizeInvoiceClaims,summarizeStatementBalances,summarizeRecurringObligations,summarizeBillClaims,statementTransactions,
+ type InvoiceClaimRow,type StatementBalanceRow,type SettlementEvidenceRow,type RecurringObligationRow,type BillClaimRow} from "@/lib/metrics/core/cashflow";
 
 type Scope={businessId:string;ownerUserId:string;verifiedReadClient?:SupabaseClient};
 export type FinanceSelection={statementUploadId?:string|null;rowOffset?:number|null};
@@ -24,7 +24,7 @@ export async function readFinancialStatement(scope:Scope,uploadId:string){
 export async function readFinancialEvidence(scope:Scope,asOf:string,selection:FinanceSelection={}){
  const {client}=await simulationOwnerReader(scope);
  const limit=500;
- const [invoices,statements,events,bills]=await Promise.allSettled([
+ const [invoices,statements,events,bills,datedBills]=await Promise.allSettled([
   client.from("supplier_invoices").select("id,supplier_id,purchase_order_id,invoice_reference,revision,issued_on,due_on,currency_code,total_cents")
    .eq("business_id",scope.businessId).eq("owner_user_id",scope.ownerUserId)
    .order("revision",{ascending:false}).order("id").limit(limit+1),
@@ -35,7 +35,10 @@ export async function readFinancialEvidence(scope:Scope,asOf:string,selection:Fi
    .eq("business_id",scope.businessId).eq("owner_user_id",scope.ownerUserId)
    .in("financial_kind",["settlement_evidence_linked","settlement_evidence_reversed"]).order("id").limit(limit+1),
   client.from("recurring_costs").select("id,label,amount_cents,frequency,due_day,is_estimate,active_from,active_to")
-   .eq("business_id",scope.businessId).order("id").limit(limit+1)
+   .eq("business_id",scope.businessId).order("id").limit(limit+1),
+  client.from("uploads").select("id,financial_bill_payee,financial_bill_reference,financial_bill_revision,financial_bill_issued_on,financial_bill_due_on,financial_bill_amount_cents,financial_currency")
+   .eq("business_id",scope.businessId).eq("financial_owner_user_id",scope.ownerUserId).eq("kind","bill_claim")
+   .eq("status","done").order("financial_bill_revision",{ascending:false}).order("id").limit(limit+1)
  ]);
  let selectedStatement:null|{uploadId:string;currency:string;asOf:string;rows:{i:number;date:string;amountCents:number;balanceCents:number}[];rowCount:number;nextRowOffset:number|null}=null;
  const selectedMissing:string[]=[];
@@ -59,7 +62,10 @@ export async function readFinancialEvidence(scope:Scope,asOf:string,selection:Fi
  const claims=summarizeInvoiceClaims(rows,asOf,!invoiceOk||rows.length>limit,eventsOk&&entries.length<=limit?entries:null);
  const cash=summarizeStatementBalances(balances,asOf,!statementOk||balances.length>limit);
  const recurring=summarizeRecurringObligations(configured,asOf,!billsOk||configured.length>limit);
- return {...claims,...cash,...recurring,selectedStatement,
+ const datedOk=datedBills.status==="fulfilled"&&!datedBills.value.error;
+ const dated=(datedOk?datedBills.value.data??[]:[]) as BillClaimRow[];
+ const billClaims=summarizeBillClaims(dated,asOf,!datedOk||dated.length>limit);
+ return {...claims,...cash,...recurring,...billClaims,selectedStatement,
   missing:[...(invoiceOk?claims.missing:["supplierInvoiceEvidenceUnavailable"]),
-  ...cash.statementMissing,...recurring.recurringMissing,...selectedMissing,...(statementOk?[]:["statementEvidenceUnavailable"])]};
+  ...cash.statementMissing,...recurring.recurringMissing,...billClaims.billClaimMissing,...selectedMissing,...(statementOk?[]:["statementEvidenceUnavailable"])]};
 }

@@ -133,6 +133,19 @@ try{
  const changed=await draftSettlement({...effectSettlement,invoiceId:newInvoice.invoiceId,invoiceRevision:3,invoiceTotalCents:12000,uploadId:newSource,sourceHash:"9".repeat(64),
   allocationCents:500,transactionDate:"2026-01-03",transactionAmountCents:-500,transactionBalanceCents:10500});
  await claimInvoice(changed);await role("authenticated",a.owner);await denied(()=>one(settlement,commitArgs(changed)));
+ const billEffect={payee:"municipality",reference:"tax-2026",expectedRevision:0,issuedOn:"2026-01-01",dueOn:"2026-02-01",
+  amountCents:4200,currency:"CAD",sourceKind:"owner_report",sourceRef:"owner-message:"+message,sourceSha256:"7".repeat(64)};
+ const billCommit="select public.supervisor_commit_financial_bill($1,$2,$3,$4) id";
+ const bill=await draftInvoice(billEffect,"leo.financial_bill.v1");
+ await role("authenticated",a.owner);await denied(()=>one(billCommit,commitArgs(bill)));
+ await claimInvoice(bill);await role("authenticated",b.owner);await denied(()=>one(billCommit,commitArgs(bill)));
+ await role("authenticated",a.owner);const billId=(await one(billCommit,commitArgs(bill))).id;assert.ok(billId);
+ assert.equal((await one(billCommit,commitArgs(bill))).id,billId);
+ assert.equal(Number((await one("select financial_bill_amount_cents from public.uploads where id=$1",[billId])).financial_bill_amount_cents),4200);
+ await role("service_role");assert.equal((await one("select public.supervisor_financial_bill_proof($1,$2,$3) id",[a.business,bill.id,bill.hash])).id,billId);
+ const billDuplicate=await draftInvoice(billEffect,"leo.financial_bill.v1");
+ await claimInvoice(billDuplicate);await role("authenticated",a.owner);await denied(()=>one(billCommit,commitArgs(billDuplicate)));
+ await role("authenticated",b.owner);assert.equal(await one("select id from public.uploads where id=$1",[billId]),null);
  await role("service_role");
  await db.query("delete from public.memberships where business_id=$1 and user_id=$2",[a.business,a.owner]);
  await denied(()=>one(capture,args));
