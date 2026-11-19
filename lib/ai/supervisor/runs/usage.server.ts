@@ -94,6 +94,12 @@ type DurableProviderScope = {
 };
 type DurableProviderContext = { scope:DurableProviderScope; launched:string[]; denied:boolean };
 const durableProviderTurns = new AsyncLocalStorage<DurableProviderContext>();
+const DURABLE_PROVIDER_OUTPUT_CAP=1200;
+/** Keep the independently authorized unattended spend envelope distinct from
+ * the interactive Supervisor's reasoning allowance, before request creation. */
+export function currentDurableProviderOutputCap():number|undefined{
+  return durableProviderTurns.getStore()?DURABLE_PROVIDER_OUTPUT_CAP:undefined;
+}
 export function withDurableProviderTurn<T>(scope:DurableProviderScope,work:()=>Promise<T>):Promise<T>{
   return durableProviderTurns.run({scope,launched:[],denied:false},work);
 }
@@ -135,7 +141,7 @@ export async function reserveDurableProviderRequest(
   try{
     const model=params.model,output=params.max_output_tokens;
     if(typeof model!=="string"||typeof output!=="number"||!Number.isSafeInteger(output)||
-       output<1||output>1200)throw new Error("durable_provider_request_invalid");
+       output<1||output>DURABLE_PROVIDER_OUTPUT_CAP)throw new Error("durable_provider_request_invalid");
     // Measure text/framing separately from trusted attachment binary
     // transport. The provider tokenizes the decoded media, not the base64
     // representation. Strip only the binary data URL in a real user content

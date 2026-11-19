@@ -58,7 +58,7 @@ export function rankPriority(source:PrioritySource,now:Date):PriorityDecision{
   const severityClass=!unverified&&source.severity==="critical"?300:
     !unverified&&source.severity==="high"?200:100;
   // An approved supplier draft is an owner-action item, never a generic cost anomaly.
-  let priority=severityClass+(source.sourceType==="supplier_po"?30:
+  let priority=severityClass+((source.sourceType==="supplier_po"||source.sourceType==="supplier_dispatch")?30:
     ownerAction?25:source.sourceType==="alert"?15:10);
   if(overdue)priority+=20;
   if(source.confidence==="high")priority+=5;
@@ -68,6 +68,8 @@ export function rankPriority(source:PrioritySource,now:Date):PriorityDecision{
     source.sourceType+":"+source.sourceId+":"+revisionHash);
   const reason=source.sourceType==="supplier_po"?
     "Supplier purchase-order draft needs your approval":
+    source.sourceType==="supplier_dispatch"?
+    "Approved order unresolved: was the supplier contacted by Gmail, phone or portal, and what did they confirm?":
     overdue?"Overdue item needs review":
     source.sourceType==="alert"?"Actionable café alert needs review":
     ownerAction?"Owner task needs review":"Task response needs review";
@@ -80,7 +82,8 @@ export function choosePriorities(sources:readonly PrioritySource[],now:Date,limi
     (s.sourceType==="operating_task"&&!alreadyNotifiedTaskKinds.has(s.kind)&&
       (s.status==="needs_owner"||s.status==="needs_response"||
        (options?.includeWatching===true&&s.status==="watching")))||
-    (s.sourceType==="supplier_po"&&s.status==="draft"))
+    (s.sourceType==="supplier_po"&&s.status==="draft")||
+    (s.sourceType==="supplier_dispatch"&&s.status==="approved_for_ordering"))
     .map(s=>rankPriority(s,now));
   return candidates.sort((a,b)=>b.priority-a.priority||
     a.source.createdAt.localeCompare(b.source.createdAt)||

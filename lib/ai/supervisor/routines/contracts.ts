@@ -40,7 +40,7 @@ export type RoutineOccurrence={
 };
 export type PrioritySource={
   businessId:string;ownerUserId:string;
-  sourceType:"alert"|"operating_task"|"supplier_po";sourceId:string;
+  sourceType:"alert"|"operating_task"|"supplier_po"|"supplier_dispatch";sourceId:string;
   /** Verified draft-thread destination for an owner-only purchasing follow-up. */
   sourceThreadId?:string;
   kind:string;status:string;createdAt:string;dueAt?:string|null;
