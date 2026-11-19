@@ -8,18 +8,21 @@ import {homedir} from 'node:os';
 import {createHash} from 'node:crypto';
 import {pathToFileURL} from 'node:url';
 import {readMuseNotes} from './muse-local-notes.mjs';
-import {parseCodexReviewState} from './github.mjs';
+import {parseCodexReviewState,parseOwnerQuestion} from './github.mjs';
 
 const millis=t=>{const n=Date.parse(t||'');return Number.isFinite(n)?n:null;};
 const identity=a=>createHash('sha256').update(JSON.stringify(a)).digest('hex').slice(0,24);
 
-const QUERY=`query MuseMonitor($owner:String!,$repo:String!){
+export const QUERY=`query MuseMonitor($owner:String!,$repo:String!){
  repository(owner:$owner,name:$repo){
+  nameWithOwner
   pullRequests(states:OPEN,first:70,orderBy:{field:UPDATED_AT,direction:DESC}){
    pageInfo{hasNextPage}
-   nodes{number title url isDraft headRefOid
+   nodes{number title url isDraft headRefOid body authorAssociation
+    headRepository{nameWithOwner}
+    labels(first:100){pageInfo{hasNextPage} nodes{name}}
     headRef{target{... on Commit{committedDate statusCheckRollup{state}}}}
-    comments(last:100){nodes{body createdAt author{login}}}
+    comments(last:100){pageInfo{hasPreviousPage} nodes{body createdAt url authorAssociation author{login}}}
    }
   }
   recentlyMerged:pullRequests(states:MERGED,first:25,orderBy:{field:UPDATED_AT,direction:DESC}){
@@ -36,6 +39,28 @@ function codexStatus(comments,head){
   .filter(Boolean);
  return states.at(-1)||'unknown';
 }
+// A question is an escalation, never an approval. Reuse the existing PR-body
+// marker and label. Only a trusted same-repository PR/body or trusted comment
+// may supply its text. A label with incomplete evidence still blocks nudges.
+function ownerQuestion(p,repo){
+ const trusted=a=>['OWNER','MEMBER','COLLABORATOR'].includes(a);
+ const sameRepo=typeof repo==='string'&&p.headRepository?.nameWithOwner===repo;
+ const body=sameRepo&&trusted(p.authorAssociation)?parseOwnerQuestion(p.body):null;
+ const labeled=(p.labels?.nodes||[]).some(l=>l.name==='needs-owner-decision');
+ const markerPresent=sameRepo&&trusted(p.authorAssociation)&&
+  /<!-- aicafe-owner-question\s/.test(p.body||'');
+ if(body)return {status:'requested',question:body,url:p.url};
+ if(labeled){
+  const latest=[...(p.comments?.nodes||[])].reverse().find(c=>
+   trusted(c.authorAssociation)&&!c.author?.login?.endsWith('[bot]')&&parseOwnerQuestion(c.body));
+  if(latest)return {status:'requested',question:parseOwnerQuestion(latest.body),url:p.url};
+  return {status:'missing_details',question:'Owner decision requested; exact question missing. Ask the coding chat to publish it on this PR.',url:p.url};
+ }
+ if(markerPresent)return {status:'missing_details',question:'Invalid or multiple owner-question markers. Ask the coding chat for one precise decision.',url:p.url};
+ if(!p.labels||p.labels.pageInfo?.hasNextPage)
+  return {status:'unverified',question:'Owner decision label evidence incomplete; inspect the PR before continuing.',url:p.url};
+ return null;
+}
 export function normalizeGithubFacts(response,now=new Date().toISOString()){
  const repo=response?.data?.repository;
  if(response?.errors?.length||!repo?.pullRequests||repo.pullRequests.pageInfo?.hasNextPage)
@@ -50,7 +75,8 @@ export function normalizeGithubFacts(response,now=new Date().toISOString()){
    committed_at:p.headRef?.target?.committedDate||null,
    ci:check==='SUCCESS'?'observed_green':check==='FAILURE'||check==='ERROR'?'failure':
       check==='PENDING'?'pending':'unknown',
-   codex:codexStatus(p.comments?.nodes,p.headRefOid)});
+   codex:codexStatus(p.comments?.nodes,p.headRefOid),
+   owner_question:ownerQuestion(p,repo.nameWithOwner)});
  }
  return {version:1,observed_at:now,source:'github_graphql_read_only',
   prs,merged_prs:(repo.recentlyMerged?.nodes||[]).filter(p=>p.mergedAt)
@@ -83,13 +109,29 @@ export function museActions(facts,previous,notes,{now=new Date().toISOString(),
  };
  // Owner reminders are independent of GitHub health.
  for(const [task,entry] of Object.entries(records)){
-  if(entry.stage==='waiting_owner'&&millis(entry.updated_at)!==null&&
+  if(entry.stage==='waiting_owner'&&!(fresh&&byPr.get(entry.pr_number)?.owner_question)&&millis(entry.updated_at)!==null&&
    clock-millis(entry.updated_at)>=ownerReminderMinutes*60000)
    emit('remind_owner',task,entry.pr_number,null,entry.chat_url||null,
      'Review the proposed architecture in the existing chat',
      String(entry.revision));
  }
  if(!fresh)return {fresh:false,actions,blocked:[{reason:'github_evidence_stale_or_unavailable'}]};
+ // The PR itself declares the blocker, even when Muse has no saved chat URL.
+ // Deduplicate by PR + exact question, not commit SHA or mutable note revision.
+ for(const p of facts.prs||[]){
+  const q=p.owner_question;
+  if(!q)continue;
+  const entry=Object.values(records).find(e=>e.pr_number===p.number);
+  if(q.status==='unverified'||q.status==='missing_details'){
+   blocked.push({task_id:entry?.task_id??null,pr_number:p.number,reason:q.question});
+   // Route an incomplete question back to the coder, not an owner approval.
+   if(entry?.chat_url)emit('continue_chat',entry.task_id,p.number,p.head_sha,entry.chat_url,q.question,'owner_question_details');
+   continue;
+  }
+  actions.push({id:identity(['owner_question',p.number,q.question]),kind:'remind_owner',
+   task_id:entry?.task_id??null,pr_number:p.number,head_sha:p.head_sha,
+   chat_url:entry?.chat_url||null,pr_url:p.url,owner_question:true,reason:q.question});
+ }
  for(const entry of Object.values(records)){
   if(!entry.pr_number||['waiting_owner','paused'].includes(entry.stage))continue;
   const p=byPr.get(entry.pr_number);
@@ -99,12 +141,16 @@ export function museActions(facts,previous,notes,{now=new Date().toISOString(),
      reason:'pr_missing_or_closed_unmerged_verify_github'});
    continue;
   }
+  if(p.owner_question)continue;
   const head=p.head_sha;
+  const before=seen.find(v=>v.number===p.number);
   let kind=null,reason=null;
   if(p.ci==='failure'){kind='fix_ci';reason='Investigate current-head failing checks and rerun';}
   else if(p.codex==='findings'){kind='fix_codex';reason='Address exact-head Codex findings and retest';}
   else if(!p.draft&&p.ci==='observed_green'&&p.codex==='clean'){
    kind='verify_merge';reason='Verify required CI, approval, security and acceptance gates; merge only if eligible';
+  }else if(before?.head_sha===head&&before.ci==='pending'&&p.ci==='observed_green'&&p.codex!=='pending'){
+   kind='continue_chat';reason='Current-head CI completed green; continue verification and next eligible step';
   }else if(entry.stage!=='ready_review'&&
     (millis(p.committed_at)!==null&&clock-millis(p.committed_at)>=idleMinutes*60000)&&
     p.ci!=='pending'&&p.codex!=='pending'){
@@ -133,6 +179,13 @@ export function reserveMuseActions(existing,planned,now){
  const next=structuredClone(existing||{version:1,events:{}});
  if(next.version!==1||!next.events)throw Error('Invalid Muse event record');
  const newly=[];
+ // A completed/withdrawn PR question is no longer an outstanding suggestion.
+ // Never infer withdrawal from an unavailable GitHub read or alter delivery receipts.
+ if(planned.fresh){
+  const active=new Set(planned.actions.filter(a=>a.owner_question).map(a=>a.id));
+  for(const e of Object.values(next.events))
+   if(e.owner_question&&e.status==='suggested_unverified'&&!active.has(e.id))e.status='superseded';
+ }
  for(const a of planned.actions){
   if(next.events[a.id])continue;
   next.events[a.id]={...a,status:'suggested_unverified',created_at:now};
