@@ -1977,3 +1977,42 @@ begin
 end $$;
 revoke all on function public.supervisor_answer_owner_run_v2(uuid,uuid,uuid,uuid,uuid) from public,anon,authenticated;
 grant execute on function public.supervisor_answer_owner_run_v2(uuid,uuid,uuid,uuid,uuid) to service_role;
+
+-- Explicit authenticated owner cancellation uses the existing run/step locks.
+-- It is deliberately not the worker's token-based stop RPC: an owner may
+-- stop a live worker, but cannot claim an in-flight effect was undone.
+create function public.supervisor_cancel_owner_run_v2(
+ p_business_id uuid,p_owner_user_id uuid,p_thread_id uuid,p_run_id uuid
+) returns text language plpgsql security invoker set search_path=public as $$
+declare r public.supervisor_runs;s public.supervisor_run_steps;v_now timestamptz;v_code text;
+begin
+ if coalesce(auth.role(),'')<>'service_role'
+   or not public.supervisor_routine_owner_authorized(p_business_id,p_owner_user_id,p_thread_id)
+   then raise exception 'owner_run_cancel_denied' using errcode='42501'; end if;
+ select * into r from public.supervisor_runs where id=p_run_id and business_id=p_business_id
+   and owner_user_id=p_owner_user_id and thread_id=p_thread_id and execution_version=2 for update;
+ if not found then return 'not_found'; end if;
+ if r.status='completed' or exists(select 1 from public.ai_agent_jobs j
+   where j.durable_run_id=r.id and j.business_id=r.business_id and j.owner_user_id=r.owner_user_id
+    and j.thread_id=r.thread_id and j.status='done' and j.reply_message_id is not null)
+    then return 'completed'; end if;
+ select * into s from public.supervisor_run_steps where run_id=r.id and business_id=r.business_id
+   and status<>'completed' order by step_index limit 1 for update;
+ if not found then return 'completed'; end if;
+ if r.status='blocked' and s.error_code not in ('awaiting_owner','cancelled','cancelled_effect_uncertain','effect_uncertain','lease_expired','turn_failed')
+   then return 'blocked'; end if;
+ v_code:=case when s.checkpoint_phase='effect_pending' or s.error_code in ('effect_uncertain','cancelled_effect_uncertain')
+   then 'cancelled_effect_uncertain' else 'cancelled' end;
+ v_now:=clock_timestamp();
+ update public.supervisor_run_steps set status='blocked',error_code=v_code,worker_id=null,
+   claim_token=null,lease_until=null,next_retry_at=null,updated_at=v_now where id=s.id;
+ update public.supervisor_runs set status='blocked',awaiting_question_id=null,
+   dispatch_after=null,updated_at=v_now where id=r.id;
+ update public.ai_agent_jobs set status='failed',error_code=v_code,finished_at=v_now,
+   updated_at=v_now,durable_claim_token=null where durable_run_id=r.id
+   and business_id=r.business_id and owner_user_id=r.owner_user_id and thread_id=r.thread_id
+   and status='running';
+ return case when v_code='cancelled' then 'cancelled' else 'uncertain' end;
+end $$;
+revoke all on function public.supervisor_cancel_owner_run_v2(uuid,uuid,uuid,uuid) from public,anon,authenticated;
+grant execute on function public.supervisor_cancel_owner_run_v2(uuid,uuid,uuid,uuid) to service_role;

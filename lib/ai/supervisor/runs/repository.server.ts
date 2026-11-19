@@ -324,3 +324,9 @@ export async function answerOwnerRun(scope:RunScope,questionId:string,answerId:s
  if(result.businessId!==s.businessId||result.ownerUserId!==s.ownerUserId||result.threadId!==s.threadId)throw new Error("Supervisor run outside owner scope");
  return result;
 }
+
+export async function cancelOwnerRun(scope:RunScope,runId:string){
+ const {scope:s,runId:id}=parseIdentity(scope,runId);
+ return callRpc("supervisor_cancel_owner_run_v2",{p_business_id:s.businessId,p_owner_user_id:s.ownerUserId,
+   p_thread_id:s.threadId,p_run_id:id},v=>z.enum(["cancelled","uncertain","completed","not_found","blocked"]).parse(v));
+}

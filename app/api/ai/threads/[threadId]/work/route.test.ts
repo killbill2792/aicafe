@@ -10,7 +10,9 @@ vi.mock("@/lib/ai/conversations/auth.server", () => ({
 }));
 vi.mock("@/lib/supabase/server", () => ({ createServerSupabaseClient: client }));
 
-import { GET } from "./route";
+const cancel=vi.hoisted(()=>vi.fn());
+vi.mock("@/lib/ai/supervisor/runs/repository.server",()=>({cancelOwnerRun:cancel}));
+import { GET, POST } from "./route";
 
 const thread = "123e4567-e89b-42d3-a456-426614174000";
 function database() {
@@ -209,4 +211,27 @@ describe("GET /work owner isolation and receipt verification", () => {
     expect(response.status).not.toBe(200);
     expect(client).not.toHaveBeenCalled();
   });
+});
+
+describe("POST /work scoped owner cancellation",()=>{
+ const runId="123e4567-e89b-42d3-a456-426614174111";
+ const post=(body:unknown,origin="https://example.org")=>POST(new Request("https://example.org/api/ai/work",{
+   method:"POST",headers:{"Content-Type":"application/json",Origin:origin},body:JSON.stringify(body)
+ }),{params:Promise.resolve({threadId:thread})});
+ it("cancels the exact authorized run without implying an in-flight effect was undone",async()=>{
+   cancel.mockResolvedValue("uncertain");
+   const response=await post({action:"cancel",runId});
+   expect(response.status).toBe(200);
+   expect(await response.json()).toEqual({state:"uncertain",runId});
+   expect(cancel).toHaveBeenCalledWith({businessId:"cafe-a",ownerUserId:"owner-a",threadId:thread},runId);
+ });
+ it("does not accept another owner or cross-origin cancellation",async()=>{
+   expect((await post({action:"cancel",runId,ownerUserId:"foreign"})).status).toBe(422);
+   expect((await post({action:"cancel",runId},"https://foreign.example")).status).toBe(403);
+   expect(cancel).not.toHaveBeenCalled();
+ });
+ it("does not expose a foreign run",async()=>{
+   cancel.mockResolvedValue("not_found");
+   expect((await post({action:"cancel",runId})).status).toBe(404);
+ });
 });

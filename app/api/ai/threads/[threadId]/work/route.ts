@@ -1,6 +1,7 @@
-import { authenticatedConversationContext } from "@/lib/ai/conversations/auth.server";
+import {z} from "zod";
+import { authenticatedConversationContext, ConversationApiError } from "@/lib/ai/conversations/auth.server";
 import { threadIdInput } from "@/lib/ai/conversations/contracts";
-import { conversationError, conversationJson, parseInput } from "@/lib/ai/conversations/http.server";
+import { conversationError, conversationJson, parseInput, requireSameOrigin, readBoundedJson } from "@/lib/ai/conversations/http.server";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
 import {
   projectOwnerWork, type RunRow, type StepRow, type ProposalRow, type AttemptRow, type JobRow, type InvestigationRow,
@@ -116,4 +117,21 @@ export async function GET(request: Request, context: RouteContext) {
   } catch (error) {
     return conversationError(error);
   }
+}
+
+/** Explicit owner control on existing Work endpoint. Cancellation is not an
+ * undo of any already authorized provider action or a separate approval. */
+export async function POST(request:Request,context:RouteContext){
+  try{
+    requireSameOrigin(request);
+    const {threadId}=await context.params;
+    const id=parseInput(threadIdInput,threadId);
+    const input=parseInput(z.strictObject({action:z.literal("cancel"),runId:z.uuid()}),await readBoundedJson(request));
+    const {scope,service}=await authenticatedConversationContext();
+    await service.getThread(id);
+    const {cancelOwnerRun}=await import("@/lib/ai/supervisor/runs/repository.server");
+    const state=await cancelOwnerRun({...scope,threadId:id},input.runId);
+    if(state==="not_found")throw new ConversationApiError(404,"thread_not_found");
+    return conversationJson({state,runId:input.runId});
+  }catch(error){return conversationError(error);}
 }
