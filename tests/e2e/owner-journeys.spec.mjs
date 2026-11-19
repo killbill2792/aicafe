@@ -322,6 +322,113 @@ test("@home Task15A persisted investigation opens in real Operations without lea
   }
 });
 
+test("@home Task15B owner reports a real maintenance incident and independently verifies working equipment",async({browser})=>{
+  test.setTimeout(120_000);
+  const own=seededCafe(0),other=seededCafe(1),label="Disposable espresso "+randomUUID().slice(0,8);
+  const db=new pg.Client({host:"127.0.0.1",port:54322,database:"postgres",
+    user:"postgres",password:"postgres",connectionTimeoutMillis:5000});
+  const ownContext=await browser.newContext({baseURL:"http://127.0.0.1:3000",serviceWorkers:"block"});
+  const otherContext=await browser.newContext({baseURL:"http://127.0.0.1:3000",serviceWorkers:"block"});
+  let taskId=null,connected=false;
+  try{
+    await db.connect();connected=true;
+    const page=await ownContext.newPage();
+    await login(page,own);
+    await openOwnedPage(page,own,"operations");
+    await page.setViewportSize({width:390,height:844});
+    const form=page.getByRole("region",{name:"Report equipment problem"});
+    await expect(form).toBeVisible();
+    await form.getByLabel("Equipment name or label").fill(label);
+    await form.getByLabel("What happened?").fill("Machine stopped extracting espresso during service");
+    await form.getByLabel("Urgency").selectOption("high");
+    await form.getByRole("button",{name:"Report problem"}).click();
+    const getCase=()=>db.query("select id,status,payload,resolved_at from public.operating_tasks "+
+      "where business_id=$1 and kind='maintenance_issue' and payload->>'equipmentLabel'=$2",
+      [own.businessId,label]).then(r=>r.rows[0]??null);
+    await expect.poll(async()=>(await getCase())?.payload?.maintenanceStage,{timeout:25_000}).toBe("reported");
+    const reported=await getCase();
+    taskId=reported.id;
+    expect(reported.status).toBe("needs_owner");
+    expect(reported.payload).toMatchObject({externalSent:false,repairVerified:false,
+      severity:"high",maintenanceStage:"reported"});
+    expect(reported.resolved_at).toBeNull();
+    const initialEvents=await db.query("select kind from public.maintenance_case_events "+
+      "where business_id=$1 and task_id=$2",[own.businessId,taskId]);
+    expect(initialEvents.rows.map(x=>x.kind)).toEqual(["report"]);
+    await page.reload();
+    const card=page.locator('article[data-task-kind="maintenance_issue"]').filter({hasText:label});
+    await expect(card).toBeVisible({timeout:30_000});
+    await expect(card).toContainText("Reported");
+    // A repair CLAIM is saved as evidence but does not close a physical case.
+    const controls=card.getByRole("region",{name:"Equipment maintenance"});
+    await controls.getByLabel("Details or evidence").fill("Technician told owner the repair is done");
+    await controls.getByRole("button",{name:"Record a claimed repair"}).click();
+    await expect.poll(async()=>(await getCase())?.payload?.maintenanceStage,{timeout:25_000})
+      .toBe("repair_claimed");
+    const claimed=await getCase();
+    expect(claimed.status).toBe("needs_owner");
+    expect(claimed.resolved_at).toBeNull();
+    expect(claimed.payload).toMatchObject({repairVerified:false,externalSent:false});
+    await page.reload();
+    await expect(card).toContainText("Repair claimed");
+    await card.getByRole("button",{name:"I inspected the equipment and confirmed it works"}).click();
+    await expect.poll(async()=>(await getCase())?.status,{timeout:25_000}).toBe("handled");
+    const checked=await getCase();
+    expect(checked.resolved_at).not.toBeNull();
+    expect(checked.payload).toMatchObject({maintenanceStage:"verified_repaired",
+      repairVerified:true,externalSent:false});
+    const history=await db.query("select kind,source_kind from public.maintenance_case_events "+
+      "where business_id=$1 and task_id=$2",[own.businessId,taskId]);
+    expect(new Set(history.rows.map(x=>x.kind)))
+      .toEqual(new Set(["report","repair_claim","operational_verification"]));
+    expect(history.rows.some(x=>x.source_kind==="owner_operational_check")).toBe(true);
+    // The handled case is a real saved Operations row. The global café-name
+    // breadcrumb is intentionally hidden at mobile width; it is not proof
+    // of authentication or of this case being absent.
+    await page.goto("/en/operations?agent=leo&status=handled&task="+encodeURIComponent(taskId));
+    await expect(page).not.toHaveURL(/login|onboarding/);
+    await expect(page.getByRole("main")).toBeVisible();
+    await expect(page.locator('article[data-task-kind="maintenance_issue"]').filter({hasText:label}))
+      .toContainText("Repair independently verified");
+    await expect(page.locator('article[data-task-kind="maintenance_issue"]').filter({hasText:label})
+      .getByRole("link",{name:"Open maintenance case"}))
+      .toHaveAttribute("href",/status=handled/);
+    const outside=await otherContext.newPage();
+    await login(outside,other);
+    await outside.goto("/en/operations");
+    await expect(outside).not.toHaveURL(/login|onboarding/);
+    await expect(outside.getByRole("main")).toBeVisible();
+    await expect(outside.locator('article[data-task-kind="maintenance_issue"]').filter({hasText:label}))
+      .toHaveCount(0);
+    await outside.goto("/en/operations?agent=leo&status=handled");
+    await expect(outside).not.toHaveURL(/login|onboarding/);
+    await expect(outside.getByRole("main")).toBeVisible();
+    await expect(outside.locator('article[data-task-kind="maintenance_issue"]').filter({hasText:label}))
+      .toHaveCount(0);
+    // A sent message must never be fabricated by the UI or the SQL workflow.
+    const latest=await getCase();
+    expect(latest.payload.externalSent).toBe(false);
+    // A router refresh can replace the execution context after the save.
+    // Retry the exact authenticated handled-case and viewport assertions
+    // together; neither a redirect nor a real overflow may pass.
+    await expect(async()=>{
+      await expect(page).toHaveURL(/\/operations\?.*status=handled/);
+      await expect(page.locator('article[data-task-kind="maintenance_issue"]').filter({hasText:label}))
+        .toContainText("Repair independently verified");
+      const bounds=await page.evaluate(()=>({
+        page:document.documentElement.scrollWidth,viewport:document.documentElement.clientWidth
+      }));
+      expect(bounds.page).toBeLessThanOrEqual(bounds.viewport+1);
+    }).toPass({timeout:25_000});
+  }finally{
+    await ownContext.close();await otherContext.close();
+    if(connected&&taskId)await db.query(
+      "delete from public.operating_tasks where business_id=$1 and id=$2",
+      [own.businessId,taskId]).catch(()=>{});
+    await db.end().catch(()=>{});
+  }
+});
+
 test("@home owner uploads and reselects a private receipt while another café cannot read it", async ({browser}) => {
   test.setTimeout(90_000); // Two signed-in sessions, one real Storage upload and a reload.
   const owner = seededCafe(0), other = seededCafe(1);

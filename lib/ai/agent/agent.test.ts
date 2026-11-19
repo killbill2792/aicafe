@@ -174,7 +174,7 @@ describe("numbers, statuses, and strict tool contracts", () => {
       "get_break_even","get_cost_summary","get_usage_variance","get_product_costs","get_ingredient_costs","get_inventory",
       "get_item_sales","get_price_recommendation","get_today_so_far","draft_week_schedule","simulate_staff_absence","suggest_new_item_price","milk_swap_price","simulate_scenario","calculate","propose_price_change","propose_price_experiment","get_price_monitor_status","propose_goal","record_checkin","get_goal_status",
       "propose_schedule","propose_shift_change","propose_add_staff","propose_staff_change",
-      "propose_availability_change","propose_rule_change","propose_send_schedule","propose_purchases","get_supplier_purchase_orders","inspect_supplier_purchase","propose_supplier_purchase_order","record_supplier_order_outcome","propose_supplier_vendor_email","get_nearby_events","get_events","propose_event_plan","inspect_public_page","web_search","manage_commitment","get_supervisor_permissions"]);
+      "propose_availability_change","propose_rule_change","propose_send_schedule","propose_purchases","get_supplier_purchase_orders","inspect_supplier_purchase","propose_supplier_purchase_order","record_supplier_order_outcome","propose_supplier_vendor_email","get_nearby_events","get_events","propose_event_plan","inspect_public_page","web_search","manage_commitment","get_supervisor_permissions","get_maintenance_staff_candidates","propose_maintenance_staff_assignment","record_maintenance_repair_claim","search_maintenance_vendor","propose_maintenance_vendor_request","get_maintenance_cases"]);
     expect(agentToolDefinitions.every(t=>t.strict)).toBe(true);
     for (const tool of agentToolDefinitions) {
       expect(Object.hasOwn(tool.parameters,"$schema")).toBe(false);
@@ -184,6 +184,15 @@ describe("numbers, statuses, and strict tool contracts", () => {
     expect(requestedPeriod("today","2026-10-21")).toEqual({from:"2026-10-21",to:"2026-10-21"});
     expect(requestedPeriod("week","2026-10-21")).toEqual({from:"2026-10-15",to:"2026-10-21"});
     expect(requestedPeriod("month","2026-10-21")).toEqual({from:"2026-10-01",to:"2026-10-21"});
+  });
+  it("compacts nullable primitives without dropping provider constraints or strict validation",()=>{
+    const vendor=agentToolDefinitions.find(t=>t.name==="propose_maintenance_vendor_request")!;
+    const properties=vendor.parameters.properties as Record<string,unknown>;
+    expect(properties.contactMessageId).toMatchObject({type:["string","null"],minLength:8,maxLength:100});
+    expect(properties.dueAt).toMatchObject({type:["string","null"],format:"date-time"});
+    expect(properties.recipient).toMatchObject({type:"string",format:"email"});
+    expect(vendor.parameters.required).toEqual(Object.keys(properties));
+    expect(vendor.parameters.additionalProperties).toBe(false);
   });
   it("lists every property as required in nested objects too (OpenAI strict mode rejects the whole request otherwise)", () => {
     const gaps:string[]=[];

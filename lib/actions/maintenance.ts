@@ -68,3 +68,19 @@ export async function recordMaintenanceProgress(raw:unknown):Promise<Maintenance
   revalidatePath("/");
   return {ok:true,taskId:parsed.data.taskId,stage:data};
 }
+
+/** Explicit owner approval for exact employee and work in the existing inbox. */
+export async function assignMaintenanceWork(raw:unknown):Promise<MaintenanceActionResult>{
+  const parsed=z.strictObject({taskId:z.string().startsWith("maintenance:").max(160),
+    employeeId:z.uuid(),nonce:z.uuid(),prompt:z.string().trim().min(1).max(1200)}).safeParse(raw);
+  if(!parsed.success)return {ok:false,error:"invalid_request"};
+  const session=await ownerSession();
+  if(!session)return {ok:false,error:"owner_access_required"};
+  const {data,error}=await session.supabase.rpc("maintenance_assign_staff",{
+    p_business_id:session.businessId,p_task_id:parsed.data.taskId,p_employee_id:parsed.data.employeeId,
+    p_nonce:parsed.data.nonce,p_prompt:parsed.data.prompt,
+  });
+  if(error||typeof data?.id!=="string")return {ok:false,error:"source_unavailable"};
+  revalidatePath("/operations");revalidatePath("/");
+  return {ok:true,taskId:parsed.data.taskId};
+}

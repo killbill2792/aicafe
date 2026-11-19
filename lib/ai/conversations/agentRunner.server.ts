@@ -30,6 +30,7 @@ import type {SupplierPurchaseOrderEffect} from "@/lib/ai/supervisor/loop/purchas
 import {SupabaseLoopRepository} from "@/lib/ai/supervisor/loop/supabase.server";
 import {SupervisorEffectGateway} from "@/lib/ai/supervisor/loop/effectGateway.server";
 import {gmailCapabilityId,type GmailProposalInput} from "@/lib/ai/supervisor/loop/gmail.server";
+import {maintenanceContext} from "@/lib/ai/supervisor/loop/maintenance.server";
 import {gmailSearch,gmailListLabels,gmailRead,gmailReadThread,gmailReadAttachment} from "@/lib/connectors/gmail/provider.server";
 import {getConnectorAccount,allowsGmail} from "@/lib/connectors/registry.server";
 import {gmailToolDefinitions} from "@/lib/ai/agent/tools";
@@ -188,6 +189,13 @@ export async function runOneTurn(p: TurnParams): Promise<{ replyId: string; repl
       ownerText:p.ownerText,
       readPermissions:()=>new SupervisorEffectGateway().listMandates({businessId:scope.businessId,ownerUserId:scope.ownerUserId}),
       canonicalData:async()=>({db:await getDb(),businessId:scope.businessId}),
+      maintenance:{
+        staff:async caseId=>maintenanceContext(await getDb(),proposalScope,{ownerMessage:{id:owner.id,text:p.ownerText}}).staff(caseId),
+        proposeStaff:async input=>maintenanceContext(await getDb(),proposalScope,{ownerMessage:{id:owner.id,text:p.ownerText}}).proposeStaff(input),
+        recordRepairClaim:async()=>{throw new Error("maintenance_worker_only");},
+        search:async(caseId,query)=>maintenanceContext(await getDb(),proposalScope,{ownerMessage:{id:owner.id,text:p.ownerText}}).search(caseId,query),
+        propose:async input=>maintenanceContext(await getDb(),proposalScope,{ownerMessage:{id:owner.id,text:p.ownerText}}).propose(input),
+      },
       menuPriceEvidence:items=>readMenuPriceEvidence(scope.businessId,items,identity.asOf,p.externalClient),
       readEconomics:async()=>readSupervisorEconomics(await getDb(),scope.businessId,identity.asOf),
       readPriceMonitors:async()=>{

@@ -17,7 +17,9 @@ import {purchaseCapabilityId} from "@/lib/ai/supervisor/loop/purchases.server";
 import {supplierPurchaseOrderCapabilityId} from "@/lib/ai/supervisor/loop/purchaseOrders.server";
 import {goalCapabilityId} from "@/lib/ai/supervisor/loop/goal.server";
 import {eventReadinessCapabilityId} from "@/lib/ai/supervisor/loop/eventReadiness.server";
-import {gmailCapabilityId,gmailEffectSchema} from "@/lib/ai/supervisor/loop/gmail.server";
+import {gmailCapabilityId,gmailEffectSchema,readMaintenanceCase} from "@/lib/ai/supervisor/loop/gmail.server";
+import en from "@/messages/en.json";
+import {maintenanceStaffCapabilityId,maintenanceAssignmentEffect} from "@/lib/ai/supervisor/loop/maintenance.server";
 import {SupervisorEffectGateway} from "@/lib/ai/supervisor/loop/effectGateway.server";
 import {createServerSupabaseClient} from "@/lib/supabase/server";
 import {publishApprovedStaffSchedule,cancelStaffPublication} from "@/lib/scheduling/staffPublication.server";
@@ -162,9 +164,14 @@ async function view(scope:OwnerLoopScope,repo:SupabaseLoopRepository,p:LoopPropo
       uncertain:counts("uncertain")}};
 
   }
+  if(p.capabilityId===maintenanceStaffCapabilityId){
+    const effect=maintenanceAssignmentEffect.parse(p.canonicalEffectPayload);
+    return {...card(p,p.status==="executing"?executionState:p.status==="approved"?"pending":undefined),
+      maintenanceAssignment:effect,productName:en.Maintenance.approvalName+" · "+effect.equipmentLabel};
+  }
   if(p.capabilityId===gmailCapabilityId){
     const effect=gmailEffectSchema.parse(p.canonicalEffectPayload);
-    return {...card(p,p.status==="executing"?executionState:undefined),
+    return {...card(p,p.status==="executing"?executionState:p.status==="approved"&&effect.maintenanceCaseId?"pending":undefined),
       gmail:{...effect},productName:"Gmail · "+effect.operation};
   }
   if(p.capabilityId===eventReadinessCapabilityId){
@@ -269,21 +276,30 @@ export async function POST(request:Request,{params}:Params){
       return conversationJson({error:"publication_cancellation_not_supported"},422);
     const purchase=p.capabilityId===purchaseCapabilityId;
     const supplierPO=p.capabilityId===supplierPurchaseOrderCapabilityId;
-    if(!staff&&!purchase&&!supplierPO&&p.capabilityId!==gmailCapabilityId&&p.capabilityId!==menuPriceChangeCapabilityId&&p.capabilityId!==priceExperimentCapabilityId&&
+    if(!staff&&!purchase&&!supplierPO&&p.capabilityId!==maintenanceStaffCapabilityId&&p.capabilityId!==gmailCapabilityId&&p.capabilityId!==menuPriceChangeCapabilityId&&p.capabilityId!==priceExperimentCapabilityId&&
       p.capabilityId!==goalCapabilityId&&p.capabilityId!==eventReadinessCapabilityId)
       return conversationJson({error:"proposal_not_found"},404);
-    if(p.capabilityId===gmailCapabilityId){
+    if(p.capabilityId===gmailCapabilityId||p.capabilityId===maintenanceStaffCapabilityId){
+      const maintenance=p.capabilityId===maintenanceStaffCapabilityId||Boolean(gmailEffectSchema.parse(p.canonicalEffectPayload).maintenanceCaseId);
       if(input.action==="start"||input.action==="edit"||input.action==="edit_purchase")
         return conversationJson({error:"gmail_action_not_supported"},422);
       if(p.status==="committed")return conversationJson({proposal:await view(scope,repo,p)});
-      if(p.revision!==input.revision||p.status!=="draft")
+      if(p.revision!==input.revision||(p.status!=="draft"&&!(maintenance&&p.status==="approved")))
         return conversationJson({state:"conflict",proposal:await view(scope,repo,p)},409);
       if(input.action==="cancel")
         return conversationJson({proposal:await view(scope,repo,await repo.transition(scope,p.id,p.revision,"reject"))});
       if(input.action!=="approve")return conversationJson({error:"gmail_action_not_supported"},422);
       // A specific owner click on this immutable card is the only outbound authority.
       try{
-        const approved=await approveLoop(scope,repo,p.id,p.revision,supervisorLoopRegistry);
+        const effect=p.capabilityId===maintenanceStaffCapabilityId?maintenanceAssignmentEffect.parse(p.canonicalEffectPayload):gmailEffectSchema.parse(p.canonicalEffectPayload);
+        const dueAt="purpose" in effect?effect.dueAt:effect.maintenanceDueAt;
+        if(effect.maintenanceCaseId){
+          const current=await readMaintenanceCase(scope,await createServerSupabaseClient(),effect.maintenanceCaseId);
+          if(current.updated_at!==effect.maintenanceCaseRevision||
+            (dueAt&&Date.parse(dueAt)<=Date.now()))
+            return conversationJson({state:"conflict",error:"maintenance_case_changed",proposal:await view(scope,repo,p)},409);
+        }
+        const approved=p.status==="approved"?p:await approveLoop(scope,repo,p.id,p.revision,supervisorLoopRegistry);
         const finished=await commitLoop(scope,supervisorLoopRegistry,repo,p.id,approved.revision,"click");
         return conversationJson({proposal:await view(scope,repo,finished.proposal)});
       }catch{

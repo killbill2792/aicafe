@@ -20,6 +20,7 @@ import {supplierPurchaseOrderCapability} from "./purchaseOrders.server";
 import {goalCapability} from "./goal.server";
 import {eventReadinessCapability} from "./eventReadiness.server";
 import {gmailCapability} from "./gmail.server";
+import {maintenanceStaffCapability} from "./maintenance.server";
 import {readMetricDay} from "@/lib/data/metricDay.server";
 import {computeMetric} from "@/lib/calc/metrics/catalog";
 import {addDays} from "@/lib/calc/goals/goalSpec";
@@ -181,4 +182,4 @@ export const priceExperimentCapability=registerLoopCapability({
     };
   },
 });
-export const supervisorLoopRegistry=loopRegistry(priceExperimentCapability,menuPriceChangeCapability,purchaseCapability,supplierPurchaseOrderCapability,goalCapability,eventReadinessCapability,gmailCapability,...staffCapabilities);
+export const supervisorLoopRegistry=loopRegistry(priceExperimentCapability,menuPriceChangeCapability,purchaseCapability,supplierPurchaseOrderCapability,goalCapability,eventReadinessCapability,gmailCapability,maintenanceStaffCapability,...staffCapabilities);

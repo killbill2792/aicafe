@@ -1,6 +1,7 @@
 "use client";
 import {useCallback,useEffect,useRef,useState} from "react";
 import {useRouter} from "next/navigation";
+import en from "@/messages/en.json";
 import {createBrowserSupabaseClient} from "@/lib/supabase/client";
 import type {StaffMessage,StaffRequest} from "@/lib/staffCommunication/channel.server";
 import {crewOutboxKey,crewRejectedDraftKey,loadCrewPending,saveCrewPending,sameCrewOperation,
@@ -9,12 +10,15 @@ export default function CrewInbox({name,requests,messages,authUserId}:{
  name:string;requests:StaffRequest[];messages:StaffMessage[];authUserId:string;
 }){
  const router=useRouter(),sending=useRef(false);
+ const copy=en.Maintenance;
  const pendingRef=useRef<PendingCrewSubmission|null>(null);
  const storageKey=crewOutboxKey(authUserId),draftKey=crewRejectedDraftKey(authUserId);
  const [rejectedDraft,setRejectedDraft]=useState("");
  const [pending,setPending]=useState(false);
  const [notes,setNotes]=useState<Record<string,string>>({});
  const [report,setReport]=useState("");
+ const [equipment,setEquipment]=useState("");
+ const [severity,setSeverity]=useState("unknown");
  const [busy,setBusy]=useState(""),[feedback,setFeedback]=useState("");
  const retryPending=useCallback(async()=>{
   const operation=pendingRef.current;
@@ -80,7 +84,7 @@ export default function CrewInbox({name,requests,messages,authUserId}:{
    pendingRef.current=null;
    setPending(false);
    if(operation.requestId)setNotes(value=>({...value,[operation.requestId!]:""}));
-   else setReport("");
+   else {setReport("");setEquipment("");setSeverity("unknown");}
    setFeedback("Response saved. Your café supervisor can now review it.");
    router.refresh();
   }finally{sending.current=false;setBusy("");}
@@ -183,7 +187,12 @@ export default function CrewInbox({name,requests,messages,authUserId}:{
        className="min-h-12 rounded-full bg-accent px-5 py-2 font-semibold text-on-accent disabled:opacity-50">Confirm</button>
        <button disabled={Boolean(busy)||pending} onClick={()=>send(req.id,"decline",notes[req.id]?.trim()||null)}
         className="min-h-12 rounded-full border border-line px-5 py-2 font-semibold disabled:opacity-50">Cannot work</button></>
-      :<button disabled={Boolean(busy)||pending} onClick={()=>send(req.id,"complete",notes[req.id]?.trim()||null)}
+      :req.source_type==="maintenance_verify"?<>
+        <button disabled={Boolean(busy)||pending} onClick={()=>send(req.id,"complete",copy.crewWorkingReceipt)}
+          className="min-h-12 rounded-full bg-accent px-5 py-2 font-semibold text-on-accent disabled:opacity-50">{copy.crewWorking}</button>
+        <button disabled={Boolean(busy)||pending} onClick={()=>send(req.id,"message",copy.crewNotWorkingReceipt+" "+(notes[req.id]?.trim()||""))}
+          className="min-h-12 rounded-full border border-line px-5 py-2 font-semibold disabled:opacity-50">{copy.crewNotWorking}</button>
+      </>:<button disabled={Boolean(busy)||pending} onClick={()=>send(req.id,"complete",notes[req.id]?.trim()||null)}
         className="min-h-12 rounded-full bg-accent px-5 py-2 font-semibold text-on-accent disabled:opacity-50">Mark complete</button>)}
      <button disabled={Boolean(busy)||pending||!notes[req.id]?.trim()}
       onClick={()=>send(req.id,"message",notes[req.id]?.trim()||null)}
@@ -199,8 +208,20 @@ export default function CrewInbox({name,requests,messages,authUserId}:{
    <textarea id="crew-report" rows={4} maxLength={2000} required disabled={pending} value={report}
     onChange={e=>setReport(e.target.value)} placeholder="Describe what you noticed…"
     className="w-full rounded-xl border border-line bg-white p-3 text-ink"/>
-   <button disabled={Boolean(busy)||pending||!report.trim()}
-    onClick={()=>send(null,"report",report.trim())}
+   <label className="block text-sm">{copy.crewEquipment}
+    <input value={equipment} onChange={e=>setEquipment(e.target.value.replace(/[\r\n]/g," "))} maxLength={120}
+     disabled={pending} className="mt-1 w-full rounded-xl border border-line p-3"/>
+   </label>
+   {equipment.trim()&&<label className="block text-sm">{copy.crewUrgency}
+    <select value={severity} onChange={e=>setSeverity(e.target.value)} disabled={pending}
+     className="mt-1 w-full rounded-xl border border-line p-3">
+     <option value="unknown">{copy.crewUnknown}</option><option value="normal">{copy.crewNormal}</option>
+     <option value="high">{copy.crewHigh}</option><option value="critical">{copy.crewCritical}</option>
+    </select>
+   </label>}
+   {equipment.trim()&&report.trim().length>1200&&<p className="text-sm">{copy.crewReportLimit}</p>}
+   <button disabled={Boolean(busy)||pending||!report.trim()||Boolean(equipment.trim()&&report.trim().length>1200)}
+    onClick={()=>send(null,"report",equipment.trim()?["Maintenance report v1",equipment.trim(),severity,report.trim()].join("\n"):report.trim())}
     className="min-h-12 rounded-full bg-accent px-5 py-2 font-semibold text-on-accent disabled:opacity-50">Send report</button>
   </section>
   <section className="space-y-3" aria-labelledby="crew-history">
