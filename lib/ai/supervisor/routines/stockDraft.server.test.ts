@@ -27,22 +27,25 @@ const scope={businessId:"cafe",ownerUserId:"owner",threadId:"thread",locale:"en"
 const ingredient="coffee";
 const po={id:"po",status:"approved_for_ordering",revision:2,receivingEvidence:"not_yet_verified",lines:[{ingredientId:ingredient,baseUnit:"g"}]};
 let revoked=false;
+let foreignOrders=false;
 function db(){
  const response=(table:string)=>{
   if(table==="supervisor_investigations")return revoked?null:{source_id:"alert"};
   if(table==="memberships")return {role:"owner"};
   if(table==="alerts")return {kind:"business_anomaly",status:"new",payload:{family:"stock_shortage",subject:ingredient}};
   if(table==="purchase_order_dispatches")return {proposal_id:"email",po_revision:2};
+  if(table==="purchase_order_lines")return foreignOrders?[{purchase_order_id:"other-po"}]:[];
+  if(table==="purchase_orders")return foreignOrders?[{id:"other-po",owner_user_id:"other-owner"}]:[];
   throw Error(table);
  };
  return {from:vi.fn((table:string)=>{
-  const chain={select:()=>chain,eq:()=>chain,gt:()=>chain,maybeSingle:async()=>({data:response(table),error:null})};
+  const chain={select:()=>chain,eq:()=>chain,gt:()=>chain,neq:()=>chain,in:()=>chain,limit:async()=>({data:response(table),error:null}),maybeSingle:async()=>({data:response(table),error:null})};
   return chain;
  })} as unknown as SupabaseClient;
 }
 const run=()=>prepareProactiveStockDraft(db(),scope,"alert","episode","lease",ingredient,"2026-11-19");
 beforeEach(()=>{
- vi.resetAllMocks();revoked=false;
+ vi.resetAllMocks();revoked=false;foreignOrders=false;
  f.stock.mockResolvedValue({rows:[],error:null,truncated:false});
  f.usage.mockResolvedValue({rows:[],provenance:{coverage:"complete"}});
  f.evidence.mockResolvedValue({ingredients:[],truncated:false});
@@ -57,6 +60,14 @@ describe("proactive procurement lifecycle",()=>{
  it("requires the still-authorized lease before any purchase work",async()=>{
   revoked=true;await expect(run()).rejects.toThrow("stock_claim_unavailable");
   expect(f.orders).not.toHaveBeenCalled();expect(f.email).not.toHaveBeenCalled();
+ });
+ it("does not expose or duplicate another owner's outstanding café order",async()=>{
+  foreignOrders=true;
+  f.orders.mockResolvedValueOnce({orders:[],truncated:false}).mockResolvedValueOnce({orders:[{...po,id:"other-po"}],truncated:false});
+  const result=await run();
+  expect(result).toEqual({state:"existing",summary:"An existing café order covers this ingredient. I will not prepare a duplicate purchase."});
+  expect(f.orders).toHaveBeenCalledWith(expect.anything(),"cafe","other-owner","other-po");
+  expect(f.email).not.toHaveBeenCalled();expect(f.inspect).not.toHaveBeenCalled();
  });
  it("prepares a separate inert email for a verified approved PO",async()=>{
   expect(await run()).toMatchObject({state:"existing",emailProposalId:"email"});

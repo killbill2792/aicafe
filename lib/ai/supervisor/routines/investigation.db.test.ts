@@ -845,3 +845,43 @@ describe("Task 15A exact owner response binding",()=>{
   }
  },30000);
 });
+
+describe("Task 15A proactive procurement café-wide draft fence",()=>{
+ (sandbox?it:it.skip)("concurrent owners cannot prepare two inert drafts for one ingredient; exact lease and private scope enforced",async()=>{
+  const admin=await connect("postgres"),a=await connect("service"),b=await connect("service");
+  const cafe=randomUUID(),owners=[randomUUID(),randomUUID()],threads=[randomUUID(),randomUUID()];
+  const ingredient=randomUUID(),alert=randomUUID(),now=new Date();
+  const payload={family:"stock_shortage",subject:ingredient,quality:"verified"};
+  try{
+   await admin.query("insert into public.businesses(id,name,timezone,is_demo) values($1,'Disposable stock café','UTC',false)",[cafe]);
+   for(let i=0;i<2;i++){
+    await admin.query("insert into auth.users(id,instance_id,aud,role,email,encrypted_password,created_at,updated_at) values($1,'00000000-0000-0000-0000-000000000000','authenticated','authenticated',$2,'',now(),now())",[owners[i],owners[i]+"@example.invalid"]);
+    await admin.query("insert into public.memberships(business_id,user_id,role) values($1,$2,'owner')",[cafe,owners[i]]);
+    await admin.query("insert into public.ai_threads(id,business_id,owner_user_id,client_request_id) values($1,$2,$3,$4)",[threads[i],cafe,owners[i],randomUUID()]);
+   }
+   await admin.query("insert into public.alerts(id,business_id,kind,status,payload) values($1,$2,'business_anomaly','new',$3)",[alert,cafe,JSON.stringify(payload)]);
+   for(let i=0;i<2;i++)expect(await rpc(a,"supervisor_enqueue_investigation",[cafe,owners[i],threads[i],"alert",alert,hex("a"),hex("b"),400,stamp(now,-1)])).toBe(true);
+   const claims=[await rpc(a,"supervisor_claim_investigation",[stamp(now)]),await rpc(b,"supervisor_claim_investigation",[stamp(now)])];
+   expect(claims.map(c=>c.owner_user_id).sort()).toEqual([...owners].sort());
+   const insert=(client:Client,i:number,token?:string)=>{
+    const claim=claims.find(c=>c.owner_user_id===owners[i]);
+    return client.query("insert into public.supervisor_proposals(id,business_id,owner_user_id,thread_id,request_key,capability_id,capability_version,canonical_effect_payload,effect_hash,baseline,monitor_spec,locale) values($1,$2,$3,$4,$5,'maya.supplier_purchase_order.v1',1,$6::jsonb,$7,$8::jsonb,$9::jsonb,'en') returning status,baseline",
+     [randomUUID(),cafe,owners[i],threads[i],randomUUID(),JSON.stringify({lines:[{ingredientId:ingredient}]}),hex("a"),JSON.stringify({proactiveStock:{sourceId:alert,episodeId:claim.episode_id,ingredientId:ingredient,leaseToken:token??claim.lease_token,checkedAt:stamp(now)}}),JSON.stringify({durationDays:1,metricScope:"supplier_purchase_order"})]);
+   };
+   await expect(insert(a,0,randomUUID())).rejects.toThrow("proactive_stock_claim_unavailable");
+   const races=await Promise.allSettled([insert(a,0),insert(b,1)]);
+   expect(races.filter(r=>r.status==="fulfilled")).toHaveLength(1);
+   const rejected=races.find(r=>r.status==="rejected");
+   expect(rejected?.reason?.message).toBe("proactive_stock_order_overlap");
+   const rows=(await admin.query("select status,baseline from public.supervisor_proposals where business_id=$1",[cafe])).rows;
+   expect(rows).toHaveLength(1);expect(rows[0].status).toBe("draft");
+   expect(rows[0].baseline.proactiveStock).not.toHaveProperty("leaseToken");
+   expect((await admin.query("select count(*)::int as n from public.purchase_orders where business_id=$1",[cafe])).rows[0].n).toBe(0);
+   expect((await admin.query("select count(*)::int as n from public.supervisor_effect_attempts where business_id=$1",[cafe])).rows[0].n).toBe(0);
+  }finally{
+   await admin.query("delete from public.businesses where id=$1",[cafe]);
+   await admin.query("delete from auth.users where id=any($1::uuid[])",[owners]);
+   await Promise.all([admin.end(),a.end(),b.end()]);
+  }
+ },30000);
+});

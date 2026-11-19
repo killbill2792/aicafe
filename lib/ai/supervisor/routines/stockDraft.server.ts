@@ -1,6 +1,6 @@
 import "server-only";
 import type {SupabaseClient} from "@supabase/supabase-js";
-import type {OwnerLoopScope} from "@/lib/ai/supervisor/loop/engine";
+import type {LoopCreate,OwnerLoopScope} from "@/lib/ai/supervisor/loop/engine";
 import {proposeLoop} from "@/lib/ai/supervisor/loop/engine";
 import {proposalRequestKey} from "@/lib/ai/supervisor/loop/requestKeys";
 import {investigateSupplierPurchase,supplierPurchaseOrderCapabilityId,supplierPurchaseInputSchema,supplierPurchaseOrderEffectSchema} from "@/lib/ai/supervisor/loop/purchaseOrders.server";
@@ -26,6 +26,8 @@ export async function prepareProactiveStockDraft(db:SupabaseClient,scope:OwnerLo
   if(claim.error||!claim.data||owner.error||owner.data?.role!=="owner"||alert.error||alert.data?.kind!=="business_anomaly"||!["new","seen"].includes(alert.data.status)||!["stockout_risk","stock_shortage"].includes(String(alert.data.payload?.family))||alert.data.payload?.subject!==ingredientId)throw Error("stock_claim_unavailable");
  };
  await assertClaim();
+ // The database checks this observation window again when the inert draft is inserted.
+ const checkedAt=new Date().toISOString();
  const [stock,usage,evidence,proposals,orders]=await Promise.all([
   readCanonicalView(db,scope.businessId,"cv_inventory",{dateFrom:date(today,-1),dateTo:today},100),
   readUsageVariance({from:date(today,-7),to:date(today,-1),ingredient:ingredientId},{client:db,businessId:scope.businessId}),
@@ -39,7 +41,32 @@ export async function prepareProactiveStockDraft(db:SupabaseClient,scope:OwnerLo
   if(!parsed.success)return {state:"missing"};
   if(parsed.data.lines.some(l=>l.ingredientId===ingredientId))return p.status==="draft"&&p.thread_id===scope.threadId?{state:"draft",proposalId:p.id}:{state:"existing"};
  }
+ // Other owners' private orders are never attached to this thread. Inspect only
+ // the shared café/ingredient's outstanding order condition, and disclose no
+ // private order IDs, supplier details or owner identity.
+ const matchingLines=await db.from("purchase_order_lines").select("purchase_order_id")
+  .eq("business_id",scope.businessId).eq("ingredient_id",ingredientId).limit(101);
+ if(matchingLines.error||(matchingLines.data??[]).length>100)return {state:"missing"};
+ const orderIds=[...new Set((matchingLines.data??[]).map(l=>String(l.purchase_order_id)))];
+ if(orderIds.length){
+  const foreign=await db.from("purchase_orders").select("id,owner_user_id")
+   .eq("business_id",scope.businessId).eq("status","approved_for_ordering")
+   .neq("owner_user_id",scope.ownerUserId).in("id",orderIds).limit(101);
+  if(foreign.error||(foreign.data??[]).length>100)return {state:"missing"};
+  for(const order of foreign.data??[]){
+   const readback=await readSupplierPurchaseOrders(db,scope.businessId,order.owner_user_id,order.id);
+   const other=readback.orders.find(o=>o.id===order.id);
+   if(readback.truncated||!other||other.receivingEvidence!=="complete_verified")
+    return {state:"existing",summary:"An existing café order covers this ingredient. I will not prepare a duplicate purchase."};
+   const verified=await readSupplierReconciliation(db,scope.businessId,order.owner_user_id,order.id);
+   const last=verified.reconciliation?.receipts.map(r=>r.receivedOn).sort().at(-1);
+   const fresh=projectInventoryEvidence(stock.rows,100).rows.some(r=>r.source==="app"&&r.ingredient_id===ingredientId&&r.quantity!==null&&r.quantity_unit===other.lines.find(l=>l.ingredientId===ingredientId)?.baseUnit&&last&&String(r.source_as_of).slice(0,10)>last);
+   if(!fresh||!verified.reconciliation?.closureVerified)
+    return {state:"existing",summary:"The café already has a purchase for this ingredient, but current stock or reconciliation is not verified."};
+  }
+ }
  const relevant=orders.orders.filter(o=>o.status==="approved_for_ordering"&&o.lines.some(l=>l.ingredientId===ingredientId));
+ // Multiple outstanding own orders must not be ignored in favor of a completed order.
  const incoming=relevant.find(o=>o.receivingEvidence!=="complete_verified")??relevant[0];
  if(incoming){
   const [communications,reconciliation]=await Promise.all([
@@ -92,6 +119,20 @@ export async function prepareProactiveStockDraft(db:SupabaseClient,scope:OwnerLo
  const [{supervisorLoopRegistry},{SupabaseLoopRepository}]=await Promise.all([import("@/lib/ai/supervisor/loop/priceExperiment.server"),import("@/lib/ai/supervisor/loop/supabase.server")]);
  // Stable for this source episode; retry cannot create another draft.
  const key=proposalRequestKey(episodeId,"stock-purchase:"+ingredientId);
- const draft=await proposeLoop(scope,supervisorLoopRegistry,new SupabaseLoopRepository(),supplierPurchaseOrderCapabilityId,input.data,key);
- return draft.status==="draft"?{state:"draft",proposalId:draft.id}:{state:"existing"};
+ // Retain the shared proposal repository and canonical effect simulation.
+ // The insert trigger consumes the transient lease token before storage.
+ const repository=new SupabaseLoopRepository();
+ const create=repository.create.bind(repository);
+ repository.create=(owner:OwnerLoopScope,requestKey:string,proposal:LoopCreate)=>create(owner,requestKey,{
+  ...proposal,baseline:{...proposal.baseline,proactiveStock:{sourceId,episodeId,ingredientId,leaseToken,checkedAt}},
+ });
+ try{
+  const draft=await proposeLoop(scope,supervisorLoopRegistry,repository,supplierPurchaseOrderCapabilityId,input.data,key);
+  return draft.status==="draft"?{state:"draft",proposalId:draft.id}:{state:"existing"};
+ }catch(error){
+  const cause=error instanceof Error?error.cause:null;
+  if(cause&&typeof cause==="object"&&"message" in cause&&cause.message==="proactive_stock_order_overlap")
+   return {state:"existing",summary:"An existing café purchase or draft covers this ingredient. I will not prepare a duplicate."};
+  throw error;
+ }
 }

@@ -600,3 +600,57 @@ begin
     input_attachment_ids=p_attachment_ids,input_attachment_version_hash=v_fingerprint where id=(v_started->>'id')::uuid returning * into r;
   return to_jsonb(r);
 end $$;
+
+-- Task 15A: serialize unattended stock drafts across owners using the existing
+-- proposal writer. Manual explicit owner requests retain the regular gateway;
+-- a proactive draft must never race another outstanding purchase for the item.
+create function public.supervisor_guard_proactive_stock_draft()
+returns trigger language plpgsql security invoker set search_path=public as $$
+declare v jsonb; v_ingredient uuid; v_source uuid; v_episode uuid; v_lease uuid; v_checked timestamptz;
+begin
+ if new.capability_id<>'maya.supplier_purchase_order.v1' then return new;end if;
+ -- Every PO insert, including an explicitly requested one, shares this café lock.
+ perform pg_advisory_xact_lock(hashtextextended('supervisor_stock_po:'||new.business_id::text,0));
+ if not (new.baseline ? 'proactiveStock') then return new;end if;
+ if coalesce(auth.role(),'')<>'service_role' then
+  raise exception 'proactive_stock_claim_unavailable' using errcode='42501';end if;
+ v:=new.baseline->'proactiveStock';
+ v_ingredient:=(v->>'ingredientId')::uuid;v_source:=(v->>'sourceId')::uuid;
+ v_episode:=(v->>'episodeId')::uuid;v_lease:=(v->>'leaseToken')::uuid;
+ v_checked:=(v->>'checkedAt')::timestamptz;
+ if v_ingredient is null or v_source is null or v_episode is null or v_lease is null
+  or v_checked is null or v_checked>clock_timestamp()+interval '1 minute'
+  or v_checked<clock_timestamp()-interval '10 minutes'
+  or jsonb_typeof(new.canonical_effect_payload->'lines') is distinct from 'array'
+  or jsonb_array_length(new.canonical_effect_payload->'lines')<>1
+  or new.canonical_effect_payload->'lines'->0->>'ingredientId' is distinct from v_ingredient::text
+  or not public.supervisor_routine_owner_authorized(new.business_id,new.owner_user_id,new.thread_id)
+  then raise exception 'proactive_stock_claim_unavailable' using errcode='42501';end if;
+ -- Same source-then-investigation lock order as the existing finish checkpoint.
+ perform 1 from public.alerts a where a.id=v_source and a.business_id=new.business_id
+  and a.kind='business_anomaly' and a.status in ('new','seen')
+  and a.payload->>'family' in ('stock_shortage','stockout_risk')
+  and a.payload->>'subject'=v_ingredient::text for share;
+ if not found then raise exception 'proactive_stock_claim_unavailable' using errcode='42501';end if;
+ perform 1 from public.supervisor_investigations i where i.business_id=new.business_id
+  and i.owner_user_id=new.owner_user_id and i.thread_id=new.thread_id
+  and i.source_type='alert' and i.source_id=v_source::text and i.episode_id=v_episode
+  and i.lease_token=v_lease and i.lease_until>clock_timestamp() for share;
+ if not found then raise exception 'proactive_stock_claim_unavailable' using errcode='42501';end if;
+ if exists(select 1 from public.supervisor_proposals p where p.business_id=new.business_id
+   and p.capability_id=new.capability_id and p.status in ('draft','approved','executing')
+   and not (p.owner_user_id=new.owner_user_id and p.thread_id=new.thread_id and p.request_key=new.request_key)
+   and p.canonical_effect_payload @> jsonb_build_object('lines',jsonb_build_array(jsonb_build_object('ingredientId',v_ingredient::text))))
+  or exists(select 1 from public.purchase_orders o join public.purchase_order_lines l
+    on l.business_id=o.business_id and l.purchase_order_id=o.id
+    where o.business_id=new.business_id and o.status='approved_for_ordering'
+     and l.ingredient_id=v_ingredient and o.approved_at>=v_checked-interval '1 minute') then
+  raise exception 'proactive_stock_order_overlap' using errcode='P0001';end if;
+ -- No claim credential is persisted, exposed to the owner, or used as approval.
+ new.baseline:=new.baseline #- '{proactiveStock,leaseToken}';
+ return new;
+end $$;
+revoke all on function public.supervisor_guard_proactive_stock_draft() from public,anon,authenticated;
+grant execute on function public.supervisor_guard_proactive_stock_draft() to service_role;
+create trigger supervisor_guard_proactive_stock_draft before insert on public.supervisor_proposals
+ for each row execute function public.supervisor_guard_proactive_stock_draft();
