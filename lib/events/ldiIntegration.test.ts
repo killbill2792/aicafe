@@ -849,6 +849,27 @@ describe("LDI E scheduled B+C→A→single Events reader",()=>{
     expect(await readCafeEvents(s.db,cafeB,"2026-11-06","2026-11-06"))
       .toEqual([]);
   });
+  it("does not label a month or a missing middle date completely researched from adjacent complete roots",async()=>{
+    const s=mockStore();
+    await s.scoped(cafeA,"2026-11-03",
+      {from:"2026-11-03",to:"2026-11-03",reason:"new_day"},{...newLdiBudget(),cityTasks:40});
+    await s.scoped(cafeA,"2026-11-05",
+      {from:"2026-11-05",to:"2026-11-05",reason:"new_day"},{...newLdiBudget(),cityTasks:40});
+    expect((await readCityResearchCoverage(s.db,cafeA,"2026-11-03","2026-11-05")).status).toBe("partial");
+    await s.scoped(cafeA,"2026-11-05",
+      {from:"2026-11-04",to:"2026-11-04",reason:"new_day"},{...newLdiBudget(),cityTasks:40});
+    expect((await readCityResearchCoverage(s.db,cafeA,"2026-11-03","2026-11-05")).status).toBe("complete");
+    expect((await readCityResearchCoverage(s.db,cafeA,"2026-11-01","2026-11-30")).status).toBe("partial");
+  });
+  it("does not re-search successfully covered dates when a shifted retry introduces a new range key",async()=>{
+    const s=mockStore();
+    await s.scoped(cafeA,"2026-11-03",eventScanWindows("2026-11-03",null,"location")[0],
+      {...newLdiBudget(),cityTasks:40});
+    f.city.mockClear();
+    await s.scoped(cafeA,"2026-11-04",
+      {from:"2026-11-04",to:"2026-11-09",reason:"new_day"},{...newLdiBudget(),cityTasks:40});
+    expect(f.city).not.toHaveBeenCalled();
+  });
   it("pages an owner catalog past old 500-row caps; source URLs and null venues remain",async()=>{
     const s=mockStore();
     for(let i=0;i<540;i++)s.tables.city_events.push({

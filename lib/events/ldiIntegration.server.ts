@@ -170,6 +170,13 @@ async function allCoverage(db:Db,cityKey:string):Promise<CoverageRow[]>{
 function matchingCoverage(all:CoverageRow[],key:string,from:string,to:string){
   return all.find(r=>r.source_key===key&&r.window_from===from&&r.window_to===to);
 }
+/** A shifted daily window may already be covered by completed, independently
+ * persisted roots. Reuse that evidence rather than spending again merely
+ * because a new date range does not match the original root's exact key. */
+function coveredByCompletedRoots(all:readonly CoverageRow[],key:string,from:string,to:string){
+  const roots=all.filter(r=>r.source_key===key&&r.is_scan_root&&complete(r.status)&&!!r.last_completed_at);
+  return datesWithin(from,to).every(day=>roots.some(r=>r.window_from<=day&&r.window_to>=day));
+}
 function needsRefresh(r:CoverageRow|undefined,reason:EventScanWindow["reason"],epoch:string){
   if(!r||!r.is_scan_root||!complete(r.status))return true;
   // A Monday pass must see later announcements even if a prior scan covered the dates.
@@ -584,9 +591,12 @@ export async function scanSharedResearch(db:Db,input:{
       cityResearchDateSlices(proposed.from,proposed.to).map(slice=>({
         source,key:sourceKey(source),...slice,
       })));
-    const needs=intendedForWindow.filter(item=>needsRefresh(
-      matchingCoverage(all,item.key,item.from,item.to),
-      proposed.reason,proposed.from));
+    const needs=intendedForWindow.filter(item=>{
+      const prior=matchingCoverage(all,item.key,item.from,item.to);
+      if(!prior&&proposed.reason==="new_day"&&
+        coveredByCompletedRoots(all,item.key,item.from,item.to))return false;
+      return needsRefresh(prior,proposed.reason,proposed.from);
+    });
     const missing=needs.filter(item=>!matchingCoverage(all,item.key,item.from,item.to));
     if(missing.length){
       const saved=await db.from("city_source_coverage").upsert(missing.map(item=>({
@@ -668,9 +678,14 @@ export async function scanSharedResearch(db:Db,input:{
   }
   all=await allCoverage(db,cityKey);
   const completed=intended.every(item=>{const row=matchingCoverage(all,item.key,item.from,item.to);
-    return !!row&&row.is_scan_root&&complete(row.status);
+    return row?row.is_scan_root&&complete(row.status):
+      window.reason==="new_day"&&coveredByCompletedRoots(all,item.key,item.from,item.to);
   });
-  const associations=await associateCityFacts(db,input.businessId,cityKey,window.from,window.to);
+  // B may have completed new entering roots while retrying an older window.
+  // Associate the whole requested range even before the older root finishes.
+  const associations=await associateCityFacts(db,input.businessId,cityKey,
+    window.from<requestedWindow.from?window.from:requestedWindow.from,
+    window.to>requestedWindow.to?window.to:requestedWindow.to);
   return {completed,through:window.to,reason:window.reason,
     windowStart:window.from,associations};
 }

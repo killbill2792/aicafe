@@ -2,6 +2,8 @@ import "server-only";
 import type {SupabaseClient} from "@supabase/supabase-js";
 import {readPrimaryLocation} from "./cafeLocation.server";
 import {cityScopeKey,canonicalEventNameKey} from "@/lib/events/cityEventIdentity";
+import {defaultCityResearchSources} from "@/lib/events/citySourceResearch";
+import {addDays} from "@/lib/events/holidays";
 import {readOwnerProposals,readOwnerReports,type OwnerScope} from "@/lib/ai/supervisor/loop/reads.server";
 
 export type CafeEvent={
@@ -285,7 +287,7 @@ export async function readCityResearchCoverage(db:SupabaseClient,businessId:stri
   const cityKey=await cityKeyForCafe(db,businessId);
   if(!cityKey)return empty("unavailable");
   const {data,error}=await db.from("city_source_coverage")
-    .select("status,search_attempted,last_completed_at")
+    .select("source_key,window_from,window_to,status,search_attempted,last_completed_at")
     .eq("city_key",cityKey).eq("is_scan_root",true)
     .lte("window_from",to).gte("window_to",from)
     .order("window_from").limit(4000);
@@ -304,6 +306,21 @@ export async function readCityResearchCoverage(db:SupabaseClient,businessId:stri
     if(row.last_completed_at&&(!latest||row.last_completed_at>latest))
       latest=row.last_completed_at;
   }
+  // Existing covered windows do not establish that every requested date was
+  // researched. Count contiguous gaps for known/default sources as unsearched.
+  // A missing root must not be interpreted as a successful empty search.
+  const sourceKeys=new Set([...defaultCityResearchSources().map(s=>"category:"+s.id),
+    ...rows.map(row=>String(row.source_key))]);
+  for(const key of sourceKeys){
+    const windows=rows.filter(row=>row.source_key===key);
+    let inGap=false;
+    for(let day=from;day<=to;day=addDays(day,1)){
+      const gap=!windows.some(row=>row.window_from<=day&&row.window_to>=day);
+      if(gap&&!inGap)unsearched++;
+      inGap=gap;
+    }
+  }
+  if(rows.length>=4000)unsearched++;
   return {
     status:unsearched||failed||partial?"partial":"complete",
     researchedSourceWindows:attempted,successfulSourceWindows:successful,
