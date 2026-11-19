@@ -1,7 +1,7 @@
 import {z} from "zod";
 import type {AgentToolContext,AgentToolResult} from "./index";
 import type {OwnerProposalRow,OwnerReportRow} from "@/lib/ai/supervisor/loop/reads.server";
-import {monitorDayIndex} from "@/lib/operating/board";
+import {monitorDayIndex,verifiedMonitorDay} from "@/lib/operating/board";
 
 /** An ISO date from readSupervisorCafeIdentity is already café-local. For an
  * instant, convert to the café timezone before counting business dates. */
@@ -103,7 +103,7 @@ export function planVerifiedToastPriceObservations(
 
 /** Pure mapping of the same canonical monitor rows the Operating Board uses. */
 export function mapPriceMonitorRows(rows:readonly OwnerProposalRow[],reports:readonly OwnerReportRow[],
-    asOf:string,timezone:string){
+    asOf:string,timezone:string,verifiedStarts:ReadonlyMap<string,string>=new Map(),now=asOf){
   const today=monitorCafeDate(asOf,timezone);
   // The canonical reader returns reports newest-first. Keep the latest report
   // per proposal, including when a proposal has more than one report row.
@@ -117,7 +117,8 @@ export function mapPriceMonitorRows(rows:readonly OwnerProposalRow[],reports:rea
     const days=spec?.durationDays;
     const durationDays=typeof days==="number"&&Number.isSafeInteger(days)&&days>0?days:null;
     const startDate=r.monitoring_start_date;
-    const elapsed=startDate?monitorDayIndex(startDate,today):null;
+    const sourceStart=verifiedStarts.get(r.id);
+    const elapsed=sourceStart?verifiedMonitorDay(sourceStart,now):startDate?monitorDayIndex(startDate,today):null;
     const ended=elapsed!==null&&durationDays!==null&&elapsed>durationDays;
     // Derived display lifecycle only: never mutate an approval or the loop's
     // persisted status. A missing final report is not evidence of a result.
@@ -153,7 +154,7 @@ export const priceMonitorTools={
   get_price_monitor_status:{
     agentId:"alex",
     schema:z.strictObject({}),
-    description:"Read existing price-change and price-experiment monitoring status, including upcoming start dates and completed reports. Never create or restart an experiment.",
+    description:"Read independent Toast price observations and owner-approved price experiments, including verified elapsed windows, existing reports, estimated versus unknown costs and interruptions. An observation is not an approval. Never create or restart an experiment.",
     execute:async(raw:unknown,ctx:AgentToolContext):Promise<AgentToolResult>=>{
       priceMonitorTools.get_price_monitor_status.schema.parse(raw);
       if(!ctx.readPriceMonitors)return {source:"supervisor_loop",period:null,missing:["monitor_reader_unavailable"],monitors:[]};
