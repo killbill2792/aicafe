@@ -87,6 +87,36 @@ function observedValue(value:unknown,depth=0):boolean{
       !nonObservationKeys.has(key)&&observedValue(fact,depth+1));
   return false;
 }
+function verifiedEventEvidence(result:AgentToolResult,from:string,to:string):boolean{
+  if(result.source!=="cafe_events"||result.missing.length||!result.period||
+    !Array.isArray(result.events)||from>to)return false;
+  const start=result.period.from>from?result.period.from:from;
+  const end=result.period.to<to?result.period.to:to;
+  if(start>end)return false;
+  return result.events.some(event=>{
+    if(!event||typeof event!=="object")return false;
+    return event.status==="found"&&typeof event.lastVerifiedAt==="string"&&
+      Number.isFinite(Date.parse(event.lastVerifiedAt))&&
+      typeof event.startDate==="string"&&typeof event.endDate==="string"&&event.startDate<=event.endDate&&
+      event.startDate<=end&&event.endDate>=start&&
+      (!event.verificationFailedAt||Date.parse(event.verificationFailedAt)<=Date.parse(event.lastVerifiedAt));
+  });
+}
+/** A bounded SQL coverage receipt can prove a source problem even when the
+ * result contains no order rows. Never certify zero customers from it. */
+function observedCustomerGap(result:AgentToolResult):boolean{
+  if(result.source!=="canonical_data"||result.error||result.truncated||result.customerEvidence!==true||
+    result.aggregateOnly!==true||!result.period)return false;
+  const c=result.customerCoverage;
+  if(!c||typeof c!=="object")return false;
+  const v=c as Record<string,unknown>;
+  if(v.scope!=="all_eligible_checks_in_period"||typeof v.complete!=="boolean")return false;
+  const natural=(x:unknown):x is number=>typeof x==="number"&&Number.isSafeInteger(x)&&x>=0;
+  const {eligibleChecks,linkedChecks,expectedLocationDays,completeLocationDays}=v;
+  if(!natural(eligibleChecks)||!natural(linkedChecks)||linkedChecks>eligibleChecks||
+    !natural(expectedLocationDays)||!natural(completeLocationDays)||completeLocationDays>expectedLocationDays)return false;
+  return expectedLocationDays>0&&!v.complete||eligibleChecks>0&&linkedChecks<eligibleChecks;
+}
 function hasObservedEvidence(result:AgentToolResult):boolean{
   if(!Array.isArray(result.missing))return false;
   // Schema metadata, row-count sentinels and truncated/failed aggregate
@@ -98,13 +128,7 @@ function hasObservedEvidence(result:AgentToolResult):boolean{
       /^(count|count_distinct|sum|avg|min|max)_/.test(key)&&
       (typeof v==="number"&&Number.isFinite(v)||typeof v==="string"&&v.trim()!==""&&Number.isFinite(Number(v)))));
   }
-  if(result.source==="cafe_events")return Array.isArray(result.events)&&result.events.some(event=>{
-    if(!event||typeof event!=="object")return false;
-    return event.status==="found"&&typeof event.lastVerifiedAt==="string"&&Number.isFinite(Date.parse(event.lastVerifiedAt))&&
-      typeof event.startDate==="string"&&typeof event.endDate==="string"&&!!result.period&&
-      event.startDate<=result.period.to&&event.endDate>=result.period.from&&
-      (!event.verificationFailedAt||Date.parse(event.verificationFailedAt)<=Date.parse(event.lastVerifiedAt));
-  });
+  if(result.source==="cafe_events")return !!result.period&&verifiedEventEvidence(result,result.period.from,result.period.to);
   if(result.source==="cashflow_evidence")return (Array.isArray(result.documentedAccountBalances)&&result.documentedAccountBalances.length>0)||
     (typeof result.recordedClaimCount==="number"&&result.recordedClaimCount>0)||
     (typeof result.billClaimCount==="number"&&result.billClaimCount>0);
@@ -349,13 +373,10 @@ export function verifyInvestigationTurn(turn:AgentTurn,expected:ExpectedInvestig
   const corroborated=calls.filter(call=>allowed.has(call.name)&&
     call.result.source!=="investigation_source"&&
     typeof call.result.source==="string"&&call.result.source.length>0&&
-    hasObservedEvidence(call.result)&&
-    (call.name!=="get_events"||selectors?.family==="customer_trend"&&typeof selectors.from==="string"&&typeof selectors.to==="string"&&
-      !!call.result.period&&call.result.period.from<=selectors.to&&call.result.period.to>=selectors.from&&
-      Array.isArray(call.result.events)&&call.result.events.some(event=>event&&event.status==="found"&&
-        typeof event.lastVerifiedAt==="string"&&Number.isFinite(Date.parse(event.lastVerifiedAt))&&
-        (!event.verificationFailedAt||Date.parse(event.verificationFailedAt)<=Date.parse(event.lastVerifiedAt))&&
-        typeof event.startDate==="string"&&typeof event.endDate==="string"&&event.startDate<=selectors.to!&&event.endDate>=selectors.from!)));
+    (hasObservedEvidence(call.result)||customerIncident&&selectors?.family==="data_gap"&&
+      call.name==="query_data"&&observedCustomerGap(call.result))&&
+    (call.name!=="get_events"||selectors?.family==="customer_trend"&&typeof selectors.from==="string"&&
+      typeof selectors.to==="string"&&verifiedEventEvidence(call.result,selectors.from,selectors.to)));
   if(customerIncident&&!corroborated.some(call=>{
     if(call.name!=="query_data"||call.result.customerEvidence!==true||call.result.aggregateOnly!==true||
       !["cv_toast_records","cv_customer_visits","cv_customer_products"].includes(String(call.result.view)))return false;
@@ -363,8 +384,10 @@ export function verifyInvestigationTurn(turn:AgentTurn,expected:ExpectedInvestig
     if(!period)return false;
     if(selectors?.family==="customer_trend")
       return call.result.missing.length===0&&typeof selectors.from==="string"&&typeof selectors.to==="string"&&
-       period.to>=selectors.from&&period.from<=selectors.to;
-    return true; // a genuine aggregate can demonstrate a customer data gap
+       period.from<=selectors.from&&period.to>=selectors.to&&
+       !!call.result.customerCoverage&&typeof call.result.customerCoverage==="object"&&
+       (call.result.customerCoverage as Record<string,unknown>).complete===true;
+    return observedCustomerGap(call.result); // only a scoped gap receipt, not an unrelated subtotal
   }))return {ok:false,reason:"evidence_incomplete"};
   const names=[...new Set(corroborated.map(c=>c.name))];
   // A result's display source may be "scheduled_shifts" versus
