@@ -27,13 +27,15 @@ import { priceReviewDirection, priceReviewHref } from "@/lib/viewmodels/priceRev
 import {staffScheduleHref} from "@/lib/scheduling/staffScheduleLinks";
 import MaintenanceCaseCard from "@/components/operations/MaintenanceCaseCard";
 import {ownerStaffLoginList} from "@/lib/staffCommunication/channel.server";
+import {createServerSupabaseClient} from "@/lib/supabase/server";
 import enMessages from "@/messages/en.json";
 
 export const dynamic = "force-dynamic";
 const parsePeriod = (value?: string): Period => value === "week" || value === "month" ? value : "today";
 type ExpiredNeed = AttentionItem & { expired: true };
 const isNeed = (row: OperatingTask | NeedsYouItem | ExpiredNeed): row is NeedsYouItem | ExpiredNeed => "displayTitle" in row;
-type CardMeta = { today: string; locale: string; currency: string | null; maintenanceStaff?:{id:string;name:string}[] };
+type CardMeta = { today: string; locale: string; currency: string | null; maintenanceStaff?:{id:string;name:string}[];
+  vendorApprovals?:{caseId:string;id:string;threadId:string}[] };
 type OperationsT = Awaited<ReturnType<typeof getTranslations<"Operations">>>;
 
 export default async function OperationsPage({ searchParams }: { searchParams: Promise<{ agent?: string; status?: string; task?: string; period?: string }> }) {
@@ -51,7 +53,17 @@ export default async function OperationsPage({ searchParams }: { searchParams: P
   const team = projectOperatingTasks([...inbox.tasks.needsYou, ...inbox.tasks.watching, ...inbox.tasks.handled]);
   const needs = needsYouFromAttention(inbox.items, team.needsYou);
   const maintenanceStaff=await ownerStaffLoginList().then(rows=>rows.filter(row=>row.active&&row.linked).map(({id,name})=>({id,name}))).catch(()=>undefined);
-  const meta: CardMeta = { today: snapshot.todayDateStr, locale, currency: snapshot.business.currency ?? null, maintenanceStaff };
+  const vendorApprovals=await authenticatedConversationContext().then(async({scope})=>{
+    const db=await createServerSupabaseClient();
+    const {data,error}=await db.from("supervisor_proposals").select("id,thread_id,canonical_effect_payload")
+      .eq("business_id",scope.businessId).eq("owner_user_id",scope.ownerUserId).eq("capability_id","alex.gmail_effect.v1")
+      .in("status",["draft","approved","executing"]).not("canonical_effect_payload->>maintenanceCaseId","is",null)
+      .order("created_at",{ascending:false}).limit(100);
+    if(error)throw error;
+    return (data??[]).flatMap(p=>typeof p.canonical_effect_payload?.maintenanceCaseId==="string"?
+      [{caseId:p.canonical_effect_payload.maintenanceCaseId,id:p.id,threadId:p.thread_id}]:[]);
+  }).catch(()=>undefined);
+  const meta: CardMeta = { today: snapshot.todayDateStr, locale, currency: snapshot.business.currency ?? null, maintenanceStaff,vendorApprovals };
   const tops = topChatStartItems(inbox.items);
   const names: Record<AgentId, string> = { alex: "Alex", olivia: "Olivia", maya: "Maya", leo: "Leo" };
   const roles: Record<AgentId, string> = { alex: t("alexRole"), olivia: t("oliviaRole"), maya: t("mayaRole"), leo: t("leoRole") };
@@ -254,6 +266,7 @@ function TaskCard({ row: task, names, t, tExperiment, tBrief, tGoals, category, 
       {!midRun&&<p className="text-ink-muted">{tExperiment(task.payload.outcomeStatus==="complete"?"reportCompletedCaveat":"reportUncertain")}</p>}
     </div>}
     {task.kind==="maintenance_issue"&&<MaintenanceCaseCard copy={maintenanceCopy} staff={meta.maintenanceStaff}
+      vendorApprovals={meta.vendorApprovals?.filter(p=>p.caseId===task.id)}
       caseData={{taskId:task.id,equipmentLabel:String(task.payload.equipmentLabel??""),
         stage:String(task.payload.maintenanceStage??"reported"),
         symptom:String(task.payload.symptom??"")}} />}

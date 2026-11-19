@@ -4,11 +4,11 @@ set statement_timeout='30s';
 
 alter table public.maintenance_case_events drop constraint maintenance_case_events_kind_check;
 alter table public.maintenance_case_events add constraint maintenance_case_events_kind_check
- check(kind in ('report','repair_claim','operational_verification','blocked','reopened','follow_up','staff_assignment')) not valid;
+ check(kind in ('report','repair_claim','operational_verification','blocked','reopened','follow_up','staff_assignment','vendor_send_verified','vendor_reply')) not valid;
 alter table public.maintenance_case_events validate constraint maintenance_case_events_kind_check;
 alter table public.maintenance_case_events drop constraint maintenance_case_events_source_kind_check;
 alter table public.maintenance_case_events add constraint maintenance_case_events_source_kind_check
- check(source_kind in ('owner_report','owner_relay','owner_operational_check','system_follow_up','staff_report','approved_staff_assignment')) not valid;
+ check(source_kind in ('owner_report','owner_relay','owner_operational_check','system_follow_up','staff_report','approved_staff_assignment','gmail_effect_receipt','vendor_reply')) not valid;
 alter table public.maintenance_case_events validate constraint maintenance_case_events_source_kind_check;
 
 -- A second owner of the same business must not see another owner's private
@@ -168,3 +168,72 @@ begin
 end $$;
 revoke all on function public.maintenance_assign_staff(uuid,text,uuid,uuid,text) from public,anon;
 grant execute on function public.maintenance_assign_staff(uuid,text,uuid,uuid,text) to authenticated;
+
+-- Serialize draft creation per case without changing the owner-visible case
+-- revision. Existing generic Gmail proposals have no maintenanceCaseId.
+create function public.maintenance_guard_vendor_proposal()
+ returns trigger language plpgsql security definer set search_path=public,pg_temp as $$
+declare v_case public.operating_tasks; v_case_id text:=new.canonical_effect_payload->>'maintenanceCaseId';
+begin
+ if v_case_id is null then return new;end if;
+ if new.capability_id<>'alex.gmail_effect.v1' or new.canonical_effect_payload->>'operation'<>'send'
+   or new.canonical_effect_payload->>'maintenanceCaseRevision' is null then
+  raise exception 'Invalid maintenance effect' using errcode='22023';end if;
+ select * into v_case from public.operating_tasks t where t.business_id=new.business_id and
+  t.id=v_case_id and t.kind='maintenance_issue' and t.owner_user_id=new.owner_user_id for update;
+ if not found or v_case.status not in ('needs_owner','needs_response','watching') or
+   v_case.updated_at is distinct from (new.canonical_effect_payload->>'maintenanceCaseRevision')::timestamptz or
+   not exists(select 1 from public.memberships m where m.business_id=new.business_id
+    and m.user_id=new.owner_user_id and m.role='owner') then
+  raise exception 'Maintenance case changed' using errcode='42501';end if;
+ if exists(select 1 from public.supervisor_proposals p where p.business_id=new.business_id
+   and p.owner_user_id=new.owner_user_id and p.canonical_effect_payload->>'maintenanceCaseId'=v_case_id
+   and p.status in ('draft','approved','executing') and
+   (p.thread_id<>new.thread_id or p.request_key<>new.request_key)) then
+  raise exception 'Existing case approval requires review' using errcode='23505';end if;
+ return new;
+end $$;
+revoke all on function public.maintenance_guard_vendor_proposal() from public,anon,authenticated;
+create trigger maintenance_vendor_proposal_guard before insert on public.supervisor_proposals
+ for each row execute function public.maintenance_guard_vendor_proposal();
+
+-- A verified provider send is copied to the case only from the existing
+-- gateway completion transaction; neither a model nor an owner can forge it.
+create function public.maintenance_vendor_receipt()
+ returns trigger language plpgsql security definer set search_path=public,pg_temp as $$
+declare v_receipt public.connector_provider_receipts; v_case public.operating_tasks;
+ v_case_id text:=new.canonical_effect_payload->>'maintenanceCaseId';
+begin
+ if v_case_id is null or new.capability_id<>'alex.gmail_effect.v1' or new.status<>'committed'
+   or old.status='committed' then return new;end if;
+ select r.* into v_receipt from public.connector_provider_receipts r
+  join public.supervisor_effect_attempts a on a.business_id=r.business_id and a.proposal_id=r.proposal_id
+   and a.effect_hash=r.effect_hash and a.authorization_kind='click' and a.state='verified'
+  where r.business_id=new.business_id and r.owner_user_id=new.owner_user_id and r.proposal_id=new.id
+   and r.effect_hash=new.effect_hash and r.state='verified' and r.operation='send'
+   and r.provider_message_id is not null and r.provider_accepted_at is not null;
+ if not found then raise exception 'Maintenance provider receipt required' using errcode='42501';end if;
+ select * into v_case from public.operating_tasks t where t.business_id=new.business_id and
+  t.id=v_case_id and t.kind='maintenance_issue' and t.owner_user_id=new.owner_user_id for update;
+ if not found then return new;end if;
+ insert into public.maintenance_case_events
+  (business_id,task_id,idempotency_key,kind,actor_kind,actor_user_id,source_kind,source_id,occurred_at)
+ values(new.business_id,v_case_id,'gmail-send:'||v_receipt.id::text,'vendor_send_verified',
+   'supervisor',new.owner_user_id,'gmail_effect_receipt',v_receipt.id::text,v_receipt.provider_accepted_at)
+ on conflict(business_id,task_id,idempotency_key) do nothing;
+ if found and v_case.status<>'handled' then
+  perform set_config('app.maintenance_case_transition','allowed',true);
+  update public.operating_tasks set status='needs_owner',
+   due_at=coalesce((new.canonical_effect_payload->>'maintenanceDueAt')::timestamptz,due_at),
+   payload=payload||jsonb_build_object('externalSent',true,
+    'maintenanceStage',case when payload->>'maintenanceStage'='repair_claimed' then 'repair_claimed' else 'request_sent' end),
+   evidence=evidence||jsonb_build_array(jsonb_build_object('source','connector_provider_receipts',
+    'facts',jsonb_build_object('receiptId',v_receipt.id,'providerAccepted',true,'deliveryVerified',false))),
+   updated_at=statement_timestamp() where business_id=new.business_id and id=v_case_id;
+  perform set_config('app.maintenance_case_transition','',true);
+ end if;
+ return new;
+end $$;
+revoke all on function public.maintenance_vendor_receipt() from public,anon,authenticated;
+create trigger maintenance_vendor_receipt_record after update of status on public.supervisor_proposals
+ for each row execute function public.maintenance_vendor_receipt();

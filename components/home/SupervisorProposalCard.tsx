@@ -29,7 +29,8 @@ export type ProposalView={proposalId:string;revision:number;state:string;capabil
     accepted?:number;delivered?:number;read?:number;pending?:number;
     failed?:number;uncertain?:number;missing?:number};
   gmail?:{operation:string;action:string|null;from:string;to:string[];cc:string[];bcc:string[];
-    subject:string;body:string;messageId:string|null;threadId:string|null;labelId:string|null;labelName:string|null};};
+    subject:string;body:string;messageId:string|null;threadId:string|null;labelId:string|null;labelName:string|null;
+    maintenanceCaseId?:string;maintenanceDueAt?:string|null};};
 const dict={en,es,ar} as const;
 /** Deterministic, full Gmail effect preview. The owner sees recipients and
  * exact content before a click can authorize any provider action. */
@@ -42,6 +43,8 @@ export function GmailApprovalDetails({effect,locale="en"}:{
   return <>
       <dl className="mt-4 grid gap-3 rounded-xl bg-surface2 p-4 text-base">
         <div><dt className="text-sm text-ink-muted">{c.action}</dt><dd className="font-semibold capitalize">{previewLabel}</dd></div>
+        {g.maintenanceCaseId&&<div><dt className="text-sm text-ink-muted">Linked maintenance case</dt><dd className="break-all">{g.maintenanceCaseId}</dd>
+          <p className="text-sm">Request only, not authorization for repair costs. {g.maintenanceDueAt?"Review again by "+g.maintenanceDueAt:"No explicit deadline."}</p></div>}
         <div><dt className="text-sm text-ink-muted">{c.from}</dt><dd className="break-all" dir="auto">{g.from}</dd></div>
         {(sending||drafting)&&<>
           <div><dt className="text-sm text-ink-muted">{c.to}</dt><dd className="break-all" dir="auto">{g.to.join(", ")||c.none}</dd></div>

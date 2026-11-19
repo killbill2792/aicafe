@@ -2,11 +2,13 @@
 
 import {useState,type FormEvent} from "react";
 import {useRouter} from "next/navigation";
+import SupervisorProposalCard from "@/components/home/SupervisorProposalCard";
 import {assignMaintenanceWork,recordMaintenanceProgress,reportMaintenanceCase} from "@/lib/actions/maintenance";
 
 type Copy=Record<string,string>;
 type CaseProps={taskId:string;equipmentLabel:string;stage:string;symptom:string};
-type Props={copy:Copy;caseData?:CaseProps;staff?:{id:string;name:string}[]};
+type Props={copy:Copy;caseData?:CaseProps;staff?:{id:string;name:string}[];
+  vendorApprovals?:{id:string;threadId:string}[]};
 
 const stages:Record<string,string>={
   reported:"stageReported",investigating:"stageInvestigating",
@@ -17,7 +19,7 @@ const stages:Record<string,string>={
 };
 
 /** A thin view over the same operating_tasks row as Supervisor/Home. */
-export default function MaintenanceCaseCard({copy,caseData,staff}:Props){
+export default function MaintenanceCaseCard({copy,caseData,staff,vendorApprovals}:Props){
   const router=useRouter();
   const [equipmentLabel,setEquipmentLabel]=useState("");
   const [symptom,setSymptom]=useState("");
@@ -160,6 +162,7 @@ export default function MaintenanceCaseCard({copy,caseData,staff}:Props){
         </button>
       </>}
     </form>}
+    {stage!=="verified_repaired"&&vendorApprovals?.map(p=><SupervisorProposalCard key={p.id} proposalId={p.id} threadId={p.threadId} locale="en"/>)}
     {stage==="repair_claimed"&&<p className="mt-2 text-sm text-ink-muted">{copy.verifyHelp}</p>}
     {stage!=="verified_repaired"&&<p className="mt-2 text-sm text-ink-muted">{copy.notSent}</p>}
     {message&&<p role="status" className="mt-2 text-sm font-semibold text-ink">{message}</p>}
