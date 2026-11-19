@@ -103,13 +103,11 @@ alter table public.supervisor_experiment_notice_receipts
  (kind='toast_price_daily' and slot between 0 and 7)) not valid;
 -- The previous checks guarantee existing rows satisfy the replacement.
 -- Install the replacement first, avoiding a full scan under migration lock.
--- Reason: widen daily observation slots; all other kind/slot restrictions
--- are preserved by supervisor_8a_notice_slot_range above.
+-- Reason: widen daily observation slots only; the installed replacement preserves all other kind/slot restrictions.
 -- squawk-ignore ban-drop-constraint
 alter table public.supervisor_experiment_notice_receipts
  drop constraint supervisor_experiment_notice_receipts_slot_check;
--- Reason: the same replacement preserves the original kind/slot restrictions
--- except for the intentionally widened elapsed-day index.
+-- Reason: the installed replacement preserves the original kind/slot restrictions except the widened elapsed-day index.
 -- squawk-ignore ban-drop-constraint
 alter table public.supervisor_experiment_notice_receipts
  drop constraint supervisor_experiment_notice_receipts_check;
