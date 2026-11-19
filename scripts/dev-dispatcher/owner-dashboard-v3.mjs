@@ -63,8 +63,9 @@ export function ownerDashboardHandler({readState,editState,readNotes,saveNote,re
     const value=await readActions();
     if(value?.version!==1||!value.events||typeof value.events!=='object')
       throw Error('Invalid Muse action history');
+    const questions=readQuestions?await readQuestions():null;
     return reply(res,200,'application/json',JSON.stringify({version:1,
-      events:Object.values(value.events).sort((a,b)=>String(b.created_at).localeCompare(String(a.created_at))).slice(0,50)}));
+      events:Object.values(value.events).filter(a=>!a.question_id||questions?.entries?.[a.question_id]?.status==='open'&&!questions.entries[a.question_id].source_changed).sort((a,b)=>String(b.created_at).localeCompare(String(a.created_at))).slice(0,50)}));
    }
    if(req.method==='GET'&&req.url==='/api/muse-status'){
     if(!readFacts)return reply(res,503,'application/json',JSON.stringify({error:'Muse monitor unavailable'}));
