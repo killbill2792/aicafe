@@ -149,3 +149,12 @@ test("shared connector boundary runs Gmail security tests; new unknown provider 
  assert.throws(()=>domainsForPaths(["lib/connectors/newProvider/token.server.ts"]),
   /unknown_connector_contract/);
 });
+
+test("Task17 combined acceptance selects every existing owner-domain suite instead of only recently changed modules",()=>{
+ for(const path of ["evals/acceptance/supervisor-census.test.ts","evals/acceptance/fixtures/task17b-coverage-map.json",".github/luna/scenarios/17b-sales-labor.json",".github/luna/scenarios/17c-autonomy.json",".github/luna/scenarios/17d.json"]){
+  const plan=selection({eventName:"pull_request",base,head,paths:[path]});
+  assert.deepEqual(plan.domains,DOMAINS);
+  assert.deepEqual(plan.files,selectedFiles(DOMAINS));
+ }
+ assert.deepEqual(domainsForPaths([".github/luna/scenarios/14b.json"]),[]);
+});

@@ -216,6 +216,7 @@ jobs:
           version: 2.121.0
       # Both are slow and independent, so they run side by side.
       - name: Install locked dependencies and start local Supabase once (database only, never production)
+        id: local_db
         run: |
           npm ci --ignore-scripts >"$RUNNER_TEMP/npm-ci.log" 2>&1 &
           npm_ci=$!
@@ -240,6 +241,7 @@ jobs:
           if-no-files-found: warn
           retention-days: 14
       - name: Run every SQL and database test
+        if: ${{ !cancelled() && steps.local_db.outcome == 'success' }}
         run: bash scripts/db/run-all.sh
       - name: Stop local Supabase
         if: always()
@@ -396,6 +398,7 @@ jobs:
           node-version: 22
           cache: npm
       - name: Install locked dependencies
+        id: owner_dependencies
         run: npm ci
       - name: Mutation-test owner-domain selection and proof validation
         run: node --test scripts/acceptance/owner-gate.test.mjs
@@ -414,8 +417,11 @@ jobs:
           if-no-files-found: error
           retention-days: 14
       - name: Execute all selected registered domain regressions
+        id: owner_regressions
+        if: ${{ !cancelled() && steps.owner_dependencies.outcome == 'success' }}
         run: node scripts/acceptance/owner-gate.mjs run
       - name: Verify exact-head proof and actual case execution
+        if: ${{ !cancelled() && steps.owner_regressions.outcome == 'success' }}
         run: node scripts/acceptance/owner-gate.mjs verify
       - name: Upload redacted exact-head domain proof
         if: always()

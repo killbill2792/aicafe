@@ -60,7 +60,8 @@
         "tool:query_data",
         "historical sales and labor",
         "correction",
-        "discount/refund/tip/tax/fee arithmetic"
+        "discount/refund/tip/tax/fee arithmetic",
+        "loaded labor share and average ticket on corrected date"
       ],
       "state": "UNTESTED"
     },
@@ -74,7 +75,11 @@
         "tool:get_cashflow_evidence",
         "menu/recipe unit margin",
         "recurring bills and documented expenses",
-        "missing bank balance"
+        "missing bank balance",
+        "tool:get_item_sales",
+        "tool:get_supplier_purchase_orders",
+        "menu price/recipe cost/actual units and recorded revenue",
+        "supplier commitments versus verified cash"
       ],
       "state": "UNTESTED"
     }
@@ -104,5 +109,245 @@
       "applies_to"
     ],
     "additionalProperties": false
-  }
+  },
+  "inheritedScenarioBaseline": {
+    "main": "2c7c7a905a7581db63c668eac92e77189e91e2f4",
+    "artifacts": {
+      ".github/luna/scenarios/13c.json": "233f51dc697eec7b77d63b0d96838cecd89b6bce",
+      ".github/luna/scenarios/13d.json": "9d435a2ab1223df70e6c4ba3dce4a5139ad44a90",
+      ".github/luna/scenarios/14b.json": "f0ad05e9ea738994c652f6dae237f76e34096717",
+      ".github/luna/scenarios/14c.json": "1ec7efc3b471935987ae93356c58e36b39747b02",
+      ".github/luna/scenarios/14d-autonomous.json": "c5def2c576788873b960c24556d55470105e0e63",
+      ".github/luna/scenarios/14d.json": "31a857359b94563a1b9abfce95ecf4929b02eb9b",
+      ".github/luna/scenarios/14e-autonomous-followup.json": "592b40716856f5c500f88e324e79b47024e9821d",
+      ".github/luna/scenarios/14e-cash-position.json": "211d9411815f62126057aaa07f6d36e9dc21ace0",
+      ".github/luna/scenarios/14e-payables.json": "1b1cea412ba38622b887e2454dd86304f4903b5d",
+      ".github/luna/scenarios/14e-settlement-boundary.json": "47d2807bc39dca9983c584f9fd34f06af64ac650",
+      ".github/luna/scenarios/15b.json": "296e0e1580ec4b317646ec71091fe327fd4a79ae",
+      ".github/luna/scenarios/15c.json": "0be43d231c9ad522a84c7a22f9dc500fd897259b",
+      ".github/luna/scenarios/15d.json": "432a455f4d7ebd03d1284611c37dc12383b7d199",
+      ".github/luna/scenarios/16a.json": "21bc8a794b3f19bd8dd76a811c8d668d237a0a93",
+      ".github/luna/scenarios/16c.json": "1786fe8cf260ef00969526b3bfd100f5ea474f4c",
+      ".github/luna/scenarios/16d.json": "2a6a1a9a252db3f20f490d35d1a18a3dcae5218b",
+      "evals/acceptance/live/task14b.mjs": "2eb270c9684b4f43d5fe3690d1cdca37b5645f82",
+      "evals/acceptance/live/task14b.test.mjs": "f2e6526d79feb2fb497d14cbcec0dfc52a9446b2",
+      "evals/acceptance/live/task14c.mjs": "51e6b040b2efa17b22cf6ebeb1652a072ca1480a",
+      "evals/acceptance/live/task14d.mjs": "2eae9e013f22033ae4900dc35246cdf45c1b2894",
+      "evals/acceptance/live/task14e-autonomous-followup.mjs": "fac7428eaf0ee240fc74e22176959a370565c98a",
+      "evals/acceptance/live/task14e-cash-position.mjs": "f44d4aa4889c4892791bf755b89f174a42fed06a",
+      "evals/acceptance/live/task14e-payables.mjs": "bd6e4e12b3280c3730502430bd1cce9c19518187",
+      "evals/acceptance/live/task14e-settlement-boundary.mjs": "3bbb568e56545ba92df7ba50c5710a09bb845e15",
+      "evals/acceptance/live/task15d.mjs": "6396dfa53804fb805c8799607f155469417db2bc",
+      "evals/acceptance/live/task16a.mjs": "ec434c63d8bf2026702b4e3ff4d81beffc4837ae",
+      "evals/acceptance/live/task16c.mjs": "57b15144aef08efc64d19cacd1a33e004a198574",
+      "evals/acceptance/live/task16d.mjs": "0856864e3b582fa70ae102d8701151b5e74513f9",
+      "lib/ai/supervisor/routines/staffCoordination.live.test.ts": "34c5a109b4c00c9de3584091f22d92b1a107e417",
+      "lib/ai/supervisor/routines/staffCoverage.live.test.ts": "600ee522092ffa31b178762ab1c5914f34f92cee",
+      "lib/ai/supervisor/routines/supplierReceiving.live.test.ts": "083df29c73f608c9448e8232c197666a9e831c68",
+      "lib/ai/supervisor/runs/fleetResilience.live.test.ts": "db8a743a3f27e3a9b459d4e7be17bd0e2ef82526",
+      "lib/maintenance/coordination.live.test.ts": "9d60ce09c6f84b086c651707e6026abf587b6538"
+    }
+  },
+  "requiredScenarioGroups": {
+    "13": [
+      "13c",
+      "13d"
+    ],
+    "14": [
+      "14b",
+      "14c",
+      "14d",
+      "14d-autonomous",
+      "14e-autonomous-followup",
+      "14e-cash-position",
+      "14e-payables",
+      "14e-settlement-boundary"
+    ],
+    "15": [
+      "15b",
+      "15c",
+      "15d"
+    ],
+    "16": [
+      "16a",
+      "16c",
+      "16d"
+    ],
+    "17b": [
+      "17b-owner-security",
+      "17b-sales-labor",
+      "17b-supply-finance"
+    ],
+    "17c": [
+      "17c",
+      "17c-autonomy",
+      "17c-procurement-recovery",
+      "17c-business-monitors",
+      "17c-effect-security-recovery"
+    ],
+    "17d": [
+      "17d"
+    ]
+  },
+  "crossFunctionalFamilies": [
+    {
+      "id": "sales-labor-profit",
+      "modules": [
+        "sales",
+        "staff",
+        "finance"
+      ],
+      "candidates": [
+        "17b-sales-labor",
+        "17c-autonomy"
+      ],
+      "missing": "complete independently reconciled operating profit and cross-period missing/partial data"
+    },
+    {
+      "id": "menu-ingredient-sales-margin",
+      "modules": [
+        "menu",
+        "ingredients",
+        "sales",
+        "finance"
+      ],
+      "candidates": [
+        "17b-supply-finance"
+      ],
+      "missing": "historical cost changes, variants, wastage, full profit attribution"
+    },
+    {
+      "id": "stock-purchase-receive-invoice-payables",
+      "modules": [
+        "inventory",
+        "supplier",
+        "procurement",
+        "receiving",
+        "gmail",
+        "finance"
+      ],
+      "candidates": [
+        "14b",
+        "14c",
+        "14d",
+        "14d-autonomous",
+        "14e-payables",
+        "14e-settlement-boundary",
+        "17c-procurement-recovery"
+      ],
+      "missing": "one genuine joined journey from inventory signal to source-verified payable and durable follow-up; separate scenarios do not prove the join"
+    },
+    {
+      "id": "staff-message-scheduling-payroll-sales",
+      "modules": [
+        "staff",
+        "communications",
+        "scheduling",
+        "payroll",
+        "sales"
+      ],
+      "candidates": [
+        "13c",
+        "13d",
+        "15c",
+        "17c-autonomy",
+        "17b-sales-labor"
+      ],
+      "missing": "complete staffing demand, approved publish, provider acknowledgement and actual payroll outcome"
+    },
+    {
+      "id": "maintenance-staff-supplier-expense",
+      "modules": [
+        "maintenance",
+        "staff",
+        "supplier",
+        "gmail",
+        "finance"
+      ],
+      "candidates": [
+        "15b",
+        "17c-business-monitors"
+      ],
+      "missing": "combined maintenance-induced menu/sales interruption and verified cost reconciliation"
+    },
+    {
+      "id": "file-gmail-routine-permissions",
+      "modules": [
+        "files",
+        "gmail",
+        "memory",
+        "routines",
+        "security"
+      ],
+      "candidates": [
+        "15d",
+        "16a",
+        "16c",
+        "17b-owner-security",
+        "17c",
+        "17c-effect-security-recovery",
+        "17d"
+      ],
+      "missing": "general file management and connected Gmail label selection; lasting owner memory approval/reuse across allowed sessions"
+    },
+    {
+      "id": "cashflow-supplier-bill-followup",
+      "modules": [
+        "finance",
+        "supplier",
+        "routines",
+        "attention"
+      ],
+      "candidates": [
+        "14e-cash-position",
+        "14e-payables",
+        "14e-settlement-boundary",
+        "14e-autonomous-followup",
+        "17b-supply-finance",
+        "17c-business-monitors"
+      ],
+      "missing": "real external bank/provider evidence separately authorized; do not infer live balances"
+    },
+    {
+      "id": "events-staff-inventory-revenue",
+      "modules": [
+        "events",
+        "staff",
+        "inventory",
+        "sales"
+      ],
+      "candidates": [],
+      "missing": "no registered joined real Luna scenario; verify existing event-plan tools and saved events, schedule draft, demand and stock assumptions"
+    },
+    {
+      "id": "experiment-goals-margin-monitor",
+      "modules": [
+        "pricing",
+        "experiments",
+        "goals",
+        "sales",
+        "finance",
+        "attention"
+      ],
+      "candidates": [],
+      "missing": "no registered joined real Luna scenario; price proposal/approval, guardrail monitoring, actual POS change evidence, rollback"
+    },
+    {
+      "id": "owner-brief-cross-domain-actions",
+      "modules": [
+        "morning brief",
+        "attention",
+        "sales",
+        "staff",
+        "inventory",
+        "finance",
+        "owner UI"
+      ],
+      "candidates": [
+        "17c-business-monitors",
+        "17d"
+      ],
+      "missing": "complete source-backed cross-domain briefing, owner actions and independently verified UI"
+    }
+  ]
 }

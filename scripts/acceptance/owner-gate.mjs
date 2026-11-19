@@ -48,6 +48,7 @@ const includes=(p,re)=>re.test(p.toLowerCase());
 export function domainsForPaths(paths){
  if(!Array.isArray(paths)||paths.some(p=>typeof p!=="string"||!p||p.includes("\0")))fail("invalid_changed_paths");
  const found=new Set();
+ const consolidated=paths.some(p=>p==="evals/acceptance/supervisor-census.test.ts"||p==="evals/acceptance/fixtures/task17b-coverage-map.json"||/^\.github\/luna\/scenarios\/17[bcd](?:-|\.)/.test(p));
  for(const p of paths){
   const sharedConnector=/^lib\/connectors\/(?:crypto|registry)(?:\.server|\.test|\.live\.test)?\.[cm]?[jt]s$/.test(p) ||
     /^lib\/connectors\/(?:access|publicWeb)(?:\.server|\.test)\.ts$/.test(p);
@@ -76,7 +77,7 @@ export function domainsForPaths(paths){
   if(/^lib\/(?:calc|data|actions|operating)\/|^app\/api\/|^supabase\/migrations\//.test(p)
      && found.size===seenBefore)found.add("supervisor");
  }
- return DOMAINS.filter(d=>found.has(d));
+ return consolidated?[...DOMAINS]:DOMAINS.filter(d=>found.has(d));
 }
 /** Same original baseline change categories; computed from local Git instead
  * of the rate-limited GitHub pull-request listFiles API. */

@@ -15,7 +15,7 @@ import {routineStatusSchema,routineScheduleSchema} from "@/lib/ai/supervisor/rou
 import {metricCatalog,metricKeySchema,computeMetric,type MetricKey,type MetricDailyInput} from "@/lib/calc/metrics/catalog";
 import {canonicalDictionary,canonicalViewNames,toastOfficialFieldCatalog,isDataField} from "@/lib/data/canonical/dictionary";
 import {connectorOperations} from "@/lib/connectors/registry.server";
-import {row,schemaCases,manifestIndex,makeInventory,buildCensusReport,writeCensus,verifyBootstrapSnapshot} from "../../scripts/acceptance/supervisor-coverage.mjs";
+import {row,schemaCases,manifestIndex,makeInventory,buildCensusReport,writeCensus,verifyBootstrapSnapshot,verifyInheritedScenarios,scenarioCoveragePlan} from "../../scripts/acceptance/supervisor-coverage.mjs";
 import truth from "./fixtures/task17b-business-truth.json";
 import coverageMap from "./fixtures/task17b-coverage-map.json";
 const deterministicMetrics:string[]=[];
@@ -119,8 +119,9 @@ describe("Task17B first-party changing capability inventory (no provider)",()=>{
   const inventory=makeInventory(rows);
   const manifestPaths=paths.filter(p=>p.startsWith(".github/luna/scenarios/")&&p.endsWith(".json"));
   const manifests=manifestIndex(root,manifestPaths,coverageMap.legacyTools);
+  const combinedScenarioPlan=scenarioCoveragePlan(manifests.ids,coverageMap.requiredScenarioGroups,coverageMap.crossFunctionalFamilies);
   const report=buildCensusReport(inventory,manifests,{head:git("rev-parse","HEAD"),runId:process.env.GITHUB_RUN_ID??null,deterministicMetrics,registrationGaps,testReferences:findTestReferences(new Set(Object.keys(fullSchemas)))});
-  if(process.env.AICAFE_CENSUS_OUTPUT)writeCensus(process.env.AICAFE_CENSUS_OUTPUT,report);
+  if(process.env.AICAFE_CENSUS_OUTPUT)writeCensus(process.env.AICAFE_CENSUS_OUTPUT,{...report,combinedScenarioPlan});
   expect(report.totals.UNTESTED+report.totals.FAIL).toBe(inventory.length);
   expect(report.complete).toBe(false);
   // The omitted memory tool is an explicit independently reviewed addition.
@@ -135,6 +136,20 @@ describe("Task17B first-party changing capability inventory (no provider)",()=>{
   expect(registrationGaps,"defined but not advertised to the actual model; do not accept hidden tools").toEqual([]);
  });
 
+ it("preserves every inherited Luna manifest and executable test and reports separately registered cross-functional cases",()=>{
+  const expected=coverageMap.inheritedScenarioBaseline.artifacts;
+  const actual=Object.fromEntries(Object.keys(expected).filter(path=>paths.includes(path)).map(path=>[path,git("hash-object",path)]));
+  verifyInheritedScenarios(expected,actual);
+  const manifests=manifestIndex(root,paths.filter(p=>p.startsWith(".github/luna/scenarios/")&&p.endsWith(".json")),coverageMap.legacyTools);
+  const plan=scenarioCoveragePlan(manifests.ids,coverageMap.requiredScenarioGroups,coverageMap.crossFunctionalFamilies);
+  expect(plan.unknown,"new scenario needs explicit combined plan").toEqual([]);
+  for(const group of plan.groups.filter(g=>!["17c","17d"].includes(g.group)))expect(group.missing,group.group).toEqual([]);
+  // A parent branch cannot attest scenarios from an unmerged child. When the
+  // combined tree contains either downstream manifest, require its entire group.
+  for(const group of plan.groups.filter(g=>["17c","17d"].includes(g.group)&&g.registered.length))expect(group.missing,group.group).toEqual([]);
+  expect(plan.complete).toBe(false);
+  console.log("Task17B consolidated scenario plan:",JSON.stringify(plan));
+ });
  it("checks each actual registered schema rejects unexpected tenant authority",()=>{
   for(const [name,entry] of Object.entries(fullSchemas)){
    const schema="schema" in entry?entry.schema:entry;

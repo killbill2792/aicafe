@@ -114,3 +114,28 @@ export function requireComplete(report){
  throw Error("supervisor_acceptance_not_proven:trusted_receipt_reconciliation_pending");
 }
 export function writeCensus(path,report){mkdirSync(dirname(path),{recursive:true});writeFileSync(path,JSON.stringify(report,null,2)+"\n",{mode:0o600});}
+
+/** Preserve inherited paid-test specifications and executable entrypoints.
+ * A reviewed replacement needs an explicit baseline revision, not deletion. */
+export function verifyInheritedScenarios(expected,actual){
+ if(!expected||typeof expected!=="object"||Object.keys(expected).length<1)throw Error("empty_inherited_scenario_contract");
+ for(const [path,sha] of Object.entries(expected)){
+  if(!/^[a-f0-9]{40}$/.test(sha)||actual[path]!==sha)throw Error("inherited_scenario_missing_or_changed:"+path);
+ }
+}
+export function scenarioCoveragePlan(ids,groups,families){
+ const observed=new Set(ids);
+ if(observed.size!==ids.length)throw Error("duplicate_registered_scenario");
+ const required=Object.values(groups).flat();
+ if(!required.length||new Set(required).size!==required.length)throw Error("invalid_required_scenario_groups");
+ const known=new Set(required);
+ const unknown=ids.filter(id=>!known.has(id)).sort();
+ const groupRows=Object.entries(groups).map(([group,expected])=>({group,registered:expected.filter(id=>observed.has(id)),missing:expected.filter(id=>!observed.has(id))}));
+ const crossFunctional=families.map(f=>{
+  if(new Set(f.modules).size<2||f.candidates.some(id=>!known.has(id))||!f.missing)throw Error("invalid_cross_functional_contract:"+f.id);
+  return {...f,registered:f.candidates.filter(id=>observed.has(id)),unregistered:f.candidates.filter(id=>!observed.has(id)),status:"UNTESTED"};
+ });
+ return {registered:ids.length,required:required.length,unknown,groups:groupRows,crossFunctional,
+  allRegistered:unknown.length===0&&groupRows.every(g=>g.missing.length===0),
+  providerProof:false,complete:false};
+}

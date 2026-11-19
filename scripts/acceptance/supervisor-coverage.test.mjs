@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import {row,schemaCases,makeInventory,buildCensusReport,inventoryDelta,requireComplete,verifyBootstrapSnapshot} from "./supervisor-coverage.mjs";
+import {row,schemaCases,makeInventory,buildCensusReport,inventoryDelta,requireComplete,verifyBootstrapSnapshot,verifyInheritedScenarios,scenarioCoveragePlan} from "./supervisor-coverage.mjs";
 const head="a".repeat(40);
 const tool=row("tool","manage_routine",{type:"object"});
 const metric=row("metric","profit",{unit:"cents"});
@@ -62,4 +62,24 @@ test("a registered schema omitted from the actual model list is retained as a fa
  assert.equal(report.rows.find(r=>r.id===tool.id).status,"FAIL");
  assert.deepEqual(report.totals,{PASS:0,FAIL:1,UNTESTED:1,UNSUPPORTED:0});
  assert.throws(()=>requireComplete(report),/not_proven/);
+});
+
+test("prior feature scenario and oracle blobs cannot silently disappear or change",()=>{
+ const baseline={"13c.json":"a".repeat(40),"13c.live.test.ts":"b".repeat(40)};
+ assert.doesNotThrow(()=>verifyInheritedScenarios(baseline,{...baseline,"17b.json":"c".repeat(40)}));
+ assert.throws(()=>verifyInheritedScenarios(baseline,{"13c.json":baseline["13c.json"]}),/inherited_scenario_missing_or_changed/);
+ assert.throws(()=>verifyInheritedScenarios(baseline,{...baseline,"13c.json":"d".repeat(40)}),/inherited_scenario_missing_or_changed/);
+});
+test("all earlier scenarios and joined cases must remain separately visible, never counted as provider proof",()=>{
+ const groups={"14":["14b","14d"],"17b":["17b-supply"],"17c":["17c"]};
+ const families=[{id:"supply",modules:["stock","finance"],candidates:["14b","14d","17b-supply","17c"],missing:"joined effect"}];
+ const partial=scenarioCoveragePlan(["14b","14d","17b-supply"],groups,families);
+ assert.equal(partial.allRegistered,false);
+ assert.deepEqual(partial.groups[2].missing,["17c"]);
+ const combined=scenarioCoveragePlan(["14b","14d","17b-supply","17c"],groups,families);
+ assert.equal(combined.allRegistered,true);
+ assert.equal(combined.complete,false);
+ assert.equal(combined.crossFunctional[0].status,"UNTESTED");
+ assert.equal(scenarioCoveragePlan(["14b","14d","17b-supply","17c","new"],groups,families).allRegistered,false);
+ assert.throws(()=>scenarioCoveragePlan(["14b"],groups,[{...families[0],candidates:["nonexistent"]}]),/invalid_cross_functional/);
 });
