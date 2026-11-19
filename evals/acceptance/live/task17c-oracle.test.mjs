@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import {assessCoverage,requiredFamilies,verifyRoutineAndFile,verifyScheduledOccurrence,verifyOperatingWorld} from "./task17c-oracle.mjs";
+import {assessCoverage,requiredFamilies,verifyRoutineAndFile,verifyScheduledOccurrence,verifyOperatingWorld,verifyProcurementOutcome,verifyRevocationOutcome,verifyMonitorOutcome} from "./task17c-oracle.mjs";
 const head="a".repeat(40);
 test("missing, stale or candidate-only receipt cannot pass",()=>{
  const base={family:"chat_routine",head,model:"gpt-6-luna",status:"PASS"};
@@ -58,5 +58,36 @@ test("operating-world proof rejects restarted identity, missing follow-up, unaut
  assert.equal(verifyOperatingWorld(good).providerCalls,4);
  for(const mutate of [x=>x.recovered=[{...x.recovered[0],episode_id:"new"},x.recovered[1]],x=>x.financeNew=[],x=>x.effects=[{}],x=>x.usage[0].model="fallback",x=>x.sources[1].financial_closing_cents=600,x=>x.ownerRows=[{}],x=>x.staffNotices.push({id:"duplicate"}),x=>x.recoveryPid=x.originalPid]){
   const copy=structuredClone(good);mutate(copy.evidence);assert.throws(()=>verifyOperatingWorld(copy));
+ }
+});
+
+test("procurement outcome requires exactly one approved effect across lost ACK and replay",()=>{
+ const expected={supplier:"vendor",quoteId:"quote",packs:4,price:600,currency:"TEST",ownerUserId:"owner"};
+ const proposal={id:"p",status:"draft",capability_id:"maya.supplier_purchase_order.v1",effect_hash:"hash",canonical_effect_payload:{supplierName:"vendor",currency:"TEST",subtotalCents:2400,lines:[{quoteId:"quote",packs:4}]}};
+ const receipt={attempt_key:"attempt",effect_hash:"hash",authorization_kind:"click",state:"verified",receipt_ref:"purchase_orders:po"};
+ const order={id:"po",proposal_id:"p",status:"approved_for_ordering",subtotal_cents:2400,currency_code:"TEST",effect_hash:"hash"};
+ const counts={stock:0,expenses:0,remote:0};
+ const fixture={expected,proposal,preOrders:[],preAttempts:[],foreignOrders:[],foreignAttempts:[],foreignStatus:403,dropped:true,serverStatus:200,committed:[order],committedAttempts:[receipt],after:[{...order}],afterAttempts:[{...receipt}],approvals:[{owner_user_id:"owner",effect_hash:"hash",authorization_kind:"click"}],finalProposal:[{id:"p",status:"committed",effect_hash:"hash"}],replayStatus:409,before:counts,afterCounts:{...counts}};
+ assert.equal(verifyProcurementOutcome(fixture),"po");
+ for(const mutate of [x=>x.preOrders.push(order),x=>x.foreignAttempts.push(receipt),x=>x.proposal.canonical_effect_payload.subtotalCents++,x=>x.committedAttempts[0].state="uncertain",x=>x.committedAttempts[0].receipt_ref="purchase_orders:other",x=>x.afterAttempts.push(receipt),x=>x.after.push(order),x=>x.approvals[0].owner_user_id="foreign",x=>x.dropped=false,x=>x.afterCounts.stock++]){
+  const bad=structuredClone(fixture);mutate(bad);assert.throws(()=>verifyProcurementOutcome(bad));
+ }
+});
+
+test("revoked file and old model context are unavailable without any mutation",()=>{
+ const good={canary:"private-canary",qty:47,good:[{text:"Oat milk 47 private-canary"}],after:[{text:"The file is no longer accessible."}],blocked:"supervisor_file_access_revoked",blockedUse:[],foreignStatus:503,foreignError:"access_change_unverified",prematureAccess:[],access:[{allowed:false}],proposals:[],before:{stock:0,expenses:0,remote:0},afterCounts:{stock:0,expenses:0,remote:0}};
+ assert.doesNotThrow(()=>verifyRevocationOutcome(good));
+ for(const mutate of [x=>x.good=[{text:"Wrong item 47 private-canary"}],x=>x.good=[{text:"Oat milk 147 private-canary"}],x=>x.after=[{text:"private-canary"}],x=>x.blocked="http_500",x=>x.blockedUse=[{}],x=>x.foreignStatus=200,x=>x.foreignError="unknown",x=>x.prematureAccess=[{}],x=>x.access[0].allowed=true,x=>x.proposals=[{}],x=>x.afterCounts.remote=1]){
+  const bad=structuredClone(good);mutate(bad);assert.throws(()=>verifyRevocationOutcome(bad));
+ }
+});
+
+test("source alert lifecycle rejects healthy-cafe false positive and fabricated closure",()=>{
+ const alert={id:"a",business_id:"cafe",status:"new"};
+ const ep={episode_id:"episode",phase:"awaiting_owner",evidence:{modelTools:["get_investigation_source","get_expenses","get_bills"]}};
+ const good={businessId:"cafe",alertId:"a",oldExpenseId:"old",newExpenseId:"new",amount:12000,opened:[alert],repeated:[{...alert}],pending:[ep],closed:[{...alert,status:"resolved"}],finished:[{...ep,phase:"resolved"}],beforeNotices:[{id:"n1"}],afterNotices:[{id:"n2"}],ownerRows:[],effects:[],expenses:[{id:"old",amount_cents:12000},{id:"new",amount_cents:12000}],usage:[{model:"gpt-6-luna",status:"completed",input_tokens:100},{model:"gpt-6-luna",status:"completed",input_tokens:200}]};
+ assert.equal(verifyMonitorOutcome(good).episodeId,"episode");
+ for(const mutate of [x=>x.opened.push({...alert,business_id:"healthy"}),x=>x.repeated.push(alert),x=>x.pending[0].evidence.modelTools=["get_investigation_source"],x=>x.closed[0].status="new",x=>x.finished[0].episode_id="replacement",x=>x.afterNotices=[],x=>x.ownerRows=[{}],x=>x.effects=[{}],x=>x.expenses[1].amount_cents++,x=>x.usage[0].model="fallback"]){
+  const bad=structuredClone(good);mutate(bad);assert.throws(()=>verifyMonitorOutcome(bad));
  }
 });
