@@ -353,47 +353,39 @@ export async function runVerifiedToastPriceTick(db:SupabaseClient,repo:LoopRepos
   if(written.error)throw new Error("verified_window_write_failed");
   complete.push(measured);
  }
- // The new-mode midpoint uses the SAME idempotent report+notifyOwner
- // delivery path as legacy. The skipped calendar-day monitor must never
- // become a second writer; a stable midRunKey deduplicates cron retries.
- if(complete.length!==days){
-  const half=Math.ceil(days/2);
-  if(days>1&&complete.length>=half&&Date.parse(now)<Date.parse(finalEndAt)){
-   const actualCount=complete.filter(c=>c.status==="actual").length;
-   const firstHalfEnd=windows[half-1].endAt;
-   const interim:LoopReport={
-    status:"in_progress",recommendation:"adjust",
-    source:"order_lines.ordered_at+orders.closed_at",
-    midRunKey:"verified-source-half",
-    midRunText:"Toast verified the price for "+effect.productName+
-     ". Midpoint update: "+actualCount+" of "+complete.length+
-     " elapsed 24-hour windows have actual sales coverage. "+
-     (interruptionAt?"A later price or source-context change interrupted this trial. ":
-      "Any missing timestamps or late imports remain unverified. ")+
-     "These observations do not prove that the price caused sales changes.",
-    result:{productId:effect.productId,productName:effect.productName,
+ // Each elapsed day has its own stable existing in-app report update.
+ // Catch-up uses the original window index instead of today's local date.
+ // A day-specific update never overwrites a previously stored final report.
+ for(const m of complete){
+  const day=m.window.index+1;
+  const actual=m.status==="actual";
+  const interim:LoopReport={
+   status:"in_progress",recommendation:"adjust",
+   source:"order_lines.ordered_at+orders.closed_at",
+   midRunKey:"verified-source-day-"+day,
+   midRunText:"Toast verified the price for "+effect.productName+
+    ". Elapsed 24-hour day "+day+" of "+days+" ended at "+m.window.endAt+". "+
+    (actual?"Observed "+m.units+" units and "+new Intl.NumberFormat("en-US",{style:"currency",currency:effect.currency}).format(m.revenueCents!/100)+" net revenue. ":
+     "Some timestamps or sales coverage are missing. ")+
+    (interruptionAt?"A later price or source gap interrupted the trial; please decide whether to stop or authorize a separate new phase. ":"")+
+    "These are observations, not proof that the price caused sales changes.",
+   result:{productId:effect.productId,productName:effect.productName,
+    coveredWindows:complete.filter(c=>c.status==="actual").length,
+    elapsedWindows:day,totalWindows:days,windowStartAt:receipt.startAt,
+    windowEndAt:m.window.endAt,observedUnits:m.units,observedRevenueCents:m.revenueCents,
+    sourceContinuity:interruptionAt?"interrupted":"verified",nonCausal:true},
+   delivery:{agentId:"alex",taskKind:"price_experiment_report",entityType:"menu_item",entityId:effect.productId,
+    confidence:actual?"high":"low",payload:{productId:effect.productId,productName:effect.productName,
+     itemName:effect.productName,outcomeStatus:"in_progress",recommendation:"adjust",
      oldPriceCents:effect.oldPriceCents,newPriceCents:effect.newPriceCents,
-     coveredWindows:actualCount,elapsedWindows:complete.length,totalWindows:days,
-     windowStartAt:receipt.startAt,windowEndAt:firstHalfEnd,
-     sourceContinuity:interruptionAt?"interrupted":"verified",
-     nonCausal:true,status:"in_progress"},
-    delivery:{agentId:"alex",taskKind:"price_experiment_report",
-     entityType:"menu_item",entityId:effect.productId,
-     confidence:"low",payload:{productId:effect.productId,
-      productName:effect.productName,itemName:effect.productName,
-      outcomeStatus:"in_progress",recommendation:"adjust",
-      oldPriceCents:effect.oldPriceCents,newPriceCents:effect.newPriceCents,
-      coveredWindows:actualCount,totalWindows:days,
-      windowStartAt:receipt.startAt,windowEndAt:firstHalfEnd,
-      sourceCoverage:"in_progress",nonCausal:true},
-     evidence:[{source:"order_lines",facts:{actualWindowCount:actualCount,
-      elapsedWindowCount:complete.length,totalWindowCount:days,nonCausal:true}}],
-     threadText:""},
-   };
-   await repo.saveReport(scope,proposal,interim,{midRun:true});
-  }
-  return "monitoring";
+     elapsedWindows:day,totalWindows:days,observedUnits:m.units,observedRevenueCents:m.revenueCents,
+     windowStartAt:m.window.startAt,windowEndAt:m.window.endAt,nonCausal:true},
+    evidence:[{source:"order_lines",facts:{status:m.status,windowIndex:m.window.index,nonCausal:true}}],
+    threadText:""},
+  };
+  await repo.saveReport(scope,proposal,interim,{midRun:true});
  }
+ if(complete.length!==days)return "monitoring";
  const actual=!interruptionAt&&complete.every(c=>c.status==="actual");
  const units=actual?complete.reduce((a,b)=>a+(b.units??0),0):null;
  const revenue=actual?complete.reduce((a,b)=>a+(b.revenueCents??0),0):null;
@@ -435,6 +427,11 @@ export async function runVerifiedToastPriceTick(db:SupabaseClient,repo:LoopRepos
     "Any trading after the final window remains separately unverified.",
   }};
  await repo.saveReport(scope,proposal,report);
+ // Match the existing monitor correction grace and seal only after the
+ // terminal report was durably saved. A newly transitioned proposal will
+ // be checked with its current revision on the next authenticated tick.
+ if(row.status!=="manual_pending"&&Date.parse(now)>Date.parse(finalEndAt)+14*86400000)
+  await repo.transition(scope,row.id,row.revision,"finish_monitor");
  return "reported";
 }
 /** Notification-only action during legacy/shadow rollout. This does not
