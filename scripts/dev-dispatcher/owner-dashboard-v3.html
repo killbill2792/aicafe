@@ -41,6 +41,15 @@ section{margin-top:18px}details{padding:7px;border-bottom:1px solid #e2e2e2}
 </section>
 <section id="detail"><b>Select a task to inspect every field and its evidence.</b></section>
 <section>
+<h2>Owner questions — local communication history</h2>
+<p>Questions arrive from coding PR comments. Muse and the owner record the actual answer, send it to the saved chat and record evidence of delivery. These records do not authorize spend, merging or production actions.</p>
+<div id="muse-questions"></div>
+<label>Question ID<input id="question-id" readonly></label>
+<label>Action<select id="question-action"><option value="answer">Record owner's answer</option><option value="claim_delivery">Reserve delivery (before sending)</option><option value="confirm_delivery">Confirm observed delivery</option><option value="confirm_not_sent">Verify not sent (allow retry)</option><option value="close">Close with reason</option></select></label>
+<label>Exact answer or evidence<textarea id="question-detail" rows="4" cols="55"></textarea></label>
+<button id="question-save">Save local question record</button><p id="question-result"></p>
+</section>
+<section>
 <h2>Muse coordination notes</h2>
 <p>Both Muse and the owner can register a ChatGPT URL, a note and an informal work stage here. These are NOT CI, Codex, owner approval or merge receipts. The notes stay on Muse's private host and can be edited even when GitHub Actions fails.</p>
 <div id="muse-notes-list"></div>
@@ -76,7 +85,7 @@ async function refreshMusePrs(){
   return '<tr><td><a target="_blank" rel="noopener noreferrer" href="'+esc(p.url)+'">#'+esc(p.number)+'</a> '+esc(p.title)+'</td>'+
     '<td>'+esc(p.head_sha?.slice(0,8))+' · '+age(p.committed_at)+'</td>'+
     '<td>'+esc(p.ci)+(fresh?'':' (stale)')+'</td><td>'+esc(p.codex)+(fresh?'':' (stale)')+'</td>'+
-    '<td>'+(p.owner_question?'<strong>'+esc(p.owner_question.status==='requested'?'OWNER DECISION REQUIRED':'Owner-question evidence incomplete')+'</strong><p>'+esc(p.owner_question.question)+'</p>':'')+
+    '<td>'+(p.owner_request_read_incomplete?'<strong>Question scan incomplete — inspect earlier comments</strong>':'')+
     (p.workflow_handoff?'<p>Coder report: '+esc(p.workflow_handoff.state)+' · '+esc(p.workflow_handoff.next)+
      (p.workflow_handoff.observed?' · Luna '+esc(p.workflow_handoff.observed)+' '+esc(p.workflow_handoff.conclusion||''):'')+
      '</p>':'')+(fresh?'':'<small>Stale: verify on PR before acting</small>')+'</td>'+
@@ -92,10 +101,46 @@ async function refreshMuseActions(){
  el('muse-actions').innerHTML=(value.events||[]).slice(0,15).map(a=>
   '<p>'+esc(a.kind)+' · '+esc(a.task_id||('PR #'+(a.pr_number||'—')))+
   ' · '+esc(a.status)+' · '+esc(a.reason||'')+
-  (a.owner_question?' · Owner decision; verify on PR #'+esc(a.pr_number):'')+
+  (a.question_id?' · Local question '+esc(a.question_id):'')+
   (a.chat_url?'<a target="_blank" rel="noopener noreferrer" href="'+esc(a.chat_url)+'"> Open chat</a>':'')+'</p>'
  ).join('')||'<p>None recorded yet.</p>';
 }
+let localQuestions={entries:{}},selectedQuestion=null;
+async function refreshQuestions(){
+ const response=await fetch('/api/muse-questions',{cache:'no-store'});
+ if(!response.ok)throw Error('Question records HTTP '+response.status);
+ localQuestions=await response.json();
+ el('muse-questions').innerHTML=Object.values(localQuestions.entries||{}).sort((a,b)=>
+  Number(a.status==='closed')-Number(b.status==='closed')||String(b.created_at).localeCompare(String(a.created_at))).map(q=>{
+   const links=[...new Set(Object.values(localNotes.entries||{}).filter(e=>e.pr_number===q.pr_number).map(e=>e.chat_url).filter(Boolean))];
+   return '<details'+(q.status==='open'||q.status==='delivery_uncertain'?' open':'')+'><summary>PR #'+esc(q.pr_number)+' · '+esc(q.id)+' · '+esc(q.status)+(q.source_changed?' · SOURCE EDITED':'')+'</summary>'+
+    '<p>'+esc(q.question)+'</p><p>Requested head: '+esc(q.head_sha)+'</p>'+
+    '<p><a target="_blank" rel="noopener noreferrer" href="'+esc(q.url)+'">Original question</a>'+
+    (links.length===1?' · <a target="_blank" rel="noopener noreferrer" href="'+esc(links[0])+'">Open saved coding chat</a>':' · Chat link missing or ambiguous')+'</p>'+
+    (q.answer?'<p>Recorded answer ('+esc(q.answer_recorded_by)+'): '+esc(q.answer)+'</p>':'')+
+    (q.delivery_receipt?'<p>Reported delivery evidence: '+esc(q.delivery_receipt)+'</p>':'')+
+    (q.closure?'<p>Closure: '+esc(q.closure)+'</p>':'')+
+    '<button data-question="'+esc(q.id)+'">Edit local record</button></details>';
+  }).join('')||'<p>No imported questions. Absence is not proof that a coder has no blocker.</p>';
+ for(const button of document.querySelectorAll('[data-question]'))button.onclick=()=>{
+  const q=localQuestions.entries[button.dataset.question];
+  selectedQuestion={id:q.id,expected_revision:q.revision};el('question-id').value=q.id;
+  el('question-detail').value='';el('question-result').textContent='Selected revision '+q.revision;
+ };
+ if(selectedQuestion&&localQuestions.entries[selectedQuestion.id]?.revision!==selectedQuestion.expected_revision)
+  el('question-result').textContent='Record changed elsewhere. Select it again before saving.';
+}
+el('question-save').onclick=async()=>{
+ if(!selectedQuestion){el('question-result').textContent='Select a question first.';return;}
+ try{
+  const r=await fetch('/api/muse-questions',{method:'POST',headers:{'Content-Type':'application/json'},
+   body:JSON.stringify({...selectedQuestion,action:el('question-action').value,detail:el('question-detail').value})});
+  const v=await r.json();if(!r.ok)throw Error(v.error||'HTTP '+r.status);
+  selectedQuestion={id:v.entry.id,expected_revision:v.entry.revision};
+  el('question-detail').value='';await refreshQuestions();
+  el('question-result').textContent='Saved locally: '+v.entry.status+' (not authorization)';
+ }catch(e){el('question-result').textContent='Not saved: '+e.message;}
+};
 async function refreshNotes(){
  const response=await fetch('/api/notes',{cache:'no-store'});
  if(!response.ok)throw Error('Notes HTTP '+response.status);
@@ -153,7 +198,7 @@ function detail(id){
  selectMuseNote(id);
 }
 el('search').oninput=()=>snapshot&&redraw();
-el('refresh').onclick=()=>{refresh().catch(e=>alert(e.message));refreshNotes().catch(e=>el('muse-saved').textContent=e.message);refreshMusePrs().catch(e=>el('muse-pr-freshness').textContent='Monitor unavailable: '+e.message);refreshMuseActions().catch(e=>el('muse-actions').textContent='Actions unavailable: '+e.message);};
+el('refresh').onclick=()=>{refresh().catch(e=>alert(e.message));refreshNotes().catch(e=>el('muse-saved').textContent=e.message);refreshMusePrs().catch(e=>el('muse-pr-freshness').textContent='Monitor unavailable: '+e.message);refreshMuseActions().catch(e=>el('muse-actions').textContent='Actions unavailable: '+e.message);refreshQuestions().catch(e=>el('question-result').textContent=e.message);};
 el('muse-save').onclick=async()=>{
  const task_id=el('muse-task').value.trim();
  const prRaw=el('muse-pr').value.trim();
@@ -186,6 +231,8 @@ el('save').onclick=async()=>{
 refresh().catch(e=>el('freshness').textContent='GitHub state unavailable: '+e.message);
 refreshNotes().catch(e=>el('muse-saved').textContent='Notes unavailable: '+e.message);
 refreshMusePrs().catch(e=>el('muse-pr-freshness').textContent='Monitor unavailable: '+e.message);
-setInterval(()=>{refresh().catch(()=>{});refreshNotes().catch(()=>{});refreshMusePrs().catch(()=>{});refreshMuseActions().catch(()=>{});},60000);
+refreshMuseActions().catch(e=>el('muse-actions').textContent='Actions unavailable: '+e.message);
+refreshQuestions().catch(e=>el('question-result').textContent='Questions unavailable: '+e.message);
+setInterval(()=>{refresh().catch(()=>{});refreshNotes().catch(()=>{});refreshMusePrs().catch(()=>{});refreshMuseActions().catch(()=>{});refreshQuestions().catch(e=>el('question-result').textContent=e.message);},60000);
 </script>
 </body></html>
