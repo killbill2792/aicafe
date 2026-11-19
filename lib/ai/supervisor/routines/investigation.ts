@@ -11,6 +11,10 @@ export const investigationReadTools=[
   "get_peak_hours","get_payroll_facts","get_staff_messages","get_staff_coordination_cases","get_schedule","get_week_schedule",
   "get_coverage_gaps","get_inventory","get_usage_variance","calculate",
 ] as const satisfies readonly AgentToolName[];
+/** The only system-triggered write permitted here is an inert approval
+ * draft. The existing owner-click gateway is still the only effect authority. */
+export const maintenanceInvestigationTools=[...investigationReadTools,
+  "search_maintenance_vendor","propose_maintenance_vendor_request"] as const satisfies readonly AgentToolName[];
 /** Requiring kind-specific independent corroboration keeps an agent from
  * reading two irrelevant sales/expense totals for an employee incident. */
 const relevantByKind:Record<string,readonly AgentToolName[]>={
@@ -183,7 +187,10 @@ export function investigationPrompt(source:SourceSynopsis,followUp:boolean,
     "None implies the next stage automatically. Determine the best next steps using "+
     "real source facts, staffing and business impact; if a technician or employee "+
     "must be contacted, prepare a specific owner approval request in the existing "+
-    "Supervisor conversation, not a claim that a message was sent. "+
+    "Supervisor conversation, not a claim that a message was sent. For a technician, "+
+    "search_maintenance_vendor can find a previous verified sender; call propose_maintenance_vendor_request "+
+    "when the actual contact is known to persist the inert approval on the maintenance case. "+
+    "No spending, repair booking or sending is permitted in this turn. "+
     "If vendor contact details or communication channel are missing, explicitly "+
     "ask the owner for the missing detail and keep investigating other leads. ":"";
   return "SYSTEM-INITIATED CAFÉ INVESTIGATION. This is NOT an owner message or " +
@@ -250,7 +257,7 @@ export function verifyInvestigationTurn(turn:AgentTurn,expected:ExpectedInvestig
     turn.unverified.length>0||unsupportedExternalEffectClaim(text))
     return {ok:false,reason:"model_incomplete"};
   const calls=turn.toolInvocations??[];
-  const allowedSet=new Set<string>(investigationReadTools);
+  const allowedSet=new Set<string>(expected.kind==="maintenance_issue"?maintenanceInvestigationTools:investigationReadTools);
   if(calls.some(call=>!allowedSet.has(call.name)))
     return {ok:false,reason:"model_incomplete"};
   // Missing the required source read means insufficient evidence; attempting

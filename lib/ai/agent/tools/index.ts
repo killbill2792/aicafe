@@ -111,6 +111,7 @@ export type AgentToolContext = {
     thread(threadId:string):Promise<Record<string,unknown>>;
     attachment(messageId:string,attachmentId:string):Promise<Record<string,unknown>>;
     propose(input:import("@/lib/ai/supervisor/loop/gmail.server").GmailProposalInput):Promise<{proposalId:string;revision:number;account:string}>};
+  maintenance?:ReturnType<typeof import("@/lib/ai/supervisor/loop/maintenance.server").maintenanceContext>;
   /** Owner-scoped purchasing capability in the ONE Supervisor. No model-supplied café IDs or approvals. */
   purchasing?:{
     list():Promise<{orders:SupplierOrderStatus[];truncated:boolean;
@@ -192,7 +193,7 @@ export const resolverExemptions:Partial<Record<AgentToolName,readonly string[]>>
   // A public web search phrase is not a café catalog identifier.
   web_search:["query"],
   // Free-form Gmail search is owner text, not an internal catalogue identity.
-  search_gmail:["query"],
+  search_gmail:["query"],search_maintenance_vendor:["query"],
   inspect_public_page:["url"],
   propose_event_plan:["summary","actions","expectedBusyHours"],
   manage_commitment:["title","due_date","due_time","origin","commitment_id"],
@@ -257,6 +258,8 @@ export async function executeAgentTool(name: string, raw: unknown, ctx: AgentToo
   if(name==="read_gmail_attachment")return gmailTools.read_gmail_attachment.execute(raw,ctx);
   if(name==="propose_gmail_action")return gmailTools.propose_gmail_action.execute(raw,ctx);
   if(name==="get_maintenance_cases")return maintenanceTools.get_maintenance_cases.execute(raw,ctx);
+  if(name==="search_maintenance_vendor")return maintenanceTools.search_maintenance_vendor.execute(raw,ctx);
+  if(name==="propose_maintenance_vendor_request")return maintenanceTools.propose_maintenance_vendor_request.execute(raw,ctx);
   if(name==="describe_data"){
     // Field names for one Toast record type need the café-scoped reader.
     const scoped=raw&&typeof raw==="object"&&typeof (raw as {record_type?:unknown}).record_type==="string";

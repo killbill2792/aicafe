@@ -13,7 +13,8 @@ import {readClaimedStaffCoordination} from "@/lib/staffCoordination/cases.server
 import {readStaffMessagesForVerifiedOwner} from "@/lib/staffCommunication/channel.server";
 import {getWeekSchedule as readScopedWeekSchedule} from "@/lib/data/staffSchedule.server";
 import {alreadyNotifiedTaskKinds} from "./priority";
-import {investigationPrompt,investigationReadTools,verifyInvestigationTurn,
+import {maintenanceContext,pollMaintenanceVendorReplies} from "@/lib/ai/supervisor/loop/maintenance.server";
+import {investigationPrompt,investigationReadTools,maintenanceInvestigationTools,verifyInvestigationTurn,
   unsupportedExternalEffectClaim,type InvestigationCheckpoint,type SourceSynopsis} from "./investigation";
 
 type Claimed={
@@ -150,17 +151,17 @@ async function readIncidentEvidence(db:SupabaseClient,c:Claimed):
     }
   }
   let maintenanceHistory:Array<{kind:string;sourceKind:string;verifiedWorking:boolean;
-    occurredAt:string}>|null=null;
+    occurredAt:string;note:string|null}>|null=null;
   if(row.kind==="maintenance_issue"&&c.source_type==="operating_task"){
     const events=await db.from("maintenance_case_events")
-      .select("kind,source_kind,working_confirmed,occurred_at")
+      .select("kind,source_kind,working_confirmed,occurred_at,note")
       .eq("business_id",c.business_id).eq("task_id",c.source_id)
       .order("occurred_at",{ascending:false}).limit(12);
     if(events.error)throw new Error("source_unavailable");
     maintenanceHistory=(events.data??[]).map(e=>({
       kind:e.kind,sourceKind:e.source_kind,verifiedWorking:e.kind==="operational_verification"&&
         ["owner_operational_check","staff_operational_check"].includes(e.source_kind)&&e.working_confirmed===true,
-      occurredAt:e.occurred_at,
+      occurredAt:e.occurred_at,note:typeof e.note==="string"?e.note.slice(0,600):null,
     }));
     if(!maintenanceHistory.length)missing.push("maintenance_report_receipt_missing");
   }
@@ -236,6 +237,11 @@ export async function processNextInvestigation(db:SupabaseClient,now:Date,
     // The current source is reread on each continuation. If the source was
     // closed or owner lost access, SQL's fenced finish will refuse a stale write.
     const synopsis=await collectSource(db,c);
+    const maintenanceScope={businessId:c.business_id,ownerUserId:c.owner_user_id,
+      threadId:c.thread_id,locale:"en" as const,verifiedReadClient:db};
+    const maintenanceLease={caseId:c.source_id,token:c.lease_token,revisionHash:c.revision_hash};
+    const vendorPoll=synopsis.kind==="maintenance_issue"&&c.phase==="awaiting_owner"?
+      await pollMaintenanceVendorReplies(db,maintenanceScope,maintenanceLease):{added:0,missing:[]};
     const checkpoint=previousCheckpoint(c);
     if(!checkpoint)throw new Error("evidence_incomplete");
     // Persist continued monitoring without pestering the owner with six-hour
@@ -249,7 +255,7 @@ export async function processNextInvestigation(db:SupabaseClient,now:Date,
       synopsis.relatedTasks.length===earlier.relatedTasks.length&&
       synopsis.relatedAlerts.every((item,i)=>item===earlier.relatedAlerts[i])&&
       synopsis.relatedTasks.every((item,i)=>item===earlier.relatedTasks[i]);
-    if(c.phase==="awaiting_owner"&&!c.last_error&&unchanged&&
+    if(c.phase==="awaiting_owner"&&!c.last_error&&unchanged&&vendorPoll.added===0&&vendorPoll.missing.length===0&&
       Number.isFinite(lastUpdate)&&now.getTime()-lastUpdate>=0&&
       now.getTime()-lastUpdate<24*60*60*1000){
       const silent:InvestigationCheckpoint={...checkpoint,unchangedChecks:
@@ -285,11 +291,12 @@ export async function processNextInvestigation(db:SupabaseClient,now:Date,
       tools:createOwnerScopedCafeTools(scope,db),locale:"en" as const,
       asOf:identity.asOf,timezone:identity.timezone,currency:identity.currency,
       canonicalData:async()=>({db,businessId:c.business_id}),
+      ...(synopsis.kind==="maintenance_issue"?{maintenance:maintenanceContext(db,maintenanceScope,{lease:maintenanceLease})}:{}),
       staffCoordinationRead:()=>readClaimedStaffCoordination(db,scope),
       staffMessages:{read:()=>readStaffMessagesForVerifiedOwner(
         db,c.business_id,c.owner_user_id,40)},
       investigation:{
-        read:()=>readIncidentEvidence(db,c),
+        read:async()=>{const result=await readIncidentEvidence(db,c);return {...result,vendorReadMissing:vendorPoll.missing};},
         weekSchedule:(weekStart:string)=>readScopedWeekSchedule({weekStart},
           {client:db,businessId:c.business_id,ownerUserId:c.owner_user_id}),
       },
@@ -306,7 +313,7 @@ export async function processNextInvestigation(db:SupabaseClient,now:Date,
     },()=>runAgentTurn({
       provider:metered.provider,ownerText:investigationPrompt(synopsis,c.phase==="awaiting_owner",
         c.narrative??null),
-      context,toolNames:investigationReadTools,businessId:c.business_id,
+      context,toolNames:synopsis.kind==="maintenance_issue"?maintenanceInvestigationTools:investigationReadTools,businessId:c.business_id,
       requestId:c.stable_key,
     }));
     if(metered.problem())throw new Error(metered.problem()!);
