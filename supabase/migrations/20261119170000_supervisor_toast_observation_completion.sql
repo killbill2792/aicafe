@@ -505,6 +505,33 @@ revoke all on function public.supervisor_8a_post_observation_notice(uuid,bigint,
 grant execute on function public.supervisor_8a_post_observation_notice(uuid,bigint,uuid,text,uuid,text,jsonb,text,text,uuid,timestamptz,uuid)
  to service_role;
 
+-- One immutable chat digest, independent task/receipt per observation.
+-- A failed lease, revoked owner or invalid entry rolls back the whole group.
+create function public.supervisor_8a_post_observation_digest(
+ p_business_id uuid,p_owner_user_id uuid,p_thread_id uuid,p_message_id uuid,
+ p_text text,p_entries jsonb
+) returns boolean language plpgsql security invoker set search_path='' as $$
+declare entry jsonb;n public.supervisor_experiment_notice_receipts;v_ok boolean;
+begin
+ if auth.role() is distinct from 'service_role' then raise exception 'service_role_only' using errcode='42501';end if;
+ if jsonb_typeof(p_entries) is distinct from 'array' or jsonb_array_length(p_entries) not between 1 and 10
+   or p_text is null or length(p_text)>1200 then
+   raise exception 'invalid_observation_digest' using errcode='22023';end if;
+ for entry in select value from jsonb_array_elements(p_entries) order by value->>'receiptId' loop
+  select * into n from public.supervisor_experiment_notice_receipts where id=(entry->>'receiptId')::uuid
+    and business_id=p_business_id and owner_user_id=p_owner_user_id
+    and kind in ('toast_price_initial','toast_price_daily','toast_price_final') for update;
+  if not found or entry->>'workerToken' is null then raise exception 'observation_digest_scope_lost' using errcode='40001';end if;
+  v_ok:=public.supervisor_8a_post_observation_notice(n.id,(entry->>'attempt')::bigint,p_thread_id,
+    entry->>'taskId',p_message_id,entry->>'timezone',entry->'payload',p_text,
+    entry->>'confidence',null,(entry->>'measurementAsOf')::timestamptz,(entry->>'workerToken')::uuid);
+  if v_ok is distinct from true then raise exception 'observation_digest_lease_lost' using errcode='40001';end if;
+ end loop;
+ return true;
+end;$$;
+revoke all on function public.supervisor_8a_post_observation_digest(uuid,uuid,uuid,uuid,text,jsonb) from public,anon,authenticated;
+grant execute on function public.supervisor_8a_post_observation_digest(uuid,uuid,uuid,uuid,text,jsonb) to service_role;
+
 create or replace function public.supervisor_8a_guard_toast_manual_confirmation()
  returns trigger language plpgsql set search_path=public as $$
 declare v_item public.menu_items;v_product text;v_before text;v_target text;
