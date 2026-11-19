@@ -141,7 +141,7 @@ export async function persistAgentReply(scope: ConversationScope, owner: Convers
   const { reply, metadata } = agentReplyPayload(turn);
   let saved: ConversationMessage;
   if(durableFence&&(turn.endReason!=="complete"||reply.status!=="verified"))throw new AgentEmptyReplyError();
-  try { saved = await persistGroundedSupervisorReply(scope, owner, reply, metadata, durableFence); }
+  try { saved = await (durableFence ? persistGroundedSupervisorReply(scope, owner, reply, metadata, durableFence) : persistGroundedSupervisorReply(scope, owner, reply, metadata)); }
   catch (error) {
     // Field paths and issue codes only (never reply text), so a rejected card can be traced.
     const issues = error instanceof ZodError ? error.issues.slice(0, 5).map(i => i.path.join(".") + ":" + i.code) : [];
