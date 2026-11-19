@@ -243,7 +243,7 @@ export async function openOwnerRunCheckpoint(scope:RunScope,runId:string,token:s
       await assertLive();
       if(replayed){replayed=false;return;}
       if(current.checkpoint_phase==="read_pending"){
-        await finish("read:"+createHash("sha256").update(stableJson(result)).digest("hex"));return;
+        await finish("read:"+createHash("sha256").update(JSON.stringify(result)).digest("hex"));return;
       }
       if(current.checkpoint_phase!=="effect_pending")throw new Error("checkpoint_operation_conflict");
       const name=current.checkpoint_tool??"";
