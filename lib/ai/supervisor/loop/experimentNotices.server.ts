@@ -156,10 +156,11 @@ export function toastObservationNoticeKey(input:{
 export async function postToastObservationNotice(db:SupabaseClient,input:{
  key:OwnerNoticeKey;threadId:string;timezone:string;
  payload:Record<string,string|number|boolean|null>;text:string;confidence:"high"|"low";
+ measurementAsOf?:string;prior?:{id:string;attempts:number;message_id:string};
 }):Promise<"posted"|"not_claimed"|"not_authorized">{
  const k=input.key;
  if(k.kind==="price_reminder")throw new Error("wrong_observation_notice_kind");
- const {data:claim,error}=await db.rpc("supervisor_8a_claim_observation_notice",{
+ const {data:claim,error}=input.prior?{data:[{receipt_id:input.prior.id,attempt:input.prior.attempts}],error:null}:await db.rpc("supervisor_8a_claim_observation_notice",{
   p_business_id:k.businessId,p_owner_user_id:k.ownerUserId,p_source_id:k.sourceId,
   p_kind:k.kind,p_local_date:k.localDate,p_slot:k.slot,
  });
@@ -167,7 +168,8 @@ export async function postToastObservationNotice(db:SupabaseClient,input:{
  const lease=claim?.[0];
  if(!lease)return "not_claimed";
  const id="toast-price-observation:"+k.ownerUserId+":"+k.sourceId+":"+k.kind+":"+k.slot;
- const messageId=stableNoticeUuid(k.businessId+":"+id);
+ const material=JSON.stringify(Object.entries(input.payload).filter(([key])=>key!=="costEstimateAsOf").sort(([a],[b])=>a.localeCompare(b)));
+ const messageId=stableNoticeUuid(k.businessId+":"+id+(input.prior?":"+input.prior.message_id+":"+material:""));
  const result=await notifyOwner(db,{
   businessId:k.businessId,ownerUserId:k.ownerUserId,threadId:input.threadId,
   taskId:id,kind:"priority_notice",localDate:k.localDate,important:true,required:true,
@@ -175,7 +177,8 @@ export async function postToastObservationNotice(db:SupabaseClient,input:{
   const saved=await db.rpc("supervisor_8a_post_observation_notice",{
    p_receipt_id:lease.receipt_id,p_attempt:lease.attempt,p_thread_id:input.threadId,
    p_task_id:id,p_message_id:messageId,p_timezone:input.timezone,p_payload:input.payload,
-   p_text:input.text,p_confidence:input.confidence,
+   p_text:(input.prior?"Updated observation: ":"")+input.text,p_confidence:input.confidence,
+   p_prior_message_id:input.prior?.message_id??null,p_measurement_as_of:input.measurementAsOf??null,
   });
   if(saved.error)throw new Error("observation_notice_delivery_failed");
   return saved.data===true;
