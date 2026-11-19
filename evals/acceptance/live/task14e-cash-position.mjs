@@ -261,7 +261,9 @@ export async function withFinanceJourney(id,body){
    await connection.page.getByRole("textbox",{name:/Account nickname/}).fill(nickname);
    // Bank statement cash proof is deliberately independent of expense review.
    // Exclude each debit from incidental expense recognition before saving.
-   for(const box of await connection.page.getByRole("checkbox",{name:/exclude/i}).all())await box.check();
+   for(const select of await connection.page.locator("select").all()){
+    if(await select.locator('option[value="exclude"]').count())await select.selectOption("exclude");
+   }
    await connection.page.getByRole("button",{name:"Save all",exact:true}).click();
    await connection.page.getByText("Saved",{exact:true}).waitFor({timeout:30000});
    const row=(await read("select id,financial_owner_user_id,financial_closing_cents from public.uploads where business_id=$1 and financial_source_sha256=$2",[scope.businessId,hash]))[0];

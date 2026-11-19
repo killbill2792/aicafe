@@ -808,7 +808,7 @@ begin
   or e->>'sourceRef' is null
  then raise exception 'financial_bill_invalid' using errcode='22023';end if;
  v_msg:=split_part(e->>'sourceRef',':',2)::uuid;
- if split_part(e->>'sourceRef',':',1) is distinct from case when e->>'sourceKind'='owner_report' then 'owner-message' else 'owner-attachment' end
+ if split_part(e->>'sourceRef',':',1) is distinct from (case when e->>'sourceKind'='owner_report' then 'owner-message' else 'owner-attachment' end)
   or not exists(select 1 from public.ai_messages m where m.id=v_msg and m.business_id=p_business_id
    and m.owner_user_id=v_owner and m.thread_id=p_thread_id and m.role='owner' and m.author_user_id=v_owner)
  then raise exception 'financial_bill_source_unverified' using errcode='42501';end if;
