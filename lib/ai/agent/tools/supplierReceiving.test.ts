@@ -35,7 +35,8 @@ describe("Task14D supplier discrepancy follow-up",()=>{
    recipient:"verified@example.invalid"});
   const r=await supplierPurchasingTools.propose_supplier_discrepancy_followup.execute(
    {purchaseOrderId},{receivingFollowup} as unknown as AgentToolContext);
-  expect(r).toMatchObject({proposalCreated:true,approvalRequired:true,sent:false,purchaseOrderId});
+  expect(r).toMatchObject({source:"gmail_proposal",proposalCreated:true,draft:true,saved:false,
+   approvalRequired:true,requiredApproval:"owner_click",operation:"send",sent:false,purchaseOrderId});
   expect(receivingFollowup).toHaveBeenCalledExactlyOnceWith(purchaseOrderId);
  });
  it("keeps unverified or unavailable contact/source open without a send",async()=>{
