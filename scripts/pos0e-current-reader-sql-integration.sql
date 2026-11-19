@@ -510,7 +510,7 @@ BEGIN
  INSERT INTO public.toast_raw_records(business_id,restaurant_guid,entity,business_date,payload,payload_sha256,capture_key,run_id)
  VALUES
  (a,rest_a,'order',d-45,jsonb_build_object('guid',cohort_order,'checks',jsonb_build_array(
-  jsonb_build_object('guid',cohort_check,'amount',12,'customer',jsonb_build_object('guid',cohort_guest)),
+  jsonb_build_object('guid',cohort_check,'amount',12,'customer',jsonb_build_object('guid',cohort_guest,'visitPreference',jsonb_build_object('favoriteDrink','fixture-latte'))),
   jsonb_build_object('guid',gen_random_uuid(),'amount',8,'customer',jsonb_build_object('guid',cohort_other)))),
   repeat('d',64),'pos0ef:cohort-first',cohort_run),
  (a,rest_a,'order',d-42,jsonb_build_object('guid',cohort_return,'checks',jsonb_build_array(
@@ -611,9 +611,45 @@ BEGIN
   {"visit_class":"observed_returning","sum_quantity":1},{"visit_class":"unresolved","sum_quantity":1}]'::jsonb,
  'registered returning-product mix separates first and unresolved units');
 
+ -- A rare historical optional field is still discoverable and queryable
+ -- without a specific customer view. It is not an identity or visit.
+ PERFORM pg_temp.pos0e_assert(
+  public.ai_toast_fields(a,'check') @>
+   '[{"field":"data.customer.visitPreference.favoriteDrink","type":"string"}]'::jsonb
+  and not(public.ai_toast_fields(b,'check') @>
+   '[{"field":"data.customer.visitPreference.favoriteDrink"}]'::jsonb),
+  'old raw-only customer field discovery is tenant-specific');
+ response:=public.ai_query_view(a,'cv_toast_records',null::text[],
+  '[{"column":"record_type","op":"=","value":"check"},{"column":"counts_in_sales","op":"=","value":true},{"column":"data.customer.visitPreference.favoriteDrink","op":"=","value":"fixture-latte"}]'::jsonb,
+  null::text[],'[{"fn":"count","column":"source_ref"}]'::jsonb,d-45,d-38,null,1);
+ PERFORM pg_temp.pos0e_assert(
+  response->'rows'->0->>'count_source_ref'='1'
+  and response?'customerCoverage' and (response->'customerCoverage'->>'eligibleChecks')::int>1,
+  'rare raw-only field query returns independent check count and full period denominator');
+
+ -- Exercise every physical customer canonical column through the actual
+ -- migrated SQL RPC in bounded batches, not just the TypeScript dictionary.
+ -- Existing independent fixture assertions above prove metric semantics.
+ DECLARE view_name text; cols text[]; chunk text[]; offset_col integer; matrix jsonb; start_day date; end_day date;
+ BEGIN
+  FOREACH view_name IN ARRAY ARRAY['cv_customer_visits','cv_customer_products'] LOOP
+   SELECT array_agg(column_name::text ORDER BY ordinal_position) INTO cols
+   FROM information_schema.columns WHERE table_schema='public' AND table_name=view_name;
+   PERFORM pg_temp.pos0e_assert(coalesce(cardinality(cols),0)>20,'customer canonical columns exist: '||view_name);
+   start_day:=case when view_name='cv_customer_visits' then d else d-43 end;
+   end_day:=case when view_name='cv_customer_visits' then d else d-42 end;
+   FOR offset_col IN 1..cardinality(cols) BY 20 LOOP
+    chunk:=cols[offset_col:offset_col+19];
+    matrix:=public.ai_query_view(a,view_name,chunk,'[]'::jsonb,null::text[],null::jsonb,start_day,end_day,null,1);
+    PERFORM pg_temp.pos0e_assert((matrix->>'sourceCount')::int>0
+     and (matrix->'rows'->0 ?& chunk),'all requested canonical columns survive actual SQL projection: '||view_name||':'||offset_col);
+   END LOOP;
+  END LOOP;
+ END;
+
  -- Real browser-equivalent authenticated role, not a postgres/service-only
  -- approximation. Protected mapping and credential tables stay inaccessible.
- DECLARE owner_a uuid:=gen_random_uuid(); own_response jsonb; foreign_response jsonb; own_cov jsonb; foreign_cov jsonb; raw_response jsonb;
+ DECLARE owner_a uuid:=gen_random_uuid(); own_response jsonb; foreign_response jsonb; own_cov jsonb; foreign_cov jsonb; raw_response jsonb; foreign_raw jsonb;
  BEGIN
   insert into auth.users(id,instance_id,aud,role,email,encrypted_password,created_at,updated_at)
    values(owner_a,'00000000-0000-0000-0000-000000000000','authenticated','authenticated',owner_a||'@example.invalid','',now(),now());
@@ -629,6 +665,9 @@ BEGIN
   raw_response:=public.ai_query_view(a,'cv_toast_records',null::text[],
    '[{"column":"record_type","op":"=","value":"check"}]'::jsonb,null::text[],
    '[{"fn":"count","column":"data.customer.guid"}]'::jsonb,d,d,null,100);
+  foreign_raw:=public.ai_query_view(b,'cv_toast_records',null::text[],
+   '[{"column":"record_type","op":"=","value":"check"}]'::jsonb,null::text[],
+   '[{"fn":"count","column":"data.customer.guid"}]'::jsonb,d,d,null,100);
   own_cov:=public.customer_query_coverage(a,d,d);
   foreign_cov:=public.customer_query_coverage(b,d,d);
   execute 'reset role';
@@ -637,6 +676,8 @@ BEGIN
    'authenticated owner can query same scoped visit counts and full coverage');
   perform pg_temp.pos0e_assert(raw_response->'customerCoverage'=own_cov,
    'ordinary retained customer named-path query includes the full coverage denominator without a specialized view');
+  perform pg_temp.pos0e_assert((foreign_raw->>'sourceCount')::int=0 and not(foreign_raw?'customerCoverage'),
+   'foreign raw-only query cannot reveal coverage or retained counts');
   perform pg_temp.pos0e_assert((foreign_response->>'sourceCount')::int=0 and not(foreign_response?'customerCoverage') and foreign_cov is null,
    'foreign owner scope cannot read visit or coverage facts');
   perform pg_temp.pos0e_assert(not has_table_privilege('authenticated','public.toast_location_mappings','SELECT')
