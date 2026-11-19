@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {museActions,normalizeGithubFacts,fetchGithubFacts,reserveMuseActions,runMuseLite} from './muse-lite.mjs';
+import {museActions,normalizeGithubFacts,fetchGithubFacts,reserveMuseActions,runMuseLite,observeHandoffRuns} from './muse-lite.mjs';
 import {mkdtempSync,rmSync} from 'node:fs';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
@@ -207,4 +207,62 @@ test('same-head CI completion wakes the coder immediately rather than waiting 10
  assert.equal(out.actions.length,1);
  assert.equal(out.actions[0].kind,'continue_chat');
  assert.match(out.actions[0].reason,/CI completed green/);
+});
+
+const runUrl='https://github.com/killbill2792/aicafe/actions/runs/123456';
+function handoffFacts(state,ci='SUCCESS',overrides={},comments=[]){
+ const raw=github(ci,comments),p=raw.data.repository.pullRequests.nodes[0];
+ p.body='<!-- aicafe-workflow-handoff '+JSON.stringify({id:'attempt-1',head:sha,state,
+  run_url:state==='waiting_luna'?runUrl:null,next:'verify the result and continue',...overrides})+' -->';
+ return normalizeGithubFacts(raw,now);
+}
+test('published CI handoff resumes on the first terminal observation, even after monitor restart',()=>{
+ const pending=handoffFacts('waiting_ci','PENDING');
+ assert.equal(museActions(pending,previous,notes(),{now}).actions.length,0);
+ const green=handoffFacts('waiting_ci','SUCCESS');
+ const res=museActions(green,null,notes(),{now});
+ assert.equal(res.actions[0].kind,'continue_chat');
+ const first=reserveMuseActions(null,res,now);
+ assert.equal(first.new_actions.length,1);
+ assert.equal(reserveMuseActions(first.state,res,now).new_actions.length,0);
+ assert.equal(museActions(handoffFacts('waiting_ci','FAILURE'),null,notes(),{now}).actions[0].kind,'fix_ci');
+});
+test('explicit same-head Codex wait resumes only on actual review evidence',()=>{
+ const pending=c();pending.body=pending.body.replace('"status":"completed"','"status":"running"');
+ assert.equal(museActions(handoffFacts('waiting_codex','SUCCESS',{},[pending]),null,notes(),{now}).actions.length,0);
+ assert.equal(museActions(handoffFacts('waiting_codex','SUCCESS',{},[c('b'.repeat(40))]),null,notes(),{now}).actions.length,0);
+ assert.equal(museActions(handoffFacts('waiting_codex','SUCCESS',{},[c()]),null,notes(),{now}).actions[0].kind,'continue_chat');
+ assert.equal(museActions(handoffFacts('waiting_codex','SUCCESS',{},[c(sha,true)]),null,notes(),{now}).actions[0].kind,'fix_codex');
+});
+test('shared Luna is independent of green PR CI and only resumes on the named observed terminal run',async()=>{
+ const facts=handoffFacts('waiting_luna'),h=facts.prs[0].workflow_handoff;
+ const run={id:123456,html_url:runUrl,name:'AI CAFE Shared Owner-Gated Luna Scenarios',status:'in_progress'};
+ assert.equal(museActions(facts,null,notes(),{now}).actions.length,0);
+ await observeHandoffRuns(facts,async id=>{assert.equal(id,'123456');return run;});
+ assert.equal(h.observed,'pending');
+ assert.equal(museActions(facts,null,notes(),{now}).actions.length,0);
+ await observeHandoffRuns(facts,async()=>({...run,id:999,status:'completed',conclusion:'success'}));
+ assert.equal(h.observed,'unknown');
+ assert.equal(museActions(facts,null,notes(),{now}).actions.length,0);
+ await observeHandoffRuns(facts,async()=>({...run,status:'completed',conclusion:'failure'}));
+ const res=museActions(facts,null,notes(),{now});
+ assert.equal(res.actions[0].kind,'continue_chat');
+ assert.match(res.actions[0].reason,/completed \(failure\).*verify actual artifacts/);
+ const first=reserveMuseActions(null,res,now);
+ assert.equal(reserveMuseActions(first.state,res,now).new_actions.length,0);
+ await observeHandoffRuns(facts,async()=>{throw Error('429');});
+ assert.equal(h.observed,'unknown');
+ assert.equal(museActions(facts,null,notes(),{now}).actions.length,0);
+});
+test('handoffs cannot select another repo run or be inherited onto changed HEAD',()=>{
+ for(const overrides of [{head:'b'.repeat(40)},{run_url:'https://example.com/actions/runs/123456'},{run_url:'https://github.com/someone/else/actions/runs/123456'},{run_url:null}]){
+  assert.equal(handoffFacts('waiting_luna','SUCCESS',overrides).prs[0].workflow_handoff,null);
+ }
+});
+test('removal of an active owner question resumes the saved chat for decision verification',()=>{
+ const before=questionFacts('Approve option A?');
+ const after=normalizeGithubFacts(github('SUCCESS',[]),now);
+ const out=museActions(after,before,notes(),{now});
+ assert.equal(out.actions[0].kind,'continue_chat');
+ assert.match(out.actions[0].reason,/verify actual owner decision/);
 });
