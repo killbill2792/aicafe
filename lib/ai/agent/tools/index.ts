@@ -7,6 +7,7 @@ import {resolveEntity,resolveChosenEntity,ownerNamedTarget,choicePayload,ownerCh
 
 import {money,count} from "../explain";
 import { staffTools } from "./staff";
+import {staffCoordinationTools} from "./staffCoordination";
 import {localizeQualityNotes} from "./qualityNotes";
 import { attentionTools } from "./attention";
 import {incidentEvidenceTools} from "./incidentEvidence";
@@ -81,6 +82,8 @@ export type AgentToolContext = {
     weekSchedule:(weekStart:string)=>ReturnType<
       typeof import("@/lib/data/staffSchedule.server").getWeekSchedule>;
   };
+  /** SQL-claimed owner/cafe evidence reader. Never use a model-provided scope. */
+  staffCoordinationRead?:()=>Promise<import("@/lib/staffCoordination/cases.server").StaffCoordinationCase[]>;
   /** Prior owner utterances for verifying explicit pricing percentages. */
   ownerMessages?:readonly string[];
   ownerText?:string;
@@ -161,7 +164,7 @@ const posReadTools={
   get_payroll_facts:{schema:posPeriodSchema,description:"Read imported pay-period facts without inferring missing wages or taxes."}
 };
 export const schemas = { ...askOwnerTools, ...dataQueryTools, ...posReadTools, ...attentionTools, ...incidentEvidenceTools, get_profit: periodSchema, get_sales: periodSchema, get_menu_items: menuSchema,
-  ...staffTools, ...scheduleReadTools, ...hoursTools, ...moneyTools, ...suppliesTools, ...salesTools,...todayTools,...draftScheduleTools,...newItemPriceTools,...milkSwapTools,...scenarioTools,...calculateTools,...proposalTools,...priceExperimentTools,...priceMonitorTools,...goalTools,...staffProposalTools,...purchasesTools,...supplierPurchasingTools,...eventsTools,...savedEventsTools,...eventPlanTools,...webSearchTools,...commitmentTools,...routineTools,...permissionTools,...gmailTools } as const;
+  ...staffTools,...staffCoordinationTools, ...scheduleReadTools, ...hoursTools, ...moneyTools, ...suppliesTools, ...salesTools,...todayTools,...draftScheduleTools,...newItemPriceTools,...milkSwapTools,...scenarioTools,...calculateTools,...proposalTools,...priceExperimentTools,...priceMonitorTools,...goalTools,...staffProposalTools,...purchasesTools,...supplierPurchasingTools,...eventsTools,...savedEventsTools,...eventPlanTools,...webSearchTools,...commitmentTools,...routineTools,...permissionTools,...gmailTools } as const;
 export type AgentToolName = keyof typeof schemas;
 /** Input fields backed by the shared entity/period resolver. A new tool whose
  * strict schema accepts a target must declare the corresponding field here;
@@ -195,7 +198,7 @@ export const resolverExemptions:Partial<Record<AgentToolName,readonly string[]>>
   manage_routine:["title","routine_id"]
 };
 
-export function agentForTool(name:string):"alex"|"olivia"|"maya"|"leo"{return name==="get_payroll_facts"||name in staffTools||name in scheduleReadTools||name in hoursTools||name in draftScheduleTools||name in staffProposalTools?"olivia":name in moneyTools||name in goalTools||name in commitmentTools||name in routineTools||name in permissionTools||name==="get_profit"?"leo":name in suppliesTools||name in purchasesTools||name in supplierPurchasingTools?"maya":"alex";}
+export function agentForTool(name:string):"alex"|"olivia"|"maya"|"leo"{return name==="get_payroll_facts"||name in staffTools||name in staffCoordinationTools||name in scheduleReadTools||name in hoursTools||name in draftScheduleTools||name in staffProposalTools?"olivia":name in moneyTools||name in goalTools||name in commitmentTools||name in routineTools||name in permissionTools||name==="get_profit"?"leo":name in suppliesTools||name in purchasesTools||name in supplierPurchasingTools?"maya":"alex";}
 const descriptions: Record<string, string> = {
   get_profit: "Read profit for today, trailing seven days or the calendar month. Report missing inputs.",
   get_sales: "Read covered daily sales in a current calendar period. Closed days only; for today, a todaySoFar provisional reading is attached when today is not imported. If stale, say last updated HH:MM rather than so far today.",
@@ -286,6 +289,7 @@ export async function executeAgentTool(name: string, raw: unknown, ctx: AgentToo
   if(name==="get_investigation_source")return incidentEvidenceTools.get_investigation_source.execute(raw,ctx);
   if(name==="manage_commitment")return commitmentTools.manage_commitment.execute(raw,ctx);
   if(name==="manage_routine")return routineTools.manage_routine.execute(raw,ctx);
+  if(name==="get_staff_coordination_cases")return staffCoordinationTools.get_staff_coordination_cases.execute(raw,ctx);
   if(name==="get_supervisor_permissions")return permissionTools.get_supervisor_permissions.execute(raw,ctx);
   if(name==="get_staff")return staffTools.get_staff.execute(raw,ctx);
   if(name==="get_schedule")return staffTools.get_schedule.execute(raw,ctx);
