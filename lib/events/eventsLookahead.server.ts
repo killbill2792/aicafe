@@ -313,6 +313,7 @@ export async function draftDay(db:Db,b:Business,ownerId:string,locale:"en"|"es"|
   let selectedEventIds:string[]=[];
   let selectedFactsHash:string|null=null;
   let reused=false;
+  let proposalAttempted=false;
   const turn=await runAgentTurn({
     businessId:b.id,requestId:requestKey,ownerFacts,
     toolNames:["propose_event_plan","web_search","get_events"],
@@ -348,6 +349,8 @@ export async function draftDay(db:Db,b:Business,ownerId:string,locale:"en"|"es"|
         getMenuCatalog:async()=>{throw new Error("tool_unavailable");},
       },
       eventPlans:{propose:async input=>{
+        if(proposalAttempted)throw new Error("event_plan_already_attempted");
+        proposalAttempted=true;
         // All-day facts are rechecked for races, but an informed Supervisor
         // may select ONE relevant ID even if eight events occur simultaneously.
         const latest=await readCanonicalCafeEvents(db,b.id,day.date,day.date);

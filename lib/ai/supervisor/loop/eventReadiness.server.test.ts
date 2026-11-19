@@ -1,5 +1,5 @@
 import {describe,expect,it} from "vitest";
-import {eventReadinessCapability,eventReadinessCapabilityId,eventReadinessInput,eventReadinessEffect}
+import {eventReadinessCapability,eventReadinessCapabilityId,eventReadinessInput,eventReadinessEffect,eventDailyOnlyComparison}
  from "./eventReadiness.server";
 
 const eventId="11111111-1111-4111-8111-111111111111";
@@ -38,6 +38,15 @@ describe("event_readiness uses the shared Supervisor lifecycle",()=>{
    result:{observedDays:1,expectedDays:2,missingBaselineDays:["2026-10-31"]}});
   const early=await eventReadinessCapability.report(scope,effect,[sample],false);
   expect(early.status).toBe("in_progress");
+ });
+ it("retains independently certified daily totals without hourly or exclusion evidence",()=>{
+  const days=[{date:"2026-11-05",netSalesCents:10000},{date:"2026-11-12",netSalesCents:12000},
+    {date:"2026-11-19",netSalesCents:14000},{date:"2026-11-26",netSalesCents:18000}];
+  expect(eventDailyOnlyComparison(days,"2026-11-26",new Set())).toEqual({actualCents:18000,
+    typicalCents:12000,changePercent:50,baselineDays:3,hours:[],hourlyCoverage:"missing"});
+  expect(eventDailyOnlyComparison(days,"2026-11-26",null)).toMatchObject({actualCents:18000,
+    typicalCents:null,changePercent:null,baselineDays:0});
+  expect(eventDailyOnlyComparison(days,"2026-11-27",new Set())).toBeNull();
  });
  it("reports complete only after every event day has actual evidence and a baseline",async()=>{
   const sample=(date:string)=>({businessDate:date,source:"hourly_sales_rollup+daily_rollups",

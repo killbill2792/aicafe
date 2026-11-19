@@ -15,6 +15,7 @@ import {readItemSales,readDiscounts,readLaborEntries,readMenu} from "@/lib/data/
 import {posFactReaders} from "@/lib/data/posFactReaders.server";
 import {indexHourlyRevenue,compareEventDaySales,compareLiveEventSales} from "@/lib/metrics/core/eventReadiness";
 import {cafeToday} from "@/lib/metrics/core/clock";
+import {typicalDaySales,changePercent,type OutlookSalesDay} from "@/lib/metrics/core/dayOutlook";
 import {eventFinalNarrative,eventReportFactsHash,eventReportFallback,eventReportNumericEvidence}
   from "@/lib/events/eventFinalReport.server";
 import {effectHash,registerLoopCapability,utcDateOffset} from "./engine";
@@ -113,10 +114,10 @@ export async function eventToastEvidence(db:ReturnType<typeof createAdminSupabas
   actions:readonly {area:string;action:string}[]=[]){
   const range={dateFrom:day,dateTo:day};
   const [items,discounts,shifts,menu]=await Promise.all([
-    readItemSales(db,businessId,range),
-    readDiscounts(db,businessId,range),
-    readLaborEntries(db,businessId,range),
-    readMenu(db,businessId,range),
+    readItemSales(db,businessId,range).catch(()=>({rows:[],truncated:true,error:"unavailable"})),
+    readDiscounts(db,businessId,range).catch(()=>({rows:[],truncated:true,error:"unavailable"})),
+    readLaborEntries(db,businessId,range).catch(()=>({rows:[],truncated:true,error:"unavailable"})),
+    readMenu(db,businessId,range).catch(()=>({rows:[],truncated:true,error:"unavailable"})),
   ]);
   const unavailable=(v:{error?:string;truncated:boolean})=>Boolean(v.error||v.truncated);
   const itemRows=items.rows.filter(r=>r.source==="toast"&&r.status==="actual");
@@ -234,6 +235,18 @@ export function selectedEventPlanFacts(
   return eventPlanFacts(selected);
 }
 
+/** A closed-day POS total is still evidence when hourly details are missing. */
+export function eventDailyOnlyComparison(days:readonly OutlookSalesDay[],date:string,
+  excluded:ReadonlySet<string>|null){
+  const day=days.find(d=>d.date===date);
+  if(!day||!Number.isSafeInteger(day.netSalesCents))return null;
+  const base=excluded?typicalDaySales(days,date,date,{exclude:excluded}):null;
+  const typicalCents=base?.typicalCents??null;
+  return {actualCents:day.netSalesCents,typicalCents,
+    changePercent:typicalCents===null?null:changePercent(day.netSalesCents,typicalCents),
+    baselineDays:base?.sampleDays??0,hours:[],hourlyCoverage:"missing" as const};
+}
+
 /** No new monitoring store: one sample per business day in supervisor_monitor_samples. */
 export const eventReadinessCapability=registerLoopCapability({
  id:eventReadinessCapabilityId,version:1,
@@ -287,35 +300,37 @@ export const eventReadinessCapability=registerLoopCapability({
    const from=utcDateOffset(businessDate,-56);
    const [days,hours,exclusions]=await Promise.all([
      readDailyFacts(db,scope.businessId,from,businessDate),
-     posFactReaders(db,scope.businessId).peakHours({from,to:businessDate}),
-     readCanonicalCafeEvents(db,scope.businessId,from,utcDateOffset(businessDate,-1)),
+     Promise.resolve().then(()=>posFactReaders(db,scope.businessId).peakHours({from,to:businessDate})).catch(()=>null),
+     readCanonicalCafeEvents(db,scope.businessId,from,utcDateOffset(businessDate,-1)).catch(()=>null),
    ]);
    const certified=days.filter(d=>d.salesDataStatus==="actual");
    const today=certified.find(d=>d.date===businessDate);
    // Finalized daily evidence always wins; never replace it with a live sample.
-   if((isLive&&today)||(!isLive&&!today)||!hours.available||!hours.value)return null;
-   const byDay=indexHourlyRevenue(hours.value.hours);
-   if(hours.quality.missingInputs.some(x=>x==="hourlySalesPageLimit"||x==="hourlySalesUnavailable"))return null;
-   const excluded=new Set(exclusions.filter(e=>e.status==="found").flatMap(e=>{
+   if((isLive&&today)||(!isLive&&!today))return null;
+   const byDay=hours?.available&&hours.value&&
+     !hours.quality.missingInputs.some(x=>x==="hourlySalesPageLimit"||x==="hourlySalesUnavailable")
+     ?indexHourlyRevenue(hours.value.hours):null;
+   const excluded=exclusions?new Set(exclusions.filter(e=>e.status==="found").flatMap(e=>{
      const dates:string[]=[];
      for(let d=e.startDate;d<=e.endDate&&dates.length<90;d=utcDateOffset(d,1))dates.push(d);
      return dates;
-   }));
+   })):null;
    // One canonical usual-day definition, shared with get_nearby_events.
    // Missing hourly coverage only reduces the per-hour comparison sample.
    if(isLive&&saved){
      const time=formatInTimeZone(new Date(saved.value.readAt),cafe.timezone,"HH:mm");
      const throughHour=Number(time.slice(0,2));
-     const comparison=compareLiveEventSales(certified,byDay,businessDate,
-       saved.value.netSalesCents,throughHour,excluded);
-     if(!comparison)return null;
-     return {businessDate,source:"toast_today_live+hourly_sales_rollup+daily_rollups",
-       observation:{coverage:"provisional",...comparison,asOf:saved.value.readAt,
+     const comparison=byDay&&excluded?compareLiveEventSales(certified,byDay,businessDate,
+       saved.value.netSalesCents,throughHour,excluded):null;
+     return {businessDate,source:comparison?"toast_today_live+hourly_sales_rollup+daily_rollups":"toast_today_live",
+       observation:{coverage:"provisional",...(comparison??{actualCents:saved.value.netSalesCents,
+         typicalCents:null,changePercent:null,baselineDays:0,notable:false,hourlyCoverage:"missing"}),asOf:saved.value.readAt,
          asOfLocal:time,partialCurrentHour:true}};
    }
-   const comparison=compareEventDaySales(certified,byDay,businessDate,excluded);
+   const hourly=byDay&&excluded?compareEventDaySales(certified,byDay,businessDate,excluded):null;
+   const comparison=hourly??eventDailyOnlyComparison(certified,businessDate,excluded);
    if(!comparison)return null;
-   return {businessDate,source:"hourly_sales_rollup+daily_rollups",
+   return {businessDate,source:hourly?"hourly_sales_rollup+daily_rollups":"daily_rollups",
      observation:{coverage:"actual",...comparison}};
  },
  report:async(scope,effect,samples,windowComplete,window)=>{
