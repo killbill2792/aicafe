@@ -25,11 +25,16 @@ from pg_class c
 where c.relnamespace='public'::regnamespace and c.relkind in ('r','v')
 `;
 const client=new Client({connectionString:connection,connectionTimeoutMillis:4000,statement_timeout:15000});
-let live;
+let live,logicalColumns;
 try{
  await client.connect();
  const {rows}=await client.query(sql);
  live=rows[0]?.catalog;
+ const logical=await client.query(
+  "SELECT table_name AS relation,column_name AS field "+
+  "FROM information_schema.columns WHERE table_schema='u3_research' "+
+  "ORDER BY table_name,column_name");
+ logicalColumns=logical.rows;
 }finally{await client.end().catch(()=>{});}
 if(!Array.isArray(live))throw Error("Migrated catalog query returned no relations");
 const reference=JSON.parse(readFileSync(snapshotPath,"utf8"));
@@ -94,6 +99,39 @@ const differences=drift.slice(0,6).map(relation=>{
 });
 const current=new Set(live.map(x=>x.relation));
 const removed=reference.relations.filter(x=>!current.has(x.relation)).map(x=>x.relation);
+// Independently compare the entire reviewed physical-to-logical research surface
+// against the *actually migrated* SQL views. This is a generated schema-property
+// check, not a fixed collection of owner-question scenarios.
+const migration=readFileSync("supabase/migrations/20261120210000_u3_canonical_research.sql","utf8");
+const sourceMatch=migration.match(/\\$u3_sources\\$(\\[[\\s\\S]*?\\])\\$u3_sources\\$/);
+if(!sourceMatch)throw Error("U3 source admission manifest missing");
+const manifest=JSON.parse(sourceMatch[1]);
+if(!Array.isArray(manifest)||!manifest.length)
+ throw Error("U3 source admission manifest empty");
+const expectedLogical=new Map(manifest.map(source=>[source.table,source.fields]));
+expectedLogical.set("toast_records",[
+ "source","source_ref","status","business_date","record_type","record_ref",
+ "order_ref","check_ref","counts_in_sales","data"
+]);
+expectedLogical.set("toast_changes",[
+ "change_id","entity","entity_guid","business_date","changed_at",
+ "field_path","before_scalar","after_scalar"
+]);
+const observedLogical=new Map();
+for(const column of logicalColumns??[]){
+ const list=observedLogical.get(column.relation)??[];
+ list.push(column.field);
+ observedLogical.set(column.relation,list);
+}
+const badLogical=[...new Set([...expectedLogical.keys(),...observedLogical.keys()])]
+ .filter(name=>JSON.stringify([...(expectedLogical.get(name)??[])].sort())!==
+               JSON.stringify([...(observedLogical.get(name)??[])].sort()));
+console.log("U3 generated logical admission parity",JSON.stringify({
+ expectedSources:expectedLogical.size,migratedSources:observedLogical.size,
+ mismatched:badLogical.slice(0,12)
+}));
+if(badLogical.length)throw Error("U3 approved logical view/field surface does not match migrated database");
+
 if(process.argv.includes("--write")){
  const revised={...reference,
   generatedFrom:"fully migrated local Supabase pg_catalog; no business rows",
