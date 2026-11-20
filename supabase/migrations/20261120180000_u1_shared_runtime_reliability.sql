@@ -148,8 +148,8 @@ begin
  (select min(mi.id::text)::uuid from public.menu_items mi
    where mi.business_id=p_business_id and mi.pos_item_id like l.pos_item_id||':size:%'
    having count(*)=1)) as new_menu_item_id
- from public.orders o
- where o.id=l.order_id and o.business_id=p_business_id
+ from public.order_lines l join public.orders o on o.id=l.order_id
+ where o.business_id=p_business_id
   and l.pos_item_id like v_prefix||'%'
   and (l.menu_item_id is null or exists(select 1 from public.menu_items current_item
     where current_item.id=l.menu_item_id and current_item.pos_item_id=l.pos_item_id))
