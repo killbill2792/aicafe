@@ -101,3 +101,37 @@ describe("refresh-derived cron",()=>{
     expect(mocks.investigate).toHaveBeenCalledOnce();
   });
 });
+
+describe("U1 refresh workload and lease timing",()=>{
+  it("uses the actual time after a slow refresh to claim investigations, not an expired invocation timestamp",async()=>{
+    vi.useFakeTimers();
+    const started=new Date("2026-11-20T17:00:00Z");
+    vi.setSystemTime(started);
+    try{
+      mocks.refresh.mockImplementationOnce(async()=>{
+        vi.setSystemTime(new Date(started.getTime()+181000));
+        return {businessDate:"2026-11-20",alertsCreated:0};
+      });
+      const result=await GET(new Request("https://example.test/api/cron/refresh-derived",{headers:{authorization:"Bearer test-secret"}}));
+      expect(result.status).toBe(200);
+      expect(mocks.investigate).toHaveBeenCalledOnce();
+      const args=mocks.investigate.mock.calls[0] as unknown as [unknown,Date,number];
+      expect(args[1].getTime()).toBeGreaterThanOrEqual(started.getTime()+181000);
+    }finally{vi.useRealTimers();}
+  });
+  it("does not launch simultaneous full café refreshes that contend with owner work",async()=>{
+    let running=0,peak=0;
+    mocks.refresh.mockImplementation(async()=>{
+      running++;peak=Math.max(peak,running);
+      await Promise.resolve();
+      running--;
+      return {businessDate:"2026-11-20",alertsCreated:0};
+    });
+    try{
+      const response=await GET(new Request("https://example.test/api/cron/refresh-derived",{headers:{authorization:"Bearer test-secret"}}));
+      expect(response.status).toBe(200);
+      expect(mocks.refresh).toHaveBeenCalledTimes(2);
+      expect(peak).toBe(1);
+    }finally{mocks.refresh.mockReset().mockResolvedValue({businessDate:"2026-10-28",alertsCreated:0});}
+  });
+});
