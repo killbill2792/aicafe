@@ -617,3 +617,50 @@ it("advertises actual result references on the native continuation and preserves
  expect(result.results).toContainEqual(expect.objectContaining({source:"response_presentation",accepted:true,presentation:expect.objectContaining({groups:[{layout:"grid",items:["table0"]}],tables:[expect.objectContaining({rows:[expect.arrayContaining(["Latte",450]) ]})]})}));
  expect(JSON.stringify(requests[2].input)).toContain("Visual selection only");
 });
+
+describe("U1 matched recorded incident — checkpoint and presentation variations",()=>{
+  it.each([false,true])("returns the same honest answer with checkpoint=%s and optional presentation",async(useCheckpoint)=>{
+    const period={from:"2026-10-20",to:"2026-10-20"};
+    const checkpoint={
+      assertLive:vi.fn(async()=>{}),beginProvider:vi.fn(async()=>{}),
+      endProvider:vi.fn(async(_completed:boolean)=>{}),
+      beginTool:vi.fn(async(_name:string,_raw:unknown,_repeatSafe:boolean)=>null),
+      endTool:vi.fn(async(_result:import("./tools").AgentToolResult,_noEffect?:boolean)=>{}),
+      resumeContext:vi.fn(async()=>null),canYield:()=>false,yieldForRetry:async()=>false,
+    };
+    const answer="Sales, hourly activity and profit are unavailable for that date.";
+    const missing={available:false as const,value:null,quality:{level:"low" as const,
+      missingInputs:["testSourceUnavailable"],estimatedInputs:[],staleInputs:[]}};
+    for(const withPresentation of [false,true]){
+      const {requests,provider}=recording([
+        [call("get_sales",JSON.stringify({period,ownerInputs:null}),"u1-sales"),completed],
+        [call("get_peak_hours",JSON.stringify(period),"u1-peak"),completed],
+        [call("get_profit",JSON.stringify({period,ownerInputs:null}),"u1-profit"),completed],
+        ...(withPresentation?[[call("present_response",JSON.stringify({layout:"stack",panels:[],suggestions:[]}),"u1-visual"),completed]]:[]),
+        [text(answer),completed],
+      ]);
+      const sales=vi.fn(async()=>missing),peak=vi.fn(async()=>missing),profit=vi.fn(async()=>missing);
+      const ctx:AgentToolContext={...context,tools:{...context.tools,getSalesTrend:sales,getPeakHours:peak,getProfitability:profit}};
+      vi.clearAllMocks();
+      const result=await runAgentTurn({ownerText:"For October 20, 2026, report sales, peak hours and profit.",context:ctx,provider,
+        ...(useCheckpoint?{checkpoint}:{}),});
+      expect(result.text).toBe(answer);
+      expect(result.endReason).toBe("complete");
+      expect(sales).toHaveBeenCalledExactlyOnceWith(period);
+      expect(peak).toHaveBeenCalledExactlyOnceWith(period);
+      expect(profit).toHaveBeenCalledExactlyOnceWith(period);
+      expect(result.results.filter(r=>r.source!=="response_presentation").map(r=>({source:r.source,period:r.period,missing:r.missing}))).toEqual([
+        {source:"daily_rollups",period,missing:["testSourceUnavailable"]},
+        {source:"get_peak_hours",period,missing:["testSourceUnavailable"]},
+        {source:"profitability",period,missing:["testSourceUnavailable"]},
+      ]);
+      expect(requests).toHaveLength(withPresentation?5:4);
+      if(useCheckpoint){
+        expect(checkpoint.beginProvider).toHaveBeenCalledTimes(requests.length);
+        expect(checkpoint.endProvider.mock.calls).toEqual(Array.from({length:requests.length},()=>[true]));
+        expect(checkpoint.beginTool).toHaveBeenCalledTimes(withPresentation?4:3);
+        expect(checkpoint.endTool).toHaveBeenCalledTimes(withPresentation?4:3);
+      }else expect(checkpoint.beginProvider).not.toHaveBeenCalled();
+    }
+  });
+});

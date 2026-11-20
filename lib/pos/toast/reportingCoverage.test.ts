@@ -9,11 +9,23 @@ function reader(rpcDays:string[],canonicalDays:string[],failure?:string){
  const query={
   select:vi.fn(),eq:vi.fn(),like:vi.fn(),in:vi.fn(),order:vi.fn(),range:vi.fn()
  };
- for(const key of ["select","eq","like","in","order"] as const)query[key].mockReturnValue(query);
- query.range.mockImplementation(async(start:number,end:number)=>failure==="orders"
+ const from=()=>{
+  let selected:string[]=[];
+  const chain={
+   select:(...args:unknown[])=>{query.select(...args);return chain;},
+   eq:(...args:unknown[])=>{query.eq(...args);return chain;},
+   like:(...args:unknown[])=>{query.like(...args);return chain;},
+   in:(column:string,dates:string[])=>{query.in(column,dates);selected=dates;return chain;},
+   order:(...args:unknown[])=>{query.order(...args);return chain;},
+   range:(start:number,end:number)=>query.range(start,end,selected),
+  };
+  return chain;
+ };
+ query.range.mockImplementation(async(start:number,end:number,dates:string[])=>failure==="orders"
    ?{data:null,error:{message:"unavailable"}}
-   :{data:canonicalDays.slice(start,end+1).map((business_date,i)=>({id:start+i,business_date})),error:null});
- return {db:{rpc,from:()=>query} as unknown as SupabaseClient,rpc,query};
+   :{data:canonicalDays.map((business_date,i)=>({id:i,business_date}))
+     .filter(row=>dates.includes(row.business_date)).slice(start,end+1),error:null});
+ return {db:{rpc,from} as unknown as SupabaseClient,rpc,query};
 }
 describe("Toast reporting guard preserves independently verified non-Toast sales",()=>{
  it("does not block a Square/CSV day merely due to a staged Toast pilot or payment GUID",async()=>{
@@ -38,11 +50,11 @@ describe("Toast reporting guard preserves independently verified non-Toast sales
   await expect(unverifiedToastSalesDates(db,"business","2026-10-10","2026-10-11"))
    .rejects.toThrow("unavailable");
  });
- it("reads all 1000+ canonical orders, not the first page as proof",async()=>{
+ it("proves date presence without transferring all 1000+ canonical orders",async()=>{
   const {db,query}=reader(["2026-10-10"],Array(1007).fill("2026-10-10"));
   expect([...await unverifiedToastSalesDates(db,"business","2026-10-10","2026-10-11")])
     .toEqual(["2026-10-10"]);
-  expect(query.range).toHaveBeenCalledTimes(6);
+  expect(query.range.mock.calls).toEqual([[0,0,["2026-10-10"]]]);
  });
 });
 
@@ -90,4 +102,25 @@ it("paginates shared attention beyond the first two hundred combinations",async(
  const rows=[{business_date:last,import_state:"imported",recon_state:"matched",last_error_category:null}];
  const result=await toastDayFlags(statusDb(rows,flags),"business",flags[0],last);
  expect(result).toEqual([{date:last,status:"imported",needsLook:true}]);
+});
+
+describe("U1 coverage workload and completeness evidence",()=>{
+  it("retains dates beyond the first 1000 orders and rejects partial results when a date read fails",async()=>{
+    const dates=["2026-10-10","2026-10-11"];
+    const many=Array(1007).fill(dates[0]).concat(dates[1]);
+    const good=reader(dates,many);
+    expect([...await unverifiedToastSalesDates(good.db,"business",dates[0],dates[1])]).toEqual(dates);
+    const failed=reader(dates,many);
+    failed.query.range.mockImplementationOnce(async()=>({data:[{id:0,business_date:dates[0]}],error:null}))
+      .mockRejectedValueOnce(new Error("late source date unavailable"));
+    await expect(unverifiedToastSalesDates(failed.db,"business",dates[0],dates[1])).rejects.toThrow("late source date unavailable");
+    expect(failed.query.range).toHaveBeenCalledTimes(2);
+  });
+  it("does not page thousands of individual order IDs merely to establish calendar-day presence",async()=>{
+    const dates=["2026-10-10","2026-10-11"];
+    const {db,query}=reader(dates,Array(11711).fill(dates[0]).concat(dates[1]));
+    expect([...await unverifiedToastSalesDates(db,"business",dates[0],dates[1])]).toEqual(dates);
+    // With two possible dates, the existence/aggregation result must not grow with order count.
+    expect(query.range.mock.calls).toEqual(dates.map(date=>[0,0,[date]]));
+  });
 });

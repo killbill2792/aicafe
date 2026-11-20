@@ -159,3 +159,36 @@ describe("Toast source-scoped Supervisor coverage without changing aggregate for
   expect(trend.available).toBe(false);
  });
 });
+
+describe("U1 shared daily reader scope and date bounds",()=>{
+  it("rejects an unbound café before any database request",async()=>{
+    const from=vi.fn();
+    const readers=supervisorHistoricalReaders({from} as unknown as SupabaseClient,"my-cafe");
+    await expect(readers.salesTrend("other-cafe",{from:"2026-10-12",to:"2026-10-12"})).rejects.toThrow("scope");
+    expect(from).not.toHaveBeenCalled();
+  });
+  it("reads only requested days through the shared saved-daily-facts reader",async()=>{
+    const day="2026-10-12";
+    const daily={select:vi.fn(),eq:vi.fn(),gte:vi.fn(),lte:vi.fn(),order:vi.fn(),range:vi.fn()};
+    for(const key of ["select","eq","gte","lte","order"] as const)daily[key].mockReturnValue(daily);
+    daily.range.mockResolvedValue({data:[row("actual",4820,12,day)],error:null});
+    const unavailable={select:()=>{throw new Error("status unavailable");}};
+    const from=vi.fn((table:string)=>table==="daily_rollups"?daily:unavailable);
+    const db={from,rpc:vi.fn().mockRejectedValue(new Error("coverage unavailable"))} as unknown as SupabaseClient;
+    vi.stubEnv("TOAST_AUTO_IMPORT_ENABLED","false");
+    const result=await supervisorHistoricalReaders(db,"my-cafe").salesTrend("my-cafe",{from:day,to:day});
+    expect(daily.eq).toHaveBeenCalledWith("business_id","my-cafe");
+    expect(daily.gte).toHaveBeenCalledWith("business_date",day);
+    expect(daily.lte).toHaveBeenCalledWith("business_date",day);
+    expect(daily.range).toHaveBeenCalledExactlyOnceWith(0,999);
+    expect(result).toMatchObject({available:true,value:[{date:day,netSalesCents:4820,ordersCount:12}],
+      quality:{missingInputs:["toastDayStatusUnavailable"]}});
+  });
+});
+
+it("rejects a foreign café before any date metadata read",async()=>{
+ const from=vi.fn();
+ const readers=supervisorHistoricalReaders({from} as unknown as SupabaseClient,"my-cafe");
+ await expect(readers.salesCoverageBounds("other-cafe",{from:"2026-10-12",to:"2026-10-12"})).rejects.toThrow("scope");
+ expect(from).not.toHaveBeenCalled();
+});
