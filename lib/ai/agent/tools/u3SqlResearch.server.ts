@@ -241,8 +241,22 @@ export async function runU3Sql(ctx:U3SqlContext,raw:unknown){
    const list=await sources(client);
    if(!list.length)throw Error("research_not_configured");
    const p=parsed.data;
+   // Off-turn privacy is source/field-based, not a regex over model-
+   // selected output aliases. These are reusable data classes rather than
+   // question patterns; personal IDs, text and unrestricted JSON are excluded.
+   const safeOffturnColumns=new Set(list.flatMap(r=>
+    ["employees","timecards","scheduled_shifts","cafe_decisions"].includes(r.name)?[]:
+    r.columns.filter(c=>
+     c.unit==="integer_cent"||c.unit==="microcent"||
+     c.unit==="cafe_business_date"||c.unit==="minutes"||c.unit==="hours"||
+     c.unit==="source_specific_unit"||c.unit==="boolean"||
+     ["int2","int4","int8","numeric","float4","float8","bool","date"].includes(c.type)&&
+       !/(?:_id|_ref|_guid|^id$|^phone|^postal)/i.test(c.name)||
+     ["status","category","source","source_channel","dining_option",
+      "toast_excluded","sales_data_status"].includes(c.name)
+    ).map(c=>c.name))));
    const plan=await admitU3Sql(p.sql,list.map(r=>r.name),p.parameters?.length??0,
-    ctx.aggregateOnly===true);
+    ctx.aggregateOnly===true,[...safeOffturnColumns]);
    const count=p.limit??50;
    const bounded=p.sql.trim().replace(/;\s*$/,"");
    const statement="SELECT * FROM ("+bounded+") AS u3_bounded LIMIT "+(count+1);
