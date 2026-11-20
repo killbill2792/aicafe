@@ -223,6 +223,25 @@ export async function describeU3Catalog(ctx:U3SqlContext,p:{
   };
  });
 }
+/** Protect the legacy retained-data archive from nested-object extraction,
+ * including objects serialized by PostgreSQL as text. */
+export function unsafeStructuredToastResult(rows:readonly unknown[]):boolean{
+ return rows.some(row=>{
+  if(!row||typeof row!=="object"||Array.isArray(row))return true;
+  return Object.values(row).some(value=>{
+   if(value===null||value instanceof Date)return false;
+   if(typeof value==="object")return true;
+   if(typeof value!=="string")return false;
+   const trimmed=value.trim();
+   if(!trimmed.startsWith("{")&&!trimmed.startsWith("["))return false;
+   try{
+    const decoded=JSON.parse(trimmed) as unknown;
+    return decoded!==null&&typeof decoded==="object";
+   }catch{return false;}
+  });
+ });
+}
+
 const fitRows=(rows:unknown[])=>{
  const kept:unknown[]=[];let bytes=2;
  for(const row of rows){
@@ -283,6 +302,8 @@ export async function runU3Sql(ctx:U3SqlContext,raw:unknown){
    const asOf=(await client.query("SELECT transaction_timestamp() AS observed_at")).rows[0]?.observed_at;
    const result=await client.query({text:statement,values:parameters});
    const rows=Array.isArray(result.rows)?result.rows:[];
+   if(plan.relations.includes("toast_records")&&unsafeStructuredToastResult(rows))
+    throw Error("invalid_query");
    const fit=fitRows(rows.slice(0,count));
    const truncated=rows.length>count||fit.cut;
    if(ctx.aggregateOnly&&fit.rows.some(row=>
