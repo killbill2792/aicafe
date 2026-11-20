@@ -103,9 +103,10 @@ const removed=reference.relations.filter(x=>!current.has(x.relation)).map(x=>x.r
 // against the *actually migrated* SQL views. This is a generated schema-property
 // check, not a fixed collection of owner-question scenarios.
 const migration=readFileSync("supabase/migrations/20261120210000_u3_canonical_research.sql","utf8");
-const sourceMatch=migration.match(/\\$u3_sources\\$(\\[[\\s\\S]*?\\])\\$u3_sources\\$/);
-if(!sourceMatch)throw Error("U3 source admission manifest missing");
-const manifest=JSON.parse(sourceMatch[1]);
+const tag="$u3_sources$";
+const begin=migration.indexOf(tag),end=migration.indexOf(tag,begin+tag.length);
+if(begin<0||end<0)throw Error("U3 source admission manifest missing");
+const manifest=JSON.parse(migration.slice(begin+tag.length,end));
 if(!Array.isArray(manifest)||!manifest.length)
  throw Error("U3 source admission manifest empty");
 const expectedLogical=new Map(manifest.map(source=>[source.table,source.fields]));
