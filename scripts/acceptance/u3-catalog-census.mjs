@@ -54,7 +54,34 @@ const canonical=relation=>relation?JSON.stringify({
   String(a.constraint).localeCompare(String(b.constraint))||
   String(a.target).localeCompare(String(b.target)))
 }):null;
-const drift=live.filter(x=>canonical(byName.get(x.relation))!==canonical(x)).map(x=>x.relation);
+// The production snapshot is the inventory authority. One pre-existing POS
+// payroll table has stricter NOT NULL flags in production than in the original
+// migrated CREATE definition (which correctly allows unknown wage breakdowns).
+// Audit that exact known *physical-schema* discrepancy; NEVER invent zeros,
+// silently change payroll semantics, or use it as an AI source admission grant.
+// Every other type, field, foreign key, RLS or nullability discrepancy fails.
+const documentedPayrollNullability=new Set([
+ "regular_cents","overtime_cents","double_overtime_cents","gross_cents",
+ "employee_tax_cents","employer_tax_cents","net_cents","source"
+]);
+function documentedProductionConstraintDifference(actual,production){
+ if(!actual||!production||
+   actual.relation!=="employee_pay_period_facts"||
+   production.relation!=="employee_pay_period_facts")return false;
+ const withoutNullability=r=>canonical({...r,columns:r.columns.map(c=>[c[0],c[1],true])});
+ if(withoutNullability(actual)!==withoutNullability(production))return false;
+ const cols=new Map(production.columns.map(c=>[c[0],c]));
+ const differences=actual.columns.filter(c=>cols.get(c[0])?.[2]!==c[2]);
+ return differences.length===documentedPayrollNullability.size&&
+   differences.every(c=>documentedPayrollNullability.has(c[0])&&
+    cols.get(c[0])?.[2]===true&&c[2]===false);
+}
+const notedDeltas=live.filter(x=>canonical(byName.get(x.relation))!==canonical(x)&&
+ documentedProductionConstraintDifference(x,byName.get(x.relation)))
+ .map(x=>x.relation);
+const drift=live.filter(x=>canonical(byName.get(x.relation))!==canonical(x)&&
+ !documentedProductionConstraintDifference(x,byName.get(x.relation)))
+ .map(x=>x.relation);
 const differences=drift.slice(0,6).map(relation=>{
  const currentRelation=live.find(x=>x.relation===relation);
  const previous=byName.get(relation);
@@ -75,7 +102,7 @@ if(process.argv.includes("--write")){
  console.log("Regenerated non-authorizing physical census",stats);
 }else{
  console.log("U3 full migrated physical schema census",JSON.stringify({expected,actual:stats,
-  mismatched:drift.slice(0,15),removed:removed.slice(0,15),differences}));
+  mismatched:drift.slice(0,15),documentedProductionOnlyConstraints:notedDeltas,removed:removed.slice(0,15),differences}));
  if(drift.length||removed.length||JSON.stringify(stats)!==JSON.stringify(expected))
   throw Error("U3 physical schema drift: regenerate and review field/source dispositions before admitting data");
 }
