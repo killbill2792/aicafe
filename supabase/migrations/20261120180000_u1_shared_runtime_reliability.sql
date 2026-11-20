@@ -1,3 +1,6 @@
+set lock_timeout = '5s';
+set statement_timeout = '120s';
+
 -- U1: preserve original sources/keys; only change coordination and no-op writes.
 -- Existing cron and post-import caller are the ONLY producers.
 create table public.supervisor_derived_refresh_state (
@@ -13,6 +16,8 @@ create table public.supervisor_derived_refresh_state (
  check ((lease_token is null and lease_until is null and claimed_version is null)
    or (lease_token is not null and lease_until is not null and claimed_version is not null))
 );
+-- Reason: newly created empty service-only table; enable RLS before any client can access it.
+-- squawk-ignore ban-alter-row-level-security
 alter table public.supervisor_derived_refresh_state enable row level security;
 revoke all on table public.supervisor_derived_refresh_state from public,anon,authenticated;
 grant select on table public.supervisor_derived_refresh_state to service_role;
@@ -343,3 +348,6 @@ begin
 end $$;
 revoke all on function public.toast_unverified_sales_dates(uuid,date,date,boolean) from public,anon;
 grant execute on function public.toast_unverified_sales_dates(uuid,date,date,boolean) to authenticated,service_role;
+
+reset statement_timeout;
+reset lock_timeout;
