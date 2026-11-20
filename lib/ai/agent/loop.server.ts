@@ -11,6 +11,8 @@ import { statusFromResults } from "./status";
 import { checkNumbers,numberProvenance,compactEvidence,type NumericEvidence } from "./checkNumbers";
 import {usageEvidenceRefresh} from "./usageEvidence";
 import { STYLE_RULES } from "./style";
+import {executionPolicy,remainingOutput,requestOutputCap} from "./executionPolicy";
+import {projectProviderTools,usesNativeToolSearch,allowedFunctionNames,validProviderFunctionCall,canonicalHostedOutput,type ProviderFunctionCall} from "./providerTools";
 import {newResolveState,observeToolResult,resolveOwnerPeriod,localizedPeriodLabel} from "./resolve";
 import {acceptedExplainLines,type ExplainLine} from "./explain";
 import {verifiedRecommendedPriceInReply} from "./pricingReply";
@@ -20,7 +22,7 @@ import {withoutSavedFactFields} from "@/lib/ownerFacts/askGuard";
 import {ownerRunStatement,type OwnerRunCheckpoint,type MatchedOwnerAnswer} from "@/lib/ai/supervisor/runs/contracts";
 
 export type EndReason = "complete" | "budget" | "timeout" | "provider_error" | "tool_errors";
-type ToolCall = { type: "function_call"; name: string; arguments: string; call_id: string };
+type ToolCall = ProviderFunctionCall;
 type Event = { type: string; [key: string]: unknown };
 type ProviderFailureCode = "max_output_tokens" | "content_filter" | "incomplete_other" |
   "missing_terminal" | "provider_failed" | "stream_error";
@@ -177,12 +179,21 @@ export async function runAgentTurn(args: {
 }): Promise<AgentTurn> {
   if(!args.context.timezone)throw new Error("cafe_timezone_required");
   const now = args.now ?? Date.now, started = now();
-  // Only the durable cron worker supplies a stricter per-run cap. Ordinary
-  // interactive turns retain their existing 60-second limits unchanged.
   const workerBudget = currentWorkerBudget();
-  const turnMs = Math.min(60000, workerBudget?.maxElapsedMs ?? 60000);
-  const deadline = started + turnMs;
-  const workDeadline = deadline - Math.min(12000, Math.floor(turnMs / 5)); // final-answer reserve
+  const model = configuredSupervisorModel();
+  // The independent legacy host reservation remains unchanged; native tools
+  // must not silently expand the owner's approved paid acceptance envelope.
+  const approvedLocalTask14b=process.env.AI_CAFE_LIVE_ACCEPTANCE==="OWNER_APPROVED_LOCAL_ONLY" &&
+    process.env.APP_URL==="http://127.0.0.1:3000" &&
+    process.env.NEXT_PUBLIC_SUPABASE_URL==="http://127.0.0.1:54321" &&
+    typeof process.env.AICAFE_14B_BROKER_TOKEN==="string" &&
+    process.env.AICAFE_14B_BROKER_TOKEN.length>=40;
+  const legacyPaid=approvedLocalTask14b||Boolean(process.env.AICAFE_TASK14B_BUDGET_LEDGER);
+  const adaptive=model===PRODUCTION_SUPERVISOR_OPENAI_MODEL&&!legacyPaid;
+  const nativeSearch=usesNativeToolSearch(model,legacyPaid);
+  const policy=executionPolicy(model,workerBudget,legacyPaid);
+  const deadline=started+policy.elapsedMs;
+  const workDeadline=deadline-policy.finalTimeReserve;
   const controller = new AbortController();
   const provider = args.provider ?? openAIProvider;
   const localDay=new Date(args.context.asOf+"T12:00:00Z");
@@ -286,7 +297,6 @@ export async function runAgentTurn(args: {
   }, workerBudget) : null;
   let text = "", endReason: EndReason = "complete", failures = 0, finished = false;
   let askedQuestion:string|null=null;
-  const model = configuredSupervisorModel();
   const audit = (step: AgentAuditStep) => { try { args.onAuditStep?.(step); } catch { /* audit is non-critical */ } };
   // A hosted web search is another Responses model request, not a free data read.
   // Account for it within the same six-call budget and protect the final answer slot.
@@ -297,22 +307,25 @@ export async function runAgentTurn(args: {
   // Never imply approval or start a purchase from a keyword match.
   const supplierWorkObserved=()=>startedTools.some(name=>
     name==="inspect_supplier_purchase"||name==="get_supplier_purchase_orders"||name==="inspect_purchase_reconciliation");
-  const maxModelToolCalls=()=>supplierWorkObserved()?6:5;
+  const maxModelToolCalls=()=>adaptive?policy.maxWorkCalls:supplierWorkObserved()?6:5;
+  const maxToolCalls=adaptive?policy.maxToolCalls:8;
   const expandedLuna=model===PRODUCTION_SUPERVISOR_OPENAI_MODEL;
   const finalOutputReserve=1200, lunaToolOutputCap=16_384, lunaTurnOutputCap=25_000;
   // The owner-approved Luna turn cap includes the final response reserve.
   // Actual usage (or the full request cap if unreported) reduces the next
   // request; the worker's remaining budget can impose a smaller ceiling.
   // Only an executed supplier read unlocks the sixth work call.
-  const outputRemaining=(final:boolean)=>Math.max(0,Math.min(
+  const outputRemaining=(final:boolean)=>adaptive?remainingOutput(policy,meteredOutput(),final):Math.max(0,Math.min(
     workerBudget?workerBudget.maxOutputTokens-meteredOutput():Infinity,
     expandedLuna?lunaTurnOutputCap-meteredOutput()-
       (final?0:finalOutputReserve):Infinity));
   // The expanded reasoning allowance is for interactive turns only. Every
   // unattended worker, including the separately metered scheduled investigation,
   // retains its existing per-request ceiling as well as its remaining turn budget.
-  const outputLimit=(final:boolean)=>Math.min(expandedLuna&&!final&&!workerBudget?lunaToolOutputCap:finalOutputReserve,
-    currentDurableProviderOutputCap()??Infinity,outputRemaining(final));
+  const outputLimit=(final:boolean)=>adaptive
+    ?requestOutputCap(policy,meteredOutput(),final,currentDurableProviderOutputCap()??(workerBudget?1200:Infinity))
+    :Math.min(expandedLuna&&!final&&!workerBudget?lunaToolOutputCap:finalOutputReserve,
+      currentDurableProviderOutputCap()??Infinity,outputRemaining(final));
   const reportedOutput=(event:Event)=> {
     const u=(event.response as {usage?:{output_tokens?:unknown}}|undefined)?.usage?.output_tokens;
     return typeof u==="number"&&Number.isSafeInteger(u)&&u>=0&&u<=1_000_000;
@@ -370,24 +383,17 @@ export async function runAgentTurn(args: {
       }
     },
   }:args.context;
-  // Docker receives only an ephemeral trusted-broker token, never the host's
-  // paid budget ledger or real API key. Match the actual disposable runtime.
-  // The trusted host broker independently enforces every paid budget cap.
-  const approvedLocalTask14b=process.env.AI_CAFE_LIVE_ACCEPTANCE==="OWNER_APPROVED_LOCAL_ONLY" &&
-    process.env.APP_URL==="http://127.0.0.1:3000" &&
-    process.env.NEXT_PUBLIC_SUPABASE_URL==="http://127.0.0.1:54321" &&
-    typeof process.env.AICAFE_14B_BROKER_TOKEN==="string" &&
-    process.env.AICAFE_14B_BROKER_TOKEN.length>=40;
+  const allowedDefinitions=[...agentToolDefinitions.filter(t=>(!args.toolNames||args.toolNames.includes(t.name as AgentToolName))&&
+      (!args.checkpoint||t.name!=="record_maintenance_repair_claim")&&(t.name!=="present_response"||presentationAllowed)),
+      ...(args.toolNames?.includes("get_investigation_source")&&args.context.investigation?[investigationToolDefinition]:[]),
+      ...(args.toolNames?[]:args.extraTools??[])];
+  const eligibleNames=allowedFunctionNames(allowedDefinitions);
+  const projectedTools=projectProviderTools(allowedDefinitions,nativeSearch);
+  // Discovery is a provider transport choice, not a new local tool or route.
   const request = (final: boolean, outputCap:number) => ({
     model, instructions: agentInstructions(),
     ...(approvedLocalTask14b?{store:false as const}:{}),
-    // The complete ordered registry is identical for every owner request.
-    // The model itself decides whether a draft, an inspection or neither fits.
-    tools: [...agentToolDefinitions.filter(t=>(!args.toolNames||args.toolNames.includes(t.name as AgentToolName))&&
-      (!args.checkpoint||t.name!=="record_maintenance_repair_claim")&&(t.name!=="present_response"||presentationAllowed)),
-      ...(args.toolNames?.includes("get_investigation_source")&&args.context.investigation
-        ? [investigationToolDefinition] : []),
-      ...(args.toolNames?[]:args.extraTools??[])],
+    tools: projectedTools,
     tool_choice: final ? "none" : "auto", stream: true,
     max_output_tokens: outputCap, prompt_cache_key: agentPromptCacheKey(), input,
   });
@@ -426,7 +432,11 @@ export async function runAgentTurn(args: {
         if (event.type === "response.output_item.done" && event.item && typeof event.item === "object") {
           const item = event.item as { type?: string };
           output.push(item);
-          if (item.type === "function_call") calls.push(item as ToolCall);
+          if (item.type === "function_call") {
+            if(!validProviderFunctionCall(item)||calls.some(c=>c.call_id===item.call_id))
+              throw Error("invalid_provider_function_call");
+            calls.push(item);
+          }
         }
         if (event.type === "response.completed") {
           const actual=(event.response as {model?:unknown}|undefined)?.model;
@@ -446,7 +456,8 @@ export async function runAgentTurn(args: {
       if (!completed) {failureCode="missing_terminal";throw new Error("provider_incomplete");}
       await args.beforeAcceptResult?.();
       if(deferOutput&&text.length>callTextStart)args.onDelta?.(text.slice(callTextStart));
-      input.push(...(approvedLocalTask14b?task14bInlineContinuation(output):output));
+      input.push(...(approvedLocalTask14b?task14bInlineContinuation(output):
+        nativeSearch?canonicalHostedOutput(output,projectedTools,true):output));
       // A tool-only response is not an answer. Keep those follow-ups unclaimed
       // until a completed text response can be persisted.
       if (!calls.length && text.length > callTextStart)
@@ -473,10 +484,10 @@ export async function runAgentTurn(args: {
     // scoped registry/budget. No provider transport and no autonomous writes.
     // Leave at least half the tool allowance available to advance the assignment.
     const priorReads=args.checkpoint?.readReferences?.()??[];
-    const replayCap=Math.min(3,Math.floor((workerBudget?.maxToolCalls??8)/2));
+    const replayCap=Math.min(3,Math.floor(maxToolCalls/2));
     for(const saved of priorReads.slice(-replayCap)){
       if(replayCap===0||budgetStop()||workDeadline-now()<5000)break;
-      if(args.toolNames&&!args.toolNames.includes(saved.name as AgentToolName))continue;
+      if(!eligibleNames.has(saved.name))continue;
       if(!isRepeatSafeOwnerTool(saved.name,saved.selector))continue;
       await args.beforeAcceptResult?.();
       await boundary(()=>args.checkpoint!.assertLive());
@@ -529,7 +540,7 @@ export async function runAgentTurn(args: {
       }
       for (let index = 0; index < calls.length; index++) {
         const tool = calls[index];
-        if (usage.toolCalls >= 8 || now() >= workDeadline || failures >= 2 || budgetStop()) {
+        if (usage.toolCalls >= maxToolCalls || now() >= workDeadline || failures >= 2 || budgetStop()) {
           endReason = now() >= workDeadline || budgetStop() === "timeout" ? "timeout" : failures >= 2 ? "tool_errors" : "budget";
           for (const skipped of calls.slice(index)) {
             const error = endReason === "timeout" ? "deadline_exceeded" : endReason === "tool_errors" ? "tool_errors" : "budget_exceeded";
@@ -550,7 +561,7 @@ export async function runAgentTurn(args: {
         let observedEffect:ReturnType<typeof observeDurableToolEffect>|undefined;
         let toolTimer: ReturnType<typeof setTimeout> | undefined;
         try {
-          if((tool.name==="present_response"&&!presentationAllowed)||(args.toolNames&&!args.toolNames.includes(tool.name as AgentToolName))||(args.checkpoint&&tool.name==="record_maintenance_repair_claim"))
+          if(!eligibleNames.has(tool.name))
             throw new Error("tool_not_available");
           const parsedArgs=JSON.parse(tool.arguments);
           const questionArgs=tool.name==="ask_owner"?
@@ -705,7 +716,7 @@ export async function runAgentTurn(args: {
       if(askedQuestion){if(!text.trim()){text=askedQuestion; // allowed: empty-reply fill
        }break;}
       if (endReason !== "complete") break;
-      if (round === maxModelToolCalls()-1 || usage.modelCalls>=maxModelToolCalls() || usage.toolCalls >= 8 || budgetStop()) { endReason = budgetStop() ?? "budget"; break; }
+      if (round === maxModelToolCalls()-1 || usage.modelCalls>=maxModelToolCalls() || usage.toolCalls >= maxToolCalls || budgetStop()) { endReason = budgetStop() ?? "budget"; break; }
     }
     if (!finished && endReason === "complete") endReason = "budget";
     if (!finished && usage.modelCalls < maxModelToolCalls()+1 && now() < deadline && !budgetStop() && outputLimit(true)>0) {
