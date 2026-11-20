@@ -659,12 +659,13 @@ for(const width of [390,768,1440]){
       await open(page,t);
       results.push(await scanAxe(page,"home"));
       for(const tab of ["Work","Library","Routines","Permissions"]){
-        const panel=await controls(page,tab);
+        const trigger=page.getByRole("button",{name:tab==="Work"?"Supervisor work":"Library, routines and permissions",exact:true});
+        const panel=tab==="Work"?await (async()=>{await trigger.click({timeout:15000});return page.getByRole("dialog",{name:"Supervisor controls"});})():await controls(page,tab);
         await expect(panel).toBeVisible();
         results.push(await scanAxe(page,tab));
         await page.keyboard.press("Escape");
         await expect(panel).toHaveCount(0);
-        await expect(page.getByRole("button",{name:"Library, routines and permissions"})).toBeFocused();
+        await expect(trigger).toBeFocused();
       }
       mkdirSync("test-results/e2e",{recursive:true});
       writeFileSync("test-results/e2e/task17d-axe-"+width+".json", JSON.stringify({

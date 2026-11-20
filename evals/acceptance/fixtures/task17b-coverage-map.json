@@ -185,8 +185,8 @@
     "reviewedReplacements": {
       "lib/ai/agent/tools/dataQuery.ownerParity.live.test.ts": {
         "previous": "5b14a117e46e9471160f67c0075edd6198135dbb",
-        "reason": "Preserve all 18 original paid questions; receipt-backed inventory parity fixture, unverified-quantity negative and expanded all-18 deterministic registered-reader checks, including grouped null-name/date results.",
-        "replacement": "4130ece59cffb0473255abca0470a4c748aaaeca"
+        "reason": "Preserve all 18 original paid questions; receipt-backed inventory parity fixture, unverified-quantity negative and expanded all-18 deterministic registered-reader checks, including grouped null-name/date results. Includes a zero-provider preflight of the shared authenticated historical fixture.",
+        "replacement": "5c9a000859231ee7f8d44759928ecdbfdcd5e502"
       }
     }
   },
@@ -229,14 +229,19 @@
       "17b-owner-security",
       "17b-sales-labor",
       "17b-supply-finance",
-      "17b-cross-module-brief"
+      "17b-cross-module-brief",
+      "17b-pos-discounts",
+      "17b-pos-sales",
+      "17b-pos-identity",
+      "17b-pos-operations"
     ],
     "17c": [
       "17c",
       "17c-autonomy",
       "17c-procurement-recovery",
       "17c-business-monitors",
-      "17c-effect-security-recovery"
+      "17c-effect-security-recovery",
+      "17c-fault-followup"
     ],
     "17d": [
       "17d"
@@ -472,14 +477,23 @@
       "mode": "legacy_paid_unregistered",
       "status": "UNTESTED",
       "safePreflight": "POS0E_E2_SQL_ONLY=1; no provider",
-      "requiredMigration": "Preserve each retained-field, identity, discount, units, guests, current-day and correction question; split into separately bounded shared runner scenarios with independent SQL truth and host receipts. Do not execute old AGENT_LIVE_EVAL paid flag."
+      "requiredMigration": "All 18 original questions migrated into authenticated shared-runner scenarios; independently read persisted answers, actual source SQL and broker tool evidence. No direct paid legacy workflow. Exact fixture and no-provider verification pending.",
+      "registeredMigrationIds": [
+        "17b-pos-discounts",
+        "17b-pos-sales",
+        "17b-pos-identity",
+        "17b-pos-operations"
+      ]
     },
     {
       "path": "lib/ai/supervisor/routines/investigation.live.test.ts",
       "owner": "15A / 17C",
       "mode": "legacy_paid_unregistered",
       "status": "UNTESTED",
-      "requiredMigration": "Preserve autonomous unprompted detection, exact incident, persisted update, no user impersonation, 25-hour follow-up, watching and verified closure using shared trusted worker, not old direct provider workflow."
+      "requiredMigration": "Shared migration preserves unattended detection, corroboration, 23h silence, 25h follow-up, watching and verified closure; accelerated test clock. Real model execution pending.",
+      "registeredMigrationIds": [
+        "17c-fault-followup"
+      ]
     }
   ],
   "legacyNonProviderSuites": [
@@ -609,7 +623,11 @@
         "8a-price-observation",
         "pos0ef-customer-detail",
         "pos0ef-customer-identity",
-        "pos0ef-customer-trends"
+        "pos0ef-customer-trends",
+        "17b-pos-discounts",
+        "17b-pos-sales",
+        "17b-pos-identity",
+        "17b-pos-operations"
       ]
     },
     {
@@ -629,7 +647,8 @@
         "17d",
         "6-15c-owner-run",
         "8a-approved-experiment",
-        "8b-multiday-lifecycle"
+        "8b-multiday-lifecycle",
+        "17c-fault-followup"
       ]
     }
   ]

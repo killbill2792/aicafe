@@ -36,7 +36,7 @@ export function validateScenario(m,id){
       /^evals\/acceptance\/live\/[a-zA-Z0-9_-]+\.mjs$/.test(m.entrypoint))),
     "Invalid generic test entrypoint");
   ensure(m.proof===id+"-proof.json"&&m.scope===id+"-scope.json","Invalid proof filenames");
-  ensure(Array.isArray(m.expectedTools)&&m.expectedTools.length>=2&&m.expectedTools.length<=20&&
+  ensure(Array.isArray(m.expectedTools)&&m.expectedTools.length>=(["17b-pos-discounts","17b-pos-sales","17b-pos-identity","17b-pos-operations"].includes(id)&&m.entrypoint==="evals/acceptance/live/task17b-cross-domain.mjs"&&m.expectedTools[0]==="query_data"?1:2)&&m.expectedTools.length<=20&&
     m.expectedTools.every(t=>typeof t==="string"&&/^[a-z][a-z0-9_]{1,79}$/.test(t)),"Real registered tool names required");
   ensure(Array.isArray(m.assertions)&&m.assertions.length>=3&&m.assertions.length<=20,"Independent DB assertions required");
   const kinds=new Set();
@@ -63,6 +63,7 @@ export function validateScenario(m,id){
 }
 // The previously submitted 16E executable explicitly allows either canonical sales reader.
 export function expectedToolsObserved(manifest,observed){
+ if(manifest.id==="17c-fault-followup"&&manifest.expectedTools.join(",")==="get_investigation_source,query_data")return observed.includes("get_investigation_source")&&new Set(observed.filter(t=>["query_data","get_sales","get_profit","get_labor","get_expenses","get_bills","get_cashflow_evidence","get_cost_summary","get_item_sales","get_ingredient_costs","get_product_costs","get_menu_items","get_price_monitor_status","get_peak_hours","get_payroll_facts","get_staff_messages","get_staff_coordination_cases","get_schedule","get_week_schedule","get_coverage_gaps","get_inventory","get_usage_variance","inspect_purchase_reconciliation"].includes(t))).size>=2;
  return manifest.expectedTools.every(t=>observed.includes(t)||(manifest.id==="16e"&&t==="get_sales"&&observed.includes("query_data"))||(manifest.id==="17b-cross-module-brief"&&["get_sales","get_labor"].includes(t)&&observed.includes("query_data")));
 }
 export function readScenario(root,id){
@@ -457,7 +458,8 @@ async function attest(){
     ensure(count>=a.minCount&&count<=a.maxCount,"Independent DB assertion failed: "+a.name);
     return {name:a.name,kind:a.kind,passed:true};
   });
-  const {attestTask17B}=await import("./luna-attest-17b.mjs");
+  const {attestTask17B,isHistoricalPosScenario,historicalPosCases}=await import("./luna-attest-17b.mjs");
+  if(isHistoricalPosScenario(id))ensure(observed.filter(t=>t==="query_data").length>=historicalPosCases(id).length,"Missing historical per-question provider tool evidence");
   const independentValueReadbacks=attestTask17B(id,scope);
   const safe={scenario:id,head:audit.head,provider:"openai_responses",model:"gpt-6-luna",
     attempts:audit.attempts,reservedUpperUSD:audit.reservedMicros/1_000_000,

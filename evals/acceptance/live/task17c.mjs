@@ -4,12 +4,12 @@ import {existsSync,realpathSync,writeFileSync} from "node:fs";
 import {resolve,dirname,sep} from "node:path";
 import {assertLocalLiveEnvironment} from "./preflight.mjs";
 import {readPersistedModelUsage,verifyCheckoutHead} from "./runner.mjs";
-import {profiles,openOwner,createThread,makeQuote,delegate,rows,observeDueOccurrence,createOperatingWorld,exerciseOperatingWorld,procurementRecovery,businessMonitorRecovery,effectSecurityRecovery} from "./task17c-world.mjs";
+import {profiles,openOwner,createThread,makeQuote,delegate,rows,observeDueOccurrence,createOperatingWorld,exerciseOperatingWorld,procurementRecovery,businessMonitorRecovery,effectSecurityRecovery,legacyFollowup} from "./task17c-world.mjs";
 import {verifyRoutineAndFile,assessCoverage,verifyScheduledOccurrence,verifyOperatingWorld} from "./task17c-oracle.mjs";
 const env=process.env;
 assertLocalLiveEnvironment(env);verifyCheckoutHead(env.HEAD_SHA);
 if(env.AICAFE_SHARED_LUNA!=="1"||env.AICAFE_SHARED_LUNA_CANDIDATE!=="1"||
- !["17c","17c-autonomy","17c-procurement-recovery","17c-business-monitors","17c-effect-security-recovery"].includes(env.AICAFE_SHARED_LUNA_SCENARIO)||env.AICAFE_SHARED_LUNA_HEAD!==env.HEAD_SHA)
+ !["17c","17c-autonomy","17c-procurement-recovery","17c-business-monitors","17c-effect-security-recovery","17c-fault-followup"].includes(env.AICAFE_SHARED_LUNA_SCENARIO)||env.AICAFE_SHARED_LUNA_HEAD!==env.HEAD_SHA)
  throw Error("task17c:trusted_shared_run_required");
 const args=process.argv.slice(2);
 if(args.length!==4||args[0]!=="--output"||args[2]!=="--scope-output")throw Error("task17c:proof_paths_required");
@@ -22,7 +22,7 @@ const browser=await chromium.launch({headless:true});
 let owner,outsider;
 try{
  await db.connect();
- const additional={"17c-procurement-recovery":procurementRecovery,"17c-business-monitors":businessMonitorRecovery,"17c-effect-security-recovery":effectSecurityRecovery};
+ const additional={"17c-procurement-recovery":procurementRecovery,"17c-business-monitors":businessMonitorRecovery,"17c-effect-security-recovery":effectSecurityRecovery,"17c-fault-followup":legacyFollowup};
  if(Object.hasOwn(additional,env.AICAFE_SHARED_LUNA_SCENARIO)){
   const result=await additional[env.AICAFE_SHARED_LUNA_SCENARIO](db,browser);
   if(!Number.isSafeInteger(result.calls)||result.calls<2||result.calls>18)throw Error("task17c:provider_call_bound");
@@ -52,15 +52,17 @@ try{
  const {attachmentId,expected}=await makeQuote(owner.context,threadId,first.timezone);
  const scope={businessId:first.businessId,ownerUserId:first.owner.userId,
   foreignBusinessId:foreign.businessId,threadId,attachmentId};
- const result=await delegate(owner.page,threadId,attachmentId,expected);
+ const result=await delegate(owner.page,threadId,attachmentId,expected,async()=>{
+  for(const table of ["supervisor_routines","supervisor_proposals"])if((await rows(db,"select 1 from public."+table+" where business_id=$1 and thread_id=$2",[scope.businessId,threadId])).length)throw Error("task17c:read_only_external_file_mutation");
+ });
  // Close owner browser before independent readback; no subsequent prompt.
  await owner.context.close();owner=null;
- const ownerRows=await rows(db,"select id from public.ai_messages where business_id=$1 and thread_id=$2 and role='owner'",[scope.businessId,threadId]);
- if(ownerRows.length!==1)throw Error("task17c:owner_delegation_count");
- const usage=await readPersistedModelUsage(db,scope.businessId,ownerRows[0].id);
+ const ownerRows=await rows(db,"select id from public.ai_messages where business_id=$1 and thread_id=$2 and role='owner' order by created_at,id",[scope.businessId,threadId]);
+ if(ownerRows.length!==2)throw Error("task17c:owner_delegation_count");
+ const usage=await Promise.all(ownerRows.map(row=>readPersistedModelUsage(db,scope.businessId,row.id)));
  const routineId=verifyRoutineAndFile({scope,expected,ownerRows,usage,
   routines:await rows(db,"select * from public.supervisor_routines where business_id=$1 and thread_id=$2",[scope.businessId,threadId]),
-  reply:await rows(db,"select structured_content from public.ai_messages where business_id=$1 and owner_user_id=$2 and thread_id=$3 and id=$4 and role='supervisor'",[scope.businessId,scope.ownerUserId,threadId,result.done.reply.id]),
+  reply:await rows(db,"select structured_content from public.ai_messages where business_id=$1 and owner_user_id=$2 and thread_id=$3 and id=$4 and role='supervisor'",[scope.businessId,scope.ownerUserId,threadId,result.read.done.reply.id]),
   attachments:await rows(db,"select id,business_id,owner_user_id,thread_id from public.ai_attachments where id=$1",[attachmentId]),
   proposals:await rows(db,"select id from public.supervisor_proposals where business_id=$1 and thread_id=$2",[scope.businessId,threadId]),
   foreignRows:await rows(db,"select id from public.supervisor_routines where business_id=$1 and thread_id=$2",[scope.foreignBusinessId,threadId])
@@ -68,7 +70,7 @@ try{
  const occurrence=await observeDueOccurrence(db,scope,expected,routineId);
  const routineRunId=verifyScheduledOccurrence({expected,...occurrence});
  const ownerAfter=await rows(db,"select id from public.ai_messages where business_id=$1 and thread_id=$2 and role='owner'",[scope.businessId,threadId]);
- if(ownerAfter.length!==1||ownerAfter[0].id!==ownerRows[0].id)throw Error("task17c:unexpected_new_owner_prompt");
+ if(ownerAfter.length!==2||ownerAfter.some(row=>!ownerRows.some(prior=>prior.id===row.id)))throw Error("task17c:unexpected_new_owner_prompt");
  const effectsAfter=await rows(db,"select id from public.supervisor_proposals where business_id=$1 and thread_id=$2",[scope.businessId,threadId]);
  if(effectsAfter.length!==0)throw Error("task17c:unapproved_effect_proposal");
  outsider=await openOwner(browser,foreign);
@@ -86,14 +88,14 @@ try{
  if(foreignRoutines.status()!==200)throw Error("task17c:foreign_routine_reader_failed");
  const other=await foreignRoutines.json();
  if(!Array.isArray(other.routines)||other.routines.some(row=>row.id===routineId))throw Error("task17c:foreign_routine_leak");
- const providerCalls=Number(usage.model_call_count);
+ const providerCalls=usage.reduce((sum,u)=>sum+Number(u.model_call_count),0);
  if(providerCalls>18)throw Error("task17c:shared_call_cap_exceeded");
  const proof={schema_version:1,task:"17c",lane:"chat-routine-file-delegation",head_sha:env.HEAD_SHA,
    status:"passed",observed_model:"gpt-6-luna",provider:"openai_responses",
    calls:providerCalls,registeredTools:result.names,actualRoutineOccurrence:true,duplicateTickStable:true,realDatabaseClock:true,distinctWorkerProcesses:true,coverage:assessCoverage({head:env.HEAD_SHA}),
    integrated_proven:false,released_proven:false};
  writeFileSync(files[0],JSON.stringify(proof,null,2)+"\n",{flag:"wx",mode:0o600});
- writeFileSync(files[1],JSON.stringify({...scope,routineId,routineRunId,routineLocalDate:expected.localDate,replyId:result.done.reply.id,expectedProviderCalls:providerCalls})+"\n",{flag:"wx",mode:0o600});
+ writeFileSync(files[1],JSON.stringify({...scope,routineId,routineRunId,routineLocalDate:expected.localDate,replyId:result.create.done.reply.id,fileReplyId:result.read.done.reply.id,expectedProviderCalls:providerCalls})+"\n",{flag:"wx",mode:0o600});
  console.log("Task17C initial chat delegation lane complete; full autonomous acceptance is NOT_PROVEN.");
  }
 }finally{
