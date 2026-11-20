@@ -6,7 +6,7 @@ const mocks=vi.hoisted(()=>({
   ownerRun:vi.fn(async()=>({processed:1,state:"completed"})),
   due:vi.fn(async()=>({scopes:1,delivered:1,failed:0})),
   enqueue:vi.fn(async()=>2),
-  investigate:vi.fn(async()=>({processed:2,collected:1,investigated:1,followUps:0,failed:0})),
+  investigate:vi.fn(async(_db:unknown,_now:Date,_maxSteps:number)=>({processed:1,collected:1,investigated:0,followUps:0,rechecked:0,failed:0})),
   routines:vi.fn(async(_db:unknown,_businessId:string,_timezone:string,_now:Date,_enqueue?:unknown)=>({routinesChecked:1,runs:1,notices:1,failed:0,evidenceChecks:1,investigationsQueued:2})),
 }));
 vi.mock("@/lib/security/bearer",()=>({verifyBearer:(req:Request,secret:string)=>
@@ -29,7 +29,9 @@ vi.mock("@/lib/supabase/admin",()=>({createAdminSupabaseClient:()=>({
       {id:"demo",timezone:"UTC",is_demo:true}],error:null};}}),
 })}));
 import {GET} from "./route";
-beforeEach(()=>{vi.stubEnv("CRON_SECRET","test-secret");vi.stubEnv("SUPERVISOR_RUN_WORKER_ENABLED","");vi.stubEnv("SUPERVISOR_DURABLE_CHAT_ENABLED","");mocks.ownerRun.mockReset().mockResolvedValue({processed:1,state:"completed"});mocks.refresh.mockClear();mocks.due.mockClear();mocks.routines.mockClear();mocks.enqueue.mockClear();mocks.investigate.mockClear();mocks.calls=0});
+beforeEach(()=>{vi.stubEnv("CRON_SECRET","test-secret");vi.stubEnv("SUPERVISOR_RUN_WORKER_ENABLED","");vi.stubEnv("SUPERVISOR_DURABLE_CHAT_ENABLED","");mocks.ownerRun.mockReset().mockResolvedValue({processed:1,state:"completed"});mocks.refresh.mockClear();mocks.due.mockClear();mocks.routines.mockClear();mocks.enqueue.mockClear();mocks.investigate.mockReset()
+    .mockResolvedValueOnce({processed:1,collected:1,investigated:0,followUps:0,rechecked:0,failed:0})
+    .mockResolvedValue({processed:1,collected:0,investigated:1,followUps:0,rechecked:0,failed:0});mocks.calls=0});
 afterEach(()=>vi.unstubAllEnvs());
 describe("refresh-derived cron",()=>{
   it("requires authorization before even fetching businesses",async()=>{
@@ -54,7 +56,8 @@ describe("refresh-derived cron",()=>{
     expect(mocks.refresh.mock.calls.map(call=>call[1])).toEqual(["a","b"]);
     expect(mocks.routines.mock.calls.map(call=>call[1])).toEqual(["a","b"]);
     expect(mocks.routines.mock.calls.every(call=>call[4]===mocks.enqueue)).toBe(true);
-    expect(mocks.investigate).toHaveBeenCalledOnce();
+    expect(mocks.investigate).toHaveBeenCalledTimes(2);
+    expect(mocks.investigate.mock.calls.map(args=>args[2])).toEqual([1,1]);
     expect(mocks.ownerRun).not.toHaveBeenCalled();
   });
   it("does not hide successful cafés when a routine fails",async()=>{
@@ -87,7 +90,8 @@ describe("refresh-derived cron",()=>{
     expect(result.status).toBe(200);
     expect(await result.json()).toMatchObject({ownerRuns:{processed:1,state:"busy",failed:0},refreshed:2});
     expect(mocks.ownerRun).toHaveBeenCalledOnce();
-    expect(mocks.investigate).toHaveBeenCalledOnce();
+    expect(mocks.investigate).toHaveBeenCalledTimes(2);
+    expect(mocks.investigate.mock.calls.map(args=>args[2])).toEqual([1,1]);
   });
   it("isolates an unavailable owner worker and reports only a sanitized failure",async()=>{
     vi.stubEnv("SUPERVISOR_RUN_WORKER_ENABLED","true");
@@ -100,7 +104,8 @@ describe("refresh-derived cron",()=>{
     const body=await result.json();
     expect(body).toMatchObject({ownerRuns:{processed:0,state:null,failed:1},refreshed:2});
     expect(JSON.stringify(body)).not.toContain("private tenant data");
-    expect(mocks.investigate).toHaveBeenCalledOnce();
+    expect(mocks.investigate).toHaveBeenCalledTimes(2);
+    expect(mocks.investigate.mock.calls.map(args=>args[2])).toEqual([1,1]);
   });
 });
 
@@ -115,9 +120,12 @@ describe("U1 refresh workload and lease timing",()=>{
         return {businessDate:"2026-11-20",alertsCreated:0};
       });
       const result=await GET(new Request("https://example.test/api/cron/refresh-derived",{headers:{authorization:"Bearer test-secret"}}));
-      expect(result.status).toBe(200);
-      expect(mocks.investigate).toHaveBeenCalledOnce();
-      const args=mocks.investigate.mock.calls[0] as unknown as [unknown,Date,number];
+      expect(result.status).toBe(207);
+      expect(await result.json()).toMatchObject({checked:1,refreshed:1,deferred:1});
+      expect(mocks.refresh).toHaveBeenCalledTimes(1);
+      expect(mocks.investigate).toHaveBeenCalledTimes(2);
+    expect(mocks.investigate.mock.calls.map(args=>args[2])).toEqual([1,1]);
+      const args=mocks.investigate.mock.calls[1];
       expect(args[1].getTime()).toBeGreaterThanOrEqual(started.getTime()+181000);
     }finally{vi.useRealTimers();}
   });
