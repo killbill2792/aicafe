@@ -3,6 +3,7 @@ import {createHash,randomUUID} from "node:crypto";
 import {Pool,type PoolClient} from "pg";
 import {z} from "zod";
 import type {SupabaseClient} from "@supabase/supabase-js";
+import {createAdminSupabaseClient} from "@/lib/supabase/admin";
 import {admitU3Sql} from "./u3SqlAdmission";
 
 /** One research executor for the existing query_data tool.
@@ -75,7 +76,10 @@ function scope(ctx:U3SqlContext){
 async function signedCapability(ctx:U3SqlContext):Promise<string>{
  const p=scope(ctx);
  if(!p||!ctx.db)throw Error("research_invalid_scope");
- const {data,error}=await ctx.db.rpc("u3_issue_research_scope",{
+ // A checked owner/thread/lease comes only from trusted server contexts.
+ // Mint through the internal service client: browser RLS clients cannot call
+ // this service-only RPC, and model SQL never sees the privileged client.
+ const {data,error}=await createAdminSupabaseClient().rpc("u3_issue_research_scope",{
   p_business_id:p.businessId,p_owner_user_id:p.ownerUserId,p_thread_id:p.threadId,
   p_mode:p.mode,p_source_type:p.sourceType,p_source_id:p.sourceId,
   p_run_id:p.runId,p_lease_token:p.leaseToken
