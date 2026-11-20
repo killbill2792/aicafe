@@ -95,7 +95,7 @@ export async function readEventDemandEvidence(db:SupabaseClient,scope:OwnerScope
   const scheduled=ok(shifts,null),stock=ok(inventory,null);
   // The two scheduling sources may overlap. Keep them separate; a draft or
   // scheduled shift is not proof of attendance, availability or sufficient staff.
-  const shiftRows=(scheduled?.rows??[]).flatMap(row=>{
+  const shiftRows=(scheduled?.rows??[]).flatMap<{source:"app"|"toast";status:string;start:string|null;end:string|null}>(row=>{
     const d=row.data as Record<string,unknown>|null;
     if(!d||row.business_date!==request.eventDate)return [];
     if(row.source==="app"&&["published","confirmed","draft"].includes(String(d.shift_status)))

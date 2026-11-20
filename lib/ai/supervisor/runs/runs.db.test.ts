@@ -347,6 +347,19 @@ describe("Task 15C durable provider reservations survive actual worker death",()
       // The two persisted reservations exhaust the existing owner-day quota,
       // even though the aggregate also records their two attempted calls.
       await expect(call(a,"supervisor_reserve_durable_model_call",args(randomUUID(),{calls:3,input:300,output:150,cost:300}))).rejects.toThrow("owner_usage_limit_reached");
+      const maxArgs=args(randomUUID(),{calls:3,input:300,output:150});
+      maxArgs[maxArgs.length-2]=null;
+      maxArgs[maxArgs.length-1]=null;
+      await call(a,"supervisor_reserve_durable_model_call",maxArgs);
+      expect((await admin.query("select count(*)::int n from public.supervisor_system_usage_events where business_id=$1",[businessId])).rows).toEqual([{n:3}]);
+      const rollup=await call(a,"admin_supervisor_usage_rollup",[]);
+      expect(rollup.rows.find((row:{business_id:string})=>row.business_id===businessId)).toMatchObject({
+        calls:3,known_input_tokens:70,known_output_tokens:10,known_cost_micros:12,
+        unknown_token_calls:2,unpriced_calls:2,channel:"owner_requested"});
+      await foreign.query("select set_config('request.jwt.claim.sub',$1,false)",[ownerId]);
+      expect(await call(foreign,"supervisor_owner_usage_summary",[businessId])).toMatchObject({ownerRequests:1,proactiveItems:0});
+      await expect(call(foreign,"supervisor_owner_usage_summary",[randomUUID()])).rejects.toThrow("owner_access_required");
+      await expect(call(foreign,"admin_supervisor_usage_rollup",[])).rejects.toThrow();
       await admin.query("delete from public.memberships where business_id=$1 and user_id=$2",[businessId,ownerId]);
       await expect(call(a,"supervisor_reserve_durable_model_call",args(randomUUID(),{daily:5}))).rejects.toThrow("durable_reservation_not_authorized");
       await admin.query("insert into public.memberships(business_id,user_id,role) values ($1,$2,'owner')",[businessId,ownerId]);
@@ -443,10 +456,7 @@ describe("Task 6/15C v2 durable owner admission and checkpoint fencing",()=>{
       expect(saved.rows).toMatchObject([{status:"blocked",checkpoint_seq:"5",checkpoint_phase:"effect_pending",checkpoint_receipts:[{operation,receipt},{operation:providerOp}]}]);
       await admin.query("update storage.objects set metadata=jsonb_build_object('size',42,'eTag','replaced') where id=$1",[objectId]);
       await expect(call(a,"supervisor_admit_owner_run_v2",admit)).rejects.toThrow("owner_run_input_conflict");
-      // This PostgreSQL-only sandbox inserts a synthetic metadata row, not a
-      // real Storage API file or bytes. The lane has no Storage API credentials.
-      // Verify the platform guard and leave this unique metadata-only row for
-      // destruction with the disposable database; never disable protect_delete.
+      // Synthetic metadata only: preserve the Storage API deletion guard.
       await expect(admin.query("delete from storage.objects where id=$1",[objectId])).rejects.toThrow("Direct deletion from storage tables is not allowed");
     }finally{
       for(const child of children)if(child.exitCode===null&&child.signalCode===null)await killAndConfirm(child);

@@ -11,7 +11,7 @@ const bounded=z.object({dateFrom:z.iso.date(),dateTo:z.iso.date()});
 const periodViews=new Set<CanonicalView>([
  "cv_sales_days","cv_sales_hours","cv_item_sales","cv_payments","cv_discounts",
  "cv_voids_refunds","cv_card_fees","cv_analytics","cv_labor_entries",
- "cv_shifts","cv_inventory","cv_orders","cv_cash","cv_kitchen","cv_dining_options"
+ "cv_shifts","cv_inventory","cv_orders","cv_cash","cv_kitchen","cv_dining_options","cv_customer_visits","cv_customer_products"
 ]);
 /** The only canonical view query path for screens and AI.
  * Never accept an arbitrary SQL table or inferred café ID from the model. */
@@ -27,7 +27,11 @@ export async function readCanonicalView(db:SupabaseClient,businessId:string,
  if(!parsed.success||range.dateFrom>range.dateTo)
   return {rows:[],notes:["invalid_date_range"],empty:true,truncated:false,rowCount:0,error:"invalid_range"};
  const limit=Math.min(1000,Math.max(1,Math.floor(requestedLimit)));
- let query=db.from(view).select("*").eq("business_id",businessId);
+ // Customer timeline/cohort values are computed at the requested cutoff,
+ // never at today's date then filtered back into a historical range.
+ let query=view==="cv_customer_visits"||view==="cv_customer_products"
+  ?db.rpc(view==="cv_customer_visits"?"customer_visits_for":"customer_products_for",{p_business_id:businessId,p_from:range.dateFrom,p_to:range.dateTo}).eq("business_id",businessId)
+  :db.from(view).select("*").eq("business_id",businessId);
  if(periodViews.has(view))
   query=query.gte("business_date",range.dateFrom).lte("business_date",range.dateTo);
  if(filter.status!==undefined){
@@ -68,3 +72,7 @@ export const readOrders=wrap("cv_orders");
 export const readCash=wrap("cv_cash");
 export const readKitchen=wrap("cv_kitchen");
 export const readDiningOptions=wrap("cv_dining_options");
+
+export const readCustomerVisits=wrap("cv_customer_visits");
+
+export const readCustomerProducts=wrap("cv_customer_products");

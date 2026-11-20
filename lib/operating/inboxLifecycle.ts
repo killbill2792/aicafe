@@ -77,11 +77,11 @@ const expire = (task: OperatingTask, reason: InboxExpiredReason, now: string): O
  * reports to Watching and moves past or superseded items to Handled as expired.
  * `today` is the café-local date.
  */
-export function settleInboxTasks(stored: readonly OperatingTask[], derived: readonly OperatingTask[] | null, now: Date, today: string): OperatingTask[] {
+export function settleInboxTasks(stored: readonly OperatingTask[], derived: readonly OperatingTask[] | null, now: Date, today: string, verifiedPriceEntities?:ReadonlySet<string>): OperatingTask[] {
   const byId = new Map(stored.map((task) => [task.id, task]));
   // null = today's derived items are not known here (a cron); stored price reviews are kept as stored.
   if (derived) {
-    const plan = reconcileOperatingTasks([...stored], [...derived], now);
+    const plan = reconcileOperatingTasks([...stored], [...derived], now, verifiedPriceEntities);
     for (const task of [...plan.refresh, ...plan.expire, ...plan.insert]) byId.set(task.id, task);
   }
   // Collapse repeats: keep the newest row of each key.

@@ -15,6 +15,7 @@ test("real Home, Staff, Menu, Money and Gmail changes select only relevant journ
   assert.deepEqual(classifyPaths(["app/[locale]/money/page.tsx"]).scenarios, ["money"]);
   assert.deepEqual(classifyPaths(["app/[locale]/more/gmail/page.tsx"]).scenarios, ["gmail"]);
   assert.deepEqual(classifyPaths(["app/[locale]/more/supervisor-access/page.tsx"]).scenarios,["gmail"]);
+  assert.deepEqual(classifyPaths(["app/admin/costs/page.tsx"]).scenarios,["gmail"]);
   assert.deepEqual(classifyPaths(["components/more/SupervisorAccessPanel.tsx"]).scenarios,["gmail"]);
   assert.deepEqual(classifyPaths(["components/shared/BackHeader.tsx"]).scenarios,SCENARIOS);
   assert.deepEqual(classifyPaths(["components/shared/BackHeader.tsx"]).unmapped,[]);

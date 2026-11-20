@@ -40,9 +40,15 @@ export function affectedLocalDays(start:string,end:string,timezone:string):strin
  */
 export function timecardWagesForLocalDay(shift:PricedShift,day:string,
  timezone:string,now:Date=new Date()):number|null{
- if(shift.hourlyWageCents===null)return null;
  const start=fromZonedTime(day+"T00:00:00",timezone).getTime();
  const end=fromZonedTime(nextDay(day)+"T00:00:00",timezone).getTime();
+ return timecardWagesForInterval(shift,start,end,now);
+}
+/** Shared actual-pay allocation. Same provider-pay and unpaid-break rules as
+ * daily rollups; consumers may use a verified closed local-hour interval. */
+export function timecardWagesForInterval(shift:PricedShift,start:number,end:number,now:Date=new Date()):number|null{
+ if(shift.hourlyWageCents===null)return null;
+ if(!Number.isFinite(start)||!Number.isFinite(end)||end<=start)throw Error("Invalid wage allocation interval");
  const inMs=validTime(shift.clockIn);
  const outMs=shift.clockOut?validTime(shift.clockOut):now.getTime();
  const effectiveOut=Math.min(outMs,now.getTime());
@@ -58,7 +64,7 @@ export function timecardWagesForLocalDay(shift:PricedShift,day:string,
  const shiftPaidMs=paidMsBetween(shift,inMs,effectiveOut);
  if(shiftPaidMs<=0){
   // No paid clock time to split by: the whole shift belongs to its clock-in day.
-  return formatInTimeZone(inMs,timezone,"yyyy-MM-dd")===day?providerPay:0;
+  return inMs>=start&&inMs<end?providerPay:0;
  }
  return providerPay*dayPaidMs/shiftPaidMs;
 }

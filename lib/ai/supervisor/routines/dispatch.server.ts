@@ -183,7 +183,7 @@ function parseRoutine(row:RoutineRow):RoutineRecord{
 }
 type OwnerScope={ownerUserId:string;threadId:string};
 /** The existing refresh-derived cron calls this once per café *after* alert
- * generation. Any owner with an existing thread receives change-driven notices,
+ * generation. Every owner with actionable evidence receives change-driven notices,
  * even on dates where no routine is due. No new AI worker, event loop or inbox. */
 export async function dispatchRoutinesForBusiness(db:SupabaseClient,businessId:string,
   timezone:string,now:Date,
@@ -231,8 +231,16 @@ export async function dispatchRoutinesForBusiness(db:SupabaseClient,businessId:s
   if(coordinated.error)result.failed++;
   // Source-change notices remain independent from the due schedule.
   for(const ownerUserId of owners){
-    const threadId=threads.get(ownerUserId);
-    if(!threadId){result.failed++;continue;}
+    let threadId=threads.get(ownerUserId);
+    if(!threadId){
+      try{
+        const opened=await db.rpc("supervisor_ensure_proactive_thread",{p_business_id:businessId,p_owner_user_id:ownerUserId});
+        if(opened.error)throw opened.error;
+        if(typeof opened.data==="string")threadId=opened.data;
+      }catch{result.failed++;continue;}
+      // Null is a successful no-work result, not an outage. A failed RPC is handled above.
+      if(!threadId)continue;
+    }
     try{
       const done=await postForOwner(db,{businessId,ownerUserId,threadId,localDate},now);
       result.evidenceChecks+=done.checked;

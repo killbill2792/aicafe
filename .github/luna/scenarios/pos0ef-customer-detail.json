@@ -1,0 +1,77 @@
+{
+  "id": "pos0ef-customer-detail",
+  "mode": "generic",
+  "engine": "vitest",
+  "entrypoint": "lib/ai/agent/tools/customerIdentity.live.test.ts",
+  "proof": "pos0ef-customer-detail-proof.json",
+  "scope": "pos0ef-customer-detail-scope.json",
+  "expectedTools": [
+    "query_data",
+    "describe_data"
+  ],
+  "assertions": [
+    {
+      "name": "closed-period-source-receipts",
+      "kind": "source",
+      "table": "public.toast_raw_records",
+      "where": {
+        "business_id": {
+          "scope": "businessId"
+        },
+        "restaurant_guid": {
+          "scope": "restaurant"
+        },
+        "entity": {
+          "eq": "order"
+        }
+      },
+      "minCount": 70,
+      "maxCount": 70
+    },
+    {
+      "name": "authenticated-owner-membership",
+      "kind": "owner",
+      "table": "public.memberships",
+      "where": {
+        "business_id": {
+          "scope": "businessId"
+        },
+        "user_id": {
+          "scope": "queryOwnerId"
+        },
+        "role": {
+          "eq": "owner"
+        }
+      },
+      "minCount": 1,
+      "maxCount": 1
+    },
+    {
+      "name": "no-unapproved-effect",
+      "kind": "source",
+      "table": "public.supervisor_effect_attempts",
+      "where": {
+        "business_id": {
+          "scope": "businessId"
+        }
+      },
+      "minCount": 0,
+      "maxCount": 0
+    },
+    {
+      "name": "no-foreign-restaurant-receipts",
+      "kind": "isolation",
+      "table": "public.toast_raw_records",
+      "where": {
+        "business_id": {
+          "scope": "foreignBusinessId"
+        },
+        "restaurant_guid": {
+          "scope": "restaurant"
+        }
+      },
+      "minCount": 0,
+      "maxCount": 0
+    }
+  ]
+}

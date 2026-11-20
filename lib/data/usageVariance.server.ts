@@ -48,7 +48,7 @@ async function allRows<T>(load:(first:number,last:number)=>PromiseLike<{data:T[]
 /** UI and Maya use this same owner-scoped read; no LLM/client-supplied business ID. */
 export async function readUsageVariance(raw:z.input<typeof readInput>, explicit?:{client:SupabaseClient;businessId:string}):Promise<{from:string;to:string;rows:UsageRow[];missing:string[];groupBy:string|null;provenance:{sales:string;recipes:string;counts:string;purchases:string;coverage:"complete"|"incomplete"}}>{
  const input=readInput.parse(raw);
- const {db,businessId}=await scope();
+ const {db,businessId}=await scope(explicit);
  const {data:ingredients,error:ie}=await db.from("ingredients").select("id,name,base_unit,category")
   .eq("business_id",businessId).order("name").limit(1000);
  if(ie||!ingredients)throw new Error("usage_ingredients_unavailable");

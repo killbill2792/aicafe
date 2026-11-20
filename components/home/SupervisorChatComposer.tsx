@@ -323,7 +323,7 @@ export default function SupervisorChatComposer({
     if (job.status === "failed") { setFailureCode(job.errorCode ?? "agent_turn_failed"); setError(true); }
   });
   const supervisorWork = useSupervisorWork(threadId, Boolean(threadId));
-  const durableWork=supervisorWork.items.filter(item=>item.executionVersion===2);
+  const durableWork=supervisorWork.items.filter(item=>item.executionVersion===2||item.kind==="investigation");
   const activeDurableQuestions=new Set(durableWork.flatMap(item=>item.questionId?[item.questionId]:[]));
   const durableSignature=JSON.stringify(durableWork.map(item=>[item.id,item.status,item.questionId,item.proof?.ref,item.relatedOwnerMessageIds]));
   const resumedRunning = !sending && shouldShowRunningJob(watcher.job,messages);
@@ -625,8 +625,8 @@ export default function SupervisorChatComposer({
           buffer = read.rest;
           for (const { type, data } of read.frames) {
             const event = data as { text?: string; code?: string; discardChars?: number; agentId?: string;
-              name?: string; jobId?: string; mode?: string; runId?:string;ownerMessageId?:string };
-            if(type==="ack"&&typeof event.runId==="string"){
+              name?: string; jobId?: string; mode?: string; runId?:string;investigationId?:string;ownerMessageId?:string };
+            if(type==="ack"&&(typeof event.runId==="string"||typeof event.investigationId==="string")){
               durableConfirmed=true;jobConfirmed=true;finished=true;
               if(event.ownerMessageId)setAcceptedDurableIds(ids=>[...new Set([...ids,event.ownerMessageId!])]);
               setLiveNote(liveCopy.followUpQueued);

@@ -85,3 +85,16 @@ export function standardModelTokenRates(model:string,serviceTier:unknown,
   const family=modelFamily(model);
   return family?rates[family]??null:null;
 }
+
+/** Actual observed hosted search-call count × configured unit tariff, plus
+ * measured token estimate. No guessed search fee when the receipt is missing
+ * or the actual tariff is not configured. The reservation ceiling is separate. */
+export function hostedWebActualCostMicros(tokenCost:number|null,output:unknown,rate=process.env.SUPERVISOR_HOSTED_WEB_CALL_COST_MICROS):number|null{
+ if(tokenCost===null||!Array.isArray(output)||!rate||!/^[0-9]+$/u.test(rate))return null;
+ const perCall=Number(rate);
+ if(!Number.isSafeInteger(perCall)||perCall<0)return null;
+ const calls=output.filter(item=>item?.type==="web_search_call");
+ if(!calls.length||calls.some(item=>typeof item.id!=="string"||item.status!=="completed")||new Set(calls.map(item=>item.id)).size!==calls.length)return null;
+ const total=tokenCost+calls.length*perCall;
+ return Number.isSafeInteger(total)&&total>=0?total:null;
+}

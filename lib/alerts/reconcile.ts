@@ -1,9 +1,9 @@
 export type GeneratedAlertState = { id: string; dedupeKey: string; status: "new" | "seen" | "resolved" | "dismissed" };
 
-/** Only open generated rows can be auto-resolved. Owner-dismissed/resolved history is immutable. */
-export function staleGeneratedAlertIds(existing: GeneratedAlertState[], validDedupeKeys: Set<string>): string[] {
+/** Only explicitly verified healthy open incidents can be auto-resolved. Absence from a read is unknown. */
+export function staleGeneratedAlertIds(existing: GeneratedAlertState[], verifiedHealthyKeys: Set<string>): string[] {
   return existing
-    .filter((alert) => (alert.status === "new" || alert.status === "seen") && !validDedupeKeys.has(alert.dedupeKey))
+    .filter((alert) => (alert.status === "new" || alert.status === "seen") && verifiedHealthyKeys.has(alert.dedupeKey))
     .map((alert) => alert.id);
 }
 

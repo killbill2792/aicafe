@@ -4258,6 +4258,15 @@
     "verdictCoverage": "Based on {covered} of {days} days",
     "openThread": "Open the chat thread"
   },
+  "SupervisorUsage": {
+    "title": "Supervisor usage",
+    "max": "Max · Unlimited",
+    "help": "No plan usage limit. Your permissions and action approvals still apply.",
+    "month": "Recorded activity this month (UTC)",
+    "requests": "Owner requests",
+    "proactive": "Proactive work items",
+    "unavailable": "Usage history is temporarily unavailable."
+  },
   "SupervisorAccess": {
     "title": "Supervisor access",
     "subtitle": "Control which outside sources the Supervisor may use for this café.",

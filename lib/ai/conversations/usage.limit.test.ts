@@ -50,7 +50,7 @@ vi.mock("@/lib/supabase/server", () => ({
     },
   }),
 }));
-import { assertOwnerAgentTurnAvailable, MAX_OWNER_MODEL_CALLS_PER_DAY, ownerModelCallsLimit } from "./usage.server";
+import { assertOwnerAgentTurnAvailable, ownerModelCallsLimit } from "./usage.server";
 
 describe("owner daily model-call allowance", () => {
   const owner={businessId:"business-1",ownerUserId:"owner-1"};
@@ -61,8 +61,8 @@ describe("owner daily model-call allowance", () => {
   });
   it("allows one hundred normal turns with up to three calls each", async () => {
     fake.entries=Array.from({length:100},()=>({day:new Date().toISOString().slice(0,10),model_call_count:3}));
-    expect(MAX_OWNER_MODEL_CALLS_PER_DAY).toBe(600);
-    await expect(assertOwnerAgentTurnAvailable(owner)).resolves.toBeUndefined();
+    expect(ownerModelCallsLimit()).toBeNull();
+    await expect(assertOwnerAgentTurnAvailable(owner, undefined, 600)).resolves.toBeUndefined();
     expect(fake.queriedBusiness).toBe(owner.businessId);
     expect(fake.queriedOwner).toBe(owner.ownerUserId);
   });
@@ -70,9 +70,9 @@ describe("owner daily model-call allowance", () => {
     const day=new Date().toISOString().slice(0,10);
     // One ledger row accumulates retry increments for the same message+day.
     fake.entries=[{day,model_call_count:598}];
-    await expect(assertOwnerAgentTurnAvailable(owner)).resolves.toBeUndefined();
+    await expect(assertOwnerAgentTurnAvailable(owner, undefined, 600)).resolves.toBeUndefined();
     fake.entries[0].model_call_count+=2;
-    await expect(assertOwnerAgentTurnAvailable(owner)).rejects.toMatchObject({
+    await expect(assertOwnerAgentTurnAvailable(owner, undefined, 600)).rejects.toMatchObject({
       status:429,code:"owner_usage_limit_reached",
     });
   });
@@ -80,9 +80,9 @@ describe("owner daily model-call allowance", () => {
     const day=new Date().toISOString().slice(0,10);
     fake.entries=[{day,model_call_count:598}];
     fake.systemEntries=[{day,model_call_count:1}];
-    await expect(assertOwnerAgentTurnAvailable(owner)).resolves.toBeUndefined();
+    await expect(assertOwnerAgentTurnAvailable(owner, undefined, 600)).resolves.toBeUndefined();
     fake.systemEntries.push({day,model_call_count:1});
-    await expect(assertOwnerAgentTurnAvailable(owner)).rejects.toMatchObject({
+    await expect(assertOwnerAgentTurnAvailable(owner, undefined, 600)).rejects.toMatchObject({
       status:429,code:"owner_usage_limit_reached",
     });
   });
@@ -90,31 +90,32 @@ describe("owner daily model-call allowance", () => {
     const day=new Date().toISOString().slice(0,10);
     fake.entries=[{day,model_call_count:599,reserved_model_call_count:2}];
     fake.systemEntries=[{day,model_call_count:1},{day,model_call_count:1}];
-    await expect(assertOwnerAgentTurnAvailable(owner)).resolves.toBeUndefined();
+    await expect(assertOwnerAgentTurnAvailable(owner, undefined, 600)).resolves.toBeUndefined();
     fake.systemEntries.push({day,model_call_count:1});
-    await expect(assertOwnerAgentTurnAvailable(owner)).rejects.toMatchObject({status:429});
+    await expect(assertOwnerAgentTurnAvailable(owner, undefined, 600)).rejects.toMatchObject({status:429});
   });
-  it("uses a validated environment override without accepting invalid caps", async () => {
-    expect(ownerModelCallsLimit("350")).toBe(350);
-    expect(ownerModelCallsLimit("0")).toBe(600);
-    expect(ownerModelCallsLimit("NaN")).toBe(600);
+  it("Max ignores the obsolete global cap and continues above historical quotas", async () => {
     process.env.AI_OWNER_MAX_MODEL_CALLS_PER_DAY="300";
-    fake.entries=[{day:new Date().toISOString().slice(0,10),model_call_count:300}];
-    await expect(assertOwnerAgentTurnAvailable(owner)).rejects.toMatchObject({status:429});
+    const day=new Date().toISOString().slice(0,10);
+    fake.entries=[{day,model_call_count:2000,reserved_model_call_count:300}];
+    fake.systemEntries=[{day,model_call_count:300}];
+    expect(ownerModelCallsLimit()).toBeNull();
+    await expect(assertOwnerAgentTurnAvailable(owner)).resolves.toBeUndefined();
+    await expect(assertOwnerAgentTurnAvailable(owner, undefined, 600)).rejects.toMatchObject({status:429});
   });
   it("attributes a retry after UTC midnight to the new day", async () => {
     vi.useFakeTimers();
     vi.setSystemTime(new Date("2026-10-21T23:59:59Z"));
     fake.entries=[{day:"2026-10-21",model_call_count:600}];
-    await expect(assertOwnerAgentTurnAvailable(owner)).rejects.toMatchObject({status:429});
+    await expect(assertOwnerAgentTurnAvailable(owner, undefined, 600)).rejects.toMatchObject({status:429});
     vi.setSystemTime(new Date("2026-10-22T00:00:01Z"));
     fake.entries.push({day:"2026-10-22",model_call_count:1});
-    await expect(assertOwnerAgentTurnAvailable(owner)).resolves.toBeUndefined();
+    await expect(assertOwnerAgentTurnAvailable(owner, undefined, 600)).resolves.toBeUndefined();
     expect(fake.queriedDay).toBe("2026-10-22");
   });
   it("fails closed on missing usage records due to a DB error", async () => {
     fake.failure=true;
-    await expect(assertOwnerAgentTurnAvailable(owner)).rejects.toMatchObject({
+    await expect(assertOwnerAgentTurnAvailable(owner, undefined, 600)).rejects.toMatchObject({
       status:503,code:"usage_unavailable",
     });
   });
