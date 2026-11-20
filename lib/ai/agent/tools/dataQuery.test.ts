@@ -318,7 +318,7 @@ describe("U3 tool descriptions leave investigation strategy to Luna",()=>{
  it("does not prescribe example-question routing or an obligatory discovery sequence",()=>{
   const discovery=dataQueryTools.describe_data.description;
   const research=dataQueryTools.query_data.description;
-  expect(discovery).toMatch(/Discover authorized canonical relations/);
+  expect(discovery).toMatch(/Discover reviewed canonical views/);
   expect(research).toMatch(/Choose sources, dates, filters/);
   expect(discovery+research).not.toMatch(/FIRST call|ONLY when|ALWAYS use query_data|For known retained discount counts|For supplied order\/employee GUID/);
  });
@@ -344,7 +344,7 @@ describe("U3 retained Toast field pagination",()=>{
     record_type:"item",field_prefix:"data.rare_",page_size:11,page_offset:next
    },ctx);
    const values=page.fields??[];
-   seen.push(...values.map(v=>String(v.field)));
+   seen.push(...values.map(v=>String((v as {field?:unknown})?.field)));
    next="next_offset" in page?page.next_offset??null:null;
   }while(next!==null);
   expect(seen).toEqual(fields.map(f=>f.field));
