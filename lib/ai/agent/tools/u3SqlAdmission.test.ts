@@ -52,6 +52,12 @@ describe("U3 governed PostgreSQL AST admission",()=>{
  it("requires actual aggregate evidence and denies personal source reads off-turn",async()=>{
   await expect(admitU3Sql("SELECT id FROM orders",admitted,0,true))
    .rejects.toThrow("unattended_aggregate_required");
+  await expect(admitU3Sql("SELECT sum(gross_cents) FROM employee_pay_period_facts",
+    [...admitted,"employee_pay_period_facts"],0,true,["gross_cents"]))
+   .rejects.toThrow("unattended_aggregate_required");
+  await expect(admitU3Sql("SELECT count(*) FROM staff_availability_rules",
+    [...admitted,"staff_availability_rules"],0,true))
+   .rejects.toThrow("unattended_aggregate_required");
   await expect(admitU3Sql("SELECT count(*) FROM employees",admitted,0,true))
    .rejects.toThrow("unattended_aggregate_required");
   await expect(admitU3Sql("SELECT count(*) FROM orders",admitted,0,true))
