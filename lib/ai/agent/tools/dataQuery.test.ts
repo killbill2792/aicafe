@@ -4,6 +4,7 @@ vi.mock("@/lib/data/toastDayTrust.server",()=>({
  readToastDayTrust:vi.fn(async()=>({blocked:new Set(),quality:[],notes:[]}))
 }));
 import {dataQueryTools,fitRows} from "./dataQuery";
+import {canonicalViewNames} from "@/lib/data/canonical/dictionary";
 import {readToastDayTrust} from "@/lib/data/toastDayTrust.server";
 const b="aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
 function input(view="cv_sales_days"){return {view,columns:["business_date"],
@@ -348,8 +349,8 @@ describe("U3 semantic source discovery",()=>{
    seen.push(...(data.views??[]).map(view=>view.name));
    offset="next_offset" in data?data.next_offset??null:null;
   }while(offset!==null);
-  expect(seen).toHaveLength(22);
-  expect(new Set(seen).size).toBe(22);
+  expect(seen).toEqual([...canonicalViewNames]);
+  expect(new Set(seen).size).toBe(canonicalViewNames.length);
  });
  it("does not infer permissions or permit model-selected café identities",async()=>{
   const result=await dataQueryTools.describe_data.execute({search:"password"});
