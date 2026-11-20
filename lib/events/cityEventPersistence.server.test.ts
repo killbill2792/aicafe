@@ -1,7 +1,10 @@
 import {describe,expect,it,vi} from "vitest";
 import type {SupabaseClient} from "@supabase/supabase-js";
 import {findCafeEventIdForCityEvent,linkCityEventToCafeEvent,
-  recordCitySourceCoverage,upsertCafeNeighborhoodEvidence,upsertCityEventFact} from "./cityEventPersistence.server";
+  recordCitySourceCoverage,upsertCafeNeighborhoodEvidence,upsertCityEventFact,correctCityOccurrence} from "./cityEventPersistence.server";
+
+import {cityEventIdentity,correctedVenueAlias,correctedSourceAlias} from "./cityEventIdentity";
+import type {CafeEvent} from "@/lib/data/cafeEvents.server";
 
 const A="11111111-1111-4111-8111-111111111111";
 const B="22222222-2222-4222-8222-222222222222";
@@ -247,4 +250,25 @@ describe("LDI A atomic shared persistence handoff",()=>{
       cityEventId:EVENT_ID})).rejects.toThrow();
     expect(s.calls).toHaveLength(0);
   });
+});
+
+it("passes exact source and unchanged venue aliases in one correction RPC, but never guesses a changed venue address",async()=>{
+  const rpc=vi.fn(async()=>({data:true,error:null})),db={rpc} as unknown as SupabaseClient;
+  const old=cityEventIdentity(candidate),newDate="2026-11-09",newEndDate="2026-11-10";
+  const event:CafeEvent={id:OLD_A,cityEventId:EVENT_ID,cityKey:old.cityKey,name:candidate.name,
+    kind:candidate.kind,startDate:candidate.startDate,endDate:candidate.startDate,
+    startTime:null,endTime:null,venue:candidate.venue,venueAddress:candidate.venueAddress,
+    areaLabel:null,sourceUrl:candidate.sourceUrl,status:"found",foundAt:candidate.checkedAt,lastCheckedAt:candidate.checkedAt};
+  const change={id:event.id,previousStatus:"found" as const,status:"found" as const,
+    verdict:"postponed" as const,sourceUrl:"https://city.example/jazz-update",
+    statement:"Organizer confirms replacement dates",newDate,newEndDate,newVenue:null,
+    verifiedAt:candidate.checkedAt};
+  const venue=correctedVenueAlias(old.cityKey,event.name,newDate,event.venue!,event.venueAddress!);
+  const correctionSource=correctedSourceAlias(old.cityKey,event.name,newDate,change.sourceUrl);
+  expect(await correctCityOccurrence(db,A,event,change,candidate.checkedAt)).toBe(true);
+  expect(rpc).toHaveBeenCalledWith("ldi_correct_occurrence",expect.objectContaining({
+    p_aliases:expect.arrayContaining([venue,correctionSource])}));
+  await correctCityOccurrence(db,A,event,{...change,newVenue:"Other Hall"},candidate.checkedAt);
+  expect(rpc).toHaveBeenLastCalledWith("ldi_correct_occurrence",expect.objectContaining({
+    p_aliases:expect.not.arrayContaining([venue])}));
 });

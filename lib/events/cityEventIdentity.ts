@@ -78,8 +78,7 @@ export function cityEventIdentity(input:CityEventCandidate){
   // Strong cross-source reconciliation requires BOTH a named venue and its
   // address. Distinct halls at the SAME address are not interchangeable.
   // Unknown or incomplete venues stay source-scoped until corroborated.
-  const venueIdentityKey=venue&&venueAddress?digest([cityKey,startDate,nameKey,
-    "venue:"+venueKey,"address:"+venueAddressKey].join("\u001f")):null;
+  const venueIdentityKey=venue&&venueAddress?correctedVenueAlias(cityKey,name,startDate,venue,venueAddress):null;
   return {cityKey,name,nameKey,startDate,endDate,venue,venueAddress,
     venueKey,venueAddressKey,sourceUrl,sourceIdentityKey,venueIdentityKey,
     identityKey:venueIdentityKey??sourceIdentityKey};
@@ -99,6 +98,13 @@ export function cityPlaceIdentity(input:CityPlaceCandidate){
  * Discovery still distinguishes recurring editions by their date. */
 export function correctedSourceAlias(cityKey:string,name:string,date:string,source:string){
  return digest([cityKey,assertDay(date),canonicalEventNameKey(name),"source:"+canonicalSourceUrl(source)].join("\u001f"));
+}
+
+/** A cited new date at the unchanged, corroborated venue can retain the
+ * cross-source identity. Never construct a venue alias from only one field. */
+export function correctedVenueAlias(cityKey:string,name:string,date:string,venue:string,address:string){
+ return digest([cityKey,assertDay(date),canonicalEventNameKey(name),
+  "venue:"+clean(label(venue,200,"venue")),"address:"+clean(label(address,500,"venue address"))].join("\u001f"));
 }
 
 /** Explicit offset + named IANA zone disambiguates DST folds and gaps. A

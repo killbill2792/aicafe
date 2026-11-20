@@ -210,18 +210,30 @@ SELECT public.ldi_correct_occurrence(:'business_a',:'cafe_event_a',:'city_id',
  '2026-11-03T15:00:00Z',jsonb_build_object('previousStatus','cancelled','status','found',
  'verdict','reinstated','verifiedAt','2026-11-03T15:00:00Z','sourceUrl','https://city.example.org/events/civic-fair',
  'statement','Organizer confirms replacement dates','newDate','2026-11-10','newEndDate','2026-11-11'),
- array[repeat('8',64)]) AS corrected \gset
+ array[repeat('8',64),repeat('9',64)]) AS corrected \gset
 SELECT set_config('test.ldi.corrected',:'corrected',true);
 SELECT public.ldi_upsert_city_event('us|ca|example',repeat('a',64),repeat('a',64),null,
  'Civic Fair','other','2026-11-04','2026-11-30','https://city.example.org/events/civic-fair',
  '2026-11-03T16:00:00Z',null,null,null,null) AS historical_alias \gset
 SELECT set_config('test.ldi.historical_alias',:'historical_alias',true);
+SELECT public.ldi_upsert_city_event('us|ca|example',repeat('9',64),repeat('7',64),repeat('9',64),
+ 'Civic Fair','other','2026-11-10','2026-11-30','https://third.example.org/listing',
+ '2026-11-03T17:00:00Z','Civic Hall','20 Main St','civic hall','20 main st') AS moved_source \gset
+SELECT set_config('test.ldi.moved_source',:'moved_source',true);
+SELECT public.ldi_upsert_city_event('us|ca|example',repeat('7',64),repeat('7',64),null,
+ 'Civic Fair','other','2026-11-10','2026-11-30','https://third.example.org/listing',
+ '2026-11-03T18:00:00Z',null,null,null,null) AS moved_source_replay \gset
+SELECT set_config('test.ldi.moved_source_replay',:'moved_source_replay',true);
 UPDATE public.city_events SET end_date='2026-11-30'
  WHERE id=current_setting('test.ldi.city')::uuid;
 DO $check$
 BEGIN
  IF current_setting('test.ldi.corrected')<>'t'
  OR current_setting('test.ldi.historical_alias')<>current_setting('test.ldi.city')
+ OR current_setting('test.ldi.moved_source')<>current_setting('test.ldi.city')
+ OR current_setting('test.ldi.moved_source_replay')<>current_setting('test.ldi.city')
+ OR NOT EXISTS(select 1 from public.city_event_sources where city_event_id=current_setting('test.ldi.city')::uuid
+ and source_url='https://third.example.org/listing')
  OR NOT EXISTS(select 1 from public.city_events where id=current_setting('test.ldi.city')::uuid
  and start_date='2026-11-10' and end_date='2026-11-11' and lifecycle->>'status'='found')
  OR (select count(*) from public.cafe_events ce join public.cafe_city_event_links l

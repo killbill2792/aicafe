@@ -1,5 +1,5 @@
 import {describe,expect,it} from "vitest";
-import {canonicalSourceUrl,cityEventIdentity,cityPlaceIdentity,cityScopeKey,correctedSourceAlias} from "./cityEventIdentity";
+import {canonicalSourceUrl,cityEventIdentity,cityPlaceIdentity,cityScopeKey,correctedSourceAlias,correctedVenueAlias} from "./cityEventIdentity";
 
 const scope={city:"Berkeley",region:"CA",countryCode:"US"};
 const base={...scope,name:"Café Jazz & Art Night",kind:"community" as const,
@@ -54,6 +54,14 @@ describe("shared city identity",()=>{
     const old=cityEventIdentity(base),moved=cityEventIdentity({...base,startDate:"2026-11-09",endDate:"2026-11-10"});
     expect(correctedSourceAlias(old.cityKey,old.name,moved.startDate,old.sourceUrl)).toBe(moved.sourceIdentityKey);
     expect(moved.sourceIdentityKey).not.toBe(old.sourceIdentityKey);
+  });
+  it("retains cross-source identity at the verified replacement date and venue without merging a recurring edition",()=>{
+    const old=cityEventIdentity(base);
+    const moved=cityEventIdentity({...base,startDate:"2026-11-09",endDate:"2026-11-10",
+      sourceUrl:"https://another.example/listing"});
+    expect(correctedVenueAlias(old.cityKey,old.name,moved.startDate,base.venue,base.venueAddress)).toBe(moved.venueIdentityKey);
+    expect(moved.venueIdentityKey).not.toBe(old.venueIdentityKey);
+    expect(correctedVenueAlias(old.cityKey,old.name,moved.startDate,base.venue,"101 Center St")).not.toBe(moved.venueIdentityKey);
   });
   it("normalizes URL parameters without stripping meaningful event selectors",()=>{
     expect(canonicalSourceUrl("https://EVENTS.example/calendar/?id=30&utm_campaign=x&b=2#top"))

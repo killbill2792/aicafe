@@ -45,6 +45,22 @@ begin
       and city_key=p_city_key and lifecycle is not null) then
       -- A verified correction owns the new interval. A dated historic alias
       -- still resolves, but discovery may not reverse its status/venue/dates.
+      -- At the corrected date a strongly corroborated venue (or already
+      -- registered source) can attach its additional source, never mutate facts.
+      if exists(select 1 from public.city_events e where e.id=result_id
+        and e.start_date=p_start_date
+        and ((p_venue_key is null or e.venue_key=p_venue_key)
+          and (p_venue_address_key is null or e.venue_address_key=p_venue_address_key)))
+      then
+        insert into public.city_event_aliases(alias_key,city_event_id)
+          values(p_source_identity_key,result_id) on conflict(alias_key) do nothing;
+        if (select city_event_id from public.city_event_aliases where alias_key=p_source_identity_key)
+          is distinct from result_id then raise exception 'city_event_alias_conflict' using errcode='23514'; end if;
+        insert into public.city_event_sources(city_event_id,source_url,observed_name,observed_at)
+          values(result_id,p_source_url,p_name,p_checked_at)
+          on conflict(city_event_id,source_url) do update set
+            observed_at=greatest(city_event_sources.observed_at,excluded.observed_at);
+      end if;
       return result_id;
     end if;
     -- Compare EXACTLY the normalized keys supplied by cityEventIdentity.ts;
@@ -192,6 +208,10 @@ begin
    duration_verified_at=case when p_change->>'newEndDate' is not null then at_time else duration_verified_at end,
    last_checked_at=greatest(last_checked_at,at_time)
  where id=e.id;
+ insert into public.city_event_sources(city_event_id,source_url,observed_name,observed_at)
+   values(e.id,source,e.name,at_time)
+   on conflict(city_event_id,source_url) do update set
+     observed_at=greatest(city_event_sources.observed_at,excluded.observed_at);
  -- Each linked café receives its own pending notice revision, preserving IDs
  -- and historical owner decisions. Later per-café verification claims lose.
  for c in select ce.* from public.cafe_events ce join public.cafe_city_event_links l
