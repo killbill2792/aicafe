@@ -80,3 +80,6 @@ Use the existing authenticated seeded browser job, `next build --webpack` + loca
 
 ### Automated accessibility, separate from manual evidence
 D22 uses the existing lockfile-resolved axe-core dependency (no version or package changes) in the real authenticated production-build browser, at phone/tablet/desktop widths. D13–16 route checks and D20 localized rich-answer checks also run WCAG-tagged scans; all violations fail the case and incomplete checks are reported for manual review. Only test-engine/rule IDs and counts are recorded, never DOM, source contents or credentials. D22 receipts are included in the existing redacted browser artifact. This is not WCAG certification, native zoom/keyboard, physical-device or assistive-technology speech proof.
+
+### Durable run owner action
+D23 seeds an unstarted v2 assignment in each disposable owner browser, asserts foreign cancellation denial and unchanged state, clicks the existing Stop assignment control, verifies the authenticated cancellation response and reloaded terminal state against exact persisted step/assignment IDs, zero attempts/claims, no report and no proposal. This is a free owner-control test, not proof of autonomous model progression or uncertain in-flight effects. Those remain reconciled with 6-15c-owner-run and Task17C.

@@ -245,6 +245,17 @@
         "D08",
         "D09"
       ]
+    },
+    {
+      "id": "D23",
+      "tag": "home",
+      "name": "real owner cancellation API and persisted work state with foreign denial",
+      "evidence": "actual_local_owner_control_and_db_parity",
+      "families": [
+        "D02",
+        "D06",
+        "D09"
+      ]
     }
   ],
   "integration": {

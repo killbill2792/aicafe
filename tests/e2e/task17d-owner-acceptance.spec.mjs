@@ -674,3 +674,35 @@ for(const width of [390,768,1440]){
     });
   });
 }
+
+for(const width of [390,1440]){
+  test("@home 17D:D23-"+width+" stop queued durable assignment through real owner control",async({browser})=>{
+    test.setTimeout(120_000);
+    await withOwner(browser,width,async({cafe,other,query,session,thread,open})=>{
+      const t=await thread(),run=randomUUID(),request=randomUUID();
+      await query("insert into public.supervisor_runs(id,business_id,owner_user_id,thread_id,request_key,plan_hash,status,execution_version,input_locale,input_attachment_version_hash) values($1,$2,$3,$4,$5,$6,'pending',2,'en',$7)",[run,cafe.businessId,cafe.owner.userId,t.id,request,createHash("sha256").update(run).digest("hex"),createHash("sha256").update("[]").digest("hex")]);
+      await query("insert into public.supervisor_run_steps(business_id,run_id,step_key,step_index,retry_mode,status) values($1,$2,'owner_turn',1,'reconcile','pending')",[cafe.businessId,run]);
+      const foreign=await session(other);
+      const url="/api/ai/threads/"+t.id+"/work";
+      const denied=await foreign.ctx.request.post(url,{data:{action:"cancel",runId:run}});
+      expect([401,403,404]).toContain(denied.status());
+      expect(await query("select status from public.supervisor_runs where id=$1 and business_id=$2",[run,cafe.businessId])).toEqual([{status:"pending"}]);
+      const {page}=await session();await open(page,t);
+      const card=page.locator('[data-work-id="run:'+run+'"]');
+      await expect(card).toHaveAttribute("data-work-status","queued");
+      const response=page.waitForResponse(r=>new URL(r.url()).pathname===url&&r.request().method()==="POST");
+      await card.getByRole("button",{name:"Stop assignment",exact:true}).click();
+      const cancelled=await response;expect(cancelled.ok()).toBe(true);
+      expect(await cancelled.json()).toMatchObject({state:"cancelled"});
+      await page.reload();
+      await expect(card).toHaveAttribute("data-work-status","cancelled");
+      await expect(card).toContainText("This assignment was cancelled.");
+      await expect(card.getByRole("button",{name:"Stop assignment",exact:true})).toHaveCount(0);
+      expect(await query("select id,status,final_report_ref,finished_at from public.supervisor_runs where business_id=$1 and request_key=$2",[cafe.businessId,request])).toEqual([{id:run,status:"blocked",final_report_ref:null,finished_at:null}]);
+      const steps=await query("select status,error_code,attempts,claim_token from public.supervisor_run_steps where business_id=$1 and run_id=$2",[cafe.businessId,run]);
+      expect(steps.map(x=>({...x,attempts:Number(x.attempts)}))).toEqual([{status:"blocked",error_code:"cancelled",attempts:0,claim_token:null}]);
+      expect(await query("select id from public.supervisor_proposals where business_id=$1 and thread_id=$2",[cafe.businessId,t.id])).toEqual([]);
+      await expect(card.getByText("Effect verified",{exact:true})).toHaveCount(0);
+    });
+  });
+}
