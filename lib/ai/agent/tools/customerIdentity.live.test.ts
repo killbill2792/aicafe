@@ -145,7 +145,7 @@ live("retained customer identity or observed trend, real model investigation, is
     // Independent receipt oracle, including two distinct guests with the
     // same display name. No values are supplied in the owner question.
     const individual=receipts.filter(r=>r.guest===ids[0]);
-    const duplicateName=receipts.filter(r=>[ids[1],ids[2]].includes(r.guest));
+    const duplicateName=receipts.filter(r=>(r.guest===ids[1]||r.guest===ids[2]));
     const oracle={visits:individual.length,net:individual.length*700,units:individual.length,
       returning:individual.filter(r=>r.current).length,
       alex:new Set(duplicateName.map(r=>r.guest)).size,
