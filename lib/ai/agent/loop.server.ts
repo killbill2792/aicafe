@@ -1,4 +1,5 @@
 import { ZodError } from "zod";
+import {presentationSourceNames} from "@/lib/ai/conversations/presentation";
 import {reserveTask14bPaidRequest} from "./task14bPaidBudget.server";
 import { currentWorkerBudget, recordWorkerTurnUsage, usageStopReason,reserveDurableProviderRequest,currentDurableProviderOutputCap } from "@/lib/ai/supervisor/runs/usage.server";
 import {redactToolFailure,redactedErrorStack} from "./redactToolError";
@@ -655,7 +656,7 @@ export async function runAgentTurn(args: {
         const wireResult=tool.name==="present_response"&&result.source==="response_presentation"?
           {source:result.source,accepted:result.accepted===true,
            instruction:"Visual selection only. Give the complete plain-language answer from the prior evidence."}:
-          presentationAllowed&&["daily_rollups","item_sales","profitability","canonical_data","expenses","business_costs","product_costs","supplier_purchase_plan","purchase_orders","inventory","menu_items","labor_and_attendance","get_peak_hours","get_employee_sales","get_payroll_facts"].includes(result.source)?{...result,presentationRef:"r"+results.length}:result;
+          presentationAllowed&&presentationSourceNames.some(source=>source===result.source)?{...result,presentationRef:"r"+results.length}:result;
         input.push({ type: "function_call_output", call_id: tool.call_id, output: JSON.stringify(wireResult) });
         // The old pricing-only choice card sent amounts as chat text and lost
         // them in later threads. Use the universal structured fact card instead.

@@ -120,7 +120,7 @@ function RecordTableView({table,locale}:{table:RecordTable;locale:string}){
   <p className="break-words text-[13px] text-ink-muted">{table.scope}</p>
   <div tabIndex={0} aria-label={table.title} className="max-w-full overflow-x-auto overscroll-x-contain focus-visible:outline focus-visible:outline-2 focus-visible:outline-ink">
    <table className="w-full text-[15px] tabular-nums"><caption className="sr-only">{table.title}</caption>
-    <thead><tr>{table.columns.map((c,i)=><th key={i} scope="col" className="border-b border-line px-2 py-2 text-start align-bottom font-medium">{c.label}<span className="block text-[13px] text-ink-muted">{c.unit==="stored"?copy.unitUnknown:c.unit==="cents"?table.currency:c.unit==="cents/hour"?table.currency+" / h":c.unit}</span></th>)}</tr></thead>
+    <thead><tr>{table.columns.map((c,i)=><th key={i} scope="col" className="border-b border-line px-2 py-2 text-start align-bottom font-medium">{c.label}<span className="block text-[13px] text-ink-muted">{c.unit==="stored"?copy.unitUnknown:c.unit==="microcents"?table.currency+" microcents":c.unit==="cents"?table.currency:c.unit==="cents/hour"?table.currency+" / h":c.unit}</span></th>)}</tr></thead>
     <tbody>{table.rows.map((row,i)=><tr key={i}>{row.map((v,j)=><td key={j} className="border-b border-line px-2 py-2 text-start align-top break-words">{fmt(v,table.columns[j].unit)}</td>)}</tr>)}</tbody>
    </table>
   </div>

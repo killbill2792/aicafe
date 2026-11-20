@@ -2,12 +2,12 @@ import {scenarioEditorSchema,evaluateScenarioEditor} from "@/lib/ai/conversation
 import {canonicalDictionary,canonicalViewNames,type CanonicalView} from "@/lib/data/canonical/dictionary";
 import { z } from "zod";
 import en from "@/messages/en.json";
-import { richPresentationSchema,agendaSchema,scenarioComparisonSchema,recordTableSchema,interactiveCalcSchema,evaluatePresentationCalc,presentationLeaves,allPresentationLeaves,compatibleComparison,descriptiveGroupTitle,type RichPresentation,type RecordTable,type InteractiveCalc,type Agenda,type ScenarioComparison,type PresentationPanel } from "@/lib/ai/conversations/presentation";
+import { richPresentationSchema,agendaSchema,scenarioComparisonSchema,recordTableSchema,interactiveCalcSchema,evaluatePresentationCalc,presentationLeaves,allPresentationLeaves,compatibleComparison,descriptiveGroupTitle,presentationSourceNames,type RichPresentation,type RecordTable,type InteractiveCalc,type Agenda,type ScenarioComparison,type PresentationPanel } from "@/lib/ai/conversations/presentation";
 import type { AgentToolContext,AgentToolResult } from "./index";
 
 // Select a source projection, never supply a numeric value, arbitrary path or business identity.
 const selection=z.strictObject({
-  source:z.enum(["daily_rollups","item_sales","profitability","canonical_data","expenses","business_costs","product_costs","supplier_purchase_plan","purchase_orders","inventory","menu_items","labor_and_attendance","get_peak_hours","get_employee_sales","get_payroll_facts"]),
+  source:z.enum(presentationSourceNames),
   field:z.string().trim().min(1).max(120),
   ref:z.string().regex(/^r[1-9][0-9]?$/).nullable().optional(),
   from:z.iso.date().nullable().optional(),to:z.iso.date().nullable().optional(),
@@ -206,7 +206,7 @@ function interactiveCalculation(r:AgentToolResult,encoded:string,ctx:Pick<AgentT
 }
 function agendaFor(kind:NonNullable<z.infer<typeof presentationInputSchema>["agenda"]>,r:AgentToolResult,asOf:string):Agenda|null{
  const event=kind.endsWith("_events");
- if(!r.period||r.error||r.needsOwnerChoice||r.source!==(event?"cafe_events":"scheduled_shifts")||(!event&&r.scheduleSet!==true))return null;
+ if(!r.period||r.error||r.needsOwnerChoice||(event?r.source!=="cafe_events":!["scheduled_shifts","scheduled_shifts+pos_scheduled_shifts","employees+scheduled_shifts"].includes(r.source))||(!event&&r.source!=="employees+scheduled_shifts"&&r.scheduleSet!==true))return null;
  const selected=event?(r.selectedCityEventId?r.selectedCityEvent?[r.selectedCityEvent]:[]:r.events):r.shifts;
  if(!Array.isArray(selected)||!selected.length||selected.length>40)return null;
  const clock=(v:unknown)=>typeof v==="string"&&/^(?:[01]\d|2[0-3]):[0-5]\d(?::[0-5]\d)?$/.test(v)?v.slice(0,5):null;
@@ -227,7 +227,7 @@ function agendaFor(kind:NonNullable<z.infer<typeof presentationInputSchema>["age
  }
  // These are saved listings/roster snapshots, not independent proof of current
  // attendance, event occurrence, permission, publication or staffing coverage.
- const partial=r.missing.length>0||Number(r.omittedEvents??0)>0||Number(r.omittedCityEvents??0)>0||
+ const partial=r.source==="employees+scheduled_shifts"||r.missing.length>0||Number(r.omittedEvents??0)>0||Number(r.omittedCityEvents??0)>0||
    entries.some(e=>e.status==="unverified"||e.status==="ai_draft");
  const out=agendaSchema.safeParse({kind:kind.startsWith("calendar")?"calendar":"timeline",source:event?"cafe_events":"scheduled_shifts",
    title:event?"Saved events":"Saved shift schedule",...r.period,asOf,coverage:partial?"partial":"saved",
@@ -298,7 +298,7 @@ function modeledScenario(results:readonly AgentToolResult[],ctx:Pick<AgentToolCo
  return out.success?out.data:null;
 }
 /** Project named fields from existing typed readers, not arbitrary JSON paths. */
-function readerTable(r:AgentToolResult,ctx:Pick<AgentToolContext,"currency"|"asOf"|"turnResults">):RecordTable|null{
+function readerTable(r:AgentToolResult,ctx:Pick<AgentToolContext,"currency"|"asOf"|"turnResults">,variant="rows"):RecordTable|null{
  if(r.error||r.needsOwnerChoice)return null;
  const columns:RecordTable["columns"]=[];
  let rows:RecordTable["rows"]=[],title="",scope="",currency:string|null=null;
@@ -307,8 +307,92 @@ function readerTable(r:AgentToolResult,ctx:Pick<AgentToolContext,"currency"|"asO
  const bool=(v:unknown)=>typeof v==="boolean"?v:null;
  const date=(v:unknown)=>typeof v==="string"&&z.iso.date().safeParse(v).success?v:null;
  const add=(label:string,unit:RecordTable["columns"][number]["unit"])=>columns.push({label,unit});
- const from=r.period?.from??ctx.asOf,to=r.period?.to??ctx.asOf;
- if(r.source==="supplier_purchase_plan"&&Array.isArray(r.offers)&&r.sourceTrust==="owner_reported"&&r.comparison==="subtotal_only"){
+ let from=r.period?.from??ctx.asOf,to=r.period?.to??ctx.asOf;
+ if(variant!=="rows"&&(r.source!=="cashflow_evidence"||!["rows:statement","rows:balances","rows:recurring","rows:claims","rows:stress"].includes(variant)))return null;
+ const scalarRows=(fields:readonly (readonly [string,string])[])=>fields.map(([label,key])=>[label,num(r[key])]);
+ if(r.source==="today_live"&&r.period&&r.provisional===true&&r.period.from===ctx.asOf&&r.period.to===ctx.asOf){
+   if(!ctx.currency||typeof r.readAt!=="string"||!z.iso.datetime({offset:true}).safeParse(r.readAt).success||typeof r.stale!=="boolean"||!Number.isSafeInteger(r.netSalesCents))return null;
+   title=r.stale?"Last saved current-day sales reading":"Provisional current-day sales";
+   scope=(r.stale?"Stale; last updated ":"Provisional reading at ")+r.readAt+". Not final closeout; missing locations, open checks or truncation may affect the total.";
+   currency=ctx.currency;add("Measure","label");add("Recorded amount","cents");add("Recorded count","count");
+   rows=[...scalarRows([["Net sales","netSalesCents"],["Discounts","discountsCents"],["Refunds","refundsCents"],["Tips","tipCents"]]).map(row=>[...row,null]),...scalarRows([["Orders","orders"],["Open checks","openChecks"]]).map(row=>[row[0],null,row[1]])];
+ }else if(r.source==="usage_variance"&&r.period&&Array.isArray(r.rows)){
+   if(to>ctx.asOf||r.rows.length>100||r.rows.some(o=>!obj(o)||typeof o.name!=="string"||!["g","ml","each"].includes(String(o.unit))))return null;
+   title="Ingredient usage evidence";scope="Expected usage is recipe-based; actual stock use covers the full count period only. Grouped shift/staff values are not actual usage. Missing counts or recipes are not zero.";
+   add("Ingredient","label");add("Unit","label");add("Expected usage","quantity");add("Actual usage","quantity");add("Status","label");
+   rows=r.rows.map(o=>[text(o.name),text(o.unit),num(o.expected),num(o.actual),text(o.status)]);
+ }else if(r.source==="ingredient_prices"&&Array.isArray(r.items)){
+   if(!ctx.currency||r.items.some(o=>!obj(o)||typeof o.name!=="string"||typeof o.baseUnit!=="string"||
+      (o.effectiveFrom!==null&&(!date(o.effectiveFrom)||String(o.effectiveFrom)>ctx.asOf))))return null;
+   title="Saved ingredient costs";scope="Exact saved microcents per stated base unit, not a package price. One million microcents is one minor currency unit. Different base units are not comparable.";
+   currency=ctx.currency;add("Ingredient","label");add("Base unit","label");add("Cost per base unit","microcents");add("Effective from","local date");
+   rows=r.items.map(o=>[text(o.name),text(o.baseUnit),num(o.costPerBaseUnitMicros),date(o.effectiveFrom)]);
+ }else if(r.source==="recurring_bills"&&typeof r.estimated==="boolean"&&Number.isSafeInteger(r.monthlyEquivalentCents)){
+   if(!ctx.currency)return null;
+   title="Configured monthly equivalent of recurring bills";scope="Saved recurring configuration, not a paid bill, bank balance or full liability total.";
+   currency=ctx.currency;add("Measure","label");add("Monthly equivalent","cents");add("Basis","label");
+   rows=[["Recurring costs",num(r.monthlyEquivalentCents),r.estimated?"Estimate":"Saved configuration"]];
+ }else if(r.source==="break_even"&&r.period&&["actual","estimate"].includes(String(r.status))){
+   if(!ctx.currency||!["today","month_to_date","month_forecast"].includes(String(r.periodKind)))return null;
+   title="Break-even calculation";scope="Existing economics engine, not revenue already earned. A known-cost floor excludes unknown costs; daily and full-period values use different bases. Forecasts are estimates.";
+   currency=ctx.currency;add("Measure","label");add("Calculated amount","cents");add("Basis","label");
+   const basis=r.status==="estimate"?"Estimate":"Recorded-input calculation";
+   rows=[["Selected period break-even",num(r.periodBreakEvenCents),r.missing.length?"Partial or floor":basis],
+    ["Daily break-even",num(r.dailyBreakEvenCents),r.missing.length?"Partial or floor":basis],
+    ["Known-cost floor",num(r.knownCostBreakEvenFloorCents),"Floor only"]];
+ }else if(r.source==="pricing_engine"&&typeof r.itemId==="string"&&r.selectedMoneySource!=="ownerProvided"){
+   if(!ctx.currency)return null;
+   title="Current price and suggested pricing";scope="Existing pricing engine values. The recommendation is a modeled suggestion, not an applied price; contribution excludes other costs unless explicitly stated.";
+   currency=ctx.currency;add("Measure","label");add("Amount per item","cents");add("Basis","label");
+   rows=[["Current price",num(r.currentPriceCents),"Saved price"],["Product cost",num(r.productCostCents),"Source-dependent"],
+    ["Gross profit per item",num(r.grossProfitPerItemCents),"Calculation"],["Recommended price",num(r.recommendedPriceCents),"Estimate"]];
+ }else if(r.source==="new_item_price"&&r.draft===true&&r.saved===false){
+   if(!ctx.currency)return null;
+   title="Draft new-item pricing";scope="Existing calculator, proposed prices only; missing costs may limit the estimate to a known-cost floor. Nothing saved or published.";
+   currency=ctx.currency;add("Measure","label");add("Amount per item","cents");add("Basis","label");
+   rows=[...scalarRows([["Recommended price","recommendedPriceCents"],["Suggested price","suggestedPriceCents"],["Full cost","fullCostCents"],["Break-even price","breakEvenCents"],["Cost-plus price","costPlusPriceCents"],["Profit-target price","profitPriceCents"]]).filter(row=>row[1]!==null).map(row=>[...row,"Estimate"]),
+    ["Known-cost floor",num(r.knownCostFloorCents),"Floor only"]];
+ }else if(r.source==="milk_swap"&&Array.isArray(r.rows)){
+   if(!ctx.currency||r.currency!==ctx.currency||r.rows.some(o=>!obj(o)||typeof o.sizeLabel!=="string"||!["estimated","missing"].includes(String(o.basis))))return null;
+   title="Modeled milk-substitution pricing";scope="Existing per-size calculator, not a saved modifier price. Input basis may be recorded, owner-supplied, mixed or unknown; absent inputs remain null.";
+   currency=ctx.currency;add("Size","label");add("Base serving cost","cents");add("Target serving cost","cents");add("Additional cost","cents");add("Suggested upcharge","cents");add("Input basis","label");add("Calculation basis","label");
+   rows=r.rows.map(o=>[text(o.sizeLabel),num(o.baseServingCents),num(o.targetServingCents),num(o.additionalCostCents),num(o.suggestedUpchargeCents),text(o.inputBasis),text(o.basis)]);
+ }else if(r.source==="cashflow_evidence"){
+   if(!ctx.currency)return null;
+   currency=ctx.currency;
+   const mode=variant==="rows"?(obj(r.selectedStatement)?"rows:statement":"rows:balances"):variant;
+   if(mode==="rows:statement"&&obj(r.selectedStatement)&&Array.isArray(r.selectedStatement.rows)){
+     const statement=r.selectedStatement;
+     if(statement.currency!==currency||!date(statement.asOf)||String(statement.asOf)>ctx.asOf||!Array.isArray(statement.rows)||statement.rows.some(o=>!obj(o)||!date(o.date)||String(o.date)>String(statement.asOf)))return null;
+     title="Dated bank statement rows";scope="Returned page of an owner-confirmed statement only, not a current bank balance. No unconfirmed payment inference.";
+     add("Statement date","local date");add("Amount","cents");add("Reported balance","cents");
+     rows=statement.rows.map(o=>[date(o.date),num(o.amountCents),num(o.balanceCents)]);
+     if(rows.length){const dates=rows.map(o=>String(o[0])).sort();from=dates[0];to=dates[dates.length-1];}
+   }else if(mode==="rows:balances"&&Array.isArray(r.documentedAccountBalances)){
+     if(r.documentedAccountBalances.some(o=>!obj(o)||o.currency!==currency||o.source!=="owner_confirmed_statement"||o.freshness!=="dated_not_live"||!date(o.asOf)||String(o.asOf)>ctx.asOf))return null;
+     title="Documented account balances";scope="Separate dated owner-confirmed account snapshots. Account coverage is unknown. Do not sum them or treat them as live available cash; account identifiers omitted.";
+     add("Statement date","local date");add("Closing balance","cents");
+     rows=r.documentedAccountBalances.map(o=>[date(o.asOf),num(o.closingCents)]);
+   }else if(mode==="rows:recurring"&&Array.isArray(r.recurringObligations)){
+     if(r.recurringObligations.some(o=>!obj(o)||typeof o.label!=="string"||o.paymentStatus!=="unknown"||typeof o.estimated!=="boolean"))return null;
+     title="Configured recurring obligations";scope="Configured amounts and projected due dates, not actual invoices or proof of unpaid debt; unknown payment status. Amounts use the café currency.";
+     add("Obligation","label");add("Configured amount","cents");add("Frequency","label");add("Projected due","local date");add("Basis","label");
+     rows=r.recurringObligations.map(o=>[text(o.label),num(o.configuredAmountCents),text(o.frequency),date(o.nextProjectedDueOn),o.estimated?"Estimate":"Saved configuration"]);
+   }else if(mode==="rows:claims"&&Array.isArray(r.claims)){
+     if(r.claims.some(o=>!obj(o)||o.currency!==currency||!date(o.issuedOn)||String(o.issuedOn)>ctx.asOf||!["unknown","revision_review","documented_covered","documented_partial"].includes(String(o.paymentStatus))))return null;
+     title="Returned supplier invoice claims";scope="Dated documentary claims and linked allocations, not verified unpaid debt or proof of payment. Page may be incomplete; do not infer undisclosed claims.";
+     add("Issued","local date");add("Due","local date");add("Recorded claim","cents");add("Documented allocation","cents");add("Evidence status","label");
+     rows=r.claims.map(o=>[date(o.issuedOn),date(o.dueOn),num(o.recordedClaimCents),num(o.documentedAllocatedCents),text(o.paymentStatus)]);
+   }else if(mode==="rows:stress"&&Array.isArray(r.conditionalStress)){
+     if(r.conditionalStress.some(o=>!obj(o)||o.currency!==currency||!date(o.balanceAsOf)||!date(o.through)||String(o.balanceAsOf)>ctx.asOf||!["supplier_claims","dated_bill_claims","recurring_configuration"].includes(String(o.sourceClass))))return null;
+     title="Conditional cash stress scenarios";scope="If documented balance were unchanged and listed claims still needed settlement; no new deposits or other spending. Separate scenarios may overlap. Not a present balance or forecast.";
+     add("Evidence class","label");add("Balance date","local date");add("Through","local date");add("Dated opening balance","cents");add("Conditional exposure","cents");add("Conditional remainder","cents");add("Conditional shortfall","cents");
+     rows=r.conditionalStress.map(o=>[text(o.sourceClass),date(o.balanceAsOf),date(o.through),num(o.startDocumentedCents),num(o.conditionalExposureCents),num(o.conditionalRemainingCents),num(o.conditionalShortfallCents)]);
+   }else return null;
+ }else if(r.source==="current_staff"&&r.attendanceTracked===true&&Number.isSafeInteger(r.onClockCount)&&Number(r.onClockCount)>=0){
+   title="Recorded on-clock staff";scope="Observed attendance snapshot, not the scheduled roster or total headcount.";
+   add("Measure","label");add("On clock","count");rows=[["Recorded attendance",num(r.onClockCount)]];
+ }else if(r.source==="supplier_purchase_plan"&&Array.isArray(r.offers)&&r.sourceTrust==="owner_reported"&&r.comparison==="subtotal_only"){
    if(!ctx.currency||r.offers.some(o=>!obj(o)||o.currency!==ctx.currency||typeof o.supplierName!=="string"||typeof o.subtotalCents!=="number"||!Number.isSafeInteger(o.subtotalCents)))return null;
    title="Supplier quote subtotals";scope="Saved owner-reported quotes for requested quantities. Excludes unknown freight and tax; not landed cost or delivery confirmation.";
    currency=ctx.currency;add("Supplier","label");add("Subtotal","cents");add("Shipping","cents");add("Tax","cents");
@@ -397,9 +481,9 @@ function readerTable(r:AgentToolResult,ctx:Pick<AgentToolContext,"currency"|"asO
    currency=ctx.currency;add("Item","label");add("Category","label");add("Catalog price","cents");add("Price evidence","label");
    rows=r.items.flatMap(o=>obj(o)&&typeof o.name==="string"?[[o.name,text(o.category),o.priceStatus==="fixed"?num(o.priceCents):null,text(o.priceSource)]]:[]);
  }else return null;
- if(!rows.length)return null;
+ if(!rows.length||!rows.some(row=>row.some(v=>typeof v==="number"&&Number.isFinite(v))))return null;
  const parsed=recordTableSchema.safeParse({title,view:"tool_"+r.source,from,to,asOf:ctx.asOf,currency,
-  coverage:r.missing.length||r.source==="supplier_purchase_plan"||r.source==="inventory"||["labor_and_attendance","get_peak_hours","get_employee_sales","get_payroll_facts"].includes(r.source)||rows.length>30?"partial":"stored",
+  coverage:r.missing.length||r.source==="supplier_purchase_plan"||r.source==="inventory"||["labor_and_attendance","get_peak_hours","get_employee_sales","get_payroll_facts","today_live","usage_variance","ingredient_prices","recurring_bills","break_even","pricing_engine","new_item_price","milk_swap","cashflow_evidence","current_staff"].includes(r.source)||rows.length>30?"partial":"stored",
   scope,columns,rows:rows.slice(0,30)});
  return parsed.success?parsed.data:null;
 }
@@ -489,6 +573,9 @@ function laborPanel(s:z.infer<typeof selection>,r:AgentToolResult,ctx:Pick<Agent
 function project(s:z.infer<typeof selection>,r:AgentToolResult,ctx:Pick<AgentToolContext,"currency"|"asOf"|"turnResults">):PresentationPanel|null {
  if(s.source==="labor_and_attendance")return laborPanel(s,r,ctx);
  if(s.field.startsWith("table:")){
+  // Financial classes and calculation bases may overlap or be conditional;
+  // use their full qualified table, not an ambiguous isolated chart.
+  if(r.source==="cashflow_evidence"||r.source==="break_even"||r.source==="pricing_engine"||r.source==="new_item_price")return null;
   const table=readerTable(r,ctx);return table?tablePanel(s,table):null;
  }
  if(s.source==="supplier_purchase_plan")return supplierPanel(s,r,ctx);
@@ -542,10 +629,10 @@ export function presentResponse(raw:unknown,ctx:Pick<AgentToolContext,"currency"
    const selected= s.ref?canonical.filter(x=>x.ref===s.ref):canonical;
    if(s.ref&&selected.length!==1)return [];
    const matching=(r:AgentToolResult)=>r.source===s.source&&(!s.from||r.period?.from===s.from)&&(!s.to||r.period?.to===s.to);
-   if(s.kind==="table"&&s.field==="rows"){
+   if(s.kind==="table"&&(s.field==="rows"||s.source==="cashflow_evidence"&&s.field.startsWith("rows:"))){
      const candidates=s.source==="canonical_data"?selected.filter(x=>x.name==="query_data"&&matching(x.result)).flatMap(x=>{
        const table=canonicalTable(x.result,x.arguments,ctx);return table?[table]:[];
-     }):(s.ref?selected:results).filter(x=>matching(x.result)).flatMap(x=>{const table=readerTable(x.result,ctx);return table?[table]:[]});
+     }):(s.ref?selected:results).filter(x=>matching(x.result)).flatMap(x=>{const table=readerTable(x.result,ctx,s.field);return table?[table]:[]});
      const distinct=[...new Map(candidates.map(t=>[JSON.stringify(t),t])).values()];
      if(distinct.length===1&&tables.length<8){slots.set("p"+i,"table"+tables.length);tables.push(distinct[0]);}
      return [];
@@ -602,5 +689,5 @@ export function presentResponse(raw:unknown,ctx:Pick<AgentToolContext,"currency"
  return {...empty,accepted:true,presentation:arranged.success?arranged.data:block.data};
 }
 export const presentationTools={
- present_response:{schema:presentationInputSchema,description:"Optional UI from current reads, never invented data. Source+field: daily_rollups daily_sales; item_sales item_units; profitability net_sales/total_costs/owner_profit; canonical_data exact aggregate alias or field rows for a multi-column table; expenses recorded_expenses; business_costs cost_components; product_costs recipe_cost; supplier_purchase_plan subtotal/rows; purchase_orders, inventory, menu_items rows; labor_and_attendance daily_labor_cost/rows; get_peak_hours/get_employee_sales/get_payroll_facts rows. Use ref from the prior result to disambiguate; groups: p0–p7, agenda/scenario/calculator/files/report/suggestions; id g0–g11 for nested stack/grid/compare (same units)/details (title required); descriptive group titles without numeric claims; show numbers in bound leaves or prose. For safe reader table numerics use table:<column_label_snake_case>. Agenda from get_events/get_week_schedule; scenario monthly_profit/monthly_break_even/monthly_target_sales/item_margin from verified simulate_scenario; calculator=true after calculate for editable owner assumptions (not screen numbers); report=true for text export; files=true for sources attached in this turn only. Suggestions edit a draft, never act. Answer fully in words; visuals only if useful."},
+ present_response:{schema:presentationInputSchema,description:"Optional evidence UI (not invented values). Use exact prior result source/ref. daily_rollups daily_sales; item_sales item_units; profitability net_sales/total_costs/owner_profit; canonical_data exact aggregate alias/rows; expenses recorded_expenses; business_costs cost_components; product_costs recipe_cost; supplier_purchase_plan subtotal/rows; labor_and_attendance daily_labor_cost/rows. Other listed sources: rows or table:<column_label_snake_case>. cashflow_evidence rows:statement/balances/recurring/claims/stress. Groups p0–p7, agenda/scenario/calculator/files/report/suggestions; g0–g11 nested stack/grid/compare(same units)/details(descriptive nonnumeric title). Agenda from saved events or schedule; scenario monthly_profit/monthly_break_even/monthly_target_sales/item_margin from simulate_scenario; calculator after calculate with editable owner assumptions; report text export; files selected same-turn sources. Suggestions only edit draft. Answer fully in words; visuals optional."},
 };

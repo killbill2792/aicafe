@@ -322,3 +322,38 @@ it("keeps model headings descriptive without discarding verified values or neste
  }
  expect(presentResponse({...request,groups:[{id:"g0",layout:"details",title:"Recorded sales",items:["p0"]}]},ctx())).toMatchObject({accepted:true,presentation:{groups:[{layout:"details",title:"Recorded sales"}]}});
 });
+
+describe("additional typed producer contracts",()=>{
+ const q=(source:string,field="rows",kind="table")=>({layout:"stack",panels:[{source,field,kind}],suggestions:[]});
+ const checks=(source:string,result:Record<string,unknown>,rows:unknown[][],field="rows")=>expect(presentResponse(q(source,field),ctx({source,period:null,missing:[],...result}))).toMatchObject({accepted:true,presentation:{tables:[{coverage:"partial",rows}]}});
+ it("preserves today's stale timestamp, provisional scope and zero",()=>{
+  const r:AgentToolResult={source:"today_live",period:{from:"2026-11-04",to:"2026-11-04"},missing:["todayLiveLocationsFailed:1"],provisional:true,stale:true,readAt:"2026-11-04T10:00:00Z",netSalesCents:1200,orders:3,openChecks:0};
+  const a=presentResponse(q(r.source),ctx(r));
+  expect(a).toMatchObject({accepted:true,presentation:{tables:[{title:"Last saved current-day sales reading",coverage:"partial",rows:[["Net sales",1200,null],["Discounts",null,null],["Refunds",null,null],["Tips",null,null],["Orders",null,3],["Open checks",null,0]]}]}});
+  expect(JSON.stringify(a)).toContain(r.readAt);
+  expect(presentResponse(q(r.source),ctx({...r,provisional:false})).accepted).toBe(false);
+ });
+ it("keeps physical units, expected vs actual, and exact ingredient microcents",()=>{
+  checks("usage_variance",{period:sales.period,rows:[{name:"Milk",unit:"ml",expected:200,actual:null,status:null},{name:"Flour",unit:"g",expected:0,actual:0,status:"on_target"}]},[["Milk","ml",200,null,null],["Flour","g",0,0,"on_target"]]);
+  checks("ingredient_prices",{items:[{name:"Milk",baseUnit:"ml",costPerBaseUnitMicros:125001,effectiveFrom:"2026-11-01"}]},[["Milk","ml",125001,"2026-11-01"]]);
+  const r:AgentToolResult={source:"usage_variance",period:sales.period,missing:[],rows:[{name:"Milk",unit:"ml",expected:20,actual:10},{name:"Flour",unit:"g",expected:10,actual:10}]};
+  expect(presentResponse(q(r.source,"table:expected_usage","bar"),ctx(r)).accepted).toBe(false);
+ });
+ it("separates configured monthly bills, break-even basis, current prices and modeled suggestions",()=>{
+  checks("recurring_bills",{monthlyEquivalentCents:12000,estimated:true},[["Recurring costs",12000,"Estimate"]]);
+  checks("break_even",{period:sales.period,periodKind:"month_to_date",status:"estimate",periodBreakEvenCents:1000,dailyBreakEvenCents:200,knownCostBreakEvenFloorCents:null},[["Selected period break-even",1000,"Estimate"],["Daily break-even",200,"Estimate"],["Known-cost floor",null,"Floor only"]]);
+  checks("pricing_engine",{itemId:"p1",currentPriceCents:300,productCostCents:100,grossProfitPerItemCents:200,recommendedPriceCents:350},[["Current price",300,"Saved price"],["Product cost",100,"Source-dependent"],["Gross profit per item",200,"Calculation"],["Recommended price",350,"Estimate"]]);
+  checks("new_item_price",{draft:true,saved:false,recommendedPriceCents:400,fullCostCents:150},[["Recommended price",400,"Estimate"],["Full cost",150,"Estimate"],["Known-cost floor",null,"Floor only"]]);
+  checks("milk_swap",{currency:"USD",rows:[{sizeLabel:"Small",baseServingCents:20,targetServingCents:30,additionalCostCents:10,suggestedUpchargeCents:50,inputBasis:"mixed",basis:"estimated"}]},[["Small",20,30,10,50,"mixed","estimated"]]);
+ });
+ it("uses only the selected dated financial class and preserves missing allocation/currency semantics",()=>{
+  const r:AgentToolResult={source:"cashflow_evidence",period:null,missing:["currentCashEvidenceMissing"],selectedStatement:{currency:"USD",asOf:"2026-11-03",rows:[{i:1,date:"2026-11-02",amountCents:-300,balanceCents:800}]},documentedAccountBalances:[],claims:[{currency:"USD",issuedOn:"2026-11-01",dueOn:null,recordedClaimCents:200,documentedAllocatedCents:null,paymentStatus:"unknown"}]};
+  expect(presentResponse(q(r.source,"rows:statement"),ctx(r))).toMatchObject({accepted:true,presentation:{tables:[{coverage:"partial",rows:[["2026-11-02",-300,800]]}]}});
+  expect(presentResponse(q(r.source,"rows:claims"),ctx(r))).toMatchObject({accepted:true,presentation:{tables:[{rows:[["2026-11-01",null,200,null,"unknown"]]}]}});
+  expect(presentResponse(q(r.source,"rows:claims"),{...ctx(r),currency:"EUR"}).accepted).toBe(false);
+ });
+ it("does not transform missing attendance into a headcount",()=>{
+  checks("current_staff",{attendanceTracked:true,onClockCount:0},[["Recorded attendance",0]]);
+  expect(presentResponse(q("current_staff"),ctx({source:"current_staff",period:null,missing:[],attendanceTracked:false,onClockCount:0})).accepted).toBe(false);
+ });
+});

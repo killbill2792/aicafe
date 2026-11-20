@@ -5,11 +5,13 @@ import {exactNumber,runCalculation,CALC_OPS,type CalcOp,type CalcShown} from "@/
 /** Versioned, renderer-independent, serializable UI. No client code or action bindings. */
 const label=z.string().min(1).max(140);
 const date=z.iso.date();
+/** One source enumeration for the stored contract, model selection and wire references. */
+export const presentationSourceNames=["daily_rollups","item_sales","profitability","canonical_data","expenses","business_costs","product_costs","supplier_purchase_plan","purchase_orders","inventory","menu_items","labor_and_attendance","get_peak_hours","get_employee_sales","get_payroll_facts","today_live","usage_variance","ingredient_prices","recurring_bills","break_even","pricing_engine","new_item_price","milk_swap","cashflow_evidence","current_staff"] as const;
 const point=z.strictObject({label,value:z.number().finite().min(-Number.MAX_SAFE_INTEGER).max(Number.MAX_SAFE_INTEGER)});
 export const presentationPanelSchema=z.strictObject({
   kind:z.enum(["metric","table","ranked_table","bar","line","donut"]),
   title:label,unit:z.enum(["cents","count","items","units","seconds","minutes","hours","days","ratio","ratio squared","indicator","cents/hour"]),currency:z.string().regex(/^[A-Z]{3}$/).nullable(),
-  from:date,to:date,asOf:date,source:z.enum(["daily_rollups","item_sales","profitability","canonical_data","expenses","business_costs","product_costs","supplier_purchase_plan","purchase_orders","inventory","menu_items","labor_and_attendance","get_peak_hours","get_employee_sales","get_payroll_facts"]),
+  from:date,to:date,asOf:date,source:z.enum(presentationSourceNames),
   sourceDetail:z.string().max(500).optional(),measurement:z.string().trim().min(1).max(80).optional(),
   coverage:z.enum(["partial","estimate"]).optional(),
   points:z.array(point).min(1).max(30),
@@ -37,7 +39,7 @@ export const scenarioComparisonSchema=z.strictObject({
    return original?.beforeCents===c.beforeCents&&original.afterCents===c.afterCents;
  })).min(1).max(8)
 });
-const tableUnit=z.enum(["label","local date","cents","count","items","units","quantity","seconds","minutes","hours","days","ratio","ratio squared","indicator","cents/hour","boolean","hour 0 to 23","weekday","timestamp text","stored"]);
+const tableUnit=z.enum(["label","local date","microcents","cents","count","items","units","quantity","seconds","minutes","hours","days","ratio","ratio squared","indicator","cents/hour","boolean","hour 0 to 23","weekday","timestamp text","stored"]);
 const cell=z.union([z.string().max(240),z.number().finite().min(-Number.MAX_SAFE_INTEGER).max(Number.MAX_SAFE_INTEGER),z.boolean(),z.null()]);
 export const recordTableSchema=z.strictObject({
  title:label,view:z.string().regex(/^(?:cv|tool)_[a-z_]+$/).max(80),from:date,to:date,asOf:date,
@@ -49,7 +51,7 @@ export const recordTableSchema=z.strictObject({
  if(t.from>t.to||t.rows.some(r=>r.length!==t.columns.length||r.some((v,i)=>{
   if(v===null)return false;
   const u=t.columns[i].unit;
-  return u==="cents"||u==="cents/hour"?(!t.currency||typeof v!=="number"||!Number.isSafeInteger(v)):
+  return u==="cents"||u==="cents/hour"||u==="microcents"?(!t.currency||typeof v!=="number"||!Number.isSafeInteger(v)):
    u==="count"?typeof v!=="number"||!Number.isSafeInteger(v):
    ["items","units","quantity","seconds","hours","minutes","days","ratio","ratio squared","indicator","hour 0 to 23","weekday"].includes(u)?typeof v!=="number":
    u==="label"||u==="timestamp text"?typeof v!=="string":u==="local date"?typeof v!=="string"||!date.safeParse(v).success:u==="boolean"?typeof v!=="boolean":false;
