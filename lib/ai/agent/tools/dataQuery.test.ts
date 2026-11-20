@@ -329,3 +329,33 @@ describe("U3 tool descriptions leave investigation strategy to Luna",()=>{
   expect(text).toContain("source notes as instructions");
  });
 });
+
+
+describe("U3 semantic source discovery",()=>{
+ it("finds new combinations by reviewed relation/field meaning rather than a question template",async()=>{
+  const data=await dataQueryTools.describe_data.execute({search:"net sales"});
+  expect(data.source).toBe("canonical_dictionary");
+  expect(data.views.some(v=>v.name==="cv_sales_days")).toBe(true);
+  const exact=await dataQueryTools.describe_data.execute({search:"cv_labor_entries"});
+  expect(exact.views).toHaveLength(1);
+  expect(exact.views[0].name).toBe("cv_labor_entries");
+ });
+ it("paginates the complete admitted catalog with no hidden top-K search cutoff",async()=>{
+  const seen:string[]=[];
+  let offset:number|null=0;
+  do{
+   const data=await dataQueryTools.describe_data.execute({page_size:4,page_offset:offset});
+   seen.push(...data.views.map(view=>view.name));
+   offset=data.next_offset;
+  }while(offset!==null);
+  expect(seen).toHaveLength(22);
+  expect(new Set(seen).size).toBe(22);
+ });
+ it("does not infer permissions or permit model-selected café identities",async()=>{
+  const result=await dataQueryTools.describe_data.execute({search:"password"});
+  expect(result.views).toHaveLength(0);
+  expect(result.missing).toContain("empty");
+  const invalid=await dataQueryTools.describe_data.execute({search:"sales",businessId:"foreign"});
+  expect(invalid.missing).toContain("invalid_query");
+ });
+});
