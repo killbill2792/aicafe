@@ -1,0 +1,354 @@
+{
+  "id": "17c-procurement-recovery",
+  "mode": "generic",
+  "engine": "node-server",
+  "entrypoint": "evals/acceptance/live/task17c.mjs",
+  "proof": "17c-procurement-recovery-proof.json",
+  "scope": "17c-procurement-recovery-scope.json",
+  "expectedTools": [
+    "inspect_supplier_purchase",
+    "propose_supplier_purchase_order",
+    "get_supplier_purchase_orders"
+  ],
+  "assertions": [
+    {
+      "name": "source-offer",
+      "kind": "source",
+      "table": "public.ai_supplier_quotes",
+      "where": {
+        "business_id": {
+          "scope": "businessId"
+        },
+        "id": {
+          "scope": "quoteId"
+        },
+        "owner_user_id": {
+          "scope": "ownerUserId"
+        }
+      },
+      "minCount": 1,
+      "maxCount": 1
+    },
+    {
+      "name": "authorized-proposal",
+      "kind": "owner",
+      "table": "public.supervisor_proposals",
+      "where": {
+        "business_id": {
+          "scope": "businessId"
+        },
+        "owner_user_id": {
+          "scope": "ownerUserId"
+        },
+        "thread_id": {
+          "scope": "threadId"
+        },
+        "id": {
+          "scope": "proposalId"
+        },
+        "status": {
+          "eq": "committed"
+        }
+      },
+      "minCount": 1,
+      "maxCount": 1
+    },
+    {
+      "name": "one-exact-order",
+      "kind": "source",
+      "table": "public.purchase_orders",
+      "where": {
+        "business_id": {
+          "scope": "businessId"
+        },
+        "id": {
+          "scope": "orderId"
+        },
+        "proposal_id": {
+          "scope": "proposalId"
+        },
+        "owner_user_id": {
+          "scope": "ownerUserId"
+        },
+        "subtotal_cents": {
+          "scope": "subtotalCents"
+        },
+        "status": {
+          "eq": "approved_for_ordering"
+        },
+        "effect_hash": {
+          "scope": "effectHash"
+        },
+        "currency_code": {
+          "scope": "currency"
+        }
+      },
+      "minCount": 1,
+      "maxCount": 1
+    },
+    {
+      "name": "no-duplicate-order",
+      "kind": "source",
+      "table": "public.purchase_orders",
+      "where": {
+        "business_id": {
+          "scope": "businessId"
+        },
+        "proposal_id": {
+          "scope": "proposalId"
+        }
+      },
+      "minCount": 1,
+      "maxCount": 1
+    },
+    {
+      "name": "saved-order-status-reply",
+      "kind": "owner",
+      "table": "public.ai_messages",
+      "where": {
+        "business_id": {
+          "scope": "businessId"
+        },
+        "owner_user_id": {
+          "scope": "ownerUserId"
+        },
+        "thread_id": {
+          "scope": "threadId"
+        },
+        "id": {
+          "scope": "replyId"
+        },
+        "role": {
+          "eq": "supervisor"
+        }
+      },
+      "minCount": 1,
+      "maxCount": 1
+    },
+    {
+      "name": "no-cross-cafe-order",
+      "kind": "isolation",
+      "table": "public.purchase_orders",
+      "where": {
+        "business_id": {
+          "scope": "foreignBusinessId"
+        },
+        "proposal_id": {
+          "scope": "proposalId"
+        }
+      },
+      "minCount": 0,
+      "maxCount": 0
+    },
+    {
+      "name": "verified-single-click-receipt",
+      "kind": "source",
+      "table": "public.supervisor_effect_attempts",
+      "where": {
+        "business_id": {
+          "scope": "businessId"
+        },
+        "proposal_id": {
+          "scope": "proposalId"
+        },
+        "attempt_key": {
+          "scope": "attemptKey"
+        },
+        "effect_hash": {
+          "scope": "effectHash"
+        },
+        "authorization_kind": {
+          "eq": "click"
+        },
+        "state": {
+          "eq": "verified"
+        },
+        "receipt_ref": {
+          "scope": "receiptRef"
+        }
+      },
+      "minCount": 1,
+      "maxCount": 1
+    },
+    {
+      "name": "one-effect-attempt",
+      "kind": "source",
+      "table": "public.supervisor_effect_attempts",
+      "where": {
+        "business_id": {
+          "scope": "businessId"
+        },
+        "proposal_id": {
+          "scope": "proposalId"
+        }
+      },
+      "minCount": 1,
+      "maxCount": 1
+    },
+    {
+      "name": "one-authenticated-approval",
+      "kind": "owner",
+      "table": "public.supervisor_approvals",
+      "where": {
+        "business_id": {
+          "scope": "businessId"
+        },
+        "proposal_id": {
+          "scope": "proposalId"
+        },
+        "owner_user_id": {
+          "scope": "ownerUserId"
+        },
+        "authorization_kind": {
+          "eq": "click"
+        },
+        "effect_hash": {
+          "scope": "effectHash"
+        }
+      },
+      "minCount": 1,
+      "maxCount": 1
+    },
+    {
+      "name": "foreign-no-effect-attempt",
+      "kind": "isolation",
+      "table": "public.supervisor_effect_attempts",
+      "where": {
+        "business_id": {
+          "scope": "foreignBusinessId"
+        },
+        "proposal_id": {
+          "scope": "proposalId"
+        }
+      },
+      "minCount": 0,
+      "maxCount": 0
+    },
+    {
+      "name": "original-draft-reminder-closed",
+      "kind": "owner",
+      "table": "public.operating_tasks",
+      "where": {
+        "business_id": {
+          "scope": "businessId"
+        },
+        "owner_user_id": {
+          "scope": "ownerUserId"
+        },
+        "id": {
+          "scope": "draftNoticeId"
+        },
+        "kind": {
+          "eq": "priority_notice"
+        },
+        "status": {
+          "eq": "handled"
+        }
+      },
+      "minCount": 1,
+      "maxCount": 1
+    },
+    {
+      "name": "approved-order-reminder-open",
+      "kind": "owner",
+      "table": "public.operating_tasks",
+      "where": {
+        "business_id": {
+          "scope": "businessId"
+        },
+        "owner_user_id": {
+          "scope": "ownerUserId"
+        },
+        "id": {
+          "scope": "dispatchNoticeId"
+        },
+        "kind": {
+          "eq": "priority_notice"
+        },
+        "status": {
+          "eq": "needs_owner"
+        }
+      },
+      "minCount": 1,
+      "maxCount": 1
+    },
+    {
+      "name": "original-draft-reminder-message",
+      "kind": "owner",
+      "table": "public.ai_messages",
+      "where": {
+        "business_id": {
+          "scope": "businessId"
+        },
+        "owner_user_id": {
+          "scope": "ownerUserId"
+        },
+        "thread_id": {
+          "scope": "threadId"
+        },
+        "id": {
+          "scope": "draftNoticeMessageId"
+        },
+        "role": {
+          "eq": "supervisor"
+        }
+      },
+      "minCount": 1,
+      "maxCount": 1
+    },
+    {
+      "name": "approved-order-reminder-message",
+      "kind": "owner",
+      "table": "public.ai_messages",
+      "where": {
+        "business_id": {
+          "scope": "businessId"
+        },
+        "owner_user_id": {
+          "scope": "ownerUserId"
+        },
+        "thread_id": {
+          "scope": "threadId"
+        },
+        "id": {
+          "scope": "dispatchNoticeMessageId"
+        },
+        "role": {
+          "eq": "supervisor"
+        }
+      },
+      "minCount": 1,
+      "maxCount": 1
+    },
+    {
+      "name": "reminder-never-sends-order",
+      "kind": "source",
+      "table": "public.purchase_order_dispatches",
+      "where": {
+        "business_id": {
+          "scope": "businessId"
+        },
+        "purchase_order_id": {
+          "scope": "orderId"
+        }
+      },
+      "minCount": 0,
+      "maxCount": 0
+    },
+    {
+      "name": "foreign-reminder-denied",
+      "kind": "isolation",
+      "table": "public.operating_tasks",
+      "where": {
+        "business_id": {
+          "scope": "foreignBusinessId"
+        },
+        "id": {
+          "scope": "dispatchNoticeId"
+        }
+      },
+      "minCount": 0,
+      "maxCount": 0
+    }
+  ]
+}

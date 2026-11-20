@@ -1,0 +1,321 @@
+{
+  "id": "17c-business-monitors",
+  "mode": "generic",
+  "engine": "node-server",
+  "entrypoint": "evals/acceptance/live/task17c.mjs",
+  "proof": "17c-business-monitors-proof.json",
+  "scope": "17c-business-monitors-scope.json",
+  "expectedTools": [
+    "get_investigation_source",
+    "get_expenses",
+    "get_bills"
+  ],
+  "assertions": [
+    {
+      "name": "recorded-prior-bill",
+      "kind": "source",
+      "table": "public.expenses",
+      "where": {
+        "business_id": {
+          "scope": "businessId"
+        },
+        "id": {
+          "scope": "oldExpenseId"
+        },
+        "amount_cents": {
+          "scope": "amountCents"
+        },
+        "category_code": {
+          "eq": "internet"
+        }
+      },
+      "minCount": 1,
+      "maxCount": 1
+    },
+    {
+      "name": "recorded-corrected-bill",
+      "kind": "source",
+      "table": "public.expenses",
+      "where": {
+        "business_id": {
+          "scope": "businessId"
+        },
+        "id": {
+          "scope": "newExpenseId"
+        },
+        "amount_cents": {
+          "scope": "amountCents"
+        },
+        "category_code": {
+          "eq": "internet"
+        }
+      },
+      "minCount": 1,
+      "maxCount": 1
+    },
+    {
+      "name": "resolved-source-alert",
+      "kind": "source",
+      "table": "public.alerts",
+      "where": {
+        "business_id": {
+          "scope": "businessId"
+        },
+        "id": {
+          "scope": "alertId"
+        },
+        "kind": {
+          "eq": "missing_bill"
+        },
+        "status": {
+          "eq": "resolved"
+        }
+      },
+      "minCount": 1,
+      "maxCount": 1
+    },
+    {
+      "name": "resolved-original-episode",
+      "kind": "source",
+      "table": "public.supervisor_investigations",
+      "where": {
+        "business_id": {
+          "scope": "businessId"
+        },
+        "owner_user_id": {
+          "scope": "ownerUserId"
+        },
+        "thread_id": {
+          "scope": "threadId"
+        },
+        "source_id": {
+          "scope": "alertId"
+        },
+        "episode_id": {
+          "scope": "episodeId"
+        },
+        "phase": {
+          "eq": "resolved"
+        }
+      },
+      "minCount": 1,
+      "maxCount": 1
+    },
+    {
+      "name": "owner-investigation-notice",
+      "kind": "owner",
+      "table": "public.ai_messages",
+      "where": {
+        "business_id": {
+          "scope": "businessId"
+        },
+        "owner_user_id": {
+          "scope": "ownerUserId"
+        },
+        "thread_id": {
+          "scope": "threadId"
+        },
+        "id": {
+          "scope": "noticeId"
+        },
+        "role": {
+          "eq": "supervisor"
+        }
+      },
+      "minCount": 1,
+      "maxCount": 1
+    },
+    {
+      "name": "owner-resolution-notice",
+      "kind": "owner",
+      "table": "public.ai_messages",
+      "where": {
+        "business_id": {
+          "scope": "businessId"
+        },
+        "owner_user_id": {
+          "scope": "ownerUserId"
+        },
+        "thread_id": {
+          "scope": "threadId"
+        },
+        "id": {
+          "scope": "resolutionNoticeId"
+        },
+        "role": {
+          "eq": "supervisor"
+        }
+      },
+      "minCount": 1,
+      "maxCount": 1
+    },
+    {
+      "name": "no-owner-chat-trigger",
+      "kind": "owner",
+      "table": "public.ai_messages",
+      "where": {
+        "business_id": {
+          "scope": "businessId"
+        },
+        "role": {
+          "eq": "owner"
+        }
+      },
+      "minCount": 0,
+      "maxCount": 0
+    },
+    {
+      "name": "no-effect",
+      "kind": "owner",
+      "table": "public.supervisor_effect_attempts",
+      "where": {
+        "business_id": {
+          "scope": "businessId"
+        }
+      },
+      "minCount": 0,
+      "maxCount": 0
+    },
+    {
+      "name": "healthy-control-no-missing-bill",
+      "kind": "isolation",
+      "table": "public.alerts",
+      "where": {
+        "business_id": {
+          "scope": "foreignBusinessId"
+        },
+        "kind": {
+          "eq": "missing_bill"
+        }
+      },
+      "minCount": 0,
+      "maxCount": 0
+    },
+    {
+      "name": "void-source-correction",
+      "kind": "source",
+      "table": "public.daily_rollups",
+      "where": {
+        "business_id": {
+          "scope": "sourceAlertBusinessId"
+        },
+        "business_date": {
+          "scope": "sourceAlertDate"
+        },
+        "voids_cents": {
+          "eq": "0"
+        },
+        "voids_status": {
+          "eq": "complete"
+        }
+      },
+      "minCount": 1,
+      "maxCount": 1
+    },
+    {
+      "name": "resolved-void-detector",
+      "kind": "source",
+      "table": "public.alerts",
+      "where": {
+        "business_id": {
+          "scope": "sourceAlertBusinessId"
+        },
+        "id": {
+          "scope": "voidAlertId"
+        },
+        "kind": {
+          "eq": "voids"
+        },
+        "status": {
+          "eq": "resolved"
+        }
+      },
+      "minCount": 1,
+      "maxCount": 1
+    },
+    {
+      "name": "resolved-meal-detector",
+      "kind": "source",
+      "table": "public.alerts",
+      "where": {
+        "business_id": {
+          "scope": "sourceAlertBusinessId"
+        },
+        "id": {
+          "scope": "mealAlertId"
+        },
+        "kind": {
+          "eq": "meal_break"
+        },
+        "status": {
+          "eq": "resolved"
+        }
+      },
+      "minCount": 1,
+      "maxCount": 1
+    },
+    {
+      "name": "actual-attendance-source",
+      "kind": "source",
+      "table": "public.timecards",
+      "where": {
+        "business_id": {
+          "scope": "sourceAlertBusinessId"
+        },
+        "id": {
+          "scope": "actualTimecard"
+        },
+        "source_type": {
+          "eq": "owner_manual"
+        }
+      },
+      "minCount": 1,
+      "maxCount": 1
+    },
+    {
+      "name": "planned-not-actual-source",
+      "kind": "source",
+      "table": "public.timecards",
+      "where": {
+        "business_id": {
+          "scope": "sourceAlertBusinessId"
+        },
+        "id": {
+          "scope": "plannedTimecard"
+        },
+        "source_type": {
+          "eq": "owner_schedule"
+        }
+      },
+      "minCount": 1,
+      "maxCount": 1
+    },
+    {
+      "name": "detector-cafe-no-unauthorized-effect",
+      "kind": "owner",
+      "table": "public.supervisor_effect_attempts",
+      "where": {
+        "business_id": {
+          "scope": "sourceAlertBusinessId"
+        }
+      },
+      "minCount": 0,
+      "maxCount": 0
+    },
+    {
+      "name": "foreign-void-alert-denied",
+      "kind": "isolation",
+      "table": "public.alerts",
+      "where": {
+        "business_id": {
+          "scope": "foreignBusinessId"
+        },
+        "id": {
+          "scope": "voidAlertId"
+        }
+      },
+      "minCount": 0,
+      "maxCount": 0
+    }
+  ]
+}
