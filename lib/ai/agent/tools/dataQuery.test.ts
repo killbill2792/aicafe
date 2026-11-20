@@ -345,7 +345,7 @@ describe("U3 retained Toast field pagination",()=>{
    },ctx);
    const values=page.fields??[];
    seen.push(...values.map(v=>String(v.field)));
-   next=page.next_offset??null;
+   next="next_offset" in page?page.next_offset??null:null;
   }while(next!==null);
   expect(seen).toEqual(fields.map(f=>f.field));
   expect(rpc).toHaveBeenCalledTimes(8);
