@@ -13,7 +13,7 @@ vi.mock("@/lib/ai/agent/loop.server",()=>({runAgentTurn:mocks.model,
 vi.mock("@/lib/ai/supervisor/runs/worker.server",()=>({
   assertDurablePaidTurnAllowed:mocks.paidGate,
 }));
-vi.mock("@/lib/ai/supervisor/runs/usage.server",()=>({withWorkerBudget:mocks.budget}));
+vi.mock("@/lib/ai/supervisor/runs/usage.server",()=>({withWorkerBudget:mocks.budget,loadModelExecutionCap:async()=>1200}));
 vi.mock("@/lib/operating/notifyOwner.server",()=>({notifyOwner:mocks.notify}));
 vi.mock("./dispatch.server",()=>({readActionablePriorities:mocks.priorities}));
 vi.mock("./stockDraft.server",()=>({prepareProactiveStockDraft:mocks.stockDraft}));
