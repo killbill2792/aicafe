@@ -293,6 +293,30 @@ BEGIN
  AND business_date='2026-11-11' AND observation->>'coverage'='actual')<>1
  THEN RAISE EXCEPTION 'inactive event blocked active cafe-day sales'; END IF;
 END $check$;
+-- A previously stored provisional reading is retired if its exact occurrence
+-- has been verified shortened/moved out of the date. Certified prior dates stay.
+UPDATE public.supervisor_proposals SET canonical_effect_payload=jsonb_build_object('eventIds',jsonb_build_array(:'cafe_event_a'))
+ WHERE id=:'plan_one';
+INSERT INTO public.supervisor_monitor_samples(business_id,proposal_id,business_date,observation,evidence_source)
+ VALUES(:'business_a',:'plan_one','2026-11-12','{"coverage":"provisional","actualCents":10000}','toast_today_live');
+SELECT public.ldi_claim_monitor(:'business_a',:'owner_a',:'plan_two','2026-11-12',:'token_two',false) AS transferred \gset
+SELECT set_config('test.ldi.transferred',:'transferred',true),set_config('test.ldi.plan_one',:'plan_one',true);
+INSERT INTO public.supervisor_monitor_samples(business_id,proposal_id,business_date,observation,evidence_source)
+ VALUES(:'business_a',:'plan_two','2026-11-12','{"coverage":"actual","actualCents":30000}','daily_rollups');
+DO $check$
+BEGIN
+ IF current_setting('test.ldi.transferred')<>'t' OR NOT EXISTS(
+ SELECT 1 FROM public.supervisor_monitor_samples WHERE proposal_id=current_setting('test.ldi.plan_one')::uuid
+ AND business_date='2026-11-12' AND observation->>'coverage'='event_inactive')
+ OR NOT EXISTS(SELECT 1 FROM public.supervisor_monitor_samples WHERE proposal_id=current_setting('test.ldi.plan_one')::uuid
+ AND business_date='2026-11-10' AND observation->>'coverage'='actual')
+ THEN RAISE EXCEPTION 'inactive prior live sample did not relinquish sales ownership safely'; END IF;
+ BEGIN
+ UPDATE public.supervisor_monitor_samples SET observation='{"coverage":"provisional","actualCents":10000}'
+ WHERE proposal_id=current_setting('test.ldi.plan_one')::uuid AND business_date='2026-11-12';
+ RAISE EXCEPTION 'stale inactive worker restored overlapping sales';
+ EXCEPTION WHEN check_violation THEN NULL; END;
+END $check$;
 -- Two claims for one exact preparation or change revision: only the first
 -- may run, stale release cannot unlock it, and completed work stays closed.
 SELECT public.ldi_claim_event_work(:'business_a',:'owner_a',

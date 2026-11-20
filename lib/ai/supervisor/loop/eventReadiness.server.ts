@@ -17,6 +17,7 @@ import {readItemSales,readDiscounts,readLaborEntries,readMenu} from "@/lib/data/
 import {posFactReaders} from "@/lib/data/posFactReaders.server";
 import {indexHourlyRevenue,compareEventDaySales,compareLiveEventSales} from "@/lib/metrics/core/eventReadiness";
 import {cafeToday} from "@/lib/metrics/core/clock";
+import {projectTimedOccurrence} from "@/lib/events/cityEventIdentity";
 import {typicalDaySales,changePercent,type OutlookSalesDay} from "@/lib/metrics/core/dayOutlook";
 import {eventFinalNarrative,eventReportFactsHash,eventReportFallback,eventReportNumericEvidence}
   from "@/lib/events/eventFinalReport.server";
@@ -368,7 +369,7 @@ export function eventWindowAtBusinessDay(event:CafeEvent,day:string,timezone:str
   const d=detail as {history?:unknown[];change?:unknown};
   const history=(Array.isArray(d.history)?d.history:d.change?[d.change]:[]).flatMap(value=>{
     if(!value||typeof value!=="object")return [];
-    const row=value as {verifiedAt?:unknown;status?:unknown;previousStatus?:unknown;previousStartDate?:unknown;previousEndDate?:unknown;newDate?:unknown;newEndDate?:unknown};
+    const row=value as {verifiedAt?:unknown;status?:unknown;previousStatus?:unknown;previousStartDate?:unknown;previousEndDate?:unknown;newDate?:unknown;newEndDate?:unknown;previousStartAt?:unknown;previousEndAt?:unknown;newStartAt?:unknown;newEndAt?:unknown};
     const valid=(s:unknown):s is CafeEvent["status"]=>s==="found"||s==="cancelled"||s==="moved";
     if(typeof row.verifiedAt!=="string"||!Number.isFinite(Date.parse(row.verifiedAt))||
       !valid(row.status)||!valid(row.previousStatus))return [];
@@ -378,14 +379,26 @@ export function eventWindowAtBusinessDay(event:CafeEvent,day:string,timezone:str
   let status=history[0].previousStatus;
   let startDate=typeof history[0].previousStartDate==="string"?history[0].previousStartDate:event.startDate;
   let endDate=typeof history[0].previousEndDate==="string"?history[0].previousEndDate:event.endDate;
+  const timed=(start:unknown,end:unknown)=>{
+    if(typeof start!=="string"||typeof end!=="string")return null;
+    try{return projectTimedOccurrence(new Date(start).toISOString(),new Date(end).toISOString(),timezone);}
+    catch{return null;}
+  };
+  const prior=timed(history[0].previousStartAt,history[0].previousEndAt);
+  if(prior){startDate=prior.startDate;endDate=prior.endDate;}
   for(const change of history){
     if(formatInTimeZone(new Date(change.verifiedAt),timezone,"yyyy-MM-dd")>day)break;
     status=change.status;
     if(typeof change.newEndDate==="string"){
       if(typeof change.newDate==="string")startDate=change.newDate;
       endDate=change.newEndDate;
+      const next=timed(change.newStartAt,change.newEndAt);
+      if(next){startDate=next.startDate;endDate=next.endDate;}
     }
   }
+  // Once the latest verified revision applies, the canonical reader already
+  // supplies the current café-local interval, including exact midnight.
+  if(formatInTimeZone(new Date(history.at(-1)!.verifiedAt),timezone,"yyyy-MM-dd")<=day)return current;
   return {status,startDate,endDate};
 }
 export function eventStatusAtBusinessDay(event:CafeEvent,day:string,timezone:string):CafeEvent["status"]{

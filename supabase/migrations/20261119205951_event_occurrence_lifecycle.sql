@@ -236,9 +236,11 @@ begin
      end_time=case when next_start<>e.start_date or p_change->>'newEndDate' is not null then null else end_time end,
      last_verification_attempt_at=at_time,last_verified_at=at_time,verification_failed_at=null,
      verification_details=jsonb_build_object('change',p_change||jsonb_build_object('id',c.id,
-       'previousStatus',c.status,'previousStartDate',c.start_date,'previousEndDate',c.end_date),
+       'previousStatus',c.status,'previousStartDate',c.start_date,'previousEndDate',c.end_date,
+       'previousStartAt',e.start_at,'previousEndAt',e.end_at),
        'pendingNotice',true,'history',previous_history||jsonb_build_array(p_change||
-       jsonb_build_object('id',c.id,'previousStatus',c.status,'previousStartDate',c.start_date,'previousEndDate',c.end_date)))
+       jsonb_build_object('id',c.id,'previousStatus',c.status,'previousStartDate',c.start_date,'previousEndDate',c.end_date,
+       'previousStartAt',e.start_at,'previousEndAt',e.end_at)))
    where id=c.id and business_id=c.business_id;
  end loop;
  return true;
@@ -278,9 +280,13 @@ begin
      and not exists(
        select 1 from jsonb_array_elements_text(p.canonical_effect_payload->'eventIds') ids(id)
        left join public.cafe_events ce on ce.business_id=s.business_id and ce.id::text=ids.id
+       left join public.cafe_city_event_links l on l.business_id=ce.business_id and l.cafe_event_id=ce.id
+       left join public.city_events city on city.id=l.city_event_id
        where ce.id is null or ce.last_verified_at is null
         or (ce.last_verified_at at time zone b.timezone)::date>p_day
-        or (ce.status='found' and p_day between ce.start_date and ce.end_date));
+        or (coalesce(city.lifecycle->>'status',ce.status)='found' and p_day between
+          coalesce((city.start_at at time zone b.timezone)::date,ce.start_date)
+          and coalesce(((city.end_at-interval '1 microsecond') at time zone b.timezone)::date,ce.end_date)));
    select s.proposal_id into sampled from public.supervisor_monitor_samples s
    join public.supervisor_proposals p on p.business_id=s.business_id and p.id=s.proposal_id
    where s.business_id=p_business_id and s.business_date=p_day and p.capability_id='alex.event_readiness.v1'

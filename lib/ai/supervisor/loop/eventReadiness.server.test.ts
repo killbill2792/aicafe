@@ -78,6 +78,16 @@ describe("event_readiness uses the shared Supervisor lifecycle",()=>{
     expect(eventDayActivity([moved],"2026-11-02","UTC")).toBe("inactive");
     expect(eventDayActivity([moved],"2026-11-04","UTC")).toBe("active");
   });
+  it("uses the café-local timed interval both before and after a source-timezone correction",()=>{
+    const timed={...event,status:"found" as const,startDate:"2026-11-03",endDate:"2026-11-03",
+      verificationDetails:{history:[{verifiedAt:"2026-11-02T12:00:00Z",previousStatus:"found",status:"found",
+        previousStartDate:"2026-11-02",previousEndDate:"2026-11-02",
+        previousStartAt:"2026-11-02T01:00:00Z",previousEndAt:"2026-11-02T03:00:00Z",
+        newDate:"2026-11-04",newEndDate:"2026-11-04",newStartAt:"2026-11-04T01:00:00Z",newEndAt:"2026-11-04T03:00:00Z"}]}};
+    expect(eventDayActivity([timed],"2026-11-01","America/Los_Angeles")).toBe("active");
+    expect(eventDayActivity([timed],"2026-11-03","America/Los_Angeles")).toBe("active");
+    expect(eventDayActivity([timed],"2026-11-04","America/Los_Angeles")).toBe("inactive");
+  });
   it("does not count a cancelled day as zero sales or a completed observation",async()=>{
     const report=await eventReadinessCapability.report(scope,effect,[{businessDate:"2026-10-31",source:"daily_rollups",observation:{coverage:"actual",actualCents:12300,typicalCents:10000}},{businessDate:"2026-11-01",source:"cafe_events",observation:{coverage:"event_inactive",eventActivity:"inactive"}}],true);
     expect(report).toMatchObject({status:"insufficient_evidence",result:{observedDays:1,expectedDays:2,eventStatusDays:[{date:"2026-11-01",activity:"inactive"}],salesSummary:{observedSalesCents:12300,observedSalesDays:1}}});
