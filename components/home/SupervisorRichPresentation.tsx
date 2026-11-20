@@ -9,7 +9,7 @@ import type {ComparisonSeries} from "./SupervisorRichChart";
 import en from "@/messages/en.json";
 import es from "@/messages/es.json";
 import ar from "@/messages/ar.json";
-import {richPresentationSchema,presentationPanelSchema,agendaSchema,scenarioComparisonSchema,presentationReport,recordTableSchema,interactiveCalcSchema,evaluatePresentationCalc,presentationLeaves,compatibleComparison,type RecordTable,type InteractiveCalc,type Agenda,type ScenarioComparison,type RichPresentation,type PresentationPanel} from "@/lib/ai/conversations/presentation";
+import {richPresentationSchema,presentationPanelSchema,agendaSchema,scenarioComparisonSchema,presentationReport,recordTableSchema,interactiveCalcSchema,evaluatePresentationCalc,presentationLeaves,compatibleComparison,calendarPage,type RecordTable,type InteractiveCalc,type Agenda,type ScenarioComparison,type RichPresentation,type PresentationPanel} from "@/lib/ai/conversations/presentation";
 const copy=en.SupervisorPresentation;
 const Chart=dynamic(()=>import("./SupervisorRichChart"),{ssr:false});
 const ComparisonChart=dynamic(()=>import("./SupervisorRichChart").then(m=>m.ComparisonChart),{ssr:false});
@@ -68,20 +68,34 @@ function AgendaView({agenda,locale}:{agenda:Agenda;locale:string}){
  // fields at local noon; no hardcoded café timezone or conversion.
  const format=(day:string)=>{const [y,m,d]=day.split("-").map(Number);return new Intl.DateTimeFormat(locale,{dateStyle:"medium"}).format(new Date(y,m-1,d,12));}; // hardcode-ok: date-only café calendar labels, not timestamps; preserve the already-resolved calendar day in every viewer timezone.
  const status:Record<Agenda["entries"][number]["status"],string>=copy.eventStatuses;
- const dates=[...new Set(agenda.entries.map(e=>e.date))];
+ const [page,setPage]=useState(0);
+ const [selected,setSelected]=useState<string|null>(null);
+ const window=calendarPage(agenda,page);
+ const current=window.days.find(d=>d.date===selected)??window.days.find(d=>d.entries.length)??window.days[0];
  return <section data-testid="supervisor-agenda" className="min-w-0 space-y-3 py-2">
   <h3 className="font-medium text-ink">{agenda.title}</h3>
   <p className="text-[13px] text-ink-muted">{format(agenda.from)} – {format(agenda.to)} · {copy.snapshot} {format(agenda.asOf)}{agenda.coverage==="partial"?" · "+copy.partial:""}</p>
-  {agenda.kind==="calendar"?<div className="grid gap-2 sm:grid-cols-2">
-    {dates.map(day=><section key={day} className="min-w-0 rounded-xl border border-line p-3">
-     <h4 className="font-medium"><time dateTime={day}>{format(day)}</time></h4>
-     <ul className="mt-2 space-y-2">{agenda.entries.filter(e=>e.date===day).map((e,i)=><li key={i} className="break-words">
-      <p>{e.label}</p><p className="text-[13px] text-ink-muted">{e.start??copy.timeUnknown}{e.end?" – "+e.end:""}{e.endDate!==e.date? " · "+copy.until+" "+format(e.endDate):""} · {status[e.status]}</p>
-     </li>)}</ul>
-    </section>)}
-  </div>:<ol className="space-y-3 border-s border-line ps-4">{agenda.entries.map((e,i)=><li key={i} className="break-words">
+  {agenda.kind==="calendar"?<>
+    <div className="flex items-center justify-between gap-2 text-[15px]">
+     <button type="button" aria-label={copy.previousDates} disabled={window.page===0} onClick={()=>{setPage(window.page-1);setSelected(null)}} className="min-h-12 min-w-12 rounded-lg border border-line disabled:opacity-40">‹</button>
+     <span className="text-center">{format(window.days[0].date)} – {format(window.days[window.days.length-1].date)}</span>
+     <button type="button" aria-label={copy.nextDates} disabled={window.page+1===window.pages} onClick={()=>{setPage(window.page+1);setSelected(null)}} className="min-h-12 min-w-12 rounded-lg border border-line disabled:opacity-40">›</button>
+    </div>
+    <div data-testid="supervisor-calendar-grid" className="grid grid-cols-7 gap-1" aria-label={agenda.title}>
+     {Array.from({length:7},(_,i)=><span key={i} className="text-center text-[13px] text-ink-muted">{new Intl.DateTimeFormat(locale,{weekday:"short"}).format(new Date(2024,0,7+i,12))}</span>)}
+     {Array.from({length:window.days[0].weekday},(_,i)=><span key={"empty"+i} aria-hidden="true"/>)}
+     {window.days.map(d=><button type="button" key={d.date} aria-label={format(d.date)+" · "+d.entries.length+" "+copy.savedEntries} aria-pressed={current.date===d.date} onClick={()=>setSelected(d.date)} className={"min-h-12 min-w-0 rounded-lg border px-0.5 py-1 text-center tabular-nums focus-visible:outline focus-visible:outline-2 "+(current.date===d.date?"border-accent bg-surface2":"border-line")}>
+      <span className="block text-[15px]">{Number(d.date.slice(-2))}</span><span className="block text-[13px] text-ink-muted">{d.entries.length?d.entries.length:"·"}</span>
+     </button>)}
+    </div>
+    <h4 className="font-medium"><time dateTime={current.date}>{format(current.date)}</time></h4>
+    {current.entries.length===0&&<p className="text-[15px] text-ink-muted">{copy.noSavedEntries}</p>}
+    <ul className="space-y-2">{current.entries.map((e,i)=><li key={i} className="break-words border-s border-line ps-3">
+      <p>{e.label}</p><p className="text-[13px] text-ink-muted">{e.start??copy.timeUnknown}{e.end?" – "+e.end:""}{e.endDate!==e.date?" · "+format(e.date)+" – "+format(e.endDate):""} · {status[e.status]}{e.checkedAt?" · "+copy.snapshot+" "+e.checkedAt:""}</p>
+    </li>)}</ul>
+  </>:<ol className="space-y-3 border-s border-line ps-4">{agenda.entries.map((e,i)=><li key={i} className="break-words">
    <time dateTime={e.date} className="text-[13px] text-ink-muted">{format(e.date)}{e.endDate!==e.date?" – "+format(e.endDate):""}</time>
-   <p className="font-medium">{e.label}</p><p className="text-[13px] text-ink-muted">{e.start??copy.timeUnknown}{e.end?" – "+e.end:""} · {status[e.status]}</p>
+   <p className="font-medium">{e.label}</p><p className="text-[13px] text-ink-muted">{e.start??copy.timeUnknown}{e.end?" – "+e.end:""} · {status[e.status]}{e.checkedAt?" · "+copy.snapshot+" "+e.checkedAt:""}</p>
   </li>)}</ol>}
   <p className="text-[13px] text-ink-muted">{agenda.source==="cafe_events"?copy.eventNotice:copy.shiftNotice}</p>
  </section>;

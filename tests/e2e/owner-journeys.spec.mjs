@@ -1804,8 +1804,10 @@ test("@home Task16E adaptive answer survives reload, preserves prose and opens a
     const suggestion="Compare another period";
     const blocks=[{type:"text",text},{type:"rich_presentation",version:1,layout:"stack",panels:[
       {kind:"line",title:"Daily net sales",unit:"cents",currency:owner.currency,source:"daily_rollups",from:"2026-01-01",to:"2026-01-02",asOf:"2026-01-03",
-        points:[{label:"2026-01-01",value:1200},{label:"2026-01-02",value:2400}]}
-    ],report:true,files:[attachment.id],tables:[{title:"Saved query results",view:"cv_orders",from:"2026-01-01",to:"2026-01-02",asOf:"2026-01-03",currency:owner.currency,
+        points:[{label:"2026-01-01",value:1200},{label:"2026-01-02",value:2400}]},
+      {kind:"metric",title:"Recorded sales",unit:"cents",currency:owner.currency,source:"profitability",from:"2026-01-01",to:"2026-01-02",asOf:"2026-01-03",points:[{label:"Sales",value:3600}]},
+      {kind:"metric",title:"Recorded costs",unit:"cents",currency:owner.currency,source:"business_costs",from:"2026-01-01",to:"2026-01-02",asOf:"2026-01-03",points:[{label:"Costs",value:1000}]}
+    ],groups:[{layout:"compare",items:["panel1","panel2"]},{layout:"stack",items:["panel0","agenda","scenario","table0","calculator"]}],report:true,files:[attachment.id],tables:[{title:"Saved query results",view:"cv_orders",from:"2026-01-01",to:"2026-01-02",asOf:"2026-01-03",currency:owner.currency,
       coverage:"partial",scope:"Requested query",columns:[{label:"Order channel",unit:"label"},{label:"Orders",unit:"count"},{label:"Sales",unit:"cents"}],rows:[["Takeaway",0,0],["Dine in",7,null]]}],
       calculator:{title:"Order cost estimate",asOf:"2026-01-03",currency:owner.currency,inputs:[
         {id:"cost",label:"Unit cost",value:{unit:"cents",valueCents:250},editable:false},
@@ -1842,6 +1844,12 @@ test("@home Task16E adaptive answer survives reload, preserves prose and opens a
       await expect(calcField).toHaveValue("10");
       await expect(rich.locator(".recharts-line")).toBeAttached({timeout:30000});
       await expect(rich.getByTestId("supervisor-agenda")).toContainText("Not independently verified");
+      await expect(rich.getByTestId("supervisor-comparison")).toContainText("Recorded costs");
+      await expect(rich.getByTestId("supervisor-comparison-chart")).toBeVisible();
+      const calendar=rich.getByTestId("supervisor-calendar-grid");
+      await expect(calendar.getByRole("button",{name:/Jan 4, 2026/})).toBeVisible();
+      await calendar.getByRole("button",{name:/Jan 4, 2026/}).click();
+      await expect(rich.getByTestId("supervisor-agenda")).toContainText("Market");
       const scenario=rich.getByTestId("supervisor-scenario");
       await scenario.getByRole("combobox").selectOption("1");
       await expect(scenario).toContainText(new Intl.NumberFormat("en-US",{style:"currency",currency:owner.currency,minimumFractionDigits:2,maximumFractionDigits:2}).format(600));

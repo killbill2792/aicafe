@@ -173,3 +173,15 @@ export function presentationReport(block:RichPresentation,message:{
  lines.push("","Export only. Refer to the original conversation for approvals, work status and current evidence.");
  return lines.join("\n");
 }
+
+/** Café-local civil-date page. The existing source dates are never converted
+ * into a guessed café timezone. Include every day of multi-day records. */
+export function calendarPage(agenda:Agenda,offset:number){
+ const from=Date.parse(agenda.from),to=Date.parse(agenda.to),day=86400000;
+ const count=Math.floor((to-from)/day)+1,pages=Math.max(1,Math.ceil(count/28));
+ const page=Math.min(pages-1,Math.max(0,offset));
+ return {page,pages,days:Array.from({length:Math.min(28,count-page*28)},(_,i)=>{
+  const date=new Date(from+(page*28+i)*day).toISOString().slice(0,10);
+  return {date,weekday:new Date(date).getUTCDay(),entries:agenda.entries.filter(e=>e.date<=date&&e.endDate>=date)};
+ })};
+}

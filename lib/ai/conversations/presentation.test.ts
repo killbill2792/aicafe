@@ -1,5 +1,5 @@
 import {describe,it,expect} from "vitest";
-import {richPresentationSchema,presentationReport,interactiveCalcSchema,evaluatePresentationCalc} from "./presentation";
+import {richPresentationSchema,presentationReport,interactiveCalcSchema,evaluatePresentationCalc,agendaSchema,calendarPage} from "./presentation";
 describe("Task16E presentation snapshot and safe report",()=>{
  it("preserves the source-marked answer and exact minor unit values, not executable content",()=>{
   const p=richPresentationSchema.parse({type:"rich_presentation",version:1,layout:"stack",report:true,suggestions:[],panels:[
@@ -42,4 +42,15 @@ it("rejects duplicate, foreign and incompatible layout references",()=>{
  expect(richPresentationSchema.safeParse({...b,groups:[{layout:"grid",items:["panel0","panel0"]}]}).success).toBe(false);
  expect(richPresentationSchema.safeParse({...b,groups:[{layout:"stack",items:["table0"]}]}).success).toBe(false);
  expect(richPresentationSchema.safeParse({...b,panels:[p,{...p,unit:"count",currency:null}],groups:[{layout:"compare",items:["panel0","panel1"]}]}).success).toBe(false);
+});
+
+it("retains dates spanning weeks and calendar pages without inventing an occurrence",()=>{
+ const a=agendaSchema.parse({kind:"calendar",source:"cafe_events",title:"Saved events",from:"2026-01-01",to:"2026-02-15",asOf:"2026-01-01",coverage:"partial",entries:[
+  {label:"Market",date:"2026-01-27",endDate:"2026-01-30",start:null,end:null,status:"unverified",checkedAt:null}]});
+ const first=calendarPage(a,0),second=calendarPage(a,1);
+ expect(first.days.at(-1)?.entries[0].label).toBe("Market");
+ expect(second.days[0].date).toBe("2026-01-29");
+ expect(second.days[0].entries[0].label).toBe("Market");
+ expect(second.days[2].entries).toEqual([]);
+ expect(second.pages).toBe(2);
 });

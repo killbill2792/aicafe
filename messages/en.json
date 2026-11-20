@@ -4526,7 +4526,11 @@
     "invalidCalculation": "Cannot calculate from these inputs",
     "resetAssumptions": "Reset assumptions",
     "sourceAttachments": "Attached source files",
-    "sourceFile": "Open source file"
+    "sourceFile": "Open source file",
+    "previousDates": "Previous dates",
+    "nextDates": "Next dates",
+    "savedEntries": "saved entries",
+    "noSavedEntries": "No saved entries for this date; this does not confirm that nothing is scheduled."
   },
   "SupervisorExperience": {
     "offline": "Offline. Saved information may be out of date. Your draft is kept; reconnect to send.",
