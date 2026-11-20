@@ -101,3 +101,18 @@ describe("shared Toast day trust",()=>{
  });
 
 });
+
+describe("U1 shared trust failures and independent source facts",()=>{
+  it("preserves requested café/date boundaries and does not turn a failed canonical lookup into certification",async()=>{
+    const db={} as never;
+    const date="2026-08-02";
+    flags.mockResolvedValue([{date,status:"imported",needsLook:false}]);
+    canonical.mockRejectedValue(new Error("canonical order coverage timed out"));
+    const result=await readToastDayTrust(db,"business",date,date);
+    expect(flags).toHaveBeenCalledExactlyOnceWith(db,"business",date,date);
+    expect(canonical).toHaveBeenCalledExactlyOnceWith(db,"business",date,date);
+    expect(result.blocked.size).toBe(0);
+    expect(result.quality).toEqual(["toastDayStatusUnavailable"]);
+    expect(result.notes).toEqual([]);
+  });
+});
