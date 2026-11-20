@@ -92,6 +92,29 @@ BEGIN
 END
 $checks$;
 
+-- Generated policy invariant for every logical research relation. The
+-- onboarding manifest may grow without writing a new permission test per view.
+DO $u3_all_views$
+DECLARE v record; view_count integer:=0;
+BEGIN
+ FOR v IN SELECT c.oid,c.relname,c.relowner,c.reloptions
+    FROM pg_catalog.pg_class c
+    JOIN pg_catalog.pg_namespace n ON n.oid=c.relnamespace
+    WHERE n.nspname='u3_research' AND c.relkind='v'
+ LOOP
+  view_count:=view_count+1;
+  IF pg_catalog.pg_get_userbyid(v.relowner)<>'aicafe_research_view_owner'
+    OR NOT ('security_barrier=true'=ANY(coalesce(v.reloptions,ARRAY[]::text[])))
+    OR has_table_privilege('anon',v.oid,'SELECT')
+    OR has_table_privilege('authenticated',v.oid,'SELECT')
+    OR NOT has_table_privilege('aicafe_research',v.oid,'SELECT')
+   THEN RAISE EXCEPTION 'U3 logical source authorization failed: %',v.relname;
+  END IF;
+ END LOOP;
+ IF view_count<2 THEN RAISE EXCEPTION 'U3 source admission missing'; END IF;
+END
+$u3_all_views$;
+
 -- An actual service-role call must attest the *original* owner and thread.
 SELECT set_config('request.jwt.claim.role','service_role',true);
 SELECT public.u3_issue_research_scope(
