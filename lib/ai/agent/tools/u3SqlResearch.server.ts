@@ -28,8 +28,9 @@ export const u3SqlSchema=z.strictObject({
  ])).max(48).nullable(),
  limit:z.number().int().min(1).max(MAX_ROWS).nullable()
 });
-export type U3Column={name:string;type:string;nullable:boolean};
-export type U3Relation={name:string;description:string|null;columns:U3Column[]};
+export type U3Column={name:string;type:string;nullable:boolean;unit:string};
+export type U3Relationship={target:string;fields:string[];targetFields:string[];cardinality:"many_to_one"};
+export type U3Relation={name:string;description:string|null;columns:U3Column[];relationships:U3Relationship[]};
 const CATALOG_SQL="SELECT c.table_name AS relation, c.column_name AS column_name, "+
  "c.udt_name AS db_type, c.is_nullable AS nullable, "+
  "pg_catalog.obj_description(pc.oid,'pg_class') AS description "+
@@ -37,6 +38,33 @@ const CATALOG_SQL="SELECT c.table_name AS relation, c.column_name AS column_name
  "JOIN pg_catalog.pg_namespace pn ON pn.nspname=c.table_schema "+
  "JOIN pg_catalog.pg_class pc ON pc.relnamespace=pn.oid AND pc.relname=c.table_name "+
  "WHERE c.table_schema='u3_research' ORDER BY c.table_name,c.ordinal_position";
+const RELATIONSHIPS_SQL=`
+ SELECT src.relname AS source,tgt.relname AS target,
+   (SELECT array_agg(a.attname ORDER BY ix.ord)
+      FROM unnest(fk.conkey) WITH ORDINALITY ix(n,ord)
+      JOIN pg_catalog.pg_attribute a ON a.attrelid=src.oid AND a.attnum=ix.n) AS fields,
+   (SELECT array_agg(a.attname ORDER BY ix.ord)
+      FROM unnest(fk.confkey) WITH ORDINALITY ix(n,ord)
+      JOIN pg_catalog.pg_attribute a ON a.attrelid=tgt.oid AND a.attnum=ix.n) AS target_fields
+ FROM pg_catalog.pg_constraint fk
+ JOIN pg_catalog.pg_class src ON src.oid=fk.conrelid
+ JOIN pg_catalog.pg_class tgt ON tgt.oid=fk.confrelid
+ WHERE fk.contype='f' AND src.relnamespace='public'::regnamespace
+   AND tgt.relnamespace='public'::regnamespace
+ ORDER BY source,target,fk.conname
+`;
+const columnUnit=(field:string,type:string)=>{
+ if(field.endsWith("_cents"))return "integer_cent";
+ if(field.endsWith("_micros"))return "microcent";
+ if(field.endsWith("_at"))return "timestamp_observed_or_effective";
+ if(field==="business_date"||field.endsWith("_date"))return "cafe_business_date";
+ if(field.endsWith("_minutes"))return "minutes";
+ if(field.endsWith("_hours"))return "hours";
+ if(field==="quantity"||field.endsWith("_quantity"))return "source_specific_unit";
+ if(field.endsWith("_id")||field==="id")return "stable_relation_key_not_people_count";
+ if(type==="bool")return "boolean";
+ return "source_defined";
+};
 
 let pool:Pool|null=null;
 let cachedCatalog:{until:number;relations:U3Relation[]}|null=null;
@@ -128,11 +156,22 @@ async function sources(client:PoolClient):Promise<U3Relation[]>{
   if(!relation){
    relation={name:row.relation,
     description:typeof row.description==="string"?row.description:null,
-    columns:[]};
+    columns:[],relationships:[]};
    byName.set(row.relation,relation);
   }
   relation.columns.push({name:row.column_name,
-   type:String(row.db_type??"unknown"),nullable:row.nullable==="YES"});
+   type:String(row.db_type??"unknown"),nullable:row.nullable==="YES",
+   unit:columnUnit(row.column_name,String(row.db_type??"unknown"))});
+ }
+ // A structural FK is discoverable but NEVER proves compatible grain,
+ // actual source freshness, customer identity, or causal attribution.
+ const edges=await client.query(RELATIONSHIPS_SQL);
+ for(const edge of edges.rows){
+  const source=byName.get(String(edge.source));
+  if(!source||!byName.has(String(edge.target))||
+   !Array.isArray(edge.fields)||!Array.isArray(edge.target_fields))continue;
+  source.relationships.push({target:String(edge.target),fields:edge.fields,
+   targetFields:edge.target_fields,cardinality:"many_to_one"});
  }
  const result=[...byName.values()];
  // Cache only the authorized logical schema, never café data or answers.
@@ -159,6 +198,7 @@ export async function describeU3Catalog(ctx:U3SqlContext,p:{
     r.columns.filter(c=>c.name.toLocaleLowerCase("en").includes(term)):[]);
    return {name:r.name,
     meaning:r.description??"Reviewed logical source; consult field definitions.",
+    relationships:r.relationships,
     columns:detail?fields.slice(offset,offset+limit):fields.slice(0,12),
     columnCount:r.columns.length,
     fieldsTotal:detail?fields.length:undefined};
