@@ -317,10 +317,13 @@ jobs:
             "CRON_SECRET=" + localCronSecret + "\n" +
             "ADMIN_EMAILS=" + TEST_CAFES[0].owner.email + "\n");
           NODE
-      - name: Start locally bound Next.js and verify login route readiness
+      - name: Build authenticated local production app (no preview or provider spend)
+        run: npm run build -- --webpack
+      - name: Start locally bound Next.js production build and verify login route readiness
         run: |
           set -euo pipefail
-          npm run dev -- --webpack --hostname 127.0.0.1 --port 3000 > "$RUNNER_TEMP/e2e-next.log" 2>&1 &
+          echo "AICAFE_E2E_BUILD=production" >> "$GITHUB_ENV"
+          npm run start -- --hostname 127.0.0.1 --port 3000 > "$RUNNER_TEMP/e2e-next.log" 2>&1 &
           echo $! > "$RUNNER_TEMP/e2e-next.pid"
           ready=0
           for attempt in $(seq 1 90); do

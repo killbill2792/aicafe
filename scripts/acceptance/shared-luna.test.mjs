@@ -805,3 +805,32 @@ test("legacy 15A must select two distinct independent source readers",async()=>{
  assert.equal(expectedToolsObserved(m,["get_investigation_source","get_sales","get_sales"]),false);
  assert.equal(expectedToolsObserved(m,["get_sales","get_labor"]),false);
 });
+
+test("historical host attestation binds ordered owner/reply pairs and scoped usage",async()=>{
+ const {attestHistoricalPos,historicalPosCases,historicalPosSourceSql}=await import("./luna-attest-17b.mjs");
+ const id=n=>"aaaaaaaa-aaaa-4aaa-8aaa-"+String(n).padStart(12,"0");
+ const scenario="17b-pos-identity",cases=historicalPosCases(scenario);
+ const s={businessId:"eeeeeeee-3333-4eee-8eee-eeeeeeeeee00",ownerUserId:id(1),threadId:id(2),today:"2026-11-19",prior:"2026-11-18",owner1:id(3),reply1:id(4),owner2:id(5),reply2:id(6),expectedProviderCalls:4};
+ const transcript=[{id:s.owner1,role:"owner"},{id:s.reply1,role:"supervisor"},{id:s.owner2,role:"owner"},{id:s.reply2,role:"supervisor"}];
+ let wrongUsageScope=false,missingUsage=false;
+ const query=sql=>{
+  if(sql.includes("FROM public.businesses"))return [{today:s.today,prior:s.prior}];
+  if(sql.includes("SELECT id,role"))return transcript;
+  if(sql.includes("SELECT text_content"))return [{text_content:cases[sql.includes(s.owner1)?0:1].prompt,created_at:"2026-11-19T12:00:00Z"}];
+  if(sql.includes("SELECT structured_content"))return [{blocks:[{type:"text",text:"Name: Same"}],created_at:"2026-11-19T12:00:01Z"}];
+  if(sql.includes("public.ai_usage_events")){
+   assert.ok(sql.includes(s.ownerUserId)&&sql.includes(s.threadId),"Usage readback must bind owner and thread");
+   if(missingUsage||wrongUsageScope)return [];
+   return [{model:"gpt-6-luna",provider:"openai",input_tokens:10,model_call_count:2}];
+  }
+  if(cases.some(c=>historicalPosSourceSql(c,s)===sql))return [{answer:"Same"}];
+  throw Error("Unexpected independent query");
+ };
+ assert.equal(attestHistoricalPos(scenario,s,query).length,2);
+ assert.throws(()=>attestHistoricalPos(scenario,{...s,reply1:s.reply2,reply2:s.reply1},query),/reply turn order/);
+ transcript.push({id:id(7),role:"supervisor"});
+ assert.throws(()=>attestHistoricalPos(scenario,s,query),/Unexpected historical conversation turns/);
+ transcript.pop();
+ missingUsage=true;assert.throws(()=>attestHistoricalPos(scenario,s,query),/Exact scoped source row required/);
+ missingUsage=false;wrongUsageScope=true;assert.throws(()=>attestHistoricalPos(scenario,s,query),/Exact scoped source row required/);
+});
