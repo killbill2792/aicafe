@@ -65,6 +65,6 @@ describe("U3 exact PostgreSQL numeric source arithmetic",()=>{
  it("rejects exponent, nondecimal, absurd precision and nonfinite inputs",()=>{
   for(const value of ["NaN","Infinity","1e8","1.000000000000000000000001","1,200",""])
    expect(exactDecimal(value,"cents")).toBeNull();
-  expect(exactDecimal("1200","cents")).toMatchObject({n:1200n,d:1n});
+  expect(exactDecimal("1200","cents")).toMatchObject({n:BigInt(1200),d:BigInt(1)});
  });
 });
