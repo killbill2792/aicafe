@@ -309,16 +309,17 @@ begin
  values(older_order,pos,'Historical latte',1,550,false,
   jsonb_build_array(jsonb_build_object('posModifierId',size_guid,'name','Large','quantity',1)))
  returning id into older_line;
- if public.pos_relink_toast_lines(b,r,'2026-10-26')<>0
-  or (select menu_item_id from public.order_lines where id=older_line) is not null
+ n:=public.pos_relink_toast_lines(b,r,'2026-10-26');
+ if n<>0 or (select menu_item_id from public.order_lines where id=older_line) is not null
  then raise exception 'day-scoped relink changed unrelated history';end if;
  insert into public.toast_sync_phase_errors(business_id,restaurant_guid,phase,last_error_category,last_failed_at)
  values(b,r,'sales_link','unavailable',clock_timestamp()-interval '1 minute')
  on conflict(business_id,restaurant_guid,phase) do update set
  last_failed_at=excluded.last_failed_at,last_error_category=excluded.last_error_category,last_recovered_at=null;
- if public.pos_relink_toast_lines(b,r,'2026-10-26')<>1
-  or (select menu_item_id from public.order_lines where id=older_line) is distinct from sized_id
- then raise exception 'durable unresolved link failure was not recovered';end if;
+ n:=public.pos_relink_toast_lines(b,r,'2026-10-26');
+ select menu_item_id into actual_id from public.order_lines where id=older_line;
+ if n<>1 or actual_id is distinct from sized_id
+ then raise exception 'durable unresolved link recovery: changed %, actual %, expected %', n,actual_id,sized_id;end if;
  if not exists(select 1 from public.toast_sync_phase_errors where business_id=b and restaurant_guid=r and phase='sales_link' and last_recovered_at>=last_failed_at)
  then raise exception 'recovered historical failure has no durable receipt';end if;
  if public.pos_relink_toast_lines(b,r,'2026-10-26')<>0 then
