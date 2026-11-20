@@ -402,7 +402,7 @@ function project(s:z.infer<typeof selection>,r:AgentToolResult,ctx:Pick<AgentToo
  return {kind:s.kind,title:d.title,unit:d.unit,currency:d.unit==="cents"?ctx.currency??null:null,
    from,to,asOf:ctx.asOf,source:s.source,points};
 }
-export function presentResponse(raw:unknown,ctx:Pick<AgentToolContext,"currency"|"asOf"|"turnResults|"presentationResults"|"presentationAttachments"|"presentationScenarioBasis">):AgentToolResult{
+export function presentResponse(raw:unknown,ctx:Pick<AgentToolContext,"currency"|"asOf"|"turnResults"|"presentationResults"|"presentationAttachments"|"presentationScenarioBasis">):AgentToolResult{
  const empty={source:"response_presentation",period:null,missing:[]};
  const parsed=presentationInputSchema.safeParse(raw);
  if(!parsed.success||!ctx.turnResults)return {...empty,accepted:false};
