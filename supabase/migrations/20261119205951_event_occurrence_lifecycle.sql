@@ -1,12 +1,21 @@
 -- Task 8B: public occurrence correction, existing identities and private histories.
 -- Additive, service-role-only; no production migration authorized by this PR.
-alter table public.city_events add column lifecycle jsonb
-  check (lifecycle is null or jsonb_typeof(lifecycle)='object'),
+set lock_timeout = '5s';
+set statement_timeout = '45s';
+alter table public.city_events add column lifecycle jsonb,
  add column start_at timestamptz, add column end_at timestamptz,
- add column source_timezone text,
+ add column source_timezone text;
+
+-- Existing rows have NULL in every newly allocated column by construction.
+-- NOT VALID avoids scanning the whole table under a DDL lock and enforces both
+-- constraints on all new/updated rows. A later independently reviewed online
+-- validation may mark the constraints validated without changing semantics.
+alter table public.city_events
+ add constraint city_event_lifecycle_shape check (
+ lifecycle is null or jsonb_typeof(lifecycle)='object') not valid,
  add constraint city_event_explicit_interval check (
  (start_at is null and end_at is null and source_timezone is null) or
- (start_at is not null and end_at is not null and source_timezone is not null and end_at>start_at));
+ (start_at is not null and end_at is not null and source_timezone is not null and end_at>start_at)) not valid;
 
 create or replace function public.ldi_upsert_city_event(
   p_city_key text, p_identity_key text, p_source_identity_key text,
