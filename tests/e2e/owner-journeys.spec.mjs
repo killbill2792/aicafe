@@ -1849,7 +1849,7 @@ test("@home Task16E adaptive answer survives reload, preserves prose and opens a
     }});
     expect(uploaded.status()).toBe(201);
     const attachment=(await uploaded.json()).attachment;
-    const text="## Sales overview\nRevenue increased from the first day to the next. The chart is optional.";
+    const text="## Sales overview\nRevenue increased from the first day to the next. The chart is optional.\n\n| Day | Recorded status |\n| --- | --- |\n| First day | Complete |\n| Next day | Complete |";
     const suggestion="Compare another period";
     const blocks=[{type:"text",text},{type:"rich_presentation",version:1,layout:"stack",panels:[
       {kind:"line",title:"Daily net sales",unit:"cents",currency:owner.currency,source:"daily_rollups",from:"2026-01-01",to:"2026-01-02",asOf:"2026-01-03",
@@ -1884,7 +1884,11 @@ test("@home Task16E adaptive answer survives reload, preserves prose and opens a
       await expect(rich.getByTestId("supervisor-comparison-chart")).toHaveAttribute("aria-hidden","true");
       const ax=await answer.ariaSnapshot();
       expect(ax).toContain('heading "Sales overview"');
+      expect(ax).toContain('table "Response table"');
       expect(ax).toContain('table "Daily net sales"');
+      await expect(answer.getByRole("table",{name:"Response table"}).getByRole("columnheader",{name:"Recorded status"})).toBeVisible();
+      await expect(rich.getByRole("table",{name:"Daily net sales"})).toHaveAccessibleDescription(/Sales records.*Saved snapshot/);
+      await expect(rich.getByRole("table",{name:"Comparison values"})).toHaveAccessibleDescription(/Recorded sales.*Recorded costs/);
       expect(ax).toContain('table "Comparison values"');
       expect(ax).toContain('columnheader "Category"');
       expect(ax).toContain('rowheader "2026-01-02"');
@@ -1897,6 +1901,7 @@ test("@home Task16E adaptive answer survives reload, preserves prose and opens a
       await expect(rich.getByRole("table",{name:"Daily net sales"}).getByRole("cell",{name:expected,exact:true})).toBeVisible();
       const recordTable=rich.getByTestId("supervisor-record-table");
       await expect(recordTable).toContainText("Incomplete information");
+      await expect(recordTable.getByRole("table")).toHaveAccessibleDescription(/Incomplete information.*Requested query/);
       await expect(recordTable.getByRole("row").filter({hasText:"Dine in"})).toContainText("Not recorded");
       const calc=rich.getByTestId("supervisor-calculator");
       const calcField=calc.getByRole("textbox",{name:"Quantity"});
@@ -1905,8 +1910,10 @@ test("@home Task16E adaptive answer survives reload, preserves prose and opens a
       await expect(calc.getByRole("status")).toContainText(new Intl.NumberFormat("en-US",{style:"currency",currency:owner.currency,minimumFractionDigits:2,maximumFractionDigits:2}).format(30));
       await calcField.fill("invalid");
       await expect(calc.getByRole("status")).toHaveText("Cannot calculate from these inputs");
+      await expect(calcField).toHaveAccessibleDescription("Cannot calculate from these inputs");
       await calc.getByRole("button",{name:"Reset assumptions"}).click();
       await expect(calcField).toHaveValue("10");
+      await expect(calcField).not.toHaveAttribute("aria-describedby");
       await expect(rich.locator(".recharts-line")).toBeAttached({timeout:30000});
       await expect(rich.getByTestId("supervisor-agenda")).toContainText("Not independently verified");
       await expect(rich.getByTestId("supervisor-comparison")).toContainText("Recorded costs");
@@ -1920,10 +1927,23 @@ test("@home Task16E adaptive answer survives reload, preserves prose and opens a
       const selectedDetails=rich.locator('[id='+JSON.stringify(detailsId)+']');
       await expect(selectedDetails).toHaveAttribute("aria-live","polite");
       await expect(selectedDetails).toContainText("Market");
+      if(viewport.width===390){
+        await page.setViewportSize({width:320,height:720});
+        expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);
+        const size=await dateChoice.boundingBox();
+        expect(size?.width).toBeGreaterThanOrEqual(48);
+        expect(size?.height).toBeGreaterThanOrEqual(48);
+        await calendar.focus();await expect(calendar).toBeFocused();
+        await page.setViewportSize(viewport);
+      }
       await expect(rich.getByTestId("supervisor-agenda")).toContainText("Market");
       const scenario=rich.getByTestId("supervisor-scenario");
       const scenarioEditor=scenario.getByTestId("supervisor-scenario-editor");
-      await scenarioEditor.getByRole("textbox",{name:/Monthly bill change/}).fill("20");
+      const billField=scenarioEditor.getByRole("textbox",{name:/Monthly bill change/});
+      await billField.fill("invalid");
+      await expect(billField).toHaveAccessibleDescription("Cannot calculate from these inputs");
+      await billField.fill("20");
+      await expect(billField).not.toHaveAttribute("aria-describedby");
       await expect(scenario.getByRole("status")).toHaveText(new Intl.NumberFormat("en-US",{style:"currency",currency:owner.currency,minimumFractionDigits:2,maximumFractionDigits:2}).format(3460));
       await scenarioEditor.getByRole("button",{name:"Reset assumptions"}).click();
       await expect(scenario.getByRole("status")).toHaveText(new Intl.NumberFormat("en-US",{style:"currency",currency:owner.currency,minimumFractionDigits:2,maximumFractionDigits:2}).format(3380));
@@ -1954,6 +1974,8 @@ test("@home Task16E adaptive answer survives reload, preserves prose and opens a
         expect(exposed.some(n=>n.role?.value==="dialog"&&n.name?.value==="Supervisor controls")).toBe(true);
         expect(exposed.some(n=>n.role?.value==="button"&&n.name?.value==="Close Supervisor controls")).toBe(true);
         expect(exposed.some(n=>n.role?.value==="log"&&n.name?.value==="Conversations")).toBe(false);
+        const controls=new Set(["button","link","textbox","searchbox","combobox","checkbox","radio","switch","spinbutton","slider","tab","menuitem","DisclosureTriangle"]);
+        expect(exposed.filter(n=>controls.has(n.role?.value)&&!String(n.name?.value??"").trim()).map(n=>n.role?.value)).toEqual([]);
       }finally{await axSession.detach();}
       await page.keyboard.press("Shift+Tab");
       expect(await library.evaluate(el=>el.contains(document.activeElement))).toBe(true);

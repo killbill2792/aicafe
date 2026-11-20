@@ -36,24 +36,26 @@ export function presentationSpec(p:RichPresentation):Spec{
  return {root:"root",elements};
 }
 function Panel({panel,locale}:{panel:PresentationPanel;locale:string}){
+ const evidenceId=useId(),coverageId=useId();
  const formatter=new Intl.NumberFormat(locale,["cents","cents/hour"].includes(panel.unit)&&panel.currency?
   {style:"currency",currency:panel.currency,minimumFractionDigits:2,maximumFractionDigits:2}:{maximumFractionDigits:20});
  const format=(v:number)=>formatter.format(["cents","cents/hour"].includes(panel.unit)?v/100:v)+(panel.unit==="cents/hour"?" / h":["seconds","minutes","hours","days","units","items","ratio","ratio squared","indicator"].includes(panel.unit)?" "+(panel.measurement??panel.unit):"");
  const detailsLabel=({en,es,ar}[locale as "en"|"es"|"ar"]??en).Home.chatStartDetails;
- const table=<div role="region" aria-label={panel.title} tabIndex={0} className="overflow-x-auto overscroll-x-contain focus-visible:outline focus-visible:outline-2 focus-visible:outline-ink"><table className="w-full text-[17px] tabular-nums"><caption className="sr-only">{panel.title}</caption>
+ const table=<div role="region" aria-label={panel.title} tabIndex={0} className="overflow-x-auto overscroll-x-contain focus-visible:outline focus-visible:outline-2 focus-visible:outline-ink"><table aria-describedby={panel.coverage?coverageId+" "+evidenceId:evidenceId} className="w-full text-[17px] tabular-nums"><caption className="sr-only">{panel.title}</caption>
     <thead><tr><th scope="col" className="py-2 text-start">{copy.categoryLabel}</th><th scope="col" className="py-2 text-end">{copy.valueLabel}{panel.currency?" ("+panel.currency+")":panel.measurement?" ("+panel.measurement+")":""}</th></tr></thead>
     <tbody>{panel.points.map((p,i)=><tr key={i} className="border-b border-line"><th scope="row" className="break-words py-2 pe-3 text-start font-normal">{p.label}</th><td className="py-2 text-end">{format(p.value)}</td></tr>)}</tbody>
    </table></div>;
  return <figure className="min-w-0 space-y-2 py-2">
   <figcaption className="text-[17px] font-medium leading-snug text-ink">{panel.title}</figcaption>
-  {panel.coverage&&<p className="text-[13px] text-ink-muted">{panel.coverage==="partial"?copy.partial:copy.estimate}</p>}
+  {panel.coverage&&<p id={coverageId} className="text-[13px] text-ink-muted">{panel.coverage==="partial"?copy.partial:copy.estimate}</p>}
   {panel.kind==="metric"?<p className="break-words font-headline text-[30px] font-medium leading-tight tracking-tight tabular-nums text-ink">{format(panel.points[0].value)}</p>:
    (panel.kind==="table"||panel.kind==="ranked_table")?table:<><Chart panel={panel} format={format}/>
     <details className="text-ink"><summary aria-label={detailsLabel+": "+panel.title} className="flex min-h-12 cursor-pointer items-center text-[15px] text-accent-text underline underline-offset-4 focus-visible:outline focus-visible:outline-2 focus-visible:outline-ink">{detailsLabel}</summary>{table}</details></>}
-  <p className="break-words text-[13px] leading-relaxed text-ink-muted">{panel.from} – {panel.to} · {panel.sourceDetail??(panel.source==="daily_rollups"?"Sales records":panel.source==="item_sales"?"Item sales":panel.source==="canonical_data"?panel.sourceDetail??"Canonical records":panel.source==="expenses"?"Recorded expenses":panel.source==="business_costs"?"Business costs":panel.source==="product_costs"?"Product economics":panel.source==="supplier_purchase_plan"?"Supplier quotes":panel.source==="purchase_orders"?"Purchase orders":panel.source==="inventory"?"Inventory":panel.source==="menu_items"?"Menu":"Profitability")} · {copy.snapshot} {panel.asOf}</p>
+  <p id={evidenceId} className="break-words text-[13px] leading-relaxed text-ink-muted">{panel.from} – {panel.to} · {panel.sourceDetail??(panel.source==="daily_rollups"?"Sales records":panel.source==="item_sales"?"Item sales":panel.source==="canonical_data"?panel.sourceDetail??"Canonical records":panel.source==="expenses"?"Recorded expenses":panel.source==="business_costs"?"Business costs":panel.source==="product_costs"?"Product economics":panel.source==="supplier_purchase_plan"?"Supplier quotes":panel.source==="purchase_orders"?"Purchase orders":panel.source==="inventory"?"Inventory":panel.source==="menu_items"?"Menu":"Profitability")} · {copy.snapshot} {panel.asOf}</p>
  </figure>;
 }
 function ComparisonView({panels,locale}:{panels:PresentationPanel[];locale:string}){
+ const evidenceId=useId();
  const first=panels[0],scalar=panels.every(p=>p.points.length===1);
  const series:ComparisonSeries[]=panels.map((p,i)=>({id:"s"+i,label:(i+1)+". "+p.title+" · "+p.from+" – "+p.to,points:p.points.map(v=>({label:scalar?"—":v.label,value:v.value}))}));
  const labels=[...new Set(series.flatMap(s=>s.points.map(v=>v.label)))];
@@ -65,10 +67,10 @@ function ComparisonView({panels,locale}:{panels:PresentationPanel[];locale:strin
   <ComparisonChart series={series} labels={labels} line={line} format={format}/>
   <div className="flex flex-wrap gap-3 text-[13px] text-ink-muted">{series.map(s=><span key={s.id}>{s.label}</span>)}</div>
   <div role="region" className="overflow-x-auto focus-visible:outline focus-visible:outline-2 focus-visible:outline-ink" tabIndex={0} aria-label={copy.comparisonValues}>
-   <table className="w-full text-[15px] tabular-nums"><caption className="sr-only">{copy.comparisonValues}</caption><thead><tr><th scope="col" className="py-2 text-start">{first.currency??first.measurement??first.unit}</th>{series.map(s=><th key={s.id} scope="col" className="px-2 text-end">{s.label}</th>)}</tr></thead>
+   <table aria-describedby={evidenceId} className="w-full text-[15px] tabular-nums"><caption className="sr-only">{copy.comparisonValues}</caption><thead><tr><th scope="col" className="py-2 text-start">{first.currency??first.measurement??first.unit}</th>{series.map(s=><th key={s.id} scope="col" className="px-2 text-end">{s.label}</th>)}</tr></thead>
     <tbody>{labels.map(label=><tr key={label}><th scope="row" className="py-2 text-start">{label}</th>{series.map(s=>{const v=s.points.find(p=>p.label===label);return <td key={s.id} className="px-2 text-end">{v?format(v.value):copy.notRecorded}</td>})}</tr>)}</tbody></table>
   </div>
-  {panels.map((p,i)=><p key={i} className="break-words text-[13px] text-ink-muted">{series[i].label} · {p.sourceDetail??p.source} · {copy.snapshot} {p.asOf}{p.coverage?" · "+(p.coverage==="partial"?copy.partial:copy.estimate):""}</p>)}
+  <div id={evidenceId}>{panels.map((p,i)=><p key={i} className="break-words text-[13px] text-ink-muted">{series[i].label} · {p.sourceDetail??p.source} · {copy.snapshot} {p.asOf}{p.coverage?" · "+(p.coverage==="partial"?copy.partial:copy.estimate):""}</p>)}</div>
  </figure>;
 }
 function AgendaView({agenda,locale}:{agenda:Agenda;locale:string}){
@@ -90,12 +92,14 @@ function AgendaView({agenda,locale}:{agenda:Agenda;locale:string}){
      <span role="status" aria-atomic="true" className="text-center">{format(window.days[0].date)} – {format(window.days[window.days.length-1].date)}</span>
      <button type="button" aria-label={copy.nextDates} disabled={window.page+1===window.pages} onClick={()=>{setPage(window.page+1);setSelected(null)}} className="min-h-12 min-w-12 rounded-lg border border-line disabled:opacity-40">›</button>
     </div>
-    <div role="group" data-testid="supervisor-calendar-grid" className="grid grid-cols-7 gap-1" aria-label={agenda.title}>
+    <div role="group" tabIndex={0} data-testid="supervisor-calendar-grid" className="max-w-full overflow-x-auto overscroll-x-contain focus-visible:outline focus-visible:outline-2 focus-visible:outline-ink" aria-label={agenda.title}>
+     <div className="grid min-w-[22.5rem] grid-cols-7 gap-1">
      {Array.from({length:7},(_,i)=><span key={i} className="text-center text-[13px] text-ink-muted">{new Intl.DateTimeFormat(locale,{weekday:"short"}).format(new Date(2024,0,7+i,12))}</span>)}
      {Array.from({length:window.days[0].weekday},(_,i)=><span key={"empty"+i} aria-hidden="true"/>)}
-     {window.days.map(d=><button type="button" key={d.date} aria-label={format(d.date)+" · "+d.entries.length+" "+copy.savedEntries} aria-pressed={current.date===d.date} aria-controls={dateDetailsId} onClick={()=>setSelected(d.date)} className={"min-h-12 min-w-0 rounded-lg border px-0.5 py-1 text-center tabular-nums focus-visible:outline focus-visible:outline-2 "+(current.date===d.date?"border-accent bg-surface2":"border-line")}>
+     {window.days.map(d=><button type="button" key={d.date} aria-label={format(d.date)+" · "+d.entries.length+" "+copy.savedEntries} aria-pressed={current.date===d.date} aria-controls={dateDetailsId} onClick={()=>setSelected(d.date)} className={"min-h-12 min-w-12 rounded-lg border px-0.5 py-1 text-center tabular-nums focus-visible:outline focus-visible:outline-2 "+(current.date===d.date?"border-accent bg-surface2":"border-line")}>
       <span className="block text-[15px]">{Number(d.date.slice(-2))}</span><span className="block text-[13px] text-ink-muted">{d.entries.length?d.entries.length:"·"}</span>
      </button>)}
+     </div>
     </div>
     <div id={dateDetailsId} aria-live="polite" aria-atomic="true">
     <h4 className="font-medium"><time dateTime={current.date}>{format(current.date)}</time></h4>
@@ -112,6 +116,7 @@ function AgendaView({agenda,locale}:{agenda:Agenda;locale:string}){
  </section>;
 }
 function RecordTableView({table,locale}:{table:RecordTable;locale:string}){
+ const evidenceId=useId(),scopeId=useId();
  const fmt=(value:RecordTable["rows"][number][number],u:RecordTable["columns"][number]["unit"])=>{
   if(value===null)return copy.notRecorded;
   if(typeof value!=="number")return String(value);
@@ -121,10 +126,10 @@ function RecordTableView({table,locale}:{table:RecordTable;locale:string}){
  };
  return <figure data-testid="supervisor-record-table" className="min-w-0 space-y-2 py-2">
   <figcaption className="font-medium text-ink">{table.title}</figcaption>
-  <p className="break-words text-[13px] text-ink-muted">{table.view} · {table.from} – {table.to} · {copy.snapshot} {table.asOf}{table.coverage==="partial"?" · "+copy.partial:""}</p>
-  <p className="break-words text-[13px] text-ink-muted">{table.scope}</p>
+  <p id={evidenceId} className="break-words text-[13px] text-ink-muted">{table.view} · {table.from} – {table.to} · {copy.snapshot} {table.asOf}{table.coverage==="partial"?" · "+copy.partial:""}</p>
+  <p id={scopeId} className="break-words text-[13px] text-ink-muted">{table.scope}</p>
   <div role="region" tabIndex={0} aria-label={table.title} className="max-w-full overflow-x-auto overscroll-x-contain focus-visible:outline focus-visible:outline-2 focus-visible:outline-ink">
-   <table className="w-full text-[15px] tabular-nums"><caption className="sr-only">{table.title}</caption>
+   <table aria-describedby={evidenceId+" "+scopeId} className="w-full text-[15px] tabular-nums"><caption className="sr-only">{table.title}</caption>
     <thead><tr>{table.columns.map((c,i)=><th key={i} scope="col" className="border-b border-line px-2 py-2 text-start align-bottom font-medium">{c.label}<span className="block text-[13px] text-ink-muted">{c.unit==="stored"?copy.unitUnknown:c.unit==="microcents"?table.currency+" microcents":c.unit==="cents"?table.currency:c.unit==="cents/hour"?table.currency+" / h":c.unit}</span></th>)}</tr></thead>
     <tbody>{table.rows.map((row,i)=><tr key={i}>{row.map((v,j)=>j===0&&["label","local date"].includes(table.columns[j].unit)?<th key={j} scope="row" className="border-b border-line px-2 py-2 text-start align-top break-words font-normal">{fmt(v,table.columns[j].unit)}</th>:<td key={j} className="border-b border-line px-2 py-2 text-start align-top break-words">{fmt(v,table.columns[j].unit)}</td>)}</tr>)}</tbody>
    </table>
@@ -132,6 +137,7 @@ function RecordTableView({table,locale}:{table:RecordTable;locale:string}){
  </figure>;
 }
 function CalculatorView({calculator,locale}:{calculator:InteractiveCalc;locale:string}){
+ const resultId=useId();
  const [changes,setChanges]=useState<Record<string,string>>({});
  const outcome=evaluatePresentationCalc(calculator,changes);
  const number=(v:InteractiveCalc["original"])=>v.unit==="cents"?v.valueCents/100:v.unit==="percent"?v.valueBps/100:v.unit==="count"?v.quantity:v.valueRatio;
@@ -143,13 +149,14 @@ function CalculatorView({calculator,locale}:{calculator:InteractiveCalc;locale:s
   <p className="text-[13px] text-ink-muted">{copy.calculatorNotice} · {copy.snapshot} {calculator.asOf}</p>
   {calculator.inputs.map(i=>i.editable?<label key={i.id} className="block text-[15px]">
    {i.label}{i.value.unit==="cents"?" ("+calculator.currency+")":i.value.unit==="percent"?" (%)":""}
-   <input type="text" inputMode="decimal" maxLength={13} value={changes[i.id]??String(number(i.value))} onChange={e=>setChanges(prev=>({...prev,[i.id]:e.target.value}))} className="mt-1 block min-h-12 w-full rounded-xl border border-line bg-surface px-3 tabular-nums"/>
+   <input aria-describedby={outcome?undefined:resultId} type="text" inputMode="decimal" maxLength={13} value={changes[i.id]??String(number(i.value))} onChange={e=>setChanges(prev=>({...prev,[i.id]:e.target.value}))} className="mt-1 block min-h-12 w-full rounded-xl border border-line bg-surface px-3 tabular-nums"/>
   </label>:<p key={i.id} className="break-words text-[15px]">{i.label}: {fmt(i.value)}</p>)}
-  <p role="status" aria-label={copy.calculationResult} aria-atomic="true" className="break-words text-xl font-medium tabular-nums">{outcome?fmt(outcome):copy.invalidCalculation}</p>
+  <p id={resultId} role="status" aria-label={copy.calculationResult} aria-atomic="true" className="break-words text-xl font-medium tabular-nums">{outcome?fmt(outcome):copy.invalidCalculation}</p>
   <button type="button" className="min-h-12 text-[15px] underline" onClick={()=>setChanges({})}>{copy.resetAssumptions}</button>
  </section>;
 }
 function ScenarioView({scenario,locale}:{scenario:ScenarioComparison;locale:string}){
+ const resultId=useId();
  const [index,setIndex]=useState(0);
  const selected=scenario.cases[index]??scenario.cases[0];
  const [changes,setChanges]=useState<Record<string,string>>({});
@@ -165,13 +172,13 @@ function ScenarioView({scenario,locale}:{scenario:ScenarioComparison;locale:stri
   {selected.editor&&<div data-testid="supervisor-scenario-editor" className="space-y-2">
     <p className="text-[13px] text-ink-muted">{copy.calculatorNotice}</p>
     {scenarioEditFields(selected.editor).map(f=><label key={f.key} className="block text-[15px]">{copy.scenarioEditFields[f.key as keyof typeof copy.scenarioEditFields]??f.label}{f.money?" ("+scenario.currency+")":f.percent?" (%)":""}
-      <input type="text" inputMode="decimal" maxLength={15} value={changes[f.key]??String(f.value)} onChange={e=>setChanges(prev=>({...prev,[f.key]:e.target.value}))} className="mt-1 block w-full min-h-12 rounded-xl border border-line bg-surface px-3 tabular-nums"/>
+      <input aria-describedby={edited?undefined:resultId} type="text" inputMode="decimal" maxLength={15} value={changes[f.key]??String(f.value)} onChange={e=>setChanges(prev=>({...prev,[f.key]:e.target.value}))} className="mt-1 block w-full min-h-12 rounded-xl border border-line bg-surface px-3 tabular-nums"/>
     </label>)}
     <button type="button" className="min-h-12 underline text-[15px]" onClick={()=>setChanges({})}>{copy.resetAssumptions}</button>
   </div>}
   <dl className="grid grid-cols-2 gap-2 tabular-nums">
    <div><dt className="text-[13px] text-ink-muted">{copy.baselineEstimate}</dt><dd className="break-words text-xl font-medium">{fmt(selected.beforeCents)}</dd></div>
-   <div><dt className="text-[13px] text-ink-muted">{copy.scenarioEstimate}</dt><dd className="break-words text-xl font-medium"><span role="status" aria-label={copy.scenarioEstimate} aria-atomic="true">{selected.editor?edited?fmt(edited.afterCents):copy.invalidCalculation:fmt(selected.afterCents)}</span></dd></div>
+   <div><dt className="text-[13px] text-ink-muted">{copy.scenarioEstimate}</dt><dd className="break-words text-xl font-medium"><span id={resultId} role="status" aria-label={copy.scenarioEstimate} aria-atomic="true">{selected.editor?edited?fmt(edited.afterCents):copy.invalidCalculation:fmt(selected.afterCents)}</span></dd></div>
   </dl>
   {!selected.editor&&<p className="text-[13px] text-ink-muted">{copy.scenarioNotice}</p>}
  </section>;
