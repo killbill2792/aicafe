@@ -28,7 +28,7 @@ const functions=new Set([
 const operators=new Set([
  "=","<>","!=","<",">","<=",">=","+","-","*","/","%","^","||",
  "~~","!~~","~~*","!~~*","~","~*","!~","!~*","->","->>",
- "#>","#>>","@>","<@","?","?|","?&","&&"
+ "#>","#>>","@>","<@","?","?|","?&","&&","BETWEEN"
 ]);
 const casts=new Set([
  "int2","int4","int8","smallint","integer","bigint","numeric","decimal",
@@ -112,11 +112,14 @@ export async function admitU3Sql(sql:string,allowedRelations:readonly string[],
  function walk(n:unknown,allowNamedData=false){
   if(n===null||n===undefined||typeof n==="string"||
     typeof n==="number"||typeof n==="boolean")return;
-  if(Array.isArray(n)){n.forEach(walk);return;}
+  if(Array.isArray(n)){n.forEach(value=>walk(value,false));return;}
   if(typeof n!=="object")throw Error("invalid_query");
   nodes++;if(nodes>MAX_NODES)throw Error("invalid_query");
   for(const [kind,raw] of Object.entries(n)){
    if(prohibited.has(kind))throw Error("invalid_query");
+   // Reject recursive CTEs regardless of parser nesting or SelectStmt wrapper.
+   if(kind==="WithClause"&&raw&&typeof raw==="object"&&
+      (raw as {recursive?:unknown}).recursive===true)throw Error("invalid_query");
    if(kind==="A_Expr"&&raw&&typeof raw==="object"){
     const e=raw as {name?:unknown;lexpr?:unknown;rexpr?:unknown};
     if(["#>>","->>"].includes(name(e.name)??"")&&
