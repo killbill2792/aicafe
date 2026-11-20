@@ -36,7 +36,7 @@ function Panel({panel,locale}:{panel:PresentationPanel;locale:string}){
  </figure>;
 }
 function AgendaView({agenda,locale}:{agenda:Agenda;locale:string}){
- const format=(day:string)=>new Intl.DateTimeFormat(locale,{dateStyle:"medium",timeZone:"UTC"}).format(new Date(day+"T12:00:00Z"));
+ const format=(day:string)=>new Intl.DateTimeFormat(locale,{dateStyle:"medium",timeZone:"UTC"}).format(new Date(day+"T12:00:00Z")); // hardcode-ok: date-only café calendar labels, not timestamps; preserve the already-resolved calendar day in every viewer timezone.
  const status:Record<Agenda["entries"][number]["status"],string>=copy.eventStatuses;
  const dates=[...new Set(agenda.entries.map(e=>e.date))];
  return <section data-testid="supervisor-agenda" className="min-w-0 space-y-3 py-2">
