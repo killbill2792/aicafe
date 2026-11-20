@@ -1,5 +1,5 @@
 import {PgParser} from "@supabase/pg-parser";
-import {isDataField} from "@/lib/data/canonical/dictionary";
+import {isDataField,toastOfficialFieldCatalog} from "@/lib/data/canonical/dictionary";
 
 /** PostgreSQL 17's own parser is the grammar authority. All legal query
  * forms remain model-directed; the validator enforces only scope, syntax
@@ -36,6 +36,33 @@ const casts=new Set([
  "float4","float8","real","text","varchar","bool","boolean","date",
  "time","timestamp","timestamptz","interval","uuid","json","jsonb"
 ]);
+// Scalar path admission is generated from official Toast field definitions,
+// not individual owner questions. Parent JSON objects/arrays are NEVER exposed
+// as text by model SQL, even through subsequent string expressions.
+const splitRoots=[
+ "data.checks.0.selections.0.modifiers.0.",
+ "data.checks.0.selections.0.appliedDiscounts.0.",
+ "data.checks.0.selections.0.",
+ "data.checks.0.appliedDiscounts.0.",
+ "data.checks.0.appliedServiceCharges.0.",
+ "data.checks.0.payments.0.",
+ "data.checks.0.",
+ "data."
+] as const;
+const approvedToastScalars=new Set<string>(),complexToastFields=new Set<string>();
+for(const source of Object.values(toastOfficialFieldCatalog)){
+ for(const [path,types] of source.fields){
+  for(const root of splitRoots){
+   if(!path.startsWith(root))continue;
+   const logical="data."+path.slice(root.length);
+   if(!isDataField(logical))continue;
+   if(types.every(t=>["string","number","integer","boolean","null"].includes(t)))
+    approvedToastScalars.add(logical);
+   else complexToastFields.add(logical);
+  }
+ }
+}
+
 export type U3SqlAdmission={relations:string[];functions:string[];nodeCount:number;cteCount:number};
 const stringNode=(input:unknown)=>{
  if(!input||typeof input!=="object"||!("String" in input))return null;
@@ -127,9 +154,11 @@ export async function admitU3Sql(sql:string,allowedRelations:readonly string[],
   // arbitrary retained JSON key merely because the SQL is read-only.
   const segments=literal.startsWith("{")&&literal.endsWith("}")?
    literal.slice(1,-1).split(","): [literal];
+  const key="data."+segments.join(".");
   return segments.length>0&&segments.length<=16&&
    segments.every(v=>/^(?:[A-Za-z_][A-Za-z0-9_]{0,100}|[0-9]{1,3})$/.test(v))&&
-   isDataField("data."+segments.join("."));
+   isDataField(key)&&approvedToastScalars.has(key)&&
+   !complexToastFields.has(key);
  };
  function walk(n:unknown,allowNamedData=false){
   if(n===null||n===undefined||typeof n==="string"||
