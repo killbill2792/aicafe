@@ -585,5 +585,52 @@
     "entrypoint": "evals/acceptance/live/task16e.mjs",
     "status": "UNTESTED",
     "limitations": "Dedicated visual regression expects chart and follow-up; do not infer general format independence or independent comprehension from this case."
-  }
+  },
+  "paidExecutionPhases": [
+    {
+      "id": "business_accuracy_security",
+      "ids": [
+        "13c",
+        "13d",
+        "14b",
+        "14c",
+        "14d",
+        "14e-cash-position",
+        "14e-payables",
+        "14e-settlement-boundary",
+        "15d",
+        "16a",
+        "16c",
+        "16d",
+        "17b-cross-module-brief",
+        "17b-owner-security",
+        "17b-sales-labor",
+        "17b-supply-finance",
+        "8a-price-observation",
+        "pos0ef-customer-detail",
+        "pos0ef-customer-identity",
+        "pos0ef-customer-trends"
+      ]
+    },
+    {
+      "id": "autonomy_recovery_owner_experience",
+      "ids": [
+        "14d-autonomous",
+        "14e-autonomous-followup",
+        "15a-proactive-owner-answer",
+        "15b",
+        "15c",
+        "16e",
+        "17c",
+        "17c-autonomy",
+        "17c-business-monitors",
+        "17c-effect-security-recovery",
+        "17c-procurement-recovery",
+        "17d",
+        "6-15c-owner-run",
+        "8a-approved-experiment",
+        "8b-multiday-lifecycle"
+      ]
+    }
+  ]
 }
