@@ -128,7 +128,8 @@ async function main(){
    const pair=days.slice(0,-1).map((d,i)=>[days[i+1],d]).find(([a,b])=>Date.parse(b.day)-Date.parse(a.day)===86400000&&Number(a.cents)>0&&Number(b.cents)>0);
    if(!pair)fail("complete_seeded_sales_pair_missing");
    const [first,last]=pair;
-   const simple=await ownerTurn(connection.page,thread,"In one sentence, explain what an espresso is. No chart needed.");
+   // No format instruction: the simple question must naturally select prose.
+   const simple=await ownerTurn(connection.page,thread,"What is the difference between an espresso and an Americano?");
    const rich=await ownerTurn(connection.page,thread,"Show my recorded daily net sales from "+first.day+" through "+last.day+
       " inclusive. Give the amounts and a complete plain-language comparison, plus a useful daily trend chart and an optional follow-up suggestion.");
    const getProof=async(turn)=>{
@@ -169,6 +170,20 @@ async function main(){
      if(await row.getByRole("cell",{name:expected,exact:true}).count()!==1)fail("rendered_value_mismatch");
    }
    if(!(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)))fail("mobile_horizontal_overflow");
+   // Structural test only: actual saved natural prose must remain visible
+   // without rich blocks and Markdown tables. Human reviewers separately score
+   // correctness, meaning and actionable uncertainty against seeded evidence.
+   const prose=container.getByTestId("supervisor-answer-prose");
+   await prose.first().waitFor({timeout:30000});
+   const textOnly=await container.evaluate(el=>{
+     const hidden=[...el.querySelectorAll('[data-testid="supervisor-rich-presentation"],table')];
+     const before=hidden.map(node=>({node,display:node.style.display}));
+     try{
+       for(const {node} of before)node.style.display="none";
+       return [...el.querySelectorAll('[data-testid="supervisor-answer-prose"]')].map(node=>node.innerText).join("\n").trim();
+     }finally{for(const {node,display} of before)node.style.display=display;}
+   });
+   if(!textOnly)fail("no_prose_without_visuals");
    const input=page.locator("#supervisor-home-composer");
    await input.fill("");
    await presentation.getByRole("button",{name:ui.suggestions[0],exact:true}).click();
@@ -183,7 +198,7 @@ async function main(){
    if(effects[0].n!==0)fail("unexpected_effect_draft");
    const modelCalls=plain.calls+answer.calls;
    writeFileSync(file,JSON.stringify({schema_version:1,id:"16e",head_sha:env.HEAD_SHA,status:"passed",observed_model:answer.model,
-    modelCalls,checks:{simpleText:true,plainLanguageAndChart:true,exactCanonicalValues:true,editableSuggestion:true,historyReload:true,foreignDenied:true,noEffect:true}},null,2)+"\n",{mode:0o600,flag:"wx"});
+    modelCalls,checks:{simpleText:true,plainLanguageAndChart:true,proseVisibleWithoutVisuals:true,exactCanonicalValues:true,editableSuggestion:true,historyReload:true,foreignDenied:true,noEffect:true}},null,2)+"\n",{mode:0o600,flag:"wx"});
    writeFileSync(scopeFile,JSON.stringify({businessId:cafe.businessId,ownerUserId:cafe.owner.userId,otherCafeId:otherCafe.businessId,
     threadId:thread,plainReplyId:simple.done.reply.id,richReplyId:rich.done.reply.id,firstDay:first.day,lastDay:last.day,
     firstCents:first.cents,lastCents:last.cents,expectedProviderCalls:modelCalls},null,2)+"\n",{mode:0o600,flag:"wx"});
