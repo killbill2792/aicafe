@@ -20,7 +20,7 @@ export type InvestigationUsageProblem="owner_quota_reached"|"storage_failed"|nul
  * The queue's SQL lease, owner membership and thread are rechecked per call.
  */
 export function meteredInvestigationProvider(
-  db:SupabaseClient,scope:ClaimedInvestigationUsageScope,underlying:AgentProvider,
+  db:SupabaseClient,scope:ClaimedInvestigationUsageScope,underlying:AgentProvider,providerOutputCap=1200,
 ):{provider:AgentProvider;problem:()=>InvestigationUsageProblem;reserve:(params:Record<string,unknown>,kind?:"responses"|"hosted_web")=>Promise<(response:unknown)=>Promise<void>>}{
   let problem:InvestigationUsageProblem=null;
   const reserve=async(params:Record<string,unknown>,kind:"responses"|"hosted_web"="responses")=>{
@@ -34,7 +34,8 @@ export function meteredInvestigationProvider(
     if(typeof requestedModel!=="string"||!requestedModel.trim()||
       typeof outputCap!=="number"||!Number.isSafeInteger(outputCap)||
       !Number.isSafeInteger(bytes)||bytes<1||bytes>2_000_000||
-      outputCap<1||outputCap>1200){
+      outputCap<1||outputCap>providerOutputCap||![1200,8192].includes(providerOutputCap)||
+      (outputCap>1200&&requestedModel!=="gpt-6-luna")){
       problem="storage_failed";throw new Error(problem);
     }
     const {error}=await db.rpc("supervisor_reserve_investigation_model_call",{
