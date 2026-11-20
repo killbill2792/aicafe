@@ -1,6 +1,7 @@
 import "server-only";
 import {ownerPublicWebFetch,PublicWebPermissionError} from "@/lib/connectors/publicWeb.server";
 import {configuredSupervisorModel} from "@/lib/ai/conversations/modelConfig";
+import {requestComposition,type RequestComposition} from "./executionPolicy";
 
 /** Read-only public web lookup for the authenticated Supervisor chat. */
 export type WebSearchResult =
@@ -13,6 +14,7 @@ export type WebSearchBudget={
   reserveModelCall:()=>boolean;
   recordUsage:(usage:WebSearchUsage)=>void;
   onProviderResponse?:(response:unknown)=>void;
+  onRequestComposition?:(composition:RequestComposition|null)=>void;
 };
 function tokens(value:unknown):number{
   return typeof value==="number"&&Number.isSafeInteger(value)&&value>=0?value:0;
@@ -85,6 +87,7 @@ export function createWebSearch(deps:{fetch?:Fetch;apiKey?:string;model?:string;
           tools:[{type:"web_search"}],
           input:"Search for current, public information on this question. Summarize only what sources support and cite their URLs. Question: "+query,
         };
+      budget?.onRequestComposition?.(requestComposition(params));
       const finish=await deps.reserveTransport?.(params);
       const response=await doFetch("https://api.openai.com/v1/responses",{
         method:"POST",signal:AbortSignal.timeout(WEB_SEARCH_TIMEOUT_MS),
