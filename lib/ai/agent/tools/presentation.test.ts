@@ -590,3 +590,12 @@ describe("goal, schedule and hours producer coverage",()=>{
   expect(presentResponse(q(r.source),ctx({...r,saved:true})).accepted).toBe(false);
  });
 });
+
+it("binds exact Task8B café-event selection and never fabricates an unknown end",()=>{
+ const selected={name:"Exact event",startDate:"2026-11-03",endDate:"2026-11-08",startTime:"09:00",endTime:"10:00",datePrecision:"unknown_end",status:"found",lastVerifiedAt:"2026-11-02T12:00:00Z"};
+ const r:AgentToolResult={source:"cafe_events",period:{from:"2026-11-01",to:"2026-11-10"},missing:[],selectedCafeEvent:selected,events:[{...selected,name:"Unrelated event"}]};
+ const q={layout:"stack",panels:[],agenda:"calendar_events",suggestions:[]};
+ expect(presentResponse(q,ctx(r))).toMatchObject({accepted:true,presentation:{agenda:{coverage:"partial",entries:[{label:"Exact event",date:"2026-11-03",endDate:"2026-11-03",end:null,endUnknown:true}]}}});
+ expect(presentResponse(q,ctx({...r,selectedCafeEvent:null,missing:["selectedCafeEventNotFound"]})).accepted).toBe(false);
+ expect(presentResponse(q,ctx({...r,selectedCityEventId:"city",selectedCityEvent:selected,missing:["selectedEventIdentityMismatch"]})).accepted).toBe(false);
+});

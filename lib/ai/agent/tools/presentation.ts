@@ -208,7 +208,9 @@ function interactiveCalculation(r:AgentToolResult,encoded:string,ctx:Pick<AgentT
 function agendaFor(kind:NonNullable<z.infer<typeof presentationInputSchema>["agenda"]>,r:AgentToolResult,asOf:string):Agenda|null{
  const event=kind.endsWith("_events");
  if(!r.period||r.error||r.needsOwnerChoice||(event?r.source!=="cafe_events":!["scheduled_shifts","scheduled_shifts+pos_scheduled_shifts","employees+scheduled_shifts"].includes(r.source))||(!event&&r.source!=="employees+scheduled_shifts"&&r.scheduleSet!==true))return null;
- const selected=event?(r.selectedCityEventId?r.selectedCityEvent?[r.selectedCityEvent]:[]:r.events):r.shifts;
+ if(event&&r.missing.some(m=>["selectedCityEventNotFound","selectedCafeEventNotFound","selectedEventIdentityMismatch"].includes(m)))return null;
+ const selected=event?(r.selectedCityEventId?r.selectedCafeEvent?[r.selectedCafeEvent]:r.selectedCityEvent?[r.selectedCityEvent]:[]:
+   Object.hasOwn(r,"selectedCafeEvent")?r.selectedCafeEvent?[r.selectedCafeEvent]:[]:r.events):r.shifts;
  if(!Array.isArray(selected)||!selected.length||selected.length>40)return null;
  const clock=(v:unknown)=>typeof v==="string"&&/^(?:[01]\d|2[0-3]):[0-5]\d(?::[0-5]\d)?$/.test(v)?v.slice(0,5):null;
  const entries:Agenda["entries"]=[];
@@ -217,19 +219,20 @@ function agendaFor(kind:NonNullable<z.infer<typeof presentationInputSchema>["age
    const name=event?row.name:row.employeeName,day=event?row.startDate:row.date;
    if(typeof name!=="string"||typeof day!=="string"||!z.iso.date().safeParse(day).success)return null;
    const start=clock(event?row.startTime:row.start),end=clock(event?row.endTime:row.end);
-   const endDate=event?row.endDate:typeof day==="string"&&start&&end&&end<start?
+   const endUnknown=event&&row.datePrecision==="unknown_end";
+   const endDate=event?(endUnknown?day:row.endDate):typeof day==="string"&&start&&end&&end<start?
      new Date(Date.parse(day+"T12:00:00Z")+86400000).toISOString().slice(0,10):day;
    if(typeof endDate!=="string")return null;
    const parsed=event?(row.status==="cancelled"||row.status==="moved"?row.status:
      row.status==="found"&&typeof row.lastVerifiedAt==="string"&&z.iso.datetime({offset:true}).safeParse(row.lastVerifiedAt).success&&!row.verificationFailedAt?"found":"unverified"):row.source;
    if(parsed!=="found"&&parsed!=="cancelled"&&parsed!=="moved"&&parsed!=="unverified"&&parsed!=="app"&&parsed!=="toast"&&parsed!=="ai_draft")return null;
-   entries.push({label:name,date:day,endDate,start,end,status:parsed,
+   entries.push({label:name,date:day,endDate,start,end:endUnknown?null:end,status:parsed,...(endUnknown?{endUnknown:true as const}:{}),
      checkedAt:event&&typeof row.lastVerifiedAt==="string"&&z.iso.datetime({offset:true}).safeParse(row.lastVerifiedAt).success?row.lastVerifiedAt:null});
  }
  // These are saved listings/roster snapshots, not independent proof of current
  // attendance, event occurrence, permission, publication or staffing coverage.
  const partial=r.source==="employees+scheduled_shifts"||r.missing.length>0||Number(r.omittedEvents??0)>0||Number(r.omittedCityEvents??0)>0||
-   entries.some(e=>e.status==="unverified"||e.status==="ai_draft");
+   entries.some(e=>e.status==="unverified"||e.status==="ai_draft"||e.endUnknown)||event&&selected.some(row=>obj(row)&&row.datePrecision==="legacy_range");
  const out=agendaSchema.safeParse({kind:kind.startsWith("calendar")?"calendar":"timeline",source:event?"cafe_events":"scheduled_shifts",
    title:event?"Saved events":"Saved shift schedule",...r.period,asOf,coverage:partial?"partial":"saved",
    entries:entries.sort((a,b)=>a.date.localeCompare(b.date)||(a.start??"").localeCompare(b.start??""))});

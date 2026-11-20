@@ -215,8 +215,8 @@ export default function SupervisorMandatePanel({threadId,threads,approvals,onSel
     onKeyDown={e=>{
       if(e.key!=="Tab")return;
       const elements=Array.from(e.currentTarget.querySelectorAll<HTMLElement>(
-        'button:not([disabled]),a[href],input:not([disabled]),textarea:not([disabled]),select:not([disabled]),[tabindex="0"]'
-      )).filter(node=>node.tabIndex>=0&&node.getClientRects().length);
+        'button:not([disabled]),a[href],input:not([disabled]),textarea:not([disabled]),select:not([disabled]),summary,[tabindex="0"]'
+      )).filter(node=>node.tabIndex>=0&&node.getClientRects().length&&!node.closest("[inert],[aria-hidden=true]")&&getComputedStyle(node).visibility!=="hidden");
       const first=elements[0],last=elements.at(-1);
       if(e.shiftKey&&document.activeElement===first){e.preventDefault();last?.focus();}
       else if(!e.shiftKey&&document.activeElement===last){e.preventDefault();first?.focus();}

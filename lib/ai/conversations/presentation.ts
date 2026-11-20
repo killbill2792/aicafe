@@ -28,7 +28,7 @@ export const agendaSchema=z.strictObject({
  title:label,from:date,to:date,asOf:date,coverage:z.enum(["saved","partial"]),
  entries:z.array(z.strictObject({label,date,endDate:date,start:clock.nullable(),end:clock.nullable(),
    status:z.enum(["found","cancelled","moved","unverified","app","toast","ai_draft"]),
-   checkedAt:z.iso.datetime({offset:true}).nullable()})).min(1).max(40),
+   checkedAt:z.iso.datetime({offset:true}).nullable(),endUnknown:z.literal(true).optional()})).min(1).max(40),
 }).refine(a=>a.from<=a.to&&a.entries.every(e=>e.date<=e.endDate&&e.date<=a.to&&e.endDate>=a.from));
 export const scenarioComparisonSchema=z.strictObject({
  title:label,currency:z.string().regex(/^[A-Z]{3}$/),asOf:date,
@@ -209,7 +209,7 @@ export function presentationReport(block:RichPresentation,message:{
  }
  if(block.agenda){
   const a=block.agenda;lines.push("",a.title,"Saved schedule/listing snapshot: "+a.asOf+"; coverage: "+a.coverage,
-   ...a.entries.map(e=>[e.date,e.endDate,e.label,e.start??"Time not recorded",e.end??"",e.status,e.checkedAt??""].join(" | ")));
+   ...a.entries.map(e=>[e.date,e.endDate,e.label,e.start??"Time not recorded",e.end??"",e.status,e.endUnknown?"End date unknown":"",e.checkedAt??""].join(" | ")));
  }
  if(block.scenario){
   const s=block.scenario;lines.push("",s.title+" — estimates only; no change made","Snapshot: "+s.asOf,

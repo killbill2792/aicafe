@@ -4498,6 +4498,11 @@
     "unknown": "unknown"
   },
   "SupervisorPresentation": {
+    "categoryLabel": "Category",
+    "valueLabel": "Value",
+    "comparisonValues": "Comparison values",
+    "calculationResult": "Calculation result",
+    "eventEndUnknown": "End date not recorded",
     "savedRecordCount": "Saved record count",
     "savedRecordCountNotice": "Counts saved records only; not a current balance or certified business total.",
     "snapshot": "Saved snapshot",
@@ -4570,6 +4575,8 @@
     "savedReport": "Saved answer report",
     "openRoutineChat": "Open routine conversation",
     "weekdayNames": ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"],
+    "latestReplyReady": "New Supervisor reply. Read the latest message to review it.",
+    "readLatestMessage": "Read latest message",
     "stopLiveView": "Stop live view",
     "streamDetached": "Live view stopped. Saved work may continue; check Work for its status."
   }

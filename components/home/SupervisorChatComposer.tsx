@@ -329,6 +329,21 @@ export default function SupervisorChatComposer({
   const composer = useRef<HTMLTextAreaElement | null>(null);
   const shell = useRef<HTMLElement | null>(null);
   const transcript = useRef<HTMLDivElement | null>(null);
+  const replyAnnouncement=useRef<HTMLDivElement|null>(null);
+  const lastAnnouncedReply=useRef<{threadId:string;id:string|null}|null>(null);
+  // Never announce a history page or each streamed token. Only a new stored
+  // reply in the currently loaded conversation updates this live region.
+  useEffect(()=>{
+    const region=replyAnnouncement.current;
+    if(!threadId||loadedThreadId!==threadId){lastAnnouncedReply.current=null;if(region)region.textContent="";return;}
+    const latest=[...messages].reverse().find(m=>m.role==="supervisor")?.id??null;
+    const previous=lastAnnouncedReply.current;
+    lastAnnouncedReply.current={threadId,id:latest};
+    if(!region||!previous||previous.threadId!==threadId||!latest||latest===previous.id)return;
+    region.textContent="";
+    const frame=requestAnimationFrame(()=>{region.textContent=en.SupervisorExperience.latestReplyReady;});
+    return()=>cancelAnimationFrame(frame);
+  },[messages,threadId,loadedThreadId]);
   const prependAnchor = useRef<{ scrollTop: number; scrollHeight: number } | null>(null);
   // Reading positions are private, view-only and limited to this mounted owner
   // session. Never cache conversation bodies or restore a denied thread.
@@ -574,6 +589,11 @@ export default function SupervisorChatComposer({
     pinned.current = true;
     setShowNewMessage(false);
     node.scrollTop = Math.max(0, node.scrollHeight - node.clientHeight);
+  }
+  function readLatestMessage(){
+    scrollToLatest();
+    const rows=transcript.current?.querySelectorAll<HTMLElement>("[data-work-message]");
+    rows?.[rows.length-1]?.focus({preventScroll:true});
   }
   function onTranscriptScroll() {
     const node = transcript.current;
@@ -1210,7 +1230,7 @@ export default function SupervisorChatComposer({
         comingUp={comingUpCard}/>
     </div>}
     <div ref={transcript} className="min-h-0 flex-1 overflow-y-auto overscroll-contain [overflow-anchor:none] px-4 py-3 sm:px-6 md:py-5"
-      onScroll={onTranscriptScroll} role="log" aria-live="polite" aria-label={copy.threads}>
+      onScroll={onTranscriptScroll} role="log" aria-live="off" aria-label={copy.threads} tabIndex={0}>
       <div ref={messageContent} className="mx-auto flex min-h-full w-full max-w-[46rem] min-w-0 flex-col items-stretch justify-start gap-5">
       {workNotice&&<p role="status" className="text-sm text-ink-muted">{workNotice}</p>}
       {!hasChatMessages&&startReady&&!threadUnavailable&&<SupervisorWelcome heading={copy.emptyHeading} intro={copy.emptyIntro}/>}
@@ -1238,7 +1258,7 @@ export default function SupervisorChatComposer({
       </button>}
       {displayedMessages.map((message,messageIndex) => {
         const clarify=clarifyCardState(clarifyVisibilityMessages,messageIndex,activeDurableQuestions);
-        return <div key={message.id} data-work-message={message.id} tabIndex={-1} data-client-message-id={message.role === "owner" ? message.clientMessageId ?? undefined : undefined} className="space-y-2">
+        return <div key={message.id} data-work-message={message.id} role="group" aria-label={message.role==="owner"?copy.you:copy.supervisor} tabIndex={-1} data-client-message-id={message.role === "owner" ? message.clientMessageId ?? undefined : undefined} className="space-y-2">
         <SupervisorMessage message={message} copy={copy} locale={locale} cafeCurrency={cafeCurrency} storedFiles={storedAttachments}
           linkedThreadId={threadId===initialThreadId?initialThreadId:undefined}
           linkedProposalId={threadId===initialThreadId?initialProposalId:undefined}
@@ -1314,7 +1334,7 @@ export default function SupervisorChatComposer({
       {(sending && liveJobId || resumedRunning) && <ChatJobProgress locale={locale} acknowledged
         steps={sending ? liveSteps : watcher.job?.progress ?? []}
         note={sending ? liveNote : liveCopy.resumed} />}
-      {sending && streamedText && <article aria-live="off" aria-busy="true" className="w-full space-y-3"><div className="flex items-center gap-2 text-[15px] font-bold text-ink-muted"><span className="flex h-8 w-8 items-center justify-center rounded-full bg-pos-soft text-good"><Sparkles size={17} aria-hidden="true"/></span>{copy.supervisor}</div><ReplyBlock block={{type:"text",text:streamedText}} copy={copy} locale={locale}/></article>}
+      {sending && streamedText && <article aria-hidden="true" aria-live="off" aria-busy="true" inert className="w-full space-y-3"><div className="flex items-center gap-2 text-[15px] font-bold text-ink-muted"><span className="flex h-8 w-8 items-center justify-center rounded-full bg-pos-soft text-good"><Sparkles size={17} aria-hidden="true"/></span>{copy.supervisor}</div><ReplyBlock block={{type:"text",text:streamedText}} copy={copy} locale={locale}/></article>}
       {sending && <div className="flex items-center gap-3 text-[16px] text-ink-muted" role="status">
         {parseAgentId(progressStatus?.agent) ?
           <span className="shrink-0"><AgentAvatar agentId={parseAgentId(progressStatus?.agent)!} size="task" /></span> :
@@ -1325,7 +1345,9 @@ export default function SupervisorChatComposer({
     </div>
     {sending&&canDetach&&<button type="button" onClick={()=>void detachLiveStream()} className="mx-auto flex min-h-12 shrink-0 items-center gap-2 rounded-full border border-line px-4 text-[15px] text-ink hover:bg-surface2 focus-visible:outline focus-visible:outline-2 focus-visible:outline-ink"><Square size={16} aria-hidden="true"/>{en.SupervisorExperience.stopLiveView}</button>}
     {streamNotice&&<p role="status" className="shrink-0 px-4 py-2 text-[15px] text-ink-muted">{streamNotice}</p>}
-    {showNewMessage && <button type="button" onClick={scrollToLatest} className="mx-auto inline-flex min-h-12 max-w-full shrink-0 items-center gap-2 rounded-full border border-line bg-surface px-4 text-sm font-semibold text-accent-text focus-visible:outline focus-visible:outline-2 focus-visible:outline-ink"><ArrowDown size={16} aria-hidden="true" />{copy.newMessage}</button>}
+    <div ref={replyAnnouncement} role="status" aria-live="polite" aria-atomic="true" data-testid="supervisor-reply-announcement" className="sr-only"/>
+    {hasChatMessages&&!showNewMessage&&<button type="button" onClick={readLatestMessage} className="sr-only focus:not-sr-only focus:mx-auto focus:min-h-12 focus:rounded-lg focus:px-3 focus:outline focus:outline-2">{en.SupervisorExperience.readLatestMessage}</button>}
+    {showNewMessage && <button type="button" onClick={readLatestMessage} className="mx-auto inline-flex min-h-12 max-w-full shrink-0 items-center gap-2 rounded-full border border-line bg-surface px-4 text-sm font-semibold text-accent-text focus-visible:outline focus-visible:outline-2 focus-visible:outline-ink"><ArrowDown size={16} aria-hidden="true" />{copy.newMessage}</button>}
     {initialProposalId && initialThreadId && threadId === initialThreadId && <div className="max-h-[50dvh] shrink-0 overflow-y-auto" data-testid="experiment-deeplink" data-work-proposal={initialProposalId} tabIndex={-1}>
       <SupervisorExperiment key={initialThreadId + ":" + initialProposalId}
         threadId={threadId} locale={locale} canUseAi={canUseAi}
