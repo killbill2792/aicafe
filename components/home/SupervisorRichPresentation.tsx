@@ -30,14 +30,15 @@ export function presentationSpec(p:RichPresentation):Spec{
  return {root:"root",elements};
 }
 function Panel({panel,locale}:{panel:PresentationPanel;locale:string}){
- const formatter=new Intl.NumberFormat(locale,panel.unit==="cents"&&panel.currency?
+ const formatter=new Intl.NumberFormat(locale,["cents","cents/hour"].includes(panel.unit)&&panel.currency?
   {style:"currency",currency:panel.currency,minimumFractionDigits:2,maximumFractionDigits:2}:{maximumFractionDigits:20});
- const format=(v:number)=>formatter.format(panel.unit==="cents"?v/100:v)+(["seconds","minutes","hours"].includes(panel.unit)?" "+panel.unit:"");
+ const format=(v:number)=>formatter.format(["cents","cents/hour"].includes(panel.unit)?v/100:v)+(panel.unit==="cents/hour"?" / h":["seconds","minutes","hours","days","units","items","ratio","ratio squared","indicator"].includes(panel.unit)?" "+panel.unit:"");
  const table=<div className="overflow-x-auto overscroll-x-contain"><table className="w-full text-[17px] tabular-nums"><caption className="sr-only">{panel.title}</caption>
     <tbody>{panel.points.map((p,i)=><tr key={i} className="border-b border-line"><th scope="row" className="break-words py-2 pe-3 text-start font-normal">{p.label}</th><td className="py-2 text-end">{format(p.value)}</td></tr>)}</tbody>
    </table></div>;
  return <figure className="min-w-0 space-y-2 py-2">
   <figcaption className="text-[17px] font-medium leading-snug text-ink">{panel.title}</figcaption>
+  {panel.coverage&&<p className="text-[13px] text-ink-muted">{panel.coverage==="partial"?copy.partial:copy.estimate}</p>}
   {panel.kind==="metric"?<p className="break-words font-headline text-[30px] font-medium leading-tight tracking-tight tabular-nums text-ink">{format(panel.points[0].value)}</p>:
    (panel.kind==="table"||panel.kind==="ranked_table")?table:<><Chart panel={panel} format={format}/>
     <details className="text-ink"><summary className="flex min-h-12 cursor-pointer items-center text-[15px] text-accent-text underline underline-offset-4">{({en,es,ar}[locale as "en"|"es"|"ar"]??en).Home.chatStartDetails}</summary>{table}</details></>}
@@ -46,12 +47,12 @@ function Panel({panel,locale}:{panel:PresentationPanel;locale:string}){
 }
 function ComparisonView({panels,locale}:{panels:PresentationPanel[];locale:string}){
  const first=panels[0],scalar=panels.every(p=>p.points.length===1);
- const series:ComparisonSeries[]=panels.map((p,i)=>({id:"s"+i,label:p.title+" · "+p.from+" – "+p.to,points:p.points.map(v=>({label:scalar?"—":v.label,value:v.value}))}));
+ const series:ComparisonSeries[]=panels.map((p,i)=>({id:"s"+i,label:p.title+" · "+p.from+" – "+p.to+(p.sourceDetail?" · "+p.sourceDetail:""),points:p.points.map(v=>({label:scalar?"—":v.label,value:v.value}))}));
  const labels=[...new Set(series.flatMap(s=>s.points.map(v=>v.label)))];
  const line=panels.every(p=>p.kind==="line");
  if(line)labels.sort();
- const fmt=new Intl.NumberFormat(locale,first.unit==="cents"&&first.currency?{style:"currency",currency:first.currency,minimumFractionDigits:2,maximumFractionDigits:2}:{maximumFractionDigits:20});
- const format=(v:number)=>fmt.format(first.unit==="cents"?v/100:v);
+ const fmt=new Intl.NumberFormat(locale,["cents","cents/hour"].includes(first.unit)&&first.currency?{style:"currency",currency:first.currency,minimumFractionDigits:2,maximumFractionDigits:2}:{maximumFractionDigits:20});
+ const format=(v:number)=>fmt.format(["cents","cents/hour"].includes(first.unit)?v/100:v);
  return <figure data-testid="supervisor-comparison" className="min-w-0 space-y-2 py-2">
   <ComparisonChart series={series} labels={labels} line={line} format={format}/>
   <div className="flex flex-wrap gap-3 text-[13px] text-ink-muted">{series.map(s=><span key={s.id}>{s.label}</span>)}</div>
@@ -59,7 +60,7 @@ function ComparisonView({panels,locale}:{panels:PresentationPanel[];locale:strin
    <table className="w-full text-[15px] tabular-nums"><thead><tr><th scope="col" className="py-2 text-start">{first.unit}</th>{series.map(s=><th key={s.id} scope="col" className="px-2 text-end">{s.label}</th>)}</tr></thead>
     <tbody>{labels.map(label=><tr key={label}><th scope="row" className="py-2 text-start">{label}</th>{series.map(s=>{const v=s.points.find(p=>p.label===label);return <td key={s.id} className="px-2 text-end">{v?format(v.value):copy.notRecorded}</td>})}</tr>)}</tbody></table>
   </div>
-  {panels.map((p,i)=><p key={i} className="break-words text-[13px] text-ink-muted">{series[i].label} · {p.sourceDetail??p.source} · {copy.snapshot} {p.asOf}</p>)}
+  {panels.map((p,i)=><p key={i} className="break-words text-[13px] text-ink-muted">{series[i].label} · {p.sourceDetail??p.source} · {copy.snapshot} {p.asOf}{p.coverage?" · "+(p.coverage==="partial"?copy.partial:copy.estimate):""}</p>)}
  </figure>;
 }
 function AgendaView({agenda,locale}:{agenda:Agenda;locale:string}){

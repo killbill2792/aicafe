@@ -32,9 +32,19 @@ const descriptions={
 const obj=(v:unknown):v is Record<string,unknown>=>!!v&&typeof v==="object"&&!Array.isArray(v);
 // Project already scoped canonical results using the existing field dictionary.
 // No additional reads, arbitrary JSON paths, model-authored units or aggregation.
-const blockedViews=new Set(["cv_cash","cv_inventory","cv_owner_facts","cv_bills","cv_staff"]);
+const blockedViews=new Set(["cv_inventory","cv_owner_facts","cv_bills","cv_staff"]);
+function queryScope(args:Record<string,unknown>,columns:Record<string,{unit:string}>):string{
+ const filters=Array.isArray(args.filters)?args.filters:[];
+ return filters.flatMap(f=>{
+  if(!obj(f)||typeof f.column!=="string"||typeof f.op!=="string")return [];
+  const unit=columns[f.column]?.unit;
+  if(!unit||["identifier","UUID","JSON"].includes(unit))return [f.column+" "+f.op+" (scoped value)"];
+  const value=Array.isArray(f.value)?f.value.map(String).join(", "):String(f.value??"");
+  return [f.column+" "+f.op+" "+value.slice(0,80)];
+ }).join("; ");
+}
 function canonicalPanel(s:z.infer<typeof selection>,r:AgentToolResult,encoded:string,ctx:Pick<AgentToolContext,"currency"|"asOf">):PresentationPanel|null{
- if(r.source!=="canonical_data"||r.missing.length||r.empty||r.truncated||r.error||r.scopeWarning||!r.period||
+ if(r.source!=="canonical_data"||r.empty||r.truncated||r.error||!r.period||
      r.period.to>ctx.asOf||!Array.isArray(r.rows)||r.rows.length<1||r.rows.length>30)return null;
  let args:unknown;try{args=JSON.parse(encoded);}catch{return null;}
  if(!obj(args)||typeof args.view!=="string"||!canonicalViewNames.includes(args.view as CanonicalView)||blockedViews.has(args.view)||
@@ -43,17 +53,19 @@ function canonicalPanel(s:z.infer<typeof selection>,r:AgentToolResult,encoded:st
  const columns=canonicalDictionary[view].columns as Record<string,{unit:string;meaning:string}>;
  const m=args.metrics.find(x=>obj(x)&&typeof x.fn==="string"&&typeof x.column==="string"&&x.fn+"_"+x.column===s.field);
  if(!obj(m)||typeof m.fn!=="string"||typeof m.column!=="string"||!Object.hasOwn(columns,m.column))return null;
- const units=["cents","count","items","seconds","minutes","hours"] as const;
- const unit=m.fn==="count"||m.fn==="count_distinct"?"count":columns[m.column].unit;
+ const units=["cents","count","items","units","seconds","minutes","hours","days","ratio","ratio squared","indicator","cents/hour"] as const;
+ const rawUnit=columns[m.column].unit;
+ const unit=m.fn==="count"||m.fn==="count_distinct"||rawUnit==="indicator"&&m.fn==="sum"?"count":rawUnit;
+ const partial=r.missing.length>0||Boolean(r.scopeWarning)||obj(r.aggregate)&&r.aggregate.status==="so_far";
  // Raw Toast fallback is scoped to explicit record counts, not guessed JSON units or screen totals.
  if(view==="cv_toast_records"&&(!["count","count_distinct"].includes(m.fn)||!["source_ref","record_ref","order_ref","check_ref"].includes(m.column)||!Array.isArray(args.filters)||!args.filters.some(f=>obj(f)&&f.column==="record_type"&&["=","in"].includes(String(f.op)))||!args.filters.some(f=>obj(f)&&f.column==="counts_in_sales"&&f.op==="="&&f.value===true)))return null;
  if(!units.includes(unit as typeof units[number])||!["sum","count","count_distinct","min","max","avg"].includes(m.fn))return null;
  const groups=args.group_by??[];
  if(!Array.isArray(groups)||groups.length>1)return null;
  const group:unknown=groups[0];
- if(group!==undefined&&(typeof group!=="string"||!Object.hasOwn(columns,group)||!["label","local date","hour"].includes(columns[group].unit)||
+ if(group!==undefined&&(typeof group!=="string"||!Object.hasOwn(columns,group)||!["label","local date","hour 0 to 23","weekday"].includes(columns[group].unit)||
       /(?:business_id|source_ref|status|source|employee|customer|email|phone)/i.test(group)))return null;
- if(group===undefined&&(!obj(r.aggregate)||r.aggregate.metric!==s.field||r.aggregate.status!=="stored"||r.rows.length!==1))return null;
+ if(group===undefined&&(!obj(r.aggregate)||r.aggregate.metric!==s.field||!["stored","so_far"].includes(String(r.aggregate.status))||r.rows.length!==1))return null;
  if(s.kind==="line"&&(typeof group!=="string"||columns[group].unit!=="local date"))return null;
  // Never imply disjoint parts of a whole for arbitrary grouped aggregates.
  if(s.kind==="donut")return null;
@@ -63,7 +75,8 @@ function canonicalPanel(s:z.infer<typeof selection>,r:AgentToolResult,encoded:st
  for(const row of r.rows){
    if(!obj(row)||!Object.hasOwn(row,s.field))return null;
    const value=row[s.field];
-   const label=typeof group==="string"?row[group]:title;
+   const category=typeof group==="string"?row[group]:title;
+   const label=typeof category==="number"&&typeof group==="string"&&["hour 0 to 23","weekday"].includes(columns[group].unit)?String(category):category;
    if(typeof label!=="string"||!label.trim()||label.length>140||
       typeof value!=="number"||!Number.isFinite(value))return null;
    if(typeof group==="string"&&columns[group].unit==="local date"&&
@@ -75,8 +88,10 @@ function canonicalPanel(s:z.infer<typeof selection>,r:AgentToolResult,encoded:st
    points.sort((a,b)=>a.label.localeCompare(b.label));
    if(points.length<2||points.some((p,i)=>i>0&&Date.parse(p.label)-Date.parse(points[i-1].label)!==86400000))return null;
  }
- return {kind:s.kind,title,unit:unit as PresentationPanel["unit"],currency:unit==="cents"?ctx.currency??null:null,
-   from:r.period.from,to:r.period.to,asOf:ctx.asOf,source:"canonical_data",sourceDetail:view+" · "+s.field+(filtered?" · Query filters applied; see answer for scope.":""),points};
+ return {kind:s.kind,title,unit:unit as PresentationPanel["unit"],currency:unit==="cents"||unit==="cents/hour"?ctx.currency??null:null,
+   from:r.period.from,to:r.period.to,asOf:ctx.asOf,source:"canonical_data",
+   sourceDetail:[view,s.field,filtered?queryScope(args,columns):"",columns[m.column].meaning,r.scopeWarning??"",...(partial?r.missing:[])].filter(Boolean).join(" · ").slice(0,500),
+   ...(partial?{coverage:"partial" as const}:["processing_fee_cents","historical_recipe_cost_cents","historical_recipe_contribution_cents"].includes(m.column)?{coverage:"estimate" as const}:{}),points};
 }
 // A query's returned columns and aggregate aliases, not a new model-defined
 // shape, determine the table. No new reads, raw JSON objects, identifiers,
@@ -103,7 +118,7 @@ function canonicalTable(r:AgentToolResult,encoded:string,ctx:Pick<AgentToolConte
  const group=Array.isArray(a.group_by)?a.group_by:[],metrics=Array.isArray(a.metrics)?a.metrics:[],selected=Array.isArray(a.columns)?a.columns:[];
  // Explicitly selected columns only, never an implicit raw record dump.
  const keys:{key:string;label:string;unit:RecordTable["columns"][number]["unit"]}[]=[];
- const knownUnits=["label","local date","cents","count","items","seconds","minutes","hours","cents/hour","boolean"] as const;
+ const knownUnits=["label","local date","cents","count","items","units","quantity","seconds","minutes","hours","days","ratio","ratio squared","indicator","cents/hour","boolean","hour 0 to 23","weekday","timestamp text"] as const;
  const fieldUnit=(key:string)=>Object.hasOwn(fields,key)?fields[key].unit:rawFieldUnit(view,key,a.filters);
  const secret=/(?:business_id|source_ref|_ref$|(?:^|[._])id$|email|phone|password|token|secret|credential)/i;
  const add=(key:string,unit:string,label:string)=>{
@@ -122,7 +137,8 @@ function canonicalTable(r:AgentToolResult,encoded:string,ctx:Pick<AgentToolConte
   if(!unit||m.column==="data")continue;
   add(m.fn+"_"+m.column,count?"count":unit,m.fn.replaceAll("_"," ")+" "+m.column.replaceAll("_"," "));
  }
- if(!keys.length||keys.length>8)return null;
+ // Do not erase grouping dimensions and make distinct rows appear identical.
+ if(group.some(key=>!keys.some(k=>k.key===key))||!keys.length||keys.length>8)return null;
  const rows=r.rows.slice(0,30).map(row=>obj(row)?keys.map(k=>{
   if(!Object.hasOwn(row,k.key))return undefined;
   const value=row[k.key];return value===null||typeof value==="string"||typeof value==="number"||typeof value==="boolean"?value:undefined;
@@ -135,11 +151,11 @@ function canonicalTable(r:AgentToolResult,encoded:string,ctx:Pick<AgentToolConte
   const shown=!safeValue?"selected value":Array.isArray(f.value)?f.value.map(x=>String(x)).join(", "):String(f.value??"");
   return [f.column+" "+f.op+" "+shown];
  }):[];
- const scope=["Selected safe fields only",filters.length?"Filtered: "+filters.join("; "):"Requested query",typeof r.scopeWarning==="string"?r.scopeWarning:""].filter(Boolean).join(" · ");
+ const scope=["Selected safe fields only",filters.length?"Filtered: "+filters.join("; "):"Requested query",typeof r.scopeWarning==="string"?r.scopeWarning:"",...r.missing,keys.some(k=>/processing_fee_cents|historical_recipe_(?:cost|contribution)_cents/.test(k.key))?"Includes modeled costs or fees; not certified actual amounts.":""].filter(Boolean).join(" · ");
  const scopeText=scope.length>300?"Filtered query ("+filters.length+" filters); see the full answer for scope and limitations.":scope;
  const parsed=recordTableSchema.safeParse({title:"Saved query results",view,from:r.period.from,to:r.period.to,asOf:ctx.asOf,
   currency:keys.some(k=>k.unit==="cents"||k.unit==="cents/hour")?ctx.currency??null:null,
-  coverage:r.missing.length||r.truncated||r.rows.length>30||r.scopeWarning?"partial":"stored",
+  coverage:r.missing.length||r.truncated||r.rows.length>30||r.scopeWarning||keys.some(k=>/processing_fee_cents|historical_recipe_(?:cost|contribution)_cents/.test(k.key))?"partial":"stored",
   scope:scopeText,columns:keys.map(({label,unit})=>({label,unit})),rows});
  return parsed.success?parsed.data:null;
 }

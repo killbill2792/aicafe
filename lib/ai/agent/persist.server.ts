@@ -122,7 +122,7 @@ export function agentReplyPayload(turn: AgentTurn) {
       // A presentation never makes unavailable business evidence verified.
       const {agenda,scenario,tables,calculator,groups,...rest}=presentation.data;
       const partialTables=tables?.filter(t=>t.coverage==="partial");
-      const safe=status==="unavailable"?{...rest,panels:[],...(agenda?.coverage==="partial"?{agenda}:{}),...(partialTables?.length?{tables:partialTables}:{})}:
+      const safe=status==="unavailable"?{...rest,panels:rest.panels.filter(p=>p.coverage==="partial"),...(agenda?.coverage==="partial"?{agenda}:{}),...(partialTables?.length?{tables:partialTables}:{})}:
        {...rest,...(agenda?{agenda}:{}),...(scenario?{scenario}:{}),...(tables?{tables}:{}),...(calculator?{calculator}:{}),...(groups?{groups}:{})};
       const validated=richPresentationSchema.safeParse(safe);
       if(validated.success)reply.blocks.push(validated.data);

@@ -183,8 +183,8 @@ it("uses actual roster evidence and executed scenario arguments for staffing alt
 });
 
 describe("independent semantic composition",()=>{
- it("selects distinct same-period reads by exact reference and compares compatible series",()=>{
-  const a={...sales,days:[{date:"2026-11-02",netSalesCents:100},{date:"2026-11-03",netSalesCents:200}]};
+ it("selects distinct reads by exact reference and compares compatible series",()=>{
+  const a={...sales,period:{from:"2026-11-01",to:"2026-11-02"},days:[{date:"2026-11-01",netSalesCents:100},{date:"2026-11-02",netSalesCents:200}]};
   const b={...sales,days:[{date:"2026-11-02",netSalesCents:300},{date:"2026-11-03",netSalesCents:400}]};
   const c={...ctx(),turnResults:()=>[{name:"get_sales",result:a},{name:"get_sales",result:b}],
     presentationResults:()=>[{ref:"r1",name:"get_sales",arguments:"{}",result:a},{ref:"r2",name:"get_sales",arguments:"{}",result:b}]};
@@ -197,4 +197,11 @@ describe("independent semantic composition",()=>{
   const q={...request,groups:[{layout:"grid",items:["p0","p0","calculator"]}]};
   expect(presentResponse(q,ctx())).toMatchObject({accepted:true,presentation:{groups:[{layout:"grid",items:["panel0"]}]}});
  });
+});
+
+it("shows safe stored current-day values as partial, never as final totals",()=>{
+ const r:AgentToolResult={source:"canonical_data",period:sales.period,missing:["currentDayIncomplete"],rows:[{sum_net_sales_cents:2400}],aggregate:{metric:"sum_net_sales_cents",value:2400,status:"so_far"}};
+ const args={view:"cv_sales_days",date_from:sales.period!.from,date_to:sales.period!.to,group_by:null,metrics:[{fn:"sum",column:"net_sales_cents"}]};
+ const c={...ctx(),presentationResults:()=>[{name:"query_data",arguments:JSON.stringify(args),result:r}]};
+ expect(presentResponse({layout:"stack",panels:[{source:"canonical_data",field:"sum_net_sales_cents",kind:"metric"}],suggestions:[]},c)).toMatchObject({accepted:true,presentation:{panels:[{coverage:"partial",points:[{value:2400}]}]}});
 });

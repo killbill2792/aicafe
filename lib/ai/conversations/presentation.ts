@@ -7,15 +7,16 @@ const date=z.iso.date();
 const point=z.strictObject({label,value:z.number().finite().min(-Number.MAX_SAFE_INTEGER).max(Number.MAX_SAFE_INTEGER)});
 export const presentationPanelSchema=z.strictObject({
   kind:z.enum(["metric","table","ranked_table","bar","line","donut"]),
-  title:label,unit:z.enum(["cents","count","items","seconds","minutes","hours"]),currency:z.string().regex(/^[A-Z]{3}$/).nullable(),
+  title:label,unit:z.enum(["cents","count","items","units","seconds","minutes","hours","days","ratio","ratio squared","indicator","cents/hour"]),currency:z.string().regex(/^[A-Z]{3}$/).nullable(),
   from:date,to:date,asOf:date,source:z.enum(["daily_rollups","item_sales","profitability","canonical_data","expenses","business_costs","product_costs"]),
-  sourceDetail:z.string().max(200).optional(),
+  sourceDetail:z.string().max(500).optional(),
+  coverage:z.enum(["partial","estimate"]).optional(),
   points:z.array(point).min(1).max(30),
 }).superRefine((p,ctx)=>{
-  if((p.unit==="cents")!==(p.currency!==null)||p.from>p.to||p.to>p.asOf||
-     ((p.unit==="cents"||p.unit==="count")&&p.points.some(x=>!Number.isSafeInteger(x.value)))||
+  if((["cents","cents/hour"].includes(p.unit))!==(p.currency!==null)||p.from>p.to||p.to>p.asOf||
+     ((p.unit==="cents"||p.unit==="cents/hour"||p.unit==="count")&&p.points.some(x=>!Number.isSafeInteger(x.value)))||
      (p.kind==="metric"&&p.points.length!==1)||
-     (p.kind==="donut"&&(p.points.some(x=>x.value<0)||p.points.every(x=>x.value===0))))
+     (p.kind==="donut"&&(p.coverage||p.points.some(x=>x.value<0)||p.points.every(x=>x.value===0))))
     ctx.addIssue({code:"custom",message:"Invalid presentation data"});
 });
 const clock=z.string().regex(/^(?:[01]\d|2[0-3]):[0-5]\d$/);
@@ -31,7 +32,7 @@ export const scenarioComparisonSchema=z.strictObject({
  provenance:z.literal("estimate"),
  cases:z.array(z.strictObject({assumption:label,beforeCents:z.number().int().safe(),afterCents:z.number().int().safe()})).min(1).max(8)
 });
-const tableUnit=z.enum(["label","local date","cents","count","items","seconds","minutes","hours","cents/hour","boolean","stored"]);
+const tableUnit=z.enum(["label","local date","cents","count","items","units","quantity","seconds","minutes","hours","days","ratio","ratio squared","indicator","cents/hour","boolean","hour 0 to 23","weekday","timestamp text","stored"]);
 const cell=z.union([z.string().max(240),z.number().finite().min(-Number.MAX_SAFE_INTEGER).max(Number.MAX_SAFE_INTEGER),z.boolean(),z.null()]);
 export const recordTableSchema=z.strictObject({
  title:label,view:z.string().regex(/^cv_[a-z_]+$/).max(80),from:date,to:date,asOf:date,
@@ -45,8 +46,8 @@ export const recordTableSchema=z.strictObject({
   const u=t.columns[i].unit;
   return u==="cents"||u==="cents/hour"?(!t.currency||typeof v!=="number"||!Number.isSafeInteger(v)):
    u==="count"?typeof v!=="number"||!Number.isSafeInteger(v):
-   u==="items"||u==="seconds"||u==="hours"||u==="minutes"?typeof v!=="number":
-   u==="label"?typeof v!=="string":u==="local date"?typeof v!=="string"||!date.safeParse(v).success:u==="boolean"?typeof v!=="boolean":false;
+   ["items","units","quantity","seconds","hours","minutes","days","ratio","ratio squared","indicator","hour 0 to 23","weekday"].includes(u)?typeof v!=="number":
+   u==="label"||u==="timestamp text"?typeof v!=="string":u==="local date"?typeof v!=="string"||!date.safeParse(v).success:u==="boolean"?typeof v!=="boolean":false;
  })))ctx.addIssue({code:"custom",message:"Invalid table cells"});
 });
 const calcName=z.string().regex(/^[a-z][a-z0-9_]{0,39}$/u);
@@ -120,7 +121,7 @@ export function compatibleComparison(items:string[],panels:PresentationPanel[]):
  const first=series[0];
  // Exact matching categories or a shared daily axis. Never align unrelated
  // labels, or mix incompatible measurement units/currencies on one axis.
- return series.every(p=>p.unit===first.unit&&p.currency===first.currency)&&
+ return new Set(series.map(p=>[p.title,p.from,p.to,p.sourceDetail??p.source].join("|"))).size===series.length&&series.every(p=>p.unit===first.unit&&p.currency===first.currency)&&
   (series.every(p=>p.points.length===1)||series.every(p=>p.points.length===first.points.length&&p.points.every((v,i)=>v.label===first.points[i].label))||
    series.every(p=>p.kind==="line"&&p.points.every(v=>date.safeParse(v.label).success)));
 }
@@ -150,7 +151,7 @@ export function presentationReport(block:RichPresentation,message:{
   "",texts.filter((t):t is string=>t!==null).join(""),
   ...(notes.length?["","Source cautions",...notes]:[])];
  for(const p of block.panels){
-  lines.push("",p.title,p.sourceDetail??p.source,"Period: "+p.from+" – "+p.to+"; snapshot: "+p.asOf,
+  lines.push("",p.title,p.sourceDetail??p.source,...(p.coverage?["Coverage: "+p.coverage]:[]),"Period: "+p.from+" – "+p.to+"; snapshot: "+p.asOf,
     ...p.points.map(point=>point.label+": "+point.value+" "+p.unit+(p.currency?" ("+p.currency+")":"")));
  }
  if(block.tables)for(const t of block.tables){
