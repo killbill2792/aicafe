@@ -5,7 +5,7 @@ import {getTranslations} from "next-intl/server";
 import {readToastDayTrust} from "@/lib/data/toastDayTrust.server";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { fromZonedTime } from "date-fns-tz";
-import { readDailyFacts } from "@/lib/data/dailyFacts.server";
+import { readDailyFacts, readSalesCoverageBounds } from "@/lib/data/dailyFacts.server";
 import { readMenuCatalogRows } from "@/lib/data/menuCatalog.server";
 import type { DailyFacts } from "@/lib/calc";
 import type { CafeStatePeriod, KnownSlice } from "@/lib/operating/types";
@@ -34,6 +34,10 @@ export function supervisorHistoricalReaders(client: SupabaseClient, businessId: 
     if (!businessId || requested !== businessId) throw new Error("Café access scope mismatch");
   }
   return {
+    async salesCoverageBounds(id:string,period:CafeStatePeriod){
+      assertScope(id);
+      return readSalesCoverageBounds(client,id,period.from,period.to);
+    },
     async salesTrend(id: string, period: CafeStatePeriod): Promise<KnownSlice<DailyFacts[]>> {
       assertScope(id);
       const all = await readDailyFacts(client,id,period.from,period.to);
