@@ -732,7 +732,7 @@ describe("U2 no-provider end-to-end execution receipts",()=>{
    expect(JSON.stringify(receipts)).not.toContain("new location");
   }finally{vi.unstubAllEnvs();}
  });
- it("uses expanded migrated worker allowances through actual metered investigation transport",async()=>{
+ it.each([false,true])("uses expanded migrated worker allowances through actual metered investigation transport (fault=%s)",async(fault)=>{
   vi.stubEnv("SUPERVISOR_OPENAI_MODEL","gpt-6-luna");
   const rpc=vi.fn(async()=>({data:null,error:null}));
   const db={rpc} as unknown as import("@supabase/supabase-js").SupabaseClient;
@@ -742,17 +742,18 @@ describe("U2 no-provider end-to-end execution receipts",()=>{
    sourceType:"alert" as const,sourceId:"00000000-0000-4000-8000-000000000004",
    leaseToken:"00000000-0000-4000-8000-000000000005"};
   try{
-   const {provider,requests}=recording([[menu("worker_menu"),done(3500)],[text("Investigation finished."),done(1800)]]);
+   const {provider,requests}=recording(fault?[[{type:"response.incomplete",response:{model:"gpt-6-luna",usage:{input_tokens:500,output_tokens:3500},incomplete_details:{reason:"max_output_tokens"}}}],[text("Investigation recovered."),done(1800)]]:[[menu("worker_menu"),done(3500)],[text("Investigation finished."),done(1800)]]);
    const metered=meteredInvestigationProvider(db,scope,provider,8192);
    const result=await withWorkerBudget({maxElapsedMs:55000,maxModelCalls:8,maxToolCalls:24,
     maxInputTokens:240000,maxOutputTokens:32768},()=>runAgentTurn({ownerText:"Investigate this objective.",
      context:{...context},provider:metered.provider,toolNames:["get_menu_items"]}),8192);
-   expect(result.endReason).toBe("complete");
+   expect(result.endReason).toBe(fault?"provider_error":"complete");
    expect(requests.map(p=>p.max_output_tokens)).toEqual([8192,8192]);
    expect(result.usage.outputTokens).toBe(5300);
    expect(rpc).toHaveBeenCalledWith("supervisor_reserve_investigation_model_call",expect.objectContaining({p_output_cap:8192,p_lease_token:scope.leaseToken}));
    expect(rpc).toHaveBeenCalledWith("supervisor_complete_investigation_model_call",expect.objectContaining({p_output_tokens:1800,
     p_execution_metrics:expect.objectContaining({composition:expect.objectContaining({toolEvidenceBytes:expect.any(Number)})})}));
+   if(fault)expect(rpc).toHaveBeenCalledWith("supervisor_complete_investigation_model_call",expect.objectContaining({p_output_tokens:3500,p_execution_metrics:expect.objectContaining({outcome:"incomplete",outputTokens:3500})}));
    expect(metered.problem()).toBeNull();
   }finally{vi.unstubAllEnvs();}
  });
