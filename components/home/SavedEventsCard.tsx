@@ -300,7 +300,7 @@ export function SavedEventAnalysis({plan,selectedEvent,date,today,currency,local
       <ul className="grid gap-3 sm:grid-cols-2">{actions.map((action,index)=>
         <EventAdviceItem key={index} action={action}/>)}</ul>
     </div>}
-    {date===today&&liveEventHeadline(plan,date,t)&&<section aria-label={t("liveObservations")} className="rounded-xl bg-surface2 p-3">
+    {date===today&&(!selectedEvent||selectedEvent.status==="found")&&liveEventHeadline(plan,date,t)&&<section aria-label={t("liveObservations")} className="rounded-xl bg-surface2 p-3">
       <h4 className="font-bold">{t("liveObservations")}</h4>
       <p role="status">{liveEventHeadline(plan,date,t)}</p>
     </section>}
@@ -582,7 +582,7 @@ export default function SavedEventsCard({locale,chatDisabled,compact=false,onCha
         </p>)}
         {lead.events[0]?.venue&&<p className="mt-1 break-words text-[15px] text-ink-muted" dir="auto">{lead.events[0].venue}</p>}
         {lead.plan?.summary&&<p className="mt-2 line-clamp-3 text-[17px] leading-relaxed text-ink" dir="auto">{lead.plan.summary}</p>}
-        {lead.date===today&&liveEventHeadline(lead.plan,today,t)&&<p className="mt-2 rounded-xl bg-card p-2 text-[17px]">{liveEventHeadline(lead.plan,today,t)}</p>}
+        {lead.date===today&&lead.events.some(e=>e.status==="found")&&liveEventHeadline(lead.plan,today,t)&&<p className="mt-2 rounded-xl bg-card p-2 text-[17px]">{liveEventHeadline(lead.plan,today,t)}</p>}
         <span className="mt-2 inline-flex min-h-12 items-center font-semibold text-accent-text">{t("readInsights")} <ChevronRight size={19} className="ms-1 rtl:rotate-180" aria-hidden="true"/></span>
       </button>:<p className="mb-3 text-[17px] leading-snug text-ink-muted">{t("noCafeOutlook")}</p>)}
       {!compact&&<div className="grid grid-cols-7 gap-1">

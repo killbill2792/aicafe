@@ -72,7 +72,7 @@ export async function readEventDemandEvidence(db:SupabaseClient,scope:OwnerScope
   const relevant=relevantEventDemandProposals(plans,request);
   const reportCandidates=relevant.filter(p=>p.end<request.eventDate).slice(0,24);
   const sampleCandidates=[...reportCandidates.slice(0,8),
-    ...relevant.filter(p=>p.start<=request.eventDate&&p.end>=request.eventDate).slice(0,2)];
+    ...relevant.filter(p=>p.method==="event_id").slice(0,12)];
   const ids=[...new Set(reportCandidates.map(p=>p.proposal.id))];
   const sampleIds=[...new Set(sampleCandidates.map(p=>p.proposal.id))];
   const [reports,samples]=await Promise.allSettled([

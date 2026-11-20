@@ -172,9 +172,24 @@ export function assembleEventDemandEvidence(input:EventDemandRequest,sources:{
       observedDays:integer(data?.observedDays),expectedDays:integer(data?.expectedDays),days,
       observations:safeObservations(sources.samples,proposal.id,input.asOfDate)};
   });
-  const current=matched.filter(p=>p.start<=input.eventDate&&p.end>=input.eventDate)
-    .slice(0,2).flatMap(p=>safeObservations(sources.samples,p.proposal.id,input.asOfDate))
-    .filter(s=>s.date===input.eventDate).slice(0,2);
+  // An earlier day of the same occurrence is evidence for the next day, even
+  // if the spanning readiness plan has not yet generated its final report.
+  // Never combine duplicate café-day totals or another occurrence by name.
+  const currentByDay=new Map<string,EventDemandEvidence["currentObservations"][number]>();
+  const through=input.eventDate<input.asOfDate?input.eventDate:input.asOfDate;
+  for(const p of matched.filter(p=>p.method==="event_id").slice(0,12)){
+    for(const sample of safeObservations(sources.samples,p.proposal.id,through)){
+      if(sample.date<p.start||sample.date>p.end||
+        (sample.date!==input.asOfDate&&sample.coverage!=="actual"))continue;
+      const previous=currentByDay.get(sample.date);
+      if(!previous||previous.coverage==="provisional"&&sample.coverage==="actual")
+        currentByDay.set(sample.date,sample);
+      else if(previous.coverage==="actual"&&sample.coverage==="actual"&&
+        previous.actualCents!==sample.actualCents)caveats.push("conflicting_same_day_monitor_samples");
+    }
+  }
+  const current=[...currentByDay.values()].sort((a,b)=>a.date.localeCompare(b.date))
+    .slice(-14);
   const ids=new Set(input.eventIds??[]),names=new Set((input.eventNames??[]).map(normalized));
   const otherKnownEvents=[...new Set(sources.dayEvents.filter(e=>e.status==="found"&&
     e.startDate<=input.eventDate&&e.endDate>=input.eventDate&&!ids.has(e.id)&&

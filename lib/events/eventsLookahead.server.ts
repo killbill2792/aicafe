@@ -293,7 +293,9 @@ export async function draftDay(db:Db,b:Business,ownerId:string,locale:"en"|"es"|
   // refreshes. Live amounts are evaluated by the existing live monitor instead
   // of triggering a paid preparation turn for each new order.
   const evidenceHash=effectHash({normal:evidence.normal,usualHours:evidence.usualHours,
-    priorOutcomes:evidence.priorOutcomes,ownerObservations:evidence.ownerObservations,
+    priorOutcomes:evidence.priorOutcomes,
+    currentActualObservations:evidence.currentObservations.filter(s=>s.coverage==="actual"),
+    ownerObservations:evidence.ownerObservations,
     otherKnownEvents:[...evidence.otherKnownEvents].sort(),readiness:evidence.readiness,
     openingHours:profile?.open_hours??null,address:location?.label??null,
     coverage:{missing:[...evidence.coverage.missing].sort(),caveats:[...evidence.coverage.caveats].sort()}});

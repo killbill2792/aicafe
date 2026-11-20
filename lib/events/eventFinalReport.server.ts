@@ -15,6 +15,7 @@ type EventResult={
     changePercent?:number|null;hours?:Array<{hourLocal:number;actualCents:number;
       usualCents:number|null;changePercent:number|null}>}>;
   caveat:string;
+  eventStatusDays?:Array<{date:string;activity:unknown}>;
   salesSummary?:{observedSalesCents:number|null;observedSalesDays:number;comparableDays:number;
     comparableActualCents:number|null;comparableTypicalCents:number|null;changePercent:number|null};
   toastEvidenceWindow?:{from:string;to:string};
@@ -133,7 +134,7 @@ export async function eventFinalNarrative(scope:OwnerLoopScope,proposalId:string
     ownerMarkedChecklist:result.checklist,observedDays:result.observedDays,
     toastEvidence:result.toastEvidence??null,
     toastEvidenceWindow:result.toastEvidenceWindow??null,
-    expectedDays:result.expectedDays,
+    expectedDays:result.expectedDays,eventStatusDays:result.eventStatusDays??[],
     salesSummary:result.salesSummary?{
       observedSales:money(result.salesSummary.observedSalesCents),
       observedSalesDays:result.salesSummary.observedSalesDays,
@@ -169,6 +170,7 @@ export async function eventFinalNarrative(scope:OwnerLoopScope,proposalId:string
         "and shift evidence. Hourly figures support the conclusion; do not recite an hourly ledger. "+
         "Report independent reliable findings even when other inputs are missing; distinguish "+
         "an incomplete window from verified days, and never infer causation. "+
+        "Explicitly distinguish cancelled, moved or unconfirmed event dates from missing sales. "+
         "Never ask which physical suggestions were performed. Never imply a checklist "+
         "marker proves implementation, or that separate item sales prove a combo "+
         "or discount was offered. If POS lacks an identifiable discount name, "+
