@@ -147,7 +147,10 @@ export function verifyReviewedSourceChanges(changedPaths,reviewedPaths){
  const unexpected=changedPaths.filter(p=>!allowed.has(p));
  if(unexpected.length)throw Error("unreviewed_supervisor_source_change:"+unexpected.join(","));
 }
-/** Report-only plan: never authorizes a grant or proves a scenario. */
+/** Report-only plan: never authorizes a grant or proves a scenario.
+ * @param {{id:string,entrypoint:string,[key:string]:any}[]} specs
+ * @param {{id:string,ids:string[]}[]|null} [phases]
+ */
 export function planPaidBatches(specs,phases=null){
  const valid=id=>/^[a-z0-9][a-z0-9-]{0,31}$/.test(id??"")&&id!=="all"&&!id.startsWith("group-");
  const ordered=[...specs].sort((a,b)=>a.id.localeCompare(b.id));
