@@ -71,23 +71,20 @@ remain useful inputs, never the intellectual decision-maker.
   scheduler, effect gateway, verified receipts, follow-up and interruption recovery.
   Do not force corroboration by a fixed number of unrelated domains or tools;
   evidence adequacy depends on the claim, source and uncertainty.
-- The target is not yet implemented. Current runtime constraints below describe
-  the legacy transition baseline and must not be bypassed by a docs-only change.
+- The target is being implemented in separately approved U1–U5 slices. The runtime and independently executed proof, rather than documentation alone, determine completion.
   Any conflict with AGENTS.md or a binding workflow restriction must be explicitly
   reconciled before affected runtime changes. Exact implementation scope and
   independently executed evidence are mandatory; no production or paid authority.
 
 ### Conversation state
 - `ai_threads` / `ai_messages` store every user, assistant and tool message (tool results compact).
-- Context per turn = system prompt + tool schemas (stable, cacheable) + rolling summary + last 6–8 messages.
+- Context per turn = stable instructions and permitted tool definitions + existing owner facts and thread memory + recent admitted messages within a 96 KB UTF-8 history budget.
 - Owner facts (saved answers) are reused on every turn; never ask again for a saved fact.
 - Rolling summary (to be built): a small model keeps facts the owner stated, open goals and chosen
   items/periods. Business figures are never cached in the summary; tools re-read them.
 
-### Legacy budget baseline (existing policy until approved runtime transition)
-- Stable prefix first (system prompt + tools), `prompt_cache_key = "cafe-agent-v{N}"`. No dates, ids or
-  per-turn data in the prefix.
-- Ordinary turns: ≤ 6 model calls (5 tool rounds + 1 final). When the model actually chooses and executes a supplier-investigation or saved-order-read function, it may use one additional bounded tool round (≤ 7 total model calls including final) to complete the owner\u2019s purchasing workflow; keyword matches and request text must never grant an exception. All turns: ≤ 8 tool executions, stop after 2 consecutive tool errors, and a 60s deadline. The isolated paid pilot also has its separate hard $0.18/18-transport authorization cap.
-- The legacy written policy states `max_output_tokens` ≤ 1200 per call; actual interactive work calls already have a larger allowance. Audit actual runtime limits rather than assuming this text describes deployed behavior. Worker/final limits and fixed round/time ceilings are remediation targets. The typical input target is not a capability ceiling.
-- Main model from `SUPERVISOR_OPENAI_MODEL`; a small model for summaries and titles only.
-- Log per turn: calls, tool calls, input/cached/output tokens, latency, end reason. Never log prompt text.
+### U2 execution policy (owner-approved implementation)
+- Model-led completion, not a preset investigation route. Exact Luna uses provider-native hosted tool search over the existing authorized registry; other models use eager declarations. All selected calls still pass local strict validation, scope and effect authorization.
+- Existing 60-second maximum execution slice and tighter worker/lease limits remain. Ordinary Luna permits up to 7 work requests plus one synthesis request, 24 tool calls and 32,768 aggregate output tokens per slice; up to 16,384 work tokens interactively, up to 8,192 per verified migrated worker request and up to 8,192 final reserve. Smaller admitted budgets take precedence. Unknown output reserves its whole admitted cap; final synthesis is tool-free. Durable work uses existing checkpoints and original identity.
+- Pre-U2 databases retain the 1,200 worker request ceiling; only the exact migrated service-only capability read permits expansion. Existing fallback and legacy trusted paid-run bounds remain, including the $0.18/18-transport hard cap. No paid launch from a coding approval.
+- Existing usage ledgers record redacted request and tool measurements, actual observed model, cached/input/output/reasoning counts and costs when known; missing values are null. Never store prompts, raw reasoning, arguments, results or private business content in telemetry. Production migration and live model execution require separate authorization.
