@@ -1,7 +1,27 @@
 import {test,expect} from "@playwright/test";
 import {randomUUID,createHash} from "node:crypto";
 import {readFileSync,mkdirSync,writeFileSync} from "node:fs";
+import {createRequire} from "node:module";
 import {withOwner,controls} from "./task17d-owner-fixtures.mjs";
+
+const require=createRequire(import.meta.url);
+const axePath=require.resolve("axe-core/axe.min.js");
+const axeVersion=require("axe-core/package.json").version;
+const lockedAxe=JSON.parse(readFileSync(new URL("../../package-lock.json",import.meta.url),"utf8")).packages["node_modules/axe-core"].version;
+async function scanAxe(page,surface){
+  expect(axeVersion).toBe(lockedAxe);
+  if(!await page.evaluate(()=>Boolean(window.axe)))await page.addScriptTag({path:axePath});
+  const result=await page.evaluate(async()=>{
+    const audit=await window.axe.run(document,{runOnly:{type:"tag",values:["wcag2a","wcag2aa","wcag21a","wcag21aa","wcag22aa"]}});
+    const summarize=rows=>rows.map(r=>({id:r.id,impact:r.impact,nodes:r.nodes.length}));
+    return {version:audit.testEngine.version,violations:summarize(audit.violations),manualReview:summarize(audit.incomplete),passes:audit.passes.length};
+  });
+  expect(result.version).toBe(lockedAxe);
+  expect(result.passes).toBeGreaterThan(0);
+  console.info("[17D axe]",JSON.stringify({surface,...result}));
+  expect.soft(result.violations,"Automated WCAG violations at "+surface).toEqual([]);
+  return {surface,...result};
+}
 
 const matrix=JSON.parse(readFileSync(new URL("./task17d-owner-matrix.json",import.meta.url),"utf8"));
 
@@ -377,7 +397,7 @@ for(const width of [390,1440]) {
 
   for(const group of matrix.routeGroups){
     test("@"+group.tag+" 17D:"+group.id+"-"+width+" "+group.name,async({browser})=>{
-      test.setTimeout(240_000);
+      test.setTimeout(360_000);
       await withOwner(browser,width,async({cafe,session})=>{
         const {page}=await session(cafe);
         for(const [path,marker,redirect,search,hash] of group.routes){
@@ -391,6 +411,7 @@ for(const width of [390,1440]) {
             await expect(page.getByText(marker,{exact:true}).filter({visible:true}).first()).toBeVisible({timeout:30000});
             expect(await page.evaluate(()=>innerWidth)).toBe(width);
             expect(await page.evaluate(()=>document.documentElement.scrollWidth)).toBeLessThanOrEqual(width);
+            await scanAxe(page,group.id+"-"+width+":"+path);
           });
         }
       });
@@ -501,6 +522,7 @@ for(const width of [390,768,1024,1440]){
       await rich.locator("figure details summary").focus();await page.keyboard.press("Enter");
       await expect(rich.getByRole("table",{name:"Recorded sales"})).toBeVisible();
       await expect(rich.getByRole("cell",{name:new Intl.NumberFormat("en-US",{style:"currency",currency:cafe.currency}).format(24),exact:true})).toBeVisible();
+      await scanAxe(page,"D20-"+width+":rich-en");
       await rich.evaluate(el=>{el.hidden=true;});
       await expect(answer.getByText(text,{exact:true})).toBeVisible();
       await rich.evaluate(el=>{el.hidden=false;});
@@ -521,6 +543,7 @@ for(const width of [390,768,1024,1440]){
         await expect(composer).toBeVisible();
         expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);
         await page.reload();await expect(answer.getByText(text,{exact:true})).toBeVisible();
+        await scanAxe(page,"D20-"+width+":rich-"+locale);
       }
       expect(await query("select id,thread_id,structured_content from public.ai_messages where business_id=$1 and id=$2",[cafe.businessId,reply])).toEqual([{id:reply,thread_id:t.id,structured_content:blocks}]);
       expect(sent).toBe(0);
@@ -624,6 +647,30 @@ for(const width of [390,768,1440]){
       expect.soft(summary.metrics.lcpLab2500ms).toBe(true);
       expect.soft(summary.metrics.clsLabPointOne).toBe(true);
       expect.soft(summary.metrics.interactionLab200ms).toBe(true);
+    });
+  });
+}
+
+for(const width of [390,768,1440]){
+  test("@home 17D:D22-"+width+" locked axe automated accessibility of authenticated work and owner controls",async({browser})=>{
+    test.setTimeout(300_000);
+    await withOwner(browser,width,async({session,thread,open})=>{
+      const t=await thread(),{page}=await session(),results=[];
+      await open(page,t);
+      results.push(await scanAxe(page,"home"));
+      for(const tab of ["Work","Library","Routines","Permissions"]){
+        const panel=await controls(page,tab);
+        await expect(panel).toBeVisible();
+        results.push(await scanAxe(page,tab));
+        await page.keyboard.press("Escape");
+        await expect(panel).toHaveCount(0);
+        await expect(page.getByRole("button",{name:"Library, routines and permissions"})).toBeFocused();
+      }
+      mkdirSync("test-results/e2e",{recursive:true});
+      writeFileSync("test-results/e2e/task17d-axe-"+width+".json", JSON.stringify({
+        schemaVersion:1,head:process.env.HEAD_SHA,width,engine:lockedAxe,
+        results,actualScreenReader:false,physicalDevice:false,manualReviewRequired:true
+      },null,2)+"\n");
     });
   });
 }

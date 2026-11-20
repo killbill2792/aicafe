@@ -230,6 +230,21 @@
       "families": [
         "D08"
       ]
+    },
+    {
+      "id": "D22",
+      "tag": "home",
+      "name": "authenticated axe WCAG automated scan of home and owner controls",
+      "viewports": [
+        390,
+        768,
+        1440
+      ],
+      "evidence": "locked_axe_automated_not_manual_accessibility",
+      "families": [
+        "D08",
+        "D09"
+      ]
     }
   ],
   "integration": {
@@ -1127,7 +1142,14 @@
       "17b-owner-security",
       "17c",
       "8b-multiday-lifecycle",
-      "pos0ef-customer-identity"
-    ]
+      "pos0ef-customer-identity",
+      "6-15c-owner-run",
+      "15a-proactive-owner-answer",
+      "8a-price-observation",
+      "8a-approved-experiment",
+      "pos0ef-customer-trends",
+      "pos0ef-customer-detail"
+    ],
+    "automatedWCAG": "EXECUTABLE_SCAN_AUTHORED_NOT_RUN"
   }
 }

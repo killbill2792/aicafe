@@ -344,6 +344,7 @@ jobs:
           path: |
             test-results/e2e/proof.json
             test-results/e2e/task17d-performance-*.json
+            test-results/e2e/task17d-axe-*.json
           if-no-files-found: error
           retention-days: 14
       - name: Link executed browser job and artifact
