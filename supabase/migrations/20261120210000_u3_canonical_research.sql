@@ -213,28 +213,639 @@ DECLARE
   missing text;
 BEGIN
   FOR cfg IN SELECT value FROM jsonb_array_elements($u3_sources$[
-    {"table":"daily_rollups","fields":["business_date","net_sales_cents","orders_count","drinks_count","ingredients_cents","staff_wages_cents","staff_tax_cents","card_fees_cents","voids_cents","sales_data_status","staff_tax_status","labor_wage_status"]},
-    {"table":"hourly_sales_rollup","fields":["business_date","location_id","hour_local","net_sales_cents","orders_count"]},
-    {"table":"orders","fields":["id","location_id","pos_order_id","business_date","closed_at","gross_sales_cents","discounts_cents","refunds_cents","tax_cents","tip_cents","processing_fee_cents","net_sales_cents","employee_id","dining_option","source_channel","guest_count","toast_excluded","superseded_by"],"sensitive":["employee_id"]},
-    {"table":"order_lines","parent":"orders","parent_fk":"order_id","fields":["id","order_id","menu_item_id","pos_item_id","name","quantity","net_sales_cents","voided","category","ordered_at","fulfillment_status"]},
-    {"table":"menu_items","fields":["id","pos_item_id","name","price_cents","category","is_active","base_name","size_label","catalog_source","catalog_last_synced_at","menu_group","pos_visibility","toast_publication_state","toast_publication_version","toast_publication_observed_at"]},
-    {"table":"ingredients","fields":["id","name","base_unit","category","archived_at"]},
-    {"table":"recipe_lines","parent":"menu_items","parent_fk":"menu_item_id","fields":["menu_item_id","ingredient_id","quantity","display_unit","display_quantity","sort_order"]},
-    {"table":"ingredient_prices","parent":"ingredients","parent_fk":"ingredient_id","fields":["id","ingredient_id","effective_from","cost_per_base_unit_micros","source","pack_quantity","pack_unit","pack_cost_cents","recorded_at"]},
-    {"table":"ingredient_unit_conversions","parent":"ingredients","parent_fk":"ingredient_id","fields":["id","ingredient_id","unit","base_units_per_unit","created_at"]},
-    {"table":"expenses","fields":["id","spent_on","amount_cents","vendor","category_code","source","status","confidence","created_at"]},
-    {"table":"expense_lines","parent":"expenses","parent_fk":"expense_id","fields":["id","expense_id","quantity","unit","amount_cents","ingredient_id","receipt_line_index"]},
-    {"table":"employees","fields":["id","display_name","role","active","default_hourly_wage_cents","wage_period","wage_amount_cents","pos_last_synced_at"],"sensitive":["id","display_name","default_hourly_wage_cents","wage_amount_cents"]},
-    {"table":"timecards","fields":["id","employee_id","clock_in","clock_out","hourly_wage_cents","source_type","source_provider","wage_source","pos_last_synced_at","provider_regular_hours","provider_overtime_hours"],"sensitive":["id","employee_id","hourly_wage_cents"]},
-    {"table":"scheduled_shifts","fields":["id","employee_id","local_date","start_local","end_local","overnight","break_minutes","role","status","source","deleted_at"],"sensitive":["id","employee_id"]},
-    {"table":"locations","fields":["id","name","city","region","country_code","timezone"]},
-    {"table":"purchase_orders","fields":["id","supplier_id","supplier_name_snapshot","status","revision","currency_code","needed_by","subtotal_cents","shipping_cents","tax_cents","total_cents","approved_at","created_at"]},
-    {"table":"purchase_order_lines","fields":["id","purchase_order_id","ingredient_id","item_name_snapshot","needed_base_quantity","base_unit","packs","pack_quantity","pack_unit","unit_price_cents","subtotal_cents","quoted_on","delivery_on"]},
-    {"table":"purchase_receipts","fields":["id","purchase_order_id","supplier_id","receiving_reference","revision","received_on","verification_kind","verified_at","created_at"]},
-    {"table":"supplier_invoices","fields":["id","purchase_order_id","supplier_id","revision","issued_on","due_on","currency_code","subtotal_cents","tax_cents","freight_cents","discount_cents","total_cents","canonical_expense_id","recognized_expense_on"]},
-    {"table":"cafe_events","fields":["id","name","kind","start_date","end_date","start_time","end_time","area_label","source_url","status","last_verified_at"]},
-    {"table":"cafe_decisions","fields":["id","type","entity_type","entity_id","confidence","status","created_at","updated_at"]}
-  ]$u3_sources$::jsonb) LOOP
+  {
+    "table": "daily_rollups",
+    "fields": [
+      "business_date",
+      "net_sales_cents",
+      "orders_count",
+      "drinks_count",
+      "ingredients_cents",
+      "staff_wages_cents",
+      "staff_tax_cents",
+      "card_fees_cents",
+      "voids_cents",
+      "sales_data_status",
+      "staff_tax_status",
+      "labor_wage_status"
+    ]
+  },
+  {
+    "table": "hourly_sales_rollup",
+    "fields": [
+      "business_date",
+      "location_id",
+      "hour_local",
+      "net_sales_cents",
+      "orders_count"
+    ]
+  },
+  {
+    "table": "orders",
+    "fields": [
+      "id",
+      "location_id",
+      "pos_order_id",
+      "business_date",
+      "closed_at",
+      "gross_sales_cents",
+      "discounts_cents",
+      "refunds_cents",
+      "tax_cents",
+      "tip_cents",
+      "processing_fee_cents",
+      "net_sales_cents",
+      "employee_id",
+      "dining_option",
+      "source_channel",
+      "guest_count",
+      "toast_excluded",
+      "superseded_by"
+    ],
+    "sensitive": [
+      "employee_id"
+    ]
+  },
+  {
+    "table": "order_lines",
+    "parent": "orders",
+    "parent_fk": "order_id",
+    "fields": [
+      "id",
+      "order_id",
+      "menu_item_id",
+      "pos_item_id",
+      "name",
+      "quantity",
+      "net_sales_cents",
+      "voided",
+      "category",
+      "ordered_at",
+      "fulfillment_status"
+    ]
+  },
+  {
+    "table": "menu_items",
+    "fields": [
+      "id",
+      "pos_item_id",
+      "name",
+      "price_cents",
+      "category",
+      "is_active",
+      "base_name",
+      "size_label",
+      "catalog_source",
+      "catalog_last_synced_at",
+      "menu_group",
+      "pos_visibility",
+      "toast_publication_state",
+      "toast_publication_version",
+      "toast_publication_observed_at"
+    ]
+  },
+  {
+    "table": "ingredients",
+    "fields": [
+      "id",
+      "name",
+      "base_unit",
+      "category",
+      "archived_at"
+    ]
+  },
+  {
+    "table": "recipe_lines",
+    "parent": "menu_items",
+    "parent_fk": "menu_item_id",
+    "fields": [
+      "menu_item_id",
+      "ingredient_id",
+      "quantity",
+      "display_unit",
+      "display_quantity",
+      "sort_order"
+    ]
+  },
+  {
+    "table": "ingredient_prices",
+    "parent": "ingredients",
+    "parent_fk": "ingredient_id",
+    "fields": [
+      "id",
+      "ingredient_id",
+      "effective_from",
+      "cost_per_base_unit_micros",
+      "source",
+      "pack_quantity",
+      "pack_unit",
+      "pack_cost_cents",
+      "recorded_at"
+    ]
+  },
+  {
+    "table": "ingredient_unit_conversions",
+    "parent": "ingredients",
+    "parent_fk": "ingredient_id",
+    "fields": [
+      "id",
+      "ingredient_id",
+      "unit",
+      "base_units_per_unit",
+      "created_at"
+    ]
+  },
+  {
+    "table": "expenses",
+    "fields": [
+      "id",
+      "spent_on",
+      "amount_cents",
+      "vendor",
+      "category_code",
+      "source",
+      "status",
+      "confidence",
+      "created_at"
+    ]
+  },
+  {
+    "table": "expense_lines",
+    "parent": "expenses",
+    "parent_fk": "expense_id",
+    "fields": [
+      "id",
+      "expense_id",
+      "quantity",
+      "unit",
+      "amount_cents",
+      "ingredient_id",
+      "receipt_line_index"
+    ]
+  },
+  {
+    "table": "employees",
+    "fields": [
+      "id",
+      "display_name",
+      "role",
+      "active",
+      "default_hourly_wage_cents",
+      "wage_period",
+      "wage_amount_cents",
+      "pos_last_synced_at"
+    ],
+    "sensitive": [
+      "id",
+      "display_name",
+      "default_hourly_wage_cents",
+      "wage_amount_cents"
+    ]
+  },
+  {
+    "table": "timecards",
+    "fields": [
+      "id",
+      "employee_id",
+      "clock_in",
+      "clock_out",
+      "hourly_wage_cents",
+      "source_type",
+      "source_provider",
+      "wage_source",
+      "pos_last_synced_at",
+      "provider_regular_hours",
+      "provider_overtime_hours"
+    ],
+    "sensitive": [
+      "id",
+      "employee_id",
+      "hourly_wage_cents"
+    ]
+  },
+  {
+    "table": "scheduled_shifts",
+    "fields": [
+      "id",
+      "employee_id",
+      "local_date",
+      "start_local",
+      "end_local",
+      "overnight",
+      "break_minutes",
+      "role",
+      "status",
+      "source",
+      "deleted_at"
+    ],
+    "sensitive": [
+      "id",
+      "employee_id"
+    ]
+  },
+  {
+    "table": "locations",
+    "fields": [
+      "id",
+      "name",
+      "city",
+      "region",
+      "country_code",
+      "timezone"
+    ]
+  },
+  {
+    "table": "purchase_orders",
+    "fields": [
+      "id",
+      "supplier_id",
+      "supplier_name_snapshot",
+      "status",
+      "revision",
+      "currency_code",
+      "needed_by",
+      "subtotal_cents",
+      "shipping_cents",
+      "tax_cents",
+      "total_cents",
+      "approved_at",
+      "created_at"
+    ]
+  },
+  {
+    "table": "purchase_order_lines",
+    "fields": [
+      "id",
+      "purchase_order_id",
+      "ingredient_id",
+      "item_name_snapshot",
+      "needed_base_quantity",
+      "base_unit",
+      "packs",
+      "pack_quantity",
+      "pack_unit",
+      "unit_price_cents",
+      "subtotal_cents",
+      "quoted_on",
+      "delivery_on"
+    ]
+  },
+  {
+    "table": "purchase_receipts",
+    "fields": [
+      "id",
+      "purchase_order_id",
+      "supplier_id",
+      "receiving_reference",
+      "revision",
+      "received_on",
+      "verification_kind",
+      "verified_at",
+      "created_at"
+    ]
+  },
+  {
+    "table": "supplier_invoices",
+    "fields": [
+      "id",
+      "purchase_order_id",
+      "supplier_id",
+      "revision",
+      "issued_on",
+      "due_on",
+      "currency_code",
+      "subtotal_cents",
+      "tax_cents",
+      "freight_cents",
+      "discount_cents",
+      "total_cents",
+      "canonical_expense_id",
+      "recognized_expense_on"
+    ]
+  },
+  {
+    "table": "cafe_events",
+    "fields": [
+      "id",
+      "name",
+      "kind",
+      "start_date",
+      "end_date",
+      "start_time",
+      "end_time",
+      "area_label",
+      "source_url",
+      "status",
+      "last_verified_at"
+    ]
+  },
+  {
+    "table": "cafe_decisions",
+    "fields": [
+      "id",
+      "type",
+      "entity_type",
+      "entity_id",
+      "confidence",
+      "status",
+      "created_at",
+      "updated_at"
+    ]
+  },
+  {
+    "table": "recurring_costs",
+    "fields": [
+      "id",
+      "category_code",
+      "label",
+      "amount_cents",
+      "frequency",
+      "due_day",
+      "is_estimate",
+      "active_from",
+      "active_to",
+      "source"
+    ]
+  },
+  {
+    "table": "pantry_stock_counts",
+    "fields": [
+      "id",
+      "ingredient_id",
+      "count_date",
+      "quantity_base",
+      "entered_quantity",
+      "entered_unit",
+      "created_at",
+      "updated_at"
+    ]
+  },
+  {
+    "table": "pantry_stock_purchases",
+    "fields": [
+      "id",
+      "ingredient_id",
+      "purchase_date",
+      "quantity_base",
+      "entered_quantity",
+      "entered_unit",
+      "cost_cents",
+      "source",
+      "source_ref",
+      "revision",
+      "voided_at",
+      "expense_line_id"
+    ]
+  },
+  {
+    "table": "menu_price_history",
+    "fields": [
+      "id",
+      "menu_item_id",
+      "old_price_cents",
+      "new_price_cents",
+      "source_type",
+      "source_provider",
+      "changed_at",
+      "toast_publication_version",
+      "toast_observed_at",
+      "toast_effective_at",
+      "toast_publication_completed_at",
+      "toast_publication_pos_item_id"
+    ]
+  },
+  {
+    "table": "menu_market_price_observations",
+    "fields": [
+      "id",
+      "menu_item_id",
+      "competitor_name",
+      "competitor_address",
+      "observed_item_name",
+      "price_cents",
+      "observed_on",
+      "distance_meters",
+      "source_url",
+      "source_label",
+      "verified_at"
+    ]
+  },
+  {
+    "table": "catalog_cost_history",
+    "fields": [
+      "id",
+      "kind",
+      "entity_id",
+      "row_id",
+      "observed_at",
+      "present",
+      "quantity",
+      "effective_from",
+      "price_micros",
+      "price_recorded_at"
+    ]
+  },
+  {
+    "table": "cafe_suppliers",
+    "fields": [
+      "id",
+      "display_name",
+      "normalized_name",
+      "created_at"
+    ]
+  },
+  {
+    "table": "employee_sales_rollup",
+    "fields": [
+      "business_date",
+      "employee_id",
+      "net_sales_cents",
+      "orders_count"
+    ],
+    "sensitive": [
+      "employee_id"
+    ]
+  },
+  {
+    "table": "employee_pay_period_facts",
+    "fields": [
+      "id",
+      "employee_id",
+      "pay_period_end",
+      "gross_cents",
+      "net_cents",
+      "regular_cents",
+      "overtime_cents",
+      "double_overtime_cents",
+      "employee_tax_cents",
+      "employer_tax_cents",
+      "source"
+    ],
+    "sensitive": [
+      "employee_id"
+    ]
+  },
+  {
+    "table": "staff_availability_rules",
+    "fields": [
+      "id",
+      "employee_id",
+      "location_id",
+      "day_of_week",
+      "start_local",
+      "end_local",
+      "overnight",
+      "effective_from",
+      "effective_to",
+      "source",
+      "confirmation",
+      "confirmed_at",
+      "revision"
+    ],
+    "sensitive": [
+      "employee_id"
+    ]
+  },
+  {
+    "table": "staff_availability_exceptions",
+    "fields": [
+      "id",
+      "employee_id",
+      "location_id",
+      "local_date",
+      "exception_type",
+      "start_local",
+      "end_local",
+      "overnight",
+      "max_minutes",
+      "source",
+      "confirmation",
+      "confirmed_at",
+      "revision"
+    ],
+    "sensitive": [
+      "employee_id"
+    ]
+  },
+  {
+    "table": "menu_combo_components",
+    "fields": [
+      "combo_item_id",
+      "component_item_id",
+      "quantity",
+      "buy_in_cost_cents"
+    ]
+  },
+  {
+    "table": "menu_item_modifier_groups",
+    "fields": [
+      "menu_item_id",
+      "pos_group_id",
+      "pos_group_name",
+      "min_selections",
+      "max_selections",
+      "required",
+      "toast_publication_state",
+      "toast_publication_version",
+      "toast_publication_observed_at"
+    ]
+  },
+  {
+    "table": "menu_product_addons",
+    "fields": [
+      "id",
+      "menu_item_id",
+      "ingredient_id",
+      "kind",
+      "enabled",
+      "is_default",
+      "upcharge_cents",
+      "display_unit",
+      "display_quantity"
+    ]
+  },
+  {
+    "table": "modifier_recipes",
+    "fields": [
+      "id",
+      "pos_modifier_id",
+      "name",
+      "ingredient_id",
+      "quantity_delta",
+      "replaces_ingredient_id",
+      "price_cents",
+      "pos_group_id",
+      "pos_group_name",
+      "is_active",
+      "catalog_source",
+      "toast_publication_state",
+      "toast_publication_version",
+      "toast_publication_observed_at"
+    ]
+  },
+  {
+    "table": "pantry_modifier_links",
+    "fields": [
+      "provider",
+      "location_ref",
+      "pos_modifier_id",
+      "modifier_recipe_id",
+      "created_at",
+      "updated_at"
+    ]
+  },
+  {
+    "table": "toast_catalog_price_versions",
+    "fields": [
+      "restaurant_guid",
+      "kind",
+      "provider_guid",
+      "price_cents",
+      "name",
+      "category",
+      "observed_at"
+    ]
+  },
+  {
+    "table": "supplier_invoice_lines",
+    "fields": [
+      "id",
+      "purchase_order_id",
+      "invoice_id",
+      "source_line_key",
+      "order_line_id",
+      "ingredient_id",
+      "source_item_name",
+      "quantity_base4",
+      "subtotal_cents"
+    ]
+  },
+  {
+    "table": "purchase_receipt_lines",
+    "fields": [
+      "id",
+      "purchase_order_id",
+      "receipt_id",
+      "source_line_key",
+      "order_line_id",
+      "ingredient_id",
+      "source_item_name",
+      "received_base4",
+      "accepted_base4",
+      "damaged_base4",
+      "canonical_stock_line_id"
+    ]
+  },
+  {
+    "table": "cafe_neighborhood_evidence",
+    "fields": [
+      "place_id",
+      "assessment",
+      "rationale",
+      "checked_at"
+    ]
+  }
+]$u3_sources$::jsonb) LOOP
     rel:=cfg->>'table';
     SELECT array_agg(value) INTO fields FROM jsonb_array_elements_text(cfg->'fields');
     SELECT coalesce(array_agg(value),ARRAY[]::text[]) INTO sensitive
@@ -351,5 +962,26 @@ COMMENT ON VIEW u3_research.purchase_receipts IS 'Grain: one recorded physical r
 COMMENT ON VIEW u3_research.supplier_invoices IS 'Grain: one invoice claim; not proof of payment, delivery or expense recognition. Canonical linked expense must not be double counted with invoice total.';
 COMMENT ON VIEW u3_research.cafe_events IS 'Grain: one saved local event record with verification and time coverage. A listing is not evidence of attendance or causation, and stale verification must remain disclosed.';
 COMMENT ON VIEW u3_research.cafe_decisions IS 'Grain: one recorded business decision with confidence/status and provenance. Draft/pending decisions are not executed effects; outcomes need independent source proof.';
+
+COMMENT ON VIEW u3_research.recurring_costs IS 'One configured recurring cost per id and effective interval; budget expectation not a recorded invoice or cash payment';
+COMMENT ON VIEW u3_research.pantry_stock_counts IS 'One dated owner inventory count per ingredient; current quantity requires independent freshness and source verification';
+COMMENT ON VIEW u3_research.pantry_stock_purchases IS 'One recorded pantry stock purchase with base units, source and void/revision state; avoid doubling associated expense line';
+COMMENT ON VIEW u3_research.menu_price_history IS 'One historical price-change observation per menu item; verified Toast publication and manual proposals are not interchangeable';
+COMMENT ON VIEW u3_research.menu_market_price_observations IS 'One dated external competitor observation; a listing is not verified availability or comparable cost without matching size and date';
+COMMENT ON VIEW u3_research.catalog_cost_history IS 'One historical observation of cost structure; use observed effective time rather than current recipe prices for past profitability';
+COMMENT ON VIEW u3_research.cafe_suppliers IS 'One owner-recorded supplier identity without credentials or contact secrets';
+COMMENT ON VIEW u3_research.employee_sales_rollup IS 'One employee business-day sales rollup; avoid equating attributed sales with labor profit or individual customer demand';
+COMMENT ON VIEW u3_research.employee_pay_period_facts IS 'One observed employee pay-period payroll fact, not predicted hourly wages; individual payroll only for authenticated owner';
+COMMENT ON VIEW u3_research.staff_availability_rules IS 'One declared recurring staff availability rule; availability is not a published assigned shift';
+COMMENT ON VIEW u3_research.staff_availability_exceptions IS 'One date-specific staff availability exception; employee reports and owner confirmation are not scheduled changes';
+COMMENT ON VIEW u3_research.menu_combo_components IS 'One component entry for a menu combo; avoid multiplying total menu revenue across components';
+COMMENT ON VIEW u3_research.menu_item_modifier_groups IS 'One published or pending modifier group attachment, with selection bounds; excluded raw provider metadata';
+COMMENT ON VIEW u3_research.menu_product_addons IS 'One item addon ingredient/price specification; upcharge is not automatically historical sale revenue';
+COMMENT ON VIEW u3_research.modifier_recipes IS 'One modifier recipe mapping with unit-aware quantity changes and published Toast status';
+COMMENT ON VIEW u3_research.pantry_modifier_links IS 'One provider modifier to recipe linkage; use source ID and location, not title similarity';
+COMMENT ON VIEW u3_research.toast_catalog_price_versions IS 'One observed Toast catalog price version per provider identity and observation; not a complete historical price timeline';
+COMMENT ON VIEW u3_research.supplier_invoice_lines IS 'One supplier invoice line claim, not proof of receiving or payment; avoid duplicating linked invoice or expense amount';
+COMMENT ON VIEW u3_research.purchase_receipt_lines IS 'One physical receipt line with received, accepted and damaged quantities; distinguish provider statement from verified stock';
+COMMENT ON VIEW u3_research.cafe_neighborhood_evidence IS 'One dated local-market evidence assessment; source text is untrusted context and not attendance or causality proof';
 
 REVOKE aicafe_research_view_owner FROM postgres;
