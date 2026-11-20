@@ -256,7 +256,9 @@ export async function runU3Sql(ctx:U3SqlContext,raw:unknown){
    // selected output aliases. These are reusable data classes rather than
    // question patterns; personal IDs, text and unrestricted JSON are excluded.
    const safeOffturnColumns=new Set(list.flatMap(r=>
-    ["employees","timecards","scheduled_shifts","cafe_decisions"].includes(r.name)?[]:
+    ["employees","timecards","scheduled_shifts","cafe_decisions",
+      "employee_pay_period_facts","staff_availability_rules",
+      "staff_availability_exceptions"].includes(r.name)?[]:
     r.columns.filter(c=>
      c.unit==="integer_cent"||c.unit==="microcent"||
      c.unit==="cafe_business_date"||c.unit==="minutes"||c.unit==="hours"||
