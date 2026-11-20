@@ -320,6 +320,7 @@ export async function runAgentTurn(args: {
   args.context.ownerText=args.serviceOrigin?"":ownerRunStatement(args.ownerText,matched);
   args.context.turnResults=()=>results.filter(r=>r.name!=="calculate"&&r.name!=="present_response").map(r=>({name:r.name,result:r.result}));
   const presentationAllowed=!args.serviceOrigin&&!args.toolNames;
+  args.context.presentationScenarioBasis=presentationAllowed?new WeakMap():undefined;
   args.context.presentationResults=()=>results.map((r,i)=>({...r,ref:"r"+(i+1)})).filter(r=>r.name!=="present_response");
   const toolContext:AgentToolContext=underlyingWebSearch?{
     ...args.context,

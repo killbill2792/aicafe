@@ -6,6 +6,7 @@ import {Paperclip} from "lucide-react";
 import type {StoredAttachment} from "@/lib/ai/conversations/attachments";
 import type {Spec} from "@json-render/core";
 import type {ComparisonSeries} from "./SupervisorRichChart";
+import {evaluateScenarioEditor,scenarioEditFields} from "@/lib/ai/conversations/scenarioPresentation";
 import en from "@/messages/en.json";
 import es from "@/messages/es.json";
 import ar from "@/messages/ar.json";
@@ -141,17 +142,26 @@ function CalculatorView({calculator,locale}:{calculator:InteractiveCalc;locale:s
 function ScenarioView({scenario,locale}:{scenario:ScenarioComparison;locale:string}){
  const [index,setIndex]=useState(0);
  const selected=scenario.cases[index]??scenario.cases[0];
+ const [changes,setChanges]=useState<Record<string,string>>({});
+ const edited=selected.editor?evaluateScenarioEditor(selected.editor,changes):null;
  const fmt=(v:number)=>new Intl.NumberFormat(locale,{style:"currency",currency:scenario.currency,minimumFractionDigits:2,maximumFractionDigits:2}).format(v/100);
  return <section data-testid="supervisor-scenario" className="min-w-0 space-y-3 py-2">
   <h3 className="font-medium text-ink">{scenario.title}</h3>
   <p className="text-[13px] text-ink-muted">{copy.estimate} · {copy.snapshot} {scenario.asOf}. {copy.noChange}</p>
   {scenario.cases.length>1?<label className="block text-[15px]">{copy.compareAssumptions}
-   <select value={index} onChange={e=>setIndex(Number(e.target.value))} className="mt-1 block min-h-12 w-full rounded-xl border border-line bg-surface px-3">
+   <select value={index} onChange={e=>{setIndex(Number(e.target.value));setChanges({});}} className="mt-1 block min-h-12 w-full rounded-xl border border-line bg-surface px-3">
     {scenario.cases.map((c,i)=><option value={i} key={i}>{c.assumption}</option>)}
    </select></label>:<p>{selected.assumption}</p>}
+  {selected.editor&&<div data-testid="supervisor-scenario-editor" className="space-y-2">
+    <p className="text-[13px] text-ink-muted">{copy.calculatorNotice}</p>
+    {scenarioEditFields(selected.editor).map(f=><label key={f.key} className="block text-[15px]">{f.label}{f.money?" ("+scenario.currency+")":f.percent?" (%)":""}
+      <input type="text" inputMode="decimal" maxLength={15} value={changes[f.key]??String(f.value)} onChange={e=>setChanges(prev=>({...prev,[f.key]:e.target.value}))} className="mt-1 block w-full min-h-12 rounded-xl border border-line bg-surface px-3 tabular-nums"/>
+    </label>)}
+    <button type="button" className="min-h-12 underline text-[15px]" onClick={()=>setChanges({})}>{copy.resetAssumptions}</button>
+  </div>}
   <dl className="grid grid-cols-2 gap-2 tabular-nums">
    <div><dt className="text-[13px] text-ink-muted">{copy.baselineEstimate}</dt><dd className="break-words text-xl font-medium">{fmt(selected.beforeCents)}</dd></div>
-   <div><dt className="text-[13px] text-ink-muted">{copy.scenarioEstimate}</dt><dd className="break-words text-xl font-medium">{fmt(selected.afterCents)}</dd></div>
+   <div><dt className="text-[13px] text-ink-muted">{copy.scenarioEstimate}</dt><dd className="break-words text-xl font-medium"><span role="status">{selected.editor?edited?fmt(edited.afterCents):copy.invalidCalculation:fmt(selected.afterCents)}</span></dd></div>
   </dl>
   <p className="text-[13px] text-ink-muted">{copy.scenarioNotice}</p>
  </section>;

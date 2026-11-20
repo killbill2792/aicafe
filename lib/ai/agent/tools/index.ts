@@ -97,6 +97,8 @@ export type AgentToolContext = {
   presentationResults?:()=>ReadonlyArray<{name:string;arguments:string;result:AgentToolResult;ref?:string}>;
   /** Selected same-thread attachments already authenticated, read and rechecked by the existing runner. */
   presentationAttachments?:readonly string[];
+  /** Ephemeral sanitized simulator basis. Never sent to the model/checkpoint. */
+  presentationScenarioBasis?:WeakMap<object,import("@/lib/ai/conversations/scenarioPresentation").ScenarioEditorSeed>;
   resolveState?:import("../resolve").ResolveState;
   asOf: string; locale: AgentLocale;
   threadId?:string;ownerMessageId?:string;

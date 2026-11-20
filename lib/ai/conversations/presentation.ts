@@ -1,3 +1,4 @@
+import {scenarioEditorSchema,evaluateScenarioEditor} from "./scenarioPresentation";
 import { z } from "zod";
 import {exactNumber,runCalculation,CALC_OPS,type CalcOp,type CalcShown} from "@/lib/metrics/core/calculator";
 
@@ -30,7 +31,11 @@ export const agendaSchema=z.strictObject({
 export const scenarioComparisonSchema=z.strictObject({
  title:label,currency:z.string().regex(/^[A-Z]{3}$/),asOf:date,
  provenance:z.literal("estimate"),
- cases:z.array(z.strictObject({assumption:label,beforeCents:z.number().int().safe(),afterCents:z.number().int().safe()})).min(1).max(8)
+ cases:z.array(z.strictObject({assumption:label,beforeCents:z.number().int().safe(),afterCents:z.number().int().safe(),editor:scenarioEditorSchema.optional()}).refine(c=>{
+   if(!c.editor)return true;
+   const original=evaluateScenarioEditor(c.editor);
+   return original?.beforeCents===c.beforeCents&&original.afterCents===c.afterCents;
+ })).min(1).max(8)
 });
 const tableUnit=z.enum(["label","local date","cents","count","items","units","quantity","seconds","minutes","hours","days","ratio","ratio squared","indicator","cents/hour","boolean","hour 0 to 23","weekday","timestamp text","stored"]);
 const cell=z.union([z.string().max(240),z.number().finite().min(-Number.MAX_SAFE_INTEGER).max(Number.MAX_SAFE_INTEGER),z.boolean(),z.null()]);

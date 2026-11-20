@@ -1,3 +1,4 @@
+import {scenarioEditorSchema,evaluateScenarioEditor} from "@/lib/ai/conversations/scenarioPresentation";
 import {canonicalDictionary,canonicalViewNames,type CanonicalView} from "@/lib/data/canonical/dictionary";
 import { z } from "zod";
 import { richPresentationSchema,agendaSchema,scenarioComparisonSchema,recordTableSchema,interactiveCalcSchema,evaluatePresentationCalc,presentationLeaves,compatibleComparison,type RichPresentation,type RecordTable,type InteractiveCalc,type Agenda,type ScenarioComparison,type PresentationPanel } from "@/lib/ai/conversations/presentation";
@@ -224,7 +225,7 @@ function agendaFor(kind:NonNullable<z.infer<typeof presentationInputSchema>["age
    entries:entries.sort((a,b)=>a.date.localeCompare(b.date)||(a.start??"").localeCompare(b.start??""))});
  return out.success?out.data:null;
 }
-function modeledScenario(results:readonly AgentToolResult[],ctx:Pick<AgentToolContext,"asOf"|"currency">,kind:NonNullable<z.infer<typeof presentationInputSchema>["scenario"]>,calls:readonly {name:string;arguments:string;result:AgentToolResult}[]):ScenarioComparison|null{
+function modeledScenario(results:readonly AgentToolResult[],ctx:Pick<AgentToolContext,"asOf"|"currency"|"presentationScenarioBasis">,kind:NonNullable<z.infer<typeof presentationInputSchema>["scenario"]>,calls:readonly {name:string;arguments:string;result:AgentToolResult}[]):ScenarioComparison|null{
  const cases:ScenarioComparison["cases"]=[];
  const definitions={monthly_profit:["monthlyProfitCents","Modeled monthly profit"],monthly_break_even:["monthlyBreakEvenCents","Modeled monthly break-even"],monthly_target_sales:["monthlyTargetSalesCents","Modeled monthly target sales"],item_margin:["itemMarginCents","Modeled item margin"]} as const;
  const [field,title]=definitions[kind];
@@ -276,7 +277,11 @@ function modeledScenario(results:readonly AgentToolResult[],ctx:Pick<AgentToolCo
        }
      }
    }
-   if(assumption!==null&&assumption.length<=140){cases.push({assumption,beforeCents:before,afterCents:after});if(target)targets.add(target);}
+   if(assumption!==null&&assumption.length<=140){const seed=ctx.presentationScenarioBasis?.get(r);
+     const ed=seed?scenarioEditorSchema.safeParse({...seed,metric:field}):null;
+     const baseline=ed?.success?evaluateScenarioEditor(ed.data):null;
+     const editor=ed?.success&&baseline?.beforeCents===before&&baseline.afterCents===after?ed.data:undefined;
+     cases.push({assumption,beforeCents:before,afterCents:after,...(editor?{editor}:{})});if(target)targets.add(target);}
  }
  const unique=[...new Map(cases.map(c=>[JSON.stringify(c),c])).values()];
  if(targets.size>1||new Set(unique.map(c=>c.beforeCents)).size!==1||new Set(unique.map(c=>c.assumption)).size!==unique.length)return null;
@@ -397,7 +402,7 @@ function project(s:z.infer<typeof selection>,r:AgentToolResult,ctx:Pick<AgentToo
  return {kind:s.kind,title:d.title,unit:d.unit,currency:d.unit==="cents"?ctx.currency??null:null,
    from,to,asOf:ctx.asOf,source:s.source,points};
 }
-export function presentResponse(raw:unknown,ctx:Pick<AgentToolContext,"currency"|"asOf"|"turnResults"|"presentationResults"|"presentationAttachments">):AgentToolResult{
+export function presentResponse(raw:unknown,ctx:Pick<AgentToolContext,"currency"|"asOf"|"turnResults|"presentationResults"|"presentationAttachments"|"presentationScenarioBasis">):AgentToolResult{
  const empty={source:"response_presentation",period:null,missing:[]};
  const parsed=presentationInputSchema.safeParse(raw);
  if(!parsed.success||!ctx.turnResults)return {...empty,accepted:false};
