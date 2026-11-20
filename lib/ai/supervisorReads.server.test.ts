@@ -185,3 +185,10 @@ describe("U1 shared daily reader scope and date bounds",()=>{
       quality:{missingInputs:["toastDayStatusUnavailable"]}});
   });
 });
+
+it("rejects a foreign café before any date metadata read",async()=>{
+ const from=vi.fn();
+ const readers=supervisorHistoricalReaders({from} as unknown as SupabaseClient,"my-cafe");
+ await expect(readers.salesCoverageBounds("other-cafe",{from:"2026-10-12",to:"2026-10-12"})).rejects.toThrow("scope");
+ expect(from).not.toHaveBeenCalled();
+});
