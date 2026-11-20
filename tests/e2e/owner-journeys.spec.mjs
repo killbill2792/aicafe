@@ -8,6 +8,23 @@ test.beforeEach(() => {
   assertDisposableEnvironment();
 });
 
+// Exercise the browser's computed tree rather than trusting aria-label source
+// strings. Only redacted role counts are asserted; don't export answer content.
+const interactiveAXRoles=new Set(["button","link","textbox","searchbox","combobox","checkbox","radio","switch","spinbutton","slider","tab","menuitem","menuitemcheckbox","menuitemradio","DisclosureTriangle"]);
+function assertNamedAXControls(nodes){
+  const controls=nodes.filter(n=>!n.ignored&&interactiveAXRoles.has(n.role?.value));
+  expect(controls.length).toBeGreaterThan(0);
+  expect(controls.filter(n=>!String(n.name?.value??"").trim()).map(n=>n.role?.value)).toEqual([]);
+}
+async function assertAccessibleControls(page){
+  const session=await page.context().newCDPSession(page);
+  try{
+    await session.send("Accessibility.enable");
+    const {nodes}=await session.send("Accessibility.getFullAXTree");
+    assertNamedAXControls(nodes);
+  }finally{await session.detach();}
+}
+
 test("@home Task16A authenticated mobile owner views library/routines/permissions and revokes a scoped mandate",async({browser})=>{
   test.setTimeout(120_000);
   const owner=seededCafe(0),foreign=seededCafe(1);
@@ -53,7 +70,7 @@ test("@home Task16A authenticated mobile owner views library/routines/permission
     const panel=page.getByRole("dialog",{name:"Supervisor controls"});
     await expect(panel).toBeVisible();
     await panel.getByRole("button",{name:"Library",exact:true}).click();
-    await expect(panel.getByRole("button",{name:"Task16A approval library"})).toBeVisible();console.info("[Task16A E2E] library from authenticated records");
+    await expect(panel.getByRole("button",{name:"Task16A approval library"})).toBeVisible();await assertAccessibleControls(page);console.info("[Task16A E2E] library from authenticated records");
     const routinesTab=panel.getByRole("button",{name:"Routines",exact:true});
     await routinesTab.click();
     await expect(panel.getByText("Daily source check")).toBeVisible();
@@ -61,6 +78,7 @@ test("@home Task16A authenticated mobile owner views library/routines/permission
     await routinesTab.click();
     await expect(panel.getByText("Daily source check")).toBeVisible();
     await expect(panel.getByText("Checking saved permissions and routines")).toHaveCount(0);
+    await assertAccessibleControls(page);
     console.info("[Task16A E2E] canonical routine remains after active-tab reselect");
     await page.getByRole("dialog",{name:"Supervisor controls"}).getByRole("button",{name:"Open routine conversation",exact:true}).click();
     await expect(panel).toHaveCount(0);
@@ -76,12 +94,14 @@ test("@home Task16A authenticated mobile owner views library/routines/permission
     await expect(panel.getByText("Goal tracking",{exact:true}).first()).toBeVisible();
     await expect(panel.getByText("5 goal starts per café-local day").first()).toBeVisible();
     await expect(panel.getByText("Checking saved permissions and routines")).toHaveCount(0);
+    await assertAccessibleControls(page);
     console.info("[Task16A E2E] canonical permission remains after active-tab reselect");
     // No verified phone MFA factor is installed in the seeded project:
     // a simulated grant cannot be shown as enabled.
     await expect(panel.getByRole("button",{name:"Request verification code"})).toHaveCount(0);
     console.info("[Task16A E2E] invoking genuine owner revoke");
-    await panel.getByRole("button",{name:"Revoke permission"}).click();
+    await panel.getByRole("button",{name:"Revoke permission"}).focus();
+    await page.keyboard.press("Enter");
     await expect(panel.getByText("Permission revoked in the database")).toBeVisible();
     const receipt=await db.query("select revision,revoked_at from public.supervisor_mandates "+
       "where id=$1 order by revision desc limit 1",[id.active]);
@@ -476,6 +496,12 @@ test("@home owner uploads and reselects a private receipt while another café ca
     await openOwnedPage(page, owner, "");
     const attach = page.getByRole("button", {name: "Add an attachment"});
     await expect(attach).toBeEnabled({timeout: 30_000});
+    await attach.focus();await page.keyboard.press("Enter");
+    const choices=page.getByRole("group",{name:"Add an attachment"});
+    await expect(choices.getByRole("button",{name:"Choose file or photo"})).toBeFocused();
+    await assertAccessibleControls(page);
+    await page.keyboard.press("Escape");await expect(choices).toHaveCount(0);
+    await expect(attach).toBeFocused();
     // Observe only status/path metadata. Failing a real upload must explain
     // whether the lazy thread creation or the private file endpoint failed.
     const uploads=[];
@@ -1115,9 +1141,11 @@ test("@purchasing proactive notice → repeated cron idempotency → owner-appro
     await expect(card).toContainText(name);
     await expect(card).toContainText("Shipping, tax and full landed total: unknown");
     await expect(card.getByRole("button",{name:"Approve purchase order"})).toBeVisible();
+    await assertAccessibleControls(page);
     const approved=page.waitForResponse(r=>new URL(r.url()).pathname===
       "/api/ai/threads/"+id.thread+"/proposals"&&r.request().method()==="POST");
-    await card.getByRole("button",{name:"Approve purchase order"}).click();
+    await card.getByRole("button",{name:"Approve purchase order"}).focus();
+    await page.keyboard.press("Enter");
     const response=await approved;
     expect(response.status()).toBe(200);
     await expect(card).toContainText("Approved for ordering — NOT sent to supplier",
@@ -1370,6 +1398,7 @@ test("@home Task16D authenticated responsive Supervisor work across conversation
     const drawer=page.getByRole("dialog",{name:"Supervisor controls"});
     const earlier=drawer.locator('[data-work-id="run:'+otherRun+'"]');
     await expect(earlier).toContainText("Earlier supplier conversation");
+    await assertAccessibleControls(page);
     // Initial target-thread message read fails; no terminal job exists to reload it.
     const initialMessages=`**/api/ai/threads/${otherThread}/messages?offset=0`;
     await page.route(initialMessages,route=>route.fulfill({status:503,body:"{}"}));
@@ -1679,6 +1708,7 @@ test("@home Task16E quiet shell, optional visuals, editable follow-up and mobile
       const input=page.locator("#supervisor-home-composer");
       const welcome=page.getByTestId("supervisor-welcome");
       await expect(welcome).toBeVisible({timeout:30000});
+      await assertAccessibleControls(page);
       await page.emulateMedia({reducedMotion:"reduce"});
       expect(await welcome.evaluate(el=>getComputedStyle(el).animationName)).toBe("none");
       await expect(input).toBeVisible();
@@ -1882,6 +1912,7 @@ test("@home Task16E adaptive answer survives reload, preserves prose and opens a
       await expect(chartDetail.locator("..")).toHaveAttribute("open","");
       await expect(rich.getByTestId("supervisor-rich-chart")).toHaveAttribute("aria-hidden","true");
       await expect(rich.getByTestId("supervisor-comparison-chart")).toHaveAttribute("aria-hidden","true");
+      await assertAccessibleControls(page);
       const ax=await answer.ariaSnapshot();
       expect(ax).toContain('heading "Sales overview"');
       expect(ax).toContain('table "Response table"');
@@ -1974,8 +2005,7 @@ test("@home Task16E adaptive answer survives reload, preserves prose and opens a
         expect(exposed.some(n=>n.role?.value==="dialog"&&n.name?.value==="Supervisor controls")).toBe(true);
         expect(exposed.some(n=>n.role?.value==="button"&&n.name?.value==="Close Supervisor controls")).toBe(true);
         expect(exposed.some(n=>n.role?.value==="log"&&n.name?.value==="Conversations")).toBe(false);
-        const controls=new Set(["button","link","textbox","searchbox","combobox","checkbox","radio","switch","spinbutton","slider","tab","menuitem","DisclosureTriangle"]);
-        expect(exposed.filter(n=>controls.has(n.role?.value)&&!String(n.name?.value??"").trim()).map(n=>n.role?.value)).toEqual([]);
+        assertNamedAXControls(exposed);
       }finally{await axSession.detach();}
       await page.keyboard.press("Shift+Tab");
       expect(await library.evaluate(el=>el.contains(document.activeElement))).toBe(true);
@@ -2071,7 +2101,8 @@ test("@home Task16E stops an acknowledged live view without invoking a cancel or
     await expect(stop).toHaveCount(0);
     await page.evaluate(()=>window.__task16eStream.ack());
     await expect(stop).toBeVisible();
-    await stop.click();
+    await assertAccessibleControls(page);
+    await stop.focus();await page.keyboard.press("Enter");
     await expect.poll(()=>page.evaluate(()=>window.__task16eStream.detached)).toBe(1);
     await expect(stop).toHaveCount(0);
     await expect(page.getByText("Live view stopped. Saved work may continue; check Work for its status.",{exact:true})).toBeVisible();
