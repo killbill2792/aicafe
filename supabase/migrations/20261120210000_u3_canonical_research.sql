@@ -26,6 +26,8 @@ REVOKE ALL ON SCHEMA u3_research_private FROM PUBLIC, anon, authenticated;
 GRANT USAGE ON SCHEMA u3_research TO aicafe_research;
 GRANT CREATE,USAGE ON SCHEMA u3_research TO aicafe_research_view_owner;
 GRANT USAGE ON SCHEMA u3_research_private TO aicafe_research_view_owner;
+-- Grant temporary SET ROLE solely for ownership transfer in this transaction.
+GRANT aicafe_research_view_owner TO postgres WITH SET TRUE;
 
 -- One private signing key, not one entitlement row per model call. Its random
 -- value is never emitted to service/browser/model, including via error output.
@@ -346,4 +348,5 @@ COMMENT ON VIEW u3_research.supplier_invoices IS 'Grain: one invoice claim; not 
 COMMENT ON VIEW u3_research.cafe_events IS 'Grain: one saved local event record with verification and time coverage. A listing is not evidence of attendance or causation, and stale verification must remain disclosed.';
 COMMENT ON VIEW u3_research.cafe_decisions IS 'Grain: one recorded business decision with confidence/status and provenance. Draft/pending decisions are not executed effects; outcomes need independent source proof.';
 
+REVOKE aicafe_research_view_owner FROM postgres;
 COMMIT;
