@@ -1,4 +1,5 @@
 import "server-only";
+import {randomUUID} from "node:crypto";
 import type {SupabaseClient} from "@supabase/supabase-js";
 import {assertDay,cityEventIdentity,cityPlaceIdentity,cityScopeKey,correctedSourceAlias,canonicalSourceUrl,
   type CityEventCandidate,type CityPlaceCandidate,type CityScope} from "./cityEventIdentity";
@@ -120,4 +121,21 @@ export async function correctCityOccurrence(db:SupabaseClient,businessId:string,
    p_aliases:aliases,
  });
  throwOnError(error);return data===true;
+}
+
+/** Existing handled-task ledger, claimed before paid assessment/change work.
+ * Retry failed versions, but never regenerate a completed identical version. */
+export async function withEventWorkClaim<T>(db:SupabaseClient,businessId:string,ownerId:string,
+ type:"assessment"|"change",key:string,day:string,work:(complete:()=>void)=>Promise<T>):Promise<T|null>{
+ const token=randomUUID(),workKey="event-work:"+type+":"+key;
+ const claimed=await db.rpc("ldi_claim_event_work",{p_business_id:businessId,p_owner_id:ownerId,
+   p_work_key:workKey,p_day:day,p_token:token});
+ throwOnError(claimed.error);
+ if(claimed.data!==true)return null;
+ let complete=false;
+ try{return await work(()=>{complete=true;});}finally{
+   const released=await db.rpc("ldi_release_event_work",{p_business_id:businessId,p_work_key:workKey,
+     p_token:token,p_complete:complete});
+   throwOnError(released.error);
+ }
 }

@@ -84,6 +84,7 @@ function store(){
   const writes:Array<{table:string;method:string;row:Record<string,unknown>}>=[],
     requests:Array<{table:string;method:string}>=[];
   const db={
+    rpc:async()=>({data:true,error:null}),
     from(table:string){
       const q={
         select:()=>q,eq:()=>q,in:()=>q,order:()=>q,limit:()=>q,

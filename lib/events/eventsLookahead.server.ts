@@ -18,6 +18,7 @@ import type {NearbyEventsSearch} from "./nearbyEvents";
 import {searchNearbyEvents} from "./nearbyEventsSearch.server";
 import {scanSharedResearch,newLdiBudget,type LdiBudget} from "./ldiIntegration.server";
 import {verifyUpcomingEventChanges} from "./eventVerification.server";
+import {withEventWorkClaim} from "./cityEventPersistence.server";
 import {stableMessageId,SupabaseLoopRepository} from "@/lib/ai/supervisor/loop/supabase.server";
 import {notifyOwner} from "@/lib/operating/notifyOwner.server";
 import {effectHash,proposeLoop,monitorLoop,type LoopProposal,type OwnerLoopScope} from "@/lib/ai/supervisor/loop/engine";
@@ -302,6 +303,7 @@ export async function draftDay(db:Db,b:Business,ownerId:string,locale:"en"|"es"|
   if(day.priorEvidenceHash===evidenceHash)return false;
   const requestKey=stableMessageId("event-proposal:"+b.id+":"+ownerId+":"+day.date+":"+day.hash+":"+sourceHash+":"+evidenceHash+
     (day.refresh?":day-of":""));
+  return (await withEventWorkClaim(db,b.id,ownerId,"assessment",requestKey,day.date,async complete=>{
   const existing=await db.from("supervisor_proposals").select("id")
     .eq("business_id",b.id).eq("owner_user_id",ownerId).eq("request_key",requestKey)
     .maybeSingle();
@@ -309,7 +311,7 @@ export async function draftDay(db:Db,b:Business,ownerId:string,locale:"en"|"es"|
   if(existing.data){
     // Repair eligibility stays with recoverPlanDelivery, not a second model turn.
     await saveEventAssessment(db,b.id,day.date,day.hash,sourceHash,"proposed","",today,day.batchKey,evidenceHash);
-    return false;
+    complete();return false;
   }
   // Bounded, factual and café-specific. No synthetic attendance, routes, uplift
   // or hours are manufactured when E/D did not establish them.
@@ -406,7 +408,7 @@ export async function draftDay(db:Db,b:Business,ownerId:string,locale:"en"|"es"|
   if(reused){
     await saveEventAssessment(db,b.id,day.date,day.hash,sourceHash,
       "no_action","Existing preparation decision remains applicable.",today,day.batchKey,evidenceHash);
-    return false;
+    complete();return false;
   }
   const proposal=turn.results.find(r=>r.source==="event_plan_proposal"&&
     r.missing.length===0&&r.draft===true&&typeof r.proposalId==="string");
@@ -414,9 +416,11 @@ export async function draftDay(db:Db,b:Business,ownerId:string,locale:"en"|"es"|
     // Budget exhaustion/provider errors are NOT a completed no-action review.
     if(turn.endReason==="complete"&&turn.text.trim()&&!proposalAttempted&&
       !turn.results.some(r=>r.source==="event_plan_proposal"||
-        r.source==="propose_event_plan"||(r.source==="web_search"&&r.missing.length>0)))
+        r.source==="propose_event_plan"||(r.source==="web_search"&&r.missing.length>0))){
       await saveEventAssessment(db,b.id,day.date,day.hash,sourceHash,
         "no_action",turn.text,today,day.batchKey,evidenceHash);
+      complete();
+    }
     return false;
   }
   const {reply,metadata}=turn.text.trim()?agentReplyPayload(turn):
@@ -448,7 +452,8 @@ export async function draftDay(db:Db,b:Business,ownerId:string,locale:"en"|"es"|
   requireOk(task.error);
   });
   await saveEventAssessment(db,b.id,day.date,day.hash,sourceHash,"proposed","",today,day.batchKey,evidenceHash);
-  return true;
+  complete();return true;
+  }))??false;
 }
 
 /** A proposal write can succeed while its later message/task write fails.

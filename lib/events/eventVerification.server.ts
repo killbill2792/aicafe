@@ -7,7 +7,7 @@ import {runAgentTurn} from "@/lib/ai/agent/loop.server";
 import {agentReplyPayload} from "@/lib/ai/agent/persist.server";
 import {stableMessageId} from "@/lib/ai/supervisor/loop/supabase.server";
 import {notifyOwner} from "@/lib/operating/notifyOwner.server";
-import {correctCityOccurrence} from "./cityEventPersistence.server";
+import {correctCityOccurrence,withEventWorkClaim} from "./cityEventPersistence.server";
 import type {CafeEvent,SavedEventTimeline} from "@/lib/data/cafeEvents.server";
 import {credibleEventEvidence,importantVerificationQueue,verifiedEventChange,planMatchesEvent,
   type EventEvidence,type EventVerdict,type VerifiedChange} from "./eventVerification";
@@ -164,6 +164,7 @@ async function deliverChange(db:Db,businessId:string,ownerId:string,timezone:str
   const key=stableMessageId("event-change:"+businessId+":"+event.id+":"+change.verifiedAt+":"+
     change.status+":"+change.verdict+":"+change.sourceUrl+":"+
     (change.newDate??"")+":"+(change.newEndDate??"")+":"+(change.newVenue??""));
+  await withEventWorkClaim(db,businessId,ownerId,"change",key,today,async complete=>{
   const taskId="event-change:"+key;
   const messageId=stableMessageId("event-change-message:"+key);
   const exists=await db.from("operating_tasks").select("id").eq("business_id",businessId)
@@ -228,6 +229,8 @@ async function deliverChange(db:Db,businessId:string,ownerId:string,timezone:str
     .eq("verification_details->change->>verifiedAt",change.verifiedAt)
     .eq("verification_details->>pendingNotice","true");
   if(cleared.error)throw cleared.error;
+  complete();
+  });
 }
 /** Existing authorized events cron calls this after its owner+AI entitlement checks.
  * Strict budget: max 3 source-specific checks per café, no screen-triggered work. */

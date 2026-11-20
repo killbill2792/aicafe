@@ -279,3 +279,36 @@ begin
 end $$;
 create trigger ldi_guard_event_sample before insert or update on public.supervisor_monitor_samples
  for each row execute function public.ldi_guard_event_sample();
+
+-- Serialize the existing assessment/notice writers before a paid model turn.
+-- Successful versions are durable until new material evidence changes the key.
+create function public.ldi_claim_event_work(p_business_id uuid,p_owner_id uuid,
+ p_work_key text,p_day date,p_token uuid) returns boolean
+ language plpgsql security invoker set search_path=public as $$
+declare affected integer;
+begin
+ if p_work_key !~ '^event-work:(assessment|change):[0-9a-f-]{36}$'
+ or not exists(select 1 from public.memberships where business_id=p_business_id
+ and user_id=p_owner_id and role='owner') then return false; end if;
+ insert into public.operating_tasks(business_id,id,agent_id,kind,entity_type,entity_id,
+ status,confidence,payload,evidence)
+ values(p_business_id,p_work_key,'alex','event_assessment','event_day',p_day::text,
+ 'handled','low',jsonb_build_object('token',p_token,'leaseUntil',clock_timestamp()+interval '10 minutes'),'[]'::jsonb)
+ on conflict(business_id,id) do update set payload=excluded.payload,updated_at=clock_timestamp()
+ where coalesce((public.operating_tasks.payload->>'complete')::boolean,false)=false
+ and ((public.operating_tasks.payload->>'leaseUntil')::timestamptz<=clock_timestamp()
+ or public.operating_tasks.payload->>'leaseUntil' is null);
+ get diagnostics affected=row_count;
+ return affected=1;
+end $$;
+create function public.ldi_release_event_work(p_business_id uuid,p_work_key text,
+ p_token uuid,p_complete boolean) returns void
+ language sql security invoker set search_path=public as $$
+ update public.operating_tasks set payload=(payload-'leaseUntil')||jsonb_build_object('complete',p_complete),
+ updated_at=clock_timestamp()
+ where business_id=p_business_id and id=p_work_key and payload->>'token'=p_token::text
+$$;
+revoke all on function public.ldi_claim_event_work(uuid,uuid,text,date,uuid),
+ public.ldi_release_event_work(uuid,text,uuid,boolean) from public,anon,authenticated;
+grant execute on function public.ldi_claim_event_work(uuid,uuid,text,date,uuid),
+ public.ldi_release_event_work(uuid,text,uuid,boolean) to service_role;

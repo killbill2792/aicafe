@@ -267,4 +267,25 @@ BEGIN
  RAISE EXCEPTION 'overlapping event sample was incorrectly allowed';
  EXCEPTION WHEN check_violation THEN NULL; END;
 END $check$;
+-- Two claims for one exact preparation or change revision: only the first
+-- may run, stale release cannot unlock it, and completed work stays closed.
+SELECT public.ldi_claim_event_work(:'business_a',:'owner_a',
+ 'event-work:assessment:'||:'token_one','2026-11-10',:'token_one') AS work_won \gset
+SELECT public.ldi_claim_event_work(:'business_a',:'owner_a',
+ 'event-work:assessment:'||:'token_one','2026-11-10',:'token_two') AS work_lost \gset
+SELECT public.ldi_release_event_work(:'business_a','event-work:assessment:'||:'token_one',:'token_two',false);
+SELECT public.ldi_claim_event_work(:'business_a',:'owner_a',
+ 'event-work:assessment:'||:'token_one','2026-11-10',:'token_two') AS work_still_lost \gset
+SELECT public.ldi_release_event_work(:'business_a','event-work:assessment:'||:'token_one',:'token_one',true);
+SELECT public.ldi_claim_event_work(:'business_a',:'owner_a',
+ 'event-work:assessment:'||:'token_one','2026-11-10',:'token_two') AS work_done \gset
+SELECT set_config('test.ldi.work_won',:'work_won',true),set_config('test.ldi.work_lost',:'work_lost',true),
+ set_config('test.ldi.work_still_lost',:'work_still_lost',true),set_config('test.ldi.work_done',:'work_done',true);
+DO $check$
+BEGIN
+ IF current_setting('test.ldi.work_won')<>'t' OR current_setting('test.ldi.work_lost')<>'f'
+ OR current_setting('test.ldi.work_still_lost')<>'f' OR current_setting('test.ldi.work_done')<>'f'
+ OR has_function_privilege('authenticated','public.ldi_claim_event_work(uuid,uuid,text,date,uuid)','EXECUTE')
+ THEN RAISE EXCEPTION 'LDI duplicate worker paid claim or grant failed'; END IF;
+END $check$;
 ROLLBACK;
