@@ -3,7 +3,7 @@ import { AsyncLocalStorage } from "node:async_hooks";
 import {randomUUID} from "node:crypto";
 import type {SupabaseClient} from "@supabase/supabase-js";
 import {configuredSupervisorModel} from "@/lib/ai/conversations/modelConfig";
-import {modelTokenUsage,standardModelTokenRates,estimateModelCallCostMicros} from "@/lib/calc/supervisorTokenCost";
+import {modelTokenUsage,standardModelTokenRates,estimateModelCallCostMicros,hostedWebActualCostMicros} from "@/lib/calc/supervisorTokenCost";
 
 /** Caps come from authenticated server configuration, never a model reply.
  * A cap of zero denies new work; usage is measured across the whole run. */
@@ -90,7 +90,7 @@ export async function withWorkerBudget<T>(budget: WorkerBudget, work: () => Prom
 type DurableProviderScope = {
   db: SupabaseClient; businessId:string; ownerUserId:string; threadId:string;
   runId:string; ownerMessageId:string; jobId:string; claimToken:string;
-  budget:WorkerBudget; ownerDailyCap:number; authorize:()=>Promise<void>;
+  budget:WorkerBudget; ownerDailyCap:number|null; authorize:()=>Promise<void>;
 };
 type DurableProviderContext = { scope:DurableProviderScope; launched:string[]; denied:boolean };
 const durableProviderTurns = new AsyncLocalStorage<DurableProviderContext>();
@@ -121,23 +121,18 @@ function configuredReserve(value:string|undefined,fallback:number):number{
 }
 export type DurableProviderReservation={
   launched:()=>void;
-  complete:(response:{model?:unknown;service_tier?:unknown;usage?:unknown})=>Promise<void>;
+  complete:(response:{model?:unknown;service_tier?:unknown;usage?:unknown;output?:unknown})=>Promise<void>;
 };
 
 /** A conservative reservation is not an exact provider invoice. Count every
  * serialized UTF-8 byte plus framing allowance; multimedia/hosted retrieval
- * reserves the whole known standard short-context limit. No unknown pricing
- * or unbounded hosted fee is used to authorize unattended spend. */
+ * reserves the whole known standard short-context limit. Commercial costs are measured, not a Max admission gate. */
 export async function reserveDurableProviderRequest(
   params:Record<string,unknown>,kind:"responses"|"hosted_web"="responses",
 ):Promise<DurableProviderReservation|null>{
   const ctx=durableProviderTurns.getStore();if(!ctx)return null;
   const {scope}=ctx;
   if(ctx.denied)throw new Error("durable_provider_reservation_unavailable");
-  // An unpriced optional hosted lookup may be unavailable without preventing
-  // a grounded answer from the other already-authorized sources.
-  if(kind==="hosted_web"&&!process.env.SUPERVISOR_WORKER_HOSTED_WEB_RESERVE_MICROS)
-    throw new Error("durable_hosted_web_unpriced");
   try{
     const model=params.model,output=params.max_output_tokens;
     if(typeof model!=="string"||typeof output!=="number"||!Number.isSafeInteger(output)||
@@ -175,14 +170,12 @@ export async function reserveDurableProviderRequest(
     const configuredOutput=primary?process.env.SUPERVISOR_OUTPUT_USD_PER_MILLION_TOKENS:undefined;
     const inRate=Math.max(Number(rates?.input),Number(configuredInput??0));
     const outRate=Math.max(Number(rates?.output),Number(configuredOutput??0));
-    const hostedFee=kind==="hosted_web"?
-      configuredReserve(process.env.SUPERVISOR_WORKER_HOSTED_WEB_RESERVE_MICROS,0):0;
-    if(inputUpper>272000||!Number.isFinite(inRate)||inRate<=0||
-       !Number.isFinite(outRate)||outRate<=0||kind==="hosted_web"&&hostedFee===0)
-      throw new Error("durable_provider_budget_unpriced");
-    const costUpper=Math.ceil(inputUpper*inRate+output*outRate)+hostedFee;
-    if(!Number.isSafeInteger(costUpper)||costUpper<1)
-      throw new Error("durable_provider_budget_unpriced");
+    const hostedRate=process.env.SUPERVISOR_WORKER_HOSTED_WEB_RESERVE_MICROS;
+    const hostedFee=kind==="hosted_web"?(hostedRate===undefined?null:configuredReserve(hostedRate,0)):0;
+    if(inputUpper>272000) throw new Error("durable_provider_request_invalid");
+    const estimate=hostedFee===null?null:Math.ceil(inputUpper*inRate+output*outRate)+hostedFee;
+    // An unknown rate remains NULL telemetry, never a commercial refusal for Max.
+    const costUpper=estimate!==null&&Number.isSafeInteger(estimate)&&estimate>=0?estimate:null;
     await scope.authorize();
     const id=randomUUID();
     const {error}=await scope.db.rpc("supervisor_reserve_durable_model_call",{
@@ -192,7 +185,7 @@ export async function reserveDurableProviderRequest(
       p_output_cap:output,p_cost_upper:costUpper,p_max_calls:scope.budget.maxModelCalls,
       p_max_input_upper:configuredReserve(process.env.SUPERVISOR_WORKER_MAX_RESERVED_INPUT_UNITS,600000),
       p_max_output_cap:scope.budget.maxOutputTokens,
-      p_max_cost:configuredReserve(process.env.SUPERVISOR_WORKER_MAX_RESERVED_COST_MICROS,200000),
+      p_max_cost:null,
       p_owner_daily_cap:scope.ownerDailyCap,
     });
     if(error)throw new Error("durable_provider_reservation_denied",{cause:error});
@@ -206,12 +199,12 @@ export async function reserveDurableProviderRequest(
         const measured=modelTokenUsage(response.usage);
         const actualRates=measured&&typeof actual==="string"?
           standardModelTokenRates(actual,response.service_tier,measured.inputTokens):null;
-        if(!measured||typeof actual!=="string"||actual!==model||!actualRates||
+        if(!measured||typeof actual!=="string"||actual!==model||
           measured.inputTokens>inputUpper||measured.outputTokens>output){
           ctx.denied=true;throw new Error("durable_provider_usage_unverified");
         }
-        const cost=estimateModelCallCostMicros(measured,actualRates);
-        if(cost===null||cost>costUpper){ctx.denied=true;throw new Error("durable_provider_usage_unverified");}
+        const tokenCost=actualRates?estimateModelCallCostMicros(measured,actualRates):null;
+        const cost=kind==='hosted_web'?hostedWebActualCostMicros(tokenCost,response.output):tokenCost;
         const {error}=await scope.db.rpc("supervisor_complete_investigation_model_call",{
           p_attempt_id:id,p_business_id:scope.businessId,p_owner_user_id:scope.ownerUserId,
           p_thread_id:scope.threadId,p_model:actual,p_input_tokens:measured.inputTokens,

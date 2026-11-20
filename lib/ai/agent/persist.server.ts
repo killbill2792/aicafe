@@ -1,6 +1,7 @@
+import { richPresentationSchema } from "@/lib/ai/conversations/presentation";
 import "server-only";
 import { ZodError } from "zod";
-import { persistGroundedSupervisorReply } from "@/lib/ai/conversations/replyWriter.server";
+import { persistGroundedSupervisorReply, type DurableReplyFence } from "@/lib/ai/conversations/replyWriter.server";
 import { recordSupervisorUsage } from "@/lib/ai/conversations/usage.server";
 import type { ConversationMessage, ConversationScope, GroundedSupervisorReply } from "@/lib/ai/conversations/contracts";
 import type { AgentTurn } from "./loop.server";
@@ -14,9 +15,10 @@ export function persistedAgentStatus(turn: AgentTurn): GroundingStatus {
   if(turn.results.some(r=>r.source==="ask_owner"&&r.missing.length===0))
     return "requires_owner_input";
   // A completed greeting/clarification does not require a business read.
-  if (turn.endReason === "complete" && turn.usage.toolCalls === 0) return "verified";
+  if (turn.endReason === "complete" && (turn.usage.toolCalls === 0 ||
+    (turn.results.length===turn.usage.toolCalls&&turn.results.every(r=>r.source==="response_presentation")))) return "verified";
   const hasSuccessfulRead = turn.results.some(result =>
-    result.source!=="ask_owner"&&result.missing.length===0&&typeof result.error!=="string");
+    result.source!=="ask_owner"&&result.source!=="response_presentation"&&result.missing.length===0&&typeof result.error!=="string");
   if (!hasSuccessfulRead) return "unavailable";
   if (turn.endReason !== "complete") return "partial";
   return turn.status.status === "complete" ? "verified" : "partial";
@@ -113,6 +115,19 @@ export function agentReplyPayload(turn: AgentTurn) {
        [{type:"clarify" as const,question:clarify.question,
          options:clarify.options as {label:string;value:string}[],allowOther:clarify.allowOther===true}]:[]),
     ...(safeExplain.length?[{type:"how" as const,lines:safeExplain}]:[])] };
+  if(turn.endReason==="complete"&&!clarify&&reply.blocks.length<30){
+    const result=[...turn.results].reverse().find(r=>r.source==="response_presentation"&&r.accepted===true);
+    const presentation=richPresentationSchema.safeParse(result?.presentation);
+    if(presentation.success) {
+      // A presentation never makes unavailable business evidence verified.
+      const {agenda,scenario,tables,calculator,groups,...rest}=presentation.data;
+      const partialTables=tables?.filter(t=>t.coverage==="partial");
+      const safe=status==="unavailable"?{...rest,panels:rest.panels.filter(p=>p.coverage==="partial"),...(agenda?.coverage==="partial"?{agenda}:{}),...(partialTables?.length?{tables:partialTables}:{})}:
+       {...rest,...(agenda?{agenda}:{}),...(scenario?{scenario}:{}),...(tables?{tables}:{}),...(calculator?{calculator}:{}),...(groups?{groups}:{})};
+      const validated=richPresentationSchema.safeParse(safe);
+      if(validated.success)reply.blocks.push(validated.data);
+    }
+  }
   const annotations=turn.provenance??turn.unverified.map(item=>({...item,source:"unchecked" as const}));
   const unverified = annotations.flatMap(item => {
     const rows: Array<typeof item & {blockIndex:number}> = [];
@@ -137,10 +152,11 @@ export function agentReplyPayload(turn: AgentTurn) {
     ...(turn.absorbedOwnerMessageIds?.length?{absorbedOwnerMessageIds:[...turn.absorbedOwnerMessageIds]}:{}),
   } };
 }
-export async function persistAgentReply(scope: ConversationScope, owner: ConversationMessage, turn: AgentTurn) {
+export async function persistAgentReply(scope: ConversationScope, owner: ConversationMessage, turn: AgentTurn, durableFence?:DurableReplyFence) {
   const { reply, metadata } = agentReplyPayload(turn);
   let saved: ConversationMessage;
-  try { saved = await persistGroundedSupervisorReply(scope, owner, reply, metadata); }
+  if(durableFence&&reply.status!=="requires_owner_input"&&turn.endReason!=="complete")throw new AgentEmptyReplyError();
+  try { saved = await (durableFence ? persistGroundedSupervisorReply(scope, owner, reply, metadata, durableFence) : persistGroundedSupervisorReply(scope, owner, reply, metadata)); }
   catch (error) {
     // Field paths and issue codes only (never reply text), so a rejected card can be traced.
     const issues = error instanceof ZodError ? error.issues.slice(0, 5).map(i => i.path.join(".") + ":" + i.code) : [];

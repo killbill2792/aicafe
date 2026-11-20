@@ -7,6 +7,7 @@ import {formatEventMoney} from "@/lib/events/eventReportMoney";
 export type EventReport={
   status?:unknown;reportText?:unknown;observedDays?:unknown;expectedDays?:unknown;
   checklist?:unknown;days?:unknown;caveat?:unknown;reportProvenance?:unknown;
+  salesSummary?:unknown;eventStatusDays?:unknown;
 };
 type ReportDay={date:string;actualCents:number|null;typicalCents:number|null;
   hours:Array<{hourLocal:number;actualCents:number;usualCents:number|null}>};
@@ -15,6 +16,8 @@ const cents=(x:unknown):number|null=>
 export function safeEventReport(raw:unknown):{
   text:string|null;observedDays:number|null;expectedDays:number|null;
   done:number|null;total:number|null;days:ReportDay[];
+  summary?:{actual:number|null;usual:number|null;observed:number|null;compared:number|null;change:number|null};
+  inactive?:Array<{date:string;activity:"inactive"|"unconfirmed"}>;
   provenance?:Array<{start:number;end:number;source:"owner"|"estimate"|"unchecked"}>;
 }|null{
   if(!raw||typeof raw!=="object"||Array.isArray(raw))return null;
@@ -36,9 +39,18 @@ export function safeEventReport(raw:unknown):{
     return [{date:day.date,actualCents:cents(day.actualCents),
       typicalCents:cents(day.typicalCents),hours}];
   }):[];
+  const summary=r.salesSummary&&typeof r.salesSummary==="object"?r.salesSummary as Record<string,unknown>:null;
+  const inactive=Array.isArray(r.eventStatusDays)?r.eventStatusDays.flatMap((entry:unknown)=>{
+    if(!entry||typeof entry!=="object")return [];
+    const x=entry as Record<string,unknown>;
+    return typeof x.date==="string"&&/^\d{4}-\d{2}-\d{2}$/.test(x.date)&&(x.activity==="inactive"||x.activity==="unconfirmed")?
+      [{date:x.date,activity:x.activity as "inactive"|"unconfirmed"}]:[];
+  }):undefined;
   return {text:typeof r.reportText==="string"&&r.reportText.trim()?r.reportText:null,
     observedDays:cents(r.observedDays),expectedDays:cents(r.expectedDays),
     done:cents(checklist.done),total:cents(checklist.total),days,
+    ...(summary?{summary:{actual:cents(summary.comparableActualCents),usual:cents(summary.comparableTypicalCents),observed:cents(summary.observedSalesCents),compared:cents(summary.comparableDays),change:typeof summary.changePercent==="number"&&Number.isFinite(summary.changePercent)?summary.changePercent:null}}:{}),
+    ...(inactive?{inactive}:{}),
     ...(Array.isArray(r.reportProvenance)?{provenance:r.reportProvenance.flatMap((raw:unknown)=>{
       if(!raw||typeof raw!=="object")return [];
       const v=raw as Record<string,unknown>;
@@ -65,6 +77,14 @@ export function EventReportCard({report,status,currency,locale,t,onChat}:{
       t("reportComplete"):t("reportIncomplete")}</h4>
     {parsed.text&&<div dir="auto"><ChatMarkdown text={parsed.text} locale={locale}
       unverified={parsed.provenance??[]} label={t("reportUnchecked")}/></div>}
+    {parsed.summary&&<div className="rounded-xl border border-line bg-card p-3 space-y-2">
+      <div className="grid grid-cols-2 gap-2"><div>{t("reportActual")}<p className="font-bold text-xl tabular-nums">{money(parsed.summary.actual)}</p></div>
+      <div>{t("reportUsual")}<p className="font-bold text-xl tabular-nums">{money(parsed.summary.usual)}</p></div></div>
+      {parsed.summary.change!==null&&<p className="font-semibold tabular-nums">{new Intl.NumberFormat(locale,{style:"percent",signDisplay:"exceptZero",maximumFractionDigits:1}).format(parsed.summary.change/100)}</p>}
+      <p className="text-ink-muted">{t("reportDays",{actual:count(parsed.summary.compared),expected:count(parsed.expectedDays)})}</p>
+      {parsed.summary.observed!==parsed.summary.actual&&<p>{t("reportActual")}: {money(parsed.summary.observed)} · {t("reportDays",{actual:count(parsed.observedDays),expected:count(parsed.expectedDays)})}</p>}
+    </div>}
+    {!!parsed.inactive?.length&&<div className="space-y-1">{parsed.inactive.map(day=><p key={day.date}>{day.date} · {day.activity==="inactive"?t("moved")+" / "+t("cancelled"):t("reportUnknown")}</p>)}</div>}
     <p>{t("reportDays",{actual:count(parsed.observedDays),expected:count(parsed.expectedDays)})}</p>
     <p>{t("reportChecklist",{done:count(parsed.done),total:count(parsed.total)})}</p>
     {!currency&&<p className="text-ink-muted">{t("reportCurrencyMissing")}</p>}

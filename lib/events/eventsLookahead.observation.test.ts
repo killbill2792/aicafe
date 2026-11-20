@@ -37,6 +37,7 @@ function row(day:string,status="draft"){
     monitoring_start_date:null,locale:"en",created_at:"2026-10-30T00:00:00Z"};
 }
 const fake=(rows:ReturnType<typeof row>[])=>({
+  rpc:async()=>({data:true,error:null}),
   from(table:string){
     if(table==="supervisor_monitor_samples")return {
       select:()=>({eq:()=>({in:()=>({limit:async()=>({data:[],error:null})})})})};
@@ -52,6 +53,41 @@ beforeEach(()=>{
     status:"complete",result:{},recommendation:"adjust",source:"toast"} as never);
 });
 describe("automatic café-local final event observation",()=>{
+  it("rolls an extended event beyond the preparation window without a second approval",async()=>{
+    const draft=row("2026-10-01");
+    const event={id:effect("2026-10-01").eventIds[0],name:"Parade",kind:"parade",startDate:"2026-10-01",endDate:"2026-11-02",startTime:null,endTime:null,venue:null,venueAddress:null,areaLabel:null,sourceUrl:"https://example.com/event",status:"found" as const,foundAt:"",lastCheckedAt:"",lastVerifiedAt:"2026-10-20T12:00:00Z"};
+    await reportSavedEventDays(fake([draft]),businessId,ownerId,"2026-10-24",[event],"America/Los_Angeles");
+    expect(vi.mocked(monitorLoop).mock.calls.map(args=>args[4])).toContain("2026-10-23");
+    expect(vi.mocked(monitorLoop).mock.calls.every(args=>args[3].id===draft.id&&args[3].monitorSpec.durationDays===33)).toBe(true);
+    expect(draft.monitor_spec.durationDays).toBe(1);
+  });
+  it("closes a verified cancelled future occurrence without sampling a future day",async()=>{
+    const draft=row("2026-11-02");
+    const event={id:effect("2026-11-02").eventIds[0],name:"Parade",kind:"parade",startDate:"2026-11-02",endDate:"2026-11-02",startTime:null,endTime:null,venue:null,venueAddress:null,areaLabel:null,sourceUrl:"https://example.com/event",status:"cancelled" as const,foundAt:"",lastCheckedAt:"",lastVerifiedAt:"2026-10-30T12:00:00Z"};
+    await reportSavedEventDays(fake([draft]),businessId,ownerId,"2026-10-30",[event],"America/Los_Angeles");
+    expect(monitorLoop).toHaveBeenCalledTimes(1);
+    expect(vi.mocked(monitorLoop).mock.calls[0][3].canonicalEffectPayload).toMatchObject({observationWindow:{closeEarly:true,inactiveDates:["2026-11-02"],through:"2026-10-29"}});
+    expect(vi.mocked(monitorLoop).mock.calls[0][4]).toBe("2026-11-03");
+  });
+  it("closes cancelled history separately while the other occurrence owns the closed café day",async()=>{
+    const day="2026-11-02",old=row("2026-10-31"),next=row(day);
+    old.canonical_effect_payload={...old.canonical_effect_payload,endDate:day,
+      facts:[{...old.canonical_effect_payload.facts[0],endDate:day}]};
+    old.effect_hash=effectHash(old.canonical_effect_payload);old.monitor_spec.durationDays=3;
+    const nextId="77777777-7777-4777-8777-777777777777";
+    next.id="88888888-8888-4888-8888-888888888888";
+    next.canonical_effect_payload={...next.canonical_effect_payload,eventIds:[nextId],
+      facts:[{...next.canonical_effect_payload.facts[0],id:nextId}]};next.effect_hash=effectHash(next.canonical_effect_payload);
+    const event={...old.canonical_effect_payload.facts[0],startTime:null,endTime:null,venueAddress:null,
+      status:"cancelled" as const,foundAt:"",lastCheckedAt:"",lastVerifiedAt:"2026-11-02T12:00:00Z",
+      verificationDetails:{history:[{previousStatus:"found",status:"cancelled",verifiedAt:"2026-11-02T12:00:00Z"}]}};
+    const confirmed={...event,id:nextId,startDate:day,endDate:day,status:"found" as const,verificationDetails:null};
+    await reportSavedEventDays(fake([old,next]),businessId,ownerId,"2026-11-03",[event,confirmed],"America/Los_Angeles");
+    const calls=vi.mocked(monitorLoop).mock.calls;
+    expect(calls.filter(a=>a[4]===day).map(a=>a[3].id)).toEqual([next.id]);
+    expect(calls.some(a=>a[3].id===old.id&&a[4]==="2026-11-03")).toBe(true);
+    expect(calls.some(a=>a[3].id===old.id&&a[4]==="2026-11-01")).toBe(true);
+  });
   it("does not monitor tomorrow's saved event",async()=>{
     expect(await reportSavedEventDays(fake([row("2026-10-31")]),
       businessId,ownerId,"2026-10-30")).toEqual({checked:0,reported:0,failed:0});
@@ -95,6 +131,16 @@ describe("automatic café-local final event observation",()=>{
     ]);
     expect(vi.mocked(monitorLoop).mock.calls.every(args=>
       args[3].id===draft.id&&args[3].status==="committed")).toBe(true);
+  });
+  it("does not sample overlapping cafe-date windows twice",async()=>{
+    const span=row("2026-10-30");
+    span.canonical_effect_payload.endDate="2026-11-01";
+    span.effect_hash=effectHash(span.canonical_effect_payload);span.monitor_spec.durationDays=3;
+    const overlap={...row("2026-10-31"),id:"66666666-6666-4666-8666-666666666666"};
+    await reportSavedEventDays(fake([span,overlap]),businessId,ownerId,"2026-11-02");
+    const calls=vi.mocked(monitorLoop).mock.calls;
+    expect(calls.map(a=>a[4])).toEqual(["2026-10-30","2026-10-31","2026-11-01"]);
+    expect(calls.every(a=>a[3].id===span.id)).toBe(true);
   });
   it("does not resurrect an event whose final date predates the correction horizon",async()=>{
     const draft=row("2026-10-01");

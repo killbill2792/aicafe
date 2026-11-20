@@ -14,7 +14,7 @@ type SupervisorCopy = {
 
 /** One conversation surface, not a dashboard card around another chat card. */
 export default function SupervisorHomePanel({
-  copy, chatCopy, chatEnabled, chatUnavailableReason, canUseAi=true, locale, languageSwitch, initialThreadId, initialProposalId, chatStartData, chatStartCopy, chatStartPromise, boardPeriod, cafeCurrency,
+  copy, chatCopy, chatEnabled, chatUnavailableReason, canUseAi=true, locale, languageSwitch, initialThreadId, initialProposalId, initialNewChat=false, chatStartData, chatStartCopy, chatStartPromise, boardPeriod, cafeCurrency,
 }: {
   copy: SupervisorCopy;
   cafeCurrency:string|null;
@@ -23,7 +23,7 @@ export default function SupervisorHomePanel({
   chatStartPromise?: Promise<HomeStartPayload | null>;
   boardPeriod?: Period;
   chatStartCopy?: Omit<ChatStartCopy, "suggestions">;
-  initialThreadId?:string;initialProposalId?:string;
+  initialThreadId?:string;initialProposalId?:string;initialNewChat?:boolean;
   languageSwitch?: React.ReactNode;
   chatEnabled: boolean;
   canUseAi?: boolean;
@@ -33,10 +33,10 @@ export default function SupervisorHomePanel({
   return <SupervisorChatComposer
     // Search-param navigation can reuse this component on Home. A linked proposal
     // must select its own conversation even when a different one is open.
-    key={(initialThreadId ?? "new") + ":" + (initialProposalId ?? "")}
+    key={(initialThreadId ?? "new") + ":" + (initialProposalId ?? "") + ":" + (initialNewChat?"blank":"resume")}
     enabled={chatEnabled} canUseAi={canUseAi} unavailableReason={chatUnavailableReason} cafeCurrency={cafeCurrency}
      locale={locale} languageSwitch={languageSwitch}
-    initialThreadId={initialThreadId} initialProposalId={initialProposalId} copy={{ ...copy, ...chatCopy }}
+    initialThreadId={initialThreadId} initialProposalId={initialProposalId} initialNewChat={initialNewChat} copy={{ ...copy, ...chatCopy }}
     chatStartData={chatStartData} chatStartCopy={chatStartCopy} chatStartPromise={chatStartPromise} boardPeriod={boardPeriod}
   />;
 }

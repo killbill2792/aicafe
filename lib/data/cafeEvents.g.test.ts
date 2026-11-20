@@ -29,7 +29,8 @@ function fakeDb(options:{missingSchema?:boolean}={}){
         if(options.missingSchema)return {data:null,count:null,error:{code:"42P01"}};
         const filtered=rows.filter(row=>
           (!equals.has("kind")||row.kind===equals.get("kind"))&&
-          (!pattern||row.name.toLowerCase().includes(pattern.toLowerCase())));
+          (!pattern||[row.name,row.venue,row.venue_address].some(value=>
+            typeof value==="string"&&value.toLowerCase().includes(pattern.toLowerCase()))));
         return {data:filtered,count:filtered.length,error:null};
       }
       if(table==="city_event_sources"){
@@ -58,7 +59,12 @@ function fakeDb(options:{missingSchema?:boolean}={}){
       lte:(_key:string,_value:string)=>query,
       gte:(_key:string,_value:string)=>query,
       in:(key:string,value:string[])=>{includes.set(key,value);return query;},
-      ilike:(_key:string,value:string)=>{
+      or:(filter:string)=>{
+        const match=/^name\.ilike\.("(?:\\.|[^"\\])*")/.exec(filter);
+        if(!match)throw new Error("Invalid literal search");
+        const value=JSON.parse(match[1]) as string;
+        expect(filter).toBe(["name","venue","venue_address"].map(field=>
+          field+".ilike."+JSON.stringify(value)).join(","));
         pattern=value.slice(1,-1).replace(/\\([%_\\])/g,"$1");return query;
       },
       order:(_key:string,_options?:unknown)=>query,
@@ -113,6 +119,20 @@ describe("LDI G — canonical city paging and café-private source status",()=>{
     expect(last.items).toHaveLength(11);
     expect(last.hasMore).toBe(false);
     expect(fixture.visited.at(-1)).toMatchObject({from:50,to:74,kind:"festival",search:"Hall"});
+  });
+  it("finds a venue across the entire city catalog case-insensitively before pagination",async()=>{
+    const fixture=fakeDb();
+    const page=await readCityEventCatalog(fixture.db,"cafe-a",from,to,
+      {page:2,pageSize:25,search:"cIVic cENtEr"});
+    expect(page.total).toBe(541);
+    expect(page.items).toHaveLength(25);
+    expect(page.items.every(item=>item.venue==="Civic Center")).toBe(true);
+  });
+  it("treats punctuation, wildcard and PostgREST syntax as literal search input",async()=>{
+    const fixture=fakeDb();
+    const page=await readCityEventCatalog(fixture.db,"cafe-a",from,to,
+      {search:'%_,(name.eq."x")'});
+    expect(page.total).toBe(0);
   });
   it("labels missing shared schema unavailable, rather than inventing a confirmed zero-event city",async()=>{
     const fixture=fakeDb({missingSchema:true});

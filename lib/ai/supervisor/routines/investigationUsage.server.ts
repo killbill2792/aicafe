@@ -2,7 +2,7 @@ import "server-only";
 import {randomUUID} from "node:crypto";
 import type {SupabaseClient} from "@supabase/supabase-js";
 import type {AgentProvider} from "@/lib/ai/agent/loop.server";
-import {modelTokenUsage,standardModelTokenRates,estimateModelCallCostMicros}
+import {modelTokenUsage,standardModelTokenRates,estimateModelCallCostMicros,hostedWebActualCostMicros}
   from "@/lib/calc/supervisorTokenCost";
 import {ownerModelCallsLimit} from "@/lib/ai/conversations/usage.server";
 
@@ -21,9 +21,9 @@ export type InvestigationUsageProblem="owner_quota_reached"|"storage_failed"|nul
  */
 export function meteredInvestigationProvider(
   db:SupabaseClient,scope:ClaimedInvestigationUsageScope,underlying:AgentProvider,
-):{provider:AgentProvider;problem:()=>InvestigationUsageProblem}{
+):{provider:AgentProvider;problem:()=>InvestigationUsageProblem;reserve:(params:Record<string,unknown>,kind?:"responses"|"hosted_web")=>Promise<(response:unknown)=>Promise<void>>}{
   let problem:InvestigationUsageProblem=null;
-  const provider:AgentProvider=async function*(params,signal){
+  const reserve=async(params:Record<string,unknown>,kind:"responses"|"hosted_web"="responses")=>{
     if(problem)throw new Error(problem);
     const attemptId=randomUUID();
     let bytes:number;
@@ -50,18 +50,19 @@ export function meteredInvestigationProvider(
         "owner_quota_reached":"storage_failed";
       throw new Error(problem);
     }
-    // A successfully reserved attempt is durable even if the provider fails.
-    // Do not retry an uncertain network call with the same attempt ID.
-    for await(const event of underlying(params,signal)){
-      if(event.type==="response.completed"){
-        const resp=event.response as {model?:unknown;service_tier?:unknown;
-          usage?:unknown}|undefined;
+    let completedOnce=false;
+    return async(response:unknown)=>{
+        if(completedOnce)throw new Error("investigation_usage_completion_conflict");
+        const resp=response as {model?:unknown;service_tier?:unknown;usage?:unknown;output?:unknown}|undefined;
         const model=typeof resp?.model==="string"&&resp.model.trim()?
           resp.model:requestedModel;
         const usage=modelTokenUsage(resp?.usage);
         const rates=usage?standardModelTokenRates(model,resp?.service_tier??null,
           usage.inputTokens):null;
-        const cost=usage&&rates?estimateModelCallCostMicros(usage,rates):null;
+        const tokenCost=usage&&rates?estimateModelCallCostMicros(usage,rates):null;
+        // Provider tool calls are measured separately from response tokens. A
+        // reserve is NOT a tariff. Unknown tool rate/receipt stays unpriced.
+        const cost=kind==="hosted_web"?hostedWebActualCostMicros(tokenCost,resp?.output):tokenCost;
         const completed=await db.rpc("supervisor_complete_investigation_model_call",{
           p_attempt_id:attemptId,p_business_id:scope.businessId,
           p_owner_user_id:scope.ownerUserId,p_thread_id:scope.threadId,
@@ -70,9 +71,16 @@ export function meteredInvestigationProvider(
           p_estimated_cost_micros:cost,
         });
         if(completed.error){problem="storage_failed";throw new Error(problem);}
-      }
+        completedOnce=true;
+    };
+  };
+  const provider:AgentProvider=async function*(params,signal){
+    const finish=await reserve(params);
+    // Retain failed/uncertain attempts; never refund or replay a reservation.
+    for await(const event of underlying(params,signal)){
+      if(event.type==="response.completed")await finish(event.response);
       yield event;
     }
   };
-  return {provider,problem:()=>problem};
+  return {provider,problem:()=>problem,reserve};
 }

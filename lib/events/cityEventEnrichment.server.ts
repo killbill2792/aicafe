@@ -2,7 +2,7 @@ import "server-only";
 import {ownerPublicWebFetch} from "@/lib/connectors/publicWeb.server";
 import {DEFAULT_SUPERVISOR_OPENAI_MODEL} from "@/lib/ai/conversations/modelConfig";
 import {responseOutputText} from "./nearbyEvents";
-import {canonicalSourceUrl,assertDay} from "./cityEventIdentity";
+import {canonicalSourceUrl,assertDay,verifiedTimedOccurrence} from "./cityEventIdentity";
 import {neighborhoodWebSearchCompleted,neighborhoodCitedUrls} from "./neighborhoodResearch";
 
 export const EVENT_ENRICHMENT_MAX_OUTPUT_TOKENS=1200;
@@ -10,6 +10,7 @@ const REQUEST_TIMEOUT_MS=12_000;
 export type ConfirmedEventEnrichment={
   endDate:string|null;venue:string|null;venueAddress:string|null;
   startTime:string|null;endTime:string|null;evidenceUrl:string;
+  startAt?:string;endAt?:string;sourceTimezone?:string;
 };
 export type EventEnrichmentInput={
   city:string;region:string|null;countryCode:string|null;
@@ -17,13 +18,14 @@ export type EventEnrichmentInput={
 };
 const schema={
   type:"object",additionalProperties:false,
-  required:["name","startDate","endDate","venue","venueAddress","startTime","endTime","evidenceUrl"],
+  required:["name","startDate","endDate","venue","venueAddress","startTime","endTime","evidenceUrl","startAt","endAt","sourceTimezone"],
   properties:{
     name:{type:"string"},startDate:{type:"string"},
     endDate:{type:["string","null"]},
     venue:{type:["string","null"]},venueAddress:{type:["string","null"]},
     startTime:{type:["string","null"]},endTime:{type:["string","null"]},
     evidenceUrl:{type:"string"},
+    startAt:{type:["string","null"]},endAt:{type:["string","null"]},sourceTimezone:{type:["string","null"]},
   },
 } as const;
 const hhmm=/^([01]\d|2[0-3]):[0-5]\d$/u;
@@ -67,10 +69,18 @@ function parse(body:unknown,input:EventEnrichmentInput):ConfirmedEventEnrichment
     try{endDate=assertDay(v.endDate);}catch{return null;}
     const days=(Date.parse(endDate+"T00:00:00Z")-
       Date.parse(input.startDate+"T00:00:00Z"))/86400000;
-    if(days<0||days>13)return null;
+    if(days<0||days>365)return null;
+  }
+  let timed:ReturnType<typeof verifiedTimedOccurrence>|null=null;
+  if(v.startAt||v.endAt||v.sourceTimezone){
+    if(typeof v.startAt!=="string"||typeof v.endAt!=="string"||typeof v.sourceTimezone!=="string")return null;
+    try{timed=verifiedTimedOccurrence(v.startAt,v.endAt,v.sourceTimezone);}catch{return null;}
+    if(timed.startDate!==input.startDate||endDate&&endDate!==timed.endDate)return null;
+    endDate=timed.endDate;
   }
   if(!venue&&!venueAddress&&!startTime&&!endTime&&!endDate)return null;
-  return {venue,venueAddress,startTime,endTime,endDate,evidenceUrl};
+  return {venue,venueAddress,startTime:timed?.startTime??startTime,endTime:timed?.endTime??endTime,endDate,evidenceUrl,
+    ...(timed?{startAt:timed.startAt,endAt:timed.endAt,sourceTimezone:timed.sourceTimezone}:{})};
 }
 /** Optional second-pass FACTUAL enrichment. B discovery stays compact three-field
  * JSON; no page-open search, no new model agent, no invented crowd/attendance.
@@ -102,9 +112,9 @@ export function createCityEventEnrichment(deps:{
             " Never infer the event location from the website or organizer name."+
             " Do not guess attendance, hours, venue or multi-day duration."+
             " Return one compact JSON object with exactly name, startDate, endDate,"+
-            " venue, venueAddress, startTime, endTime, evidenceUrl."+
+            " venue, venueAddress, startTime, endTime, evidenceUrl, startAt, endAt, sourceTimezone."+
             " Use null for every unconfirmed field; evidenceUrl must be the"+
-            " cited event page itself. Times HH:MM local; dates YYYY-MM-DD.",
+            " cited event page itself. Times HH:MM local; dates YYYY-MM-DD. Only provide absolute startAt/endAt (ISO with explicit offset) and IANA sourceTimezone when the cited source explicitly establishes all three. Do not infer a timezone or end date; use a half-open interval, midnight excludes the next date.",
           text:{format:{type:"json_schema",name:"event_enrichment",strict:true,schema}},
         }),
       });

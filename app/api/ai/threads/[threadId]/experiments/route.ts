@@ -10,6 +10,7 @@ import {supervisorLoopRegistry,priceExperimentCapabilityId}
   from "@/lib/ai/supervisor/loop/priceExperiment.server";
 import {SupabaseLoopRepository} from "@/lib/ai/supervisor/loop/supabase.server";
 import {readOwnerProposals} from "@/lib/ai/supervisor/loop/reads.server";
+import {eventReadinessCapabilityId} from "@/lib/ai/supervisor/loop/eventReadiness.server";
 import {simulateLoop,proposeLoop,approveLoop,commitLoop,
   confirmManualLoop,monitorLoop,utcDateOffset,type OwnerLoopScope} from "@/lib/ai/supervisor/loop/engine";
 /** The loop refused a second active proposal on the same item (engine ProposalOverlapError). */
@@ -94,7 +95,7 @@ export async function POST(request:Request,{params}:Params){
    }
    case "report":{
      const p=await repo.load(scope,input.proposalId);
-     if(p.status==="monitored"){
+     if(p.status==="monitored"||p.capabilityId===eventReadinessCapabilityId){
        const db=createAdminSupabaseClient();
        const {data,error}=await db.from("supervisor_reports")
          .select("status,report").eq("business_id",scope.businessId)

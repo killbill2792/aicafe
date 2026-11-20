@@ -141,6 +141,7 @@ describe("Task14B trusted broker request-shape preflight (zero provider cost)",(
     expect(requests).toHaveLength(1);
     const tools=requests[0].tools as Array<{type:string;name:string;strict:boolean;
       parameters:Record<string,unknown>}>;
+    expect(tools.map(t=>t.name)).toContain("present_response");
     expect(tools.map(t=>t.name)).toContain("manage_routine");
     expect(tools.map(t=>t.name)).toContain("remember_cafe_fact");
     expect(tools.length).toBeLessThanOrEqual(128);
@@ -578,4 +579,41 @@ describe("saved supplier order communication is distinct from creating a new PO"
     expect(requests[0].instructions).toBe(agentInstructions());
     expect(String(requests[0].instructions)).toContain("For comparison-only requests use read-only tools only.");
   });
+});
+
+
+describe("Task16E optional composition in the single existing agent loop",()=>{
+ it("keeps ordinary prose, records the presentation result without treating it as numerical evidence",async()=>{
+  const {requests,provider}=recording([
+    [call("present_response",JSON.stringify({layout:"stack",panels:[],suggestions:["Compare costs"]}),"ui1"),completed],
+    [text("You can compare your costs next."),completed]
+  ]);
+  const result=await runAgentTurn({ownerText:"How should I explore my costs?",context:{...context},provider});
+  expect(result.text).toBe("You can compare your costs next.");
+  expect(result.endReason).toBe("complete");
+  expect(result.status).toEqual({status:"complete",missing:[]});
+  expect(result.results).toContainEqual(expect.objectContaining({source:"response_presentation",accepted:true}));
+  expect(JSON.stringify(requests[1].input)).toContain("Visual selection only");
+  expect(result.evidence).toEqual([]);
+  expect(requests).toHaveLength(2);
+ });
+ it("does not offer the optional composition tool to restricted unattended work",async()=>{
+  const {requests,provider}=recording([[text("No action needed."),completed]]);
+  await runAgentTurn({ownerText:"Routine summary",context:{...context},provider,serviceOrigin:true});
+  expect((requests[0].tools as Array<{name:string}>).some(t=>t.name==="present_response")).toBe(false);
+ });
+});
+
+it("advertises actual result references on the native continuation and preserves the plain answer",async()=>{
+ const {requests,provider}=recording([
+  [call("get_menu_items",'{"query":null,"limit":null}',"menu_read"),completed],
+  [call("present_response",JSON.stringify({layout:"stack",panels:[{source:"menu_items",field:"rows",kind:"table",ref:"r1"}],groups:[{layout:"grid",items:["p0"]}],suggestions:[]}),"ui_read"),completed],
+  [text("Latte is on the saved menu."),completed]
+ ]);
+ const result=await runAgentTurn({ownerText:"What is on my menu?",context:{...context,currency:"USD"},provider});
+ expect(result.text).toBe("Latte is on the saved menu.");
+ const output=(requests[1].input as Array<Record<string,unknown>>).find(x=>x.type==="function_call_output"&&x.call_id==="menu_read");
+ expect(JSON.parse(String(output?.output))).toMatchObject({source:"menu_items",presentationRef:"r1"});
+ expect(result.results).toContainEqual(expect.objectContaining({source:"response_presentation",accepted:true,presentation:expect.objectContaining({groups:[{layout:"grid",items:["table0"]}],tables:[expect.objectContaining({rows:[expect.arrayContaining(["Latte",450]) ]})]})}));
+ expect(JSON.stringify(requests[2].input)).toContain("Visual selection only");
 });

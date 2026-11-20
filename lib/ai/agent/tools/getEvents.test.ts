@@ -10,7 +10,7 @@ describe("get_events: saved-only, owner-scoped read",()=>{
  it("publishes a strict schema and never accepts a café id from the model",async()=>{
   const tool=agentToolDefinitions.find(t=>t.name==="get_events");
   expect(tool?.strict).toBe(true);
-  expect(tool?.parameters.required).toEqual(["from","to","cityEventId"]);
+  expect(tool?.parameters.required).toEqual(["from","to","cityEventId","cafeEventId"]);
   await expect(executeAgentTool("get_events",{from:"2026-10-01",to:"2026-10-31",businessId:"other"},
    context(vi.fn()))).rejects.toThrow();
  });
@@ -55,6 +55,19 @@ describe("get_events: saved-only, owner-scoped read",()=>{
    const city=r.cityEvents as typeof items;
    expect(city.map(e=>e.id)).toEqual(["city-7","city-6","city-5","city-4","city-3","city-2"]);
    expect(r.omittedCityEvents).toBe(2);
+ });
+ it("returns the exact selected cafe event and its later-day report beyond the compact limits",async()=>{
+  const id="11111111-1111-4111-8111-111111111111",date="2026-11-19";
+  const events=Array.from({length:10},(_,i)=>({id:i===9?id:String(i),name:"Event "+i,startDate:"2026-11-17",endDate:date}));
+  const otherPlans=Array.from({length:6},(_,i)=>({proposalId:String(i),eventIds:[String(i)]}));
+  const report={observedDays:9,expectedDays:9,salesSummary:{observedSalesCents:12345},days:Array.from({length:9},(_,i)=>({date:`2026-11-${11+i}`,actualCents:i}))};
+  const saved=vi.fn(async()=>({events,plans:[...otherPlans,{proposalId:"exact",eventIds:[id],report}]}));
+  const ctx=context(saved as unknown as AgentToolContext["savedEvents"]);
+  const r=await executeAgentTool("get_events",{from:date,to:date,cafeEventId:id},ctx);
+  expect(r.selectedCafeEvent).toMatchObject({id});
+  expect(r.plans).toMatchObject([{proposalId:"exact",report:{salesSummary:{observedSalesCents:12345},days:[{date,actualCents:8},...report.days.slice(0,6)]}}]);
+  const missing=await executeAgentTool("get_events",{from:date,to:date,cafeEventId:"22222222-2222-4222-8222-222222222222"},ctx);
+  expect(missing.missing).toContain("selectedCafeEventNotFound");expect(missing.plans).toEqual([]);
  });
  it("does not turn missing storage or a reversed range into a false no-events answer",async()=>{
   const absent=await executeAgentTool("get_events",{from:"2026-10-30",to:"2026-11-01"},context(undefined));

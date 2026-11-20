@@ -44,3 +44,38 @@ html[lang="ar"] h1, html[lang="ar"] h2, html[lang="ar"] h3 { font-family: var(--
   :root[data-mode="system"] .theme-preview-light { display: none; }
   :root[data-mode="system"] .theme-preview-dark { display: block; }
 }
+
+/* Supervisor-only motion. It accompanies real pending states and settles
+   automatically; no artificial progress, endless spinner or extra package. */
+@keyframes supervisor-brew-steam {
+  0%, 100% { transform: translateY(0); opacity: .82; }
+  50% { transform: translateY(-2px); opacity: .35; }
+}
+.supervisor-steam {
+  animation: supervisor-brew-steam 1.4s ease-in-out 3;
+}
+.supervisor-steam-second { animation-delay: .18s; }
+@keyframes supervisor-appear {
+  from { opacity: 0; transform: translateY(4px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+.supervisor-welcome-motion { animation: supervisor-appear 240ms ease-out both; }
+@media (prefers-reduced-motion: reduce) {
+  .supervisor-steam, .supervisor-welcome-motion { animation: none !important; }
+}
+
+/* The ordinary chat stays a quiet reading surface, not a dashboard card.
+   Keyboard-only shrink uses the visual viewport when supported. */
+.supervisor-shell {
+  height: calc(100dvh - 2rem - env(safe-area-inset-bottom, 0px));
+}
+@media (max-width: 767px) {
+  .app-page-content:has(.supervisor-shell) { padding-bottom: 0; }
+}
+@media (min-width: 768px) {
+  .supervisor-shell { height: calc(100dvh - 5rem); }
+}
+.supervisor-shell[data-keyboard="open"] {
+  height: max(180px, calc(var(--supervisor-keyboard-height) - 1.5rem));
+  min-height: 0;
+}

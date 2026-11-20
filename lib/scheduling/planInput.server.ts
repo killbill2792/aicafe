@@ -8,6 +8,7 @@ import { createHash } from "node:crypto";
 import { z } from "zod";
 
 import { requireSchedulingOwner } from "./foundation.server";
+import {requireOliviaReadOwner,readOliviaSourceToken} from "./oliviaReadScope.server";
 import { normalizeSchedulingWallTime, compensationProvenance, type CompensationProvenance } from "@/lib/calc/scheduling/availability";
 import type { PlannerEmployee, PlannerInput, PlannerLocation, PlannerShift } from "@/lib/calc/scheduling/plannerTypes";
 import { civilDateAdd } from "@/lib/calc/scheduling/plannerClock";
@@ -79,12 +80,11 @@ export async function loadOliviaWeekFromSavedStaff(week: string): Promise<Olivia
       new Date(week + "T00:00:00Z").getUTCDay() !== 1) {
     return { ok: false, error: "invalid_week" };
   }
-  const owner = await requireSchedulingOwner();
+  const owner = await requireOliviaReadOwner();
   if (!owner) return { ok: false, error: "unauthorized" };
   const { supabase, businessId } = owner;
   try {
-    const {data:tokenBefore,error:tokenBeforeError}=await supabase.rpc(
-      "scheduling_owner_source_token",{p_business_id:businessId});
+    const {data:tokenBefore,error:tokenBeforeError}=await readOliviaSourceToken(supabase,businessId);
     if(tokenBeforeError || typeof tokenBefore!=="string" ||
       !/^[a-f0-9]{32}$/.test(tokenBefore))
       throw new Error("Cannot verify scheduling source revision");
@@ -203,7 +203,7 @@ export async function loadOliviaWeekFromSavedStaff(week: string): Promise<Olivia
       }
     }
     const [{data:tokenAfter,error:tokenAfterError},pointerCheck]=await Promise.all([
-      supabase.rpc("scheduling_owner_source_token",{p_business_id:businessId}),
+      readOliviaSourceToken(supabase,businessId),
       supabase.from("scheduling_plan_series").select("id,published_revision")
         .eq("business_id",businessId).eq("horizon_start",week).maybeSingle(),
     ]);

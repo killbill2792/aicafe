@@ -43,7 +43,7 @@ export const draftScheduleTools={draft_week_schedule:{
    source:"olivia_owner_what_if",period:null,agentId:"olivia",saved:false,
    missing:["temporaryAbsenceNotSupportedForOwnerSavings"]};
   if(purpose==="owner_savings"){
-   const whatIf=await previewOliviaOwnerSavings({week:start});
+   const whatIf=await (ctx.oliviaPreview?.ownerSavings??previewOliviaOwnerSavings)({week:start});
    if(!whatIf.ok)return {source:"olivia_owner_what_if",period:{from:start,to:new Date(Date.parse(start+"T12:00:00Z")+6*86400000).toISOString().slice(0,10)},
     missing:[whatIf.error],agentId:"olivia",draft:false,saved:false,approvalTool:"not_created"};
    return {source:"olivia_owner_what_if",period:whatIf.period,agentId:"olivia",
@@ -57,7 +57,7 @@ export const draftScheduleTools={draft_week_schedule:{
   }
   const selectedEmployeeIds=[...(ctx.resolveState?.chosenIds??[])]
     .filter(id=>z.uuid().safeParse(id).success).slice(0,10);
-  const result=await previewOliviaWeek(temporary_absence?{
+  const result=await (ctx.oliviaPreview?.week??previewOliviaWeek)(temporary_absence?{
    week:start,temporaryAbsence:{
     employeeName:temporary_absence.employee_name,
     weekday:temporary_absence.weekday,selectedEmployeeIds,
@@ -162,7 +162,7 @@ export const draftScheduleTools={draft_week_schedule:{
    const week=week_start??nextMonday(ctx.asOf);
    const selectedEmployeeIds=[...(ctx.resolveState?.chosenIds??[])]
      .filter(id=>z.uuid().safeParse(id).success).slice(0,10);
-   const result=await previewOliviaAbsenceWhatIf({
+   const result=await (ctx.oliviaPreview?.absence??previewOliviaAbsenceWhatIf)({
      week,employeeName:employee_name,weekday,selectedEmployeeIds});
    if(!result.ok)return {source:"olivia_hypothetical_absence",
     agentId:"olivia",period:null,draft:false,saved:false,

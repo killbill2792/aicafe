@@ -1,5 +1,5 @@
 import Link from "next/link";
-import {getAdminCosts,type CostGroup,type CostMetric} from "@/lib/admin/analytics.server";
+import {getAdminCosts,getAdminSupervisorUsage,type CostGroup,type CostMetric} from "@/lib/admin/analytics.server";
 import {topicLabels} from "@/lib/admin/topics";
 import {displayKnownCost} from "@/lib/admin/format";
 export const dynamic="force-dynamic";
@@ -14,10 +14,22 @@ function Table({title,rows,label}:{title:string;rows:CostGroup[];label:(g:CostGr
     </table></div>{!rows.length&&<p>No recorded turns.</p>}</section>;
 }
 export default async function AdminCosts(){
-  const values=await getAdminCosts();
+  const [values,ledger]=await Promise.all([getAdminCosts(),getAdminSupervisorUsage().catch(()=>null)]);
   return <div className="space-y-7"><header><h1 className="text-2xl font-bold">AI usage and cost</h1>
     <p className="text-sm text-slate-600">UTC calendar days. Costs are estimates from explicitly configured rates; unpriced turns are counted but excluded from cost totals.</p></header>
-    <div className="rounded-xl border bg-white p-5"><h2 className="font-semibold">Recorded totals</h2><Metrics item={values.totals}/></div>
+    <section className="space-y-2"><h2 className="text-xl font-semibold">Supervisor metered activity</h2>
+      <p className="text-sm text-slate-600">UTC month. Deduplicated recorded ledger, separate from the turn logs below. Model cost estimates exclude unmetered provider fees, including search fees; this is not an invoice.</p>
+      {ledger?<><p>{ledger.periodStart.slice(0,7)}</p><div className="overflow-x-auto rounded-xl border bg-white">
+       <table className="w-full text-left text-sm"><thead><tr className="bg-slate-100">
+        {["Cafe","Activity","Recorded calls","Known tokens (input / output)","Estimated model cost"].map(t=><th scope="col" className="p-3" key={t}>{t}</th>)}
+       </tr></thead><tbody>{ledger.rows.map(r=><tr key={r.business_id+":"+r.channel} className="border-t">
+        <th scope="row" className="p-3">{r.name}</th><td className="p-3">{r.channel==="proactive"?"Proactive":"Owner requested"}</td>
+        <td className="p-3">{r.calls.toLocaleString("en-US")}</td>
+        <td className="p-3">{r.known_input_tokens.toLocaleString("en-US")} / {r.known_output_tokens.toLocaleString("en-US")}{r.unknown_token_calls>0?" · "+r.unknown_token_calls+" calls unknown":""}</td>
+        <td className="p-3">{displayKnownCost(r.known_cost_micros/1000000,r.calls-r.unpriced_calls,r.calls)}</td>
+       </tr>)}</tbody></table></div>{!ledger.rows.length&&<p>No recorded usage.</p>}</>:<p role="status">Metered usage is temporarily unavailable.</p>}
+    </section>
+    <div className="rounded-xl border bg-white p-5"><h2 className="font-semibold">Legacy recorded turn totals (not additive)</h2><Metrics item={values.totals}/></div>
     <Table title="Per cafe" rows={values.cafes} label={r=><Link className="text-blue-700 underline" href={`/admin/conversations?cafe=${r.business_id}`}>{r.name??r.business_id}</Link>}/>
     <Table title="Per day (UTC)" rows={values.days} label={r=>r.day}/>
     <Table title="Per question type" rows={values.topics} label={r=>topicLabels[r.topic??""]??r.topic}/>

@@ -139,3 +139,12 @@ Errors say what happened and what to do. Empty states invite action ("Add your r
 - Charts have a text summary for screen readers ("Rent 100% covered, utilities 100%, insurance 60%").
 - Supports system text size up to 200% without horizontal scrolling.
 - `prefers-reduced-motion` disables fill and number count-up animations.
+
+
+## Supervisor conversation surface — Task 16E owner-approved exception
+
+The existing themes, semantic tokens, typography and accessibility policy still apply. On Supervisor only, lead with a complete plain-language answer; visuals are optional supplements, not prerequisites. Preserve exact accessible numbers, units, period, source and as-of; disclose chart rows through a labelled native details control. Do not color a signed amount as good/bad or show arbitrary percentages as progress without meaning established by the evidence.
+
+Use a quiet conversation-first home (expand the existing business board), one readable transcript and the existing Work/Library/Routines/Permissions controls. Home mobile navigation uses the same canonical NAV_TABS in the labelled drawer; other pages retain their existing navigation. The desktop Home rail can collapse. Familiar chat chrome may use icon controls with accessible names, keyboard focus and at least 48px hit areas; consequential approval/effect controls retain visible text and the ordinary primary-action rules. This is not an app-wide icon-only exception.
+
+Coffee/café motifs may appear on genuine pending work, upload, recording/transcription, or other known activity. They are decorative, never proof of success, completion or progress. Keep animation brief, passive and finite (e.g. steam up to three cycles); stop when activity ends and render statically under prefers-reduced-motion. Do not introduce timers, network calls or fake delay for animation. Text status remains available regardless of motion.

@@ -1,0 +1,113 @@
+{
+  "id": "pos0ef-customer-identity",
+  "mode": "generic",
+  "engine": "vitest",
+  "entrypoint": "lib/ai/agent/tools/customerIdentity.live.test.ts",
+  "proof": "pos0ef-customer-identity-proof.json",
+  "scope": "pos0ef-customer-identity-scope.json",
+  "expectedTools": [
+    "get_investigation_source",
+    "query_data"
+  ],
+  "assertions": [
+    {
+      "name": "generated-source-still-open",
+      "kind": "source",
+      "table": "public.alerts",
+      "where": {
+        "id": {
+          "scope": "sourceId"
+        },
+        "business_id": {
+          "scope": "businessId"
+        },
+        "kind": {
+          "eq": "business_anomaly"
+        },
+        "status": {
+          "eq": "new"
+        }
+      },
+      "minCount": 1,
+      "maxCount": 1
+    },
+    {
+      "name": "same-open-episode",
+      "kind": "owner",
+      "table": "public.supervisor_investigations",
+      "where": {
+        "business_id": {
+          "scope": "businessId"
+        },
+        "owner_user_id": {
+          "scope": "ownerUserId"
+        },
+        "thread_id": {
+          "scope": "threadId"
+        },
+        "source_id": {
+          "scope": "sourceId"
+        },
+        "episode_id": {
+          "scope": "episodeId"
+        },
+        "phase": {
+          "eq": "awaiting_owner"
+        }
+      },
+      "minCount": 1,
+      "maxCount": 1
+    },
+    {
+      "name": "owner-update",
+      "kind": "owner",
+      "table": "public.ai_messages",
+      "where": {
+        "business_id": {
+          "scope": "businessId"
+        },
+        "owner_user_id": {
+          "scope": "ownerUserId"
+        },
+        "thread_id": {
+          "scope": "threadId"
+        },
+        "id": {
+          "scope": "replyId"
+        },
+        "role": {
+          "eq": "supervisor"
+        }
+      },
+      "minCount": 1,
+      "maxCount": 1
+    },
+    {
+      "name": "no-unauthorized-effect",
+      "kind": "source",
+      "table": "public.supervisor_effect_attempts",
+      "where": {
+        "business_id": {
+          "scope": "businessId"
+        }
+      },
+      "minCount": 0,
+      "maxCount": 0
+    },
+    {
+      "name": "no-foreign-episode",
+      "kind": "isolation",
+      "table": "public.supervisor_investigations",
+      "where": {
+        "business_id": {
+          "scope": "foreignBusinessId"
+        },
+        "episode_id": {
+          "scope": "episodeId"
+        }
+      },
+      "minCount": 0,
+      "maxCount": 0
+    }
+  ]
+}

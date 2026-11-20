@@ -31,7 +31,7 @@ async function localWeek(requested:string|null,ctx:AgentToolContext){
  // Its café-local asOf date comes from the previously verified owner scope,
  // and the bound investigation.weekSchedule port independently enforces
  // owner/café membership on every scheduled read. Never open a session here.
- if(ctx.investigation)return mondayOfLocalDate(ctx.asOf);
+ if(ctx.investigation||ctx.readWeekSchedule)return mondayOfLocalDate(ctx.asOf);
  const scope=await staffReadScope();
  const today=scope.ok?scope.today:ctx.asOf;
  return mondayOfLocalDate(today);
@@ -40,7 +40,7 @@ type WeekData=Extract<Awaited<ReturnType<typeof getWeekSchedule>>,{ok:true}>["da
 /** Same projection as interactive chat; scheduled runs bind the week reader
  * to the database-claimed café/owner instead of depending on a session cookie. */
 const readWeek=(ws:string,ctx:AgentToolContext)=>
- ctx.investigation?ctx.investigation.weekSchedule(ws):getWeekSchedule({weekStart:ws});
+ ctx.investigation?ctx.investigation.weekSchedule(ws):ctx.readWeekSchedule?ctx.readWeekSchedule(ws):getWeekSchedule({weekStart:ws});
 
 /** Staff and chat use this exact same projection, never a separate union. */
 const visibleSchedule=(data:Pick<WeekData,"shifts"|"calendarEntries">)=>
@@ -182,8 +182,8 @@ export const scheduleReadTools={
  get_labor_rules:{
   agentId:"olivia",schema:none,
   description:"Read current owner rules and default labor settings with unambiguous owner-written custom rules; not a verified legal opinion.",
-  execute:async(raw:unknown):Promise<AgentToolResult>=>{
-   none.parse(raw);const result=await getTeamRules();
+  execute:async(raw:unknown,ctx?:AgentToolContext):Promise<AgentToolResult>=>{
+   none.parse(raw);const result=await (ctx?.readLaborRules??getTeamRules)();
    if(!result.ok)return fail("team_rules",null,result.error);
    const {custom,owner_set,...values}=result.data;
    return {source:"team_rules+staff_custom_rules",period:null,agentId:"olivia",
@@ -220,7 +220,8 @@ export const scheduleReadTools={
   description:"Calculate an uncommitted shift's paid minutes and wages from the same deterministic cost engine used by the shift sheet; missing wage is estimated or unknown.",
   execute:async(raw:unknown,ctx:AgentToolContext):Promise<AgentToolResult>=>{
    const p=estimate.parse(raw);
-   const team=ctx.resolveState?await getTeam({weekStart:mondayOfLocalDate(ctx.asOf)}):null;
+   const weekStart=mondayOfLocalDate(ctx.asOf);
+   const team=ctx.resolveState?(ctx.readWeekSchedule?await ctx.readWeekSchedule(weekStart):await getTeam({weekStart})):null;
    if(team&&!team.ok)return fail("shift_cost",null,"staffIdentityUnavailable");
    const person=team?.ok?team.data.team.find(person=>person.id===p.employee_id):undefined;
    if(team?.ok&&!person)return fail("shift_cost",null,"staffNotFound");
@@ -236,7 +237,7 @@ export const scheduleReadTools={
    if(guard)return {source:"shift_cost",period:null,agentId:"olivia",...guard};
    if(person&&!ownerNamedTarget(ctx.resolveState,p.employee_id,person.name))
      return fail("shift_cost",null,"targetNotConfirmed");
-   const res=await getShiftCost({employeeId:p.employee_id,date:p.date,start:p.start,end:p.end,
+   const res=await (ctx.readShiftCost??getShiftCost)({employeeId:p.employee_id,date:p.date,start:p.start,end:p.end,
     breakMinutes:p.break_minutes??undefined});
    if(!res.ok)return fail("shift_cost",null,res.error);
    const modeled=person&&p.break_minutes!==null&&person.wageCents!==null?

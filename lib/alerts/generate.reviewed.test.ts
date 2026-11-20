@@ -60,6 +60,7 @@ describe("generated alert lifecycle and owner intent", () => {
     };
     const db = { from: () => q } as unknown as SupabaseClient;
     expect(await hasOpenAlert(db, "cafe", "missing_bill", "2026-10-rent", true)).toBe(true);
+    await expect(hasOpenAlert(db, "cafe", "missing_bill", "2026-10-rent", true, true)).rejects.toThrow("alert_dedupe_unavailable");
   });
 
   it("CSV import deduplication remains open-only even for owner-resolved and dismissed rows", async () => {

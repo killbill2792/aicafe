@@ -1,5 +1,5 @@
 import {describe,expect,it} from "vitest";
-import {affectedLocalDays,timecardWagesForLocalDay} from "./timecardDay";
+import {affectedLocalDays,timecardWagesForLocalDay,timecardWagesForInterval} from "./timecardDay";
 const zone="America/Los_Angeles";
 const later=new Date("2026-12-01T00:00:00Z");
 describe("actual paid time across café-local day boundaries",()=>{
@@ -38,4 +38,12 @@ describe("actual paid time across café-local day boundaries",()=>{
   const corrected=affectedLocalDays("2026-10-27T08:00:00Z","2026-10-27T11:00:00Z",zone);
   expect([...new Set([...old,...corrected])].sort()).toEqual(["2026-10-26","2026-10-27"]);
  });
+});
+
+it("hourly allocation uses the same wage and unpaid-break math as the closed-day sum",()=>{
+ const shift={clockIn:"2026-10-27T15:00:00Z",clockOut:"2026-10-27T17:00:00Z",hourlyWageCents:2000,breaks:[{start:"2026-10-27T15:45:00Z",end:"2026-10-27T16:15:00Z",paid:false}]};
+ const a=timecardWagesForInterval(shift,Date.parse("2026-10-27T15:00:00Z"),Date.parse("2026-10-27T16:00:00Z"),later);
+ const b=timecardWagesForInterval(shift,Date.parse("2026-10-27T16:00:00Z"),Date.parse("2026-10-27T17:00:00Z"),later);
+ expect([a,b]).toEqual([1500,1500]);
+ expect(a!+b!).toBe(timecardWagesForLocalDay(shift,"2026-10-27",zone,later));
 });

@@ -1,3 +1,4 @@
+import {businessSignalTitle} from "@/lib/alerts/businessSignals";
 import type { getTranslations } from "next-intl/server";
 import type { AlertRow } from "@/lib/data/getAlerts";
 import { RUNNING_COST_CODES } from "@/lib/constants";
@@ -17,6 +18,7 @@ export type AlertDescription = {
 /** List and detail share one safe, localized description, including unknown alert kinds. */
 export function describeAlert(alert: AlertRow, t: T, categoryLabel: (code: string) => string): AlertDescription {
   switch (alert.kind) {
+    case "business_anomaly": return {icon:"other",title:businessSignalTitle(alert.payload.family),subtitle:"Supervisor is reviewing the recorded evidence.",tone:"warn",actionHref:"/operations",actionLabel:"Review"};
     case "missing_bill": {
       const code = String(alert.payload.categoryCode ?? "");
       // Never put an unrecognized category code into an icon, translation or target URL.

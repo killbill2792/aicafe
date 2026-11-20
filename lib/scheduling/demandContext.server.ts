@@ -3,7 +3,7 @@ import {posFactReaders} from "@/lib/data/posFactReaders.server";
 import {civilDateAdd,localParts} from "@/lib/calc/scheduling/plannerClock";
 import {comparableDemandHours,unavailableScheduleDemand,
   type ScheduleDemandEvidence} from "@/lib/calc/scheduling/demandEvidence";
-import {requireSchedulingOwner} from "./foundation.server";
+import {requireOliviaReadOwner} from "./oliviaReadScope.server";
 
 /** Authenticated, café-isolated read of the ALREADY canonical POS hourly facts.
  * An absent or uncertified POS source never blocks manual schedule planning.
@@ -32,7 +32,7 @@ export async function readSchedulingDemandContext(
   const readAt=asOf.toISOString();
   const shell={targetWeekStart:weekStart,historicalPeriod,readAt};
   try{
-    const owner=await requireSchedulingOwner();
+    const owner=await requireOliviaReadOwner();
     if(!owner||owner.businessId!==expectedBusinessId)
       return unavailableScheduleDemand(shell,["scheduleDemandUnauthorized"]);
     const slice=await posFactReaders(owner.supabase,owner.businessId)

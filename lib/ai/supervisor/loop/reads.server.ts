@@ -12,13 +12,14 @@ export type OwnerProposalRow={id:string;thread_id:string;capability_id:string;re
 export type OwnerReportRow={proposal_id:string;status:string;report:unknown;generated_at:string};
 
 export async function readOwnerProposals(db:SupabaseClient,scope:OwnerScope,
-  filter:{threadId?:string;id?:string;capabilityId?:string;capabilityIds?:readonly string[];statuses?:readonly string[];limit:number;offset?:number}):Promise<OwnerProposalRow[]>{
+  filter:{threadId?:string;id?:string;capabilityId?:string;capabilityIds?:readonly string[];statuses?:readonly string[];customerInvestigationContext?:{episodeId:string;sourceId:string};limit:number;offset?:number}):Promise<OwnerProposalRow[]>{
   let q=db.from("supervisor_proposals").select(PROPOSAL_COLUMNS)
     .eq("business_id",scope.businessId).eq("owner_user_id",scope.ownerUserId);
   if(filter.threadId)q=q.eq("thread_id",filter.threadId);
   if(filter.capabilityId)q=q.eq("capability_id",filter.capabilityId);
   if(filter.capabilityIds)q=q.in("capability_id",[...filter.capabilityIds]);
   if(filter.id)q=q.eq("id",filter.id);
+  if(filter.customerInvestigationContext)q=q.contains("baseline",{customerInvestigationContext:filter.customerInvestigationContext});
   if(filter.statuses)q=q.in("status",[...filter.statuses]);
   const ordered=q.order("created_at",{ascending:false}).order("id",{ascending:false});
   const {data,error}=await (filter.offset===undefined?ordered.limit(filter.limit):
@@ -114,4 +115,38 @@ export async function readOwnerVerifiedPriceWindows(db:SupabaseClient,scope:Owne
   rows.push(...((data??[]) as OwnerVerifiedPriceWindow[]));
  }
  return rows;
+}
+
+export type OwnerToastObservation={
+ kind:"toast_price_observation";historyId:string;productName:string;
+ startAt:string;durationDays:7;oldPriceCents:number;newPriceCents:number;
+ status:"monitoring"|"finished"|"interrupted";nonCausal:true;
+ cumulative:unknown;firstWindow:unknown;sourcePublicationVersion:string;
+};
+/** One canonical observation projection for Supervisor and owner surfaces. */
+export async function readOwnerToastObservations(db:SupabaseClient,scope:OwnerScope):Promise<OwnerToastObservation[]>{
+ const member=await db.from("memberships").select("role").eq("business_id",scope.businessId)
+  .eq("user_id",scope.ownerUserId).maybeSingle();
+ if(member.error||member.data?.role!=="owner")throw Error("observation_owner_not_authorized");
+ const out:OwnerToastObservation[]=[];
+ for(let offset=0;;offset+=100){
+  const rows=await db.from("supervisor_monitor_windows").select("source_id,start_at,source_reference")
+   .eq("business_id",scope.businessId).eq("monitor_kind","toast_price_observation")
+   .eq("window_index",0).order("start_at",{ascending:false}).order("source_id").range(offset,offset+99);
+  if(rows.error)throw rows.error;
+  for(const row of rows.data??[]){
+   const ref=row.source_reference;
+   if(ref?.historyId!==row.source_id||ref?.businessId!==scope.businessId||
+     typeof ref.itemName!=="string"||!Number.isSafeInteger(ref.oldPriceCents)||
+     !Number.isSafeInteger(ref.newPriceCents)||typeof ref.publicationVersion!=="string")
+    throw Error("invalid_observation_projection");
+   out.push({kind:"toast_price_observation",historyId:row.source_id,productName:ref.itemName,
+    startAt:row.start_at,durationDays:7,oldPriceCents:ref.oldPriceCents,newPriceCents:ref.newPriceCents,
+    status:ref.interruptedAt?"interrupted":ref.finalDue?"finished":"monitoring",
+    nonCausal:true,cumulative:ref.cumulative??null,firstWindow:ref.measurement??null,
+    sourcePublicationVersion:ref.publicationVersion});
+  }
+  if((rows.data??[]).length<100)break;
+ }
+ return out;
 }
