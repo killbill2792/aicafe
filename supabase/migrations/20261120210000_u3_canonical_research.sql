@@ -34,7 +34,7 @@ GRANT aicafe_research_view_owner TO postgres WITH SET TRUE;
 -- One private signing key, not one entitlement row per model call. Its random
 -- value is never emitted to service/browser/model, including via error output.
 CREATE TABLE IF NOT EXISTS u3_research_private.signing_key(
-  singleton integer PRIMARY KEY CHECK(singleton=1),
+  singleton bigint PRIMARY KEY CHECK(singleton=1),
   secret bytea NOT NULL CHECK(octet_length(secret)>=32)
 );
 -- Reason: this is a newly created isolated signing-key table; enabling RLS immediately prevents untrusted-role reads.
