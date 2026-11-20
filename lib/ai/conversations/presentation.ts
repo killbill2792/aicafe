@@ -6,7 +6,7 @@ import {exactNumber,runCalculation,CALC_OPS,type CalcOp,type CalcShown} from "@/
 const label=z.string().min(1).max(140);
 const date=z.iso.date();
 /** One source enumeration for the stored contract, model selection and wire references. */
-export const presentationSourceNames=["daily_rollups","item_sales","profitability","canonical_data","expenses","business_costs","product_costs","supplier_purchase_plan","purchase_orders","inventory","menu_items","labor_and_attendance","get_peak_hours","get_employee_sales","get_payroll_facts","today_live","usage_variance","ingredient_prices","recurring_bills","break_even","pricing_engine","new_item_price","milk_swap","cashflow_evidence","current_staff"] as const;
+export const presentationSourceNames=["daily_rollups","item_sales","profitability","canonical_data","expenses","business_costs","product_costs","supplier_purchase_plan","purchase_orders","inventory","menu_items","labor_and_attendance","get_peak_hours","get_employee_sales","get_payroll_facts","today_live","usage_variance","ingredient_prices","recurring_bills","break_even","pricing_engine","new_item_price","milk_swap","cashflow_evidence","current_staff","goals","locations.open_hours","scheduled_shifts+locations.open_hours","employees+shiftCost","olivia_schedule","olivia_owner_what_if","olivia_hypothetical_absence"] as const;
 const point=z.strictObject({label,value:z.number().finite().min(-Number.MAX_SAFE_INTEGER).max(Number.MAX_SAFE_INTEGER)});
 export const presentationPanelSchema=z.strictObject({
   kind:z.enum(["metric","table","ranked_table","bar","line","donut"]),

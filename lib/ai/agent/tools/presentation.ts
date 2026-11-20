@@ -1,6 +1,7 @@
 import {scenarioEditorSchema,evaluateScenarioEditor} from "@/lib/ai/conversations/scenarioPresentation";
 import {canonicalDictionary,canonicalViewNames,type CanonicalView} from "@/lib/data/canonical/dictionary";
 import { z } from "zod";
+import {OPEN_HOURS_DAY_KEYS,isValidLocalTime} from "@/lib/business/openHours";
 import en from "@/messages/en.json";
 import { richPresentationSchema,agendaSchema,scenarioComparisonSchema,recordTableSchema,interactiveCalcSchema,evaluatePresentationCalc,presentationLeaves,allPresentationLeaves,compatibleComparison,descriptiveGroupTitle,presentationSourceNames,type RichPresentation,type RecordTable,type InteractiveCalc,type Agenda,type ScenarioComparison,type PresentationPanel } from "@/lib/ai/conversations/presentation";
 import type { AgentToolContext,AgentToolResult } from "./index";
@@ -392,6 +393,54 @@ function readerTable(r:AgentToolResult,ctx:Pick<AgentToolContext,"currency"|"asO
  }else if(r.source==="current_staff"&&r.attendanceTracked===true&&Number.isSafeInteger(r.onClockCount)&&Number(r.onClockCount)>=0){
    title="Recorded on-clock staff";scope="Observed attendance snapshot, not the scheduled roster or total headcount.";
    add("Measure","label");add("On clock","count");rows=[["Recorded attendance",num(r.onClockCount)]];
+ }else if(r.source==="goals"&&obj(r.goal)&&obj(r.metricDetail)&&obj(r.metricEvaluation)&&obj(r.evaluation)){
+   const g=r.goal,d=r.metricDetail,e=r.metricEvaluation;
+   const unit=d.metricKey==="net_sales"||d.metricKey==="avg_ticket"||d.metricKey==="item_revenue"?"cents":d.metricKey==="orders"||d.metricKey==="item_units"?"count":null;
+   if(!unit||d.unit!==unit||d.source!=="computed"||!date(g.startsOn)||!date(g.endsOn)||String(g.startsOn)>String(g.endsOn)||
+      (unit==="cents"&&!ctx.currency))return null;
+   title="Goal progress";scope="Daily-average goal comparison from the existing goal evaluator. The target is not an observed result; coverage and sampling may be incomplete.";
+   from=String(g.startsOn);to=String(g.endsOn);currency=unit==="cents"?ctx.currency??null:null;
+   add("Measure","label");add("Daily average",unit==="cents"?"cents":"quantity");add("Basis","label");
+   rows=[["Baseline",num(e.baseline),"Baseline evidence"],["Current",num(e.current),text(r.evaluation.status)],["Target",num(e.target),"Goal target"]];
+ }else if(r.source==="locations.open_hours"&&obj(r.hours)){
+   title="Configured weekly opening hours";scope="Café-local configured weekly hours, not special-date openings. A missing day differs from an explicitly closed day. An end before opening can extend into the following day.";
+   add("Weekday","label");add("Opening","label");add("Closing","label");add("Configuration","label");
+   const labels=["Sunday","Monday","Tuesday","Wednesday","Thursday","Friday","Saturday"];
+   for(const [i,day] of OPEN_HOURS_DAY_KEYS.entries()){
+     const intervals=r.hours[day];
+     if(intervals===undefined){rows.push([labels[i],null,null,"Not configured"]);continue;}
+     if(!Array.isArray(intervals)||intervals.some(v=>!Array.isArray(v)||v.length!==2||typeof v[0]!=="string"||typeof v[1]!=="string"||!isValidLocalTime(v[0])||!isValidLocalTime(v[1])))return null;
+     if(!intervals.length){rows.push([labels[i],null,null,"Closed"]);continue;}
+     for(const v of intervals)rows.push([labels[i],v[0],v[1],"Configured"]);
+   }
+ }else if(r.source==="scheduled_shifts+locations.open_hours"&&r.period&&r.scheduleSet===true&&Array.isArray(r.gaps)){
+   if(r.missing.some(m=>["coverageDisabled","toastScheduleCoverageUnverified","scheduleNotSet"].includes(m)))return null;
+   title="Recorded schedule coverage gaps";scope="Calculated against configured opening hours and minimum headcount, not labor-law certification or observed attendance. Unknown periods are not checked.";
+   add("Date","local date");add("Start","label");add("End","label");add("Scheduled headcount","count");add("Required headcount","count");
+   for(const o of r.gaps){
+     if(!obj(o)||!date(o.date)||typeof o.start!=="string"||typeof o.end!=="string"||!isValidLocalTime(o.start)||!isValidLocalTime(o.end)||!Number.isSafeInteger(o.headcount)||!Number.isSafeInteger(o.needed)||Number(o.headcount)<0||Number(o.needed)<=Number(o.headcount))return null;
+     rows.push([date(o.shiftDate??o.date),o.start,o.end,num(o.headcount),num(o.needed)]);
+   }
+ }else if(r.source==="employees+shiftCost"&&r.period&&typeof r.estimated==="boolean"&&typeof r.unknown==="boolean"){
+   if(!ctx.currency)return null;
+   title="Uncommitted shift cost";scope="Existing shift-cost calculation. No shift has been scheduled or changed; wages may be estimated or not known.";
+   currency=ctx.currency;add("Measure","label");add("Paid minutes","minutes");add("Wage cost","cents");add("Basis","label");
+   rows=[["Shift",num(r.paidMinutes),r.unknown?null:num(r.costCents),r.unknown?"Unavailable":r.estimated?"Estimate":"Recorded wage calculation"]];
+ }else if(r.source==="olivia_schedule"&&r.draft===true&&r.saved===false&&r.period&&Array.isArray(r.scenarioAlternatives)){
+   if(!ctx.currency||r.scenarioAlternatives.some(o=>!obj(o)||typeof o.objective!=="string"||typeof o.completeCoverage!=="boolean"||typeof o.hardConstraintsSatisfied!=="boolean"))return null;
+   title="Modeled schedule alternatives";scope="Existing scheduling solver; estimated scheduled wages, not actual payroll. Coverage and hard constraints are separate; none of these alternatives is saved or applied by this table.";
+   currency=ctx.currency;add("Objective","label");add("Cash wages","cents");add("Loaded payroll","cents");add("Owner minutes","minutes");add("Coverage complete","boolean");add("Hard constraints satisfied","boolean");add("Cost evidence","label");
+   rows=r.scenarioAlternatives.map(o=>[text(o.objective),num(o.cashWagesCents),num(o.loadedPayrollCents),num(o.ownerMinutes),bool(o.completeCoverage),bool(o.hardConstraintsSatisfied),text(o.costState)]);
+ }else if(r.source==="olivia_owner_what_if"&&r.saved===false&&r.period&&typeof r.completeCoverage==="boolean"){
+   if(!ctx.currency)return null;
+   title="Modeled owner-coverage alternative";scope="Read-only scheduled-wage comparison; this is not a payroll saving already realized. No roster or availability has been changed.";
+   currency=ctx.currency;add("Measure","label");add("Modeled cash wages","cents");add("Coverage complete","boolean");
+   rows=[["Baseline",num(r.baselineCashWagesCents),r.completeCoverage],["With owner",num(r.withOwnerCashWagesCents),r.completeCoverage],["Modeled difference",num(r.savingsCents),r.completeCoverage]];
+ }else if(r.source==="olivia_hypothetical_absence"&&r.hypothetical===true&&r.saved===false&&r.period&&typeof r.comparisonCompleteCoverage==="boolean"&&typeof r.laborCostDifferenceKnown==="boolean"){
+   if(!ctx.currency)return null;
+   title="Modeled staff-absence comparison";scope="Read-only solver hypothetical. No staff availability or published schedule changed. Missing cost difference is not zero.";
+   currency=ctx.currency;add("Measure","label");add("Modeled change in cash wages","cents");add("Coverage complete","boolean");
+   rows=[["Absence alternative",r.laborCostDifferenceKnown?num(r.changeInModeledCashWagesCents):null,r.comparisonCompleteCoverage]];
  }else if(r.source==="supplier_purchase_plan"&&Array.isArray(r.offers)&&r.sourceTrust==="owner_reported"&&r.comparison==="subtotal_only"){
    if(!ctx.currency||r.offers.some(o=>!obj(o)||o.currency!==ctx.currency||typeof o.supplierName!=="string"||typeof o.subtotalCents!=="number"||!Number.isSafeInteger(o.subtotalCents)))return null;
    title="Supplier quote subtotals";scope="Saved owner-reported quotes for requested quantities. Excludes unknown freight and tax; not landed cost or delivery confirmation.";
@@ -481,9 +530,9 @@ function readerTable(r:AgentToolResult,ctx:Pick<AgentToolContext,"currency"|"asO
    currency=ctx.currency;add("Item","label");add("Category","label");add("Catalog price","cents");add("Price evidence","label");
    rows=r.items.flatMap(o=>obj(o)&&typeof o.name==="string"?[[o.name,text(o.category),o.priceStatus==="fixed"?num(o.priceCents):null,text(o.priceSource)]]:[]);
  }else return null;
- if(!rows.length||!rows.some(row=>row.some(v=>typeof v==="number"&&Number.isFinite(v))))return null;
- const parsed=recordTableSchema.safeParse({title,view:"tool_"+r.source,from,to,asOf:ctx.asOf,currency,
-  coverage:r.missing.length||r.source==="supplier_purchase_plan"||r.source==="inventory"||["labor_and_attendance","get_peak_hours","get_employee_sales","get_payroll_facts","today_live","usage_variance","ingredient_prices","recurring_bills","break_even","pricing_engine","new_item_price","milk_swap","cashflow_evidence","current_staff"].includes(r.source)||rows.length>30?"partial":"stored",
+ if(!rows.length)return null;
+ const parsed=recordTableSchema.safeParse({title,view:"tool_"+r.source.toLowerCase().replace(/[^a-z_]+/g,"_"),from,to,asOf:ctx.asOf,currency,
+  coverage:r.missing.length||r.source==="supplier_purchase_plan"||r.source==="inventory"||["labor_and_attendance","get_peak_hours","get_employee_sales","get_payroll_facts","today_live","usage_variance","ingredient_prices","recurring_bills","break_even","pricing_engine","new_item_price","milk_swap","cashflow_evidence","current_staff","goals","locations.open_hours","scheduled_shifts+locations.open_hours","employees+shiftCost","olivia_schedule","olivia_owner_what_if","olivia_hypothetical_absence"].includes(r.source)||rows.length>30?"partial":"stored",
   scope,columns,rows:rows.slice(0,30)});
  return parsed.success?parsed.data:null;
 }
@@ -575,7 +624,7 @@ function project(s:z.infer<typeof selection>,r:AgentToolResult,ctx:Pick<AgentToo
  if(s.field.startsWith("table:")){
   // Financial classes and calculation bases may overlap or be conditional;
   // use their full qualified table, not an ambiguous isolated chart.
-  if(r.source==="cashflow_evidence"||r.source==="break_even"||r.source==="pricing_engine"||r.source==="new_item_price")return null;
+  if(["cashflow_evidence","break_even","pricing_engine","new_item_price","goals","locations.open_hours","scheduled_shifts+locations.open_hours","employees+shiftCost","olivia_schedule","olivia_owner_what_if","olivia_hypothetical_absence"].includes(r.source))return null;
   const table=readerTable(r,ctx);return table?tablePanel(s,table):null;
  }
  if(s.source==="supplier_purchase_plan")return supplierPanel(s,r,ctx);

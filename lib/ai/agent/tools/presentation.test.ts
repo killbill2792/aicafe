@@ -1,5 +1,7 @@
 import {describe,it,expect} from "vitest";
 import {presentResponse} from "./presentation";
+import {schemas,agentToolDefinitions,executeAgentTool} from "./index";
+import {presentationSourceNames} from "@/lib/ai/conversations/presentation";
 import {planSupplierOrder} from "@/lib/purchasing/planOrder";
 import {projectInventoryEvidence} from "@/lib/calc/inventoryEvidence";
 import type {AgentToolContext,AgentToolResult} from "./index";
@@ -355,5 +357,236 @@ describe("additional typed producer contracts",()=>{
  it("does not transform missing attendance into a headcount",()=>{
   checks("current_staff",{attendanceTracked:true,onClockCount:0},[["Recorded attendance",0]]);
   expect(presentResponse(q("current_staff"),ctx({source:"current_staff",period:null,missing:[],attendanceTracked:false,onClockCount:0})).accepted).toBe(false);
+ });
+});
+
+describe("Task16E presentation capability census",()=>{
+ // Explicit dispositions, not a claim every tool should yield a chart.
+ // A new registered capability must be assigned and verified deliberately.
+ const dispositions={
+  "bound": [
+    "get_profit",
+    "get_sales",
+    "get_menu_items",
+    "get_peak_hours",
+    "get_employee_sales",
+    "get_payroll_facts",
+    "query_data",
+    "get_staff",
+    "get_labor",
+    "get_business_hours",
+    "get_coverage_gaps",
+    "get_shift_cost",
+    "get_expenses",
+    "get_bills",
+    "get_cashflow_evidence",
+    "get_break_even",
+    "get_cost_summary",
+    "get_usage_variance",
+    "get_product_costs",
+    "get_ingredient_costs",
+    "get_inventory",
+    "get_item_sales",
+    "get_price_recommendation",
+    "get_today_so_far",
+    "draft_week_schedule",
+    "simulate_staff_absence",
+    "suggest_new_item_price",
+    "milk_swap_price",
+    "get_goal_status",
+    "get_supplier_purchase_orders",
+    "inspect_supplier_purchase"
+  ],
+  "composition": [
+    "present_response",
+    "get_schedule",
+    "get_team",
+    "get_week_schedule",
+    "get_events",
+    "simulate_scenario",
+    "calculate"
+  ],
+  "native": [
+    "ask_owner",
+    "describe_data",
+    "get_attention_items",
+    "get_investigation_source",
+    "get_staff_coordination_cases",
+    "get_staff_messages",
+    "get_labor_rules",
+    "get_price_monitor_status",
+    "inspect_purchase_reconciliation",
+    "get_nearby_events",
+    "inspect_public_page",
+    "web_search",
+    "get_supervisor_permissions",
+    "search_gmail",
+    "list_gmail_labels",
+    "read_gmail",
+    "read_gmail_thread",
+    "read_gmail_attachment",
+    "get_maintenance_staff_candidates",
+    "search_maintenance_vendor",
+    "get_maintenance_cases"
+  ],
+  "effect": [
+    "propose_financial_settlement",
+    "propose_financial_bill",
+    "propose_price_change",
+    "propose_price_experiment",
+    "propose_goal",
+    "record_checkin",
+    "propose_schedule",
+    "propose_shift_change",
+    "propose_add_staff",
+    "propose_staff_change",
+    "propose_availability_change",
+    "propose_rule_change",
+    "propose_send_schedule",
+    "propose_purchases",
+    "propose_purchase_receiving",
+    "propose_invoice_reconciliation",
+    "propose_supplier_discrepancy_followup",
+    "propose_supplier_purchase_order",
+    "record_supplier_order_outcome",
+    "propose_supplier_vendor_email",
+    "propose_event_plan",
+    "manage_commitment",
+    "manage_routine",
+    "propose_gmail_action",
+    "propose_maintenance_staff_assignment",
+    "record_maintenance_repair_claim",
+    "propose_maintenance_vendor_request"
+  ]
+} as const;
+ const projections={
+  "get_profit": [
+    "profitability"
+  ],
+  "get_sales": [
+    "daily_rollups"
+  ],
+  "get_menu_items": [
+    "menu_items"
+  ],
+  "get_peak_hours": [
+    "get_peak_hours"
+  ],
+  "get_employee_sales": [
+    "get_employee_sales"
+  ],
+  "get_payroll_facts": [
+    "get_payroll_facts"
+  ],
+  "query_data": [
+    "canonical_data"
+  ],
+  "get_staff": [
+    "current_staff"
+  ],
+  "get_labor": [
+    "labor_and_attendance"
+  ],
+  "get_business_hours": [
+    "locations.open_hours"
+  ],
+  "get_coverage_gaps": [
+    "scheduled_shifts+locations.open_hours"
+  ],
+  "get_shift_cost": [
+    "employees+shiftCost"
+  ],
+  "get_expenses": [
+    "expenses"
+  ],
+  "get_bills": [
+    "recurring_bills"
+  ],
+  "get_cashflow_evidence": [
+    "cashflow_evidence"
+  ],
+  "get_break_even": [
+    "break_even"
+  ],
+  "get_cost_summary": [
+    "business_costs"
+  ],
+  "get_usage_variance": [
+    "usage_variance"
+  ],
+  "get_product_costs": [
+    "product_costs"
+  ],
+  "get_ingredient_costs": [
+    "ingredient_prices"
+  ],
+  "get_inventory": [
+    "inventory"
+  ],
+  "get_item_sales": [
+    "item_sales"
+  ],
+  "get_price_recommendation": [
+    "pricing_engine"
+  ],
+  "get_today_so_far": [
+    "today_live"
+  ],
+  "draft_week_schedule": [
+    "olivia_schedule",
+    "olivia_owner_what_if"
+  ],
+  "simulate_staff_absence": [
+    "olivia_hypothetical_absence"
+  ],
+  "suggest_new_item_price": [
+    "new_item_price"
+  ],
+  "milk_swap_price": [
+    "milk_swap"
+  ],
+  "get_goal_status": [
+    "goals"
+  ],
+  "get_supplier_purchase_orders": [
+    "purchase_orders"
+  ],
+  "inspect_supplier_purchase": [
+    "supplier_purchase_plan"
+  ]
+} as const;
+ it("classifies the complete registered registry (including gated owner tools) with no silent omissions",()=>{
+  const names=Object.values(dispositions).flatMap(xs=>[...xs]);
+  expect(new Set(names).size).toBe(names.length);
+  expect([...names].sort()).toEqual(Object.keys(schemas).sort());
+  expect(agentToolDefinitions.every(t=>names.some(name=>name===t.name))).toBe(true);
+  expect(Object.keys(projections).sort()).toEqual([...dispositions.bound].sort());
+  expect([...new Set(Object.values(projections).flatMap(xs=>[...xs]))].sort()).toEqual([...presentationSourceNames].sort());
+ });
+ it("projects a real registered hourly-sales tool response without another read",async()=>{
+  let reads=0;
+  const c={...ctx(),locale:"en",timezone:"America/Los_Angeles",tools:{
+    getPeakHours:async()=>{reads++;return {available:true,value:{hours:[{date:"2026-11-02",hourLocal:9,locationId:null,netSalesCents:1200,ordersCount:3},{date:"2026-11-03",hourLocal:9,locationId:null,netSalesCents:1300,ordersCount:4}]},quality:{level:"high",missingInputs:[],estimatedInputs:[],staleInputs:[]}};}
+  }} as unknown as AgentToolContext;
+  const result=await executeAgentTool("get_peak_hours",{from:"2026-11-02",to:"2026-11-03"},c);
+  const p=presentResponse({layout:"stack",panels:[{source:"get_peak_hours",field:"rows",kind:"table"}],suggestions:[]},{...c,turnResults:()=>[{name:"get_peak_hours",result}]});
+  expect(p).toMatchObject({accepted:true,presentation:{tables:[{rows:[["09:00",2500,7]]}]}});
+  expect(reads).toBe(1);
+ });
+});
+describe("goal, schedule and hours producer coverage",()=>{
+ const q=(source:string)=>({layout:"stack",panels:[{source,field:"rows",kind:"table"}],suggestions:[]});
+ it("preserves configured closed days separately from unknown days and weekly hours",()=>{
+  const r:AgentToolResult={source:"locations.open_hours",period:null,missing:["businessHoursNotSet:tue"],hours:{mon:[["09:00","18:00"]],sun:[]}};
+  expect(presentResponse(q(r.source),ctx(r))).toMatchObject({accepted:true,presentation:{tables:[{coverage:"partial",rows:[["Sunday",null,null,"Closed"],["Monday","09:00","18:00","Configured"],["Tuesday",null,null,"Not configured"],["Wednesday",null,null,"Not configured"],["Thursday",null,null,"Not configured"],["Friday",null,null,"Not configured"],["Saturday",null,null,"Not configured"]]}]}});
+ });
+ it("separates goal target from observed values and retains fractional daily counts",()=>{
+  const r:AgentToolResult={source:"goals",period:null,missing:[],goal:{startsOn:"2026-11-01",endsOn:"2026-12-01"},metricDetail:{metricKey:"orders",unit:"count",source:"computed"},metricEvaluation:{baseline:10.5,current:11.5,target:15,coverage:0.7},evaluation:{status:"tracking"}};
+  expect(presentResponse(q(r.source),ctx(r))).toMatchObject({accepted:true,presentation:{tables:[{coverage:"partial",rows:[["Baseline",10.5,"Baseline evidence"],["Current",11.5,"tracking"],["Target",15,"Goal target"]]}]}});
+ });
+ it("preserves incomplete or estimated staffing alternatives and never treats them as applied",()=>{
+  const r:AgentToolResult={source:"olivia_schedule",period:sales.period,missing:[],draft:true,saved:false,scenarioAlternatives:[{objective:"cash",cashWagesCents:null,loadedPayrollCents:null,ownerMinutes:0,completeCoverage:false,hardConstraintsSatisfied:true,costState:"unknown"}]};
+  expect(presentResponse(q(r.source),ctx(r))).toMatchObject({accepted:true,presentation:{tables:[{coverage:"partial",rows:[["cash",null,null,0,false,true,"unknown"]]}]}});
+  expect(presentResponse(q(r.source),ctx({...r,saved:true})).accepted).toBe(false);
  });
 });
