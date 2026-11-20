@@ -123,7 +123,7 @@ export function validPresentationGroups(groups:readonly PresentationGroup[],leav
  };
  return presentationGroupRoots(groups).every(i=>visit(i,1))&&seenGroups.size===groups.length&&seenLeaves.size===leaves.length;
 }
-export const richPresentationSchema=z.strictObject({
+const richPresentationBaseSchema=z.strictObject({
   type:z.literal("rich_presentation"),version:z.literal(1),
   layout:z.enum(["stack","grid"]),
   panels:z.array(presentationPanelSchema).max(8),
@@ -135,11 +135,14 @@ export const richPresentationSchema=z.strictObject({
   agenda:agendaSchema.optional(),
   scenario:scenarioComparisonSchema.optional(),
   suggestions:z.array(z.string().trim().min(1).max(160)).max(3),
-}).refine(p=>p.panels.length+p.suggestions.length+Number(Boolean(p.agenda))+Number(Boolean(p.scenario))+Number(Boolean(p.report))+Number(Boolean(p.calculator))+(p.tables?.length??0)+(p.files?.length??0)>0).refine(p=>{
+});
+// Infer the snapshot type from the structural fields before applying graph
+// refinements, which themselves consume that type. Avoid circular inference.
+export type RichPresentation=z.infer<typeof richPresentationBaseSchema>;
+export const richPresentationSchema=richPresentationBaseSchema.refine(p=>p.panels.length+p.suggestions.length+Number(Boolean(p.agenda))+Number(Boolean(p.scenario))+Number(Boolean(p.report))+Number(Boolean(p.calculator))+(p.tables?.length??0)+(p.files?.length??0)>0).refine(p=>{
  if(!p.groups)return true;
  return validPresentationGroups(p.groups,p.groups.some(g=>g.id)?allPresentationLeaves(p):presentationLeaves(p),p.panels);
 });
-export type RichPresentation=z.infer<typeof richPresentationSchema>;
 export type PresentationPanel=z.infer<typeof presentationPanelSchema>;
 export function presentationLeaves(p:Pick<RichPresentation,"panels"|"tables"|"agenda"|"scenario"|"calculator">):string[]{
  return [...p.panels.map((_,i)=>"panel"+i),...(p.agenda?["agenda"]:[]),...(p.scenario?["scenario"]:[]),...(p.tables??[]).map((_,i)=>"table"+i),...(p.calculator?["calculator"]:[])];
