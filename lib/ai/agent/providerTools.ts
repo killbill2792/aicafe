@@ -8,7 +8,7 @@ type Row=Record<string,unknown>;
 const object=(x:unknown):x is Row=>!!x&&typeof x==="object"&&!Array.isArray(x);
 const namePattern=/^[a-z][a-z0-9_]{1,79}$/;
 const inlineCall=/^[A-Za-z0-9_-]{1,128}$/;
-export type ProviderFunctionCall={type:"function_call";name:string;arguments:string;call_id:string;namespace?:string};
+export type ProviderFunctionCall={type:"function_call";name:string;arguments:string;call_id:string;namespace?:string|null};
 export function usesNativeToolSearch(model:string,isolatedLegacy:boolean):boolean{
  return model===PRODUCTION_SUPERVISOR_OPENAI_MODEL&&!isolatedLegacy;
 }
