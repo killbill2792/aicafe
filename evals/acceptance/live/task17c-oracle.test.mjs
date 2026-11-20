@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import {readFileSync,readdirSync} from "node:fs";
-import {assessCoverage,requiredFamilies,proactiveRequirements,auditProactiveInventory,verifyRoutineAndFile,verifyScheduledOccurrence,verifyOperatingWorld,verifyProcurementOutcome,verifyRevocationOutcome,verifyMonitorOutcome,verifySupplierReminderOutcome,verifySourceAlertLifecycle} from "./task17c-oracle.mjs";
+import {assessCoverage,requiredFamilies,proactiveRequirements,auditProactiveInventory,businessAnomalyCoverage,auditBusinessAnomalyCoverage,verifyRoutineAndFile,verifyScheduledOccurrence,verifyOperatingWorld,verifyProcurementOutcome,verifyRevocationOutcome,verifyMonitorOutcome,verifySupplierReminderOutcome,verifySourceAlertLifecycle} from "./task17c-oracle.mjs";
 const head="a".repeat(40);
 test("missing, stale or candidate-only receipt cannot pass",()=>{
  const base={family:"chat_routine",head,model:"gpt-6-luna",status:"PASS"};
@@ -115,9 +115,9 @@ test("proactive register covers actual signal, task and scheduled job inventorie
  assert.ok(audit.unscheduledWorkers.includes("supervisor-run-worker"));
  assert.deepEqual(audit.missingCandidates,[]);
  assert.equal(audit.complete,false);
- assert.ok(audit.unregistered.some(x=>x.family==="sales_drop_live"&&x.state==="trigger_gap"));
+ assert.ok(audit.unregistered.some(x=>x.family==="sales_drop_live"&&x.state==="source_only"));
  assert.ok(requiredFamilies.includes("goal_checkin_due_answer_missed"));
- assert.ok(proactiveRequirements.find(x=>x.family==="event_discovery_no_action_or_plan").candidates.length===0);
+ assert.ok(proactiveRequirements.find(x=>x.family==="event_discovery_no_action_or_plan").candidates.includes("8b-multiday-lifecycle"));
  const drift=auditProactiveInventory({...input,signals:[...signals,"NEW_SOURCE_SIGNAL"],taskKinds:[...taskKinds,"new_task"],cronPaths:[...cronPaths,"/api/cron/new-monitor"],routePaths:[...routePaths,"/api/cron/new-worker"],manifestIds:[]});
  assert.deepEqual(drift.missingSignals,["NEW_SOURCE_SIGNAL"]);
  assert.deepEqual(drift.missingTaskKinds,["new_task"]);
@@ -144,5 +144,28 @@ test("void and meal break source detectors must distinguish complete evidence an
  assert.equal(verifySourceAlertLifecycle(fixture).voidAlertId,"void");
  for(const mutate of [x=>x.negative.push(a),x=>x.opened[0].payload.timecardId="planned",x=>x.opened[1].impact_cents++,x=>x.repeated.push(b),x=>x.closed[0].status="new",x=>x.repeatedClosed.pop(),x=>x.effects.push({}),x=>x.ownerRows.push({})]){
   const bad=structuredClone(fixture);mutate(bad);assert.throws(()=>verifySourceAlertLifecycle(bad));
+ }
+});
+
+// Fail closed on vocabulary drift, missing source wiring or unregistered feature handoff.
+test("merged scheduled anomaly producers and feature manifests are mapped, never accepted by declaration",()=>{
+ const root=new URL("../../../",import.meta.url);
+ const read=path=>readFileSync(new URL(path,root),"utf8");
+ const titles=read("lib/alerts/businessSignals.ts").match(/businessSignalTitles\s*=\s*\{([\s\S]*?)\}\s*as const/);
+ assert.ok(titles,"business anomaly declaration unavailable");
+ const keys=[...titles[1].matchAll(/\b([a-z][a-z0-9_]*)\s*:\s*"/g)].map(m=>m[1]);
+ assert.ok(keys.length>=24);
+ const audit=auditBusinessAnomalyCoverage(keys);
+ assert.deepEqual(audit,{missing:[],retired:[],orphaned:[],complete:false});
+ assert.deepEqual(auditBusinessAnomalyCoverage([...keys,"new_detector"]).missing,["new_detector"]);
+ assert.deepEqual(auditBusinessAnomalyCoverage(keys.filter(k=>k!=="customer_trend")).retired,["customer_trend"]);
+ const producer=read("lib/alerts/businessAnomalies.server.ts");
+ for(const key of Object.keys(businessAnomalyCoverage))assert.ok(producer.includes('"'+key+'"'),"producer reference missing: "+key);
+ assert.match(read("lib/alerts/refreshDerived.server.ts"),/refreshBusinessAnomalies\(db,businessId,/);
+ assert.match(read("app/api/cron/refresh-derived/route.ts"),/await refreshDerivedForBusiness\(/);
+ for(const id of ["6-15c-owner-run","15a-proactive-owner-answer","8a-price-observation","8a-approved-experiment","pos0ef-customer-trends","pos0ef-customer-detail","pos0ef-customer-identity","8b-multiday-lifecycle","16e"]){
+  const manifest=JSON.parse(read(".github/luna/scenarios/"+id+".json"));
+  assert.equal(manifest.id,id);assert.ok(manifest.assertions.length>0);assert.ok(read(manifest.entrypoint).length>0);
+  assert.ok(proactiveRequirements.some(row=>row.candidates.includes(id)),"unmapped merged scenario "+id);
  }
 });
