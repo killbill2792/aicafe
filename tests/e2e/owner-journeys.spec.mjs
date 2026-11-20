@@ -1882,3 +1882,55 @@ test("@home Task16E adaptive answer survives reload, preserves prose and opens a
     await db.end();
   }
 });
+
+// Synthetic transport check in the real authenticated UI. It deliberately does
+// not claim a real model run or durable job: Task17C verifies the actual worker.
+test("@home Task16E stops an acknowledged live view without invoking a cancel or effect",async({browser})=>{
+  test.setTimeout(120_000);
+  const owner=seededCafe(0),thread=randomUUID();
+  const db=new pg.Client({host:"127.0.0.1",port:54322,database:"postgres",user:"postgres",password:"postgres",connectionTimeoutMillis:5000});
+  const ctx=await browser.newContext({baseURL:"http://127.0.0.1:3000",serviceWorkers:"block"});
+  await db.connect();
+  try{
+    await db.query("insert into public.ai_threads(id,business_id,owner_user_id,client_request_id,title) values($1,$2,$3,$4,$5)",[thread,owner.businessId,owner.owner.userId,randomUUID(),"Task16E live view fixture"]);
+    const page=await ctx.newPage();await login(page,owner);await openOwnedPage(page,owner,"?thread="+thread);
+    let realWrites=0;
+    page.on("request",request=>{if(request.method()==="POST"&&new URL(request.url()).pathname.startsWith("/api/ai/"))realWrites++;});
+    await page.evaluate(id=>{
+      const original=window.fetch.bind(window),state={opened:false,detached:0,ack:null};
+      window.__task16eStream=state;
+      window.fetch=(request,init)=>{
+        const url=new URL(typeof request==="string"?request:request instanceof URL?request.href:request.url,location.href);
+        if(url.pathname!=="/api/ai/threads/"+id+"/agent"||init?.method!=="POST")return original(request,init);
+        const stream=new ReadableStream({
+          start(controller){
+            state.opened=true;
+            state.ack=()=>controller.enqueue(new TextEncoder().encode("event: ack\ndata: "+JSON.stringify({runId:"synthetic-run",mode:"queued"})+"\n\n"));
+          },
+          cancel(){state.detached++;}
+        });
+        return Promise.resolve(new Response(stream,{headers:{"content-type":"text/event-stream"}}));
+      };
+    },thread);
+    const input=page.locator("#supervisor-home-composer");
+    await input.fill("Synthetic live stream view check");
+    await page.getByRole("button",{name:"Send",exact:true}).click();
+    await expect.poll(()=>page.evaluate(()=>window.__task16eStream.opened)).toBe(true);
+    const stop=page.getByRole("button",{name:"Stop live view",exact:true});
+    await expect(stop).toHaveCount(0);
+    await page.evaluate(()=>window.__task16eStream.ack());
+    await expect(stop).toBeVisible();
+    await stop.click();
+    await expect.poll(()=>page.evaluate(()=>window.__task16eStream.detached)).toBe(1);
+    await expect(stop).toHaveCount(0);
+    await expect(page.getByText("Live view stopped. Saved work may continue; check Work for its status.",{exact:true})).toBeVisible();
+    await expect(input).toBeEnabled();
+    expect(realWrites).toBe(0);
+    const records=await db.query("select count(*)::int as n from public.ai_messages where thread_id=$1",[thread]);
+    expect(records.rows[0].n).toBe(0);
+  }finally{
+    await ctx.close();
+    await db.query("delete from public.ai_threads where id=$1 and business_id=$2",[thread,owner.businessId]).catch(()=>{});
+    await db.end();
+  }
+});
