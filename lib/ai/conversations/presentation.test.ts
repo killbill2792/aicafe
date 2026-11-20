@@ -1,5 +1,5 @@
 import {describe,it,expect} from "vitest";
-import {richPresentationSchema,presentationReport,interactiveCalcSchema,evaluatePresentationCalc,agendaSchema,calendarPage} from "./presentation";
+import {descriptiveGroupTitle,richPresentationSchema,presentationReport,interactiveCalcSchema,evaluatePresentationCalc,agendaSchema,calendarPage} from "./presentation";
 describe("Task16E presentation snapshot and safe report",()=>{
  it("preserves the source-marked answer and exact minor unit values, not executable content",()=>{
   const p=richPresentationSchema.parse({type:"rich_presentation",version:1,layout:"stack",report:true,suggestions:[],panels:[
@@ -85,4 +85,9 @@ it("permits a titled nested disclosure and rejects an unlabeled interactive grou
  const groups=[{id:"g0",layout:"stack",items:["g1"]},{id:"g1",layout:"details",title:"More details",items:["report","suggestions"]}];
  expect(richPresentationSchema.safeParse({...b,groups}).success).toBe(true);
  expect(richPresentationSchema.safeParse({...b,groups:[groups[0],{...groups[1],title:undefined}]}).success).toBe(false);
+});
+
+it("does not render old ungrounded numerical group labels as trusted headings",()=>{
+ for(const title of ["Profit $9,999","Margin 50٪","Revenue ９９９","Staff ②"])expect(descriptiveGroupTitle(title)).toBeUndefined();
+ expect(descriptiveGroupTitle("Cost breakdown")).toBe("Cost breakdown");
 });

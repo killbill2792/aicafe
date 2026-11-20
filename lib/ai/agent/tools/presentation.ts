@@ -2,7 +2,7 @@ import {scenarioEditorSchema,evaluateScenarioEditor} from "@/lib/ai/conversation
 import {canonicalDictionary,canonicalViewNames,type CanonicalView} from "@/lib/data/canonical/dictionary";
 import { z } from "zod";
 import en from "@/messages/en.json";
-import { richPresentationSchema,agendaSchema,scenarioComparisonSchema,recordTableSchema,interactiveCalcSchema,evaluatePresentationCalc,presentationLeaves,allPresentationLeaves,compatibleComparison,type RichPresentation,type RecordTable,type InteractiveCalc,type Agenda,type ScenarioComparison,type PresentationPanel } from "@/lib/ai/conversations/presentation";
+import { richPresentationSchema,agendaSchema,scenarioComparisonSchema,recordTableSchema,interactiveCalcSchema,evaluatePresentationCalc,presentationLeaves,allPresentationLeaves,compatibleComparison,descriptiveGroupTitle,type RichPresentation,type RecordTable,type InteractiveCalc,type Agenda,type ScenarioComparison,type PresentationPanel } from "@/lib/ai/conversations/presentation";
 import type { AgentToolContext,AgentToolResult } from "./index";
 
 // Select a source projection, never supply a numeric value, arbitrary path or business identity.
@@ -593,7 +593,8 @@ export function presentResponse(raw:unknown,ctx:Pick<AgentToolContext,"currency"
      if(!leaves.includes(key)||used.has(key))return [];
      used.add(key);return [key];
    });
-   if(items.length)groups.push({...(request.id?{id:request.id}:{}),...(request.title?{title:request.title}:{}),layout:request.layout==="compare"&&!compatibleComparison(items,block.data.panels)?"grid":request.layout==="details"&&!request.title?"stack":request.layout,items});
+   const title=descriptiveGroupTitle(request.title);
+   if(items.length)groups.push({...(request.id?{id:request.id}:{}),...(title?{title}:{}),layout:request.layout==="compare"&&!compatibleComparison(items,block.data.panels)?"grid":request.layout==="details"&&!title?"stack":request.layout,items});
  }
  const remainder=leaves.filter(k=>!used.has(k));
  if(remainder.length)groups.push({layout:parsed.data.layout,items:remainder});
@@ -601,5 +602,5 @@ export function presentResponse(raw:unknown,ctx:Pick<AgentToolContext,"currency"
  return {...empty,accepted:true,presentation:arranged.success?arranged.data:block.data};
 }
 export const presentationTools={
- present_response:{schema:presentationInputSchema,description:"Optional UI from current reads, never invented data. Source+field: daily_rollups daily_sales; item_sales item_units; profitability net_sales/total_costs/owner_profit; canonical_data exact aggregate alias or field rows for a multi-column table; expenses recorded_expenses; business_costs cost_components; product_costs recipe_cost; supplier_purchase_plan subtotal/rows; purchase_orders, inventory, menu_items rows; labor_and_attendance daily_labor_cost/rows; get_peak_hours/get_employee_sales/get_payroll_facts rows. Use ref from the prior result to disambiguate; groups: p0–p7, agenda/scenario/calculator/files/report/suggestions; id g0–g11 for nested stack/grid/compare (same units)/details (title required); optional descriptive titles, not data claims. For safe reader table numerics use table:<column_label_snake_case>. Agenda from get_events/get_week_schedule; scenario monthly_profit/monthly_break_even/monthly_target_sales/item_margin from verified simulate_scenario; calculator=true after calculate for editable owner assumptions (not screen numbers); report=true for text export; files=true for sources attached in this turn only. Suggestions edit a draft, never act. Answer fully in words; visuals only if useful."},
+ present_response:{schema:presentationInputSchema,description:"Optional UI from current reads, never invented data. Source+field: daily_rollups daily_sales; item_sales item_units; profitability net_sales/total_costs/owner_profit; canonical_data exact aggregate alias or field rows for a multi-column table; expenses recorded_expenses; business_costs cost_components; product_costs recipe_cost; supplier_purchase_plan subtotal/rows; purchase_orders, inventory, menu_items rows; labor_and_attendance daily_labor_cost/rows; get_peak_hours/get_employee_sales/get_payroll_facts rows. Use ref from the prior result to disambiguate; groups: p0–p7, agenda/scenario/calculator/files/report/suggestions; id g0–g11 for nested stack/grid/compare (same units)/details (title required); descriptive group titles without numeric claims; show numbers in bound leaves or prose. For safe reader table numerics use table:<column_label_snake_case>. Agenda from get_events/get_week_schedule; scenario monthly_profit/monthly_break_even/monthly_target_sales/item_margin from verified simulate_scenario; calculator=true after calculate for editable owner assumptions (not screen numbers); report=true for text export; files=true for sources attached in this turn only. Suggestions edit a draft, never act. Answer fully in words; visuals only if useful."},
 };

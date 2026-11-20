@@ -96,6 +96,13 @@ export function evaluatePresentationCalc(c:InteractiveCalc,changes:Readonly<Reco
 }
 /** A bounded semantic grouping grammar, independent of the renderer. Leaf
  * references identify only already validated snapshot components. */
+/** Group headings are descriptive labels, not a second unannotated answer.
+ * Quantitative claims belong in the bound data leaves or provenance-checked
+ * prose. Use the same policy on legacy persisted labels at render time. */
+export function descriptiveGroupTitle(value:string|null|undefined):string|undefined{
+ if(!value?.trim()||/[\p{N}\p{Sc}%٪‰‱]/u.test(value.normalize("NFKC")))return undefined;
+ return value;
+}
 // Flat reference graph supports recursive layouts without accepting recursive
 // model-authored JSON, executable props, repeated leaves or unbounded trees.
 export const presentationGroupSchema=z.strictObject({id:z.string().regex(/^g(?:[0-9]|1[01])$/).optional(),layout:z.enum(["stack","grid","compare","details"]),title:label.optional(),items:z.array(z.string().regex(/^(?:panel[0-7]|table[0-7]|agenda|scenario|calculator|files|report|suggestions|g(?:[0-9]|1[01]))$/)).min(1).max(12)});

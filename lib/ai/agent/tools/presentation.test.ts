@@ -312,3 +312,13 @@ describe("typed operational summary presentation",()=>{
   expect(presentResponse(q(r.source),ctx({...r,recordedPayPeriods:0})).accepted).toBe(false);
  });
 });
+
+it("keeps model headings descriptive without discarding verified values or nested layout",()=>{
+ for(const title of ["Profit: $9,999","Margin 27%","Profit ٩٩٩","Cost ９９９","Sales 12.00","Return ②"]){
+  const q={...request,groups:[{id:"g0",layout:"stack",items:["g1"]},{id:"g1",layout:"details",title,items:["p0"]}]};
+  const res=presentResponse(q,ctx());
+  expect(res).toMatchObject({accepted:true,presentation:{groups:[{id:"g0",layout:"stack",items:["g1"]},{id:"g1",layout:"stack",items:["panel0"]}],panels:[{points:[{value:1200},{value:0}]}]}});
+  expect(JSON.stringify(res)).not.toContain(title);
+ }
+ expect(presentResponse({...request,groups:[{id:"g0",layout:"details",title:"Recorded sales",items:["p0"]}]},ctx())).toMatchObject({accepted:true,presentation:{groups:[{layout:"details",title:"Recorded sales"}]}});
+});

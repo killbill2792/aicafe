@@ -10,7 +10,7 @@ import {evaluateScenarioEditor,scenarioEditFields} from "@/lib/ai/conversations/
 import en from "@/messages/en.json";
 import es from "@/messages/es.json";
 import ar from "@/messages/ar.json";
-import {richPresentationSchema,presentationPanelSchema,agendaSchema,scenarioComparisonSchema,presentationReport,recordTableSchema,interactiveCalcSchema,evaluatePresentationCalc,presentationLeaves,presentationGroupRoots,allPresentationLeaves,compatibleComparison,calendarPage,type RecordTable,type InteractiveCalc,type Agenda,type ScenarioComparison,type RichPresentation,type PresentationPanel} from "@/lib/ai/conversations/presentation";
+import {richPresentationSchema,presentationPanelSchema,agendaSchema,scenarioComparisonSchema,presentationReport,recordTableSchema,interactiveCalcSchema,evaluatePresentationCalc,presentationLeaves,presentationGroupRoots,allPresentationLeaves,compatibleComparison,descriptiveGroupTitle,calendarPage,type RecordTable,type InteractiveCalc,type Agenda,type ScenarioComparison,type RichPresentation,type PresentationPanel} from "@/lib/ai/conversations/presentation";
 const copy=en.SupervisorPresentation;
 const Chart=dynamic(()=>import("./SupervisorRichChart"),{ssr:false});
 const ComparisonChart=dynamic(()=>import("./SupervisorRichChart").then(m=>m.ComparisonChart),{ssr:false});
@@ -29,7 +29,8 @@ export function presentationSpec(p:RichPresentation):Spec{
   const ids=new Map(p.groups.flatMap((g,i)=>g.id?[[g.id,"group"+i] as const]:[]));
   elements.root.children=presentationGroupRoots(p.groups).map(i=>"group"+i);
   p.groups.forEach((g,i)=>{
-   elements["group"+i]=g.layout==="compare"&&compatibleComparison(g.items,p.panels)?{type:"Comparison",props:{panels:g.items.map(k=>p.panels[Number(k.slice(5))]),...(g.title?{title:g.title}:{})},children:[]}:{type:"Layout",props:{layout:g.layout,...(g.title?{title:g.title}:{})},children:g.items.map(key=>ids.get(key)??key)};
+   const title=descriptiveGroupTitle(g.title);
+   elements["group"+i]=g.layout==="compare"&&compatibleComparison(g.items,p.panels)?{type:"Comparison",props:{panels:g.items.map(k=>p.panels[Number(k.slice(5))]),...(title?{title}:{})},children:[]}:{type:"Layout",props:{layout:g.layout==="details"&&!title?"stack":g.layout,...(title?{title}:{})},children:g.items.map(key=>ids.get(key)??key)};
   });
  }
  return {root:"root",elements};
