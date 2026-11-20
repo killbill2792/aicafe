@@ -120,7 +120,8 @@ run("real Luna reads exact multi-day event, prepares proactively, preserves deci
    expect((await readExactCafeEvent(db,businessId,cafeEventId,startDate,endDate))?.status).toBe("cancelled");
    // Advance the scheduled logical closed-day date, not system time or the
    // source rows. Inactive days cannot create fictional future sales.
-   const closed=await reportSavedEventDays(db,businessId,ownerId,addDays(endDate,1));
+   const closed=await reportSavedEventDays(db,businessId,ownerId,addDays(endDate,1),
+     (await readSavedEventTimeline(db,scope,startDate,endDate)).events,timezone);
    expect(closed.failed).toBe(0);
    const report=(await sql.query("select status,report from public.supervisor_reports where business_id=$1 and proposal_id=$2",[businessId,proposalId])).rows[0];
    expect(report).toMatchObject({status:"insufficient_evidence",report:{observedDays:0,salesSummary:{observedSalesCents:null}}});

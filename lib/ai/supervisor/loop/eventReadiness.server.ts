@@ -81,7 +81,7 @@ export async function withEventObservationClaim<T>(db:ReturnType<typeof createAd
  * Give the existing monitor loop a transient window for a saved event plan,
  * without calling commitLoop or changing its durable proposal status/revision.
  * Rejected/stale proposals and corrupt facts are never resurrected. */
-export function readOnlyEventObservation(p:LoopProposal,current?:ReadonlyMap<string,CafeEvent>,today?:string,timezone="UTC"):LoopProposal|null{
+export function readOnlyEventObservation(p:LoopProposal,current?:ReadonlyMap<string,CafeEvent>,today?:string,timezone?:string):LoopProposal|null{
   if(p.capabilityId!==eventReadinessCapabilityId||
     !["draft","approved","committed","manual_confirmed"].includes(p.status))return null;
   const parsed=eventReadinessEffect.safeParse(p.canonicalEffectPayload);
@@ -99,12 +99,13 @@ export function readOnlyEventObservation(p:LoopProposal,current?:ReadonlyMap<str
     const duration=Math.round((Date.parse(end)-Date.parse(start))/86400000)+1;
     if(duration>=1&&duration<=366){
       const inactiveDates:string[]=[];
+      if(event&&today&&!timezone)throw new Error("event_observation_timezone_required");
       if(event&&today){
         for(let day=start;day<=end;day=utcDateOffset(day,1)){
           if(day>=today&&(event.status!=="found"||day<event.startDate||day>event.endDate))inactiveDates.push(day);
         }
       }
-      const closeEarly=Boolean(event&&today&&event.lastVerifiedAt&&end>=today&&
+      const closeEarly=Boolean(event&&today&&timezone&&event.lastVerifiedAt&&end>=today&&
         (eventStatusAtBusinessDay(event,today,timezone)!=="found"||event.endDate<today));
       if(duration!==days||start!==effect.startDate||inactiveDates.length){
         const projected=eventReadinessEffect.parse({...effect,startDate:start,endDate:end,observationWindow:{inactiveDates,closeEarly,...(closeEarly&&today?{through:utcDateOffset(today,-1)}:{})}});
@@ -121,7 +122,7 @@ export function readOnlyEventObservation(p:LoopProposal,current?:ReadonlyMap<str
  * an unapproved revised draft; reruns never generate parallel report threads. */
 export function selectEventObservations(proposals:readonly LoopProposal[],
   observedIds:ReadonlySet<string>=new Set(),businessDate?:string,
-  sampledOnDate:ReadonlySet<string>=new Set(),current?:ReadonlyMap<string,CafeEvent>,today?:string,timezone="UTC"):LoopProposal[]{
+  sampledOnDate:ReadonlySet<string>=new Set(),current?:ReadonlyMap<string,CafeEvent>,today?:string,timezone?:string):LoopProposal[]{
   const priority=(p:LoopProposal)=>{
     // Once a day's monitor has emitted a sample, its proposal ID is sticky.
     // Changing draft facts cannot create a second mid-run notice/inbox thread.

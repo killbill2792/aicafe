@@ -541,7 +541,8 @@ export async function recoverPlanDelivery(db:Db,businessId:string,ownerId:string
  * Drafts remain drafts: no owner approval, commit or POS effect is invoked.
  * Recheck recently closed days to incorporate late/corrected Toast imports. */
 export async function reportSavedEventDays(db:Db,businessId:string,ownerId:string,
-  today:string,currentEvents?:readonly CafeEvent[],timezone="UTC"):Promise<{checked:number;reported:number;failed:number}>{
+  today:string,currentEvents?:readonly CafeEvent[],timezone?:string):Promise<{checked:number;reported:number;failed:number}>{
+  if(currentEvents&&!timezone)throw new Error("event_observation_timezone_required");
   const rows=await db.from("supervisor_proposals")
     .select("id,owner_user_id,thread_id,capability_id,capability_version,canonical_effect_payload,effect_hash,baseline,monitor_spec,status,revision,locale,monitoring_start_date,created_at")
     .eq("business_id",businessId).eq("owner_user_id",ownerId)
