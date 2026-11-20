@@ -566,8 +566,17 @@
     ],
     "reason": "All six merged feature contracts incorporated; prior bootstrap snapshot retained as historical. Detect any candidate runtime-source changes outside reviewed exact paths. No mapping or acceptance is inferred from this baseline.",
     "combinedOwnerPaths": {
+      "app/[locale]/menu/[itemId]/page.tsx": "df2e8a60948822340221f7c46a45f3b853374133",
+      "app/[locale]/more/alerts/[id]/page.tsx": "710ffce2ae46020e83d6d42fb87211a68538adef",
       "app/[locale]/more/bills/page.tsx": "80f9e945d02c32fcb3680695ee22ca253ac753e1",
-      "components/bills/BillsManager.tsx": "4bf94ea89487159b14060d2cf32244bf4cca6cce"
+      "app/[locale]/onboarding/page.tsx": "c3699dff260f55756e2a9282a94bf36c99c9bd5e",
+      "components/bills/BillsManager.tsx": "4bf94ea89487159b14060d2cf32244bf4cca6cce",
+      "components/menu/ProductDetailScreen.tsx": "83a57d3cee04ba04b26fe1c6f991309ca382420d"
+    },
+    "combinedOwnerReview": {
+      "head": "1a53c97fdc39cc2ac1e18212037df0588ec02011",
+      "authorization": "17D #7012084391 and #7012696041 as expressly recorded in owner-directed final acceptance scope on #535",
+      "note": "Pin only the actual scoped currency/readback repair paths; require exact blob equality in combined census, never count a pinned source as passed."
     }
   },
   "registrationRepair": {

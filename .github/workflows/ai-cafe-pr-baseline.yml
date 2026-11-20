@@ -92,6 +92,9 @@ jobs:
         shard: [1, 2, 3]
     steps:
       - uses: actions/checkout@v4
+        with:
+          # Census validates pinned main ancestry and reviewed source blobs.
+          fetch-depth: 0
       - uses: actions/setup-node@v4
         with:
           node-version: 22
