@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { ConversationMessage } from "@/lib/ai/conversations/contracts";
 import { clarifyCardState, activeOwnerQuestionMessageId, beginOptimisticOwner, sendKey, visibleConversationMessages,
-  hasInsertedHistoryPage, isTranscriptNearBottom, transcriptScrollTarget, isDuplicateLinkedExperimentCard, mergeLatestConversationPage, loadedSavedReports, conversationLocation } from "./supervisorChatBehavior";
+  hasInsertedHistoryPage, isTranscriptNearBottom, transcriptScrollTarget, isDuplicateLinkedExperimentCard, mergeLatestConversationPage, prependConversationPage, loadedSavedReports, conversationLocation } from "./supervisorChatBehavior";
 
 const owner: ConversationMessage = {
   id: "stored-owner", threadId: "thread", role: "owner", contentType: "text",
@@ -145,5 +145,21 @@ describe("conversation URL state",()=>{
     expect(conversationLocation("https://cafe.invalid/en?period=week&thread=old&experiment=old-proposal","selected")).toBe("/en?period=week&thread=selected");
     expect(conversationLocation("https://cafe.invalid/en?period=week&thread=old&experiment=old-proposal",null)).toBe("/en?period=week&newChat=1");
     expect(conversationLocation("https://cafe.invalid/es?newChat=1","saved")).toBe("/es?thread=saved");
+  });
+});
+
+describe("authorized older page concurrency",()=>{
+  const m=(id:string)=>({...owner,id,clientMessageId:id});
+  it("merges a repeated boundary after a newer message arrives without skipping the next row",()=>{
+    const current={items:[m("c"),m("d"),m("e")],nextOffset:3};
+    const older={items:[m("b"),m("c")],nextOffset:4};
+    expect(prependConversationPage(current,older,"thread")).toEqual({items:[m("b"),m("c"),m("d"),m("e")],nextOffset:4});
+    expect(prependConversationPage(current,{items:[m("a"),m("b")],nextOffset:null},"thread").nextOffset).toBeNull();
+  });
+  it("never reintroduces rows after a denied or foreign conversation",()=>{
+    const denied={items:[],nextOffset:null};
+    expect(prependConversationPage(denied,{items:[m("b")],nextOffset:1},"thread")).toEqual(denied);
+    const current={items:[m("c")],nextOffset:1};
+    expect(prependConversationPage(current,{items:[{...m("b"),threadId:"other"}],nextOffset:null},"thread")).toEqual(current);
   });
 });

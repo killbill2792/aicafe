@@ -109,6 +109,17 @@ export function mergeLatestConversationPage(previous:ConversationPage<Conversati
   return {items:[...prefix,...fresh.items],nextOffset:previous.nextOffset===null?null:fresh.nextOffset+prefix.length};
 }
 
+/** Merge an authorized older response with the latest committed view. An
+ * overlapping page can occur when new messages arrive during pagination.
+ * Offset follows the actual contiguous unique window, not a stale request. */
+export function prependConversationPage(current:ConversationPage<ConversationMessage>,older:ConversationPage<ConversationMessage>,threadId:string):ConversationPage<ConversationMessage>{
+  if(!current.items.length||current.items.some(m=>m.threadId!==threadId)||older.items.some(m=>m.threadId!==threadId))return current;
+  const seen=new Set(current.items.map(m=>m.id));
+  const prefix=older.items.filter(m=>{if(seen.has(m.id))return false;seen.add(m.id);return true;});
+  const items=[...prefix,...current.items];
+  return {items,nextOffset:older.nextOffset===null?null:items.length};
+}
+
 /** Index only already-authorized persisted messages loaded in this conversation.
  * The original answer remains the report; this is not another store or receipt. */
 export function loadedSavedReports(messages:readonly ConversationMessage[],threadId:string|null){

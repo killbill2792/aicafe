@@ -1528,6 +1528,12 @@ test("@home Task16E design baseline observes empty and long Supervisor conversat
           await expect(page).not.toHaveURL(/\/login(?:\?|$)|\/onboarding(?:\?|$)/);
         };
         const requests={threads:0,messages:0,attachments:0,work:0,otherApi:0,rsc:0};
+        const readFailures=[];
+        page.on("response",response=>{
+          const url=new URL(response.url());
+          if(url.pathname.startsWith("/api/ai/threads")&&response.status()>=400)
+            readFailures.push({kind:url.pathname.endsWith("/messages")?"messages":url.pathname.endsWith("/attachments")?"attachments":"threads-or-work",status:response.status()});
+        });
         page.on("request",r=>{
           const u=new URL(r.url());
           if(u.origin!=="http://127.0.0.1:3000")return;
@@ -1589,7 +1595,12 @@ test("@home Task16E design baseline observes empty and long Supervisor conversat
           for(let i=0;i<12&&await older.isVisible();i++){
             const before=await messageRows.count();
             await older.click();
-            await expect.poll(()=>messageRows.count(),{timeout:30000}).toBeGreaterThan(before);
+            try{
+              await expect.poll(()=>messageRows.count(),{timeout:30000}).toBeGreaterThan(before);
+            }catch(error){
+              console.info("[Task16E history failure]",JSON.stringify({before,after:await messageRows.count(),readFailures,ownerSessionDenied:await page.getByText("Your owner session needs to be verified again",{exact:false}).count()>0,threadUnavailable:await page.getByRole("alert").count()>0}));
+              throw error;
+            }
           }
           await expect(page.getByText("Synthetic owner question 505",{exact:true})).toBeAttached();
           await expect(older).toHaveCount(0);
@@ -1663,7 +1674,7 @@ test("@home Task16E quiet shell, optional visuals, editable follow-up and mobile
     }
     let writes=0;
     page.on("request",r=>{if(r.method()==="POST"&&/\/api\/ai\/threads\/[^/]+\/(agent|messages)$/.test(new URL(r.url()).pathname))writes++;});
-    for(const viewport of [{width:320,height:720},{width:390,height:844},{width:768,height:1024},{width:1440,height:900}]){
+    for(const viewport of [{width:320,height:720},{width:390,height:844},{width:430,height:932},{width:768,height:1024},{width:1024,height:768},{width:1440,height:900}]){
       await page.setViewportSize(viewport);await openFixture(empty);
       const input=page.locator("#supervisor-home-composer");
       const welcome=page.getByTestId("supervisor-welcome");
@@ -1690,6 +1701,14 @@ test("@home Task16E quiet shell, optional visuals, editable follow-up and mobile
       }
       await page.keyboard.press("Escape");
       await expect(drawer).toHaveCount(0);await expect(controls).toBeFocused();
+      if(viewport.width>=768){
+        const nav=page.getByRole("navigation",{name:"Primary navigation"});
+        const rail=nav.getByRole("button",{name:"Primary navigation",exact:true});
+        await expect(rail).toHaveAttribute("aria-expanded","true");
+        await rail.click();await expect(rail).toHaveAttribute("aria-expanded","false");
+        await expect(nav.getByRole("link",{name:"Money",exact:true})).toBeVisible();
+        await rail.click();await expect(rail).toHaveAttribute("aria-expanded","true");
+      }
       await openFixture(thread);
       const answer=page.locator('[data-work-message="'+replyId+'"]');
       await expect(answer).toContainText(text,{timeout:30000});

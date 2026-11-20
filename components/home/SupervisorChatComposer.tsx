@@ -13,7 +13,7 @@ import type { StoredAttachment } from "@/lib/ai/conversations/attachments";
 import type { SupervisorChatUnavailableReason } from "@/lib/ai/conversations/readiness";
 import type { ConversationMessage, ConversationPage, ConversationThread } from "@/lib/ai/conversations/contracts";
 import { activeOwnerQuestionMessageId, clarifyCardState, beginOptimisticOwner, sendKey, visibleConversationMessages,
-  hasInsertedHistoryPage, isTranscriptNearBottom, transcriptScrollTarget, isDuplicateLinkedExperimentCard, mergeLatestConversationPage, loadedSavedReports, conversationLocation } from "./supervisorChatBehavior";
+  hasInsertedHistoryPage, isTranscriptNearBottom, transcriptScrollTarget, isDuplicateLinkedExperimentCard, mergeLatestConversationPage, prependConversationPage, loadedSavedReports, conversationLocation } from "./supervisorChatBehavior";
 import { ChatMarkdown, SourceLegend } from "./ChatMarkdown";
 import dynamic from "next/dynamic";
 const SupervisorRichPresentation=dynamic(()=>import("./SupervisorRichPresentation"));
@@ -26,7 +26,7 @@ import ClarifyCard from "./ClarifyCard";
 import HowIGotThis from "./HowIGotThis";
 import {resumeOwnerQuestion,ownerAnswerAcknowledgement} from "@/lib/ownerFacts/resume";
 import {explainLineSchema} from "@/lib/ai/agent/explain";
-import {clarifyBlockSchema} from "@/lib/ai/conversations/contracts";
+import {clarifyBlockSchema,PAGE_SIZE} from "@/lib/ai/conversations/contracts";
 import ChatJobProgress, { CafeActivity } from "./ChatJobProgress";
 import SupervisorWorkStatus from "./SupervisorWorkStatus";
 import SupervisorMandatePanel from "./SupervisorMandatePanel";
@@ -336,6 +336,7 @@ export default function SupervisorChatComposer({
   const [prependVersion, setPrependVersion] = useState(0);
   const appliedPrependVersion = useRef(0);
   const paginationRequest = useRef(0);
+  const historyLoading=useRef(false);
   const selectedThreadId = useRef<string | null>(initialThreadId ?? null);
   const pinned = useRef(true);
   const openingThread = useRef(true);
@@ -373,14 +374,14 @@ export default function SupervisorChatComposer({
     const merged=mergeLatestConversationPage(previous,fresh);
     // An unrelated/nonoverlapping page invalidates an old in-flight offset.
     if(previous.items.length&&fresh.items.length&&!previous.items.some(m=>m.id===fresh.items[0].id)){
-      paginationRequest.current++;setLoading(false);prependAnchor.current=null;
+      paginationRequest.current++;historyLoading.current=false;setLoading(false);prependAnchor.current=null;
     }
     messagePage.current=merged;setMessages(merged.items);setNextOffset(merged.nextOffset);
   },[]);
   const clearDeniedSession=useCallback(()=>{
     // A failed owner authorization must not leave previously read chat/files visible.
     threadDrafts.current.clear();readingPositions.current.clear();pendingFileSelection.current=null;setRestoringFiles(false);retryId.current=null;retryResponse.current=null;
-    messagePage.current={items:[],nextOffset:null};paginationRequest.current++;selectedThreadId.current=null;
+    messagePage.current={items:[],nextOffset:null};paginationRequest.current++;historyLoading.current=false;selectedThreadId.current=null;
     setThreadId(null);setNextOffset(null);setSessionDenied(true);setThreads([]);setThreadsNextOffset(null);setMessages([]);setStoredAttachments(null);setAttachments([]);setDraft("");setControlsTab(null);setAttachmentMenu(false);
     setOptimisticOwner(null);setQueuedOwner([]);setLoadedThreadId(null);setThreadTitle(null);setEventContext(null);
   },[]);
@@ -471,7 +472,7 @@ export default function SupervisorChatComposer({
     const refreshExternal = async () => {
       // Protect older-page navigation only after the target conversation has loaded.
       // Failed initial reads must still recover via focus/online/periodic refresh.
-      if (stopped || checking || sending || !navigator.onLine || (workTarget && loadedThreadId === workTarget.threadId) || document.visibilityState === "hidden") return;
+      if (stopped || checking || historyLoading.current || sending || !navigator.onLine || (workTarget && loadedThreadId === workTarget.threadId) || document.visibilityState === "hidden") return;
       checking = true;
       const selected = selectedThreadId.current;
       try {
@@ -513,27 +514,26 @@ export default function SupervisorChatComposer({
       { signal: controller.signal, cache: "no-store" })
       .then((res) => jsonFrom<ConversationPage<ConversationMessage>>(res))
       .then(async (page) => {
-        if (controller.signal.aborted) return;
+        if (controller.signal.aborted||selectedThreadId.current!==threadId) return;
         const position=openingThread.current?readingPositions.current.get(threadId):undefined;
         // Re-read only the previously loaded history window through the same
         // authorized, abortable endpoint. New messages remain authoritative.
         // Offset movement can cause overlapping IDs; never append a duplicate.
         if(position){
-          let remaining=12;
-          while(page.nextOffset!==null&&page.items.length<position.loaded&&
+          let remaining=Math.ceil(position.loaded/PAGE_SIZE)+1;
+          while(page.nextOffset!==null&&
                 !page.items.some(m=>m.id===position.messageId)&&remaining-->0){
             const offset=page.nextOffset;
             const older=await jsonFrom<ConversationPage<ConversationMessage>>(await fetch(
               "/api/ai/threads/"+encodeURIComponent(threadId)+"/messages?offset="+offset,
               {signal:controller.signal,credentials:"same-origin",cache:"no-store"}));
             if(controller.signal.aborted)return;
-            const seen=new Set(page.items.map(m=>m.id));
-            const prefix=older.items.filter(m=>!seen.has(m.id));
-            if(!prefix.length||older.nextOffset===offset)break;
-            page={items:[...prefix,...page.items],nextOffset:older.nextOffset};
+            const combined=prependConversationPage(page,older,threadId);
+            if(combined.items.length===page.items.length||older.nextOffset===offset)break;
+            page=combined;
           }
         }
-        if(controller.signal.aborted)return;
+        if(controller.signal.aborted||selectedThreadId.current!==threadId)return;
         applyLatestPage(page);setLoadedThreadId(threadId);setDeniedThread(null);
         const title=threads.find((thread) => thread.id === threadId)?.title??(selectedHistoryTitle.current?.id===threadId?selectedHistoryTitle.current.title:null);
         setThreadTitle(title);
@@ -543,7 +543,7 @@ export default function SupervisorChatComposer({
         if(error instanceof ConversationReadError&&error.status===401)clearDeniedSession();
         else if(error instanceof ConversationReadError&&[403,404].includes(error.status)){
           // The selected thread is unavailable, not evidence of an empty conversation.
-          threadDrafts.current.delete(threadId);readingPositions.current.delete(threadId);messagePage.current={items:[],nextOffset:null};setDeniedThread(threadId);setNextOffset(null);setMessages([]);setStoredAttachments(null);setAttachments([]);setDraft("");setThreadTitle(null);setEventContext(null);retryId.current=null;retryResponse.current=null;setLoadedThreadId(null);setError(true);
+          threadDrafts.current.delete(threadId);readingPositions.current.delete(threadId);paginationRequest.current++;historyLoading.current=false;setLoading(false);messagePage.current={items:[],nextOffset:null};setDeniedThread(threadId);setNextOffset(null);setMessages([]);setStoredAttachments(null);setAttachments([]);setDraft("");setThreadTitle(null);setEventContext(null);retryId.current=null;retryResponse.current=null;setLoadedThreadId(null);setError(true);
         }else setError(true);
       } });
     return () => controller.abort();
@@ -847,9 +847,10 @@ export default function SupervisorChatComposer({
     }
   }
   async function loadOlder() {
-    if (!threadId || nextOffset === null || loading) return false;
+    if (!threadId || nextOffset === null || loading||historyLoading.current) return false;
     const requestedThread = threadId;
     const request = ++paginationRequest.current;
+    historyLoading.current=true;
     // Older pages are loaded independently from SSE and can resolve in any
     // order. A different conversation must never receive an old page.
     pinned.current = false;
@@ -861,19 +862,30 @@ export default function SupervisorChatComposer({
       prependAnchor.current = node
         ? { scrollTop: node.scrollTop, scrollHeight: node.scrollHeight }
         : null;
-      setMessages((current) => {
-        const known = new Set(current.map((msg) => msg.id));
-        return [...page.items.filter((msg) => !known.has(msg.id)), ...current];
-      });
-      setNextOffset(page.nextOffset);
+      const merged=prependConversationPage(messagePage.current,page,requestedThread);
+      messagePage.current=merged;
+      setMessages(merged.items);
+      setNextOffset(merged.nextOffset);
       // Batched with setMessages, so only this version authorizes consumption.
       setPrependVersion((version) => version + 1);
       return true;
-    } catch {
-      if (request === paginationRequest.current && selectedThreadId.current === requestedThread) setError(true);
+    } catch(error) {
+      if (request === paginationRequest.current && selectedThreadId.current === requestedThread){
+        if(error instanceof ConversationReadError&&error.status===401)clearDeniedSession();
+        else if(error instanceof ConversationReadError&&[403,404].includes(error.status)){
+          // Revalidate via the existing latest-page authorization path.
+          // Do not keep showing an older page after an explicit access denial.
+          threadDrafts.current.delete(requestedThread);readingPositions.current.delete(requestedThread);
+          messagePage.current={items:[],nextOffset:null};setMessages([]);setNextOffset(null);
+          setDeniedThread(requestedThread);setLoadedThreadId(null);setStoredAttachments(null);setAttachments([]);setDraft("");
+          retryId.current=null;retryResponse.current=null;pendingFileSelection.current=null;setRestoringFiles(false);
+          setReloadVersion(v=>v+1);
+        }
+        setError(true);
+      }
       return false;
     } finally {
-      if (request === paginationRequest.current) setLoading(false);
+      if (request === paginationRequest.current){historyLoading.current=false;setLoading(false);}
     }
   }
   function selectThread(id: string | null, historyTitle?:string|null) {
@@ -909,6 +921,7 @@ export default function SupervisorChatComposer({
     setAttachmentMenu(false);
     cleanupRecording(); dispatchDictation({ type: "reset" });
     paginationRequest.current++;
+    historyLoading.current=false;
     prependAnchor.current = null;
     selectedThreadId.current = id;
     setLoading(false);
