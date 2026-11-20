@@ -171,7 +171,7 @@ export default function SupervisorRichPresentation({block,locale,onSuggest,disab
  const registry=useMemo<ComponentRegistry>(()=>({
   Layout:({element,children})=><div className={element.props.layout==="grid"?"grid min-w-0 gap-3 sm:grid-cols-2":"space-y-3"}>{children}</div>,
   Panel:({element})=>{const p=presentationPanelSchema.safeParse(element.props.panel);return p.success?<Panel panel={p.data} locale={locale}/>:null;},
-  Comparison:({element})=>{const p=Array.isArray(element.props.panels)?element.props.panels.map(v=>presentationPanelSchema.safeParse(v)):[];if(p.some(v=>!v.success))return null;const panels=p.flatMap(v=>v.success?[v.data]:[]);return compatibleComparison(panels.map((_,i)=>"panel"+i),panels)?<ComparisonView panels={panels} locale={locale}/>:null;},
+  Comparison:({element})=>{const raw:unknown=element.props.panels;const p=Array.isArray(raw)?raw.map((v:unknown)=>presentationPanelSchema.safeParse(v)):[];if(p.some(v=>!v.success))return null;const panels=p.flatMap(v=>v.success?[v.data]:[]);return compatibleComparison(panels.map((_,i)=>"panel"+i),panels)?<ComparisonView panels={panels} locale={locale}/>:null;},
   Agenda:({element})=>{const a=agendaSchema.safeParse(element.props.agenda);return a.success?<AgendaView agenda={a.data} locale={locale}/>:null;},
   Scenario:({element})=>{const s=scenarioComparisonSchema.safeParse(element.props.scenario);return s.success?<ScenarioView scenario={s.data} locale={locale}/>:null;},
   RecordTable:({element})=>{const t=recordTableSchema.safeParse(element.props.table);return t.success?<RecordTableView table={t.data} locale={locale}/>:null;},
