@@ -150,17 +150,24 @@ export async function describeU3Catalog(ctx:U3SqlContext,p:{
    (r.description??"").toLocaleLowerCase("en").includes(term)||
    r.columns.some(c=>c.name.toLocaleLowerCase("en").includes(term))));
   const offset=p.offset??0,limit=Math.min(p.limit??20,30);
-  const matching=available.slice(offset,offset+limit);
-  const out=matching.map(r=>({
-   name:r.name,meaning:r.description??"Reviewed logical source; consult field definitions.",
-   columns:p.relation?
-    r.columns.slice(offset,offset+limit):
-    term!==null?r.columns.filter(c=>c.name.toLocaleLowerCase("en").includes(term)).slice(0,12):[],
-   columnCount:r.columns.length
-  }));
+  const detail=p.relation!==null&&p.relation!==undefined;
+  // For a named relation, paginate its FIELDS rather than just the one
+  // relation row. Otherwise deeper admitted columns remain unreachable.
+  const matching=detail?available:available.slice(offset,offset+limit);
+  const out=matching.map(r=>{
+   const fields=detail?r.columns:(term!==null?
+    r.columns.filter(c=>c.name.toLocaleLowerCase("en").includes(term)):[]);
+   return {name:r.name,
+    meaning:r.description??"Reviewed logical source; consult field definitions.",
+    columns:detail?fields.slice(offset,offset+limit):fields.slice(0,12),
+    columnCount:r.columns.length,
+    fieldsTotal:detail?fields.length:undefined};
+  });
+  const total=detail?(available[0]?.columns.length??0):available.length;
   return {source:"u3_semantic_catalog",period:null,
    missing:available.length?[]:["empty"],relations:out,
-   total:available.length,page_offset:offset,next_offset:offset+limit<available.length?offset+limit:null,
+   total:available.length,fields_total:detail?total:undefined,page_offset:offset,
+   next_offset:offset+limit<total?offset+limit:null,
    catalog_version:createHash("sha256").update(JSON.stringify(all)).digest("hex").slice(0,16)
   };
  });
