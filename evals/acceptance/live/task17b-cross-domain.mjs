@@ -2,12 +2,13 @@
 /** Real registered model scenario, not another paid runner.
  * Shared #520 owns provider authorization, broker and trusted readbacks. */
 import {randomUUID} from "node:crypto";
-import {existsSync,realpathSync,writeFileSync} from "node:fs";
+import {existsSync,realpathSync,writeFileSync,readFileSync} from "node:fs";
 import {resolve,dirname,sep} from "node:path";
 import {pathToFileURL} from "node:url";
 import {TEST_CAFES} from "../../../scripts/seed/cafes.mjs";
 import {assertLocalLiveEnvironment} from "./preflight.mjs";
 import {readPersistedModelUsage,requireObservedProductionModel,verifyCheckoutHead} from "./runner.mjs";
+import {isHistoricalPosScenario,historicalPosCases,historicalPosSourceSql,checkHistoricalPosAnswer} from "../../../scripts/acceptance/luna-attest-17b.mjs";
 const fail=code=>{throw Error("task17b_live:"+code);};
 const local="http://127.0.0.1:3000";
 const uuid=x=>/^[0-9a-f]{8}-[0-9a-f-]{27,}$/i.test(x??"");
@@ -158,12 +159,86 @@ async function verifyBusinessJourney({id,db,read,first,second,scope,cafe,foreign
  replyIds.forEach((reply,i)=>scope["reply"+(i+1)]=reply);
  return {scope:{expectedProviderCalls:providerCalls},proof:{provider_calls:providerCalls,providerSelectedTools:[...observed].sort(),checks:{independentSourceArithmetic:id!=="17b-cross-module-brief",actualOwnerTurns:replyIds.length,foreignCafeDenied:true,noUnauthorizedProposal:true},limitations:["numeric reply comparisons are executed in candidate; trusted generic host independently verifies source and persisted reply identities, not numerical wording or UI","synthetic local data, not live Toast or real money"]}};
 }
+
+export async function setupHistoricalPosFixture(client,ownerUserId=null){
+ const p=client.connectionParameters;
+ if(p.host!=="127.0.0.1"||Number(p.port)!==54322||p.database!=="postgres")fail("pos_not_local_disposable");
+ if(ownerUserId!==null&&ownerUserId!==TEST_CAFES[0]?.owner?.userId)fail("pos_not_seeded_owner");
+  const raw=readFileSync(resolve("scripts/ai-data-query-distinct-sql-integration.sql"),"utf8");
+  const fixture=raw.replace(/^\\set[^\n]*\n/gm,"").replace(/\nROLLBACK;\s*$/,"\n");
+  if(fixture===raw||!fixture.includes("BEGIN;"))throw Error("Unsafe/missing parity fixture");
+  await client.query(fixture);
+  const biz=(await client.query(
+   `select id,timezone,(now() at time zone timezone)::date::text today
+    from public.businesses where name='Query fixture café' limit 1`)).rows[0];
+  if(!biz)throw Error("Disposable fixture café missing");
+  const prior=(await client.query(
+   "select ($1::date - 1)::text prior",[biz.today])).rows[0].prior;
+  const params=[biz.id,prior,biz.today];
+  // POS0e opt-in E2: all source-family facts are synthetic and inside the same
+  // rollback transaction as the existing historic/live-order parity fixture.
+  const restaurant="eeeeeeee-3333-4eee-8eee-eeeeeeeeee01";
+  const staffGuid="eeeeeeee-3333-4eee-8eee-eeeeeeee00a1";
+  const stockGuid="eeeeeeee-3333-4eee-8eee-eeeeeeee00b1";
+  const firstOrderGuid="eeeeeeee-3333-4eee-8eee-eeeeeeee0001";
+  const otherCafe="eeeeeeee-4444-4eee-8eee-eeeeeeeeee00";
+  const otherRestaurant="eeeeeeee-4444-4eee-8eee-eeeeeeeeee01";
+  await client.query("insert into public.businesses(id,name,is_demo) values($1,'Other synthetic café',false)",[otherCafe]);
+  const modified=await client.query("update public.toast_raw_records set payload=payload ||\n jsonb_build_object('customer',jsonb_build_object('firstName','Maya','lastName','Shah','email','maya@example.test'))\n where business_id=$1 and entity='order' and payload->>'guid'=$2",[biz.id,firstOrderGuid]);
+  if(modified.rowCount!==1)fail("pos_identity_fixture_missing");
+  await client.query("insert into public.toast_raw_records\n (business_id,restaurant_guid,entity,entity_guid,business_date,payload,payload_sha256,capture_key)\n values\n ($1,$2,'employee',$3,$4::date,\n  jsonb_build_object('employee_guid',$3::uuid::text,'display_name','Nadia Rao','deleted',false),\n  repeat('a',64),'pos0e:e2:employee'),\n ($1,$2,'labor/v1/timeEntries',null,$4::date,\n  jsonb_build_object('guid','time-pos0e','employeeGuid',$3::uuid::text,'regularHours',5.5),\n  repeat('a',64),'pos0e:e2:time'),\n ($1,$2,'cashmgmt/v1/entries',null,$4::date,\n  jsonb_build_object('guid','cash-pos0e','type','CASH_IN','amount',18.75,\n   'employee',jsonb_build_object('guid',$3::uuid::text)),repeat('a',64),'pos0e:e2:cash'),\n ($1,$2,'stock/v1/inventory',$5,$4::date,\n  jsonb_build_object('guid',$5::uuid::text,'quantity',4.5,'status','QUANTITY'),\n  repeat('a',64),'pos0e:e2:stock'),\n ($6,$7,'cashmgmt/v1/entries',null,$4::date,\n  '{\"guid\":\"other-cafe-cash\",\"amount\":9999.99,\"type\":\"CASH_IN\"}'::jsonb,\n  repeat('a',64),'pos0e:e2:other-cafe')",
+   [biz.id,restaurant,staffGuid,biz.today,stockGuid,otherCafe,otherRestaurant]);
+  // The old receipt-less stock observation is retained, but not current.
+  const legacyStock=(await client.query("select data->>'evidence_state' state from public.cv_inventory where business_id=$1 and menu_item_ref=$2",[biz.id,stockGuid])).rows;
+  if(JSON.stringify(legacyStock)!==JSON.stringify([{state:"source_unverified"}]))fail("pos_unverified_stock_fixture");
+  // Simulate the existing complete stock-family writer and its matching receipt
+  // within this rollback fixture. Same source ID, no diagnostic fallback.
+  const stockAsOf=new Date().toISOString();
+  const staged=await client.query("select public.toast_stage_operational_batch($1,$2,'stock/v1/inventory',$3::date,$4::jsonb)",
+   [biz.id,restaurant,biz.today,JSON.stringify([{business_id:biz.id,restaurant_guid:restaurant,endpoint:"stock/v1/inventory",provider_key:stockGuid,source_key_kind:"provider_guid",source_business_date_kind:"observed_cafe_day",guid:stockGuid,status:"QUANTITY",quantity:4.5,business_date:biz.today,lastSuccessAt:stockAsOf}])]);
+  if(staged.rowCount!==1)fail("pos_stock_staging_failed");
+  await client.query("insert into public.toast_optional_sync_state(business_id,restaurant_guid,operational_sources) values($1,$2,$3::jsonb) on conflict(business_id,restaurant_guid) do update set operational_sources=excluded.operational_sources",
+   [biz.id,restaurant,JSON.stringify({stock_inventory:{last_checked_at:stockAsOf,last_success_at:stockAsOf,status:"current",count:1}})]);
+  const currentStock=(await client.query("select quantity::text as quantity,data->>'evidence_state' state from public.cv_inventory where business_id=$1 and menu_item_ref=$2 and data->>'evidence_state'='observed_current'",[biz.id,stockGuid])).rows;
+  if(JSON.stringify(currentStock)!==JSON.stringify([{quantity:"4.5",state:"observed_current"}]))fail("pos_current_stock_fixture");
+  // The poison is purposefully newer-looking, but NEVER an operational value.
+  await client.query("insert into public.toast_raw_samples\n (business_id,restaurant_guid,endpoint,business_date,http_status,item_count,sample,field_paths)\n values\n ($1,$2,'cashmgmt/v1/entries',$3::date,200,1,'[{\"guid\":\"poison-cash\",\"amount\":9999.99}]'::jsonb,ARRAY[]::text[]),\n ($1,$2,'stock/v1/inventory',$3::date,200,1,'[{\"guid\":\"poison-stock\",\"quantity\":9999}]'::jsonb,ARRAY[]::text[]),\n ($1,$2,'labor/v1/timeEntries',$3::date,200,1,'[{\"guid\":\"poison-time\",\"firstName\":\"PoisonEmployee\"}]'::jsonb,ARRAY[]::text[])",[biz.id,restaurant,biz.today]);
+  const leak=(await client.query("select count(*)::integer n from public.toast_records_for($1,$2,$3)\n where data->>'guid' in ('other-cafe-cash','poison-cash','poison-stock','poison-time')",
+   [biz.id,prior,biz.today])).rows[0].n;
+  if(leak!==0)fail("pos_diagnostic_or_foreign_leak");
+
+ if(biz.id!=="eeeeeeee-3333-4eee-8eee-eeeeeeeeee00")fail("pos_fixture_identity_changed");
+ if(ownerUserId){
+  await client.query("insert into public.memberships(business_id,user_id,role,can_see_profit) values($1,$2,'owner',true)",[biz.id,ownerUserId]);
+  await client.query("insert into public.cafe_access(business_id,mode,code_id,access_end,updated_at) values($1,'grandfathered',null,null,now()) on conflict(business_id) do update set mode='grandfathered',code_id=null,access_end=null,updated_at=now()",[biz.id]);
+ }
+ return {businessId:biz.id,today:biz.today,prior};
+}
+async function verifyHistoricalPosJourney({id,db,read,first,second,scope,thread}){
+ const cases=historicalPosCases(id),observed=new Set();let providerCalls=0;
+ for(const [i,spec] of cases.entries()){
+  const result=await turn(first.page,thread,spec.prompt);
+  if(result.error||result.done?.endReason!=="complete"||!uuid(result.done?.reply?.id)||!result.names.includes("query_data"))fail("pos_registered_turn_missing_"+spec.id);
+  const owner=await read("select id from public.ai_messages where business_id=$1 and owner_user_id=$2 and thread_id=$3 and client_message_id=$4 and role='owner'",[scope.businessId,scope.ownerUserId,thread,result.clientMessageId]);
+  if(owner.length!==1)fail("pos_owner_not_persisted");
+  const usage=await readPersistedModelUsage(db,scope.businessId,owner[0].id);
+  requireObservedProductionModel(usage.model,"gpt-6-luna");providerCalls+=integer(usage.model_call_count);
+  if(providerCalls>18||Number(usage.model_call_count)<2)fail("pos_model_calls_invalid");
+  checkHistoricalPosAnswer(spec,await read(historicalPosSourceSql(spec,scope)),replyText(result.done.reply));
+  scope["owner"+(i+1)]=owner[0].id;scope["reply"+(i+1)]=result.done.reply.id;
+  result.names.forEach(n=>observed.add(n));
+ }
+ if((await second.context.request.get("/api/ai/threads/"+thread)).status()===200)fail("pos_foreign_thread_visible");
+ if((await read("select id from public.supervisor_proposals where business_id=$1 and thread_id=$2",[scope.businessId,thread])).length)fail("pos_read_only_effect");
+ return {scope:{expectedProviderCalls:providerCalls},proof:{provider_calls:providerCalls,providerSelectedTools:[...observed].sort(),checks:{originalQuestions:cases.length,authenticatedOwner:true,sourceReadback:true,foreignDenied:true},limitations:["synthetic fixture; independent host reads persisted answers and source, not physical device/human comprehension"]}};
+}
+
 const id=process.env.AICAFE_SHARED_LUNA_SCENARIO;
 const allowedScenarios=new Set(["17b-owner-security","17b-sales-labor","17b-supply-finance","17b-cross-module-brief"]);
 async function measure(){
  const env=process.env;
  assertLocalLiveEnvironment(env);verifyCheckoutHead(env.HEAD_SHA);
- if(env.AICAFE_SHARED_LUNA!=="1"||!allowedScenarios.has(id)||
+ if(env.AICAFE_SHARED_LUNA!=="1"||(!allowedScenarios.has(id)&&!isHistoricalPosScenario(id))||
     env.AICAFE_SHARED_LUNA_HEAD!==env.HEAD_SHA||env.AICAFE_SHARED_LUNA_CANDIDATE!=="1")
    fail("trusted_shared_scenario_required");
  const args=process.argv.slice(2);
@@ -181,12 +256,19 @@ async function measure(){
  await db.connect();
  try{
   first=await login(browser,cafe);
+  let posScope=null;
+  if(isHistoricalPosScenario(id)){
+   posScope=await setupHistoricalPosFixture(db,cafe.owner.userId);
+   await db.query("COMMIT");
+   await first.context.addCookies([{name:"active_business_id",value:posScope.businessId,url:local}]);
+   await first.page.goto("/en");
+  }
   const thread=await createThread(first.context);
-  const scope={businessId:cafe.businessId,ownerUserId:cafe.owner.userId,threadId:thread,foreignBusinessId:foreign.businessId};
+  const scope={businessId:cafe.businessId,ownerUserId:cafe.owner.userId,threadId:thread,foreignBusinessId:foreign.businessId,...(posScope??{})};
   const read=async(sql,args=[]) => (await db.query(sql,args)).rows;
   if(id!=="17b-owner-security"){
    second=await login(browser,foreign);
-   const result=await verifyBusinessJourney({id,db,read,first,second,scope,cafe,foreign,thread});
+   const result=await (posScope?verifyHistoricalPosJourney:verifyBusinessJourney)({id,db,read,first,second,scope,cafe,foreign,thread});
    writeFileSync(outputs[0],JSON.stringify({schema_version:1,scenario:id,head_sha:env.HEAD_SHA,status:"passed",observed_model:"gpt-6-luna",...result.proof})+"\n",{mode:0o600,flag:"wx"});
    writeFileSync(outputs[1],JSON.stringify({...scope,...result.scope})+"\n",{mode:0o600,flag:"wx"});
    return;

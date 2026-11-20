@@ -17,7 +17,7 @@ export const proactiveRequirements=Object.freeze([
  ["stock_count_low","INVENTORY_LOW","supply_check",["14b"],"partial"],
  ["forecast_stockout","STOCKOUT_RISK","supply_check",["14b"],"partial"],
  ["supplier_quote_change","SUPPLIER_COST_CHANGED","",["14b","17c-procurement-recovery"],"source_only"],
- ["missing_or_stale_source","DATA_INCOMPLETE","data_quality",["15c"],"partial"],
+ ["missing_or_stale_source","DATA_INCOMPLETE","data_quality",["15c","17c-fault-followup"],"partial"],
  ["missing_bill_autonomous_resolution","","",["17c-business-monitors"],"registered"],
  ["unusual_voids_verified_coverage","","",["17c-business-monitors"],"source_only"],
  ["meal_break_actual_not_schedule","","",["17c-business-monitors"],"source_only"],
@@ -400,4 +400,26 @@ export function verifySourceAlertLifecycle(x){
  assert.deepEqual(x.effects,[]);
  assert.deepEqual(x.ownerRows,[]);
  return {mealAlertId:meal.id,voidAlertId:voids.id};
+}
+
+export function verifyLegacyFollowup({initial,early,due,watching,closed}){
+ const episode=initial.episodes[0]?.episode_id;assert.ok(episode);
+ for(const [stage,s] of Object.entries({initial,early,due,watching,closed})){
+  assert.equal(s.episodes.length,1,stage);assert.equal(s.episodes[0].episode_id,episode,stage+" episode identity");
+  assert.equal(s.episodes[0].phase,stage==="closed"?"resolved":"awaiting_owner",stage);
+  assert.equal(s.episodes[0].lease_token,null,stage);assert.equal(s.effects.length,0);assert.equal(s.proposals.length,0);
+  assert.ok(s.messages.every(m=>m.role==="supervisor"),"no owner spoofing");
+  assert.ok(s.usage.every(u=>u.model==="gpt-6-luna"&&u.status==="completed"&&Number(u.model_call_count)===1&&Number(u.input_tokens)>0&&Number(u.output_tokens)>=0));
+ }
+ assert.equal(Number(initial.episodes[0].step_version),2);assert.equal(initial.messages.length,1);
+ assert.equal(initial.messages[0].intent,"priority_investigation");assert.ok(["partial","verified"].includes(initial.messages[0].status));
+ for(const s of [initial,due]){const tools=s.episodes[0].evidence.modelTools;assert.equal(tools[0],"get_investigation_source");assert.ok(new Set(tools).size>=3);}
+ assert.deepEqual(early.messages,initial.messages,"no premature duplicate notice");assert.deepEqual(early.usage,initial.usage,"no premature paid follow-up");
+ assert.ok(Number(early.episodes[0].evidence.unchangedChecks??0)>Number(initial.episodes[0].evidence.unchangedChecks??0),"silent check persisted");
+ assert.equal(due.messages.length,2);assert.equal(due.messages[0].id,initial.messages[0].id);assert.equal(due.messages[1].intent,"priority_investigation");assert.notEqual(due.messages[1].id,initial.messages[0].id);
+ assert.ok(due.usage.length>=initial.usage.length+2&&initial.usage.length>=2);
+ assert.deepEqual(watching.messages,due.messages,"watching cannot announce closure");assert.deepEqual(watching.usage,due.usage);
+ assert.equal(closed.messages.length,3);const resolution=closed.messages.filter(m=>m.intent==="priority_investigation_resolution");
+ assert.equal(resolution.length,1);assert.deepEqual(closed.usage,due.usage);assert.ok(closed.usage.length<=18);
+ return {episodeId:episode,firstNoticeId:initial.messages[0].id,followupNoticeId:due.messages[1].id,resolutionNoticeId:resolution[0].id,calls:closed.usage.length};
 }

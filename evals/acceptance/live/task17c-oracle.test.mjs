@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import {readFileSync,readdirSync} from "node:fs";
-import {assessCoverage,requiredFamilies,proactiveRequirements,auditProactiveInventory,businessAnomalyCoverage,auditBusinessAnomalyCoverage,verifyRoutineAndFile,verifyScheduledOccurrence,verifyOperatingWorld,verifyProcurementOutcome,verifyRevocationOutcome,verifyMonitorOutcome,verifySupplierReminderOutcome,verifySourceAlertLifecycle} from "./task17c-oracle.mjs";
+import {assessCoverage,requiredFamilies,proactiveRequirements,auditProactiveInventory,businessAnomalyCoverage,auditBusinessAnomalyCoverage,verifyRoutineAndFile,verifyScheduledOccurrence,verifyOperatingWorld,verifyProcurementOutcome,verifyRevocationOutcome,verifyMonitorOutcome,verifySupplierReminderOutcome,verifySourceAlertLifecycle,verifyLegacyFollowup} from "./task17c-oracle.mjs";
 const head="a".repeat(40);
 test("missing, stale or candidate-only receipt cannot pass",()=>{
  const base={family:"chat_routine",head,model:"gpt-6-luna",status:"PASS"};
@@ -168,4 +168,12 @@ test("merged scheduled anomaly producers and feature manifests are mapped, never
   assert.equal(manifest.id,id);assert.ok(manifest.assertions.length>0);assert.ok(read(manifest.entrypoint).length>0);
   assert.ok(proactiveRequirements.some(row=>row.candidates.includes(id)),"unmapped merged scenario "+id);
  }
+});
+
+test("legacy 15A exact episode, 23h silence, 25h notice and source closure",()=>{
+ const mk=(phase="awaiting_owner",checks=0)=>({episodes:[{episode_id:"episode",phase,step_version:2,lease_token:null,evidence:{unchangedChecks:checks,modelTools:["get_investigation_source","get_sales","get_labor"]}}],messages:[{id:"n1",role:"supervisor",intent:"priority_investigation",status:"partial"}],usage:[1,2].map(id=>({id,model:"gpt-6-luna",status:"completed",model_call_count:1,input_tokens:100,output_tokens:10})),effects:[],proposals:[]});
+ const initial=mk(),early=mk("awaiting_owner",1),due=mk();due.messages.push({...initial.messages[0],id:"n2"});due.usage.push(...structuredClone(initial.usage).map(u=>({...u,id:u.id+2})));
+ const watching=structuredClone(due),closed=structuredClone(due);closed.episodes[0].phase="resolved";closed.messages.push({id:"n3",role:"supervisor",intent:"priority_investigation_resolution",status:"verified"});
+ const good={initial,early,due,watching,closed};assert.equal(verifyLegacyFollowup(good).calls,4);
+ for(const mutate of [x=>x.early.usage.push({}),x=>x.early.messages.push(x.initial.messages[0]),x=>x.due.episodes[0].episode_id="new",x=>x.watching.episodes[0].phase="resolved",x=>x.closed.messages.pop(),x=>x.closed.messages[0].role="owner"]){const bad=structuredClone(good);mutate(bad);assert.throws(()=>verifyLegacyFollowup(bad));}
 });

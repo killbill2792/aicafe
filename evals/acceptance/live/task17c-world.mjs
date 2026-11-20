@@ -250,11 +250,11 @@ if(process.env.AICAFE_17C_TICK){
   const {assertLocalLiveEnvironment}=await import("./preflight.mjs");
   const {verifyCheckoutHead}=await import("./runner.mjs");
   assertLocalLiveEnvironment(process.env);verifyCheckoutHead(process.env.HEAD_SHA);
-  check(process.env.AICAFE_SHARED_LUNA==="1"&&process.env.AICAFE_SHARED_LUNA_CANDIDATE==="1"&&["17c","17c-autonomy","17c-business-monitors","17c-procurement-recovery"].includes(process.env.AICAFE_SHARED_LUNA_SCENARIO),"worker_trusted_runner_required");
+  check(process.env.AICAFE_SHARED_LUNA==="1"&&process.env.AICAFE_SHARED_LUNA_CANDIDATE==="1"&&["17c","17c-autonomy","17c-business-monitors","17c-procurement-recovery","17c-fault-followup"].includes(process.env.AICAFE_SHARED_LUNA_SCENARIO),"worker_trusted_runner_required");
   const input=JSON.parse(process.env.AICAFE_17C_TICK);
   const {createClient}=await import("@supabase/supabase-js");
   const {dispatchRoutinesForBusiness}=await import("../../../lib/ai/supervisor/routines/dispatch.server.ts");
-  const {enqueueInvestigationsForOwner,processNextInvestigation}=await import("../../../lib/ai/supervisor/routines/investigation.server.ts");
+  const {enqueueInvestigationsForOwner,processNextInvestigation,processDueInvestigations}=await import("../../../lib/ai/supervisor/routines/investigation.server.ts");
   const db=createClient(process.env.NEXT_PUBLIC_SUPABASE_URL,process.env.SUPABASE_SERVICE_ROLE_KEY,{auth:{persistSession:false,autoRefreshToken:false}});
   if(input.mode==="refresh"){
    const {refreshDerivedForBusiness}=await import("../../../lib/alerts/refreshDerived.server.ts");
@@ -288,7 +288,11 @@ if(process.env.AICAFE_17C_TICK){
    }
    throw Error("worker_never_reached_reserved_transport");
   }
-  check(input.mode==="investigate","unknown_worker_mode");
+  if(input.mode==="legacy_enqueue"){
+   expect(input.scopes).toHaveLength(1);
+   expect(await enqueueInvestigationsForOwner(db,input.scopes[0],new Date(input.asOf))).toBe(1);return;
+  }
+  check(input.mode==="investigate"||input.mode==="legacy_followup","unknown_worker_mode");
   const {openAIProvider}=await import("../../../lib/ai/agent/loop.server.ts");
   const provider=async function*(params,signal){
    check(params.model==="gpt-6-luna"&&Number.isSafeInteger(params.max_output_tokens),"actual_luna_model_required");
@@ -297,6 +301,17 @@ if(process.env.AICAFE_17C_TICK){
     yield ev;
    }
   };
+  if(input.mode==="legacy_followup"){
+   const clock=new Date(input.asOf),summaries=[];expect(Number.isFinite(clock.getTime())).toBe(true);
+   const capture=p=>summaries.push(p);
+   if(input.stage==="first")expect(await processDueInvestigations(db,clock,2,provider,capture)).toMatchObject({processed:2,collected:1,investigated:1,failed:0});
+   else if(input.stage==="early")expect(await processNextInvestigation(db,clock,provider,capture)).toMatchObject({processed:1,rechecked:1,failed:0});
+   else if(input.stage==="due")expect(await processNextInvestigation(db,clock,provider,capture)).toMatchObject({processed:1,followUps:1,failed:0});
+   else throw Error("unknown_legacy_stage");
+   expect(summaries).toHaveLength(input.stage==="early"?0:1);
+   for(const p of summaries)expect(p).toMatchObject({verified:true,externalEffectClaim:false,unverifiedCount:0,failureCode:null});
+   return;
+  }
   for(let i=0;i<8;i++){
    const actual=await processNextInvestigation(db,new Date(),provider);
    expect(actual.failed).toBe(0);
@@ -307,7 +322,7 @@ if(process.env.AICAFE_17C_TICK){
 }
 
 import {readPersistedModelUsage,requireObservedProductionModel} from "./runner.mjs";
-import {verifyProcurementOutcome,verifyMonitorOutcome,verifyRevocationOutcome,verifySupplierReminderOutcome,verifySourceAlertLifecycle} from "./task17c-oracle.mjs";
+import {verifyProcurementOutcome,verifyMonitorOutcome,verifyRevocationOutcome,verifySupplierReminderOutcome,verifySourceAlertLifecycle,verifyLegacyFollowup} from "./task17c-oracle.mjs";
 
 function dateAt(timezone,date=new Date()){
  const p=Object.fromEntries(new Intl.DateTimeFormat("en-CA",{timeZone:timezone,year:"numeric",month:"2-digit",day:"2-digit"}).formatToParts(date).map(x=>[x.type,x.value]));
@@ -532,4 +547,41 @@ async function exerciseAlertSources(db,profile){
  const ownerRows=await rows(db,"select id from public.ai_messages where business_id=$1 and role='owner'",[businessId]);
  const verified=verifySourceAlertLifecycle({negative,opened,repeated,closed,repeatedClosed,actualTimecard,plannedTimecard,wage,voidCents,effects,ownerRows});
  return {sourceAlertBusinessId:businessId,sourceAlertDate:today,actualTimecard,plannedTimecard,...verified};
+}
+
+/** Legacy 15A migrated to the shared runner, without a duplicate provider lane.
+ * Worker clock accelerated for the 24h notice boundary, not overnight proof. */
+export async function legacyFollowup(db,browser){
+ const cafe=await makeMonitorCafe(db,profiles().first),foreign=profiles().foreign;
+ const {businessId,ownerUserId,threadId,timezone}=cafe,taskId="data-quality:"+randomUUID();
+ const scope={businessId,ownerUserId,threadId,foreignBusinessId:foreign.businessId,taskId};
+ await db.query("insert into public.operating_tasks(business_id,id,agent_id,kind,status,payload,confidence,evidence,owner_user_id) values($1,$2,'leo','data_quality','needs_owner',$3,'low',$4,$5)",[businessId,taskId,JSON.stringify({coverage:"unverified"}),JSON.stringify([{source:"pos_import",facts:{coverage:"unverified"}}]),ownerUserId]);
+ const scopes=[{businessId,ownerUserId,threadId,timezone,localDate:dateAt(timezone)}];
+ const snapshot=async()=>({
+  episodes:await rows(db,"select episode_id,phase,step_version,lease_token,evidence from public.supervisor_investigations where business_id=$1 and source_id=$2",[businessId,taskId]),
+  messages:await rows(db,"select id,role,grounding->>'intent' as intent,grounding->>'status' as status from public.ai_messages where business_id=$1 and thread_id=$2 order by created_at,id",[businessId,threadId]),
+  usage:await rows(db,"select model,status,model_call_count,input_tokens,output_tokens from public.supervisor_system_usage_events where business_id=$1 and owner_user_id=$2 order by created_at",[businessId,ownerUserId]),
+  effects:await rows(db,"select 1 from public.supervisor_effect_attempts where business_id=$1",[businessId]),
+  proposals:await rows(db,"select id from public.supervisor_proposals where business_id=$1",[businessId])
+ });
+ await runWorker({mode:"legacy_enqueue",scopes,asOf:new Date().toISOString()});
+ await runWorker({mode:"legacy_followup",stage:"first",asOf:new Date().toISOString()},225000);
+ const initial=await snapshot(),last=Date.parse(initial.episodes[0]?.evidence?.lastOwnerUpdate??"");
+ check(Number.isFinite(last),"legacy_initial_update_missing");
+ await runWorker({mode:"legacy_followup",stage:"early",asOf:new Date(last+23*3600000).toISOString()},225000);
+ const early=await snapshot();
+ await runWorker({mode:"legacy_followup",stage:"due",asOf:new Date(last+25*3600000).toISOString()},225000);
+ const due=await snapshot();
+ await db.query("update public.operating_tasks set status='watching' where business_id=$1 and id=$2",[businessId,taskId]);
+ const watching=await snapshot();
+ await db.query("update public.operating_tasks set status='handled' where business_id=$1 and id=$2",[businessId,taskId]);
+ const closed=await snapshot();
+ const verified=verifyLegacyFollowup({initial,early,due,watching,closed});
+ let owner,outsider;
+ try{
+  owner=await openOwner(browser,cafe);outsider=await openOwner(browser,foreign);
+  check((await owner.context.request.get("/api/ai/threads/"+threadId)).status()===200,"legacy_thread_not_owner_readable");
+  check([401,403,404].includes((await outsider.context.request.get("/api/ai/threads/"+threadId)).status()),"legacy_foreign_thread_readable");
+ }finally{await owner?.context.close();await outsider?.context.close();}
+ return {calls:verified.calls,scope:{...scope,...verified}};
 }

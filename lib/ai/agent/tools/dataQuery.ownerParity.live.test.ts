@@ -867,3 +867,26 @@ run("Supervisor proves current-source orders, staff, cash, stock, names and scre
   await client.end();
  }
 },1_200_000);
+
+// Independently verify the new shared authenticated fixture on the same
+// migrated local DB before accepting any provider launch. Roll back all writes.
+if(sqlOnly&&dbUrl)it("shared historical POS fixture and all 18 independent source queries",async()=>{
+ allowedHost(dbUrl);
+ const client=new pg.Client({connectionString:dbUrl});
+ await client.connect();
+ try{
+  const {setupHistoricalPosFixture}=await import("../../../../evals/acceptance/live/task17b-cross-domain.mjs");
+  const {historicalPosCases,historicalPosSourceSql}=await import("../../../../scripts/acceptance/luna-attest-17b.mjs");
+  const scope=await setupHistoricalPosFixture(client);
+  let count=0;
+  for(const id of ["17b-pos-discounts","17b-pos-sales","17b-pos-identity","17b-pos-operations"]){
+   for(const spec of historicalPosCases(id)){
+    const rows=(await client.query(historicalPosSourceSql(spec,scope))).rows;
+    expect(rows.length,spec.id).toBeGreaterThan(0);
+    for(const row of rows)expect(spec.kind==="name"?row.answer:row.n,spec.id).not.toBeNull();
+    count++;
+   }
+  }
+  expect(count).toBe(18);
+ }finally{await client.query("ROLLBACK").catch(()=>{});await client.end();}
+},120_000);
