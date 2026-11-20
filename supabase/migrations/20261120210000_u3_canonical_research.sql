@@ -194,6 +194,11 @@ REVOKE ALL ON FUNCTION u3_research_private.business_id() FROM PUBLIC,anon,authen
 REVOKE ALL ON FUNCTION u3_research_private.mode() FROM PUBLIC,anon,authenticated,aicafe_research;
 GRANT EXECUTE ON FUNCTION u3_research_private.business_id() TO aicafe_research_view_owner;
 GRANT EXECUTE ON FUNCTION u3_research_private.mode() TO aicafe_research_view_owner;
+-- View/RLS expressions are executed under the querying SQL role for function
+-- privilege checks. Permit these *scope-enforcing* helpers through views, but
+-- continue to deny USAGE on u3_research_private, all raw data and scope().
+GRANT EXECUTE ON FUNCTION u3_research_private.business_id() TO aicafe_research;
+GRANT EXECUTE ON FUNCTION u3_research_private.mode() TO aicafe_research;
 
 -- Every selected field and indirect parent edge is individually reviewed.
 -- This is a source/field admission contract, NOT a library of owner-question
