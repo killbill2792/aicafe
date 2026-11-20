@@ -78,6 +78,13 @@ BEGIN
    has_table_privilege('aicafe_research','public.toast_raw_records','SELECT') OR
    has_schema_privilege('aicafe_research','u3_research_private','USAGE')
  THEN RAISE EXCEPTION 'U3 research role can access forbidden source'; END IF;
+ -- The logical views need function EXECUTE while the private schema itself
+ -- remains inaccessible to the model SQL connection. Never grant USAGE.
+ IF NOT has_function_privilege('aicafe_research',
+     'u3_research_private.toast_operational_records()','EXECUTE')
+    OR NOT has_function_privilege('aicafe_research',
+     'u3_research_private.toast_change_rows()','EXECUTE')
+ THEN RAISE EXCEPTION 'U3 scoped research wrappers cannot execute through views'; END IF;
  IF has_function_privilege('anon','public.u3_issue_research_scope(uuid,uuid,uuid,text,text,text,uuid,uuid)','EXECUTE')
     OR has_function_privilege('authenticated','public.u3_issue_research_scope(uuid,uuid,uuid,text,text,text,uuid,uuid)','EXECUTE')
     OR has_function_privilege('aicafe_research','public.u3_issue_research_scope(uuid,uuid,uuid,text,text,text,uuid,uuid)','EXECUTE')
