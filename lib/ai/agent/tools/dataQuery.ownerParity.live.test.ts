@@ -634,10 +634,15 @@ run("Supervisor proves current-source orders, staff, cash, stock, names and scre
      fromScope:"today",toScope:"today",outcome:"rows"
     });
    }
-   // Every previously failed full-Luna scalar case must first be executable through
+   // Every historical scalar case must first be executable through
    // the ACTUAL registered query_data RPC on the existing disposable fixture.
    // Compare each with independent source SQL before making another paid call.
-   const failedScalarReaderCases=[
+   const scalarReaderCases=[
+    {index:0,filters:[
+     {column:"record_type",op:"in",value:["item_discount","check_discount"]},
+     {column:"counts_in_sales",op:"=",value:true},
+     {column:"data.name",op:"ilike",value:"%student%"}],
+     metric:{fn:"count",column:"source_ref"}},
     {index:1,filters:[
      {column:"record_type",op:"in",value:["item_discount","check_discount"]},
      {column:"counts_in_sales",op:"=",value:true},
@@ -670,6 +675,11 @@ run("Supervisor proves current-source orders, staff, cash, stock, names and scre
      {column:"record_type",op:"=",value:"order"},
      {column:"counts_in_sales",op:"=",value:true}],
      metric:{fn:"sum",column:"data.numberOfGuests"}},
+    {index:8,filters:[
+     {column:"record_type",op:"=",value:"item"},
+     {column:"counts_in_sales",op:"=",value:true},
+     {column:"data.displayName",op:"is_null",value:null}],
+     metric:{fn:"count",column:"source_ref"}},
     {index:9,filters:[
      {column:"record_type",op:"=",value:"order"},
      {column:"counts_in_sales",op:"=",value:true},
@@ -680,7 +690,8 @@ run("Supervisor proves current-source orders, staff, cash, stock, names and scre
      {column:"counts_in_sales",op:"=",value:true}],
      metric:{fn:"sum",column:"data.quantity"}}
    ] as const;
-   for(const spec of failedScalarReaderCases){
+   expect(scalarReaderCases.map(spec=>spec.index)).toEqual(scalarQuestions.map((_,index)=>index));
+   for(const spec of scalarReaderCases){
     const question=scalarQuestions[spec.index];
     const expected=(await client.query<{n:number}>(question.truth,
      truthArgs(question.scope))).rows[0].n;
@@ -701,6 +712,45 @@ run("Supervisor proves current-source orders, staff, cash, stock, names and scre
      "scalar-"+(spec.index+1)+" registered reader vs source SQL")
      .toBeCloseTo(Number(expected),2);
    }
+   // Preserve all rows, including the null-name group: the reader must
+   // return the same grouping and totals as the independent source query.
+   const breakdownReaderCases=[
+    {group:"business_date",filters:[
+     {column:"record_type",op:"in",value:["item_discount","check_discount"]},
+     {column:"counts_in_sales",op:"=",value:true}],
+     metric:{fn:"count",column:"source_ref"}},
+    {group:"data.displayName",filters:[
+     {column:"record_type",op:"=",value:"item"},
+     {column:"counts_in_sales",op:"=",value:true}],
+     metric:{fn:"sum",column:"data.quantity"}}
+   ] as const;
+   expect(breakdownReaderCases).toHaveLength(breakdowns.length);
+   for(const [index,spec] of breakdownReaderCases.entries()){
+    const question=breakdowns[index];
+    const args=truthArgs(question.scope);
+    const expected=await client.query<{k:string;n:number}>(question.truth,args);
+    const result=await executeAgentTool("query_data",{
+     view:"cv_toast_records",columns:[spec.group],filters:spec.filters,
+     group_by:[spec.group],metrics:[spec.metric],date_from:args[1],date_to:args[2],
+     order_by:null,limit:50
+    },context);
+    expect(result.error,"breakdown-"+(index+1)+" registered reader").toBeUndefined();
+    expect(result.missing).not.toContain("toastDayStatusUnavailable");
+    const rows=result.rows as Array<Record<string,unknown>>|undefined;
+    expect(rows,"complete grouped result").toHaveLength(expected.rows.length);
+    const alias=spec.metric.fn+"_"+spec.metric.column;
+    const actual=(rows??[]).map(r=>{
+     expect(Object.hasOwn(r,spec.group),"group column returned").toBe(true);
+     expect(r[alias],"group total not missing").not.toBeNull();
+     expect(r[alias],"group total not missing").not.toBeUndefined();
+     return {k:r[spec.group]===null?"Unnamed":String(r[spec.group]),n:Number(r[alias])};
+    });
+    const sort=(rows:{k:string;n:number}[])=>rows.sort((a,b)=>a.k.localeCompare(b.k));
+    expect(sort(actual),"breakdown-"+(index+1)+" independent grouped SQL truth").toEqual(
+     sort(expected.rows.map(r=>({k:r.k,n:Number(r.n)}))));
+   }
+   // A source-backed reader result is separate from any real-model selection.
+   console.log("POS historical reader parity: 11 scalar, 2 breakdown, 2 identity, 3 source-family cases; zero provider calls.");
    return;
   }
 
