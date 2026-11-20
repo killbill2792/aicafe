@@ -81,6 +81,10 @@ BEGIN
  -- The logical views need function EXECUTE while the private schema itself
  -- remains inaccessible to the model SQL connection. Never grant USAGE.
  IF NOT has_function_privilege('aicafe_research',
+     'u3_research_private.business_id()','EXECUTE')
+    OR NOT has_function_privilege('aicafe_research',
+     'u3_research_private.mode()','EXECUTE')
+    OR NOT has_function_privilege('aicafe_research',
      'u3_research_private.toast_operational_records()','EXECUTE')
     OR NOT has_function_privilege('aicafe_research',
      'u3_research_private.toast_change_rows()','EXECUTE')
