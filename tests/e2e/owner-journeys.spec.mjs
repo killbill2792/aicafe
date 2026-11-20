@@ -1637,7 +1637,10 @@ test("@home Task16E quiet shell, optional visuals, editable follow-up and mobile
       const response=await page.goto("/en/?thread="+id,{waitUntil:"domcontentloaded",timeout:30000});
       expect(response?.ok()).toBe(true);
       await expect(page).not.toHaveURL(/\/login(?:\?|$)|\/onboarding(?:\?|$)/);
-      await expect(page.getByText(owner.name,{exact:true}).first()).toBeVisible({timeout:30000});
+      // The authenticated desktop café label stays in the DOM on mobile but is
+      // intentionally hidden; the actual interactive owner shell must be visible.
+      await expect(page.getByText(owner.name,{exact:true}).first()).toBeAttached({timeout:30000});
+      await expect(page.locator("#supervisor-home-composer")).toBeVisible({timeout:30000});
     }
     let writes=0;
     page.on("request",r=>{if(r.method()==="POST"&&/\/api\/ai\/threads\/[^/]+\/(agent|messages)$/.test(new URL(r.url()).pathname))writes++;});
