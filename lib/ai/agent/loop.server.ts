@@ -394,6 +394,8 @@ export async function runAgentTurn(args: {
       ...(args.toolNames?.includes("get_investigation_source")&&args.context.investigation?[investigationToolDefinition]:[]),
       ...(args.toolNames?[]:args.extraTools??[])];
   const eligibleNames=allowedFunctionNames(allowedDefinitions);
+  const seenCallIds=new Set<string>();
+  let discoveryOnly=false;
   const projectedTools=projectProviderTools(allowedDefinitions,nativeSearch);
   // Discovery is a provider transport choice, not a new local tool or route.
   const request = (final: boolean, outputCap:number) => ({
@@ -417,6 +419,7 @@ export async function runAgentTurn(args: {
   };
   const call = async (final: boolean) => {
     const calls: ToolCall[] = [], output: unknown[] = [];
+    discoveryOnly=false;
     const callTextStart = text.length;
     const callsBefore=usage.modelCalls;
     let terminal:Event|undefined;
@@ -441,7 +444,7 @@ export async function runAgentTurn(args: {
           const item = event.item as { type?: string };
           output.push(item);
           if (item.type === "function_call") {
-            if(!validProviderFunctionCall(item)||calls.some(c=>c.call_id===item.call_id))
+            if(!validProviderFunctionCall(item)||(calls.some(c=>c.call_id===item.call_id)||seenCallIds.has(item.call_id)))
               throw Error("invalid_provider_function_call");
             calls.push(item);
           }
@@ -464,8 +467,11 @@ export async function runAgentTurn(args: {
       if (!completed) {failureCode="missing_terminal";throw new Error("provider_incomplete");}
       await args.beforeAcceptResult?.();
       if(deferOutput&&text.length>callTextStart)args.onDelta?.(text.slice(callTextStart));
-      input.push(...(approvedLocalTask14b?task14bInlineContinuation(output):
-        nativeSearch?canonicalHostedOutput(output,projectedTools,true):output));
+      const continuation=approvedLocalTask14b?task14bInlineContinuation(output):
+        nativeSearch?canonicalHostedOutput(output,projectedTools,true):output;
+      input.push(...continuation);
+      calls.forEach(c=>seenCallIds.add(c.call_id));
+      discoveryOnly=nativeSearch&&calls.length===0&&text.length===callTextStart&&output.some(o=>!!o&&typeof o==="object"&&(o as {type?:unknown}).type==="tool_search_output");
       // A tool-only response is not an answer. Keep those follow-ups unclaimed
       // until a completed text response can be persisted.
       if (!calls.length && text.length > callTextStart)
@@ -505,6 +511,7 @@ export async function runAgentTurn(args: {
       await boundary(()=>args.checkpoint!.assertLive());
       usage.toolCalls++;
       const callId="call_recovered_"+usage.toolCalls;
+      seenCallIds.add(callId);
       const wire=JSON.stringify(saved.selector);
       let timer:ReturnType<typeof setTimeout>|undefined;
       let result:AgentToolResult;
@@ -548,6 +555,7 @@ export async function runAgentTurn(args: {
              args.onDelta?.("\n\n"); }
           continue;
         }
+        if(discoveryOnly)continue;
         if(!text.trim()){endReason="provider_error";break;}
         finished = true; break;
       }
