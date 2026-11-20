@@ -59,32 +59,23 @@ it("uses the actual Toast roster adapter's retained full-name projection",async(
 });
 
 describe("POS0e retained current-source dictionary and shared reader",()=>{
- it("exposes retained discount, item-unit and guest query semantics in registered model tool metadata",()=>{
-  const registered=agentToolDefinitions.find(tool=>tool.name==="query_data");
-  const description=registered?.description??"";
-  expect(description).toContain("count_distinct order_ref");
-  expect(description).toContain("count_distinct check_ref");
-  expect(description).toContain("sum data.quantity");
-  expect(description).toContain("sum data.numberOfGuests");
-  expect(description).toContain("retained canonical records");
-  expect(description).toContain("Never ask the café owner");
-  // Six actual full-Luna failures: keep route selection and aggregate semantics
-  // specific, while all real answer assertions remain unchanged.
-  expect(description).toContain("count_distinct data.name with group_by:null");
-  expect(description).toContain("For ALL applied uses of ANY name");
-  expect(description).toContain("filter data.quantity >= 2");
-  expect(description).toContain("data.source=Online");
-  expect(description).toContain("count_distinct record_ref");
-  expect(description).toContain("the canonical source column is data provenance");
-  expect(description).toContain("avoid repeated schema discovery");
-  expect(description).toContain("call query_data directly");
-  expect(description).toContain("ALWAYS use query_data, NOT ask_owner");
-  expect(description).toContain("rows[0].count_source_ref");
-  expect(description).toContain("aggregate:{metric,value,status}");
-  expect(description).toContain("status=so_far");
+ it("preserves POS metric semantics in the canonical dictionary without scripted question routing",()=>{
+  const query=agentToolDefinitions.find(tool=>tool.name==="query_data");
   const discovery=agentToolDefinitions.find(tool=>tool.name==="describe_data");
-  expect(discovery?.description).toContain("ONLY when the canonical view or field path is genuinely unknown");
-  expect(discovery?.description).toContain("call query_data directly without schema discovery");
+  expect(query?.description).toContain("source grain");
+  expect(query?.description).toContain("model-selected");
+  expect(discovery?.description).toContain("meaning");
+  // The reusable semantic catalog, not a mandatory prompt sequence, defines
+  // how different order/check/discount measurements can be counted.
+  const record=canonicalDictionary.cv_toast_records;
+  expect(record.meaning).toContain("count_distinct order_ref");
+  expect(record.meaning).toContain("count_distinct check_ref");
+  expect(record.meaning).toContain("count source_ref");
+  expect(record.columns).toHaveProperty("counts_in_sales");
+  expect(record.columns).toHaveProperty("order_ref");
+  expect(record.columns).toHaveProperty("check_ref");
+  expect(record.columns).toHaveProperty("data");
+  expect(query?.description).not.toMatch(/ALWAYS use query_data|For ALL applied uses of ANY name|call query_data directly/);
  });
  it("describes the correct Toast menu-item GUID lookup without confusing evidence refs",async()=>{
   const described=await dataQueryTools.describe_data.execute({view:"cv_inventory"});
