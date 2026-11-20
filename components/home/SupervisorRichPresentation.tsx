@@ -151,7 +151,7 @@ function CalculatorView({calculator,locale}:{calculator:InteractiveCalc;locale:s
    {i.label}{i.value.unit==="cents"?" ("+calculator.currency+")":i.value.unit==="percent"?" (%)":""}
    <input aria-describedby={outcome?undefined:resultId} type="text" inputMode="decimal" maxLength={13} value={changes[i.id]??String(number(i.value))} onChange={e=>setChanges(prev=>({...prev,[i.id]:e.target.value}))} className="mt-1 block min-h-12 w-full rounded-xl border border-line bg-surface px-3 tabular-nums"/>
   </label>:<p key={i.id} className="break-words text-[15px]">{i.label}: {fmt(i.value)}</p>)}
-  <p id={resultId} role="status" aria-label={copy.calculationResult} aria-atomic="true" className="break-words text-xl font-medium tabular-nums">{outcome?fmt(outcome):copy.invalidCalculation}</p>
+  <p role="status" aria-label={copy.calculationResult} aria-atomic="true" className="break-words text-xl font-medium tabular-nums"><span id={resultId}>{outcome?fmt(outcome):copy.invalidCalculation}</span></p>
   <button type="button" className="min-h-12 text-[15px] underline" onClick={()=>setChanges({})}>{copy.resetAssumptions}</button>
  </section>;
 }
@@ -178,7 +178,7 @@ function ScenarioView({scenario,locale}:{scenario:ScenarioComparison;locale:stri
   </div>}
   <dl className="grid grid-cols-2 gap-2 tabular-nums">
    <div><dt className="text-[13px] text-ink-muted">{copy.baselineEstimate}</dt><dd className="break-words text-xl font-medium">{fmt(selected.beforeCents)}</dd></div>
-   <div><dt className="text-[13px] text-ink-muted">{copy.scenarioEstimate}</dt><dd className="break-words text-xl font-medium"><span id={resultId} role="status" aria-label={copy.scenarioEstimate} aria-atomic="true">{selected.editor?edited?fmt(edited.afterCents):copy.invalidCalculation:fmt(selected.afterCents)}</span></dd></div>
+   <div><dt className="text-[13px] text-ink-muted">{copy.scenarioEstimate}</dt><dd className="break-words text-xl font-medium"><span role="status" aria-label={copy.scenarioEstimate} aria-atomic="true"><span id={resultId}>{selected.editor?edited?fmt(edited.afterCents):copy.invalidCalculation:fmt(selected.afterCents)}</span></span></dd></div>
   </dl>
   {!selected.editor&&<p className="text-[13px] text-ink-muted">{copy.scenarioNotice}</p>}
  </section>;
