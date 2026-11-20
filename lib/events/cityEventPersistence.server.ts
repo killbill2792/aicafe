@@ -1,6 +1,6 @@
 import "server-only";
 import type {SupabaseClient} from "@supabase/supabase-js";
-import {assertDay,cityEventIdentity,cityPlaceIdentity,cityScopeKey,
+import {assertDay,cityEventIdentity,cityPlaceIdentity,cityScopeKey,correctedSourceAlias,canonicalSourceUrl,
   type CityEventCandidate,type CityPlaceCandidate,type CityScope} from "./cityEventIdentity";
 
 /** The ONLY planned writer for shared event/coverage/neighborhood storage.
@@ -103,4 +103,21 @@ export async function findCafeEventIdForCityEvent(db:SupabaseClient,input:{
     .eq("city_event_id",validId(input.cityEventId)).maybeSingle();
   throwOnError(error);
   return data?.cafe_event_id?validId(data.cafe_event_id):null;
+}
+
+/** Source-backed change to a known shared occurrence, using its exact claimed
+ * café association rather than matching a similar event by name. */
+export async function correctCityOccurrence(db:SupabaseClient,businessId:string,
+ event:import("@/lib/data/cafeEvents.server").CafeEvent,
+ change:import("./eventVerification").VerifiedChange,claimAt:string){
+ if(!event.cityEventId||!event.cityKey||!event.sourceUrl)throw new Error("occurrence_identity_unavailable");
+ const newDate=change.newEndDate?change.newDate:null;
+ const sourceUrls=[...new Set([event.sourceUrl,...(event.sourceUrls??[])])];
+ const aliases=newDate?sourceUrls.map(url=>correctedSourceAlias(event.cityKey!,event.name,newDate,url)):[];
+ const {data,error}=await db.rpc("ldi_correct_occurrence",{
+   p_business_id:validId(businessId),p_cafe_event_id:validId(event.id),p_city_id:validId(event.cityEventId),
+   p_claim_at:validInstant(claimAt),p_change:{...change,newDate,originalSourceUrl:canonicalSourceUrl(event.sourceUrl)},
+   p_aliases:aliases,
+ });
+ throwOnError(error);return data===true;
 }

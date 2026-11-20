@@ -28,7 +28,8 @@ function fakeDb(options:{failFirstTaskRead?:boolean;lostRevision?:boolean;concur
   const writes:Array<{table:string;patch:Record<string,unknown>;filters:Array<[string,string]>}>=[];
   let taskExists=false,taskReadCount=0;
   const attempts=new Map<string,string>();
-  const db={
+  const rpc=vi.fn(async()=>({data:true,error:null}));
+  const db={rpc,
     from:(table:string)=>{
       const filters:Array<[string,string]>=[];
       const query={
@@ -80,7 +81,7 @@ function fakeDb(options:{failFirstTaskRead?:boolean;lostRevision?:boolean;concur
       };
     },
   };
-  return {db:db as unknown as SupabaseClient,writes};
+  return {db:db as unknown as SupabaseClient,writes,rpc};
 }
 const timeline=(events:CafeEvent[]=[event]):SavedEventTimeline=>({events,plans:[plan]});
 describe("persisted change alerts through the existing inbox and chat",()=>{
@@ -113,6 +114,13 @@ describe("persisted change alerts through the existing inbox and chat",()=>{
      .toBe(true);
    expect(writes.filter(w=>w.table==="cafe_events").every(w=>
      w.filters.some(([k,v])=>k==="business_id"&&v==="cafe-one"))).toBe(true);
+ });
+ it("uses one claimed shared-occurrence correction instead of a local-only date update",async()=>{
+   const {db,rpc}=fakeDb();
+   const linked={...event,cityKey:"us|ca|example",cityEventId:"22222222-2222-4222-8222-222222222222",sourceUrls:[event.sourceUrl!]};
+   const businessId="11111111-1111-4111-8111-111111111111";
+   expect(await verifyUpcomingEventChanges(db,businessId,"owner-one","UTC","2026-11-01",timeline([linked]),new Date("2026-11-01T12:00:00Z"),async()=>({evidence:{verdict:"postponed",sourceUrl:event.sourceUrl,statement:"New dates confirmed Nov 9–10",newDate:"2026-11-09",newEndDate:"2026-11-10",newVenue:null},citedUrls:[event.sourceUrl!]}))).toBe(1);
+   expect(rpc).toHaveBeenCalledWith("ldi_correct_occurrence",expect.objectContaining({p_city_id:linked.cityEventId,p_change:expect.objectContaining({status:"found",newDate:"2026-11-09",newEndDate:"2026-11-10"}),p_aliases:[expect.stringMatching(/^[a-f0-9]{64}$/)]}));
  });
  it("cannot deliver a stale concurrent change or overwrite a newer same-status revision",async()=>{
    const {db,writes}=fakeDb({lostRevision:true});

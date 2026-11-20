@@ -1,14 +1,18 @@
 import type {CafeEvent} from "@/lib/data/cafeEvents.server";
+import {assertDay} from "./cityEventIdentity";
 
-export type EventVerdict="confirmed"|"cancelled"|"postponed"|"venue_changed"|"reinstated"|"conflicting"|"unverified";
+export type EventVerdict="confirmed"|"cancelled"|"postponed"|"dates_changed"|"venue_changed"|"reinstated"|"conflicting"|"unverified";
 export type EventEvidence={
   verdict:EventVerdict;sourceUrl:string|null;statement:string|null;
-  newDate:string|null;newVenue:string|null;
+  newDate:string|null;newVenue:string|null;newEndDate?:string|null;
+  newStartAt?:string|null;newEndAt?:string|null;sourceTimezone?:string|null;
 };
 export type VerifiedChange={
   id:string;previousStatus:CafeEvent["status"];status:CafeEvent["status"];
   verdict:EventVerdict;sourceUrl:string;statement:string;
   newDate:string|null;newVenue:string|null;verifiedAt:string;
+  newEndDate?:string|null;newStartAt?:string|null;newEndAt?:string|null;sourceTimezone?:string|null;
+  previousStartDate?:string;previousEndDate?:string;
 };
 const safeUrl=(value:string)=>{
   try{
@@ -33,18 +37,30 @@ export function verifiedEventChange(event:CafeEvent,evidence:EventEvidence,
   citedUrls:readonly string[],at:string):VerifiedChange|null{
   if(!credibleEventEvidence(event,evidence,citedUrls)||!evidence.sourceUrl||
     !evidence.statement)return null;
+  let newDate=evidence.newDate,newEndDate=evidence.newEndDate??null;
+  try{
+    if(newDate)assertDay(newDate);
+    if(newEndDate)assertDay(newEndDate);
+    if(newEndDate&&newEndDate<(newDate??event.startDate))return null;
+  }catch{return null;}
+  const fullDates=Boolean(newDate&&newEndDate);
   const status:CafeEvent["status"]=
     evidence.verdict==="cancelled"?"cancelled":
-    evidence.verdict==="postponed"||evidence.verdict==="venue_changed"?"moved":
-    evidence.verdict==="reinstated"?"found":event.status;
-  if(!["cancelled","postponed","venue_changed","reinstated"].includes(evidence.verdict)||
+    evidence.verdict==="postponed"?(fullDates?"found":"moved"):
+    evidence.verdict==="venue_changed"?"moved":
+    evidence.verdict==="reinstated"||evidence.verdict==="dates_changed"?"found":event.status;
+  if(!["cancelled","postponed","dates_changed","venue_changed","reinstated"].includes(evidence.verdict)||
+    (evidence.verdict==="dates_changed"&&(!newEndDate||event.status!=="found"))||
     (evidence.verdict==="reinstated"&&event.status==="found")||
-    (status===event.status&&evidence.verdict!=="venue_changed"&&
-      evidence.verdict!=="postponed"))return null;
+    (status===event.status&&!["venue_changed","postponed","dates_changed"].includes(evidence.verdict)))return null;
   return {id:event.id,previousStatus:event.status,status,
     verdict:evidence.verdict,sourceUrl:evidence.sourceUrl,
-    statement:evidence.statement.trim(),newDate:evidence.newDate,
-    newVenue:evidence.newVenue,verifiedAt:at};
+    statement:evidence.statement.trim(),newDate,newEndDate,
+    newVenue:evidence.newVenue,verifiedAt:at,
+    previousStartDate:event.startDate,previousEndDate:event.endDate,
+    ...(evidence.newStartAt&&evidence.newEndAt&&evidence.sourceTimezone?{
+      newStartAt:evidence.newStartAt,newEndAt:evidence.newEndAt,sourceTimezone:evidence.sourceTimezone}:{}),
+  };
 }
 export function eventVerificationDue(event:CafeEvent,today:string,now:Date):boolean{
   if(event.kind==="holiday"||!event.sourceUrl?.startsWith("https://")||

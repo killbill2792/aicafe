@@ -13,7 +13,7 @@ export type CafeEvent={
  status:"found"|"cancelled"|"moved";foundAt:string;lastCheckedAt:string;
  lastAttemptedAt?:string|null;lastVerifiedAt?:string|null;verificationFailedAt?:string|null;
  verificationDetails?:unknown;
- cityEventId?:string|null;sourceUrls?:string[];
+ cityEventId?:string|null;cityKey?:string;sourceUrls?:string[];
  datePrecision?:"verified_day"|"verified_range"|"unknown_end"|"legacy_range";
  durationSourceUrl?:string|null;durationVerifiedAt?:string|null;
 };
@@ -137,7 +137,7 @@ export async function readSavedEventTimeline(db:SupabaseClient,scope:OwnerScope,
 }
 
 
-type SharedRow={id:string;name:string;kind:string;start_date:string;end_date:string;
+type SharedRow={id:string;name:string;kind:string;city_key?:string;lifecycle?:{status?:CafeEvent["status"];verifiedAt?:string}|null;start_date:string;end_date:string;
   start_time:string|null;end_time:string|null;time_source_url:string|null;
   venue:string|null;venue_address:string|null;last_checked_at:string;
   duration_source_url?:string|null;duration_verified_at?:string|null};
@@ -182,7 +182,7 @@ export async function readCityEventCatalog(db:SupabaseClient,businessId:string,
   const kind=options.kind&&validKinds.includes(options.kind)?options.kind:null;
   const search=options.search?.trim().slice(0,80)??"";
   let query=db.from("city_events")
-    .select("id,name,kind,start_date,end_date,start_time,end_time,time_source_url,venue,venue_address,last_checked_at,duration_source_url,duration_verified_at",{count:"exact"})
+    .select("id,name,kind,start_date,end_date,start_time,end_time,time_source_url,venue,venue_address,last_checked_at,duration_source_url,duration_verified_at,city_key,lifecycle",{count:"exact"})
     .eq("city_key",cityKey).lte("start_date",to).gte("end_date",from);
   if(kind)query=query.eq("kind",kind);
   if(options.cityEventId){
@@ -231,7 +231,7 @@ export async function readCityEventCatalog(db:SupabaseClient,businessId:string,
       venue:e.venue,
       venueAddress:e.venue_address,checkedAt:e.last_checked_at,
       sources:bySource.get(e.id)??[],cafeEventId:byCity.get(e.id)??null,
-      status:(byLegacy.get(byCity.get(e.id)??"")?.status??null) as CityCatalogPage["items"][number]["status"],
+      status:(e.lifecycle?.status??byLegacy.get(byCity.get(e.id)??"")?.status??null) as CityCatalogPage["items"][number]["status"],
       lastVerifiedAt:byLegacy.get(byCity.get(e.id)??"")?.last_verified_at??null}))};
 }
 /** Private owner-scoped evidence and source details; shared place facts have no
@@ -271,7 +271,7 @@ async function overlayCityFacts(db:SupabaseClient,businessId:string,
   if(!links.length)return legacy;
   const ids=[...new Set(links.map(l=>l.city_event_id))];
   const [{data:city,error:cityError},sources]=await Promise.all([
-    db.from("city_events").select("id,name,kind,start_date,end_date,start_time,end_time,time_source_url,venue,venue_address,last_checked_at,duration_source_url,duration_verified_at")
+    db.from("city_events").select("id,name,kind,start_date,end_date,start_time,end_time,time_source_url,venue,venue_address,last_checked_at,duration_source_url,duration_verified_at,city_key,lifecycle")
       .in("id",ids),sourceRows(db,ids),
   ]);
   if(missingSchema(cityError))return legacy;
@@ -284,15 +284,17 @@ async function overlayCityFacts(db:SupabaseClient,businessId:string,
   return legacy.map(e=>{
     const id=byCafe.get(e.id),fact=id?shared.get(id):null;
     if(!id||!fact)return e;
-    const endDate=e.endDate>fact.end_date?e.endDate:fact.end_date;
-    return {...e,cityEventId:id,name:fact.name,
+    const corrected=Boolean(fact.lifecycle);
+    const endDate=corrected?fact.end_date:e.endDate>fact.end_date?e.endDate:fact.end_date;
+    return {...e,cityEventId:id,cityKey:fact.city_key,name:fact.name,
       // Compact three-field discovery never downgrades a documented category
       // or shortens a confirmed multi-day event. Existing status is authoritative.
       kind:fact.kind==="other"&&e.kind!=="other"?e.kind:fact.kind,
-      startDate:e.startDate,endDate,datePrecision:sharedDatePrecision(fact,endDate),
+      startDate:corrected?fact.start_date:e.startDate,endDate,datePrecision:sharedDatePrecision(fact,endDate),
+      status:fact.lifecycle?.status??e.status,
       durationSourceUrl:fact.duration_source_url??null,durationVerifiedAt:fact.duration_verified_at??null,
-      startTime:e.startTime??fact.start_time,endTime:e.endTime??fact.end_time,
-      venue:e.venue??fact.venue,venueAddress:e.venueAddress??fact.venue_address,
+      startTime:corrected?fact.start_time:e.startTime??fact.start_time,endTime:corrected?fact.end_time:e.endTime??fact.end_time,
+      venue:corrected?fact.venue:e.venue??fact.venue,venueAddress:corrected?fact.venue_address:e.venueAddress??fact.venue_address,
       sourceUrls:bySource.get(id)??[]};
   });
 }
