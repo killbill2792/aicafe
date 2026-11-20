@@ -367,14 +367,14 @@ export async function runAgentTurn(args: {
             reserved=true;
             return true;
           },
-          recordUsage:(bill,response)=>{
+          recordUsage:bill=>{
             usage.inputTokens+=bill.inputTokens;
             usage.cachedTokens+=bill.cachedTokens;
             usage.outputTokens+=bill.outputTokens;
             reported=Number.isSafeInteger(bill.outputTokens)&&bill.outputTokens>0;
-            measuredResponse=response;
-            measured=Boolean(response)&&bill.inputTokens>0;
+            measured=bill.inputTokens>0;
           },
+          onProviderResponse:response=>{measuredResponse=response;},
         });
         if(reserved&&reservation&&measured&&measuredResponse&&typeof measuredResponse==="object")await reservation.complete(measuredResponse);
         completed=result.available;
@@ -445,7 +445,7 @@ export async function runAgentTurn(args: {
           const item = event.item as { type?: string };
           output.push(item);
           if (item.type === "function_call") {
-            if(!validProviderFunctionCall(item)||(calls.some(c=>c.call_id===item.call_id)||seenCallIds.has(item.call_id)))
+            if(!validProviderFunctionCall(item)||(calls.some(c=>c.call_id===item.call_id)||(nativeSearch&&seenCallIds.has(item.call_id))))
               throw Error("invalid_provider_function_call");
             calls.push(item);
           }
