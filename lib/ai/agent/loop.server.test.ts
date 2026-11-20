@@ -458,7 +458,7 @@ describe("U1 incident regression: exact requested dates and useful synthesis",()
     expect(result.results[0]).toMatchObject({period,missing:["noCoveredSalesRows"]});
     expect(result.text).toBe("No recorded sales totals are available for that requested interval.");
   });
-  it("keeps completed sales and peak-hour evidence when profit fails and provides one useful answer",async()=>{
+  it("keeps source-specific missing-state evidence when profit fails and provides one useful answer",async()=>{
     const period={from:"2026-10-20",to:"2026-10-20"};
     const missingSales=vi.fn<AgentToolContext["tools"]["getSalesTrend"]>()
       .mockResolvedValue({available:false,value:null,quality:{level:"low",
@@ -495,5 +495,68 @@ describe("U1 incident regression: exact requested dates and useful synthesis",()
     expect(JSON.stringify(outputs)).not.toContain("private connection detail");
     expect(result.text).toBe(answer);
     expect(requests).toHaveLength(2);
+  });
+});
+
+describe("U1 controlled incident timing fixture (no provider)",()=>{
+  it("preserves verified sales and hourly facts through a stalled profit read and a late completed final answer",async()=>{
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-10-21T12:00:00Z"));
+    try{
+      const period={from:"2026-10-20",to:"2026-10-20"};
+      const quality={level:"high" as const,missingInputs:[],estimatedInputs:[],staleInputs:[]};
+      const sales=vi.fn<AgentToolContext["tools"]["getSalesTrend"]>().mockImplementation(async()=>{
+        await new Promise<void>(resolve=>setTimeout(resolve,20776));
+        return {available:true,quality,value:[{
+          date:period.from,netSalesCents:4820,ordersCount:12,drinksCount:8,
+          ingredientsCents:0,wagesCents:null,staffTaxCents:null,
+          laborWageStatus:"missing",salesDataStatus:"actual",cardFeesCents:0,voidsCents:0,
+        }]};
+      });
+      const peak=vi.fn<NonNullable<AgentToolContext["tools"]["getPeakHours"]>>().mockImplementation(async()=>{
+        await new Promise<void>(resolve=>setTimeout(resolve,483));
+        return {available:true,quality,value:{hours:[
+          {date:period.from,hourLocal:10,locationId:null,netSalesCents:3000,ordersCount:8},
+          {date:period.from,hourLocal:14,locationId:null,netSalesCents:1820,ordersCount:4},
+        ]}};
+      });
+      const profit=vi.fn<AgentToolContext["tools"]["getProfitability"]>().mockImplementation(
+        ()=>new Promise<Awaited<ReturnType<AgentToolContext["tools"]["getProfitability"]>>>(()=>{}));
+      const ctx:AgentToolContext={...context,currency:"USD",tools:{...context.tools,
+        getSalesTrend:sales,getPeakHours:peak,getProfitability:profit}};
+      const requests:Record<string,unknown>[]=[];
+      const answer="Recorded sales were $48.20. Hourly activity is available, but I could not verify profit.";
+      const provider:AgentProvider=async function*(params){
+        requests.push(params);
+        if(requests.length===1){
+          yield call("get_sales",JSON.stringify({period,ownerInputs:null}),"u1-delayed-sales");
+          yield call("get_peak_hours",JSON.stringify(period),"u1-delayed-peak");
+          yield call("get_profit",JSON.stringify({period,ownerInputs:null}),"u1-delayed-profit");
+        }else{
+          // Reproduce a late but completed final synthesis, not a real network wait.
+          await new Promise<void>(resolve=>setTimeout(resolve,11684));
+          yield text(answer);
+        }
+        yield completed;
+      };
+      const pending=runAgentTurn({ownerText:"For October 20, 2026, report sales, peak hours and profit.",context:ctx,provider});
+      await vi.advanceTimersByTimeAsync(0);
+      await vi.advanceTimersByTimeAsync(60000);
+      const result=await pending;
+      expect(result.text).toBe(answer);
+      expect(result.endReason).toBe("timeout");
+      expect(result.usage.modelCalls).toBe(2);
+      expect(result.usage.toolCalls).toBe(3);
+      expect(result.usage.latencyMs).toBe(59684);
+      expect(result.results).toEqual(expect.arrayContaining([
+        expect.objectContaining({source:"daily_rollups",period,netSalesCents:4820}),
+        expect.objectContaining({source:"get_peak_hours",period,totalNetSalesCents:4820,
+          totalOrdersCount:12,topHours:[{hourLocal:10,netSalesCents:3000,ordersCount:8},{hourLocal:14,netSalesCents:1820,ordersCount:4}]}),
+        expect.objectContaining({source:"get_profit",period,missing:["deadline_exceeded"]}),
+      ]));
+      expect(requests[1].tool_choice).toBe("none");
+      expect((requests[1].input as Array<Record<string,unknown>>).filter(x=>x.type==="function_call_output")
+        .map(x=>x.call_id)).toEqual(["u1-delayed-sales","u1-delayed-peak","u1-delayed-profit"]);
+    }finally{vi.useRealTimers();}
   });
 });
