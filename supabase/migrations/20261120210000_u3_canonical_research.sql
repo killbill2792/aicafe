@@ -929,6 +929,11 @@ REVOKE ALL ON FUNCTION u3_research_private.toast_operational_records()
  FROM PUBLIC,anon,authenticated,aicafe_research;
 GRANT EXECUTE ON FUNCTION u3_research_private.toast_operational_records()
  TO aicafe_research_view_owner;
+-- PostgreSQL checks a view's function EXECUTE privilege as the caller.
+-- Grant only this scoped wrapper; the research role has NO USAGE on the
+-- private schema, so direct function invocation remains prohibited.
+GRANT EXECUTE ON FUNCTION u3_research_private.toast_operational_records()
+ TO aicafe_research;
 CREATE OR REPLACE VIEW u3_research.toast_records WITH (security_barrier=true) AS
  SELECT * FROM u3_research_private.toast_operational_records();
 ALTER VIEW u3_research.toast_records OWNER TO aicafe_research_view_owner;
@@ -1033,6 +1038,11 @@ REVOKE ALL ON FUNCTION u3_research_private.toast_change_rows()
  FROM PUBLIC,anon,authenticated,aicafe_research;
 GRANT EXECUTE ON FUNCTION u3_research_private.toast_change_rows()
  TO aicafe_research_view_owner;
+-- PostgreSQL checks a view's function EXECUTE privilege as the caller.
+-- Grant only this scoped wrapper; the research role has NO USAGE on the
+-- private schema, so direct function invocation remains prohibited.
+GRANT EXECUTE ON FUNCTION u3_research_private.toast_change_rows()
+ TO aicafe_research;
 CREATE OR REPLACE VIEW u3_research.toast_changes
  WITH (security_barrier=true) AS SELECT * FROM u3_research_private.toast_change_rows();
 ALTER VIEW u3_research.toast_changes OWNER TO aicafe_research_view_owner;
