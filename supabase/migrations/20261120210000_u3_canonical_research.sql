@@ -1011,18 +1011,18 @@ AS $u3_change_rows$
  CROSS JOIN LATERAL (
   SELECT nullif(current_setting('aicafe.u3_date_from',true),'')::date AS from_day,
     nullif(current_setting('aicafe.u3_date_to',true),'')::date AS to_day
- ) window
+ ) u3_window
  JOIN public.toast_raw_changes c ON c.business_id=s.business_id
  CROSS JOIN LATERAL jsonb_array_elements(c.changes) e(value)
  CROSS JOIN LATERAL (
   SELECT 'data.' || btrim(regexp_replace(
      coalesce(e.value->>'path',''), '\[[^]]+\]', '.0','g'),'.') AS named_path
  ) n
- WHERE window.from_day IS NOT NULL AND window.to_day IS NOT NULL
-  AND window.to_day>=window.from_day
-  AND window.to_day-window.from_day<=31
+ WHERE u3_window.from_day IS NOT NULL AND u3_window.to_day IS NOT NULL
+  AND u3_window.to_day>=u3_window.from_day
+  AND u3_window.to_day-u3_window.from_day<=31
   AND coalesce(c.business_date,(c.changed_at AT TIME ZONE 'UTC')::date)
-      BETWEEN window.from_day AND window.to_day
+      BETWEEN u3_window.from_day AND u3_window.to_day
   AND length(n.named_path)<=512
   AND public.ai_query_path(n.named_path) IS NOT NULL
   AND n.named_path !~* '(^|\.)(note|notes|instructions|comment|comments|memo|message|freeText|text|description)(\.|$)'
