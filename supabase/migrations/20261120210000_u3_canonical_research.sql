@@ -297,7 +297,13 @@ AS $u3_toast_records$
   SELECT nullif(current_setting('aicafe.u3_date_from',true),'')::date AS from_day,
    nullif(current_setting('aicafe.u3_date_to',true),'')::date AS to_day
  ) window
- CROSS JOIN LATERAL public.toast_records_for(s.business_id,window.from_day,window.to_day) r
+ CROSS JOIN LATERAL public.toast_records_for(s.business_id,
+    CASE WHEN window.from_day IS NOT NULL AND window.to_day IS NOT NULL
+      AND window.to_day>=window.from_day AND window.to_day-window.from_day<=31
+      THEN window.from_day ELSE '9999-12-31'::date END,
+    CASE WHEN window.from_day IS NOT NULL AND window.to_day IS NOT NULL
+      AND window.to_day>=window.from_day AND window.to_day-window.from_day<=31
+      THEN window.to_day ELSE '0001-01-01'::date END) r
  WHERE window.from_day IS NOT NULL AND window.to_day IS NOT NULL
    AND window.to_day>=window.from_day
    AND window.to_day-window.from_day<=31
