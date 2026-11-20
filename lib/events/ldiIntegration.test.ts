@@ -20,7 +20,7 @@ vi.mock("@/lib/ai/supervisor/loop/reads.server",()=>({
 
 import {newLdiBudget,scanSharedResearch,planCityResearchJobs,
   reconciledCityRootStatus} from "./ldiIntegration.server";
-import {readCafeEvents,readSavedEventTimeline,readCityEventCatalog,
+import {readCafeEvents,readExactCafeEvent,readSavedEventTimeline,readCityEventCatalog,
   readCityResearchCoverage} from "@/lib/data/cafeEvents.server";
 import {eventScanWindows} from "./eventsLookahead";
 
@@ -337,6 +337,7 @@ describe("LDI E scheduled B+C→A→single Events reader",()=>{
     await s.scoped(cafeA,"2026-11-03",window,generous());
     expect(s.tables.city_events).toHaveLength(1);
     expect(s.tables.city_events[0].end_date).toBe("2026-11-04");
+    expect((await readCityEventCatalog(s.db,cafeA,"2026-11-04","2026-11-04")).items[0].datePrecision).toBe("unknown_end");
     // Later rediscovery of the SAME fact obtains a cited multi-day end date.
     f.enrichment.mockResolvedValue({endDate:"2026-11-07",venue:null,
       venueAddress:null,startTime:null,endTime:null,
@@ -359,7 +360,7 @@ describe("LDI E scheduled B+C→A→single Events reader",()=>{
     expect(s.tables.city_events[0].end_date).toBe("2026-11-07");
     const catalog=await readCityEventCatalog(s.db,cafeA,"2026-11-06","2026-11-06");
     expect(catalog.items).toMatchObject([{
-      id:cityId,endDate:"2026-11-07",
+      id:cityId,endDate:"2026-11-07",datePrecision:"verified_range",
     }]);
   });
 
@@ -840,6 +841,10 @@ describe("LDI E scheduled B+C→A→single Events reader",()=>{
       source_url:"https://city.example.org/convention",observed_at:stamp});
     s.tables.cafe_city_event_links.push({business_id:cafeA,
       cafe_event_id:legacyId,city_event_id:cityId});
+    const exact=await readExactCafeEvent(s.db,cafeA,legacyId,"2026-11-06","2026-11-06");
+    expect(exact).toMatchObject({id:legacyId,endDate:"2026-11-06"});
+    expect(await readExactCafeEvent(s.db,cafeB,legacyId,"2026-11-06","2026-11-06")).toBeNull();
+    expect(await readExactCafeEvent(s.db,cafeA,legacyId,"2026-11-07","2026-11-07")).toBeNull();
     const saved=await readCafeEvents(s.db,cafeA,"2026-11-06","2026-11-06");
     expect(saved).toMatchObject([{id:legacyId,endDate:"2026-11-06",
       venue:"Center",startTime:"09:00",status:"found"}]);

@@ -106,9 +106,10 @@ export function cafeHighlightedEvents(timeline:Pick<Timeline,"events"|"plans">,d
       !["rejected","expired","stale"].includes(p.status)&&p.eventIds?.includes(e.id)&&
       p.startDate<=date&&p.endDate>=e.startDate&&p.startDate<=e.endDate)));
 }
-export function eventLifecycle(event:Pick<CafeEvent,"startDate"|"endDate"|"status">,today:string){
+export function eventLifecycle(event:Pick<CafeEvent,"startDate"|"endDate"|"status"|"datePrecision">,today:string){
   if(event.status!=="found")return event.status==="cancelled"?"cancelled":"moved";
   if(today<event.startDate)return "upcoming";
+  if(event.datePrecision==="unknown_end")return "eventEndUnknown";
   if(today>event.endDate)return "eventCompleted";
   if(today===event.startDate&&today===event.endDate)return "now";
   if(today===event.startDate)return "eventStarting";
@@ -119,6 +120,7 @@ function lifecycleLabel(event:CafeEvent,today:string,locale:Locale,t:T){
   const key=eventLifecycle(event,today);
   const messages={en,es,ar}[locale];
   switch(key){
+    case "eventEndUnknown":return messages.SchedulingAvailability.end+" · "+t("reportUnknown");
     case "eventStarting":return messages.SchedulingAvailability.start+" · "+t("now");
     case "eventEnding":return messages.SchedulingAvailability.end+" · "+t("now");
     case "eventOngoing":return messages.SchedulingAvailability.ongoing;
@@ -374,6 +376,7 @@ export function CityCatalogView({today,locale,t,chatDisabled,onAsk}:{
     <article className="space-y-3 rounded-2xl border border-line bg-card p-4">
       <p className="font-semibold text-accent-text">{dateLabel(selected.startDate,locale,"long")}
         {selected.endDate!==selected.startDate?" – "+dateLabel(selected.endDate,locale,"long"):""}
+        {selected.datePrecision==="unknown_end"?" · "+({en,es,ar}[locale].SchedulingAvailability.end)+" "+t("reportUnknown"):""}
         {selected.startTime?" · "+selected.startTime:""}
       </p>
       <h4 className="break-words font-headline text-[22px] font-bold" dir="auto">{selected.name}</h4>
@@ -451,7 +454,8 @@ export function CityCatalogView({today,locale,t,chatDisabled,onAsk}:{
           <button type="button" onClick={()=>setSelected(item)}
             className="w-full min-h-20 rounded-2xl border border-line bg-card p-4 text-start focus-visible:outline focus-visible:outline-2 focus-visible:outline-ink">
             <p className="text-[15px] font-semibold text-accent-text">
-              {dateLabel(item.startDate,locale,"long")} · {cityKindLabel(item.kind,t)}
+              {dateLabel(item.startDate,locale,"long")}{item.endDate!==item.startDate?" – "+dateLabel(item.endDate,locale,"long"):""} · {cityKindLabel(item.kind,t)}
+              {item.datePrecision==="unknown_end"?" · "+({en,es,ar}[locale].SchedulingAvailability.end)+" "+t("reportUnknown"):""}
             </p>
             <h5 className="mt-1 break-words text-[19px] font-bold" dir="auto">{item.name}</h5>
             <p className="mt-1 break-words text-[16px] text-ink-muted" dir="auto">

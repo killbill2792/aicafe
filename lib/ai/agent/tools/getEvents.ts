@@ -28,13 +28,15 @@ export const savedEventsTools={
    if(v.from>v.to||ms>90*86400000)throw new Error("Invalid saved event range");
    if(!ctx.savedEvents)return {source:"cafe_events",period:{from:v.from,to:v.to},
      missing:["savedEventsUnavailable"],agentId:"alex"};
-   const result=v.cityEventId?
-     await ctx.savedEvents(v.from,v.to,{cityEventId:v.cityEventId}):
+   const exactOptions={cityEventId:v.cityEventId??undefined,cafeEventId:v.cafeEventId??undefined};
+   const result=v.cityEventId||v.cafeEventId?
+     await ctx.savedEvents(v.from,v.to,exactOptions):
      await ctx.savedEvents(v.from,v.to);
    const selectedCityEvent=v.cityEventId?
      result.cityCatalog?.items.find(e=>e.id===v.cityEventId)??null:null;
    const selectedId=v.cafeEventId??selectedCityEvent?.cafeEventId;
-   const selectedCafeEvent=selectedId?result.events.find(e=>e.id===selectedId)??null:null;
+   const selectedCafeEvent=selectedId?(result.selectedCafeEvent?.id===selectedId?result.selectedCafeEvent:
+     result.events.find(e=>e.id===selectedId)??null):null;
    const exactMismatch=Boolean(v.cafeEventId&&v.cityEventId&&selectedCityEvent?.cafeEventId!==v.cafeEventId);
    const exactRequested=Boolean(v.cafeEventId||v.cityEventId);
    const relevantPlans=exactRequested?(selectedCafeEvent&&!exactMismatch?

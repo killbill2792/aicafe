@@ -312,3 +312,8 @@ describe("date- and ID-scoped event AI analysis",()=>{
       .toEqual(committed);
   });
 });
+
+ it("does not declare an event completed when only its start date is sourced",()=>{
+   expect(eventLifecycle({startDate:"2026-11-17",endDate:"2026-11-17",status:"found",datePrecision:"unknown_end"},"2026-11-18")).toBe("eventEndUnknown");
+   expect(eventLifecycle({startDate:"2026-11-17",endDate:"2026-11-17",status:"found",datePrecision:"verified_day"},"2026-11-18")).toBe("eventCompleted");
+ });
