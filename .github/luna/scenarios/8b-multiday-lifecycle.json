@@ -1,0 +1,134 @@
+{
+  "id": "8b-multiday-lifecycle",
+  "mode": "generic",
+  "engine": "vitest",
+  "entrypoint": "lib/events/eventLifecycle.live.test.ts",
+  "proof": "8b-multiday-lifecycle-proof.json",
+  "scope": "8b-multiday-lifecycle-scope.json",
+  "expectedTools": [
+    "get_events",
+    "propose_event_plan"
+  ],
+  "assertions": [
+    {
+      "name": "canonical-public-event",
+      "kind": "source",
+      "table": "public.city_events",
+      "where": {
+        "id": {
+          "scope": "cityEventId"
+        },
+        "start_date": {
+          "scope": "startDate"
+        },
+        "end_date": {
+          "scope": "endDate"
+        }
+      },
+      "minCount": 1,
+      "maxCount": 1
+    },
+    {
+      "name": "private-event-cancelled",
+      "kind": "owner",
+      "table": "public.cafe_events",
+      "where": {
+        "business_id": {
+          "scope": "businessId"
+        },
+        "id": {
+          "scope": "cafeEventId"
+        },
+        "status": {
+          "eq": "cancelled"
+        }
+      },
+      "minCount": 1,
+      "maxCount": 1
+    },
+    {
+      "name": "one-draft-proposal",
+      "kind": "owner",
+      "table": "public.supervisor_proposals",
+      "where": {
+        "business_id": {
+          "scope": "businessId"
+        },
+        "id": {
+          "scope": "proposalId"
+        },
+        "owner_user_id": {
+          "scope": "ownerId"
+        },
+        "status": {
+          "eq": "draft"
+        }
+      },
+      "minCount": 1,
+      "maxCount": 1
+    },
+    {
+      "name": "terminal-cancelled-report",
+      "kind": "owner",
+      "table": "public.supervisor_reports",
+      "where": {
+        "business_id": {
+          "scope": "businessId"
+        },
+        "proposal_id": {
+          "scope": "proposalId"
+        },
+        "status": {
+          "eq": "insufficient_evidence"
+        }
+      },
+      "minCount": 1,
+      "maxCount": 1
+    },
+    {
+      "name": "no-unapproved-effect",
+      "kind": "isolation",
+      "table": "public.supervisor_approvals",
+      "where": {
+        "business_id": {
+          "scope": "businessId"
+        },
+        "proposal_id": {
+          "scope": "proposalId"
+        }
+      },
+      "minCount": 0,
+      "maxCount": 0
+    },
+    {
+      "name": "foreign-event-isolation",
+      "kind": "isolation",
+      "table": "public.cafe_events",
+      "where": {
+        "business_id": {
+          "scope": "foreignBusinessId"
+        },
+        "id": {
+          "scope": "cafeEventId"
+        }
+      },
+      "minCount": 0,
+      "maxCount": 0
+    },
+    {
+      "name": "foreign-report-isolation",
+      "kind": "isolation",
+      "table": "public.supervisor_reports",
+      "where": {
+        "business_id": {
+          "scope": "foreignBusinessId"
+        },
+        "proposal_id": {
+          "scope": "proposalId"
+        }
+      },
+      "minCount": 0,
+      "maxCount": 0
+    }
+  ]
+}
