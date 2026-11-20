@@ -45,7 +45,7 @@ function queryScope(args:Record<string,unknown>,columns:Record<string,{unit:stri
  }).join("; ");
 }
 function canonicalPanel(s:z.infer<typeof selection>,r:AgentToolResult,encoded:string,ctx:Pick<AgentToolContext,"currency"|"asOf">):PresentationPanel|null{
- if(r.source!=="canonical_data"||r.empty||r.truncated||r.error||!r.period||
+ if(r.source!=="canonical_data"||r.empty||r.truncated||r.missing.includes("result_truncated")||r.error||!r.period||
      r.period.to>ctx.asOf||!Array.isArray(r.rows)||r.rows.length<1||r.rows.length>30)return null;
  let args:unknown;try{args=JSON.parse(encoded);}catch{return null;}
  if(!obj(args)||typeof args.view!=="string"||!canonicalViewNames.includes(args.view as CanonicalView)||blockedViews.has(args.view)||
