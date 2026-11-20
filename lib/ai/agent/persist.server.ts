@@ -28,7 +28,7 @@ type Span = { start: number; end: number };
 const moneyToken = /(?:(?:[$€£]|USD|EUR|GBP|ر\.س|د\.إ|دولار)\s*)?[-+−]?[٠-٩۰-۹\d]+(?:[.,٬٫\u00a0\u202f][٠-٩۰-۹\d]+)*(?:[ \u00a0\u202f]*(?:[$€£]|USD|EUR|GBP|ر\.س|د\.إ|دولار|[%٪]))?/gu;
 
 /** Preserve every character, preferring paragraphs, lines then whitespace. */
-export function splitAgentText(text: string, unverified: readonly Span[] = []) {
+export function splitAgentText(text: string, unverified: readonly Span[] = [],maxBlocks=30) {
   const value = text || " ";
   const protectedSpans: Span[] = [...unverified];
   for (const match of value.matchAll(moneyToken))
@@ -37,7 +37,7 @@ export function splitAgentText(text: string, unverified: readonly Span[] = []) {
   const blocks: Array<{ type: "text"; text: string }> = [];
   let start = 0;
   while (start < value.length) {
-    if (blocks.length >= 30) throw new AgentReplyTooLongError();
+    if (blocks.length >= maxBlocks) throw new AgentReplyTooLongError();
     const limit = Math.min(start + 1200, value.length);
     let end = limit;
     if (limit < value.length) {
@@ -48,7 +48,10 @@ export function splitAgentText(text: string, unverified: readonly Span[] = []) {
         else if (value[i] === "\n") choices[1].push(i + 1);
         else if (/\s/u.test(value[i])) choices[2].push(i + 1);
       }
-      const preferred = choices.find(choices => choices.length);
+      // Prefer a natural boundary only if the remainder can fit in the real reply contract.
+      const minEnd=Math.max(start+1,value.length-(maxBlocks-blocks.length-1)*1200);
+      const fitting=choices.map(items=>items.filter(at=>at>=minEnd));
+      const preferred = fitting.find(items => items.length);
       if (preferred) end = preferred[preferred.length - 1];
       else if (!safe(end)) {
         // A >1200-character token may be hard-split, but never through a
@@ -69,7 +72,7 @@ export function agentReplyPayload(turn: AgentTurn) {
   const isOnlyQuestion=clarify&&typeof clarify.question==="string"&&
     turn.text.trim()===clarify.question.trim();
   // The card itself owns the question; avoid showing the identical text twice.
-  const blocks=isOnlyQuestion?[]:splitAgentText(turn.text,turn.provenance??turn.unverified);
+  let blocks:Array<{type:"text";text:string}>=[];
   const proposalIds=[...new Set(turn.results.flatMap(result=>
     (result.source==="price_change_proposal"||result.source==="staff_proposal"||result.source==="purchase_proposal"||
       result.source==="supplier_purchase_proposal"||result.source==="goal_proposal"||result.source==="event_plan_proposal"||
@@ -79,22 +82,25 @@ export function agentReplyPayload(turn: AgentTurn) {
       typeof result.proposalId==="string"&&
       /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(result.proposalId)
       ?[result.proposalId]:result.source==="purchase_proposal"&&Array.isArray(result.proposals)?
-       result.proposals.flatMap(p=>p&&typeof p==="object"&&"proposalId" in p&&typeof p.proposalId==="string"&&UUID.test(p.proposalId)?[p.proposalId]:[]):[]))].slice(0,Math.max(0,29-blocks.length));
+       result.proposals.flatMap(p=>p&&typeof p==="object"&&"proposalId" in p&&typeof p.proposalId==="string"&&UUID.test(p.proposalId)?[p.proposalId]:[]):[]))];
   const experimentIds=[...new Set(turn.results.flatMap(result=>
     result.source==="price_experiment_proposal"&&result.draft===true&&result.saved===false&&
     result.missing.length===0&&typeof result.proposalId==="string"&&UUID.test(result.proposalId)
-      ?[result.proposalId]:[]))].slice(0,Math.max(0,29-blocks.length-proposalIds.length));
+      ?[result.proposalId]:[]))];
   // Memory cards come only from the memory tool's own draft result (never model text).
   const memoryRuleIds=[...new Set(turn.results.flatMap(result=>
     result.source==="memory_proposal"&&result.draft===true&&
       result.saved===false&&result.missing.length===0&&
       typeof result.ruleId==="string"&&UUID.test(result.ruleId)
-      ?[result.ruleId]:[]))].slice(0,Math.max(0,29-blocks.length-proposalIds.length-experimentIds.length));
+      ?[result.ruleId]:[]))];
   const explanation=(turn.explain??[]).flatMap(item=>{
     const parsed=explainLineSchema.safeParse(item);
     return parsed.success?[parsed.data]:[];
   }).slice(0,20);
   const reserved=Number(Boolean(clarify))+Number(explanation.length>0);
+  const cardCount=proposalIds.length+experimentIds.length+memoryRuleIds.length+Number(Boolean(clarify));
+  if(cardCount>30)throw new AgentReplyTooLongError();
+  blocks=isOnlyQuestion?[]:splitAgentText(turn.text,turn.provenance??turn.unverified,30-cardCount);
   const safeExplain=blocks.length+proposalIds.length+experimentIds.length+memoryRuleIds.length+reserved<=30?explanation:[];
   const status = persistedAgentStatus(turn);
   const reply: GroundedSupervisorReply = { intent: "unknown", status, evidence: [], blocks:[...blocks,
@@ -147,7 +153,7 @@ export function agentReplyPayload(turn: AgentTurn) {
     unverified, endReason: turn.endReason, evidence:turn.evidence??[],explain:safeExplain,agentIds:turn.agentIds??[],
     sources: turn.results.map(r => ({ source:r.source, period:r.period, missing:r.missing })),
     ...(typeof turn.externalEvidence==="boolean"?{externalEvidence:turn.externalEvidence}:{}),
-    usage: { ...turn.usage },
+    usage: { modelCalls:turn.usage.modelCalls,toolCalls:turn.usage.toolCalls,inputTokens:turn.usage.inputTokens,cachedTokens:turn.usage.cachedTokens,outputTokens:turn.usage.outputTokens,latencyMs:turn.usage.latencyMs,model:turn.usage.model },
     // Owner messages answered inside this reply (mid-run follow-ups).
     ...(turn.absorbedOwnerMessageIds?.length?{absorbedOwnerMessageIds:[...turn.absorbedOwnerMessageIds]}:{}),
   } };
