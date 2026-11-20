@@ -887,9 +887,9 @@ if(sqlOnly&&dbUrl)it("shared historical POS fixture and all 18 independent sourc
     // Synthetic labelled answers exercise the trusted oracle against actual
     // migrated source rows; never represent these as provider/model evidence.
     const note=spec.incomplete?"\nToday is incomplete.":"";
-    const answer=spec.kind==="groups"?rows.map(row=>row.k+": "+row.n).join("\n"):
+    const answer=spec.kind==="groups"?rows.map((row:{k:string;n:number|string})=>row.k+": "+row.n).join("\n"):
       spec.kind==="name"?"Name: "+rows[0].answer:spec.label+": "+rows[0].n+note;
-    const wrong=spec.kind==="groups"?rows.map((row,i)=>row.k+": "+(Number(row.n)+(i===0?1:0))).join("\n"):
+    const wrong=spec.kind==="groups"?rows.map((row:{k:string;n:number|string},i:number)=>row.k+": "+(Number(row.n)+(i===0?1:0))).join("\n"):
       spec.kind==="name"?"Name: "+rows[0].answer+" altered":spec.label+": "+(Number(rows[0].n)+1)+note;
     expect(()=>checkHistoricalPosAnswer(spec,rows,answer),spec.id).not.toThrow();
     expect(()=>checkHistoricalPosAnswer(spec,rows,wrong),spec.id+" altered answer").toThrow();
