@@ -43,6 +43,15 @@ describe("U3 governed PostgreSQL AST admission",()=>{
    .rejects.toThrow("unattended_aggregate_required");
   await expect(admitU3Sql("SELECT count(*) FROM orders",admitted,0,true))
    .resolves.toMatchObject({relations:["orders"]});
+  await expect(admitU3Sql("SELECT MIN(pos_order_id) AS innocent FROM orders",
+   admitted,0,true,["business_date","net_sales_cents"]))
+   .rejects.toThrow("unattended_aggregate_required");
+  await expect(admitU3Sql("SELECT SUM(net_sales_cents) AS n FROM orders",
+   admitted,0,true,["business_date","net_sales_cents"]))
+   .resolves.toMatchObject({relations:["orders"]});
+  await expect(admitU3Sql("SELECT * FROM orders",
+   admitted,0,true,["business_date","net_sales_cents"]))
+   .rejects.toThrow("unattended_aggregate_required");
  });
  it("cannot change café or role from a query parameter",async()=>{
   await expect(admitU3Sql("SELECT count(*) FROM orders WHERE id=$1",admitted,0))
