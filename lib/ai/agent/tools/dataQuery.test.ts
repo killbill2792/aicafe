@@ -1,4 +1,4 @@
-import {it,expect,vi} from "vitest";
+import {describe,it,expect,vi} from "vitest";
 vi.mock("server-only",()=>({}));
 vi.mock("@/lib/data/toastDayTrust.server",()=>({
  readToastDayTrust:vi.fn(async()=>({blocked:new Set(),quality:[],notes:[]}))
