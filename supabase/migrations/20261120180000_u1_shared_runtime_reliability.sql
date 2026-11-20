@@ -298,3 +298,26 @@ begin
 end $$;
 revoke all on function public.whatsapp_claim_inbound() from public,anon,authenticated;
 grant execute on function public.whatsapp_claim_inbound() to service_role;
+
+-- Legacy three-argument RPC remains available for diagnostic candidate dates.
+-- The business guard only needs the intersection with actual canonical orders.
+-- All canonical order dates are already members of that legacy union. Return
+-- the exact date set in one small response, not 365 REST existence requests.
+create or replace function public.toast_unverified_sales_dates(
+ p_business_id uuid,p_from date,p_to date,p_canonical_only boolean)
+returns jsonb language plpgsql stable security definer set search_path=public as $$
+declare dates jsonb;
+begin
+ if p_canonical_only is distinct from true or p_business_id is null
+  or (coalesce(auth.role(),'')<>'service_role' and (auth.uid() is null or not is_member(p_business_id)))
+  or p_from is null or p_to is null or p_to<p_from or p_to>p_from+370
+ then raise exception 'not authorized for Toast reporting coverage' using errcode='42501';end if;
+ select coalesce(jsonb_agg(d.business_date order by d.business_date),'[]'::jsonb) into dates
+ from (select p_from+g.n as business_date from generate_series(0,p_to-p_from) g(n)) d
+ where exists(select 1 from public.orders o
+  where o.business_id=p_business_id and o.business_date=d.business_date
+   and o.pos_order_id like 'toast:%');
+ return jsonb_build_object('canonicalDates',dates);
+end $$;
+revoke all on function public.toast_unverified_sales_dates(uuid,date,date,boolean) from public,anon;
+grant execute on function public.toast_unverified_sales_dates(uuid,date,date,boolean) to authenticated,service_role;
