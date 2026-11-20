@@ -36,6 +36,7 @@ export async function refreshDerivedForBusiness(
   let success=false;
   let pending=false;
   let alertsCreated=0;
+  let failure:unknown;
   try{
     await ensureScheduledShiftsThroughDate(db,businessId,timezone,businessDate);
     // Never abandon other independent families just because one throws.
@@ -46,14 +47,14 @@ export async function refreshDerivedForBusiness(
     try{alertsCreated+=await refreshBusinessAnomalies(db,businessId,businessDate,timezone,now);}catch(e){failures.push(e);}
     if(failures.length)throw failures[0];
     success=true;
-  }finally{
-    if(token){
-      const done=await db.rpc("supervisor_finish_derived_refresh",{
-        p_business_id:businessId,p_token:token,p_success:success,
-      });
-      if(done.error||done.data?.accepted!==true)throw new Error("derived_refresh_ack_failed");
-      pending=done.data.pending===true;
-    }
+  }catch(error){failure=error;}
+  if(token){
+    const done=await db.rpc("supervisor_finish_derived_refresh",{
+      p_business_id:businessId,p_token:token,p_success:success,
+    });
+    if(done.error||done.data?.accepted!==true)throw new Error("derived_refresh_ack_failed");
+    pending=done.data.pending===true;
   }
+  if(!success)throw failure;
   return {businessDate,alertsCreated,...(pending?{deferred:true as const}:{})};
 }
