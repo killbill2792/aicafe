@@ -1630,11 +1630,19 @@ test("@home Task16E quiet shell, optional visuals, editable follow-up and mobile
     for(const [id,title] of [[empty,"Task16E welcome fixture"],[thread,"Task16E answer fixture"]])
       await db.query("insert into public.ai_threads(id,business_id,owner_user_id,client_request_id,title) values($1,$2,$3,$4,$5)",[id,owner.businessId,owner.owner.userId,randomUUID(),title]);
     await db.query("insert into public.ai_messages(id,business_id,thread_id,owner_user_id,role,content_type,structured_content,grounding) values($1,$2,$3,$4,'supervisor','blocks',$5::jsonb,$6::jsonb)",[replyId,owner.businessId,thread,owner.owner.userId,JSON.stringify([{type:"text",text},visual]),JSON.stringify({status:"verified",intent:"sales_quantity",evidence:[{source:"historical_rollups",identifier:"synthetic-e2e",asOf:"2026-01-02"}]})]);
-    const page=await ctx.newPage();await login(page,owner);await openOwnedPage(page,owner,"?thread="+empty);
+    const page=await ctx.newPage();await login(page,owner);
+    // The first viewport navigates to the empty fixture below. Avoid a redundant
+    // full load wait; assert actual owner shell and fixture state on every navigation.
+    async function openFixture(id){
+      const response=await page.goto("/en/?thread="+id,{waitUntil:"domcontentloaded",timeout:30000});
+      expect(response?.ok()).toBe(true);
+      await expect(page).not.toHaveURL(/\/login(?:\?|$)|\/onboarding(?:\?|$)/);
+      await expect(page.getByText(owner.name,{exact:true}).first()).toBeVisible({timeout:30000});
+    }
     let writes=0;
     page.on("request",r=>{if(r.method()==="POST"&&/\/api\/ai\/threads\/[^/]+\/(agent|messages)$/.test(new URL(r.url()).pathname))writes++;});
     for(const viewport of [{width:320,height:720},{width:390,height:844},{width:768,height:1024},{width:1440,height:900}]){
-      await page.setViewportSize(viewport);await page.goto("/en/?thread="+empty);
+      await page.setViewportSize(viewport);await openFixture(empty);
       const input=page.locator("#supervisor-home-composer");
       const welcome=page.getByTestId("supervisor-welcome");
       await expect(welcome).toBeVisible({timeout:30000});
@@ -1660,7 +1668,7 @@ test("@home Task16E quiet shell, optional visuals, editable follow-up and mobile
       }
       await page.keyboard.press("Escape");
       await expect(drawer).toHaveCount(0);await expect(controls).toBeFocused();
-      await page.goto("/en/?thread="+thread);
+      await openFixture(thread);
       const answer=page.locator('[data-work-message="'+replyId+'"]');
       await expect(answer).toContainText(text,{timeout:30000});
       const rich=answer.getByTestId("supervisor-rich-presentation");
