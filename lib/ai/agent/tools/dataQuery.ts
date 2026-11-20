@@ -223,10 +223,10 @@ export const dataQueryTools={
     return {source:"canonical_dictionary",period:null,missing:["invalid_query"],views:[]};
    if(recordType!==null){
     if(!ctx?.db||!z.uuid().safeParse(ctx.businessId).success)
-     return {source:"toast_fields",period:null,missing:["invalid_scope"],record_type:recordType,fields:[]};
+     return {source:"toast_fields",period:null,views:[],missing:["invalid_scope"],record_type:recordType,fields:[]};
     try{
      const {data,error}=await ctx.db.rpc("ai_toast_fields",{p_business_id:ctx.businessId,p_record_type:recordType});
-     if(error)return {source:"toast_fields",period:null,missing:["source_read_failed"],record_type:recordType,fields:[]};
+     if(error)return {source:"toast_fields",period:null,views:[],missing:["source_read_failed"],record_type:recordType,fields:[]};
      const observed=Array.isArray(data)?data.filter((item:unknown)=>
       item!==null&&typeof item==="object"&&"field" in item&&
       typeof item.field==="string"&&isDataField(item.field)) as Array<{field:string;[key:string]:unknown}>:[];
@@ -242,22 +242,20 @@ export const dataQueryTools={
      const retainedMatching=classified.filter(item=>fieldMatches(item.field,prefix)).length;
      const declaredMatching=schemaFields.filter(item=>fieldMatches(item.field,prefix)).length;
      const fit=fitRows(matching);
-     return {source:"toast_fields",period:null,
+     return {source:"toast_fields",period:null,views:[],
       missing:[...(retainedMatching?[]:["source_not_observed"]),
        ...(declaredMatching?["schema_grants_unverified"]:[]),
        ...(matching.length?[]:["empty"]),...(fit.cut?["result_truncated"]:[])],
       record_type:recordType,view:"cv_toast_records",field_prefix:prefix,
       declaredFields:schemaFields.length,retainedFields:observed.length,
       matchingFields:matching.length,matchingRetainedFields:retainedMatching,matchingDeclaredFields:declaredMatching,fields:fit.rows,truncated:fit.cut};
-    }catch{return {source:"toast_fields",period:null,missing:["source_read_failed"],record_type:recordType,fields:[]};}
+    }catch{return {source:"toast_fields",period:null,views:[],missing:["source_read_failed"],record_type:recordType,fields:[]};}
    }
    if(relation!==null||source==="research"){
     if(!ctx?.ownerUserId||!ctx?.threadId||!u3SqlConfigured())
-     return {source:"u3_semantic_catalog",period:null,
+     return {source:"u3_semantic_catalog",period:null,views:[],
       missing:["capability_unavailable"],relations:[]};
-    try{return await describeU3Catalog(ctx,{
-     search,relation,offset,limit:pageSize
-    });}catch{return {source:"u3_semantic_catalog",period:null,
+    try{return {...await describeU3Catalog(ctx,{search,relation,offset,limit:pageSize}),views:[]};}catch{return {source:"u3_semantic_catalog",period:null,views:[],
      missing:["source_read_failed"],relations:[]};}
    }
    // Search the ONE reviewed dictionary. Rank by exact/lexical meaning, not
@@ -309,8 +307,19 @@ export const dataQueryTools={
    if(!z.uuid().safeParse(ctx.businessId).success||!ctx.db)return empty("invalid_scope");
    if(p.sql!==null){
     if(p.view!==null||!u3SqlConfigured())return empty("capability_unavailable");
-    return runU3Sql(ctx,{sql:p.sql,parameters:p.parameters,limit:p.limit,
-     date_from:p.date_from,date_to:p.date_to});
+    const result=await runU3Sql(ctx,{sql:p.sql,parameters:p.parameters,limit:p.limit,
+      date_from:p.date_from,date_to:p.date_to});
+    // Preserve the existing registered-tool contract for legacy consumers.
+    // Failed SQL is not a successful empty business observation.
+    const failure=result.missing.find(code=>[
+      "invalid_query","unattended_aggregate_required","research_invalid_scope",
+      "research_not_configured","research_scope_denied",
+      "research_connection_untrusted","source_read_failed"
+    ].includes(code));
+    return {...result,empty:result.rows.length===0,
+      error:failure??undefined,rowCount:result.rows.length,
+      aggregate:undefined,scopeWarning:undefined,customerCoverage:undefined,
+      sourceMix:{}};
    }
    if(p.view===null||p.date_from===null||p.date_to===null)return empty("invalid_query");
    if(p.date_from>p.date_to)
