@@ -243,9 +243,18 @@ it("reuses safe reader table columns for generic numeric components without gues
  const req={layout:"stack",panels:[{source:"menu_items",field:"table:catalog_price",kind:"bar"}],suggestions:[]};
  expect(presentResponse(req,ctx(r))).toMatchObject({accepted:true,presentation:{panels:[{unit:"cents",points:[{label:"Latte",value:450},{label:"Tea",value:300}]}]}});
  expect(presentResponse(req,ctx({...r,items:[{name:"Latte",priceStatus:"open",priceCents:450}]})).accepted).toBe(false);
- const stock:AgentToolResult={source:"inventory",period:sales.period,missing:[],scope:"observed_inventory_only",inventory:[{ingredient_name:"Milk",quantity:0,quantity_unit:"ml",evidence_state:"dated_owner_count",quantity_state:"known"},{ingredient_name:"Cream",quantity:5,quantity_unit:"ml",evidence_state:"observed_current",quantity_state:"known"}]};
+ const stock:AgentToolResult={source:"inventory",period:sales.period,missing:[],scope:"observed_inventory_only",inventory:[{ingredient_name:"Milk",quantity:0,quantity_unit:"ml",evidence_state:"dated_owner_count",quantity_state:"known",source_as_of:"2026-11-03"},{ingredient_name:"Cream",quantity:5,quantity_unit:"ml",evidence_state:"observed_current",quantity_state:"known",source_as_of:"2026-11-04"}]};
  const q={layout:"stack",panels:[{source:"inventory",field:"table:quantity",kind:"bar"}],suggestions:[]};
- expect(presentResponse(q,ctx(stock))).toMatchObject({accepted:true,presentation:{panels:[{title:"Quantity (ml)",coverage:"partial",points:[{value:0},{value:5}]}]}});
+ expect(presentResponse(q,ctx(stock))).toMatchObject({accepted:true,presentation:{panels:[{title:"Quantity (ml)",measurement:"ml",coverage:"partial",points:[{value:0},{value:5}]}]}});
  expect(presentResponse(q,ctx({...stock,inventory:[(stock.inventory as object[])[0],{...(stock.inventory as object[])[1],quantity_unit:"g"}]})).accepted).toBe(false);
  expect(presentResponse(q,ctx({...stock,inventory:[{...(stock.inventory as object[])[0],evidence_state:"not_observed"}]})).accepted).toBe(false);
+});
+
+it("projects canonical typed table columns without a domain-specific chart adapter and refuses truncated measures",()=>{
+ const r:AgentToolResult={source:"canonical_data",period:sales.period,missing:[],rows:[{dining_option:"Takeaway",sum_net_sales_cents:100},{dining_option:"Dine in",sum_net_sales_cents:200}]};
+ const args={view:"cv_orders",date_from:sales.period!.from,date_to:sales.period!.to,group_by:["dining_option"],metrics:[{fn:"sum",column:"net_sales_cents"}]};
+ const c=(result=r)=>({...ctx(),presentationResults:()=>[{name:"query_data",arguments:JSON.stringify(args),result}]});
+ const req={layout:"stack",panels:[{source:"canonical_data",field:"table:sum_net_sales_cents",kind:"bar"}],suggestions:[]};
+ expect(presentResponse(req,c())).toMatchObject({accepted:true,presentation:{panels:[{unit:"cents",points:[{label:"Takeaway",value:100},{label:"Dine in",value:200}]}]}});
+ expect(presentResponse(req,c({...r,truncated:true})).accepted).toBe(false);
 });

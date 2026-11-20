@@ -379,7 +379,7 @@ function tablePanel(s:z.infer<typeof selection>,table:RecordTable):PresentationP
  const matches=table.columns.flatMap((c,i)=>slug(c.label)===field?[i]:[]);
  if(matches.length!==1)return null;
  const index=matches[0],col=table.columns[index];
- const labelIndex=table.columns.findIndex(c=>c.unit==="label");
+ const labelIndex=table.columns.findIndex(c=>c.unit==="label"&&!/(employee|customer|email|phone|identity|secret|token|credential)/i.test(c.label));
  if(!["metric","table","ranked_table","bar"].includes(s.kind)||labelIndex<0&&table.rows.length!==1)return null;
  let unit:string=col.unit,quantityUnit="";
  if(unit==="quantity"){
@@ -392,13 +392,20 @@ function tablePanel(s:z.infer<typeof selection>,table:RecordTable):PresentationP
  if(!["cents","count","items","units","seconds","minutes","hours","days","ratio","ratio squared","indicator","cents/hour"].includes(unit))return null;
  const points:PresentationPanel["points"]=[];
  for(const row of table.rows){
-  const value=row[index],label=labelIndex<0?col.label:row[labelIndex];
-  if(typeof value!=="number"||!Number.isFinite(value)||typeof label!=="string"||!label.trim()||label.length>140)return null;
+  const value=row[index],baseLabel=labelIndex<0?col.label:row[labelIndex];
+  if(typeof value!=="number"||!Number.isFinite(value)||typeof baseLabel!=="string"||!baseLabel.trim())return null;
+  let label=baseLabel;
+  if(quantityUnit){
+   const age=table.columns.findIndex(c=>slug(c.label)==="source_as_of"),state=table.columns.findIndex(c=>slug(c.label)==="evidence_state");
+   if(age>=0){if(typeof row[age]!=="string"||!row[age])return null;label+=" · "+row[age];}
+   if(state>=0){if(typeof row[state]!=="string"||!row[state])return null;label+=" · "+row[state];}
+  }
+  if(label.length>140)return null;
   points.push({label,value});
  }
  if(new Set(points.map(p=>p.label)).size!==points.length)return null;
  return {kind:s.kind,title:col.label+(quantityUnit?" ("+quantityUnit+")":""),unit:unit as PresentationPanel["unit"],currency:["cents","cents/hour"].includes(unit)?table.currency:null,
-  from:table.from,to:table.to,asOf:table.asOf,source:s.source,sourceDetail:table.scope.slice(0,500),...(table.coverage==="partial"?{coverage:"partial" as const}:{}),points};
+  from:table.from,to:table.to,asOf:table.asOf,source:s.source,...(quantityUnit?{measurement:quantityUnit}:{}),sourceDetail:table.scope.slice(0,500),...(table.coverage==="partial"?{coverage:"partial" as const}:{}),points};
 }
 function project(s:z.infer<typeof selection>,r:AgentToolResult,ctx:Pick<AgentToolContext,"currency"|"asOf">):PresentationPanel|null {
  if(s.field.startsWith("table:")){
@@ -464,6 +471,11 @@ export function presentResponse(raw:unknown,ctx:Pick<AgentToolContext,"currency"
      return [];
    }
    const candidates=s.source==="canonical_data"?selected.filter(x=>x.name==="query_data"&&matching(x.result)).flatMap(x=>{
+     if(s.field.startsWith("table:")){
+       const table=canonicalTable(x.result,x.arguments,ctx);
+       const p=table&&!recordOnlyViews.has(table.view)&&table.view!=="cv_toast_records"&&!x.result.truncated&&!x.result.missing.includes("result_truncated")?tablePanel(s,table):null;
+       return p?[p]:[];
+     }
      const p=canonicalPanel(s,x.result,x.arguments,ctx);return p?[p]:[];
    }):(s.ref?selected:results).filter(x=>matching(x.result)).flatMap(x=>{const p=project(s,x.result,ctx);return p?[p]:[]});
    // Repeated identical reads can collapse; never silently pick a distinct period or subtotal.

@@ -130,8 +130,8 @@ async function main(){
    const [first,last]=pair;
    // No format instruction: the simple question must naturally select prose.
    const simple=await ownerTurn(connection.page,thread,"What is the difference between an espresso and an Americano?");
-   const rich=await ownerTurn(connection.page,thread,"Show my recorded daily net sales from "+first.day+" through "+last.day+
-      " inclusive. Give the amounts and a complete plain-language comparison, plus a useful daily trend chart and an optional follow-up suggestion.");
+   const rich=await ownerTurn(connection.page,thread,"How did my recorded net sales change day by day from "+first.day+" through "+last.day+
+      " inclusive, and what should I look into next?");
    const getProof=async(turn)=>{
      const owners=await query(db,"select id from public.ai_messages where business_id=$1 and thread_id=$2 and role='owner' and client_message_id=$3",[cafe.businessId,thread,turn.clientMessageId]);
      if(owners.length!==1)fail("owner_message_not_persisted");
@@ -148,7 +148,7 @@ async function main(){
    if(!plainText.trim()||plain.blocks.some(b=>b.type==="rich_presentation")||plainText.length>800)fail("simple_answer_overformatted");
    const richText=answer.blocks.filter(b=>b.type==="text").map(b=>b.text).join("");
    if(!richText.trim()||!rich.names.includes("present_response")||
-      !rich.names.includes("get_sales"))fail("real_adaptive_tool_or_text_missing");
+      !rich.names.some(n=>n==="get_sales"||n==="query_data"))fail("real_adaptive_tool_or_text_missing");
    const ui=answer.blocks.find(b=>b.type==="rich_presentation"&&b.version===1);
    const panel=ui?.panels?.find(x=>x.kind==="line"||x.kind==="bar");
    if(!panel||panel.unit!=="cents"||panel.currency!==cafe.currency||panel.from!==first.day||panel.to!==last.day||
@@ -198,7 +198,7 @@ async function main(){
    if(effects[0].n!==0)fail("unexpected_effect_draft");
    const modelCalls=plain.calls+answer.calls;
    writeFileSync(file,JSON.stringify({schema_version:1,id:"16e",head_sha:env.HEAD_SHA,status:"passed",observed_model:answer.model,
-    modelCalls,checks:{simpleText:true,plainLanguageAndChart:true,proseVisibleWithoutVisuals:true,exactCanonicalValues:true,editableSuggestion:true,historyReload:true,foreignDenied:true,noEffect:true}},null,2)+"\n",{mode:0o600,flag:"wx"});
+    modelCalls,checks:{simpleText:true,plainLanguageAndChart:true,unpromptedVisualSelection:true,proseVisibleWithoutVisuals:true,exactCanonicalValues:true,editableSuggestion:true,historyReload:true,foreignDenied:true,noEffect:true}},null,2)+"\n",{mode:0o600,flag:"wx"});
    writeFileSync(scopeFile,JSON.stringify({businessId:cafe.businessId,ownerUserId:cafe.owner.userId,otherCafeId:otherCafe.businessId,
     threadId:thread,plainReplyId:simple.done.reply.id,richReplyId:rich.done.reply.id,firstDay:first.day,lastDay:last.day,
     firstCents:first.cents,lastCents:last.cents,expectedProviderCalls:modelCalls},null,2)+"\n",{mode:0o600,flag:"wx"});

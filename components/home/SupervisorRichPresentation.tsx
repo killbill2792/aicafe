@@ -37,7 +37,7 @@ export function presentationSpec(p:RichPresentation):Spec{
 function Panel({panel,locale}:{panel:PresentationPanel;locale:string}){
  const formatter=new Intl.NumberFormat(locale,["cents","cents/hour"].includes(panel.unit)&&panel.currency?
   {style:"currency",currency:panel.currency,minimumFractionDigits:2,maximumFractionDigits:2}:{maximumFractionDigits:20});
- const format=(v:number)=>formatter.format(["cents","cents/hour"].includes(panel.unit)?v/100:v)+(panel.unit==="cents/hour"?" / h":["seconds","minutes","hours","days","units","items","ratio","ratio squared","indicator"].includes(panel.unit)?" "+panel.unit:"");
+ const format=(v:number)=>formatter.format(["cents","cents/hour"].includes(panel.unit)?v/100:v)+(panel.unit==="cents/hour"?" / h":["seconds","minutes","hours","days","units","items","ratio","ratio squared","indicator"].includes(panel.unit)?" "+(panel.measurement??panel.unit):"");
  const table=<div className="overflow-x-auto overscroll-x-contain"><table className="w-full text-[17px] tabular-nums"><caption className="sr-only">{panel.title}</caption>
     <tbody>{panel.points.map((p,i)=><tr key={i} className="border-b border-line"><th scope="row" className="break-words py-2 pe-3 text-start font-normal">{p.label}</th><td className="py-2 text-end">{format(p.value)}</td></tr>)}</tbody>
    </table></div>;
@@ -62,7 +62,7 @@ function ComparisonView({panels,locale}:{panels:PresentationPanel[];locale:strin
   <ComparisonChart series={series} labels={labels} line={line} format={format}/>
   <div className="flex flex-wrap gap-3 text-[13px] text-ink-muted">{series.map(s=><span key={s.id}>{s.label}</span>)}</div>
   <div className="overflow-x-auto" tabIndex={0} aria-label={series.map(s=>s.label).join("; ")}>
-   <table className="w-full text-[15px] tabular-nums"><thead><tr><th scope="col" className="py-2 text-start">{first.currency??first.unit}</th>{series.map(s=><th key={s.id} scope="col" className="px-2 text-end">{s.label}</th>)}</tr></thead>
+   <table className="w-full text-[15px] tabular-nums"><thead><tr><th scope="col" className="py-2 text-start">{first.currency??first.measurement??first.unit}</th>{series.map(s=><th key={s.id} scope="col" className="px-2 text-end">{s.label}</th>)}</tr></thead>
     <tbody>{labels.map(label=><tr key={label}><th scope="row" className="py-2 text-start">{label}</th>{series.map(s=>{const v=s.points.find(p=>p.label===label);return <td key={s.id} className="px-2 text-end">{v?format(v.value):copy.notRecorded}</td>})}</tr>)}</tbody></table>
   </div>
   {panels.map((p,i)=><p key={i} className="break-words text-[13px] text-ink-muted">{series[i].label} · {p.sourceDetail??p.source} · {copy.snapshot} {p.asOf}{p.coverage?" · "+(p.coverage==="partial"?copy.partial:copy.estimate):""}</p>)}
@@ -197,7 +197,7 @@ function ControlView({kind}:{kind:unknown}){
 export default function SupervisorRichPresentation({block,locale,onSuggest,disabled,message,attachments}:{block:unknown;locale:string;onSuggest:(text:string)=>void;disabled:boolean;message?:Parameters<typeof presentationReport>[1]&{threadId:string};attachments?:{threadId:string;items:StoredAttachment[]}|null}){
  const parsed=useMemo(()=>richPresentationSchema.safeParse(block),[block]);
  const registry=useMemo<ComponentRegistry>(()=>({
-  Layout:({element,children})=><div data-supervisor-layout={element.props.layout==="grid"?"grid":"stack"} className={element.props.layout==="grid"?"grid min-w-0 gap-3 sm:grid-cols-2":"min-w-0 space-y-3"}>{children}</div>,
+  Layout:({element,children})=><div data-supervisor-layout={element.props.layout==="grid"?"grid":"stack"} className={element.props.layout==="grid"?"grid min-w-0 gap-3 grid-cols-[repeat(auto-fit,minmax(min(100%,22rem),1fr))]":"min-w-0 space-y-3"}>{children}</div>,
   Panel:({element})=>{const p=presentationPanelSchema.safeParse(element.props.panel);return p.success?<Panel panel={p.data} locale={locale}/>:null;},
   Comparison:({element})=>{const raw:unknown=element.props.panels;const p=Array.isArray(raw)?raw.map((v:unknown)=>presentationPanelSchema.safeParse(v)):[];if(p.some(v=>!v.success))return null;const panels=p.flatMap(v=>v.success?[v.data]:[]);return compatibleComparison(panels.map((_,i)=>"panel"+i),panels)?<ComparisonView panels={panels} locale={locale}/>:null;},
   Agenda:({element})=>{const a=agendaSchema.safeParse(element.props.agenda);return a.success?<AgendaView agenda={a.data} locale={locale}/>:null;},

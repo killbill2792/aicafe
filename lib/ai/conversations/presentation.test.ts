@@ -73,3 +73,9 @@ it("places verified attachments, export and editable suggestions at arbitrary ne
  expect(richPresentationSchema.safeParse({...b,groups:[{...groups[0],items:["g1","report","suggestions"]},groups[1]]}).success).toBe(false);
  expect(richPresentationSchema.safeParse({...b,report:undefined,groups}).success).toBe(false);
 });
+
+it("does not combine different actual physical units on the same scale",()=>{
+ const a={kind:"bar",title:"Milk",unit:"units",measurement:"ml",currency:null,from:"2026-01-01",to:"2026-01-01",asOf:"2026-01-02",source:"inventory",points:[{label:"Stock",value:5}]};
+ const b={type:"rich_presentation",version:1,layout:"stack",panels:[a,{...a,title:"Flour",measurement:"g"}],suggestions:[],groups:[{layout:"compare",items:["panel0","panel1"]}]};
+ expect(richPresentationSchema.safeParse(b).success).toBe(false);
+});
