@@ -3,6 +3,7 @@ import { AsyncLocalStorage } from "node:async_hooks";
 import {randomUUID} from "node:crypto";
 import type {SupabaseClient} from "@supabase/supabase-js";
 import {PRODUCTION_SUPERVISOR_OPENAI_MODEL,configuredSupervisorModel} from "@/lib/ai/conversations/modelConfig";
+import {providerUsageReceipt} from "@/lib/ai/agent/executionPolicy";
 import {modelTokenUsage,standardModelTokenRates,estimateModelCallCostMicros,hostedWebActualCostMicros} from "@/lib/calc/supervisorTokenCost";
 
 /** Caps come from authenticated server configuration, never a model reply.
@@ -203,10 +204,10 @@ export async function reserveDurableProviderRequest(
       p_owner_daily_cap:scope.ownerDailyCap,
     });
     if(error)throw new Error("durable_provider_reservation_denied",{cause:error});
-    let started=false,completed=false;
+    let started=false,completed=false,startedAt=0;
     return {
       launched:()=>{if(started||ctx.denied)throw new Error("durable_provider_launch_conflict");
-        started=true;ctx.launched.push(id);},
+        started=true;startedAt=Date.now();ctx.launched.push(id);},
       complete:async(response)=>{
         if(!started||completed)throw new Error("durable_provider_completion_conflict");
         const actual=response.model;
@@ -219,11 +220,14 @@ export async function reserveDurableProviderRequest(
         }
         const tokenCost=actualRates?estimateModelCallCostMicros(measured,actualRates):null;
         const cost=kind==='hosted_web'?hostedWebActualCostMicros(tokenCost,response.output):tokenCost;
-        const {error}=await scope.db.rpc("supervisor_complete_investigation_model_call",{
+        const completeArgs={
           p_attempt_id:id,p_business_id:scope.businessId,p_owner_user_id:scope.ownerUserId,
           p_thread_id:scope.threadId,p_model:actual,p_input_tokens:measured.inputTokens,
           p_output_tokens:measured.outputTokens,p_estimated_cost_micros:cost,
-        });
+        };
+        const metrics=providerUsageReceipt({requestedModel:model,kind,outcome:"completed",final:params.tool_choice==="none",nativeSearch:Array.isArray(params.tools)&&params.tools.some(t=>t?.type==="tool_search"),outputCap:output,durationMs:Math.max(0,Date.now()-startedAt),response});
+        let {error}=await scope.db.rpc("supervisor_complete_investigation_model_call",{...completeArgs,p_execution_metrics:metrics});
+        if(error?.code==="PGRST202"||error?.code==="42883")({error}=await scope.db.rpc("supervisor_complete_investigation_model_call",completeArgs));
         if(error){ctx.denied=true;throw new Error("durable_provider_completion_unavailable",{cause:error});}
         completed=true;
       },
