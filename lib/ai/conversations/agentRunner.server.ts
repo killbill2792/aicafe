@@ -35,6 +35,7 @@ import {recordOwnerSupplierOutcome,authenticatedSupplierOwnerTurn,explicitSingle
 import {simulationOwnerReader} from "@/lib/ai/supervisor/loop/simulationOwner.server";
 import type {SupplierPurchaseOrderEffect} from "@/lib/ai/supervisor/loop/purchaseOrders.server";
 import {SupabaseLoopRepository} from "@/lib/ai/supervisor/loop/supabase.server";
+import {precedingInvestigationReport,type CustomerInvestigationOrigin} from "@/lib/ai/supervisor/routines/investigation";
 import {SupervisorEffectGateway} from "@/lib/ai/supervisor/loop/effectGateway.server";
 import {gmailCapabilityId,type GmailProposalInput} from "@/lib/ai/supervisor/loop/gmail.server";
 import {maintenanceContext} from "@/lib/ai/supervisor/loop/maintenance.server";
@@ -187,6 +188,28 @@ export async function runOneTurn(p: TurnParams): Promise<{ replyId: string; repl
     ]);
     // External content is historical, not fresh authority. Legacy unclassified
     // assistant summaries remain owner-visible but are not re-admitted to the model.
+    const preceding=precedingInvestigationReport(page.items,owner);
+    let customerOrigin:CustomerInvestigationOrigin|null=null;
+    if(preceding){
+      const db=await getDb();
+      const [episode,alert]=await Promise.all([
+        db.from("supervisor_investigations").select("episode_id,evidence").eq("business_id",scope.businessId)
+          .eq("owner_user_id",scope.ownerUserId).eq("thread_id",id).eq("source_type","alert")
+          .eq("source_id",preceding.sourceId).eq("revision_hash",preceding.sourceRevision)
+          .eq("phase","awaiting_owner").maybeSingle(),
+        db.from("alerts").select("kind,status,payload").eq("business_id",scope.businessId)
+          .eq("id",preceding.sourceId).maybeSingle(),
+      ]);
+      const evidence=episode.data?.evidence as {sourceRevision?:unknown;modelTools?:unknown;missing?:unknown}|null|undefined;
+      if(!episode.error&&!alert.error&&episode.data&&alert.data?.kind==="business_anomaly"&&
+        ["new","seen"].includes(alert.data.status)&&alert.data.payload?.family==="customer_trend"&&
+        evidence?.sourceRevision===preceding.sourceRevision&&Array.isArray(evidence.modelTools)&&
+        evidence.modelTools.includes("get_investigation_source")&&evidence.modelTools.includes("query_data")&&
+        Array.isArray(evidence.missing)&&evidence.missing.length===0){
+        customerOrigin={sourceId:preceding.sourceId,sourceRevision:preceding.sourceRevision,
+          episodeId:episode.data.episode_id,reportMessageId:preceding.report.id,ownerMessageId:owner.id};
+      }
+    }
     const reusable=(m:ConversationMessage)=>m.role==="owner"||
       (m.grounding?.agentMetadata as {externalEvidence?:unknown}|undefined)?.externalEvidence===false;
     const ownerAt = Date.parse(owner.createdAt);
@@ -204,10 +227,10 @@ export async function runOneTurn(p: TurnParams): Promise<{ replyId: string; repl
     // Retain only typed evidence from successful tool reads. Messages queued for a
     // running job (sent after this one) are excluded: they arrive as follow-ups.
     const history = page.items.filter(m => m.id !== owner.id &&
-      (m.role === "owner" || m.role === "supervisor") && reusable(m) &&
+      (m.role === "owner" || m.role === "supervisor") && (reusable(m)||m.id===customerOrigin?.reportMessageId) &&
       !(job && (p.durableFence||m.role === "owner") && Number.isFinite(ownerAt) && Date.parse(m.createdAt) > ownerAt)).slice(-8)
       .map(m => ({ role: m.role === "owner" ? "user" as const : "assistant" as const,
-        content: historyContent(m) })).filter(m => m.content);
+        content: m.id===customerOrigin?.reportMessageId?"Historical proactive customer report (not current evidence or approval; verify all facts afresh): "+historyContent(m):historyContent(m) })).filter(m => m.content);
     const proposalScope={...scope,threadId:id,locale:p.locale,
       ...(external?{verifiedReadClient:p.externalClient}: {})};
     let selectedContentSha256:string|null=null;
@@ -228,6 +251,18 @@ export async function runOneTurn(p: TurnParams): Promise<{ replyId: string; repl
       }
       await assertCafeAiAccess(scope.businessId);
       for(const check of sourceChecks.values())await check();
+    };
+    // Attach provenance only at the normal, authenticated draft write. Never
+    // forward it as an effect authorization or modify a saved proposal on retry.
+    const customerProposalRepository=()=>{
+      const repo=new SupabaseLoopRepository(),origin=customerOrigin;
+      if(!origin)return repo;
+      const create=repo.create.bind(repo);
+      repo.create=async (draftScope,key,draft)=>{
+        await assertTurnSources();
+        return create(draftScope,key,{...draft,baseline:{...draft.baseline,customerInvestigationContext:origin}});
+      };
+      return repo;
     };
     const withGmailEvidence=async<T>(read:()=>Promise<T>):Promise<T>=>{
       const account=await getConnectorAccount(scope);
@@ -520,7 +555,7 @@ export async function runOneTurn(p: TurnParams): Promise<{ replyId: string; repl
             // Null replacement ID means a NEW purchase request even if other
             // unrelated drafts exist and the owner says 'increase production'.
             draft=await proposeLoop(proposalScope,supervisorLoopRegistry,
-              new SupabaseLoopRepository(),supplierPurchaseOrderCapabilityId,purchaseInput,key);
+              customerProposalRepository(),supplierPurchaseOrderCapabilityId,purchaseInput,key);
           }
           if(draft.status!=="draft")throw new ToolError("validation","Purchase-order draft is no longer active.");
           const effect=draft.canonicalEffectPayload as SupplierPurchaseOrderEffect;
@@ -595,7 +630,7 @@ export async function runOneTurn(p: TurnParams): Promise<{ replyId: string; repl
         // RFC 4122 UUIDv5: the thread UUID is the namespace.
         const requestKey=proposalRequestKey(id,stable);
         const proposal=await proposeLoop(proposalScope,
-          supervisorLoopRegistry,new SupabaseLoopRepository(),menuPriceChangeCapabilityId,
+          supervisorLoopRegistry,customerProposalRepository(),menuPriceChangeCapabilityId,
           {productId,newPriceCents},requestKey);
         const effect=proposal.canonicalEffectPayload as {
           productName:string;oldPriceCents:number;newPriceCents:number};
@@ -613,7 +648,7 @@ export async function runOneTurn(p: TurnParams): Promise<{ replyId: string; repl
         requirePositivePriceIncrease(increase);
         const key=proposalRequestKey(id,JSON.stringify({ownerMessageId:owner.id,productId,increase,days}));
         const proposal=await proposeLoop(proposalScope,supervisorLoopRegistry,
-          new SupabaseLoopRepository(),priceExperimentCapabilityId,{productId,increaseCents:increase},key);
+          customerProposalRepository(),priceExperimentCapabilityId,{productId,increaseCents:increase},key);
         const effect=proposal.canonicalEffectPayload as {productName:string;oldPriceCents:number;newPriceCents:number};
         return {proposalId:proposal.id,revision:proposal.revision,productName:effect.productName,oldPriceCents:effect.oldPriceCents,newPriceCents:effect.newPriceCents};
       },
@@ -662,7 +697,7 @@ export async function runOneTurn(p: TurnParams): Promise<{ replyId: string; repl
               !/\b(expense|accounting|bookkeeping|payable|pay the bill)\b/iu.test(currentOwnerStatement);
             const sourceForEffect=stockOnlyReceipt?"chat_text":input.source;
             const proposal=await proposeLoop(proposalScope,supervisorLoopRegistry,
-              new SupabaseLoopRepository(),purchaseCapabilityId,{...line,source:sourceForEffect,
+              customerProposalRepository(),purchaseCapabilityId,{...line,source:sourceForEffect,
                 receiptGroupId:input.source==="receipt_chat"?receiptGroupId:null,
                 receiptLineIndex,
                 receiptVendor:input.source==="receipt_chat"?input.receiptVendor:null,
@@ -719,7 +754,7 @@ export async function runOneTurn(p: TurnParams): Promise<{ replyId: string; repl
       proposeStaff:async({name,input})=>{
         const requestKey=proposalRequestKey(id,JSON.stringify({ownerMessageId:owner.id,name,input}));
         const proposal=await proposeLoop(proposalScope,
-          supervisorLoopRegistry,new SupabaseLoopRepository(),staffCapabilityId(name),input,requestKey);
+          supervisorLoopRegistry,customerProposalRepository(),staffCapabilityId(name),input,requestKey);
         return {proposalId:proposal.id,revision:proposal.revision,capabilityId:proposal.capabilityId};
       }} };
     // Only expose Gmail tools after owner+café account authorization.

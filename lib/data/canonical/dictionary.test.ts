@@ -10,7 +10,8 @@ const source=[readFileSync(resolve("supabase/migrations/20261028000112_canonical
  readFileSync(resolve("supabase/migrations/20261028000118_toast_kitchen_prep_station.sql"),"utf8"),
  readFileSync(resolve("supabase/migrations/20261029000119_toast_latest_raw_capture.sql"),"utf8"),
  readFileSync(resolve("supabase/migrations/20261031000130_ai_reads_all_toast_fields.sql"),"utf8"),
- readFileSync(resolve("supabase/migrations/20261104000155_toast_money_cents_projection.sql"),"utf8")].join("\n");
+ readFileSync(resolve("supabase/migrations/20261104000155_toast_money_cents_projection.sql"),"utf8"),
+ readFileSync(resolve("supabase/migrations/20261119205950_pos0ef_canonical_customer_identity.sql"),"utf8")].join("\n");
 const docs=readFileSync(resolve("docs/data-dictionary.md"),"utf8");
 describe("canonical view column dictionary contract",()=>{
  it("documents every SQL view column, without phantom columns",()=>{

@@ -12,13 +12,14 @@ export type OwnerProposalRow={id:string;thread_id:string;capability_id:string;re
 export type OwnerReportRow={proposal_id:string;status:string;report:unknown;generated_at:string};
 
 export async function readOwnerProposals(db:SupabaseClient,scope:OwnerScope,
-  filter:{threadId?:string;id?:string;capabilityId?:string;capabilityIds?:readonly string[];statuses?:readonly string[];limit:number;offset?:number}):Promise<OwnerProposalRow[]>{
+  filter:{threadId?:string;id?:string;capabilityId?:string;capabilityIds?:readonly string[];statuses?:readonly string[];customerInvestigationContext?:{episodeId:string;sourceId:string};limit:number;offset?:number}):Promise<OwnerProposalRow[]>{
   let q=db.from("supervisor_proposals").select(PROPOSAL_COLUMNS)
     .eq("business_id",scope.businessId).eq("owner_user_id",scope.ownerUserId);
   if(filter.threadId)q=q.eq("thread_id",filter.threadId);
   if(filter.capabilityId)q=q.eq("capability_id",filter.capabilityId);
   if(filter.capabilityIds)q=q.in("capability_id",[...filter.capabilityIds]);
   if(filter.id)q=q.eq("id",filter.id);
+  if(filter.customerInvestigationContext)q=q.contains("baseline",{customerInvestigationContext:filter.customerInvestigationContext});
   if(filter.statuses)q=q.in("status",[...filter.statuses]);
   const ordered=q.order("created_at",{ascending:false}).order("id",{ascending:false});
   const {data,error}=await (filter.offset===undefined?ordered.limit(filter.limit):

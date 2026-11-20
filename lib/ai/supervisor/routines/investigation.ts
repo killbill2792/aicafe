@@ -1,5 +1,6 @@
 import type {AgentTurn} from "@/lib/ai/agent/loop.server";
 import type {AgentToolName,AgentToolResult} from "@/lib/ai/agent/tools";
+import {CUSTOMER_MONITOR_POLICY,customerTrendEvidenceFields} from "@/lib/metrics/core/customers";
 
 /** Task 15A uses the SAME registered Supervisor model/tool loop, restricted to
  * evidence reads. Only a verified owner's later turn can reach the registered
@@ -10,9 +11,11 @@ export const investigationReadTools=[
   "get_product_costs","get_menu_items","get_price_monitor_status",
   "get_peak_hours","get_payroll_facts","get_staff_messages","get_staff_coordination_cases","get_schedule","get_week_schedule",
   "get_coverage_gaps","get_inventory","get_usage_variance","inspect_purchase_reconciliation","calculate",
+  "describe_data","query_data",
 ] as const satisfies readonly AgentToolName[];
 /** The only system-triggered write permitted here is an inert approval
  * draft. The existing owner-click gateway is still the only effect authority. */
+export const customerInvestigationTools=[...investigationReadTools,"get_events"] as const satisfies readonly AgentToolName[];
 export const supplierResearchInvestigationTools=[...investigationReadTools,"web_search"] as const satisfies readonly AgentToolName[];
 export const maintenanceInvestigationTools=[...investigationReadTools,
   "get_maintenance_staff_candidates","propose_maintenance_staff_assignment","record_maintenance_repair_claim",
@@ -20,7 +23,7 @@ export const maintenanceInvestigationTools=[...investigationReadTools,
 /** Requiring kind-specific independent corroboration keeps an agent from
  * reading two irrelevant sales/expense totals for an employee incident. */
 const relevantByKind:Record<string,readonly AgentToolName[]>={
-  business_anomaly:["get_sales","get_peak_hours","get_profit","get_labor","get_expenses","get_bills","get_ingredient_costs","get_product_costs","get_inventory","get_usage_variance","get_item_sales","get_menu_items","get_schedule","get_week_schedule"],
+  business_anomaly:["describe_data","query_data","get_sales","get_peak_hours","get_profit","get_labor","get_expenses","get_bills","get_ingredient_costs","get_product_costs","get_inventory","get_usage_variance","get_item_sales","get_menu_items","get_schedule","get_week_schedule"],
   meal_break:["get_labor","get_payroll_facts","get_schedule","get_week_schedule"],
   staff_coverage:["get_staff_messages","get_staff_coordination_cases","get_labor","get_schedule","get_coverage_gaps","get_week_schedule"],
   staff_coordination:["get_staff_coordination_cases","get_staff_messages","get_schedule","get_week_schedule","get_coverage_gaps"],
@@ -47,7 +50,7 @@ const relevantByKind:Record<string,readonly AgentToolName[]>={
  * The groups are intentionally conservative. A derived aggregate never
  * invents an independent source where the underlying evidence overlaps. */
 const canonicalEvidenceDomain:Partial<Record<AgentToolName,string>>={
-  get_sales:"recorded_sales",get_item_sales:"recorded_sales",
+  query_data:"recorded_sales",get_sales:"recorded_sales",get_item_sales:"recorded_sales",
   get_peak_hours:"recorded_sales",
   get_labor:"attendance_and_labor",get_payroll_facts:"attendance_and_labor",
   get_staff_messages:"verified_staff_messages",
@@ -60,7 +63,7 @@ const canonicalEvidenceDomain:Partial<Record<AgentToolName,string>>={
   inspect_purchase_reconciliation:"receiving_and_invoice_source",
   get_ingredient_costs:"ingredient_prices",get_product_costs:"recipe_costs",
   get_menu_items:"menu_catalog",get_price_monitor_status:"price_monitor",
-  get_profit:"profitability",
+  get_profit:"profitability",get_events:"verified_saved_local_events",
 };
 /** Read-only tool names and source labels do NOT establish evidence. Readers
  * frequently return a valid source name with only missing/error reasons. A
@@ -85,8 +88,64 @@ function observedValue(value:unknown,depth=0):boolean{
       !nonObservationKeys.has(key)&&observedValue(fact,depth+1));
   return false;
 }
+function verifiedEventEvidence(result:AgentToolResult,from:string,to:string):boolean{
+  if(result.source!=="cafe_events"||result.missing.length||!result.period||
+    !Array.isArray(result.events)||from>to)return false;
+  const start=result.period.from>from?result.period.from:from;
+  const end=result.period.to<to?result.period.to:to;
+  if(start>end)return false;
+  return result.events.some(event=>{
+    if(!event||typeof event!=="object")return false;
+    return event.status==="found"&&typeof event.lastVerifiedAt==="string"&&
+      Number.isFinite(Date.parse(event.lastVerifiedAt))&&
+      typeof event.startDate==="string"&&typeof event.endDate==="string"&&event.startDate<=event.endDate&&
+      event.startDate<=end&&event.endDate>=start&&
+      (!event.verificationFailedAt||Date.parse(event.verificationFailedAt)<=Date.parse(event.lastVerifiedAt));
+  });
+}
+/** Validate the actual unfiltered period denominator before accepting any
+ * customer finding. A complete flag alone is not evidence of sufficient identity. */
+function customerCoverageReceipt(result:AgentToolResult){
+  if(result.source!=="canonical_data"||result.error||result.truncated||result.customerEvidence!==true||
+    result.aggregateOnly!==true||!result.period||result.period.from>result.period.to)return null;
+  const c=result.customerCoverage;
+  if(!c||typeof c!=="object")return null;
+  const v=c as Record<string,unknown>;
+  if(v.scope!=="all_eligible_checks_in_period"||typeof v.complete!=="boolean")return null;
+  const natural=(x:unknown):x is number=>typeof x==="number"&&Number.isSafeInteger(x)&&x>=0;
+  const {eligibleChecks,linkedChecks,expectedLocationDays,completeLocationDays}=v;
+  if(!natural(eligibleChecks)||!natural(linkedChecks)||linkedChecks>eligibleChecks||
+    !natural(expectedLocationDays)||!natural(completeLocationDays)||completeLocationDays>expectedLocationDays||
+    v.complete&&completeLocationDays!==expectedLocationDays)return null;
+  return {eligibleChecks,linkedChecks,expectedLocationDays,completeLocationDays,complete:v.complete};
+}
+/** A bounded SQL coverage receipt can prove a source problem even when the
+ * result contains no order rows. Never certify zero customers from it. */
+function observedCustomerGap(result:AgentToolResult):boolean{
+  const c=customerCoverageReceipt(result);
+  if(!c)return false;
+  return c.expectedLocationDays>0&&!c.complete||c.eligibleChecks>0&&
+    (c.linkedChecks<CUSTOMER_MONITOR_POLICY.minimumLinkedChecks||c.linkedChecks/c.eligibleChecks<CUSTOMER_MONITOR_POLICY.minimumIdentityCoverage);
+}
+function qualifiedCustomerTrendCoverage(result:AgentToolResult,anonymous=false):boolean{
+  const c=customerCoverageReceipt(result);
+  return !!c&&c.complete&&c.expectedLocationDays>0&&c.eligibleChecks>0&&
+    (anonymous?c.eligibleChecks>=CUSTOMER_MONITOR_POLICY.minimumLinkedChecks:
+    c.linkedChecks>=CUSTOMER_MONITOR_POLICY.minimumLinkedChecks&&
+    c.linkedChecks/c.eligibleChecks>=CUSTOMER_MONITOR_POLICY.minimumIdentityCoverage);
+}
 function hasObservedEvidence(result:AgentToolResult):boolean{
   if(!Array.isArray(result.missing))return false;
+  // Schema metadata, row-count sentinels and truncated/failed aggregate
+  // reads must never establish an independent observed fact.
+  if(result.source==="canonical_dictionary"||result.source==="toast_fields")return false;
+  if(result.source==="canonical_data"){
+    if(result.error||result.empty||result.truncated||result.aggregateOnly!==true||!Array.isArray(result.rows))return false;
+    return result.rows.some(row=>row&&typeof row==="object"&&!Array.isArray(row)&&Object.entries(row).some(([key,v])=>
+      /^(count|count_distinct|sum|avg|min|max)_/.test(key)&&
+      (typeof v==="number"&&Number.isFinite(v)||typeof v==="string"&&v.trim()!==""&&Number.isFinite(Number(v)))));
+  }
+  if(result.source==="cafe_events")return !!result.period&&verifiedEventEvidence(result,result.period.from,result.period.to);
   if(result.source==="cashflow_evidence")return (Array.isArray(result.documentedAccountBalances)&&result.documentedAccountBalances.length>0)||
     (typeof result.recordedClaimCount==="number"&&result.recordedClaimCount>0)||
     (typeof result.billClaimCount==="number"&&result.billClaimCount>0);
@@ -110,6 +169,33 @@ export type SourceSynopsis={
   relatedAlerts:readonly string[];relatedTasks:readonly string[];
   maintenanceDueAt?:string|null;maintenanceOverdue?:boolean;
 };
+/** The server derives this from a prior durable report, not a model argument.
+ * It is conversational provenance only, never authority to execute an effect. */
+export type CustomerInvestigationOrigin={
+  sourceId:string;sourceRevision:string;episodeId:string;
+  reportMessageId:string;ownerMessageId:string;
+};
+export type CustomerActionObservation={
+  proposalId:string;capabilityId:string;status:string;revision:number;attemptState:string|null;
+};
+export function precedingInvestigationReport<T extends {id:string;role:string;threadId:string;createdAt:string;grounding:Record<string,unknown>|null}>(
+  messages:readonly T[],owner:{id:string;threadId:string;createdAt:string}):
+  {report:T;sourceId:string;sourceRevision:string}|null{
+  const ownerAt=Date.parse(owner.createdAt);
+  if(!Number.isFinite(ownerAt))return null;
+  const previous=messages.filter(m=>m.id!==owner.id&&m.threadId===owner.threadId&&Date.parse(m.createdAt)<ownerAt)
+    .sort((a,b)=>Date.parse(b.createdAt)-Date.parse(a.createdAt));
+  const report=previous[0];
+  if(!report||report.role!=="supervisor"||report.grounding?.intent!=="priority_investigation"||
+    report.grounding.status!=="verified"||
+    (previous[1]&&previous[1].createdAt===report.createdAt))return null;
+  const evidence=report.grounding.evidence;
+  if(!Array.isArray(evidence)||evidence.length!==1)return null;
+  const ref=evidence[0] as {source?:unknown;identifier?:unknown;revisionHash?:unknown};
+  if(ref?.source!=="alert"||typeof ref.identifier!=="string"||
+    typeof ref.revisionHash!=="string"||!ref.revisionHash)return null;
+  return {report,sourceId:ref.identifier,sourceRevision:ref.revisionHash};
+}
 export type InvestigationCheckpoint={
   source:SourceSynopsis;
   collectedAt:string;
@@ -125,6 +211,7 @@ export type InvestigationCheckpoint={
   ownerQuestion?:string;
   sourceRevision?:string;
   stockEmailProposalId?:string;
+  customerLinkedActions?:CustomerActionObservation[];
   /** Server-observed procurement status, never part of the model narrative. */
   stockProcurementStatus?:string;
   receivingClosureEvidence?:{poRevision:number;receiptVersions:number;invoiceVersions:number};
@@ -226,7 +313,7 @@ export function investigationPrompt(source:SourceSynopsis,followUp:boolean,
     "for incident-specific evidence. For this incident, relevant tools include: " +
     relevantInvestigationTools(source.kind).join(", ")+". " +
     (["money_update","missing_bill"].includes(source.kind)?"Finance: check actual available statement/invoice evidence plus independent recorded bills, expenses, sales or labor. If integrations are absent, use surviving facts and explicit uncertainty. Separate dated balances, bill amounts and payment status; no payment actions. ":"") +
-    (source.kind==="business_anomaly"?"Use the exact incident family, subject, unit and comparison dates supplied by get_investigation_source. Recorded expenses are observed entries, not complete spending; stockout risk is a forecast not a confirmed shortage. Hourly staff pressure uses a reconciled allocation of recorded daily wages and tax, not an actual per-hour provider payroll figure, and does not prove a specific employee or shift is unnecessary. For stockout risk, physical shortage or supplier quote issues, after the source read use the available web_search tool for public supplier leads if current saved offers are insufficient. Public descriptions or prices are UNVERIFIED leads, never firm offers, stock or guaranteed delivery. Do not repeat private data in public search terms. Cite actual links only; if no lead or permission, ask for the missing supplier confirmation. For data gaps explicitly ask for the missing evidence. ":"") +
+    (source.kind==="business_anomaly"?"Use the exact incident family, subject, unit and comparison dates supplied by get_investigation_source. Recorded expenses are observed entries, not complete spending; stockout risk is a forecast not a confirmed shortage. Hourly staff pressure uses a reconciled allocation of recorded daily wages and tax, not an actual per-hour provider payroll figure, and does not prove a specific employee or shift is unnecessary. For stockout risk, physical shortage or supplier quote issues, after the source read use the available web_search tool for public supplier leads if current saved offers are insufficient. Public descriptions or prices are UNVERIFIED leads, never firm offers, stock or guaranteed delivery. Do not repeat private data in public search terms. Cite actual links only; if no lead or permission, ask for the missing supplier confirmation. For data gaps identify the missing source evidence. For customer_trend or customer identity coverage, use query_data numeric check/visit/product aggregates, not names; check source coverage and matured denominators, then independent staffing, inventory, menu/price or expense evidence. For anonymous_check_spend or anonymous_items_per_check, use all eligible checks and recorded item quantities, not linked-person filters; report only transaction-level behaviour. Customer trend source includes an independent exact-metric re-read when available; do not claim the trend is verified when that read is absent or differs from the alert. For customer trends around holidays or local events, use get_events for the same comparison dates when available; distinguish verified saved occurrence evidence from unverified listings, and do not infer attendance, customer acquisition or causation from an event listing. Use describe_data for unfamiliar retained fields, including optional fields without dedicated views. Do not treat two sales projections as independent, or missing identity as churn. Investigate the existing Toast source before asking the owner; do not ask them to supply stored POS facts. Notify only useful aggregate findings, no personal names/contact or account IDs. Correlation is not causation. ":"") +
     "Use canonical numbers, coverage and timestamps; " +
     "do not infer zero from missing or stale evidence. Explain what changed, what is " +
     "known, what is unknown, and the smallest useful multi-step plan. Give the owner " +
@@ -299,7 +386,7 @@ export function verifyInvestigationTurn(turn:AgentTurn,expected:ExpectedInvestig
     turn.unverified.length>0||unsupportedExternalEffectClaim(text))
     return {ok:false,reason:"model_incomplete"};
   const calls=turn.toolInvocations??[];
-  const allowedSet=new Set<string>(expected.kind==="maintenance_issue"?maintenanceInvestigationTools:expected.kind==="business_anomaly"?supplierResearchInvestigationTools:investigationReadTools);
+  const allowedSet=new Set<string>(expected.kind==="maintenance_issue"?maintenanceInvestigationTools:expected.kind==="business_anomaly"?[...supplierResearchInvestigationTools,"get_events"]:investigationReadTools);
   if(expected.kind==="supplier_receiving")allowedSet.add("propose_supplier_discrepancy_followup");
   if(calls.some(call=>!allowedSet.has(call.name)))
     return {ok:false,reason:"model_incomplete"};
@@ -320,13 +407,49 @@ export function verifyInvestigationTurn(turn:AgentTurn,expected:ExpectedInvestig
   // Distinguish a qualified report from an affirmative assertion of repair.
   if(expected.kind==="maintenance_issue"&&unsupportedMaintenanceRepairClaim(text))
     return {ok:false,reason:"model_incomplete"};
-  const selectors=source.result.selectors as {family?:string}|undefined;
+  const selectors=source.result.selectors as {family?:string;subject?:string;from?:string;to?:string;current?:number;previous?:number;unit?:string}|undefined;
+  const customerIncident=expected.kind==="business_anomaly"&&(selectors?.family==="customer_trend"||
+    selectors?.family==="data_gap"&&["customer_identity_coverage","reader_unavailable:customer_intelligence"].includes(selectors.subject??""));
+  const anonymousCustomer=selectors?.family==="customer_trend"&&selectors.subject?.startsWith("anonymous_")===true;
+  if(customerIncident&&selectors?.family==="customer_trend"){
+    const p=source.result.customerTrendProof as {key?:string;current?:number;previous?:number;unit?:string;active?:boolean}|null|undefined;
+    const equal=(x:unknown,y:unknown)=>typeof x==="number"&&typeof y==="number"&&Number.isFinite(x)&&Number.isFinite(y)&&Math.abs(x-y)<=1e-9*Math.max(1,Math.abs(x),Math.abs(y));
+    if(!p||p.key!==selectors.subject||p.unit!==selectors.unit||p.active!==true||!equal(p.current,selectors.current)||!equal(p.previous,selectors.previous))return {ok:false,reason:"evidence_incomplete"};
+  }
+  if(!customerIncident&&calls.some(call=>call.name==="get_events"))return {ok:false,reason:"model_incomplete"};
+  const customerTools:readonly AgentToolName[]=["get_events","query_data","get_labor","get_schedule","get_week_schedule",
+    "get_inventory","get_usage_variance","get_menu_items","get_price_monitor_status","get_ingredient_costs","get_expenses","get_bills"];
   const familyTools:Record<string,readonly AgentToolName[]>={sales_decline:["get_sales","get_profit","get_labor","get_item_sales"],sales_growth:["get_sales","get_profit","get_labor","get_item_sales"],labor_cost:["get_labor","get_sales","get_profit"],recorded_expense_rise:["get_expenses","get_bills","get_profit"],recorded_refund_rise:["get_sales","get_profit","get_item_sales"],order_refund_rise:["get_sales","get_profit","get_item_sales"],ingredient_cost:["get_ingredient_costs","get_product_costs","get_menu_items"],product_cost:["get_product_costs","get_ingredient_costs","get_menu_items"],product_contribution:["get_product_costs","get_ingredient_costs","get_item_sales"],high_contribution:["get_product_costs","get_item_sales"],operating_margin:["get_profit","get_sales","get_expenses","get_labor"],cost_recovery_lag:["get_profit","get_bills","get_expenses","get_sales"],cost_recovery_ahead:["get_profit","get_bills","get_expenses","get_sales"],stock_shortage:["get_inventory","get_usage_variance","get_ingredient_costs"],stockout_risk:["get_inventory","get_usage_variance","get_ingredient_costs"],consumption_variance:["get_usage_variance","get_ingredient_costs","get_item_sales"],overstaffed_hour:["get_labor","get_peak_hours","get_sales","get_schedule","get_week_schedule"],early_clock_in:["get_labor","get_schedule","get_week_schedule"],missed_clock_evidence:["get_labor","get_schedule","get_week_schedule"],supplier_quote:["get_ingredient_costs","get_product_costs","get_inventory"]};
-  const allowed=new Set<string>(expected.kind==="business_anomaly"&&selectors?.family&&familyTools[selectors.family]?familyTools[selectors.family]:relevantInvestigationTools(expected.kind));
-  const corroborated=calls.filter(call=>allowed.has(call.name)&&
+  const allowed=new Set<string>(customerIncident?customerTools:expected.kind==="business_anomaly"&&selectors?.family&&familyTools[selectors.family]?familyTools[selectors.family]:relevantInvestigationTools(expected.kind));
+  // Date-bearing independent facts must relate to the actual incident window.
+  // Undated catalog/configuration facts may still describe the present setup.
+  const matchesIncidentPeriod=(result:AgentToolResult)=>!customerIncident||
+    !selectors?.from||!selectors.to||!result.period||
+    (result.period.from<=result.period.to&&result.period.from<=selectors.to&&result.period.to>=selectors.from);
+  const corroborated=calls.filter(call=>allowed.has(call.name)&&matchesIncidentPeriod(call.result)&&
     call.result.source!=="investigation_source"&&
     typeof call.result.source==="string"&&call.result.source.length>0&&
-    hasObservedEvidence(call.result));
+    (hasObservedEvidence(call.result)||customerIncident&&selectors?.family==="data_gap"&&
+      call.name==="query_data"&&observedCustomerGap(call.result))&&
+    (call.name!=="get_events"||selectors?.family==="customer_trend"&&typeof selectors.from==="string"&&
+      typeof selectors.to==="string"&&verifiedEventEvidence(call.result,selectors.from,selectors.to)));
+  if(customerIncident&&!corroborated.some(call=>{
+    if(call.name!=="query_data"||call.result.customerEvidence!==true||call.result.aggregateOnly!==true||
+      !["cv_toast_records","cv_customer_visits","cv_customer_products"].includes(String(call.result.view)))return false;
+    const period=call.result.period;
+    if(!period)return false;
+    if(selectors?.family==="customer_trend")
+      return call.result.missing.length===0&&typeof selectors.from==="string"&&typeof selectors.to==="string"&&
+       period.from<=selectors.from&&period.to>=selectors.to&&
+       qualifiedCustomerTrendCoverage(call.result,anonymousCustomer)&&
+       Array.isArray(call.result.rows)&&customerTrendEvidenceFields(selectors.subject??"").some(field=>
+        (call.result.rows as unknown[]).some(row=>row&&typeof row==="object"&&
+         Object.keys(row).some(key=>key===field||["count","count_distinct","sum","avg","min","max"].some(fn=>key===fn+"_"+field))));
+    // Coverage alerts without dated selectors use an observed scoped gap.
+    // If the claim has dates, require its entire period, not a stale/partial gap.
+    return (!selectors?.from||!selectors.to||period.from<=selectors.from&&period.to>=selectors.to)&&
+      observedCustomerGap(call.result);
+  }))return {ok:false,reason:"evidence_incomplete"};
   const names=[...new Set(corroborated.map(c=>c.name))];
   // A result's display source may be "scheduled_shifts" versus
   // "scheduled_shifts+pos_scheduled_shifts" for the SAME canonical reader.
