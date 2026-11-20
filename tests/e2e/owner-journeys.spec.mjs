@@ -1503,14 +1503,14 @@ test("@home Task15A scheduler detects reduced sales from actual daily source row
 // Task16E design-stage observation only. Real authenticated seeded app, no model
 // calls, mutations of business facts, new workflow or production access.
 test("@home Task16E design baseline observes empty and long Supervisor conversations",async({browser},testInfo)=>{
-  test.setTimeout(180_000);
+  test.setTimeout(300_000);
   const owner=seededCafe(0), thread=randomUUID(), empty=randomUUID();
   const db=new pg.Client({host:"127.0.0.1",port:54322,database:"postgres",user:"postgres",password:"postgres",connectionTimeoutMillis:5000});
   await db.connect();
   try{
     for(const [id,title] of [[thread,"Task16E long synthetic conversation"],[empty,"Task16E empty synthetic conversation"]])
       await db.query("insert into public.ai_threads(id,business_id,owner_user_id,client_request_id,title) values($1,$2,$3,$4,$5)",[id,owner.businessId,owner.owner.userId,randomUUID(),title]);
-    await db.query("insert into public.ai_messages(business_id,thread_id,owner_user_id,author_user_id,role,content_type,text_content,client_message_id,created_at) select $1,$2,$3,$3,'owner','text','Synthetic owner question '||n,gen_random_uuid(),now()-n*interval '2 minutes' from generate_series(1,65) n",[owner.businessId,thread,owner.owner.userId]);
+    await db.query("insert into public.ai_messages(business_id,thread_id,owner_user_id,author_user_id,role,content_type,text_content,client_message_id,created_at) select $1,$2,$3,$3,'owner','text','Synthetic owner question '||n,gen_random_uuid(),now()-n*interval '2 minutes' from generate_series(1,505) n",[owner.businessId,thread,owner.owner.userId]);
     await db.query("insert into public.ai_messages(business_id,thread_id,owner_user_id,role,content_type,structured_content,grounding) values($1,$2,$3,'supervisor','blocks',$4::jsonb,$5::jsonb)",
       [owner.businessId,thread,owner.owner.userId,JSON.stringify([{type:"text",text:"Synthetic audit reply: review the saved business evidence. No external action was taken."}]),JSON.stringify({status:"estimated",intent:"operating_tasks",evidence:[]})]);
     for(const viewport of [{width:390,height:844},{width:1440,height:900}]){
@@ -1581,10 +1581,25 @@ test("@home Task16E design baseline observes empty and long Supervisor conversat
         if(viewport.width===1440){
           await page.getByRole("button",{name:"Load older messages",exact:true}).click();
           await expect(page.getByText("Synthetic owner question 65",{exact:true})).toBeAttached();
+          // Load the complete long history through the actual owner pagination path.
+          // Treat this as a diagnostic, not a claim about production latency.
+          const historyStarted=Date.now();
+          const older=page.getByRole("button",{name:"Load older messages",exact:true});
+          const messageRows=page.locator("[data-work-message]");
+          for(let i=0;i<12&&await older.isVisible();i++){
+            const before=await messageRows.count();
+            await older.click();
+            await expect.poll(()=>messageRows.count(),{timeout:30000}).toBeGreaterThan(before);
+          }
+          await expect(page.getByText("Synthetic owner question 505",{exact:true})).toBeAttached();
+          await expect(older).toHaveCount(0);
+          await expect(messageRows).toHaveCount(506);
+          console.info("[Task16E 500+ history]",JSON.stringify({loaded:await messageRows.count(),paginationMs:Date.now()-historyStarted,geometry:await geometry(),requests,condition:"seeded dev server; no production latency claim"}));
           const latest="Synthetic persisted refresh after history pagination";
           await db.query("insert into public.ai_messages(business_id,thread_id,owner_user_id,role,content_type,structured_content,grounding) values($1,$2,$3,'supervisor','blocks',$4::jsonb,$5::jsonb)",[owner.businessId,thread,owner.owner.userId,JSON.stringify([{type:"text",text:latest}]),JSON.stringify({status:"estimated",intent:"unknown",evidence:[]})]);
           await expect.poll(async()=>{await page.evaluate(()=>window.dispatchEvent(new Event("focus")));return await page.getByText(latest,{exact:true}).count();},{timeout:30000}).toBe(1);
-          await expect(page.getByText("Synthetic owner question 65",{exact:true})).toBeAttached();
+          await expect(page.getByText("Synthetic owner question 505",{exact:true})).toBeAttached();
+          await expect(messageRows).toHaveCount(507);
           expect(await page.locator("[data-work-message]").evaluateAll(nodes=>new Set(nodes.map(n=>n.getAttribute("data-work-message"))).size)).toBe(await page.locator("[data-work-message]").count());
         }
       }finally{await ctx.close();}
