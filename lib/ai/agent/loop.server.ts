@@ -191,7 +191,12 @@ export async function runAgentTurn(args: {
     process.env.AICAFE_14B_BROKER_TOKEN.length>=40;
   const legacyPaid=approvedLocalTask14b||Boolean(process.env.AICAFE_TASK14B_BUDGET_LEDGER);
   const adaptive=model===PRODUCTION_SUPERVISOR_OPENAI_MODEL&&!legacyPaid;
-  const nativeSearch=usesNativeToolSearch(model,legacyPaid);
+  // Only the specifically registered trusted acceptance case can use the new
+  // native transport inside the legacy broker's unchanged paid envelope.
+  const trustedU2=approvedLocalTask14b&&process.env.AICAFE_SHARED_LUNA==="1"&&
+    process.env.AICAFE_SHARED_LUNA_CANDIDATE==="1"&&process.env.AICAFE_SHARED_LUNA_SCENARIO==="u2-model-execution"&&
+    !process.env.AICAFE_TASK14B_BUDGET_LEDGER;
+  const nativeSearch=usesNativeToolSearch(model,legacyPaid&&!trustedU2);
   const policy=executionPolicy(model,workerBudget,legacyPaid);
   const deadline=started+policy.elapsedMs;
   const workDeadline=deadline-policy.finalTimeReserve;
@@ -401,7 +406,7 @@ export async function runAgentTurn(args: {
   // Discovery is a provider transport choice, not a new local tool or route.
   const request = (final: boolean, outputCap:number) => ({
     model, instructions: agentInstructions(),
-    ...(approvedLocalTask14b?{store:false as const}:{}),
+    ...(nativeSearch?{store:false as const,include:["reasoning.encrypted_content"]}:approvedLocalTask14b?{store:false as const}:{}),
     tools: projectedTools,
     tool_choice: final ? "none" : "auto", stream: true,
     max_output_tokens: outputCap, prompt_cache_key: agentPromptCacheKey(), input,
@@ -468,8 +473,16 @@ export async function runAgentTurn(args: {
       if (!completed) {failureCode="missing_terminal";throw new Error("provider_incomplete");}
       await args.beforeAcceptResult?.();
       if(deferOutput&&text.length>callTextStart)args.onDelta?.(text.slice(callTextStart));
-      const continuation=approvedLocalTask14b?task14bInlineContinuation(output):
-        nativeSearch?canonicalHostedOutput(output,projectedTools,true):output;
+      const continuation=nativeSearch?canonicalHostedOutput(output,projectedTools,true).flatMap(item=>{
+        if(item&&typeof item==="object"){
+          const row=item as Record<string,unknown>;
+          if(row.type==="tool_search_call"||row.type==="tool_search_output")return [row];
+          if(row.type==="function_call"&&validProviderFunctionCall(row))
+            return [{type:"function_call",name:row.name,call_id:row.call_id,arguments:row.arguments,
+              ...(typeof row.namespace==="string"?{namespace:row.namespace}:{})}];
+        }
+        return task14bInlineContinuation([item]);
+      }):approvedLocalTask14b?task14bInlineContinuation(output):output;
       input.push(...continuation);
       calls.forEach(c=>seenCallIds.add(c.call_id));
       discoveryOnly=nativeSearch&&calls.length===0&&text.length===callTextStart&&output.some(o=>!!o&&typeof o==="object"&&(o as {type?:unknown}).type==="tool_search_output");
