@@ -48,9 +48,12 @@ begin
  if n<>3 then raise exception 'catalog/review RLS incomplete %',n;end if;
  select count(*) into n from pg_proc p join pg_namespace ns on ns.oid=p.pronamespace
  where ns.nspname='public' and p.proname in
- ('pos_relink_toast_lines','pos_import_toast_attendance') and p.prosecdef
+ ('pos_relink_toast_lines','pos_import_toast_attendance') and p.pronargs=2 and p.prosecdef
  and p.proconfig @> array['search_path=public'];
  if n<>2 then raise exception 'service-only SQL handlers not hardened: %',n;end if;
+ if has_function_privilege('authenticated','public.pos_relink_toast_lines(uuid,uuid,date)','EXECUTE')
+  or not has_function_privilege('service_role','public.pos_relink_toast_lines(uuid,uuid,date)','EXECUTE')
+ then raise exception 'day-scoped relink privilege drift';end if;
  if not exists(select 1 from pg_proc p join pg_namespace ns on ns.oid=p.pronamespace
   where ns.nspname='public' and p.proname='toast_business_scope_summary'
    and p.prosecdef and p.proconfig @> array['search_path=public'])
