@@ -207,13 +207,13 @@ describe("answer style ()", () => {
   it("adds the style rules with a new cache key when on", async () => {
     const { requests, provider } = recording([[text("Hi."), completed]]);
     await runAgentTurn({ ownerText: "Hi", context, provider });
-    expect(requests[0].prompt_cache_key).toBe("cafe-agent-v14-supplier-receiving");
+    expect(requests[0].prompt_cache_key).toBe("cafe-agent-v15-universal-execution");
     expect(String(requests[0].instructions)).toContain(STYLE_RULES);
     expect(String(requests[0].instructions)).toContain("replaceProposalId=null");
     expect(String(requests[0].instructions)).toContain("NEVER infer replacement authority");
     expect(String(requests[0].instructions)).toContain("call get_supervisor_permissions");
     expect(String(requests[0].instructions)).toContain("A genuinely uncertain result requires receipt-only reconciliation");
-    expect(agentPromptCacheKey()).toBe("cafe-agent-v14-supplier-receiving");
+    expect(agentPromptCacheKey()).toBe("cafe-agent-v15-universal-execution");
   });
 });
 
@@ -416,40 +416,40 @@ describe("Luna tool reasoning stays within the owner-approved aggregate output a
     usage:{input_tokens:40,output_tokens:n}}});
   const menu=(id:string)=>call("get_menu_items",'{"query":null,"limit":null}',id);
   const limits=(requests:Record<string,unknown>[])=>requests.map(r=>[r.tool_choice,r.max_output_tokens]);
-  it("allows 16384 then only the remaining 23800 work allocation, retaining final 1200",async()=>{
+  it("allows 16384 then only the remaining work allocation, retaining final 8192",async()=>{
     vi.stubEnv("SUPERVISOR_OPENAI_MODEL","gpt-6-luna");
     try{
-      const {requests,provider}=recording([[menu("a"),doneWith(16384)],[menu("b"),doneWith(7416)],[text("Summary."),doneWith(1200)]]);
+      const {requests,provider}=recording([[menu("a"),doneWith(16384)],[menu("b"),doneWith(8192)],[text("Summary."),doneWith(8192)]]);
       const r=await runAgentTurn({ownerText:"Read my menu.",context:{...context},provider});
-      expect(limits(requests)).toEqual([["auto",16384],["auto",7416],["none",1200]]);
-      expect(r.usage.outputTokens).toBe(25000);
+      expect(limits(requests)).toEqual([["auto",16384],["auto",8192],["none",8192]]);
+      expect(r.usage.outputTokens).toBe(32768);
       expect(r.usage.toolCalls).toBe(2);
       expect(r.endReason).toBe("budget");
     }finally{vi.unstubAllEnvs()}
   });
-  it("supplier reads retain the same 25000 aggregate limit",async()=>{
+  it("supplier reads retain the same 32768 aggregate limit",async()=>{
     vi.stubEnv("SUPERVISOR_OPENAI_MODEL","gpt-6-luna");
     try{
       const {requests,provider}=recording([[call("get_supplier_purchase_orders","{}","po"),doneWith(16384)],
-        [menu("b"),doneWith(7416)],[text("Summary."),doneWith(1200)]]);
+        [menu("b"),doneWith(8192)],[text("Summary."),doneWith(8192)]]);
       const ctx={...context,purchasing:{
         list:async()=>({orders:[],truncated:false,drafts:[],draftsTruncated:false,unresolvedApprovals:[],unresolvedApprovalsTruncated:false}),
         inspect:vi.fn(),propose:vi.fn()
       }} as AgentToolContext;
       const r=await runAgentTurn({ownerText:"Read my supplier orders.",context:ctx,provider});
       expect(r.tools).toContain("get_supplier_purchase_orders");
-      expect(limits(requests)).toEqual([["auto",16384],["auto",7416],["none",1200]]);
-      expect(r.usage.outputTokens).toBe(25000);
+      expect(limits(requests)).toEqual([["auto",16384],["auto",8192],["none",8192]]);
+      expect(r.usage.outputTokens).toBe(32768);
     }finally{vi.unstubAllEnvs()}
   });
   it("never exceeds a durable worker's remaining output",async()=>{
     vi.stubEnv("SUPERVISOR_OPENAI_MODEL","gpt-6-luna");
     try{
-      const {requests,provider}=recording([[menu("a"),doneWith(900)],[text("Summary."),doneWith(800)]]);
+      const {requests,provider}=recording([[menu("a"),doneWith(900)],[text("Summary."),doneWith(234)]]);
       const r=await withWorkerBudget({maxElapsedMs:60000,maxModelCalls:6,maxToolCalls:8,maxInputTokens:100000,maxOutputTokens:1700},
         ()=>runAgentTurn({ownerText:"Read the menu.",context:{...context},provider}));
-      expect(limits(requests)).toEqual([["auto",1200],["auto",800]]);
-      expect(r.usage.outputTokens).toBe(1700);
+      expect(limits(requests)).toEqual([["auto",1134],["auto",234]]);
+      expect(r.usage.outputTokens).toBe(1134);
     }finally{vi.unstubAllEnvs()}
   });
   it("keeps the durable reservation ceiling while interactive Luna has the expanded allowance",async()=>{
@@ -509,10 +509,10 @@ describe("Luna tool reasoning stays within the owner-approved aggregate output a
     vi.stubEnv("SUPERVISOR_OPENAI_MODEL","gpt-6-luna");
     try{
       const {requests,provider}=recording([[menu("a"),{type:"response.completed",response:{model:"gpt-6-luna"}}],
-        [menu("b"),doneWith(7416)],[text("Summary."),doneWith(1200)]]);
+        [menu("b"),doneWith(8192)],[text("Summary."),doneWith(8192)]]);
       const r=await runAgentTurn({ownerText:"Read the menu.",context:{...context},provider});
-      expect(limits(requests)).toEqual([["auto",16384],["auto",7416],["none",1200]]);
-      expect(r.usage.outputTokens).toBe(8616);
+      expect(limits(requests)).toEqual([["auto",16384],["auto",8192],["none",8192]]);
+      expect(r.usage.outputTokens).toBe(16384);
     }finally{vi.unstubAllEnvs()}
   });
   it("ordinary other models keep the prior 1200 cap even on recovery",async()=>{
@@ -663,4 +663,24 @@ describe("U1 matched recorded incident — checkpoint and presentation variation
       }else expect(checkpoint.beginProvider).not.toHaveBeenCalled();
     }
   });
+});
+
+describe("one Supervisor native discovery transport",()=>{
+ it("continues a hosted search using only canonical registered definitions and pairs the actual selected function",async()=>{
+   vi.stubEnv("SUPERVISOR_OPENAI_MODEL","gpt-6-luna");
+   try{
+     const discovery={type:"output_item.done",item:{type:"tool_search_call",execution:"server",call_id:null,status:"completed",arguments:{paths:["get_menu_items"]}}};
+     const loaded={type:"response.output_item.done",item:{type:"tool_search_output",execution:"server",call_id:null,status:"completed",tools:[{type:"function",name:"get_menu_items",description:"untrusted"}]}};
+     const {requests,provider}=recording([[{...discovery,type:"response.output_item.done"},loaded,call("get_menu_items",'{"query":null,"limit":null}',"native_menu"),completed],[text("Menu reviewed."),completed]]);
+     const result=await runAgentTurn({ownerText:"Read the menu.",context:{...context},provider});
+     expect(result.endReason).toBe("complete");
+     expect(result.tools).toContain("get_menu_items");
+     expect(requests[0].tools).toContainEqual({type:"tool_search"});
+     const second=JSON.stringify(requests[1].input);
+     expect(second).toContain("native_menu");
+     expect(second).toContain("function_call_output");
+     expect(second).not.toContain('"description":"untrusted"');
+     expect(result.usage.requests).toHaveLength(2);
+   }finally{vi.unstubAllEnvs()}
+ });
 });
