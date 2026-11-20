@@ -169,13 +169,101 @@ begin
     where e.attempt_id=p_attempt_id and e.business_id=p_business_id
       and e.owner_user_id=p_owner_user_id and e.thread_id=p_thread_id
       and e.status='attempted'
-      and (p_input_tokens is null or p_input_tokens<=e.reserved_input_upper)
+      and (e.source_type<>'durable_run' or p_input_tokens is null or p_input_tokens<=e.reserved_input_upper)
       and (p_output_tokens is null or p_output_tokens<=e.reserved_output_cap)
       and (e.reserved_output_cap<=1200 or e.model=p_model);
   if not found then
     raise exception 'system_usage_missing_or_already_completed' using errcode='P0001';
   end if;
 end $$;
+
+-- Redacted execution receipts augment the canonical usage ledgers. They are
+-- not additional billable attempts and never include prompts, tool results,
+-- credentials, or private business values. Old signatures remain available.
+alter table public.ai_usage_events add column execution_metrics jsonb;
+alter table public.supervisor_system_usage_events add column execution_metrics jsonb;
+
+create function public.record_supervisor_usage_increment(
+ p_business_id uuid,p_owner_user_id uuid,p_thread_id uuid,p_owner_message_id uuid,
+ p_model text,p_input_tokens integer,p_output_tokens integer,
+ p_model_call_count integer,p_tool_call_count integer,p_estimated_cost_micros bigint,
+ p_execution_metrics jsonb
+) returns void language plpgsql security invoker set search_path=public as $$
+begin
+ if coalesce(auth.role(),'')<>'service_role'
+   or jsonb_typeof(p_execution_metrics) is distinct from 'object'
+   or jsonb_typeof(p_execution_metrics->'requests') is distinct from 'array'
+   or jsonb_typeof(p_execution_metrics->'tools') is distinct from 'array'
+   or octet_length(p_execution_metrics::text)>24000
+ then raise exception 'execution_metrics_invalid' using errcode='42501'; end if;
+ if jsonb_array_length(p_execution_metrics->'requests')<>p_model_call_count
+   or jsonb_array_length(p_execution_metrics->'tools')>24
+ then raise exception 'execution_metrics_count_invalid' using errcode='22023'; end if;
+ perform public.record_supervisor_usage_increment(p_business_id,p_owner_user_id,p_thread_id,p_owner_message_id,
+   p_model,p_input_tokens,p_output_tokens,p_model_call_count,p_tool_call_count,p_estimated_cost_micros);
+ update public.ai_usage_events set execution_metrics=coalesce(execution_metrics,'[]'::jsonb)||jsonb_build_array(p_execution_metrics)
+ where business_id=p_business_id and owner_user_id=p_owner_user_id and thread_id=p_thread_id
+   and owner_message_id=p_owner_message_id and attempt_day=(statement_timestamp() at time zone 'UTC')::date;
+ if not found then raise exception 'execution_metrics_scope_mismatch' using errcode='42501'; end if;
+end $$;
+revoke all on function public.record_supervisor_usage_increment(uuid,uuid,uuid,uuid,text,integer,integer,integer,integer,bigint,jsonb) from public,anon,authenticated;
+grant execute on function public.record_supervisor_usage_increment(uuid,uuid,uuid,uuid,text,integer,integer,integer,integer,bigint,jsonb) to service_role;
+
+create function public.supervisor_record_durable_usage_increment(
+ p_business_id uuid,p_owner_user_id uuid,p_thread_id uuid,p_owner_message_id uuid,
+ p_run_id uuid,p_attempt_ids uuid[],p_model text,p_input_tokens integer,p_output_tokens integer,
+ p_model_call_count integer,p_tool_call_count integer,p_estimated_cost_micros bigint,p_execution_metrics jsonb
+) returns void language plpgsql security invoker set search_path=public as $$
+begin
+ if coalesce(auth.role(),'')<>'service_role'
+   or jsonb_typeof(p_execution_metrics) is distinct from 'object'
+   or jsonb_typeof(p_execution_metrics->'requests') is distinct from 'array'
+   or jsonb_typeof(p_execution_metrics->'tools') is distinct from 'array'
+   or octet_length(p_execution_metrics::text)>24000
+ then raise exception 'execution_metrics_invalid' using errcode='42501'; end if;
+ if jsonb_array_length(p_execution_metrics->'requests')<>p_model_call_count
+   or jsonb_array_length(p_execution_metrics->'tools')>24
+ then raise exception 'execution_metrics_count_invalid' using errcode='22023'; end if;
+ perform public.supervisor_record_durable_usage_increment(p_business_id,p_owner_user_id,p_thread_id,p_owner_message_id,
+   p_run_id,p_attempt_ids,p_model,p_input_tokens,p_output_tokens,p_model_call_count,p_tool_call_count,p_estimated_cost_micros);
+ update public.ai_usage_events set execution_metrics=coalesce(execution_metrics,'[]'::jsonb)||jsonb_build_array(p_execution_metrics)
+ where business_id=p_business_id and owner_user_id=p_owner_user_id and thread_id=p_thread_id
+   and owner_message_id=p_owner_message_id and attempt_day=(statement_timestamp() at time zone 'UTC')::date;
+ if not found then raise exception 'execution_metrics_scope_mismatch' using errcode='42501'; end if;
+ update public.supervisor_system_usage_events e set execution_metrics=coalesce(e.execution_metrics,p_execution_metrics->'requests'->((a.ordinality-1)::integer))
+ from unnest(p_attempt_ids) with ordinality a(id,ordinality)
+ where e.attempt_id=a.id and e.business_id=p_business_id and e.owner_user_id=p_owner_user_id
+   and e.thread_id=p_thread_id and e.source_type='durable_run' and e.source_id=p_run_id::text
+   and e.owner_message_id=p_owner_message_id;
+end $$;
+revoke all on function public.supervisor_record_durable_usage_increment(uuid,uuid,uuid,uuid,uuid,uuid[],text,integer,integer,integer,integer,bigint,jsonb) from public,anon,authenticated;
+grant execute on function public.supervisor_record_durable_usage_increment(uuid,uuid,uuid,uuid,uuid,uuid[],text,integer,integer,integer,integer,bigint,jsonb) to service_role;
+
+create function public.supervisor_complete_investigation_model_call(
+ p_attempt_id uuid,p_business_id uuid,p_owner_user_id uuid,p_thread_id uuid,
+ p_model text,p_input_tokens integer,p_output_tokens integer,p_estimated_cost_micros bigint,
+ p_execution_metrics jsonb
+) returns void language plpgsql security invoker set search_path=public as $$
+begin
+ if coalesce(auth.role(),'')<>'service_role'
+   or jsonb_typeof(p_execution_metrics) is distinct from 'object'
+   or octet_length(p_execution_metrics::text)>4096
+   or coalesce(p_execution_metrics->>'outcome','') not in ('completed','incomplete','failed')
+ then raise exception 'execution_metrics_invalid' using errcode='42501'; end if;
+ if p_execution_metrics->>'outcome'='completed' then
+   perform public.supervisor_complete_investigation_model_call(p_attempt_id,p_business_id,p_owner_user_id,p_thread_id,
+     p_model,p_input_tokens,p_output_tokens,p_estimated_cost_micros);
+ end if;
+ -- Incomplete or failed responses retain their attempted status and reserved
+ -- budget. The measured diagnostic receipt is separate from settlement.
+ update public.supervisor_system_usage_events set execution_metrics=p_execution_metrics
+ where attempt_id=p_attempt_id and business_id=p_business_id and owner_user_id=p_owner_user_id
+   and thread_id=p_thread_id and execution_metrics is null
+   and status=case when p_execution_metrics->>'outcome'='completed' then 'completed' else 'attempted' end;
+ if not found then raise exception 'execution_metrics_scope_or_replay' using errcode='42501'; end if;
+end $$;
+revoke all on function public.supervisor_complete_investigation_model_call(uuid,uuid,uuid,uuid,text,integer,integer,bigint,jsonb) from public,anon,authenticated;
+grant execute on function public.supervisor_complete_investigation_model_call(uuid,uuid,uuid,uuid,text,integer,integer,bigint,jsonb) to service_role;
 
 reset lock_timeout;
 reset statement_timeout;
