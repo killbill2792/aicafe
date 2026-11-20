@@ -85,18 +85,23 @@ describe("PR F shared attention and chat entry",()=>{
   expect(render(true)).toContain('aria-expanded="true"');
   expect(render(true)).toContain('data-attention-id="a2"');
  });
- it("keeps Events visible when an existing conversation collapses the board",()=>{
+ it("keeps Events reachable without occupying a collapsed active conversation",()=>{
   const comingUp=createElement("div",{"data-testid":"events-shortcuts"},"Past · Today · Upcoming");
-  const render=(expanded:boolean)=>renderToStaticMarkup(createElement(ChatStart,{
-    data,copy,hasMessages:true,expanded,onToggle:()=>{},onSuggestion:()=>{},
+  const render=(expanded:boolean,hasMessages=true)=>renderToStaticMarkup(createElement(ChatStart,{
+    data,copy,hasMessages,expanded,onToggle:()=>{},onSuggestion:()=>{},
     suggestionsDisabled:false,comingUp,
   }));
-  for(const expanded of [false,true]){
-    const html=render(expanded);
+  const collapsed=render(false);
+  expect(collapsed).toContain('aria-expanded="false"');
+  expect(collapsed).toContain("Key numbers");
+  expect(collapsed).not.toContain("Past · Today · Upcoming");
+  expect(collapsed).not.toContain('data-testid="events-shortcuts"');
+  expect(collapsed).not.toContain("Today: Sales $500");
+  expect(collapsed).not.toContain('data-attention-id="a2"');
+  for(const html of [render(true),render(false,false)]){
     expect(html).toContain("Past · Today · Upcoming");
     expect(html.match(/data-testid="events-shortcuts"/g)).toHaveLength(1);
   }
-  expect(render(false)).not.toContain('data-attention-id="a2"');
  });
  it("removes duplicate Home list and experiment panel, guards rapid sends",()=>{
   const home=readFileSync("app/[locale]/page.tsx","utf8");
