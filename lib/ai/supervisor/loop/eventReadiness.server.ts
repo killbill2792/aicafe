@@ -1,5 +1,6 @@
 import "server-only";
 import {randomUUID} from "node:crypto";
+import type {SupabaseClient} from "@supabase/supabase-js";
 import {simulationOwnerReader} from "./simulationOwner.server";
 import {z} from "zod";
 import {formatInTimeZone} from "date-fns-tz";
@@ -102,21 +103,48 @@ export function readOnlyEventObservation(p:LoopProposal,current?:ReadonlyMap<str
       if(event&&today&&!timezone)throw new Error("event_observation_timezone_required");
       if(event&&today){
         for(let day=start;day<=end;day=utcDateOffset(day,1)){
-          if(day>=today&&(event.status!=="found"||day<event.startDate||day>event.endDate))inactiveDates.push(day);
+          if(eventDayActivity([event],day,timezone!)==="inactive")inactiveDates.push(day);
         }
       }
       const closeEarly=Boolean(event&&today&&timezone&&event.lastVerifiedAt&&end>=today&&
         (eventStatusAtBusinessDay(event,today,timezone)!=="found"||event.endDate<today));
-      if(duration!==days||start!==effect.startDate||inactiveDates.length){
+      if(duration!==days||start!==effect.startDate||inactiveDates.length||closeEarly){
         const projected=eventReadinessEffect.parse({...effect,startDate:start,endDate:end,observationWindow:{inactiveDates,closeEarly,...(closeEarly&&today?{through:utcDateOffset(today,-1)}:{})}});
         return {...p,status:"committed",monitoringStartDate:start,monitorSpec:{...p.monitorSpec,durationDays:duration},
           canonicalEffectPayload:projected,effectHash:effectHash(projected)};
       }
     }
   }
+  if(current&&today&&timezone){
+    const inactiveDates:string[]=[];
+    for(let day=effect.startDate;day<=effect.endDate;day=utcDateOffset(day,1))
+      if(eventDayActivity(effect.eventIds.map(id=>current.get(id)??null),day,timezone)==="inactive")inactiveDates.push(day);
+    if(inactiveDates.length){
+      const projected=eventReadinessEffect.parse({...effect,observationWindow:{inactiveDates,closeEarly:false}});
+      return {...p,status:"committed",monitoringStartDate:effect.startDate,
+        canonicalEffectPayload:projected,effectHash:effectHash(projected)};
+    }
+  }
   return {...p,status:"committed",monitoringStartDate:effect.startDate};
 }
 
+
+/** Fill missing selected IDs through the historical exact same-tenant reader.
+ * An absent identity is unknown, never a confirmed active occurrence. */
+export async function eventObservationFacts(db:SupabaseClient,businessId:string,
+ proposals:readonly LoopProposal[],date:string,seed:readonly CafeEvent[]=[]){
+ const current=new Map(seed.map(e=>[e.id,e]));
+ const ids=[...new Set(proposals.flatMap(p=>{
+   const parsed=eventReadinessEffect.safeParse(p.canonicalEffectPayload);
+   return parsed.success?parsed.data.eventIds:[];
+ }))].filter(id=>!current.has(id));
+ for(let i=0;i<ids.length;i+=8){
+   const events=await Promise.all(ids.slice(i,i+8).map(id=>
+     readExactCafeEvent(db,businessId,id,date,date,{historical:true})));
+   for(const event of events)if(event)current.set(event.id,event);
+ }
+ return current;
+}
 
 /** One canonical monitored plan per event-day. A committed owner choice wins over
  * an unapproved revised draft; reruns never generate parallel report threads. */
@@ -140,6 +168,11 @@ export function selectEventObservations(proposals:readonly LoopProposal[],
     const start=observation.monitoringStartDate!;
     if(businessDate){
       if(businessDate<start||businessDate>utcDateOffset(start,observation.monitorSpec.durationDays-1))continue;
+      if(current){
+        if(!timezone)throw new Error("event_observation_timezone_required");
+        const effect=eventReadinessEffect.parse(observation.canonicalEffectPayload);
+        if(eventDayActivity(effect.eventIds.map(id=>current.get(id)??null),businessDate,timezone)!=="active")continue;
+      }
       // Sales are café-day facts, not per-event sales. One primary window owns
       // the date even if multiple events and approvals overlap.
       const key=observation.businessId+"|"+businessDate;
@@ -159,10 +192,12 @@ export async function observedEventProposalDates(
   // An extended occurrence can have 366 samples; two IDs stay below the provider cap.
   for(let i=0;i<unique.length;i+=2){
     const {data,error}=await db.from("supervisor_monitor_samples")
-      .select("proposal_id,business_date").eq("business_id",businessId)
+      .select("proposal_id,business_date,observation").eq("business_id",businessId)
       .in("proposal_id",unique.slice(i,i+2)).limit(1000);
     if(error||!data||data.length>=1000)throw new Error("Event monitoring history unavailable");
     for(const row of data){
+      // Status-only observations are not sales ownership receipts.
+      if((row.observation as {coverage?:string}|null)?.coverage==="event_inactive")continue;
       const id=String(row.proposal_id);found.add(id);
       if(typeof row.business_date!=="string")continue;
       const dates=byDate.get(row.business_date)??new Set<string>();

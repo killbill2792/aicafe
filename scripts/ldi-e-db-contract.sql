@@ -279,6 +279,20 @@ BEGIN
  RAISE EXCEPTION 'overlapping event sample was incorrectly allowed';
  EXCEPTION WHEN check_violation THEN NULL; END;
 END $check$;
+-- An inactive status-only receipt does not reserve the café's sales day.
+INSERT INTO public.supervisor_monitor_samples(business_id,proposal_id,business_date,observation,evidence_source)
+ VALUES(:'business_a',:'plan_one','2026-11-11','{"coverage":"event_inactive","eventActivity":"inactive"}','cafe_events');
+SELECT public.ldi_claim_monitor(:'business_a',:'owner_a',:'plan_two','2026-11-11',:'token_two',false) AS active_after_inactive \gset
+SELECT set_config('test.ldi.active_after_inactive',:'active_after_inactive',true);
+INSERT INTO public.supervisor_monitor_samples(business_id,proposal_id,business_date,observation,evidence_source)
+ VALUES(:'business_a',:'plan_two','2026-11-11','{"coverage":"actual","actualCents":20000}','daily_rollups');
+DO $check$
+BEGIN
+ IF current_setting('test.ldi.active_after_inactive')<>'t' OR
+ (SELECT count(*) FROM public.supervisor_monitor_samples WHERE business_id=current_setting('test.ldi.business_a')::uuid
+ AND business_date='2026-11-11' AND observation->>'coverage'='actual')<>1
+ THEN RAISE EXCEPTION 'inactive event blocked active cafe-day sales'; END IF;
+END $check$;
 -- Two claims for one exact preparation or change revision: only the first
 -- may run, stale release cannot unlock it, and completed work stays closed.
 SELECT public.ldi_claim_event_work(:'business_a',:'owner_a',

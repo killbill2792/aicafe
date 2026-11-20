@@ -262,9 +262,29 @@ begin
  else 'event-observation:'||p_day::text end;
  perform pg_advisory_xact_lock(hashtextextended('ldi-monitor:'||p_business_id::text||':'||task_key,0));
  if not p_closure then
+   perform pg_advisory_xact_lock(hashtextextended('ldi-sample:'||p_business_id::text||':'||p_day::text,0));
+   -- Retire an obsolete provisional reading only when every occurrence was
+   -- verified inactive by the requested local date. Preserve certified history.
+   update public.supervisor_monitor_samples s
+   set observation=jsonb_build_object('coverage','event_inactive','eventActivity','inactive'),
+       evidence_source='cafe_events'
+   from public.supervisor_proposals p, public.businesses b
+   where s.business_id=p_business_id and s.business_date=p_day
+     and s.proposal_id<>p_proposal_id and p.id=s.proposal_id and p.business_id=s.business_id
+     and b.id=s.business_id and b.timezone is not null
+     and p.capability_id='alex.event_readiness.v1'
+     and s.observation->>'coverage'='provisional'
+     and jsonb_array_length(p.canonical_effect_payload->'eventIds')>0
+     and not exists(
+       select 1 from jsonb_array_elements_text(p.canonical_effect_payload->'eventIds') ids(id)
+       left join public.cafe_events ce on ce.business_id=s.business_id and ce.id::text=ids.id
+       where ce.id is null or ce.last_verified_at is null
+        or (ce.last_verified_at at time zone b.timezone)::date>p_day
+        or (ce.status='found' and p_day between ce.start_date and ce.end_date));
    select s.proposal_id into sampled from public.supervisor_monitor_samples s
    join public.supervisor_proposals p on p.business_id=s.business_id and p.id=s.proposal_id
    where s.business_id=p_business_id and s.business_date=p_day and p.capability_id='alex.event_readiness.v1'
+   and s.observation->>'coverage' is distinct from 'event_inactive'
    order by s.recorded_at asc,s.id asc limit 1;
    if sampled is not null and sampled<>p_proposal_id then return false; end if;
  end if;
@@ -298,11 +318,14 @@ language plpgsql security invoker set search_path=public as $$
 begin
  if not exists(select 1 from public.supervisor_proposals p where p.business_id=new.business_id
  and p.id=new.proposal_id and p.capability_id='alex.event_readiness.v1') then return new; end if;
+ -- Inactive status receipts carry no sales and cannot monopolize the date.
+ if new.observation->>'coverage'='event_inactive' then return new; end if;
  perform pg_advisory_xact_lock(hashtextextended('ldi-sample:'||new.business_id::text||':'||new.business_date::text,0));
  if exists(select 1 from public.supervisor_monitor_samples s join public.supervisor_proposals p
  on p.business_id=s.business_id and p.id=s.proposal_id where s.business_id=new.business_id
  and s.business_date=new.business_date and s.proposal_id<>new.proposal_id
- and p.capability_id='alex.event_readiness.v1') then
+ and p.capability_id='alex.event_readiness.v1'
+ and s.observation->>'coverage' is distinct from 'event_inactive') then
  raise exception 'event_business_day_already_observed' using errcode='23514'; end if;
  return new;
 end $$;

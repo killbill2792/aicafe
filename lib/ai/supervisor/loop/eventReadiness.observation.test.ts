@@ -2,6 +2,7 @@ import {describe,expect,it,vi,beforeEach} from "vitest";
 import {effectHash,type LoopProposal} from "./engine";
 import {readOnlyEventObservation,selectEventObservations,observedEventProposalIds,
   eventToastEvidence,eventReadinessCapabilityId} from "./eventReadiness.server";
+import type {CafeEvent} from "@/lib/data/cafeEvents.server";
 import {readItemSales,readDiscounts,readLaborEntries,readMenu}
   from "@/lib/data/canonical/reads.server";
 
@@ -74,6 +75,34 @@ describe("saved event observation is never owner approval",()=>{
     expect(selectEventObservations([second,span],new Set(),"2026-11-01").map(x=>x.id)).toEqual(["span"]);
     expect(selectEventObservations([second,span],new Set(["span"]),"2026-11-01",new Set(["second"])).map(x=>x.id)).toEqual(["second"]);
     expect(selectEventObservations([second,span],new Set(),"2026-11-02").map(x=>x.id)).toEqual(["span"]);
+  });
+  it("elects an active occurrence instead of a sampled cancelled, shortened or moved one",()=>{
+    const day="2026-11-01",oldId=effect.eventIds[0],newId="22222222-2222-4222-8222-222222222223";
+    const fact:CafeEvent={...effect.facts[0],startTime:null,endTime:null,venueAddress:null,
+      status:"found",foundAt:"",lastCheckedAt:"",endDate:"2026-11-02"};
+    const spanEffect={...effect,endDate:"2026-11-02",facts:[{...effect.facts[0],endDate:"2026-11-02"}]};
+    const span={...proposal("draft","span"),canonicalEffectPayload:spanEffect,effectHash:effectHash(spanEffect),
+      monitorSpec:{durationDays:3,metricScope:"event"}};
+    const nextEffect={...effect,startDate:day,endDate:day,eventIds:[newId],
+      facts:[{...effect.facts[0],id:newId,startDate:day,endDate:day}]};
+    const next={...proposal("draft","next"),canonicalEffectPayload:nextEffect,effectHash:effectHash(nextEffect)};
+    const active={...fact,id:newId,startDate:day,endDate:day};
+    for(const changed of [
+      {...fact,status:"cancelled" as const},
+      {...fact,endDate:date},
+      {...fact,startDate:"2026-11-04",endDate:"2026-11-05"},
+    ]){
+      const current=new Map([[oldId,changed],[newId,active]]);
+      expect(selectEventObservations([span,next],new Set(["span"]),day,new Set(["span"]),current,day,"America/Los_Angeles").map(p=>p.id)).toEqual(["next"]);
+    }
+    expect(selectEventObservations([span,next],new Set(["span"]),day,new Set(),new Map([[newId,active]]),day,"America/Los_Angeles").map(p=>p.id)).toEqual(["next"]);
+  });
+  it("does not treat an inactive status sample as sales ownership",async()=>{
+    const db={from(){const q={select:()=>q,eq:()=>q,in:()=>q,limit:async()=>({data:[
+      {proposal_id:"inactive",business_date:date,observation:{coverage:"event_inactive"}},
+      {proposal_id:"active",business_date:date,observation:{coverage:"actual"}},
+    ],error:null})};return q;}};
+    expect(await observedEventProposalIds(db as never,proposal().businessId,["inactive","active"])).toEqual(new Set(["active"]));
   });
   it("does not multiply a day monitor when cron receives duplicate saved drafts",()=>{
     expect(selectEventObservations([proposal("draft","older"),proposal("draft","newer")]))

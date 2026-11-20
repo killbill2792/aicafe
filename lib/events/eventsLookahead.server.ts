@@ -23,7 +23,7 @@ import {stableMessageId,SupabaseLoopRepository} from "@/lib/ai/supervisor/loop/s
 import {notifyOwner} from "@/lib/operating/notifyOwner.server";
 import {effectHash,proposeLoop,monitorLoop,type LoopProposal,type OwnerLoopScope} from "@/lib/ai/supervisor/loop/engine";
 import {supervisorLoopRegistry} from "@/lib/ai/supervisor/loop/priceExperiment.server";
-import {authorizedScheduledEventScope,eventPlanFacts,selectedEventPlanFacts,eventReadinessCapabilityId,eventReadinessEffect,selectEventObservations,observedEventProposalDates,withEventObservationClaim,readOnlyEventObservation}
+import {authorizedScheduledEventScope,eventPlanFacts,selectedEventPlanFacts,eventReadinessCapabilityId,eventReadinessEffect,selectEventObservations,observedEventProposalDates,withEventObservationClaim,readOnlyEventObservation,eventObservationFacts,eventDayActivity}
   from "@/lib/ai/supervisor/loop/eventReadiness.server";
 import {runAgentTurn} from "@/lib/ai/agent/loop.server";
 import {searchWeb} from "@/lib/ai/agent/webSearch.server";
@@ -562,7 +562,7 @@ export async function reportSavedEventDays(db:Db,businessId:string,ownerId:strin
   let checked=0,reported=0,failed=0;
   const repo=new SupabaseLoopRepository();
   const observed=await observedEventProposalDates(db,businessId,proposals.map(p=>p.id));
-  const current=currentEvents?new Map(currentEvents.map(e=>[e.id,e])):undefined;
+  const current=currentEvents?await eventObservationFacts(db,businessId,proposals,today,currentEvents):undefined;
   const candidateDates=new Set<string>();
   const projected=proposals.flatMap(p=>{const observation=readOnlyEventObservation(p,current,today,timezone);return observation?[observation]:[]});
   for(const proposal of projected){
@@ -578,7 +578,13 @@ export async function reportSavedEventDays(db:Db,businessId:string,ownerId:strin
   }
   for(const p of projected){
     const effect=eventReadinessEffect.parse(p.canonicalEffectPayload);
-    if(effect.observationWindow?.closeEarly&&!eligibleById.has(p.id))eligibleById.set(p.id,{proposal:p,days:[]});
+    const end=addDays(p.monitoringStartDate!,p.monitorSpec.durationDays-1);
+    const closed=closedEventObservationDays(p.monitoringStartDate!,p.monitorSpec.durationDays,today);
+    // Inactive windows still owe a historical report, not today's sales.
+    const inactiveEnd=current&&timezone&&end<today&&closed.length>0&&
+      eventDayActivity(effect.eventIds.map(id=>current.get(id)??null),end,timezone)!=="active";
+    if((effect.observationWindow?.closeEarly||inactiveEnd)&&!eligibleById.has(p.id))
+      eligibleById.set(p.id,{proposal:p,days:[]});
   }
   const groups=[...eligibleById.values()];
   // Rotate bounded work each café-local day; newer proposals cannot starve older ones.

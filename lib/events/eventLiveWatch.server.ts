@@ -1,7 +1,7 @@
 import "server-only";
 import {formatInTimeZone} from "date-fns-tz";
 import {createAdminSupabaseClient} from "@/lib/supabase/admin";
-import {eventReadinessCapabilityId,authorizedScheduledEventScope,selectEventObservations,observedEventProposalDates,withEventObservationClaim}
+import {eventReadinessCapabilityId,authorizedScheduledEventScope,selectEventObservations,observedEventProposalDates,withEventObservationClaim,eventObservationFacts}
   from "@/lib/ai/supervisor/loop/eventReadiness.server";
 import {monitorLoop,utcDateOffset} from "@/lib/ai/supervisor/loop/engine";
 import {supervisorLoopRegistry} from "@/lib/ai/supervisor/loop/priceExperiment.server";
@@ -51,7 +51,8 @@ export async function watchLiveEvents(businessId:string,businessDate:string,
    }
  }
  const observed=await observedEventProposalDates(db,businessId,eligible.map(p=>p.id));
- const current=new Map((await readCanonicalCafeEvents(db,businessId,today,today)).map(e=>[e.id,e]));
+ const current=await eventObservationFacts(db,businessId,eligible,today,
+   await readCanonicalCafeEvents(db,businessId,today,today));
  for(const proposal of selectEventObservations(eligible,observed.ids,today,observed.byDate.get(today),current,today,business.timezone)){
    const start=proposal.monitoringStartDate!;
    const end=utcDateOffset(start,proposal.monitorSpec.durationDays-1);
