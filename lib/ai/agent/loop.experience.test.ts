@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import { agentInstructions, agentPromptCacheKey, runAgentTurn, task14bInlineContinuation, type AgentProvider, type OwnerFollowUp } from "./loop.server";
 import { STYLE_RULES } from "./style";
+import {agentReplyPayload} from "./persist.server";
 import { withWorkerBudget,withDurableProviderTurn } from "@/lib/ai/supervisor/runs/usage.server";
 import { meteredInvestigationProvider } from "@/lib/ai/supervisor/routines/investigationUsage.server";
 import { memoryToolDefinition } from "./tools/memory";
@@ -207,13 +208,13 @@ describe("answer style ()", () => {
   it("adds the style rules with a new cache key when on", async () => {
     const { requests, provider } = recording([[text("Hi."), completed]]);
     await runAgentTurn({ ownerText: "Hi", context, provider });
-    expect(requests[0].prompt_cache_key).toBe("cafe-agent-v15-universal-execution");
+    expect(requests[0].prompt_cache_key).toBe("cafe-agent-v16-universal-execution");
     expect(String(requests[0].instructions)).toContain(STYLE_RULES);
     expect(String(requests[0].instructions)).toContain("replaceProposalId=null");
     expect(String(requests[0].instructions)).toContain("NEVER infer replacement authority");
     expect(String(requests[0].instructions)).toContain("call get_supervisor_permissions");
     expect(String(requests[0].instructions)).toContain("A genuinely uncertain result requires receipt-only reconciliation");
-    expect(agentPromptCacheKey()).toBe("cafe-agent-v15-universal-execution");
+    expect(agentPromptCacheKey()).toBe("cafe-agent-v16-universal-execution");
   });
 });
 
@@ -716,6 +717,9 @@ describe("U2 no-provider end-to-end execution receipts",()=>{
    expect(result.endReason).toBe("provider_error");
    expect(result.text).toBe(answer);
    expect(result.text.length).toBeGreaterThan(1200);
+   const payload=agentReplyPayload(result);
+   expect(payload.reply.blocks.flatMap(b=>b.type==="text"?[b.text]:[]).join("")).toBe(answer);
+   expect(payload.reply.status).toBe("partial");
    expect(reset).toHaveBeenCalledWith("Discard this unfinished claim.".length);
    expect(requests.map(p=>p.tool_choice)).toEqual(["auto","auto","none"]);
    expect(requests[2].max_output_tokens).toBe(8192);
