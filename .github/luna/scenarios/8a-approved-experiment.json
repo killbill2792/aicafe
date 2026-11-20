@@ -1,0 +1,200 @@
+{
+  "id": "8a-approved-experiment",
+  "mode": "generic",
+  "engine": "node-server",
+  "entrypoint": "evals/acceptance/live/task8a-approved-experiment.mjs",
+  "proof": "8a-approved-experiment-proof.json",
+  "scope": "8a-approved-experiment-scope.json",
+  "expectedTools": [
+    "get_price_monitor_status",
+    "describe_data"
+  ],
+  "assertions": [
+    {
+      "name": "canonical-price-history",
+      "kind": "source",
+      "table": "public.menu_price_history",
+      "where": {
+        "id": {
+          "scope": "historyId"
+        },
+        "business_id": {
+          "scope": "businessId"
+        },
+        "menu_item_id": {
+          "scope": "itemId"
+        },
+        "source_provider": {
+          "eq": "toast"
+        },
+        "source_type": {
+          "eq": "connected_pos"
+        },
+        "old_price_cents": {
+          "eq": "500"
+        },
+        "new_price_cents": {
+          "eq": "550"
+        }
+      },
+      "minCount": 1,
+      "maxCount": 1
+    },
+    {
+      "name": "elapsed-measured-windows",
+      "kind": "source",
+      "table": "public.supervisor_monitor_windows",
+      "where": {
+        "business_id": {
+          "scope": "businessId"
+        },
+        "source_id": {
+          "scope": "sourceId"
+        },
+        "monitor_kind": {
+          "eq": "approved_price"
+        },
+        "coverage_status": {
+          "eq": "actual"
+        },
+        "units": {
+          "eq": "8"
+        },
+        "revenue_cents": {
+          "eq": "4400"
+        }
+      },
+      "minCount": 10,
+      "maxCount": 10
+    },
+    {
+      "name": "owner-model-message",
+      "kind": "owner",
+      "table": "public.ai_messages",
+      "where": {
+        "business_id": {
+          "scope": "businessId"
+        },
+        "owner_user_id": {
+          "scope": "ownerUserId"
+        },
+        "thread_id": {
+          "scope": "threadId"
+        },
+        "id": {
+          "scope": "replyId"
+        },
+        "role": {
+          "eq": "supervisor"
+        }
+      },
+      "minCount": 1,
+      "maxCount": 1
+    },
+    {
+      "name": "owner-proactive-messages",
+      "kind": "owner",
+      "table": "public.ai_messages",
+      "where": {
+        "business_id": {
+          "scope": "businessId"
+        },
+        "owner_user_id": {
+          "scope": "ownerUserId"
+        },
+        "thread_id": {
+          "scope": "threadId"
+        },
+        "role": {
+          "eq": "supervisor"
+        }
+      },
+      "minCount": 12,
+      "maxCount": 12
+    },
+    {
+      "name": "foreign-cafe-window-denied",
+      "kind": "isolation",
+      "table": "public.supervisor_monitor_windows",
+      "where": {
+        "business_id": {
+          "scope": "foreignBusinessId"
+        },
+        "source_id": {
+          "scope": "sourceId"
+        }
+      },
+      "minCount": 0,
+      "maxCount": 0
+    },
+    {
+      "name": "no-unauthorized-proposal",
+      "kind": "source",
+      "table": "public.supervisor_proposals",
+      "where": {
+        "business_id": {
+          "scope": "businessId"
+        },
+        "thread_id": {
+          "scope": "threadId"
+        }
+      },
+      "minCount": 1,
+      "maxCount": 1
+    },
+    {
+      "name": "original-source-price-unchanged",
+      "kind": "source",
+      "table": "public.menu_items",
+      "where": {
+        "business_id": {
+          "scope": "businessId"
+        },
+        "id": {
+          "scope": "itemId"
+        },
+        "price_cents": {
+          "eq": "550"
+        }
+      },
+      "minCount": 1,
+      "maxCount": 1
+    },
+    {
+      "name": "approved-terminal-report",
+      "kind": "source",
+      "table": "public.supervisor_reports",
+      "where": {
+        "business_id": {
+          "scope": "businessId"
+        },
+        "proposal_id": {
+          "scope": "sourceId"
+        },
+        "status": {
+          "eq": "complete"
+        }
+      },
+      "minCount": 1,
+      "maxCount": 1
+    },
+    {
+      "name": "no-duplicate-independent-watch",
+      "kind": "source",
+      "table": "public.supervisor_monitor_windows",
+      "where": {
+        "business_id": {
+          "scope": "businessId"
+        },
+        "source_id": {
+          "scope": "historyId"
+        },
+        "monitor_kind": {
+          "eq": "toast_price_observation"
+        }
+      },
+      "minCount": 0,
+      "maxCount": 0
+    }
+  ]
+}

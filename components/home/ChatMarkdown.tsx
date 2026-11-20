@@ -229,6 +229,14 @@ function inlineMarkdown(
 }
 
 
+/** ATX headings are presentation only: retain original UTF-16 offsets. */
+function headingMarker(line:SourceLine){
+ const match=/^([ ]{0,3}#{1,6})[ \t]+(\S.*)$/u.exec(line.text);
+ if(!match)return null;
+ const content=match[2].replace(/[ \t]+#+[ \t]*$/u,"").trimEnd();
+ if(!content)return null;
+ return {level:Math.min(6,match[1].trim().length+1),content,start:line.start+match[0].length-match[2].length};
+}
 type TableCell={text:string;start:number};
 function tableCells(line:SourceLine):TableCell[]{
  const text=line.text;const found:TableCell[]=[];let from=0,code=false,escape=false;
@@ -309,11 +317,24 @@ export function ChatMarkdown({text,unverified=[],label,labels,locale="en",showLe
       }
     }
 
+    const heading=headingMarker(lines[index]);
+    if(heading){
+      const children=inlineMarkdown(heading.content,heading.start,spans,copy,badged,locale);
+      const cls="mt-4 mb-1 font-semibold leading-snug text-balance break-words text-ink";
+      if(heading.level===2)blocks.push(<h2 key={index} className={cls+" text-xl"}>{children}</h2>);
+      else if(heading.level===3)blocks.push(<h3 key={index} className={cls+" text-[19px]"}>{children}</h3>);
+      else if(heading.level===4)blocks.push(<h4 key={index} className={cls+" text-[17px]"}>{children}</h4>);
+      else if(heading.level===5)blocks.push(<h5 key={index} className={cls+" text-[17px]"}>{children}</h5>);
+      else blocks.push(<h6 key={index} className={cls+" text-[17px]"}>{children}</h6>);
+      index++;
+      continue;
+    }
+
     const table=tableHeader(lines,index);
     if(table){
       const firstLine=index; index+=2;
       const rows:TableCell[][]=[];
-      while(index<lines.length&&lines[index].text.trim()&&!tableHeader(lines,index)){
+      while(index<lines.length&&lines[index].text.trim()&&!headingMarker(lines[index])&&!listMarker(lines[index])&&!tableHeader(lines,index)){
         if(!lines[index].text.includes("|")&&table.head.length>1)break;
         const cells=tableCells(lines[index]);
         rows.push(Array.from({length:table.head.length},(_,i)=>cells[i]??{text:"",start:lines[index].start+lines[index].text.length}));
@@ -323,6 +344,7 @@ export function ChatMarkdown({text,unverified=[],label,labels,locale="en",showLe
       blocks.push(<div key={firstLine} role="region" aria-label="Response table" tabIndex={0}
         className="max-w-full overflow-x-auto rounded-lg border border-line focus-visible:outline focus-visible:outline-2 focus-visible:outline-ink">
         <table dir={locale==="ar"?"rtl":"auto"} className="w-full min-w-max border-collapse text-[17px]">
+         <caption className="sr-only">Response table</caption>
          <thead><tr>{table.head.map((cell,i)=><th key={i} scope="col" className={`border-b border-line bg-surface2 px-3 py-2 font-semibold ${alignment(i)}`}>{inlineMarkdown(cell.text,cell.start,spans,copy,badged,locale)}</th>)}</tr></thead>
          <tbody>{rows.map((cells,j)=><tr key={j}>{cells.map((cell,i)=><td key={i} className={`border-b border-line px-3 py-2 ${alignment(i)}`}>{inlineMarkdown(cell.text,cell.start,spans,copy,badged,locale)}</td>)}</tr>)}</tbody>
         </table>
@@ -361,7 +383,7 @@ export function ChatMarkdown({text,unverified=[],label,labels,locale="en",showLe
     }
     const start = index;
     const rows: ReactNode[] = [];
-    while (index < lines.length && lines[index].text.trim() && !listMarker(lines[index]) && !tableHeader(lines,index)) {
+    while (index < lines.length && lines[index].text.trim() && !headingMarker(lines[index]) && !listMarker(lines[index]) && !tableHeader(lines,index)) {
       if (rows.length) rows.push("\n");
       const line = lines[index];
       rows.push(...inlineMarkdown(line.text, line.start, spans, copy, badged,locale));
@@ -371,7 +393,7 @@ export function ChatMarkdown({text,unverified=[],label,labels,locale="en",showLe
     else blocks.push(<p key={start} className="whitespace-pre-line">{rows}</p>);
   }
   const sources=spans.map(s=>s.source??"unchecked");
-  return <div className="space-y-2 break-words text-[17px] leading-relaxed text-ink">
+  return <div data-testid="supervisor-answer-prose" className="space-y-2 break-words text-[17px] leading-relaxed text-ink">
     {blocks}
     {showLegend&&<SourceLegend sources={sources} labels={copy} legendLabel={legendLabel}/>}
 

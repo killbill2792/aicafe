@@ -90,9 +90,9 @@ export function eventDetailDay(event:Pick<CafeEvent,"startDate"|"endDate">,viewD
 }
 /** Preserve the exact tapped event across Home, chat and saved day reports. */
 export function eventChatTarget(date:string,event?:Pick<CafeEvent,"id"|"name">,
-  plan?:Pick<Plan,"summary"|"threadId">){
+  plan?:Pick<Plan,"summary"|"threadId"|"eventIds">){
   return {date,title:event?.name??plan?.summary??date,eventId:event?.id,
-    existingThreadId:event?undefined:plan?.threadId};
+    existingThreadId:event?(plan?.eventIds?.length===1&&plan.eventIds[0]===event.id?plan.threadId:undefined):plan?.threadId};
 }
 const planOn=(plans:readonly Plan[],date:string)=>
   plans.find(p=>p.startDate<=date&&p.endDate>=date);
@@ -101,7 +101,32 @@ const planOn=(plans:readonly Plan[],date:string)=>
 export function cafeHighlightedEvents(timeline:Pick<Timeline,"events"|"plans">,date:string):CafeEvent[]{
   const ids=new Set(timeline.plans.filter(p=>p.startDate<=date&&p.endDate>=date)
     .flatMap(p=>p.eventIds??[]));
-  return timeline.events.filter(e=>ids.has(e.id)&&e.startDate<=date&&e.endDate>=date);
+  return timeline.events.filter(e=>e.startDate<=date&&e.endDate>=date&&
+    (ids.has(e.id)||timeline.plans.some(p=>p.importance==="high"&&
+      !["rejected","expired","stale"].includes(p.status)&&p.eventIds?.includes(e.id)&&
+      p.startDate<=date&&p.endDate>=e.startDate&&p.startDate<=e.endDate)));
+}
+export function eventLifecycle(event:Pick<CafeEvent,"startDate"|"endDate"|"status"|"datePrecision">,today:string){
+  if(event.status!=="found")return event.status==="cancelled"?"cancelled":"moved";
+  if(today<event.startDate)return "upcoming";
+  if(event.datePrecision==="unknown_end")return "eventEndUnknown";
+  if(today>event.endDate)return "eventCompleted";
+  if(today===event.startDate&&today===event.endDate)return "now";
+  if(today===event.startDate)return "eventStarting";
+  if(today===event.endDate)return "eventEnding";
+  return "eventOngoing";
+}
+function lifecycleLabel(event:CafeEvent,today:string,locale:Locale,t:T){
+  const key=eventLifecycle(event,today);
+  const messages={en,es,ar}[locale];
+  switch(key){
+    case "eventEndUnknown":return messages.SchedulingAvailability.end+" · "+t("reportUnknown");
+    case "eventStarting":return messages.SchedulingAvailability.start+" · "+t("now");
+    case "eventEnding":return messages.SchedulingAvailability.end+" · "+t("now");
+    case "eventOngoing":return messages.SchedulingAvailability.ongoing;
+    case "eventCompleted":return messages.Experiments.past;
+    default:return t(key);
+  }
 }
 export function cityEventChatTarget(item:CityCatalogPage["items"][number]){
   // Keep the existing café thread key, but NEVER drop the shared city UUID:
@@ -119,6 +144,9 @@ const nextMonth=(month:string,delta:number)=>{
   return d.toISOString().slice(0,7);
 };
 const cityMonthEnd=(month:string)=>dayAt(nextMonth(month,1)+"-01",-1);
+export function cityCatalogDateRange(month:string){
+  return {from:month+"-01",to:cityMonthEnd(month)};
+}
 /** A dated event can have multiple proposals. Never show another event's or day's
  * AI analysis; prefer the owner-approved choice over a draft on the same date. */
 export function eventPlanFor(plans:readonly Plan[],eventId:string,date:string):Plan|undefined{
@@ -169,12 +197,13 @@ export function VenueMapLink({address,t}:{address:string|null;t:T}){
 }
 
 /** An individual event opens its own saved read-only detail, not its chat or day header. */
-export function SavedEventListCard({event,locale,t,onOpen,hasAnalysis}:{
+export function SavedEventListCard({event,locale,t,onOpen,hasAnalysis,viewDate=event.startDate,today}:{
   event:CafeEvent;locale:Locale;t:T;onOpen:(event:CafeEvent)=>void;hasAnalysis:boolean;
+  viewDate?:string;today?:string;
 }){
   return <article className="min-w-0 rounded-2xl border border-line bg-card">
     <button type="button" onClick={()=>onOpen(event)}
-      aria-label={t("openEvent",{title:event.name,date:dateLabel(event.startDate,locale,"long")})}
+      aria-label={t("openEvent",{title:event.name,date:dateLabel(viewDate,locale,"long")})}
       className="flex min-h-20 w-full min-w-0 items-center gap-3 rounded-2xl p-4 text-start focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ink">
       <div className="min-w-0 flex-1 space-y-1">
         <p className="text-[15px] font-semibold text-accent-text">
@@ -185,8 +214,8 @@ export function SavedEventListCard({event,locale,t,onOpen,hasAnalysis}:{
         </p>
         <h4 className="break-words font-headline text-[19px] font-bold leading-snug text-ink" dir="auto">{event.name}</h4>
         {(event.venue||event.areaLabel)&&<p className="break-words text-[16px] text-ink-muted" dir="auto">{event.venue??event.areaLabel}</p>}
-        {event.status!=="found"&&<p role="status" className="font-semibold text-warn-text">
-          {event.status==="cancelled"?t("cancelled"):t("moved")}
+        {(today||event.status!=="found")&&<p role="status" className={event.status==="found"?"font-semibold text-ink-muted":"font-semibold text-warn-text"}>
+          {lifecycleLabel(event,today??viewDate,locale,t)}
         </p>}
         <p className="text-[15px] font-semibold text-accent-text">{t(hasAnalysis?"readInsights":"viewEventDetails")}</p>
       </div>
@@ -199,16 +228,19 @@ export function eventStripDays(today:string){return Array.from({length:7},(_,i)=
 export function eventListDays(timeline:Timeline,tab:Tab,affectsOnly:boolean,sortByDate=false){
   const from=tab==="past"?dayAt(timeline.today,-14):tab==="now"?timeline.today:dayAt(timeline.today,1);
   const to=tab==="past"?dayAt(timeline.today,-1):tab==="now"?timeline.today:dayAt(timeline.today,14);
-  const dates=new Set<string>();
-  timeline.events.forEach(e=>{
-    if(e.startDate<=to&&e.endDate>=from)dates.add(e.startDate<from?from:e.startDate);
-  });
-  timeline.plans.forEach(p=>{
-    if(p.startDate<=to&&p.endDate>=from)dates.add(p.startDate<from?from:p.startDate);
-  });
-  const list=[...dates].filter(date=>!affectsOnly||Boolean(planOn(timeline.plans,date)));
+  const list:string[]=[];
+  // Dates are projections, not new event identities. The tab bounds the work.
+  for(let date=from;date<=to;date=dayAt(date,1)){
+    if(planOn(timeline.plans,date)||(affectsOnly?
+      cafeHighlightedEvents(timeline,date).length>0:eventsOn(timeline.events,date).length>0))
+      list.push(date);
+  }
   const importance=(day:string)=>{
-    const level=planOn(timeline.plans,day)?.importance;
+    const levels=timeline.plans.filter(p=>p.startDate<=day&&p.endDate>=day).map(p=>p.importance);
+    const priorHigh=cafeHighlightedEvents(timeline,day).some(e=>timeline.plans.some(p=>
+      p.importance==="high"&&p.eventIds?.includes(e.id)&&p.startDate<=day&&p.endDate>=e.startDate&&
+      !["rejected","expired","stale"].includes(p.status)));
+    const level=priorHigh||levels.includes("high")?"high":levels.includes("medium")?"medium":levels.includes("low")?"low":null;
     return level==="high"?3:level==="medium"?2:level==="low"?1:0;
   };
   return list.sort((a,b)=>{
@@ -268,7 +300,7 @@ export function SavedEventAnalysis({plan,selectedEvent,date,today,currency,local
       <ul className="grid gap-3 sm:grid-cols-2">{actions.map((action,index)=>
         <EventAdviceItem key={index} action={action}/>)}</ul>
     </div>}
-    {date===today&&liveEventHeadline(plan,date,t)&&<section aria-label={t("liveObservations")} className="rounded-xl bg-surface2 p-3">
+    {date===today&&(!selectedEvent||selectedEvent.status==="found")&&liveEventHeadline(plan,date,t)&&<section aria-label={t("liveObservations")} className="rounded-xl bg-surface2 p-3">
       <h4 className="font-bold">{t("liveObservations")}</h4>
       <p role="status">{liveEventHeadline(plan,date,t)}</p>
     </section>}
@@ -295,8 +327,7 @@ export function CityCatalogView({today,locale,t,chatDisabled,onAsk}:{
   const [loading,setLoading]=useState(true);
   const [error,setError]=useState(false);
   const [retry,setRetry]=useState(0);
-  const from=month===today.slice(0,7)?today:month+"-01";
-  const to=month===today.slice(0,7)?dayAt(today,13):cityMonthEnd(month);
+  const {from,to}=cityCatalogDateRange(month);
   useEffect(()=>{
     const controller=new AbortController();
     const params=new URLSearchParams({cityFrom:from,cityTo:to,cityPage:String(page),
@@ -345,6 +376,7 @@ export function CityCatalogView({today,locale,t,chatDisabled,onAsk}:{
     <article className="space-y-3 rounded-2xl border border-line bg-card p-4">
       <p className="font-semibold text-accent-text">{dateLabel(selected.startDate,locale,"long")}
         {selected.endDate!==selected.startDate?" – "+dateLabel(selected.endDate,locale,"long"):""}
+        {selected.datePrecision==="unknown_end"?" · "+({en,es,ar}[locale].SchedulingAvailability.end)+" "+t("reportUnknown"):""}
         {selected.startTime?" · "+selected.startTime:""}
       </p>
       <h4 className="break-words font-headline text-[22px] font-bold" dir="auto">{selected.name}</h4>
@@ -396,8 +428,11 @@ export function CityCatalogView({today,locale,t,chatDisabled,onAsk}:{
         </select>
       </label>
       <button type="submit" className={button+" self-end"}>{t("searchButton")}</button>
+      {!!(searchInput||search)&&<button type="button" className={button+" self-end"} onClick={()=>{
+        beginRefresh();setSearchInput("");setSearch("");setPage(0);setSelected(null);setRetry(v=>v+1);
+      }}>{{en,es,ar}[locale].StaffSchedule.clear}</button>}
     </form>
-    {coverage&&<div role="status" className="rounded-xl bg-surface2 p-3 text-[15px]">
+    {coverage&&!loading&&!error&&<div role="status" className="rounded-xl bg-surface2 p-3 text-[15px]">
       <p className="font-semibold">{t(coverage.status==="complete"?"cityCoverageRecorded":"cityCoverageIncomplete")}</p>
       <p>{t("cityCoverageCounts",{checked:coverage.researchedSourceWindows,
         failed:coverage.failedSourceWindows+coverage.partialSourceWindows+
@@ -419,7 +454,8 @@ export function CityCatalogView({today,locale,t,chatDisabled,onAsk}:{
           <button type="button" onClick={()=>setSelected(item)}
             className="w-full min-h-20 rounded-2xl border border-line bg-card p-4 text-start focus-visible:outline focus-visible:outline-2 focus-visible:outline-ink">
             <p className="text-[15px] font-semibold text-accent-text">
-              {dateLabel(item.startDate,locale,"long")} · {cityKindLabel(item.kind,t)}
+              {dateLabel(item.startDate,locale,"long")}{item.endDate!==item.startDate?" – "+dateLabel(item.endDate,locale,"long"):""} · {cityKindLabel(item.kind,t)}
+              {item.datePrecision==="unknown_end"?" · "+({en,es,ar}[locale].SchedulingAvailability.end)+" "+t("reportUnknown"):""}
             </p>
             <h5 className="mt-1 break-words text-[19px] font-bold" dir="auto">{item.name}</h5>
             <p className="mt-1 break-words text-[16px] text-ink-muted" dir="auto">
@@ -488,7 +524,7 @@ export default function SavedEventsCard({locale,chatDisabled,compact=false,onCha
   const days=eventStripDays(today);
   const lead=days.map(date=>({date,plan:planOn(timeline.plans,date),
     events:cafeHighlightedEvents(timeline,date)}))
-    .find(d=>Boolean(d.plan));
+    .find(d=>Boolean(d.plan)||d.events.length>0);
   const openDay=(date:string,eventId:string|null=null)=>{
     setView("cafe");setSelected(date);setSelectedEventId(eventId);setPanel("day");
     setTab(date<today?"past":date===today?"now":"upcoming");setMonth(date.slice(0,7));
@@ -511,7 +547,7 @@ export default function SavedEventsCard({locale,chatDisabled,compact=false,onCha
   const button="min-h-12 rounded-xl px-4 text-[17px] font-semibold focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ink disabled:opacity-50";
   const chat=(date:string,event?:CafeEvent)=>{
     if(chatDisabled)return;
-    const target=eventChatTarget(date,event,planOn(timeline.plans,date));
+    const target=eventChatTarget(date,event,event?eventPlanFor(timeline.plans,event.id,date):planOn(timeline.plans,date));
     onChatAboutDay(target.date,target.title,target.eventId,target.existingThreadId);
     setPanel(null);
   };
@@ -524,10 +560,7 @@ export default function SavedEventsCard({locale,chatDisabled,compact=false,onCha
     setPanel(null);
   };
   const listDates=eventListDays(timeline,tab,true,sortByDate);
-  const visibleEvents=(date:string)=>cafeHighlightedEvents(timeline,date).filter(e=>{
-    const from=tab==="past"?dayAt(today,-14):tab==="now"?today:dayAt(today,1);
-    return e.startDate<=date&&e.endDate>=date&&(e.startDate===date||(e.startDate<from&&date===from));
-  });
+  const visibleEvents=(date:string)=>cafeHighlightedEvents(timeline,date);
   return <>
     <section data-testid="coming-up" aria-label={t("title")}
       className="min-w-0 rounded-2xl border border-line bg-card p-3">
@@ -549,7 +582,7 @@ export default function SavedEventsCard({locale,chatDisabled,compact=false,onCha
         </p>)}
         {lead.events[0]?.venue&&<p className="mt-1 break-words text-[15px] text-ink-muted" dir="auto">{lead.events[0].venue}</p>}
         {lead.plan?.summary&&<p className="mt-2 line-clamp-3 text-[17px] leading-relaxed text-ink" dir="auto">{lead.plan.summary}</p>}
-        {lead.date===today&&liveEventHeadline(lead.plan,today,t)&&<p className="mt-2 rounded-xl bg-card p-2 text-[17px]">{liveEventHeadline(lead.plan,today,t)}</p>}
+        {lead.date===today&&lead.events.some(e=>e.status==="found")&&liveEventHeadline(lead.plan,today,t)&&<p className="mt-2 rounded-xl bg-card p-2 text-[17px]">{liveEventHeadline(lead.plan,today,t)}</p>}
         <span className="mt-2 inline-flex min-h-12 items-center font-semibold text-accent-text">{t("readInsights")} <ChevronRight size={19} className="ms-1 rtl:rotate-180" aria-hidden="true"/></span>
       </button>:<p className="mb-3 text-[17px] leading-snug text-ink-muted">{t("noCafeOutlook")}</p>)}
       {!compact&&<div className="grid grid-cols-7 gap-1">
@@ -628,7 +661,7 @@ export default function SavedEventsCard({locale,chatDisabled,compact=false,onCha
                   {dateLabel(date,locale,"long")}{dayPlan?" · "+t("hasPlan"):""}
                 </button>
                 {saved.map(event=><SavedEventListCard key={event.id} event={event} locale={locale} t={t}
-                  hasAnalysis={Boolean(eventPlanFor(timeline.plans,event.id,date))}
+                  viewDate={date} today={today} hasAnalysis={Boolean(eventPlanFor(timeline.plans,event.id,date))}
                   onOpen={event=>openEvent(event,date)}/>)}
                 {dayPlan?.summary&&<p className="rounded-xl bg-surface2 p-3 text-[17px]" dir="auto">{dayPlan.summary}</p>}
                 {tab==="past"&&dayPlan&&<EventReportCard report={dayPlan.report}
@@ -640,7 +673,7 @@ export default function SavedEventsCard({locale,chatDisabled,compact=false,onCha
             {dayEvents.map(event=><article key={event.id} className="space-y-2 rounded-2xl border border-line bg-card p-4">
               <div className="flex flex-wrap items-start justify-between gap-2">
                 <h4 className="min-w-0 flex-1 break-words font-headline text-[22px] font-bold leading-snug" dir="auto">{event.name}</h4>
-                {event.status!=="found"&&<span role="status" className="rounded-lg bg-surface2 px-2 py-1 text-[15px] font-semibold text-warn-text">{event.status==="cancelled"?t("cancelled"):t("moved")}</span>}
+                <span role="status" className={"rounded-lg bg-surface2 px-2 py-1 text-[15px] font-semibold "+(event.status==="found"?"text-ink-muted":"text-warn-text")}>{lifecycleLabel(event,today,locale,t)}</span>
               </div>
               <p className="font-semibold text-accent-text"><CalendarDays size={18} className="me-2 inline" aria-hidden="true"/>{dateLabel(event.startDate,locale,"long")}{event.endDate!==event.startDate?" – "+dateLabel(event.endDate,locale,"long"):""}{event.startTime?" · "+event.startTime:""}</p>
               {(event.venue||event.areaLabel)&&<p className="break-words text-ink-muted" dir="auto">{event.venue??event.areaLabel}</p>}

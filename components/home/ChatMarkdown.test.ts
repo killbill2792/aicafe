@@ -354,3 +354,23 @@ describe("GFM response tables",()=>{
    expect(html.match(/— Not checked against your records"/g)).toHaveLength(1);
  });
 });
+
+describe("adaptive Markdown headings",()=>{
+ it("renders headings adjacent to text and tables, while preserving source offsets",()=>{
+  const text="Intro\r\n## Sales **$125.00**\r\nItem | Revenue\r\n--- | ---:\r\nLatte | $50\r\n### Next steps\r\nReview sales";
+  const start=text.indexOf("$125.00");
+  const html=renderToStaticMarkup(createElement(ChatMarkdown,{text,unverified:[{start,end:start+7,source:"owner"}]}));
+  expect(html).toContain("<h3");
+  expect(html).toContain("<h4");
+  expect(html).toContain("<table");
+  expect(html).toContain('aria-label="$125.00 — You told me"');
+  expect(html).not.toContain("## Sales");
+  expect(html).toContain("Review sales");
+ });
+ it("keeps unsafe markup literal even inside a heading",()=>{
+  const html=renderToStaticMarkup(createElement(ChatMarkdown,{text:"# <script>bad()</script>"}));
+  expect(html).toContain("<h2");
+  expect(html).toContain("&lt;script&gt;");
+  expect(html).not.toContain("<script>");
+ });
+});

@@ -8,6 +8,23 @@ test.beforeEach(() => {
   assertDisposableEnvironment();
 });
 
+// Exercise the browser's computed tree rather than trusting aria-label source
+// strings. Only redacted role counts are asserted; don't export answer content.
+const interactiveAXRoles=new Set(["button","link","textbox","searchbox","combobox","checkbox","radio","switch","spinbutton","slider","tab","menuitem","menuitemcheckbox","menuitemradio","DisclosureTriangle"]);
+function assertNamedAXControls(nodes){
+  const controls=nodes.filter(n=>!n.ignored&&interactiveAXRoles.has(n.role?.value));
+  expect(controls.length).toBeGreaterThan(0);
+  expect(controls.filter(n=>!String(n.name?.value??"").trim()).map(n=>n.role?.value)).toEqual([]);
+}
+async function assertAccessibleControls(page){
+  const session=await page.context().newCDPSession(page);
+  try{
+    await session.send("Accessibility.enable");
+    const {nodes}=await session.send("Accessibility.getFullAXTree");
+    assertNamedAXControls(nodes);
+  }finally{await session.detach();}
+}
+
 test("@home Task16A authenticated mobile owner views library/routines/permissions and revokes a scoped mandate",async({browser})=>{
   test.setTimeout(120_000);
   const owner=seededCafe(0),foreign=seededCafe(1);
@@ -53,7 +70,7 @@ test("@home Task16A authenticated mobile owner views library/routines/permission
     const panel=page.getByRole("dialog",{name:"Supervisor controls"});
     await expect(panel).toBeVisible();
     await panel.getByRole("button",{name:"Library",exact:true}).click();
-    await expect(panel.getByRole("button",{name:"Task16A approval library"})).toBeVisible();console.info("[Task16A E2E] library from authenticated records");
+    await expect(panel.getByRole("button",{name:"Task16A approval library"})).toBeVisible();await assertAccessibleControls(page);console.info("[Task16A E2E] library from authenticated records");
     const routinesTab=panel.getByRole("button",{name:"Routines",exact:true});
     await routinesTab.click();
     await expect(panel.getByText("Daily source check")).toBeVisible();
@@ -61,7 +78,12 @@ test("@home Task16A authenticated mobile owner views library/routines/permission
     await routinesTab.click();
     await expect(panel.getByText("Daily source check")).toBeVisible();
     await expect(panel.getByText("Checking saved permissions and routines")).toHaveCount(0);
+    await assertAccessibleControls(page);
     console.info("[Task16A E2E] canonical routine remains after active-tab reselect");
+    await page.getByRole("dialog",{name:"Supervisor controls"}).getByRole("button",{name:"Open routine conversation",exact:true}).click();
+    await expect(panel).toHaveCount(0);
+    await expect(page.locator("#supervisor-home-composer")).toBeVisible();
+    await controlsButton.click();
     await panel.getByRole("button",{name:"Permissions",exact:true}).click();
     await expect(panel.getByText("Goal tracking",{exact:true}).first()).toBeVisible();
     await expect(panel.getByText("Active",{exact:true})).toBeVisible();
@@ -72,12 +94,14 @@ test("@home Task16A authenticated mobile owner views library/routines/permission
     await expect(panel.getByText("Goal tracking",{exact:true}).first()).toBeVisible();
     await expect(panel.getByText("5 goal starts per café-local day").first()).toBeVisible();
     await expect(panel.getByText("Checking saved permissions and routines")).toHaveCount(0);
+    await assertAccessibleControls(page);
     console.info("[Task16A E2E] canonical permission remains after active-tab reselect");
     // No verified phone MFA factor is installed in the seeded project:
     // a simulated grant cannot be shown as enabled.
     await expect(panel.getByRole("button",{name:"Request verification code"})).toHaveCount(0);
     console.info("[Task16A E2E] invoking genuine owner revoke");
-    await panel.getByRole("button",{name:"Revoke permission"}).click();
+    await panel.getByRole("button",{name:"Revoke permission"}).focus();
+    await page.keyboard.press("Enter");
     await expect(panel.getByText("Permission revoked in the database")).toBeVisible();
     const receipt=await db.query("select revision,revoked_at from public.supervisor_mandates "+
       "where id=$1 order by revision desc limit 1",[id.active]);
@@ -231,6 +255,38 @@ test("@home Task 16B persists real Supervisor work through reload, uncertainty a
       const bounds = await work.boundingBox();
       expect(bounds).not.toBeNull();
       expect(bounds.x+ bounds.width).toBeLessThanOrEqual(391);
+
+      // Exercise the actual v2 admission/question/cancellation RPCs in this
+      // disposable database. This is Work/browser proof, not a real model
+      // or scheduled producer test. No provider invocation or flag change.
+      const ownerMessage=randomUUID(),questionId=randomUUID();
+      await db.query("insert into public.ai_messages(id,business_id,owner_user_id,thread_id,author_user_id,role,content_type,text_content,client_message_id) values($1,$2,$3,$4,$3,'owner','text','Prepare a report',$5)",
+        [ownerMessage,own.businessId,own.owner.userId,threadId,randomUUID()]);
+      await db.query("select set_config('request.jwt.claim.role','service_role',false)");
+      const scope=[own.businessId,own.owner.userId,threadId];
+      const rpc=async(name,args)=>(await db.query("select public."+name+"("+args.map((_,i)=>"$"+(i+1)).join(",")+") as value",args)).rows[0].value;
+      const assignment=await rpc("supervisor_admit_owner_run_v2",[...scope,ownerMessage,"d".repeat(64),"en",[]]);
+      const authorized=await rpc("supervisor_run_claim",[...scope,assignment.id,randomUUID(),30]);
+      await rpc("supervisor_run_complete_step",[...scope,assignment.id,"authorize_owner",authorized.step.claim_token,"owner:"+ownerMessage]);
+      const ownerClaim=await rpc("supervisor_run_claim",[...scope,assignment.id,randomUUID(),30]);
+      const job=await rpc("supervisor_start_owner_job_v2",[...scope,assignment.id,ownerClaim.step.claim_token]);
+      const blocks=[{type:"clarify",question:"Which saved period?",options:[{label:"Today only",value:"today"},{label:"Last week",value:"week"}],allowOther:true}];
+      await rpc("supervisor_publish_owner_question_v2",[...scope,assignment.id,ownerClaim.step.claim_token,job.id,questionId,JSON.stringify(blocks),JSON.stringify({status:"requires_owner_input",ownerMessageId:ownerMessage,durableRunId:assignment.id,durableQuestionId:questionId})]);
+      await db.query("insert into public.ai_messages(id,business_id,owner_user_id,thread_id,author_user_id,role,content_type,text_content,client_message_id) values($1,$2,$3,$4,$3,'owner','text','An unrelated question',$5)",
+        [randomUUID(),...scope,randomUUID()]);
+      await page.reload();
+      const persisted=work.locator('[data-work-id="run:'+assignment.id+'"]');
+      await expect(persisted).toHaveAttribute("data-work-status","approval_required");
+      await expect(persisted).toContainText("Waiting for your answer to the saved question");
+      await expect(page.getByText("Which saved period?",{exact:true})).toBeVisible();
+      await expect(work.locator('[data-work-id="job:'+job.id+'"]')).toHaveCount(0);
+      await persisted.getByRole("button",{name:"Stop assignment",exact:true}).click();
+      await expect(persisted.getByText("This assignment was cancelled.",{exact:true}).first()).toBeVisible();
+      await page.reload();
+      const savedWork=(await (await context.request.get("/api/ai/threads/"+threadId+"/work")).json()).work;
+      expect(savedWork.find(item=>item.id==="run:"+assignment.id)).toMatchObject({status:"cancelled",questionId:null,cancelAllowed:false});
+      expect((await db.query("select status,awaiting_question_id from public.supervisor_runs where id=$1",[assignment.id])).rows[0]).toEqual({status:"blocked",awaiting_question_id:null});
+      await expect(page.getByRole("button",{name:"Today only",exact:true})).toHaveCount(0);
     } finally { await context.close(); }
   } finally {
     if (connected) {
@@ -440,6 +496,12 @@ test("@home owner uploads and reselects a private receipt while another café ca
     await openOwnedPage(page, owner, "");
     const attach = page.getByRole("button", {name: "Add an attachment"});
     await expect(attach).toBeEnabled({timeout: 30_000});
+    await attach.focus();await page.keyboard.press("Enter");
+    const choices=page.getByRole("group",{name:"Add an attachment"});
+    await expect(choices.getByRole("button",{name:"Choose file or photo"})).toBeFocused();
+    await assertAccessibleControls(page);
+    await page.keyboard.press("Escape");await expect(choices).toHaveCount(0);
+    await expect(attach).toBeFocused();
     // Observe only status/path metadata. Failing a real upload must explain
     // whether the lazy thread creation or the private file endpoint failed.
     const uploads=[];
@@ -521,6 +583,17 @@ test("@home owner uploads and reselects a private receipt while another café ca
     await page.getByText("Previous files",{exact:true}).click();
     await page.getByRole("button",{name:"Use receipt.png"}).click();
     await expect(page.getByRole("button",{name:"Remove receipt.png"})).toBeVisible();
+    const input=page.locator("#supervisor-home-composer");await input.fill("Saved unsent receipt draft");
+    await page.getByRole("button",{name:"New chat",exact:true}).click();
+    await expect(input).toHaveValue("");await expect(page.getByRole("button",{name:"Remove receipt.png"})).toHaveCount(0);
+    await page.getByRole("button",{name:"Library, routines and permissions"}).click();
+    const drawer=page.getByRole("dialog",{name:"Supervisor controls"});
+    await drawer.locator('[data-library-thread="'+threadId+'"]').click();
+    await expect(input).toHaveValue("Saved unsent receipt draft");
+    await expect(page.getByRole("button",{name:"Remove receipt.png"})).toBeVisible();
+    await page.getByRole("button",{name:"Library, routines and permissions"}).click();
+    await expect(drawer.getByRole("link",{name:"receipt.png",exact:true})).toHaveAttribute("href",route+"/"+attachment.id);
+    await page.keyboard.press("Escape");
 
     const otherPage=await otherContext.newPage();
     await login(otherPage, other);
@@ -1068,9 +1141,11 @@ test("@purchasing proactive notice → repeated cron idempotency → owner-appro
     await expect(card).toContainText(name);
     await expect(card).toContainText("Shipping, tax and full landed total: unknown");
     await expect(card.getByRole("button",{name:"Approve purchase order"})).toBeVisible();
+    await assertAccessibleControls(page);
     const approved=page.waitForResponse(r=>new URL(r.url()).pathname===
       "/api/ai/threads/"+id.thread+"/proposals"&&r.request().method()==="POST");
-    await card.getByRole("button",{name:"Approve purchase order"}).click();
+    await card.getByRole("button",{name:"Approve purchase order"}).focus();
+    await page.keyboard.press("Enter");
     const response=await approved;
     expect(response.status()).toBe(200);
     await expect(card).toContainText("Approved for ordering — NOT sent to supplier",
@@ -1323,6 +1398,7 @@ test("@home Task16D authenticated responsive Supervisor work across conversation
     const drawer=page.getByRole("dialog",{name:"Supervisor controls"});
     const earlier=drawer.locator('[data-work-id="run:'+otherRun+'"]');
     await expect(earlier).toContainText("Earlier supplier conversation");
+    await assertAccessibleControls(page);
     // Initial target-thread message read fails; no terminal job exists to reload it.
     const initialMessages=`**/api/ai/threads/${otherThread}/messages?offset=0`;
     await page.route(initialMessages,route=>route.fulfill({status:503,body:"{}"}));
@@ -1374,4 +1450,669 @@ test("@money historical statement imports work without a bank connection and per
    return rows.map(r=>[r.financial_currency,r.financial_to,Number(r.financial_closing_cents),r.financial_owner_user_id]);
   },{timeout:20000}).toEqual([[cafe.currency,"2026-01-02",105000,cafe.owner.userId]]);
  }finally{await db.query("delete from public.uploads where business_id=$1 and financial_source_sha256=$2",[cafe.businessId,digest]);await db.end();}
+});
+
+test("@gmail Task15A authenticated usage and admin cost ledger are scoped",async({browser})=>{
+  test.setTimeout(120_000);
+  const owner=seededCafe(0),foreign=seededCafe(1),thread=randomUUID(),attempt=randomUUID(),source=randomUUID();
+  const db=new pg.Client({host:"127.0.0.1",port:54322,database:"postgres",user:"postgres",password:"postgres",connectionTimeoutMillis:5000});
+  const a=await browser.newContext({baseURL:"http://127.0.0.1:3000",serviceWorkers:"block"}),b=await browser.newContext({baseURL:"http://127.0.0.1:3000",serviceWorkers:"block"});
+  try{
+    await db.connect();
+    await db.query("insert into public.ai_threads(id,business_id,owner_user_id,client_request_id,title) values ($1,$2,$3,$4,$5)",[thread,owner.businessId,owner.owner.userId,randomUUID(),"Usage verification"]);
+    await db.query("insert into public.supervisor_system_usage_events(attempt_id,business_id,owner_user_id,thread_id,source_type,source_id,model,attempt_day,reserved_input_upper,reserved_output_cap,status) values ($1,$2,$3,$4,'alert',$5,'gpt-6-luna',(now() at time zone 'UTC')::date,100,50,'attempted')",[attempt,owner.businessId,owner.owner.userId,thread,source]);
+    const count=async(cafe)=>Number((await db.query("select count(distinct (source_type,source_id)) n from public.supervisor_system_usage_events where business_id=$1 and owner_user_id=$2 and source_type in ('alert','operating_task') and attempt_day>=date_trunc('month',now() at time zone 'UTC')::date",[cafe.businessId,cafe.owner.userId])).rows[0].n);
+    for(const [context,cafe] of [[a,owner],[b,foreign]]){
+      const page=await context.newPage();
+      await login(page,cafe);
+      await openOwnedPage(page,cafe,"more/supervisor-access");
+      const usage=page.getByRole("region",{name:"Supervisor usage"});
+      await expect(usage.getByText("Max · Unlimited",{exact:true})).toBeVisible();
+      await expect(usage.getByText("Proactive work items",{exact:true}).locator("..").locator("dd")).toHaveText((await count(cafe)).toLocaleString("en-US"));
+      await expect(usage.getByText("Owner requests",{exact:true})).toBeVisible();
+      await page.goto("/admin/costs");
+      if(cafe===owner){
+        const ledger=page.locator("section").filter({has:page.getByRole("heading",{name:"Supervisor metered activity"})});
+        await expect(ledger.getByRole("row").filter({hasText:cafe.name}).filter({hasText:"Proactive"})).toContainText("calls unknown");
+      }else{
+        await expect(page.getByRole("heading",{name:"Supervisor metered activity"})).toHaveCount(0);
+      }
+    }
+  }finally{
+    await a.close();await b.close();
+    await db.query("delete from public.supervisor_system_usage_events where attempt_id=$1",[attempt]).catch(()=>{});
+    await db.query("delete from public.ai_threads where id=$1",[thread]).catch(()=>{});
+    await db.end();
+  }
+});
+
+test("@home Task15A scheduler detects reduced sales from actual daily source rows",async({browser})=>{
+ test.setTimeout(180_000);
+ const own=seededCafe(0);
+ const db=new pg.Client({host:"127.0.0.1",port:54322,database:"postgres",user:"postgres",password:"postgres",connectionTimeoutMillis:5000});
+ const context=await browser.newContext({baseURL:"http://127.0.0.1:3000",serviceWorkers:"block"});
+ let original=[],activeSchedules=[],connected=false;
+ const today=new Intl.DateTimeFormat("en-CA",{timeZone:own.timezone,year:"numeric",month:"2-digit",day:"2-digit"}).format(new Date());
+ const date=(n)=>new Date(Date.parse(today+"T12:00:00Z")+n*86400000).toISOString().slice(0,10);
+ const start=date(-14),end=date(-1);
+ if(!process.env.CRON_SECRET)throw Error("Task15A local cron credential unavailable");
+ try{
+  await db.connect();connected=true;
+  original=(await db.query("select to_jsonb(d) row from public.daily_rollups d where business_id=$1 and business_date between $2 and $3",[own.businessId,start,end])).rows.map(x=>x.row);
+  // Isolate stored actual daily source facts from unrelated schedule materialization.
+  activeSchedules=(await db.query("select id from public.staff_schedules where business_id=$1 and active",[own.businessId])).rows.map(row=>row.id);
+  await db.query("update public.staff_schedules set active=false where business_id=$1 and id=any($2::uuid[])",[own.businessId,activeSchedules]);
+  const prior=await db.query("select id from public.alerts where business_id=$1 and kind='business_anomaly' and payload->>'dedupeKey'='sales_decline:cafe'",[own.businessId]);
+  await db.query("insert into public.daily_rollups(business_id,business_date,net_sales_cents,orders_count,drinks_count,ingredients_cents,staff_wages_cents,staff_tax_cents,card_fees_cents,voids_cents,sales_data_status) select $1,d::date,case when d::date<=$3::date then 100000 else 60000 end,50,50,10000,10000,1000,1000,0,'actual' from generate_series($2::date,$4::date,interval '1 day') d on conflict(business_id,business_date) do update set net_sales_cents=excluded.net_sales_cents,sales_data_status='actual'",[own.businessId,start,date(-8),end]);
+  const tick=()=>context.request.get("/api/cron/refresh-derived",{headers:{Authorization:"Bearer "+process.env.CRON_SECRET},timeout:100_000});
+  expect([200,207]).toContain((await tick()).status());
+  const active=()=>db.query("select id,status,payload from public.alerts where business_id=$1 and kind='business_anomaly' and status in ('new','seen') and payload->>'dedupeKey'='sales_decline:cafe'",[own.businessId]).then(r=>r.rows);
+  const facts=await db.query("select sum(net_sales_cents) filter(where business_date < $2::date)::int previous,sum(net_sales_cents) filter(where business_date >= $2::date)::int current,count(*) filter(where sales_data_status='actual')::int covered from public.daily_rollups where business_id=$1 and business_date between $3 and $4",[own.businessId,date(-7),start,end]);
+  expect(facts.rows[0]).toEqual({previous:700000,current:420000,covered:14});
+  const rows=await active();expect(rows).toHaveLength(1);
+  expect(rows[0].payload).toMatchObject({current:420000,previous:700000,unit:"cents",family:"sales_decline"});
+  const page=await context.newPage();await login(page,own);await openOwnedPage(page,own,"more/alerts");
+  await expect(page.getByText("Sales declined",{exact:true}).first()).toBeVisible({timeout:30000});
+  // Restore known healthy comparable source facts rather than marking the alert handled manually.
+  await db.query("update public.daily_rollups set net_sales_cents=100000 where business_id=$1 and business_date between $2 and $3",[own.businessId,date(-7),end]);
+  expect([200,207]).toContain((await tick()).status());expect(await active()).toHaveLength(0);
+  // No fixture downstream of the real detector; rollback source data in finally.
+  if(!prior.rows.some(x=>x.id===rows[0].id))await db.query("delete from public.alerts where business_id=$1 and id=$2",[own.businessId,rows[0].id]);
+ }finally{
+  await context.close();
+  if(connected){
+   await db.query("delete from public.daily_rollups where business_id=$1 and business_date between $2 and $3",[own.businessId,start,end]);
+   if(original.length)await db.query("insert into public.daily_rollups select * from jsonb_populate_recordset(null::public.daily_rollups,$1::jsonb)",[JSON.stringify(original)]);
+   await db.query("update public.staff_schedules set active=true where business_id=$1 and id=any($2::uuid[])",[own.businessId,activeSchedules]);
+   await db.end();
+  }
+ }
+});
+
+// Task16E design-stage observation only. Real authenticated seeded app, no model
+// calls, mutations of business facts, new workflow or production access.
+test("@home Task16E design baseline observes empty and long Supervisor conversations",async({browser},testInfo)=>{
+  test.setTimeout(300_000);
+  const owner=seededCafe(0), thread=randomUUID(), empty=randomUUID();
+  const db=new pg.Client({host:"127.0.0.1",port:54322,database:"postgres",user:"postgres",password:"postgres",connectionTimeoutMillis:5000});
+  await db.connect();
+  try{
+    for(const [id,title] of [[thread,"Task16E long synthetic conversation"],[empty,"Task16E empty synthetic conversation"]])
+      await db.query("insert into public.ai_threads(id,business_id,owner_user_id,client_request_id,title) values($1,$2,$3,$4,$5)",[id,owner.businessId,owner.owner.userId,randomUUID(),title]);
+    await db.query("insert into public.ai_messages(business_id,thread_id,owner_user_id,author_user_id,role,content_type,text_content,client_message_id,created_at) select $1,$2,$3,$3,'owner','text','Synthetic owner question '||n,gen_random_uuid(),now()-n*interval '2 minutes' from generate_series(1,505) n",[owner.businessId,thread,owner.owner.userId]);
+    await db.query("insert into public.ai_messages(business_id,thread_id,owner_user_id,role,content_type,structured_content,grounding) values($1,$2,$3,'supervisor','blocks',$4::jsonb,$5::jsonb)",
+      [owner.businessId,thread,owner.owner.userId,JSON.stringify([{type:"text",text:"Synthetic audit reply: review the saved business evidence. No external action was taken."}]),JSON.stringify({status:"estimated",intent:"operating_tasks",evidence:[]})]);
+    for(const viewport of [{width:390,height:844},{width:1440,height:900}]){
+      const ctx=await browser.newContext({baseURL:"http://127.0.0.1:3000",serviceWorkers:"block"});
+      try{
+        const page=await ctx.newPage();
+        await login(page,owner);
+        // The shared auth helper checks a visible desktop café label; mobile hides it.
+        // Verify owner on desktop first, then assert the exact thread URL on each measured navigation.
+        await openOwnedPage(page,owner,"?thread="+empty);
+        await page.setViewportSize(viewport);
+        const requests={threads:0,messages:0,attachments:0,work:0,otherApi:0,rsc:0};
+        const readFailures=[];
+        page.on("response",response=>{
+          const url=new URL(response.url());
+          if(url.pathname.startsWith("/api/ai/threads")&&response.status()>=400)
+            readFailures.push({kind:url.pathname.endsWith("/messages")?"messages":url.pathname.endsWith("/attachments")?"attachments":"threads-or-work",status:response.status()});
+        });
+        page.on("request",r=>{
+          const u=new URL(r.url());
+          if(u.origin!=="http://127.0.0.1:3000")return;
+          if(u.searchParams.has("_rsc"))requests.rsc++;
+          if(u.pathname==="/api/ai/threads")requests.threads++;
+          else if(/^\/api\/ai\/threads\/[^/]+\/messages$/.test(u.pathname))requests.messages++;
+          else if(/^\/api\/ai\/threads\/[^/]+\/attachments$/.test(u.pathname))requests.attachments++;
+          else if(/^\/api\/ai\/threads\/[^/]+\/work$/.test(u.pathname))requests.work++;
+          else if(u.pathname.startsWith("/api/"))requests.otherApi++;
+        });
+        const geometry=()=>page.evaluate(()=>{
+          const input=document.querySelector("#supervisor-home-composer");
+          const rect=input?.getBoundingClientRect();
+          const scrollRegions=[...document.querySelectorAll("main *, [role=log]")].filter(el=>{
+            const style=getComputedStyle(el);
+            return /auto|scroll/.test(style.overflowY)&&el.clientHeight>0&&el.scrollHeight>el.clientHeight+2;
+          });
+          const nav=performance.getEntriesByType("navigation")[0];
+          return {documentWidth:document.documentElement.scrollWidth,viewportWidth:innerWidth,
+            viewportHeight:innerHeight,composerInViewport:!!rect&&rect.height>0&&rect.top>=0&&rect.bottom<=innerHeight+1,
+            scrollRegions:scrollRegions.length,renderedMessages:document.querySelectorAll("[data-work-message]").length,
+            navigationMs:nav?Math.round(nav.domContentLoadedEventEnd):null};
+        });
+        const controls=page.getByRole("button",{name:"Library, routines and permissions"});
+        const input=page.locator("#supervisor-home-composer");
+        const start=Date.now();
+        await expect(page).toHaveURL(new RegExp("[?&]thread="+empty+"(?:&|$)"));
+        await expect(page.getByTestId("supervisor-welcome")).toBeVisible();
+        await expect(input).toBeVisible();
+        const emptyMs=Date.now()-start;
+        const emptyMetrics=await geometry();
+        await page.screenshot({path:testInfo.outputPath("16e-empty-"+viewport.width+".png")});
+        const longStart=Date.now();
+        await controls.click();
+        const historyDrawer=page.getByRole("dialog",{name:"Supervisor controls"});
+        await historyDrawer.getByRole("button",{name:"Library",exact:true}).click();
+        await historyDrawer.getByRole("button",{name:"Task16E long synthetic conversation",exact:true}).click();
+        await expect(page).toHaveURL(new RegExp("[?&]thread="+thread+"(?:&|$)"));
+        await expect(page.getByText("Synthetic owner question 1",{exact:true})).toBeVisible();
+        await expect(input).toBeVisible();
+        const longMs=Date.now()-longStart;
+        const longMetrics=await geometry();
+        await page.screenshot({path:testInfo.outputPath("16e-thread-"+viewport.width+".png")});
+        const drawerStart=Date.now();
+        await controls.click();
+        const drawer=page.getByRole("dialog",{name:"Supervisor controls"});
+        await expect(drawer).toBeVisible();
+        const drawerMs=Date.now()-drawerStart;
+        await page.screenshot({path:testInfo.outputPath("16e-controls-"+viewport.width+".png")});
+        await page.keyboard.press("Escape");
+        await expect(drawer).toHaveCount(0);
+        const restored=await controls.evaluate(el=>document.activeElement===el);
+        await input.focus();
+        const focused=await geometry();
+        console.info("[Task16E baseline]",JSON.stringify({viewport,emptyMs,longMs,drawerMs,emptyMetrics,longMetrics,focused,focusRestored:restored,requests,condition:"seeded CI dev server, warm authenticated navigation, desktop Chromium viewport; not real mobile keyboard or production"}));
+        if(viewport.width===1440){
+          await page.getByRole("button",{name:"Load older messages",exact:true}).click();
+          await expect(page.getByText("Synthetic owner question 65",{exact:true})).toBeAttached();
+          // Load the complete long history through the actual owner pagination path.
+          // Treat this as a diagnostic, not a claim about production latency.
+          const historyStarted=Date.now();
+          const older=page.getByRole("button",{name:"Load older messages",exact:true});
+          const messageRows=page.locator("[data-work-message]");
+          for(let i=0;i<12&&await older.isVisible();i++){
+            const before=await messageRows.count();
+            await older.click();
+            try{
+              await expect.poll(()=>messageRows.count(),{timeout:30000}).toBeGreaterThan(before);
+            }catch(error){
+              console.info("[Task16E history failure]",JSON.stringify({before,after:await messageRows.count(),readFailures,ownerSessionDenied:await page.getByText("Your owner session needs to be verified again",{exact:false}).count()>0,threadUnavailable:await page.getByRole("alert").count()>0}));
+              throw error;
+            }
+          }
+          await expect(page.getByText("Synthetic owner question 505",{exact:true})).toBeAttached();
+          await expect(older).toHaveCount(0);
+          await expect(messageRows).toHaveCount(506);
+          console.info("[Task16E 500+ history]",JSON.stringify({loaded:await messageRows.count(),paginationMs:Date.now()-historyStarted,geometry:await geometry(),requests,condition:"seeded dev server; no production latency claim"}));
+          const latest="Synthetic persisted refresh after history pagination";
+          await db.query("insert into public.ai_messages(business_id,thread_id,owner_user_id,role,content_type,structured_content,grounding) values($1,$2,$3,'supervisor','blocks',$4::jsonb,$5::jsonb)",[owner.businessId,thread,owner.owner.userId,JSON.stringify([{type:"text",text:latest}]),JSON.stringify({status:"estimated",intent:"unknown",evidence:[]})]);
+          await expect.poll(async()=>{await page.evaluate(()=>window.dispatchEvent(new Event("focus")));return await page.getByText(latest,{exact:true}).count();},{timeout:30000}).toBe(1);
+          await expect(page.getByText("Synthetic owner question 505",{exact:true})).toBeAttached();
+          await expect(messageRows).toHaveCount(507);
+          expect(await page.locator("[data-work-message]").evaluateAll(nodes=>new Set(nodes.map(n=>n.getAttribute("data-work-message"))).size)).toBe(await page.locator("[data-work-message]").count());
+          // Switching threads must not abandon a reader in older history.
+          const oldQuestion=page.getByText("Synthetic owner question 505",{exact:true});
+          await oldQuestion.scrollIntoViewIfNeeded();
+          const oldId=await oldQuestion.locator("xpath=ancestor::*[@data-work-message][1]").getAttribute("data-work-message");
+          const log=page.getByRole("log");
+          const previous=await log.evaluate(el=>({top:el.scrollTop,height:el.scrollHeight,client:el.clientHeight}));
+          expect(previous.height-previous.client-previous.top).toBeGreaterThan(64);
+          await controls.click();
+          await page.getByRole("button",{name:"Task16E empty synthetic conversation",exact:true}).click();
+          await expect(page.getByTestId("supervisor-welcome")).toBeVisible();
+          await controls.click();
+          await page.getByRole("button",{name:"Task16E long synthetic conversation",exact:true}).click();
+          await expect(page.locator('[data-work-message="'+oldId+'"]')).toBeAttached({timeout:30000});
+          await expect.poll(()=>log.evaluate(el=>el.scrollHeight-el.clientHeight-el.scrollTop),{timeout:10000}).toBeGreaterThan(64);
+          const restoredPosition=await page.locator('[data-work-message="'+oldId+'"]').evaluate(el=>{
+            const parent=el.closest('[role="log"]');const a=el.getBoundingClientRect(),b=parent.getBoundingClientRect();
+            return a.bottom>b.top&&a.top<b.bottom;
+          });
+          expect(restoredPosition).toBe(true);
+        }
+      }finally{await ctx.close();}
+    }
+  }finally{
+    await db.query("delete from public.ai_threads where id=any($1::uuid[]) and business_id=$2",[[thread,empty],owner.businessId]).catch(()=>{});
+    await db.end();
+  }
+});
+
+
+// Task16E acceptance: exercise the real persisted renderer and controls in the
+// disposable café. This is a synthetic presentation fixture, not model or
+// financial truth acceptance. Task17B/C/D own live evidence and effect proof.
+test("@home Task16E quiet shell, optional visuals, editable follow-up and mobile navigation",async({browser},testInfo)=>{
+  test.setTimeout(300_000);
+  const owner=seededCafe(0), empty=randomUUID(), thread=randomUUID(), replyId=randomUUID();
+  const db=new pg.Client({host:"127.0.0.1",port:54322,database:"postgres",user:"postgres",password:"postgres",connectionTimeoutMillis:5000});
+  const ctx=await browser.newContext({baseURL:"http://127.0.0.1:3000",serviceWorkers:"block"});
+  const text="Sales rose from $100.00 to $125.00. That is $25.00 more, although it does not prove profit increased.";
+  const visual={type:"rich_presentation",version:1,layout:"stack",panels:[{
+    kind:"line",title:"Synthetic daily sales",unit:"cents",currency:"USD",
+    from:"2026-01-01",to:"2026-01-02",asOf:"2026-01-02",source:"daily_rollups",
+    points:[{label:"2026-01-01",value:10000},{label:"2026-01-02",value:12500}],
+  }],suggestions:["Explain how costs affect this"]};
+  await db.connect();
+  try{
+    for(const [id,title] of [[empty,"Task16E welcome fixture"],[thread,"Task16E answer fixture"]])
+      await db.query("insert into public.ai_threads(id,business_id,owner_user_id,client_request_id,title) values($1,$2,$3,$4,$5)",[id,owner.businessId,owner.owner.userId,randomUUID(),title]);
+    await db.query("insert into public.ai_messages(id,business_id,thread_id,owner_user_id,role,content_type,structured_content,grounding) values($1,$2,$3,$4,'supervisor','blocks',$5::jsonb,$6::jsonb)",[replyId,owner.businessId,thread,owner.owner.userId,JSON.stringify([{type:"text",text},visual]),JSON.stringify({status:"verified",intent:"sales_quantity",evidence:[{source:"historical_rollups",identifier:"synthetic-e2e",asOf:"2026-01-02"}]})]);
+    const page=await ctx.newPage();await login(page,owner);
+    // The first viewport navigates to the empty fixture below. Avoid a redundant
+    // full load wait; assert actual owner shell and fixture state on every navigation.
+    async function openFixture(id){
+      const response=await page.goto("/en/?thread="+id,{waitUntil:"domcontentloaded",timeout:30000});
+      expect(response?.ok()).toBe(true);
+      await expect(page).not.toHaveURL(/\/login(?:\?|$)|\/onboarding(?:\?|$)/);
+      // The authenticated desktop café label stays in the DOM on mobile but is
+      // intentionally hidden; the actual interactive owner shell must be visible.
+      await expect(page.getByText(owner.name,{exact:true}).first()).toBeAttached({timeout:30000});
+      await expect(page.locator("#supervisor-home-composer")).toBeVisible({timeout:30000});
+    }
+    let writes=0;
+    page.on("request",r=>{if(r.method()==="POST"&&/\/api\/ai\/threads\/[^/]+\/(agent|messages)$/.test(new URL(r.url()).pathname))writes++;});
+    for(const viewport of [{width:320,height:720},{width:390,height:844},{width:430,height:932},{width:768,height:1024},{width:1024,height:768},{width:1440,height:900}]){
+      await page.setViewportSize(viewport);await openFixture(empty);
+      const input=page.locator("#supervisor-home-composer");
+      const welcome=page.getByTestId("supervisor-welcome");
+      await expect(welcome).toBeVisible({timeout:30000});
+      await assertAccessibleControls(page);
+      await page.emulateMedia({reducedMotion:"reduce"});
+      expect(await welcome.evaluate(el=>getComputedStyle(el).animationName)).toBe("none");
+      await expect(input).toBeVisible();
+      const board=page.getByTestId("chat-start").locator("button[aria-expanded]").first();
+      await expect(board).toHaveAttribute("aria-expanded","false");
+      await board.click();
+      await expect(board).toHaveAttribute("aria-expanded","true");
+      await expect(page.getByRole("region",{name:"Key numbers",exact:true})).toBeVisible();
+      await board.click();await expect(board).toHaveAttribute("aria-expanded","false");
+      const controls=page.getByRole("button",{name:"Library, routines and permissions"});
+      await controls.click();
+      const drawer=page.getByRole("dialog",{name:"Supervisor controls"});
+      await expect(drawer.getByRole("button",{name:"Library",exact:true})).toBeVisible();
+      if(viewport.width<768){
+        const nav=drawer.getByRole("navigation",{name:"Primary navigation"});
+        for(const route of ["/en","/en/operations","/en/money","/en/menu","/en/staff","/en/more"]){
+          const path=route==="/en"?/\/en\/?$/:new RegExp(route+"$");
+          expect(await nav.getByRole("link").evaluateAll(links=>links.map(l=>l.getAttribute("href")))).toEqual(expect.arrayContaining([expect.stringMatching(path)]));
+        }
+      }
+      await page.keyboard.press("Escape");
+      await expect(drawer).toHaveCount(0);await expect(controls).toBeFocused();
+      if(viewport.width>=768){
+        const nav=page.getByRole("navigation",{name:"Primary navigation"});
+        const rail=nav.getByRole("button",{name:"Primary navigation",exact:true});
+        await expect(rail).toHaveAttribute("aria-expanded","true");
+        await rail.click();await expect(rail).toHaveAttribute("aria-expanded","false");
+        await expect(nav.getByRole("link",{name:"Money",exact:true})).toBeVisible();
+        await rail.click();await expect(rail).toHaveAttribute("aria-expanded","true");
+      }
+      await openFixture(thread);
+      const answer=page.locator('[data-work-message="'+replyId+'"]');
+      await expect(answer).toContainText(text,{timeout:30000});
+      const rich=answer.getByTestId("supervisor-rich-presentation");
+      await expect(rich.getByTestId("supervisor-rich-chart")).toBeVisible({timeout:30000});
+      await rich.locator("details summary").click();
+      await expect(rich.getByRole("table")).toBeVisible();
+      await expect(rich.getByRole("row").filter({hasText:"2026-01-02"})).toContainText("$125.00");
+      const suggest=rich.getByRole("button",{name:"Explain how costs affect this"});
+      await suggest.click();await expect(input).toHaveValue("Explain how costs affect this");
+      expect(writes).toBe(0);
+      // Simulate a suppressed/unavailable visual, preserving the actual text element.
+      await rich.evaluate(el=>{el.hidden=true;});
+      await expect(answer.getByText(text,{exact:true})).toBeVisible();
+      await rich.evaluate(el=>{el.hidden=false;});
+      await input.fill("");
+      await page.emulateMedia({reducedMotion:"reduce"});
+      expect(await page.evaluate(()=>matchMedia("(prefers-reduced-motion: reduce)").matches)).toBe(true);
+      const geometry=await input.evaluate(el=>({width:document.documentElement.scrollWidth,viewport:innerWidth,top:el.getBoundingClientRect().top,bottom:el.getBoundingClientRect().bottom,height:innerHeight}));
+      expect(geometry.width).toBeLessThanOrEqual(geometry.viewport);
+      expect(geometry.top).toBeGreaterThanOrEqual(0);
+      expect(geometry.bottom).toBeLessThanOrEqual(geometry.height+1);
+      await page.screenshot({path:testInfo.outputPath("16e-acceptance-"+viewport.width+".png")});
+    }
+    // All existing palettes/modes share the same actual app tokens, not
+    // mockups. Inspect rendered foreground/background and reflow in place.
+    await page.setViewportSize({width:320,height:720});
+    const themeChecks=await page.evaluate(()=>{
+      const root=document.documentElement, priorTheme=root.getAttribute("data-theme"),priorMode=root.getAttribute("data-mode");
+      const luminance=channels=>channels.reduce((n,v,i)=>n+[0.2126,0.7152,0.0722][i]*(v/255<=0.04045?v/255/12.92:((v/255+0.055)/1.055)**2.4),0);
+      const ratio=(a,b)=>{const x=luminance(a),y=luminance(b);return (Math.max(x,y)+0.05)/(Math.min(x,y)+0.05);};
+      const results=[];
+      try{
+        for(const theme of ["fresh-pour","night-roast","market-green","berry-mocha","blue-hour","matcha","caramel-sky","cherry-cola"]){
+          for(const mode of ["light","dark"]){
+            root.setAttribute("data-theme",theme);root.setAttribute("data-mode",mode);
+            const style=getComputedStyle(root),color=name=>style.getPropertyValue(name).trim().split(/\s+/).map(Number);
+            results.push({theme,mode,body:ratio(color("--c-text"),color("--c-surface")),muted:ratio(color("--c-muted"),color("--c-surface")),send:ratio(color("--c-on-accent"),color("--c-accent")),overflow:root.scrollWidth>innerWidth});
+          }
+        }
+      }finally{
+        if(priorTheme===null)root.removeAttribute("data-theme");else root.setAttribute("data-theme",priorTheme);
+        if(priorMode===null)root.removeAttribute("data-mode");else root.setAttribute("data-mode",priorMode);
+      }
+      return results;
+    });
+    expect(themeChecks).toHaveLength(16);
+    for(const check of themeChecks){
+      expect(check.body,JSON.stringify(check)).toBeGreaterThanOrEqual(4.5);
+      expect(check.muted,JSON.stringify(check)).toBeGreaterThanOrEqual(4.5);
+      expect(check.send,JSON.stringify(check)).toBeGreaterThanOrEqual(4.5);
+      expect(check.overflow,JSON.stringify(check)).toBe(false);
+    }
+    console.info("[Task16E theme contrast]",JSON.stringify(themeChecks));
+    await page.setViewportSize({width:1440,height:900});
+    // Switch between exact persisted conversations. A draft stays in the
+    // original mounted owner session, never moves to another thread.
+    const input=page.locator("#supervisor-home-composer");
+    await input.fill("My unsent answer-thread draft");
+    const controls=page.getByRole("button",{name:"Library, routines and permissions"});
+    const drawer=page.getByRole("dialog",{name:"Supervisor controls"});
+    await controls.click();
+    const search=drawer.getByRole("searchbox",{name:"Search loaded Library"});
+    await search.fill("Task16E welcome fixture");
+    await expect(drawer.getByRole("button",{name:"Task16E answer fixture"})).toHaveCount(0);
+    await drawer.getByRole("button",{name:"Task16E welcome fixture"}).click();
+    await expect(input).toHaveValue("");
+    await expect(page.getByTestId("supervisor-welcome")).toBeVisible();
+    await controls.click();await drawer.getByRole("searchbox").fill("Task16E answer fixture");
+    await drawer.getByRole("button",{name:"Task16E answer fixture"}).click();
+    await expect(page).toHaveURL(new RegExp("[?&]thread="+thread+"(?:&|$)"));
+    await expect(input).toHaveValue("My unsent answer-thread draft");
+    await expect(page.locator('[data-work-message="'+replyId+'"]')).toContainText(text);
+    const attach=page.getByRole("button",{name:"Add an attachment"});
+    await attach.click();
+    await expect(page.getByRole("button",{name:"Choose file or photo"})).toBeFocused();
+    const camera=page.getByRole("button",{name:"Take photo"});
+    for(const control of [attach,camera,page.getByRole("button",{name:"Choose file or photo"})]){
+      const rect=await control.boundingBox();expect(rect?.height??0).toBeGreaterThanOrEqual(48);
+    }
+    const [chooser]=await Promise.all([page.waitForEvent("filechooser"),camera.click()]);
+    await expect(page.locator('input[type="file"]')).toHaveAttribute("capture","environment");
+    await chooser.setFiles([]);
+    await attach.click();
+    const [files]=await Promise.all([page.waitForEvent("filechooser"),page.getByRole("button",{name:"Choose file or photo"}).click()]);
+    await expect(page.locator('input[type="file"]')).not.toHaveAttribute("capture","environment");
+    await files.setFiles([]);
+    await ctx.setOffline(true);
+    await expect(page.getByText("Offline. Saved information may be out of date. Your draft is kept; reconnect to send.")).toBeVisible();
+    await expect(page.getByRole("button",{name:"Send",exact:true})).toBeDisabled();
+    await input.press("Enter");
+    await expect(input).toHaveValue("My unsent answer-thread draft");
+    expect(writes).toBe(0);
+    await ctx.setOffline(false);
+    await expect(page.getByText("Offline. Saved information may be out of date. Your draft is kept; reconnect to send.")).toHaveCount(0);
+    await expect(input).toHaveValue("My unsent answer-thread draft");
+    await page.getByRole("button",{name:"New chat",exact:true}).click();
+    await expect(input).toHaveValue("");
+    await expect(page.getByTestId("supervisor-welcome")).toBeVisible();
+    await page.evaluate(()=>window.dispatchEvent(new Event("focus")));
+    await expect(page.locator('[data-work-message="'+replyId+'"]')).toHaveCount(0);
+    await expect(page).toHaveURL(/[?&]newChat=1(?:&|$)/);
+    await page.reload();
+    await expect(page.getByTestId("supervisor-welcome")).toBeVisible({timeout:30000});
+    await expect(page.locator('[data-work-message="'+replyId+'"]')).toHaveCount(0);
+    await controls.click();await drawer.getByRole("searchbox").fill("Task16E answer fixture");
+    await drawer.getByRole("button",{name:"Task16E answer fixture"}).click();
+    await expect(page.locator('[data-work-message="'+replyId+'"]')).toContainText(text);
+    await expect(page).toHaveURL(new RegExp("[?&]thread="+thread+"(?:&|$)"));
+    await page.reload();
+    await expect(page.locator('[data-work-message="'+replyId+'"]')).toContainText(text);
+    // A denied owner session hides the prior private content and controls.
+    await page.route("**/api/ai/threads",route=>route.fulfill({status:401,contentType:"application/json",body:'{"error":"unauthorized"}'}));
+    const deniedAlert=page.getByRole("alert").filter({hasText:"Your owner session needs to be verified again"});
+    await expect.poll(async()=>{await page.evaluate(()=>window.dispatchEvent(new Event("online")));return await deniedAlert.isVisible();},{timeout:30000}).toBe(true);
+    await expect(input).toHaveCount(0);
+    expect(writes).toBe(0);
+  }finally{
+    await ctx.close();await db.query("delete from public.ai_threads where id=any($1::uuid[]) and business_id=$2",[[empty,thread],owner.businessId]).catch(()=>{});await db.end();
+  }
+});
+
+test("@home Task16E adaptive answer survives reload, preserves prose and opens a safe editable follow-up",async({browser})=>{
+  test.setTimeout(120_000);
+  const owner=seededCafe(0),foreign=seededCafe(1),thread=randomUUID(),reply=randomUUID();
+  const db=new pg.Client({host:"127.0.0.1",port:54322,database:"postgres",user:"postgres",password:"postgres",connectionTimeoutMillis:5000});
+  const ctx=await browser.newContext({baseURL:"http://127.0.0.1:3000",serviceWorkers:"block"});
+  const other=await browser.newContext({baseURL:"http://127.0.0.1:3000",serviceWorkers:"block"});
+  await db.connect();
+  try{
+    await db.query("insert into public.ai_threads(id,business_id,owner_user_id,client_request_id,title) values($1,$2,$3,$4,$5)",
+      [thread,owner.businessId,owner.owner.userId,randomUUID(),"Disposable adaptive answer"]);
+    const page=await ctx.newPage();
+    await login(page,owner);await openOwnedPage(page,owner,"?thread="+thread);
+    const fileRoute="/api/ai/threads/"+thread+"/attachments";
+    const uploaded=await ctx.request.post(fileRoute,{headers:{Origin:"http://127.0.0.1:3000"},multipart:{
+      file:{name:"example-sales.csv",mimeType:"text/csv",buffer:Buffer.from("day,sales\n2026-01-01,12\n")}
+    }});
+    expect(uploaded.status()).toBe(201);
+    const attachment=(await uploaded.json()).attachment;
+    const text="## Sales overview\nRevenue increased from the first day to the next. The chart is optional.\n\n| Day | Recorded status |\n| --- | --- |\n| First day | Complete |\n| Next day | Complete |";
+    const suggestion="Compare another period";
+    const blocks=[{type:"text",text},{type:"rich_presentation",version:1,layout:"stack",panels:[
+      {kind:"line",title:"Daily net sales",unit:"cents",currency:owner.currency,source:"daily_rollups",from:"2026-01-01",to:"2026-01-02",asOf:"2026-01-03",
+        points:[{label:"2026-01-01",value:1200},{label:"2026-01-02",value:2400}]},
+      {kind:"metric",title:"Recorded sales",unit:"cents",currency:owner.currency,source:"profitability",from:"2026-01-01",to:"2026-01-02",asOf:"2026-01-03",points:[{label:"Sales",value:3600}]},
+      {kind:"metric",title:"Recorded costs",unit:"cents",currency:owner.currency,source:"business_costs",from:"2026-01-01",to:"2026-01-02",asOf:"2026-01-03",points:[{label:"Costs",value:1000}]}
+    ],groups:[{id:"g0",layout:"stack",items:["g1","g2","g4","suggestions"]},{id:"g1",layout:"compare",items:["panel1","panel2"]},{id:"g2",layout:"stack",items:["panel0","g3"]},{id:"g3",layout:"grid",items:["agenda","scenario","table0","calculator"]},{id:"g4",layout:"details",title:"Saved evidence and export",items:["files","report"]}],report:true,files:[attachment.id],tables:[{title:"Saved query results",view:"cv_orders",from:"2026-01-01",to:"2026-01-02",asOf:"2026-01-03",currency:owner.currency,
+      coverage:"partial",scope:"Requested query",columns:[{label:"Order channel",unit:"label"},{label:"Orders",unit:"count"},{label:"Sales",unit:"cents"}],rows:[["Takeaway",0,0],["Dine in",7,null]]}],
+      calculator:{title:"Order cost estimate",asOf:"2026-01-03",currency:owner.currency,inputs:[
+        {id:"cost",label:"Unit cost",value:{unit:"cents",valueCents:250},editable:false},
+        {id:"quantity",label:"Quantity",value:{unit:"count",quantity:10},editable:true}],
+        steps:[{id:"total",op:"multiply",args:["cost","quantity"]}],original:{unit:"cents",valueCents:2500}},
+      agenda:{kind:"calendar",source:"cafe_events",title:"Saved event dates",from:"2026-01-01",to:"2026-01-04",asOf:"2026-01-03",coverage:"partial",
+      entries:[{label:"Market",date:"2026-01-02",endDate:"2026-01-04",start:null,end:null,status:"unverified",checkedAt:null}]},
+      scenario:{title:"Modeled monthly profit",currency:owner.currency,asOf:"2026-01-03",provenance:"estimate",cases:[
+        {assumption:"Small adjustment",beforeCents:348000,afterCents:338000,editor:{metric:"monthlyProfitCents",basis:{monthlyBillsCents:100000,monthlyStaffCents:200000,monthlyRevenueCents:900000,ingredientRate:0.25,feeRate:0.03,daysInMonth:30,targetMargin:0.2},delta:{kind:"bill",monthlyChangeCents:10000}}},{assumption:"Larger adjustment",beforeCents:348000,afterCents:318000}]},suggestions:[suggestion]}];
+    await db.query("insert into public.ai_messages(id,business_id,thread_id,owner_user_id,role,content_type,structured_content,grounding) values($1,$2,$3,$4,'supervisor','blocks',$5::jsonb,$6::jsonb)",
+      [reply,owner.businessId,thread,owner.owner.userId,JSON.stringify(blocks),JSON.stringify({status:"verified",intent:"unknown",evidence:[],agentMetadata:{endReason:"complete",unverified:[]}})]);
+    for(const viewport of [{width:390,height:844},{width:1440,height:900}]){
+      await page.setViewportSize(viewport);
+      await page.reload();
+      const answer=page.locator('[data-work-message="'+reply+'"]');
+      await expect(answer.getByRole("heading",{name:"Sales overview"})).toBeVisible();
+      await expect(answer.getByText("Revenue increased from the first day to the next. The chart is optional.")).toBeVisible();
+      const rich=answer.getByTestId("supervisor-rich-presentation");
+      await expect(rich.locator('[data-supervisor-layout="stack"] [data-supervisor-layout="stack"] [data-supervisor-layout="grid"]')).toHaveCount(1);
+      const chartDetail=rich.locator("figure details summary");
+      await expect(chartDetail).toHaveAccessibleName(/Daily net sales/);
+      await chartDetail.focus();await page.keyboard.press("Enter");
+      await expect(chartDetail.locator("..")).toHaveAttribute("open","");
+      await expect(rich.getByTestId("supervisor-rich-chart")).toHaveAttribute("aria-hidden","true");
+      await expect(rich.getByTestId("supervisor-comparison-chart")).toHaveAttribute("aria-hidden","true");
+      await assertAccessibleControls(page);
+      const ax=await answer.ariaSnapshot();
+      expect(ax).toContain('heading "Sales overview"');
+      expect(ax).toContain('table "Response table"');
+      expect(ax).toContain('table "Daily net sales"');
+      await expect(answer.getByRole("table",{name:"Response table"}).getByRole("columnheader",{name:"Recorded status"})).toBeVisible();
+      await expect(rich.getByRole("table",{name:"Daily net sales"})).toHaveAccessibleDescription(/Sales records.*Saved snapshot/);
+      await expect(rich.getByRole("table",{name:"Comparison values"})).toHaveAccessibleDescription(/Recorded sales.*Recorded costs/);
+      expect(ax).toContain('table "Comparison values"');
+      expect(ax).toContain('columnheader "Category"');
+      expect(ax).toContain('rowheader "2026-01-02"');
+      expect(ax).toContain('textbox "Quantity"');
+      expect(ax).toContain('combobox "Compare calculated assumptions"');
+      expect(ax).not.toContain("application");
+      await expect(answer).toHaveAccessibleName("Supervisor");
+      await expect(rich.getByRole("table",{name:"Daily net sales"})).toBeVisible();
+      const expected=new Intl.NumberFormat("en-US",{style:"currency",currency:owner.currency}).format(24);
+      await expect(rich.getByRole("table",{name:"Daily net sales"}).getByRole("cell",{name:expected,exact:true})).toBeVisible();
+      const recordTable=rich.getByTestId("supervisor-record-table");
+      await expect(recordTable).toContainText("Incomplete information");
+      await expect(recordTable.getByRole("table")).toHaveAccessibleDescription(/Incomplete information.*Requested query/);
+      await expect(recordTable.getByRole("row").filter({hasText:"Dine in"})).toContainText("Not recorded");
+      const calc=rich.getByTestId("supervisor-calculator");
+      const calcField=calc.getByRole("textbox",{name:"Quantity"});
+      await expect(calcField).toHaveValue("10");
+      await calcField.fill("12");
+      await expect(calc.getByRole("status")).toContainText(new Intl.NumberFormat("en-US",{style:"currency",currency:owner.currency,minimumFractionDigits:2,maximumFractionDigits:2}).format(30));
+      await calcField.fill("invalid");
+      await expect(calc.getByRole("status")).toHaveText("Cannot calculate from these inputs");
+      await expect(calcField).toHaveAccessibleDescription("Cannot calculate from these inputs");
+      await calc.getByRole("button",{name:"Reset assumptions"}).click();
+      await expect(calcField).toHaveValue("10");
+      await expect(calcField).not.toHaveAttribute("aria-describedby");
+      await expect(rich.locator(".recharts-line")).toBeAttached({timeout:30000});
+      await expect(rich.getByTestId("supervisor-agenda")).toContainText("Not independently verified");
+      await expect(rich.getByTestId("supervisor-comparison")).toContainText("Recorded costs");
+      await expect(rich.getByTestId("supervisor-comparison-chart")).toBeVisible();
+      const calendar=rich.getByTestId("supervisor-calendar-grid");
+      await expect(calendar.getByRole("button",{name:/Jan 4, 2026/})).toBeVisible();
+      const dateChoice=calendar.getByRole("button",{name:/Jan 4, 2026/});
+      await dateChoice.focus();await page.keyboard.press("Space");
+      await expect(dateChoice).toHaveAttribute("aria-pressed","true");
+      const detailsId=await dateChoice.getAttribute("aria-controls");
+      const selectedDetails=rich.locator('[id='+JSON.stringify(detailsId)+']');
+      await expect(selectedDetails).toHaveAttribute("aria-live","polite");
+      await expect(selectedDetails).toContainText("Market");
+      if(viewport.width===390){
+        await page.setViewportSize({width:320,height:720});
+        expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);
+        const size=await dateChoice.boundingBox();
+        expect(size?.width).toBeGreaterThanOrEqual(48);
+        expect(size?.height).toBeGreaterThanOrEqual(48);
+        await calendar.focus();await expect(calendar).toBeFocused();
+        await page.setViewportSize(viewport);
+      }
+      await expect(rich.getByTestId("supervisor-agenda")).toContainText("Market");
+      const scenario=rich.getByTestId("supervisor-scenario");
+      const scenarioEditor=scenario.getByTestId("supervisor-scenario-editor");
+      const billField=scenarioEditor.getByRole("textbox",{name:/Monthly bill change/});
+      await billField.fill("invalid");
+      await expect(billField).toHaveAccessibleDescription("Cannot calculate from these inputs");
+      await billField.fill("20");
+      await expect(billField).not.toHaveAttribute("aria-describedby");
+      await expect(scenario.getByRole("status")).toHaveText(new Intl.NumberFormat("en-US",{style:"currency",currency:owner.currency,minimumFractionDigits:2,maximumFractionDigits:2}).format(3460));
+      await scenarioEditor.getByRole("button",{name:"Reset assumptions"}).click();
+      await expect(scenario.getByRole("status")).toHaveText(new Intl.NumberFormat("en-US",{style:"currency",currency:owner.currency,minimumFractionDigits:2,maximumFractionDigits:2}).format(3380));
+      await scenario.getByRole("combobox").selectOption("1");
+      await expect(scenario).toContainText(new Intl.NumberFormat("en-US",{style:"currency",currency:owner.currency,minimumFractionDigits:2,maximumFractionDigits:2}).format(3180));
+      const disclosure=rich.locator('[data-supervisor-layout="details"]');
+      await expect(disclosure).not.toHaveAttribute("open","");
+      await disclosure.getByText("Saved evidence and export",{exact:true}).click();
+      const sourceLink=rich.getByRole("link",{name:"example-sales.csv",exact:true});
+      await expect(sourceLink).toHaveAttribute("href",fileRoute+"/"+attachment.id);
+      const fileResponse=await ctx.request.get(fileRoute+"/"+attachment.id,{maxRedirects:0});
+      expect(fileResponse.status()).toBe(302);
+      const downloadEvent=page.waitForEvent("download");
+      await rich.getByRole("button",{name:"Download saved answer report"}).click();
+      expect((await downloadEvent).suggestedFilename()).toBe("supervisor-report.txt");
+      const library=page.getByRole("dialog",{name:"Supervisor controls"});
+      const opener=page.getByRole("button",{name:"Library, routines and permissions"});
+      await opener.focus();await page.keyboard.press("Enter");
+      const close=library.getByRole("button",{name:"Close Supervisor controls"});
+      await expect(close).toBeFocused();
+      // Chromium's computed accessibility tree (not just the DOM attributes)
+      // must expose the modal and hide the background chat subtree.
+      const axSession=await ctx.newCDPSession(page);
+      try{
+        await axSession.send("Accessibility.enable");
+        const tree=await axSession.send("Accessibility.getFullAXTree");
+        const exposed=tree.nodes.filter(n=>!n.ignored);
+        expect(exposed.some(n=>n.role?.value==="dialog"&&n.name?.value==="Supervisor controls")).toBe(true);
+        expect(exposed.some(n=>n.role?.value==="button"&&n.name?.value==="Close Supervisor controls")).toBe(true);
+        expect(exposed.some(n=>n.role?.value==="log"&&n.name?.value==="Conversations")).toBe(false);
+        assertNamedAXControls(exposed);
+      }finally{await axSession.detach();}
+      await page.keyboard.press("Shift+Tab");
+      expect(await library.evaluate(el=>el.contains(document.activeElement))).toBe(true);
+      await page.keyboard.press("Tab");await expect(close).toBeFocused();
+      await page.keyboard.press("Escape");await expect(opener).toBeFocused();
+      await page.keyboard.press("Enter");
+      await library.getByRole("button",{name:"Library",exact:true}).click();
+      const librarySearch=library.getByRole("searchbox",{name:"Search loaded Library"});
+      await librarySearch.fill("example-sales.csv");
+      await expect(library.getByRole("link",{name:"example-sales.csv",exact:true})).toBeVisible();
+      await expect(library.locator('[data-library-report="'+reply+'"]')).toHaveCount(0);
+      await librarySearch.fill("Daily net sales");
+      await expect(library.getByRole("link",{name:"example-sales.csv",exact:true})).toHaveCount(0);
+      await library.locator('[data-library-report="'+reply+'"]').click();
+      await expect(library).toHaveCount(0);
+      await expect(answer).toBeFocused();
+      await expect(rich.getByRole("button",{name:"Download saved answer report"})).toBeVisible();
+      expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);
+      const input=page.locator("#supervisor-home-composer");
+      await input.fill("");
+      await rich.getByRole("button",{name:suggestion,exact:true}).focus();
+      await page.keyboard.press("Enter");
+      await expect(input).toHaveValue(suggestion);
+      await expect(input).toBeFocused();
+      // Suggestions are editable, never a submitted message/effect/approval.
+      await input.fill("My existing draft");
+      await rich.getByRole("button",{name:suggestion,exact:true}).click();
+      await expect(input).toHaveValue("My existing draft\n"+suggestion);
+      const count=await db.query("select count(*)::int as n from public.ai_messages where thread_id=$1",[thread]);
+      expect(count.rows[0].n).toBe(1);
+    }
+    // Real authorized polling observes externally saved messages. History and
+    // initial hydration do not announce, only the newly saved reply does.
+    const announcement=page.getByTestId("supervisor-reply-announcement");
+    await expect(announcement).toBeEmpty();
+    const latest=randomUUID();
+    await db.query("insert into public.ai_messages(id,business_id,thread_id,owner_user_id,role,content_type,structured_content,grounding) values($1,$2,$3,$4,'supervisor','blocks',$5::jsonb,$6::jsonb)",
+      [latest,owner.businessId,thread,owner.owner.userId,JSON.stringify([{type:"text",text:"A newly saved answer is ready."}]),JSON.stringify({status:"verified",intent:"unknown",evidence:[]})]);
+    await page.evaluate(()=>window.dispatchEvent(new Event("focus")));
+    const latestRow=page.locator('[data-work-message="'+latest+'"]');
+    await expect(latestRow).toContainText("A newly saved answer is ready.",{timeout:30000});
+    await expect(announcement).toHaveText("New Supervisor reply. Read the latest message to review it.");
+    const readLatest=page.getByRole("button",{name:/^(Read latest message|New message)$/});
+    await readLatest.focus();await page.keyboard.press("Enter");await expect(latestRow).toBeFocused();
+    await page.reload();await expect(latestRow).toBeVisible();
+    await expect(announcement).toBeEmpty();
+    const foreignPage=await other.newPage();await login(foreignPage,foreign);
+    const denied=await other.request.get("/api/ai/threads/"+thread+"/messages");
+    expect([401,403,404]).toContain(denied.status());
+    const foreignFile=await other.request.get(fileRoute+"/"+attachment.id,{maxRedirects:0});
+    expect([401,403,404]).toContain(foreignFile.status());
+  }finally{
+    await ctx.close();await other.close();
+    await db.query("delete from public.ai_threads where id=$1 and business_id=$2",[thread,owner.businessId]).catch(()=>{});
+    await db.end();
+  }
+});
+
+// Synthetic transport check in the real authenticated UI. It deliberately does
+// not claim a real model run or durable job: Task17C verifies the actual worker.
+test("@home Task16E stops an acknowledged live view without invoking a cancel or effect",async({browser})=>{
+  test.setTimeout(120_000);
+  const owner=seededCafe(0),thread=randomUUID();
+  const db=new pg.Client({host:"127.0.0.1",port:54322,database:"postgres",user:"postgres",password:"postgres",connectionTimeoutMillis:5000});
+  const ctx=await browser.newContext({baseURL:"http://127.0.0.1:3000",serviceWorkers:"block"});
+  await db.connect();
+  try{
+    await db.query("insert into public.ai_threads(id,business_id,owner_user_id,client_request_id,title) values($1,$2,$3,$4,$5)",[thread,owner.businessId,owner.owner.userId,randomUUID(),"Task16E live view fixture"]);
+    const page=await ctx.newPage();await login(page,owner);await openOwnedPage(page,owner,"?thread="+thread);
+    let realWrites=0;
+    page.on("request",request=>{if(request.method()==="POST"&&new URL(request.url()).pathname.startsWith("/api/ai/"))realWrites++;});
+    await page.evaluate(id=>{
+      const original=window.fetch.bind(window),state={opened:false,detached:0,ack:null};
+      window.__task16eStream=state;
+      window.fetch=(request,init)=>{
+        const url=new URL(typeof request==="string"?request:request instanceof URL?request.href:request.url,location.href);
+        if(url.pathname!=="/api/ai/threads/"+id+"/agent"||init?.method!=="POST")return original(request,init);
+        const stream=new ReadableStream({
+          start(controller){
+            state.opened=true;
+            state.ack=()=>controller.enqueue(new TextEncoder().encode("event: ack\ndata: "+JSON.stringify({runId:"synthetic-run",mode:"queued"})+"\n\n"));
+          },
+          cancel(){state.detached++;}
+        });
+        return Promise.resolve(new Response(stream,{headers:{"content-type":"text/event-stream"}}));
+      };
+    },thread);
+    const input=page.locator("#supervisor-home-composer");
+    await input.fill("Synthetic live stream view check");
+    await page.getByRole("button",{name:"Send",exact:true}).click();
+    await expect.poll(()=>page.evaluate(()=>window.__task16eStream.opened)).toBe(true);
+    const stop=page.getByRole("button",{name:"Stop live view",exact:true});
+    await expect(stop).toHaveCount(0);
+    await page.evaluate(()=>window.__task16eStream.ack());
+    await expect(stop).toBeVisible();
+    await assertAccessibleControls(page);
+    await stop.focus();await page.keyboard.press("Enter");
+    await expect.poll(()=>page.evaluate(()=>window.__task16eStream.detached)).toBe(1);
+    await expect(stop).toHaveCount(0);
+    await expect(page.getByText("Live view stopped. Saved work may continue; check Work for its status.",{exact:true})).toBeVisible();
+    await expect(input).toBeEnabled();
+    expect(realWrites).toBe(0);
+    const records=await db.query("select count(*)::int as n from public.ai_messages where thread_id=$1",[thread]);
+    expect(records.rows[0].n).toBe(0);
+  }finally{
+    await ctx.close();
+    await db.query("delete from public.ai_threads where id=$1 and business_id=$2",[thread,owner.businessId]).catch(()=>{});
+    await db.end();
+  }
 });

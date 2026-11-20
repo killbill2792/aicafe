@@ -55,6 +55,7 @@ export type ChatStartProps = {
   onSuggestion: (prompt: string) => void;
   suggestionsDisabled: boolean;
   unavailableMessage?: string;
+  welcome?: { heading: string; intro: string };
   /** The "Coming up" card (events, holidays, decisions); loads on its own. */
   comingUp?: import("react").ReactNode;
 };
@@ -68,26 +69,51 @@ function SafeAction({ item }: { item: ChatStartAttentionItem }) {
     : <Link className={className} href={item.href}>{item.actionLabel}</Link>;
 }
 
+/** The greeting is independent of deferred or unavailable business facts. */
+export function SupervisorWelcome({heading,intro}:{heading:string;intro:string}){
+  return <div className="supervisor-welcome-motion mx-auto w-full max-w-[36rem] pb-4 pt-5 sm:pt-12" data-testid="supervisor-welcome">
+    <h1 className="text-balance font-headline text-[26px] font-medium leading-tight tracking-[-0.025em] text-ink sm:text-[34px]">{heading}</h1>
+    <p className="mt-2 max-w-[32rem] text-[17px] leading-relaxed text-ink-muted">{intro}</p>
+  </div>;
+}
+
 /** One chat-start surface, never a second Home dashboard or attention query. */
-export default function ChatStart({ data, copy, hasMessages, expanded, onToggle, onSuggestion, suggestionsDisabled, unavailableMessage, comingUp }: ChatStartProps) {
+export default function ChatStart({ data, copy, hasMessages, expanded, onToggle, onSuggestion, suggestionsDisabled, unavailableMessage, welcome, comingUp }: ChatStartProps) {
   const tops = topChatStartItems(data.attention);
   return <div className="w-full min-w-0 space-y-3" data-testid="chat-start">
-    {hasMessages && <button type="button" aria-expanded={expanded} onClick={onToggle}
-      className="flex min-h-12 w-full min-w-0 items-center gap-2 rounded-xl border border-line bg-card px-3 text-start text-[15px] font-semibold text-ink focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ink">
-      <span className="min-w-0 flex-1 truncate" dir="auto">{copy.summary}</span>
+    {!hasMessages && welcome && <SupervisorWelcome {...welcome}/> }
+    {!hasMessages && unavailableMessage && <p role="status" className="text-[17px] leading-relaxed text-ink">{unavailableMessage}</p>}
+    {!hasMessages && copy.suggestions.length > 0 && <div className="mx-auto w-full max-w-[36rem]" aria-label={copy.suggestionsLabel}>
+      <div className="flex flex-wrap gap-x-2 gap-y-1" dir="inherit">
+        {copy.suggestions.map((label, index) => <button type="button" key={index}
+          disabled={suggestionsDisabled} onClick={() => onSuggestion(index === 3 ? copy.experimentPrompt : label)}
+          className="inline-flex min-h-12 max-w-full items-center rounded-full border border-line px-4 py-2 text-start text-[15px] font-medium leading-snug text-ink hover:bg-surface2 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ink disabled:opacity-50">
+          {label}
+        </button>)}
+      </div>
+    </div>}
+    <button type="button" aria-expanded={expanded} onClick={onToggle}
+      className="flex min-h-12 w-full min-w-0 items-center gap-2 rounded-xl px-2 text-start text-[15px] font-medium leading-snug text-ink-muted hover:bg-surface2 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ink">
+      <span className="min-w-0 flex-1 break-words" dir="auto">
+        <span className="block">{copy.summary}</span>
+        {!expanded&&(data.partial||data.estimated||data.incomplete||data.salesCaption)&&
+          <span className="block text-[13px] leading-snug">{[data.partial?copy.partial:null,data.estimated?copy.estimate:null,data.incomplete?copy.incomplete:null,data.salesCaption].filter(Boolean).join(" · ")}</span>}
+        {!expanded&&data.board&&(data.board.running.length>0||data.board.reports.length>0)&&
+          <span className="block text-[13px] leading-snug">{[data.board.running.length&&copy.boardRunning?copy.boardRunning+": "+data.board.running.length:null,data.board.reports.length&&copy.boardReports?copy.boardReports+": "+data.board.reports.length:null].filter(Boolean).join(" · ")}</span>}
+      </span>
       {expanded ? <ChevronUp size={18} className="shrink-0" aria-hidden="true" /> :
         <ChevronDown size={18} className="shrink-0" aria-hidden="true" />}
-    </button>}
+    </button>
     {comingUp}
-    {(!hasMessages || expanded) && <>
-      <section className="min-w-0 rounded-2xl border border-line bg-card p-3" aria-label={copy.keyNumbers}>
+    {expanded && <>
+      <section className="min-w-0 rounded-xl border border-line bg-surface p-3" aria-label={copy.keyNumbers}>
         <PeriodSwitch current={data.period} />
         <div className="mt-3 grid grid-cols-3 gap-1.5">
           {([
             { label: copy.sales, value: data.sales },
             { label: copy.knownCosts, value: data.costs },
             { label: copy.youKeep, value: data.kept },
-          ] as const).map((number) => <div key={number.label} className="min-w-0 rounded-xl bg-surface2 p-2">
+          ] as const).map((number) => <div key={number.label} className="min-w-0 rounded-lg bg-surface2 p-2">
             <p className="text-[13px] font-semibold leading-snug text-ink-muted">{number.label}</p>
             <p className="mt-1 break-words font-headline text-[17px] font-bold leading-tight text-ink" dir="auto">{number.value}</p>
             {number.label===copy.sales&&data.salesCaption&&<p className="mt-1 text-[13px] leading-snug text-ink-muted" dir="auto">{data.salesCaption}</p>}
@@ -151,16 +177,6 @@ export default function ChatStart({ data, copy, hasMessages, expanded, onToggle,
           </Link>
         </div>
       </section>
-      {unavailableMessage && <p role="status" className="rounded-xl border border-line bg-surface2 p-3 text-[17px] text-ink">{unavailableMessage}</p>}
-      {!hasMessages && copy.suggestions.length > 0 && <div className="min-w-0" aria-label={copy.suggestionsLabel}>
-        <div className="flex max-w-full gap-2 overflow-x-auto overscroll-x-contain pb-2" dir="inherit">
-          {copy.suggestions.map((label, index) => <button type="button" key={index}
-            disabled={suggestionsDisabled} onClick={() => onSuggestion(index === 3 ? copy.experimentPrompt : label)}
-            className="inline-flex min-h-12 w-max shrink-0 items-center whitespace-nowrap rounded-full bg-accent-soft px-4 py-2 text-[15px] font-semibold text-accent-text focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ink disabled:opacity-50">
-            {label}
-          </button>)}
-        </div>
-      </div>}
     </>}
   </div>;
 }

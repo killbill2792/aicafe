@@ -2,7 +2,7 @@ import {describe,expect,it} from "vitest";
 import React from "react";
 import {renderToStaticMarkup} from "react-dom/server";
 import type {SupervisorReplyBlock,EvidenceReference} from "@/lib/ai/conversations/contracts";
-import {groupReplyBlocks,originalReplyBlockIndex,sourceLabel,uniqueSources} from "./supervisorReplyPresentation";
+import {groupReplyBlocks,joinedAgentTextSpans,originalReplyBlockIndex,sourceLabel,uniqueSources} from "./supervisorReplyPresentation";
 import FactSummary from "./FactSummary";
 const source=(kind:EvidenceReference["source"]):EvidenceReference=>({
   source:kind,identifier:"test",asOf:"2026-10-12",
@@ -40,6 +40,12 @@ describe("Supervisor fact presentation",()=>{
     expect(html).toContain('data-testid="supervisor-fact-single"');
     expect(html).not.toContain("sm:grid-cols-2");
   });
+  it("formats metrics in the authenticated café currency without sign-based success or progress",()=>{
+    const html=renderToStaticMarkup(React.createElement(FactSummary,{blocks:[facts[0]] as Extract<SupervisorReplyBlock,{type:"metric"}>[],locale:"en",sourceText:"Source",cafeCurrency:"EUR"}));
+    expect(html).toContain("€5,000.00");expect(html).not.toContain("text-good");expect(html).not.toContain("text-warn");
+    const missing=renderToStaticMarkup(React.createElement(FactSummary,{blocks:[facts[0]] as Extract<SupervisorReplyBlock,{type:"metric"}>[],locale:"en",sourceText:"Source",cafeCurrency:null}));
+    expect(missing).toContain("Café currency could not be verified.");expect(missing).not.toContain("$5,000");
+  });
   it("localizes ALL evidence-source enums in English, Spanish and Arabic",()=>{
     const codes:EvidenceReference["source"][]=["cafe_state","historical_rollups","staff_timecards",
       "pricing_engine","operating_tasks","owner_rules","verified_external","unverified_external"];
@@ -68,4 +74,24 @@ describe("persisted provenance block index mapping",()=>{
     expect(originalReplyBlockIndex(blocks,groups[2].block)).toBe(5);
     expect(originalReplyBlockIndex(blocks,{})).toBe(-1);
   });
+});
+
+describe("agent Markdown storage boundaries",()=>{
+ it("joins exact text and rebases source offsets across chunks, not across approvals",()=>{
+   const head={type:"text",text:"## Sales\nItem | Revenue\n--- | ---:\nLatte | $50\n"};
+   const tail={type:"text",text:"Mocha | $60\n"};
+   const card={type:"proposal_card",proposalId:"33333333-3333-4333-8333-333333333333"};
+   const after={type:"text",text:"End."};
+   const groups=groupReplyBlocks([head,tail,card,after],true);
+   expect(groups).toHaveLength(3);
+   const first=groups[0];
+   if(first.kind!=="agentText")throw Error("expected joined text");
+   expect(first.text).toBe(head.text+tail.text);
+   const start=tail.text.indexOf("$60");
+   expect(joinedAgentTextSpans(first,[{blockIndex:1,start,end:start+3,source:"estimate"},
+     {blockIndex:3,start:0,end:3,source:"owner"},{blockIndex:1,start:0,end:999}]))
+     .toEqual([{start:head.text.length+start,end:head.text.length+start+3,source:"estimate",detail:undefined}]);
+   expect(groups[1]).toEqual({kind:"single",block:card});
+   expect(groupReplyBlocks([head,tail])).toEqual([{kind:"single",block:head},{kind:"single",block:tail}]);
+ });
 });

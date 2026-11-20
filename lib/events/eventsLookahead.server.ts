@@ -18,11 +18,12 @@ import type {NearbyEventsSearch} from "./nearbyEvents";
 import {searchNearbyEvents} from "./nearbyEventsSearch.server";
 import {scanSharedResearch,newLdiBudget,type LdiBudget} from "./ldiIntegration.server";
 import {verifyUpcomingEventChanges} from "./eventVerification.server";
+import {withEventWorkClaim} from "./cityEventPersistence.server";
 import {stableMessageId,SupabaseLoopRepository} from "@/lib/ai/supervisor/loop/supabase.server";
 import {notifyOwner} from "@/lib/operating/notifyOwner.server";
 import {effectHash,proposeLoop,monitorLoop,type LoopProposal,type OwnerLoopScope} from "@/lib/ai/supervisor/loop/engine";
 import {supervisorLoopRegistry} from "@/lib/ai/supervisor/loop/priceExperiment.server";
-import {authorizedScheduledEventScope,eventPlanFacts,selectedEventPlanFacts,eventReadinessCapabilityId,selectEventObservations,observedEventProposalIds}
+import {authorizedScheduledEventScope,eventPlanFacts,selectedEventPlanFacts,eventReadinessCapabilityId,eventReadinessEffect,selectEventObservations,observedEventProposalDates,withEventObservationClaim,readOnlyEventObservation,eventObservationFacts,eventDayActivity}
   from "@/lib/ai/supervisor/loop/eventReadiness.server";
 import {runAgentTurn} from "@/lib/ai/agent/loop.server";
 import {searchWeb} from "@/lib/ai/agent/webSearch.server";
@@ -58,28 +59,43 @@ export function eventAssessmentSourceHash(timeline:Pick<SavedEventTimeline,"city
   });
 }
 export type SavedEventAssessment={
-  startDate:string;factsHash:string;sourceHash:string;
+  startDate:string;factsHash:string;sourceHash:string;assessedOn?:string;batchKey?:string;evidenceHash?:string;
 };
 /** A prior no-action is a durable assessment, not an alert. Approved/rejected
  * plans always win; a changed source or confirmed event can be reconsidered. */
+type EventAssessmentDay={date:string;events:CafeEvent[];hash:string;refresh?:boolean;batchKey?:string;priorEvidenceHash?:string};
+const occurrenceKey=(ids:readonly string[])=>effectHash([...ids].sort()).slice(0,24);
+const eventPlanTaskKey=(date:string,ids:readonly string[])=>"event-plan:"+date+
+  (ids.length?":"+occurrenceKey(ids):"");
 export function pendingEventDays(events:readonly CafeEvent[],
-  plans:readonly {startDate:string;factsHash:string;status?:string}[],from:string,to:string,
-  assessments:readonly SavedEventAssessment[]=[],sourceHash=""):Array<{
-    date:string;events:CafeEvent[];hash:string
-  }>{
-  const result:Array<{date:string;events:CafeEvent[];hash:string}>=[];
+  plans:readonly {startDate:string;factsHash:string;status?:string;eventIds?:string[]}[],from:string,to:string,
+  assessments:readonly SavedEventAssessment[]=[],sourceHash=""):EventAssessmentDay[]{
+  const result:EventAssessmentDay[]=[];
   for(let day=from;day<=to;day=addDays(day,1)){
-    const found=events.filter(e=>e.status==="found"&&e.startDate<=day&&e.endDate>=day)
-      .sort((a,b)=>a.id.localeCompare(b.id)).slice(0,8);
-    if(!found.length)continue;
-    const hash=effectHash(eventPlanFacts(found));
-    if(assessments.some(a=>a.startDate===day&&a.factsHash===hash&&
-      a.sourceHash===sourceHash))continue;
-    // This also preserves historical full-day drafts. Any approved or declined
-    // owner decision remains authoritative, regardless of new public evidence.
-    if(!plans.some(p=>p.startDate===day&&(p.factsHash===hash||
-      (p.status!==undefined&&p.status!=="draft"&&p.status!=="stale"&&p.status!=="expired"))))
-      result.push({date:day,events:found,hash});
+    const candidates=events.filter(e=>e.status==="found"&&e.startDate<=day&&e.endDate>=day)
+      .sort((a,b)=>a.id.localeCompare(b.id));
+    for(let offset=0;offset<candidates.length;offset+=8){
+      const found=candidates.slice(offset,offset+8);
+      const hash=effectHash(eventPlanFacts(found));
+      const batchKey=candidates.length>8?occurrenceKey(found.map(e=>e.id)):undefined;
+      const batch={date:day,events:found,hash,...(batchKey?{batchKey}:{})};
+      const prior=assessments.find(a=>a.startDate===day&&a.factsHash===hash&&a.sourceHash===sourceHash);
+      if(day===from&&prior?.assessedOn&&prior.assessedOn<day&&found.some(e=>e.startDate<e.endDate)){
+        result.push({...batch,refresh:true});continue;
+      }
+      if(prior){
+        if(day===from&&prior.evidenceHash&&found.some(e=>e.startDate<e.endDate))
+          result.push({...batch,refresh:true,priorEvidenceHash:prior.evidenceHash});
+        continue;
+      }
+      // A decision for one selected subset must not suppress a different batch.
+      if(!plans.some(p=>p.startDate===day&&(p.factsHash===hash||
+        (!p.eventIds?.length&&!batchKey&&p.status!==undefined&&
+          !["draft","stale","expired"].includes(p.status))||
+        (p.eventIds?.length&&found.every(e=>p.eventIds!.includes(e.id))&&
+          p.factsHash===hash&&p.status!==undefined&&!["draft","stale","expired"].includes(p.status)))))
+        result.push(batch);
+    }
   }
   return result;
 }
@@ -181,11 +197,14 @@ export async function scanCafe(db:Db,b:Business,today:string,
   }
   return count;
 }
-async function eventThread(db:Db,businessId:string,ownerId:string,day:string){
-  const key=stableMessageId("event-day-thread:"+businessId+":"+ownerId+":"+day);
+async function eventThread(db:Db,businessId:string,ownerId:string,day:string,event?:CafeEvent){
+  const key=stableMessageId("event-day-thread:"+businessId+":"+ownerId+":"+(event?"event:"+event.id:day));
+  const suffix=event?" · event:"+event.id:"";
+  const prefix="Events · "+day+(event?" · ":"");
+  const title=prefix+(event?.name.replace(/[\r\n<>]/g," ").trim().slice(0,Math.max(0,120-prefix.length-suffix.length))??"")+suffix;
   const created=await db.from("ai_threads").upsert({
     business_id:businessId,owner_user_id:ownerId,client_request_id:key,
-    title:"Events · "+day,
+    title,
   },{onConflict:"business_id,owner_user_id,client_request_id",ignoreDuplicates:true});
   requireOk(created.error);
   const existing=await db.from("ai_threads").select("id")
@@ -200,53 +219,68 @@ async function eventThread(db:Db,businessId:string,ownerId:string,day:string){
  * event-plan approval. Its stable day ID makes positive and no-action judgments
  * replay-safe without creating a second assessment store. */
 async function saveEventAssessment(db:Db,businessId:string,date:string,
-  factsHash:string,sourceHash:string,outcome:"proposed"|"no_action",reason:string){
+  factsHash:string,sourceHash:string,outcome:"proposed"|"no_action",reason:string,
+  assessedOn:string,batchKey?:string,evidenceHash?:string){
   const saved=await db.from("operating_tasks").upsert({
-    id:"event-assessment:"+date,business_id:businessId,agent_id:"alex",
+    id:"event-assessment:"+date+(batchKey?":"+batchKey:""),business_id:businessId,agent_id:"alex",
     kind:"event_assessment",entity_type:"event_day",entity_id:date,
     status:"handled",confidence:"low",
-    payload:{businessDate:date,factsHash,sourceHash,outcome,reason:reason.slice(0,500)},
+    payload:{businessDate:date,factsHash,sourceHash,outcome,assessedOn,batchKey:batchKey??null,evidenceHash:evidenceHash??null,reason:reason.slice(0,500)},
     evidence:[{source:"cafe_events",facts:{businessDate:date,factsHash}}],
   },{onConflict:"business_id,id"});
   requireOk(saved.error);
 }
 async function readEventAssessments(db:Db,businessId:string,from:string,to:string):
   Promise<SavedEventAssessment[]>{
-  const ids:string[]=[];
-  for(let d=from;d<=to;d=addDays(d,1))ids.push("event-assessment:"+d);
   const saved=await db.from("operating_tasks").select("id,status,payload")
-    .eq("business_id",businessId).eq("kind","event_assessment").in("id",ids).limit(90);
+    .eq("business_id",businessId).eq("kind","event_assessment").eq("entity_type","event_day")
+    .gte("entity_id",from).lte("entity_id",to).order("id").limit(1000);
   requireOk(saved.error);
   return (saved.data??[]).flatMap(row=>{
     const p=row.payload as Record<string,unknown>|null;
     return row.status==="handled"&&typeof p?.factsHash==="string"&&
       typeof p?.sourceHash==="string"?
-      [{startDate:row.id.slice("event-assessment:".length),
-        factsHash:p.factsHash,sourceHash:p.sourceHash}]:[];
+      [{startDate:typeof p.businessDate==="string"?p.businessDate:row.id.slice("event-assessment:".length, "event-assessment:".length+10),
+        factsHash:p.factsHash,sourceHash:p.sourceHash,
+        ...(typeof p.batchKey==="string"?{batchKey:p.batchKey}:{}),
+        ...(typeof p.evidenceHash==="string"?{evidenceHash:p.evidenceHash}:{}),
+        ...(typeof p.assessedOn==="string"?{assessedOn:p.assessedOn}:{})}]:[];
   });
+}
+
+/** Exact unchanged action identities can reuse an existing decision. Never treat
+ * a previously declined proposal as approval or change an old effect in place. */
+export function matchingEventPreparation(plans:SavedEventTimeline["plans"],
+  input:{startDate:string;endDate:string;eventIds:string[];actions:unknown},factsHash:string){
+  const key=(actions:unknown)=>{
+    if(!Array.isArray(actions)||!actions.length)return null;
+    const values=actions.flatMap(value=>{
+      if(!value||typeof value.area!=="string"||typeof value.action!=="string")return [];
+      return [value.area+"|"+value.action.normalize("NFKC").trim().replace(/\s+/g," ").toLowerCase()];
+    });
+    return values.length===actions.length?JSON.stringify(values.sort()):null;
+  };
+  const requested=key(input.actions);
+  if(!requested)return undefined;
+  const ids=JSON.stringify([...input.eventIds].sort());
+  return plans.find(p=>["draft","approved","committed","manual_confirmed","rejected"].includes(p.status)&&
+    p.startDate<=input.startDate&&p.endDate>=input.endDate&&p.factsHash===factsHash&&
+    JSON.stringify([...(p.eventIds??[])].sort())===ids&&key(p.actions)===requested);
 }
 
 /** The existing scheduled Supervisor consumes E's canonical saved Events facade
  * and D's scoped Toast/report evidence, and MAY use its existing web_search.
  * No separate investigator, money metric, or auto-approval is introduced. */
 export async function draftDay(db:Db,b:Business,ownerId:string,locale:"en"|"es"|"ar",
-  today:string,day:{date:string;events:CafeEvent[];hash:string},
+  today:string,day:EventAssessmentDay,
   ownerFacts:readonly SavedFact[],timeline:SavedEventTimeline,
   sourceHash:string):Promise<boolean>{
-  const threadId=await eventThread(db,b.id,ownerId,day.date);
+  const singleton=day.events.length===1?day.events[0]:undefined;
+  const priorThread=singleton?timeline.plans.find(p=>p.eventIds?.length===1&&p.eventIds[0]===singleton.id)?.threadId:undefined;
+  const threadId=priorThread??await eventThread(db,b.id,ownerId,day.date,singleton);
   const scope:OwnerLoopScope=await authorizedScheduledEventScope({
     businessId:b.id,ownerUserId:ownerId,threadId,locale,
   });
-  const requestKey=stableMessageId("event-proposal:"+b.id+":"+ownerId+":"+day.date+":"+day.hash);
-  const existing=await db.from("supervisor_proposals").select("id")
-    .eq("business_id",b.id).eq("owner_user_id",ownerId).eq("request_key",requestKey)
-    .maybeSingle();
-  requireOk(existing.error);
-  if(existing.data){
-    // Repair eligibility stays with recoverPlanDelivery, not a second model turn.
-    await saveEventAssessment(db,b.id,day.date,day.hash,sourceHash,"proposed","");
-    return false;
-  }
   const facts=eventPlanFacts(day.events);
   const [evidence,profile,location]=await Promise.all([
     readEventDemandEvidence(db,{businessId:b.id,ownerUserId:ownerId},{
@@ -256,6 +290,29 @@ export async function draftDay(db:Db,b:Business,ownerId:string,locale:"en"|"es"|
     readPrimaryLocation(db,b.id),
     readCafeLocation(db,b.id,ownerFacts),
   ]);
+  // Keep materially different operational evidence distinct from timestamp-only
+  // refreshes. Live amounts are evaluated by the existing live monitor instead
+  // of triggering a paid preparation turn for each new order.
+  const evidenceHash=effectHash({normal:evidence.normal,usualHours:evidence.usualHours,
+    priorOutcomes:evidence.priorOutcomes,
+    currentActualObservations:evidence.currentObservations.filter(s=>s.coverage==="actual"),
+    ownerObservations:evidence.ownerObservations,
+    otherKnownEvents:[...evidence.otherKnownEvents].sort(),readiness:evidence.readiness,
+    openingHours:profile?.open_hours??null,address:location?.label??null,
+    coverage:{missing:[...evidence.coverage.missing].sort(),caveats:[...evidence.coverage.caveats].sort()}});
+  if(day.priorEvidenceHash===evidenceHash)return false;
+  const requestKey=stableMessageId("event-proposal:"+b.id+":"+ownerId+":"+day.date+":"+day.hash+":"+sourceHash+":"+evidenceHash+
+    (day.refresh?":day-of":""));
+  return (await withEventWorkClaim(db,b.id,ownerId,"assessment",requestKey,day.date,async complete=>{
+  const existing=await db.from("supervisor_proposals").select("id")
+    .eq("business_id",b.id).eq("owner_user_id",ownerId).eq("request_key",requestKey)
+    .maybeSingle();
+  requireOk(existing.error);
+  if(existing.data){
+    // Repair eligibility stays with recoverPlanDelivery, not a second model turn.
+    await saveEventAssessment(db,b.id,day.date,day.hash,sourceHash,"proposed","",today,day.batchKey,evidenceHash);
+    complete();return false;
+  }
   // Bounded, factual and café-specific. No synthetic attendance, routes, uplift
   // or hours are manufactured when E/D did not establish them.
   const context={
@@ -275,9 +332,14 @@ export async function draftDay(db:Db,b:Business,ownerId:string,locale:"en"|"es"|
       assessment:p.assessment,rationale:p.rationale,
     })),
     cafePerformance:evidence,
+    previousReadinessPlans:timeline.plans.filter(p=>p.eventIds?.some(id=>facts.some(f=>f.id===id)))
+      .slice(0,8).map(p=>({eventIds:p.eventIds,startDate:p.startDate,endDate:p.endDate,
+        status:p.status,summary:p.summary,actions:p.actions,expectedBusyHours:p.expectedBusyHours})),
   };
   let selectedEventIds:string[]=[];
   let selectedFactsHash:string|null=null;
+  let reused=false;
+  let proposalAttempted=false;
   const turn=await runAgentTurn({
     businessId:b.id,requestId:requestKey,ownerFacts,
     toolNames:["propose_event_plan","web_search","get_events"],
@@ -290,8 +352,14 @@ export async function draftDay(db:Db,b:Business,ownerId:string,locale:"en"|"es"|
       "before deciding. Do not ask the owner to research external information. "+
       "If there is no defensible café-specific preparation advice, explain uncertainty "+
       "briefly and do NOT call propose_event_plan. Otherwise call it once with 1–3 "+
-      "specific, inert owner-reviewable recommendations. Dates must both be "+
-      day.date+". Only include expectedBusyHours when a timed source and usable "+
+      "specific, inert owner-reviewable recommendations. Start on "+day.date+
+      ". You may cover the remaining verified dates of the SAME occurrence when "+
+      "the same actions are justified throughout; do not turn a first-day forecast into "+
+      "a multi-day hourly estimate. For different daily preparation, assess independently. "+
+      "Use existing readiness plans and historical outcomes before asking for another approval. "+
+      "If an unchanged plan is adequate or declined, do not repeat it; only recommend a materially "+
+      "different action when supported by new evidence. Assign high, medium or low importance "+
+      "based on café-specific evidence, not event size alone. Only include expectedBusyHours when a timed source and usable "+
       "café evidence justify an explicitly estimated window; else use []. "+
       "Never claim an event caused a sales change or invent attendance, uplift, "+
       "numeric forecast, changed busy hours or any action already taken.",
@@ -307,13 +375,24 @@ export async function draftDay(db:Db,b:Business,ownerId:string,locale:"en"|"es"|
         getMenuCatalog:async()=>{throw new Error("tool_unavailable");},
       },
       eventPlans:{propose:async input=>{
+        if(proposalAttempted)throw new Error("event_plan_already_attempted");
+        proposalAttempted=true;
         // All-day facts are rechecked for races, but an informed Supervisor
         // may select ONE relevant ID even if eight events occur simultaneously.
         const latest=await readCanonicalCafeEvents(db,b.id,day.date,day.date);
         const selected=selectedEventPlanFacts(day.events,latest,day.date,
           day.hash,input.eventIds);
-        if(input.startDate!==day.date||input.endDate!==day.date)
+        if(input.startDate!==day.date||input.endDate<input.startDate||
+          input.endDate>addDays(input.startDate,13)||
+          selected.some(e=>e.endDate<input.endDate))
           throw new Error("event_facts_changed");
+        if(input.endDate!==input.startDate&&input.expectedBusyHours.length)
+          throw new Error("event_busy_hours_not_supported");
+        const prior=matchingEventPreparation(timeline.plans,input,effectHash(selected));
+        if(prior){
+          reused=true;
+          return {proposalId:prior.proposalId,revision:prior.revision,reused:true,status:prior.status};
+        }
         const timed=selected.some(e=>e.startTime&&e.endTime&&e.sourceUrl);
         if(input.expectedBusyHours.length>0&&
           (!timed||!evidence.usualHours.length))
@@ -326,15 +405,22 @@ export async function draftDay(db:Db,b:Business,ownerId:string,locale:"en"|"es"|
       }},
     },
   });
+  if(reused){
+    await saveEventAssessment(db,b.id,day.date,day.hash,sourceHash,
+      "no_action","Existing preparation decision remains applicable.",today,day.batchKey,evidenceHash);
+    complete();return false;
+  }
   const proposal=turn.results.find(r=>r.source==="event_plan_proposal"&&
     r.missing.length===0&&r.draft===true&&typeof r.proposalId==="string");
   if(!proposal){
     // Budget exhaustion/provider errors are NOT a completed no-action review.
-    if(turn.endReason==="complete"&&turn.text.trim()&&
+    if(turn.endReason==="complete"&&turn.text.trim()&&!proposalAttempted&&
       !turn.results.some(r=>r.source==="event_plan_proposal"||
-        r.source==="propose_event_plan"))
+        r.source==="propose_event_plan"||(r.source==="web_search"&&r.missing.length>0))){
       await saveEventAssessment(db,b.id,day.date,day.hash,sourceHash,
-        "no_action",turn.text);
+        "no_action",turn.text,today,day.batchKey,evidenceHash);
+      complete();
+    }
     return false;
   }
   const {reply,metadata}=turn.text.trim()?agentReplyPayload(turn):
@@ -342,8 +428,9 @@ export async function draftDay(db:Db,b:Business,ownerId:string,locale:"en"|"es"|
   if(!selectedFactsHash)throw new Error("event_selected_facts_missing");
   const messageId=planMessageId(b.id,ownerId,day.date,
     selectedFactsHash,String(proposal.proposalId));
+  const taskId=eventPlanTaskKey(day.date,selectedEventIds);
   await notifyOwner(db,{
-    businessId:b.id,ownerUserId:ownerId,threadId,taskId:"event-plan:"+day.date,
+    businessId:b.id,ownerUserId:ownerId,threadId,taskId,
     kind:"event_plan",localDate:today,important:true,
   },async()=>{
   const message=await db.from("ai_messages").insert({
@@ -355,7 +442,7 @@ export async function draftDay(db:Db,b:Business,ownerId:string,locale:"en"|"es"|
   });
   if(message.error&&message.error.code!=="23505")throw new Error("event_message_unavailable");
   const task=await db.from("operating_tasks").upsert({
-    id:"event-plan:"+day.date,business_id:b.id,agent_id:"alex",kind:"event_plan",
+    id:taskId,business_id:b.id,agent_id:"alex",kind:"event_plan",
     entity_type:"event_day",entity_id:day.date,status:"needs_owner",confidence:"low",
     payload:{businessDate:day.date,plannedOn:today,threadId,ownerNoticeDate:today,
       proposalId:proposal.proposalId,messageId,needsApproval:true,selectedEventIds},
@@ -364,8 +451,9 @@ export async function draftDay(db:Db,b:Business,ownerId:string,locale:"en"|"es"|
   },{onConflict:"business_id,id"});
   requireOk(task.error);
   });
-  await saveEventAssessment(db,b.id,day.date,day.hash,sourceHash,"proposed","");
-  return true;
+  await saveEventAssessment(db,b.id,day.date,day.hash,sourceHash,"proposed","",today,day.batchKey,evidenceHash);
+  complete();return true;
+  }))??false;
 }
 
 /** A proposal write can succeed while its later message/task write fails.
@@ -379,22 +467,22 @@ export async function recoverPlanDelivery(db:Db,businessId:string,ownerId:string
   // Only the newest eligible draft may own the day-keyed inbox notification.
   const seenDays=new Set<string>();
   const latest=plans.filter(p=>{
-    if(p.startDate<today||p.startDate>addDays(today,13)||seenDays.has(p.startDate))
-      return false;
-    // A later owner-approved/rejected plan supersedes older drafts too.
-    seenDays.add(p.startDate);
+    const key=eventPlanTaskKey(p.startDate,p.eventIds??[]);
+    if(p.startDate<today||p.startDate>addDays(today,13)||seenDays.has(key))return false;
+    // A later exact occurrence decision supersedes older drafts, not unrelated events.
+    seenDays.add(key);
     if(p.status!=="draft")return false;
     const matching=events.filter(e=>e.status==="found"&&
       e.startDate<=p.startDate&&e.endDate>=p.startDate)
-      .sort((a,b)=>a.id.localeCompare(b.id)).slice(0,8);
+      .sort((a,b)=>a.id.localeCompare(b.id));
     const selected=p.eventIds?.length?
-      matching.filter(e=>p.eventIds!.includes(e.id)):matching;
+      matching.filter(e=>p.eventIds!.includes(e.id)):matching.slice(0,8);
     return (!p.eventIds?.length||selected.length===p.eventIds.length)&&
       p.factsHash===effectHash(eventPlanFacts(selected));
   });
   if(!latest.length)return {repaired:0,created:0};
   const rows=await db.from("operating_tasks").select("id,payload").eq("business_id",businessId)
-    .in("id",latest.map(p=>"event-plan:"+p.startDate));
+    .in("id",[...new Set(latest.flatMap(p=>[eventPlanTaskKey(p.startDate,p.eventIds??[]),"event-plan:"+p.startDate]))]);
   requireOk(rows.error);
   const known=new Map<string,Record<string,unknown>>((rows.data??[]).map(t=>[
     t.id,t.payload&&typeof t.payload==="object"&&!Array.isArray(t.payload)
@@ -402,7 +490,11 @@ export async function recoverPlanDelivery(db:Db,businessId:string,ownerId:string
   ]));
   let repaired=0,created=0;
   for(const p of latest){
-    const taskId="event-plan:"+p.startDate;
+    const exactKey=eventPlanTaskKey(p.startDate,p.eventIds??[]),legacyKey="event-plan:"+p.startDate;
+    const legacy=known.get(legacyKey);
+    const legacyIds=Array.isArray(legacy?.selectedEventIds)?legacy.selectedEventIds.map(String):[];
+    const taskId=legacy&&(legacy.proposalId===p.proposalId||
+      legacyIds.length>0&&occurrenceKey(legacyIds)===occurrenceKey(p.eventIds??[]))?legacyKey:exactKey;
     const previous=known.get(taskId);
     // Scope the message to the proposal, not just the day's event facts:
     // owner-chat drafts can share a facts hash but have different approval cards.
@@ -449,7 +541,8 @@ export async function recoverPlanDelivery(db:Db,businessId:string,ownerId:string
  * Drafts remain drafts: no owner approval, commit or POS effect is invoked.
  * Recheck recently closed days to incorporate late/corrected Toast imports. */
 export async function reportSavedEventDays(db:Db,businessId:string,ownerId:string,
-  today:string):Promise<{checked:number;reported:number;failed:number}>{
+  today:string,currentEvents?:readonly CafeEvent[],timezone?:string):Promise<{checked:number;reported:number;failed:number}>{
+  if(currentEvents&&!timezone)throw new Error("event_observation_timezone_required");
   const rows=await db.from("supervisor_proposals")
     .select("id,owner_user_id,thread_id,capability_id,capability_version,canonical_effect_payload,effect_hash,baseline,monitor_spec,status,revision,locale,monitoring_start_date,created_at")
     .eq("business_id",businessId).eq("owner_user_id",ownerId)
@@ -468,12 +561,34 @@ export async function reportSavedEventDays(db:Db,businessId:string,ownerId:strin
   }));
   let checked=0,reported=0,failed=0;
   const repo=new SupabaseLoopRepository();
-  const observedIds=await observedEventProposalIds(db,businessId,
-    proposals.map(p=>p.id));
-  const eligible=selectEventObservations(proposals,observedIds)
-    .map(proposal=>({proposal,days:closedEventObservationDays(
-      proposal.monitoringStartDate!,proposal.monitorSpec.durationDays,today)}))
-    .filter(item=>item.days.length>0).slice(0,6);
+  const observed=await observedEventProposalDates(db,businessId,proposals.map(p=>p.id));
+  const current=currentEvents?await eventObservationFacts(db,businessId,proposals,today,currentEvents):undefined;
+  const candidateDates=new Set<string>();
+  const projected=proposals.flatMap(p=>{const observation=readOnlyEventObservation(p,current,today,timezone);return observation?[observation]:[]});
+  for(const proposal of projected){
+    for(const date of closedEventObservationDays(proposal.monitoringStartDate!,proposal.monitorSpec.durationDays,today))
+      candidateDates.add(date);
+  }
+  const eligibleById=new Map<string,{proposal:LoopProposal;days:string[]}>();
+  for(const date of [...candidateDates].sort()){
+    const [proposal]=selectEventObservations(proposals,observed.ids,date,observed.byDate.get(date),current,today,timezone);
+    if(!proposal)continue;
+    const group=eligibleById.get(proposal.id)??{proposal,days:[]};
+    group.days.push(date);eligibleById.set(proposal.id,group);
+  }
+  for(const p of projected){
+    const effect=eventReadinessEffect.parse(p.canonicalEffectPayload);
+    const end=addDays(p.monitoringStartDate!,p.monitorSpec.durationDays-1);
+    const closed=closedEventObservationDays(p.monitoringStartDate!,p.monitorSpec.durationDays,today);
+    // Inactive windows still owe a historical report, not today's sales.
+    const inactiveEnd=current&&timezone&&end<today&&closed.length>0&&
+      eventDayActivity(effect.eventIds.map(id=>current.get(id)??null),end,timezone)!=="active";
+    if((effect.observationWindow?.closeEarly||inactiveEnd)&&!eligibleById.has(p.id))
+      eligibleById.set(p.id,{proposal:p,days:[]});
+  }
+  const groups=[...eligibleById.values()];
+  // Rotate bounded work each café-local day; newer proposals cannot starve older ones.
+  const eligible=dailyCafeScanOrder(groups,new Date(today+"T00:00:00Z")).slice(0,6);
   for(const {proposal:p,days} of eligible){
     checked++;
     try{
@@ -483,11 +598,17 @@ export async function reportSavedEventDays(db:Db,businessId:string,ownerId:strin
       // The monitor itself certifies coverage. A missing Toast day remains
       // insufficient evidence, never a fabricated zero or implementation claim.
       for(const day of days){
-        const result=await monitorLoop(scope,supervisorLoopRegistry,repo,p,day);
+        const result=await withEventObservationClaim(db,scope,p,day,()=>monitorLoop(scope,supervisorLoopRegistry,repo,p,day));
         if(result)reported++;
       }
-      // The final observed day above already generates the terminal report.
-      // Replaying that day on later crons refreshes corrected Toast evidence.
+      // If another primary proposal owns the final day, finalize this partial
+      // window without sampling that date again. Preserve previous approval/history.
+      const end=addDays(p.monitoringStartDate!,p.monitorSpec.durationDays-1);
+      if((end<today&&!days.includes(end))||eventReadinessEffect.parse(p.canonicalEffectPayload).observationWindow?.closeEarly){
+        const closingDay=addDays(end,1);
+        const result=await withEventObservationClaim(db,scope,p,closingDay,()=>monitorLoop(scope,supervisorLoopRegistry,repo,p,closingDay));
+        if(result)reported++;
+      }
     }catch{
       failed++;
       console.warn("events_observation_report_failed");
@@ -521,10 +642,12 @@ export async function runEventsLookahead(db:Db=createAdminSupabaseClient(),
           .limit(1).maybeSingle();
         requireOk(owner.error);
         if(!owner.data?.user_id){result.skipped++;continue;}
+        const ownerId=owner.data.user_id;
         // Required before ANY paid model or web search and rechecked at proposal time.
         await assertCafeAiAccess(b.id);
         // Reconcile yesterday's saved event regardless of discovery/search outcome.
-        const observation=await reportSavedEventDays(db,b.id,owner.data.user_id,today)
+        const observation=await readCanonicalCafeEvents(db,b.id,addDays(today,-14),addDays(today,13))
+          .then(events=>reportSavedEventDays(db,b.id,ownerId,today,events,b.timezone!))
           .catch(()=>{
             console.warn("events_observation_unavailable");
             return {checked:0,reported:0,failed:1};
@@ -538,8 +661,11 @@ export async function runEventsLookahead(db:Db=createAdminSupabaseClient(),
         const verifiedChanges=await verifyUpcomingEventChanges(db,b.id,owner.data.user_id,
           b.timezone,today,timeline,now);
         // Re-read updated event statuses before planning; never alter approved plans.
-        if(verifiedChanges)timeline=await readSavedEventTimeline(db,
-          {businessId:b.id,ownerUserId:owner.data.user_id},today,to);
+        if(verifiedChanges){
+          timeline=await readSavedEventTimeline(db,{businessId:b.id,ownerUserId:owner.data.user_id},today,to);
+          const reconciled=await reportSavedEventDays(db,b.id,owner.data.user_id,today,timeline.events,b.timezone);
+          result.failed+=reconciled.failed;
+        }
         const sourceHash=eventAssessmentSourceHash(timeline);
         const assessments=await readEventAssessments(db,b.id,today,to);
         const candidates=pendingEventDays(timeline.events,timeline.plans,today,to,
@@ -560,7 +686,7 @@ export async function runEventsLookahead(db:Db=createAdminSupabaseClient(),
         const locale=localeRow.data?.locale==="es"||localeRow.data?.locale==="ar"
           ?localeRow.data.locale:"en";
         const ownerFacts=await loadOwnerFacts(b.id,db);
-        for(const day of candidates.slice(0,remaining)){
+        for(const day of [...candidates.filter(d=>!d.priorEvidenceHash),...candidates.filter(d=>d.priorEvidenceHash)].slice(0,remaining)){
           try{
             if(await draftDay(db,b,owner.data.user_id,locale,today,day,
               ownerFacts,timeline,sourceHash))result.planned++;

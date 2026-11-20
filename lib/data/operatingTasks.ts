@@ -4,6 +4,9 @@ import { isSupabaseConfigured } from "@/lib/supabase/client";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
 import { getActiveBusinessId } from "./getActiveBusinessId";
 import type { OperatingTask } from "@/lib/operating/tasks";
+import {getMenuControlCenter} from "./getMenuControlCenter";
+import {projectPriceReviewTasks} from "@/lib/viewmodels/operationsTeam";
+import {reconcileOperatingTasks,taskRefreshChangesRow} from "@/lib/operating/reconcileTasks";
 
 type TaskRow = {
   id: string; business_id: string; agent_id: OperatingTask["agentId"]; kind: OperatingTask["kind"];
@@ -30,8 +33,8 @@ function fromRow(row: TaskRow): OperatingTask {
 }
 
 /**
- * The one writer for an item the inbox computes on read (price reviews). Called only by an
- * owner decision on that item, never on page load. Idempotent on the stable key
+ * The one writer for an item the inbox computes on read (price reviews). Called by an owner decision or the existing
+ * derived refresh, never on page load. Idempotent on the stable key
  * (business_id, id): a repeat or a race inserts nothing.
  */
 export async function storeDerivedOperatingTask(client: SupabaseClient, businessId: string, task: OperatingTask): Promise<void> {
@@ -50,7 +53,7 @@ export async function storeDerivedOperatingTask(client: SupabaseClient, business
  * expires, or responds to tasks. Future Supervisor summaries must use these
  * statuses, not raw engine signals, for Needs You / Handled / Watching claims.
  */
-export async function readPersistedOperatingTasks(businessId: string, explicit?:{client:SupabaseClient;businessId:string;ownerUserId?:string}): Promise<OperatingTask[]> {
+export async function readPersistedOperatingTasks(businessId: string, explicit?:{client:SupabaseClient;businessId:string;ownerUserId?:string;kind?:OperatingTask["kind"]}): Promise<OperatingTask[]> {
   if (!isSupabaseConfigured()) throw new Error("Persisted café tasks are unavailable");
   const supabase = explicit?.client ?? await createServerSupabaseClient();
   if (explicit) {
@@ -70,7 +73,35 @@ export async function readPersistedOperatingTasks(businessId: string, explicit?:
     if(!/^[0-9a-f-]{36}$/i.test(explicit.ownerUserId))throw new Error("Invalid owner scope");
     query=query.or("kind.not.in.(commitment,priority_notice),owner_user_id.eq."+explicit.ownerUserId);
   }else if(explicit)query=query.not("kind","in","(commitment,priority_notice)");
+  if(explicit?.kind)query=query.eq("kind",explicit.kind);
   const {data,error}=await query.order("created_at",{ascending:false});
   if (error) throw error;
   return (data as TaskRow[]).map(fromRow);
+}
+
+/** Persist the canonical price recommendations before Supervisor's existing priority scan.
+ * Compare-and-set on the original workflow state so a concurrent owner decision wins.
+ * Missing source coverage can never expire a saved review. */
+export async function refreshPriceReviewTasks(client:SupabaseClient,businessId:string,now:Date):Promise<void>{
+  const scope={client,businessId};
+  const [menu,existing]=await Promise.all([
+    getMenuControlCenter({includeSalesEvidence:false},scope),
+    readPersistedOperatingTasks(businessId,{...scope,kind:"price_review"}),
+  ]);
+  const derived=projectPriceReviewTasks(businessId,menu,now);
+  const verifiedKeep=new Set(menu.filter(item=>item.pricing?.status==="KEEP_CURRENT_PRICE").map(item=>item.id));
+  const plan=reconcileOperatingTasks(existing,derived,now,verifiedKeep);
+  for(const task of plan.insert)await storeDerivedOperatingTask(client,businessId,task);
+  for(const task of [...plan.refresh,...plan.expire]){
+    const previous=existing.find(row=>row.id===task.id);
+    if(!previous||!taskRefreshChangesRow(previous,task))continue;
+    let update=client.from("operating_tasks").update({status:task.status,payload:task.payload,
+      evidence:task.evidence,confidence:task.confidence,created_at:task.createdAt,resolved_at:task.resolvedAt??null})
+      .eq("business_id",businessId).eq("id",task.id).eq("kind","price_review")
+      .eq("status",previous.status).eq("created_at",previous.createdAt)
+      .eq("payload",JSON.stringify(previous.payload)).eq("evidence",JSON.stringify(previous.evidence));
+    update=previous.resolvedAt?update.eq("resolved_at",previous.resolvedAt):update.is("resolved_at",null);
+    const {error}=await update;
+    if(error)throw error;
+  }
 }

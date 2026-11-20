@@ -13,8 +13,19 @@ One conversational agent with ONE streaming tool-calling loop per owner turn (Op
   The owner's answer is the next message. No server-side pending-question state.
 - **Actions:** `propose_*` tools create an inert proposal and an approval card. Only the approval
   endpoint, called by the owner's click, commits.
-- **Rich blocks:** tools may return `display` hints (`metric`, `chart`, `table`) rendered with the source
-  and period chip.
+- **Rich blocks:** existing display hints remain supported. The optional read-only
+  `present_response` tool selects versioned compositions from same-turn authorized evidence;
+  the server binds exact values, units, currency, date coverage and saved/estimate status.
+  No model-supplied executable UI, links, hidden identifiers or new numerical facts.
+  The existing message blocks persist the result and the existing chat renderer owns it.
+  Full plain-language text is required independently of visuals. Follow-ups edit the
+  ordinary composer; existing work, file access and approval paths stay authoritative.
+  Report export is a local snapshot of the loaded answer with provenance, not a new saved
+  file or independent report pipeline. Scenario alternatives use existing calculator results;
+  changing an assumption requests a normal turn, never a business write.
+  Optional presentations consume existing model/tool/time allowance. No forced extra round;
+  a rejected visual never invalidates the plain answer. The provider schema may omit exact
+  duplicate Zod default regexes when the standard format remains; runtime validation is unchanged.
 - **When the loop must stop** (budget, timeout, provider error): one final call with `tool_choice:"none"`
   so the model answers from what it has and says what is missing.
 - **Model text:** never rewrite, replace, shorten or append to the model's reply.

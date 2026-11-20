@@ -21,13 +21,17 @@ export function projectOperatingTasks(tasks: OperatingTask[]): OperationsTeamVie
   ], needsYou, handled, watching };
 }
 
-/** Presentation projection only. All numbers originate in existing deterministic engines. */
-export function buildOperationsTeamViewModel(snapshot: BusinessSnapshot, menu: MenuControlItem[], now = new Date()): OperationsTeamViewModel {
-  const pricing = menu.flatMap((item) => {
+export function projectPriceReviewTasks(businessId:string,menu:MenuControlItem[],now:Date):OperatingTask[]{
+  return menu.flatMap((item) => {
     if (!item.pricing) return [];
-    const task = pricingTask({ businessId: snapshot.business.id, itemId: item.id, itemName: item.sizeLabel ? `${item.baseName} · ${item.sizeLabel}` : item.name, result: item.pricing, now });
+    const task = pricingTask({ businessId: businessId, itemId: item.id, itemName: item.sizeLabel ? `${item.baseName} · ${item.sizeLabel}` : item.name, result: item.pricing, now });
     return task ? [task] : [];
   });
+}
+
+/** Presentation projection only. All numbers originate in existing deterministic engines. */
+export function buildOperationsTeamViewModel(snapshot: BusinessSnapshot, menu: MenuControlItem[], now = new Date()): OperationsTeamViewModel {
+  const pricing = projectPriceReviewTasks(snapshot.business.id,menu,now);
   const missing = expectedMissingCostLines(snapshot.runningCostLines);
   const leoTasks: OperatingTask[] = missing.map((line) => ({ id: `data:${snapshot.monthKey}:cost:${line.categoryCode}`, businessId: snapshot.business.id, agentId: "leo", kind: "data_quality", entityType: "expense_category", entityId: line.categoryCode, status: "needs_owner", payload: { categoryCode: line.categoryCode }, confidence: "high", evidence: [{ source: "BusinessSnapshot", facts: { categoryCode: line.categoryCode, isMissing: true } }], createdAt: now.toISOString() }));
   const maya: OperatingTask = { id: `supplies:${snapshot.monthKey}`, businessId: snapshot.business.id, agentId: "maya", kind: "supply_check", status: "watching", payload: { inventoryQuantityAvailable: false }, confidence: "high", evidence: [{ source: "CafeState", facts: { inventoryAvailable: false } }], createdAt: now.toISOString() };

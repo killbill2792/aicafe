@@ -75,6 +75,31 @@ export function matchVerifiedToastPriceEvidence(input:Candidate):
   observedAt:event.toast_observed_at!,startAt:effective??event.toast_observed_at!,
   startBasis:effective?"source_effective":"first_verified_observation"};
 }
+/** An unsolicited current-publication observation needs no owner proposal.
+ * The full-copy checkpoint must have completed by the worker's as-of time.
+ * Never use a pending per-item history stamp as proof of a complete menu. */
+export function matchVerifiedToastObservation(input:Candidate&{
+ historyId:string;notBefore:string;asOf:string;
+ receipt:Candidate["receipt"]&{menu_checked_local_day:string|null};
+}):VerifiedToastPriceEvidence|UnverifiedToastPriceEvidence{
+ const deny=(reason:string):UnverifiedToastPriceEvidence=>({status:"unverified",reason});
+ if(!validTime(input.notBefore)||!validTime(input.asOf)||
+    Date.parse(input.notBefore)>Date.parse(input.asOf))
+  return deny("invalid_observation_discovery_boundary");
+ if(!input.receipt.menu_checked_local_day||
+    !/^\d{4}-\d{2}-\d{2}$/.test(input.receipt.menu_checked_local_day)||
+    input.receipt.menu_last_updated?.startsWith("pending:"))
+  return deny("menu_publication_not_completed");
+ const verified=matchVerifiedToastPriceEvidence(input);
+ if(verified.status!=="verified")return verified;
+ if(verified.historyId!==input.historyId)
+  return deny("observation_history_identity_mismatch");
+ const observed=Date.parse(verified.observedAt),copied=Date.parse(input.receipt.menu_copied_at!);
+ if(observed<Date.parse(input.notBefore)||observed>Date.parse(input.asOf)||
+    copied<observed||copied>Date.parse(input.asOf))
+  return deny("observation_outside_completed_publication_boundary");
+ return verified;
+}
 type HistoricAudit={
  observed_at:string;old_pos_item_id:string|null;new_pos_item_id:string|null;
  old_price_cents:number|null;new_price_cents:number|null;
@@ -162,35 +187,33 @@ export async function readVerifiedToastPriceEvidence(db:SupabaseClient,
  if(itemError)throw new Error("toast_price_source_read_failed");
  if(!item)return {status:"unverified",reason:"menu_item_missing"};
  if(activation){
-  // A changed current catalog is NOT evidence that the original transition
-  // was never published. POS0d history and the immutable canonical update
-  // audit identify what was authenticated at activation time.
-  const [prices,changes,locations]=await Promise.all([
+  const [prices,locations]=await Promise.all([
    db.from("menu_price_history").select(
-    "id,business_id,menu_item_id,old_price_cents,new_price_cents,source_type,source_provider,toast_restaurant_guid,toast_publication_version,toast_observed_at,toast_effective_at,changed_at",{count:"exact"})
+    "id,business_id,menu_item_id,old_price_cents,new_price_cents,source_type,source_provider,toast_restaurant_guid,toast_publication_version,toast_observed_at,toast_effective_at,changed_at,toast_publication_completed_at,toast_publication_pos_item_id",{count:"exact"})
     .eq("business_id",businessId).eq("menu_item_id",menuItemId)
     .eq("source_type","connected_pos").eq("source_provider","toast")
     .gte("toast_observed_at",activation.approvedAt)
+    .not("toast_publication_completed_at","is",null)
     .order("toast_observed_at",{ascending:true}).limit(250),
-   db.from("supervisor_toast_price_context_changes").select(
-    "observed_at,old_pos_item_id,new_pos_item_id,old_price_cents,new_price_cents,new_pricing_strategy,new_catalog_source,new_is_active",{count:"exact"})
-    .eq("business_id",businessId).eq("menu_item_id",menuItemId)
-    .gte("observed_at",activation.approvedAt)
-    .order("observed_at",{ascending:true}).limit(10000),
    db.from("toast_location_mappings").select("restaurant_guid,verified_at")
     .eq("business_id",businessId).limit(100),
   ]);
-  if(prices.error||changes.error||locations.error)
-   throw new Error("historical_toast_source_read_failed");
-  if(prices.count===null||prices.count!==(prices.data?.length??0)||
-     changes.count===null||changes.count!==(changes.data?.length??0)||
-     (locations.data??[]).length===100)
+  if(prices.error||locations.error)throw new Error("historical_toast_source_read_failed");
+  if(prices.count!==(prices.data?.length??0)||(locations.data??[]).length===100)
    throw new Error("historical_toast_source_incomplete");
-  return matchVerifiedHistoricToastActivation({
-   businessId,menuItemId,targetCents,...activation,menu:item,
-   history:prices.data??[],audits:changes.data??[],
-   locations:locations.data??[],
-  });
+  const matches=(prices.data??[]).filter(event=>event.old_price_cents===activation.oldPriceCents&&
+   event.new_price_cents===targetCents).map(event=>matchCompletedToastObservation({
+    businessId,historyId:event.id,notBefore:activation.approvedAt,asOf:new Date().toISOString(),
+    event,location:(locations.data??[]).find(l=>l.restaurant_guid===event.toast_restaurant_guid)??null,
+   })).filter((v):v is VerifiedToastPriceEvidence=>v.status==="verified"&&
+    Date.parse(v.startAt)>=Date.parse(activation.approvedAt));
+  if(matches.length){
+   if(matches.length>1&&Date.parse(matches[0].observedAt)===Date.parse(matches[1].observedAt))
+    return {status:"unverified",reason:"ambiguous_activation_history"};
+   return matches[0];
+  }
+  // Existing pre-migration events may still be proven by the CURRENT
+  // complete checkpoint below. A pending or superseded historical copy cannot.
  }
  if(typeof item.pos_item_id!=="string")
   return {status:"unverified",reason:"menu_item_missing"};
@@ -200,7 +223,7 @@ export async function readVerifiedToastPriceEvidence(db:SupabaseClient,
  const [location,checkpoint,prices]=await Promise.all([
   db.from("toast_location_mappings").select("restaurant_guid,verified_at")
    .eq("business_id",businessId).eq("restaurant_guid",restaurantGuid).maybeSingle(),
-  db.from("toast_optional_sync_state").select("menu_last_updated,menu_copied_at")
+  db.from("toast_optional_sync_state").select("menu_last_updated,menu_copied_at,menu_checked_local_day")
    .eq("business_id",businessId).eq("restaurant_guid",restaurantGuid).maybeSingle(),
   db.from("menu_price_history").select(
    "id,business_id,menu_item_id,old_price_cents,new_price_cents,source_type,source_provider,toast_restaurant_guid,toast_publication_version,toast_observed_at,toast_effective_at")
@@ -214,7 +237,55 @@ export async function readVerifiedToastPriceEvidence(db:SupabaseClient,
   throw new Error("toast_price_source_read_failed");
  if(!location.data||!checkpoint.data)
   return {status:"unverified",reason:"no_verified_restaurant_copy"};
- return matchVerifiedToastPriceEvidence({businessId,menuItemId,targetCents,
-  menu:item,receipt:{...location.data,...checkpoint.data},
-  history:prices.data??[]});
+ if(!checkpoint.data.menu_checked_local_day||checkpoint.data.menu_last_updated?.startsWith("pending:"))
+  return {status:"unverified",reason:"menu_publication_not_completed"};
+ const verified=matchVerifiedToastPriceEvidence({businessId,menuItemId,targetCents,
+  menu:item,receipt:{...location.data,...checkpoint.data},history:prices.data??[]});
+ if(activation&&verified.status==="verified"&&
+   (verified.oldPriceCents!==activation.oldPriceCents||
+    Date.parse(verified.startAt)<Date.parse(activation.approvedAt)||
+    Date.parse(verified.observedAt)<Date.parse(activation.approvedAt)))
+  return {status:"unverified",reason:"publication_before_approval_or_wrong_price"};
+ return verified;
+}
+
+/** Full-copy completion and exact POS identity remain on the original history
+ * event. A later menu version must neither erase nor rewrite that evidence.
+ * The source-provenance trigger stamps these fields only when the existing
+ * importer's pending checkpoint becomes complete. */
+export type CompletedToastHistory=Candidate["history"][number]&{
+ toast_publication_completed_at:string|null;
+ toast_publication_pos_item_id:string|null;
+};
+export function matchCompletedToastObservation(input:{
+ businessId:string;historyId:string;notBefore:string;asOf:string;
+ event:CompletedToastHistory;
+ location:{restaurant_guid:string;verified_at:string|null}|null;
+}):VerifiedToastPriceEvidence|UnverifiedToastPriceEvidence{
+ const deny=(reason:string):UnverifiedToastPriceEvidence=>({status:"unverified",reason});
+ const {event,location}=input;
+ const time=(s:string|null|undefined)=>typeof s==="string"&&/(Z|[+-]\d{2}:?\d{2})$/.test(s)?Date.parse(s):NaN;
+ const observed=time(event.toast_observed_at), completed=time(event.toast_publication_completed_at);
+ const earliest=time(input.notBefore),now=time(input.asOf),start=time(event.toast_effective_at??event.toast_observed_at);
+ const parsed=event.toast_publication_pos_item_id?.match(posPattern);
+ if(event.id!==input.historyId||event.business_id!==input.businessId||
+  event.source_type!=="connected_pos"||event.source_provider!=="toast"||
+  !event.menu_item_id||!event.toast_publication_version||
+  event.toast_publication_version.startsWith("pending:")||
+  !parsed||!location||!validTime(location.verified_at)||
+  parsed[1].toLowerCase()!==location.restaurant_guid.toLowerCase()||
+  event.toast_restaurant_guid?.toLowerCase()!==parsed[1].toLowerCase()||
+  !Number.isSafeInteger(event.old_price_cents)||event.old_price_cents!<=0||
+  !Number.isSafeInteger(event.new_price_cents)||event.new_price_cents!<=0||
+  event.old_price_cents===event.new_price_cents)
+  return deny("invalid_completed_toast_identity");
+ if(![earliest,now,start,observed,completed].every(Number.isFinite)||
+  earliest>observed||start>observed||observed>completed||completed>now)
+  return deny("incomplete_or_out_of_scope_toast_publication");
+ return {status:"verified",businessId:input.businessId,historyId:event.id,
+  menuItemId:event.menu_item_id,posItemId:event.toast_publication_pos_item_id!,
+  restaurantGuid:location.restaurant_guid,publicationVersion:event.toast_publication_version,
+  oldPriceCents:event.old_price_cents!,newPriceCents:event.new_price_cents!,
+  observedAt:new Date(observed).toISOString(),startAt:new Date(start).toISOString(),
+  startBasis:event.toast_effective_at===null?"first_verified_observation":"source_effective"};
 }

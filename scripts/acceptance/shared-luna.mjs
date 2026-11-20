@@ -10,6 +10,9 @@ import {createHash} from "node:crypto";
 import {spawn,spawnSync} from "node:child_process";
 const REPO="killbill2792/aicafe", OWNER="killbill2792";
 const shaRe=/^[0-9a-f]{40}$/, idRe=/^[a-z0-9][a-z0-9-]{0,31}$/;
+// Catalog validation is no-spend discovery. The separate selected-run limit
+// and trusted owner budget below still cap every actual execution at 20.
+const MAX_REGISTERED_SCENARIOS=256;
 const manifestPath=id=>".github/luna/scenarios/"+id+".json";
 const legacy={
   "13c":{engine:"vitest",entrypoint:"lib/ai/supervisor/routines/staffCoverage.live.test.ts",proof:"13c-live-proof.json",scope:"13c-live-scope.json"},
@@ -190,7 +193,7 @@ function verifyTrackedSource(stage){
 function validateAll(){
   const root=process.cwd(),folder=resolve(root,".github/luna/scenarios");
   const files=readdirSync(folder);
-  ensure(files.length>=1&&files.length<=20,"Scenario inventory must be nonempty and budget bounded");
+  ensure(files.length>=1&&files.length<=MAX_REGISTERED_SCENARIOS,"Scenario inventory must be nonempty and catalog bounded");
   for(const filename of files){
     ensure(filename.endsWith(".json")&&idRe.test(filename.slice(0,-5)),
       "Invalid registered scenario filename");
@@ -244,7 +247,7 @@ async function verifyOwnerCommentRun(event,token){
 // IDs. Do not accept globs, partial matches, duplicates or candidate-provided
 // aliases. Individual IDs and 'all' retain their prior meaning.
 export function selectLunaScenarios(found,requested){
-  ensure(Array.isArray(found)&&found.length>=1&&found.length<=20&&
+  ensure(Array.isArray(found)&&found.length>=1&&found.length<=MAX_REGISTERED_SCENARIOS&&
     found.every(id=>idRe.test(id)&&id!=="all"&&!id.startsWith("group-"))&&
     new Set(found).size===found.length,"Invalid registered scenario inventory");
   ensure(typeof requested==="string"&&requested.length<=700,"Invalid scenario selection");

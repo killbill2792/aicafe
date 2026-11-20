@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import {row,schemaCases,makeInventory,buildCensusReport,inventoryDelta,requireComplete,verifyBootstrapSnapshot,verifyInheritedScenarios,scenarioCoveragePlan} from "./supervisor-coverage.mjs";
+import {row,schemaCases,makeInventory,buildCensusReport,inventoryDelta,requireComplete,verifyBootstrapSnapshot,verifyInheritedScenarios,scenarioCoveragePlan,verifyReviewedSourceChanges,planPaidBatches} from "./supervisor-coverage.mjs";
 const head="a".repeat(40);
 const tool=row("tool","manage_routine",{type:"object"});
 const metric=row("metric","profit",{unit:"cents"});
@@ -82,4 +82,18 @@ test("all earlier scenarios and joined cases must remain separately visible, nev
  assert.equal(combined.crossFunctional[0].status,"UNTESTED");
  assert.equal(scenarioCoveragePlan(["14b","14d","17b-supply","17c","new"],groups,families).allRegistered,false);
  assert.throws(()=>scenarioCoveragePlan(["14b"],groups,[{...families[0],candidates:["nonexistent"]}]),/invalid_cross_functional/);
+});
+
+test("reviewed source change boundary rejects unknown runtime paths",()=>{
+ assert.doesNotThrow(()=>verifyReviewedSourceChanges(["lib/ai/agent/tools/index.ts"],["lib/ai/agent/tools/index.ts"]));
+ assert.throws(()=>verifyReviewedSourceChanges(["lib/unknown.ts"],[]),/unreviewed_supervisor_source_change/);
+});
+test("all actual manifests assigned once to <=20-case grants, never paid by generating plan",()=>{
+ const specs=Array.from({length:34},(_,i)=>({id:"case-"+i,entrypoint:"case.mjs"}));
+ const plan=planPaidBatches(specs);
+ assert.deepEqual(plan.batches.map(b=>b.ids.length),[20,14]);
+ assert.equal(plan.reservedCents,612);
+ assert.equal(plan.authorizationRequired,true);
+ assert.equal(plan.ready,false);
+ assert.throws(()=>planPaidBatches([...specs,specs[0]]),/invalid_paid_inventory/);
 });

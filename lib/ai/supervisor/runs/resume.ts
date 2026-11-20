@@ -1,7 +1,7 @@
 import type { DurableRunRepository, RunScope, StepClaim } from "./contracts";
 
 type Claimed = Extract<StepClaim, { kind: "claimed" }>;
-export type StepExecutor = (step: Claimed, renewLease: () => Promise<boolean>) => Promise<string>;
+export type StepExecutor = (step: Claimed, renewLease: () => Promise<boolean>) => Promise<string | null>;
 
 /** A run's ordered steps have already been registered atomically. Executors MUST
  * use step.idempotencyKey for replay-safe external writes; otherwise their step
@@ -25,6 +25,9 @@ export async function resumeSupervisorRun(
     // A failed/uncertain effect remains leased until expiry; only key-aware
     // idempotent steps replay automatically.
     const receipt = await execute(claim, renew);
+    // A null result means the executor durably yielded without acknowledging
+    // the step; a replacement worker will claim the same operation later.
+    if(receipt===null)return "busy";
     await repo.complete(scope, runId, claim.key, claim.claimToken, receipt);
   }
 }

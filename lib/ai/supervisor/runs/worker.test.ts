@@ -264,3 +264,234 @@ describe("Codex P1: aggregate budget across bounded agent continuations", () => 
     expect(db.status).toBe("blocked"); expect(db.finalRef).toBeNull();
   });
 });
+
+describe("v2 checkpoint boundaries in the actual agent loop",()=>{
+  const context={timezone:"America/Los_Angeles",asOf:"2026-11-10",locale:"en",tools:{}} as AgentToolContext;
+  function fixture(){
+    const trace:string[]=[];
+    const checkpoint:import("./contracts").OwnerRunCheckpoint={
+      assertLive:async()=>{trace.push("authorize");},
+      beginProvider:async()=>{trace.push("begin");},
+      endProvider:async ok=>{trace.push(ok?"receipt":"abandon");},
+      beginTool:async()=>null,endTool:async()=>{},
+      resumeContext:async()=>null,canYield:()=>true,yieldForRetry:async()=>true,
+    };
+    return {trace,checkpoint};
+  }
+  it("records the provider boundary before dispatch and its receipt before a complete reply",async()=>{
+    const {trace,checkpoint}=fixture();
+    const provider:AgentProvider=async function*(){
+      trace.push("transport");
+      yield {type:"response.output_text.delta",delta:"Done."};
+      yield {type:"response.completed",response:{usage:{input_tokens:30,output_tokens:4,input_tokens_details:{cached_tokens:0}}}};
+    };
+    const result=await runAgentTurn({ownerText:"Hello",context,provider,checkpoint});
+    expect(result.endReason).toBe("complete");
+    expect(trace.filter(x=>x!=="authorize")).toEqual(["begin","transport","receipt"]);
+  });
+  it("does not dispatch if the checkpoint cannot be durably written",async()=>{
+    const {checkpoint}=fixture();
+    checkpoint.beginProvider=async()=>{throw Error("checkpoint_storage_unavailable");};
+    const provider=vi.fn<AgentProvider>(async function*(){yield {type:"response.output_text.delta",delta:"must not execute"};});
+    await expect(runAgentTurn({ownerText:"Hello",context,provider,checkpoint})).rejects.toThrow();
+    expect(provider).not.toHaveBeenCalled();
+  });
+  it("does not finish a run when its owner turn durably yielded",async()=>{
+    const db=new Ledger(),env=setup(db);
+    env.deps.version2=true;
+    env.deps.executeTurn=async()=>"yielded";
+    expect(await executeDurableRun(run,budget,env.deps)).toBe("busy");
+    expect(db.rows.find(x=>x.key==="owner_turn")?.state).not.toBe("completed");
+    expect(db.finalRef).toBeNull();
+  });
+});
+
+describe("durable failure classification",()=>{
+  it("retains the v2 lease after a transient execution exception for SQL recovery",async()=>{
+    const db=new Ledger(),env=setup(db);
+    env.deps.version2=true;
+    env.deps.executeTurn=async()=>{throw Error("checkpoint_storage_unavailable");};
+    await expect(executeDurableRun(run,budget,env.deps)).rejects.toThrow("checkpoint_storage_unavailable");
+    expect(db.rows.find(x=>x.key==="owner_turn")?.state).toBe("leased");
+    expect(db.errors).toEqual([]);
+    expect(db.finalRef).toBeNull();
+  });
+  it("retains the version-one reconciliation-only stop behavior",async()=>{
+    const db=new Ledger(),env=setup(db);
+    env.deps.executeTurn=async()=>{throw Error("worker transport unavailable");};
+    await expect(executeDurableRun(run,budget,env.deps)).rejects.toThrow("worker transport unavailable");
+    expect(db.errors).toEqual(["turn_failed"]);
+  });
+  it("retains recovered canonical card references in the finished turn",async()=>{
+    const id=randomUUID();
+    const checkpoint:import("./contracts").OwnerRunCheckpoint={
+      assertLive:async()=>{},beginProvider:async()=>{},endProvider:async()=>{},
+      beginTool:async()=>null,endTool:async()=>{},resumeContext:async()=>null,
+      restoredResults:async()=>[{source:"staff_proposal",period:null,missing:[],draft:true,saved:false,proposalId:id}],
+      canYield:()=>true,yieldForRetry:async()=>true,
+    };
+    const provider:AgentProvider=async function*(){
+      yield {type:"response.output_text.delta",delta:"Your draft is ready."};
+      yield {type:"response.completed",response:{usage:{input_tokens:30,output_tokens:4,input_tokens_details:{cached_tokens:0}}}};
+    };
+    const context={timezone:"UTC",asOf:"2026-11-10",locale:"en",tools:{}} as AgentToolContext;
+    const result=await runAgentTurn({ownerText:"Prepare the roster",context,provider,checkpoint});
+    const {agentReplyPayload}=await import("@/lib/ai/agent/persist.server");
+    expect(agentReplyPayload(result).reply.blocks).toContainEqual({type:"proposal_card",proposalId:id});
+  });
+});
+
+describe("observed pre-effect refusal",()=>{
+  it("proves no write only after a reviewed handler has settled without touching a mutation port",async()=>{
+    const {observeDurableToolEffect}=await import("@/lib/ai/agent/tools");
+    const write=vi.fn(async()=>({proposalId:randomUUID(),revision:1,productName:"Latte",oldPriceCents:400,newPriceCents:500}));
+    const before=vi.fn(async()=>{});
+    const context={proposals:{proposePriceChange:write}} as unknown as AgentToolContext;
+    const guard=observeDurableToolEffect("propose_price_change",context,before);
+    expect(guard.noEffect()).toBe(false);
+    guard.settle();expect(guard.noEffect()).toBe(true);
+    await guard.context.proposals!.proposePriceChange({productId:randomUUID(),newPriceCents:500});
+    expect(before).toHaveBeenCalledOnce();expect(write).toHaveBeenCalledOnce();expect(guard.noEffect()).toBe(false);
+    const timed=observeDurableToolEffect("propose_price_change",context,before);
+    timed.close();await expect(timed.context.proposals!.proposePriceChange({productId:randomUUID(),newPriceCents:500})).rejects.toThrow("tool_deadline_exceeded");
+    expect(write).toHaveBeenCalledOnce();expect(timed.noEffect()).toBe(false);
+    timed.settle();expect(timed.noEffect()).toBe(false); // late settlement cannot override a timeout
+    const unknown=observeDurableToolEffect("unreviewed_writer",context,before);
+    unknown.settle();expect(unknown.noEffect()).toBe(false);
+  });
+});
+
+it("binds resumed context to the exact persisted question and authenticated answer, not another run",async()=>{
+ const {decodeMatchedOwnerAnswer}=await import("./worker.server");
+ const questionId=randomUUID(),answerId=randomUUID(),r={...run,id:randomUUID(),requestKey:randomUUID()};
+ const q={id:questionId,role:"supervisor",text_content:null,structured_content:[{type:"clarify",question:"Which supplier?"}],grounding:{durableRunId:r.id,ownerMessageId:r.requestKey,durableQuestionId:questionId,status:"requires_owner_input"},owner_input_response:null,owner_input_prompt_message_id:null};
+ const a={id:answerId,role:"owner",text_content:"The existing coffee supplier",structured_content:null,grounding:null,owner_input_response:{questionId,action:"supply"},owner_input_prompt_message_id:questionId};
+ expect(decodeMatchedOwnerAnswer(r,questionId,answerId,q,a)).toEqual({questionId,answerId,question:"Question card (owner answers in its form): Which supplier?",answer:"The existing coffee supplier"});
+ expect(()=>decodeMatchedOwnerAnswer(r,questionId,answerId,{...q,grounding:{...q.grounding,durableRunId:randomUUID()}},a)).toThrow();
+ expect(()=>decodeMatchedOwnerAnswer(r,questionId,answerId,q,{...a,owner_input_prompt_message_id:randomUUID()})).toThrow();
+});
+
+it("sends the original assignment before the exact matched clarification and preserves its selected record for tool resolution",async()=>{
+ const chosen=randomUUID();let saw:unknown;
+ const ctx={timezone:"UTC",asOf:"2026-11-10",locale:"en",tools:{}} as AgentToolContext;
+ const provider:AgentProvider=async function*(params){saw=params.input;yield {type:"response.output_text.delta",delta:"The selected record."};yield {type:"response.completed",response:{usage:{input_tokens:30,output_tokens:4,input_tokens_details:{cached_tokens:0}}}};};
+ const intent="Prepare a price draft",question="Asked: Which product? Options: Regular ("+chosen+"); Other ("+randomUUID()+")";
+ await runAgentTurn({ownerText:intent,context:ctx,provider,matchedOwnerAnswers:[{questionId:randomUUID(),answerId:randomUUID(),question,answer:"Regular"}]});
+ expect((saw as unknown[]).slice(-3)).toEqual([{role:"user",content:intent},{role:"assistant",content:question},{role:"user",content:"Regular"}]);
+ expect(ctx.resolveState?.chosenIds.has(chosen)).toBe(true);
+});
+
+
+it("stores only reviewed canonical read selectors; never arbitrary source contents or owner financial facts",async()=>{
+ const {recoverableReadSelector}=await import("./contracts");
+ expect(recoverableReadSelector("get_sales",{period:"last_month"},{from:"2026-10-01",to:"2026-10-31"})).toEqual({period:{from:"2026-10-01",to:"2026-10-31"}});
+ expect(recoverableReadSelector("get_sales",{period:{from:"2026-10-01",to:"2026-10-31"}})).toEqual({period:{from:"2026-10-01",to:"2026-10-31"}});
+ expect(recoverableReadSelector("get_profit",{period:"today",ownerInputs:{netSalesCents:123}}, {from:"2026-11-19",to:"2026-11-19"})).toBeNull();
+ expect(recoverableReadSelector("search_gmail",{query:"private supplier invoice"})).toBeNull();
+ expect(recoverableReadSelector("propose_purchases",{})).toBeNull();
+ expect(recoverableReadSelector("get_inventory",{secret:"private"})).toBeNull();
+});
+
+it("refreshes a prior scoped read before the next model request and charges the slice tool budget",async()=>{
+ const trace:string[]=[];
+ const getCurrentStaff=vi.fn(async()=>({available:true,value:{count:2,people:[],asOf:"2026-11-19T00:00:00Z"},quality:{missingInputs:[]}}));
+ const getStaffAttendance=vi.fn(async()=>({available:true,value:{attendanceTracked:true,onClockCount:2},quality:{missingInputs:[]}}));
+ const context={timezone:"UTC",asOf:"2026-11-19",locale:"en",tools:{getCurrentStaff,getStaffAttendance}} as unknown as AgentToolContext;
+ const checkpoint:import("./contracts").OwnerRunCheckpoint={
+   assertLive:async()=>{trace.push("fenced");},beginProvider:async()=>{trace.push("reserve");},
+   endProvider:async()=>{},beginTool:async()=>null,endTool:async()=>{},
+   resumeContext:async()=>null,readReferences:()=>[{name:"get_staff",selector:{}}],
+   canYield:()=>true,yieldForRetry:async()=>true,
+ };
+ const provider:AgentProvider=async function*(params){
+   trace.push("transport");
+   const items=params.input as Array<Record<string,unknown>>;
+   const call=items.find(x=>x.type==="function_call"&&x.name==="get_staff");
+   const output=items.find(x=>x.type==="function_call_output"&&x.call_id===call?.call_id);
+   expect(JSON.parse(String(output?.output))).toMatchObject({source:"current_staff",count:2,missing:[]});
+   yield {type:"response.output_text.delta",delta:"Two people are working."};
+   yield {type:"response.completed",response:{usage:{input_tokens:30,output_tokens:4,input_tokens_details:{cached_tokens:0}}}};
+ };
+ const result=await runAgentTurn({ownerText:"Continue the staffing report",context,provider,checkpoint});
+ expect(getCurrentStaff).toHaveBeenCalledOnce();expect(getStaffAttendance).toHaveBeenCalledOnce();
+ expect(trace.slice(0,4)).toEqual(["fenced","fenced","reserve","transport"]);
+ expect(result.usage.toolCalls).toBe(1);
+ expect(result.results).toContainEqual(expect.objectContaining({source:"current_staff",count:2}));
+});
+
+describe("Codex P1: real loop pre-dispatch rejection and matched owner authorization",()=>{
+  const complete={type:"response.completed",response:{usage:{input_tokens:30,output_tokens:8,input_tokens_details:{cached_tokens:0}}}};
+  const call=(name:string,input:unknown,id:string)=>({type:"response.output_item.done",item:{type:"function_call",name,arguments:JSON.stringify(input),call_id:id}});
+  const fixture=()=>{
+    const endTool=vi.fn(async(_result:unknown,_noEffect?:boolean)=>{});
+    const checkpoint:import("./contracts").OwnerRunCheckpoint={
+      assertLive:async()=>{},beginProvider:async()=>{},endProvider:async()=>{},
+      beginTool:async()=>null,endTool,resumeContext:async()=>null,
+      canYield:()=>true,yieldForRetry:async()=>true,
+    };
+    return {checkpoint,endTool};
+  };
+  it("allows a missing-date rejection to be corrected without stranding a reviewed writer",async()=>{
+    const {checkpoint,endTool}=fixture();
+    const create=vi.fn(async()=>({id:randomUUID(),title:"Follow up",status:"open"}));
+    const context={timezone:"UTC",asOf:"2026-11-19",locale:"en",tools:{},threadId:scope.threadId,
+      commitments:{create,list:async()=>[],close:async()=>false}} as unknown as AgentToolContext;
+    const base={action:"create",title:"Follow up",due_date:null,due_time:null,origin:"owner_chat",commitment_id:null};
+    let round=0;
+    const provider:AgentProvider=async function*(){
+      if(round===0)yield call("manage_commitment",base,"missing-date");
+      else if(round===1)yield call("manage_commitment",{...base,due_date:"2026-11-20"},"corrected-date");
+      else yield {type:"response.output_text.delta",delta:"Your reminder is saved."};
+      round++;yield complete;
+    };
+    await runAgentTurn({ownerText:"Remind me tomorrow",context,provider,checkpoint});
+    expect(create).toHaveBeenCalledOnce();
+    expect(endTool).toHaveBeenNthCalledWith(1,expect.objectContaining({source:"manage_commitment",error:expect.any(String)}),true);
+    expect(endTool).toHaveBeenNthCalledWith(2,expect.objectContaining({source:"operating_tasks",saved:true}),false);
+  });
+  it("keeps a rejected dispatched mutation uncertain",async()=>{
+    const {checkpoint,endTool}=fixture();
+    const create=vi.fn(async()=>{throw Error("lost database acknowledgement");});
+    const context={timezone:"UTC",asOf:"2026-11-19",locale:"en",tools:{},threadId:scope.threadId,
+      commitments:{create,list:async()=>[],close:async()=>false}} as unknown as AgentToolContext;
+    let round=0;
+    const provider:AgentProvider=async function*(){
+      if(round++===0)yield call("manage_commitment",{action:"create",title:"Follow up",due_date:"2026-11-20",due_time:null,origin:"owner_chat",commitment_id:null},"uncertain");
+      else yield {type:"response.output_text.delta",delta:"The save could not be verified."};
+      yield complete;
+    };
+    await runAgentTurn({ownerText:"Remind me tomorrow",context,provider,checkpoint});
+    expect(create).toHaveBeenCalledOnce();
+    expect(endTool).toHaveBeenCalledWith(expect.objectContaining({source:"manage_commitment",error:expect.any(String)}),false);
+  });
+  it("uses only the original and exact matched owner answer, never the assistant wording or unrelated history, for a supplier outcome",async()=>{
+    const {ownerRunStatement}=await import("./contracts");
+    const purchaseOrderId=randomUUID(),questionId=randomUUID(),answerId=randomUUID();
+    const original="The supplier accepted purchase order "+purchaseOrderId;
+    const input={purchaseOrderId,channel:"phone",outcome:"supplier_accepted"};
+    const saved=vi.fn(async()=>({reportId:randomUUID(),reportedAt:"2026-11-19T10:00:00Z",alreadyRecorded:false,
+      source:"owner_reported" as const,providerVerified:false as const,outcome:"supplier_accepted" as const}));
+    const exercise=async(answer:string,serviceOrigin=false)=>{
+      const {checkpoint}=fixture();
+      const context={timezone:"UTC",asOf:"2026-11-19",locale:"en",tools:{},purchasing:{recordOwnerOutcome:saved}} as unknown as AgentToolContext;
+      let round=0;
+      const provider:AgentProvider=async function*(){
+        if(round++===0)yield call("record_supplier_order_outcome",input,"report");
+        else yield {type:"response.output_text.delta",delta:"Checked the report."};
+        yield complete;
+      };
+      const matchedOwnerAnswers=[{questionId,answerId,question:"Did you call by phone?",answer}];
+      await runAgentTurn({ownerText:original,context,history:[{role:"user",content:"An unrelated phone call last week"}],
+        provider,checkpoint,matchedOwnerAnswers,serviceOrigin});
+      return ownerRunStatement(original,matchedOwnerAnswers);
+    };
+    const expected=await exercise("We used the phone.");
+    expect(saved).toHaveBeenCalledExactlyOnceWith({...input,note:expected.trim()});
+    expect(expected).toBe(original+"\nWe used the phone.");
+    saved.mockClear();
+    await exercise("Not sure");
+    expect(saved).not.toHaveBeenCalled();
+    await exercise("We used the phone.",true);
+    expect(saved).not.toHaveBeenCalled();
+  });
+});

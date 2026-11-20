@@ -1,4 +1,6 @@
 import "server-only";
+import {randomUUID} from "node:crypto";
+import type {SupabaseClient} from "@supabase/supabase-js";
 import {simulationOwnerReader} from "./simulationOwner.server";
 import {z} from "zod";
 import {formatInTimeZone} from "date-fns-tz";
@@ -9,12 +11,14 @@ import {readSavedTodayLive} from "@/lib/data/todayLive.server";
 import {createAdminSupabaseClient} from "@/lib/supabase/admin";
 import {assertCafeAiAccess} from "@/lib/access/access.server";
 import type {OwnerLoopScope,LoopProposal} from "./engine";
-import {readCafeEvents,readCanonicalCafeEvents,readEventChecklist} from "@/lib/data/cafeEvents.server";
+import {readCafeEvents,readCanonicalCafeEvents,readExactCafeEvent,readEventChecklist,type CafeEvent} from "@/lib/data/cafeEvents.server";
 import {readDailyFacts} from "@/lib/data/dailyFacts.server";
 import {readItemSales,readDiscounts,readLaborEntries,readMenu} from "@/lib/data/canonical/reads.server";
 import {posFactReaders} from "@/lib/data/posFactReaders.server";
 import {indexHourlyRevenue,compareEventDaySales,compareLiveEventSales} from "@/lib/metrics/core/eventReadiness";
 import {cafeToday} from "@/lib/metrics/core/clock";
+import {projectTimedOccurrence} from "@/lib/events/cityEventIdentity";
+import {typicalDaySales,changePercent,type OutlookSalesDay} from "@/lib/metrics/core/dayOutlook";
 import {eventFinalNarrative,eventReportFactsHash,eventReportFallback,eventReportNumericEvidence}
   from "@/lib/events/eventFinalReport.server";
 import {effectHash,registerLoopCapability,utcDateOffset} from "./engine";
@@ -30,6 +34,7 @@ export const eventReadinessInput=z.strictObject({
  startDate:isoDay,endDate:isoDay,
  eventIds:z.array(z.uuid()).min(1).max(8),
  summary:z.string().trim().min(3).max(500),
+ importance:z.enum(["high","medium","low"]).optional(),
  expectedBusyHours:z.array(z.strictObject({start:time,end:time})).max(8),
  actions:z.array(action).min(1).max(3),
 });
@@ -42,14 +47,43 @@ const sourceFact=z.strictObject({
 export const eventReadinessEffect=eventReadinessInput.extend({
  facts:z.array(sourceFact).min(1).max(8),
  factsHash:z.string().regex(/^[a-f0-9]{64}$/),
+ observationWindow:z.object({inactiveDates:z.array(isoDay).max(366),closeEarly:z.boolean(),through:isoDay.optional()}).optional(),
 });
 export const eventReadinessCapabilityId="alex.event_readiness.v1";
+
+/** Serialize live, close-day and owner-triggered event observations using the
+ * same existing handled task ledger and a token-fenced release. */
+export async function withEventObservationClaim<T>(db:ReturnType<typeof createAdminSupabaseClient>,
+ scope:OwnerLoopScope,p:LoopProposal,day:string,work:()=>Promise<T>){
+ const token=randomUUID();
+ const closure=Boolean(p.monitoringStartDate&&day>utcDateOffset(p.monitoringStartDate,p.monitorSpec.durationDays-1));
+ const args={p_business_id:scope.businessId,p_proposal_id:p.id,p_day:day,p_token:token,p_closure:closure};
+ const claimed=await db.rpc("ldi_claim_monitor",{...args,p_owner_id:scope.ownerUserId});
+ if(claimed.error)throw claimed.error;
+ if(claimed.data!==true)return null;
+ let reportLock=false;
+ const reportArgs={...args,p_closure:true};
+ try{
+  // The final report and the last observation must never generate concurrently.
+  if(!closure){
+   const lock=await db.rpc("ldi_claim_monitor",{...reportArgs,p_owner_id:scope.ownerUserId});
+   if(lock.error)throw lock.error;
+   if(lock.data!==true)return null;
+   reportLock=true;
+  }
+  return await work();
+ }finally{
+  try{
+   if(reportLock){const released=await db.rpc("ldi_release_monitor",reportArgs);if(released.error)throw released.error;}
+  }finally{const release=await db.rpc("ldi_release_monitor",args);if(release.error)throw release.error;}
+ }
+}
 
 /** Observation is permitted without approval; business effects are not.
  * Give the existing monitor loop a transient window for a saved event plan,
  * without calling commitLoop or changing its durable proposal status/revision.
  * Rejected/stale proposals and corrupt facts are never resurrected. */
-export function readOnlyEventObservation(p:LoopProposal):LoopProposal|null{
+export function readOnlyEventObservation(p:LoopProposal,current?:ReadonlyMap<string,CafeEvent>,today?:string,timezone?:string):LoopProposal|null{
   if(p.capabilityId!==eventReadinessCapabilityId||
     !["draft","approved","committed","manual_confirmed"].includes(p.status))return null;
   const parsed=eventReadinessEffect.safeParse(p.canonicalEffectPayload);
@@ -57,51 +91,125 @@ export function readOnlyEventObservation(p:LoopProposal):LoopProposal|null{
   const effect=parsed.data;
   const days=Math.round((Date.parse(effect.endDate)-Date.parse(effect.startDate))/86400000)+1;
   if(days<1||days>14||days!==p.monitorSpec.durationDays)return null;
-  // This clone is for monitorLoop only; it is never persisted as a transition.
+  // A single occurrence retains its one reporting identity beyond the bounded
+  // preparation plan. This projection is never an approved or executable effect.
+  if(effect.eventIds.length===1&&effect.facts.length===1){
+    const event=current?.get(effect.eventIds[0]);
+    const fact=effect.facts[0];
+    const start=event&&event.startDate<effect.startDate?event.startDate:effect.startDate;
+    const end=[effect.endDate,fact.endDate,...(event?[event.endDate]:[])].sort().at(-1)!;
+    const duration=Math.round((Date.parse(end)-Date.parse(start))/86400000)+1;
+    if(duration>=1&&duration<=366){
+      const inactiveDates:string[]=[];
+      if(event&&today&&!timezone)throw new Error("event_observation_timezone_required");
+      if(event&&today){
+        for(let day=start;day<=end;day=utcDateOffset(day,1)){
+          if(eventDayActivity([event],day,timezone!)==="inactive")inactiveDates.push(day);
+        }
+      }
+      const closeEarly=Boolean(event&&today&&timezone&&event.lastVerifiedAt&&end>=today&&
+        (eventStatusAtBusinessDay(event,today,timezone)!=="found"||event.endDate<today));
+      if(duration!==days||start!==effect.startDate||inactiveDates.length||closeEarly){
+        const projected=eventReadinessEffect.parse({...effect,startDate:start,endDate:end,observationWindow:{inactiveDates,closeEarly,...(closeEarly&&today?{through:utcDateOffset(today,-1)}:{})}});
+        return {...p,status:"committed",monitoringStartDate:start,monitorSpec:{...p.monitorSpec,durationDays:duration},
+          canonicalEffectPayload:projected,effectHash:effectHash(projected)};
+      }
+    }
+  }
+  if(current&&today&&timezone){
+    const inactiveDates:string[]=[];
+    for(let day=effect.startDate;day<=effect.endDate;day=utcDateOffset(day,1))
+      if(eventDayActivity(effect.eventIds.map(id=>current.get(id)??null),day,timezone)==="inactive")inactiveDates.push(day);
+    if(inactiveDates.length){
+      const projected=eventReadinessEffect.parse({...effect,observationWindow:{inactiveDates,closeEarly:false}});
+      return {...p,status:"committed",monitoringStartDate:effect.startDate,
+        canonicalEffectPayload:projected,effectHash:effectHash(projected)};
+    }
+  }
   return {...p,status:"committed",monitoringStartDate:effect.startDate};
 }
 
 
+/** Fill missing selected IDs through the historical exact same-tenant reader.
+ * An absent identity is unknown, never a confirmed active occurrence. */
+export async function eventObservationFacts(db:SupabaseClient,businessId:string,
+ proposals:readonly LoopProposal[],date:string,seed:readonly CafeEvent[]=[]){
+ const current=new Map(seed.map(e=>[e.id,e]));
+ const ids=[...new Set(proposals.flatMap(p=>{
+   const parsed=eventReadinessEffect.safeParse(p.canonicalEffectPayload);
+   return parsed.success?parsed.data.eventIds:[];
+ }))].filter(id=>!current.has(id));
+ for(let i=0;i<ids.length;i+=8){
+   const events=await Promise.all(ids.slice(i,i+8).map(id=>
+     readExactCafeEvent(db,businessId,id,date,date,{historical:true})));
+   for(const event of events)if(event)current.set(event.id,event);
+ }
+ return current;
+}
+
 /** One canonical monitored plan per event-day. A committed owner choice wins over
  * an unapproved revised draft; reruns never generate parallel report threads. */
 export function selectEventObservations(proposals:readonly LoopProposal[],
-  observedIds:ReadonlySet<string>=new Set()):LoopProposal[]{
+  observedIds:ReadonlySet<string>=new Set(),businessDate?:string,
+  sampledOnDate:ReadonlySet<string>=new Set(),current?:ReadonlyMap<string,CafeEvent>,today?:string,timezone?:string):LoopProposal[]{
   const priority=(p:LoopProposal)=>{
     // Once a day's monitor has emitted a sample, its proposal ID is sticky.
     // Changing draft facts cannot create a second mid-run notice/inbox thread.
+    if(sampledOnDate.has(p.id))return 20;
     if(observedIds.has(p.id))return 10;
     return p.status==="committed"||p.status==="manual_confirmed"?2:
       p.status==="approved"?1:0;
   };
   const chosen=new Map<string,LoopProposal>();
   for(const original of [...proposals].sort((a,b)=>
-    priority(b)-priority(a)||b.createdAt.localeCompare(a.createdAt)||
+    priority(b)-priority(a)||b.monitorSpec.durationDays-a.monitorSpec.durationDays||b.createdAt.localeCompare(a.createdAt)||
     b.id.localeCompare(a.id))){
-    const observation=readOnlyEventObservation(original);
+    const observation=readOnlyEventObservation(original,current,today,timezone);
     if(!observation)continue;
     const start=observation.monitoringStartDate!;
-    if(!chosen.has(start))chosen.set(start,observation);
+    if(businessDate){
+      if(businessDate<start||businessDate>utcDateOffset(start,observation.monitorSpec.durationDays-1))continue;
+      if(current){
+        if(!timezone)throw new Error("event_observation_timezone_required");
+        const effect=eventReadinessEffect.parse(observation.canonicalEffectPayload);
+        if(eventDayActivity(effect.eventIds.map(id=>current.get(id)??null),businessDate,timezone)!=="active")continue;
+      }
+      // Sales are café-day facts, not per-event sales. One primary window owns
+      // the date even if multiple events and approvals overlap.
+      const key=observation.businessId+"|"+businessDate;
+      if(!chosen.has(key))chosen.set(key,observation);
+    }else if(!chosen.has(start))chosen.set(start,observation);
   }
   return [...chosen.values()];
 }
 /** Bounded, persisted monitor identity, shared by the live and report crons.
  * Fail closed when it cannot be read: guessing a new ID can duplicate notices. */
-export async function observedEventProposalIds(
+export async function observedEventProposalDates(
   db:ReturnType<typeof createAdminSupabaseClient>,businessId:string,
-  ids:readonly string[]):Promise<Set<string>>{
-  if(!ids.length)return new Set();
-  const found=new Set<string>();
+  ids:readonly string[]):Promise<{ids:Set<string>;byDate:Map<string,Set<string>>}>{
+  const found=new Set<string>(),byDate=new Map<string,Set<string>>();
+  if(!ids.length)return {ids:found,byDate};
   const unique=[...new Set(ids)].slice(0,100);
-  // One event proposal has at most 14 observed business days. Chunks of 40
-  // cannot silently hit the canonical 1,000-row provider cap.
-  for(let i=0;i<unique.length;i+=40){
+  // An extended occurrence can have 366 samples; two IDs stay below the provider cap.
+  for(let i=0;i<unique.length;i+=2){
     const {data,error}=await db.from("supervisor_monitor_samples")
-      .select("proposal_id").eq("business_id",businessId)
-      .in("proposal_id",unique.slice(i,i+40)).limit(1000);
-    if(error||!data)throw new Error("Event monitoring history unavailable");
-    for(const row of data)found.add(row.proposal_id as string);
+      .select("proposal_id,business_date,observation").eq("business_id",businessId)
+      .in("proposal_id",unique.slice(i,i+2)).limit(1000);
+    if(error||!data||data.length>=1000)throw new Error("Event monitoring history unavailable");
+    for(const row of data){
+      // Status-only observations are not sales ownership receipts.
+      if((row.observation as {coverage?:string}|null)?.coverage==="event_inactive")continue;
+      const id=String(row.proposal_id);found.add(id);
+      if(typeof row.business_date!=="string")continue;
+      const dates=byDate.get(row.business_date)??new Set<string>();
+      dates.add(id);byDate.set(row.business_date,dates);
+    }
   }
-  return found;
+  return {ids:found,byDate};
+}
+export async function observedEventProposalIds(db:ReturnType<typeof createAdminSupabaseClient>,
+  businessId:string,ids:readonly string[]):Promise<Set<string>>{
+  return (await observedEventProposalDates(db,businessId,ids)).ids;
 }
 
 /** Read the already canonicalized, café-scoped Toast evidence only.
@@ -109,29 +217,39 @@ export async function observedEventProposalIds(
  * or an order-level discount total; neither proves that physical work occurred. */
 export async function eventToastEvidence(db:ReturnType<typeof createAdminSupabaseClient>,
   businessId:string,day:string,
-  actions:readonly {area:string;action:string}[]=[]){
-  const range={dateFrom:day,dateTo:day};
+  actions:readonly {area:string;action:string}[]=[],through=day,excludedDates:ReadonlySet<string>=new Set()){
+  const range={dateFrom:day,dateTo:through};
   const [items,discounts,shifts,menu]=await Promise.all([
-    readItemSales(db,businessId,range),
-    readDiscounts(db,businessId,range),
-    readLaborEntries(db,businessId,range),
-    readMenu(db,businessId,range),
+    readItemSales(db,businessId,range).catch(()=>({rows:[],truncated:true,error:"unavailable"})),
+    readDiscounts(db,businessId,range).catch(()=>({rows:[],truncated:true,error:"unavailable"})),
+    readLaborEntries(db,businessId,range).catch(()=>({rows:[],truncated:true,error:"unavailable"})),
+    readMenu(db,businessId,range).catch(()=>({rows:[],truncated:true,error:"unavailable"})),
   ]);
   const unavailable=(v:{error?:string;truncated:boolean})=>Boolean(v.error||v.truncated);
-  const itemRows=items.rows.filter(r=>r.source==="toast"&&r.status==="actual");
+  // Menu names are catalogue evidence, not a sale. Actual sales/discounts
+  // and timecards must belong to the confirmed event dates, not a moved gap.
+  const inEvent=(row:Record<string,unknown>)=>!excludedDates.size||
+    typeof row.business_date==="string"&&!excludedDates.has(row.business_date);
+  const missingDate=(rows:Record<string,unknown>[])=>excludedDates.size>0&&
+    rows.some(r=>r.source==="toast"&&typeof r.business_date!=="string");
+  const itemRows=items.rows.filter(r=>inEvent(r)&&r.source==="toast"&&r.status==="actual");
   const menuNames=new Set(menu.rows.filter(r=>r.source==="toast"&&r.status==="actual")
     .map(r=>(r.data as {name?:unknown}|null)?.name)
     .filter((v):v is string=>typeof v==="string"));
-  const sold=itemRows.flatMap(r=>{
+  const soldRows=itemRows.flatMap(r=>{
     const data=r.data as {name?:unknown;quantity?:unknown}|null;
     return typeof data?.name==="string"&&
       typeof data.quantity==="number"&&Number.isFinite(data.quantity)&&
       data.quantity>0&&menuNames.has(data.name)
       ?[{name:data.name,quantity:data.quantity}]:[];
   });
+  const quantities=new Map<string,number>();
+  for(const item of soldRows)quantities.set(item.name,(quantities.get(item.name)??0)+item.quantity);
+  const sold=[...quantities].map(([name,quantity])=>({name,quantity}))
+    .sort((a,b)=>b.quantity-a.quantity||a.name.localeCompare(b.name));
   // The current canonical view includes typed *check* and *item* discounts.
   // Empty/malformed names are not evidence of an applied named promotion.
-  const recordedDiscounts=discounts.rows.filter(r=>r.source==="toast"&&
+  const recordedDiscounts=discounts.rows.filter(r=>inEvent(r)&&r.source==="toast"&&
     r.status==="actual"&&typeof r.amount_cents==="number");
   const names=new Set<string>();
   for(const row of recordedDiscounts){
@@ -157,20 +275,20 @@ export async function eventToastEvidence(db:ReturnType<typeof createAdminSupabas
   // A wage classification is independent of a recorded closed timecard.
   // "needs_match" and "estimated" wages remain valid attendance facts.
   const labor=shifts.rows.filter(r=>{
-    if(r.source!=="toast")return false;
+    if(r.source!=="toast"||!inEvent(r))return false;
     const data=r.data as {clock_in?:unknown;clock_out?:unknown}|null;
     return ["actual","estimated","needs_match"].includes(String(r.status))&&
       typeof data?.clock_in==="string"&&typeof data.clock_out==="string";
   });
-  const openLabor=shifts.rows.some(r=>r.source==="toast"&&r.status==="open");
-  const partialLabor=unavailable(shifts)||openLabor;
+  const openLabor=shifts.rows.some(r=>inEvent(r)&&r.source==="toast"&&r.status==="open");
+  const partialLabor=unavailable(shifts)||openLabor||missingDate(shifts.rows);
   return {
-    itemSales:{coverage:unavailable(items)||unavailable(menu)?"partial" as const:
+    itemSales:{coverage:unavailable(items)||unavailable(menu)||missingDate(items.rows)?"partial" as const:
       sold.length?"verified" as const:"missing" as const,items:sold.slice(0,8)},
-    namedDiscounts:{coverage:unavailable(discounts)?"partial" as const:
+    namedDiscounts:{coverage:unavailable(discounts)||missingDate(discounts.rows)?"partial" as const:
       names.size?"verified" as const:"missing" as const,
       names:[...names].slice(0,8),matchedRecommendationNames:matchedDiscounts.slice(0,8)},
-    discountAmounts:{coverage:unavailable(discounts)?"partial" as const:
+    discountAmounts:{coverage:unavailable(discounts)||missingDate(discounts.rows)?"partial" as const:
       recordedDiscounts.length?"verified" as const:"missing" as const,
       observedOrders:recordedDiscounts.length},
     laborEntries:{coverage:partialLabor?"partial" as const:
@@ -220,17 +338,85 @@ export function selectedEventPlanFacts(
   current:readonly import("@/lib/data/cafeEvents.server").CafeEvent[],
   date:string,originalDayHash:string,ids:readonly string[]
 ){
-  const currentDay=current.filter(e=>e.status==="found"&&
-    e.startDate<=date&&e.endDate>=date).sort((a,b)=>a.id.localeCompare(b.id)).slice(0,8);
+  const batchIds=new Set(original.map(e=>e.id));
+  const currentDay=current.filter(e=>batchIds.has(e.id)&&e.status==="found"&&
+    e.startDate<=date&&e.endDate>=date).sort((a,b)=>a.id.localeCompare(b.id));
   const initial=original.filter(e=>e.status==="found"&&
-    e.startDate<=date&&e.endDate>=date).sort((a,b)=>a.id.localeCompare(b.id)).slice(0,8);
+    e.startDate<=date&&e.endDate>=date).sort((a,b)=>a.id.localeCompare(b.id));
   if(effectHash(eventPlanFacts(currentDay))!==originalDayHash||
     effectHash(eventPlanFacts(initial))!==originalDayHash||
-    !ids.length||ids.length>8||new Set(ids).size!==ids.length)
+    !ids.length||ids.length>8||initial.length>8||new Set(ids).size!==ids.length)
     throw new Error("event_facts_changed");
   const selected=currentDay.filter(e=>ids.includes(e.id));
   if(selected.length!==ids.length)throw new Error("event_facts_changed");
   return eventPlanFacts(selected);
+}
+
+/** A closed-day POS total is still evidence when hourly details are missing. */
+export function eventDailyOnlyComparison(days:readonly OutlookSalesDay[],date:string,
+  excluded:ReadonlySet<string>|null){
+  const day=days.find(d=>d.date===date);
+  if(!day||!Number.isSafeInteger(day.netSalesCents))return null;
+  const base=excluded?typicalDaySales(days,date,date,{exclude:excluded}):null;
+  const typicalCents=base?.typicalCents??null;
+  return {actualCents:day.netSalesCents,typicalCents,
+    changePercent:typicalCents===null?null:changePercent(day.netSalesCents,typicalCents),
+    baselineDays:base?.sampleDays??0,hours:[],hourlyCoverage:"missing" as const};
+}
+
+/** Reconstruct the saved occurrence status at the end of a café-local date.
+ * Verification time is knowledge, not an invented event cancellation time.
+ * A change on that date is conservatively treated as no confirmed active day.
+ * The original approval and all ordinary POS records remain untouched. */
+export function eventWindowAtBusinessDay(event:CafeEvent,day:string,timezone:string){
+  const detail=event.verificationDetails;
+  const current={status:event.status,startDate:event.startDate,endDate:event.endDate};
+  if(!detail||typeof detail!=="object"||Array.isArray(detail))return current;
+  const d=detail as {history?:unknown[];change?:unknown};
+  const history=(Array.isArray(d.history)?d.history:d.change?[d.change]:[]).flatMap(value=>{
+    if(!value||typeof value!=="object")return [];
+    const row=value as {verifiedAt?:unknown;status?:unknown;previousStatus?:unknown;previousStartDate?:unknown;previousEndDate?:unknown;newDate?:unknown;newEndDate?:unknown;previousStartAt?:unknown;previousEndAt?:unknown;newStartAt?:unknown;newEndAt?:unknown};
+    const valid=(s:unknown):s is CafeEvent["status"]=>s==="found"||s==="cancelled"||s==="moved";
+    if(typeof row.verifiedAt!=="string"||!Number.isFinite(Date.parse(row.verifiedAt))||
+      !valid(row.status)||!valid(row.previousStatus))return [];
+    return [{...row,verifiedAt:row.verifiedAt,status:row.status,previousStatus:row.previousStatus}];
+  }).sort((a,b)=>Date.parse(a.verifiedAt)-Date.parse(b.verifiedAt));
+  if(!history.length)return current;
+  let status=history[0].previousStatus;
+  let startDate=typeof history[0].previousStartDate==="string"?history[0].previousStartDate:event.startDate;
+  let endDate=typeof history[0].previousEndDate==="string"?history[0].previousEndDate:event.endDate;
+  const timed=(start:unknown,end:unknown)=>{
+    if(typeof start!=="string"||typeof end!=="string")return null;
+    try{return projectTimedOccurrence(new Date(start).toISOString(),new Date(end).toISOString(),timezone);}
+    catch{return null;}
+  };
+  const prior=timed(history[0].previousStartAt,history[0].previousEndAt);
+  if(prior){startDate=prior.startDate;endDate=prior.endDate;}
+  for(const change of history){
+    if(formatInTimeZone(new Date(change.verifiedAt),timezone,"yyyy-MM-dd")>day)break;
+    status=change.status;
+    if(typeof change.newEndDate==="string"){
+      if(typeof change.newDate==="string")startDate=change.newDate;
+      endDate=change.newEndDate;
+      const next=timed(change.newStartAt,change.newEndAt);
+      if(next){startDate=next.startDate;endDate=next.endDate;}
+    }
+  }
+  // Once the latest verified revision applies, the canonical reader already
+  // supplies the current café-local interval, including exact midnight.
+  if(formatInTimeZone(new Date(history.at(-1)!.verifiedAt),timezone,"yyyy-MM-dd")<=day)return current;
+  return {status,startDate,endDate};
+}
+export function eventStatusAtBusinessDay(event:CafeEvent,day:string,timezone:string):CafeEvent["status"]{
+ return eventWindowAtBusinessDay(event,day,timezone).status;
+}
+export function eventDayActivity(events:readonly (CafeEvent|null)[],day:string,timezone:string){
+  if(events.some(event=>{
+    if(!event)return false;
+    const range=eventWindowAtBusinessDay(event,day,timezone);
+    return range.startDate<=day&&range.endDate>=day&&range.status==="found";
+  }))return "active" as const;
+  return events.some(event=>event===null)?"unconfirmed" as const:"inactive" as const;
 }
 
 /** No new monitoring store: one sample per business day in supervisor_monitor_samples. */
@@ -256,7 +442,9 @@ export const eventReadinessCapability=registerLoopCapability({
      input.expectedBusyHours.some(h=>h.start>=h.end))throw new Error("invalid_event_plan");
    const found=(await readCanonicalCafeEvents(db,scope.businessId,input.startDate,input.endDate))
      .filter(e=>input.eventIds.includes(e.id)&&e.status==="found");
-   if(found.length!==input.eventIds.length)throw new Error("event_facts_unavailable");
+   if(found.length!==input.eventIds.length||
+     found.some(e=>e.startDate>input.startDate||e.endDate<input.endDate))
+     throw new Error("event_facts_unavailable");
    const facts=eventPlanFacts(found);
    return {effect:{...input,facts,factsHash:effectHash(facts)},
      baseline:{source:"cafe_events",eventNames:facts.map(f=>f.name),
@@ -275,6 +463,13 @@ export const eventReadinessCapability=registerLoopCapability({
    if(cafeError||!cafe?.timezone)return null;
    const liveDay=formatInTimeZone(new Date(),cafe.timezone,"yyyy-MM-dd");
    const isLive=businessDate===liveDay;
+   // The stored plan is historical approval evidence, not current event truth.
+   // Read the exact IDs before reading any sales, including beyond compact UI lists.
+   const events=await Promise.all(effect.eventIds.map(id=>
+     readExactCafeEvent(db,scope.businessId,id,businessDate,businessDate,{historical:true})));
+   const activity=eventDayActivity(events,businessDate,cafe.timezone);
+   if(activity!=="active")return isLive?null:{businessDate,source:"cafe_events",
+     observation:{coverage:"event_inactive",eventActivity:activity}};
    const saved=isLive?await readSavedTodayLive(db,scope.businessId):null;
    // A partial, old or mismatched reading cannot generate an owner alert.
    if(isLive&&(!saved||saved.value.businessDate!==businessDate||
@@ -284,35 +479,37 @@ export const eventReadinessCapability=registerLoopCapability({
    const from=utcDateOffset(businessDate,-56);
    const [days,hours,exclusions]=await Promise.all([
      readDailyFacts(db,scope.businessId,from,businessDate),
-     posFactReaders(db,scope.businessId).peakHours({from,to:businessDate}),
-     readCanonicalCafeEvents(db,scope.businessId,from,utcDateOffset(businessDate,-1)),
+     Promise.resolve().then(()=>posFactReaders(db,scope.businessId).peakHours({from,to:businessDate})).catch(()=>null),
+     readCanonicalCafeEvents(db,scope.businessId,from,utcDateOffset(businessDate,-1)).catch(()=>null),
    ]);
    const certified=days.filter(d=>d.salesDataStatus==="actual");
    const today=certified.find(d=>d.date===businessDate);
    // Finalized daily evidence always wins; never replace it with a live sample.
-   if((isLive&&today)||(!isLive&&!today)||!hours.available||!hours.value)return null;
-   const byDay=indexHourlyRevenue(hours.value.hours);
-   if(hours.quality.missingInputs.some(x=>x==="hourlySalesPageLimit"||x==="hourlySalesUnavailable"))return null;
-   const excluded=new Set(exclusions.filter(e=>e.status==="found").flatMap(e=>{
+   if((isLive&&today)||(!isLive&&!today))return null;
+   const byDay=hours?.available&&hours.value&&
+     !hours.quality.missingInputs.some(x=>x==="hourlySalesPageLimit"||x==="hourlySalesUnavailable")
+     ?indexHourlyRevenue(hours.value.hours):null;
+   const excluded=exclusions?new Set(exclusions.filter(e=>e.status==="found").flatMap(e=>{
      const dates:string[]=[];
      for(let d=e.startDate;d<=e.endDate&&dates.length<90;d=utcDateOffset(d,1))dates.push(d);
      return dates;
-   }));
+   })):null;
    // One canonical usual-day definition, shared with get_nearby_events.
    // Missing hourly coverage only reduces the per-hour comparison sample.
    if(isLive&&saved){
      const time=formatInTimeZone(new Date(saved.value.readAt),cafe.timezone,"HH:mm");
      const throughHour=Number(time.slice(0,2));
-     const comparison=compareLiveEventSales(certified,byDay,businessDate,
-       saved.value.netSalesCents,throughHour,excluded);
-     if(!comparison)return null;
-     return {businessDate,source:"toast_today_live+hourly_sales_rollup+daily_rollups",
-       observation:{coverage:"provisional",...comparison,asOf:saved.value.readAt,
+     const comparison=byDay&&excluded?compareLiveEventSales(certified,byDay,businessDate,
+       saved.value.netSalesCents,throughHour,excluded):null;
+     return {businessDate,source:comparison?"toast_today_live+hourly_sales_rollup+daily_rollups":"toast_today_live",
+       observation:{coverage:"provisional",...(comparison??{actualCents:saved.value.netSalesCents,
+         typicalCents:null,changePercent:null,baselineDays:0,notable:false,hourlyCoverage:"missing"}),asOf:saved.value.readAt,
          asOfLocal:time,partialCurrentHour:true}};
    }
-   const comparison=compareEventDaySales(certified,byDay,businessDate,excluded);
+   const hourly=byDay&&excluded?compareEventDaySales(certified,byDay,businessDate,excluded):null;
+   const comparison=hourly??eventDailyOnlyComparison(certified,businessDate,excluded);
    if(!comparison)return null;
-   return {businessDate,source:"hourly_sales_rollup+daily_rollups",
+   return {businessDate,source:hourly?"hourly_sales_rollup+daily_rollups":"daily_rollups",
      observation:{coverage:"actual",...comparison}};
  },
  report:async(scope,effect,samples,windowComplete,window)=>{
@@ -321,15 +518,41 @@ export const eventReadinessCapability=registerLoopCapability({
    const checklist={total:effect.actions.length,
      done:ticks.filter(t=>t.state==="done").length,
      dismissed:ticks.filter(t=>t.state==="dismissed").length};
-   const observed=samples.filter(s=>s.businessDate>=effect.startDate&&s.businessDate<=effect.endDate)
+   const observed=samples.filter(s=>s.businessDate>=effect.startDate&&s.businessDate<=effect.endDate&&!effect.observationWindow?.inactiveDates.includes(s.businessDate))
      .sort((a,b)=>a.businessDate.localeCompare(b.businessDate));
    const expected=Math.round((Date.parse(effect.endDate)-Date.parse(effect.startDate))/86400000)+1;
-   const actual=observed.filter(s=>s.observation.coverage==="actual");
+   const actual=[...new Map(observed.filter(s=>s.observation.coverage==="actual")
+     .map(s=>[s.businessDate,s])).values()];
+   // Compare matched days only. A missing day is not a zero-sales day and
+   // an observed total must not masquerade as the complete event total.
+   const measured=actual.filter(s=>typeof s.observation.actualCents==="number"&&
+     Number.isSafeInteger(s.observation.actualCents));
+   const comparable=measured.filter(s=>typeof s.observation.typicalCents==="number"&&
+     Number.isSafeInteger(s.observation.typicalCents));
+   const total=(rows:typeof actual,key:"actualCents"|"typicalCents")=>{
+     if(!rows.length)return null;
+     const sum=rows.reduce((acc,row)=>acc+Number(row.observation[key]),0);
+     return Number.isSafeInteger(sum)?sum:null;
+   };
+   const observedSalesCents=total(measured,"actualCents");
+   const comparableActualCents=total(comparable,"actualCents");
+   const comparableTypicalCents=total(comparable,"typicalCents");
+   const salesSummary={observedSalesCents,observedSalesDays:measured.length,
+     comparableDays:comparable.length,comparableActualCents,comparableTypicalCents,
+     changePercent:comparableActualCents!==null&&comparableTypicalCents!==null?
+       changePercent(comparableActualCents,comparableTypicalCents):null};
    // A completed business day can have actual sales but missing item/discount
    // details. Keep that distinction in the same saved Supervisor report.
-   const toastEvidence=windowComplete&&window?.proposalId?await Promise.resolve()
+   const inactive=new Set([...(effect.observationWindow?.inactiveDates??[]),
+     ...samples.filter(s=>s.observation.coverage==="event_inactive").map(s=>s.businessDate)]);
+   // Use the last eligible event date, not the moving cron date. The same
+   // cancelled occurrence must not acquire new off-event product/labor facts.
+   let evidenceEnd=effect.observationWindow?.through??effect.endDate;
+   while(evidenceEnd>=effect.startDate&&inactive.has(evidenceEnd))evidenceEnd=utcDateOffset(evidenceEnd,-1);
+   if(evidenceEnd<effect.startDate)evidenceEnd=utcDateOffset(effect.startDate,-1);
+   const toastEvidence=windowComplete&&window?.proposalId&&evidenceEnd>=effect.startDate?await Promise.resolve()
      .then(()=>eventToastEvidence(createAdminSupabaseClient(),
-       scope.businessId,effect.endDate,effect.actions)).catch(()=>({
+       scope.businessId,effect.startDate,effect.actions,evidenceEnd,inactive)).catch(()=>({
        itemSales:{coverage:"missing" as const,items:[]},
        namedDiscounts:{coverage:"missing" as const,names:[],
          matchedRecommendationNames:[]},
@@ -340,8 +563,7 @@ export const eventReadinessCapability=registerLoopCapability({
        recommendedDiscountImplemented:"unverified" as const,
        physicalPreparationImplemented:"unverified" as const,
      })):null;
-   const complete=windowComplete&&actual.length===expected&&
-     actual.every(s=>typeof s.observation.typicalCents==="number");
+   const complete=windowComplete&&measured.length===expected&&comparable.length===expected;
    const live=!windowComplete?[...observed].reverse().find(s=>
      s.businessDate===window?.through&&s.observation.coverage==="provisional"):undefined;
    const o=live?.observation;
@@ -381,10 +603,14 @@ export const eventReadinessCapability=registerLoopCapability({
    const result={
      eventIds:effect.eventIds,startDate:effect.startDate,endDate:effect.endDate,
      factsHash:effect.factsHash,observedDays:actual.length,expectedDays:expected,
-     checklist,liveWatch,toastEvidence,
+     checklist,liveWatch,toastEvidence,salesSummary,
+     eventStatusDays:[...new Map([...observed.filter(s=>s.observation.coverage==="event_inactive")
+       .map(s=>({date:s.businessDate,activity:s.observation.eventActivity})),
+       ...(effect.observationWindow?.inactiveDates??[]).map(date=>({date,activity:"inactive"}))].map(d=>[d.date,d])).values()],
+     toastEvidenceWindow:{from:effect.startDate,to:evidenceEnd},
      missingBaselineDays:actual.filter(s=>s.observation.typicalCents===null).map(s=>s.businessDate),
      days:actual.map(s=>({date:s.businessDate,...s.observation})),
-     caveat:"Event-day sales are observational, not proof of event causality. Recorded item sales, discount totals and staff timecards do not prove a proposed combo, discount or physical preparation was implemented; owner checklist markers are not POS evidence.",
+     caveat:"Cancelled, moved or unconfirmed event dates are not treated as active event observations. Event-day sales are observational, not proof of event causality. Recorded item sales, discount totals and staff timecards do not prove a proposed combo, discount or physical preparation was implemented; owner checklist markers are not POS evidence.",
    };
    // Keep PR 6's live reporting and PR 7's final report in the same canonical loop.
    const terminal=windowComplete&&Boolean(window?.proposalId);

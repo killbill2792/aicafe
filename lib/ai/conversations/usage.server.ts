@@ -5,7 +5,7 @@ import "server-only";
 import type {SupabaseClient} from "@supabase/supabase-js";
 import { createAdminSupabaseClient } from "@/lib/supabase/admin";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
-import { ConversationApiError } from "./auth.server";
+import { authenticatedConversationContext, ConversationApiError } from "./auth.server";
 import type { ConversationScope } from "./contracts";
 import {currentDurableUsageAccounting} from "@/lib/ai/supervisor/runs/usage.server";
 export type SupervisorUsage = {model:string;inputTokens:number;outputTokens:number;modelCallCount:number;toolCallCount:number};
@@ -85,16 +85,11 @@ export async function recordSupervisorUsage(params: {
  */
 /** Owner-scoped ledger gate before launching a billable agent turn.
  * Uses existing RLS-protected usage records; no migration is needed.
- * The beta cap counts model calls per owner and UTC attempt day, including retries.
+ * A future finite entitlement counts attempts per owner and UTC day, including retries. Current Max is unlimited.
  */
-export const MAX_OWNER_MODEL_CALLS_PER_DAY = 600;
-export function ownerModelCallsLimit(value = process.env.AI_OWNER_MAX_MODEL_CALLS_PER_DAY): number {
-  if (value === undefined || value.trim() === "") return MAX_OWNER_MODEL_CALLS_PER_DAY;
-  const limit = Number(value);
-  return /^\d+$/.test(value) && Number.isSafeInteger(limit) && limit > 0
-    ? limit : MAX_OWNER_MODEL_CALLS_PER_DAY;
-}
-export async function assertOwnerAgentTurnAvailable(scope: ConversationScope, scopedClient?:SupabaseClient): Promise<void> {
+/** All current owners are Max. Future commercial allowances must come from a trusted server policy, not a browser or obsolete global environment cap. */
+export function ownerModelCallsLimit(): number | null { return null; }
+export async function assertOwnerAgentTurnAvailable(scope: ConversationScope, scopedClient?:SupabaseClient, dailyCap: number | null = ownerModelCallsLimit()): Promise<void> {
   const session = scopedClient ?? await createServerSupabaseClient();
   // allowed: UTC quota bucket. ai_usage_events.attempt_day is an existing UTC quota key,
   // not a café calendar date or a date shown to the owner.
@@ -115,7 +110,7 @@ export async function assertOwnerAgentTurnAvailable(scope: ConversationScope, sc
   const calls = interactive.data.reduce((total,entry)=>
     total+Number(entry.model_call_count)-Number(entry.reserved_model_call_count??0),0)
     +proactive.data.reduce((total,entry)=>total+Number(entry.model_call_count),0);
-  if (calls >= ownerModelCallsLimit())
+  if (dailyCap !== null && calls >= dailyCap)
     throw new ConversationApiError(429, "owner_usage_limit_reached");
 }
 
@@ -129,4 +124,15 @@ export function summarizeSupervisorUsage(rows: Array<{
     estimatedCostMicros: rows.every((row) => row.estimated_cost_micros !== null)
       ? rows.reduce((n, row) => n + (row.estimated_cost_micros ?? 0), 0) : null,
   };
+}
+
+export type OwnerUsageSummary={periodStart:string;ownerRequests:number;proactiveItems:number};
+export async function readOwnerSupervisorUsage():Promise<OwnerUsageSummary>{
+  const {scope}=await authenticatedConversationContext();
+  const client=await createServerSupabaseClient();
+  const {data,error}=await client.rpc("supervisor_owner_usage_summary",{p_business_id:scope.businessId});
+  if(error||!data||typeof data.periodStart!=="string"||
+    ![data.ownerRequests,data.proactiveItems].every(n=>Number.isSafeInteger(n)&&n>=0))
+    throw new Error("usage_unavailable");
+  return {periodStart:data.periodStart,ownerRequests:data.ownerRequests,proactiveItems:data.proactiveItems};
 }

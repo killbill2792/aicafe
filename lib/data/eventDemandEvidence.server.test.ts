@@ -2,8 +2,9 @@ import {beforeEach,describe,expect,it,vi} from "vitest";
 vi.mock("server-only",()=>({}));
 const reads=vi.hoisted(()=>({
   daily:vi.fn(),hourly:vi.fn(),events:vi.fn(),proposals:vi.fn(),reports:vi.fn(),
-  facts:vi.fn(),live:vi.fn(),trust:vi.fn(),
+  facts:vi.fn(),live:vi.fn(),trust:vi.fn(),shifts:vi.fn(),inventory:vi.fn(),
 }));
+vi.mock("./canonical/reads.server",()=>({readShifts:reads.shifts,readInventory:reads.inventory}));
 vi.mock("./dailyFacts.server",()=>({readDailyFacts:reads.daily}));
 vi.mock("./toastDayTrust.server",()=>({readToastDayTrust:reads.trust}));
 vi.mock("./posFactReaders.server",()=>({posFactReaders:()=>({peakHours:reads.hourly})}));
@@ -57,6 +58,10 @@ beforeEach(()=>{
   reads.facts.mockResolvedValue([]);
   reads.live.mockResolvedValue(null);
   reads.trust.mockResolvedValue({quality:[],notes:[]});
+  reads.shifts.mockResolvedValue({rows:[{source:"app",business_date:request.eventDate,
+    data:{shift_status:"published",start_local:"08:00",end_local:"14:00",employee_id:"private-id"}}],notes:[],truncated:false});
+  reads.inventory.mockResolvedValue({rows:[{source:"app",source_ref:"stock",quantity:12,
+    business_date:request.asOfDate,data:{ingredient_name:"Milk",base_unit:"L",count_date:request.asOfDate}}],notes:[],truncated:false});
 });
 
 describe("LDI D — authorized composite reader / PR F contract",()=>{
@@ -87,6 +92,19 @@ describe("LDI D — authorized composite reader / PR F contract",()=>{
       expect(fixture.selectors.filter(q=>q.table==="supervisor_monitor_samples"&&
         q.column==="business_id")).toHaveLength(1);
     }
+  });
+  it("reads event-date scheduled shifts and dated stock facts without employee identity or invented readiness",async()=>{
+    const {db}=fakeDb();
+    const result=await readEventDemandEvidence(db,ownerA,request);
+    expect(reads.shifts).toHaveBeenCalledWith(db,ownerA.businessId,{dateFrom:request.eventDate,dateTo:request.eventDate});
+    expect(reads.inventory).toHaveBeenCalledWith(db,ownerA.businessId,{dateFrom:request.asOfDate,dateTo:request.asOfDate});
+    expect(result.readiness?.staffing).toMatchObject({coverage:"recorded",shifts:[{source:"app",status:"published",start:"08:00",end:"14:00"}]});
+    expect(JSON.stringify(result.readiness)).not.toContain("private-id");
+    expect(result.readiness?.inventory.items[0]).toMatchObject({quantity:12,ingredient_name:"Milk",evidence_state:"dated_owner_count"});
+    reads.shifts.mockRejectedValueOnce(new Error("offline"));
+    const partial=await readEventDemandEvidence(db,ownerA,request);
+    expect(partial.readiness?.staffing.coverage).toBe("unknown");
+    expect(partial.readiness?.inventory.items[0].quantity).toBe(12);
   });
   it("downgrades missing source reads instead of converting unknown to zero",async()=>{
     reads.daily.mockRejectedValueOnce(new Error("Toast unavailable"));

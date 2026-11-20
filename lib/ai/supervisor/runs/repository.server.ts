@@ -1,11 +1,11 @@
 import "server-only";
-import { createHash } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { z } from "zod";
 import { createAdminSupabaseClient } from "@/lib/supabase/admin";
 import {
   decodeClaim, decodeRun, runScopeSchema, stepSpecSchema,
   type DurableRunRepository, type RunScope, type StepClaim, type StepSpec,
-  type DurableRun,
+  type DurableRun, recoverableReadSelector, type OwnerReadReference, ownerRunInputSchema, checkpointRowSchema, type OwnerRunInput, type CheckpointRow, type OwnerRunCheckpoint,
 } from "./contracts";
 
 const uuid = z.uuid();
@@ -104,4 +104,267 @@ export async function selectNextDurableRun(): Promise<{ runId: string; recovery:
     const candidate = z.object({ run_id: uuid, recovery: z.boolean() }).nullable().parse(value);
     return candidate ? { runId: candidate.run_id, recovery: candidate.recovery } : null;
   });
+}
+
+/** Fixed plan is server-owned; no caller can supply arbitrary effects. */
+export async function admitOwnerRun(scope:RunScope,messageId:string,input:OwnerRunInput,steps:readonly StepSpec[]):Promise<DurableRun>{
+  const s=runScopeSchema.parse(scope),key=uuid.parse(messageId),selected=ownerRunInputSchema.parse(input);
+  const planHash=createHash("sha256").update(JSON.stringify(z.array(stepSpecSchema).parse(steps))).digest("hex");
+  const result=await callRpc("supervisor_admit_owner_run_v2",{
+    p_business_id:s.businessId,p_owner_user_id:s.ownerUserId,p_thread_id:s.threadId,
+    p_owner_message_id:key,p_plan_hash:planHash,p_locale:selected.locale,p_attachment_ids:selected.attachmentIds,
+  },decodeRun);
+  if(result.businessId!==s.businessId||result.ownerUserId!==s.ownerUserId||result.threadId!==s.threadId||result.requestKey!==key)
+    throw new Error("Supervisor run outside owner scope");
+  return result;
+}
+
+type ToolResult=import("@/lib/ai/agent/tools").AgentToolResult;
+const proposalSources:Record<string,string>={
+  propose_price_change:"price_change_proposal",propose_price_experiment:"price_experiment_proposal",
+  propose_staff_change:"staff_proposal",propose_add_staff:"staff_proposal",propose_schedule:"staff_proposal",
+  propose_shift_change:"staff_proposal",propose_availability_change:"staff_proposal",
+  propose_rule_change:"staff_proposal",propose_send_schedule:"staff_proposal",
+  draft_week_schedule:"staff_proposal",propose_maintenance_staff_assignment:"staff_proposal",
+  propose_maintenance_vendor_request:"gmail_proposal",propose_supplier_vendor_email:"gmail_proposal",
+  propose_goal:"goal_proposal",propose_event_plan:"event_plan_proposal",
+  propose_supplier_purchase_order:"supplier_purchase_proposal",propose_purchase_receiving:"supplier_purchase_proposal",
+  propose_invoice_reconciliation:"supplier_purchase_proposal",propose_financial_settlement:"supplier_purchase_proposal",
+  propose_financial_bill:"supplier_purchase_proposal",propose_gmail_action:"gmail_proposal",
+  propose_supplier_discrepancy_followup:"gmail_proposal",
+};
+function stableJson(value:unknown):string{
+  if(value===null||typeof value==="string"||typeof value==="number"||typeof value==="boolean")return JSON.stringify(value);
+  if(Array.isArray(value))return "["+value.map(stableJson).join(",")+"]";
+  if(value&&typeof value==="object"){
+    const obj=value as Record<string,unknown>;
+    return "{"+Object.keys(obj).sort().map(k=>JSON.stringify(k)+":"+stableJson(obj[k])).join(",")+"}";
+  }
+  throw new Error("invalid_checkpoint_operation");
+}
+function operationKey(runId:string,name:string,raw:unknown):string{
+  const hex=createHash("sha256").update(runId+"\\0"+name+"\\0"+stableJson(raw)).digest("hex");
+  return hex.slice(0,8)+"-"+hex.slice(8,12)+"-4"+hex.slice(13,16)+"-8"+hex.slice(17,20)+"-"+hex.slice(20,32);
+}
+
+/** v2 operation journal: stores only scoped receipt IDs and hashes. Never
+ * persist model reasoning, provider output, tool arguments or private source
+ * documents here. On a restart source reads are refreshed via canonical tools.
+ * An unclassified effect is not replayed as if it were a read. */
+export async function openOwnerRunCheckpoint(scope:RunScope,runId:string,token:string,jobId:string):Promise<OwnerRunCheckpoint>{
+  const {scope:s,runId:id}=parseIdentity(scope,runId);
+  const identity={p_business_id:s.businessId,p_owner_user_id:s.ownerUserId,p_thread_id:s.threadId,
+    p_run_id:id,p_claim_token:uuid.parse(token)};
+  const db=createAdminSupabaseClient();
+  const row=await db.from("supervisor_run_steps").select("checkpoint_seq,checkpoint_phase,checkpoint_operation,checkpoint_tool,checkpoint_receipts")
+    .eq("business_id",s.businessId).eq("run_id",id).eq("step_key","owner_turn").single();
+  if(row.error)throw new Error("checkpoint_storage_unavailable");
+  let current:CheckpointRow=checkpointRowSchema.parse(row.data);
+  const assertLive=async()=>{
+    const fence=await db.rpc("supervisor_owner_job_fence_v2",identity);
+    if(fence.error||fence.data!==true)throw new Error("durable_job_lease_lost");
+    const heartbeat=await db.rpc("supervisor_update_owner_job_v2",{...identity,p_job_id:jobId,
+      p_action:"heartbeat",p_step:null,p_reply_id:null,p_error_code:null});
+    if(heartbeat.error||heartbeat.data!==true)throw new Error("durable_job_lease_lost");
+  };
+  const change=async(op:string,action:string,tool:string|null,receipt:string|null)=>{
+    current=await callRpc("supervisor_checkpoint_owner_run_v2",{...identity,p_expected_seq:current.checkpoint_seq,
+      p_operation:op,p_action:action,p_tool:tool,p_receipt_ref:receipt},v=>checkpointRowSchema.parse(v));
+  };
+  const finish=async(receipt:string)=>{
+    if(!current.checkpoint_operation)throw new Error("checkpoint_operation_missing");
+    await change(current.checkpoint_operation,"complete",null,receipt);
+  };
+  const scopedProposal=async(ref:string)=>{
+    const result=await db.from("supervisor_proposals").select("id,status,revision,capability_id,effect_hash")
+      .eq("business_id",s.businessId).eq("owner_user_id",s.ownerUserId).eq("thread_id",s.threadId)
+      .eq("id",uuid.parse(ref)).maybeSingle();
+    if(result.error||!result.data)throw new Error("checkpoint_receipt_unavailable");
+    return result.data;
+  };
+  const recoverEffect=async(name:string,ref:string):Promise<ToolResult>=>{
+    const separator=ref.indexOf(":");
+    const kind=ref.slice(0,separator),value=ref.slice(separator+1);
+    if(kind==="proposal"&&proposalSources[name]){
+      const p=await scopedProposal(value);
+      return {source:proposalSources[name],period:null,missing:p.status==="draft"?[]:["prior_operation_already_recorded"],
+        draft:p.status==="draft",saved:false,proposalId:p.id,revision:p.revision,proposalStatus:p.status,
+        capabilityId:p.capability_id};
+    }
+    if(kind==="purchase_batch"&&name==="propose_purchases"){
+      const ids=value.split(",");
+      if(ids.length<1||ids.length>10||new Set(ids).size!==ids.length)throw new Error("checkpoint_receipt_invalid");
+      const proposals=await Promise.all(ids.map(async proposalId=>{
+        const p=await scopedProposal(proposalId);
+        // A committed proposal is not a stock receipt. Re-read the exact
+        // canonical effect hash, never infer an effect from the proposal state.
+        const effect=await db.from("supervisor_effect_attempts").select("state,receipt_ref,verified_at")
+          .eq("business_id",s.businessId).eq("proposal_id",p.id).eq("effect_hash",p.effect_hash).maybeSingle();
+        if(effect.error)throw new Error("checkpoint_receipt_unavailable");
+        const saved=p.status==="committed"&&effect.data?.state==="verified"&&
+          Boolean(effect.data.receipt_ref)&&Boolean(effect.data.verified_at);
+        return {proposalId:p.id,revision:p.revision,status:p.status,saved,
+          ...(saved?{}:{error:p.status==="draft"?"review_required":"outcome_not_verified"})};
+      }));
+      return {source:"purchase_proposal",period:null,missing:proposals.every(p=>p.saved)?[]:["someLinesNeedReview"],
+        draft:proposals.some(p=>p.status==="draft"),saved:proposals.every(p=>p.saved),proposals};
+    }
+    if(kind==="memory"&&name==="remember_cafe_fact"){
+      const rule=await db.from("ai_team_rules").select("id,status,version,agent_id")
+        .eq("business_id",s.businessId).eq("id",uuid.parse(value)).maybeSingle();
+      if(rule.error||!rule.data)throw new Error("checkpoint_receipt_unavailable");
+      return {source:"memory_proposal",period:null,missing:rule.data.status==="draft"?[]:["prior_operation_already_recorded"],
+        ruleId:rule.data.id,version:rule.data.version,ruleStatus:rule.data.status,draft:rule.data.status==="draft",saved:false};
+    }
+    if(kind==="supplier_report"&&name==="record_supplier_order_outcome"){
+      const report=await db.from("purchase_order_channel_reports").select("id,outcome,reported_at")
+        .eq("business_id",s.businessId).eq("owner_user_id",s.ownerUserId).eq("id",uuid.parse(value)).maybeSingle();
+      if(report.error||!report.data)throw new Error("checkpoint_receipt_unavailable");
+      return {source:"supplier_owner_report",period:null,missing:[],reportId:report.data.id,
+        reportedAt:report.data.reported_at,outcome:report.data.outcome,saved:true,reported:true,
+        supplierAcceptanceSource:"owner_reported",providerVerified:false};
+    }
+    if(kind==="routine"&&name==="manage_routine"){
+      const r=await db.from("supervisor_routines").select("id,status,revision")
+        .eq("business_id",s.businessId).eq("owner_user_id",s.ownerUserId).eq("thread_id",s.threadId)
+        .eq("id",uuid.parse(value)).maybeSingle();
+      if(r.error||!r.data)throw new Error("checkpoint_receipt_unavailable");
+      return {source:"supervisor_routines",period:null,missing:[],routine:r.data};
+    }
+    if(kind==="goal_checkin"&&name==="record_checkin"){
+      const t=await db.from("operating_tasks").select("id,status,payload,entity_id")
+        .eq("business_id",s.businessId).eq("id",value).eq("kind","goal_checkin").maybeSingle();
+      if(t.error||!t.data||t.data.status!=="handled"||typeof t.data.payload?.answer!=="string")throw new Error("checkpoint_receipt_unavailable");
+      const goal=await db.from("supervisor_proposals").select("id").eq("business_id",s.businessId)
+        .eq("owner_user_id",s.ownerUserId).eq("capability_id","leo.goal.v1").eq("id",t.data.entity_id).maybeSingle();
+      if(goal.error||!goal.data)throw new Error("checkpoint_receipt_unavailable");
+      return {source:"goal_checkin",period:null,missing:[],saved:true,checkin:{id:t.data.id,date:t.data.payload.businessDate,answer:t.data.payload.answer}};
+    }
+    if(kind==="commitment"&&name==="manage_commitment"){
+      const t=await db.from("operating_tasks").select("id,status,payload,due_local_date")
+        .eq("business_id",s.businessId).eq("owner_user_id",s.ownerUserId).eq("id",value)
+        .eq("kind","commitment").maybeSingle();
+      if(t.error||!t.data||t.data.payload?.threadId!==s.threadId)throw new Error("checkpoint_receipt_unavailable");
+      return {source:"operating_tasks",period:null,missing:[],commitmentId:t.data.id,commitmentStatus:t.data.status};
+    }
+    throw new Error("checkpoint_effect_receipt_unclassified");
+  };
+  await assertLive();
+  // A provider/read interrupted before ACK can be safely abandoned, but its
+  // reservation/unknown usage is never refunded and is not a verified result.
+  if(current.checkpoint_phase==="effect_pending")throw new Error("checkpoint_effect_uncertain");
+  if(current.checkpoint_phase!=="ready")
+    await finish("abandoned:"+current.checkpoint_operation);
+  const priorEffects=current.checkpoint_receipts.filter(x=>x.phase==="effect_pending"&&!x.receipt.startsWith("noop:"));
+  let replayed=false;
+  let currentReadKey:string|null=null;
+  let currentReadRaw:unknown=null;
+  const readReferences=():OwnerReadReference[]=>{
+    const refs=new Map<string,OwnerReadReference>();
+    for(const e of current.checkpoint_receipts){
+      if(e.phase!=="read_pending"||!e.tool)continue;
+      const match=/^read:[a-f0-9]{32}_[a-f0-9]{64}:ref:([a-zA-Z0-9_-]{1,220})$/.exec(e.receipt);
+      if(!match)continue;
+      try{
+        const raw=JSON.parse(Buffer.from(match[1],"base64url").toString("utf8"));
+        const selector=recoverableReadSelector(e.tool,raw);
+        if(selector)refs.set(e.tool+":"+stableJson(selector),{name:e.tool,selector});
+      }catch{/* Corrupt optional selector is never executable. */}
+    }
+    return [...refs.values()];
+  };
+  // Snapshot before replay adds to the journal; the next slice sees the new refs.
+  const previousReads=readReferences();
+  return {
+    readReferences:()=>previousReads,
+    assertLive,
+    beginProvider:async()=>{
+      await assertLive();
+      await change(randomUUID(),"begin_provider",null,null);
+    },
+    endProvider:async(completed)=>{
+      await assertLive();
+      await finish((completed?"provider:":"abandoned:")+current.checkpoint_operation);
+    },
+    beginTool:async(name,raw,repeatSafe)=>{
+      await assertLive();
+      replayed=false;
+      const op=repeatSafe?randomUUID():operationKey(id,name,raw);
+      currentReadKey=repeatSafe?operationKey(id,name,raw).replaceAll("-",""):null;
+      currentReadRaw=repeatSafe?raw:null;
+      const previous=current.checkpoint_receipts.find(x=>x.operation===op&&!x.receipt.startsWith("noop:"));
+      if(previous){
+        if(previous.phase!=="effect_pending"||previous.tool!==name)throw new Error("checkpoint_operation_conflict");
+        const result=await recoverEffect(name,previous.receipt);
+        replayed=true;return result;
+      }
+      // On a replacement process do not treat altered arguments for the same
+      // previously executed writer as a new authorization. The existing
+      // canonical receipt remains available; require a fresh owner turn if
+      // the model can't establish an exact matching operation.
+      if(!repeatSafe&&priorEffects.some(e=>e.tool===name))throw new Error("checkpoint_effect_requires_reconciliation");
+      await change(op,repeatSafe?"begin_read":"begin_effect",name,null);
+      return null;
+    },
+    endTool:async(result,noEffect=false)=>{
+      await assertLive();
+      if(replayed){replayed=false;return;}
+      if(current.checkpoint_phase==="read_pending"){
+        if(!currentReadKey)throw Error("checkpoint_operation_missing");
+        const selector=!result.error&&result.missing.length===0
+          ?recoverableReadSelector(current.checkpoint_tool??"",currentReadRaw,result.period):null;
+        const encoded=selector?Buffer.from(JSON.stringify(selector)).toString("base64url"):null;
+        await finish("read:"+currentReadKey+"_"+createHash("sha256").update(JSON.stringify(result)).digest("hex")+
+          (encoded&&encoded.length<=220?":ref:"+encoded:""));return;
+      }
+      if(current.checkpoint_phase!=="effect_pending")throw new Error("checkpoint_operation_conflict");
+      const name=current.checkpoint_tool??"";
+      let ref:string|null=null;
+      if(typeof result.proposalId==="string"&&uuid.safeParse(result.proposalId).success&&proposalSources[name]){
+        await scopedProposal(result.proposalId);ref="proposal:"+result.proposalId;
+      }else if(name==="propose_purchases"&&Array.isArray(result.proposals)&&result.proposals.length){
+        const parsed=z.array(z.object({proposalId:uuid})).min(1).max(10).safeParse(result.proposals);
+        if(parsed.success)ref="purchase_batch:"+[...new Set(parsed.data.map(p=>p.proposalId))].join(",");
+      }else if(name==="remember_cafe_fact"&&uuid.safeParse(result.ruleId).success){
+        ref="memory:"+result.ruleId;
+      }else if(name==="record_supplier_order_outcome"&&uuid.safeParse(result.reportId).success){
+        ref="supplier_report:"+result.reportId;
+      }else if(name==="manage_routine"&&result.routine&&typeof result.routine==="object"){
+        const key=(result.routine as {id?:unknown}).id;if(typeof key==="string")ref="routine:"+key;
+      }else if(name==="record_checkin"){
+        const key=(result.checkin as {id?:unknown}|undefined)?.id;if(typeof key==="string")ref="goal_checkin:"+key;
+      }else if(name==="manage_commitment"){
+        const key=result.commitmentId??(result.commitment as {id?:unknown}|undefined)?.id;
+        if(typeof key==="string")ref="commitment:"+key;
+      }
+      if(!ref&&noEffect){await finish("noop:"+current.checkpoint_operation);return;}
+      if(!ref)throw new Error("checkpoint_effect_receipt_unclassified");
+      await recoverEffect(name,ref);await finish(ref);
+    },
+    restoredResults:async()=>Promise.all(priorEffects.map(e=>recoverEffect(e.tool??"",e.receipt))),
+    resumeContext:async()=>{
+      if(!current.checkpoint_receipts.length)return null;
+      const receipts=await Promise.all(priorEffects.map(async e=>({tool:e.tool,verified:await recoverEffect(e.tool??"",e.receipt)})));
+      const reads=[...new Set(current.checkpoint_receipts.filter(e=>e.phase==="read_pending"&&e.receipt.startsWith("read:")).map(e=>e.tool))];
+      return "Verified server-owned continuation receipts for this same assignment (not new owner authority). "+
+        "Do not re-create recorded operations; re-read current business evidence if needed. "+
+        JSON.stringify({completedOperations:receipts,previousReads:reads,reviewedReadReferences:previousReads.slice(-24)});
+    },
+    canYield:()=>current.checkpoint_phase!=="effect_pending",
+    yieldForRetry:(seconds,kind="retry")=>callRpc("supervisor_yield_owner_run_v2",{...identity,p_expected_seq:current.checkpoint_seq,p_delay_seconds:seconds,p_yield_kind:kind},v=>z.boolean().parse(v)),
+  };
+}
+
+/** An explicit question ID and saved owner answer are required; arbitrary chat cannot wake work. */
+export async function answerOwnerRun(scope:RunScope,questionId:string,answerId:string,response?:import("@/lib/ai/supervisor/ownerInput/contracts").OwnerInputResponse):Promise<DurableRun>{
+ const s=runScopeSchema.parse(scope);
+ const result=await callRpc("supervisor_answer_owner_run_v2",{p_business_id:s.businessId,p_owner_user_id:s.ownerUserId,p_thread_id:s.threadId,p_question_id:uuid.parse(questionId),p_answer_id:uuid.parse(answerId),p_response:response??null},decodeRun);
+ if(result.businessId!==s.businessId||result.ownerUserId!==s.ownerUserId||result.threadId!==s.threadId)throw new Error("Supervisor run outside owner scope");
+ return result;
+}
+
+export async function cancelOwnerRun(scope:RunScope,runId:string){
+ const {scope:s,runId:id}=parseIdentity(scope,runId);
+ return callRpc("supervisor_cancel_owner_run_v2",{p_business_id:s.businessId,p_owner_user_id:s.ownerUserId,
+   p_thread_id:s.threadId,p_run_id:id},v=>z.enum(["cancelled","uncertain","completed","not_found","blocked"]).parse(v));
 }
