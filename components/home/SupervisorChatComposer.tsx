@@ -295,6 +295,9 @@ export default function SupervisorChatComposer({
   const [sending, setSending] = useState(false);
   const [progressStatus, setProgressStatus] = useState<SupervisorProgress>(null);
   const [streamedText, setStreamedText] = useState("");
+  const currentStreamReader=useRef<ReadableStreamDefaultReader<Uint8Array>|null>(null);
+  const [canDetach,setCanDetach]=useState(false);
+  const [streamNotice,setStreamNotice]=useState("");
   const [threadTitle, setThreadTitle] = useState<string | null>(null);
   const [eventContext,setEventContext]=useState<EventChatContext|null>(null);
   const [loading, setLoading] = useState(false);
@@ -659,6 +662,19 @@ export default function SupervisorChatComposer({
       setQueuedOwner((queue) => queue.filter((item) => item.clientMessageId !== clientMessageId));
     }
   }
+  async function detachLiveStream(){
+    // Only available after a real server acknowledgement. The SSE cancellation
+    // hook detaches a viewer; the existing durable worker/receipt stays authoritative.
+    const reader=currentStreamReader.current;
+    if(!reader||!canDetach)return;
+    setCanDetach(false);
+    try{
+      await reader.cancel();
+      setStreamNotice(en.SupervisorExperience.streamDetached);
+    }catch{
+      if(currentStreamReader.current===reader)setCanDetach(true);
+    }
+  }
   async function sendText(value: string, existingKey?: string, targetThreadId?: string,
     attachmentOverride?:readonly StoredAttachment[],ownerInputResponse?:import("@/lib/ai/supervisor/ownerInput/contracts").OwnerInputResponse) {
     if(!navigator.onLine||sessionDenied||restoringFiles||(threadId!==null&&deniedThread===threadId))return;
@@ -685,7 +701,7 @@ export default function SupervisorChatComposer({
       setShowNewMessage(false);
       setDraft("");
     }
-    setSending(true); setError(false); setFailureCode(null); setProgressStatus(null); setStreamedText("");
+    setSending(true);setCanDetach(false);setStreamNotice(""); setError(false); setFailureCode(null); setProgressStatus(null); setStreamedText("");
     let attemptedThreadId: string | null = null;
     // Set once the server confirms a background job; from then on a dropped
     // connection is not a failure because the answer keeps being written.
@@ -700,6 +716,7 @@ export default function SupervisorChatComposer({
       if(response.status===401){clearDeniedSession();return;}
       if (!response.ok || !response.body) throw new Error("agent_request_failed");
       const reader = response.body.getReader();
+      currentStreamReader.current=reader;
       const decoder = new TextDecoder();
       let buffer = "", finished = false;
       try {
@@ -712,13 +729,14 @@ export default function SupervisorChatComposer({
             const event = data as { text?: string; code?: string; discardChars?: number; agentId?: string;
               name?: string; jobId?: string; mode?: string; runId?:string;investigationId?:string;ownerMessageId?:string };
             if(type==="ack"&&(typeof event.runId==="string"||typeof event.investigationId==="string")){
-              durableConfirmed=true;jobConfirmed=true;finished=true;
+              durableConfirmed=true;jobConfirmed=true;finished=true;setCanDetach(true);
               if(event.ownerMessageId)setAcceptedDurableIds(ids=>[...new Set([...ids,event.ownerMessageId!])]);
               setLiveNote(liveCopy.followUpQueued);
             } else if(type==="queued"&&durableConfirmed){
               finished=true;
             } else if (type === "ack" && typeof event.jobId === "string") {
               jobConfirmed = true;
+              setCanDetach(event.mode==="started"||event.mode==="continuation");
               setLiveJobId(event.jobId);
               if (event.mode === "continuation") {
                 setLiveNote(liveCopy.continuing);
@@ -758,7 +776,7 @@ export default function SupervisorChatComposer({
             }
           }
         }
-      } finally { reader.releaseLock(); }
+      } finally { if(currentStreamReader.current===reader)currentStreamReader.current=null;setCanDetach(false);reader.releaseLock(); }
       if (!finished) throw new Error("agent_stream_incomplete");
       const page = await loadMessages(id);
       applyLatestPage(page);
@@ -788,7 +806,7 @@ export default function SupervisorChatComposer({
       }
     } finally {
       sendOnce.current=false;
-      setSending(false); setProgressStatus(null); setStreamedText("");
+      setCanDetach(false);setSending(false); setProgressStatus(null); setStreamedText("");
       setLiveJobId(null); setLiveSteps([]); setLiveNote(null);
     }
   }
@@ -824,7 +842,7 @@ export default function SupervisorChatComposer({
   }
   function selectThread(id: string | null, historyTitle?:string|null) {
     if (sending||uploading||dictation==="recognizing"||dictation==="listening") return;
-    setWorkTarget(null);setWorkNotice("");setControlsTab(null);
+    setWorkTarget(null);setWorkNotice("");setStreamNotice("");setControlsTab(null);
     if(id&&id===threadId)return;
     if(threadId&&(draft.trim()||attachments.length||restoringFiles)){
       // Keep unsent text and its retry identity only in this mounted owner session.
@@ -1240,6 +1258,8 @@ export default function SupervisorChatComposer({
       </div>}
       </div>
     </div>
+    {sending&&canDetach&&<button type="button" onClick={()=>void detachLiveStream()} className="mx-auto flex min-h-12 shrink-0 items-center gap-2 rounded-full border border-line px-4 text-[15px] text-ink hover:bg-surface2 focus-visible:outline focus-visible:outline-2 focus-visible:outline-ink"><Square size={16} aria-hidden="true"/>{en.SupervisorExperience.stopLiveView}</button>}
+    {streamNotice&&<p role="status" className="shrink-0 px-4 py-2 text-[15px] text-ink-muted">{streamNotice}</p>}
     {showNewMessage && <button type="button" onClick={scrollToLatest} className="mx-auto inline-flex min-h-12 max-w-full shrink-0 items-center gap-2 rounded-full border border-line bg-surface px-4 text-sm font-semibold text-accent-text focus-visible:outline focus-visible:outline-2 focus-visible:outline-ink"><ArrowDown size={16} aria-hidden="true" />{copy.newMessage}</button>}
     {initialProposalId && initialThreadId && threadId === initialThreadId && <div className="max-h-[50dvh] shrink-0 overflow-y-auto" data-testid="experiment-deeplink" data-work-proposal={initialProposalId} tabIndex={-1}>
       <SupervisorExperiment key={initialThreadId + ":" + initialProposalId}
