@@ -94,3 +94,9 @@ export function cityPlaceIdentity(input:CityPlaceCandidate){
   return {cityKey,name,address,sourceUrl,calendarUrl,
     identityKey:digest([cityKey,clean(name),discriminator].join("\u001f"))};
 }
+
+/** A verified correction may register a new dated alias for the SAME UUID.
+ * Discovery still distinguishes recurring editions by their date. */
+export function correctedSourceAlias(cityKey:string,name:string,date:string,source:string){
+ return digest([cityKey,assertDay(date),canonicalEventNameKey(name),"source:"+canonicalSourceUrl(source)].join("\u001f"));
+}

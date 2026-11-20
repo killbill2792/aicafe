@@ -51,3 +51,6 @@ Additional merge gates D7: current and past/future month search, case-insensitiv
 
 ## CI-driven refinements
 Use existing localized labels for start/end/ongoing/finished and clear; no new translation exceptions. Discovery coverage is separate from bounded retry of incomplete duration/venue enrichment using the exact already saved citation. Keep the existing provider request size limit, canonical staffing/inventory readers, independent evidence and one primary monitoring proposal per café-local date.
+
+## Scope amendment approval
+Owner explicitly approved #7027108690 in chat; recorded in #7027703570. Add the service-only atomic correction migration, exact source/date aliases, immutable historical decisions, timezone/overnight handling, concurrency and existing shared acceptance registration. Previous complete baseline and browser on 47077f97 are green; new head requires fresh proof. No production migration or separate paid Luna authorization.
