@@ -47,9 +47,10 @@ INSERT INTO public.toast_raw_records(
 
 -- Two independent supplier records exercise a newly admitted business
 -- relation, not just the original order/order-line fixtures.
-INSERT INTO public.cafe_suppliers(id,business_id,display_name,normalized_name)
-VALUES (gen_random_uuid(),:'a','Synthetic supplier A','synthetic supplier a'),
-       (gen_random_uuid(),:'b','Synthetic supplier B','synthetic supplier b');
+-- normalized_name is database-generated; do not specify its value.
+INSERT INTO public.cafe_suppliers(id,business_id,display_name)
+VALUES (gen_random_uuid(),:'a','Synthetic supplier A'),
+       (gen_random_uuid(),:'b','Synthetic supplier B');
 
 -- Verify strict object and function privileges before checking actual rows.
 DO $checks$
