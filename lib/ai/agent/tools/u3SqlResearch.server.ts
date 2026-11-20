@@ -26,7 +26,8 @@ export const u3SqlSchema=z.strictObject({
  parameters:z.array(z.union([
   z.string().max(512),z.number().finite(),z.boolean(),z.null()
  ])).max(48).nullable(),
- limit:z.number().int().min(1).max(MAX_ROWS).nullable()
+ limit:z.number().int().min(1).max(MAX_ROWS).nullable(),
+ date_from:z.iso.date().nullable(),date_to:z.iso.date().nullable()
 });
 export type U3Column={name:string;type:string;nullable:boolean;unit:string};
 export type U3Relationship={target:string;fields:string[];targetFields:string[];cardinality:"many_to_one"};
@@ -116,7 +117,8 @@ async function signedCapability(ctx:U3SqlContext):Promise<string>{
   throw Error("research_scope_denied");
  return data;
 }
-async function withinScope<T>(ctx:U3SqlContext,callback:(client:PoolClient)=>Promise<T>):Promise<T>{
+async function withinScope<T>(ctx:U3SqlContext,callback:(client:PoolClient)=>Promise<T>,
+ requestedWindow?:{date_from:string|null;date_to:string|null}):Promise<T>{
  if(!u3SqlConfigured())throw Error("research_not_configured");
  // The server mints the capability only after authenticating the real owner,
  // café, original thread and durable/off-turn lease. Never log or return it.
@@ -137,6 +139,15 @@ async function withinScope<T>(ctx:U3SqlContext,callback:(client:PoolClient)=>Pro
   await client.query("SET LOCAL search_path = u3_research, pg_catalog");
   // Trusted application operation, NEVER a model-authored SQL call.
   await client.query("SELECT set_config('aicafe.u3_research_scope',$1,true)",[ticket]);
+  if(requestedWindow){
+   const {date_from:from,date_to:to}=requestedWindow;
+   if(from!==null&&to!==null){
+    const distance=(Date.parse(to+"T00:00:00Z")-Date.parse(from+"T00:00:00Z"))/86_400_000;
+    if(!Number.isFinite(distance)||distance<0||distance>31)throw Error("invalid_query");
+   }else if(from!==null||to!==null)throw Error("invalid_query");
+   await client.query("SELECT set_config('aicafe.u3_date_from',$1,true),"+
+    "set_config('aicafe.u3_date_to',$2,true)",[from??"",to??""]);
+  }
   const result=await callback(client);
   await client.query("COMMIT");
   begun=false;
@@ -257,6 +268,8 @@ export async function runU3Sql(ctx:U3SqlContext,raw:unknown){
     ).map(c=>c.name))));
    const plan=await admitU3Sql(p.sql,list.map(r=>r.name),p.parameters?.length??0,
     ctx.aggregateOnly===true,[...safeOffturnColumns]);
+   if(plan.relations.includes("toast_records")&&
+     (p.date_from===null||p.date_to===null))throw Error("invalid_query");
    const count=p.limit??50;
    const bounded=p.sql.trim().replace(/;\s*$/,"");
    const statement="SELECT * FROM ("+bounded+") AS u3_bounded LIMIT "+(count+1);
@@ -286,7 +299,7 @@ export async function runU3Sql(ctx:U3SqlContext,raw:unknown){
      relation_names:plan.relations,functions:plan.functions,
      authority:"approved_logical_source",scope:"verified_owner_cafe_lease"}
    };
-  });
+  },{date_from:parsed.data.date_from,date_to:parsed.data.date_to});
  }catch(e){
   const code=safeCode(e);
   return {source:"u3_canonical_research",period:null,missing:[code],
