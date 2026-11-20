@@ -47,7 +47,136 @@ export function hasMoney(answer,currency,cents){
  }
  return false;
 }
+
+// The legacy fixture and all 18 original questions are retained. The shared
+// app scenarios split only for the broker's separate 18-call reservation.
+const historicalPosIds=Object.freeze(["17b-pos-discounts","17b-pos-sales","17b-pos-identity","17b-pos-operations"]);
+export const isHistoricalPosScenario=id=>historicalPosIds.includes(id);
+const historicalBusiness="eeeeeeee-3333-4eee-8eee-eeeeeeeeee00";
+const firstOrderGuid="eeeeeeee-3333-4eee-8eee-eeeeeeee0001",staffGuid="eeeeeeee-3333-4eee-8eee-eeeeeeee00a1",stockGuid="eeeeeeee-3333-4eee-8eee-eeeeeeee00b1";
+const scalarQuestions=[
+ {scope:"today",question:"How many applied student discount uses did we record today? The day is still incomplete.",
+  truth:`select count(*)::integer n from public.toast_records_for($1,$2,$3) where counts_in_sales=true and record_type in ('item_discount','check_discount') and data->>'name' ilike '%student%'`},
+ {scope:"today",question:"How many different orders received a student discount today? Do not count checks as orders.",
+  truth:`select count(distinct order_ref)::integer n from public.toast_records_for($1,$2,$3) where counts_in_sales=true and record_type in ('item_discount','check_discount') and data->>'name' ilike '%student%'`},
+ {scope:"today",question:"How many distinct checks had student discounts today?",
+  truth:`select count(distinct check_ref)::integer n from public.toast_records_for($1,$2,$3) where counts_in_sales=true and record_type in ('item_discount','check_discount') and data->>'name' ilike '%student%'`},
+ {scope:"today",question:"How many valid item and check discount uses of any name are recorded today?",
+  truth:`select count(*)::integer n from public.toast_records_for($1,$2,$3) where counts_in_sales=true and record_type in ('item_discount','check_discount')`},
+ {scope:"span",question:"How many different applied discount names are there across yesterday and today?",
+  truth:`select count(distinct data->>'name')::integer n from public.toast_records_for($1,$2,$3) where counts_in_sales=true and record_type in ('item_discount','check_discount')`},
+ {scope:"span",question:"How many individual item selections across these two days had quantity at least two?",
+  truth:`select count(*)::integer n from public.toast_records_for($1,$2,$3) where counts_in_sales=true and record_type='item' and (data->>'quantity')::numeric>=2`},
+ {scope:"prior",question:"How many units of items were sold yesterday? Count units, not selection lines.",
+  truth:`select sum((data->>'quantity')::numeric)::integer n from public.toast_records_for($1,$2,$3) where counts_in_sales=true and record_type='item'`},
+ {scope:"prior",question:"How many guests did Toast record yesterday, using the orders?",
+  truth:`select sum((data->>'numberOfGuests')::numeric)::integer n from public.toast_records_for($1,$2,$3) where counts_in_sales=true and record_type='order'`},
+ {scope:"prior",question:"How many item selection records yesterday are missing their displayName?",
+  truth:`select count(*)::integer n from public.toast_records_for($1,$2,$3) where counts_in_sales=true and record_type='item' and data->>'displayName' is null`},
+ {scope:"span",question:"How many Online orders were recorded across yesterday and today?",
+  truth:`select count(distinct record_ref)::integer n from public.toast_records_for($1,$2,$3) where counts_in_sales=true and record_type='order' and data->>'source'='Online'`},
+ {scope:"today",question:"How many units are there today across all item selections, regardless of their number of lines?",
+  truth:`select sum((data->>'quantity')::numeric)::integer n from public.toast_records_for($1,$2,$3) where counts_in_sales=true and record_type='item'`}
+];
+const namedQuestions=[
+   {question:"For current Toast order GUID "+firstOrderGuid+
+     ", what is this customer's first name? Answer exactly Name: X.",
+    truth:"select data->'customer'->>'firstName' answer\n from public.toast_records_for($1,$2,$3)\n where record_type='order' and record_ref=$4",ref:firstOrderGuid},
+   {question:"For current Toast employee GUID "+staffGuid+
+     ", what full display name is stored for this employee? Answer exactly Name: X.",
+    truth:"select data->>'display_name' answer\n from public.toast_records_for($1,$2,$3)\n where record_type='employee' and record_ref=$4",ref:staffGuid}
+  ];
+  const familyQuestions=[
+   {question:"What is this café's total current Toast cash entries today in integer cents? Answer Cents: N; no diagnostic or other-café amounts.",
+    truth:"select sum(amount_cents)::integer n from public.cv_cash\n where business_id=$1 and business_date=$2",label:"Cents",dateScope:"today"},
+   {question:"For current Toast stock item GUID "+stockGuid+
+     ", what quantity is retained today? Answer Quantity: N; do not treat missing as zero.",
+    truth:"select sum(quantity)::numeric n from public.cv_inventory\n where business_id=$1 and business_date=$2 and menu_item_ref=$3 and data->>'evidence_state'='observed_current'",label:"Quantity",dateScope:"today",ref:stockGuid},
+   {question:"What is yesterday's canonical screen net sales for this café in integer cents? Use the daily sales rollup, not raw order guesses. Answer Cents: N.",
+    truth:"select sum(net_sales_cents)::integer n from public.cv_sales_days\n where business_id=$1 and business_date=$2",label:"Cents",dateScope:"prior"}
+  ];
+const breakdowns=[
+   {scope:"span",question:"Give applied discount USE counts for yesterday and today, one line per date as YYYY-MM-DD: N.",
+    truth:`select business_date::text k,count(*)::integer n from public.toast_records_for($1,$2,$3) where record_type in ('item_discount','check_discount') and counts_in_sales=true group by business_date order by business_date`},
+   {scope:"prior",question:"Give units sold yesterday by item display name. Call absent names 'Unnamed'. Use Name: N lines.",
+    truth:`select coalesce(data->>'displayName','Unnamed') k, sum((data->>'quantity')::numeric)::integer n from public.toast_records_for($1,$2,$3) where record_type='item' and counts_in_sales=true group by coalesce(data->>'displayName','Unnamed') order by 1`}
+  ];
+export function historicalPosCases(id){
+ const scalar=(indices)=>indices.map(i=>({...scalarQuestions[i],id:"scalar-"+(i+1),kind:"number",label:"Number",
+  prompt:scalarQuestions[i].question+" Answer with 'Number: N' and a short source/coverage note.",
+  incomplete:scalarQuestions[i].question.includes("today")}));
+ const grouped=i=>({...breakdowns[i],id:"breakdown-"+(i+1),kind:"groups",prompt:breakdowns[i].question});
+ const groups={
+  "17b-pos-discounts":[...scalar([0,1,2,3,4]),grouped(0)],
+  "17b-pos-sales":[...scalar([5,6,7,8,9,10]),grouped(1)],
+  "17b-pos-identity":namedQuestions.map((q,i)=>({...q,id:"named-"+(i+1),kind:"name",scope:"span",label:"Name",prompt:q.question+" Use retained current source facts, not diagnostic snapshots or another café."})),
+  "17b-pos-operations":familyQuestions.map((q,i)=>({...q,id:"family-"+(i+1),kind:"number",prompt:q.question}))
+ };
+ assert.ok(Object.hasOwn(groups,id),"Unknown historical POS scenario");
+ return groups[id];
+}
+export function historicalPosSourceSql(spec,scope){
+ // Only trusted static SQL and validated fixture identity/date literals. The
+ // candidate never supplies a SQL string, an expected answer, or a predicate.
+ assert.equal(scope.businessId,historicalBusiness);
+ const b=uuid(scope.businessId),today=day(scope.today),prior=day(scope.prior);
+ const args=spec.dateScope?[b,spec.dateScope==="prior"?prior:today,...(spec.ref?[uuid(spec.ref)]:[])]:
+ [b,spec.scope==="today"?today:prior,spec.scope==="prior"?prior:today,...(spec.ref?[uuid(spec.ref)]:[])];
+ return spec.truth.replace(/\$(\d+)/g,(_,n)=>{assert.ok(args[Number(n)-1]);return args[Number(n)-1];});
+}
+export function checkHistoricalPosAnswer(spec,rows,answer){
+ const clean=answer.replace(/[*_`]/g,"");
+ if(spec.kind==="groups"){
+  assert.ok(rows.length>0,"Empty breakdown reference");
+  const expected=new Map(rows.map(r=>[r.k,Number(r.n)]));
+  assert.equal(expected.size,rows.length);
+  const matches=clean.split("\n").map(line=>line.match(/^\s*(?:[-•]\s*)?(.+?)\s*[:=]\s*(-?\d+(?:\.\d+)?)\s*\.?\s*$/)).filter(Boolean);
+  // Compare the complete set of explicitly labelled groups; no cherry-picked
+  // rows or silently omitted null-name group.
+  const actual=new Map();
+  for(const m of matches){assert.ok(!actual.has(m[1]),"Repeated breakdown label");actual.set(m[1],Number(m[2]));}
+  assert.deepEqual([...actual].sort(),[...expected].sort(),"Independent complete grouped answer");
+ }else if(spec.kind==="name"){
+  const value=one(rows).answer;assert.ok(typeof value==="string"&&value.length);
+  const lines=clean.split("\n").map(l=>l.match(/^\s*(?:[-•]\s*)?Name\s*[:=]\s*(.+?)\s*\.?\s*$/i)).filter(Boolean);
+  assert.equal(lines.length,1);assert.equal(lines[0][1].toLowerCase(),value.toLowerCase());
+ }else{
+  const value=one(rows).n;assert.ok(value!==undefined&&value!==null&&Number.isFinite(Number(value)));
+  const pattern=new RegExp("^\\s*(?:[-•]\\s*)?"+spec.label+"\\s*[:=]\\s*(-?\\d[\\d,]*(?:\\.\\d+)?)\\s*\\.?\\s*$","i");
+  const lines=clean.split("\n").map(l=>l.match(pattern)).filter(Boolean);
+  assert.equal(lines.length,1,"Exactly one original answer label required");
+  assert.ok(Math.abs(Number(lines[0][1].replaceAll(",",""))-Number(value))<0.000001,"Independent POS number mismatch");
+  if(spec.incomplete)assert.match(clean,/so far|partial|incomplete|provisional/i);
+ }
+ assert.doesNotMatch(clean,/PoisonEmployee|9999\.99|poison-stock|other-cafe-cash/i);
+}
+export function attestHistoricalPos(id,scope,query=read){
+ const b=uuid(scope.businessId),o=uuid(scope.ownerUserId),t=uuid(scope.threadId);
+ assert.equal(scope.businessId,historicalBusiness);
+ assert.equal(one(query("SELECT (now() at time zone timezone)::date::text AS today,((now() at time zone timezone)::date-1)::text AS prior FROM public.businesses WHERE id="+b)).today,scope.today);
+ assert.equal(one(query("SELECT ((now() at time zone timezone)::date-1)::text AS prior FROM public.businesses WHERE id="+b)).prior,scope.prior);
+ const specs=historicalPosCases(id),seen=new Set(),checks=[];let calls=0;
+ for(const [i,spec] of specs.entries()){
+  const owner=scope["owner"+(i+1)],replyId=scope["reply"+(i+1)];
+  for(const value of [owner,replyId]){uuid(value);assert.ok(!seen.has(value));seen.add(value);}
+  const filter=" WHERE business_id="+b+" AND owner_user_id="+o+" AND thread_id="+t;
+  const message=one(query("SELECT text_content,created_at FROM public.ai_messages"+filter+" AND role='owner' AND id="+uuid(owner)));
+  assert.equal(message.text_content,spec.prompt);
+  const response=one(query("SELECT structured_content AS blocks,created_at FROM public.ai_messages"+filter+" AND role='supervisor' AND id="+uuid(replyId)));
+  assert.ok(Date.parse(response.created_at)>=Date.parse(message.created_at));
+  const usage=one(query("SELECT model,provider,input_tokens,model_call_count FROM public.ai_usage_events WHERE business_id="+b+" AND owner_message_id="+uuid(owner)+" ORDER BY created_at DESC LIMIT 1"));
+  assert.equal(usage.model,"gpt-6-luna");assert.equal(usage.provider,"openai");
+  assert.ok(integer(usage.input_tokens)>0&&integer(usage.model_call_count)>=2);
+  calls+=integer(usage.model_call_count);
+  checkHistoricalPosAnswer(spec,query(historicalPosSourceSql(spec,scope)),prose(response.blocks));
+  checks.push({name:id+"-"+spec.id,passed:true});
+ }
+ assert.equal(calls,scope.expectedProviderCalls);
+ return checks;
+}
+
 export function attestTask17B(id,scope,query=read){
+ if(isHistoricalPosScenario(id))return attestHistoricalPos(id,scope,query);
  if(!["16e","17b-sales-labor","17b-supply-finance","17b-cross-module-brief"].includes(id))return [];
  const b=uuid(scope.businessId),o=uuid(scope.ownerUserId),t=uuid(scope.threadId);
  const reply=value=>one(query("SELECT structured_content AS blocks FROM public.ai_messages WHERE business_id="+b+" AND owner_user_id="+o+" AND thread_id="+t+" AND role='supervisor' AND id="+uuid(value))).blocks;

@@ -779,3 +779,21 @@ test("natural money evidence cannot certify wrong sign, currency or truncated di
   assert.equal(hasMoney(v,"USD",1234),true,v);
  }
 });
+
+test("historical POS migration retains all 18 original distinct cases and independent answer checks",async()=>{
+ const {historicalPosCases,historicalPosSourceSql,checkHistoricalPosAnswer}=await import("./luna-attest-17b.mjs");
+ const ids=["17b-pos-discounts","17b-pos-sales","17b-pos-identity","17b-pos-operations"];
+ const cases=ids.flatMap(historicalPosCases);
+ assert.deepEqual(ids.map(id=>historicalPosCases(id).length),[6,7,2,3]);
+ assert.equal(new Set(cases.map(c=>c.id)).size,18);
+ const s={businessId:"eeeeeeee-3333-4eee-8eee-eeeeeeeeee00",today:"2026-11-19",prior:"2026-11-18"};
+ for(const c of cases)assert.ok(!/\$\d/.test(historicalPosSourceSql(c,s)));
+ assert.throws(()=>historicalPosSourceSql(cases[0],{...s,businessId:"aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"}));
+ checkHistoricalPosAnswer(cases[0],[{n:4}],"Number: 4\nToday is incomplete.");
+ assert.throws(()=>checkHistoricalPosAnswer(cases[0],[{n:4}],"Number: 4"));
+ assert.throws(()=>checkHistoricalPosAnswer(cases[0],[{n:4}],"Number: 44\nToday is incomplete."));
+ const g=cases.find(c=>c.id==="breakdown-2");
+ checkHistoricalPosAnswer(g,[{k:"Muffin",n:2},{k:"Unnamed",n:1}],"Muffin: 2\nUnnamed: 1");
+ assert.throws(()=>checkHistoricalPosAnswer(g,[{k:"Muffin",n:2},{k:"Unnamed",n:1}],"Muffin: 2"));
+ assert.throws(()=>checkHistoricalPosAnswer(g,[{k:"Muffin",n:2},{k:"Unnamed",n:1}],"Muffin: 2\nUnnamed: 1\nInvented: 9"));
+});
