@@ -184,6 +184,8 @@ supabase_lane() {
   sql_step task16c-external-permissions-db.sql "Task16C: owner/café permission revoke, CAS, audit, Gmail generations"
 
   group "Concurrent sessions"
+  check supabase "U1 historical replay evaluator fail-closed checks" node --test scripts/acceptance/u1-incident-replay.test.mjs
+  check supabase "U1 four-ref matched recorded incident replay" node scripts/acceptance/u1-incident-replay.mjs
   check supabase "U1 shared runtime: concurrent admission, recovery, scope and workload" env U1_RELIABILITY_DB_SANDBOX_ONLY=1 \
     U1_RELIABILITY_DB_URL="$supabase_url" npx vitest run lib/ai/agent/u1Reliability.db.test.ts --reporter=verbose
   check supabase "Task13C: concurrent authenticated staff, owner reply and assignment replay" env TASK13C_DISPOSABLE_DB_URL="$supabase_url" node scripts/task13c-concurrent-nonce-db.mjs
