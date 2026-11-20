@@ -97,3 +97,18 @@ test("all actual manifests assigned once to <=20-case grants, never paid by gene
  assert.equal(plan.ready,false);
  assert.throws(()=>planPaidBatches([...specs,specs[0]]),/invalid_paid_inventory/);
 });
+
+test("phase plan is an exact disjoint partition, rejects forged selections and reports missing child IDs",()=>{
+ const specs=[{id:"a",entrypoint:"a.mjs"},{id:"b",entrypoint:"b.mjs"},{id:"c",entrypoint:"c.mjs"}];
+ const phases=[{id:"business",ids:["b","a"]},{id:"autonomy",ids:["c","d"]}];
+ const result=planPaidBatches(specs,phases);
+ assert.deepEqual(result.batches.map(b=>[b.phase,b.selection,b.maxReservedCents]),[["business","a,b",36],["autonomy","c",18]]);
+ assert.deepEqual(result.missing,["d"]);
+ assert.equal(result.maxProviderCalls,54);
+ assert.equal(result.ready,false);
+ for(const bad of [[{id:"one",ids:["a","b","c","a"]}],[{id:"one",ids:["a","b"]}],[{id:"one",ids:["a","b","c","all"]}]]){
+  assert.throws(()=>planPaidBatches(specs,bad),/invalid_paid_phase_partition/);
+ }
+ assert.throws(()=>planPaidBatches([{id:"all",entrypoint:"a.mjs"}]),/invalid_paid_inventory/);
+ assert.throws(()=>planPaidBatches([{id:"group-17",entrypoint:"a.mjs"}]),/invalid_paid_inventory/);
+});

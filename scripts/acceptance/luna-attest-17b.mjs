@@ -20,17 +20,32 @@ function number(answer,label,expected){
 }
 // Accept ordinary currency wording (prose, table cells or Markdown); do not
 // prescribe chart/card layout, numeric labels, or formatting in owner prompts.
+const currencyCodes=new Set(Intl.supportedValuesOf("currency"));
+const escapeRegex=value=>value.replace(/[.*+?^${}()|[\]\\]/g,"\\$&");
+// Exact signed monetary tokens; value presence is not semantic or human comprehension proof.
 export function hasMoney(answer,currency,cents){
- const formatted=new Intl.NumberFormat("en-US",{style:"currency",currency}).formatToParts(Math.abs(cents)/100);
- const symbol=formatted.find(p=>p.type==="currency")?.value;
- const compact=answer.replace(/[,\u00a0\u202f]/g,"").replace(/\s+/g," ").replace(/[*_`]/g,"");
- const values=[(Math.abs(cents)/100).toFixed(2)];
- if(cents%100===0)values.push(String(Math.abs(cents)/100));
- const sign=cents<0?"-":"";
- return values.some(v=>[currency,symbol].filter(Boolean).some(u=>{
-  const tokens=[sign+u+v,sign+u+" "+v,u+" "+sign+v,sign+v+" "+u];
-  return tokens.some(t=>{const i=compact.toUpperCase().indexOf(t.toUpperCase());return i>=0&&!/[\d.]/.test(compact[i+t.length]??"")&&(i===0||!/[\d.]/.test(compact[i-1]));});
- }));
+ if(!currencyCodes.has(currency)||!Number.isSafeInteger(cents))return false;
+ const symbol=new Intl.NumberFormat("en-US",{style:"currency",currency}).formatToParts(1).find(p=>p.type==="currency")?.value;
+ const units=[currency,symbol].filter(Boolean).map(escapeRegex).join("|");
+ const amount=String.raw`(?:\d{1,3}(?:,\d{3})+|\d+)(?:\.\d{1,2})?`;
+ const before=String.raw`(?<![\p{L}\p{N}.,+$€£¥-])`,after=String.raw`(?![\p{L}\p{N}]|[.,]\d)`;
+ const pattern=new RegExp(before+String.raw`(?:(?:(?<prefixSign>[+-])[ \t]*)?(?<prefixUnit>`+units+String.raw`)[ \t]*(?:(?<amountSign>[+-])[ \t]*)?(?<prefixAmount>`+amount+String.raw`)|(?:(?<suffixSign>[+-])[ \t]*)?(?<suffixAmount>`+amount+String.raw`)[ \t]*(?<suffixUnit>`+units+"))"+after,"giu");
+ const clean=String(answer).replace(/[\u2212\u2012\u2013]/g,"-").replace(/[\u00a0\u202f]/g," ").replace(/[*_`]/g,"");
+ for(const match of clean.matchAll(pattern)){
+  const g=match.groups,raw=g.prefixAmount??g.suffixAmount;
+  const sign=g.prefixSign||g.amountSign||g.suffixSign||"";
+  if(g.prefixSign&&g.amountSign)continue;
+  const left=clean.slice(0,match.index),right=clean.slice(match.index+match[0].length);
+  const adjacent=[left.match(/\b([A-Z]{3})[ \t]*$/)?.[1],right.match(/^[ \t]*([A-Z]{3})\b/)?.[1]].filter(Boolean);
+  if(adjacent.some(code=>currencyCodes.has(code)&&code!==currency))continue;
+  const accounting=/\([ \t]*$/.test(left)&&/^[ \t]*\)/.test(right);
+  if(accounting&&sign)continue;
+  if(/[+-][ \t]*$/.test(left))continue;
+  const [whole,fraction=""]=raw.replace(/,/g,"").split(".");
+  const absolute=Number(whole)*100+Number(fraction.padEnd(2,"0"));
+  if(Number.isSafeInteger(absolute)&&(accounting||sign==="-"?-absolute:absolute)===cents)return true;
+ }
+ return false;
 }
 export function attestTask17B(id,scope,query=read){
  if(!["16e","17b-sales-labor","17b-supply-finance","17b-cross-module-brief"].includes(id))return [];
