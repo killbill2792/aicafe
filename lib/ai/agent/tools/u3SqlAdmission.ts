@@ -175,7 +175,9 @@ export async function admitU3Sql(sql:string,allowedRelations:readonly string[],
       !rel||!catalog.has(rel)&&!ctes.has(rel))throw Error("invalid_query");
     if(catalog.has(rel)){
      reads.add(rel);rangeCount++;
-     if(aggregateOnly&&["employees","timecards","scheduled_shifts","cafe_decisions"].includes(rel))
+     if(aggregateOnly&&["employees","timecards","scheduled_shifts","cafe_decisions",
+      "employee_pay_period_facts","staff_availability_rules",
+      "staff_availability_exceptions"].includes(rel))
       throw Error("unattended_aggregate_required");
     }
    }
