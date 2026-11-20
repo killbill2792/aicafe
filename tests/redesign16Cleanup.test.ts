@@ -230,7 +230,7 @@ describe("redesign 16 cleanup integration", () => {
     for(const [namespace,expected] of Object.entries(approved)){
       expect(Object.keys(en[namespace]??{}).sort()).toEqual([...expected].sort());
       for(const key of expected){
-        if(key==="eventStatuses"||key==="weekdayNames")continue;
+        if(key==="eventStatuses"||key==="weekdayNames"||key==="scenarioEditFields")continue;
         expect(en[namespace][key],namespace+"."+key).toEqual(expect.any(String));
         expect(en[namespace][key].trim().length).toBeGreaterThan(0);
       }
@@ -240,6 +240,9 @@ describe("redesign 16 cleanup integration", () => {
     const statuses=en.SupervisorPresentation.eventStatuses as unknown as Record<string,string>;
     expect(Object.keys(statuses).sort()).toEqual(["ai_draft","app","cancelled","found","moved","toast","unverified"]);
     for(const status of Object.values(statuses))expect(status.trim().length).toBeGreaterThan(0);
+    const edits=en.SupervisorPresentation.scenarioEditFields as unknown as Record<string,string>;
+    expect(Object.keys(edits).sort()).toEqual(["changePercent","hoursChange","monthlyChangeCents","newCostCents","newPriceCents","newWageCents","shiftsPerWeek","targetMargin","weeklyUnits"]);
+    for(const label of Object.values(edits))expect(label.trim().length).toBeGreaterThan(0);
   });
 
   it("pins the seven approved Max usage labels in English only",()=>{
