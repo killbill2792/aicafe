@@ -1,3 +1,4 @@
+import { presentationTools,presentResponse } from "./presentation";
 import { laborKnown } from "@/lib/calc";
 import { z } from "zod";
 import {askOwnerTools} from "./askOwner";
@@ -92,6 +93,12 @@ export type AgentToolContext = {
   /** True only for an authenticated turn that admitted external evidence. */
   externalEvidencePresent?:()=>boolean;
   turnResults?:()=>ReadonlyArray<{name:string;result:AgentToolResult}>;
+  /** Internal same-turn read/simulation arguments for verified presentation; no extra reads or scope. */
+  presentationResults?:()=>ReadonlyArray<{name:string;arguments:string;result:AgentToolResult;ref?:string}>;
+  /** Selected same-thread attachments already authenticated, read and rechecked by the existing runner. */
+  presentationAttachments?:readonly string[];
+  /** Ephemeral sanitized simulator basis. Never sent to the model/checkpoint. */
+  presentationScenarioBasis?:WeakMap<object,import("@/lib/ai/conversations/scenarioPresentation").ScenarioEditorSeed>;
   resolveState?:import("../resolve").ResolveState;
   asOf: string; locale: AgentLocale;
   threadId?:string;ownerMessageId?:string;
@@ -198,7 +205,7 @@ const posReadTools={
   get_employee_sales:{schema:posPeriodSchema,description:"Read recorded employee-attributed sales for a date range."},
   get_payroll_facts:{schema:posPeriodSchema,description:"Read imported pay-period facts without inferring missing wages or taxes."}
 };
-export const schemas = { ...askOwnerTools, ...dataQueryTools, ...posReadTools, ...attentionTools, ...incidentEvidenceTools, get_profit: periodSchema, get_sales: periodSchema, get_menu_items: menuSchema,
+export const schemas = { ...presentationTools, ...askOwnerTools, ...dataQueryTools, ...posReadTools, ...attentionTools, ...incidentEvidenceTools, get_profit: periodSchema, get_sales: periodSchema, get_menu_items: menuSchema,
   ...staffTools,...staffCoordinationTools, ...scheduleReadTools, ...hoursTools, ...moneyTools, ...suppliesTools, ...salesTools,...todayTools,...draftScheduleTools,...newItemPriceTools,...milkSwapTools,...scenarioTools,...calculateTools,...proposalTools,...priceExperimentTools,...priceMonitorTools,...goalTools,...staffProposalTools,...purchasesTools,...supplierPurchasingTools,...eventsTools,...savedEventsTools,...eventPlanTools,...webSearchTools,...commitmentTools,...routineTools,...permissionTools,...gmailTools,...maintenanceTools } as const;
 export type AgentToolName = keyof typeof schemas;
 /** Input fields backed by the shared entity/period resolver. A new tool whose
@@ -244,6 +251,14 @@ const descriptions: Record<string, string> = {
 /** OpenAI strict mode needs every property listed in `required` at every nesting level;
  * one gap rejects the whole request (HTTP 400), so the chat fails on every question.
  * Optional fields must therefore also be nullable in Zod so the model can send null. */
+// Omit only generated regexes duplicating an existing standard format on the
+// provider wire. Runtime Zod schemas still enforce every original constraint.
+const redundantFormatPatterns=new Map<string,unknown>();
+for(const schema of [z.iso.date(),z.iso.datetime(),z.uuid()]){
+  const generated=z.toJSONSchema(schema,{target:"draft-07"}) as Record<string,unknown>;
+  if(typeof generated.format==="string"&&typeof generated.pattern==="string")
+    redundantFormatPatterns.set(generated.format,generated.pattern);
+}
 function requireEveryProperty(node:unknown):unknown{
   if(Array.isArray(node))return node.map(requireEveryProperty);
   if(!node||typeof node!=="object")return node;
@@ -251,6 +266,8 @@ function requireEveryProperty(node:unknown):unknown{
   for(const [key,value] of Object.entries(node))out[key]=requireEveryProperty(value);
   if(out.properties&&typeof out.properties==="object"&&!Array.isArray(out.properties))
     out.required=Object.keys(out.properties);
+  if(typeof out.format==="string"&&typeof out.pattern==="string"&&
+      redundantFormatPatterns.get(out.format)===out.pattern)delete out.pattern;
   // JSON Schema's nullable primitive type array is equivalent to the
   // two-branch union. Preserve every constraint and enum member. Avoid
   // rewriting objects, arrays, references or complex combinators.
@@ -325,6 +342,7 @@ export async function executeAgentTool(name: string, raw: unknown, ctx: AgentToo
   // Flag-gated extra tool: only offered to the model when CHAT_MEMORY is on.
   if(name==="remember_cafe_fact")return memoryTools.remember_cafe_fact.execute(raw,ctx);
   if (!Object.hasOwn(schemas, name)) throw new ToolError("not_supported");
+  if(name==="present_response")return presentResponse(raw,ctx);
   if(name==="ask_owner")return askOwnerTools.ask_owner.execute(raw,ctx);
   if(name==="search_gmail")return gmailTools.search_gmail.execute(raw,ctx);
   if(name==="list_gmail_labels")return gmailTools.list_gmail_labels.execute(raw,ctx);
@@ -628,7 +646,7 @@ const repeatSafeOwnerTools:ReadonlySet<string>=new Set([
  "web_search","inspect_public_page","search_maintenance_vendor",
 ]);
 export function isRepeatSafeOwnerTool(name:string,input:unknown):boolean{
- if(repeatSafeOwnerTools.has(name))return true;
+ if(name==="present_response"||repeatSafeOwnerTools.has(name))return true;
  if(name==="draft_week_schedule"){
    const parsed=draftScheduleTools.draft_week_schedule.schema.safeParse(input);
    return parsed.success&&["owner_savings","compare_only","cash_preview","owner_time_preview"].includes(parsed.data.purpose);

@@ -223,3 +223,45 @@ describe("database-safe agent persistence payload", () => {
   });
 
 });
+
+
+describe("Task16E reply persistence",()=>{
+ const block={type:"rich_presentation",version:1,layout:"stack",panels:[],suggestions:["Compare last month"]};
+ const ui={source:"response_presentation",period:null,missing:[],accepted:true,presentation:block};
+ it("preserves the model's prose and treats a UI-only turn as ordinary conversation",()=>{
+   const t={...turn("Here is a useful next step."),unverified:[],results:[ui]};
+   expect(persistedAgentStatus(t)).toBe("verified");
+   expect(agentReplyPayload(t).reply.blocks).toEqual([{type:"text",text:t.text},block]);
+ });
+ it("does not replace failed business evidence or an existing clarification",()=>{
+   const t={...turn("Sales are unavailable."),unverified:[],results:[
+     {source:"daily_rollups",period:null,missing:["sales"]},ui],
+     usage:{...turn("").usage,toolCalls:2}};
+   expect(persistedAgentStatus(t)).toBe("unavailable");
+   expect(agentReplyPayload(t).reply.blocks).toEqual([{type:"text",text:t.text},block]);
+   const ask={source:"ask_owner",period:null,missing:[],question:"Which date?",
+     options:[{label:"Today",value:"today"},{label:"Yesterday",value:"yesterday"}],allowOther:true};
+   expect(agentReplyPayload({...t,results:[ui,ask]}).reply.blocks.map(b=>b.type)).toEqual(["text","clarify"]);
+ });
+ it("does not persist a UI block on interrupted turns",()=>{
+   expect(agentReplyPayload({...turn("Partial answer."),results:[ui],endReason:"budget"}).reply.blocks.map(b=>b.type)).toEqual(["text"]);
+ });
+});
+
+it("keeps explicitly partial saved agendas without upgrading unavailable grounding",()=>{
+ const agenda={kind:"calendar",source:"scheduled_shifts",title:"Saved shifts",from:"2026-11-01",to:"2026-11-02",asOf:"2026-11-01",coverage:"partial",entries:[
+ {label:"Team",date:"2026-11-01",endDate:"2026-11-01",start:"09:00",end:"12:00",status:"ai_draft",checkedAt:null}]};
+ const r=agentReplyPayload({...turn("Some saved shifts are drafts."),results:[
+  {source:"scheduled_shifts",period:null,missing:["coverage"]},
+  {source:"response_presentation",period:null,missing:[],accepted:true,presentation:{type:"rich_presentation",version:1,layout:"stack",panels:[],suggestions:[],agenda}}]});
+ expect(r.reply.status).toBe("unavailable");
+ expect(r.reply.blocks).toContainEqual(expect.objectContaining({type:"rich_presentation",agenda}));
+});
+
+it("preserves partial canonical rows when the overall answer lacks complete evidence",()=>{
+ const tables=[{title:"Saved query results",view:"cv_orders",from:"2026-11-01",to:"2026-11-02",asOf:"2026-11-02",currency:null,coverage:"partial",scope:"Filtered",columns:[{label:"Orders",unit:"count"}],rows:[[0],[null]]}];
+ const r=agentReplyPayload({...turn("Only these saved rows are available."),results:[
+  {source:"canonical_data",period:null,missing:["incompleteEvidence"]},
+  {source:"response_presentation",period:null,missing:[],accepted:true,presentation:{type:"rich_presentation",version:1,layout:"stack",panels:[],suggestions:[],tables}}]});
+ expect(r.reply.status).toBe("unavailable");expect(r.reply.blocks).toContainEqual(expect.objectContaining({type:"rich_presentation",tables}));
+});

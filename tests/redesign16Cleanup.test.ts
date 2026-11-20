@@ -208,18 +208,41 @@ describe("redesign 16 cleanup integration", () => {
     // every pre-existing key; only the owner-approved Gmail, Task13B and exact Task14B keys are English-only.
     // Task13B mandate's 25 exact keys are separately enforced by StaffStandingMandatePanel.test.ts.
     const englishOnly = /^(?:GmailConnect\.[^.]+|GmailApprovalCard\.[^.]+|More\.gmailConnect|StaffApprovalCard\.agentic[A-Z][^.]*|StaffStandingMandate\.[^.]+|SupervisorWork\.(?:heading|stale|more|effectReceipt|replyReceipt|status|copy))$/;
+    // Task16E owner explicitly approved English-only additions, not arbitrary locale drift.
+    const task16e=new Set([...["offline","sessionDenied","signInAgain","threadUnavailable","chooseFile","takePhoto","uploadUnconfirmed","filesUnverified","checkingFiles","removeSelection","searchLoadedChats","noMatchingChats","loadOlderChats","historyUnavailable","conversationFiles","workingQueued","recentResults","savedUpdate","moreRecent","currencyUnavailable","loadedReports","savedReport","openRoutineChat","weekdayNames","stopLiveView","streamDetached","latestReplyReady","readLatestMessage"].map(key=>"SupervisorExperience."+key),...["snapshot","timeUnknown","until","partial","eventStatuses","eventNotice","shiftNotice","estimate","noChange","compareAssumptions","baselineEstimate","scenarioEstimate","scenarioNotice","downloadReport","notRecorded","unitUnknown","calculatorNotice","invalidCalculation","resetAssumptions","sourceAttachments","sourceFile","previousDates","nextDates","savedEntries","noSavedEntries","scenarioEditFields","savedRecordCount","savedRecordCountNotice","categoryLabel","valueLabel","comparisonValues","calculationResult","eventEndUnknown"].map(key=>"SupervisorPresentation."+key)]);
     const keys = (locale: string) => {
       const messages = localeMessages(locale);
       return Object.entries(messages)
         .flatMap(([namespace, values]) => Object.keys(values).map(key => `${namespace}.${key}`))
         .filter(key => !englishOnly.test(key) && !approvedTask14bSet.has(key)
-          && !approvedTask14cSet.has(key) && !approvedTask15bSet.has(key) && !approvedTask16aSet.has(key) && !approvedTask16cSet.has(key) && !approvedTask14eSet.has(key)
+          && !approvedTask14cSet.has(key) && !approvedTask15bSet.has(key) && !approvedTask16aSet.has(key) && !approvedTask16cSet.has(key) && !approvedTask14eSet.has(key) && !task16e.has(key)
           && !["runAwaitingOwner","runAwaitingOwnerNext","runCancelled","runRetrying","cancelAction","cancelPending","cancelUncertain","cancelCompleted","cancelFailed"].some(name=>key==="SupervisorDurableWork."+name)
           && !/^SupervisorUsage\.(?:help|max|month|proactive|requests|title|unavailable)$/.test(key))
         .sort();
     };
     expect(keys("es")).toEqual(keys("en"));
     expect(keys("ar")).toEqual(keys("en"));
+  });
+
+  it("pins exact Task16E English-only shell and presentation keys, preserving every older locale",()=>{
+    const en=localeMessages("en"),es=localeMessages("es"),ar=localeMessages("ar");
+    const approved={SupervisorExperience:["offline","sessionDenied","signInAgain","threadUnavailable","chooseFile","takePhoto","uploadUnconfirmed","filesUnverified","checkingFiles","removeSelection","searchLoadedChats","noMatchingChats","loadOlderChats","historyUnavailable","conversationFiles","workingQueued","recentResults","savedUpdate","moreRecent","currencyUnavailable","loadedReports","savedReport","openRoutineChat","weekdayNames","stopLiveView","streamDetached","latestReplyReady","readLatestMessage"],SupervisorPresentation:["snapshot","timeUnknown","until","partial","eventStatuses","eventNotice","shiftNotice","estimate","noChange","compareAssumptions","baselineEstimate","scenarioEstimate","scenarioNotice","downloadReport","notRecorded","unitUnknown","calculatorNotice","invalidCalculation","resetAssumptions","sourceAttachments","sourceFile","previousDates","nextDates","savedEntries","noSavedEntries","scenarioEditFields","savedRecordCount","savedRecordCountNotice","categoryLabel","valueLabel","comparisonValues","calculationResult","eventEndUnknown"]};
+    for(const [namespace,expected] of Object.entries(approved)){
+      expect(Object.keys(en[namespace]??{}).sort()).toEqual([...expected].sort());
+      for(const key of expected){
+        if(key==="eventStatuses"||key==="weekdayNames"||key==="scenarioEditFields")continue;
+        expect(en[namespace][key],namespace+"."+key).toEqual(expect.any(String));
+        expect(en[namespace][key].trim().length).toBeGreaterThan(0);
+      }
+      expect(es[namespace]).toBeUndefined();expect(ar[namespace]).toBeUndefined();
+    }
+    expect(en.SupervisorExperience.weekdayNames).toEqual(["Monday","Tuesday","Wednesday","Thursday","Friday","Saturday","Sunday"]);
+    const statuses=en.SupervisorPresentation.eventStatuses as unknown as Record<string,string>;
+    expect(Object.keys(statuses).sort()).toEqual(["ai_draft","app","cancelled","found","moved","toast","unverified"]);
+    for(const status of Object.values(statuses))expect(status.trim().length).toBeGreaterThan(0);
+    const edits=en.SupervisorPresentation.scenarioEditFields as unknown as Record<string,string>;
+    expect(Object.keys(edits).sort()).toEqual(["changePercent","hoursChange","monthlyChangeCents","newCostCents","newPriceCents","newWageCents","shiftsPerWeek","targetMargin","weeklyUnits"]);
+    for(const label of Object.values(edits))expect(label.trim().length).toBeGreaterThan(0);
   });
 
   it("pins the seven approved Max usage labels in English only",()=>{

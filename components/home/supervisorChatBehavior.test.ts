@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { ConversationMessage } from "@/lib/ai/conversations/contracts";
 import { clarifyCardState, activeOwnerQuestionMessageId, beginOptimisticOwner, sendKey, visibleConversationMessages,
-  hasInsertedHistoryPage, isTranscriptNearBottom, transcriptScrollTarget, isDuplicateLinkedExperimentCard } from "./supervisorChatBehavior";
+  hasInsertedHistoryPage, isTranscriptNearBottom, transcriptScrollTarget, isDuplicateLinkedExperimentCard, mergeLatestConversationPage, prependConversationPage, loadedSavedReports, conversationLocation } from "./supervisorChatBehavior";
 
 const owner: ConversationMessage = {
   id: "stored-owner", threadId: "thread", role: "owner", contentType: "text",
@@ -107,3 +107,59 @@ describe("Supervisor chat turn and scroll behavior", () => {
 });
 
 it("keeps a durable question active across unrelated messages and consumes only the exact saved answer",()=>{const question={...answer,id:"q",grounding:{durableQuestionId:"q"},blocks:[{type:"clarify",question:"Which day?"}]};const unrelated={...owner,id:"other"};const matched={...owner,id:"matched",text:"Tomorrow",ownerInputResponse:{questionId:"q",action:"supply" as const}};expect(clarifyCardState([question,unrelated],0,new Set(["q"]))).toEqual({state:"active",choice:null});expect(clarifyCardState([question,unrelated,matched],0,new Set())).toEqual({state:"chosen",choice:"Tomorrow"});expect(clarifyCardState([question,unrelated],0,new Set())).toEqual({state:"skipped",choice:null});});
+
+describe("same-thread refresh with older history already loaded",()=>{
+  const message=(id:string)=>({...owner,id,clientMessageId:id});
+  it("preserves the contiguous older prefix, refreshes overlapping content and advances the offset",()=>{
+    const older=[message("a"),message("b"),message("c"),message("d")];
+    const fresh=[{...message("c"),text:"Current saved answer"},message("d"),message("e")];
+    const merged=mergeLatestConversationPage({items:older,nextOffset:4},{items:fresh,nextOffset:3});
+    expect(merged.items.map(m=>m.id)).toEqual(["a","b","c","d","e"]);
+    expect(merged.items[2].text).toBe("Current saved answer");
+    expect(merged.nextOffset).toBe(5);
+    expect(mergeLatestConversationPage({items:older,nextOffset:null},{items:fresh,nextOffset:3}).nextOffset).toBeNull();
+  });
+  it("does not combine unrelated or nonoverlapping pages or keep deleted rows from a full read",()=>{
+    const old={items:[message("a"),message("b")],nextOffset:2};
+    const recent={items:[message("x"),message("y")],nextOffset:2};
+    expect(mergeLatestConversationPage(old,recent)).toEqual(recent);
+    const other={items:[{...message("b"),threadId:"other"}],nextOffset:1};
+    expect(mergeLatestConversationPage(old,other)).toEqual(other);
+    const full={items:[message("b")],nextOffset:null};
+    expect(mergeLatestConversationPage(old,full)).toEqual(full);
+  });
+});
+
+describe("saved report indexing",()=>{
+  const presentation={type:"rich_presentation",version:1,layout:"stack",panels:[],suggestions:[],report:true};
+  it("indexes only supported same-thread persisted supervisor reports, once per source message",()=>{
+    const report={...answer,blocks:[...answer.blocks!,presentation,presentation]};
+    expect(loadedSavedReports([report,{...report,id:"foreign",threadId:"foreign"},{...report,id:"unknown",blocks:[{...presentation,version:2}]},{...owner,blocks:[presentation]}],"thread")).toEqual([{id:"reply",createdAt:answer.createdAt,title:null}]);
+    expect(loadedSavedReports([report],null)).toEqual([]);
+    expect(loadedSavedReports([report],"foreign")).toEqual([]);
+  });
+});
+
+describe("conversation URL state",()=>{
+  it("preserves the current period and locale and drops stale experiment when switching conversations",()=>{
+    expect(conversationLocation("https://cafe.invalid/en?period=week&thread=old&experiment=old-proposal","selected")).toBe("/en?period=week&thread=selected");
+    expect(conversationLocation("https://cafe.invalid/en?period=week&thread=old&experiment=old-proposal",null)).toBe("/en?period=week&newChat=1");
+    expect(conversationLocation("https://cafe.invalid/es?newChat=1","saved")).toBe("/es?thread=saved");
+  });
+});
+
+describe("authorized older page concurrency",()=>{
+  const m=(id:string)=>({...owner,id,clientMessageId:id});
+  it("merges a repeated boundary after a newer message arrives without skipping the next row",()=>{
+    const current={items:[m("c"),m("d"),m("e")],nextOffset:3};
+    const older={items:[m("b"),m("c")],nextOffset:4};
+    expect(prependConversationPage(current,older,"thread")).toEqual({items:[m("b"),m("c"),m("d"),m("e")],nextOffset:4});
+    expect(prependConversationPage(current,{items:[m("a"),m("b")],nextOffset:null},"thread").nextOffset).toBeNull();
+  });
+  it("never reintroduces rows after a denied or foreign conversation",()=>{
+    const denied={items:[],nextOffset:null};
+    expect(prependConversationPage(denied,{items:[m("b")],nextOffset:1},"thread")).toEqual(denied);
+    const current={items:[m("c")],nextOffset:1};
+    expect(prependConversationPage(current,{items:[{...m("b"),threadId:"other"}],nextOffset:null},"thread")).toEqual(current);
+  });
+});

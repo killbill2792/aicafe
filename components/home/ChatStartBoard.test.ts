@@ -12,8 +12,8 @@ const copy:ChatStartCopy={keyNumbers:"Key numbers",sales:"Sales",knownCosts:"Kno
   experimentPrompt:"",suggestionsLabel:"Ask",handledLabel:"Handled",boardRunning:"Running",boardReports:"Recent reports"};
 const data:ChatStartData={period:"today",sales:"—",costs:"—",kept:"—",attention:[],partial:false,estimated:false,
   incomplete:false,shareCaption:null,comparisonCaption:null};
-const render=(board:ChatStartData["board"])=>renderToStaticMarkup(createElement(ChatStart,{data:{...data,board},copy,
-  hasMessages:false,expanded:false,onToggle:()=>{},onSuggestion:()=>{},suggestionsDisabled:false}));
+const render=(board:ChatStartData["board"],expanded=true)=>renderToStaticMarkup(createElement(ChatStart,{data:{...data,board},copy,
+  hasMessages:false,expanded,onToggle:()=>{},onSuggestion:()=>{},suggestionsDisabled:false}));
 
 describe("Operating Board on the chat start",()=>{
   it("shows running experiments and recent reports, each linking to its chat thread",()=>{
@@ -25,6 +25,12 @@ describe("Operating Board on the chat start",()=>{
     expect(html).toContain('href="/?thread=t1&amp;experiment=p1"');
     expect(html).toContain("Recent reports");
     expect(html).toContain("keep the new price");
+  });
+  it("keeps the same operating board reachable through its disclosure",()=>{
+    const board={running:[{key:"p1",href:"/?thread=t1&experiment=p1",text:"Latte monitor"}],reports:[]};
+    expect(render(board,false)).toContain('aria-expanded="false"');
+    expect(render(board,false)).not.toContain("Latte monitor");
+    expect(render(board,true)).toContain('href="/?thread=t1&amp;experiment=p1"');
   });
   it("hides the board when nothing is running or reported",()=>{
     expect(render({running:[],reports:[]})).not.toContain("operating-board");
