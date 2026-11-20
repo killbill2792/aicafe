@@ -3,7 +3,7 @@ import { AsyncLocalStorage } from "node:async_hooks";
 import {randomUUID} from "node:crypto";
 import type {SupabaseClient} from "@supabase/supabase-js";
 import {PRODUCTION_SUPERVISOR_OPENAI_MODEL,configuredSupervisorModel} from "@/lib/ai/conversations/modelConfig";
-import {providerUsageReceipt} from "@/lib/ai/agent/executionPolicy";
+import {providerUsageReceipt,requestComposition} from "@/lib/ai/agent/executionPolicy";
 import {modelTokenUsage,standardModelTokenRates,estimateModelCallCostMicros,hostedWebActualCostMicros} from "@/lib/calc/supervisorTokenCost";
 
 /** Caps come from authenticated server configuration, never a model reply.
@@ -150,6 +150,7 @@ export async function reserveDurableProviderRequest(
   if(ctx.denied)throw new Error("durable_provider_reservation_unavailable");
   try{
     const model=params.model,output=params.max_output_tokens;
+    const composition=requestComposition(params);
     if(typeof model!=="string"||typeof output!=="number"||!Number.isSafeInteger(output)||
        output<1||output>(currentDurableProviderOutputCap()??1200))throw new Error("durable_provider_request_invalid");
     // Measure text/framing separately from trusted attachment binary
@@ -225,7 +226,7 @@ export async function reserveDurableProviderRequest(
           p_thread_id:scope.threadId,p_model:actual,p_input_tokens:measured.inputTokens,
           p_output_tokens:measured.outputTokens,p_estimated_cost_micros:cost,
         };
-        const metrics=providerUsageReceipt({requestedModel:model,kind,outcome:"completed",final:params.tool_choice==="none",nativeSearch:Array.isArray(params.tools)&&params.tools.some(t=>t?.type==="tool_search"),outputCap:output,durationMs:Math.max(0,Date.now()-startedAt),response});
+        const metrics=providerUsageReceipt({requestedModel:model,kind,outcome:"completed",final:params.tool_choice==="none",nativeSearch:Array.isArray(params.tools)&&params.tools.some(t=>t?.type==="tool_search"),outputCap:output,durationMs:Math.max(0,Date.now()-startedAt),response,composition});
         let {error}=await scope.db.rpc("supervisor_complete_investigation_model_call",{...completeArgs,p_execution_metrics:metrics});
         if(error?.code==="PGRST202"||error?.code==="42883")({error}=await scope.db.rpc("supervisor_complete_investigation_model_call",completeArgs));
         if(error){ctx.denied=true;throw new Error("durable_provider_completion_unavailable",{cause:error});}
