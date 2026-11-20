@@ -229,6 +229,14 @@ function inlineMarkdown(
 }
 
 
+/** ATX headings are presentation only: retain original UTF-16 offsets. */
+function headingMarker(line:SourceLine){
+ const match=/^([ ]{0,3}#{1,6})[ \t]+(\S.*)$/u.exec(line.text);
+ if(!match)return null;
+ const content=match[2].replace(/[ \t]+#+[ \t]*$/u,"").trimEnd();
+ if(!content)return null;
+ return {level:Math.min(6,match[1].trim().length+1),content,start:line.start+match[0].length-match[2].length};
+}
 type TableCell={text:string;start:number};
 function tableCells(line:SourceLine):TableCell[]{
  const text=line.text;const found:TableCell[]=[];let from=0,code=false,escape=false;
@@ -309,11 +317,24 @@ export function ChatMarkdown({text,unverified=[],label,labels,locale="en",showLe
       }
     }
 
+    const heading=headingMarker(lines[index]);
+    if(heading){
+      const children=inlineMarkdown(heading.content,heading.start,spans,copy,badged,locale);
+      const cls="mt-4 mb-1 font-semibold leading-snug text-balance break-words text-ink";
+      if(heading.level===2)blocks.push(<h2 key={index} className={cls+" text-xl"}>{children}</h2>);
+      else if(heading.level===3)blocks.push(<h3 key={index} className={cls+" text-[19px]"}>{children}</h3>);
+      else if(heading.level===4)blocks.push(<h4 key={index} className={cls+" text-[17px]"}>{children}</h4>);
+      else if(heading.level===5)blocks.push(<h5 key={index} className={cls+" text-[17px]"}>{children}</h5>);
+      else blocks.push(<h6 key={index} className={cls+" text-[17px]"}>{children}</h6>);
+      index++;
+      continue;
+    }
+
     const table=tableHeader(lines,index);
     if(table){
       const firstLine=index; index+=2;
       const rows:TableCell[][]=[];
-      while(index<lines.length&&lines[index].text.trim()&&!tableHeader(lines,index)){
+      while(index<lines.length&&lines[index].text.trim()&&!headingMarker(lines[index])&&!listMarker(lines[index])&&!tableHeader(lines,index)){
         if(!lines[index].text.includes("|")&&table.head.length>1)break;
         const cells=tableCells(lines[index]);
         rows.push(Array.from({length:table.head.length},(_,i)=>cells[i]??{text:"",start:lines[index].start+lines[index].text.length}));
@@ -361,7 +382,7 @@ export function ChatMarkdown({text,unverified=[],label,labels,locale="en",showLe
     }
     const start = index;
     const rows: ReactNode[] = [];
-    while (index < lines.length && lines[index].text.trim() && !listMarker(lines[index]) && !tableHeader(lines,index)) {
+    while (index < lines.length && lines[index].text.trim() && !headingMarker(lines[index]) && !listMarker(lines[index]) && !tableHeader(lines,index)) {
       if (rows.length) rows.push("\n");
       const line = lines[index];
       rows.push(...inlineMarkdown(line.text, line.start, spans, copy, badged,locale));

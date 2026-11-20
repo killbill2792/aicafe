@@ -318,7 +318,9 @@ export async function runAgentTurn(args: {
   };
   const underlyingWebSearch=args.context.webSearch;
   args.context.ownerText=args.serviceOrigin?"":ownerRunStatement(args.ownerText,matched);
-  args.context.turnResults=()=>results.filter(r=>r.name!=="calculate").map(r=>({name:r.name,result:r.result}));
+  args.context.turnResults=()=>results.filter(r=>r.name!=="calculate"&&r.name!=="present_response").map(r=>({name:r.name,result:r.result}));
+  const presentationAllowed=!args.serviceOrigin&&!args.toolNames;
+  args.context.presentationResults=()=>results.filter(r=>r.name==="query_data"||r.name==="calculate"||r.name==="simulate_scenario");
   const toolContext:AgentToolContext=underlyingWebSearch?{
     ...args.context,
     webSearch:async query=>{
@@ -380,7 +382,7 @@ export async function runAgentTurn(args: {
     // The complete ordered registry is identical for every owner request.
     // The model itself decides whether a draft, an inspection or neither fits.
     tools: [...agentToolDefinitions.filter(t=>(!args.toolNames||args.toolNames.includes(t.name as AgentToolName))&&
-      (!args.checkpoint||t.name!=="record_maintenance_repair_claim")),
+      (!args.checkpoint||t.name!=="record_maintenance_repair_claim")&&(t.name!=="present_response"||presentationAllowed)),
       ...(args.toolNames?.includes("get_investigation_source")&&args.context.investigation
         ? [investigationToolDefinition] : []),
       ...(args.toolNames?[]:args.extraTools??[])],
@@ -546,7 +548,7 @@ export async function runAgentTurn(args: {
         let observedEffect:ReturnType<typeof observeDurableToolEffect>|undefined;
         let toolTimer: ReturnType<typeof setTimeout> | undefined;
         try {
-          if((args.toolNames&&!args.toolNames.includes(tool.name as AgentToolName))||(args.checkpoint&&tool.name==="record_maintenance_repair_claim"))
+          if((tool.name==="present_response"&&!presentationAllowed)||(args.toolNames&&!args.toolNames.includes(tool.name as AgentToolName))||(args.checkpoint&&tool.name==="record_maintenance_repair_claim"))
             throw new Error("tool_not_available");
           const parsedArgs=JSON.parse(tool.arguments);
           const questionArgs=tool.name==="ask_owner"?
@@ -646,8 +648,13 @@ export async function runAgentTurn(args: {
         }catch{ /* Invalid tool arguments already have a localized failure. */ }
         if(checkpointOpened)await boundary(()=>args.checkpoint!.endTool(result,observedEffect?.noEffect()??false));
         results.push({ callId: tool.call_id, name: tool.name, arguments: tool.arguments, result });
-        observeToolResult(resolveState,result);
-        input.push({ type: "function_call_output", call_id: tool.call_id, output: JSON.stringify(result) });
+        if(tool.name!=="present_response")observeToolResult(resolveState,result);
+        // This tool selects prior evidence; retain the sanitized snapshot in
+        // results for persistence, but do not duplicate it on the provider wire.
+        const wireResult=tool.name==="present_response"&&result.source==="response_presentation"?
+          {source:result.source,accepted:result.accepted===true,
+           instruction:"Visual selection only. Give the complete plain-language answer from the prior evidence."}:result;
+        input.push({ type: "function_call_output", call_id: tool.call_id, output: JSON.stringify(wireResult) });
         // The old pricing-only choice card sent amounts as chat text and lost
         // them in later threads. Use the universal structured fact card instead.
         if(tool.name==="suggest_new_item_price"&&result.askOwnerRequired===true&&
@@ -770,7 +777,7 @@ export async function runAgentTurn(args: {
     modelCalls: usage.modelCalls, toolCalls: usage.toolCalls,
     inputTokens: usage.inputTokens, outputTokens: meteredOutput() });
   await args.beforeAcceptResult?.();
-  const status = statusFromResults(results);
+  const status = statusFromResults(results.filter(r=>r.name!=="present_response"));
   const ownerStatements=[...(args.history??[]).filter(m=>m.role==="user").map(m=>m.content),
     ...(args.serviceOrigin?[]:[args.ownerText]),...matched.map(pair=>pair.answer),...absorbed.map(m=>m.text)].join("\n");
   const restored=await args.checkpoint?.restoredResults?.()??[];
@@ -778,7 +785,7 @@ export async function runAgentTurn(args: {
   // They remain part of the final grounded reply even when the model did not
   // call their writer again after recovery. The existing card builder dedupes IDs.
   const toolResults=[...restored,...results.map(r=>r.result)];
-  const verificationResults=usageEvidenceRefresh(toolResults,args.previousEvidence);
+  const verificationResults=usageEvidenceRefresh(toolResults.filter(r=>r.source!=="response_presentation"),args.previousEvidence);
   const unverified=checkNumbers(text,ownerStatements,verificationResults,args.context.locale,args.previousEvidence);
   const evidence=compactEvidence(verificationResults);
   const candidates=toolResults.flatMap(result=>Array.isArray(result.explain)?

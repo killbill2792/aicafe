@@ -54,7 +54,7 @@ function isPeriod(value: string | undefined): value is Period {
   return value === "today" || value === "week" || value === "month";
 }
 
-export default async function HomePage({ searchParams }: { searchParams: Promise<{ period?: string; thread?: string; experiment?: string; fixture?: string }> }) {
+export default async function HomePage({ searchParams }: { searchParams: Promise<{ period?: string; thread?: string; experiment?: string; newChat?: string; fixture?: string }> }) {
   // This is the existing Home route, never a standalone Events experience.
   // Strictly development-only: preview and production builds cannot bypass auth.
   if(process.env.NODE_ENV==="development"&&process.env.EVENTS_VISUAL_FIXTURES==="true"&&
@@ -65,7 +65,7 @@ export default async function HomePage({ searchParams }: { searchParams: Promise
   }
   // Authorize the owner before starting any café-scoped data read or streaming the chat.
   const signedInUser = await timeReader("Home","requireOwnBusiness",requireOwnBusiness);
-  const [requestedLocale, {period:periodParam,thread:initialThread,experiment:initialExperiment}] = await Promise.all([
+  const [requestedLocale, {period:periodParam,thread:initialThread,experiment:initialExperiment,newChat}] = await Promise.all([
     timeReader("Home","getLocale",getLocale), searchParams,
   ]);
   const locale = requestedLocale === "es" || requestedLocale === "ar" ? requestedLocale : "en";
@@ -212,7 +212,7 @@ export default async function HomePage({ searchParams }: { searchParams: Promise
     </p>}
     <SupervisorHomePanel cafeCurrency={cafeCurrency}
       chatStartPromise={chatStartPromise} boardPeriod={period}
-      initialThreadId={initialThread} initialProposalId={initialExperiment}
+      initialThreadId={initialThread} initialProposalId={initialExperiment} initialNewChat={newChat==="1"&&!initialThread}
           locale={locale}
       languageSwitch={<LanguageSwitch href="/" compact />}
       chatEnabled={chatReadiness.enabled} canUseAi={cafeAccess?.active??true}

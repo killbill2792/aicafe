@@ -1,19 +1,20 @@
 "use client";
 
 import {useEffect,useRef,useState,type ReactNode} from "react";
-import {BookOpen,Clock3,ListChecks,RefreshCcw,ShieldCheck,X} from "lucide-react";
+import {BookOpen,Clock3,ListChecks,RefreshCcw,ShieldCheck,X,Search,Paperclip} from "lucide-react";
 import {Link} from "@/i18n/navigation";
 import {createBrowserSupabaseClient} from "@/lib/supabase/client";
 import en from "@/messages/en.json";
 
 import SupervisorWorkStatus from "./SupervisorWorkStatus";
 import {useSupervisorWork} from "./useSupervisorWork";
+import type {StoredAttachment} from "@/lib/ai/conversations/attachments";
 import type {OwnerWorkItem} from "@/lib/ai/supervisor/runs/ownerWorkView";
 
 const copy=en.SupervisorMandateCenter;
 type Tab="work"|"library"|"routines"|"permissions";
 type Thread={id:string;title:string|null;lastMessageAt?:string|null;createdAt:string};
-type Routine={id:string;title:string;cadence:"daily"|"weekly";localTime:string;
+type Routine={id:string;threadId:string;title:string;cadence:"daily"|"weekly";localTime:string;
   status:"active"|"paused"|"revoked";weekdays:number[];timezone:string;revision:number};
 type Mandate={id:string;revision:number;capability_id:string;capability_version:number;
   limit_kind:"count";limit_value:number;period_kind:string;staff_week_start:string|null;
@@ -31,12 +32,21 @@ const humanTime=(date:string)=>new Date(date).toLocaleString();
 const validLocalExpiry=(value:string,clock:number)=>Boolean(value.trim())&&
   Number.isFinite(new Date(value).valueOf())&&new Date(value).valueOf()>clock;
 
-export default function SupervisorMandatePanel({threadId,threads,approvals,onSelectThread,onClose,initialTab="permissions",onOpenWork,disabled=false,languageSwitch}:{
+export default function SupervisorMandatePanel({threadId,threads,approvals,onSelectThread,onClose,initialTab="permissions",onOpenWork,disabled=false,languageSwitch,files,reports=[],onOpenReport,threadsNextOffset=null}:{
   threadId:string|null;threads:Thread[];approvals:Array<{id:string;title:string;detail:string}>;
-  onSelectThread:(id:string)=>void;onClose:()=>void;
+  onSelectThread:(id:string,thread?:Thread)=>void;onClose:()=>void;
+  files?:{threadId:string;items:StoredAttachment[]}|null;threadsNextOffset?:number|null;
+  reports?:{id:string;createdAt:string;title:string|null}[];onOpenReport?:(id:string)=>void;
   initialTab?:Tab;onOpenWork:(item:OwnerWorkItem)=>void;disabled?:boolean;languageSwitch?:ReactNode;
 }){
   const [tab,setTab]=useState<Tab>(initialTab);
+  const [search,setSearch]=useState("");
+  const [olderThreads,setOlderThreads]=useState<Thread[]>([]);
+  const [historyCursor,setHistoryCursor]=useState<number|null|undefined>(undefined);
+  const historyOffset=historyCursor===undefined?threadsNextOffset:historyCursor;
+  const [historyBusy,setHistoryBusy]=useState(false);
+  const [historyError,setHistoryError]=useState("");
+  const historyRequest=useRef<AbortController|null>(null);
   const [mandates,setMandates]=useState<Mandate[]>([]);
   const [routines,setRoutines]=useState<Routine[]>([]);
   const [loading,setLoading]=useState(Boolean(threadId??threads[0]?.id));
@@ -63,7 +73,7 @@ export default function SupervisorMandatePanel({threadId,threads,approvals,onSel
     const opener=document.activeElement instanceof HTMLElement?document.activeElement:null;
     node.showModal();
     closeButton.current?.focus();
-    return()=>{if(node.open)node.close();opener?.focus();};
+    return()=>{historyRequest.current?.abort();if(node.open)node.close();opener?.focus();};
   },[]);
   useEffect(()=>{
     const initial=window.setTimeout(()=>setNow(Date.now()),0);
@@ -180,6 +190,20 @@ export default function SupervisorMandatePanel({threadId,threads,approvals,onSel
   const goal=mandates.find(m=>m.capability_id==="leo.goal.v1"&&
     mandateStatus(m,now)==="active");
   const expiredChallenge=Boolean(challenge&&Date.parse(challenge.expiresAt)<=now);
+  const allThreads=[...new Map([...olderThreads,...threads].map(t=>[t.id,t])).values()].sort((a,b)=>(b.lastMessageAt??b.createdAt).localeCompare(a.lastMessageAt??a.createdAt));
+  const filteredThreads=allThreads.filter(t=>(t.title??copy.savedChats).toLocaleLowerCase().includes(search.trim().toLocaleLowerCase()));
+  async function loadHistory(){
+    if(historyBusy||historyOffset===null||historyRequest.current)return;
+    const request=new AbortController();historyRequest.current=request;setHistoryBusy(true);setHistoryError("");
+    try{
+      const response=await fetch("/api/ai/threads?offset="+historyOffset,{credentials:"same-origin",cache:"no-store",signal:request.signal});
+      if(!response.ok)throw Error("history_failed");
+      const result=await response.json() as {items:Thread[];nextOffset:number|null};
+      if(!Array.isArray(result.items)||!(result.nextOffset===null||Number.isSafeInteger(result.nextOffset)&&result.nextOffset>historyOffset))throw Error("history_invalid");
+      if(!request.signal.aborted){setOlderThreads(items=>[...items,...result.items]);setHistoryCursor(result.nextOffset);}
+    }catch{if(!request.signal.aborted)setHistoryError(en.SupervisorExperience.historyUnavailable);}
+    finally{if(!request.signal.aborted){historyRequest.current=null;setHistoryBusy(false);}}
+  }
 
   return <dialog ref={dialog} aria-modal="true" aria-label={copy.title}
     onCancel={e=>{e.preventDefault();onClose();}}
@@ -192,15 +216,15 @@ export default function SupervisorMandatePanel({threadId,threads,approvals,onSel
       if(e.shiftKey&&document.activeElement===first){e.preventDefault();last?.focus();}
       else if(!e.shiftKey&&document.activeElement===last){e.preventDefault();first?.focus();}
     }}
-    className="fixed inset-y-0 end-0 start-auto m-0 h-full max-h-none w-full max-w-[520px] flex-col border-s border-line bg-surface2 text-ink shadow-xl backdrop:bg-fg/35 open:flex">
-      <header className="flex items-center justify-between border-b border-line px-4 py-3">
-        <h2 className="text-lg font-bold text-ink">{copy.title}</h2>
+    className="supervisor-drawer fixed inset-y-0 start-0 end-auto m-0 h-full max-h-none w-full max-w-[440px] flex-col border-e border-line bg-surface text-ink backdrop:bg-fg/30 open:flex">
+      <header className="flex items-center justify-between px-4 py-3">
+        <h2 className="font-headline text-[19px] font-medium tracking-tight text-ink">{copy.title}</h2>
         <button ref={closeButton} type="button" onClick={onClose} aria-label={copy.close}
           className="flex h-12 w-12 items-center justify-center rounded-xl focus-visible:outline focus-visible:outline-2 focus-visible:outline-ink">
           <X size={22} aria-hidden="true"/>
         </button>
       </header>
-      <nav aria-label={copy.title} className="grid grid-cols-2 gap-1 sm:grid-cols-4 border-b border-line p-2">
+      <nav aria-label={copy.title} className="grid grid-cols-2 gap-1 border-b border-line px-3 pb-2 sm:grid-cols-4">
         {([["work",ListChecks,en.SupervisorWork.heading],["library",BookOpen,copy.library],["routines",Clock3,copy.routines],
           ["permissions",ShieldCheck,copy.permissions]] as const).map(([id,Icon,label])=>
           <button key={id} type="button" onClick={()=>{
@@ -212,8 +236,8 @@ export default function SupervisorMandatePanel({threadId,threads,approvals,onSel
               setTab(id);
             }}
             aria-current={tab===id?"page":undefined}
-            className={"flex min-h-12 items-center justify-center gap-1.5 rounded-xl px-2 text-[14px] font-semibold focus-visible:outline focus-visible:outline-2 focus-visible:outline-ink "+
-              (tab===id?"bg-pos-soft text-ink":"text-ink-muted hover:bg-surface")}>
+            className={"flex min-h-12 items-center justify-center gap-1.5 rounded-full px-2 text-[14px] font-medium focus-visible:outline focus-visible:outline-2 focus-visible:outline-ink "+
+              (tab===id?"bg-surface2 text-ink":"text-ink-muted hover:bg-surface2")}>
             <Icon size={17} aria-hidden="true"/><span>{label}</span>
           </button>)}
       </nav>
@@ -221,14 +245,26 @@ export default function SupervisorMandatePanel({threadId,threads,approvals,onSel
         {tab==="work"&&(mandateThreadId?<SupervisorWorkStatus items={work.items} unavailable={work.unavailable}
           loading={work.loading} showEmpty onOpen={onOpenWork} disabled={disabled}/>:<p role="status">{copy.emptyChats}</p>)}
         {tab==="library"&&<section aria-label={copy.savedChats} className="space-y-2">
-          <h3 className="font-bold text-ink">{copy.savedChats}</h3>
-          {threads.length===0&&<p className="text-sm text-ink-muted">{copy.emptyChats}</p>}
-          {threads.map(thread=><button key={thread.id} type="button"
-            disabled={disabled} onClick={()=>{onSelectThread(thread.id);onClose();}}
+          <h3 className="text-[15px] font-medium text-ink-muted">{copy.savedChats}</h3>
+          <label className="flex min-h-12 items-center gap-2 rounded-lg border border-line px-3"><Search size={18} aria-hidden="true"/><span className="sr-only">{en.SupervisorExperience.searchLoadedChats}</span><input type="search" value={search} onChange={e=>setSearch(e.target.value)} placeholder={en.SupervisorExperience.searchLoadedChats} className="min-w-0 flex-1 bg-transparent text-[17px] text-ink"/></label>
+          {allThreads.length===0&&<p className="text-sm text-ink-muted">{copy.emptyChats}</p>}
+          {allThreads.length>0&&filteredThreads.length===0&&<p role="status" className="text-sm text-ink-muted">{en.SupervisorExperience.noMatchingChats}</p>}
+          {filteredThreads.map(thread=><button key={thread.id} type="button" data-library-thread={thread.id}
+            disabled={disabled} onClick={()=>{onSelectThread(thread.id,thread);onClose();}}
             aria-current={thread.id===threadId?"page":undefined}
-            className="block min-h-12 w-full rounded-xl border border-line bg-surface px-3 py-2 text-start text-[15px] font-medium text-ink hover:bg-pos-soft focus-visible:outline focus-visible:outline-2 focus-visible:outline-ink">
+            className="block min-h-12 w-full rounded-lg px-3 py-2 text-start text-[17px] font-normal leading-snug text-ink hover:bg-surface2 focus-visible:outline focus-visible:outline-2 focus-visible:outline-ink">
             {thread.title||copy.savedChats}
           </button>)}
+          {historyError&&<p role="alert" className="text-sm text-ink-muted">{historyError}</p>}
+          {historyOffset!==null&&<button type="button" disabled={historyBusy} onClick={()=>void loadHistory()} className="min-h-12 rounded-lg border border-line px-3 text-[15px] text-ink">{historyBusy?copy.loading:en.SupervisorExperience.loadOlderChats}</button>}
+          {reports.length>0&&onOpenReport&&<section aria-label={en.SupervisorExperience.loadedReports} className="border-t border-line pt-3">
+            <h3 className="text-[15px] font-medium text-ink-muted">{en.SupervisorExperience.loadedReports}</h3>
+            {reports.map(report=><button key={report.id} type="button" disabled={disabled} data-library-report={report.id} onClick={()=>{onOpenReport(report.id);onClose();}} className="flex min-h-12 w-full items-center gap-2 rounded-lg px-2 text-start hover:bg-surface2 disabled:opacity-50"><BookOpen size={18} className="shrink-0" aria-hidden="true"/><span className="min-w-0 break-words text-[17px]">{report.title??en.SupervisorExperience.savedReport}<span className="block text-[13px] text-ink-muted">{humanTime(report.createdAt)}</span></span></button>)}
+          </section>}
+          {files&&files.threadId===threadId&&files.items.length>0&&<section aria-label={en.SupervisorExperience.conversationFiles} className="border-t border-line pt-3">
+            <h3 className="text-[15px] font-medium text-ink-muted">{en.SupervisorExperience.conversationFiles}</h3>
+            {files.items.map(file=><a key={file.id} href={"/api/ai/threads/"+encodeURIComponent(files.threadId)+"/attachments/"+encodeURIComponent(file.id)} target="_blank" rel="noopener noreferrer" className="flex min-h-12 min-w-0 items-center gap-2 rounded-lg px-2 text-[17px] text-ink underline hover:bg-surface2"><Paperclip size={18} className="shrink-0" aria-hidden="true"/><span className="min-w-0 break-all">{file.originalName}</span></a>)}
+          </section>}
         </section>}
         {tab==="routines"&&<section aria-label={copy.routineTitle} className="space-y-3">
           <div className="flex items-center justify-between gap-2">
@@ -248,7 +284,9 @@ export default function SupervisorMandatePanel({threadId,threads,approvals,onSel
                 <strong className="text-[15px]">{r.title}</strong>
                 <span className="text-xs text-ink-muted">{r.status}</span>
               </div>
-              <p className="text-sm text-ink-muted">{r.cadence} · {r.localTime} · {r.timezone}</p>
+              <p className="text-[15px] text-ink-muted">{r.cadence} · {r.localTime} · {r.timezone}</p>
+              {r.cadence==="weekly"&&<p className="text-[15px] text-ink-muted">{r.weekdays.map(day=>en.SupervisorExperience.weekdayNames[day-1]).filter(Boolean).join(", ")}</p>}
+              {r.threadId&&<button type="button" disabled={disabled} className="min-h-12 rounded-lg px-2 text-[15px] font-medium text-accent-text underline disabled:opacity-50" onClick={()=>{onSelectThread(r.threadId);onClose();}}>{en.SupervisorExperience.openRoutineChat}</button>}
             </article>)}
         </section>}
         {tab==="permissions"&&<section aria-label={copy.permissionTitle} className="space-y-3">
@@ -261,8 +299,6 @@ export default function SupervisorMandatePanel({threadId,threads,approvals,onSel
             </button>
           </div>
           <p className="text-sm text-ink-muted">{copy.permissionHelp}</p>
-          <Link href={threadId?"/more/supervisor-access?thread="+encodeURIComponent(threadId):"/more/supervisor-access"}
-            className="inline-flex min-h-12 items-center rounded-xl border border-line px-4 text-sm font-semibold text-ink focus-visible:outline focus-visible:outline-2 focus-visible:outline-ink">{en.SupervisorAccess.title}</Link>
           <section aria-label={copy.oneTimeTitle} className="space-y-2 rounded-xl border border-line bg-surface p-3">
             <h4 className="text-sm font-semibold">{copy.oneTimeTitle}</h4>
             <p className="text-sm text-ink-muted">{copy.oneTimeHelp}</p>
@@ -345,6 +381,10 @@ export default function SupervisorMandatePanel({threadId,threads,approvals,onSel
           </Link>
           <p className="text-sm text-ink-muted">{copy.notUnlimited}</p>
         </section>}
+      </div>
+      <div className="shrink-0 border-t border-line px-3">
+        <Link href={threadId?"/more/supervisor-access?thread="+encodeURIComponent(threadId):"/more/supervisor-access"}
+          className="flex min-h-12 items-center gap-2 rounded-lg px-2 text-[15px] font-medium text-ink hover:bg-surface2 focus-visible:outline focus-visible:outline-2 focus-visible:outline-ink"><ShieldCheck size={18} aria-hidden="true"/>{en.SupervisorAccess.title}</Link>
       </div>
       {languageSwitch}
   </dialog>;

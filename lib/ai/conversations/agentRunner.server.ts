@@ -787,6 +787,10 @@ export async function runOneTurn(p: TurnParams): Promise<{ replyId: string; repl
     for(const attachmentId of selectedIds){
       await assertSelectedAttachmentAccess(scope,attachmentId);
     }
+    // Reuse the exact attachment IDs that the existing scoped reader admitted.
+    // Rich output stores references only; direct access still uses the existing
+    // authenticated attachment route, never a signed URL or object path.
+    context.presentationAttachments=[...selectedIds];
     failureStage = "model";
     const result = await runAgentTurn({ ownerText: p.ownerText, ownerImages:selected.images,
        ownerPdfs:selected.pdfs,ownerEvidence:selected.evidence,

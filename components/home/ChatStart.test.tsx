@@ -37,9 +37,9 @@ describe("PR F shared attention and chat entry",()=>{
   expect(top.maya?.id).toBe("m1");
   expect(top.olivia).toBeUndefined();
  });
- it("uses one source, keeps the fourth starter, and never shows old accordion",()=>{
+ it("opens the single canonical board on demand, keeps all four starters and every source link",()=>{
   const markup=renderToStaticMarkup(createElement(ChatStart,{
-    data,copy,hasMessages:false,expanded:false,onToggle:()=>{},onSuggestion:()=>{},suggestionsDisabled:false,
+    data,copy,hasMessages:false,expanded:true,onToggle:()=>{},onSuggestion:()=>{},suggestionsDisabled:false,
   }));
   expect(markup).toContain("Known business costs");
   expect(markup).toContain("Today");
@@ -57,11 +57,24 @@ describe("PR F shared attention and chat entry",()=>{
  it("does not fabricate a comparison when current or prior-period evidence is incomplete",()=>{
   const html=renderToStaticMarkup(createElement(ChatStart,{
     data:{...data,kept:"—",shareCaption:null,comparisonCaption:null},
-    copy,hasMessages:false,expanded:false,onToggle:()=>{},onSuggestion:()=>{},suggestionsDisabled:false,
+    copy,hasMessages:false,expanded:true,onToggle:()=>{},onSuggestion:()=>{},suggestionsDisabled:false,
   }));
   expect(html).not.toContain("42% of sales");
   expect(html).not.toContain("18% more vs last period");
   expect(html).toContain("Costs incomplete");
+ });
+ it("keeps empty chat welcoming and the business board collapsed but reachable",()=>{
+  const html=renderToStaticMarkup(createElement(ChatStart,{
+    data,copy,hasMessages:false,expanded:false,onToggle:()=>{},onSuggestion:()=>{},suggestionsDisabled:false,
+    welcome:{heading:"How can I help today?",intro:"Ask about your café."},
+  }));
+  expect(html).toContain("How can I help today?");
+  expect(html).toContain("Today: Sales $500");
+  expect(html).toContain("Costs incomplete");
+  expect(html).toContain('aria-expanded="false"');
+  expect(html).not.toContain('data-attention-id="a2"');
+  expect(html).not.toContain('aria-label="Key numbers"');
+  for(const starter of copy.suggestions)expect(html).toContain(starter);
  });
  it("collapses for an existing thread and reopens with aria-expanded",()=>{
   const render=(expanded:boolean)=>renderToStaticMarkup(createElement(ChatStart,{
@@ -118,7 +131,7 @@ describe("PR F shared attention and chat entry",()=>{
   expect(wrapper).toContain('initialThreadId={initialThreadId} initialProposalId={initialProposalId}');
   // Fails on the old branch: client-side deep links changed only props, not
   // the useState-initialized thread, so owner opened the wrong conversation.
-  expect(wrapper).toContain('key={(initialThreadId ?? "new") + ":" + (initialProposalId ?? "")}');
+  expect(wrapper).toContain('key={(initialThreadId ?? "new") + ":" + (initialProposalId ?? "") + ":" + (initialNewChat?"blank":"resume")}');
   expect(composer).toContain('initialProposalId && initialThreadId && threadId === initialThreadId');
   expect(composer).toContain('initialProposalId={initialProposalId}');
   expect(composer).toContain('copy={{en,es,ar}[locale].SupervisorExperiment}');

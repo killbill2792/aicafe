@@ -1,3 +1,4 @@
+import { richPresentationSchema } from "@/lib/ai/conversations/presentation";
 import "server-only";
 import { ZodError } from "zod";
 import { persistGroundedSupervisorReply, type DurableReplyFence } from "@/lib/ai/conversations/replyWriter.server";
@@ -14,9 +15,10 @@ export function persistedAgentStatus(turn: AgentTurn): GroundingStatus {
   if(turn.results.some(r=>r.source==="ask_owner"&&r.missing.length===0))
     return "requires_owner_input";
   // A completed greeting/clarification does not require a business read.
-  if (turn.endReason === "complete" && turn.usage.toolCalls === 0) return "verified";
+  if (turn.endReason === "complete" && (turn.usage.toolCalls === 0 ||
+    (turn.results.length===turn.usage.toolCalls&&turn.results.every(r=>r.source==="response_presentation")))) return "verified";
   const hasSuccessfulRead = turn.results.some(result =>
-    result.source!=="ask_owner"&&result.missing.length===0&&typeof result.error!=="string");
+    result.source!=="ask_owner"&&result.source!=="response_presentation"&&result.missing.length===0&&typeof result.error!=="string");
   if (!hasSuccessfulRead) return "unavailable";
   if (turn.endReason !== "complete") return "partial";
   return turn.status.status === "complete" ? "verified" : "partial";
@@ -113,6 +115,19 @@ export function agentReplyPayload(turn: AgentTurn) {
        [{type:"clarify" as const,question:clarify.question,
          options:clarify.options as {label:string;value:string}[],allowOther:clarify.allowOther===true}]:[]),
     ...(safeExplain.length?[{type:"how" as const,lines:safeExplain}]:[])] };
+  if(turn.endReason==="complete"&&!clarify&&reply.blocks.length<30){
+    const result=[...turn.results].reverse().find(r=>r.source==="response_presentation"&&r.accepted===true);
+    const presentation=richPresentationSchema.safeParse(result?.presentation);
+    if(presentation.success) {
+      // A presentation never makes unavailable business evidence verified.
+      const {agenda,scenario,tables,calculator,...rest}=presentation.data;
+      const partialTables=tables?.filter(t=>t.coverage==="partial");
+      const safe=status==="unavailable"?{...rest,panels:[],...(agenda?.coverage==="partial"?{agenda}:{}),...(partialTables?.length?{tables:partialTables}:{})}:
+       {...rest,...(agenda?{agenda}:{}),...(scenario?{scenario}:{}),...(tables?{tables}:{}),...(calculator?{calculator}:{})};
+      const validated=richPresentationSchema.safeParse(safe);
+      if(validated.success)reply.blocks.push(validated.data);
+    }
+  }
   const annotations=turn.provenance??turn.unverified.map(item=>({...item,source:"unchecked" as const}));
   const unverified = annotations.flatMap(item => {
     const rows: Array<typeof item & {blockIndex:number}> = [];

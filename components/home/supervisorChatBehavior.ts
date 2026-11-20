@@ -1,4 +1,5 @@
-import type { ConversationMessage } from "@/lib/ai/conversations/contracts";
+import type { ConversationMessage, ConversationPage } from "@/lib/ai/conversations/contracts";
+import {richPresentationSchema} from "@/lib/ai/conversations/presentation";
 
 export type OptimisticOwner = { id: string; text: string; clientMessageId: string };
 
@@ -91,4 +92,46 @@ export function isDuplicateLinkedExperimentCard(
     !block||typeof block!=="object"||Array.isArray(block))return false;
   return "type" in block&&block.type==="experiment_card"&&
     "proposalId" in block&&block.proposalId===linkedProposalId;
+}
+
+/** The API returns chronological pages. A latest-page refresh may overlap
+ * the older pages already read in the current thread; preserve those
+ * contiguous records, replacing every overlapping record with fresh evidence.
+ * An entirely new/nonoverlapping page must not create a fabricated history gap. */
+export function mergeLatestConversationPage(previous:ConversationPage<ConversationMessage>,fresh:ConversationPage<ConversationMessage>):ConversationPage<ConversationMessage>{
+  if(fresh.nextOffset===null||!fresh.items.length||!previous.items.length)return fresh;
+  const threadId=fresh.items[0].threadId;
+  if(previous.items.some(m=>m.threadId!==threadId)||fresh.items.some(m=>m.threadId!==threadId))return fresh;
+  const overlap=previous.items.findIndex(m=>m.id===fresh.items[0].id);
+  if(overlap<0)return fresh;
+  const freshIds=new Set(fresh.items.map(m=>m.id));
+  const prefix=previous.items.slice(0,overlap).filter(m=>!freshIds.has(m.id));
+  return {items:[...prefix,...fresh.items],nextOffset:previous.nextOffset===null?null:fresh.nextOffset+prefix.length};
+}
+
+/** Index only already-authorized persisted messages loaded in this conversation.
+ * The original answer remains the report; this is not another store or receipt. */
+export function loadedSavedReports(messages:readonly ConversationMessage[],threadId:string|null){
+  if(!threadId)return [];
+  return messages.flatMap(message=>{
+    if(message.threadId!==threadId||message.role!=="supervisor")return [];
+    const presentations=(message.blocks??[]).flatMap(block=>{
+      const parsed=richPresentationSchema.safeParse(block);
+      return parsed.success&&parsed.data.report?[parsed.data]:[];
+    });
+    if(!presentations.length)return [];
+    const first=presentations[0];
+    return [{id:message.id,createdAt:message.createdAt,title:first.panels[0]?.title??first.tables?.[0]?.title??first.agenda?.title??first.scenario?.title??first.calculator?.title??null}];
+  }).reverse();
+}
+
+/** Retain the selected conversation on reload without a second server navigation
+ * or a new browser history entry. An explicit blank chat is not "resume latest".
+ * A linked experiment belongs only to its original thread. */
+export function conversationLocation(href:string,threadId:string|null):string{
+  const url=new URL(href);
+  url.searchParams.delete("experiment");
+  if(threadId){url.searchParams.set("thread",threadId);url.searchParams.delete("newChat");}
+  else{url.searchParams.delete("thread");url.searchParams.set("newChat","1");}
+  return url.pathname+url.search+url.hash;
 }

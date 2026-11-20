@@ -1,0 +1,183 @@
+import {describe,it,expect} from "vitest";
+import {presentResponse} from "./presentation";
+import type {AgentToolContext,AgentToolResult} from "./index";
+const sales:AgentToolResult={source:"daily_rollups",period:{from:"2026-11-01",to:"2026-11-03"},missing:[],
+ days:[{date:"2026-11-02",netSalesCents:1200},{date:"2026-11-03",netSalesCents:0}]};
+const request={layout:"stack",panels:[{source:"daily_rollups",field:"daily_sales",kind:"line"}],suggestions:[]};
+const ctx=(r:AgentToolResult=sales):Pick<AgentToolContext,"currency"|"asOf"|"turnResults"|"presentationResults">=>({currency:"USD",asOf:"2026-11-04",turnResults:()=>[{name:"get_sales",result:r}]});
+describe("bound optional presentation",()=>{
+ it("uses exact current values, including zero and actual covered dates",()=>{
+  expect(presentResponse(request,ctx())).toMatchObject({accepted:true,presentation:{version:1,panels:[{
+   currency:"USD",from:"2026-11-02",to:"2026-11-03",points:[{label:"2026-11-02",value:1200},{label:"2026-11-03",value:0}]}]}});
+ });
+ it("rejects model-provided values and arbitrary action fields",()=>{
+  expect(presentResponse({...request,panels:[{...request.panels[0],value:100000}]},ctx()).accepted).toBe(false);
+  expect(presentResponse({...request,action:"approve"},ctx()).accepted).toBe(false);
+ });
+ it("rejects missing, provisional, wrong-source and foreign/unavailable evidence",()=>{
+  for(const r of [{...sales,missing:["sales"]},{...sales,provisional:true},{...sales,source:"other"}])
+   expect(presentResponse(request,ctx(r)).accepted).toBe(false);
+  expect(presentResponse(request,{...ctx(),turnResults:()=>[]}).accepted).toBe(false);
+ });
+ it("does not invent a currency",()=>expect(presentResponse(request,{...ctx(),currency:null}).accepted).toBe(false));
+});
+
+describe("Task16E canonical query and period binding",()=>{
+ const result:AgentToolResult={source:"canonical_data",period:{from:"2026-11-01",to:"2026-11-03"},missing:[],
+  rows:[{business_date:"2026-11-01",sum_net_sales_cents:1200},{business_date:"2026-11-02",sum_net_sales_cents:2400}]};
+ const args={view:"cv_sales_days",date_from:"2026-11-01",date_to:"2026-11-03",
+  group_by:["business_date"],metrics:[{fn:"sum",column:"net_sales_cents"}]};
+ const request={layout:"stack",panels:[{source:"canonical_data",field:"sum_net_sales_cents",kind:"line"}],suggestions:[]};
+ const canonicalCtx=(r=result,a=args)=>({...ctx(),turnResults:()=>[],
+   presentationResults:()=>[{name:"query_data",arguments:JSON.stringify(a),result:r}]});
+ it("projects a previously authorized aggregate without an extra data read",()=>{
+   expect(presentResponse(request,canonicalCtx())).toMatchObject({accepted:true,presentation:{panels:[{
+    unit:"cents",source:"canonical_data",points:[{label:"2026-11-01",value:1200},{label:"2026-11-02",value:2400}]}]}});
+ });
+ it("rejects unsafe source, unknown unit, incompatible coverage and truncated rows",()=>{
+   expect(presentResponse(request,canonicalCtx(result,{...args,view:"cv_cash"})).accepted).toBe(false);
+   expect(presentResponse(request,canonicalCtx({...result,missing:["result_truncated"]})).accepted).toBe(false);
+   expect(presentResponse(request,canonicalCtx(result,{...args,date_from:"2026-10-31"})).accepted).toBe(false);
+   expect(presentResponse({...request,panels:[{...request.panels[0],field:"unverified"}]},canonicalCtx()).accepted).toBe(false);
+ });
+ it("requires period selection instead of silently choosing another period",()=>{
+   const other={...sales,period:{from:"2026-10-01",to:"2026-10-02"},days:[{date:"2026-10-01",netSalesCents:300},{date:"2026-10-02",netSalesCents:500}]};
+   const c={...ctx(),turnResults:()=>[{name:"get_sales",result:sales},{name:"get_sales",result:other}]};
+   const q={layout:"stack",panels:[{source:"daily_rollups",field:"daily_sales",kind:"line"}],suggestions:[]};
+   expect(presentResponse(q,c).accepted).toBe(false);
+   expect(presentResponse({...q,panels:[{...q.panels[0],from:"2026-10-01",to:"2026-10-02"}]},c)).toMatchObject({accepted:true,presentation:{panels:[{points:[{label:"2026-10-01",value:300},{label:"2026-10-02",value:500}]}]}});
+ });
+});
+
+describe("dated and modeled presentations",()=>{
+ it("preserves multiday saved event dates, cancellation and unverified status without pretending live research",()=>{
+  const events:AgentToolResult={source:"cafe_events",period:{from:"2026-11-01",to:"2026-11-10"},missing:[],events:[
+   {name:"Market",startDate:"2026-11-03",endDate:"2026-11-05",status:"cancelled",lastVerifiedAt:"2026-11-02T12:00:00Z"},
+   {name:"Fair",startDate:"2026-11-06",endDate:"2026-11-06",status:"found"}]};
+  expect(presentResponse({layout:"stack",panels:[],agenda:"calendar_events",suggestions:[]},ctx(events))).toMatchObject({
+   accepted:true,presentation:{agenda:{coverage:"partial",entries:[{label:"Market",date:"2026-11-03",endDate:"2026-11-05",status:"cancelled"},{label:"Fair",status:"unverified"}]}}});
+ });
+ it("separates draft future shifts from attendance and accepts overnight saved timings",()=>{
+  const shifts:AgentToolResult={source:"scheduled_shifts",period:{from:"2026-11-09",to:"2026-11-15"},missing:["coverageDisabled"],scheduleSet:true,shifts:[
+   {employeeName:"Team member",date:"2026-11-11",start:"22:00",end:"02:00",source:"ai_draft"}]};
+  expect(presentResponse({layout:"stack",panels:[],agenda:"timeline_shifts",suggestions:[]},ctx(shifts))).toMatchObject({
+   accepted:true,presentation:{agenda:{coverage:"partial",entries:[{date:"2026-11-11",endDate:"2026-11-12",status:"ai_draft"}]}}});
+ });
+ it("selects only previously calculated alternatives with an identical baseline and never accepts model amounts",()=>{
+  const base:AgentToolResult={source:"scenario",period:null,missing:[],status:"estimate",provenance:"estimate",
+   input:{kind:"bill",monthlyChangeCents:10000},before:{monthlyProfitCents:50000},after:{monthlyProfitCents:40000}};
+  const next={...base,input:{kind:"bill",monthlyChangeCents:20000},after:{monthlyProfitCents:30000}};
+  const c={...ctx(),turnResults:()=>[{name:"simulate_scenario",result:base},{name:"simulate_scenario",result:next}]};
+  const req={layout:"stack",panels:[],scenario:"monthly_profit",suggestions:[]};
+  expect(presentResponse(req,c)).toMatchObject({accepted:true,presentation:{scenario:{provenance:"estimate",cases:[
+   {beforeCents:50000,afterCents:40000},{beforeCents:50000,afterCents:30000}]}}});
+  expect(presentResponse({...req,afterCents:999999},c).accepted).toBe(false);
+ });
+ it("does not expose estimated or incomplete cost components as recorded costs",()=>{
+  const costs:AgentToolResult={source:"business_costs",period:sales.period,missing:[],completeness:"complete",estimated:[],
+   components:{ingredientsCents:100,loadedStaffCents:200,cardFeesCents:0,runningCostsCents:50}};
+  const req={layout:"stack",panels:[{source:"business_costs",field:"cost_components",kind:"bar"}],suggestions:[]};
+  expect(presentResponse(req,ctx(costs))).toMatchObject({accepted:true,presentation:{panels:[{points:[{label:"Ingredients",value:100},{label:"Staff",value:200},{label:"Card fees",value:0},{label:"Running costs",value:50}]}]}});
+  expect(presentResponse(req,ctx({...costs,estimated:["labor"]})).accepted).toBe(false);
+  expect(presentResponse(req,ctx({...costs,components:{...costs.components as object,cardFeesCents:null}})).accepted).toBe(false);
+ });
+});
+
+describe("ranked and downloadable presentation",()=>{
+ it("permits a text-only report request without invented values or arbitrary file paths",()=>{
+  const req={layout:"stack",panels:[],suggestions:[],report:true};
+  expect(presentResponse(req,ctx())).toMatchObject({accepted:true,presentation:{report:true,panels:[]}});
+  expect(presentResponse({...req,filePath:"/private"},ctx()).accepted).toBe(false);
+ });
+ it("ranks the exact values without manufacturing another metric",()=>{
+  const req={layout:"stack",panels:[{source:"item_sales",field:"item_units",kind:"ranked_table"}],suggestions:[]};
+  const result:AgentToolResult={source:"item_sales",period:sales.period,missing:[],items:[{name:"Latte",units:2},{name:"Tea",units:4}]};
+  expect(presentResponse(req,ctx(result))).toMatchObject({accepted:true,presentation:{panels:[{points:[{label:"Tea",value:4},{label:"Latte",value:2}]}]}});
+ });
+});
+
+it("does not draw a continuous line across an unobserved day; allows exact table values",()=>{
+ const sparse={...sales,days:[{date:"2026-11-01",netSalesCents:100},{date:"2026-11-03",netSalesCents:200}]};
+ expect(presentResponse(request,ctx(sparse)).accepted).toBe(false);
+ expect(presentResponse({...request,panels:[{...request.panels[0],kind:"table"}]},ctx(sparse))).toMatchObject({accepted:true,presentation:{panels:[{points:[{label:"2026-11-01",value:100},{label:"2026-11-03",value:200}]}]}});
+});
+
+describe("Task16E reusable canonical record table",()=>{
+ const result:AgentToolResult={source:"canonical_data",period:sales.period,missing:[],rows:[
+  {dining_option:"Takeaway",count_order_ref:0,sum_net_sales_cents:0},
+  {dining_option:"Dine in",count_order_ref:7,sum_net_sales_cents:2450}]};
+ const args={view:"cv_orders",date_from:sales.period!.from,date_to:sales.period!.to,
+  group_by:["dining_option"],metrics:[{fn:"count",column:"order_ref"},{fn:"sum",column:"net_sales_cents"}],filters:[]};
+ const context=(r=result,a=args)=>({...ctx(),turnResults:()=>[],presentationResults:()=>[{name:"query_data",arguments:JSON.stringify(a),result:r}]});
+ const req={layout:"stack",panels:[{source:"canonical_data",field:"rows",kind:"table"}],suggestions:[]};
+ it("projects multiple exact metrics and labels from one existing authenticated query",()=>{
+   expect(presentResponse(req,context())).toMatchObject({accepted:true,presentation:{tables:[{
+    view:"cv_orders",currency:"USD",coverage:"stored",
+    columns:[{unit:"label"},{unit:"count"},{unit:"cents"}],rows:[["Takeaway",0,0],["Dine in",7,2450]]}]}});
+ });
+ it("labels a truncated result partial; distinguishes missing values from zero",()=>{
+   expect(presentResponse(req,context({...result,truncated:true,missing:["result_truncated"],rows:[
+    {dining_option:"Takeaway",count_order_ref:0,sum_net_sales_cents:null}]}))).toMatchObject({
+      accepted:true,presentation:{tables:[{coverage:"partial",rows:[["Takeaway",0,null]]}]}});
+ });
+ it("rejects a foreign/unavailable read or an unselected data dump; no invented values",()=>{
+   expect(presentResponse(req,context({...result,error:"invalid_scope"})).accepted).toBe(false);
+   expect(presentResponse(req,context(result,{...args,group_by:[],metrics:[],columns:["data","business_id"]} as typeof args)).accepted).toBe(false);
+   expect(presentResponse({...req,panels:[{...req.panels[0],values:[77]}]},context()).accepted).toBe(false);
+ });
+});
+describe("Task16E interactive calculator selection",()=>{
+ const r:AgentToolResult={source:"calculate",period:null,missing:[],purpose:"Order quantity estimate",kind:"estimate",
+  inputs:[{name:"price",label:"Unit cost",unit:"cents",valueCents:250,from:"tool",ref:"get_product_costs:item.ingredientsCentsToday"},
+          {name:"qty",label:"Quantity",unit:"count",quantity:10,from:"owner_said",ref:"owner"}],
+  steps:[{id:"total",op:"multiply",args:["price","qty"],unit:"cents",valueCents:2500}],result:{unit:"cents",valueCents:2500}};
+ const c=(result=r,screen_number="none")=>({...ctx(),turnResults:()=>[],presentationResults:()=>[{name:"calculate",arguments:JSON.stringify({screen_number,inputs:[{name:"price",tool:"get_product_costs",path:"item.ingredientsCentsToday"},{name:"qty",owner_value:10,owner_unit:"count"}]}),result}]});
+ const q={layout:"stack",panels:[],suggestions:[],calculator:true};
+ it("uses the previously calculated result, only owner-supplied assumption editable",()=>{
+  expect(presentResponse(q,c())).toMatchObject({accepted:true,presentation:{calculator:{inputs:[
+   {id:"price",editable:false,value:{valueCents:250}},{id:"qty",editable:true,value:{quantity:10}}],
+   original:{unit:"cents",valueCents:2500}}}});
+ });
+ it("rejects changing a screen number, partial source, rounded mismatch or no owner assumption",()=>{
+  expect(presentResponse(q,c(r,"profit")).accepted).toBe(false);
+  expect(presentResponse(q,c({...r,basedOnPartialData:["get_product_costs"]})).accepted).toBe(false);
+  expect(presentResponse(q,c({...r,result:{unit:"cents",valueCents:2501}})).accepted).toBe(false);
+  const rounded={...r,inputs:[{name:"price",label:"Unit cost",unit:"count",quantity:2.5,from:"tool"},{name:"qty",label:"Quantity",unit:"count",quantity:10,from:"owner_said"}],result:{unit:"count",quantity:25}};
+  expect(presentResponse(q,c(rounded)).accepted).toBe(false);
+  expect(presentResponse(q,c({...r,inputs:(r.inputs as Array<Record<string,unknown>>).map(i=>({...i,from:"tool"}))})).accepted).toBe(false);
+ });
+});
+
+describe("Task16E selected source file references",()=>{
+ const id="11111111-1111-4111-8111-111111111111";
+ const req={layout:"stack",panels:[],suggestions:[],files:true};
+ it("references only selected already-verified attachment IDs, not model paths or URLs",()=>{
+  expect(presentResponse(req,{...ctx(),presentationAttachments:[id]})).toMatchObject({accepted:true,presentation:{files:[id]}});
+  expect(presentResponse(req,ctx()).accepted).toBe(false);
+  expect(presentResponse({...req,files:[id]},ctx()).accepted).toBe(false);
+  expect(presentResponse({...req,href:"https://example.com/private"},ctx()).accepted).toBe(false);
+ });
+});
+
+it("renders canonical price scenarios and the exact estimate metric, with a verified item identity",()=>{
+ const itemId="11111111-1111-4111-8111-111111111111";
+ const scenario:AgentToolResult={source:"scenario",period:null,missing:[],status:"estimate",provenance:"estimate",
+  input:{kind:"price",itemId,oldPriceCents:400,newPriceCents:450,weeklyUnits:50},
+  before:{itemMarginCents:250,monthlyProfitCents:45000},after:{itemMarginCents:300,monthlyProfitCents:50000}};
+ const menu:AgentToolResult={source:"menu_items",period:null,missing:[],items:[{id:itemId,name:"Latte"}]};
+ const req={layout:"stack",panels:[],suggestions:[],scenario:"item_margin"};
+ const qualified={...ctx(),turnResults:()=>[{name:"get_menu_items",result:menu},{name:"simulate_scenario",result:scenario}]};
+ expect(presentResponse(req,qualified)).toMatchObject({accepted:true,presentation:{scenario:{title:"Modeled item margin",cases:[{assumption:expect.stringContaining("Latte"),beforeCents:250,afterCents:300}]}}});
+ expect(presentResponse(req,ctx(scenario)).accepted).toBe(false);
+});
+it("uses actual roster evidence and executed scenario arguments for staffing alternatives",()=>{
+ const staffId="22222222-2222-4222-8222-222222222222";
+ const roster:AgentToolResult={source:"employees+scheduled_shifts",period:sales.period,missing:[],people:[{id:staffId,name:"Team lead"}]};
+ const scenario:AgentToolResult={source:"scenario",period:null,missing:[],status:"estimate",provenance:"estimate",
+  input:{kind:"shift",hoursChange:2,shiftsPerWeek:5,wageCents:2000,payrollTaxRate:0.1},
+  before:{monthlyBreakEvenCents:100000},after:{monthlyBreakEvenCents:120000}};
+ const req={layout:"stack",panels:[],suggestions:[],scenario:"monthly_break_even"};
+ const c={...ctx(),turnResults:()=>[{name:"get_team",result:roster},{name:"simulate_scenario",result:scenario}],
+  presentationResults:()=>[{name:"simulate_scenario",arguments:JSON.stringify({staffId}),result:scenario}]};
+ expect(presentResponse(req,c)).toMatchObject({accepted:true,presentation:{scenario:{cases:[{assumption:expect.stringContaining("Team lead"),beforeCents:100000,afterCents:120000}]}}});
+});

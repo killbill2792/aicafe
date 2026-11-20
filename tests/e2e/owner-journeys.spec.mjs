@@ -62,6 +62,10 @@ test("@home Task16A authenticated mobile owner views library/routines/permission
     await expect(panel.getByText("Daily source check")).toBeVisible();
     await expect(panel.getByText("Checking saved permissions and routines")).toHaveCount(0);
     console.info("[Task16A E2E] canonical routine remains after active-tab reselect");
+    await page.getByRole("dialog",{name:"Supervisor controls"}).getByRole("button",{name:"Open routine conversation",exact:true}).click();
+    await expect(panel).toHaveCount(0);
+    await expect(page.locator("#supervisor-home-composer")).toBeVisible();
+    await controlsButton.click();
     await panel.getByRole("button",{name:"Permissions",exact:true}).click();
     await expect(panel.getByText("Goal tracking",{exact:true}).first()).toBeVisible();
     await expect(panel.getByText("Active",{exact:true})).toBeVisible();
@@ -553,6 +557,17 @@ test("@home owner uploads and reselects a private receipt while another café ca
     await page.getByText("Previous files",{exact:true}).click();
     await page.getByRole("button",{name:"Use receipt.png"}).click();
     await expect(page.getByRole("button",{name:"Remove receipt.png"})).toBeVisible();
+    const input=page.locator("#supervisor-home-composer");await input.fill("Saved unsent receipt draft");
+    await page.getByRole("button",{name:"New chat",exact:true}).click();
+    await expect(input).toHaveValue("");await expect(page.getByRole("button",{name:"Remove receipt.png"})).toHaveCount(0);
+    await page.getByRole("button",{name:"Library, routines and permissions"}).click();
+    const drawer=page.getByRole("dialog",{name:"Supervisor controls"});
+    await drawer.locator('[data-library-thread="'+threadId+'"]').click();
+    await expect(input).toHaveValue("Saved unsent receipt draft");
+    await expect(page.getByRole("button",{name:"Remove receipt.png"})).toBeVisible();
+    await page.getByRole("button",{name:"Library, routines and permissions"}).click();
+    await expect(drawer.getByRole("link",{name:"receipt.png",exact:true})).toHaveAttribute("href",route+"/"+attachment.id);
+    await page.keyboard.press("Escape");
 
     const otherPage=await otherContext.newPage();
     await login(otherPage, other);
@@ -1483,4 +1498,372 @@ test("@home Task15A scheduler detects reduced sales from actual daily source row
    await db.end();
   }
  }
+});
+
+// Task16E design-stage observation only. Real authenticated seeded app, no model
+// calls, mutations of business facts, new workflow or production access.
+test("@home Task16E design baseline observes empty and long Supervisor conversations",async({browser},testInfo)=>{
+  test.setTimeout(180_000);
+  const owner=seededCafe(0), thread=randomUUID(), empty=randomUUID();
+  const db=new pg.Client({host:"127.0.0.1",port:54322,database:"postgres",user:"postgres",password:"postgres",connectionTimeoutMillis:5000});
+  await db.connect();
+  try{
+    for(const [id,title] of [[thread,"Task16E long synthetic conversation"],[empty,"Task16E empty synthetic conversation"]])
+      await db.query("insert into public.ai_threads(id,business_id,owner_user_id,client_request_id,title) values($1,$2,$3,$4,$5)",[id,owner.businessId,owner.owner.userId,randomUUID(),title]);
+    await db.query("insert into public.ai_messages(business_id,thread_id,owner_user_id,author_user_id,role,content_type,text_content,client_message_id,created_at) select $1,$2,$3,$3,'owner','text','Synthetic owner question '||n,gen_random_uuid(),now()-n*interval '2 minutes' from generate_series(1,65) n",[owner.businessId,thread,owner.owner.userId]);
+    await db.query("insert into public.ai_messages(business_id,thread_id,owner_user_id,role,content_type,structured_content,grounding) values($1,$2,$3,'supervisor','blocks',$4::jsonb,$5::jsonb)",
+      [owner.businessId,thread,owner.owner.userId,JSON.stringify([{type:"text",text:"Synthetic audit reply: review the saved business evidence. No external action was taken."}]),JSON.stringify({status:"estimated",intent:"operating_tasks",evidence:[]})]);
+    for(const viewport of [{width:390,height:844},{width:1440,height:900}]){
+      const ctx=await browser.newContext({baseURL:"http://127.0.0.1:3000",serviceWorkers:"block"});
+      try{
+        const page=await ctx.newPage();
+        await login(page,owner);
+        // The shared auth helper checks a visible desktop café label; mobile hides it.
+        // Verify owner on desktop first, then assert the exact thread URL on each measured navigation.
+        await openOwnedPage(page,owner,"?thread="+empty);
+        await page.setViewportSize(viewport);
+        const navigateThread=async id=>{
+          await page.goto("/en/?thread="+id);
+          await expect(page).toHaveURL(new RegExp("[?&]thread="+id+"(?:&|$)"));
+          await expect(page).not.toHaveURL(/\/login(?:\?|$)|\/onboarding(?:\?|$)/);
+        };
+        const requests={threads:0,messages:0,attachments:0,work:0,otherApi:0,rsc:0};
+        page.on("request",r=>{
+          const u=new URL(r.url());
+          if(u.origin!=="http://127.0.0.1:3000")return;
+          if(u.searchParams.has("_rsc"))requests.rsc++;
+          if(u.pathname==="/api/ai/threads")requests.threads++;
+          else if(/^\/api\/ai\/threads\/[^/]+\/messages$/.test(u.pathname))requests.messages++;
+          else if(/^\/api\/ai\/threads\/[^/]+\/attachments$/.test(u.pathname))requests.attachments++;
+          else if(/^\/api\/ai\/threads\/[^/]+\/work$/.test(u.pathname))requests.work++;
+          else if(u.pathname.startsWith("/api/"))requests.otherApi++;
+        });
+        const geometry=()=>page.evaluate(()=>{
+          const input=document.querySelector("#supervisor-home-composer");
+          const rect=input?.getBoundingClientRect();
+          const scrollRegions=[...document.querySelectorAll("main *, [role=log]")].filter(el=>{
+            const style=getComputedStyle(el);
+            return /auto|scroll/.test(style.overflowY)&&el.clientHeight>0&&el.scrollHeight>el.clientHeight+2;
+          });
+          const nav=performance.getEntriesByType("navigation")[0];
+          return {documentWidth:document.documentElement.scrollWidth,viewportWidth:innerWidth,
+            viewportHeight:innerHeight,composerInViewport:!!rect&&rect.height>0&&rect.top>=0&&rect.bottom<=innerHeight+1,
+            scrollRegions:scrollRegions.length,renderedMessages:document.querySelectorAll("[data-work-message]").length,
+            navigationMs:nav?Math.round(nav.domContentLoadedEventEnd):null};
+        });
+        const controls=page.getByRole("button",{name:"Library, routines and permissions"});
+        const input=page.locator("#supervisor-home-composer");
+        const start=Date.now();
+        await navigateThread(empty);
+        await expect(input).toBeVisible();
+        const emptyMs=Date.now()-start;
+        const emptyMetrics=await geometry();
+        await page.screenshot({path:testInfo.outputPath("16e-empty-"+viewport.width+".png")});
+        const longStart=Date.now();
+        await navigateThread(thread);
+        await expect(page.getByText("Synthetic owner question 1",{exact:true})).toBeVisible();
+        await expect(input).toBeVisible();
+        const longMs=Date.now()-longStart;
+        const longMetrics=await geometry();
+        await page.screenshot({path:testInfo.outputPath("16e-thread-"+viewport.width+".png")});
+        const drawerStart=Date.now();
+        await controls.click();
+        const drawer=page.getByRole("dialog",{name:"Supervisor controls"});
+        await expect(drawer).toBeVisible();
+        const drawerMs=Date.now()-drawerStart;
+        await page.screenshot({path:testInfo.outputPath("16e-controls-"+viewport.width+".png")});
+        await page.keyboard.press("Escape");
+        await expect(drawer).toHaveCount(0);
+        const restored=await controls.evaluate(el=>document.activeElement===el);
+        await input.focus();
+        const focused=await geometry();
+        console.info("[Task16E baseline]",JSON.stringify({viewport,emptyMs,longMs,drawerMs,emptyMetrics,longMetrics,focused,focusRestored:restored,requests,condition:"seeded CI dev server, warm authenticated navigation, desktop Chromium viewport; not real mobile keyboard or production"}));
+        if(viewport.width===1440){
+          await page.getByRole("button",{name:"Load older messages",exact:true}).click();
+          await expect(page.getByText("Synthetic owner question 65",{exact:true})).toBeAttached();
+          const latest="Synthetic persisted refresh after history pagination";
+          await db.query("insert into public.ai_messages(business_id,thread_id,owner_user_id,role,content_type,structured_content,grounding) values($1,$2,$3,'supervisor','blocks',$4::jsonb,$5::jsonb)",[owner.businessId,thread,owner.owner.userId,JSON.stringify([{type:"text",text:latest}]),JSON.stringify({status:"estimated",intent:"unknown",evidence:[]})]);
+          await expect.poll(async()=>{await page.evaluate(()=>window.dispatchEvent(new Event("focus")));return await page.getByText(latest,{exact:true}).count();},{timeout:30000}).toBe(1);
+          await expect(page.getByText("Synthetic owner question 65",{exact:true})).toBeAttached();
+          expect(await page.locator("[data-work-message]").evaluateAll(nodes=>new Set(nodes.map(n=>n.getAttribute("data-work-message"))).size)).toBe(await page.locator("[data-work-message]").count());
+        }
+      }finally{await ctx.close();}
+    }
+  }finally{
+    await db.query("delete from public.ai_threads where id=any($1::uuid[]) and business_id=$2",[[thread,empty],owner.businessId]).catch(()=>{});
+    await db.end();
+  }
+});
+
+
+// Task16E acceptance: exercise the real persisted renderer and controls in the
+// disposable café. This is a synthetic presentation fixture, not model or
+// financial truth acceptance. Task17B/C/D own live evidence and effect proof.
+test("@home Task16E quiet shell, optional visuals, editable follow-up and mobile navigation",async({browser},testInfo)=>{
+  test.setTimeout(300_000);
+  const owner=seededCafe(0), empty=randomUUID(), thread=randomUUID(), replyId=randomUUID();
+  const db=new pg.Client({host:"127.0.0.1",port:54322,database:"postgres",user:"postgres",password:"postgres",connectionTimeoutMillis:5000});
+  const ctx=await browser.newContext({baseURL:"http://127.0.0.1:3000",serviceWorkers:"block"});
+  const text="Sales rose from $100.00 to $125.00. That is $25.00 more, although it does not prove profit increased.";
+  const visual={type:"rich_presentation",version:1,layout:"stack",panels:[{
+    kind:"line",title:"Synthetic daily sales",unit:"cents",currency:"USD",
+    from:"2026-01-01",to:"2026-01-02",asOf:"2026-01-02",source:"daily_rollups",
+    points:[{label:"2026-01-01",value:10000},{label:"2026-01-02",value:12500}],
+  }],suggestions:["Explain how costs affect this"]};
+  await db.connect();
+  try{
+    for(const [id,title] of [[empty,"Task16E welcome fixture"],[thread,"Task16E answer fixture"]])
+      await db.query("insert into public.ai_threads(id,business_id,owner_user_id,client_request_id,title) values($1,$2,$3,$4,$5)",[id,owner.businessId,owner.owner.userId,randomUUID(),title]);
+    await db.query("insert into public.ai_messages(id,business_id,thread_id,owner_user_id,role,content_type,structured_content,grounding) values($1,$2,$3,$4,'supervisor','blocks',$5::jsonb,$6::jsonb)",[replyId,owner.businessId,thread,owner.owner.userId,JSON.stringify([{type:"text",text},visual]),JSON.stringify({status:"verified",intent:"sales_quantity",evidence:[{source:"historical_rollups",identifier:"synthetic-e2e",asOf:"2026-01-02"}]})]);
+    const page=await ctx.newPage();await login(page,owner);await openOwnedPage(page,owner,"?thread="+empty);
+    let writes=0;
+    page.on("request",r=>{if(r.method()==="POST"&&/\/api\/ai\/threads\/[^/]+\/(agent|messages)$/.test(new URL(r.url()).pathname))writes++;});
+    for(const viewport of [{width:320,height:720},{width:390,height:844},{width:768,height:1024},{width:1440,height:900}]){
+      await page.setViewportSize(viewport);await page.goto("/en/?thread="+empty);
+      const input=page.locator("#supervisor-home-composer");
+      const welcome=page.getByTestId("supervisor-welcome");
+      await expect(welcome).toBeVisible({timeout:30000});
+      await page.emulateMedia({reducedMotion:"reduce"});
+      expect(await welcome.evaluate(el=>getComputedStyle(el).animationName)).toBe("none");
+      await expect(input).toBeVisible();
+      const board=page.getByTestId("chat-start").locator("button[aria-expanded]").first();
+      await expect(board).toHaveAttribute("aria-expanded","false");
+      await board.click();
+      await expect(board).toHaveAttribute("aria-expanded","true");
+      await expect(page.getByRole("region",{name:"Key numbers",exact:true})).toBeVisible();
+      await board.click();await expect(board).toHaveAttribute("aria-expanded","false");
+      const controls=page.getByRole("button",{name:"Library, routines and permissions"});
+      await controls.click();
+      const drawer=page.getByRole("dialog",{name:"Supervisor controls"});
+      await expect(drawer.getByRole("button",{name:"Library",exact:true})).toBeVisible();
+      if(viewport.width<768){
+        const nav=drawer.getByRole("navigation",{name:"Primary navigation"});
+        for(const route of ["/en","/en/operations","/en/money","/en/menu","/en/staff","/en/more"]){
+          const path=route==="/en"?/\/en\/?$/:new RegExp(route+"$");
+          expect(await nav.getByRole("link").evaluateAll(links=>links.map(l=>l.getAttribute("href")))).toEqual(expect.arrayContaining([expect.stringMatching(path)]));
+        }
+      }
+      await page.keyboard.press("Escape");
+      await expect(drawer).toHaveCount(0);await expect(controls).toBeFocused();
+      await page.goto("/en/?thread="+thread);
+      const answer=page.locator('[data-work-message="'+replyId+'"]');
+      await expect(answer).toContainText(text,{timeout:30000});
+      const rich=answer.getByTestId("supervisor-rich-presentation");
+      await expect(rich.getByTestId("supervisor-rich-chart")).toBeVisible({timeout:30000});
+      await rich.locator("details summary").click();
+      await expect(rich.getByRole("table")).toBeVisible();
+      await expect(rich.getByRole("row").filter({hasText:"2026-01-02"})).toContainText("$125.00");
+      const suggest=rich.getByRole("button",{name:"Explain how costs affect this"});
+      await suggest.click();await expect(input).toHaveValue("Explain how costs affect this");
+      expect(writes).toBe(0);
+      // Simulate a suppressed/unavailable visual, preserving the actual text element.
+      await rich.evaluate(el=>{el.hidden=true;});
+      await expect(answer.getByText(text,{exact:true})).toBeVisible();
+      await rich.evaluate(el=>{el.hidden=false;});
+      await input.fill("");
+      await page.emulateMedia({reducedMotion:"reduce"});
+      expect(await page.evaluate(()=>matchMedia("(prefers-reduced-motion: reduce)").matches)).toBe(true);
+      const geometry=await input.evaluate(el=>({width:document.documentElement.scrollWidth,viewport:innerWidth,top:el.getBoundingClientRect().top,bottom:el.getBoundingClientRect().bottom,height:innerHeight}));
+      expect(geometry.width).toBeLessThanOrEqual(geometry.viewport);
+      expect(geometry.top).toBeGreaterThanOrEqual(0);
+      expect(geometry.bottom).toBeLessThanOrEqual(geometry.height+1);
+      await page.screenshot({path:testInfo.outputPath("16e-acceptance-"+viewport.width+".png")});
+    }
+    // All existing palettes/modes share the same actual app tokens, not
+    // mockups. Inspect rendered foreground/background and reflow in place.
+    await page.setViewportSize({width:320,height:720});
+    const themeChecks=await page.evaluate(()=>{
+      const root=document.documentElement, priorTheme=root.getAttribute("data-theme"),priorMode=root.getAttribute("data-mode");
+      const luminance=channels=>channels.reduce((n,v,i)=>n+[0.2126,0.7152,0.0722][i]*(v/255<=0.04045?v/255/12.92:((v/255+0.055)/1.055)**2.4),0);
+      const ratio=(a,b)=>{const x=luminance(a),y=luminance(b);return (Math.max(x,y)+0.05)/(Math.min(x,y)+0.05);};
+      const results=[];
+      try{
+        for(const theme of ["fresh-pour","night-roast","market-green","berry-mocha","blue-hour","matcha","caramel-sky","cherry-cola"]){
+          for(const mode of ["light","dark"]){
+            root.setAttribute("data-theme",theme);root.setAttribute("data-mode",mode);
+            const style=getComputedStyle(root),color=name=>style.getPropertyValue(name).trim().split(/\s+/).map(Number);
+            results.push({theme,mode,body:ratio(color("--c-text"),color("--c-surface")),muted:ratio(color("--c-muted"),color("--c-surface")),send:ratio(color("--c-on-accent"),color("--c-accent")),overflow:root.scrollWidth>innerWidth});
+          }
+        }
+      }finally{
+        if(priorTheme===null)root.removeAttribute("data-theme");else root.setAttribute("data-theme",priorTheme);
+        if(priorMode===null)root.removeAttribute("data-mode");else root.setAttribute("data-mode",priorMode);
+      }
+      return results;
+    });
+    expect(themeChecks).toHaveLength(16);
+    for(const check of themeChecks){
+      expect(check.body,JSON.stringify(check)).toBeGreaterThanOrEqual(4.5);
+      expect(check.muted,JSON.stringify(check)).toBeGreaterThanOrEqual(4.5);
+      expect(check.send,JSON.stringify(check)).toBeGreaterThanOrEqual(4.5);
+      expect(check.overflow,JSON.stringify(check)).toBe(false);
+    }
+    console.info("[Task16E theme contrast]",JSON.stringify(themeChecks));
+    await page.setViewportSize({width:1440,height:900});
+    // Switch between exact persisted conversations. A draft stays in the
+    // original mounted owner session, never moves to another thread.
+    const input=page.locator("#supervisor-home-composer");
+    await input.fill("My unsent answer-thread draft");
+    const controls=page.getByRole("button",{name:"Library, routines and permissions"});
+    const drawer=page.getByRole("dialog",{name:"Supervisor controls"});
+    await controls.click();
+    const search=drawer.getByRole("searchbox",{name:"Search loaded chats"});
+    await search.fill("Task16E welcome fixture");
+    await expect(drawer.getByRole("button",{name:"Task16E answer fixture"})).toHaveCount(0);
+    await drawer.getByRole("button",{name:"Task16E welcome fixture"}).click();
+    await expect(input).toHaveValue("");
+    await expect(page.getByTestId("supervisor-welcome")).toBeVisible();
+    await controls.click();await drawer.getByRole("searchbox").fill("Task16E answer fixture");
+    await drawer.getByRole("button",{name:"Task16E answer fixture"}).click();
+    await expect(page).toHaveURL(new RegExp("[?&]thread="+thread+"(?:&|$)"));
+    await expect(input).toHaveValue("My unsent answer-thread draft");
+    await expect(page.locator('[data-work-message="'+replyId+'"]')).toContainText(text);
+    const attach=page.getByRole("button",{name:"Add an attachment"});
+    await attach.click();
+    await expect(page.getByRole("button",{name:"Choose file or photo"})).toBeFocused();
+    const camera=page.getByRole("button",{name:"Take photo"});
+    for(const control of [attach,camera,page.getByRole("button",{name:"Choose file or photo"})]){
+      const rect=await control.boundingBox();expect(rect?.height??0).toBeGreaterThanOrEqual(48);
+    }
+    const [chooser]=await Promise.all([page.waitForEvent("filechooser"),camera.click()]);
+    await expect(page.locator('input[type="file"]')).toHaveAttribute("capture","environment");
+    await chooser.setFiles([]);
+    await attach.click();
+    const [files]=await Promise.all([page.waitForEvent("filechooser"),page.getByRole("button",{name:"Choose file or photo"}).click()]);
+    await expect(page.locator('input[type="file"]')).not.toHaveAttribute("capture","environment");
+    await files.setFiles([]);
+    await ctx.setOffline(true);
+    await expect(page.getByText("Offline. Saved information may be out of date. Your draft is kept; reconnect to send.")).toBeVisible();
+    await expect(page.getByRole("button",{name:"Send",exact:true})).toBeDisabled();
+    await input.press("Enter");
+    await expect(input).toHaveValue("My unsent answer-thread draft");
+    expect(writes).toBe(0);
+    await ctx.setOffline(false);
+    await expect(page.getByText("Offline. Saved information may be out of date. Your draft is kept; reconnect to send.")).toHaveCount(0);
+    await expect(input).toHaveValue("My unsent answer-thread draft");
+    await page.getByRole("button",{name:"New chat",exact:true}).click();
+    await expect(input).toHaveValue("");
+    await expect(page.getByTestId("supervisor-welcome")).toBeVisible();
+    await page.evaluate(()=>window.dispatchEvent(new Event("focus")));
+    await expect(page.locator('[data-work-message="'+replyId+'"]')).toHaveCount(0);
+    await expect(page).toHaveURL(/[?&]newChat=1(?:&|$)/);
+    await page.reload();
+    await expect(page.getByTestId("supervisor-welcome")).toBeVisible({timeout:30000});
+    await expect(page.locator('[data-work-message="'+replyId+'"]')).toHaveCount(0);
+    await controls.click();await drawer.getByRole("searchbox").fill("Task16E answer fixture");
+    await drawer.getByRole("button",{name:"Task16E answer fixture"}).click();
+    await expect(page.locator('[data-work-message="'+replyId+'"]')).toContainText(text);
+    await expect(page).toHaveURL(new RegExp("[?&]thread="+thread+"(?:&|$)"));
+    await page.reload();
+    await expect(page.locator('[data-work-message="'+replyId+'"]')).toContainText(text);
+    // A denied owner session hides the prior private content and controls.
+    await page.route("**/api/ai/threads",route=>route.fulfill({status:401,contentType:"application/json",body:'{"error":"unauthorized"}'}));
+    const deniedAlert=page.getByRole("alert").filter({hasText:"Your owner session needs to be verified again"});
+    await expect.poll(async()=>{await page.evaluate(()=>window.dispatchEvent(new Event("online")));return await deniedAlert.isVisible();},{timeout:30000}).toBe(true);
+    await expect(input).toHaveCount(0);
+    expect(writes).toBe(0);
+  }finally{
+    await ctx.close();await db.query("delete from public.ai_threads where id=any($1::uuid[]) and business_id=$2",[[empty,thread],owner.businessId]).catch(()=>{});await db.end();
+  }
+});
+
+test("@home Task16E adaptive answer survives reload, preserves prose and opens a safe editable follow-up",async({browser})=>{
+  test.setTimeout(120_000);
+  const owner=seededCafe(0),foreign=seededCafe(1),thread=randomUUID(),reply=randomUUID();
+  const db=new pg.Client({host:"127.0.0.1",port:54322,database:"postgres",user:"postgres",password:"postgres",connectionTimeoutMillis:5000});
+  const ctx=await browser.newContext({baseURL:"http://127.0.0.1:3000",serviceWorkers:"block"});
+  const other=await browser.newContext({baseURL:"http://127.0.0.1:3000",serviceWorkers:"block"});
+  await db.connect();
+  try{
+    await db.query("insert into public.ai_threads(id,business_id,owner_user_id,client_request_id,title) values($1,$2,$3,$4,$5)",
+      [thread,owner.businessId,owner.owner.userId,randomUUID(),"Disposable adaptive answer"]);
+    const page=await ctx.newPage();
+    await login(page,owner);await openOwnedPage(page,owner,"?thread="+thread);
+    const fileRoute="/api/ai/threads/"+thread+"/attachments";
+    const uploaded=await ctx.request.post(fileRoute,{headers:{Origin:"http://127.0.0.1:3000"},multipart:{
+      file:{name:"example-sales.csv",mimeType:"text/csv",buffer:Buffer.from("day,sales\n2026-01-01,12\n")}
+    }});
+    expect(uploaded.status()).toBe(201);
+    const attachment=(await uploaded.json()).attachment;
+    const text="## Sales overview\nRevenue increased from the first day to the next. The chart is optional.";
+    const suggestion="Compare another period";
+    const blocks=[{type:"text",text},{type:"rich_presentation",version:1,layout:"stack",panels:[
+      {kind:"line",title:"Daily net sales",unit:"cents",currency:owner.currency,source:"daily_rollups",from:"2026-01-01",to:"2026-01-02",asOf:"2026-01-03",
+        points:[{label:"2026-01-01",value:1200},{label:"2026-01-02",value:2400}]}
+    ],report:true,files:[attachment.id],tables:[{title:"Saved query results",view:"cv_orders",from:"2026-01-01",to:"2026-01-02",asOf:"2026-01-03",currency:owner.currency,
+      coverage:"partial",scope:"Requested query",columns:[{label:"Order channel",unit:"label"},{label:"Orders",unit:"count"},{label:"Sales",unit:"cents"}],rows:[["Takeaway",0,0],["Dine in",7,null]]}],
+      calculator:{title:"Order cost estimate",asOf:"2026-01-03",currency:owner.currency,inputs:[
+        {id:"cost",label:"Unit cost",value:{unit:"cents",valueCents:250},editable:false},
+        {id:"quantity",label:"Quantity",value:{unit:"count",quantity:10},editable:true}],
+        steps:[{id:"total",op:"multiply",args:["cost","quantity"]}],original:{unit:"cents",valueCents:2500}},
+      agenda:{kind:"calendar",source:"cafe_events",title:"Saved event dates",from:"2026-01-01",to:"2026-01-04",asOf:"2026-01-03",coverage:"partial",
+      entries:[{label:"Market",date:"2026-01-02",endDate:"2026-01-04",start:null,end:null,status:"unverified",checkedAt:null}]},
+      scenario:{title:"Modeled monthly profit",currency:owner.currency,asOf:"2026-01-03",provenance:"estimate",cases:[
+        {assumption:"Small adjustment",beforeCents:90000,afterCents:80000},{assumption:"Larger adjustment",beforeCents:90000,afterCents:60000}]},suggestions:[suggestion]}];
+    await db.query("insert into public.ai_messages(id,business_id,thread_id,owner_user_id,role,content_type,structured_content,grounding) values($1,$2,$3,$4,'supervisor','blocks',$5::jsonb,$6::jsonb)",
+      [reply,owner.businessId,thread,owner.owner.userId,JSON.stringify(blocks),JSON.stringify({status:"verified",intent:"unknown",evidence:[],agentMetadata:{endReason:"complete",unverified:[]}})]);
+    for(const viewport of [{width:390,height:844},{width:1440,height:900}]){
+      await page.setViewportSize(viewport);
+      await page.reload();
+      const answer=page.locator('[data-work-message="'+reply+'"]');
+      await expect(answer.getByRole("heading",{name:"Sales overview"})).toBeVisible();
+      await expect(answer.getByText("Revenue increased from the first day to the next. The chart is optional.")).toBeVisible();
+      const rich=answer.getByTestId("supervisor-rich-presentation");
+      await rich.locator("details summary").click();
+      await expect(rich.getByRole("table",{name:"Daily net sales"})).toBeVisible();
+      const expected=new Intl.NumberFormat("en-US",{style:"currency",currency:owner.currency}).format(24);
+      await expect(rich.getByRole("table",{name:"Daily net sales"}).getByRole("cell",{name:expected,exact:true})).toBeVisible();
+      const recordTable=rich.getByTestId("supervisor-record-table");
+      await expect(recordTable).toContainText("Incomplete information");
+      await expect(recordTable.getByRole("row").filter({hasText:"Dine in"})).toContainText("Not recorded");
+      const calc=rich.getByTestId("supervisor-calculator");
+      const calcField=calc.getByRole("textbox",{name:"Quantity"});
+      await expect(calcField).toHaveValue("10");
+      await calcField.fill("12");
+      await expect(calc.getByRole("status")).toContainText(new Intl.NumberFormat("en-US",{style:"currency",currency:owner.currency,minimumFractionDigits:2,maximumFractionDigits:2}).format(30));
+      await calcField.fill("invalid");
+      await expect(calc.getByRole("status")).toHaveText("Cannot calculate from these inputs");
+      await calc.getByRole("button",{name:"Reset assumptions"}).click();
+      await expect(calcField).toHaveValue("10");
+      await expect(rich.locator(".recharts-line")).toBeAttached({timeout:30000});
+      await expect(rich.getByTestId("supervisor-agenda")).toContainText("Not independently verified");
+      const scenario=rich.getByTestId("supervisor-scenario");
+      await scenario.getByRole("combobox").selectOption("1");
+      await expect(scenario).toContainText(new Intl.NumberFormat("en-US",{style:"currency",currency:owner.currency,minimumFractionDigits:2,maximumFractionDigits:2}).format(600));
+      const sourceLink=rich.getByRole("link",{name:"example-sales.csv",exact:true});
+      await expect(sourceLink).toHaveAttribute("href",fileRoute+"/"+attachment.id);
+      const fileResponse=await ctx.request.get(fileRoute+"/"+attachment.id,{maxRedirects:0});
+      expect(fileResponse.status()).toBe(302);
+      const downloadEvent=page.waitForEvent("download");
+      await rich.getByRole("button",{name:"Download saved answer report"}).click();
+      expect((await downloadEvent).suggestedFilename()).toBe("supervisor-report.txt");
+      const library=page.getByRole("dialog",{name:"Supervisor controls"});
+      await page.getByRole("button",{name:"Library, routines and permissions"}).click();
+      await library.getByRole("button",{name:"Library",exact:true}).click();
+      await library.locator('[data-library-report="'+reply+'"]').click();
+      await expect(library).toHaveCount(0);
+      await expect(answer).toBeFocused();
+      await expect(rich.getByRole("button",{name:"Download saved answer report"})).toBeVisible();
+      expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);
+      const input=page.locator("#supervisor-home-composer");
+      await input.fill("");
+      await rich.getByRole("button",{name:suggestion,exact:true}).click();
+      await expect(input).toHaveValue(suggestion);
+      // Suggestions are editable, never a submitted message/effect/approval.
+      await input.fill("My existing draft");
+      await rich.getByRole("button",{name:suggestion,exact:true}).click();
+      await expect(input).toHaveValue("My existing draft\n"+suggestion);
+      const count=await db.query("select count(*)::int as n from public.ai_messages where thread_id=$1",[thread]);
+      expect(count.rows[0].n).toBe(1);
+    }
+    const foreignPage=await other.newPage();await login(foreignPage,foreign);
+    const denied=await other.request.get("/api/ai/threads/"+thread+"/messages");
+    expect([401,403,404]).toContain(denied.status());
+    const foreignFile=await other.request.get(fileRoute+"/"+attachment.id,{maxRedirects:0});
+    expect([401,403,404]).toContain(foreignFile.status());
+  }finally{
+    await ctx.close();await other.close();
+    await db.query("delete from public.ai_threads where id=$1 and business_id=$2",[thread,owner.businessId]).catch(()=>{});
+    await db.end();
+  }
 });
