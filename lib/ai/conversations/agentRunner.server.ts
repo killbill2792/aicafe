@@ -284,7 +284,11 @@ export async function runOneTurn(p: TurnParams): Promise<{ replyId: string; repl
       ownerText:currentOwnerStatement,
       externalEvidencePresent:()=>sourceChecks.size>0,
       readPermissions:()=>new SupervisorEffectGateway().listMandates({businessId:scope.businessId,ownerUserId:scope.ownerUserId}),
-      canonicalData:async()=>({db:await getDb(),businessId:scope.businessId}),
+      canonicalData:async()=>({
+        db:await getDb(),businessId:scope.businessId,ownerUserId:scope.ownerUserId,
+        threadId:id,mode:p.durableFence?"durable" as const:"owner" as const,
+        ...(p.durableFence?{runId:p.durableFence.runId,leaseToken:p.durableFence.claimToken}:{})
+       }),
       maintenance:{
         staff:async caseId=>maintenanceContext(await getDb(),proposalScope,{ownerMessage:{id:owner.id,text:currentOwnerStatement}}).staff(caseId),
         proposeStaff:async input=>maintenanceContext(await getDb(),proposalScope,{ownerMessage:{id:owner.id,text:currentOwnerStatement}}).proposeStaff(input),
