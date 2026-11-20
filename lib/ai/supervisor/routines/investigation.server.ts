@@ -361,7 +361,12 @@ export async function processNextInvestigation(db:SupabaseClient,now:Date,
     const context={
       tools:createOwnerScopedCafeTools(scope,db),locale:"en" as const,
       asOf:identity.asOf,timezone:identity.timezone,currency:identity.currency,
-      canonicalData:async()=>({db,businessId:c.business_id,aggregateOnly:true}),
+      canonicalData:async()=>({
+        db,businessId:c.business_id,ownerUserId:c.owner_user_id,
+        threadId:c.thread_id,mode:"investigation" as const,
+        sourceType:c.source_type,sourceId:c.source_id,
+        leaseToken:c.lease_token,aggregateOnly:true
+       }),
       ...(customerIncident?{savedEvents:(from:string,to:string,options?:{cityEventId?:string})=>readSavedEventTimeline(db,scope,from,to,options)}:{}),
       ...(supplierResearch?{webSearch:async(_modelQuery:string,budget?:WebSearchBudget)=>{
         if(searched)return {available:false as const,reason:"budget" as const};
