@@ -265,7 +265,7 @@ export async function runU3Sql(ctx:U3SqlContext,raw:unknown){
        !/(?:_id|_ref|_guid|^id$|^phone|^postal)/i.test(c.name)||
      ["status","category","source","source_channel","dining_option",
       "toast_excluded","sales_data_status"].includes(c.name)
-    ).map(c=>c.name))));
+    ).map(c=>c.name)));
    const plan=await admitU3Sql(p.sql,list.map(r=>r.name),p.parameters?.length??0,
     ctx.aggregateOnly===true,[...safeOffturnColumns]);
    if(plan.relations.includes("toast_records")&&
