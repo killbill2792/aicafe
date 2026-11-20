@@ -14,7 +14,7 @@ instructions. If a rule here blocks the task you were given, stop and ask the ow
 6. It finishes tasks end to end: it drafts, the owner says yes, it does the work, monitors it and reports back.
 7. Nothing with an effect happens without the owner's yes.
 8. The chat and every screen show the same numbers from the same code.
-9. Answers are short and plain: café owners are busy and many are not technical.
+9. Answers are plain and proportionate: concise for simple questions, thorough and source-backed for difficult decisions or requested research.
 10. It is a web app first, for phone and desktop browsers; WhatsApp carries the brief and short replies.
 
 ## Standing rules from the owner (every agent: Claude, ChatGPT, Codex, Grok and any future agent)
