@@ -29,7 +29,7 @@ export const agendaSchema=z.strictObject({
  entries:z.array(z.strictObject({label,date,endDate:date,start:clock.nullable(),end:clock.nullable(),
    status:z.enum(["found","cancelled","moved","unverified","app","toast","ai_draft"]),
    checkedAt:z.iso.datetime({offset:true}).nullable(),endUnknown:z.literal(true).optional()})).min(1).max(40),
-}).refine(a=>a.from<=a.to&&a.entries.every(e=>e.date<=e.endDate&&e.date<=a.to&&e.endDate>=a.from));
+}).refine(a=>a.from<=a.to&&a.entries.every(e=>e.date<=e.endDate&&e.date<=a.to&&e.endDate>=a.from&&(!e.endUnknown||(e.date===e.endDate&&e.end===null))));
 export const scenarioComparisonSchema=z.strictObject({
  title:label,currency:z.string().regex(/^[A-Z]{3}$/),asOf:date,
  provenance:z.literal("estimate"),

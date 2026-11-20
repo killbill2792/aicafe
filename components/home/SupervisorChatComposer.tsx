@@ -330,16 +330,21 @@ export default function SupervisorChatComposer({
   const shell = useRef<HTMLElement | null>(null);
   const transcript = useRef<HTMLDivElement | null>(null);
   const replyAnnouncement=useRef<HTMLDivElement|null>(null);
-  const lastAnnouncedReply=useRef<{threadId:string;id:string|null}|null>(null);
+  const lastAnnouncedReply=useRef<{threadId:string;tailId:string|null;tailDate:string|null}|null>(null);
   // Never announce a history page or each streamed token. Only a new stored
   // reply in the currently loaded conversation updates this live region.
   useEffect(()=>{
     const region=replyAnnouncement.current;
     if(!threadId||loadedThreadId!==threadId){lastAnnouncedReply.current=null;if(region)region.textContent="";return;}
-    const latest=[...messages].reverse().find(m=>m.role==="supervisor")?.id??null;
+    const tail=messages.at(-1);
     const previous=lastAnnouncedReply.current;
-    lastAnnouncedReply.current={threadId,id:latest};
-    if(!region||!previous||previous.threadId!==threadId||!latest||latest===previous.id)return;
+    lastAnnouncedReply.current={threadId,tailId:tail?.id??null,tailDate:tail?.createdAt??null};
+    if(!region||!previous||previous.threadId!==threadId||!tail||tail.id===previous.tailId)return;
+    // The authorized older-page loader prepends rows. A prior tail may also
+    // have rolled outside the latest window, so compare dates if it is absent.
+    const index=messages.findIndex(m=>m.id===previous.tailId);
+    const appended=index>=0?messages.slice(index+1):messages.filter(m=>!previous.tailDate||m.createdAt>previous.tailDate);
+    if(!appended.some(m=>m.role==="supervisor"))return;
     region.textContent="";
     const frame=requestAnimationFrame(()=>{region.textContent=en.SupervisorExperience.latestReplyReady;});
     return()=>cancelAnimationFrame(frame);
@@ -593,7 +598,8 @@ export default function SupervisorChatComposer({
   function readLatestMessage(){
     scrollToLatest();
     const rows=transcript.current?.querySelectorAll<HTMLElement>("[data-work-message]");
-    rows?.[rows.length-1]?.focus({preventScroll:true});
+    const latest=rows?.[rows.length-1];
+    latest?.focus({preventScroll:true});latest?.scrollIntoView({block:"start",inline:"nearest"});
   }
   function onTranscriptScroll() {
     const node = transcript.current;
@@ -1229,7 +1235,7 @@ export default function SupervisorChatComposer({
         onSuggestion={()=>{}} suggestionsDisabled
         comingUp={comingUpCard}/>
     </div>}
-    <div ref={transcript} className="min-h-0 flex-1 overflow-y-auto overscroll-contain [overflow-anchor:none] px-4 py-3 sm:px-6 md:py-5"
+    <div ref={transcript} className="min-h-0 flex-1 overflow-y-auto overscroll-contain [overflow-anchor:none] px-4 py-3 sm:px-6 md:py-5 focus-visible:outline focus-visible:outline-2 focus-visible:outline-inset focus-visible:outline-ink"
       onScroll={onTranscriptScroll} role="log" aria-live="off" aria-label={copy.threads} tabIndex={0}>
       <div ref={messageContent} className="mx-auto flex min-h-full w-full max-w-[46rem] min-w-0 flex-col items-stretch justify-start gap-5">
       {workNotice&&<p role="status" className="text-sm text-ink-muted">{workNotice}</p>}

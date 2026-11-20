@@ -1944,6 +1944,17 @@ test("@home Task16E adaptive answer survives reload, preserves prose and opens a
       await opener.focus();await page.keyboard.press("Enter");
       const close=library.getByRole("button",{name:"Close Supervisor controls"});
       await expect(close).toBeFocused();
+      // Chromium's computed accessibility tree (not just the DOM attributes)
+      // must expose the modal and hide the background chat subtree.
+      const axSession=await ctx.newCDPSession(page);
+      try{
+        await axSession.send("Accessibility.enable");
+        const tree=await axSession.send("Accessibility.getFullAXTree");
+        const exposed=tree.nodes.filter(n=>!n.ignored);
+        expect(exposed.some(n=>n.role?.value==="dialog"&&n.name?.value==="Supervisor controls")).toBe(true);
+        expect(exposed.some(n=>n.role?.value==="button"&&n.name?.value==="Close Supervisor controls")).toBe(true);
+        expect(exposed.some(n=>n.role?.value==="log"&&n.name?.value==="Conversations")).toBe(false);
+      }finally{await axSession.detach();}
       await page.keyboard.press("Shift+Tab");
       expect(await library.evaluate(el=>el.contains(document.activeElement))).toBe(true);
       await page.keyboard.press("Tab");await expect(close).toBeFocused();
@@ -1974,6 +1985,21 @@ test("@home Task16E adaptive answer survives reload, preserves prose and opens a
       const count=await db.query("select count(*)::int as n from public.ai_messages where thread_id=$1",[thread]);
       expect(count.rows[0].n).toBe(1);
     }
+    // Real authorized polling observes externally saved messages. History and
+    // initial hydration do not announce, only the newly saved reply does.
+    const announcement=page.getByTestId("supervisor-reply-announcement");
+    await expect(announcement).toBeEmpty();
+    const latest=randomUUID();
+    await db.query("insert into public.ai_messages(id,business_id,thread_id,owner_user_id,role,content_type,structured_content,grounding) values($1,$2,$3,$4,'supervisor','blocks',$5::jsonb,$6::jsonb)",
+      [latest,owner.businessId,thread,owner.owner.userId,JSON.stringify([{type:"text",text:"A newly saved answer is ready."}]),JSON.stringify({status:"verified",intent:"unknown",evidence:[]})]);
+    await page.evaluate(()=>window.dispatchEvent(new Event("focus")));
+    const latestRow=page.locator('[data-work-message="'+latest+'"]');
+    await expect(latestRow).toContainText("A newly saved answer is ready.",{timeout:30000});
+    await expect(announcement).toHaveText("New Supervisor reply. Read the latest message to review it.");
+    const readLatest=page.getByRole("button",{name:/^(Read latest message|New message)$/});
+    await readLatest.focus();await page.keyboard.press("Enter");await expect(latestRow).toBeFocused();
+    await page.reload();await expect(latestRow).toBeVisible();
+    await expect(announcement).toBeEmpty();
     const foreignPage=await other.newPage();await login(foreignPage,foreign);
     const denied=await other.request.get("/api/ai/threads/"+thread+"/messages");
     expect([401,403,404]).toContain(denied.status());

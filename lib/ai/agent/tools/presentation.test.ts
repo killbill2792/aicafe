@@ -599,3 +599,17 @@ it("binds exact Task8B café-event selection and never fabricates an unknown end
  expect(presentResponse(q,ctx({...r,selectedCafeEvent:null,missing:["selectedCafeEventNotFound"]})).accepted).toBe(false);
  expect(presentResponse(q,ctx({...r,selectedCityEventId:"city",selectedCityEvent:selected,missing:["selectedEventIdentityMismatch"]})).accepted).toBe(false);
 });
+
+it("projects an exact café-event read through the registered Task8B tool, preserving unknown duration",async()=>{
+ const cafeEventId="11111111-1111-4111-8111-111111111111";
+ const event={id:cafeEventId,name:"Exact selected event",kind:"festival",startDate:"2026-11-03",endDate:"2026-11-03",startTime:null,endTime:null,venue:null,venueAddress:null,areaLabel:null,sourceUrl:null,status:"found" as const,foundAt:"2026-11-01T00:00:00Z",lastCheckedAt:"2026-11-01T00:00:00Z",lastVerifiedAt:"2026-11-01T00:00:00Z",datePrecision:"unknown_end" as const};
+ let reads=0;
+ const c={...ctx(),savedEvents:async(from:string,to:string,options?:{cafeEventId?:string;cityEventId?:string})=>{
+  reads++;expect([from,to,options?.cafeEventId]).toEqual(["2026-11-01","2026-11-10",cafeEventId]);
+  return {events:[{...event,id:"22222222-2222-4222-8222-222222222222",name:"Unrelated"}],selectedCafeEvent:event,plans:[]};
+ }} as unknown as AgentToolContext;
+ const result=await executeAgentTool("get_events",{from:"2026-11-01",to:"2026-11-10",cafeEventId},c);
+ const p=presentResponse({layout:"stack",panels:[],agenda:"calendar_events",suggestions:[]},{...c,turnResults:()=>[{name:"get_events",result}]});
+ expect(p).toMatchObject({accepted:true,presentation:{agenda:{coverage:"partial",entries:[{label:"Exact selected event",endUnknown:true,date:"2026-11-03",endDate:"2026-11-03"}]}}});
+ expect(reads).toBe(1);
+});
