@@ -15,7 +15,7 @@ import {TeamRulesService} from "@/lib/ai/policies/service";
 import {SupabaseTeamRulesRepository} from "@/lib/ai/policies/repository.server";
 import {getWeekSchedule} from "@/lib/actions/schedule";
 import {proposalRequestKey} from "@/lib/ai/supervisor/loop/requestKeys";
-import { historyContent } from "@/lib/ai/agent/history";
+import { historyContent,boundedConversationHistory } from "@/lib/ai/agent/history";
 import {allocateReceiptIndexes,purchaseBatchKeys,receiptEvidenceGroupId,ambiguousEarlierReceiptIngredient} from "@/lib/ai/supervisor/loop/receiptAllocation";
 import {proposeLoop,commitLoop,simulateLoop,effectHash} from "@/lib/ai/supervisor/loop/engine";
 import {authorizesInventoryWrite,ownerTextSupportsTypedLine,ownerTextSupportsTypedFinancials,receivedPurchaseDocument} from "@/lib/ai/agent/tools/purchaseIntent";
@@ -226,11 +226,11 @@ export async function runOneTurn(p: TurnParams): Promise<{ replyId: string; repl
     // Previous assistant prose is conversation context, never source evidence.
     // Retain only typed evidence from successful tool reads. Messages queued for a
     // running job (sent after this one) are excluded: they arrive as follow-ups.
-    const history = page.items.filter(m => m.id !== owner.id &&
+    const history = boundedConversationHistory(page.items.filter(m => m.id !== owner.id &&
       (m.role === "owner" || m.role === "supervisor") && (reusable(m)||m.id===customerOrigin?.reportMessageId) &&
-      !(job && (p.durableFence||m.role === "owner") && Number.isFinite(ownerAt) && Date.parse(m.createdAt) > ownerAt)).slice(-8)
+      !(job && (p.durableFence||m.role === "owner") && Number.isFinite(ownerAt) && Date.parse(m.createdAt) > ownerAt))
       .map(m => ({ role: m.role === "owner" ? "user" as const : "assistant" as const,
-        content: m.id===customerOrigin?.reportMessageId?"Historical proactive customer report (not current evidence or approval; verify all facts afresh): "+historyContent(m):historyContent(m) })).filter(m => m.content);
+        content: m.id===customerOrigin?.reportMessageId?"Historical proactive customer report (not current evidence or approval; verify all facts afresh): "+historyContent(m):historyContent(m) })).filter(m => m.content));
     const proposalScope={...scope,threadId:id,locale:p.locale,
       ...(external?{verifiedReadClient:p.externalClient}: {})};
     let selectedContentSha256:string|null=null;
@@ -857,7 +857,7 @@ export async function runOneTurn(p: TurnParams): Promise<{ replyId: string; repl
         result.endReason === "provider_error" || result.endReason === "tool_errors" ? "failed" : "ok",
       ...(result.endReason === "complete" ? {} : { error: result.endReason }) });
     emit("done", { reply, status: result.status, endReason: result.endReason,
-      unverified: result.unverified, usage: result.usage,
+      unverified: result.unverified, usage: {modelCalls:result.usage.modelCalls,toolCalls:result.usage.toolCalls,inputTokens:result.usage.inputTokens,cachedTokens:result.usage.cachedTokens,outputTokens:result.usage.outputTokens,latencyMs:result.usage.latencyMs,model:result.usage.model},
       ...(result.providerFailureCodes?{diagnosticProviderFailures:result.providerFailureCodes}:{}),
       ...(job ? { jobId: job.id, absorbedOwnerMessageIds: result.absorbedOwnerMessageIds ?? [] } : {}) });
     return { replyId: reply.id, replyText:result.text, absorbedOwnerMessageIds: result.absorbedOwnerMessageIds ?? [], ...(p.durableFence&&reply.grounding?.status==="requires_owner_input"?{awaitingOwner:true}:p.durableFence&&reply.grounding?.status!=="verified"?{incompleteReport:true}:{}) };
