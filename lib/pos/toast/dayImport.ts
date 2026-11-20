@@ -147,7 +147,9 @@ export async function importToastBusinessDay(db:SupabaseClient,p:Params){
    ...derivedRefresh};
   // SQL queued a generation-bound cost refresh in the same transaction.
   // The global 240s budget also bounds this derivative; never start it late.
-  if(Date.now()>=deadlineAt)return {...imported,costsPending:true};
+  // The migrated import also persisted a relink generation. Leave costs
+  // pending until linking is recovered; the retry renews the cost generation.
+  if(linkFailed||Date.now()>=deadlineAt)return {...imported,costsPending:true};
   let generation:string|null=null;
   try{
    const {data:job,error:queueError}=await db.from("toast_rollup_refresh_jobs")
