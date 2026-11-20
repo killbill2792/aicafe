@@ -147,13 +147,29 @@ export function verifyReviewedSourceChanges(changedPaths,reviewedPaths){
  const unexpected=changedPaths.filter(p=>!allowed.has(p));
  if(unexpected.length)throw Error("unreviewed_supervisor_source_change:"+unexpected.join(","));
 }
-export function planPaidBatches(specs){
+/** Report-only plan: never authorizes a grant or proves a scenario. */
+export function planPaidBatches(specs,phases=null){
+ const valid=id=>/^[a-z0-9][a-z0-9-]{0,31}$/.test(id??"")&&id!=="all"&&!id.startsWith("group-");
  const ordered=[...specs].sort((a,b)=>a.id.localeCompare(b.id));
- if(!ordered.length||new Set(ordered.map(s=>s.id)).size!==ordered.length||ordered.some(s=>typeof s.entrypoint!=="string"||!s.entrypoint))throw Error("invalid_paid_inventory");
- const batches=[];
- for(let i=0;i<ordered.length;i+=20){
-  const cases=ordered.slice(i,i+20);
-  batches.push({ids:cases.map(s=>s.id),maxReservedCents:cases.length*18,cases});
+ if(!ordered.length||ordered.length>256||new Set(ordered.map(s=>s.id)).size!==ordered.length||
+  ordered.some(s=>!valid(s.id)||typeof s.entrypoint!=="string"||!s.entrypoint))throw Error("invalid_paid_inventory");
+ const assigned=phases??[{id:"registered_only",ids:ordered.map(s=>s.id)}];
+ if(!Array.isArray(assigned)||!assigned.length||new Set(assigned.map(p=>p.id)).size!==assigned.length||
+  assigned.some(p=>!p.id||!Array.isArray(p.ids)||!p.ids.length))throw Error("invalid_paid_phase_partition");
+ const all=assigned.flatMap(p=>p.ids);
+ if(new Set(all).size!==all.length||!all.every(valid)||ordered.some(s=>!all.includes(s.id)))throw Error("invalid_paid_phase_partition");
+ const seen=new Map(ordered.map(s=>[s.id,s]));
+ const batches=[],missing=all.filter(id=>!seen.has(id)).sort();
+ for(const phase of assigned){
+  const cases=phase.ids.filter(id=>seen.has(id)).map(id=>seen.get(id)).sort((a,b)=>a.id.localeCompare(b.id));
+  for(let i=0;i<cases.length;i+=20){
+   const selected=cases.slice(i,i+20);
+   const ids=selected.map(s=>s.id),selection=ids.join(",");
+   if(selection.length>700)throw Error("invalid_paid_selection_length");
+   batches.push({order:batches.length+1,phase:phase.id,ids,selection,maxReservedCents:selected.length*18,
+    maxProviderCalls:selected.length*18,cases:selected});
+  }
  }
- return {batches,reservedCents:ordered.length*18,ready:false,authorizationRequired:true,providerModelProof:false};
+ return {batches,reservedCents:ordered.length*18,maxProviderCalls:ordered.length*18,missing,
+  ready:false,authorizationRequired:true,providerModelProof:false};
 }

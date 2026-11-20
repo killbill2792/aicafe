@@ -152,7 +152,7 @@ describe("Task17B first-party changing capability inventory (no provider)",()=>{
    for(const c of register.cases)for(const width of register.viewports)rows.push(row("owner-journey",c.id+":"+width,{...c,width}));
   }
   const inventory=makeInventory(rows);
-  const combinedScenarioPlan={...scenarioCoveragePlan(manifests.ids,coverageMap.requiredScenarioGroups,coverageMap.crossFunctionalFamilies),legacyPaidSuites:coverageMap.legacyPaidSuites,legacyNonProviderSuites:coverageMap.legacyNonProviderSuites,paidPlan:planPaidBatches(manifests.specs),newFeatureHandoffs:coverageMap.newFeatureHandoffs};
+  const combinedScenarioPlan={...scenarioCoveragePlan(manifests.ids,coverageMap.requiredScenarioGroups,coverageMap.crossFunctionalFamilies),legacyPaidSuites:coverageMap.legacyPaidSuites,legacyNonProviderSuites:coverageMap.legacyNonProviderSuites,paidPlan:planPaidBatches(manifests.specs,coverageMap.paidExecutionPhases),newFeatureHandoffs:coverageMap.newFeatureHandoffs};
   const report=buildCensusReport(inventory,manifests,{head:git("rev-parse","HEAD"),runId:process.env.GITHUB_RUN_ID??null,deterministicMetrics,registrationGaps,testReferences:findTestReferences(new Set(Object.keys(fullSchemas)))});
   if(process.env.AICAFE_CENSUS_OUTPUT)writeCensus(process.env.AICAFE_CENSUS_OUTPUT,{...report,combinedScenarioPlan});
   expect(report.totals.UNTESTED+report.totals.FAIL).toBe(inventory.length);

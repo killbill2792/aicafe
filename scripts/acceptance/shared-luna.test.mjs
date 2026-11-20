@@ -765,3 +765,17 @@ test("natural-brief currency oracle accepts normal prose but rejects inexact num
  assert.equal(hasMoney("Sales $1,234.57","USD",123456),false);
  assert.equal(hasMoney("2026-01-01 1234.56","USD",123456),false);
 });
+
+test("natural money evidence cannot certify wrong sign, currency or truncated digits",async()=>{
+ const {hasMoney}=await import("./luna-attest-17b.mjs");
+ for(const v of ["-$12.34","−$12.34","USD -12.34","($12.34)","- 12.34 USD"]){
+  assert.equal(hasMoney(v,"USD",1234),false,v);
+  assert.equal(hasMoney(v,"USD",-1234),true,v);
+ }
+ for(const v of ["CAD$12.34","CAD $12.34","$12.34 CAD","USD 12.345","$112.34","$12.340","USD 1,2.34","$12.34x"]){
+  assert.equal(hasMoney(v,"USD",1234),false,v);
+ }
+ for(const v of ["USD 12.34","$12.34","12.34 USD","**$12.34**","Net sales: $12.34."]){
+  assert.equal(hasMoney(v,"USD",1234),true,v);
+ }
+});
