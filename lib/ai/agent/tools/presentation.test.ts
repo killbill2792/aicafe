@@ -237,3 +237,15 @@ describe("real typed producer presentation",()=>{
  expect(presentResponse({...request,panels:[{source:"canonical_data",field:"count_source_ref",kind:"bar"}]},context)).toMatchObject({accepted:true,presentation:{panels:[{title:"Saved record count",unit:"count",points:[{value:2}]}]}});
  }
  });
+
+it("reuses safe reader table columns for generic numeric components without guessing missing values or units",()=>{
+ const r:AgentToolResult={source:"menu_items",period:sales.period,missing:[],items:[{name:"Latte",priceStatus:"fixed",priceCents:450},{name:"Tea",priceStatus:"fixed",priceCents:300}]};
+ const req={layout:"stack",panels:[{source:"menu_items",field:"table:catalog_price",kind:"bar"}],suggestions:[]};
+ expect(presentResponse(req,ctx(r))).toMatchObject({accepted:true,presentation:{panels:[{unit:"cents",points:[{label:"Latte",value:450},{label:"Tea",value:300}]}]}});
+ expect(presentResponse(req,ctx({...r,items:[{name:"Latte",priceStatus:"open",priceCents:450}]})).accepted).toBe(false);
+ const stock:AgentToolResult={source:"inventory",period:sales.period,missing:[],scope:"observed_inventory_only",inventory:[{ingredient_name:"Milk",quantity:0,quantity_unit:"ml",evidence_state:"dated_owner_count",quantity_state:"known"},{ingredient_name:"Cream",quantity:5,quantity_unit:"ml",evidence_state:"observed_current",quantity_state:"known"}]};
+ const q={layout:"stack",panels:[{source:"inventory",field:"table:quantity",kind:"bar"}],suggestions:[]};
+ expect(presentResponse(q,ctx(stock))).toMatchObject({accepted:true,presentation:{panels:[{title:"Quantity (ml)",coverage:"partial",points:[{value:0},{value:5}]}]}});
+ expect(presentResponse(q,ctx({...stock,inventory:[(stock.inventory as object[])[0],{...(stock.inventory as object[])[1],quantity_unit:"g"}]})).accepted).toBe(false);
+ expect(presentResponse(q,ctx({...stock,inventory:[{...(stock.inventory as object[])[0],evidence_state:"not_observed"}]})).accepted).toBe(false);
+});

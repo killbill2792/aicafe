@@ -66,10 +66,10 @@ function canonicalPanel(s:z.infer<typeof selection>,r:AgentToolResult,encoded:st
  if(view==="cv_toast_records"&&(!["count","count_distinct"].includes(m.fn)||!["source_ref","record_ref","order_ref","check_ref"].includes(m.column)||!Array.isArray(args.filters)||!args.filters.some(f=>obj(f)&&f.column==="record_type"&&["=","in"].includes(String(f.op)))||!args.filters.some(f=>obj(f)&&f.column==="counts_in_sales"&&f.op==="="&&f.value===true)))return null;
  if(!units.includes(unit as typeof units[number])||!["sum","count","count_distinct","min","max","avg"].includes(m.fn))return null;
  const groups=args.group_by??[];
- if(!Array.isArray(groups)||groups.length>1)return null;
- const group:unknown=groups[0];
- if(group!==undefined&&(typeof group!=="string"||!Object.hasOwn(columns,group)||!["label","local date","hour 0 to 23","weekday"].includes(columns[group].unit)||
-      /(?:business_id|source_ref|status|source|employee|customer|email|phone)/i.test(group)))return null;
+ if(!Array.isArray(groups)||groups.length>3||groups.some(g=>typeof g!=="string"||!Object.hasOwn(columns,g)||!["label","local date","hour 0 to 23","weekday"].includes(columns[g].unit)||/(?:business_id|source_ref|status|source|employee|customer|email|phone|password|secret|credential|token|_ref$|(?:^|[._])id$)/i.test(g)))return null;
+ const dimensions=groups as string[];
+ const group=dimensions[0];
+ if(dimensions.length>1&&s.kind==="line")return null;
  if(group===undefined&&(!obj(r.aggregate)||r.aggregate.metric!==s.field||!["stored","so_far"].includes(String(r.aggregate.status))||r.rows.length!==1))return null;
  if(s.kind==="line"&&(typeof group!=="string"||columns[group].unit!=="local date"))return null;
  // Never imply disjoint parts of a whole for arbitrary grouped aggregates.
@@ -80,12 +80,15 @@ function canonicalPanel(s:z.infer<typeof selection>,r:AgentToolResult,encoded:st
  for(const row of r.rows){
    if(!obj(row)||!Object.hasOwn(row,s.field))return null;
    const value=row[s.field];
-   const category=typeof group==="string"?row[group]:title;
-   const label=typeof category==="number"&&typeof group==="string"&&["hour 0 to 23","weekday"].includes(columns[group].unit)?String(category):category;
-   if(typeof label!=="string"||!label.trim()||label.length>140||
-      typeof value!=="number"||!Number.isFinite(value))return null;
-   if(typeof group==="string"&&columns[group].unit==="local date"&&
-      (!z.iso.date().safeParse(label).success||label<r.period.from||label>r.period.to))return null;
+   const category:string[]=[];
+   for(const dim of dimensions){
+    const raw=row[dim],label=typeof raw==="number"&&["hour 0 to 23","weekday"].includes(columns[dim].unit)?String(raw):raw;
+    if(typeof label!=="string"||!label.trim()||label.length>140)return null;
+    if(columns[dim].unit==="local date"&&(!z.iso.date().safeParse(label).success||label<r.period.from||label>r.period.to))return null;
+    category.push(label);
+   }
+   const label=category.length?category.join(" · "):title;
+   if(label.length>140||typeof value!=="number"||!Number.isFinite(value))return null;
    points.push({label,value});
  }
  if(new Set(points.map(x=>x.label)).size!==points.length)return null;
@@ -95,7 +98,7 @@ function canonicalPanel(s:z.infer<typeof selection>,r:AgentToolResult,encoded:st
  }
  return {kind:s.kind,title,unit:unit as PresentationPanel["unit"],currency:unit==="cents"||unit==="cents/hour"?ctx.currency??null:null,
    from:r.period.from,to:r.period.to,asOf:ctx.asOf,source:"canonical_data",
-   sourceDetail:[view,s.field,filtered?queryScope(args,columns):"",columns[m.column].meaning,canonicalDictionary[view].meaning,recordOnly?"Counts saved records only; not a current balance or certified business total.":"",r.scopeWarning??"",...(partial?r.missing:[])].filter(Boolean).join(" · ").slice(0,500),
+   sourceDetail:[recordOnly?"Counts saved records only; not a current balance or certified business total.":"",r.scopeWarning??"",...(partial?r.missing:[]),view,s.field,filtered?queryScope(args,columns):"",columns[m.column].meaning].filter(Boolean).join(" · ").slice(0,500),
    ...(partial?{coverage:"partial" as const}:["processing_fee_cents","historical_recipe_cost_cents","historical_recipe_contribution_cents"].includes(m.column)?{coverage:"estimate" as const}:{}),points};
 }
 // A query's returned columns and aggregate aliases, not a new model-defined
@@ -367,7 +370,40 @@ function costPanel(s:z.infer<typeof selection>,r:AgentToolResult,ctx:Pick<AgentT
  }else return null;
  return {kind:s.kind,title,unit:"cents",currency:ctx.currency,from,to,asOf:ctx.asOf,source:s.source,points};
 }
+/** Any existing safe reader table can provide a numeric visual without a
+ * new per-question renderer. Use its published column labels, units and scope;
+ * refuse missing cells, mixed quantity units or ambiguous category labels. */
+function tablePanel(s:z.infer<typeof selection>,table:RecordTable):PresentationPanel|null{
+ const slug=(label:string)=>label.toLowerCase().replace(/[^a-z0-9]+/g,"_").replace(/^_|_$/g,"");
+ const field=s.field.slice("table:".length);
+ const matches=table.columns.flatMap((c,i)=>slug(c.label)===field?[i]:[]);
+ if(matches.length!==1)return null;
+ const index=matches[0],col=table.columns[index];
+ const labelIndex=table.columns.findIndex(c=>c.unit==="label");
+ if(!["metric","table","ranked_table","bar"].includes(s.kind)||labelIndex<0&&table.rows.length!==1)return null;
+ let unit:string=col.unit,quantityUnit="";
+ if(unit==="quantity"){
+  const u=table.columns.findIndex(c=>slug(c.label)==="unit"&&c.unit==="label");
+  if(u<0)return null;
+  const units=new Set(table.rows.map(row=>row[u]));
+  if(units.size!==1||typeof table.rows[0][u]!=="string"||!table.rows[0][u])return null;
+  quantityUnit=String(table.rows[0][u]);unit="units";
+ }
+ if(!["cents","count","items","units","seconds","minutes","hours","days","ratio","ratio squared","indicator","cents/hour"].includes(unit))return null;
+ const points:PresentationPanel["points"]=[];
+ for(const row of table.rows){
+  const value=row[index],label=labelIndex<0?col.label:row[labelIndex];
+  if(typeof value!=="number"||!Number.isFinite(value)||typeof label!=="string"||!label.trim()||label.length>140)return null;
+  points.push({label,value});
+ }
+ if(new Set(points.map(p=>p.label)).size!==points.length)return null;
+ return {kind:s.kind,title:col.label+(quantityUnit?" ("+quantityUnit+")":""),unit:unit as PresentationPanel["unit"],currency:["cents","cents/hour"].includes(unit)?table.currency:null,
+  from:table.from,to:table.to,asOf:table.asOf,source:s.source,sourceDetail:table.scope.slice(0,500),...(table.coverage==="partial"?{coverage:"partial" as const}:{}),points};
+}
 function project(s:z.infer<typeof selection>,r:AgentToolResult,ctx:Pick<AgentToolContext,"currency"|"asOf">):PresentationPanel|null {
+ if(s.field.startsWith("table:")){
+  const table=readerTable(r,ctx);return table?tablePanel(s,table):null;
+ }
  if(s.source==="supplier_purchase_plan")return supplierPanel(s,r,ctx);
  if(s.source==="expenses"||s.source==="business_costs"||s.source==="product_costs")return costPanel(s,r,ctx);
  const d=Object.hasOwn(descriptions,s.field)?descriptions[s.field as keyof typeof descriptions]:null;
@@ -473,5 +509,5 @@ export function presentResponse(raw:unknown,ctx:Pick<AgentToolContext,"currency"
  return {...empty,accepted:true,presentation:arranged.success?arranged.data:block.data};
 }
 export const presentationTools={
- present_response:{schema:presentationInputSchema,description:"Optional UI from current reads, never invented data. Source+field: daily_rollups daily_sales; item_sales item_units; profitability net_sales/total_costs/owner_profit; canonical_data exact aggregate alias or field rows for a multi-column table; expenses recorded_expenses; business_costs cost_components; product_costs recipe_cost; supplier_purchase_plan subtotal/rows; purchase_orders, inventory, menu_items rows. Use ref from the prior result to disambiguate; groups arrange p0–p7, agenda/scenario/calculator; name groups g0–g11 and reference them inside other groups for nested stack/grid/compare (same units). Agenda from get_events/get_week_schedule; scenario monthly_profit/monthly_break_even/monthly_target_sales/item_margin from verified simulate_scenario; calculator=true after calculate for editable owner assumptions (not screen numbers); report=true for text export; files=true for sources attached in this turn only. Suggestions edit a draft, never act. Answer fully in words; visuals only if useful."},
+ present_response:{schema:presentationInputSchema,description:"Optional UI from current reads, never invented data. Source+field: daily_rollups daily_sales; item_sales item_units; profitability net_sales/total_costs/owner_profit; canonical_data exact aggregate alias or field rows for a multi-column table; expenses recorded_expenses; business_costs cost_components; product_costs recipe_cost; supplier_purchase_plan subtotal/rows; purchase_orders, inventory, menu_items rows. Use ref from the prior result to disambiguate; groups: p0–p7, agenda/scenario/calculator; id g0–g11 allows nested stack/grid/compare (same units). For safe reader table numerics use table:<column_label_snake_case>. Agenda from get_events/get_week_schedule; scenario monthly_profit/monthly_break_even/monthly_target_sales/item_margin from verified simulate_scenario; calculator=true after calculate for editable owner assumptions (not screen numbers); report=true for text export; files=true for sources attached in this turn only. Suggestions edit a draft, never act. Answer fully in words; visuals only if useful."},
 };

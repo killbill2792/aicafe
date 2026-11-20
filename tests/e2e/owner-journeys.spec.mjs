@@ -1807,7 +1807,7 @@ test("@home Task16E adaptive answer survives reload, preserves prose and opens a
         points:[{label:"2026-01-01",value:1200},{label:"2026-01-02",value:2400}]},
       {kind:"metric",title:"Recorded sales",unit:"cents",currency:owner.currency,source:"profitability",from:"2026-01-01",to:"2026-01-02",asOf:"2026-01-03",points:[{label:"Sales",value:3600}]},
       {kind:"metric",title:"Recorded costs",unit:"cents",currency:owner.currency,source:"business_costs",from:"2026-01-01",to:"2026-01-02",asOf:"2026-01-03",points:[{label:"Costs",value:1000}]}
-    ],groups:[{layout:"compare",items:["panel1","panel2"]},{layout:"stack",items:["panel0","agenda","scenario","table0","calculator"]}],report:true,files:[attachment.id],tables:[{title:"Saved query results",view:"cv_orders",from:"2026-01-01",to:"2026-01-02",asOf:"2026-01-03",currency:owner.currency,
+    ],groups:[{id:"g0",layout:"stack",items:["g1","g2"]},{id:"g1",layout:"compare",items:["panel1","panel2"]},{id:"g2",layout:"stack",items:["panel0","g3"]},{id:"g3",layout:"grid",items:["agenda","scenario","table0","calculator"]}],report:true,files:[attachment.id],tables:[{title:"Saved query results",view:"cv_orders",from:"2026-01-01",to:"2026-01-02",asOf:"2026-01-03",currency:owner.currency,
       coverage:"partial",scope:"Requested query",columns:[{label:"Order channel",unit:"label"},{label:"Orders",unit:"count"},{label:"Sales",unit:"cents"}],rows:[["Takeaway",0,0],["Dine in",7,null]]}],
       calculator:{title:"Order cost estimate",asOf:"2026-01-03",currency:owner.currency,inputs:[
         {id:"cost",label:"Unit cost",value:{unit:"cents",valueCents:250},editable:false},
@@ -1826,6 +1826,7 @@ test("@home Task16E adaptive answer survives reload, preserves prose and opens a
       await expect(answer.getByRole("heading",{name:"Sales overview"})).toBeVisible();
       await expect(answer.getByText("Revenue increased from the first day to the next. The chart is optional.")).toBeVisible();
       const rich=answer.getByTestId("supervisor-rich-presentation");
+      await expect(rich.locator('[data-supervisor-layout="stack"] [data-supervisor-layout="stack"] [data-supervisor-layout="grid"]')).toHaveCount(1);
       await rich.locator("details summary").click();
       await expect(rich.getByRole("table",{name:"Daily net sales"})).toBeVisible();
       const expected=new Intl.NumberFormat("en-US",{style:"currency",currency:owner.currency}).format(24);
