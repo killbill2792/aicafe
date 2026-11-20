@@ -320,7 +320,7 @@ export async function runAgentTurn(args: {
   args.context.ownerText=args.serviceOrigin?"":ownerRunStatement(args.ownerText,matched);
   args.context.turnResults=()=>results.filter(r=>r.name!=="calculate"&&r.name!=="present_response").map(r=>({name:r.name,result:r.result}));
   const presentationAllowed=!args.serviceOrigin&&!args.toolNames;
-  args.context.presentationResults=()=>results.filter(r=>r.name==="query_data"||r.name==="calculate"||r.name==="simulate_scenario");
+  args.context.presentationResults=()=>results.map((r,i)=>({...r,ref:"r"+(i+1)})).filter(r=>r.name!=="present_response");
   const toolContext:AgentToolContext=underlyingWebSearch?{
     ...args.context,
     webSearch:async query=>{
@@ -653,7 +653,8 @@ export async function runAgentTurn(args: {
         // results for persistence, but do not duplicate it on the provider wire.
         const wireResult=tool.name==="present_response"&&result.source==="response_presentation"?
           {source:result.source,accepted:result.accepted===true,
-           instruction:"Visual selection only. Give the complete plain-language answer from the prior evidence."}:result;
+           instruction:"Visual selection only. Give the complete plain-language answer from the prior evidence."}:
+          presentationAllowed&&["canonical_data","daily_rollups","item_sales","profitability","expenses","business_costs","product_costs"].includes(result.source)?{...result,presentationRef:"r"+results.length}:result;
         input.push({ type: "function_call_output", call_id: tool.call_id, output: JSON.stringify(wireResult) });
         // The old pricing-only choice card sent amounts as chat text and lost
         // them in later threads. Use the universal structured fact card instead.

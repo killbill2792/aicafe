@@ -88,10 +88,14 @@ export function evaluatePresentationCalc(c:InteractiveCalc,changes:Readonly<Reco
  const outcome=runCalculation(entries,c.steps);
  return outcome.ok?outcome.result.shown:null;
 }
+/** A bounded semantic grouping grammar, independent of the renderer. Leaf
+ * references identify only already validated snapshot components. */
+export const presentationGroupSchema=z.strictObject({layout:z.enum(["stack","grid","compare"]),items:z.array(z.string().regex(/^(?:panel[0-3]|table[01]|agenda|scenario|calculator)$/)).min(1).max(9)});
 export const richPresentationSchema=z.strictObject({
   type:z.literal("rich_presentation"),version:z.literal(1),
   layout:z.enum(["stack","grid"]),
   panels:z.array(presentationPanelSchema).max(4),
+  groups:z.array(presentationGroupSchema).min(1).max(9).optional(),
   report:z.literal(true).optional(),
   files:z.array(z.uuid()).min(1).max(3).refine(ids=>new Set(ids).size===ids.length).optional(),
   tables:z.array(recordTableSchema).max(2).optional(),
@@ -99,9 +103,27 @@ export const richPresentationSchema=z.strictObject({
   agenda:agendaSchema.optional(),
   scenario:scenarioComparisonSchema.optional(),
   suggestions:z.array(z.string().trim().min(1).max(160)).max(3),
-}).refine(p=>p.panels.length+p.suggestions.length+Number(Boolean(p.agenda))+Number(Boolean(p.scenario))+Number(Boolean(p.report))+Number(Boolean(p.calculator))+(p.tables?.length??0)+(p.files?.length??0)>0);
+}).refine(p=>p.panels.length+p.suggestions.length+Number(Boolean(p.agenda))+Number(Boolean(p.scenario))+Number(Boolean(p.report))+Number(Boolean(p.calculator))+(p.tables?.length??0)+(p.files?.length??0)>0).refine(p=>{
+ if(!p.groups)return true;
+ const keys=presentationLeaves(p),used=p.groups.flatMap(g=>g.items);
+ return used.length===keys.length&&new Set(used).size===used.length&&used.every(k=>keys.includes(k))&&p.groups.every(g=>g.layout!=="compare"||compatibleComparison(g.items,p.panels));
+});
 export type RichPresentation=z.infer<typeof richPresentationSchema>;
 export type PresentationPanel=z.infer<typeof presentationPanelSchema>;
+export function presentationLeaves(p:Pick<RichPresentation,"panels"|"tables"|"agenda"|"scenario"|"calculator">):string[]{
+ return [...p.panels.map((_,i)=>"panel"+i),...(p.agenda?["agenda"]:[]),...(p.scenario?["scenario"]:[]),...(p.tables??[]).map((_,i)=>"table"+i),...(p.calculator?["calculator"]:[])];
+}
+export function compatibleComparison(items:string[],panels:PresentationPanel[]):boolean{
+ if(items.length<2||items.some(k=>!/^panel[0-3]$/.test(k)))return false;
+ const series=items.map(k=>panels[Number(k.slice(5))]);
+ if(series.some(p=>!p||p.kind==="donut"))return false;
+ const first=series[0];
+ // Exact matching categories or a shared daily axis. Never align unrelated
+ // labels, or mix incompatible measurement units/currencies on one axis.
+ return series.every(p=>p.unit===first.unit&&p.currency===first.currency)&&
+  (series.every(p=>p.points.length===1)||series.every(p=>p.points.length===first.points.length&&p.points.every((v,i)=>v.label===first.points[i].label))||
+   series.every(p=>p.kind==="line"&&p.points.every(v=>date.safeParse(v.label).success)));
+}
 
 export type Agenda=z.infer<typeof agendaSchema>;
 export type ScenarioComparison=z.infer<typeof scenarioComparisonSchema>;

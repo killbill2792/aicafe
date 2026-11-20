@@ -35,3 +35,11 @@ describe("bounded local calculation using canonical arithmetic",()=>{
   expect(interactiveCalcSchema.safeParse({...calc,currency:null}).success).toBe(false);
  });
 });
+
+it("rejects duplicate, foreign and incompatible layout references",()=>{
+ const p={kind:"metric",title:"Sales",unit:"cents",currency:"SAR",from:"2026-01-01",to:"2026-01-01",asOf:"2026-01-02",source:"daily_rollups",points:[{label:"Sales",value:12}]};
+ const b={type:"rich_presentation",version:1,layout:"stack",panels:[p],suggestions:[]};
+ expect(richPresentationSchema.safeParse({...b,groups:[{layout:"grid",items:["panel0","panel0"]}]}).success).toBe(false);
+ expect(richPresentationSchema.safeParse({...b,groups:[{layout:"stack",items:["table0"]}]}).success).toBe(false);
+ expect(richPresentationSchema.safeParse({...b,panels:[p,{...p,unit:"count",currency:null}],groups:[{layout:"compare",items:["panel0","panel1"]}]}).success).toBe(false);
+});

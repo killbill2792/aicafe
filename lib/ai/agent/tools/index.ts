@@ -94,7 +94,7 @@ export type AgentToolContext = {
   externalEvidencePresent?:()=>boolean;
   turnResults?:()=>ReadonlyArray<{name:string;result:AgentToolResult}>;
   /** Internal same-turn read/simulation arguments for verified presentation; no extra reads or scope. */
-  presentationResults?:()=>ReadonlyArray<{name:string;arguments:string;result:AgentToolResult}>;
+  presentationResults?:()=>ReadonlyArray<{name:string;arguments:string;result:AgentToolResult;ref?:string}>;
   /** Selected same-thread attachments already authenticated, read and rechecked by the existing runner. */
   presentationAttachments?:readonly string[];
   resolveState?:import("../resolve").ResolveState;

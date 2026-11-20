@@ -1,18 +1,20 @@
 import {canonicalDictionary,canonicalViewNames,type CanonicalView} from "@/lib/data/canonical/dictionary";
 import { z } from "zod";
-import { richPresentationSchema,agendaSchema,scenarioComparisonSchema,recordTableSchema,interactiveCalcSchema,evaluatePresentationCalc,type RecordTable,type InteractiveCalc,type Agenda,type ScenarioComparison,type PresentationPanel } from "@/lib/ai/conversations/presentation";
+import { richPresentationSchema,agendaSchema,scenarioComparisonSchema,recordTableSchema,interactiveCalcSchema,evaluatePresentationCalc,presentationLeaves,compatibleComparison,type RichPresentation,type RecordTable,type InteractiveCalc,type Agenda,type ScenarioComparison,type PresentationPanel } from "@/lib/ai/conversations/presentation";
 import type { AgentToolContext,AgentToolResult } from "./index";
 
 // Select a source projection, never supply a numeric value, arbitrary path or business identity.
 const selection=z.strictObject({
   source:z.enum(["daily_rollups","item_sales","profitability","canonical_data","expenses","business_costs","product_costs"]),
   field:z.string().trim().min(1).max(120),
+  ref:z.string().regex(/^r[1-9][0-9]?$/).nullable().optional(),
   from:z.iso.date().nullable().optional(),to:z.iso.date().nullable().optional(),
   kind:z.enum(["metric","table","ranked_table","bar","line","donut"]),
 });
 export const presentationInputSchema=z.strictObject({
   layout:z.enum(["stack","grid"]),
   panels:z.array(selection).max(4),
+  groups:z.array(z.strictObject({layout:z.enum(["stack","grid","compare"]),items:z.array(z.string().regex(/^(?:p[0-3]|agenda|scenario|calculator)$/)).min(1).max(7)})).max(7).nullable().optional(),
   agenda:z.enum(["calendar_events","timeline_events","calendar_shifts","timeline_shifts"]).nullable().optional(),
   scenario:z.enum(["monthly_profit","monthly_break_even","monthly_target_sales","item_margin"]).nullable().optional(),
   report:z.boolean().nullable().optional(),
@@ -336,25 +338,30 @@ export function presentResponse(raw:unknown,ctx:Pick<AgentToolContext,"currency"
  const results=ctx.turnResults();
  const canonical=ctx.presentationResults?.()??[];
  const tables:RecordTable[]=[];
- const panels=parsed.data.panels.flatMap(s=>{
+ const slots=new Map<string,string>();
+ let panelIndex=0;
+ const panels=parsed.data.panels.flatMap((s,i)=>{
+   const selected= s.ref?canonical.filter(x=>x.ref===s.ref):canonical;
+   if(s.ref&&selected.length!==1)return [];
    const matching=(r:AgentToolResult)=>r.source===s.source&&(!s.from||r.period?.from===s.from)&&(!s.to||r.period?.to===s.to);
    if(s.source==="canonical_data"&&s.kind==="table"&&s.field==="rows"){
-     const candidates=canonical.filter(x=>x.name==="query_data"&&matching(x.result)).flatMap(x=>{
+     const candidates=selected.filter(x=>x.name==="query_data"&&matching(x.result)).flatMap(x=>{
        const table=canonicalTable(x.result,x.arguments,ctx);return table?[table]:[];
      });
      const distinct=[...new Map(candidates.map(t=>[JSON.stringify(t),t])).values()];
-     if(distinct.length===1&&tables.length<2)tables.push(distinct[0]);
+     if(distinct.length===1&&tables.length<2){slots.set("p"+i,"table"+tables.length);tables.push(distinct[0]);}
      return [];
    }
-   const candidates=s.source==="canonical_data"?canonical.filter(x=>x.name==="query_data"&&matching(x.result)).flatMap(x=>{
+   const candidates=s.source==="canonical_data"?selected.filter(x=>x.name==="query_data"&&matching(x.result)).flatMap(x=>{
      const p=canonicalPanel(s,x.result,x.arguments,ctx);return p?[p]:[];
-   }):results.filter(x=>matching(x.result)).flatMap(x=>{const p=project(s,x.result,ctx);return p?[p]:[]});
+   }):(s.ref?selected:results).filter(x=>matching(x.result)).flatMap(x=>{const p=project(s,x.result,ctx);return p?[p]:[]});
    // Repeated identical reads can collapse; never silently pick a distinct period or subtotal.
    const distinct=[...new Map(candidates.map(p=>[JSON.stringify(p),p])).values()];
    const p=distinct.length===1?distinct[0]:null;
    if(p?.kind==="ranked_table")p.points.sort((a,b)=>b.value-a.value||a.label.localeCompare(b.label));
    const checked=p&&richPresentationSchema.safeParse({type:"rich_presentation",version:1,layout:"stack",panels:[p],suggestions:[]});
-   return checked&&checked.success?checked.data.panels:[];
+   if(checked&&checked.success){slots.set("p"+i,"panel"+panelIndex++);return checked.data.panels;}
+   return [];
  });
  const agendaCandidates=parsed.data.agenda?results.flatMap(({result})=>{
    const a=agendaFor(parsed.data.agenda!,result,ctx.asOf);return a?[a]:[];
@@ -368,8 +375,23 @@ export function presentResponse(raw:unknown,ctx:Pick<AgentToolContext,"currency"
  const files=parsed.data.files?[...new Set(ctx.presentationAttachments??[])].filter(id=>z.uuid().safeParse(id).success).slice(0,3):[];
  const block=richPresentationSchema.safeParse({type:"rich_presentation",version:1,
    layout:parsed.data.layout,panels,...(files.length?{files}:{}),...(tables.length?{tables}:{}),...(uniqueCalcs.length===1?{calculator:uniqueCalcs[0]}:{}),...(parsed.data.report?{report:true as const}:{}),...(agendas.length===1?{agenda:agendas[0]}:{}),...(scenario?{scenario}:{}),suggestions:[...new Set(parsed.data.suggestions)]});
- return block.success?{...empty,accepted:true,presentation:block.data}:{...empty,accepted:false};
+ if(!block.success)return {...empty,accepted:false};
+ if(!parsed.data.groups?.length)return {...empty,accepted:true,presentation:block.data};
+ const leaves=presentationLeaves(block.data),used=new Set<string>();
+ const groups:NonNullable<RichPresentation["groups"]>=[];
+ for(const request of parsed.data.groups){
+   const items=request.items.flatMap(id=>{
+     const key=slots.get(id)??id;
+     if(!leaves.includes(key)||used.has(key))return [];
+     used.add(key);return [key];
+   });
+   if(items.length)groups.push({layout:request.layout==="compare"&&!compatibleComparison(items,block.data.panels)?"grid":request.layout,items});
+ }
+ const remainder=leaves.filter(k=>!used.has(k));
+ if(remainder.length)groups.push({layout:parsed.data.layout,items:remainder});
+ const arranged=richPresentationSchema.safeParse({...block.data,...(groups.length?{groups}:{})});
+ return {...empty,accepted:true,presentation:arranged.success?arranged.data:block.data};
 }
 export const presentationTools={
- present_response:{schema:presentationInputSchema,description:"Optional UI from current reads, never invented data. Source+field: daily_rollups daily_sales; item_sales item_units; profitability net_sales/total_costs/owner_profit; canonical_data exact aggregate alias or field rows for a multi-column table; expenses recorded_expenses; business_costs cost_components; product_costs recipe_cost. Disambiguate periods with from/to. Agenda from get_events/get_week_schedule; scenario monthly_profit/monthly_break_even/monthly_target_sales/item_margin from verified simulate_scenario; calculator=true after calculate for editable owner assumptions (not screen numbers); report=true for text export; files=true for sources attached in this turn only. Suggestions edit a draft, never act. Answer fully in words; visuals only if useful."},
+ present_response:{schema:presentationInputSchema,description:"Optional UI from current reads, never invented data. Source+field: daily_rollups daily_sales; item_sales item_units; profitability net_sales/total_costs/owner_profit; canonical_data exact aggregate alias or field rows for a multi-column table; expenses recorded_expenses; business_costs cost_components; product_costs recipe_cost. Use ref from the prior result to disambiguate; groups arrange p0–p3, agenda/scenario/calculator in stack/grid/compare (same units). Agenda from get_events/get_week_schedule; scenario monthly_profit/monthly_break_even/monthly_target_sales/item_margin from verified simulate_scenario; calculator=true after calculate for editable owner assumptions (not screen numbers); report=true for text export; files=true for sources attached in this turn only. Suggestions edit a draft, never act. Answer fully in words; visuals only if useful."},
 };

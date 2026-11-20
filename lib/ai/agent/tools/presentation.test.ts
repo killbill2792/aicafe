@@ -181,3 +181,20 @@ it("uses actual roster evidence and executed scenario arguments for staffing alt
   presentationResults:()=>[{name:"simulate_scenario",arguments:JSON.stringify({staffId}),result:scenario}]};
  expect(presentResponse(req,c)).toMatchObject({accepted:true,presentation:{scenario:{cases:[{assumption:expect.stringContaining("Team lead"),beforeCents:100000,afterCents:120000}]}}});
 });
+
+describe("independent semantic composition",()=>{
+ it("selects distinct same-period reads by exact reference and compares compatible series",()=>{
+  const a={...sales,days:[{date:"2026-11-02",netSalesCents:100},{date:"2026-11-03",netSalesCents:200}]};
+  const b={...sales,days:[{date:"2026-11-02",netSalesCents:300},{date:"2026-11-03",netSalesCents:400}]};
+  const c={...ctx(),turnResults:()=>[{name:"get_sales",result:a},{name:"get_sales",result:b}],
+    presentationResults:()=>[{ref:"r1",name:"get_sales",arguments:"{}",result:a},{ref:"r2",name:"get_sales",arguments:"{}",result:b}]};
+  const sel={source:"daily_rollups",field:"daily_sales",kind:"line"};
+  const req={layout:"stack",panels:[{...sel,ref:"r2"},{...sel,ref:"r1"}],groups:[{layout:"compare",items:["p1","p0"]}],suggestions:[]};
+  expect(presentResponse(req,c)).toMatchObject({accepted:true,presentation:{groups:[{layout:"compare",items:["panel1","panel0"]}],panels:[{points:[{value:300},{value:400}]},{points:[{value:100},{value:200}]}]}});
+  expect(presentResponse({...req,panels:[{...sel,ref:"r99"}]},c).accepted).toBe(false);
+ });
+ it("does not discard a valid visual omitted from an optional arrangement or repeat a leaf",()=>{
+  const q={...request,groups:[{layout:"grid",items:["p0","p0","calculator"]}]};
+  expect(presentResponse(q,ctx())).toMatchObject({accepted:true,presentation:{groups:[{layout:"grid",items:["panel0"]}]}});
+ });
+});

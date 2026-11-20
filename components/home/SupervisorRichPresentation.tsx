@@ -5,19 +5,28 @@ import {JSONUIProvider,Renderer,type ComponentRegistry} from "@json-render/react
 import {Paperclip} from "lucide-react";
 import type {StoredAttachment} from "@/lib/ai/conversations/attachments";
 import type {Spec} from "@json-render/core";
+import type {ComparisonSeries} from "./SupervisorRichChart";
 import en from "@/messages/en.json";
 import es from "@/messages/es.json";
 import ar from "@/messages/ar.json";
-import {richPresentationSchema,presentationPanelSchema,agendaSchema,scenarioComparisonSchema,presentationReport,recordTableSchema,interactiveCalcSchema,evaluatePresentationCalc,type RecordTable,type InteractiveCalc,type Agenda,type ScenarioComparison,type RichPresentation,type PresentationPanel} from "@/lib/ai/conversations/presentation";
+import {richPresentationSchema,presentationPanelSchema,agendaSchema,scenarioComparisonSchema,presentationReport,recordTableSchema,interactiveCalcSchema,evaluatePresentationCalc,presentationLeaves,compatibleComparison,type RecordTable,type InteractiveCalc,type Agenda,type ScenarioComparison,type RichPresentation,type PresentationPanel} from "@/lib/ai/conversations/presentation";
 const copy=en.SupervisorPresentation;
 const Chart=dynamic(()=>import("./SupervisorRichChart"),{ssr:false});
+const ComparisonChart=dynamic(()=>import("./SupervisorRichChart").then(m=>m.ComparisonChart),{ssr:false});
 export function presentationSpec(p:RichPresentation):Spec{
- const elements:Spec["elements"]={root:{type:"Layout",props:{layout:p.layout},children:[...p.panels.map((_,i)=>"panel"+i),...(p.agenda?["agenda"]:[]),...(p.scenario?["scenario"]:[]),...(p.tables??[]).map((_,i)=>"table"+i),...(p.calculator?["calculator"]:[])]}};
+ const elements:Spec["elements"]={root:{type:"Layout",props:{layout:p.layout},children:presentationLeaves(p)}};
  p.panels.forEach((panel,i)=>{elements["panel"+i]={type:"Panel",props:{panel},children:[]}});
  if(p.agenda)elements.agenda={type:"Agenda",props:{agenda:p.agenda},children:[]};
  if(p.scenario)elements.scenario={type:"Scenario",props:{scenario:p.scenario},children:[]};
  p.tables?.forEach((table,i)=>{elements["table"+i]={type:"RecordTable",props:{table},children:[]}});
  if(p.calculator)elements.calculator={type:"Calculator",props:{calculator:p.calculator},children:[]};
+ if(p.groups){
+  elements.root.props={layout:"stack"};
+  elements.root.children=p.groups.map((_,i)=>"group"+i);
+  p.groups.forEach((g,i)=>{
+   elements["group"+i]=g.layout==="compare"&&compatibleComparison(g.items,p.panels)?{type:"Comparison",props:{panels:g.items.map(k=>p.panels[Number(k.slice(5))])},children:[]}:{type:"Layout",props:{layout:g.layout},children:g.items};
+  });
+ }
  return {root:"root",elements};
 }
 function Panel({panel,locale}:{panel:PresentationPanel;locale:string}){
@@ -35,8 +44,28 @@ function Panel({panel,locale}:{panel:PresentationPanel;locale:string}){
   <p className="break-words text-[13px] leading-relaxed text-ink-muted">{panel.from} – {panel.to} · {panel.source==="daily_rollups"?"Sales records":panel.source==="item_sales"?"Item sales":panel.source==="canonical_data"?panel.sourceDetail??"Canonical records":panel.source==="expenses"?"Recorded expenses":panel.source==="business_costs"?"Business costs":panel.source==="product_costs"?"Product economics":"Profitability"} · {copy.snapshot} {panel.asOf}</p>
  </figure>;
 }
+function ComparisonView({panels,locale}:{panels:PresentationPanel[];locale:string}){
+ const first=panels[0],scalar=panels.every(p=>p.points.length===1);
+ const series:ComparisonSeries[]=panels.map((p,i)=>({id:"s"+i,label:p.title+" · "+p.from+" – "+p.to,points:p.points.map(v=>({label:scalar?"—":v.label,value:v.value}))}));
+ const labels=[...new Set(series.flatMap(s=>s.points.map(v=>v.label)))];
+ const line=panels.every(p=>p.kind==="line");
+ if(line)labels.sort();
+ const fmt=new Intl.NumberFormat(locale,first.unit==="cents"&&first.currency?{style:"currency",currency:first.currency,minimumFractionDigits:2,maximumFractionDigits:2}:{maximumFractionDigits:20});
+ const format=(v:number)=>fmt.format(first.unit==="cents"?v/100:v);
+ return <figure data-testid="supervisor-comparison" className="min-w-0 space-y-2 py-2">
+  <ComparisonChart series={series} labels={labels} line={line} format={format}/>
+  <div className="flex flex-wrap gap-3 text-[13px] text-ink-muted">{series.map(s=><span key={s.id}>{s.label}</span>)}</div>
+  <div className="overflow-x-auto" tabIndex={0} aria-label={series.map(s=>s.label).join("; ")}>
+   <table className="w-full text-[15px] tabular-nums"><thead><tr><th scope="col" className="py-2 text-start">{first.unit}</th>{series.map(s=><th key={s.id} scope="col" className="px-2 text-end">{s.label}</th>)}</tr></thead>
+    <tbody>{labels.map(label=><tr key={label}><th scope="row" className="py-2 text-start">{label}</th>{series.map(s=>{const v=s.points.find(p=>p.label===label);return <td key={s.id} className="px-2 text-end">{v?format(v.value):copy.notRecorded}</td>})}</tr>)}</tbody></table>
+  </div>
+  {panels.map((p,i)=><p key={i} className="break-words text-[13px] text-ink-muted">{series[i].label} · {p.sourceDetail??p.source} · {copy.snapshot} {p.asOf}</p>)}
+ </figure>;
+}
 function AgendaView({agenda,locale}:{agenda:Agenda;locale:string}){
- const format=(day:string)=>new Intl.DateTimeFormat(locale,{dateStyle:"medium",timeZone:"UTC"}).format(new Date(day+"T12:00:00Z")); // hardcode-ok: date-only café calendar labels, not timestamps; preserve the already-resolved calendar day in every viewer timezone.
+ // These are café-local civil dates, not timestamps. Format their calendar
+ // fields at local noon; no hardcoded café timezone or conversion.
+ const format=(day:string)=>{const [y,m,d]=day.split("-").map(Number);return new Intl.DateTimeFormat(locale,{dateStyle:"medium"}).format(new Date(y,m-1,d,12));}; // hardcode-ok: date-only café calendar labels, not timestamps; preserve the already-resolved calendar day in every viewer timezone.
  const status:Record<Agenda["entries"][number]["status"],string>=copy.eventStatuses;
  const dates=[...new Set(agenda.entries.map(e=>e.date))];
  return <section data-testid="supervisor-agenda" className="min-w-0 space-y-3 py-2">
@@ -117,6 +146,7 @@ export default function SupervisorRichPresentation({block,locale,onSuggest,disab
  const registry=useMemo<ComponentRegistry>(()=>({
   Layout:({element,children})=><div className={element.props.layout==="grid"?"grid min-w-0 gap-3 sm:grid-cols-2":"space-y-3"}>{children}</div>,
   Panel:({element})=>{const p=presentationPanelSchema.safeParse(element.props.panel);return p.success?<Panel panel={p.data} locale={locale}/>:null;},
+  Comparison:({element})=>{const p=Array.isArray(element.props.panels)?element.props.panels.map(v=>presentationPanelSchema.safeParse(v)):[];if(p.some(v=>!v.success))return null;const panels=p.flatMap(v=>v.success?[v.data]:[]);return compatibleComparison(panels.map((_,i)=>"panel"+i),panels)?<ComparisonView panels={panels} locale={locale}/>:null;},
   Agenda:({element})=>{const a=agendaSchema.safeParse(element.props.agenda);return a.success?<AgendaView agenda={a.data} locale={locale}/>:null;},
   Scenario:({element})=>{const s=scenarioComparisonSchema.safeParse(element.props.scenario);return s.success?<ScenarioView scenario={s.data} locale={locale}/>:null;},
   RecordTable:({element})=>{const t=recordTableSchema.safeParse(element.props.table);return t.success?<RecordTableView table={t.data} locale={locale}/>:null;},
