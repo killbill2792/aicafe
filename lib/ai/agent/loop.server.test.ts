@@ -427,3 +427,73 @@ describe("admin audit does not change the chat result", () => {
     expect(JSON.stringify(steps)).not.toContain("private-owner-value");
   });
 });
+
+describe("U1 incident regression: exact requested dates and useful synthesis",()=>{
+  it("does not ask for an unrequested year of sales after today's closed day is missing",async()=>{
+    const sales=vi.fn<AgentToolContext["tools"]["getSalesTrend"]>()
+      .mockResolvedValue({available:false,value:null,quality:{level:"low",
+        missingInputs:["noCoveredSalesRows"],estimatedInputs:[],staleInputs:[]}});
+    const ctx:AgentToolContext={...context,tools:{...context.tools,getSalesTrend:sales}};
+    const result=await runAgentTurn({ownerText:"What are today's sales?",context:ctx,
+      provider:fixture([
+        [call("get_sales",'{"period":"today","ownerInputs":null}',"u1-today-sales"),completed],
+        [text("Today's closing sales are not available; I cannot verify a total."),completed],
+      ])});
+    expect(result.text).toBe("Today's closing sales are not available; I cannot verify a total.");
+    expect(result.results[0]).toMatchObject({source:"daily_rollups",period:{from:ctx.asOf,to:ctx.asOf},
+      missing:expect.arrayContaining(["noCoveredSalesRows"])});
+    expect(sales).toHaveBeenCalled();
+    expect(sales.mock.calls.every(([period])=>period.from===ctx.asOf&&period.to===ctx.asOf)).toBe(true);
+  });
+  it("preserves an explicitly requested long historical interval instead of limiting research to today",async()=>{
+    const period={from:"2025-10-22",to:"2026-10-20"};
+    const sales=vi.fn<AgentToolContext["tools"]["getSalesTrend"]>()
+      .mockResolvedValue({available:false,value:null,quality:{level:"low",
+        missingInputs:["noCoveredSalesRows"],estimatedInputs:[],staleInputs:[]}});
+    const result=await runAgentTurn({ownerText:"Research sales from 2025-10-22 through 2026-10-20",
+      context:{...context,tools:{...context.tools,getSalesTrend:sales}},
+      provider:fixture([[call("get_sales",JSON.stringify({period,ownerInputs:null}),"u1-owner-year"),completed],
+        [text("No recorded sales totals are available for that requested interval."),completed]])});
+    expect(sales.mock.calls).toEqual([[period]]);
+    expect(result.results[0]).toMatchObject({period,missing:["noCoveredSalesRows"]});
+    expect(result.text).toBe("No recorded sales totals are available for that requested interval.");
+  });
+  it("keeps completed sales and peak-hour evidence when profit fails and provides one useful answer",async()=>{
+    const period={from:"2026-10-20",to:"2026-10-20"};
+    const missingSales=vi.fn<AgentToolContext["tools"]["getSalesTrend"]>()
+      .mockResolvedValue({available:false,value:null,quality:{level:"low",
+        missingInputs:["noCoveredSalesRows"],estimatedInputs:[],staleInputs:[]}});
+    const peak=vi.fn<NonNullable<AgentToolContext["tools"]["getPeakHours"]>>()
+      .mockResolvedValue({available:false,value:null,quality:{level:"low",
+        missingInputs:["hourlyCoverageMissing"],estimatedInputs:[],staleInputs:[]}});
+    const profit=vi.fn<AgentToolContext["tools"]["getProfitability"]>()
+      .mockRejectedValue(new Error("private connection detail"));
+    const requests:Record<string,unknown>[]=[];
+    const answer="Sales and hourly data are missing for the requested date. Profit could not be verified.";
+    const provider:AgentProvider=async function*(params){
+      requests.push(params);
+      if(requests.length===1){
+        yield call("get_sales",JSON.stringify({period,ownerInputs:null}),"u1-mixed-sales");
+        yield call("get_peak_hours",JSON.stringify(period),"u1-mixed-peak");
+        yield call("get_profit",JSON.stringify({period,ownerInputs:null}),"u1-mixed-profit");
+      }else yield text(answer);
+      yield completed;
+    };
+    const result=await runAgentTurn({ownerText:"For October 20, 2026, report sales, peak hours and profit.",
+      context:{...context,tools:{...context.tools,getSalesTrend:missingSales,getPeakHours:peak,getProfitability:profit}},provider});
+    expect(missingSales.mock.calls).toEqual([[period]]);
+    expect(peak.mock.calls).toEqual([[period]]);
+    expect(profit.mock.calls).toEqual([[period]]);
+    expect(result.results).toEqual(expect.arrayContaining([
+      expect.objectContaining({source:"daily_rollups",period,missing:["noCoveredSalesRows"]}),
+      expect.objectContaining({source:"get_peak_hours",period,missing:["hourlyCoverageMissing"]}),
+      expect.objectContaining({source:"get_profit",error:"internal"}),
+    ]));
+    const outputs=(requests[1].input as Array<Record<string,unknown>>)
+      .filter(x=>x.type==="function_call_output");
+    expect(outputs.map(x=>x.call_id)).toEqual(["u1-mixed-sales","u1-mixed-peak","u1-mixed-profit"]);
+    expect(JSON.stringify(outputs)).not.toContain("private connection detail");
+    expect(result.text).toBe(answer);
+    expect(requests).toHaveLength(2);
+  });
+});
