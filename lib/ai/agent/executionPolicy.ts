@@ -35,18 +35,19 @@ export function requestOutputCap(policy:ExecutionPolicy,spent:number,final:boole
 export type RequestComposition={
  serializedBytes:number;instructionBytes:number;schemaBytes:number;inputBytes:number;
  ownerContextBytes:number;developerContextBytes:number;assistantHistoryBytes:number;
- toolEvidenceBytes:number;toolCallBytes:number;reasoningReplayBytes:number;otherInputBytes:number;
+ toolEvidenceBytes:number;discoveredSchemaBytes:number;toolCallBytes:number;reasoningReplayBytes:number;otherInputBytes:number;
 };
 export function requestComposition(params:Record<string,unknown>):RequestComposition|null{
  try{
   const bytes=(x:unknown)=>x===undefined?0:Buffer.byteLength(JSON.stringify(x),"utf8");
   const result:RequestComposition={serializedBytes:bytes(params),instructionBytes:bytes(params.instructions),
    schemaBytes:bytes(params.tools),inputBytes:bytes(params.input),ownerContextBytes:0,
-   developerContextBytes:0,assistantHistoryBytes:0,toolEvidenceBytes:0,toolCallBytes:0,reasoningReplayBytes:0,otherInputBytes:0};
+   developerContextBytes:0,assistantHistoryBytes:0,toolEvidenceBytes:0,discoveredSchemaBytes:0,toolCallBytes:0,reasoningReplayBytes:0,otherInputBytes:0};
   for(const item of Array.isArray(params.input)?params.input:params.input===undefined?[]:[params.input]){
    const row=item&&typeof item==="object"?item as Record<string,unknown>:{};
    const size=bytes(item);
-   if(row.type==="function_call_output"||row.type==="tool_search_output")result.toolEvidenceBytes+=size;
+   if(row.type==="function_call_output")result.toolEvidenceBytes+=size;
+   else if(row.type==="tool_search_output")result.discoveredSchemaBytes+=size;
    else if(row.type==="function_call"||row.type==="tool_search_call")result.toolCallBytes+=size;
    else if(row.type==="reasoning")result.reasoningReplayBytes+=size;
    else if(row.role==="user"||typeof item==="string")result.ownerContextBytes+=size;
