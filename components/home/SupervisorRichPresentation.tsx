@@ -48,7 +48,7 @@ function Panel({panel,locale}:{panel:PresentationPanel;locale:string}){
 }
 function ComparisonView({panels,locale}:{panels:PresentationPanel[];locale:string}){
  const first=panels[0],scalar=panels.every(p=>p.points.length===1);
- const series:ComparisonSeries[]=panels.map((p,i)=>({id:"s"+i,label:p.title+" · "+p.from+" – "+p.to+(p.sourceDetail?" · "+p.sourceDetail:""),points:p.points.map(v=>({label:scalar?"—":v.label,value:v.value}))}));
+ const series:ComparisonSeries[]=panels.map((p,i)=>({id:"s"+i,label:(i+1)+". "+p.title+" · "+p.from+" – "+p.to,points:p.points.map(v=>({label:scalar?"—":v.label,value:v.value}))}));
  const labels=[...new Set(series.flatMap(s=>s.points.map(v=>v.label)))];
  const line=panels.every(p=>p.kind==="line");
  if(line)labels.sort();
@@ -58,7 +58,7 @@ function ComparisonView({panels,locale}:{panels:PresentationPanel[];locale:strin
   <ComparisonChart series={series} labels={labels} line={line} format={format}/>
   <div className="flex flex-wrap gap-3 text-[13px] text-ink-muted">{series.map(s=><span key={s.id}>{s.label}</span>)}</div>
   <div className="overflow-x-auto" tabIndex={0} aria-label={series.map(s=>s.label).join("; ")}>
-   <table className="w-full text-[15px] tabular-nums"><thead><tr><th scope="col" className="py-2 text-start">{first.unit}</th>{series.map(s=><th key={s.id} scope="col" className="px-2 text-end">{s.label}</th>)}</tr></thead>
+   <table className="w-full text-[15px] tabular-nums"><thead><tr><th scope="col" className="py-2 text-start">{first.currency??first.unit}</th>{series.map(s=><th key={s.id} scope="col" className="px-2 text-end">{s.label}</th>)}</tr></thead>
     <tbody>{labels.map(label=><tr key={label}><th scope="row" className="py-2 text-start">{label}</th>{series.map(s=>{const v=s.points.find(p=>p.label===label);return <td key={s.id} className="px-2 text-end">{v?format(v.value):copy.notRecorded}</td>})}</tr>)}</tbody></table>
   </div>
   {panels.map((p,i)=><p key={i} className="break-words text-[13px] text-ink-muted">{series[i].label} · {p.sourceDetail??p.source} · {copy.snapshot} {p.asOf}{p.coverage?" · "+(p.coverage==="partial"?copy.partial:copy.estimate):""}</p>)}
@@ -154,7 +154,7 @@ function ScenarioView({scenario,locale}:{scenario:ScenarioComparison;locale:stri
    </select></label>:<p>{selected.assumption}</p>}
   {selected.editor&&<div data-testid="supervisor-scenario-editor" className="space-y-2">
     <p className="text-[13px] text-ink-muted">{copy.calculatorNotice}</p>
-    {scenarioEditFields(selected.editor).map(f=><label key={f.key} className="block text-[15px]">{f.label}{f.money?" ("+scenario.currency+")":f.percent?" (%)":""}
+    {scenarioEditFields(selected.editor).map(f=><label key={f.key} className="block text-[15px]">{copy.scenarioEditFields[f.key as keyof typeof copy.scenarioEditFields]??f.label}{f.money?" ("+scenario.currency+")":f.percent?" (%)":""}
       <input type="text" inputMode="decimal" maxLength={15} value={changes[f.key]??String(f.value)} onChange={e=>setChanges(prev=>({...prev,[f.key]:e.target.value}))} className="mt-1 block w-full min-h-12 rounded-xl border border-line bg-surface px-3 tabular-nums"/>
     </label>)}
     <button type="button" className="min-h-12 underline text-[15px]" onClick={()=>setChanges({})}>{copy.resetAssumptions}</button>
@@ -163,7 +163,7 @@ function ScenarioView({scenario,locale}:{scenario:ScenarioComparison;locale:stri
    <div><dt className="text-[13px] text-ink-muted">{copy.baselineEstimate}</dt><dd className="break-words text-xl font-medium">{fmt(selected.beforeCents)}</dd></div>
    <div><dt className="text-[13px] text-ink-muted">{copy.scenarioEstimate}</dt><dd className="break-words text-xl font-medium"><span role="status">{selected.editor?edited?fmt(edited.afterCents):copy.invalidCalculation:fmt(selected.afterCents)}</span></dd></div>
   </dl>
-  <p className="text-[13px] text-ink-muted">{copy.scenarioNotice}</p>
+  {!selected.editor&&<p className="text-[13px] text-ink-muted">{copy.scenarioNotice}</p>}
  </section>;
 }
 export default function SupervisorRichPresentation({block,locale,onSuggest,disabled,message,attachments}:{block:unknown;locale:string;onSuggest:(text:string)=>void;disabled:boolean;message?:Parameters<typeof presentationReport>[1]&{threadId:string};attachments?:{threadId:string;items:StoredAttachment[]}|null}){

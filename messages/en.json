@@ -4530,7 +4530,18 @@
     "previousDates": "Previous dates",
     "nextDates": "Next dates",
     "savedEntries": "saved entries",
-    "noSavedEntries": "No saved entries for this date; this does not confirm that nothing is scheduled."
+    "noSavedEntries": "No saved entries for this date; this does not confirm that nothing is scheduled.",
+    "scenarioEditFields": {
+      "monthlyChangeCents": "Monthly bill change",
+      "newPriceCents": "New selling price",
+      "weeklyUnits": "Assumed units per week",
+      "newCostCents": "New ingredient cost",
+      "hoursChange": "Hours change per shift",
+      "shiftsPerWeek": "Shifts per week",
+      "newWageCents": "New hourly wage",
+      "changePercent": "Sales volume change",
+      "targetMargin": "Target margin"
+    }
   },
   "SupervisorExperience": {
     "offline": "Offline. Saved information may be out of date. Your draft is kept; reconnect to send.",

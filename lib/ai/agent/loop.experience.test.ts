@@ -603,3 +603,17 @@ describe("Task16E optional composition in the single existing agent loop",()=>{
   expect((requests[0].tools as Array<{name:string}>).some(t=>t.name==="present_response")).toBe(false);
  });
 });
+
+it("advertises actual result references on the native continuation and preserves the plain answer",async()=>{
+ const {requests,provider}=recording([
+  [call("get_menu_items",'{"query":null,"limit":null}',"menu_read"),completed],
+  [call("present_response",JSON.stringify({layout:"stack",panels:[{source:"menu_items",field:"rows",kind:"table",ref:"r1"}],groups:[{layout:"grid",items:["p0"]}],suggestions:[]}),"ui_read"),completed],
+  [text("Latte is on the saved menu."),completed]
+ ]);
+ const result=await runAgentTurn({ownerText:"What is on my menu?",context:{...context,currency:"USD"},provider});
+ expect(result.text).toBe("Latte is on the saved menu.");
+ const output=(requests[1].input as Array<Record<string,unknown>>).find(x=>x.type==="function_call_output"&&x.call_id==="menu_read");
+ expect(JSON.parse(String(output?.output))).toMatchObject({source:"menu_items",presentationRef:"r1"});
+ expect(result.results).toContainEqual(expect.objectContaining({source:"response_presentation",accepted:true,presentation:expect.objectContaining({groups:[{layout:"grid",items:["table0"]}],tables:[expect.objectContaining({rows:[expect.arrayContaining(["Latte",450]) ]})]})}));
+ expect(JSON.stringify(requests[2].input)).toContain("Visual selection only");
+});

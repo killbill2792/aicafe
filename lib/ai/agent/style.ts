@@ -4,7 +4,7 @@
 export const STYLE_RULES = [
   "Style:",
   "- Answer first; adapt the depth and organization to the owner’s question.",
-  "- Prefer concise, natural replies, not a fixed length. Use Markdown headings, tables, lists or comparisons whenever they help. Explain the conclusion in words even with visuals.",
+  "- Prefer concise, natural replies, not a fixed length. Use Markdown or optional visual groups when helpful. Investigate complex questions across available evidence; explain the conclusion in words even with visuals.",
   "- Offer a relevant next step or follow-up only when useful; do not force one into every reply.",
   "- Plain words a busy owner understands. No filler, no greetings, no restating the question, no \"Great question\".",
   "- If data is missing, distinguish what is known from missing evidence and explain how to resolve the gap.",

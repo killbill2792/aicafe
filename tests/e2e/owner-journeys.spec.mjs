@@ -1816,7 +1816,7 @@ test("@home Task16E adaptive answer survives reload, preserves prose and opens a
       agenda:{kind:"calendar",source:"cafe_events",title:"Saved event dates",from:"2026-01-01",to:"2026-01-04",asOf:"2026-01-03",coverage:"partial",
       entries:[{label:"Market",date:"2026-01-02",endDate:"2026-01-04",start:null,end:null,status:"unverified",checkedAt:null}]},
       scenario:{title:"Modeled monthly profit",currency:owner.currency,asOf:"2026-01-03",provenance:"estimate",cases:[
-        {assumption:"Small adjustment",beforeCents:90000,afterCents:80000},{assumption:"Larger adjustment",beforeCents:90000,afterCents:60000}]},suggestions:[suggestion]}];
+        {assumption:"Small adjustment",beforeCents:348000,afterCents:338000,editor:{metric:"monthlyProfitCents",basis:{monthlyBillsCents:100000,monthlyStaffCents:200000,monthlyRevenueCents:900000,ingredientRate:0.25,feeRate:0.03,daysInMonth:30,targetMargin:0.2},delta:{kind:"bill",monthlyChangeCents:10000}}},{assumption:"Larger adjustment",beforeCents:348000,afterCents:318000}]},suggestions:[suggestion]}];
     await db.query("insert into public.ai_messages(id,business_id,thread_id,owner_user_id,role,content_type,structured_content,grounding) values($1,$2,$3,$4,'supervisor','blocks',$5::jsonb,$6::jsonb)",
       [reply,owner.businessId,thread,owner.owner.userId,JSON.stringify(blocks),JSON.stringify({status:"verified",intent:"unknown",evidence:[],agentMetadata:{endReason:"complete",unverified:[]}})]);
     for(const viewport of [{width:390,height:844},{width:1440,height:900}]){
@@ -1851,8 +1851,13 @@ test("@home Task16E adaptive answer survives reload, preserves prose and opens a
       await calendar.getByRole("button",{name:/Jan 4, 2026/}).click();
       await expect(rich.getByTestId("supervisor-agenda")).toContainText("Market");
       const scenario=rich.getByTestId("supervisor-scenario");
+      const scenarioEditor=scenario.getByTestId("supervisor-scenario-editor");
+      await scenarioEditor.getByRole("textbox",{name:/Monthly bill change/}).fill("20");
+      await expect(scenario.getByRole("status")).toHaveText(new Intl.NumberFormat("en-US",{style:"currency",currency:owner.currency,minimumFractionDigits:2,maximumFractionDigits:2}).format(3460));
+      await scenarioEditor.getByRole("button",{name:"Reset assumptions"}).click();
+      await expect(scenario.getByRole("status")).toHaveText(new Intl.NumberFormat("en-US",{style:"currency",currency:owner.currency,minimumFractionDigits:2,maximumFractionDigits:2}).format(3380));
       await scenario.getByRole("combobox").selectOption("1");
-      await expect(scenario).toContainText(new Intl.NumberFormat("en-US",{style:"currency",currency:owner.currency,minimumFractionDigits:2,maximumFractionDigits:2}).format(600));
+      await expect(scenario).toContainText(new Intl.NumberFormat("en-US",{style:"currency",currency:owner.currency,minimumFractionDigits:2,maximumFractionDigits:2}).format(3180));
       const sourceLink=rich.getByRole("link",{name:"example-sales.csv",exact:true});
       await expect(sourceLink).toHaveAttribute("href",fileRoute+"/"+attachment.id);
       const fileResponse=await ctx.request.get(fileRoute+"/"+attachment.id,{maxRedirects:0});
