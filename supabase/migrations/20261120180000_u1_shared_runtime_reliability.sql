@@ -109,22 +109,29 @@ end $$;
 
 -- Same matching rules and historical placeholders. MATERIALIZED evaluates
 -- the existing candidate link once; do not rewrite a line whose identity is unchanged.
-create or replace function public.pos_relink_toast_lines(p_business_id uuid,p_restaurant_guid uuid)
-returns integer language plpgsql security definer set search_path=public as $$
-declare v_prefix text;v_count integer;
+alter table public.toast_sync_phase_errors add column last_recovered_at timestamptz;
+create or replace function public.pos_relink_toast_lines(p_business_id uuid,p_restaurant_guid uuid,p_business_date date)
+returns integer language plpgsql security definer set search_path=public as $
+declare v_prefix text;v_count integer;v_date date:=p_business_date;
 begin
  if coalesce(auth.role(),'')<>'service_role' or not exists(
   select 1 from public.toast_location_mappings where business_id=p_business_id
   and restaurant_guid=p_restaurant_guid and verified_at is not null)
  then raise exception 'POS relink unauthorized' using errcode='42501';end if;
  perform pg_advisory_xact_lock(hashtextextended('pos-menu:'||p_business_id::text,0));
+ -- A prior failed post-commit relink must not be forgotten by a subsequent
+ -- narrow day import. Retain the failure receipt; recover the broader scope.
+ if exists(select 1 from public.toast_sync_phase_errors e
+  where e.business_id=p_business_id and e.restaurant_guid=p_restaurant_guid and e.phase='sales_link'
+   and (e.last_recovered_at is null or e.last_recovered_at<e.last_failed_at))
+ then v_date:=null;end if;
  v_prefix:='toast:'||p_restaurant_guid::text||':';
  -- Only sold GUIDs actually present on Toast order lines become archived placeholders.
  insert into public.menu_items(business_id,pos_item_id,name,base_name,price_cents,is_active,
   pos_archived_at,catalog_source)
  select p_business_id,l.pos_item_id,min(l.name),min(l.name),null,false,now(),'toast'
  from public.order_lines l join public.orders o on o.id=l.order_id
- where o.business_id=p_business_id and l.pos_item_id like v_prefix||'%'
+ where o.business_id=p_business_id and (v_date is null or o.business_date=v_date) and l.pos_item_id like v_prefix||'%'
  and not exists (select 1 from public.menu_items i
   where i.business_id=p_business_id and (i.pos_item_id=l.pos_item_id
     or i.pos_item_id like l.pos_item_id||':size:%'))
@@ -149,7 +156,7 @@ begin
    where mi.business_id=p_business_id and mi.pos_item_id like l.pos_item_id||':size:%'
    having count(*)=1)) as new_menu_item_id
  from public.order_lines l join public.orders o on o.id=l.order_id
- where o.business_id=p_business_id
+ where o.business_id=p_business_id and (v_date is null or o.business_date=v_date)
   and l.pos_item_id like v_prefix||'%'
   and (l.menu_item_id is null or exists(select 1 from public.menu_items current_item
     where current_item.id=l.menu_item_id and current_item.pos_item_id=l.pos_item_id))
@@ -159,8 +166,22 @@ begin
  update public.order_lines l set menu_item_id=c.new_menu_item_id
  from candidates c where l.id=c.id and l.menu_item_id is distinct from c.new_menu_item_id;
  get diagnostics v_count=row_count;
+ if v_date is null then
+  update public.toast_sync_phase_errors set last_recovered_at=clock_timestamp()
+  where business_id=p_business_id and restaurant_guid=p_restaurant_guid and phase='sales_link'
+   and (last_recovered_at is null or last_recovered_at<last_failed_at);
+ end if;
  return v_count;
-end $$;
+end $;
+revoke all on function public.pos_relink_toast_lines(uuid,uuid,date) from public,anon,authenticated;
+grant execute on function public.pos_relink_toast_lines(uuid,uuid,date) to service_role;
+-- Catalog changes still re-evaluate the restaurant's eligible history.
+create or replace function public.pos_relink_toast_lines(p_business_id uuid,p_restaurant_guid uuid)
+returns integer language plpgsql security definer set search_path=public as $
+begin
+ if coalesce(auth.role(),'')<>'service_role' then raise exception 'POS relink unauthorized' using errcode='42501';end if;
+ return public.pos_relink_toast_lines(p_business_id,p_restaurant_guid,null::date);
+end $;
 revoke all on function public.pos_relink_toast_lines(uuid,uuid) from public,anon,authenticated;
 grant execute on function public.pos_relink_toast_lines(uuid,uuid) to service_role;
 
