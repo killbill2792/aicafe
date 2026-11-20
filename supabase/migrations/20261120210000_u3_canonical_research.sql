@@ -273,6 +273,47 @@ BEGIN
 END
 $u3_views$;
 
+-- The retained Toast operation already yields permitted, scrubbed source
+-- objects with true order/check/item/payment grains and current non-order
+-- objects. This wrapper binds the source to the signed owner/café scope and
+-- a bounded caller-requested business-date window; it never grants a direct
+-- raw-record/archive or diagnostic table read to the model's SQL role.
+CREATE OR REPLACE FUNCTION u3_research_private.toast_operational_records()
+RETURNS TABLE(
+ source text,source_ref text,status text,business_date date,record_type text,
+ record_ref text,order_ref text,check_ref text,counts_in_sales boolean,data jsonb
+) LANGUAGE sql STABLE SECURITY DEFINER SET search_path=''
+AS $u3_toast_records$
+ SELECT r.source,
+  CASE WHEN s.mode='owner' THEN r.source_ref ELSE NULL END,
+  r.status,r.business_date,r.record_type,
+  CASE WHEN s.mode='owner' THEN r.record_ref ELSE NULL END,
+  CASE WHEN s.mode='owner' THEN r.order_ref ELSE NULL END,
+  CASE WHEN s.mode='owner' THEN r.check_ref ELSE NULL END,
+  r.counts_in_sales,
+  CASE WHEN s.mode='owner' THEN r.data ELSE NULL::jsonb END
+ FROM u3_research_private.scope() s
+ CROSS JOIN LATERAL (
+  SELECT nullif(current_setting('aicafe.u3_date_from',true),'')::date AS from_day,
+   nullif(current_setting('aicafe.u3_date_to',true),'')::date AS to_day
+ ) window
+ CROSS JOIN LATERAL public.toast_records_for(s.business_id,window.from_day,window.to_day) r
+ WHERE window.from_day IS NOT NULL AND window.to_day IS NOT NULL
+   AND window.to_day>=window.from_day
+   AND window.to_day-window.from_day<=31
+$u3_toast_records$;
+REVOKE ALL ON FUNCTION u3_research_private.toast_operational_records()
+ FROM PUBLIC,anon,authenticated,aicafe_research;
+GRANT EXECUTE ON FUNCTION u3_research_private.toast_operational_records()
+ TO aicafe_research_view_owner;
+CREATE OR REPLACE VIEW u3_research.toast_records WITH (security_barrier=true) AS
+ SELECT * FROM u3_research_private.toast_operational_records();
+ALTER VIEW u3_research.toast_records OWNER TO aicafe_research_view_owner;
+REVOKE ALL ON u3_research.toast_records FROM PUBLIC,anon,authenticated;
+GRANT SELECT ON u3_research.toast_records TO aicafe_research;
+COMMENT ON VIEW u3_research.toast_records IS
+ 'Source: retained operational Toast current objects through the existing scrubbed toast_records_for reader, not diagnostic samples. Grain: separate order/check/item/modifier/discount/payment/current provider object with real stable provider identity. Source data fields are only accessible in verified owner mode; unattended mode masks private details. A business-date window of at most 31 days is required for each indexed research request; earlier dates can be queried in independent windows. Declared Toast fields do not prove returned values. Status, counts_in_sales and identity determine eligibility; never multiply money across line/check/payment fanout or claim complete historical reconstruction.';
+
 -- No ability to execute an unrestricted model query through PostgREST, the
 -- app's admin client or a public SECURITY DEFINER SQL function is introduced.
 -- Dedicated-role LOGIN/password and private connection are provisioned only
