@@ -28,11 +28,41 @@ export function requestOutputCap(policy:ExecutionPolicy,spent:number,final:boole
 /** No raw response, query, IDs, arguments or private evidence in these receipts.
  * Non-reasoning output is NOT necessarily visible text (it can include calls).
  * Missing usage stays null, rather than fabricated zero or a guessed tariff. */
+/** Serialized request sizes are diagnostics, NOT provider token counts. The
+ * provider's measured usage remains the billing authority. Capture before
+ * dispatch because the loop subsequently appends evidence to the same array.
+ * Never retain the serialized payload, content, identifiers or its hashes. */
+export type RequestComposition={
+ serializedBytes:number;instructionBytes:number;schemaBytes:number;inputBytes:number;
+ ownerContextBytes:number;developerContextBytes:number;assistantHistoryBytes:number;
+ toolEvidenceBytes:number;toolCallBytes:number;reasoningReplayBytes:number;otherInputBytes:number;
+};
+export function requestComposition(params:Record<string,unknown>):RequestComposition|null{
+ try{
+  const bytes=(x:unknown)=>x===undefined?0:Buffer.byteLength(JSON.stringify(x),"utf8");
+  const result:RequestComposition={serializedBytes:bytes(params),instructionBytes:bytes(params.instructions),
+   schemaBytes:bytes(params.tools),inputBytes:bytes(params.input),ownerContextBytes:0,
+   developerContextBytes:0,assistantHistoryBytes:0,toolEvidenceBytes:0,toolCallBytes:0,reasoningReplayBytes:0,otherInputBytes:0};
+  for(const item of Array.isArray(params.input)?params.input:params.input===undefined?[]:[params.input]){
+   const row=item&&typeof item==="object"?item as Record<string,unknown>:{};
+   const size=bytes(item);
+   if(row.type==="function_call_output"||row.type==="tool_search_output")result.toolEvidenceBytes+=size;
+   else if(row.type==="function_call"||row.type==="tool_search_call")result.toolCallBytes+=size;
+   else if(row.type==="reasoning")result.reasoningReplayBytes+=size;
+   else if(row.role==="user"||typeof item==="string")result.ownerContextBytes+=size;
+   else if(row.role==="developer"||row.role==="system")result.developerContextBytes+=size;
+   else if(row.role==="assistant")result.assistantHistoryBytes+=size;
+   else result.otherInputBytes+=size;
+  }
+  return result;
+ }catch{return null;}
+}
 export type ProviderUsageReceipt={
  kind:"responses"|"hosted_web";model:string|null;requestedModel:string;outcome:"completed"|"incomplete"|"failed";
  final:boolean;nativeSearch:boolean;outputCap:number;durationMs:number;
  inputTokens:number|null;cachedTokens:number|null;outputTokens:number|null;reasoningTokens:number|null;
  nonReasoningTokens:number|null;estimatedCostMicros:number|null;discoveryCalls:number|null;
+ composition?:RequestComposition|null;
 };
 export type ToolUsageReceipt={name:string;durationMs:number;resultBytes:number;returnedRows:number|null;outcome:"complete"|"partial"|"failed"};
 import {estimateModelCallCostMicros,standardModelTokenRates,hostedWebActualCostMicros} from "@/lib/calc/supervisorTokenCost";
@@ -40,7 +70,7 @@ const record=(value:unknown):Record<string,unknown>=>value&&typeof value==="obje
 const count=(value:unknown):number|null=>typeof value==="number"&&Number.isSafeInteger(value)&&value>=0&&value<=10_000_000?value:null;
 const modelId=(value:unknown):string|null=>typeof value==="string"&&/^[A-Za-z0-9._:-]{1,80}$/.test(value)?value:null;
 export function providerUsageReceipt(p:{requestedModel:string;kind:ProviderUsageReceipt["kind"];outcome:ProviderUsageReceipt["outcome"];final:boolean;
- nativeSearch:boolean;outputCap:number;durationMs:number;response?:unknown}):ProviderUsageReceipt{
+ nativeSearch:boolean;outputCap:number;durationMs:number;response?:unknown;composition?:RequestComposition|null}):ProviderUsageReceipt{
  const response=record(p.response),usage=record(response.usage);
  const input=count(usage.input_tokens),output=count(usage.output_tokens);
  const cachedRaw=count(record(usage.input_tokens_details).cached_tokens);
@@ -57,5 +87,6 @@ export function providerUsageReceipt(p:{requestedModel:string;kind:ProviderUsage
   inputTokens:input,cachedTokens:cached,outputTokens:output,reasoningTokens:reasoning,
   nonReasoningTokens:reasoning===null||output===null?null:output-reasoning,
   estimatedCostMicros:p.kind==="hosted_web"?hostedWebActualCostMicros(tokenCost,items):tokenCost,
-  discoveryCalls:items?items.filter(i=>record(i).type==="tool_search_call").length:null};
+  discoveryCalls:items?items.filter(i=>record(i).type==="tool_search_call").length:null,
+  ...(p.composition!==undefined?{composition:p.composition}:{})};
 }
