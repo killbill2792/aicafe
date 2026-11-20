@@ -251,12 +251,12 @@ test("@home Task 16B persists real Supervisor work through reload, uncertainty a
       await expect(work.getByText("Effect verified",{exact:true})).toHaveCount(0);
 
       // An offline read is a stale status, not an action failure or success.
-      await page.route("**/api/ai/threads/"+threadId+"/work", route=>
+      await page.route("**/api/ai/threads/"+threadId+"/work?scope=owner", route=>
         route.fulfill({status:503,contentType:"application/json",body:'{"error":"unavailable"}'}));
       await page.reload();
       await openWork();
       await expect(work).toContainText("Current status cannot be verified");
-      await page.unroute("**/api/ai/threads/"+threadId+"/work");
+      await page.unroute("**/api/ai/threads/"+threadId+"/work?scope=owner");
       await page.reload();
       await openWork();
       await expect(work.locator('[data-work-status="answer_ready"]')).toBeVisible();
@@ -287,7 +287,9 @@ test("@home Task 16B persists real Supervisor work through reload, uncertainty a
       const persisted=work.locator('[data-work-id="run:'+assignment.id+'"]');
       await expect(persisted).toHaveAttribute("data-work-status","approval_required");
       await expect(persisted).toContainText("Waiting for your answer to the saved question");
+      await page.keyboard.press("Escape");
       await expect(page.getByText("Which saved period?",{exact:true})).toBeVisible();
+      await openWork();
       await expect(work.locator('[data-work-id="job:'+job.id+'"]')).toHaveCount(0);
       await persisted.getByRole("button",{name:"Stop assignment",exact:true}).click();
       await expect(persisted.getByText("This assignment was cancelled.",{exact:true}).first()).toBeVisible();
@@ -2093,19 +2095,19 @@ test("@home Task16E stops an acknowledged live view without invoking a cancel or
   const ctx=await browser.newContext({baseURL:"http://127.0.0.1:3000",serviceWorkers:"block"});
   await db.connect();
   try{
-    await db.query("insert into public.ai_threads(id,business_id,owner_user_id,client_request_id,title) values($1,$2,$3,$4,$5)",[thread,owner.businessId,owner.owner.userId,randomUUID(),"Task16E live view fixture"]);
+    await db.query("insert into public.ai_threads(id,business_id,owner_user_id,client_request_id,title) values($1,$2,$3,$4,$5)",[thread,owner.businessId,owner.owner.userId,randomUUID(),"Events · 2026-11-20 · Task16E live view fixture"]);
     const page=await ctx.newPage();await login(page,owner);await openOwnedPage(page,owner,"?thread="+thread);
     let realWrites=0;
     page.on("request",request=>{if(request.method()==="POST"&&new URL(request.url()).pathname.startsWith("/api/ai/"))realWrites++;});
     await page.evaluate(id=>{
-      const original=window.fetch.bind(window),state={opened:false,detached:0,ack:null};
+      const original=window.fetch.bind(window),state={opened:false,detached:0,ack:null,body:null};
       window.__task16eStream=state;
       window.fetch=(request,init)=>{
         const url=new URL(typeof request==="string"?request:request instanceof URL?request.href:request.url,location.href);
         if(url.pathname!=="/api/ai/threads/"+id+"/agent"||init?.method!=="POST")return original(request,init);
         const stream=new ReadableStream({
           start(controller){
-            state.opened=true;
+            state.opened=true;state.body=JSON.parse(init.body);
             state.ack=()=>controller.enqueue(new TextEncoder().encode("event: ack\ndata: "+JSON.stringify({runId:"synthetic-run",mode:"queued"})+"\n\n"));
           },
           cancel(){state.detached++;}
@@ -2114,19 +2116,29 @@ test("@home Task16E stops an acknowledged live view without invoking a cancel or
       };
     },thread);
     const input=page.locator("#supervisor-home-composer");
+    const eventChip=page.getByText("@event Task16E live view fixture · 2026-11-20",{exact:true});
+    await expect(eventChip).toBeVisible();
+    await page.getByRole("button",{name:/remove event context/i}).click();
+    await expect(eventChip).toHaveCount(0);
     await input.fill("Synthetic live stream view check");
     await page.getByRole("button",{name:"Send",exact:true}).click();
     await expect.poll(()=>page.evaluate(()=>window.__task16eStream.opened)).toBe(true);
+    expect(JSON.stringify(await page.evaluate(()=>window.__task16eStream.body))).not.toContain("@event");
+    await expect(page.getByTestId("supervisor-live-progress")).toHaveCount(1);
     const stop=page.getByRole("button",{name:"Stop live view",exact:true});
     await expect(stop).toHaveCount(0);
     await page.evaluate(()=>window.__task16eStream.ack());
     await expect(stop).toBeVisible();
+    await expect(page.getByTestId("supervisor-live-progress")).toHaveCount(1);
+    await expect(eventChip).toHaveCount(0);
     await assertAccessibleControls(page);
     await stop.focus();await page.keyboard.press("Enter");
     await expect.poll(()=>page.evaluate(()=>window.__task16eStream.detached)).toBe(1);
     await expect(stop).toHaveCount(0);
     await expect(page.getByText("Live view stopped. Saved work may continue; check Work for its status.",{exact:true})).toBeVisible();
     await expect(input).toBeEnabled();
+    await expect(page.getByTestId("supervisor-live-progress")).toHaveCount(0);
+    await expect(eventChip).toHaveCount(0);
     expect(realWrites).toBe(0);
     const records=await db.query("select count(*)::int as n from public.ai_messages where thread_id=$1",[thread]);
     expect(records.rows[0].n).toBe(0);
