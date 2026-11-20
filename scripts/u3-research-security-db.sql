@@ -45,6 +45,12 @@ INSERT INTO public.toast_raw_records(
   '{"guid":"99999999-9999-4999-8999-999999999992","role":"manager","properties":{"verified":{"quantity":9}}}'::jsonb,
   repeat('b',64),'current:u3-test');
 
+-- Two independent supplier records exercise a newly admitted business
+-- relation, not just the original order/order-line fixtures.
+INSERT INTO public.cafe_suppliers(id,business_id,display_name,normalized_name)
+VALUES (gen_random_uuid(),:'a','Synthetic supplier A','synthetic supplier a'),
+       (gen_random_uuid(),:'b','Synthetic supplier B','synthetic supplier b');
+
 -- Verify strict object and function privileges before checking actual rows.
 DO $checks$
 BEGIN
@@ -84,7 +90,9 @@ SELECT (SELECT count(*) FROM u3_research.toast_records
   WHERE record_type='employee')=1 AS toast_current_same_cafe,
  (SELECT data #>> '{properties,verified,quantity}'
   FROM u3_research.toast_records WHERE record_type='employee')='3' AS toast_nested_value;
-SELECT (SELECT count(*) FROM u3_research.orders)=1 AS only_owner_cafe_orders,
+SELECT (SELECT count(*) FROM u3_research.cafe_suppliers)=1 AS supplier_isolation,
+ (SELECT min(display_name) FROM u3_research.cafe_suppliers)='Synthetic supplier A' AS supplier_identity,
+ (SELECT count(*) FROM u3_research.orders)=1 AS only_owner_cafe_orders,
  (SELECT sum(net_sales_cents) FROM u3_research.orders)=1100 AS correct_owner_amount,
  (SELECT count(*) FROM u3_research.order_lines)=1 AS indirect_child_tenant_scope,
  (SELECT sum(net_sales_cents) FROM u3_research.order_lines)=1100 AS correct_child_amount
@@ -101,6 +109,16 @@ SELECT (SELECT count(*) FROM u3_research.toast_records WHERE record_type='employ
 \if :toast_nested_cafe_value
 \else
  \echo 'U3 retained nested Toast field unreadable or wrong'
+ SELECT 1/0;
+\endif
+\if :supplier_isolation
+\else
+ \echo 'U3 newly admitted supplier source leaked cross-café data'
+ SELECT 1/0;
+\endif
+\if :supplier_identity
+\else
+ \echo 'U3 synthetic supplier identity scope mismatch'
  SELECT 1/0;
 \endif
 \if :only_owner_cafe_orders
