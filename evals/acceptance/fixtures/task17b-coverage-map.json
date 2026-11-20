@@ -185,8 +185,8 @@
     "reviewedReplacements": {
       "lib/ai/agent/tools/dataQuery.ownerParity.live.test.ts": {
         "previous": "5b14a117e46e9471160f67c0075edd6198135dbb",
-        "reason": "Preserve all 18 original paid questions; receipt-backed inventory parity fixture, unverified-quantity negative and expanded all-18 deterministic registered-reader checks, including grouped null-name/date results. Includes a zero-provider preflight of the shared authenticated historical fixture.",
-        "replacement": "5c9a000859231ee7f8d44759928ecdbfdcd5e502"
+        "reason": "Preserve all 18 original paid questions; receipt-backed inventory parity fixture, unverified-quantity negative and expanded all-18 deterministic registered-reader checks, including grouped null-name/date results. Includes a zero-provider preflight of the shared authenticated historical fixture and positive, altered and missing answer-oracle checks against all 18 migrated source queries.",
+        "replacement": "3ceff99411faba11eb4210141e0dd4ceef25fce1"
       }
     }
   },

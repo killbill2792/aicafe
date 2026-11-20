@@ -156,15 +156,21 @@ export function attestHistoricalPos(id,scope,query=read){
  assert.equal(one(query("SELECT (now() at time zone timezone)::date::text AS today,((now() at time zone timezone)::date-1)::text AS prior FROM public.businesses WHERE id="+b)).today,scope.today);
  assert.equal(one(query("SELECT ((now() at time zone timezone)::date-1)::text AS prior FROM public.businesses WHERE id="+b)).prior,scope.prior);
  const specs=historicalPosCases(id),seen=new Set(),checks=[];let calls=0;
+ const filter=" WHERE business_id="+b+" AND owner_user_id="+o+" AND thread_id="+t;
+ // Verify the complete persisted conversation, not merely candidate-selected
+ // pairs of IDs. Equal numeric answers must not authorize swapped replies.
+ const transcript=query("SELECT id,role FROM public.ai_messages"+filter+" ORDER BY created_at,id");
+ assert.equal(transcript.length,specs.length*2,"Unexpected historical conversation turns");
  for(const [i,spec] of specs.entries()){
   const owner=scope["owner"+(i+1)],replyId=scope["reply"+(i+1)];
   for(const value of [owner,replyId]){uuid(value);assert.ok(!seen.has(value));seen.add(value);}
-  const filter=" WHERE business_id="+b+" AND owner_user_id="+o+" AND thread_id="+t;
+  assert.deepEqual(transcript[i*2],{id:owner,role:"owner"},"Historical owner turn order");
+  assert.deepEqual(transcript[i*2+1],{id:replyId,role:"supervisor"},"Historical reply turn order");
   const message=one(query("SELECT text_content,created_at FROM public.ai_messages"+filter+" AND role='owner' AND id="+uuid(owner)));
   assert.equal(message.text_content,spec.prompt);
   const response=one(query("SELECT structured_content AS blocks,created_at FROM public.ai_messages"+filter+" AND role='supervisor' AND id="+uuid(replyId)));
   assert.ok(Date.parse(response.created_at)>=Date.parse(message.created_at));
-  const usage=one(query("SELECT model,provider,input_tokens,model_call_count FROM public.ai_usage_events WHERE business_id="+b+" AND owner_message_id="+uuid(owner)+" ORDER BY created_at DESC LIMIT 1"));
+  const usage=one(query("SELECT model,provider,input_tokens,model_call_count FROM public.ai_usage_events WHERE business_id="+b+" AND owner_message_id="+uuid(owner)+" AND owner_user_id="+o+" AND thread_id="+t+" ORDER BY created_at DESC LIMIT 1"));
   assert.equal(usage.model,"gpt-6-luna");assert.equal(usage.provider,"openai");
   assert.ok(integer(usage.input_tokens)>0&&integer(usage.model_call_count)>=2);
   calls+=integer(usage.model_call_count);

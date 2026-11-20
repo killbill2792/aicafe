@@ -870,13 +870,13 @@ run("Supervisor proves current-source orders, staff, cash, stock, names and scre
 
 // Independently verify the new shared authenticated fixture on the same
 // migrated local DB before accepting any provider launch. Roll back all writes.
-if(sqlOnly&&dbUrl)it("shared historical POS fixture and all 18 independent source queries",async()=>{
+if(sqlOnly&&dbUrl)it("shared historical POS fixture and all 18 independent source and answer-oracle checks",async()=>{
  allowedHost(dbUrl);
  const client=new pg.Client({connectionString:dbUrl});
  await client.connect();
  try{
   const {setupHistoricalPosFixture}=await import("../../../../evals/acceptance/live/task17b-cross-domain.mjs");
-  const {historicalPosCases,historicalPosSourceSql}=await import("../../../../scripts/acceptance/luna-attest-17b.mjs");
+  const {historicalPosCases,historicalPosSourceSql,checkHistoricalPosAnswer}=await import("../../../../scripts/acceptance/luna-attest-17b.mjs");
   const scope=await setupHistoricalPosFixture(client);
   let count=0;
   for(const id of ["17b-pos-discounts","17b-pos-sales","17b-pos-identity","17b-pos-operations"]){
@@ -884,6 +884,16 @@ if(sqlOnly&&dbUrl)it("shared historical POS fixture and all 18 independent sourc
     const rows=(await client.query(historicalPosSourceSql(spec,scope))).rows;
     expect(rows.length,spec.id).toBeGreaterThan(0);
     for(const row of rows)expect(spec.kind==="name"?row.answer:row.n,spec.id).not.toBeNull();
+    // Synthetic labelled answers exercise the trusted oracle against actual
+    // migrated source rows; never represent these as provider/model evidence.
+    const note=spec.incomplete?"\nToday is incomplete.":"";
+    const answer=spec.kind==="groups"?rows.map(row=>row.k+": "+row.n).join("\n"):
+      spec.kind==="name"?"Name: "+rows[0].answer:spec.label+": "+rows[0].n+note;
+    const wrong=spec.kind==="groups"?rows.map((row,i)=>row.k+": "+(Number(row.n)+(i===0?1:0))).join("\n"):
+      spec.kind==="name"?"Name: "+rows[0].answer+" altered":spec.label+": "+(Number(rows[0].n)+1)+note;
+    expect(()=>checkHistoricalPosAnswer(spec,rows,answer),spec.id).not.toThrow();
+    expect(()=>checkHistoricalPosAnswer(spec,rows,wrong),spec.id+" altered answer").toThrow();
+    expect(()=>checkHistoricalPosAnswer(spec,rows,""),spec.id+" missing answer").toThrow();
     count++;
    }
   }
