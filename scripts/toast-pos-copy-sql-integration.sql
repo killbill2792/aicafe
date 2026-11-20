@@ -278,7 +278,7 @@ begin
    where id=archived_id and business_id=b and is_active=false
    and price_cents is null and pos_item_id=pos)
  then raise exception 'unknown sold-only item must be one archived null-price row';end if;
- perform public.pos_relink_toast_lines(b,r);
+ if public.pos_relink_toast_lines(b,r)<>0 then raise exception 'unchanged base-linked order line was rewritten';end if;
  select count(*) into n from public.menu_items where business_id=b and pos_item_id=pos;
  if n<>1 then raise exception 'repeated sold-only relink duplicated menu identity';end if;
  insert into public.menu_items(business_id,pos_item_id,name,base_name,
