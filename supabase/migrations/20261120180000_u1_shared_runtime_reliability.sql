@@ -38,7 +38,8 @@ begin
   where s.lease_token is not null and s.lease_until>v_now) then return null;end if;
  v_token:=gen_random_uuid();
  update public.supervisor_derived_refresh_state set lease_token=v_token,
-  lease_until=v_now+interval '6 minutes',claimed_version=v.requested_version,last_started_at=v_now
+  lease_until=v_now+interval '6 minutes',claimed_version=v.requested_version,last_started_at=v_now,
+  last_error=case when v.lease_token is not null and v.lease_until<=v_now then 'lease_expired' else v.last_error end
   where business_id=p_business_id;
  return jsonb_build_object('token',v_token);
 end $$;
@@ -112,7 +113,7 @@ end $$;
 alter table public.toast_sync_phase_errors add column last_recovered_at timestamptz;
 create or replace function public.pos_relink_toast_lines(p_business_id uuid,p_restaurant_guid uuid,p_business_date date)
 returns integer language plpgsql security definer set search_path=public as $
-declare v_prefix text;v_count integer;v_date date:=p_business_date;
+declare v_prefix text;v_count integer;v_date date:=p_business_date;v_failed_at timestamptz;
 begin
  if coalesce(auth.role(),'')<>'service_role' or not exists(
   select 1 from public.toast_location_mappings where business_id=p_business_id
@@ -121,10 +122,10 @@ begin
  perform pg_advisory_xact_lock(hashtextextended('pos-menu:'||p_business_id::text,0));
  -- A prior failed post-commit relink must not be forgotten by a subsequent
  -- narrow day import. Retain the failure receipt; recover the broader scope.
- if exists(select 1 from public.toast_sync_phase_errors e
+ select e.last_failed_at into v_failed_at from public.toast_sync_phase_errors e
   where e.business_id=p_business_id and e.restaurant_guid=p_restaurant_guid and e.phase='sales_link'
-   and (e.last_recovered_at is null or e.last_recovered_at<e.last_failed_at))
- then v_date:=null;end if;
+   and (e.last_recovered_at is null or e.last_recovered_at<e.last_failed_at);
+ if v_failed_at is not null then v_date:=null;end if;
  v_prefix:='toast:'||p_restaurant_guid::text||':';
  -- Only sold GUIDs actually present on Toast order lines become archived placeholders.
  insert into public.menu_items(business_id,pos_item_id,name,base_name,price_cents,is_active,
@@ -166,10 +167,10 @@ begin
  update public.order_lines l set menu_item_id=c.new_menu_item_id
  from candidates c where l.id=c.id and l.menu_item_id is distinct from c.new_menu_item_id;
  get diagnostics v_count=row_count;
- if v_date is null then
+ if v_date is null and v_failed_at is not null then
   update public.toast_sync_phase_errors set last_recovered_at=clock_timestamp()
   where business_id=p_business_id and restaurant_guid=p_restaurant_guid and phase='sales_link'
-   and (last_recovered_at is null or last_recovered_at<last_failed_at);
+   and last_failed_at=v_failed_at;
  end if;
  return v_count;
 end $;
