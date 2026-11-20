@@ -9,14 +9,14 @@ describe("guarded B-owned derived refresh loader",()=>{
  it("by default calls the real shared refresh (no dynamic path that production cannot load)",async()=>{
   const db={} as SupabaseClient;
   const result=await afterToastImport(db,business,"America/Los_Angeles");
-  expect(real.refresh).toHaveBeenCalledExactlyOnceWith(db,business,"America/Los_Angeles");
+  expect(real.refresh).toHaveBeenCalledExactlyOnceWith(db,business,"America/Los_Angeles",undefined,{enqueueOnly:true});
   expect(result).toEqual({derivedRefreshPending:false,derivedRefreshNote:null});
  });
  it("passes authenticated business and timezone to one shared B refresh",async()=>{
   const db={} as SupabaseClient,run=vi.fn(async()=>{});
   const result=await afterToastImport(db,business,"America/Los_Angeles",
    async()=>({refreshDerivedForBusiness:run}));
-  expect(run).toHaveBeenCalledExactlyOnceWith(db,business,"America/Los_Angeles");
+  expect(run).toHaveBeenCalledExactlyOnceWith(db,business,"America/Los_Angeles",undefined,{enqueueOnly:true});
   expect(result).toEqual({derivedRefreshPending:false,derivedRefreshNote:null});
  });
  it("missing B module or failed refresh records a note but never throws",async()=>{
@@ -32,4 +32,13 @@ describe("guarded B-owned derived refresh loader",()=>{
    expect(spy).toHaveBeenCalledTimes(2);
   }finally{spy.mockRestore();}
  });
+});
+
+it("reports durable queued refresh as pending instead of complete",async()=>{
+ const db={} as SupabaseClient;
+ const run=vi.fn(async()=>({businessDate:"2026-11-20",alertsCreated:0,deferred:true}));
+ expect(await afterToastImport(db,business,"UTC",async()=>({refreshDerivedForBusiness:run}))).toEqual({
+  derivedRefreshPending:true,derivedRefreshNote:"derived_refresh_queued",
+ });
+ expect(run).toHaveBeenCalledExactlyOnceWith(db,business,"UTC",undefined,{enqueueOnly:true});
 });
