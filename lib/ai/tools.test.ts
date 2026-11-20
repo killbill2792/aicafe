@@ -154,3 +154,11 @@ describe("StructuredCafeTools read-only evidence boundary", () => {
     expect(() => new BusinessScopedCafeTools(makeTools(), "")).toThrow("Missing authorized café");
   });
 });
+
+it("binds date-only sales coverage to the authenticated café without falling back to a broad snapshot",async()=>{
+ const getSalesCoverageBounds=vi.fn(async()=>period);
+ const scoped=new BusinessScopedCafeTools({getSalesCoverageBounds} as unknown as StructuredCafeTools,"fixture-a");
+ expect(await scoped.getSalesCoverageBounds(period)).toEqual(period);
+ expect(getSalesCoverageBounds).toHaveBeenCalledExactlyOnceWith("fixture-a",period);
+ await expect(makeTools().getSalesCoverageBounds("fixture-a",period)).rejects.toThrow("metadata unavailable");
+});
