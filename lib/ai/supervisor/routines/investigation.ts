@@ -139,6 +139,19 @@ function hasObservedEvidence(result:AgentToolResult):boolean{
   // Schema metadata, row-count sentinels and truncated/failed aggregate
   // reads must never establish an independent observed fact.
   if(result.source==="canonical_dictionary"||result.source==="toast_fields")return false;
+  if(result.source==="u3_canonical_research"){
+    // Unlike a result's label, a complete receipt and actual scoped numeric
+    // rows are verifiable evidence. Plan cost, query text, row count, schema
+    // descriptions and truncated responses are NOT observed business facts.
+    const raw=result as Record<string,unknown>;
+    const e=raw.evidence as {scope?:unknown}|null|undefined;
+    if(result.missing.length||raw.truncated!==false||
+      e?.scope!=="verified_owner_cafe_lease"||!Array.isArray(raw.rows))return false;
+    return raw.rows.some(row=>row&&typeof row==="object"&&!Array.isArray(row)&&
+      Object.values(row).some(value=>typeof value==="number"&&Number.isFinite(value)||
+        typeof value==="string"&&value.trim()!==""&&
+        /^(?:-?\d+(?:\.\d+)?)$/.test(value)&&Number.isFinite(Number(value))));
+  }
   if(result.source==="canonical_data"){
     if(result.error||result.empty||result.truncated||result.aggregateOnly!==true||!Array.isArray(result.rows))return false;
     return result.rows.some(row=>row&&typeof row==="object"&&!Array.isArray(row)&&Object.entries(row).some(([key,v])=>
