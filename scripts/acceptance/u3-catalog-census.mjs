@@ -45,6 +45,16 @@ const stats=count(live);
 const expected=count(reference.relations);
 const byName=new Map(reference.relations.map(x=>[x.relation,x]));
 const drift=live.filter(x=>JSON.stringify(byName.get(x.relation))!==JSON.stringify(x)).map(x=>x.relation);
+const differences=drift.slice(0,6).map(relation=>{
+ const currentRelation=live.find(x=>x.relation===relation);
+ const previous=byName.get(relation);
+ const expectedCols=new Map((previous?.columns??[]).map(c=>[c[0],c]));
+ const actualCols=new Map((currentRelation?.columns??[]).map(c=>[c[0],c]));
+ return {relation,expectedRls:previous?.rls,actualRls:currentRelation?.rls,
+  changedColumns:[...actualCols].filter(([k,v])=>JSON.stringify(expectedCols.get(k))!==JSON.stringify(v)),
+  removedColumns:[...expectedCols.keys()].filter(k=>!actualCols.has(k)),
+  expectedForeignKeys:previous?.foreign_keys,actualForeignKeys:currentRelation?.foreign_keys};
+});
 const current=new Set(live.map(x=>x.relation));
 const removed=reference.relations.filter(x=>!current.has(x.relation)).map(x=>x.relation);
 if(process.argv.includes("--write")){
@@ -55,7 +65,7 @@ if(process.argv.includes("--write")){
  console.log("Regenerated non-authorizing physical census",stats);
 }else{
  console.log("U3 full migrated physical schema census",JSON.stringify({expected,actual:stats,
-  mismatched:drift.slice(0,15),removed:removed.slice(0,15)}));
+  mismatched:drift.slice(0,15),removed:removed.slice(0,15),differences}));
  if(drift.length||removed.length||JSON.stringify(stats)!==JSON.stringify(expected))
   throw Error("U3 physical schema drift: regenerate and review field/source dispositions before admitting data");
 }
