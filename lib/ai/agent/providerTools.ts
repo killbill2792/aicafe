@@ -62,7 +62,14 @@ export function canonicalHostedOutput(items:readonly unknown[],definitions:reado
  validateHostedToolOutput(items,definitions,native);
  const byName=new Map(definitions.flatMap(d=>object(d)&&d.type==="function"&&typeof d.name==="string"?[[d.name,d] as const]:[]));
  return items.map(raw=>{
-  if(!object(raw)||raw.type!=="tool_search_output")return raw;
-  return {...raw,tools:(raw.tools as Row[]).map(t=>byName.get(t.name as string)!)};
+  if(!object(raw))return raw;
+  if(raw.type==="tool_search_call"){
+    if(!object(raw.arguments)||!Array.isArray(raw.arguments.paths)||
+      raw.arguments.paths.some(p=>typeof p!=="string"||!byName.has(p)))
+      throw Error("invalid_provider_tool_search_paths");
+    return {type:raw.type,execution:"server",call_id:null,status:"completed",arguments:{paths:raw.arguments.paths}};
+  }
+  if(raw.type!=="tool_search_output")return raw;
+  return {type:raw.type,execution:"server",call_id:null,status:"completed",tools:(raw.tools as Row[]).map(t=>byName.get(t.name as string)!)};
  });
 }
