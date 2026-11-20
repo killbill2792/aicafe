@@ -267,7 +267,7 @@ it("preserves partial canonical rows when the overall answer lacks complete evid
 });
 
 it("retains a real approval card alongside a substantial answer without clipping its words",()=>{
- const prose="Evidence matters. ".repeat(1600);
+ const prose="Evidence matters. ".repeat(1600).trim();
  const id="33333333-3333-4333-8333-333333333333";
  const payload=agentReplyPayload({...turn(prose),unverified:[],results:[{source:"price_change_proposal",period:null,missing:[],draft:true,saved:false,proposalId:id}]});
  expect(payload.reply.blocks).toContainEqual({type:"proposal_card",proposalId:id});
