@@ -72,6 +72,15 @@ describe("event readiness final report delivery",()=>{
       delivery:{threadText:"Certified event results are ready.",taskKind:"event_plan"}});
     expect(report.delivery?.numberProvenance).toEqual([]);
   });
+  it("keeps cancelled report evidence cutoff stable as the cron advances",async()=>{
+    const inactive=["2026-11-01","2026-11-02"];
+    const base={...effect,endDate:"2026-11-02"};
+    const early=await eventReadinessCapability.report(scope,{...base,observationWindow:{inactiveDates:inactive,closeEarly:true,through:"2026-10-31"}},[actual(4000)],true);
+    const later=await eventReadinessCapability.report(scope,{...base,observationWindow:{inactiveDates:inactive,closeEarly:false}},[actual(4000)],true);
+    expect(early.result.toastEvidenceWindow).toEqual({from:"2026-10-31",to:"2026-10-31"});
+    expect(later.result.toastEvidenceWindow).toEqual(early.result.toastEvidenceWindow);
+    expect(later.result.salesSummary).toEqual(early.result.salesSummary);
+  });
   it("does not send a final report or call the model before the window closes",async()=>{
     vi.mocked(eventFinalNarrative).mockClear();
     const report=await eventReadinessCapability.report(scope,effect,[actual(4000)],false,
