@@ -734,3 +734,34 @@ test("large registered catalog retains the strict selected-run limit",()=>{
  const grouped=Array.from({length:21},(_,i)=>"17-case-"+i);
  assert.throws(()=>selectLunaScenarios(grouped,"group-17"),/Requested scenario/);
 });
+
+test("16E permits its documented alternative sales tool but still requires presentation",async()=>{
+ const {expectedToolsObserved}=await import("./shared-luna.mjs");
+ const m={id:"16e",expectedTools:["get_sales","present_response"]};
+ assert.equal(expectedToolsObserved(m,["query_data","present_response"]),true);
+ assert.equal(expectedToolsObserved(m,["query_data"]),false);
+ assert.equal(expectedToolsObserved({...m,id:"other"},["query_data","present_response"]),false);
+});
+test("trusted 16E readback rejects altered stored numeric results and wrong currency",async()=>{
+ const {attestTask17B}=await import("./luna-attest-17b.mjs");
+ const id=n=>"aaaaaaaa-aaaa-4aaa-8aaa-"+String(n).padStart(12,"0");
+ const scope={businessId:id(1),ownerUserId:id(2),threadId:id(3),plainReplyId:id(4),richReplyId:id(5),firstDay:"2026-01-01",lastDay:"2026-01-02"};
+ const panel={kind:"line",unit:"cents",currency:"USD",from:scope.firstDay,to:scope.lastDay,points:[{label:scope.firstDay,value:1234},{label:scope.lastDay,value:5678}]};
+ const query=sql=>{
+  if(sql.includes("public.businesses"))return [{currency:"USD"}];
+  if(sql.includes("daily_rollups"))return [{net_sales_cents:sql.includes(scope.firstDay)?1234:5678}];
+  if(sql.includes(scope.plainReplyId))return [{blocks:[{type:"text",text:"Yes."}]}];
+  return [{blocks:[{type:"text",text:"Sales rose."},{type:"rich_presentation",version:1,panels:[structuredClone(panel)]}]}];
+ };
+ assert.equal(attestTask17B("16e",scope,query).length,2);
+ panel.points[1].value=5679;assert.throws(()=>attestTask17B("16e",scope,query));
+ panel.points[1].value=5678;panel.currency="EUR";assert.throws(()=>attestTask17B("16e",scope,query));
+});
+
+test("natural-brief currency oracle accepts normal prose but rejects inexact numbers",async()=>{
+ const {hasMoney}=await import("./luna-attest-17b.mjs");
+ assert.equal(hasMoney("Sales were $1,234.56 after checks.","USD",123456),true);
+ assert.equal(hasMoney("1234.56 USD","USD",123456),true);
+ assert.equal(hasMoney("Sales $1,234.57","USD",123456),false);
+ assert.equal(hasMoney("2026-01-01 1234.56","USD",123456),false);
+});

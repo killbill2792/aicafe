@@ -92,6 +92,9 @@ jobs:
         shard: [1, 2, 3]
     steps:
       - uses: actions/checkout@v4
+        with:
+          # Census validates pinned main ancestry and reviewed source blobs.
+          fetch-depth: 0
       - uses: actions/setup-node@v4
         with:
           node-version: 22
@@ -418,6 +421,13 @@ jobs:
         run: npm ci
       - name: Mutation-test owner-domain selection and proof validation
         run: node --test scripts/acceptance/owner-gate.test.mjs
+      - name: Execute inherited Task17C oracle tests when its stack is present
+        run: |
+          if git ls-files --error-unmatch evals/acceptance/live/task17c-oracle.test.mjs >/dev/null 2>&1; then
+            node --test evals/acceptance/live/task17c-oracle.test.mjs
+          else
+            echo "Task17C not present on this parent-only tree; combined oracle proof remains UNTESTED"
+          fi
       - name: Mutation-test exhaustive Supervisor census and inherited operator evaluator accounting
         run: node --test scripts/acceptance/supervisor-coverage.test.mjs evals/acceptance/task13b-operator-parity.test.mjs
       - name: Discover Supervisor capabilities and run independent metric goldens
