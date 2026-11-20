@@ -1601,6 +1601,25 @@ test("@home Task16E design baseline observes empty and long Supervisor conversat
           await expect(page.getByText("Synthetic owner question 505",{exact:true})).toBeAttached();
           await expect(messageRows).toHaveCount(507);
           expect(await page.locator("[data-work-message]").evaluateAll(nodes=>new Set(nodes.map(n=>n.getAttribute("data-work-message"))).size)).toBe(await page.locator("[data-work-message]").count());
+          // Switching threads must not abandon a reader in older history.
+          const oldQuestion=page.getByText("Synthetic owner question 505",{exact:true});
+          await oldQuestion.scrollIntoViewIfNeeded();
+          const oldId=await oldQuestion.locator("xpath=ancestor::*[@data-work-message][1]").getAttribute("data-work-message");
+          const log=page.getByRole("log");
+          const previous=await log.evaluate(el=>({top:el.scrollTop,height:el.scrollHeight,client:el.clientHeight}));
+          expect(previous.height-previous.client-previous.top).toBeGreaterThan(64);
+          await controls.click();
+          await page.getByRole("button",{name:"Task16E empty synthetic conversation",exact:true}).click();
+          await expect(page.getByTestId("supervisor-welcome")).toBeVisible();
+          await controls.click();
+          await page.getByRole("button",{name:"Task16E long synthetic conversation",exact:true}).click();
+          await expect(page.locator('[data-work-message="'+oldId+'"]')).toBeAttached({timeout:30000});
+          await expect.poll(()=>log.evaluate(el=>el.scrollHeight-el.clientHeight-el.scrollTop),{timeout:10000}).toBeGreaterThan(64);
+          const restoredPosition=await page.locator('[data-work-message="'+oldId+'"]').evaluate(el=>{
+            const parent=el.closest('[role="log"]');const a=el.getBoundingClientRect(),b=parent.getBoundingClientRect();
+            return a.bottom>b.top&&a.top<b.bottom;
+          });
+          expect(restoredPosition).toBe(true);
         }
       }finally{await ctx.close();}
     }
