@@ -96,23 +96,48 @@ export function evaluatePresentationCalc(c:InteractiveCalc,changes:Readonly<Reco
 }
 /** A bounded semantic grouping grammar, independent of the renderer. Leaf
  * references identify only already validated snapshot components. */
-export const presentationGroupSchema=z.strictObject({layout:z.enum(["stack","grid","compare"]),items:z.array(z.string().regex(/^(?:panel[0-3]|table[01]|agenda|scenario|calculator)$/)).min(1).max(9)});
+// Flat reference graph supports recursive layouts without accepting recursive
+// model-authored JSON, executable props, repeated leaves or unbounded trees.
+export const presentationGroupSchema=z.strictObject({id:z.string().regex(/^g(?:[0-9]|1[01])$/).optional(),layout:z.enum(["stack","grid","compare"]),items:z.array(z.string().regex(/^(?:panel[0-7]|table[0-7]|agenda|scenario|calculator|g(?:[0-9]|1[01]))$/)).min(1).max(12)});
+type PresentationGroup=z.infer<typeof presentationGroupSchema>;
+export function presentationGroupRoots(groups:readonly PresentationGroup[]):number[]{
+ const children=new Set(groups.flatMap(g=>g.items));
+ return groups.flatMap((g,i)=>!g.id||!children.has(g.id)?[i]:[]);
+}
+/** Validate topology before recursive rendering. At most six group levels,
+ * twelve groups, and each owned data leaf exactly once. */
+export function validPresentationGroups(groups:readonly PresentationGroup[],leaves:readonly string[],panels:PresentationPanel[]):boolean{
+ const ids=new Map<string,number>();
+ for(let i=0;i<groups.length;i++){const id=groups[i].id;if(id){if(ids.has(id))return false;ids.set(id,i);}}
+ const seenGroups=new Set<number>(),seenLeaves=new Set<string>();
+ const visit=(i:number,depth:number):boolean=>{
+  if(depth>6||seenGroups.has(i))return false;
+  seenGroups.add(i);const g=groups[i];
+  if(g.layout==="compare"&&!compatibleComparison(g.items,panels))return false;
+  for(const key of g.items){
+   const child=ids.get(key);
+   if(child!==undefined){if(!visit(child,depth+1))return false;}
+   else{if(!leaves.includes(key)||seenLeaves.has(key))return false;seenLeaves.add(key);}
+  }
+  return true;
+ };
+ return presentationGroupRoots(groups).every(i=>visit(i,1))&&seenGroups.size===groups.length&&seenLeaves.size===leaves.length;
+}
 export const richPresentationSchema=z.strictObject({
   type:z.literal("rich_presentation"),version:z.literal(1),
   layout:z.enum(["stack","grid"]),
-  panels:z.array(presentationPanelSchema).max(4),
-  groups:z.array(presentationGroupSchema).min(1).max(9).optional(),
+  panels:z.array(presentationPanelSchema).max(8),
+  groups:z.array(presentationGroupSchema).min(1).max(12).optional(),
   report:z.literal(true).optional(),
   files:z.array(z.uuid()).min(1).max(3).refine(ids=>new Set(ids).size===ids.length).optional(),
-  tables:z.array(recordTableSchema).max(2).optional(),
+  tables:z.array(recordTableSchema).max(8).optional(),
   calculator:interactiveCalcSchema.optional(),
   agenda:agendaSchema.optional(),
   scenario:scenarioComparisonSchema.optional(),
   suggestions:z.array(z.string().trim().min(1).max(160)).max(3),
 }).refine(p=>p.panels.length+p.suggestions.length+Number(Boolean(p.agenda))+Number(Boolean(p.scenario))+Number(Boolean(p.report))+Number(Boolean(p.calculator))+(p.tables?.length??0)+(p.files?.length??0)>0).refine(p=>{
  if(!p.groups)return true;
- const keys=presentationLeaves(p),used=p.groups.flatMap(g=>g.items);
- return used.length===keys.length&&new Set(used).size===used.length&&used.every(k=>keys.includes(k))&&p.groups.every(g=>g.layout!=="compare"||compatibleComparison(g.items,p.panels));
+ return validPresentationGroups(p.groups,presentationLeaves(p),p.panels);
 });
 export type RichPresentation=z.infer<typeof richPresentationSchema>;
 export type PresentationPanel=z.infer<typeof presentationPanelSchema>;
@@ -120,7 +145,7 @@ export function presentationLeaves(p:Pick<RichPresentation,"panels"|"tables"|"ag
  return [...p.panels.map((_,i)=>"panel"+i),...(p.agenda?["agenda"]:[]),...(p.scenario?["scenario"]:[]),...(p.tables??[]).map((_,i)=>"table"+i),...(p.calculator?["calculator"]:[])];
 }
 export function compatibleComparison(items:string[],panels:PresentationPanel[]):boolean{
- if(items.length<2||items.some(k=>!/^panel[0-3]$/.test(k)))return false;
+ if(items.length<2||items.some(k=>!/^panel[0-7]$/.test(k)))return false;
  const series=items.map(k=>panels[Number(k.slice(5))]);
  if(series.some(p=>!p||p.kind==="donut"))return false;
  const first=series[0];

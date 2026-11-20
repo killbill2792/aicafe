@@ -54,3 +54,13 @@ it("retains dates spanning weeks and calendar pages without inventing an occurre
  expect(second.days[2].entries).toEqual([]);
  expect(second.pages).toBe(2);
 });
+
+ it("accepts recursive compositions of existing evidence and rejects cycles, repeated subtrees, dangling and over-depth graphs",()=>{
+ const p={kind:"metric",title:"Sales",unit:"cents",currency:"SAR",from:"2026-01-01",to:"2026-01-01",asOf:"2026-01-02",source:"daily_rollups",points:[{label:"Sales",value:12}]};
+ const b={type:"rich_presentation",version:1,layout:"stack",panels:[p,{...p,title:"Cost"},{...p,title:"Profit"}],suggestions:[]};
+ const groups=[{id:"g0",layout:"stack",items:["g1","panel2"]},{id:"g1",layout:"grid",items:["g2"]},{id:"g2",layout:"compare",items:["panel0","panel1"]}];
+ expect(richPresentationSchema.safeParse({...b,groups}).success).toBe(true);
+ for(const invalid of [[...groups,{id:"g3",layout:"grid",items:["g1"]}],[{...groups[0],items:["g1","g0"]},...groups.slice(1)],[{...groups[0],items:["g9","panel2"]},...groups.slice(1)],[...groups,{...groups[2]}]])expect(richPresentationSchema.safeParse({...b,groups:invalid}).success).toBe(false);
+ const deep=Array.from({length:7},(_,i)=>({id:"g"+i,layout:"stack",items:i===6?["panel0","panel1","panel2"]:["g"+(i+1)]}));
+ expect(richPresentationSchema.safeParse({...b,groups:deep}).success).toBe(false);
+ });

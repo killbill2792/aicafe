@@ -222,3 +222,18 @@ describe("real typed producer presentation",()=>{
    expect(presentResponse({layout:"stack",panels:[{source:"inventory",field:"rows",kind:"table"}],suggestions:[]},ctx(r))).toMatchObject({accepted:true,presentation:{tables:[{coverage:"partial",rows:[["Unnamed stock record",null,null,"not_observed","2026-11-01"],["Milk",0,"ml","dated_owner_count","2026-11-04"]]}]}});
  });
 });
+
+ it("composes nested groups from scoped current results without allowing numeric or action injection",()=>{
+ const nested={...request,panels:[request.panels[0],{...request.panels[0],kind:"bar"}],groups:[{id:"g0",layout:"stack",items:["g1"]},{id:"g1",layout:"grid",items:["p0","p1"]}]};
+ expect(presentResponse(nested,ctx())).toMatchObject({accepted:true,presentation:{groups:[{id:"g0",layout:"stack",items:["g1"]},{id:"g1",layout:"grid",items:["panel0","panel1"]}]}});
+ const cycle={...nested,groups:[{id:"g0",layout:"stack",items:["g1","p0"]},{id:"g1",layout:"grid",items:["g0","p1"]}]};
+ const safe=presentResponse(cycle,ctx());expect(safe).toMatchObject({accepted:true,presentation:{panels:[{},{}]}});expect(safe.presentation).not.toHaveProperty("groups");
+ });
+ it("projects explicitly counted saved records across formerly blocked domains while refusing stock or personal identity inference",()=>{
+ for(const view of ["cv_staff","cv_bills","cv_owner_facts","cv_inventory"]){
+ const result:AgentToolResult={source:"canonical_data",period:sales.period,missing:[],rows:[{business_date:"2026-11-01",count_source_ref:2}]};
+ const args={view,date_from:sales.period!.from,date_to:sales.period!.to,group_by:["business_date"],metrics:[{fn:"count",column:"source_ref"}]};
+ const context={...ctx(),turnResults:()=>[],presentationResults:()=>[{name:"query_data",arguments:JSON.stringify(args),result}]};
+ expect(presentResponse({...request,panels:[{source:"canonical_data",field:"count_source_ref",kind:"bar"}]},context)).toMatchObject({accepted:true,presentation:{panels:[{title:"Saved record count",unit:"count",points:[{value:2}]}]}});
+ }
+ });

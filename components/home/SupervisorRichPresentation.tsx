@@ -10,7 +10,7 @@ import {evaluateScenarioEditor,scenarioEditFields} from "@/lib/ai/conversations/
 import en from "@/messages/en.json";
 import es from "@/messages/es.json";
 import ar from "@/messages/ar.json";
-import {richPresentationSchema,presentationPanelSchema,agendaSchema,scenarioComparisonSchema,presentationReport,recordTableSchema,interactiveCalcSchema,evaluatePresentationCalc,presentationLeaves,compatibleComparison,calendarPage,type RecordTable,type InteractiveCalc,type Agenda,type ScenarioComparison,type RichPresentation,type PresentationPanel} from "@/lib/ai/conversations/presentation";
+import {richPresentationSchema,presentationPanelSchema,agendaSchema,scenarioComparisonSchema,presentationReport,recordTableSchema,interactiveCalcSchema,evaluatePresentationCalc,presentationLeaves,presentationGroupRoots,compatibleComparison,calendarPage,type RecordTable,type InteractiveCalc,type Agenda,type ScenarioComparison,type RichPresentation,type PresentationPanel} from "@/lib/ai/conversations/presentation";
 const copy=en.SupervisorPresentation;
 const Chart=dynamic(()=>import("./SupervisorRichChart"),{ssr:false});
 const ComparisonChart=dynamic(()=>import("./SupervisorRichChart").then(m=>m.ComparisonChart),{ssr:false});
@@ -23,9 +23,10 @@ export function presentationSpec(p:RichPresentation):Spec{
  if(p.calculator)elements.calculator={type:"Calculator",props:{calculator:p.calculator},children:[]};
  if(p.groups){
   elements.root.props={layout:"stack"};
-  elements.root.children=p.groups.map((_,i)=>"group"+i);
+  const ids=new Map(p.groups.flatMap((g,i)=>g.id?[[g.id,"group"+i] as const]:[]));
+  elements.root.children=presentationGroupRoots(p.groups).map(i=>"group"+i);
   p.groups.forEach((g,i)=>{
-   elements["group"+i]=g.layout==="compare"&&compatibleComparison(g.items,p.panels)?{type:"Comparison",props:{panels:g.items.map(k=>p.panels[Number(k.slice(5))])},children:[]}:{type:"Layout",props:{layout:g.layout},children:g.items};
+   elements["group"+i]=g.layout==="compare"&&compatibleComparison(g.items,p.panels)?{type:"Comparison",props:{panels:g.items.map(k=>p.panels[Number(k.slice(5))])},children:[]}:{type:"Layout",props:{layout:g.layout},children:g.items.map(key=>ids.get(key)??key)};
   });
  }
  return {root:"root",elements};
@@ -169,7 +170,7 @@ function ScenarioView({scenario,locale}:{scenario:ScenarioComparison;locale:stri
 export default function SupervisorRichPresentation({block,locale,onSuggest,disabled,message,attachments}:{block:unknown;locale:string;onSuggest:(text:string)=>void;disabled:boolean;message?:Parameters<typeof presentationReport>[1]&{threadId:string};attachments?:{threadId:string;items:StoredAttachment[]}|null}){
  const parsed=useMemo(()=>richPresentationSchema.safeParse(block),[block]);
  const registry=useMemo<ComponentRegistry>(()=>({
-  Layout:({element,children})=><div className={element.props.layout==="grid"?"grid min-w-0 gap-3 sm:grid-cols-2":"space-y-3"}>{children}</div>,
+  Layout:({element,children})=><div data-supervisor-layout={element.props.layout==="grid"?"grid":"stack"} className={element.props.layout==="grid"?"grid min-w-0 gap-3 sm:grid-cols-2":"min-w-0 space-y-3"}>{children}</div>,
   Panel:({element})=>{const p=presentationPanelSchema.safeParse(element.props.panel);return p.success?<Panel panel={p.data} locale={locale}/>:null;},
   Comparison:({element})=>{const raw:unknown=element.props.panels;const p=Array.isArray(raw)?raw.map((v:unknown)=>presentationPanelSchema.safeParse(v)):[];if(p.some(v=>!v.success))return null;const panels=p.flatMap(v=>v.success?[v.data]:[]);return compatibleComparison(panels.map((_,i)=>"panel"+i),panels)?<ComparisonView panels={panels} locale={locale}/>:null;},
   Agenda:({element})=>{const a=agendaSchema.safeParse(element.props.agenda);return a.success?<AgendaView agenda={a.data} locale={locale}/>:null;},

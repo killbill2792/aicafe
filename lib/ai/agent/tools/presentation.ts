@@ -14,8 +14,8 @@ const selection=z.strictObject({
 });
 export const presentationInputSchema=z.strictObject({
   layout:z.enum(["stack","grid"]),
-  panels:z.array(selection).max(4),
-  groups:z.array(z.strictObject({layout:z.enum(["stack","grid","compare"]),items:z.array(z.string().regex(/^(?:p[0-3]|agenda|scenario|calculator)$/)).min(1).max(7)})).max(7).nullable().optional(),
+  panels:z.array(selection).max(8),
+  groups:z.array(z.strictObject({id:z.string().regex(/^g(?:[0-9]|1[01])$/).nullable().optional(),layout:z.enum(["stack","grid","compare"]),items:z.array(z.string().regex(/^(?:p[0-7]|agenda|scenario|calculator|g(?:[0-9]|1[01]))$/)).min(1).max(12)})).max(12).nullable().optional(),
   agenda:z.enum(["calendar_events","timeline_events","calendar_shifts","timeline_shifts"]).nullable().optional(),
   scenario:z.enum(["monthly_profit","monthly_break_even","monthly_target_sales","item_margin"]).nullable().optional(),
   report:z.boolean().nullable().optional(),
@@ -33,7 +33,9 @@ const descriptions={
 const obj=(v:unknown):v is Record<string,unknown>=>!!v&&typeof v==="object"&&!Array.isArray(v);
 // Project already scoped canonical results using the existing field dictionary.
 // No additional reads, arbitrary JSON paths, model-authored units or aggregation.
-const blockedViews=new Set(["cv_inventory","cv_owner_facts","cv_bills","cv_staff"]);
+// These sources mix snapshots or owner-supplied records. A count describes
+// saved records only, never stock quantity, active headcount or verified costs.
+const recordOnlyViews=new Set(["cv_inventory","cv_owner_facts","cv_bills","cv_staff"]);
 function queryScope(args:Record<string,unknown>,columns:Record<string,{unit:string}>):string{
  const filters=Array.isArray(args.filters)?args.filters:[];
  return filters.flatMap(f=>{
@@ -48,7 +50,7 @@ function canonicalPanel(s:z.infer<typeof selection>,r:AgentToolResult,encoded:st
  if(r.source!=="canonical_data"||r.empty||r.truncated||r.missing.includes("result_truncated")||r.error||!r.period||
      r.period.to>ctx.asOf||!Array.isArray(r.rows)||r.rows.length<1||r.rows.length>30)return null;
  let args:unknown;try{args=JSON.parse(encoded);}catch{return null;}
- if(!obj(args)||typeof args.view!=="string"||!canonicalViewNames.includes(args.view as CanonicalView)||blockedViews.has(args.view)||
+ if(!obj(args)||typeof args.view!=="string"||!canonicalViewNames.includes(args.view as CanonicalView)||
     !Array.isArray(args.metrics)||args.date_from!==r.period.from||args.date_to!==r.period.to)return null;
  const view=args.view as CanonicalView;
  const columns=canonicalDictionary[view].columns as Record<string,{unit:string;meaning:string}>;
@@ -56,6 +58,8 @@ function canonicalPanel(s:z.infer<typeof selection>,r:AgentToolResult,encoded:st
  if(!obj(m)||typeof m.fn!=="string"||typeof m.column!=="string"||!Object.hasOwn(columns,m.column))return null;
  const units=["cents","count","items","units","seconds","minutes","hours","days","ratio","ratio squared","indicator","cents/hour"] as const;
  const rawUnit=columns[m.column].unit;
+ const recordOnly=recordOnlyViews.has(view);
+ if(recordOnly&&(!["count","count_distinct"].includes(m.fn)||m.column!=="source_ref"))return null;
  const unit=m.fn==="count"||m.fn==="count_distinct"||rawUnit==="indicator"&&m.fn==="sum"?"count":rawUnit;
  const partial=r.missing.length>0||Boolean(r.scopeWarning)||obj(r.aggregate)&&r.aggregate.status==="so_far";
  // Raw Toast fallback is scoped to explicit record counts, not guessed JSON units or screen totals.
@@ -72,7 +76,7 @@ function canonicalPanel(s:z.infer<typeof selection>,r:AgentToolResult,encoded:st
  if(s.kind==="donut")return null;
  const points:PresentationPanel["points"]=[];
  const filtered=Array.isArray(args.filters)&&args.filters.length>0;
- const title=(filtered?"Filtered: ":"")+m.fn.replaceAll("_"," ")+" "+m.column.replaceAll("_"," ");
+ const title=(filtered?"Filtered: ":"")+(recordOnly?"Saved record count":m.fn.replaceAll("_"," ")+" "+m.column.replaceAll("_"," "));
  for(const row of r.rows){
    if(!obj(row)||!Object.hasOwn(row,s.field))return null;
    const value=row[s.field];
@@ -91,7 +95,7 @@ function canonicalPanel(s:z.infer<typeof selection>,r:AgentToolResult,encoded:st
  }
  return {kind:s.kind,title,unit:unit as PresentationPanel["unit"],currency:unit==="cents"||unit==="cents/hour"?ctx.currency??null:null,
    from:r.period.from,to:r.period.to,asOf:ctx.asOf,source:"canonical_data",
-   sourceDetail:[view,s.field,filtered?queryScope(args,columns):"",columns[m.column].meaning,r.scopeWarning??"",...(partial?r.missing:[])].filter(Boolean).join(" · ").slice(0,500),
+   sourceDetail:[view,s.field,filtered?queryScope(args,columns):"",columns[m.column].meaning,canonicalDictionary[view].meaning,recordOnly?"Counts saved records only; not a current balance or certified business total.":"",r.scopeWarning??"",...(partial?r.missing:[])].filter(Boolean).join(" · ").slice(0,500),
    ...(partial?{coverage:"partial" as const}:["processing_fee_cents","historical_recipe_cost_cents","historical_recipe_contribution_cents"].includes(m.column)?{coverage:"estimate" as const}:{}),points};
 }
 // A query's returned columns and aggregate aliases, not a new model-defined
@@ -420,7 +424,7 @@ export function presentResponse(raw:unknown,ctx:Pick<AgentToolContext,"currency"
        const table=canonicalTable(x.result,x.arguments,ctx);return table?[table]:[];
      }):(s.ref?selected:results).filter(x=>matching(x.result)).flatMap(x=>{const table=readerTable(x.result,ctx);return table?[table]:[]});
      const distinct=[...new Map(candidates.map(t=>[JSON.stringify(t),t])).values()];
-     if(distinct.length===1&&tables.length<2){slots.set("p"+i,"table"+tables.length);tables.push(distinct[0]);}
+     if(distinct.length===1&&tables.length<8){slots.set("p"+i,"table"+tables.length);tables.push(distinct[0]);}
      return [];
    }
    const candidates=s.source==="canonical_data"?selected.filter(x=>x.name==="query_data"&&matching(x.result)).flatMap(x=>{
@@ -449,14 +453,19 @@ export function presentResponse(raw:unknown,ctx:Pick<AgentToolContext,"currency"
  if(!block.success)return {...empty,accepted:false};
  if(!parsed.data.groups?.length)return {...empty,accepted:true,presentation:block.data};
  const leaves=presentationLeaves(block.data),used=new Set<string>();
+ // Named groups are references to other groups. Strict graph validation below
+ // prevents cycles, repeated subtrees or dangling refs; invalid requests safely
+ // fall back to the original evidence leaves rather than hiding them.
+ const named=new Set(parsed.data.groups.flatMap(g=>g.id?[g.id]:[]));
  const groups:NonNullable<RichPresentation["groups"]>=[];
  for(const request of parsed.data.groups){
    const items=request.items.flatMap(id=>{
+     if(named.has(id))return [id];
      const key=slots.get(id)??id;
      if(!leaves.includes(key)||used.has(key))return [];
      used.add(key);return [key];
    });
-   if(items.length)groups.push({layout:request.layout==="compare"&&!compatibleComparison(items,block.data.panels)?"grid":request.layout,items});
+   if(items.length)groups.push({...(request.id?{id:request.id}:{}),layout:request.layout==="compare"&&!compatibleComparison(items,block.data.panels)?"grid":request.layout,items});
  }
  const remainder=leaves.filter(k=>!used.has(k));
  if(remainder.length)groups.push({layout:parsed.data.layout,items:remainder});
@@ -464,5 +473,5 @@ export function presentResponse(raw:unknown,ctx:Pick<AgentToolContext,"currency"
  return {...empty,accepted:true,presentation:arranged.success?arranged.data:block.data};
 }
 export const presentationTools={
- present_response:{schema:presentationInputSchema,description:"Optional UI from current reads, never invented data. Source+field: daily_rollups daily_sales; item_sales item_units; profitability net_sales/total_costs/owner_profit; canonical_data exact aggregate alias or field rows for a multi-column table; expenses recorded_expenses; business_costs cost_components; product_costs recipe_cost; supplier_purchase_plan subtotal/rows; purchase_orders, inventory, menu_items rows. Use ref from the prior result to disambiguate; groups arrange p0–p3, agenda/scenario/calculator in stack/grid/compare (same units). Agenda from get_events/get_week_schedule; scenario monthly_profit/monthly_break_even/monthly_target_sales/item_margin from verified simulate_scenario; calculator=true after calculate for editable owner assumptions (not screen numbers); report=true for text export; files=true for sources attached in this turn only. Suggestions edit a draft, never act. Answer fully in words; visuals only if useful."},
+ present_response:{schema:presentationInputSchema,description:"Optional UI from current reads, never invented data. Source+field: daily_rollups daily_sales; item_sales item_units; profitability net_sales/total_costs/owner_profit; canonical_data exact aggregate alias or field rows for a multi-column table; expenses recorded_expenses; business_costs cost_components; product_costs recipe_cost; supplier_purchase_plan subtotal/rows; purchase_orders, inventory, menu_items rows. Use ref from the prior result to disambiguate; groups arrange p0–p7, agenda/scenario/calculator; name groups g0–g11 and reference them inside other groups for nested stack/grid/compare (same units). Agenda from get_events/get_week_schedule; scenario monthly_profit/monthly_break_even/monthly_target_sales/item_margin from verified simulate_scenario; calculator=true after calculate for editable owner assumptions (not screen numbers); report=true for text export; files=true for sources attached in this turn only. Suggestions edit a draft, never act. Answer fully in words; visuals only if useful."},
 };
