@@ -22,7 +22,7 @@ import {stableMessageId,SupabaseLoopRepository} from "@/lib/ai/supervisor/loop/s
 import {notifyOwner} from "@/lib/operating/notifyOwner.server";
 import {effectHash,proposeLoop,monitorLoop,type LoopProposal,type OwnerLoopScope} from "@/lib/ai/supervisor/loop/engine";
 import {supervisorLoopRegistry} from "@/lib/ai/supervisor/loop/priceExperiment.server";
-import {authorizedScheduledEventScope,eventPlanFacts,selectedEventPlanFacts,eventReadinessCapabilityId,eventReadinessEffect,selectEventObservations,observedEventProposalDates,withEventObservationClaim}
+import {authorizedScheduledEventScope,eventPlanFacts,selectedEventPlanFacts,eventReadinessCapabilityId,eventReadinessEffect,selectEventObservations,observedEventProposalDates,withEventObservationClaim,readOnlyEventObservation}
   from "@/lib/ai/supervisor/loop/eventReadiness.server";
 import {runAgentTurn} from "@/lib/ai/agent/loop.server";
 import {searchWeb} from "@/lib/ai/agent/webSearch.server";
@@ -536,7 +536,7 @@ export async function recoverPlanDelivery(db:Db,businessId:string,ownerId:string
  * Drafts remain drafts: no owner approval, commit or POS effect is invoked.
  * Recheck recently closed days to incorporate late/corrected Toast imports. */
 export async function reportSavedEventDays(db:Db,businessId:string,ownerId:string,
-  today:string):Promise<{checked:number;reported:number;failed:number}>{
+  today:string,currentEvents?:readonly CafeEvent[],timezone="UTC"):Promise<{checked:number;reported:number;failed:number}>{
   const rows=await db.from("supervisor_proposals")
     .select("id,owner_user_id,thread_id,capability_id,capability_version,canonical_effect_payload,effect_hash,baseline,monitor_spec,status,revision,locale,monitoring_start_date,created_at")
     .eq("business_id",businessId).eq("owner_user_id",ownerId)
@@ -556,19 +556,23 @@ export async function reportSavedEventDays(db:Db,businessId:string,ownerId:strin
   let checked=0,reported=0,failed=0;
   const repo=new SupabaseLoopRepository();
   const observed=await observedEventProposalDates(db,businessId,proposals.map(p=>p.id));
+  const current=currentEvents?new Map(currentEvents.map(e=>[e.id,e])):undefined;
   const candidateDates=new Set<string>();
-  for(const proposal of proposals){
-    const parsed=eventReadinessEffect.safeParse(proposal.canonicalEffectPayload);
-    if(!parsed.success)continue;
-    for(const date of closedEventObservationDays(parsed.data.startDate,proposal.monitorSpec.durationDays,today))
+  const projected=proposals.flatMap(p=>{const observation=readOnlyEventObservation(p,current,today,timezone);return observation?[observation]:[]});
+  for(const proposal of projected){
+    for(const date of closedEventObservationDays(proposal.monitoringStartDate!,proposal.monitorSpec.durationDays,today))
       candidateDates.add(date);
   }
   const eligibleById=new Map<string,{proposal:LoopProposal;days:string[]}>();
   for(const date of [...candidateDates].sort()){
-    const [proposal]=selectEventObservations(proposals,observed.ids,date,observed.byDate.get(date));
+    const [proposal]=selectEventObservations(proposals,observed.ids,date,observed.byDate.get(date),current,today,timezone);
     if(!proposal)continue;
     const group=eligibleById.get(proposal.id)??{proposal,days:[]};
     group.days.push(date);eligibleById.set(proposal.id,group);
+  }
+  for(const p of projected){
+    const effect=eventReadinessEffect.parse(p.canonicalEffectPayload);
+    if(effect.observationWindow?.closeEarly&&!eligibleById.has(p.id))eligibleById.set(p.id,{proposal:p,days:[]});
   }
   const groups=[...eligibleById.values()];
   // Rotate bounded work each café-local day; newer proposals cannot starve older ones.
@@ -588,7 +592,7 @@ export async function reportSavedEventDays(db:Db,businessId:string,ownerId:strin
       // If another primary proposal owns the final day, finalize this partial
       // window without sampling that date again. Preserve previous approval/history.
       const end=addDays(p.monitoringStartDate!,p.monitorSpec.durationDays-1);
-      if(end<today&&!days.includes(end)){
+      if((end<today&&!days.includes(end))||eventReadinessEffect.parse(p.canonicalEffectPayload).observationWindow?.closeEarly){
         const closingDay=addDays(end,1);
         const result=await withEventObservationClaim(db,scope,p,closingDay,()=>monitorLoop(scope,supervisorLoopRegistry,repo,p,closingDay));
         if(result)reported++;
@@ -629,7 +633,8 @@ export async function runEventsLookahead(db:Db=createAdminSupabaseClient(),
         // Required before ANY paid model or web search and rechecked at proposal time.
         await assertCafeAiAccess(b.id);
         // Reconcile yesterday's saved event regardless of discovery/search outcome.
-        const observation=await reportSavedEventDays(db,b.id,owner.data.user_id,today)
+        const observation=await readCanonicalCafeEvents(db,b.id,addDays(today,-14),addDays(today,13))
+          .then(events=>reportSavedEventDays(db,b.id,owner.data.user_id,today,events,b.timezone!))
           .catch(()=>{
             console.warn("events_observation_unavailable");
             return {checked:0,reported:0,failed:1};
@@ -643,8 +648,11 @@ export async function runEventsLookahead(db:Db=createAdminSupabaseClient(),
         const verifiedChanges=await verifyUpcomingEventChanges(db,b.id,owner.data.user_id,
           b.timezone,today,timeline,now);
         // Re-read updated event statuses before planning; never alter approved plans.
-        if(verifiedChanges)timeline=await readSavedEventTimeline(db,
-          {businessId:b.id,ownerUserId:owner.data.user_id},today,to);
+        if(verifiedChanges){
+          timeline=await readSavedEventTimeline(db,{businessId:b.id,ownerUserId:owner.data.user_id},today,to);
+          const reconciled=await reportSavedEventDays(db,b.id,owner.data.user_id,today,timeline.events,b.timezone);
+          result.failed+=reconciled.failed;
+        }
         const sourceHash=eventAssessmentSourceHash(timeline);
         const assessments=await readEventAssessments(db,b.id,today,to);
         const candidates=pendingEventDays(timeline.events,timeline.plans,today,to,

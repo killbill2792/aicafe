@@ -58,7 +58,7 @@ export function cityScanWindows(today:string,state:EventScanState|null,locationH
 export function closedEventObservationDays(
   startDate:string,durationDays:number,today:string,lookbackDays=14
 ):string[]{
-  if(!Number.isInteger(durationDays)||durationDays<1||durationDays>14||
+  if(!Number.isInteger(durationDays)||durationDays<1||durationDays>366||
     !Number.isInteger(lookbackDays)||lookbackDays<1)return [];
   const first=addDays(today,-lookbackDays);
   const last=addDays(today,-1);
@@ -66,7 +66,7 @@ export function closedEventObservationDays(
   if(startDate>last||end<first)return [];
   const until=end<last?end:last;
   const days:string[]=[];
-  for(let day=startDate;day<=until;day=addDays(day,1))days.push(day);
+  for(let day=durationDays>14&&startDate<first?first:startDate;day<=until;day=addDays(day,1))days.push(day);
   return days;
 }
 /** Fair selection for one shared daily research budget. Stable UTC-day

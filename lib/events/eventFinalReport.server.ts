@@ -66,7 +66,7 @@ export function eventReportNumericEvidence(result:EventResult):NumericEvidence[]
     add("event/comparableTypicalCents",s.comparableTypicalCents,"cents");
     if(s.changePercent!==null)add("event/comparableChangeBps",s.changePercent*100,"bps");
   }
-  for(const day of result.days){
+  for(const day of result.days.slice(-14)){
     add(day.date+"/actualCents",day.actualCents,"cents");
     add(day.date+"/typicalCents",day.typicalCents,"cents");
     if(typeof day.changePercent==="number")add(day.date+"/changeBps",Math.round(day.changePercent*100),"bps");
@@ -144,7 +144,7 @@ export async function eventFinalNarrative(scope:OwnerLoopScope,proposalId:string
       changePercent:result.salesSummary.changePercent,
       comparisonScope:"Matched certified dates only; observed sales are not full-event totals unless all expected dates are covered.",
     }:null,
-    days:result.days.map(day=>({
+    days:result.days.slice(-14).map(day=>({
       date:day.date,actual:money(day.actualCents),
       usual:money(day.typicalCents),changePercent:day.changePercent??null,
       hours:day.hours?.filter(h=>h.usualCents!==null)

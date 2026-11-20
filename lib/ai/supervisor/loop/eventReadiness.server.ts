@@ -45,6 +45,7 @@ const sourceFact=z.strictObject({
 export const eventReadinessEffect=eventReadinessInput.extend({
  facts:z.array(sourceFact).min(1).max(8),
  factsHash:z.string().regex(/^[a-f0-9]{64}$/),
+ observationWindow:z.object({inactiveDates:z.array(isoDay).max(366),closeEarly:z.boolean()}).optional(),
 });
 export const eventReadinessCapabilityId="alex.event_readiness.v1";
 
@@ -68,7 +69,7 @@ export async function withEventObservationClaim<T>(db:ReturnType<typeof createAd
  * Give the existing monitor loop a transient window for a saved event plan,
  * without calling commitLoop or changing its durable proposal status/revision.
  * Rejected/stale proposals and corrupt facts are never resurrected. */
-export function readOnlyEventObservation(p:LoopProposal):LoopProposal|null{
+export function readOnlyEventObservation(p:LoopProposal,current?:ReadonlyMap<string,CafeEvent>,today?:string,timezone="UTC"):LoopProposal|null{
   if(p.capabilityId!==eventReadinessCapabilityId||
     !["draft","approved","committed","manual_confirmed"].includes(p.status))return null;
   const parsed=eventReadinessEffect.safeParse(p.canonicalEffectPayload);
@@ -76,7 +77,31 @@ export function readOnlyEventObservation(p:LoopProposal):LoopProposal|null{
   const effect=parsed.data;
   const days=Math.round((Date.parse(effect.endDate)-Date.parse(effect.startDate))/86400000)+1;
   if(days<1||days>14||days!==p.monitorSpec.durationDays)return null;
-  // This clone is for monitorLoop only; it is never persisted as a transition.
+  // A single occurrence retains its one reporting identity beyond the bounded
+  // preparation plan. This projection is never an approved or executable effect.
+  if(effect.eventIds.length===1&&effect.facts.length===1){
+    const event=current?.get(effect.eventIds[0]);
+    const fact=effect.facts[0];
+    const start=event&&event.startDate<effect.startDate?event.startDate:effect.startDate;
+    const end=[effect.endDate,fact.endDate,...(event?[event.endDate]:[])].sort().at(-1)!;
+    const duration=Math.round((Date.parse(end)-Date.parse(start))/86400000)+1;
+    if(duration>=1&&duration<=366){
+      const inactiveDates:string[]=[];
+      if(event&&today){
+        for(let day=start;day<=end;day=utcDateOffset(day,1)){
+          if(day>=today&&(event.status!=="found"||day<event.startDate||day>event.endDate))inactiveDates.push(day);
+        }
+      }
+      const closeEarly=Boolean(event&&today&&event.lastVerifiedAt&&
+        (event.status!=="found"||event.endDate<today)&&end>=today&&
+        eventStatusAtBusinessDay(event,today,timezone)!=="found"||event&&today&&event.lastVerifiedAt&&event.endDate<today&&end>=today);
+      if(duration!==days||start!==effect.startDate||inactiveDates.length){
+        const projected=eventReadinessEffect.parse({...effect,startDate:start,endDate:end,observationWindow:{inactiveDates,closeEarly}});
+        return {...p,status:"committed",monitoringStartDate:start,monitorSpec:{...p.monitorSpec,durationDays:duration},
+          canonicalEffectPayload:projected,effectHash:effectHash(projected)};
+      }
+    }
+  }
   return {...p,status:"committed",monitoringStartDate:effect.startDate};
 }
 
@@ -85,7 +110,7 @@ export function readOnlyEventObservation(p:LoopProposal):LoopProposal|null{
  * an unapproved revised draft; reruns never generate parallel report threads. */
 export function selectEventObservations(proposals:readonly LoopProposal[],
   observedIds:ReadonlySet<string>=new Set(),businessDate?:string,
-  sampledOnDate:ReadonlySet<string>=new Set()):LoopProposal[]{
+  sampledOnDate:ReadonlySet<string>=new Set(),current?:ReadonlyMap<string,CafeEvent>,today?:string,timezone="UTC"):LoopProposal[]{
   const priority=(p:LoopProposal)=>{
     // Once a day's monitor has emitted a sample, its proposal ID is sticky.
     // Changing draft facts cannot create a second mid-run notice/inbox thread.
@@ -98,7 +123,7 @@ export function selectEventObservations(proposals:readonly LoopProposal[],
   for(const original of [...proposals].sort((a,b)=>
     priority(b)-priority(a)||b.monitorSpec.durationDays-a.monitorSpec.durationDays||b.createdAt.localeCompare(a.createdAt)||
     b.id.localeCompare(a.id))){
-    const observation=readOnlyEventObservation(original);
+    const observation=readOnlyEventObservation(original,current,today,timezone);
     if(!observation)continue;
     const start=observation.monitoringStartDate!;
     if(businessDate){
@@ -119,13 +144,12 @@ export async function observedEventProposalDates(
   const found=new Set<string>(),byDate=new Map<string,Set<string>>();
   if(!ids.length)return {ids:found,byDate};
   const unique=[...new Set(ids)].slice(0,100);
-  // One event proposal has at most 14 observed business days. Chunks of 40
-  // cannot silently hit the canonical 1,000-row provider cap.
-  for(let i=0;i<unique.length;i+=40){
+  // An extended occurrence can have 366 samples; two IDs stay below the provider cap.
+  for(let i=0;i<unique.length;i+=2){
     const {data,error}=await db.from("supervisor_monitor_samples")
       .select("proposal_id,business_date").eq("business_id",businessId)
-      .in("proposal_id",unique.slice(i,i+40)).limit(1000);
-    if(error||!data)throw new Error("Event monitoring history unavailable");
+      .in("proposal_id",unique.slice(i,i+2)).limit(1000);
+    if(error||!data||data.length>=1000)throw new Error("Event monitoring history unavailable");
     for(const row of data){
       const id=String(row.proposal_id);found.add(id);
       if(typeof row.business_date!=="string")continue;
@@ -453,9 +477,10 @@ export const eventReadinessCapability=registerLoopCapability({
        changePercent(comparableActualCents,comparableTypicalCents):null};
    // A completed business day can have actual sales but missing item/discount
    // details. Keep that distinction in the same saved Supervisor report.
-   const toastEvidence=windowComplete&&window?.proposalId?await Promise.resolve()
+   const evidenceEnd=effect.observationWindow?.closeEarly?utcDateOffset(cafeToday((await createAdminSupabaseClient().from("businesses").select("timezone").eq("id",scope.businessId).maybeSingle()).data?.timezone??"UTC"),-1):effect.endDate;
+   const toastEvidence=windowComplete&&window?.proposalId&&evidenceEnd>=effect.startDate?await Promise.resolve()
      .then(()=>eventToastEvidence(createAdminSupabaseClient(),
-       scope.businessId,effect.startDate,effect.actions,effect.endDate)).catch(()=>({
+       scope.businessId,effect.startDate,effect.actions,evidenceEnd)).catch(()=>({
        itemSales:{coverage:"missing" as const,items:[]},
        namedDiscounts:{coverage:"missing" as const,names:[],
          matchedRecommendationNames:[]},
@@ -507,9 +532,10 @@ export const eventReadinessCapability=registerLoopCapability({
      eventIds:effect.eventIds,startDate:effect.startDate,endDate:effect.endDate,
      factsHash:effect.factsHash,observedDays:actual.length,expectedDays:expected,
      checklist,liveWatch,toastEvidence,salesSummary,
-     eventStatusDays:observed.filter(s=>s.observation.coverage==="event_inactive")
+     eventStatusDays:[...new Map([...observed.filter(s=>s.observation.coverage==="event_inactive")
        .map(s=>({date:s.businessDate,activity:s.observation.eventActivity})),
-     toastEvidenceWindow:{from:effect.startDate,to:effect.endDate},
+       ...(effect.observationWindow?.inactiveDates??[]).map(date=>({date,activity:"inactive"}))].map(d=>[d.date,d])).values()],
+     toastEvidenceWindow:{from:effect.startDate,to:evidenceEnd},
      missingBaselineDays:actual.filter(s=>s.observation.typicalCents===null).map(s=>s.businessDate),
      days:actual.map(s=>({date:s.businessDate,...s.observation})),
      caveat:"Cancelled, moved or unconfirmed event dates are not treated as active event observations. Event-day sales are observational, not proof of event causality. Recorded item sales, discount totals and staff timecards do not prove a proposed combo, discount or physical preparation was implemented; owner checklist markers are not POS evidence.",
