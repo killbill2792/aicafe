@@ -24,14 +24,17 @@ const plan={proposalId:"proposal-id",threadId:"thread-id",status:"committed",rev
   startDate:"2026-11-06",endDate:"2026-11-06",summary:"Plan owner approved",
   actions:[{area:"staff",action:"Consider a second barista"}],
   expectedBusyHours:[],factsHash:"original",reportStatus:null,report:null};
-function fakeDb(options:{failFirstTaskRead?:boolean}={}){
+function fakeDb(options:{failFirstTaskRead?:boolean;lostRevision?:boolean;concurrent?:boolean}={}){
   const writes:Array<{table:string;patch:Record<string,unknown>;filters:Array<[string,string]>}>=[];
   let taskExists=false,taskReadCount=0;
-  const db={
+  const attempts=new Map<string,string>();
+  const rpc=vi.fn(async()=>({data:true,error:null}));
+  const db={rpc,
     from:(table:string)=>{
       const filters:Array<[string,string]>=[];
       const query={
         eq(key:string,value:string){filters.push([key,value]);return this;},
+        is(key:string,value:null){filters.push([key,String(value)]);return this;},
         order(){return this;},limit(){return this;},select(){return this;},
         maybeSingle:async()=>{
           const failed=table==="operating_tasks"&&options.failFirstTaskRead&&++taskReadCount===1;
@@ -52,6 +55,14 @@ function fakeDb(options:{failFirstTaskRead?:boolean}={}){
           select(){return this;},
           async maybeSingle(){
             writes.push({table,patch,filters:[...filters]});
+            if(options.lostRevision)return {data:null,error:null};
+            if(options.concurrent&&table==="cafe_events"){
+              const id=filters.find(([k])=>k==="id")?.[1]??"";
+              const expected=filters.find(([k])=>k==="last_verification_attempt_at")?.[1];
+              if(expected!==(attempts.get(id)??"null"))return {data:null,error:null};
+              if(typeof patch.last_verification_attempt_at==="string")
+                attempts.set(id,patch.last_verification_attempt_at);
+            }
             return {data:{id:event.id},error:null};
           },
           then(resolve:(v:{error:null})=>unknown){
@@ -70,7 +81,7 @@ function fakeDb(options:{failFirstTaskRead?:boolean}={}){
       };
     },
   };
-  return {db:db as unknown as SupabaseClient,writes};
+  return {db:db as unknown as SupabaseClient,writes,rpc};
 }
 const timeline=(events:CafeEvent[]=[event]):SavedEventTimeline=>({events,plans:[plan]});
 describe("persisted change alerts through the existing inbox and chat",()=>{
@@ -104,15 +115,41 @@ describe("persisted change alerts through the existing inbox and chat",()=>{
    expect(writes.filter(w=>w.table==="cafe_events").every(w=>
      w.filters.some(([k,v])=>k==="business_id"&&v==="cafe-one"))).toBe(true);
  });
+ it("uses one claimed shared-occurrence correction instead of a local-only date update",async()=>{
+   const {db,rpc}=fakeDb();
+   const linked={...event,cityKey:"us|ca|example",cityEventId:"22222222-2222-4222-8222-222222222222",sourceUrls:[event.sourceUrl!]};
+   const businessId="11111111-1111-4111-8111-111111111111";
+   expect(await verifyUpcomingEventChanges(db,businessId,"owner-one","UTC","2026-11-01",timeline([linked]),new Date("2026-11-01T12:00:00Z"),async()=>({evidence:{verdict:"postponed",sourceUrl:event.sourceUrl,statement:"New dates confirmed Nov 9–10",newDate:"2026-11-09",newEndDate:"2026-11-10",newVenue:null},citedUrls:[event.sourceUrl!]}))).toBe(1);
+   expect(rpc).toHaveBeenCalledWith("ldi_correct_occurrence",expect.objectContaining({p_city_id:linked.cityEventId,p_change:expect.objectContaining({status:"found",newDate:"2026-11-09",newEndDate:"2026-11-10"}),p_aliases:[expect.stringMatching(/^[a-f0-9]{64}$/)]}));
+ });
+ it("cannot deliver a stale concurrent change or overwrite a newer same-status revision",async()=>{
+   const {db,writes}=fakeDb({lostRevision:true});
+   const known={...event,lastAttemptedAt:"2026-10-30T00:00:00Z"};
+   expect(await verifyUpcomingEventChanges(db,"cafe-one","owner-one","UTC",
+     "2026-11-01",timeline([known]),new Date("2026-11-01T12:00:00Z"),async()=>({
+       evidence:{verdict:"venue_changed",sourceUrl:event.sourceUrl,statement:"Venue changed",newDate:null,newVenue:"New venue"},citedUrls:[event.sourceUrl!]}))).toBe(0);
+   expect(writes).toHaveLength(1);
+   expect(writes[0].filters).toContainEqual(["last_verification_attempt_at",known.lastAttemptedAt]);
+   expect(writes.filter(w=>w.table==="operating_tasks"||w.table==="ai_messages")).toEqual([]);
+ });
+ it("two workers sharing a stale event snapshot can invoke the paid source at most once",async()=>{
+   const {db,writes}=fakeDb({concurrent:true});
+   const check=vi.fn(async()=>null);
+   const go=()=>verifyUpcomingEventChanges(db,"cafe-one","owner-one","UTC","2026-11-01",
+     timeline(),new Date("2026-11-01T12:00:00Z"),check);
+   await Promise.all([go(),go()]);
+   expect(check).toHaveBeenCalledTimes(1);
+   expect(writes.filter(w=>w.patch.verification_failed_at)).toHaveLength(1);
+ });
  it("failed or conflicting verification records failure without erasing saved status",async()=>{
    const {db,writes}=fakeDb();
    const count=await verifyUpcomingEventChanges(db,"cafe-one","owner-one","UTC",
      "2026-11-01",timeline(),new Date("2026-11-01T12:00:00Z"),async()=>null);
    expect(count).toBe(0);
-   expect(writes).toHaveLength(1);
-   expect(writes[0].patch).toMatchObject({verification_failed_at:"2026-11-01T12:00:00.000Z"});
-   expect(writes[0].patch).not.toHaveProperty("status");
-   expect(writes[0].patch).not.toHaveProperty("last_verified_at");
+   expect(writes).toHaveLength(2);
+   expect(writes[1].patch).toMatchObject({verification_failed_at:"2026-11-01T12:00:00.000Z"});
+   expect(writes[1].patch).not.toHaveProperty("status");
+   expect(writes[1].patch).not.toHaveProperty("last_verified_at");
  });
  it("retains cancellation history when a cited reinstatement restores an event",async()=>{
    const {db,writes}=fakeDb();
@@ -129,7 +166,7 @@ describe("persisted change alerts through the existing inbox and chat",()=>{
        sourceUrl:event.sourceUrl,statement:"City says parade resumes.",
        newDate:null,newVenue:null},citedUrls:[event.sourceUrl!]}));
    expect(changed).toBe(1);
-   const changes=writes.filter(w=>w.table==="cafe_events");
+   const changes=writes.filter(w=>w.table==="cafe_events"&&w.patch.status==="found");
    expect(changes[0].patch.status).toBe("found");
    const details=changes[0].patch.verification_details as {history:Array<{verdict:string}>};
    expect(details.history.map(h=>h.verdict)).toEqual(["cancelled","reinstated"]);
@@ -157,6 +194,16 @@ describe("persisted change alerts through the existing inbox and chat",()=>{
    expect(writes.some(w=>w.table==="cafe_events"&&w.patch.status==="cancelled"&&
      w.filters.some(([key,value])=>key==="id"&&value===next.id))).toBe(true);
    expect(writes.filter(w=>w.table==="operating_tasks")).toHaveLength(1);
+ });
+ it("does not research an unrelated event solely because an exact-ID plan shares its date",async()=>{
+   const {db,writes}=fakeDb(),check=vi.fn(async()=>null);
+   const unrelated={...event,id:"00000000-0000-4000-8000-000000000099"};
+   await verifyUpcomingEventChanges(db,"cafe-one","owner-one","UTC","2026-11-01",
+     {events:[unrelated,event],plans:[{...plan,eventIds:[event.id]}]},
+     new Date("2026-11-01T12:00:00Z"),check);
+   expect(check).toHaveBeenCalledTimes(1);
+   expect(check).toHaveBeenCalledWith(event);
+   expect(writes[0].filters).toContainEqual(["id",event.id]);
  });
  it("does not replay an already-delivered notice or recheck immediately",async()=>{
    const {db,writes}=fakeDb();

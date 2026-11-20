@@ -15,6 +15,10 @@ type EventResult={
     changePercent?:number|null;hours?:Array<{hourLocal:number;actualCents:number;
       usualCents:number|null;changePercent:number|null}>}>;
   caveat:string;
+  eventStatusDays?:Array<{date:string;activity:unknown}>;
+  salesSummary?:{observedSalesCents:number|null;observedSalesDays:number;comparableDays:number;
+    comparableActualCents:number|null;comparableTypicalCents:number|null;changePercent:number|null};
+  toastEvidenceWindow?:{from:string;to:string};
   toastEvidence?:{
     itemSales:{coverage:string;items:Array<{name:string;quantity:number}>};
     namedDiscounts:{coverage:string;names:string[];matchedRecommendationNames?:string[]};
@@ -29,7 +33,7 @@ export function eventReportFactsHash(result:EventResult,status:string,planSummar
   eventNames:readonly string[],currency:string|null):string{
   // The narrative is formatted in the café's currency. A configuration change
   // must invalidate cached text even when the underlying cents never change.
-  return effectHash({result,status,planSummary,eventNames,currency,narrativeFormatVersion:3});
+  return effectHash({result,status,planSummary,eventNames,currency,narrativeFormatVersion:4});
 }
 /** The factual fallback is not advice; it is sent even when a paid model
  * cannot run. No unknown amount is treated as zero. */
@@ -53,7 +57,16 @@ export function eventReportNumericEvidence(result:EventResult):NumericEvidence[]
   add("event/expectedDays",result.expectedDays,"count");
   add("event/checklist/done/count",result.checklist.done,"count");
   add("event/checklist/total/count",result.checklist.total,"count");
-  for(const day of result.days){
+  if(result.salesSummary){
+    const s=result.salesSummary;
+    add("event/observedSalesCents",s.observedSalesCents,"cents");
+    add("event/observedSalesDays",s.observedSalesDays,"count");
+    add("event/comparableDays",s.comparableDays,"count");
+    add("event/comparableActualCents",s.comparableActualCents,"cents");
+    add("event/comparableTypicalCents",s.comparableTypicalCents,"cents");
+    if(s.changePercent!==null)add("event/comparableChangeBps",s.changePercent*100,"bps");
+  }
+  for(const day of result.days.slice(-14)){
     add(day.date+"/actualCents",day.actualCents,"cents");
     add(day.date+"/typicalCents",day.typicalCents,"cents");
     if(typeof day.changePercent==="number")add(day.date+"/changeBps",Math.round(day.changePercent*100),"bps");
@@ -120,8 +133,18 @@ export async function eventFinalNarrative(scope:OwnerLoopScope,proposalId:string
     // A tick is an owner-entered marker, not proof of implementation.
     ownerMarkedChecklist:result.checklist,observedDays:result.observedDays,
     toastEvidence:result.toastEvidence??null,
-    expectedDays:result.expectedDays,
-    days:result.days.map(day=>({
+    toastEvidenceWindow:result.toastEvidenceWindow??null,
+    expectedDays:result.expectedDays,eventStatusDays:result.eventStatusDays??[],
+    salesSummary:result.salesSummary?{
+      observedSales:money(result.salesSummary.observedSalesCents),
+      observedSalesDays:result.salesSummary.observedSalesDays,
+      comparableDays:result.salesSummary.comparableDays,
+      comparableActual:money(result.salesSummary.comparableActualCents),
+      comparableTypical:money(result.salesSummary.comparableTypicalCents),
+      changePercent:result.salesSummary.changePercent,
+      comparisonScope:"Matched certified dates only; observed sales are not full-event totals unless all expected dates are covered.",
+    }:null,
+    days:result.days.slice(-14).map(day=>({
       date:day.date,actual:money(day.actualCents),
       usual:money(day.typicalCents),changePercent:day.changePercent??null,
       hours:day.hours?.filter(h=>h.usualCents!==null)
@@ -141,9 +164,13 @@ export async function eventFinalNarrative(scope:OwnerLoopScope,proposalId:string
       businessId:scope.businessId,
       requestId:"event-final:"+proposalId+":"+hash,
       toolNames:[],
-      ownerText:"Scheduled event-day FINAL report, not an owner request. Write a short, "+
-        "clear owner-facing report card comparing the certified actual and usual hourly "+
-        "sales and available Toast item, menu, named-discount and shift evidence. "+
+      ownerText:"Scheduled event FINAL report, not an owner request. Lead with the business outcome, "+
+        "the most meaningful verified comparisons across days, what worked or needs attention, "+
+        "and a practical lesson for the next event. Use available Toast item, menu, named-discount "+
+        "and shift evidence. Hourly figures support the conclusion; do not recite an hourly ledger. "+
+        "Report independent reliable findings even when other inputs are missing; distinguish "+
+        "an incomplete window from verified days, and never infer causation. "+
+        "Explicitly distinguish cancelled, moved or unconfirmed event dates from missing sales. "+
         "Never ask which physical suggestions were performed. Never imply a checklist "+
         "marker proves implementation, or that separate item sales prove a combo "+
         "or discount was offered. If POS lacks an identifiable discount name, "+

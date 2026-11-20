@@ -39,8 +39,15 @@ export function cityScanWindows(today:string,state:EventScanState|null,locationH
   if(cityCoverage==="unsearched")
     return [{from:today,to:addDays(today,13),reason:"initial"}];
   const windows=eventScanWindows(today,state,locationHash);
-  if(cityCoverage==="partial"&&!windows.some(w=>w.from<=today&&w.to>=today))
-    return [{from:today,to:addDays(today,13),reason:"new_day"},...windows];
+  if(cityCoverage==="partial"){
+    const horizon=addDays(today,13);
+    // One overlapping window is not proof all fourteen local dates are queued.
+    // The shared source ledger resumes only unresolved slices on the retry.
+    let covered=true;
+    for(let day=today;day<=horizon;day=addDays(day,1))
+      if(!windows.some(w=>w.from<=day&&w.to>=day)){covered=false;break;}
+    if(!covered)return [{from:today,to:horizon,reason:"new_day"},...windows];
+  }
   return windows;
 }
 /** Replay every date of a recently ended event window, preserving the
@@ -51,7 +58,7 @@ export function cityScanWindows(today:string,state:EventScanState|null,locationH
 export function closedEventObservationDays(
   startDate:string,durationDays:number,today:string,lookbackDays=14
 ):string[]{
-  if(!Number.isInteger(durationDays)||durationDays<1||durationDays>14||
+  if(!Number.isInteger(durationDays)||durationDays<1||durationDays>366||
     !Number.isInteger(lookbackDays)||lookbackDays<1)return [];
   const first=addDays(today,-lookbackDays);
   const last=addDays(today,-1);
@@ -59,7 +66,7 @@ export function closedEventObservationDays(
   if(startDate>last||end<first)return [];
   const until=end<last?end:last;
   const days:string[]=[];
-  for(let day=startDate;day<=until;day=addDays(day,1))days.push(day);
+  for(let day=durationDays>14&&startDate<first?first:startDate;day<=until;day=addDays(day,1))days.push(day);
   return days;
 }
 /** Fair selection for one shared daily research budget. Stable UTC-day

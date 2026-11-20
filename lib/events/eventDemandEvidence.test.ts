@@ -50,6 +50,11 @@ describe("LDI D — pure canonical performance evidence",()=>{
     expect(unreconciled.usualHours).toEqual([]);
     expect(unreconciled.coverage.hourlyReconciledDays).toBe(2);
   });
+  it("withholds an event-adjusted baseline when the exclusion source fails",()=>{
+    const result=assembleEventDemandEvidence(request,inputs({missing:["baseline_event_exclusions_unavailable"]}));
+    expect(result.normal.netSalesCents).toBeNull();
+    expect(result.usualHours).toEqual([]);
+  });
   it("excludes known event days, not arbitrary dates, from the comparable baseline",()=>{
     const result=assembleEventDemandEvidence(request,inputs({
       baselineEvents:[event("past-event","Another public event","2026-10-12")],
@@ -83,6 +88,20 @@ describe("LDI D — pure canonical performance evidence",()=>{
     expect(result.ownerObservations[0]).toMatchObject({origin:"owner_reported",
       value:{note:"Busy but a storm"}});
     expect(result.attribution).toBe("not_established");
+  });
+  it("learns from earlier certified days of the same spanning occurrence without double-counting an overlapping plan",()=>{
+    const previous="2026-11-01",now="2026-11-02";
+    const one=proposal("span",previous,[{id:"current-id",name:"City Parade"}]);
+    one.canonical_effect_payload={startDate:previous,endDate:now,eventIds:["current-id"],facts:[{id:"current-id",name:"City Parade"}]};
+    const overlap=proposal("also",previous,[{id:"current-id",name:"City Parade"}]);
+    const recurrence=proposal("unrelated",previous,[{id:"other",name:"City Parade"}]);
+    const samples=(id:string,cents:number)=>({proposal_id:id,business_date:previous,
+      evidence_source:"daily_rollups",observation:{coverage:"actual",actualCents:cents,typicalCents:10000}});
+    const result=assembleEventDemandEvidence({...request,asOfDate:now},inputs({
+      proposals:[one,overlap,recurrence],samples:[samples("span",13000),samples("also",13000),samples("unrelated",50000)],
+    }));
+    expect(result.currentObservations).toEqual([{date:previous,coverage:"actual",actualCents:13000,typicalCents:10000,source:"daily_rollups"}]);
+    expect(result.priorOutcomes).toEqual([]);
   });
   it("actual day defeats a live estimate; stale, incomplete or other-day Toast stays unknown",()=>{
     const yesterday={netSalesCents:9000,businessDate:date,readAt:"2026-11-02T18:00:00Z",

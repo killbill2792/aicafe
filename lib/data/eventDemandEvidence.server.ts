@@ -5,6 +5,8 @@ import {readToastDayTrust} from "./toastDayTrust.server";
 import {posFactReaders} from "./posFactReaders.server";
 import {readCafeEvents} from "./cafeEvents.server";
 import {readSavedTodayLive} from "./todayLive.server";
+import {readShifts,readInventory} from "./canonical/reads.server";
+import {projectInventoryEvidence} from "@/lib/calc/inventoryEvidence";
 import {loadOwnerFacts} from "@/lib/ownerFacts/store.server";
 import {readOwnerProposals,readOwnerReports,type OwnerScope} from
   "@/lib/ai/supervisor/loop/reads.server";
@@ -27,7 +29,7 @@ export async function readEventDemandEvidence(db:SupabaseClient,scope:OwnerScope
   const isToday=request.eventDate===request.asOfDate;
   // Source failures are explicitly incomplete, not zero sales or no outcomes.
   // All services below are existing canonical readers; there are no writes.
-  const [days,hours,baselineEvents,dayEvents,proposals,facts,live,trust]=
+  const [days,hours,baselineEvents,dayEvents,proposals,facts,live,trust,shifts,inventory]=
     await Promise.allSettled([
       readDailyFacts(db,scope.businessId,period.from,period.dailyThrough),
       posFactReaders(db,scope.businessId).peakHours({from:period.from,to:period.through}),
@@ -37,6 +39,8 @@ export async function readEventDemandEvidence(db:SupabaseClient,scope:OwnerScope
       loadOwnerFacts(scope.businessId,db),
       isToday?readSavedTodayLive(db,scope.businessId):Promise.resolve(null),
       readToastDayTrust(db,scope.businessId,period.from,period.through),
+      readShifts(db,scope.businessId,{dateFrom:request.eventDate,dateTo:request.eventDate}),
+      readInventory(db,scope.businessId,{dateFrom:request.asOfDate,dateTo:request.asOfDate}),
     ] as const);
   const ok=<T>(value:PromiseSettledResult<T>,fallback:T):T=>
     value.status==="fulfilled"?value.value:fallback;
@@ -68,7 +72,7 @@ export async function readEventDemandEvidence(db:SupabaseClient,scope:OwnerScope
   const relevant=relevantEventDemandProposals(plans,request);
   const reportCandidates=relevant.filter(p=>p.end<request.eventDate).slice(0,24);
   const sampleCandidates=[...reportCandidates.slice(0,8),
-    ...relevant.filter(p=>p.start<=request.eventDate&&p.end>=request.eventDate).slice(0,2)];
+    ...relevant.filter(p=>p.method==="event_id").slice(0,12)];
   const ids=[...new Set(reportCandidates.map(p=>p.proposal.id))];
   const sampleIds=[...new Set(sampleCandidates.map(p=>p.proposal.id))];
   const [reports,samples]=await Promise.allSettled([
@@ -88,7 +92,34 @@ export async function readEventDemandEvidence(db:SupabaseClient,scope:OwnerScope
   const sampleRows=samples.status==="fulfilled"&&!samples.value.error?
     (samples.value.data??[]) as EventDemandSample[]:[];
   const saved=ok(live,null);
-  return assembleEventDemandEvidence(request,{
+  const scheduled=ok(shifts,null),stock=ok(inventory,null);
+  // The two scheduling sources may overlap. Keep them separate; a draft or
+  // scheduled shift is not proof of attendance, availability or sufficient staff.
+  const shiftRows=(scheduled?.rows??[]).flatMap<{source:"app"|"toast";status:string;start:string|null;end:string|null}>(row=>{
+    const d=row.data as Record<string,unknown>|null;
+    if(!d||row.business_date!==request.eventDate)return [];
+    if(row.source==="app"&&["published","confirmed","draft"].includes(String(d.shift_status)))
+      return [{source:"app" as const,status:String(d.shift_status),
+        start:typeof d.start_local==="string"?d.start_local:null,
+        end:typeof d.end_local==="string"?d.end_local:null}];
+    if(row.source==="toast")return [{source:"toast" as const,status:"scheduled",
+      start:typeof d.scheduled_start==="string"?d.scheduled_start:null,
+      end:typeof d.scheduled_end==="string"?d.scheduled_end:null}];
+    return [];
+  });
+  const projected=projectInventoryEvidence(stock?.rows??[],100);
+  const readiness={staffing:{date:request.eventDate,source:"cv_shifts" as const,
+      coverage:!scheduled||scheduled.error||!shiftRows.length?"unknown" as const:
+        scheduled.truncated||shiftRows.length>60?"partial" as const:"recorded" as const,
+      shifts:shiftRows.slice(0,60)},
+    inventory:{asOfDate:request.asOfDate,source:"cv_inventory" as const,
+      coverage:!stock||stock.error||!projected.rows.length?"unknown" as const:
+        stock.truncated||projected.truncated||projected.missing.length?"partial" as const:"recorded" as const,
+      items:projected.rows.map(({source,ingredient_name,menu_item_ref,quantity,quantity_unit,
+        stock_status,source_as_of,evidence_state})=>({source,ingredient_name,menu_item_ref,
+        quantity,quantity_unit,stock_status,source_as_of,evidence_state})),
+      missing:[...projected.missing,...(stock?.notes??[])]}};
+  return {...assembleEventDemandEvidence(request,{
     daily:ok(days,[]),hourly:hourly?.available&&hourly.value?hourly.value.hours:[],
     baselineEvents:ok(baselineEvents,[]),dayEvents:ok(dayEvents,[]),
     proposals:plans,reports:prior,samples:sampleRows,ownerFacts:ok(facts,[]),
@@ -96,5 +127,5 @@ export async function readEventDemandEvidence(db:SupabaseClient,scope:OwnerScope
       readAt:saved.value.readAt,ageMs:saved.ageMs,truncated:saved.value.truncated,
       unparsedOrders:saved.value.unparsedOrders,locationsFailed:saved.value.locationsFailed}:null,
     missing,caveats,
-  });
+  }),readiness};
 }

@@ -9,6 +9,7 @@ vi.mock("@/lib/ai/conversations/auth.server",()=>({
 vi.mock("@/lib/access/access.server",()=>({assertCafeAiAccess:async()=>{f.access++;}}));
 vi.mock("@/lib/supabase/admin",()=>({createAdminSupabaseClient:()=>({from:()=>({select:()=>({eq:()=>({eq:()=>({maybeSingle:async()=>({data:null,error:null})})})})})})}));
 vi.mock("@/lib/data/getMenuControlCenter",()=>({getMenuControlCenter:async()=>[]}));
+vi.mock("@/lib/ai/supervisor/loop/eventReadiness.server",()=>({eventReadinessCapabilityId:"alex.event_readiness.v1"}));
 vi.mock("@/lib/ai/supervisor/loop/priceExperiment.server",()=>({
  priceExperimentCapabilityId:"alex.drink_price_experiment.v1",supervisorLoopRegistry:{},
 }));

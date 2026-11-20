@@ -161,14 +161,21 @@ async function sourcesForCity(db:Db,cityKey:string):Promise<CityResearchSource[]
   }
   return [...defaults,...venue];
 }
-async function allCoverage(db:Db,cityKey:string):Promise<CoverageRow[]>{
+async function allCoverage(db:Db,cityKey:string,today:string):Promise<CoverageRow[]>{
   return rows<CoverageRow>((from,to)=>db.from("city_source_coverage")
     .select("source_key,window_from,window_to,scan_from,scan_to,window_reason,status,search_attempted,is_scan_root,last_completed_at,last_checked_at,failure_category")
-    .eq("city_key",cityKey).order("scan_from").order("window_from")
+    .eq("city_key",cityKey).gte("scan_to",addDays(today,-14)).order("scan_from").order("window_from")
     .range(from,to),5000);
 }
 function matchingCoverage(all:CoverageRow[],key:string,from:string,to:string){
   return all.find(r=>r.source_key===key&&r.window_from===from&&r.window_to===to);
+}
+/** A shifted daily window may already be covered by completed, independently
+ * persisted roots. Reuse that evidence rather than spending again merely
+ * because a new date range does not match the original root's exact key. */
+function coveredByCompletedRoots(all:readonly CoverageRow[],key:string,from:string,to:string){
+  const roots=all.filter(r=>r.source_key===key&&r.is_scan_root&&complete(r.status)&&!!r.last_completed_at);
+  return datesWithin(from,to).every(day=>roots.some(r=>r.window_from<=day&&r.window_to>=day));
 }
 function needsRefresh(r:CoverageRow|undefined,reason:EventScanWindow["reason"],epoch:string){
   if(!r||!r.is_scan_root||!complete(r.status))return true;
@@ -201,11 +208,46 @@ async function persistCandidate(db:Db,scope:CityScope,kind:CityEventKind,
     // cited event-page provenance; no parallel Events authority is introduced.
     const patch:Record<string,unknown>={
       time_source_url:enrichment.evidenceUrl,last_enriched_at:checkedAt,
+      ...(enrichment.startAt&&enrichment.endAt&&enrichment.sourceTimezone?{
+        start_at:enrichment.startAt,end_at:enrichment.endAt,source_timezone:enrichment.sourceTimezone}:{}),
     };
     if(enrichment.startTime)patch.start_time=enrichment.startTime;
     if(enrichment.endTime)patch.end_time=enrichment.endTime;
     const update=await db.from("city_events").update(patch).eq("id",stored.cityEventId);
     assertOk(update.error);
+  }
+}
+/** Retry incomplete source enrichment independently of the discovery ledger.
+ * A completed search is not a completed duration/venue assessment. Reuse its
+ * exact cited candidate and the same existing budget; no duplicate search. */
+const enrichmentKey=(scope:CityScope,e:{name:string;startDate:string;sourceUrl:string})=>
+  "enrich|"+cityScopeKey(scope)+"|"+e.startDate+"|"+e.name+"|"+e.sourceUrl;
+async function attemptEnrichment(scope:CityScope,event:{name:string;startDate:string;sourceUrl:string},budget:LdiBudget){
+  const key=enrichmentKey(scope,event);
+  if(budget.enrichmentsRemaining<=0||budget.attempted.has(key))return null;
+  budget.attempted.add(key);budget.enrichmentsRemaining--;
+  return enrichCityEventFact({...scope,...event});
+}
+async function retryCityEnrichment(db:Db,scope:CityScope,from:string,to:string,budget:LdiBudget){
+  if(budget.enrichmentsRemaining<=0)return;
+  const candidates=await rows<{id:string;name:string;kind:CityEventKind;start_date:string;
+    end_date:string;duration_verified_at:string|null;last_enriched_at:string|null}>(
+    (offset,end)=>db.from("city_events").select("id,name,kind,start_date,end_date,duration_verified_at,last_enriched_at")
+      .eq("city_key",cityScopeKey(scope)).lte("start_date",to).gte("end_date",from)
+      .order("id").range(offset,end),1000);
+  const missing=candidates.filter(e=>!e.duration_verified_at||!e.last_enriched_at);
+  if(!missing.length)return;
+  const urls=await rows<{city_event_id:string;source_url:string}>(
+    (offset,end)=>db.from("city_event_sources").select("city_event_id,source_url")
+      .in("city_event_id",missing.map(e=>e.id)).order("city_event_id").order("source_url").range(offset,end),2000);
+  for(const row of missing){
+    if(budget.enrichmentsRemaining<=0)break;
+    const sourceUrl=urls.find(u=>u.city_event_id===row.id)?.source_url;
+    if(!sourceUrl)continue;
+    const candidate={name:row.name,startDate:row.start_date,sourceUrl};
+    if(budget.attempted.has(enrichmentKey(scope,candidate)))continue;
+    const enriched=await attemptEnrichment(scope,candidate,budget);
+    if(enriched)await persistCandidate(db,scope,row.kind,candidate,new Date().toISOString(),enriched);
   }
 }
 async function studyOne(db:Db,scope:CityScope,source:CityResearchSource,
@@ -222,8 +264,7 @@ async function studyOne(db:Db,scope:CityScope,source:CityResearchSource,
         let enrichment:ConfirmedEventEnrichment|null=null;
         if(budget.enrichmentsRemaining>0&&
           (source.kind==="city_calendar"||source.kind==="venue")){
-          budget.enrichmentsRemaining--;
-          enrichment=await enrichCityEventFact({...scope,...event});
+          enrichment=await attemptEnrichment(scope,event,budget);
         }
         await persistCandidate(db,scope,eventKind(),event,checkedAt,enrichment);
         saved++;
@@ -479,8 +520,7 @@ async function studyBatchedDays(db:Db,scope:CityScope,job:CityResearchJob,
         let enrichment:ConfirmedEventEnrichment|null=null;
         if(budget.enrichmentsRemaining>0&&
           (job.source.kind==="city_calendar"||job.source.kind==="venue")){
-          budget.enrichmentsRemaining--;
-          enrichment=await enrichCityEventFact({...scope,...event});
+          enrichment=await attemptEnrichment(scope,event,budget);
         }
         await persistCandidate(db,scope,eventKind(),event,checkedAt,enrichment);
         saved++;
@@ -549,7 +589,7 @@ export async function scanSharedResearch(db:Db,input:{
   if(input.window.reason==="initial"&&input.budget.cityTasks===6)
     input.budget.cityTasks=Math.max(input.budget.cityTasks,
       sources.length*4);
-  let all=await allCoverage(db,cityKey);
+  let all=await allCoverage(db,cityKey,input.today);
   // Only root/source-slice rows determine completion. Saturation creates
   // child coverage records, but a child must never complete its parent.
   // The scheduled caller determines initial city windows from the canonical
@@ -584,9 +624,12 @@ export async function scanSharedResearch(db:Db,input:{
       cityResearchDateSlices(proposed.from,proposed.to).map(slice=>({
         source,key:sourceKey(source),...slice,
       })));
-    const needs=intendedForWindow.filter(item=>needsRefresh(
-      matchingCoverage(all,item.key,item.from,item.to),
-      proposed.reason,proposed.from));
+    const needs=intendedForWindow.filter(item=>{
+      const prior=matchingCoverage(all,item.key,item.from,item.to);
+      if(!prior&&proposed.reason==="new_day"&&
+        coveredByCompletedRoots(all,item.key,item.from,item.to))return false;
+      return needsRefresh(prior,proposed.reason,proposed.from);
+    });
     const missing=needs.filter(item=>!matchingCoverage(all,item.key,item.from,item.to));
     if(missing.length){
       const saved=await db.from("city_source_coverage").upsert(missing.map(item=>({
@@ -612,7 +655,7 @@ export async function scanSharedResearch(db:Db,input:{
         .eq("window_from",item.from).eq("window_to",item.to);
       assertOk(saved.error);
     }
-    all=await allCoverage(db,cityKey);
+    all=await allCoverage(db,cityKey,input.today);
   }
   const intended=sources.flatMap(source=>cityResearchDateSlices(window.from,window.to)
     .map(slice=>({source,key:sourceKey(source),...slice})));
@@ -620,7 +663,7 @@ export async function scanSharedResearch(db:Db,input:{
   // otherwise seven sources on every one-day extension would permanently
   // outgrow the six-task daily budget. A grouped request must be contiguous,
   // use one source, and never exceed B's seven-day subwindow.
-  all=await allCoverage(db,cityKey);
+  all=await allCoverage(db,cityKey,input.today);
   const pending=planCityResearchJobs(all,sources,input.today);
   const selected:CityResearchJob[]=[];
   for(const job of pending){
@@ -642,7 +685,7 @@ export async function scanSharedResearch(db:Db,input:{
       }
     }));
   }
-  all=await allCoverage(db,cityKey);
+  all=await allCoverage(db,cityKey,input.today);
   // A saturated seven-day B attempt may have searched two subwindows, each
   // still too crowded for the 5-event compact answer. Subsequent retries
   // work on those narrower saved child windows. Only after they collectively
@@ -666,11 +709,17 @@ export async function scanSharedResearch(db:Db,input:{
       .eq("status",status);
     assertOk(updated.error);
   }
-  all=await allCoverage(db,cityKey);
+  all=await allCoverage(db,cityKey,input.today);
   const completed=intended.every(item=>{const row=matchingCoverage(all,item.key,item.from,item.to);
-    return !!row&&row.is_scan_root&&complete(row.status);
+    return row?row.is_scan_root&&complete(row.status):
+      window.reason==="new_day"&&coveredByCompletedRoots(all,item.key,item.from,item.to);
   });
-  const associations=await associateCityFacts(db,input.businessId,cityKey,window.from,window.to);
+  await retryCityEnrichment(db,scope,input.today,addDays(input.today,13),input.budget);
+  // B may have completed new entering roots while retrying an older window.
+  // Associate the whole requested range even before the older root finishes.
+  const associations=await associateCityFacts(db,input.businessId,cityKey,
+    window.from<requestedWindow.from?window.from:requestedWindow.from,
+    window.to>requestedWindow.to?window.to:requestedWindow.to);
   return {completed,through:window.to,reason:window.reason,
     windowStart:window.from,associations};
 }

@@ -59,6 +59,10 @@ describe("scheduled event discovery",()=>{
    ]);
    expect(cityScanWindows("2026-11-03",cursor,"location-a","complete")).toEqual([]);
    expect(cityScanWindows("2026-11-03",cursor,"location-a","unavailable")).toEqual([]);
+   // A cursor that covers today but not the whole horizon still needs recovery.
+   expect(cityScanWindows("2026-11-03",state("2026-11-03"),"location-a","partial"))
+     .toEqual([{from:"2026-11-03",to:"2026-11-16",reason:"new_day"},
+       {from:"2026-11-04",to:"2026-11-16",reason:"new_day"}]);
    // Older local-day catch-up is preserved, not overwritten by the retry.
    expect(cityScanWindows("2026-11-03",state("2026-10-31"),"location-a","partial"))
      .toEqual([
