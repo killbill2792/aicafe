@@ -24,9 +24,10 @@ const plan={proposalId:"proposal-id",threadId:"thread-id",status:"committed",rev
   startDate:"2026-11-06",endDate:"2026-11-06",summary:"Plan owner approved",
   actions:[{area:"staff",action:"Consider a second barista"}],
   expectedBusyHours:[],factsHash:"original",reportStatus:null,report:null};
-function fakeDb(options:{failFirstTaskRead?:boolean;lostRevision?:boolean}={}){
+function fakeDb(options:{failFirstTaskRead?:boolean;lostRevision?:boolean;concurrent?:boolean}={}){
   const writes:Array<{table:string;patch:Record<string,unknown>;filters:Array<[string,string]>}>=[];
   let taskExists=false,taskReadCount=0;
+  const attempts=new Map<string,string>();
   const db={
     from:(table:string)=>{
       const filters:Array<[string,string]>=[];
@@ -53,7 +54,15 @@ function fakeDb(options:{failFirstTaskRead?:boolean;lostRevision?:boolean}={}){
           select(){return this;},
           async maybeSingle(){
             writes.push({table,patch,filters:[...filters]});
-            return {data:options.lostRevision?null:{id:event.id},error:null};
+            if(options.lostRevision)return {data:null,error:null};
+            if(options.concurrent&&table==="cafe_events"){
+              const id=filters.find(([k])=>k==="id")?.[1]??"";
+              const expected=filters.find(([k])=>k==="last_verification_attempt_at")?.[1];
+              if(expected!==(attempts.get(id)??"null"))return {data:null,error:null};
+              if(typeof patch.last_verification_attempt_at==="string")
+                attempts.set(id,patch.last_verification_attempt_at);
+            }
+            return {data:{id:event.id},error:null};
           },
           then(resolve:(v:{error:null})=>unknown){
             writes.push({table,patch,filters:[...filters]});
@@ -115,15 +124,24 @@ describe("persisted change alerts through the existing inbox and chat",()=>{
    expect(writes[0].filters).toContainEqual(["last_verification_attempt_at",known.lastAttemptedAt]);
    expect(writes.filter(w=>w.table==="operating_tasks"||w.table==="ai_messages")).toEqual([]);
  });
+ it("two workers sharing a stale event snapshot can invoke the paid source at most once",async()=>{
+   const {db,writes}=fakeDb({concurrent:true});
+   const check=vi.fn(async()=>null);
+   const go=()=>verifyUpcomingEventChanges(db,"cafe-one","owner-one","UTC","2026-11-01",
+     timeline(),new Date("2026-11-01T12:00:00Z"),check);
+   await Promise.all([go(),go()]);
+   expect(check).toHaveBeenCalledTimes(1);
+   expect(writes.filter(w=>w.patch.verification_failed_at)).toHaveLength(1);
+ });
  it("failed or conflicting verification records failure without erasing saved status",async()=>{
    const {db,writes}=fakeDb();
    const count=await verifyUpcomingEventChanges(db,"cafe-one","owner-one","UTC",
      "2026-11-01",timeline(),new Date("2026-11-01T12:00:00Z"),async()=>null);
    expect(count).toBe(0);
-   expect(writes).toHaveLength(1);
-   expect(writes[0].patch).toMatchObject({verification_failed_at:"2026-11-01T12:00:00.000Z"});
-   expect(writes[0].patch).not.toHaveProperty("status");
-   expect(writes[0].patch).not.toHaveProperty("last_verified_at");
+   expect(writes).toHaveLength(2);
+   expect(writes[1].patch).toMatchObject({verification_failed_at:"2026-11-01T12:00:00.000Z"});
+   expect(writes[1].patch).not.toHaveProperty("status");
+   expect(writes[1].patch).not.toHaveProperty("last_verified_at");
  });
  it("retains cancellation history when a cited reinstatement restores an event",async()=>{
    const {db,writes}=fakeDb();
@@ -140,7 +158,7 @@ describe("persisted change alerts through the existing inbox and chat",()=>{
        sourceUrl:event.sourceUrl,statement:"City says parade resumes.",
        newDate:null,newVenue:null},citedUrls:[event.sourceUrl!]}));
    expect(changed).toBe(1);
-   const changes=writes.filter(w=>w.table==="cafe_events");
+   const changes=writes.filter(w=>w.table==="cafe_events"&&w.patch.status==="found");
    expect(changes[0].patch.status).toBe("found");
    const details=changes[0].patch.verification_details as {history:Array<{verdict:string}>};
    expect(details.history.map(h=>h.verdict)).toEqual(["cancelled","reinstated"]);

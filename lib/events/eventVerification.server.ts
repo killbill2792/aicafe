@@ -95,6 +95,25 @@ function sameChange(a:VerifiedChange,b:VerifiedChange):boolean{
   return a.status===b.status&&a.verdict===b.verdict&&
     a.sourceUrl===b.sourceUrl&&a.newDate===b.newDate&&a.newVenue===b.newVenue;
 }
+/** Claim the existing verification clock atomically before paid source work.
+ * A competing worker reading the same old row loses the conditional update.
+ * A crash leaves the last good evidence intact and the normal due clock
+ * permits a bounded retry; this is not a separate lease table or scheduler. */
+async function claimVerification(db:Db,businessId:string,event:CafeEvent,at:string){
+  let query=db.from("cafe_events").update({last_verification_attempt_at:at})
+    .eq("business_id",businessId).eq("id",event.id).eq("status",event.status);
+  query=event.lastAttemptedAt?query.eq("last_verification_attempt_at",event.lastAttemptedAt):
+    query.is("last_verification_attempt_at",null);
+  const claimed=await query.select("id").maybeSingle();
+  if(claimed.error)throw claimed.error;
+  return Boolean(claimed.data);
+}
+async function releaseUnstartedVerification(db:Db,businessId:string,event:CafeEvent,at:string){
+  const result=await db.from("cafe_events").update({last_verification_attempt_at:event.lastAttemptedAt??null})
+    .eq("business_id",businessId).eq("id",event.id).eq("status",event.status)
+    .eq("last_verification_attempt_at",at);
+  if(result.error)throw result.error;
+}
 async function writeAttempt(db:Db,businessId:string,event:CafeEvent,at:string,
   verification:CheckResult):Promise<VerifiedChange|null>{
   const prior=storedChange(event);
@@ -219,20 +238,28 @@ export async function verifyUpcomingEventChanges(db:Db,businessId:string,ownerId
     // Do not advance a verification timestamp merely because authorization was denied.
     // Previously verified pending notices above can still be delivered.
     if(!await ownerPublicWebAllowed(webScope))break;
+    const at=now.toISOString();
+    let claimed=false;
     try{
+      claimed=await claimVerification(db,businessId,event,at);
+      if(!claimed)continue;
       // Each actual provider transport also rechecks the live permission.
       const checked=await withOwnerPublicWebScope(webScope,()=>check(event)).catch(error=>{
         if(error instanceof PublicWebPermissionError)throw error;
         return null;
       });
-      const change=await writeAttempt(db,businessId,event,now.toISOString(),checked);
+      const change=await writeAttempt(db,businessId,{...event,lastAttemptedAt:at},at,checked);
       if(change){
         changed++;
         const plan=planned(event);
         if(plan)await deliverChange(db,businessId,ownerId,timezone,today,event,plan,change);
       }
     }catch(error){
-      if(error instanceof PublicWebPermissionError)break;
+      if(error instanceof PublicWebPermissionError){
+        if(claimed)await releaseUnstartedVerification(db,businessId,event,at).catch(()=>
+          console.warn("event_verification_failed",{stage:"release_claim"}));
+        break;
+      }
       // No guessing, no status clearing, no cross-café data in logs.
       console.warn("event_verification_failed",{stage:"verify_or_notify"});
     }

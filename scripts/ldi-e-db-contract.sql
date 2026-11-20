@@ -148,6 +148,30 @@ BEGIN
  THEN RAISE EXCEPTION 'shared event/place identity or legacy owner status corrupt'; END IF;
 END $check$;
 
+-- The existing row-clock claim is one conditional UPDATE, with no new
+-- lease table. Prove a stale second claim and stale completion cannot win,
+-- and the other café remains untouched.
+DO $check$
+DECLARE winner integer; loser integer; stale integer;
+BEGIN
+ UPDATE public.cafe_events SET last_verification_attempt_at='2026-11-03T15:00:00Z'
+ WHERE id=current_setting('test.ldi.cafe_event_a')::uuid
+ AND last_verification_attempt_at IS NULL;
+ GET DIAGNOSTICS winner=ROW_COUNT;
+ UPDATE public.cafe_events SET last_verification_attempt_at='2026-11-03T15:00:01Z'
+ WHERE id=current_setting('test.ldi.cafe_event_a')::uuid
+ AND last_verification_attempt_at IS NULL;
+ GET DIAGNOSTICS loser=ROW_COUNT;
+ UPDATE public.cafe_events SET last_verified_at='2026-11-03T15:00:01Z'
+ WHERE id=current_setting('test.ldi.cafe_event_a')::uuid
+ AND last_verification_attempt_at='2026-11-03T15:00:01Z';
+ GET DIAGNOSTICS stale=ROW_COUNT;
+ IF winner<>1 OR loser<>0 OR stale<>0 OR EXISTS(
+ SELECT 1 FROM public.cafe_events WHERE id<>current_setting('test.ldi.cafe_event_a')::uuid
+ AND source_url='https://city.example.org/events/civic-fair' AND last_verification_attempt_at IS NOT NULL)
+ THEN RAISE EXCEPTION 'LDI stale worker claim or cross-cafe verification write'; END IF;
+END $check$;
+
 -- Authenticate owner A: shared sourced city facts visible, never café B
 -- associations, hypotheses, scope coverage or owner decisions.
 SET LOCAL ROLE authenticated;
