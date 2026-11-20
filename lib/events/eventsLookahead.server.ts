@@ -635,11 +635,12 @@ export async function runEventsLookahead(db:Db=createAdminSupabaseClient(),
           .limit(1).maybeSingle();
         requireOk(owner.error);
         if(!owner.data?.user_id){result.skipped++;continue;}
+        const ownerId=owner.data.user_id;
         // Required before ANY paid model or web search and rechecked at proposal time.
         await assertCafeAiAccess(b.id);
         // Reconcile yesterday's saved event regardless of discovery/search outcome.
         const observation=await readCanonicalCafeEvents(db,b.id,addDays(today,-14),addDays(today,13))
-          .then(events=>reportSavedEventDays(db,b.id,owner.data.user_id,today,events,b.timezone!))
+          .then(events=>reportSavedEventDays(db,b.id,ownerId,today,events,b.timezone!))
           .catch(()=>{
             console.warn("events_observation_unavailable");
             return {checked:0,reported:0,failed:1};
