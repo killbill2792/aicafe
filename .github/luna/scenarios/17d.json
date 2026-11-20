@@ -1,0 +1,179 @@
+{
+  "id": "17d",
+  "mode": "generic",
+  "engine": "node-server",
+  "entrypoint": "evals/acceptance/live/task17d.mjs",
+  "proof": "17d-proof.json",
+  "scope": "17d-scope.json",
+  "expectedTools": [
+    "get_supervisor_permissions",
+    "manage_routine"
+  ],
+  "assertions": [
+    {
+      "name": "routine-final-revision",
+      "kind": "source",
+      "table": "public.supervisor_routines",
+      "where": {
+        "business_id": {
+          "scope": "businessId"
+        },
+        "owner_user_id": {
+          "scope": "ownerUserId"
+        },
+        "thread_id": {
+          "scope": "threadId"
+        },
+        "id": {
+          "scope": "routineId"
+        },
+        "title": {
+          "scope": "routineTitle"
+        },
+        "status": {
+          "eq": "revoked"
+        },
+        "revision": {
+          "eq": "5"
+        },
+        "local_time": {
+          "eq": "09:30:00"
+        }
+      },
+      "minCount": 1,
+      "maxCount": 1
+    },
+    {
+      "name": "only-one-routine",
+      "kind": "source",
+      "table": "public.supervisor_routines",
+      "where": {
+        "business_id": {
+          "scope": "businessId"
+        },
+        "owner_user_id": {
+          "scope": "ownerUserId"
+        },
+        "thread_id": {
+          "scope": "threadId"
+        }
+      },
+      "minCount": 1,
+      "maxCount": 1
+    },
+    {
+      "name": "private-file-source",
+      "kind": "source",
+      "table": "public.ai_attachments",
+      "where": {
+        "business_id": {
+          "scope": "businessId"
+        },
+        "owner_user_id": {
+          "scope": "ownerUserId"
+        },
+        "thread_id": {
+          "scope": "threadId"
+        },
+        "id": {
+          "scope": "attachmentId"
+        }
+      },
+      "minCount": 1,
+      "maxCount": 1
+    },
+    {
+      "name": "create-reply",
+      "kind": "owner",
+      "table": "public.ai_messages",
+      "where": {
+        "business_id": {
+          "scope": "businessId"
+        },
+        "owner_user_id": {
+          "scope": "ownerUserId"
+        },
+        "thread_id": {
+          "scope": "threadId"
+        },
+        "id": {
+          "scope": "createReplyId"
+        },
+        "role": {
+          "eq": "supervisor"
+        }
+      },
+      "minCount": 1,
+      "maxCount": 1
+    },
+    {
+      "name": "file-reply",
+      "kind": "owner",
+      "table": "public.ai_messages",
+      "where": {
+        "business_id": {
+          "scope": "businessId"
+        },
+        "owner_user_id": {
+          "scope": "ownerUserId"
+        },
+        "thread_id": {
+          "scope": "threadId"
+        },
+        "id": {
+          "scope": "fileReplyId"
+        },
+        "role": {
+          "eq": "supervisor"
+        }
+      },
+      "minCount": 1,
+      "maxCount": 1
+    },
+    {
+      "name": "no-unrequested-proposal",
+      "kind": "source",
+      "table": "public.supervisor_proposals",
+      "where": {
+        "business_id": {
+          "scope": "businessId"
+        },
+        "thread_id": {
+          "scope": "threadId"
+        }
+      },
+      "minCount": 0,
+      "maxCount": 0
+    },
+    {
+      "name": "foreign-routine",
+      "kind": "isolation",
+      "table": "public.supervisor_routines",
+      "where": {
+        "business_id": {
+          "scope": "otherCafeId"
+        },
+        "id": {
+          "scope": "routineId"
+        }
+      },
+      "minCount": 0,
+      "maxCount": 0
+    },
+    {
+      "name": "foreign-file",
+      "kind": "isolation",
+      "table": "public.ai_attachments",
+      "where": {
+        "business_id": {
+          "scope": "otherCafeId"
+        },
+        "id": {
+          "scope": "attachmentId"
+        }
+      },
+      "minCount": 0,
+      "maxCount": 0
+    }
+  ]
+}

@@ -1,0 +1,1166 @@
+{
+  "version": 1,
+  "viewports": [
+    390,
+    1440
+  ],
+  "cases": [
+    {
+      "id": "D01",
+      "name": "saved conversation and routine identity",
+      "evidence": "fixture_presentation",
+      "families": [
+        "D01",
+        "D06"
+      ],
+      "tag": "home"
+    },
+    {
+      "id": "D02",
+      "name": "proactive private notice and foreign tenant denial",
+      "evidence": "fixture_presentation",
+      "families": [
+        "D02"
+      ],
+      "tag": "home"
+    },
+    {
+      "id": "D03",
+      "name": "offline work and two-tab recovery without effect",
+      "evidence": "fixture_presentation",
+      "families": [
+        "D03",
+        "D07",
+        "D09"
+      ],
+      "tag": "home"
+    },
+    {
+      "id": "D04",
+      "name": "private upload, readback, reselect and tenant denial",
+      "evidence": "actual_local_storage",
+      "families": [
+        "D01",
+        "D06"
+      ],
+      "tag": "home"
+    },
+    {
+      "id": "D05",
+      "name": "owner decline, stale tab approval and tenant denial",
+      "evidence": "actual_local_decision_no_effect",
+      "families": [
+        "D04",
+        "D07"
+      ],
+      "tag": "home"
+    },
+    {
+      "id": "D06",
+      "name": "keyboard focus trap and 320px reflow",
+      "evidence": "actual_browser_interaction",
+      "families": [
+        "D08"
+      ],
+      "tag": "home"
+    },
+    {
+      "id": "D07",
+      "tag": "home",
+      "name": "missing source, retry and source-resolution honesty",
+      "evidence": "fixture_presentation",
+      "families": [
+        "D03",
+        "D09"
+      ]
+    },
+    {
+      "id": "D08",
+      "tag": "home",
+      "name": "actual signout, private thread denial and relogin",
+      "evidence": "actual_local_auth",
+      "families": [
+        "D01",
+        "D06",
+        "D07"
+      ]
+    },
+    {
+      "id": "D09",
+      "tag": "money",
+      "name": "monthly bill arithmetic, estimates, USD and EUR",
+      "evidence": "actual_source_screen_parity",
+      "families": [
+        "D05",
+        "D09"
+      ]
+    },
+    {
+      "id": "D10",
+      "tag": "gmail",
+      "name": "actual file revocation, endpoint failure and stale owner revision",
+      "evidence": "actual_local_permission",
+      "families": [
+        "D06",
+        "D07",
+        "D09"
+      ]
+    },
+    {
+      "id": "D11",
+      "tag": "home",
+      "name": "permission read failure and verified retry, no grant",
+      "evidence": "actual_browser_fault_no_effect",
+      "families": [
+        "D06",
+        "D09"
+      ]
+    },
+    {
+      "id": "D12",
+      "tag": "home",
+      "name": "owner cross-conversation library navigation and saved work",
+      "evidence": "fixture_presentation",
+      "families": [
+        "D01",
+        "D03",
+        "D07"
+      ]
+    },
+    {
+      "id": "D13",
+      "tag": "money",
+      "name": "financial planning, cost entry and settings routes",
+      "evidence": "actual_authenticated_route_reachability_only",
+      "families": [
+        "D05",
+        "D08"
+      ]
+    },
+    {
+      "id": "D14",
+      "tag": "menu",
+      "name": "catalog, pantry and source correction route reachability",
+      "evidence": "actual_authenticated_route_reachability_only",
+      "families": [
+        "D05",
+        "D08"
+      ]
+    },
+    {
+      "id": "D15",
+      "tag": "staff",
+      "name": "staff, rules and operations source navigation",
+      "evidence": "actual_authenticated_route_reachability_only",
+      "families": [
+        "D05",
+        "D08"
+      ]
+    },
+    {
+      "id": "D16",
+      "tag": "gmail",
+      "name": "owner account, POS and file import route reachability",
+      "evidence": "actual_authenticated_route_reachability_only",
+      "families": [
+        "D05",
+        "D08"
+      ]
+    },
+    {
+      "id": "D17",
+      "tag": "menu",
+      "name": "source price, currency and foreign item isolation",
+      "evidence": "actual_source_screen_parity",
+      "families": [
+        "D05",
+        "D06",
+        "D09"
+      ]
+    },
+    {
+      "id": "D18",
+      "tag": "home",
+      "name": "actual owner alert disposition, correct currency and foreign denial",
+      "evidence": "actual_local_owner_decision",
+      "families": [
+        "D05",
+        "D06",
+        "D09"
+      ]
+    },
+    {
+      "id": "D19",
+      "tag": "gmail",
+      "name": "private persisted import results and foreign denial",
+      "evidence": "fixture_presentation",
+      "families": [
+        "D05",
+        "D06",
+        "D09"
+      ]
+    },
+    {
+      "id": "D20",
+      "tag": "home",
+      "name": "authenticated tablet RTL, localized route and answer text fallback",
+      "viewports": [
+        390,
+        768,
+        1024,
+        1440
+      ],
+      "evidence": "actual_browser_emulation_only",
+      "families": [
+        "D01",
+        "D08",
+        "D09"
+      ]
+    },
+    {
+      "id": "D21",
+      "tag": "home",
+      "name": "repeat authenticated production-build lab measurement",
+      "viewports": [
+        390,
+        768,
+        1440
+      ],
+      "evidence": "actual_local_production_lab_not_field_vitals",
+      "families": [
+        "D08"
+      ]
+    },
+    {
+      "id": "D22",
+      "tag": "home",
+      "name": "authenticated axe WCAG automated scan of home and owner controls",
+      "viewports": [
+        390,
+        768,
+        1440
+      ],
+      "evidence": "locked_axe_automated_not_manual_accessibility",
+      "families": [
+        "D08",
+        "D09"
+      ]
+    },
+    {
+      "id": "D23",
+      "tag": "home",
+      "name": "real owner cancellation API and persisted work state with foreign denial",
+      "evidence": "actual_local_owner_control_and_db_parity",
+      "families": [
+        "D02",
+        "D06",
+        "D09"
+      ]
+    }
+  ],
+  "integration": {
+    "status": "NOT_PROVEN",
+    "dependencies": [
+      "17b",
+      "17c"
+    ],
+    "required": [
+      "full upstream screen/intent census",
+      "real autonomous event and effect receipts",
+      "actual delegated routine and file analysis",
+      "all approval and correction families",
+      "accessibility automation and remaining business screen parity"
+    ]
+  },
+  "censusCandidates": {
+    "screen-candidate:app/[locale]/page.tsx": [
+      "D01",
+      "D03",
+      "D04",
+      "D05",
+      "D06",
+      "D07",
+      "D08",
+      "D11",
+      "D12",
+      "D20"
+    ],
+    "screen-candidate:app/[locale]/operations/page.tsx": [
+      "D02"
+    ],
+    "screen-candidate:app/[locale]/more/page.tsx": [
+      "D08",
+      "D16"
+    ],
+    "screen-candidate:app/[locale]/more/bills/page.tsx": [
+      "D09"
+    ],
+    "screen-candidate:app/[locale]/more/supervisor-access/page.tsx": [
+      "D10"
+    ],
+    "screen-candidate:app/[locale]/login/page.tsx": [
+      "D08"
+    ],
+    "tool:manage_routine": [
+      "D01",
+      "luna:17d"
+    ],
+    "tool:get_supervisor_permissions": [
+      "D10",
+      "luna:17d"
+    ],
+    "tool:get_bills": [
+      "D09"
+    ],
+    "tool:inspect_supplier_purchase": [
+      "D05"
+    ],
+    "tool:propose_supplier_purchase_order": [
+      "D05"
+    ],
+    "effect:maya.supplier_purchase_order.v1": [
+      "D05"
+    ],
+    "routine-status:active": [
+      "D01",
+      "luna:17d"
+    ],
+    "routine-status:paused": [
+      "luna:17d"
+    ],
+    "routine-status:revoked": [
+      "luna:17d"
+    ],
+    "screen-candidate:app/[locale]/money/page.tsx": [
+      "D13"
+    ],
+    "screen-candidate:app/[locale]/more/plan/page.tsx": [
+      "D13"
+    ],
+    "screen-candidate:app/[locale]/more/break-even/page.tsx": [
+      "D13"
+    ],
+    "screen-candidate:app/[locale]/more/economics/page.tsx": [
+      "D13"
+    ],
+    "screen-candidate:app/[locale]/more/try-scenario/page.tsx": [
+      "D13"
+    ],
+    "screen-candidate:app/[locale]/more/financial-settings/page.tsx": [
+      "D13"
+    ],
+    "screen-candidate:app/[locale]/more/processing-fees/page.tsx": [
+      "D13"
+    ],
+    "screen-candidate:app/[locale]/add-cost/page.tsx": [
+      "D13"
+    ],
+    "screen-candidate:app/[locale]/add-cost/type/page.tsx": [
+      "D13"
+    ],
+    "screen-candidate:app/[locale]/add-cost/receipt/page.tsx": [
+      "D13"
+    ],
+    "screen-candidate:app/[locale]/add-cost/voice/page.tsx": [
+      "D13"
+    ],
+    "screen-candidate:app/[locale]/add-cost/statement/page.tsx": [
+      "D13"
+    ],
+    "screen-candidate:app/[locale]/menu/page.tsx": [
+      "D14"
+    ],
+    "screen-candidate:app/[locale]/menu/pantry/page.tsx": [
+      "D14"
+    ],
+    "screen-candidate:app/[locale]/menu/manage/page.tsx": [
+      "D14"
+    ],
+    "screen-candidate:app/[locale]/menu/import-review/page.tsx": [
+      "D14"
+    ],
+    "screen-candidate:app/[locale]/menu/new/page.tsx": [
+      "D14"
+    ],
+    "screen-candidate:app/[locale]/staff/page.tsx": [
+      "D15"
+    ],
+    "screen-candidate:app/[locale]/staff/rules/page.tsx": [
+      "D15"
+    ],
+    "screen-candidate:app/[locale]/operations/rules/page.tsx": [
+      "D15"
+    ],
+    "screen-candidate:app/[locale]/more/manage-staff/page.tsx": [
+      "D15"
+    ],
+    "screen-candidate:app/[locale]/operations/experiments/page.tsx": [
+      "D15"
+    ],
+    "screen-candidate:app/[locale]/operations/suppliers/page.tsx": [
+      "D15"
+    ],
+    "screen-candidate:app/[locale]/more/cafe-profile/page.tsx": [
+      "D16"
+    ],
+    "screen-candidate:app/[locale]/more/toast/page.tsx": [
+      "D16"
+    ],
+    "screen-candidate:app/[locale]/more/alerts/page.tsx": [
+      "D16"
+    ],
+    "screen-candidate:app/[locale]/more/uploads/page.tsx": [
+      "D16"
+    ],
+    "screen-candidate:app/[locale]/more/uploads/history/page.tsx": [
+      "D16"
+    ],
+    "screen-candidate:app/[locale]/more/uploads/ingredients/page.tsx": [
+      "D16"
+    ],
+    "screen-candidate:app/[locale]/more/uploads/labor/page.tsx": [
+      "D16"
+    ],
+    "screen-candidate:app/[locale]/more/uploads/processing-fees/page.tsx": [
+      "D16"
+    ],
+    "screen-candidate:app/[locale]/more/uploads/sales/page.tsx": [
+      "D16"
+    ],
+    "screen-candidate:app/[locale]/more/delete-account/page.tsx": [
+      "D16"
+    ],
+    "screen-candidate:app/[locale]/menu/[itemId]/page.tsx": [
+      "D17"
+    ],
+    "screen-candidate:app/[locale]/more/alerts/[id]/page.tsx": [
+      "D18"
+    ],
+    "screen-candidate:app/[locale]/more/uploads/[uploadId]/page.tsx": [
+      "D19"
+    ]
+  },
+  "autonomyCandidates": {
+    "sales_decline": [],
+    "inventory_depletion": [
+      "D17"
+    ],
+    "supplier_cost_change": [],
+    "late_purchase_order": [],
+    "receiving_invoice_discrepancy": [],
+    "staff_absence": [],
+    "staff_coverage": [],
+    "equipment_failure": [],
+    "pricing_experiment": [],
+    "cashflow": [
+      "D09",
+      "D18"
+    ],
+    "event_goals_briefs": [],
+    "chat_routine": [
+      "D01",
+      "luna:17d"
+    ],
+    "chat_files": [
+      "D04",
+      "D10",
+      "luna:17d"
+    ],
+    "concurrent_cafes": [
+      "D01",
+      "D02",
+      "D04",
+      "D08",
+      "D09",
+      "D10"
+    ],
+    "worker_restart": [
+      "D03",
+      "D07"
+    ],
+    "provider_outage": [
+      "D03",
+      "D10"
+    ],
+    "expired_lease": [
+      "D03"
+    ],
+    "uncertain_receipt": [
+      "D03",
+      "D07"
+    ],
+    "duplicate_event": [
+      "D18"
+    ],
+    "revoked_access": [
+      "D10",
+      "D11"
+    ],
+    "offline_owner": [
+      "D03",
+      "D12"
+    ],
+    "authorized_effect_recovery": [
+      "D05"
+    ],
+    "proactive_rich_response_and_reload": [
+      "D20"
+    ],
+    "proactive_owner_answer_same_episode": [
+      "D02",
+      "D20"
+    ]
+  },
+  "routeGroups": [
+    {
+      "id": "D13",
+      "tag": "money",
+      "name": "financial planning, cost entry and settings routes",
+      "routes": [
+        [
+          "/money",
+          "Money"
+        ],
+        [
+          "/more/plan",
+          "Plan & goals"
+        ],
+        [
+          "/more/break-even",
+          "Plan & goals",
+          "/more/plan",
+          "tab=break-even"
+        ],
+        [
+          "/more/economics",
+          "Plan & goals",
+          "/more/plan",
+          "tab=profit-goal"
+        ],
+        [
+          "/more/try-scenario",
+          "Plan & goals",
+          "/more/plan",
+          "tab=what-if"
+        ],
+        [
+          "/more/financial-settings",
+          "Financial assumptions"
+        ],
+        [
+          "/more/processing-fees",
+          "Processing fees"
+        ],
+        [
+          "/add-cost",
+          "Add a cost"
+        ],
+        [
+          "/add-cost/type",
+          "Type it"
+        ],
+        [
+          "/add-cost/receipt",
+          "Photo of receipt"
+        ],
+        [
+          "/add-cost/voice",
+          "Say it"
+        ],
+        [
+          "/add-cost/statement",
+          "Upload bank statement"
+        ]
+      ]
+    },
+    {
+      "id": "D14",
+      "tag": "menu",
+      "name": "catalog, pantry and source correction route reachability",
+      "routes": [
+        [
+          "/menu",
+          "Menu"
+        ],
+        [
+          "/menu/pantry",
+          "Inventory"
+        ],
+        [
+          "/menu/manage",
+          "Menu",
+          "/menu"
+        ],
+        [
+          "/menu/import-review",
+          "Match items"
+        ],
+        [
+          "/menu/new",
+          "Add a drink or food item"
+        ]
+      ]
+    },
+    {
+      "id": "D15",
+      "tag": "staff",
+      "name": "staff, rules and operations source navigation",
+      "routes": [
+        [
+          "/staff",
+          "Schedule"
+        ],
+        [
+          "/staff/rules",
+          "Rules & costs"
+        ],
+        [
+          "/operations/rules",
+          "Rules & costs",
+          "/staff/rules"
+        ],
+        [
+          "/more/manage-staff",
+          "Team",
+          "/staff"
+        ],
+        [
+          "/operations/experiments",
+          "Experiments"
+        ],
+        [
+          "/operations/suppliers",
+          "Supplier sources"
+        ]
+      ]
+    },
+    {
+      "id": "D16",
+      "tag": "gmail",
+      "name": "owner account, POS and file import route reachability",
+      "routes": [
+        [
+          "/more",
+          "More"
+        ],
+        [
+          "/more/cafe-profile",
+          "Café profile"
+        ],
+        [
+          "/more/toast",
+          "Connect Toast"
+        ],
+        [
+          "/more/alerts",
+          "Alerts"
+        ],
+        [
+          "/more/uploads",
+          "Upload history"
+        ],
+        [
+          "/more/uploads/history",
+          "Upload history",
+          "/more/uploads",
+          null,
+          "#upload-history"
+        ],
+        [
+          "/more/uploads/ingredients",
+          "Import ingredient costs"
+        ],
+        [
+          "/more/uploads/labor",
+          "Import labor / time entries"
+        ],
+        [
+          "/more/uploads/processing-fees",
+          "Import processing fees"
+        ],
+        [
+          "/more/uploads/sales",
+          "Import sales report"
+        ],
+        [
+          "/more/delete-account",
+          "Delete account"
+        ]
+      ]
+    }
+  ],
+  "routeReview": {
+    "app/[locale]/page.tsx": {
+      "state": "behavior_case_authored",
+      "cases": [
+        "D01",
+        "D03",
+        "D04",
+        "D05",
+        "D06",
+        "D07",
+        "D08",
+        "D11",
+        "D12"
+      ],
+      "remaining": "all source and effect parity, independent live proof"
+    },
+    "app/[locale]/operations/page.tsx": {
+      "state": "behavior_case_authored",
+      "cases": [
+        "D02"
+      ],
+      "remaining": "all actionable incident families, real autonomous receipt"
+    },
+    "app/[locale]/more/bills/page.tsx": {
+      "state": "behavior_case_authored",
+      "cases": [
+        "D09"
+      ],
+      "remaining": "owner bill editing, real Luna parity"
+    },
+    "app/[locale]/more/supervisor-access/page.tsx": {
+      "state": "behavior_case_authored",
+      "cases": [
+        "D10"
+      ],
+      "remaining": "all connector/revocation and real resumed-work scenarios"
+    },
+    "app/[locale]/login/page.tsx": {
+      "state": "behavior_case_authored",
+      "cases": [
+        "D08"
+      ],
+      "remaining": "login failures and account recovery"
+    },
+    "app/[locale]/more/gmail/page.tsx": {
+      "state": "existing_regression_candidate",
+      "cases": [],
+      "remaining": "existing Task16C failure, actual authorized provider delivery"
+    },
+    "app/[locale]/menu/[itemId]/page.tsx": {
+      "state": "behavior_case_authored",
+      "cases": [
+        "D17"
+      ],
+      "remaining": "actual recipe/cost edits and chat parity"
+    },
+    "app/[locale]/more/alerts/[id]/page.tsx": {
+      "state": "behavior_case_authored",
+      "cases": [
+        "D18"
+      ],
+      "remaining": "real autonomous source closure, all alert types"
+    },
+    "app/[locale]/more/uploads/[uploadId]/page.tsx": {
+      "state": "behavior_case_authored",
+      "cases": [
+        "D19"
+      ],
+      "remaining": "actual importer execution, all import families and repair flows"
+    },
+    "app/[locale]/forgot-password/page.tsx": {
+      "state": "gap_public_account",
+      "cases": [],
+      "remaining": "isolated reset transport, no actual delivery"
+    },
+    "app/[locale]/reset-password/page.tsx": {
+      "state": "gap_public_account",
+      "cases": [],
+      "remaining": "isolated valid/expired reset tokens"
+    },
+    "app/[locale]/signup/page.tsx": {
+      "state": "gap_public_account",
+      "cases": [],
+      "remaining": "new disposable account, onboarding and duplicates"
+    },
+    "app/[locale]/onboarding/page.tsx": {
+      "state": "gap_public_account",
+      "cases": [],
+      "remaining": "new account setup and demo/own-cafe distinction"
+    },
+    "app/[locale]/pricing/page.tsx": {
+      "state": "gap_account_billing",
+      "cases": [],
+      "remaining": "read-only presentation and safe entitlement conditions"
+    },
+    "app/[locale]/more/access/page.tsx": {
+      "state": "gap_account_billing",
+      "cases": [],
+      "remaining": "legacy redirect to pricing"
+    },
+    "app/[locale]/privacy/page.tsx": {
+      "state": "gap_public_account",
+      "cases": [],
+      "remaining": "public privacy document reachability"
+    },
+    "app/[locale]/money/page.tsx": {
+      "state": "navigation_case_authored",
+      "cases": [
+        "D13"
+      ],
+      "remaining": "full source/action parity and applicable real Luna proof"
+    },
+    "app/[locale]/more/plan/page.tsx": {
+      "state": "navigation_case_authored",
+      "cases": [
+        "D13"
+      ],
+      "remaining": "full source/action parity and applicable real Luna proof"
+    },
+    "app/[locale]/more/break-even/page.tsx": {
+      "state": "navigation_case_authored",
+      "cases": [
+        "D13"
+      ],
+      "remaining": "full source/action parity and applicable real Luna proof"
+    },
+    "app/[locale]/more/economics/page.tsx": {
+      "state": "navigation_case_authored",
+      "cases": [
+        "D13"
+      ],
+      "remaining": "full source/action parity and applicable real Luna proof"
+    },
+    "app/[locale]/more/try-scenario/page.tsx": {
+      "state": "navigation_case_authored",
+      "cases": [
+        "D13"
+      ],
+      "remaining": "full source/action parity and applicable real Luna proof"
+    },
+    "app/[locale]/more/financial-settings/page.tsx": {
+      "state": "navigation_case_authored",
+      "cases": [
+        "D13"
+      ],
+      "remaining": "full source/action parity and applicable real Luna proof"
+    },
+    "app/[locale]/more/processing-fees/page.tsx": {
+      "state": "navigation_case_authored",
+      "cases": [
+        "D13"
+      ],
+      "remaining": "full source/action parity and applicable real Luna proof"
+    },
+    "app/[locale]/add-cost/page.tsx": {
+      "state": "navigation_case_authored",
+      "cases": [
+        "D13"
+      ],
+      "remaining": "full source/action parity and applicable real Luna proof"
+    },
+    "app/[locale]/add-cost/type/page.tsx": {
+      "state": "navigation_case_authored",
+      "cases": [
+        "D13"
+      ],
+      "remaining": "full source/action parity and applicable real Luna proof"
+    },
+    "app/[locale]/add-cost/receipt/page.tsx": {
+      "state": "navigation_case_authored",
+      "cases": [
+        "D13"
+      ],
+      "remaining": "full source/action parity and applicable real Luna proof"
+    },
+    "app/[locale]/add-cost/voice/page.tsx": {
+      "state": "navigation_case_authored",
+      "cases": [
+        "D13"
+      ],
+      "remaining": "full source/action parity and applicable real Luna proof"
+    },
+    "app/[locale]/add-cost/statement/page.tsx": {
+      "state": "navigation_case_authored",
+      "cases": [
+        "D13"
+      ],
+      "remaining": "full source/action parity and applicable real Luna proof"
+    },
+    "app/[locale]/menu/page.tsx": {
+      "state": "navigation_case_authored",
+      "cases": [
+        "D14"
+      ],
+      "remaining": "full source/action parity and applicable real Luna proof"
+    },
+    "app/[locale]/menu/pantry/page.tsx": {
+      "state": "navigation_case_authored",
+      "cases": [
+        "D14"
+      ],
+      "remaining": "full source/action parity and applicable real Luna proof"
+    },
+    "app/[locale]/menu/manage/page.tsx": {
+      "state": "navigation_case_authored",
+      "cases": [
+        "D14"
+      ],
+      "remaining": "full source/action parity and applicable real Luna proof"
+    },
+    "app/[locale]/menu/import-review/page.tsx": {
+      "state": "navigation_case_authored",
+      "cases": [
+        "D14"
+      ],
+      "remaining": "full source/action parity and applicable real Luna proof"
+    },
+    "app/[locale]/menu/new/page.tsx": {
+      "state": "navigation_case_authored",
+      "cases": [
+        "D14"
+      ],
+      "remaining": "full source/action parity and applicable real Luna proof"
+    },
+    "app/[locale]/staff/page.tsx": {
+      "state": "navigation_case_authored",
+      "cases": [
+        "D15"
+      ],
+      "remaining": "full source/action parity and applicable real Luna proof"
+    },
+    "app/[locale]/staff/rules/page.tsx": {
+      "state": "navigation_case_authored",
+      "cases": [
+        "D15"
+      ],
+      "remaining": "full source/action parity and applicable real Luna proof"
+    },
+    "app/[locale]/operations/rules/page.tsx": {
+      "state": "navigation_case_authored",
+      "cases": [
+        "D15"
+      ],
+      "remaining": "full source/action parity and applicable real Luna proof"
+    },
+    "app/[locale]/more/manage-staff/page.tsx": {
+      "state": "navigation_case_authored",
+      "cases": [
+        "D15"
+      ],
+      "remaining": "full source/action parity and applicable real Luna proof"
+    },
+    "app/[locale]/operations/experiments/page.tsx": {
+      "state": "navigation_case_authored",
+      "cases": [
+        "D15"
+      ],
+      "remaining": "full source/action parity and applicable real Luna proof"
+    },
+    "app/[locale]/operations/suppliers/page.tsx": {
+      "state": "navigation_case_authored",
+      "cases": [
+        "D15"
+      ],
+      "remaining": "full source/action parity and applicable real Luna proof"
+    },
+    "app/[locale]/more/page.tsx": {
+      "state": "navigation_case_authored",
+      "cases": [
+        "D16"
+      ],
+      "remaining": "full source/action parity and applicable real Luna proof"
+    },
+    "app/[locale]/more/cafe-profile/page.tsx": {
+      "state": "navigation_case_authored",
+      "cases": [
+        "D16"
+      ],
+      "remaining": "full source/action parity and applicable real Luna proof"
+    },
+    "app/[locale]/more/toast/page.tsx": {
+      "state": "navigation_case_authored",
+      "cases": [
+        "D16"
+      ],
+      "remaining": "full source/action parity and applicable real Luna proof"
+    },
+    "app/[locale]/more/alerts/page.tsx": {
+      "state": "navigation_case_authored",
+      "cases": [
+        "D16"
+      ],
+      "remaining": "full source/action parity and applicable real Luna proof"
+    },
+    "app/[locale]/more/uploads/page.tsx": {
+      "state": "navigation_case_authored",
+      "cases": [
+        "D16"
+      ],
+      "remaining": "full source/action parity and applicable real Luna proof"
+    },
+    "app/[locale]/more/uploads/history/page.tsx": {
+      "state": "navigation_case_authored",
+      "cases": [
+        "D16"
+      ],
+      "remaining": "full source/action parity and applicable real Luna proof"
+    },
+    "app/[locale]/more/uploads/ingredients/page.tsx": {
+      "state": "navigation_case_authored",
+      "cases": [
+        "D16"
+      ],
+      "remaining": "full source/action parity and applicable real Luna proof"
+    },
+    "app/[locale]/more/uploads/labor/page.tsx": {
+      "state": "navigation_case_authored",
+      "cases": [
+        "D16"
+      ],
+      "remaining": "full source/action parity and applicable real Luna proof"
+    },
+    "app/[locale]/more/uploads/processing-fees/page.tsx": {
+      "state": "navigation_case_authored",
+      "cases": [
+        "D16"
+      ],
+      "remaining": "full source/action parity and applicable real Luna proof"
+    },
+    "app/[locale]/more/uploads/sales/page.tsx": {
+      "state": "navigation_case_authored",
+      "cases": [
+        "D16"
+      ],
+      "remaining": "full source/action parity and applicable real Luna proof"
+    },
+    "app/[locale]/more/delete-account/page.tsx": {
+      "state": "navigation_case_authored",
+      "cases": [
+        "D16"
+      ],
+      "remaining": "destructive action not executed; separately scoped disposable account deletion and safety confirmation"
+    }
+  },
+  "inheritedCases": [
+    {
+      "title": "@home Task16A authenticated mobile owner views library/routines/permissions and revokes a scoped mandate",
+      "tag": "home"
+    },
+    {
+      "title": "@home Task 16B persists real Supervisor work through reload, uncertainty and café isolation",
+      "tag": "home"
+    },
+    {
+      "title": "@home real password sign-in isolates two cafés and ignores an unauthorized café cookie",
+      "tag": "home"
+    },
+    {
+      "title": "@home Task15A persisted investigation opens in real Operations without leaking another café",
+      "tag": "home"
+    },
+    {
+      "title": "@home Task15B owner reports a real maintenance incident and independently verifies working equipment",
+      "tag": "home"
+    },
+    {
+      "title": "@home owner uploads and reselects a private receipt while another café cannot read it",
+      "tag": "home"
+    },
+    {
+      "title": "@staff seeded owner can open actual schedule and Team view",
+      "tag": "staff"
+    },
+    {
+      "title": "@staff owner sees durable published/accepted/delivered status, isolated by café",
+      "tag": "staff"
+    },
+    {
+      "title": "@menu seeded owner searches real stored products",
+      "tag": "menu"
+    },
+    {
+      "title": "@money seeded owner switches from recovery to real profit & costs",
+      "tag": "money"
+    },
+    {
+      "title": "@gmail seeded owner sees Gmail entry, connection status and revocation UX without external Google calls",
+      "tag": "gmail"
+    },
+    {
+      "title": "@menu Pantry retains confirmed zero and rejects historical Toast stock as current for two cafés",
+      "tag": "menu"
+    },
+    {
+      "title": "@purchasing real supplier quote entry preserves currency and denies cross-café reads",
+      "tag": "purchasing"
+    },
+    {
+      "title": "@purchasing owner verifies a supplier phone/portal channel and a Gmail address without sending",
+      "tag": "purchasing"
+    },
+    {
+      "title": "@purchasing proactive notice → repeated cron idempotency → owner-approved PO → resolved forever",
+      "tag": "purchasing"
+    },
+    {
+      "title": "@gmail Task16C owner revokes live external access across mobile reload and cafés",
+      "tag": "gmail"
+    },
+    {
+      "title": "@home Task16D authenticated responsive Supervisor work across conversations",
+      "tag": "home"
+    },
+    {
+      "title": "@money historical statement imports work without a bank connection and persist only owner-confirmed balances",
+      "tag": "money"
+    },
+    {
+      "title": "@gmail Task15A authenticated usage and admin cost ledger are scoped",
+      "tag": "gmail"
+    },
+    {
+      "title": "@home Task15A scheduler detects reduced sales from actual daily source rows",
+      "tag": "home"
+    },
+    {
+      "title": "@home Task16E design baseline observes empty and long Supervisor conversations",
+      "tag": "home"
+    },
+    {
+      "title": "@home Task16E quiet shell, optional visuals, editable follow-up and mobile navigation",
+      "tag": "home"
+    },
+    {
+      "title": "@home Task16E adaptive answer survives reload, preserves prose and opens a safe editable follow-up",
+      "tag": "home"
+    },
+    {
+      "title": "@home Task16E stops an acknowledged live view without invoking a cancel or effect",
+      "tag": "home"
+    }
+  ],
+  "visualAcceptance": {
+    "inheritedExactHead": "a3fa53197920e554435db69a9e690a39669f8bfc",
+    "inheritedRun": "44673606521",
+    "browserWidths": [
+      320,
+      390,
+      430,
+      768,
+      1024,
+      1440
+    ],
+    "actualDevice": "UNTESTED",
+    "actualSpeech": "UNTESTED",
+    "independentDesignReview": "UNTESTED",
+    "productionBuildPerformance": "EXECUTABLE_LAB_CASE_AUTHORED_NOT_RUN",
+    "nontechnicalHumanComprehension": "UNTESTED",
+    "modelDependentConsolidation": [
+      "16e",
+      "17d",
+      "17b-owner-security",
+      "17c",
+      "8b-multiday-lifecycle",
+      "pos0ef-customer-identity",
+      "6-15c-owner-run",
+      "15a-proactive-owner-answer",
+      "8a-price-observation",
+      "8a-approved-experiment",
+      "pos0ef-customer-trends",
+      "pos0ef-customer-detail"
+    ],
+    "automatedWCAG": "EXECUTABLE_SCAN_AUTHORED_NOT_RUN"
+  }
+}

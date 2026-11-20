@@ -332,7 +332,7 @@ jobs:
           done
           test "$ready" -eq 1
       - name: Verify selector and required-proof negative cases
-        run: node --test scripts/e2e/targeted.test.mjs
+        run: node --test scripts/e2e/targeted.test.mjs scripts/e2e/task17d-evidence.test.mjs
       - name: Run selected real authenticated Playwright cases
         run: node scripts/e2e/targeted.mjs run
       - name: Verify exact-head executed case counts; never accept skipped/missing proof
@@ -344,7 +344,10 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: aicafe-e2-targeted-browser-proof
-          path: test-results/e2e/proof.json
+          path: |
+            test-results/e2e/proof.json
+            test-results/e2e/task17d-performance-*.json
+            test-results/e2e/task17d-axe-*.json
           if-no-files-found: error
           retention-days: 14
       - name: Link executed browser job and artifact
@@ -431,6 +434,18 @@ jobs:
         env:
           AICAFE_CENSUS_OUTPUT: test-results/acceptance/supervisor-census.json
         run: npx vitest run evals/acceptance/supervisor-census.test.ts
+      - name: Map actual 17B and 17C inventory to owner-browser gaps
+        env:
+          HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: node scripts/e2e/task17d-evidence.mjs census test-results/acceptance/supervisor-census.json test-results/acceptance/task17d-census-gaps.json
+      - name: Upload explicit 17D owner-browser census gaps (not acceptance)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: aicafe-task17d-census-gaps
+          path: test-results/acceptance/task17d-census-gaps.json
+          if-no-files-found: warn
+          retention-days: 14
       - name: Upload preliminary exact-head coverage census (not acceptance)
         if: always()
         uses: actions/upload-artifact@v4

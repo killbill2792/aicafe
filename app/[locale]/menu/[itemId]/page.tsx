@@ -1,6 +1,8 @@
 import { notFound } from "next/navigation";
 import { getTranslations } from "next-intl/server";
 import { requireOwnBusiness } from "@/lib/auth/requireUser";
+import { getActiveBusinessId } from "@/lib/data/getActiveBusinessId";
+import { readSupervisorCafeIdentity } from "@/lib/ai/cafeTools.server";
 import { getMenuControlCenter } from "@/lib/data/getMenuControlCenter";
 import { getMenuItemsForEdit } from "@/lib/data/getMenuItemsForEdit";
 import { getMenuGroupOptions } from "@/lib/actions/menuItems";
@@ -27,8 +29,8 @@ export default async function MenuItemPage({
   params: Promise<{ itemId: string }>;
   searchParams: Promise<{ setupRecipe?: string; tab?: string; editPrice?: string; copiedFrom?: string; size?: string }>;
 }) {
-  await requireOwnBusiness();
-  const [{ itemId }, { setupRecipe, tab, editPrice, copiedFrom, size }, controlItems, { items: editItems, ingredients }, menuGroupOptions, ingredientConversions, common, photoResult] = await Promise.all([
+  const user=await requireOwnBusiness();
+  const [{ itemId }, { setupRecipe, tab, editPrice, copiedFrom, size }, controlItems, { items: editItems, ingredients }, menuGroupOptions, ingredientConversions, common, photoResult,identity] = await Promise.all([
     params,
     searchParams,
     getMenuControlCenter(),
@@ -37,6 +39,7 @@ export default async function MenuItemPage({
     getIngredientUnitConversions(),
     getTranslations("Common"),
     getProductPhoto((await params).itemId),
+    user ? getActiveBusinessId(user.id).then(id=>readSupervisorCafeIdentity(id)).catch(()=>null) : null,
   ]);
   const item = controlItems.find((candidate) => candidate.id === itemId);
   const editItem = editItems.find((candidate) => candidate.id === itemId);
@@ -52,6 +55,7 @@ export default async function MenuItemPage({
       <BackHeader title={editItem.baseName} backHref="/menu" backLabel={common("back")} />
       {comboParts.length>0?<SavedComboDetail name={editItem.baseName} priceCents={editItem.priceCents} parts={comboParts} items={editItems}/>:<ProductDetailScreen
         item={item}
+        currency={identity?.currency??null}
         pantry={pantry.map(({id,name,category,baseUnit,costPerBaseMicros,archivedAt})=>({id,name,category,baseUnit,costPerBaseMicros,archivedAt}))}
         savedAddons={savedAddons}
         posModifierGroups={posModifierGroups}
