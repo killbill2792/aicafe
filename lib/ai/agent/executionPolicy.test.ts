@@ -43,3 +43,12 @@ it("measures each serialized request component without retaining prompt, schema 
  expect(requestComposition(params)!.toolEvidenceBytes).toBeGreaterThan(measured.toolEvidenceBytes);
  expect(requestComposition(params)!.schemaBytes).toBe(measured.schemaBytes);
 });
+
+it("separates discovered schema replay from business evidence",()=>{
+ const schema={type:"tool_search_output",tools:[{name:"private_schema"}]};
+ const evidence={type:"function_call_output",output:"private evidence"};
+ const m=requestComposition({input:[schema,evidence]})!;
+ expect(m.discoveredSchemaBytes).toBe(Buffer.byteLength(JSON.stringify(schema)));
+ expect(m.toolEvidenceBytes).toBe(Buffer.byteLength(JSON.stringify(evidence)));
+ expect(JSON.stringify(m)).not.toContain("private");
+});
