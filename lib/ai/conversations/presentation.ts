@@ -98,7 +98,7 @@ export function evaluatePresentationCalc(c:InteractiveCalc,changes:Readonly<Reco
  * references identify only already validated snapshot components. */
 // Flat reference graph supports recursive layouts without accepting recursive
 // model-authored JSON, executable props, repeated leaves or unbounded trees.
-export const presentationGroupSchema=z.strictObject({id:z.string().regex(/^g(?:[0-9]|1[01])$/).optional(),layout:z.enum(["stack","grid","compare"]),items:z.array(z.string().regex(/^(?:panel[0-7]|table[0-7]|agenda|scenario|calculator|g(?:[0-9]|1[01]))$/)).min(1).max(12)});
+export const presentationGroupSchema=z.strictObject({id:z.string().regex(/^g(?:[0-9]|1[01])$/).optional(),layout:z.enum(["stack","grid","compare"]),items:z.array(z.string().regex(/^(?:panel[0-7]|table[0-7]|agenda|scenario|calculator|files|report|suggestions|g(?:[0-9]|1[01]))$/)).min(1).max(12)});
 type PresentationGroup=z.infer<typeof presentationGroupSchema>;
 export function presentationGroupRoots(groups:readonly PresentationGroup[]):number[]{
  const children=new Set(groups.flatMap(g=>g.items));
@@ -137,12 +137,16 @@ export const richPresentationSchema=z.strictObject({
   suggestions:z.array(z.string().trim().min(1).max(160)).max(3),
 }).refine(p=>p.panels.length+p.suggestions.length+Number(Boolean(p.agenda))+Number(Boolean(p.scenario))+Number(Boolean(p.report))+Number(Boolean(p.calculator))+(p.tables?.length??0)+(p.files?.length??0)>0).refine(p=>{
  if(!p.groups)return true;
- return validPresentationGroups(p.groups,presentationLeaves(p),p.panels);
+ return validPresentationGroups(p.groups,p.groups.some(g=>g.id)?allPresentationLeaves(p):presentationLeaves(p),p.panels);
 });
 export type RichPresentation=z.infer<typeof richPresentationSchema>;
 export type PresentationPanel=z.infer<typeof presentationPanelSchema>;
 export function presentationLeaves(p:Pick<RichPresentation,"panels"|"tables"|"agenda"|"scenario"|"calculator">):string[]{
  return [...p.panels.map((_,i)=>"panel"+i),...(p.agenda?["agenda"]:[]),...(p.scenario?["scenario"]:[]),...(p.tables??[]).map((_,i)=>"table"+i),...(p.calculator?["calculator"]:[])];
+}
+/** Both data visuals and safe local interactions are composable. Legacy unnamed groups retain their historic trailing controls. */
+export function allPresentationLeaves(p:RichPresentation):string[]{
+ return [...presentationLeaves(p),...(p.files?.length?["files"]:[]),...(p.report?["report"]:[]),...(p.suggestions.length?["suggestions"]:[])];
 }
 export function compatibleComparison(items:string[],panels:PresentationPanel[]):boolean{
  if(items.length<2||items.some(k=>!/^panel[0-7]$/.test(k)))return false;

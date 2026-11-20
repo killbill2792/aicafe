@@ -1,5 +1,5 @@
 "use client";
-import {useMemo,useState} from "react";
+import {createContext,useContext,useMemo,useState} from "react";
 import dynamic from "next/dynamic";
 import {JSONUIProvider,Renderer,type ComponentRegistry} from "@json-render/react";
 import {Paperclip} from "lucide-react";
@@ -10,7 +10,7 @@ import {evaluateScenarioEditor,scenarioEditFields} from "@/lib/ai/conversations/
 import en from "@/messages/en.json";
 import es from "@/messages/es.json";
 import ar from "@/messages/ar.json";
-import {richPresentationSchema,presentationPanelSchema,agendaSchema,scenarioComparisonSchema,presentationReport,recordTableSchema,interactiveCalcSchema,evaluatePresentationCalc,presentationLeaves,presentationGroupRoots,compatibleComparison,calendarPage,type RecordTable,type InteractiveCalc,type Agenda,type ScenarioComparison,type RichPresentation,type PresentationPanel} from "@/lib/ai/conversations/presentation";
+import {richPresentationSchema,presentationPanelSchema,agendaSchema,scenarioComparisonSchema,presentationReport,recordTableSchema,interactiveCalcSchema,evaluatePresentationCalc,presentationLeaves,presentationGroupRoots,allPresentationLeaves,compatibleComparison,calendarPage,type RecordTable,type InteractiveCalc,type Agenda,type ScenarioComparison,type RichPresentation,type PresentationPanel} from "@/lib/ai/conversations/presentation";
 const copy=en.SupervisorPresentation;
 const Chart=dynamic(()=>import("./SupervisorRichChart"),{ssr:false});
 const ComparisonChart=dynamic(()=>import("./SupervisorRichChart").then(m=>m.ComparisonChart),{ssr:false});
@@ -21,6 +21,9 @@ export function presentationSpec(p:RichPresentation):Spec{
  if(p.scenario)elements.scenario={type:"Scenario",props:{scenario:p.scenario},children:[]};
  p.tables?.forEach((table,i)=>{elements["table"+i]={type:"RecordTable",props:{table},children:[]}});
  if(p.calculator)elements.calculator={type:"Calculator",props:{calculator:p.calculator},children:[]};
+ if(p.groups?.some(g=>g.id)){
+  for(const key of allPresentationLeaves(p).filter(k=>["files","report","suggestions"].includes(k)))elements[key]={type:"Control",props:{kind:key},children:[]};
+ }
  if(p.groups){
   elements.root.props={layout:"stack"};
   const ids=new Map(p.groups.flatMap((g,i)=>g.id?[[g.id,"group"+i] as const]:[]));
@@ -167,6 +170,30 @@ function ScenarioView({scenario,locale}:{scenario:ScenarioComparison;locale:stri
   {!selected.editor&&<p className="text-[13px] text-ink-muted">{copy.scenarioNotice}</p>}
  </section>;
 }
+type ControlContext={data:RichPresentation;message?:Parameters<typeof presentationReport>[1]&{threadId:string};attachments?:{threadId:string;items:StoredAttachment[]}|null;onSuggest:(text:string)=>void;disabled:boolean};
+const PresentationControls=createContext<ControlContext|null>(null);
+function ControlView({kind}:{kind:unknown}){
+ const context=useContext(PresentationControls);
+ if(!context)return null;
+ const {data,message,attachments,onSuggest,disabled}=context;
+ const download=()=>{
+  if(!message||!data.report)return;
+  const url=URL.createObjectURL(new Blob([presentationReport(data,message)],{type:"text/plain;charset=utf-8"}));
+  const anchor=document.createElement("a");anchor.href=url;anchor.download="supervisor-report.txt";anchor.click();
+  // The browser owns the local download; release the in-memory snapshot afterwards.
+  setTimeout(()=>URL.revokeObjectURL(url),1000);
+ };
+ return <>
+  {kind==="files"&&!!data.files?.length&&message&&<section aria-label={copy.sourceAttachments} className="space-y-2">
+    <h3 className="text-[15px] font-medium text-ink-muted">{copy.sourceAttachments}</h3>
+    {data.files.map((id,i)=>{const file=attachments?.threadId===message.threadId?attachments.items.find(f=>f.id===id):null;
+     return <a key={id} href={"/api/ai/threads/"+encodeURIComponent(message.threadId)+"/attachments/"+encodeURIComponent(id)} target="_blank" rel="noopener noreferrer" className="flex min-h-12 min-w-0 items-center gap-2 rounded-lg border border-line px-3 text-[15px] text-ink underline"><Paperclip size={17} className="shrink-0" aria-hidden="true"/><span className="min-w-0 break-all">{file?.originalName??copy.sourceFile+" "+(i+1)}</span></a>;
+    })}
+  </section>}
+  {kind==="report"&&data.report&&message&&<button type="button" onClick={download} className="min-h-12 rounded-xl border border-line px-4 text-start text-[15px] font-medium text-ink hover:bg-surface2">{copy.downloadReport}</button>}
+  {kind==="suggestions"&&data.suggestions.length>0&&<div className="flex flex-wrap gap-2">{data.suggestions.map(prompt=><button key={prompt} type="button" disabled={disabled} onClick={()=>onSuggest(prompt)} className="min-h-12 max-w-full rounded-full border border-line px-4 py-2 text-start text-[15px] leading-snug text-ink hover:bg-surface2 focus-visible:outline focus-visible:outline-2 focus-visible:outline-ink disabled:opacity-50">{prompt}</button>)}</div>}
+ </>;
+}
 export default function SupervisorRichPresentation({block,locale,onSuggest,disabled,message,attachments}:{block:unknown;locale:string;onSuggest:(text:string)=>void;disabled:boolean;message?:Parameters<typeof presentationReport>[1]&{threadId:string};attachments?:{threadId:string;items:StoredAttachment[]}|null}){
  const parsed=useMemo(()=>richPresentationSchema.safeParse(block),[block]);
  const registry=useMemo<ComponentRegistry>(()=>({
@@ -176,25 +203,13 @@ export default function SupervisorRichPresentation({block,locale,onSuggest,disab
   Agenda:({element})=>{const a=agendaSchema.safeParse(element.props.agenda);return a.success?<AgendaView agenda={a.data} locale={locale}/>:null;},
   Scenario:({element})=>{const s=scenarioComparisonSchema.safeParse(element.props.scenario);return s.success?<ScenarioView scenario={s.data} locale={locale}/>:null;},
   RecordTable:({element})=>{const t=recordTableSchema.safeParse(element.props.table);return t.success?<RecordTableView table={t.data} locale={locale}/>:null;},
+  Control:({element})=><ControlView kind={element.props.kind}/>,
   Calculator:({element})=>{const c=interactiveCalcSchema.safeParse(element.props.calculator);return c.success?<CalculatorView calculator={c.data} locale={locale}/>:null;},
  }),[locale]);
  if(!parsed.success)return null;
- const download=()=>{
-  if(!message||!parsed.data.report)return;
-  const url=URL.createObjectURL(new Blob([presentationReport(parsed.data,message)],{type:"text/plain;charset=utf-8"}));
-  const anchor=document.createElement("a");anchor.href=url;anchor.download="supervisor-report.txt";anchor.click();
-  // The browser owns the local download; release the in-memory snapshot afterwards.
-  setTimeout(()=>URL.revokeObjectURL(url),1000);
- };
- return <section className="min-w-0 space-y-3" data-testid="supervisor-rich-presentation">
-  {(parsed.data.panels.length>0||parsed.data.agenda||parsed.data.scenario||Boolean(parsed.data.tables?.length)||parsed.data.calculator)&&<JSONUIProvider registry={registry}><Renderer spec={presentationSpec(parsed.data)} registry={registry}/></JSONUIProvider>}
-  {!!parsed.data.files?.length&&message&&<section aria-label={copy.sourceAttachments} className="space-y-2">
-    <h3 className="text-[15px] font-medium text-ink-muted">{copy.sourceAttachments}</h3>
-    {parsed.data.files.map((id,i)=>{const file=attachments?.threadId===message.threadId?attachments.items.find(f=>f.id===id):null;
-     return <a key={id} href={"/api/ai/threads/"+encodeURIComponent(message.threadId)+"/attachments/"+encodeURIComponent(id)} target="_blank" rel="noopener noreferrer" className="flex min-h-12 min-w-0 items-center gap-2 rounded-lg border border-line px-3 text-[15px] text-ink underline"><Paperclip size={17} className="shrink-0" aria-hidden="true"/><span className="min-w-0 break-all">{file?.originalName??copy.sourceFile+" "+(i+1)}</span></a>;
-    })}
-  </section>}
-  {parsed.data.report&&message&&<button type="button" onClick={download} className="min-h-12 rounded-xl border border-line px-4 text-start text-[15px] font-medium text-ink hover:bg-surface2">{copy.downloadReport}</button>}
-  {parsed.data.suggestions.length>0&&<div className="flex flex-wrap gap-2">{parsed.data.suggestions.map(prompt=><button key={prompt} type="button" disabled={disabled} onClick={()=>onSuggest(prompt)} className="min-h-12 max-w-full rounded-full border border-line px-4 py-2 text-start text-[15px] leading-snug text-ink hover:bg-surface2 focus-visible:outline focus-visible:outline-2 focus-visible:outline-ink disabled:opacity-50">{prompt}</button>)}</div>}
- </section>;
+ const data=parsed.data,composed=Boolean(data.groups?.some(g=>g.id));
+ return <PresentationControls.Provider value={{data,message,attachments,onSuggest,disabled}}><section className="min-w-0 space-y-3" data-testid="supervisor-rich-presentation">
+  {(presentationLeaves(data).length>0||composed)&&<JSONUIProvider registry={registry}><Renderer spec={presentationSpec(data)} registry={registry}/></JSONUIProvider>}
+  {!composed&&<><ControlView kind="files"/><ControlView kind="report"/><ControlView kind="suggestions"/></>}
+ </section></PresentationControls.Provider>;
 }

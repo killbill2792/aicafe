@@ -64,3 +64,12 @@ it("retains dates spanning weeks and calendar pages without inventing an occurre
  const deep=Array.from({length:7},(_,i)=>({id:"g"+i,layout:"stack",items:i===6?["panel0","panel1","panel2"]:["g"+(i+1)]}));
  expect(richPresentationSchema.safeParse({...b,groups:deep}).success).toBe(false);
  });
+
+it("places verified attachments, export and editable suggestions at arbitrary nested positions without legacy breakage",()=>{
+ const b={type:"rich_presentation",version:1,layout:"stack",panels:[],report:true,files:["11111111-1111-4111-8111-111111111111"],suggestions:["Explain costs"]};
+ expect(richPresentationSchema.safeParse(b).success).toBe(true);
+ const groups=[{id:"g0",layout:"stack",items:["g1","suggestions"]},{id:"g1",layout:"grid",items:["files","report"]}];
+ expect(richPresentationSchema.safeParse({...b,groups}).success).toBe(true);
+ expect(richPresentationSchema.safeParse({...b,groups:[{...groups[0],items:["g1","report","suggestions"]},groups[1]]}).success).toBe(false);
+ expect(richPresentationSchema.safeParse({...b,report:undefined,groups}).success).toBe(false);
+});
