@@ -37,6 +37,7 @@ function row(day:string,status="draft"){
     monitoring_start_date:null,locale:"en",created_at:"2026-10-30T00:00:00Z"};
 }
 const fake=(rows:ReturnType<typeof row>[])=>({
+  rpc:async()=>({data:true,error:null}),
   from(table:string){
     if(table==="supervisor_monitor_samples")return {
       select:()=>({eq:()=>({in:()=>({limit:async()=>({data:[],error:null})})})})};

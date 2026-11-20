@@ -1,7 +1,7 @@
 import "server-only";
 import {formatInTimeZone} from "date-fns-tz";
 import {createAdminSupabaseClient} from "@/lib/supabase/admin";
-import {eventReadinessCapabilityId,authorizedScheduledEventScope,selectEventObservations,observedEventProposalDates}
+import {eventReadinessCapabilityId,authorizedScheduledEventScope,selectEventObservations,observedEventProposalDates,withEventObservationClaim}
   from "@/lib/ai/supervisor/loop/eventReadiness.server";
 import {monitorLoop,utcDateOffset} from "@/lib/ai/supervisor/loop/engine";
 import {supervisorLoopRegistry} from "@/lib/ai/supervisor/loop/priceExperiment.server";
@@ -61,8 +61,8 @@ export async function watchLiveEvents(businessId:string,businessDate:string,
        businessId,ownerUserId:proposal.ownerUserId,threadId:proposal.threadId,
        locale:proposal.locale,
      });
-     const report=await monitorLoop(scope,supervisorLoopRegistry,repo,
-       proposal,today,true,true,true);
+     const report=await withEventObservationClaim(db,scope,proposal,today,()=>monitorLoop(scope,supervisorLoopRegistry,repo,
+       proposal,today,true,true,true));
      if(report)updated++;
    }catch{
      failed++;

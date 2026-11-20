@@ -213,3 +213,66 @@ begin
 end $$;
 revoke all on function public.ldi_correct_occurrence(uuid,uuid,uuid,timestamptz,jsonb,text[]) from public,anon,authenticated;
 grant execute on function public.ldi_correct_occurrence(uuid,uuid,uuid,timestamptz,jsonb,text[]) to service_role;
+
+-- One existing handled operating-task row owns each cafe-day monitor lease.
+-- No new queue or table. A lease may be recovered after a failed worker.
+create function public.ldi_claim_monitor(p_business_id uuid,p_owner_id uuid,
+ p_proposal_id uuid,p_day date,p_token uuid,p_closure boolean default false)
+ returns boolean language plpgsql security invoker set search_path=public as $$
+declare task_key text; result_count integer; sampled uuid;
+begin
+ if not exists(select 1 from public.supervisor_proposals p join public.memberships m
+ on m.business_id=p.business_id and m.user_id=p.owner_user_id and m.role='owner'
+ where p.business_id=p_business_id and p.owner_user_id=p_owner_id and p.id=p_proposal_id
+ and p.capability_id='alex.event_readiness.v1' and p.status in ('draft','approved','committed','manual_confirmed'))
+ then return false; end if;
+ task_key:=case when p_closure then 'event-observation-closure:'||p_proposal_id::text
+ else 'event-observation:'||p_day::text end;
+ perform pg_advisory_xact_lock(hashtextextended('ldi-monitor:'||p_business_id::text||':'||task_key,0));
+ if not p_closure then
+   select s.proposal_id into sampled from public.supervisor_monitor_samples s
+   join public.supervisor_proposals p on p.business_id=s.business_id and p.id=s.proposal_id
+   where s.business_id=p_business_id and s.business_date=p_day and p.capability_id='alex.event_readiness.v1'
+   order by s.recorded_at asc,s.id asc limit 1;
+   if sampled is not null and sampled<>p_proposal_id then return false; end if;
+ end if;
+ insert into public.operating_tasks(business_id,id,agent_id,kind,entity_type,entity_id,status,confidence,payload,evidence)
+ values(p_business_id,task_key,'alex','event_assessment','event_day',p_day::text,'handled','low',
+ jsonb_build_object('businessDate',p_day,'proposalId',p_proposal_id,'token',p_token,
+ 'leaseUntil',clock_timestamp()+interval '10 minutes'),'[]'::jsonb)
+ on conflict(business_id,id) do update set payload=excluded.payload,updated_at=clock_timestamp()
+ where (public.operating_tasks.payload->>'leaseUntil')::timestamptz<=clock_timestamp()
+ or public.operating_tasks.payload->>'leaseUntil' is null;
+ get diagnostics result_count=row_count;
+ return result_count=1;
+end $$;
+create function public.ldi_release_monitor(p_business_id uuid,p_proposal_id uuid,
+ p_day date,p_token uuid,p_closure boolean default false) returns void
+ language sql security invoker set search_path=public as $$
+ update public.operating_tasks set payload=payload-'leaseUntil',updated_at=clock_timestamp()
+ where business_id=p_business_id and id=case when p_closure then 'event-observation-closure:'||p_proposal_id::text
+ else 'event-observation:'||p_day::text end
+ and payload->>'token'=p_token::text and payload->>'proposalId'=p_proposal_id::text
+$$;
+revoke all on function public.ldi_claim_monitor(uuid,uuid,uuid,date,uuid,boolean),
+ public.ldi_release_monitor(uuid,uuid,date,uuid,boolean) from public,anon,authenticated;
+grant execute on function public.ldi_claim_monitor(uuid,uuid,uuid,date,uuid,boolean),
+ public.ldi_release_monitor(uuid,uuid,date,uuid,boolean) to service_role;
+
+-- Last-line integrity across competing proposal UUIDs, including a stale worker.
+-- Preserve any historically existing rows; never insert a second cafe-day.
+create function public.ldi_guard_event_sample() returns trigger
+language plpgsql security invoker set search_path=public as $$
+begin
+ if not exists(select 1 from public.supervisor_proposals p where p.business_id=new.business_id
+ and p.id=new.proposal_id and p.capability_id='alex.event_readiness.v1') then return new; end if;
+ perform pg_advisory_xact_lock(hashtextextended('ldi-sample:'||new.business_id::text||':'||new.business_date::text,0));
+ if exists(select 1 from public.supervisor_monitor_samples s join public.supervisor_proposals p
+ on p.business_id=s.business_id and p.id=s.proposal_id where s.business_id=new.business_id
+ and s.business_date=new.business_date and s.proposal_id<>new.proposal_id
+ and p.capability_id='alex.event_readiness.v1') then
+ raise exception 'event_business_day_already_observed' using errcode='23514'; end if;
+ return new;
+end $$;
+create trigger ldi_guard_event_sample before insert or update on public.supervisor_monitor_samples
+ for each row execute function public.ldi_guard_event_sample();

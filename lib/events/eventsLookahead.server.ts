@@ -22,7 +22,7 @@ import {stableMessageId,SupabaseLoopRepository} from "@/lib/ai/supervisor/loop/s
 import {notifyOwner} from "@/lib/operating/notifyOwner.server";
 import {effectHash,proposeLoop,monitorLoop,type LoopProposal,type OwnerLoopScope} from "@/lib/ai/supervisor/loop/engine";
 import {supervisorLoopRegistry} from "@/lib/ai/supervisor/loop/priceExperiment.server";
-import {authorizedScheduledEventScope,eventPlanFacts,selectedEventPlanFacts,eventReadinessCapabilityId,eventReadinessEffect,selectEventObservations,observedEventProposalDates}
+import {authorizedScheduledEventScope,eventPlanFacts,selectedEventPlanFacts,eventReadinessCapabilityId,eventReadinessEffect,selectEventObservations,observedEventProposalDates,withEventObservationClaim}
   from "@/lib/ai/supervisor/loop/eventReadiness.server";
 import {runAgentTurn} from "@/lib/ai/agent/loop.server";
 import {searchWeb} from "@/lib/ai/agent/webSearch.server";
@@ -582,14 +582,15 @@ export async function reportSavedEventDays(db:Db,businessId:string,ownerId:strin
       // The monitor itself certifies coverage. A missing Toast day remains
       // insufficient evidence, never a fabricated zero or implementation claim.
       for(const day of days){
-        const result=await monitorLoop(scope,supervisorLoopRegistry,repo,p,day);
+        const result=await withEventObservationClaim(db,scope,p,day,()=>monitorLoop(scope,supervisorLoopRegistry,repo,p,day));
         if(result)reported++;
       }
       // If another primary proposal owns the final day, finalize this partial
       // window without sampling that date again. Preserve previous approval/history.
       const end=addDays(p.monitoringStartDate!,p.monitorSpec.durationDays-1);
       if(end<today&&!days.includes(end)){
-        const result=await monitorLoop(scope,supervisorLoopRegistry,repo,p,addDays(end,1));
+        const closingDay=addDays(end,1);
+        const result=await withEventObservationClaim(db,scope,p,closingDay,()=>monitorLoop(scope,supervisorLoopRegistry,repo,p,closingDay));
         if(result)reported++;
       }
     }catch{

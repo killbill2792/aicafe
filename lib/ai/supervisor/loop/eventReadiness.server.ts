@@ -1,4 +1,5 @@
 import "server-only";
+import {randomUUID} from "node:crypto";
 import {simulationOwnerReader} from "./simulationOwner.server";
 import {z} from "zod";
 import {formatInTimeZone} from "date-fns-tz";
@@ -46,6 +47,22 @@ export const eventReadinessEffect=eventReadinessInput.extend({
  factsHash:z.string().regex(/^[a-f0-9]{64}$/),
 });
 export const eventReadinessCapabilityId="alex.event_readiness.v1";
+
+/** Serialize live, close-day and owner-triggered event observations using the
+ * same existing handled task ledger and a token-fenced release. */
+export async function withEventObservationClaim<T>(db:ReturnType<typeof createAdminSupabaseClient>,
+ scope:OwnerLoopScope,p:LoopProposal,day:string,work:()=>Promise<T>){
+ const token=randomUUID();
+ const closure=Boolean(p.monitoringStartDate&&day>utcDateOffset(p.monitoringStartDate,p.monitorSpec.durationDays-1));
+ const args={p_business_id:scope.businessId,p_proposal_id:p.id,p_day:day,p_token:token,p_closure:closure};
+ const claimed=await db.rpc("ldi_claim_monitor",{...args,p_owner_id:scope.ownerUserId});
+ if(claimed.error)throw claimed.error;
+ if(claimed.data!==true)return null;
+ try{return await work();}finally{
+  const release=await db.rpc("ldi_release_monitor",args);
+  if(release.error)throw release.error;
+ }
+}
 
 /** Observation is permitted without approval; business effects are not.
  * Give the existing monitor loop a transient window for a saved event plan,

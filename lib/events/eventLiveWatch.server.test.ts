@@ -21,6 +21,7 @@ const proposal={id:"44444444-4444-4444-8444-444444444444",
   createdAt:"2026-10-30T00:00:00Z",monitoringStartDate:null,status:"draft"};
 const errors={business:false,hours:false,missingTimezone:false};
 const db={
+  rpc:async()=>({data:true,error:null}),
   from(table:string){
     if(table==="businesses")return {
       select:()=>({eq:()=>({maybeSingle:async()=>({data:{

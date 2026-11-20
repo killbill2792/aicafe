@@ -307,6 +307,7 @@ describe("E saved facts + D performance → scheduled Supervisor → same loop r
      created_at:"2026-11-03T00:00:00Z",
    };
    const monitorDb={
+     rpc:async()=>({data:true,error:null}),
      from(table:string){
        const q={select:()=>q,eq:()=>q,in:()=>q,order:()=>q,
          limit:async()=>({data:table==="supervisor_proposals"?[row]:[],error:null})};
