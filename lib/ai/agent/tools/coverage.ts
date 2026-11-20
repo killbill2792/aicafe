@@ -38,15 +38,15 @@ export async function resolveCoveredSalesWindow(ctx:AgentToolContext,requested:C
  const unchanged={period:requested,label:null,coverageFallback:null};
  if(requested.from!==ctx.asOf||requested.to!==ctx.asOf){
   // Preserve legacy pricing coverage without changing any chat reporting period.
-  if(typeof ctx.tools.getSalesTrend!=="function")return unchanged;
+  if(!ctx.tools.getSalesCoverageBounds)return unchanged;
   try{
-   const current=await ctx.tools.getSalesTrend(requested);
-   if(current.available&&current.value.length)return unchanged;
-   const history=await ctx.tools.getSalesTrend({
+   const current=await ctx.tools.getSalesCoverageBounds(requested);
+   if(current)return unchanged;
+   const history=await ctx.tools.getSalesCoverageBounds({
     from:dateOffset(requested.to,-364),to:requested.to,
    });
-   if(!history.available||!history.value.length)return unchanged;
-   const window=coveredWindow(requested,history.value.map(day=>day.date));
+   if(!history)return unchanged;
+   const window=coveredWindow(requested,history);
    if(!window.labelKey||!window.labelParams)return window;
    const format=(value:string)=>new Intl.DateTimeFormat(ctx.locale,{
     month:"short",day:"numeric",timeZone:"UTC"}).format(new Date(value+"T12:00:00Z"));
@@ -77,26 +77,21 @@ export async function resolveCoveredSalesWindow(ctx:AgentToolContext,requested:C
  const todaySoFar=readTodayLive(ctx);
  let historicFailed=false;
  let previous:{date:string;netSalesCents?:number|null;ordersCount?:number|null;drinksCount?:number|null}|undefined;
- try{
-  const history=await ctx.tools.getSalesTrend({from:dateOffset(ctx.asOf,-364),to:dateOffset(ctx.asOf,-1)});
-  if(history.available)previous=[...history.value].filter(day=>day.date<ctx.asOf)
-   .sort((a,b)=>a.date.localeCompare(b.date)).at(-1);
-  else if(!onlyNoRows(history.quality.missingInputs))historicFailed=true;
- }catch{historicFailed=true;}
- // A historical row alone does not prove that the Toast import finished.
- // Recheck the candidate day so quality flags from unrelated historical dates
- // cannot incorrectly qualify (or disqualify) this day's completeness.
  let lastFullDay:string|null=null;
- if(previous){
-  try{
-   const checked=await ctx.tools.getSalesTrend({from:previous.date,to:previous.date});
-   const warnings=checked.quality.missingInputs;
-   if(checked.available&&checked.value.some(row=>row.date===previous!.date)&&
-      checked.quality.level!=="low"&&warnings.length===0){
-    lastFullDay=previous.date;
-   }
-  }catch{ /* Preserve the stored observation but do not call it complete. */ }
- }
+ try{
+  if(!ctx.tools.getSalesCoverageBounds)throw new Error("Sales coverage metadata unavailable");
+  const history=await ctx.tools.getSalesCoverageBounds({from:dateOffset(ctx.asOf,-364),to:dateOffset(ctx.asOf,-1)});
+  if(history){
+   const date=history.to;
+   previous={date};
+   const checked=await ctx.tools.getSalesTrend({from:date,to:date});
+   const observed=checked.available?checked.value.find(row=>row.date===date):undefined;
+   if(observed){
+    previous=observed;
+    if(checked.quality.level!=="low"&&checked.quality.missingInputs.length===0)lastFullDay=date;
+   }else historicFailed=true;
+  }
+ }catch{historicFailed=true;}
  const amount=previous&&Number.isSafeInteger(previous.netSalesCents)?previous.netSalesCents!:null;
  const formatted=amount===null?"—":new Intl.NumberFormat(ctx.locale,{
   style:"currency",currency:ctx.currency??"XXX"}).format(amount/100);
