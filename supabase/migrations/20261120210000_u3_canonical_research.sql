@@ -3,7 +3,9 @@
 -- and rechecked by RLS on every SQL statement. The model never sees this token.
 -- All research roles are NOLOGIN until a separately provisioned private
 -- read-only database credential exists; a migration never stores passwords.
-BEGIN;
+-- Supabase manages the migration transaction; do not nest BEGIN/COMMIT.
+set lock_timeout = '1s';
+set statement_timeout = '30s';
 
 DO $u3_roles$
 BEGIN
@@ -32,9 +34,11 @@ GRANT aicafe_research_view_owner TO postgres WITH SET TRUE;
 -- One private signing key, not one entitlement row per model call. Its random
 -- value is never emitted to service/browser/model, including via error output.
 CREATE TABLE IF NOT EXISTS u3_research_private.signing_key(
-  singleton smallint PRIMARY KEY CHECK(singleton=1),
+  singleton integer PRIMARY KEY CHECK(singleton=1),
   secret bytea NOT NULL CHECK(octet_length(secret)>=32)
 );
+-- Reason: this is a newly created isolated signing-key table; enabling RLS immediately prevents untrusted-role reads.
+-- squawk-ignore ban-alter-row-level-security
 ALTER TABLE u3_research_private.signing_key ENABLE ROW LEVEL SECURITY;
 REVOKE ALL ON u3_research_private.signing_key FROM PUBLIC,anon,authenticated,
   aicafe_research,aicafe_research_view_owner;
@@ -349,4 +353,3 @@ COMMENT ON VIEW u3_research.cafe_events IS 'Grain: one saved local event record 
 COMMENT ON VIEW u3_research.cafe_decisions IS 'Grain: one recorded business decision with confidence/status and provenance. Draft/pending decisions are not executed effects; outcomes need independent source proof.';
 
 REVOKE aicafe_research_view_owner FROM postgres;
-COMMIT;
