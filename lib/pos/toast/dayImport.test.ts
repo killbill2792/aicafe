@@ -439,6 +439,10 @@ it("does not record the committed day as failed even if relink and its error rec
   const result=await importToastBusinessDay(f.db,params("2026-10-16"));
   expect(result.derivedRefreshPending).toBe(true);
   expect(result.derivedRefreshNote).toBe("sales_link_unavailable");
+  expect(result.costsPending).toBe(true);
+  expect(f.pendingCosts.has("2026-10-16")).toBe(true);
+  expect(mocked.recompute).not.toHaveBeenCalled();
+  expect(f.operations).not.toContain("toast_ack_rollup_refresh");
   expect(f.imports).toHaveLength(1);
   expect(f.operations).not.toContain("toast_record_day_error");
   expect(f.dayStatuses.get("2026-10-16")).toBe("imported");
