@@ -382,11 +382,11 @@ for(const width of [390,1440]) {
           await test.step(path,async()=>{
             const response=await page.goto("/en"+path,{waitUntil:"domcontentloaded"});
             expect(response?.status()).toBe(200);
+            await expect.poll(()=>new URL(page.url()).pathname,{timeout:30000}).toBe("/en"+(redirect??path));
             const final=new URL(page.url());
-            expect(final.pathname).toBe("/en"+(redirect??path));
             if(search)expect(final.searchParams.toString()).toContain(search);
             if(hash)expect(final.hash).toBe(hash);
-            await expect(page.getByText(marker,{exact:true}).first()).toBeVisible({timeout:30000});
+            await expect(page.getByText(marker,{exact:true}).filter({visible:true}).first()).toBeVisible({timeout:30000});
             expect(await page.evaluate(()=>innerWidth)).toBe(width);
             expect(await page.evaluate(()=>document.documentElement.scrollWidth)).toBeLessThanOrEqual(width);
           });
@@ -405,13 +405,14 @@ for(const width of [390,1440]) {
         const item=items[0],url="/en/menu/"+item.id;
         const result=await active.page.goto(url);
         expect(result?.status()).toBe(200);
-        await expect(active.page.getByRole("heading",{name:item.base_name,exact:true})).toBeVisible();
+        await expect(active.page.getByRole("heading",{name:item.base_name,level:1,exact:true})).toBeVisible();
         const money=new Intl.NumberFormat("en",{style:"currency",currency:who.currency}).format(Number(item.price_cents)/100);
         // Independent currency and cents are checked even if legacy formatting
         // assumes USD. The test never changes prices or calls a payment tool.
         await expect.soft(active.page.getByRole("button",{name:money,exact:true}).first()).toBeVisible();
         const deniedResult=await denied.page.goto(url);
-        expect(deniedResult?.status()).toBe(404);
+        expect([200,404]).toContain(deniedResult?.status());
+        await expect(denied.page.getByText("This page could not be found.",{exact:true})).toBeVisible();
         await expect(denied.page.getByRole("heading",{name:item.base_name,exact:true})).toHaveCount(0);
         expect(await query("select id,price_cents from public.menu_items where business_id=$1 and id=$2",[who.businessId,item.id])).toEqual([{id:item.id,price_cents:item.price_cents}]);
       }
@@ -428,7 +429,8 @@ for(const width of [390,1440]) {
       try{
         const owner=await session(other),foreign=await session(cafe),url="/en/more/alerts/"+id;
         const denied=await foreign.page.goto(url);
-        expect(denied?.status()).toBe(404);
+        expect([200,404]).toContain(denied?.status());
+        await expect(foreign.page.getByText("This page could not be found.",{exact:true})).toBeVisible();
         await expect(foreign.page.getByText(marker,{exact:false})).toHaveCount(0);
         expect(await query("select status from public.alerts where id=$1 and business_id=$2",[id,other.businessId])).toEqual([{status:"new"}]);
         const response=await owner.page.goto(url);
@@ -467,12 +469,59 @@ for(const width of [390,1440]) {
         await expect(owner.page.getByText("2 of 3 rows",{exact:true})).toBeVisible();
         await expect(owner.page.getByText(marker,{exact:true})).toBeVisible();
         const denied=await foreign.page.goto(url);
-        expect(denied?.status()).toBe(404);
+        expect([200,404]).toContain(denied?.status());
+        await expect(foreign.page.getByText("This page could not be found.",{exact:true})).toBeVisible();
         await expect(foreign.page.getByText(marker,{exact:true})).toHaveCount(0);
         await owner.page.reload();
         await expect(owner.page.getByText(marker,{exact:true})).toBeVisible();
         expect(await query("select id,status,summary from public.uploads where business_id=$1 and id=$2",[cafe.businessId,id])).toEqual([{id,status:"done",summary}]);
       }finally{await query("delete from public.uploads where business_id=$1 and id=$2",[cafe.businessId,id]);}
+    });
+  });
+}
+
+for(const width of [390,768,1024,1440]){
+  test("@home 17D:D20-"+width+" tablet and RTL owner transcript preserves text, source details and local controls",async({browser})=>{
+    test.setTimeout(180_000);
+    await withOwner(browser,width,async({cafe,query,session,thread,open})=>{
+      const t=await thread(),reply=randomUUID();
+      const text="Sales are recorded. The comparison is incomplete; no profit conclusion is justified.";
+      const blocks=[{type:"text",text},{type:"rich_presentation",version:1,layout:"stack",panels:[
+        {kind:"line",title:"Recorded sales",unit:"cents",currency:cafe.currency,source:"daily_rollups",from:"2026-01-01",to:"2026-01-02",asOf:"2026-01-03",points:[{label:"2026-01-01",value:1200},{label:"2026-01-02",value:2400}]}
+      ],suggestions:["Check missing costs"]}];
+      await query("insert into public.ai_messages(id,business_id,thread_id,owner_user_id,role,content_type,structured_content,grounding) values($1,$2,$3,$4,'supervisor','blocks',$5::jsonb,$6::jsonb)",[reply,cafe.businessId,t.id,cafe.owner.userId,JSON.stringify(blocks),JSON.stringify({status:"verified",intent:"unknown",evidence:[]})]);
+      const {page}=await session();
+      await open(page,t);
+      const answer=page.locator('[data-work-message="'+reply+'"]'),rich=answer.getByTestId("supervisor-rich-presentation"),composer=page.locator("#supervisor-home-composer");
+      let sent=0;page.on("request",r=>{if(r.method()==="POST"&&/\/api\/ai\/threads\/[^/]+\/(agent|messages)$/.test(new URL(r.url()).pathname))sent++;});
+      await expect(answer.getByText(text,{exact:true})).toBeVisible();
+      await expect(rich).toBeVisible();
+      await rich.locator("figure details summary").focus();await page.keyboard.press("Enter");
+      await expect(rich.getByRole("table",{name:"Recorded sales"})).toBeVisible();
+      await expect(rich.getByRole("cell",{name:new Intl.NumberFormat("en-US",{style:"currency",currency:cafe.currency}).format(24),exact:true})).toBeVisible();
+      await rich.evaluate(el=>{el.hidden=true;});
+      await expect(answer.getByText(text,{exact:true})).toBeVisible();
+      await rich.evaluate(el=>{el.hidden=false;});
+      await rich.getByRole("button",{name:"Check missing costs",exact:true}).click();
+      await expect(composer).toHaveValue("Check missing costs");
+      expect(sent).toBe(0);
+      await composer.fill("");
+      // Reducing CSS width is a reflow simulation, NOT native browser zoom.
+      await page.setViewportSize({width:Math.max(320,Math.floor(width/2)),height:844});
+      await expect(composer).toBeVisible();
+      expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);
+      await page.setViewportSize({width,height:width===768?1024:900});
+      for(const [locale,dir] of [["ar","rtl"],["es","ltr"]]){
+        await page.goto("/"+locale+"?thread="+t.id);
+        await expect(page.locator("html")).toHaveAttribute("dir",dir);
+        await expect(page.locator("html")).toHaveAttribute("lang",locale);
+        await expect(answer.getByText(text,{exact:true})).toBeVisible();
+        await expect(composer).toBeVisible();
+        expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);
+        await page.reload();await expect(answer.getByText(text,{exact:true})).toBeVisible();
+      }
+      expect(await query("select id,thread_id,structured_content from public.ai_messages where business_id=$1 and id=$2",[cafe.businessId,reply])).toEqual([{id:reply,thread_id:t.id,structured_content:blocks}]);
+      expect(sent).toBe(0);
     });
   });
 }

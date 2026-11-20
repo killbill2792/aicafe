@@ -199,6 +199,23 @@
         "D06",
         "D09"
       ]
+    },
+    {
+      "id": "D20",
+      "tag": "home",
+      "name": "authenticated tablet RTL, localized route and answer text fallback",
+      "viewports": [
+        390,
+        768,
+        1024,
+        1440
+      ],
+      "evidence": "actual_browser_emulation_only",
+      "families": [
+        "D01",
+        "D08",
+        "D09"
+      ]
     }
   ],
   "integration": {
@@ -225,7 +242,8 @@
       "D07",
       "D08",
       "D11",
-      "D12"
+      "D12",
+      "D20"
     ],
     "screen-candidate:app/[locale]/operations/page.tsx": [
       "D02"
@@ -444,6 +462,13 @@
     ],
     "authorized_effect_recovery": [
       "D05"
+    ],
+    "proactive_rich_response_and_reload": [
+      "D20"
+    ],
+    "proactive_owner_answer_same_episode": [
+      "D02",
+      "D20"
     ]
   },
   "routeGroups": [
@@ -967,5 +992,128 @@
       ],
       "remaining": "destructive action not executed; separately scoped disposable account deletion and safety confirmation"
     }
+  },
+  "inheritedCases": [
+    {
+      "title": "@home Task16A authenticated mobile owner views library/routines/permissions and revokes a scoped mandate",
+      "tag": "home"
+    },
+    {
+      "title": "@home Task 16B persists real Supervisor work through reload, uncertainty and café isolation",
+      "tag": "home"
+    },
+    {
+      "title": "@home real password sign-in isolates two cafés and ignores an unauthorized café cookie",
+      "tag": "home"
+    },
+    {
+      "title": "@home Task15A persisted investigation opens in real Operations without leaking another café",
+      "tag": "home"
+    },
+    {
+      "title": "@home Task15B owner reports a real maintenance incident and independently verifies working equipment",
+      "tag": "home"
+    },
+    {
+      "title": "@home owner uploads and reselects a private receipt while another café cannot read it",
+      "tag": "home"
+    },
+    {
+      "title": "@staff seeded owner can open actual schedule and Team view",
+      "tag": "staff"
+    },
+    {
+      "title": "@staff owner sees durable published/accepted/delivered status, isolated by café",
+      "tag": "staff"
+    },
+    {
+      "title": "@menu seeded owner searches real stored products",
+      "tag": "menu"
+    },
+    {
+      "title": "@money seeded owner switches from recovery to real profit & costs",
+      "tag": "money"
+    },
+    {
+      "title": "@gmail seeded owner sees Gmail entry, connection status and revocation UX without external Google calls",
+      "tag": "gmail"
+    },
+    {
+      "title": "@menu Pantry retains confirmed zero and rejects historical Toast stock as current for two cafés",
+      "tag": "menu"
+    },
+    {
+      "title": "@purchasing real supplier quote entry preserves currency and denies cross-café reads",
+      "tag": "purchasing"
+    },
+    {
+      "title": "@purchasing owner verifies a supplier phone/portal channel and a Gmail address without sending",
+      "tag": "purchasing"
+    },
+    {
+      "title": "@purchasing proactive notice → repeated cron idempotency → owner-approved PO → resolved forever",
+      "tag": "purchasing"
+    },
+    {
+      "title": "@gmail Task16C owner revokes live external access across mobile reload and cafés",
+      "tag": "gmail"
+    },
+    {
+      "title": "@home Task16D authenticated responsive Supervisor work across conversations",
+      "tag": "home"
+    },
+    {
+      "title": "@money historical statement imports work without a bank connection and persist only owner-confirmed balances",
+      "tag": "money"
+    },
+    {
+      "title": "@gmail Task15A authenticated usage and admin cost ledger are scoped",
+      "tag": "gmail"
+    },
+    {
+      "title": "@home Task15A scheduler detects reduced sales from actual daily source rows",
+      "tag": "home"
+    },
+    {
+      "title": "@home Task16E design baseline observes empty and long Supervisor conversations",
+      "tag": "home"
+    },
+    {
+      "title": "@home Task16E quiet shell, optional visuals, editable follow-up and mobile navigation",
+      "tag": "home"
+    },
+    {
+      "title": "@home Task16E adaptive answer survives reload, preserves prose and opens a safe editable follow-up",
+      "tag": "home"
+    },
+    {
+      "title": "@home Task16E stops an acknowledged live view without invoking a cancel or effect",
+      "tag": "home"
+    }
+  ],
+  "visualAcceptance": {
+    "inheritedExactHead": "a3fa53197920e554435db69a9e690a39669f8bfc",
+    "inheritedRun": "44673606521",
+    "browserWidths": [
+      320,
+      390,
+      430,
+      768,
+      1024,
+      1440
+    ],
+    "actualDevice": "UNTESTED",
+    "actualSpeech": "UNTESTED",
+    "independentDesignReview": "UNTESTED",
+    "productionBuildPerformance": "UNTESTED",
+    "nontechnicalHumanComprehension": "UNTESTED",
+    "modelDependentConsolidation": [
+      "16e",
+      "17d",
+      "17b-owner-security",
+      "17c",
+      "8b-multiday-lifecycle",
+      "pos0ef-customer-identity"
+    ]
   }
 }

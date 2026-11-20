@@ -4,13 +4,14 @@ const matrix=JSON.parse(readFileSync(new URL("../../tests/e2e/task17d-owner-matr
 
 export function verifyOwnerCases(report, contract=matrix, selected=null) {
   const expected=new Set();
-  for(const c of contract.cases.filter(c=>!selected||selected.includes(c.tag??"home"))) for(const w of contract.viewports) {
+  for(const c of contract.cases.filter(c=>!selected||selected.includes(c.tag??"home"))) for(const w of c.viewports??contract.viewports) {
     const key=c.id+"-"+w;
     if(expected.has(key)) throw Error("Duplicate owner matrix case "+key);
     expected.add(key);
   }
   if(!contract.cases.length||!contract.viewports.length)throw Error("Empty 17D matrix");
-  if(!expected.size) return {status:"not_selected",expected:0,cases:[],errors:[],integrated_proven:false,live_model_proof:false};
+  const inherited=(contract.inheritedCases??[]).filter(c=>!selected||selected.includes(c.tag));
+  if(!expected.size&&!inherited.length) return {status:"not_selected",expected:0,cases:[],errors:[],integrated_proven:false,live_model_proof:false};
   const observed=new Map(), errors=[];
   function walk(suite) {
     for(const spec of suite.specs??[]) {
@@ -29,8 +30,25 @@ export function verifyOwnerCases(report, contract=matrix, selected=null) {
   }
   for(const suite of report?.suites??[])walk(suite);
   for(const id of expected)if(!observed.has(id))errors.push("missing:"+id);
+  const inheritedObserved=new Map(),inheritedTitles=new Set(inherited.map(c=>c.title));
+  if(inheritedTitles.size!==inherited.length)throw Error("Duplicate inherited browser title");
+  function walkInherited(suite){
+    for(const spec of suite.specs??[]){
+      if(!inheritedTitles.has(spec.title))continue;
+      const tests=spec.tests??[],t=tests[0];
+      const ok=tests.length===1&&t?.status==="expected"&&t.expectedStatus==="passed"&&t.results?.length===1&&t.results[0].status==="passed";
+      if(inheritedObserved.has(spec.title))errors.push("duplicate-inherited:"+spec.title);
+      inheritedObserved.set(spec.title,ok);
+      if(!ok)errors.push("not-passed-inherited:"+spec.title);
+    }
+    for(const child of suite.suites??[])walkInherited(child);
+  }
+  for(const suite of report?.suites??[])walkInherited(suite);
+  for(const c of inherited)if(!inheritedObserved.has(c.title))errors.push("missing-inherited:"+c.title);
+
   return {status:errors.length?"failed":"passed",expected:expected.size,
     cases:[...expected].map(id=>({id,status:observed.get(id)===true?"passed":observed.has(id)?"failed":"untested"})),
+    inherited:inherited.map(c=>({title:c.title,status:inheritedObserved.get(c.title)===true?"passed":inheritedObserved.has(c.title)?"failed":"untested"})),
     errors,integrated_proven:false,live_model_proof:false};
 }
 

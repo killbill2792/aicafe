@@ -52,3 +52,15 @@ test("new owner screens and retired route reviews cannot disappear from the cens
  assert.equal(result.screens[0].status,"UNTESTED");
  assert.equal(result.integrated_proven,false);
 });
+
+test("inherited exact title evidence and tablet-specific cases cannot disappear",()=>{
+ const contract={viewports:[390,1440],cases:[{id:"D20",tag:"home",viewports:[768,1024]}],inheritedCases:[{title:"@home Task16E inherited",tag:"home"},{title:"@purchasing actual purchase",tag:"purchasing"}]};
+ const legacy={title:"@home Task16E inherited",tests:[{status:"expected",expectedStatus:"passed",results:[{status:"passed"}]}]};
+ const a=report(spec("D20-768"),spec("D20-1024"));
+ assert.equal(verifyOwnerCases(a,contract,["home"]).status,"failed");
+ assert.equal(verifyOwnerCases(report(),contract,["purchasing"]).status,"failed");
+ a.suites[0].suites[0].specs.push(legacy);
+ assert.equal(verifyOwnerCases(a,contract,["home"]).status,"passed");
+ legacy.tests[0].results.push({status:"passed"});
+ assert.equal(verifyOwnerCases(a,contract,["home"]).status,"failed");
+});
