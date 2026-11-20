@@ -66,3 +66,44 @@ describe("U2 migrated execution ledger",()=>{
  }finally{await ownerClient?.end();await service.end();await admin.query("delete from public.businesses where id=any($1::uuid[])",[cafes]);await admin.query("delete from auth.users where id=any($1::uuid[])",[owners]);await admin.end()}
  },30000);
 });
+
+describe("U2 durable owner execution",()=>{
+ (sandbox?it:it.skip)("admits expanded Luna calls under the same durable owner lease and settles actual usage exactly once",async()=>{
+ const admin=await connect("postgres"),service=await connect("service_role");
+ const businessId=randomUUID(),ownerId=randomUUID(),threadId=randomUUID(),messageId=randomUUID();
+ const scope=[businessId,ownerId,threadId];
+ try{
+  await admin.query("insert into auth.users(id,instance_id,aud,role,email,encrypted_password,created_at,updated_at) values ($1,'00000000-0000-0000-0000-000000000000','authenticated','authenticated',$2,'',now(),now())",[ownerId,ownerId+"@example.invalid"]);
+  await admin.query("insert into public.businesses(id,name,timezone,is_demo) values ($1,'Disposable U2 durable','UTC',false)",[businessId]);
+  await admin.query("insert into public.memberships(business_id,user_id,role) values ($1,$2,'owner')",[businessId,ownerId]);
+  await admin.query("insert into public.ai_threads(id,business_id,owner_user_id,client_request_id) values ($1,$2,$3,$4)",[...scope,randomUUID()]);
+  await admin.query("insert into public.ai_messages(id,business_id,owner_user_id,thread_id,author_user_id,role,content_type,text_content,client_message_id) values($1,$2,$3,$4,$3,'owner','text','Review the evidence',$5)",[messageId,...scope,randomUUID()]);
+  const run=await rpc(service,"supervisor_admit_owner_run_v2",[...scope,messageId,"c".repeat(64),"en",[]]);
+  const auth=await rpc(service,"supervisor_run_claim",[...scope,run.id,randomUUID(),30]);
+  await rpc(service,"supervisor_run_complete_step",[...scope,run.id,"authorize_owner",auth.step.claim_token,"owner:"+messageId]);
+  const first=await rpc(service,"supervisor_run_claim",[...scope,run.id,randomUUID(),30]);
+  const token=first.step.claim_token;
+  const job=await rpc(service,"supervisor_start_owner_job_v2",[...scope,run.id,token]);
+  const reserve=(id:string,cap:number,model="gpt-6-luna",lease=token,owner=ownerId)=>rpc(service,"supervisor_reserve_durable_model_call",[id,businessId,owner,threadId,run.id,messageId,job.id,lease,model,2000,cap,100,3,10000,12000,1000,10]);
+  await expect(reserve(randomUUID(),8193)).rejects.toThrow();
+  await expect(reserve(randomUUID(),8192,"gpt-4.1-mini")).rejects.toThrow();
+  await expect(reserve(randomUUID(),8192,"gpt-6-luna",randomUUID())).rejects.toThrow();
+  await expect(reserve(randomUUID(),8192,"gpt-6-luna",token,randomUUID())).rejects.toThrow();
+  const a=randomUUID(),b=randomUUID();
+  await reserve(a,8192);
+  await expect(reserve(b,8192)).rejects.toThrow();
+  const receipt={kind:"responses",model:"gpt-6-luna",requestedModel:"gpt-6-luna",outcome:"completed",final:false,nativeSearch:true,outputCap:8192,durationMs:40,inputTokens:100,cachedTokens:20,outputTokens:3000,reasoningTokens:2000,nonReasoningTokens:1000,estimatedCostMicros:100,discoveryCalls:1};
+  const settle=(id:string)=>rpc(service,"supervisor_complete_investigation_model_call",[id,...scope,"gpt-6-luna",100,3000,100,JSON.stringify(receipt)]);
+  await settle(a);
+  await expect(settle(a)).rejects.toThrow();
+  await reserve(b,8192);
+  await settle(b);
+  const summary=[...scope,messageId,run.id,[a,b],"gpt-6-luna",200,6000,2,0,200,JSON.stringify({requests:[receipt,receipt],tools:[]})];
+  await rpc(service,"supervisor_record_durable_usage_increment",summary);
+  await expect(rpc(service,"supervisor_record_durable_usage_increment",summary)).rejects.toThrow();
+  const rows=await admin.query("select attempt_id,status,output_tokens,execution_metrics from public.supervisor_system_usage_events where business_id=$1",[businessId]);
+  expect(rows.rows).toHaveLength(2);
+  for(const row of rows.rows)expect(row).toMatchObject({status:"completed",output_tokens:"3000",execution_metrics:receipt});
+ }finally{await service.end();await admin.query("delete from public.businesses where id=$1",[businessId]);await admin.query("delete from auth.users where id=$1",[ownerId]);await admin.end();}
+ },30000);
+});
