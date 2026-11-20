@@ -8,7 +8,7 @@ const point=z.strictObject({label,value:z.number().finite().min(-Number.MAX_SAFE
 export const presentationPanelSchema=z.strictObject({
   kind:z.enum(["metric","table","ranked_table","bar","line","donut"]),
   title:label,unit:z.enum(["cents","count","items","units","seconds","minutes","hours","days","ratio","ratio squared","indicator","cents/hour"]),currency:z.string().regex(/^[A-Z]{3}$/).nullable(),
-  from:date,to:date,asOf:date,source:z.enum(["daily_rollups","item_sales","profitability","canonical_data","expenses","business_costs","product_costs"]),
+  from:date,to:date,asOf:date,source:z.enum(["daily_rollups","item_sales","profitability","canonical_data","expenses","business_costs","product_costs","supplier_purchase_plan","purchase_orders","inventory","menu_items"]),
   sourceDetail:z.string().max(500).optional(),
   coverage:z.enum(["partial","estimate"]).optional(),
   points:z.array(point).min(1).max(30),
@@ -35,7 +35,7 @@ export const scenarioComparisonSchema=z.strictObject({
 const tableUnit=z.enum(["label","local date","cents","count","items","units","quantity","seconds","minutes","hours","days","ratio","ratio squared","indicator","cents/hour","boolean","hour 0 to 23","weekday","timestamp text","stored"]);
 const cell=z.union([z.string().max(240),z.number().finite().min(-Number.MAX_SAFE_INTEGER).max(Number.MAX_SAFE_INTEGER),z.boolean(),z.null()]);
 export const recordTableSchema=z.strictObject({
- title:label,view:z.string().regex(/^cv_[a-z_]+$/).max(80),from:date,to:date,asOf:date,
+ title:label,view:z.string().regex(/^(?:cv|tool)_[a-z_]+$/).max(80),from:date,to:date,asOf:date,
  currency:z.string().regex(/^[A-Z]{3}$/).nullable(),
  coverage:z.enum(["stored","partial"]),scope:z.string().max(300),
  columns:z.array(z.strictObject({label,unit:tableUnit})).min(1).max(8),

@@ -1,5 +1,7 @@
 import {describe,it,expect} from "vitest";
 import {presentResponse} from "./presentation";
+import {planSupplierOrder} from "@/lib/purchasing/planOrder";
+import {projectInventoryEvidence} from "@/lib/calc/inventoryEvidence";
 import type {AgentToolContext,AgentToolResult} from "./index";
 const sales:AgentToolResult={source:"daily_rollups",period:{from:"2026-11-01",to:"2026-11-03"},missing:[],
  days:[{date:"2026-11-02",netSalesCents:1200},{date:"2026-11-03",netSalesCents:0}]};
@@ -204,4 +206,19 @@ it("shows safe stored current-day values as partial, never as final totals",()=>
  const args={view:"cv_sales_days",date_from:sales.period!.from,date_to:sales.period!.to,group_by:null,metrics:[{fn:"sum",column:"net_sales_cents"}]};
  const c={...ctx(),presentationResults:()=>[{name:"query_data",arguments:JSON.stringify(args),result:r}]};
  expect(presentResponse({layout:"stack",panels:[{source:"canonical_data",field:"sum_net_sales_cents",kind:"metric"}],suggestions:[]},c)).toMatchObject({accepted:true,presentation:{panels:[{coverage:"partial",points:[{value:2400}]}]}});
+});
+
+describe("real typed producer presentation",()=>{
+ it("uses the existing pack planner's subtotal and does not invent landed total",()=>{
+   const ingredient={id:"11111111-1111-4111-8111-111111111111",name:"Milk",base_unit:"ml"};
+   const quote={id:"22222222-2222-4222-8222-222222222222",supplier_name:"Farm A",item_name:"Milk",ingredient_id:ingredient.id,price_cents:450,package_count:1,package_unit:"gal",currency_code:"USD",source_kind:"supplier_quote",quoted_on:"2026-11-01",valid_until:"2026-11-20",available_status:"confirmed",available_checked_at:"2026-11-03",delivery_on:"2026-11-06"};
+   const plan=planSupplierOrder({needs:[{ingredientId:ingredient.id,itemName:"Milk",quantity:5,unit:"gal"}],ingredients:[ingredient],quotes:[quote],currency:"USD",today:"2026-11-04",neededBy:"2026-11-07",preferredSupplier:null});
+   const r:AgentToolResult={source:"supplier_purchase_plan",period:null,sourceTrust:"owner_reported",...plan};
+   expect(presentResponse({layout:"stack",panels:[{source:r.source,field:"rows",kind:"table"},{source:r.source,field:"subtotal",kind:"bar"}],suggestions:[]},ctx(r))).toMatchObject({accepted:true,presentation:{panels:[{coverage:"partial",points:[{label:"Farm A",value:2250}]}],tables:[{coverage:"partial",rows:[["Farm A",2250,null,null]]}]}});
+ });
+ it("uses actual inventory projection; stale retained quantity stays null",()=>{
+   const projection=projectInventoryEvidence([{source:"toast",quantity:12,data:{evidence_state:"not_observed",source_as_of:"2026-11-01"}},{source:"app",quantity:0,data:{ingredient_name:"Milk",base_unit:"ml",count_date:"2026-11-04"}}]);
+   const r:AgentToolResult={source:"inventory",period:sales.period,scope:"observed_inventory_only",missing:projection.missing,inventory:projection.rows};
+   expect(presentResponse({layout:"stack",panels:[{source:"inventory",field:"rows",kind:"table"}],suggestions:[]},ctx(r))).toMatchObject({accepted:true,presentation:{tables:[{coverage:"partial",rows:[["Unnamed stock record",null,null,"not_observed","2026-11-01"],["Milk",0,"ml","dated_owner_count","2026-11-04"]]}]}});
+ });
 });

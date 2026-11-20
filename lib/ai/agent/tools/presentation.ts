@@ -5,7 +5,7 @@ import type { AgentToolContext,AgentToolResult } from "./index";
 
 // Select a source projection, never supply a numeric value, arbitrary path or business identity.
 const selection=z.strictObject({
-  source:z.enum(["daily_rollups","item_sales","profitability","canonical_data","expenses","business_costs","product_costs"]),
+  source:z.enum(["daily_rollups","item_sales","profitability","canonical_data","expenses","business_costs","product_costs","supplier_purchase_plan","purchase_orders","inventory","menu_items"]),
   field:z.string().trim().min(1).max(120),
   ref:z.string().regex(/^r[1-9][0-9]?$/).nullable().optional(),
   from:z.iso.date().nullable().optional(),to:z.iso.date().nullable().optional(),
@@ -283,6 +283,55 @@ function modeledScenario(results:readonly AgentToolResult[],ctx:Pick<AgentToolCo
  const out=scenarioComparisonSchema.safeParse({title,currency:ctx.currency,asOf:ctx.asOf,provenance:"estimate",cases:unique});
  return out.success?out.data:null;
 }
+/** Project named fields from existing typed readers, not arbitrary JSON paths. */
+function readerTable(r:AgentToolResult,ctx:Pick<AgentToolContext,"currency"|"asOf">):RecordTable|null{
+ if(r.error||r.needsOwnerChoice)return null;
+ const columns:RecordTable["columns"]=[];
+ let rows:RecordTable["rows"]=[],title="",scope="",currency:string|null=null;
+ const text=(v:unknown)=>typeof v==="string"?v:null;
+ const num=(v:unknown)=>typeof v==="number"&&Number.isFinite(v)?v:null;
+ const bool=(v:unknown)=>typeof v==="boolean"?v:null;
+ const date=(v:unknown)=>typeof v==="string"&&z.iso.date().safeParse(v).success?v:null;
+ const add=(label:string,unit:RecordTable["columns"][number]["unit"])=>columns.push({label,unit});
+ const from=r.period?.from??ctx.asOf,to=r.period?.to??ctx.asOf;
+ if(r.source==="supplier_purchase_plan"&&Array.isArray(r.offers)&&r.sourceTrust==="owner_reported"&&r.comparison==="subtotal_only"){
+   if(!ctx.currency||r.offers.some(o=>!obj(o)||o.currency!==ctx.currency||typeof o.supplierName!=="string"||typeof o.subtotalCents!=="number"||!Number.isSafeInteger(o.subtotalCents)))return null;
+   title="Supplier quote subtotals";scope="Saved owner-reported quotes for requested quantities. Excludes unknown freight and tax; not landed cost or delivery confirmation.";
+   currency=ctx.currency;add("Supplier","label");add("Subtotal","cents");add("Shipping","cents");add("Tax","cents");
+   rows=r.offers.map(o=>[o.supplierName,o.subtotalCents,null,null]);
+ }else if(r.source==="purchase_orders"&&Array.isArray(r.orders)){
+   if(!ctx.currency||r.orders.some(o=>!obj(o)||o.currency!==ctx.currency))return null;
+   title="Saved purchase orders";scope="Saved order history as of snapshot. Internal approval does not mean sent or received; no payment inference.";
+   currency=ctx.currency;add("Supplier","label");add("Status","label");add("Subtotal","cents");add("Needed by","local date");add("Approved at","timestamp text");add("Sent","boolean");add("Received into inventory","boolean");
+   rows=r.orders.map(o=>[text(o.supplierName),text(o.status),num(o.subtotalCents),date(o.neededBy),text(o.approvedAt),bool(o.sentToSupplier),bool(o.receivedIntoInventory)]);
+ }else if(r.source==="inventory"&&Array.isArray(r.inventory)&&r.scope==="observed_inventory_only"){
+   title="Observed inventory";scope="Saved counts and retained evidence only. Unnamed records and unknown quantities are not zero; units may differ.";
+   add("Item","label");add("Quantity","quantity");add("Unit","label");add("Evidence state","label");add("Source as of","timestamp text");
+   rows=r.inventory.flatMap(o=>{
+    if(!obj(o)||!["observed_current","dated_owner_count","not_observed","source_failed","source_unverified"].includes(String(o.evidence_state)))return [];
+    const known=["observed_current","dated_owner_count"].includes(String(o.evidence_state))&&o.quantity_state==="known";
+    return [[text(o.ingredient_name)??"Unnamed stock record",known?num(o.quantity):null,text(o.quantity_unit),text(o.evidence_state),text(o.source_as_of)]];
+   });
+ }else if(r.source==="menu_items"&&Array.isArray(r.items)){
+   if(!ctx.currency)return null;
+   title="Saved menu price records";scope="Catalog prices, not realized selling prices. Open prices and unavailable values remain unknown.";
+   currency=ctx.currency;add("Item","label");add("Category","label");add("Catalog price","cents");add("Price evidence","label");
+   rows=r.items.flatMap(o=>obj(o)&&typeof o.name==="string"?[[o.name,text(o.category),o.priceStatus==="fixed"?num(o.priceCents):null,text(o.priceSource)]]:[]);
+ }else return null;
+ if(!rows.length)return null;
+ const parsed=recordTableSchema.safeParse({title,view:"tool_"+r.source,from,to,asOf:ctx.asOf,currency,
+  coverage:r.missing.length||r.source==="supplier_purchase_plan"||r.source==="inventory"||rows.length>30?"partial":"stored",
+  scope,columns,rows:rows.slice(0,30)});
+ return parsed.success?parsed.data:null;
+}
+function supplierPanel(s:z.infer<typeof selection>,r:AgentToolResult,ctx:Pick<AgentToolContext,"currency"|"asOf">):PresentationPanel|null{
+ if(s.source!=="supplier_purchase_plan"||s.field!=="subtotal"||s.kind==="line"||s.kind==="donut")return null;
+ const table=readerTable(r,ctx);
+ if(!table||!table.currency||!table.rows.every(row=>typeof row[0]==="string"&&typeof row[1]==="number"))return null;
+ const points=table.rows.map(row=>({label:row[0] as string,value:row[1] as number}));
+ if(new Set(points.map(p=>p.label)).size!==points.length)return null;
+ return {kind:s.kind,title:table.title,unit:"cents",currency:table.currency,from:table.from,to:table.to,asOf:table.asOf,source:"supplier_purchase_plan",sourceDetail:table.scope,coverage:"partial",points};
+}
 function costPanel(s:z.infer<typeof selection>,r:AgentToolResult,ctx:Pick<AgentToolContext,"asOf"|"currency">):PresentationPanel|null{
  if(r.source!==s.source||r.error||r.missing.length||r.needsOwnerChoice||!ctx.currency||s.kind==="line")return null;
  let points:PresentationPanel["points"]=[],title="";
@@ -310,6 +359,7 @@ function costPanel(s:z.infer<typeof selection>,r:AgentToolResult,ctx:Pick<AgentT
  return {kind:s.kind,title,unit:"cents",currency:ctx.currency,from,to,asOf:ctx.asOf,source:s.source,points};
 }
 function project(s:z.infer<typeof selection>,r:AgentToolResult,ctx:Pick<AgentToolContext,"currency"|"asOf">):PresentationPanel|null {
+ if(s.source==="supplier_purchase_plan")return supplierPanel(s,r,ctx);
  if(s.source==="expenses"||s.source==="business_costs"||s.source==="product_costs")return costPanel(s,r,ctx);
  const d=Object.hasOwn(descriptions,s.field)?descriptions[s.field as keyof typeof descriptions]:null;
  if(!d||d.source!==s.source||r.source!==s.source||r.missing.length||r.needsOwnerChoice||
@@ -360,10 +410,10 @@ export function presentResponse(raw:unknown,ctx:Pick<AgentToolContext,"currency"
    const selected= s.ref?canonical.filter(x=>x.ref===s.ref):canonical;
    if(s.ref&&selected.length!==1)return [];
    const matching=(r:AgentToolResult)=>r.source===s.source&&(!s.from||r.period?.from===s.from)&&(!s.to||r.period?.to===s.to);
-   if(s.source==="canonical_data"&&s.kind==="table"&&s.field==="rows"){
-     const candidates=selected.filter(x=>x.name==="query_data"&&matching(x.result)).flatMap(x=>{
+   if(s.kind==="table"&&s.field==="rows"){
+     const candidates=s.source==="canonical_data"?selected.filter(x=>x.name==="query_data"&&matching(x.result)).flatMap(x=>{
        const table=canonicalTable(x.result,x.arguments,ctx);return table?[table]:[];
-     });
+     }):(s.ref?selected:results).filter(x=>matching(x.result)).flatMap(x=>{const table=readerTable(x.result,ctx);return table?[table]:[]});
      const distinct=[...new Map(candidates.map(t=>[JSON.stringify(t),t])).values()];
      if(distinct.length===1&&tables.length<2){slots.set("p"+i,"table"+tables.length);tables.push(distinct[0]);}
      return [];
@@ -409,5 +459,5 @@ export function presentResponse(raw:unknown,ctx:Pick<AgentToolContext,"currency"
  return {...empty,accepted:true,presentation:arranged.success?arranged.data:block.data};
 }
 export const presentationTools={
- present_response:{schema:presentationInputSchema,description:"Optional UI from current reads, never invented data. Source+field: daily_rollups daily_sales; item_sales item_units; profitability net_sales/total_costs/owner_profit; canonical_data exact aggregate alias or field rows for a multi-column table; expenses recorded_expenses; business_costs cost_components; product_costs recipe_cost. Use ref from the prior result to disambiguate; groups arrange p0–p3, agenda/scenario/calculator in stack/grid/compare (same units). Agenda from get_events/get_week_schedule; scenario monthly_profit/monthly_break_even/monthly_target_sales/item_margin from verified simulate_scenario; calculator=true after calculate for editable owner assumptions (not screen numbers); report=true for text export; files=true for sources attached in this turn only. Suggestions edit a draft, never act. Answer fully in words; visuals only if useful."},
+ present_response:{schema:presentationInputSchema,description:"Optional UI from current reads, never invented data. Source+field: daily_rollups daily_sales; item_sales item_units; profitability net_sales/total_costs/owner_profit; canonical_data exact aggregate alias or field rows for a multi-column table; expenses recorded_expenses; business_costs cost_components; product_costs recipe_cost; supplier_purchase_plan subtotal/rows; purchase_orders, inventory, menu_items rows. Use ref from the prior result to disambiguate; groups arrange p0–p3, agenda/scenario/calculator in stack/grid/compare (same units). Agenda from get_events/get_week_schedule; scenario monthly_profit/monthly_break_even/monthly_target_sales/item_margin from verified simulate_scenario; calculator=true after calculate for editable owner assumptions (not screen numbers); report=true for text export; files=true for sources attached in this turn only. Suggestions edit a draft, never act. Answer fully in words; visuals only if useful."},
 };
