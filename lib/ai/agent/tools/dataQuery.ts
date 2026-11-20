@@ -309,7 +309,8 @@ export const dataQueryTools={
    if(!z.uuid().safeParse(ctx.businessId).success||!ctx.db)return empty("invalid_scope");
    if(p.sql!==null){
     if(p.view!==null||!u3SqlConfigured())return empty("capability_unavailable");
-    return runU3Sql(ctx,{sql:p.sql,parameters:p.parameters,limit:p.limit});
+    return runU3Sql(ctx,{sql:p.sql,parameters:p.parameters,limit:p.limit,
+     date_from:p.date_from,date_to:p.date_to});
    }
    if(p.view===null||p.date_from===null||p.date_to===null)return empty("invalid_query");
    if(p.date_from>p.date_to)
