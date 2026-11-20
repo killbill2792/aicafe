@@ -277,4 +277,26 @@ $u3_views$;
 -- app's admin client or a public SECURITY DEFINER SQL function is introduced.
 -- Dedicated-role LOGIN/password and private connection are provisioned only
 -- after fully migrated role, canonical parity and attacker-path acceptance.
+COMMENT ON VIEW u3_research.daily_rollups IS 'Grain: one café/business date. Official saved daily net sales and bounded cost components; revenue and expenses here are not an independent raw transaction feed. Status columns determine completeness. Business date and currency come from owner café settings.';
+COMMENT ON VIEW u3_research.hourly_sales_rollup IS 'Grain: one café/location/business date/local hour. Reconciled hourly sales/order counts; join daily totals only after compatible preaggregation. Do not multiply daily revenue by hourly rows.';
+COMMENT ON VIEW u3_research.orders IS 'Grain: one organized source order identified by immutable id and café-specific pos_order_id. Historical/current order status may be toast_excluded or superseded. Screen net sales must use authoritative canonical sales metric, not sum orders without eligibility rules. Never infer customer identity from labels.';
+COMMENT ON VIEW u3_research.order_lines IS 'Grain: one order line per id, belonging to exactly one parent order via order_id. Quantity and line revenue are item-grain. Join to orders by order_id, restrict eligible, preaggregate before joining other one-to-many children to prevent fanout.';
+COMMENT ON VIEW u3_research.menu_items IS 'Grain: one local menu item and provider identity; Toast published menu authority for connected cafés. Current catalog price is not historical sale price or verified profit. Variant/size identities must not be inferred from title alone.';
+COMMENT ON VIEW u3_research.ingredients IS 'Grain: one café ingredient per id, base unit must be respected. Archived status and unit compatibility govern recipe analysis.';
+COMMENT ON VIEW u3_research.recipe_lines IS 'Grain: one ingredient usage specification per menu item/ingredient. Quantity uses ingredient base/display conversion semantics; recipes are owner-enriched and may be missing.';
+COMMENT ON VIEW u3_research.ingredient_prices IS 'Grain: a recorded ingredient cost observation with effective_from and recorded_at. Use latest verified effective price at the requested historical date; never substitute current prices for historical cost or infer missing cost.';
+COMMENT ON VIEW u3_research.ingredient_unit_conversions IS 'Grain: one ingredient-specific display unit conversion. Unit conversion is specific to ingredient and must not be applied globally across unlike quantities.';
+COMMENT ON VIEW u3_research.expenses IS 'Grain: one recorded expense record per id and spent_on; recorded expenses are not guaranteed complete accruals or cash movement. Status/source must be reviewed; never double count linked supplier invoices.';
+COMMENT ON VIEW u3_research.expense_lines IS 'Grain: one line within a parent expense; the expense amount must not be multiplied across lines. Derived ingredient links require original supplier receipt source proof.';
+COMMENT ON VIEW u3_research.employees IS 'Grain: one café employee ID; names and wages are protected and only owner mode can read. Never assume this roster proves an employee worked an unverified shift.';
+COMMENT ON VIEW u3_research.timecards IS 'Grain: one time entry with clock_in/clock_out; actual recorded work differs from planned shifts. Missing wage or unverified status is not zero and does not prove absence.';
+COMMENT ON VIEW u3_research.scheduled_shifts IS 'Grain: one planned shift per employee/date; draft, deleted or pending records are not current published staffing. Proposed text is not an approved shift change.';
+COMMENT ON VIEW u3_research.locations IS 'Grain: one café location. Local timezone is authoritative for calendar business-date/hour comparisons; no arbitrary cross-location GUID wildcard.';
+COMMENT ON VIEW u3_research.purchase_orders IS 'Grain: one owner-controlled purchase order; approval, dispatch, receipt, invoice and payment are different lifecycle states. No effect without owner approval and an exact authorized receipt.';
+COMMENT ON VIEW u3_research.purchase_order_lines IS 'Grain: one purchase order line; quantities, pack units, supplier quotes and historical costs must use consistent units, status and currency.';
+COMMENT ON VIEW u3_research.purchase_receipts IS 'Grain: one recorded physical receiving event; must be independently verified; purchase order status or supplier invoice does not prove arrival or accepted stock.';
+COMMENT ON VIEW u3_research.supplier_invoices IS 'Grain: one invoice claim; not proof of payment, delivery or expense recognition. Canonical linked expense must not be double counted with invoice total.';
+COMMENT ON VIEW u3_research.cafe_events IS 'Grain: one saved local event record with verification and time coverage. A listing is not evidence of attendance or causation, and stale verification must remain disclosed.';
+COMMENT ON VIEW u3_research.cafe_decisions IS 'Grain: one recorded business decision with confidence/status and provenance. Draft/pending decisions are not executed effects; outcomes need independent source proof.';
+
 COMMIT;
