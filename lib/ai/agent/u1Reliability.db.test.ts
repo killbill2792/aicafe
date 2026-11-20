@@ -131,3 +131,61 @@ describe("U1 migrated full-year coverage workload",()=>{
   }finally{await db.query("rollback");await db.end();}
  },120000);
 });
+
+describe("U1 migrated worker lease clocks and transport ordering",()=>{
+ (enabled?it:it.skip)("does not grant an expired investigation lease after a slow caller",async()=>{
+  const db=await connect(),cafe=randomUUID(),uid=randomUUID(),thread=randomUUID(),alert=randomUUID();
+  try{
+   await db.query("begin");
+   await db.query("insert into auth.users(id,instance_id,aud,role,email,encrypted_password,created_at,updated_at) values ($1,'00000000-0000-0000-0000-000000000000','authenticated','authenticated',$2,'',now(),now())",[uid,uid+"@example.invalid"]);
+   await db.query("insert into public.businesses(id,name,timezone,is_demo) values ($1,'U1 stale clock fixture','UTC',false)",[cafe]);
+   await db.query("insert into public.memberships(business_id,user_id,role) values ($1,$2,'owner')",[cafe,uid]);
+   await db.query("insert into public.ai_threads(id,business_id,owner_user_id,client_request_id) values ($1,$2,$3,$4)",[thread,cafe,uid,randomUUID()]);
+   await db.query("insert into public.alerts(id,business_id,kind,status,payload) values ($1,$2,'meal_break','new',$3)",[alert,cafe,JSON.stringify({quality:"verified",severity:"high"})]);
+   await db.query("select set_config('request.jwt.claim.role','service_role',true)");
+   await db.query("set local role service_role");
+   const stale=new Date(Date.now()-240000).toISOString();
+   const args=[cafe,uid,thread,"alert",alert,"a".repeat(64),"b".repeat(64),315,stale];
+   expect((await db.query("select public.supervisor_enqueue_investigation($1,$2,$3,$4,$5,$6,$7,$8,$9) result",args)).rows[0].result).toBe(true);
+   const claimed=(await db.query("select public.supervisor_claim_investigation($1) result",[stale])).rows[0].result;
+   expect(claimed.source_id).toBe(alert);
+   await db.query("reset role");
+   expect((await db.query("select lease_until>clock_timestamp()+interval '2 minutes' as live from public.supervisor_investigations where business_id=$1 and source_id=$2",[cafe,alert])).rows).toEqual([{live:true}]);
+  }finally{await db.query("rollback");await db.end();}
+ },30000);
+ (enabled?it:it.skip)("retains per-owner FIFO, skips idle bindings and rejects stale WhatsApp receipts",async()=>{
+  const db=await connect(),cafes=[randomUUID(),randomUUID()],owners=[randomUUID(),randomUUID()],threads=[randomUUID(),randomUUID()],bindings=[randomUUID(),randomUUID()];
+  const phones=["15550001001","15550001002"];
+  const earlier="wamid."+randomUUID(),later="wamid."+randomUUID();
+  const take=async()=> (await db.query("select public.whatsapp_claim_inbound() result")).rows[0].result;
+  try{
+   await db.query("begin");
+   for(let i=0;i<2;i++){
+    await db.query("insert into auth.users(id,instance_id,aud,role,email,phone,phone_confirmed_at,encrypted_password,created_at,updated_at) values ($1,'00000000-0000-0000-0000-000000000000','authenticated','authenticated',$2,$3,now(),'',now(),now())",[owners[i],owners[i]+"@example.invalid","+"+phones[i]]);
+    await db.query("insert into public.businesses(id,name,timezone,is_demo) values ($1,'U1 transport fixture','UTC',false)",[cafes[i]]);
+    await db.query("insert into public.memberships(business_id,user_id,role) values ($1,$2,'owner')",[cafes[i],owners[i]]);
+    await db.query("insert into public.ai_threads(id,business_id,owner_user_id,client_request_id) values ($1,$2,$3,$4)",[threads[i],cafes[i],owners[i],randomUUID()]);
+    await db.query("select set_config('request.jwt.claim.role','authenticated',true),set_config('request.jwt.claim.sub',$1,true)",[owners[i]]);
+    await db.query("set local role authenticated");
+    await db.query("insert into public.whatsapp_owner_bindings(id,phone_number_id,wa_id,business_id,owner_user_id,thread_id,opted_in,consent_at) values ($1,'1234567890',$2,$3,$4,$5,true,now())",[bindings[i],phones[i],cafes[i],owners[i],threads[i]]);
+    await db.query("reset role");
+   }
+   for(const [id,offset] of [[later,1],[earlier,2]] as const)
+    await db.query("insert into public.whatsapp_inbound(wamid,binding_id,business_id,owner_user_id,thread_id,kind,text_content,provider_at) values ($1,$2,$3,$4,$5,'text','Disposable question',clock_timestamp()-($6::int * interval '1 minute'))",[id,bindings[0],cafes[0],owners[0],threads[0],offset]);
+   await db.query("select set_config('request.jwt.claim.role','service_role',true)");
+   await db.query("set local role service_role");
+   const first=await take();
+   expect(first.wamid).toBe(earlier);
+   expect(await take()).toBeNull();
+   await db.query("reset role");
+   await db.query("update public.whatsapp_inbound set leased_until=clock_timestamp()-interval '1 second' where wamid=$1",[earlier]);
+   await db.query("set local role service_role");
+   const recovered=await take();
+   expect(recovered.wamid).toBe(earlier);expect(recovered.lease_token).not.toBe(first.lease_token);
+   const finish=async(token:string)=>(await db.query("select public.whatsapp_finish_inbound($1,$2,'failed',null,'fixture') result",[earlier,token])).rows[0].result;
+   expect(await finish(first.lease_token)).toBe(false);
+   expect(await finish(recovered.lease_token)).toBe(true);
+   expect((await take()).wamid).toBe(later);
+  }finally{await db.query("rollback");await db.end();}
+ },30000);
+});
