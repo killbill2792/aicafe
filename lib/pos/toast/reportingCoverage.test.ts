@@ -91,3 +91,24 @@ it("paginates shared attention beyond the first two hundred combinations",async(
  const result=await toastDayFlags(statusDb(rows,flags),"business",flags[0],last);
  expect(result).toEqual([{date:last,status:"imported",needsLook:true}]);
 });
+
+describe("U1 coverage workload and completeness evidence",()=>{
+  it("retains late-page date evidence and rejects partial results when a later page fails",async()=>{
+    const dates=["2026-10-10","2026-10-11"];
+    const many=Array(1007).fill(dates[0]).concat(dates[1]);
+    const good=reader(dates,many);
+    expect([...await unverifiedToastSalesDates(good.db,"business",dates[0],dates[1])]).toEqual(dates);
+    const failed=reader(dates,many);
+    failed.query.range.mockImplementationOnce(async(start:number,end:number)=>({data:many.slice(start,end+1).map((business_date,i)=>({id:i,business_date})),error:null}))
+      .mockRejectedValueOnce(new Error("late source page unavailable"));
+    await expect(unverifiedToastSalesDates(failed.db,"business",dates[0],dates[1])).rejects.toThrow("late source page unavailable");
+    expect(failed.query.range).toHaveBeenCalledTimes(2);
+  });
+  it("does not page thousands of individual order IDs merely to establish calendar-day presence",async()=>{
+    const dates=["2026-10-10","2026-10-11"];
+    const {db,query}=reader(dates,Array(11711).fill(dates[0]).concat(dates[1]));
+    expect([...await unverifiedToastSalesDates(db,"business",dates[0],dates[1])]).toEqual(dates);
+    // With two possible dates, the existence/aggregation result must not grow with order count.
+    expect(query.range.mock.calls.length).toBeLessThanOrEqual(dates.length);
+  });
+});
