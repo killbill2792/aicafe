@@ -253,7 +253,8 @@ INSERT INTO public.ai_threads(id,business_id,owner_user_id,client_request_id)
  VALUES(:'thread_a',:'business_a',:'owner_a',gen_random_uuid());
 INSERT INTO public.supervisor_proposals(id,business_id,owner_user_id,thread_id,request_key,
  capability_id,capability_version,canonical_effect_payload,effect_hash,baseline,monitor_spec,locale)
- VALUES(:'plan_one',:'business_a',:'owner_a',:'thread_a',gen_random_uuid(),'alex.event_readiness.v1',1,'{}',repeat('a',64),'{}','{}','en'),
+ VALUES(:'plan_one',:'business_a',:'owner_a',:'thread_a',gen_random_uuid(),'alex.event_readiness.v1',1,
+ jsonb_build_object('eventIds',jsonb_build_array(:'cafe_event_a')),repeat('a',64),'{}','{}','en'),
  (:'plan_two',:'business_a',:'owner_a',:'thread_a',gen_random_uuid(),'alex.event_readiness.v1',1,'{}',repeat('b',64),'{}','{}','en');
 SELECT public.ldi_claim_monitor(:'business_a',:'owner_a',:'plan_one','2026-11-10',:'token_one',false) AS won \gset
 SELECT public.ldi_claim_monitor(:'business_a',:'owner_a',:'plan_two','2026-11-10',:'token_two',false) AS lost \gset
@@ -295,8 +296,7 @@ BEGIN
 END $check$;
 -- A previously stored provisional reading is retired if its exact occurrence
 -- has been verified shortened/moved out of the date. Certified prior dates stay.
-UPDATE public.supervisor_proposals SET canonical_effect_payload=jsonb_build_object('eventIds',jsonb_build_array(:'cafe_event_a'))
- WHERE id=:'plan_one';
+-- The original immutable effect already contains this occurrence ID.
 INSERT INTO public.supervisor_monitor_samples(business_id,proposal_id,business_date,observation,evidence_source)
  VALUES(:'business_a',:'plan_one','2026-11-12','{"coverage":"provisional","actualCents":10000}','toast_today_live');
 SELECT public.ldi_claim_monitor(:'business_a',:'owner_a',:'plan_two','2026-11-12',:'token_two',false) AS transferred \gset
