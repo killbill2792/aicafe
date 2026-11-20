@@ -108,8 +108,7 @@ Where an older line in this file conflicts with these rules, these rules win.
 10. **Screen and chat match.** Supervisor's numbers come from the same shared calculations as the app
     screens (`lib/metrics/core`), never a formula the model invents.
 11. **Proactive by default.** Every feature says how Supervisor brings it to the owner without being asked.
-12. **The database aggregates.** Supervisor reads small summaries built in the database, not raw rows, to
-    keep tokens low.
+12. **The database aggregates by default.** Supervisor may request authorized, bounded source-backed detail when needed; canonical metrics and source permissions remain binding.
 13. **Proof, not claims.** The PR body matches the diff, and "done" means verified on real café data, not
     only on fixtures.
 14. **Read before you build, update after.** Every task starts by reading AGENTS.md and PROGRESS.md.
