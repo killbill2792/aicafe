@@ -96,7 +96,24 @@ async function verifyBusinessJourney({id,db,read,first,second,scope,cafe,foreign
   return answer;
  }
  const s=scope.businessId;
- if(id==="17b-sales-labor"){
+ if(id==="17b-cross-module-brief"){
+  // Vary the concrete held-out dates using the actual newly-created thread ID.
+  // No exact answer, tool name, visual or response layout appears in the prompt.
+  const available=await read("select business_date::text as day,net_sales_cents,staff_wages_cents,staff_tax_cents from public.daily_rollups where business_id=$1 and sales_data_status='actual' and net_sales_cents>0 and staff_wages_cents>0 and staff_tax_cents is not null order by business_date desc limit 14",[s]);
+  if(available.length<3)fail("holdout_days_missing");
+  const pick=Number.parseInt(thread.slice(0,8),16)%available.length;
+  const a=available[pick],amount=d=>integer(d.net_sales_cents)-integer(d.staff_wages_cents)-integer(d.staff_tax_cents);
+  const b=available.slice(pick+1).concat(available.slice(0,pick)).find(d=>amount(d)!==amount(a)&&integer(d.net_sales_cents)!==integer(a.net_sales_cents));
+  if(!b)fail("holdout_distinct_truth_missing");
+  const wording=[
+   "I am trying to understand what we took in on DATE and how much we still had once we accounted for staff wages and employer payroll tax. What were those three amounts? Is the leftover the same as profit? Read only.",
+   "Can you put DATE into perspective for me? What were net sales, the whole staff cost including employer payroll tax, and what was left after that? I don't want to change anything. Is that our final profit?",
+   "On DATE, what money came in from actual net sales, what did labor cost us including payroll tax, and how much remained? Help me understand whether that is profit. Don't make changes."
+  ];
+  await checked(wording[pick%wording.length].replace("DATE",a.day),[],{});
+  await checked("Sorry, actually I was looking at "+b.day+". Can you answer the same question for that date instead, and tell me how much more or less was left compared with the first date? Don't change anything.",[],{});
+  Object.assign(scope,{salesDay:a.day,correctedDay:b.day,salesCents:String(a.net_sales_cents),correctedSalesCents:String(b.net_sales_cents),wageCents:String(a.staff_wages_cents),staffTaxCents:String(a.staff_tax_cents)});
+ }else if(id==="17b-sales-labor"){
   // Independent base-row aggregation and rollup reconciliation on actual
   // disposable seeded dates. No duplicated application calculator.
   const days=await read("select business_date::text as day,net_sales_cents,orders_count,staff_wages_cents,staff_tax_cents from public.daily_rollups where business_id=$1 and sales_data_status='actual' and net_sales_cents>0 and staff_wages_cents is not null and staff_tax_cents is not null order by business_date desc limit 2",[s]);
@@ -137,12 +154,12 @@ async function verifyBusinessJourney({id,db,read,first,second,scope,cafe,foreign
  }
  if((await second.context.request.get("/api/ai/threads/"+thread)).status()===200)fail("foreign_business_thread_visible");
  if((await read("select id from public.supervisor_proposals where business_id=$1 and thread_id=$2",[s,thread])).length)fail("read_only_business_effect_created");
- if(replyIds.length!==3||new Set(replyIds).size!==3)fail("business_reply_count_wrong");
+ if(replyIds.length!==(id==="17b-cross-module-brief"?2:3)||new Set(replyIds).size!==replyIds.length)fail("business_reply_count_wrong");
  replyIds.forEach((reply,i)=>scope["reply"+(i+1)]=reply);
- return {scope:{expectedProviderCalls:providerCalls},proof:{provider_calls:providerCalls,providerSelectedTools:[...observed].sort(),checks:{independentSourceArithmetic:true,threeRealOwnerTurns:true,foreignCafeDenied:true,noUnauthorizedProposal:true},limitations:["numeric reply comparisons are executed in candidate; trusted generic host independently verifies source and persisted reply identities, not numerical wording or UI","synthetic local data, not live Toast or real money"]}};
+ return {scope:{expectedProviderCalls:providerCalls},proof:{provider_calls:providerCalls,providerSelectedTools:[...observed].sort(),checks:{independentSourceArithmetic:id!=="17b-cross-module-brief",actualOwnerTurns:replyIds.length,foreignCafeDenied:true,noUnauthorizedProposal:true},limitations:["numeric reply comparisons are executed in candidate; trusted generic host independently verifies source and persisted reply identities, not numerical wording or UI","synthetic local data, not live Toast or real money"]}};
 }
 const id=process.env.AICAFE_SHARED_LUNA_SCENARIO;
-const allowedScenarios=new Set(["17b-owner-security","17b-sales-labor","17b-supply-finance"]);
+const allowedScenarios=new Set(["17b-owner-security","17b-sales-labor","17b-supply-finance","17b-cross-module-brief"]);
 async function measure(){
  const env=process.env;
  assertLocalLiveEnvironment(env);verifyCheckoutHead(env.HEAD_SHA);
