@@ -91,6 +91,8 @@ describe("Task 15A migrated, agentic investigation SQL integration",()=>{
       expect(Boolean(first)!==Boolean(duplicate)).toBe(true);
       expect(claim.source_id).toBe(alerts[0]);
       expect(claim.phase).toBe("collect");
+      const lease=await admin.query("select lease_until>clock_timestamp() as live from public.supervisor_investigations where business_id=$1 and source_id=$2",[cafes[0],alerts[0]]);
+      expect(lease.rows).toEqual([{live:true}]);
       const source={kind:"meal_break",status:"new",severity:"high",quality:"verified",
         relatedAlerts:["meal_break"],relatedTasks:[]};
       const checkpoint={source,collectedAt:anchor};
