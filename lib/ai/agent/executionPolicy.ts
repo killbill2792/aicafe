@@ -24,3 +24,38 @@ export function remainingOutput(policy:ExecutionPolicy,spent:number,final:boolea
 export function requestOutputCap(policy:ExecutionPolicy,spent:number,final:boolean,transportCap=Infinity):number{
  return Math.max(0,Math.min(final?policy.finalReserve:policy.maxWorkOutput,transportCap,remainingOutput(policy,spent,final)));
 }
+
+/** No raw response, query, IDs, arguments or private evidence in these receipts.
+ * Non-reasoning output is NOT necessarily visible text (it can include calls).
+ * Missing usage stays null, rather than fabricated zero or a guessed tariff. */
+export type ProviderUsageReceipt={
+ kind:"responses"|"hosted_web";model:string|null;requestedModel:string;outcome:"completed"|"incomplete"|"failed";
+ final:boolean;nativeSearch:boolean;outputCap:number;durationMs:number;
+ inputTokens:number|null;cachedTokens:number|null;outputTokens:number|null;reasoningTokens:number|null;
+ nonReasoningTokens:number|null;estimatedCostMicros:number|null;discoveryCalls:number|null;
+};
+export type ToolUsageReceipt={name:string;durationMs:number;resultBytes:number;returnedRows:number|null;outcome:"complete"|"partial"|"failed"};
+import {estimateModelCallCostMicros,standardModelTokenRates,hostedWebActualCostMicros} from "@/lib/calc/supervisorTokenCost";
+const record=(value:unknown):Record<string,unknown>=>value&&typeof value==="object"&&!Array.isArray(value)?value as Record<string,unknown>:{};
+const count=(value:unknown):number|null=>typeof value==="number"&&Number.isSafeInteger(value)&&value>=0&&value<=10_000_000?value:null;
+const modelId=(value:unknown):string|null=>typeof value==="string"&&/^[A-Za-z0-9._:-]{1,80}$/.test(value)?value:null;
+export function providerUsageReceipt(p:{requestedModel:string;kind:ProviderUsageReceipt["kind"];outcome:ProviderUsageReceipt["outcome"];final:boolean;
+ nativeSearch:boolean;outputCap:number;durationMs:number;response?:unknown}):ProviderUsageReceipt{
+ const response=record(p.response),usage=record(response.usage);
+ const input=count(usage.input_tokens),output=count(usage.output_tokens);
+ const cachedRaw=count(record(usage.input_tokens_details).cached_tokens);
+ const reasoningRaw=count(record(usage.output_tokens_details).reasoning_tokens);
+ const cached=cachedRaw!==null&&input!==null&&cachedRaw<=input?cachedRaw:null;
+ const reasoning=reasoningRaw!==null&&output!==null&&reasoningRaw<=output?reasoningRaw:null;
+ const model=modelId(response.model),rates=model&&input!==null?standardModelTokenRates(model,response.service_tier,input):null;
+ const tokenCost=rates&&input!==null&&output!==null&&cached!==null?
+  estimateModelCallCostMicros({inputTokens:input,cachedInputTokens:cached,uncachedInputTokens:input-cached,
+    outputTokens:output,reasoningOutputTokens:reasoning??0},rates):null;
+ const items=Array.isArray(response.output)?response.output:null;
+ return {kind:p.kind,model,requestedModel:modelId(p.requestedModel)??"unknown",outcome:p.outcome,
+  final:p.final,nativeSearch:p.nativeSearch,outputCap:p.outputCap,durationMs:p.durationMs,
+  inputTokens:input,cachedTokens:cached,outputTokens:output,reasoningTokens:reasoning,
+  nonReasoningTokens:reasoning===null||output===null?null:output-reasoning,
+  estimatedCostMicros:p.kind==="hosted_web"?hostedWebActualCostMicros(tokenCost,items):tokenCost,
+  discoveryCalls:items?items.filter(i=>record(i).type==="tool_search_call").length:null};
+}
