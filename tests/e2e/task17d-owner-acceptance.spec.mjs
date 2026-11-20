@@ -283,6 +283,8 @@ for(const width of [390,1440]) {
         const estimate=page.getByRole("button",{name:/Electricity/i}).filter({hasText:"Estimate"});
         await expect(estimate).toHaveCount(1);
         await expect.soft(estimate).toContainText(money(Number(estimated.amount_cents)));
+        await page.goto("/en/onboarding?step=2");
+        await expect(page.locator("section").filter({hasText:"Total monthly bills"})).toContainText(money(total));
         expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);
       }
     });

@@ -11,7 +11,7 @@ import type { ExpenseIconCode } from "@/components/icons/ExpenseIconDefs";
 import PageShell from "@/components/shared/PageShell";
 import { getSnapshot } from "@/lib/data/getSnapshot";
 import { formatShiftTime } from "@/lib/alerts/shiftTime";
-import { formatCents } from "@/lib/calc/money";
+import { formatCafeCurrency } from "@/lib/format/cafeCurrency";
 import { Link } from "@/i18n/navigation";
 import { formatInTimeZone } from "date-fns-tz";
 
@@ -27,6 +27,7 @@ export default async function AlertDetailPage({ params }: { params: Promise<{ id
 
   const t = await getTranslations("Alerts");
   const tCommon = await getTranslations("Common");
+  const money=(cents:number)=>{const formatted=formatCafeCurrency(cents,locale,snapshot.business.currency);return formatted.currencyMissing?formatted.text+" ("+tCommon("currencyNotSet")+")":formatted.text;};
   const tCategories = await getTranslations("Categories");
   const categoryLabels = Object.fromEntries(EXPENSE_CATEGORY_CODES.map((c) => [c, tCategories(c)])) as Record<ExpenseCategoryCode, string>;
   const content = describeAlert(alert, t, (code) => categoryLabels[code as ExpenseCategoryCode] ?? code);
@@ -47,7 +48,7 @@ export default async function AlertDetailPage({ params }: { params: Promise<{ id
           <PlainIcon code={content.icon as ExpenseIconCode} size={26} color="rgb(var(--c-warn-text))" />
         </span>
         {displayedImpact !== null && (
-          <><span className="text-sm font-bold text-warn">{t("potentialImpact")}</span><span className="font-headline text-[44px] font-bold leading-none text-warn">{formatCents(displayedImpact, locale)}</span></>
+          <><span className="text-sm font-bold text-warn">{t("potentialImpact")}</span><span className="font-headline text-[44px] font-bold leading-none text-warn">{money(displayedImpact)}</span></>
         )}
         <p className="text-base leading-snug text-ink">{content.subtitle}</p>
       </section>
@@ -70,15 +71,15 @@ export default async function AlertDetailPage({ params }: { params: Promise<{ id
             label={voids.summary.monthKey === formatInTimeZone(new Date(), snapshot.business.timezone, "yyyy-MM")
               ? t("voidsThisMonth")
               : t("voidsAlertMonth", { month: formatBusinessMonth(voids.summary.monthKey, locale) })}
-            value={voids.summary.thisMonthCents === null ? t("voidsUnknown") : formatCents(voids.summary.thisMonthCents, locale)}
+            value={voids.summary.thisMonthCents === null ? t("voidsUnknown") : money(voids.summary.thisMonthCents)}
           />
           <Detail label={t("voidsAverage")} value={voids.summary.previousThreeMonthAverageCents === null
-            ? t("voidsUnknown") : formatCents(voids.summary.previousThreeMonthAverageCents, locale)} />
+            ? t("voidsUnknown") : money(voids.summary.previousThreeMonthAverageCents)} />
           {voids.summary.previousThreeMonthAverageCents === null && <p className="text-sm text-ink-muted">{t("voidsMissingHistory")}</p>}
           <h3 className="font-semibold">{t("voidsByDay")}</h3>
           {voids.summary.days.length === 0 ? <p className="text-sm text-ink-muted">{t("voidsNoData")}</p> :
             <div className="flex flex-col gap-2">{voids.summary.days.map((day) =>
-              <Detail key={day.date} label={formatBusinessDate(day.date, locale)} value={formatCents(day.cents, locale)} />
+              <Detail key={day.date} label={formatBusinessDate(day.date, locale)} value={money(day.cents)} />
             )}</div>}
           <p className="text-sm text-ink-muted">{t("voidsCoverageNote")}</p>
           <p className="text-sm text-ink-muted">{t("voidsPeopleUnavailable")}</p>

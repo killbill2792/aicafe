@@ -7,6 +7,7 @@ import { isSquareConfigured } from "@/lib/pos/square/oauth";
 import { isSupabaseConfigured } from "@/lib/supabase/client";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
 import { getRecurringCosts } from "@/lib/data/getRecurringCosts";
+import { readSupervisorCafeIdentity } from "@/lib/ai/cafeTools.server";
 import { EXPENSE_CATEGORY_CODES, type ExpenseCategoryCode } from "@/lib/constants";
 import { Link } from "@/i18n/navigation";
 import OnboardingProgress from "@/components/onboarding/OnboardingProgress";
@@ -65,6 +66,7 @@ export default async function OnboardingPage({ searchParams }: { searchParams: P
         <>
           <BillsManager
             bills={await getRecurringCosts()}
+            currency={await readSupervisorCafeIdentity(businessId).then(identity=>identity.currency).catch(()=>null)}
             categoryLabels={categoryLabels}
             labels={{
               amountLabel: tBills("amountLabel"),
