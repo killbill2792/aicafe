@@ -241,14 +241,24 @@ export const dataQueryTools={
      const matching=allFields.filter(item=>fieldMatches(item.field,prefix));
      const retainedMatching=classified.filter(item=>fieldMatches(item.field,prefix)).length;
      const declaredMatching=schemaFields.filter(item=>fieldMatches(item.field,prefix)).length;
-     const fit=fitRows(matching);
+     // Stable exhaustive pagination over actual retained and declared fields.
+     // The optional cursor is an offset, not a hidden best-guess top-K cap.
+     // Preserve compact legacy first-page behavior when pagination is omitted.
+     const from=offset??0;
+     const requested=offset!==null||pageSize!==null
+      ?matching.slice(from,from+(pageSize??30)):matching;
+     const fit=fitRows(requested);
+     const next=from+fit.rows.length<matching.length?from+fit.rows.length:null;
+     const truncated=fit.cut||next!==null;
      return {source:"toast_fields",period:null,views:[],
       missing:[...(retainedMatching?[]:["source_not_observed"]),
        ...(declaredMatching?["schema_grants_unverified"]:[]),
-       ...(matching.length?[]:["empty"]),...(fit.cut?["result_truncated"]:[])],
+       ...(matching.length?[]:["empty"]),...(truncated?["result_truncated"]:[])],
       record_type:recordType,view:"cv_toast_records",field_prefix:prefix,
       declaredFields:schemaFields.length,retainedFields:observed.length,
-      matchingFields:matching.length,matchingRetainedFields:retainedMatching,matchingDeclaredFields:declaredMatching,fields:fit.rows,truncated:fit.cut};
+      matchingFields:matching.length,matchingRetainedFields:retainedMatching,
+      matchingDeclaredFields:declaredMatching,page_offset:from,next_offset:next,
+      fields:fit.rows,truncated};
     }catch{return {source:"toast_fields",period:null,views:[],missing:["source_read_failed"],record_type:recordType,fields:[],truncated:false,retainedFields:undefined};}
    }
    if(relation!==null||source==="research"){
