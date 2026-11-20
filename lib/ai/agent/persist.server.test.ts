@@ -265,3 +265,12 @@ it("preserves partial canonical rows when the overall answer lacks complete evid
   {source:"response_presentation",period:null,missing:[],accepted:true,presentation:{type:"rich_presentation",version:1,layout:"stack",panels:[],suggestions:[],tables}}]});
  expect(r.reply.status).toBe("unavailable");expect(r.reply.blocks).toContainEqual(expect.objectContaining({type:"rich_presentation",tables}));
 });
+
+it("retains a real approval card alongside a substantial answer without clipping its words",()=>{
+ const prose="Evidence matters. ".repeat(1600);
+ const id="33333333-3333-4333-8333-333333333333";
+ const payload=agentReplyPayload({...turn(prose),unverified:[],results:[{source:"price_change_proposal",period:null,missing:[],draft:true,saved:false,proposalId:id}]});
+ expect(payload.reply.blocks).toContainEqual({type:"proposal_card",proposalId:id});
+ expect(payload.reply.blocks.filter(b=>b.type==="text").map(b=>b.text).join("")).toBe(prose.trim());
+ expect(payload.reply.blocks.length).toBeLessThanOrEqual(30);
+});
