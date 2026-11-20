@@ -124,7 +124,16 @@ alter table public.toast_day_status add column relink_pending_generation uuid;
 create function public.toast_mark_relink_pending()
 returns trigger language plpgsql set search_path=public as $$
 begin
- if new.import_state='imported' and new.imported_at is not null then
+ -- Copies/restores use direct SQL and must retain their exact row values.
+ -- Only a real service-role import, bound to an active run of this café and
+ -- restaurant, generates fresh work. The canonical RPC advances that run
+ -- after the day-status write, in the same transaction.
+ if coalesce(auth.role(),'')='service_role' and new.import_state='imported'
+  and new.imported_at is not null and exists(
+   select 1 from public.toast_sync_runs r where r.id=new.last_import_run_id
+    and r.business_id=new.business_id and r.restaurant_guid=new.restaurant_guid
+    and r.state in ('queued','running','paused_rate_limited'))
+ then
   new.relink_pending_generation:=gen_random_uuid();
  end if;
  return new;
