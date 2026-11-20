@@ -11,7 +11,7 @@ import { statusFromResults } from "./status";
 import { checkNumbers,numberProvenance,compactEvidence,type NumericEvidence } from "./checkNumbers";
 import {usageEvidenceRefresh} from "./usageEvidence";
 import { STYLE_RULES } from "./style";
-import {executionPolicy,remainingOutput,requestOutputCap,providerUsageReceipt,type ProviderUsageReceipt,type ToolUsageReceipt} from "./executionPolicy";
+import {executionPolicy,remainingOutput,requestOutputCap,providerUsageReceipt,requestComposition,type RequestComposition,type ProviderUsageReceipt,type ToolUsageReceipt} from "./executionPolicy";
 import {projectProviderTools,usesNativeToolSearch,allowedFunctionNames,validProviderFunctionCall,canonicalHostedOutput,type ProviderFunctionCall} from "./providerTools";
 import {newResolveState,observeToolResult,resolveOwnerPeriod,localizedPeriodLabel} from "./resolve";
 import {acceptedExplainLines,type ExplainLine} from "./explain";
@@ -350,6 +350,7 @@ export async function runAgentTurn(args: {
       const searchStarted=now();
       let reserved=false,completed=false,reported=false;
       let measuredResponse:unknown;
+      let composition:RequestComposition|null=null;
       let measured=false;
       try{
         await args.beforeProviderRequest?.();
@@ -380,6 +381,7 @@ export async function runAgentTurn(args: {
             measured=bill.inputTokens>0;
           },
           onProviderResponse:response=>{measuredResponse=response;},
+          onRequestComposition:value=>{composition=value;},
         });
         if(reserved&&reservation&&measured&&measuredResponse&&typeof measuredResponse==="object")await reservation.complete(measuredResponse);
         completed=result.available;
@@ -388,7 +390,7 @@ export async function runAgentTurn(args: {
         if(reserved&&expandedLuna&&!reported)unreportedOutput+=finalOutputReserve;
         if(reserved)usage.requests.push(providerUsageReceipt({
           requestedModel:model,kind:"hosted_web",outputCap:1200,durationMs:Math.max(0,now()-searchStarted),
-          outcome:completed?"completed":"failed",response:measuredResponse,nativeSearch:false,final:false}));
+          outcome:completed?"completed":"failed",response:measuredResponse,nativeSearch:false,final:false,composition}));
         if(reserved)audit({kind:"model_call",inputSummary:"Web lookup; prompts withheld",
           outputSummary:completed?"Completed":"Incomplete",
           durationMs:Math.max(0,now()-searchStarted)});
@@ -438,9 +440,10 @@ export async function runAgentTurn(args: {
     const remaining = (final ? deadline : workDeadline) - now();
     if (remaining <= 0) throw new Error("deadline");
     if (budgetStop(final)||outputCap<=0) throw new Error("worker_budget");
+    const params=request(final,outputCap),composition=requestComposition(params);
     const timeout = setTimeout(() => controller.abort(), remaining);
     try {
-      for await (const event of meteredProvider(request(final,outputCap), controller.signal)) {
+      for await (const event of meteredProvider(params, controller.signal)) {
         if (now() >= (final ? deadline : workDeadline)) throw new Error("deadline");
         if (event.type === "response.output_text.delta" && typeof event.delta === "string") {
           text += event.delta;
@@ -505,7 +508,7 @@ export async function runAgentTurn(args: {
       if(usage.modelCalls>callsBefore)usage.requests.push(providerUsageReceipt({
         requestedModel:model,kind:"responses",outputCap,durationMs:Math.max(0,now()-modelStart),
         outcome:completed&&!modelError?"completed":terminal?.type==="response.incomplete"?"incomplete":"failed",
-        response:terminal?.response,nativeSearch,final}));
+        response:terminal?.response,nativeSearch,final,composition}));
       clearTimeout(timeout);
       audit({ kind: "model_call", inputSummary: final ? "Final response; no tools" : "Model request; prompts withheld",
         outputSummary: completed ? "Completed" : "Incomplete", durationMs: Math.max(0, now() - modelStart), error: modelError });
@@ -781,8 +784,9 @@ export async function runAgentTurn(args: {
           let completed = false, outputReported=false;
           let finalError: string | undefined;
           let failureCode:ProviderFailureCode="stream_error";
+          const params=request(true,outputCap),composition=requestComposition(params);
           try {
-            for await (const event of meteredProvider(request(true,outputCap), finalController.signal)) {
+            for await (const event of meteredProvider(params, finalController.signal)) {
               if(event.type==="response.incomplete"){
                 terminal=event;failureCode=incompleteProviderCode(event);outputReported=reportedOutput(event);recordReportedUsage(event);
                 throw new Error("provider_incomplete");
@@ -821,7 +825,7 @@ export async function runAgentTurn(args: {
             if(usage.modelCalls>callsBefore)usage.requests.push(providerUsageReceipt({
               requestedModel:model,kind:"responses",outputCap,durationMs:Math.max(0,now()-finalStart),
               outcome:completed&&!finalError?"completed":terminal?.type==="response.incomplete"?"incomplete":"failed",
-              response:terminal?.response,nativeSearch,final:true}));
+              response:terminal?.response,nativeSearch,final:true,composition}));
             clearTimeout(timeout);
             audit({ kind: "model_call", inputSummary: "Final response; no tools",
               outputSummary: completed ? "Completed" : "Incomplete", durationMs: Math.max(0, now() - finalStart), error: finalError });
