@@ -71,22 +71,22 @@ SELECT (SELECT count(*) FROM u3_research.orders)=1 AS only_owner_cafe_orders,
 \if :only_owner_cafe_orders
 \else
  \echo 'U3 tenant test failed: owner café order count'
- \quit 1
+ SELECT 1/0;
 \endif
 \if :correct_owner_amount
 \else
  \echo 'U3 tenant test failed: foreign café amount leaked'
- \quit 1
+ SELECT 1/0;
 \endif
 \if :indirect_child_tenant_scope
 \else
  \echo 'U3 indirect child test failed'
- \quit 1
+ SELECT 1/0;
 \endif
 \if :correct_child_amount
 \else
  \echo 'U3 indirect child amount leaked'
- \quit 1
+ SELECT 1/0;
 \endif
 
 -- The scope GUC itself is not authority; HMAC integrity is mandatory.
@@ -96,7 +96,7 @@ SELECT (SELECT count(*) FROM u3_research.orders)=0 AS no_ticket_denied
 \if :no_ticket_denied
 \else
  \echo 'U3 unsigned GUC unexpectedly admitted rows'
- \quit 1
+ SELECT 1/0;
 \endif
 SELECT set_config('aicafe.u3_research_scope',:'ticket'||'tamper',true);
 SELECT (SELECT count(*) FROM u3_research.orders)=0 AS altered_ticket_denied
@@ -104,7 +104,7 @@ SELECT (SELECT count(*) FROM u3_research.orders)=0 AS altered_ticket_denied
 \if :altered_ticket_denied
 \else
  \echo 'U3 tampered ticket unexpectedly admitted rows'
- \quit 1
+ SELECT 1/0;
 \endif
 SELECT set_config('aicafe.u3_research_scope',:'other_ticket',true);
 SELECT (SELECT count(*) FROM u3_research.orders)=1
@@ -113,7 +113,7 @@ SELECT (SELECT count(*) FROM u3_research.orders)=1
 \if :other_scope_correct
 \else
  \echo 'U3 second original owner/tenant scope incorrect'
- \quit 1
+ SELECT 1/0;
 \endif
 
 -- Revoking original café owner membership must revoke an already minted,
@@ -127,7 +127,7 @@ SELECT (SELECT count(*) FROM u3_research.orders)=0 AS revoked_owner_denied
 \if :revoked_owner_denied
 \else
  \echo 'U3 revoked owner can still read rows'
- \quit 1
+ SELECT 1/0;
 \endif
 ROLLBACK;
 \echo 'U3 migrated role/cafe/indirect-child/tamper/revocation security checks passed'
