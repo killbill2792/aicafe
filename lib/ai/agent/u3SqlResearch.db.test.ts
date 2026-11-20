@@ -124,8 +124,9 @@ describe.skipIf(!active)("U3 migrated registered tool + private connection",()=>
  it("discovers admitted relational sources through the real scoped SQL catalog",async()=>{
   const d=await dataQueryTools.describe_data.execute({source:"research",search:"orders"},scoped);
   expect(d.missing).toEqual([]);
-  expect(JSON.stringify(d.research)).toContain("orders");
-  expect(JSON.stringify(d.research)).not.toContain("connector_credentials");
+  expect(d.source).toBe("u3_semantic_catalog");
+  expect(JSON.stringify(d)).toContain("orders");
+  expect(JSON.stringify(d)).not.toContain("connector_credentials");
  });
  it("runs a real model-selected join with accurate café-isolated money",async()=>{
   const result=await dataQueryTools.query_data.execute(input(
