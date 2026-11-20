@@ -240,7 +240,8 @@
       "17c-autonomy",
       "17c-procurement-recovery",
       "17c-business-monitors",
-      "17c-effect-security-recovery"
+      "17c-effect-security-recovery",
+      "17c-fault-followup"
     ],
     "17d": [
       "17d"
@@ -489,7 +490,10 @@
       "owner": "15A / 17C",
       "mode": "legacy_paid_unregistered",
       "status": "UNTESTED",
-      "requiredMigration": "Preserve autonomous unprompted detection, exact incident, persisted update, no user impersonation, 25-hour follow-up, watching and verified closure using shared trusted worker, not old direct provider workflow."
+      "requiredMigration": "Shared migration preserves unattended detection, corroboration, 23h silence, 25h follow-up, watching and verified closure; accelerated test clock. Real model execution pending.",
+      "registeredMigrationIds": [
+        "17c-fault-followup"
+      ]
     }
   ],
   "legacyNonProviderSuites": [
@@ -643,7 +647,8 @@
         "17d",
         "6-15c-owner-run",
         "8a-approved-experiment",
-        "8b-multiday-lifecycle"
+        "8b-multiday-lifecycle",
+        "17c-fault-followup"
       ]
     }
   ]

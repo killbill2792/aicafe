@@ -797,3 +797,11 @@ test("historical POS migration retains all 18 original distinct cases and indepe
  assert.throws(()=>checkHistoricalPosAnswer(g,[{k:"Muffin",n:2},{k:"Unnamed",n:1}],"Muffin: 2"));
  assert.throws(()=>checkHistoricalPosAnswer(g,[{k:"Muffin",n:2},{k:"Unnamed",n:1}],"Muffin: 2\nUnnamed: 1\nInvented: 9"));
 });
+
+test("legacy 15A must select two distinct independent source readers",async()=>{
+ const {expectedToolsObserved}=await import("./shared-luna.mjs");
+ const m={id:"17c-fault-followup",expectedTools:["get_investigation_source","query_data"]};
+ assert.equal(expectedToolsObserved(m,["get_investigation_source","get_sales","get_labor"]),true);
+ assert.equal(expectedToolsObserved(m,["get_investigation_source","get_sales","get_sales"]),false);
+ assert.equal(expectedToolsObserved(m,["get_sales","get_labor"]),false);
+});
