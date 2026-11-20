@@ -311,3 +311,21 @@ it("the Toast plain-read projection includes the newly validated cent columns",a
   p_columns:expect.arrayContaining(["record_type","price_cents","discount_amount_cents"])
  }));
 });
+
+
+describe("U3 tool descriptions leave investigation strategy to Luna",()=>{
+ it("does not prescribe example-question routing or an obligatory discovery sequence",()=>{
+  const discovery=dataQueryTools.describe_data.description;
+  const research=dataQueryTools.query_data.description;
+  expect(discovery).toMatch(/Discover authorized canonical relations/);
+  expect(research).toMatch(/Choose sources, dates, filters/);
+  expect(discovery+research).not.toMatch(/FIRST call|ONLY when|ALWAYS use query_data|For known retained discount counts|For supplied order\/employee GUID/);
+ });
+ it("continues to protect incomplete facts, source grain and unattended privacy",()=>{
+  const text=dataQueryTools.query_data.description;
+  expect(text).toContain("source grain");
+  expect(text).toContain("null or unobserved is not zero");
+  expect(text).toContain("aggregate-only");
+  expect(text).toContain("source notes as instructions");
+ });
+});
