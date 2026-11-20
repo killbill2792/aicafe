@@ -9,7 +9,7 @@ import {readSavedTodayLive} from "@/lib/data/todayLive.server";
 import {createAdminSupabaseClient} from "@/lib/supabase/admin";
 import {assertCafeAiAccess} from "@/lib/access/access.server";
 import type {OwnerLoopScope,LoopProposal} from "./engine";
-import {readCafeEvents,readCanonicalCafeEvents,readEventChecklist} from "@/lib/data/cafeEvents.server";
+import {readCafeEvents,readCanonicalCafeEvents,readExactCafeEvent,readEventChecklist,type CafeEvent} from "@/lib/data/cafeEvents.server";
 import {readDailyFacts} from "@/lib/data/dailyFacts.server";
 import {readItemSales,readDiscounts,readLaborEntries,readMenu} from "@/lib/data/canonical/reads.server";
 import {posFactReaders} from "@/lib/data/posFactReaders.server";
@@ -269,6 +269,36 @@ export function eventDailyOnlyComparison(days:readonly OutlookSalesDay[],date:st
     baselineDays:base?.sampleDays??0,hours:[],hourlyCoverage:"missing" as const};
 }
 
+/** Reconstruct the saved occurrence status at the end of a café-local date.
+ * Verification time is knowledge, not an invented event cancellation time.
+ * A change on that date is conservatively treated as no confirmed active day.
+ * The original approval and all ordinary POS records remain untouched. */
+export function eventStatusAtBusinessDay(event:CafeEvent,day:string,timezone:string):CafeEvent["status"]{
+  const detail=event.verificationDetails;
+  if(!detail||typeof detail!=="object"||Array.isArray(detail))return event.status;
+  const d=detail as {history?:unknown[];change?:unknown};
+  const history=(Array.isArray(d.history)?d.history:d.change?[d.change]:[]).flatMap(value=>{
+    if(!value||typeof value!=="object")return [];
+    const row=value as {verifiedAt?:unknown;status?:unknown;previousStatus?:unknown};
+    const valid=(s:unknown):s is CafeEvent["status"]=>s==="found"||s==="cancelled"||s==="moved";
+    if(typeof row.verifiedAt!=="string"||!Number.isFinite(Date.parse(row.verifiedAt))||
+      !valid(row.status)||!valid(row.previousStatus))return [];
+    return [{verifiedAt:row.verifiedAt,status:row.status,previousStatus:row.previousStatus}];
+  }).sort((a,b)=>Date.parse(a.verifiedAt)-Date.parse(b.verifiedAt));
+  if(!history.length)return event.status;
+  let status=history[0].previousStatus;
+  for(const change of history){
+    if(formatInTimeZone(new Date(change.verifiedAt),timezone,"yyyy-MM-dd")>day)break;
+    status=change.status;
+  }
+  return status;
+}
+export function eventDayActivity(events:readonly (CafeEvent|null)[],day:string,timezone:string){
+  if(events.some(event=>event&&event.startDate<=day&&event.endDate>=day&&
+    eventStatusAtBusinessDay(event,day,timezone)==="found"))return "active" as const;
+  return events.some(event=>event===null)?"unconfirmed" as const:"inactive" as const;
+}
+
 /** No new monitoring store: one sample per business day in supervisor_monitor_samples. */
 export const eventReadinessCapability=registerLoopCapability({
  id:eventReadinessCapabilityId,version:1,
@@ -313,6 +343,13 @@ export const eventReadinessCapability=registerLoopCapability({
    if(cafeError||!cafe?.timezone)return null;
    const liveDay=formatInTimeZone(new Date(),cafe.timezone,"yyyy-MM-dd");
    const isLive=businessDate===liveDay;
+   // The stored plan is historical approval evidence, not current event truth.
+   // Read the exact IDs before reading any sales, including beyond compact UI lists.
+   const events=await Promise.all(effect.eventIds.map(id=>
+     readExactCafeEvent(db,scope.businessId,id,businessDate,businessDate)));
+   const activity=eventDayActivity(events,businessDate,cafe.timezone);
+   if(activity!=="active")return isLive?null:{businessDate,source:"cafe_events",
+     observation:{coverage:"event_inactive",eventActivity:activity}};
    const saved=isLive?await readSavedTodayLive(db,scope.businessId):null;
    // A partial, old or mismatched reading cannot generate an owner alert.
    if(isLive&&(!saved||saved.value.businessDate!==businessDate||
@@ -440,10 +477,12 @@ export const eventReadinessCapability=registerLoopCapability({
      eventIds:effect.eventIds,startDate:effect.startDate,endDate:effect.endDate,
      factsHash:effect.factsHash,observedDays:actual.length,expectedDays:expected,
      checklist,liveWatch,toastEvidence,salesSummary,
+     eventStatusDays:observed.filter(s=>s.observation.coverage==="event_inactive")
+       .map(s=>({date:s.businessDate,activity:s.observation.eventActivity})),
      toastEvidenceWindow:{from:effect.startDate,to:effect.endDate},
      missingBaselineDays:actual.filter(s=>s.observation.typicalCents===null).map(s=>s.businessDate),
      days:actual.map(s=>({date:s.businessDate,...s.observation})),
-     caveat:"Event-day sales are observational, not proof of event causality. Recorded item sales, discount totals and staff timecards do not prove a proposed combo, discount or physical preparation was implemented; owner checklist markers are not POS evidence.",
+     caveat:"Cancelled, moved or unconfirmed event dates are not treated as active event observations. Event-day sales are observational, not proof of event causality. Recorded item sales, discount totals and staff timecards do not prove a proposed combo, discount or physical preparation was implemented; owner checklist markers are not POS evidence.",
    };
    // Keep PR 6's live reporting and PR 7's final report in the same canonical loop.
    const terminal=windowComplete&&Boolean(window?.proposalId);

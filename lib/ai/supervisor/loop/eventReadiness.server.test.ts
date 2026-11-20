@@ -1,5 +1,6 @@
 import {describe,expect,it} from "vitest";
-import {eventReadinessCapability,eventReadinessCapabilityId,eventReadinessInput,eventReadinessEffect,eventDailyOnlyComparison}
+import type {CafeEvent} from "@/lib/data/cafeEvents.server";
+import {eventReadinessCapability,eventReadinessCapabilityId,eventReadinessInput,eventReadinessEffect,eventDailyOnlyComparison,eventStatusAtBusinessDay,eventDayActivity}
  from "./eventReadiness.server";
 
 const eventId="11111111-1111-4111-8111-111111111111";
@@ -61,3 +62,18 @@ describe("event_readiness uses the shared Supervisor lifecycle",()=>{
        comparableActualCents:260000,comparableTypicalCents:200000,changePercent:30}}});
  });
 });
+
+ describe("cancellation-aware monitoring",()=>{
+  const event:CafeEvent={id:eventId,name:"Parade",kind:"parade",startDate:"2026-10-31",endDate:"2026-11-02",startTime:null,endTime:null,venue:null,venueAddress:null,areaLabel:null,sourceUrl:null,status:"cancelled",foundAt:"2026-10-30T00:00:00Z",lastCheckedAt:"2026-11-02T00:00:00Z",verificationDetails:{history:[{verifiedAt:"2026-11-02T06:30:00Z",previousStatus:"found",status:"cancelled"}]}};
+  it("uses the café-local change date, preserves earlier observed dates and fails closed on unknown identity",()=>{
+    expect(eventStatusAtBusinessDay(event,"2026-10-31","America/Los_Angeles")).toBe("found");
+    expect(eventDayActivity([event],"2026-11-01","America/Los_Angeles")).toBe("inactive");
+    expect(eventDayActivity([event],"2026-11-01","UTC")).toBe("active");
+    expect(eventDayActivity([null],"2026-11-01","UTC")).toBe("unconfirmed");
+    expect(eventDayActivity([event,{...event,status:"found",verificationDetails:null}],"2026-11-02","UTC")).toBe("active");
+  });
+  it("does not count a cancelled day as zero sales or a completed observation",async()=>{
+    const report=await eventReadinessCapability.report(scope,effect,[{businessDate:"2026-10-31",source:"daily_rollups",observation:{coverage:"actual",actualCents:12300,typicalCents:10000}},{businessDate:"2026-11-01",source:"cafe_events",observation:{coverage:"event_inactive",eventActivity:"inactive"}}],true);
+    expect(report).toMatchObject({status:"insufficient_evidence",result:{observedDays:1,expectedDays:2,eventStatusDays:[{date:"2026-11-01",activity:"inactive"}],salesSummary:{observedSalesCents:12300,observedSalesDays:1}}});
+  });
+ });

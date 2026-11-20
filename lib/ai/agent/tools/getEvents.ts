@@ -15,7 +15,7 @@ function compactReport(raw:unknown,from:string,to:string):Record<string,unknown>
      date:x.date,actualCents:x.actualCents,typicalCents:x.typicalCents,
      changePercent:x.changePercent,baselineDays:x.baselineDays};}):[];
  return {observedDays:r.observedDays??null,expectedDays:r.expectedDays??null,
-   checklist:r.checklist??null,salesSummary:r.salesSummary??null,days,additionalDays:Array.isArray(r.days)?Math.max(0,r.days.length-days.length):0};
+   checklist:r.checklist??null,salesSummary:r.salesSummary??null,eventStatusDays:r.eventStatusDays??[],days,additionalDays:Array.isArray(r.days)?Math.max(0,r.days.length-days.length):0};
 }
 export const savedEventsTools={
  get_events:{
@@ -28,7 +28,8 @@ export const savedEventsTools={
    if(v.from>v.to||ms>90*86400000)throw new Error("Invalid saved event range");
    if(!ctx.savedEvents)return {source:"cafe_events",period:{from:v.from,to:v.to},
      missing:["savedEventsUnavailable"],agentId:"alex"};
-   const exactOptions={cityEventId:v.cityEventId??undefined,cafeEventId:v.cafeEventId??undefined};
+   const exactOptions={...(v.cityEventId?{cityEventId:v.cityEventId}:{}),
+     ...(v.cafeEventId?{cafeEventId:v.cafeEventId}:{})};
    const result=v.cityEventId||v.cafeEventId?
      await ctx.savedEvents(v.from,v.to,exactOptions):
      await ctx.savedEvents(v.from,v.to);

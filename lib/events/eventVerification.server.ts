@@ -112,9 +112,13 @@ async function writeAttempt(db:Db,businessId:string,event:CafeEvent,at:string,
     patch.status=change.status;
     patch.verification_details={change,pendingNotice:true,history:historyIncluding(event,change)};
   }
-  // Optimistic status guard: never race an owner's newer saved event revision.
-  const updated=await db.from("cafe_events").update(patch).eq("business_id",businessId)
-    .eq("id",event.id).eq("status",event.status).select("id").maybeSingle();
+  // Match the observed revision as well as status: two same-status venue/date
+  // changes must not overwrite each other or reset a newer verification.
+  let query=db.from("cafe_events").update(patch).eq("business_id",businessId)
+    .eq("id",event.id).eq("status",event.status);
+  query=event.lastAttemptedAt?query.eq("last_verification_attempt_at",event.lastAttemptedAt):
+    query.is("last_verification_attempt_at",null);
+  const updated=await query.select("id").maybeSingle();
   if(updated.error)throw updated.error;
   return updated.data&&isNew?change:null;
 }
@@ -183,7 +187,9 @@ async function deliverChange(db:Db,businessId:string,ownerId:string,timezone:str
   // An interrupted delivery is retried next cron. Never resurrect handled tasks.
   const cleared=await db.from("cafe_events").update({
     verification_details:{change,pendingNotice:false,history:historyIncluding(event,change)},
-  }).eq("business_id",businessId).eq("id",event.id).eq("status",change.status);
+  }).eq("business_id",businessId).eq("id",event.id).eq("status",change.status)
+    .eq("verification_details->change->>verifiedAt",change.verifiedAt)
+    .eq("verification_details->>pendingNotice","true");
   if(cleared.error)throw cleared.error;
 }
 /** Existing authorized events cron calls this after its owner+AI entitlement checks.

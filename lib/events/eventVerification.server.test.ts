@@ -24,7 +24,7 @@ const plan={proposalId:"proposal-id",threadId:"thread-id",status:"committed",rev
   startDate:"2026-11-06",endDate:"2026-11-06",summary:"Plan owner approved",
   actions:[{area:"staff",action:"Consider a second barista"}],
   expectedBusyHours:[],factsHash:"original",reportStatus:null,report:null};
-function fakeDb(options:{failFirstTaskRead?:boolean}={}){
+function fakeDb(options:{failFirstTaskRead?:boolean;lostRevision?:boolean}={}){
   const writes:Array<{table:string;patch:Record<string,unknown>;filters:Array<[string,string]>}>=[];
   let taskExists=false,taskReadCount=0;
   const db={
@@ -32,6 +32,7 @@ function fakeDb(options:{failFirstTaskRead?:boolean}={}){
       const filters:Array<[string,string]>=[];
       const query={
         eq(key:string,value:string){filters.push([key,value]);return this;},
+        is(key:string,value:null){filters.push([key,String(value)]);return this;},
         order(){return this;},limit(){return this;},select(){return this;},
         maybeSingle:async()=>{
           const failed=table==="operating_tasks"&&options.failFirstTaskRead&&++taskReadCount===1;
@@ -52,7 +53,7 @@ function fakeDb(options:{failFirstTaskRead?:boolean}={}){
           select(){return this;},
           async maybeSingle(){
             writes.push({table,patch,filters:[...filters]});
-            return {data:{id:event.id},error:null};
+            return {data:options.lostRevision?null:{id:event.id},error:null};
           },
           then(resolve:(v:{error:null})=>unknown){
             writes.push({table,patch,filters:[...filters]});
@@ -103,6 +104,16 @@ describe("persisted change alerts through the existing inbox and chat",()=>{
      .toBe(true);
    expect(writes.filter(w=>w.table==="cafe_events").every(w=>
      w.filters.some(([k,v])=>k==="business_id"&&v==="cafe-one"))).toBe(true);
+ });
+ it("cannot deliver a stale concurrent change or overwrite a newer same-status revision",async()=>{
+   const {db,writes}=fakeDb({lostRevision:true});
+   const known={...event,lastAttemptedAt:"2026-10-30T00:00:00Z"};
+   expect(await verifyUpcomingEventChanges(db,"cafe-one","owner-one","UTC",
+     "2026-11-01",timeline([known]),new Date("2026-11-01T12:00:00Z"),async()=>({
+       evidence:{verdict:"venue_changed",sourceUrl:event.sourceUrl,statement:"Venue changed",newDate:null,newVenue:"New venue"},citedUrls:[event.sourceUrl!]}))).toBe(0);
+   expect(writes).toHaveLength(1);
+   expect(writes[0].filters).toContainEqual(["last_verification_attempt_at",known.lastAttemptedAt]);
+   expect(writes.filter(w=>w.table==="operating_tasks"||w.table==="ai_messages")).toEqual([]);
  });
  it("failed or conflicting verification records failure without erasing saved status",async()=>{
    const {db,writes}=fakeDb();

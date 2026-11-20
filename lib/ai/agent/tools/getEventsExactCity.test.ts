@@ -20,8 +20,9 @@ describe("G exact owner-selected city event via existing get_events and canonica
   it("exposes a strict nullable cityEventId with no café scope chosen by the model",()=>{
     const tool=agentToolDefinitions.find(x=>x.name==="get_events");
     expect(tool?.strict).toBe(true);
-    expect(tool?.parameters.required).toEqual(["from","to","cityEventId"]);
+    expect(tool?.parameters.required).toEqual(["from","to","cityEventId","cafeEventId"]);
     expect(JSON.stringify(tool?.parameters.properties?.cityEventId)).toContain("null");
+    expect(JSON.stringify(tool?.parameters.properties?.cafeEventId)).toContain("null");
     expect(JSON.stringify(tool?.parameters)).not.toContain("businessId");
   });
   it("retrieves the seventh or 501st same-day event by exact ID instead of the six-item summary",async()=>{
@@ -63,6 +64,8 @@ describe("G exact owner-selected city event via existing get_events and canonica
       {from:date,to:date,cityEventId:"not-a-uuid"},ctx)).rejects.toThrow();
     await expect(executeAgentTool("get_events",
       {from:date,to:date,cityEventId:exactId,businessId:"cafe-b"},ctx)).rejects.toThrow();
+    await expect(executeAgentTool("get_events",
+      {from:date,to:date,cafeEventId:"not-a-uuid"},ctx)).rejects.toThrow();
     expect(savedEvents).not.toHaveBeenCalled();
   });
 });
