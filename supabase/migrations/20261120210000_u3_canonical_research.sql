@@ -296,17 +296,17 @@ AS $u3_toast_records$
  CROSS JOIN LATERAL (
   SELECT nullif(current_setting('aicafe.u3_date_from',true),'')::date AS from_day,
    nullif(current_setting('aicafe.u3_date_to',true),'')::date AS to_day
- ) window
+ ) u3_window
  CROSS JOIN LATERAL public.toast_records_for(s.business_id,
-    CASE WHEN window.from_day IS NOT NULL AND window.to_day IS NOT NULL
-      AND window.to_day>=window.from_day AND window.to_day-window.from_day<=31
-      THEN window.from_day ELSE '9999-12-31'::date END,
-    CASE WHEN window.from_day IS NOT NULL AND window.to_day IS NOT NULL
-      AND window.to_day>=window.from_day AND window.to_day-window.from_day<=31
-      THEN window.to_day ELSE '0001-01-01'::date END) r
- WHERE window.from_day IS NOT NULL AND window.to_day IS NOT NULL
-   AND window.to_day>=window.from_day
-   AND window.to_day-window.from_day<=31
+    CASE WHEN u3_window.from_day IS NOT NULL AND u3_window.to_day IS NOT NULL
+      AND u3_window.to_day>=u3_window.from_day AND u3_window.to_day-u3_window.from_day<=31
+      THEN u3_window.from_day ELSE '9999-12-31'::date END,
+    CASE WHEN u3_window.from_day IS NOT NULL AND u3_window.to_day IS NOT NULL
+      AND u3_window.to_day>=u3_window.from_day AND u3_window.to_day-u3_window.from_day<=31
+      THEN u3_window.to_day ELSE '0001-01-01'::date END) r
+ WHERE u3_window.from_day IS NOT NULL AND u3_window.to_day IS NOT NULL
+   AND u3_window.to_day>=u3_window.from_day
+   AND u3_window.to_day-u3_window.from_day<=31
 $u3_toast_records$;
 REVOKE ALL ON FUNCTION u3_research_private.toast_operational_records()
  FROM PUBLIC,anon,authenticated,aicafe_research;
