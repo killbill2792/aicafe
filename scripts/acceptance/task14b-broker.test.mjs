@@ -517,3 +517,21 @@ test("expanded tool-capable allowance charges every reserved and replayed token 
  assert.ok(b.reservedMicros<=180000);
  assert.throws(()=>b.reserve(large),/approved_budget_exhausted/);
 });
+
+test("U2 isolated native search permits only canonical local declarations under the original paid bounds",()=>{
+ const definition={...params.tools[0],strict:true,defer_loading:true};
+ const call={type:"tool_search_call",execution:"server",call_id:null,status:"completed",arguments:{paths:[definition.name]}};
+ const loaded={type:"tool_search_output",execution:"server",call_id:null,status:"completed",tools:[definition]};
+ const native={...params,store:false,include:["reasoning.encrypted_content"],tools:[definition,{type:"tool_search"}],input:[...params.input,call,loaded]};
+ const bodyFor=x=>Buffer.from(JSON.stringify(x));
+ assert.throws(()=>reservationForRequest(bodyFor(native)),/provider_expanded_context_forbidden/);
+ const admitted=reservationForRequest(bodyFor(native),new Map(),true);
+ assert.ok(admitted.reservedMicros>0&&admitted.reservedMicros<=MAX_RESERVATION_MICROS);
+ assert.deepEqual(admitted.params.input.slice(-2),[call,loaded]);
+ for(const input of [[...params.input,call],[...params.input,loaded],[...params.input,call,{...loaded,tools:[{...definition,name:"unknown_tool"}]}],
+  [...params.input,{...call,execution:"client"},loaded],[...params.input,call,{...loaded,tools:[{...definition,parameters:{evil:true}}]}]])
+   assert.throws(()=>reservationForRequest(bodyFor({...native,input}),new Map(),true),/provider_built_in_tools_forbidden/);
+ assert.throws(()=>reservationForRequest(bodyFor({...native,tools:[definition,{type:"tool_search",execution:"client"}]}),new Map(),true),/provider_built_in_tools_forbidden/);
+ assert.throws(()=>reservationForRequest(bodyFor({...native,tool_choice:"none",max_output_tokens:1201}),new Map(),true),/output_cap/);
+ assert.throws(()=>reservationForRequest(bodyFor({...native,previous_response_id:"remote"}),new Map(),true),/provider_expanded_context_forbidden/);
+});
