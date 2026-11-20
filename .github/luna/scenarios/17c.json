@@ -101,7 +101,7 @@
       "maxCount": 1
     },
     {
-      "name": "single-owner-delegation",
+      "name": "separate-source-read-and-owner-delegation",
       "kind": "source",
       "table": "public.ai_messages",
       "where": {
@@ -115,8 +115,8 @@
           "eq": "owner"
         }
       },
-      "minCount": 1,
-      "maxCount": 1
+      "minCount": 2,
+      "maxCount": 2
     },
     {
       "name": "no-unauthorized-proposals",
@@ -225,6 +225,30 @@
       },
       "minCount": 0,
       "maxCount": 0
+    },
+    {
+      "name": "persisted-file-read-reply",
+      "kind": "owner",
+      "table": "public.ai_messages",
+      "where": {
+        "business_id": {
+          "scope": "businessId"
+        },
+        "owner_user_id": {
+          "scope": "ownerUserId"
+        },
+        "thread_id": {
+          "scope": "threadId"
+        },
+        "id": {
+          "scope": "fileReplyId"
+        },
+        "role": {
+          "eq": "supervisor"
+        }
+      },
+      "minCount": 1,
+      "maxCount": 1
     }
   ]
 }

@@ -168,15 +168,15 @@ export function verifyRoutineAndFile({scope,expected,routines,reply,attachments,
  assert.equal(attachments[0].business_id,scope.businessId);
  assert.equal(attachments[0].owner_user_id,scope.ownerUserId);
  assert.equal(attachments[0].thread_id,scope.threadId);
- assert.equal(ownerRows.length,1,"one genuine owner delegation");
+ assert.equal(ownerRows.length,2,"separate owner source-read and delegation");
+ assert.notEqual(ownerRows[0].id,ownerRows[1].id);
  assert.equal(reply.length,1,"one persisted supervisor reply");
  const text=JSON.stringify(reply[0].structured_content??"");
  assert.ok(text.includes(expected.reference),"exact private source reference absent");
  assert.match(text,/oat milk/i);
  assert.ok(new RegExp("(?:^|[^0-9])"+expected.quantity+"(?:[^0-9]|$)").test(text),"exact source quantity absent");
- assert.equal(usage.model,"gpt-6-luna");
- assert.ok(Number.isSafeInteger(Number(usage.model_call_count))&&Number(usage.model_call_count)>=2);
- assert.ok(Number(usage.input_tokens)>0);
+ assert.equal(usage.length,2);
+ for(const u of usage){assert.equal(u.model,"gpt-6-luna");assert.ok(Number.isSafeInteger(Number(u.model_call_count))&&Number(u.model_call_count)>=2);assert.ok(Number(u.input_tokens)>0);}
  assert.equal(proposals.length,0,"not authorized to buy/send/change stock");
  assert.equal(foreignRows.length,0,"cross-cafe data leak");
  return routine.id;
