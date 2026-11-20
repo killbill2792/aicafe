@@ -138,15 +138,15 @@ async function withinScope<T>(ctx:U3SqlContext,callback:(client:PoolClient)=>Pro
   await client.query("SET LOCAL work_mem = '4MB'");
   await client.query("SET LOCAL search_path = u3_research, pg_catalog");
   // Trusted application operation, NEVER a model-authored SQL call.
-  await client.query("SELECT set_config('aicafe.u3_research_scope',$1,true)",[ticket]);
+  await client.query("SELECT set_config('aicafe.u3_research_scope',$1,true)",[ticket]); // hardcode-ok: PostgreSQL bind placeholder
   if(requestedWindow){
    const {date_from:from,date_to:to}=requestedWindow;
    if(from!==null&&to!==null){
     const distance=(Date.parse(to+"T00:00:00Z")-Date.parse(from+"T00:00:00Z"))/86_400_000;
     if(!Number.isFinite(distance)||distance<0||distance>31)throw Error("invalid_query");
    }else if(from!==null||to!==null)throw Error("invalid_query");
-   await client.query("SELECT set_config('aicafe.u3_date_from',$1,true),"+
-    "set_config('aicafe.u3_date_to',$2,true)",[from??"",to??""]);
+   await client.query("SELECT set_config('aicafe.u3_date_from',$1,true),"+ // hardcode-ok: PostgreSQL bind placeholder
+    "set_config('aicafe.u3_date_to',$2,true)",[from??"",to??""]); // hardcode-ok: PostgreSQL bind placeholder
   }
   const result=await callback(client);
   await client.query("COMMIT");
