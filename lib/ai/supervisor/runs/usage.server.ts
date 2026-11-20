@@ -2,7 +2,7 @@ import "server-only";
 import { AsyncLocalStorage } from "node:async_hooks";
 import {randomUUID} from "node:crypto";
 import type {SupabaseClient} from "@supabase/supabase-js";
-import {configuredSupervisorModel} from "@/lib/ai/conversations/modelConfig";
+import {PRODUCTION_SUPERVISOR_OPENAI_MODEL,configuredSupervisorModel} from "@/lib/ai/conversations/modelConfig";
 import {modelTokenUsage,standardModelTokenRates,estimateModelCallCostMicros,hostedWebActualCostMicros} from "@/lib/calc/supervisorTokenCost";
 
 /** Caps come from authenticated server configuration, never a model reply.
@@ -40,7 +40,7 @@ export function usageStopReason(usage: WorkerUsage, cap: WorkerBudget): UsageSto
 
 /** One async-local meter spans every sequential continuation in a durable
  * run. Ordinary browser/WhatsApp conversations never see this meter. */
-type WorkerMeter = { cap: WorkerBudget; started: number; used: WorkerUsage };
+type WorkerMeter = { cap: WorkerBudget; started: number; used: WorkerUsage; providerOutputCap:number };
 const workerBudgets = new AsyncLocalStorage<WorkerMeter>();
 const FINISH_RESERVE_MS = 3000; // keep time for canonical finish/lease acknowledgement
 const empty: WorkerUsage = { elapsedMs: 0, modelCalls: 0, toolCalls: 0, inputTokens: 0, outputTokens: 0 };
@@ -79,9 +79,10 @@ export function workerBudgetExhausted(): UsageStopReason {
   const remaining = currentWorkerBudget();
   return remaining ? usageStopReason(empty, remaining) : null;
 }
-export async function withWorkerBudget<T>(budget: WorkerBudget, work: () => Promise<T>): Promise<T> {
+export async function withWorkerBudget<T>(budget: WorkerBudget, work: () => Promise<T>,providerOutputCap=1200): Promise<T> {
   if (usageStopReason(empty, budget)) throw new Error("supervisor_worker_budget_exhausted");
-  return workerBudgets.run({ cap: budget, started: Date.now(), used: empty }, work);
+  if(![1200,8192].includes(providerOutputCap))throw Error("invalid_worker_provider_cap");
+  return workerBudgets.run({ cap: budget, started: Date.now(), used: empty,providerOutputCap }, work);
 }
 
 /** The existing durable owner-turn lease, not a new queue or agent. Each
@@ -94,11 +95,24 @@ type DurableProviderScope = {
 };
 type DurableProviderContext = { scope:DurableProviderScope; launched:string[]; denied:boolean };
 const durableProviderTurns = new AsyncLocalStorage<DurableProviderContext>();
-const DURABLE_PROVIDER_OUTPUT_CAP=1200;
+/** Expanded capacity requires a migrated database. On rolling deploy, an
+ * absent RPC keeps the legacy cap; other failures stop admission. */
+export async function loadModelExecutionCap(db:SupabaseClient,model=configuredSupervisorModel()):Promise<number>{
+  if(model!==PRODUCTION_SUPERVISOR_OPENAI_MODEL||
+     process.env.AI_CAFE_LIVE_ACCEPTANCE==="OWNER_APPROVED_LOCAL_ONLY"||
+     process.env.AICAFE_TASK14B_BUDGET_LEDGER)return 1200;
+  const {data,error}=await db.rpc("supervisor_model_execution_cap",{p_model:model});
+  if(error){
+    if(error.code==="PGRST202"||error.code==="42883")return 1200;
+    throw Error("worker_execution_cap_unavailable");
+  }
+  if(data!==8192&&data!==1200)throw Error("worker_execution_cap_unavailable");
+  return data;
+}
 /** Keep the independently authorized unattended spend envelope distinct from
  * the interactive Supervisor's reasoning allowance, before request creation. */
 export function currentDurableProviderOutputCap():number|undefined{
-  return durableProviderTurns.getStore()?DURABLE_PROVIDER_OUTPUT_CAP:undefined;
+  return workerBudgets.getStore()?.providerOutputCap??(durableProviderTurns.getStore()?1200:undefined);
 }
 export function withDurableProviderTurn<T>(scope:DurableProviderScope,work:()=>Promise<T>):Promise<T>{
   return durableProviderTurns.run({scope,launched:[],denied:false},work);
@@ -136,7 +150,7 @@ export async function reserveDurableProviderRequest(
   try{
     const model=params.model,output=params.max_output_tokens;
     if(typeof model!=="string"||typeof output!=="number"||!Number.isSafeInteger(output)||
-       output<1||output>DURABLE_PROVIDER_OUTPUT_CAP)throw new Error("durable_provider_request_invalid");
+       output<1||output>(currentDurableProviderOutputCap()??1200))throw new Error("durable_provider_request_invalid");
     // Measure text/framing separately from trusted attachment binary
     // transport. The provider tokenizes the decoded media, not the base64
     // representation. Strip only the binary data URL in a real user content
