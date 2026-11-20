@@ -132,9 +132,13 @@ export async function admitU3Sql(sql:string,allowedRelations:readonly string[],
   if(Array.isArray(node)){node.forEach(collectToastAliases);return;}
   for(const [key,value] of Object.entries(node)){
    if(key==="RangeVar"&&value&&typeof value==="object"){
-    const rv=value as {relname?:string;alias?:{Alias?:{aliasname?:string}}};
-    if(rv.relname==="toast_records"&&rv.alias?.Alias?.aliasname)
-     toastAliases.add(rv.alias.Alias.aliasname);
+    const rv=value as {relname?:string;alias?:{
+      aliasname?:unknown;Alias?:{aliasname?:unknown}}};
+    // PostgreSQL parser versions emit either a direct Alias object or its
+    // Node wrapper. Normalize both before applying composite-row denial.
+    const identifier=rv.alias?.Alias?.aliasname??rv.alias?.aliasname;
+    if(rv.relname==="toast_records"&&typeof identifier==="string"&&identifier)
+     toastAliases.add(identifier);
    }
    collectToastAliases(value);
   }
