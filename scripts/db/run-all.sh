@@ -157,8 +157,7 @@ restore_newest_toast_importer() {
 supabase_lane() {
   group "Static"
   check supabase "Olivia SQL block delimiters" olivia_sql_delimiters
-  check supabase "U3 fully migrated physical catalog census and schema drift" \\
-    env U3_CATALOG_DB_URL="$supabase_url" node scripts/acceptance/u3-catalog-census.mjs
+  check supabase "U3 fully migrated physical catalog census and schema drift" env U3_CATALOG_DB_URL="$supabase_url" node scripts/acceptance/u3-catalog-census.mjs
 
   group "App and security checks"
   sql_step rls-all-public-tables.sql "Every public table has row level security"
