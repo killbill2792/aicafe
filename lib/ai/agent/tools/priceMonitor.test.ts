@@ -150,4 +150,22 @@ describe("source-verified seven-day Toast price observation plan (no sends)",()=
   expect(windows).toHaveLength(14);
   expect(new Set(windows.map(w=>w.deliveryKey)).size).toBe(14);
  });
+ it("uses authenticated effective instants for both exposure and subsequent interruption",()=>{
+  const first={...observation,sourceEffectiveAt:"2026-11-01T07:30:00Z"};
+  const second={...observation,oldPriceCents:750,newPriceCents:700,
+   publicationVersion:"v2",observedAt:"2026-11-02T20:00:00Z",
+   sourceEffectiveAt:"2026-11-02T18:00:00Z"};
+  const windows=planVerifiedToastPriceObservations([first,second],"2026-11-05T00:00:00Z");
+  expect(windows[0].from).toBe("2026-11-01T07:30:00.000Z");
+  expect(windows[1]).toMatchObject({to:"2026-11-02T18:00:00.000Z",interrupted:true});
+  expect(windows[2].from).toBe(windows[1].to);
+ });
+ it("fails closed for contradictory replay, non-chain transitions and impossible timestamps",()=>{
+  const future={...observation,sourceEffectiveAt:"2026-11-01T09:00:00Z"};
+  const ambiguous={...observation,newPriceCents:800};
+  const disconnected={...observation,publicationVersion:"v2",observedAt:"2026-11-02T20:00:00Z",oldPriceCents:900};
+  for(const input of [[future],[observation,ambiguous],[observation,disconnected]])
+   expect(planVerifiedToastPriceObservations(input,"2026-11-09T09:30:00Z")).toEqual([]);
+ });
+
 });

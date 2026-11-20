@@ -1,7 +1,7 @@
 import {beforeEach,describe,expect,it,vi} from "vitest";
 vi.mock("server-only",()=>({}));
 const f=vi.hoisted(()=>({
-  access:false,status:"monitored",monitorCalls:0,reportReads:0,businessReads:0,
+  access:false,status:"monitored",capabilityId:"alex.drink_price_experiment.v1",monitorCalls:0,reportReads:0,businessReads:0,
   businessId:"11111111-1111-4111-8111-111111111111",
   ownerId:"22222222-2222-4222-8222-222222222222",
   threadId:"33333333-3333-4333-8333-333333333333",
@@ -45,6 +45,7 @@ vi.mock("@/lib/supabase/admin",()=>({
   }),
 }));
 vi.mock("@/lib/data/getMenuControlCenter",()=>({getMenuControlCenter:async()=>[]}));
+vi.mock("@/lib/ai/supervisor/loop/eventReadiness.server",()=>({eventReadinessCapabilityId:"alex.event_readiness.v1"}));
 vi.mock("@/lib/ai/supervisor/loop/priceExperiment.server",()=>({
   supervisorLoopRegistry:{},priceExperimentCapabilityId:"alex.drink_price_experiment.v1",
 }));
@@ -52,7 +53,7 @@ vi.mock("@/lib/ai/supervisor/loop/supabase.server",()=>({
   SupabaseLoopRepository:class{
     async load(_scope:unknown,id:string){
       if(id!==f.proposalId)throw Error("not found");
-      return {id,status:f.status};
+      return {id,status:f.status,capabilityId:f.capabilityId};
     }
   },
 }));
@@ -71,7 +72,7 @@ function post(body:Record<string,unknown>){
     body:JSON.stringify(body),
   }),params);
 }
-beforeEach(()=>{f.access=false;f.status="monitored";f.monitorCalls=0;f.reportReads=0;f.businessReads=0;});
+beforeEach(()=>{f.access=false;f.status="monitored";f.capabilityId="alex.drink_price_experiment.v1";f.monitorCalls=0;f.reportReads=0;f.businessReads=0;});
 describe("expired café can read history without creating new AI work",()=>{
   it("returns a previously stored report with expired access",async()=>{
     const r=await post({action:"report",proposalId:f.proposalId});
@@ -92,6 +93,11 @@ describe("expired café can read history without creating new AI work",()=>{
     const r=await post({action:"simulate",productId:f.proposalId,increaseCents:50});
     expect(r.status).toBe(403);
     expect(f.reportReads).toBe(0);expect(f.monitorCalls).toBe(0);
+  });
+  it("reads existing event reports rather than launching a competing event monitor from a page",async()=>{
+    f.access=true;f.status="committed";f.capabilityId="alex.event_readiness.v1";
+    const r=await post({action:"report",proposalId:f.proposalId});
+    expect(r.status).toBe(200);expect(f.reportReads).toBe(1);expect(f.monitorCalls).toBe(0);
   });
   it("allows an active café to request an uncomputed report",async()=>{
     f.access=true;f.status="committed";

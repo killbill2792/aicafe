@@ -65,7 +65,7 @@ describe("the registered agent loop uses the durable provider reservation before
     const authorized=vi.fn(async()=>{});
     vi.stubEnv("SUPERVISOR_OPENAI_MODEL","gpt-6-luna");
     try{
-      const result=await withDurableProviderTurn({...scope,db:client,authorize:authorized,ownerDailyCap:600,
+      const result=await withDurableProviderTurn({...scope,db:client,authorize:authorized,ownerDailyCap:null,
         budget:{maxElapsedMs:60000,maxModelCalls:6,maxToolCalls:8,maxInputTokens:60000,maxOutputTokens:7200}},
         async()=>{
           const turn=await runAgentTurn({ownerText:"Hello",...attachment,context:{timezone:"UTC",asOf:"2026-11-18",
@@ -101,7 +101,7 @@ describe("the registered agent loop uses the durable provider reservation before
       const first=result.calls[0].args,second=result.calls[1].args;
       expect(first).toMatchObject({p_run_id:scope.runId,p_claim_token:scope.claimToken,
         p_business_id:scope.businessId,p_owner_message_id:scope.ownerMessageId,p_job_id:scope.jobId,
-        p_model:"gpt-6-luna",p_max_calls:6});
+        p_model:"gpt-6-luna",p_max_calls:6,p_max_cost:null,p_owner_daily_cap:null});
       expect(first.p_attempt_id).not.toBe(second.p_attempt_id);
       expect(result.calls[2].args.p_attempt_id).toBe(second.p_attempt_id);
       expect(result.accounting).toEqual({runId:scope.runId,attemptIds:[first.p_attempt_id,second.p_attempt_id]});

@@ -168,7 +168,7 @@ describe("numbers, statuses, and strict tool contracts", () => {
       status:"partial",missing:["sales"] });
   });
   it("publishes exactly the registered strict functions", () => {
-    expect(agentToolDefinitions.map(t=>t.name)).toEqual(["ask_owner","describe_data","query_data","get_peak_hours","get_employee_sales","get_payroll_facts","get_attention_items","get_profit","get_sales","get_menu_items",
+    expect(agentToolDefinitions.map(t=>t.name)).toEqual(["present_response","ask_owner","describe_data","query_data","get_peak_hours","get_employee_sales","get_payroll_facts","get_attention_items","get_profit","get_sales","get_menu_items",
       "get_staff","get_schedule","get_labor","get_staff_coordination_cases","get_staff_messages","get_team","get_week_schedule","get_labor_rules",
       "get_coverage_gaps","get_shift_cost","get_business_hours","get_expenses","get_bills",
       "get_cashflow_evidence","propose_financial_settlement","propose_financial_bill","get_break_even","get_cost_summary","get_usage_variance","get_product_costs","get_ingredient_costs","get_inventory",
@@ -1751,4 +1751,20 @@ describe("Codex adversarial provenance matrix: identity, history and amounts",()
     expect(numberProvenance(reply,"",[invalid],"en",saved).find(v=>v.text==="$129.88")?.source)
       .toBe("unchecked");
   });
+});
+
+
+describe("compact strict provider schema",()=>{
+ it("preserves custom time patterns and standard date formats while runtime Zod rejects invalid dates",async()=>{
+  const tool=agentToolDefinitions.find(t=>t.name==="get_events");
+  const p=tool?.parameters as {properties?:Record<string,Record<string,unknown>>};
+  expect(p.properties?.from?.format).toBe("date");
+  expect(p.properties?.to?.format).toBe("date");
+  const shift=agentToolDefinitions.find(t=>t.name==="get_shift_cost");
+  const s=shift?.parameters as {properties?:Record<string,Record<string,unknown>>};
+  expect(s.properties?.start?.pattern).toBeTruthy();
+  expect(s.properties?.end?.pattern).toBeTruthy();
+  const {getEventsInput}=await import("./tools/getEvents");
+  expect(getEventsInput.safeParse({from:"2026-02-30",to:"2026-03-01"}).success).toBe(false);
+ });
 });

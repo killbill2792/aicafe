@@ -3,10 +3,10 @@ import type {SupabaseClient} from "@supabase/supabase-js";
 import type {OperatingTask} from "@/lib/operating/tasks";
 import {settleInboxTasks} from "@/lib/operating/inboxLifecycle";
 vi.mock("server-only",()=>({}));
-import {nextOwnerPriceReminder,toastObservationNoticeKey,postVerifiedSourceReminder} from "./experimentNotices.server";
+import {nextOwnerPriceReminder,toastObservationNoticeKey,postVerifiedSourceReminder,postToastObservationNotice} from "./experimentNotices.server";
 vi.mock("@/lib/operating/notifyOwner.server",()=>({notifyOwner:async(
  _db:unknown,notice:{kind:string},write:()=>Promise<unknown>)=>{
-  if(notice.kind!=="commitment")throw Error("Unsupported notice type");
+  if(!["commitment","priority_notice"].includes(notice.kind))throw Error("Unsupported notice type");
   return {decision:"posted",result:await write()};
  }}));
 const base={businessId:"aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
@@ -58,9 +58,9 @@ describe("Task 8a owner notice exact source/day/slot identity",()=>{
   expect(toastObservationNoticeKey({...event,windowIndex:0})).toMatchObject({
    kind:"toast_price_initial",slot:0,sourceId:event.priceHistoryId});
   expect(toastObservationNoticeKey({...event,windowIndex:3})).toMatchObject({
-   kind:"toast_price_daily"});
+   kind:"toast_price_daily",slot:3});
   expect(toastObservationNoticeKey({...event,windowIndex:7,final:true})).toMatchObject({
-   kind:"toast_price_final"});
+   kind:"toast_price_final",slot:0});
   expect(()=>toastObservationNoticeKey({...event,windowIndex:8})).toThrow();
  });
 });
@@ -115,5 +115,20 @@ describe("Task 8a actual notice write and durable delivery",()=>{
   expect(effects).toEqual(["claim:supervisor_8a_claim_notice","task:commitment",
    "message","receipt:posted"]);
   expect(receipts.state).toBe("posted");
+ });
+});
+
+describe("observation delivery generation",()=>{
+ it("uses the exact returned lease attempt and never treats an uncommitted delivery as posted",async()=>{
+  const rpc=vi.fn().mockResolvedValueOnce({data:[{receipt_id:"receipt",attempt:4}],error:null})
+   .mockResolvedValueOnce({data:false,error:null});
+  const key=toastObservationNoticeKey({businessId:base.businessId,ownerUserId:base.ownerUserId,
+   priceHistoryId:base.proposalId,windowIndex:3,localDate:"2026-11-11"});
+  const result=await postToastObservationNotice({rpc} as unknown as SupabaseClient,{
+   key,threadId:"thread",timezone:base.timezone,payload:{title:"Observation"},text:"Observed",confidence:"low",
+  });
+  expect(result).toBe("not_authorized");
+  expect(rpc.mock.calls[1]).toEqual(["supervisor_8a_post_observation_notice",
+   expect.objectContaining({p_receipt_id:"receipt",p_attempt:4})]);
  });
 });

@@ -29,7 +29,8 @@ export function scenariosForPath(path) {
   // The owner More page contains Gmail controls and is a restricted owner
   // navigation destination for workers. Require BOTH real browser journeys.
   if (path === "app/[locale]/more/page.tsx") return ["staff","gmail"];
-  if (path === "app/[locale]/more/gmail/page.tsx" ||
+  if (path === "app/admin/costs/page.tsx" ||
+      path === "app/[locale]/more/gmail/page.tsx" ||
       path === "app/[locale]/more/supervisor-access/page.tsx" ||
       path === "components/more/SupervisorAccessPanel.tsx" ||
       path === "components/more/GmailConnectionPanel.tsx" ||
@@ -52,6 +53,7 @@ export function scenariosForPath(path) {
       path === "components/operations/SupplierVendorCommunicationManager.tsx" ||
       path === "app/[locale]/operations/suppliers/page.tsx")
     return ["purchasing"];
+  if (path === "components/alerts/alertContent.ts" || path === "components/alerts/alertContent.test.ts") return ["home"];
   if (path.startsWith("components/home/")) return ["home"];
   if (path === "app/[locale]/page.tsx" ||
       path.startsWith("lib/viewmodels/home") ||

@@ -120,4 +120,23 @@ BEGIN
    'local yesterday accepted even when it equals UTC today');
  END IF;
 END $local_range$;
+-- Certified order-cohort zero is evidence; missing or flagged days are not.
+DO $refund$
+DECLARE b uuid:='cccccccc-cccc-4ccc-8ccc-cccccccccccc';g uuid:='cccccccc-cccc-4ccc-8ccc-cccccccc0002';
+BEGIN
+ UPDATE public.toast_day_status set refunds_cents=0,order_count=0,net_sales_cents=0,
+   unparsed_count=0,recon_state='matched',rechecking_reason=null
+ where business_id=b and restaurant_guid=g and business_date='2026-10-02';
+ INSERT INTO public.daily_rollups(business_id,business_date,net_sales_cents,orders_count,drinks_count,
+  ingredients_cents,staff_wages_cents,staff_tax_cents,card_fees_cents,voids_cents,sales_data_status,voids_status,voids_source)
+ values(b,'2026-10-02',0,0,0,0,0,0,0,0,'actual','complete','toast')
+ ON CONFLICT(business_id,business_date) DO UPDATE set net_sales_cents=0,orders_count=0,sales_data_status='actual',voids_status='complete',voids_source='toast';
+ PERFORM pg_temp.assert((select refund_cents=0 from public.supervisor_checked_order_refunds(b,'2026-10-02','2026-10-02')),
+  'checked closed order cohort proves zero refunds');
+ UPDATE public.toast_day_status set recon_state='mismatch' where business_id=b and restaurant_guid=g and business_date='2026-10-02';
+ PERFORM pg_temp.assert(not exists(select 1 from public.supervisor_checked_order_refunds(b,'2026-10-02','2026-10-02')),
+  'unverified checked-day mismatch cannot prove zero');
+ PERFORM pg_temp.assert(not has_function_privilege('authenticated','public.supervisor_checked_order_refunds(uuid,date,date)','EXECUTE'),
+  'refund evidence is server-only');
+END $refund$;
 ROLLBACK;

@@ -30,6 +30,12 @@ export type EventDemandEvidence={
   ownerObservations:Array<{key:string;value:unknown;recordedAt:string;origin:"owner_reported"}>;
   otherKnownEvents:string[];
   coverage:{dailyActualDays:number;hourlyReconciledDays:number;missing:string[];caveats:string[]};
+  readiness?:{staffing:{date:string;source:"cv_shifts";coverage:"unknown"|"partial"|"recorded";
+      shifts:Array<{source:"app"|"toast";status:string;start:string|null;end:string|null}>};
+    inventory:{asOfDate:string;source:"cv_inventory";coverage:"unknown"|"partial"|"recorded";
+      items:Array<Pick<import("../calc/inventoryEvidence").InventoryEvidenceRow,
+        "source"|"ingredient_name"|"menu_item_ref"|"quantity"|"quantity_unit"|"stock_status"|"source_as_of"|"evidence_state">>;
+      missing:string[]}};
   attribution:"not_established";
 };
 
@@ -116,7 +122,9 @@ export function assembleEventDemandEvidence(input:EventDemandRequest,sources:{
     }
   }
   const comparable=certified.filter(d=>d.date>=window.from&&d.date<=window.through);
-  const usual=typicalDaySales(comparable,input.eventDate,window.before,{exclude:excluded});
+  const exclusionUnavailable=sources.missing?.includes("baseline_event_exclusions_unavailable");
+  const usual=exclusionUnavailable?{typicalCents:null,sampleDays:0,from:window.from,to:window.through}:
+    typicalDaySales(comparable,input.eventDate,window.before,{exclude:excluded});
   const missing=[...(sources.missing??[])];
   const caveats=[...(sources.caveats??[])];
   if(usual.typicalCents===null)missing.push("insufficient_comparable_actual_weekdays");
@@ -136,7 +144,7 @@ export function assembleEventDemandEvidence(input:EventDemandRequest,sources:{
     caveats.push("live_reading_incomplete_or_stale");
 
   let usualHours:EventDemandEvidence["usualHours"]=[],hourlyReconciledDays=0;
-  if(!missing.includes("hourly_source_unavailable")&&!missing.includes("hourly_source_truncated")){
+  if(!exclusionUnavailable&&!missing.includes("hourly_source_unavailable")&&!missing.includes("hourly_source_truncated")){
     try{
       const grouped=indexHourlyRevenue(sources.hourly);
       const fullDays=new Set(comparable.filter(d=>
@@ -164,9 +172,24 @@ export function assembleEventDemandEvidence(input:EventDemandRequest,sources:{
       observedDays:integer(data?.observedDays),expectedDays:integer(data?.expectedDays),days,
       observations:safeObservations(sources.samples,proposal.id,input.asOfDate)};
   });
-  const current=matched.filter(p=>p.start<=input.eventDate&&p.end>=input.eventDate)
-    .slice(0,2).flatMap(p=>safeObservations(sources.samples,p.proposal.id,input.asOfDate))
-    .filter(s=>s.date===input.eventDate).slice(0,2);
+  // An earlier day of the same occurrence is evidence for the next day, even
+  // if the spanning readiness plan has not yet generated its final report.
+  // Never combine duplicate café-day totals or another occurrence by name.
+  const currentByDay=new Map<string,EventDemandEvidence["currentObservations"][number]>();
+  const through=input.eventDate<input.asOfDate?input.eventDate:input.asOfDate;
+  for(const p of matched.filter(p=>p.method==="event_id").slice(0,12)){
+    for(const sample of safeObservations(sources.samples,p.proposal.id,through)){
+      if(sample.date<p.start||sample.date>p.end||
+        (sample.date!==input.asOfDate&&sample.coverage!=="actual"))continue;
+      const previous=currentByDay.get(sample.date);
+      if(!previous||previous.coverage==="provisional"&&sample.coverage==="actual")
+        currentByDay.set(sample.date,sample);
+      else if(previous.coverage==="actual"&&sample.coverage==="actual"&&
+        previous.actualCents!==sample.actualCents)caveats.push("conflicting_same_day_monitor_samples");
+    }
+  }
+  const current=[...currentByDay.values()].sort((a,b)=>a.date.localeCompare(b.date))
+    .slice(-14);
   const ids=new Set(input.eventIds??[]),names=new Set((input.eventNames??[]).map(normalized));
   const otherKnownEvents=[...new Set(sources.dayEvents.filter(e=>e.status==="found"&&
     e.startDate<=input.eventDate&&e.endDate>=input.eventDate&&!ids.has(e.id)&&

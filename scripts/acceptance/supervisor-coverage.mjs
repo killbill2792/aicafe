@@ -46,7 +46,7 @@ export function makeInventory(rows){
  return [...rows].sort((a,b)=>a.id<b.id?-1:a.id>b.id?1:0);
 }
 export function manifestIndex(root,paths,legacyTools={}){
- const index=new Map(),ids=new Set();
+ const index=new Map(),ids=new Set(),specs=[];
  for(const path of paths){
   if(!/^\.github\/luna\/scenarios\/[a-z0-9-]+\.json$/.test(path))throw Error("invalid_manifest_path");
   const manifest=JSON.parse(readFileSync(resolve(root,path),"utf8"));
@@ -55,13 +55,14 @@ export function manifestIndex(root,paths,legacyTools={}){
   const entry=manifest.entrypoint;
   if(typeof entry!=="string"||isAbsolute(entry)||relative(root,resolve(root,entry)).startsWith("..")||!existsSync(resolve(root,entry)))
     throw Error("missing_manifest_entrypoint:"+manifest.id);
+  specs.push({id:manifest.id,entrypoint:entry,engine:manifest.engine,expectedTools:manifest.expectedTools??legacyTools[manifest.id]??[],assertions:manifest.assertions??[],contract:fingerprint(manifest)});
   for(const tool of manifest.expectedTools??legacyTools[manifest.id]??[]){
    if(typeof tool!=="string"||!tool)throw Error("invalid_manifest_tool");
    const refs=index.get(tool)??[];
    refs.push(manifest.id);index.set(tool,refs);
   }
  }
- return {index,ids:[...ids].sort()};
+ return {index,ids:[...ids].sort(),specs:specs.sort((a,b)=>a.id.localeCompare(b.id))};
 }
 /** A mapping alone never represents an executed test. Bootstrap records every
  * gap; the release check deliberately rejects even one UNTESTED row. */
@@ -138,4 +139,21 @@ export function scenarioCoveragePlan(ids,groups,families){
  return {registered:ids.length,required:required.length,unknown,groups:groupRows,crossFunctional,
   allRegistered:unknown.length===0&&groupRows.every(g=>g.missing.length===0),
   providerProof:false,complete:false};
+}
+
+export function verifyReviewedSourceChanges(changedPaths,reviewedPaths){
+ const allowed=new Set(reviewedPaths);
+ if(new Set(changedPaths).size!==changedPaths.length||allowed.size!==reviewedPaths.length)throw Error("invalid_reviewed_source_paths");
+ const unexpected=changedPaths.filter(p=>!allowed.has(p));
+ if(unexpected.length)throw Error("unreviewed_supervisor_source_change:"+unexpected.join(","));
+}
+export function planPaidBatches(specs){
+ const ordered=[...specs].sort((a,b)=>a.id.localeCompare(b.id));
+ if(!ordered.length||new Set(ordered.map(s=>s.id)).size!==ordered.length||ordered.some(s=>typeof s.entrypoint!=="string"||!s.entrypoint))throw Error("invalid_paid_inventory");
+ const batches=[];
+ for(let i=0;i<ordered.length;i+=20){
+  const cases=ordered.slice(i,i+20);
+  batches.push({ids:cases.map(s=>s.id),maxReservedCents:cases.length*18,cases});
+ }
+ return {batches,reservedCents:ordered.length*18,ready:false,authorizationRequired:true,providerModelProof:false};
 }

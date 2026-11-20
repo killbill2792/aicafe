@@ -2,7 +2,7 @@ import {describe,it,expect,vi} from "vitest";
 import type {SupabaseClient} from "@supabase/supabase-js";
 import type {AgentProvider} from "@/lib/ai/agent/loop.server";
 vi.mock("server-only",()=>({}));
-vi.mock("@/lib/ai/conversations/usage.server",()=>({ownerModelCallsLimit:()=>600}));
+vi.mock("@/lib/ai/conversations/usage.server",()=>({ownerModelCallsLimit:()=>null}));
 import {meteredInvestigationProvider} from "./investigationUsage.server";
 
 const scope={businessId:"cafe-a",ownerUserId:"owner-a",threadId:"thread-a",
@@ -45,7 +45,7 @@ describe("scheduled system-initiated paid model quota",()=>{
     expect(d.calls[0].args).toMatchObject({
       p_business_id:"cafe-a",p_owner_user_id:"owner-a",p_thread_id:"thread-a",
       p_source_type:"operating_task",p_source_id:"task-1",
-      p_lease_token:"lease-a",p_owner_daily_cap:600,p_model:"gpt-6-luna",
+      p_lease_token:"lease-a",p_owner_daily_cap:null,p_model:"gpt-6-luna",
       p_output_cap:1200,
     });
     expect(d.calls[1].args).toMatchObject({
@@ -102,4 +102,21 @@ describe("scheduled system-initiated paid model quota",()=>{
     expect(metered.problem()).toBe("storage_failed");
     expect(d.calls.map(x=>x.name)).toHaveLength(2);
   });
+});
+
+it("meters hosted research through the same fenced ledger; missing tool tariff is not zero",async()=>{
+ const d=db(),metered=meteredInvestigationProvider(d.client,scope,completed as AgentProvider);
+ const old=process.env.SUPERVISOR_HOSTED_WEB_CALL_COST_MICROS;
+ delete process.env.SUPERVISOR_HOSTED_WEB_CALL_COST_MICROS;
+ try{
+  const finish=await metered.reserve({...params,tools:[{type:"web_search"}]},"hosted_web");
+  expect(d.calls.map(x=>x.name)).toEqual(["supervisor_reserve_investigation_model_call"]);
+  const response={model:"gpt-6-luna",usage:{input_tokens:100,output_tokens:20},output:[{type:"web_search_call",id:"search-1",status:"completed"}]};
+  await finish(response);
+  expect(d.calls[1].args).toMatchObject({p_input_tokens:100,p_output_tokens:20,p_estimated_cost_micros:null});
+  process.env.SUPERVISOR_HOSTED_WEB_CALL_COST_MICROS="10000";
+  const next=await metered.reserve(params,"hosted_web");await next(response);
+  expect(d.calls[3].args.p_estimated_cost_micros).toBe(10020);
+  await expect(next(response)).rejects.toThrow("investigation_usage_completion_conflict");
+ }finally{if(old===undefined)delete process.env.SUPERVISOR_HOSTED_WEB_CALL_COST_MICROS;else process.env.SUPERVISOR_HOSTED_WEB_CALL_COST_MICROS=old;}
 });

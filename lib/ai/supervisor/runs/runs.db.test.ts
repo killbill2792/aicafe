@@ -347,6 +347,19 @@ describe("Task 15C durable provider reservations survive actual worker death",()
       // The two persisted reservations exhaust the existing owner-day quota,
       // even though the aggregate also records their two attempted calls.
       await expect(call(a,"supervisor_reserve_durable_model_call",args(randomUUID(),{calls:3,input:300,output:150,cost:300}))).rejects.toThrow("owner_usage_limit_reached");
+      const maxArgs=args(randomUUID(),{calls:3,input:300,output:150});
+      maxArgs[maxArgs.length-2]=null;
+      maxArgs[maxArgs.length-1]=null;
+      await call(a,"supervisor_reserve_durable_model_call",maxArgs);
+      expect((await admin.query("select count(*)::int n from public.supervisor_system_usage_events where business_id=$1",[businessId])).rows).toEqual([{n:3}]);
+      const rollup=await call(a,"admin_supervisor_usage_rollup",[]);
+      expect(rollup.rows.find((row:{business_id:string})=>row.business_id===businessId)).toMatchObject({
+        calls:3,known_input_tokens:70,known_output_tokens:10,known_cost_micros:12,
+        unknown_token_calls:2,unpriced_calls:2,channel:"owner_requested"});
+      await foreign.query("select set_config('request.jwt.claim.sub',$1,false)",[ownerId]);
+      expect(await call(foreign,"supervisor_owner_usage_summary",[businessId])).toMatchObject({ownerRequests:1,proactiveItems:0});
+      await expect(call(foreign,"supervisor_owner_usage_summary",[randomUUID()])).rejects.toThrow("owner_access_required");
+      await expect(call(foreign,"admin_supervisor_usage_rollup",[])).rejects.toThrow();
       await admin.query("delete from public.memberships where business_id=$1 and user_id=$2",[businessId,ownerId]);
       await expect(call(a,"supervisor_reserve_durable_model_call",args(randomUUID(),{daily:5}))).rejects.toThrow("durable_reservation_not_authorized");
       await admin.query("insert into public.memberships(business_id,user_id,role) values ($1,$2,'owner')",[businessId,ownerId]);
@@ -363,4 +376,213 @@ describe("Task 15C durable provider reservations survive actual worker death",()
       await admin.end();
     }
   },30000);
+});
+
+
+describe("Task 6/15C v2 durable owner admission and checkpoint fencing",()=>{
+  (sandbox?it:it.skip)("preserves exact input and receipts across real lease loss; refuses uncertain effects, foreign scope and stale writers",async()=>{
+    const admin=await connect();
+    const businessId=randomUUID(),ownerId=randomUUID(),threadId=randomUUID(),messageId=randomUUID();
+    const scope=[businessId,ownerId,threadId];
+    let a:Client|undefined,b:Client|undefined,denied:Client|undefined;
+    const children:ChildProcess[]=[];
+    try{
+      await admin.query("insert into auth.users(id,instance_id,aud,role,email,encrypted_password,created_at,updated_at) values ($1,'00000000-0000-0000-0000-000000000000','authenticated','authenticated',$2,'',now(),now())",[ownerId,"checkpoint-"+ownerId+"@example.invalid"]);
+      await admin.query("insert into public.businesses(id,name,timezone,is_demo) values($1,$2,current_setting('TimeZone'),false)",[businessId,"Disposable v2 checkpoint café"]);
+      await admin.query("insert into public.memberships(business_id,user_id,role) values($1,$2,'owner')",[businessId,ownerId]);
+      await admin.query("insert into public.ai_threads(id,business_id,owner_user_id,client_request_id) values($1,$2,$3,$4)",[threadId,businessId,ownerId,randomUUID()]);
+      await admin.query("insert into public.ai_messages(id,business_id,owner_user_id,thread_id,author_user_id,role,content_type,text_content,client_message_id) values($1,$2,$3,$4,$3,'owner','text','Review the selected document',$5)",[messageId,...scope,randomUUID()]);
+      const attachmentId=randomUUID(),objectId=randomUUID();
+      const objectPath=scope.join("/")+"/"+attachmentId+"/notes.txt";
+      await admin.query("insert into public.ai_attachments(id,business_id,owner_user_id,thread_id,object_path,original_name,media_type,bytes) values($1,$2,$3,$4,$5,'notes.txt','text/plain',42)",[attachmentId,...scope,objectPath]);
+      await admin.query("insert into storage.objects(id,bucket_id,name,metadata) values($1,'ai-chat-private',$2,$3)",[objectId,objectPath,JSON.stringify({size:42,eTag:"initial"})]);
+      a=await connect(true);b=await connect(true);
+      const admit=[...scope,messageId,"c".repeat(64),"es",[attachmentId]];
+      const run=await call(a,"supervisor_admit_owner_run_v2",admit);
+      expect(run).toMatchObject({execution_version:2,request_key:messageId,input_locale:"es",input_attachment_ids:[attachmentId],status:"pending"});
+      expect((await call(b,"supervisor_admit_owner_run_v2",admit)).id).toBe(run.id);
+      expect(run.input_attachment_version_hash).toMatch(/^[a-f0-9]{64}$/);
+      await expect(call(a,"supervisor_admit_owner_run_v2",[...scope,messageId,"c".repeat(64),"en",[attachmentId]])).rejects.toThrow("owner_run_input_conflict");
+      await expect(call(a,"supervisor_admit_owner_run_v2",[...scope,messageId,"c".repeat(64),"es",[randomUUID()]])).rejects.toThrow("owner_run_input_unavailable");
+      denied=await connect();await denied.query("set role authenticated");
+      await expect(call(denied,"supervisor_admit_owner_run_v2",admit)).rejects.toThrow();
+      const privileges=await admin.query("select has_column_privilege('authenticated','public.supervisor_runs','input_attachment_ids','SELECT') as input,has_column_privilege('authenticated','public.supervisor_run_steps','checkpoint_receipts','SELECT') as receipts,has_column_privilege('authenticated','public.supervisor_run_steps','checkpoint_seq','SELECT') as progress");
+      expect(privileges.rows).toEqual([{input:false,receipts:false,progress:true}]);
+      const worker=randomUUID();
+      const auth=await call(a,"supervisor_run_claim",[...scope,run.id,worker,30]);
+      expect(auth.step.step_key).toBe("authorize_owner");
+      await call(a,"supervisor_run_complete_step",[...scope,run.id,"authorize_owner",auth.step.claim_token,"owner:"+messageId]);
+      const child=fork("scripts/acceptance/task15c-worker-child.mjs",[],{execArgv:[],stdio:["ignore","ignore","inherit","ipc"]});
+      children.push(child);
+      const first=await invoke(child,"claim",[...scope,run.id,randomUUID(),5]);
+      expect(first).toMatchObject({ok:true,pid:child.pid,result:{kind:"claimed",step:{step_key:"owner_turn",attempts:1}}});
+      const oldToken=first.result!.step!.claim_token;
+      const job=await call(a,"supervisor_start_owner_job_v2",[...scope,run.id,oldToken]);
+      expect(job).toMatchObject({owner_message_id:messageId,durable_run_id:run.id,status:"running"});
+      await expect(call(a,"ai_agent_job_start",[...scope,messageId])).rejects.toThrow("durable_job_owned");
+      const operation=randomUUID(),receipt="source:"+randomUUID();
+      const checkpoint=(token:string,seq:number,op:string,action:string,tool:string|null,ref:string|null)=>[...scope,run.id,token,seq,op,action,tool,ref];
+      expect(await call(a,"supervisor_checkpoint_owner_run_v2",checkpoint(oldToken,0,operation,"begin_read","get_sales",null)))
+        .toMatchObject({checkpoint_seq:1,checkpoint_phase:"read_pending",checkpoint_operation:operation});
+      expect(await call(a,"supervisor_checkpoint_owner_run_v2",checkpoint(oldToken,1,operation,"complete",null,receipt)))
+        .toMatchObject({checkpoint_seq:2,checkpoint_phase:"ready",checkpoint_receipts:[{operation,phase:"read_pending",tool:"get_sales",receipt}]});
+      // A second provider operation is pending when the actual worker dies.
+      const providerOp=randomUUID();
+      await call(a,"supervisor_checkpoint_owner_run_v2",checkpoint(oldToken,2,providerOp,"begin_provider",null,null));
+      await killAndConfirm(child);
+      await waitForActualLeaseExpiry(admin,run.id,"owner_turn");
+      const resumed=await call(b,"supervisor_run_claim",[...scope,run.id,randomUUID(),30]);
+      expect(resumed).toMatchObject({kind:"claimed",step:{step_key:"owner_turn",attempts:2,checkpoint_seq:3,checkpoint_phase:"provider_pending",checkpoint_operation:providerOp,checkpoint_receipts:[{operation,receipt}]}});
+      const token=resumed.step.claim_token;
+      expect(token).not.toBe(oldToken);
+      expect((await call(b,"supervisor_start_owner_job_v2",[...scope,run.id,token])).id).toBe(job.id);
+      expect(await call(a,"supervisor_update_owner_job_v2",[...scope,run.id,oldToken,job.id,"heartbeat",null,null,null])).toBe(false);
+      await expect(call(a,"supervisor_checkpoint_owner_run_v2",checkpoint(oldToken,3,providerOp,"complete",null,"provider:"+randomUUID()))).rejects.toThrow("checkpoint_claim_conflict");
+      await expect(call(b,"supervisor_checkpoint_owner_run_v2",[randomUUID(),...checkpoint(token,3,providerOp,"complete",null,"provider:"+randomUUID()).slice(1)])).rejects.toThrow("checkpoint_run_unavailable");
+      await expect(call(b,"supervisor_run_complete_step",[...scope,run.id,"owner_turn",token,randomUUID()])).rejects.toThrow("owner_turn_receipt_not_verified");
+      await call(b,"supervisor_checkpoint_owner_run_v2",checkpoint(token,3,providerOp,"complete",null,"provider:"+randomUUID()));
+      await expect(call(b,"supervisor_checkpoint_owner_run_v2",checkpoint(token,4,operation,"begin_read","get_sales",null))).rejects.toThrow("checkpoint_operation_conflict");
+      // An uncertain effect cannot yield or receive a second operation key.
+      const effect=randomUUID();
+      await call(b,"supervisor_checkpoint_owner_run_v2",checkpoint(token,4,effect,"begin_effect","propose_supplier_purchase_order",null));
+      expect(await call(b,"supervisor_yield_owner_run_v2",[...scope,run.id,token,5,15])).toBe(false);
+      await expect(call(b,"supervisor_checkpoint_owner_run_v2",checkpoint(token,5,randomUUID(),"begin_read","get_sales",null))).rejects.toThrow("checkpoint_operation_conflict");
+      await expect(call(b,"supervisor_cancel_owner_run_v2",[randomUUID(),ownerId,threadId,run.id])).rejects.toThrow();
+      expect(await call(b,"supervisor_cancel_owner_run_v2",[...scope,run.id])).toBe("uncertain");
+      expect(await call(b,"supervisor_cancel_owner_run_v2",[...scope,run.id])).toBe("uncertain");
+      expect(await call(a,"supervisor_owner_job_fence_v2",[...scope,run.id,token])).toBe(false);
+      await expect(call(a,"supervisor_checkpoint_owner_run_v2",checkpoint(token,5,effect,"complete",null,"effect:"+randomUUID()))).rejects.toThrow("checkpoint_run_unavailable");
+      const saved=await admin.query("select r.status,s.checkpoint_seq,s.checkpoint_phase,s.checkpoint_receipts from public.supervisor_runs r join public.supervisor_run_steps s on s.run_id=r.id and s.business_id=r.business_id where r.id=$1 and s.step_key='owner_turn'",[run.id]);
+      expect(saved.rows).toMatchObject([{status:"blocked",checkpoint_seq:"5",checkpoint_phase:"effect_pending",checkpoint_receipts:[{operation,receipt},{operation:providerOp}]}]);
+      await admin.query("update storage.objects set metadata=jsonb_build_object('size',42,'eTag','replaced') where id=$1",[objectId]);
+      await expect(call(a,"supervisor_admit_owner_run_v2",admit)).rejects.toThrow("owner_run_input_conflict");
+      // Synthetic metadata only: preserve the Storage API deletion guard.
+      await expect(admin.query("delete from storage.objects where id=$1",[objectId])).rejects.toThrow("Direct deletion from storage tables is not allowed");
+    }finally{
+      for(const child of children)if(child.exitCode===null&&child.signalCode===null)await killAndConfirm(child);
+      await Promise.all([a?.end(),b?.end(),denied?.end()]);
+      await admin.query("delete from public.businesses where id=$1",[businessId]);
+      await admin.query("delete from auth.users where id=$1",[ownerId]);
+      await admin.end();
+    }
+  },30000);
+});
+
+describe("Task 6/15C exact matched owner clarification and final reply",()=>{
+ (sandbox?it:it.skip)("waits for the matched owner, resumes the original run, fences old jobs and publishes one final receipt",async()=>{
+  const admin=await connect();const businessId=randomUUID(),ownerId=randomUUID(),threadId=randomUUID(),messageId=randomUUID();
+  const scope=[businessId,ownerId,threadId];
+  let a:Client|undefined;
+  try{
+   await admin.query("insert into auth.users(id,instance_id,aud,role,email,encrypted_password,created_at,updated_at) values ($1,'00000000-0000-0000-0000-000000000000','authenticated','authenticated',$2,'',now(),now())",[ownerId,"answer-"+ownerId+"@example.invalid"]);
+   await admin.query("insert into public.businesses(id,name,timezone,is_demo) values($1,$2,'UTC',false)",[businessId,"Disposable exact owner answer"]);
+   await admin.query("insert into public.memberships(business_id,user_id,role) values($1,$2,'owner')",[businessId,ownerId]);
+   await admin.query("insert into public.ai_threads(id,business_id,owner_user_id,client_request_id) values($1,$2,$3,$4)",[threadId,businessId,ownerId,randomUUID()]);
+   const insert=async(id:string,text:string)=>admin.query("insert into public.ai_messages(id,business_id,owner_user_id,thread_id,author_user_id,role,content_type,text_content,client_message_id) values($1,$2,$3,$4,$3,'owner','text',$5,$6)",[id,...scope,text,randomUUID()]);
+   await insert(messageId,"Prepare the report");
+   a=await connect(true);
+   const run=await call(a,"supervisor_admit_owner_run_v2",[...scope,messageId,"d".repeat(64),"en",[]]);
+   const auth=await call(a,"supervisor_run_claim",[...scope,run.id,randomUUID(),30]);
+   await call(a,"supervisor_run_complete_step",[...scope,run.id,"authorize_owner",auth.step.claim_token,"owner:"+messageId]);
+   const first=await call(a,"supervisor_run_claim",[...scope,run.id,randomUUID(),30]);
+   const token=first.step.claim_token;
+   const job=await call(a,"supervisor_start_owner_job_v2",[...scope,run.id,token]);
+   const questionId=randomUUID();
+   const grounding={status:"requires_owner_input",ownerMessageId:messageId,durableRunId:run.id,durableQuestionId:questionId};
+   const question=await call(a,"supervisor_publish_owner_question_v2",[...scope,run.id,token,job.id,questionId,JSON.stringify([{type:"clarify",question:"Which date?",options:[{label:"Today",value:"today"}],allowOther:true}]),JSON.stringify(grounding)]);
+   expect(question.id).toBe(questionId);
+   expect((await call(a,"supervisor_run_claim",[...scope,run.id,randomUUID(),30])).kind).toBe("blocked");
+   const answerId=randomUUID();await insert(answerId,"Today");
+   await expect(call(a,"supervisor_answer_owner_run_v2",[...scope,randomUUID(),answerId])).rejects.toThrow();
+   await expect(call(a,"supervisor_answer_owner_run_v2",[randomUUID(),ownerId,threadId,questionId,answerId])).rejects.toThrow();
+   const resumed=await call(a,"supervisor_answer_owner_run_v2",[...scope,questionId,answerId]);
+   expect(resumed).toMatchObject({id:run.id,request_key:messageId,status:"pending",owner_answer_ids:[answerId]});
+   expect((await call(a,"supervisor_answer_owner_run_v2",[...scope,questionId,answerId])).id).toBe(run.id);
+   const binding=(await admin.query("select owner_input_prompt_message_id,owner_input_response from public.ai_messages where id=$1",[answerId])).rows[0];
+   expect(binding).toEqual({owner_input_prompt_message_id:questionId,owner_input_response:{questionId,action:"supply"}});
+   await expect(call(a,"supervisor_answer_owner_run_v2",[...scope,questionId,answerId,JSON.stringify({questionId,action:"supply",value:"different"})])).rejects.toThrow();
+   await expect(call(a,"ai_agent_job_start",[...scope,answerId])).rejects.toThrow("durable_job_owned");
+   const secondAnswer=randomUUID();await insert(secondAnswer,"Tomorrow");
+   await expect(call(a,"supervisor_answer_owner_run_v2",[...scope,questionId,secondAnswer])).rejects.toThrow("owner_question_already_answered");
+   const next=await call(a,"supervisor_run_claim",[...scope,run.id,randomUUID(),30]);
+   const nextToken=next.step.claim_token;
+   expect(nextToken).not.toBe(token);
+   expect((await call(a,"supervisor_start_owner_job_v2",[...scope,run.id,nextToken])).id).toBe(job.id);
+   const {supervisorReplyIdFor}=await import("@/lib/ai/conversations/replyValidation");
+   const final=supervisorReplyIdFor(messageId);
+   const finalGrounding=JSON.stringify({status:"verified",ownerMessageId:messageId,durableRunId:run.id,agentMetadata:{endReason:"complete"}});
+   const blocks=JSON.stringify([{type:"text",text:"Verified report"}]);
+   await expect(call(a,"supervisor_publish_owner_reply_v2",[...scope,run.id,token,job.id,final,blocks,finalGrounding])).rejects.toThrow();
+   expect((await call(a,"supervisor_publish_owner_reply_v2",[...scope,run.id,nextToken,job.id,final,blocks,finalGrounding])).id).toBe(final);
+   expect((await call(a,"supervisor_publish_owner_reply_v2",[...scope,run.id,nextToken,job.id,final,blocks,finalGrounding])).id).toBe(final);
+   await call(a,"supervisor_run_complete_step",[...scope,run.id,"owner_turn",nextToken,final]);
+   const verify=await call(a,"supervisor_run_claim",[...scope,run.id,randomUUID(),30]);
+   await call(a,"supervisor_run_complete_step",[...scope,run.id,"verify_report",verify.step.claim_token,final]);
+   expect((await call(a,"supervisor_run_finish",[...scope,run.id,final])).status).toBe("completed");
+   expect((await admin.query("select count(*)::int n from public.ai_messages where id=$1",[final])).rows[0].n).toBe(1);
+   // A consumed answer cannot become a second independent assignment.
+   await expect(call(a,"supervisor_admit_owner_run_v2",[...scope,answerId,"d".repeat(64),"en",[]])).rejects.toThrow();
+   const longId=randomUUID();await insert(longId,"Continue a multi-step report");
+   const long=await call(a,"supervisor_admit_owner_run_v2",[...scope,longId,"e".repeat(64),"en",[]]);
+   const authorization=await call(a,"supervisor_run_claim",[...scope,long.id,randomUUID(),30]);
+   await call(a,"supervisor_run_complete_step",[...scope,long.id,"authorize_owner",authorization.step.claim_token,"owner:"+longId]);
+   const state=async()=>(await admin.query("select checkpoint_retry_count,checkpoint_progress_count,checkpoint_seq from public.supervisor_run_steps where run_id=$1 and step_key='owner_turn'",[long.id])).rows[0];
+   // Move only the due timestamp in this disposable fixture; actual lease expiry is tested above.
+   const due=async()=>{await admin.query("update public.supervisor_runs set dispatch_after=clock_timestamp()-interval '1 second' where id=$1",[long.id]);await admin.query("update public.supervisor_run_steps set next_retry_at=clock_timestamp()-interval '1 second' where run_id=$1 and step_key='owner_turn'",[long.id]);};
+   let previousToken:string|null=null;
+   const spentIds:string[]=[];
+   for(let i=0;i<6;i++){
+    const claim=await call(a,"supervisor_run_claim",[...scope,long.id,randomUUID(),30]);
+    expect(claim.kind).toBe("claimed");
+    const t=claim.step.claim_token;
+    if(i<2){
+      const job=await call(a,"supervisor_start_owner_job_v2",[...scope,long.id,t]);
+      expect(await call(a,"supervisor_owner_schedule_source_token_v2",[...scope,long.id,t,job.id])).toMatch(/^[a-f0-9]{32}$/);
+      await expect(call(a,"supervisor_owner_schedule_source_token_v2",[randomUUID(),ownerId,threadId,long.id,t,job.id])).rejects.toThrow("durable_schedule_scope_unavailable");
+      await expect(call(a,"supervisor_owner_schedule_source_token_v2",[...scope,long.id,t,randomUUID()])).rejects.toThrow("durable_schedule_scope_unavailable");
+      if(previousToken)await expect(call(a,"supervisor_owner_schedule_source_token_v2",[...scope,long.id,previousToken,job.id])).rejects.toThrow("durable_schedule_scope_unavailable");
+      const args=(attempt:string,token:string)=>[attempt,...scope,long.id,longId,job.id,token,"gpt-6-luna",100,50,100,1,100,50,10000,1000];
+      if(previousToken)await expect(call(a,"supervisor_reserve_durable_model_call",args(randomUUID(),previousToken))).rejects.toThrow("durable_reservation_not_authorized");
+      const id=randomUUID();spentIds.push(id);
+      await call(a,"supervisor_reserve_durable_model_call",args(id,t));
+      await expect(call(a,"supervisor_reserve_durable_model_call",args(randomUUID(),t))).rejects.toThrow("durable_provider_budget_exhausted");
+      previousToken=t;
+    }
+    if(i===0){
+     const noop=randomUUID();
+     for(let n=0;n<2;n++){
+      const seq=Number((await state()).checkpoint_seq);
+      await call(a,"supervisor_checkpoint_owner_run_v2",[...scope,long.id,t,seq,noop,"begin_effect","propose_price_change",null]);
+      await call(a,"supervisor_checkpoint_owner_run_v2",[...scope,long.id,t,seq+1,noop,"complete",null,"noop:"+noop]);
+     }
+     expect(await state()).toMatchObject({checkpoint_progress_count:"0"});
+    }
+    const seq=Number((await state()).checkpoint_seq),op=randomUUID();
+    await call(a,"supervisor_checkpoint_owner_run_v2",[...scope,long.id,t,seq,op,"begin_read","get_sales",null]);
+    await call(a,"supervisor_checkpoint_owner_run_v2",[...scope,long.id,t,seq+1,op,"complete",null,"read:"+"a".repeat(32)+"_"+String(i).repeat(64)]);
+    expect(await call(a,"supervisor_yield_owner_run_v2",[...scope,long.id,t,seq+2,15,"technical"])).toBe(true);
+    expect(await state()).toMatchObject({checkpoint_retry_count:String(i),checkpoint_progress_count:"1"});
+    await due();
+   }
+   expect(await call(a,"supervisor_run_claim",[...scope,long.id,randomUUID(),30])).toEqual({kind:"blocked"});
+   expect((await admin.query("select count(*)::int n,count(distinct durable_claim_token)::int slices,count(*) filter(where status='attempted')::int unknown from public.supervisor_system_usage_events where attempt_id=any($1::uuid[])",[spentIds])).rows).toEqual([{n:2,slices:2,unknown:2}]);
+   const partialId=randomUUID();await insert(partialId,"Find missing data");
+   const partial=await call(a,"supervisor_admit_owner_run_v2",[...scope,partialId,"f".repeat(64),"en",[]]);
+   const author=await call(a,"supervisor_run_claim",[...scope,partial.id,randomUUID(),30]);
+   await call(a,"supervisor_run_complete_step",[...scope,partial.id,"authorize_owner",author.step.claim_token,"owner:"+partialId]);
+   const turn=await call(a,"supervisor_run_claim",[...scope,partial.id,randomUUID(),30]);
+   const partialJob=await call(a,"supervisor_start_owner_job_v2",[...scope,partial.id,turn.step.claim_token]);
+   const partialReply=supervisorReplyIdFor(partialId);
+   const incomplete=JSON.stringify({status:"partial",ownerMessageId:partialId,durableRunId:partial.id,agentMetadata:{endReason:"complete"}});
+   expect((await call(a,"supervisor_publish_owner_reply_v2",[...scope,partial.id,turn.step.claim_token,partialJob.id,partialReply,blocks,incomplete])).id).toBe(partialReply);
+   expect(await call(a,"supervisor_run_claim",[...scope,partial.id,randomUUID(),30])).toEqual({kind:"blocked"});
+   expect((await admin.query("select status,final_report_ref from public.supervisor_runs where id=$1",[partial.id])).rows).toEqual([{status:"blocked",final_report_ref:null}]);
+   expect(await call(a,"supervisor_cancel_owner_run_v2",[...scope,partial.id])).toBe("blocked");
+
+
+  }finally{
+   await a?.end();await admin.query("delete from public.businesses where id=$1",[businessId]);
+   await admin.query("delete from auth.users where id=$1",[ownerId]);await admin.end();
+  }
+ },30000);
 });

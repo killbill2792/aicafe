@@ -9,7 +9,8 @@ export default function TabBar() {
   const t = useTranslations("Nav");
   const pathname = usePathname();
 
-  if (isAuthPath(pathname)) return null;
+  // Home is the conversation-first surface; its existing controls drawer exposes the same NAV_TABS.
+  if (isAuthPath(pathname) || pathname === "/") return null;
 
   return (
     <nav

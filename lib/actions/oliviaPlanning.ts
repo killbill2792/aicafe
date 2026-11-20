@@ -11,6 +11,7 @@ import {modelUnpaidOwnerWhatIf} from "@/lib/calc/scheduling/plannerOwnerSavings"
 import type { PlannerInput, PlannerResult } from "@/lib/calc/scheduling/plannerTypes";
 import {civilDateAdd} from "@/lib/calc/scheduling/plannerClock";
 import { requireSchedulingOwner } from "@/lib/scheduling/foundation.server";
+import {requireOliviaReadOwner} from "@/lib/scheduling/oliviaReadScope.server";
 import { editDraftSchema, saveOliviaEditedDraft } from "@/lib/scheduling/planEdits.server";
 import {transitionOliviaPlan} from "@/lib/scheduling/planPublication.server";
 import {laborReviewCommandSchema,readOliviaRuleReview,saveOliviaRuleReview} from "@/lib/scheduling/planPolicy.server";
@@ -69,7 +70,7 @@ export async function previewOliviaWeek(raw: unknown): Promise<
   };
   // Capture the draft head at the start of this proposal. Saving MUST use
   // precisely this revision, never a later history refresh from a co-owner.
-  const owner = await requireSchedulingOwner();
+  const owner = await requireOliviaReadOwner();
   if (!owner || owner.businessId !== loaded.businessId)
     return { ok:false, error:"unauthorized" };
   const head = await owner.supabase.from("scheduling_plan_series")

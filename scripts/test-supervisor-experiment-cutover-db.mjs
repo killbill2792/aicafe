@@ -116,6 +116,20 @@ async function seed(){
 }
 async function run(){
  await seed();
+ const completion=()=>one(admin,"select toast_publication_completed_at,toast_publication_pos_item_id from public.menu_price_history where id=$1",[ids.history]);
+ check((await completion()).toast_publication_completed_at===null,
+  "pending per-item receipt cannot become a completed publication");
+ await role(workerA,"service_role",null,c=>c.query(
+  "update public.toast_optional_sync_state set menu_checked_local_day=current_date,menu_copied_at=clock_timestamp() where business_id=$1 and restaurant_guid=$2",
+  [ids.business,ids.restaurant]));
+ const proof=await completion();
+ check(proof.toast_publication_completed_at!==null&&proof.toast_publication_pos_item_id===pos,
+  "actual completion checkpoint atomically stamps exact item identity");
+ await role(workerA,"service_role",null,c=>c.query(
+  "update public.toast_optional_sync_state set menu_checked_local_day=current_date+1 where business_id=$1 and restaurant_guid=$2",
+  [ids.business,ids.restaurant]));
+ check((await completion()).toast_publication_completed_at.getTime()===proof.toast_publication_completed_at.getTime(),
+  "metadata-only refresh never restamps the historical completion");
  check((await one(admin,"select count(*)::int as n from public.supervisor_monitor_windows where business_id=$1",
   [ids.business])).n===0,"no synthetic window exists before activation");
  // Owner and tenant RLS: owner can see own gate, not another café;
@@ -290,16 +304,109 @@ async function run(){
  check(typeof differentDay==="string","café-local next date is independently keyed");
  const foreignClaim=await claim(workerA,raced,"price_reminder",1,ids.foreignBusiness,ids.foreignOwner);
  check(foreignClaim===null,"foreign café owner cannot claim another café's proposal");
- const observedClaim=await claim(workerA,ids.history,"toast_price_initial",0);
- check(typeof observedClaim==="string","source-verified unsolicited observation is separately keyed");
- check((await claim(workerA,ids.history,"toast_price_initial",0))===null,
-  "replaying the same initial observation does not produce another receipt");
+ const observedItem=randomUUID(),observedHistory=randomUUID();
+ const observationVersion="observation-"+randomUUID(),observedPos="toast:"+ids.restaurant+":"+randomUUID();
+ await admin.query("insert into public.menu_items(id,business_id,pos_item_id,name,base_name,price_cents,catalog_source,is_active,pos_pricing_strategy,toast_publication_state,toast_publication_version,toast_publication_observed_at) values($1,$2,$3,'Observation Latte','Observation Latte',550,'toast',true,'BASE_PRICE','active',$4,$5)",
+  [observedItem,ids.business,observedPos,observationVersion,observed]);
+ await admin.query("insert into public.menu_price_history(id,business_id,menu_item_id,old_price_cents,new_price_cents,source_type,source_provider,changed_at,toast_restaurant_guid,toast_publication_version,toast_observed_at) values($1,$2,$3,500,550,'connected_pos','toast',$4,$5,$6,$4)",
+  [observedHistory,ids.business,observedItem,observed,ids.restaurant,observationVersion]);
+ await admin.query("update public.toast_optional_sync_state set menu_last_updated=$3,menu_copied_at=$4,menu_checked_local_day=null where business_id=$1 and restaurant_guid=$2",
+  [ids.business,ids.restaurant,observationVersion,observed]);
+ await admin.query("update public.supervisor_experiment_cutover_cafes set mode='new',parity_proven_at=now(),rollback_proven_at=now(),release_approved_at=now(),toast_observation_enabled_at=$2 where business_id=$1",
+  [ids.business,approved]);
+ const due=()=>role(workerA,"service_role",null,c=>result(c,"select history_id from public.supervisor_8a_due_toast_observations(now(),10)"));
+ check(!(await due()).some(x=>x.history_id===observedHistory),"pending source never enters independent discovery");
+ await admin.query("update public.toast_optional_sync_state set menu_checked_local_day=current_date,menu_copied_at=clock_timestamp() where business_id=$1 and restaurant_guid=$2",[ids.business,ids.restaurant]);
+ check((await due()).some(x=>x.history_id===observedHistory),"completed source enters independent discovery");
+ await admin.query("insert into public.supervisor_monitor_windows(business_id,owner_user_id,monitor_kind,source_id,window_index,start_at,end_at,coverage_status,evaluation_status,units,revenue_cents) values($1,$2,'toast_price_observation',$3,0,$4::timestamptz,$4::timestamptz+interval '24 hours','actual','complete',1,550)",[ids.business,ids.owner,observedHistory,observed]);
+ // Independent work itself is fenced, not merely the outgoing notice.
+ const work=(client)=>role(client,"service_role",null,c=>one(c,
+  "select public.supervisor_8a_claim_observation_work($1,$2,now()) as token",[ids.business,observedHistory]));
+ const [wa,wb]=await Promise.all([work(workerA),work(workerB)]);
+ const token=wa.token??wb.token;
+ check(Boolean(token)&&Boolean(wa.token)!==Boolean(wb.token),"only one concurrent observation worker owns the lease");
+ check(!(await due()).some(x=>x.history_id===observedHistory),"claimed event is excluded from discovery");
+ await admin.query("update public.supervisor_monitor_windows set observation_worker_until=now()-interval '1 minute' where business_id=$1 and source_id=$2 and window_index=0",[ids.business,observedHistory]);
+ const reclaimed=(await work(workerB)).token;
+ check(Boolean(reclaimed)&&reclaimed!==token,"expired worker is recovered with a different generation");
+ const writeWindow=(generation)=>role(workerA,"service_role",null,c=>one(c,
+  "select public.supervisor_8a_write_observation_window($1,$2,$3,0,'{}'::jsonb,'actual',1,550,0,'complete') as ok",
+  [ids.business,observedHistory,generation]));
+ check((await writeWindow(token)).ok===false,"stale worker cannot overwrite a measured window");
+ check((await writeWindow(reclaimed)).ok===true,"new generation writes actual measurement");
+ const threadKey=randomUUID();
+ const thread=(owner)=>role(workerA,"service_role",null,c=>one(c,
+  "select public.supervisor_8a_observation_thread($1,$2,$3,$4,$5) as id",
+  [ids.business,owner,observedHistory,reclaimed,threadKey]));
+ check((await thread(ids.owner)).id===ids.thread,"existing owner thread is reused");
+ check((await thread(ids.foreignOwner)).id===null,"foreign owner cannot obtain observation thread");
+ const finished=await role(workerA,"service_role",null,c=>one(c,
+  "select public.supervisor_8a_finish_observation_work($1,$2,$3,null,false) as ok",
+  [ids.business,observedHistory,reclaimed]));
+ check(finished.ok===true,"worker releases durable generation after success");
+ const observedClaim=await claim(workerA,observedHistory,"toast_price_initial",0);
+ check(typeof observedClaim==="string","completed unsolicited observation is separately keyed");
+ check((await claim(workerA,observedHistory,"toast_price_initial",0,ids.business,ids.owner,nextNoticeDay))===null,
+  "same event dedupes across café-local date changes");
+ const daily=await role(workerA,"service_role",null,c=>one(c,"select * from public.supervisor_8a_claim_observation_notice($1,$2,$3,'toast_price_daily',$4,1::smallint)",[ids.business,ids.owner,observedHistory,firstNoticeDay]));
+ check(typeof daily?.receipt_id==="string","daily elapsed window has its own fenced claim");
+ const taskId="toast-price-observation:"+ids.owner+":"+observedHistory+":toast_price_daily:1",messageId=randomUUID();
+ const post=(attempt)=>role(workerA,"service_role",null,c=>one(c,"select public.supervisor_8a_post_observation_notice($1,$2,$3,$4,$5,'America/Los_Angeles','{\"title\":\"Price observation\"}'::jsonb,'Actual observation','high') as posted",[daily.receipt_id,attempt,ids.thread,taskId,messageId]));
+ check((await post(Number(daily.attempt)+1)).posted===false,"wrong lease generation cannot deliver");
+ check((await post(Number(daily.attempt))).posted===true,"matching lease atomically posts observation task and chat");
+ check((await post(Number(daily.attempt))).posted===false,"posted lease cannot be delivered twice");
+ check((await one(admin,"select count(*)::int n from public.ai_messages where id=$1 and business_id=$2 and owner_user_id=$3",[messageId,ids.business,ids.owner])).n===1,"exactly one genuine observation chat row");
+ check((await one(admin,"select count(*)::int n from public.operating_tasks where id=$1 and business_id=$2 and owner_user_id=$3",[taskId,ids.business,ids.owner])).n===1,"exactly one genuine observation task row");
+ check((await claim(workerA,observedHistory,"toast_price_daily",1,ids.business,ids.owner,nextNoticeDay))===null,"daily index cannot duplicate following timezone/date change");
+ const correctionId=randomUUID();
+ const correct=(prior,id,title)=>role(workerA,"service_role",null,c=>one(c,
+  "select public.supervisor_8a_post_observation_notice($1,$2,$3,$4,$5,'America/Los_Angeles',jsonb_build_object('title',$6::text),'Corrected observation','high',$7,now()) as posted",
+  [daily.receipt_id,Number(daily.attempt),ids.thread,taskId,id,title,prior]));
+ check((await correct(messageId,correctionId,"Corrected revenue")).posted===true,"material correction updates existing posted receipt");
+ check((await correct(messageId,randomUUID(),"Old stale revision")).posted===false,"previous correction generation cannot overwrite current report");
+ check((await correct(correctionId,randomUUID(),"Corrected revenue")).posted===true,"unchanged replay returns successfully without another message");
+ check((await one(admin,"select count(*)::int n from public.ai_messages where business_id=$1 and id in ($2,$3)",[ids.business,messageId,correctionId])).n===2,"original and exactly one corrected chat message are preserved");
+ check((await one(admin,"select status,payload->>'title' as title from public.operating_tasks where business_id=$1 and id=$2",[ids.business,taskId])).status==="handled","original immutable notice is settled");
+ check((await one(admin,"select t.payload->>'title' as title from public.supervisor_experiment_notice_receipts n join public.operating_tasks t on t.business_id=n.business_id and t.id=n.task_id where n.id=$1",[daily.receipt_id])).title==="Corrected revenue","same receipt references latest immutable correction");
+
  const ownWindow=await role(workerA,"authenticated",ids.owner,async c=>
   one(c,"select count(*)::int as n from public.supervisor_monitor_windows where business_id=$1",[ids.business]));
- check(ownWindow.n===1,"correct owner reads pinned receipt");
+ check(ownWindow.n===2,"correct owner reads pinned approved receipt and observation");
  const otherWindow=await role(workerA,"authenticated",ids.foreignOwner,async c=>
   one(c,"select count(*)::int as n from public.supervisor_monitor_windows where business_id=$1",[ids.business]));
  check(otherWindow.n===0,"other owner cannot see pinned receipt");
+ // A second actual publication event shares ONE immutable owner digest.
+ // Its independent receipt/task persists and a failed generation rolls back
+ // even the first entry rather than exposing a partial digest.
+ const anotherItem=randomUUID(),anotherHistory=randomUUID(),anotherVersion="digest-"+randomUUID();
+ const anotherPos="toast:"+ids.restaurant+":"+randomUUID();
+ await admin.query("insert into public.menu_items(id,business_id,pos_item_id,name,base_name,price_cents,catalog_source,is_active,pos_pricing_strategy,toast_publication_state,toast_publication_version,toast_publication_observed_at) values($1,$2,$3,'Digest Tea','Digest Tea',600,'toast',true,'BASE_PRICE','active',$4,$5)",[anotherItem,ids.business,anotherPos,anotherVersion,observed]);
+ await admin.query("insert into public.menu_price_history(id,business_id,menu_item_id,old_price_cents,new_price_cents,source_type,source_provider,changed_at,toast_restaurant_guid,toast_publication_version,toast_observed_at) values($1,$2,$3,550,600,'connected_pos','toast',$4,$5,$6,$4)",[anotherHistory,ids.business,anotherItem,observed,ids.restaurant,anotherVersion]);
+ await admin.query("update public.toast_optional_sync_state set menu_last_updated=$3,menu_copied_at=$4,menu_checked_local_day=null where business_id=$1 and restaurant_guid=$2",[ids.business,ids.restaurant,anotherVersion,observed]);
+ await admin.query("update public.toast_optional_sync_state set menu_checked_local_day=current_date,menu_copied_at=clock_timestamp() where business_id=$1 and restaurant_guid=$2",[ids.business,ids.restaurant]);
+ const d1=(await work(workerA)).token;
+ const d2=(await role(workerB,"service_role",null,c=>one(c,
+  "select public.supervisor_8a_claim_observation_work($1,$2,now()) as token",[ids.business,anotherHistory]))).token;
+ check(Boolean(d1)&&Boolean(d2),"two source events own independent work leases");
+ const secondClaim=await claim(workerA,anotherHistory,"toast_price_initial",0);
+ check(Boolean(secondClaim),"second event has a separate initial notice claim");
+ const digestId=randomUUID();
+ const entry=(history,receiptId,workerToken)=>({receiptId,attempt:1,
+  taskId:"toast-price-observation:"+ids.owner+":"+history+":toast_price_initial:0",
+  timezone:"America/Los_Angeles",payload:{title:"Toast price detected"},
+  confidence:"high",measurementAsOf:new Date().toISOString(),workerToken});
+ const entries=[entry(observedHistory,observedClaim,d1),entry(anotherHistory,secondClaim,d2)];
+ const digest=(rows)=>role(workerA,"service_role",null,c=>one(c,
+  "select public.supervisor_8a_post_observation_digest($1,$2,$3,$4,'Two price changes',$5::jsonb) as ok",
+  [ids.business,ids.owner,ids.thread,digestId,JSON.stringify(rows)]));
+ let rolledBack=false;
+ try{await digest([entries[0],{...entries[1],workerToken:randomUUID()}]);}
+ catch(e){rolledBack=e.code==="40001";}
+ check(rolledBack,"stale digest entry fails entire transaction");
+ check((await one(admin,"select count(*)::int n from public.ai_messages where id=$1",[digestId])).n===0,"failed group produces no partial chat message");
+ check((await digest(entries)).ok===true,"atomic digest posts both valid generations");
+ check((await one(admin,"select count(*)::int n from public.supervisor_experiment_notice_receipts where message_id=$1 and state='posted'",[digestId])).n===2,"both independent receipts reference one chat digest");
+ check((await one(admin,"select count(*)::int n from public.ai_messages where id=$1",[digestId])).n===1,"one digest message, not one message per product");
  console.log("PASS Task8a migrated SQL acceptance: "+assertions+
   " checks (source guard, pinned recovery, RLS/tenant, claims, real two-session race)");
 }

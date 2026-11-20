@@ -20,6 +20,9 @@ describe("Past event report cards",()=>{
           {hourLocal:14,actualCents:1550,usualCents:1200}]}],
     });
   });
+  it("retains matched-day cumulative totals separately from partial observed totals and inactive dates",()=>{
+    expect(safeEventReport({salesSummary:{observedSalesCents:15000,comparableActualCents:10000,comparableTypicalCents:8000,comparableDays:1,changePercent:25},eventStatusDays:[{date:"2026-11-02",activity:"inactive"}]})).toMatchObject({summary:{actual:10000,usual:8000,observed:15000,compared:1,change:25},inactive:[{date:"2026-11-02",activity:"inactive"}]});
+  });
   it("retains precise unverified number spans without changing report text",()=>{
     const report=safeEventReport({
       reportText:"Sales reached 999, but that figure is unverified.",

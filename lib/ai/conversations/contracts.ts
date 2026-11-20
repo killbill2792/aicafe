@@ -1,3 +1,4 @@
+import { richPresentationSchema,type RichPresentation } from "./presentation";
 import { z } from "zod";
 import {explainLineSchema,type ExplainLine} from "@/lib/ai/agent/explain";
 import { investigationMemorySchema, type InvestigationMemory } from "./investigationMemory";
@@ -65,6 +66,7 @@ export type EvidenceReference = {
 };
 
 export type SupervisorReplyBlock =
+  | RichPresentation
   | {type:"clarify";question:string;options:{label:string;value:string}[];allowOther:boolean;kind?:"choice"}
   | {type:"clarify";kind:"fill";question:string;fields:{key:string;label:string;inputType:"number";units:string[];defaultUnit:string}[]}
   | {type:"clarify";kind:"facts";questionId:string;question:string;changeSaved?:true;fields:{key:string;label:string;inputType:"number"|"money"|"percent"|"text"|"date"|"choice";units:string[];defaultUnit:string;choices?:{label:string;value:string}[];remember?:"this_question";current?:{value:string;savedOn:string;canForget:boolean}}[]}
@@ -172,5 +174,5 @@ export const groundedReplySchema = z.strictObject({
   evidence: z.array(evidenceReferenceSchema).max(30),
   blocks: z.array(z.union(
     [textBlockSchema, warningBlockSchema, metricBlockSchema, countBlockSchema, percentBlockSchema,
-      taskBlockSchema, taskCardBlockSchema,ownerQuestionSchema,proposalCardSchema,experimentCardSchema,memoryCardSchema,clarifyBlockSchema,howBlockSchema])).min(1).max(30),
+      taskBlockSchema, taskCardBlockSchema,ownerQuestionSchema,proposalCardSchema,experimentCardSchema,memoryCardSchema,clarifyBlockSchema,howBlockSchema,richPresentationSchema])).min(1).max(30),
 });

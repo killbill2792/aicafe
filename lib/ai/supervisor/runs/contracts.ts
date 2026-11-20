@@ -71,3 +71,75 @@ export interface DurableRunRepository {
   reconcile(scope: RunScope, runId: string, key: string, verifiedResultRef: string): Promise<void>;
   finish(scope: RunScope, runId: string, finalReportRef: string): Promise<DurableRun>;
 }
+
+export const ownerRunInputSchema = z.strictObject({
+  locale: z.enum(["en","es","ar"]),
+  attachmentIds: z.array(z.uuid()).max(3).refine(ids=>new Set(ids).size===ids.length),
+});
+export type OwnerRunInput=z.infer<typeof ownerRunInputSchema>;
+
+const checkpointPhaseSchema=z.enum(["ready","provider_pending","read_pending","effect_pending"]);
+export const checkpointRowSchema=z.object({
+  checkpoint_seq:z.number().int().nonnegative(),
+  checkpoint_phase:checkpointPhaseSchema,
+  checkpoint_operation:z.uuid().nullable(),
+  checkpoint_tool:z.string().nullable(),
+  checkpoint_receipts:z.array(z.object({
+    operation:z.uuid(),phase:z.enum(["provider_pending","read_pending","effect_pending"]),
+    tool:z.string().nullable(),receipt:z.string().max(400),
+  })).max(256),
+});
+export type CheckpointRow=z.infer<typeof checkpointRowSchema>;
+
+/** Passed into the existing one-agent loop, never model-controlled. A failure
+ * at a checkpoint boundary must escape tool/provider error recovery. */
+/** Only reviewed canonical read selectors; never arbitrary model arguments,
+ * owner-supplied financial facts, private connector queries or source contents. */
+export function recoverableReadSelector(name:string,raw:unknown,resultPeriod?:unknown):Record<string,unknown>|null {
+  const empty=z.strictObject({});
+  const range=z.strictObject({from:z.iso.date(),to:z.iso.date()}).refine(x=>x.from<=x.to);
+  const week=z.strictObject({week_start:z.iso.date().nullable()});
+  const item=z.strictObject({itemId:z.uuid()});
+  if(["get_staff","get_inventory","get_labor_rules","get_bills","get_supervisor_permissions"].includes(name))
+    return empty.safeParse(raw).success?{}:null;
+  if(["get_peak_hours","get_employee_sales","get_payroll_facts"].includes(name)){
+    const parsed=range.safeParse(raw);return parsed.success?parsed.data:null;
+  }
+  if(["get_week_schedule","get_coverage_gaps"].includes(name)){
+    const parsed=week.safeParse(raw);return parsed.success&&parsed.data.week_start!==null?parsed.data:null;
+  }
+  if(name==="get_product_costs"){
+    const parsed=item.safeParse(raw);return parsed.success?parsed.data:null;
+  }
+  if(["get_profit","get_sales","get_labor","get_cost_summary"].includes(name)){
+    const parsed=z.strictObject({period:z.unknown(),ownerInputs:z.null().optional()}).safeParse(raw);
+    if(!parsed.success)return null;
+    const period=range.safeParse(resultPeriod??parsed.data.period);
+    return period.success?{period:period.data}:null;
+  }
+  return null;
+}
+export type OwnerReadReference={name:string;selector:Record<string,unknown>};
+export type OwnerRunCheckpoint = {
+  assertLive:()=>Promise<void>;
+  beginProvider:()=>Promise<void>;
+  endProvider:(completed:boolean)=>Promise<void>;
+  beginTool:(name:string,raw:unknown,repeatSafe:boolean)=>Promise<import("@/lib/ai/agent/tools").AgentToolResult|null>;
+  endTool:(result:import("@/lib/ai/agent/tools").AgentToolResult,noEffect?:boolean)=>Promise<void>;
+  resumeContext:()=>Promise<string|null>;
+  readReferences?:()=>readonly OwnerReadReference[];
+  restoredResults?:()=>Promise<import("@/lib/ai/agent/tools").AgentToolResult[]>;
+  canYield:()=>boolean;
+  yieldForRetry:(seconds:number,kind?:"retry"|"technical"|"contended")=>Promise<boolean>;
+};
+
+/** The database binds the original question to the explicit owner response. */
+export const matchedOwnerAnswerSchema=z.object({questionId:z.uuid(),answerId:z.uuid(),question:z.string().trim().min(1).max(8000),answer:z.string().trim().min(1).max(4000)});
+export type MatchedOwnerAnswer=z.infer<typeof matchedOwnerAnswerSchema>;
+
+/** Only the original authenticated owner statement and exact persisted,
+ * same-run owner answers. Never include assistant questions, later unrelated
+ * transcript messages, attachment text or model-generated claims. */
+export function ownerRunStatement(original:string,answers:readonly MatchedOwnerAnswer[]=[]):string{
+  return answers.length?[original,...answers.map(pair=>pair.answer)].join("\n"):original;
+}

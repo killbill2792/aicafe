@@ -106,7 +106,7 @@ export default async function LocaleLayout({
             <Suspense fallback={<SideNav cafeName="" languageSwitch={<LanguageSwitch href="/" compact />} />}>
               <ActiveCafeNavigation />
             </Suspense>
-            <div className="w-full min-w-0 flex-1 pb-24 md:pb-10">{children}</div>
+            <div className="app-page-content w-full min-w-0 flex-1 pb-24 md:pb-10">{children}</div>
           </div>
           <TabBar />
           <ServiceWorkerRegister />

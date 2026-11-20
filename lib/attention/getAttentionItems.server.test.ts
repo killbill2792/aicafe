@@ -26,7 +26,7 @@ vi.mock("@/components/home/GettingStartedCard",()=>({gettingStartedAttention:()=
 import { getAttentionItems } from "./getAttentionItems.server";
 
 const snapshot={business:{id:"business-a"},todayDateStr:"2026-10-29"};
-const menu={};
+const menu:unknown[]=[];
 function deferred<T>() {
   let resolve!: (value:T)=>void;
   const promise=new Promise<T>(done=>{resolve=done;});

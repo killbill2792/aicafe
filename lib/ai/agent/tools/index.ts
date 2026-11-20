@@ -1,3 +1,4 @@
+import { presentationTools,presentResponse } from "./presentation";
 import { laborKnown } from "@/lib/calc";
 import { z } from "zod";
 import {askOwnerTools} from "./askOwner";
@@ -30,6 +31,7 @@ import type {PurchasePlan} from "@/lib/purchasing/planOrder";
 import type {SupplierOrderStatus} from "@/lib/data/supplierPurchasing.server";
 import {priceExperimentTools} from "./priceExperiment";
 import {priceMonitorTools} from "./priceMonitor";
+import type {OwnerToastObservation} from "@/lib/ai/supervisor/loop/reads.server";
 import {ownerInputsSchema,ownerAmountForPeriod,ownerConflict} from "./ownerInputs";
 import {moneyChoiceCandidates,chosenMoneySource,replayedMoneyChoice} from "../resolveMoney";
 import {staffProposalTools} from "./staffProposals";
@@ -91,6 +93,12 @@ export type AgentToolContext = {
   /** True only for an authenticated turn that admitted external evidence. */
   externalEvidencePresent?:()=>boolean;
   turnResults?:()=>ReadonlyArray<{name:string;result:AgentToolResult}>;
+  /** Internal same-turn read/simulation arguments for verified presentation; no extra reads or scope. */
+  presentationResults?:()=>ReadonlyArray<{name:string;arguments:string;result:AgentToolResult;ref?:string}>;
+  /** Selected same-thread attachments already authenticated, read and rechecked by the existing runner. */
+  presentationAttachments?:readonly string[];
+  /** Ephemeral sanitized simulator basis. Never sent to the model/checkpoint. */
+  presentationScenarioBasis?:WeakMap<object,import("@/lib/ai/conversations/scenarioPresentation").ScenarioEditorSeed>;
   resolveState?:import("../resolve").ResolveState;
   asOf: string; locale: AgentLocale;
   threadId?:string;ownerMessageId?:string;
@@ -168,14 +176,21 @@ export type AgentToolContext = {
   /** Read-only web search for public events near a location. */
   searchNearbyEvents?:import("@/lib/events/nearbyEvents").NearbyEventsSearch;
   /** Authenticated, saved-only timeline; never a web search. */
-  savedEvents?:(from:string,to:string,options?:{cityEventId?:string})=>Promise<import("@/lib/data/cafeEvents.server").SavedEventTimeline>;
+  savedEvents?:(from:string,to:string,options?:{cityEventId?:string;cafeEventId?:string})=>Promise<import("@/lib/data/cafeEvents.server").SavedEventTimeline>;
   /** General outside-world lookup; server checks current café AI access before each paid call. */
   webSearch?:(query:string,budget?:import("../webSearch.server").WebSearchBudget)=>Promise<import("../webSearch.server").WebSearchResult>;
   /** Same canonical café readers used by Staff and saved owner questions. */
   readWeekSchedule?:(weekStart:string)=>ReturnType<typeof import("@/lib/actions/schedule").getWeekSchedule>;
+  readLaborRules?:()=>ReturnType<typeof import("@/lib/data/staffRules.server").getTeamRules>;
+  readShiftCost?:(raw:unknown)=>ReturnType<typeof import("@/lib/data/staffSchedule.server").getShiftCost>;
+  oliviaPreview?:{
+    week:typeof import("@/lib/actions/oliviaPlanning").previewOliviaWeek;
+    absence:typeof import("@/lib/actions/oliviaPlanning").previewOliviaAbsenceWhatIf;
+    ownerSavings:typeof import("@/lib/actions/oliviaPlanning").previewOliviaOwnerSavings;
+  };
   ownerFacts?:readonly import("@/lib/ownerFacts/inject").SavedFact[];
   menuPriceEvidence?:(items:ReadonlyArray<{id:string;priceCents:number}>)=>Promise<Record<string,import("@/lib/data/menuPriceEvidence.server").MenuPriceEvidence>>;
-  readPriceMonitors?:()=>Promise<Array<{proposalId:string;threadId:string;productName:string;status:string;startDate:string|null;durationDays:number|null;day:number|null;oldPriceCents:number|null;newPriceCents:number|null;reportStatus:string|null}>>;
+  readPriceMonitors?:()=>Promise<Array<OwnerToastObservation|{proposalId:string;threadId:string;productName:string;status:string;startDate:string|null;durationDays:number|null;day:number|null;oldPriceCents:number|null;newPriceCents:number|null;reportStatus:string|null}>>;
   proposals?: {proposePriceChange(input:{productId:string;newPriceCents:number}):Promise<{proposalId:string;revision:number;productName:string;oldPriceCents:number;newPriceCents:number}>;
     proposePriceExperiment?(input:{productId:string;newPriceCents:number|null;increaseCents:number|null;days:number}):Promise<{proposalId:string;revision:number;productName:string;oldPriceCents:number;newPriceCents:number}>;
     proposeStaff?(input:{name:import("./staffProposals").StaffProposalName;input:unknown}):Promise<{proposalId:string;revision:number;capabilityId:string}>;
@@ -190,7 +205,7 @@ const posReadTools={
   get_employee_sales:{schema:posPeriodSchema,description:"Read recorded employee-attributed sales for a date range."},
   get_payroll_facts:{schema:posPeriodSchema,description:"Read imported pay-period facts without inferring missing wages or taxes."}
 };
-export const schemas = { ...askOwnerTools, ...dataQueryTools, ...posReadTools, ...attentionTools, ...incidentEvidenceTools, get_profit: periodSchema, get_sales: periodSchema, get_menu_items: menuSchema,
+export const schemas = { ...presentationTools, ...askOwnerTools, ...dataQueryTools, ...posReadTools, ...attentionTools, ...incidentEvidenceTools, get_profit: periodSchema, get_sales: periodSchema, get_menu_items: menuSchema,
   ...staffTools,...staffCoordinationTools, ...scheduleReadTools, ...hoursTools, ...moneyTools, ...suppliesTools, ...salesTools,...todayTools,...draftScheduleTools,...newItemPriceTools,...milkSwapTools,...scenarioTools,...calculateTools,...proposalTools,...priceExperimentTools,...priceMonitorTools,...goalTools,...staffProposalTools,...purchasesTools,...supplierPurchasingTools,...eventsTools,...savedEventsTools,...eventPlanTools,...webSearchTools,...commitmentTools,...routineTools,...permissionTools,...gmailTools,...maintenanceTools } as const;
 export type AgentToolName = keyof typeof schemas;
 /** Input fields backed by the shared entity/period resolver. A new tool whose
@@ -236,6 +251,14 @@ const descriptions: Record<string, string> = {
 /** OpenAI strict mode needs every property listed in `required` at every nesting level;
  * one gap rejects the whole request (HTTP 400), so the chat fails on every question.
  * Optional fields must therefore also be nullable in Zod so the model can send null. */
+// Omit only generated regexes duplicating an existing standard format on the
+// provider wire. Runtime Zod schemas still enforce every original constraint.
+const redundantFormatPatterns=new Map<string,unknown>();
+for(const schema of [z.iso.date(),z.iso.datetime(),z.uuid()]){
+  const generated=z.toJSONSchema(schema,{target:"draft-07"}) as Record<string,unknown>;
+  if(typeof generated.format==="string"&&typeof generated.pattern==="string")
+    redundantFormatPatterns.set(generated.format,generated.pattern);
+}
 function requireEveryProperty(node:unknown):unknown{
   if(Array.isArray(node))return node.map(requireEveryProperty);
   if(!node||typeof node!=="object")return node;
@@ -243,6 +266,8 @@ function requireEveryProperty(node:unknown):unknown{
   for(const [key,value] of Object.entries(node))out[key]=requireEveryProperty(value);
   if(out.properties&&typeof out.properties==="object"&&!Array.isArray(out.properties))
     out.required=Object.keys(out.properties);
+  if(typeof out.format==="string"&&typeof out.pattern==="string"&&
+      redundantFormatPatterns.get(out.format)===out.pattern)delete out.pattern;
   // JSON Schema's nullable primitive type array is equivalent to the
   // two-branch union. Preserve every constraint and enum member. Avoid
   // rewriting objects, arrays, references or complex combinators.
@@ -284,7 +309,7 @@ export const agentToolDefinitions:Array<Omit<(typeof baseToolDefinitions)[number
 /** Offered only for a verified connected owner. Default cafés keep their existing tools. */
 /** Offered only when a server-claimed autonomous run explicitly requests it. */
 export const investigationToolDefinition=baseToolDefinitions.find(t=>t.name==="get_investigation_source")!;
-export const gmailToolDefinitions=baseToolDefinitions.filter(tool=>["search_gmail","read_gmail","read_gmail_thread","read_gmail_attachment","propose_gmail_action"].includes(tool.name));
+export const gmailToolDefinitions=baseToolDefinitions.filter(tool=>["search_gmail","list_gmail_labels","read_gmail","read_gmail_thread","read_gmail_attachment","propose_gmail_action"].includes(tool.name));
 export const agentLabelsPrompt = "Field labels by language (use matching language, not translated numeric units): " +
   JSON.stringify({ en: en.AgentFields, es: es.AgentFields, ar: ar.AgentFields });
 
@@ -317,6 +342,7 @@ export async function executeAgentTool(name: string, raw: unknown, ctx: AgentToo
   // Flag-gated extra tool: only offered to the model when CHAT_MEMORY is on.
   if(name==="remember_cafe_fact")return memoryTools.remember_cafe_fact.execute(raw,ctx);
   if (!Object.hasOwn(schemas, name)) throw new ToolError("not_supported");
+  if(name==="present_response")return presentResponse(raw,ctx);
   if(name==="ask_owner")return askOwnerTools.ask_owner.execute(raw,ctx);
   if(name==="search_gmail")return gmailTools.search_gmail.execute(raw,ctx);
   if(name==="list_gmail_labels")return gmailTools.list_gmail_labels.execute(raw,ctx);
@@ -378,7 +404,7 @@ export async function executeAgentTool(name: string, raw: unknown, ctx: AgentToo
   if(name==="get_staff_messages")return scheduleReadTools.get_staff_messages.execute(raw,ctx);
   if(name==="get_team")return scheduleReadTools.get_team.execute(raw,ctx);
   if(name==="get_week_schedule")return scheduleReadTools.get_week_schedule.execute(raw,ctx);
-  if(name==="get_labor_rules")return scheduleReadTools.get_labor_rules.execute(raw);
+  if(name==="get_labor_rules")return scheduleReadTools.get_labor_rules.execute(raw,ctx);
   if(name==="get_coverage_gaps")return scheduleReadTools.get_coverage_gaps.execute(raw,ctx);
   if(name==="get_shift_cost")return scheduleReadTools.get_shift_cost.execute(raw,ctx);
   if(name==="get_business_hours")return hoursTools.get_business_hours.execute(raw,ctx);
@@ -599,4 +625,91 @@ export async function executeAgentTool(name: string, raw: unknown, ctx: AgentToo
   return {source:"daily_rollups",period,coverageLabel:selection.label,coverageFallback:selection.coverageFallback,todayImported:selection.todayImported,lastFullDay:selection.lastFullDay,lastFullDayTotals:selection.lastFullDayTotals,dataNote:selection.dataNote,todaySoFar:selection.todaySoFar,agentId:"alex",unit:"cents",
     missing:slice.quality.missingInputs,dataNotes:salesNotes,netSalesCents:netSalesCentsForPeriod(slice.value),
     days:slice.value.slice(-7).map(day=>({date:day.date,netSalesCents:day.netSalesCents}))};
+}
+
+/** Durable recovery safety classification. Membership is based on reviewed
+ * handlers, never a tool-name prefix or owner/model wording. Unknown or
+ * mixed read/write capabilities default to an effect boundary. */
+const repeatSafeOwnerTools:ReadonlySet<string>=new Set([
+ "describe_data","query_data","get_profit","get_sales","get_menu_items",
+ "get_peak_hours","get_employee_sales","get_payroll_facts","get_attention_items",
+ "get_investigation_source","get_staff","get_schedule","get_labor","get_staff_messages",
+ "get_team","get_week_schedule","get_labor_rules","get_coverage_gaps","get_shift_cost",
+ "get_business_hours","get_expenses","get_bills","get_cashflow_evidence","get_break_even",
+ "get_cost_summary","get_product_costs","get_ingredient_costs","get_usage_variance","get_inventory",
+ "get_staff_coordination_cases","get_supervisor_permissions","get_goal_status","get_price_monitor_status",
+ "get_supplier_purchase_orders","inspect_purchase_reconciliation","inspect_supplier_purchase",
+ "get_maintenance_cases","get_maintenance_staff_candidates","simulate_staff_absence",
+ "suggest_new_item_price","milk_swap_price","simulate_scenario","calculate","ask_owner",
+ "get_item_sales","get_price_recommendation","get_today_so_far","get_events","get_nearby_events",
+ "search_gmail","list_gmail_labels","read_gmail","read_gmail_thread","read_gmail_attachment",
+ "web_search","inspect_public_page","search_maintenance_vendor",
+]);
+export function isRepeatSafeOwnerTool(name:string,input:unknown):boolean{
+ if(name==="present_response"||repeatSafeOwnerTools.has(name))return true;
+ if(name==="draft_week_schedule"){
+   const parsed=draftScheduleTools.draft_week_schedule.schema.safeParse(input);
+   return parsed.success&&["owner_savings","compare_only","cash_preview","owner_time_preview"].includes(parsed.data.purpose);
+ }
+ if(name==="manage_routine"||name==="manage_commitment"){
+   const schema=name==="manage_routine"?routineTools.manage_routine.schema:commitmentTools.manage_commitment.schema;
+   const parsed=schema.safeParse(input);
+   return parsed.success&&parsed.data.action==="list";
+ }
+ return false;
+}
+
+/** Reviewed mutation ports for tools whose handlers cannot write anywhere else.
+ * The observer is per invocation; it cannot be supplied by the model.
+ * Unknown/new writers never get no-effect proof. A timeout closes the port
+ * without pretending the already-dispatched work is cancelled. */
+const durableEffectPorts:Readonly<Record<string,readonly string[]>>={
+  propose_price_change:["proposals.proposePriceChange"],
+  propose_price_experiment:["proposals.proposePriceExperiment"],
+  propose_add_staff:["proposals.proposeStaff"],propose_staff_change:["proposals.proposeStaff"],
+  propose_schedule:["proposals.proposeStaff"],propose_shift_change:["proposals.proposeStaff"],
+  propose_availability_change:["proposals.proposeStaff"],propose_rule_change:["proposals.proposeStaff"],
+  propose_send_schedule:["proposals.proposeStaff"],draft_week_schedule:["proposals.proposeStaff"],
+  propose_purchases:["proposals.proposePurchases"],
+  propose_supplier_purchase_order:["purchasing.propose"],
+  propose_supplier_vendor_email:["purchasing.proposeVendorSend"],
+  record_supplier_order_outcome:["purchasing.recordOwnerOutcome"],
+  propose_purchase_receiving:["receivingPropose"],propose_invoice_reconciliation:["invoicePropose"],
+  propose_supplier_discrepancy_followup:["receivingFollowup"],
+  propose_financial_settlement:["financialSettlementPropose"],propose_financial_bill:["financialBillPropose"],
+  propose_goal:["goals.propose"],record_checkin:["goals.recordCheckin"],
+  propose_event_plan:["eventPlans.propose"],remember_cafe_fact:["memory.proposeFact"],
+  manage_commitment:["commitments.create","commitments.close"],
+  manage_routine:["routines.create","routines.change"],propose_gmail_action:["gmail.propose"],
+  propose_maintenance_staff_assignment:["maintenance.proposeStaff"],
+  propose_maintenance_vendor_request:["maintenance.propose"],
+  record_maintenance_repair_claim:["maintenance.recordRepairClaim"],
+};
+export function observeDurableToolEffect(name:string,context:AgentToolContext,beforeDispatch:()=>Promise<void>){
+  const paths=Object.hasOwn(durableEffectPorts,name)?durableEffectPorts[name]:undefined;
+  let dispatched=false,closed=false,settled=false;
+  const wrap=(target:object,fn:(...args:unknown[])=>unknown)=>async(...args:unknown[])=>{
+    if(closed)throw new Error("tool_deadline_exceeded");
+    await beforeDispatch();
+    if(closed)throw new Error("tool_deadline_exceeded");
+    dispatched=true;
+    return Reflect.apply(fn,target,args);
+  };
+  const observed=paths?new Proxy(context,{
+    get(target,key,receiver){
+      const value=Reflect.get(target,key,receiver);
+      if(typeof key!=="string")return value;
+      if(paths.includes(key)&&typeof value==="function")return wrap(target,value);
+      const nested=paths.filter(p=>p.startsWith(key+".")).map(p=>p.slice(key.length+1));
+      if(!nested.length||!value||typeof value!=="object")return value;
+      return new Proxy(value,{
+        get(port,method,portReceiver){
+          const fn=Reflect.get(port,method,portReceiver);
+          return typeof method==="string"&&nested.includes(method)&&typeof fn==="function"?wrap(port,fn):fn;
+        },
+      });
+    },
+  }):context;
+  return {context:observed,settle:()=>{if(!closed)settled=true;},close:()=>{closed=true;},
+    noEffect:()=>Boolean(paths&&settled&&!dispatched)};
 }

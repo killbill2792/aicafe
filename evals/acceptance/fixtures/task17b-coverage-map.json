@@ -111,7 +111,7 @@
     "additionalProperties": false
   },
   "inheritedScenarioBaseline": {
-    "main": "2c7c7a905a7581db63c668eac92e77189e91e2f4",
+    "main": "7fdcaafa977504db999f976c139be7a6374d1802",
     "artifacts": {
       ".github/luna/scenarios/13c.json": "233f51dc697eec7b77d63b0d96838cecd89b6bce",
       ".github/luna/scenarios/13d.json": "9d435a2ab1223df70e6c4ba3dce4a5139ad44a90",
@@ -160,10 +160,44 @@
       "lib/ai/supervisor/routines/investigation.live.test.ts": "84c6091a64cf47ae23d4c30d751266e183d629f7",
       "lib/ai/supervisor/routines/investigation.liveBudget.ts": "f44a080f995e7e7ceff49ce7d71b2344206886ba",
       "lib/connectors/registry.live.test.ts": "b25f5649dcd29e586163d333e2dacd08c6f7dbd0",
-      "lib/metrics/core/eventReadiness.live.test.ts": "f3dc26c48dfb86ee8862a794f8119b636ffd1755"
+      "lib/metrics/core/eventReadiness.live.test.ts": "f3dc26c48dfb86ee8862a794f8119b636ffd1755",
+      ".github/luna/scenarios/15a-proactive-owner-answer.json": "b9f6b5ea3e89500d5fd2d42b030bd5fd77b01972",
+      ".github/luna/scenarios/6-15c-owner-run.json": "0b709791ef623fbfd4c8f4cf4c737f97db006fcb",
+      ".github/luna/scenarios/8a-approved-experiment.json": "00798d982bcd445934ed711197f653487e40852f",
+      ".github/luna/scenarios/8a-price-observation.json": "6b86e5eca8c624a885894e9ef8a3197f3f7f8aab",
+      ".github/luna/scenarios/8b-multiday-lifecycle.json": "f584418bb0f716fed1344be970992dfa81c3bf90",
+      ".github/luna/scenarios/pos0ef-customer-detail.json": "90f8245a9abf56f48162ff07c22ad6262afc4ba2",
+      ".github/luna/scenarios/pos0ef-customer-identity.json": "c0c2da5ee3332e34a7910bf649772b8283abc257",
+      ".github/luna/scenarios/pos0ef-customer-trends.json": "17f7827bd6553308de65e10e1bc82532f47bd929",
+      "evals/acceptance/live/preflight.mjs": "b28b9a0367f6d66d100610dbc968f532593ed428",
+      "evals/acceptance/live/preflight.test.mjs": "92d3662432e7f4bc3b3828c0f44d84461b9e140b",
+      "evals/acceptance/live/runner.mjs": "cbce6da372f2e8c0c1b3c0d97027278432f34f45",
+      "evals/acceptance/live/runner.test.mjs": "cdff737a6b1e62f02feb01c5f61435e2d3c25eed",
+      "evals/acceptance/live/task16e.mjs": "2cb2fc85832622a8149e389a22f98a1eb941aea9",
+      "evals/acceptance/live/task8a-approved-experiment.mjs": "ab1c2e0d2807db19bea4d62f490f902dd2334d5a",
+      "evals/acceptance/live/task8a-price-observation.mjs": "08013444f5a8b21b01292899e63f213af725a976",
+      "lib/ai/agent/tools/customerIdentity.live.test.ts": "efa38dfcdf0b744d862c0e2aa4b98737f47a565d",
+      "lib/ai/supervisor/routines/investigationOwnerAnswer.live.test.ts": "60f6694ecd2166d04a26197c5dd4c678b90ae913",
+      "lib/ai/supervisor/runs/durableOwnerRun.live.test.ts": "3c49b8a4f8c9bbf0020d11478e231f94b83bf357",
+      "lib/events/eventLifecycle.live.test.ts": "83ae3871f5b030b207776c1edb5c69a71c6b9e7b"
+    },
+    "priorArtifactsUnchanged": 48,
+    "reviewedReplacements": {
+      "lib/ai/agent/tools/dataQuery.ownerParity.live.test.ts": {
+        "previous": "5b14a117e46e9471160f67c0075edd6198135dbb",
+        "reason": "receipt-backed inventory parity fixture and unverified-quantity negative; all 18 paid questions preserved"
+      }
     }
   },
   "requiredScenarioGroups": {
+    "6": [
+      "6-15c-owner-run"
+    ],
+    "8": [
+      "8a-approved-experiment",
+      "8a-price-observation",
+      "8b-multiday-lifecycle"
+    ],
     "13": [
       "13c",
       "13d"
@@ -181,12 +215,14 @@
     "15": [
       "15b",
       "15c",
-      "15d"
+      "15d",
+      "15a-proactive-owner-answer"
     ],
     "16": [
       "16a",
       "16c",
-      "16d"
+      "16d",
+      "16e"
     ],
     "17b": [
       "17b-owner-security",
@@ -202,6 +238,11 @@
     ],
     "17d": [
       "17d"
+    ],
+    "pos0ef": [
+      "pos0ef-customer-detail",
+      "pos0ef-customer-identity",
+      "pos0ef-customer-trends"
     ]
   },
   "crossFunctionalFamilies": [
@@ -331,7 +372,10 @@
         "inventory",
         "sales"
       ],
-      "candidates": [],
+      "candidates": [
+        "8b-multiday-lifecycle",
+        "17c-business-monitors"
+      ],
       "missing": "no registered joined real Luna scenario; verify existing event-plan tools and saved events, schedule draft, demand and stock assumptions"
     },
     {
@@ -344,7 +388,10 @@
         "finance",
         "attention"
       ],
-      "candidates": [],
+      "candidates": [
+        "8a-approved-experiment",
+        "8a-price-observation"
+      ],
       "missing": "no registered joined real Luna scenario; price proposal/approval, guardrail monitoring, actual POS change evidence, rollback"
     },
     {
@@ -363,6 +410,54 @@
         "17d"
       ],
       "missing": "complete source-backed cross-domain briefing, owner actions and independently verified UI"
+    },
+    {
+      "id": "customer-event-sales",
+      "modules": [
+        "customers",
+        "events",
+        "sales"
+      ],
+      "candidates": [
+        "pos0ef-customer-trends",
+        "pos0ef-customer-detail",
+        "8b-multiday-lifecycle"
+      ],
+      "missing": "one model-selected joined comparison, independent distinct visit/linked denominator and dates, no causal or attendance inference"
+    },
+    {
+      "id": "durable-owner-cross-module",
+      "modules": [
+        "owner work",
+        "routines",
+        "customer intelligence",
+        "finance",
+        "permissions"
+      ],
+      "candidates": [
+        "6-15c-owner-run",
+        "15a-proactive-owner-answer",
+        "17c-autonomy",
+        "17d"
+      ],
+      "missing": "actual same assignment restart with independent source evidence across modules and owner answer"
+    },
+    {
+      "id": "adaptive-visual-evidence-conversation",
+      "modules": [
+        "presentation",
+        "all canonical readers",
+        "calculation",
+        "conversation",
+        "owner UI"
+      ],
+      "candidates": [
+        "16e",
+        "17b-sales-labor",
+        "17b-supply-finance",
+        "17d"
+      ],
+      "missing": "unfamiliar format-neutral questions, independently score all numeric/source bindings, missing/partial/estimate provenance, flexible choice and blinded human comprehension; no chart quota"
     }
   ],
   "legacyPaidSuites": [
@@ -403,5 +498,74 @@
       "mode": "deterministic",
       "required": "Full Vitest and Gmail domain safety suite"
     }
-  ]
+  ],
+  "newFeatureHandoffs": [
+    {
+      "pr": 536,
+      "owner": "17B/17C/17D",
+      "scenarios": [
+        "6-15c-owner-run"
+      ],
+      "truth": "same durable assignment/one final reply, fence, attachment generation, owner answer, cancellation, restart without duplicate effect"
+    },
+    {
+      "pr": 537,
+      "owner": "17B/17C",
+      "scenarios": [
+        "15a-proactive-owner-answer"
+      ],
+      "truth": "source-detected anomaly, stock-to-procurement, verified owner answer consumed, continued observation and later closure, no automatic sending"
+    },
+    {
+      "pr": 538,
+      "owner": "17B/17C",
+      "scenarios": [
+        "8a-price-observation",
+        "8a-approved-experiment"
+      ],
+      "truth": "independent price observation and approved watch, exact date/source, 7 daily owner receipts, no source writes, correct elapsed windows"
+    },
+    {
+      "pr": 539,
+      "owner": "17B/17C/17D",
+      "scenarios": [
+        "pos0ef-customer-detail",
+        "pos0ef-customer-identity",
+        "pos0ef-customer-trends"
+      ],
+      "truth": "linked checks/accounts/visits vs people, low linkage, anonymous aggregates, exact cohorts and matured denominators, cross-cafe and permission denial, event correlation not causation"
+    },
+    {
+      "pr": 540,
+      "owner": "17B/17C/17D",
+      "scenarios": [
+        "8b-multiday-lifecycle"
+      ],
+      "truth": "verified occurrence identity, date/timezone correction, cancellation, changed-source stale guard, multi-day observations, draft approval boundary"
+    },
+    {
+      "pr": 541,
+      "owner": "17B/17D",
+      "scenarios": [
+        "16e"
+      ],
+      "truth": "source-bound generic visual composition, exact values/units/coverage, independent useful prose, editable suggestions, no auto-send, reload and foreign denial; broader natural choices and blind comprehension remain separate"
+    }
+  ],
+  "currentSourceBaseline": {
+    "head": "7fdcaafa977504db999f976c139be7a6374d1802",
+    "reviewedPaths": [
+      "lib/ai/agent/tools/index.ts",
+      "lib/ai/agent/tools/gmail.test.ts",
+      "lib/ai/agent/tools/dataQuery.ownerParity.live.test.ts"
+    ],
+    "reason": "All six merged feature contracts incorporated; prior bootstrap snapshot retained as historical. Detect any candidate runtime-source changes outside reviewed exact paths. No mapping or acceptance is inferred from this baseline."
+  },
+  "registrationRepair": {
+    "id": "16e",
+    "priorManifest": "32ea032b871b11c4117d34de768f56806566a60a",
+    "entrypoint": "evals/acceptance/live/task16e.mjs",
+    "status": "UNTESTED",
+    "limitations": "Dedicated visual regression expects chart and follow-up; do not infer general format independence or independent comprehension from this case."
+  }
 }

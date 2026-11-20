@@ -1,7 +1,8 @@
 import {describe,expect,it} from "vitest";
+import {precedingInvestigationReport} from "./investigation";
 import type {AgentTurn} from "@/lib/ai/agent/loop.server";
 import {checkNumbers} from "@/lib/ai/agent/checkNumbers";
-import {investigationPrompt,investigationReadTools,verifyInvestigationTurn,
+import {investigationPrompt,investigationReadTools,customerInvestigationTools,verifyInvestigationTurn,
   relevantInvestigationTools,unsupportedExternalEffectClaim,type SourceSynopsis} from "./investigation";
 const source:SourceSynopsis={
   kind:"labor_variance",status:"new",severity:"high",quality:"partial",
@@ -373,4 +374,81 @@ describe("Task 15A genuine multi-step agentic acceptance",()=>{
     expect(verifyInvestigationTurn(turn({text:"x".repeat(1801)}),expected))
       .toMatchObject({ok:false});
   });
+});
+
+it("customer investigations require an actual scoped aggregate and an independent domain",()=>{
+ const target={sourceType:"alert" as const,sourceId:"customer-case",kind:"business_anomaly"};
+ const src={name:"get_investigation_source",result:{source:"investigation_source",period:null,missing:[],
+  sourceType:"alert",sourceId:"customer-case",incidentKind:"business_anomaly",
+  selectors:{family:"customer_trend",subject:"returning_visit_share",from:"2026-11-12",to:"2026-11-18",current:.25,previous:.5,unit:"observed_visit_ratio"},
+  customerTrendProof:{key:"returning_visit_share",current:.25,previous:.5,unit:"observed_visit_ratio",active:true}}};
+ const customer={name:"query_data",result:{source:"canonical_data",view:"cv_customer_visits",
+  aggregateOnly:true,customerEvidence:true,period:{from:"2026-11-12",to:"2026-11-18"},
+  missing:[],rows:[{sum_returning_visit:20,count_source_ref:80}],empty:false,truncated:false,
+  customerCoverage:{scope:"all_eligible_checks_in_period",eligibleChecks:90,linkedChecks:80,namedChecks:80,
+    expectedLocationDays:7,completeLocationDays:7,complete:true}}};
+ const schema={name:"describe_data",result:{source:"toast_fields",period:null,missing:[],retainedFields:30,fields:[{field:"data.customer.guid"}]}};
+ const verify=(...calls:unknown[])=>verifyInvestigationTurn(turn({toolInvocations:[src,...calls]}),target);
+ expect(verify(customer,labor).ok).toBe(true);
+ expect(verify({...customer,result:{...customer.result,rows:[{sum_net_sales_cents:8000}]}},labor).ok).toBe(false);
+ for(const proof of [null,{...src.result.customerTrendProof,key:"average_visit_spend"},{...src.result.customerTrendProof,current:.4},{...src.result.customerTrendProof,previous:.4},{...src.result.customerTrendProof,active:false}]){
+  expect(verifyInvestigationTurn(turn({toolInvocations:[{...src,result:{...src.result,customerTrendProof:proof}},customer,labor]}),target).ok).toBe(false);
+ }
+ for(const coverage of [{linkedChecks:20},{linkedChecks:50},{eligibleChecks:0,linkedChecks:0},
+  {linkedChecks:91},{expectedLocationDays:0,completeLocationDays:0},{completeLocationDays:6},
+  {scope:"filtered_subtotal"}]){
+  expect(verify({...customer,result:{...customer.result,customerCoverage:{...customer.result.customerCoverage,...coverage}}},labor).ok).toBe(false);
+ }
+ const historicalLabor={...labor,result:{...labor.result,period:{from:"2026-10-01",to:"2026-10-07"}}};
+ expect(verify(customer,historicalLabor).ok).toBe(false);
+ expect(verify(customer,{...labor,result:{...labor.result,period:{from:"2026-11-12",to:"2026-11-18"}}}).ok).toBe(true);
+ const event={name:"get_events",result:{source:"cafe_events",period:{from:"2026-11-12",to:"2026-11-18"},missing:[],
+  events:[{name:"Fixture event",status:"found",startDate:"2026-11-14",endDate:"2026-11-15",lastVerifiedAt:"2026-11-13T08:00:00Z"}]}};
+ expect(customerInvestigationTools).toContain("get_events");
+ expect(investigationReadTools).not.toContain("get_events");
+ expect(verify(customer,event).ok).toBe(true);
+ for(const change of [{status:"cancelled"},{lastVerifiedAt:null},{verificationFailedAt:"2026-11-14T08:00:00Z"},
+  {startDate:"2026-10-01",endDate:"2026-10-02"}]){
+  expect(verify(customer,{...event,result:{...event.result,events:[{...event.result.events[0],...change}]}}).ok).toBe(false);
+ }
+ expect(verify(customer,{...event,result:{...event.result,events:[],cityEventTotal:20}}).ok).toBe(false);
+ // An event in the incident window but outside the actual query window
+ // cannot be counted as observed evidence from that query.
+ expect(verify(customer,{...event,result:{...event.result,period:{from:"2026-11-16",to:"2026-11-18"}}}).ok).toBe(false);
+ expect(verify(customer,{...event,result:{...event.result,missing:["source_read_failed"]}}).ok).toBe(false);
+ expect(verify({...customer,result:{...customer.result,period:{from:"2026-11-18",to:"2026-11-18"}}},labor).ok).toBe(false);
+ expect(verify({...customer,result:{...customer.result,customerCoverage:{...customer.result.customerCoverage,complete:false}}},labor).ok).toBe(false);
+ const gap={...src,result:{...src.result,selectors:{family:"data_gap",subject:"customer_identity_coverage",from:"",to:""}}};
+ const verifyGap=(call:unknown)=>verifyInvestigationTurn(turn({toolInvocations:[gap,call,labor]}),target);
+ const noOrders={...customer,result:{...customer.result,view:"cv_toast_records",empty:true,rows:[],missing:["empty"],
+  customerCoverage:{...customer.result.customerCoverage,eligibleChecks:0,linkedChecks:0,namedChecks:0,
+   expectedLocationDays:7,completeLocationDays:2,complete:false}}};
+ expect(verifyGap(noOrders).ok).toBe(true);
+ const datedGap={...gap,result:{...gap.result,selectors:{...gap.result.selectors,from:"2026-11-12",to:"2026-11-18"}}};
+ const verifyDatedGap=(call:unknown)=>verifyInvestigationTurn(turn({toolInvocations:[datedGap,call,labor]}),target);
+ expect(verifyDatedGap(noOrders).ok).toBe(true);
+ expect(verifyDatedGap({...noOrders,result:{...noOrders.result,period:{from:"2026-11-17",to:"2026-11-18"}}}).ok).toBe(false);
+ expect(verifyGap({...noOrders,result:{...noOrders.result,customerCoverage:{...noOrders.result.customerCoverage,complete:true,completeLocationDays:7}}}).ok).toBe(false);
+ expect(verifyGap({...noOrders,result:{...noOrders.result,customerCoverage:{...noOrders.result.customerCoverage,expectedLocationDays:0,completeLocationDays:0}}}).ok).toBe(false);
+ expect(verifyGap({...noOrders,result:{...noOrders.result,error:"source_read_failed"}}).ok).toBe(false);
+ expect(verifyGap(customer).ok).toBe(false);
+ expect(verify(customer,sales).ok).toBe(false);
+ expect(verify(schema,labor).ok).toBe(false);
+ expect(verify({...customer,result:{...customer.result,rows:[],rowCount:0}},labor).ok).toBe(false);
+ expect(verify({...customer,result:{...customer.result,truncated:true}},labor).ok).toBe(false);
+ expect(verify({...customer,result:{...customer.result,period:{from:"2026-08-01",to:"2026-08-07"}}},labor).ok).toBe(false);
+ expect(investigationReadTools).toContain("describe_data");
+ expect(investigationReadTools).toContain("query_data");
+});
+
+
+it("only the immediately preceding verified, same-thread proactive report is eligible for owner-turn context",()=>{
+  const owner={id:"owner",threadId:"thread",createdAt:"2026-01-01T10:02:00Z"};
+  const report={id:"report",role:"supervisor",threadId:"thread",createdAt:"2026-01-01T10:00:00Z",
+    grounding:{intent:"priority_investigation",status:"verified",evidence:[{source:"alert",identifier:"alert",revisionHash:"rev"}]}};
+  expect(precedingInvestigationReport([report],owner)).toEqual({report,sourceId:"alert",sourceRevision:"rev"});
+  expect(precedingInvestigationReport([{...report,threadId:"other"}],owner)).toBeNull();
+  expect(precedingInvestigationReport([{...report,grounding:{...report.grounding,status:"partial"}}],owner)).toBeNull();
+  expect(precedingInvestigationReport([report,{...report,id:"owner2",role:"owner",createdAt:"2026-01-01T10:01:00Z"}],owner)).toBeNull();
+  expect(precedingInvestigationReport([{...report,createdAt:"2026-01-01T10:03:00Z"}],owner)).toBeNull();
 });

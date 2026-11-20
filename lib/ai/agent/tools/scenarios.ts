@@ -1,3 +1,4 @@
+import {captureScenarioBasis} from "@/lib/ai/conversations/scenarioPresentation";
 import {z} from "zod";
 import type {AgentToolContext,AgentToolResult} from "./index";
 import {resolveEntity,choicePayload,ownerNamedTarget,ownerChose} from "../resolve";
@@ -165,9 +166,11 @@ export const scenarioTools={simulate_scenario:{
    result.after.monthlyProfitCents,result.after.monthlyBreakEvenCents,
    result.difference.monthlyProfitCents,result.difference.monthlyBreakEvenCents,
    result.weeklyChangeCents,result.before.itemMarginCents,result.after.itemMarginCents];
-  return {source:"scenario",period:null,agentId:"leo",status:"estimate",
+  const response:AgentToolResult={source:"scenario",period:null,agentId:"leo",status:"estimate",
    input:delta,...result,explain,numberEstimates:observed.filter((value):value is number=>value!==null)
     .map(value=>({value,unit:"cents" as const,detail:"scenario"})),
    ...(result.after.drinksPerDay!==null?{numberEstimatesCounts:[result.after.drinksPerDay]}:{})};
+  if(ctx.presentationScenarioBasis&&!result.missing.length){const basis=captureScenarioBasis(economics,delta);if(basis)ctx.presentationScenarioBasis.set(response,basis);}
+  return response;
  }
 }} as const;

@@ -1,4 +1,5 @@
 import {z} from "zod";
+import {createServerSupabaseClient} from "@/lib/supabase/server";
 import {authenticatedConversationContext,ConversationApiError} from "@/lib/ai/conversations/auth.server";
 import {conversationJson,conversationError,parseInput,readBoundedJson,requireSameOrigin} from "@/lib/ai/conversations/http.server";
 import {clarifyBlockSchema} from "@/lib/ai/conversations/contracts";
@@ -30,7 +31,11 @@ export async function POST(request:Request,{params}:Params){
   const block=(match?.blocks??[]).map(b=>clarifyBlockSchema.safeParse(b))
    .find(x=>x.success&&x.data.kind==="facts"&&x.data.questionId===input.questionId);
   if(!block?.success||block.data.kind!=="facts")throw new ConversationApiError(404,"owner_question_not_found");
-  if(page.items.some(m=>m.role==="owner"&&match&&
+  if(typeof match?.grounding?.durableQuestionId==="string"){
+   const db=await createServerSupabaseClient();
+   const pending=await db.from("supervisor_runs").select("id").eq("business_id",scope.businessId).eq("owner_user_id",scope.ownerUserId).eq("thread_id",threadId).eq("execution_version",2).eq("status","blocked").eq("awaiting_question_id",match.grounding.durableQuestionId).maybeSingle();
+   if(pending.error||!pending.data)throw new ConversationApiError(409,"owner_question_superseded");
+  }else if(page.items.some(m=>m.role==="owner"&&match&&
     (m.createdAt>match.createdAt||(m.createdAt===match.createdAt&&m.id>match.id))))
     throw new ConversationApiError(409,"owner_question_superseded");
   // The card decides what is kept: "this question only" answers are never saved

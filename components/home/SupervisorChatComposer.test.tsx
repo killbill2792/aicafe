@@ -14,6 +14,7 @@ vi.mock("@/components/operations/agentVisuals", () => ({
   AgentAvatar:()=>createElement("span",null,"avatar"),
 }));
 import SupervisorChatComposer, { type SupervisorChatCopy } from "./SupervisorChatComposer";
+import { CafeActivity } from "./ChatJobProgress";
 import type { ChatStartCopy, ChatStartData } from "./ChatStart";
 
 const copy = {
@@ -52,19 +53,17 @@ function startHtml(enabled=true) {
 }
 
 describe("modern Supervisor conversation shell", () => {
-  it("shows one compact numbers section, four team cards and all four tappable starter chips",()=>{
+  it("prioritizes the greeting, all starters, and a single expandable business summary",()=>{
     const html=startHtml();
-    expect(html).toContain('aria-label="Key numbers"');
-    for(const text of ["$300","$225","$75","25% of sales","17% more than last period",
-      "Alex","Leo","Maya","Olivia","How are we doing today?","What needs my attention?",
-      "Any staff issues?","Try a drink price experiment"])
-      expect(html).toContain(text);
-    expect(html.match(/data-agent-id=/g)).toHaveLength(4);
-    expect(html.match(/min-h-12 w-max shrink-0/g)).toHaveLength(4);
-    expect(html).toContain('href="/operations?status=handled"');
-    expect(html).not.toContain("What can I help with today?");
+    expect(html).toContain("What can I help with today?");
+    expect(html).toContain("Ask about your café.");
+    expect(html).toContain("Today: Sales $300 · You keep $75 · Nothing needs you");
+    for(const text of ["How are we doing today?","What needs my attention?",
+      "Any staff issues?","Try a drink price experiment"])expect(html).toContain(text);
+    expect(html).not.toContain('data-agent-id=');
+    expect(html).toContain('aria-expanded="false"');
     expect(html).toContain('role="log"');
-    expect(html).toContain('aria-label="Chat history"');
+    expect(html).toContain('aria-label="Library, routines and permissions"');
     expect(html).toContain('aria-label="New chat"');
     expect(html).toContain("<textarea");
     expect(html).toContain('aria-label="Dictate"');
@@ -72,15 +71,28 @@ describe("modern Supervisor conversation shell", () => {
     expect(html).not.toContain("SUPERVISOR_CHAT_ENABLED");
     expect(html).not.toContain("SUPABASE_SERVICE_ROLE_KEY");
   });
-  it("does not render a second Home snapshot or standalone experiment control",()=>{
+  it("keeps the existing board available without a second snapshot or standalone experiment",()=>{
     const html=startHtml();
-    expect(html.match(/aria-label="Key numbers"/g)).toHaveLength(1);
+    expect(html.match(/data-testid="chat-start"/g)).toHaveLength(1);
+    expect(html).not.toContain('aria-label="Key numbers"');
     expect(html).not.toContain("Today snapshot");
     expect(html).not.toContain("No sales recorded yet");
-    expect(html).not.toContain("What can I help with today?");
     expect(html).toContain('aria-label="Dictate"');
-    expect(readFileSync("components/home/SupervisorChatComposer.tsx","utf8"))
-      .not.toContain("{enabled&&threadId&&experimentCopy&&<SupervisorExperiment");
+    const composer=readFileSync("components/home/SupervisorChatComposer.tsx","utf8");
+    expect(composer).toContain("hasMessages={false} expanded={startExpanded}");
+    expect(composer).not.toContain("{enabled&&threadId&&experimentCopy&&<SupervisorExperiment");
+  });
+  it("uses decorative short café motion with a static fallback and reduced motion",()=>{
+    const animated=renderToStaticMarkup(createElement(CafeActivity));
+    const still=renderToStaticMarkup(createElement(CafeActivity,{brewing:false}));
+    expect(animated).toContain('aria-hidden="true"');
+    expect(animated).toContain('data-cafe-motion="brewing"');
+    expect(animated).toContain("supervisor-steam");
+    expect(still).toContain('data-cafe-motion="still"');
+    expect(still).not.toContain("supervisor-steam");
+    const css=readFileSync("app/globals.css","utf8");
+    expect(css).toContain("supervisor-brew-steam 1.4s ease-in-out 3");
+    expect(css).toContain(".supervisor-steam, .supervisor-welcome-motion { animation: none !important; }");
   });
   it("explains unavailable chat while keeping its four starters disabled",()=>{
     const html=startHtml(false);
@@ -110,15 +122,17 @@ describe("modern Supervisor conversation shell", () => {
     expect(source).toContain('message.role === "owner"');
     expect(source).toContain("answeredOwnerIds");
     expect(source).toContain("pendingOwnerIds.has(message.id)");
-    expect(source).toContain('sendText(message.text ?? "", message.clientMessageId ?? undefined)');
+    expect(source).toContain('sendText(message.text ?? "", message.clientMessageId ?? undefined,undefined,undefined,message.ownerInputResponse)');
+    expect(source).toContain("retryResponse.current?.key===clientMessageId");
     expect(source).toContain("sendKey(existingKey, retryId.current, () => crypto.randomUUID())");
   });
   it("keeps the chat-start summary outside the independently scrolling transcript",()=>{
     const source=readFileSync("components/home/SupervisorChatComposer.tsx","utf8");
-    expect(source).toContain("100dvh");
-    expect(source).toContain('className="flex min-h-full flex-col items-stretch justify-start gap-4"');
+    expect(readFileSync("app/globals.css","utf8")).toContain("100dvh");
+    expect(source).toContain("max-w-[46rem] min-w-0 flex-col items-stretch justify-start");
     expect(source).toContain("overflow-y-auto overscroll-contain");
-    expect(source).toContain("mt-auto shrink-0 border-t");
+    expect(source).toContain("mt-auto w-full max-w-[49rem] shrink-0");
+    expect(source).toContain("window.visualViewport");
     expect(source).toContain("transcriptScrollTarget({");
     expect(source).toContain("prependAnchor.current");
     expect(source).toContain("openingThread.current");

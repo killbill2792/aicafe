@@ -2,7 +2,9 @@ import "server-only";
 import type {SupabaseClient} from "@supabase/supabase-js";
 import {cafeToday} from "@/lib/metrics/core/clock";
 import {ensureScheduledShiftsThroughDate} from "@/lib/data/materializeSchedule";
+import {refreshBusinessAnomalies} from "./businessAnomalies.server";
 import {generateAlerts} from "./generate";
+import {refreshPriceReviewTasks} from "@/lib/data/operatingTasks";
 
 /** Idempotent, explicitly invoked refresh. NEVER called by snapshot/page loaders.
  * Toast/Square import handlers can invoke this after their commit is complete.
@@ -16,6 +18,9 @@ export async function refreshDerivedForBusiness(
   const businessDate=cafeToday(timezone,now);
   // Alerts read timecards/rollups, therefore schedules must be reconciled first.
   await ensureScheduledShiftsThroughDate(db,businessId,timezone,businessDate);
-  const alerts=await generateAlerts(db,businessId);
-  return {businessDate,alertsCreated:alerts.created};
+  const [alerts,prices,anomalies]=await Promise.allSettled([generateAlerts(db,businessId),refreshPriceReviewTasks(db,businessId,now),refreshBusinessAnomalies(db,businessId,businessDate,timezone,now)]);
+  if(alerts.status==="rejected")throw alerts.reason;
+  if(prices.status==="rejected")throw prices.reason;
+  if(anomalies.status==="rejected")throw anomalies.reason;
+  return {businessDate,alertsCreated:alerts.value.created+anomalies.value};
 }

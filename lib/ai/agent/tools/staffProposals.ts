@@ -70,7 +70,8 @@ export const staffProposalTools=Object.fromEntries(
    // The ordinary agent always supplies resolveState. Keep legacy tests that
    // call this handler directly compatible without weakening the live guard.
    if(ctx.resolveState&&name!=="propose_add_staff"&&name!=="propose_rule_change"&&name!=="propose_send_schedule"){
-     const team=await getTeam({weekStart:mondayOfLocalDate(ctx.asOf)});
+     const weekStart=mondayOfLocalDate(ctx.asOf);
+     const team=ctx.readWeekSchedule?await ctx.readWeekSchedule(weekStart):await getTeam({weekStart});
      if(!team.ok)return {source:"staff_proposal",period:null,agentId:"olivia",
        draft:true,saved:false,missing:["staffIdentityUnavailable"]};
      const people=team.data.team;

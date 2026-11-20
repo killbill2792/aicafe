@@ -198,3 +198,10 @@ describe("reconcileOperatingTasks", () => {
     expect(reconcileOperatingTasks([applied], [current], new Date("2026-11-01T00:00:00Z")).insert).toEqual([current]);
   });
 });
+
+it("never expires a saved price review on unknown source coverage; verified keep can expire it",()=>{
+  const saved=priceTask(625);
+  const now=new Date("2026-10-03T00:00:00Z");
+  expect(reconcileOperatingTasks([saved],[],now).expire).toEqual([]);
+  expect(reconcileOperatingTasks([saved],[],now,new Set(["item"])).expire.map(row=>row.id)).toEqual([saved.id]);
+});

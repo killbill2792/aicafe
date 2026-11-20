@@ -45,3 +45,12 @@ export async function getAdminProactive(cafe?:string):Promise<ProactiveRollup>{
   const {data,error}=await createAdminSupabaseClient().rpc("admin_proactive_rollup",{p_cafe:cafe??null});
   return requireResult(data,error);
 }
+
+export type SupervisorLedgerGroup={business_id:string;name:string;channel:"owner_requested"|"proactive";
+  calls:number;known_input_tokens:number;known_output_tokens:number;unknown_token_calls:number;
+  known_cost_micros:number;unpriced_calls:number};
+export async function getAdminSupervisorUsage():Promise<{periodStart:string;rows:SupervisorLedgerGroup[]}>{
+  await requireAdmin();
+  const {data,error}=await createAdminSupabaseClient().rpc("admin_supervisor_usage_rollup");
+  return requireResult(data,error);
+}

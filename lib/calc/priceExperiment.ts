@@ -147,3 +147,45 @@ export function priceExperimentEstimatedUplift(baseline:PriceExperimentBaseline)
     baseline.newPriceCents<baseline.oldPriceCents)return null;
   return safeProduct(baseline.newPriceCents-baseline.oldPriceCents,baseline.baselineUnits7Days);
 }
+
+/** Comparable exposure economics, shared by price watches and approved
+ * experiments. Cost provenance is explicit: a current recipe is not a
+ * historical actual cost. Negative net sales may reflect refunds. */
+export function comparePriceExposure(input:{
+ units:number|null;revenueCents:number|null;baselineUnits:number|null;
+ baselineRevenueCents:number|null;unitCostEstimateCents:number|null;
+ baselineUnitCostEstimateCents?:number|null;
+}){
+ const money=(n:number|null)=>n!==null&&Number.isSafeInteger(n)?n:null;
+ const qty=(n:number|null)=>n!==null&&Number.isFinite(n)&&n>=0?n:null;
+ const units=qty(input.units),baselineUnits=qty(input.baselineUnits);
+ const revenue=money(input.revenueCents),baselineRevenue=money(input.baselineRevenueCents);
+ const contribution=(u:number|null,r:number|null,c:number|null)=>{
+  if(u===null||r===null)return null;
+  if(u===0)return r;
+  if(c===null||!Number.isFinite(c)||c<=0)return null;
+  return money(Math.round(r-u*c));
+ };
+ const current=contribution(units,revenue,input.unitCostEstimateCents);
+ const before=contribution(baselineUnits,baselineRevenue,
+  input.baselineUnitCostEstimateCents===undefined?input.unitCostEstimateCents:input.baselineUnitCostEstimateCents);
+ const difference=(a:number|null,b:number|null)=>a===null||b===null?null:money(a-b);
+ const percent=(a:number|null,b:number|null)=>a===null||b===null||b<=0?null:
+  money(Math.round((a-b)*10000/b));
+ const margin=(c:number|null,r:number|null)=>c===null||r===null||r<=0?null:
+  money(Math.round(c*10000/r));
+ const contributionChange=difference(current,before);
+ const revenueChange=difference(revenue,baselineRevenue);
+ const recommendation=contributionChange===null||units===null||baselineUnits===null||
+  units===0||baselineUnits===0?"adjust":
+  contributionChange<0?"review_revert":contributionChange>0&&revenueChange!==null&&revenueChange>=0?"review_keep":"adjust";
+ return {observedUnits:units,observedRevenueCents:revenue,baselineUnits,
+  baselineRevenueCents:baselineRevenue,volumeChangeBps:percent(units,baselineUnits),
+  revenueChangeBps:percent(revenue,baselineRevenue),revenueChangeCents:revenueChange,
+  contributionEstimateCents:current,baselineContributionEstimateCents:before,
+  contributionChangeEstimateCents:contributionChange,
+  contributionMarginEstimateBps:margin(current,revenue),
+  baselineContributionMarginEstimateBps:margin(before,baselineRevenue),
+  costBasis:input.unitCostEstimateCents===null?"missing":"current_cost_estimate",
+  recommendation,nonCausal:true as const};
+}

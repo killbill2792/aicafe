@@ -15,7 +15,11 @@ import {routineStatusSchema,routineScheduleSchema} from "@/lib/ai/supervisor/rou
 import {metricCatalog,metricKeySchema,computeMetric,type MetricKey,type MetricDailyInput} from "@/lib/calc/metrics/catalog";
 import {canonicalDictionary,canonicalViewNames,toastOfficialFieldCatalog,isDataField} from "@/lib/data/canonical/dictionary";
 import {connectorOperations} from "@/lib/connectors/registry.server";
-import {row,schemaCases,manifestIndex,makeInventory,buildCensusReport,writeCensus,verifyBootstrapSnapshot,verifyInheritedScenarios,scenarioCoveragePlan} from "../../scripts/acceptance/supervisor-coverage.mjs";
+import {presentationSourceNames,presentationPanelSchema,richPresentationSchema,agendaSchema,recordTableSchema,interactiveCalcSchema,scenarioComparisonSchema,presentationGroupSchema} from "@/lib/ai/conversations/presentation";
+import {scenarioEditorSchema} from "@/lib/ai/conversations/scenarioPresentation";
+import {groundedReplySchema,evidenceReferenceSchema} from "@/lib/ai/conversations/contracts";
+import {ownerRunInputSchema,stepSpecSchema,runScopeSchema,checkpointRowSchema,matchedOwnerAnswerSchema} from "@/lib/ai/supervisor/runs/contracts";
+import {row,schemaCases,manifestIndex,makeInventory,buildCensusReport,writeCensus,verifyInheritedScenarios,scenarioCoveragePlan,verifyReviewedSourceChanges,planPaidBatches} from "../../scripts/acceptance/supervisor-coverage.mjs";
 import truth from "./fixtures/task17b-business-truth.json";
 import coverageMap from "./fixtures/task17b-coverage-map.json";
 const deterministicMetrics:string[]=[];
@@ -116,10 +120,23 @@ describe("Task17B first-party changing capability inventory (no provider)",()=>{
    if(/^lib\/ai\/supervisor\/(routines|runs)\/[^/]+\.ts$/.test(path)&&!path.includes(".test."))rows.push(...fingerprintedExports(path));
    if(/^app\/api\/cron\/[^/]+\/route\.ts$/.test(path))rows.push(row("monitor-candidate",path,source(path)));
   }
+  for(const name of presentationSourceNames)rows.push(row("visual-source",name,name));
+  for(const [name,schema] of Object.entries({presentationPanelSchema,richPresentationSchema,agendaSchema,recordTableSchema,interactiveCalcSchema,scenarioComparisonSchema,presentationGroupSchema,scenarioEditorSchema,groundedReplySchema,evidenceReferenceSchema,ownerRunInputSchema,stepSpecSchema,runScopeSchema,checkpointRowSchema,matchedOwnerAnswerSchema})){
+   const json=schemaJson(schema);
+   rows.push(row("response-or-work-contract",name,json),...schemaCases("response-or-work-field",name,json));
+  }
+  for(const [name,definition] of visible)rows.push(row("question-family",name,{description:definition.description,parameters:definition.parameters}));
+  const recorded=source("evals/supervisor/promptfooconfig.yaml");
+  for(const match of recorded.matchAll(/^\s*caseId:\s*([a-zA-Z0-9_-]+)\s*$/gm))rows.push(row("recorded-question",match[1],{source:"evals/supervisor/promptfooconfig.yaml",caseId:match[1]}));
+  for(const family of coverageMap.crossFunctionalFamilies)rows.push(row("cross-module-family",family.id,family));
+  for(const path of paths){
+   if(/^components\/home\/(?:Supervisor|Chat|FactSummary|EventReportCard|SavedEventsCard)[^/]*\.tsx?$/.test(path)&&!path.includes(".test."))rows.push(row("owner-component",path,source(path)));
+   if(/^lib\/(?:alerts|events|operating|calc\/goals)\/[^/]+\.ts$/.test(path)&&!path.includes(".test."))rows.push(...fingerprintedExports(path));
+  }
   const inventory=makeInventory(rows);
   const manifestPaths=paths.filter(p=>p.startsWith(".github/luna/scenarios/")&&p.endsWith(".json"));
   const manifests=manifestIndex(root,manifestPaths,coverageMap.legacyTools);
-  const combinedScenarioPlan={...scenarioCoveragePlan(manifests.ids,coverageMap.requiredScenarioGroups,coverageMap.crossFunctionalFamilies),legacyPaidSuites:coverageMap.legacyPaidSuites,legacyNonProviderSuites:coverageMap.legacyNonProviderSuites};
+  const combinedScenarioPlan={...scenarioCoveragePlan(manifests.ids,coverageMap.requiredScenarioGroups,coverageMap.crossFunctionalFamilies),legacyPaidSuites:coverageMap.legacyPaidSuites,legacyNonProviderSuites:coverageMap.legacyNonProviderSuites,paidPlan:planPaidBatches(manifests.specs),newFeatureHandoffs:coverageMap.newFeatureHandoffs};
   const report=buildCensusReport(inventory,manifests,{head:git("rev-parse","HEAD"),runId:process.env.GITHUB_RUN_ID??null,deterministicMetrics,registrationGaps,testReferences:findTestReferences(new Set(Object.keys(fullSchemas)))});
   if(process.env.AICAFE_CENSUS_OUTPUT)writeCensus(process.env.AICAFE_CENSUS_OUTPUT,{...report,combinedScenarioPlan});
   expect(report.totals.UNTESTED+report.totals.FAIL).toBe(inventory.length);
@@ -128,10 +145,11 @@ describe("Task17B first-party changing capability inventory (no provider)",()=>{
   const expectedMemory=coverageMap.reviewedMemorySchema;
   const actualMemory=schemaJson(memoryTools.remember_cafe_fact.schema);
   expect(actualMemory).toEqual(expectedMemory);
-  verifyBootstrapSnapshot(report,{...coverageMap,reviewedAdditions:[
-    row("tool",memoryToolDefinition.name,{input:expectedMemory,advertised:true}),
-    ...schemaCases("tool-input",memoryToolDefinition.name,expectedMemory),
-  ]});
+  const sourceBase=coverageMap.currentSourceBaseline;
+  expect(git("merge-base",sourceBase.head,"HEAD")).toBe(sourceBase.head);
+  const changed=git("diff","--name-only",sourceBase.head,"HEAD","--","lib","components","app","supabase/migrations","evals/supervisor").split("\n").filter(Boolean);
+  verifyReviewedSourceChanges(changed,sourceBase.reviewedPaths);
+  expect(report.unknownManifestTools).toEqual([]);
   console.log("Task17B census (discovery only):",JSON.stringify({head:report.head,totals:report.totals,byKind:report.byKind,manifests:report.manifests,unknownManifestTools:report.unknownManifestTools,registrationGaps:report.registrationGaps}));
   expect(registrationGaps,"defined but not advertised to the actual model; do not accept hidden tools").toEqual([]);
  });
@@ -139,7 +157,12 @@ describe("Task17B first-party changing capability inventory (no provider)",()=>{
  it("preserves every inherited Luna manifest and executable test and reports separately registered cross-functional cases",()=>{
   const expected=coverageMap.inheritedScenarioBaseline.artifacts;
   const actual=Object.fromEntries(Object.keys(expected).filter(path=>paths.includes(path)).map(path=>[path,git("hash-object",path)]));
-  verifyInheritedScenarios(expected,actual);
+  const replacements=coverageMap.inheritedScenarioBaseline.reviewedReplacements;
+  for(const [path,review] of Object.entries(replacements)){
+   expect(git("rev-parse",coverageMap.inheritedScenarioBaseline.main+":"+path)).toBe(review.previous);
+   expect(actual[path]).toMatch(/^[a-f0-9]{40}$/);
+  }
+  verifyInheritedScenarios(Object.fromEntries(Object.entries(expected).filter(([path])=>!Object.hasOwn(replacements,path))),actual);
   const manifests=manifestIndex(root,paths.filter(p=>p.startsWith(".github/luna/scenarios/")&&p.endsWith(".json")),coverageMap.legacyTools);
   const plan=scenarioCoveragePlan(manifests.ids,coverageMap.requiredScenarioGroups,coverageMap.crossFunctionalFamilies);
   expect(plan.unknown,"new scenario needs explicit combined plan").toEqual([]);

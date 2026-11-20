@@ -1,10 +1,14 @@
-import { describe, expect, it, vi, beforeEach } from "vitest";
+import { describe, expect, it, vi, beforeEach, afterEach } from "vitest";
 
 const THREAD = "11111111-1111-4111-8111-111111111111";
 const JOB = "55555555-5555-4555-8555-555555555555";
 const NEXT = "66666666-6666-4666-8666-666666666666";
 const job = (id: string, owner = "msg-1") => ({ id, threadId: THREAD, ownerMessageId: owner, status: "running", attempt: 1,
   errorCode: null, replyMessageId: null, progress: [], inbox: [], consumed: [], heartbeatAt: "", createdAt: "" });
+const answerRpc=vi.hoisted(()=>vi.fn());
+vi.mock("@/lib/supabase/admin",()=>({createAdminSupabaseClient:()=>({rpc:answerRpc})}));
+const durable = vi.hoisted(() => ({admit:vi.fn(), process:vi.fn()}));
+vi.mock("@/lib/ai/supervisor/runs/worker.server",()=>({admitDurableChat:durable.admit,processDurableRun:durable.process}));
 const fake = vi.hoisted(() => ({
   mode: "started" as string, startFails: false, accessAllowed: true, continuation: null as unknown,
   finished: [] as Array<{ id: string; status: string; errorCode?: string }>,
@@ -78,7 +82,11 @@ const post = () => POST(new Request("http://localhost:3000/api/ai/threads/" + TH
 }), { params: Promise.resolve({ threadId: THREAD }) });
 const events = (body: string) => [...body.matchAll(/event: (\w+)\ndata: (.*)\n\n/g)].map(m => ({ type: m[1], data: JSON.parse(m[2]) }));
 
+afterEach(()=>vi.unstubAllEnvs());
 beforeEach(() => {
+  vi.stubEnv("SUPERVISOR_RUN_WORKER_ENABLED","false");vi.stubEnv("SUPERVISOR_DURABLE_CHAT_ENABLED","false");
+  answerRpc.mockReset();answerRpc.mockResolvedValue({data:null,error:null});
+  durable.admit.mockReset();durable.process.mockReset();
   fake.mode = "started"; fake.startFails = false; fake.accessAllowed = true; fake.continuation = null; fake.finished = [];
   fake.steps = []; fake.loopArgs = []; fake.followUps = []; fake.kept = 0;
   vi.spyOn(console, "info").mockImplementation(() => undefined);
@@ -139,4 +147,64 @@ describe("agent route with background jobs enabled", () => {
     expect(fake.finished).toEqual([]);
     expect(console.error).toHaveBeenCalledWith("agent_job_start_failed");
   });
+});
+
+describe("durable owner admission",()=>{
+  beforeEach(()=>{
+    vi.stubEnv("SUPERVISOR_RUN_WORKER_ENABLED","true");
+    vi.stubEnv("SUPERVISOR_DURABLE_CHAT_ENABLED","true");
+    durable.admit.mockResolvedValue({id:NEXT});
+  });
+  it("admits the saved owner and immutable input before the same worker starts",async()=>{
+    durable.process.mockImplementation(async(id,emit)=>{
+      expect(durable.admit).toHaveBeenCalledTimes(1);
+      expect(id).toBe(NEXT);
+      emit("ack",{jobId:JOB,runId:NEXT,mode:"started"});
+      emit("done",{reply:{id:"reply-msg-1"}});
+      return "completed";
+    });
+    const out=events(await (await post()).text());
+    expect(durable.admit).toHaveBeenCalledWith({businessId:"business-1",ownerUserId:"owner-1",threadId:THREAD},
+      expect.objectContaining({id:"msg-1",role:"owner"}),{locale:"en",attachmentIds:[]});
+    expect(out.map(e=>e.type)).toEqual(["ack","ack","done"]);
+    expect(out[0]).toEqual({type:"ack",data:{runId:NEXT,ownerMessageId:"msg-1",mode:"queued"}});
+    expect(fake.loopArgs).toHaveLength(0);
+    expect(fake.kept).toBe(1);
+  });
+  it("fails closed when admission storage is unavailable",async()=>{
+    durable.admit.mockRejectedValue(new Error("storage"));
+    const response=await post();
+    expect(response.status).toBe(503);
+    expect(durable.process).not.toHaveBeenCalled();
+    expect(fake.loopArgs).toHaveLength(0);
+  });
+  it("reports queued work without inventing a completed reply",async()=>{
+    durable.process.mockResolvedValue("busy");
+    const out=events(await (await post()).text());
+    expect(out).toEqual([{type:"ack",data:{runId:NEXT,ownerMessageId:"msg-1",mode:"queued"}},{type:"queued",data:{runId:NEXT}}]);
+    expect(fake.loopArgs).toHaveLength(0);
+  });
+});
+
+describe("scheduled owner answer admission",()=>{
+ const questionId="99999999-9999-4999-8999-999999999999";
+ const response={questionId,action:"supply"};
+ const postAnswer=()=>POST(new Request("http://localhost:3000/api/ai/threads/"+THREAD+"/agent",{
+   method:"POST",headers:{origin:"http://localhost:3000","content-type":"application/json"},
+   body:JSON.stringify({clientMessageId:"22222222-2222-4222-8222-222222222222",text:"I will count it",locale:"en",ownerInputResponse:response}),
+ }),{params:Promise.resolve({threadId:THREAD})});
+ it("queues the exact existing investigation without admitting an owner run or calling a provider",async()=>{
+  answerRpc.mockResolvedValue({data:NEXT,error:null});
+  const out=events(await (await postAnswer()).text());
+  expect(out).toEqual([{type:"ack",data:{investigationId:NEXT,ownerMessageId:"msg-1",mode:"queued"}}]);
+  expect(answerRpc).toHaveBeenCalledWith("supervisor_answer_investigation_question",{
+   p_business_id:"business-1",p_owner_user_id:"owner-1",p_thread_id:THREAD,p_question_id:questionId,p_answer_id:"msg-1",p_response:response
+  });
+  expect(durable.admit).not.toHaveBeenCalled();expect(fake.loopArgs).toHaveLength(0);
+ });
+ it("does not run a new turn after a stale or consumed question",async()=>{
+  answerRpc.mockResolvedValue({data:null,error:{code:"23505"}});
+  expect((await postAnswer()).status).toBe(409);
+  expect(durable.admit).not.toHaveBeenCalled();expect(fake.loopArgs).toHaveLength(0);
+ });
 });

@@ -78,8 +78,7 @@ export function cityEventIdentity(input:CityEventCandidate){
   // Strong cross-source reconciliation requires BOTH a named venue and its
   // address. Distinct halls at the SAME address are not interchangeable.
   // Unknown or incomplete venues stay source-scoped until corroborated.
-  const venueIdentityKey=venue&&venueAddress?digest([cityKey,startDate,nameKey,
-    "venue:"+venueKey,"address:"+venueAddressKey].join("\u001f")):null;
+  const venueIdentityKey=venue&&venueAddress?correctedVenueAlias(cityKey,name,startDate,venue,venueAddress):null;
   return {cityKey,name,nameKey,startDate,endDate,venue,venueAddress,
     venueKey,venueAddressKey,sourceUrl,sourceIdentityKey,venueIdentityKey,
     identityKey:venueIdentityKey??sourceIdentityKey};
@@ -93,4 +92,39 @@ export function cityPlaceIdentity(input:CityPlaceCandidate){
   const discriminator=address?"address:"+clean(address):"source:"+sourceUrl;
   return {cityKey,name,address,sourceUrl,calendarUrl,
     identityKey:digest([cityKey,clean(name),discriminator].join("\u001f"))};
+}
+
+/** A verified correction may register a new dated alias for the SAME UUID.
+ * Discovery still distinguishes recurring editions by their date. */
+export function correctedSourceAlias(cityKey:string,name:string,date:string,source:string){
+ return digest([cityKey,assertDay(date),canonicalEventNameKey(name),"source:"+canonicalSourceUrl(source)].join("\u001f"));
+}
+
+/** A cited new date at the unchanged, corroborated venue can retain the
+ * cross-source identity. Never construct a venue alias from only one field. */
+export function correctedVenueAlias(cityKey:string,name:string,date:string,venue:string,address:string){
+ return digest([cityKey,assertDay(date),canonicalEventNameKey(name),
+  "venue:"+clean(label(venue,200,"venue")),"address:"+clean(label(address,500,"venue address"))].join("\u001f"));
+}
+
+/** Explicit offset + named IANA zone disambiguates DST folds and gaps. A
+ * midnight endpoint is exclusive, not a fictitious next-day occurrence. */
+export function projectTimedOccurrence(startAt:string,endAt:string,timezone:string){
+ const iso=/^\d{4}-\d{2}-\d{2}T(?:[01]\d|2[0-3]):[0-5]\d(?::[0-5]\d(?:\.\d{1,3})?)?(?:Z|[+-]\d{2}:\d{2})$/;
+ if(!iso.test(startAt)||!iso.test(endAt))throw Error("explicit_event_offset_required");
+ assertDay(startAt.slice(0,10));assertDay(endAt.slice(0,10));
+ const start=Date.parse(startAt),end=Date.parse(endAt);
+ if(!Number.isFinite(start)||!Number.isFinite(end)||end<=start)throw Error("invalid_event_interval");
+ const fmt=new Intl.DateTimeFormat("en-CA",{timeZone:timezone,year:"numeric",month:"2-digit",day:"2-digit",hour:"2-digit",minute:"2-digit",hourCycle:"h23"});
+ const parts=(ms:number)=>Object.fromEntries(fmt.formatToParts(new Date(ms)).map(p=>[p.type,p.value]));
+ const day=(p:Record<string,string>)=>p.year+"-"+p.month+"-"+p.day;
+ const time=(p:Record<string,string>)=>p.hour+":"+p.minute;
+ return {startDate:day(parts(start)),endDate:day(parts(end-1)),startTime:time(parts(start)),endTime:time(parts(end))};
+}
+export function verifiedTimedOccurrence(startAt:string,endAt:string,timezone:string){
+ const window=projectTimedOccurrence(startAt,endAt,timezone);
+ const endWall=projectTimedOccurrence(endAt,new Date(Date.parse(endAt)+60000).toISOString(),timezone);
+ if(window.startDate+"T"+window.startTime!==startAt.slice(0,16)||endWall.startDate+"T"+endWall.startTime!==endAt.slice(0,16))
+   throw Error("event_timezone_offset_conflict");
+ return {startAt:new Date(startAt).toISOString(),endAt:new Date(endAt).toISOString(),sourceTimezone:timezone,...window};
 }
