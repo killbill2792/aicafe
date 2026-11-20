@@ -332,6 +332,26 @@ describe("U3 tool descriptions leave investigation strategy to Luna",()=>{
 });
 
 
+describe("U3 retained Toast field pagination",()=>{
+ it("enumerates every retained field without question-specific paths or a hidden best-results cap",async()=>{
+  const fields=Array.from({length:80},(_,i)=>({field:"data.rare_"+String(i).padStart(3,"0"),
+   type:"number",source:"retained_current"}));
+  const rpc=vi.fn(async()=>({data:fields,error:null}));
+  const ctx={db:{rpc} as never,businessId:b};
+  const seen:string[]=[];let next:number|null=0;
+  do{
+   const page=await dataQueryTools.describe_data.execute({
+    record_type:"item",field_prefix:"data.rare_",page_size:11,page_offset:next
+   },ctx);
+   const values=page.fields??[];
+   seen.push(...values.map(v=>String(v.field)));
+   next=page.next_offset??null;
+  }while(next!==null);
+  expect(seen).toEqual(fields.map(f=>f.field));
+  expect(rpc).toHaveBeenCalledTimes(8);
+ });
+});
+
 describe("U3 semantic source discovery",()=>{
  it("finds new combinations by reviewed relation/field meaning rather than a question template",async()=>{
   const data=await dataQueryTools.describe_data.execute({search:"net sales"});
