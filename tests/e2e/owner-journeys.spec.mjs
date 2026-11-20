@@ -1381,7 +1381,10 @@ test("@home Task16D authenticated responsive Supervisor work across conversation
       await expect(controls).toBeVisible();
       await expect(page.locator("[data-work-status]")).toHaveCount(0);
       await page.getByRole("button",{name:"Supervisor work",exact:true}).click();
-      await expect(work.locator('[data-work-status="queued"]')).toBeVisible();
+      // Work is owner-wide now: both saved conversations must remain visible
+      // by their own original identity, not a globally unique queued label.
+      await expect(work.locator('[data-work-id="run:'+runId+'"][data-work-status="queued"]')).toBeVisible();
+      await expect(work.locator('[data-work-id="run:'+otherRun+'"][data-work-status="queued"]')).toBeVisible();
       await page.keyboard.press("Escape");
       const before=await page.evaluate(()=>({
         viewport:window.innerWidth, documentWidth:document.documentElement.scrollWidth,
