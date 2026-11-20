@@ -4552,6 +4552,8 @@
     "loadedReports": "Reports in loaded messages",
     "savedReport": "Saved answer report",
     "openRoutineChat": "Open routine conversation",
-    "weekdayNames": ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]
+    "weekdayNames": ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"],
+    "stopLiveView": "Stop live view",
+    "streamDetached": "Live view stopped. Saved work may continue; check Work for its status."
   }
 }
