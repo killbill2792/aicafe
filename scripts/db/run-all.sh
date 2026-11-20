@@ -184,6 +184,8 @@ supabase_lane() {
   sql_step task16c-external-permissions-db.sql "Task16C: owner/café permission revoke, CAS, audit, Gmail generations"
 
   group "Concurrent sessions"
+  check supabase "U1 shared runtime: concurrent admission, recovery, scope and workload" env U1_RELIABILITY_DB_SANDBOX_ONLY=1 \
+    U1_RELIABILITY_DB_URL="$supabase_url" npx vitest run lib/ai/agent/u1Reliability.db.test.ts --reporter=verbose
   check supabase "Task13C: concurrent authenticated staff, owner reply and assignment replay" env TASK13C_DISPOSABLE_DB_URL="$supabase_url" node scripts/task13c-concurrent-nonce-db.mjs
   check supabase "Olivia 1A: concurrent same-key creates" bash scripts/olivia-pr1a-create-concurrency.sh
   check supabase "Olivia 1B: concurrent co-owner batches" bash scripts/olivia-pr1b-create-concurrency.sh
