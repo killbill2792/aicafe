@@ -8,7 +8,8 @@ import { createServerSupabaseClient } from "@/lib/supabase/server";
 import { authenticatedConversationContext, ConversationApiError } from "./auth.server";
 import type { ConversationScope } from "./contracts";
 import {currentDurableUsageAccounting} from "@/lib/ai/supervisor/runs/usage.server";
-export type SupervisorUsage = {model:string;inputTokens:number;outputTokens:number;modelCallCount:number;toolCallCount:number};
+import type {ProviderUsageReceipt,ToolUsageReceipt} from "@/lib/ai/agent/executionPolicy";
+export type SupervisorUsage = {model:string;inputTokens:number;outputTokens:number;modelCallCount:number;toolCallCount:number;executionMetrics?:{requests:ProviderUsageReceipt[];tools:ToolUsageReceipt[]}};
 
 /** A dollar rate is configured per million tokens; cost is stored in millionths of a USD.
  * A missing rate is NULL, not a fabricated "$0" estimate. No financial business math is touched.
@@ -64,20 +65,28 @@ export async function recordSupervisorUsage(params: {
   const family=modelFamily(usage.model);
   if(!family)console.error("unpriced_model",{model:usage.model});
   const standard=family?standardModelTokenRates(usage.model,null,usage.inputTokens):null;
-  const cost=family?estimateSupervisorCostMicros(usage.inputTokens,usage.outputTokens,
-    inputRate??standard?.input,outputRate??standard?.output):null;
+  const known=usage.executionMetrics?.requests;
+  const cost=usage.modelCallCount===0&&usage.inputTokens===0&&usage.outputTokens===0?0:
+    known?known.length===usage.modelCallCount&&known.every(x=>x.estimatedCostMicros!==null)?known.reduce((sum,x)=>sum+(x.estimatedCostMicros??0),0):null:
+    family?estimateSupervisorCostMicros(usage.inputTokens,usage.outputTokens,
+      inputRate??standard?.input,outputRate??standard?.output):null;
   const admin = createAdminSupabaseClient();
   // Atomic additive write: failed attempt plus Retry never discard previously incurred usage.
   const accounting=currentDurableUsageAccounting({...scope,threadId,ownerMessageId},usage.modelCallCount);
-  const { error } = await admin.rpc(accounting?"supervisor_record_durable_usage_increment":"record_supervisor_usage_increment", {
+  const name=accounting?"supervisor_record_durable_usage_increment":"record_supervisor_usage_increment";
+  const args={
     ...(accounting?{p_run_id:accounting.runId,p_attempt_ids:accounting.attemptIds}:{}),
     p_business_id:scope.businessId,p_owner_user_id:scope.ownerUserId,
     p_thread_id:threadId,p_owner_message_id:ownerMessageId,
     p_model:usage.model,p_input_tokens:usage.inputTokens,p_output_tokens:usage.outputTokens,
     p_model_call_count:usage.modelCallCount,p_tool_call_count:usage.toolCallCount,
     p_estimated_cost_micros:cost,
-  });
-  if (error) throw error;
+  };
+  let {error}=await admin.rpc(name,usage.executionMetrics?{...args,p_execution_metrics:usage.executionMetrics}:args);
+  // Only a missing signature means the old database has not migrated yet.
+  // Never retry an uncertain write or a rejected owner/attempt fence.
+  if(usage.executionMetrics&&(error?.code==="PGRST202"||error?.code==="42883"))({error}=await admin.rpc(name,args));
+  if(error)throw error;
 }
 
 /** Read via the owner's cookie-authenticated, RLS-enforced client, not service role.
