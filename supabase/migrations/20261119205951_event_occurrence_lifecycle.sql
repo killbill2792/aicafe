@@ -148,7 +148,7 @@ begin
    raise exception 'occurrence_source_not_linked' using errcode='23514';
  end if;
  if e.lifecycle is not null and (e.lifecycle->>'verifiedAt')::timestamptz>=at_time then return false; end if;
- next_start:=coalesce((p_change->>'newDate')::date,e.start_date);
+ next_start:=case when p_change->>'newEndDate' is not null then coalesce((p_change->>'newDate')::date,e.start_date) else e.start_date end;
  next_end:=coalesce((p_change->>'newEndDate')::date,e.end_date);
  -- Never move a confirmed interval by guessing its duration.
  if next_start<>e.start_date and p_change->>'newEndDate' is null then

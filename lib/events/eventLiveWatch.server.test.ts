@@ -3,6 +3,7 @@ import {effectHash,monitorLoop} from "@/lib/ai/supervisor/loop/engine";
 import {watchLiveEvents} from "./eventLiveWatch.server";
 
 vi.mock("server-only",()=>({}));
+vi.mock("@/lib/data/cafeEvents.server",async importOriginal=>({...await importOriginal<typeof import("@/lib/data/cafeEvents.server")>(),readCanonicalCafeEvents:vi.fn(async()=>[])}));
 const day="2026-10-31";
 const businessId="11111111-1111-4111-8111-111111111111";
 const effect={startDate:day,endDate:day,

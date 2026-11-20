@@ -53,6 +53,22 @@ beforeEach(()=>{
     status:"complete",result:{},recommendation:"adjust",source:"toast"} as never);
 });
 describe("automatic café-local final event observation",()=>{
+  it("rolls an extended event beyond the preparation window without a second approval",async()=>{
+    const draft=row("2026-10-01");
+    const event={id:effect("2026-10-01").eventIds[0],name:"Parade",kind:"parade",startDate:"2026-10-01",endDate:"2026-11-02",startTime:null,endTime:null,venue:null,venueAddress:null,areaLabel:null,sourceUrl:"https://example.com/event",status:"found" as const,foundAt:"",lastCheckedAt:"",lastVerifiedAt:"2026-10-20T12:00:00Z"};
+    await reportSavedEventDays(fake([draft]),businessId,ownerId,"2026-10-24",[event]);
+    expect(vi.mocked(monitorLoop).mock.calls.map(args=>args[4])).toContain("2026-10-23");
+    expect(vi.mocked(monitorLoop).mock.calls.every(args=>args[3].id===draft.id&&args[3].monitorSpec.durationDays===33)).toBe(true);
+    expect(draft.monitor_spec.durationDays).toBe(1);
+  });
+  it("closes a verified cancelled future occurrence without sampling a future day",async()=>{
+    const draft=row("2026-11-02");
+    const event={id:effect("2026-11-02").eventIds[0],name:"Parade",kind:"parade",startDate:"2026-11-02",endDate:"2026-11-02",startTime:null,endTime:null,venue:null,venueAddress:null,areaLabel:null,sourceUrl:"https://example.com/event",status:"cancelled" as const,foundAt:"",lastCheckedAt:"",lastVerifiedAt:"2026-10-30T12:00:00Z"};
+    await reportSavedEventDays(fake([draft]),businessId,ownerId,"2026-10-30",[event]);
+    expect(monitorLoop).toHaveBeenCalledTimes(1);
+    expect(vi.mocked(monitorLoop).mock.calls[0][3].canonicalEffectPayload).toMatchObject({observationWindow:{closeEarly:true,inactiveDates:["2026-11-02"],through:"2026-10-29"}});
+    expect(vi.mocked(monitorLoop).mock.calls[0][4]).toBe("2026-11-03");
+  });
   it("does not monitor tomorrow's saved event",async()=>{
     expect(await reportSavedEventDays(fake([row("2026-10-31")]),
       businessId,ownerId,"2026-10-30")).toEqual({checked:0,reported:0,failed:0});

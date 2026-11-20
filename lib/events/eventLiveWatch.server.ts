@@ -7,6 +7,7 @@ import {monitorLoop,utcDateOffset} from "@/lib/ai/supervisor/loop/engine";
 import {supervisorLoopRegistry} from "@/lib/ai/supervisor/loop/priceExperiment.server";
 import {SupabaseLoopRepository} from "@/lib/ai/supervisor/loop/supabase.server";
 import {withinCafeOpenHours} from "./eventLiveWatch";
+import {readCanonicalCafeEvents} from "@/lib/data/cafeEvents.server";
 
 /** Only the authenticated cron invokes this after the canonical live Toast
  * reader has refreshed. No UI request, web search or second monitoring ledger. */
@@ -50,7 +51,8 @@ export async function watchLiveEvents(businessId:string,businessDate:string,
    }
  }
  const observed=await observedEventProposalDates(db,businessId,eligible.map(p=>p.id));
- for(const proposal of selectEventObservations(eligible,observed.ids,today,observed.byDate.get(today))){
+ const current=new Map((await readCanonicalCafeEvents(db,businessId,today,today)).map(e=>[e.id,e]));
+ for(const proposal of selectEventObservations(eligible,observed.ids,today,observed.byDate.get(today),current,today,business.timezone)){
    const start=proposal.monitoringStartDate!;
    const end=utcDateOffset(start,proposal.monitorSpec.durationDays-1);
    if(today<start||today>end)continue;

@@ -116,7 +116,7 @@ export async function correctCityOccurrence(db:SupabaseClient,businessId:string,
  const aliases=newDate?sourceUrls.map(url=>correctedSourceAlias(event.cityKey!,event.name,newDate,url)):[];
  const {data,error}=await db.rpc("ldi_correct_occurrence",{
    p_business_id:validId(businessId),p_cafe_event_id:validId(event.id),p_city_id:validId(event.cityEventId),
-   p_claim_at:validInstant(claimAt),p_change:{...change,newDate,originalSourceUrl:canonicalSourceUrl(event.sourceUrl)},
+   p_claim_at:validInstant(claimAt),p_change:{...change,originalSourceUrl:canonicalSourceUrl(event.sourceUrl)},
    p_aliases:aliases,
  });
  throwOnError(error);return data===true;

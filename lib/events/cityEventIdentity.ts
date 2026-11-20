@@ -106,6 +106,7 @@ export function correctedSourceAlias(cityKey:string,name:string,date:string,sour
 export function projectTimedOccurrence(startAt:string,endAt:string,timezone:string){
  const iso=/^\d{4}-\d{2}-\d{2}T(?:[01]\d|2[0-3]):[0-5]\d(?::[0-5]\d(?:\.\d{1,3})?)?(?:Z|[+-]\d{2}:\d{2})$/;
  if(!iso.test(startAt)||!iso.test(endAt))throw Error("explicit_event_offset_required");
+ assertDay(startAt.slice(0,10));assertDay(endAt.slice(0,10));
  const start=Date.parse(startAt),end=Date.parse(endAt);
  if(!Number.isFinite(start)||!Number.isFinite(end)||end<=start)throw Error("invalid_event_interval");
  const fmt=new Intl.DateTimeFormat("en-CA",{timeZone:timezone,year:"numeric",month:"2-digit",day:"2-digit",hour:"2-digit",minute:"2-digit",hourCycle:"h23"});

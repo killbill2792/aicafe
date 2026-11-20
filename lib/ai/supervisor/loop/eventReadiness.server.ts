@@ -45,7 +45,7 @@ const sourceFact=z.strictObject({
 export const eventReadinessEffect=eventReadinessInput.extend({
  facts:z.array(sourceFact).min(1).max(8),
  factsHash:z.string().regex(/^[a-f0-9]{64}$/),
- observationWindow:z.object({inactiveDates:z.array(isoDay).max(366),closeEarly:z.boolean()}).optional(),
+ observationWindow:z.object({inactiveDates:z.array(isoDay).max(366),closeEarly:z.boolean(),through:isoDay.optional()}).optional(),
 });
 export const eventReadinessCapabilityId="alex.event_readiness.v1";
 
@@ -59,9 +59,21 @@ export async function withEventObservationClaim<T>(db:ReturnType<typeof createAd
  const claimed=await db.rpc("ldi_claim_monitor",{...args,p_owner_id:scope.ownerUserId});
  if(claimed.error)throw claimed.error;
  if(claimed.data!==true)return null;
- try{return await work();}finally{
-  const release=await db.rpc("ldi_release_monitor",args);
-  if(release.error)throw release.error;
+ let reportLock=false;
+ const reportArgs={...args,p_closure:true};
+ try{
+  // The final report and the last observation must never generate concurrently.
+  if(!closure){
+   const lock=await db.rpc("ldi_claim_monitor",{...reportArgs,p_owner_id:scope.ownerUserId});
+   if(lock.error)throw lock.error;
+   if(lock.data!==true)return null;
+   reportLock=true;
+  }
+  return await work();
+ }finally{
+  try{
+   if(reportLock){const released=await db.rpc("ldi_release_monitor",reportArgs);if(released.error)throw released.error;}
+  }finally{const release=await db.rpc("ldi_release_monitor",args);if(release.error)throw release.error;}
  }
 }
 
@@ -92,11 +104,10 @@ export function readOnlyEventObservation(p:LoopProposal,current?:ReadonlyMap<str
           if(day>=today&&(event.status!=="found"||day<event.startDate||day>event.endDate))inactiveDates.push(day);
         }
       }
-      const closeEarly=Boolean(event&&today&&event.lastVerifiedAt&&
-        (event.status!=="found"||event.endDate<today)&&end>=today&&
-        eventStatusAtBusinessDay(event,today,timezone)!=="found"||event&&today&&event.lastVerifiedAt&&event.endDate<today&&end>=today);
+      const closeEarly=Boolean(event&&today&&event.lastVerifiedAt&&end>=today&&
+        (eventStatusAtBusinessDay(event,today,timezone)!=="found"||event.endDate<today));
       if(duration!==days||start!==effect.startDate||inactiveDates.length){
-        const projected=eventReadinessEffect.parse({...effect,startDate:start,endDate:end,observationWindow:{inactiveDates,closeEarly}});
+        const projected=eventReadinessEffect.parse({...effect,startDate:start,endDate:end,observationWindow:{inactiveDates,closeEarly,...(closeEarly&&today?{through:utcDateOffset(today,-1)}:{})}});
         return {...p,status:"committed",monitoringStartDate:start,monitorSpec:{...p.monitorSpec,durationDays:duration},
           canonicalEffectPayload:projected,effectHash:effectHash(projected)};
       }
@@ -452,7 +463,7 @@ export const eventReadinessCapability=registerLoopCapability({
    const checklist={total:effect.actions.length,
      done:ticks.filter(t=>t.state==="done").length,
      dismissed:ticks.filter(t=>t.state==="dismissed").length};
-   const observed=samples.filter(s=>s.businessDate>=effect.startDate&&s.businessDate<=effect.endDate)
+   const observed=samples.filter(s=>s.businessDate>=effect.startDate&&s.businessDate<=effect.endDate&&!effect.observationWindow?.inactiveDates.includes(s.businessDate))
      .sort((a,b)=>a.businessDate.localeCompare(b.businessDate));
    const expected=Math.round((Date.parse(effect.endDate)-Date.parse(effect.startDate))/86400000)+1;
    const actual=[...new Map(observed.filter(s=>s.observation.coverage==="actual")
@@ -477,7 +488,7 @@ export const eventReadinessCapability=registerLoopCapability({
        changePercent(comparableActualCents,comparableTypicalCents):null};
    // A completed business day can have actual sales but missing item/discount
    // details. Keep that distinction in the same saved Supervisor report.
-   const evidenceEnd=effect.observationWindow?.closeEarly?utcDateOffset(cafeToday((await createAdminSupabaseClient().from("businesses").select("timezone").eq("id",scope.businessId).maybeSingle()).data?.timezone??"UTC"),-1):effect.endDate;
+   const evidenceEnd=effect.observationWindow?.through??effect.endDate;
    const toastEvidence=windowComplete&&window?.proposalId&&evidenceEnd>=effect.startDate?await Promise.resolve()
      .then(()=>eventToastEvidence(createAdminSupabaseClient(),
        scope.businessId,effect.startDate,effect.actions,evidenceEnd)).catch(()=>({
