@@ -33,3 +33,25 @@ export async function readCoveredSalesDates(db:SupabaseClient,businessId:string,
  return (await readDailyFactRows(db,businessId,from,to))
   .filter(row=>row.sales_data_status==="actual").map(row=>row.business_date);
 }
+
+/** Date-only bounds of stored actual sales, not proof of financial completeness.
+ * The caller verifies a selected day with the ordinary shared reader. */
+export async function readSalesCoverageBounds(db:SupabaseClient,businessId:string,from:string,to:string):Promise<{from:string;to:string}|null>{
+ if(!businessId||from>to)throw new Error("Invalid sales coverage scope");
+ const read=async(ascending:boolean)=>{
+  const {data,error}=await db.from("daily_rollups").select("business_date")
+   .eq("business_id",businessId).eq("sales_data_status","actual")
+   .gte("business_date",from).lte("business_date",to)
+   .order("business_date",{ascending}).range(0,0);
+  if(error||!Array.isArray(data)||data.length>1)throw new Error("Sales coverage unavailable");
+  if(!data.length)return null;
+  const date=data[0].business_date;
+  if(typeof date!=="string"||!/^\d{4}-\d{2}-\d{2}$/.test(date)||date<from||date>to)
+   throw new Error("Invalid sales coverage date");
+  return date;
+ };
+ const [first,last]=await Promise.all([read(true),read(false)]);
+ if(first===null&&last===null)return null;
+ if(first===null||last===null||first>last)throw new Error("Sales coverage changed during read");
+ return {from:first,to:last};
+}
