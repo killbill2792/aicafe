@@ -1,6 +1,6 @@
 "use client";
 
-import { Suspense, useCallback, useEffect, useLayoutEffect, useReducer, useRef, useState, useSyncExternalStore, type ChangeEvent, type KeyboardEvent } from "react";
+import { Suspense, useCallback, useEffect, useLayoutEffect, useMemo, useReducer, useRef, useState, useSyncExternalStore, type ChangeEvent, type KeyboardEvent } from "react";
 import { Clock3, Menu, ListChecks, Mic, Plus, Camera, ArrowUp, Sparkles, Square, SquarePen, ThumbsUp, ThumbsDown, X, AlertCircle, Paperclip, LoaderCircle, UsersRound, ArrowDown } from "lucide-react";
 import { AgentAvatar } from "@/components/operations/AITeamCard";
 import { parseAgentId } from "@/lib/operating/tasks";
@@ -1112,9 +1112,10 @@ export default function SupervisorChatComposer({
     })),
   ];
   const activeQuestionMessageId=activeOwnerQuestionMessageId(displayedMessages);
+  const savedReports=useMemo(()=>loadedSavedReports(messages,threadId),[messages,threadId]);
   const hasChatMessages=displayedMessages.length>0;
   const startReady=!threadId||loadedThreadId===threadId||hasChatMessages;
-  const answeredOwnerIds = answeredOwnerMessageIds(messages);
+  const answeredOwnerIds = useMemo(()=>answeredOwnerMessageIds(messages),[messages]);
   const inFlightOwnerIds = inFlightOwnerMessageIds(watcher.job);
   for(const item of durableWork){if(item.ownerMessageId)inFlightOwnerIds.add(item.ownerMessageId);for(const id of item.relatedOwnerMessageIds??[])inFlightOwnerIds.add(id);}
   for(const id of acceptedDurableIds)inFlightOwnerIds.add(id);
@@ -1440,6 +1441,6 @@ export default function SupervisorChatComposer({
         </nav>
         <Link href="/operations" className="hidden min-h-12 items-center gap-2 rounded-lg px-2 text-[17px] text-ink hover:bg-surface2 md:flex"><UsersRound size={20} aria-hidden="true"/>{copy.teamButton}</Link>
         {languageSwitch&&<div className="md:hidden">{languageSwitch}</div>}
-      </div>} files={storedAttachments} reports={loadedSavedReports(messages,threadId)} onOpenReport={id=>{if(!threadId)return;setControlsTab(null);setWorkNotice("");setWorkTarget({threadId,messageId:id});}} threadsNextOffset={threadsNextOffset} onSelectThread={(id,thread)=>selectThread(id,thread?.title)} onClose={()=>setControlsTab(null)}/>}
+      </div>} files={storedAttachments} reports={savedReports} onOpenReport={id=>{if(!threadId)return;setControlsTab(null);setWorkNotice("");setWorkTarget({threadId,messageId:id});}} threadsNextOffset={threadsNextOffset} onSelectThread={(id,thread)=>selectThread(id,thread?.title)} onClose={()=>setControlsTab(null)}/>}
   </section>;
 }

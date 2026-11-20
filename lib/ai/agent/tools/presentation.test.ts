@@ -267,3 +267,21 @@ it("uses dictionary field semantics instead of admitting identifiers or raw JSON
  expect(presentResponse(req,c).accepted).toBe(false);
  expect(presentResponse({...req,panels:[{...req.panels[0],field:"table:count_business_id"}]},c).accepted).toBe(false);
 });
+
+describe("labor evidence presentation",()=>{
+ const labor:AgentToolResult={source:"labor_and_attendance",period:sales.period,missing:[],estimated:[],laborDays:[
+  {date:"2026-11-02",wagesCents:1500,staffTaxCents:300,loadedStaffCostCents:1800,wageStatus:"actual"},
+  {date:"2026-11-03",wagesCents:0,staffTaxCents:0,loadedStaffCostCents:0,wageStatus:"actual"}]};
+ const q={layout:"stack",panels:[{source:"labor_and_attendance",field:"daily_labor_cost",kind:"line"}],suggestions:[]};
+ it("binds the loaded labor cost without recalculating or implying whole payroll coverage",()=>{
+  expect(presentResponse(q,ctx(labor))).toMatchObject({accepted:true,presentation:{panels:[{coverage:"partial",points:[{label:"2026-11-02",value:1800},{label:"2026-11-03",value:0}]}]}});
+ });
+ it("preserves estimate and missing wage rows instead of charting them as actual",()=>{
+  const mixed={...labor,estimated:["laborWageEstimate"],laborDays:[
+   {date:"2026-11-01",wagesCents:100,staffTaxCents:25,loadedStaffCostCents:125,wageStatus:"estimate"},
+   {date:"2026-11-02",wagesCents:0,staffTaxCents:0,loadedStaffCostCents:0,wageStatus:"missing"}]};
+  expect(presentResponse(q,ctx(mixed)).accepted).toBe(false);
+  expect(presentResponse({...q,panels:[{source:"labor_and_attendance",field:"rows",kind:"table"}]},ctx(mixed))).toMatchObject({accepted:true,presentation:{tables:[{coverage:"partial",rows:[["2026-11-01",100,25,125,"Estimate"],["2026-11-02",null,null,null,"Unavailable"]]}]}});
+  expect(presentResponse(q,ctx({...labor,missing:["laborReadFailed"]})).accepted).toBe(false);
+ });
+});

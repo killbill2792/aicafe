@@ -1522,11 +1522,6 @@ test("@home Task16E design baseline observes empty and long Supervisor conversat
         // Verify owner on desktop first, then assert the exact thread URL on each measured navigation.
         await openOwnedPage(page,owner,"?thread="+empty);
         await page.setViewportSize(viewport);
-        const navigateThread=async id=>{
-          await page.goto("/en/?thread="+id);
-          await expect(page).toHaveURL(new RegExp("[?&]thread="+id+"(?:&|$)"));
-          await expect(page).not.toHaveURL(/\/login(?:\?|$)|\/onboarding(?:\?|$)/);
-        };
         const requests={threads:0,messages:0,attachments:0,work:0,otherApi:0,rsc:0};
         const readFailures=[];
         page.on("response",response=>{
@@ -1560,13 +1555,18 @@ test("@home Task16E design baseline observes empty and long Supervisor conversat
         const controls=page.getByRole("button",{name:"Library, routines and permissions"});
         const input=page.locator("#supervisor-home-composer");
         const start=Date.now();
-        await navigateThread(empty);
+        await expect(page).toHaveURL(new RegExp("[?&]thread="+empty+"(?:&|$)"));
+        await expect(page.getByTestId("supervisor-welcome")).toBeVisible();
         await expect(input).toBeVisible();
         const emptyMs=Date.now()-start;
         const emptyMetrics=await geometry();
         await page.screenshot({path:testInfo.outputPath("16e-empty-"+viewport.width+".png")});
         const longStart=Date.now();
-        await navigateThread(thread);
+        await controls.click();
+        const historyDrawer=page.getByRole("dialog",{name:"Supervisor controls"});
+        await historyDrawer.getByRole("button",{name:"Library",exact:true}).click();
+        await historyDrawer.getByRole("button",{name:"Task16E long synthetic conversation",exact:true}).click();
+        await expect(page).toHaveURL(new RegExp("[?&]thread="+thread+"(?:&|$)"));
         await expect(page.getByText("Synthetic owner question 1",{exact:true})).toBeVisible();
         await expect(input).toBeVisible();
         const longMs=Date.now()-longStart;
@@ -1771,7 +1771,7 @@ test("@home Task16E quiet shell, optional visuals, editable follow-up and mobile
     const controls=page.getByRole("button",{name:"Library, routines and permissions"});
     const drawer=page.getByRole("dialog",{name:"Supervisor controls"});
     await controls.click();
-    const search=drawer.getByRole("searchbox",{name:"Search loaded chats"});
+    const search=drawer.getByRole("searchbox",{name:"Search loaded Library"});
     await search.fill("Task16E welcome fixture");
     await expect(drawer.getByRole("button",{name:"Task16E answer fixture"})).toHaveCount(0);
     await drawer.getByRole("button",{name:"Task16E welcome fixture"}).click();
@@ -1921,6 +1921,12 @@ test("@home Task16E adaptive answer survives reload, preserves prose and opens a
       const library=page.getByRole("dialog",{name:"Supervisor controls"});
       await page.getByRole("button",{name:"Library, routines and permissions"}).click();
       await library.getByRole("button",{name:"Library",exact:true}).click();
+      const librarySearch=library.getByRole("searchbox",{name:"Search loaded Library"});
+      await librarySearch.fill("example-sales.csv");
+      await expect(library.getByRole("link",{name:"example-sales.csv",exact:true})).toBeVisible();
+      await expect(library.locator('[data-library-report="'+reply+'"]')).toHaveCount(0);
+      await librarySearch.fill("Daily net sales");
+      await expect(library.getByRole("link",{name:"example-sales.csv",exact:true})).toHaveCount(0);
       await library.locator('[data-library-report="'+reply+'"]').click();
       await expect(library).toHaveCount(0);
       await expect(answer).toBeFocused();

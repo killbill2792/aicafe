@@ -191,7 +191,12 @@ export default function SupervisorMandatePanel({threadId,threads,approvals,onSel
     mandateStatus(m,now)==="active");
   const expiredChallenge=Boolean(challenge&&Date.parse(challenge.expiresAt)<=now);
   const allThreads=[...new Map([...olderThreads,...threads].map(t=>[t.id,t])).values()].sort((a,b)=>(b.lastMessageAt??b.createdAt).localeCompare(a.lastMessageAt??a.createdAt));
-  const filteredThreads=allThreads.filter(t=>(t.title??copy.savedChats).toLocaleLowerCase().includes(search.trim().toLocaleLowerCase()));
+  const term=search.trim().toLocaleLowerCase();
+  const matches=(value:string)=>value.toLocaleLowerCase().includes(term);
+  const filteredThreads=allThreads.filter(t=>matches(t.title??copy.savedChats));
+  const filteredReports=reports.filter(report=>matches(report.title??en.SupervisorExperience.savedReport));
+  const filteredFiles=files&&files.threadId===threadId?files.items.filter(file=>matches(file.originalName)):[];
+  const noMatches=Boolean(term)&&!filteredThreads.length&&!filteredReports.length&&!filteredFiles.length;
   async function loadHistory(){
     if(historyBusy||historyOffset===null||historyRequest.current)return;
     const request=new AbortController();historyRequest.current=request;setHistoryBusy(true);setHistoryError("");
@@ -248,7 +253,7 @@ export default function SupervisorMandatePanel({threadId,threads,approvals,onSel
           <h3 className="text-[15px] font-medium text-ink-muted">{copy.savedChats}</h3>
           <label className="flex min-h-12 items-center gap-2 rounded-lg border border-line px-3"><Search size={18} aria-hidden="true"/><span className="sr-only">{en.SupervisorExperience.searchLoadedChats}</span><input type="search" value={search} onChange={e=>setSearch(e.target.value)} placeholder={en.SupervisorExperience.searchLoadedChats} className="min-w-0 flex-1 bg-transparent text-[17px] text-ink"/></label>
           {allThreads.length===0&&<p className="text-sm text-ink-muted">{copy.emptyChats}</p>}
-          {allThreads.length>0&&filteredThreads.length===0&&<p role="status" className="text-sm text-ink-muted">{en.SupervisorExperience.noMatchingChats}</p>}
+          {noMatches&&<p role="status" className="text-sm text-ink-muted">{en.SupervisorExperience.noMatchingChats}</p>}
           {filteredThreads.map(thread=><button key={thread.id} type="button" data-library-thread={thread.id}
             disabled={disabled} onClick={()=>{onSelectThread(thread.id,thread);onClose();}}
             aria-current={thread.id===threadId?"page":undefined}
@@ -257,13 +262,13 @@ export default function SupervisorMandatePanel({threadId,threads,approvals,onSel
           </button>)}
           {historyError&&<p role="alert" className="text-sm text-ink-muted">{historyError}</p>}
           {historyOffset!==null&&<button type="button" disabled={historyBusy} onClick={()=>void loadHistory()} className="min-h-12 rounded-lg border border-line px-3 text-[15px] text-ink">{historyBusy?copy.loading:en.SupervisorExperience.loadOlderChats}</button>}
-          {reports.length>0&&onOpenReport&&<section aria-label={en.SupervisorExperience.loadedReports} className="border-t border-line pt-3">
+          {filteredReports.length>0&&onOpenReport&&<section aria-label={en.SupervisorExperience.loadedReports} className="border-t border-line pt-3">
             <h3 className="text-[15px] font-medium text-ink-muted">{en.SupervisorExperience.loadedReports}</h3>
-            {reports.map(report=><button key={report.id} type="button" disabled={disabled} data-library-report={report.id} onClick={()=>{onOpenReport(report.id);onClose();}} className="flex min-h-12 w-full items-center gap-2 rounded-lg px-2 text-start hover:bg-surface2 disabled:opacity-50"><BookOpen size={18} className="shrink-0" aria-hidden="true"/><span className="min-w-0 break-words text-[17px]">{report.title??en.SupervisorExperience.savedReport}<span className="block text-[13px] text-ink-muted">{humanTime(report.createdAt)}</span></span></button>)}
+            {filteredReports.map(report=><button key={report.id} type="button" disabled={disabled} data-library-report={report.id} onClick={()=>{onOpenReport(report.id);onClose();}} className="flex min-h-12 w-full items-center gap-2 rounded-lg px-2 text-start hover:bg-surface2 disabled:opacity-50"><BookOpen size={18} className="shrink-0" aria-hidden="true"/><span className="min-w-0 break-words text-[17px]">{report.title??en.SupervisorExperience.savedReport}<span className="block text-[13px] text-ink-muted">{humanTime(report.createdAt)}</span></span></button>)}
           </section>}
-          {files&&files.threadId===threadId&&files.items.length>0&&<section aria-label={en.SupervisorExperience.conversationFiles} className="border-t border-line pt-3">
+          {files&&files.threadId===threadId&&filteredFiles.length>0&&<section aria-label={en.SupervisorExperience.conversationFiles} className="border-t border-line pt-3">
             <h3 className="text-[15px] font-medium text-ink-muted">{en.SupervisorExperience.conversationFiles}</h3>
-            {files.items.map(file=><a key={file.id} href={"/api/ai/threads/"+encodeURIComponent(files.threadId)+"/attachments/"+encodeURIComponent(file.id)} target="_blank" rel="noopener noreferrer" className="flex min-h-12 min-w-0 items-center gap-2 rounded-lg px-2 text-[17px] text-ink underline hover:bg-surface2"><Paperclip size={18} className="shrink-0" aria-hidden="true"/><span className="min-w-0 break-all">{file.originalName}</span></a>)}
+            {filteredFiles.map(file=><a key={file.id} href={"/api/ai/threads/"+encodeURIComponent(files.threadId)+"/attachments/"+encodeURIComponent(file.id)} target="_blank" rel="noopener noreferrer" className="flex min-h-12 min-w-0 items-center gap-2 rounded-lg px-2 text-[17px] text-ink underline hover:bg-surface2"><Paperclip size={18} className="shrink-0" aria-hidden="true"/><span className="min-w-0 break-all">{file.originalName}</span></a>)}
           </section>}
         </section>}
         {tab==="routines"&&<section aria-label={copy.routineTitle} className="space-y-3">
