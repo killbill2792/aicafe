@@ -4,7 +4,7 @@ import type {SupabaseClient} from "@supabase/supabase-js";
 import type {AgentProvider} from "@/lib/ai/agent/loop.server";
 import {modelTokenUsage,standardModelTokenRates,estimateModelCallCostMicros,hostedWebActualCostMicros}
   from "@/lib/calc/supervisorTokenCost";
-import {providerUsageReceipt} from "@/lib/ai/agent/executionPolicy";
+import {providerUsageReceipt,requestComposition} from "@/lib/ai/agent/executionPolicy";
 import {ownerModelCallsLimit} from "@/lib/ai/conversations/usage.server";
 
 export type ClaimedInvestigationUsageScope={
@@ -31,6 +31,7 @@ export function meteredInvestigationProvider(
     try{bytes=Buffer.byteLength(JSON.stringify(params),"utf8");}
     catch{problem="storage_failed";throw new Error(problem);}
     const outputCap=params.max_output_tokens;
+    const composition=requestComposition(params);
     const requestedModel=params.model;
     if(typeof requestedModel!=="string"||!requestedModel.trim()||
       typeof outputCap!=="number"||!Number.isSafeInteger(outputCap)||
@@ -73,7 +74,7 @@ export function meteredInvestigationProvider(
           p_output_tokens:usage?.outputTokens??null,
           p_estimated_cost_micros:cost,
         };
-        const metrics=providerUsageReceipt({requestedModel,kind,outcome:"completed",final:params.tool_choice==="none",nativeSearch:Array.isArray(params.tools)&&params.tools.some(t=>t?.type==="tool_search"),outputCap,durationMs:Math.max(0,Date.now()-startedAt),response});
+        const metrics=providerUsageReceipt({requestedModel,kind,outcome:"completed",final:params.tool_choice==="none",nativeSearch:Array.isArray(params.tools)&&params.tools.some(t=>t?.type==="tool_search"),outputCap,durationMs:Math.max(0,Date.now()-startedAt),response,composition});
         let completed=await db.rpc("supervisor_complete_investigation_model_call",{...completeArgs,p_execution_metrics:metrics});
         if(completed.error?.code==="PGRST202"||completed.error?.code==="42883")completed=await db.rpc("supervisor_complete_investigation_model_call",completeArgs);
         if(completed.error){problem="storage_failed";throw new Error(problem);}
