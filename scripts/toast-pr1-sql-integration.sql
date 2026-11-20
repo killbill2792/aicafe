@@ -43,7 +43,7 @@ SELECT public.toast_import_day(
  'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaff01','2026-10-16',
  '[{"posOrderId":"toast:aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaff01:aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaa1234",
  "closedAt":"2026-10-17T02:00:00Z","grossSalesCents":1200,"discountsCents":200,"refundsCents":0,
- "taxCents":40,"tipCents":100,"netSalesCents":1000,"lines":[{"posItemId":null,"name":"Coffee",
+ "taxCents":40,"tipCents":100,"netSalesCents":1000,"lines":[{"posItemId":"toast:aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaff01:aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaa4321","name":"Coffee",
  "quantity":1,"netSalesCents":1000,"modifiers":[],"voided":false}]}]'::jsonb,
  '{"net_sales_cents":1000,"order_count":1,"gross_sales_cents":1200,
  "discounts_cents":200,"refunds_cents":0,"tax_cents":40,"tip_cents":100,
@@ -70,12 +70,47 @@ SELECT pg_temp.assert((SELECT count(*)=1 FROM public.toast_void_facts WHERE
  void_business_date='2026-10-17'),'later-day void attribution');
 SELECT pg_temp.assert((SELECT count(*)=1 FROM public.order_lines
  WHERE net_sales_cents=1000),'line imported');
+
+-- P1: the import transaction itself must retain a relink generation. Simulate
+-- a crashed worker: no relink call and no sales_link error receipt was written.
+SELECT pg_temp.assert((SELECT relink_pending_generation IS NOT NULL FROM public.toast_day_status
+ WHERE business_id='aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa'
+ AND restaurant_guid='aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaff01'
+ AND business_date='2026-10-16'),'committed day has durable pending relink intent');
+SELECT pg_temp.assert(NOT EXISTS(SELECT 1 FROM public.toast_sync_phase_errors
+ WHERE business_id='aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa' AND phase='sales_link'),
+ 'recovery cannot depend on a post-commit failure write');
+SELECT pg_temp.assert((SELECT menu_item_id IS NULL FROM public.order_lines
+ WHERE net_sales_cents=1000),'sold item still needs relink');
+-- Cost worker may have already acknowledged the pre-relink snapshot.
+SELECT pg_temp.assert(public.toast_ack_rollup_refresh(business_id,business_date,generation),
+ 'pre-relink cost generation acknowledged')
+ FROM public.toast_rollup_refresh_jobs WHERE business_id='aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa'
+ AND business_date='2026-10-16';
+SELECT pg_temp.assert(public.toast_retry_pending_relink(
+ 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa','aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaff01'),
+ 'scheduler recovers committed day without another import');
+SELECT pg_temp.assert((SELECT menu_item_id IS NOT NULL FROM public.order_lines
+ WHERE net_sales_cents=1000),'durable retry links sold identity');
+SELECT pg_temp.assert((SELECT relink_pending_generation IS NULL FROM public.toast_day_status
+ WHERE business_id='aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa'
+ AND restaurant_guid='aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaff01'
+ AND business_date='2026-10-16'),'successful retry settles exact intent');
+SELECT pg_temp.assert(EXISTS(SELECT 1 FROM public.toast_rollup_refresh_jobs
+ WHERE business_id='aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa'
+ AND business_date='2026-10-16'),'relink renews cost generation');
+SELECT pg_temp.assert(NOT public.toast_retry_pending_relink(
+ 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa','aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaff01'),
+ 'idle tick does not repeat historic scan');
+SELECT pg_temp.assert(NOT has_function_privilege('authenticated',
+ 'public.toast_retry_pending_relink(uuid,uuid)','EXECUTE'),'owner cannot invoke retry');
+
 SELECT public.toast_import_day(
  'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa','aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaa0001',
  'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaff01','2026-10-16',
  '[{"posOrderId":"toast:aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaff01:aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaa1234",
  "closedAt":"2026-10-17T02:00:00Z","grossSalesCents":1200,"discountsCents":200,"refundsCents":0,
- "taxCents":40,"tipCents":100,"netSalesCents":1000,"lines":[{"posItemId":null,"name":"Coffee",
+ "taxCents":40,"tipCents":100,"netSalesCents":1000,"lines":[{"posItemId":"toast:aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaff01:aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaa4321","name":"Coffee",
  "quantity":1,"netSalesCents":1000,"modifiers":[],"voided":false}]}]'::jsonb,
  '{"net_sales_cents":1000,"order_count":1,"gross_sales_cents":1200,
  "discounts_cents":200,"refunds_cents":0,"tax_cents":40,"tip_cents":100,
@@ -90,6 +125,11 @@ SELECT pg_temp.assert((SELECT labor_wage_status='actual' AND staff_wages_cents=5
 SELECT pg_temp.assert((SELECT count(*)=1 FROM public.orders WHERE business_id='aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa'
  AND pos_order_id like 'toast:%'),'idempotent order upsert');
 SELECT pg_temp.assert((SELECT count(*)=0 FROM public.toast_order_revisions),'unchanged day creates no revisions');
+SELECT pg_temp.assert((SELECT relink_pending_generation IS NOT NULL FROM public.toast_day_status
+ WHERE business_id='aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa'
+ AND restaurant_guid='aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaff01'
+ AND business_date='2026-10-16'),'repeat import renews relink intent even in the same transaction');
+
 SELECT public.toast_import_day(
  'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa','aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaa0001',
  'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaff01','2026-10-16','[]'::jsonb,
