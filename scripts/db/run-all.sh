@@ -188,6 +188,8 @@ supabase_lane() {
   check supabase "U1 four-ref matched recorded incident replay" node scripts/acceptance/u1-incident-replay.mjs
   check supabase "U1 shared runtime: concurrent admission, recovery, scope and workload" env U1_RELIABILITY_DB_SANDBOX_ONLY=1 \
     U1_RELIABILITY_DB_URL="$supabase_url" npx vitest run lib/ai/agent/u1Reliability.db.test.ts --reporter=verbose
+  check supabase "U2 model execution capacity, accounting and isolation" env U2_MODEL_EXECUTION_DB_SANDBOX_ONLY=1 \
+    U2_MODEL_EXECUTION_DB_URL="$supabase_url" npx vitest run lib/ai/agent/u2ModelExecution.db.test.ts --reporter=verbose
   check supabase "Task13C: concurrent authenticated staff, owner reply and assignment replay" env TASK13C_DISPOSABLE_DB_URL="$supabase_url" node scripts/task13c-concurrent-nonce-db.mjs
   check supabase "Olivia 1A: concurrent same-key creates" bash scripts/olivia-pr1a-create-concurrency.sh
   check supabase "Olivia 1B: concurrent co-owner batches" bash scripts/olivia-pr1b-create-concurrency.sh
