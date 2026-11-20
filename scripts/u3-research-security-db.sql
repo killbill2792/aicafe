@@ -52,6 +52,18 @@ INSERT INTO public.cafe_suppliers(id,business_id,display_name)
 VALUES (gen_random_uuid(),:'a','Synthetic supplier A'),
        (gen_random_uuid(),:'b','Synthetic supplier B');
 
+-- One genuine observed scalar change and two forbidden paths in café A;
+-- café B has a different value. This is the existing operational delta log.
+INSERT INTO public.toast_raw_changes(
+ business_id,restaurant_guid,entity,entity_guid,business_date,changes)
+VALUES
+ (:'a',NULL,'employee',gen_random_uuid(),current_date,
+  '[{"path":".properties.verified.quantity","before":1,"after":3},
+    {"path":".authToken","before":"forbidden-one","after":"forbidden-two"},
+    {"path":".notes","before":"not permitted","after":"still not permitted"}]'::jsonb),
+ (:'b',NULL,'employee',gen_random_uuid(),current_date,
+  '[{"path":".properties.verified.quantity","before":2,"after":9}]'::jsonb);
+
 -- Verify strict object and function privileges before checking actual rows.
 DO $checks$
 BEGIN
@@ -91,7 +103,12 @@ SELECT (SELECT count(*) FROM u3_research.toast_records
   WHERE record_type='employee')=1 AS toast_current_same_cafe,
  (SELECT data #>> '{properties,verified,quantity}'
   FROM u3_research.toast_records WHERE record_type='employee')='3' AS toast_nested_value;
-SELECT (SELECT count(*) FROM u3_research.cafe_suppliers)=1 AS supplier_isolation,
+SELECT (SELECT count(*) FROM u3_research.toast_changes)=1 AS change_tenant_scope,
+ (SELECT after_scalar FROM u3_research.toast_changes
+   WHERE field_path='data.properties.verified.quantity')='3' AS change_scalar_correct,
+ (SELECT count(*) FROM u3_research.toast_changes
+   WHERE field_path LIKE '%authToken%' OR field_path LIKE '%notes%')=0 AS change_privacy,
+ (SELECT count(*) FROM u3_research.cafe_suppliers)=1 AS supplier_isolation,
  (SELECT min(display_name) FROM u3_research.cafe_suppliers)='Synthetic supplier A' AS supplier_identity,
  (SELECT count(*) FROM u3_research.orders)=1 AS only_owner_cafe_orders,
  (SELECT sum(net_sales_cents) FROM u3_research.orders)=1100 AS correct_owner_amount,
@@ -110,6 +127,21 @@ SELECT (SELECT count(*) FROM u3_research.toast_records WHERE record_type='employ
 \if :toast_nested_cafe_value
 \else
  \echo 'U3 retained nested Toast field unreadable or wrong'
+ SELECT 1/0;
+\endif
+\if :change_tenant_scope
+\else
+ \echo 'U3 historical change rows leaked foreign café or forbidden paths'
+ SELECT 1/0;
+\endif
+\if :change_scalar_correct
+\else
+ \echo 'U3 true observed Toast before/after scalar unavailable'
+ SELECT 1/0;
+\endif
+\if :change_privacy
+\else
+ \echo 'U3 historical credentials or free-text notes exposed'
  SELECT 1/0;
 \endif
 \if :supplier_isolation
