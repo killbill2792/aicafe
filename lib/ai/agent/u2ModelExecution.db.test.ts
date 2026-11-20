@@ -76,7 +76,7 @@ describe("U2 durable owner execution",()=>{
   await admin.query("insert into auth.users(id,instance_id,aud,role,email,encrypted_password,created_at,updated_at) values ($1,'00000000-0000-0000-0000-000000000000','authenticated','authenticated',$2,'',now(),now())",[ownerId,ownerId+"@example.invalid"]);
   await admin.query("insert into public.businesses(id,name,timezone,is_demo) values ($1,'Disposable U2 durable','UTC',false)",[businessId]);
   await admin.query("insert into public.memberships(business_id,user_id,role) values ($1,$2,'owner')",[businessId,ownerId]);
-  await admin.query("insert into public.ai_threads(id,business_id,owner_user_id,client_request_id) values ($1,$2,$3,$4)",[...scope,randomUUID()]);
+  await admin.query("insert into public.ai_threads(id,business_id,owner_user_id,client_request_id) values ($1,$2,$3,$4)",[threadId,businessId,ownerId,randomUUID()]);
   await admin.query("insert into public.ai_messages(id,business_id,owner_user_id,thread_id,author_user_id,role,content_type,text_content,client_message_id) values($1,$2,$3,$4,$3,'owner','text','Review the evidence',$5)",[messageId,...scope,randomUUID()]);
   const run=await rpc(service,"supervisor_admit_owner_run_v2",[...scope,messageId,"c".repeat(64),"en",[]]);
   const auth=await rpc(service,"supervisor_run_claim",[...scope,run.id,randomUUID(),30]);
