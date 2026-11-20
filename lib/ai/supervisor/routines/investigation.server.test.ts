@@ -202,7 +202,7 @@ describe("Task 15A operational end-to-end orchestration (recorded source/model)"
     expect(mocks.budget).toHaveBeenCalledWith({
       maxElapsedMs:55_000,maxModelCalls:6,maxToolCalls:7,
       maxInputTokens:72_000,maxOutputTokens:4800,
-    },expect.any(Function));
+    },expect.any(Function),1200);
 
     expect(mocks.tools).toHaveBeenCalledWith(
       {businessId:"cafe-a",ownerUserId:"owner-a"},d.client);
