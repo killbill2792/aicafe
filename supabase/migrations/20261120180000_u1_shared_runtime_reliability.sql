@@ -116,9 +116,27 @@ end $$;
 -- Same matching rules and historical placeholders. MATERIALIZED evaluates
 -- the existing candidate link once; do not rewrite a line whose identity is unchanged.
 alter table public.toast_sync_phase_errors add column last_recovered_at timestamptz;
+
+-- The canonical import writes imported_at in its own transaction. Record its
+-- relink intent there, even if the worker dies before its first follow-up RPC.
+-- A UUID is a generation fence, including repeat imports in one transaction.
+alter table public.toast_day_status add column relink_pending_generation uuid;
+create function public.toast_mark_relink_pending()
+returns trigger language plpgsql set search_path=public as $$
+begin
+ if new.import_state='imported' and new.imported_at is not null then
+  new.relink_pending_generation:=gen_random_uuid();
+ end if;
+ return new;
+end $$;
+revoke all on function public.toast_mark_relink_pending() from public,anon,authenticated;
+create trigger toast_day_relink_pending
+ before insert or update of imported_at on public.toast_day_status
+ for each row execute function public.toast_mark_relink_pending();
+
 create or replace function public.pos_relink_toast_lines(p_business_id uuid,p_restaurant_guid uuid,p_business_date date)
 returns integer language plpgsql security definer set search_path=public as $$
-declare v_prefix text;v_count integer;v_date date:=p_business_date;v_failed_at timestamptz;
+declare v_prefix text;v_count integer;v_date date:=p_business_date;v_failed_at timestamptz;v_generations uuid[];
 begin
  if coalesce(auth.role(),'')<>'service_role' or not exists(
   select 1 from public.toast_location_mappings where business_id=p_business_id
@@ -131,6 +149,13 @@ begin
   where e.business_id=p_business_id and e.restaurant_guid=p_restaurant_guid and e.phase='sales_link'
    and (e.last_recovered_at is null or e.last_recovered_at<e.last_failed_at);
  if v_failed_at is not null then v_date:=null;end if;
+ -- Acknowledge only import generations observed before linking. An import
+ -- that arrives during linking must remain eligible for another retry.
+ select array_agg(s.relink_pending_generation) into v_generations
+ from public.toast_day_status s
+ where s.business_id=p_business_id and s.restaurant_guid=p_restaurant_guid
+  and (v_date is null or s.business_date=v_date)
+  and s.relink_pending_generation is not null;
  v_prefix:='toast:'||p_restaurant_guid::text||':';
  -- Only sold GUIDs actually present on Toast order lines become archived placeholders.
  insert into public.menu_items(business_id,pos_item_id,name,base_name,price_cents,is_active,
@@ -172,6 +197,20 @@ begin
  update public.order_lines l set menu_item_id=c.new_menu_item_id
  from candidates c where l.id=c.id and l.menu_item_id is distinct from c.new_menu_item_id;
  get diagnostics v_count=row_count;
+ -- Requeue cost generation in the same commit as successful relinking;
+ -- a cost refresh could already have read the previously unlinked lines.
+ with settled as (
+  update public.toast_day_status s set relink_pending_generation=null
+  where s.business_id=p_business_id and s.restaurant_guid=p_restaurant_guid
+   and (v_date is null or s.business_date=v_date)
+   and s.relink_pending_generation=any(v_generations)
+  returning s.business_id,s.business_date
+ )
+ insert into public.toast_rollup_refresh_jobs(business_id,business_date)
+ select distinct business_id,business_date from settled
+ on conflict(business_id,business_date) do update set
+  generation=gen_random_uuid(),requested_at=now(),retry_at=now(),
+  attempts=0,last_error_category=null;
  if v_date is null and v_failed_at is not null then
   update public.toast_sync_phase_errors set last_recovered_at=clock_timestamp()
   where business_id=p_business_id and restaurant_guid=p_restaurant_guid and phase='sales_link'
@@ -190,6 +229,32 @@ begin
 end $$;
 revoke all on function public.pos_relink_toast_lines(uuid,uuid) from public,anon,authenticated;
 grant execute on function public.pos_relink_toast_lines(uuid,uuid) to service_role;
+
+-- The existing leased Toast scheduler drains one pending day per tick even
+-- if the original run completed and there are no subsequent order imports.
+create function public.toast_retry_pending_relink(p_business_id uuid,p_restaurant_guid uuid)
+returns boolean language plpgsql security definer set search_path=public as $$
+declare v_day date;
+begin
+ if coalesce(auth.role(),'')<>'service_role' or not exists(
+  select 1 from public.toast_location_mappings where business_id=p_business_id
+   and restaurant_guid=p_restaurant_guid and verified_at is not null)
+ then raise exception 'POS relink unauthorized' using errcode='42501';end if;
+ perform pg_advisory_xact_lock(hashtextextended('pos-menu:'||p_business_id::text,0));
+ select business_date into v_day from public.toast_day_status
+ where business_id=p_business_id and restaurant_guid=p_restaurant_guid
+  and relink_pending_generation is not null
+ order by business_date limit 1;
+ if v_day is null and not exists(
+  select 1 from public.toast_sync_phase_errors where business_id=p_business_id
+   and restaurant_guid=p_restaurant_guid and phase='sales_link'
+   and (last_recovered_at is null or last_recovered_at<last_failed_at))
+ then return false;end if;
+ perform public.pos_relink_toast_lines(p_business_id,p_restaurant_guid,v_day);
+ return true;
+end $$;
+revoke all on function public.toast_retry_pending_relink(uuid,uuid) from public,anon,authenticated;
+grant execute on function public.toast_retry_pending_relink(uuid,uuid) to service_role;
 
 -- Preserve the existing fair, revision-fenced investigation claim. Refresh
 -- the trusted clock at admission, even if the cron began several minutes ago.
