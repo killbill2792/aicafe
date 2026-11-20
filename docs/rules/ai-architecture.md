@@ -35,6 +35,48 @@ One conversational agent with ONE streaming tool-calling loop per owner turn (Op
   3. A blank-line separator between answers to follow-ups that arrived mid-run.
 - **Personas** (Alex/Olivia/Maya/Leo) are labels on tool chips only, never separate agents or prompts.
 
+### Owner-approved intelligence-first target (November 20, 2026)
+
+The [remediation record](../plans/universal-supervisor-intelligence-remediation.md)
+defines the transition and required evidence. Luna is the intellectual authority
+for interactive and unattended objectives: it chooses what to investigate,
+which authorized information and capabilities to use, how to assess evidence,
+and the appropriate depth of the answer. The application provides reliable data,
+canonical calculations, authorization, resource accounting and persistent execution.
+Do not encode owner-question strategies, mandatory domain/tool sequences,
+preselected conclusions or a second agent. Deterministic observations and schedules
+remain useful inputs, never the intellectual decision-maker.
+
+- One existing data access path: discover all permitted business knowledge and
+  relationships across POS and non-POS data. Preserve original permitted Toast
+  order/object fields and history in the existing operational archive/change log.
+  Use source-backed targeted detail and aggregation, not wholesale raw prompt dumps.
+  Retain shared metric authority, source periods, freshness and honest unknowns.
+  Do not implicitly scan a year of history merely because one requested day is absent.
+- Evaluate expanded structured analytical queries and isolated read-only SQL on
+  identical disposable fixtures. Until separately approved, the existing SQL
+  prohibition remains; no administrative connection, unrestricted SQL, cross-café
+  visibility or writes. Source rules, field permissions and AGENTS.md always apply.
+- Prefer verified provider-native deferred tool discovery and model-selected
+  context over full schema repetition. No mandatory custom discover-before-read
+  gate or keyword routing. Preserve strict schemas, runtime validation and authorization.
+- Resource policy must permit objective-appropriate thinking and final synthesis.
+  A simple answer should be quick; a detailed second-store feasibility study may
+  need more research, longer reasoning and a substantial sourced answer.
+  Replace blanket ceilings only under approved implementation scope, with measured
+  budgets and independent tests. Persist work across bounded execution slices instead
+  of abandoning it. Never loosen cost, privacy, approval or source safeguards.
+- Routines and monitors feed the same persistent Luna work lifecycle; general
+  objectives can change strategy as actual evidence changes. Use the existing
+  scheduler, effect gateway, verified receipts, follow-up and interruption recovery.
+  Do not force corroboration by a fixed number of unrelated domains or tools;
+  evidence adequacy depends on the claim, source and uncertainty.
+- The target is not yet implemented. Current runtime constraints below describe
+  the legacy transition baseline and must not be bypassed by a docs-only change.
+  Any conflict with AGENTS.md or a binding workflow restriction must be explicitly
+  reconciled before affected runtime changes. Exact implementation scope and
+  independently executed evidence are mandatory; no production or paid authority.
+
 ### Conversation state
 - `ai_threads` / `ai_messages` store every user, assistant and tool message (tool results compact).
 - Context per turn = system prompt + tool schemas (stable, cacheable) + rolling summary + last 6–8 messages.
@@ -42,10 +84,10 @@ One conversational agent with ONE streaming tool-calling loop per owner turn (Op
 - Rolling summary (to be built): a small model keeps facts the owner stated, open goals and chosen
   items/periods. Business figures are never cached in the summary; tools re-read them.
 
-### Budget (enforced in code and tested)
+### Legacy budget baseline (existing policy until approved runtime transition)
 - Stable prefix first (system prompt + tools), `prompt_cache_key = "cafe-agent-v{N}"`. No dates, ids or
   per-turn data in the prefix.
 - Ordinary turns: ≤ 6 model calls (5 tool rounds + 1 final). When the model actually chooses and executes a supplier-investigation or saved-order-read function, it may use one additional bounded tool round (≤ 7 total model calls including final) to complete the owner\u2019s purchasing workflow; keyword matches and request text must never grant an exception. All turns: ≤ 8 tool executions, stop after 2 consecutive tool errors, and a 60s deadline. The isolated paid pilot also has its separate hard $0.18/18-transport authorization cap.
-- `max_output_tokens` ≤ 1200 per call. Target ≤ 25k input tokens for a typical question.
+- The legacy written policy states `max_output_tokens` ≤ 1200 per call; actual interactive work calls already have a larger allowance. Audit actual runtime limits rather than assuming this text describes deployed behavior. Worker/final limits and fixed round/time ceilings are remediation targets. The typical input target is not a capability ceiling.
 - Main model from `SUPERVISOR_OPENAI_MODEL`; a small model for summaries and titles only.
 - Log per turn: calls, tool calls, input/cached/output tokens, latency, end reason. Never log prompt text.
