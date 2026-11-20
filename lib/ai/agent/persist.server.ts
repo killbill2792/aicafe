@@ -183,6 +183,8 @@ export function agentUsageIncrements(turn: AgentTurn) {
     toolCallCount: Math.min(5, calls - index * 5),
     inputTokens: index === 0 ? turn.usage.inputTokens : 0,
     outputTokens: index === 0 ? turn.usage.outputTokens : 0,
+    ...(index===0&&turn.usage.requests?.length===turn.usage.modelCalls?
+      {executionMetrics:{requests:turn.usage.requests,tools:turn.usage.toolMetrics??[]}}:{}),
   }));
 }
 export async function recordAgentTurnUsage(scope: ConversationScope, owner: ConversationMessage, turn: AgentTurn) {
