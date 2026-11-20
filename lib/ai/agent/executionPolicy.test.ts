@@ -1,5 +1,5 @@
 import {describe,it,expect} from "vitest";
-import {executionPolicy,requestOutputCap,providerUsageReceipt} from "./executionPolicy";
+import {executionPolicy,requestOutputCap,providerUsageReceipt,requestComposition} from "./executionPolicy";
 describe("technical execution budgets, not business intent routing",()=>{
  it("reserves synthesis tokens for complex work and retains old provider constraints",()=>{
    const p=executionPolicy("gpt-6-luna",undefined,false);
@@ -25,4 +25,21 @@ describe("technical execution budgets, not business intent routing",()=>{
    expect(receipt).toMatchObject({inputTokens:200,cachedTokens:50,outputTokens:100,reasoningTokens:25,nonReasoningTokens:75,discoveryCalls:1});
    expect(JSON.stringify(receipt)).not.toContain("private");
  });
+});
+
+it("measures each serialized request component without retaining prompt, schema or evidence contents",()=>{
+ const params={instructions:"private instruction",tools:[{name:"private_tool"}],input:[
+  {role:"developer",content:"private context"},{role:"user",content:"owner private question"},
+  {role:"assistant",content:"previous answer"},{type:"function_call",arguments:"private args"},
+  {type:"function_call_output",output:"private evidence"},{type:"reasoning",encrypted_content:"private replay"}]};
+ const measured=requestComposition(params)!;
+ expect(measured.serializedBytes).toBe(Buffer.byteLength(JSON.stringify(params)));
+ expect(measured.schemaBytes).toBe(Buffer.byteLength(JSON.stringify(params.tools)));
+ expect(measured.inputBytes).toBe(Buffer.byteLength(JSON.stringify(params.input)));
+ for(const key of ["instructionBytes","ownerContextBytes","developerContextBytes","assistantHistoryBytes","toolEvidenceBytes","toolCallBytes","reasoningReplayBytes"] as const)
+  expect(measured[key]).toBeGreaterThan(0);
+ expect(JSON.stringify(measured)).not.toContain("private");
+ params.input.push({type:"function_call_output",output:"additional information"});
+ expect(requestComposition(params)!.toolEvidenceBytes).toBeGreaterThan(measured.toolEvidenceBytes);
+ expect(requestComposition(params)!.schemaBytes).toBe(measured.schemaBytes);
 });
