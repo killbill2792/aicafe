@@ -1,4 +1,5 @@
 import {PgParser} from "@supabase/pg-parser";
+import {isDataField} from "@/lib/data/canonical/dictionary";
 
 /** PostgreSQL 17's own parser is the grammar authority. All legal query
  * forms remain model-directed; the validator enforces only scope, syntax
@@ -98,6 +99,20 @@ export async function admitU3Sql(sql:string,allowedRelations:readonly string[],
  if(nCtes>MAX_CTES)throw Error("invalid_query");
  const reads=new Set<string>(),called=new Set<string>();
  let nodes=0,rangeCount=0;
+ const toastAliases=new Set<string>(["toast_records"]);
+ function collectToastAliases(node:unknown):void{
+  if(!node||typeof node!=="object")return;
+  if(Array.isArray(node)){node.forEach(collectToastAliases);return;}
+  for(const [key,value] of Object.entries(node)){
+   if(key==="RangeVar"&&value&&typeof value==="object"){
+    const rv=value as {relname?:string;alias?:{Alias?:{aliasname?:string}}};
+    if(rv.relname==="toast_records"&&rv.alias?.Alias?.aliasname)
+     toastAliases.add(rv.alias.Alias.aliasname);
+   }
+   collectToastAliases(value);
+  }
+ }
+ collectToastAliases(tree);
  const directData=(x:unknown)=>{
   if(!x||typeof x!=="object"||!("ColumnRef" in x))return false;
   const fields=(x as {ColumnRef?:{fields?:unknown}}).ColumnRef?.fields;
@@ -106,8 +121,15 @@ export async function admitU3Sql(sql:string,allowedRelations:readonly string[],
  const hasNamedJsonPath=(x:unknown)=>{
   const literal=x&&typeof x==="object"&&"A_Const" in x?
     (x as {A_Const?:{sval?:{sval?:unknown}}}).A_Const?.sval?.sval:null;
-  return typeof literal==="string"&&literal.trim().length>0&&literal.length<=512&&
-   !/^\{\s*\}$/.test(literal);
+  if(typeof literal!=="string"||literal.length>512)return false;
+  // PostgreSQL array-style #>> paths or one literal ->> key only.
+  // Reuse the existing Toast secret/card-path guard; never permit an
+  // arbitrary retained JSON key merely because the SQL is read-only.
+  const segments=literal.startsWith("{")&&literal.endsWith("}")?
+   literal.slice(1,-1).split(","): [literal];
+  return segments.length>0&&segments.length<=16&&
+   segments.every(v=>/^(?:[A-Za-z_][A-Za-z0-9_]{0,100}|[0-9]{1,3})$/.test(v))&&
+   isDataField("data."+segments.join("."));
  };
  function walk(n:unknown,allowNamedData=false){
   if(n===null||n===undefined||typeof n==="string"||
@@ -117,6 +139,10 @@ export async function admitU3Sql(sql:string,allowedRelations:readonly string[],
   nodes++;if(nodes>MAX_NODES)throw Error("invalid_query");
   for(const [kind,raw] of Object.entries(n)){
    if(prohibited.has(kind))throw Error("invalid_query");
+   // SELECT * materializes the entire retained Toast JSON object, including
+   // historical fields that never passed named-path secret admission.
+   // Explicit columns are required; COUNT(*) is encoded as FuncCall.agg_star.
+   if(kind==="A_Star")throw Error("invalid_query");
    // Reject recursive CTEs regardless of parser nesting or SelectStmt wrapper.
    if(kind==="WithClause"&&raw&&typeof raw==="object"&&
       (raw as {recursive?:unknown}).recursive===true)throw Error("invalid_query");
@@ -131,6 +157,10 @@ export async function admitU3Sql(sql:string,allowedRelations:readonly string[],
     const fields=(raw as {fields?:unknown})?.fields;
     if(Array.isArray(fields)&&fields.some(x=>stringNode(x)==="data")&&
       !allowNamedData)throw Error("invalid_query");
+    // SELECT t returns a composite row, bypassing the named-JSON-path
+    // requirement even without spelling "data" in the SQL.
+    if(Array.isArray(fields)&&fields.length===1&&
+       toastAliases.has(stringNode(fields[0])??""))throw Error("invalid_query");
    }
    if(kind==="SelectStmt"&&raw&&typeof raw==="object"){
     const s=raw as Record<string,unknown>;
