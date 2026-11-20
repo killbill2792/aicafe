@@ -61,6 +61,10 @@ export function validateScenario(m,id){
   ensure(["source","owner","isolation"].every(k=>kinds.has(k)),"Source, owner and cross-scope negatives required");
   return m;
 }
+// The previously submitted 16E executable explicitly allows either canonical sales reader.
+export function expectedToolsObserved(manifest,observed){
+ return manifest.expectedTools.every(t=>observed.includes(t)||(manifest.id==="16e"&&t==="get_sales"&&observed.includes("query_data")));
+}
 export function readScenario(root,id){
   ensure(idRe.test(id),"Invalid scenario ID");
   const p=resolve(root,manifestPath(id));
@@ -417,7 +421,7 @@ function dbCount(table,where,scope){
   ensure(r.status===0&&/^[0-9]+$/.test(r.stdout.trim()),"Host SQL readback failed");
   return Number(r.stdout.trim());
 }
-function attest(){
+async function attest(){
   ensure(process.env.GITHUB_RUN_ATTEMPT==="1"&&shaRe.test(process.env.HEAD_SHA),"Immutable authorized attempt required");
   const id=process.env.SCENARIO,manifest=readFrozen(id);
   const dir=process.env.RUNNER_TEMP,source=dir+"/luna-candidate-proof/";
@@ -447,18 +451,20 @@ function attest(){
   const scope=JSON.parse(readFileSync(source+manifest.scope,"utf8"));
   ensure(scope.expectedProviderCalls===audit.attempts,"Model quota/source mismatch");
   const observed=audit.receipts.flatMap(r=>Array.isArray(r.toolNames)?r.toolNames:[]);
-  ensure(manifest.expectedTools.every(t=>observed.includes(t)),"Provider did not select claimed registered tools");
+  ensure(expectedToolsObserved(manifest,observed),"Provider did not select claimed registered tools");
   const checks=manifest.assertions.map(a=>{
     const count=dbCount(a.table,a.where,scope);
     ensure(count>=a.minCount&&count<=a.maxCount,"Independent DB assertion failed: "+a.name);
     return {name:a.name,kind:a.kind,passed:true};
   });
+  const {attestTask17B}=await import("./luna-attest-17b.mjs");
+  const independentValueReadbacks=attestTask17B(id,scope);
   const safe={scenario:id,head:audit.head,provider:"openai_responses",model:"gpt-6-luna",
     attempts:audit.attempts,reservedUpperUSD:audit.reservedMicros/1_000_000,
     actualInputTokens:audit.receipts.reduce((sum,r)=>sum+r.actualInputTokens,0),
     actualOutputTokens:audit.receipts.reduce((sum,r)=>sum+r.actualOutputTokens,0),
     providerSelectedTools:[...new Set(observed)].sort(),
-    independentDatabaseReadbacks:checks,realModelAndDatabaseProof:true,
+    independentDatabaseReadbacks:checks,independentValueReadbacks,realModelAndDatabaseProof:true,
     independentOwnerUIAttestation:false,fullTask17IntegrationProof:false,
     note:"Scenario assertions are defined in the reviewed candidate PR; host independently executes SQL readbacks."};
   writeFileSync(dir+"/luna-sanitized-result.json",JSON.stringify(safe,null,2)+"\n",{mode:0o600,flag:"wx"});
@@ -468,7 +474,7 @@ if(process.argv[1]&&import.meta.url===new URL("file://"+resolve(process.argv[1])
   if(cmd==="plan")await plan();
   else if(cmd==="revalidate")await plan({revalidate:true});
   else if(cmd==="candidate")await candidate();
-  else if(cmd==="attest")attest();
+  else if(cmd==="attest")await attest();
   else if(cmd==="validate-all")validateAll();
   else if(cmd==="freeze")freeze();
   else if(cmd==="snapshot-source")await snapshotTrackedSource();

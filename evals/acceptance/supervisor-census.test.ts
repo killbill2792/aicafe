@@ -8,6 +8,7 @@ import ts from "typescript";
 import {z} from "zod";
 import {schemas,agentToolDefinitions,investigationToolDefinition,gmailToolDefinitions,executeAgentTool,type AgentToolContext} from "@/lib/ai/agent/tools";
 import {memoryToolDefinition,memoryTools} from "@/lib/ai/agent/tools/memory";
+import {presentResponse,presentationInputSchema} from "@/lib/ai/agent/tools/presentation";
 import {dataQueryTools,officialToastFields} from "@/lib/ai/agent/tools/dataQuery";
 import {routineToolDefinition} from "@/lib/ai/agent/tools/routines";
 import {supervisorLoopRegistry} from "@/lib/ai/supervisor/loop/priceExperiment.server";
@@ -133,9 +134,13 @@ describe("Task17B first-party changing capability inventory (no provider)",()=>{
    if(/^components\/home\/(?:Supervisor|Chat|FactSummary|EventReportCard|SavedEventsCard)[^/]*\.tsx?$/.test(path)&&!path.includes(".test."))rows.push(row("owner-component",path,source(path)));
    if(/^lib\/(?:alerts|events|operating|calc\/goals)\/[^/]+\.ts$/.test(path)&&!path.includes(".test."))rows.push(...fingerprintedExports(path));
   }
-  const inventory=makeInventory(rows);
   const manifestPaths=paths.filter(p=>p.startsWith(".github/luna/scenarios/")&&p.endsWith(".json"));
   const manifests=manifestIndex(root,manifestPaths,coverageMap.legacyTools);
+  for(const spec of manifests.specs){
+   rows.push(row("registered-scenario",spec.id,spec));
+   for(const a of spec.assertions)rows.push(row("scenario-assertion",spec.id+":"+a.name,a));
+  }
+  const inventory=makeInventory(rows);
   const combinedScenarioPlan={...scenarioCoveragePlan(manifests.ids,coverageMap.requiredScenarioGroups,coverageMap.crossFunctionalFamilies),legacyPaidSuites:coverageMap.legacyPaidSuites,legacyNonProviderSuites:coverageMap.legacyNonProviderSuites,paidPlan:planPaidBatches(manifests.specs),newFeatureHandoffs:coverageMap.newFeatureHandoffs};
   const report=buildCensusReport(inventory,manifests,{head:git("rev-parse","HEAD"),runId:process.env.GITHUB_RUN_ID??null,deterministicMetrics,registrationGaps,testReferences:findTestReferences(new Set(Object.keys(fullSchemas)))});
   if(process.env.AICAFE_CENSUS_OUTPUT)writeCensus(process.env.AICAFE_CENSUS_OUTPUT,{...report,combinedScenarioPlan});
@@ -160,7 +165,7 @@ describe("Task17B first-party changing capability inventory (no provider)",()=>{
   const replacements=coverageMap.inheritedScenarioBaseline.reviewedReplacements;
   for(const [path,review] of Object.entries(replacements)){
    expect(git("rev-parse",coverageMap.inheritedScenarioBaseline.main+":"+path)).toBe(review.previous);
-   expect(actual[path]).toMatch(/^[a-f0-9]{40}$/);
+   expect(actual[path]).toBe(review.replacement);
   }
   verifyInheritedScenarios(Object.fromEntries(Object.entries(expected).filter(([path])=>!Object.hasOwn(replacements,path))),actual);
   const manifests=manifestIndex(root,paths.filter(p=>p.startsWith(".github/luna/scenarios/")&&p.endsWith(".json")),coverageMap.legacyTools);
@@ -178,6 +183,16 @@ describe("Task17B first-party changing capability inventory (no provider)",()=>{
   expect(unregistered,"legacy real-provider test must have shared registration or explicit pending migration").toEqual(coverageMap.legacyPaidSuites.map(s=>s.path).sort());
   expect(plan.complete).toBe(false);
   console.log("Task17B consolidated scenario plan:",JSON.stringify({...plan,legacyPaidSuites:coverageMap.legacyPaidSuites,legacyNonProviderSuites:coverageMap.legacyNonProviderSuites}));
+ });
+ it("rejects missing and invented visual evidence across every registered source and panel kind",()=>{
+  const ctx={asOf:"2026-01-02",currency:"USD",turnResults:()=>[],presentationResults:()=>[],presentationAttachments:[]};
+  const kinds=presentationInputSchema.shape.panels.element.shape.kind.options;
+  for(const source of presentationSourceNames)for(const kind of kinds){
+   const selection={source,field:"rows",kind};
+   const input={layout:"stack",panels:[selection],suggestions:[]};
+   expect(presentResponse(input,ctx).accepted,source+":"+kind).toBe(false);
+   expect(presentationInputSchema.safeParse({...input,panels:[{...selection,value:1234}]}).success).toBe(false);
+  }
  });
  it("checks each actual registered schema rejects unexpected tenant authority",()=>{
   for(const [name,entry] of Object.entries(fullSchemas)){
