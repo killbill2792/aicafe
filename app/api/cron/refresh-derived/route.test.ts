@@ -11,7 +11,8 @@ const mocks=vi.hoisted(()=>({
 }));
 vi.mock("@/lib/security/bearer",()=>({verifyBearer:(req:Request,secret:string)=>
   req.headers.get("authorization")==="Bearer "+secret}));
-vi.mock("@/lib/alerts/refreshDerived.server",()=>({refreshDerivedForBusiness:mocks.refresh}));
+vi.mock("@/lib/alerts/refreshDerived.server",()=>({refreshDerivedForBusiness:mocks.refresh,
+  derivedRefreshSchemaMissing:(error:{code?:string}|null)=>error?.code==="PGRST202"}));
 vi.mock("@/lib/operating/commitments.server",()=>({deliverPendingCommitments:mocks.due}));
 vi.mock("@/lib/ai/supervisor/routines/dispatch.server",()=>({dispatchRoutinesForBusiness:mocks.routines}));
 vi.mock("@/lib/ai/supervisor/routines/investigation.server",()=>({
@@ -20,6 +21,7 @@ vi.mock("@/lib/ai/supervisor/routines/investigation.server",()=>({
 }));
 vi.mock("@/lib/ai/supervisor/runs/worker.server",()=>({processOldestDurableRun:mocks.ownerRun}));
 vi.mock("@/lib/supabase/admin",()=>({createAdminSupabaseClient:()=>({
+  rpc:async()=>({data:null,error:{code:"PGRST202"}}),
   from:()=>({select(){return this},order(){return this},
     async range(){mocks.calls++;return {data:[
       {id:"a",timezone:"America/Los_Angeles",is_demo:false},
