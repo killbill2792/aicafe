@@ -19,11 +19,24 @@ export async function unverifiedToastSalesDates(
  if(possible.length>371)throw new Error("Toast coverage range exceeds bounds");
  // The RPC includes pilot-only and payment-review dates for audit. Those dates
  // must not hide proven Square/CSV canonical revenue when no Toast sale was imported.
- const canonical=await readAllPages((start,end)=>db.from("orders")
-  .select("id,business_date")
-  .eq("business_id",businessId).like("pos_order_id","toast:%")
-  .in("business_date",possible).order("id").range(start,end));
- return new Set(canonical.map(row=>row.business_date));
+ const canonical=new Set<string>();
+ // Existence, not order volume, establishes canonical presence. Bound fan-out
+ // and return no partial certificate if any independent date read fails.
+ const concurrency=4;
+ for(let offset=0;offset<possible.length;offset+=concurrency){
+  const found=await Promise.all(possible.slice(offset,offset+concurrency).map(async date=>{
+   if(typeof date!=="string"||!/^\d{4}-\d{2}-\d{2}$/.test(date)||date<from||date>to)
+    throw new Error("Invalid Toast coverage date");
+   const {data,error}=await db.from("orders").select("id,business_date")
+    .eq("business_id",businessId).like("pos_order_id","toast:%")
+    .in("business_date",[date]).order("id").range(0,0);
+   if(error||!Array.isArray(data)||data.length>1||data.some(row=>row.business_date!==date))
+    throw new Error("Toast owner history unavailable");
+   return data.length?date:null;
+  }));
+  for(const date of found)if(date!==null)canonical.add(date);
+ }
+ return canonical;
 }
 
 /** Imported Toast days are visible even before external reconciliation. Missing
