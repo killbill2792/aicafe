@@ -172,7 +172,7 @@ describe("U3 receipt-bound exact research calculation",()=>{
    query("33333333-3333-4333-8333-333333333333"),ctx(row))).refused)
    .toBe("receiptNotFound");
   expect((await calculateTools.calculate.execute(query(older,"query_data","rows.0.unknown"),ctx(row))).refused)
-   .toBe("researchUnitUnverified");
+   .toBe("pathIsNotANumber");
   expect((await calculateTools.calculate.execute(query(older),ctx([
    sql(older,"12345.25")]))).refused).toBe("researchUnitUnverified");
   expect((await calculateTools.calculate.execute(query(older),ctx([{
