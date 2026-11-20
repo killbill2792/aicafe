@@ -18,8 +18,22 @@ function number(answer,label,expected){
  assert.match(raw,/^-?\d[\d,]*\s*(?:cents|minor units|orders|%)?\.?$/i);
  assert.equal(integer(raw.match(/^-?\d[\d,]*/)[0].replaceAll(",","")),expected,"Independent saved answer: "+label);
 }
+// Accept ordinary currency wording (prose, table cells or Markdown); do not
+// prescribe chart/card layout, numeric labels, or formatting in owner prompts.
+export function hasMoney(answer,currency,cents){
+ const formatted=new Intl.NumberFormat("en-US",{style:"currency",currency}).formatToParts(Math.abs(cents)/100);
+ const symbol=formatted.find(p=>p.type==="currency")?.value;
+ const compact=answer.replace(/[,\u00a0\u202f]/g,"").replace(/\s+/g," ").replace(/[*_`]/g,"");
+ const values=[(Math.abs(cents)/100).toFixed(2)];
+ if(cents%100===0)values.push(String(Math.abs(cents)/100));
+ const sign=cents<0?"-":"";
+ return values.some(v=>[currency,symbol].filter(Boolean).some(u=>{
+  const tokens=[sign+u+v,sign+u+" "+v,u+" "+sign+v,sign+v+" "+u];
+  return tokens.some(t=>{const i=compact.toUpperCase().indexOf(t.toUpperCase());return i>=0&&!/[\d.]/.test(compact[i+t.length]??"")&&(i===0||!/[\d.]/.test(compact[i-1]));});
+ }));
+}
 export function attestTask17B(id,scope,query=read){
- if(!["16e","17b-sales-labor","17b-supply-finance"].includes(id))return [];
+ if(!["16e","17b-sales-labor","17b-supply-finance","17b-cross-module-brief"].includes(id))return [];
  const b=uuid(scope.businessId),o=uuid(scope.ownerUserId),t=uuid(scope.threadId);
  const reply=value=>one(query("SELECT structured_content AS blocks FROM public.ai_messages WHERE business_id="+b+" AND owner_user_id="+o+" AND thread_id="+t+" AND role='supervisor' AND id="+uuid(value))).blocks;
  const daily=value=>one(query("SELECT net_sales_cents,orders_count,staff_wages_cents,staff_tax_cents FROM public.daily_rollups WHERE business_id="+b+" AND business_date="+day(value)+" AND sales_data_status='actual'"));
@@ -33,6 +47,20 @@ export function attestTask17B(id,scope,query=read){
   const expected=[{label:scope.firstDay,value:integer(a.net_sales_cents)},{label:scope.lastDay,value:integer(z.net_sales_cents)}];
   assert.ok(panels.some(p=>["line","bar"].includes(p.kind)&&p.unit==="cents"&&p.currency===currency&&p.from===scope.firstDay&&p.to===scope.lastDay&&p.points.length===2&&expected.every(e=>p.points.some(q=>q.label===e.label&&q.value===e.value))),"Saved visual must independently agree with source");
   checks.push("16e_saved_visual_exact_source","16e_plain_and_rich_saved_prose");
+ }else if(id==="17b-cross-module-brief"){
+  const currency=one(query("SELECT currency FROM public.businesses WHERE id="+b)).currency;
+  const a=daily(scope.salesDay),z=daily(scope.correctedDay);
+  assert.notEqual(scope.salesDay,scope.correctedDay);assert.notEqual(scope.reply1,scope.reply2);
+  const amounts=d=>{const net=integer(d.net_sales_cents),labor=integer(d.staff_wages_cents)+integer(d.staff_tax_cents);return [net,labor,net-labor];};
+  const [first,last]=[amounts(a),amounts(z)];
+  const plain1=prose(reply(scope.reply1)),plain2=prose(reply(scope.reply2));
+  for(const [answer,values] of [[plain1,first],[plain2,[...last,Math.abs(last[2]-first[2])]]]){
+   for(const cents of values)assert.ok(hasMoney(answer,currency,cents),"Saved natural answer omitted exact source-backed money");
+   // Structural language check, not an AI judge or proof of human comprehension.
+   assert.match(answer,/profit/i);
+   assert.match(answer,/not|isn't|before|other cost|remaining expense/i);
+  }
+  checks.push("17b_unprescribed_text_source_values_and_context_correction");
  }else if(id==="17b-sales-labor"){
   assert.notEqual(scope.salesDay,scope.correctedDay);
   for(const [date,key] of [[scope.salesDay,"reply1"],[scope.correctedDay,"reply2"]]){

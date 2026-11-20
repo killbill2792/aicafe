@@ -757,3 +757,11 @@ test("trusted 16E readback rejects altered stored numeric results and wrong curr
  panel.points[1].value=5679;assert.throws(()=>attestTask17B("16e",scope,query));
  panel.points[1].value=5678;panel.currency="EUR";assert.throws(()=>attestTask17B("16e",scope,query));
 });
+
+test("natural-brief currency oracle accepts normal prose but rejects inexact numbers",async()=>{
+ const {hasMoney}=await import("./luna-attest-17b.mjs");
+ assert.equal(hasMoney("Sales were $1,234.56 after checks.","USD",123456),true);
+ assert.equal(hasMoney("1234.56 USD","USD",123456),true);
+ assert.equal(hasMoney("Sales $1,234.57","USD",123456),false);
+ assert.equal(hasMoney("2026-01-01 1234.56","USD",123456),false);
+});

@@ -63,7 +63,7 @@ export function validateScenario(m,id){
 }
 // The previously submitted 16E executable explicitly allows either canonical sales reader.
 export function expectedToolsObserved(manifest,observed){
- return manifest.expectedTools.every(t=>observed.includes(t)||(manifest.id==="16e"&&t==="get_sales"&&observed.includes("query_data")));
+ return manifest.expectedTools.every(t=>observed.includes(t)||(manifest.id==="16e"&&t==="get_sales"&&observed.includes("query_data"))||(manifest.id==="17b-cross-module-brief"&&["get_sales","get_labor"].includes(t)&&observed.includes("query_data")));
 }
 export function readScenario(root,id){
   ensure(idRe.test(id),"Invalid scenario ID");

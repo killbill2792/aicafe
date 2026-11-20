@@ -228,7 +228,8 @@
     "17b": [
       "17b-owner-security",
       "17b-sales-labor",
-      "17b-supply-finance"
+      "17b-supply-finance",
+      "17b-cross-module-brief"
     ],
     "17c": [
       "17c",
@@ -256,7 +257,8 @@
       ],
       "candidates": [
         "17b-sales-labor",
-        "17c-autonomy"
+        "17c-autonomy",
+        "17b-cross-module-brief"
       ],
       "missing": "complete independently reconciled operating profit and cross-period missing/partial data"
     },
@@ -408,7 +410,8 @@
       ],
       "candidates": [
         "17c-business-monitors",
-        "17d"
+        "17d",
+        "17b-cross-module-brief"
       ],
       "missing": "complete source-backed cross-domain briefing, owner actions and independently verified UI"
     },
@@ -456,7 +459,8 @@
         "16e",
         "17b-sales-labor",
         "17b-supply-finance",
-        "17d"
+        "17d",
+        "17b-cross-module-brief"
       ],
       "missing": "unfamiliar format-neutral questions, independently score all numeric/source bindings, missing/partial/estimate provenance, flexible choice and blinded human comprehension; no chart quota"
     }
@@ -560,7 +564,11 @@
       "lib/ai/agent/tools/gmail.test.ts",
       "lib/ai/agent/tools/dataQuery.ownerParity.live.test.ts"
     ],
-    "reason": "All six merged feature contracts incorporated; prior bootstrap snapshot retained as historical. Detect any candidate runtime-source changes outside reviewed exact paths. No mapping or acceptance is inferred from this baseline."
+    "reason": "All six merged feature contracts incorporated; prior bootstrap snapshot retained as historical. Detect any candidate runtime-source changes outside reviewed exact paths. No mapping or acceptance is inferred from this baseline.",
+    "combinedOwnerPaths": {
+      "app/[locale]/more/bills/page.tsx": "80f9e945d02c32fcb3680695ee22ca253ac753e1",
+      "components/bills/BillsManager.tsx": "4bf94ea89487159b14060d2cf32244bf4cca6cce"
+    }
   },
   "registrationRepair": {
     "id": "16e",
