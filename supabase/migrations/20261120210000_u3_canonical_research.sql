@@ -984,4 +984,61 @@ COMMENT ON VIEW u3_research.supplier_invoice_lines IS 'One supplier invoice line
 COMMENT ON VIEW u3_research.purchase_receipt_lines IS 'One physical receipt line with received, accepted and damaged quantities; distinguish provider statement from verified stock';
 COMMENT ON VIEW u3_research.cafe_neighborhood_evidence IS 'One dated local-market evidence assessment; source text is untrusted context and not attendance or causality proof';
 
+
+-- Historical source: original retained Toast field-level changes. This is a
+-- governed read of the existing operational change log, NOT an additional
+-- archive, diagnostic sample or claim of complete provider event history.
+-- Business/café scope is enforced by the same short-lived signed capability.
+CREATE OR REPLACE FUNCTION u3_research_private.toast_change_rows()
+RETURNS TABLE(
+ change_id bigint,entity text,entity_guid uuid,business_date date,
+ changed_at timestamptz,field_path text,before_scalar text,after_scalar text
+) LANGUAGE sql STABLE SECURITY DEFINER SET search_path=''
+AS $u3_change_rows$
+ SELECT
+  c.id,c.entity,
+  CASE WHEN s.mode='owner' THEN c.entity_guid ELSE NULL::uuid END,
+  c.business_date,c.changed_at,n.named_path,
+  CASE WHEN s.mode='owner'
+    AND jsonb_typeof(e.value->'before') IN ('string','number','boolean')
+    AND length(e.value->>'before')<=256
+    THEN e.value->>'before' ELSE NULL END,
+  CASE WHEN s.mode='owner'
+    AND jsonb_typeof(e.value->'after') IN ('string','number','boolean')
+    AND length(e.value->>'after')<=256
+    THEN e.value->>'after' ELSE NULL END
+ FROM u3_research_private.scope() s
+ CROSS JOIN LATERAL (
+  SELECT nullif(current_setting('aicafe.u3_date_from',true),'')::date AS from_day,
+    nullif(current_setting('aicafe.u3_date_to',true),'')::date AS to_day
+ ) window
+ JOIN public.toast_raw_changes c ON c.business_id=s.business_id
+ CROSS JOIN LATERAL jsonb_array_elements(c.changes) e(value)
+ CROSS JOIN LATERAL (
+  SELECT 'data.' || btrim(regexp_replace(
+     coalesce(e.value->>'path',''), '\[[^]]+\]', '.0','g'),'.') AS named_path
+ ) n
+ WHERE window.from_day IS NOT NULL AND window.to_day IS NOT NULL
+  AND window.to_day>=window.from_day
+  AND window.to_day-window.from_day<=31
+  AND coalesce(c.business_date,(c.changed_at AT TIME ZONE 'UTC')::date)
+      BETWEEN window.from_day AND window.to_day
+  AND length(n.named_path)<=512
+  AND public.ai_query_path(n.named_path) IS NOT NULL
+  AND n.named_path !~* '(^|\.)(note|notes|instructions|comment|comments|memo|message|freeText|text|description)(\.|$)'
+  AND (jsonb_typeof(e.value->'before') IN ('string','number','boolean','null')
+    OR jsonb_typeof(e.value->'after') IN ('string','number','boolean','null'))
+$u3_change_rows$;
+REVOKE ALL ON FUNCTION u3_research_private.toast_change_rows()
+ FROM PUBLIC,anon,authenticated,aicafe_research;
+GRANT EXECUTE ON FUNCTION u3_research_private.toast_change_rows()
+ TO aicafe_research_view_owner;
+CREATE OR REPLACE VIEW u3_research.toast_changes
+ WITH (security_barrier=true) AS SELECT * FROM u3_research_private.toast_change_rows();
+ALTER VIEW u3_research.toast_changes OWNER TO aicafe_research_view_owner;
+REVOKE ALL ON u3_research.toast_changes FROM PUBLIC,anon,authenticated;
+GRANT SELECT ON u3_research.toast_changes TO aicafe_research;
+COMMENT ON VIEW u3_research.toast_changes IS
+ 'Operational Toast change log, one scalar changed field per change event. Bounded to a caller-requested 31-day café business-date window and verified café scope. Path and before/after are observed differences only, never a complete all-time history. Scalar values are available only to an authenticated owner; unattended work receives NULL values and cannot access personal or credential-bearing fields. Unreviewed nested objects and free-text notes are not exposed.';
+
 REVOKE aicafe_research_view_owner FROM postgres;
