@@ -65,7 +65,7 @@ const castName=(n:Record<string,unknown>)=>{
  * A successful parse alone is NEVER authorization. The executor must also
  * use a dedicated no-BYPASSRLS scope-bound role and approved research views. */
 export async function admitU3Sql(sql:string,allowedRelations:readonly string[],
- parameterCount=0,aggregateOnly=false):Promise<U3SqlAdmission>{
+ parameterCount=0,aggregateOnly=false,offturnColumns:readonly string[]=[]):Promise<U3SqlAdmission>{
  if(typeof sql!=="string"||sql.length>MAX_SQL||!sql.trim()||
   parameterCount<0||parameterCount>48)throw Error("invalid_query");
  const parsed=await parser.parse(sql);
@@ -75,6 +75,10 @@ export async function admitU3Sql(sql:string,allowedRelations:readonly string[],
   !tree.stmts[0]?.stmt||!("SelectStmt" in tree.stmts[0].stmt))
   throw Error("invalid_query");
  const catalog=new Set(allowedRelations);
+ // Privacy admission depends on source/field semantics, never model aliases.
+ // Derived numeric/date-safe columns are admitted as a set from the verified
+ // logical catalog. Raw identifiers/free-text are never an off-turn oracle.
+ const safeOffturnColumns=new Set(offturnColumns);
  const ctes=new Set<string>();
  let nCtes=0;
  function collect(n:unknown){
@@ -118,6 +122,16 @@ export async function admitU3Sql(sql:string,allowedRelations:readonly string[],
      if(aggregateOnly&&["employees","timecards","scheduled_shifts","cafe_decisions"].includes(rel))
       throw Error("unattended_aggregate_required");
     }
+   }
+   if(kind==="ColumnRef"&&aggregateOnly){
+    const fields=(raw as {fields?:unknown}).fields;
+    if(!Array.isArray(fields)||!fields.length)throw Error("unattended_aggregate_required");
+    const last=fields[fields.length-1];
+    const col=stringNode(last);
+    // A SELECT * or ANY sensitive identifier may leak rows through a
+    // harmless-looking alias or MIN/MAX, even if the output name looks safe.
+    if(!col||!safeOffturnColumns.has(col))
+     throw Error("unattended_aggregate_required");
    }
    if(kind==="FuncCall"){
     const fn=functionName(raw as Record<string,unknown>);
