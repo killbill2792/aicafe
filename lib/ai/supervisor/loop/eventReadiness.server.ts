@@ -290,29 +290,42 @@ export function eventDailyOnlyComparison(days:readonly OutlookSalesDay[],date:st
  * Verification time is knowledge, not an invented event cancellation time.
  * A change on that date is conservatively treated as no confirmed active day.
  * The original approval and all ordinary POS records remain untouched. */
-export function eventStatusAtBusinessDay(event:CafeEvent,day:string,timezone:string):CafeEvent["status"]{
+export function eventWindowAtBusinessDay(event:CafeEvent,day:string,timezone:string){
   const detail=event.verificationDetails;
-  if(!detail||typeof detail!=="object"||Array.isArray(detail))return event.status;
+  const current={status:event.status,startDate:event.startDate,endDate:event.endDate};
+  if(!detail||typeof detail!=="object"||Array.isArray(detail))return current;
   const d=detail as {history?:unknown[];change?:unknown};
   const history=(Array.isArray(d.history)?d.history:d.change?[d.change]:[]).flatMap(value=>{
     if(!value||typeof value!=="object")return [];
-    const row=value as {verifiedAt?:unknown;status?:unknown;previousStatus?:unknown};
+    const row=value as {verifiedAt?:unknown;status?:unknown;previousStatus?:unknown;previousStartDate?:unknown;previousEndDate?:unknown;newDate?:unknown;newEndDate?:unknown};
     const valid=(s:unknown):s is CafeEvent["status"]=>s==="found"||s==="cancelled"||s==="moved";
     if(typeof row.verifiedAt!=="string"||!Number.isFinite(Date.parse(row.verifiedAt))||
       !valid(row.status)||!valid(row.previousStatus))return [];
-    return [{verifiedAt:row.verifiedAt,status:row.status,previousStatus:row.previousStatus}];
+    return [{...row,verifiedAt:row.verifiedAt,status:row.status,previousStatus:row.previousStatus}];
   }).sort((a,b)=>Date.parse(a.verifiedAt)-Date.parse(b.verifiedAt));
-  if(!history.length)return event.status;
+  if(!history.length)return current;
   let status=history[0].previousStatus;
+  let startDate=typeof history[0].previousStartDate==="string"?history[0].previousStartDate:event.startDate;
+  let endDate=typeof history[0].previousEndDate==="string"?history[0].previousEndDate:event.endDate;
   for(const change of history){
     if(formatInTimeZone(new Date(change.verifiedAt),timezone,"yyyy-MM-dd")>day)break;
     status=change.status;
+    if(typeof change.newEndDate==="string"){
+      if(typeof change.newDate==="string")startDate=change.newDate;
+      endDate=change.newEndDate;
+    }
   }
-  return status;
+  return {status,startDate,endDate};
+}
+export function eventStatusAtBusinessDay(event:CafeEvent,day:string,timezone:string):CafeEvent["status"]{
+ return eventWindowAtBusinessDay(event,day,timezone).status;
 }
 export function eventDayActivity(events:readonly (CafeEvent|null)[],day:string,timezone:string){
-  if(events.some(event=>event&&event.startDate<=day&&event.endDate>=day&&
-    eventStatusAtBusinessDay(event,day,timezone)==="found"))return "active" as const;
+  if(events.some(event=>{
+    if(!event)return false;
+    const range=eventWindowAtBusinessDay(event,day,timezone);
+    return range.startDate<=day&&range.endDate>=day&&range.status==="found";
+  }))return "active" as const;
   return events.some(event=>event===null)?"unconfirmed" as const:"inactive" as const;
 }
 
@@ -363,7 +376,7 @@ export const eventReadinessCapability=registerLoopCapability({
    // The stored plan is historical approval evidence, not current event truth.
    // Read the exact IDs before reading any sales, including beyond compact UI lists.
    const events=await Promise.all(effect.eventIds.map(id=>
-     readExactCafeEvent(db,scope.businessId,id,businessDate,businessDate)));
+     readExactCafeEvent(db,scope.businessId,id,businessDate,businessDate,{historical:true})));
    const activity=eventDayActivity(events,businessDate,cafe.timezone);
    if(activity!=="active")return isLive?null:{businessDate,source:"cafe_events",
      observation:{coverage:"event_inactive",eventActivity:activity}};

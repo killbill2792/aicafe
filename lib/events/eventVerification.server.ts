@@ -67,7 +67,7 @@ export async function verifyEventSource(event:CafeEvent):Promise<CheckResult>{
         "(confirmed/cancelled/postponed/dates_changed/venue_changed/reinstated/conflicting/unverified), "+
         "sourceUrl (the exact cited source page URL, null if none), statement "+
         "(short direct source evidence, null if none), newDate (YYYY-MM-DD or null), "+
-        "newEndDate (explicit YYYY-MM-DD or null, never infer), newVenue (string or null). "+
+        "newEndDate (explicit YYYY-MM-DD or null, never infer), newVenue (string or null), newStartAt/newEndAt (explicit offset ISO timestamps or null) and sourceTimezone (explicit IANA timezone or null). "+
         "Use dates_changed only for an explicitly shortened or extended interval of the SAME occurrence, not a recurrence. "+
         "If both new dates are confirmed use postponed with both dates. Use unverified for conflicting occurrence identity. "+
         "Prefer primary organizer/source evidence; do not invent citations."}),
@@ -91,7 +91,9 @@ export async function verifyEventSource(event:CafeEvent):Promise<CheckResult>{
     sourceUrl:v.sourceUrl as string|null,statement:v.statement as string|null,
     newDate:typeof v.newDate==="string"&&/^\d{4}-\d{2}-\d{2}$/u.test(v.newDate)?v.newDate:null,
     newVenue:typeof v.newVenue==="string"?v.newVenue.slice(0,200):null,
-    newEndDate:typeof v.newEndDate==="string"?v.newEndDate:null};
+    newEndDate:typeof v.newEndDate==="string"?v.newEndDate:null,
+    newStartAt:typeof v.newStartAt==="string"?v.newStartAt:null,newEndAt:typeof v.newEndAt==="string"?v.newEndAt:null,
+    sourceTimezone:typeof v.sourceTimezone==="string"?v.sourceTimezone:null};
   const citations=citedUrls(body);
   return credibleEventEvidence(event,evidence,citations)?{evidence,citedUrls:citations}:null;
 }

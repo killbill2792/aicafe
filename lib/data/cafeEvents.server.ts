@@ -414,10 +414,11 @@ export async function readCafeEvents(db:SupabaseClient,businessId:string,
 export const readCanonicalCafeEvents=readCafeEvents;
 /** Exact, same-tenant event selection is not subject to compact list caps or
  * display deduplication. A date outside the verified saved range is not a hit. */
-export async function readExactCafeEvent(db:SupabaseClient,businessId:string,id:string,from:string,to:string){
+export async function readExactCafeEvent(db:SupabaseClient,businessId:string,id:string,from:string,to:string,
+ options:{historical?:boolean}={}){
   if(!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(id))return null;
   const rows=await readStoredCafeEvents(db,businessId,from,to,[id]);
-  return (await overlayCityFacts(db,businessId,rows)).find(e=>e.id===id&&e.startDate<=to&&e.endDate>=from)??null;
+  return (await overlayCityFacts(db,businessId,rows)).find(e=>e.id===id&&(options.historical||e.startDate<=to&&e.endDate>=from))??null;
 }
 
 

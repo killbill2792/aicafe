@@ -182,9 +182,12 @@ begin
    venue_address_key=case when p_change->>'newVenue' is not null then null else venue_address_key end,
    start_time=case when next_start<>e.start_date or p_change->>'newEndDate' is not null then null else start_time end,
    end_time=case when next_start<>e.start_date or p_change->>'newEndDate' is not null then null else end_time end,
-   start_at=case when next_start<>e.start_date or p_change->>'newEndDate' is not null then null else start_at end,
-   end_at=case when next_start<>e.start_date or p_change->>'newEndDate' is not null then null else end_at end,
-   source_timezone=case when next_start<>e.start_date or p_change->>'newEndDate' is not null then null else source_timezone end,
+   start_at=case when p_change->>'newStartAt' is not null then (p_change->>'newStartAt')::timestamptz
+     when next_start<>e.start_date or p_change->>'newEndDate' is not null then null else start_at end,
+   end_at=case when p_change->>'newEndAt' is not null then (p_change->>'newEndAt')::timestamptz
+     when next_start<>e.start_date or p_change->>'newEndDate' is not null then null else end_at end,
+   source_timezone=case when p_change->>'sourceTimezone' is not null then p_change->>'sourceTimezone'
+     when next_start<>e.start_date or p_change->>'newEndDate' is not null then null else source_timezone end,
    duration_source_url=case when p_change->>'newEndDate' is not null then source else duration_source_url end,
    duration_verified_at=case when p_change->>'newEndDate' is not null then at_time else duration_verified_at end,
    last_checked_at=greatest(last_checked_at,at_time)

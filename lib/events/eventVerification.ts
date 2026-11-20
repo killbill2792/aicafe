@@ -1,5 +1,5 @@
 import type {CafeEvent} from "@/lib/data/cafeEvents.server";
-import {assertDay} from "./cityEventIdentity";
+import {assertDay,verifiedTimedOccurrence} from "./cityEventIdentity";
 
 export type EventVerdict="confirmed"|"cancelled"|"postponed"|"dates_changed"|"venue_changed"|"reinstated"|"conflicting"|"unverified";
 export type EventEvidence={
@@ -38,7 +38,14 @@ export function verifiedEventChange(event:CafeEvent,evidence:EventEvidence,
   if(!credibleEventEvidence(event,evidence,citedUrls)||!evidence.sourceUrl||
     !evidence.statement)return null;
   let newDate=evidence.newDate,newEndDate=evidence.newEndDate??null;
+  let timed:ReturnType<typeof verifiedTimedOccurrence>|null=null;
   try{
+    if(evidence.newStartAt||evidence.newEndAt||evidence.sourceTimezone){
+      if(!evidence.newStartAt||!evidence.newEndAt||!evidence.sourceTimezone)return null;
+      timed=verifiedTimedOccurrence(evidence.newStartAt,evidence.newEndAt,evidence.sourceTimezone);
+      if(newDate&&newDate!==timed.startDate||newEndDate&&newEndDate!==timed.endDate)return null;
+      newDate=timed.startDate;newEndDate=timed.endDate;
+    }
     if(newDate)assertDay(newDate);
     if(newEndDate)assertDay(newEndDate);
     if(newEndDate&&newEndDate<(newDate??event.startDate))return null;
@@ -58,8 +65,7 @@ export function verifiedEventChange(event:CafeEvent,evidence:EventEvidence,
     statement:evidence.statement.trim(),newDate,newEndDate,
     newVenue:evidence.newVenue,verifiedAt:at,
     previousStartDate:event.startDate,previousEndDate:event.endDate,
-    ...(evidence.newStartAt&&evidence.newEndAt&&evidence.sourceTimezone?{
-      newStartAt:evidence.newStartAt,newEndAt:evidence.newEndAt,sourceTimezone:evidence.sourceTimezone}:{}),
+    ...(timed?{newStartAt:timed.startAt,newEndAt:timed.endAt,sourceTimezone:timed.sourceTimezone}:{}),
   };
 }
 export function eventVerificationDue(event:CafeEvent,today:string,now:Date):boolean{

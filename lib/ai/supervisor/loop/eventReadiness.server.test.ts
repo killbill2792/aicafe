@@ -1,6 +1,6 @@
 import {describe,expect,it} from "vitest";
 import type {CafeEvent} from "@/lib/data/cafeEvents.server";
-import {eventReadinessCapability,eventReadinessCapabilityId,eventReadinessInput,eventReadinessEffect,eventDailyOnlyComparison,eventStatusAtBusinessDay,eventDayActivity}
+import {eventReadinessCapability,eventReadinessCapabilityId,eventReadinessInput,eventReadinessEffect,eventDailyOnlyComparison,eventStatusAtBusinessDay,eventDayActivity,eventWindowAtBusinessDay}
  from "./eventReadiness.server";
 
 const eventId="11111111-1111-4111-8111-111111111111";
@@ -71,6 +71,12 @@ describe("event_readiness uses the shared Supervisor lifecycle",()=>{
     expect(eventDayActivity([event],"2026-11-01","UTC")).toBe("active");
     expect(eventDayActivity([null],"2026-11-01","UTC")).toBe("unconfirmed");
     expect(eventDayActivity([event,{...event,status:"found",verificationDetails:null}],"2026-11-02","UTC")).toBe("active");
+  });
+  it("retains earlier-day evidence when the same event is officially moved later",()=>{
+    const moved={...event,status:"found" as const,startDate:"2026-11-04",endDate:"2026-11-05",verificationDetails:{history:[{verifiedAt:"2026-11-02T12:00:00Z",previousStatus:"found",status:"found",previousStartDate:"2026-10-31",previousEndDate:"2026-11-02",newDate:"2026-11-04",newEndDate:"2026-11-05"}]}};
+    expect(eventWindowAtBusinessDay(moved,"2026-11-01","UTC")).toEqual({status:"found",startDate:"2026-10-31",endDate:"2026-11-02"});
+    expect(eventDayActivity([moved],"2026-11-02","UTC")).toBe("inactive");
+    expect(eventDayActivity([moved],"2026-11-04","UTC")).toBe("active");
   });
   it("does not count a cancelled day as zero sales or a completed observation",async()=>{
     const report=await eventReadinessCapability.report(scope,effect,[{businessDate:"2026-10-31",source:"daily_rollups",observation:{coverage:"actual",actualCents:12300,typicalCents:10000}},{businessDate:"2026-11-01",source:"cafe_events",observation:{coverage:"event_inactive",eventActivity:"inactive"}}],true);
