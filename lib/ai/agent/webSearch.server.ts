@@ -11,7 +11,7 @@ export type WebSearchUsage={inputTokens:number;cachedTokens:number;outputTokens:
 /** The outer agent reserves a model call before the request and records token usage. */
 export type WebSearchBudget={
   reserveModelCall:()=>boolean;
-  recordUsage:(usage:WebSearchUsage)=>void;
+  recordUsage:(usage:WebSearchUsage,response?:unknown)=>void;
 };
 function tokens(value:unknown):number{
   return typeof value==="number"&&Number.isSafeInteger(value)&&value>=0?value:0;
@@ -96,7 +96,7 @@ export function createWebSearch(deps:{fetch?:Fetch;apiKey?:string;model?:string;
       }
       const body:unknown=await response.json();
       await finish?.(body);
-      budget?.recordUsage(webSearchUsage(body));
+      budget?.recordUsage(webSearchUsage(body),body);
       const parsed=extractWebSearchAnswer(body);
       if(!parsed){
         console.error("agent_web_search_failed",{category:"unreadable",durationMs});
