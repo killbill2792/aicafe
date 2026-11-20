@@ -50,7 +50,7 @@
       "maxCount": 1
     },
     {
-      "name": "firstReplyId",
+      "name": "first-reply",
       "kind": "owner",
       "table": "public.ai_messages",
       "where": {
@@ -71,7 +71,7 @@
       "maxCount": 1
     },
     {
-      "name": "secondReplyId",
+      "name": "second-reply",
       "kind": "owner",
       "table": "public.ai_messages",
       "where": {
