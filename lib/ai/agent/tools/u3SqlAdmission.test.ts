@@ -2,7 +2,7 @@ import {describe,expect,it} from "vitest";
 import {admitU3Sql} from "./u3SqlAdmission";
 
 const admitted=["orders","order_lines","daily_rollups","menu_items","ingredients",
- "recipe_lines","ingredient_prices","expenses","expense_lines","employees"];
+ "recipe_lines","ingredient_prices","expenses","expense_lines","employees","toast_records"];
 
 describe("U3 governed PostgreSQL AST admission",()=>{
  it.each([
@@ -13,6 +13,7 @@ describe("U3 governed PostgreSQL AST admission",()=>{
   "SELECT count(*) FROM orders WHERE business_date BETWEEN DATE '2026-11-01' AND DATE '2026-11-20'",
   "SELECT count(*) FROM orders WHERE net_sales_cents > $1",
   "SELECT count(*) FROM orders WHERE EXISTS (SELECT 1 FROM order_lines l WHERE l.order_id=orders.id)",
+  "SELECT record_type, data #>> '{customer,firstName}' AS observed_field FROM toast_records",
  ])("accepts model-composed valid analytical SQL: %s",async sql=>{
   const meta=await admitU3Sql(sql,admitted,sql.includes("$1")?1:0);
   expect(meta.relations.length).toBeGreaterThan(0);
@@ -31,6 +32,9 @@ describe("U3 governed PostgreSQL AST admission",()=>{
   "SELECT * FROM orders FOR UPDATE",
   "SELECT * FROM unnest(ARRAY[1,2]) AS raw",
   "SELECT * FROM orders WHERE id::regclass IS NOT NULL",
+  "SELECT data FROM toast_records",
+  "SELECT t.data AS innocent FROM toast_records t",
+  "SELECT MIN(data::text) FROM toast_records",
   "SELECT * FROM orders WHERE net_sales_cents > $2",
   "SELECT 1",
  ])("rejects unsafe, unauthorized, or unbounded SQL: %s",async sql=>{
