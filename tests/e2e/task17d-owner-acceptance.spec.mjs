@@ -1,6 +1,6 @@
 import {test,expect} from "@playwright/test";
 import {randomUUID,createHash} from "node:crypto";
-import {readFileSync} from "node:fs";
+import {readFileSync,mkdirSync,writeFileSync} from "node:fs";
 import {withOwner,controls} from "./task17d-owner-fixtures.mjs";
 
 const matrix=JSON.parse(readFileSync(new URL("./task17d-owner-matrix.json",import.meta.url),"utf8"));
@@ -524,6 +524,106 @@ for(const width of [390,768,1024,1440]){
       }
       expect(await query("select id,thread_id,structured_content from public.ai_messages where business_id=$1 and id=$2",[cafe.businessId,reply])).toEqual([{id:reply,thread_id:t.id,structured_content:blocks}]);
       expect(sent).toBe(0);
+    });
+  });
+}
+
+// Measure the real production-built local app, never a dev compilation or a
+// Vercel deployment. All observations below are lab measurements, not field SLO.
+for(const width of [390,768,1440]){
+  test("@home 17D:D21-"+width+" production build owner interaction and navigation performance",async({browser})=>{
+    test.setTimeout(240_000);
+    expect(process.env.AICAFE_E2E_BUILD).toBe("production");
+    expect(process.env.HEAD_SHA).toMatch(/^[a-f0-9]{40}$/);
+    await withOwner(browser,width,async({session,thread})=>{
+      const t=await thread(),cold=[],warm=[];
+      const install=async(page)=>page.addInitScript(()=>{
+        const perf=window.__ownerLab={lcp:null,cls:0,interactionDurations:{},longTasks:0,feedback:null};
+        let windowStart=0,lastShift=0,shiftSum=0;
+        const observe=(type,fn,opts={})=>{if(PerformanceObserver.supportedEntryTypes.includes(type)){new PerformanceObserver(list=>{for(const entry of list.getEntries())fn(entry);}).observe({type,buffered:true,...opts});}};
+        observe("largest-contentful-paint",e=>{perf.lcp=e.startTime;});
+        observe("layout-shift",e=>{if(e.hadRecentInput)return;
+          if(e.startTime-lastShift>1000||e.startTime-windowStart>5000||shiftSum===0){windowStart=e.startTime;shiftSum=0;}
+          shiftSum+=e.value;lastShift=e.startTime;perf.cls=Math.max(perf.cls,shiftSum);});
+        observe("event",e=>{if(e.interactionId)perf.interactionDurations[e.interactionId]=Math.max(perf.interactionDurations[e.interactionId]??0,e.duration);},{durationThreshold:16});
+        observe("longtask",()=>{perf.longTasks++;});
+        document.addEventListener("click",e=>{
+          if(!e.target.closest?.('button[aria-label="Library, routines and permissions"]'))return;
+          const start=performance.now();
+          function frame(){
+            const dialog=document.querySelector("dialog[open]");
+            if(dialog&&dialog.getBoundingClientRect().height>0){perf.feedback=performance.now()-start;return;}
+            if(performance.now()-start<5000)requestAnimationFrame(frame);
+          }
+          requestAnimationFrame(frame);
+        },true);
+      });
+      async function sample(page){
+        const begin=performance.now();
+        const response=await page.goto("/en?thread="+t.id,{waitUntil:"domcontentloaded"});
+        expect(response?.ok()).toBe(true);
+        const composer=page.locator("#supervisor-home-composer");
+        const trigger=page.getByRole("button",{name:"Library, routines and permissions"});
+        await expect(composer).toBeVisible();await expect(trigger).toBeEnabled();
+        const usable=performance.now()-begin;
+        // Click an actual owner control, require resulting named dialog, then keyboard close.
+        await trigger.click();
+        const modal=page.getByRole("dialog",{name:"Supervisor controls"});
+        await expect(modal).toBeVisible();
+        await expect.poll(()=>page.evaluate(()=>window.__ownerLab.feedback)).not.toBeNull();
+        await page.keyboard.press("Escape");await expect(modal).toHaveCount(0);
+        await expect(trigger).toBeFocused();
+        const data=await page.evaluate(()=>{
+          const n=performance.getEntriesByType("navigation")[0],p=window.__ownerLab;
+          return {lcp:p.lcp,cls:p.cls,feedback:p.feedback,longTasks:p.longTasks,
+            observedInteractions:Object.values(p.interactionDurations),resources:performance.getEntriesByType("resource").length,
+            ttfb:n?.responseStart??null,domContentLoaded:n?.domContentLoadedEventEnd??null};
+        });
+        expect(data.feedback).toBeGreaterThanOrEqual(0);
+        expect(Number.isFinite(usable)&&usable>0).toBe(true);
+        return {...data,usable};
+      }
+      // Disable browser HTTP cache for two samples; server/OS caches are NOT cleared.
+      for(let i=0;i<2;i++){
+        const {ctx,page}=await session();await install(page);
+        const cdp=await ctx.newCDPSession(page);await cdp.send("Network.enable");
+        await cdp.send("Network.setCacheDisabled",{cacheDisabled:true});
+        cold.push(await sample(page));await cdp.detach();
+      }
+      const {page}=await session();await install(page);
+      await sample(page); // warm-up excluded from repeat observations
+      for(let i=0;i<5;i++)warm.push(await sample(page));
+      const percentile=(values,p)=>{const x=values.filter(Number.isFinite).sort((a,b)=>a-b);return x.length?x[Math.max(0,Math.ceil(x.length*p)-1)]:null;};
+      const stats=(rows,key)=>({count:rows.filter(x=>Number.isFinite(x[key])).length,p50:percentile(rows.map(x=>x[key]),.5),p95:percentile(rows.map(x=>x[key]),.95)});
+      const valid=[...cold,...warm];
+      const interactions=valid.flatMap(r=>r.observedInteractions);
+      const observedInteractionP98=percentile(interactions,.98);
+      const summary={schemaVersion:1,head:process.env.HEAD_SHA,width,mode:"authenticated_local_production_lab",
+        browserVersion:browser.version(),coldDefinition:"HTTP cache disabled; server and OS not reset",
+        warmSamples:warm.length,coldSamples:cold.length,cold:stats(cold,"usable"),warm:stats(warm,"usable"),
+        feedback:stats(warm,"feedback"),lcp:stats(valid,"lcp"),cls:stats(valid,"cls"),
+        interactionCount:interactions.length,observedInteractionP98,requests:stats(valid,"resources"),
+        longTasks:stats(valid,"longTasks"),ttfb:stats(valid,"ttfb"),
+        metrics:{feedback100ms:percentile(warm.map(r=>r.feedback),.95)<=100,
+          warmUsable500ms:percentile(warm.map(r=>r.usable),.95)<=500,
+          lcpLab2500ms:percentile(valid.map(r=>r.lcp),.75)===null?null:percentile(valid.map(r=>r.lcp),.75)<=2500,
+          clsLabPointOne:percentile(valid.map(r=>r.cls),.75)<=.1,
+          interactionLab200ms:observedInteractionP98===null?null:observedInteractionP98<=200},
+        fieldWebVitalsProven:false,physicalDeviceProven:false};
+      // Numeric-only synthetic lab receipt; no DOM, board content, cookies or screenshots.
+      mkdirSync("test-results/e2e",{recursive:true});
+      writeFileSync("test-results/e2e/task17d-performance-"+width+".json",JSON.stringify(summary,null,2)+"\n");
+      console.info("[17D performance lab]",JSON.stringify(summary));
+      expect(summary.warm.count).toBe(5);
+      expect(summary.cold.count).toBe(2);
+      expect(summary.feedback.count).toBe(5);
+      // Treat target misses as failures, preserve numbers and explicitly block
+      // any missing LCP or interaction sample rather than equating it with zero.
+      expect.soft(summary.metrics.feedback100ms).toBe(true);
+      expect.soft(summary.metrics.warmUsable500ms).toBe(true);
+      expect.soft(summary.metrics.lcpLab2500ms).toBe(true);
+      expect.soft(summary.metrics.clsLabPointOne).toBe(true);
+      expect.soft(summary.metrics.interactionLab200ms).toBe(true);
     });
   });
 }

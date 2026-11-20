@@ -216,6 +216,20 @@
         "D08",
         "D09"
       ]
+    },
+    {
+      "id": "D21",
+      "tag": "home",
+      "name": "repeat authenticated production-build lab measurement",
+      "viewports": [
+        390,
+        768,
+        1440
+      ],
+      "evidence": "actual_local_production_lab_not_field_vitals",
+      "families": [
+        "D08"
+      ]
     }
   ],
   "integration": {
@@ -1105,7 +1119,7 @@
     "actualDevice": "UNTESTED",
     "actualSpeech": "UNTESTED",
     "independentDesignReview": "UNTESTED",
-    "productionBuildPerformance": "UNTESTED",
+    "productionBuildPerformance": "EXECUTABLE_LAB_CASE_AUTHORED_NOT_RUN",
     "nontechnicalHumanComprehension": "UNTESTED",
     "modelDependentConsolidation": [
       "16e",
