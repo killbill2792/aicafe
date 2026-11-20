@@ -392,7 +392,7 @@ export function ChatMarkdown({text,unverified=[],label,labels,locale="en",showLe
     else blocks.push(<p key={start} className="whitespace-pre-line">{rows}</p>);
   }
   const sources=spans.map(s=>s.source??"unchecked");
-  return <div className="space-y-2 break-words text-[17px] leading-relaxed text-ink">
+  return <div data-testid="supervisor-answer-prose" className="space-y-2 break-words text-[17px] leading-relaxed text-ink">
     {blocks}
     {showLegend&&<SourceLegend sources={sources} labels={copy} legendLabel={legendLabel}/>}
 
