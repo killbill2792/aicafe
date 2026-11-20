@@ -30,6 +30,19 @@ INSERT INTO public.order_lines(id,order_id,name,quantity,net_sales_cents)
 VALUES (:'line_a',:'order_a','test item A',1,1100),
        (:'line_b',:'order_b','test item B',1,4200);
 
+-- The canonical Toast reader must read a permitted, current retained nested
+-- field with the original café scope, never the diagnostic sample archive.
+INSERT INTO public.toast_raw_records(
+ business_id,restaurant_guid,entity,entity_guid,business_date,
+ payload,payload_sha256,capture_key
+) VALUES
+ (:'a',gen_random_uuid(),'employee',gen_random_uuid(),current_date,
+  '{"guid":"99999999-9999-4999-8999-999999999991","role":"barista","properties":{"verified":{"quantity":3}}}'::jsonb,
+  repeat('a',64),'current:u3-test'),
+ (:'b',gen_random_uuid(),'employee',gen_random_uuid(),current_date,
+  '{"guid":"99999999-9999-4999-8999-999999999992","role":"manager","properties":{"verified":{"quantity":9}}}'::jsonb,
+  repeat('b',64),'current:u3-test');
+
 -- Verify strict object and function privileges before checking actual rows.
 DO $checks$
 BEGIN
@@ -63,11 +76,31 @@ SELECT public.u3_issue_research_scope(
 -- A superuser who sets the local role no longer bypasses RLS.
 SET LOCAL ROLE aicafe_research;
 SELECT set_config('aicafe.u3_research_scope',:'ticket',true);
+SELECT set_config('aicafe.u3_date_from',current_date::text,true),
+ set_config('aicafe.u3_date_to',current_date::text,true);
+SELECT (SELECT count(*) FROM u3_research.toast_records
+  WHERE record_type='employee')=1 AS toast_current_same_cafe,
+ (SELECT data #>> '{properties,verified,quantity}'
+  FROM u3_research.toast_records WHERE record_type='employee')='3' AS toast_nested_value;
 SELECT (SELECT count(*) FROM u3_research.orders)=1 AS only_owner_cafe_orders,
  (SELECT sum(net_sales_cents) FROM u3_research.orders)=1100 AS correct_owner_amount,
  (SELECT count(*) FROM u3_research.order_lines)=1 AS indirect_child_tenant_scope,
  (SELECT sum(net_sales_cents) FROM u3_research.order_lines)=1100 AS correct_child_amount
 \gset
+SELECT (SELECT count(*) FROM u3_research.toast_records WHERE record_type='employee')=1 AS toast_tenant_count,
+ (SELECT data #>> '{properties,verified,quantity}' FROM u3_research.toast_records
+  WHERE record_type='employee')='3' AS toast_nested_cafe_value
+\gset
+\if :toast_tenant_count
+\else
+ \echo 'U3 current Toast records cross-café leak or unavailable'
+ SELECT 1/0;
+\endif
+\if :toast_nested_cafe_value
+\else
+ \echo 'U3 retained nested Toast field unreadable or wrong'
+ SELECT 1/0;
+\endif
 \if :only_owner_cafe_orders
 \else
  \echo 'U3 tenant test failed: owner café order count'
