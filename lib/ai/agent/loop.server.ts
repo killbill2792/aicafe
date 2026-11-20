@@ -344,7 +344,8 @@ export async function runAgentTurn(args: {
     webSearch:async query=>{
       const searchStarted=now();
       let reserved=false,completed=false,reported=false;
-      let measured:{input_tokens:number;output_tokens:number;input_tokens_details:{cached_tokens:number}}|undefined;
+      let measuredResponse:unknown;
+      let measured=false;
       try{
         await args.beforeProviderRequest?.();
         if(usage.modelCalls>=maxModelToolCalls()||now()>=workDeadline||budgetStop()||
@@ -366,23 +367,23 @@ export async function runAgentTurn(args: {
             reserved=true;
             return true;
           },
-          recordUsage:bill=>{
+          recordUsage:(bill,response)=>{
             usage.inputTokens+=bill.inputTokens;
             usage.cachedTokens+=bill.cachedTokens;
             usage.outputTokens+=bill.outputTokens;
             reported=Number.isSafeInteger(bill.outputTokens)&&bill.outputTokens>0;
-            if(bill.inputTokens>0)measured={input_tokens:bill.inputTokens,output_tokens:bill.outputTokens,
-              input_tokens_details:{cached_tokens:bill.cachedTokens}};
+            measuredResponse=response;
+            measured=Boolean(response)&&bill.inputTokens>0;
           },
         });
-        if(reserved&&reservation&&measured)await reservation.complete({model,usage:measured});
+        if(reserved&&reservation&&measured&&measuredResponse&&typeof measuredResponse==="object")await reservation.complete(measuredResponse);
         completed=result.available;
         return result;
       }finally{
         if(reserved&&expandedLuna&&!reported)unreportedOutput+=finalOutputReserve;
         if(reserved)usage.requests.push(providerUsageReceipt({
           requestedModel:model,kind:"hosted_web",outputCap:1200,durationMs:Math.max(0,now()-searchStarted),
-          outcome:completed?"completed":"failed",response:measured?{model,usage:measured}:undefined,nativeSearch:false,final:false}));
+          outcome:completed?"completed":"failed",response:measuredResponse,nativeSearch:false,final:false}));
         if(reserved)audit({kind:"model_call",inputSummary:"Web lookup; prompts withheld",
           outputSummary:completed?"Completed":"Incomplete",
           durationMs:Math.max(0,now()-searchStarted)});
