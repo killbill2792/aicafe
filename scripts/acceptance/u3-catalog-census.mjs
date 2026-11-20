@@ -44,7 +44,17 @@ const count=(relations)=>({
 const stats=count(live);
 const expected=count(reference.relations);
 const byName=new Map(reference.relations.map(x=>[x.relation,x]));
-const drift=live.filter(x=>JSON.stringify(byName.get(x.relation))!==JSON.stringify(x)).map(x=>x.relation);
+// PostgreSQL physical attribute ordinal is not a business semantic. Migration
+// CREATE order and production ALTER order can differ without source drift.
+// Compare every column name/type/nullability and every FK, not the row order.
+const canonical=relation=>relation?JSON.stringify({
+ relation:relation.relation,kind:relation.kind,rls:relation.rls,
+ columns:[...(relation.columns??[])].sort((a,b)=>String(a[0]).localeCompare(String(b[0]))),
+ foreign_keys:[...(relation.foreign_keys??[])].sort((a,b)=>
+  String(a.constraint).localeCompare(String(b.constraint))||
+  String(a.target).localeCompare(String(b.target)))
+}):null;
+const drift=live.filter(x=>canonical(byName.get(x.relation))!==canonical(x)).map(x=>x.relation);
 const differences=drift.slice(0,6).map(relation=>{
  const currentRelation=live.find(x=>x.relation===relation);
  const previous=byName.get(relation);
