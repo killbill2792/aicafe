@@ -98,7 +98,18 @@ export async function admitU3Sql(sql:string,allowedRelations:readonly string[],
  if(nCtes>MAX_CTES)throw Error("invalid_query");
  const reads=new Set<string>(),called=new Set<string>();
  let nodes=0,rangeCount=0;
- function walk(n:unknown){
+ const directData=(x:unknown)=>{
+  if(!x||typeof x!=="object"||!("ColumnRef" in x))return false;
+  const fields=(x as {ColumnRef?:{fields?:unknown}}).ColumnRef?.fields;
+  return Array.isArray(fields)&&fields.length>0&&stringNode(fields.at(-1))==="data";
+ };
+ const hasNamedJsonPath=(x:unknown)=>{
+  const literal=x&&typeof x==="object"&&"A_Const" in x?
+    (x as {A_Const?:{sval?:{sval?:unknown}}}).A_Const?.sval?.sval:null;
+  return typeof literal==="string"&&literal.trim().length>0&&literal.length<=512&&
+   !/^\{\s*\}$/.test(literal);
+ };
+ function walk(n:unknown,allowNamedData=false){
   if(n===null||n===undefined||typeof n==="string"||
     typeof n==="number"||typeof n==="boolean")return;
   if(Array.isArray(n)){n.forEach(walk);return;}
@@ -106,6 +117,18 @@ export async function admitU3Sql(sql:string,allowedRelations:readonly string[],
   nodes++;if(nodes>MAX_NODES)throw Error("invalid_query");
   for(const [kind,raw] of Object.entries(n)){
    if(prohibited.has(kind))throw Error("invalid_query");
+   if(kind==="A_Expr"&&raw&&typeof raw==="object"){
+    const e=raw as {name?:unknown;lexpr?:unknown;rexpr?:unknown};
+    if(["#>>","->>"].includes(name(e.name)??"")&&
+      directData(e.lexpr)&&hasNamedJsonPath(e.rexpr)){
+     walk(e.lexpr,true);walk(e.rexpr,false);continue;
+    }
+   }
+   if(kind==="ColumnRef"){
+    const fields=(raw as {fields?:unknown})?.fields;
+    if(Array.isArray(fields)&&fields.some(x=>stringNode(x)==="data")&&
+      !allowNamedData)throw Error("invalid_query");
+   }
    if(kind==="SelectStmt"&&raw&&typeof raw==="object"){
     const s=raw as Record<string,unknown>;
     if(s.intoClause||Array.isArray(s.lockingClause)&&s.lockingClause.length||
