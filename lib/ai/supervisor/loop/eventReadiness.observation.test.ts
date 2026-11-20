@@ -158,6 +158,27 @@ describe("canonical Toast item/discount/shift evidence",()=>{
     expect(evidence.itemSales).toEqual({coverage:"verified",items:[{name:"Latte",quantity:5}]});
     expect(evidence.namedDiscounts.coverage).toBe("partial");
   });
+  it("excludes cancelled dates and undated rows from event-period non-sales evidence",async()=>{
+    const excluded="2026-11-01",end="2026-11-02";
+    vi.mocked(readItemSales).mockResolvedValue(ready([
+      {source:"toast",status:"actual",business_date:date,data:{name:"Latte",quantity:2}},
+      {source:"toast",status:"actual",business_date:excluded,data:{name:"Latte",quantity:99}},
+      {source:"toast",status:"actual",business_date:end,data:{name:"Latte",quantity:3}},
+      {source:"toast",status:"actual",data:{name:"Latte",quantity:99}},
+    ]));
+    vi.mocked(readMenu).mockResolvedValue(ready([{source:"toast",status:"actual",data:{name:"Latte"}}]));
+    vi.mocked(readDiscounts).mockResolvedValue(ready([{source:"toast",status:"actual",business_date:excluded,amount_cents:100,
+      check_discounts:[{name:"Off-event discount",amountCents:100}]}]));
+    vi.mocked(readLaborEntries).mockResolvedValue(ready([
+      {source:"toast",status:"actual",business_date:date,data:{clock_in:"2026-10-31T12:00:00Z",clock_out:"2026-10-31T17:00:00Z"}},
+      {source:"toast",status:"actual",business_date:excluded,data:{clock_in:"2026-11-01T12:00:00Z",clock_out:"2026-11-01T17:00:00Z"}},
+    ]));
+    const result=await eventToastEvidence({} as never,proposal().businessId,date,[],end,new Set([excluded]));
+    expect(result.itemSales).toEqual({coverage:"partial",items:[{name:"Latte",quantity:5}]});
+    expect(result.namedDiscounts.names).toEqual([]);
+    expect(result.discountAmounts.observedOrders).toBe(0);
+    expect(result.laborEntries.recordedShifts).toBe(1);
+  });
   it("does not assert full item coverage on a capped Toast read",async()=>{
     vi.mocked(readItemSales).mockResolvedValue(ready([
       {source:"toast",status:"actual",data:{name:"Latte",quantity:1}},

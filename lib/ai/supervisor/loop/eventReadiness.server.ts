@@ -217,7 +217,7 @@ export async function observedEventProposalIds(db:ReturnType<typeof createAdminS
  * or an order-level discount total; neither proves that physical work occurred. */
 export async function eventToastEvidence(db:ReturnType<typeof createAdminSupabaseClient>,
   businessId:string,day:string,
-  actions:readonly {area:string;action:string}[]=[],through=day){
+  actions:readonly {area:string;action:string}[]=[],through=day,excludedDates:ReadonlySet<string>=new Set()){
   const range={dateFrom:day,dateTo:through};
   const [items,discounts,shifts,menu]=await Promise.all([
     readItemSales(db,businessId,range).catch(()=>({rows:[],truncated:true,error:"unavailable"})),
@@ -226,7 +226,13 @@ export async function eventToastEvidence(db:ReturnType<typeof createAdminSupabas
     readMenu(db,businessId,range).catch(()=>({rows:[],truncated:true,error:"unavailable"})),
   ]);
   const unavailable=(v:{error?:string;truncated:boolean})=>Boolean(v.error||v.truncated);
-  const itemRows=items.rows.filter(r=>r.source==="toast"&&r.status==="actual");
+  // Menu names are catalogue evidence, not a sale. Actual sales/discounts
+  // and timecards must belong to the confirmed event dates, not a moved gap.
+  const inEvent=(row:Record<string,unknown>)=>!excludedDates.size||
+    typeof row.business_date==="string"&&!excludedDates.has(row.business_date);
+  const missingDate=(rows:Record<string,unknown>[])=>excludedDates.size>0&&
+    rows.some(r=>r.source==="toast"&&typeof r.business_date!=="string");
+  const itemRows=items.rows.filter(r=>inEvent(r)&&r.source==="toast"&&r.status==="actual");
   const menuNames=new Set(menu.rows.filter(r=>r.source==="toast"&&r.status==="actual")
     .map(r=>(r.data as {name?:unknown}|null)?.name)
     .filter((v):v is string=>typeof v==="string"));
@@ -243,7 +249,7 @@ export async function eventToastEvidence(db:ReturnType<typeof createAdminSupabas
     .sort((a,b)=>b.quantity-a.quantity||a.name.localeCompare(b.name));
   // The current canonical view includes typed *check* and *item* discounts.
   // Empty/malformed names are not evidence of an applied named promotion.
-  const recordedDiscounts=discounts.rows.filter(r=>r.source==="toast"&&
+  const recordedDiscounts=discounts.rows.filter(r=>inEvent(r)&&r.source==="toast"&&
     r.status==="actual"&&typeof r.amount_cents==="number");
   const names=new Set<string>();
   for(const row of recordedDiscounts){
@@ -269,20 +275,20 @@ export async function eventToastEvidence(db:ReturnType<typeof createAdminSupabas
   // A wage classification is independent of a recorded closed timecard.
   // "needs_match" and "estimated" wages remain valid attendance facts.
   const labor=shifts.rows.filter(r=>{
-    if(r.source!=="toast")return false;
+    if(r.source!=="toast"||!inEvent(r))return false;
     const data=r.data as {clock_in?:unknown;clock_out?:unknown}|null;
     return ["actual","estimated","needs_match"].includes(String(r.status))&&
       typeof data?.clock_in==="string"&&typeof data.clock_out==="string";
   });
-  const openLabor=shifts.rows.some(r=>r.source==="toast"&&r.status==="open");
-  const partialLabor=unavailable(shifts)||openLabor;
+  const openLabor=shifts.rows.some(r=>inEvent(r)&&r.source==="toast"&&r.status==="open");
+  const partialLabor=unavailable(shifts)||openLabor||missingDate(shifts.rows);
   return {
-    itemSales:{coverage:unavailable(items)||unavailable(menu)?"partial" as const:
+    itemSales:{coverage:unavailable(items)||unavailable(menu)||missingDate(items.rows)?"partial" as const:
       sold.length?"verified" as const:"missing" as const,items:sold.slice(0,8)},
-    namedDiscounts:{coverage:unavailable(discounts)?"partial" as const:
+    namedDiscounts:{coverage:unavailable(discounts)||missingDate(discounts.rows)?"partial" as const:
       names.size?"verified" as const:"missing" as const,
       names:[...names].slice(0,8),matchedRecommendationNames:matchedDiscounts.slice(0,8)},
-    discountAmounts:{coverage:unavailable(discounts)?"partial" as const:
+    discountAmounts:{coverage:unavailable(discounts)||missingDate(discounts.rows)?"partial" as const:
       recordedDiscounts.length?"verified" as const:"missing" as const,
       observedOrders:recordedDiscounts.length},
     laborEntries:{coverage:partialLabor?"partial" as const:
@@ -537,10 +543,16 @@ export const eventReadinessCapability=registerLoopCapability({
        changePercent(comparableActualCents,comparableTypicalCents):null};
    // A completed business day can have actual sales but missing item/discount
    // details. Keep that distinction in the same saved Supervisor report.
-   const evidenceEnd=effect.observationWindow?.through??effect.endDate;
+   const inactive=new Set([...(effect.observationWindow?.inactiveDates??[]),
+     ...samples.filter(s=>s.observation.coverage==="event_inactive").map(s=>s.businessDate)]);
+   // Use the last eligible event date, not the moving cron date. The same
+   // cancelled occurrence must not acquire new off-event product/labor facts.
+   let evidenceEnd=effect.observationWindow?.through??effect.endDate;
+   while(evidenceEnd>=effect.startDate&&inactive.has(evidenceEnd))evidenceEnd=utcDateOffset(evidenceEnd,-1);
+   if(evidenceEnd<effect.startDate)evidenceEnd=utcDateOffset(effect.startDate,-1);
    const toastEvidence=windowComplete&&window?.proposalId&&evidenceEnd>=effect.startDate?await Promise.resolve()
      .then(()=>eventToastEvidence(createAdminSupabaseClient(),
-       scope.businessId,effect.startDate,effect.actions,evidenceEnd)).catch(()=>({
+       scope.businessId,effect.startDate,effect.actions,evidenceEnd,inactive)).catch(()=>({
        itemSales:{coverage:"missing" as const,items:[]},
        namedDiscounts:{coverage:"missing" as const,names:[],
          matchedRecommendationNames:[]},
