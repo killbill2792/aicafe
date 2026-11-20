@@ -19,6 +19,8 @@ export async function GET(request:Request){
   let checked=0,refreshed=0,failed=0,deferred=0;
   const routines={routinesChecked:0,runs:0,notices:0,failed:0,evidenceChecks:0,investigationsQueued:0};
   const now=new Date();
+  const refreshAdmissionUntil=now.getTime()+180_000;
+  const investigationAdmissionUntil=now.getTime()+225_000;
   // The legacy manual worker flag alone must not activate scheduled chat work.
   // This additional rollout gate remains off until durable admission/recovery is proven.
   const ownerRunsEnabled=process.env.SUPERVISOR_RUN_WORKER_ENABLED==="true" &&
@@ -29,6 +31,20 @@ export async function GET(request:Request){
     try{return {...await ownerWorker.processOldestDurableRun(),failed:0};}
     catch{return {processed:0,state:null,failed:1};}
   })() : Promise.resolve({processed:0,state:null,failed:ownerRunsEnabled?1:0});
+  // Do not run a large refresh concurrently with an admitted owner run.
+  const ownerResult=await ownerRuns;
+  // Reserve the first investigation slot for existing due work before a
+  // potentially slow fleet scan. Use the SAME bounded global step budget.
+  const investigations={processed:0,collected:0,investigated:0,followUps:0,rechecked:0,failed:0};
+  async function investigateOne(){
+    if(Date.now()>=investigationAdmissionUntil)return;
+    try{
+      const step=await processDueInvestigations(db,new Date(),1);
+      for(const key of ["processed","collected","investigated","followUps","rechecked","failed"] as const)
+        investigations[key]+=step[key]??0;
+    }catch{investigations.failed++;}
+  }
+  await investigateOne();
   // Separate task capability, same authorized cron. Failures remain visible and
   // the database keeps unfinished commitments pending for the next invocation.
   let commitments:{scopes:number;delivered:number;failed:number};
@@ -37,6 +53,7 @@ export async function GET(request:Request){
   const pageSize=100;
   const scheduled=await db.rpc("supervisor_list_derived_refresh_businesses");
   const useLegacy=derivedRefreshSchemaMissing(scheduled.error);
+  let admissionDeferred=false;
   for(let offset=0;;offset+=pageSize){
     const {data,error}=useLegacy?await db.from("businesses").select("id,timezone,is_demo")
       .order("id",{ascending:true}).range(offset,offset+pageSize-1):scheduled;
@@ -45,6 +62,10 @@ export async function GET(request:Request){
     const rows=data??[];
     for(const business of rows as Array<{id:string;timezone:string|null;is_demo:boolean}>){
         if(business.is_demo)continue;
+        if(Date.now()>=refreshAdmissionUntil){
+          // Entries not started retain their least-recently-started position.
+          deferred++;admissionDeferred=true;continue;
+        }
         checked++;
         if(!business.timezone){failed++;continue;}
         try{
@@ -67,15 +88,12 @@ export async function GET(request:Request){
           routines.investigationsQueued+=outcome.investigationsQueued;
         }catch{routines.failed++;}
     }
-    if(!useLegacy||rows.length<pageSize)break;
+    if(admissionDeferred||!useLegacy||rows.length<pageSize)break;
   }
   // A global fair, bounded slice across all cafés, not paid model calls per
   // business. The existing cron remains the only schedule for this capability.
-  let investigations={processed:0,collected:0,investigated:0,followUps:0,rechecked:0,failed:0};
-  try{investigations=await processDueInvestigations(db,new Date(),2);}
-  catch{investigations.failed++;}
-  const ownerResult=await ownerRuns;
-  return respond(failed||commitments.failed||routines.failed||investigations.failed||ownerResult.failed?207:200,
+  await investigateOne();
+  return respond(failed||commitments.failed||routines.failed||investigations.failed||ownerResult.failed||admissionDeferred?207:200,
     {checked,refreshed,failed,deferred,commitments,routines,investigations,
       ...(ownerRunsEnabled?{ownerRuns:ownerResult}:{})});
 }
