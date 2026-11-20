@@ -26,6 +26,24 @@ function make(n:bigint,d:bigint,unit:CalcUnit):CalcValue{
   return {n:n/g,d:d/g,unit};
 }
 
+/** Exact decimal as returned by PostgreSQL NUMERIC/BIGINT. The model cannot
+ * invent these values: the caller must bind them to a verified tool receipt.
+ * No Number() conversion, binary float, or unreviewed amount rounding. */
+export function exactDecimal(text:string,unit:CalcUnit,scale=1):CalcValue|null{
+ if(typeof text!=="string"||text.length>60||
+   !/^[+-]?(?:0|[1-9][0-9]*)(?:\.[0-9]{1,20})?$/u.test(text)||
+   !Number.isSafeInteger(scale)||scale<1)return null;
+ const negative=text.startsWith("-");
+ const clean=text.replace(/^[+-]/u,"");
+ const [whole,frac=""]=clean.split(".");
+ const digits=(whole+frac).replace(/^0+(?=\d)/u,"");
+ if(digits.length>45)return null;
+ let numerator:bigint;
+ try{numerator=BigInt(digits);}catch{return null;}
+ if(negative)numerator=-numerator;
+ return make(numerator,BigInt(10)**BigInt(frac.length)*BigInt(scale),unit);
+}
+
 /** Exact value of a finite JS number, read through its shortest decimal form. */
 export function exactNumber(value:number,unit:CalcUnit,scale=1):CalcValue|null{
   if(!Number.isFinite(value)||Math.abs(value)>Number.MAX_SAFE_INTEGER)return null;
