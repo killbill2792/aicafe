@@ -58,11 +58,11 @@ export function eventAssessmentSourceHash(timeline:Pick<SavedEventTimeline,"city
   });
 }
 export type SavedEventAssessment={
-  startDate:string;factsHash:string;sourceHash:string;assessedOn?:string;batchKey?:string;
+  startDate:string;factsHash:string;sourceHash:string;assessedOn?:string;batchKey?:string;evidenceHash?:string;
 };
 /** A prior no-action is a durable assessment, not an alert. Approved/rejected
  * plans always win; a changed source or confirmed event can be reconsidered. */
-type EventAssessmentDay={date:string;events:CafeEvent[];hash:string;refresh?:boolean;batchKey?:string};
+type EventAssessmentDay={date:string;events:CafeEvent[];hash:string;refresh?:boolean;batchKey?:string;priorEvidenceHash?:string};
 const occurrenceKey=(ids:readonly string[])=>effectHash([...ids].sort()).slice(0,24);
 const eventPlanTaskKey=(date:string,ids:readonly string[])=>"event-plan:"+date+
   (ids.length?":"+occurrenceKey(ids):"");
@@ -82,7 +82,11 @@ export function pendingEventDays(events:readonly CafeEvent[],
       if(day===from&&prior?.assessedOn&&prior.assessedOn<day&&found.some(e=>e.startDate<e.endDate)){
         result.push({...batch,refresh:true});continue;
       }
-      if(prior)continue;
+      if(prior){
+        if(day===from&&prior.evidenceHash&&found.some(e=>e.startDate<e.endDate))
+          result.push({...batch,refresh:true,priorEvidenceHash:prior.evidenceHash});
+        continue;
+      }
       // A decision for one selected subset must not suppress a different batch.
       if(!plans.some(p=>p.startDate===day&&(p.factsHash===hash||
         (!p.eventIds?.length&&!batchKey&&p.status!==undefined&&
@@ -215,12 +219,12 @@ async function eventThread(db:Db,businessId:string,ownerId:string,day:string,eve
  * replay-safe without creating a second assessment store. */
 async function saveEventAssessment(db:Db,businessId:string,date:string,
   factsHash:string,sourceHash:string,outcome:"proposed"|"no_action",reason:string,
-  assessedOn:string,batchKey?:string){
+  assessedOn:string,batchKey?:string,evidenceHash?:string){
   const saved=await db.from("operating_tasks").upsert({
     id:"event-assessment:"+date+(batchKey?":"+batchKey:""),business_id:businessId,agent_id:"alex",
     kind:"event_assessment",entity_type:"event_day",entity_id:date,
     status:"handled",confidence:"low",
-    payload:{businessDate:date,factsHash,sourceHash,outcome,assessedOn,batchKey:batchKey??null,reason:reason.slice(0,500)},
+    payload:{businessDate:date,factsHash,sourceHash,outcome,assessedOn,batchKey:batchKey??null,evidenceHash:evidenceHash??null,reason:reason.slice(0,500)},
     evidence:[{source:"cafe_events",facts:{businessDate:date,factsHash}}],
   },{onConflict:"business_id,id"});
   requireOk(saved.error);
@@ -238,6 +242,7 @@ async function readEventAssessments(db:Db,businessId:string,from:string,to:strin
       [{startDate:typeof p.businessDate==="string"?p.businessDate:row.id.slice("event-assessment:".length, "event-assessment:".length+10),
         factsHash:p.factsHash,sourceHash:p.sourceHash,
         ...(typeof p.batchKey==="string"?{batchKey:p.batchKey}:{}),
+        ...(typeof p.evidenceHash==="string"?{evidenceHash:p.evidenceHash}:{}),
         ...(typeof p.assessedOn==="string"?{assessedOn:p.assessedOn}:{})}]:[];
   });
 }
@@ -275,17 +280,6 @@ export async function draftDay(db:Db,b:Business,ownerId:string,locale:"en"|"es"|
   const scope:OwnerLoopScope=await authorizedScheduledEventScope({
     businessId:b.id,ownerUserId:ownerId,threadId,locale,
   });
-  const requestKey=stableMessageId("event-proposal:"+b.id+":"+ownerId+":"+day.date+":"+day.hash+":"+sourceHash+
-    (day.refresh?":day-of":""));
-  const existing=await db.from("supervisor_proposals").select("id")
-    .eq("business_id",b.id).eq("owner_user_id",ownerId).eq("request_key",requestKey)
-    .maybeSingle();
-  requireOk(existing.error);
-  if(existing.data){
-    // Repair eligibility stays with recoverPlanDelivery, not a second model turn.
-    await saveEventAssessment(db,b.id,day.date,day.hash,sourceHash,"proposed","",today,day.batchKey);
-    return false;
-  }
   const facts=eventPlanFacts(day.events);
   const [evidence,profile,location]=await Promise.all([
     readEventDemandEvidence(db,{businessId:b.id,ownerUserId:ownerId},{
@@ -295,6 +289,26 @@ export async function draftDay(db:Db,b:Business,ownerId:string,locale:"en"|"es"|
     readPrimaryLocation(db,b.id),
     readCafeLocation(db,b.id,ownerFacts),
   ]);
+  // Keep materially different operational evidence distinct from timestamp-only
+  // refreshes. Live amounts are evaluated by the existing live monitor instead
+  // of triggering a paid preparation turn for each new order.
+  const evidenceHash=effectHash({normal:evidence.normal,usualHours:evidence.usualHours,
+    priorOutcomes:evidence.priorOutcomes,ownerObservations:evidence.ownerObservations,
+    otherKnownEvents:[...evidence.otherKnownEvents].sort(),readiness:evidence.readiness,
+    openingHours:profile?.open_hours??null,address:location?.label??null,
+    coverage:{missing:[...evidence.coverage.missing].sort(),caveats:[...evidence.coverage.caveats].sort()}});
+  if(day.priorEvidenceHash===evidenceHash)return false;
+  const requestKey=stableMessageId("event-proposal:"+b.id+":"+ownerId+":"+day.date+":"+day.hash+":"+sourceHash+":"+evidenceHash+
+    (day.refresh?":day-of":""));
+  const existing=await db.from("supervisor_proposals").select("id")
+    .eq("business_id",b.id).eq("owner_user_id",ownerId).eq("request_key",requestKey)
+    .maybeSingle();
+  requireOk(existing.error);
+  if(existing.data){
+    // Repair eligibility stays with recoverPlanDelivery, not a second model turn.
+    await saveEventAssessment(db,b.id,day.date,day.hash,sourceHash,"proposed","",today,day.batchKey,evidenceHash);
+    return false;
+  }
   // Bounded, factual and café-specific. No synthetic attendance, routes, uplift
   // or hours are manufactured when E/D did not establish them.
   const context={
@@ -389,7 +403,7 @@ export async function draftDay(db:Db,b:Business,ownerId:string,locale:"en"|"es"|
   });
   if(reused){
     await saveEventAssessment(db,b.id,day.date,day.hash,sourceHash,
-      "no_action","Existing preparation decision remains applicable.",today,day.batchKey);
+      "no_action","Existing preparation decision remains applicable.",today,day.batchKey,evidenceHash);
     return false;
   }
   const proposal=turn.results.find(r=>r.source==="event_plan_proposal"&&
@@ -400,7 +414,7 @@ export async function draftDay(db:Db,b:Business,ownerId:string,locale:"en"|"es"|
       !turn.results.some(r=>r.source==="event_plan_proposal"||
         r.source==="propose_event_plan"||(r.source==="web_search"&&r.missing.length>0)))
       await saveEventAssessment(db,b.id,day.date,day.hash,sourceHash,
-        "no_action",turn.text,today,day.batchKey);
+        "no_action",turn.text,today,day.batchKey,evidenceHash);
     return false;
   }
   const {reply,metadata}=turn.text.trim()?agentReplyPayload(turn):
@@ -431,7 +445,7 @@ export async function draftDay(db:Db,b:Business,ownerId:string,locale:"en"|"es"|
   },{onConflict:"business_id,id"});
   requireOk(task.error);
   });
-  await saveEventAssessment(db,b.id,day.date,day.hash,sourceHash,"proposed","",today,day.batchKey);
+  await saveEventAssessment(db,b.id,day.date,day.hash,sourceHash,"proposed","",today,day.batchKey,evidenceHash);
   return true;
 }
 
@@ -648,7 +662,7 @@ export async function runEventsLookahead(db:Db=createAdminSupabaseClient(),
         const locale=localeRow.data?.locale==="es"||localeRow.data?.locale==="ar"
           ?localeRow.data.locale:"en";
         const ownerFacts=await loadOwnerFacts(b.id,db);
-        for(const day of candidates.slice(0,remaining)){
+        for(const day of [...candidates.filter(d=>!d.priorEvidenceHash),...candidates.filter(d=>d.priorEvidenceHash)].slice(0,remaining)){
           try{
             if(await draftDay(db,b,owner.data.user_id,locale,today,day,
               ownerFacts,timeline,sourceHash))result.planned++;

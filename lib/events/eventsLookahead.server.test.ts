@@ -44,6 +44,11 @@ describe("saved event readiness plan-once selection",()=>{
    expect(pendingEventDays([e],[plan],"2026-11-04","2026-11-04",
      [{...prior,assessedOn:"2026-11-04"}],"s")).toEqual([]);
  });
+ it("keeps the current multi-day assessment eligible for a cheap material-evidence comparison",()=>{
+   const e=event({startDate:"2026-11-03",endDate:"2026-11-05"}),hash=effectHash(eventPlanFacts([e]));
+   expect(pendingEventDays([e],[],"2026-11-04","2026-11-04",[{startDate:"2026-11-04",factsHash:hash,sourceHash:"s",assessedOn:"2026-11-04",evidenceHash:"version"}],"s"))
+     .toEqual([{date:"2026-11-04",events:[e],hash,refresh:true,priorEvidenceHash:"version"}]);
+ });
  it("reuses only the same occurrence, verified facts, covered dates and unchanged action",()=>{
    const actions=[{area:"prep",action:"Prepare pastry stock",reason:"Initial evidence"}];
    const prior={proposalId:"p",threadId:"t",revision:1,status:"approved",eventIds:["event"],
