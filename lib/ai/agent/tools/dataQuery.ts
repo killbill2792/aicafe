@@ -215,18 +215,18 @@ export const dataQueryTools={
    const parsed=describeSchema.safeParse({record_type:null,view:null,relation:null,source:null,
     field_prefix:null,search:null,page_offset:null,page_size:null,
     ...(raw&&typeof raw==="object"?raw:{})});
-   if(!parsed.success)return {source:"canonical_dictionary",period:null,missing:["invalid_query"],views:[]};
+   if(!parsed.success)return {source:"canonical_dictionary",period:null,missing:["invalid_query"],views:[],fields:[],truncated:false,retainedFields:undefined};
    const {record_type:recordType,view,relation,source,field_prefix:prefix,
     search,page_offset:offset,page_size:pageSize}=parsed.data;
    if((recordType!==null&&(view!==null||search!==null||relation!==null))||
     (prefix!==null&&recordType===null)||(view!==null&&relation!==null))
-    return {source:"canonical_dictionary",period:null,missing:["invalid_query"],views:[]};
+    return {source:"canonical_dictionary",period:null,missing:["invalid_query"],views:[],fields:[],truncated:false,retainedFields:undefined};
    if(recordType!==null){
     if(!ctx?.db||!z.uuid().safeParse(ctx.businessId).success)
-     return {source:"toast_fields",period:null,views:[],missing:["invalid_scope"],record_type:recordType,fields:[]};
+     return {source:"toast_fields",period:null,views:[],missing:["invalid_scope"],record_type:recordType,fields:[],truncated:false,retainedFields:undefined};
     try{
      const {data,error}=await ctx.db.rpc("ai_toast_fields",{p_business_id:ctx.businessId,p_record_type:recordType});
-     if(error)return {source:"toast_fields",period:null,views:[],missing:["source_read_failed"],record_type:recordType,fields:[]};
+     if(error)return {source:"toast_fields",period:null,views:[],missing:["source_read_failed"],record_type:recordType,fields:[],truncated:false,retainedFields:undefined};
      const observed=Array.isArray(data)?data.filter((item:unknown)=>
       item!==null&&typeof item==="object"&&"field" in item&&
       typeof item.field==="string"&&isDataField(item.field)) as Array<{field:string;[key:string]:unknown}>:[];
@@ -249,14 +249,14 @@ export const dataQueryTools={
       record_type:recordType,view:"cv_toast_records",field_prefix:prefix,
       declaredFields:schemaFields.length,retainedFields:observed.length,
       matchingFields:matching.length,matchingRetainedFields:retainedMatching,matchingDeclaredFields:declaredMatching,fields:fit.rows,truncated:fit.cut};
-    }catch{return {source:"toast_fields",period:null,views:[],missing:["source_read_failed"],record_type:recordType,fields:[]};}
+    }catch{return {source:"toast_fields",period:null,views:[],missing:["source_read_failed"],record_type:recordType,fields:[],truncated:false,retainedFields:undefined};}
    }
    if(relation!==null||source==="research"){
     if(!ctx?.ownerUserId||!ctx?.threadId||!u3SqlConfigured())
      return {source:"u3_semantic_catalog",period:null,views:[],
-      missing:["capability_unavailable"],relations:[]};
-    try{return {...await describeU3Catalog(ctx,{search,relation,offset,limit:pageSize}),views:[]};}catch{return {source:"u3_semantic_catalog",period:null,views:[],
-     missing:["source_read_failed"],relations:[]};}
+      missing:["capability_unavailable"],relations:[],fields:[],truncated:false,retainedFields:undefined};
+    try{return {...await describeU3Catalog(ctx,{search,relation,offset,limit:pageSize}),views:[],fields:[],truncated:false,retainedFields:undefined};}catch{return {source:"u3_semantic_catalog",period:null,views:[],
+     missing:["source_read_failed"],relations:[],fields:[],truncated:false,retainedFields:undefined};}
    }
    // Search the ONE reviewed dictionary. Rank by exact/lexical meaning, not
    // a new question-specific relation list. Exhaustive stable pagination gives
@@ -291,7 +291,7 @@ export const dataQueryTools={
    return {source:"canonical_dictionary",period:null,
     missing:[...(candidates.length===0&&research===null?["empty"]:[])],
     search:term,page_offset:from,next_offset:next,total_matches:candidates.length,
-    views:page,research};
+    views:page,research,fields:[],truncated:false,retainedFields:undefined};
   }
  },
  query_data:{
