@@ -3,6 +3,8 @@
 -- Transactions roll back all fixtures. No paid model or production rows.
 \set ON_ERROR_STOP on
 BEGIN;
+-- Transactional test-only membership, rolled back with fixtures; no durable research login grant.
+GRANT aicafe_research TO postgres WITH INHERIT FALSE, SET TRUE;
 SELECT gen_random_uuid() AS a,gen_random_uuid() AS b,
        gen_random_uuid() AS oa,gen_random_uuid() AS ob,
        gen_random_uuid() AS ta,gen_random_uuid() AS tb,
