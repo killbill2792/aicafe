@@ -32,7 +32,7 @@ export function allowedFunctionNames(definitions:readonly unknown[]):ReadonlySet
 export function validProviderFunctionCall(raw:unknown):raw is ProviderFunctionCall{
  return object(raw)&&raw.type==="function_call"&&typeof raw.name==="string"&&namePattern.test(raw.name)&&
   typeof raw.call_id==="string"&&inlineCall.test(raw.call_id)&&typeof raw.arguments==="string"&&
-  (raw.namespace===undefined||raw.namespace===raw.name);
+  (raw.namespace===undefined||raw.namespace===null||raw.namespace===raw.name);
 }
 /** Search output may select only declarations from this request. Never accept
  * a provider-returned schema as the authoritative local execution contract. */
@@ -47,11 +47,22 @@ export function validateHostedToolOutput(items:readonly unknown[],definitions:re
    pending++;
   }else if(raw.type==="tool_search_output"){
    if(!native||pending===0||raw.execution!=="server"||raw.call_id!==null||
-    raw.status!=="completed"||!Array.isArray(raw.tools)||!raw.tools.length||
+    raw.status!=="completed"||!Array.isArray(raw.tools)||
     raw.tools.some(t=>!object(t)||t.type!=="function"||typeof t.name!=="string"||!allowed.has(t.name)))
      throw Error("invalid_provider_tool_search_output");
    pending--;
   }
  }
  if(pending!==0)throw Error("unpaired_provider_tool_search");
+}
+
+// Reuse the request's trusted schema and description on replay, not an
+// amplified or altered definition from a returned discovery item.
+export function canonicalHostedOutput(items:readonly unknown[],definitions:readonly unknown[],native:boolean):unknown[]{
+ validateHostedToolOutput(items,definitions,native);
+ const byName=new Map(definitions.flatMap(d=>object(d)&&d.type==="function"&&typeof d.name==="string"?[[d.name,d] as const]:[]));
+ return items.map(raw=>{
+  if(!object(raw)||raw.type!=="tool_search_output")return raw;
+  return {...raw,tools:(raw.tools as Row[]).map(t=>byName.get(t.name as string)!)};
+ });
 }
