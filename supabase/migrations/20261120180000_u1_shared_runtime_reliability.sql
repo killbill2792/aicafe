@@ -112,7 +112,7 @@ end $$;
 -- the existing candidate link once; do not rewrite a line whose identity is unchanged.
 alter table public.toast_sync_phase_errors add column last_recovered_at timestamptz;
 create or replace function public.pos_relink_toast_lines(p_business_id uuid,p_restaurant_guid uuid,p_business_date date)
-returns integer language plpgsql security definer set search_path=public as $
+returns integer language plpgsql security definer set search_path=public as $$
 declare v_prefix text;v_count integer;v_date date:=p_business_date;v_failed_at timestamptz;
 begin
  if coalesce(auth.role(),'')<>'service_role' or not exists(
@@ -173,16 +173,16 @@ begin
    and last_failed_at=v_failed_at;
  end if;
  return v_count;
-end $;
+end $$;
 revoke all on function public.pos_relink_toast_lines(uuid,uuid,date) from public,anon,authenticated;
 grant execute on function public.pos_relink_toast_lines(uuid,uuid,date) to service_role;
 -- Catalog changes still re-evaluate the restaurant's eligible history.
 create or replace function public.pos_relink_toast_lines(p_business_id uuid,p_restaurant_guid uuid)
-returns integer language plpgsql security definer set search_path=public as $
+returns integer language plpgsql security definer set search_path=public as $$
 begin
  if coalesce(auth.role(),'')<>'service_role' then raise exception 'POS relink unauthorized' using errcode='42501';end if;
  return public.pos_relink_toast_lines(p_business_id,p_restaurant_guid,null::date);
-end $;
+end $$;
 revoke all on function public.pos_relink_toast_lines(uuid,uuid) from public,anon,authenticated;
 grant execute on function public.pos_relink_toast_lines(uuid,uuid) to service_role;
 
