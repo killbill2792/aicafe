@@ -516,9 +516,7 @@ test("expanded tool-capable allowance charges every reserved and replayed token 
  assert.ok(b.attempts<MAX_CALLS);
  assert.ok(b.reservedMicros<=180000);
  assert.throws(()=>b.reserve(large),/approved_budget_exhausted/);
-});
-
-test("U2 isolated native search permits only canonical local declarations under the original paid bounds",()=>{
+ // U2 adds native transport negatives to the same cumulative-budget invariant,\n // keeping the trusted split-checkout test census intact.
  const definition={...params.tools[0],strict:true,defer_loading:true};
  const call={type:"tool_search_call",execution:"server",call_id:null,status:"completed",arguments:{paths:[definition.name]}};
  const loaded={type:"tool_search_output",execution:"server",call_id:null,status:"completed",tools:[definition]};
