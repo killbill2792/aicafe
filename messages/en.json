@@ -4498,6 +4498,8 @@
     "unknown": "unknown"
   },
   "SupervisorPresentation": {
+    "savedRecordCount": "Saved record count",
+    "savedRecordCountNotice": "Counts saved records only; not a current balance or certified business total.",
     "snapshot": "Saved snapshot",
     "timeUnknown": "Time not recorded",
     "until": "Until",

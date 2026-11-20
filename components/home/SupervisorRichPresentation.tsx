@@ -29,7 +29,7 @@ export function presentationSpec(p:RichPresentation):Spec{
   const ids=new Map(p.groups.flatMap((g,i)=>g.id?[[g.id,"group"+i] as const]:[]));
   elements.root.children=presentationGroupRoots(p.groups).map(i=>"group"+i);
   p.groups.forEach((g,i)=>{
-   elements["group"+i]=g.layout==="compare"&&compatibleComparison(g.items,p.panels)?{type:"Comparison",props:{panels:g.items.map(k=>p.panels[Number(k.slice(5))])},children:[]}:{type:"Layout",props:{layout:g.layout},children:g.items.map(key=>ids.get(key)??key)};
+   elements["group"+i]=g.layout==="compare"&&compatibleComparison(g.items,p.panels)?{type:"Comparison",props:{panels:g.items.map(k=>p.panels[Number(k.slice(5))]),...(g.title?{title:g.title}:{})},children:[]}:{type:"Layout",props:{layout:g.layout,...(g.title?{title:g.title}:{})},children:g.items.map(key=>ids.get(key)??key)};
   });
  }
  return {root:"root",elements};
@@ -197,9 +197,16 @@ function ControlView({kind}:{kind:unknown}){
 export default function SupervisorRichPresentation({block,locale,onSuggest,disabled,message,attachments}:{block:unknown;locale:string;onSuggest:(text:string)=>void;disabled:boolean;message?:Parameters<typeof presentationReport>[1]&{threadId:string};attachments?:{threadId:string;items:StoredAttachment[]}|null}){
  const parsed=useMemo(()=>richPresentationSchema.safeParse(block),[block]);
  const registry=useMemo<ComponentRegistry>(()=>({
-  Layout:({element,children})=><div data-supervisor-layout={element.props.layout==="grid"?"grid":"stack"} className={element.props.layout==="grid"?"grid min-w-0 gap-3 grid-cols-[repeat(auto-fit,minmax(min(100%,22rem),1fr))]":"min-w-0 space-y-3"}>{children}</div>,
+  Layout:({element,children})=>{
+   const title=typeof element.props.title==="string"?element.props.title:null;
+   if(element.props.layout==="details"&&title)return <details data-supervisor-layout="details" className="min-w-0 space-y-2"><summary className="min-h-12 cursor-pointer break-words py-3 text-[17px] font-medium text-ink focus-visible:outline focus-visible:outline-2 focus-visible:outline-ink">{title}</summary>{children}</details>;
+   return <div data-supervisor-layout={element.props.layout==="grid"?"grid":"stack"} className="min-w-0 space-y-2">
+    {title&&<h3 className="break-words text-[17px] font-medium text-ink">{title}</h3>}
+    <div className={element.props.layout==="grid"?"grid min-w-0 gap-3 grid-cols-[repeat(auto-fit,minmax(min(100%,22rem),1fr))]":"min-w-0 space-y-3"}>{children}</div>
+   </div>;
+  },
   Panel:({element})=>{const p=presentationPanelSchema.safeParse(element.props.panel);return p.success?<Panel panel={p.data} locale={locale}/>:null;},
-  Comparison:({element})=>{const raw:unknown=element.props.panels;const p=Array.isArray(raw)?raw.map((v:unknown)=>presentationPanelSchema.safeParse(v)):[];if(p.some(v=>!v.success))return null;const panels=p.flatMap(v=>v.success?[v.data]:[]);return compatibleComparison(panels.map((_,i)=>"panel"+i),panels)?<ComparisonView panels={panels} locale={locale}/>:null;},
+  Comparison:({element})=>{const raw:unknown=element.props.panels;const p=Array.isArray(raw)?raw.map((v:unknown)=>presentationPanelSchema.safeParse(v)):[];if(p.some(v=>!v.success))return null;const panels=p.flatMap(v=>v.success?[v.data]:[]);return compatibleComparison(panels.map((_,i)=>"panel"+i),panels)?<div className="min-w-0">{typeof element.props.title==="string"&&<h3 className="break-words text-[17px] font-medium text-ink">{element.props.title}</h3>}<ComparisonView panels={panels} locale={locale}/></div>:null;},
   Agenda:({element})=>{const a=agendaSchema.safeParse(element.props.agenda);return a.success?<AgendaView agenda={a.data} locale={locale}/>:null;},
   Scenario:({element})=>{const s=scenarioComparisonSchema.safeParse(element.props.scenario);return s.success?<ScenarioView scenario={s.data} locale={locale}/>:null;},
   RecordTable:({element})=>{const t=recordTableSchema.safeParse(element.props.table);return t.success?<RecordTableView table={t.data} locale={locale}/>:null;},

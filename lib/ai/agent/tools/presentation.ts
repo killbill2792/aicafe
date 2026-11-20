@@ -1,6 +1,7 @@
 import {scenarioEditorSchema,evaluateScenarioEditor} from "@/lib/ai/conversations/scenarioPresentation";
 import {canonicalDictionary,canonicalViewNames,type CanonicalView} from "@/lib/data/canonical/dictionary";
 import { z } from "zod";
+import en from "@/messages/en.json";
 import { richPresentationSchema,agendaSchema,scenarioComparisonSchema,recordTableSchema,interactiveCalcSchema,evaluatePresentationCalc,presentationLeaves,allPresentationLeaves,compatibleComparison,type RichPresentation,type RecordTable,type InteractiveCalc,type Agenda,type ScenarioComparison,type PresentationPanel } from "@/lib/ai/conversations/presentation";
 import type { AgentToolContext,AgentToolResult } from "./index";
 
@@ -15,7 +16,7 @@ const selection=z.strictObject({
 export const presentationInputSchema=z.strictObject({
   layout:z.enum(["stack","grid"]),
   panels:z.array(selection).max(8),
-  groups:z.array(z.strictObject({id:z.string().regex(/^g(?:[0-9]|1[01])$/).nullable().optional(),layout:z.enum(["stack","grid","compare"]),items:z.array(z.string().regex(/^(?:p[0-7]|agenda|scenario|calculator|files|report|suggestions|g(?:[0-9]|1[01]))$/)).min(1).max(12)})).max(12).nullable().optional(),
+  groups:z.array(z.strictObject({id:z.string().regex(/^g(?:[0-9]|1[01])$/).nullable().optional(),layout:z.enum(["stack","grid","compare","details"]),title:z.string().trim().min(1).max(140).nullable().optional(),items:z.array(z.string().regex(/^(?:p[0-7]|agenda|scenario|calculator|files|report|suggestions|g(?:[0-9]|1[01]))$/)).min(1).max(12)})).max(12).nullable().optional(),
   agenda:z.enum(["calendar_events","timeline_events","calendar_shifts","timeline_shifts"]).nullable().optional(),
   scenario:z.enum(["monthly_profit","monthly_break_even","monthly_target_sales","item_margin"]).nullable().optional(),
   report:z.boolean().nullable().optional(),
@@ -33,9 +34,9 @@ const descriptions={
 const obj=(v:unknown):v is Record<string,unknown>=>!!v&&typeof v==="object"&&!Array.isArray(v);
 // Project already scoped canonical results using the existing field dictionary.
 // No additional reads, arbitrary JSON paths, model-authored units or aggregation.
-// These sources mix snapshots or owner-supplied records. A count describes
-// saved records only, never stock quantity, active headcount or verified costs.
-const recordOnlyViews=new Set(["cv_inventory","cv_owner_facts","cv_bills","cv_staff"]);
+// Eligibility belongs to the canonical field semantics, not a fixed list of business domains.
+// A reference count describes saved records; it is not a stock balance, headcount or cost total.
+const presentationCopy=en.SupervisorPresentation;
 function queryScope(args:Record<string,unknown>,columns:Record<string,{unit:string}>):string{
  const filters=Array.isArray(args.filters)?args.filters:[];
  return filters.flatMap(f=>{
@@ -58,8 +59,9 @@ function canonicalPanel(s:z.infer<typeof selection>,r:AgentToolResult,encoded:st
  if(!obj(m)||typeof m.fn!=="string"||typeof m.column!=="string"||!Object.hasOwn(columns,m.column))return null;
  const units=["cents","count","items","units","seconds","minutes","hours","days","ratio","ratio squared","indicator","cents/hour"] as const;
  const rawUnit=columns[m.column].unit;
- const recordOnly=recordOnlyViews.has(view);
- if(recordOnly&&(!["count","count_distinct"].includes(m.fn)||m.column!=="source_ref"))return null;
+ const counting=["count","count_distinct"].includes(m.fn);
+ const recordOnly=counting&&m.column==="source_ref";
+ if(["UUID","JSON"].includes(rawUnit)||m.column==="business_id"||rawUnit==="identifier"&&!counting)return null;
  const unit=m.fn==="count"||m.fn==="count_distinct"||rawUnit==="indicator"&&m.fn==="sum"?"count":rawUnit;
  const partial=r.missing.length>0||Boolean(r.scopeWarning)||obj(r.aggregate)&&r.aggregate.status==="so_far";
  // Raw Toast fallback is scoped to explicit record counts, not guessed JSON units or screen totals.
@@ -76,7 +78,7 @@ function canonicalPanel(s:z.infer<typeof selection>,r:AgentToolResult,encoded:st
  if(s.kind==="donut")return null;
  const points:PresentationPanel["points"]=[];
  const filtered=Array.isArray(args.filters)&&args.filters.length>0;
- const title=(filtered?"Filtered: ":"")+(recordOnly?"Saved record count":m.fn.replaceAll("_"," ")+" "+m.column.replaceAll("_"," "));
+ const title=(filtered?"Filtered: ":"")+(recordOnly?presentationCopy.savedRecordCount:m.fn.replaceAll("_"," ")+" "+m.column.replaceAll("_"," "));
  for(const row of r.rows){
    if(!obj(row)||!Object.hasOwn(row,s.field))return null;
    const value=row[s.field];
@@ -98,7 +100,7 @@ function canonicalPanel(s:z.infer<typeof selection>,r:AgentToolResult,encoded:st
  }
  return {kind:s.kind,title,unit:unit as PresentationPanel["unit"],currency:unit==="cents"||unit==="cents/hour"?ctx.currency??null:null,
    from:r.period.from,to:r.period.to,asOf:ctx.asOf,source:"canonical_data",
-   sourceDetail:[recordOnly?"Counts saved records only; not a current balance or certified business total.":"",r.scopeWarning??"",...(partial?r.missing:[]),view,s.field,filtered?queryScope(args,columns):"",columns[m.column].meaning].filter(Boolean).join(" · ").slice(0,500),
+   sourceDetail:[recordOnly?presentationCopy.savedRecordCountNotice:"",r.scopeWarning??"",...(partial?r.missing:[]),view,s.field,filtered?queryScope(args,columns):"",columns[m.column].meaning].filter(Boolean).join(" · ").slice(0,500),
    ...(partial?{coverage:"partial" as const}:["processing_fee_cents","historical_recipe_cost_cents","historical_recipe_contribution_cents"].includes(m.column)?{coverage:"estimate" as const}:{}),points};
 }
 // A query's returned columns and aggregate aliases, not a new model-defined
@@ -142,7 +144,7 @@ function canonicalTable(r:AgentToolResult,encoded:string,ctx:Pick<AgentToolConte
   if(!obj(m)||typeof m.column!=="string"||typeof m.fn!=="string"||!["sum","count","count_distinct","min","max","avg"].includes(m.fn))continue;
   const count=m.fn==="count"||m.fn==="count_distinct",unit=fieldUnit(m.column);
   if(!count&&(!unit||secret.test(m.column)||unit==="label"||unit==="local date"||unit==="stored"||unit==="boolean"))continue;
-  if(!unit||m.column==="data")continue;
+  if(!unit||m.column==="data"||m.column==="business_id"||["UUID","JSON"].includes(unit))continue;
   add(m.fn+"_"+m.column,count?"count":unit,m.fn.replaceAll("_"," ")+" "+m.column.replaceAll("_"," "));
  }
  // Do not erase grouping dimensions and make distinct rows appear identical.
@@ -473,7 +475,7 @@ export function presentResponse(raw:unknown,ctx:Pick<AgentToolContext,"currency"
    const candidates=s.source==="canonical_data"?selected.filter(x=>x.name==="query_data"&&matching(x.result)).flatMap(x=>{
      if(s.field.startsWith("table:")){
        const table=canonicalTable(x.result,x.arguments,ctx);
-       const p=table&&!recordOnlyViews.has(table.view)&&table.view!=="cv_toast_records"&&!x.result.truncated&&!x.result.missing.includes("result_truncated")?tablePanel(s,table):null;
+       const p=table&&table.view!=="cv_toast_records"&&!x.result.truncated&&!x.result.missing.includes("result_truncated")?tablePanel(s,table):null;
        return p?[p]:[];
      }
      const p=canonicalPanel(s,x.result,x.arguments,ctx);return p?[p]:[];
@@ -513,7 +515,7 @@ export function presentResponse(raw:unknown,ctx:Pick<AgentToolContext,"currency"
      if(!leaves.includes(key)||used.has(key))return [];
      used.add(key);return [key];
    });
-   if(items.length)groups.push({...(request.id?{id:request.id}:{}),layout:request.layout==="compare"&&!compatibleComparison(items,block.data.panels)?"grid":request.layout,items});
+   if(items.length)groups.push({...(request.id?{id:request.id}:{}),...(request.title?{title:request.title}:{}),layout:request.layout==="compare"&&!compatibleComparison(items,block.data.panels)?"grid":request.layout==="details"&&!request.title?"stack":request.layout,items});
  }
  const remainder=leaves.filter(k=>!used.has(k));
  if(remainder.length)groups.push({layout:parsed.data.layout,items:remainder});
@@ -521,5 +523,5 @@ export function presentResponse(raw:unknown,ctx:Pick<AgentToolContext,"currency"
  return {...empty,accepted:true,presentation:arranged.success?arranged.data:block.data};
 }
 export const presentationTools={
- present_response:{schema:presentationInputSchema,description:"Optional UI from current reads, never invented data. Source+field: daily_rollups daily_sales; item_sales item_units; profitability net_sales/total_costs/owner_profit; canonical_data exact aggregate alias or field rows for a multi-column table; expenses recorded_expenses; business_costs cost_components; product_costs recipe_cost; supplier_purchase_plan subtotal/rows; purchase_orders, inventory, menu_items rows. Use ref from the prior result to disambiguate; groups: p0–p7, agenda/scenario/calculator/files/report/suggestions; id g0–g11 for nested stack/grid/compare (same units). For safe reader table numerics use table:<column_label_snake_case>. Agenda from get_events/get_week_schedule; scenario monthly_profit/monthly_break_even/monthly_target_sales/item_margin from verified simulate_scenario; calculator=true after calculate for editable owner assumptions (not screen numbers); report=true for text export; files=true for sources attached in this turn only. Suggestions edit a draft, never act. Answer fully in words; visuals only if useful."},
+ present_response:{schema:presentationInputSchema,description:"Optional UI from current reads, never invented data. Source+field: daily_rollups daily_sales; item_sales item_units; profitability net_sales/total_costs/owner_profit; canonical_data exact aggregate alias or field rows for a multi-column table; expenses recorded_expenses; business_costs cost_components; product_costs recipe_cost; supplier_purchase_plan subtotal/rows; purchase_orders, inventory, menu_items rows. Use ref from the prior result to disambiguate; groups: p0–p7, agenda/scenario/calculator/files/report/suggestions; id g0–g11 for nested stack/grid/compare (same units)/details (title required); optional descriptive titles, not data claims. For safe reader table numerics use table:<column_label_snake_case>. Agenda from get_events/get_week_schedule; scenario monthly_profit/monthly_break_even/monthly_target_sales/item_margin from verified simulate_scenario; calculator=true after calculate for editable owner assumptions (not screen numbers); report=true for text export; files=true for sources attached in this turn only. Suggestions edit a draft, never act. Answer fully in words; visuals only if useful."},
 };

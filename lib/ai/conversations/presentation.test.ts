@@ -79,3 +79,10 @@ it("does not combine different actual physical units on the same scale",()=>{
  const b={type:"rich_presentation",version:1,layout:"stack",panels:[a,{...a,title:"Flour",measurement:"g"}],suggestions:[],groups:[{layout:"compare",items:["panel0","panel1"]}]};
  expect(richPresentationSchema.safeParse(b).success).toBe(false);
 });
+
+it("permits a titled nested disclosure and rejects an unlabeled interactive group",()=>{
+ const b={type:"rich_presentation",version:1,layout:"stack",panels:[],report:true,suggestions:["Explain"]};
+ const groups=[{id:"g0",layout:"stack",items:["g1"]},{id:"g1",layout:"details",title:"More details",items:["report","suggestions"]}];
+ expect(richPresentationSchema.safeParse({...b,groups}).success).toBe(true);
+ expect(richPresentationSchema.safeParse({...b,groups:[groups[0],{...groups[1],title:undefined}]}).success).toBe(false);
+});

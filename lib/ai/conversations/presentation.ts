@@ -98,7 +98,7 @@ export function evaluatePresentationCalc(c:InteractiveCalc,changes:Readonly<Reco
  * references identify only already validated snapshot components. */
 // Flat reference graph supports recursive layouts without accepting recursive
 // model-authored JSON, executable props, repeated leaves or unbounded trees.
-export const presentationGroupSchema=z.strictObject({id:z.string().regex(/^g(?:[0-9]|1[01])$/).optional(),layout:z.enum(["stack","grid","compare"]),items:z.array(z.string().regex(/^(?:panel[0-7]|table[0-7]|agenda|scenario|calculator|files|report|suggestions|g(?:[0-9]|1[01]))$/)).min(1).max(12)});
+export const presentationGroupSchema=z.strictObject({id:z.string().regex(/^g(?:[0-9]|1[01])$/).optional(),layout:z.enum(["stack","grid","compare","details"]),title:label.optional(),items:z.array(z.string().regex(/^(?:panel[0-7]|table[0-7]|agenda|scenario|calculator|files|report|suggestions|g(?:[0-9]|1[01]))$/)).min(1).max(12)});
 type PresentationGroup=z.infer<typeof presentationGroupSchema>;
 export function presentationGroupRoots(groups:readonly PresentationGroup[]):number[]{
  const children=new Set(groups.flatMap(g=>g.items));
@@ -113,7 +113,7 @@ export function validPresentationGroups(groups:readonly PresentationGroup[],leav
  const visit=(i:number,depth:number):boolean=>{
   if(depth>6||seenGroups.has(i))return false;
   seenGroups.add(i);const g=groups[i];
-  if(g.layout==="compare"&&!compatibleComparison(g.items,panels))return false;
+  if(g.layout==="details"&&!g.title||g.layout==="compare"&&!compatibleComparison(g.items,panels))return false;
   for(const key of g.items){
    const child=ids.get(key);
    if(child!==undefined){if(!visit(child,depth+1))return false;}

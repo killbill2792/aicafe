@@ -258,3 +258,12 @@ it("projects canonical typed table columns without a domain-specific chart adapt
  expect(presentResponse(req,c())).toMatchObject({accepted:true,presentation:{panels:[{unit:"cents",points:[{label:"Takeaway",value:100},{label:"Dine in",value:200}]}]}});
  expect(presentResponse(req,c({...r,truncated:true})).accepted).toBe(false);
 });
+
+it("uses dictionary field semantics instead of admitting identifiers or raw JSON as numeric measures",()=>{
+ const req={layout:"stack",panels:[{source:"canonical_data",field:"count_business_id",kind:"bar"}],suggestions:[]};
+ const result:AgentToolResult={source:"canonical_data",period:sales.period,missing:[],rows:[{business_date:"2026-11-01",count_business_id:1}]};
+ const args={view:"cv_staff",date_from:sales.period!.from,date_to:sales.period!.to,group_by:["business_date"],metrics:[{fn:"count",column:"business_id"}]};
+ const c={...ctx(),presentationResults:()=>[{name:"query_data",arguments:JSON.stringify(args),result}]};
+ expect(presentResponse(req,c).accepted).toBe(false);
+ expect(presentResponse({...req,panels:[{...req.panels[0],field:"table:count_business_id"}]},c).accepted).toBe(false);
+});
