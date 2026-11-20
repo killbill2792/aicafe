@@ -33,6 +33,17 @@ export function eventContextFromTitle(title:string,threadId:string):EventChatCon
     {date:legacy[1],title:"Event",threadId}:null;
 }
 
+/** Session-local explicit dismissal wins over title restoration and polling. */
+export function restoreEventContext(current:EventChatContext|null,title:string|null,threadId:string,dismissed:ReadonlySet<string>):EventChatContext|null {
+  if(dismissed.has(threadId))return null;
+  return current?.threadId===threadId?current:title?eventContextFromTitle(title,threadId):null;
+}
+
+/** A retry sends the saved original text, without applying the current event chip. */
+export function eventMessageForSend(text:string,context:EventChatContext|null,original?:string):string {
+  return original ?? eventOwnerMessage(text,context);
+}
+
 /** Reuse the exact existing event conversation after page reload; don't match only by day. */
 export function eventThreadFromHistory(
   threads:readonly {id:string;title:string|null}[],date:string,eventId?:string,cityEventId?:string,

@@ -44,7 +44,7 @@ describe("chat experience helpers", () => {
       { tool: "unknown_tool", agent: "olivia" }, { tool: "unknown_tool", agent: "nobody" }] as AgentJobStep[], copy);
     expect(lines).toEqual([copy.tools.get_sales, copy.agents.olivia, copy.agents.supervisor]);
     const many = Array.from({ length: 10 }, (_, i) => ({ tool: i % 2 ? "get_sales" : "get_profit", agent: "alex" as const }));
-    expect(progressLines(many, copy)).toHaveLength(6);
+    expect(progressLines(many, copy)).toEqual([copy.tools.get_profit, copy.tools.get_sales]);
   });
   it("knows which owner messages are answered or still being worked on", () => {
     const reply = { role: "supervisor", grounding: { ownerMessageId: "a", agentMetadata: { absorbedOwnerMessageIds: ["b", 3] } } };

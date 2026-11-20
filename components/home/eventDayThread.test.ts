@@ -1,5 +1,5 @@
 import {describe,expect,it,vi} from "vitest";
-import {openEventDayThread,eventOwnerMessage,eventContextFromTitle,eventThreadTitle,eventThreadKey,eventThreadFromHistory} from "./eventDayThread";
+import {openEventDayThread,eventOwnerMessage,eventContextFromTitle,eventThreadTitle,eventThreadKey,eventThreadFromHistory,restoreEventContext,eventMessageForSend} from "./eventDayThread";
 
 describe("Chat about this event day",()=>{
   it("only creates and selects the day thread on explicit tap, with no automatic message",async()=>{
@@ -34,6 +34,19 @@ describe("event context is explicit and survives the owner's next message",()=>{
     expect(eventOwnerMessage(text,context)).toBe(text);
     expect(eventOwnerMessage("Explain this",null)).toBe("Explain this");
     expect(eventOwnerMessage("",context)).toBe("");
+  });
+  it("honors dismissal across refresh and thread switching until explicitly reselected",()=>{
+    const title=eventThreadTitle(context.date,context.title);
+    const dismissed=new Set([context.threadId]);
+    expect(restoreEventContext(context,title,context.threadId,dismissed)).toBeNull();
+    expect(restoreEventContext(null,title,context.threadId,dismissed)).toBeNull();
+    expect(restoreEventContext(null,title,"another",dismissed)?.threadId).toBe("another");
+    expect(eventMessageForSend("What were sales?",null)).toBe("What were sales?");
+    const anchored=eventOwnerMessage("Explain this",context);
+    expect(eventMessageForSend("Explain this",null,anchored)).toBe(anchored);
+    expect(eventMessageForSend("What were sales?",context,"What were sales?")).toBe("What were sales?");
+    dismissed.delete(context.threadId);
+    expect(restoreEventContext(null,title,context.threadId,dismissed)).toEqual(context);
   });
   it("restores event threads without misidentifying unrelated conversations",()=>{
     expect(eventContextFromTitle(eventThreadTitle(context.date,context.title),context.threadId)).toEqual(context);

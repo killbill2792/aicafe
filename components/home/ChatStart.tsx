@@ -95,16 +95,16 @@ export default function ChatStart({ data, copy, hasMessages, expanded, onToggle,
     <button type="button" aria-expanded={expanded} onClick={onToggle}
       className="flex min-h-12 w-full min-w-0 items-center gap-2 rounded-xl px-2 text-start text-[15px] font-medium leading-snug text-ink-muted hover:bg-surface2 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ink">
       <span className="min-w-0 flex-1 break-words" dir="auto">
-        <span className="block">{copy.summary}</span>
-        {!expanded&&(data.partial||data.estimated||data.incomplete||data.salesCaption)&&
+        <span className="block">{hasMessages && !expanded ? copy.keyNumbers : copy.summary}</span>
+        {!hasMessages&&!expanded&&(data.partial||data.estimated||data.incomplete||data.salesCaption)&&
           <span className="block text-[13px] leading-snug">{[data.partial?copy.partial:null,data.estimated?copy.estimate:null,data.incomplete?copy.incomplete:null,data.salesCaption].filter(Boolean).join(" · ")}</span>}
-        {!expanded&&data.board&&(data.board.running.length>0||data.board.reports.length>0)&&
+        {!hasMessages&&!expanded&&data.board&&(data.board.running.length>0||data.board.reports.length>0)&&
           <span className="block text-[13px] leading-snug">{[data.board.running.length&&copy.boardRunning?copy.boardRunning+": "+data.board.running.length:null,data.board.reports.length&&copy.boardReports?copy.boardReports+": "+data.board.reports.length:null].filter(Boolean).join(" · ")}</span>}
       </span>
       {expanded ? <ChevronUp size={18} className="shrink-0" aria-hidden="true" /> :
         <ChevronDown size={18} className="shrink-0" aria-hidden="true" />}
     </button>
-    {comingUp}
+    {(!hasMessages || expanded) && comingUp}
     {expanded && <>
       <section className="min-w-0 rounded-xl border border-line bg-surface p-3" aria-label={copy.keyNumbers}>
         <PeriodSwitch current={data.period} />

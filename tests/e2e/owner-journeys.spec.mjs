@@ -183,8 +183,9 @@ test("@home Task 16B persists real Supervisor work through reload, uncertainty a
       await login(page,own);
       await openOwnedPage(page,own,"?thread="+threadId);
       await page.setViewportSize({width:390,height:844});
-      const work = page.getByRole("region",{name:"Supervisor work"});
-      await expect(work).toBeVisible();
+      const work = page.getByRole("dialog",{name:"Supervisor controls"}).getByRole("region",{name:"Supervisor work"});
+      const openWork=async()=>{await expect(page.locator('[data-work-status]')).toHaveCount(0);await page.getByRole("button",{name:"Supervisor work",exact:true}).click();await expect(work).toBeVisible();};
+      await openWork();
       await expect(work.locator('[data-work-kind="durable_run"][data-work-status="queued"]')).toBeVisible();
       await expect(work.locator('[data-work-kind="investigation"][data-work-status="queued"]')).toBeVisible();
       const ownRead = await context.request.get("/api/ai/threads/"+threadId+"/work");
@@ -199,6 +200,7 @@ test("@home Task 16B persists real Supervisor work through reload, uncertainty a
           [own.businessId,own.owner.userId,threadId,episode,hash,hash]);
       }
       await page.reload();
+      await openWork();
       const showMore = work.getByRole("button",{name:"Show more saved work"});
       await expect(showMore).toBeVisible();
       await showMore.click();
@@ -209,6 +211,7 @@ test("@home Task 16B persists real Supervisor work through reload, uncertainty a
         [randomUUID(),randomUUID(),runId]);
       await db.query("update public.supervisor_runs set status='running',updated_at=now() where id=$1",[runId]);
       await page.reload();
+      await openWork();
       await expect(work.locator('[data-work-status="retrying"]')).toBeVisible();
 
       // A dead reconciliation lease stays UNKNOWN rather than re-executing an effect.
@@ -216,6 +219,7 @@ test("@home Task 16B persists real Supervisor work through reload, uncertainty a
         [runId]);
       await db.query("update public.supervisor_runs set status='blocked',updated_at=now() where id=$1",[runId]);
       await page.reload();
+      await openWork();
       await expect(work.locator('[data-work-status="uncertain"]')).toContainText("Outcome not yet verified");
       await expect(work.getByText("Effect verified",{exact:true})).toHaveCount(0);
 
@@ -234,6 +238,7 @@ test("@home Task 16B persists real Supervisor work through reload, uncertainty a
       await db.query("update public.supervisor_runs set status='completed',final_report_ref=$1,finished_at=now(),updated_at=now() where id=$2",
         [answerId,runId]);
       await page.reload();
+      await openWork();
       await expect(work.locator('[data-work-status="answer_ready"]')).toContainText("Answer saved");
       await expect(work).toContainText("not an external effect");
       await expect(work.getByText("Effect verified",{exact:true})).toHaveCount(0);
@@ -241,6 +246,7 @@ test("@home Task 16B persists real Supervisor work through reload, uncertainty a
       await db.query("update public.supervisor_investigations set phase='resolved',updated_at=now() where business_id=$1 and source_id=$2",
         [own.businessId, investigationSourceId]);
       await page.reload();
+      await openWork();
       await expect(work.locator('[data-work-kind="investigation"][data-work-status="source_resolved"]')).toBeVisible();
       await expect(work.getByText("Effect verified",{exact:true})).toHaveCount(0);
 
@@ -248,9 +254,11 @@ test("@home Task 16B persists real Supervisor work through reload, uncertainty a
       await page.route("**/api/ai/threads/"+threadId+"/work", route=>
         route.fulfill({status:503,contentType:"application/json",body:'{"error":"unavailable"}'}));
       await page.reload();
+      await openWork();
       await expect(work).toContainText("Current status cannot be verified");
       await page.unroute("**/api/ai/threads/"+threadId+"/work");
       await page.reload();
+      await openWork();
       await expect(work.locator('[data-work-status="answer_ready"]')).toBeVisible();
       const bounds = await work.boundingBox();
       expect(bounds).not.toBeNull();
@@ -275,6 +283,7 @@ test("@home Task 16B persists real Supervisor work through reload, uncertainty a
       await db.query("insert into public.ai_messages(id,business_id,owner_user_id,thread_id,author_user_id,role,content_type,text_content,client_message_id) values($1,$2,$3,$4,$3,'owner','text','An unrelated question',$5)",
         [randomUUID(),...scope,randomUUID()]);
       await page.reload();
+      await openWork();
       const persisted=work.locator('[data-work-id="run:'+assignment.id+'"]');
       await expect(persisted).toHaveAttribute("data-work-status","approval_required");
       await expect(persisted).toContainText("Waiting for your answer to the saved question");
@@ -1364,11 +1373,14 @@ test("@home Task16D authenticated responsive Supervisor work across conversation
     await login(page,owner);
     await openOwnedPage(page,owner,"?thread="+threadId);
     const controls=page.getByRole("button",{name:"Library, routines and permissions"});
-    const work=page.getByRole("region",{name:"Supervisor work"});
+    const work=page.getByRole("dialog",{name:"Supervisor controls"}).getByRole("region",{name:"Supervisor work"});
     for (const viewport of [{width:390,height:844},{width:1440,height:900}]) {
       await page.setViewportSize(viewport);
       await expect(controls).toBeVisible();
+      await expect(page.locator("[data-work-status]")).toHaveCount(0);
+      await page.getByRole("button",{name:"Supervisor work",exact:true}).click();
       await expect(work.locator('[data-work-status="queued"]')).toBeVisible();
+      await page.keyboard.press("Escape");
       const before=await page.evaluate(()=>({
         viewport:window.innerWidth, documentWidth:document.documentElement.scrollWidth,
         composerVisible:!!document.querySelector("#supervisor-home-composer")?.getBoundingClientRect().height,
@@ -1742,6 +1754,14 @@ test("@home Task16E quiet shell, optional visuals, editable follow-up and mobile
       await openFixture(thread);
       const answer=page.locator('[data-work-message="'+replyId+'"]');
       await expect(answer).toContainText(text,{timeout:30000});
+      const activeBoard=page.getByTestId("chat-start").locator("button[aria-expanded]").first();
+      await expect(activeBoard).toHaveAttribute("aria-expanded","false");
+      await expect(activeBoard).toHaveText("Key numbers");
+      await expect(page.getByRole("region",{name:"Key numbers",exact:true})).toHaveCount(0);
+      await expect(page.locator("[data-work-status]")).toHaveCount(0);
+      await activeBoard.click();
+      await expect(page.getByRole("region",{name:"Key numbers",exact:true})).toBeVisible();
+      await activeBoard.click();
       const rich=answer.getByTestId("supervisor-rich-presentation");
       await expect(rich.getByTestId("supervisor-rich-chart")).toBeVisible({timeout:30000});
       await rich.locator("details summary").click();

@@ -1,5 +1,4 @@
 "use client";
-import { CircleDot } from "lucide-react";
 import type { AgentJobStep } from "@/lib/ai/agent/jobState";
 import { chatExperienceCopy, progressLines, type ChatLocale } from "./chatExperience";
 
@@ -20,14 +19,11 @@ export default function ChatJobProgress({ locale, acknowledged, steps, note }: {
   locale: ChatLocale; acknowledged: boolean; steps: AgentJobStep[]; note?: string | null;
 }) {
   const copy = chatExperienceCopy(locale);
-  const lines = progressLines(steps, copy);
-  if (!acknowledged && lines.length === 0 && !note) return null;
-  return <div className="w-full space-y-1 text-[15px] leading-relaxed text-ink-muted" role="status" aria-live="polite"
+  const line = note || progressLines(steps, copy).at(-1) || (acknowledged ? copy.ack : null);
+  if (!line) return null;
+  return <div className="flex w-full items-center gap-2 text-[15px] leading-snug text-ink-muted"
+    role="status" aria-live="polite" aria-atomic="true" data-testid="supervisor-live-progress"
     dir={locale === "ar" ? "rtl" : "ltr"}>
-    {acknowledged && <p className="flex items-center gap-2 font-medium text-ink"><CafeActivity/>{copy.ack}</p>}
-    {lines.map((line, i) => <p key={i + line} className="flex items-center gap-2">
-      <CircleDot size={16} aria-hidden="true" className="shrink-0 text-ink-muted" />{line}
-    </p>)}
-    {note && <p>{note}</p>}
+    <CafeActivity/><span className="min-w-0">{line}</span>
   </div>;
 }

@@ -2,8 +2,6 @@
 
 import { Suspense, useCallback, useEffect, useLayoutEffect, useMemo, useReducer, useRef, useState, useSyncExternalStore, type ChangeEvent, type KeyboardEvent } from "react";
 import { Clock3, Menu, ListChecks, Mic, Plus, Camera, ArrowUp, Sparkles, Square, SquarePen, ThumbsUp, ThumbsDown, X, AlertCircle, Paperclip, LoaderCircle, UsersRound, ArrowDown } from "lucide-react";
-import { AgentAvatar } from "@/components/operations/AITeamCard";
-import { parseAgentId } from "@/lib/operating/tasks";
 import { Link } from "@/i18n/navigation";
 import { NAV_TABS } from "@/components/shared/navTabs";
 import { nextDictationStage } from "@/lib/ai/conversations/dictationState";
@@ -28,7 +26,6 @@ import {resumeOwnerQuestion,ownerAnswerAcknowledgement} from "@/lib/ownerFacts/r
 import {explainLineSchema} from "@/lib/ai/agent/explain";
 import {clarifyBlockSchema,PAGE_SIZE} from "@/lib/ai/conversations/contracts";
 import ChatJobProgress, { CafeActivity } from "./ChatJobProgress";
-import SupervisorWorkStatus from "./SupervisorWorkStatus";
 import SupervisorMandatePanel from "./SupervisorMandatePanel";
 import { useSupervisorWork } from "./useSupervisorWork";
 import type {OwnerWorkItem} from "@/lib/ai/supervisor/runs/ownerWorkView";
@@ -44,7 +41,7 @@ import es from "@/messages/es.json";
 import ar from "@/messages/ar.json";
 import { groupReplyBlocks, joinedAgentTextSpans, originalReplyBlockIndex } from "./supervisorReplyPresentation";
 import SavedEventsCard from "./SavedEventsCard";
-import {openEventDayThread,eventContextFromTitle,eventOwnerMessage,eventThreadKey,eventThreadFromHistory,type EventChatContext} from "./eventDayThread";
+import {openEventDayThread,restoreEventContext,eventMessageForSend,eventThreadKey,eventThreadFromHistory,type EventChatContext} from "./eventDayThread";
 import {ownerQuestionSchema,pendingOwnerInputSchema}
   from "@/lib/ai/supervisor/ownerInput/contracts";
 
@@ -300,6 +297,8 @@ export default function SupervisorChatComposer({
   const [streamNotice,setStreamNotice]=useState("");
   const [threadTitle, setThreadTitle] = useState<string | null>(null);
   const [eventContext,setEventContext]=useState<EventChatContext|null>(null);
+  const dismissedEventThreads=useRef(new Set<string>());
+  const originalRetryText=useRef(new Map<string,string>());
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(false);
   const [dictation, dispatchDictation] = useReducer(nextDictationStage, "idle");
@@ -400,6 +399,7 @@ export default function SupervisorChatComposer({
   },[]);
   const clearDeniedSession=useCallback(()=>{
     // A failed owner authorization must not leave previously read chat/files visible.
+    dismissedEventThreads.current.clear();originalRetryText.current.clear();
     threadDrafts.current.clear();readingPositions.current.clear();pendingFileSelection.current=null;setRestoringFiles(false);retryId.current=null;retryResponse.current=null;
     messagePage.current={items:[],nextOffset:null};paginationRequest.current++;historyLoading.current=false;selectedThreadId.current=null;
     setThreadId(null);setNextOffset(null);setSessionDenied(true);setThreads([]);setThreadsNextOffset(null);setMessages([]);setStoredAttachments(null);setAttachments([]);setDraft("");setControlsTab(null);setAttachmentMenu(false);
@@ -557,8 +557,7 @@ export default function SupervisorChatComposer({
         applyLatestPage(page);setLoadedThreadId(threadId);setDeniedThread(null);
         const title=threads.find((thread) => thread.id === threadId)?.title??(selectedHistoryTitle.current?.id===threadId?selectedHistoryTitle.current.title:null);
         setThreadTitle(title);
-        setEventContext(current=>current?.threadId===threadId?current:
-          title?eventContextFromTitle(title,threadId):null);
+        setEventContext(current=>restoreEventContext(current,title,threadId,dismissedEventThreads.current));
       }).catch(error => { if (!controller.signal.aborted) {
         if(error instanceof ConversationReadError&&error.status===401)clearDeniedSession();
         else if(error instanceof ConversationReadError&&[403,404].includes(error.status)){
@@ -742,7 +741,8 @@ export default function SupervisorChatComposer({
     if(!navigator.onLine||sessionDenied||restoringFiles||(threadId!==null&&deniedThread===threadId))return;
     const inputText=value.trim() || (attachments.length>0?copy.photoRequest:"");
     const context=eventContext?.threadId===(targetThreadId??threadId)?eventContext:null;
-    const text=ownerInputResponse?inputText:eventOwnerMessage(inputText,context);
+    const previousText=existingKey?value:retryId.current?originalRetryText.current.get(retryId.current):undefined;
+    const text=eventMessageForSend(inputText,ownerInputResponse?null:context,previousText);
     // A confirmed background job accepts follow-ups while the first response streams.
     // The main-turn double-tap guard must not intercept this separate path.
     if (!ownerInputResponse && !targetThreadId && !existingKey && enabled && canUseAi && text && (sending ? Boolean(liveJobId) : resumedRunning) &&
@@ -753,6 +753,8 @@ export default function SupervisorChatComposer({
     sendOnce.current=true;
     const clientMessageId = sendKey(existingKey, retryId.current, () => crypto.randomUUID());
     retryId.current = clientMessageId;
+    originalRetryText.current.set(clientMessageId,text);
+    if(originalRetryText.current.size>25)originalRetryText.current.delete(originalRetryText.current.keys().next().value!);
     const matchedResponse=ownerInputResponse??(retryResponse.current?.key===clientMessageId?retryResponse.current.response:undefined);
     if(matchedResponse)retryResponse.current={key:clientMessageId,response:matchedResponse};
     if (!existingKey) {
@@ -763,6 +765,7 @@ export default function SupervisorChatComposer({
       setShowNewMessage(false);
       setDraft("");
     }
+    setStartExpanded(false);
     setSending(true);setCanDetach(false);setStreamNotice(""); setError(false); setFailureCode(null); setProgressStatus(null); setStreamedText("");
     let attemptedThreadId: string | null = null;
     // Set once the server confirms a background job; from then on a dropped
@@ -844,6 +847,7 @@ export default function SupervisorChatComposer({
       applyLatestPage(page);
       setOptimisticOwner(null);
       await refreshThreads();
+      originalRetryText.current.delete(clientMessageId);
       retryId.current = null; retryResponse.current=null;setStreamedText("");
       dispatchDictation({ type: "reset" }); setMediaNotice(""); setAttachments([]);
     } catch (failure) {
@@ -857,6 +861,7 @@ export default function SupervisorChatComposer({
       }
       if (jobConfirmed && !serverError) {
         // Connection dropped but the job keeps running: the watcher resumes it.
+        originalRetryText.current.delete(clientMessageId);
         setOptimisticOwner(null); retryId.current = null;retryResponse.current=null;
       } else {
         if (!existingKey) {
@@ -960,7 +965,7 @@ export default function SupervisorChatComposer({
     const title=historyTitle??threads.find((thread) => thread.id === id)?.title??null;
     selectedHistoryTitle.current=id?{id,title}:null;
     setThreadTitle(title);
-    setEventContext(id&&title?eventContextFromTitle(title,id):null);
+    setEventContext(id?restoreEventContext(null,title,id,dismissedEventThreads.current):null);
     setDraft(restored?.text??""); setMediaNotice(""); setError(false);
     setFailureCode(null); setQueuedOwner([]);
     retryId.current = restored?.key??null; retryResponse.current=restored?.response??null;threadRequestId.current = null;setAcceptedDurableIds([]);
@@ -1140,6 +1145,7 @@ export default function SupervisorChatComposer({
   const activeQuestionMessageId=activeOwnerQuestionMessageId(displayedMessages);
   const savedReports=useMemo(()=>loadedSavedReports(messages,threadId),[messages,threadId]);
   const hasChatMessages=displayedMessages.length>0;
+  const workAttentionCount=supervisorWork.items.filter(item=>["approval_required","uncertain","failed"].includes(item.status)).length;
   const startReady=!threadId||loadedThreadId===threadId||hasChatMessages;
   const answeredOwnerIds = useMemo(()=>answeredOwnerMessageIds(messages),[messages]);
   const inFlightOwnerIds = inFlightOwnerMessageIds(watcher.job);
@@ -1164,6 +1170,7 @@ export default function SupervisorChatComposer({
       if(existingThreadId&&!eventId&&!cityEventId){
         eventThreadIds.current.set(eventThreadKey(date),existingThreadId);
         selectThread(existingThreadId);
+        dismissedEventThreads.current.delete(existingThreadId);
         setEventContext({date,title,threadId:existingThreadId});
         if(draftPrompt)setDraft(draftPrompt);
         return;
@@ -1183,6 +1190,7 @@ export default function SupervisorChatComposer({
         },
         select:id=>selectThread(id),
       });
+      dismissedEventThreads.current.delete(chosenId);
       setEventContext({date,title,eventId,cityEventId,threadId:chosenId});
       if(draftPrompt)setDraft(draftPrompt);
     }catch{
@@ -1207,9 +1215,11 @@ export default function SupervisorChatComposer({
         <Menu size={22} aria-hidden="true"/>
       </button>
       <button type="button" onClick={() => setControlsTab("work")} disabled={!enabled}
-        aria-expanded={controlsTab==="work"} aria-label={en.SupervisorWork.heading} title={en.SupervisorWork.heading}
+        aria-expanded={controlsTab==="work"} aria-label={en.SupervisorWork.heading} title={en.SupervisorWork.heading} aria-description={supervisorWork.unavailable?en.SupervisorWork.stale:workAttentionCount?en.SupervisorChat.needsYou+": "+workAttentionCount:undefined}
         className="inline-flex min-h-12 min-w-12 items-center justify-center rounded-full text-ink-muted hover:bg-surface2 focus-visible:outline focus-visible:outline-2 focus-visible:outline-ink disabled:opacity-50">
         <ListChecks size={21} aria-hidden="true" />
+        {workAttentionCount>0&&<span className="text-xs font-semibold text-ink" aria-hidden="true">{workAttentionCount}</span>}
+        {supervisorWork.unavailable&&<AlertCircle size={16} aria-hidden="true"/>}
       </button>
       <h2 className="min-w-0 flex-1 truncate text-center font-headline text-[17px] font-medium tracking-tight text-ink">
         {threadTitle || copy.supervisor}
@@ -1222,14 +1232,14 @@ export default function SupervisorChatComposer({
     </header>
     {threadUnavailable&&<p role="alert" className="shrink-0 border-b border-line px-4 py-2 text-[17px] text-ink">{en.SupervisorExperience.threadUnavailable}</p>}
     {offline&&<p role="status" className="shrink-0 border-b border-line px-4 py-2 text-[15px] text-ink-muted">{en.SupervisorExperience.offline}</p>}
-    {chatStartPromise&&hasChatMessages&&<div className="max-h-[35dvh] shrink-0 overflow-y-auto px-2 sm:px-4 md:max-h-[48dvh]">
+    {chatStartPromise&&hasChatMessages&&<div className={"shrink-0 px-2 sm:px-4"+(startExpanded?" max-h-[35dvh] overflow-y-auto md:max-h-[48dvh]":"")}>
       <Suspense key={boardPeriod} fallback={<p role="status" className="p-3 text-[17px] text-ink-muted">{copy.sending}</p>}>
         <DeferredChatStart promise={chatStartPromise} suggestions={copy.suggestions} failureText={copy.unverified}
           hasMessages expanded={startExpanded} onToggle={()=>setStartExpanded(v=>!v)}
           onSuggestion={()=>{}} suggestionsDisabled comingUp={comingUpCard}/>
       </Suspense>
     </div>}
-    {!chatStartPromise&&chatStartData&&chatStartCopy&&hasChatMessages&&<div className="max-h-[35dvh] shrink-0 overflow-y-auto px-2 sm:px-4 md:max-h-[48dvh]">
+    {!chatStartPromise&&chatStartData&&chatStartCopy&&hasChatMessages&&<div className={"shrink-0 px-2 sm:px-4"+(startExpanded?" max-h-[35dvh] overflow-y-auto md:max-h-[48dvh]":"")}>
       <ChatStart data={chatStartData} copy={{...chatStartCopy,suggestions:copy.suggestions}}
         hasMessages expanded={startExpanded} onToggle={()=>setStartExpanded(v=>!v)}
         onSuggestion={()=>{}} suggestionsDisabled
@@ -1333,20 +1343,13 @@ export default function SupervisorChatComposer({
         </div>}
       </div>;
       })}
-      <SupervisorWorkStatus items={supervisorWork.items} unavailable={supervisorWork.unavailable} onOpen={openWork} disabled={sending}/>
       {queuedOwner.map((item) => <article key={item.id} className="ms-auto w-fit max-w-[80%] rounded-2xl bg-surface2 px-4 py-3 text-[17px] leading-relaxed text-ink opacity-80">
         <p className="whitespace-pre-wrap break-words">{item.text}</p>
       </article>)}
-      {(sending && liveJobId || resumedRunning) && <ChatJobProgress locale={locale} acknowledged
+      {(sending || resumedRunning) && <ChatJobProgress locale={locale} acknowledged
         steps={sending ? liveSteps : watcher.job?.progress ?? []}
-        note={sending ? liveNote : liveCopy.resumed} />}
+        note={sending ? progressStatus?.stage==="answering"?progressStatusText(copy,progressStatus):liveNote??(!liveJobId?progressStatusText(copy,progressStatus)??copy.sending:null) : watcher.job?.progress.length?null:liveCopy.resumed} />}
       {sending && streamedText && <article aria-hidden="true" aria-live="off" aria-busy="true" inert className="w-full space-y-3"><div className="flex items-center gap-2 text-[15px] font-bold text-ink-muted"><span className="flex h-8 w-8 items-center justify-center rounded-full bg-pos-soft text-good"><Sparkles size={17} aria-hidden="true"/></span>{copy.supervisor}</div><ReplyBlock block={{type:"text",text:streamedText}} copy={copy} locale={locale}/></article>}
-      {sending && <div className="flex items-center gap-3 text-[16px] text-ink-muted" role="status">
-        {parseAgentId(progressStatus?.agent) ?
-          <span className="shrink-0"><AgentAvatar agentId={parseAgentId(progressStatus?.agent)!} size="task" /></span> :
-          <CafeActivity brewing={!liveJobId}/>}
-        {progressStatusText(copy, progressStatus) ?? copy.sending}
-      </div>}
       </div>
     </div>
     {sending&&canDetach&&<button type="button" onClick={()=>void detachLiveStream()} className="mx-auto flex min-h-12 shrink-0 items-center gap-2 rounded-full border border-line px-4 text-[15px] text-ink hover:bg-surface2 focus-visible:outline focus-visible:outline-2 focus-visible:outline-ink"><Square size={16} aria-hidden="true"/>{en.SupervisorExperience.stopLiveView}</button>}
@@ -1395,7 +1398,7 @@ export default function SupervisorChatComposer({
       {eventContext?.threadId===threadId&&
         <div role="status" className="mb-2 flex min-h-10 items-center gap-2 rounded-xl bg-accent-soft px-3 py-2 text-[15px] font-semibold text-ink">
           <span className="min-w-0 flex-1 break-words">@event {eventContext.title} · {eventContext.date}</span>
-          <button type="button" onClick={()=>setEventContext(null)} aria-label={copy.removeEventContext}
+          <button type="button" onClick={()=>{if(threadId)dismissedEventThreads.current.add(threadId);setEventContext(null);}} aria-label={copy.removeEventContext}
             className="flex h-12 w-12 shrink-0 items-center justify-center rounded-lg focus-visible:outline focus-visible:outline-2 focus-visible:outline-ink">
             <X size={18} aria-hidden="true"/>
           </button>
