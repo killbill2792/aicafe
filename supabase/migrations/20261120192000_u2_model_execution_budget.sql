@@ -12,8 +12,7 @@ grant execute on function public.supervisor_model_execution_cap(text) to service
 
 alter table public.supervisor_system_usage_events add constraint supervisor_system_output_cap_v2
   check (reserved_output_cap between 1 and case when model='gpt-6-luna' then 8192 else 1200 end) not valid;
--- Reason: a stricter model-specific replacement already exists; the previous
--- unconditional ceiling prevents model-directed research and final synthesis.
+-- Reason: the model-specific replacement constraint is installed first; the old ceiling prevents authorized expanded work.
 -- squawk-ignore ban-drop-constraint
 alter table public.supervisor_system_usage_events drop constraint supervisor_system_usage_events_reserved_output_cap_check;
 
