@@ -44,7 +44,7 @@ describe("bounded source-backed optional enrichment",()=>{
     const invalid=[
       {...details,name:"Different fair"},
       {...details,evidenceUrl:"https://city.example.org/events/other"},
-      {...details,endDate:"2026-12-01"},
+      {...details,endDate:"2028-12-01"},
       {...details,startTime:"25:12"},
     ];
     for(const v of invalid){
@@ -52,6 +52,15 @@ describe("bounded source-backed optional enrichment",()=>{
       expect(await createCityEventEnrichment({apiKey:"test",fetch:request as typeof fetch})
         (candidate)).toBeNull();
     }
+  });
+  it("accepts verified long and timed overnight occurrences without treating a midnight endpoint as another day",async()=>{
+    const overnight={...details,endDate:"2026-11-04",startAt:"2026-11-04T22:00:00-08:00",endAt:"2026-11-05T00:00:00-08:00",sourceTimezone:"America/Los_Angeles"};
+    const fetch=vi.fn(async()=>response(overnight));
+    expect(await createCityEventEnrichment({apiKey:"test",fetch:fetch as typeof globalThis.fetch})(candidate)).toMatchObject({endDate:"2026-11-04",startTime:"22:00",endTime:"00:00",sourceTimezone:"America/Los_Angeles"});
+    fetch.mockImplementation(async()=>response({...details,endDate:"2026-12-01"}));
+    expect(await createCityEventEnrichment({apiKey:"test",fetch:fetch as typeof globalThis.fetch})(candidate)).toMatchObject({endDate:"2026-12-01"});
+    fetch.mockImplementation(async()=>response({...overnight,sourceTimezone:"America/New_York"}));
+    expect(await createCityEventEnrichment({apiKey:"test",fetch:fetch as typeof globalThis.fetch})(candidate)).toBeNull();
   });
   it("does not invent fields when a complete cited source lacks details",async()=>{
     const request=vi.fn(async()=>response({...details,venue:null,venueAddress:null,

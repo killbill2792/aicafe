@@ -1,7 +1,7 @@
 import "server-only";
 import type {SupabaseClient} from "@supabase/supabase-js";
 import {readPrimaryLocation} from "./cafeLocation.server";
-import {cityScopeKey,canonicalEventNameKey} from "@/lib/events/cityEventIdentity";
+import {cityScopeKey,canonicalEventNameKey,projectTimedOccurrence} from "@/lib/events/cityEventIdentity";
 import {defaultCityResearchSources} from "@/lib/events/citySourceResearch";
 import {addDays} from "@/lib/events/holidays";
 import {readOwnerProposals,readOwnerReports,type OwnerScope} from "@/lib/ai/supervisor/loop/reads.server";
@@ -16,6 +16,7 @@ export type CafeEvent={
  cityEventId?:string|null;cityKey?:string;sourceUrls?:string[];
  datePrecision?:"verified_day"|"verified_range"|"unknown_end"|"legacy_range";
  durationSourceUrl?:string|null;durationVerifiedAt?:string|null;
+ startAt?:string|null;endAt?:string|null;sourceTimezone?:string|null;
 };
 export type EventChecklistTick={actionIndex:number;state:"done"|"dismissed"};
 export type CityCatalogPage={available:boolean;missing:string|null;page:number;pageSize:number;total:number;hasMore:boolean;
@@ -140,7 +141,8 @@ export async function readSavedEventTimeline(db:SupabaseClient,scope:OwnerScope,
 type SharedRow={id:string;name:string;kind:string;city_key?:string;lifecycle?:{status?:CafeEvent["status"];verifiedAt?:string}|null;start_date:string;end_date:string;
   start_time:string|null;end_time:string|null;time_source_url:string|null;
   venue:string|null;venue_address:string|null;last_checked_at:string;
-  duration_source_url?:string|null;duration_verified_at?:string|null};
+  duration_source_url?:string|null;duration_verified_at?:string|null;
+  start_at?:string|null;end_at?:string|null;source_timezone?:string|null};
 /** A shared discovered start date alone is not a verified single-day duration. */
 function sharedDatePrecision(e:SharedRow,end=e.end_date):NonNullable<CafeEvent["datePrecision"]>{
   if(e.duration_verified_at&&e.duration_source_url&&end===e.end_date)
@@ -182,7 +184,7 @@ export async function readCityEventCatalog(db:SupabaseClient,businessId:string,
   const kind=options.kind&&validKinds.includes(options.kind)?options.kind:null;
   const search=options.search?.trim().slice(0,80)??"";
   let query=db.from("city_events")
-    .select("id,name,kind,start_date,end_date,start_time,end_time,time_source_url,venue,venue_address,last_checked_at,duration_source_url,duration_verified_at,city_key,lifecycle",{count:"exact"})
+    .select("id,name,kind,start_date,end_date,start_time,end_time,time_source_url,venue,venue_address,last_checked_at,duration_source_url,duration_verified_at,city_key,lifecycle,start_at,end_at,source_timezone",{count:"exact"})
     .eq("city_key",cityKey).lte("start_date",to).gte("end_date",from);
   if(kind)query=query.eq("kind",kind);
   if(options.cityEventId){
@@ -271,7 +273,7 @@ async function overlayCityFacts(db:SupabaseClient,businessId:string,
   if(!links.length)return legacy;
   const ids=[...new Set(links.map(l=>l.city_event_id))];
   const [{data:city,error:cityError},sources]=await Promise.all([
-    db.from("city_events").select("id,name,kind,start_date,end_date,start_time,end_time,time_source_url,venue,venue_address,last_checked_at,duration_source_url,duration_verified_at,city_key,lifecycle")
+    db.from("city_events").select("id,name,kind,start_date,end_date,start_time,end_time,time_source_url,venue,venue_address,last_checked_at,duration_source_url,duration_verified_at,city_key,lifecycle,start_at,end_at,source_timezone")
       .in("id",ids),sourceRows(db,ids),
   ]);
   if(missingSchema(cityError))return legacy;
@@ -281,19 +283,26 @@ async function overlayCityFacts(db:SupabaseClient,businessId:string,
   const bySource=new Map<string,string[]>();
   for(const row of sources)bySource.set(row.city_event_id,
     [...(bySource.get(row.city_event_id)??[]),row.source_url]);
+  const cafeClock=([...shared.values()].some(e=>e.start_at&&e.end_at))?
+    await db.from("businesses").select("timezone").eq("id",businessId).maybeSingle():null;
+  if(cafeClock?.error)throw cafeClock.error;
   return legacy.map(e=>{
     const id=byCafe.get(e.id),fact=id?shared.get(id):null;
     if(!id||!fact)return e;
     const corrected=Boolean(fact.lifecycle);
-    const endDate=corrected?fact.end_date:e.endDate>fact.end_date?e.endDate:fact.end_date;
+    const timed=fact.start_at&&fact.end_at&&fact.source_timezone&&cafeClock?.data?.timezone?
+      projectTimedOccurrence(new Date(fact.start_at).toISOString(),new Date(fact.end_at).toISOString(),cafeClock.data.timezone):null;
+    const endDate=timed?.endDate??(corrected?fact.end_date:e.endDate>fact.end_date?e.endDate:fact.end_date);
     return {...e,cityEventId:id,cityKey:fact.city_key,name:fact.name,
       // Compact three-field discovery never downgrades a documented category
       // or shortens a confirmed multi-day event. Existing status is authoritative.
       kind:fact.kind==="other"&&e.kind!=="other"?e.kind:fact.kind,
-      startDate:corrected?fact.start_date:e.startDate,endDate,datePrecision:sharedDatePrecision(fact,endDate),
+      startDate:timed?.startDate??(corrected?fact.start_date:e.startDate),endDate,
+      datePrecision:timed?(timed.startDate===timed.endDate?"verified_day":"verified_range"):sharedDatePrecision(fact,endDate),
+      startAt:fact.start_at??null,endAt:fact.end_at??null,sourceTimezone:fact.source_timezone??null,
       status:fact.lifecycle?.status??e.status,
       durationSourceUrl:fact.duration_source_url??null,durationVerifiedAt:fact.duration_verified_at??null,
-      startTime:corrected?fact.start_time:e.startTime??fact.start_time,endTime:corrected?fact.end_time:e.endTime??fact.end_time,
+      startTime:timed?.startTime??(corrected?fact.start_time:e.startTime??fact.start_time),endTime:timed?.endTime??(corrected?fact.end_time:e.endTime??fact.end_time),
       venue:corrected?fact.venue:e.venue??fact.venue,venueAddress:corrected?fact.venue_address:e.venueAddress??fact.venue_address,
       sourceUrls:bySource.get(id)??[]};
   });
@@ -367,7 +376,7 @@ async function extendedLinkedCafeIds(db:SupabaseClient,businessId:string,
   for(let page=0;;page++){
     if(page>=100)throw new Error("city_events_date_range_too_large");
     const {data,error}=await db.from("city_events").select("id")
-      .eq("city_key",cityKey).lte("start_date",to).gte("end_date",from)
+      .eq("city_key",cityKey).lte("start_date",addDays(to,2)).gte("end_date",addDays(from,-2))
       .order("id").range(page*200,page*200+199);
     if(missingSchema(error))return [];
     ensureShared(error);
@@ -400,7 +409,7 @@ export async function readCafeEvents(db:SupabaseClient,businessId:string,
     extended.push(...await readStoredCafeEvents(db,businessId,from,to,ids.slice(i,i+100)));
   // Canonical facts are never filtered or deduplicated: scheduled verification,
   // monitoring and alerts must see every saved identity, including remote ones.
-  return overlayCityFacts(db,businessId,[...raw,...extended]);
+  return (await overlayCityFacts(db,businessId,[...raw,...extended])).filter(e=>e.startDate<=to&&e.endDate>=from);
 }
 export const readCanonicalCafeEvents=readCafeEvents;
 /** Exact, same-tenant event selection is not subject to compact list caps or

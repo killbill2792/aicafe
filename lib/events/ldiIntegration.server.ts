@@ -208,6 +208,8 @@ async function persistCandidate(db:Db,scope:CityScope,kind:CityEventKind,
     // cited event-page provenance; no parallel Events authority is introduced.
     const patch:Record<string,unknown>={
       time_source_url:enrichment.evidenceUrl,last_enriched_at:checkedAt,
+      ...(enrichment.startAt&&enrichment.endAt&&enrichment.sourceTimezone?{
+        start_at:enrichment.startAt,end_at:enrichment.endAt,source_timezone:enrichment.sourceTimezone}:{}),
     };
     if(enrichment.startTime)patch.start_time=enrichment.startTime;
     if(enrichment.endTime)patch.end_time=enrichment.endTime;

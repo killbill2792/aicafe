@@ -1,7 +1,12 @@
 -- Task 8B: public occurrence correction, existing identities and private histories.
 -- Additive, service-role-only; no production migration authorized by this PR.
 alter table public.city_events add column lifecycle jsonb
-  check (lifecycle is null or jsonb_typeof(lifecycle)='object');
+  check (lifecycle is null or jsonb_typeof(lifecycle)='object'),
+ add column start_at timestamptz, add column end_at timestamptz,
+ add column source_timezone text,
+ add constraint city_event_explicit_interval check (
+ (start_at is null and end_at is null and source_timezone is null) or
+ (start_at is not null and end_at is not null and source_timezone is not null and end_at>start_at));
 
 create or replace function public.ldi_upsert_city_event(
   p_city_key text, p_identity_key text, p_source_identity_key text,
@@ -102,6 +107,7 @@ begin
    new.duration_verified_at:=old.duration_verified_at;
    new.time_source_url:=old.time_source_url;
    new.last_enriched_at:=old.last_enriched_at;
+   new.start_at:=old.start_at; new.end_at:=old.end_at; new.source_timezone:=old.source_timezone;
  end if;
  return new;
 end $$;
@@ -176,6 +182,9 @@ begin
    venue_address_key=case when p_change->>'newVenue' is not null then null else venue_address_key end,
    start_time=case when next_start<>e.start_date or p_change->>'newEndDate' is not null then null else start_time end,
    end_time=case when next_start<>e.start_date or p_change->>'newEndDate' is not null then null else end_time end,
+   start_at=case when next_start<>e.start_date or p_change->>'newEndDate' is not null then null else start_at end,
+   end_at=case when next_start<>e.start_date or p_change->>'newEndDate' is not null then null else end_at end,
+   source_timezone=case when next_start<>e.start_date or p_change->>'newEndDate' is not null then null else source_timezone end,
    duration_source_url=case when p_change->>'newEndDate' is not null then source else duration_source_url end,
    duration_verified_at=case when p_change->>'newEndDate' is not null then at_time else duration_verified_at end,
    last_checked_at=greatest(last_checked_at,at_time)
