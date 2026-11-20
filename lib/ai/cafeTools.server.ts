@@ -151,7 +151,10 @@ export function createOwnerScopedCafeTools(scope:ConversationScope,client:Supaba
     async(requested)=>{
       assertBusiness(requested);
       const {data,error}=await client.rpc("toast_business_scope_summary",{
-        p_business_id:requested
+        p_business_id:requested,
+        // External callers have already verified owner/thread binding. SQL
+        // independently verifies current owner membership before reading scopes.
+        ...(!browserSession?{p_owner_user_id:scope.ownerUserId}:{}),
       });
       if(error)throw error;
       const parsed=data as {menus?:unknown;labor?:unknown}|null;
