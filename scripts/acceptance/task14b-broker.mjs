@@ -50,11 +50,21 @@ function encryptedReasoningKey(item){
  * Canonicalize recorded Responses output to self-contained text/function items.
  * Provider can bill only for text/tool JSON physically in this request.
  */
-export function normalizeInlineContext(items,reasoningRegistry=new Map(),stats={reasoningItems:0,replayOutputCeiling:0,reasoningBytes:0}){
+export function normalizeInlineContext(items,reasoningRegistry=new Map(),stats={reasoningItems:0,replayOutputCeiling:0,reasoningBytes:0},nativeRegistry=null){
  if(!Array.isArray(items)||items.length<1||items.length>256)
   fail("inline_input_required");
- return items.map(item=>{
+ let pendingSearch=0;
+ const normalized=items.map(item=>{
   if(!isObject(item))fail("non_inline_input");
+  if(item.type==="tool_search_call"||item.type==="tool_search_output"){
+   if(!nativeRegistry||item.execution!=="server"||item.call_id!==null||item.status!=="completed")fail("provider_built_in_tools_forbidden");
+   if(item.type==="tool_search_call"){
+    if(!onlyKeys(item,["type","execution","call_id","status","arguments"])||!isObject(item.arguments)||!onlyKeys(item.arguments,["paths"])||!Array.isArray(item.arguments.paths)||item.arguments.paths.some(p=>!nativeRegistry.has(p)))fail("provider_built_in_tools_forbidden");
+    pendingSearch++;return item;
+   }
+   if(!onlyKeys(item,["type","execution","call_id","status","tools"])||pendingSearch<1||!Array.isArray(item.tools)||item.tools.some(t=>!isObject(t)||JSON.stringify(t)!==JSON.stringify(nativeRegistry.get(t.name))))fail("provider_built_in_tools_forbidden");
+   pendingSearch--;return item;
+  }
   if(item.type===undefined&&["developer","user","assistant"].includes(item.role)){
    if(!onlyKeys(item,["role","content"]))fail("remote_message_metadata_forbidden");
    if(typeof item.content==="string")
@@ -84,13 +94,14 @@ export function normalizeInlineContext(items,reasoningRegistry=new Map(),stats={
     summary:[],encrypted_content:item.encrypted_content};
   }
   if(item.type==="function_call"){
-   if(!onlyKeys(item,["type","id","status","name","call_id","arguments"])||
+   if(!onlyKeys(item,["type","id","status","name","call_id","arguments",...(nativeRegistry?["namespace"]:[])])||
+      (item.namespace!==undefined&&item.namespace!==item.name)||
       !inlineName(item.name)||!inlineId(item.call_id)||
       typeof item.arguments!=="string")fail("non_inline_function_call");
    // Remove provider-generated opaque item IDs; preserve the inline call
    // name+arguments and call_id needed for the function output correlation.
    return {type:"function_call",name:item.name,
-    call_id:item.call_id,arguments:item.arguments};
+    call_id:item.call_id,arguments:item.arguments,...(item.namespace?{namespace:item.namespace}:{})};
   }
   if(item.type==="function_call_output"){
    if(!onlyKeys(item,["type","call_id","output"])||
@@ -116,8 +127,10 @@ export function normalizeInlineContext(items,reasoningRegistry=new Map(),stats={
   // item classes can expand to unbounded hidden/remote context.
   fail("opaque_or_remote_context_forbidden");
  });
+ if(pendingSearch!==0)fail("provider_built_in_tools_forbidden");
+ return normalized;
 }
-export function reservationForRequest(body,reasoningRegistry=new Map()) {
+export function reservationForRequest(body,reasoningRegistry=new Map(),allowNative=false) {
  if(!Buffer.isBuffer(body)||body.length<2||body.length>MAX_BODY_BYTES)
   fail("request_size");
  let p;
@@ -125,7 +138,7 @@ export function reservationForRequest(body,reasoningRegistry=new Map()) {
  if(p===null||typeof p!=="object"||Array.isArray(p))
   fail("not_a_response_request");
  const allowed=["model","instructions","tools","tool_choice","stream",
-  "max_output_tokens","prompt_cache_key","input","service_tier","store"];
+  "max_output_tokens","prompt_cache_key","input","service_tier","store",...(allowNative?["include"]:[])];
  if(!onlyKeys(p,allowed))fail("provider_expanded_context_forbidden");
  if(typeof p.instructions!=="string"||!p.instructions.trim()||
     (p.prompt_cache_key!==undefined&&
@@ -134,7 +147,24 @@ export function reservationForRequest(body,reasoningRegistry=new Map()) {
   fail("unsupported_provider_request_shape");
  if(p.store!==undefined&&p.store!==false)fail("remote_store_forbidden");
  const stats={reasoningItems:0,replayOutputCeiling:0,reasoningBytes:0};
- const input=normalizeInlineContext(p.input,reasoningRegistry,stats);
+ const native=allowNative&&Array.isArray(p.tools)&&p.tools.some(t=>t?.type==="tool_search");
+ const registry=native?new Map():null;
+ if(native){
+  if(p.store!==false||JSON.stringify(p.include)!=='["reasoning.encrypted_content"]'||
+    p.tools.filter(t=>t?.type==="tool_search").length!==1)fail("provider_built_in_tools_forbidden");
+  for(const tool of p.tools){
+   if(!isObject(tool))fail("provider_built_in_tools_forbidden");
+   if(tool.type==="tool_search"){
+     if(!onlyKeys(tool,["type"]))fail("provider_built_in_tools_forbidden");
+   }else{
+     if(tool.type!=="function"||tool.defer_loading!==true||tool.strict!==true||
+       !inlineName(tool.name)||registry.has(tool.name)||
+       !onlyKeys(tool,["type","name","description","strict","parameters","defer_loading"]))fail("provider_built_in_tools_forbidden");
+     registry.set(tool.name,tool);
+   }
+  }
+ }else if(p.include!==undefined)fail("provider_expanded_context_forbidden");
+ const input=normalizeInlineContext(p.input,reasoningRegistry,stats,registry);
  if(stats.reasoningItems>0&&p.store!==false)fail("stateless_reasoning_required");
  if(p.model!=="gpt-6-luna")fail("unexpected_model");
  if(!Number.isSafeInteger(p.max_output_tokens)||p.max_output_tokens<1||
@@ -143,7 +173,7 @@ export function reservationForRequest(body,reasoningRegistry=new Map()) {
   fail("unpriced_service_tier");
  if(p.background===true||p.stream!==true)fail("must_stream_foreground");
  if(p.prompt_cache_retention==="24h")fail("unpriced_cache_storage");
- if(p.tools!==undefined&&(!Array.isArray(p.tools)||p.tools.some(t=>!t||
+ if(!native&&p.tools!==undefined&&(!Array.isArray(p.tools)||p.tools.some(t=>!t||
     typeof t!=="object"||t.type!=="function")))
   fail("provider_built_in_tools_forbidden");
  // One token per serialized UTF-8 byte is a conservative upper allowance.
@@ -224,11 +254,12 @@ export function safePolicyDenial(error){
 }
 
 export class PaidReservation {
- constructor(head){if(!/^[a-f0-9]{40}$/.test(head))fail("bad_head");
+ constructor(head,allowNative=false){if(!/^[a-f0-9]{40}$/.test(head))fail("bad_head");
+  this.allowNative=allowNative;
   this.head=head;this.attempts=0;this.reservedMicros=0;this.receipts=[];
   this.deniedCount=0;this.policyDenials=[]}
  reserve(body,reasoningRegistry=new Map()){
-  const {serializedBytes,reservedMicros,params}=reservationForRequest(body,reasoningRegistry);
+  const {serializedBytes,reservedMicros,params}=reservationForRequest(body,reasoningRegistry,this.allowNative);
   if(this.attempts>=MAX_CALLS||
     this.reservedMicros+reservedMicros>MAX_RESERVATION_MICROS)
    fail("approved_budget_exhausted");
@@ -319,7 +350,7 @@ export function startTrustedBroker({
   fail("provider_key_missing");
  if(typeof token!=="string"||token.length<40)fail("broker_token_missing");
  if(typeof auditFile!=="string"||!auditFile.startsWith("/"))fail("audit_path_missing");
- const reserved=new PaidReservation(head);
+ const reserved=new PaidReservation(head,process.env.SCENARIO==="u2-model-execution");
  // Provenance belongs only to this broker run; never persists ciphertext.
  const trustedReasoning=new Map();
  saveAudit(auditFile,reserved);
