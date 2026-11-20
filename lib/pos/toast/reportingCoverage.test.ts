@@ -124,3 +124,30 @@ describe("U1 coverage workload and completeness evidence",()=>{
     expect(query.range.mock.calls).toEqual(dates.map(date=>[0,0,[date]]));
   });
 });
+
+describe("U1 single-query canonical date evidence",()=>{
+ it("returns all canonical dates over the full explicit window without order-ID transfer",async()=>{
+  const allDates=Array.from({length:365},(_,i)=>new Date(Date.UTC(2025,10,21+i)).toISOString().slice(0,10));
+  const rpc=vi.fn(async()=>({data:{canonicalDates:allDates},error:null}));
+  const from=vi.fn();
+  expect([...await unverifiedToastSalesDates({rpc,from} as never,"business",allDates[0],allDates.at(-1)!)]).toEqual(allDates);
+  expect(rpc).toHaveBeenCalledExactlyOnceWith("toast_unverified_sales_dates",{
+   p_business_id:"business",p_from:allDates[0],p_to:allDates.at(-1),p_canonical_only:true,
+  });
+  expect(from).not.toHaveBeenCalled();
+ });
+ it("does not silently fall back to old reads after authorization, outage or malformed result",async()=>{
+  for(const response of [{data:null,error:{code:"42501"}},{data:null,error:{code:"57014"}},
+    {data:{canonicalDates:["2026-10-19"]},error:null},{data:null,error:null}]){
+   const rpc=vi.fn(async()=>response),from=vi.fn();
+   await expect(unverifiedToastSalesDates({rpc,from} as never,"business","2026-10-20","2026-10-20")).rejects.toThrow();
+   expect(rpc).toHaveBeenCalledOnce();expect(from).not.toHaveBeenCalled();
+  }
+ });
+ it("uses the old bounded, source-aware read only when the new SQL overload is not present",async()=>{
+  const fixture=reader(["2026-10-10","2026-10-11"],["2026-10-10"]);
+  fixture.rpc.mockResolvedValueOnce({data:null,error:{code:"PGRST202"}});
+  expect([...await unverifiedToastSalesDates(fixture.db,"business","2026-10-10","2026-10-11")]).toEqual(["2026-10-10"]);
+  expect(fixture.rpc).toHaveBeenCalledTimes(2);
+ });
+});

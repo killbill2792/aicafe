@@ -114,24 +114,31 @@ export async function importToastBusinessDay(db:SupabaseClient,p:Params){
    console.error("toast_import_day_failed",{code:error.code??null});
    throw new ToastApiError("unavailable");
   }
-  // The database day transaction has committed. Derived refresh failures must
-  // NEVER enter the outer import error/checkpoint path or replay a good day.
+  // The canonical day has committed. Narrow ordinary relinks to that day;
+  // the existing SQL handler widens only for unresolved prior failure or
+  // a catalog change. Never route a post-commit failure into import rollback.
+  let linkFailed=false;
+  try{
+   const args={p_business_id:p.businessId,p_restaurant_guid:p.restaurantGuid};
+   let linked=await db.rpc("pos_relink_toast_lines",{...args,p_business_date:p.businessDate});
+   if(linked.error&&["PGRST202","42883"].includes(linked.error.code??""))
+    linked=await db.rpc("pos_relink_toast_lines",args);
+   if(linked.error)throw linked.error;
+  }catch{
+   linkFailed=true;
+   try{
+    const {error}=await db.from("toast_sync_phase_errors").upsert({
+     business_id:p.businessId,restaurant_guid:p.restaurantGuid,
+     phase:"sales_link",last_error_category:"unavailable",
+     last_failed_at:new Date().toISOString(),
+    },{onConflict:"business_id,restaurant_guid,phase"});
+    if(error)throw error;
+   }catch{console.warn("toast_sales_link_failure_not_persisted");}
+  }
   let derivedRefresh={derivedRefreshPending:true,derivedRefreshNote:"derived_refresh_unavailable" as string|null};
   try{derivedRefresh=await afterToastImport(db,p.businessId,m.toast_time_zone);}
   catch{console.warn("toast_derived_refresh_pending");}
-  // After the atomic day commit, link lines to current sizes (or one archived
-  // sold-only GUID). Never classify a post-commit relink failure as a day failure.
-  const {error:linkError}=await db.rpc("pos_relink_toast_lines",{
-   p_business_id:p.businessId,p_restaurant_guid:p.restaurantGuid
-  });
-  if(linkError){
-   const {error:phaseError}=await db.from("toast_sync_phase_errors").upsert({
-    business_id:p.businessId,restaurant_guid:p.restaurantGuid,
-    phase:"sales_link",last_error_category:"unavailable",
-    last_failed_at:new Date().toISOString()
-   },{onConflict:"business_id,restaurant_guid,phase"});
-   if(phaseError)throw new ToastApiError("unavailable");
-  }
+  if(linkFailed)derivedRefresh={derivedRefreshPending:true,derivedRefreshNote:"sales_link_unavailable"};
   // SQL has already committed the complete business day and advanced days_done.
   // A trigger queued cost refresh in the SAME transaction. Never route a
   // post-commit cost failure through the page-import checkpoint handler.
@@ -140,7 +147,9 @@ export async function importToastBusinessDay(db:SupabaseClient,p:Params){
    ...derivedRefresh};
   // SQL queued a generation-bound cost refresh in the same transaction.
   // The global 240s budget also bounds this derivative; never start it late.
-  if(Date.now()>=deadlineAt)return {...imported,costsPending:true};
+  // The migrated import also persisted a relink generation. Leave costs
+  // pending until linking is recovered; the retry renews the cost generation.
+  if(linkFailed||Date.now()>=deadlineAt)return {...imported,costsPending:true};
   let generation:string|null=null;
   try{
    const {data:job,error:queueError}=await db.from("toast_rollup_refresh_jobs")

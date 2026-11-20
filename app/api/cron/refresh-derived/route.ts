@@ -1,7 +1,7 @@
 import {NextResponse} from "next/server";
 import {createAdminSupabaseClient} from "@/lib/supabase/admin";
 import {verifyBearer} from "@/lib/security/bearer";
-import {refreshDerivedForBusiness} from "@/lib/alerts/refreshDerived.server";
+import {refreshDerivedForBusiness,derivedRefreshSchemaMissing} from "@/lib/alerts/refreshDerived.server";
 import {deliverPendingCommitments} from "@/lib/operating/commitments.server";
 import {dispatchRoutinesForBusiness} from "@/lib/ai/supervisor/routines/dispatch.server";
 import {enqueueInvestigationsForOwner,processDueInvestigations} from "@/lib/ai/supervisor/routines/investigation.server";
@@ -16,9 +16,11 @@ export async function GET(request:Request){
   if(!verifyBearer(request,process.env.CRON_SECRET))
     return respond(401,{error:"unauthorized"});
   const db=createAdminSupabaseClient();
-  let checked=0,refreshed=0,failed=0;
+  let checked=0,refreshed=0,failed=0,deferred=0;
   const routines={routinesChecked:0,runs:0,notices:0,failed:0,evidenceChecks:0,investigationsQueued:0};
   const now=new Date();
+  const refreshAdmissionUntil=now.getTime()+180_000;
+  const investigationAdmissionUntil=now.getTime()+225_000;
   // The legacy manual worker flag alone must not activate scheduled chat work.
   // This additional rollout gate remains off until durable admission/recovery is proven.
   const ownerRunsEnabled=process.env.SUPERVISOR_RUN_WORKER_ENABLED==="true" &&
@@ -29,33 +31,54 @@ export async function GET(request:Request){
     try{return {...await ownerWorker.processOldestDurableRun(),failed:0};}
     catch{return {processed:0,state:null,failed:1};}
   })() : Promise.resolve({processed:0,state:null,failed:ownerRunsEnabled?1:0});
+  // Do not run a large refresh concurrently with an admitted owner run.
+  const ownerResult=await ownerRuns;
+  // Reserve the first investigation slot for existing due work before a
+  // potentially slow fleet scan. Use the SAME bounded global step budget.
+  const investigations={processed:0,collected:0,investigated:0,followUps:0,rechecked:0,failed:0};
+  async function investigateOne(){
+    if(Date.now()>=investigationAdmissionUntil)return;
+    try{
+      const step=await processDueInvestigations(db,new Date(),1);
+      for(const key of ["processed","collected","investigated","followUps","rechecked","failed"] as const)
+        investigations[key]+=step[key]??0;
+    }catch{investigations.failed++;}
+  }
+  await investigateOne();
   // Separate task capability, same authorized cron. Failures remain visible and
   // the database keeps unfinished commitments pending for the next invocation.
   let commitments:{scopes:number;delivered:number;failed:number};
   try{commitments=await deliverPendingCommitments(db,now);}
   catch{commitments={scopes:0,delivered:0,failed:1};}
   const pageSize=100;
+  const scheduled=await db.rpc("supervisor_list_derived_refresh_businesses");
+  const useLegacy=derivedRefreshSchemaMissing(scheduled.error);
+  let admissionDeferred=false;
   for(let offset=0;;offset+=pageSize){
-    const {data,error}=await db.from("businesses").select("id,timezone,is_demo")
-      .order("id",{ascending:true}).range(offset,offset+pageSize-1);
+    const {data,error}=useLegacy?await db.from("businesses").select("id,timezone,is_demo")
+      .order("id",{ascending:true}).range(offset,offset+pageSize-1):scheduled;
     if(error)return respond(503,{error:"refresh_unavailable",checked,refreshed,failed,
       ...(ownerRunsEnabled?{ownerRuns:await ownerRuns}:{})});
     const rows=data??[];
-    for(let i=0;i<rows.length;i+=5){
-      await Promise.all(rows.slice(i,i+5).map(async business=>{
-        if(business.is_demo)return;
+    for(const business of rows as Array<{id:string;timezone:string|null;is_demo:boolean}>){
+        if(business.is_demo)continue;
+        if(Date.now()>=refreshAdmissionUntil){
+          // Entries not started retain their least-recently-started position.
+          deferred++;admissionDeferred=true;continue;
+        }
         checked++;
-        if(!business.timezone){failed++;return;}
+        if(!business.timezone){failed++;continue;}
         try{
-          await refreshDerivedForBusiness(db,business.id,business.timezone,now);
-          refreshed++;
+          const outcome=await refreshDerivedForBusiness(db,business.id,business.timezone,new Date());
+          if(outcome.deferred)deferred++;
+          else refreshed++;
         }catch{
           // Isolate one café; no identifiers or sensitive error messages in response.
           failed++;
         }
         // Independent source-change triage follows the authoritative alert refresh.
         try{
-          const outcome=await dispatchRoutinesForBusiness(db,business.id,business.timezone,now,
+          const outcome=await dispatchRoutinesForBusiness(db,business.id,business.timezone,new Date(),
             enqueueInvestigationsForOwner);
           routines.routinesChecked+=outcome.routinesChecked;
           routines.runs+=outcome.runs;
@@ -64,17 +87,13 @@ export async function GET(request:Request){
           routines.evidenceChecks+=outcome.evidenceChecks;
           routines.investigationsQueued+=outcome.investigationsQueued;
         }catch{routines.failed++;}
-      }));
     }
-    if(rows.length<pageSize)break;
+    if(admissionDeferred||!useLegacy||rows.length<pageSize)break;
   }
   // A global fair, bounded slice across all cafés, not paid model calls per
   // business. The existing cron remains the only schedule for this capability.
-  let investigations={processed:0,collected:0,investigated:0,followUps:0,rechecked:0,failed:0};
-  try{investigations=await processDueInvestigations(db,now,2);}
-  catch{investigations.failed++;}
-  const ownerResult=await ownerRuns;
-  return respond(failed||commitments.failed||routines.failed||investigations.failed||ownerResult.failed?207:200,
-    {checked,refreshed,failed,commitments,routines,investigations,
+  await investigateOne();
+  return respond(failed||commitments.failed||routines.failed||investigations.failed||ownerResult.failed||admissionDeferred?207:200,
+    {checked,refreshed,failed,deferred,commitments,routines,investigations,
       ...(ownerRunsEnabled?{ownerRuns:ownerResult}:{})});
 }

@@ -48,9 +48,12 @@ begin
  if n<>3 then raise exception 'catalog/review RLS incomplete %',n;end if;
  select count(*) into n from pg_proc p join pg_namespace ns on ns.oid=p.pronamespace
  where ns.nspname='public' and p.proname in
- ('pos_relink_toast_lines','pos_import_toast_attendance') and p.prosecdef
+ ('pos_relink_toast_lines','pos_import_toast_attendance') and p.pronargs=2 and p.prosecdef
  and p.proconfig @> array['search_path=public'];
  if n<>2 then raise exception 'service-only SQL handlers not hardened: %',n;end if;
+ if has_function_privilege('authenticated','public.pos_relink_toast_lines(uuid,uuid,date)','EXECUTE')
+  or not has_function_privilege('service_role','public.pos_relink_toast_lines(uuid,uuid,date)','EXECUTE')
+ then raise exception 'day-scoped relink privilege drift';end if;
  if not exists(select 1 from pg_proc p join pg_namespace ns on ns.oid=p.pronamespace
   where ns.nspname='public' and p.proname='toast_business_scope_summary'
    and p.prosecdef and p.proconfig @> array['search_path=public'])
@@ -259,7 +262,7 @@ declare b uuid:='cccccccc-cccc-4ccc-8ccc-cccccccccccc';
  item_guid text:='cccccccc-cccc-4ccc-8ccc-cccccccc0030';
  size_guid text:='cccccccc-cccc-4ccc-8ccc-cccccccc0040';
  pos text;test_order_id uuid;line_id uuid;archived_id uuid;sized_id uuid;
- actual_id uuid; n integer;
+ actual_id uuid; n integer;older_order uuid;older_line uuid;
 begin
  pos:='toast:'||r::text||':'||item_guid;
  insert into public.orders(business_id,location_id,pos_order_id,closed_at,
@@ -278,7 +281,7 @@ begin
    where id=archived_id and business_id=b and is_active=false
    and price_cents is null and pos_item_id=pos)
  then raise exception 'unknown sold-only item must be one archived null-price row';end if;
- perform public.pos_relink_toast_lines(b,r);
+ if public.pos_relink_toast_lines(b,r)<>0 then raise exception 'unchanged base-linked order line was rewritten';end if;
  select count(*) into n from public.menu_items where business_id=b and pos_item_id=pos;
  if n<>1 then raise exception 'repeated sold-only relink duplicated menu identity';end if;
  insert into public.menu_items(business_id,pos_item_id,name,base_name,
@@ -298,6 +301,29 @@ begin
   raise exception 'second sized relink changed canonical identity';end if;
  if (select count(*) from public.order_lines l where l.order_id=test_order_id)<>1 then
   raise exception 'relink must not duplicate sales lines';end if;
+ -- A normal day import cannot scan/write unrelated days. Only an existing
+ -- unresolved error or catalog change authorizes the wider repair.
+ insert into public.orders(business_id,location_id,pos_order_id,closed_at,business_date,gross_sales_cents,net_sales_cents)
+ values(b,loc,'toast:copy-older-u1','2026-10-24T18:00:00Z','2026-10-24',550,550) returning id into older_order;
+ insert into public.order_lines(order_id,pos_item_id,name,quantity,net_sales_cents,voided,modifiers)
+ values(older_order,pos,'Historical latte',1,550,false,
+  jsonb_build_array(jsonb_build_object('posModifierId',size_guid,'name','Large','quantity',1)))
+ returning id into older_line;
+ n:=public.pos_relink_toast_lines(b,r,'2026-10-26');
+ if n<>0 or (select menu_item_id from public.order_lines where id=older_line) is not null
+ then raise exception 'day-scoped relink changed unrelated history';end if;
+ insert into public.toast_sync_phase_errors(business_id,restaurant_guid,phase,last_error_category,last_failed_at)
+ values(b,r,'sales_link','unavailable',clock_timestamp()-interval '1 minute')
+ on conflict(business_id,restaurant_guid,phase) do update set
+ last_failed_at=excluded.last_failed_at,last_error_category=excluded.last_error_category,last_recovered_at=null;
+ n:=public.pos_relink_toast_lines(b,r,'2026-10-26');
+ select menu_item_id into actual_id from public.order_lines where id=older_line;
+ if n<>1 or actual_id is distinct from sized_id
+ then raise exception 'durable unresolved link recovery: changed %, actual %, expected %', n,actual_id,sized_id;end if;
+ if not exists(select 1 from public.toast_sync_phase_errors where business_id=b and restaurant_guid=r and phase='sales_link' and last_recovered_at>=last_failed_at)
+ then raise exception 'recovered historical failure has no durable receipt';end if;
+ if public.pos_relink_toast_lines(b,r,'2026-10-26')<>0 then
+  raise exception 'recovered historical relink was not idempotent';end if;
 end
 $catalog_link$;
 

@@ -570,10 +570,18 @@ export async function refreshBusinessAnomalies(db:SupabaseClient,businessId:stri
   if(optionalFailed)throw Error("customer_optional_reader_failed");
  });
  const names=["catalog_history","sales","wages","expenses","ingredient_product_cost","inventory_usage","supplier_quotes","operating_margin","attendance","refunds","live_sales","hourly_staff_pressure","cost_recovery","customer_intelligence"];
- const results=await Promise.allSettled(work.map(async(run,index)=>{
-  try{await run();}catch(error){await gap("reader_unavailable:"+names[index],true);throw error;}
-  await gap("reader_unavailable:"+names[index],false);
- }));
- if(results.some(r=>r.status==="rejected"))throw Error("business_anomaly_refresh_incomplete");
+ let incomplete=false;
+ // Limit read-family fan-out while retaining every family and its independent
+ // evidence/failure lifecycle. Families may still parallelize paired periods.
+ const familyConcurrency=2;
+ for(let offset=0;offset<work.length;offset+=familyConcurrency){
+  const results=await Promise.allSettled(work.slice(offset,offset+familyConcurrency).map(async(run,index)=>{
+   const name=names[offset+index];
+   try{await run();}catch(error){await gap("reader_unavailable:"+name,true);throw error;}
+   await gap("reader_unavailable:"+name,false);
+  }));
+  if(results.some(r=>r.status==="rejected"))incomplete=true;
+ }
+ if(incomplete)throw Error("business_anomaly_refresh_incomplete");
  return created;
 }
