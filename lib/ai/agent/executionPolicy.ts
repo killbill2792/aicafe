@@ -13,7 +13,7 @@ export function executionPolicy(model:string,worker:ExecutionBudget|undefined,le
  const elapsedMs=Math.min(60000,worker?.maxElapsedMs??60000);
  const maxTurnOutput=Math.min(luna?(adaptive?32768:25000):Number.MAX_SAFE_INTEGER,worker?.maxOutputTokens??Infinity);
  const finalReserve=adaptive?Math.min(8192,Math.max(1,Math.floor(maxTurnOutput/3))):1200;
- return {elapsedMs,maxWorkCalls:Math.max(0,Math.min(adaptive?12:5,(worker?.maxModelCalls??Infinity)-1)),
+ return {elapsedMs,maxWorkCalls:Math.max(0,Math.min(adaptive?7:5,(worker?.maxModelCalls??Infinity)-1)),
   maxToolCalls:Math.min(adaptive?24:8,worker?.maxToolCalls??Infinity),
   maxTurnOutput,maxWorkOutput:luna&&!worker?16384:adaptive?8192:1200,finalReserve,
   finalTimeReserve:Math.min(12000,Math.floor(elapsedMs/5))};
