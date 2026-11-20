@@ -285,3 +285,30 @@ describe("labor evidence presentation",()=>{
   expect(presentResponse(q,ctx({...labor,missing:["laborReadFailed"]})).accepted).toBe(false);
  });
 });
+
+describe("typed operational summary presentation",()=>{
+ const q=(source:string,field="rows",kind="table")=>({layout:"stack",panels:[{source,field,kind}],suggestions:[]});
+ it("projects returned hourly sales with zero, coverage and the local clock without guessing absent hours",()=>{
+  const r:AgentToolResult={source:"get_peak_hours",period:sales.period,missing:["hourlySalesDatesNotObserved"],recordedRows:2,otherHoursOmitted:false,
+   topHours:[{hourLocal:9,netSalesCents:1200,ordersCount:3},{hourLocal:10,netSalesCents:0,ordersCount:0}]};
+  expect(presentResponse(q(r.source),ctx(r))).toMatchObject({accepted:true,presentation:{tables:[{coverage:"partial",rows:[["09:00",1200,3],["10:00",0,0]]}]}});
+  expect(presentResponse(q(r.source,"table:net_sales","bar"),ctx(r))).toMatchObject({accepted:true,presentation:{panels:[{coverage:"partial",points:[{label:"09:00",value:1200},{label:"10:00",value:0}]}]}});
+  expect(presentResponse(q(r.source),ctx({...r,topHours:[{hourLocal:25,netSalesCents:1,ordersCount:1}]})).accepted).toBe(false);
+ });
+ it("only exposes employee comparisons when same-turn authorized identities uniquely match",()=>{
+  const r:AgentToolResult={source:"get_employee_sales",period:sales.period,missing:[],recordedRows:2,employeeCount:2,employeesOmitted:false,totalAttributedNetSalesCents:1400,
+   topEmployees:[{employeeId:"e1",netSalesCents:1200,ordersCount:3},{employeeId:"e2",netSalesCents:200,ordersCount:1}]};
+  const res=presentResponse(q(r.source),ctx(r));
+  expect(res).toMatchObject({accepted:true,presentation:{tables:[{rows:[["Returned evidence",1400,2]]}]}});
+  expect(JSON.stringify(res)).not.toContain('"e1"');
+  const roster:AgentToolResult={source:"employees+scheduled_shifts",period:sales.period,missing:[],people:[{id:"e1",name:"Owner test A"},{id:"e2",name:"Owner test B"}]};
+  const c={...ctx(r),turnResults:()=>[{name:"get_employee_sales",result:r},{name:"get_team",result:roster}]};
+  expect(presentResponse(q(r.source),c)).toMatchObject({accepted:true,presentation:{tables:[{rows:[["Owner test A",1200,3],["Owner test B",200,1]]}]}});
+ });
+ it("preserves payroll unknowns, never equating imported pay periods with a complete labor bill",()=>{
+  const r:AgentToolResult={source:"get_payroll_facts",period:sales.period,missing:["payrollUnknown:netCents"],recordedPayPeriods:2,employeeCount:1,
+   grossCents:4000,netCents:null,regularCents:3600,overtimeCents:400,doubleOvertimeCents:0,employeeTaxCents:200,employerTaxCents:300};
+  expect(presentResponse(q(r.source),ctx(r))).toMatchObject({accepted:true,presentation:{tables:[{coverage:"partial",rows:[["Gross pay",4000],["Net pay",null],["Regular pay",3600],["Overtime pay",400],["Double overtime pay",0],["Employee tax",200],["Employer tax",300]]}]}});
+  expect(presentResponse(q(r.source),ctx({...r,recordedPayPeriods:0})).accepted).toBe(false);
+ });
+});

@@ -7,7 +7,7 @@ import type { AgentToolContext,AgentToolResult } from "./index";
 
 // Select a source projection, never supply a numeric value, arbitrary path or business identity.
 const selection=z.strictObject({
-  source:z.enum(["daily_rollups","item_sales","profitability","canonical_data","expenses","business_costs","product_costs","supplier_purchase_plan","purchase_orders","inventory","menu_items","labor_and_attendance"]),
+  source:z.enum(["daily_rollups","item_sales","profitability","canonical_data","expenses","business_costs","product_costs","supplier_purchase_plan","purchase_orders","inventory","menu_items","labor_and_attendance","get_peak_hours","get_employee_sales","get_payroll_facts"]),
   field:z.string().trim().min(1).max(120),
   ref:z.string().regex(/^r[1-9][0-9]?$/).nullable().optional(),
   from:z.iso.date().nullable().optional(),to:z.iso.date().nullable().optional(),
@@ -298,7 +298,7 @@ function modeledScenario(results:readonly AgentToolResult[],ctx:Pick<AgentToolCo
  return out.success?out.data:null;
 }
 /** Project named fields from existing typed readers, not arbitrary JSON paths. */
-function readerTable(r:AgentToolResult,ctx:Pick<AgentToolContext,"currency"|"asOf">):RecordTable|null{
+function readerTable(r:AgentToolResult,ctx:Pick<AgentToolContext,"currency"|"asOf"|"turnResults">):RecordTable|null{
  if(r.error||r.needsOwnerChoice)return null;
  const columns:RecordTable["columns"]=[];
  let rows:RecordTable["rows"]=[],title="",scope="",currency:string|null=null;
@@ -326,6 +326,56 @@ function readerTable(r:AgentToolResult,ctx:Pick<AgentToolContext,"currency"|"asO
     const known=["observed_current","dated_owner_count"].includes(String(o.evidence_state))&&o.quantity_state==="known";
     return [[text(o.ingredient_name)??"Unnamed stock record",known?num(o.quantity):null,text(o.quantity_unit),text(o.evidence_state),text(o.source_as_of)]];
    });
+ }else if(r.source==="get_peak_hours"&&Array.isArray(r.topHours)&&r.period){
+   if(!ctx.currency||r.period.to>ctx.asOf||!Number.isSafeInteger(r.recordedRows)||Number(r.recordedRows)<=0||
+      r.topHours.length>12||typeof r.otherHoursOmitted!=="boolean")return null;
+   title="Recorded busiest sales hours";scope="Hours ranked by recorded net sales in the café's local clock, not by order count. Only returned hours; absent hours are unknown.";
+   currency=ctx.currency;add("Local hour","label");add("Net sales","cents");add("Orders","count");
+   const seen=new Set<number>();
+   for(const o of r.topHours){
+     if(!obj(o)||typeof o.hourLocal!=="number"||!Number.isInteger(o.hourLocal)||o.hourLocal<0||o.hourLocal>23||seen.has(o.hourLocal)||
+      !Number.isSafeInteger(o.netSalesCents)||!Number.isSafeInteger(o.ordersCount)||Number(o.ordersCount)<0)return null;
+     seen.add(o.hourLocal);rows.push([String(o.hourLocal).padStart(2,"0")+":00",num(o.netSalesCents),num(o.ordersCount)]);
+   }
+ }else if(r.source==="get_employee_sales"&&Array.isArray(r.topEmployees)&&r.period){
+   if(!ctx.currency||r.period.to>ctx.asOf||!Number.isSafeInteger(r.recordedRows)||Number(r.recordedRows)<=0||
+      !Number.isSafeInteger(r.employeeCount)||Number(r.employeeCount)<=0||r.topEmployees.length>10||
+      typeof r.employeesOmitted!=="boolean"||r.topEmployees.length>Number(r.employeeCount))return null;
+   const names=new Map<string,Set<string>>();
+   for(const read of ctx.turnResults?.()??[]){
+     if(read.result.source!=="employees+scheduled_shifts"||read.result.error||read.result.needsOwnerChoice||!Array.isArray(read.result.people))continue;
+     for(const person of read.result.people){
+       if(!obj(person)||typeof person.id!=="string"||typeof person.name!=="string"||!person.name.trim())continue;
+       const set=names.get(person.id)??new Set<string>();set.add(person.name);names.set(person.id,set);
+     }
+   }
+   const named:Array<[string,number,number]>=[];
+   const seen=new Set<string>();
+   for(const o of r.topEmployees){
+     if(!obj(o)||typeof o.employeeId!=="string"||seen.has(o.employeeId)||typeof o.netSalesCents!=="number"||
+       !Number.isSafeInteger(o.netSalesCents)||typeof o.ordersCount!=="number"||!Number.isSafeInteger(o.ordersCount)||o.ordersCount<0)return null;
+     seen.add(o.employeeId);
+     const matches=names.get(o.employeeId);
+     if(matches?.size===1)named.push([[...matches][0],o.netSalesCents,o.ordersCount]);
+   }
+   currency=ctx.currency;
+   if(named.length&&named.length===r.topEmployees.length&&new Set(named.map(o=>o[0])).size===named.length){
+     title="Recorded employee-attributed sales";scope="Returned employees ranked by recorded attributed sales. Not a full staff list or proof of individual productivity; identities matched to this turn's roster.";
+     add("Team member","label");add("Attributed net sales","cents");add("Attributed orders","count");rows=named;
+   }else{
+     if(!Number.isSafeInteger(r.totalAttributedNetSalesCents))return null;
+     title="Recorded employee-attributed sales summary";scope="Recorded employee-attributed sales only. Individual identities could not be uniquely matched to this turn's roster; no personal ranking is shown.";
+     add("Measure","label");add("Attributed net sales","cents");add("Employees in returned evidence","count");
+     rows=[["Returned evidence",num(r.totalAttributedNetSalesCents),num(r.employeeCount)]];
+   }
+ }else if(r.source==="get_payroll_facts"&&r.period){
+   if(!ctx.currency||r.period.to>ctx.asOf||!Number.isSafeInteger(r.recordedPayPeriods)||Number(r.recordedPayPeriods)<=0||
+      !Number.isSafeInteger(r.employeeCount)||Number(r.employeeCount)<=0)return null;
+   title="Saved payroll-period facts";scope="Imported pay periods ending in the selected dates, not accrued daily labor cost or a complete payroll bill. Unknown components are not zero; employer taxes and employee deductions are distinct.";
+   currency=ctx.currency;add("Component","label");add("Recorded amount","cents");
+   for(const [name,key] of [["Gross pay","grossCents"],["Net pay","netCents"],["Regular pay","regularCents"],["Overtime pay","overtimeCents"],["Double overtime pay","doubleOvertimeCents"],["Employee tax","employeeTaxCents"],["Employer tax","employerTaxCents"]]){
+     const v=r[key];if(v!==null&&!Number.isSafeInteger(v))return null;rows.push([name,num(v)]);
+   }
  }else if(r.source==="labor_and_attendance"&&Array.isArray(r.laborDays)&&r.period){
    if(!ctx.currency||r.period.to>ctx.asOf||r.missing.some(m=>m==="laborReadFailed"||m==="laborReaderUnavailable")||
       r.laborDays.some(d=>!obj(d)||typeof d.date!=="string"||!z.iso.date().safeParse(d.date).success||d.date<from||d.date>to))return null;
@@ -349,7 +399,7 @@ function readerTable(r:AgentToolResult,ctx:Pick<AgentToolContext,"currency"|"asO
  }else return null;
  if(!rows.length)return null;
  const parsed=recordTableSchema.safeParse({title,view:"tool_"+r.source,from,to,asOf:ctx.asOf,currency,
-  coverage:r.missing.length||r.source==="supplier_purchase_plan"||r.source==="inventory"||r.source==="labor_and_attendance"||rows.length>30?"partial":"stored",
+  coverage:r.missing.length||r.source==="supplier_purchase_plan"||r.source==="inventory"||["labor_and_attendance","get_peak_hours","get_employee_sales","get_payroll_facts"].includes(r.source)||rows.length>30?"partial":"stored",
   scope,columns,rows:rows.slice(0,30)});
  return parsed.success?parsed.data:null;
 }
@@ -436,7 +486,7 @@ function laborPanel(s:z.infer<typeof selection>,r:AgentToolResult,ctx:Pick<Agent
  return {kind:s.kind,title:"Recorded daily loaded staff cost",unit:"cents",currency:t.currency,from:t.from,to:t.to,asOf:t.asOf,
   source:"labor_and_attendance",sourceDetail:t.scope,coverage:"partial",points};
 }
-function project(s:z.infer<typeof selection>,r:AgentToolResult,ctx:Pick<AgentToolContext,"currency"|"asOf">):PresentationPanel|null {
+function project(s:z.infer<typeof selection>,r:AgentToolResult,ctx:Pick<AgentToolContext,"currency"|"asOf"|"turnResults">):PresentationPanel|null {
  if(s.source==="labor_and_attendance")return laborPanel(s,r,ctx);
  if(s.field.startsWith("table:")){
   const table=readerTable(r,ctx);return table?tablePanel(s,table):null;
@@ -551,5 +601,5 @@ export function presentResponse(raw:unknown,ctx:Pick<AgentToolContext,"currency"
  return {...empty,accepted:true,presentation:arranged.success?arranged.data:block.data};
 }
 export const presentationTools={
- present_response:{schema:presentationInputSchema,description:"Optional UI from current reads, never invented data. Source+field: daily_rollups daily_sales; item_sales item_units; profitability net_sales/total_costs/owner_profit; canonical_data exact aggregate alias or field rows for a multi-column table; expenses recorded_expenses; business_costs cost_components; product_costs recipe_cost; supplier_purchase_plan subtotal/rows; purchase_orders, inventory, menu_items rows; labor_and_attendance daily_labor_cost/rows. Use ref from the prior result to disambiguate; groups: p0–p7, agenda/scenario/calculator/files/report/suggestions; id g0–g11 for nested stack/grid/compare (same units)/details (title required); optional descriptive titles, not data claims. For safe reader table numerics use table:<column_label_snake_case>. Agenda from get_events/get_week_schedule; scenario monthly_profit/monthly_break_even/monthly_target_sales/item_margin from verified simulate_scenario; calculator=true after calculate for editable owner assumptions (not screen numbers); report=true for text export; files=true for sources attached in this turn only. Suggestions edit a draft, never act. Answer fully in words; visuals only if useful."},
+ present_response:{schema:presentationInputSchema,description:"Optional UI from current reads, never invented data. Source+field: daily_rollups daily_sales; item_sales item_units; profitability net_sales/total_costs/owner_profit; canonical_data exact aggregate alias or field rows for a multi-column table; expenses recorded_expenses; business_costs cost_components; product_costs recipe_cost; supplier_purchase_plan subtotal/rows; purchase_orders, inventory, menu_items rows; labor_and_attendance daily_labor_cost/rows; get_peak_hours/get_employee_sales/get_payroll_facts rows. Use ref from the prior result to disambiguate; groups: p0–p7, agenda/scenario/calculator/files/report/suggestions; id g0–g11 for nested stack/grid/compare (same units)/details (title required); optional descriptive titles, not data claims. For safe reader table numerics use table:<column_label_snake_case>. Agenda from get_events/get_week_schedule; scenario monthly_profit/monthly_break_even/monthly_target_sales/item_margin from verified simulate_scenario; calculator=true after calculate for editable owner assumptions (not screen numbers); report=true for text export; files=true for sources attached in this turn only. Suggestions edit a draft, never act. Answer fully in words; visuals only if useful."},
 };
