@@ -213,6 +213,15 @@ export async function runOneTurn(p: TurnParams): Promise<{ replyId: string; repl
     const reusable=(m:ConversationMessage)=>m.role==="owner"||
       (m.grounding?.agentMetadata as {externalEvidence?:unknown}|undefined)?.externalEvidence===false;
     const ownerAt = Date.parse(owner.createdAt);
+    // Expose only existing authenticated same-thread owner message IDs to the
+    // model when it chooses the ORIGINAL goal after a schedule clarification.
+    // Source text is preview context, never a model-generated saved objective.
+    const goalSourceCandidates=[...page.items.filter(m=>
+      m.role==="owner"&&typeof m.text==="string"&&m.id!==owner.id&&
+      Date.parse(m.createdAt)<=ownerAt).slice(-6),owner].map(m=>({
+        id:m.id,text:(m.id===owner.id?p.ownerText:m.text??"").slice(0,320),
+      }));
+    const goalSourceIds=new Set(goalSourceCandidates.map(m=>m.id));
     const priorAssistant=page.items.filter(m=>m.role==="supervisor"&&m.id!==owner.id&&reusable(m)&&
       (!p.durableFence||Date.parse(m.createdAt)<=ownerAt)).slice(-8);
     const previousEvidence:NumericEvidence[]=priorAssistant.flatMap(m=>{
@@ -355,9 +364,19 @@ export async function runOneTurn(p: TurnParams): Promise<{ replyId: string; repl
         close:async taskId=>closeOwnerCommitment(taskId,{scope,threadId:id,client:await getDb()}),
       },
       routines:{
-        create:async schedule=>createOwnerRoutine(schedule,{
-          scope,threadId:id,ownerMessageId:owner.id,client:await getDb(),
-        }),
+        create:async(schedule,goalSourceMessageId)=>{
+          // A missing choice in a multi-turn conversation is NOT evidence that
+          // the newest scheduling-only sentence is the requested objective.
+          if(process.env.SUPERVISOR_U4_ENABLED==="true"&&
+            goalSourceCandidates.length>1&&!goalSourceMessageId)
+            throw Error("Choose the verified original owner goal message ID before saving");
+          const selected=goalSourceMessageId??owner.id;
+          if(!goalSourceIds.has(selected))throw Error("Unverified routine goal source");
+          return createOwnerRoutine(schedule,{
+            scope,threadId:id,ownerMessageId:owner.id,
+            goalSourceMessageId:selected,client:await getDb(),
+          });
+        },
         list:async()=>listOwnerRoutines({scope,threadId:id,client:await getDb()}),
         change:async input=>changeOwnerRoutine(input,{scope,threadId:id,ownerMessageId:owner.id,client:await getDb()}),
       },
@@ -816,7 +835,13 @@ export async function runOneTurn(p: TurnParams): Promise<{ replyId: string; repl
       ...(memory ? { memoryFacts: memory.facts } : {}),
       // Both the routine tool and optional café memory are offered only after
       // the authenticated owner/thread context has been established.
-      extraTools:[routineToolDefinition,...(gmailAvailable?gmailToolDefinitions:[]),...(memory?[memory.tool]:[])],
+      extraTools:[{
+        ...routineToolDefinition,
+        description:routineToolDefinition.description+" VERIFIED SAME-THREAD OWNER MESSAGES "+
+          "(choose the source ID for the complete investigation goal, not the answer to a scheduling question; "+
+          "the server will verify this original owner message independently): "+
+          JSON.stringify(goalSourceCandidates),
+      },...(gmailAvailable?gmailToolDefinitions:[]),...(memory?[memory.tool]:[])],
       ...(job && jobs ? {
         takeFollowUps: async(max: number):Promise<OwnerFollowUp[]> => {
            // A second question always receives its own serialized turn, on
