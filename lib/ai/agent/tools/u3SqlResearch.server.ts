@@ -4,7 +4,7 @@ import {Pool,type PoolClient} from "pg";
 import {z} from "zod";
 import type {SupabaseClient} from "@supabase/supabase-js";
 import {createAdminSupabaseClient} from "@/lib/supabase/admin";
-import {admitU3Sql} from "./u3SqlAdmission";
+import {admitU3Sql,type U3TrustedUnit} from "./u3SqlAdmission";
 
 /** One research executor for the existing query_data tool.
  * No service-role client receives model-authored SQL. Scope is a server-only
@@ -287,8 +287,22 @@ export async function runU3Sql(ctx:U3SqlContext,raw:unknown){
      ["status","category","source","source_channel","dining_option",
       "toast_excluded","sales_data_status"].includes(c.name)
     ).map(c=>c.name)));
+   // Exact calculator units come from the authorized catalog and parsed SQL
+   // projection, never an arbitrary alias such as "net_sales_cents".
+   const knownColumnUnits:Record<string,U3TrustedUnit|null>={};
+   for(const relation of list)for(const col of relation.columns){
+    const unit:U3TrustedUnit|null=col.unit==="integer_cent"?"cents":
+     /(?:^|_)(?:count|orders|items|visits|rows)$/.test(col.name)&&
+       ["int2","int4","int8","numeric"].includes(col.type)?"count":
+     /(?:^|_)percent$/.test(col.name)?"percent":
+     /(?:^|_)(?:ratio|share|margin)$/.test(col.name)?"ratio":null;
+    if(Object.hasOwn(knownColumnUnits,col.name)&&knownColumnUnits[col.name]!==unit)
+     knownColumnUnits[col.name]=null;
+    else if(!Object.hasOwn(knownColumnUnits,col.name))
+     knownColumnUnits[col.name]=unit;
+   }
    const plan=await admitU3Sql(p.sql,list.map(r=>r.name),p.parameters?.length??0,
-    ctx.aggregateOnly===true,[...safeOffturnColumns]);
+    ctx.aggregateOnly===true,[...safeOffturnColumns],knownColumnUnits);
    if(plan.relations.includes("toast_records")&&
      (p.date_from===null||p.date_to===null))throw Error("invalid_query");
    const count=p.limit??50;
@@ -318,6 +332,7 @@ export async function runU3Sql(ctx:U3SqlContext,raw:unknown){
     evidence:{receipt_id:randomUUID(),
      as_of:asOf instanceof Date?asOf.toISOString():String(asOf??""),
      query_fingerprint:createHash("sha256").update(p.sql).digest("hex"),
+     column_units:plan.outputUnits,
      catalog_version:createHash("sha256").update(JSON.stringify(list)).digest("hex").slice(0,16),
      relation_names:plan.relations,functions:plan.functions,
      authority:"approved_logical_source",scope:"verified_owner_cafe_lease"}
