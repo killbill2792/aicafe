@@ -13,6 +13,20 @@ describe("verified owner routine chat tool",()=>{
       title:"Morning evidence",cadence:"daily",weekdays:[],localTime:"08:00"},null);
     expect(res.missing).toEqual([]);
   });
+  it("lets Luna select the original authenticated goal after the owner clarifies time",async()=>{
+    const original="22222222-2222-4222-8222-222222222222";
+    const create=vi.fn(async()=>({id:"saved-original-goal"}));
+    await routineTools.manage_routine.execute({
+      ...blank,action:"create",title:"Review sales and stock",cadence:"weekly",
+      weekdays:[1],local_time:"09:00",goal_source_message_id:original,
+    },ctx({create,list:vi.fn(),change:vi.fn()}));
+    expect(create).toHaveBeenCalledWith({title:"Review sales and stock",
+      cadence:"weekly",weekdays:[1],localTime:"09:00"},original);
+    await expect(routineTools.manage_routine.execute({
+      ...blank,action:"create",title:"Review",cadence:"daily",weekdays:[],
+      local_time:"09:00",goal_source_message_id:"fake-source",
+    },ctx({create}))).rejects.toThrow();
+  });
   it("does not pretend success if no authenticated port exists",async()=>{
     const res=await routineTools.manage_routine.execute({...blank,action:"list"},ctx(undefined));
     expect(res.missing).toEqual(["not_supported"]);
