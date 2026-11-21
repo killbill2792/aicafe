@@ -1,7 +1,7 @@
 import {describe,it,expect,vi} from "vitest";
 import {routineTools} from "./routines";
 const ctx=(port:unknown)=>({routines:port}) as never;
-const blank={routine_id:null,revision:null,title:null,cadence:null,weekdays:null,local_time:null,goal_source_message_id:null};
+const blank={routine_id:null,revision:null,title:null,cadence:null,weekdays:null,local_time:null,goal_source_message_id:null,source_page_offset:null};
 describe("verified owner routine chat tool",()=>{
   it("saves only through server verified port",async()=>{
     const create=vi.fn(async(input)=>({id:"saved",...input}));
@@ -26,6 +26,32 @@ describe("verified owner routine chat tool",()=>{
       ...blank,action:"create",title:"Review",cadence:"daily",weekdays:[],
       local_time:"09:00",goal_source_message_id:"fake-source",
     },ctx({create}))).rejects.toThrow();
+  });
+  it("lets Luna page older authenticated owner-goal candidates rather than silently saving a scheduling reply",async()=>{
+    const original="22222222-2222-4222-8222-222222222222";
+    const goalSources=vi.fn(async(offset:number)=>({
+      sources:[{id:original,text:"Investigate weekly customer demand and inventory history."}],
+      nextOffset:100,
+    }));
+    const response=await routineTools.manage_routine.execute({
+      ...blank,action:"list_goal_sources",source_page_offset:50,
+    },ctx({goalSources,list:vi.fn(),create:vi.fn(),change:vi.fn()}));
+    expect(goalSources).toHaveBeenCalledWith(50);
+    await routineTools.manage_routine.execute({
+      ...blank,action:"list_goal_sources",source_page_offset:0,
+    },ctx({goalSources}));
+    expect(goalSources).toHaveBeenLastCalledWith(0);
+    expect(response).toMatchObject({missing:[],next_offset:100,
+      sources:[{id:original,text:"Investigate weekly customer demand and inventory history."}]});
+  });
+  it("refuses an unbound goal source page and oversized offsets",async()=>{
+    const unbound=await routineTools.manage_routine.execute({
+      ...blank,action:"list_goal_sources",source_page_offset:50,
+    },ctx({list:vi.fn(),create:vi.fn(),change:vi.fn()}));
+    expect(unbound.missing).toEqual(["not_supported"]);
+    await expect(routineTools.manage_routine.execute({
+      ...blank,action:"list_goal_sources",source_page_offset:10001,
+    },ctx({goalSources:vi.fn()}))).rejects.toThrow();
   });
   it("does not pretend success if no authenticated port exists",async()=>{
     const res=await routineTools.manage_routine.execute({...blank,action:"list"},ctx(undefined));

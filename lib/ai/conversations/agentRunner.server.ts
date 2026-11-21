@@ -62,6 +62,7 @@ import { runAgentTurn, type OwnerFollowUp } from "@/lib/ai/agent/loop.server";
 import {createOwnerCommitment,listOwnerCommitments,closeOwnerCommitment} from "@/lib/operating/commitments.server";
 import {createOwnerRoutine,listOwnerRoutines,changeOwnerRoutine} from "@/lib/ai/supervisor/routines/repository.server";
 import {routineReportCandidates,verifiedRoutineReportHistory} from "@/lib/ai/supervisor/routines/reportHistory.server";
+import {routineGoalCandidates,needsExplicitGoalSource} from "@/lib/ai/conversations/routineGoalSources";
 import {routineToolDefinition} from "@/lib/ai/agent/tools/routines";
 import { persistAgentReply, recordAgentTurnUsage, AgentReplyTooLongError, AgentReplyStorageError, AgentEmptyReplyError } from "@/lib/ai/agent/persist.server";
 import { styleReport } from "@/lib/ai/agent/style";
@@ -224,12 +225,10 @@ export async function runOneTurn(p: TurnParams): Promise<{ replyId: string; repl
     // Expose only existing authenticated same-thread owner message IDs to the
     // model when it chooses the ORIGINAL goal after a schedule clarification.
     // Source text is preview context, never a model-generated saved objective.
-    const goalSourceCandidates=[...page.items.filter(m=>
-      m.role==="owner"&&typeof m.text==="string"&&m.id!==owner.id&&
-      Date.parse(m.createdAt)<=ownerAt).slice(-6),owner].map(m=>({
-        id:m.id,text:(m.id===owner.id?p.ownerText:m.text??"").slice(0,320),
-      }));
-    const goalSourceIds=new Set(goalSourceCandidates.map(m=>m.id));
+    const allPageGoalSources=routineGoalCandidates(page.items,owner,p.ownerText);
+    // Keep default prompts small; Luna can page any older authenticated
+    // owner message on demand, including candidates hidden from this preview.
+    const goalSourceCandidates=allPageGoalSources.slice(-8);
     const priorAssistant=page.items.filter(m=>m.role==="supervisor"&&m.id!==owner.id&&reusable(m)&&
       (!p.durableFence||Date.parse(m.createdAt)<=ownerAt)).slice(-8);
     const previousEvidence:NumericEvidence[]=priorAssistant.flatMap(m=>{
@@ -376,14 +375,25 @@ export async function runOneTurn(p: TurnParams): Promise<{ replyId: string; repl
         close:async taskId=>closeOwnerCommitment(taskId,{scope,threadId:id,client:await getDb()}),
       },
       routines:{
+        goalSources:async(offset:number)=>{
+          // The existing authenticated service enforces this exact owner/thread
+          // and pages only persisted messages. Nothing is promoted to approval.
+          const older=await p.service.listMessages(id,offset);
+          const sources=routineGoalCandidates(older.items,owner,p.ownerText,false);
+          return {sources,nextOffset:older.nextOffset};
+        },
         create:async(schedule,goalSourceMessageId)=>{
           // A missing choice in a multi-turn conversation is NOT evidence that
           // the newest scheduling-only sentence is the requested objective.
           if(process.env.SUPERVISOR_U4_ENABLED==="true"&&
-            goalSourceCandidates.length>1&&!goalSourceMessageId)
+            needsExplicitGoalSource(goalSourceCandidates.length,page.nextOffset)&&
+            !goalSourceMessageId)
             throw Error("Choose the verified original owner goal message ID before saving");
           const selected=goalSourceMessageId??owner.id;
-          if(!goalSourceIds.has(selected))throw Error("Unverified routine goal source");
+          // A recovered run may retain a source discovered before restart.
+          // The existing U4 SQL RPC revalidates source owner/cafe/thread,
+          // author, chronology and full text on every creation. A transient
+          // in-memory candidate list cannot be a second permission authority.
           return createOwnerRoutine(schedule,{
             scope,threadId:id,ownerMessageId:owner.id,
             goalSourceMessageId:selected,client:await getDb(),
@@ -852,7 +862,10 @@ export async function runOneTurn(p: TurnParams): Promise<{ replyId: string; repl
         description:routineToolDefinition.description+" VERIFIED SAME-THREAD OWNER MESSAGES "+
           "(choose the source ID for the complete investigation goal, not the answer to a scheduling question; "+
           "the server will verify this original owner message independently): "+
-          JSON.stringify(goalSourceCandidates),
+          JSON.stringify(goalSourceCandidates)+
+          " For any older goal absent from these previews, call manage_routine action=list_goal_sources "+
+          "with source_page_offset=0 first; use next_offset to continue to older pages. "+
+          "NEXT_OLDER_GOAL_SOURCES_OFFSET="+JSON.stringify(page.nextOffset),
       },...(gmailAvailable?gmailToolDefinitions:[]),...(memory?[memory.tool]:[])],
       ...(job && jobs ? {
         takeFollowUps: async(max: number):Promise<OwnerFollowUp[]> => {

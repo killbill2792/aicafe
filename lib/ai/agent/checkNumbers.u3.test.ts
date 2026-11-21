@@ -1,5 +1,5 @@
 import {describe,expect,it} from "vitest";
-import {compactEvidence,checkNumbers} from "./checkNumbers";
+import {compactEvidence,checkNumbers,hasVerifiedU3NumericObservation} from "./checkNumbers";
 import type {AgentToolResult} from "./tools";
 
 const receipt=()=>({
@@ -23,6 +23,13 @@ describe("U3 SQL source receipts in numeric claim verification",()=>{
   ]));
   expect(checkNumbers("$123.45, 7 orders and 12.34%.","",[receipt()],"en")).toEqual([]);
   expect(checkNumbers("$123.46 and 8 orders.","",[receipt()],"en")).not.toEqual([]);
+ });
+ it("uses identical receipt proof for unattended source admission",()=>{
+  expect(hasVerifiedU3NumericObservation(receipt())).toBe(true);
+  const original=receipt() as Record<string,unknown>;
+  const proof=original.evidence as Record<string,unknown>;
+  expect(hasVerifiedU3NumericObservation({...original,rows:[{fakeCents:99999}],
+    evidence:{...proof,column_units:{}}} as unknown as AgentToolResult)).toBe(false);
  });
  it("does not promote missing scope, untyped aliases or partial responses",()=>{
   const original=receipt() as Record<string,unknown>;

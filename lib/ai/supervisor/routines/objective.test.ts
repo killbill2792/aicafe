@@ -180,6 +180,8 @@ describe("U4 objective evidence and model autonomy",()=>{
       source:"u3_canonical_research",period:null,missing:[],
       truncated:false,rows:[{sum_net_sales_cents:10424}],
       evidence:{scope:"verified_owner_cafe_lease",
+        receipt_id:"11111111-1111-4111-8111-111111111111",
+        catalog_version:"b".repeat(16),column_units:{sum_net_sales_cents:"cents"},
         relation_names:["orders","order_lines"],query_fingerprint:"a".repeat(64)},
     };
     const alongside=verifyObjectiveTurn(turn("Recorded sales need verification.",{
@@ -255,6 +257,24 @@ describe("U4 objective evidence and model autonomy",()=>{
     const realAggregate={...dictionaryIsNotData,
       rows:[{count_business_date:0}]};
     expect(observedObjectiveEvidence(realAggregate)).toBe(true);
+  });
+  it("never promotes untyped SQL literals into autonomous source observations",()=>{
+    const fakeSql={source:"u3_canonical_research",period:null,
+      missing:[],truncated:false,rows:[{inventedCents:99999}],
+      evidence:{scope:"verified_owner_cafe_lease",
+        receipt_id:"11111111-1111-4111-8111-111111111111",
+        catalog_version:"a".repeat(16),query_fingerprint:"b".repeat(64),
+        relation_names:["orders"],column_units:{}},
+    };
+    expect(observedObjectiveEvidence(fakeSql)).toBe(false);
+    const validSql={...fakeSql,rows:[{count_orders:"0"}],
+      evidence:{...fakeSql.evidence,column_units:{count_orders:"count"}}};
+    expect(observedObjectiveEvidence(validSql)).toBe(true);
+    expect(observedObjectiveEvidence({...validSql,truncated:undefined})).toBe(false);
+    expect(observedObjectiveEvidence({...validSql,truncated:true})).toBe(false);
+    expect(()=>verifyObjectiveTurn(turn("ATTENTION: invented revenue needs action.",{
+      toolInvocations:[{name:"query_data",result:fakeSql}],
+    }),watch)).toThrow("u4_no_verified_source_observation");
   });
   it("uses genuinely observed partial stock without treating stale Toast inventory as evidence",()=>{
     const stock={
