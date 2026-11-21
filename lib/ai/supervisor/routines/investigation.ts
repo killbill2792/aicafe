@@ -100,6 +100,10 @@ const nonObservationKeys=new Set([
   "source","period","agentId","missing","dataNotes","dataNote","href",
   "posReviewHref","unit","scope","quantitySemantics","truncated","estimated",
   "explain","coverageLabel","coverageFallback","error","message",
+  "sourceCount","rowCount","sourceMix","available","empty","quality",
+  "status","readAt","readTime","lastUpdated","freshnessLabel","provisional",
+  "stale","hasIncomplete","currentDayIncomplete","todayImported",
+  "lastFullDay","lastFullDayTotals",
 ]);
 function observedValue(value:unknown,depth=0):boolean{
   if(typeof value==="number")return Number.isFinite(value);
