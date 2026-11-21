@@ -321,8 +321,7 @@ grant execute on function public.u4_publish_objective_report(
 -- The existing check is replaced in the same migration transaction.
 -- Reason: the new check immediately includes 'routine' while preserving all prior valid source types.
 -- squawk-ignore ban-drop-constraint
-alter table public.supervisor_system_usage_events
-  drop constraint supervisor_system_usage_events_source_scope_check;
+alter table public.supervisor_system_usage_events drop constraint supervisor_system_usage_events_source_scope_check;
 alter table public.supervisor_system_usage_events
   add constraint supervisor_system_usage_events_source_scope_check
   check(source_type in ('alert','operating_task','durable_run','routine')) not valid;
