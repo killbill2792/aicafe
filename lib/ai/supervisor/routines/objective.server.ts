@@ -139,6 +139,9 @@ export function verifyObjectiveTurn(turn:AgentTurn,routine:RoutineRecord):Object
     !turn.text.trim())throw Error("u4_model_result_unverified");
   const reads=(turn.toolInvocations??[]).filter(call=>
     objectiveReadTools.includes(call.name as AgentToolName)&&
+    // Arithmetic and presentation are not source observations, even when
+    // they have nonempty results. At least one real source read is mandatory.
+    call.name!=="calculate"&&
     observedObjectiveEvidence(call.result));
   if(!reads.length)throw Error("u4_no_verified_source_observation");
   let report=turn.text.trim();
