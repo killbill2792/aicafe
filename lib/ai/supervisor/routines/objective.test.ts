@@ -79,6 +79,10 @@ describe("U4 objective evidence and model autonomy",()=>{
     expect(objectiveReadTools).toContain("get_sales");
     expect(objectiveReadTools).toContain("get_inventory");
     expect(objectiveReadTools).toContain("get_events");
+    expect(objectiveReadTools).toContain("describe_data");
+    expect(objectiveReadTools).toContain("query_data");
+    expect(watchReadTools).toContain("describe_data");
+    expect(watchReadTools).toContain("query_data");
     expect(objectiveReadTools).not.toContain("manage_routine");
     expect(objectiveReadTools).not.toContain("propose_price_change");
     expect(objectiveReadTools).not.toContain("propose_supplier_purchase_order");
@@ -92,6 +96,26 @@ describe("U4 objective evidence and model autonomy",()=>{
     const result=verifyObjectiveTurn(turn("Sales context suggests reviewing staffing."),objective);
     expect(result).toMatchObject({attention:"attention",sourceCount:1,
       observedToolNames:["get_sales"]});
+  });
+  it("does not inflate corroboration from repeated calls or differently named views of one source",()=>{
+    const same=verifyObjectiveTurn(turn("ATTENTION: Recorded sales need review.",{
+      toolInvocations:[
+        {name:"get_sales",result:source},
+        {name:"get_sales",result:source},
+        {name:"get_item_sales",result:{...source,items:[{quantity:4}]}},
+      ],
+    }),watch);
+    expect(same.sourceCount).toBe(1);
+    expect(same.sourceDomains).toEqual(["recorded_sales"]);
+    const independent=verifyObjectiveTurn(turn("Review independent sales and inventory.",{
+      toolInvocations:[
+        {name:"get_sales",result:source},
+        {name:"get_inventory",result:{source:"stock_snapshot",period:null,
+          missing:[],items:[{quantity:3}]}},
+      ],
+    }),objective);
+    expect(independent.sourceCount).toBe(2);
+    expect(independent.sourceDomains).toEqual(["recorded_sales","stock_and_inventory"]);
   });
   it("quietly completes a Watch when real evidence does not justify owner interruption",()=>{
     const result=verifyObjectiveTurn(turn("NO_ACTION_REQUIRED: Observed a normal week."),watch);
@@ -256,6 +280,15 @@ describe("U4 scheduled model execution persists only verified outcomes",()=>{
     expect(args?.ownerText).toContain("SYSTEM-EXECUTED OWNER ROUTINE");
     expect(args?.ownerText).toContain("PRIOR_ASSESSMENTS=[]");
     expect(args?.toolNames).toContain("get_inventory");
+    expect(args?.toolNames).toContain("describe_data");
+    expect(args?.toolNames).toContain("query_data");
+    const sourceContext=await args?.context.canonicalData?.();
+    expect(sourceContext).toMatchObject({
+      businessId:objective.businessId,ownerUserId:objective.ownerUserId,
+      threadId:objective.threadId,mode:"routine",
+      runId:lease.runId,leaseToken:lease.leaseToken,aggregateOnly:true,
+    });
+    expect(sourceContext?.mode).not.toBe("owner");
     expect(args?.toolNames).not.toContain("manage_routine");
     expect(rpc.mock.calls.filter(c=>c[0]==="u4_routine_lease_active").length).toBeGreaterThanOrEqual(2);
     expect(rpc).toHaveBeenCalledWith("u4_publish_objective_report",
