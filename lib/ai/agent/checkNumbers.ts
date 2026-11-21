@@ -24,7 +24,8 @@ const COUNTABLE_FIELDS = new Set(["count","itemCount","quantity","units","totalU
   "missingProductCostCount","drinksNeededPerDay","drinksPerHour","todayDrinks",
   "ordersCount","staffCount","shiftCount","employeesCount","attendanceCount",
   "timecardCount","onClockCount"]);
-const trustedCountKey=(key:string)=>key.includes("calculateResultCount")||
+const trustedCountKey=(key:string)=>key.includes("u3VerifiedCount/")||
+  key.includes("calculateResultCount")||
   COUNTABLE_FIELDS.has(key.split("/").at(-1)??"")||
   COUNTABLE_COLLECTIONS.has((key.split("/").at(-1)??"").replace(/Length$/u,""));
 
@@ -90,6 +91,67 @@ function appendGoalNumericEvidence(
   }
 }
 
+/** Convert a PostgreSQL NUMERIC/INT8 *source receipt* to the checker’s
+ * existing bounded display units. Do not coerce arbitrary numeric strings,
+ * round fractional cents/counts, or accept unsafe IEEE-754 integers. */
+function u3ReceiptNumber(raw:unknown,unit:unknown):
+  {value:number;unit:"cents"|"count"|"bps"|"ratio"}|null{
+ const text=typeof raw==="string"?raw:
+  typeof raw==="number"&&Number.isFinite(raw)?String(raw):"";
+ if(!/^-?(?:0|[1-9][0-9]*)(?:\.[0-9]+)?$/.test(text)||text.length>70)return null;
+ const [integer,fraction=""]=text.split(".");
+ if(unit==="cents"||unit==="count"){
+  if(fraction&&!/^0+$/.test(fraction))return null;
+  const n=BigInt(integer);
+  if(n>BigInt(Number.MAX_SAFE_INTEGER)||n<BigInt(Number.MIN_SAFE_INTEGER))return null;
+  return {value:Number(n),unit};
+ }
+ if(unit!=="percent"&&unit!=="ratio")return null;
+ // The checker is a finite-number verifier. Preserve source decimal precision
+ // at the conversion boundary and refuse values that cannot be represented
+ // within its explicitly bounded percentage/ratio display granularity.
+ const places=unit==="percent"?2:6;
+ if(fraction.length>places&&!/^0+$/.test(fraction.slice(places)))return null;
+ const digits=fraction.slice(0,places).padEnd(places,"0");
+ const base=BigInt(integer)*BigInt(10**places)+
+  BigInt(digits)*(integer.startsWith("-")?-1n:1n);
+ if(base>BigInt(Number.MAX_SAFE_INTEGER)||base<BigInt(Number.MIN_SAFE_INTEGER))return null;
+ const numeric=Number(base)/(10**places);
+ if(!Number.isFinite(numeric))return null;
+ return unit==="percent"?{value:numeric*100,unit:"bps"}:
+  {value:numeric,unit:"ratio"};
+}
+function verifiedU3Evidence(r:AgentToolResult,periodKey:string){
+ const values:NumericEvidence["values"]=[];
+ if(r.source!=="u3_canonical_research"||r.error||
+  r.missing.length>0||r.truncated===true||!Array.isArray(r.rows))return values;
+ const e=r.evidence;
+ if(!e||typeof e!=="object"||Array.isArray(e))return values;
+ const proof=e as Record<string,unknown>;
+ if(proof.scope!=="verified_owner_cafe_lease"||
+  typeof proof.receipt_id!=="string"||
+  !/^[a-f0-9]{8}-[a-f0-9]{4}-[1-8][a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$/i.test(proof.receipt_id)||
+  typeof proof.query_fingerprint!=="string"||
+  !/^[a-f0-9]{64}$/i.test(proof.query_fingerprint)||
+  typeof proof.catalog_version!=="string"||
+  !/^[a-f0-9]{16}$/i.test(proof.catalog_version)||
+  !proof.column_units||typeof proof.column_units!=="object"||
+  Array.isArray(proof.column_units))return values;
+ const units=proof.column_units as Record<string,unknown>;
+ for(const [rowIndex,row] of r.rows.slice(0,100).entries()){
+  if(!row||typeof row!=="object"||Array.isArray(row))continue;
+  for(const [column,raw] of Object.entries(row)){
+   if(!Object.hasOwn(units,column))continue;
+   const accepted=u3ReceiptNumber(raw,units[column]);
+   if(!accepted)continue;
+   const key=periodKey+(accepted.unit==="count"?"u3VerifiedCount/":"u3Receipt/")+
+    proof.receipt_id+"/row:"+rowIndex+"/"+column;
+   values.push({key,value:accepted.value,unit:accepted.unit});
+  }
+ }
+ return values;
+}
+
 /** Collect the complete current observations first. Apply the persistence cap
  * only after collection, prioritizing recent reads and high-value prices. */
 export function compactEvidence(results:readonly AgentToolResult[],limit=100):NumericEvidence[]{
@@ -138,6 +200,11 @@ export function compactEvidence(results:readonly AgentToolResult[],limit=100):Nu
       values.push({key:valueKey,value:/Micros$/.test(key)?v/1000000:/Percent$/.test(key)?v*100:v,unit});
     };
     walk(r,"",0,rootScope);
+    // node-postgres serializes bigint/NUMERIC source values as strings. Only
+    // complete, source-attested SQL receipt values contribute numeric evidence.
+    // The generic object walker intentionally ignores string-valued amounts.
+    const verified=verifiedU3Evidence(r,periodKey);
+    for(const value of verified){values.push(value);invalidatedKeys.push(value.key);}
     // Only declared, typed calculate results count as arithmetic evidence.
     if(r.source==="calculate"&&r.refused===undefined&&
        Array.isArray(r.numberEstimates)&&r.result&&typeof r.result==="object"){
