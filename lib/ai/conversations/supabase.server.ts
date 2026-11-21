@@ -78,6 +78,12 @@ export class SupabaseConversationRepository implements ConversationRepository {
     const { data, error } = await this.client.from("ai_threads")
       .select(THREAD_COLUMNS)
       .eq("business_id", scope.businessId).eq("owner_user_id", scope.ownerUserId)
+      // U4 may create a service-only thread before its first genuinely
+      // useful finding. Do not fill an owner's chat library with an empty
+      // proactive shell. Once a verified report is saved, the existing
+      // ai_messages trigger advances last_message_at and the thread appears.
+      // Null-titled owner-created drafts remain visible.
+      .or('last_message_at.not.is.null,title.is.null,title.neq."Supervisor proactive review"')
       .order("updated_at", { ascending: false }).order("id", { ascending: false })
       .range(offset, offset + THREAD_PAGE_SIZE);
     if (error) throw error;
