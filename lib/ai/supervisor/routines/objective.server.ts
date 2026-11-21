@@ -222,9 +222,11 @@ export async function executeClaimedObjective(db:SupabaseClient,params:{
   await assertLease();
   await assertCafeAiAccess(routine.businessId);
   const proof={sources:verified.observedToolNames.map(name=>({
-    source:"registered_cafe_tool",identifier:name,
-    observedAt:identity.asOf,
+    source:"cafe_state" as const,identifier:name,
+    asOf:identity.asOf,
   })),sourceCount:verified.sourceCount,
+    quality:verified.missing.length||turn.status.status!=="complete"?
+      "partial" as const:"verified" as const,
     missing:verified.missing,externalEffects:"not_attempted"};
   const publish=async()=>{
     const {data,error}=await db.rpc("u4_publish_objective_report",{
