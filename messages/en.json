@@ -1,4 +1,20 @@
 {
+    "CrewSelfService": {
+        "title": "My schedule, hours and breaks",
+        "privateOnly": "Only your own linked, recorded work information is shown. Your café owner can review work messages you send to Supervisor.",
+        "publishedShifts": "My upcoming published shifts",
+        "noPublishedShifts": "No upcoming published shifts were found for your linked employee record.",
+        "overnight": "(ends next day)",
+        "recordedHours": "My recorded hours (last 30 days)",
+        "hoursNote": "Calculated from linked recorded clock-in/out and recorded unpaid breaks, not finalized payroll. Overnight hours are grouped by the day you clocked in.",
+        "noLinkedTimecards": "No linked recorded timecards were found. This does not mean no hours were worked.",
+        "openTimecard": "Clock-out not recorded; hours are not verified",
+        "hoursUnknown": "Recorded times or break details are incomplete; hours are not verified",
+        "hours": "recorded hours",
+        "breakNotices": "My recorded break notices",
+        "noBreakAlerts": "No open break discrepancies are recorded here. This does not confirm that all breaks were taken.",
+        "unavailable": "My personal schedule, hours or break records are temporarily unavailable. You can still send work replies and reports."
+    },
     "SupervisorMandateCenter": {
         "oneTimeTitle": "Individual action approvals",
         "oneTimeEmpty": "No individual action is currently waiting for approval in this conversation.",

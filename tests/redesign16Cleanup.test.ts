@@ -189,7 +189,27 @@ const approvedTask14eAddCostKeys=["statementCashConfirm","statementCashDated","s
 const approvedTask14eFinanceKeys=["heading","reverse","allocate","allocationRecorded","supplierInvoice","revision","invoiceClaim","transaction","closingBalance","statementRow","originalRow","reversedLink","allocationAmount","allocationNotice","confirmLink","decline","checkLink","linkError","billHeading","billRecorded","payee","reference","issued","due","amount","unknown","billNotice","confirmBill","checkBill","billError"] as const;
 const approvedTask14eSet=new Set([...approvedTask14eAddCostKeys.map(key=>"AddCost."+key),...approvedTask14eFinanceKeys.map(key=>"FinancialEvidenceApproval."+key)]);
 
+// PR #550: the owner approved employee-only personal schedule, recorded hours,
+// and break notices in the existing /crew screen. Keep this new English-only
+// namespace pinned; do not allow unreviewed new keys or non-English additions.
+const approvedCrewSelfServiceKeys=[
+ "title","privateOnly","publishedShifts","noPublishedShifts","overnight",
+ "recordedHours","hoursNote","noLinkedTimecards","openTimecard","hoursUnknown",
+ "hours","breakNotices","noBreakAlerts","unavailable",
+] as const;
+const approvedCrewSelfServiceSet=new Set(approvedCrewSelfServiceKeys.map(key=>"CrewSelfService."+key));
+
+
+
 describe("redesign 16 cleanup integration", () => {
+  it("pins new employee-only English copy to the approved personal-access contract",()=>{
+    const en=localeMessages("en"),es=localeMessages("es"),ar=localeMessages("ar");
+    expect(Object.keys(en.CrewSelfService??{}).sort()).toEqual([...approvedCrewSelfServiceKeys].sort());
+    expect(es.CrewSelfService).toBeUndefined();expect(ar.CrewSelfService).toBeUndefined();
+    for(const key of approvedCrewSelfServiceKeys)
+      expect(en.CrewSelfService[key].trim().length).toBeGreaterThan(0);
+  });
+
   it("pins the exact U4 routine strings without widening older English-only exemptions",()=>{
     const en=localeMessages("en"),es=localeMessages("es"),ar=localeMessages("ar");
     expect(Object.keys(en.SupervisorRoutines??{}).sort()).toEqual([...approvedU4RoutineKeys].sort());
@@ -230,7 +250,7 @@ describe("redesign 16 cleanup integration", () => {
       return Object.entries(messages)
         .flatMap(([namespace, values]) => Object.keys(values).map(key => `${namespace}.${key}`))
         .filter(key => !englishOnly.test(key) && !approvedTask14bSet.has(key)
-          && !approvedTask14cSet.has(key) && !approvedTask15bSet.has(key) && !approvedTask16aSet.has(key) && !approvedU4RoutineSet.has(key) && !approvedTask16cSet.has(key) && !approvedTask14eSet.has(key) && !task16e.has(key)
+          && !approvedTask14cSet.has(key) && !approvedTask15bSet.has(key) && !approvedTask16aSet.has(key) && !approvedU4RoutineSet.has(key) && !approvedTask16cSet.has(key) && !approvedTask14eSet.has(key) && !approvedCrewSelfServiceSet.has(key) && !task16e.has(key)
           && !["runAwaitingOwner","runAwaitingOwnerNext","runCancelled","runRetrying","cancelAction","cancelPending","cancelUncertain","cancelCompleted","cancelFailed"].some(name=>key==="SupervisorDurableWork."+name)
           && !/^SupervisorUsage\.(?:help|max|month|proactive|requests|title|unavailable)$/.test(key))
         .sort();

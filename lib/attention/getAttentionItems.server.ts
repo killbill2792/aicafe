@@ -23,6 +23,8 @@ import { homeAttentionHref, homeShiftHref, showAlertInHome, type HomeAttentionIt
 import { missingCostDestination } from "@/lib/expenses/expectedCosts";
 import { buildOperationsTeamViewModel, projectOperatingTasks } from "@/lib/viewmodels/operationsTeam";
 import {readPersistedOperatingTasks} from "@/lib/data/operatingTasks";
+import {staffResponseNoticePreviews} from "@/lib/staffCommunication/channel.server";
+import {createServerSupabaseClient} from "@/lib/supabase/server";
 import {isSupabaseConfigured} from "@/lib/supabase/client";
 import { priceReviewDirection, priceReviewHref } from "@/lib/viewmodels/priceReviewTask";
 import { EXPENSE_CATEGORY_CODES, RUNNING_COST_CODES, type ExpenseCategoryCode } from "@/lib/constants";
@@ -76,6 +78,7 @@ function operatingTaskHref(task: OperatingTask): string {
       return "/?thread="+encodeURIComponent(thread)+"&experiment="+encodeURIComponent(proposal);
     return "/operations?agent=alex&status=needs_you&task="+encodeURIComponent(task.id);
   }
+  if (task.entityType === "staff_message") return "/staff";
   if (task.kind === "price_review" && task.entityId) return priceReviewHref(task.entityId);
   if (task.kind === "staff_coverage") {
     const shiftDate = task.payload.shiftDate ?? task.payload.businessDate;
@@ -165,12 +168,29 @@ export async function readInbox(args:AttentionArgs={}):Promise<Inbox>{
   const team=projectOperatingTasks(settleInboxTasks(
     stored.filter(task=>retainActionablePrioritySource(task)||isVerifiedInvestigationReport(task)),
     derived,new Date(),today,new Set(menu.filter(item=>item.pricing?.status==="KEEP_CURRENT_PRICE").map(item=>item.id))));
+  const staffTaskIds=stored.filter(task=>task.entityType==="staff_message"&&
+    typeof task.entityId==="string").map(task=>task.entityId!);
+  let staffNoticeTitles=new Map<string,string>();
+  if(staffTaskIds.length&&isSupabaseConfigured()){
+    try{
+      staffNoticeTitles=await staffResponseNoticePreviews(
+       scope?.client??await createServerSupabaseClient(),snapshot.business.id,staffTaskIds);
+    }catch{
+      // A failed optional preview must not hide or falsely resolve the
+      // already-committed owner notification. Its generic title remains.
+    }
+  }
   const agentNames: Record<AgentId, string> = { alex: "Alex", olivia: "Olivia", maya: "Maya", leo: "Leo" };
   const taskPreview = (task: OperatingTask): HomeTaskPreviewItem => {
     const itemName = String(task.payload.itemName ?? "").replace(" · ", " ");
     let title: string;
 
-    if(task.kind==="commitment"||isPriorityNoticeTask(task)){
+    if(task.entityType==="staff_message"){
+      // Every employee reply has an existing transactional inbox receipt.
+      // Keep its short, truthful title and link to the complete owner-only
+      // Staff conversation; never route a staff report to missing-costs.
+      title=(staffNoticeTitles.get(task.entityId??"")??String(task.payload.title??"Employee update received")).slice(0,200);
+    }else if(task.kind==="commitment"||isPriorityNoticeTask(task)){
       title=String(task.payload.title??"");
     }else if(task.kind==="maintenance_issue"){
       title=enMessages.Maintenance.caseTitle+": "+String(task.payload.equipmentLabel??"");

@@ -1,10 +1,11 @@
 import {describe,it,expect,vi,beforeEach} from "vitest";
 const mocks=vi.hoisted(()=>({
- inbox:vi.fn(),reply:vi.fn(),link:vi.fn(),links:vi.fn(),ownerSend:vi.fn(),assign:vi.fn(),
+ inbox:vi.fn(),reply:vi.fn(),link:vi.fn(),createLogin:vi.fn(),links:vi.fn(),history:vi.fn(),ownerSend:vi.fn(),assign:vi.fn(),
 }));
 vi.mock("@/lib/staffCommunication/channel.server",()=>({
  getStaffInbox:mocks.inbox,submitStaffReply:mocks.reply,
- ownerStaffLoginList:mocks.links,ownerLinkExistingLogin:mocks.link,
+ ownerStaffLoginList:mocks.links,ownerLinkExistingLogin:mocks.link,ownerCreateEmployeeLogin:mocks.createLogin,
+ readOwnerStaffHistory:mocks.history,
  sendOwnerStaffMessage:mocks.ownerSend,assignOwnerStaffWork:mocks.assign,
  StaffChannelError:class StaffChannelError extends Error{
   constructor(public code:string){super(code);}
@@ -13,6 +14,7 @@ vi.mock("@/lib/staffCommunication/channel.server",()=>({
 import {StaffChannelError} from "@/lib/staffCommunication/channel.server";
 import {GET as get,POST as post} from "./route";
 import {GET as getLinks,POST as postLinks} from "./link/route";
+import {GET as getHistory} from "./owner-history/route";
 import {POST as ownerPost} from "./owner-message/route";
 import {POST as ownerAssign} from "./owner-assignment/route";
 const origin="https://example.test";
@@ -28,10 +30,12 @@ beforeEach(()=>{
  Object.values(mocks).forEach(x=>x.mockReset());
  mocks.reply.mockResolvedValue({id:"33333333-3333-4333-8333-333333333333",replayed:false});
  mocks.link.mockResolvedValue({linked:true});
+ mocks.createLogin.mockResolvedValue({linked:true,loginPath:"/crew/login"});
  mocks.ownerSend.mockResolvedValue({id:"33333333-3333-4333-8333-333333333333",replayed:false});
  mocks.assign.mockResolvedValue({id:"44444444-4444-4444-8444-444444444444",replayed:false});
  mocks.links.mockResolvedValue([]);
  mocks.inbox.mockResolvedValue({name:"Ava",requests:[],messages:[]});
+ mocks.history.mockResolvedValue({events:[],nextCursor:null});
 });
 describe("restricted staff communication APIs",()=>{
  it("posts structured plus free-text as one scoped submission",async()=>{
@@ -101,6 +105,34 @@ describe("restricted staff communication APIs",()=>{
   const uncertain=await ownerPost(req(message));
   expect(uncertain.status).toBe(409);
   expect(await uncertain.json()).toEqual({error:"conflict"});
+ });
+ it("owner-only staff history rejects unknown query parameters and forwards validated cursors",async()=>{
+  const noParams=await getHistory(new Request(origin+"/api/staff-channel/owner-history"));
+  expect(noParams.status).toBe(200);
+  expect(mocks.history).toHaveBeenCalledExactlyOnceWith(null);
+  const cursor={at:"2026-11-21T17:00:00.000Z",id:reply.requestId};
+  const params=new URLSearchParams(cursor);
+  const next=await getHistory(new Request(origin+"/api/staff-channel/owner-history?"+params));
+  expect(next.status).toBe(200);
+  expect(mocks.history).toHaveBeenLastCalledWith(cursor);
+  const invalid=await getHistory(new Request(origin+"/api/staff-channel/owner-history?employeeId="+reply.requestId));
+  expect(invalid.status).toBe(400);
+  expect(mocks.history).toHaveBeenCalledTimes(2);
+  mocks.history.mockRejectedValueOnce(new StaffChannelError("unauthorized"));
+  expect((await getHistory(new Request(origin+"/api/staff-channel/owner-history"))).status).toBe(403);
+ });
+ it("owner-created employee password accounts require same-origin owner API and never return secrets",async()=>{
+  const input={action:"create",employeeId:reply.requestId,email:"worker@example.test",
+   password:"a-long-one-time-secret"};
+  const created=await postLinks(req(input));
+  expect(created.status).toBe(200);
+  expect(await created.json()).toEqual({linked:true,loginPath:"/crew/login"});
+  expect(mocks.createLogin).toHaveBeenCalledExactlyOnceWith({
+   employeeId:reply.requestId,email:"worker@example.test",password:input.password});
+  expect((await postLinks(req(input,{Origin:"https://attacker.test"}))).status).toBe(403);
+  expect(mocks.createLogin).toHaveBeenCalledOnce();
+  mocks.createLogin.mockRejectedValueOnce(new StaffChannelError("conflict"));
+  expect((await postLinks(req(input))).status).toBe(409);
  });
  it("owner link API reuses owner authorization service and checks origin",async()=>{
   expect((await getLinks()).status).toBe(200);
