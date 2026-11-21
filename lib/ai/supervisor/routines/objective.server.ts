@@ -10,7 +10,8 @@ import {readSavedEventTimeline} from "@/lib/data/cafeEvents.server";
 import {notifyOwner} from "@/lib/operating/notifyOwner.server";
 import {investigationReadTools,unsupportedExternalEffectClaim} from "./investigation";
 import {meteredInvestigationProvider} from "./investigationUsage.server";
-import type {ClaimedRoutine,RoutineRecord} from "./contracts";
+import type {RoutineRecord} from "./contracts";
+import type {ClaimedRoutine} from "./repository.server";
 
 /** A service-claimed routine is NOT a current owner instruction. No effects,
  * new routine management, incident-specific claim readers or unscoped SQL.
