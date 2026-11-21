@@ -78,11 +78,12 @@ test("@home Task16A authenticated mobile owner views library/routines/permission
     console.info("[Task16A E2E] saved synthetic owner-scoped records");
     const page=await ctx.newPage();
     await login(page,owner);console.info("[Task16A E2E] first owner signed in");
-    let transientReceiptRead=false;
+    let receiptReadAttempts=0;
     await page.route("**/api/ai/supervisor/routines",route=>{
-      if(route.request().method()==="GET"&&!transientReceiptRead){
-        transientReceiptRead=true;
-        return route.fulfill({status:503,contentType:"application/json",body:'{"error":"temporary"}'});
+      if(route.request().method()==="GET"){
+        receiptReadAttempts++;
+        if(receiptReadAttempts===1)
+          return route.fulfill({status:503,contentType:"application/json",body:'{"error":"temporary"}'});
       }
       return route.continue();
     });
@@ -117,8 +118,8 @@ test("@home Task16A authenticated mobile owner views library/routines/permission
     expect(savedRoutines.routines).toEqual(expect.arrayContaining([
       expect.objectContaining({id:id.routine,revision:1,status:"active"}),
     ]));
+    await expect.poll(()=>receiptReadAttempts,{timeout:12000}).toBeGreaterThanOrEqual(2);
     await expect(editInChat).toBeEnabled({timeout:12000});
-    expect(transientReceiptRead).toBe(true);
     await page.unroute("**/api/ai/supervisor/routines");
     await editInChat.click();
     await expect(page.locator("#supervisor-home-composer")).toHaveValue(
