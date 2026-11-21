@@ -54,7 +54,7 @@ export function observedObjectiveEvidence(result:AgentToolResult):boolean{
 
 const digest=(value:unknown)=>{
   let text="";
-  try{text=JSON.stringify(value).slice(0,16384);}catch{text="unserializable";}
+  try{text=JSON.stringify(value);}catch{text="unserializable";}
   return createHash("sha256").update(text).digest("hex");
 };
 /** Checkpoints belong to the original durable occurrence. They contain ONLY
