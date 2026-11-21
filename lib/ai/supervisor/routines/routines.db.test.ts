@@ -211,7 +211,7 @@ describe("U4 migrated model-objective and autonomous Watch SQL contract",()=>{
       expect(clarified).toMatchObject({
         id:clarifiedRoutineId,execution_mode:"objective",
         objective_source_message_id:ownerMessageId,
-        objective_text:original+"\\nOwner schedule clarification: Every Monday at nine.",
+        objective_text:original+"\nOwner schedule clarification: Every Monday at nine.",
       });
       expect((await call(owner,"u4_create_objective_routine",clarifiedArgs)).id)
         .toBe(clarifiedRoutineId);
