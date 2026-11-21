@@ -77,7 +77,7 @@ export function agentReplyPayload(turn: AgentTurn) {
   const proposalIds=[...new Set(turn.results.flatMap(result=>
     (result.source==="price_change_proposal"||result.source==="staff_proposal"||result.source==="purchase_proposal"||
       result.source==="supplier_purchase_proposal"||result.source==="goal_proposal"||result.source==="event_plan_proposal"||
-      result.source==="gmail_proposal")&&
+      result.source==="gmail_proposal"||result.source==="staff_question_proposal")&&
       (result.source==="purchase_proposal"||result.missing.length===0)&&result.draft===true&&
       result.saved===false&&
       typeof result.proposalId==="string"&&
