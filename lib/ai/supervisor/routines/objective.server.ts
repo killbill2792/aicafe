@@ -39,7 +39,11 @@ export const watchReadTools:readonly AgentToolName[]=objectiveReadTools.filter(n
 
 const meta=new Set(["source","period","missing","agentId","error","dataNotes",
   "dataNote","href","status","quality","truncated","explain","message",
-  "coverageLabel","currency","unit","readTime","reason"]);
+  "coverageLabel","coverageFallback","currency","unit","readTime","readAt",
+  "lastUpdated","freshnessLabel","reason","available","empty","rowCount",
+  "sourceCount","sourceMix","scope","scopeWarning","provisional","stale",
+  "estimated","hasIncomplete","currentDayIncomplete","todayImported",
+  "lastFullDay","lastFullDayTotals","quantitySemantics"]);
 /** A registered tool name is never evidence by itself; require an actual
  * observed source fact or a real observed empty collection explicitly returned
  * without a missing/error/truncated flag. No second business calculation. */
