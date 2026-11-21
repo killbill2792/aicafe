@@ -45,13 +45,13 @@ insert into public.supervisor_investigations( business_id,owner_user_id,thread_i
  'identifier','staff-question-fixture:'||:'task_uuid'))))
  returning id as proposal_card_message \gset
 select set_config('test.staffquestion.card',:'proposal_card_message',true);
-do $
+do $$
 begin
  if not exists(select 1 from public.ai_messages m where m.id=current_setting('test.staffquestion.card')::uuid
   and m.structured_content @> jsonb_build_array(jsonb_build_object('type','proposal_card',
    'proposalId',current_setting('test.staffquestion.rejected_proposal')))) then
   raise exception 'proactive report failed to render actual owner approval card';end if;
-end $;
+end $$;
 do $$
 declare b uuid:=current_setting('test.staffquestion.biz')::uuid; o uuid:=current_setting('test.staffquestion.owner')::uuid; th uuid:=current_setting('test.staffquestion.thread')::uuid; p uuid:=current_setting('test.staffquestion.proposal')::uuid;
 begin
@@ -90,12 +90,17 @@ begin
  if not exists(select 1 from public.supervisor_proposals where id=current_setting('test.staffquestion.proposal')::uuid and status='committed')
    then raise exception 'uncertain receipt was not safely reconciled';end if;
 end $$;
-select public.supervisor_answer_staff_question(:'biz',:'owner_id',:'thread_id', :'owner_proposal',1,'There are approximately 40 cups remaining.');
+select gen_random_uuid() as owner_answer_message \gset
+insert into public.ai_messages(id,business_id,thread_id,owner_user_id,author_user_id,role,content_type,text_content,client_message_id)
+ values(:'owner_answer_message',:'biz',:'thread_id',:'owner_id',:'owner_id','owner','text',
+  'There are approximately 40 cups remaining.',gen_random_uuid());
+select public.supervisor_answer_staff_question(:'biz',:'owner_id',:'thread_id',
+ :'owner_proposal',1,:'owner_answer_message');
 do $$
 begin
  if not exists(select 1 from public.supervisor_proposals where id=current_setting('test.staffquestion.owner_proposal')::uuid
   and status='rejected' and baseline->'ownerAnswer'->>'text'=
-    'There are approximately 40 cups remaining.') then raise exception 'owner answer not durable';end if;
+    'There are approximately 40 cups remaining.' and baseline->'ownerAnswer'->>'ownerMessageId' is not null) then raise exception 'owner answer not durable';end if;
  if not exists(select 1 from public.operating_tasks where id='staff-question-owner-answer:'||current_setting('test.staffquestion.owner_proposal')
   and evidence @> '[{"source":"owner_report"}]'::jsonb) then
   raise exception 'owner answer did not enter existing investigation queue';end if;
@@ -106,11 +111,11 @@ do $$
 begin
  begin
   perform public.supervisor_answer_staff_question(current_setting('test.staffquestion.biz')::uuid,current_setting('test.staffquestion.owner')::uuid,current_setting('test.staffquestion.thread')::uuid,
-    current_setting('test.staffquestion.owner_proposal')::uuid,1,'Changed my mind'); raise exception 'owner answer replay was accepted';
+    current_setting('test.staffquestion.owner_proposal')::uuid,1,:'owner_answer_message'); raise exception 'owner answer replay was accepted';
  exception when sqlstate '40900' then null;end;
  begin
   perform public.supervisor_answer_staff_question(current_setting('test.staffquestion.biz')::uuid,current_setting('test.staffquestion.outsider')::uuid,current_setting('test.staffquestion.thread')::uuid,
-    current_setting('test.staffquestion.rejected_proposal')::uuid,1,'Other cafe answer'); raise exception 'cross-cafe owner answer was accepted';
+    current_setting('test.staffquestion.rejected_proposal')::uuid,1,:'owner_answer_message'); raise exception 'cross-cafe owner answer was accepted';
  exception when sqlstate '40900' then null;end;
 end $$;
 update public.staff_communication_requests set due_at=statement_timestamp()-interval '1 second' where id=:'request_id';
