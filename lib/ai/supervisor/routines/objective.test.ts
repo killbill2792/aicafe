@@ -79,6 +79,8 @@ describe("U4 objective evidence and model autonomy",()=>{
     expect(objectiveReadTools).toContain("get_sales");
     expect(objectiveReadTools).toContain("get_inventory");
     expect(objectiveReadTools).toContain("get_events");
+    expect(objectiveReadTools).toContain("get_staff_messages");
+    expect(watchReadTools).not.toContain("get_staff_messages");
     expect(objectiveReadTools).toContain("describe_data");
     expect(objectiveReadTools).toContain("query_data");
     expect(watchReadTools).toContain("describe_data");
@@ -299,6 +301,8 @@ describe("U4 scheduled model execution persists only verified outcomes",()=>{
     expect(args?.toolNames).toContain("get_inventory");
     expect(args?.toolNames).toContain("describe_data");
     expect(args?.toolNames).toContain("query_data");
+    expect(args?.context.staffMessages).toBeDefined();
+    expect(args?.context.staffCoordinationRead).toBeDefined();
     const sourceContext=await args?.context.canonicalData?.();
     expect(sourceContext).toMatchObject({
       businessId:objective.businessId,ownerUserId:objective.ownerUserId,
@@ -334,6 +338,10 @@ describe("U4 scheduled model execution persists only verified outcomes",()=>{
       provider:(async function*(){}) as never,
     });
     expect(result.attention).toBe("none");
+    const watchTurn=vi.mocked(runAgentTurn).mock.calls.at(-1)?.[0];
+    expect(watchTurn?.context.staffMessages).toBeUndefined();
+    expect(watchTurn?.context.staffCoordinationRead).toBeUndefined();
+    expect(watchTurn?.toolNames).not.toContain("get_staff_messages");
     expect(notifyOwner).not.toHaveBeenCalled();
     expect(rpc).toHaveBeenCalledWith("u4_publish_objective_report",
       expect.objectContaining({p_attention:"none"}));
