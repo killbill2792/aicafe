@@ -26,9 +26,10 @@ async function assertAccessibleControls(page){
 }
 
 test("@home Task16A authenticated mobile owner views library/routines/permissions and revokes a scoped mandate",async({browser})=>{
-  test.setTimeout(120_000);
+  // Two authenticated cafés, multiple database mutations, and two full browser reloads.
+  test.setTimeout(220_000);
   const owner=seededCafe(0),foreign=seededCafe(1);
-  const id={thread:randomUUID(),routine:randomUUID(),active:randomUUID(),old:randomUUID()};
+  const id={thread:randomUUID(),watchShell:randomUUID(),routine:randomUUID(),active:randomUUID(),old:randomUUID()};
   const db=new pg.Client({host:"127.0.0.1",port:54322,database:"postgres",
     user:"postgres",password:"postgres",connectionTimeoutMillis:5000});
   const ctx=await browser.newContext({baseURL:"http://127.0.0.1:3000",serviceWorkers:"block"});
@@ -38,6 +39,10 @@ test("@home Task16A authenticated mobile owner views library/routines/permission
     await db.connect();connected=true;console.info("[Task16A E2E] connected disposable database");
     await db.query("insert into public.ai_threads(id,business_id,owner_user_id,client_request_id,title) values($1,$2,$3,$4,$5)",
       [id.thread,owner.businessId,owner.owner.userId,randomUUID(),"Task16A approval library"]);
+    // The first unsolicited Watch needs a real service-only thread. Do not
+    // show an empty background shell in the ordinary owner chat library.
+    await db.query("insert into public.ai_threads(id,business_id,owner_user_id,client_request_id,title) values($1,$2,$3,$4,'Supervisor proactive review')",
+      [id.watchShell,owner.businessId,owner.owner.userId,randomUUID()]);
     // A disposable saved mandate fixture proves the real owner/API/RLS/UI path,
     // NOT phone OTP delivery, which needs its own provider-backed acceptance.
     await db.query("insert into public.supervisor_mandates("+
@@ -56,12 +61,78 @@ test("@home Task16A authenticated mobile owner views library/routines/permission
       " values($1,$2,$3,$4,'Daily source check','daily','{}'::integer[],'08:00',"+
       "(select timezone from public.businesses where id=$2),'active')",
       [id.routine,owner.businessId,owner.owner.userId,id.thread]);
+    // No provider call: this is a fixture for a previously verified
+    // manage_routine receipt, not evidence that Luna ran. It must hydrate as
+    // ONE compact in-chat card with the same canonical routine/revision.
+    await db.query("insert into public.ai_messages("+
+      "business_id,thread_id,owner_user_id,role,content_type,"+
+      "structured_content,grounding) values($1,$2,$3,'supervisor',"+
+      "'blocks',$4::jsonb,$5::jsonb)",[
+        owner.businessId,id.thread,owner.owner.userId,
+        JSON.stringify([{type:"text",text:"Daily source check saved."},
+          {type:"routine_card",routineId:id.routine,title:"Daily source check",
+            cadence:"daily",weekdays:[],localTime:"08:00",
+            timezone:owner.timezone,status:"active",revision:1}]),
+        JSON.stringify({status:"verified",intent:"operating_tasks",evidence:[]}),
+      ]);
 
     console.info("[Task16A E2E] saved synthetic owner-scoped records");
     const page=await ctx.newPage();
     await login(page,owner);console.info("[Task16A E2E] first owner signed in");
+    let receiptReadAttempts=0;
+    await page.route("**/api/ai/supervisor/routines",route=>{
+      if(route.request().method()==="GET"){
+        receiptReadAttempts++;
+        if(receiptReadAttempts===1)
+          return route.fulfill({status:503,contentType:"application/json",body:'{"error":"temporary"}'});
+      }
+      return route.continue();
+    });
     await openOwnedPage(page,owner,"?thread="+id.thread);console.info("[Task16A E2E] opened real Supervisor chat");
+    const visibleThreads=async()=>{
+      const response=await ctx.request.get("/api/ai/threads");
+      expect(response.status()).toBe(200);
+      return (await response.json()).items.map((item)=>item.id);
+    };
+    expect(await visibleThreads()).not.toContain(id.watchShell);
+    // A genuine saved message makes the proactive thread visible through the
+    // same authenticated API; neither UI state nor a fabricated alert suffices.
+    await db.query("insert into public.ai_messages(business_id,thread_id,owner_user_id,role,content_type,structured_content,grounding) values($1,$2,$3,'supervisor','blocks',$4::jsonb,$5::jsonb)",
+      [owner.businessId,id.watchShell,owner.owner.userId,
+        JSON.stringify([{type:"text",text:"A report was saved."}]),
+        JSON.stringify({status:"verified",intent:"operating_tasks",evidence:[]})]);
+    await expect.poll(visibleThreads,{timeout:12000}).toContain(id.watchShell);
     await page.setViewportSize({width:390,height:844});
+    const routineCard=page.locator('[data-routine-card="'+id.routine+'"]');
+    await expect(routineCard).toBeVisible({timeout:30_000});
+    await expect(routineCard.getByRole("status")).toHaveText("Routine created");
+    // Creation stays a small line; owner can reveal the schedule/actions.
+    await expect(routineCard.locator("details")).not.toHaveAttribute("open","");
+    await expect(routineCard).toContainText("Daily source check");
+    await expect(page.getByText("Daily source check saved.",{exact:true})).toHaveCount(1);
+    await expect(routineCard.getByLabel("Routine actions: Daily source check")).toBeVisible();
+    await routineCard.getByLabel("Routine actions: Daily source check").click();
+    const editInChat=routineCard.getByRole("button",{name:"Edit in chat",exact:true});
+    // A draft prefill does not invoke the model, so even this no-provider
+    // browser MUST prepare a real ID/revision edit. Failure to hydrate the
+    // owner-scoped routine is a product bug, not an expected provider limit.
+    const routineRead=await ctx.request.get("/api/ai/supervisor/routines");
+    expect(routineRead.status()).toBe(200);
+    const savedRoutines=await routineRead.json();
+    expect(savedRoutines.routines).toEqual(expect.arrayContaining([
+      expect.objectContaining({id:id.routine,revision:1,status:"active"}),
+    ]));
+    await expect.poll(()=>receiptReadAttempts,{timeout:12000}).toBeGreaterThanOrEqual(2);
+    await expect(editInChat).toBeEnabled({timeout:12000});
+    await page.unroute("**/api/ai/supervisor/routines");
+    await editInChat.click();
+    await expect(page.locator("#supervisor-home-composer")).toHaveValue(
+      new RegExp(id.routine));
+    await expect(page.locator("#supervisor-home-composer")).toHaveValue(/revision 1/);
+    // A provider-disabled composer can still display the inert draft. Do not
+    // fake a completed model edit by typing/sending through a disabled field.
+    // Prove the compact chat does not regress the mobile viewport.
+    expect(await page.evaluate(()=>document.documentElement.scrollWidth)).toBeLessThanOrEqual(391);
     const controlsButton=page.getByRole("button",{name:"Library, routines and permissions"});
     await expect(controlsButton).toBeVisible({timeout:20_000});
     await expect(controlsButton).toBeEnabled({timeout:10_000});
@@ -80,9 +151,39 @@ test("@home Task16A authenticated mobile owner views library/routines/permission
     await expect(panel.getByText("Checking saved permissions and routines")).toHaveCount(0);
     await assertAccessibleControls(page);
     console.info("[Task16A E2E] canonical routine remains after active-tab reselect");
-    await page.getByRole("dialog",{name:"Supervisor controls"}).getByRole("button",{name:"Open routine conversation",exact:true}).click();
+    // U4: the compact disclosure is a true owner-scoped route/SQL mutation,
+    // not a client-only toggle. Verify SQL revisions and persisted status.
+    await panel.getByLabel("Routine actions: Daily source check").click();
+    await panel.getByRole("button",{name:"Pause",exact:true}).click();
+    // A label alone is not a receipt. Wait for actual atomic SQL CAS, then
+    // demand the UI reflects that same persisted revision/state.
+    const savedState=async()=>({
+      status:(await db.query("select status,revision from public.supervisor_routines where business_id=$1 and id=$2",
+        [owner.businessId,id.routine])).rows.map(row=>({
+          status:row.status,revision:Number(row.revision),
+        })),
+    });
+    await expect.poll(savedState,{timeout:15000}).toEqual({
+      status:[{status:"paused",revision:2}],
+    });
+    await expect(panel.locator("article").filter({hasText:"Daily source check"})).toContainText("Paused");
+    await panel.getByRole("button",{name:"Resume",exact:true}).click();
+    await expect.poll(savedState,{timeout:15000}).toEqual({
+      status:[{status:"active",revision:3}],
+    });
+    await expect(panel.locator("article").filter({hasText:"Daily source check"})).toContainText("Active");
+    const stale=await ctx.request.post("/api/ai/supervisor/routines",{
+      headers:{origin:"http://127.0.0.1:3000"},
+      data:{action:"pause",routineId:id.routine,revision:1},
+    });
+    expect(stale.status()).not.toBe(200);
+    // Drawer edit is another inert draft, not a model execution. It MUST
+    // use the updated DB revision rather than a historical card's old one.
+    await panel.getByRole("button",{name:"Edit in chat",exact:true}).click();
     await expect(panel).toHaveCount(0);
-    await expect(page.locator("#supervisor-home-composer")).toBeVisible();
+    await expect(page.locator("#supervisor-home-composer")).toHaveValue(
+      new RegExp(id.routine));
+    await expect(page.locator("#supervisor-home-composer")).toHaveValue(/revision 3/);
     await controlsButton.click();
     await panel.getByRole("button",{name:"Permissions",exact:true}).click();
     await expect(panel.getByText("Goal tracking",{exact:true}).first()).toBeVisible();
@@ -139,14 +240,66 @@ test("@home Task16A authenticated mobile owner views library/routines/permission
     await foreignPanel.getByRole("button",{name:"Permissions",exact:true}).click();
     await expect(foreignPanel.getByText("Task16A approval library")).toHaveCount(0);console.info("[Task16A E2E] other-café isolation proved");
 
+    // U4-10: Return through a FRESH authenticated owner page after the
+    // foreign-café isolation journey. The earlier page has pending client
+    // navigation and must not be mistaken for an authoritative owner read.
+    // Actual SQL revision 3, confirmed browser deletion, revocation, stale
+    // replay denial and post-reload persistence are still required.
+    const deletionPage=await ctx.newPage();
+    await openOwnedPage(deletionPage,owner,"?thread="+id.thread);
+    await deletionPage.setViewportSize({width:390,height:844});
+    await deletionPage.getByRole("button",{name:"Library, routines and permissions"}).click();
+    const deletionPanel=deletionPage.getByRole("dialog",{name:"Supervisor controls"});
+    await expect(deletionPanel).toBeVisible();
+    await deletionPanel.getByRole("button",{name:"Routines",exact:true}).click();
+    await expect(deletionPanel.getByText("Daily source check")).toBeVisible();
+    await expect.poll(savedState,{timeout:15_000}).toEqual({
+      status:[{status:"active",revision:3}],
+    });
+    await deletionPanel.getByLabel("Routine actions: Daily source check").click();
+    deletionPage.once("dialog",dialog=>void dialog.accept());
+    await deletionPanel.getByRole("button",{name:"Delete",exact:true}).click();
+    await expect.poll(savedState,{timeout:15_000}).toEqual({
+      status:[{status:"revoked",revision:4}],
+    });
+    await expect(deletionPanel.getByText("Daily source check")).toHaveCount(0);
+    // The existing persisted mutation route, not a fake chat bubble, confirms deletion.
+    await expect(deletionPanel.getByText("Routine deleted.",{exact:true})).toBeVisible();
+    const staleDelete=await ctx.request.post("/api/ai/supervisor/routines",{
+      headers:{origin:"http://127.0.0.1:3000"},
+      data:{action:"delete",routineId:id.routine,revision:3},
+    });
+    expect(staleDelete.status()).not.toBe(200);
+    console.info("[U4 E2E] SQL revocation revision 4 and stale delete rejection verified");
+    // Verify post-reload absence in an independent signed-in page on the
+    // ordinary owner route. Reusing a page whose thread navigation is still
+    // pending can leave the drawer mount unhydrated and a click inert.
+    const persistedVerifyPage=await ctx.newPage();
+    await openOwnedPage(persistedVerifyPage,owner,"");
+    await persistedVerifyPage.reload({waitUntil:"domcontentloaded"});
+    const reopenedControls=persistedVerifyPage.getByRole("button",
+      {name:"Library, routines and permissions"});
+    await expect.poll(()=>reopenedControls.evaluate(button=>
+      Object.getOwnPropertyNames(button).some(key=>
+        key.startsWith("__reactProps$")&&typeof button[key]?.onClick==="function")),
+    {timeout:30_000}).toBe(true);
+    await reopenedControls.click();
+    const afterReload=persistedVerifyPage.getByRole("dialog",{name:"Supervisor controls"});
+    await expect(afterReload).toBeVisible({timeout:20_000});
+    await afterReload.getByRole("button",{name:"Routines",exact:true}).click();
+    await expect(afterReload.getByText("Daily source check")).toHaveCount(0);
+    const deletedInDb=await savedState();
+    expect(deletedInDb).toEqual({status:[{status:"revoked",revision:4}]});
+    console.info("[U4 E2E] routine deleted, stale replay denied and reload remains revoked");
+
   }finally{
     await Promise.allSettled([ctx.close(),other.close()]);
     if(connected){
       await db.query("delete from public.supervisor_mandates where id=any($1::uuid[])",
         [[id.active,id.old]]).catch(()=>{});
       await db.query("delete from public.supervisor_routines where id=$1",[id.routine]).catch(()=>{});
-      await db.query("delete from public.ai_threads where id=$1 and business_id=$2",
-        [id.thread,owner.businessId]).catch(()=>{});
+      await db.query("delete from public.ai_threads where id=any($1::uuid[]) and business_id=$2",
+        [[id.thread,id.watchShell],owner.businessId]).catch(()=>{});
       await db.end();
     }
   }
