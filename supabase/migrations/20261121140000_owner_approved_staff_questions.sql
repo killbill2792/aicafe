@@ -18,10 +18,10 @@ begin
  if not found or p.capability_id<>'olivia.staff_question.v1'
   or p.capability_version<>1 or p.status<>'executing'
   or p.effect_hash is distinct from p_effect_hash or not exists(
-   select 1 from public.supervisor_effect_attempts a
-   where a.business_id=p_business_id and a.proposal_id=p_proposal_id
-    and a.effect_hash=p_effect_hash and a.authorization_kind='click'
-    and a.state='executing') or not exists(
+   select 1 from public.supervisor_effect_attempts attempt
+   where attempt.business_id=p_business_id and attempt.proposal_id=p_proposal_id
+    and attempt.effect_hash=p_effect_hash and attempt.authorization_kind='click'
+    and attempt.state='executing') or not exists(
    select 1 from public.memberships m where m.business_id=p_business_id
     and m.user_id=p_owner_user_id and m.role='owner')
  then raise exception 'verified_owner_click_required' using errcode='42501';end if;
