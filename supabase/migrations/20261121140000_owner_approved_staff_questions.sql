@@ -83,15 +83,12 @@ grant execute on function public.supervisor_commit_staff_question(uuid,uuid,uuid
 -- queue and retains the owner's attribution for subsequent source rechecks.
 create function public.supervisor_answer_staff_question(
  p_business_id uuid,p_owner_user_id uuid,p_thread_id uuid,p_proposal_id uuid,
- p_revision integer,p_answer text
+ p_revision integer,p_owner_message_id uuid
 ) returns jsonb language plpgsql security definer set search_path=public,pg_temp as $$
 declare p public.supervisor_proposals; v_answer text;
 begin
  if auth.role() is distinct from 'service_role' then
   raise exception 'service_role_only' using errcode='42501';end if;
- v_answer:=nullif(btrim(p_answer),'');
- if v_answer is null or char_length(v_answer)>1200 then
-  raise exception 'owner_answer_invalid' using errcode='22023';end if;
  select * into p from public.supervisor_proposals where
   business_id=p_business_id and owner_user_id=p_owner_user_id
   and thread_id=p_thread_id and id=p_proposal_id for update;
@@ -99,9 +96,16 @@ begin
   or p.revision<>p_revision or not exists(select 1 from public.memberships m
    where m.business_id=p_business_id and m.user_id=p_owner_user_id and m.role='owner')
  then raise exception 'owner_question_stale' using errcode='40900';end if;
+ select nullif(btrim(m.text_content),'') into v_answer from public.ai_messages m
+  where m.id=p_owner_message_id and m.business_id=p_business_id and
+   m.owner_user_id=p_owner_user_id and m.thread_id=p_thread_id and m.role='owner'
+   and m.content_type='text' and m.created_at>=p.created_at
+   and m.owner_input_response is null and m.owner_input_prompt_message_id is null;
+ if v_answer is null or char_length(v_answer)>1200 then
+  raise exception 'owner_answer_invalid' using errcode='22023';end if;
  update public.supervisor_proposals set status='rejected',revision=revision+1,
   baseline=baseline||jsonb_build_object('ownerAnswer',jsonb_build_object(
-   'text',v_answer,'ownerUserId',p_owner_user_id,'receivedAt',statement_timestamp(),
+   'text',v_answer,'ownerUserId',p_owner_user_id,'ownerMessageId',p_owner_message_id,'receivedAt',statement_timestamp(),
    'provenance','owner_report_unverified')),
   updated_at=statement_timestamp() where business_id=p_business_id and id=p_proposal_id;
  insert into public.operating_tasks(
@@ -115,20 +119,20 @@ begin
     'nextAction','Recheck source records before deriving any inventory or staffing change'),
   'low',jsonb_build_array(jsonb_build_object('source','owner_report',
    'facts',jsonb_build_object('proposalId',p_proposal_id,'ownerUserId',p_owner_user_id,
-    'answer',v_answer,'independentlyVerified',false,'sourceTaskId',
+    'answer',v_answer,'ownerMessageId',p_owner_message_id,'independentlyVerified',false,'sourceTaskId',
       p.canonical_effect_payload->>'sourceTaskId'))))
  on conflict(business_id,id) do nothing;
  return jsonb_build_object('answered',true,'ownerEvidenceOnly',true,'employeeContacted',false);
 end $$;
-revoke all on function public.supervisor_answer_staff_question(uuid,uuid,uuid,uuid,integer,text)
+revoke all on function public.supervisor_answer_staff_question(uuid,uuid,uuid,uuid,integer,uuid)
  from public,anon,authenticated;
-grant execute on function public.supervisor_answer_staff_question(uuid,uuid,uuid,uuid,integer,text) to service_role;
+grant execute on function public.supervisor_answer_staff_question(uuid,uuid,uuid,uuid,integer,uuid) to service_role;
 
 -- A lost HTTP response never re-sends a worker question. Resolve only an
 -- already-durable request, then finish its SAME previously clicked effect.
 create function public.supervisor_reconcile_staff_question(
  p_business_id uuid,p_owner_user_id uuid,p_thread_id uuid,p_proposal_id uuid
-) returns jsonb language plpgsql security definer set search_path=public,pg_temp as $
+) returns jsonb language plpgsql security definer set search_path=public,pg_temp as $$
 declare p public.supervisor_proposals; a public.supervisor_effect_attempts;
  r public.staff_communication_requests; tz text;
 begin
@@ -160,7 +164,7 @@ begin
  end if;
  if p.status<>'committed' then return jsonb_build_object('state','unknown');end if;
  return jsonb_build_object('state','verified','requestId',r.id,'employeeContacted',true);
-end $;
+end $$;
 revoke all on function public.supervisor_reconcile_staff_question(uuid,uuid,uuid,uuid)
  from public,anon,authenticated;
 grant execute on function public.supervisor_reconcile_staff_question(uuid,uuid,uuid,uuid) to service_role;
