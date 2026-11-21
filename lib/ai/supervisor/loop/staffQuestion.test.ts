@@ -33,7 +33,7 @@ function dbRows({staffActive=true,linked=true,onShift=true,taskStatus="needs_own
    maybeSingle:vi.fn(async()=>({data:sources[table][0]??null,error:null}))};
   return q;
  });
- vi.mocked(simulationOwnerReader).mockResolvedValue({client:{from} as never});
+ vi.mocked(simulationOwnerReader).mockResolvedValue({client:{from} as never,explicit:true});
  return {from};
 }
 const scope={businessId:business,ownerUserId:owner,threadId:thread,locale:"en" as const};
