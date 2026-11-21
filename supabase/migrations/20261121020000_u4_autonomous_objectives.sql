@@ -51,11 +51,13 @@ alter table public.supervisor_routine_occurrences
 create or replace function public.u4_create_objective_routine(
   p_business_id uuid,p_owner_user_id uuid,p_thread_id uuid,
   p_title text,p_cadence text,p_weekdays integer[],p_local_time time,
-  p_routine_id uuid,p_owner_message_id uuid
+  p_routine_id uuid,p_owner_message_id uuid,
+  p_goal_source_message_id uuid default null
 ) returns public.supervisor_routines
 language plpgsql security definer set search_path=''
 as $u4_create$
-declare m public.ai_messages;v public.supervisor_routines;
+declare m public.ai_messages;g public.ai_messages;
+        v public.supervisor_routines;v_goal text;
 begin
   if not public.supervisor_routine_owner_authorized(p_business_id,p_owner_user_id,p_thread_id)
     or p_owner_message_id is null then
@@ -66,26 +68,43 @@ begin
     and role='owner' and content_type='text';
   if not found or length(btrim(coalesce(m.text_content,''))) not between 1 and 4000
     then raise exception 'u4_objective_source_unavailable' using errcode='42501'; end if;
+  -- Only a real, earlier owner-authored SAME-thread goal may be selected by
+  -- Luna after the owner supplies the missing schedule in a second turn.
+  -- Neither the model's title nor its own paraphrase enters objective_text.
+  select * into g from public.ai_messages
+    where id=coalesce(p_goal_source_message_id,p_owner_message_id)
+      and business_id=p_business_id and thread_id=p_thread_id
+      and owner_user_id=p_owner_user_id and author_user_id=p_owner_user_id
+      and role='owner' and content_type='text'
+      and created_at<=m.created_at;
+  if not found or length(btrim(coalesce(g.text_content,''))) not between 1 and 4000
+    then raise exception 'u4_goal_source_unavailable' using errcode='42501'; end if;
+  v_goal:=g.text_content;
+  if g.id<>m.id then
+    v_goal:=g.text_content||E'\\nOwner schedule clarification: '||m.text_content;
+  end if;
+  if length(btrim(v_goal)) not between 1 and 4000 then
+    raise exception 'u4_goal_context_too_long' using errcode='22023'; end if;
   -- The retained RPC verifies café timezone, schedule and retry-stable ID.
   select * into v from public.create_supervisor_routine(
     p_business_id,p_owner_user_id,p_thread_id,p_title,p_cadence,
     p_weekdays,p_local_time,p_routine_id);
   if v.execution_mode='objective'
-    and v.objective_source_message_id=p_owner_message_id then return v; end if;
+    and v.objective_source_message_id=g.id and v.objective_text=v_goal then return v; end if;
   if v.execution_mode<>'priority' or v.objective_source_message_id is not null
     then raise exception 'u4_objective_conflict' using errcode='23505'; end if;
   update public.supervisor_routines set
-    execution_mode='objective',objective_text=m.text_content,
-    objective_source_message_id=m.id,updated_at=clock_timestamp()
+    execution_mode='objective',objective_text=v_goal,
+    objective_source_message_id=g.id,updated_at=clock_timestamp()
     where business_id=p_business_id and id=v.id returning * into v;
   return v;
 end
 $u4_create$;
 revoke all on function public.u4_create_objective_routine(
-  uuid,uuid,uuid,text,text,integer[],time,uuid,uuid)
+  uuid,uuid,uuid,text,text,integer[],time,uuid,uuid,uuid)
   from public,anon,authenticated;
 grant execute on function public.u4_create_objective_routine(
-  uuid,uuid,uuid,text,text,integer[],time,uuid,uuid) to authenticated,service_role;
+  uuid,uuid,uuid,text,text,integer[],time,uuid,uuid,uuid) to authenticated,service_role;
 
 -- A real owner edit is appended to the objective context; the original
 -- objective remains available for interpretation. Revision compare-and-swap
