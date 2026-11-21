@@ -29,6 +29,11 @@ import {prepareProactiveStockDraft} from "./stockDraft.server";
 import {alreadyNotifiedTaskKinds} from "./priority";
 import {getConnectorAccount,allowsGmail} from "@/lib/connectors/registry.server";
 import {maintenanceContext,pollMaintenanceVendorReplies} from "@/lib/ai/supervisor/loop/maintenance.server";
+import {staffQuestionCapabilityId} from "@/lib/ai/supervisor/loop/staffQuestion.server";
+import {proposeLoop} from "@/lib/ai/supervisor/loop/engine";
+import {supervisorLoopRegistry} from "@/lib/ai/supervisor/loop/priceExperiment.server";
+import {SupabaseLoopRepository} from "@/lib/ai/supervisor/loop/supabase.server";
+import {proposalRequestKey} from "@/lib/ai/supervisor/loop/requestKeys";
 import {investigationPrompt,universalInvestigationPrompt,investigationReadTools,
   customerInvestigationTools,maintenanceInvestigationTools,supplierResearchInvestigationTools,
   verifyInvestigationTurn,verifyUniversalInvestigationTurn,
@@ -409,6 +414,17 @@ export async function processNextInvestigation(db:SupabaseClient,now:Date,
         return prepareSupplierDiscrepancyFollowup({...scope,threadId:c.thread_id,locale:"en",verifiedReadClient:db},purchaseOrderId);
       }}:{}),
       staffCoordinationRead:()=>readClaimedStaffCoordination(db,scope),
+      ...({staffQuestionPropose:async(input:import("@/lib/ai/supervisor/loop/staffQuestion.server").StaffQuestionInput)=>{
+        if(input.sourceKind!==c.source_type||input.sourceTaskId!==c.source_id)
+          throw new Error("staff_question_claim_scope_mismatch");
+        const current=await readIncidentEvidence(db,c);
+        if(current.missing.length)throw new Error("staff_question_evidence_unavailable");
+        const proposal=await proposeLoop({...scope,threadId:c.thread_id,locale:"en",verifiedReadClient:db},
+         supervisorLoopRegistry,new SupabaseLoopRepository(),staffQuestionCapabilityId,input,
+         proposalRequestKey(c.thread_id,JSON.stringify({source:c.source_id,revision:c.revision_hash,staffQuestion:input})));
+        if(proposal.status!=="draft")throw new Error("staff_question_no_longer_draft");
+        return {proposalId:proposal.id,revision:proposal.revision};
+      }}:{}),
       staffMessages:{read:()=>readStaffMessagesForVerifiedOwner(
         db,c.business_id,c.owner_user_id,40)},
       investigation:{
@@ -438,6 +454,7 @@ export async function processNextInvestigation(db:SupabaseClient,now:Date,
         ...(context.savedEvents?["get_events" as const]:[]),
         ...(context.webSearch?["web_search" as const]:[]),
         ...(synopsis.kind==="maintenance_issue"?maintenanceInvestigationTools:[]),
+        "propose_staff_question" as const,
         ...(context.receivingFollowup?["propose_supplier_discrepancy_followup" as const]:[]),
       ])] as import("@/lib/ai/agent/tools").AgentToolName[]):
       (synopsis.kind==="maintenance_issue"?[...maintenanceInvestigationTools]:synopsis.kind==="supplier_receiving"?
@@ -534,6 +551,10 @@ export async function processNextInvestigation(db:SupabaseClient,now:Date,
       ownerQuestion="What additional information can you confirm so I can continue checking this issue?";
     // The agent's complete, number-checked reply is the only owner-visible
     // result. An incomplete response is NEVER recorded as investigation done.
+    const staffQuestionCall=(turn.toolInvocations??[]).find(call=>
+      call.name==="propose_staff_question"&&
+      typeof call.result.proposalId==="string"&&call.result.draft===true);
+    const staffQuestionProposalId=staffQuestionCall?.result.proposalId as string|undefined;
     const next:InvestigationCheckpoint={
       source:synopsis,collectedAt:checkpoint.collectedAt,sourceRevision:c.revision_hash,
       modelTools:report.tools,missing:report.missing,
@@ -542,6 +563,7 @@ export async function processNextInvestigation(db:SupabaseClient,now:Date,
       ...(customerLinkedActions?{customerLinkedActions}:{}),
       ...(stockPurchaseProposalId?{stockPurchaseProposalId}:{}),
       ...(stockEmailProposalId?{stockEmailProposalId}:{}),
+      ...(staffQuestionProposalId?{staffQuestionProposalId}:{}),
       ...(stockProcurementStatus?{stockProcurementStatus}:{}),
       ...(ownerQuestion?{ownerQuestion}:{}),
       ...(synopsis.kind==="maintenance_issue"?{maintenanceReadMissing:vendorPoll.missing}:{}),

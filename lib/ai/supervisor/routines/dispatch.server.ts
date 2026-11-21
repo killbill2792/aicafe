@@ -323,6 +323,8 @@ export async function dispatchRoutinesForBusiness(db:SupabaseClient,businessId:s
     if(unanswered.error)result.failed++;
   }
   // Task13D source-verifies approved leave and expires recruitment references in this same tick.
+  const dueQuestions=await db.rpc("staff_question_escalate_due",{p_business_id:businessId});
+  if(dueQuestions.error)result.failed++;
   const coordinated=await db.rpc("staff_coordination_reconcile",{p_business_id:businessId});
   if(coordinated.error)result.failed++;
   // Source-change notices remain independent from the due schedule.

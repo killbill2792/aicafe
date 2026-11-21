@@ -39,6 +39,7 @@ import {precedingInvestigationReport,type CustomerInvestigationOrigin} from "@/l
 import {SupervisorEffectGateway} from "@/lib/ai/supervisor/loop/effectGateway.server";
 import {gmailCapabilityId,type GmailProposalInput} from "@/lib/ai/supervisor/loop/gmail.server";
 import {maintenanceContext} from "@/lib/ai/supervisor/loop/maintenance.server";
+import {staffQuestionCapabilityId} from "@/lib/ai/supervisor/loop/staffQuestion.server";
 import {gmailSearch,gmailListLabels,gmailRead,gmailReadThread,gmailReadAttachment} from "@/lib/connectors/gmail/provider.server";
 import {getConnectorAccount,allowsGmail,assertConnectorOwnerLive} from "@/lib/connectors/registry.server";
 import {gmailToolDefinitions} from "@/lib/ai/agent/tools";
@@ -309,6 +310,14 @@ export async function runOneTurn(p: TurnParams): Promise<{ replyId: string; repl
         threadId:id,mode:p.durableFence?"durable" as const:"owner" as const,
         ...(p.durableFence?{runId:p.durableFence.runId,leaseToken:p.durableFence.claimToken}:{})
        }),
+      staffQuestionPropose:async input=>{
+        await assertTurnSources();
+        const key=proposalRequestKey(id,JSON.stringify({ownerMessageId:owner.id,staffQuestion:input}));
+        const proposal=await proposeLoop(proposalScope,supervisorLoopRegistry,
+          new SupabaseLoopRepository(),staffQuestionCapabilityId,input,key);
+        if(proposal.status!=="draft")throw new Error("staff_question_no_longer_draft");
+        return {proposalId:proposal.id,revision:proposal.revision};
+      },
       maintenance:{
         staff:async caseId=>maintenanceContext(await getDb(),proposalScope,{ownerMessage:{id:owner.id,text:currentOwnerStatement}}).staff(caseId),
         proposeStaff:async input=>maintenanceContext(await getDb(),proposalScope,{ownerMessage:{id:owner.id,text:currentOwnerStatement}}).proposeStaff(input),

@@ -204,11 +204,19 @@ const staffChannelEnglishOnly={
 } as const;
 const staffChannelEnglishOnlySet=new Set(Object.entries(staffChannelEnglishOnly)
  .flatMap(([ns,keys])=>keys.map(key=>ns+"."+key)));
+const staffQuestionApprovalKeys=["title","sourceNotice","followUp","awaitingApproval","savedNotRead","ownerAnswered","askEmployee","answerMyself","ignore","answerLabel","submitAnswer","checkReceipt","error"] as const;
+const staffQuestionEnglishSet=new Set(staffQuestionApprovalKeys.map(key=>"StaffQuestionApproval."+key));
+
 
 
 
 
 describe("redesign 16 cleanup integration", () => {
+  it("pins every staff approval action and question string",()=>{
+    const en=localeMessages("en"),es=localeMessages("es"),ar=localeMessages("ar");
+    expect(Object.keys(en.StaffQuestionApproval??{}).sort()).toEqual([...staffQuestionApprovalKeys].sort());
+    expect(es.StaffQuestionApproval).toBeUndefined();expect(ar.StaffQuestionApproval).toBeUndefined();
+  });
   it("pins new staff history and login English-only strings",()=>{
     const en=localeMessages("en"),es=localeMessages("es"),ar=localeMessages("ar");
     for(const [ns,keys] of Object.entries(staffChannelEnglishOnly)){
@@ -264,7 +272,7 @@ describe("redesign 16 cleanup integration", () => {
       return Object.entries(messages)
         .flatMap(([namespace, values]) => Object.keys(values).map(key => `${namespace}.${key}`))
         .filter(key => !englishOnly.test(key) && !approvedTask14bSet.has(key)
-          && !approvedTask14cSet.has(key) && !approvedTask15bSet.has(key) && !approvedTask16aSet.has(key) && !approvedU4RoutineSet.has(key) && !approvedTask16cSet.has(key) && !approvedTask14eSet.has(key) && !approvedCrewSelfServiceSet.has(key) && !staffChannelEnglishOnlySet.has(key) && !task16e.has(key)
+          && !approvedTask14cSet.has(key) && !approvedTask15bSet.has(key) && !approvedTask16aSet.has(key) && !approvedU4RoutineSet.has(key) && !approvedTask16cSet.has(key) && !approvedTask14eSet.has(key) && !approvedCrewSelfServiceSet.has(key) && !staffChannelEnglishOnlySet.has(key) && !staffQuestionEnglishSet.has(key) && !task16e.has(key)
           && !["runAwaitingOwner","runAwaitingOwnerNext","runCancelled","runRetrying","cancelAction","cancelPending","cancelUncertain","cancelCompleted","cancelFailed"].some(name=>key==="SupervisorDurableWork."+name)
           && !/^SupervisorUsage\.(?:help|max|month|proactive|requests|title|unavailable)$/.test(key))
         .sort();

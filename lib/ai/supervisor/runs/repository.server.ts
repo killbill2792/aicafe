@@ -125,7 +125,7 @@ const proposalSources:Record<string,string>={
   propose_staff_change:"staff_proposal",propose_add_staff:"staff_proposal",propose_schedule:"staff_proposal",
   propose_shift_change:"staff_proposal",propose_availability_change:"staff_proposal",
   propose_rule_change:"staff_proposal",propose_send_schedule:"staff_proposal",
-  draft_week_schedule:"staff_proposal",propose_maintenance_staff_assignment:"staff_proposal",
+  draft_week_schedule:"staff_proposal",propose_maintenance_staff_assignment:"staff_proposal",propose_staff_question:"staff_proposal",
   propose_maintenance_vendor_request:"gmail_proposal",propose_supplier_vendor_email:"gmail_proposal",
   propose_goal:"goal_proposal",propose_event_plan:"event_plan_proposal",
   propose_supplier_purchase_order:"supplier_purchase_proposal",propose_purchase_receiving:"supplier_purchase_proposal",

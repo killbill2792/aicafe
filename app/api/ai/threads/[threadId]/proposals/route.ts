@@ -21,6 +21,8 @@ import {eventReadinessCapabilityId} from "@/lib/ai/supervisor/loop/eventReadines
 import {gmailCapabilityId,gmailEffectSchema,readMaintenanceCase} from "@/lib/ai/supervisor/loop/gmail.server";
 import en from "@/messages/en.json";
 import {maintenanceStaffCapabilityId,maintenanceAssignmentEffect} from "@/lib/ai/supervisor/loop/maintenance.server";
+import {staffQuestionCapabilityId,staffQuestionEffect} from "@/lib/ai/supervisor/loop/staffQuestion.server";
+import {createAdminSupabaseClient} from "@/lib/supabase/admin";
 import {SupervisorEffectGateway} from "@/lib/ai/supervisor/loop/effectGateway.server";
 import {createServerSupabaseClient} from "@/lib/supabase/server";
 import {publishApprovedStaffSchedule,cancelStaffPublication} from "@/lib/scheduling/staffPublication.server";
@@ -39,6 +41,7 @@ const actions=z.discriminatedUnion("action",[
   z.strictObject({action:z.literal("start"),proposalId:uuid,revision}),
   z.strictObject({action:z.literal("reconcile"),proposalId:uuid,revision}),
   z.strictObject({action:z.literal("cancel"),proposalId:uuid,revision}),
+  z.strictObject({action:z.literal("answer"),proposalId:uuid,revision,answer:z.string().trim().min(1).max(1200)}),
   z.strictObject({action:z.literal("cancel_publication"),proposalId:uuid,revision}),
   z.strictObject({action:z.literal("edit"),proposalId:uuid,revision,newPriceCents:price}),
   z.strictObject({action:z.literal("edit_purchase"),proposalId:uuid,revision,
@@ -185,6 +188,17 @@ async function view(scope:OwnerLoopScope,repo:SupabaseLoopRepository,p:LoopPropo
       uncertain:counts("uncertain")}};
 
   }
+  if(p.capabilityId===staffQuestionCapabilityId){
+    const effect=staffQuestionEffect.parse(p.canonicalEffectPayload);
+    const report=p.baseline.ownerAnswer as {text?:unknown}|undefined;
+    return {...card(p,p.status==="executing"?executionState:p.status==="approved"?"pending":undefined),
+      productName:en.StaffQuestionApproval.title,staffQuestion:{
+       employeeName:effect.employeeName,question:effect.question,
+       reason:effect.reason,sourceTaskId:effect.sourceTaskId,
+       evidence:effect.evidence,followUpAfter:effect.followUpAfter,
+       answeredByOwner:report&&typeof report.text==="string"?report.text:null,
+      }};
+  }
   if(p.capabilityId===maintenanceStaffCapabilityId){
     const effect=maintenanceAssignmentEffect.parse(p.canonicalEffectPayload);
     return {...card(p,p.status==="executing"?executionState:p.status==="approved"?"pending":undefined),
@@ -300,9 +314,40 @@ export async function POST(request:Request,{params}:Params){
     const purchase=p.capabilityId===purchaseCapabilityId;
     const supplierPO=p.capabilityId===supplierPurchaseOrderCapabilityId;
     const receiving=[supplierReceivingCapabilityId,supplierInvoiceCapabilityId,financialSettlementCapabilityId,financialBillCapabilityId].includes(p.capabilityId);
-    if(!staff&&!purchase&&!supplierPO&&!receiving&&p.capabilityId!==maintenanceStaffCapabilityId&&p.capabilityId!==gmailCapabilityId&&p.capabilityId!==menuPriceChangeCapabilityId&&p.capabilityId!==priceExperimentCapabilityId&&
+    if(!staff&&!purchase&&!supplierPO&&!receiving&&p.capabilityId!==staffQuestionCapabilityId&&p.capabilityId!==maintenanceStaffCapabilityId&&p.capabilityId!==gmailCapabilityId&&p.capabilityId!==menuPriceChangeCapabilityId&&p.capabilityId!==priceExperimentCapabilityId&&
       p.capabilityId!==goalCapabilityId&&p.capabilityId!==eventReadinessCapabilityId)
       return conversationJson({error:"proposal_not_found"},404);
+    if(p.capabilityId===staffQuestionCapabilityId){
+      if(p.revision!==input.revision||p.status!=="draft")
+        return conversationJson({state:"conflict",proposal:await view(scope,repo,p)},409);
+      if(input.action==="cancel")
+        return conversationJson({proposal:await view(scope,repo,
+          await repo.transition(scope,p.id,p.revision,"reject"))});
+      if(input.action==="answer"){
+        const outcome=await createAdminSupabaseClient().rpc("supervisor_answer_staff_question",{
+          p_business_id:scope.businessId,p_owner_user_id:scope.ownerUserId,
+          p_thread_id:scope.threadId,p_proposal_id:p.id,p_revision:p.revision,
+          p_answer:input.answer,
+        });
+        if(outcome.error||outcome.data?.answered!==true)
+          return conversationJson({state:"conflict",error:"owner_answer_not_recorded"},409);
+        return conversationJson({proposal:await view(scope,repo,await repo.load(scope,p.id))});
+      }
+      if(input.action!=="approve")
+        return conversationJson({error:"staff_question_action_not_supported"},422);
+      try{
+        // The committed SQL path independently rechecks the exact worker,
+        // published current shift, source revision and owner-click attempt.
+        const approved=await approveLoop(scope,repo,p.id,p.revision,supervisorLoopRegistry);
+        const finished=await commitLoop(scope,supervisorLoopRegistry,repo,p.id,approved.revision,"click");
+        return conversationJson({proposal:await view(scope,repo,finished.proposal)});
+      }catch{
+        const latest=await repo.load(scope,p.id);
+        return conversationJson({state:latest.status==="executing"?"uncertain":"conflict",
+          error:latest.status==="executing"?"staff_question_outcome_uncertain":"staff_question_evidence_changed",
+          proposal:await view(scope,repo,latest)},409);
+      }
+    }
     if(p.capabilityId===gmailCapabilityId||p.capabilityId===maintenanceStaffCapabilityId){
       const maintenance=p.capabilityId===maintenanceStaffCapabilityId||Boolean(gmailEffectSchema.parse(p.canonicalEffectPayload).maintenanceCaseId);
       if(input.action==="start"||input.action==="edit"||input.action==="edit_purchase")

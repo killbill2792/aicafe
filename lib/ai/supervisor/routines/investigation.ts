@@ -248,6 +248,7 @@ export type InvestigationCheckpoint={
   unchangedChecks?:number;
   maintenanceReadMissing?:string[];
   receivingFollowupProposalId?:string;
+  staffQuestionProposalId?:string;
   stockPurchaseProposalId?:string;
   ownerQuestion?:string;
   sourceRevision?:string;

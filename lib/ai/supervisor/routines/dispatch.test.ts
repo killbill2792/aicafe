@@ -35,7 +35,7 @@ function db(params?:{routines?:Record<string,unknown>[];owners?:{user_id:string}
     if(name==="u4_ensure_watch_thread")return {data:"first-watch-thread",error:null};
     if(name==="u4_ensure_watch_routine")return mocks.ensureWatch();
     if(name==="staff_coordination_reconcile")return mocks.reconcile();
-    if(!["staff_channel_sync_shift_requests","staff_channel_escalate_unanswered","supervisor_sync_supplier_receiving_tasks","supervisor_sync_financial_review"].includes(name))
+    if(!["staff_channel_sync_shift_requests","staff_channel_escalate_unanswered","staff_question_escalate_due","supervisor_sync_supplier_receiving_tasks","supervisor_sync_financial_review"].includes(name))
       throw new Error("unexpected staff channel RPC "+name);
     return {data:0,error:null};
   },from:(table:string)=>{
