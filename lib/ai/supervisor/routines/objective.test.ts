@@ -33,7 +33,7 @@ vi.mock("@/lib/operating/notifyOwner.server",()=>({
 
 import {runAgentTurn} from "@/lib/ai/agent/loop.server";
 import {verifyObjectiveTurn,executeClaimedObjective,objectiveReadTools,
-  observedObjectiveEvidence} from "./objective.server";
+  observedObjectiveEvidence,routineObjectiveCheckpoint} from "./objective.server";
 import {notifyOwner} from "@/lib/operating/notifyOwner.server";
 
 const identifier="11111111-1111-4111-8111-111111111111";
@@ -97,6 +97,48 @@ describe("U4 objective evidence and model autonomy",()=>{
     expect(()=>verifyObjectiveTurn(turn("ATTENTION: data unavailable",{
       endReason:"provider_failed",
     }),watch)).toThrow("u4_model_result_unverified");
+  });
+});
+describe("U4 original work-identity checkpoints",()=>{
+  it("journals only tool digests and replays NO private result or unverified effect",async()=>{
+    const steps=[
+      {stage:"provider_start",tool:null},
+      {stage:"tool_start",tool:"get_sales"},
+      {stage:"tool_complete",tool:null},
+    ];
+    const rpc=vi.fn(async(name:string)=>{
+      if(name==="u4_checkpoint_model_step")return {data:true,error:null};
+      return {data:false,error:null};
+    });
+    const from=vi.fn(()=>({
+      select:()=>({eq:()=>({eq:()=>({eq:()=>({
+        maybeSingle:async()=>({data:{u4_checkpoint:{steps}},error:null}),
+      })})})}),
+    }));
+    const checkpoint=routineObjectiveCheckpoint({rpc,from} as never,{
+      routine:objective,lease,assertLease:async()=>{},
+    });
+    await checkpoint.beginProvider();
+    expect(await checkpoint.beginTool("get_sales",{
+      source:"private source",amountCents:99999,
+    },true)).toBeNull();
+    await checkpoint.endTool(source as never);
+    await checkpoint.endProvider(true);
+    const calls=rpc.mock.calls.filter(c=>c[0]==="u4_checkpoint_model_step");
+    expect(calls).toHaveLength(4);
+    expect(calls.every(c=>!JSON.stringify(c[1]).includes("99999"))).toBe(true);
+    const continuation=await checkpoint.resumeContext();
+    expect(continuation).toContain("RESUMED ORIGINAL ROUTINE OCCURRENCE");
+    expect(continuation).toContain("get_sales");
+    expect(continuation).not.toContain("99999");
+    expect(await checkpoint.restoredResults?.()).toEqual([]);
+  });
+  it("fails closed when checkpoint DB rejects its exact lease",async()=>{
+    const rpc=vi.fn(async()=>({data:false,error:null}));
+    const checkpoint=routineObjectiveCheckpoint({rpc} as never,{
+      routine:objective,lease,assertLease:async()=>{},
+    });
+    await expect(checkpoint.beginProvider()).rejects.toThrow("u4_checkpoint_lease_lost");
   });
 });
 describe("U4 scheduled model execution persists only verified outcomes",()=>{
