@@ -1471,6 +1471,21 @@ export default function SupervisorChatComposer({
         </nav>
         <Link href="/operations" className="hidden min-h-12 items-center gap-2 rounded-lg px-2 text-[17px] text-ink hover:bg-surface2 md:flex"><UsersRound size={20} aria-hidden="true"/>{copy.teamButton}</Link>
         {languageSwitch&&<div className="md:hidden">{languageSwitch}</div>}
-      </div>} files={storedAttachments} reports={savedReports} onOpenReport={id=>{if(!threadId)return;setControlsTab(null);setWorkNotice("");setWorkTarget({threadId,messageId:id});}} threadsNextOffset={threadsNextOffset} onSelectThread={(id,thread)=>selectThread(id,thread?.title)} onClose={()=>setControlsTab(null)}/>}
+      </div>} files={storedAttachments} reports={savedReports} onOpenReport={id=>{if(!threadId)return;setControlsTab(null);setWorkNotice("");setWorkTarget({threadId,messageId:id});}} threadsNextOffset={threadsNextOffset} onSelectThread={(id,thread)=>selectThread(id,thread?.title)}
+      onEditRoutine={routine=>{
+        // Keep an existing unsent owner draft and bind the requested edit to
+        // the authoritative record ID/revision, not a potentially duplicate
+        // owner-chosen title. SQL still verifies the original owner scope.
+        selectThread(routine.threadId);
+        const instruction="Edit saved routine \""+routine.title+"\" (routine ID "+
+          routine.id+", revision "+routine.revision+"): ";
+        setDraft(current=>current.trim()?
+          current.length+instruction.length+1<=4000?
+            current.trimEnd()+"\\n"+instruction:current:
+          instruction);
+        retryId.current=null;
+        requestAnimationFrame(()=>composer.current?.focus());
+      }}
+      onClose={()=>setControlsTab(null)}/>}
   </section>;
 }
