@@ -24,7 +24,7 @@ insert into public.operating_tasks(business_id,id,owner_user_id,agent_id, kind,e
  id,business_id,owner_user_id,thread_id,request_key,capability_id,capability_version,
  canonical_effect_payload,effect_hash,baseline,monitor_spec,locale) select v.id,t.business_id,t.owner_user_id,:'thread_id',gen_random_uuid(),
   'olivia.staff_question.v1',1, jsonb_build_object('sourceKind','operating_task','sourceTaskId',t.id,'employeeId',:'employee','question',
-   'How many takeaway cups are left?','reason','Source and physical count differ',
+   case when v.id=:'stale_proposal'::uuid then 'Can you cover the evening shift?' else 'How many takeaway cups are left?' end,'reason','Source and physical count differ',
    'evidence',jsonb_build_array(jsonb_build_object('source','order_lines','asOf','verified check')),
    'followUpAfter',statement_timestamp()+interval '4 hours', 'sourceRevision',t.updated_at,'employeeName','On-shift worker'),
   repeat('d',64),'{}','{"durationDays":1,"metricScope":"staff_question_receipt"}','en' from public.operating_tasks t
@@ -90,7 +90,10 @@ select public.supervisor_answer_staff_question(:'biz',:'owner_id',:'thread_id',
 do $$
  begin if not exists(select 1 from public.supervisor_proposals where id=current_setting('test.staffquestion.owner_proposal')::uuid and status='rejected' and baseline->'ownerAnswer'->>'text'=
  'There are approximately 40 cups remaining.' and baseline->'ownerAnswer'->>'ownerMessageId' is not null) then raise exception 'owner answer not durable';end if; if not exists(select 1 from public.operating_tasks where id='staff-question-owner-answer:'||current_setting('test.staffquestion.owner_proposal') and evidence @> '[{"source":"owner_report"}]'::jsonb) then
- raise exception 'owner answer did not enter existing investigation queue';end if; if exists(select 1 from public.staff_communication_requests where source_id=current_setting('test.staffquestion.owner_proposal')) then raise exception 'owner answer contacted worker';end if;
+ raise exception 'owner answer did not enter existing investigation queue';end if;
+ if not exists(select 1 from public.supervisor_proposals where id=current_setting('test.staffquestion.rejected_proposal')::uuid and status='rejected' and baseline->'ownerAnswer'->>'ownerMessageId' is not null) then raise exception 'equivalent pending draft not superseded';end if;
+ if not exists(select 1 from public.supervisor_proposals where id=:'stale_proposal'::uuid and status='draft') then raise exception 'unrelated staff question was closed';end if;
+ if exists(select 1 from public.staff_communication_requests where source_id=current_setting('test.staffquestion.owner_proposal')) then raise exception 'owner answer contacted worker';end if;
 end $$;
 do $$
  begin if public.supervisor_answer_staff_question(current_setting('test.staffquestion.biz')::uuid,current_setting('test.staffquestion.owner')::uuid,current_setting('test.staffquestion.thread')::uuid,
