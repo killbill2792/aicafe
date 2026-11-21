@@ -212,7 +212,7 @@ function SupervisorMessage({ message, copy, locale, cafeCurrency, storedFiles, o
           .map(v=>({start:Number(v.start),end:Number(v.end),
             source:(v.source==="owner"||v.source==="estimate"?v.source:"unchecked") as "owner"|"estimate"|"unchecked",
             detail:typeof v.detail==="string"?v.detail:undefined}));
-        return <ReplyBlock key={i} block={group.block} copy={copy} locale={locale} threadId={message.threadId} unverified={spans}/>;
+        return <ReplyBlock key={i} block={group.block} copy={copy} locale={locale} threadId={message.threadId} onEdit={onSuggest} disabled={disabled} unverified={spans}/>;
       })}
       <SourceLegend sources={legendSources} labels={provenanceLabels} legendLabel={copy.provenanceLegend}/>
     </div>
