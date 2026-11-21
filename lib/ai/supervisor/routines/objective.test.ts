@@ -16,6 +16,12 @@ vi.mock("@/lib/ai/supervisor/runs/usage.server",()=>({
 vi.mock("@/lib/data/cafeEvents.server",()=>({
   readSavedEventTimeline:vi.fn(),
 }));
+vi.mock("@/lib/data/staffSchedule.server",()=>({
+  getWeekSchedule:vi.fn(async()=>({ok:true,data:{shifts:[{id:"scoped-shift"}]}})),
+}));
+vi.mock("@/lib/data/financialEvidence.server",()=>({
+  readFinancialEvidence:vi.fn(async()=>({missing:[],cash:{balanceCents:12345}})),
+}));
 vi.mock("@/lib/ai/agent/loop.server",()=>({
   openAIProvider:vi.fn(),
   runAgentTurn:vi.fn(),
@@ -49,6 +55,8 @@ import {verifyObjectiveTurn,executeClaimedObjective,objectiveReadTools,
 import {notifyOwner} from "@/lib/operating/notifyOwner.server";
 import {getConnectorAccount} from "@/lib/connectors/registry.server";
 import {gmailSearch} from "@/lib/connectors/gmail/provider.server";
+import {getWeekSchedule as scopedWeekSchedule} from "@/lib/data/staffSchedule.server";
+import {readFinancialEvidence} from "@/lib/data/financialEvidence.server";
 
 const identifier="11111111-1111-4111-8111-111111111111";
 const objective={
@@ -464,6 +472,30 @@ describe("U4 scheduled model execution persists only verified outcomes",()=>{
     expect(rpc).toHaveBeenCalledWith("u4_publish_objective_report",
       expect.objectContaining({p_run_id:lease.runId,p_attention:"attention"}));
     expect(notifyOwner).toHaveBeenCalled();
+  });
+  it("binds cron schedule and finance tools to the original owner, never browser cookies",async()=>{
+    const rpc=vi.fn(async()=>({data:true,error:null}));
+    const db={rpc,...mockRoutineHistory()} as never;
+    vi.mocked(runAgentTurn).mockImplementationOnce(async args=>{
+      expect(args.toolNames).toContain("get_week_schedule");
+      expect(args.toolNames).toContain("get_cashflow_evidence");
+      const week=await args.context.readWeekSchedule?.("2026-11-16");
+      const finance=await args.context.financialEvidenceRead?.({horizonDays:14});
+      expect(week).toMatchObject({ok:true});
+      expect(finance).toMatchObject({missing:[]});
+      return turn("Verified scheduled financial evidence; owner action remains read-only.");
+    });
+    await executeClaimedObjective(db,{
+      routine:objective,lease,localDate:"2026-11-20",
+      provider:(async function*(){}) as never,
+    });
+    expect(scopedWeekSchedule).toHaveBeenCalledWith({weekStart:"2026-11-16"},
+      {client:db,businessId:objective.businessId,ownerUserId:objective.ownerUserId});
+    expect(readFinancialEvidence).toHaveBeenCalledWith({
+      businessId:objective.businessId,ownerUserId:objective.ownerUserId,
+      verifiedReadClient:db,
+    },"2026-11-20",{horizonDays:14});
+    expect(rpc).toHaveBeenCalledWith("u4_publish_objective_report",expect.anything());
   });
   it("gives the model earlier conclusions as hypotheses, not new verified source facts",async()=>{
     vi.mocked(runAgentTurn).mockResolvedValueOnce(turn("Evidence changed; revise last conclusion."));
