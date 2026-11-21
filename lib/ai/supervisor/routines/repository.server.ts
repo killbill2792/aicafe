@@ -47,7 +47,8 @@ export async function createOwnerRoutine(schedule:RoutineSchedule,turn:VerifiedR
     p_business_id:turn.scope.businessId,p_owner_user_id:turn.scope.ownerUserId,
     p_thread_id:turn.threadId,p_title:parsed.title,p_cadence:parsed.cadence,
     p_weekdays:parsed.weekdays,p_local_time:parsed.localTime,p_routine_id:stableId,
-    ...(u4Enabled&&turn.ownerMessageId?{p_owner_message_id:turn.ownerMessageId}:{}),
+    ...(u4Enabled&&turn.ownerMessageId?{p_owner_message_id:turn.ownerMessageId,
+      p_goal_source_message_id:turn.goalSourceMessageId??turn.ownerMessageId}:{}),
   });
   if(error||!data)throw error??new Error("Routine not saved");
   return asRoutine(data as RoutineRow);
