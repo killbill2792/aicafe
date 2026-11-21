@@ -75,6 +75,8 @@ export type SupervisorReplyBlock =
   | { type: "proposal_card"; proposalId: string }
   | { type: "experiment_card"; proposalId: string }
   | { type: "memory_card"; ruleId: string }
+  | {type:"routine_card";routineId:string;title:string;cadence:"daily"|"weekly";
+      weekdays:number[];localTime:string;timezone:string;status:"active"|"paused"|"revoked";revision:number}
   | { type: "text"; text: string }
   | { type: "warning"; code: string; text: string }
   | { type: "metric"; label: string; valueCents: number; source: EvidenceReference }
@@ -132,6 +134,16 @@ const proposalCardSchema=z.strictObject({type:z.literal("proposal_card"),proposa
 const experimentCardSchema=z.strictObject({type:z.literal("experiment_card"),proposalId:z.uuid()});
 // Draft café fact (ai_team_rules row) the owner can approve; created only by the memory tool.
 const memoryCardSchema=z.strictObject({type:z.literal("memory_card"),ruleId:z.uuid()});
+/** Produced exclusively from an authenticated, successful manage_routine tool
+ * receipt. This is a compact UI reflection, not an authorization capability. */
+export const routineCardSchema=z.strictObject({
+  type:z.literal("routine_card"),routineId:z.uuid(),
+  title:z.string().min(1).max(240),cadence:z.enum(["daily","weekly"]),
+  weekdays:z.array(z.number().int().min(1).max(7)).max(7),
+  localTime:z.string().regex(/^([01]\d|2[0-3]):[0-5]\d(?::[0-5]\d)?$/u),
+  timezone:z.string().min(1).max(120),
+  status:z.enum(["active","paused","revoked"]),revision:z.number().int().positive(),
+});
 const warningBlockSchema = z.strictObject({
   type: z.literal("warning"), code: z.string().min(1).max(80),
   text: z.string().trim().min(1).max(1200),
@@ -174,5 +186,5 @@ export const groundedReplySchema = z.strictObject({
   evidence: z.array(evidenceReferenceSchema).max(30),
   blocks: z.array(z.union(
     [textBlockSchema, warningBlockSchema, metricBlockSchema, countBlockSchema, percentBlockSchema,
-      taskBlockSchema, taskCardBlockSchema,ownerQuestionSchema,proposalCardSchema,experimentCardSchema,memoryCardSchema,clarifyBlockSchema,howBlockSchema,richPresentationSchema])).min(1).max(30),
+      taskBlockSchema, taskCardBlockSchema,ownerQuestionSchema,proposalCardSchema,experimentCardSchema,memoryCardSchema,routineCardSchema,clarifyBlockSchema,howBlockSchema,richPresentationSchema])).min(1).max(30),
 });
