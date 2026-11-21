@@ -41,7 +41,6 @@ const actions=z.discriminatedUnion("action",[
   z.strictObject({action:z.literal("start"),proposalId:uuid,revision}),
   z.strictObject({action:z.literal("reconcile"),proposalId:uuid,revision}),
   z.strictObject({action:z.literal("cancel"),proposalId:uuid,revision}),
-  z.strictObject({action:z.literal("answer"),proposalId:uuid,revision,answer:z.string().trim().min(1).max(1200)}),
   z.strictObject({action:z.literal("cancel_publication"),proposalId:uuid,revision}),
   z.strictObject({action:z.literal("edit"),proposalId:uuid,revision,newPriceCents:price}),
   z.strictObject({action:z.literal("edit_purchase"),proposalId:uuid,revision,
@@ -284,6 +283,14 @@ export async function POST(request:Request,{params}:Params){
     assertProposalScope(scope,p);
     if(input.action==="reconcile"){
       if(p.revision!==input.revision)return conversationJson({state:"conflict",proposal:await view(scope,repo,p)},409);
+      if(p.capabilityId===staffQuestionCapabilityId){
+        const checked=await createAdminSupabaseClient().rpc("supervisor_reconcile_staff_question",{
+          p_business_id:scope.businessId,p_owner_user_id:scope.ownerUserId,
+          p_thread_id:scope.threadId,p_proposal_id:p.id});
+        if(checked.error)return conversationJson({state:"uncertain",error:"receipt_read_failed"},503);
+        return conversationJson({state:checked.data?.state,
+          proposal:await view(scope,repo,await repo.load(scope,p.id))});
+      }
       // This POST only checks canonical receipts / inert transitions. It never
       // invokes a capability commit and cannot resend a failed provider action.
       if(p.status==="committed"||p.status==="manual_pending")
@@ -318,31 +325,12 @@ export async function POST(request:Request,{params}:Params){
       p.capabilityId!==goalCapabilityId&&p.capabilityId!==eventReadinessCapabilityId)
       return conversationJson({error:"proposal_not_found"},404);
     if(p.capabilityId===staffQuestionCapabilityId){
-      if(input.action==="reconcile"){
-        const checked=await createAdminSupabaseClient().rpc("supervisor_reconcile_staff_question",{
-          p_business_id:scope.businessId,p_owner_user_id:scope.ownerUserId,
-          p_thread_id:scope.threadId,p_proposal_id:p.id,
-        });
-        if(checked.error)return conversationJson({state:"uncertain",error:"receipt_read_failed"},503);
-        return conversationJson({state:checked.data?.state,
-          proposal:await view(scope,repo,await repo.load(scope,p.id))});
-      }
       if(p.revision!==input.revision||
         (p.status!=="draft"&&!(p.status==="approved"&&input.action==="approve")))
         return conversationJson({state:"conflict",proposal:await view(scope,repo,p)},409);
       if(input.action==="cancel")
         return conversationJson({proposal:await view(scope,repo,
           await repo.transition(scope,p.id,p.revision,"reject"))});
-      if(input.action==="answer"){
-        const outcome=await createAdminSupabaseClient().rpc("supervisor_answer_staff_question",{
-          p_business_id:scope.businessId,p_owner_user_id:scope.ownerUserId,
-          p_thread_id:scope.threadId,p_proposal_id:p.id,p_revision:p.revision,
-          p_answer:input.answer,
-        });
-        if(outcome.error||outcome.data?.answered!==true)
-          return conversationJson({state:"conflict",error:"owner_answer_not_recorded"},409);
-        return conversationJson({proposal:await view(scope,repo,await repo.load(scope,p.id))});
-      }
       if(input.action!=="approve")
         return conversationJson({error:"staff_question_action_not_supported"},422);
       try{
