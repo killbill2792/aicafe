@@ -100,7 +100,7 @@ export function routineObjectiveCheckpoint(db:SupabaseClient,params:{
       if(error)throw error;
       const checkpoint=data?.u4_checkpoint;
       if(!checkpoint||typeof checkpoint!=="object"||Array.isArray(checkpoint))return null;
-      const steps=Array.isArray(checkpoint.steps)?checkpoint.steps:[];
+      const steps:unknown[]=Array.isArray(checkpoint.steps)?checkpoint.steps:[];
       const known=steps.filter((v:unknown):v is {stage:string;tool?:string}=>{
         if(!v||typeof v!=="object"||Array.isArray(v))return false;
         const r=v as Record<string,unknown>;
@@ -254,7 +254,7 @@ export async function executeClaimedObjective(db:SupabaseClient,params:{
     source:"cafe_state" as const,identifier:name,
     asOf:identity.asOf,
   })),sourceCount:verified.sourceCount,
-    quality:verified.missing.length||turn.status.status!=="complete"?
+    quality:verified.missing.length||turn.status?.status!=="complete"?
       "partial" as const:"verified" as const,
     missing:verified.missing,externalEffects:"not_attempted"};
   const publish=async()=>{
