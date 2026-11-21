@@ -41,7 +41,7 @@ Next.js and Vercel explicitly support `outputFileTracingIncludes` for assets dyn
 ### Implementation / verification
 - [ ] Trace includes PG17 WASM for every applicable serverless route (cron and Supervisor API); preserve all source admission checks.
 - [ ] Guard refuses missing runtime artifact, omitted file in any emitted Node API route trace (including future routes), missing route trace, corrupt trace, and missing output directory.
-- [ ] Tests demonstrate original failure goes red, intended trace goes green, and existing U3 `SELECT` admission / injection / foreign-scope negative assertions still pass.
+- [ ] Tests demonstrate original omission goes red, intended real trace goes green, and the installed PostgreSQL 17 WASM executes a real read-only parse under Node22 and Node24; existing U3 `SELECT` admission / injection / foreign-scope negative assertions still pass.
 - [ ] CI runs **both** existing Webpack and production-matching Turbopack builds; new guard checks real generated route traces. No skip/allow-failure or reduction of existing jobs.
 - [ ] Exact-head all mandated CI: lint/types, all Vitest shards, production build, DB, authenticated owner browser, repo guard, integrity and Events (as applicable).
 - [ ] Audit no modified schema, RLS, model provider, salaries, imports, source readers, effects, schedules, crew UI or PR542 chat paths.

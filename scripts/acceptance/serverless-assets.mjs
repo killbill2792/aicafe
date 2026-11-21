@@ -66,7 +66,14 @@ export function verifyServerlessAssetTraces(projectRoot=process.cwd()){
 if(process.argv[1]&&pathToFileURL(resolve(process.argv[1])).href===import.meta.url){
   try{
     const result=verifyServerlessAssetTraces();
-    console.log("Serverless asset trace proof PASSED "+JSON.stringify(result));
+    // The package must also execute a real PG17 parse under the active Node
+    // runtime (Node 22 Webpack and Node 24 Vercel-parity Turbopack CI).
+    // This is a read-only, credential-free WASM runtime smoke, not SQL access.
+    const {PgParser}=await import("@supabase/pg-parser");
+    const parsed=await new PgParser({version:17}).parse("SELECT 1 AS probe");
+    if(parsed.error||!parsed.tree||!parsed.tree.stmts?.length)
+      throw Error("postgres17_wasm_runtime_smoke_failed");
+    console.log("Serverless asset trace + PG17 parse proof PASSED "+JSON.stringify(result));
   }catch(error){
     console.error("scripts/acceptance/serverless-assets.mjs:1: "+(error instanceof Error?error.message:String(error)));
     process.exitCode=1;
