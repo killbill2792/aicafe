@@ -125,6 +125,32 @@ describe("U4 objective evidence and model autonomy",()=>{
     expect(independent.sourceCount).toBe(2);
     expect(independent.sourceDomains).toEqual(["recorded_sales","stock_and_inventory"]);
   });
+  it("attributes each canonical query to its real source, not generically to sales",()=>{
+    const fromQuery=(view:string)=>({source:"canonical_data",view,
+      period:{from:"2026-11-13",to:"2026-11-20"},missing:[],
+      rows:[{count_business_date:4}],rowCount:1,sourceMix:{app:1},
+      aggregateOnly:true,truncated:false});
+    const result=verifyObjectiveTurn(turn("Review recorded sales and scheduling evidence.",{
+      toolInvocations:[
+        {name:"get_sales",result:source},
+        {name:"query_data",result:fromQuery("cv_sales_days")},
+        {name:"get_schedule",result:{source:"schedule",period:null,
+          missing:[],shifts:[{durationHours:6}]}},
+        {name:"query_data",result:fromQuery("cv_shifts")},
+        {name:"query_data",result:fromQuery("cv_cash")},
+        {name:"query_data",result:fromQuery("cv_cash")},
+      ],
+    }),objective);
+    expect(result.sourceDomains).toEqual([
+      "recorded_sales","dated_schedule","cash_management_records",
+    ]);
+    expect(result.sourceCount).toBe(3);
+    expect(result.sourceRefs).toHaveLength(3);
+    const unclassified=verifyObjectiveTurn(turn("An unfamiliar research view was observed.",{
+      toolInvocations:[{name:"query_data",result:fromQuery("cv_not_yet_classified")}],
+    }),objective);
+    expect(unclassified.sourceDomains).toEqual(["other:canonical_data"]);
+  });
   it("quietly completes a Watch when real evidence does not justify owner interruption",()=>{
     const result=verifyObjectiveTurn(turn("NO_ACTION_REQUIRED: Observed a normal week."),watch);
     expect(result.attention).toBe("none");
