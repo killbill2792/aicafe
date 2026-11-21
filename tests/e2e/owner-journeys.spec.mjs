@@ -78,6 +78,14 @@ test("@home Task16A authenticated mobile owner views library/routines/permission
     console.info("[Task16A E2E] saved synthetic owner-scoped records");
     const page=await ctx.newPage();
     await login(page,owner);console.info("[Task16A E2E] first owner signed in");
+    let transientReceiptRead=false;
+    await page.route("**/api/ai/supervisor/routines",route=>{
+      if(route.request().method()==="GET"&&!transientReceiptRead){
+        transientReceiptRead=true;
+        return route.fulfill({status:503,contentType:"application/json",body:'{"error":"temporary"}'});
+      }
+      return route.continue();
+    });
     await openOwnedPage(page,owner,"?thread="+id.thread);console.info("[Task16A E2E] opened real Supervisor chat");
     const visibleThreads=async()=>{
       const response=await ctx.request.get("/api/ai/threads");
@@ -110,6 +118,8 @@ test("@home Task16A authenticated mobile owner views library/routines/permission
       expect.objectContaining({id:id.routine,revision:1,status:"active"}),
     ]));
     await expect(editInChat).toBeEnabled({timeout:12000});
+    expect(transientReceiptRead).toBe(true);
+    await page.unroute("**/api/ai/supervisor/routines");
     await editInChat.click();
     await expect(page.locator("#supervisor-home-composer")).toHaveValue(
       new RegExp(id.routine));
