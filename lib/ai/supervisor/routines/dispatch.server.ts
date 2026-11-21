@@ -282,6 +282,17 @@ export async function dispatchRoutinesForBusiness(db:SupabaseClient,businessId:s
         const opened=await db.rpc("supervisor_ensure_proactive_thread",{p_business_id:businessId,p_owner_user_id:ownerUserId});
         if(opened.error)throw opened.error;
         if(typeof opened.data==="string")threadId=opened.data;
+        if(!threadId&&u4Enabled){
+          // Unlike the legacy alert-driven path, a newly connected owner
+          // needs an autonomous research identity BEFORE the first incident.
+          // This additive service-only RPC reuses the existing owner-thread
+          // fence and advisory lock, never creating a fabricated owner turn.
+          const watchThread=await db.rpc("u4_ensure_watch_thread",{
+            p_business_id:businessId,p_owner_user_id:ownerUserId,
+          });
+          if(watchThread.error)throw watchThread.error;
+          if(typeof watchThread.data==="string")threadId=watchThread.data;
+        }
       }catch{result.failed++;continue;}
       // Null is a successful no-work result, not an outage. A failed RPC is handled above.
       if(!threadId)continue;
