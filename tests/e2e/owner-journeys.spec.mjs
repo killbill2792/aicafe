@@ -116,12 +116,12 @@ test("@home Task16A authenticated mobile owner views library/routines/permission
     await expect.poll(savedState,{timeout:15000}).toEqual({
       status:[{status:"paused",revision:2}],
     });
-    await expect(panel.getByText("Paused",{exact:true})).toBeVisible();
+    await expect(panel.locator("article").filter({hasText:"Daily source check"})).toContainText("Paused");
     await panel.getByRole("button",{name:"Resume",exact:true}).click();
     await expect.poll(savedState,{timeout:15000}).toEqual({
       status:[{status:"active",revision:3}],
     });
-    await expect(panel.getByText("Active",{exact:true})).toBeVisible();
+    await expect(panel.locator("article").filter({hasText:"Daily source check"})).toContainText("Active");
     const stale=await ctx.request.post("/api/ai/supervisor/routines",{
       headers:{origin:"http://127.0.0.1:3000"},
       data:{action:"pause",routineId:id.routine,revision:1},
