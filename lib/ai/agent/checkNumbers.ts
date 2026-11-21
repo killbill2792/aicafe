@@ -199,10 +199,13 @@ export function compactEvidence(results:readonly AgentToolResult[],limit=100):Nu
       invalidatedKeys.push(valueKey);
       values.push({key:valueKey,value:/Micros$/.test(key)?v/1000000:/Percent$/.test(key)?v*100:v,unit});
     };
-    walk(r,"",0,rootScope);
-    // node-postgres serializes bigint/NUMERIC source values as strings. Only
-    // complete, source-attested SQL receipt values contribute numeric evidence.
-    // The generic object walker intentionally ignores string-valued amounts.
+    // The generic walker trusts conventional numeric field names and is
+    // intentionally NOT safe for model-authored SQL projections: for example,
+    // SELECT 99999 AS "fakeCents" would otherwise become verified money even
+    // with no attested source unit or with truncated evidence.
+    if(r.source!=="u3_canonical_research")walk(r,"",0,rootScope);
+    // PostgreSQL bigint/NUMERIC values may be strings. Only complete,
+    // source-attested SQL receipts contribute numeric verification evidence.
     const verified=verifiedU3Evidence(r,periodKey);
     for(const value of verified){values.push(value);invalidatedKeys.push(value.key);}
     // Only declared, typed calculate results count as arithmetic evidence.
