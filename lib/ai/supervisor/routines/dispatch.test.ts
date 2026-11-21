@@ -2,6 +2,7 @@ import {describe,expect,it,vi} from "vitest";
 vi.mock("server-only",()=>({}));
 const mocks=vi.hoisted(()=>({
   claim:vi.fn(),finish:vi.fn(),notice:vi.fn(),candidates:vi.fn(),
+  objective:vi.fn(),ensureWatch:vi.fn(async()=>({data:"verified-watch-id",error:null})),
   staff:vi.fn(async()=>({published:0,attempted:0,blocked:0})),
   reconcile:vi.fn(async()=>({data:{completed:0,expired:0},error:null})),
 }));
@@ -10,6 +11,7 @@ vi.mock("./repository.server",()=>({
   listRoutineOccurrenceCandidates:mocks.candidates,
 }));
 vi.mock("./notices.server",()=>({postPriorityNotice:mocks.notice}));
+vi.mock("./objective.server",()=>({executeClaimedObjective:mocks.objective}));
 vi.mock("@/lib/scheduling/staffPublication.server",()=>({
   followUpStaffPublicationForBusiness:mocks.staff,
 }));
@@ -28,6 +30,7 @@ function db(params?:{routines?:Record<string,unknown>[];owners?:{user_id:string}
   };
   return {rpc:async(name:string,args?:{p_owner_user_id?:string})=>{
     if(name==="supervisor_ensure_proactive_thread")return {data:params?.newThread??null,error:params?.revokedThreadOwner&&args?.p_owner_user_id===params.revokedThreadOwner?{code:"42501"}:null};
+    if(name==="u4_ensure_watch_routine")return mocks.ensureWatch();
     if(name==="staff_coordination_reconcile")return mocks.reconcile();
     if(!["staff_channel_sync_shift_requests","staff_channel_escalate_unanswered","supervisor_sync_supplier_receiving_tasks","supervisor_sync_financial_review"].includes(name))
       throw new Error("unexpected staff channel RPC "+name);
@@ -89,6 +92,46 @@ describe("U4 fair scheduled work without a second queue",()=>{
       ["another","later"],["old","earlier"]]));
     expect(two.slice(1).map(x=>x.id)).toEqual(["watch","old","another"]);
     expect(input.map(x=>x.id)).toEqual(["priority","old","watch","another"]);
+  });
+});
+describe("U4 direct cron integration rather than isolated objective-only unit proof",()=>{
+  it("executes a full saved owner goal even when there are no existing alerts",async()=>{
+    vi.stubEnv("SUPERVISOR_U4_ENABLED","true");
+    try{
+      mocks.candidates.mockReset().mockResolvedValue([
+        {localDate:"2026-11-20",scheduledForUtc:null},
+      ]);
+      mocks.claim.mockReset().mockResolvedValue({
+        runId:"one-durable-run",leaseToken:"one-lease",revision:1,
+      });
+      mocks.objective.mockReset().mockResolvedValue({
+        attention:"attention",sourceCount:2,
+      });
+      mocks.ensureWatch.mockClear();
+      mocks.finish.mockClear();
+      const objective={...routine,id:"saved-owner-objective",
+        execution_mode:"objective",
+        objective_text:"Check source-backed staffing, stock and demand.",
+        objective_source_message_id:"verified-owner-message"};
+      const source=db({routines:[objective],alerts:[],tasks:[]});
+      const now=new Date("2026-11-21T17:00:00Z");
+      const result=await dispatchRoutinesForBusiness(source,
+        "cafe","America/Los_Angeles",now);
+      expect(mocks.ensureWatch).toHaveBeenCalledOnce();
+      expect(mocks.objective).toHaveBeenCalledOnce();
+      expect(mocks.objective).toHaveBeenCalledWith(source,
+        expect.objectContaining({
+          routine:expect.objectContaining({
+            id:"saved-owner-objective",executionMode:"objective",
+            objectiveText:"Check source-backed staffing, stock and demand.",
+          }),
+          lease:{runId:"one-durable-run",leaseToken:"one-lease",revision:1},
+          localDate:"2026-11-20",
+        }));
+      expect(mocks.finish).not.toHaveBeenCalled();
+      expect(result).toMatchObject({runs:1,evidenceChecks:2,
+        notices:1,failed:0});
+    }finally{vi.unstubAllEnvs();}
   });
 });
 describe("bounded independent routine dispatch",()=>{
