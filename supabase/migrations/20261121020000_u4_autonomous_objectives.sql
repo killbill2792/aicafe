@@ -472,6 +472,10 @@ grant execute on function public.supervisor_reserve_investigation_model_call(
   select u4_checkpoint into current_journal from public.supervisor_routine_occurrences
     where business_id=p_business_id and routine_id=p_routine_id
       and run_id=p_run_id for update;
+  -- Recheck under the row lock; a different worker may have replaced the
+  -- original token while this session waited.
+  if not public.u4_routine_lease_active(
+      p_business_id,p_routine_id,p_run_id,p_lease_token) then return false; end if;
   steps:=coalesce(current_journal->'steps','[]'::jsonb);
   steps:=(select coalesce(jsonb_agg(x.val order by x.ord),'[]'::jsonb)
     from jsonb_array_elements(steps) with ordinality x(val,ord)
