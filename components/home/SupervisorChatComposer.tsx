@@ -18,6 +18,7 @@ import { ChatMarkdown, SourceLegend } from "./ChatMarkdown";
 import dynamic from "next/dynamic";
 const SupervisorRichPresentation=dynamic(()=>import("./SupervisorRichPresentation"));
 import FactSummary from "./FactSummary";
+import SupervisorRoutineInlineCard from "./SupervisorRoutineInlineCard";
 import SupervisorProposalCard from "./SupervisorProposalCard";
 import InventoryApproveAll from "./InventoryApproveAll";
 import {buildAgentSendBody} from "./agentSendBody";
@@ -113,7 +114,7 @@ function progressStatusText(copy: SupervisorChatCopy, status: SupervisorProgress
 const record = (value: unknown): value is Record<string, unknown> =>
   Boolean(value) && typeof value === "object" && !Array.isArray(value);
 
-function ReplyBlock({ block, copy, locale, threadId, unverified = [] }: { block: unknown; copy: SupervisorChatCopy; locale: Locale; threadId?:string; unverified?: {start:number;end:number;source?:'owner'|'estimate'|'unchecked';detail?:string}[] }) {
+function ReplyBlock({ block, copy, locale, threadId, onEdit, disabled=false, unverified = [] }: { block: unknown; copy: SupervisorChatCopy; locale: Locale; threadId?:string; onEdit?:(text:string)=>void;disabled?:boolean; unverified?: {start:number;end:number;source?:'owner'|'estimate'|'unchecked';detail?:string}[] }) {
   if (!record(block)) return null;
   if(block.type==="proposal_card"&&typeof block.proposalId==="string"&&threadId)
     return <div data-work-proposal={block.proposalId} tabIndex={-1}><SupervisorProposalCard threadId={threadId} proposalId={block.proposalId} locale={locale}/></div>;
@@ -122,6 +123,7 @@ function ReplyBlock({ block, copy, locale, threadId, unverified = [] }: { block:
       copy={{en,es,ar}[locale].SupervisorExperiment} initialProposalId={block.proposalId}/></div>;
   if(block.type==="memory_card"&&typeof block.ruleId==="string")
     return <MemoryCard ruleId={block.ruleId} locale={locale}/>;
+  if(block.type==="routine_card")return <SupervisorRoutineInlineCard block={block} onEdit={onEdit} disabled={disabled}/>;
   if ((block.type === "text" || block.type === "warning") && typeof block.text === "string") {
     return block.type === "warning"
       ? <p className="flex items-start gap-2 text-[17px] leading-relaxed text-ink-muted" role="note">
@@ -213,7 +215,7 @@ function SupervisorMessage({ message, copy, locale, cafeCurrency, storedFiles, o
           .map(v=>({start:Number(v.start),end:Number(v.end),
             source:(v.source==="owner"||v.source==="estimate"?v.source:"unchecked") as "owner"|"estimate"|"unchecked",
             detail:typeof v.detail==="string"?v.detail:undefined}));
-        return <ReplyBlock key={i} block={group.block} copy={copy} locale={locale} threadId={message.threadId} unverified={spans}/>;
+        return <ReplyBlock key={i} block={group.block} copy={copy} locale={locale} threadId={message.threadId} onEdit={onSuggest} disabled={disabled} unverified={spans}/>;
       })}
       <SourceLegend sources={legendSources} labels={provenanceLabels} legendLabel={copy.provenanceLegend}/>
     </div>
