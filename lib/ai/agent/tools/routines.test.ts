@@ -24,6 +24,29 @@ describe("verified owner routine chat tool",()=>{
     },ctx({change}))).rejects.toThrow();
     expect(change).not.toHaveBeenCalled();
   });
+  it("edits an authenticated owner objective without requiring a replacement schedule",async()=>{
+    const change=vi.fn(async(input)=>({id:input.id,revision:input.revision+1,
+      objectiveUpdates:[{sourceMessageId:"authenticated-turn"}]}));
+    const id="11111111-1111-4111-8111-111111111111";
+    const saved=await routineTools.manage_routine.execute({
+      ...blank,action:"edit_goal",routine_id:id,revision:4,
+    },ctx({change,list:vi.fn()}));
+    expect(change).toHaveBeenCalledWith({
+      id,revision:4,objectiveEdit:true,
+    });
+    expect(saved.missing).toEqual([]);
+    expect(saved.routine).toMatchObject({revision:5});
+  });
+  it("does not treat a schedule-only edit as a replacement goal",async()=>{
+    const change=vi.fn(async input=>({id:input.id,revision:2}));
+    const id="11111111-1111-4111-8111-111111111111";
+    await routineTools.manage_routine.execute({
+      ...blank,action:"edit",routine_id:id,revision:1,title:"Monday review",
+      cadence:"weekly",weekdays:[1],local_time:"09:15",
+    },ctx({change}));
+    expect(change).toHaveBeenCalledWith({id,revision:1,
+      schedule:{title:"Monday review",cadence:"weekly",weekdays:[1],localTime:"09:15"}});
+  });
   it("rejects duplicate weekdays",async()=>{
     await expect(routineTools.manage_routine.execute({
       ...blank,action:"create",title:"Weekly review",cadence:"weekly",
