@@ -93,8 +93,8 @@ do $$
  raise exception 'owner answer did not enter existing investigation queue';end if; if exists(select 1 from public.staff_communication_requests where source_id=current_setting('test.staffquestion.owner_proposal')) then raise exception 'owner answer contacted worker';end if;
 end $$;
 do $$
- begin begin perform public.supervisor_answer_staff_question(current_setting('test.staffquestion.biz')::uuid,current_setting('test.staffquestion.owner')::uuid,current_setting('test.staffquestion.thread')::uuid,
- current_setting('test.staffquestion.owner_proposal')::uuid,1,:'owner_answer_message'); raise exception 'owner answer replay was accepted'; exception when sqlstate '40900' then null;end; begin
+ begin if public.supervisor_answer_staff_question(current_setting('test.staffquestion.biz')::uuid,current_setting('test.staffquestion.owner')::uuid,current_setting('test.staffquestion.thread')::uuid,
+ current_setting('test.staffquestion.owner_proposal')::uuid,1,:'owner_answer_message')->>'alreadyRecorded' is distinct from 'true' then raise exception 'identical owner message retry lost';end if; begin
  perform public.supervisor_answer_staff_question(current_setting('test.staffquestion.biz')::uuid,current_setting('test.staffquestion.outsider')::uuid,current_setting('test.staffquestion.thread')::uuid, current_setting('test.staffquestion.rejected_proposal')::uuid,1,:'owner_answer_message'); raise exception 'cross-cafe owner answer was accepted'; exception when sqlstate '40900' then null;end;
 end $$;
 update public.staff_communication_requests set due_at=statement_timestamp()-interval '1 second' where id=:'request_id';
