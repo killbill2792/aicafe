@@ -56,12 +56,33 @@ test("@home Task16A authenticated mobile owner views library/routines/permission
       " values($1,$2,$3,$4,'Daily source check','daily','{}'::integer[],'08:00',"+
       "(select timezone from public.businesses where id=$2),'active')",
       [id.routine,owner.businessId,owner.owner.userId,id.thread]);
+    // No provider call: this is a fixture for a previously verified
+    // manage_routine receipt, not evidence that Luna ran. It must hydrate as
+    // ONE compact in-chat card with the same canonical routine/revision.
+    await db.query("insert into public.ai_messages("+
+      "business_id,thread_id,owner_user_id,role,content_type,"+
+      "structured_content,grounding) values($1,$2,$3,'supervisor',"+
+      "'blocks',$4::jsonb,$5::jsonb)",[
+        owner.businessId,id.thread,owner.owner.userId,
+        JSON.stringify([{type:"text",text:"Daily source check saved."},
+          {type:"routine_card",routineId:id.routine,title:"Daily source check",
+            cadence:"daily",weekdays:[],localTime:"08:00",
+            timezone:owner.timezone,status:"active",revision:1}]),
+        JSON.stringify({status:"verified",intent:"operating_tasks",evidence:[]}),
+      ]);
 
     console.info("[Task16A E2E] saved synthetic owner-scoped records");
     const page=await ctx.newPage();
     await login(page,owner);console.info("[Task16A E2E] first owner signed in");
     await openOwnedPage(page,owner,"?thread="+id.thread);console.info("[Task16A E2E] opened real Supervisor chat");
     await page.setViewportSize({width:390,height:844});
+    const routineCard=page.locator('[data-routine-card="'+id.routine+'"]');
+    await expect(routineCard).toBeVisible({timeout:30_000});
+    await expect(routineCard).toContainText("Daily source check");
+    await expect(page.getByText("Daily source check saved.",{exact:true})).toHaveCount(1);
+    await expect(routineCard.getByLabel("Routine actions: Daily source check")).toBeVisible();
+    // Prove the compact chat does not regress the mobile viewport.
+    expect(await page.evaluate(()=>document.documentElement.scrollWidth)).toBeLessThanOrEqual(391);
     const controlsButton=page.getByRole("button",{name:"Library, routines and permissions"});
     await expect(controlsButton).toBeVisible({timeout:20_000});
     await expect(controlsButton).toBeEnabled({timeout:10_000});
