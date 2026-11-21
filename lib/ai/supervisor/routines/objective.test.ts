@@ -151,6 +151,27 @@ describe("U4 objective evidence and model autonomy",()=>{
     }),objective);
     expect(unclassified.sourceDomains).toEqual(["other:canonical_data"]);
   });
+  it("keeps signed multi-relation SQL auditable without inventing a second independent source",()=>{
+    const signedSql={
+      source:"u3_canonical_research",period:null,missing:[],
+      truncated:false,rows:[{sum_net_sales_cents:10424}],
+      evidence:{scope:"verified_owner_cafe_lease",
+        relation_names:["orders","order_lines"],query_fingerprint:"a".repeat(64)},
+    };
+    const alongside=verifyObjectiveTurn(turn("Recorded sales need verification.",{
+      toolInvocations:[{name:"get_sales",result:source},
+        {name:"query_data",result:signedSql}],
+    }),objective);
+    expect(alongside.sourceCount).toBe(1);
+    expect(alongside.sourceDomains).toEqual(["recorded_sales"]);
+    expect(alongside.sourceRefs).toHaveLength(2);
+    expect(alongside.sourceRefs[1].relations).toEqual(["orders","order_lines"]);
+    const alone=verifyObjectiveTurn(turn("Signed SQL observed facts.",{
+      toolInvocations:[{name:"query_data",result:signedSql}],
+    }),objective);
+    expect(alone.sourceCount).toBe(1);
+    expect(alone.sourceDomains).toEqual(["other:u3_signed_sql"]);
+  });
   it("hashes all original observed source bytes without persisting their raw text",()=>{
     const common="recorded-context:".repeat(1300);
     const a=verifyObjectiveTurn(turn("Source A recorded." ,{
