@@ -80,6 +80,8 @@ export default function SupervisorRoutineInlineCard({block,onEdit,disabled=false
 
   if(!parsed.success||!current)return null;
   const isDeleted=current.status==="revoked";
+  // Draft preparation is inert and safe when chat sending is unavailable.
+  // Actual pause/delete still require a current owner-scoped SQL receipt.
   // ISO weekday labels come from the same verified English locale copy as
   // the owner routines drawer. Do not synthesize arbitrary dates in the UI.
   const localDay=current.cadence==="weekly"?
@@ -103,7 +105,7 @@ export default function SupervisorRoutineInlineCard({block,onEdit,disabled=false
           <Ellipsis size={20} aria-hidden="true"/>
         </summary>
         <div role="group" aria-label={copy.actions} className="mt-1 flex flex-col gap-1">
-          <button type="button" disabled={disabled||busy||unavailable||!onEdit}
+          <button type="button" disabled={busy||unavailable||!onEdit}
             onClick={()=>onEdit?.("Edit saved routine \""+current.title+"\" (routine ID "+current.routineId+", revision "+current.revision+"): ")}
             className="min-h-11 rounded-lg px-3 text-start text-[14px] hover:bg-surface2 disabled:opacity-50">{copy.editInChat}</button>
           <button type="button" disabled={disabled||busy||unavailable}
