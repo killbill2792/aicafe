@@ -128,6 +128,7 @@ export type AgentToolContext = {
   /** Verified owner/claimed investigation port; proposals are inert until an owner click. */
   staffQuestionPropose?:(input:import("@/lib/ai/supervisor/loop/staffQuestion.server").StaffQuestionInput)=>
    Promise<{proposalId:string;revision:number}>;
+  staffQuestionAnswer?:(proposalId:string,revision:number)=>Promise<{proposalId:string;ownerMessageId:string;employeeContacted:false}>;
   /** Owner-scoped purchasing capability in the ONE Supervisor. No model-supplied café IDs or approvals. */
   /** Owner/cafe scoped receiving evidence; no mutation or payment authority. */
   invoicePropose?:(input:import("@/lib/ai/supervisor/loop/supplierReceiving.server").InvoiceToolInput)=>Promise<{proposalId:string;revision:number}>;
@@ -361,6 +362,7 @@ export async function executeAgentTool(name: string, raw: unknown, ctx: AgentToo
   if(name==="get_maintenance_staff_candidates")return maintenanceTools.get_maintenance_staff_candidates.execute(raw,ctx);
   if(name==="propose_maintenance_staff_assignment")return maintenanceTools.propose_maintenance_staff_assignment.execute(raw,ctx);
   if(name==="propose_staff_question")return staffQuestionTools.propose_staff_question.execute(raw,ctx);
+  if(name==="record_staff_question_owner_answer")return staffQuestionTools.record_staff_question_owner_answer.execute(raw,ctx);
   if(name==="record_maintenance_repair_claim")return maintenanceTools.record_maintenance_repair_claim.execute(raw,ctx);
   if(name==="search_maintenance_vendor")return maintenanceTools.search_maintenance_vendor.execute(raw,ctx);
   if(name==="propose_maintenance_vendor_request")return maintenanceTools.propose_maintenance_vendor_request.execute(raw,ctx);
