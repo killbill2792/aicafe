@@ -35,6 +35,27 @@ describe("owner-only routine mutation port",()=>{
       p_business_id:"business",p_owner_user_id:"owner",p_thread_id:uuid,
     }));
   });
+  it("requires real owner origin and executes goal-only CAS against existing routine RPC",async()=>{
+    const rpc=vi.fn(async()=>({data:{...row,revision:4,execution_mode:"objective",
+      objective_updates:[{sourceMessageId:uuid,text:"Include costs",revision:4}]},error:null}));
+    const base=turn(rpc);
+    vi.stubEnv("SUPERVISOR_U4_ENABLED","true");
+    try{
+      await expect(changeOwnerRoutine({id:uuid,revision:3,objectiveEdit:true},
+        base)).rejects.toThrow("Authenticated owner message");
+      expect(rpc).not.toHaveBeenCalled();
+      const updated=await changeOwnerRoutine({
+        id:uuid,revision:3,objectiveEdit:true,
+      },{...base,ownerMessageId:uuid});
+      expect(updated).toMatchObject({revision:4,executionMode:"objective"});
+      expect(rpc).toHaveBeenCalledWith("u4_edit_objective_routine",
+        expect.objectContaining({
+          p_business_id:"business",p_owner_user_id:"owner",
+          p_owner_message_id:uuid,p_patch:{},
+          p_revision:3,p_routine_id:uuid,
+        }));
+    }finally{vi.unstubAllEnvs();}
+  });
   it("does not permit revoke or edit without optimistic revision",async()=>{
     const rpc=vi.fn(async()=>({data:row,error:null}));
     await expect(changeOwnerRoutine({id:uuid,revision:0,status:"revoked"},turn(rpc)))
