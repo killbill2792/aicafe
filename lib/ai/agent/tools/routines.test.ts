@@ -37,6 +37,15 @@ describe("verified owner routine chat tool",()=>{
     expect(saved.missing).toEqual([]);
     expect(saved.routine).toMatchObject({revision:5});
   });
+  it("refuses incomplete combined goal/schedule updates instead of claiming success",async()=>{
+    const change=vi.fn();
+    await expect(routineTools.manage_routine.execute({
+      ...blank,action:"edit_goal",
+      routine_id:"11111111-1111-4111-8111-111111111111",
+      revision:2,title:"Renamed but no schedule supplied",
+    },ctx({change}))).rejects.toThrow("partial changes cannot be silently ignored");
+    expect(change).not.toHaveBeenCalled();
+  });
   it("does not treat a schedule-only edit as a replacement goal",async()=>{
     const change=vi.fn(async input=>({id:input.id,revision:2}));
     const id="11111111-1111-4111-8111-111111111111";
