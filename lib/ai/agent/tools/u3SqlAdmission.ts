@@ -63,7 +63,9 @@ for(const source of Object.values(toastOfficialFieldCatalog)){
  }
 }
 
-export type U3SqlAdmission={relations:string[];functions:string[];nodeCount:number;cteCount:number};
+export type U3TrustedUnit="cents"|"count"|"percent"|"ratio";
+export type U3SqlAdmission={relations:string[];functions:string[];nodeCount:number;cteCount:number;
+ outputUnits:Record<string,U3TrustedUnit>};
 const stringNode=(input:unknown)=>{
  if(!input||typeof input!=="object"||!("String" in input))return null;
  const val=(input as {String?:{sval?:unknown}}).String?.sval;
@@ -93,7 +95,8 @@ const castName=(n:Record<string,unknown>)=>{
  * A successful parse alone is NEVER authorization. The executor must also
  * use a dedicated no-BYPASSRLS scope-bound role and approved research views. */
 export async function admitU3Sql(sql:string,allowedRelations:readonly string[],
- parameterCount=0,aggregateOnly=false,offturnColumns:readonly string[]=[]):Promise<U3SqlAdmission>{
+ parameterCount=0,aggregateOnly=false,offturnColumns:readonly string[]=[],
+ knownColumnUnits:Readonly<Record<string,U3TrustedUnit|null>>={}):Promise<U3SqlAdmission>{
  if(typeof sql!=="string"||sql.length>MAX_SQL||!sql.trim()||
   parameterCount<0||parameterCount>48)throw Error("invalid_query");
  const parsed=await parser.parse(sql);
@@ -259,6 +262,61 @@ export async function admitU3Sql(sql:string,allowedRelations:readonly string[],
     "stddev_samp","variance","bool_and","bool_or"].includes(fn)))
    throw Error("unattended_aggregate_required");
  }
+
+ // A model-authored SELECT alias is NOT source authority. Infer a unit only
+ // from the approved source column and operation, not from the output name.
+ // Unsafe/ambiguous expressions remain calculable as SQL research but do not
+ // become a trusted input to the exact canonical calculator.
+ type N=Record<string,unknown>;
+ const recognized=(v:unknown):U3TrustedUnit|null=>
+  v==="cents"||v==="count"||v==="percent"||v==="ratio"?v:null;
+ const infer=(node:unknown):U3TrustedUnit|null=>{
+  if(!node||typeof node!=="object"||Array.isArray(node))return null;
+  const obj=node as N;
+  if(obj.ColumnRef&&typeof obj.ColumnRef==="object"){
+   const fields=(obj.ColumnRef as {fields?:unknown}).fields;
+   if(!Array.isArray(fields)||!fields.length)return null;
+   const col=stringNode(fields[fields.length-1]);
+   return col?recognized(knownColumnUnits[col]):null;
+  }
+  if(obj.FuncCall&&typeof obj.FuncCall==="object"){
+   const fn=obj.FuncCall as N,operation=functionName(fn);
+   if(operation==="count")return "count";
+   if(!["sum","min","max"].includes(operation??""))return null;
+   const args=fn.args;
+   return Array.isArray(args)&&args.length===1?infer(args[0]):null;
+  }
+  if(obj.A_Expr&&typeof obj.A_Expr==="object"){
+   const expr=obj.A_Expr as N,op=name(expr.name);
+   const left=infer(expr.lexpr),right=infer(expr.rexpr);
+   return (op==="+"||op==="-")&&left!==null&&left===right?left:null;
+  }
+  if(obj.TypeCast&&typeof obj.TypeCast==="object"){
+   const cast=obj.TypeCast as N,type=castName(cast);
+   return ["int2","int4","int8","smallint","integer","bigint",
+    "numeric","decimal"].includes(type??"")?infer(cast.arg):null;
+  }
+  return null;
+ };
+ const outputUnits:Record<string,U3TrustedUnit>={};
+ const targets=(tree.stmts[0].stmt.SelectStmt as {targetList?:unknown}).targetList;
+ if(Array.isArray(targets))for(const t of targets){
+  if(!t||typeof t!=="object"||!("ResTarget" in t))continue;
+  const target=(t as {ResTarget?:{name?:unknown;val?:unknown}}).ResTarget;
+  const value=target?.val,unit=infer(value);
+  if(!unit)continue;
+  const fallback=value&&typeof value==="object"&&"ColumnRef" in value?
+   name((value as {ColumnRef?:{fields?:unknown}}).ColumnRef?.fields)?.split(".").at(-1):
+   value&&typeof value==="object"&&"FuncCall" in value?
+    functionName((value as {FuncCall:N}).FuncCall):null;
+  const alias=typeof target?.name==="string"?target.name:fallback;
+  if(alias&&/^[a-zA-Z_][a-zA-Z0-9_]{0,99}$/.test(alias)){
+   // Duplicate aliases cannot create a false unit claim.
+   if(Object.hasOwn(outputUnits,alias)&&outputUnits[alias]!==unit)
+    delete outputUnits[alias];
+   else outputUnits[alias]=unit;
+  }
+ }
  return {relations:[...reads].sort(),functions:[...called].sort(),
-  nodeCount:nodes,cteCount:nCtes};
+  nodeCount:nodes,cteCount:nCtes,outputUnits};
 }
