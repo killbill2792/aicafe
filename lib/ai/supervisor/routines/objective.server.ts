@@ -144,6 +144,7 @@ export type ObjectiveOutcome={
   missing:string[];
   sourceCount:number;
   sourceDomains:string[];
+  sourceRefs:Array<{tool:string;source:string;domain:string;view:string|null;period:{from:string;to:string}|null;evidenceDigest:string}>;
 };
 /** A verified outcome is NOT the model saying it was successful. Validate
  * registered tool results, unsupported effects and the ordinary numeric
@@ -162,7 +163,7 @@ export function verifyObjectiveTurn(turn:AgentTurn,routine:RoutineRecord):Object
   if(!reads.length)throw Error("u4_no_verified_source_observation");
   // Another tool projecting the SAME physical source is not independent
   // corroboration. Reuse the incident investigator's conservative lineage.
-  const sourceDomains=[...new Set(reads.map(call=>{
+  const domainOf=(call:(typeof reads)[number])=>{
     if(call.result.source==="gmail")return "unverified_external_mail";
     if(call.name==="query_data"){
       const view=typeof call.result.view==="string"?call.result.view:"";
@@ -173,8 +174,28 @@ export function verifyObjectiveTurn(turn:AgentTurn,routine:RoutineRecord):Object
       if(view==="cv_events")return "verified_saved_local_events";
     }
     return canonicalEvidenceDomain[call.name as AgentToolName]??
-      "other:"+String(call.result.source);
-  }))];
+      "other:"+String(call.result.source).slice(0,80);
+  };
+  // Persist only bounded original-source metadata and a digest, NEVER source
+  // rows, third-party content or confidential values in the owner work ledger.
+  // The first fact from each independently identified lineage is sufficient
+  // for an auditable provenance record; it is not independent metric parity.
+  const distinctReads=[...new Map(reads.map(call=>[domainOf(call),call])).entries()]
+    .slice(0,8);
+  const sourceDomains=distinctReads.map(([domain])=>domain);
+  const sourceRefs=distinctReads.map(([domain,call])=>{
+    const period=call.result.period;
+    const validDate=(value:unknown):value is string=>
+      typeof value==="string"&&/^\\d{4}-\\d{2}-\\d{2}$/u.test(value);
+    const dates=period&&validDate(period.from)&&validDate(period.to)?
+      {from:period.from,to:period.to}:null;
+    return {
+      tool:call.name,source:String(call.result.source).slice(0,80),
+      domain,view:typeof call.result.view==="string"?
+        call.result.view.slice(0,80):null,
+      period:dates,evidenceDigest:digest(call.result),
+    };
+  });
   let report=turn.text.trim();
   let attention:"attention"|"none"="attention";
   if(routine.executionMode==="watch"){
@@ -191,7 +212,7 @@ export function verifyObjectiveTurn(turn:AgentTurn,routine:RoutineRecord):Object
     observedToolNames:[...new Set(reads.map(call=>call.name))].slice(0,12),
     missing:[...new Set((turn.results??[]).flatMap(r=>
       Array.isArray(r.missing)?r.missing:[]))].slice(0,12),
-    sourceCount:sourceDomains.length,sourceDomains,
+    sourceCount:sourceDomains.length,sourceDomains,sourceRefs,
   };
 }
 
@@ -336,9 +357,11 @@ export async function executeClaimedObjective(db:SupabaseClient,params:{
   await recheckGmail();
   await assertCafeAiAccess(routine.businessId);
   const gmailWasRead=verified.observedToolNames.some(name=>name.includes("gmail"));
-  const proof={sources:verified.observedToolNames.map(name=>({
-    source:name.includes("gmail")?"unverified_external" as const:"cafe_state" as const,
-    identifier:name,asOf:identity.asOf,
+  const proof={sources:verified.sourceRefs.map(ref=>({
+    source:ref.domain==="unverified_external_mail"?"unverified_external" as const:"cafe_state" as const,
+    identifier:ref.tool,originalSource:ref.source,domain:ref.domain,
+    view:ref.view,period:ref.period,evidenceDigest:ref.evidenceDigest,
+    asOf:identity.asOf,
   })),sourceCount:verified.sourceCount,sourceDomains:verified.sourceDomains,
     quality:gmailWasRead||verified.missing.length||turn.status?.status!=="complete"?
       "partial" as const:"verified" as const,
