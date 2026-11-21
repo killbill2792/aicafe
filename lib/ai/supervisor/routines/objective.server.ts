@@ -22,7 +22,7 @@ import type {ClaimedRoutine} from "./repository.server";
  * Luna decides which of these admitted, existing source readers it needs. */
 export const objectiveReadTools:readonly AgentToolName[]=[
   ...investigationReadTools.filter(name=>
-    !["get_investigation_source","query_data","describe_data","get_staff_messages"].includes(name)),
+    !["get_investigation_source","get_staff_messages"].includes(name)),
   "get_events",
   "search_gmail","list_gmail_labels","read_gmail","read_gmail_thread",
   "read_gmail_attachment",
@@ -283,6 +283,13 @@ export async function executeClaimedObjective(db:SupabaseClient,params:{
     context:{
       tools:createOwnerScopedCafeTools(scope,db),locale:"en" as const,
       asOf:identity.asOf,timezone:identity.timezone,currency:identity.currency,
+      // Same existing canonical source as interactive and incident turns;
+      // "routine" requires a live service-owned lease, never an owner ticket.
+      canonicalData:async()=>({
+        db,businessId:routine.businessId,ownerUserId:routine.ownerUserId,
+        threadId:routine.threadId,mode:"routine" as const,
+        runId:lease.runId,leaseToken:lease.leaseToken,aggregateOnly:true,
+      }),
       savedEvents:(from:string,to:string,options?:{cityEventId?:string})=>
         readSavedEventTimeline(db,scope,from,to,options),
       ...(routine.executionMode==="objective"?{gmail:{
