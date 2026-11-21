@@ -186,7 +186,7 @@ export function verifyObjectiveTurn(turn:AgentTurn,routine:RoutineRecord):Object
   const sourceRefs=distinctReads.map(([domain,call])=>{
     const period=call.result.period;
     const validDate=(value:unknown):value is string=>
-      typeof value==="string"&&/^\\d{4}-\\d{2}-\\d{2}$/u.test(value);
+      typeof value==="string"&&/^\d{4}-\d{2}-\d{2}$/u.test(value);
     const dates=period&&validDate(period.from)&&validDate(period.to)?
       {from:period.from,to:period.to}:null;
     return {
