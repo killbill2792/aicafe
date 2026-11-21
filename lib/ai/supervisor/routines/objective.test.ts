@@ -177,6 +177,27 @@ describe("U4 objective evidence and model autonomy",()=>{
     expect(()=>verifyObjectiveTurn(labels,objective))
       .toThrow("u4_no_verified_source_observation");
   });
+  it("rejects metadata-only canonical rows and SQL planning costs as fake facts",()=>{
+    const dictionaryIsNotData={
+      source:"canonical_data",view:"cv_sales_days",
+      period:{from:"2026-11-13",to:"2026-11-20"},
+      missing:[],empty:false,truncated:false,aggregateOnly:true,
+      rows:[{business_date:"2026-11-20",source_ref:"opaque"}],
+      rowCount:1,sourceMix:{toast:1},
+    };
+    expect(observedObjectiveEvidence(dictionaryIsNotData)).toBe(false);
+    expect(()=>verifyObjectiveTurn(turn("ATTENTION: fabricated source conclusion.",{
+      toolInvocations:[{name:"query_data",result:dictionaryIsNotData}],
+    }),watch)).toThrow("u4_no_verified_source_observation");
+    const sqlPlanWithoutFacts={source:"u3_canonical_research",
+      missing:[],truncated:false,rows:[],estimatedCost:400,
+      evidence:{scope:"verified_owner_cafe_lease"},
+    };
+    expect(observedObjectiveEvidence(sqlPlanWithoutFacts)).toBe(false);
+    const realAggregate={...dictionaryIsNotData,
+      rows:[{count_business_date:0}]};
+    expect(observedObjectiveEvidence(realAggregate)).toBe(true);
+  });
   it("denies a tool name without a verified observed source and refuses missing evidence",()=>{
     expect(observedObjectiveEvidence({source:"sales",period:null,missing:[]})).toBe(false);
     expect(observedObjectiveEvidence({...source,missing:["source_unavailable"]})).toBe(false);
