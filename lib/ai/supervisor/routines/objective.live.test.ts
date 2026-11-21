@@ -49,7 +49,8 @@ live("real Luna executes an authenticated full café goal through existing sched
   });
   let connected=false,providerCompletions=0;
   let budget=emptyInvestigationLiveLedger();
-  const threadId=randomUUID(),ownerMessageId=randomUUID(),routineId=randomUUID();
+  const threadId=randomUUID(),ownerMessageId=randomUUID();
+  let routineId="";
   const originalGoal="Every morning review the café's actual recent sales and "+
     "inventory. Independently read both relevant sources, explain important "+
     "changes and missing coverage, and recommend the next owner action if "+
@@ -104,7 +105,8 @@ live("real Luna executes an authenticated full café goal through existing sched
       title:"Real cross-domain daily review",cadence:"daily",
       weekdays:[],localTime:due.local_time,
     },{scope:{businessId,ownerUserId},threadId,ownerMessageId,client:db});
-    expect(routine).toMatchObject({id:routineId,executionMode:"objective",
+    routineId=routine.id;
+    expect(routine).toMatchObject({executionMode:"objective",
       objectiveText:originalGoal,objectiveSourceMessageId:ownerMessageId});
     // The schedule was genuinely recorded above; simulate time passing in
     // this disposable DB before its scheduled occurrence was due. Never
