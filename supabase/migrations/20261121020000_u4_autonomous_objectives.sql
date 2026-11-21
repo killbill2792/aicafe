@@ -212,12 +212,19 @@ create or replace function public.u4_publish_objective_report(
 ) returns boolean language plpgsql security definer set search_path=''
 as $u4_publish$
 declare r public.supervisor_routines;o public.supervisor_routine_occurrences;msg uuid;
+        blocks jsonb;
 begin
  if coalesce(auth.role(),'')<>'service_role' or p_now is null
    or p_attention not in ('attention','none')
    or length(btrim(coalesce(p_report,''))) not between 1 and 2600
    or p_proof is null or jsonb_typeof(p_proof)<>'object'
-   or octet_length(p_proof::text)>4096 then
+   or octet_length(p_proof::text)>4096
+   or jsonb_typeof(p_proof->'sources')<>'array'
+   or jsonb_array_length(p_proof->'sources')<1
+   or jsonb_typeof(p_proof->'sourceCount')<>'number'
+   or coalesce((p_proof->>'sourceCount')::integer,0)<1
+   or p_proof->>'externalEffects'<>'not_attempted'
+   or p_proof->>'quality' not in ('verified','partial') then
    raise exception 'u4_report_invalid' using errcode='22023'; end if;
  select * into r from public.supervisor_routines
    where business_id=p_business_id and id=p_routine_id for update;
@@ -233,18 +240,29 @@ begin
    or o.revision<>r.revision then return false; end if;
  if r.execution_mode='objective' or p_attention='attention' then
    msg:=md5('u4-objective-report:'||p_run_id::text)::uuid;
+   -- Native chat blocks accept at most 1,200 characters each.
+   select jsonb_agg(jsonb_build_object('type','text',
+       'text',substring(btrim(p_report) from n for 1200)) order by n)
+     into blocks
+     from generate_series(1,char_length(btrim(p_report)),1200) n;
    insert into public.ai_messages(
      id,business_id,thread_id,owner_user_id,role,
      content_type,structured_content,grounding)
    values(msg,r.business_id,r.thread_id,r.owner_user_id,'supervisor',
-     'blocks',jsonb_build_array(jsonb_build_object('type','text','text',btrim(p_report))),
-     jsonb_build_object('status','verified','intent',
-       case when r.execution_mode='watch' then 'u4_watch' else 'u4_routine' end,
-       'evidence',coalesce(p_proof->'sources','[]'::jsonb),
+     'blocks',blocks,
+     jsonb_build_object('status',p_proof->>'quality','intent','operating_tasks',
+       'evidence',p_proof->'sources',
        'agentMetadata',jsonb_build_object('runId',p_run_id::text,
           'routineId',r.id::text,'revision',r.revision,
+          'u4Kind',case when r.execution_mode='watch' then 'watch' else 'routine' end,
           'externalEffects','not_attempted')))
    on conflict(id) do nothing;
+   if not exists(select 1 from public.ai_messages m
+     where m.id=msg and m.business_id=r.business_id
+       and m.thread_id=r.thread_id and m.owner_user_id=r.owner_user_id
+       and m.role='supervisor'
+       and m.grounding->'agentMetadata'->>'runId'=p_run_id::text)
+     then raise exception 'u4_report_identity_conflict' using errcode='23505'; end if;
  end if;
  if not public.finish_supervisor_routine_occurrence(
    p_business_id,p_routine_id,p_run_id,p_lease_token,true,'u4-verified:'||p_run_id::text,
