@@ -43,6 +43,6 @@ describe("U3 SQL source receipts in numeric claim verification",()=>{
   const bad={...original,rows:[{
    amount_cents:"12345.5",orders:"9007199254740993",percent:"12.3456789"
   }]};
-  expect(compactEvidence([bad as AgentToolResult]).flatMap(v=>v.values)).toEqual([]);
+  expect(compactEvidence([bad as unknown as AgentToolResult]).flatMap(v=>v.values)).toEqual([]);
  });
 });
