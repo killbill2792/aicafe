@@ -243,3 +243,68 @@ alter table public.supervisor_system_usage_events
 alter table public.supervisor_system_usage_events
   add constraint supervisor_system_usage_events_source_scope_check
   check(source_type in ('alert','operating_task','durable_run','routine')) not valid;
+
+-- Add routines to the EXISTING per-owner, per-call reservation ledger.
+-- Every Responses request is reserved before transport, even if the provider,
+-- process or model turn subsequently fails. The routine lease is rechecked.
+create or replace function public.supervisor_reserve_investigation_model_call(
+  p_attempt_id uuid,p_business_id uuid,p_owner_user_id uuid,p_thread_id uuid,
+  p_source_type text,p_source_id text,p_lease_token uuid,p_model text,
+  p_input_upper integer,p_output_cap integer,p_owner_daily_cap integer
+) returns void language plpgsql security definer set search_path='public'
+as $u4_reserve$
+declare v_day date;v_prior bigint;v_system bigint;
+begin
+  if coalesce(auth.role(),'')<>'service_role'
+    or p_attempt_id is null or p_business_id is null or p_owner_user_id is null
+    or p_thread_id is null or p_lease_token is null
+    or p_source_type not in ('alert','operating_task','routine')
+    or length(coalesce(p_source_id,'')) not between 1 and 160
+    or length(coalesce(p_model,'')) not between 1 and 80
+    or p_input_upper not between 1 and 2000000
+    or p_output_cap is null or p_output_cap not between 1 and public.supervisor_model_execution_cap(p_model)
+    or (p_owner_daily_cap is not null and p_owner_daily_cap not between 1 and 1000000)
+    or not public.supervisor_routine_owner_authorized(
+      p_business_id,p_owner_user_id,p_thread_id)
+    or (p_source_type='routine' and not exists(
+      select 1 from public.supervisor_routine_occurrences o
+      join public.supervisor_routines r on r.business_id=o.business_id
+        and r.id=o.routine_id
+      where o.business_id=p_business_id and r.owner_user_id=p_owner_user_id
+        and r.thread_id=p_thread_id and o.run_id::text=p_source_id
+        and o.lease_token=p_lease_token and o.lease_until>statement_timestamp()
+        and o.state='running' and r.status='active' and r.revision=o.revision
+        and r.execution_mode in ('objective','watch')
+    ))
+    or (p_source_type in ('alert','operating_task') and not exists (
+      select 1 from public.supervisor_investigations i
+      where i.business_id=p_business_id and i.owner_user_id=p_owner_user_id
+        and i.thread_id=p_thread_id and i.source_type=p_source_type
+        and i.source_id=p_source_id and i.lease_token=p_lease_token
+        and i.lease_until>statement_timestamp()
+        and i.phase in ('investigate','awaiting_owner')
+    ))
+  then raise exception 'system_model_attempt_not_authorized' using errcode='42501'; end if;
+  v_day:=(statement_timestamp() at time zone 'UTC')::date;
+  perform pg_advisory_xact_lock(hashtextextended(
+    p_business_id::text||':'||p_owner_user_id::text||':'||v_day::text,0));
+  select coalesce(sum(e.model_call_count-e.reserved_model_call_count),0) into v_prior
+    from public.ai_usage_events e where e.business_id=p_business_id
+      and e.owner_user_id=p_owner_user_id and e.attempt_day=v_day;
+  select count(*) into v_system from public.supervisor_system_usage_events e
+    where e.business_id=p_business_id and e.owner_user_id=p_owner_user_id
+      and e.attempt_day=v_day;
+  if p_owner_daily_cap is not null and v_prior+v_system>=p_owner_daily_cap
+    then raise exception 'owner_usage_limit_reached' using errcode='P0001'; end if;
+  insert into public.supervisor_system_usage_events(
+    attempt_id,business_id,owner_user_id,thread_id,source_type,source_id,
+    model,attempt_day,reserved_input_upper,reserved_output_cap,status)
+  values(p_attempt_id,p_business_id,p_owner_user_id,p_thread_id,
+    p_source_type,p_source_id,p_model,v_day,p_input_upper,p_output_cap,'attempted');
+end
+$u4_reserve$;
+revoke all on function public.supervisor_reserve_investigation_model_call(
+  uuid,uuid,uuid,uuid,text,text,uuid,text,integer,integer,integer)
+  from public,anon,authenticated;
+grant execute on function public.supervisor_reserve_investigation_model_call(
+  uuid,uuid,uuid,uuid,text,text,uuid,text,integer,integer,integer) to service_role;
