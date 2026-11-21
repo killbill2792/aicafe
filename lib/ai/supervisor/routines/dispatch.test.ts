@@ -15,15 +15,17 @@ vi.mock("./objective.server",()=>({executeClaimedObjective:mocks.objective}));
 vi.mock("@/lib/scheduling/staffPublication.server",()=>({
   followUpStaffPublicationForBusiness:mocks.staff,
 }));
-import {dispatchRoutinesForBusiness,readActionablePriorities,orderRoutinesFairly} from "./dispatch.server";
+import {dispatchRoutinesForBusiness,readActionablePriorities,orderRoutinesFairly,routinePageWindow} from "./dispatch.server";
 import {choosePriorities} from "./priority";
 function db(params?:{routines?:Record<string,unknown>[];owners?:{user_id:string}[];
   threads?:{id:string;owner_user_id:string}[];alerts?:Record<string,unknown>[];
-  tasks?:Record<string,unknown>[];proposals?:Record<string,unknown>[];newThread?:string;revokedThreadOwner?:string}) {
+  tasks?:Record<string,unknown>[];proposals?:Record<string,unknown>[];
+  occurrences?:Record<string,unknown>[];newThread?:string;revokedThreadOwner?:string}) {
   const rows:Record<string,Record<string,unknown>[]>={
     memberships:params?.owners??[{user_id:"owner"}],
     ai_threads:params?.threads??[{id:"thread",owner_user_id:"owner"}],
     supervisor_routines:params?.routines??[],
+    supervisor_routine_occurrences:params?.occurrences??[],
     alerts:params?.alerts??[],
     operating_tasks:params?.tasks??[],
     supervisor_proposals:params?.proposals??[],
@@ -37,10 +39,16 @@ function db(params?:{routines?:Record<string,unknown>[];owners?:{user_id:string}
       throw new Error("unexpected staff channel RPC "+name);
     return {data:0,error:null};
   },from:(table:string)=>{
-    let selected=rows[table];
+    let selected=rows[table]??[];
+    let countRequested=false;
     const builder={
-      select(){return builder},
+      select(_columns?:string,options?:{count?:string}){
+        countRequested=options?.count==="exact";
+        return builder;
+      },
       eq(field:string,value:unknown){
+        if(table==="supervisor_routines"&&["business_id","status"].includes(field))
+          selected=selected.filter(row=>row[field]===value);
         if((table==="operating_tasks"&&(field==="kind"||field==="owner_user_id"))||
           (table==="supervisor_proposals"&&["business_id","owner_user_id","capability_id","status"].includes(field)))
           selected=selected.filter(row=>row[field]===value);
@@ -68,7 +76,12 @@ function db(params?:{routines?:Record<string,unknown>[];owners?:{user_id:string}
           selected=selected.filter(row=>typeof row[field]==="string"&&String(row[field])<=value);
         return builder;
       },
-      async limit(){return {data:selected,error:null}},
+      async limit(size=Number.MAX_SAFE_INTEGER){
+        return {data:selected.slice(0,size),count:countRequested?selected.length:null,error:null};
+      },
+      async range(start:number,end:number){
+        return {data:selected.slice(start,end+1),error:null};
+      },
     };
     return builder;
   }} as never;
@@ -78,6 +91,15 @@ const routine={business_id:"cafe",id:"routine",owner_user_id:"owner",thread_id:"
   timezone:"America/Los_Angeles",status:"active",revision:1,
   created_at:"2026-11-10T00:00:00Z",updated_at:"2026-11-10T00:00:00Z"};
 describe("U4 fair scheduled work without a second queue",()=>{
+  it("rotates bounded pages instead of permanently starving newer goals",()=>{
+    expect(routinePageWindow(new Date("2026-11-21T17:00:00Z"),102))
+      .toEqual({start:100,end:199});
+    expect(routinePageWindow(new Date("2026-11-21T18:00:00Z"),102))
+      .toEqual({start:0,end:99});
+    expect(routinePageWindow(new Date("2026-11-21T17:00:00Z"),0))
+      .toEqual({start:0,end:99});
+    expect(()=>routinePageWindow(new Date("invalid"),1)).toThrow();
+  });
   it("rotates Watch and owner objectives by actual occurrence, not fixed creation order",()=>{
     const old={id:"old",executionMode:"objective" as const};
     const watch={id:"watch",executionMode:"watch" as const};
@@ -96,6 +118,48 @@ describe("U4 fair scheduled work without a second queue",()=>{
   });
 });
 describe("U4 direct cron integration rather than isolated objective-only unit proof",()=>{
+  it("claims new owner goal and system Watch behind 100 old routines on consecutive ticks",async()=>{
+    vi.stubEnv("SUPERVISOR_U4_ENABLED","true");
+    try{
+      mocks.candidates.mockReset().mockResolvedValue([
+        {localDate:"2026-11-20",scheduledForUtc:null},
+      ]);
+      mocks.claim.mockReset().mockResolvedValue({
+        runId:"leased-run",leaseToken:"leased-token",revision:1,
+      });
+      mocks.objective.mockReset().mockResolvedValue({
+        attention:"none",sourceCount:1,
+      });
+      const previous=Array.from({length:100},(_,index)=>({
+        ...routine,id:"old-priority-"+String(index).padStart(3,"0"),
+        created_at:"2026-11-10T00:00:00Z",execution_mode:"priority",
+      }));
+      const newGoal={...routine,id:"zz-owner-goal",
+        created_at:"2026-11-20T00:00:00Z",execution_mode:"objective",
+        objective_text:"Review stock and sales.",objective_source_message_id:"saved-owner-goal"};
+      const watch={...routine,id:"zz-watch",
+        created_at:"2026-11-20T00:00:00Z",execution_mode:"watch",
+        objective_text:"Investigate meaningful source changes.",objective_source_message_id:null};
+      const occurrences:Record<string,unknown>[]=[];
+      const source=db({routines:[...previous,newGoal,watch],occurrences});
+      await dispatchRoutinesForBusiness(source,"cafe","America/Los_Angeles",
+        new Date("2026-11-21T17:00:00Z"));
+      expect(mocks.objective).toHaveBeenCalledOnce();
+      expect(mocks.objective).toHaveBeenCalledWith(source,expect.objectContaining({
+        routine:expect.objectContaining({id:"zz-owner-goal"}),
+      }));
+      // The first occurrence moves behind the unattempted Watch in the
+      // existing durable work history. No second scheduler/queue is used.
+      occurrences.push({routine_id:"zz-owner-goal",updated_at:"2026-11-21T17:00:00Z"});
+      mocks.objective.mockClear();
+      await dispatchRoutinesForBusiness(source,"cafe","America/Los_Angeles",
+        new Date("2026-11-21T17:10:00Z"));
+      expect(mocks.objective).toHaveBeenCalledOnce();
+      expect(mocks.objective).toHaveBeenCalledWith(source,expect.objectContaining({
+        routine:expect.objectContaining({id:"zz-watch"}),
+      }));
+    }finally{vi.unstubAllEnvs();}
+  });
   it("creates a service Watch thread when the first-ever owner has no chat or alert",async()=>{
     vi.stubEnv("SUPERVISOR_U4_ENABLED","true");
     try{

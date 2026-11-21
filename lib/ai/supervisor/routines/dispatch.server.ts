@@ -14,6 +14,17 @@ export type RoutineDispatchResult={
 };
 type DbRow={id:string;[field:string]:unknown};
 const batchLimit=100;
+/** Rotating a bounded window prevents later-created Watch and owner goals
+ * from being permanently hidden behind the first 100 older active routines.
+ * The existing refresh cron revisits all windows; no new scheduler or queue. */
+export function routinePageWindow(now:Date,total:number):{start:number;end:number}{
+  if(!Number.isFinite(now.getTime())||!Number.isSafeInteger(total)||total<0)
+    throw Error("routine_page_invalid");
+  const pageCount=Math.max(1,Math.ceil(total/batchLimit));
+  const selected=Math.floor(now.getTime()/3_600_000)%pageCount;
+  const start=selected*batchLimit;
+  return {start,end:start+batchLimit-1};
+}
 type Scope={businessId:string;ownerUserId:string;threadId:string;localDate:string};
 function safeSeverity(payload:unknown):string|null{
   if(!payload||typeof payload!=="object")return null;
@@ -221,14 +232,26 @@ export async function dispatchRoutinesForBusiness(db:SupabaseClient,businessId:s
   const tickNow=()=>new Date(now.getTime()+Math.max(0,Date.now()-started));
   const localDate=localDateAt(now,timezone);
   const result:RoutineDispatchResult={routinesChecked:0,runs:0,notices:0,failed:0,evidenceChecks:0,investigationsQueued:0};
+  const u4Enabled=process.env.SUPERVISOR_U4_ENABLED==="true";
+  // A fixed oldest-100 query can starve every newer owner objective forever.
+  // Count the active routines and rotate one bounded page per UTC hour while
+  // retaining the original legacy selection when U4 is off.
+  const activeCount=u4Enabled?await db.from("supervisor_routines")
+    .select("id",{count:"exact"}).eq("business_id",businessId)
+    .eq("status","active").limit(0):null;
+  if(u4Enabled&&(activeCount?.error||typeof activeCount?.count!=="number"))
+    throw activeCount?.error??Error("u4_routine_count_unavailable");
+  const window=u4Enabled?routinePageWindow(now,activeCount!.count!):null;
+  const scopedRoutines=db.from("supervisor_routines").select("*")
+    .eq("business_id",businessId).eq("status","active")
+    .order("created_at",{ascending:true}).order("id",{ascending:true});
   const [ownerRows,threadRows,routineRows]=await Promise.all([
     db.from("memberships").select("user_id").eq("business_id",businessId)
       .eq("role","owner").order("user_id",{ascending:true}).limit(batchLimit),
     db.from("ai_threads").select("id,owner_user_id").eq("business_id",businessId)
       .order("updated_at",{ascending:false}).limit(batchLimit*2),
-    db.from("supervisor_routines").select("*")
-      .eq("business_id",businessId).eq("status","active")
-      .order("created_at",{ascending:true}).limit(batchLimit),
+    window?scopedRoutines.range(window.start,window.end):
+      scopedRoutines.limit(batchLimit),
   ]);
   if(ownerRows.error||threadRows.error||routineRows.error)
     throw ownerRows.error??threadRows.error??routineRows.error;
@@ -241,7 +264,6 @@ export async function dispatchRoutinesForBusiness(db:SupabaseClient,businessId:s
   const routines=((routineRows.data??[]) as RoutineRow[]).map(parseRoutine);
   // A leased model execution is bounded to one objective per café tick so
   // it cannot starve source refresh, chat or unrelated incident investigation.
-  const u4Enabled=process.env.SUPERVISOR_U4_ENABLED==="true";
   let objectiveExecutions=0;
   if(u4Enabled&&routines.some(r=>r.executionMode!=="priority")){
     // Reuse authoritative occurrence updates; never create a second queue or
