@@ -27,6 +27,19 @@ describe("verified owner routine chat tool",()=>{
       local_time:"09:00",goal_source_message_id:"fake-source",
     },ctx({create}))).rejects.toThrow();
   });
+  it("lets Luna page older authenticated owner-goal candidates rather than silently saving a scheduling reply",async()=>{
+    const original="22222222-2222-4222-8222-222222222222";
+    const goalSources=vi.fn(async(offset:number)=>({
+      sources:[{id:original,text:"Investigate weekly customer demand and inventory history."}],
+      nextOffset:100,
+    }));
+    const response=await routineTools.manage_routine.execute({
+      ...blank,action:"list_goal_sources",source_page_offset:50,
+    },ctx({goalSources,list:vi.fn(),create:vi.fn(),change:vi.fn()}));
+    expect(goalSources).toHaveBeenCalledWith(50);
+    expect(response).toMatchObject({missing:[],next_offset:100,
+      sources:[{id:original,text:"Investigate weekly customer demand and inventory history."}]});
+  });
   it("does not pretend success if no authenticated port exists",async()=>{
     const res=await routineTools.manage_routine.execute({...blank,action:"list"},ctx(undefined));
     expect(res.missing).toEqual(["not_supported"]);
