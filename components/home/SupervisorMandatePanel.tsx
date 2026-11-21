@@ -33,9 +33,10 @@ const humanTime=(date:string)=>new Date(date).toLocaleString();
 const validLocalExpiry=(value:string,clock:number)=>Boolean(value.trim())&&
   Number.isFinite(new Date(value).valueOf())&&new Date(value).valueOf()>clock;
 
-export default function SupervisorMandatePanel({threadId,threads,approvals,onSelectThread,onClose,initialTab="permissions",onOpenWork,disabled=false,languageSwitch,files,reports=[],onOpenReport,threadsNextOffset=null}:{
+export default function SupervisorMandatePanel({threadId,threads,approvals,onSelectThread,onClose,onEditRoutine,initialTab="permissions",onOpenWork,disabled=false,languageSwitch,files,reports=[],onOpenReport,threadsNextOffset=null}:{
   threadId:string|null;threads:Thread[];approvals:Array<{id:string;title:string;detail:string}>;
   onSelectThread:(id:string,thread?:Thread)=>void;onClose:()=>void;
+  onEditRoutine:(routine:Routine)=>void;
   files?:{threadId:string;items:StoredAttachment[]}|null;threadsNextOffset?:number|null;
   reports?:{id:string;createdAt:string;title:string|null}[];onOpenReport?:(id:string)=>void;
   initialTab?:Tab;onOpenWork:(item:OwnerWorkItem)=>void;disabled?:boolean;languageSwitch?:ReactNode;
@@ -335,7 +336,7 @@ export default function SupervisorMandatePanel({threadId,threads,approvals,onSel
                   <div className="mt-1 flex flex-col gap-1" role="group" aria-label={routineCopy.actions}>
                     <button type="button" disabled={disabled||!!routineBusy}
                       className="min-h-11 rounded-lg px-3 text-start text-[14px] hover:bg-surface2 disabled:opacity-50"
-                      onClick={()=>{onSelectThread(r.threadId);onClose();}}>
+                      onClick={()=>{onEditRoutine(r);onClose();}}>
                       {routineCopy.editInChat}
                     </button>
                     <button type="button" disabled={disabled||!!routineBusy}
