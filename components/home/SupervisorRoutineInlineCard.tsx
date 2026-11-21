@@ -104,7 +104,7 @@ export default function SupervisorRoutineInlineCard({block,onEdit,disabled=false
         </summary>
         <div role="group" aria-label={copy.actions} className="mt-1 flex flex-col gap-1">
           <button type="button" disabled={disabled||busy||unavailable||!onEdit}
-            onClick={()=>onEdit?.("Edit my "+current.title+" routine: ")}
+            onClick={()=>onEdit?.("Edit saved routine \""+current.title+"\" (routine ID "+current.routineId+", revision "+current.revision+"): ")}
             className="min-h-11 rounded-lg px-3 text-start text-[14px] hover:bg-surface2 disabled:opacity-50">{copy.editInChat}</button>
           <button type="button" disabled={disabled||busy||unavailable}
             onClick={()=>void change(current.status==="active"?"pause":"resume")}
