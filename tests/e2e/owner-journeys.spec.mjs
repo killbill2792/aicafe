@@ -100,10 +100,21 @@ test("@home Task16A authenticated mobile owner views library/routines/permission
     await expect(routineCard.getByLabel("Routine actions: Daily source check")).toBeVisible();
     await routineCard.getByLabel("Routine actions: Daily source check").click();
     const editInChat=routineCard.getByRole("button",{name:"Edit in chat",exact:true});
-    // This disposable browser deliberately has NO working model provider.
-    // Do not claim a real chat edit or activate a disabled text composer.
-    // Exact owner-scoped schedule mutations below still run through real SQL.
-    await expect(editInChat).toBeDisabled();
+    // A draft prefill does not invoke the model, so even this no-provider
+    // browser MUST prepare a real ID/revision edit. Failure to hydrate the
+    // owner-scoped routine is a product bug, not an expected provider limit.
+    const routineRead=await ctx.request.get("/api/ai/supervisor/routines");
+    expect(routineRead.status()).toBe(200);
+    const savedRoutines=await routineRead.json();
+    expect(savedRoutines.routines).toEqual(expect.arrayContaining([
+      expect.objectContaining({id:id.routine,revision:1,status:"active"}),
+    ]));
+    await expect(editInChat).toBeEnabled({timeout:12000});
+    await editInChat.click();
+    await expect(page.locator("#supervisor-home-composer")).toHaveValue(
+      new RegExp(id.routine));
+    await expect(page.locator("#supervisor-home-composer")).toHaveValue(/revision 1/);
+    await page.locator("#supervisor-home-composer").fill("");
     // Prove the compact chat does not regress the mobile viewport.
     expect(await page.evaluate(()=>document.documentElement.scrollWidth)).toBeLessThanOrEqual(391);
     const controlsButton=page.getByRole("button",{name:"Library, routines and permissions"});
@@ -150,11 +161,14 @@ test("@home Task16A authenticated mobile owner views library/routines/permission
       data:{action:"pause",routineId:id.routine,revision:1},
     });
     expect(stale.status()).not.toBe(200);
-    // In no-provider E2, a disabled edit affordance must not impersonate
-    // a completed Luna goal edit. Goal mutation and revision are DB-tested;
-    // authenticated model-backed chat acceptance remains independently gated.
-    await expect(panel.getByRole("button",{name:"Edit in chat",exact:true}))
-      .toBeDisabled();
+    // Drawer edit is another inert draft, not a model execution. It MUST
+    // use the updated DB revision rather than a historical card's old one.
+    await panel.getByRole("button",{name:"Edit in chat",exact:true}).click();
+    await expect(panel).toHaveCount(0);
+    await expect(page.locator("#supervisor-home-composer")).toHaveValue(
+      new RegExp(id.routine));
+    await expect(page.locator("#supervisor-home-composer")).toHaveValue(/revision 3/);
+    await controlsButton.click();
     await panel.getByRole("button",{name:"Permissions",exact:true}).click();
     await expect(panel.getByText("Goal tracking",{exact:true}).first()).toBeVisible();
     await expect(panel.getByText("Active",{exact:true})).toBeVisible();
