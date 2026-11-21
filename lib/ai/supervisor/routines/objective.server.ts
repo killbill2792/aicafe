@@ -42,9 +42,24 @@ export const watchReadTools:readonly AgentToolName[]=objectiveReadTools.filter(n
  * canonical aggregates, current inventory and verified saved local events.
  * Gmail identity proves a mailbox item was read, not that its claims are true. */
 export function observedObjectiveEvidence(result:AgentToolResult):boolean{
-  if(!Array.isArray(result.missing)||result.missing.length>0||
-    result.error||result.truncated===true)return false;
-  if(result.source==="gmail"&&result.message&&typeof result.message==="object"
+  if(!Array.isArray(result.missing)||result.error||result.truncated===true||
+    result.missing.some(reason=>
+      /(?:unavailable|readfailed|readerfailed|readerror|unauthorized|denied|source_read_failed|invalid_scope)/iu.test(reason)))
+    return false;
+  // Partial recorded inventory still contains genuine observed source facts.
+  // An unverified/stale Toast row, even with a reported quantity, does NOT.
+  if(result.source==="inventory"){
+    const rows=result.inventory;
+    return Array.isArray(rows)&&rows.some((row:unknown)=>{
+      if(!row||typeof row!=="object"||Array.isArray(row))return false;
+      const r=row as Record<string,unknown>;
+      return ["dated_owner_count","observed_current"].includes(String(r.evidence_state))&&
+        (typeof r.quantity==="number"&&Number.isFinite(r.quantity)&&r.quantity>=0||
+          typeof r.stock_status==="string"&&r.stock_status.trim().length>0);
+    });
+  }
+  if(result.source==="gmail"&&result.missing.length===0&&
+    result.message&&typeof result.message==="object"
     &&!Array.isArray(result.message)){
     const msg=result.message as Record<string,unknown>;
     return typeof msg.id==="string"&&msg.id.length>=8;
