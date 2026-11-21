@@ -35,17 +35,17 @@ export function seededCafe(index) {
   return cafe;
 }
 
-/** One bounded retry for a dropped *loopback* connection while Next.js
- * compiles a large authenticated page. No retry for HTTP errors, redirect to
- * login, incorrect owner data or real application failures. A permanently
- * unavailable server still fails the exact authenticated journey. */
+/** One bounded retry for a dropped/aborted *loopback* navigation while Next.js
+ * compiles an authenticated page. Await DOM readiness, not slow external asset
+ * loads. No retry for HTTP errors, login redirect, owner-data failure or app
+ * assertions. A permanently unavailable app still fails the journey. */
 export async function navigateLocal(page,path){
   assertDisposableEnvironment();
   if(!path.startsWith("/en/"))throw Error("E2 refuses nonlocal route");
   try{
-    await page.goto(path);
+    await page.goto(path,{waitUntil:"domcontentloaded",timeout:30_000});
   }catch(error){
-    if(!/net::ERR_(?:CONNECTION_RESET|EMPTY_RESPONSE)/u.test(String(error)))
+    if(!/net::ERR_(?:CONNECTION_RESET|EMPTY_RESPONSE|ABORTED)/u.test(String(error)))
       throw error;
     // The disposable Next.js dev server can briefly drop loopback sockets
     // while compiling a different signed-in route under the 24-journey CI
@@ -55,7 +55,7 @@ export async function navigateLocal(page,path){
       try{return (await page.request.get("/en/login",{timeout:4000})).ok();}
       catch{return false;}
     },{timeout:30000,intervals:[500,1000,2000,3000]}).toBe(true);
-    await page.goto(path);
+    await page.goto(path,{waitUntil:"domcontentloaded",timeout:30_000});
   }
 }
 
