@@ -177,7 +177,7 @@ describe("U4 migrated model-objective and autonomous Watch SQL contract",()=>{
   (sandbox?it:it.skip)("stores original owner goal, fences exact lease, posts one private proof and silences irrelevant Watch",async()=>{
     const admin=await connect("postgres");
     const business=randomUUID(),ownerId=randomUUID(),threadId=randomUUID();
-    const ownerMessageId=randomUUID(),editMessageId=randomUUID(),routineId=randomUUID();
+    const ownerMessageId=randomUUID(),editMessageId=randomUUID(),goalEditMessageId=randomUUID(),routineId=randomUUID();
     let owner:Client|undefined,worker:Client|undefined;
     try{
       await admin.query("insert into auth.users(id,instance_id,aud,role,email,encrypted_password,created_at,updated_at) values ($1,'00000000-0000-0000-0000-000000000000','authenticated','authenticated',$2,'',now(),now())",
@@ -188,7 +188,8 @@ describe("U4 migrated model-objective and autonomous Watch SQL contract",()=>{
         [threadId,business,ownerId,randomUUID()]);
       const original="Every morning, check staffing, stock and changing sales. Investigate cross-domain issues that matter.";
       const edit="Keep checking staffing, inventory and demand, but explain relevant recurring costs too.";
-      for(const [id,msg] of [[ownerMessageId,original],[editMessageId,edit]]){
+      const goalEdit="Change my morning objective: compare cash pressure with inventory and expected local demand.";
+      for(const [id,msg] of [[ownerMessageId,original],[editMessageId,edit],[goalEditMessageId,goalEdit]]){
         await admin.query("insert into public.ai_messages(id,business_id,thread_id,owner_user_id,author_user_id,role,content_type,text_content,client_message_id) values ($1,$2,$3,$4,$4,'owner','text',$5,$6)",
           [id,business,threadId,ownerId,msg,randomUUID()]);
       }
@@ -210,6 +211,17 @@ describe("U4 migrated model-objective and autonomous Watch SQL contract",()=>{
       expect(edited.objective_updates).toEqual([{
         sourceMessageId:editMessageId,text:edit,revision:2,
       }]);
+      const goalOnly=await call(owner,"u4_edit_objective_routine",
+        [business,ownerId,threadId,routineId,2,{},goalEditMessageId]);
+      expect(goalOnly).toMatchObject({title:"Morning intelligence and costs",
+        local_time:"08:00:00",revision:3});
+      expect(goalOnly.objective_updates).toHaveLength(2);
+      expect(goalOnly.objective_updates[1]).toMatchObject({
+        sourceMessageId:goalEditMessageId,text:goalEdit,revision:3,
+      });
+      await expect(call(owner,"u4_edit_objective_routine",
+        [business,ownerId,threadId,routineId,2,{},goalEditMessageId]))
+        .rejects.toThrow();
       await expect(call(owner,"u4_edit_objective_routine",
         [business,ownerId,threadId,routineId,1,{title:"Stale change"},editMessageId]))
         .rejects.toThrow();
@@ -278,7 +290,8 @@ describe("U4 migrated model-objective and autonomous Watch SQL contract",()=>{
       expect(observed.rows[0].u4_checkpoint).toMatchObject({
         lastStage:"tool_start",lastTool:"get_sales",
       });
-      expect(observed.rows[0]).toMatchObject({run_id:first.run_id,state:"running",attempts:1});
+      expect(observed.rows[0]).toMatchObject({run_id:first.run_id,state:"running"});
+      expect(Number(observed.rows[0].attempts)).toBe(1);
       // Simulate lease expiry after the genuine process death; this advances
       // only disposable fixture state, not a production clock.
       await admin.query("update public.supervisor_routine_occurrences "+
