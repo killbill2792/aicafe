@@ -169,3 +169,96 @@ describe("routine SQL security contract",()=>{
     }
   },120_000);
 });
+
+
+describe("U4 migrated model-objective and autonomous Watch SQL contract",()=>{
+  (sandbox?it:it.skip)("stores original owner goal, fences exact lease, posts one private proof and silences irrelevant Watch",async()=>{
+    const admin=await connect("postgres");
+    const business=randomUUID(),ownerId=randomUUID(),threadId=randomUUID();
+    const ownerMessageId=randomUUID(),editMessageId=randomUUID(),routineId=randomUUID();
+    let owner:Client|undefined,worker:Client|undefined;
+    try{
+      await admin.query("insert into auth.users(id,instance_id,aud,role,email,encrypted_password,created_at,updated_at) values ($1,'00000000-0000-0000-0000-000000000000','authenticated','authenticated',$2,'',now(),now())",
+        [ownerId,"u4-"+ownerId+"@example.invalid"]);
+      await admin.query("insert into public.businesses(id,name,timezone,is_demo) values ($1,'Disposable U4 café','America/Los_Angeles',false)",[business]);
+      await admin.query("insert into public.memberships(business_id,user_id,role) values ($1,$2,'owner')",[business,ownerId]);
+      await admin.query("insert into public.ai_threads(id,business_id,owner_user_id,client_request_id) values ($1,$2,$3,$4)",
+        [threadId,business,ownerId,randomUUID()]);
+      const original="Every morning, check staffing, stock and changing sales. Investigate cross-domain issues that matter.";
+      const edit="Keep checking staffing, inventory and demand, but explain relevant recurring costs too.";
+      for(const [id,msg] of [[ownerMessageId,original],[editMessageId,edit]]){
+        await admin.query("insert into public.ai_messages(id,business_id,thread_id,owner_user_id,author_user_id,role,content_type,text_content,client_message_id) values ($1,$2,$3,$4,$4,'owner','text',$5,$6)",
+          [id,business,threadId,ownerId,msg,randomUUID()]);
+      }
+      owner=await connect("owner",ownerId);
+      worker=await connect("service");
+      const make=[business,ownerId,threadId,"Morning intelligence","daily",[],"08:00",routineId,ownerMessageId];
+      const saved=await call(owner,"u4_create_objective_routine",make);
+      expect(saved).toMatchObject({id:routineId,execution_mode:"objective",
+        objective_text:original,objective_source_message_id:ownerMessageId,revision:1});
+      expect((await call(owner,"u4_create_objective_routine",make)).id).toBe(routineId);
+      await expect(call(owner,"u4_create_objective_routine",
+        [business,ownerId,threadId,"Forged","daily",[],"08:30",randomUUID(),randomUUID()]))
+        .rejects.toThrow();
+      const edited=await call(owner,"u4_edit_objective_routine",
+        [business,ownerId,threadId,routineId,1,
+          {title:"Morning intelligence and costs"},editMessageId]);
+      expect(edited.revision).toBe(2);
+      expect(edited.objective_text).toBe(original);
+      expect(edited.objective_updates).toEqual([{
+        sourceMessageId:editMessageId,text:edit,revision:2,
+      }]);
+      await expect(call(owner,"u4_edit_objective_routine",
+        [business,ownerId,threadId,routineId,1,{title:"Stale change"},editMessageId]))
+        .rejects.toThrow();
+      await admin.query("update public.supervisor_routines set updated_at='2026-11-01T00:00:00Z' where business_id=$1 and id=$2",[business,routineId]);
+      const createdWatch=await call(worker,"u4_ensure_watch_routine",
+        [business,ownerId,threadId,"09:00"]);
+      expect(typeof createdWatch).toBe("string");
+      expect(await call(worker,"u4_ensure_watch_routine",
+        [business,ownerId,threadId,"09:00"])).toBe(createdWatch);
+      const persisted=await admin.query("select execution_mode,objective_source_message_id from public.supervisor_routines where business_id=$1 and id=$2",[business,createdWatch]);
+      expect(persisted.rows).toEqual([{execution_mode:"watch",objective_source_message_id:null}]);
+      await expect(call(owner,"u4_ensure_watch_routine",
+        [business,ownerId,threadId,"09:00"])).rejects.toThrow();
+      const now=new Date().toISOString();
+      const first=await call(worker,"claim_supervisor_routine_occurrence",[
+        business,routineId,"2026-11-20","2026-11-20T16:00:00Z",now,
+      ]);
+      expect(first?.run_id).toBeTruthy();
+      expect(await call(worker,"claim_supervisor_routine_occurrence",[
+        business,routineId,"2026-11-20","2026-11-20T16:00:00Z",now,
+      ])).toBeNull();
+      expect(await call(worker,"u4_routine_lease_active",[
+        business,routineId,first.run_id,first.lease_token,
+      ])).toBe(true);
+      expect(await call(worker,"u4_routine_lease_active",[
+        business,routineId,first.run_id,randomUUID(),
+      ])).toBe(false);
+      const proof={sources:[{source:"registered_cafe_tool",identifier:"get_sales",observedAt:"2026-11-20"}],
+        sourceCount:1,missing:[],externalEffects:"not_attempted"};
+      const posted=await call(worker,"u4_publish_objective_report",[
+        business,routineId,first.run_id,first.lease_token,
+        "A verified café observation needs owner review.","attention",proof,new Date().toISOString(),
+      ]);
+      expect(posted).toBe(true);
+      expect(await call(worker,"u4_publish_objective_report",[
+        business,routineId,first.run_id,first.lease_token,
+        "A duplicate report.","attention",proof,new Date().toISOString(),
+      ])).toBe(false);
+      const audited=await admin.query("select state,receipt_ref,u4_result from public.supervisor_routine_occurrences where business_id=$1 and run_id=$2",[business,first.run_id]);
+      expect(audited.rows[0].state).toBe("completed");
+      expect(audited.rows[0].receipt_ref).toBe("u4-verified:"+first.run_id);
+      expect(audited.rows[0].u4_result).toMatchObject({attention:"attention",proof});
+      const ownerReports=await admin.query("select grounding,structured_content from public.ai_messages where business_id=$1 and owner_user_id=$2 and role='supervisor' and grounding->>'intent'='u4_routine'",[business,ownerId]);
+      expect(ownerReports.rows).toHaveLength(1);
+      expect(ownerReports.rows[0].grounding.agentMetadata.runId).toBe(first.run_id);
+      expect(ownerReports.rows[0].structured_content[0].text).toContain("verified café");
+    }finally{
+      await owner?.end();await worker?.end();
+      await admin.query("delete from public.businesses where id=$1",[business]);
+      await admin.query("delete from auth.users where id=$1",[ownerId]);
+      await admin.end();
+    }
+  });
+});
