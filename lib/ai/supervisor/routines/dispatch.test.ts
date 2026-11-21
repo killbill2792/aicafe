@@ -151,11 +151,13 @@ describe("U4 direct cron integration rather than isolated objective-only unit pr
         objective_text:"Investigate meaningful source changes.",objective_source_message_id:null};
       const occurrences:Record<string,unknown>[]=[];
       const source=db({routines:[...previous,newGoal,watch],occurrences});
+      const trustedProvider=(async function*(){}) as never;
       await dispatchRoutinesForBusiness(source,"cafe","America/Los_Angeles",
-        new Date("2026-11-21T17:00:00Z"));
+        new Date("2026-11-21T17:00:00Z"),undefined,trustedProvider);
       expect(mocks.objective).toHaveBeenCalledOnce();
       expect(mocks.objective).toHaveBeenCalledWith(source,expect.objectContaining({
         routine:expect.objectContaining({id:"zz-owner-goal"}),
+        provider:trustedProvider,
       }));
       // The first occurrence moves behind the unattempted Watch in the
       // existing durable work history. No second scheduler/queue is used.
