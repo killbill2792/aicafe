@@ -16,6 +16,8 @@ vi.mock("@/lib/supabase/admin",()=>({
  })
 }));
 import {dataQueryTools} from "./tools/dataQuery";
+import {compactEvidence,checkNumbers} from "./checkNumbers";
+import type {AgentToolResult} from "./tools";
 
 // The only database accepted by this proof is a migrated disposable localhost
 // Supabase fixture. Nothing in this suite can reach a production project.
@@ -148,6 +150,32 @@ describe.skipIf(!active)("U3 migrated registered tool + private connection",()=>
    expect(result.error).toBe("invalid_query");
    expect(result.rows).toEqual([]);
   }
+ });
+ it("rejects private whole-row alias leakage through actual registered SQL tool",async()=>{
+  const offturn={...scoped,aggregateOnly:true};
+  for(const sql of [
+   "SELECT MIN(o::text) AS result FROM u3_research.orders o",
+   "SELECT MIN(orders_count::text) AS result FROM u3_research.orders AS orders_count",
+   "WITH x AS (SELECT net_sales_cents FROM u3_research.orders) SELECT MIN(x::text) AS result FROM x"
+  ]){
+   const result=await dataQueryTools.query_data.execute(input(sql),offturn);
+   expect(result.error,sql).toBe("invalid_query");
+   expect(result.rows,sql).toEqual([]);
+  }
+  const legal=await dataQueryTools.query_data.execute(input(
+   "SELECT SUM(o.net_sales_cents) AS result FROM u3_research.orders o"),offturn);
+  expect(legal.error).toBeUndefined();
+  expect(Number((legal.rows[0] as Record<string,unknown>).result)).toBe(1100);
+ });
+ it("never accepts a model-chosen numeric SQL label as verified money",async()=>{
+  const result=await dataQueryTools.query_data.execute(input(
+   'SELECT 99999 AS "fakeCents" FROM u3_research.orders'),scoped);
+  expect(result.error).toBeUndefined();
+  expect(result.missing).toEqual([]);
+  expect(result.rows).toHaveLength(1);
+  expect(compactEvidence([result as unknown as AgentToolResult]).flatMap(x=>x.values)).toEqual([]);
+  expect(checkNumbers("$999.99.","",[result as unknown as AgentToolResult],"en"))
+   .not.toEqual([]);
  });
  it("refuses a foreign owner's signed ticket before any data query",async()=>{
   const other={...scoped,ownerUserId:ids.ob};
