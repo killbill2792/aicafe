@@ -81,6 +81,8 @@ describe("database-safe agent persistence payload", () => {
         draft:true,saved:false,proposalId:id,revision:1,
         productName:"Latte",oldPriceCents:450,newPriceCents:500}]});
     expect(actual.reply.blocks).toContainEqual({type:"proposal_card",proposalId:id});
+    expect(agentReplyPayload({...turn("Shall I ask?"),results:[{source:"staff_question_proposal",period:null,missing:[],draft:true,saved:false,proposalId:id,revision:1}]}).reply.blocks).toContainEqual({type:"proposal_card",proposalId:id});
+    expect(agentReplyPayload({...turn("No real proposal"),results:[{source:"staff_question_proposal",period:null,missing:["not_available"],draft:true,saved:false,proposalId:id,revision:1}]}).reply.blocks.some(b=>b.type==="proposal_card")).toBe(false);
     expect(actual.reply.blocks.length).toBe(2);
     const experiment=agentReplyPayload({...turn("Please approve the seven-day test."),
       results:[{source:"price_experiment_proposal",period:null,missing:[],draft:true,saved:false,
