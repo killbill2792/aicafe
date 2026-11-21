@@ -31,7 +31,7 @@ export function routineReportCandidates(messages:readonly ConversationMessage[],
       const meta=m.grounding.agentMetadata;
       if(typeof meta.runId!=="string"||!uuid.test(meta.runId)||
         typeof meta.routineId!=="string"||!uuid.test(meta.routineId)||
-        !Number.isSafeInteger(meta.revision)||Number(meta.revision)<1||
+        typeof meta.revision!=="number"||!Number.isSafeInteger(meta.revision)||meta.revision<1||
         !["watch","routine"].includes(String(meta.u4Kind))||
         meta.externalEffects!=="not_attempted"||m.id!==reportId(meta.runId))
         return [];
