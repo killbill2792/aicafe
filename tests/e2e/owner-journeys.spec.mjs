@@ -1683,7 +1683,23 @@ test("@home Task15A scheduler detects reduced sales from actual daily source row
   await db.query("update public.staff_schedules set active=false where business_id=$1 and id=any($2::uuid[])",[own.businessId,activeSchedules]);
   const prior=await db.query("select id from public.alerts where business_id=$1 and kind='business_anomaly' and payload->>'dedupeKey'='sales_decline:cafe'",[own.businessId]);
   await db.query("insert into public.daily_rollups(business_id,business_date,net_sales_cents,orders_count,drinks_count,ingredients_cents,staff_wages_cents,staff_tax_cents,card_fees_cents,voids_cents,sales_data_status) select $1,d::date,case when d::date<=$3::date then 100000 else 60000 end,50,50,10000,10000,1000,1000,0,'actual' from generate_series($2::date,$4::date,interval '1 day') d on conflict(business_id,business_date) do update set net_sales_cents=excluded.net_sales_cents,sales_data_status='actual'",[own.businessId,start,date(-8),end]);
-  const tick=()=>context.request.get("/api/cron/refresh-derived",{headers:{Authorization:"Bearer "+process.env.CRON_SECRET},timeout:100_000});
+  // The disposable Next dev server may briefly reset its loopback socket
+  // during compilation. Retry only transport failures; HTTP errors and every
+  // source/SQL/alert assertion below remain failures, never fake success.
+  const tick=async()=>{
+    for(let attempt=0;attempt<4;attempt++){
+      try{
+        return await context.request.get("/api/cron/refresh-derived",{
+          headers:{Authorization:"Bearer "+process.env.CRON_SECRET},timeout:100_000,
+        });
+      }catch(error){
+        const detail=error instanceof Error?error.message:String(error);
+        if(attempt===3||!/(?:ECONNREFUSED|ECONNRESET|socket hang up)/i.test(detail))throw error;
+        await new Promise(resolve=>setTimeout(resolve,[1000,3000,7000][attempt]));
+      }
+    }
+    throw Error("unreachable");
+  };
   expect([200,207]).toContain((await tick()).status());
   const active=()=>db.query("select id,status,payload from public.alerts where business_id=$1 and kind='business_anomaly' and status in ('new','seen') and payload->>'dedupeKey'='sales_decline:cafe'",[own.businessId]).then(r=>r.rows);
   const facts=await db.query("select sum(net_sales_cents) filter(where business_date < $2::date)::int previous,sum(net_sales_cents) filter(where business_date >= $2::date)::int current,count(*) filter(where sales_data_status='actual')::int covered from public.daily_rollups where business_id=$1 and business_date between $3 and $4",[own.businessId,date(-7),start,end]);
