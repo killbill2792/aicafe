@@ -6,9 +6,14 @@ One conversational agent with ONE streaming tool-calling loop per owner turn (Op
   Code does not pre-decide intent with regexes or keyword routers.
 - **Tools:** typed, strict JSON Schema (`strict:true`), zod input, compact results (≤ ~1.5k tokens:
   totals, top rows, ids, units, source + period, `missing[]`). One tool per business capability.
-  One read-only data-query tool over documented canonical views is allowed, plus one general
-  `calculate` tool for arithmetic (rule 7.2). The server sets the café
-  scope; the model never writes SQL and never chooses the café.
+  One read-only data-query interface (`describe_data`/`query_data`) and one general
+  `calculate` tool remain authoritative. For legacy execution, use only reviewed
+  canonical views. The U3 approved target permits model-authored analytical SELECT
+  on a **private, catalog-admitted logical business surface only**, after a dedicated
+  non-owner/non-BYPASSRLS research role, real PostgreSQL AST admission and independently
+  tested database tenant/owner/lease enforcement are deployed. Do not send model SQL
+  to service-role clients or SQL SECURITY DEFINER RPCs. The server, never the model,
+  chooses the café and owner scope. No arbitrary database SQL, effects or mutation.
 - **Clarifications:** the `ask_owner` tool renders a clarify card (2–4 options from real tool data + Other).
   The owner's answer is the next message. No server-side pending-question state.
 - **Actions:** `propose_*` tools create an inert proposal and an approval card. Only the approval
@@ -53,10 +58,15 @@ remain useful inputs, never the intellectual decision-maker.
   Use source-backed targeted detail and aggregation, not wholesale raw prompt dumps.
   Retain shared metric authority, source periods, freshness and honest unknowns.
   Do not implicitly scan a year of history merely because one requested day is absent.
-- Evaluate expanded structured analytical queries and isolated read-only SQL on
-  identical disposable fixtures. Until separately approved, the existing SQL
-  prohibition remains; no administrative connection, unrestricted SQL, cross-café
-  visibility or writes. Source rules, field permissions and AGENTS.md always apply.
+- Owner-approved U3 production target: **governed PostgreSQL-native analytical SQL**
+  (the existing `query_data` façade), not a parallel custom SQL-like query language.
+  SQL work is disabled by default until dedicated least-privilege connection, validated
+  AST and admitted sources/functions/operators, genuine DB-enforced tenant and field
+  protection, read-only transactions, hard resource/cancellation limits, complete
+  migrated negative tests and explicit deployment configuration are verified.
+  Keep original canonical metric functions and existing operational source lineage.
+  Approval to develop and merge U3 does not itself enable a production SQL endpoint,
+  authorize paid model runs, or bypass production migration checks.
 - Prefer verified provider-native deferred tool discovery and model-selected
   context over full schema repetition. No mandatory custom discover-before-read
   gate or keyword routing. Preserve strict schemas, runtime validation and authorization.

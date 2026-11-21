@@ -1,0 +1,92 @@
+{
+  "id": "u3-canonical-research",
+  "mode": "generic",
+  "engine": "node-server",
+  "entrypoint": "evals/acceptance/live/u3-canonical-research.mjs",
+  "proof": "u3-canonical-research-proof.json",
+  "scope": "u3-canonical-research-scope.json",
+  "expectedTools": [
+    "describe_data",
+    "query_data"
+  ],
+  "assertions": [
+    {
+      "name": "source-orders",
+      "kind": "source",
+      "table": "public.orders",
+      "where": {
+        "business_id": {
+          "scope": "businessId"
+        },
+        "business_date": {
+          "scope": "businessDate"
+        }
+      },
+      "minCount": 1,
+      "maxCount": 10000
+    },
+    {
+      "name": "source-order-lines",
+      "kind": "source",
+      "table": "public.order_lines",
+      "where": {
+        "order_id": {
+          "scope": "sampleOrderId"
+        }
+      },
+      "minCount": 1,
+      "maxCount": 10000
+    },
+    {
+      "name": "owner-answer",
+      "kind": "owner",
+      "table": "public.ai_messages",
+      "where": {
+        "business_id": {
+          "scope": "businessId"
+        },
+        "thread_id": {
+          "scope": "threadId"
+        },
+        "id": {
+          "scope": "replyId"
+        },
+        "role": {
+          "eq": "supervisor"
+        }
+      },
+      "minCount": 1,
+      "maxCount": 1
+    },
+    {
+      "name": "foreign-thread",
+      "kind": "isolation",
+      "table": "public.ai_threads",
+      "where": {
+        "business_id": {
+          "scope": "otherCafeId"
+        },
+        "id": {
+          "scope": "threadId"
+        }
+      },
+      "minCount": 0,
+      "maxCount": 0
+    },
+    {
+      "name": "no-effect",
+      "kind": "source",
+      "table": "public.supervisor_proposals",
+      "where": {
+        "business_id": {
+          "scope": "businessId"
+        },
+        "thread_id": {
+          "scope": "threadId"
+        }
+      },
+      "minCount": 0,
+      "maxCount": 0
+    }
+  ]
+}

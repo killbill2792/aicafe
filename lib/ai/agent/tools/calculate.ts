@@ -1,6 +1,6 @@
 import {z} from "zod";
 import type {AgentToolContext,AgentToolResult} from "./index";
-import {CALC_OPS,exactNumber,runCalculation,type CalcOp,type CalcShown,type CalcUnit,type CalcValue} from "@/lib/metrics/core/calculator";
+import {CALC_OPS,exactDecimal,exactNumber,runCalculation,type CalcOp,type CalcShown,type CalcUnit,type CalcValue} from "@/lib/metrics/core/calculator";
 import {SCREEN_NUMBERS,SCREEN_NUMBER_IDS,type ScreenNumber} from "../screenNumbers";
 import type {ExplainLine} from "../explain";
 import type {CardValue} from "@/lib/format/values";
@@ -14,6 +14,7 @@ const calculateInput=z.strictObject({
     name,label:z.string().trim().min(1).max(50),
     tool:z.string().max(64).nullable(),
     path:z.string().max(200).nullable(),
+    receipt_id:z.uuid().nullable(),
     fact_key:z.string().max(120).nullable(),
     owner_value:z.number().finite().nullable(),
     owner_unit:z.enum(["cents","percent","count"]).nullable(),
@@ -38,6 +39,20 @@ function unitForField(field:string,value:number):CalcValue|null{
   if(/percent$/iu.test(field))return exactNumber(value,"percent",100);
   if(/(?:rate|ratio|margin|share)$/iu.test(field))return exactNumber(value,"percent");
   return exactNumber(value,"count");
+}
+/** Only the SQL parser/authorized catalog may attest an exact research
+ * result unit. Model-selected result aliases are untrusted labels. */
+function exactResearchField(verifiedUnit:unknown,value:string|number):CalcValue|null{
+ const amount=typeof value==="string"?value:
+   Number.isFinite(value)?String(value):"";
+ const unit:CalcUnit|null=
+  verifiedUnit==="cents"||verifiedUnit==="count"||
+  verifiedUnit==="percent"||verifiedUnit==="ratio"?verifiedUnit:null;
+ if(!unit)return null;
+ const scale=unit==="percent"?100:1;
+ const exact=exactDecimal(amount,unit,scale);
+ if(!exact||unit==="cents"&&exact.n%exact.d!==BigInt(0))return null;
+ return exact;
 }
 function readPath(root:unknown,path:string):unknown{
   let node=root;
@@ -85,14 +100,20 @@ export const calculateTools={
     description:"The only way to do arithmetic (+ − × ÷, sum, percent_of) for numbers that are NOT screen numbers. "+
       "Screen numbers (profit, labor cost, card fees, break-even, item cost) come only from their own tools; "+
       "set screen_number to the one this result is about, or none, and start from that tool's number. "+
-      "Each input reads ONE number: either tool (a tool name called earlier this turn) + path (dot path into its result, e.g. rows.0.net_sales_cents), "+
+      "Each input reads ONE number: either tool + path (dot path into the exact tool result, e.g. rows.0.net_sales_cents), "+
+      "and for U3 SQL research include that result's exact evidence.receipt_id, with a query-receipt-verified numeric column unit; aliases alone do not establish units. Otherwise set receipt_id to null. "+
       "or fact_key (a saved owner fact, including a question-card answer), "+
       "or owner_value + owner_unit for a number the owner said in chat (cents for money, 20 for 20%, plain count). "+
       "Set the unused fields to null. Never type any other number. Say You told me for owner numbers. "+
       "Steps run in order; args name inputs or earlier step ids; percent_of takes (percent, value). "+
       "Show the inputs, formula and steps in How I got this, and label the result Calculation or Estimate as returned.",
     async execute(raw:unknown,ctx:AgentToolContext):Promise<AgentToolResult>{
-      const p=calculateInput.parse(raw);
+      const untrusted=raw&&typeof raw==="object"&&!Array.isArray(raw)?
+        raw as Record<string,unknown>:{};
+      const provided=Array.isArray(untrusted.inputs)?untrusted.inputs.map(item=>
+        item&&typeof item==="object"&&!Array.isArray(item)?
+        {receipt_id:null,...item}:item):untrusted.inputs;
+      const p=calculateInput.parse({...untrusted,inputs:provided});
       const scoped=ctx as CalcContext;
       const turn=(scoped.turnResults?.()??[]).filter(r=>r.name!=="calculate"&&r.name!=="ask_owner");
       const facts=scoped.savedOwnerFacts??[];
@@ -101,16 +122,43 @@ export const calculateTools={
         if(inputs.some(i=>i.name===input.name))return refuse("duplicateName",input.name);
         const owner=input.owner_value!==null||input.owner_unit!==null;
         if(input.tool&&input.path&&!input.fact_key&&!owner){
-          const hit=[...turn].reverse().find(r=>r.name===input.tool);
-          if(!hit)return refuse("toolNotCalledThisTurn",input.tool);
+          const candidates=turn.filter(r=>r.name===input.tool);
+          const receipt=(r:TurnResult)=>{
+            const evidence=(r.result as Record<string,unknown>).evidence;
+            return evidence&&typeof evidence==="object"&&!Array.isArray(evidence)?
+              (evidence as Record<string,unknown>).receipt_id:null;
+          };
+          const hit=input.receipt_id?
+            candidates.find(r=>receipt(r)===input.receipt_id):
+            [...candidates].reverse()[0];
+          if(!hit)return refuse(input.receipt_id?"receiptNotFound":"toolNotCalledThisTurn",
+            input.receipt_id??input.tool);
+          const isResearch=hit.result.source==="u3_canonical_research";
+          if(isResearch&&!input.receipt_id)return refuse("researchReceiptRequired",input.tool);
+          if(isResearch&&(hit.result.missing.length>0||
+            (hit.result as Record<string,unknown>).truncated===true))
+            return refuse("incompleteResearchEvidence",input.tool);
           const value=readPath(hit.result,input.path);
           if(value===null)return refuse("inputIsUnknown",input.name+" ("+input.path+" is null; never use it as zero)");
-          if(typeof value!=="number")return refuse("pathIsNotANumber",input.path);
+          if(typeof value!=="number"&&
+            !(isResearch&&typeof value==="string"))
+            return refuse("pathIsNotANumber",input.path);
           const field=input.path.split(".").at(-1)??"";
-          const exact=unitForField(field,value);
-          if(!exact)return refuse("invalidNumber",input.path);
-          inputs.push({name:input.name,label:input.label,value:exact,from:"tool",ref:input.tool+":"+input.path,
-            estimate:isEstimate(hit.result),owner:false,partial:hit.result.missing.length>0,period:hit.result.period});
+          const e=(hit.result as Record<string,unknown>).evidence;
+          const proof=e&&typeof e==="object"&&!Array.isArray(e)?
+            (e as Record<string,unknown>).column_units:null;
+          const columnUnits=proof&&typeof proof==="object"&&!Array.isArray(proof)?
+            proof as Record<string,unknown>:null;
+          const attestedUnit=columnUnits&&Object.hasOwn(columnUnits,field)?
+            columnUnits[field]:null;
+          const exact=isResearch?
+            exactResearchField(attestedUnit,value as string|number):
+            unitForField(field,value as number);
+          if(!exact)return refuse(isResearch?"researchUnitUnverified":"invalidNumber",input.path);
+          inputs.push({name:input.name,label:input.label,value:exact,from:"tool",
+            ref:input.tool+":"+(input.receipt_id?input.receipt_id+":":"")+input.path,
+            estimate:isEstimate(hit.result),owner:false,
+            partial:hit.result.missing.length>0,period:hit.result.period});
         }else if(input.fact_key&&!input.tool&&!input.path&&!owner){
           const fact=facts.find(f=>f.fact_key===input.fact_key);
           if(!fact)return refuse("factNotSaved",input.fact_key);

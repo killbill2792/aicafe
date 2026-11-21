@@ -1,5 +1,5 @@
 import {describe,expect,it} from "vitest";
-import {exactNumber,runCalculation,type CalcValue} from "./calculator";
+import {exactDecimal,exactNumber,runCalculation,type CalcValue} from "./calculator";
 const cents=(n:number)=>exactNumber(n,"cents")!;
 const pct=(n:number)=>exactNumber(n,"percent",100)!;
 const count=(n:number)=>exactNumber(n,"count")!;
@@ -45,4 +45,26 @@ describe("general calculator",()=>{
     expect(exactNumber(2.9,"percent",100)).toEqual({n:BigInt(29),d:BigInt(1000),unit:"percent"});
     expect(exactNumber(Number.NaN,"count")).toBeNull();
   });
+});
+
+
+describe("U3 exact PostgreSQL numeric source arithmetic",()=>{
+ it("never converts source decimal strings through binary floats",()=>{
+  const a=exactDecimal("0.100000000000000001","count");
+  const b=exactDecimal("0.200000000000000002","count");
+  expect(a).not.toBeNull();expect(b).not.toBeNull();
+  const result=runCalculation(new Map([["a",a!],["b",b!]]),[
+   {id:"sum",op:"sum",args:["a","b"]}
+  ]);
+  expect(result.ok).toBe(true);
+  if(result.ok){
+   expect(result.result.value).toEqual(exactDecimal("0.300000000000000003","count"));
+   expect(result.result.shown).toEqual({unit:"count",quantity:0.3});
+  }
+ });
+ it("rejects exponent, nondecimal, absurd precision and nonfinite inputs",()=>{
+  for(const value of ["NaN","Infinity","1e8","1.000000000000000000000001","1,200",""])
+   expect(exactDecimal(value,"cents")).toBeNull();
+  expect(exactDecimal("1200","cents")).toMatchObject({n:BigInt(1200),d:BigInt(1)});
+ });
 });
