@@ -204,295 +204,15 @@ begin
     or p_stage not in ('provider_start','provider_complete','provider_uncertain',
       'tool_start','tool_complete')
     or (p_tool is not null and (length(p_tool)>80
-        or p_tool !~ '^[a-z][a-z0-9_]*
--- A silent watch review still leaves a bounded persisted evidence receipt.
-create or replace function public.u4_publish_objective_report(
- p_business_id uuid,p_routine_id uuid,p_run_id uuid,p_lease_token uuid,
- p_report text,p_attention text,p_proof jsonb,p_now timestamptz
-) returns boolean language plpgsql security definer set search_path=''
-as $u4_publish$
-declare r public.supervisor_routines;o public.supervisor_routine_occurrences;msg uuid;
-        blocks jsonb;
-begin
- if coalesce(auth.role(),'')<>'service_role' or p_now is null
-   or p_attention not in ('attention','none')
-   or length(btrim(coalesce(p_report,''))) not between 1 and 2600
-   or p_proof is null or jsonb_typeof(p_proof)<>'object'
-   or octet_length(p_proof::text)>4096
-   or jsonb_typeof(p_proof->'sources')<>'array'
-   or jsonb_array_length(p_proof->'sources')<1
-   or jsonb_typeof(p_proof->'sourceCount')<>'number'
-   or coalesce((p_proof->>'sourceCount')::integer,0)<1
-   or p_proof->>'externalEffects'<>'not_attempted'
-   or p_proof->>'quality' not in ('verified','partial') then
-   raise exception 'u4_report_invalid' using errcode='22023'; end if;
- select * into r from public.supervisor_routines
-   where business_id=p_business_id and id=p_routine_id for update;
- if not found or r.execution_mode not in ('objective','watch') or r.status<>'active'
-   or not public.supervisor_routine_owner_authorized(
-       r.business_id,r.owner_user_id,r.thread_id) then
-   return false; end if;
- select * into o from public.supervisor_routine_occurrences
-   where business_id=p_business_id and routine_id=p_routine_id
-     and run_id=p_run_id for update;
- if not found or o.state<>'running' or o.lease_token is distinct from p_lease_token
-   or o.lease_until<=greatest(p_now,statement_timestamp())
-   or o.revision<>r.revision then return false; end if;
- if r.execution_mode='objective' or p_attention='attention' then
-   msg:=md5('u4-objective-report:'||p_run_id::text)::uuid;
-   -- Native chat blocks accept at most 1,200 characters each.
-   select jsonb_agg(jsonb_build_object('type','text',
-       'text',substring(btrim(p_report) from n for 1200)) order by n)
-     into blocks
-     from generate_series(1,char_length(btrim(p_report)),1200) n;
-   insert into public.ai_messages(
-     id,business_id,thread_id,owner_user_id,role,
-     content_type,structured_content,grounding)
-   values(msg,r.business_id,r.thread_id,r.owner_user_id,'supervisor',
-     'blocks',blocks,
-     jsonb_build_object('status',p_proof->>'quality','intent','operating_tasks',
-       'evidence',p_proof->'sources',
-       'agentMetadata',jsonb_build_object('runId',p_run_id::text,
-          'routineId',r.id::text,'revision',r.revision,
-          'u4Kind',case when r.execution_mode='watch' then 'watch' else 'routine' end,
-          'externalEffects','not_attempted')))
-   on conflict(id) do nothing;
-   if not exists(select 1 from public.ai_messages m
-     where m.id=msg and m.business_id=r.business_id
-       and m.thread_id=r.thread_id and m.owner_user_id=r.owner_user_id
-       and m.role='supervisor'
-       and m.grounding->'agentMetadata'->>'runId'=p_run_id::text)
-     then raise exception 'u4_report_identity_conflict' using errcode='23505'; end if;
- end if;
- if not public.finish_supervisor_routine_occurrence(
-   p_business_id,p_routine_id,p_run_id,p_lease_token,true,'u4-verified:'||p_run_id::text,
-   greatest(p_now,statement_timestamp())) then
-   raise exception 'u4_lease_lost' using errcode='40001'; end if;
- update public.supervisor_routine_occurrences set
-   u4_result=jsonb_build_object('attention',p_attention,
-     'summary',left(p_report,2400),'proof',p_proof,'reviewedAt',p_now::text)
-   where business_id=p_business_id and routine_id=p_routine_id and run_id=p_run_id;
- return true;
-end
-$u4_publish$;
-revoke all on function public.u4_publish_objective_report(
-  uuid,uuid,uuid,uuid,text,text,jsonb,timestamptz)
-  from public,anon,authenticated;
-grant execute on function public.u4_publish_objective_report(
-  uuid,uuid,uuid,uuid,text,text,jsonb,timestamptz) to service_role;
-
--- The existing system usage ledger is the sole billable-attempt owner.
-alter table public.supervisor_system_usage_events
-  drop constraint supervisor_system_usage_events_source_scope_check;
-alter table public.supervisor_system_usage_events
-  add constraint supervisor_system_usage_events_source_scope_check
-  check(source_type in ('alert','operating_task','durable_run','routine')) not valid;
-
--- Add routines to the EXISTING per-owner, per-call reservation ledger.
--- Every Responses request is reserved before transport, even if the provider,
--- process or model turn subsequently fails. The routine lease is rechecked.
-create or replace function public.supervisor_reserve_investigation_model_call(
-  p_attempt_id uuid,p_business_id uuid,p_owner_user_id uuid,p_thread_id uuid,
-  p_source_type text,p_source_id text,p_lease_token uuid,p_model text,
-  p_input_upper integer,p_output_cap integer,p_owner_daily_cap integer
-) returns void language plpgsql security definer set search_path='public'
-as $u4_reserve$
-declare v_day date;v_prior bigint;v_system bigint;
-begin
-  if coalesce(auth.role(),'')<>'service_role'
-    or p_attempt_id is null or p_business_id is null or p_owner_user_id is null
-    or p_thread_id is null or p_lease_token is null
-    or p_source_type not in ('alert','operating_task','routine')
-    or length(coalesce(p_source_id,'')) not between 1 and 160
-    or length(coalesce(p_model,'')) not between 1 and 80
-    or p_input_upper not between 1 and 2000000
-    or p_output_cap is null or p_output_cap not between 1 and public.supervisor_model_execution_cap(p_model)
-    or (p_owner_daily_cap is not null and p_owner_daily_cap not between 1 and 1000000)
-    or not public.supervisor_routine_owner_authorized(
-      p_business_id,p_owner_user_id,p_thread_id)
-    or (p_source_type='routine' and not exists(
-      select 1 from public.supervisor_routine_occurrences o
-      join public.supervisor_routines r on r.business_id=o.business_id
-        and r.id=o.routine_id
-      where o.business_id=p_business_id and r.owner_user_id=p_owner_user_id
-        and r.thread_id=p_thread_id and o.run_id::text=p_source_id
-        and o.lease_token=p_lease_token and o.lease_until>statement_timestamp()
-        and o.state='running' and r.status='active' and r.revision=o.revision
-        and r.execution_mode in ('objective','watch')
-    ))
-    or (p_source_type in ('alert','operating_task') and not exists (
-      select 1 from public.supervisor_investigations i
-      where i.business_id=p_business_id and i.owner_user_id=p_owner_user_id
-        and i.thread_id=p_thread_id and i.source_type=p_source_type
-        and i.source_id=p_source_id and i.lease_token=p_lease_token
-        and i.lease_until>statement_timestamp()
-        and i.phase in ('investigate','awaiting_owner')
-    ))
-  then raise exception 'system_model_attempt_not_authorized' using errcode='42501'; end if;
-  v_day:=(statement_timestamp() at time zone 'UTC')::date;
-  perform pg_advisory_xact_lock(hashtextextended(
-    p_business_id::text||':'||p_owner_user_id::text||':'||v_day::text,0));
-  select coalesce(sum(e.model_call_count-e.reserved_model_call_count),0) into v_prior
-    from public.ai_usage_events e where e.business_id=p_business_id
-      and e.owner_user_id=p_owner_user_id and e.attempt_day=v_day;
-  select count(*) into v_system from public.supervisor_system_usage_events e
-    where e.business_id=p_business_id and e.owner_user_id=p_owner_user_id
-      and e.attempt_day=v_day;
-  if p_owner_daily_cap is not null and v_prior+v_system>=p_owner_daily_cap
-    then raise exception 'owner_usage_limit_reached' using errcode='P0001'; end if;
-  insert into public.supervisor_system_usage_events(
-    attempt_id,business_id,owner_user_id,thread_id,source_type,source_id,
-    model,attempt_day,reserved_input_upper,reserved_output_cap,status)
-  values(p_attempt_id,p_business_id,p_owner_user_id,p_thread_id,
-    p_source_type,p_source_id,p_model,v_day,p_input_upper,p_output_cap,'attempted');
-end
-$u4_reserve$;
-revoke all on function public.supervisor_reserve_investigation_model_call(
-  uuid,uuid,uuid,uuid,text,text,uuid,text,integer,integer,integer)
-  from public,anon,authenticated;
-grant execute on function public.supervisor_reserve_investigation_model_call(
-  uuid,uuid,uuid,uuid,text,text,uuid,text,integer,integer,integer) to service_role;
-))
-    or (p_digest is not null and p_digest !~ '^[a-f0-9]{64}
--- A silent watch review still leaves a bounded persisted evidence receipt.
-create or replace function public.u4_publish_objective_report(
- p_business_id uuid,p_routine_id uuid,p_run_id uuid,p_lease_token uuid,
- p_report text,p_attention text,p_proof jsonb,p_now timestamptz
-) returns boolean language plpgsql security definer set search_path=''
-as $u4_publish$
-declare r public.supervisor_routines;o public.supervisor_routine_occurrences;msg uuid;
-begin
- if coalesce(auth.role(),'')<>'service_role' or p_now is null
-   or p_attention not in ('attention','none')
-   or length(btrim(coalesce(p_report,''))) not between 1 and 2600
-   or p_proof is null or jsonb_typeof(p_proof)<>'object'
-   or octet_length(p_proof::text)>4096 then
-   raise exception 'u4_report_invalid' using errcode='22023'; end if;
- select * into r from public.supervisor_routines
-   where business_id=p_business_id and id=p_routine_id for update;
- if not found or r.execution_mode not in ('objective','watch') or r.status<>'active'
-   or not public.supervisor_routine_owner_authorized(
-       r.business_id,r.owner_user_id,r.thread_id) then
-   return false; end if;
- select * into o from public.supervisor_routine_occurrences
-   where business_id=p_business_id and routine_id=p_routine_id
-     and run_id=p_run_id for update;
- if not found or o.state<>'running' or o.lease_token is distinct from p_lease_token
-   or o.lease_until<=greatest(p_now,statement_timestamp())
-   or o.revision<>r.revision then return false; end if;
- if r.execution_mode='objective' or p_attention='attention' then
-   msg:=md5('u4-objective-report:'||p_run_id::text)::uuid;
-   insert into public.ai_messages(
-     id,business_id,thread_id,owner_user_id,role,
-     content_type,structured_content,grounding)
-   values(msg,r.business_id,r.thread_id,r.owner_user_id,'supervisor',
-     'blocks',jsonb_build_array(jsonb_build_object('type','text','text',btrim(p_report))),
-     jsonb_build_object('status','verified','intent',
-       case when r.execution_mode='watch' then 'u4_watch' else 'u4_routine' end,
-       'evidence',coalesce(p_proof->'sources','[]'::jsonb),
-       'agentMetadata',jsonb_build_object('runId',p_run_id::text,
-          'routineId',r.id::text,'revision',r.revision,
-          'externalEffects','not_attempted')))
-   on conflict(id) do nothing;
- end if;
- if not public.finish_supervisor_routine_occurrence(
-   p_business_id,p_routine_id,p_run_id,p_lease_token,true,'u4-verified:'||p_run_id::text,
-   greatest(p_now,statement_timestamp())) then
-   raise exception 'u4_lease_lost' using errcode='40001'; end if;
- update public.supervisor_routine_occurrences set
-   u4_result=jsonb_build_object('attention',p_attention,
-     'summary',left(p_report,2400),'proof',p_proof,'reviewedAt',p_now::text)
-   where business_id=p_business_id and routine_id=p_routine_id and run_id=p_run_id;
- return true;
-end
-$u4_publish$;
-revoke all on function public.u4_publish_objective_report(
-  uuid,uuid,uuid,uuid,text,text,jsonb,timestamptz)
-  from public,anon,authenticated;
-grant execute on function public.u4_publish_objective_report(
-  uuid,uuid,uuid,uuid,text,text,jsonb,timestamptz) to service_role;
-
--- The existing system usage ledger is the sole billable-attempt owner.
-alter table public.supervisor_system_usage_events
-  drop constraint supervisor_system_usage_events_source_scope_check;
-alter table public.supervisor_system_usage_events
-  add constraint supervisor_system_usage_events_source_scope_check
-  check(source_type in ('alert','operating_task','durable_run','routine')) not valid;
-
--- Add routines to the EXISTING per-owner, per-call reservation ledger.
--- Every Responses request is reserved before transport, even if the provider,
--- process or model turn subsequently fails. The routine lease is rechecked.
-create or replace function public.supervisor_reserve_investigation_model_call(
-  p_attempt_id uuid,p_business_id uuid,p_owner_user_id uuid,p_thread_id uuid,
-  p_source_type text,p_source_id text,p_lease_token uuid,p_model text,
-  p_input_upper integer,p_output_cap integer,p_owner_daily_cap integer
-) returns void language plpgsql security definer set search_path='public'
-as $u4_reserve$
-declare v_day date;v_prior bigint;v_system bigint;
-begin
-  if coalesce(auth.role(),'')<>'service_role'
-    or p_attempt_id is null or p_business_id is null or p_owner_user_id is null
-    or p_thread_id is null or p_lease_token is null
-    or p_source_type not in ('alert','operating_task','routine')
-    or length(coalesce(p_source_id,'')) not between 1 and 160
-    or length(coalesce(p_model,'')) not between 1 and 80
-    or p_input_upper not between 1 and 2000000
-    or p_output_cap is null or p_output_cap not between 1 and public.supervisor_model_execution_cap(p_model)
-    or (p_owner_daily_cap is not null and p_owner_daily_cap not between 1 and 1000000)
-    or not public.supervisor_routine_owner_authorized(
-      p_business_id,p_owner_user_id,p_thread_id)
-    or (p_source_type='routine' and not exists(
-      select 1 from public.supervisor_routine_occurrences o
-      join public.supervisor_routines r on r.business_id=o.business_id
-        and r.id=o.routine_id
-      where o.business_id=p_business_id and r.owner_user_id=p_owner_user_id
-        and r.thread_id=p_thread_id and o.run_id::text=p_source_id
-        and o.lease_token=p_lease_token and o.lease_until>statement_timestamp()
-        and o.state='running' and r.status='active' and r.revision=o.revision
-        and r.execution_mode in ('objective','watch')
-    ))
-    or (p_source_type in ('alert','operating_task') and not exists (
-      select 1 from public.supervisor_investigations i
-      where i.business_id=p_business_id and i.owner_user_id=p_owner_user_id
-        and i.thread_id=p_thread_id and i.source_type=p_source_type
-        and i.source_id=p_source_id and i.lease_token=p_lease_token
-        and i.lease_until>statement_timestamp()
-        and i.phase in ('investigate','awaiting_owner')
-    ))
-  then raise exception 'system_model_attempt_not_authorized' using errcode='42501'; end if;
-  v_day:=(statement_timestamp() at time zone 'UTC')::date;
-  perform pg_advisory_xact_lock(hashtextextended(
-    p_business_id::text||':'||p_owner_user_id::text||':'||v_day::text,0));
-  select coalesce(sum(e.model_call_count-e.reserved_model_call_count),0) into v_prior
-    from public.ai_usage_events e where e.business_id=p_business_id
-      and e.owner_user_id=p_owner_user_id and e.attempt_day=v_day;
-  select count(*) into v_system from public.supervisor_system_usage_events e
-    where e.business_id=p_business_id and e.owner_user_id=p_owner_user_id
-      and e.attempt_day=v_day;
-  if p_owner_daily_cap is not null and v_prior+v_system>=p_owner_daily_cap
-    then raise exception 'owner_usage_limit_reached' using errcode='P0001'; end if;
-  insert into public.supervisor_system_usage_events(
-    attempt_id,business_id,owner_user_id,thread_id,source_type,source_id,
-    model,attempt_day,reserved_input_upper,reserved_output_cap,status)
-  values(p_attempt_id,p_business_id,p_owner_user_id,p_thread_id,
-    p_source_type,p_source_id,p_model,v_day,p_input_upper,p_output_cap,'attempted');
-end
-$u4_reserve$;
-revoke all on function public.supervisor_reserve_investigation_model_call(
-  uuid,uuid,uuid,uuid,text,text,uuid,text,integer,integer,integer)
-  from public,anon,authenticated;
-grant execute on function public.supervisor_reserve_investigation_model_call(
-  uuid,uuid,uuid,uuid,text,text,uuid,text,integer,integer,integer) to service_role;
-)
-    then raise exception 'u4_checkpoint_invalid' using errcode='42501'; end if;
+      or p_tool !~ '^[a-z][a-z0-9_]*$'))
+    or (p_digest is not null and p_digest !~ '^[a-f0-9]{64}$')
+  then raise exception 'u4_checkpoint_invalid' using errcode='42501'; end if;
   if not public.u4_routine_lease_active(
       p_business_id,p_routine_id,p_run_id,p_lease_token) then return false; end if;
   select u4_checkpoint into current_journal from public.supervisor_routine_occurrences
     where business_id=p_business_id and routine_id=p_routine_id
       and run_id=p_run_id for update;
-  -- Recheck under the row lock; a different worker may have replaced the
-  -- original token while this session waited.
-  if not public.u4_routine_lease_active(
+  if not found or not public.u4_routine_lease_active(
       p_business_id,p_routine_id,p_run_id,p_lease_token) then return false; end if;
   steps:=coalesce(current_journal->'steps','[]'::jsonb);
   steps:=(select coalesce(jsonb_agg(x.val order by x.ord),'[]'::jsonb)
@@ -522,13 +242,20 @@ create or replace function public.u4_publish_objective_report(
  p_report text,p_attention text,p_proof jsonb,p_now timestamptz
 ) returns boolean language plpgsql security definer set search_path=''
 as $u4_publish$
-declare r public.supervisor_routines;o public.supervisor_routine_occurrences;msg uuid;
+declare r public.supervisor_routines;o public.supervisor_routine_occurrences;
+        msg uuid; blocks jsonb;
 begin
  if coalesce(auth.role(),'')<>'service_role' or p_now is null
    or p_attention not in ('attention','none')
    or length(btrim(coalesce(p_report,''))) not between 1 and 2600
    or p_proof is null or jsonb_typeof(p_proof)<>'object'
-   or octet_length(p_proof::text)>4096 then
+   or octet_length(p_proof::text)>4096
+   or jsonb_typeof(p_proof->'sources')<>'array'
+   or jsonb_array_length(p_proof->'sources')<1
+   or jsonb_typeof(p_proof->'sourceCount')<>'number'
+   or coalesce((p_proof->>'sourceCount')::integer,0)<1
+   or p_proof->>'externalEffects'<>'not_attempted'
+   or p_proof->>'quality' not in ('verified','partial') then
    raise exception 'u4_report_invalid' using errcode='22023'; end if;
  select * into r from public.supervisor_routines
    where business_id=p_business_id and id=p_routine_id for update;
@@ -544,18 +271,29 @@ begin
    or o.revision<>r.revision then return false; end if;
  if r.execution_mode='objective' or p_attention='attention' then
    msg:=md5('u4-objective-report:'||p_run_id::text)::uuid;
+   -- Each chat text block is bounded by the 1,200-character UI contract.
+   select jsonb_agg(jsonb_build_object('type','text',
+       'text',substring(btrim(p_report) from n for 1200)) order by n)
+     into blocks
+     from generate_series(1,char_length(btrim(p_report)),1200) n;
    insert into public.ai_messages(
      id,business_id,thread_id,owner_user_id,role,
      content_type,structured_content,grounding)
    values(msg,r.business_id,r.thread_id,r.owner_user_id,'supervisor',
-     'blocks',jsonb_build_array(jsonb_build_object('type','text','text',btrim(p_report))),
-     jsonb_build_object('status','verified','intent',
-       case when r.execution_mode='watch' then 'u4_watch' else 'u4_routine' end,
-       'evidence',coalesce(p_proof->'sources','[]'::jsonb),
+     'blocks',blocks,
+     jsonb_build_object('status',p_proof->>'quality','intent','operating_tasks',
+       'evidence',p_proof->'sources',
        'agentMetadata',jsonb_build_object('runId',p_run_id::text,
           'routineId',r.id::text,'revision',r.revision,
+          'u4Kind',case when r.execution_mode='watch' then 'watch' else 'routine' end,
           'externalEffects','not_attempted')))
    on conflict(id) do nothing;
+   if not exists(select 1 from public.ai_messages m
+     where m.id=msg and m.business_id=r.business_id
+       and m.thread_id=r.thread_id and m.owner_user_id=r.owner_user_id
+       and m.role='supervisor'
+       and m.grounding->'agentMetadata'->>'runId'=p_run_id::text)
+     then raise exception 'u4_report_identity_conflict' using errcode='23505'; end if;
  end if;
  if not public.finish_supervisor_routine_occurrence(
    p_business_id,p_routine_id,p_run_id,p_lease_token,true,'u4-verified:'||p_run_id::text,
