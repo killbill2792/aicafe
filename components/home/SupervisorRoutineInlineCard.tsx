@@ -102,12 +102,12 @@ export default function SupervisorRoutineInlineCard({block,onEdit,disabled=false
     current.weekdays.map(day=>en.SupervisorExperience.weekdayNames[day-1])
       .filter(Boolean).join(", "):current.cadence;
   // The displayed status follows the actual verified receipt and read-back.
-  const label=isDeleted?copy.deleteSaved:
+  const label=notice || (isDeleted?copy.deleteSaved:
     current.status==="paused"?copy.pausedSaved:
-    current.revision===1?copy.created:copy.updated;
+    current.revision===1?copy.created:copy.updated);
   return <section data-routine-card={current.routineId}
     aria-label={current.title} className="min-w-0 max-w-lg">
-    <div className="flex min-h-12 items-center gap-2 text-[15px] text-ink-muted">
+    <div className="flex min-h-12 items-center gap-2 text-[17px] text-ink-muted">
       <Clock3 size={16} className="shrink-0" aria-hidden="true"/>
       <span role="status" className="min-w-0 flex-1">{label}</span>
       {!isDeleted&&<details className="relative shrink-0">
@@ -132,7 +132,6 @@ export default function SupervisorRoutineInlineCard({block,onEdit,disabled=false
         </div>
       </details>}
     </div>
-    {notice&&<p role="status" className="text-[14px] text-ink-muted">{notice}</p>}
     {error&&<p role="alert" className="text-[14px] text-neg">{error}</p>}
     {unavailable&&!error&&<p role="status" className="text-[14px] text-ink-muted">{copy.saveFailed}</p>}
   </section>;
