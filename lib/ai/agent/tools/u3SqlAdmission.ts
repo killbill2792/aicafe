@@ -179,6 +179,12 @@ export async function admitU3Sql(sql:string,allowedRelations:readonly string[],
    // historical fields that never passed named-path secret admission.
    // Explicit columns are required; COUNT(*) is encoded as FuncCall.agg_star.
    if(kind==="A_Star")throw Error("invalid_query");
+   // PostgreSQL table/CTE column-alias lists rewrite the *names* of source
+   // columns. Our privacy and dimensional admission use approved source names,
+   // so aliases for table columns are not supported until lineage resolution
+   // is implemented. Ordinary table aliases and output aliases remain legal.
+   if((kind==="colnames"||kind==="aliascolnames")&&
+      Array.isArray(raw)&&raw.length>0)throw Error("invalid_query");
    // Derived/aliased CTE and set-operation columns may shadow source names.
    // Research may still use them, but the exact calculator cannot treat a
    // projected alias as proof of its original monetary dimension.
@@ -305,23 +311,25 @@ export async function admitU3Sql(sql:string,allowedRelations:readonly string[],
  };
  const outputUnits:Record<string,U3TrustedUnit>={};
  const targets=(tree.stmts[0].stmt.SelectStmt as {targetList?:unknown}).targetList;
- const duplicateAliases=new Set<string>();
- if(nCtes===0&&!unitAmbiguousDerivedSource&&Array.isArray(targets))for(const t of targets){
+ const seenLabels=new Set<string>();
+ // Check ALL result labels before trusting ANY unit. PostgreSQL allows
+ // duplicate column labels and node-postgres overwrites object properties
+ // with later values, including constants deliberately mislabeled as money.
+ if(Array.isArray(targets))for(const t of targets){
   if(!t||typeof t!=="object"||!("ResTarget" in t))continue;
   const target=(t as {ResTarget?:{name?:unknown;val?:unknown}}).ResTarget;
-  const value=target?.val,unit=infer(value);
-  if(!unit)continue;
+  const value=target?.val;
   const fallback=value&&typeof value==="object"&&"ColumnRef" in value?
    name((value as {ColumnRef?:{fields?:unknown}}).ColumnRef?.fields)?.split(".").at(-1):
    value&&typeof value==="object"&&"FuncCall" in value?
     functionName((value as {FuncCall:N}).FuncCall):null;
   const alias=typeof target?.name==="string"?target.name:fallback;
-  if(alias&&/^[a-zA-Z_][a-zA-Z0-9_]{0,99}$/.test(alias)){
-   // Duplicate aliases cannot create a false unit claim.
-   if(Object.hasOwn(outputUnits,alias)){
-    delete outputUnits[alias];duplicateAliases.add(alias);
-   }else if(!duplicateAliases.has(alias))outputUnits[alias]=unit;
-  }
+  if(!alias||!/^[a-zA-Z_][a-zA-Z0-9_]{0,99}$/.test(alias))continue;
+  if(seenLabels.has(alias))throw Error("invalid_query");
+  seenLabels.add(alias);
+  if(nCtes!==0||unitAmbiguousDerivedSource)continue;
+  const unit=infer(value);
+  if(unit)outputUnits[alias]=unit;
  }
  return {relations:[...reads].sort(),functions:[...called].sort(),
   nodeCount:nodes,cteCount:nCtes,outputUnits};
