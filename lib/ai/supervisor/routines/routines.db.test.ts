@@ -327,7 +327,7 @@ describe("U4 migrated model-objective and autonomous Watch SQL contract",()=>{
         const child=spawn(process.execPath,[
           "node_modules/vitest/vitest.mjs","run",
           "lib/ai/supervisor/routines/u4ActualLoopProcess.test.ts",
-          "--reporter=dot","--maxWorkers=1","--fileParallelism=false",
+          "--reporter=dot","--maxWorkers=1","--fileParallelism=false","--pool=threads",
         ],{
           cwd:process.cwd(),
           env:{...process.env,SUPERVISOR_ROUTINES_DB_SANDBOX_ONLY:"1",
@@ -349,7 +349,8 @@ describe("U4 migrated model-objective and autonomous Watch SQL contract",()=>{
       try{
         const crashed=startChild("crash",originalLease);
         const deadline=Date.now()+45_000;
-        while(!existsSync(marker)&&Date.now()<deadline&&crashed.child.exitCode===null)
+        while(!existsSync(marker)&&Date.now()<deadline&&
+          crashed.child.exitCode===null&&crashed.child.signalCode===null)
           await sleep(80);
         if(!existsSync(marker)){
           crashed.child.kill("SIGKILL");
@@ -405,7 +406,7 @@ describe("U4 migrated model-objective and autonomous Watch SQL contract",()=>{
       const resumeProcess=spawn(process.execPath,[
         "node_modules/vitest/vitest.mjs","run",
         "lib/ai/supervisor/routines/u4ActualLoopProcess.test.ts",
-        "--reporter=dot","--maxWorkers=1","--fileParallelism=false",
+        "--reporter=dot","--maxWorkers=1","--fileParallelism=false","--pool=threads",
       ],{
         cwd:process.cwd(),
         env:{...process.env,SUPERVISOR_ROUTINES_DB_SANDBOX_ONLY:"1",
@@ -425,13 +426,18 @@ describe("U4 migrated model-objective and autonomous Watch SQL contract",()=>{
       let resumeCode:number|null=null;
       let resumeSignal:NodeJS.Signals|null=null;
       try{
-        [resumeCode,resumeSignal]=await Promise.race([
-          once(resumeProcess,"exit") as Promise<[number|null,NodeJS.Signals|null]>,
-          sleep(65_000).then(()=>{
+        [resumeCode,resumeSignal]=await new Promise<[number|null,NodeJS.Signals|null]>((resolve,reject)=>{
+          const timeout=setTimeout(()=>{
             resumeProcess.kill("SIGKILL");
-            throw Error("u4_actual_loop_resume_timeout:"+resumedDiagnostics);
-          }),
-        ]);
+            reject(Error("u4_actual_loop_resume_timeout:"+resumedDiagnostics));
+          },65_000);
+          resumeProcess.once("exit",(code,signal)=>{
+            clearTimeout(timeout);resolve([code,signal]);
+          });
+          resumeProcess.once("error",error=>{
+            clearTimeout(timeout);reject(error);
+          });
+        });
         expect(resumeCode,resumedDiagnostics).toBe(0);
         expect(resumeSignal).toBeNull();
         expect(readFileSync(resumeMarker,"utf8")).toBe("resumed_and_published\n");
