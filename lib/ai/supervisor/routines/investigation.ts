@@ -608,7 +608,8 @@ export function verifyInvestigationTurn(turn:AgentTurn,expected:ExpectedInvestig
   // A result's display source may be "scheduled_shifts" versus
   // "scheduled_shifts+pos_scheduled_shifts" for the SAME canonical reader.
   // Count underlying evidence families rather than spelling differences.
-  const domains=new Set(corroborated.map(c=>
+  const domains=new Set(corroborated.map(c=>c.name==="query_data"?
+    canonicalQuerySourceFamily(c.result.view):
     canonicalEvidenceDomain[c.name as AgentToolName]).filter(
       (domain):domain is string=>typeof domain==="string"&&domain.length>0));
   if(names.length<2||domains.size<2)return {ok:false,reason:"evidence_incomplete"};
