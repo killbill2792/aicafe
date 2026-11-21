@@ -12,6 +12,7 @@ import type {StoredAttachment} from "@/lib/ai/conversations/attachments";
 import type {OwnerWorkItem} from "@/lib/ai/supervisor/runs/ownerWorkView";
 
 const copy=en.SupervisorMandateCenter;
+const routineCopy=en.SupervisorRoutines;
 type Tab="work"|"library"|"routines"|"permissions";
 type Thread={id:string;title:string|null;lastMessageAt?:string|null;createdAt:string};
 type Routine={id:string;threadId:string;title:string;cadence:"daily"|"weekly";localTime:string;
@@ -128,7 +129,7 @@ export default function SupervisorMandatePanel({threadId,threads,approvals,onSel
 
   async function changeRoutine(r:Routine,action:"pause"|"resume"|"delete"){
     if(routineBusy||disabled)return;
-    if(action==="delete"&&!window.confirm(copy.routineDeleteConfirm))return;
+    if(action==="delete"&&!window.confirm(routineCopy.deleteConfirm))return;
     setRoutineBusy(r.id);setRoutineError("");setRoutineNotice("");
     try{
       const response=await fetch("/api/ai/supervisor/routines",{
@@ -143,9 +144,9 @@ export default function SupervisorMandatePanel({threadId,threads,approvals,onSel
         updated.status!==(action==="delete"?"revoked":action==="pause"?"paused":"active"))
         throw Error("routine_receipt_not_verified");
       setRoutines(current=>current.map(item=>item.id===r.id?updated:item));
-      setRoutineNotice(action==="delete"?copy.routineDeleteSaved:copy.routineSaved);
+      setRoutineNotice(action==="delete"?routineCopy.deleteSaved:routineCopy.saved);
     }catch{
-      setRoutineError(copy.routineSaveFailed);
+      setRoutineError(routineCopy.saveFailed);
       // A failed request may have committed; refresh against persisted state.
       setRoutinesLoading(true);setRefresh(n=>n+1);
     }finally{setRoutineBusy(null);}
@@ -323,29 +324,29 @@ export default function SupervisorMandatePanel({threadId,threads,approvals,onSel
                         .filter(Boolean).join(", ")
                       :r.cadence}
                     {" · "+r.localTime+" · "}
-                    {r.status==="active"?copy.active:copy.routinePaused}
+                    {r.status==="active"?copy.active:routineCopy.paused}
                   </span>
                 </div>
                 <details className="shrink-0">
-                  <summary aria-label={copy.routineActions+": "+r.title}
+                  <summary aria-label={routineCopy.actions+": "+r.title}
                     className="flex min-h-11 min-w-11 cursor-pointer list-none items-center justify-center rounded-lg hover:bg-surface2 focus-visible:outline focus-visible:outline-2 focus-visible:outline-ink">
                     <Ellipsis size={20} aria-hidden="true"/>
                   </summary>
-                  <div className="mt-1 flex flex-col gap-1" role="group" aria-label={copy.routineActions}>
+                  <div className="mt-1 flex flex-col gap-1" role="group" aria-label={routineCopy.actions}>
                     <button type="button" disabled={disabled||!!routineBusy}
                       className="min-h-11 rounded-lg px-3 text-start text-[14px] hover:bg-surface2 disabled:opacity-50"
                       onClick={()=>{onSelectThread(r.threadId);onClose();}}>
-                      {copy.routineEditInChat}
+                      {routineCopy.editInChat}
                     </button>
                     <button type="button" disabled={disabled||!!routineBusy}
                       className="min-h-11 rounded-lg px-3 text-start text-[14px] hover:bg-surface2 disabled:opacity-50"
                       onClick={()=>void changeRoutine(r,r.status==="active"?"pause":"resume")}>
-                      {r.status==="active"?copy.routinePause:copy.routineResume}
+                      {r.status==="active"?routineCopy.pause:routineCopy.resume}
                     </button>
                     <button type="button" disabled={disabled||!!routineBusy}
                       className="min-h-11 rounded-lg px-3 text-start text-[14px] text-neg hover:bg-surface2 disabled:opacity-50"
                       onClick={()=>void changeRoutine(r,"delete")}>
-                      {copy.routineDelete}
+                      {routineCopy.delete}
                     </button>
                   </div>
                 </details>
