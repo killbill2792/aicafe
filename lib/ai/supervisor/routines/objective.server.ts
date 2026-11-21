@@ -153,9 +153,9 @@ export function verifyObjectiveTurn(turn:AgentTurn,routine:RoutineRecord):Object
   const admitted=routine.executionMode==="watch"?watchReadTools:objectiveReadTools;
   const reads=(turn.toolInvocations??[]).filter(call=>
     admitted.includes(call.name as AgentToolName)&&
-    // Arithmetic and presentation are not source observations, even when
-    // they have nonempty results. At least one real source read is mandatory.
-    call.name!=="calculate"&&
+    // Catalogs and mailbox labels describe capabilities, not observed
+    // business facts. A model cannot pass acceptance using discovery alone.
+    !["calculate","describe_data","list_gmail_labels"].includes(call.name)&&
     observedObjectiveEvidence(call.result));
   if(!reads.length)throw Error("u4_no_verified_source_observation");
   // Another tool projecting the SAME physical source is not independent
