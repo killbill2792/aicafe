@@ -180,6 +180,8 @@ describe("U4 objective evidence and model autonomy",()=>{
       source:"u3_canonical_research",period:null,missing:[],
       truncated:false,rows:[{sum_net_sales_cents:10424}],
       evidence:{scope:"verified_owner_cafe_lease",
+        receipt_id:"11111111-1111-4111-8111-111111111111",
+        catalog_version:"b".repeat(16),column_units:{sum_net_sales_cents:"cents"},
         relation_names:["orders","order_lines"],query_fingerprint:"a".repeat(64)},
     };
     const alongside=verifyObjectiveTurn(turn("Recorded sales need verification.",{
@@ -265,6 +267,9 @@ describe("U4 objective evidence and model autonomy",()=>{
         relation_names:["orders"],column_units:{}},
     };
     expect(observedObjectiveEvidence(fakeSql)).toBe(false);
+    const validSql={...fakeSql,rows:[{count_orders:"0"}],
+      evidence:{...fakeSql.evidence,column_units:{count_orders:"count"}}};
+    expect(observedObjectiveEvidence(validSql)).toBe(true);
     expect(()=>verifyObjectiveTurn(turn("ATTENTION: invented revenue needs action.",{
       toolInvocations:[{name:"query_data",result:fakeSql}],
     }),watch)).toThrow("u4_no_verified_source_observation");

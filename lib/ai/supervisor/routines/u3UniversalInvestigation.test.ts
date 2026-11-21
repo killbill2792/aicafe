@@ -15,7 +15,10 @@ const caseRead={name:"get_investigation_source",result:{
 const analytics={name:"query_data",result:{
  source:"u3_canonical_research",period:null,missing:[],truncated:false,
  rows:[{net_sales_cents:"11900"}],rowCount:1,
- evidence:{scope:"verified_owner_cafe_lease"}
+ evidence:{scope:"verified_owner_cafe_lease",
+  receipt_id:"11111111-1111-4111-8111-111111111111",
+  query_fingerprint:"a".repeat(64),catalog_version:"b".repeat(16),
+  column_units:{net_sales_cents:"cents"}}
 }};
 const permitted=[...investigationReadTools,"get_events"];
 const turn=(changes:Record<string,unknown>={}):AgentTurn=>({
@@ -58,6 +61,13 @@ describe("U3 model-led autonomous investigation",()=>{
   expect(verifyUniversalInvestigationTurn(turn({
    toolInvocations:[caseRead,{...analytics,result:{...analytics.result,truncated:true}}]}),
    expected,permitted)).toEqual({ok:false,reason:"evidence_incomplete"});
+ });
+ it("rejects model-picked SQL constants without attested source units",()=>{
+  const forged={...analytics,result:{...analytics.result,
+    rows:[{fakeCents:99999}],evidence:{...analytics.result.evidence,column_units:{}}}};
+  expect(verifyUniversalInvestigationTurn(turn({
+    toolInvocations:[caseRead,forged],results:[caseRead.result,forged.result]
+  }),expected,permitted)).toEqual({ok:false,reason:"evidence_incomplete"});
  });
  it("preserves zero-effect owner approvals and uncertain facts",()=>{
   expect(verifyUniversalInvestigationTurn(turn({text:"I purchased replacement stock."}),

@@ -152,6 +152,12 @@ function verifiedU3Evidence(r:AgentToolResult,periodKey:string){
  return values;
 }
 
+/** The unattended proof gate reuses U3's exact source-attested numeric
+ * receipt admission, rather than trusting arbitrary model-selected SQL labels. */
+export function hasVerifiedU3NumericObservation(result:AgentToolResult):boolean{
+  return verifiedU3Evidence(result,"").length>0;
+}
+
 /** Collect the complete current observations first. Apply the persistence cap
  * only after collection, prioritizing recent reads and high-value prices. */
 export function compactEvidence(results:readonly AgentToolResult[],limit=100):NumericEvidence[]{
