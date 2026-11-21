@@ -1,5 +1,6 @@
 import {randomBytes,randomUUID} from "node:crypto";
 import {Client} from "pg";
+import {performance} from "node:perf_hooks";
 import {afterAll,beforeAll,describe,expect,it,vi} from "vitest";
 
 vi.mock("server-only",()=>({}));
@@ -154,6 +155,76 @@ describe.skipIf(!active)("U3 migrated registered tool + private connection",()=>
    "SELECT COUNT(*) AS n FROM u3_research.orders"),other);
   expect(result.error).toBe("research_scope_denied");
   expect(result.rows).toEqual([]);
+ });
+ it("generates cross-café join and fanout fixtures, checks independent money oracle, and records matched costs",async()=>{
+  if(!admin)throw Error("admin_missing");
+  // Reproducible metamorphic data; no owner-question string drives data routing.
+  let seed=41909;
+  const rand=()=>{seed^=seed<<13;seed^=seed>>>17;seed^=seed<<5;return seed>>>0;};
+  const insertedOrders:string[]=[],insertedLines:string[]=[];
+  const cases:{businessId:string;amount:number;lines:number[]}[]=[];
+  try{
+   for(let i=0;i<24;i++){
+    const id=randomUUID(),cafe=i%2===0?ids.a:ids.b,amount=101+rand()%4400;
+    const split=i%3===0?[Math.floor(amount/2),amount-Math.floor(amount/2)]:[amount];
+    insertedOrders.push(id);
+    cases.push({businessId:cafe,amount,lines:split});
+    await admin.query("INSERT INTO public.orders(id,business_id,pos_order_id,closed_at,business_date,gross_sales_cents,net_sales_cents) VALUES($1,$2,$3,now(),current_date,$4,$4)",
+     [id,cafe,"u3-seed-"+i,amount]);
+    for(const [part,lineAmount] of split.entries()){
+     const lineId=randomUUID();insertedLines.push(lineId);
+     await admin.query("INSERT INTO public.order_lines(id,order_id,name,quantity,net_sales_cents) VALUES($1,$2,$3,1,$4)",
+      [lineId,id,"Generated line "+part,lineAmount]);
+    }
+   }
+   const oracle=await admin.query(
+    "SELECT COALESCE(SUM(net_sales_cents),0)::text AS cents FROM public.orders WHERE business_id=$1",
+    [ids.a]);
+   const expected=Number(oracle.rows[0].cents);
+   const independentlyComputed=1100+cases.filter(c=>c.businessId===ids.a).reduce((sum,c)=>sum+c.amount,0);
+   expect(expected).toBe(independentlyComputed);
+   const sqls=[
+    "SELECT SUM(net_sales_cents) AS cents FROM u3_research.orders",
+    "SELECT SUM(p.cents) AS cents FROM u3_research.orders o JOIN (SELECT order_id,SUM(net_sales_cents) AS cents FROM u3_research.order_lines GROUP BY order_id) p ON p.order_id=o.id",
+    "WITH per_order AS (SELECT order_id,SUM(net_sales_cents) AS cents FROM u3_research.order_lines GROUP BY order_id) SELECT SUM(p.cents) AS cents FROM u3_research.orders o JOIN per_order p ON p.order_id=o.id"
+   ];
+   for(const sql of sqls){
+    const result=await dataQueryTools.query_data.execute(input(sql),scoped);
+    expect(result.error,sql).toBeUndefined();
+    expect(result.truncated,sql).toBe(false);
+    expect(Number((result.rows[0] as Record<string,unknown>).cents),sql).toBe(expected);
+   }
+   const baselineMs:number[]=[],researchMs:number[]=[];
+   const research=()=>dataQueryTools.query_data.execute(input(sqls[0]),scoped);
+   for(let i=0;i<10;i++){
+    let started=performance.now();
+    const baseline=await admin.query(
+     "SELECT COALESCE(SUM(net_sales_cents),0)::text AS cents FROM public.orders WHERE business_id=$1",
+     [ids.a]);
+    baselineMs.push(performance.now()-started);
+    expect(Number(baseline.rows[0].cents)).toBe(expected);
+    started=performance.now();
+    const actual=await research();
+    researchMs.push(performance.now()-started);
+    expect(actual.error).toBeUndefined();
+    expect(Number((actual.rows[0] as Record<string,unknown>).cents)).toBe(expected);
+   }
+   const quantile=(values:number[],q:number)=>{
+    const sorted=[...values].sort((a,b)=>a-b);
+    return Number(sorted[Math.ceil((sorted.length-1)*q)].toFixed(2));
+   };
+   console.log("U3_NO_PROVIDER_MATCHED_MEASUREMENT",JSON.stringify({
+    fixtureSeed:41909,generatedOrders:cases.length,generatedLines:cases.reduce((s,c)=>s+c.lines.length,0),
+    deterministicVariations:sqls.length,independentOracleCents:expected,modelCalls:0,
+    baseline:"scoped direct source SQL; NOT legacy ai_query_view",
+    legacyBaseline:{p50Ms:quantile(baselineMs,.5),p95Ms:quantile(baselineMs,.95)},
+    researchTool:{p50Ms:quantile(researchMs,.5),p95Ms:quantile(researchMs,.95)},
+    caveat:"Synthetic local fixture only; not a live production/paid-model performance comparison"
+   }));
+  }finally{
+   await admin.query("DELETE FROM public.order_lines WHERE id=ANY($1::uuid[])",[insertedLines]).catch(()=>{});
+   await admin.query("DELETE FROM public.orders WHERE id=ANY($1::uuid[])",[insertedOrders]).catch(()=>{});
+  }
  });
  it("rechecks actual original-owner authorization after revocation",async()=>{
   if(!admin)throw Error("admin_missing");
