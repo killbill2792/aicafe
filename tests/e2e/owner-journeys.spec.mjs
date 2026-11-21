@@ -236,6 +236,33 @@ test("@home Task16A authenticated mobile owner views library/routines/permission
     await foreignPanel.getByRole("button",{name:"Permissions",exact:true}).click();
     await expect(foreignPanel.getByText("Task16A approval library")).toHaveCount(0);console.info("[Task16A E2E] other-café isolation proved");
 
+    // U4-10: authenticated owner deletion is a durable revocation, not a
+    // local hide. Confirm the real browser prompt, SQL revision fence, stale
+    // replay denial and absence from navigation even after a full reload.
+    await panel.getByRole("button",{name:"Routines",exact:true}).click();
+    await expect(panel.getByText("Daily source check")).toBeVisible();
+    await panel.getByLabel("Routine actions: Daily source check").click();
+    page.once("dialog",dialog=>void dialog.accept());
+    await panel.getByRole("button",{name:"Delete",exact:true}).click();
+    await expect.poll(savedState,{timeout:15_000}).toEqual({
+      status:[{status:"revoked",revision:4}],
+    });
+    await expect(panel.getByText("Daily source check")).toHaveCount(0);
+    const staleDelete=await ctx.request.post("/api/ai/supervisor/routines",{
+      headers:{origin:"http://127.0.0.1:3000"},
+      data:{action:"delete",routineId:id.routine,revision:3},
+    });
+    expect(staleDelete.status()).not.toBe(200);
+    await page.reload({waitUntil:"domcontentloaded"});
+    await expect(controlsButton).toBeVisible({timeout:20_000});
+    await controlsButton.click();
+    const afterReload=page.getByRole("dialog",{name:"Supervisor controls"});
+    await afterReload.getByRole("button",{name:"Routines",exact:true}).click();
+    await expect(afterReload.getByText("Daily source check")).toHaveCount(0);
+    const deletedInDb=await savedState();
+    expect(deletedInDb).toEqual({status:[{status:"revoked",revision:4}]});
+    console.info("[U4 E2E] routine deleted, stale replay denied and reload remains revoked");
+
   }finally{
     await Promise.allSettled([ctx.close(),other.close()]);
     if(connected){
