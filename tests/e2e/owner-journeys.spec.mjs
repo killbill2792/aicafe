@@ -82,7 +82,11 @@ test("@home Task16A authenticated mobile owner views library/routines/permission
     await expect(page.getByText("Daily source check saved.",{exact:true})).toHaveCount(1);
     await expect(routineCard.getByLabel("Routine actions: Daily source check")).toBeVisible();
     await routineCard.getByLabel("Routine actions: Daily source check").click();
-    await routineCard.getByRole("button",{name:"Edit in chat",exact:true}).click();
+    const editInChat=routineCard.getByRole("button",{name:"Edit in chat",exact:true});
+    // Preparing an inert draft is available even with a no-provider chat
+    // sentinel; actual routine changes still use authenticated SQL CAS.
+    await expect(editInChat).toBeEnabled({timeout:20_000});
+    await editInChat.click();
     await expect(page.locator("#supervisor-home-composer")).toHaveValue(
       new RegExp(id.routine));
     await expect(page.locator("#supervisor-home-composer")).toHaveValue(/revision 1/);
