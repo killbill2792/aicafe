@@ -55,8 +55,9 @@ function db(params?:{routines?:Record<string,unknown>[];owners?:{user_id:string}
         return builder;
       },
       in(field:string,values:string[]){
-        if(table==="operating_tasks"&&field==="dedupe_key")
-          selected=selected.filter(row=>values.includes(String(row.dedupe_key)));
+        if((table==="operating_tasks"&&field==="dedupe_key")||
+          (table==="memberships"&&field==="user_id"))
+          selected=selected.filter(row=>values.includes(String(row[field])));
         return builder;
       },
       neq(){return builder},
@@ -108,6 +109,64 @@ describe("U4 fair scheduled work without a second queue",()=>{
     const twoDays=[0,1,2,3].map(day=>routinePageWindow(
       new Date(Date.UTC(2026,10,21+day,17)),102).start);
     expect(twoDays).toEqual([100,0,100,0]);
+  });
+  it("rotates every eligible owner through a bounded Watch scan at a fixed daily cron hour",async()=>{
+    vi.stubEnv("SUPERVISOR_U4_ENABLED","true");
+    try{
+      const owners=Array.from({length:102},(_,i)=>({
+        user_id:"owner"+String(i).padStart(3,"0"),
+      }));
+      const seen:string[]=[];
+      const source=db({owners,threads:[],routines:[]});
+      const enqueue=vi.fn(async(_db,scope:{ownerUserId:string})=>{
+        seen.push(scope.ownerUserId);return 0;
+      });
+      const day1=await dispatchRoutinesForBusiness(source,"cafe",
+        "America/Los_Angeles",new Date("2026-11-21T17:00:00Z"),enqueue);
+      const day2=await dispatchRoutinesForBusiness(source,"cafe",
+        "America/Los_Angeles",new Date("2026-11-22T17:00:00Z"),enqueue);
+      expect(day1.failed+day2.failed).toBe(0);
+      expect(seen).toHaveLength(102);
+      expect(new Set(seen).size).toBe(102);
+      expect(seen).toContain("owner000");
+      expect(seen).toContain("owner101");
+    }finally{vi.unstubAllEnvs();}
+  });
+  it("still executes a saved goal when its owner is outside the Watch page",async()=>{
+    vi.stubEnv("SUPERVISOR_U4_ENABLED","true");
+    try{
+      const owners=Array.from({length:102},(_,i)=>({
+        user_id:"owner"+String(i).padStart(3,"0"),
+      }));
+      const earlyOwnerGoal={...routine,id:"off-page-owner-goal",
+        owner_user_id:"owner000",thread_id:"owner000-thread",
+        execution_mode:"objective",objective_text:"Verify café source changes.",
+        objective_source_message_id:"saved-owner-source"};
+      const source=db({owners,threads:[],routines:[earlyOwnerGoal]});
+      mocks.candidates.mockReset().mockResolvedValue([
+        {localDate:"2026-11-20",scheduledForUtc:"2026-11-20T16:00:00Z"},
+      ]);
+      mocks.claim.mockReset().mockResolvedValue({
+        runId:"owner-run",leaseToken:"owner-lease",revision:1,
+      });
+      mocks.objective.mockReset().mockResolvedValue({
+        attention:"none",sourceCount:1,
+      });
+      const executed=await dispatchRoutinesForBusiness(source,"cafe",
+        "America/Los_Angeles",new Date("2026-11-21T17:00:00Z"));
+      expect(executed.runs).toBe(1);
+      expect(mocks.objective).toHaveBeenCalledWith(source,
+        expect.objectContaining({routine:expect.objectContaining({
+          id:"off-page-owner-goal",ownerUserId:"owner000",
+        })}));
+      const denied=db({owners:owners.slice(1),threads:[],routines:[earlyOwnerGoal]});
+      mocks.objective.mockClear();
+      const result=await dispatchRoutinesForBusiness(denied,"cafe",
+        "America/Los_Angeles",new Date("2026-11-21T17:00:00Z"));
+      expect(result.runs).toBe(0);
+      expect(result.failed).toBeGreaterThan(0);
+      expect(mocks.objective).not.toHaveBeenCalled();
+    }finally{vi.unstubAllEnvs();}
   });
   it("rotates Watch and owner objectives by actual occurrence, not fixed creation order",()=>{
     const old={id:"old",executionMode:"objective" as const};

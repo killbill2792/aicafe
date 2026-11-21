@@ -242,21 +242,29 @@ export async function dispatchRoutinesForBusiness(db:SupabaseClient,businessId:s
   const localDate=localDateAt(now,timezone);
   const result:RoutineDispatchResult={routinesChecked:0,runs:0,notices:0,failed:0,evidenceChecks:0,investigationsQueued:0};
   const u4Enabled=process.env.SUPERVISOR_U4_ENABLED==="true";
-  // A fixed oldest-100 query can starve every newer owner objective forever.
-  // Count the active routines and rotate one bounded page per UTC hour while
-  // retaining the original legacy selection when U4 is off.
-  const activeCount=u4Enabled?await db.from("supervisor_routines")
-    .select("id",{count:"exact"}).eq("business_id",businessId)
-    .eq("status","active").limit(0):null;
-  if(u4Enabled&&(activeCount?.error||typeof activeCount?.count!=="number"))
-    throw activeCount?.error??Error("u4_routine_count_unavailable");
+  // Bound and rotate BOTH owner and routine cohorts. A fixed first-100
+  // owner scan also permanently hides Watch for later café co-owners.
+  // The original legacy window stays unchanged when U4 is off.
+  const [activeCount,ownerCount]=u4Enabled?await Promise.all([
+    db.from("supervisor_routines").select("id",{count:"exact"})
+      .eq("business_id",businessId).eq("status","active").limit(0),
+    db.from("memberships").select("user_id",{count:"exact"})
+      .eq("business_id",businessId).eq("role","owner").limit(0),
+  ]):[null,null];
+  if(u4Enabled&&(activeCount?.error||typeof activeCount?.count!=="number"||
+    ownerCount?.error||typeof ownerCount?.count!=="number"))
+    throw activeCount?.error??ownerCount?.error??Error("u4_census_unavailable");
   const window=u4Enabled?routinePageWindow(now,activeCount!.count!):null;
+  const ownerWindow=u4Enabled?routinePageWindow(now,ownerCount!.count!):null;
   const scopedRoutines=db.from("supervisor_routines").select("*")
     .eq("business_id",businessId).eq("status","active")
     .order("created_at",{ascending:true}).order("id",{ascending:true});
+  const scopedOwners=db.from("memberships").select("user_id")
+    .eq("business_id",businessId).eq("role","owner")
+    .order("user_id",{ascending:true});
   const [ownerRows,threadRows,routineRows]=await Promise.all([
-    db.from("memberships").select("user_id").eq("business_id",businessId)
-      .eq("role","owner").order("user_id",{ascending:true}).limit(batchLimit),
+    ownerWindow?scopedOwners.range(ownerWindow.start,ownerWindow.end):
+      scopedOwners.limit(batchLimit),
     db.from("ai_threads").select("id,owner_user_id").eq("business_id",businessId)
       .order("updated_at",{ascending:false}).limit(batchLimit*2),
     window?scopedRoutines.range(window.start,window.end):
@@ -271,6 +279,18 @@ export async function dispatchRoutinesForBusiness(db:SupabaseClient,businessId:s
       threads.set(row.owner_user_id,row.id);
   }
   const routines=((routineRows.data??[]) as RoutineRow[]).map(parseRoutine);
+  // Rotating the owner notice/Watch window must NOT deny a valid saved
+  // routine whose owner falls on a different page this tick. Verify those
+  // identities together in ONE current membership read, never by guessing
+  // from the selected owner cohort or issuing 100 per-routine DB requests.
+  const offPageOwners=[...new Set(routines.map(r=>r.ownerUserId)
+    .filter(id=>!owners.has(id)))];
+  const extraOwners=offPageOwners.length?
+    await db.from("memberships").select("user_id").eq("business_id",businessId)
+      .eq("role","owner").in("user_id",offPageOwners).limit(batchLimit):null;
+  if(extraOwners?.error)throw extraOwners.error;
+  const authorizedRoutineOwners=new Set([...owners,
+    ...(extraOwners?.data??[]).map(row=>row.user_id)]);
   // A leased model execution is bounded to one objective per café tick so
   // it cannot starve source refresh, chat or unrelated incident investigation.
   let objectiveExecutions=0;
@@ -370,7 +390,7 @@ export async function dispatchRoutinesForBusiness(db:SupabaseClient,businessId:s
   }
   for(const routine of routines){
     result.routinesChecked++;
-    if(!owners.has(routine.ownerUserId)||routine.timezone!==timezone){
+    if(!authorizedRoutineOwners.has(routine.ownerUserId)||routine.timezone!==timezone){
       result.failed++;continue;
     }
     // Read persisted retries and missed dates, not just today's date. Each
