@@ -39,7 +39,7 @@ export function seededCafe(index) {
  * compiles a large authenticated page. No retry for HTTP errors, redirect to
  * login, incorrect owner data or real application failures. A permanently
  * unavailable server still fails the exact authenticated journey. */
-async function navigateLocal(page,path){
+export async function navigateLocal(page,path){
   assertDisposableEnvironment();
   if(!path.startsWith("/en/"))throw Error("E2 refuses nonlocal route");
   try{
