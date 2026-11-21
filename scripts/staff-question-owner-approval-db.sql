@@ -46,23 +46,14 @@ insert into public.supervisor_investigations( business_id,owner_user_id,thread_i
  returning id as proposal_card_message \gset
 select set_config('test.staffquestion.card',:'proposal_card_message',true);
 do $$
-begin
- if not exists(select 1 from public.ai_messages m where m.id=current_setting('test.staffquestion.card')::uuid
-  and m.structured_content @> jsonb_build_array(jsonb_build_object('type','proposal_card',
-   'proposalId',current_setting('test.staffquestion.rejected_proposal')))) then
-  raise exception 'proactive report failed to render actual owner approval card';end if;
+ begin if not exists(select 1 from public.ai_messages m where m.id=current_setting('test.staffquestion.card')::uuid and m.structured_content @> jsonb_build_array(jsonb_build_object('type','proposal_card',
+ 'proposalId',current_setting('test.staffquestion.rejected_proposal')))) then raise exception 'proactive report failed to render actual owner approval card';end if;
 end $$;
 do $$
-declare b uuid:=current_setting('test.staffquestion.biz')::uuid; o uuid:=current_setting('test.staffquestion.owner')::uuid; th uuid:=current_setting('test.staffquestion.thread')::uuid; p uuid:=current_setting('test.staffquestion.proposal')::uuid;
-begin
- begin
-  perform public.supervisor_commit_staff_question(b,o,th,p,repeat('d',64)); raise exception 'unapproved employee question was sent';
- exception when insufficient_privilege then null;end;
- begin
-  perform public.supervisor_commit_staff_question(b,current_setting('test.staffquestion.outsider')::uuid,th,p,repeat('d',64));
-  raise exception 'foreign owner could send'; exception when insufficient_privilege then null;end;
- if exists(select 1 from public.staff_communication_requests where source_id=p::text) then
-  raise exception 'draft created a request';end if;
+ declare b uuid:=current_setting('test.staffquestion.biz')::uuid; o uuid:=current_setting('test.staffquestion.owner')::uuid; th uuid:=current_setting('test.staffquestion.thread')::uuid; p uuid:=current_setting('test.staffquestion.proposal')::uuid; begin begin
+ perform public.supervisor_commit_staff_question(b,o,th,p,repeat('d',64)); raise exception 'unapproved employee question was sent'; exception when insufficient_privilege then null;end; begin
+ perform public.supervisor_commit_staff_question(b,current_setting('test.staffquestion.outsider')::uuid,th,p,repeat('d',64)); raise exception 'foreign owner could send'; exception when insufficient_privilege then null;end; if exists(select 1 from public.staff_communication_requests where source_id=p::text) then
+ raise exception 'draft created a request';end if;
 end $$;
 select public.supervisor_transition_proposal(:'biz',:'owner_id',:'proposal',1,'approve',null); select claim->>'attempt_key' as attempt_key,
  (claim->'proposal'->>'revision')::integer as effect_revision
@@ -70,13 +61,9 @@ select public.supervisor_transition_proposal(:'biz',:'owner_id',:'proposal',1,'a
 select public.supervisor_commit_staff_question(:'biz',:'owner_id',:'thread_id',:'proposal',repeat('d',64))->>'id' as request_id \gset
 select set_config('test.staffquestion.request',:'request_id',true);
 do $$
-begin
- if (select count(*) from public.staff_communication_requests where business_id=current_setting('test.staffquestion.biz')::uuid
-  and source_id=current_setting('test.staffquestion.proposal') and employee_id=current_setting('test.staffquestion.employee')::uuid and kind='task'
-  and prompt='How many takeaway cups are left?')<>1 then
-  raise exception 'approved question was not saved exactly once';end if;
- if exists(select 1 from public.staff_communication_messages where business_id=current_setting('test.staffquestion.biz')::uuid) then
-  raise exception 'approval falsely created an employee response';end if;
+ begin if (select count(*) from public.staff_communication_requests where business_id=current_setting('test.staffquestion.biz')::uuid and source_id=current_setting('test.staffquestion.proposal') and employee_id=current_setting('test.staffquestion.employee')::uuid and kind='task'
+ and prompt='How many takeaway cups are left?')<>1 then raise exception 'approved question was not saved exactly once';end if; if exists(select 1 from public.staff_communication_messages where business_id=current_setting('test.staffquestion.biz')::uuid) then
+ raise exception 'approval falsely created an employee response';end if;
 end $$;
 select public.supervisor_commit_staff_question(:'biz',:'owner_id',:'thread_id',:'proposal',repeat('d',64));
 update public.supervisor_effect_attempts set state='uncertain' where proposal_id=:'proposal' and business_id=:'biz';
@@ -84,11 +71,8 @@ select public.supervisor_reconcile_staff_question(:'biz',:'owner_id',:'thread_id
  :'proposal')->>'state' as recovered_state \gset
 select public.supervisor_reconcile_staff_question(:'biz',:'owner_id',:'thread_id',:'proposal');
 do $$
-begin
- if (select count(*) from public.staff_communication_requests where
-   source_id=current_setting('test.staffquestion.proposal') and business_id=current_setting('test.staffquestion.biz')::uuid)<>1 then raise exception 'duplicate question';end if;
- if not exists(select 1 from public.supervisor_proposals where id=current_setting('test.staffquestion.proposal')::uuid and status='committed')
-   then raise exception 'uncertain receipt was not safely reconciled';end if;
+ begin if (select count(*) from public.staff_communication_requests where source_id=current_setting('test.staffquestion.proposal') and business_id=current_setting('test.staffquestion.biz')::uuid)<>1 then raise exception 'duplicate question';end if;
+ if not exists(select 1 from public.supervisor_proposals where id=current_setting('test.staffquestion.proposal')::uuid and status='committed') then raise exception 'uncertain receipt was not safely reconciled';end if;
 end $$;
 do $
 begin
@@ -104,35 +88,19 @@ insert into public.ai_messages(id,business_id,thread_id,owner_user_id,author_use
 select public.supervisor_answer_staff_question(:'biz',:'owner_id',:'thread_id',
  :'owner_proposal',1,:'owner_answer_message');
 do $$
-begin
- if not exists(select 1 from public.supervisor_proposals where id=current_setting('test.staffquestion.owner_proposal')::uuid
-  and status='rejected' and baseline->'ownerAnswer'->>'text'=
-    'There are approximately 40 cups remaining.' and baseline->'ownerAnswer'->>'ownerMessageId' is not null) then raise exception 'owner answer not durable';end if;
- if not exists(select 1 from public.operating_tasks where id='staff-question-owner-answer:'||current_setting('test.staffquestion.owner_proposal')
-  and evidence @> '[{"source":"owner_report"}]'::jsonb) then
-  raise exception 'owner answer did not enter existing investigation queue';end if;
- if exists(select 1 from public.staff_communication_requests
-  where source_id=current_setting('test.staffquestion.owner_proposal')) then raise exception 'owner answer contacted worker';end if;
+ begin if not exists(select 1 from public.supervisor_proposals where id=current_setting('test.staffquestion.owner_proposal')::uuid and status='rejected' and baseline->'ownerAnswer'->>'text'=
+ 'There are approximately 40 cups remaining.' and baseline->'ownerAnswer'->>'ownerMessageId' is not null) then raise exception 'owner answer not durable';end if; if not exists(select 1 from public.operating_tasks where id='staff-question-owner-answer:'||current_setting('test.staffquestion.owner_proposal') and evidence @> '[{"source":"owner_report"}]'::jsonb) then
+ raise exception 'owner answer did not enter existing investigation queue';end if; if exists(select 1 from public.staff_communication_requests where source_id=current_setting('test.staffquestion.owner_proposal')) then raise exception 'owner answer contacted worker';end if;
 end $$;
 do $$
-begin
- begin
-  perform public.supervisor_answer_staff_question(current_setting('test.staffquestion.biz')::uuid,current_setting('test.staffquestion.owner')::uuid,current_setting('test.staffquestion.thread')::uuid,
-    current_setting('test.staffquestion.owner_proposal')::uuid,1,:'owner_answer_message'); raise exception 'owner answer replay was accepted';
- exception when sqlstate '40900' then null;end;
- begin
-  perform public.supervisor_answer_staff_question(current_setting('test.staffquestion.biz')::uuid,current_setting('test.staffquestion.outsider')::uuid,current_setting('test.staffquestion.thread')::uuid,
-    current_setting('test.staffquestion.rejected_proposal')::uuid,1,:'owner_answer_message'); raise exception 'cross-cafe owner answer was accepted';
- exception when sqlstate '40900' then null;end;
+ begin begin perform public.supervisor_answer_staff_question(current_setting('test.staffquestion.biz')::uuid,current_setting('test.staffquestion.owner')::uuid,current_setting('test.staffquestion.thread')::uuid,
+ current_setting('test.staffquestion.owner_proposal')::uuid,1,:'owner_answer_message'); raise exception 'owner answer replay was accepted'; exception when sqlstate '40900' then null;end; begin
+ perform public.supervisor_answer_staff_question(current_setting('test.staffquestion.biz')::uuid,current_setting('test.staffquestion.outsider')::uuid,current_setting('test.staffquestion.thread')::uuid, current_setting('test.staffquestion.rejected_proposal')::uuid,1,:'owner_answer_message'); raise exception 'cross-cafe owner answer was accepted'; exception when sqlstate '40900' then null;end;
 end $$;
 update public.staff_communication_requests set due_at=statement_timestamp()-interval '1 second' where id=:'request_id';
 select public.staff_question_escalate_due(:'biz'); select public.staff_question_escalate_due(:'biz');
 do $$
-begin
- if (select count(*) from public.operating_tasks
-  where id='staff-question-unanswered:'||current_setting('test.staffquestion.request')||':'||current_setting('test.staffquestion.owner'))<>1 then
-  raise exception 'unanswered follow-up lost or repeated';end if;
- if (select count(*) from public.staff_communication_requests where source_id=current_setting('test.staffquestion.proposal'))<>1 then
-  raise exception 'no-response created a second outbound request';end if;
+ begin if (select count(*) from public.operating_tasks where id='staff-question-unanswered:'||current_setting('test.staffquestion.request')||':'||current_setting('test.staffquestion.owner'))<>1 then
+ raise exception 'unanswered follow-up lost or repeated';end if; if (select count(*) from public.staff_communication_requests where source_id=current_setting('test.staffquestion.proposal'))<>1 then raise exception 'no-response created a second outbound request';end if;
 end $$;
 rollback;
