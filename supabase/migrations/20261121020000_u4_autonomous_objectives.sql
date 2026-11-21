@@ -174,6 +174,44 @@ revoke all on function public.u4_ensure_watch_routine(uuid,uuid,uuid,time)
   from public,anon,authenticated;
 grant execute on function public.u4_ensure_watch_routine(uuid,uuid,uuid,time) to service_role;
 
+
+-- The existing proactive-thread function intentionally returns NULL for a
+-- healthy owner without alerts or prior chat. U4 Watch MUST have a genuine
+-- owner/café/thread lease even before discovering its first novel issue.
+-- Reuse the original function first; only its no-work outcome needs a
+-- service-only thread. This does not alter the legacy no-work behavior.
+create or replace function public.u4_ensure_watch_thread(
+  p_business_id uuid,p_owner_user_id uuid
+) returns uuid language plpgsql security definer set search_path=''
+as $u4_watch_thread$
+declare v_thread uuid;
+begin
+  if coalesce(auth.role(),'')<>'service_role' then
+    raise exception 'u4_watch_thread_denied' using errcode='42501'; end if;
+  -- This existing function is the authoritative owner/non-demo scope check.
+  v_thread:=public.supervisor_ensure_proactive_thread(
+    p_business_id,p_owner_user_id);
+  if v_thread is not null then return v_thread; end if;
+  -- Use exactly its original advisory key: concurrent cron workers can
+  -- create at most one thread, including one created by a new owner turn.
+  perform pg_catalog.pg_advisory_xact_lock(pg_catalog.hashtextextended(
+    p_business_id::text||':'||p_owner_user_id::text||':proactive_thread',0));
+  select id into v_thread from public.ai_threads
+    where business_id=p_business_id and owner_user_id=p_owner_user_id
+    order by updated_at desc,id limit 1;
+  if v_thread is not null then return v_thread; end if;
+  insert into public.ai_threads(
+    business_id,owner_user_id,client_request_id,title)
+  values(p_business_id,p_owner_user_id,pg_catalog.gen_random_uuid(),
+    'Supervisor proactive review') returning id into v_thread;
+  return v_thread;
+end
+$u4_watch_thread$;
+revoke all on function public.u4_ensure_watch_thread(uuid,uuid)
+  from public,anon,authenticated;
+grant execute on function public.u4_ensure_watch_thread(uuid,uuid)
+  to service_role;
+
 -- Fencing before every paid model request and prior to report acceptance.
 create or replace function public.u4_routine_lease_active(
   p_business_id uuid,p_routine_id uuid,p_run_id uuid,p_lease_token uuid
