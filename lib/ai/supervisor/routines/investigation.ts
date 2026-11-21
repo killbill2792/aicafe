@@ -65,6 +65,33 @@ export const canonicalEvidenceDomain:Partial<Record<AgentToolName,string>>={
   get_menu_items:"menu_catalog",get_price_monitor_status:"price_monitor",
   get_profit:"profitability",get_events:"verified_saved_local_events",
 };
+/** Physical lineage of the existing public canonical VIEW families, not a
+ * question-to-tool routing script. Distinct views over Toast orders do not
+ * become independent evidence merely because the SQL view names differ.
+ * Unknown/U3 arbitrary SQL joins remain one conservative opaque lineage. */
+const canonicalViewSourceFamilies:Readonly<Record<string,string>>={
+  cv_sales_days:"recorded_sales",cv_sales_hours:"recorded_sales",
+  cv_item_sales:"recorded_sales",cv_orders:"recorded_sales",
+  cv_payments:"recorded_sales",cv_discounts:"recorded_sales",
+  cv_voids_refunds:"recorded_sales",cv_card_fees:"recorded_sales",
+  cv_customer_visits:"recorded_sales",cv_customer_products:"recorded_sales",
+  cv_toast_records:"recorded_sales",cv_analytics:"recorded_sales",
+  cv_inventory:"stock_and_inventory",
+  cv_labor_entries:"attendance_and_labor",cv_labor:"attendance_and_labor",
+  cv_payroll:"attendance_and_labor",
+  cv_staff:"staff_roster",cv_shifts:"dated_schedule",
+  cv_menu:"menu_catalog",cv_dining_options:"menu_catalog",
+  cv_bills:"configured_recurring_bills",
+  cv_expenses:"recorded_expenses",
+  cv_events:"verified_saved_local_events",
+  cv_cash:"cash_management_records",cv_kitchen:"kitchen_fulfillment",
+  cv_owner_facts:"owner_reported_facts",
+};
+export function canonicalQuerySourceFamily(view:unknown):string{
+  return typeof view==="string"?
+    canonicalViewSourceFamilies[view]??"other:canonical_data":
+    "other:canonical_data";
+}
 /** Read-only tool names and source labels do NOT establish evidence. Readers
  * frequently return a valid source name with only missing/error reasons. A
  * domain corroborates the incident only if its actual returned payload has
