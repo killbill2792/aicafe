@@ -90,6 +90,13 @@ begin
  if not exists(select 1 from public.supervisor_proposals where id=current_setting('test.staffquestion.proposal')::uuid and status='committed')
    then raise exception 'uncertain receipt was not safely reconciled';end if;
 end $$;
+do $
+begin
+ begin
+  perform public.supervisor_answer_staff_question(:'biz',:'owner_id',:'thread_id',:'owner_proposal',1,gen_random_uuid());
+  raise exception 'a fabricated owner message was accepted';
+ exception when sqlstate '22023' then null;end;
+end $;
 select gen_random_uuid() as owner_answer_message \gset
 insert into public.ai_messages(id,business_id,thread_id,owner_user_id,author_user_id,role,content_type,text_content,client_message_id)
  values(:'owner_answer_message',:'biz',:'thread_id',:'owner_id',:'owner_id','owner','text',
