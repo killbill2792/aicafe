@@ -124,6 +124,47 @@ revoke all on function public.supervisor_answer_staff_question(uuid,uuid,uuid,uu
  from public,anon,authenticated;
 grant execute on function public.supervisor_answer_staff_question(uuid,uuid,uuid,uuid,integer,text) to service_role;
 
+-- A lost HTTP response never re-sends a worker question. Resolve only an
+-- already-durable request, then finish its SAME previously clicked effect.
+create function public.supervisor_reconcile_staff_question(
+ p_business_id uuid,p_owner_user_id uuid,p_thread_id uuid,p_proposal_id uuid
+) returns jsonb language plpgsql security definer set search_path=public,pg_temp as $
+declare p public.supervisor_proposals; a public.supervisor_effect_attempts;
+ r public.staff_communication_requests; tz text;
+begin
+ if auth.role() is distinct from 'service_role' then
+  raise exception 'service_role_only' using errcode='42501';end if;
+ select * into p from public.supervisor_proposals where
+  business_id=p_business_id and owner_user_id=p_owner_user_id
+  and thread_id=p_thread_id and id=p_proposal_id for update;
+ if not found or p.capability_id<>'olivia.staff_question.v1'
+ then raise exception 'staff_question_not_found' using errcode='42501';end if;
+ select * into a from public.supervisor_effect_attempts where
+  business_id=p_business_id and proposal_id=p.id and effect_hash=p.effect_hash
+  and authorization_kind='click' for update;
+ if not found then return jsonb_build_object('state','not_authorized');end if;
+ select * into r from public.staff_communication_requests where
+  business_id=p_business_id and source_type='owner_manual'
+  and source_id=p.id::text and employee_id=(p.canonical_effect_payload->>'employeeId')::uuid
+  and prompt=p.canonical_effect_payload->>'question';
+ if not found then return jsonb_build_object('state','unknown');end if;
+ if p.status='executing' and a.state in ('executing','uncertain') then
+  select timezone into tz from public.businesses where id=p_business_id;
+  if tz is null then raise exception 'cafe_timezone_unavailable' using errcode='42501';end if;
+  if a.state='uncertain' then
+   update public.supervisor_effect_attempts set state='executing' where id=a.id;
+  end if;
+  p:=public.supervisor_finish_effect_attempt(p_business_id,p_owner_user_id,
+   p_thread_id,p.id,a.attempt_key,p.revision,'verified','committed',
+   ((statement_timestamp() at time zone tz)::date+1));
+ end if;
+ if p.status<>'committed' then return jsonb_build_object('state','unknown');end if;
+ return jsonb_build_object('state','verified','requestId',r.id,'employeeContacted',true);
+end $;
+revoke all on function public.supervisor_reconcile_staff_question(uuid,uuid,uuid,uuid)
+ from public,anon,authenticated;
+grant execute on function public.supervisor_reconcile_staff_question(uuid,uuid,uuid,uuid) to service_role;
+
 -- Extend the existing fifteen-minute Supervisor tick, not a new scheduler.
 -- One overdue worker request becomes one durable owner task; silence cannot
 -- count as declined or as a verified answer. Any later follow-up requires a

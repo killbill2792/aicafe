@@ -318,7 +318,17 @@ export async function POST(request:Request,{params}:Params){
       p.capabilityId!==goalCapabilityId&&p.capabilityId!==eventReadinessCapabilityId)
       return conversationJson({error:"proposal_not_found"},404);
     if(p.capabilityId===staffQuestionCapabilityId){
-      if(p.revision!==input.revision||p.status!=="draft")
+      if(input.action==="reconcile"){
+        const checked=await createAdminSupabaseClient().rpc("supervisor_reconcile_staff_question",{
+          p_business_id:scope.businessId,p_owner_user_id:scope.ownerUserId,
+          p_thread_id:scope.threadId,p_proposal_id:p.id,
+        });
+        if(checked.error)return conversationJson({state:"uncertain",error:"receipt_read_failed"},503);
+        return conversationJson({state:checked.data?.state,
+          proposal:await view(scope,repo,await repo.load(scope,p.id))});
+      }
+      if(p.revision!==input.revision||
+        (p.status!=="draft"&&!(p.status==="approved"&&input.action==="approve")))
         return conversationJson({state:"conflict",proposal:await view(scope,repo,p)},409);
       if(input.action==="cancel")
         return conversationJson({proposal:await view(scope,repo,
@@ -338,7 +348,8 @@ export async function POST(request:Request,{params}:Params){
       try{
         // The committed SQL path independently rechecks the exact worker,
         // published current shift, source revision and owner-click attempt.
-        const approved=await approveLoop(scope,repo,p.id,p.revision,supervisorLoopRegistry);
+        const approved=p.status==="approved"?p:
+          await approveLoop(scope,repo,p.id,p.revision,supervisorLoopRegistry);
         const finished=await commitLoop(scope,supervisorLoopRegistry,repo,p.id,approved.revision,"click");
         return conversationJson({proposal:await view(scope,repo,finished.proposal)});
       }catch{
