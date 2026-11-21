@@ -113,7 +113,7 @@ export type AgentToolContext = {
     create(schedule:RoutineSchedule):Promise<RoutineRecord>;
     list():Promise<RoutineRecord[]>;
     change(input:{id:string;revision:number;status?:RoutineRecord["status"];
-      schedule?:RoutineSchedule}):Promise<RoutineRecord>;
+      schedule?:RoutineSchedule;objectiveEdit?:boolean}):Promise<RoutineRecord>;
   };
   gmail?:{labels():Promise<Record<string,unknown>>;
     search(query:string,limit:number):Promise<Record<string,unknown>>;
