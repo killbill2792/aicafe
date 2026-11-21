@@ -77,6 +77,19 @@ describe("U3 governed PostgreSQL AST admission",()=>{
    admitted,0,true,["business_date","net_sales_cents"]))
    .rejects.toThrow("unattended_aggregate_required");
  });
+ it("derives trusted calculator units from source columns and SQL expressions, never aliases",async()=>{
+  const units={net_sales_cents:"cents" as const,orders_count:"count" as const};
+  const money=await admitU3Sql("SELECT SUM(net_sales_cents) AS result FROM orders",admitted,0,false,[],units);
+  expect(money.outputUnits).toEqual({result:"cents"});
+  const forgery=await admitU3Sql("SELECT COUNT(*) AS net_sales_cents FROM orders",admitted,0,false,[],units);
+  expect(forgery.outputUnits).toEqual({net_sales_cents:"count"});
+  const literal=await admitU3Sql("SELECT 12345 AS net_sales_cents FROM orders",admitted,0,false,[],units);
+  expect(literal.outputUnits).toEqual({});
+  const addition=await admitU3Sql("SELECT net_sales_cents+net_sales_cents AS total FROM orders",admitted,0,false,[],units);
+  expect(addition.outputUnits).toEqual({total:"cents"});
+  const ambiguous=await admitU3Sql("SELECT net_sales_cents*orders_count AS amount_cents FROM orders",admitted,0,false,[],units);
+  expect(ambiguous.outputUnits).toEqual({});
+ });
  it("cannot change café or role from a query parameter",async()=>{
   await expect(admitU3Sql("SELECT count(*) FROM orders WHERE id=$1",admitted,0))
    .rejects.toThrow("invalid_query");
