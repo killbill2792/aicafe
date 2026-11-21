@@ -26,7 +26,8 @@ async function assertAccessibleControls(page){
 }
 
 test("@home Task16A authenticated mobile owner views library/routines/permissions and revokes a scoped mandate",async({browser})=>{
-  test.setTimeout(120_000);
+  // Two authenticated cafés, multiple database mutations, and two full browser reloads.
+  test.setTimeout(180_000);
   const owner=seededCafe(0),foreign=seededCafe(1);
   const id={thread:randomUUID(),watchShell:randomUUID(),routine:randomUUID(),active:randomUUID(),old:randomUUID()};
   const db=new pg.Client({host:"127.0.0.1",port:54322,database:"postgres",
@@ -236,27 +237,37 @@ test("@home Task16A authenticated mobile owner views library/routines/permission
     await foreignPanel.getByRole("button",{name:"Permissions",exact:true}).click();
     await expect(foreignPanel.getByText("Task16A approval library")).toHaveCount(0);console.info("[Task16A E2E] other-café isolation proved");
 
-    // U4-10: authenticated owner deletion is a durable revocation, not a
-    // local hide. Confirm the real browser prompt, SQL revision fence, stale
-    // replay denial and absence from navigation even after a full reload.
-    await panel.getByRole("button",{name:"Routines",exact:true}).click();
-    await expect(panel.getByText("Daily source check")).toBeVisible();
-    await panel.getByLabel("Routine actions: Daily source check").click();
-    page.once("dialog",dialog=>void dialog.accept());
-    await panel.getByRole("button",{name:"Delete",exact:true}).click();
+    // U4-10: Return through a FRESH authenticated owner page after the
+    // foreign-café isolation journey. The earlier page has pending client
+    // navigation and must not be mistaken for an authoritative owner read.
+    // Actual SQL revision 3, confirmed browser deletion, revocation, stale
+    // replay denial and post-reload persistence are still required.
+    const deletionPage=await ctx.newPage();
+    await openOwnedPage(deletionPage,owner,"?thread="+id.thread);
+    await deletionPage.setViewportSize({width:390,height:844});
+    await deletionPage.getByRole("button",{name:"Library, routines and permissions"}).click();
+    const deletionPanel=deletionPage.getByRole("dialog",{name:"Supervisor controls"});
+    await expect(deletionPanel).toBeVisible();
+    await deletionPanel.getByRole("button",{name:"Routines",exact:true}).click();
+    await expect(deletionPanel.getByText("Daily source check")).toBeVisible();
+    await expect.poll(savedState,{timeout:15_000}).toEqual({
+      status:[{status:"active",revision:3}],
+    });
+    await deletionPanel.getByLabel("Routine actions: Daily source check").click();
+    deletionPage.once("dialog",dialog=>void dialog.accept());
+    await deletionPanel.getByRole("button",{name:"Delete",exact:true}).click();
     await expect.poll(savedState,{timeout:15_000}).toEqual({
       status:[{status:"revoked",revision:4}],
     });
-    await expect(panel.getByText("Daily source check")).toHaveCount(0);
+    await expect(deletionPanel.getByText("Daily source check")).toHaveCount(0);
     const staleDelete=await ctx.request.post("/api/ai/supervisor/routines",{
       headers:{origin:"http://127.0.0.1:3000"},
       data:{action:"delete",routineId:id.routine,revision:3},
     });
     expect(staleDelete.status()).not.toBe(200);
-    await page.reload({waitUntil:"domcontentloaded"});
-    await expect(controlsButton).toBeVisible({timeout:20_000});
-    await controlsButton.click();
-    const afterReload=page.getByRole("dialog",{name:"Supervisor controls"});
+    await deletionPage.reload({waitUntil:"domcontentloaded"});
+    await deletionPage.getByRole("button",{name:"Library, routines and permissions"}).click();
+    const afterReload=deletionPage.getByRole("dialog",{name:"Supervisor controls"});
     await afterReload.getByRole("button",{name:"Routines",exact:true}).click();
     await expect(afterReload.getByText("Daily source check")).toHaveCount(0);
     const deletedInDb=await savedState();
@@ -1560,8 +1571,17 @@ test("@money historical statement imports work without a bank connection and per
  try{
   await login(page,cafe);
   await navigateLocal(page,"/en/add-cost/statement");
-  await page.locator('input[type=file]').setInputFiles({name:"statement.csv",mimeType:"text/csv",buffer:Buffer.from(csv)});
-  await expect(page.getByText("Balance checks out")).toBeVisible();
+  const statementFile=page.locator('input[type=file]');
+  await expect(statementFile).toBeAttached();
+  // Next.js can server-render the input before its client onChange is
+  // hydrated. Uploading before hydration silently drops the change event;
+  // wait for the real React listener instead of retrying a failed parse.
+  await expect.poll(()=>statementFile.evaluate(input=>
+    Object.getOwnPropertyNames(input).some(key=>
+      key.startsWith("__reactProps$")&&typeof input[key]?.onChange==="function")),
+  {timeout:30_000}).toBe(true);
+  await statementFile.setInputFiles({name:"statement.csv",mimeType:"text/csv",buffer:Buffer.from(csv)});
+  await expect(page.getByText("Balance checks out")).toBeVisible({timeout:30_000});
   const confirm=page.getByRole("checkbox",{name:/Use this original statement as historical cash evidence/});
   await expect(confirm).not.toBeChecked();
   await confirm.check();
