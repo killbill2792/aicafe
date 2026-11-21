@@ -380,4 +380,55 @@ describe("U4 migrated model-objective and autonomous Watch SQL contract",()=>{
       await admin.end();
     }
   });
+  (sandbox?it:it.skip)("provisions a true unsolicited Watch without prior chat or detector",async()=>{
+    const admin=await connect("postgres");
+    const business=randomUUID(),foreignBusiness=randomUUID();
+    const ownerId=randomUUID(),foreignOwner=randomUUID();
+    let worker:Client|undefined,owner:Client|undefined;
+    try{
+      for(const [b,o] of [[business,ownerId],[foreignBusiness,foreignOwner]]){
+        await admin.query("insert into auth.users(id,instance_id,aud,role,email,encrypted_password,created_at,updated_at) values ($1,'00000000-0000-0000-0000-000000000000','authenticated','authenticated',$2,'',now(),now())",
+          [o,"u4-watch-"+o+"@example.invalid"]);
+        await admin.query("insert into public.businesses(id,name,timezone,is_demo) values ($1,'Disposable autonomous café','America/Los_Angeles',false)",[b]);
+        await admin.query("insert into public.memberships(business_id,user_id,role) values ($1,$2,'owner')",[b,o]);
+      }
+      expect((await admin.query("select count(*)::int n from public.ai_threads where business_id=any($1::uuid[])",[[business,foreignBusiness]])).rows[0].n).toBe(0);
+      expect((await admin.query("select count(*)::int n from public.alerts where business_id=any($1::uuid[])",[[business,foreignBusiness]])).rows[0].n).toBe(0);
+      worker=await connect("service");
+      owner=await connect("owner",ownerId);
+      await expect(call(owner,"u4_ensure_watch_thread",[business,ownerId]))
+        .rejects.toThrow();
+      await expect(call(worker,"u4_ensure_watch_thread",[foreignBusiness,ownerId]))
+        .rejects.toThrow();
+      const threadId=await call(worker,"u4_ensure_watch_thread",[business,ownerId]);
+      const foreignThread=await call(worker,"u4_ensure_watch_thread",[foreignBusiness,foreignOwner]);
+      expect(typeof threadId).toBe("string");
+      expect(threadId).not.toBe(foreignThread);
+      expect(await call(worker,"u4_ensure_watch_thread",[business,ownerId])).toBe(threadId);
+      expect((await admin.query("select count(*)::int n from public.ai_threads where business_id=$1",[business])).rows[0].n).toBe(1);
+      const first=await call(worker,"u4_ensure_watch_routine",
+        [business,ownerId,threadId,"09:00"]);
+      const again=await call(worker,"u4_ensure_watch_routine",
+        [business,ownerId,threadId,"09:00"]);
+      expect(again).toBe(first);
+      const watch=await admin.query("select execution_mode,objective_source_message_id from public.supervisor_routines where business_id=$1 and id=$2",[business,first]);
+      expect(watch.rows).toEqual([{execution_mode:"watch",objective_source_message_id:null}]);
+      const scheduled=(await admin.query(
+        "select to_char(((now() at time zone 'America/Los_Angeles')::date - 1),'YYYY-MM-DD') local_date,"+
+        "(((now() at time zone 'America/Los_Angeles')::date - 1 + time '09:00') at time zone 'America/Los_Angeles') due")).rows[0];
+      await admin.query("update public.supervisor_routines set updated_at=$3::timestamptz-interval '2 hours' where business_id=$1 and id=$2",
+        [business,first,scheduled.due]);
+      const claimed=await call(worker,"claim_supervisor_routine_occurrence",
+        [business,first,scheduled.local_date,scheduled.due,new Date().toISOString()]);
+      expect(claimed?.run_id).toBeTruthy();
+      expect((await admin.query("select count(*)::int n from public.supervisor_routine_occurrences where business_id=$1 and routine_id=$2",[business,first])).rows[0].n).toBe(1);
+      expect((await admin.query("select count(*)::int n from public.supervisor_routines where business_id=$1 and execution_mode='watch'",[business])).rows[0].n).toBe(1);
+    }finally{
+      await owner?.end();await worker?.end();
+      await admin.query("delete from public.businesses where id=any($1::uuid[])",[[business,foreignBusiness]]);
+      await admin.query("delete from auth.users where id=any($1::uuid[])",[[ownerId,foreignOwner]]);
+      await admin.end();
+    }
+  },120_000);
+
 });
