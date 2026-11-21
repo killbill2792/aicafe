@@ -189,13 +189,31 @@ async function view(scope:OwnerLoopScope,repo:SupabaseLoopRepository,p:LoopPropo
   }
   if(p.capabilityId===staffQuestionCapabilityId){
     const effect=staffQuestionEffect.parse(p.canonicalEffectPayload);
-    const report=p.baseline.ownerAnswer as {text?:unknown}|undefined;
+    let answeredByOwner:string|null=null;
+    if(p.status==="rejected"){
+      const report=await createAdminSupabaseClient().from("operating_tasks")
+        .select("evidence").eq("business_id",scope.businessId)
+        .eq("owner_user_id",scope.ownerUserId)
+        .eq("id","staff-question-owner-answer:"+p.id)
+        .eq("entity_type","staff_question_answer").maybeSingle();
+      if(!report.error&&Array.isArray(report.data?.evidence)){
+        for(const entry of report.data.evidence){
+          if(!entry||typeof entry!=="object"||Array.isArray(entry))continue;
+          const row=entry as Record<string,unknown>;
+          if(row.source!=="owner_report"||!row.facts||typeof row.facts!=="object"||Array.isArray(row.facts))continue;
+          const facts=row.facts as Record<string,unknown>;
+          if(facts.proposalId===p.id&&facts.ownerUserId===scope.ownerUserId&&
+             facts.independentlyVerified===false&&typeof facts.answer==="string")
+            answeredByOwner=facts.answer;
+        }
+      }
+    }
     return {...card(p,p.status==="executing"?executionState:p.status==="approved"?"pending":undefined),
       productName:en.StaffQuestionApproval.title,staffQuestion:{
        employeeName:effect.employeeName,question:effect.question,
        reason:effect.reason,sourceTaskId:effect.sourceTaskId,
        evidence:effect.evidence,followUpAfter:effect.followUpAfter,
-       answeredByOwner:report&&typeof report.text==="string"?report.text:null,
+       answeredByOwner,
       }};
   }
   if(p.capabilityId===maintenanceStaffCapabilityId){

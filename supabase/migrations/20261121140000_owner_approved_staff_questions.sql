@@ -88,8 +88,13 @@ begin
    select 1 from public.memberships m where m.business_id=p_business_id
    and m.user_id=p_owner_user_id and m.role='owner')
  then raise exception 'owner_question_stale' using errcode='40900';end if;
- if p.status='rejected' and p.baseline #>> '{ownerAnswer,ownerMessageId}'=p_owner_message_id::text
- then return jsonb_build_object('answered',true,'alreadyRecorded',true,'employeeContacted',false);end if;
+ if p.status='rejected' and exists(
+  select 1 from public.operating_tasks saved
+   where saved.business_id=p_business_id and saved.owner_user_id=p_owner_user_id
+    and saved.id='staff-question-owner-answer:'||p.id::text
+    and saved.evidence @> jsonb_build_array(jsonb_build_object('source','owner_report',
+      'facts',jsonb_build_object('ownerMessageId',p_owner_message_id)))
+ ) then return jsonb_build_object('answered',true,'alreadyRecorded',true,'employeeContacted',false);end if;
  if p.status<>'draft' or p.revision<>p_revision then
   raise exception 'owner_question_stale' using errcode='40900';end if;
  select nullif(btrim(m.text_content),'') into v_answer from public.ai_messages m
@@ -100,16 +105,12 @@ begin
    and m.owner_input_response is null and m.owner_input_prompt_message_id is null;
  if v_answer is null or char_length(v_answer)>1200 then
   raise exception 'owner_answer_invalid' using errcode='22023';end if;
+ -- The proposal baseline/effect is immutable; the separate existing task
+ -- records the exact authenticated owner message and its unverified nature.
  update public.supervisor_proposals set status='rejected',revision=revision+1,
-  baseline=baseline||jsonb_build_object('ownerAnswer',jsonb_build_object(
-   'text',v_answer,'ownerUserId',p_owner_user_id,'ownerMessageId',p_owner_message_id,'receivedAt',statement_timestamp(),
-   'provenance','owner_report_unverified')),
   updated_at=statement_timestamp() where business_id=p_business_id and id=p_proposal_id;
  -- Only truly equivalent unanswered drafts are obsolete; different questions survive.
  update public.supervisor_proposals sibling set status='rejected',revision=revision+1,
-  baseline=baseline||jsonb_build_object('ownerAnswer',jsonb_build_object(
-    'text',v_answer,'ownerUserId',p_owner_user_id,'ownerMessageId',p_owner_message_id,
-    'provenance','owner_report_unverified'),'supersededByProposalId',p.id),
   updated_at=statement_timestamp()
  where sibling.business_id=p_business_id and sibling.owner_user_id=p_owner_user_id
   and sibling.thread_id=p_thread_id and sibling.id<>p.id and sibling.status='draft'
