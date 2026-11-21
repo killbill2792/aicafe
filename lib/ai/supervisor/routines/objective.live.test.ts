@@ -164,7 +164,7 @@ live("real Luna executes an authenticated full café goal through existing sched
       JSON.stringify(proof,null,2)+"\n",{mode:0o600});
     writeFileSync("test-results/acceptance/u4-autonomous-objectives-scope.json",
       JSON.stringify({
-        businessId,foreignBusinessId,ownerUserId,threadId,
+        businessId,foreignBusinessId,ownerUserId,threadId,ownerMessageId,
         routineId,runId:leased.runId,replyId:posts[0].id,
         expectedProviderCalls:budget.calls,
       },null,2)+"\n",{mode:0o600});
