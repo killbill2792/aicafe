@@ -1481,7 +1481,7 @@ export default function SupervisorChatComposer({
           routine.id+", revision "+routine.revision+"): ";
         setDraft(current=>current.trim()?
           current.length+instruction.length+1<=4000?
-            current.trimEnd()+"\\n"+instruction:current:
+            current.trimEnd()+"\n"+instruction:current:
           instruction);
         retryId.current=null;
         requestAnimationFrame(()=>composer.current?.focus());
