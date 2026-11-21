@@ -141,11 +141,56 @@ live("real Luna executes an authenticated full café goal through existing sched
       [businessId,threadId])).rows;
     expect(posts).toHaveLength(1);
     expect(posts[0].grounding?.agentMetadata?.runId).toBe(leased.runId);
-    expect(posts[0].structured_content?.[0]?.text).toBe(result.report);
+    expect(posts[0].structured_content?.filter((x:{type:string})=>x.type==="text")
+      .map((x:{text:string})=>x.text).join("")).toBe(result.report);
+    // No owner requested this second task. The service-created daily Watch
+    // uses the SAME occurrence identity, registered model/tool loop, quota
+    // and fenced receipt contract, but the original owner message is NULL.
+    const watchCreated=await db.rpc("u4_ensure_watch_routine",{
+      p_business_id:businessId,p_owner_user_id:ownerUserId,
+      p_thread_id:threadId,p_local_time:due.local_time,
+    });
+    if(watchCreated.error||typeof watchCreated.data!=="string")
+      throw Error("u4_live_system_watch_not_created");
+    const watchRoutineId=watchCreated.data;
+    const watchRows=(await pg.query("select * from public.supervisor_routines "+
+      "where business_id=$1 and id=$2",
+      [businessId,watchRoutineId])).rows;
+    expect(watchRows).toHaveLength(1);
+    const wr=watchRows[0];
+    expect(wr).toMatchObject({execution_mode:"watch",
+      objective_source_message_id:null});
+    await pg.query("update public.supervisor_routines set updated_at=now()-interval '2 hours' "+
+      "where business_id=$1 and id=$2",[businessId,watchRoutineId]);
+    const watchLease=await claimRoutineOccurrence(db,{
+      businessId,routineId:watchRoutineId,revision:Number(wr.revision),
+      localDate:due.day,dueAt:new Date(due.scheduled),now:new Date(),
+    });
+    if(!watchLease)throw Error("u4_live_watch_claim_unavailable");
+    const watchOutcome=await executeClaimedObjective(db,{
+      routine:{
+        id:watchRoutineId,businessId,ownerUserId,threadId,title:wr.title,
+        cadence:"daily",weekdays:[],localTime:String(wr.local_time).slice(0,5),
+        timezone:wr.timezone,status:"active",revision:Number(wr.revision),
+        createdAt:String(wr.created_at),updatedAt:String(wr.updated_at),
+        executionMode:"watch",objectiveText:wr.objective_text,
+        objectiveSourceMessageId:null,objectiveUpdates:[],
+      },lease:watchLease,localDate:due.day,provider,
+    });
+    expect(["attention","none"]).toContain(watchOutcome.attention);
+    expect(watchOutcome.sourceCount).toBeGreaterThanOrEqual(1);
+    const watchReceipt=(await pg.query("select state,receipt_ref,u4_result "+
+      "from public.supervisor_routine_occurrences where business_id=$1 and run_id=$2",
+      [businessId,watchLease.runId])).rows;
+    expect(watchReceipt).toHaveLength(1);
+    expect(watchReceipt[0].state).toBe("completed");
+    expect(watchReceipt[0].receipt_ref).toBe("u4-verified:"+watchLease.runId);
+    expect(watchReceipt[0].u4_result?.attention).toBe(watchOutcome.attention);
+    expect(providerCompletions).toBe(budget.calls);
     const spend=(await pg.query("select model,status,model_call_count "+
       "from public.supervisor_system_usage_events where business_id=$1 "+
-      "and owner_user_id=$2 and source_type='routine' and source_id=$3",
-      [businessId,ownerUserId,leased.runId])).rows;
+      "and owner_user_id=$2 and source_type='routine' and source_id=any($3::text[])",
+      [businessId,ownerUserId,[leased.runId,watchLease.runId]])).rows;
     expect(spend).toHaveLength(budget.calls);
     expect(spend.every(x=>x.model==="gpt-6-luna"&&x.status==="completed"&&
       Number(x.model_call_count)===1)).toBe(true);
@@ -155,7 +200,8 @@ live("real Luna executes an authenticated full café goal through existing sched
     const proof={schema_version:1,id:"u4-autonomous-objectives",
       head_sha:env.AICAFE_SHARED_LUNA_HEAD,status:"passed",
       observed_model:"gpt-6-luna",observed_model_calls:providerCompletions,
-      selected_sources:result.observedToolNames,
+      selected_sources:[...new Set([...result.observedToolNames,...watchOutcome.observedToolNames])],
+      unprompted_watch_persisted:true,watch_significance:watchOutcome.attention,
       original_goal_preserved:true,no_unauthorized_effect:true,
       persisted_lease_and_report:true,cross_domain_source_count:result.sourceCount,
       integrated_proven:false,released_proven:false};
@@ -166,6 +212,7 @@ live("real Luna executes an authenticated full café goal through existing sched
       JSON.stringify({
         businessId,foreignBusinessId,ownerUserId,threadId,ownerMessageId,
         routineId,runId:leased.runId,replyId:posts[0].id,
+        watchRoutineId,watchRunId:watchLease.runId,
         expectedProviderCalls:budget.calls,
       },null,2)+"\n",{mode:0o600});
   }finally{
