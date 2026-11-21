@@ -4,6 +4,7 @@ import {localDateAt,dueScheduleOnDate} from "./calendar";
 import {choosePriorities} from "./priority";
 import {claimRoutineOccurrence,finishRoutineOccurrence,listRoutineOccurrenceCandidates} from "./repository.server";
 import {postPriorityNotice} from "./notices.server";
+import {executeClaimedObjective} from "./objective.server";
 import {followUpStaffPublicationForBusiness} from "@/lib/scheduling/staffPublication.server";
 import type {PriorityDecision,PrioritySource,RoutineRecord} from "./contracts";
 
@@ -171,6 +172,8 @@ type RoutineRow={
   title:string;cadence:"daily"|"weekly";weekdays:number[];
   local_time:string;timezone:string;status:"active"|"paused"|"revoked";
   revision:number;created_at:string;updated_at:string;
+  execution_mode?:"priority"|"objective"|"watch";objective_text?:string|null;
+  objective_source_message_id?:string|null;objective_updates?:unknown;
 };
 function parseRoutine(row:RoutineRow):RoutineRecord{
   return {
@@ -179,6 +182,12 @@ function parseRoutine(row:RoutineRow):RoutineRecord{
     localTime:String(row.local_time).slice(0,5),timezone:row.timezone,
     status:row.status,revision:row.revision,
     createdAt:row.created_at,updatedAt:row.updated_at,
+    executionMode:row.execution_mode??"priority",
+    objectiveText:row.objective_text??null,
+    objectiveSourceMessageId:row.objective_source_message_id??null,
+    objectiveUpdates:Array.isArray(row.objective_updates)?row.objective_updates.filter(v=>
+      v&&typeof v==="object"&&typeof v.sourceMessageId==="string"&&
+      typeof v.text==="string"&&Number.isSafeInteger(v.revision)):[],
   };
 }
 type OwnerScope={ownerUserId:string;threadId:string};
@@ -201,7 +210,7 @@ export async function dispatchRoutinesForBusiness(db:SupabaseClient,businessId:s
       .eq("role","owner").order("user_id",{ascending:true}).limit(batchLimit),
     db.from("ai_threads").select("id,owner_user_id").eq("business_id",businessId)
       .order("updated_at",{ascending:false}).limit(batchLimit*2),
-    db.from("supervisor_routines").select("business_id,id,owner_user_id,thread_id,title,cadence,weekdays,local_time,timezone,status,revision,created_at,updated_at")
+    db.from("supervisor_routines").select("business_id,id,owner_user_id,thread_id,title,cadence,weekdays,local_time,timezone,status,revision,created_at,updated_at,execution_mode,objective_text,objective_source_message_id,objective_updates")
       .eq("business_id",businessId).eq("status","active")
       .order("created_at",{ascending:true}).limit(batchLimit),
   ]);
@@ -214,6 +223,10 @@ export async function dispatchRoutinesForBusiness(db:SupabaseClient,businessId:s
       threads.set(row.owner_user_id,row.id);
   }
   const routines=((routineRows.data??[]) as RoutineRow[]).map(parseRoutine);
+  // A leased model execution is bounded to one objective per café tick so
+  // it cannot starve source refresh, chat or unrelated incident investigation.
+  const u4Enabled=process.env.SUPERVISOR_U4_ENABLED==="true";
+  let objectiveExecutions=0;
   // Task 13B publication uses the same refresh tick; never omit existing
   // approved staff delivery and owner-visible exception reconciliation.
   try{await followUpStaffPublicationForBusiness(db,businessId,localDate);}
@@ -240,6 +253,21 @@ export async function dispatchRoutinesForBusiness(db:SupabaseClient,businessId:s
       }catch{result.failed++;continue;}
       // Null is a successful no-work result, not an outage. A failed RPC is handled above.
       if(!threadId)continue;
+    }
+    // The default autonomous review is a SYSTEM-origin routine (hidden from
+    // owner-created routines). Its SQL identity and original owner/thread
+    // binding are verified; no fake owner chat utterance is inserted.
+    if(u4Enabled){
+      try{
+        const configured=process.env.SUPERVISOR_U4_WATCH_LOCAL_TIME??"09:00";
+        if(!/^([01]\d|2[0-3]):[0-5]\d$/u.test(configured))
+          throw Error("u4_invalid_watch_local_time");
+        const watch=await db.rpc("u4_ensure_watch_routine",{
+          p_business_id:businessId,p_owner_user_id:ownerUserId,
+          p_thread_id:threadId,p_local_time:configured,
+        });
+        if(watch.error||typeof watch.data!=="string")throw Error("u4_watch_unavailable");
+      }catch{result.failed++;}
     }
     try{
       const done=await postForOwner(db,{businessId,ownerUserId,threadId,localDate},now);
@@ -281,6 +309,8 @@ export async function dispatchRoutinesForBusiness(db:SupabaseClient,businessId:s
       });
     }catch{result.failed++;continue;}
     for(const candidate of candidates){
+      if(routine.executionMode!=="priority"&&
+        (!u4Enabled||objectiveExecutions>=1))break;
       let lease:{runId:string;leaseToken:string;revision:number}|null=null;
       try{
         const claimAt=tickNow();
@@ -291,6 +321,17 @@ export async function dispatchRoutinesForBusiness(db:SupabaseClient,businessId:s
         lease=await claimRoutineOccurrence(db,{businessId,routineId:routine.id,
           revision:routine.revision,localDate:candidate.localDate,dueAt:due,now:claimAt});
         if(!lease)continue;
+        if(routine.executionMode==="objective"||routine.executionMode==="watch"){
+          objectiveExecutions++;
+          const outcome=await executeClaimedObjective(db,{
+            routine,lease,localDate:candidate.localDate,
+          });
+          result.runs++;
+          result.evidenceChecks+=outcome.sourceCount;
+          if(routine.executionMode==="objective"||outcome.attention==="attention")
+            result.notices++;
+          continue;
+        }
         // A missed occurrence is a check of CURRENT evidence, never a claim
         // we checked historically or a replay of a prior external action.
         const asOf=tickNow();
