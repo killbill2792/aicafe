@@ -259,7 +259,10 @@ describe("U4 migrated model-objective and autonomous Watch SQL contract",()=>{
       const readResearchScope=async(ticket:string)=>{
         await admin.query("begin");
         try{
-          await admin.query("set local role aicafe_research_view_owner");
+          // PostgreSQL's admin role intentionally cannot SET ROLE into
+          // aicafe_research_view_owner. Execute the SECURITY DEFINER verifier
+          // directly; the existing U3 real-role DB suite independently checks
+          // read-only SQL role permissions and cross-café data isolation.
           await admin.query("select set_config('aicafe.u3_research_scope',$1,true)",[ticket]);
           const scoped=await admin.query(
             "select business_id,owner_user_id,mode from u3_research_private.scope()");
