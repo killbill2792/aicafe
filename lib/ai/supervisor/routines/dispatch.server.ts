@@ -190,6 +190,22 @@ function parseRoutine(row:RoutineRow):RoutineRecord{
       typeof v.text==="string"&&Number.isSafeInteger(v.revision)):[],
   };
 }
+/** Fairness is a work-scheduling policy, not a café business procedure:
+ * verified owner routines and silent Watch rotate by their last actual
+ * occurrence update. A daily Watch cannot starve behind a growing backlog
+ * of owner objectives, and new owner objectives are not starved by Watch.
+ * Legacy priority checks retain their original execution order. */
+export function orderRoutinesFairly<T extends Pick<RoutineRecord,"id"|"executionMode">>(
+  routines:readonly T[],lastAttempt:ReadonlyMap<string,string>):T[]{
+  const legacy=routines.filter(r=>(r.executionMode??"priority")==="priority");
+  const objectives=routines.filter(r=>(r.executionMode??"priority")!=="priority");
+  objectives.sort((a,b)=>{
+    const left=lastAttempt.get(a.id)??"";
+    const right=lastAttempt.get(b.id)??"";
+    return left.localeCompare(right)||a.id.localeCompare(b.id);
+  });
+  return [...legacy,...objectives];
+}
 type OwnerScope={ownerUserId:string;threadId:string};
 /** The existing refresh-derived cron calls this once per café *after* alert
  * generation. Every owner with actionable evidence receives change-driven notices,
@@ -227,6 +243,22 @@ export async function dispatchRoutinesForBusiness(db:SupabaseClient,businessId:s
   // it cannot starve source refresh, chat or unrelated incident investigation.
   const u4Enabled=process.env.SUPERVISOR_U4_ENABLED==="true";
   let objectiveExecutions=0;
+  if(u4Enabled&&routines.some(r=>r.executionMode!=="priority")){
+    // Reuse authoritative occurrence updates; never create a second queue or
+    // turn a model-selected hypothesis into a scheduler priority.
+    const history=await db.from("supervisor_routine_occurrences")
+      .select("routine_id,updated_at").eq("business_id",businessId)
+      .order("updated_at",{ascending:false}).limit(batchLimit*10);
+    if(history.error)throw history.error;
+    const mostRecent=new Map<string,string>();
+    for(const row of history.data??[]){
+      if(typeof row.routine_id==="string"&&
+         typeof row.updated_at==="string"&&!mostRecent.has(row.routine_id))
+        mostRecent.set(row.routine_id,row.updated_at);
+    }
+    const ordered=orderRoutinesFairly(routines,mostRecent);
+    routines.splice(0,routines.length,...ordered);
+  }
   // Task 13B publication uses the same refresh tick; never omit existing
   // approved staff delivery and owner-visible exception reconciliation.
   try{await followUpStaffPublicationForBusiness(db,businessId,localDate);}
