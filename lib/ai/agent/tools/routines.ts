@@ -4,7 +4,7 @@ import type {AgentToolContext,AgentToolResult} from "./index";
 
 /** Strict nullable fields are required by the OpenAI function schema. */
 export const manageRoutineSchema=z.strictObject({
-  action:z.enum(["create","list","edit","pause","resume","revoke"]),
+  action:z.enum(["create","list","edit","edit_goal","pause","resume","revoke"]),
   routine_id:z.uuid().nullable(),
   revision:z.number().int().positive().nullable(),
   title:z.string().trim().min(1).max(240).nullable(),
@@ -24,7 +24,7 @@ export const routineTools={
   manage_routine:{
     agentId:"leo" as const,
     schema:manageRoutineSchema,
-    description:"Manage an owner's saved natural-language recurring café objective: create, list, edit, pause, resume or permanently revoke. A newly created routine preserves the full actual owner message as its objective and, when the U4 runtime is enabled, uses the existing single Luna agent to research the objective with authorized café tools and post a concise verified report. Do not reduce the objective to the title. A legacy routine continues its existing priority check until edited or deliberately converted. A routine never grants authority to spend, message anyone, change staffing/prices or execute external effects. The saved routine ID, revision and status are authoritative. Use the current café-local clock and ask for the schedule when missing; daily takes weekdays=[]; weekly takes ISO weekdays 1=Monday to 7=Sunday. List saved routines before editing or pausing to get exact routine_id and revision. Editing requires all schedule fields. Revoke is irreversible. Never say a change was saved if the tool failed.",
+    description:"Manage an owner's saved natural-language recurring café objective: create, list, edit schedule, edit objective, pause, resume or permanently revoke. A newly created routine preserves the full actual owner message as its objective and, when the U4 runtime is enabled, uses the existing single Luna agent to research the objective with authorized café tools and post a concise verified report. Do not reduce the objective to the title. A legacy routine continues its existing priority check until edited or deliberately converted. A routine never grants authority to spend, message anyone, change staffing/prices or execute external effects. The saved routine ID, revision and status are authoritative. Use the current café-local clock and ask for the schedule when missing; daily takes weekdays=[]; weekly takes ISO weekdays 1=Monday to 7=Sunday. List saved routines before editing or pausing to get exact routine_id and revision. Use edit_goal to update the owner objective from the actual authenticated owner message without restating the schedule; optional full schedule if both change. Use edit only for schedule changes with all fields, never to overwrite the goal. Revoke is irreversible. Never say a change was saved if the tool failed.",
     execute:async(raw:unknown,ctx:AgentToolContext):Promise<AgentToolResult>=>{
       const input=manageRoutineSchema.parse(raw);
       const port=ctx.routines;
@@ -45,6 +45,9 @@ export const routineTools={
         id:input.routine_id,revision:input.revision,
         ...(status?{status}:{}),
         ...(input.action==="edit"?{schedule:fullSchedule(input)}:{}),
+        ...(input.action==="edit_goal"?{objectiveEdit:true,
+          ...(input.title&&input.cadence&&input.weekdays&&input.local_time?
+            {schedule:fullSchedule(input)}:{})}:{}),
       });
       return {...base,missing:[],routine};
     },
