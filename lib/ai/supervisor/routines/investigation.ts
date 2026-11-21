@@ -49,7 +49,7 @@ const relevantByKind:Record<string,readonly AgentToolName[]>={
  *
  * The groups are intentionally conservative. A derived aggregate never
  * invents an independent source where the underlying evidence overlaps. */
-const canonicalEvidenceDomain:Partial<Record<AgentToolName,string>>={
+export const canonicalEvidenceDomain:Partial<Record<AgentToolName,string>>={
   query_data:"recorded_sales",get_sales:"recorded_sales",get_item_sales:"recorded_sales",
   get_peak_hours:"recorded_sales",
   get_labor:"attendance_and_labor",get_payroll_facts:"attendance_and_labor",
