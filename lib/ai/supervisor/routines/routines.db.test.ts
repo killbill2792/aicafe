@@ -256,6 +256,22 @@ describe("U4 migrated model-objective and autonomous Watch SQL contract",()=>{
       const routineTicket=await call(worker,"u3_issue_research_scope",scopeArgs);
       expect(typeof routineTicket).toBe("string");
       expect(routineTicket.length).toBeGreaterThan(75);
+      const readResearchScope=async(ticket:string)=>{
+        await admin.query("begin");
+        try{
+          await admin.query("set local role aicafe_research_view_owner");
+          await admin.query("select set_config('aicafe.u3_research_scope',$1,true)",[ticket]);
+          const scoped=await admin.query(
+            "select business_id,owner_user_id,mode from u3_research_private.scope()");
+          return scoped.rows;
+        }finally{await admin.query("rollback");}
+      };
+      expect(await readResearchScope(routineTicket)).toEqual([{
+        business_id:business,owner_user_id:ownerId,mode:"routine",
+      }]);
+      const tampered=routineTicket.slice(0,-1)+
+        (routineTicket.endsWith("0")?"1":"0");
+      expect(await readResearchScope(tampered)).toEqual([]);
       await expect(call(owner,"u3_issue_research_scope",scopeArgs))
         .rejects.toThrow();
       await expect(call(worker,"u3_issue_research_scope",[
@@ -323,6 +339,14 @@ describe("U4 migrated model-objective and autonomous Watch SQL contract",()=>{
       expect(await call(worker,"u4_routine_lease_active",[
         business,routineId,first.run_id,originalLease,
       ])).toBe(false);
+      // Previously issued SQL tickets fail after the ORIGINAL worker lease
+      // expires. A resumed run must receive a new scoped ticket.
+      expect(await readResearchScope(routineTicket)).toEqual([]);
+      const resumedTicket=await call(worker,"u3_issue_research_scope",[
+        business,ownerId,threadId,"routine",null,null,
+        resumed.run_id,resumed.lease_token,
+      ]);
+      expect(await readResearchScope(resumedTicket)).toHaveLength(1);
       expect(await call(worker,"u4_routine_lease_active",[
         business,routineId,resumed.run_id,resumed.lease_token,
       ])).toBe(true);
