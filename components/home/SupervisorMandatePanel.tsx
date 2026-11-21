@@ -1,7 +1,7 @@
 "use client";
 
 import {useEffect,useRef,useState,type ReactNode} from "react";
-import {BookOpen,Clock3,ListChecks,RefreshCcw,ShieldCheck,X,Search,Paperclip} from "lucide-react";
+import {BookOpen,Clock3,ListChecks,RefreshCcw,ShieldCheck,X,Search,Paperclip,Ellipsis} from "lucide-react";
 import {Link} from "@/i18n/navigation";
 import {createBrowserSupabaseClient} from "@/lib/supabase/client";
 import en from "@/messages/en.json";
@@ -53,6 +53,8 @@ export default function SupervisorMandatePanel({threadId,threads,approvals,onSel
   const [routinesLoading,setRoutinesLoading]=useState(false);
   const [error,setError]=useState("");
   const [routineError,setRoutineError]=useState("");
+  const [routineBusy,setRoutineBusy]=useState<string|null>(null);
+  const [routineNotice,setRoutineNotice]=useState("");
   const [notice,setNotice]=useState("");
   const [factor,setFactor]=useState<string|null>(null);
   const [factorError,setFactorError]=useState(false);
@@ -124,6 +126,30 @@ export default function SupervisorMandatePanel({threadId,threads,approvals,onSel
     return()=>{live=false;};
   },[tab,refresh]);
 
+  async function changeRoutine(r:Routine,action:"pause"|"resume"|"delete"){
+    if(routineBusy||disabled)return;
+    if(action==="delete"&&!window.confirm(copy.routineDeleteConfirm))return;
+    setRoutineBusy(r.id);setRoutineError("");setRoutineNotice("");
+    try{
+      const response=await fetch("/api/ai/supervisor/routines",{
+        method:"POST",credentials:"same-origin",cache:"no-store",
+        headers:{"Content-Type":"application/json"},
+        body:JSON.stringify({action,routineId:r.id,revision:r.revision}),
+      });
+      if(!response.ok)throw Error("routine_cas_or_scope_failed");
+      const result=await response.json() as {routine?:Routine};
+      const updated=result.routine;
+      if(!updated||updated.id!==r.id||updated.revision<=r.revision||
+        updated.status!==(action==="delete"?"revoked":action==="pause"?"paused":"active"))
+        throw Error("routine_receipt_not_verified");
+      setRoutines(current=>current.map(item=>item.id===r.id?updated:item));
+      setRoutineNotice(action==="delete"?copy.routineDeleteSaved:copy.routineSaved);
+    }catch{
+      setRoutineError(copy.routineSaveFailed);
+      // A failed request may have committed; refresh against persisted state.
+      setRoutinesLoading(true);setRefresh(n=>n+1);
+    }finally{setRoutineBusy(null);}
+  }
   async function post(body:Record<string,unknown>):Promise<ActionResponse>{
     if(!mandateThreadId)throw new Error(copy.noThread);
     const response=await fetch("/api/ai/threads/"+encodeURIComponent(mandateThreadId)+"/mandates",{
@@ -282,16 +308,48 @@ export default function SupervisorMandatePanel({threadId,threads,approvals,onSel
           <p className="text-sm text-ink-muted">{copy.routineHelp}</p>
           {routinesLoading&&<p role="status" className="text-sm">{copy.loading}</p>}
           {routineError&&<p role="alert" className="text-sm text-neg">{routineError}</p>}
-          {!routinesLoading&&!routineError&&routines.length===0&&<p>{copy.emptyRoutines}</p>}
-          {!routinesLoading&&!routineError&&routines.map(r=>
-            <article key={r.id} className="space-y-1 rounded-xl border border-line bg-surface p-3">
-              <div className="flex items-center justify-between gap-2">
-                <strong className="text-[15px]">{r.title}</strong>
-                <span className="text-xs text-ink-muted">{r.status}</span>
+          {routineNotice&&<p role="status" className="text-sm text-ink-muted">{routineNotice}</p>}
+          {!routinesLoading&&!routineError&&routines.every(r=>r.status==="revoked")&&
+            <p className="text-sm text-ink-muted">{copy.emptyRoutines}</p>}
+          {!routinesLoading&&!routineError&&routines.filter(r=>r.status!=="revoked").map(r=>
+            <article key={r.id} className="rounded-xl border border-line px-3 py-2">
+              <div className="flex items-center gap-2">
+                <Clock3 size={16} className="shrink-0 text-ink-muted" aria-hidden="true"/>
+                <div className="min-w-0 flex-1">
+                  <strong className="block truncate text-[14px]">{r.title}</strong>
+                  <span className="block truncate text-[12px] text-ink-muted">
+                    {r.cadence==="weekly"
+                      ?r.weekdays.map(day=>en.SupervisorExperience.weekdayNames[day-1])
+                        .filter(Boolean).join(", ")
+                      :r.cadence}
+                    {" · "+r.localTime+" · "}
+                    {r.status==="active"?copy.active:copy.routinePaused}
+                  </span>
+                </div>
+                <details className="shrink-0">
+                  <summary aria-label={copy.routineActions+": "+r.title}
+                    className="flex min-h-11 min-w-11 cursor-pointer list-none items-center justify-center rounded-lg hover:bg-surface2 focus-visible:outline focus-visible:outline-2 focus-visible:outline-ink">
+                    <Ellipsis size={20} aria-hidden="true"/>
+                  </summary>
+                  <div className="mt-1 flex flex-col gap-1" role="group" aria-label={copy.routineActions}>
+                    <button type="button" disabled={disabled||!!routineBusy}
+                      className="min-h-11 rounded-lg px-3 text-start text-[14px] hover:bg-surface2 disabled:opacity-50"
+                      onClick={()=>{onSelectThread(r.threadId);onClose();}}>
+                      {copy.routineEditInChat}
+                    </button>
+                    <button type="button" disabled={disabled||!!routineBusy}
+                      className="min-h-11 rounded-lg px-3 text-start text-[14px] hover:bg-surface2 disabled:opacity-50"
+                      onClick={()=>void changeRoutine(r,r.status==="active"?"pause":"resume")}>
+                      {r.status==="active"?copy.routinePause:copy.routineResume}
+                    </button>
+                    <button type="button" disabled={disabled||!!routineBusy}
+                      className="min-h-11 rounded-lg px-3 text-start text-[14px] text-neg hover:bg-surface2 disabled:opacity-50"
+                      onClick={()=>void changeRoutine(r,"delete")}>
+                      {copy.routineDelete}
+                    </button>
+                  </div>
+                </details>
               </div>
-              <p className="text-[15px] text-ink-muted">{r.cadence} · {r.localTime} · {r.timezone}</p>
-              {r.cadence==="weekly"&&<p className="text-[15px] text-ink-muted">{r.weekdays.map(day=>en.SupervisorExperience.weekdayNames[day-1]).filter(Boolean).join(", ")}</p>}
-              {r.threadId&&<button type="button" disabled={disabled} className="min-h-12 rounded-lg px-2 text-[15px] font-medium text-accent-text underline disabled:opacity-50" onClick={()=>{onSelectThread(r.threadId);onClose();}}>{en.SupervisorExperience.openRoutineChat}</button>}
             </article>)}
         </section>}
         {tab==="permissions"&&<section aria-label={copy.permissionTitle} className="space-y-3">
