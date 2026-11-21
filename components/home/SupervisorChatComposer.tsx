@@ -269,6 +269,7 @@ export default function SupervisorChatComposer({
   const selectedHistoryTitle=useRef<{id:string;title:string|null}|null>(null);
   const [threadId, setThreadId] = useState<string | null>(initialThreadId??null);
   const [messages, setMessages] = useState<ConversationMessage[]>([]);
+  useEffect(()=>{window.dispatchEvent(new Event("aicafe:conversation-updated"));},[messages]);
   const [loadedThreadId,setLoadedThreadId]=useState<string|null>(null);
   const [startExpanded,setStartExpanded]=useState(false);
   const sendOnce=useRef(false);
