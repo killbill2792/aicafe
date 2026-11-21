@@ -41,12 +41,13 @@ export async function createOwnerRoutine(schedule:RoutineSchedule,turn:VerifiedR
     turn.ownerMessageId+":"+JSON.stringify(parsed)).digest("hex"):null;
   const stableId=hash?(hash.slice(0,8)+"-"+hash.slice(8,12)+"-4"+
     hash.slice(13,16)+"-a"+hash.slice(17,20)+"-"+hash.slice(20,32)):null;
-  const {data,error}=await turn.client.rpc(turn.ownerMessageId?
+  const u4Enabled=process.env.SUPERVISOR_U4_ENABLED==="true";
+  const {data,error}=await turn.client.rpc(u4Enabled&&turn.ownerMessageId?
     "u4_create_objective_routine":"create_supervisor_routine",{
     p_business_id:turn.scope.businessId,p_owner_user_id:turn.scope.ownerUserId,
     p_thread_id:turn.threadId,p_title:parsed.title,p_cadence:parsed.cadence,
     p_weekdays:parsed.weekdays,p_local_time:parsed.localTime,p_routine_id:stableId,
-    ...(turn.ownerMessageId?{p_owner_message_id:turn.ownerMessageId}:{}),
+    ...(u4Enabled&&turn.ownerMessageId?{p_owner_message_id:turn.ownerMessageId}:{}),
   });
   if(error||!data)throw error??new Error("Routine not saved");
   return asRoutine(data as RoutineRow);
@@ -58,6 +59,20 @@ async function readOwnerRoutines(scope:VerifiedRoutineTurn["scope"],client:Supab
     .eq("business_id",scope.businessId).eq("owner_user_id",scope.ownerUserId);
   const query=threadId?base.eq("thread_id",threadId):base;
   const {data,error}=await query.order("created_at",{ascending:false}).limit(100);
+  if(error&&["PGRST204","42703"].includes(error.code??"")){
+    // Rolling U4 app code must not break existing routines before its additive
+    // migration has been applied. Never silently bypass a different DB error.
+    const legacy=await (threadId?client.from("supervisor_routines")
+      .select("business_id,id,owner_user_id,thread_id,title,cadence,weekdays,local_time,timezone,status,revision,created_at,updated_at")
+      .eq("business_id",scope.businessId).eq("owner_user_id",scope.ownerUserId)
+      .eq("thread_id",threadId):
+      client.from("supervisor_routines")
+      .select("business_id,id,owner_user_id,thread_id,title,cadence,weekdays,local_time,timezone,status,revision,created_at,updated_at")
+      .eq("business_id",scope.businessId).eq("owner_user_id",scope.ownerUserId))
+      .order("created_at",{ascending:false}).limit(100);
+    if(legacy.error)throw legacy.error;
+    return ((legacy.data??[]) as RoutineRow[]).map(asRoutine);
+  }
   if(error)throw error;
   // System-origin Watch uses the SAME schedule/occurrence ledger but must
   // never appear as an owner-created routine in the simple chat list.
@@ -81,11 +96,12 @@ export async function changeOwnerRoutine(input:{
   const status=input.status===undefined?undefined:routineStatusSchema.parse(input.status);
   const schedule=input.schedule===undefined?undefined:routineScheduleSchema.parse(input.schedule);
   if(!status&&!schedule)throw new Error("Routine change required");
-  const {data,error}=await turn.client.rpc(turn.ownerMessageId&&schedule?
+  const u4Edit=process.env.SUPERVISOR_U4_ENABLED==="true"&&Boolean(turn.ownerMessageId&&schedule);
+  const {data,error}=await turn.client.rpc(u4Edit?
     "u4_edit_objective_routine":"change_supervisor_routine",{
     p_business_id:turn.scope.businessId,p_owner_user_id:turn.scope.ownerUserId,
     p_thread_id:turn.threadId,p_routine_id:id,p_revision:revision,
-    ...(turn.ownerMessageId&&schedule?{p_owner_message_id:turn.ownerMessageId}:{}),
+    ...(u4Edit?{p_owner_message_id:turn.ownerMessageId}:{}),
     p_patch:{...(status?{status}:{}),...(schedule??{})},
   });
   if(error||!data)throw error??new Error("Routine change rejected");
