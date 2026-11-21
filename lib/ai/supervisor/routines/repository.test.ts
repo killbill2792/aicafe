@@ -6,6 +6,9 @@ const scope={businessId:"business",ownerUserId:"owner"};
 const turn=(rpc:ReturnType<typeof vi.fn>)=>({
   scope,threadId:uuid,client:{rpc},
 }) as never;
+const ownerTurn=(rpc:ReturnType<typeof vi.fn>)=>({
+  scope,threadId:uuid,ownerMessageId:uuid,client:{rpc},
+}) as never;
 const row={id:uuid,business_id:"business",owner_user_id:"owner",thread_id:uuid,
   title:"Review morning",cadence:"daily",weekdays:[],local_time:"08:00:00",
   timezone:"America/Los_Angeles",status:"active",revision:1,
@@ -46,7 +49,7 @@ describe("owner-only routine mutation port",()=>{
       expect(rpc).not.toHaveBeenCalled();
       const updated=await changeOwnerRoutine({
         id:uuid,revision:3,objectiveEdit:true,
-      },{...base,ownerMessageId:uuid});
+      },ownerTurn(rpc));
       expect(updated).toMatchObject({revision:4,executionMode:"objective"});
       expect(rpc).toHaveBeenCalledWith("u4_edit_objective_routine",
         expect.objectContaining({
