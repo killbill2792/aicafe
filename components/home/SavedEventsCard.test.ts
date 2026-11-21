@@ -147,6 +147,10 @@ describe("persistent Events category navigation",()=>{
   const t=(key:string)=>({past:"Past",now:"Today",upcoming:"Upcoming",title:"Events near your café"} as Record<string,string>)[key]??key;
   it("renders three accessible choices and identifies the selected category",()=>{
     const html=renderToStaticMarkup(createElement(EventsTabs,{tab:"upcoming",onChoose:()=>{},t}));
+    const compactHtml=renderToStaticMarkup(createElement(EventsTabs,{tab:"upcoming",onChoose:()=>{},t,compact:true}));
+    expect(compactHtml).toContain("flex flex-wrap gap-2");
+    expect(compactHtml).toContain("rounded-full");
+    expect(compactHtml).toContain('aria-pressed="true"');
     for(const label of ["Past","Today","Upcoming"])expect(html).toContain(label);
     expect(html).toContain('role="group"');
     expect(html).toContain('aria-label="Events near your café"');

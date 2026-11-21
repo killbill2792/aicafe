@@ -1199,7 +1199,7 @@ export default function SupervisorChatComposer({
   };
   // Only saved event facts are read on Home; no paid search starts when opening the panel.
   const comingUpCard = enabled && canUseAi ? <SavedEventsCard locale={locale}
-    compact={!startExpanded}
+    compact
     onChatAboutDay={(date,title,eventId,existingThreadId,cityEventId,draftPrompt)=>
       void chatAboutEventDay(date,title,eventId,existingThreadId,cityEventId,draftPrompt)}
     chatDisabled={boardAskDisabled}/> : undefined;
