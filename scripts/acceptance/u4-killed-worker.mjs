@@ -21,4 +21,4 @@ if(rows[0]?.ok!==true)throw Error("u4_child_checkpoint_not_committed");
 process.stdout.write("U4_PROCESS_CHECKPOINT_COMMITTED\n");
 // The parent kills this REAL OS process after observing the committed step.
 // A new worker must reclaim the same run ID; no fake-clock-only acceptance.
-await new Promise(()=>{});
+setInterval(()=>{},1_000);
