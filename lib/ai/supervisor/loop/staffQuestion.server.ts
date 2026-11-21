@@ -20,7 +20,7 @@ export type StaffQuestionInput=z.infer<typeof staffQuestionInput>;
 export const staffQuestionCapability=registerLoopCapability({
  id:staffQuestionCapabilityId,version:1,inputSchema:staffQuestionInput,
  effectSchema:staffQuestionEffect,
- proposalDescription:"Prepare an owner-only question: ask the on-shift employee, answer myself, or ignore. Never send on the model's authority.",
+ proposalDescription:"Ask the verified on-shift employee only after owner approval, allow the owner to answer naturally in chat, or ignore. Never send on model authority.",
  dependencyScope:e=>({sourceKind:e.sourceKind,sourceTaskId:e.sourceTaskId,employeeId:e.employeeId,sourceRevision:e.sourceRevision}),
  simulate:async(scope,input)=>{
   const {client}=await simulationOwnerReader(scope);
