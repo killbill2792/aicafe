@@ -1749,7 +1749,7 @@ test("@home Task16E design baseline observes empty and long Supervisor conversat
           // Authentication and the actual café identity remain mandatory:
           // a login/onboarding redirect, a wrong café or a second failure fails.
           const pathname=new URL(page.url()).pathname;
-          if(!pathname.startsWith("/en")||/\\/(?:login|onboarding)(?:\\/|$)/.test(pathname))
+          if(!pathname.startsWith("/en/")||pathname==="/en/login"||pathname==="/en/onboarding")
             throw initialFailure;
           await page.reload({waitUntil:"load"});
           await expect(page.getByText(owner.name,{exact:true}).first())
