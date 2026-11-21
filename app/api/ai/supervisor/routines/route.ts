@@ -1,5 +1,5 @@
 import {authenticatedConversationContext} from "@/lib/ai/conversations/auth.server";
-import {conversationError,conversationJson} from "@/lib/ai/conversations/http.server";
+import {conversationError,conversationJson,parseInput,readBoundedJson,requireSameOrigin} from "@/lib/ai/conversations/http.server";
 import {createServerSupabaseClient} from "@/lib/supabase/server";
 import {listOwnerRoutinesAcrossThreads,changeOwnerRoutine} from "@/lib/ai/supervisor/routines/repository.server";
 import {z} from "zod";
@@ -8,7 +8,8 @@ export const runtime="nodejs";
 export const dynamic="force-dynamic";
 
 /** The existing routine ledger, scoped to the currently authenticated owner/café.
- * This is read-only: only verified chat turns may create/change a routine. */
+ * GET is read-only; authenticated chat turns and same-origin controls can
+ * change a routine through the ONE revision-fenced repository RPC. */
 export async function GET(){
   try{
     const {scope}=await authenticatedConversationContext();
@@ -29,7 +30,8 @@ const mutation=z.strictObject({
  * not the browser; SQL CAS rejects a stale revision or revoked owner. */
 export async function POST(request:Request){
   try{
-    const input=mutation.parse(await request.json());
+    requireSameOrigin(request);
+    const input=parseInput(mutation,await readBoundedJson(request));
     const {scope}=await authenticatedConversationContext();
     const client=await createServerSupabaseClient();
     const read=await client.from("supervisor_routines")
