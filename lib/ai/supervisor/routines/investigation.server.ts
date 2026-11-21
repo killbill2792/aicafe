@@ -414,7 +414,7 @@ export async function processNextInvestigation(db:SupabaseClient,now:Date,
         return prepareSupplierDiscrepancyFollowup({...scope,threadId:c.thread_id,locale:"en",verifiedReadClient:db},purchaseOrderId);
       }}:{}),
       staffCoordinationRead:()=>readClaimedStaffCoordination(db,scope),
-      ...({staffQuestionPropose:async(input:import("@/lib/ai/supervisor/loop/staffQuestion.server").StaffQuestionInput)=>{
+      staffQuestionPropose:async(input:import("@/lib/ai/supervisor/loop/staffQuestion.server").StaffQuestionInput)=>{
         if(input.sourceKind!==c.source_type||input.sourceTaskId!==c.source_id)
           throw new Error("staff_question_claim_scope_mismatch");
         const current=await readIncidentEvidence(db,c);
@@ -424,7 +424,7 @@ export async function processNextInvestigation(db:SupabaseClient,now:Date,
          proposalRequestKey(c.thread_id,JSON.stringify({source:c.source_id,revision:c.revision_hash,staffQuestion:input})));
         if(proposal.status!=="draft")throw new Error("staff_question_no_longer_draft");
         return {proposalId:proposal.id,revision:proposal.revision};
-      }}:{}),
+      },
       staffMessages:{read:()=>readStaffMessagesForVerifiedOwner(
         db,c.business_id,c.owner_user_id,40)},
       investigation:{
