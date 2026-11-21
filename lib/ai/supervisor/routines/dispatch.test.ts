@@ -13,7 +13,7 @@ vi.mock("./notices.server",()=>({postPriorityNotice:mocks.notice}));
 vi.mock("@/lib/scheduling/staffPublication.server",()=>({
   followUpStaffPublicationForBusiness:mocks.staff,
 }));
-import {dispatchRoutinesForBusiness,readActionablePriorities} from "./dispatch.server";
+import {dispatchRoutinesForBusiness,readActionablePriorities,orderRoutinesFairly} from "./dispatch.server";
 import {choosePriorities} from "./priority";
 function db(params?:{routines?:Record<string,unknown>[];owners?:{user_id:string}[];
   threads?:{id:string;owner_user_id:string}[];alerts?:Record<string,unknown>[];
@@ -73,6 +73,24 @@ const routine={business_id:"cafe",id:"routine",owner_user_id:"owner",thread_id:"
   title:"Opening check",cadence:"daily",weekdays:[],local_time:"08:00:00",
   timezone:"America/Los_Angeles",status:"active",revision:1,
   created_at:"2026-11-10T00:00:00Z",updated_at:"2026-11-10T00:00:00Z"};
+describe("U4 fair scheduled work without a second queue",()=>{
+  it("rotates Watch and owner objectives by actual occurrence, not fixed creation order",()=>{
+    const old={id:"old",executionMode:"objective" as const};
+    const watch={id:"watch",executionMode:"watch" as const};
+    const another={id:"another",executionMode:"objective" as const};
+    const legacy={id:"priority",executionMode:"priority" as const};
+    const input=[legacy,old,watch,another];
+    const initial=orderRoutinesFairly(input,new Map());
+    expect(initial[0]).toBe(legacy);
+    expect(initial.slice(1).map(x=>x.id)).toEqual(["another","old","watch"]);
+    const one=orderRoutinesFairly(input,new Map([["another","latest attempt"]]));
+    expect(one.slice(1).map(x=>x.id)).toEqual(["old","watch","another"]);
+    const two=orderRoutinesFairly(input,new Map([
+      ["another","later"],["old","earlier"]]));
+    expect(two.slice(1).map(x=>x.id)).toEqual(["watch","old","another"]);
+    expect(input.map(x=>x.id)).toEqual(["priority","old","watch","another"]);
+  });
+});
 describe("bounded independent routine dispatch",()=>{
   it("evaluates new evidence without any routine due",async()=>{
     mocks.notice.mockResolvedValue("posted");
