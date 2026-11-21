@@ -346,7 +346,9 @@ export async function processNextInvestigation(db:SupabaseClient,now:Date,
       sourceType:c.source_type,sourceId:c.source_id,leaseToken:c.lease_token,
     },provider??openAIProvider,providerOutputCap);
     const identity=await readSupervisorCafeIdentity(c.business_id,db);
-    const universalResearch=u3SqlConfigured();
+    // Strategy selection is model-led whether optional U3 SQL is configured or not.
+    // SQL availability changes a tool capability, never Luna's investigation policy.
+    const universalResearch=true;
     const scope={businessId:c.business_id,ownerUserId:c.owner_user_id};
     const maintenance=maintenanceContext(db,maintenanceScope,{lease:maintenanceLease});
     let mailbox:Awaited<ReturnType<typeof getConnectorAccount>>=null;
