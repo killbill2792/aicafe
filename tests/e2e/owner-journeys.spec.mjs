@@ -1,7 +1,7 @@
 import {test, expect} from "@playwright/test";
 import {randomUUID,createHash} from "node:crypto";
 import pg from "pg";
-import {assertDisposableEnvironment, seededCafe, login, openOwnedPage}
+import {assertDisposableEnvironment, seededCafe, login, openOwnedPage,navigateLocal}
   from "./seeded-auth.mjs";
 
 test.beforeEach(() => {
@@ -783,6 +783,8 @@ test("@home owner uploads and reselects a private receipt while another café ca
 });
 
 test("@staff seeded owner can open actual schedule and Team view", async ({page}) => {
+  // Keep the original authenticated Staff/Team assertion under bounded dev compile delay.
+  test.setTimeout(90_000);
   const own = seededCafe(0);
   await login(page, own);
   await openOwnedPage(page, own, "staff");
@@ -1605,9 +1607,16 @@ test("@money historical statement imports work without a bank connection and per
  await db.connect();
  try{
   await login(page,cafe);
-  await page.goto("/en/add-cost/statement");
-  await page.locator('input[type=file]').setInputFiles({name:"statement.csv",mimeType:"text/csv",buffer:Buffer.from(csv)});
-  await expect(page.getByText("Balance checks out")).toBeVisible();
+  await navigateLocal(page,"/en/add-cost/statement");
+  const statementFile=page.locator('input[type=file]');
+  await expect(statementFile).toBeAttached();
+  // Wait for actual hydrated React listener to avoid silently dropping the file input.
+  await expect.poll(()=>statementFile.evaluate(input=>
+    Object.getOwnPropertyNames(input).some(key=>
+      key.startsWith("__reactProps$")&&typeof input[key]?.onChange==="function")),
+  {timeout:30_000}).toBe(true);
+  await statementFile.setInputFiles({name:"statement.csv",mimeType:"text/csv",buffer:Buffer.from(csv)});
+  await expect(page.getByText("Balance checks out")).toBeVisible({timeout:30_000});
   const confirm=page.getByRole("checkbox",{name:/Use this original statement as historical cash evidence/});
   await expect(confirm).not.toBeChecked();
   await confirm.check();
