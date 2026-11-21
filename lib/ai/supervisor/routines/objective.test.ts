@@ -224,7 +224,7 @@ describe("U4 objective evidence and model autonomy",()=>{
       toolInvocations:[{name:"query_data",result:dictionaryIsNotData}],
     }),watch)).toThrow("u4_no_verified_source_observation");
     const sqlPlanWithoutFacts={source:"u3_canonical_research",
-      missing:[],truncated:false,rows:[],estimatedCost:400,
+      period:null,missing:[],truncated:false,rows:[],estimatedCost:400,
       evidence:{scope:"verified_owner_cafe_lease"},
     };
     expect(observedObjectiveEvidence(sqlPlanWithoutFacts)).toBe(false);
