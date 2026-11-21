@@ -14,7 +14,7 @@ import {readClaimedStaffCoordination} from "@/lib/staffCoordination/cases.server
 import {notifyOwner} from "@/lib/operating/notifyOwner.server";
 import {getConnectorAccount,allowsGmail} from "@/lib/connectors/registry.server";
 import {gmailSearch,gmailListLabels,gmailRead,gmailReadThread,gmailReadAttachment} from "@/lib/connectors/gmail/provider.server";
-import {canonicalEvidenceDomain,canonicalQuerySourceFamily,investigationReadTools,unsupportedExternalEffectClaim} from "./investigation";
+import {canonicalEvidenceDomain,canonicalQuerySourceFamily,hasObservedEvidence,investigationReadTools,unsupportedExternalEffectClaim} from "./investigation";
 import {meteredInvestigationProvider} from "./investigationUsage.server";
 import type {RoutineRecord} from "./contracts";
 import type {ClaimedRoutine} from "./repository.server";
@@ -37,41 +37,19 @@ export const watchReadTools:readonly AgentToolName[]=objectiveReadTools.filter(n
     "get_week_schedule","search_gmail","list_gmail_labels","read_gmail",
     "read_gmail_thread","read_gmail_attachment"].includes(name));
 
-const meta=new Set(["source","period","missing","agentId","error","dataNotes",
-  "dataNote","href","status","quality","truncated","explain","message",
-  "coverageLabel","coverageFallback","currency","unit","readTime","readAt",
-  "lastUpdated","freshnessLabel","reason","available","empty","rowCount",
-  "sourceCount","sourceMix","scope","scopeWarning","provisional","stale",
-  "estimated","hasIncomplete","currentDayIncomplete","todayImported",
-  "lastFullDay","lastFullDayTotals","quantitySemantics"]);
-/** A registered tool name is never evidence by itself; require an actual
- * observed source fact or a real observed empty collection explicitly returned
- * without a missing/error/truncated flag. No second business calculation. */
+/** A tool name, catalog, row-count sentinel or paid provider text is never
+ * evidence on its own. Reuse the stricter existing incident fact gate for
+ * canonical aggregates, current inventory and verified saved local events.
+ * Gmail identity proves a mailbox item was read, not that its claims are true. */
 export function observedObjectiveEvidence(result:AgentToolResult):boolean{
-  if(!Array.isArray(result.missing)||result.missing.length||result.error||
-    result.truncated===true)return false;
-  // A read Gmail message has a verified provider identity but message text
-  // remains untrusted external evidence, never canonical finance truth.
+  if(!Array.isArray(result.missing)||result.missing.length>0||
+    result.error||result.truncated===true)return false;
   if(result.source==="gmail"&&result.message&&typeof result.message==="object"
     &&!Array.isArray(result.message)){
     const msg=result.message as Record<string,unknown>;
     return typeof msg.id==="string"&&msg.id.length>=8;
   }
-  return Object.entries(result).some(([key,value])=>{
-    if(meta.has(key)||value===null||value===undefined)return false;
-    if(typeof value==="number")return Number.isFinite(value);
-    if(typeof value==="boolean")return value===true;
-    if(Array.isArray(value))return value.some(x=>
-      typeof x==="number"&&Number.isFinite(x)||
-      x!==null&&typeof x==="object"&&!Array.isArray(x));
-    if(typeof value==="object")return Object.entries(value).some(([k,v])=>
-      !meta.has(k)&&v!==null&&v!==undefined&&(
-        typeof v==="number"&&Number.isFinite(v)||
-        typeof v==="boolean"||
-        Array.isArray(v)&&v.length>0||
-        typeof v==="object"&&!Array.isArray(v)));
-    return false;
-  });
+  return hasObservedEvidence(result);
 }
 
 const digest=(value:unknown)=>{
