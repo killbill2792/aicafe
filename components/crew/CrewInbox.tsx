@@ -3,11 +3,11 @@ import {useCallback,useEffect,useRef,useState} from "react";
 import {useRouter} from "next/navigation";
 import en from "@/messages/en.json";
 import {createBrowserSupabaseClient} from "@/lib/supabase/client";
-import type {StaffMessage,StaffRequest} from "@/lib/staffCommunication/channel.server";
+import type {StaffMessage,StaffRequest,StaffOwnWork} from "@/lib/staffCommunication/channel.server";
 import {crewOutboxKey,crewRejectedDraftKey,loadCrewPending,saveCrewPending,sameCrewOperation,
  deliverCrewWithRetry,type PendingCrewSubmission} from "@/lib/staffCommunication/pendingSend";
-export default function CrewInbox({name,requests,messages,authUserId}:{
- name:string;requests:StaffRequest[];messages:StaffMessage[];authUserId:string;
+export default function CrewInbox({name,requests,messages,self,authUserId}:{
+ name:string;requests:StaffRequest[];messages:StaffMessage[];self:StaffOwnWork|null;authUserId:string;
 }){
  const router=useRouter(),sending=useRef(false);
  const copy=en.Maintenance;
@@ -166,6 +166,38 @@ export default function CrewInbox({name,requests,messages,authUserId}:{
     Retry saved message
    </button>
   </div>}
+  {self?<section className="space-y-3 rounded-2xl border border-line bg-card p-5" aria-labelledby="crew-own-records">
+   <h2 id="crew-own-records" className="text-xl font-bold">{en.CrewSelfService.title}</h2>
+   <p className="text-sm text-ink-muted">{en.CrewSelfService.privateOnly}</p>
+   <h3 className="font-semibold">{en.CrewSelfService.publishedShifts}</h3>
+   {self.shifts.length===0?<p className="text-sm text-ink-muted">{en.CrewSelfService.noPublishedShifts}</p>:
+    <ul className="space-y-2">{self.shifts.map(shift=><li key={shift.id} className="rounded-xl border border-line p-3">
+     <strong>{shift.date}</strong> · {shift.start}–{shift.end}
+     {shift.overnight?" "+en.CrewSelfService.overnight:""}
+    </li>)}</ul>}
+   <h3 className="font-semibold">{en.CrewSelfService.recordedHours}</h3>
+   {self.dailyHours.length>0&&<ul className="space-y-2">
+    {self.dailyHours.map(day=><li key={day.date} className="rounded-xl border border-line p-3">
+     <strong>{day.date}</strong> · {day.hours===null?en.CrewSelfService.hoursUnknown:
+      day.hours+" "+en.CrewSelfService.hours}
+    </li>)}
+   </ul>}
+   <p className="text-sm text-ink-muted">{en.CrewSelfService.hoursNote}</p>
+   {self.timecards.length===0?<p className="text-sm text-ink-muted">{en.CrewSelfService.noLinkedTimecards}</p>:
+    <ul className="space-y-2">{self.timecards.map(card=><li key={card.id} className="rounded-xl border border-line p-3">
+     <strong>{card.date}</strong> · {card.hasOpenClockOut?en.CrewSelfService.openTimecard:
+      card.hours===null?en.CrewSelfService.hoursUnknown:
+      card.hours+" "+en.CrewSelfService.hours}
+    </li>)}</ul>}
+   <h3 className="font-semibold">{en.CrewSelfService.breakNotices}</h3>
+   {self.breakNotices.length===0?<p className="text-sm text-ink-muted">{en.CrewSelfService.noBreakAlerts}</p>:
+    <ul className="space-y-2">{self.breakNotices.map(alert=><li key={alert.timecardId+alert.at}
+     className="rounded-xl border border-line p-3">
+      <time className="block text-xs text-ink-muted" dateTime={alert.at}>{new Date(alert.at).toLocaleString()}</time>
+      <p className="text-sm">{alert.message}</p>
+    </li>)}</ul>}
+  </section>:<p role="status" className="rounded-2xl border border-line bg-card p-4 text-ink-muted">
+   {en.CrewSelfService.unavailable}</p>}
   <section className="space-y-3" aria-labelledby="crew-assigned">
    <h2 id="crew-assigned" className="text-xl font-bold">Assigned to me</h2>
    {requests.length===0&&<p className="rounded-2xl bg-card p-4">No requests are waiting for you.</p>}

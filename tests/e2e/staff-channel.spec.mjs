@@ -14,17 +14,21 @@ test("@staff real worker login, shift explanation, cross-cafe and owner receipt"
  let connected=false;
  try{
   await db.connect();connected=true;
-  for(const cafe of cafes){
+  for(const [index,cafe] of cafes.entries()){
    const userId=randomUUID(),shiftId=randomUUID();
    const worker=(await db.query("select id,display_name from public.employees where business_id=$1 and active=true order by id limit 1",
     [cafe.businessId])).rows[0];
    expect(worker?.id).toBeTruthy();
    const email="13c-crew-"+randomUUID()+"@example.invalid";
    const password="local-disposable-13c-crew";
+   // One café exercises real owner Admin-Auth creation via the UI;
+   // the other keeps the original already-confirmed-login link path.
+   if(index===1){
    await db.query("insert into auth.users (instance_id,id,aud,role,email,encrypted_password,email_confirmed_at,raw_app_meta_data,raw_user_meta_data,created_at,updated_at,confirmation_token,recovery_token,email_change_token_new,email_change) values ('00000000-0000-0000-0000-000000000000',$1,'authenticated','authenticated',$2,extensions.crypt($3,extensions.gen_salt('bf')),now(),'{\"provider\":\"email\",\"providers\":[\"email\"]}','{}',now(),now(),'','','','')",
     [userId,email,password]);
    await db.query("insert into auth.identities (id,user_id,provider_id,provider,identity_data,last_sign_in_at,created_at,updated_at) values($1,$1,$1,'email',$2::jsonb,now(),now(),now())",
     [userId,JSON.stringify({sub:userId,email,email_verified:true})]);
+   }
    created.push({cafe,worker,userId,shiftId,email,password});
   }
   const ownerCtx=await browser.newContext({baseURL:"http://127.0.0.1:3000",serviceWorkers:"block"});
@@ -35,8 +39,18 @@ test("@staff real worker login, shift explanation, cross-cafe and owner receipt"
   await expect(owner.getByRole("heading",{name:"Employee login access"})).toBeVisible({timeout:30_000});
   await owner.locator("#staff-account-person").selectOption(created[0].worker.id);
   await owner.locator("#staff-account-email").fill(created[0].email);
-  await owner.getByRole("button",{name:"Link existing login"}).click();
-  await expect(owner.getByText("Existing confirmed login linked.")).toBeVisible();
+  await owner.locator("#staff-account-password").fill(created[0].password);
+  const createReceipt=owner.waitForResponse(resp=>resp.url().includes("/api/staff-channel/link")&&
+   resp.request().method()==="POST");
+  await owner.getByRole("button",{name:"Create employee login"}).click();
+  const createdReceipt=await createReceipt;
+  expect(createdReceipt.status()).toBe(200);
+  expect(await createdReceipt.json()).toEqual({linked:true,loginPath:"/crew/login"});
+  await expect(owner.getByText(/Staff login created and linked/)).toBeVisible();
+  await expect(owner.getByRole("button",{name:"Copy staff sign-in link"})).toBeVisible();
+  const firstAuth=await db.query("select id from auth.users where email=$1",[created[0].email]);
+  expect(firstAuth.rows).toHaveLength(1);
+  created[0].userId=firstAuth.rows[0].id;
   // Linking updates the owner reply selector without a manual page reload.
   await expect(owner.locator('#staff-reply-person option[value="'+created[0].worker.id+'"]'))
    .toHaveCount(1,{timeout:20_000});
@@ -58,6 +72,16 @@ test("@staff real worker login, shift explanation, cross-cafe and owner receipt"
    await db.query("insert into public.scheduled_shifts (id,business_id,employee_id,local_date,start_local,end_local,source,status) values($1,$2,$3,$4,'07:00','14:00','owner','sent')",
     [item.shiftId,item.cafe.businessId,item.worker.id,date]);
   }
+  // Record an actual worker-only timecard and an existing break discrepancy.
+  // No coworkers, wages or owner-only totals may leave the /crew projection.
+  const ownCardId=randomUUID(),otherCardId=randomUUID();
+  await db.query("insert into public.timecards(id,business_id,employee_id,pos_timecard_id,clock_in,clock_out,breaks,source_type,source_provider) values($1,$2,$3,$4,now()-interval '2 days',now()-interval '2 days'+interval '7 hours','[]'::jsonb,'connected_pos','Toast')",
+   [ownCardId,created[0].cafe.businessId,created[0].worker.id,"staff-own-"+ownCardId]);
+  await db.query("insert into public.timecards(id,business_id,employee_id,pos_timecard_id,clock_in,clock_out,breaks,source_type,source_provider) values($1,$2,$3,$4,now()-interval '2 days',now()-interval '2 days'+interval '9 hours','[]'::jsonb,'connected_pos','Toast')",
+   [otherCardId,created[1].cafe.businessId,created[1].worker.id,"staff-other-"+otherCardId]);
+  await db.query("insert into public.staff_rule_alerts(business_id,timecard_id,employee_id,rule_key,message,status) values($1,$2,$3,'meal','Check your recorded meal break','new')",
+   [created[0].cafe.businessId,ownCardId,created[0].worker.id]);
+  created[0].timecardId=ownCardId;created[1].timecardId=otherCardId;
   const staffCtx=await browser.newContext({baseURL:"http://127.0.0.1:3000",serviceWorkers:"block"});
   contexts.push(staffCtx);
   const staff=await staffCtx.newPage();
@@ -67,6 +91,11 @@ test("@staff real worker login, shift explanation, cross-cafe and owner receipt"
   await staff.getByRole("button",{name:"Sign in"}).click();
   await expect(staff).toHaveURL(/\/crew(?:\?|$)/,{timeout:30_000});
   await expect(staff.getByRole("heading",{name:"Hello, "+created[0].worker.display_name})).toBeVisible();
+  const personal=staff.getByRole("region",{name:"My schedule, hours and breaks"});
+  await expect(personal.getByText("My upcoming published shifts")).toBeVisible();
+  await expect(personal.getByText("7 recorded hours")).toBeVisible();
+  await expect(personal.getByText("Check your recorded meal break")).toBeVisible();
+  expect(await personal.getByText("9 recorded hours").count()).toBe(0);
   const card=staff.getByRole("article").filter({hasText:"Confirm your shift"}).first();
   await expect(card.getByText(/07:00.*14:00/)).toBeVisible();
   await card.getByRole("textbox",{name:/Add a message or explain/})
@@ -78,6 +107,10 @@ test("@staff real worker login, shift explanation, cross-cafe and owner receipt"
   expect(inbox.status()).toBe(200);
   const own=await inbox.json();
   expect(own.requests.some(r=>r.id)).toBe(true);
+  expect(own.self.timecards.some(t=>t.id===ownCardId&&t.hours===7)).toBe(true);
+  expect(own.self.timecards.some(t=>t.id===otherCardId)).toBe(false);
+  expect(own.self.breakNotices.map(a=>a.timecardId)).toContain(ownCardId);
+  expect(JSON.stringify(own.self)).not.toContain(otherCardId);
   expect(JSON.stringify(own)).not.toContain(created[1].worker.display_name);
   expect((await staffCtx.request.get("/api/staff-channel/link")).status()).toBe(403);
   const businessesBefore=(await db.query("select count(*)::integer as n from public.businesses")).rows[0].n;
@@ -98,14 +131,39 @@ test("@staff real worker login, shift explanation, cross-cafe and owner receipt"
   await expect(owner.getByRole("heading",{name:"Employee responses and reports"}))
    .toBeVisible({timeout:30_000});
   await expect(owner.getByText("I cannot work seven to two. I can arrive at 8 AM.")).toBeVisible();
+  const conversation=owner.getByRole("region",{name:"Employee Supervisor communication history"});
+  await expect(conversation.getByText("Confirm your shift")).toBeVisible();
+  await expect(conversation.getByText("I cannot work seven to two. I can arrive at 8 AM.")).toBeVisible();
+  expect((await staffCtx.request.get("/api/staff-channel/owner-history")).status()).toBe(403);
+  const ownerHistory=await ownerCtx.request.get("/api/staff-channel/owner-history");
+  expect(ownerHistory.status()).toBe(200);
+  const ownerHistoryData=await ownerHistory.json();
+  expect(ownerHistoryData.events.some(e=>e.kind==="request"&&e.text.includes("07:00"))).toBe(true);
+  expect(ownerHistoryData.events.some(e=>e.actor==="employee"&&e.text==="I cannot work seven to two. I can arrive at 8 AM.")).toBe(true);
   await owner.locator("#staff-reply-person").selectOption(created[0].worker.id);
   await owner.locator("#staff-reply-body").fill("Thanks for the update. Can you confirm 8 AM?");
   await owner.getByRole("button",{name:"Send to employee"}).click();
   await expect(owner.getByText("Message saved to this employee's work inbox. Not a read or delivery receipt."))
    .toBeVisible();
+  // Owner's existing reply outbox refreshes the server component. Its
+  // client transcript must adopt new props without a manual owner reload.
+  await expect(owner.getByRole("region",{name:"Employee Supervisor communication history"})
+   .getByText("Thanks for the update. Can you confirm 8 AM?")).toBeVisible({timeout:20_000});
   await staff.reload();
   await expect(staff.getByText("Message from café owner")).toBeVisible();
   await expect(staff.getByText("Thanks for the update. Can you confirm 8 AM?")).toBeVisible();
+  // Genuine database keyset pagination: more than the initial 25 events.
+  // Older owner-authored work messages must remain available without creating
+  // duplicate employee-response notices or leaking to another café.
+  await db.query("insert into public.staff_communication_messages (business_id,employee_id,actor,author_user_id,response_code,body,channel,client_nonce,received_at) select $1,$2,'owner',$3,'owner_message','Historical note '||n,'web',gen_random_uuid(),now()-interval '10 days'+n*interval '1 minute' from generate_series(1,35) n",
+   [created[0].cafe.businessId,created[0].worker.id,created[0].cafe.owner.userId]);
+  await owner.reload();
+  await expect(owner.getByText("Historical note 35")).toBeVisible({timeout:20_000});
+  await expect(owner.getByRole("button",{name:"Load older exchanges"})).toBeVisible();
+  await owner.getByRole("button",{name:"Load older exchanges"}).click();
+  await expect(owner.getByText("Historical note 1")).toBeVisible({timeout:20_000});
+  await otherOwner.reload();
+  await expect(otherOwner.getByText("Historical note 1")).toHaveCount(0);
   // The same channel accepts a task/checklist from any future authorized
   // staff-workflow producer; the worker's completion is actual evidence.
   await owner.locator("#staff-work-kind").selectOption("checklist");
@@ -161,6 +219,7 @@ test("@staff real worker login, shift explanation, cross-cafe and owner receipt"
    await db.query("delete from public.staff_communication_requests where business_id=$1 and employee_id=$2",
     [item.cafe.businessId,item.worker.id]).catch(()=>{});
    await db.query("delete from public.scheduled_shifts where id=$1",[item.shiftId]).catch(()=>{});
+   if(item.timecardId)await db.query("delete from public.timecards where id=$1",[item.timecardId]).catch(()=>{});
    await db.query("delete from auth.users where id=$1",[item.userId]).catch(()=>{});
   }
   await db.end().catch(()=>{});
