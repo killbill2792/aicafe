@@ -106,9 +106,9 @@ jobs:
   production-build:
     needs: changes
     if: ${{ always() && (github.event_name == 'push' || github.event_name == 'workflow_dispatch' || (needs.changes.result == 'success' && needs.changes.outputs.code == 'true')) }}
-    name: Next.js Webpack production build
+    name: Next.js production builds + serverless runtime asset proof
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -127,8 +127,22 @@ jobs:
           key: ${{ runner.os }}-nextjs-${{ hashFiles('package-lock.json') }}-${{ hashFiles('package.json', 'next.config.*', 'tsconfig.json', 'postcss.config.*', 'tailwind.config.*', 'app/**', 'components/**', 'lib/**', 'messages/**', 'public/**') }}
           restore-keys: |
             ${{ runner.os }}-nextjs-${{ hashFiles('package-lock.json') }}-
-      - name: Production build
+      - name: Production build (Webpack regression)
         run: npm run build -- --webpack
+      - name: Serverless asset guard unit tests
+        run: node --test scripts/acceptance/serverless-assets.test.mjs
+      - name: Verify real Webpack serverless traces
+        run: node scripts/acceptance/serverless-assets.mjs
+      # Vercel uses the default Next.js 16 Turbopack compiler, unlike this
+      # baseline's prior --webpack-only build. A build success is not proof
+      # the runtime asset was traced. Use a clean second build and verify its
+      # actual route manifests; no Vercel preview/deploy is created.
+      - name: Clear previous compiler outputs
+        run: rm -rf .next
+      - name: Production build (Turbopack, Vercel parity)
+        run: npm run build
+      - name: Verify real Turbopack serverless traces
+        run: node scripts/acceptance/serverless-assets.mjs
 
 
   supervisor-evals:
