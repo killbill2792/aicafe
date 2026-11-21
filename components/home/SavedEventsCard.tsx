@@ -32,11 +32,11 @@ type SavedQuestion={question:string;options:string[]};
 type Message={role:string;blocks:unknown[]|null};
 
 /** One navigation control shared by Home, the Events index and event details. */
-export function EventsTabs({tab,onChoose,t}:{tab:Tab;onChoose:(next:Tab)=>void;t:T}){
-  return <div className="grid grid-cols-3 gap-2" role="group" aria-label={t("title")}>
+export function EventsTabs({tab,onChoose,t,compact=false}:{tab:Tab;onChoose:(next:Tab)=>void;t:T;compact?:boolean}){
+  return <div className={compact?"flex flex-wrap gap-2":"grid grid-cols-3 gap-2"} role="group" aria-label={t("title")}>
     {(["past","now","upcoming"] as const).map(key=><button key={key} type="button"
       aria-pressed={tab===key} onClick={()=>onChoose(key)}
-      className={"min-h-12 min-w-0 rounded-xl px-2 text-[16px] font-semibold focus-visible:outline focus-visible:outline-2 focus-visible:outline-ink "+
+      className={(compact?"min-h-12 max-w-full rounded-full px-3.5 py-1 text-[15px]":"min-h-12 min-w-0 rounded-xl px-2 text-[16px]")+" font-semibold focus-visible:outline focus-visible:outline-2 focus-visible:outline-ink "+
         (tab===key?"bg-accent text-on-accent":"bg-surface2 text-ink")}>{t(key)}</button>)}
   </div>;
 }
@@ -569,7 +569,7 @@ export default function SavedEventsCard({locale,chatDisabled,compact=false,onCha
         <CalendarDays size={20} aria-hidden="true"/><span className="flex-1 text-[17px]">{t("title")}</span>
         <span className="text-[15px] text-accent-text">{t("seeAll")}</span>
       </button>
-      <div className="mt-2"><EventsTabs tab={tab} onChoose={openEvents} t={t}/></div>
+      <div className="mt-2"><EventsTabs tab={tab} onChoose={openEvents} t={t} compact={compact}/></div>
       {!compact&&(lead?<button type="button" onClick={()=>openDay(lead.date)}
         className="mb-3 w-full min-w-0 rounded-2xl bg-surface2 p-3 text-start disabled:opacity-60">
         <p className="text-[15px] font-semibold text-accent-text">{dateLabel(lead.date,locale,"long")} · {lead.date===today?t("now"):t("upcoming")}</p>

@@ -43,14 +43,16 @@ export function inFlightOwnerMessageIds(job: AgentJob | null, extra: Iterable<st
   return ids;
 }
 
-/** One plain line per finished step, oldest first, repeats collapsed. */
+/** Distinct progress labels, ordered by their most recent occurrence. */
 export function progressLines(steps: AgentJobStep[], copy: ChatExperienceCopy): string[] {
   const tools = copy.tools as Record<string, string>;
   const agents = copy.agents as Record<string, string>;
   const lines: string[] = [];
   for (const step of steps) {
     const line = tools[step.tool] ?? agents[step.agent] ?? copy.agents.supervisor;
-    if (lines.at(-1) !== line) lines.push(line);
+    const previous=lines.indexOf(line);
+    if(previous>=0)lines.splice(previous,1);
+    lines.push(line);
   }
   return lines.slice(-6);
 }

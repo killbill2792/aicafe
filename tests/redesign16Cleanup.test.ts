@@ -182,7 +182,7 @@ const approvedTask16aSet = new Set(approvedTask16aKeys.map(key => "SupervisorMan
 
 // U4 owner-approved routine controls are English-only, scoped to a NEW namespace
 // so the original Task16A permission contract stays frozen.
-const approvedU4RoutineKeys=["actions","pause","resume","delete","editInChat","paused","deleteConfirm","saved","deleteSaved","saveFailed"] as const;
+const approvedU4RoutineKeys=["actions","pause","resume","delete","editInChat","paused","deleteConfirm","saved","deleteSaved","saveFailed","created","updated","pausedSaved","resumedSaved"] as const;
 const approvedU4RoutineSet=new Set(approvedU4RoutineKeys.map(key=>"SupervisorRoutines."+key));
 
 const approvedTask14eAddCostKeys=["statementCashConfirm","statementCashDated","statementCashNickname","statementCashError"] as const;

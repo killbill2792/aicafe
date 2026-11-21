@@ -335,17 +335,17 @@ export default function SupervisorMandatePanel({threadId,threads,approvals,onSel
                   </summary>
                   <div className="mt-1 flex flex-col gap-1" role="group" aria-label={routineCopy.actions}>
                     <button type="button" disabled={disabled||!!routineBusy}
-                      className="min-h-11 rounded-lg px-3 text-start text-[14px] hover:bg-surface2 disabled:opacity-50"
+                      className="min-h-12 rounded-lg px-3 text-start text-[14px] hover:bg-surface2 disabled:opacity-50"
                       onClick={()=>{onEditRoutine(r);onClose();}}>
                       {routineCopy.editInChat}
                     </button>
                     <button type="button" disabled={disabled||!!routineBusy}
-                      className="min-h-11 rounded-lg px-3 text-start text-[14px] hover:bg-surface2 disabled:opacity-50"
+                      className="min-h-12 rounded-lg px-3 text-start text-[14px] hover:bg-surface2 disabled:opacity-50"
                       onClick={()=>void changeRoutine(r,r.status==="active"?"pause":"resume")}>
                       {r.status==="active"?routineCopy.pause:routineCopy.resume}
                     </button>
                     <button type="button" disabled={disabled||!!routineBusy}
-                      className="min-h-11 rounded-lg px-3 text-start text-[14px] text-neg hover:bg-surface2 disabled:opacity-50"
+                      className="min-h-12 rounded-lg px-3 text-start text-[14px] text-neg hover:bg-surface2 disabled:opacity-50"
                       onClick={()=>void changeRoutine(r,"delete")}>
                       {routineCopy.delete}
                     </button>

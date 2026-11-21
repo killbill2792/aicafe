@@ -67,7 +67,7 @@ html[lang="ar"] h1, html[lang="ar"] h2, html[lang="ar"] h3 { font-family: var(--
 /* The ordinary chat stays a quiet reading surface, not a dashboard card.
    Keyboard-only shrink uses the visual viewport when supported. */
 .supervisor-shell {
-  height: calc(100dvh - 2rem - env(safe-area-inset-bottom, 0px));
+  height: 100dvh;
 }
 @media (max-width: 767px) {
   .app-page-content:has(.supervisor-shell) { padding-bottom: 0; }

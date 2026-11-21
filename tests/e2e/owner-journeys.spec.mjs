@@ -105,6 +105,9 @@ test("@home Task16A authenticated mobile owner views library/routines/permission
     await page.setViewportSize({width:390,height:844});
     const routineCard=page.locator('[data-routine-card="'+id.routine+'"]');
     await expect(routineCard).toBeVisible({timeout:30_000});
+    await expect(routineCard.getByRole("status")).toHaveText("Routine created");
+    // Creation stays a small line; owner can reveal the schedule/actions.
+    await expect(routineCard.locator("details")).not.toHaveAttribute("open","");
     await expect(routineCard).toContainText("Daily source check");
     await expect(page.getByText("Daily source check saved.",{exact:true})).toHaveCount(1);
     await expect(routineCard.getByLabel("Routine actions: Daily source check")).toBeVisible();
@@ -260,6 +263,8 @@ test("@home Task16A authenticated mobile owner views library/routines/permission
       status:[{status:"revoked",revision:4}],
     });
     await expect(deletionPanel.getByText("Daily source check")).toHaveCount(0);
+    // The existing persisted mutation route, not a fake chat bubble, confirms deletion.
+    await expect(deletionPanel.getByText("Routine deleted.",{exact:true})).toBeVisible();
     const staleDelete=await ctx.request.post("/api/ai/supervisor/routines",{
       headers:{origin:"http://127.0.0.1:3000"},
       data:{action:"delete",routineId:id.routine,revision:3},
@@ -331,8 +336,9 @@ test("@home Task 16B persists real Supervisor work through reload, uncertainty a
       await login(page,own);
       await openOwnedPage(page,own,"?thread="+threadId);
       await page.setViewportSize({width:390,height:844});
-      const work = page.getByRole("region",{name:"Supervisor work"});
-      await expect(work).toBeVisible();
+      const work = page.getByRole("dialog",{name:"Supervisor controls"}).getByRole("region",{name:"Supervisor work"});
+      const openWork=async()=>{await expect(page.locator('[data-work-status]')).toHaveCount(0);await page.getByRole("button",{name:"Supervisor work",exact:true}).click();await expect(work).toBeVisible();};
+      await openWork();
       await expect(work.locator('[data-work-kind="durable_run"][data-work-status="queued"]')).toBeVisible();
       await expect(work.locator('[data-work-kind="investigation"][data-work-status="queued"]')).toBeVisible();
       const ownRead = await context.request.get("/api/ai/threads/"+threadId+"/work");
@@ -347,6 +353,7 @@ test("@home Task 16B persists real Supervisor work through reload, uncertainty a
           [own.businessId,own.owner.userId,threadId,episode,hash,hash]);
       }
       await page.reload();
+      await openWork();
       const showMore = work.getByRole("button",{name:"Show more saved work"});
       await expect(showMore).toBeVisible();
       await showMore.click();
@@ -357,6 +364,7 @@ test("@home Task 16B persists real Supervisor work through reload, uncertainty a
         [randomUUID(),randomUUID(),runId]);
       await db.query("update public.supervisor_runs set status='running',updated_at=now() where id=$1",[runId]);
       await page.reload();
+      await openWork();
       await expect(work.locator('[data-work-status="retrying"]')).toBeVisible();
 
       // A dead reconciliation lease stays UNKNOWN rather than re-executing an effect.
@@ -364,6 +372,7 @@ test("@home Task 16B persists real Supervisor work through reload, uncertainty a
         [runId]);
       await db.query("update public.supervisor_runs set status='blocked',updated_at=now() where id=$1",[runId]);
       await page.reload();
+      await openWork();
       await expect(work.locator('[data-work-status="uncertain"]')).toContainText("Outcome not yet verified");
       await expect(work.getByText("Effect verified",{exact:true})).toHaveCount(0);
 
@@ -382,6 +391,7 @@ test("@home Task 16B persists real Supervisor work through reload, uncertainty a
       await db.query("update public.supervisor_runs set status='completed',final_report_ref=$1,finished_at=now(),updated_at=now() where id=$2",
         [answerId,runId]);
       await page.reload();
+      await openWork();
       await expect(work.locator('[data-work-status="answer_ready"]')).toContainText("Answer saved");
       await expect(work).toContainText("not an external effect");
       await expect(work.getByText("Effect verified",{exact:true})).toHaveCount(0);
@@ -389,16 +399,19 @@ test("@home Task 16B persists real Supervisor work through reload, uncertainty a
       await db.query("update public.supervisor_investigations set phase='resolved',updated_at=now() where business_id=$1 and source_id=$2",
         [own.businessId, investigationSourceId]);
       await page.reload();
+      await openWork();
       await expect(work.locator('[data-work-kind="investigation"][data-work-status="source_resolved"]')).toBeVisible();
       await expect(work.getByText("Effect verified",{exact:true})).toHaveCount(0);
 
       // An offline read is a stale status, not an action failure or success.
-      await page.route("**/api/ai/threads/"+threadId+"/work", route=>
+      await page.route("**/api/ai/threads/"+threadId+"/work?scope=owner", route=>
         route.fulfill({status:503,contentType:"application/json",body:'{"error":"unavailable"}'}));
       await page.reload();
+      await openWork();
       await expect(work).toContainText("Current status cannot be verified");
-      await page.unroute("**/api/ai/threads/"+threadId+"/work");
+      await page.unroute("**/api/ai/threads/"+threadId+"/work?scope=owner");
       await page.reload();
+      await openWork();
       await expect(work.locator('[data-work-status="answer_ready"]')).toBeVisible();
       const bounds = await work.boundingBox();
       expect(bounds).not.toBeNull();
@@ -423,10 +436,13 @@ test("@home Task 16B persists real Supervisor work through reload, uncertainty a
       await db.query("insert into public.ai_messages(id,business_id,owner_user_id,thread_id,author_user_id,role,content_type,text_content,client_message_id) values($1,$2,$3,$4,$3,'owner','text','An unrelated question',$5)",
         [randomUUID(),...scope,randomUUID()]);
       await page.reload();
+      await openWork();
       const persisted=work.locator('[data-work-id="run:'+assignment.id+'"]');
       await expect(persisted).toHaveAttribute("data-work-status","approval_required");
       await expect(persisted).toContainText("Waiting for your answer to the saved question");
+      await page.keyboard.press("Escape");
       await expect(page.getByText("Which saved period?",{exact:true})).toBeVisible();
+      await openWork();
       await expect(work.locator('[data-work-id="job:'+job.id+'"]')).toHaveCount(0);
       await persisted.getByRole("button",{name:"Stop assignment",exact:true}).click();
       await expect(persisted.getByText("This assignment was cancelled.",{exact:true}).first()).toBeVisible();
@@ -767,8 +783,7 @@ test("@home owner uploads and reselects a private receipt while another café ca
 });
 
 test("@staff seeded owner can open actual schedule and Team view", async ({page}) => {
-  // The 24-journey disposable dev server may compile staff after login;
-  // keep the real authenticated page, Team click and seeded SQL assertions.
+  // Keep the original authenticated Staff/Team assertion under bounded dev compile delay.
   test.setTimeout(90_000);
   const own = seededCafe(0);
   await login(page, own);
@@ -1515,11 +1530,17 @@ test("@home Task16D authenticated responsive Supervisor work across conversation
     await login(page,owner);
     await openOwnedPage(page,owner,"?thread="+threadId);
     const controls=page.getByRole("button",{name:"Library, routines and permissions"});
-    const work=page.getByRole("region",{name:"Supervisor work"});
+    const work=page.getByRole("dialog",{name:"Supervisor controls"}).getByRole("region",{name:"Supervisor work"});
     for (const viewport of [{width:390,height:844},{width:1440,height:900}]) {
       await page.setViewportSize(viewport);
       await expect(controls).toBeVisible();
-      await expect(work.locator('[data-work-status="queued"]')).toBeVisible();
+      await expect(page.locator("[data-work-status]")).toHaveCount(0);
+      await page.getByRole("button",{name:"Supervisor work",exact:true}).click();
+      // Work is owner-wide now: both saved conversations must remain visible
+      // by their own original identity, not a globally unique queued label.
+      await expect(work.locator('[data-work-id="run:'+runId+'"][data-work-status="queued"]')).toBeVisible();
+      await expect(work.locator('[data-work-id="run:'+otherRun+'"][data-work-status="queued"]')).toBeVisible();
+      await page.keyboard.press("Escape");
       const before=await page.evaluate(()=>({
         viewport:window.innerWidth, documentWidth:document.documentElement.scrollWidth,
         composerVisible:!!document.querySelector("#supervisor-home-composer")?.getBoundingClientRect().height,
@@ -1589,9 +1610,7 @@ test("@money historical statement imports work without a bank connection and per
   await navigateLocal(page,"/en/add-cost/statement");
   const statementFile=page.locator('input[type=file]');
   await expect(statementFile).toBeAttached();
-  // Next.js can server-render the input before its client onChange is
-  // hydrated. Uploading before hydration silently drops the change event;
-  // wait for the real React listener instead of retrying a failed parse.
+  // Wait for actual hydrated React listener to avoid silently dropping the file input.
   await expect.poll(()=>statementFile.evaluate(input=>
     Object.getOwnPropertyNames(input).some(key=>
       key.startsWith("__reactProps$")&&typeof input[key]?.onChange==="function")),
@@ -1664,7 +1683,23 @@ test("@home Task15A scheduler detects reduced sales from actual daily source row
   await db.query("update public.staff_schedules set active=false where business_id=$1 and id=any($2::uuid[])",[own.businessId,activeSchedules]);
   const prior=await db.query("select id from public.alerts where business_id=$1 and kind='business_anomaly' and payload->>'dedupeKey'='sales_decline:cafe'",[own.businessId]);
   await db.query("insert into public.daily_rollups(business_id,business_date,net_sales_cents,orders_count,drinks_count,ingredients_cents,staff_wages_cents,staff_tax_cents,card_fees_cents,voids_cents,sales_data_status) select $1,d::date,case when d::date<=$3::date then 100000 else 60000 end,50,50,10000,10000,1000,1000,0,'actual' from generate_series($2::date,$4::date,interval '1 day') d on conflict(business_id,business_date) do update set net_sales_cents=excluded.net_sales_cents,sales_data_status='actual'",[own.businessId,start,date(-8),end]);
-  const tick=()=>context.request.get("/api/cron/refresh-derived",{headers:{Authorization:"Bearer "+process.env.CRON_SECRET},timeout:100_000});
+  // The disposable Next dev server may briefly reset its loopback socket
+  // during compilation. Retry only transport failures; HTTP errors and every
+  // source/SQL/alert assertion below remain failures, never fake success.
+  const tick=async()=>{
+    for(let attempt=0;attempt<4;attempt++){
+      try{
+        return await context.request.get("/api/cron/refresh-derived",{
+          headers:{Authorization:"Bearer "+process.env.CRON_SECRET},timeout:100_000,
+        });
+      }catch(error){
+        const detail=error instanceof Error?error.message:String(error);
+        if(attempt===3||!/(?:ECONNREFUSED|ECONNRESET|socket hang up)/i.test(detail))throw error;
+        await new Promise(resolve=>setTimeout(resolve,[1000,3000,7000][attempt]));
+      }
+    }
+    throw Error("unreachable");
+  };
   expect([200,207]).toContain((await tick()).status());
   const active=()=>db.query("select id,status,payload from public.alerts where business_id=$1 and kind='business_anomaly' and status in ('new','seen') and payload->>'dedupeKey'='sales_decline:cafe'",[own.businessId]).then(r=>r.rows);
   const facts=await db.query("select sum(net_sales_cents) filter(where business_date < $2::date)::int previous,sum(net_sales_cents) filter(where business_date >= $2::date)::int current,count(*) filter(where sales_data_status='actual')::int covered from public.daily_rollups where business_id=$1 and business_date between $3 and $4",[own.businessId,date(-7),start,end]);
@@ -1706,7 +1741,20 @@ test("@home Task16E design baseline observes empty and long Supervisor conversat
       const ctx=await browser.newContext({baseURL:"http://127.0.0.1:3000",serviceWorkers:"block"});
       try{
         const page=await ctx.newPage();
-        await login(page,owner);
+        try{
+          await login(page,owner);
+        }catch(initialFailure){
+          // Only this long-history DESIGN observation may recheck an already
+          // redirected local owner page after late-run Next.js dev hydration.
+          // Authentication and the actual café identity remain mandatory:
+          // a login/onboarding redirect, a wrong café or a second failure fails.
+          const pathname=new URL(page.url()).pathname;
+          if(!pathname.startsWith("/en/")||pathname==="/en/login"||pathname==="/en/onboarding")
+            throw initialFailure;
+          await page.reload({waitUntil:"load"});
+          await expect(page.getByText(owner.name,{exact:true}).first())
+            .toBeVisible({timeout:30_000});
+        }
         // The shared auth helper checks a visible desktop café label; mobile hides it.
         // Verify owner on desktop first, then assert the exact thread URL on each measured navigation.
         await openOwnedPage(page,owner,"?thread="+empty);
@@ -1872,12 +1920,15 @@ test("@home Task16E quiet shell, optional visuals, editable follow-up and mobile
       await page.emulateMedia({reducedMotion:"reduce"});
       expect(await welcome.evaluate(el=>getComputedStyle(el).animationName)).toBe("none");
       await expect(input).toBeVisible();
-      const board=page.getByTestId("chat-start").locator("button[aria-expanded]").first();
-      await expect(board).toHaveAttribute("aria-expanded","false");
-      await board.click();
-      await expect(board).toHaveAttribute("aria-expanded","true");
+      const insights=page.getByRole("button",{name:"Key numbers",exact:true});
+      await expect(insights).toHaveAttribute("aria-expanded","false");
+      await expect(page.getByTestId("chat-start")).toHaveCount(0);
+      await insights.click();
+      await expect(insights).toHaveAttribute("aria-expanded","true");
       await expect(page.getByRole("region",{name:"Key numbers",exact:true})).toBeVisible();
-      await board.click();await expect(board).toHaveAttribute("aria-expanded","false");
+      await insights.click();
+      await expect(insights).toHaveAttribute("aria-expanded","false");
+      await expect(page.getByTestId("chat-start")).toHaveCount(0);
       const controls=page.getByRole("button",{name:"Library, routines and permissions"});
       await controls.click();
       const drawer=page.getByRole("dialog",{name:"Supervisor controls"});
@@ -1902,6 +1953,14 @@ test("@home Task16E quiet shell, optional visuals, editable follow-up and mobile
       await openFixture(thread);
       const answer=page.locator('[data-work-message="'+replyId+'"]');
       await expect(answer).toContainText(text,{timeout:30000});
+      await expect(insights).toHaveAttribute("aria-expanded","false");
+      await expect(page.getByTestId("chat-start")).toHaveCount(0);
+      await expect(page.getByRole("region",{name:"Key numbers",exact:true})).toHaveCount(0);
+      await expect(page.locator("[data-work-status]")).toHaveCount(0);
+      await insights.click();
+      await expect(page.getByRole("region",{name:"Key numbers",exact:true})).toBeVisible();
+      await insights.click();
+      await expect(page.getByTestId("chat-start")).toHaveCount(0);
       const rich=answer.getByTestId("supervisor-rich-presentation");
       await expect(rich.getByTestId("supervisor-rich-chart")).toBeVisible({timeout:30000});
       await rich.locator("details summary").click();
@@ -2233,19 +2292,19 @@ test("@home Task16E stops an acknowledged live view without invoking a cancel or
   const ctx=await browser.newContext({baseURL:"http://127.0.0.1:3000",serviceWorkers:"block"});
   await db.connect();
   try{
-    await db.query("insert into public.ai_threads(id,business_id,owner_user_id,client_request_id,title) values($1,$2,$3,$4,$5)",[thread,owner.businessId,owner.owner.userId,randomUUID(),"Task16E live view fixture"]);
+    await db.query("insert into public.ai_threads(id,business_id,owner_user_id,client_request_id,title) values($1,$2,$3,$4,$5)",[thread,owner.businessId,owner.owner.userId,randomUUID(),"Events · 2026-11-20 · Task16E live view fixture"]);
     const page=await ctx.newPage();await login(page,owner);await openOwnedPage(page,owner,"?thread="+thread);
     let realWrites=0;
     page.on("request",request=>{if(request.method()==="POST"&&new URL(request.url()).pathname.startsWith("/api/ai/"))realWrites++;});
     await page.evaluate(id=>{
-      const original=window.fetch.bind(window),state={opened:false,detached:0,ack:null};
+      const original=window.fetch.bind(window),state={opened:false,detached:0,ack:null,body:null};
       window.__task16eStream=state;
       window.fetch=(request,init)=>{
         const url=new URL(typeof request==="string"?request:request instanceof URL?request.href:request.url,location.href);
         if(url.pathname!=="/api/ai/threads/"+id+"/agent"||init?.method!=="POST")return original(request,init);
         const stream=new ReadableStream({
           start(controller){
-            state.opened=true;
+            state.opened=true;state.body=JSON.parse(init.body);
             state.ack=()=>controller.enqueue(new TextEncoder().encode("event: ack\ndata: "+JSON.stringify({runId:"synthetic-run",mode:"queued"})+"\n\n"));
           },
           cancel(){state.detached++;}
@@ -2254,19 +2313,29 @@ test("@home Task16E stops an acknowledged live view without invoking a cancel or
       };
     },thread);
     const input=page.locator("#supervisor-home-composer");
+    const eventChip=page.getByText("@event Task16E live view fixture · 2026-11-20",{exact:true});
+    await expect(eventChip).toBeVisible();
+    await page.getByRole("button",{name:/remove event context/i}).click();
+    await expect(eventChip).toHaveCount(0);
     await input.fill("Synthetic live stream view check");
     await page.getByRole("button",{name:"Send",exact:true}).click();
     await expect.poll(()=>page.evaluate(()=>window.__task16eStream.opened)).toBe(true);
+    expect(JSON.stringify(await page.evaluate(()=>window.__task16eStream.body))).not.toContain("@event");
+    await expect(page.getByTestId("supervisor-live-progress")).toHaveCount(1);
     const stop=page.getByRole("button",{name:"Stop live view",exact:true});
     await expect(stop).toHaveCount(0);
     await page.evaluate(()=>window.__task16eStream.ack());
     await expect(stop).toBeVisible();
+    await expect(page.getByTestId("supervisor-live-progress")).toHaveCount(1);
+    await expect(eventChip).toHaveCount(0);
     await assertAccessibleControls(page);
     await stop.focus();await page.keyboard.press("Enter");
     await expect.poll(()=>page.evaluate(()=>window.__task16eStream.detached)).toBe(1);
     await expect(stop).toHaveCount(0);
     await expect(page.getByText("Live view stopped. Saved work may continue; check Work for its status.",{exact:true})).toBeVisible();
     await expect(input).toBeEnabled();
+    await expect(page.getByTestId("supervisor-live-progress")).toHaveCount(0);
+    await expect(eventChip).toHaveCount(0);
     expect(realWrites).toBe(0);
     const records=await db.query("select count(*)::int as n from public.ai_messages where thread_id=$1",[thread]);
     expect(records.rows[0].n).toBe(0);

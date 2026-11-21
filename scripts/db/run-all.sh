@@ -288,9 +288,24 @@ pull_plain_image() {
     echo "Already downloaded: $plain_image"
     return 0
   fi
-  local attempt
+  local attempt pull_log="$work/postgres-image-pull.log"
   for attempt in 1 2 3; do
-    docker pull -q "$plain_image" && return 0
+    if docker pull -q "$plain_image" >"$pull_log" 2>&1; then
+      return 0
+    fi
+    cat "$pull_log"
+    # GitHub-hosted runners share public ECR's unauthenticated data quota.
+    # Use the same Docker Official PostgreSQL 16 image from its source
+    # registry only for a registry quota response. Do not skip the plain lane.
+    if grep -Eqi 'Data limit exceeded|toomanyrequests' "$pull_log"; then
+      local fallback_image="postgres:16"
+      echo "Public ECR quota reached; checking Docker Official PostgreSQL 16 on Docker Hub"
+      if docker image inspect "$fallback_image" >/dev/null 2>&1 ||
+         docker pull -q "$fallback_image"; then
+        plain_image="$fallback_image"
+        return 0
+      fi
+    fi
     sleep $((attempt * 5))
   done
   return 1

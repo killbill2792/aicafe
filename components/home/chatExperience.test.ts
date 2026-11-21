@@ -1,4 +1,7 @@
 import { describe, expect, it } from "vitest";
+import { renderToStaticMarkup } from "react-dom/server";
+import { createElement } from "react";
+import ChatJobProgress from "./ChatJobProgress";
 import en from "@/messages/en.json";
 import es from "@/messages/es.json";
 import ar from "@/messages/ar.json";
@@ -32,6 +35,13 @@ describe("chat experience helpers", () => {
       expect(line).not.toContain("\\n");
     }
   });
+  it("renders one real progress status on one visible line without erasing full accessible text",()=>{
+    const html=renderToStaticMarkup(createElement(ChatJobProgress,
+      {locale:"en",acknowledged:true,steps:[{tool:"get_sales",agent:"alex"}]}));
+    expect(html.match(/role="status"/g)).toHaveLength(1);
+    expect(html).toContain('class="min-w-0 truncate"');
+    expect(html).toContain(copy.tools.get_sales);
+  });
   it("has a one-line failure for every code and a generic fallback", () => {
     for (const code of ["timeout", "agent_busy", "attempts_exhausted", "reply_storage_failed"])
       expect(failureLine(code, copy)).toBe((copy.failures as Record<string, string>)[code]);
@@ -44,7 +54,7 @@ describe("chat experience helpers", () => {
       { tool: "unknown_tool", agent: "olivia" }, { tool: "unknown_tool", agent: "nobody" }] as AgentJobStep[], copy);
     expect(lines).toEqual([copy.tools.get_sales, copy.agents.olivia, copy.agents.supervisor]);
     const many = Array.from({ length: 10 }, (_, i) => ({ tool: i % 2 ? "get_sales" : "get_profit", agent: "alex" as const }));
-    expect(progressLines(many, copy)).toHaveLength(6);
+    expect(progressLines(many, copy)).toEqual([copy.tools.get_profit, copy.tools.get_sales]);
   });
   it("knows which owner messages are answered or still being worked on", () => {
     const reply = { role: "supervisor", grounding: { ownerMessageId: "a", agentMetadata: { absorbedOwnerMessageIds: ["b", 3] } } };

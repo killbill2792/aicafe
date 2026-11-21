@@ -70,6 +70,10 @@
   "deleteConfirm": "Delete this routine? Future runs will stop, but its audit history will be retained.",
   "saved": "Routine updated.",
   "deleteSaved": "Routine deleted.",
+  "created": "Routine created",
+  "updated": "Routine updated",
+  "pausedSaved": "Routine paused",
+  "resumedSaved": "Routine resumed",
   "saveFailed": "Could not verify the routine change. Refresh and try again."
 },
   "Maintenance": {
