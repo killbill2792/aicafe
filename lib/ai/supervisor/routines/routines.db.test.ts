@@ -249,6 +249,24 @@ describe("U4 migrated model-objective and autonomous Watch SQL contract",()=>{
       expect(await call(worker,"u4_routine_lease_active",[
         business,routineId,first.run_id,randomUUID(),
       ])).toBe(false);
+      // U3 optional SQL research has a dedicated aggregate-only U4 ticket.
+      // It cannot impersonate an interactive owner or an incident work lease.
+      const scopeArgs=[business,ownerId,threadId,
+        "routine",null,null,first.run_id,first.lease_token];
+      const routineTicket=await call(worker,"u3_issue_research_scope",scopeArgs);
+      expect(typeof routineTicket).toBe("string");
+      expect(routineTicket.length).toBeGreaterThan(75);
+      await expect(call(owner,"u3_issue_research_scope",scopeArgs))
+        .rejects.toThrow();
+      await expect(call(worker,"u3_issue_research_scope",[
+        business,randomUUID(),threadId,"routine",
+        null,null,first.run_id,first.lease_token,
+      ])).rejects.toThrow();
+      await expect(call(worker,"u3_issue_research_scope",[
+        business,ownerId,threadId,"routine",
+        null,null,first.run_id,randomUUID(),
+      ])).rejects.toThrow();
+
       // A REAL OS child process commits a registered tool checkpoint then
       // is deliberately killed with SIGKILL. Reclaim the original occurrence
       // from a fresh service worker; never invent a second work identity.
