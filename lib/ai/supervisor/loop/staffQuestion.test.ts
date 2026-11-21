@@ -3,6 +3,8 @@ import {staffQuestionInput,ownerStaffQuestionDecision} from "@/lib/staffCommunic
 import {staffQuestionCapability,staffQuestionCapabilityId} from "./staffQuestion.server";
 import {simulationOwnerReader} from "./simulationOwner.server";
 import {createAdminSupabaseClient} from "@/lib/supabase/admin";
+import {staffQuestionTools} from "@/lib/ai/agent/tools/staffQuestion";
+import type {AgentToolContext} from "@/lib/ai/agent/tools";
 vi.mock("server-only",()=>({}));
 vi.mock("./simulationOwner.server",()=>({simulationOwnerReader:vi.fn()}));
 vi.mock("@/lib/supabase/admin",()=>({createAdminSupabaseClient:vi.fn()}));
@@ -48,6 +50,16 @@ describe("owner-click-only proactive worker question",()=>{
   expect(ownerStaffQuestionDecision.safeParse({action:"answer",proposalId:thread,revision:1,answer:"40"}).success).toBe(false);
   expect(ownerStaffQuestionDecision.safeParse({action:"ask",proposalId:thread,revision:1,
    answer:"secret"}).success).toBe(false);
+ });
+ it("records only an existing saved owner chat answer and never accepts model-supplied answer text",async()=>{
+  const save=vi.fn().mockResolvedValue({proposalId:thread,ownerMessageId:owner,employeeContacted:false});
+  const ctx={staffQuestionAnswer:save} as unknown as AgentToolContext;
+  const input={proposalId:thread,revision:1};
+  const result=await staffQuestionTools.record_staff_question_owner_answer.execute(input,ctx);
+  expect(save).toHaveBeenCalledExactlyOnceWith(thread,1);
+  expect(result).toMatchObject({saved:true,ownerReported:true,independentlyVerified:false,employeeContacted:false});
+  await expect(staffQuestionTools.record_staff_question_owner_answer.execute({...input,answer:"invented"},ctx)).rejects.toThrow();
+  expect((await staffQuestionTools.record_staff_question_owner_answer.execute(input,{} as AgentToolContext)).missing).toEqual(["owner_answer_not_recorded"]);
  });
  it("creates an inert source- and employee-scoped draft with no messaging effect",async()=>{
   const db=dbRows();
