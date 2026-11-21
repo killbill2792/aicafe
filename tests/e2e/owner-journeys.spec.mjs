@@ -27,7 +27,7 @@ async function assertAccessibleControls(page){
 
 test("@home Task16A authenticated mobile owner views library/routines/permissions and revokes a scoped mandate",async({browser})=>{
   // Two authenticated cafés, multiple database mutations, and two full browser reloads.
-  test.setTimeout(180_000);
+  test.setTimeout(220_000);
   const owner=seededCafe(0),foreign=seededCafe(1);
   const id={thread:randomUUID(),watchShell:randomUUID(),routine:randomUUID(),active:randomUUID(),old:randomUUID()};
   const db=new pg.Client({host:"127.0.0.1",port:54322,database:"postgres",
@@ -265,9 +265,22 @@ test("@home Task16A authenticated mobile owner views library/routines/permission
       data:{action:"delete",routineId:id.routine,revision:3},
     });
     expect(staleDelete.status()).not.toBe(200);
-    await deletionPage.reload({waitUntil:"domcontentloaded"});
-    await deletionPage.getByRole("button",{name:"Library, routines and permissions"}).click();
-    const afterReload=deletionPage.getByRole("dialog",{name:"Supervisor controls"});
+    console.info("[U4 E2E] SQL revocation revision 4 and stale delete rejection verified");
+    // Verify post-reload absence in an independent signed-in page on the
+    // ordinary owner route. Reusing a page whose thread navigation is still
+    // pending can leave the drawer mount unhydrated and a click inert.
+    const persistedVerifyPage=await ctx.newPage();
+    await openOwnedPage(persistedVerifyPage,owner,"");
+    await persistedVerifyPage.reload({waitUntil:"domcontentloaded"});
+    const reopenedControls=persistedVerifyPage.getByRole("button",
+      {name:"Library, routines and permissions"});
+    await expect.poll(()=>reopenedControls.evaluate(button=>
+      Object.getOwnPropertyNames(button).some(key=>
+        key.startsWith("__reactProps$")&&typeof button[key]?.onClick==="function")),
+    {timeout:30_000}).toBe(true);
+    await reopenedControls.click();
+    const afterReload=persistedVerifyPage.getByRole("dialog",{name:"Supervisor controls"});
+    await expect(afterReload).toBeVisible({timeout:20_000});
     await afterReload.getByRole("button",{name:"Routines",exact:true}).click();
     await expect(afterReload.getByText("Daily source check")).toHaveCount(0);
     const deletedInDb=await savedState();
@@ -754,6 +767,9 @@ test("@home owner uploads and reselects a private receipt while another café ca
 });
 
 test("@staff seeded owner can open actual schedule and Team view", async ({page}) => {
+  // The 24-journey disposable dev server may compile staff after login;
+  // keep the real authenticated page, Team click and seeded SQL assertions.
+  test.setTimeout(90_000);
   const own = seededCafe(0);
   await login(page, own);
   await openOwnedPage(page, own, "staff");
