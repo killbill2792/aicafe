@@ -33,7 +33,7 @@ import {investigationPrompt,universalInvestigationPrompt,investigationReadTools,
   customerInvestigationTools,maintenanceInvestigationTools,supplierResearchInvestigationTools,
   verifyInvestigationTurn,verifyUniversalInvestigationTurn,
   unsupportedExternalEffectClaim,type InvestigationCheckpoint,type SourceSynopsis} from "./investigation";
-import {u3SqlConfigured} from "@/lib/ai/agent/tools/u3SqlResearch.server";
+
 
 type Claimed={
   business_id:string;owner_user_id:string;thread_id:string;
