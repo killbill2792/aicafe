@@ -1,4 +1,7 @@
-import {readFileSync} from "node:fs";
+import {readFileSync,existsSync,mkdtempSync,rmSync} from "node:fs";
+import {tmpdir} from "node:os";
+import {join} from "node:path";
+import {setTimeout as sleep} from "node:timers/promises";
 import {randomUUID} from "node:crypto";
 import {spawn} from "node:child_process";
 import {once} from "node:events";
@@ -307,46 +310,64 @@ describe("U4 migrated model-objective and autonomous Watch SQL contract",()=>{
         null,null,first.run_id,randomUUID(),
       ])).rejects.toThrow();
 
-      // A REAL OS child process commits a registered tool checkpoint then
-      // is deliberately killed with SIGKILL. Reclaim the original occurrence
-      // from a fresh service worker; never invent a second work identity.
+      // The child runs the ACTUAL registered runAgentTurn and get_sales
+      // against this disposable source row with a recorded (free) provider.
+      // Kill only after its real tool result committed the production U4
+      // checkpoint. No direct SQL call pretending to be a model/tool event.
+      await admin.query("insert into public.daily_rollups("+
+        "business_id,business_date,net_sales_cents,orders_count,drinks_count,"+
+        "ingredients_cents,staff_wages_cents,staff_tax_cents,card_fees_cents,"+
+        "voids_cents,sales_data_status) "+
+        "values($1,'2026-11-20',4875,9,9,1200,0,0,0,0,'actual')",
+        [business]);
       const originalLease=first.lease_token;
-      const child=spawn(process.execPath,["scripts/acceptance/u4-killed-worker.mjs"],{
-        cwd:process.cwd(),
-        env:{...process.env,SUPERVISOR_ROUTINES_DB_SANDBOX_ONLY:"1",
-          U4_CRASH_BUSINESS:business,U4_CRASH_ROUTINE:routineId,
-          U4_CRASH_RUN:first.run_id,U4_CRASH_LEASE:first.lease_token},
-        stdio:["ignore","pipe","pipe"],
-      });
-      const checkpointObserved=await new Promise<void>((resolve,reject)=>{
-        let output="";
-        const timer=setTimeout(()=>{child.kill("SIGKILL");
-          reject(Error("u4_real_process_checkpoint_timeout"));},15_000);
-        child.stdout.on("data",(chunk:Buffer)=>{
-          output+=chunk.toString("utf8");
-          if(output.includes("U4_PROCESS_CHECKPOINT_COMMITTED")){
-            clearTimeout(timer);resolve();
-          }
+      const directory=mkdtempSync(join(tmpdir(),"u4-actual-loop-"));
+      const marker=join(directory,"checkpoint.txt");
+      const startChild=(mode:"crash"|"resume",token:string)=>{
+        const child=spawn(process.execPath,[
+          "node_modules/vitest/vitest.mjs","run",
+          "lib/ai/supervisor/routines/u4ActualLoopProcess.test.ts",
+          "--reporter=dot","--maxWorkers=1","--fileParallelism=false",
+        ],{
+          cwd:process.cwd(),
+          env:{...process.env,SUPERVISOR_ROUTINES_DB_SANDBOX_ONLY:"1",
+            SUPERVISOR_OPENAI_MODEL:"gpt-6-luna",
+            U4_ACTUAL_LOOP_CHILD:"1",U4_PROCESS_MODE:mode,
+            U4_PROCESS_MARKER:marker,
+            U4_CRASH_BUSINESS:business,U4_CRASH_ROUTINE:routineId,
+            U4_CRASH_RUN:first.run_id,U4_CRASH_LEASE:token,
+            U4_CRASH_OWNER:ownerId,U4_CRASH_THREAD:threadId},
+          stdio:["ignore","pipe","pipe"],
         });
-        child.once("error",error=>{clearTimeout(timer);reject(error);});
-        child.once("exit",(code,signal)=>{
-          if(!output.includes("U4_PROCESS_CHECKPOINT_COMMITTED")){
-            clearTimeout(timer);
-            reject(Error("u4_real_worker_died_before_checkpoint:"+code+":"+signal));
-          }
-        });
-      });
-      void checkpointObserved;
-      child.kill("SIGKILL");
-      const [crashCode,crashSignal]=await once(child,"exit");
-      expect(crashCode).toBeNull();
-      expect(crashSignal).toBe("SIGKILL");
+        let diagnostics="";
+        for(const stream of [child.stdout,child.stderr])
+          stream.on("data",(chunk:Buffer)=>{
+            diagnostics=(diagnostics+chunk.toString("utf8")).slice(-4500);
+          });
+        return {child,diagnostics:()=>diagnostics};
+      };
+      try{
+        const crashed=startChild("crash",originalLease);
+        const deadline=Date.now()+45_000;
+        while(!existsSync(marker)&&Date.now()<deadline&&crashed.child.exitCode===null)
+          await sleep(80);
+        if(!existsSync(marker)){
+          crashed.child.kill("SIGKILL");
+          throw Error("u4_actual_registered_tool_checkpoint_timeout:"+
+            crashed.diagnostics());
+        }
+        expect(readFileSync(marker,"utf8")).toBe("tool_complete_committed\n");
+        crashed.child.kill("SIGKILL");
+        const [crashCode,crashSignal]=await once(crashed.child,"exit");
+        expect(crashCode).toBeNull();
+        expect(crashSignal).toBe("SIGKILL");
+      }finally{rmSync(directory,{recursive:true,force:true});}
       const observed=await admin.query("select u4_checkpoint,run_id,state,attempts "+
         "from public.supervisor_routine_occurrences where business_id=$1 and routine_id=$2 "+
         "and run_id=$3",[business,routineId,first.run_id]);
       expect(observed.rows).toHaveLength(1);
       expect(observed.rows[0].u4_checkpoint).toMatchObject({
-        lastStage:"tool_start",lastTool:"get_sales",
+        lastStage:"tool_complete",
       });
       expect(observed.rows[0]).toMatchObject({run_id:first.run_id,state:"running"});
       expect(Number(observed.rows[0].attempts)).toBe(1);
@@ -375,25 +396,74 @@ describe("U4 migrated model-objective and autonomous Watch SQL contract",()=>{
         business,routineId,resumed.run_id,resumed.lease_token,
       ])).toBe(true);
       first=resumed;
-      const proof={sources:[{source:"cafe_state",identifier:"get_sales",asOf:"2026-11-20"}],
-        sourceCount:1,quality:"verified",missing:[],externalEffects:"not_attempted"};
-      const posted=await call(worker,"u4_publish_objective_report",[
-        business,routineId,first.run_id,first.lease_token,
-        "A verified café observation needs owner review.","attention",proof,new Date().toISOString(),
-      ]);
-      expect(posted).toBe(true);
+      // Resume the SAME work identity on another real process. It reads the
+      // checkpoint only as historical progress, independently runs get_sales
+      // again, reserves model calls against the same owner quota, and posts
+      // through the production U4 report RPC.
+      const resumeDirectory=mkdtempSync(join(tmpdir(),"u4-resumed-loop-"));
+      const resumeMarker=join(resumeDirectory,"checkpoint.txt");
+      const resumeProcess=spawn(process.execPath,[
+        "node_modules/vitest/vitest.mjs","run",
+        "lib/ai/supervisor/routines/u4ActualLoopProcess.test.ts",
+        "--reporter=dot","--maxWorkers=1","--fileParallelism=false",
+      ],{
+        cwd:process.cwd(),
+        env:{...process.env,SUPERVISOR_ROUTINES_DB_SANDBOX_ONLY:"1",
+          SUPERVISOR_OPENAI_MODEL:"gpt-6-luna",
+          U4_ACTUAL_LOOP_CHILD:"1",U4_PROCESS_MODE:"resume",
+          U4_PROCESS_MARKER:resumeMarker,
+          U4_CRASH_BUSINESS:business,U4_CRASH_ROUTINE:routineId,
+          U4_CRASH_RUN:first.run_id,U4_CRASH_LEASE:first.lease_token,
+          U4_CRASH_OWNER:ownerId,U4_CRASH_THREAD:threadId},
+        stdio:["ignore","pipe","pipe"],
+      });
+      let resumedDiagnostics="";
+      for(const stream of [resumeProcess.stdout,resumeProcess.stderr])
+        stream.on("data",(chunk:Buffer)=>{
+          resumedDiagnostics=(resumedDiagnostics+chunk.toString("utf8")).slice(-4500);
+        });
+      let resumeCode:number|null=null;
+      let resumeSignal:NodeJS.Signals|null=null;
+      try{
+        [resumeCode,resumeSignal]=await Promise.race([
+          once(resumeProcess,"exit") as Promise<[number|null,NodeJS.Signals|null]>,
+          sleep(65_000).then(()=>{
+            resumeProcess.kill("SIGKILL");
+            throw Error("u4_actual_loop_resume_timeout:"+resumedDiagnostics);
+          }),
+        ]);
+        expect(resumeCode,resumedDiagnostics).toBe(0);
+        expect(resumeSignal).toBeNull();
+        expect(readFileSync(resumeMarker,"utf8")).toBe("resumed_and_published\n");
+      }finally{rmSync(resumeDirectory,{recursive:true,force:true});}
       expect(await call(worker,"u4_publish_objective_report",[
         business,routineId,first.run_id,first.lease_token,
-        "A duplicate report.","attention",proof,new Date().toISOString(),
+        "A duplicate report.","attention",{
+          sources:[],sourceCount:0,quality:"partial",missing:[],
+          externalEffects:"not_attempted",
+        },new Date().toISOString(),
       ])).toBe(false);
+      const actualUsage=await admin.query("select status,model_call_count "+
+        "from public.supervisor_system_usage_events "+
+        "where business_id=$1 and owner_user_id=$2 "+
+        "and source_type='routine' and source_id=$3",
+        [business,ownerId,first.run_id]);
+      // The pre-death provider call remains charged. Recovery cannot start
+      // a new owner quota, reset its original run, or reuse a prior lease.
+      expect(actualUsage.rows.length).toBeGreaterThanOrEqual(3);
+      expect(actualUsage.rows.every(row=>row.status==="completed"&&
+        Number(row.model_call_count)===1)).toBe(true);
       const audited=await admin.query("select state,receipt_ref,u4_result from public.supervisor_routine_occurrences where business_id=$1 and run_id=$2",[business,first.run_id]);
       expect(audited.rows[0].state).toBe("completed");
       expect(audited.rows[0].receipt_ref).toBe("u4-verified:"+first.run_id);
-      expect(audited.rows[0].u4_result).toMatchObject({attention:"attention",proof});
+      expect(audited.rows[0].u4_result).toMatchObject({
+        attention:"attention",proof:{sourceCount:1,quality:"verified",
+          externalEffects:"not_attempted"},
+      });
       const ownerReports=await admin.query("select grounding,structured_content from public.ai_messages where business_id=$1 and owner_user_id=$2 and role='supervisor' and grounding->'agentMetadata'->>'u4Kind'='routine'",[business,ownerId]);
       expect(ownerReports.rows).toHaveLength(1);
       expect(ownerReports.rows[0].grounding.agentMetadata.runId).toBe(first.run_id);
-      expect(ownerReports.rows[0].structured_content[0].text).toContain("verified café");
+      expect(ownerReports.rows[0].structured_content[0].text).toContain("recorded sales");
     }finally{
       await owner?.end();await worker?.end();
       await admin.query("delete from public.businesses where id=$1",[business]);
