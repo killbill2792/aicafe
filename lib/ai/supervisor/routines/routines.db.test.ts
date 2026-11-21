@@ -62,6 +62,10 @@ describe("routine SQL security contract",()=>{
     try{
       await insertOwner(ownerId,business,threadId);
       await insertOwner(otherOwner,otherBusiness,otherThread);
+      // A later owner reply only fills in scheduling; it must NOT become the
+      // entire persisted research objective or lose the original owner source.
+      await admin.query("insert into public.ai_messages(id,business_id,thread_id,owner_user_id,author_user_id,role,content_type,text_content,client_message_id) values ($1,$2,$3,$4,$4,'owner','text',$5,$6)",
+        [scheduleAnswerId,business,threadId,ownerId,"Every Monday at nine.",randomUUID()]);
       owner=await connect("owner",ownerId);
       workerA=await connect("service");
       workerB=await connect("service");
@@ -178,6 +182,7 @@ describe("U4 migrated model-objective and autonomous Watch SQL contract",()=>{
     const admin=await connect("postgres");
     const business=randomUUID(),ownerId=randomUUID(),threadId=randomUUID();
     const ownerMessageId=randomUUID(),editMessageId=randomUUID(),goalEditMessageId=randomUUID(),routineId=randomUUID();
+    const scheduleAnswerId=randomUUID(),clarifiedRoutineId=randomUUID();
     let owner:Client|undefined,worker:Client|undefined;
     try{
       await admin.query("insert into auth.users(id,instance_id,aud,role,email,encrypted_password,created_at,updated_at) values ($1,'00000000-0000-0000-0000-000000000000','authenticated','authenticated',$2,'',now(),now())",
@@ -200,6 +205,22 @@ describe("U4 migrated model-objective and autonomous Watch SQL contract",()=>{
       expect(saved).toMatchObject({id:routineId,execution_mode:"objective",
         objective_text:original,objective_source_message_id:ownerMessageId,revision:1});
       expect((await call(owner,"u4_create_objective_routine",make)).id).toBe(routineId);
+      const clarifiedArgs=[business,ownerId,threadId,"Monday research",
+        "weekly",[1],"09:00",clarifiedRoutineId,scheduleAnswerId,ownerMessageId];
+      const clarified=await call(owner,"u4_create_objective_routine",clarifiedArgs);
+      expect(clarified).toMatchObject({
+        id:clarifiedRoutineId,execution_mode:"objective",
+        objective_source_message_id:ownerMessageId,
+        objective_text:original+"\\nOwner schedule clarification: Every Monday at nine.",
+      });
+      expect((await call(owner,"u4_create_objective_routine",clarifiedArgs)).id)
+        .toBe(clarifiedRoutineId);
+      // A fabricated or foreign goal source is not a valid replacement for
+      // the original authenticated, chronological same-thread owner request.
+      await expect(call(owner,"u4_create_objective_routine",[
+        business,ownerId,threadId,"Forged goal","weekly",[1],"09:00",
+        randomUUID(),scheduleAnswerId,randomUUID(),
+      ])).rejects.toThrow();
       await expect(call(owner,"u4_create_objective_routine",
         [business,ownerId,threadId,"Forged","daily",[],"08:30",randomUUID(),randomUUID()]))
         .rejects.toThrow();
