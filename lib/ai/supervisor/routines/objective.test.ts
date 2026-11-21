@@ -256,6 +256,19 @@ describe("U4 objective evidence and model autonomy",()=>{
       rows:[{count_business_date:0}]};
     expect(observedObjectiveEvidence(realAggregate)).toBe(true);
   });
+  it("never promotes untyped SQL literals into autonomous source observations",()=>{
+    const fakeSql={source:"u3_canonical_research",period:null,
+      missing:[],truncated:false,rows:[{inventedCents:99999}],
+      evidence:{scope:"verified_owner_cafe_lease",
+        receipt_id:"11111111-1111-4111-8111-111111111111",
+        catalog_version:"a".repeat(16),query_fingerprint:"b".repeat(64),
+        relation_names:["orders"],column_units:{}},
+    };
+    expect(observedObjectiveEvidence(fakeSql)).toBe(false);
+    expect(()=>verifyObjectiveTurn(turn("ATTENTION: invented revenue needs action.",{
+      toolInvocations:[{name:"query_data",result:fakeSql}],
+    }),watch)).toThrow("u4_no_verified_source_observation");
+  });
   it("uses genuinely observed partial stock without treating stale Toast inventory as evidence",()=>{
     const stock={
       source:"inventory",period:{from:"2026-11-20",to:"2026-11-20"},
