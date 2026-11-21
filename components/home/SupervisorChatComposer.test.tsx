@@ -53,13 +53,13 @@ function startHtml(enabled=true) {
 }
 
 describe("modern Supervisor conversation shell", () => {
-  it("prioritizes the greeting, all starters, and a single expandable business summary",()=>{
+  it("prioritizes the clean greeting and provides a single optional business summary",()=>{
     const html=startHtml();
     expect(html).toContain("What can I help with today?");
     expect(html).toContain("Ask about your café.");
-    expect(html).toContain("Today: Sales $300 · You keep $75 · Nothing needs you");
-    for(const text of ["How are we doing today?","What needs my attention?",
-      "Any staff issues?","Try a drink price experiment"])expect(html).toContain(text);
+    expect(html).not.toContain("Today: Sales $300 · You keep $75 · Nothing needs you");
+    expect(html).not.toContain('data-testid="chat-start"');
+    expect(html).toContain('aria-label="Key numbers"');
     expect(html).not.toContain('data-agent-id=');
     expect(html).toContain('aria-expanded="false"');
     expect(html).toContain('role="log"');
@@ -73,13 +73,14 @@ describe("modern Supervisor conversation shell", () => {
   });
   it("keeps the existing board available without a second snapshot or standalone experiment",()=>{
     const html=startHtml();
-    expect(html.match(/data-testid="chat-start"/g)).toHaveLength(1);
-    expect(html).not.toContain('aria-label="Key numbers"');
+    expect(html).not.toContain('data-testid="chat-start"');
+    expect(html).toContain('aria-label="Key numbers"');
     expect(html).not.toContain("Today snapshot");
     expect(html).not.toContain("No sales recorded yet");
     expect(html).toContain('aria-label="Dictate"');
     const composer=readFileSync("components/home/SupervisorChatComposer.tsx","utf8");
-    expect(composer).toContain("hasMessages={false} expanded={startExpanded}");
+    expect(composer).toContain('{startExpanded && <aside id="supervisor-chat-insights"');
+    expect(composer).toContain("hasMessages={hasChatMessages} expanded onToggle");
     expect(composer).not.toContain("{enabled&&threadId&&experimentCopy&&<SupervisorExperiment");
   });
   it("uses decorative short café motion with a static fallback and reduced motion",()=>{
@@ -94,7 +95,7 @@ describe("modern Supervisor conversation shell", () => {
     expect(css).toContain("supervisor-brew-steam 1.4s ease-in-out 3");
     expect(css).toContain(".supervisor-steam, .supervisor-welcome-motion { animation: none !important; }");
   });
-  it("explains unavailable chat while keeping its four starters disabled",()=>{
+  it("explains unavailable chat while keeping the input and actions disabled",()=>{
     const html=startHtml(false);
     expect(html).toContain('role="status"');
     expect(html).toContain("Chat unavailable");
@@ -136,8 +137,9 @@ describe("modern Supervisor conversation shell", () => {
     expect(source).toContain("transcriptScrollTarget({");
     expect(source).toContain("prependAnchor.current");
     expect(source).toContain("openingThread.current");
-    expect(source).toContain("hasChatMessages&&<div");
-    expect(source).toContain("setStartExpanded(v=>!v)");
+    expect(source).toContain('{startExpanded && <aside id="supervisor-chat-insights"');
+    expect(source).not.toContain("chatStartPromise&&hasChatMessages&&<div");
+    expect(source).toContain("setStartExpanded(open=>!open)");
     expect(source).not.toContain("responsiveTailSpace");
     expect(source).not.toContain("tailSpacer");
     expect(source).toContain('href="/operations"');

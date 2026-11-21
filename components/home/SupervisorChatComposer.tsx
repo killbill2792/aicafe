@@ -1266,7 +1266,7 @@ export default function SupervisorChatComposer({
       <div ref={messageContent} className="mx-auto flex min-h-full w-full max-w-[46rem] min-w-0 flex-col items-stretch justify-start gap-5">
       {workNotice&&<p role="status" className="text-sm text-ink-muted">{workNotice}</p>}
       {!hasChatMessages&&startReady&&!threadUnavailable&&<SupervisorWelcome heading={copy.emptyHeading} intro={copy.emptyIntro}/>}
-      {!chatStartPromise&&!chatStartData&&!hasChatMessages&&!enabled&&<p role="status" className="text-[17px] text-ink-muted">{copy.unavailable}</p>}
+      {!hasChatMessages&&!enabled&&<p role="status" className="text-[17px] text-ink-muted">{copy.unavailable}</p>}
       {nextOffset !== null && <button type="button" onClick={() => void loadOlder()} disabled={loading||offline}
         className="mx-auto flex min-h-12 items-center gap-2 rounded-xl px-4 text-[15px] font-semibold text-ink underline hover:bg-surface2">
         <Clock3 size={18} aria-hidden="true" /> {copy.more}
