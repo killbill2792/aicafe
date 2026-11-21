@@ -14,7 +14,7 @@ import {readClaimedStaffCoordination} from "@/lib/staffCoordination/cases.server
 import {notifyOwner} from "@/lib/operating/notifyOwner.server";
 import {getConnectorAccount,allowsGmail} from "@/lib/connectors/registry.server";
 import {gmailSearch,gmailListLabels,gmailRead,gmailReadThread,gmailReadAttachment} from "@/lib/connectors/gmail/provider.server";
-import {canonicalEvidenceDomain,investigationReadTools,unsupportedExternalEffectClaim} from "./investigation";
+import {canonicalEvidenceDomain,canonicalQuerySourceFamily,investigationReadTools,unsupportedExternalEffectClaim} from "./investigation";
 import {meteredInvestigationProvider} from "./investigationUsage.server";
 import type {RoutineRecord} from "./contracts";
 import type {ClaimedRoutine} from "./repository.server";
@@ -165,14 +165,8 @@ export function verifyObjectiveTurn(turn:AgentTurn,routine:RoutineRecord):Object
   // corroboration. Reuse the incident investigator's conservative lineage.
   const domainOf=(call:(typeof reads)[number])=>{
     if(call.result.source==="gmail")return "unverified_external_mail";
-    if(call.name==="query_data"){
-      const view=typeof call.result.view==="string"?call.result.view:"";
-      if(["cv_inventory","cv_usage_variance"].includes(view))return "stock_and_inventory";
-      if(["cv_labor","cv_payroll"].includes(view))return "attendance_and_labor";
-      if(view==="cv_expenses")return "recorded_expenses";
-      if(view==="cv_bills")return "configured_recurring_bills";
-      if(view==="cv_events")return "verified_saved_local_events";
-    }
+    if(call.name==="query_data")
+      return canonicalQuerySourceFamily(call.result.view);
     return canonicalEvidenceDomain[call.name as AgentToolName]??
       "other:"+String(call.result.source).slice(0,80);
   };
