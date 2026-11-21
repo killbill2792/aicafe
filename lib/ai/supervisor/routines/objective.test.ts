@@ -25,6 +25,18 @@ vi.mock("./investigationUsage.server",()=>({
     provider,problem:()=>null,
   })),
 }));
+vi.mock("@/lib/connectors/registry.server",()=>({
+  getConnectorAccount:vi.fn(async()=>null),
+  allowsGmail:vi.fn((account:unknown,permission:string)=>
+    !!account&&permission==="read"&&(account as {read?:boolean}).read===true),
+}));
+vi.mock("@/lib/connectors/gmail/provider.server",()=>({
+  gmailSearch:vi.fn(async()=>({messages:[{id:"external-gmail-id"}]})),
+  gmailListLabels:vi.fn(async()=>({labels:[]})),
+  gmailRead:vi.fn(async()=>({message:{id:"external-gmail-id"}})),
+  gmailReadThread:vi.fn(async()=>({messages:[{id:"external-gmail-id"}]})),
+  gmailReadAttachment:vi.fn(async()=>({filename:"vendor.csv",rows:[{value:4}]})),
+}));
 vi.mock("@/lib/operating/notifyOwner.server",()=>({
   notifyOwner:vi.fn(async(_db,_options,write)=>({
     decision:"posted",result:await write(),
@@ -33,8 +45,10 @@ vi.mock("@/lib/operating/notifyOwner.server",()=>({
 
 import {runAgentTurn} from "@/lib/ai/agent/loop.server";
 import {verifyObjectiveTurn,executeClaimedObjective,objectiveReadTools,
-  observedObjectiveEvidence,routineObjectiveCheckpoint} from "./objective.server";
+  observedObjectiveEvidence,routineObjectiveCheckpoint,watchReadTools} from "./objective.server";
 import {notifyOwner} from "@/lib/operating/notifyOwner.server";
+import {getConnectorAccount} from "@/lib/connectors/registry.server";
+import {gmailSearch} from "@/lib/connectors/gmail/provider.server";
 
 const identifier="11111111-1111-4111-8111-111111111111";
 const objective={
@@ -68,6 +82,11 @@ describe("U4 objective evidence and model autonomy",()=>{
     expect(objectiveReadTools).not.toContain("manage_routine");
     expect(objectiveReadTools).not.toContain("propose_price_change");
     expect(objectiveReadTools).not.toContain("propose_supplier_purchase_order");
+    expect(objectiveReadTools).toContain("search_gmail");
+    expect(objectiveReadTools).toContain("read_gmail");
+    expect(watchReadTools).not.toContain("search_gmail");
+    expect(watchReadTools).not.toContain("read_gmail");
+    expect(watchReadTools).not.toContain("read_gmail_attachment");
   });
   it("accepts any real source read instead of forcing two hardcoded tools",()=>{
     const result=verifyObjectiveTurn(turn("Sales context suggests reviewing staffing."),objective);
@@ -97,6 +116,68 @@ describe("U4 objective evidence and model autonomy",()=>{
     expect(()=>verifyObjectiveTurn(turn("ATTENTION: data unavailable",{
       endReason:"provider_failed",
     }),watch)).toThrow("u4_model_result_unverified");
+  });
+});
+describe("U4 owner-only connector capability and independent mailbox revocation",()=>{
+  it("counts a real provider message identity as external source evidence, not canonical money",()=>{
+    expect(observedObjectiveEvidence({
+      source:"gmail",period:null,missing:[],message:{id:"vendor-msg-987654"},
+    } as never)).toBe(true);
+    expect(observedObjectiveEvidence({
+      source:"gmail",period:null,missing:[],message:{id:"x"},
+    } as never)).toBe(false);
+  });
+  it("reads only a separately consented owner mailbox and marks its proof partial",async()=>{
+    vi.mocked(getConnectorAccount).mockResolvedValue({
+      id:"account-a",generation:1,provider_subject:"subject-a",read:true,
+    } as never);
+    try{
+      vi.mocked(runAgentTurn).mockImplementationOnce(async args=>{
+        const gmail=args.context.gmail;
+        expect(gmail).toBeDefined();
+        const mail=await gmail!.search("supplier replies",3);
+        expect(mail).toMatchObject({messages:[{id:"external-gmail-id"}]});
+        return turn("Review these supplier claims, verify before payment.",{
+          toolInvocations:[{name:"search_gmail",result:{
+            source:"gmail",period:null,missing:[],messages:[{id:"external-gmail-id"}],
+          }}],
+        });
+      });
+      const rpc=vi.fn(async()=>({data:true,error:null}));
+      const outcome=await executeClaimedObjective({rpc,...mockRoutineHistory()} as never,{
+        routine:objective,lease,localDate:"2026-11-20",
+        provider:(async function*(){}) as never,
+      });
+      expect(outcome.observedToolNames).toEqual(["search_gmail"]);
+      expect(gmailSearch).toHaveBeenCalledWith(
+        {businessId:objective.businessId,ownerUserId:objective.ownerUserId},
+        "supplier replies",3);
+      expect(rpc).toHaveBeenCalledWith("u4_publish_objective_report",
+        expect.objectContaining({p_proof:expect.objectContaining({
+          quality:"partial",sources:[expect.objectContaining({
+            source:"unverified_external",identifier:"search_gmail",
+          })],
+        })}));
+    }finally{vi.mocked(getConnectorAccount).mockReset();}
+  });
+  it("fails closed if Gmail read access changes between source read and report",async()=>{
+    vi.mocked(getConnectorAccount)
+      .mockResolvedValueOnce({id:"account-a",generation:1,
+        provider_subject:"subject-a",read:true} as never)
+      .mockResolvedValueOnce({id:"account-a",generation:2,
+        provider_subject:"subject-a",read:false} as never);
+    vi.mocked(runAgentTurn).mockImplementationOnce(async args=>{
+      await args.context.gmail!.read("vendor-msg-987654");
+      return turn("This response must never be accepted.");
+    });
+    const rpc=vi.fn(async()=>({data:true,error:null}));
+    try{
+      await expect(executeClaimedObjective({rpc,...mockRoutineHistory()} as never,{
+        routine:objective,lease,localDate:"2026-11-20",
+        provider:(async function*(){}) as never,
+      })).rejects.toThrow("u4_mailbox_permission_changed");
+      expect(rpc).not.toHaveBeenCalledWith("u4_publish_objective_report",expect.anything());
+    }finally{vi.mocked(getConnectorAccount).mockReset();}
   });
 });
 describe("U4 original work-identity checkpoints",()=>{
