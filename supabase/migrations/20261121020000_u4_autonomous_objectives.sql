@@ -318,8 +318,8 @@ grant execute on function public.u4_publish_objective_report(
   uuid,uuid,uuid,uuid,text,text,jsonb,timestamptz) to service_role;
 
 -- The existing system usage ledger is the sole billable-attempt owner.
--- Reason: the replacement check immediately widens the same constrained
--- source-type enum to include leased U4 routines; it never removes validation.
+-- The existing check is replaced in the same migration transaction.
+-- Reason: the new check immediately includes 'routine' while preserving all prior valid source types.
 -- squawk-ignore ban-drop-constraint
 alter table public.supervisor_system_usage_events
   drop constraint supervisor_system_usage_events_source_scope_check;
