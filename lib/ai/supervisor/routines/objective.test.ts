@@ -126,6 +126,23 @@ describe("U4 objective evidence and model autonomy",()=>{
     const result=verifyObjectiveTurn(turn("ATTENTION: Review a verified staffing and inventory conflict."),watch);
     expect(result.attention).toBe("attention");
   });
+  it("does not mistake data dictionaries and Gmail labels for observed café evidence",()=>{
+    const discovery=turn("ATTENTION: Invented answer.",{
+      toolInvocations:[{name:"describe_data",result:{
+        source:"canonical_dictionary",period:null,missing:[],
+        views:[{name:"cv_sales_days",columns:[{name:"net_cents"}]}],
+      }}],
+    });
+    expect(()=>verifyObjectiveTurn(discovery,watch))
+      .toThrow("u4_no_verified_source_observation");
+    const labels=turn("Mailboxes are healthy.",{
+      toolInvocations:[{name:"list_gmail_labels",result:{
+        source:"gmail",period:null,missing:[],labels:[{id:"INBOX"}],
+      }}],
+    });
+    expect(()=>verifyObjectiveTurn(labels,objective))
+      .toThrow("u4_no_verified_source_observation");
+  });
   it("denies a tool name without a verified observed source and refuses missing evidence",()=>{
     expect(observedObjectiveEvidence({source:"sales",period:null,missing:[]})).toBe(false);
     expect(observedObjectiveEvidence({...source,missing:["source_unavailable"]})).toBe(false);
