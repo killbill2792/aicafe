@@ -133,15 +133,15 @@ function ReplyBlock({ block, copy, locale, threadId, onEdit, disabled=false, unv
     block.href.startsWith("/operations") && !block.href.startsWith("//")) {
     const statusText = block.status === "handled" ? copy.handled :
       block.status === "watching" ? copy.watching : copy.needsYou;
-    return <Link href={block.href} className="block rounded-2xl border border-line bg-surface p-4 no-underline shadow-sm transition-colors hover:bg-surface2 focus-visible:outline focus-visible:outline-2 focus-visible:outline-ink">
-      <div className="flex items-start justify-between gap-3">
-        <div className="min-w-0">
-          <span className="text-[13px] font-extrabold uppercase tracking-wide text-ink-muted">{block.agent}</span>
-          <p className="mt-1 break-words text-[17px] font-bold text-ink">{block.title}</p>
-          <span className="mt-2 inline-flex rounded-full bg-surface2 px-3 py-1 text-sm font-semibold text-ink">{statusText}</span>
-        </div>
-        <span className="shrink-0 text-[15px] font-bold text-good">{copy.taskOpen} ↗</span>
-      </div>
+    // Background task notifications occupy one quiet row. The linked Team
+    // screen retains the detailed task, evidence and available actions.
+    return <Link href={block.href}
+      aria-label={statusText+": "+block.title+". "+copy.taskOpen}
+      className="inline-flex min-h-12 max-w-full items-center gap-2 rounded-xl px-2 text-[15px] text-ink-muted no-underline hover:bg-surface2 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ink">
+      <Clock3 size={16} className="shrink-0" aria-hidden="true"/>
+      <span className="shrink-0 font-medium">{statusText}</span>
+      <span className="min-w-0 truncate text-ink">{block.title}</span>
+      <span className="sr-only">{copy.taskOpen}</span>
     </Link>;
   }
   return null;

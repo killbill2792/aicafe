@@ -24,6 +24,6 @@ export default function ChatJobProgress({ locale, acknowledged, steps, note }: {
   return <div className="flex w-full items-center gap-2 text-[15px] leading-snug text-ink-muted"
     role="status" aria-live="polite" aria-atomic="true" data-testid="supervisor-live-progress"
     dir={locale === "ar" ? "rtl" : "ltr"}>
-    <CafeActivity/><span className="min-w-0">{line}</span>
+    <CafeActivity/><span className="min-w-0 truncate" title={line}>{line}</span>
   </div>;
 }

@@ -1,4 +1,7 @@
 import { describe, expect, it } from "vitest";
+import { renderToStaticMarkup } from "react-dom/server";
+import { createElement } from "react";
+import ChatJobProgress from "./ChatJobProgress";
 import en from "@/messages/en.json";
 import es from "@/messages/es.json";
 import ar from "@/messages/ar.json";
@@ -31,6 +34,13 @@ describe("chat experience helpers", () => {
       expect(line).not.toEqual(copy.failures.agent_turn_failed);
       expect(line).not.toContain("\\n");
     }
+  });
+  it("renders one real progress status on one visible line without erasing full accessible text",()=>{
+    const html=renderToStaticMarkup(createElement(ChatJobProgress,
+      {locale:"en",acknowledged:true,steps:[{tool:"get_sales",agent:"alex"}]}));
+    expect(html.match(/role="status"/g)).toHaveLength(1);
+    expect(html).toContain('class="min-w-0 truncate"');
+    expect(html).toContain(copy.tools.get_sales);
   });
   it("has a one-line failure for every code and a generic fallback", () => {
     for (const code of ["timeout", "agent_busy", "attempts_exhausted", "reply_storage_failed"])

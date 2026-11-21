@@ -92,6 +92,13 @@ describe("modern Supervisor conversation shell", () => {
     expect(drawer).toContain("onEditRoutine:(routine:Routine)=>void");
     expect(drawer).toContain("revision:r.revision");
   });
+  it("makes durable task notifications one line and keeps the existing Team details link",()=>{
+    const source=readFileSync("components/home/SupervisorChatComposer.tsx","utf8");
+    expect(source).toContain('className="inline-flex min-h-12 max-w-full items-center gap-2 rounded-xl px-2 text-[15px] text-ink-muted');
+    expect(source).toContain('aria-label={statusText+": "+block.title+". "+copy.taskOpen}');
+    expect(source).toContain('href={block.href}');
+    expect(source).not.toContain("shadow-sm transition-colors hover:bg-surface2");
+  });
   it("uses decorative short café motion with a static fallback and reduced motion",()=>{
     const animated=renderToStaticMarkup(createElement(CafeActivity));
     const still=renderToStaticMarkup(createElement(CafeActivity,{brewing:false}));
