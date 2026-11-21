@@ -14,8 +14,6 @@ export const staffQuestionInput=z.strictObject({
 });
 export const ownerStaffQuestionDecision=z.discriminatedUnion("action",[
  z.strictObject({action:z.literal("ask"),proposalId:z.uuid(),revision:z.number().int().positive()}),
- z.strictObject({action:z.literal("answer"),proposalId:z.uuid(),revision:z.number().int().positive(),
-  answer:z.string().trim().min(1).max(1200)}),
  z.strictObject({action:z.literal("ignore"),proposalId:z.uuid(),revision:z.number().int().positive()}),
 ]);
 export type StaffQuestionDraft=z.infer<typeof staffQuestionInput>;
