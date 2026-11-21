@@ -256,6 +256,10 @@ describe("U4 objective evidence and model autonomy",()=>{
   });
   it("denies a tool name without a verified observed source and refuses missing evidence",()=>{
     expect(observedObjectiveEvidence({source:"sales",period:null,missing:[]})).toBe(false);
+    expect(observedObjectiveEvidence({source:"sales",period:null,missing:[],
+      available:true,empty:false,rowCount:8,sourceCount:8,
+      sourceMix:{toast:8},quality:{level:"high"},readAt:"2026-11-20",
+    })).toBe(false);
     expect(observedObjectiveEvidence({...source,missing:["source_unavailable"]})).toBe(false);
     expect(()=>verifyObjectiveTurn(turn("ATTENTION: Trust me.",{
       toolInvocations:[{name:"get_sales",result:{source:"sales",period:null,missing:[]}}],
