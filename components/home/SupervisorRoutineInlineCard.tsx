@@ -80,11 +80,11 @@ export default function SupervisorRoutineInlineCard({block,onEdit,disabled=false
 
   if(!parsed.success||!current)return null;
   const isDeleted=current.status==="revoked";
+  // ISO weekday labels come from the same verified English locale copy as
+  // the owner routines drawer. Do not synthesize arbitrary dates in the UI.
   const localDay=current.cadence==="weekly"?
-    current.weekdays.length===1?
-      new Intl.DateTimeFormat("en",{weekday:"long",timeZone:"UTC"}).format(
-        new Date(Date.UTC(2026,0,4+current.weekdays[0]))):
-      "Weekly":"Daily";
+    current.weekdays.map(day=>en.SupervisorExperience.weekdayNames[day-1])
+      .filter(Boolean).join(", "):current.cadence;
   const label=isDeleted?copy.deleteSaved:current.status==="active"?"Active":copy.paused;
   return <section data-routine-card={current.routineId}
     aria-label={current.title}
