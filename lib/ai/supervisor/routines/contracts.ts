@@ -8,6 +8,8 @@ export type VerifiedRoutineTurn={
   threadId:string;
   /** Verified current owner message, for retry-idempotent create. */
   ownerMessageId?:string;
+  /** Authenticated earlier owner goal selected through the verified thread history. */
+  goalSourceMessageId?:string;
   client:SupabaseClient;
 };
 export const routineScheduleSchema=z.strictObject({
