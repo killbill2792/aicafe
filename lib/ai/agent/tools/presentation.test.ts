@@ -457,7 +457,8 @@ describe("Task16E presentation capability census",()=>{
     "propose_maintenance_staff_assignment",
     "record_maintenance_repair_claim",
     "propose_maintenance_vendor_request",
-    "propose_staff_question"
+    "propose_staff_question",
+    "record_staff_question_owner_answer"
   ]
 } as const;
  const projections={

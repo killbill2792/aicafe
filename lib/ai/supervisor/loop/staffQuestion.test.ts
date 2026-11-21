@@ -20,7 +20,7 @@ const input={sourceKind:"operating_task" as const,sourceTaskId:"staff-note-17",e
  followUpAfter:new Date(Date.now()+3*60*60_000).toISOString()};
 const sourceRevision="2026-11-21T20:00:00Z";
 function dbRows({staffActive=true,linked=true,onShift=true,taskStatus="needs_owner"}={}){
- const sources:Record<string,any>={
+ const sources:Record<string,unknown[]>={
   operating_tasks:[{id:input.sourceTaskId,status:taskStatus,kind:"data_quality",updated_at:sourceRevision}],
   alerts:[{id:input.sourceTaskId,status:"new",kind:"business_anomaly",created_at:sourceRevision}],
   employees:[{id:employee,display_name:"Priya",active:staffActive,staff_auth_user_id:linked?owner:null}],

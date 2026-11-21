@@ -41,7 +41,7 @@ insert into public.supervisor_investigations( business_id,owner_user_id,thread_i
  jsonb_build_object('staffQuestionProposalId',:'rejected_proposal')); insert into public.ai_messages(id,business_id,thread_id,owner_user_id,role,
  content_type,structured_content,grounding) values(gen_random_uuid(),:'biz',:'thread_id',:'owner_id','supervisor','blocks',
  jsonb_build_array(jsonb_build_object('type','text','text','I propose a factual check.')),
- jsonb_build_object('intent','priority_investigation','evidence', jsonb_build_array(jsonb_build_object('source','operating_task',
+ jsonb_build_object('status','partial','intent','priority_investigation','evidence', jsonb_build_array(jsonb_build_object('source','operating_task',
  'identifier','staff-question-fixture:'||:'task_uuid'))))
  returning id as proposal_card_message \gset
 select set_config('test.staffquestion.card',:'proposal_card_message',true);
@@ -69,13 +69,13 @@ do $$
  begin if (select count(*) from public.staff_communication_requests where source_id=current_setting('test.staffquestion.proposal') and business_id=current_setting('test.staffquestion.biz')::uuid)<>1 then raise exception 'duplicate question';end if;
  if not exists(select 1 from public.supervisor_proposals where id=current_setting('test.staffquestion.proposal')::uuid and status='committed') then raise exception 'uncertain receipt was not safely reconciled';end if;
 end $$;
-do $
+do $$
 begin
  begin
   perform public.supervisor_answer_staff_question(:'biz',:'owner_id',:'thread_id',:'owner_proposal',1,gen_random_uuid());
   raise exception 'a fabricated owner message was accepted';
  exception when sqlstate '22023' then null;end;
-end $;
+end $$;
 select gen_random_uuid() as owner_answer_message \gset
 select set_config('test.staffquestion.owner_answer_message',:'owner_answer_message',true);
 insert into public.ai_messages(id,business_id,thread_id,owner_user_id,author_user_id,role,content_type,text_content,client_message_id)

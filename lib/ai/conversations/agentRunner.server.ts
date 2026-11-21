@@ -304,18 +304,22 @@ export async function runOneTurn(p: TurnParams): Promise<{ replyId: string; repl
     // Saved drafts are context only; NEVER approval or license to contact staff.
     // Use the current authenticated owner message as the sole answer source.
     const pendingStaffQuestions:Array<{proposalId:string;revision:number;question:string;employeeName:string}>=[];
+    let pendingStaffQuestionReadUnavailable=false;
     if(!external&&!owner.ownerInputResponse&&p.ownerText.trim()){
-      const pending=await createAdminSupabaseClient().from("supervisor_proposals")
-        .select("id,revision,canonical_effect_payload")
-        .eq("business_id",scope.businessId).eq("owner_user_id",scope.ownerUserId)
-        .eq("thread_id",id).eq("capability_id",staffQuestionCapabilityId)
-        .eq("status","draft").lte("created_at",owner.createdAt).order("created_at",{ascending:false}).limit(8);
-      if(!pending.error)for(const row of pending.data??[]){
-        const checked=staffQuestionEffect.safeParse(row.canonical_effect_payload);
-        if(checked.success)pendingStaffQuestions.push({
-          proposalId:row.id,revision:row.revision,
-          question:checked.data.question,employeeName:checked.data.employeeName});
-      }
+      try{
+        const pending=await createAdminSupabaseClient().from("supervisor_proposals")
+          .select("id,revision,canonical_effect_payload")
+          .eq("business_id",scope.businessId).eq("owner_user_id",scope.ownerUserId)
+          .eq("thread_id",id).eq("capability_id",staffQuestionCapabilityId)
+          .eq("status","draft").lte("created_at",owner.createdAt).order("created_at",{ascending:false}).limit(8);
+        if(pending.error)pendingStaffQuestionReadUnavailable=true;
+        else for(const row of pending.data??[]){
+          const checked=staffQuestionEffect.safeParse(row.canonical_effect_payload);
+          if(checked.success)pendingStaffQuestions.push({
+            proposalId:row.id,revision:row.revision,
+            question:checked.data.question,employeeName:checked.data.employeeName});
+        }
+      }catch{pendingStaffQuestionReadUnavailable=true;}
     }
     const context: AgentToolContext = { tools, asOf: identity.asOf, locale: p.locale,timezone:identity.timezone,currency:identity.currency,
       ownerText:currentOwnerStatement,
@@ -875,7 +879,9 @@ export async function runOneTurn(p: TurnParams): Promise<{ replyId: string; repl
     failureStage = "model";
     const result = await runAgentTurn({ ownerText: p.ownerText, ownerImages:selected.images,
        ownerPdfs:selected.pdfs,ownerEvidence:selected.evidence,
-       history:[...history,...(pendingStaffQuestions.length?[{role:"assistant" as const,
+       history:[...history,...(pendingStaffQuestionReadUnavailable?[{role:"assistant" as const,
+         content:"The pending employee-question status is temporarily unavailable. Do not claim an owner reply was recorded or that a staff question was resolved; explain the uncertainty and ask the owner to retry."}]:[]),
+         ...(pendingStaffQuestions.length?[{role:"assistant" as const,
          content:"Current pending owner-approval staff questions (NOT authority to send): "+
          JSON.stringify(pendingStaffQuestions)+
          ". If THIS owner message directly supplies a factual answer to one identified question, record the exact saved owner message with record_staff_question_owner_answer. Never treat a question, an unrelated message, uncertainty, or a staff-contact request as an answer; clarify instead."}]:[])],
