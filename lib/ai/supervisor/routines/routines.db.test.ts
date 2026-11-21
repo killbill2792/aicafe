@@ -235,8 +235,8 @@ describe("U4 migrated model-objective and autonomous Watch SQL contract",()=>{
       expect(await call(worker,"u4_routine_lease_active",[
         business,routineId,first.run_id,randomUUID(),
       ])).toBe(false);
-      const proof={sources:[{source:"registered_cafe_tool",identifier:"get_sales",observedAt:"2026-11-20"}],
-        sourceCount:1,missing:[],externalEffects:"not_attempted"};
+      const proof={sources:[{source:"cafe_state",identifier:"get_sales",asOf:"2026-11-20"}],
+        sourceCount:1,quality:"verified",missing:[],externalEffects:"not_attempted"};
       const posted=await call(worker,"u4_publish_objective_report",[
         business,routineId,first.run_id,first.lease_token,
         "A verified café observation needs owner review.","attention",proof,new Date().toISOString(),
@@ -250,7 +250,7 @@ describe("U4 migrated model-objective and autonomous Watch SQL contract",()=>{
       expect(audited.rows[0].state).toBe("completed");
       expect(audited.rows[0].receipt_ref).toBe("u4-verified:"+first.run_id);
       expect(audited.rows[0].u4_result).toMatchObject({attention:"attention",proof});
-      const ownerReports=await admin.query("select grounding,structured_content from public.ai_messages where business_id=$1 and owner_user_id=$2 and role='supervisor' and grounding->>'intent'='u4_routine'",[business,ownerId]);
+      const ownerReports=await admin.query("select grounding,structured_content from public.ai_messages where business_id=$1 and owner_user_id=$2 and role='supervisor' and grounding->'agentMetadata'->>'u4Kind'='routine'",[business,ownerId]);
       expect(ownerReports.rows).toHaveLength(1);
       expect(ownerReports.rows[0].grounding.agentMetadata.runId).toBe(first.run_id);
       expect(ownerReports.rows[0].structured_content[0].text).toContain("verified café");
