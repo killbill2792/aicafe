@@ -232,6 +232,28 @@ describe("U4 objective evidence and model autonomy",()=>{
       rows:[{count_business_date:0}]};
     expect(observedObjectiveEvidence(realAggregate)).toBe(true);
   });
+  it("uses genuinely observed partial stock without treating stale Toast inventory as evidence",()=>{
+    const stock={
+      source:"inventory",period:{from:"2026-11-20",to:"2026-11-20"},
+      missing:["stockNotObservedInLatestSuccess","stockQuantityUnknown"],
+      inventory:[
+        {source:"app",source_ref:"stock:current",evidence_state:"dated_owner_count",
+          quantity:0,quantity_state:"known"},
+        {source:"toast",source_ref:"stock:stale",evidence_state:"not_observed",
+          quantity:null,stock_status:null,quantity_state:"unknown"},
+      ],
+    };
+    expect(observedObjectiveEvidence(stock)).toBe(true);
+    const checked=verifyObjectiveTurn(turn("Recorded inventory contains a dated zero and an unknown Toast item.",{
+      toolInvocations:[{name:"get_inventory",result:stock}],
+      results:[stock],
+    }),objective);
+    expect(checked.sourceCount).toBe(1);
+    expect(checked.missing).toContain("stockQuantityUnknown");
+    expect(observedObjectiveEvidence({...stock,inventory:stock.inventory.slice(1)})).toBe(false);
+    expect(observedObjectiveEvidence({...stock,
+      missing:["inventoryReaderUnavailable"]})).toBe(false);
+  });
   it("denies a tool name without a verified observed source and refuses missing evidence",()=>{
     expect(observedObjectiveEvidence({source:"sales",period:null,missing:[]})).toBe(false);
     expect(observedObjectiveEvidence({...source,missing:["source_unavailable"]})).toBe(false);
