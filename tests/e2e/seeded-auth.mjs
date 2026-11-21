@@ -47,10 +47,14 @@ export async function navigateLocal(page,path){
   }catch(error){
     if(!/net::ERR_(?:CONNECTION_RESET|EMPTY_RESPONSE)/u.test(String(error)))
       throw error;
+    // The disposable Next.js dev server can briefly drop loopback sockets
+    // while compiling a different signed-in route under the 24-journey CI
+    // load. Bound the recovery window without retrying an HTTP error from
+    // the original navigation or making an authenticated assertion pass.
     await expect.poll(async()=>{
       try{return (await page.request.get("/en/login",{timeout:4000})).ok();}
       catch{return false;}
-    },{timeout:12000}).toBe(true);
+    },{timeout:30000,intervals:[500,1000,2000,3000]}).toBe(true);
     await page.goto(path);
   }
 }
