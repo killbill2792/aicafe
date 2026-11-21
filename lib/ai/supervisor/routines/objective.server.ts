@@ -9,6 +9,8 @@ import {assertDurablePaidTurnAllowed} from "@/lib/ai/supervisor/runs/worker.serv
 import type {OwnerRunCheckpoint} from "@/lib/ai/supervisor/runs/contracts";
 import {loadModelExecutionCap,withWorkerBudget} from "@/lib/ai/supervisor/runs/usage.server";
 import {readSavedEventTimeline} from "@/lib/data/cafeEvents.server";
+import {readStaffMessagesForVerifiedOwner} from "@/lib/staffCommunication/channel.server";
+import {readClaimedStaffCoordination} from "@/lib/staffCoordination/cases.server";
 import {notifyOwner} from "@/lib/operating/notifyOwner.server";
 import {getConnectorAccount,allowsGmail} from "@/lib/connectors/registry.server";
 import {gmailSearch,gmailListLabels,gmailRead,gmailReadThread,gmailReadAttachment} from "@/lib/connectors/gmail/provider.server";
@@ -22,7 +24,7 @@ import type {ClaimedRoutine} from "./repository.server";
  * Luna decides which of these admitted, existing source readers it needs. */
 export const objectiveReadTools:readonly AgentToolName[]=[
   ...investigationReadTools.filter(name=>
-    !["get_investigation_source","get_staff_messages"].includes(name)),
+    !["get_investigation_source"].includes(name)),
   "get_events",
   "search_gmail","list_gmail_labels","read_gmail","read_gmail_thread",
   "read_gmail_attachment",
@@ -31,7 +33,7 @@ export const objectiveReadTools:readonly AgentToolName[]=[
  * detail, while preserving broad sales, cost, labor, inventory, schedules and
  * events investigation. This is a privacy boundary, not a research script. */
 export const watchReadTools:readonly AgentToolName[]=objectiveReadTools.filter(name=>
-  !["get_payroll_facts","get_staff_coordination_cases","get_schedule",
+  !["get_payroll_facts","get_staff_messages","get_staff_coordination_cases","get_schedule",
     "get_week_schedule","search_gmail","list_gmail_labels","read_gmail",
     "read_gmail_thread","read_gmail_attachment"].includes(name));
 
@@ -308,6 +310,13 @@ export async function executeClaimedObjective(db:SupabaseClient,params:{
       }),
       savedEvents:(from:string,to:string,options?:{cityEventId?:string})=>
         readSavedEventTimeline(db,scope,from,to,options),
+      // Owner-created goals may read existing authenticated employee
+      // coordination sources. Unrequested Watch never receives this port.
+      ...(routine.executionMode==="objective"?{
+        staffMessages:{read:()=>readStaffMessagesForVerifiedOwner(
+          db,routine.businessId,routine.ownerUserId,40)},
+        staffCoordinationRead:()=>readClaimedStaffCoordination(db,scope),
+      }:{}),
       ...(routine.executionMode==="objective"?{gmail:{
         labels:()=>checkedGmail(()=>gmailListLabels(scope)),
         search:(query:string,limit:number)=>checkedGmail(()=>gmailSearch(scope,query,limit)),
