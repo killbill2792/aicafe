@@ -42,11 +42,10 @@ describe("owner-click-only proactive worker question",()=>{
  it("rejects invented authority and invalid follow-up inputs",()=>{
   expect(staffQuestionInput.safeParse({...input,approved:true}).success).toBe(false);
   expect(staffQuestionInput.safeParse({...input,followUpAfter:null}).success).toBe(false);
-  for(const action of ["ask","answer","ignore"]){
-   const candidate=action==="answer"?{action,proposalId:thread,revision:1,answer:"40"}:
-    {action,proposalId:thread,revision:1};
-   expect(ownerStaffQuestionDecision.safeParse(candidate).success).toBe(true);
+  for(const action of ["ask","ignore"]){
+   expect(ownerStaffQuestionDecision.safeParse({action,proposalId:thread,revision:1}).success).toBe(true);
   }
+  expect(ownerStaffQuestionDecision.safeParse({action:"answer",proposalId:thread,revision:1,answer:"40"}).success).toBe(false);
   expect(ownerStaffQuestionDecision.safeParse({action:"ask",proposalId:thread,revision:1,
    answer:"secret"}).success).toBe(false);
  });
