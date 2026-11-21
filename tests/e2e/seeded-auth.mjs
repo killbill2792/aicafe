@@ -35,9 +35,29 @@ export function seededCafe(index) {
   return cafe;
 }
 
+/** One bounded retry for a dropped *loopback* connection while Next.js
+ * compiles a large authenticated page. No retry for HTTP errors, redirect to
+ * login, incorrect owner data or real application failures. A permanently
+ * unavailable server still fails the exact authenticated journey. */
+async function navigateLocal(page,path){
+  assertDisposableEnvironment();
+  if(!path.startsWith("/en/"))throw Error("E2 refuses nonlocal route");
+  try{
+    await page.goto(path);
+  }catch(error){
+    if(!/net::ERR_(?:CONNECTION_RESET|EMPTY_RESPONSE)/u.test(String(error)))
+      throw error;
+    await expect.poll(async()=>{
+      try{return (await page.request.get("/en/login",{timeout:4000})).ok();}
+      catch{return false;}
+    },{timeout:12000}).toBe(true);
+    await page.goto(path);
+  }
+}
+
 export async function login(page, cafe) {
   assertDisposableEnvironment();
-  await page.goto("/en/login");
+  await navigateLocal(page,"/en/login");
   await expect(page.locator("#email")).toBeVisible();
   await page.locator("#email").fill(cafe.owner.email);
   await page.locator("#login-password").fill(cafe.owner.password);
@@ -48,7 +68,7 @@ export async function login(page, cafe) {
 }
 
 export async function openOwnedPage(page, cafe, pathname) {
-  await page.goto("/en/" + pathname);
+  await navigateLocal(page,"/en/" + pathname);
   await expect(page).not.toHaveURL(/\/login(?:\?|$)|\/onboarding(?:\?|$)/);
   await expect(page.getByText(cafe.name, {exact: true}).first())
     .toBeVisible({timeout: 30_000});
