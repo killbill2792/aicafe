@@ -96,6 +96,22 @@ describe("U4 fair scheduled work without a second queue",()=>{
   });
 });
 describe("U4 direct cron integration rather than isolated objective-only unit proof",()=>{
+  it("creates a service Watch thread when the first-ever owner has no chat or alert",async()=>{
+    vi.stubEnv("SUPERVISOR_U4_ENABLED","true");
+    try{
+      mocks.ensureWatch.mockClear();
+      const source=db({threads:[],routines:[],alerts:[],tasks:[]});
+      const enqueue=vi.fn(async()=>0);
+      const result=await dispatchRoutinesForBusiness(source,
+        "cafe","America/Los_Angeles",new Date("2026-11-21T17:00:00Z"),enqueue);
+      expect(result.failed).toBe(0);
+      expect(mocks.ensureWatch).toHaveBeenCalledOnce();
+      expect(enqueue).toHaveBeenCalledWith(source,expect.objectContaining({
+        ownerUserId:"owner",threadId:"first-watch-thread",
+      }),expect.any(Date));
+    }finally{vi.unstubAllEnvs();}
+  });
+
   it("executes a full saved owner goal even when there are no existing alerts",async()=>{
     vi.stubEnv("SUPERVISOR_U4_ENABLED","true");
     try{
