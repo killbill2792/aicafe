@@ -28,7 +28,7 @@ async function assertAccessibleControls(page){
 test("@home Task16A authenticated mobile owner views library/routines/permissions and revokes a scoped mandate",async({browser})=>{
   test.setTimeout(120_000);
   const owner=seededCafe(0),foreign=seededCafe(1);
-  const id={thread:randomUUID(),routine:randomUUID(),active:randomUUID(),old:randomUUID()};
+  const id={thread:randomUUID(),watchShell:randomUUID(),routine:randomUUID(),active:randomUUID(),old:randomUUID()};
   const db=new pg.Client({host:"127.0.0.1",port:54322,database:"postgres",
     user:"postgres",password:"postgres",connectionTimeoutMillis:5000});
   const ctx=await browser.newContext({baseURL:"http://127.0.0.1:3000",serviceWorkers:"block"});
@@ -38,6 +38,10 @@ test("@home Task16A authenticated mobile owner views library/routines/permission
     await db.connect();connected=true;console.info("[Task16A E2E] connected disposable database");
     await db.query("insert into public.ai_threads(id,business_id,owner_user_id,client_request_id,title) values($1,$2,$3,$4,$5)",
       [id.thread,owner.businessId,owner.owner.userId,randomUUID(),"Task16A approval library"]);
+    // The first unsolicited Watch needs a real service-only thread. Do not
+    // show an empty background shell in the ordinary owner chat library.
+    await db.query("insert into public.ai_threads(id,business_id,owner_user_id,client_request_id,title) values($1,$2,$3,$4,'Supervisor proactive review')",
+      [id.watchShell,owner.businessId,owner.owner.userId,randomUUID()]);
     // A disposable saved mandate fixture proves the real owner/API/RLS/UI path,
     // NOT phone OTP delivery, which needs its own provider-backed acceptance.
     await db.query("insert into public.supervisor_mandates("+
@@ -75,6 +79,17 @@ test("@home Task16A authenticated mobile owner views library/routines/permission
     const page=await ctx.newPage();
     await login(page,owner);console.info("[Task16A E2E] first owner signed in");
     await openOwnedPage(page,owner,"?thread="+id.thread);console.info("[Task16A E2E] opened real Supervisor chat");
+    const visibleThreads=async()=>{
+      const response=await ctx.request.get("/api/ai/threads");
+      expect(response.status()).toBe(200);
+      return (await response.json()).items.map((item)=>item.id);
+    };
+    expect(await visibleThreads()).not.toContain(id.watchShell);
+    // A genuine saved message makes the proactive thread visible through the
+    // same authenticated API; neither UI state nor a fabricated alert suffices.
+    await db.query("insert into public.ai_messages(business_id,thread_id,owner_user_id,role,content_type,text_content) values($1,$2,$3,'supervisor','text','A source-backed report is available.')",
+      [owner.businessId,id.watchShell,owner.owner.userId]);
+    await expect.poll(visibleThreads,{timeout:12000}).toContain(id.watchShell);
     await page.setViewportSize({width:390,height:844});
     const routineCard=page.locator('[data-routine-card="'+id.routine+'"]');
     await expect(routineCard).toBeVisible({timeout:30_000});
@@ -199,8 +214,8 @@ test("@home Task16A authenticated mobile owner views library/routines/permission
       await db.query("delete from public.supervisor_mandates where id=any($1::uuid[])",
         [[id.active,id.old]]).catch(()=>{});
       await db.query("delete from public.supervisor_routines where id=$1",[id.routine]).catch(()=>{});
-      await db.query("delete from public.ai_threads where id=$1 and business_id=$2",
-        [id.thread,owner.businessId]).catch(()=>{});
+      await db.query("delete from public.ai_threads where id=any($1::uuid[]) and business_id=$2",
+        [[id.thread,id.watchShell],owner.businessId]).catch(()=>{});
       await db.end();
     }
   }
