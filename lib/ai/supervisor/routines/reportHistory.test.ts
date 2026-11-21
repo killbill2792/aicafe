@@ -78,7 +78,7 @@ describe("U4 authenticated historical report follow-ups",()=>{
     }
   });
   it("admits genuine partial/Gmail-origin reports only as stale text, not fresh facts",async()=>{
-    const partial={...report,grounding:{...report.grounding,status:"partial",
+    const partial={...report,grounding:{...(report.grounding??{}),status:"partial",
       evidence:[{source:"unverified_external"}]}};
     const candidates=routineReportCandidates([partial],threadId,"2026-11-20T17:00:00Z");
     const {db}=scopedDb({occurrence:{routine_id:routineId,run_id:runId,
