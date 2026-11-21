@@ -62,7 +62,7 @@ import { runAgentTurn, type OwnerFollowUp } from "@/lib/ai/agent/loop.server";
 import {createOwnerCommitment,listOwnerCommitments,closeOwnerCommitment} from "@/lib/operating/commitments.server";
 import {createOwnerRoutine,listOwnerRoutines,changeOwnerRoutine} from "@/lib/ai/supervisor/routines/repository.server";
 import {routineReportCandidates,verifiedRoutineReportHistory} from "@/lib/ai/supervisor/routines/reportHistory.server";
-import {routineGoalCandidates} from "@/lib/ai/conversations/routineGoalSources";
+import {routineGoalCandidates,needsExplicitGoalSource} from "@/lib/ai/conversations/routineGoalSources";
 import {routineToolDefinition} from "@/lib/ai/agent/tools/routines";
 import { persistAgentReply, recordAgentTurnUsage, AgentReplyTooLongError, AgentReplyStorageError, AgentEmptyReplyError } from "@/lib/ai/agent/persist.server";
 import { styleReport } from "@/lib/ai/agent/style";
@@ -225,7 +225,10 @@ export async function runOneTurn(p: TurnParams): Promise<{ replyId: string; repl
     // Expose only existing authenticated same-thread owner message IDs to the
     // model when it chooses the ORIGINAL goal after a schedule clarification.
     // Source text is preview context, never a model-generated saved objective.
-    const goalSourceCandidates=routineGoalCandidates(page.items,owner,p.ownerText);
+    const allPageGoalSources=routineGoalCandidates(page.items,owner,p.ownerText);
+    // Keep default prompts small; Luna can page any older authenticated
+    // owner message on demand, including candidates hidden from this preview.
+    const goalSourceCandidates=allPageGoalSources.slice(-8);
     const goalSourceIds=new Set(goalSourceCandidates.map(m=>m.id));
     const priorAssistant=page.items.filter(m=>m.role==="supervisor"&&m.id!==owner.id&&reusable(m)&&
       (!p.durableFence||Date.parse(m.createdAt)<=ownerAt)).slice(-8);
@@ -385,7 +388,8 @@ export async function runOneTurn(p: TurnParams): Promise<{ replyId: string; repl
           // A missing choice in a multi-turn conversation is NOT evidence that
           // the newest scheduling-only sentence is the requested objective.
           if(process.env.SUPERVISOR_U4_ENABLED==="true"&&
-            goalSourceCandidates.length>1&&!goalSourceMessageId)
+            needsExplicitGoalSource(goalSourceCandidates.length,page.nextOffset)&&
+            !goalSourceMessageId)
             throw Error("Choose the verified original owner goal message ID before saving");
           const selected=goalSourceMessageId??owner.id;
           if(!goalSourceIds.has(selected))throw Error("Unverified routine goal source");
@@ -858,7 +862,9 @@ export async function runOneTurn(p: TurnParams): Promise<{ replyId: string; repl
           "(choose the source ID for the complete investigation goal, not the answer to a scheduling question; "+
           "the server will verify this original owner message independently): "+
           JSON.stringify(goalSourceCandidates)+
-          " NEXT_OLDER_GOAL_SOURCES_OFFSET="+JSON.stringify(page.nextOffset),
+          " For any older goal absent from these previews, call manage_routine action=list_goal_sources "+
+          "with source_page_offset=0 first; use next_offset to continue to older pages. "+
+          "NEXT_OLDER_GOAL_SOURCES_OFFSET="+JSON.stringify(page.nextOffset),
       },...(gmailAvailable?gmailToolDefinitions:[]),...(memory?[memory.tool]:[])],
       ...(job && jobs ? {
         takeFollowUps: async(max: number):Promise<OwnerFollowUp[]> => {

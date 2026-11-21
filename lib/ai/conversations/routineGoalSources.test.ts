@@ -1,6 +1,6 @@
 import {describe,expect,it} from "vitest";
 import type {ConversationMessage} from "./contracts";
-import {routineGoalCandidates} from "./routineGoalSources";
+import {routineGoalCandidates,needsExplicitGoalSource} from "./routineGoalSources";
 
 const thread="11111111-1111-4111-8111-111111111111";
 const owner={id:"99999999-9999-4999-8999-999999999999",threadId:thread,
@@ -12,6 +12,11 @@ const msg=(id:string,text:string,createdAt="2026-11-21T17:00:00Z",
 });
 
 describe("U5 verified original routine-goal pagination",()=>{
+  it("requires a selected original goal when earlier pages exist even if only a schedule reply appears in the newest page",()=>{
+    expect(needsExplicitGoalSource(1,50)).toBe(true);
+    expect(needsExplicitGoalSource(8,null)).toBe(true);
+    expect(needsExplicitGoalSource(1,null)).toBe(false);
+  });
   it("does not discard the seventh earlier owner goal in one page",()=>{
     const messages=Array.from({length:9},(_,i)=>msg(String(i+1),
       i===0?"Original full investigation objective":"Follow-up "+i));

@@ -37,6 +37,10 @@ describe("verified owner routine chat tool",()=>{
       ...blank,action:"list_goal_sources",source_page_offset:50,
     },ctx({goalSources,list:vi.fn(),create:vi.fn(),change:vi.fn()}));
     expect(goalSources).toHaveBeenCalledWith(50);
+    await routineTools.manage_routine.execute({
+      ...blank,action:"list_goal_sources",source_page_offset:0,
+    },ctx({goalSources}));
+    expect(goalSources).toHaveBeenLastCalledWith(0);
     expect(response).toMatchObject({missing:[],next_offset:100,
       sources:[{id:original,text:"Investigate weekly customer demand and inventory history."}]});
   });

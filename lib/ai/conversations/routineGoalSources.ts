@@ -17,3 +17,10 @@ export function routineGoalCandidates(
   ).map(m=>({id:m.id,text:m.text!.slice(0,320)})):[];
   return includeCurrent?[...sources,{id:owner.id,text:ownerText.slice(0,320)}]:sources;
 }
+
+/** Existing conversation pages may contain only the latest owner clarification
+ * while earlier pages retain the objective. In that case a null source ID
+ * must not silently authorize saving only the clarification. */
+export function needsExplicitGoalSource(visibleCount:number,nextOffset:number|null):boolean{
+  return visibleCount>1||nextOffset!==null;
+}
