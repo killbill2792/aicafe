@@ -1,7 +1,7 @@
 import {test, expect} from "@playwright/test";
 import {randomUUID,createHash} from "node:crypto";
 import pg from "pg";
-import {assertDisposableEnvironment, seededCafe, login, openOwnedPage}
+import {assertDisposableEnvironment, seededCafe, login, openOwnedPage,navigateLocal}
   from "./seeded-auth.mjs";
 
 test.beforeEach(() => {
@@ -83,14 +83,10 @@ test("@home Task16A authenticated mobile owner views library/routines/permission
     await expect(routineCard.getByLabel("Routine actions: Daily source check")).toBeVisible();
     await routineCard.getByLabel("Routine actions: Daily source check").click();
     const editInChat=routineCard.getByRole("button",{name:"Edit in chat",exact:true});
-    // Preparing an inert draft is available even with a no-provider chat
-    // sentinel; actual routine changes still use authenticated SQL CAS.
-    await expect(editInChat).toBeEnabled({timeout:20_000});
-    await editInChat.click();
-    await expect(page.locator("#supervisor-home-composer")).toHaveValue(
-      new RegExp(id.routine));
-    await expect(page.locator("#supervisor-home-composer")).toHaveValue(/revision 1/);
-    await page.locator("#supervisor-home-composer").fill("");
+    // This disposable browser deliberately has NO working model provider.
+    // Do not claim a real chat edit or activate a disabled text composer.
+    // Exact owner-scoped schedule mutations below still run through real SQL.
+    await expect(editInChat).toBeDisabled();
     // Prove the compact chat does not regress the mobile viewport.
     expect(await page.evaluate(()=>document.documentElement.scrollWidth)).toBeLessThanOrEqual(391);
     const controlsButton=page.getByRole("button",{name:"Library, routines and permissions"});
@@ -137,13 +133,11 @@ test("@home Task16A authenticated mobile owner views library/routines/permission
       data:{action:"pause",routineId:id.routine,revision:1},
     });
     expect(stale.status()).not.toBe(200);
-    await panel.getByRole("button",{name:"Edit in chat",exact:true}).click();
-    await expect(panel).toHaveCount(0);
-    await expect(page.locator("#supervisor-home-composer")).toBeVisible();
-    await expect(page.locator("#supervisor-home-composer")).toHaveValue(
-      new RegExp(id.routine));
-    await expect(page.locator("#supervisor-home-composer")).toHaveValue(/revision 3/);
-    await controlsButton.click();
+    // In no-provider E2, a disabled edit affordance must not impersonate
+    // a completed Luna goal edit. Goal mutation and revision are DB-tested;
+    // authenticated model-backed chat acceptance remains independently gated.
+    await expect(panel.getByRole("button",{name:"Edit in chat",exact:true}))
+      .toBeDisabled();
     await panel.getByRole("button",{name:"Permissions",exact:true}).click();
     await expect(panel.getByText("Goal tracking",{exact:true}).first()).toBeVisible();
     await expect(panel.getByText("Active",{exact:true})).toBeVisible();
@@ -1495,7 +1489,7 @@ test("@money historical statement imports work without a bank connection and per
  await db.connect();
  try{
   await login(page,cafe);
-  await page.goto("/en/add-cost/statement");
+  await navigateLocal(page,"/en/add-cost/statement");
   await page.locator('input[type=file]').setInputFiles({name:"statement.csv",mimeType:"text/csv",buffer:Buffer.from(csv)});
   await expect(page.getByText("Balance checks out")).toBeVisible();
   const confirm=page.getByRole("checkbox",{name:/Use this original statement as historical cash evidence/});
