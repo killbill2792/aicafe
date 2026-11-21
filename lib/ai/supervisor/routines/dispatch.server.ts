@@ -1,5 +1,6 @@
 import "server-only";
 import type {SupabaseClient} from "@supabase/supabase-js";
+import type {AgentProvider} from "@/lib/ai/agent/loop.server";
 import {localDateAt,dueScheduleOnDate} from "./calendar";
 import {choosePriorities} from "./priority";
 import {claimRoutineOccurrence,finishRoutineOccurrence,listRoutineOccurrenceCandidates} from "./repository.server";
@@ -229,6 +230,9 @@ type OwnerScope={ownerUserId:string;threadId:string};
 export async function dispatchRoutinesForBusiness(db:SupabaseClient,businessId:string,
   timezone:string,now:Date,
   enqueueInvestigations?:(db:SupabaseClient,scope:Scope,now:Date)=>Promise<number>,
+  /** Trusted acceptance may meter the real provider; production uses the
+   * original configured Luna provider when this server-only port is absent. */
+  modelProvider?:AgentProvider,
 ):Promise<RoutineDispatchResult>{
   if(!Number.isFinite(now.getTime()))throw new Error("Invalid routine now");
   const started=Date.now();
@@ -395,6 +399,7 @@ export async function dispatchRoutinesForBusiness(db:SupabaseClient,businessId:s
           objectiveExecutions++;
           const outcome=await executeClaimedObjective(db,{
             routine,lease,localDate:candidate.localDate,
+            ...(modelProvider?{provider:modelProvider}:{}),
           });
           result.runs++;
           result.evidenceChecks+=outcome.sourceCount;
