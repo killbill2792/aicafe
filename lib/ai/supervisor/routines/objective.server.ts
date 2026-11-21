@@ -23,6 +23,12 @@ export const objectiveReadTools:readonly AgentToolName[]=[
     !["get_investigation_source","query_data","describe_data","get_staff_messages"].includes(name)),
   "get_events",
 ];
+/** Default unrequested research intentionally excludes individual staff/payroll
+ * detail, while preserving broad sales, cost, labor, inventory, schedules and
+ * events investigation. This is a privacy boundary, not a research script. */
+export const watchReadTools:readonly AgentToolName[]=objectiveReadTools.filter(name=>
+  !["get_payroll_facts","get_staff_coordination_cases","get_schedule",
+    "get_week_schedule"].includes(name));
 
 const meta=new Set(["source","period","missing","agentId","error","dataNotes",
   "dataNote","href","status","quality","truncated","explain","message",
@@ -214,7 +220,8 @@ export async function executeClaimedObjective(db:SupabaseClient,params:{
       savedEvents:(from:string,to:string,options?:{cityEventId?:string})=>
         readSavedEventTimeline(db,scope,from,to,options),
     },
-    toolNames:objectiveReadTools,businessId:routine.businessId,
+    toolNames:routine.executionMode==="watch"?watchReadTools:objectiveReadTools,
+    businessId:routine.businessId,
     requestId:lease.runId,
   }),cap);
   if(metered.problem())throw Error(metered.problem()!);
