@@ -163,8 +163,15 @@ describe("U4 direct cron integration rather than isolated objective-only unit pr
       // existing durable work history. No second scheduler/queue is used.
       occurrences.push({routine_id:"zz-owner-goal",updated_at:"2026-11-21T17:00:00Z"});
       mocks.objective.mockClear();
+      // Even if refresh is called at the SAME UTC hour each day, page zero
+      // must serve the older checks and the following day must return to
+      // the newer Watch/goal page, rather than starving either cohort.
+      const oldWindow=await dispatchRoutinesForBusiness(source,"cafe",
+        "America/Los_Angeles",new Date("2026-11-22T17:00:00Z"));
+      expect(oldWindow.routinesChecked).toBe(100);
+      expect(mocks.objective).not.toHaveBeenCalled();
       await dispatchRoutinesForBusiness(source,"cafe","America/Los_Angeles",
-        new Date("2026-11-21T17:10:00Z"));
+        new Date("2026-11-23T17:00:00Z"));
       expect(mocks.objective).toHaveBeenCalledOnce();
       expect(mocks.objective).toHaveBeenCalledWith(source,expect.objectContaining({
         routine:expect.objectContaining({id:"zz-watch"}),
