@@ -63,7 +63,9 @@ export const canonicalEvidenceDomain:Partial<Record<AgentToolName,string>>={
   inspect_purchase_reconciliation:"receiving_and_invoice_source",
   get_ingredient_costs:"ingredient_prices",get_product_costs:"recipe_costs",
   get_menu_items:"menu_catalog",get_price_monitor_status:"price_monitor",
-  get_profit:"profitability",get_events:"verified_saved_local_events",
+  // Profit is a computation over recorded sales, costs and labor. It is NOT
+  // a physically independent source corroborating any of those inputs.
+  get_profit:"other:derived_cafe_profit",get_events:"verified_saved_local_events",
 };
 /** Physical lineage of the existing public canonical VIEW families, not a
  * question-to-tool routing script. Distinct views over Toast orders do not
