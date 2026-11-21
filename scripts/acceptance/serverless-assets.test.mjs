@@ -51,6 +51,16 @@ describe("production serverless asset guard (Webpack and Turbopack NFT)",()=>{
     const f=fixture();writeFileSync(f.traces[1],JSON.stringify({version:1,files:["../../../../pg-parser.wasm"]}));
     assert.throws(()=>verifyServerlessAssetTraces(f.root),/untraced_runtime_asset: api\/cron\/toast-sync/);
   });
+  it("automatically checks a new Node route without hand-registering it",()=>{
+    const f=fixture();
+    const future=join(f.root,".next/server/app/api/cron/future-health/route.js.nft.json");
+    mkdirSync(dirname(future),{recursive:true});
+    writeFileSync(future,JSON.stringify({version:1,files:[relative(dirname(future),f.asset)]}));
+    assert.equal(verifyServerlessAssetTraces(f.root).routes,CRITICAL_ROUTES.length+1);
+    writeFileSync(future,JSON.stringify({version:1,files:["./unrelated.js"]}));
+    assert.throws(()=>verifyServerlessAssetTraces(f.root),
+      /untraced_runtime_asset: api\/cron\/future-health/);
+  });
   it("rejects absent output rather than treating it as skipped success",()=>{
     const f=fixture();rmSync(join(f.root,".next"),{recursive:true,force:true});
     assert.throws(()=>verifyServerlessAssetTraces(f.root),/missing_serverless_trace/);

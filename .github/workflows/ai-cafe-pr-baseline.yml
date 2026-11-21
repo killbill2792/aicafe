@@ -139,6 +139,13 @@ jobs:
       # actual route manifests; no Vercel preview/deploy is created.
       - name: Clear previous compiler outputs
         run: rm -rf .next
+      - name: Use production Node.js 24 for Turbopack parity
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - name: Reinstall locked dependencies on production Node
+        run: npm ci
       - name: Production build (Turbopack, Vercel parity)
         run: npm run build
       - name: Verify real Turbopack serverless traces
