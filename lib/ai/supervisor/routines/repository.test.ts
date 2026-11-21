@@ -68,8 +68,10 @@ describe("owner-only routine mutation port",()=>{
     try{
       const schedule={title:"Cross-domain review",cadence:"weekly" as const,
         weekdays:[1],localTime:"09:00"};
-      const saved=await createOwnerRoutine(schedule,{...ownerTurn(rpc),
-        ownerMessageId:current,goalSourceMessageId:previous});
+      const saved=await createOwnerRoutine(schedule,{
+        scope,threadId:uuid,ownerMessageId:current,
+        goalSourceMessageId:previous,client:{rpc},
+      } as never);
       expect(saved.objectiveSourceMessageId).toBe(previous);
       expect(rpc).toHaveBeenCalledWith("u4_create_objective_routine",
         expect.objectContaining({
