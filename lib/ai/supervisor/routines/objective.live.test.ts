@@ -89,6 +89,24 @@ live("real Luna executes an authenticated full café goal through existing sched
       [businessId]);
     if(sourceCounts.rows[0].sales<1||sourceCounts.rows[0].stock<1)
       throw Error("u4_live_independent_sales_stock_seed_missing");
+    // Ingredients alone cannot satisfy get_inventory: that registered reader
+    // requires a café-local *dated* stock count (or verified Toast receipt).
+    // Seed a real row in this disposable PostgreSQL instance, then inspect
+    // the SAME canonical cv_inventory view the registered tool will read.
+    await pg.query("insert into public.pantry_stock_counts "+
+      "(business_id,ingredient_id,count_date,quantity_base,entered_quantity,entered_unit) "+
+      "select i.business_id,i.id,(now() at time zone b.timezone)::date, "+
+      "0,0,i.base_unit from public.ingredients i "+
+      "join public.businesses b on b.id=i.business_id "+
+      "where i.business_id=$1 order by i.id limit 1 "+
+      "on conflict(business_id,ingredient_id,count_date) do nothing",[businessId]);
+    const observedStock=await pg.query(
+      "select count(*)::int as n from public.cv_inventory "+
+      "where business_id=$1 and business_date=(now() at time zone $2)::date "+
+      "and source='app' and data->>'evidence_state'='dated_owner_count'",
+      [businessId,own.timezone]);
+    if(Number(observedStock.rows[0]?.n)<1)
+      throw Error("u4_live_canonical_dated_inventory_missing");
     await pg.query("insert into public.ai_threads "+
       "(id,business_id,owner_user_id,client_request_id,title) values "+
       "($1,$2,$3,$4,'U4 actual saved autonomous objective')",
