@@ -30,6 +30,7 @@ function db(params?:{routines?:Record<string,unknown>[];owners?:{user_id:string}
   };
   return {rpc:async(name:string,args?:{p_owner_user_id?:string})=>{
     if(name==="supervisor_ensure_proactive_thread")return {data:params?.newThread??null,error:params?.revokedThreadOwner&&args?.p_owner_user_id===params.revokedThreadOwner?{code:"42501"}:null};
+    if(name==="u4_ensure_watch_thread")return {data:"first-watch-thread",error:null};
     if(name==="u4_ensure_watch_routine")return mocks.ensureWatch();
     if(name==="staff_coordination_reconcile")return mocks.reconcile();
     if(!["staff_channel_sync_shift_requests","staff_channel_escalate_unanswered","supervisor_sync_supplier_receiving_tasks","supervisor_sync_financial_review"].includes(name))
