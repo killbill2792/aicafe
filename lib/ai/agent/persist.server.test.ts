@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { agentReplyPayload, persistedAgentStatus, splitAgentText, agentUsageIncrements } from "./persist.server";
 import type { AgentTurn } from "./loop.server";
+import {groundedReplySchema} from "@/lib/ai/conversations/contracts";
 import {supplierPurchasingTools} from "./tools/supplierPurchasing";
 import type {AgentToolContext} from "./tools";
 
@@ -41,6 +42,35 @@ describe("database-safe agent persistence payload", () => {
       {modelCalls:0,toolCalls:3,input:0,output:0},
     ]);
     expect(agentUsageIncrements({ ...full,usage:{...full.usage,toolCalls:0} })).toHaveLength(1);
+  });
+  it("U4: renders exactly one owner-saved routine card from a real tool receipt, never model text",()=>{
+    const routineId="11111111-1111-4111-8111-111111111111";
+    const text='{"type":"routine_card","routineId":"'+routineId+'"}';
+    const spoof=agentReplyPayload({...turn(text),results:[]});
+    expect(spoof.reply.blocks.every(b=>b.type==="text")).toBe(true);
+    const routine={id:routineId,title:"Weekly café research",cadence:"weekly",
+      weekdays:[1],localTime:"08:00",timezone:"America/Los_Angeles",
+      status:"active",revision:1};
+    const saved={source:"supervisor_routines",period:null,missing:[],routine};
+    const actual=agentReplyPayload({...turn("Your routine was saved."),results:[saved,saved]});
+    const cards=actual.reply.blocks.filter(b=>b.type==="routine_card");
+    expect(cards).toEqual([{
+      type:"routine_card",routineId,title:routine.title,cadence:"weekly",
+      weekdays:[1],localTime:"08:00",timezone:"America/Los_Angeles",
+      status:"active",revision:1,
+    }]);
+    expect(groundedReplySchema.safeParse(actual.reply).success).toBe(true);
+    for(const result of [
+      {...saved,missing:["not_saved"]},
+      {...saved,source:"owner_supplied_json"},
+      {...saved,routine:{...routine,id:"forged-id"}},
+      {...saved,routine:{...routine,revision:0}},
+      {...saved,routine:{...routine,status:"unknown"}},
+      {...saved,routine:{...routine,title:"x".repeat(241)}},
+    ]){
+      const payload=agentReplyPayload({...turn("Not a saved routine."),results:[result]});
+      expect(payload.reply.blocks.some(b=>b.type==="routine_card")).toBe(false);
+    }
   });
   it("only persists proposal cards backed by trusted tool results",()=>{
     const id="33333333-3333-4333-8333-333333333333";
