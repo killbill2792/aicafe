@@ -6,6 +6,7 @@
   "proof": "u3-canonical-research-proof.json",
   "scope": "u3-canonical-research-scope.json",
   "expectedTools": [
+    "describe_data",
     "query_data"
   ],
   "assertions": [
@@ -21,7 +22,8 @@
           "scope": "businessDate"
         }
       },
-      "minCount": 1
+      "minCount": 1,
+      "maxCount": 10000
     },
     {
       "name": "source-order-lines",
@@ -32,7 +34,8 @@
           "scope": "sampleOrderId"
         }
       },
-      "minCount": 1
+      "minCount": 1,
+      "maxCount": 10000
     },
     {
       "name": "owner-answer",
