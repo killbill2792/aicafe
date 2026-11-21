@@ -29,7 +29,7 @@ describe("U3 SQL source receipts in numeric claim verification",()=>{
   const original=receipt() as Record<string,unknown>;
   const proof=original.evidence as Record<string,unknown>;
   expect(hasVerifiedU3NumericObservation({...original,rows:[{fakeCents:99999}],
-    evidence:{...proof,column_units:{}}} as AgentToolResult)).toBe(false);
+    evidence:{...proof,column_units:{}}} as unknown as AgentToolResult)).toBe(false);
  });
  it("does not promote missing scope, untyped aliases or partial responses",()=>{
   const original=receipt() as Record<string,unknown>;
