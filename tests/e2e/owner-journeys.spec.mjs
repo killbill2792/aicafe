@@ -81,6 +81,12 @@ test("@home Task16A authenticated mobile owner views library/routines/permission
     await expect(routineCard).toContainText("Daily source check");
     await expect(page.getByText("Daily source check saved.",{exact:true})).toHaveCount(1);
     await expect(routineCard.getByLabel("Routine actions: Daily source check")).toBeVisible();
+    await routineCard.getByLabel("Routine actions: Daily source check").click();
+    await routineCard.getByRole("button",{name:"Edit in chat",exact:true}).click();
+    await expect(page.locator("#supervisor-home-composer")).toHaveValue(
+      new RegExp(id.routine));
+    await expect(page.locator("#supervisor-home-composer")).toHaveValue(/revision 1/);
+    await page.locator("#supervisor-home-composer").fill("");
     // Prove the compact chat does not regress the mobile viewport.
     expect(await page.evaluate(()=>document.documentElement.scrollWidth)).toBeLessThanOrEqual(391);
     const controlsButton=page.getByRole("button",{name:"Library, routines and permissions"});
@@ -130,6 +136,9 @@ test("@home Task16A authenticated mobile owner views library/routines/permission
     await panel.getByRole("button",{name:"Edit in chat",exact:true}).click();
     await expect(panel).toHaveCount(0);
     await expect(page.locator("#supervisor-home-composer")).toBeVisible();
+    await expect(page.locator("#supervisor-home-composer")).toHaveValue(
+      new RegExp(id.routine));
+    await expect(page.locator("#supervisor-home-composer")).toHaveValue(/revision 3/);
     await controlsButton.click();
     await panel.getByRole("button",{name:"Permissions",exact:true}).click();
     await expect(panel.getByText("Goal tracking",{exact:true}).first()).toBeVisible();
