@@ -36,14 +36,15 @@ export function seededCafe(index) {
 }
 
 /** One bounded retry for a dropped/aborted *loopback* navigation while Next.js
- * compiles an authenticated page. Await DOM readiness, not slow external asset
- * loads. No retry for HTTP errors, login redirect, owner-data failure or app
+ * compiles an authenticated page. Wait for full load so hydrated login form
+ * handlers exist before Playwright submits; DOM-only readiness silently drops
+ * early events. No retry for HTTP errors, login redirect, owner-data failure or app
  * assertions. A permanently unavailable app still fails the journey. */
 export async function navigateLocal(page,path){
   assertDisposableEnvironment();
   if(!path.startsWith("/en/"))throw Error("E2 refuses nonlocal route");
   try{
-    await page.goto(path,{waitUntil:"domcontentloaded",timeout:30_000});
+    await page.goto(path);
   }catch(error){
     if(!/net::ERR_(?:CONNECTION_RESET|EMPTY_RESPONSE|ABORTED)/u.test(String(error)))
       throw error;
@@ -55,7 +56,7 @@ export async function navigateLocal(page,path){
       try{return (await page.request.get("/en/login",{timeout:4000})).ok();}
       catch{return false;}
     },{timeout:30000,intervals:[500,1000,2000,3000]}).toBe(true);
-    await page.goto(path,{waitUntil:"domcontentloaded",timeout:30_000});
+    await page.goto(path);
   }
 }
 
