@@ -161,7 +161,7 @@ function qualifiedCustomerTrendCoverage(result:AgentToolResult,anonymous=false):
     c.linkedChecks>=CUSTOMER_MONITOR_POLICY.minimumLinkedChecks&&
     c.linkedChecks/c.eligibleChecks>=CUSTOMER_MONITOR_POLICY.minimumIdentityCoverage);
 }
-function hasObservedEvidence(result:AgentToolResult):boolean{
+export function hasObservedEvidence(result:AgentToolResult):boolean{
   if(!Array.isArray(result.missing))return false;
   // Schema metadata, row-count sentinels and truncated/failed aggregate
   // reads must never establish an independent observed fact.
