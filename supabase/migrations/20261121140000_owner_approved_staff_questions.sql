@@ -1,11 +1,7 @@
--- One owner-click staff question inside the existing proposal/effect and
--- 13C employee channel. No new table, scheduler, channel or autonomous send.
+-- One owner-click staff question inside the existing proposal/effect and 13C employee channel. No new table, scheduler, channel or autonomous send.
 set lock_timeout='3s';
 set statement_timeout='30s';
-
--- Only an existing, exact proposal claimed by the owner's verified click can
--- create a worker request. The low-level staff writer remains non-executable
--- by the service role directly; SECURITY DEFINER performs the checked call.
+-- Only an existing, exact proposal claimed by the owner's verified click can create a worker request. The low-level staff writer remains non-executable by the service role directly; SECURITY DEFINER performs the checked call.
 create function public.supervisor_commit_staff_question(
  p_business_id uuid,p_owner_user_id uuid,p_thread_id uuid,p_proposal_id uuid,p_effect_hash text
 ) returns jsonb language plpgsql security definer set search_path=public,pg_temp as $$
@@ -76,11 +72,7 @@ end $$;
 revoke all on function public.supervisor_commit_staff_question(uuid,uuid,uuid,uuid,text)
  from public,anon,authenticated;
 grant execute on function public.supervisor_commit_staff_question(uuid,uuid,uuid,uuid,text) to service_role;
-
--- Owner-provided physical evidence is NOT an inventory adjustment and NEVER
--- creates a staff request. The proposal revision makes answer/ignore/ask
--- mutually exclusive. The new evidence task enters the SAME Luna investigation
--- queue and retains the owner's attribution for subsequent source rechecks.
+-- Owner-provided physical evidence is NOT an inventory adjustment and NEVER creates a staff request. The proposal revision makes answer/ignore/ask mutually exclusive. The new evidence task enters the SAME Luna investigation queue and retains the owner's attribution for subsequent source rechecks.
 create function public.supervisor_answer_staff_question(
  p_business_id uuid,p_owner_user_id uuid,p_thread_id uuid,p_proposal_id uuid,
  p_revision integer,p_owner_message_id uuid
@@ -127,9 +119,7 @@ end $$;
 revoke all on function public.supervisor_answer_staff_question(uuid,uuid,uuid,uuid,integer,uuid)
  from public,anon,authenticated;
 grant execute on function public.supervisor_answer_staff_question(uuid,uuid,uuid,uuid,integer,uuid) to service_role;
-
--- A lost HTTP response never re-sends a worker question. Resolve only an
--- already-durable request, then finish its SAME previously clicked effect.
+-- A lost HTTP response never re-sends a worker question. Resolve only an already-durable request, then finish its SAME previously clicked effect.
 create function public.supervisor_reconcile_staff_question(
  p_business_id uuid,p_owner_user_id uuid,p_thread_id uuid,p_proposal_id uuid
 ) returns jsonb language plpgsql security definer set search_path=public,pg_temp as $$
@@ -168,11 +158,7 @@ end $$;
 revoke all on function public.supervisor_reconcile_staff_question(uuid,uuid,uuid,uuid)
  from public,anon,authenticated;
 grant execute on function public.supervisor_reconcile_staff_question(uuid,uuid,uuid,uuid) to service_role;
-
--- Extend the existing fifteen-minute Supervisor tick, not a new scheduler.
--- One overdue worker request becomes one durable owner task; silence cannot
--- count as declined or as a verified answer. Any later follow-up requires a
--- fresh owner-clicked proposal after Luna rechecks current source evidence.
+-- Extend the existing fifteen-minute Supervisor tick, not a new scheduler. One overdue worker request becomes one durable owner task; silence cannot count as declined or as a verified answer. Any later follow-up requires a fresh owner-clicked proposal after Luna rechecks current source evidence.
 create function public.staff_question_escalate_due(p_business_id uuid)
  returns integer language plpgsql security definer set search_path=public,pg_temp as $$
 declare saved integer;
@@ -205,12 +191,7 @@ end $$;
 revoke all on function public.staff_question_escalate_due(uuid)
  from public,anon,authenticated;
 grant execute on function public.staff_question_escalate_due(uuid) to service_role;
-
--- The existing investigation SQL checkpoint writes the owner report's
--- ai_messages row once. This BEFORE INSERT hook appends the already-supported
--- proposal_card block only when the claimed incident and saved inert proposal
--- agree on café, owner, thread, source ID and current source revision.
--- The model cannot inject a proposal ID into chat prose to obtain this card.
+-- The existing investigation SQL checkpoint writes the owner report's ai_messages row once. This BEFORE INSERT hook appends the already-supported proposal_card block only when the claimed incident and saved inert proposal agree on café, owner, thread, source ID and current source revision. The model cannot inject a proposal ID into chat prose to obtain this card.
 create function public.supervisor_attach_staff_question_card()
  returns trigger language plpgsql security definer set search_path=public,pg_temp as $$
 declare v_source text; v_proposal uuid; v_task public.operating_tasks;
