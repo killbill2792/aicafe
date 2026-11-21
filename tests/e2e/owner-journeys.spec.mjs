@@ -125,7 +125,8 @@ test("@home Task16A authenticated mobile owner views library/routines/permission
     await expect(page.locator("#supervisor-home-composer")).toHaveValue(
       new RegExp(id.routine));
     await expect(page.locator("#supervisor-home-composer")).toHaveValue(/revision 1/);
-    await page.locator("#supervisor-home-composer").fill("");
+    // A provider-disabled composer can still display the inert draft. Do not
+    // fake a completed model edit by typing/sending through a disabled field.
     // Prove the compact chat does not regress the mobile viewport.
     expect(await page.evaluate(()=>document.documentElement.scrollWidth)).toBeLessThanOrEqual(391);
     const controlsButton=page.getByRole("button",{name:"Library, routines and permissions"});
