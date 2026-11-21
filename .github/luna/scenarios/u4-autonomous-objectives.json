@@ -76,7 +76,7 @@
       "table": "public.supervisor_routines",
       "where": {
         "business_id": {
-          "scope": "businessId"
+          "scope": "watchBusinessId"
         },
         "id": {
           "scope": "watchRoutineId"
@@ -94,7 +94,7 @@
       "table": "public.supervisor_routine_occurrences",
       "where": {
         "business_id": {
-          "scope": "businessId"
+          "scope": "watchBusinessId"
         },
         "routine_id": {
           "scope": "watchRoutineId"
@@ -108,6 +108,117 @@
       },
       "minCount": 1,
       "maxCount": 1
+    },
+    {
+      "name": "first-watch-without-owner-chat",
+      "kind": "source",
+      "table": "public.ai_messages",
+      "where": {
+        "business_id": {
+          "scope": "watchBusinessId"
+        },
+        "thread_id": {
+          "scope": "watchThreadId"
+        },
+        "role": {
+          "eq": "owner"
+        }
+      },
+      "minCount": 0,
+      "maxCount": 0
+    },
+    {
+      "name": "quiet-watch-source-verified",
+      "kind": "source",
+      "table": "public.supervisor_routine_occurrences",
+      "where": {
+        "business_id": {
+          "scope": "watchBusinessId"
+        },
+        "routine_id": {
+          "scope": "watchRoutineId"
+        },
+        "run_id": {
+          "scope": "watchQuietRunId"
+        },
+        "state": {
+          "eq": "completed"
+        }
+      },
+      "minCount": 1,
+      "maxCount": 1
+    },
+    {
+      "name": "changed-watch-owner-report",
+      "kind": "owner",
+      "table": "public.ai_messages",
+      "where": {
+        "business_id": {
+          "scope": "watchBusinessId"
+        },
+        "thread_id": {
+          "scope": "watchThreadId"
+        },
+        "id": {
+          "scope": "watchReplyId"
+        },
+        "role": {
+          "eq": "supervisor"
+        }
+      },
+      "minCount": 1,
+      "maxCount": 1
+    },
+    {
+      "name": "changed-watch-metered-model",
+      "kind": "source",
+      "table": "public.supervisor_system_usage_events",
+      "where": {
+        "business_id": {
+          "scope": "watchBusinessId"
+        },
+        "owner_user_id": {
+          "scope": "watchOwnerUserId"
+        },
+        "source_id": {
+          "scope": "watchRunId"
+        },
+        "source_type": {
+          "eq": "routine"
+        },
+        "model": {
+          "eq": "gpt-6-luna"
+        }
+      },
+      "minCount": 1,
+      "maxCount": 12
+    },
+    {
+      "name": "no-watch-cross-cafe-message",
+      "kind": "isolation",
+      "table": "public.ai_messages",
+      "where": {
+        "business_id": {
+          "scope": "foreignBusinessId"
+        },
+        "id": {
+          "scope": "watchReplyId"
+        }
+      },
+      "minCount": 0,
+      "maxCount": 0
+    },
+    {
+      "name": "no-watch-supplier-effect",
+      "kind": "source",
+      "table": "public.supervisor_proposals",
+      "where": {
+        "business_id": {
+          "scope": "watchBusinessId"
+        }
+      },
+      "minCount": 0,
+      "maxCount": 0
     },
     {
       "name": "metered-real-model",
