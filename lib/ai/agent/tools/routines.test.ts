@@ -1,7 +1,7 @@
 import {describe,it,expect,vi} from "vitest";
 import {routineTools} from "./routines";
 const ctx=(port:unknown)=>({routines:port}) as never;
-const blank={routine_id:null,revision:null,title:null,cadence:null,weekdays:null,local_time:null};
+const blank={routine_id:null,revision:null,title:null,cadence:null,weekdays:null,local_time:null,goal_source_message_id:null};
 describe("verified owner routine chat tool",()=>{
   it("saves only through server verified port",async()=>{
     const create=vi.fn(async(input)=>({id:"saved",...input}));
@@ -10,7 +10,7 @@ describe("verified owner routine chat tool",()=>{
       weekdays:[],local_time:"08:00",
     },ctx({create,list:vi.fn(),change:vi.fn()}));
     expect(create).toHaveBeenCalledWith({
-      title:"Morning evidence",cadence:"daily",weekdays:[],localTime:"08:00"});
+      title:"Morning evidence",cadence:"daily",weekdays:[],localTime:"08:00"},null);
     expect(res.missing).toEqual([]);
   });
   it("does not pretend success if no authenticated port exists",async()=>{
