@@ -48,6 +48,11 @@ describe("U3 governed PostgreSQL AST admission",()=>{
   "SELECT data #>> '{customer,api_key}' FROM toast_records",
   "SELECT data #>> '{customer,firstName}; DROP TABLE orders;' FROM toast_records",
   "SELECT t.data AS innocent FROM toast_records t",
+  "SELECT min(net_sales_cents::text) AS result FROM orders AS o(a,b,net_sales_cents)",
+  "SELECT count(*) FROM orders AS o(net_sales_cents)",
+  "WITH x(net_sales_cents) AS (SELECT pos_order_id FROM orders) SELECT min(net_sales_cents) FROM x",
+  "SELECT data FROM toast_records AS r(source,source_ref,status,business_date,record_type,record_ref,order_ref,check_ref,counts_in_sales,data)",
+  "SELECT SUM(net_sales_cents) AS result, 999 AS result FROM orders",
   "SELECT MIN(data::text) FROM toast_records",
   "SELECT * FROM orders WHERE net_sales_cents > $2",
   "SELECT 1",
@@ -89,6 +94,10 @@ describe("U3 governed PostgreSQL AST admission",()=>{
   expect(addition.outputUnits).toEqual({total:"cents"});
   const ambiguous=await admitU3Sql("SELECT net_sales_cents*orders_count AS amount_cents FROM orders",admitted,0,false,[],units);
   expect(ambiguous.outputUnits).toEqual({});
+  await expect(admitU3Sql("SELECT SUM(net_sales_cents) AS result, 999 AS result FROM orders",
+   admitted,0,false,[],units)).rejects.toThrow("invalid_query");
+  await expect(admitU3Sql("SELECT COUNT(*) AS result, COUNT(*) AS result FROM orders",
+   admitted,0,false,[],units)).rejects.toThrow("invalid_query");
   const cte=await admitU3Sql(
    "WITH x AS (SELECT COUNT(*) AS net_sales_cents FROM orders) SELECT net_sales_cents FROM x",
    admitted,0,false,[],units);
