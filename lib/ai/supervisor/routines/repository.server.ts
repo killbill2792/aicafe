@@ -89,14 +89,17 @@ export async function listOwnerRoutinesAcrossThreads(scope:VerifiedRoutineTurn["
 export async function changeOwnerRoutine(input:{
   id:string;revision:number;status?:RoutineRecord["status"];
   schedule?:RoutineSchedule;
+  objectiveEdit?:boolean;
 },turn:VerifiedRoutineTurn):Promise<RoutineRecord>{
   checkedTurn(turn);
   const id=routineIdSchema.parse(input.id);
   const revision=z.number().int().positive().parse(input.revision);
   const status=input.status===undefined?undefined:routineStatusSchema.parse(input.status);
   const schedule=input.schedule===undefined?undefined:routineScheduleSchema.parse(input.schedule);
-  if(!status&&!schedule)throw new Error("Routine change required");
-  const u4Edit=process.env.SUPERVISOR_U4_ENABLED==="true"&&Boolean(turn.ownerMessageId&&schedule);
+  if(!status&&!schedule&&!input.objectiveEdit)throw new Error("Routine change required");
+  if(input.objectiveEdit&&(!turn.ownerMessageId||process.env.SUPERVISOR_U4_ENABLED!=="true"))
+    throw new Error("Authenticated owner message and enabled U4 are required for objective edits");
+  const u4Edit=input.objectiveEdit===true;
   const {data,error}=await turn.client.rpc(u4Edit?
     "u4_edit_objective_routine":"change_supervisor_routine",{
     p_business_id:turn.scope.businessId,p_owner_user_id:turn.scope.ownerUserId,
