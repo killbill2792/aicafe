@@ -53,6 +53,12 @@ describe("U3 governed PostgreSQL AST admission",()=>{
   "WITH x(net_sales_cents) AS (SELECT pos_order_id FROM orders) SELECT min(net_sales_cents) FROM x",
   "SELECT data FROM toast_records AS r(source,source_ref,status,business_date,record_type,record_ref,order_ref,check_ref,counts_in_sales,data)",
   "SELECT SUM(net_sales_cents) AS result, 999 AS result FROM orders",
+  "SELECT MIN(orders::text) AS exposed FROM orders",
+  "SELECT MIN(o::text) AS exposed FROM orders o",
+  "SELECT MIN(orders_count::text) AS result FROM orders AS orders_count",
+  "SELECT MIN(o::text) AS exposed FROM orders AS o",
+  "SELECT MIN(x::text) AS exposed FROM (SELECT net_sales_cents FROM orders) AS x",
+  "WITH cte AS (SELECT net_sales_cents FROM orders) SELECT MIN(cte::text) FROM cte",
   "SELECT MIN(data::text) FROM toast_records",
   "SELECT * FROM orders WHERE net_sales_cents > $2",
   "SELECT 1",
@@ -77,6 +83,13 @@ describe("U3 governed PostgreSQL AST admission",()=>{
    .rejects.toThrow("unattended_aggregate_required");
   await expect(admitU3Sql("SELECT SUM(net_sales_cents) AS n FROM orders",
    admitted,0,true,["business_date","net_sales_cents"]))
+   .resolves.toMatchObject({relations:["orders"]});
+  await expect(admitU3Sql(
+   "SELECT MIN(orders_count::text) AS result FROM orders AS orders_count",
+   admitted,0,true,["orders_count","net_sales_cents"]))
+   .rejects.toThrow("invalid_query");
+  await expect(admitU3Sql("SELECT SUM(o.net_sales_cents) AS result FROM orders o",
+   admitted,0,true,["net_sales_cents"]))
    .resolves.toMatchObject({relations:["orders"]});
   await expect(admitU3Sql("SELECT * FROM orders",
    admitted,0,true,["business_date","net_sales_cents"]))
