@@ -57,7 +57,9 @@ live("real Luna executes an authenticated full café goal through existing sched
     "warranted. Do not spend, message, schedule or change anything.";
   const provider:AgentProvider=async function*(params,signal){
     if(params.model!=="gpt-6-luna")throw Error("u4_live_wrong_model");
-    const paid={...params,max_output_tokens:Math.min(params.max_output_tokens??1200,1200)};
+    const requested=typeof params.max_output_tokens==="number"?
+      params.max_output_tokens:1200;
+    const paid={...params,max_output_tokens:Math.min(requested,1200)};
     budget=reserveInvestigationLiveCall(budget,
       Buffer.byteLength(JSON.stringify(paid),"utf8"),
       paid.max_output_tokens,"gpt-6-luna");
