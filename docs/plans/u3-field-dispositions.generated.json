@@ -4,7 +4,7 @@
   "modelAuthorization": false,
   "productionRowsIncluded": false,
   "physicalTables": 221,
-  "physicalFields": 2486,
+  "physicalFields": 2492,
   "approvedSqlRelations": 41,
   "reviewedFields": 387,
   "additionalLogicalViews": [
@@ -15,7 +15,7 @@
   "dispositionCounts": {
     "admitted_masked_personal_field": 14,
     "admitted_research_field": 373,
-    "internal_or_specialized_service": 1278,
+    "internal_or_specialized_service": 1284,
     "not_admitted_from_source": 106,
     "protected_operational_archive": 57,
     "restricted_secret_or_auth": 76,
@@ -12515,6 +12515,20 @@
           "reason": "Operational workflow/audit/state; source-family tool or owner-specific review required"
         },
         {
+          "field": "u4_checkpoint",
+          "type": "jsonb",
+          "notNull": false,
+          "status": "internal_or_specialized_service",
+          "reason": "Operational workflow/audit/state; source-family tool or owner-specific review required"
+        },
+        {
+          "field": "u4_result",
+          "type": "jsonb",
+          "notNull": false,
+          "status": "internal_or_specialized_service",
+          "reason": "Operational workflow/audit/state; source-family tool or owner-specific review required"
+        },
+        {
           "field": "updated_at",
           "type": "timestamp with time zone",
           "notNull": true,
@@ -12549,6 +12563,13 @@
           "reason": "Operational workflow/audit/state; source-family tool or owner-specific review required"
         },
         {
+          "field": "execution_mode",
+          "type": "text",
+          "notNull": true,
+          "status": "internal_or_specialized_service",
+          "reason": "Operational workflow/audit/state; source-family tool or owner-specific review required"
+        },
+        {
           "field": "id",
           "type": "uuid",
           "notNull": true,
@@ -12558,6 +12579,27 @@
         {
           "field": "local_time",
           "type": "time without time zone",
+          "notNull": true,
+          "status": "internal_or_specialized_service",
+          "reason": "Operational workflow/audit/state; source-family tool or owner-specific review required"
+        },
+        {
+          "field": "objective_source_message_id",
+          "type": "uuid",
+          "notNull": false,
+          "status": "internal_or_specialized_service",
+          "reason": "Operational workflow/audit/state; source-family tool or owner-specific review required"
+        },
+        {
+          "field": "objective_text",
+          "type": "text",
+          "notNull": false,
+          "status": "internal_or_specialized_service",
+          "reason": "Operational workflow/audit/state; source-family tool or owner-specific review required"
+        },
+        {
+          "field": "objective_updates",
+          "type": "jsonb",
           "notNull": true,
           "status": "internal_or_specialized_service",
           "reason": "Operational workflow/audit/state; source-family tool or owner-specific review required"

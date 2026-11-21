@@ -85,7 +85,15 @@ export const suppliesTools={
           view:"cv_inventory",columns:["source","source_ref","status","business_date",
             "menu_item_ref","stock_status","quantity","data"],
           filters:null,group_by:null,metrics:null,date_from:date,date_to:date,
-          order_by:null,limit:50},scoped);
+          order_by:null,limit:50},{
+          ...scoped,
+          // This registered no-argument reader executes ONE fixed, bounded
+          // inventory view query, not model-authored SQL. It strips raw rows
+          // through projectInventoryEvidence below. Generic unattended
+          // query_data stays aggregate-only, so Luna cannot choose arbitrary
+          // individual records or personal fields via this allowance.
+          aggregateOnly:false,
+        });
         const evidence=projectInventoryEvidence(result.rows);
         const missing=[...new Set([...(result.missing??[]),...evidence.missing])];
         return {source:"inventory",period:{from:date,to:date},agentId:"maya",

@@ -110,10 +110,10 @@ export type AgentToolContext = {
   };
   /** A verified thread/owner port; model input contains no café or user IDs. */
   routines?:{
-    create(schedule:RoutineSchedule):Promise<RoutineRecord>;
+    create(schedule:RoutineSchedule,goalSourceMessageId:string|null):Promise<RoutineRecord>;
     list():Promise<RoutineRecord[]>;
     change(input:{id:string;revision:number;status?:RoutineRecord["status"];
-      schedule?:RoutineSchedule}):Promise<RoutineRecord>;
+      schedule?:RoutineSchedule;objectiveEdit?:boolean}):Promise<RoutineRecord>;
   };
   gmail?:{labels():Promise<Record<string,unknown>>;
     search(query:string,limit:number):Promise<Record<string,unknown>>;

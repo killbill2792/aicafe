@@ -8,6 +8,8 @@ export type VerifiedRoutineTurn={
   threadId:string;
   /** Verified current owner message, for retry-idempotent create. */
   ownerMessageId?:string;
+  /** Authenticated earlier owner goal selected through the verified thread history. */
+  goalSourceMessageId?:string;
   client:SupabaseClient;
 };
 export const routineScheduleSchema=z.strictObject({
@@ -31,6 +33,10 @@ export type RoutineStatus=z.infer<typeof routineStatusSchema>;
 export type RoutineRecord=RoutineSchedule & {
   id:string;businessId:string;ownerUserId:string;threadId:string;
   timezone:string;status:RoutineStatus;revision:number;
+  /** U4 owner goal, old priority check or hidden system-origin watch. */
+  executionMode?:"priority"|"objective"|"watch";
+  objectiveText?:string|null;objectiveSourceMessageId?:string|null;
+  objectiveUpdates?:readonly {sourceMessageId:string;text:string;revision:number}[];
   createdAt:string;updatedAt:string;
 };
 export type RoutineOccurrence={

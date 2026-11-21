@@ -8,7 +8,7 @@ import {canonicalDictionary,canonicalViewNames,
 
 export type DataQueryContext={
  db:SupabaseClient;businessId:string;ownerUserId?:string;threadId?:string;
- mode?:"owner"|"investigation"|"durable";aggregateOnly?:boolean;
+ mode?:"owner"|"investigation"|"durable"|"routine";aggregateOnly?:boolean;
  sourceType?:string;sourceId?:string;runId?:string;leaseToken?:string;
 };
 const DEFAULT_ROWS=50,MAX_ROWS=100;

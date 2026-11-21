@@ -1,5 +1,5 @@
 {
- "generatedFrom": "public pg_catalog metadata 2026-11-20; no business values",
+ "generatedFrom": "Public pg_catalog metadata; U4 extensions corroborated against disposable migrated CI run 44856900504, no business values",
  "notAuthorization": true,
  "classification": "all physical metadata denied to model until reviewed logical admission",
  "relations": [
@@ -12208,6 +12208,16 @@
      "updated_at",
      "timestamp with time zone",
      true
+    ],
+    [
+     "u4_result",
+     "jsonb",
+     false
+    ],
+    [
+     "u4_checkpoint",
+     "jsonb",
+     false
     ]
    ],
    "relation": "supervisor_routine_occurrences",
@@ -12286,6 +12296,26 @@
      "updated_at",
      "timestamp with time zone",
      true
+    ],
+    [
+     "execution_mode",
+     "text",
+     true
+    ],
+    [
+     "objective_text",
+     "text",
+     false
+    ],
+    [
+     "objective_source_message_id",
+     "uuid",
+     false
+    ],
+    [
+     "objective_updates",
+     "jsonb",
+     true
     ]
    ],
    "relation": "supervisor_routines",
@@ -12301,6 +12331,10 @@
     {
      "target": "users",
      "constraint": "supervisor_routines_owner_user_id_fkey"
+    },
+    {
+     "target": "ai_messages",
+     "constraint": "supervisor_routines_u4_source_message"
     }
    ]
   },

@@ -3,6 +3,7 @@ import type {SupabaseClient} from "@supabase/supabase-js";
 vi.mock("server-only",()=>({}));
 import { suppliesTools } from "./supplies";
 import { agentToolDefinitions,executeAgentTool,type AgentToolContext } from "./index";
+import {dataQueryTools} from "./dataQuery";
 const unavailable={available:false as const,value:null,quality:{level:"low" as const,missingInputs:["missing"],estimatedInputs:[],staleInputs:[]}};
 function ctx(extra:Partial<AgentToolContext["tools"]>):AgentToolContext{
   return {timezone:"America/Los_Angeles",asOf:"2026-10-22",locale:"en",tools:{
@@ -127,6 +128,54 @@ describe("Maya read-only costs and unavailable inventory",()=>{
     expect(rpc).toHaveBeenCalledTimes(1);
     expect(unavailable).toMatchObject({inventory:null});
     expect(unavailable.missing).toContain("source_read_failed");
+  });
+  it("permits ONLY trusted fixed inventory detail in leased unattended work",async()=>{
+    const businessId="aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
+    const rpc=vi.fn(async(name:string,args:Record<string,unknown>)=>{
+      expect(name).toBe("ai_query_view");
+      expect(args).toMatchObject({
+        p_business_id:businessId,p_view:"cv_inventory",
+        p_date_from:"2026-10-22",p_date_to:"2026-10-22",
+        p_limit:50,
+      });
+      expect(args.p_columns).toEqual(["source","source_ref","status",
+        "business_date","menu_item_ref","stock_status","quantity","data"]);
+      return {error:null,data:{
+        rows:[{source:"app",source_ref:"stock:milk",status:"actual",
+          business_date:"2026-10-22",quantity:0,
+          data:{evidence_state:"dated_owner_count",ingredient_id:"milk",
+            ingredient_name:"Whole Milk",base_unit:"ml",count_date:"2026-10-22"}}],
+        sourceMix:{app:1},sourceCount:1,truncated:false,
+      }};
+    });
+    const canonical={
+      db:{rpc} as unknown as SupabaseClient,businessId,
+      ownerUserId:"bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
+      threadId:"cccccccc-cccc-4ccc-8ccc-cccccccccccc",
+      mode:"routine" as const,runId:"dddddddd-dddd-4ddd-8ddd-dddddddddddd",
+      leaseToken:"eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee",
+      aggregateOnly:true,
+    };
+    const got=await executeAgentTool("get_inventory",{},{
+      ...ctx({}),canonicalData:async()=>canonical,
+    });
+    expect(rpc).toHaveBeenCalledTimes(1);
+    expect(got).toMatchObject({source:"inventory",missing:[],
+      scope:"observed_inventory_only"});
+    expect(got.inventory).toEqual([expect.objectContaining({
+      source_ref:"stock:milk",quantity:0,evidence_state:"dated_owner_count",
+      ingredient_name:"Whole Milk",quantity_unit:"ml",
+    })]);
+    const forbidden=await dataQueryTools.query_data.execute({
+      view:"cv_inventory",
+      sql:null,parameters:null,
+      columns:["source","source_ref","quantity","data"],
+      filters:null,group_by:null,metrics:null,
+      date_from:"2026-10-22",date_to:"2026-10-22",
+      order_by:null,limit:50,
+    },canonical);
+    expect(forbidden.missing).toContain("unattended_aggregate_required");
+    expect(rpc).toHaveBeenCalledTimes(1);
   });
   it("never invents inventory quantities",async()=>{
     expect(await suppliesTools.get_inventory.execute({})).toMatchObject({

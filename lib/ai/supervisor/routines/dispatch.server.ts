@@ -1,9 +1,11 @@
 import "server-only";
 import type {SupabaseClient} from "@supabase/supabase-js";
+import type {AgentProvider} from "@/lib/ai/agent/loop.server";
 import {localDateAt,dueScheduleOnDate} from "./calendar";
 import {choosePriorities} from "./priority";
 import {claimRoutineOccurrence,finishRoutineOccurrence,listRoutineOccurrenceCandidates} from "./repository.server";
 import {postPriorityNotice} from "./notices.server";
+import {executeClaimedObjective} from "./objective.server";
 import {followUpStaffPublicationForBusiness} from "@/lib/scheduling/staffPublication.server";
 import type {PriorityDecision,PrioritySource,RoutineRecord} from "./contracts";
 
@@ -13,6 +15,22 @@ export type RoutineDispatchResult={
 };
 type DbRow={id:string;[field:string]:unknown};
 const batchLimit=100;
+/** Rotating a bounded window prevents later-created Watch and owner goals
+ * from being permanently hidden behind the first 100 older active routines.
+ * The existing refresh cron revisits all windows; no new scheduler or queue. */
+export function routinePageWindow(now:Date,total:number):{start:number;end:number}{
+  if(!Number.isFinite(now.getTime())||!Number.isSafeInteger(total)||total<0)
+    throw Error("routine_page_invalid");
+  const pageCount=Math.max(1,Math.ceil(total/batchLimit));
+  // Hour-only rotation aliases with an everyday fixed-hour cron (e.g. a
+  // two-page café always sees the same page at 09:00). The UTC calendar day
+  // also advances the window so infrequent but regular ticks cannot leave
+  // later owner goals or system Watch permanently outside the bounded read.
+  const slot=Math.floor(now.getTime()/86_400_000)+now.getUTCHours();
+  const selected=((slot%pageCount)+pageCount)%pageCount;
+  const start=selected*batchLimit;
+  return {start,end:start+batchLimit-1};
+}
 type Scope={businessId:string;ownerUserId:string;threadId:string;localDate:string};
 function safeSeverity(payload:unknown):string|null{
   if(!payload||typeof payload!=="object")return null;
@@ -171,6 +189,8 @@ type RoutineRow={
   title:string;cadence:"daily"|"weekly";weekdays:number[];
   local_time:string;timezone:string;status:"active"|"paused"|"revoked";
   revision:number;created_at:string;updated_at:string;
+  execution_mode?:"priority"|"objective"|"watch";objective_text?:string|null;
+  objective_source_message_id?:string|null;objective_updates?:unknown;
 };
 function parseRoutine(row:RoutineRow):RoutineRecord{
   return {
@@ -179,7 +199,29 @@ function parseRoutine(row:RoutineRow):RoutineRecord{
     localTime:String(row.local_time).slice(0,5),timezone:row.timezone,
     status:row.status,revision:row.revision,
     createdAt:row.created_at,updatedAt:row.updated_at,
+    executionMode:row.execution_mode??"priority",
+    objectiveText:row.objective_text??null,
+    objectiveSourceMessageId:row.objective_source_message_id??null,
+    objectiveUpdates:Array.isArray(row.objective_updates)?row.objective_updates.filter(v=>
+      v&&typeof v==="object"&&typeof v.sourceMessageId==="string"&&
+      typeof v.text==="string"&&Number.isSafeInteger(v.revision)):[],
   };
+}
+/** Fairness is a work-scheduling policy, not a café business procedure:
+ * verified owner routines and silent Watch rotate by their last actual
+ * occurrence update. A daily Watch cannot starve behind a growing backlog
+ * of owner objectives, and new owner objectives are not starved by Watch.
+ * Legacy priority checks retain their original execution order. */
+export function orderRoutinesFairly<T extends Pick<RoutineRecord,"id"|"executionMode">>(
+  routines:readonly T[],lastAttempt:ReadonlyMap<string,string>):T[]{
+  const legacy=routines.filter(r=>(r.executionMode??"priority")==="priority");
+  const objectives=routines.filter(r=>(r.executionMode??"priority")!=="priority");
+  objectives.sort((a,b)=>{
+    const left=lastAttempt.get(a.id)??"";
+    const right=lastAttempt.get(b.id)??"";
+    return left.localeCompare(right)||a.id.localeCompare(b.id);
+  });
+  return [...legacy,...objectives];
 }
 type OwnerScope={ownerUserId:string;threadId:string};
 /** The existing refresh-derived cron calls this once per café *after* alert
@@ -188,6 +230,9 @@ type OwnerScope={ownerUserId:string;threadId:string};
 export async function dispatchRoutinesForBusiness(db:SupabaseClient,businessId:string,
   timezone:string,now:Date,
   enqueueInvestigations?:(db:SupabaseClient,scope:Scope,now:Date)=>Promise<number>,
+  /** Trusted acceptance may meter the real provider; production uses the
+   * original configured Luna provider when this server-only port is absent. */
+  modelProvider?:AgentProvider,
 ):Promise<RoutineDispatchResult>{
   if(!Number.isFinite(now.getTime()))throw new Error("Invalid routine now");
   const started=Date.now();
@@ -196,14 +241,34 @@ export async function dispatchRoutinesForBusiness(db:SupabaseClient,businessId:s
   const tickNow=()=>new Date(now.getTime()+Math.max(0,Date.now()-started));
   const localDate=localDateAt(now,timezone);
   const result:RoutineDispatchResult={routinesChecked:0,runs:0,notices:0,failed:0,evidenceChecks:0,investigationsQueued:0};
+  const u4Enabled=process.env.SUPERVISOR_U4_ENABLED==="true";
+  // Bound and rotate BOTH owner and routine cohorts. A fixed first-100
+  // owner scan also permanently hides Watch for later café co-owners.
+  // The original legacy window stays unchanged when U4 is off.
+  const [activeCount,ownerCount]=u4Enabled?await Promise.all([
+    db.from("supervisor_routines").select("id",{count:"exact"})
+      .eq("business_id",businessId).eq("status","active").limit(0),
+    db.from("memberships").select("user_id",{count:"exact"})
+      .eq("business_id",businessId).eq("role","owner").limit(0),
+  ]):[null,null];
+  if(u4Enabled&&(activeCount?.error||typeof activeCount?.count!=="number"||
+    ownerCount?.error||typeof ownerCount?.count!=="number"))
+    throw activeCount?.error??ownerCount?.error??Error("u4_census_unavailable");
+  const window=u4Enabled?routinePageWindow(now,activeCount!.count!):null;
+  const ownerWindow=u4Enabled?routinePageWindow(now,ownerCount!.count!):null;
+  const scopedRoutines=db.from("supervisor_routines").select("*")
+    .eq("business_id",businessId).eq("status","active")
+    .order("created_at",{ascending:true}).order("id",{ascending:true});
+  const scopedOwners=db.from("memberships").select("user_id")
+    .eq("business_id",businessId).eq("role","owner")
+    .order("user_id",{ascending:true});
   const [ownerRows,threadRows,routineRows]=await Promise.all([
-    db.from("memberships").select("user_id").eq("business_id",businessId)
-      .eq("role","owner").order("user_id",{ascending:true}).limit(batchLimit),
+    ownerWindow?scopedOwners.range(ownerWindow.start,ownerWindow.end):
+      scopedOwners.limit(batchLimit),
     db.from("ai_threads").select("id,owner_user_id").eq("business_id",businessId)
       .order("updated_at",{ascending:false}).limit(batchLimit*2),
-    db.from("supervisor_routines").select("business_id,id,owner_user_id,thread_id,title,cadence,weekdays,local_time,timezone,status,revision,created_at,updated_at")
-      .eq("business_id",businessId).eq("status","active")
-      .order("created_at",{ascending:true}).limit(batchLimit),
+    window?scopedRoutines.range(window.start,window.end):
+      scopedRoutines.limit(batchLimit),
   ]);
   if(ownerRows.error||threadRows.error||routineRows.error)
     throw ownerRows.error??threadRows.error??routineRows.error;
@@ -214,6 +279,37 @@ export async function dispatchRoutinesForBusiness(db:SupabaseClient,businessId:s
       threads.set(row.owner_user_id,row.id);
   }
   const routines=((routineRows.data??[]) as RoutineRow[]).map(parseRoutine);
+  // Rotating the owner notice/Watch window must NOT deny a valid saved
+  // routine whose owner falls on a different page this tick. Verify those
+  // identities together in ONE current membership read, never by guessing
+  // from the selected owner cohort or issuing 100 per-routine DB requests.
+  const offPageOwners=[...new Set(routines.map(r=>r.ownerUserId)
+    .filter(id=>!owners.has(id)))];
+  const extraOwners=offPageOwners.length?
+    await db.from("memberships").select("user_id").eq("business_id",businessId)
+      .eq("role","owner").in("user_id",offPageOwners).limit(batchLimit):null;
+  if(extraOwners?.error)throw extraOwners.error;
+  const authorizedRoutineOwners=new Set([...owners,
+    ...(extraOwners?.data??[]).map(row=>row.user_id)]);
+  // A leased model execution is bounded to one objective per café tick so
+  // it cannot starve source refresh, chat or unrelated incident investigation.
+  let objectiveExecutions=0;
+  if(u4Enabled&&routines.some(r=>r.executionMode!=="priority")){
+    // Reuse authoritative occurrence updates; never create a second queue or
+    // turn a model-selected hypothesis into a scheduler priority.
+    const history=await db.from("supervisor_routine_occurrences")
+      .select("routine_id,updated_at").eq("business_id",businessId)
+      .order("updated_at",{ascending:false}).limit(batchLimit*10);
+    if(history.error)throw history.error;
+    const mostRecent=new Map<string,string>();
+    for(const row of history.data??[]){
+      if(typeof row.routine_id==="string"&&
+         typeof row.updated_at==="string"&&!mostRecent.has(row.routine_id))
+        mostRecent.set(row.routine_id,row.updated_at);
+    }
+    const ordered=orderRoutinesFairly(routines,mostRecent);
+    routines.splice(0,routines.length,...ordered);
+  }
   // Task 13B publication uses the same refresh tick; never omit existing
   // approved staff delivery and owner-visible exception reconciliation.
   try{await followUpStaffPublicationForBusiness(db,businessId,localDate);}
@@ -237,9 +333,35 @@ export async function dispatchRoutinesForBusiness(db:SupabaseClient,businessId:s
         const opened=await db.rpc("supervisor_ensure_proactive_thread",{p_business_id:businessId,p_owner_user_id:ownerUserId});
         if(opened.error)throw opened.error;
         if(typeof opened.data==="string")threadId=opened.data;
+        if(!threadId&&u4Enabled){
+          // Unlike the legacy alert-driven path, a newly connected owner
+          // needs an autonomous research identity BEFORE the first incident.
+          // This additive service-only RPC reuses the existing owner-thread
+          // fence and advisory lock, never creating a fabricated owner turn.
+          const watchThread=await db.rpc("u4_ensure_watch_thread",{
+            p_business_id:businessId,p_owner_user_id:ownerUserId,
+          });
+          if(watchThread.error)throw watchThread.error;
+          if(typeof watchThread.data==="string")threadId=watchThread.data;
+        }
       }catch{result.failed++;continue;}
       // Null is a successful no-work result, not an outage. A failed RPC is handled above.
       if(!threadId)continue;
+    }
+    // The default autonomous review is a SYSTEM-origin routine (hidden from
+    // owner-created routines). Its SQL identity and original owner/thread
+    // binding are verified; no fake owner chat utterance is inserted.
+    if(u4Enabled){
+      try{
+        const configured=process.env.SUPERVISOR_U4_WATCH_LOCAL_TIME??"09:00";
+        if(!/^([01]\d|2[0-3]):[0-5]\d$/u.test(configured))
+          throw Error("u4_invalid_watch_local_time");
+        const watch=await db.rpc("u4_ensure_watch_routine",{
+          p_business_id:businessId,p_owner_user_id:ownerUserId,
+          p_thread_id:threadId,p_local_time:configured,
+        });
+        if(watch.error||typeof watch.data!=="string")throw Error("u4_watch_unavailable");
+      }catch{result.failed++;}
     }
     try{
       const done=await postForOwner(db,{businessId,ownerUserId,threadId,localDate},now);
@@ -268,7 +390,7 @@ export async function dispatchRoutinesForBusiness(db:SupabaseClient,businessId:s
   }
   for(const routine of routines){
     result.routinesChecked++;
-    if(!owners.has(routine.ownerUserId)||routine.timezone!==timezone){
+    if(!authorizedRoutineOwners.has(routine.ownerUserId)||routine.timezone!==timezone){
       result.failed++;continue;
     }
     // Read persisted retries and missed dates, not just today's date. Each
@@ -281,6 +403,8 @@ export async function dispatchRoutinesForBusiness(db:SupabaseClient,businessId:s
       });
     }catch{result.failed++;continue;}
     for(const candidate of candidates){
+      if(routine.executionMode!=="priority"&&
+        (!u4Enabled||objectiveExecutions>=1))break;
       let lease:{runId:string;leaseToken:string;revision:number}|null=null;
       try{
         const claimAt=tickNow();
@@ -291,6 +415,18 @@ export async function dispatchRoutinesForBusiness(db:SupabaseClient,businessId:s
         lease=await claimRoutineOccurrence(db,{businessId,routineId:routine.id,
           revision:routine.revision,localDate:candidate.localDate,dueAt:due,now:claimAt});
         if(!lease)continue;
+        if(routine.executionMode==="objective"||routine.executionMode==="watch"){
+          objectiveExecutions++;
+          const outcome=await executeClaimedObjective(db,{
+            routine,lease,localDate:candidate.localDate,
+            ...(modelProvider?{provider:modelProvider}:{}),
+          });
+          result.runs++;
+          result.evidenceChecks+=outcome.sourceCount;
+          if(routine.executionMode==="objective"||outcome.attention==="attention")
+            result.notices++;
+          continue;
+        }
         // A missed occurrence is a check of CURRENT evidence, never a claim
         // we checked historically or a replay of a prior external action.
         const asOf=tickNow();

@@ -49,7 +49,7 @@ const relevantByKind:Record<string,readonly AgentToolName[]>={
  *
  * The groups are intentionally conservative. A derived aggregate never
  * invents an independent source where the underlying evidence overlaps. */
-const canonicalEvidenceDomain:Partial<Record<AgentToolName,string>>={
+export const canonicalEvidenceDomain:Partial<Record<AgentToolName,string>>={
   query_data:"recorded_sales",get_sales:"recorded_sales",get_item_sales:"recorded_sales",
   get_peak_hours:"recorded_sales",
   get_labor:"attendance_and_labor",get_payroll_facts:"attendance_and_labor",
@@ -63,8 +63,37 @@ const canonicalEvidenceDomain:Partial<Record<AgentToolName,string>>={
   inspect_purchase_reconciliation:"receiving_and_invoice_source",
   get_ingredient_costs:"ingredient_prices",get_product_costs:"recipe_costs",
   get_menu_items:"menu_catalog",get_price_monitor_status:"price_monitor",
-  get_profit:"profitability",get_events:"verified_saved_local_events",
+  // Profit is a computation over recorded sales, costs and labor. It is NOT
+  // a physically independent source corroborating any of those inputs.
+  get_profit:"other:derived_cafe_profit",get_events:"verified_saved_local_events",
 };
+/** Physical lineage of the existing public canonical VIEW families, not a
+ * question-to-tool routing script. Distinct views over Toast orders do not
+ * become independent evidence merely because the SQL view names differ.
+ * Unknown/U3 arbitrary SQL joins remain one conservative opaque lineage. */
+const canonicalViewSourceFamilies:Readonly<Record<string,string>>={
+  cv_sales_days:"recorded_sales",cv_sales_hours:"recorded_sales",
+  cv_item_sales:"recorded_sales",cv_orders:"recorded_sales",
+  cv_payments:"recorded_sales",cv_discounts:"recorded_sales",
+  cv_voids_refunds:"recorded_sales",cv_card_fees:"recorded_sales",
+  cv_customer_visits:"recorded_sales",cv_customer_products:"recorded_sales",
+  cv_toast_records:"recorded_sales",cv_analytics:"recorded_sales",
+  cv_inventory:"stock_and_inventory",
+  cv_labor_entries:"attendance_and_labor",cv_labor:"attendance_and_labor",
+  cv_payroll:"attendance_and_labor",
+  cv_staff:"staff_roster",cv_shifts:"dated_schedule",
+  cv_menu:"menu_catalog",cv_dining_options:"menu_catalog",
+  cv_bills:"configured_recurring_bills",
+  cv_expenses:"recorded_expenses",
+  cv_events:"verified_saved_local_events",
+  cv_cash:"cash_management_records",cv_kitchen:"kitchen_fulfillment",
+  cv_owner_facts:"owner_reported_facts",
+};
+export function canonicalQuerySourceFamily(view:unknown):string{
+  return typeof view==="string"?
+    canonicalViewSourceFamilies[view]??"other:canonical_data":
+    "other:canonical_data";
+}
 /** Read-only tool names and source labels do NOT establish evidence. Readers
  * frequently return a valid source name with only missing/error reasons. A
  * domain corroborates the incident only if its actual returned payload has
@@ -73,6 +102,10 @@ const nonObservationKeys=new Set([
   "source","period","agentId","missing","dataNotes","dataNote","href",
   "posReviewHref","unit","scope","quantitySemantics","truncated","estimated",
   "explain","coverageLabel","coverageFallback","error","message",
+  "sourceCount","rowCount","sourceMix","available","empty","quality",
+  "status","readAt","readTime","lastUpdated","freshnessLabel","provisional",
+  "stale","hasIncomplete","currentDayIncomplete","todayImported",
+  "lastFullDay","lastFullDayTotals",
 ]);
 function observedValue(value:unknown,depth=0):boolean{
   if(typeof value==="number")return Number.isFinite(value);
@@ -134,7 +167,7 @@ function qualifiedCustomerTrendCoverage(result:AgentToolResult,anonymous=false):
     c.linkedChecks>=CUSTOMER_MONITOR_POLICY.minimumLinkedChecks&&
     c.linkedChecks/c.eligibleChecks>=CUSTOMER_MONITOR_POLICY.minimumIdentityCoverage);
 }
-function hasObservedEvidence(result:AgentToolResult):boolean{
+export function hasObservedEvidence(result:AgentToolResult):boolean{
   if(!Array.isArray(result.missing))return false;
   // Schema metadata, row-count sentinels and truncated/failed aggregate
   // reads must never establish an independent observed fact.
@@ -363,9 +396,9 @@ export function universalInvestigationPrompt(source:SourceSynopsis,followUp:bool
   relatedTasks:source.relatedTasks.slice(0,8).map(redact)
  });
  const history=followUp&&previousPlan?redact(previousPlan.slice(0,800)):null;
- return "UNATTENDED CAFÉ RESEARCH. You are the existing Luna Supervisor, not a new agent. "+
+ return "SYSTEM-INITIATED UNATTENDED CAFÉ RESEARCH. You are the existing Luna Supervisor, not a new agent. "+
   "This is an operational observation, NOT a new owner instruction or authority to act. "+
-  (followUp?"Continue the original unresolved work, compare past hypotheses with current source facts and report meaningful changes. ":
+  (followUp?"Continue the original unresolved work in this persistent follow-up, compare past hypotheses with current source facts and report meaningful changes. ":
    "Independently investigate what changed, what may matter to the café and what follow-up is worthwhile. ")+
   "You choose what authorized data and external research sources are relevant and how to investigate. "+
   "The claim-bound get_investigation_source reader supplies the original incident identity, status and source receipts. "+
@@ -581,7 +614,8 @@ export function verifyInvestigationTurn(turn:AgentTurn,expected:ExpectedInvestig
   // A result's display source may be "scheduled_shifts" versus
   // "scheduled_shifts+pos_scheduled_shifts" for the SAME canonical reader.
   // Count underlying evidence families rather than spelling differences.
-  const domains=new Set(corroborated.map(c=>
+  const domains=new Set(corroborated.map(c=>c.name==="query_data"?
+    canonicalQuerySourceFamily(c.result.view):
     canonicalEvidenceDomain[c.name as AgentToolName]).filter(
       (domain):domain is string=>typeof domain==="string"&&domain.length>0));
   if(names.length<2||domains.size<2)return {ok:false,reason:"evidence_incomplete"};

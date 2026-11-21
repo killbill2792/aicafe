@@ -35,9 +35,34 @@ export function seededCafe(index) {
   return cafe;
 }
 
+/** One bounded retry for a dropped/aborted *loopback* navigation while Next.js
+ * compiles an authenticated page. Wait for full load so hydrated login form
+ * handlers exist before Playwright submits; DOM-only readiness silently drops
+ * early events. No retry for HTTP errors, login redirect, owner-data failure or app
+ * assertions. A permanently unavailable app still fails the journey. */
+export async function navigateLocal(page,path){
+  assertDisposableEnvironment();
+  if(!path.startsWith("/en/"))throw Error("E2 refuses nonlocal route");
+  try{
+    await page.goto(path);
+  }catch(error){
+    if(!/net::ERR_(?:CONNECTION_RESET|EMPTY_RESPONSE|ABORTED)/u.test(String(error)))
+      throw error;
+    // The disposable Next.js dev server can briefly drop loopback sockets
+    // while compiling a different signed-in route under the 24-journey CI
+    // load. Bound the recovery window without retrying an HTTP error from
+    // the original navigation or making an authenticated assertion pass.
+    await expect.poll(async()=>{
+      try{return (await page.request.get("/en/login",{timeout:4000})).ok();}
+      catch{return false;}
+    },{timeout:30000,intervals:[500,1000,2000,3000]}).toBe(true);
+    await page.goto(path);
+  }
+}
+
 export async function login(page, cafe) {
   assertDisposableEnvironment();
-  await page.goto("/en/login");
+  await navigateLocal(page,"/en/login");
   await expect(page.locator("#email")).toBeVisible();
   await page.locator("#email").fill(cafe.owner.email);
   await page.locator("#login-password").fill(cafe.owner.password);
@@ -48,7 +73,7 @@ export async function login(page, cafe) {
 }
 
 export async function openOwnedPage(page, cafe, pathname) {
-  await page.goto("/en/" + pathname);
+  await navigateLocal(page,"/en/" + pathname);
   await expect(page).not.toHaveURL(/\/login(?:\?|$)|\/onboarding(?:\?|$)/);
   await expect(page.getByText(cafe.name, {exact: true}).first())
     .toBeVisible({timeout: 30_000});
