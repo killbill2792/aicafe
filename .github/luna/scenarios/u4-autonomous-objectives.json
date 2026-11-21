@@ -71,6 +71,45 @@
       "maxCount": 1
     },
     {
+      "name": "unprompted-watch-source",
+      "kind": "source",
+      "table": "public.supervisor_routines",
+      "where": {
+        "business_id": {
+          "scope": "businessId"
+        },
+        "id": {
+          "scope": "watchRoutineId"
+        },
+        "execution_mode": {
+          "eq": "watch"
+        }
+      },
+      "minCount": 1,
+      "maxCount": 1
+    },
+    {
+      "name": "unprompted-watch-complete",
+      "kind": "source",
+      "table": "public.supervisor_routine_occurrences",
+      "where": {
+        "business_id": {
+          "scope": "businessId"
+        },
+        "routine_id": {
+          "scope": "watchRoutineId"
+        },
+        "run_id": {
+          "scope": "watchRunId"
+        },
+        "state": {
+          "eq": "completed"
+        }
+      },
+      "minCount": 1,
+      "maxCount": 1
+    },
+    {
       "name": "metered-real-model",
       "kind": "source",
       "table": "public.supervisor_system_usage_events",
