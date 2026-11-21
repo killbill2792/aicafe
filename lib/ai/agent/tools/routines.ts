@@ -4,7 +4,7 @@ import type {AgentToolContext,AgentToolResult} from "./index";
 
 /** Strict nullable fields are required by the OpenAI function schema. */
 export const manageRoutineSchema=z.strictObject({
-  action:z.enum(["create","list","edit","edit_goal","pause","resume","revoke"]),
+  action:z.enum(["create","list","list_goal_sources","edit","edit_goal","pause","resume","revoke"]),
   routine_id:z.uuid().nullable(),
   revision:z.number().int().positive().nullable(),
   title:z.string().trim().min(1).max(240).nullable(),
@@ -13,6 +13,8 @@ export const manageRoutineSchema=z.strictObject({
   local_time:z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/u).nullable(),
   /** Verified owner-message source, never model-authored objective prose. */
   goal_source_message_id:z.uuid().nullable(),
+  /** Existing authenticated conversation pagination, never owner-supplied scope. */
+  source_page_offset:z.number().int().min(0).max(10000).nullable(),
 });
 function fullSchedule(input:z.infer<typeof manageRoutineSchema>){
   if(!input.title||!input.cadence||!input.weekdays||!input.local_time)
@@ -26,7 +28,7 @@ export const routineTools={
   manage_routine:{
     agentId:"leo" as const,
     schema:manageRoutineSchema,
-    description:"Manage an owner's saved natural-language recurring café objective: create, list, edit schedule, edit objective, pause, resume or permanently revoke. A newly created routine preserves the full actual owner message as its objective and, when the U4 runtime is enabled, uses the existing single Luna agent to research the objective with authorized café tools and post a concise verified report. Do not reduce the objective to the title. A legacy routine continues its existing priority check until edited or deliberately converted. A routine never grants authority to spend, message anyone, change staffing/prices or execute external effects. The saved routine ID, revision and status are authoritative. Use the current café-local clock and ask for the schedule when missing; daily takes weekdays=[]; weekly takes ISO weekdays 1=Monday to 7=Sunday. List saved routines before editing or pausing to get exact routine_id and revision. For create, select goal_source_message_id from the authenticated owner-message IDs in this turn’s verified candidate list: select the ORIGINAL investigation request when a later owner reply only provides a schedule. Choose the current message ID for a single-turn complete request. Do not invent IDs; a missing source must be clarified rather than silently replaced with a scheduling response. Use edit_goal to update the owner objective from the actual authenticated owner message without restating the schedule; optional full schedule if both change. Use edit only for schedule changes with all fields, never to overwrite the goal. Revoke is irreversible. Never say a change was saved if the tool failed.",
+    description:"Manage an owner's saved natural-language recurring café objective: create, list, edit schedule, edit objective, pause, resume or permanently revoke. A newly created routine preserves the full actual owner message as its objective and, when the U4 runtime is enabled, uses the existing single Luna agent to research the objective with authorized café tools and post a concise verified report. Do not reduce the objective to the title. A legacy routine continues its existing priority check until edited or deliberately converted. A routine never grants authority to spend, message anyone, change staffing/prices or execute external effects. The saved routine ID, revision and status are authoritative. Use the current café-local clock and ask for the schedule when missing; daily takes weekdays=[]; weekly takes ISO weekdays 1=Monday to 7=Sunday. List saved routines before editing or pausing to get exact routine_id and revision. For create, select goal_source_message_id from the authenticated owner-message IDs in this turn’s verified candidate list. When the original objective is older than this page, use list_goal_sources with source_page_offset from the advertised next older page or the previous listing. Its scoped owner-only candidates are short previews: the database saves the entire original message. Do not substitute the latest scheduling clarification. Continue paging when necessary: select the ORIGINAL investigation request when a later owner reply only provides a schedule. Choose the current message ID for a single-turn complete request. Do not invent IDs; a missing source must be clarified rather than silently replaced with a scheduling response. Use edit_goal to update the owner objective from the actual authenticated owner message without restating the schedule; optional full schedule if both change. Use edit only for schedule changes with all fields, never to overwrite the goal. Revoke is irreversible. Never say a change was saved if the tool failed.",
     execute:async(raw:unknown,ctx:AgentToolContext):Promise<AgentToolResult>=>{
       const input=manageRoutineSchema.parse(raw);
       const port=ctx.routines;
@@ -34,6 +36,11 @@ export const routineTools={
       if(!port)return {...base,missing:["not_supported"]};
       if(input.action==="list"){
         return {...base,missing:[],routines:await port.list()};
+      }
+      if(input.action==="list_goal_sources"){
+        if(!port.goalSources)return {...base,missing:["not_supported"]};
+        const page=await port.goalSources(input.source_page_offset??0);
+        return {...base,missing:[],sources:page.sources,next_offset:page.nextOffset};
       }
       if(input.action==="create"){
         return {...base,missing:[],routine:await port.create(fullSchedule(input),input.goal_source_message_id)};
