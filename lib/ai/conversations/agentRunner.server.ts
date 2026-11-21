@@ -359,7 +359,7 @@ export async function runOneTurn(p: TurnParams): Promise<{ replyId: string; repl
           scope,threadId:id,ownerMessageId:owner.id,client:await getDb(),
         }),
         list:async()=>listOwnerRoutines({scope,threadId:id,client:await getDb()}),
-        change:async input=>changeOwnerRoutine(input,{scope,threadId:id,client:await getDb()}),
+        change:async input=>changeOwnerRoutine(input,{scope,threadId:id,ownerMessageId:owner.id,client:await getDb()}),
       },
       invoicePropose:async ({gmailMessageId,...input})=>{
         let source:InvoiceSource={
