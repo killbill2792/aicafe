@@ -151,6 +151,12 @@ export function verifyObjectiveTurn(turn:AgentTurn,routine:RoutineRecord):Object
     unsupportedExternalEffectClaim(turn.text)||
     !turn.text.trim())throw Error("u4_model_result_unverified");
   const admitted=routine.executionMode==="watch"?watchReadTools:objectiveReadTools;
+  // This server-side gate is independent of the planner's toolNames.
+  // An unexpected effect, mailbox read in Watch, or forged tool receipt
+  // invalidates the ENTIRE outcome even if another source read succeeded.
+  if((turn.toolInvocations??[]).some(call=>
+    !admitted.includes(call.name as AgentToolName)))
+    throw Error("u4_unadmitted_tool_invocation");
   const reads=(turn.toolInvocations??[]).filter(call=>
     admitted.includes(call.name as AgentToolName)&&
     // Catalogs and mailbox labels describe capabilities, not observed
