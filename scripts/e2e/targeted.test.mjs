@@ -1,6 +1,14 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import {SCENARIOS,classifyPaths, parseNameStatus, selectedScenarios, summarizeReport} from "./targeted.mjs";
+import browserConfig from "../../playwright.config.mjs";
+
+test("browser runner discovers owner, employee-channel and owner-question real journeys",()=>{
+  const match=browserConfig.testMatch;
+  assert.equal(Array.isArray(match),true);
+  for(const required of ["owner-journeys.spec.mjs","staff-channel.spec.mjs","staff-question.spec.mjs"])
+    assert.ok(match.includes(required),"missing required browser spec: "+required);
+});
 
 test("real Home, Staff, Menu, Money and Gmail changes select only relevant journeys", () => {
   assert.deepEqual(classifyPaths(["app/[locale]/page.tsx"]).scenarios, ["home"]);
