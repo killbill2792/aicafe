@@ -445,12 +445,17 @@ describe("U4 migrated model-objective and autonomous Watch SQL contract",()=>{
         expect(resumeSignal).toBeNull();
         expect(readFileSync(resumeMarker,"utf8")).toBe("resumed_and_published\n");
       }finally{rmSync(resumeDirectory,{recursive:true,force:true});}
+      // Duplicate must be a syntactically VALID proof to exercise the
+      // completed-lease idempotency fence, not be rejected earlier by the
+      // input-validator for empty source evidence.
+      const originalProof=(await admin.query("select u4_result->'proof' proof "+
+        "from public.supervisor_routine_occurrences "+
+        "where business_id=$1 and run_id=$2",[business,first.run_id]))
+        .rows[0]?.proof;
+      expect(originalProof).toMatchObject({sourceCount:1,quality:"verified"});
       expect(await call(worker,"u4_publish_objective_report",[
         business,routineId,first.run_id,first.lease_token,
-        "A duplicate report.","attention",{
-          sources:[],sourceCount:0,quality:"partial",missing:[],
-          externalEffects:"not_attempted",
-        },new Date().toISOString(),
+        "A duplicate report.","attention",originalProof,new Date().toISOString(),
       ])).toBe(false);
       const actualUsage=await admin.query("select status,model_call_count "+
         "from public.supervisor_system_usage_events "+
