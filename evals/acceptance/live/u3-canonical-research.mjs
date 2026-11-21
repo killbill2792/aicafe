@@ -80,6 +80,13 @@ async function main(){
   fail("explicit_shared_luna_authorization_required");
  if(env.AICAFE_RESEARCH_SQL_ENABLED!=="true"||!env.AICAFE_RESEARCH_DATABASE_URL)
   fail("governed_research_connection_missing");
+ // Trusted paid acceptance may run only against the disposable migrated DB.
+ const researchURL=new URL(env.AICAFE_RESEARCH_DATABASE_URL);
+ if(!["127.0.0.1","localhost"].includes(researchURL.hostname)||
+   researchURL.port!=="54322"||researchURL.pathname!=="/postgres"||
+   !["postgres:","postgresql:"].includes(researchURL.protocol)||
+   decodeURIComponent(researchURL.username)!=="aicafe_research")
+  fail("non_disposable_research_connection");
  const args=process.argv.slice(2);
  if(args.length!==4||args[0]!=="--output"||args[2]!=="--scope-output")
   fail("private_output_and_scope_required");
