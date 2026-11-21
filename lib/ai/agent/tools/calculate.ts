@@ -40,19 +40,16 @@ function unitForField(field:string,value:number):CalcValue|null{
   if(/(?:rate|ratio|margin|share)$/iu.test(field))return exactNumber(value,"percent");
   return exactNumber(value,"count");
 }
-/** PostgreSQL result aliases must carry a traceable unit, not silently
- * fall back to "count" merely because an arbitrary alias is numeric. */
-function exactResearchField(field:string,value:string|number):CalcValue|null{
+/** Only the SQL parser/authorized catalog may attest an exact research
+ * result unit. Model-selected result aliases are untrusted labels. */
+function exactResearchField(verifiedUnit:unknown,value:string|number):CalcValue|null{
  const amount=typeof value==="string"?value:
    Number.isFinite(value)?String(value):"";
- let unit:CalcUnit|null=null,scale=1;
- if(/(?:^|_)cents$/iu.test(field)){unit="cents";}
- else if(/(?:^|_)bps$/iu.test(field)){unit="percent";scale=10000;}
- else if(/(?:^|_)percent$/iu.test(field)){unit="percent";scale=100;}
- else if(/(?:^|_)(?:ratio|margin|rate|share)$/iu.test(field)){unit="ratio";}
- else if(/(?:^|_)(?:count|quantity|units|orders|items|visits|rows)$/iu.test(field))
-   unit="count";
+ const unit:CalcUnit|null=
+  verifiedUnit==="cents"||verifiedUnit==="count"||
+  verifiedUnit==="percent"||verifiedUnit==="ratio"?verifiedUnit:null;
  if(!unit)return null;
+ const scale=unit==="percent"?100:1;
  const exact=exactDecimal(amount,unit,scale);
  if(!exact||unit==="cents"&&exact.n%exact.d!==BigInt(0))return null;
  return exact;
@@ -104,7 +101,7 @@ export const calculateTools={
       "Screen numbers (profit, labor cost, card fees, break-even, item cost) come only from their own tools; "+
       "set screen_number to the one this result is about, or none, and start from that tool's number. "+
       "Each input reads ONE number: either tool + path (dot path into the exact tool result, e.g. rows.0.net_sales_cents), "+
-      "and for U3 SQL research include that result's exact evidence.receipt_id, with a typed numeric alias such as net_sales_cents; otherwise set receipt_id to null. "+
+      "and for U3 SQL research include that result's exact evidence.receipt_id, with a query-receipt-verified numeric column unit; aliases alone do not establish units. Otherwise set receipt_id to null. "+
       "or fact_key (a saved owner fact, including a question-card answer), "+
       "or owner_value + owner_unit for a number the owner said in chat (cents for money, 20 for 20%, plain count). "+
       "Set the unused fields to null. Never type any other number. Say You told me for owner numbers. "+
@@ -147,8 +144,15 @@ export const calculateTools={
             !(isResearch&&typeof value==="string"))
             return refuse("pathIsNotANumber",input.path);
           const field=input.path.split(".").at(-1)??"";
+          const e=(hit.result as Record<string,unknown>).evidence;
+          const proof=e&&typeof e==="object"&&!Array.isArray(e)?
+            (e as Record<string,unknown>).column_units:null;
+          const columnUnits=proof&&typeof proof==="object"&&!Array.isArray(proof)?
+            proof as Record<string,unknown>:null;
+          const attestedUnit=columnUnits&&Object.hasOwn(columnUnits,field)?
+            columnUnits[field]:null;
           const exact=isResearch?
-            exactResearchField(field,value as string|number):
+            exactResearchField(attestedUnit,value as string|number):
             unitForField(field,value as number);
           if(!exact)return refuse(isResearch?"researchUnitUnverified":"invalidNumber",input.path);
           inputs.push({name:input.name,label:input.label,value:exact,from:"tool",
