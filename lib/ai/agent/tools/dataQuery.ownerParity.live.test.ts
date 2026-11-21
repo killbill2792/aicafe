@@ -67,7 +67,7 @@ const diagnosticFields=new Set(["amount_cents","quantity","net_sales_cents",
  "business_date","record_type","record_ref","menu_item_ref","source_ref",
  "order_ref","check_ref","counts_in_sales","data.name","data.quantity",
  "data.numberOfGuests","data.displayName","data.source","data.type",
- "source","stock_status","status","data.guid","data.display_name","data.firstName",
+ "source","stock_status","status","data.guid","data.display_name","data.firstName","data.evidence_state",
  "data.customer.firstName"]);
 const safeField=(value:unknown)=>typeof value==="string"&&diagnosticFields.has(value)?
  value:"other";
@@ -280,6 +280,19 @@ run("Supervisor proves current-source orders, staff, cash, stock, names and scre
   expect(modified.rowCount).toBe(1);
   await client.query("insert into public.toast_raw_records\n (business_id,restaurant_guid,entity,entity_guid,business_date,payload,payload_sha256,capture_key)\n values\n ($1,$2,'employee',$3,$4::date,\n  jsonb_build_object('employee_guid',$3::uuid::text,'display_name','Nadia Rao','deleted',false),\n  repeat('a',64),'pos0e:e2:employee'),\n ($1,$2,'labor/v1/timeEntries',null,$4::date,\n  jsonb_build_object('guid','time-pos0e','employeeGuid',$3::uuid::text,'regularHours',5.5),\n  repeat('a',64),'pos0e:e2:time'),\n ($1,$2,'cashmgmt/v1/entries',null,$4::date,\n  jsonb_build_object('guid','cash-pos0e','type','CASH_IN','amount',18.75,\n   'employee',jsonb_build_object('guid',$3::uuid::text)),repeat('a',64),'pos0e:e2:cash'),\n ($1,$2,'stock/v1/inventory',$5,$4::date,\n  jsonb_build_object('guid',$5::uuid::text,'quantity',4.5,'status','QUANTITY'),\n  repeat('a',64),'pos0e:e2:stock'),\n ($6,$7,'cashmgmt/v1/entries',null,$4::date,\n  '{\"guid\":\"other-cafe-cash\",\"amount\":9999.99,\"type\":\"CASH_IN\"}'::jsonb,\n  repeat('a',64),'pos0e:e2:other-cafe')",
    [biz.id,restaurant,staffGuid,biz.today,stockGuid,otherCafe,otherRestaurant]);
+  // The old receipt-less stock observation is retained, but not current.
+  const legacyStock=(await client.query("select data->>'evidence_state' state from public.cv_inventory where business_id=$1 and menu_item_ref=$2",[biz.id,stockGuid])).rows;
+  expect(legacyStock).toEqual([{state:"source_unverified"}]);
+  // Simulate the existing complete stock-family writer and its matching receipt
+  // within this rollback fixture. Same source ID, no diagnostic fallback.
+  const stockAsOf=new Date().toISOString();
+  const staged=await client.query("select public.toast_stage_operational_batch($1,$2,'stock/v1/inventory',$3::date,$4::jsonb)",
+   [biz.id,restaurant,biz.today,JSON.stringify([{business_id:biz.id,restaurant_guid:restaurant,endpoint:"stock/v1/inventory",provider_key:stockGuid,source_key_kind:"provider_guid",source_business_date_kind:"observed_cafe_day",guid:stockGuid,status:"QUANTITY",quantity:4.5,business_date:biz.today,lastSuccessAt:stockAsOf}])]);
+  expect(staged.rowCount).toBe(1);
+  await client.query("insert into public.toast_optional_sync_state(business_id,restaurant_guid,operational_sources) values($1,$2,$3::jsonb) on conflict(business_id,restaurant_guid) do update set operational_sources=excluded.operational_sources",
+   [biz.id,restaurant,JSON.stringify({stock_inventory:{last_checked_at:stockAsOf,last_success_at:stockAsOf,status:"current",count:1}})]);
+  const currentStock=(await client.query("select quantity::text as quantity,data->>'evidence_state' state from public.cv_inventory where business_id=$1 and menu_item_ref=$2 and data->>'evidence_state'='observed_current'",[biz.id,stockGuid])).rows;
+  expect(currentStock).toEqual([{quantity:"4.5",state:"observed_current"}]);
   // The poison is purposefully newer-looking, but NEVER an operational value.
   await client.query("insert into public.toast_raw_samples\n (business_id,restaurant_guid,endpoint,business_date,http_status,item_count,sample,field_paths)\n values\n ($1,$2,'cashmgmt/v1/entries',$3::date,200,1,'[{\"guid\":\"poison-cash\",\"amount\":9999.99}]'::jsonb,ARRAY[]::text[]),\n ($1,$2,'stock/v1/inventory',$3::date,200,1,'[{\"guid\":\"poison-stock\",\"quantity\":9999}]'::jsonb,ARRAY[]::text[]),\n ($1,$2,'labor/v1/timeEntries',$3::date,200,1,'[{\"guid\":\"poison-time\",\"firstName\":\"PoisonEmployee\"}]'::jsonb,ARRAY[]::text[])",[biz.id,restaurant,biz.today]);
   const leak=(await client.query<{n:number}>("select count(*)::integer n from public.toast_records_for($1,$2,$3)\n where data->>'guid' in ('other-cafe-cash','poison-cash','poison-stock','poison-time')",
@@ -300,7 +313,7 @@ run("Supervisor proves current-source orders, staff, cash, stock, names and scre
     truth:"select sum(amount_cents)::integer n from public.cv_cash\n where business_id=$1 and business_date=$2",label:"Cents",args:[biz.id,biz.today]},
    {question:"For current Toast stock item GUID "+stockGuid+
      ", what quantity is retained today? Answer Quantity: N; do not treat missing as zero.",
-    truth:"select sum(quantity)::numeric n from public.cv_inventory\n where business_id=$1 and business_date=$2 and menu_item_ref=$3",label:"Quantity",args:[biz.id,biz.today,stockGuid]},
+    truth:"select sum(quantity)::numeric n from public.cv_inventory\n where business_id=$1 and business_date=$2 and menu_item_ref=$3 and data->>'evidence_state'='observed_current'",label:"Quantity",args:[biz.id,biz.today,stockGuid]},
    {question:"What is yesterday's canonical screen net sales for this café in integer cents? Use the daily sales rollup, not raw order guesses. Answer Cents: N.",
     truth:"select sum(net_sales_cents)::integer n from public.cv_sales_days\n where business_id=$1 and business_date=$2",label:"Cents",args:[biz.id,prior]}
   ];
@@ -591,10 +604,15 @@ run("Supervisor proves current-source orders, staff, cash, stock, names and scre
    expect(rejected.error).toBe("invalid_query");
    // Prove the real registered query_data dispatch and SQL RPC, not just a
    // direct SELECT of the source. This never reaches a model provider.
+   const unsafeStock=await executeAgentTool("query_data",{
+    view:"cv_inventory",columns:null,filters:[{column:"menu_item_ref",op:"=",value:stockGuid}],group_by:null,
+    metrics:[{fn:"sum",column:"quantity"}],date_from:biz.today,date_to:biz.today,order_by:null,limit:10
+   },context);
+   expect(unsafeStock.error).toBe("inventory_quantity_requires_current_evidence");
    const familyToolCases=[
     {view:"cv_cash" as const,metric:"amount_cents",day:biz.today,filters:null},
     {view:"cv_inventory" as const,metric:"quantity",day:biz.today,
-     filters:[{column:"menu_item_ref",op:"=",value:stockGuid}]},
+     filters:[{column:"menu_item_ref",op:"=",value:stockGuid},{column:"data.evidence_state",op:"=",value:"observed_current"}]},
     {view:"cv_sales_days" as const,metric:"net_sales_cents",day:prior,filters:null}
    ];
    for(const [index,testCase] of familyToolCases.entries()){
@@ -612,14 +630,19 @@ run("Supervisor proves current-source orders, staff, cash, stock, names and scre
     expect(Number(rows?.[0]?.["sum_"+testCase.metric]),spec.question)
      .toBeCloseTo(Number(truthValue),2);
     if(testCase.view==="cv_inventory")expect(queryShapes.at(-1)).toMatchObject({
-     view:"cv_inventory",filterColumns:["menu_item_ref"],
+     view:"cv_inventory",filterColumns:["menu_item_ref","data.evidence_state"],
      fromScope:"today",toScope:"today",outcome:"rows"
     });
    }
-   // Every previously failed full-Luna scalar case must first be executable through
+   // Every historical scalar case must first be executable through
    // the ACTUAL registered query_data RPC on the existing disposable fixture.
    // Compare each with independent source SQL before making another paid call.
-   const failedScalarReaderCases=[
+   const scalarReaderCases=[
+    {index:0,filters:[
+     {column:"record_type",op:"in",value:["item_discount","check_discount"]},
+     {column:"counts_in_sales",op:"=",value:true},
+     {column:"data.name",op:"ilike",value:"%student%"}],
+     metric:{fn:"count",column:"source_ref"}},
     {index:1,filters:[
      {column:"record_type",op:"in",value:["item_discount","check_discount"]},
      {column:"counts_in_sales",op:"=",value:true},
@@ -652,6 +675,11 @@ run("Supervisor proves current-source orders, staff, cash, stock, names and scre
      {column:"record_type",op:"=",value:"order"},
      {column:"counts_in_sales",op:"=",value:true}],
      metric:{fn:"sum",column:"data.numberOfGuests"}},
+    {index:8,filters:[
+     {column:"record_type",op:"=",value:"item"},
+     {column:"counts_in_sales",op:"=",value:true},
+     {column:"data.displayName",op:"is_null",value:null}],
+     metric:{fn:"count",column:"source_ref"}},
     {index:9,filters:[
      {column:"record_type",op:"=",value:"order"},
      {column:"counts_in_sales",op:"=",value:true},
@@ -662,7 +690,8 @@ run("Supervisor proves current-source orders, staff, cash, stock, names and scre
      {column:"counts_in_sales",op:"=",value:true}],
      metric:{fn:"sum",column:"data.quantity"}}
    ] as const;
-   for(const spec of failedScalarReaderCases){
+   expect(scalarReaderCases.map(spec=>spec.index)).toEqual(scalarQuestions.map((_,index)=>index));
+   for(const spec of scalarReaderCases){
     const question=scalarQuestions[spec.index];
     const expected=(await client.query<{n:number}>(question.truth,
      truthArgs(question.scope))).rows[0].n;
@@ -683,6 +712,45 @@ run("Supervisor proves current-source orders, staff, cash, stock, names and scre
      "scalar-"+(spec.index+1)+" registered reader vs source SQL")
      .toBeCloseTo(Number(expected),2);
    }
+   // Preserve all rows, including the null-name group: the reader must
+   // return the same grouping and totals as the independent source query.
+   const breakdownReaderCases=[
+    {group:"business_date",filters:[
+     {column:"record_type",op:"in",value:["item_discount","check_discount"]},
+     {column:"counts_in_sales",op:"=",value:true}],
+     metric:{fn:"count",column:"source_ref"}},
+    {group:"data.displayName",filters:[
+     {column:"record_type",op:"=",value:"item"},
+     {column:"counts_in_sales",op:"=",value:true}],
+     metric:{fn:"sum",column:"data.quantity"}}
+   ] as const;
+   expect(breakdownReaderCases).toHaveLength(breakdowns.length);
+   for(const [index,spec] of breakdownReaderCases.entries()){
+    const question=breakdowns[index];
+    const args=truthArgs(question.scope);
+    const expected=await client.query<{k:string;n:number}>(question.truth,args);
+    const result=await executeAgentTool("query_data",{
+     view:"cv_toast_records",columns:[spec.group],filters:spec.filters,
+     group_by:[spec.group],metrics:[spec.metric],date_from:args[1],date_to:args[2],
+     order_by:null,limit:50
+    },context);
+    expect(result.error,"breakdown-"+(index+1)+" registered reader").toBeUndefined();
+    expect(result.missing).not.toContain("toastDayStatusUnavailable");
+    const rows=result.rows as Array<Record<string,unknown>>|undefined;
+    expect(rows,"complete grouped result").toHaveLength(expected.rows.length);
+    const alias=spec.metric.fn+"_"+spec.metric.column;
+    const actual=(rows??[]).map(r=>{
+     expect(Object.hasOwn(r,spec.group),"group column returned").toBe(true);
+     expect(r[alias],"group total not missing").not.toBeNull();
+     expect(r[alias],"group total not missing").not.toBeUndefined();
+     return {k:r[spec.group]===null?"Unnamed":String(r[spec.group]),n:Number(r[alias])};
+    });
+    const sort=(rows:{k:string;n:number}[])=>rows.sort((a,b)=>a.k.localeCompare(b.k));
+    expect(sort(actual),"breakdown-"+(index+1)+" independent grouped SQL truth").toEqual(
+     sort(expected.rows.map(r=>({k:r.k,n:Number(r.n)}))));
+   }
+   // A source-backed reader result is separate from any real-model selection.
+   console.log("POS historical reader parity: 11 scalar, 2 breakdown, 2 identity, 3 source-family cases; zero provider calls.");
    return;
   }
 
@@ -799,3 +867,36 @@ run("Supervisor proves current-source orders, staff, cash, stock, names and scre
   await client.end();
  }
 },1_200_000);
+
+// Independently verify the new shared authenticated fixture on the same
+// migrated local DB before accepting any provider launch. Roll back all writes.
+if(sqlOnly&&dbUrl)it("shared historical POS fixture and all 18 independent source and answer-oracle checks",async()=>{
+ allowedHost(dbUrl);
+ const client=new pg.Client({connectionString:dbUrl});
+ await client.connect();
+ try{
+  const {setupHistoricalPosFixture}=await import("../../../../evals/acceptance/live/task17b-cross-domain.mjs");
+  const {historicalPosCases,historicalPosSourceSql,checkHistoricalPosAnswer}=await import("../../../../scripts/acceptance/luna-attest-17b.mjs");
+  const scope=await setupHistoricalPosFixture(client);
+  let count=0;
+  for(const id of ["17b-pos-discounts","17b-pos-sales","17b-pos-identity","17b-pos-operations"]){
+   for(const spec of historicalPosCases(id)){
+    const rows=(await client.query(historicalPosSourceSql(spec,scope))).rows;
+    expect(rows.length,spec.id).toBeGreaterThan(0);
+    for(const row of rows)expect(spec.kind==="name"?row.answer:row.n,spec.id).not.toBeNull();
+    // Synthetic labelled answers exercise the trusted oracle against actual
+    // migrated source rows; never represent these as provider/model evidence.
+    const note=spec.incomplete?"\nToday is incomplete.":"";
+    const answer=spec.kind==="groups"?rows.map((row:{k:string;n:number|string})=>row.k+": "+row.n).join("\n"):
+      spec.kind==="name"?"Name: "+rows[0].answer:spec.label+": "+rows[0].n+note;
+    const wrong=spec.kind==="groups"?rows.map((row:{k:string;n:number|string},i:number)=>row.k+": "+(Number(row.n)+(i===0?1:0))).join("\n"):
+      spec.kind==="name"?"Name: "+rows[0].answer+" altered":spec.label+": "+(Number(rows[0].n)+1)+note;
+    expect(()=>checkHistoricalPosAnswer(spec,rows,answer),spec.id).not.toThrow();
+    expect(()=>checkHistoricalPosAnswer(spec,rows,wrong),spec.id+" altered answer").toThrow();
+    expect(()=>checkHistoricalPosAnswer(spec,rows,""),spec.id+" missing answer").toThrow();
+    count++;
+   }
+  }
+  expect(count).toBe(18);
+ }finally{await client.query("ROLLBACK").catch(()=>{});await client.end();}
+},120_000);

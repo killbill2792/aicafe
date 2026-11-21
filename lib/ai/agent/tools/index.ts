@@ -309,7 +309,7 @@ export const agentToolDefinitions:Array<Omit<(typeof baseToolDefinitions)[number
 /** Offered only for a verified connected owner. Default cafés keep their existing tools. */
 /** Offered only when a server-claimed autonomous run explicitly requests it. */
 export const investigationToolDefinition=baseToolDefinitions.find(t=>t.name==="get_investigation_source")!;
-export const gmailToolDefinitions=baseToolDefinitions.filter(tool=>["search_gmail","read_gmail","read_gmail_thread","read_gmail_attachment","propose_gmail_action"].includes(tool.name));
+export const gmailToolDefinitions=baseToolDefinitions.filter(tool=>["search_gmail","list_gmail_labels","read_gmail","read_gmail_thread","read_gmail_attachment","propose_gmail_action"].includes(tool.name));
 export const agentLabelsPrompt = "Field labels by language (use matching language, not translated numeric units): " +
   JSON.stringify({ en: en.AgentFields, es: es.AgentFields, ar: ar.AgentFields });
 

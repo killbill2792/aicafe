@@ -1,7 +1,7 @@
 import {describe,expect,it,vi} from "vitest";
 vi.mock("server-only",()=>({}));
 import {gmailTools} from "./gmail";
-import type {AgentToolContext} from "./index";
+import {agentToolDefinitions,gmailToolDefinitions,executeAgentTool,type AgentToolContext} from "./index";
 const context={timezone:"America/Los_Angeles",asOf:"2026-11-12",locale:"en",
  tools:{} as AgentToolContext["tools"]} satisfies AgentToolContext;
 const input={operation:"send",action:null,to:["supplier@example.com"],cc:[],bcc:[],
@@ -49,3 +49,18 @@ describe("Gmail tools are owner scoped and inert",()=>{
      gmail:{labels:vi.fn(),search:vi.fn(),read,thread:vi.fn(),attachment:vi.fn(),propose:vi.fn()}});
    expect(result).toMatchObject({trust:"external_evidence",senderAuthority:"unverified",missing:[]});
  });
+
+it("advertises the read-only label listing exactly once and only in the verified connected group",async()=>{
+ expect(agentToolDefinitions.some(t=>t.name==="list_gmail_labels")).toBe(false);
+ expect(gmailToolDefinitions.filter(t=>t.name==="list_gmail_labels")).toHaveLength(1);
+ expect(await executeAgentTool("list_gmail_labels",{},context)).toMatchObject({missing:["gmail_not_connected"]});
+ const labels=vi.fn().mockRejectedValue(new Error("connector_owner_access_revoked"));
+ const propose=vi.fn();
+ const result=await executeAgentTool("list_gmail_labels",{},{
+  ...context,gmail:{labels,search:vi.fn(),read:vi.fn(),thread:vi.fn(),attachment:vi.fn(),propose}
+ });
+ expect(labels).toHaveBeenCalledTimes(1);
+ expect(result).toMatchObject({missing:["gmail_labels_unavailable"]});
+ expect(result).not.toHaveProperty("labels");
+ expect(propose).not.toHaveBeenCalled();
+});

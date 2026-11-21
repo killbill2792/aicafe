@@ -734,3 +734,103 @@ test("large registered catalog retains the strict selected-run limit",()=>{
  const grouped=Array.from({length:21},(_,i)=>"17-case-"+i);
  assert.throws(()=>selectLunaScenarios(grouped,"group-17"),/Requested scenario/);
 });
+
+test("16E permits its documented alternative sales tool but still requires presentation",async()=>{
+ const {expectedToolsObserved}=await import("./shared-luna.mjs");
+ const m={id:"16e",expectedTools:["get_sales","present_response"]};
+ assert.equal(expectedToolsObserved(m,["query_data","present_response"]),true);
+ assert.equal(expectedToolsObserved(m,["query_data"]),false);
+ assert.equal(expectedToolsObserved({...m,id:"other"},["query_data","present_response"]),false);
+});
+test("trusted 16E readback rejects altered stored numeric results and wrong currency",async()=>{
+ const {attestTask17B}=await import("./luna-attest-17b.mjs");
+ const id=n=>"aaaaaaaa-aaaa-4aaa-8aaa-"+String(n).padStart(12,"0");
+ const scope={businessId:id(1),ownerUserId:id(2),threadId:id(3),plainReplyId:id(4),richReplyId:id(5),firstDay:"2026-01-01",lastDay:"2026-01-02"};
+ const panel={kind:"line",unit:"cents",currency:"USD",from:scope.firstDay,to:scope.lastDay,points:[{label:scope.firstDay,value:1234},{label:scope.lastDay,value:5678}]};
+ const query=sql=>{
+  if(sql.includes("public.businesses"))return [{currency:"USD"}];
+  if(sql.includes("daily_rollups"))return [{net_sales_cents:sql.includes(scope.firstDay)?1234:5678}];
+  if(sql.includes(scope.plainReplyId))return [{blocks:[{type:"text",text:"Yes."}]}];
+  return [{blocks:[{type:"text",text:"Sales rose."},{type:"rich_presentation",version:1,panels:[structuredClone(panel)]}]}];
+ };
+ assert.equal(attestTask17B("16e",scope,query).length,2);
+ panel.points[1].value=5679;assert.throws(()=>attestTask17B("16e",scope,query));
+ panel.points[1].value=5678;panel.currency="EUR";assert.throws(()=>attestTask17B("16e",scope,query));
+});
+
+test("natural-brief currency oracle accepts normal prose but rejects inexact numbers",async()=>{
+ const {hasMoney}=await import("./luna-attest-17b.mjs");
+ assert.equal(hasMoney("Sales were $1,234.56 after checks.","USD",123456),true);
+ assert.equal(hasMoney("1234.56 USD","USD",123456),true);
+ assert.equal(hasMoney("Sales $1,234.57","USD",123456),false);
+ assert.equal(hasMoney("2026-01-01 1234.56","USD",123456),false);
+});
+
+test("natural money evidence cannot certify wrong sign, currency or truncated digits",async()=>{
+ const {hasMoney}=await import("./luna-attest-17b.mjs");
+ for(const v of ["-$12.34","−$12.34","USD -12.34","($12.34)","- 12.34 USD"]){
+  assert.equal(hasMoney(v,"USD",1234),false,v);
+  assert.equal(hasMoney(v,"USD",-1234),true,v);
+ }
+ for(const v of ["CAD$12.34","CAD $12.34","$12.34 CAD","USD 12.345","$112.34","$12.340","USD 1,2.34","$12.34x"]){
+  assert.equal(hasMoney(v,"USD",1234),false,v);
+ }
+ for(const v of ["USD 12.34","$12.34","12.34 USD","**$12.34**","Net sales: $12.34."]){
+  assert.equal(hasMoney(v,"USD",1234),true,v);
+ }
+});
+
+test("historical POS migration retains all 18 original distinct cases and independent answer checks",async()=>{
+ const {historicalPosCases,historicalPosSourceSql,checkHistoricalPosAnswer}=await import("./luna-attest-17b.mjs");
+ const ids=["17b-pos-discounts","17b-pos-sales","17b-pos-identity","17b-pos-operations"];
+ const cases=ids.flatMap(historicalPosCases);
+ assert.deepEqual(ids.map(id=>historicalPosCases(id).length),[6,7,2,3]);
+ assert.equal(new Set(cases.map(c=>c.id)).size,18);
+ const s={businessId:"eeeeeeee-3333-4eee-8eee-eeeeeeeeee00",today:"2026-11-19",prior:"2026-11-18"};
+ for(const c of cases)assert.ok(!/\$\d/.test(historicalPosSourceSql(c,s)));
+ assert.throws(()=>historicalPosSourceSql(cases[0],{...s,businessId:"aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"}));
+ checkHistoricalPosAnswer(cases[0],[{n:4}],"Number: 4\nToday is incomplete.");
+ assert.throws(()=>checkHistoricalPosAnswer(cases[0],[{n:4}],"Number: 4"));
+ assert.throws(()=>checkHistoricalPosAnswer(cases[0],[{n:4}],"Number: 44\nToday is incomplete."));
+ const g=cases.find(c=>c.id==="breakdown-2");
+ checkHistoricalPosAnswer(g,[{k:"Muffin",n:2},{k:"Unnamed",n:1}],"Muffin: 2\nUnnamed: 1");
+ assert.throws(()=>checkHistoricalPosAnswer(g,[{k:"Muffin",n:2},{k:"Unnamed",n:1}],"Muffin: 2"));
+ assert.throws(()=>checkHistoricalPosAnswer(g,[{k:"Muffin",n:2},{k:"Unnamed",n:1}],"Muffin: 2\nUnnamed: 1\nInvented: 9"));
+});
+
+test("legacy 15A must select two distinct independent source readers",async()=>{
+ const {expectedToolsObserved}=await import("./shared-luna.mjs");
+ const m={id:"17c-fault-followup",expectedTools:["get_investigation_source","query_data"]};
+ assert.equal(expectedToolsObserved(m,["get_investigation_source","get_sales","get_labor"]),true);
+ assert.equal(expectedToolsObserved(m,["get_investigation_source","get_sales","get_sales"]),false);
+ assert.equal(expectedToolsObserved(m,["get_sales","get_labor"]),false);
+});
+
+test("historical host attestation binds ordered owner/reply pairs and scoped usage",async()=>{
+ const {attestHistoricalPos,historicalPosCases,historicalPosSourceSql}=await import("./luna-attest-17b.mjs");
+ const id=n=>"aaaaaaaa-aaaa-4aaa-8aaa-"+String(n).padStart(12,"0");
+ const scenario="17b-pos-identity",cases=historicalPosCases(scenario);
+ const s={businessId:"eeeeeeee-3333-4eee-8eee-eeeeeeeeee00",ownerUserId:id(1),threadId:id(2),today:"2026-11-19",prior:"2026-11-18",owner1:id(3),reply1:id(4),owner2:id(5),reply2:id(6),expectedProviderCalls:4};
+ const transcript=[{id:s.owner1,role:"owner"},{id:s.reply1,role:"supervisor"},{id:s.owner2,role:"owner"},{id:s.reply2,role:"supervisor"}];
+ let wrongUsageScope=false,missingUsage=false;
+ const query=sql=>{
+  if(sql.includes("FROM public.businesses"))return [{today:s.today,prior:s.prior}];
+  if(sql.includes("SELECT id,role"))return transcript;
+  if(sql.includes("SELECT text_content"))return [{text_content:cases[sql.includes(s.owner1)?0:1].prompt,created_at:"2026-11-19T12:00:00Z"}];
+  if(sql.includes("SELECT structured_content"))return [{blocks:[{type:"text",text:"Name: Same"}],created_at:"2026-11-19T12:00:01Z"}];
+  if(sql.includes("public.ai_usage_events")){
+   assert.ok(sql.includes(s.ownerUserId)&&sql.includes(s.threadId),"Usage readback must bind owner and thread");
+   if(missingUsage||wrongUsageScope)return [];
+   return [{model:"gpt-6-luna",provider:"openai",input_tokens:10,model_call_count:2}];
+  }
+  if(cases.some(c=>historicalPosSourceSql(c,s)===sql))return [{answer:"Same"}];
+  throw Error("Unexpected independent query");
+ };
+ assert.equal(attestHistoricalPos(scenario,s,query).length,2);
+ assert.throws(()=>attestHistoricalPos(scenario,{...s,reply1:s.reply2,reply2:s.reply1},query),/reply turn order/);
+ transcript.push({id:id(7),role:"supervisor"});
+ assert.throws(()=>attestHistoricalPos(scenario,s,query),/Unexpected historical conversation turns/);
+ transcript.pop();
+ missingUsage=true;assert.throws(()=>attestHistoricalPos(scenario,s,query),/Exact scoped source row required/);
+ missingUsage=false;wrongUsageScope=true;assert.throws(()=>attestHistoricalPos(scenario,s,query),/Exact scoped source row required/);
+});
