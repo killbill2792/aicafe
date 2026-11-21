@@ -1,5 +1,7 @@
 import {readFileSync} from "node:fs";
 import {randomUUID} from "node:crypto";
+import {spawn} from "node:child_process";
+import {once} from "node:events";
 import {Client} from "pg";
 import {describe,expect,it} from "vitest";
 
@@ -222,7 +224,7 @@ describe("U4 migrated model-objective and autonomous Watch SQL contract",()=>{
       await expect(call(owner,"u4_ensure_watch_routine",
         [business,ownerId,threadId,"09:00"])).rejects.toThrow();
       const now=new Date().toISOString();
-      const first=await call(worker,"claim_supervisor_routine_occurrence",[
+      let first=await call(worker,"claim_supervisor_routine_occurrence",[
         business,routineId,"2026-11-20","2026-11-20T16:00:00Z",now,
       ]);
       expect(first?.run_id).toBeTruthy();
@@ -235,6 +237,65 @@ describe("U4 migrated model-objective and autonomous Watch SQL contract",()=>{
       expect(await call(worker,"u4_routine_lease_active",[
         business,routineId,first.run_id,randomUUID(),
       ])).toBe(false);
+      // A REAL OS child process commits a registered tool checkpoint then
+      // is deliberately killed with SIGKILL. Reclaim the original occurrence
+      // from a fresh service worker; never invent a second work identity.
+      const originalLease=first.lease_token;
+      const child=spawn(process.execPath,["scripts/acceptance/u4-killed-worker.mjs"],{
+        cwd:process.cwd(),
+        env:{...process.env,SUPERVISOR_ROUTINES_DB_SANDBOX_ONLY:"1",
+          U4_CRASH_BUSINESS:business,U4_CRASH_ROUTINE:routineId,
+          U4_CRASH_RUN:first.run_id,U4_CRASH_LEASE:first.lease_token},
+        stdio:["ignore","pipe","pipe"],
+      });
+      const checkpointObserved=await new Promise<void>((resolve,reject)=>{
+        let output="";
+        const timer=setTimeout(()=>{child.kill("SIGKILL");
+          reject(Error("u4_real_process_checkpoint_timeout"));},15_000);
+        child.stdout.on("data",(chunk:Buffer)=>{
+          output+=chunk.toString("utf8");
+          if(output.includes("U4_PROCESS_CHECKPOINT_COMMITTED")){
+            clearTimeout(timer);resolve();
+          }
+        });
+        child.once("error",error=>{clearTimeout(timer);reject(error);});
+        child.once("exit",(code,signal)=>{
+          if(!output.includes("U4_PROCESS_CHECKPOINT_COMMITTED")){
+            clearTimeout(timer);
+            reject(Error("u4_real_worker_died_before_checkpoint:"+code+":"+signal));
+          }
+        });
+      });
+      void checkpointObserved;
+      child.kill("SIGKILL");
+      const [crashCode,crashSignal]=await once(child,"exit");
+      expect(crashCode).toBeNull();
+      expect(crashSignal).toBe("SIGKILL");
+      const observed=await admin.query("select u4_checkpoint,run_id,state,attempts "+
+        "from public.supervisor_routine_occurrences where business_id=$1 and routine_id=$2 "+
+        "and run_id=$3",[business,routineId,first.run_id]);
+      expect(observed.rows).toHaveLength(1);
+      expect(observed.rows[0].u4_checkpoint).toMatchObject({
+        lastStage:"tool_start",lastTool:"get_sales",
+      });
+      expect(observed.rows[0]).toMatchObject({run_id:first.run_id,state:"running",attempts:1});
+      // Simulate lease expiry after the genuine process death; this advances
+      // only disposable fixture state, not a production clock.
+      await admin.query("update public.supervisor_routine_occurrences "+
+        "set lease_until=now()-interval '1 second' where business_id=$1 and run_id=$2",
+        [business,first.run_id]);
+      const resumed=await call(worker,"claim_supervisor_routine_occurrence",[
+        business,routineId,"2026-11-20","2026-11-20T16:00:00Z",new Date().toISOString(),
+      ]);
+      expect(resumed?.run_id).toBe(first.run_id);
+      expect(resumed?.lease_token).not.toBe(originalLease);
+      expect(await call(worker,"u4_routine_lease_active",[
+        business,routineId,first.run_id,originalLease,
+      ])).toBe(false);
+      expect(await call(worker,"u4_routine_lease_active",[
+        business,routineId,resumed.run_id,resumed.lease_token,
+      ])).toBe(true);
+      first=resumed;
       const proof={sources:[{source:"cafe_state",identifier:"get_sales",asOf:"2026-11-20"}],
         sourceCount:1,quality:"verified",missing:[],externalEffects:"not_attempted"};
       const posted=await call(worker,"u4_publish_objective_report",[
