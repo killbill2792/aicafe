@@ -127,6 +127,20 @@ describe("U4 objective evidence and model autonomy",()=>{
     expect(independent.sourceCount).toBe(2);
     expect(independent.sourceDomains).toEqual(["recorded_sales","stock_and_inventory"]);
   });
+  it("does not call computed profit an independent source beside its sales inputs",()=>{
+    const computed={source:"profitability",period:{from:"2026-11-13",to:"2026-11-20"},
+      missing:[],ownerProfitCents:5024};
+    const checked=verifyObjectiveTurn(turn("Review source-backed margin carefully.",{
+      toolInvocations:[
+        {name:"get_sales",result:source},
+        {name:"get_profit",result:computed},
+      ],
+    }),objective);
+    expect(checked.sourceCount).toBe(1);
+    expect(checked.sourceDomains).toEqual(["recorded_sales"]);
+    expect(checked.sourceRefs).toHaveLength(2);
+    expect(checked.sourceRefs[1].domain).toBe("other:derived_cafe_profit");
+  });
   it("attributes each canonical query to its real source, not generically to sales",()=>{
     const fromQuery=(view:string)=>({source:"canonical_data",view,
       period:{from:"2026-11-13",to:"2026-11-20"},missing:[],
