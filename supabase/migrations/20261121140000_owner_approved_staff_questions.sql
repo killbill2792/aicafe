@@ -105,6 +105,19 @@ begin
    'text',v_answer,'ownerUserId',p_owner_user_id,'ownerMessageId',p_owner_message_id,'receivedAt',statement_timestamp(),
    'provenance','owner_report_unverified')),
   updated_at=statement_timestamp() where business_id=p_business_id and id=p_proposal_id;
+ -- Only truly equivalent unanswered drafts are obsolete; different questions survive.
+ update public.supervisor_proposals sibling set status='rejected',revision=revision+1,
+  baseline=baseline||jsonb_build_object('ownerAnswer',jsonb_build_object(
+    'text',v_answer,'ownerUserId',p_owner_user_id,'ownerMessageId',p_owner_message_id,
+    'provenance','owner_report_unverified'),'supersededByProposalId',p.id),
+  updated_at=statement_timestamp()
+ where sibling.business_id=p_business_id and sibling.owner_user_id=p_owner_user_id
+  and sibling.thread_id=p_thread_id and sibling.id<>p.id and sibling.status='draft'
+  and sibling.capability_id='olivia.staff_question.v1'
+  and sibling.canonical_effect_payload->>'sourceTaskId'=p.canonical_effect_payload->>'sourceTaskId'
+  and sibling.canonical_effect_payload->>'sourceKind'=p.canonical_effect_payload->>'sourceKind'
+  and sibling.canonical_effect_payload->>'sourceRevision'=p.canonical_effect_payload->>'sourceRevision'
+  and sibling.canonical_effect_payload->>'question'=p.canonical_effect_payload->>'question';
  insert into public.operating_tasks(
   business_id,id,owner_user_id,agent_id,kind,entity_type,entity_id,
   status,payload,confidence,evidence)
