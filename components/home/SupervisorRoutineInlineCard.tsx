@@ -24,24 +24,38 @@ export default function SupervisorRoutineInlineCard({block,onEdit,disabled=false
   useEffect(()=>{
     if(!routineId)return;
     const controller=new AbortController();
-    void fetch("/api/ai/supervisor/routines",{
-      credentials:"same-origin",cache:"no-store",signal:controller.signal,
-    }).then(async response=>{
-      if(!response.ok)throw Error("read_unavailable");
-      const payload=await response.json() as {routines?:unknown[]};
-      if(!Array.isArray(payload.routines))throw Error("read_invalid");
-      const row=payload.routines.find(item=>item!==null&&typeof item==="object"&&
-        (item as {id?:string}).id===routineId) as Record<string,unknown>|undefined;
-      if(!row)throw Error("routine_not_accessible");
-      const verified=routineCardSchema.safeParse({
-        type:"routine_card",routineId:row.id,title:row.title,
-        cadence:row.cadence,weekdays:row.weekdays,localTime:row.localTime,
-        timezone:row.timezone,status:row.status,revision:row.revision,
-      });
-      if(!verified.success)throw Error("invalid_routine_receipt");
-      if(!controller.signal.aborted){setCurrent(verified.data);setUnavailable(false);}
-    }).catch(()=>{if(!controller.signal.aborted)setUnavailable(true);});
-    return()=>controller.abort();
+    let retry:ReturnType<typeof setTimeout>|null=null;
+    async function load(attempt:0|1){
+      try{
+        const response=await fetch("/api/ai/supervisor/routines",{
+          credentials:"same-origin",cache:"no-store",signal:controller.signal,
+        });
+        if(!response.ok)throw Error(response.status>=500?"transient_read":"read_unavailable");
+        const payload=await response.json() as {routines?:unknown[]};
+        if(!Array.isArray(payload.routines))throw Error("read_invalid");
+        const row=payload.routines.find(item=>item!==null&&typeof item==="object"&&
+          (item as {id?:string}).id===routineId) as Record<string,unknown>|undefined;
+        if(!row)throw Error("routine_not_accessible");
+        const verified=routineCardSchema.safeParse({
+          type:"routine_card",routineId:row.id,title:row.title,
+          cadence:row.cadence,weekdays:row.weekdays,localTime:row.localTime,
+          timezone:row.timezone,status:row.status,revision:row.revision,
+        });
+        if(!verified.success)throw Error("invalid_routine_receipt");
+        if(!controller.signal.aborted){setCurrent(verified.data);setUnavailable(false);}
+      }catch(error){
+        if(controller.signal.aborted)return;
+        // One transient server/network read can occur while a locally hosted
+        // Next.js route compiles. Never retry an owner/tenant denial, a missing
+        // routine, an invalid receipt, or a stale revision as though it passed.
+        if(attempt===0&&(error instanceof TypeError||
+          error instanceof Error&&error.message==="transient_read")){
+          retry=setTimeout(()=>{void load(1);},400);
+        }else setUnavailable(true);
+      }
+    }
+    void load(0);
+    return()=>{controller.abort();if(retry!==null)clearTimeout(retry);};
   },[routineId]);
 
   async function change(action:"pause"|"resume"|"delete"){
