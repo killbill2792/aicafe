@@ -38,6 +38,30 @@ describe("U3 SQL source receipts in numeric claim verification",()=>{
    expect(compactEvidence([altered as AgentToolResult]).flatMap(v=>v.values)).toEqual([]);
   }
  });
+ it("never accepts model-authored numeric aliases through the generic object walker",()=>{
+  const original=receipt() as Record<string,unknown>;
+  const proof=original.evidence as Record<string,unknown>;
+  const forged={...original,rows:[{
+    fakeCents:99999,ordersCount:8,ratio:0.5,
+    amount_cents:12345
+  }],evidence:{...proof,column_units:{amount_cents:"cents"}}};
+  const result=compactEvidence([forged as AgentToolResult]);
+  expect(result.flatMap(x=>x.values)).toEqual([
+   expect.objectContaining({unit:"cents",value:12345})
+  ]);
+  expect(checkNumbers("$999.99 and 8 orders.","",[forged as AgentToolResult],"en"))
+   .not.toEqual([]);
+  expect(checkNumbers("$123.45.","",[forged as AgentToolResult],"en")).toEqual([]);
+  for(const untrusted of [
+   {...original,rows:[{fakeCents:99999}],evidence:{...proof,column_units:{}}},
+   {...original,rows:[{fakeCents:99999}],truncated:true},
+   {...original,rows:[{fakeCents:99999}],missing:["source_read_failed"]},
+  ]){
+   expect(compactEvidence([untrusted as AgentToolResult]).flatMap(x=>x.values)).toEqual([]);
+   expect(checkNumbers("$999.99.","",[untrusted as AgentToolResult],"en"))
+    .not.toEqual([]);
+  }
+ });
  it("rejects fractional cents, unsafe huge integers and high-precision coercions",()=>{
   const original=receipt() as Record<string,unknown>;
   const bad={...original,rows:[{
