@@ -1,6 +1,6 @@
 import {describe,expect,it} from "vitest";
 import {randomUUID} from "node:crypto";
-import {applyThreadMemoryOperations,emptyThreadMemoryDocument,formatThreadMemory,historyContent,
+import {boundedConversationHistory,applyThreadMemoryOperations,emptyThreadMemoryDocument,formatThreadMemory,historyContent,
   parseThreadMemoryDocument,safeThreadMemoryText,threadMemorySource,type ThreadMemoryOperation} from "./history";
 import {agentReplyPayload} from "./persist.server";
 import {newResolveState} from "./resolve";
@@ -207,3 +207,9 @@ describe("rolling thread memory primitives",()=>{
   expect(document.entries.map(entry=>entry.key)).toEqual(before);
  });
 });
+
+ it("retains more than eight admitted messages within a bounded complete-message history",()=>{
+  const messages=Array.from({length:12},(_,i)=>({role:"user",content:`message ${i}`}));
+  expect(boundedConversationHistory(messages,1000)).toEqual(messages);
+  expect(boundedConversationHistory([{content:"older"},{content:"咖啡"},{content:"new"}],9)).toEqual([{content:"咖啡"},{content:"new"}]);
+ });

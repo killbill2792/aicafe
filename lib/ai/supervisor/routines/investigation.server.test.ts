@@ -13,7 +13,7 @@ vi.mock("@/lib/ai/agent/loop.server",()=>({runAgentTurn:mocks.model,
 vi.mock("@/lib/ai/supervisor/runs/worker.server",()=>({
   assertDurablePaidTurnAllowed:mocks.paidGate,
 }));
-vi.mock("@/lib/ai/supervisor/runs/usage.server",()=>({withWorkerBudget:mocks.budget}));
+vi.mock("@/lib/ai/supervisor/runs/usage.server",()=>({withWorkerBudget:mocks.budget,loadModelExecutionCap:async()=>1200}));
 vi.mock("@/lib/operating/notifyOwner.server",()=>({notifyOwner:mocks.notify}));
 vi.mock("./dispatch.server",()=>({readActionablePriorities:mocks.priorities}));
 vi.mock("./stockDraft.server",()=>({prepareProactiveStockDraft:mocks.stockDraft}));
@@ -202,14 +202,15 @@ describe("Task 15A operational end-to-end orchestration (recorded source/model)"
     expect(mocks.budget).toHaveBeenCalledWith({
       maxElapsedMs:55_000,maxModelCalls:6,maxToolCalls:7,
       maxInputTokens:72_000,maxOutputTokens:4800,
-    },expect.any(Function));
+    },expect.any(Function),1200);
 
     expect(mocks.tools).toHaveBeenCalledWith(
       {businessId:"cafe-a",ownerUserId:"owner-a"},d.client);
     expect(mocks.model).toHaveBeenCalledOnce();
     const modelInput=mocks.model.mock.calls[0][0];
     expect(modelInput.ownerText).toContain("SYSTEM-INITIATED");
-    expect(modelInput.ownerText).toContain("TWO relevant independent");
+    expect(modelInput.ownerText).toContain("as many or as few useful available tools");
+    expect(modelInput.ownerText).not.toContain("at least TWO");
     expect(modelInput.toolNames).toContain("get_investigation_source");
     expect(modelInput.toolNames).toContain("get_sales");
     expect(modelInput.toolNames).toContain("get_labor");

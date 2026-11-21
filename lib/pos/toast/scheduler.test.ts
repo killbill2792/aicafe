@@ -175,6 +175,21 @@ describe("leased Toast cron phases (spec C1, 13, 16, 17, 20, 21)",()=>{
   expect(f.calls.filter(x=>x==="toast_queue_backfill")).toHaveLength(1);
   expect(f.calls.filter(x=>x==="toast_release_lease")).toHaveLength(2);
  });
+ it("retries committed historical relinks before costs even if no order imports remain",async()=>{
+  const f=makeDB();f.status.add(d);
+  const events:string[]=[];
+  const rpc=f.db.rpc.bind(f.db);
+  const originalCost=m.costs.getMockImplementation()!;
+  m.costs.mockImplementation(async(...args:unknown[])=>{events.push("costs");return originalCost(...args);});
+  vi.spyOn(f.db,"rpc").mockImplementation((...args:Parameters<typeof rpc>)=>{
+   if(args[0]==="toast_retry_pending_relink")events.push("relink");
+   return rpc(...args);
+  });
+  await runToastSyncTick(f.db,now,Date.now()+60000);
+  expect(f.imports).toEqual([]);
+  expect(events).toEqual(["relink","costs"]);
+  expect(f.db.rpc).toHaveBeenCalledWith("toast_retry_pending_relink",{p_business_id:b,p_restaurant_guid:g});
+ });
  it("a malformed modified scan does not block reconciliation, backfill, optional and cleanup",async()=>{
   const f=makeDB();
   m.request.mockRejectedValueOnce(new ToastApiError("invalid_response"));

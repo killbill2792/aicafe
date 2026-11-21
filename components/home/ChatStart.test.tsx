@@ -135,7 +135,7 @@ describe("PR F shared attention and chat entry",()=>{
    expect(composer).toContain('{startExpanded && <aside id="supervisor-chat-insights"');
    expect(composer).not.toContain("chatStartPromise&&hasChatMessages&&<div");
    expect(composer).not.toContain("chatStartPromise&&!hasChatMessages&&startReady&&");
-   expect(composer).toContain('grid-cols-[44px_minmax(0,1fr)_44px_44px]');
+   expect(composer).toContain('grid-cols-[48px_minmax(0,1fr)_48px_48px]');
    expect(home).toContain("gap-0 px-0 pb-0 pt-0");
    expect(styles).toContain("height: 100dvh;");
  });

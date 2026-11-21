@@ -39,6 +39,37 @@ Task17D tests supported integrated journeys with authenticated owner browsers at
 
 ---
 
+## Universal intelligence remediation — November 20, 2026
+
+The owner-approved [intelligence remediation record](../plans/universal-supervisor-intelligence-remediation.md)
+adds stable findings R01–R22 and proposed acceptance cases UNI-01–12 to the
+existing Task17 census. These are handoff identifiers, not registered or executed
+scenarios; map to actual manifests with independent expected outcomes before
+integration, reuse equivalent cases, and preserve all previous case obligations.
+No new test scheduler, paid runner or completion mechanism is introduced.
+
+Task17B must prove open-ended analytical access and source truth: rare retained
+fields and cross-domain relationships, no unsolicited broad history on missing dates,
+canonical metric parity, held-out questions, second-store research and depth,
+tenant/field/SQL/tool safety, useful incomplete response, and measured resource use.
+Task17C must prove objective-driven unattended research across domains, changing
+strategy as facts change, same persistent work after real interruption, competing
+workloads, authorization loss, ambiguous effect receipt and verified follow-up.
+Task17D must prove compact chat and substantial reports, source/unknown visibility,
+responsive layouts, accessible controls, genuine persisted work and reload continuity.
+
+Compare the current system (A), isolated flexible research candidate (B), and the
+integrated intelligence-first candidate (C) with the same actual model, matched data,
+equivalent held-out prompts/objectives, scope and independent oracles. Measure
+accuracy, source coverage, query count/latency/rows/bytes, input/cached/reasoning/visible
+tokens where available, actual cost, response completeness, interruption recovery
+and security; no self-grading. First complete no-provider functional, fault, migrated
+DB, browser and mutation tests. Genuine Luna runs require the existing distinct,
+bounded owner authorization; do not automatically execute or duplicate them.
+No receipt or scenario inventory alone proves functionality. Keep every unresolved
+finding explicit, and attach exact commit, executed job/artifact and observed result.
+No release until all applicable previous and new obligations have evidence.
+
 ## Live local capture runner (owner-approved follow-up #477)
 
 A real-model run is **not automatically triggered** on every PR; that would spend provider credits, require private real receipts and contaminate a holdout set. The shared deterministic evaluator integrity CI runs on every code PR, while this live capture is explicitly launched by an operator in a completely disposable local environment.

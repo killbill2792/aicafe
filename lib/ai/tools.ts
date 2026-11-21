@@ -26,6 +26,7 @@ export interface CafeToolset {
   getProfitability(businessId: string, period: CafeStatePeriod): Promise<KnownSlice<CafePeriodProfitability>>;
   getBusinessCostSummary(businessId:string,period:CafeStatePeriod):Promise<BusinessCostSummary>;
   getProductEconomics(businessId: string, productId: string): Promise<KnownSlice<MenuItemSnapshot>>;
+  getSalesCoverageBounds?(businessId:string,period:CafeStatePeriod):Promise<CafeStatePeriod|null>;
   getSalesTrend(businessId: string, period: CafeStatePeriod): Promise<KnownSlice<DailyFacts[]>>;
   getPricingRecommendation(businessId: string, productId: string): Promise<KnownSlice<PricingResult>>;
   getExpenseSummary(businessId: string, period: CafeStatePeriod): Promise<KnownSlice<RunningCostLine[]>>;
@@ -80,6 +81,7 @@ export class StructuredCafeTools implements CafeToolset {
     },
     private historicalReaders?: {
       salesTrend: CafeToolset["getSalesTrend"];
+      salesCoverageBounds?:NonNullable<CafeToolset["getSalesCoverageBounds"]>;
       menuCatalog: CafeToolset["getMenuCatalog"];
       staffAttendance: CafeToolset["getStaffAttendance"];
     },
@@ -124,6 +126,10 @@ export class StructuredCafeTools implements CafeToolset {
     if (!state.products.available) return state.products;
     const product = state.products.value.find((item) => item.id === productId);
     return product ? { available: true, value: product, quality: productQuality(product) } : missing(`product:${productId}`);
+  }
+  async getSalesCoverageBounds(businessId:string,period:CafeStatePeriod):Promise<CafeStatePeriod|null>{
+    if(!this.historicalReaders?.salesCoverageBounds)throw new Error("Sales coverage metadata unavailable");
+    return this.historicalReaders.salesCoverageBounds(businessId,period);
   }
   async getSalesTrend(businessId: string, period: CafeStatePeriod): Promise<KnownSlice<DailyFacts[]>> {
     if (this.historicalReaders) return this.historicalReaders.salesTrend(businessId, period);
@@ -232,6 +238,10 @@ export class BusinessScopedCafeTools {
   getProfitability(period: CafeStatePeriod) { return this.tools.getProfitability(this.businessId, period); }
   getBusinessCostSummary(period:CafeStatePeriod){return this.tools.getBusinessCostSummary(this.businessId,period);}
   getProductEconomics(productId: string) { return this.tools.getProductEconomics(this.businessId, productId); }
+  getSalesCoverageBounds(period:CafeStatePeriod){
+    if(!this.tools.getSalesCoverageBounds)return Promise.reject(new Error("Sales coverage metadata unavailable"));
+    return this.tools.getSalesCoverageBounds(this.businessId,period);
+  }
   getSalesTrend(period: CafeStatePeriod) { return this.tools.getSalesTrend(this.businessId, period); }
   getPricingRecommendation(productId: string) { return this.tools.getPricingRecommendation(this.businessId, productId); }
   getExpenseSummary(period: CafeStatePeriod) { return this.tools.getExpenseSummary(this.businessId, period); }

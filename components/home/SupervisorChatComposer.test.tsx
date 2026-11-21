@@ -83,6 +83,15 @@ describe("modern Supervisor conversation shell", () => {
     expect(composer).toContain("hasMessages={hasChatMessages} expanded onToggle");
     expect(composer).not.toContain("{enabled&&threadId&&experimentCopy&&<SupervisorExperiment");
   });
+  it("preserves the U4 receipt and owner-scoped routine edit entry after combining chat UI",()=>{
+    const chat=readFileSync("components/home/SupervisorChatComposer.tsx","utf8");
+    const drawer=readFileSync("components/home/SupervisorMandatePanel.tsx","utf8");
+    expect(chat).toContain('if(block.type==="routine_card")return <SupervisorRoutineInlineCard');
+    expect(chat).toContain("onEditRoutine={routine=>");
+    expect(chat).toContain("onEdit={onSuggest} disabled={disabled}");
+    expect(drawer).toContain("onEditRoutine:(routine:Routine)=>void");
+    expect(drawer).toContain("revision:r.revision");
+  });
   it("uses decorative short café motion with a static fallback and reduced motion",()=>{
     const animated=renderToStaticMarkup(createElement(CafeActivity));
     const still=renderToStaticMarkup(createElement(CafeActivity,{brewing:false}));

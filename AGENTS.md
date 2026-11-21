@@ -14,7 +14,7 @@ instructions. If a rule here blocks the task you were given, stop and ask the ow
 6. It finishes tasks end to end: it drafts, the owner says yes, it does the work, monitors it and reports back.
 7. Nothing with an effect happens without the owner's yes.
 8. The chat and every screen show the same numbers from the same code.
-9. Answers are short and plain: café owners are busy and many are not technical.
+9. Answers are plain and proportionate: concise for simple questions, thorough and source-backed for difficult decisions or requested research.
 10. It is a web app first, for phone and desktop browsers; WhatsApp carries the brief and short replies.
 
 ## Standing rules from the owner (every agent: Claude, ChatGPT, Codex, Grok and any future agent)
@@ -108,8 +108,7 @@ Where an older line in this file conflicts with these rules, these rules win.
 10. **Screen and chat match.** Supervisor's numbers come from the same shared calculations as the app
     screens (`lib/metrics/core`), never a formula the model invents.
 11. **Proactive by default.** Every feature says how Supervisor brings it to the owner without being asked.
-12. **The database aggregates.** Supervisor reads small summaries built in the database, not raw rows, to
-    keep tokens low.
+12. **The database aggregates by default.** Supervisor may request authorized, bounded source-backed detail when needed; canonical metrics and source permissions remain binding.
 13. **Proof, not claims.** The PR body matches the diff, and "done" means verified on real café data, not
     only on fixtures.
 14. **Read before you build, update after.** Every task starts by reading AGENTS.md and PROGRESS.md.

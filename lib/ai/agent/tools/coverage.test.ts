@@ -1,12 +1,17 @@
-import {describe,it,expect} from "vitest";
+import {describe,it,expect,vi} from "vitest";
 import {resolveCoveredSalesWindow} from "./coverage";
 import {executeAgentTool} from "./index";
 import {salesTools} from "./sales";
 import type {AgentToolContext} from "./index";
 const fakeDate=(date:string)=>({date});
+const bounds=(dates:string[],period:{from:string;to:string})=>{
+ const found=dates.filter(date=>date>=period.from&&date<=period.to).sort();
+ return found.length?{from:found[0],to:found[found.length-1]}:null;
+};
 const unavailable=()=>({available:false as const,value:null,quality:{level:"low" as const,missingInputs:["noCoveredSalesRows"],estimatedInputs:[],staleInputs:[]}});
 function context(dates:string[]):AgentToolContext{
  return {asOf:"2026-10-24",locale:"en",currency:"USD",timezone:"America/Los_Angeles",tools:{
+   getSalesCoverageBounds:async period=>bounds(dates,period),
    getSalesTrend:async({from,to})=>{
     const filtered=dates.filter(d=>d>=from&&d<=to);
     return filtered.length?{available:true,value:filtered.map(fakeDate) as never,
@@ -18,6 +23,7 @@ function context(dates:string[]):AgentToolContext{
 describe("days flagged for review still answer",()=>{
  // Imported Toast days with a "needs a look" flag carry it as a note, never as missing data.
  const flagged:AgentToolContext={asOf:"2026-10-29",locale:"en",currency:"USD",timezone:"America/Los_Angeles",tools:{
+   getSalesCoverageBounds:async period=>bounds(["2026-10-28"],period),
    getSalesTrend:async({from,to})=>{
     const days=[{date:"2026-10-28",netSalesCents:123_400}].filter(d=>d.date>=from&&d.date<=to);
     return days.length?{available:true,value:days as never,quality:{level:"high" as const,missingInputs:[],
@@ -91,11 +97,7 @@ describe("latest covered sales window",()=>{
  });
  it("failed last-day reader never crashes an honest today response",async()=>{
   const ctx=context([]);
-  const original=ctx.tools.getSalesTrend;
-  ctx.tools.getSalesTrend=async(p)=>{
-   if(p.to<ctx.asOf)throw Error("history unavailable");
-   return original(p);
-  };
+  ctx.tools.getSalesCoverageBounds=async()=>{throw Error("history unavailable");};
   const result=await resolveCoveredSalesWindow(ctx,{from:ctx.asOf,to:ctx.asOf});
   expect(result).toMatchObject({period:{from:ctx.asOf,to:ctx.asOf},
    todayImported:false,lastFullDay:null});
@@ -103,7 +105,7 @@ describe("latest covered sales window",()=>{
  });
  it("pricing fallback read errors preserve the requested pricing window",async()=>{
   const ctx=context([]);
-  ctx.tools.getSalesTrend=async()=>{throw Error("offline");};
+  ctx.tools.getSalesCoverageBounds=async()=>{throw Error("offline");};
   const result=await resolveCoveredSalesWindow(ctx,{from:"2026-10-01",to:"2026-10-24"});
   expect(result).toMatchObject({period:{from:"2026-10-01",to:"2026-10-24"},coverageFallback:null});
  });
@@ -265,4 +267,14 @@ describe("today's sales use the live reading until the closeout import is in",()
    withLive(["2026-10-23"],async()=>{calls++;return {available:true,value:reading};}));
   expect(calls).toBe(0);
  });
+});
+
+it("reads only the exact day and last observed day, not a year of facts",async()=>{
+ const ctx=context(["2026-09-01","2026-10-23"]);
+ const trend=vi.fn(ctx.tools.getSalesTrend),metadata=vi.fn(ctx.tools.getSalesCoverageBounds!);
+ ctx.tools.getSalesTrend=trend;ctx.tools.getSalesCoverageBounds=metadata;
+ const result=await resolveCoveredSalesWindow(ctx,{from:ctx.asOf,to:ctx.asOf});
+ expect(result.lastFullDay).toBe("2026-10-23");
+ expect(trend.mock.calls).toEqual([[{from:ctx.asOf,to:ctx.asOf}],[{from:"2026-10-23",to:"2026-10-23"}]]);
+ expect(metadata).toHaveBeenCalledTimes(1);
 });

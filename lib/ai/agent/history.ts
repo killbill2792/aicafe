@@ -235,3 +235,21 @@ export function formatThreadMemory(document: ThreadMemoryDocument): string | nul
     lines.join("\n");
   return result.length <= 1800 ? result : result.slice(0, 1799) + "…";
 }
+
+/** Keep a recent contiguous suffix of admitted conversation messages by actual
+ * size, rather than silently forgetting context after eight short messages.
+ * Never promote historical assistant content to authority or source evidence.
+ * Preserve whole messages; a single oversized recent reply stays intact if
+ * it fits the existing per-reply storage contract. */
+export function boundedConversationHistory<T extends {content:string}>(messages:readonly T[],maxBytes=96_000):T[]{
+  let bytes=0;
+  const result:T[]=[];
+  const encoder=new TextEncoder();
+  for(let i=messages.length-1;i>=0;i--){
+    const item=messages[i];
+    const size=encoder.encode(item.content).byteLength;
+    if(size>maxBytes-bytes)break;
+    bytes+=size;result.push(item);
+  }
+  return result.reverse();
+}

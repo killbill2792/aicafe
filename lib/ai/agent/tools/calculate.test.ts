@@ -141,3 +141,53 @@ describe("calculate never rebuilds a screen number",()=>{
     expect(r.source).toBe("calculate");
   });
 });
+
+
+describe("U3 receipt-bound exact research calculation",()=>{
+ const older="11111111-1111-4111-8111-111111111111";
+ const newer="22222222-2222-4222-8222-222222222222";
+ const sql=(receipt_id:string,value:string)=>({
+  name:"query_data",result:{source:"u3_canonical_research",period:{from:"2026-11-01",to:"2026-11-01"},
+   missing:[],rows:[{net_sales_cents:value}],truncated:false,
+   evidence:{receipt_id,scope:"verified_owner_cafe_lease",column_units:{net_sales_cents:"cents"}}}
+ }) as {name:string;result:AgentToolResult};
+ const row=[sql(older,"12345"),sql(newer,"67890")];
+ const query=(receipt_id:string|null,tool="query_data",path="rows.0.net_sales_cents")=>({
+  purpose:"Exact prior daily amount",screen_number:"none",
+  inputs:[{name:"amount",label:"Verified amount",tool,path,receipt_id,
+   fact_key:null,owner_value:null,owner_unit:null}],
+  steps:[{id:"result",label:"Amount",op:"sum",args:["amount"]}]
+ });
+ it("selects the exact earlier receipt rather than the latest invocation of the same tool",async()=>{
+  const actual=await calculateTools.calculate.execute(query(older),ctx(row));
+  expect(actual.refused).toBeUndefined();
+  expect(actual.result).toEqual({unit:"cents",valueCents:12345});
+  const latest=await calculateTools.calculate.execute(query(newer),ctx(row));
+  expect(latest.result).toEqual({unit:"cents",valueCents:67890});
+ });
+ it("never treats a forged SQL alias as authoritative money units",async()=>{
+  const countAsCents={...sql(older,"7"),result:{...sql(older,"7").result,
+   evidence:{receipt_id:older,scope:"verified_owner_cafe_lease",
+    column_units:{net_sales_cents:"count"}}}};
+  const actual=await calculateTools.calculate.execute(query(older),ctx([countAsCents]));
+  expect(actual.result).toEqual({unit:"count",quantity:7});
+  const withoutUnit={...sql(older,"12345"),result:{...sql(older,"12345").result,
+   evidence:{receipt_id:older,scope:"verified_owner_cafe_lease"}}};
+  const refused=await calculateTools.calculate.execute(query(older),ctx([withoutUnit]));
+  expect(refused.refused).toBe("researchUnitUnverified");
+ });
+ it("refuses ambiguous, fabricated, missing, fractional-cent and untyped SQL evidence",async()=>{
+  expect((await calculateTools.calculate.execute(query(null),ctx(row))).refused)
+   .toBe("researchReceiptRequired");
+  expect((await calculateTools.calculate.execute(
+   query("33333333-3333-4333-8333-333333333333"),ctx(row))).refused)
+   .toBe("receiptNotFound");
+  expect((await calculateTools.calculate.execute(query(older,"query_data","rows.0.unknown"),ctx(row))).refused)
+   .toBe("pathIsNotANumber");
+  expect((await calculateTools.calculate.execute(query(older),ctx([
+   sql(older,"12345.25")]))).refused).toBe("researchUnitUnverified");
+  expect((await calculateTools.calculate.execute(query(older),ctx([{
+   ...sql(older,"12345"),result:{...sql(older,"12345").result,missing:["result_truncated"]}
+  }]))).refused).toBe("incompleteResearchEvidence");
+ });
+});

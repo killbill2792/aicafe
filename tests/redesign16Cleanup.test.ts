@@ -180,11 +180,26 @@ const approvedTask16aKeys = [
 ] as const;
 const approvedTask16aSet = new Set(approvedTask16aKeys.map(key => "SupervisorMandateCenter."+key));
 
+// U4 owner-approved routine controls are English-only, scoped to a NEW namespace
+// so the original Task16A permission contract stays frozen.
+const approvedU4RoutineKeys=["actions","pause","resume","delete","editInChat","paused","deleteConfirm","saved","deleteSaved","saveFailed"] as const;
+const approvedU4RoutineSet=new Set(approvedU4RoutineKeys.map(key=>"SupervisorRoutines."+key));
+
 const approvedTask14eAddCostKeys=["statementCashConfirm","statementCashDated","statementCashNickname","statementCashError"] as const;
 const approvedTask14eFinanceKeys=["heading","reverse","allocate","allocationRecorded","supplierInvoice","revision","invoiceClaim","transaction","closingBalance","statementRow","originalRow","reversedLink","allocationAmount","allocationNotice","confirmLink","decline","checkLink","linkError","billHeading","billRecorded","payee","reference","issued","due","amount","unknown","billNotice","confirmBill","checkBill","billError"] as const;
 const approvedTask14eSet=new Set([...approvedTask14eAddCostKeys.map(key=>"AddCost."+key),...approvedTask14eFinanceKeys.map(key=>"FinancialEvidenceApproval."+key)]);
 
 describe("redesign 16 cleanup integration", () => {
+  it("pins the exact U4 routine strings without widening older English-only exemptions",()=>{
+    const en=localeMessages("en"),es=localeMessages("es"),ar=localeMessages("ar");
+    expect(Object.keys(en.SupervisorRoutines??{}).sort()).toEqual([...approvedU4RoutineKeys].sort());
+    expect(es.SupervisorRoutines).toBeUndefined();
+    expect(ar.SupervisorRoutines).toBeUndefined();
+    for(const key of approvedU4RoutineKeys){
+      expect(en.SupervisorRoutines[key].trim().length).toBeGreaterThan(0);
+    }
+  });
+
   it("requires exact Task14E English-only evidence labels",()=>{
     const en=localeMessages("en"),es=localeMessages("es"),ar=localeMessages("ar");
     expect(Object.keys(en.FinancialEvidenceApproval??{}).sort()).toEqual([...approvedTask14eFinanceKeys].sort());
@@ -215,7 +230,7 @@ describe("redesign 16 cleanup integration", () => {
       return Object.entries(messages)
         .flatMap(([namespace, values]) => Object.keys(values).map(key => `${namespace}.${key}`))
         .filter(key => !englishOnly.test(key) && !approvedTask14bSet.has(key)
-          && !approvedTask14cSet.has(key) && !approvedTask15bSet.has(key) && !approvedTask16aSet.has(key) && !approvedTask16cSet.has(key) && !approvedTask14eSet.has(key) && !task16e.has(key)
+          && !approvedTask14cSet.has(key) && !approvedTask15bSet.has(key) && !approvedTask16aSet.has(key) && !approvedU4RoutineSet.has(key) && !approvedTask16cSet.has(key) && !approvedTask14eSet.has(key) && !task16e.has(key)
           && !["runAwaitingOwner","runAwaitingOwnerNext","runCancelled","runRetrying","cancelAction","cancelPending","cancelUncertain","cancelCompleted","cancelFailed"].some(name=>key==="SupervisorDurableWork."+name)
           && !/^SupervisorUsage\.(?:help|max|month|proactive|requests|title|unavailable)$/.test(key))
         .sort();

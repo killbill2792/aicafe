@@ -6,9 +6,14 @@ One conversational agent with ONE streaming tool-calling loop per owner turn (Op
   Code does not pre-decide intent with regexes or keyword routers.
 - **Tools:** typed, strict JSON Schema (`strict:true`), zod input, compact results (≤ ~1.5k tokens:
   totals, top rows, ids, units, source + period, `missing[]`). One tool per business capability.
-  One read-only data-query tool over documented canonical views is allowed, plus one general
-  `calculate` tool for arithmetic (rule 7.2). The server sets the café
-  scope; the model never writes SQL and never chooses the café.
+  One read-only data-query interface (`describe_data`/`query_data`) and one general
+  `calculate` tool remain authoritative. For legacy execution, use only reviewed
+  canonical views. The U3 approved target permits model-authored analytical SELECT
+  on a **private, catalog-admitted logical business surface only**, after a dedicated
+  non-owner/non-BYPASSRLS research role, real PostgreSQL AST admission and independently
+  tested database tenant/owner/lease enforcement are deployed. Do not send model SQL
+  to service-role clients or SQL SECURITY DEFINER RPCs. The server, never the model,
+  chooses the café and owner scope. No arbitrary database SQL, effects or mutation.
 - **Clarifications:** the `ask_owner` tool renders a clarify card (2–4 options from real tool data + Other).
   The owner's answer is the next message. No server-side pending-question state.
 - **Actions:** `propose_*` tools create an inert proposal and an approval card. Only the approval
@@ -35,17 +40,61 @@ One conversational agent with ONE streaming tool-calling loop per owner turn (Op
   3. A blank-line separator between answers to follow-ups that arrived mid-run.
 - **Personas** (Alex/Olivia/Maya/Leo) are labels on tool chips only, never separate agents or prompts.
 
+### Owner-approved intelligence-first target (November 20, 2026)
+
+The [remediation record](../plans/universal-supervisor-intelligence-remediation.md)
+defines the transition and required evidence. Luna is the intellectual authority
+for interactive and unattended objectives: it chooses what to investigate,
+which authorized information and capabilities to use, how to assess evidence,
+and the appropriate depth of the answer. The application provides reliable data,
+canonical calculations, authorization, resource accounting and persistent execution.
+Do not encode owner-question strategies, mandatory domain/tool sequences,
+preselected conclusions or a second agent. Deterministic observations and schedules
+remain useful inputs, never the intellectual decision-maker.
+
+- One existing data access path: discover all permitted business knowledge and
+  relationships across POS and non-POS data. Preserve original permitted Toast
+  order/object fields and history in the existing operational archive/change log.
+  Use source-backed targeted detail and aggregation, not wholesale raw prompt dumps.
+  Retain shared metric authority, source periods, freshness and honest unknowns.
+  Do not implicitly scan a year of history merely because one requested day is absent.
+- Owner-approved U3 production target: **governed PostgreSQL-native analytical SQL**
+  (the existing `query_data` façade), not a parallel custom SQL-like query language.
+  SQL work is disabled by default until dedicated least-privilege connection, validated
+  AST and admitted sources/functions/operators, genuine DB-enforced tenant and field
+  protection, read-only transactions, hard resource/cancellation limits, complete
+  migrated negative tests and explicit deployment configuration are verified.
+  Keep original canonical metric functions and existing operational source lineage.
+  Approval to develop and merge U3 does not itself enable a production SQL endpoint,
+  authorize paid model runs, or bypass production migration checks.
+- Prefer verified provider-native deferred tool discovery and model-selected
+  context over full schema repetition. No mandatory custom discover-before-read
+  gate or keyword routing. Preserve strict schemas, runtime validation and authorization.
+- Resource policy must permit objective-appropriate thinking and final synthesis.
+  A simple answer should be quick; a detailed second-store feasibility study may
+  need more research, longer reasoning and a substantial sourced answer.
+  Replace blanket ceilings only under approved implementation scope, with measured
+  budgets and independent tests. Persist work across bounded execution slices instead
+  of abandoning it. Never loosen cost, privacy, approval or source safeguards.
+- Routines and monitors feed the same persistent Luna work lifecycle; general
+  objectives can change strategy as actual evidence changes. Use the existing
+  scheduler, effect gateway, verified receipts, follow-up and interruption recovery.
+  Do not force corroboration by a fixed number of unrelated domains or tools;
+  evidence adequacy depends on the claim, source and uncertainty.
+- The target is being implemented in separately approved U1–U5 slices. The runtime and independently executed proof, rather than documentation alone, determine completion.
+  Any conflict with AGENTS.md or a binding workflow restriction must be explicitly
+  reconciled before affected runtime changes. Exact implementation scope and
+  independently executed evidence are mandatory; no production or paid authority.
+
 ### Conversation state
 - `ai_threads` / `ai_messages` store every user, assistant and tool message (tool results compact).
-- Context per turn = system prompt + tool schemas (stable, cacheable) + rolling summary + last 6–8 messages.
+- Context per turn = stable instructions and permitted tool definitions + existing owner facts and thread memory + recent admitted messages within a 96 KB UTF-8 history budget.
 - Owner facts (saved answers) are reused on every turn; never ask again for a saved fact.
 - Rolling summary (to be built): a small model keeps facts the owner stated, open goals and chosen
   items/periods. Business figures are never cached in the summary; tools re-read them.
 
-### Budget (enforced in code and tested)
-- Stable prefix first (system prompt + tools), `prompt_cache_key = "cafe-agent-v{N}"`. No dates, ids or
-  per-turn data in the prefix.
-- Ordinary turns: ≤ 6 model calls (5 tool rounds + 1 final). When the model actually chooses and executes a supplier-investigation or saved-order-read function, it may use one additional bounded tool round (≤ 7 total model calls including final) to complete the owner\u2019s purchasing workflow; keyword matches and request text must never grant an exception. All turns: ≤ 8 tool executions, stop after 2 consecutive tool errors, and a 60s deadline. The isolated paid pilot also has its separate hard $0.18/18-transport authorization cap.
-- `max_output_tokens` ≤ 1200 per call. Target ≤ 25k input tokens for a typical question.
-- Main model from `SUPERVISOR_OPENAI_MODEL`; a small model for summaries and titles only.
-- Log per turn: calls, tool calls, input/cached/output tokens, latency, end reason. Never log prompt text.
+### U2 execution policy (owner-approved implementation)
+- Model-led completion, not a preset investigation route. Exact Luna uses provider-native hosted tool search over the existing authorized registry; other models use eager declarations. All selected calls still pass local strict validation, scope and effect authorization.
+- Existing 60-second maximum execution slice and tighter worker/lease limits remain. Ordinary Luna permits up to 7 work requests plus one synthesis request, 24 tool calls and 32,768 aggregate output tokens per slice; up to 16,384 work tokens interactively, up to 8,192 per verified migrated worker request and up to 8,192 final reserve. Smaller admitted budgets take precedence. Unknown output reserves its whole admitted cap; final synthesis is tool-free. Durable work uses existing checkpoints and original identity.
+- Pre-U2 databases retain the 1,200 worker request ceiling; only the exact migrated service-only capability read permits expansion. Existing fallback and legacy trusted paid-run bounds remain, including the $0.18/18-transport hard cap. No paid launch from a coding approval.
+- Existing usage ledgers record redacted request and tool measurements, actual observed model, cached/input/output/reasoning counts and costs when known; missing values are null. Never store prompts, raw reasoning, arguments, results or private business content in telemetry. Production migration and live model execution require separate authorization.

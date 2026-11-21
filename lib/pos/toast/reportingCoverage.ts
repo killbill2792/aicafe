@@ -10,20 +10,45 @@ import {readAllPages} from "./readAllPages";
 export async function unverifiedToastSalesDates(
  db:SupabaseClient,businessId:string,from:string,to:string
 ):Promise<Set<string>> {
- const {data,error}=await db.rpc("toast_unverified_sales_dates",{
-  p_business_id:businessId,p_from:from,p_to:to
- });
+ const args={p_business_id:businessId,p_from:from,p_to:to};
+ const modern=await db.rpc("toast_unverified_sales_dates",{...args,p_canonical_only:true});
+ if(!modern.error&&!Array.isArray(modern.data)){
+  const dates=modern.data?.canonicalDates;
+  if(!Array.isArray(dates)||dates.length>371||dates.some(date=>typeof date!=="string"||
+   !/^\d{4}-\d{2}-\d{2}$/.test(date)||date<from||date>to))
+   throw new Error("Invalid Toast coverage dates");
+  return new Set<string>(dates);
+ }
+ // A missing overload (during an authorized rolling migration) or a legacy
+ // array-shaped adapter uses the existing candidate + scoped order check.
+ // Never treat a legacy candidate array as proof of canonical sales.
+ if(modern.error&&!["PGRST202","42883"].includes(modern.error.code??""))
+  throw new Error("Toast sales coverage unavailable");
+ const {data,error}=modern.error?await db.rpc("toast_unverified_sales_dates",args):modern;
  if(error||!Array.isArray(data))throw new Error("Toast sales coverage unavailable");
  const possible=[...new Set(data.map((row:{business_date:string})=>row.business_date))];
  if(!possible.length)return new Set();
  if(possible.length>371)throw new Error("Toast coverage range exceeds bounds");
  // The RPC includes pilot-only and payment-review dates for audit. Those dates
  // must not hide proven Square/CSV canonical revenue when no Toast sale was imported.
- const canonical=await readAllPages((start,end)=>db.from("orders")
-  .select("id,business_date")
-  .eq("business_id",businessId).like("pos_order_id","toast:%")
-  .in("business_date",possible).order("id").range(start,end));
- return new Set(canonical.map(row=>row.business_date));
+ const canonical=new Set<string>();
+ // Existence, not order volume, establishes canonical presence. Bound fan-out
+ // and return no partial certificate if any independent date read fails.
+ const concurrency=4;
+ for(let offset=0;offset<possible.length;offset+=concurrency){
+  const found=await Promise.all(possible.slice(offset,offset+concurrency).map(async date=>{
+   if(typeof date!=="string"||!/^\d{4}-\d{2}-\d{2}$/.test(date)||date<from||date>to)
+    throw new Error("Invalid Toast coverage date");
+   const {data,error}=await db.from("orders").select("id,business_date")
+    .eq("business_id",businessId).like("pos_order_id","toast:%")
+    .in("business_date",[date]).order("id").range(0,0);
+   if(error||!Array.isArray(data)||data.length>1||data.some(row=>row.business_date!==date))
+    throw new Error("Toast owner history unavailable");
+   return data.length?date:null;
+  }));
+  for(const date of found)if(date!==null)canonical.add(date);
+ }
+ return canonical;
 }
 
 /** Imported Toast days are visible even before external reconciliation. Missing

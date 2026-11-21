@@ -157,9 +157,13 @@ restore_newest_toast_importer() {
 supabase_lane() {
   group "Static"
   check supabase "Olivia SQL block delimiters" olivia_sql_delimiters
+  check supabase "U3 fully migrated physical catalog census and schema drift" env U3_CATALOG_DB_URL="$supabase_url" node scripts/acceptance/u3-catalog-census.mjs
+  check supabase "U3 all-physical-field disposition and source review drift" node scripts/acceptance/u3-field-dispositions.mjs
 
   group "App and security checks"
   sql_step rls-all-public-tables.sql "Every public table has row level security"
+  sql_step u3-research-security-db.sql "U3 governed SQL: two-café RLS, signed scope, tamper and revocation"
+  check supabase "U3 registered SQL tool: actual private-role connection, scope and cross-café query" env U3_SQL_DB_SANDBOX_ONLY=1 U3_SQL_DB_URL="$supabase_url" npx vitest run lib/ai/agent/u3SqlResearch.db.test.ts --reporter=verbose
   sql_step admin-access-migration-smoke.sql "Admin access codes: functions, trigger, privileges"
   sql_step olivia-pr1a-rls.sql "Olivia 1A scheduling: RLS, composite keys, audit"
   sql_step olivia-pr1b-rls.sql "Olivia 1B availability + Olivia 3 publication: RLS"
@@ -184,6 +188,13 @@ supabase_lane() {
   sql_step task16c-external-permissions-db.sql "Task16C: owner/café permission revoke, CAS, audit, Gmail generations"
 
   group "Concurrent sessions"
+  check supabase "U1 historical replay evaluator fail-closed checks" node --test scripts/acceptance/u1-incident-replay.test.mjs
+  check supabase "U1 four-ref matched recorded incident replay" node scripts/acceptance/u1-incident-replay.mjs
+  check supabase "U1 shared runtime: concurrent admission, recovery, scope and workload" env U1_RELIABILITY_DB_SANDBOX_ONLY=1 \
+    U1_RELIABILITY_DB_URL="$supabase_url" npx vitest run lib/ai/agent/u1Reliability.db.test.ts --reporter=verbose
+  check supabase "U2 actual-Luna acceptance oracle fail-closed fixtures" node --test evals/acceptance/live/u2-model-execution.test.mjs
+  check supabase "U2 model execution capacity, accounting and isolation" env U2_MODEL_EXECUTION_DB_SANDBOX_ONLY=1 \
+    U2_MODEL_EXECUTION_DB_URL="$supabase_url" npx vitest run lib/ai/agent/u2ModelExecution.db.test.ts --reporter=verbose
   check supabase "Task13C: concurrent authenticated staff, owner reply and assignment replay" env TASK13C_DISPOSABLE_DB_URL="$supabase_url" node scripts/task13c-concurrent-nonce-db.mjs
   check supabase "Olivia 1A: concurrent same-key creates" bash scripts/olivia-pr1a-create-concurrency.sh
   check supabase "Olivia 1B: concurrent co-owner batches" bash scripts/olivia-pr1b-create-concurrency.sh

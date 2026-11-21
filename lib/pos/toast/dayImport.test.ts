@@ -38,6 +38,9 @@ function fakeDatabase(daysTotal=1,initialImportedDays:string[]=[],postCommitHook
  const pendingCosts=new Map<string,string>();
  const imports:ImportCall[]=[];
  const operations:string[]=[];
+ const linkCalls:Array<Record<string,unknown>>=[];
+ const phaseErrors:Array<Record<string,unknown>>=[];
+ let failLink=false,failPhase=false;
  const run={state:"queued",daysDone:0,daysTotal,cursor:{} as Record<string,unknown>};
  const db={
   from(table:string){
@@ -45,6 +48,10 @@ function fakeDatabase(daysTotal=1,initialImportedDays:string[]=[],postCommitHook
    const q={
     select(_columns:string){return q;},
     eq(name:string,value:unknown){filters[name]=value;return q;},
+    async upsert(value:Record<string,unknown>){
+     if(table!=="toast_sync_phase_errors")throw new Error("unexpected upsert");
+     phaseErrors.push(value);return {error:failPhase?{code:"57014"}:null};
+    },
     async maybeSingle(){
      if(table==="toast_location_mappings")return {data:{
       location_id:location,verified_at:verified?"2026-10-15":null,toast_time_zone:"America/Los_Angeles",
@@ -83,6 +90,9 @@ function fakeDatabase(daysTotal=1,initialImportedDays:string[]=[],postCommitHook
     run.state=run.daysTotal>0&&run.daysDone>=run.daysTotal?"completed":"running";
     run.cursor={};
     postCommitHook?.();
+   }else if(name==="pos_relink_toast_lines"){
+    linkCalls.push(args);
+    if(failLink)return {data:null,error:{code:"57014"}};
    }else if(name==="toast_ack_rollup_refresh"){
     pendingCosts.delete(String(args.p_business_date));
     return {data:true,error:null};
@@ -90,7 +100,8 @@ function fakeDatabase(daysTotal=1,initialImportedDays:string[]=[],postCommitHook
    return {data:{ok:true},error:null};
   }
  };
- return {db:db as unknown as SupabaseClient,stored,pendingCosts,imports,operations,run,dayStatuses};
+ return {db:db as unknown as SupabaseClient,stored,pendingCosts,imports,operations,run,dayStatuses,linkCalls,phaseErrors,
+  failLinks:()=>{failLink=true;failPhase=true;}};
 }
 beforeEach(()=>{mocked.request.mockReset();mocked.recompute.mockReset();mocked.refresh.mockReset();
  mocked.recompute.mockResolvedValue(undefined);
@@ -413,4 +424,29 @@ describe("real Toast messiness: same data in, same import out",()=>{
   const again=await importPages([orders.map(shuffled).reverse()]);
   expect(again.sent).toEqual(first.sent);
  });
+});
+
+it("relinks only the committed day before waking shared derived work",async()=>{
+ const f=fakeDatabase();mocked.request.mockResolvedValue([]);
+ await importToastBusinessDay(f.db,params("2026-10-16"));
+ expect(f.linkCalls).toEqual([{p_business_id:business,p_restaurant_guid:restaurant,p_business_date:"2026-10-16"}]);
+ expect(f.operations.indexOf("toast_import_day")).toBeLessThan(f.operations.indexOf("pos_relink_toast_lines"));
+});
+it("does not record the committed day as failed even if relink and its error receipt are unavailable",async()=>{
+ const f=fakeDatabase();f.failLinks();mocked.request.mockResolvedValue([]);
+ const warn=vi.spyOn(console,"warn").mockImplementation(()=>{});
+ try{
+  const result=await importToastBusinessDay(f.db,params("2026-10-16"));
+  expect(result.derivedRefreshPending).toBe(true);
+  expect(result.derivedRefreshNote).toBe("sales_link_unavailable");
+  expect(result.costsPending).toBe(true);
+  expect(f.pendingCosts.has("2026-10-16")).toBe(true);
+  expect(mocked.recompute).not.toHaveBeenCalled();
+  expect(f.operations).not.toContain("toast_ack_rollup_refresh");
+  expect(f.imports).toHaveLength(1);
+  expect(f.operations).not.toContain("toast_record_day_error");
+  expect(f.dayStatuses.get("2026-10-16")).toBe("imported");
+  expect(f.phaseErrors).toEqual([expect.objectContaining({business_id:business,restaurant_guid:restaurant,phase:"sales_link",last_error_category:"unavailable"})]);
+  expect(warn).toHaveBeenCalledWith("toast_sales_link_failure_not_persisted");
+ }finally{warn.mockRestore();}
 });

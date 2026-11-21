@@ -16,7 +16,7 @@ import { resumeSupervisorRun } from "./resume";
 import { selectNextDurableRun, SupabaseDurableRunRepository, admitOwnerRun, openOwnerRunCheckpoint } from "./repository.server";
 import { runScopeSchema, ownerRunInputSchema, type OwnerRunInput, matchedOwnerAnswerSchema, type DurableRun, type DurableRunRepository, type RunScope } from "./contracts";
 import { withWorkerBudget, usageStopReason, currentWorkerUsage, workerBudgetExhausted,
-  withDurableProviderTurn,type WorkerBudget, type WorkerUsage } from "./usage.server"; const uuid = z.uuid(); const plan = [
+  withDurableProviderTurn,loadModelExecutionCap,type WorkerBudget, type WorkerUsage } from "./usage.server"; const uuid = z.uuid(); const plan = [
   { key: "authorize_owner", retry: "idempotent" as const },
   // An uncertain effect can never be blindly repeated.
   { key: "owner_turn", retry: "reconcile" as const }, { key: "verify_report", retry: "idempotent" as const },
@@ -78,7 +78,7 @@ async function blockRun(run: WorkerRun, reason: string, token?: string, stepKey?
 
 export type WorkerDependencies = { repository: DurableRunRepository; authorize: () => Promise<void>;
   verified: () => Promise<VerifiedReply | null>; executeTurn: (claimToken:string,budget:WorkerBudget) => Promise<void|"yielded">;
-  version2?:boolean;
+  version2?:boolean; providerOutputCap?:number;
   cancelled: () => Promise<boolean>; stop: (reason: string, token?: string, key?: string) => Promise<void>;
   clock?: () => number; };
 /** Uses PR5's fenced resume runner, not a second lease implementation.
@@ -120,7 +120,7 @@ export async function executeDurableRun(
                 const exceeded = usageStopReason(aggregate, budget);
                 if (exceeded) throw new Error("supervisor_worker_chain_" + exceeded); }
               return outcome;
-            });
+            },deps.providerOutputCap);
             if(outcome==="yielded")return null; } catch (error) {
               // A v2 transport/storage failure is not proof of an effect or a
               // terminal task failure. Keep the persisted fenced lease: claim
@@ -161,15 +161,15 @@ export async function reconcileVerifiedOwnerStep(
   if (!receipt || receipt.endReason !== "complete" ||
     receipt.ref !== supervisorReplyIdFor(run.requestKey)) return false;
   await repository.reconcile(run.scope, run.id, "owner_turn", receipt.ref); return true; }
-function configuredBudget(): WorkerBudget { const limit = (value: string | undefined, fallback: number) => {
+function configuredBudget(expanded=false): WorkerBudget { const limit = (value: string | undefined, fallback: number) => {
     if (value === undefined) return fallback;
     if (!/^\d+$/.test(value) || !Number.isSafeInteger(Number(value)))
       throw new Error("invalid_worker_budget_setting"); return Number(value); }; return {
     maxElapsedMs: limit(process.env.SUPERVISOR_WORKER_MAX_ELAPSED_MS, 60000),
-    maxModelCalls: limit(process.env.SUPERVISOR_WORKER_MAX_MODEL_CALLS, 6),
-    maxToolCalls: limit(process.env.SUPERVISOR_WORKER_MAX_TOOL_CALLS, 8),
-    maxInputTokens: limit(process.env.SUPERVISOR_WORKER_MAX_INPUT_TOKENS, 60000),
-    maxOutputTokens: limit(process.env.SUPERVISOR_WORKER_MAX_OUTPUT_TOKENS, 7200), }; }
+    maxModelCalls: limit(process.env.SUPERVISOR_WORKER_MAX_MODEL_CALLS, expanded?8:6),
+    maxToolCalls: limit(process.env.SUPERVISOR_WORKER_MAX_TOOL_CALLS, expanded?24:8),
+    maxInputTokens: limit(process.env.SUPERVISOR_WORKER_MAX_INPUT_TOKENS, expanded?240000:60000),
+    maxOutputTokens: limit(process.env.SUPERVISOR_WORKER_MAX_OUTPUT_TOKENS, expanded?32768:7200), }; }
 /** Match the browser/WhatsApp paid-turn gates with an explicit scoped
  * service-role client. A delayed durable turn must not bypass current café
  * entitlement or the owner's UTC daily model-call quota. */
@@ -280,7 +280,8 @@ export async function processDurableRun(runId: string,emit:(type:string,data:unk
     if (blocked.length !== 1 || blocked[0].step_key !== "owner_turn" ||
       !(await reconcileVerifiedOwnerStep(run, repository, blocked[0].error_code,
         authorize, () => verifiedReply(run)))) return "blocked"; }
-  return executeDurableRun(run, configuredBudget(), { repository, authorize,version2,
+  const providerOutputCap=version2?await loadModelExecutionCap(db):1200;
+  return executeDurableRun(run, configuredBudget(providerOutputCap>1200), { repository, authorize,version2,providerOutputCap,
     verified: () => verifiedReply(run), cancelled: async () => {
       const check = await db.from("supervisor_runs").select("status")
         .eq("id", run.id).eq("business_id", run.scope.businessId).maybeSingle();

@@ -61,7 +61,7 @@ export type ChatStartProps = {
 };
 
 function SafeAction({ item }: { item: ChatStartAttentionItem }) {
-  const className = "mt-auto inline-flex min-h-11 w-fit max-w-full items-center justify-center rounded-xl bg-accent-soft px-3 py-1.5 text-[14px] font-semibold text-accent-text no-underline focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ink";
+  const className = "mt-auto inline-flex min-h-12 w-fit max-w-full items-center justify-center rounded-xl bg-accent-soft px-3 py-1.5 text-[15px] font-semibold text-accent-text no-underline focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ink";
   // The shared reader validates relative-only hrefs. OAuth setup needs an actual navigation.
   if (!item.href.startsWith("/") || item.href.startsWith("//")) return null;
   return item.href.startsWith("/api/pos/square/connect?")
@@ -87,7 +87,7 @@ export default function ChatStart({ data, copy, hasMessages, expanded, onToggle,
       <div className="flex flex-wrap gap-x-2 gap-y-1" dir="inherit">
         {copy.suggestions.map((label, index) => <button type="button" key={index}
           disabled={suggestionsDisabled} onClick={() => onSuggestion(index === 3 ? copy.experimentPrompt : label)}
-          className="inline-flex min-h-11 max-w-full items-center rounded-full border border-line px-3 py-1.5 text-start text-[14px] font-medium leading-snug text-ink hover:bg-surface2 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ink disabled:opacity-50">
+          className="inline-flex min-h-12 max-w-full items-center rounded-full border border-line px-3 py-1.5 text-start text-[14px] font-medium leading-snug text-ink hover:bg-surface2 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ink disabled:opacity-50">
           {label}
         </button>)}
       </div>

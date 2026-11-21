@@ -36,7 +36,7 @@ export function EventsTabs({tab,onChoose,t,compact=false}:{tab:Tab;onChoose:(nex
   return <div className={compact?"flex flex-wrap gap-2":"grid grid-cols-3 gap-2"} role="group" aria-label={t("title")}>
     {(["past","now","upcoming"] as const).map(key=><button key={key} type="button"
       aria-pressed={tab===key} onClick={()=>onChoose(key)}
-      className={(compact?"min-h-11 max-w-full rounded-full px-3.5 py-1 text-[14px]":"min-h-12 min-w-0 rounded-xl px-2 text-[16px]")+" font-semibold focus-visible:outline focus-visible:outline-2 focus-visible:outline-ink "+
+      className={(compact?"min-h-12 max-w-full rounded-full px-3.5 py-1 text-[15px]":"min-h-12 min-w-0 rounded-xl px-2 text-[16px]")+" font-semibold focus-visible:outline focus-visible:outline-2 focus-visible:outline-ink "+
         (tab===key?"bg-accent text-on-accent":"bg-surface2 text-ink")}>{t(key)}</button>)}
   </div>;
 }

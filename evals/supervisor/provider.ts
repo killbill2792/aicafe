@@ -33,6 +33,10 @@ const tools = {
     menuGroup:item.category,visibility:"POS",pricingStrategy:null,modifierGroups:[],
   }))),
   getProfitability:async()=>absent("profitabilityNotSeeded"),
+  getSalesCoverageBounds:async(period:{from:string;to:string})=>{
+    const dates=seed.days.filter(d=>within(d.date,period)).map(d=>d.date).sort();
+    return dates.length?{from:dates[0],to:dates[dates.length-1]}:null;
+  },
   getSalesTrend:async(period:{from:string;to:string})=>{
     const rows=seed.days.filter(d=>within(d.date,period)).map(d=>({
       date:d.date,netSalesCents:d.netSalesCents,ordersCount:d.ordersCount,

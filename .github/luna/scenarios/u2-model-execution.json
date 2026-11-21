@@ -1,0 +1,125 @@
+{
+  "id": "u2-model-execution",
+  "mode": "generic",
+  "engine": "node-server",
+  "entrypoint": "evals/acceptance/live/u2-model-execution.mjs",
+  "proof": "u2-model-execution-proof.json",
+  "scope": "u2-model-execution-scope.json",
+  "expectedTools": [
+    "get_menu_items",
+    "get_sales"
+  ],
+  "assertions": [
+    {
+      "name": "saved-price",
+      "kind": "source",
+      "table": "public.menu_items",
+      "where": {
+        "business_id": {
+          "scope": "businessId"
+        },
+        "id": {
+          "scope": "menuId"
+        },
+        "price_cents": {
+          "scope": "priceCents"
+        }
+      },
+      "minCount": 1,
+      "maxCount": 1
+    },
+    {
+      "name": "actual-sales",
+      "kind": "source",
+      "table": "public.daily_rollups",
+      "where": {
+        "business_id": {
+          "scope": "businessId"
+        },
+        "business_date": {
+          "scope": "salesDay"
+        },
+        "net_sales_cents": {
+          "scope": "saleCents"
+        },
+        "sales_data_status": {
+          "eq": "actual"
+        }
+      },
+      "minCount": 1,
+      "maxCount": 1
+    },
+    {
+      "name": "first-reply",
+      "kind": "owner",
+      "table": "public.ai_messages",
+      "where": {
+        "business_id": {
+          "scope": "businessId"
+        },
+        "thread_id": {
+          "scope": "threadId"
+        },
+        "id": {
+          "scope": "firstReplyId"
+        },
+        "role": {
+          "eq": "supervisor"
+        }
+      },
+      "minCount": 1,
+      "maxCount": 1
+    },
+    {
+      "name": "second-reply",
+      "kind": "owner",
+      "table": "public.ai_messages",
+      "where": {
+        "business_id": {
+          "scope": "businessId"
+        },
+        "thread_id": {
+          "scope": "threadId"
+        },
+        "id": {
+          "scope": "secondReplyId"
+        },
+        "role": {
+          "eq": "supervisor"
+        }
+      },
+      "minCount": 1,
+      "maxCount": 1
+    },
+    {
+      "name": "foreign-thread",
+      "kind": "isolation",
+      "table": "public.ai_threads",
+      "where": {
+        "business_id": {
+          "scope": "otherCafeId"
+        },
+        "id": {
+          "scope": "threadId"
+        }
+      },
+      "minCount": 0,
+      "maxCount": 0
+    },
+    {
+      "name": "no-effect",
+      "kind": "source",
+      "table": "public.supervisor_proposals",
+      "where": {
+        "business_id": {
+          "scope": "businessId"
+        },
+        "thread_id": {
+          "scope": "threadId"
+        }
+      },
+      "minCount": 0,
+      "maxCount": 0
+    }
+  ]
+}

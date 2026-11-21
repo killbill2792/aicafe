@@ -67,6 +67,12 @@ describe("Task 15A migrated, agentic investigation SQL integration",()=>{
         [cafes[0],taskId]);
       a=await connect("service");b=await connect("service");
       ownerClient=await connect("owner",owners[0]);
+      // U1: unattended scopes are limited to the explicit current owner binding,
+      // even though the worker uses service_role. No private credential is returned.
+      expect(await rpc(a,"toast_business_scope_summary",[cafes[0],owners[0]])).toEqual({menus:null,labor:null});
+      await expect(rpc(a,"toast_business_scope_summary",[cafes[0],owners[1]])).rejects.toThrow();
+      await expect(rpc(ownerClient,"toast_business_scope_summary",[cafes[0],owners[0]])).rejects.toThrow();
+      expect(await rpc(ownerClient,"toast_business_scope_summary",[cafes[0]])).toEqual({menus:null,labor:null});
       await expect(rpc(ownerClient,"supervisor_enqueue_investigation",
         enqueue(0,"alert",alerts[0]))).rejects.toThrow();
       await expect(rpc(a,"supervisor_enqueue_investigation",
@@ -85,6 +91,8 @@ describe("Task 15A migrated, agentic investigation SQL integration",()=>{
       expect(Boolean(first)!==Boolean(duplicate)).toBe(true);
       expect(claim.source_id).toBe(alerts[0]);
       expect(claim.phase).toBe("collect");
+      const lease=await admin.query("select lease_until>clock_timestamp() as live from public.supervisor_investigations where business_id=$1 and source_id=$2",[cafes[0],alerts[0]]);
+      expect(lease.rows).toEqual([{live:true}]);
       const source={kind:"meal_break",status:"new",severity:"high",quality:"verified",
         relatedAlerts:["meal_break"],relatedTasks:[]};
       const checkpoint={source,collectedAt:anchor};

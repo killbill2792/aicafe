@@ -1,7 +1,7 @@
 import {describe,expect,it,vi} from "vitest";
 vi.mock("server-only",()=>({}));
 import type {SupabaseClient} from "@supabase/supabase-js";
-import {readDailyFactRows,readDailyFacts,readCoveredSalesDates} from "./dailyFacts.server";
+import {readDailyFactRows,readDailyFacts,readCoveredSalesDates,readSalesCoverageBounds} from "./dailyFacts.server";
 import {supervisorHistoricalReaders} from "@/lib/ai/supervisorReads.server";
 
 /** A café with more saved days than one PostgREST page (1,000 rows). */
@@ -44,5 +44,47 @@ describe("shared daily totals reader",()=>{
   if(!chat.available)return;
   expect(chat.value.map(d=>[d.date,d.netSalesCents,d.ordersCount]))
    .toEqual(screen.map(d=>[d.date,d.netSalesCents,d.ordersCount]));
+ });
+});
+
+describe("bounded actual sales date metadata",()=>{
+ function metadataDb(fail=false){
+  const queries:Array<{columns:string;filters:Record<string,string>;ascending:boolean;range:number[]}>=[];
+  const from=vi.fn((table:string)=>{
+   if(table!=="daily_rollups")throw Error("Unexpected source");
+   let columns="",ascending=true;const filters:Record<string,string>={};
+   const q={
+    select:(value:string)=>{columns=value;return q;},
+    eq:(key:string,value:string)=>{filters[key]=value;return q;},
+    gte:(key:string,value:string)=>{filters["gte:"+key]=value;return q;},
+    lte:(key:string,value:string)=>{filters["lte:"+key]=value;return q;},
+    order:(key:string,options:{ascending:boolean})=>{expect(key).toBe("business_date");ascending=options.ascending;return q;},
+    range:async(a:number,b:number)=>{
+     queries.push({columns,filters,ascending,range:[a,b]});
+     if(fail&&!ascending)return {data:null,error:{message:"offline"}};
+     const found=rows.filter(r=>r.sales_data_status===filters.sales_data_status&&
+      r.business_date>=filters["gte:business_date"]&&r.business_date<=filters["lte:business_date"]);
+     if(!ascending)found.reverse();
+     return {data:found.slice(a,b+1).map(r=>({business_date:r.business_date})),error:null};
+    },
+   };
+   return q;
+  });
+  return {db:{from} as unknown as SupabaseClient,queries,from};
+ }
+ it("returns oldest and newest actual dates in scope with at most one date per query",async()=>{
+  const f=metadataDb();
+  expect(await readSalesCoverageBounds(f.db,"cafe",day(0),day(1200))).toEqual({from:day(1),to:day(1199)});
+  expect(f.queries).toEqual([true,false].map(ascending=>({columns:"business_date",ascending,range:[0,0],
+   filters:{business_id:"cafe",sales_data_status:"actual","gte:business_date":day(0),"lte:business_date":day(1200)}})));
+ });
+ it("distinguishes absent actual sales from a failed metadata query",async()=>{
+  expect(await readSalesCoverageBounds(metadataDb().db,"cafe",day(0),day(0))).toBeNull();
+  await expect(readSalesCoverageBounds(metadataDb(true).db,"cafe",day(0),day(1200))).rejects.toThrow("unavailable");
+ });
+ it("rejects another café before the metadata reader makes a request",async()=>{
+  const f=metadataDb();
+  await expect(supervisorHistoricalReaders(f.db,"cafe").salesCoverageBounds("foreign",{from:day(0),to:day(1)})).rejects.toThrow("scope");
+  expect(f.from).not.toHaveBeenCalled();
  });
 });

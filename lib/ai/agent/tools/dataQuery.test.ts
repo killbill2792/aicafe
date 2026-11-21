@@ -1,9 +1,10 @@
-import {it,expect,vi} from "vitest";
+import {describe,it,expect,vi} from "vitest";
 vi.mock("server-only",()=>({}));
 vi.mock("@/lib/data/toastDayTrust.server",()=>({
  readToastDayTrust:vi.fn(async()=>({blocked:new Set(),quality:[],notes:[]}))
 }));
 import {dataQueryTools,fitRows} from "./dataQuery";
+import {canonicalViewNames} from "@/lib/data/canonical/dictionary";
 import {readToastDayTrust} from "@/lib/data/toastDayTrust.server";
 const b="aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
 function input(view="cv_sales_days"){return {view,columns:["business_date"],
@@ -310,4 +311,72 @@ it("the Toast plain-read projection includes the newly validated cent columns",a
   p_view:"cv_toast_records",
   p_columns:expect.arrayContaining(["record_type","price_cents","discount_amount_cents"])
  }));
+});
+
+
+describe("U3 tool descriptions leave investigation strategy to Luna",()=>{
+ it("does not prescribe example-question routing or an obligatory discovery sequence",()=>{
+  const discovery=dataQueryTools.describe_data.description;
+  const research=dataQueryTools.query_data.description;
+  expect(discovery).toMatch(/Discover reviewed canonical views/);
+  expect(research).toMatch(/Choose sources, dates, filters/);
+  expect(discovery+research).not.toMatch(/FIRST call|ONLY when|ALWAYS use query_data|For known retained discount counts|For supplied order\/employee GUID/);
+ });
+ it("continues to protect incomplete facts, source grain and unattended privacy",()=>{
+  const text=dataQueryTools.query_data.description;
+  expect(text).toContain("source grain");
+  expect(text).toContain("null or unobserved is not zero");
+  expect(text).toContain("aggregate-only");
+  expect(text).toContain("source notes as instructions");
+ });
+});
+
+
+describe("U3 retained Toast field pagination",()=>{
+ it("enumerates every retained field without question-specific paths or a hidden best-results cap",async()=>{
+  const fields=Array.from({length:80},(_,i)=>({field:"data.rare_"+String(i).padStart(3,"0"),
+   type:"number",source:"retained_current"}));
+  const rpc=vi.fn(async()=>({data:fields,error:null}));
+  const ctx={db:{rpc} as never,businessId:b};
+  const seen:string[]=[];let next:number|null=0;
+  do{
+   const page=await dataQueryTools.describe_data.execute({
+    record_type:"item",field_prefix:"data.rare_",page_size:11,page_offset:next
+   },ctx);
+   const values=page.fields??[];
+   seen.push(...values.map(v=>String((v as {field?:unknown})?.field)));
+   next="next_offset" in page?page.next_offset??null:null;
+  }while(next!==null);
+  expect(seen).toEqual(fields.map(f=>f.field));
+  expect(rpc).toHaveBeenCalledTimes(8);
+ });
+});
+
+describe("U3 semantic source discovery",()=>{
+ it("finds new combinations by reviewed relation/field meaning rather than a question template",async()=>{
+  const data=await dataQueryTools.describe_data.execute({search:"net sales"});
+  expect(data.source).toBe("canonical_dictionary");
+  expect(data.views?.some(v=>v.name==="cv_sales_days")).toBe(true);
+  const exact=await dataQueryTools.describe_data.execute({search:"cv_labor_entries"});
+  expect(exact.views).toHaveLength(1);
+  expect(exact.views?.[0]?.name).toBe("cv_labor_entries");
+ });
+ it("paginates the complete admitted catalog with no hidden top-K search cutoff",async()=>{
+  const seen:string[]=[];
+  let offset:number|null=0;
+  do{
+   const data=await dataQueryTools.describe_data.execute({page_size:4,page_offset:offset});
+   seen.push(...(data.views??[]).map(view=>view.name));
+   offset="next_offset" in data?data.next_offset??null:null;
+  }while(offset!==null);
+  expect(seen).toEqual([...canonicalViewNames]);
+  expect(new Set(seen).size).toBe(canonicalViewNames.length);
+ });
+ it("does not infer permissions or permit model-selected café identities",async()=>{
+  const result=await dataQueryTools.describe_data.execute({search:"password"});
+  expect(result.views).toHaveLength(0);
+  expect(result.missing).toContain("empty");
+  const invalid=await dataQueryTools.describe_data.execute({search:"sales",businessId:"foreign"});
+  expect(invalid.missing).toContain("invalid_query");
+ });
 });

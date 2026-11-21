@@ -16,6 +16,7 @@ import { ChatMarkdown, SourceLegend } from "./ChatMarkdown";
 import dynamic from "next/dynamic";
 const SupervisorRichPresentation=dynamic(()=>import("./SupervisorRichPresentation"));
 import FactSummary from "./FactSummary";
+import SupervisorRoutineInlineCard from "./SupervisorRoutineInlineCard";
 import SupervisorProposalCard from "./SupervisorProposalCard";
 import InventoryApproveAll from "./InventoryApproveAll";
 import {buildAgentSendBody} from "./agentSendBody";
@@ -110,7 +111,7 @@ function progressStatusText(copy: SupervisorChatCopy, status: SupervisorProgress
 const record = (value: unknown): value is Record<string, unknown> =>
   Boolean(value) && typeof value === "object" && !Array.isArray(value);
 
-function ReplyBlock({ block, copy, locale, threadId, unverified = [] }: { block: unknown; copy: SupervisorChatCopy; locale: Locale; threadId?:string; unverified?: {start:number;end:number;source?:'owner'|'estimate'|'unchecked';detail?:string}[] }) {
+function ReplyBlock({ block, copy, locale, threadId, onEdit, disabled=false, unverified = [] }: { block: unknown; copy: SupervisorChatCopy; locale: Locale; threadId?:string; onEdit?:(text:string)=>void;disabled?:boolean; unverified?: {start:number;end:number;source?:'owner'|'estimate'|'unchecked';detail?:string}[] }) {
   if (!record(block)) return null;
   if(block.type==="proposal_card"&&typeof block.proposalId==="string"&&threadId)
     return <div data-work-proposal={block.proposalId} tabIndex={-1}><SupervisorProposalCard threadId={threadId} proposalId={block.proposalId} locale={locale}/></div>;
@@ -119,6 +120,7 @@ function ReplyBlock({ block, copy, locale, threadId, unverified = [] }: { block:
       copy={{en,es,ar}[locale].SupervisorExperiment} initialProposalId={block.proposalId}/></div>;
   if(block.type==="memory_card"&&typeof block.ruleId==="string")
     return <MemoryCard ruleId={block.ruleId} locale={locale}/>;
+  if(block.type==="routine_card")return <SupervisorRoutineInlineCard block={block} onEdit={onEdit} disabled={disabled}/>;
   if ((block.type === "text" || block.type === "warning") && typeof block.text === "string") {
     return block.type === "warning"
       ? <p className="flex items-start gap-2 text-[17px] leading-relaxed text-ink-muted" role="note">
@@ -1225,7 +1227,7 @@ export default function SupervisorChatComposer({
         aria-expanded={startExpanded} aria-controls={startExpanded?"supervisor-chat-insights":undefined}
         aria-label={chatStartCopy?.keyNumbers??en.Home.keyNumbers}
         title={chatStartCopy?.keyNumbers??en.Home.keyNumbers}
-        className="inline-flex min-h-11 min-w-11 items-center justify-center rounded-full text-ink-muted hover:bg-surface2 focus-visible:outline focus-visible:outline-2 focus-visible:outline-ink">
+        className="inline-flex min-h-12 min-w-12 items-center justify-center rounded-full text-ink-muted hover:bg-surface2 focus-visible:outline focus-visible:outline-2 focus-visible:outline-ink">
         <CalendarDays size={20} aria-hidden="true"/>
       </button>
       <h2 className="min-w-0 flex-1 truncate text-center font-headline text-[17px] font-medium tracking-tight text-ink">
@@ -1408,14 +1410,14 @@ export default function SupervisorChatComposer({
         <button type="button" disabled={offline} className="flex min-h-12 flex-1 items-center gap-2 rounded-lg px-3 text-start hover:bg-surface2 disabled:opacity-50" onClick={()=>pickAttachment(true)}><Camera size={18} aria-hidden="true"/>{en.SupervisorExperience.takePhoto}</button>
       </div>}
       <form onSubmit={(event) => { event.preventDefault(); void sendText(draft); }}
-        className="grid grid-cols-[44px_minmax(0,1fr)_44px_44px] items-end gap-1 rounded-[26px] border border-line bg-surface p-1 focus-within:border-accent">
+        className="grid grid-cols-[48px_minmax(0,1fr)_48px_48px] items-end gap-1 rounded-[26px] border border-line bg-surface p-1 focus-within:border-accent">
         <input ref={filePicker} type="file" className="sr-only" tabIndex={-1} aria-hidden="true"
           accept=".txt,.csv,.xlsx,.pdf,.jpg,.jpeg,.png,.webp,text/plain,text/csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/pdf,image/jpeg,image/png,image/webp"
           onChange={(event) => void attach(event)} />
         <button ref={attachmentTrigger} type="button" onClick={() => setAttachmentMenu(v=>!v)} aria-expanded={attachmentMenu} aria-controls={attachmentMenu?"supervisor-attachment-choices":undefined}
           aria-label={copy.addAttachment} title={copy.addAttachment}
           disabled={restoringFiles || threadUnavailable || offline || !enabled || !canUseAi || sending || uploading || dictation === "listening" || dictation === "recognizing"}
-          className="col-start-1 row-start-1 flex h-11 w-11 items-center justify-center rounded-full text-ink-muted hover:bg-surface2 disabled:opacity-50">
+          className="col-start-1 row-start-1 flex h-12 w-12 items-center justify-center rounded-full text-ink-muted hover:bg-surface2 disabled:opacity-50">
           <Plus size={22} aria-hidden="true" />
         </button>
         <button type="button" onClick={() => void listen()}
@@ -1424,8 +1426,8 @@ export default function SupervisorChatComposer({
           aria-pressed={dictation === "listening"}
           disabled={threadUnavailable || (offline&&dictation!=="listening") || !enabled || !canUseAi || sending || uploading || dictation === "recognizing"}
           className={dictation === "listening"
-            ? "col-start-3 row-start-1 flex h-11 w-11 items-center justify-center rounded-full bg-neg text-paper ring-2 ring-neg-soft animate-pulse motion-reduce:animate-none"
-            : "col-start-3 row-start-1 flex h-11 w-11 items-center justify-center rounded-full text-ink-muted hover:bg-surface2 disabled:opacity-40"}>
+            ? "col-start-3 row-start-1 flex h-12 w-12 items-center justify-center rounded-full bg-neg text-paper ring-2 ring-neg-soft animate-pulse motion-reduce:animate-none"
+            : "col-start-3 row-start-1 flex h-12 w-12 items-center justify-center rounded-full text-ink-muted hover:bg-surface2 disabled:opacity-40"}>
           {dictation === "listening" ? <Square size={20} fill="currentColor" aria-hidden="true" />
             : dictation === "recognizing" ? <LoaderCircle size={21} className="animate-spin motion-reduce:animate-none" aria-hidden="true" />
               : <Mic size={22} aria-hidden="true" />}
@@ -1436,10 +1438,10 @@ export default function SupervisorChatComposer({
           onChange={(event) => { if(!threadId&&event.target.value)explicitNewChat.current=true;setDraft(event.target.value); retryId.current = null; }}
           onKeyDown={composerKey} disabled={!enabled || !canUseAi || inputLocked}
           placeholder={eventContext?.threadId===threadId?"@event "+eventContext.title+" · "+copy.askAnything:copy.askAnything}
-          className="col-start-2 row-start-1 min-w-0 max-h-40 min-h-11 resize-none overflow-y-auto bg-transparent px-2 py-2 text-[16px] leading-6 text-ink outline-none placeholder:text-ink-muted disabled:opacity-50" />
+          className="col-start-2 row-start-1 min-w-0 max-h-40 min-h-12 resize-none overflow-y-auto bg-transparent px-2 py-3 text-[17px] leading-6 text-ink outline-none placeholder:text-ink-muted disabled:opacity-50" />
         <button type="submit" aria-label={copy.sendMessage}
           disabled={restoringFiles || offline || !enabled || !canUseAi || inputLocked || (!draft.trim()&&!attachments.length) || dictation === "listening" || dictation === "recognizing"}
-          className="col-start-4 row-start-1 flex h-11 w-11 items-center justify-center rounded-full bg-accent text-on-accent transition-transform hover:brightness-95 active:scale-95 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ink disabled:opacity-40">
+          className="col-start-4 row-start-1 flex h-12 w-12 items-center justify-center rounded-full bg-accent text-on-accent transition-transform hover:brightness-95 active:scale-95 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ink disabled:opacity-40">
           <ArrowUp size={22} aria-hidden="true" />
         </button>
       </form>
@@ -1471,6 +1473,21 @@ export default function SupervisorChatComposer({
         </nav>
         <Link href="/operations" className="hidden min-h-12 items-center gap-2 rounded-lg px-2 text-[17px] text-ink hover:bg-surface2 md:flex"><UsersRound size={20} aria-hidden="true"/>{copy.teamButton}</Link>
         {languageSwitch&&<div className="md:hidden">{languageSwitch}</div>}
-      </div>} files={storedAttachments} reports={savedReports} onOpenReport={id=>{if(!threadId)return;setControlsTab(null);setWorkNotice("");setWorkTarget({threadId,messageId:id});}} threadsNextOffset={threadsNextOffset} onSelectThread={(id,thread)=>selectThread(id,thread?.title)} onClose={()=>setControlsTab(null)}/>}
+      </div>} files={storedAttachments} reports={savedReports} onOpenReport={id=>{if(!threadId)return;setControlsTab(null);setWorkNotice("");setWorkTarget({threadId,messageId:id});}} threadsNextOffset={threadsNextOffset} onSelectThread={(id,thread)=>selectThread(id,thread?.title)}
+      onEditRoutine={routine=>{
+        // Keep an existing unsent owner draft and bind the requested edit to
+        // the authoritative record ID/revision, not a potentially duplicate
+        // owner-chosen title. SQL still verifies the original owner scope.
+        selectThread(routine.threadId);
+        const instruction="Edit saved routine \""+routine.title+"\" (routine ID "+
+          routine.id+", revision "+routine.revision+"): ";
+        setDraft(current=>current.trim()?
+          current.length+instruction.length+1<=4000?
+            current.trimEnd()+"\n"+instruction:current:
+          instruction);
+        retryId.current=null;
+        requestAnimationFrame(()=>composer.current?.focus());
+      }}
+      onClose={()=>setControlsTab(null)}/>}
   </section>;
 }

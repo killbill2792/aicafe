@@ -224,6 +224,16 @@ export async function runToastSyncTick(db:SupabaseClient,now=new Date(),
    if(!m.info_refreshed_at||Date.parse(m.info_refreshed_at)<now.getTime()-DAY)
     await refreshToastRestaurantInfo(db,m.business_id,m.restaurant_guid,{deadlineAt});
    });
+   await isolated("sales_link",async()=>{
+    mustFinish(deadlineAt);
+    // Drain durable import intent before recomputing costs, even when
+    // there is no daily/backfill work left. At most one retry per lease.
+    const {error}=await db.rpc("toast_retry_pending_relink",{
+     p_business_id:m.business_id,p_restaurant_guid:m.restaurant_guid});
+    // Rolling deployment before the approved migration: keep old behavior.
+    if(error&&!["PGRST202","42883"].includes(error.code??""))
+     throw new ToastApiError("unavailable");
+   });
    await isolated("cost_refresh",async()=>{
    mustFinish(deadlineAt);
    // A committed import's failed cost refresh is never another order import.

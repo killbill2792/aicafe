@@ -91,7 +91,7 @@ Muse's existing timer is the fallback, not a substitute for this duty.
 - `lib/ai/supervisor/investigation/*`, P1/P2/P3 runners, deterministic intent routers, persona sub-agents,
   a reviewer LLM, display-token citations, `askWhenStuck`.
 - Rules that ban digits in model text, force every reply to `partial`, or replace model text with generic copy.
-- Discover-before-read meta tools (`discover_tools`), `strict:false` tool schemas, JSON-envelope final
+- Mandatory application-defined discover-before-read meta tools (`discover_tools`; provider-native hosted tool search over the same admitted registry is permitted), `strict:false` tool schemas, JSON-envelope final
   answers that block streaming, the `owner_question` card and its state machine, `/progress` polling.
 - POS write-back, direct staff/supplier messaging, money movement (see section 2).
 - New standalone screens for things the chat can do, and standalone reports that only repeat what the
