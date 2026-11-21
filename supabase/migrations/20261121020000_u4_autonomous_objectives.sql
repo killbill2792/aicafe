@@ -388,3 +388,169 @@ revoke all on function public.supervisor_reserve_investigation_model_call(
   from public,anon,authenticated;
 grant execute on function public.supervisor_reserve_investigation_model_call(
   uuid,uuid,uuid,uuid,text,text,uuid,text,integer,integer,integer) to service_role;
+
+-- U4 deliberately extends the existing U3 HMAC scope, not its source
+-- permissions or its research views. Mode "routine" is off-turn/aggregate-only.
+-- It can be minted only for the original live owner/café/thread/run lease.
+-- The SQL-side verifier independently rechecks that lease every statement.
+-- Revocation, expiry, version change and ownership change revoke the ticket.
+CREATE OR REPLACE FUNCTION public.u3_issue_research_scope(
+  p_business_id uuid,p_owner_user_id uuid,p_thread_id uuid,
+  p_mode text,p_source_type text DEFAULT NULL,p_source_id text DEFAULT NULL,
+  p_run_id uuid DEFAULT NULL,p_lease_token uuid DEFAULT NULL
+) RETURNS text LANGUAGE plpgsql SECURITY DEFINER
+SET search_path='' AS $u3_issue$
+DECLARE
+  payload jsonb;
+  secret bytea;
+  issued_at bigint;
+BEGIN
+  IF coalesce(auth.role(),'') <> 'service_role'
+     OR p_business_id IS NULL OR p_owner_user_id IS NULL OR p_thread_id IS NULL
+     OR NOT public.supervisor_routine_owner_authorized(
+       p_business_id,p_owner_user_id,p_thread_id)
+  THEN RAISE EXCEPTION 'research_scope_denied' USING ERRCODE='42501'; END IF;
+  IF p_mode NOT IN ('owner','investigation','durable','routine')
+  THEN RAISE EXCEPTION 'research_scope_denied' USING ERRCODE='42501'; END IF;
+  IF p_mode='investigation' AND NOT EXISTS (
+    SELECT 1 FROM public.supervisor_investigations s
+    WHERE s.business_id=p_business_id AND s.owner_user_id=p_owner_user_id
+      AND s.thread_id=p_thread_id AND s.source_type=p_source_type
+      AND s.source_id=p_source_id AND s.lease_token=p_lease_token
+      AND s.lease_until>statement_timestamp()
+      AND s.phase IN ('investigate','awaiting_owner')
+  ) THEN RAISE EXCEPTION 'research_scope_denied' USING ERRCODE='42501'; END IF;
+  IF p_mode='routine' AND (p_source_type IS NOT NULL OR p_source_id IS NOT NULL
+     OR p_run_id IS NULL OR p_lease_token IS NULL OR NOT EXISTS (
+       SELECT 1 FROM public.supervisor_routine_occurrences o
+       JOIN public.supervisor_routines r ON r.business_id=o.business_id
+         AND r.id=o.routine_id
+       WHERE o.business_id=p_business_id AND o.run_id=p_run_id
+         AND o.lease_token=p_lease_token AND o.lease_until>statement_timestamp()
+         AND o.state='running' AND r.status='active'
+         AND r.revision=o.revision AND r.execution_mode IN ('objective','watch')
+         AND r.owner_user_id=p_owner_user_id AND r.thread_id=p_thread_id
+     ))
+  THEN RAISE EXCEPTION 'research_scope_denied' USING ERRCODE='42501'; END IF;
+  IF p_mode='durable' AND NOT
+    public.supervisor_owner_job_fence_v2(
+      p_business_id,p_owner_user_id,p_thread_id,p_run_id,p_lease_token)
+  THEN RAISE EXCEPTION 'research_scope_denied' USING ERRCODE='42501'; END IF;
+  IF p_mode='owner' AND (p_source_type IS NOT NULL OR p_source_id IS NOT NULL
+     OR p_run_id IS NOT NULL OR p_lease_token IS NOT NULL)
+  THEN RAISE EXCEPTION 'research_scope_denied' USING ERRCODE='42501'; END IF;
+  issued_at:=extract(epoch FROM statement_timestamp())::bigint;
+  payload:=jsonb_build_object(
+    'business',p_business_id,'owner',p_owner_user_id,'thread',p_thread_id,
+    'mode',p_mode,'source_type',p_source_type,'source_id',p_source_id,
+    'run',p_run_id,'lease',p_lease_token,
+    'issued',issued_at,'expires',issued_at+45,
+    'nonce',encode(extensions.gen_random_bytes(16),'hex')
+  );
+  SELECT k.secret INTO STRICT secret FROM u3_research_private.signing_key k
+  WHERE k.singleton=1;
+  RETURN encode(convert_to(payload::text,'UTF8'),'base64')||'.'||
+    encode(extensions.hmac(convert_to(payload::text,'UTF8'),secret,'sha256'),'hex');
+END
+$u3_issue$;
+REVOKE ALL ON FUNCTION public.u3_issue_research_scope(
+  uuid,uuid,uuid,text,text,text,uuid,uuid
+) FROM PUBLIC,anon,authenticated,aicafe_research,aicafe_research_view_owner;
+GRANT EXECUTE ON FUNCTION public.u3_issue_research_scope(
+  uuid,uuid,uuid,text,text,text,uuid,uuid
+) TO service_role;
+
+-- The only SQL-side scope verifier. The model can set arbitrary GUC strings,
+-- but cannot forge an HMAC; a naked research credential never grants any row.
+-- Membership, original thread and active worker lease are checked on every
+-- statement, including after an owner revokes an authorization.
+CREATE OR REPLACE FUNCTION u3_research_private.scope()
+RETURNS TABLE(business_id uuid,owner_user_id uuid,mode text)
+LANGUAGE plpgsql STABLE SECURITY DEFINER SET search_path=''
+AS $u3_verify$
+DECLARE
+  token text;
+  payload_text text;
+  payload jsonb;
+  secret bytea;
+  mac text;
+  now_epoch bigint;
+  b uuid;
+  o uuid;
+  t uuid;
+  m text;
+  lease uuid;
+  run uuid;
+BEGIN
+  token:=nullif(current_setting('aicafe.u3_research_scope',true),'');
+  IF token IS NULL OR length(token)>4096 OR length(token)<75
+     OR length(token)-length(replace(token,'.',''))<>1 THEN RETURN; END IF;
+  payload_text:=convert_from(decode(split_part(token,'.',1),'base64'),'UTF8');
+  payload:=payload_text::jsonb;
+  SELECT k.secret INTO STRICT secret FROM u3_research_private.signing_key k
+    WHERE k.singleton=1;
+  mac:=encode(extensions.hmac(convert_to(payload_text,'UTF8'),secret,'sha256'),'hex');
+  IF mac<>split_part(token,'.',2) THEN RETURN; END IF;
+  now_epoch:=extract(epoch FROM statement_timestamp())::bigint;
+  IF (payload->>'issued')::bigint>now_epoch+1
+     OR (payload->>'issued')::bigint<now_epoch-60
+     OR (payload->>'expires')::bigint<=now_epoch
+     OR (payload->>'expires')::bigint>(payload->>'issued')::bigint+45
+  THEN RETURN; END IF;
+  b:=(payload->>'business')::uuid;
+  o:=(payload->>'owner')::uuid;
+  t:=(payload->>'thread')::uuid;
+  m:=payload->>'mode';
+  IF m NOT IN ('owner','investigation','durable','routine')
+    OR NOT EXISTS (SELECT 1 FROM public.memberships a
+      WHERE a.business_id=b AND a.user_id=o AND a.role='owner')
+    OR NOT EXISTS (SELECT 1 FROM public.ai_threads a
+      WHERE a.id=t AND a.business_id=b AND a.owner_user_id=o)
+  THEN RETURN; END IF;
+  lease:=nullif(payload->>'lease','')::uuid;
+  IF m='investigation' AND NOT EXISTS (
+    SELECT 1 FROM public.supervisor_investigations s
+    WHERE s.business_id=b AND s.owner_user_id=o AND s.thread_id=t
+      AND s.source_type=payload->>'source_type'
+      AND s.source_id=payload->>'source_id'
+      AND s.lease_token=lease AND s.lease_until>statement_timestamp()
+      AND s.phase IN ('investigate','awaiting_owner')
+  ) THEN RETURN; END IF;
+  IF m='routine' THEN
+    run:=nullif(payload->>'run','')::uuid;
+    IF payload->>'source_type' IS NOT NULL OR payload->>'source_id' IS NOT NULL
+       OR run IS NULL OR lease IS NULL OR NOT EXISTS (
+         SELECT 1 FROM public.supervisor_routine_occurrences oc
+         JOIN public.supervisor_routines rt ON rt.business_id=oc.business_id
+           AND rt.id=oc.routine_id
+         WHERE oc.business_id=b AND oc.run_id=run
+           AND oc.lease_token=lease AND oc.lease_until>statement_timestamp()
+           AND oc.state='running' AND rt.status='active'
+           AND rt.revision=oc.revision AND rt.execution_mode IN ('objective','watch')
+           AND rt.owner_user_id=o AND rt.thread_id=t
+       ) THEN RETURN; END IF;
+  END IF;
+  IF m='durable' THEN
+    run:=nullif(payload->>'run','')::uuid;
+    IF NOT EXISTS (
+      SELECT 1 FROM public.supervisor_runs r
+      JOIN public.supervisor_run_steps s ON s.business_id=r.business_id
+        AND s.run_id=r.id AND s.step_key='owner_turn'
+      WHERE r.id=run AND r.business_id=b AND r.owner_user_id=o AND r.thread_id=t
+        AND r.execution_version=2 AND r.status='running'
+        AND s.status='leased' AND s.claim_token=lease
+        AND s.lease_until>statement_timestamp()
+        AND NOT (r.input_attachment_version_hash IS DISTINCT FROM
+          public.supervisor_owner_attachment_fingerprint_v2(
+            r.business_id,r.owner_user_id,r.thread_id,r.input_attachment_ids))
+    ) THEN RETURN; END IF;
+  END IF;
+  RETURN QUERY SELECT b,o,m;
+EXCEPTION WHEN others THEN
+  -- No raw PostgreSQL error, JWT, membership or business identifier is
+  -- surfaced to a research query or an end-user model.
+  RETURN;
+END
+$u3_verify$;
+REVOKE ALL ON FUNCTION u3_research_private.scope() FROM PUBLIC,anon,authenticated,aicafe_research;
+GRANT EXECUTE ON FUNCTION u3_research_private.scope() TO aicafe_research_view_owner;
