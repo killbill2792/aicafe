@@ -98,6 +98,12 @@ describe("U4 objective evidence and model autonomy",()=>{
     const result=verifyObjectiveTurn(turn("Sales context suggests reviewing staffing."),objective);
     expect(result).toMatchObject({attention:"attention",sourceCount:1,
       observedToolNames:["get_sales"]});
+    expect(result.sourceRefs).toMatchObject([{
+      tool:"get_sales",source:"cafe_sales",domain:"recorded_sales",
+      period:{from:"2026-11-13",to:"2026-11-20"},
+    }]);
+    expect(result.sourceRefs[0].evidenceDigest).toMatch(/^[0-9a-f]{64}$/u);
+    expect(JSON.stringify(result.sourceRefs)).not.toContain("10424");
   });
   it("does not inflate corroboration from repeated calls or differently named views of one source",()=>{
     const same=verifyObjectiveTurn(turn("ATTENTION: Recorded sales need review.",{
