@@ -9,7 +9,7 @@ import {ownerModelCallsLimit} from "@/lib/ai/conversations/usage.server";
 
 export type ClaimedInvestigationUsageScope={
   businessId:string;ownerUserId:string;threadId:string;
-  sourceType:"alert"|"operating_task";sourceId:string;leaseToken:string;
+  sourceType:"alert"|"operating_task"|"routine";sourceId:string;leaseToken:string;
 };
 export type InvestigationUsageProblem="owner_quota_reached"|"storage_failed"|null;
 
