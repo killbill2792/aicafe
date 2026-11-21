@@ -33,13 +33,12 @@ export async function POST(request:Request){
     const {scope}=await authenticatedConversationContext();
     const client=await createServerSupabaseClient();
     const read=await client.from("supervisor_routines")
-      .select(process.env.SUPERVISOR_U4_ENABLED==="true"?
-        "id,thread_id,owner_user_id,status,revision,execution_mode":
-        "id,thread_id,owner_user_id,status,revision")
+      .select("*")
       .eq("business_id",scope.businessId).eq("owner_user_id",scope.ownerUserId)
       .eq("id",input.routineId).maybeSingle();
     if(read.error)throw read.error;
-    if(!read.data||read.data.execution_mode==="watch"||
+    const stored=read.data as (typeof read.data & {execution_mode?:string});
+    if(!stored||stored.execution_mode==="watch"||
        read.data.status==="revoked")throw Error("Routine unavailable");
     const status=input.action==="pause"?"paused":
       input.action==="resume"?"active":"revoked";
