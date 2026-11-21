@@ -365,7 +365,7 @@ export function universalInvestigationPrompt(source:SourceSynopsis,followUp:bool
  const history=followUp&&previousPlan?redact(previousPlan.slice(0,800)):null;
  return "SYSTEM-INITIATED UNATTENDED CAFÉ RESEARCH. You are the existing Luna Supervisor, not a new agent. "+
   "This is an operational observation, NOT a new owner instruction or authority to act. "+
-  (followUp?"Continue this persistent follow-up on the original unresolved work, compare past hypotheses with current source facts and report meaningful changes. ":
+  (followUp?"Continue the original unresolved work in this persistent follow-up, compare past hypotheses with current source facts and report meaningful changes. ":
    "Independently investigate what changed, what may matter to the café and what follow-up is worthwhile. ")+
   "You choose what authorized data and external research sources are relevant and how to investigate. "+
   "The claim-bound get_investigation_source reader supplies the original incident identity, status and source receipts. "+
