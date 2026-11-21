@@ -126,7 +126,7 @@ export type ObjectiveOutcome={
   missing:string[];
   sourceCount:number;
   sourceDomains:string[];
-  sourceRefs:Array<{tool:string;source:string;domain:string;view:string|null;period:{from:string;to:string}|null;evidenceDigest:string}>;
+  sourceRefs:Array<{tool:string;source:string;domain:string;view:string|null;relations:string[];period:{from:string;to:string}|null;evidenceDigest:string}>;
 };
 /** A verified outcome is NOT the model saying it was successful. Validate
  * registered tool results, unsupported effects and the ordinary numeric
@@ -147,6 +147,10 @@ export function verifyObjectiveTurn(turn:AgentTurn,routine:RoutineRecord):Object
   // corroboration. Reuse the incident investigator's conservative lineage.
   const domainOf=(call:(typeof reads)[number])=>{
     if(call.result.source==="gmail")return "unverified_external_mail";
+    // Arbitrary signed SQL can join multiple physical roots. Without a
+    // separately proved lineage, never count it as an independent SECOND
+    // source alongside a registered canonical read of the same facts.
+    if(call.result.source==="u3_canonical_research")return "other:u3_signed_sql";
     if(call.name==="query_data")
       return canonicalQuerySourceFamily(call.result.view);
     return canonicalEvidenceDomain[call.name as AgentToolName]??
@@ -158,18 +162,29 @@ export function verifyObjectiveTurn(turn:AgentTurn,routine:RoutineRecord):Object
   // for an auditable provenance record; it is not independent metric parity.
   const distinctReads=[...new Map(reads.map(call=>[domainOf(call),call])).entries()]
     .slice(0,8);
-  const sourceDomains=distinctReads.map(([domain])=>domain);
+  const classified=distinctReads.map(([domain])=>domain)
+    .filter(domain=>!domain.startsWith("other:"));
+  // Opaque SQL remains observed evidence but is one unclassified lineage,
+  // never extra corroboration of a separately observed named source.
+  const sourceDomains=classified.length?classified:
+    distinctReads.length?[distinctReads[0][0]]:[];
   const sourceRefs=distinctReads.map(([domain,call])=>{
     const period=call.result.period;
     const validDate=(value:unknown):value is string=>
       typeof value==="string"&&/^\d{4}-\d{2}-\d{2}$/u.test(value);
     const dates=period&&validDate(period.from)&&validDate(period.to)?
       {from:period.from,to:period.to}:null;
+    const evidence=call.result.evidence;
+    const relationNames=evidence&&typeof evidence==="object"&&
+      !Array.isArray(evidence)&&
+      Array.isArray((evidence as {relation_names?:unknown}).relation_names)?
+      (evidence as {relation_names:string[]}).relation_names.filter(v=>
+        typeof v==="string"&&/^[a-z][a-z_]{0,79}$/u.test(v)).slice(0,12):[];
     return {
       tool:call.name,source:String(call.result.source).slice(0,80),
       domain,view:typeof call.result.view==="string"?
         call.result.view.slice(0,80):null,
-      period:dates,evidenceDigest:digest(call.result),
+      relations:relationNames,period:dates,evidenceDigest:digest(call.result),
     };
   });
   let report=turn.text.trim();
@@ -336,10 +351,12 @@ export async function executeClaimedObjective(db:SupabaseClient,params:{
   const proof={sources:verified.sourceRefs.map(ref=>({
     source:ref.domain==="unverified_external_mail"?"unverified_external" as const:"cafe_state" as const,
     identifier:ref.tool,originalSource:ref.source,domain:ref.domain,
-    view:ref.view,period:ref.period,evidenceDigest:ref.evidenceDigest,
+    view:ref.view,relations:ref.relations,period:ref.period,evidenceDigest:ref.evidenceDigest,
     asOf:identity.asOf,
   })),sourceCount:verified.sourceCount,sourceDomains:verified.sourceDomains,
-    quality:gmailWasRead||verified.missing.length||turn.status?.status!=="complete"?
+    quality:gmailWasRead||verified.missing.length||
+      verified.sourceRefs.some(ref=>ref.domain.startsWith("other:"))||
+      turn.status?.status!=="complete"?
       "partial" as const:"verified" as const,
     missing:verified.missing,externalEffects:"not_attempted"};
   const publish=async()=>{
