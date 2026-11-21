@@ -21,7 +21,12 @@ export function routinePageWindow(now:Date,total:number):{start:number;end:numbe
   if(!Number.isFinite(now.getTime())||!Number.isSafeInteger(total)||total<0)
     throw Error("routine_page_invalid");
   const pageCount=Math.max(1,Math.ceil(total/batchLimit));
-  const selected=Math.floor(now.getTime()/3_600_000)%pageCount;
+  // Hour-only rotation aliases with an everyday fixed-hour cron (e.g. a
+  // two-page café always sees the same page at 09:00). The UTC calendar day
+  // also advances the window so infrequent but regular ticks cannot leave
+  // later owner goals or system Watch permanently outside the bounded read.
+  const slot=Math.floor(now.getTime()/86_400_000)+now.getUTCHours();
+  const selected=((slot%pageCount)+pageCount)%pageCount;
   const start=selected*batchLimit;
   return {start,end:start+batchLimit-1};
 }
