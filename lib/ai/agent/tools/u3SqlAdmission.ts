@@ -128,7 +128,7 @@ export async function admitU3Sql(sql:string,allowedRelations:readonly string[],
  collect(tree);
  if(nCtes>MAX_CTES)throw Error("invalid_query");
  const reads=new Set<string>(),called=new Set<string>();
- let nodes=0,rangeCount=0;
+ let nodes=0,rangeCount=0,unitAmbiguousDerivedSource=false;
  const toastAliases=new Set<string>(["toast_records"]);
  function collectToastAliases(node:unknown):void{
   if(!node||typeof node!=="object")return;
@@ -179,6 +179,10 @@ export async function admitU3Sql(sql:string,allowedRelations:readonly string[],
    // historical fields that never passed named-path secret admission.
    // Explicit columns are required; COUNT(*) is encoded as FuncCall.agg_star.
    if(kind==="A_Star")throw Error("invalid_query");
+   // Derived/aliased CTE and set-operation columns may shadow source names.
+   // Research may still use them, but the exact calculator cannot treat a
+   // projected alias as proof of its original monetary dimension.
+   if(kind==="RangeSubselect")unitAmbiguousDerivedSource=true;
    // Reject recursive CTEs regardless of parser nesting or SelectStmt wrapper.
    if(kind==="WithClause"&&raw&&typeof raw==="object"&&
       (raw as {recursive?:unknown}).recursive===true)throw Error("invalid_query");
@@ -200,6 +204,7 @@ export async function admitU3Sql(sql:string,allowedRelations:readonly string[],
    }
    if(kind==="SelectStmt"&&raw&&typeof raw==="object"){
     const s=raw as Record<string,unknown>;
+    if(s.larg||s.rarg)unitAmbiguousDerivedSource=true;
     if(s.intoClause||Array.isArray(s.lockingClause)&&s.lockingClause.length||
       (s.withClause as {WithClause?:{recursive?:boolean}}|undefined)?.WithClause?.recursive)
       throw Error("invalid_query");
@@ -300,7 +305,8 @@ export async function admitU3Sql(sql:string,allowedRelations:readonly string[],
  };
  const outputUnits:Record<string,U3TrustedUnit>={};
  const targets=(tree.stmts[0].stmt.SelectStmt as {targetList?:unknown}).targetList;
- if(Array.isArray(targets))for(const t of targets){
+ const duplicateAliases=new Set<string>();
+ if(nCtes===0&&!unitAmbiguousDerivedSource&&Array.isArray(targets))for(const t of targets){
   if(!t||typeof t!=="object"||!("ResTarget" in t))continue;
   const target=(t as {ResTarget?:{name?:unknown;val?:unknown}}).ResTarget;
   const value=target?.val,unit=infer(value);
@@ -312,9 +318,9 @@ export async function admitU3Sql(sql:string,allowedRelations:readonly string[],
   const alias=typeof target?.name==="string"?target.name:fallback;
   if(alias&&/^[a-zA-Z_][a-zA-Z0-9_]{0,99}$/.test(alias)){
    // Duplicate aliases cannot create a false unit claim.
-   if(Object.hasOwn(outputUnits,alias)&&outputUnits[alias]!==unit)
-    delete outputUnits[alias];
-   else outputUnits[alias]=unit;
+   if(Object.hasOwn(outputUnits,alias)){
+    delete outputUnits[alias];duplicateAliases.add(alias);
+   }else if(!duplicateAliases.has(alias))outputUnits[alias]=unit;
   }
  }
  return {relations:[...reads].sort(),functions:[...called].sort(),
