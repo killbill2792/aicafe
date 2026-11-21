@@ -106,7 +106,7 @@ describe("U4 original work-identity checkpoints",()=>{
       {stage:"tool_start",tool:"get_sales"},
       {stage:"tool_complete",tool:null},
     ];
-    const rpc=vi.fn(async(name:string)=>{
+    const rpc=vi.fn(async(name:string,_args?:unknown)=>{
       if(name==="u4_checkpoint_model_step")return {data:true,error:null};
       return {data:false,error:null};
     });
