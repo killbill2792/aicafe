@@ -210,7 +210,7 @@ export async function dispatchRoutinesForBusiness(db:SupabaseClient,businessId:s
       .eq("role","owner").order("user_id",{ascending:true}).limit(batchLimit),
     db.from("ai_threads").select("id,owner_user_id").eq("business_id",businessId)
       .order("updated_at",{ascending:false}).limit(batchLimit*2),
-    db.from("supervisor_routines").select((process.env.SUPERVISOR_U4_ENABLED==="true"?"business_id,id,owner_user_id,thread_id,title,cadence,weekdays,local_time,timezone,status,revision,created_at,updated_at,execution_mode,objective_text,objective_source_message_id,objective_updates":"business_id,id,owner_user_id,thread_id,title,cadence,weekdays,local_time,timezone,status,revision,created_at,updated_at"))
+    db.from("supervisor_routines").select("*")
       .eq("business_id",businessId).eq("status","active")
       .order("created_at",{ascending:true}).limit(batchLimit),
   ]);
