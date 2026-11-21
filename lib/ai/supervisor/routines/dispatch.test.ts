@@ -100,6 +100,15 @@ describe("U4 fair scheduled work without a second queue",()=>{
       .toEqual({start:0,end:99});
     expect(()=>routinePageWindow(new Date("invalid"),1)).toThrow();
   });
+  it("does not repeatedly select the same page at a daily fixed cron hour",()=>{
+    const daily=Array.from({length:8},(_,day)=>
+      routinePageWindow(new Date(Date.UTC(2026,10,21+day,17)),702).start);
+    expect(new Set(daily).size).toBe(8);
+    expect(daily.every(start=>start>=0&&start<800&&start%100===0)).toBe(true);
+    const twoDays=[0,1,2,3].map(day=>routinePageWindow(
+      new Date(Date.UTC(2026,10,21+day,17)),102).start);
+    expect(twoDays).toEqual([100,0,100,0]);
+  });
   it("rotates Watch and owner objectives by actual occurrence, not fixed creation order",()=>{
     const old={id:"old",executionMode:"objective" as const};
     const watch={id:"watch",executionMode:"watch" as const};
