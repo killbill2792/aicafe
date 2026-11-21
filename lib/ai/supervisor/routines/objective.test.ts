@@ -270,6 +270,8 @@ describe("U4 objective evidence and model autonomy",()=>{
     const validSql={...fakeSql,rows:[{count_orders:"0"}],
       evidence:{...fakeSql.evidence,column_units:{count_orders:"count"}}};
     expect(observedObjectiveEvidence(validSql)).toBe(true);
+    expect(observedObjectiveEvidence({...validSql,truncated:undefined})).toBe(false);
+    expect(observedObjectiveEvidence({...validSql,truncated:true})).toBe(false);
     expect(()=>verifyObjectiveTurn(turn("ATTENTION: invented revenue needs action.",{
       toolInvocations:[{name:"query_data",result:fakeSql}],
     }),watch)).toThrow("u4_no_verified_source_observation");

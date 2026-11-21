@@ -176,7 +176,9 @@ export function hasObservedEvidence(result:AgentToolResult):boolean{
   if(result.source==="u3_canonical_research"){
     // Only the shared U3 typed-receipt checker may attest numeric SQL facts.
     // A model's SELECT literal or projection alias is never an observation.
-    return hasVerifiedU3NumericObservation(result);
+    // The executor must attest whether its output was truncated. An omitted
+    // completeness flag is not permission to publish a source-backed finding.
+    return result.truncated===false&&hasVerifiedU3NumericObservation(result);
   }
   if(result.source==="canonical_data"){
     if(result.error||result.empty||result.truncated||result.aggregateOnly!==true||!Array.isArray(result.rows))return false;
