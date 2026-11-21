@@ -11,13 +11,13 @@ import {admitU3Sql,type U3TrustedUnit} from "./u3SqlAdmission";
  * signed capability validated by independently enforced database RLS. */
 export type U3SqlContext={
  db:SupabaseClient;businessId:string;ownerUserId?:string;threadId?:string;
- mode?:"owner"|"investigation"|"durable";aggregateOnly?:boolean;
+ mode?:"owner"|"investigation"|"durable"|"routine";aggregateOnly?:boolean;
  sourceType?:string;sourceId?:string;runId?:string;leaseToken?:string;
 };
 const MAX_ROWS=100,MAX_RESULT_CHARS=6000,MAX_SQL_CHARS=12000;
 const scopeSchema=z.strictObject({
  businessId:z.uuid(),ownerUserId:z.uuid(),threadId:z.uuid(),
- mode:z.enum(["owner","investigation","durable"]),
+ mode:z.enum(["owner","investigation","durable","routine"]),
  sourceType:z.string().max(100).nullable(),sourceId:z.string().max(256).nullable(),
  runId:z.uuid().nullable(),leaseToken:z.uuid().nullable()
 });
@@ -100,6 +100,9 @@ function scope(ctx:U3SqlContext){
  if(p.mode==="owner"&&(p.sourceType||p.sourceId||p.runId||p.leaseToken))return null;
  if(p.mode==="investigation"&&(!p.sourceType||!p.sourceId||!p.leaseToken))return null;
  if(p.mode==="durable"&&(!p.runId||!p.leaseToken))return null;
+  // Routine must present the original scheduled run and exact live lease;
+  // owner-session and investigation tickets are never interchangeable.
+  if(p.mode==="routine"&&(!p.runId||!p.leaseToken||p.sourceType||p.sourceId))return null;
  return p;
 }
 async function signedCapability(ctx:U3SqlContext):Promise<string>{
