@@ -114,7 +114,7 @@ function u3ReceiptNumber(raw:unknown,unit:unknown):
  if(fraction.length>places&&!/^0+$/.test(fraction.slice(places)))return null;
  const digits=fraction.slice(0,places).padEnd(places,"0");
  const base=BigInt(integer)*BigInt(10**places)+
-  BigInt(digits)*(integer.startsWith("-")?-1n:1n);
+  BigInt(digits)*(integer.startsWith("-")?-BigInt(1):BigInt(1));
  if(base>BigInt(Number.MAX_SAFE_INTEGER)||base<BigInt(Number.MIN_SAFE_INTEGER))return null;
  const numeric=Number(base)/(10**places);
  if(!Number.isFinite(numeric))return null;
