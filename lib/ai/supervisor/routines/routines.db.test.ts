@@ -62,10 +62,6 @@ describe("routine SQL security contract",()=>{
     try{
       await insertOwner(ownerId,business,threadId);
       await insertOwner(otherOwner,otherBusiness,otherThread);
-      // A later owner reply only fills in scheduling; it must NOT become the
-      // entire persisted research objective or lose the original owner source.
-      await admin.query("insert into public.ai_messages(id,business_id,thread_id,owner_user_id,author_user_id,role,content_type,text_content,client_message_id) values ($1,$2,$3,$4,$4,'owner','text',$5,$6)",
-        [scheduleAnswerId,business,threadId,ownerId,"Every Monday at nine.",randomUUID()]);
       owner=await connect("owner",ownerId);
       workerA=await connect("service");
       workerB=await connect("service");
@@ -198,6 +194,10 @@ describe("U4 migrated model-objective and autonomous Watch SQL contract",()=>{
         await admin.query("insert into public.ai_messages(id,business_id,thread_id,owner_user_id,author_user_id,role,content_type,text_content,client_message_id) values ($1,$2,$3,$4,$4,'owner','text',$5,$6)",
           [id,business,threadId,ownerId,msg,randomUUID()]);
       }
+      // A later owner reply only fills in scheduling; it must NOT become the
+      // entire persisted research objective or lose the original owner source.
+      await admin.query("insert into public.ai_messages(id,business_id,thread_id,owner_user_id,author_user_id,role,content_type,text_content,client_message_id) values ($1,$2,$3,$4,$4,'owner','text',$5,$6)",
+        [scheduleAnswerId,business,threadId,ownerId,"Every Monday at nine.",randomUUID()]);
       owner=await connect("owner",ownerId);
       worker=await connect("service");
       const make=[business,ownerId,threadId,"Morning intelligence","daily",[],"08:00",routineId,ownerMessageId];
