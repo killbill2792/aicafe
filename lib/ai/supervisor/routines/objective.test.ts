@@ -151,6 +151,19 @@ describe("U4 objective evidence and model autonomy",()=>{
     }),objective);
     expect(unclassified.sourceDomains).toEqual(["other:canonical_data"]);
   });
+  it("hashes all original observed source bytes without persisting their raw text",()=>{
+    const common="recorded-context:".repeat(1300);
+    const a=verifyObjectiveTurn(turn("Source A recorded." ,{
+      toolInvocations:[{name:"get_sales",result:{...source,
+        sourceNote:common+"suffix-a"}}],
+    }),objective);
+    const b=verifyObjectiveTurn(turn("Source B recorded.",{
+      toolInvocations:[{name:"get_sales",result:{...source,
+        sourceNote:common+"suffix-b"}}],
+    }),objective);
+    expect(a.sourceRefs[0].evidenceDigest).not.toBe(b.sourceRefs[0].evidenceDigest);
+    expect(JSON.stringify(a.sourceRefs)).not.toContain("recorded-context:");
+  });
   it("quietly completes a Watch when real evidence does not justify owner interruption",()=>{
     const result=verifyObjectiveTurn(turn("NO_ACTION_REQUIRED: Observed a normal week."),watch);
     expect(result.attention).toBe("none");
