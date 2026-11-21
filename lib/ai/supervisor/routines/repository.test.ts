@@ -59,6 +59,25 @@ describe("owner-only routine mutation port",()=>{
         }));
     }finally{vi.unstubAllEnvs();}
   });
+  it("forwards a verified earlier goal source without changing current-turn retry identity",async()=>{
+    const previous="22222222-2222-4222-8222-222222222222";
+    const current="33333333-3333-4333-8333-333333333333";
+    const rpc=vi.fn(async()=>({data:{...row,execution_mode:"objective",
+      objective_source_message_id:previous,objective_text:"Review sales and staff."},error:null}));
+    vi.stubEnv("SUPERVISOR_U4_ENABLED","true");
+    try{
+      const schedule={title:"Cross-domain review",cadence:"weekly" as const,
+        weekdays:[1],localTime:"09:00"};
+      const saved=await createOwnerRoutine(schedule,{...ownerTurn(rpc),
+        ownerMessageId:current,goalSourceMessageId:previous});
+      expect(saved.objectiveSourceMessageId).toBe(previous);
+      expect(rpc).toHaveBeenCalledWith("u4_create_objective_routine",
+        expect.objectContaining({
+          p_owner_message_id:current,p_goal_source_message_id:previous,
+          p_thread_id:uuid,p_owner_user_id:"owner",
+        }));
+    }finally{vi.unstubAllEnvs();}
+  });
   it("does not permit revoke or edit without optimistic revision",async()=>{
     const rpc=vi.fn(async()=>({data:row,error:null}));
     await expect(changeOwnerRoutine({id:uuid,revision:0,status:"revoked"},turn(rpc)))
