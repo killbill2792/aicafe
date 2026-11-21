@@ -9,6 +9,8 @@ import {assertDurablePaidTurnAllowed} from "@/lib/ai/supervisor/runs/worker.serv
 import type {OwnerRunCheckpoint} from "@/lib/ai/supervisor/runs/contracts";
 import {loadModelExecutionCap,withWorkerBudget} from "@/lib/ai/supervisor/runs/usage.server";
 import {readSavedEventTimeline} from "@/lib/data/cafeEvents.server";
+import {getWeekSchedule as scopedWeekSchedule} from "@/lib/data/staffSchedule.server";
+import {readFinancialEvidence} from "@/lib/data/financialEvidence.server";
 import {readStaffMessagesForVerifiedOwner} from "@/lib/staffCommunication/channel.server";
 import {readClaimedStaffCoordination} from "@/lib/staffCoordination/cases.server";
 import {notifyOwner} from "@/lib/operating/notifyOwner.server";
@@ -343,6 +345,14 @@ export async function executeClaimedObjective(db:SupabaseClient,params:{
       }),
       savedEvents:(from:string,to:string,options?:{cityEventId?:string})=>
         readSavedEventTimeline(db,scope,from,to,options),
+      // Cron has no browser owner session. Reuse the exact signed-in readers
+      // with the previously verified café/owner and the claimed service DB.
+      readWeekSchedule:(weekStart:string)=>scopedWeekSchedule({weekStart},{
+        client:db,businessId:scope.businessId,ownerUserId:scope.ownerUserId,
+      }),
+      financialEvidenceRead:selection=>readFinancialEvidence({
+        ...scope,verifiedReadClient:db,
+      },identity.asOf,selection),
       // Owner-created goals may read existing authenticated employee
       // coordination sources. Unrequested Watch never receives this port.
       ...(routine.executionMode==="objective"?{
