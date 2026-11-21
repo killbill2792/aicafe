@@ -81,7 +81,7 @@ begin
     then raise exception 'u4_goal_source_unavailable' using errcode='42501'; end if;
   v_goal:=g.text_content;
   if g.id<>m.id then
-    v_goal:=g.text_content||E'\\nOwner schedule clarification: '||m.text_content;
+    v_goal:=g.text_content||E'\nOwner schedule clarification: '||m.text_content;
   end if;
   if length(btrim(v_goal)) not between 1 and 4000 then
     raise exception 'u4_goal_context_too_long' using errcode='22023'; end if;
