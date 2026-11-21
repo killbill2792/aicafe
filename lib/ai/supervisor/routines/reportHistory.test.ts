@@ -57,7 +57,7 @@ describe("U4 authenticated historical report follow-ups",()=>{
       "2026-11-20T15:00:00Z")).toEqual([]);
     expect(routineReportCandidates([{...report,grounding:{
       ...(report.grounding??{}),agentMetadata:{runId,routineId,revision:1,u4Kind:"routine",
-        externalEffects:"attempted"}}],threadId,"2026-11-20T17:00:00Z")).toEqual([]);
+        externalEffects:"attempted"}}}],threadId,"2026-11-20T17:00:00Z")).toEqual([]);
   });
   it("rejects wrong owner scope, uncompleted receipts, changed text and absent RLS reads",async()=>{
     const candidates=routineReportCandidates([report],threadId,"2026-11-20T17:00:00Z");
