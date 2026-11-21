@@ -209,7 +209,8 @@ describe("Task 15A operational end-to-end orchestration (recorded source/model)"
     expect(mocks.model).toHaveBeenCalledOnce();
     const modelInput=mocks.model.mock.calls[0][0];
     expect(modelInput.ownerText).toContain("SYSTEM-INITIATED");
-    expect(modelInput.ownerText).toContain("TWO relevant independent");
+    expect(modelInput.ownerText).toContain("as many or as few useful available tools");
+    expect(modelInput.ownerText).not.toContain("at least TWO");
     expect(modelInput.toolNames).toContain("get_investigation_source");
     expect(modelInput.toolNames).toContain("get_sales");
     expect(modelInput.toolNames).toContain("get_labor");
