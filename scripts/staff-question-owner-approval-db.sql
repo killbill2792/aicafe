@@ -72,7 +72,7 @@ end $$;
 do $$
 begin
  begin
-  perform public.supervisor_answer_staff_question(:'biz',:'owner_id',:'thread_id',:'owner_proposal',1,gen_random_uuid());
+  perform public.supervisor_answer_staff_question(current_setting('test.staffquestion.biz')::uuid,current_setting('test.staffquestion.owner')::uuid,current_setting('test.staffquestion.thread')::uuid,current_setting('test.staffquestion.owner_proposal')::uuid,1,gen_random_uuid());
   raise exception 'a fabricated owner message was accepted';
  exception when sqlstate '22023' then null;end;
 end $$;
