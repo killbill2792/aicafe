@@ -204,7 +204,7 @@ const staffChannelEnglishOnly={
 } as const;
 const staffChannelEnglishOnlySet=new Set(Object.entries(staffChannelEnglishOnly)
  .flatMap(([ns,keys])=>keys.map(key=>ns+"."+key)));
-const staffQuestionApprovalKeys=["title","sourceNotice","followUp","awaitingApproval","savedNotRead","ownerAnswered","askEmployee","answerMyself","ignore","answerLabel","submitAnswer","checkReceipt","error"] as const;
+const staffQuestionApprovalKeys=["title","sourceNotice","followUp","awaitingApproval","savedNotRead","ownerAnswered","askEmployee","ignore","replyInChat","checkReceipt","error"] as const;
 const staffQuestionEnglishSet=new Set(staffQuestionApprovalKeys.map(key=>"StaffQuestionApproval."+key));
 
 
