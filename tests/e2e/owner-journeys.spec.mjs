@@ -87,8 +87,10 @@ test("@home Task16A authenticated mobile owner views library/routines/permission
     expect(await visibleThreads()).not.toContain(id.watchShell);
     // A genuine saved message makes the proactive thread visible through the
     // same authenticated API; neither UI state nor a fabricated alert suffices.
-    await db.query("insert into public.ai_messages(business_id,thread_id,owner_user_id,role,content_type,text_content) values($1,$2,$3,'supervisor','text','A source-backed report is available.')",
-      [owner.businessId,id.watchShell,owner.owner.userId]);
+    await db.query("insert into public.ai_messages(business_id,thread_id,owner_user_id,role,content_type,structured_content,grounding) values($1,$2,$3,'supervisor','blocks',$4::jsonb,$5::jsonb)",
+      [owner.businessId,id.watchShell,owner.owner.userId,
+        JSON.stringify([{type:"text",text:"A report was saved."}]),
+        JSON.stringify({status:"verified",intent:"operating_tasks",evidence:[]})]);
     await expect.poll(visibleThreads,{timeout:12000}).toContain(id.watchShell);
     await page.setViewportSize({width:390,height:844});
     const routineCard=page.locator('[data-routine-card="'+id.routine+'"]');
