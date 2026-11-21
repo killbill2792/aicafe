@@ -105,14 +105,23 @@ test("@home Task16A authenticated mobile owner views library/routines/permission
     // not a client-only toggle. Verify SQL revisions and persisted status.
     await panel.getByLabel("Routine actions: Daily source check").click();
     await panel.getByRole("button",{name:"Pause",exact:true}).click();
-    await expect(panel.getByText("Paused",{exact:false})).toBeVisible();
-    const paused=await db.query("select status,revision from public.supervisor_routines where business_id=$1 and id=$2",
-      [owner.businessId,id.routine]);
-    expect(paused.rows).toEqual([{status:"paused",revision:2}]);
+    // A label alone is not a receipt. Wait for actual atomic SQL CAS, then
+    // demand the UI reflects that same persisted revision/state.
+    const savedState=async()=>({
+      status:(await db.query("select status,revision from public.supervisor_routines where business_id=$1 and id=$2",
+        [owner.businessId,id.routine])).rows.map(row=>({
+          status:row.status,revision:Number(row.revision),
+        })),
+    });
+    await expect.poll(savedState,{timeout:15000}).toEqual({
+      status:[{status:"paused",revision:2}],
+    });
+    await expect(panel.getByText("Paused",{exact:true})).toBeVisible();
     await panel.getByRole("button",{name:"Resume",exact:true}).click();
-    const resumed=await db.query("select status,revision from public.supervisor_routines where business_id=$1 and id=$2",
-      [owner.businessId,id.routine]);
-    expect(resumed.rows).toEqual([{status:"active",revision:3}]);
+    await expect.poll(savedState,{timeout:15000}).toEqual({
+      status:[{status:"active",revision:3}],
+    });
+    await expect(panel.getByText("active",{exact:true})).toBeVisible();
     const stale=await ctx.request.post("/api/ai/supervisor/routines",{
       headers:{origin:"http://127.0.0.1:3000"},
       data:{action:"pause",routineId:id.routine,revision:1},
