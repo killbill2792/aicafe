@@ -73,7 +73,7 @@ export function verifyObjectiveTurn(turn:AgentTurn,routine:RoutineRecord):Object
     const important=/^ATTENTION:\s*/iu.exec(report);
     if(!quiet&&!important)throw Error("u4_watch_significance_not_classified");
     attention=quiet?"none":"attention";
-    report=report.replace(quiet??important!,"").trim();
+    report=report.replace((quiet??important)![0],"").trim();
     if(!report)throw Error("u4_empty_watch_reason");
   }
   if(report.length>2600)throw Error("u4_report_too_long");
