@@ -229,7 +229,6 @@ export async function runOneTurn(p: TurnParams): Promise<{ replyId: string; repl
     // Keep default prompts small; Luna can page any older authenticated
     // owner message on demand, including candidates hidden from this preview.
     const goalSourceCandidates=allPageGoalSources.slice(-8);
-    const goalSourceIds=new Set(goalSourceCandidates.map(m=>m.id));
     const priorAssistant=page.items.filter(m=>m.role==="supervisor"&&m.id!==owner.id&&reusable(m)&&
       (!p.durableFence||Date.parse(m.createdAt)<=ownerAt)).slice(-8);
     const previousEvidence:NumericEvidence[]=priorAssistant.flatMap(m=>{
@@ -381,7 +380,6 @@ export async function runOneTurn(p: TurnParams): Promise<{ replyId: string; repl
           // and pages only persisted messages. Nothing is promoted to approval.
           const older=await p.service.listMessages(id,offset);
           const sources=routineGoalCandidates(older.items,owner,p.ownerText,false);
-          sources.forEach(source=>goalSourceIds.add(source.id));
           return {sources,nextOffset:older.nextOffset};
         },
         create:async(schedule,goalSourceMessageId)=>{
@@ -392,7 +390,10 @@ export async function runOneTurn(p: TurnParams): Promise<{ replyId: string; repl
             !goalSourceMessageId)
             throw Error("Choose the verified original owner goal message ID before saving");
           const selected=goalSourceMessageId??owner.id;
-          if(!goalSourceIds.has(selected))throw Error("Unverified routine goal source");
+          // A recovered run may retain a source discovered before restart.
+          // The existing U4 SQL RPC revalidates source owner/cafe/thread,
+          // author, chronology and full text on every creation. A transient
+          // in-memory candidate list cannot be a second permission authority.
           return createOwnerRoutine(schedule,{
             scope,threadId:id,ownerMessageId:owner.id,
             goalSourceMessageId:selected,client:await getDb(),
