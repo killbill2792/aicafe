@@ -12,7 +12,7 @@ import {readSavedEventTimeline} from "@/lib/data/cafeEvents.server";
 import {notifyOwner} from "@/lib/operating/notifyOwner.server";
 import {getConnectorAccount,allowsGmail} from "@/lib/connectors/registry.server";
 import {gmailSearch,gmailListLabels,gmailRead,gmailReadThread,gmailReadAttachment} from "@/lib/connectors/gmail/provider.server";
-import {investigationReadTools,unsupportedExternalEffectClaim} from "./investigation";
+import {canonicalEvidenceDomain,investigationReadTools,unsupportedExternalEffectClaim} from "./investigation";
 import {meteredInvestigationProvider} from "./investigationUsage.server";
 import type {RoutineRecord} from "./contracts";
 import type {ClaimedRoutine} from "./repository.server";
@@ -141,6 +141,7 @@ export type ObjectiveOutcome={
   observedToolNames:string[];
   missing:string[];
   sourceCount:number;
+  sourceDomains:string[];
 };
 /** A verified outcome is NOT the model saying it was successful. Validate
  * registered tool results, unsupported effects and the ordinary numeric
@@ -157,6 +158,21 @@ export function verifyObjectiveTurn(turn:AgentTurn,routine:RoutineRecord):Object
     call.name!=="calculate"&&
     observedObjectiveEvidence(call.result));
   if(!reads.length)throw Error("u4_no_verified_source_observation");
+  // Another tool projecting the SAME physical source is not independent
+  // corroboration. Reuse the incident investigator's conservative lineage.
+  const sourceDomains=[...new Set(reads.map(call=>{
+    if(call.result.source==="gmail")return "unverified_external_mail";
+    if(call.name==="query_data"){
+      const view=typeof call.result.view==="string"?call.result.view:"";
+      if(["cv_inventory","cv_usage_variance"].includes(view))return "stock_and_inventory";
+      if(["cv_labor","cv_payroll"].includes(view))return "attendance_and_labor";
+      if(view==="cv_expenses")return "recorded_expenses";
+      if(view==="cv_bills")return "configured_recurring_bills";
+      if(view==="cv_events")return "verified_saved_local_events";
+    }
+    return canonicalEvidenceDomain[call.name as AgentToolName]??
+      "other:"+String(call.result.source);
+  }))];
   let report=turn.text.trim();
   let attention:"attention"|"none"="attention";
   if(routine.executionMode==="watch"){
@@ -173,7 +189,7 @@ export function verifyObjectiveTurn(turn:AgentTurn,routine:RoutineRecord):Object
     observedToolNames:[...new Set(reads.map(call=>call.name))].slice(0,12),
     missing:[...new Set((turn.results??[]).flatMap(r=>
       Array.isArray(r.missing)?r.missing:[]))].slice(0,12),
-    sourceCount:reads.length,
+    sourceCount:sourceDomains.length,sourceDomains,
   };
 }
 
@@ -314,7 +330,7 @@ export async function executeClaimedObjective(db:SupabaseClient,params:{
   const proof={sources:verified.observedToolNames.map(name=>({
     source:name.includes("gmail")?"unverified_external" as const:"cafe_state" as const,
     identifier:name,asOf:identity.asOf,
-  })),sourceCount:verified.sourceCount,
+  })),sourceCount:verified.sourceCount,sourceDomains:verified.sourceDomains,
     quality:gmailWasRead||verified.missing.length||turn.status?.status!=="complete"?
       "partial" as const:"verified" as const,
     missing:verified.missing,externalEffects:"not_attempted"};
