@@ -33,7 +33,7 @@ export const objectiveReadTools:readonly AgentToolName[]=[
  * detail, while preserving broad sales, cost, labor, inventory, schedules and
  * events investigation. This is a privacy boundary, not a research script. */
 export const watchReadTools:readonly AgentToolName[]=objectiveReadTools.filter(name=>
-  !["get_payroll_facts","get_staff_messages","get_staff_coordination_cases","get_schedule",
+  !["get_labor","get_payroll_facts","get_staff_messages","get_staff_coordination_cases","get_schedule",
     "get_week_schedule","search_gmail","list_gmail_labels","read_gmail",
     "read_gmail_thread","read_gmail_attachment"].includes(name));
 
