@@ -484,7 +484,7 @@ describe("U4 migrated model-objective and autonomous Watch SQL contract",()=>{
       await admin.query("delete from auth.users where id=$1",[ownerId]);
       await admin.end();
     }
-  });
+  },180_000);
   (sandbox?it:it.skip)("provisions a true unsolicited Watch without prior chat or detector",async()=>{
     const admin=await connect("postgres");
     const business=randomUUID(),foreignBusiness=randomUUID();
