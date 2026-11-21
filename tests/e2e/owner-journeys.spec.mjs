@@ -80,7 +80,24 @@ test("@home Task16A authenticated mobile owner views library/routines/permission
     await expect(panel.getByText("Checking saved permissions and routines")).toHaveCount(0);
     await assertAccessibleControls(page);
     console.info("[Task16A E2E] canonical routine remains after active-tab reselect");
-    await page.getByRole("dialog",{name:"Supervisor controls"}).getByRole("button",{name:"Open routine conversation",exact:true}).click();
+    // U4: the compact disclosure is a true owner-scoped route/SQL mutation,
+    // not a client-only toggle. Verify SQL revisions and persisted status.
+    await panel.getByLabel("Routine actions: Daily source check").click();
+    await panel.getByRole("button",{name:"Pause",exact:true}).click();
+    await expect(panel.getByText("Paused",{exact:false})).toBeVisible();
+    const paused=await db.query("select status,revision from public.supervisor_routines where business_id=$1 and id=$2",
+      [owner.businessId,id.routine]);
+    expect(paused.rows).toEqual([{status:"paused",revision:2}]);
+    await panel.getByRole("button",{name:"Resume",exact:true}).click();
+    const resumed=await db.query("select status,revision from public.supervisor_routines where business_id=$1 and id=$2",
+      [owner.businessId,id.routine]);
+    expect(resumed.rows).toEqual([{status:"active",revision:3}]);
+    const stale=await ctx.request.post("/api/ai/supervisor/routines",{
+      headers:{origin:"http://127.0.0.1:3000"},
+      data:{action:"pause",routineId:id.routine,revision:1},
+    });
+    expect(stale.status()).not.toBe(200);
+    await panel.getByRole("button",{name:"Edit in chat",exact:true}).click();
     await expect(panel).toHaveCount(0);
     await expect(page.locator("#supervisor-home-composer")).toBeVisible();
     await controlsButton.click();
