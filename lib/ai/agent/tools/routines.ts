@@ -38,6 +38,12 @@ export const routineTools={
       }
       if(!input.routine_id||!input.revision)
         throw new Error("A saved routine ID and revision are required");
+      if(input.action==="edit_goal"){
+        const supplied=[input.title,input.cadence,input.weekdays,input.local_time]
+          .filter(value=>value!==null);
+        if(supplied.length&&supplied.length!==4)
+          throw new Error("Changing the objective and schedule together requires all schedule fields; partial changes cannot be silently ignored");
+      }
       const status=input.action==="pause"?"paused" as const:
         input.action==="resume"?"active" as const:
         input.action==="revoke"?"revoked" as const:undefined;
