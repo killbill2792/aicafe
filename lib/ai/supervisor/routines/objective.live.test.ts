@@ -15,6 +15,7 @@ import {configuredSupervisorModel} from "@/lib/ai/conversations/modelConfig";
 import {emptyInvestigationLiveLedger,reserveInvestigationLiveCall}
   from "./investigation.liveBudget";
 import {createOwnerRoutine,claimRoutineOccurrence} from "./repository.server";
+import {dispatchRoutinesForBusiness} from "./dispatch.server";
 import {executeClaimedObjective} from "./objective.server";
 
 const enabled=process.env.AICAFE_SHARED_LUNA==="1"&&
@@ -163,65 +164,145 @@ live("real Luna executes an authenticated full café goal through existing sched
     expect(posts[0].grounding?.agentMetadata?.runId).toBe(leased.runId);
     expect(posts[0].structured_content?.filter((x:{type:string})=>x.type==="text")
       .map((x:{text:string})=>x.text).join("")).toBe(result.report);
-    // No owner requested this second task. The service-created daily Watch
-    // uses the SAME occurrence identity, registered model/tool loop, quota
-    // and fenced receipt contract, but the original owner message is NULL.
-    const watchCreated=await db.rpc("u4_ensure_watch_routine",{
-      p_business_id:businessId,p_owner_user_id:ownerUserId,
-      p_thread_id:threadId,p_local_time:due.local_time,
-    });
-    if(watchCreated.error||typeof watchCreated.data!=="string")
-      throw Error("u4_live_system_watch_not_created");
-    const watchRoutineId=watchCreated.data;
-    const watchRows=(await pg.query("select * from public.supervisor_routines "+
-      "where business_id=$1 and id=$2",
-      [businessId,watchRoutineId])).rows;
-    expect(watchRows).toHaveLength(1);
-    const wr=watchRows[0];
-    expect(wr).toMatchObject({execution_mode:"watch",
-      objective_source_message_id:null});
-    await pg.query("update public.supervisor_routines set updated_at=now()-interval '2 hours' "+
-      "where business_id=$1 and id=$2",[businessId,watchRoutineId]);
-    const watchLease=await claimRoutineOccurrence(db,{
-      businessId,routineId:watchRoutineId,revision:Number(wr.revision),
-      localDate:due.day,dueAt:new Date(due.scheduled),now:new Date(),
-    });
-    if(!watchLease)throw Error("u4_live_watch_claim_unavailable");
-    const watchOutcome=await executeClaimedObjective(db,{
-      routine:{
-        id:watchRoutineId,businessId,ownerUserId,threadId,title:wr.title,
-        cadence:"daily",weekdays:[],localTime:String(wr.local_time).slice(0,5),
-        timezone:wr.timezone,status:"active",revision:Number(wr.revision),
-        createdAt:String(wr.created_at),updatedAt:String(wr.updated_at),
-        executionMode:"watch",objectiveText:wr.objective_text,
-        objectiveSourceMessageId:null,objectiveUpdates:[],
-      },lease:watchLease,localDate:due.day,provider,
-    });
-    expect(["attention","none"]).toContain(watchOutcome.attention);
-    expect(watchOutcome.sourceCount).toBeGreaterThanOrEqual(1);
-    const watchReceipt=(await pg.query("select state,receipt_ref,u4_result "+
-      "from public.supervisor_routine_occurrences where business_id=$1 and run_id=$2",
-      [businessId,watchLease.runId])).rows;
-    expect(watchReceipt).toHaveLength(1);
-    expect(watchReceipt[0].state).toBe("completed");
-    expect(watchReceipt[0].receipt_ref).toBe("u4-verified:"+watchLease.runId);
-    expect(watchReceipt[0].u4_result?.attention).toBe(watchOutcome.attention);
+    // Independent no-chat, no-alert, no-task café. The real refresh-derived
+    // scheduler must provision Watch and call the registered Luna loop itself.
+    const watchBusinessId=randomUUID(),watchOwnerUserId=randomUUID(),stockId=randomUUID();
+    await pg.query("insert into auth.users(id,instance_id,aud,role,email,encrypted_password,created_at,updated_at) "+
+      "values($1,'00000000-0000-0000-0000-000000000000','authenticated','authenticated',$2,'',now(),now())",
+      [watchOwnerUserId,"u4-watch-"+watchOwnerUserId+"@example.invalid"]);
+    await pg.query("insert into public.businesses(id,name,timezone,currency,is_demo) "+
+      "select $1,'Disposable novel Watch café',timezone,currency,false "+
+      "from public.businesses where id=$2",[watchBusinessId,businessId]);
+    await pg.query("insert into public.cafe_access(business_id,mode) "+
+      "values($1,'grandfathered') on conflict(business_id) "+
+      "do update set mode='grandfathered',access_end=null",[watchBusinessId]);
+    await pg.query("insert into public.memberships(business_id,user_id,role) "+
+      "values($1,$2,'owner')",[watchBusinessId,watchOwnerUserId]);
+    const clock=(await pg.query("select "+
+      "to_char((now() at time zone $1)::date,'YYYY-MM-DD') today,"+
+      "to_char(((now() at time zone $1)::date-1),'YYYY-MM-DD') yesterday,"+
+      "to_char(date_trunc('hour',now() at time zone $1),'HH24:MI') at_hour",
+      [own.timezone])).rows[0] as {today:string;yesterday:string;at_hour:string};
+    await pg.query("insert into public.daily_rollups("+
+      "business_id,business_date,net_sales_cents,orders_count,drinks_count,"+
+      "ingredients_cents,staff_wages_cents,staff_tax_cents,card_fees_cents,"+
+      "voids_cents,sales_data_status) "+
+      "select $1,($2::date-g.n),25000,30,30,5000,0,0,0,0,'actual' "+
+      "from generate_series(0,13) g(n)",[watchBusinessId,clock.today]);
+    await pg.query("insert into public.ingredients(id,business_id,name,base_unit) "+
+      "values($1,$2,'Measured local milk','ml')",[stockId,watchBusinessId]);
+    await pg.query("insert into public.pantry_stock_counts("+
+      "business_id,ingredient_id,count_date,quantity_base,entered_quantity,entered_unit) "+
+      "values($1,$2,$3,500,500,'ml')",[watchBusinessId,stockId,clock.today]);
+    const before=(await pg.query("select "+
+      "(select count(*)::int from public.ai_threads where business_id=$1) threads,"+
+      "(select count(*)::int from public.alerts where business_id=$1) alerts,"+
+      "(select count(*)::int from public.operating_tasks where business_id=$1) tasks",
+      [watchBusinessId])).rows[0];
+    expect(before).toEqual({threads:0,alerts:0,tasks:0});
+    vi.stubEnv("SUPERVISOR_U4_WATCH_LOCAL_TIME",clock.at_hour);
+    const provision=await dispatchRoutinesForBusiness(db,watchBusinessId,
+      String(own.timezone),new Date(),undefined,provider);
+    expect(provision.runs).toBe(0);
+    const wt=(await pg.query("select id from public.ai_threads "+
+      "where business_id=$1 and owner_user_id=$2",
+      [watchBusinessId,watchOwnerUserId])).rows;
+    expect(wt).toHaveLength(1);
+    const watchThreadId=String(wt[0].id);
+    const wr=(await pg.query("select id from public.supervisor_routines "+
+      "where business_id=$1 and owner_user_id=$2 and execution_mode='watch'",
+      [watchBusinessId,watchOwnerUserId])).rows;
+    expect(wr).toHaveLength(1);
+    const watchRoutineId=String(wr[0].id);
+    await pg.query("update public.supervisor_routines "+
+      "set updated_at=now()-interval '26 hours' where business_id=$1 and id=$2",
+      [watchBusinessId,watchRoutineId]);
+    // First genuine model-led Watch sees healthy, unchanged owner counts.
+    const quietTick=await dispatchRoutinesForBusiness(db,watchBusinessId,
+      String(own.timezone),new Date(),undefined,provider);
+    expect(quietTick.runs).toBe(1);
+    const first=(await pg.query("select run_id,local_date,state,u4_result "+
+      "from public.supervisor_routine_occurrences "+
+      "where business_id=$1 and routine_id=$2",
+      [watchBusinessId,watchRoutineId])).rows;
+    const quiet=first.find(row=>row.local_date===clock.yesterday);
+    expect(quiet?.state).toBe("completed");
+    expect(quiet?.u4_result?.attention).toBe("none");
+    const watchQuietRunId=String(quiet.run_id);
+    expect((await pg.query("select count(*)::int n from public.ai_messages "+
+      "where business_id=$1 and thread_id=$2 and role='owner'",
+      [watchBusinessId,watchThreadId])).rows[0].n).toBe(0);
+    // Held-out, independently sourced material change. No alert is inserted,
+    // no tool sequence is prescribed, and the same Watch must reassess.
+    await pg.query("update public.daily_rollups "+
+      "set net_sales_cents=900000,orders_count=900,drinks_count=900 "+
+      "where business_id=$1 and business_date=$2",
+      [watchBusinessId,clock.yesterday]);
+    await pg.query("update public.pantry_stock_counts "+
+      "set quantity_base=0,entered_quantity=0 "+
+      "where business_id=$1 and ingredient_id=$2 and count_date=$3",
+      [watchBusinessId,stockId,clock.today]);
+    const oracle=(await pg.query("select "+
+      "(select net_sales_cents from public.daily_rollups "+
+      "where business_id=$1 and business_date=$2) sale,"+
+      "(select quantity from public.cv_inventory "+
+      "where business_id=$1 and business_date=$3 and source='app' "+
+      "and data->>'evidence_state'='dated_owner_count' limit 1) stock",
+      [watchBusinessId,clock.yesterday,clock.today])).rows[0];
+    expect(Number(oracle.sale)).toBe(900000);
+    expect(Number(oracle.stock)).toBe(0);
+    const alertTick=await dispatchRoutinesForBusiness(db,watchBusinessId,
+      String(own.timezone),new Date(),undefined,provider);
+    expect(alertTick.runs).toBe(1);
+    const all=(await pg.query("select run_id,local_date,state,receipt_ref,u4_result "+
+      "from public.supervisor_routine_occurrences "+
+      "where business_id=$1 and routine_id=$2",
+      [watchBusinessId,watchRoutineId])).rows;
+    expect(all).toHaveLength(2);
+    const attention=all.find(row=>row.local_date===clock.today);
+    expect(attention?.state).toBe("completed");
+    const watchRunId=String(attention.run_id);
+    expect(attention.receipt_ref).toBe("u4-verified:"+watchRunId);
+    expect(attention.u4_result?.attention).toBe("attention");
+    const sources=(attention.u4_result?.proof?.sources??[]) as Array<{identifier:string}>;
+    const watchToolNames=sources.map(source=>source.identifier);
+    expect(sources.length).toBeGreaterThanOrEqual(2);
+    expect(watchToolNames).toContain("get_sales");
+    expect(watchToolNames).toContain("get_inventory");
+    expect(String(attention.u4_result?.summary)).toMatch(/sales|revenue|orders/iu);
+    expect(String(attention.u4_result?.summary)).toMatch(/stock|inventory|ingredient/iu);
+    const watchPosts=(await pg.query("select id,grounding from public.ai_messages "+
+      "where business_id=$1 and thread_id=$2 and role='supervisor' "+
+      "and grounding->'agentMetadata'->>'u4Kind'='watch'",
+      [watchBusinessId,watchThreadId])).rows;
+    expect(watchPosts).toHaveLength(1);
+    const watchReplyId=String(watchPosts[0].id);
+    expect(watchPosts[0].grounding.agentMetadata.runId).toBe(watchRunId);
+    const replay=await dispatchRoutinesForBusiness(db,watchBusinessId,
+      String(own.timezone),new Date(),undefined,provider);
+    expect(replay.runs).toBe(0);
     expect(providerCompletions).toBe(budget.calls);
     const spend=(await pg.query("select model,status,model_call_count "+
-      "from public.supervisor_system_usage_events where business_id=$1 "+
-      "and owner_user_id=$2 and source_type='routine' and source_id=any($3::text[])",
-      [businessId,ownerUserId,[leased.runId,watchLease.runId]])).rows;
+      "from public.supervisor_system_usage_events where source_type='routine' "+
+      "and ((business_id=$1 and owner_user_id=$2 and source_id=$3) or "+
+      "(business_id=$4 and owner_user_id=$5 and source_id=any($6::text[])))",
+      [businessId,ownerUserId,leased.runId,watchBusinessId,watchOwnerUserId,
+        [watchQuietRunId,watchRunId]])).rows;
     expect(spend).toHaveLength(budget.calls);
     expect(spend.every(x=>x.model==="gpt-6-luna"&&x.status==="completed"&&
       Number(x.model_call_count)===1)).toBe(true);
+    expect((await pg.query("select count(*)::int n from public.supervisor_proposals "+
+      "where business_id=$1",[watchBusinessId])).rows[0].n).toBe(0);
     const proposals=(await pg.query("select count(*)::int n from public.supervisor_proposals "+
       "where business_id=$1 and thread_id=$2",[businessId,threadId])).rows[0].n;
     expect(proposals).toBe(0);
     const proof={schema_version:1,id:"u4-autonomous-objectives",
       head_sha:env.AICAFE_SHARED_LUNA_HEAD,status:"passed",
       observed_model:"gpt-6-luna",observed_model_calls:providerCompletions,
-      selected_sources:[...new Set([...result.observedToolNames,...watchOutcome.observedToolNames])],
-      unprompted_watch_persisted:true,watch_significance:watchOutcome.attention,
+      selected_sources:[...new Set([...result.observedToolNames,...watchToolNames])],
+      unprompted_watch_persisted:true,watch_significance:"attention",
+      watch_healthy_control:"none",watch_changed_evidence:true,
+      watch_no_initial_chat_or_detector:true,
       original_goal_preserved:true,no_unauthorized_effect:true,
       persisted_lease_and_report:true,cross_domain_source_count:result.sourceCount,
       integrated_proven:false,released_proven:false};
@@ -232,7 +313,8 @@ live("real Luna executes an authenticated full café goal through existing sched
       JSON.stringify({
         businessId,foreignBusinessId,ownerUserId,threadId,ownerMessageId,
         routineId,runId:leased.runId,replyId:posts[0].id,
-        watchRoutineId,watchRunId:watchLease.runId,
+        watchBusinessId,watchOwnerUserId,watchThreadId,
+        watchRoutineId,watchQuietRunId,watchRunId,watchReplyId,
         expectedProviderCalls:budget.calls,
       },null,2)+"\n",{mode:0o600});
   }finally{
