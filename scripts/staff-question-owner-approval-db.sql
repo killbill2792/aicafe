@@ -82,6 +82,7 @@ begin
  exception when sqlstate '22023' then null;end;
 end $;
 select gen_random_uuid() as owner_answer_message \gset
+select set_config('test.staffquestion.owner_answer_message',:'owner_answer_message',true);
 insert into public.ai_messages(id,business_id,thread_id,owner_user_id,author_user_id,role,content_type,text_content,client_message_id)
  values(:'owner_answer_message',:'biz',:'thread_id',:'owner_id',:'owner_id','owner','text',
   'There are approximately 40 cups remaining.',gen_random_uuid());
@@ -92,13 +93,13 @@ do $$
  'There are approximately 40 cups remaining.' and baseline->'ownerAnswer'->>'ownerMessageId' is not null) then raise exception 'owner answer not durable';end if; if not exists(select 1 from public.operating_tasks where id='staff-question-owner-answer:'||current_setting('test.staffquestion.owner_proposal') and evidence @> '[{"source":"owner_report"}]'::jsonb) then
  raise exception 'owner answer did not enter existing investigation queue';end if;
  if not exists(select 1 from public.supervisor_proposals where id=current_setting('test.staffquestion.rejected_proposal')::uuid and status='rejected' and baseline->'ownerAnswer'->>'ownerMessageId' is not null) then raise exception 'equivalent pending draft not superseded';end if;
- if not exists(select 1 from public.supervisor_proposals where id=:'stale_proposal'::uuid and status='draft') then raise exception 'unrelated staff question was closed';end if;
+ if not exists(select 1 from public.supervisor_proposals where canonical_effect_payload->>'question'='Can you cover the evening shift?' and status='draft') then raise exception 'unrelated staff question was closed';end if;
  if exists(select 1 from public.staff_communication_requests where source_id=current_setting('test.staffquestion.owner_proposal')) then raise exception 'owner answer contacted worker';end if;
 end $$;
 do $$
  begin if public.supervisor_answer_staff_question(current_setting('test.staffquestion.biz')::uuid,current_setting('test.staffquestion.owner')::uuid,current_setting('test.staffquestion.thread')::uuid,
- current_setting('test.staffquestion.owner_proposal')::uuid,1,:'owner_answer_message')->>'alreadyRecorded' is distinct from 'true' then raise exception 'identical owner message retry lost';end if; begin
- perform public.supervisor_answer_staff_question(current_setting('test.staffquestion.biz')::uuid,current_setting('test.staffquestion.outsider')::uuid,current_setting('test.staffquestion.thread')::uuid, current_setting('test.staffquestion.rejected_proposal')::uuid,1,:'owner_answer_message'); raise exception 'cross-cafe owner answer was accepted'; exception when sqlstate '40900' then null;end;
+ current_setting('test.staffquestion.owner_proposal')::uuid,1,current_setting('test.staffquestion.owner_answer_message')::uuid)->>'alreadyRecorded' is distinct from 'true' then raise exception 'identical owner message retry lost';end if; begin
+ perform public.supervisor_answer_staff_question(current_setting('test.staffquestion.biz')::uuid,current_setting('test.staffquestion.outsider')::uuid,current_setting('test.staffquestion.thread')::uuid, current_setting('test.staffquestion.rejected_proposal')::uuid,1,current_setting('test.staffquestion.owner_answer_message')::uuid); raise exception 'cross-cafe owner answer was accepted'; exception when sqlstate '40900' then null;end;
 end $$;
 update public.staff_communication_requests set due_at=statement_timestamp()-interval '1 second' where id=:'request_id';
 select public.staff_question_escalate_due(:'biz'); select public.staff_question_escalate_due(:'biz');
