@@ -119,6 +119,13 @@ describe("U4 objective evidence and model autonomy",()=>{
   });
 });
 describe("U4 owner-only connector capability and independent mailbox revocation",()=>{
+  it("rejects a forged external Gmail tool receipt in an unsolicited Watch",()=>{
+    expect(()=>verifyObjectiveTurn(turn("NO_ACTION_REQUIRED: Mail looked quiet.",{
+      toolInvocations:[{name:"search_gmail",result:{
+        source:"gmail",period:null,missing:[],messages:[{id:"vendor-msg-987654"}],
+      }}],
+    }),watch)).toThrow("u4_no_verified_source_observation");
+  });
   it("counts a real provider message identity as external source evidence, not canonical money",()=>{
     expect(observedObjectiveEvidence({
       source:"gmail",period:null,missing:[],message:{id:"vendor-msg-987654"},
