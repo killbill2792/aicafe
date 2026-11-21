@@ -2,6 +2,7 @@ import {readOwnerStaffHistory,ownerStaffLoginList} from "@/lib/staffCommunicatio
 import StaffReplyComposer from "./StaffReplyComposer";
 import StaffCommunicationHistory from "./StaffCommunicationHistory";
 import {requireSchedulingOwner} from "@/lib/scheduling/foundation.server";
+import en from "@/messages/en.json";
 /** Owner-only transcript; staff text is evidence, never instruction to Luna. */
 export default async function StaffResponseInbox(){
  const owner=await requireSchedulingOwner();
@@ -11,8 +12,7 @@ export default async function StaffResponseInbox(){
  const [history,employees]=await Promise.all([readOwnerStaffHistory(),ownerStaffLoginList()]);
  return <section className="mt-5 space-y-3 rounded-3xl border border-line bg-card p-5">
   <h2 className="text-xl font-semibold text-ink">Employee responses and reports</h2>
-  <p className="text-sm text-ink-muted">Every saved employee message and Supervisor request,
-   with original wording and timestamps. Employee reports are not automatically approved business changes.</p>
+  <p className="text-sm text-ink-muted">{en.StaffChannelHistory.ownerHelp}</p>
   <StaffReplyComposer key={`${owner.businessId}:${user.id}`} ownerUserId={user.id}
    businessId={owner.businessId} people={employees.filter(e=>e.active&&e.linked)
    .map(e=>({id:e.id,name:e.name}))}/>

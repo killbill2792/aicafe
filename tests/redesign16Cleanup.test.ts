@@ -198,10 +198,24 @@ const approvedCrewSelfServiceKeys=[
  "hours","breakNotices","noBreakAlerts","unavailable",
 ] as const;
 const approvedCrewSelfServiceSet=new Set(approvedCrewSelfServiceKeys.map(key=>"CrewSelfService."+key));
+const staffChannelEnglishOnly={
+ StaffChannelHistory:["historyAria","historyHelp","ownerHelp","emptyHistory","loadOlder","loading","historyError","ownerRequested","assignedRequest","employeeReported","employeeReplied","ownerReplied","supervisorReplied","requestStatus","responseConfirm","responseDecline","responseComplete","responseMessage","responseReport","responseUnknown"],
+ StaffChannelLogin:["intro","signInLink","help","createSuccess","createFailed","copied","copyFailed","copyButton","emailLabel","emailPlaceholder","passwordLabel","passwordPlaceholder","createButton"]
+} as const;
+const staffChannelEnglishOnlySet=new Set(Object.entries(staffChannelEnglishOnly)
+ .flatMap(([ns,keys])=>keys.map(key=>ns+"."+key)));
+
 
 
 
 describe("redesign 16 cleanup integration", () => {
+  it("pins new staff history and login English-only strings",()=>{
+    const en=localeMessages("en"),es=localeMessages("es"),ar=localeMessages("ar");
+    for(const [ns,keys] of Object.entries(staffChannelEnglishOnly)){
+      expect(Object.keys(en[ns]??{}).sort()).toEqual([...keys].sort());
+      expect(es[ns]).toBeUndefined();expect(ar[ns]).toBeUndefined();
+    }
+  });
   it("pins new employee-only English copy to the approved personal-access contract",()=>{
     const en=localeMessages("en"),es=localeMessages("es"),ar=localeMessages("ar");
     expect(Object.keys(en.CrewSelfService??{}).sort()).toEqual([...approvedCrewSelfServiceKeys].sort());
@@ -250,7 +264,7 @@ describe("redesign 16 cleanup integration", () => {
       return Object.entries(messages)
         .flatMap(([namespace, values]) => Object.keys(values).map(key => `${namespace}.${key}`))
         .filter(key => !englishOnly.test(key) && !approvedTask14bSet.has(key)
-          && !approvedTask14cSet.has(key) && !approvedTask15bSet.has(key) && !approvedTask16aSet.has(key) && !approvedU4RoutineSet.has(key) && !approvedTask16cSet.has(key) && !approvedTask14eSet.has(key) && !approvedCrewSelfServiceSet.has(key) && !task16e.has(key)
+          && !approvedTask14cSet.has(key) && !approvedTask15bSet.has(key) && !approvedTask16aSet.has(key) && !approvedU4RoutineSet.has(key) && !approvedTask16cSet.has(key) && !approvedTask14eSet.has(key) && !approvedCrewSelfServiceSet.has(key) && !staffChannelEnglishOnlySet.has(key) && !task16e.has(key)
           && !["runAwaitingOwner","runAwaitingOwnerNext","runCancelled","runRetrying","cancelAction","cancelPending","cancelUncertain","cancelCompleted","cancelFailed"].some(name=>key==="SupervisorDurableWork."+name)
           && !/^SupervisorUsage\.(?:help|max|month|proactive|requests|title|unavailable)$/.test(key))
         .sort();

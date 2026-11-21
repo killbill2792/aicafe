@@ -181,6 +181,17 @@ test("@staff real worker login, shift explanation, cross-cafe and owner receipt"
   await expect(staff.getByText("Checked grinder; minor noise remains.")).toBeVisible({timeout:20_000});
   await owner.reload();
   await expect(owner.getByText("Checked grinder; minor noise remains.")).toBeVisible({timeout:20_000});
+  // A structured completion with NO optional text must remain visible.
+  await owner.locator("#staff-work-title").fill("Count takeaway cups");
+  await owner.locator("#staff-work-prompt").fill("Report the count if known");
+  await owner.getByRole("button",{name:"Assign work"}).click();
+  await staff.reload();
+  const blankReply=staff.getByRole("article").filter({hasText:"Count takeaway cups"});
+  await expect(blankReply).toBeVisible({timeout:20_000});
+  await blankReply.getByRole("button",{name:"Mark complete"}).click();
+  await owner.reload();
+  await expect(owner.getByRole("region",{name:"Employee Supervisor communication history"})
+   .getByText("Employee reported task complete — not independently verified")).toBeVisible({timeout:20_000});
   await otherOwner.reload();
   await expect(otherOwner.getByText("I cannot work seven to two. I can arrive at 8 AM.")).toHaveCount(0);
   const shift=(await db.query("select start_local,status from public.scheduled_shifts where id=$1",

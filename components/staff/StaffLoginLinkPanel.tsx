@@ -2,6 +2,8 @@
 import {useEffect,useState} from "react";
 import Link from "next/link";
 import {useRouter} from "next/navigation";
+import en from "@/messages/en.json";
+const copy=en.StaffChannelLogin;
 type Employee={id:string;name:string;active:boolean;linked:boolean};
 export default function StaffLoginLinkPanel(){
  const router=useRouter();
@@ -39,9 +41,9 @@ export default function StaffLoginLinkPanel(){
    if(!res.ok)throw new Error("create_failed");
    setPassword("");setEmail("");
    await reload();router.refresh();
-   setMessage("Staff login created and linked. Share the My work sign-in link and password separately. The password is not stored here.");
+   setMessage(copy.createSuccess);
   }catch{
-   setMessage("Could not create this login. Check the email is unused and the employee is active. If an account already exists, link it below.");
+   setMessage(copy.createFailed);
   }finally{setBusy(false);}
  }
  async function update(unlink=false){
@@ -62,14 +64,14 @@ export default function StaffLoginLinkPanel(){
  const selected=people.find(p=>p.id===chosen);
  return <section className="mt-5 space-y-3 rounded-3xl border border-line bg-card p-5">
   <h2 className="text-xl font-semibold text-ink">Employee login access</h2>
-  <p className="text-sm text-ink-muted">Create an employee-only login or link an existing confirmed account. Share the <Link href="/crew/login" className="underline">My work sign-in link</Link> separately from the password. Employees cannot access the owner Supervisor or café data.</p>
+  <p className="text-sm text-ink-muted">{copy.intro} <Link href="/crew/login" className="underline">{copy.signInLink}</Link> {copy.help}</p>
   <button type="button" className="min-h-12 rounded-full border border-line px-4 text-sm"
    onClick={async()=>{
     try{
      await navigator.clipboard.writeText(window.location.origin+"/crew/login");
-     setMessage("Staff sign-in link copied. Share the password separately.");
-    }catch{setMessage("Use the My work sign-in link above. Never put passwords in a URL.");}
-   }}>Copy staff sign-in link</button>
+     setMessage(copy.copied);
+    }catch{setMessage(copy.copyFailed);}
+   }}>{copy.copyButton}</button>
   <label htmlFor="staff-account-person" className="block text-sm font-semibold">Employee</label>
   <select id="staff-account-person" value={chosen} onChange={e=>setChosen(e.target.value)}
    className="min-h-12 w-full rounded-xl border border-line bg-white p-3">
@@ -77,18 +79,18 @@ export default function StaffLoginLinkPanel(){
     {p.name} {p.linked?"(linked)":""} {!p.active?"(inactive)":""}
    </option>)}
   </select>
-  <label htmlFor="staff-account-email" className="block text-sm font-semibold">Employee login email</label>
+  <label htmlFor="staff-account-email" className="block text-sm font-semibold">{copy.emailLabel}</label>
   <input id="staff-account-email" type="email" value={email} onChange={e=>setEmail(e.target.value)}
-   placeholder="Employee account email" autoComplete="off"
+   placeholder={copy.emailPlaceholder} autoComplete="off"
    className="min-h-12 w-full rounded-xl border border-line bg-white p-3"/>
-  <label htmlFor="staff-account-password" className="block text-sm font-semibold">New password (12 characters minimum)</label>
+  <label htmlFor="staff-account-password" className="block text-sm font-semibold">{copy.passwordLabel}</label>
   <input id="staff-account-password" type="password" value={password} autoComplete="new-password"
-   onChange={e=>setPassword(e.target.value)} maxLength={128} placeholder="Set employee password"
+   onChange={e=>setPassword(e.target.value)} maxLength={128} placeholder={copy.passwordPlaceholder}
    className="min-h-12 w-full rounded-xl border border-line bg-white p-3"/>
   <div className="flex flex-wrap gap-2">
    <button disabled={busy||!selected?.active||selected?.linked||!email.trim()||password.length<12}
     onClick={()=>void createLogin()} className="min-h-12 rounded-full bg-accent px-5 text-on-accent disabled:opacity-50">
-    Create employee login
+    {copy.createButton}
    </button>
    <button disabled={busy||!selected?.active||!email.trim()} onClick={()=>update()}
     className="min-h-12 rounded-full bg-accent px-5 text-on-accent disabled:opacity-50">Link existing login</button>
