@@ -33,7 +33,9 @@ export async function POST(request:Request){
     const {scope}=await authenticatedConversationContext();
     const client=await createServerSupabaseClient();
     const read=await client.from("supervisor_routines")
-      .select("id,thread_id,owner_user_id,status,revision,execution_mode")
+      .select(process.env.SUPERVISOR_U4_ENABLED==="true"?
+        "id,thread_id,owner_user_id,status,revision,execution_mode":
+        "id,thread_id,owner_user_id,status,revision")
       .eq("business_id",scope.businessId).eq("owner_user_id",scope.ownerUserId)
       .eq("id",input.routineId).maybeSingle();
     if(read.error)throw read.error;
