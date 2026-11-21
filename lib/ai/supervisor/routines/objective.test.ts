@@ -282,7 +282,27 @@ describe("U4 owner-only connector capability and independent mailbox revocation"
       toolInvocations:[{name:"search_gmail",result:{
         source:"gmail",period:null,missing:[],messages:[{id:"vendor-msg-987654"}],
       }}],
-    }),watch)).toThrow("u4_no_verified_source_observation");
+    }),watch)).toThrow("u4_unadmitted_tool_invocation");
+  });
+  it("refuses an unexpected external effect even alongside genuine café facts",()=>{
+    const effectAttempt=turn("Review real café evidence.",{
+      toolInvocations:[
+        {name:"get_sales",result:source},
+        {name:"propose_price_change",result:{
+          source:"price_proposal",period:null,missing:[],proposalCreated:true,
+        }},
+      ],
+    });
+    expect(()=>verifyObjectiveTurn(effectAttempt,objective))
+      .toThrow("u4_unadmitted_tool_invocation");
+    expect(()=>verifyObjectiveTurn(turn("NO_ACTION_REQUIRED: Sales are normal.",{
+      toolInvocations:[
+        {name:"get_sales",result:source},
+        {name:"read_gmail",result:{
+          source:"gmail",period:null,missing:[],message:{id:"vendor-msg-987654"},
+        }},
+      ],
+    }),watch)).toThrow("u4_unadmitted_tool_invocation");
   });
   it("counts a real provider message identity as external source evidence, not canonical money",()=>{
     expect(observedObjectiveEvidence({
