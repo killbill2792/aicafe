@@ -1,6 +1,7 @@
 import {describe,expect,it,vi} from "vitest";
 import {renderToStaticMarkup} from "react-dom/server";
 import {createElement} from "react";
+import {readFileSync} from "node:fs";
 
 vi.mock("@/i18n/navigation",()=>({Link:({children,href,...props}:{children:import("react").ReactNode;href:string})=>createElement("a",{href,...props},children)}));
 vi.mock("@/components/shared/PeriodSwitch",()=>({default:()=>createElement("div",null,"period")}));
@@ -18,8 +19,12 @@ const html=(props:{enabled:boolean;canUseAi?:boolean})=>renderToStaticMarkup(cre
   {cafeCurrency:"USD",unavailableReason:null,locale:"en",copy,chatStartData,chatStartCopy,...props}));
 
 describe("Coming up card and AI access",()=>{
-  it("shows on the chat start when the café can use AI",()=>{
-    expect(html({enabled:true})).toContain('data-testid="coming-up"');
+  it("keeps Events available on demand but out of the default conversation",()=>{
+    expect(html({enabled:true})).not.toContain('data-testid="coming-up"');
+    const source=readFileSync("components/home/SupervisorChatComposer.tsx","utf8");
+    expect(source).toContain("enabled && canUseAi ? <SavedEventsCard");
+    expect(source).toContain('{startExpanded && <aside id="supervisor-chat-insights"');
+    expect(source).toContain("comingUp={comingUpCard}");
   });
   it("is never mounted (so never fetches the paid search) without AI access or with chat off",()=>{
     expect(html({enabled:true,canUseAi:false})).not.toContain('data-testid="coming-up"');
