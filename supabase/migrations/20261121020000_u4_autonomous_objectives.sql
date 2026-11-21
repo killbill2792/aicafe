@@ -111,17 +111,22 @@ begin
     and thread_id=p_thread_id for update;
   if not found or v.execution_mode='watch' or v.revision<>p_revision
     then raise exception 'u4_revision_or_scope_changed' using errcode='40001'; end if;
-  -- Legacy priority checks are still editable; do not reinterpret an earlier
-  -- owner title/schedule as consent to autonomous execution.
+  -- This API edits only truly owner-created objectives. A legacy priority
+  -- check must never be silently promoted or presented as an edited goal.
   if v.execution_mode='priority' then
-    return public.change_supervisor_routine(p_business_id,p_owner_user_id,
-      p_thread_id,p_routine_id,p_revision,p_patch); end if;
+    raise exception 'u4_objective_edit_requires_owner_objective' using errcode='22023';
+  end if;
   changes:=v.objective_updates||jsonb_build_array(jsonb_build_object(
     'sourceMessageId',m.id::text,'text',m.text_content,'revision',p_revision+1));
   if jsonb_array_length(changes)>20 or octet_length(changes::text)>16384
     then raise exception 'u4_objective_history_limit' using errcode='22023'; end if;
+  -- The existing CAS handles revision, status, ownership, and updated_at.
+  -- An objective-only edit preserves schedule/title and still advances
+  -- revision, invalidating any in-flight leased occurrence.
   select * into v from public.change_supervisor_routine(
-    p_business_id,p_owner_user_id,p_thread_id,p_routine_id,p_revision,p_patch);
+    p_business_id,p_owner_user_id,p_thread_id,p_routine_id,p_revision,
+    case when p_patch='{}'::jsonb then jsonb_build_object('title',v.title)
+         else p_patch end);
   update public.supervisor_routines set objective_updates=changes
     where business_id=p_business_id and id=p_routine_id returning * into v;
   return v;
