@@ -264,11 +264,15 @@ live("real Luna executes an authenticated full café goal through existing sched
     const watchRunId=String(attention.run_id);
     expect(attention.receipt_ref).toBe("u4-verified:"+watchRunId);
     expect(attention.u4_result?.attention).toBe("attention");
-    const sources=(attention.u4_result?.proof?.sources??[]) as Array<{identifier:string}>;
+    const sources=(attention.u4_result?.proof?.sources??[]) as
+      Array<{identifier:string;domain:string}>;
     const watchToolNames=sources.map(source=>source.identifier);
-    expect(sources.length).toBeGreaterThanOrEqual(2);
-    expect(watchToolNames).toContain("get_sales");
-    expect(watchToolNames).toContain("get_inventory");
+    const independentlyVerified=new Set(sources.map(source=>source.domain));
+    // Neither a mandatory tool name nor a fixed call order is the oracle.
+    // Luna may use any admitted reader or U3 canonical view with independently
+    // validated sales and stock lineage; one opaque multi-join is not two proofs.
+    expect(independentlyVerified.has("recorded_sales")).toBe(true);
+    expect(independentlyVerified.has("stock_and_inventory")).toBe(true);
     expect(String(attention.u4_result?.summary)).toMatch(/sales|revenue|orders/iu);
     expect(String(attention.u4_result?.summary)).toMatch(/stock|inventory|ingredient/iu);
     const watchPosts=(await pg.query("select id,grounding from public.ai_messages "+
