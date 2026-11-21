@@ -139,7 +139,7 @@ live("real Luna executes an authenticated full café goal through existing sched
     expect(occurrence[0].u4_result?.proof?.sourceCount).toBeGreaterThanOrEqual(2);
     const posts=(await pg.query("select id,grounding,structured_content from "+
       "public.ai_messages where business_id=$1 and thread_id=$2 "+
-      "and role='supervisor' and grounding->>'intent'='u4_routine'",
+      "and role='supervisor' and grounding->'agentMetadata'->>'u4Kind'='routine'",
       [businessId,threadId])).rows;
     expect(posts).toHaveLength(1);
     expect(posts[0].grounding?.agentMetadata?.runId).toBe(leased.runId);
