@@ -1,0 +1,146 @@
+{
+  "id": "u4-autonomous-objectives",
+  "mode": "generic",
+  "engine": "vitest",
+  "entrypoint": "lib/ai/supervisor/routines/objective.live.test.ts",
+  "proof": "u4-autonomous-objectives-proof.json",
+  "scope": "u4-autonomous-objectives-scope.json",
+  "expectedTools": [
+    "get_sales",
+    "get_inventory"
+  ],
+  "assertions": [
+    {
+      "name": "authenticated-owner-original",
+      "kind": "source",
+      "table": "public.ai_messages",
+      "where": {
+        "business_id": {
+          "scope": "businessId"
+        },
+        "thread_id": {
+          "scope": "threadId"
+        },
+        "id": {
+          "scope": "ownerMessageId"
+        },
+        "role": {
+          "eq": "owner"
+        }
+      },
+      "minCount": 1,
+      "maxCount": 1
+    },
+    {
+      "name": "complete-owner-objective",
+      "kind": "source",
+      "table": "public.supervisor_routines",
+      "where": {
+        "business_id": {
+          "scope": "businessId"
+        },
+        "id": {
+          "scope": "routineId"
+        },
+        "execution_mode": {
+          "eq": "objective"
+        }
+      },
+      "minCount": 1,
+      "maxCount": 1
+    },
+    {
+      "name": "one-durable-complete",
+      "kind": "source",
+      "table": "public.supervisor_routine_occurrences",
+      "where": {
+        "business_id": {
+          "scope": "businessId"
+        },
+        "routine_id": {
+          "scope": "routineId"
+        },
+        "run_id": {
+          "scope": "runId"
+        },
+        "state": {
+          "eq": "completed"
+        }
+      },
+      "minCount": 1,
+      "maxCount": 1
+    },
+    {
+      "name": "metered-real-model",
+      "kind": "source",
+      "table": "public.supervisor_system_usage_events",
+      "where": {
+        "business_id": {
+          "scope": "businessId"
+        },
+        "source_id": {
+          "scope": "runId"
+        },
+        "source_type": {
+          "eq": "routine"
+        },
+        "model": {
+          "eq": "gpt-6-luna"
+        }
+      },
+      "minCount": 1,
+      "maxCount": 18
+    },
+    {
+      "name": "owner-saved-result",
+      "kind": "owner",
+      "table": "public.ai_messages",
+      "where": {
+        "business_id": {
+          "scope": "businessId"
+        },
+        "thread_id": {
+          "scope": "threadId"
+        },
+        "id": {
+          "scope": "replyId"
+        },
+        "role": {
+          "eq": "supervisor"
+        }
+      },
+      "minCount": 1,
+      "maxCount": 1
+    },
+    {
+      "name": "cross-cafe-owner-denied",
+      "kind": "isolation",
+      "table": "public.ai_messages",
+      "where": {
+        "business_id": {
+          "scope": "foreignBusinessId"
+        },
+        "id": {
+          "scope": "replyId"
+        }
+      },
+      "minCount": 0,
+      "maxCount": 0
+    },
+    {
+      "name": "no-silent-side-effect",
+      "kind": "source",
+      "table": "public.supervisor_proposals",
+      "where": {
+        "business_id": {
+          "scope": "businessId"
+        },
+        "thread_id": {
+          "scope": "threadId"
+        }
+      },
+      "minCount": 0,
+      "maxCount": 0
+    }
+  ]
+}
