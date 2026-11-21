@@ -128,6 +128,17 @@ describe("PR F shared attention and chat entry",()=>{
   expect(composer).toContain("pendingFollowUps.current.delete(text)");
   expect(composer).toContain("setStartExpanded(false)");
  });
+ it("keeps the overview out of the ordinary transcript and the mobile composer on one row",()=>{
+   const composer=readFileSync("components/home/SupervisorChatComposer.tsx","utf8");
+   const home=readFileSync("app/[locale]/page.tsx","utf8");
+   const styles=readFileSync("app/globals.css","utf8");
+   expect(composer).toContain('{startExpanded && <aside id="supervisor-chat-insights"');
+   expect(composer).not.toContain("chatStartPromise&&hasChatMessages&&<div");
+   expect(composer).not.toContain("chatStartPromise&&!hasChatMessages&&startReady&&");
+   expect(composer).toContain('grid-cols-[44px_minmax(0,1fr)_44px_44px]');
+   expect(home).toContain("gap-0 px-0 pb-0 pt-0");
+   expect(styles).toContain("height: 100dvh;");
+ });
  it("restores old exact experiment links without a standalone accordion on every chat",()=>{
   const home=readFileSync("app/[locale]/page.tsx","utf8");
   const wrapper=readFileSync("components/home/SupervisorHomePanel.tsx","utf8");

@@ -1,7 +1,7 @@
 "use client";
 
 import { Suspense, useCallback, useEffect, useLayoutEffect, useMemo, useReducer, useRef, useState, useSyncExternalStore, type ChangeEvent, type KeyboardEvent } from "react";
-import { Clock3, Menu, ListChecks, Mic, Plus, Camera, ArrowUp, Sparkles, Square, SquarePen, ThumbsUp, ThumbsDown, X, AlertCircle, Paperclip, LoaderCircle, UsersRound, ArrowDown } from "lucide-react";
+import { Clock3, Menu, ListChecks, CalendarDays, Mic, Plus, Camera, ArrowUp, Sparkles, Square, SquarePen, ThumbsUp, ThumbsDown, X, AlertCircle, Paperclip, LoaderCircle, UsersRound, ArrowDown } from "lucide-react";
 import { Link } from "@/i18n/navigation";
 import { NAV_TABS } from "@/components/shared/navTabs";
 import { nextDictationStage } from "@/lib/ai/conversations/dictationState";
@@ -1205,9 +1205,9 @@ export default function SupervisorChatComposer({
     chatDisabled={boardAskDisabled}/> : undefined;
 
   if(sessionDenied)return <section className="mx-auto max-w-lg space-y-4 rounded-xl bg-surface p-6" aria-label={copy.composerLabel}><p role="alert" className="text-[17px] text-ink">{en.SupervisorExperience.sessionDenied}</p><Link href="/login" className="inline-flex min-h-12 items-center rounded-lg bg-accent px-4 text-on-accent">{en.SupervisorExperience.signInAgain}</Link></section>;
-  return <section ref={shell} className="supervisor-shell relative flex min-h-[320px] min-w-0 flex-col overflow-hidden rounded-2xl bg-surface"
+  return <section ref={shell} className="supervisor-shell relative flex min-h-[320px] min-w-0 flex-col overflow-hidden rounded-none bg-surface md:rounded-2xl"
     aria-label={copy.composerLabel}>
-    <header className="flex shrink-0 items-center gap-1 px-2 py-2 sm:px-4">
+    <header className="flex shrink-0 items-center gap-1 px-2 py-1.5 sm:px-4 sm:py-2">
       <button type="button" onClick={()=>setControlsTab("library")}
         aria-expanded={controlsTab!==null&&controlsTab!=="work"}
         aria-label={en.SupervisorMandateCenter.open} title={en.SupervisorMandateCenter.open}
@@ -1221,6 +1221,13 @@ export default function SupervisorChatComposer({
         {workAttentionCount>0&&<span className="text-xs font-semibold text-ink" aria-hidden="true">{workAttentionCount}</span>}
         {supervisorWork.unavailable&&<AlertCircle size={16} aria-hidden="true"/>}
       </button>
+      <button type="button" onClick={()=>setStartExpanded(open=>!open)}
+        aria-expanded={startExpanded} aria-controls={startExpanded?"supervisor-chat-insights":undefined}
+        aria-label={chatStartCopy?.keyNumbers??en.Home.keyNumbers}
+        title={chatStartCopy?.keyNumbers??en.Home.keyNumbers}
+        className="inline-flex min-h-11 min-w-11 items-center justify-center rounded-full text-ink-muted hover:bg-surface2 focus-visible:outline focus-visible:outline-2 focus-visible:outline-ink">
+        <CalendarDays size={20} aria-hidden="true"/>
+      </button>
       <h2 className="min-w-0 flex-1 truncate text-center font-headline text-[17px] font-medium tracking-tight text-ink">
         {threadTitle || copy.supervisor}
       </h2>
@@ -1232,41 +1239,33 @@ export default function SupervisorChatComposer({
     </header>
     {threadUnavailable&&<p role="alert" className="shrink-0 border-b border-line px-4 py-2 text-[17px] text-ink">{en.SupervisorExperience.threadUnavailable}</p>}
     {offline&&<p role="status" className="shrink-0 border-b border-line px-4 py-2 text-[15px] text-ink-muted">{en.SupervisorExperience.offline}</p>}
-    {chatStartPromise&&hasChatMessages&&<div className={"shrink-0 px-2 sm:px-4"+(startExpanded?" max-h-[35dvh] overflow-y-auto md:max-h-[48dvh]":"")}>
-      <Suspense key={boardPeriod} fallback={<p role="status" className="p-3 text-[17px] text-ink-muted">{copy.sending}</p>}>
-        <DeferredChatStart promise={chatStartPromise} suggestions={copy.suggestions} failureText={copy.unverified}
-          hasMessages expanded={startExpanded} onToggle={()=>setStartExpanded(v=>!v)}
-          onSuggestion={()=>{}} suggestionsDisabled comingUp={comingUpCard}/>
-      </Suspense>
-    </div>}
-    {!chatStartPromise&&chatStartData&&chatStartCopy&&hasChatMessages&&<div className={"shrink-0 px-2 sm:px-4"+(startExpanded?" max-h-[35dvh] overflow-y-auto md:max-h-[48dvh]":"")}>
-      <ChatStart data={chatStartData} copy={{...chatStartCopy,suggestions:copy.suggestions}}
-        hasMessages expanded={startExpanded} onToggle={()=>setStartExpanded(v=>!v)}
-        onSuggestion={()=>{}} suggestionsDisabled
-        comingUp={comingUpCard}/>
-    </div>}
+    {startExpanded && <aside id="supervisor-chat-insights"
+      aria-label={chatStartCopy?.keyNumbers??en.Home.keyNumbers}
+      onKeyDown={event=>{if(event.key==="Escape"){setStartExpanded(false);}}}
+      className="absolute inset-x-2 top-14 z-30 max-h-[72dvh] overflow-y-auto overscroll-contain rounded-2xl border border-line bg-surface p-3 shadow-lg sm:inset-x-4">
+      {chatStartPromise?
+        <Suspense key={boardPeriod} fallback={<p role="status" className="p-3 text-[15px] text-ink-muted">{copy.sending}</p>}>
+          <DeferredChatStart promise={chatStartPromise} suggestions={copy.suggestions} failureText={copy.unverified}
+            hasMessages={hasChatMessages} expanded onToggle={()=>setStartExpanded(false)}
+            onSuggestion={prompt=>{setStartExpanded(false);retryId.current=null;void sendText(prompt);}}
+            suggestionsDisabled={threadUnavailable||restoringFiles||offline||!enabled||!canUseAi||sending||uploading||dictation==="recognizing"||resumedRunning}
+            unavailableMessage={!enabled ? copy.unavailable : undefined}
+            comingUp={comingUpCard}/>
+        </Suspense>
+        :chatStartData&&chatStartCopy?
+          <ChatStart data={chatStartData} copy={{...chatStartCopy,suggestions:copy.suggestions}}
+            hasMessages={hasChatMessages} expanded onToggle={()=>setStartExpanded(false)}
+            onSuggestion={prompt=>{setStartExpanded(false);retryId.current=null;void sendText(prompt);}}
+            suggestionsDisabled={threadUnavailable||restoringFiles||offline||!enabled||!canUseAi||sending||uploading||dictation==="recognizing"||resumedRunning}
+            unavailableMessage={!enabled ? copy.unavailable : undefined}
+            comingUp={comingUpCard}/>
+          :<p role="status" className="p-3 text-[15px] text-ink-muted">{copy.unverified}</p>}
+    </aside>}
     <div ref={transcript} className="min-h-0 flex-1 overflow-y-auto overscroll-contain [overflow-anchor:none] px-4 py-3 sm:px-6 md:py-5 focus-visible:outline focus-visible:outline-2 focus-visible:outline-inset focus-visible:outline-ink"
       onScroll={onTranscriptScroll} role="log" aria-live="off" aria-label={copy.threads} tabIndex={0}>
       <div ref={messageContent} className="mx-auto flex min-h-full w-full max-w-[46rem] min-w-0 flex-col items-stretch justify-start gap-5">
       {workNotice&&<p role="status" className="text-sm text-ink-muted">{workNotice}</p>}
       {!hasChatMessages&&startReady&&!threadUnavailable&&<SupervisorWelcome heading={copy.emptyHeading} intro={copy.emptyIntro}/>}
-      {chatStartPromise&&!hasChatMessages&&startReady&&
-        <Suspense key={boardPeriod} fallback={<p role="status" className="p-3 text-[17px] text-ink-muted">{copy.sending}</p>}>
-          <DeferredChatStart promise={chatStartPromise} suggestions={copy.suggestions} failureText={copy.unverified}
-            hasMessages={false} expanded={startExpanded} onToggle={()=>setStartExpanded(v=>!v)}
-            onSuggestion={prompt=>{retryId.current=null;void sendText(prompt);}}
-            suggestionsDisabled={threadUnavailable||restoringFiles||offline||!enabled||!canUseAi||sending||uploading||dictation==="recognizing"||resumedRunning}
-            unavailableMessage={!enabled ? copy.unavailable : undefined}
-            comingUp={comingUpCard}/>
-        </Suspense>}
-      {!chatStartPromise&&chatStartData&&chatStartCopy&&!hasChatMessages&&startReady&&
-        <ChatStart data={chatStartData} copy={{...chatStartCopy,suggestions:copy.suggestions}}
-          hasMessages={false} expanded={startExpanded} onToggle={()=>setStartExpanded(v=>!v)}
-          onSuggestion={prompt=>{retryId.current=null;void sendText(prompt);}}
-          suggestionsDisabled={threadUnavailable||restoringFiles||offline||!enabled||!canUseAi||sending||uploading||dictation==="recognizing"||resumedRunning}
-          unavailableMessage={!enabled ? copy.unavailable : undefined}
-          comingUp={comingUpCard}/>}
-
       {!chatStartPromise&&!chatStartData&&!hasChatMessages&&!enabled&&<p role="status" className="text-[17px] text-ink-muted">{copy.unavailable}</p>}
       {nextOffset !== null && <button type="button" onClick={() => void loadOlder()} disabled={loading||offline}
         className="mx-auto flex min-h-12 items-center gap-2 rounded-xl px-4 text-[15px] font-semibold text-ink underline hover:bg-surface2">
@@ -1363,7 +1362,7 @@ export default function SupervisorChatComposer({
         copy={{en,es,ar}[locale].SupervisorExperiment}
         initialProposalId={initialProposalId} refreshVersion={messages.length} />
     </div>}
-    <div className="mx-auto mt-auto w-full max-w-[49rem] shrink-0 bg-surface px-2 pb-2 pt-1 sm:px-4">
+    <div className="mx-auto mt-auto w-full max-w-[49rem] shrink-0 bg-surface px-2 pb-[max(0.5rem,env(safe-area-inset-bottom))] pt-1 sm:px-4">
       {attachments.length > 0 && <div className="mb-2 flex flex-wrap gap-2" aria-label={copy.addAttachment}>
         {attachments.map(file=><div key={file.id}
           className="inline-flex max-w-full min-h-10 items-center gap-1 rounded-xl bg-surface ps-3 text-[14px] font-semibold text-ink">
@@ -1409,14 +1408,14 @@ export default function SupervisorChatComposer({
         <button type="button" disabled={offline} className="flex min-h-12 flex-1 items-center gap-2 rounded-lg px-3 text-start hover:bg-surface2 disabled:opacity-50" onClick={()=>pickAttachment(true)}><Camera size={18} aria-hidden="true"/>{en.SupervisorExperience.takePhoto}</button>
       </div>}
       <form onSubmit={(event) => { event.preventDefault(); void sendText(draft); }}
-        className="grid grid-cols-[48px_minmax(0,1fr)_48px_48px] items-end gap-0.5 rounded-[24px] border border-line bg-surface p-1.5 focus-within:border-accent">
+        className="grid grid-cols-[44px_minmax(0,1fr)_44px_44px] items-end gap-1 rounded-[26px] border border-line bg-surface p-1 focus-within:border-accent">
         <input ref={filePicker} type="file" className="sr-only" tabIndex={-1} aria-hidden="true"
           accept=".txt,.csv,.xlsx,.pdf,.jpg,.jpeg,.png,.webp,text/plain,text/csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/pdf,image/jpeg,image/png,image/webp"
           onChange={(event) => void attach(event)} />
         <button ref={attachmentTrigger} type="button" onClick={() => setAttachmentMenu(v=>!v)} aria-expanded={attachmentMenu} aria-controls={attachmentMenu?"supervisor-attachment-choices":undefined}
           aria-label={copy.addAttachment} title={copy.addAttachment}
           disabled={restoringFiles || threadUnavailable || offline || !enabled || !canUseAi || sending || uploading || dictation === "listening" || dictation === "recognizing"}
-          className="col-start-1 row-start-2 flex h-12 w-12 items-center justify-center rounded-full text-ink-muted hover:bg-surface2 disabled:opacity-50 sm:row-start-1">
+          className="col-start-1 row-start-1 flex h-11 w-11 items-center justify-center rounded-full text-ink-muted hover:bg-surface2 disabled:opacity-50">
           <Plus size={22} aria-hidden="true" />
         </button>
         <button type="button" onClick={() => void listen()}
@@ -1425,8 +1424,8 @@ export default function SupervisorChatComposer({
           aria-pressed={dictation === "listening"}
           disabled={threadUnavailable || (offline&&dictation!=="listening") || !enabled || !canUseAi || sending || uploading || dictation === "recognizing"}
           className={dictation === "listening"
-            ? "col-start-3 row-start-2 flex h-12 w-12 items-center justify-center rounded-full bg-neg text-paper ring-2 ring-neg-soft animate-pulse motion-reduce:animate-none sm:row-start-1"
-            : "col-start-3 row-start-2 flex h-12 w-12 items-center justify-center rounded-full text-ink-muted hover:bg-surface2 disabled:opacity-40 sm:row-start-1"}>
+            ? "col-start-3 row-start-1 flex h-11 w-11 items-center justify-center rounded-full bg-neg text-paper ring-2 ring-neg-soft animate-pulse motion-reduce:animate-none"
+            : "col-start-3 row-start-1 flex h-11 w-11 items-center justify-center rounded-full text-ink-muted hover:bg-surface2 disabled:opacity-40"}>
           {dictation === "listening" ? <Square size={20} fill="currentColor" aria-hidden="true" />
             : dictation === "recognizing" ? <LoaderCircle size={21} className="animate-spin motion-reduce:animate-none" aria-hidden="true" />
               : <Mic size={22} aria-hidden="true" />}
@@ -1437,10 +1436,10 @@ export default function SupervisorChatComposer({
           onChange={(event) => { if(!threadId&&event.target.value)explicitNewChat.current=true;setDraft(event.target.value); retryId.current = null; }}
           onKeyDown={composerKey} disabled={!enabled || !canUseAi || inputLocked}
           placeholder={eventContext?.threadId===threadId?"@event "+eventContext.title+" · "+copy.askAnything:copy.askAnything}
-          className="col-span-4 col-start-1 row-start-1 min-w-0 max-h-40 min-h-12 resize-none overflow-y-auto bg-transparent px-3 py-3 text-[17px] leading-6 text-ink outline-none placeholder:text-ink-muted disabled:opacity-50 sm:col-span-1 sm:col-start-2 sm:px-2" />
+          className="col-start-2 row-start-1 min-w-0 max-h-40 min-h-11 resize-none overflow-y-auto bg-transparent px-2 py-2 text-[16px] leading-6 text-ink outline-none placeholder:text-ink-muted disabled:opacity-50" />
         <button type="submit" aria-label={copy.sendMessage}
           disabled={restoringFiles || offline || !enabled || !canUseAi || inputLocked || (!draft.trim()&&!attachments.length) || dictation === "listening" || dictation === "recognizing"}
-          className="col-start-4 row-start-2 flex h-12 w-12 items-center justify-center rounded-full bg-accent text-on-accent transition-transform hover:brightness-95 active:scale-95 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ink disabled:opacity-40 sm:row-start-1">
+          className="col-start-4 row-start-1 flex h-11 w-11 items-center justify-center rounded-full bg-accent text-on-accent transition-transform hover:brightness-95 active:scale-95 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ink disabled:opacity-40">
           <ArrowUp size={22} aria-hidden="true" />
         </button>
       </form>
