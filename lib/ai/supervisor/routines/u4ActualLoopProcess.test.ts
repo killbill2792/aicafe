@@ -83,7 +83,12 @@ run("survives actual recorded model and registered source tool across SIGKILL",a
     };
     const scopedRead=()=>{
       const where:Record<string,unknown>={};
-      const chain={
+      type CheckpointChain={
+        select:(columns:string)=>CheckpointChain;
+        eq:(key:string,value:unknown)=>CheckpointChain;
+        maybeSingle:()=>Promise<{data:Record<string,unknown>|null;error:null}>;
+      };
+      const chain:CheckpointChain={
         select:(_columns:string)=>chain,
         eq:(key:string,value:unknown)=>{where[key]=value;return chain;},
         maybeSingle:async()=>{
@@ -153,10 +158,10 @@ run("survives actual recorded model and registered source tool across SIGKILL",a
           type:"function_call",name:"get_sales",call_id:"u4-durable-sales",
           arguments:JSON.stringify({period:{from:"2026-11-20",to:"2026-11-20"},
             ownerInputs:null}),
-        }};
+        }} as never;
       }else{
         yield {type:"response.output_text.delta",
-          delta:"Verified recorded sales evidence warrants an owner review."};
+          delta:"Verified recorded sales evidence warrants an owner review."} as never;
       }
       yield completed as never;
     };
