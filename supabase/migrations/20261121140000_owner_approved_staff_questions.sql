@@ -84,13 +84,18 @@ begin
  select * into p from public.supervisor_proposals where
   business_id=p_business_id and owner_user_id=p_owner_user_id
   and thread_id=p_thread_id and id=p_proposal_id for update;
- if not found or p.capability_id<>'olivia.staff_question.v1' or p.status<>'draft'
-  or p.revision<>p_revision or not exists(select 1 from public.memberships m
-   where m.business_id=p_business_id and m.user_id=p_owner_user_id and m.role='owner')
+ if not found or p.capability_id<>'olivia.staff_question.v1' or not exists(
+   select 1 from public.memberships m where m.business_id=p_business_id
+   and m.user_id=p_owner_user_id and m.role='owner')
  then raise exception 'owner_question_stale' using errcode='40900';end if;
+ if p.status='rejected' and p.baseline #>> '{ownerAnswer,ownerMessageId}'=p_owner_message_id::text
+ then return jsonb_build_object('answered',true,'alreadyRecorded',true,'employeeContacted',false);end if;
+ if p.status<>'draft' or p.revision<>p_revision then
+  raise exception 'owner_question_stale' using errcode='40900';end if;
  select nullif(btrim(m.text_content),'') into v_answer from public.ai_messages m
   where m.id=p_owner_message_id and m.business_id=p_business_id and
-   m.owner_user_id=p_owner_user_id and m.thread_id=p_thread_id and m.role='owner'
+   m.owner_user_id=p_owner_user_id and m.author_user_id=p_owner_user_id and
+   m.thread_id=p_thread_id and m.role='owner'
    and m.content_type='text' and m.created_at>=p.created_at
    and m.owner_input_response is null and m.owner_input_prompt_message_id is null;
  if v_answer is null or char_length(v_answer)>1200 then
