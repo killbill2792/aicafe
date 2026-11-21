@@ -137,8 +137,10 @@ export default function SupervisorProposalCard({threadId,proposalId,locale}:{
        .catch(()=>setError(true));
     };
     window.addEventListener("aicafe:purchase-cards-updated",refresh);
-    return ()=>window.removeEventListener("aicafe:purchase-cards-updated",refresh);
-  },[endpoint,proposalId]);
+    if(value?.staffQuestion)window.addEventListener("aicafe:conversation-updated",refresh);
+    return ()=>{window.removeEventListener("aicafe:purchase-cards-updated",refresh);
+      window.removeEventListener("aicafe:conversation-updated",refresh);};
+  },[endpoint,proposalId,value?.staffQuestion]);
   // An executing approval can still be writing in another tab. Refresh only
   // that state; never label an unverified in-flight operation as a failed write.
   useEffect(()=>{
