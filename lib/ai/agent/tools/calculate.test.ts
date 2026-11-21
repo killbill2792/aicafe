@@ -149,7 +149,7 @@ describe("U3 receipt-bound exact research calculation",()=>{
  const sql=(receipt_id:string,value:string)=>({
   name:"query_data",result:{source:"u3_canonical_research",period:{from:"2026-11-01",to:"2026-11-01"},
    missing:[],rows:[{net_sales_cents:value}],truncated:false,
-   evidence:{receipt_id,scope:"verified_owner_cafe_lease"}}
+   evidence:{receipt_id,scope:"verified_owner_cafe_lease",column_units:{net_sales_cents:"cents"}}}
  }) as {name:string;result:AgentToolResult};
  const row=[sql(older,"12345"),sql(newer,"67890")];
  const query=(receipt_id:string|null,tool="query_data",path="rows.0.net_sales_cents")=>({
@@ -164,6 +164,17 @@ describe("U3 receipt-bound exact research calculation",()=>{
   expect(actual.result).toEqual({unit:"cents",valueCents:12345});
   const latest=await calculateTools.calculate.execute(query(newer),ctx(row));
   expect(latest.result).toEqual({unit:"cents",valueCents:67890});
+ });
+ it("never treats a forged SQL alias as authoritative money units",async()=>{
+  const countAsCents={...sql(older,"7"),result:{...sql(older,"7").result,
+   evidence:{receipt_id:older,scope:"verified_owner_cafe_lease",
+    column_units:{net_sales_cents:"count"}}}};
+  const actual=await calculateTools.calculate.execute(query(older),ctx([countAsCents]));
+  expect(actual.result).toEqual({unit:"count",quantity:7});
+  const withoutUnit={...sql(older,"12345"),result:{...sql(older,"12345").result,
+   evidence:{receipt_id:older,scope:"verified_owner_cafe_lease"}}};
+  const refused=await calculateTools.calculate.execute(query(older),ctx([withoutUnit]));
+  expect(refused.refused).toBe("researchUnitUnverified");
  });
  it("refuses ambiguous, fabricated, missing, fractional-cent and untyped SQL evidence",async()=>{
   expect((await calculateTools.calculate.execute(query(null),ctx(row))).refused)
