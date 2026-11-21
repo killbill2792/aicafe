@@ -52,7 +52,7 @@ export async function createOwnerRoutine(schedule:RoutineSchedule,turn:VerifiedR
   if(error||!data)throw error??new Error("Routine not saved");
   return asRoutine(data as RoutineRow);
 }
-const routineReadFields="business_id,id,owner_user_id,thread_id,title,cadence,weekdays,local_time,timezone,status,revision,created_at,updated_at,execution_mode,objective_text,objective_source_message_id,objective_updates";
+const routineReadFields="*";
 /** One canonical RLS-backed reader for thread-only and café-wide owner views. */
 async function readOwnerRoutines(scope:VerifiedRoutineTurn["scope"],client:SupabaseClient,threadId?:string){
   const base=client.from("supervisor_routines").select(routineReadFields)
