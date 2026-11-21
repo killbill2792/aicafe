@@ -129,24 +129,33 @@ export async function admitU3Sql(sql:string,allowedRelations:readonly string[],
  if(nCtes>MAX_CTES)throw Error("invalid_query");
  const reads=new Set<string>(),called=new Set<string>();
  let nodes=0,rangeCount=0,unitAmbiguousDerivedSource=false;
- const toastAliases=new Set<string>(["toast_records"]);
- function collectToastAliases(node:unknown):void{
+ // PostgreSQL resolves a single, bare table/CTE alias as a whole composite
+ // row whenever it is not a real column. That can be cast to text or passed
+ // to aggregate functions, leaking IDs and private fields. Apply this rule
+ // to ALL admitted sources and nested FROM aliases, not only Toast JSON.
+ const wholeRowNames=new Set<string>();
+ const aliasName=(alias:unknown):string|null=>{
+  if(!alias||typeof alias!=="object"||Array.isArray(alias))return null;
+  const a=alias as {aliasname?:unknown;Alias?:{aliasname?:unknown}};
+  const label=a.Alias?.aliasname??a.aliasname;
+  return typeof label==="string"&&label.length>0?label:null;
+ };
+ function collectWholeRowNames(node:unknown):void{
   if(!node||typeof node!=="object")return;
-  if(Array.isArray(node)){node.forEach(collectToastAliases);return;}
+  if(Array.isArray(node)){node.forEach(collectWholeRowNames);return;}
   for(const [key,value] of Object.entries(node)){
-   if(key==="RangeVar"&&value&&typeof value==="object"){
-    const rv=value as {relname?:string;alias?:{
-      aliasname?:unknown;Alias?:{aliasname?:unknown}}};
-    // PostgreSQL parser versions emit either a direct Alias object or its
-    // Node wrapper. Normalize both before applying composite-row denial.
-    const identifier=rv.alias?.Alias?.aliasname??rv.alias?.aliasname;
-    if(rv.relname==="toast_records"&&typeof identifier==="string"&&identifier)
-     toastAliases.add(identifier);
+   if(["RangeVar","RangeSubselect","JoinExpr"].includes(key)&&
+      value&&typeof value==="object"&&!Array.isArray(value)){
+    const relation=value as {relname?:unknown;alias?:unknown};
+    if(key==="RangeVar"&&typeof relation.relname==="string")
+     wholeRowNames.add(relation.relname);
+    const alias=aliasName(relation.alias);
+    if(alias)wholeRowNames.add(alias);
    }
-   collectToastAliases(value);
+   collectWholeRowNames(value);
   }
  }
- collectToastAliases(tree);
+ collectWholeRowNames(tree);
  const directData=(x:unknown)=>{
   if(!x||typeof x!=="object"||!("ColumnRef" in x))return false;
   const fields=(x as {ColumnRef?:{fields?:unknown}}).ColumnRef?.fields;
@@ -203,10 +212,11 @@ export async function admitU3Sql(sql:string,allowedRelations:readonly string[],
     const fields=(raw as {fields?:unknown})?.fields;
     if(Array.isArray(fields)&&fields.some(x=>stringNode(x)==="data")&&
       !allowNamedData)throw Error("invalid_query");
-    // SELECT t returns a composite row, bypassing the named-JSON-path
-    // requirement even without spelling "data" in the SQL.
+    // ColumnRef of a FROM relation/alias denotes a whole composite row.
+    // Never let an alias shadow a permitted safe-column name or the Toast
+    // data guard. Safe failure is preferable to unscoped whole-row text.
     if(Array.isArray(fields)&&fields.length===1&&
-       toastAliases.has(stringNode(fields[0])??""))throw Error("invalid_query");
+       wholeRowNames.has(stringNode(fields[0])??""))throw Error("invalid_query");
    }
    if(kind==="SelectStmt"&&raw&&typeof raw==="object"){
     const s=raw as Record<string,unknown>;
