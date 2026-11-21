@@ -187,6 +187,9 @@ describe("U4 migrated model-objective and autonomous Watch SQL contract",()=>{
       await admin.query("insert into auth.users(id,instance_id,aud,role,email,encrypted_password,created_at,updated_at) values ($1,'00000000-0000-0000-0000-000000000000','authenticated','authenticated',$2,'',now(),now())",
         [ownerId,"u4-"+ownerId+"@example.invalid"]);
       await admin.query("insert into public.businesses(id,name,timezone,is_demo) values ($1,'Disposable U4 café','America/Los_Angeles',false)",[business]);
+      await admin.query("insert into public.cafe_access(business_id,mode) "+
+        "values($1,'grandfathered') on conflict(business_id) do update "+
+        "set mode='grandfathered',access_end=null",[business]);
       await admin.query("insert into public.memberships(business_id,user_id,role) values ($1,$2,'owner')",[business,ownerId]);
       await admin.query("insert into public.ai_threads(id,business_id,owner_user_id,client_request_id) values ($1,$2,$3,$4)",
         [threadId,business,ownerId,randomUUID()]);
