@@ -141,6 +141,13 @@ describe("U4 original work-identity checkpoints",()=>{
     await expect(checkpoint.beginProvider()).rejects.toThrow("u4_checkpoint_lease_lost");
   });
 });
+function mockRoutineHistory(rows:unknown[]=[]){
+  return {from:vi.fn(()=>({
+    select:()=>({eq:()=>({eq:()=>({eq:()=>({lt:()=>({
+      order:()=>({limit:async()=>({data:rows,error:null})}),
+    })})})})}),
+  }))};
+}
 describe("U4 scheduled model execution persists only verified outcomes",()=>{
   it("runs model-led goal with original authenticated message context, one lease and report",async()=>{
     vi.mocked(runAgentTurn).mockResolvedValueOnce(turn("Check staffing and inventory next week."));
@@ -149,7 +156,7 @@ describe("U4 scheduled model execution persists only verified outcomes",()=>{
       if(name==="u4_publish_objective_report")return {data:true,error:null};
       throw Error("unexpected RPC "+name);
     });
-    const outcome=await executeClaimedObjective({rpc} as never,{
+    const outcome=await executeClaimedObjective({rpc,...mockRoutineHistory()} as never,{
       routine:objective,lease,localDate:"2026-11-20",
       provider:(async function*(){}) as never,
     });
@@ -159,6 +166,7 @@ describe("U4 scheduled model execution persists only verified outcomes",()=>{
     expect(args?.serviceOrigin).toBe(true);
     expect(args?.ownerText).toContain("Review next week's staffing, stock, demand and costs.");
     expect(args?.ownerText).toContain("SYSTEM-EXECUTED OWNER ROUTINE");
+    expect(args?.ownerText).toContain("PRIOR_ASSESSMENTS=[]");
     expect(args?.toolNames).toContain("get_inventory");
     expect(args?.toolNames).not.toContain("manage_routine");
     expect(rpc.mock.calls.filter(c=>c[0]==="u4_routine_lease_active").length).toBeGreaterThanOrEqual(2);
@@ -166,11 +174,24 @@ describe("U4 scheduled model execution persists only verified outcomes",()=>{
       expect.objectContaining({p_run_id:lease.runId,p_attention:"attention"}));
     expect(notifyOwner).toHaveBeenCalled();
   });
+  it("gives the model earlier conclusions as hypotheses, not new verified source facts",async()=>{
+    vi.mocked(runAgentTurn).mockResolvedValueOnce(turn("Evidence changed; revise last conclusion."));
+    const rpc=vi.fn(async()=>({data:true,error:null}));
+    const last=[{local_date:"2026-11-19",u4_result:{
+      attention:"attention",summary:"Potential supply interruption; verify again."}}];
+    await executeClaimedObjective({rpc,...mockRoutineHistory(last)} as never,{
+      routine:objective,lease,localDate:"2026-11-20",
+      provider:(async function*(){}) as never,
+    });
+    const prompt=vi.mocked(runAgentTurn).mock.calls.at(-1)?.[0]?.ownerText;
+    expect(prompt).toContain("Potential supply interruption");
+    expect(prompt).toContain("NOT current verified source evidence");
+  });
   it("silent Watch never invokes owner notice, but commits its source receipt",async()=>{
     vi.mocked(runAgentTurn).mockResolvedValueOnce(turn("NO_ACTION_REQUIRED: No significant changes."));
     vi.mocked(notifyOwner).mockClear();
     const rpc=vi.fn(async()=>({data:true,error:null}));
-    const result=await executeClaimedObjective({rpc} as never,{
+    const result=await executeClaimedObjective({rpc,...mockRoutineHistory()} as never,{
       routine:watch,lease,localDate:"2026-11-20",
       provider:(async function*(){}) as never,
     });
@@ -181,7 +202,7 @@ describe("U4 scheduled model execution persists only verified outcomes",()=>{
   });
   it("revoked lease fences model before a paid call or report",async()=>{
     const rpc=vi.fn(async()=>({data:false,error:null}));
-    await expect(executeClaimedObjective({rpc} as never,{
+    await expect(executeClaimedObjective({rpc,...mockRoutineHistory()} as never,{
       routine:objective,lease,localDate:"2026-11-20",
       provider:(async function*(){}) as never,
     })).rejects.toThrow("u4_objective_lease_revoked");
