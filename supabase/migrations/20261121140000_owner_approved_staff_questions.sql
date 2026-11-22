@@ -203,6 +203,14 @@ begin
  where r.business_id=p_business_id and r.source_type='owner_manual'
   and r.kind='task' and r.status='open'
   and r.due_at is not null and r.due_at<=statement_timestamp()
+  -- A factual "Send message" employee reply keeps a channel request open;
+  -- absence of a status transition is NOT absence of a real employee answer.
+  -- Filter on the exact authenticated employee/request pair, including a
+  -- free-text message, before calling this work unanswered.
+  and not exists(select 1 from public.staff_communication_messages reply
+    where reply.business_id=r.business_id and reply.employee_id=r.employee_id
+      and reply.request_id=r.id and reply.actor='employee'
+      and reply.response_code in ('message','confirm','decline','complete'))
  on conflict(business_id,id) do nothing;
  get diagnostics saved=row_count;
  return saved;
