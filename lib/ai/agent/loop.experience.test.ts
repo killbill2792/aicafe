@@ -774,3 +774,141 @@ describe("U2 no-provider end-to-end execution receipts",()=>{
   }finally{vi.unstubAllEnvs();}
  });
 });
+
+describe("PR557 first-failure strict tool contract triage (no provider spend)",()=>{
+  it("keeps once_local_date required and nullable in the actual model tool definition",()=>{
+    const p=routineToolDefinition.parameters as {additionalProperties?:unknown;
+      required?:unknown;properties?:Record<string,unknown>};
+    expect(p.additionalProperties).toBe(false);
+    expect(p.required).toEqual(Object.keys(p.properties??{}));
+    expect(p.properties?.once_local_date).toEqual({anyOf:[{type:"string",format:"date"},{type:"null"}]});
+  });
+  it("shows why old final recovery repeated the suspect tool schema instead of isolating it",async()=>{
+    vi.stubEnv("SUPERVISOR_OPENAI_MODEL","gpt-6-luna");
+    vi.stubEnv("SUPERVISOR_OPENAI_FALLBACK_MODEL","gpt-4.1-mini");
+    try{
+      const failed={type:"response.failed",response:{error:{code:"invalid_request_error"}}};
+      const {provider,requests}=recording([[failed],[failed]]);
+      const result=await runAgentTurn({ownerText:"Hello",context:{...context},provider,
+        extraTools:[routineToolDefinition]});
+      expect(result.endReason).toBe("provider_error");
+      expect(requests.map(r=>r.model)).toEqual(["gpt-6-luna","gpt-6-luna"]);
+      expect(requests.map(r=>r.tool_choice)).toEqual(["auto","none"]);
+      expect(requests[1].tools).toEqual(requests[0].tools);
+    }finally{vi.unstubAllEnvs();}
+  });
+});
+
+describe("production Supervisor provider availability recovery (zero external calls)",()=>{
+  const done=(model:string)=>({type:"response.completed",response:{model,usage:{
+    input_tokens:60,output_tokens:12,input_tokens_details:{cached_tokens:0}},output:[]}});
+
+  it("retries only a first-request Luna server outage with the configured model and its eager tool contract",async()=>{
+    vi.stubEnv("SUPERVISOR_OPENAI_MODEL","gpt-6-luna");
+    vi.stubEnv("SUPERVISOR_OPENAI_FALLBACK_MODEL","gpt-4.1-mini");
+    try{
+      const {provider,requests}=recording([
+        [{type:"response.failed",response:{error:{code:"server_error"}}}],
+        [text("I can help with that."),done("gpt-4.1-mini")],
+      ]);
+      const result=await runAgentTurn({ownerText:"Hello",context:{...context},provider});
+      expect(result.endReason).toBe("complete");
+      expect(result.text).toBe("I can help with that.");
+      expect(result.usage.model).toBe("gpt-4.1-mini");
+      expect(result.usage.modelCalls).toBe(2);
+      expect(result.usage.toolCalls).toBe(0);
+      expect(requests.map(r=>r.model)).toEqual(["gpt-6-luna","gpt-4.1-mini"]);
+      expect(requests[1].max_output_tokens).toBe(1200);
+      expect(requests[1].store).toBe(false);
+      expect(requests.map(r=>r.tool_choice)).toEqual(["auto","auto"]);
+      expect(requests[0].tools).toContainEqual({type:"tool_search"});
+      expect(requests[1].tools).not.toContainEqual({type:"tool_search"});
+      expect((requests[1].tools as Array<Record<string,unknown>>).every(t=>t.defer_loading===undefined)).toBe(true);
+      expect(result.usage.requests?.map(r=>r.requestedModel)).toEqual(["gpt-6-luna","gpt-4.1-mini"]);
+      expect(result.usage.requests?.map(r=>r.outcome)).toEqual(["failed","completed"]);
+    }finally{vi.unstubAllEnvs();}
+  });
+
+  it("rejects a revoked private attachment before transmitting any fallback request",async()=>{
+    vi.stubEnv("SUPERVISOR_OPENAI_MODEL","gpt-6-luna");
+    vi.stubEnv("SUPERVISOR_OPENAI_FALLBACK_MODEL","gpt-4.1-mini");
+    try{
+      const {provider,requests}=recording([
+        [{type:"response.failed",response:{error:{code:"server_error"}}}],
+        [text("Must never be sent."),done("gpt-4.1-mini")],
+      ]);
+      let authorizationChecks=0;
+      const assertTurnSources=async()=>{
+        authorizationChecks++;
+        if(authorizationChecks===2)throw Error("source_authorization_revoked");
+      };
+      await expect(runAgentTurn({ownerText:"Describe the private document",
+        ownerEvidence:["A private document subject to source permission revocation"],
+        context:{...context},provider,beforeProviderRequest:assertTurnSources})).rejects.toThrow("source_authorization_revoked");
+      expect(authorizationChecks).toBe(2);
+      expect(requests).toHaveLength(1);
+      expect(requests[0].model).toBe("gpt-6-luna");
+    }finally{vi.unstubAllEnvs();}
+  });
+
+  it("reauthorizes the same evidence again before the allowed fallback call",async()=>{
+    vi.stubEnv("SUPERVISOR_OPENAI_MODEL","gpt-6-luna");
+    vi.stubEnv("SUPERVISOR_OPENAI_FALLBACK_MODEL","gpt-4.1-mini");
+    try{
+      const {provider,requests}=recording([
+        [{type:"response.failed",response:{error:{code:"server_error"}}}],
+        [text("Authorized fallback answer."),done("gpt-4.1-mini")],
+      ]);
+      const check=vi.fn(async()=>undefined);
+      const result=await runAgentTurn({ownerText:"Read a permitted private document",
+        ownerEvidence:["Authorized source evidence"],context:{...context},provider,
+        beforeProviderRequest:check});
+      expect(result.endReason).toBe("complete");
+      expect(requests.map(x=>x.model)).toEqual(["gpt-6-luna","gpt-4.1-mini"]);
+      expect(check).toHaveBeenCalledTimes(2);
+    }finally{vi.unstubAllEnvs();}
+  });
+
+  it("recovers a prematurely closed stream without treating unverified model output as success",async()=>{
+    vi.stubEnv("SUPERVISOR_OPENAI_MODEL","gpt-6-luna");
+    vi.stubEnv("SUPERVISOR_OPENAI_FALLBACK_MODEL","gpt-4.1-mini");
+    try{
+      const {provider,requests}=recording([[],[text("Recovered."),done("gpt-4.1-mini")]]);
+      const result=await runAgentTurn({ownerText:"Hello",context:{...context},provider});
+      expect(result.endReason).toBe("complete");
+      expect(result.text).toBe("Recovered.");
+      expect(requests.map(r=>r.model)).toEqual(["gpt-6-luna","gpt-4.1-mini"]);
+    }finally{vi.unstubAllEnvs();}
+  });
+
+  it("never downgrades a rejected prompt, unknown provider error or content filter",async()=>{
+    vi.stubEnv("SUPERVISOR_OPENAI_MODEL","gpt-6-luna");
+    vi.stubEnv("SUPERVISOR_OPENAI_FALLBACK_MODEL","gpt-4.1-mini");
+    try{
+      for(const code of ["invalid_prompt","content_filter","unrecognized_code"]){
+        const event={type:"response.failed",response:{error:{code}}};
+        const {provider,requests}=recording([[event],[event]]);
+        const result=await runAgentTurn({ownerText:"Test",context:{...context},provider});
+        expect(result.endReason).toBe("provider_error");
+        expect(requests.map(r=>r.model)).toEqual(["gpt-6-luna","gpt-6-luna"]);
+        expect(requests.map(r=>r.tool_choice)).toEqual(["auto","none"]);
+      }
+    }finally{vi.unstubAllEnvs();}
+  });
+
+  it("does not change model once a source tool has been chosen and called",async()=>{
+    vi.stubEnv("SUPERVISOR_OPENAI_MODEL","gpt-6-luna");
+    vi.stubEnv("SUPERVISOR_OPENAI_FALLBACK_MODEL","gpt-4.1-mini");
+    try{
+      const {provider,requests}=recording([
+        [call("get_menu_items",'{"query":null,"limit":null}',"menu_repair_1"),completed],
+        [{type:"response.failed",response:{error:{code:"server_error"}}}],
+        [text("The result is incomplete."),done("gpt-6-luna")],
+      ]);
+      const result=await runAgentTurn({ownerText:"Read the menu",context:{...context},provider});
+      expect(result.usage.toolCalls).toBe(1);
+      expect(requests.map(r=>r.model)).toEqual(["gpt-6-luna","gpt-6-luna","gpt-6-luna"]);
+      expect(requests[2].tool_choice).toBe("none");
+    }finally{vi.unstubAllEnvs();}
+  });
+});
