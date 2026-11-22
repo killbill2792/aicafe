@@ -15,11 +15,19 @@ export const suppliesTools={
   execute:async(raw:unknown,ctx:AgentToolContext):Promise<AgentToolResult>=>{
    const input=usage.parse(raw);
    if(!ctx.tools.getUsageVariance)return {source:"usage_variance",period:{from:input.from,to:input.to},agentId:"maya",missing:["usageReaderUnavailable"],rows:null};
-   const result=await ctx.tools.getUsageVariance({
-    from:input.from,to:input.to,ingredient:input.ingredient,groupBy:input.group_by
-   }).catch(()=>null);
-   if(!result)return {source:"usage_variance",period:{from:input.from,to:input.to},
-    agentId:"maya",missing:["usageVarianceReadFailed"],rows:null};
+   let result;
+   try{
+    result=await ctx.tools.getUsageVariance({
+     from:input.from,to:input.to,ingredient:input.ingredient,groupBy:input.group_by
+    });
+   }catch(error){
+    // This is an actual source-read failure, not a zero-waste observation.
+    // Postgres 57014 gets a specific missing-data reason; never echo SQL/PII.
+    const msg=error instanceof Error?error.message:"";
+    const timeout=msg.includes("usage_source_timeout")||msg.includes("57014");
+    return {source:"usage_variance",period:{from:input.from,to:input.to},
+     agentId:"maya",missing:[timeout?"usageVarianceSourceTimeout":"usageVarianceReadFailed"],rows:null};
+   }
    return projectUsageTool(result);
   }
  },
