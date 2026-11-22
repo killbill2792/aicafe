@@ -185,6 +185,11 @@ export async function readUsageVariance(raw:z.input<typeof readInput>, explicit?
   return {sourceLineId:s.id,menuItemId:s.menu_item_id,quantity:Number(s.quantity),businessDate:order.business_date,
    closedAt:order.closed_at,locationId:order.location_id,modifiers:normalized};
  });
+ // Missing recipes are a separate source coverage defect from unknown pantry
+ // prices or stock counts. Do not label a catalog item with no recipe as a
+ // known zero-cost item, or conflate it with a failed SQL read.
+ const soldMenuItemsWithoutRecipe=new Set(sales.filter(s=>!s.voided&&
+  s.menu_item_id&&!recipesByItem.has(s.menu_item_id)).map(s=>s.menu_item_id));
  const rows=calculateUsage({ingredients:selected.map(i=>({id:i.id,name:i.name,unit:i.base_unit as UsageIngredient["unit"]})),
   recipes:recipes.map(r=>({menuItemId:r.menu_item_id,ingredientId:r.ingredient_id,quantity:Number(r.quantity)} satisfies UsageRecipe)),
   modifiers:[...mappedMods.values()],sales:salesRows,salesCovered:e?.covered===true,
@@ -195,7 +200,8 @@ export async function readUsageVariance(raw:z.input<typeof readInput>, explicit?
   provenance:{sales:"canonical_order_lines",recipes:"owner_recipe_lines",
    counts:"dated_owner_stock_counts",purchases:"nonvoid_purchase_lines",
    coverage:e?.covered===true?"complete":"incomplete"},
-  missing:[...new Set(rows.flatMap(r=>r.missing))]};
+  missing:[...new Set([...rows.flatMap(r=>r.missing),
+   ...(soldMenuItemsWithoutRecipe.size?["soldMenuItemsWithoutRecipes:"+soldMenuItemsWithoutRecipe.size]:[])])]};
 }
 /** Closing counts overwrite an ingredient/date; purchases use a stable line ID. */
 export async function saveUsageEntry(kind:"count"|"purchase",raw:unknown):Promise<{ok:true}|{ok:false;error:string}>{
