@@ -2439,6 +2439,7 @@ test("@home U4 real private Work report and failed-run acknowledgment in two caf
     }]);
     await page.goto("/api/ai/work/open?run="+ids.run);
     await expect(page).toHaveURL(/\/operations\?agent=leo&status=watching&task=/u);
+    expect(new URL(page.url()).hostname).toBe("127.0.0.1");
     await expect(page.locator('article[data-task-kind="u4_report"]')
       .filter({hasText:headline})).toContainText(summary,{timeout:25_000});
     const selected=await page.context().cookies("http://127.0.0.1:3000");
@@ -2477,6 +2478,7 @@ test("@home U4 owner deliberately opts into generic device push, revokes, and si
   await page.addInitScript(()=>{
     let active=false;
     const subscription={
+      endpoint:"https://fcm.googleapis.com/fcm/send/disposable-fixture",
       toJSON:()=>({
         expirationTime:null,
         endpoint:"https://fcm.googleapis.com/fcm/send/disposable-fixture",

@@ -1,6 +1,5 @@
 import {z} from "zod";
 import {NextResponse} from "next/server";
-import {cookies} from "next/headers";
 import {createServerSupabaseClient} from "@/lib/supabase/server";
 import {ACTIVE_BUSINESS_COOKIE} from "@/lib/data/getActiveBusinessId";
 export const runtime="nodejs";export const dynamic="force-dynamic";
@@ -13,7 +12,9 @@ export async function GET(request:Request){
   if(!parsed.success)return new Response("Invalid Work reference",{status:400});
   const db=await createServerSupabaseClient();
   const {data:{user},error:authError}=await db.auth.getUser();
-  if(authError||!user)return NextResponse.redirect(new URL("/login",request.url));
+  if(authError||!user)return new NextResponse(null,{
+    status:303,headers:{Location:"/login"},
+  });
   const {data:reports,error}=await db.from("operating_tasks")
     .select("id,business_id,owner_user_id")
     .eq("id","u4:"+parsed.data).eq("kind","u4_report")
@@ -27,9 +28,13 @@ export async function GET(request:Request){
     .eq("user_id",user.id).maybeSingle();
   if(memberError||membership?.role!=="owner")
     return new Response("Work reference unavailable",{status:404});
-  const response=NextResponse.redirect(new URL(
-    "/operations?agent=leo&status=watching&task="+encodeURIComponent("u4:"+parsed.data),
-    request.url),303);
+  // Use a same-origin relative Location: the framework may populate request.url
+  // with an internal localhost origin in dev/proxy deployments. An absolute
+  // redirect would silently cross origins and lose the owner's auth cookies.
+  const response=new NextResponse(null,{status:303,headers:{
+    Location:"/operations?agent=leo&status=watching&task="+
+      encodeURIComponent("u4:"+parsed.data),
+  }});
   response.cookies.set(ACTIVE_BUSINESS_COOKIE,businessId,{
     path:"/",sameSite:"lax",httpOnly:true,
     secure:process.env.NODE_ENV==="production",
