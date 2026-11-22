@@ -106,34 +106,34 @@ end $$;
 -- published shift, or authoritative source revision has changed.
 select public.supervisor_transition_proposal(:'biz',:'owner_id',:'stale_proposal',1,'approve',null);
 select public.supervisor_claim_effect(:'biz',:'owner_id',:'thread_id',:'stale_proposal',2,'click');
-do $
+do $$
 begin
  begin
   perform public.supervisor_commit_staff_question(current_setting('test.staffquestion.biz')::uuid,current_setting('test.staffquestion.owner')::uuid,current_setting('test.staffquestion.thread')::uuid,current_setting('test.staffquestion.stale_proposal')::uuid,repeat('x',64));
   raise exception 'wrong effect hash sent a question';
  exception when insufficient_privilege then null;end;
-end $;
+end $$;
 update public.employees set staff_auth_user_id=null where business_id=:'biz' and id=:'employee';
-do $
+do $$
 begin
  begin
   perform public.supervisor_commit_staff_question(current_setting('test.staffquestion.biz')::uuid,current_setting('test.staffquestion.owner')::uuid,current_setting('test.staffquestion.thread')::uuid,current_setting('test.staffquestion.stale_proposal')::uuid,repeat('d',64));
   raise exception 'revoked employee link was accepted';
  exception when sqlstate '40001' then null;end;
-end $;
+end $$;
 update public.employees set staff_auth_user_id=:'staff_user' where business_id=:'biz' and id=:'employee';
 update public.scheduled_shifts set status='draft' where business_id=:'biz' and employee_id=:'employee';
-do $
+do $$
 begin
  begin
   perform public.supervisor_commit_staff_question(current_setting('test.staffquestion.biz')::uuid,current_setting('test.staffquestion.owner')::uuid,current_setting('test.staffquestion.thread')::uuid,current_setting('test.staffquestion.stale_proposal')::uuid,repeat('d',64));
   raise exception 'withdrawn published shift was accepted';
  exception when sqlstate '40001' then null;end;
-end $;
+end $$;
 update public.scheduled_shifts set status='sent' where business_id=:'biz' and employee_id=:'employee';
 update public.operating_tasks set updated_at=updated_at+interval '1 minute'
  where business_id=:'biz' and id=current_setting('test.staffquestion.task');
-do $
+do $$
 begin
  begin
   perform public.supervisor_commit_staff_question(current_setting('test.staffquestion.biz')::uuid,current_setting('test.staffquestion.owner')::uuid,current_setting('test.staffquestion.thread')::uuid,current_setting('test.staffquestion.stale_proposal')::uuid,repeat('d',64));
@@ -141,5 +141,5 @@ begin
  exception when sqlstate '40001' then null;end;
  if exists(select 1 from public.staff_communication_requests where business_id=current_setting('test.staffquestion.biz')::uuid and source_id=current_setting('test.staffquestion.stale_proposal')) then
   raise exception 'failed authorization unexpectedly sent a staff request';end if;
-end $;
+end $$;
 rollback;
