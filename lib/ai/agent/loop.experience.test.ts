@@ -829,6 +829,46 @@ describe("production Supervisor provider availability recovery (zero external ca
     }finally{vi.unstubAllEnvs();}
   });
 
+  it("rejects a revoked private attachment before transmitting any fallback request",async()=>{
+    vi.stubEnv("SUPERVISOR_OPENAI_MODEL","gpt-6-luna");
+    vi.stubEnv("SUPERVISOR_OPENAI_FALLBACK_MODEL","gpt-4.1-mini");
+    try{
+      const {provider,requests}=recording([
+        [{type:"response.failed",response:{error:{code:"server_error"}}}],
+        [text("Must never be sent."),done("gpt-4.1-mini")],
+      ]);
+      let authorizationChecks=0;
+      const assertTurnSources=async()=>{
+        authorizationChecks++;
+        if(authorizationChecks===2)throw Error("source_authorization_revoked");
+      };
+      await expect(runAgentTurn({ownerText:"Describe the private document",
+        ownerEvidence:["A private document subject to source permission revocation"],
+        context:{...context},provider,beforeProviderRequest:assertTurnSources})).rejects.toThrow("source_authorization_revoked");
+      expect(authorizationChecks).toBe(2);
+      expect(requests).toHaveLength(1);
+      expect(requests[0].model).toBe("gpt-6-luna");
+    }finally{vi.unstubAllEnvs();}
+  });
+
+  it("reauthorizes the same evidence again before the allowed fallback call",async()=>{
+    vi.stubEnv("SUPERVISOR_OPENAI_MODEL","gpt-6-luna");
+    vi.stubEnv("SUPERVISOR_OPENAI_FALLBACK_MODEL","gpt-4.1-mini");
+    try{
+      const {provider,requests}=recording([
+        [{type:"response.failed",response:{error:{code:"server_error"}}}],
+        [text("Authorized fallback answer."),done("gpt-4.1-mini")],
+      ]);
+      const check=vi.fn(async()=>undefined);
+      const result=await runAgentTurn({ownerText:"Read a permitted private document",
+        ownerEvidence:["Authorized source evidence"],context:{...context},provider,
+        beforeProviderRequest:check});
+      expect(result.endReason).toBe("complete");
+      expect(requests.map(x=>x.model)).toEqual(["gpt-6-luna","gpt-4.1-mini"]);
+      expect(check).toHaveBeenCalledTimes(2);
+    }finally{vi.unstubAllEnvs();}
+  });
+
   it("recovers a prematurely closed stream without treating unverified model output as success",async()=>{
     vi.stubEnv("SUPERVISOR_OPENAI_MODEL","gpt-6-luna");
     vi.stubEnv("SUPERVISOR_OPENAI_FALLBACK_MODEL","gpt-4.1-mini");
