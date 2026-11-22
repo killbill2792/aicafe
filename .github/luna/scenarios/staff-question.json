@@ -1,0 +1,275 @@
+{
+  "id": "staff-question",
+  "mode": "generic",
+  "engine": "node-server",
+  "entrypoint": "evals/acceptance/live/staff-question.mjs",
+  "proof": "staff-question-proof.json",
+  "scope": "staff-question-scope.json",
+  "expectedTools": [
+    "propose_staff_question",
+    "record_staff_question_owner_answer"
+  ],
+  "assertions": [
+    {
+      "name": "first-operating-task",
+      "kind": "source",
+      "table": "public.operating_tasks",
+      "where": {
+        "business_id": {
+          "scope": "businessId"
+        },
+        "id": {
+          "scope": "firstSource"
+        }
+      },
+      "minCount": 1,
+      "maxCount": 1
+    },
+    {
+      "name": "second-operating-task",
+      "kind": "source",
+      "table": "public.operating_tasks",
+      "where": {
+        "business_id": {
+          "scope": "businessId"
+        },
+        "id": {
+          "scope": "secondSource"
+        }
+      },
+      "minCount": 1,
+      "maxCount": 1
+    },
+    {
+      "name": "explicit-approved-proposal",
+      "kind": "source",
+      "table": "public.supervisor_proposals",
+      "where": {
+        "business_id": {
+          "scope": "businessId"
+        },
+        "owner_user_id": {
+          "scope": "ownerUserId"
+        },
+        "thread_id": {
+          "scope": "firstThread"
+        },
+        "id": {
+          "scope": "firstProposalId"
+        },
+        "status": {
+          "eq": "committed"
+        }
+      },
+      "minCount": 1,
+      "maxCount": 1
+    },
+    {
+      "name": "one-approved-staff-request",
+      "kind": "source",
+      "table": "public.staff_communication_requests",
+      "where": {
+        "business_id": {
+          "scope": "businessId"
+        },
+        "id": {
+          "scope": "requestId"
+        },
+        "source_id": {
+          "scope": "firstProposalId"
+        },
+        "employee_id": {
+          "scope": "employeeId"
+        }
+      },
+      "minCount": 1,
+      "maxCount": 1
+    },
+    {
+      "name": "worker-authenticated-message",
+      "kind": "source",
+      "table": "public.staff_communication_messages",
+      "where": {
+        "business_id": {
+          "scope": "businessId"
+        },
+        "request_id": {
+          "scope": "requestId"
+        },
+        "employee_id": {
+          "scope": "employeeId"
+        },
+        "actor": {
+          "eq": "employee"
+        }
+      },
+      "minCount": 1,
+      "maxCount": 1
+    },
+    {
+      "name": "owner-answer-proposal-closed",
+      "kind": "owner",
+      "table": "public.supervisor_proposals",
+      "where": {
+        "business_id": {
+          "scope": "businessId"
+        },
+        "owner_user_id": {
+          "scope": "ownerUserId"
+        },
+        "thread_id": {
+          "scope": "ownerAnswerThread"
+        },
+        "id": {
+          "scope": "ownerAnswerProposalId"
+        },
+        "status": {
+          "eq": "rejected"
+        }
+      },
+      "minCount": 1,
+      "maxCount": 1
+    },
+    {
+      "name": "original-owner-answer-saved",
+      "kind": "owner",
+      "table": "public.ai_messages",
+      "where": {
+        "business_id": {
+          "scope": "businessId"
+        },
+        "thread_id": {
+          "scope": "ownerAnswerThread"
+        },
+        "owner_user_id": {
+          "scope": "ownerUserId"
+        },
+        "id": {
+          "scope": "ownerAnswerMessageId"
+        },
+        "role": {
+          "eq": "owner"
+        }
+      },
+      "minCount": 1,
+      "maxCount": 1
+    },
+    {
+      "name": "owner-answer-luna-reply",
+      "kind": "owner",
+      "table": "public.ai_messages",
+      "where": {
+        "business_id": {
+          "scope": "businessId"
+        },
+        "thread_id": {
+          "scope": "ownerAnswerThread"
+        },
+        "owner_user_id": {
+          "scope": "ownerUserId"
+        },
+        "id": {
+          "scope": "ownerAnswerReplyId"
+        },
+        "role": {
+          "eq": "supervisor"
+        }
+      },
+      "minCount": 1,
+      "maxCount": 1
+    },
+    {
+      "name": "unverified-owner-evidence",
+      "kind": "owner",
+      "table": "public.operating_tasks",
+      "where": {
+        "business_id": {
+          "scope": "businessId"
+        },
+        "owner_user_id": {
+          "scope": "ownerUserId"
+        },
+        "id": {
+          "scope": "ownerAnswerTaskId"
+        }
+      },
+      "minCount": 1,
+      "maxCount": 1
+    },
+    {
+      "name": "no-staff-send-for-owner-answer",
+      "kind": "source",
+      "table": "public.staff_communication_requests",
+      "where": {
+        "business_id": {
+          "scope": "businessId"
+        },
+        "source_id": {
+          "scope": "ownerAnswerProposalId"
+        }
+      },
+      "minCount": 0,
+      "maxCount": 0
+    },
+    {
+      "name": "no-cross-cafe-worker-send",
+      "kind": "isolation",
+      "table": "public.staff_communication_requests",
+      "where": {
+        "business_id": {
+          "scope": "foreignBusinessId"
+        },
+        "source_id": {
+          "scope": "firstProposalId"
+        }
+      },
+      "minCount": 0,
+      "maxCount": 0
+    },
+    {
+      "name": "no-cross-cafe-staff-message",
+      "kind": "isolation",
+      "table": "public.staff_communication_messages",
+      "where": {
+        "business_id": {
+          "scope": "foreignBusinessId"
+        },
+        "request_id": {
+          "scope": "requestId"
+        }
+      },
+      "minCount": 0,
+      "maxCount": 0
+    },
+    {
+      "name": "no-cross-cafe-source-task",
+      "kind": "isolation",
+      "table": "public.operating_tasks",
+      "where": {
+        "business_id": {
+          "scope": "foreignBusinessId"
+        },
+        "id": {
+          "scope": "firstSource"
+        }
+      },
+      "minCount": 0,
+      "maxCount": 0
+    },
+    {
+      "name": "no-cross-cafe-owner-report",
+      "kind": "isolation",
+      "table": "public.operating_tasks",
+      "where": {
+        "business_id": {
+          "scope": "foreignBusinessId"
+        },
+        "id": {
+          "scope": "ownerAnswerTaskId"
+        }
+      },
+      "minCount": 0,
+      "maxCount": 0
+    }
+  ]
+}
