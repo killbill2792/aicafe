@@ -231,6 +231,7 @@ export async function runAgentTurn(args: {
     process.env.AICAFE_SHARED_LUNA_CANDIDATE==="1"&&process.env.AICAFE_SHARED_LUNA_SCENARIO==="u2-model-execution"&&
     !process.env.AICAFE_TASK14B_BUDGET_LEDGER;
   let nativeSearch=usesNativeToolSearch(model,legacyPaid&&!trustedU2);
+  let usedAvailabilityFallback=false;
   const policy=executionPolicy(model,workerBudget,legacyPaid);
   const deadline=started+policy.elapsedMs;
   const workDeadline=deadline-policy.finalTimeReserve;
@@ -445,7 +446,7 @@ export async function runAgentTurn(args: {
   // Discovery is a provider transport choice, not a new local tool or route.
   const request = (final: boolean, outputCap:number) => ({
     model, instructions: agentInstructions(),
-    ...(nativeSearch?{store:false as const,include:["reasoning.encrypted_content"]}:approvedLocalTask14b?{store:false as const}:{}),
+    ...(nativeSearch?{store:false as const,include:["reasoning.encrypted_content"]}:usedAvailabilityFallback||approvedLocalTask14b?{store:false as const}:{}),
     tools: projectedTools,
     tool_choice: final ? "none" : "auto", stream: true,
     max_output_tokens: outputCap, prompt_cache_key: agentPromptCacheKey(), input,
@@ -612,6 +613,7 @@ export async function runAgentTurn(args: {
         if(canFallback){
           const reason=(error as ProviderAvailabilityError).reason;
           model=fallback!;
+          usedAvailabilityFallback=true;
           nativeSearch=usesNativeToolSearch(model,legacyPaid&&!trustedU2);
           expandedLuna=model===PRODUCTION_SUPERVISOR_OPENAI_MODEL;
           projectedTools=projectProviderTools(allowedDefinitions,nativeSearch);
