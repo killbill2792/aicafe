@@ -1,4 +1,5 @@
 import {submitStaffReply,getStaffInbox,StaffChannelError} from "@/lib/staffCommunication/channel.server";
+import {requireSameOrigin} from "@/lib/ai/conversations/http.server";
 export const runtime="nodejs";
 export const dynamic="force-dynamic";
 const headers={"Cache-Control":"no-store"};
@@ -8,8 +9,13 @@ export async function GET():Promise<Response>{
   {status:e instanceof StaffChannelError&&["unauthorized","not_linked"].includes(e.code)?403:503,headers});}
 }
 export async function POST(request:Request):Promise<Response>{
- const origin=request.headers.get("origin");
- if(origin!==new URL(request.url).origin)return Response.json({error:"invalid_origin"},{status:403,headers});
+ // Same Origin/Host authority used by the existing owner-link endpoint.
+ // Next can normalize Request.url to localhost while the browser sent the
+ // real loopback Host; accepting ONLY a verified request Host keeps CSRF
+ // fail-closed without rejecting authenticated staff submissions.
+ try{requireSameOrigin(request)}catch{
+  return Response.json({error:"invalid_origin"},{status:403,headers});
+ }
  if(!request.headers.get("content-type")?.startsWith("application/json"))
   return Response.json({error:"invalid_content_type"},{status:415,headers});
  let input:unknown;
