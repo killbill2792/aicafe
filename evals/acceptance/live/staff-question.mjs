@@ -188,9 +188,12 @@ async function main(){
     const workerAnswer="I physically counted 40 takeaway cups on the shelf.";
     await assignment.getByRole("textbox",{name:/Add a message or explain/}).fill(workerAnswer);
     await assignment.getByRole("button",{name:"Mark complete"}).click();
-    const actual=await sql(db,"select actor,author_user_id::text,body from public.staff_communication_messages "+
+    const actual=await sql(db,"select actor,request_id::text,employee_id::text,body from public.staff_communication_messages "+
       "where business_id=$1 and employee_id=$2 and body=$3",[one.businessId,worker.employeeId,workerAnswer]);
-    if(actual.length!==1||actual[0].actor!=="employee"||actual[0].author_user_id!==userId)
+    const linked=await sql(db,"select staff_auth_user_id::text from public.employees where business_id=$1 and id=$2",
+      [one.businessId,worker.employeeId]);
+    if(actual.length!==1||actual[0].actor!=="employee"||actual[0].request_id!==requests[0].id||
+       actual[0].employee_id!==worker.employeeId||linked[0]?.staff_auth_user_id!==userId)
       fail("employee_authenticated_provenance_missing");
     const history=await owner.context.request.get("/api/staff-channel/owner-history");
     if(history.status()!==200||!JSON.stringify(await history.json()).includes(workerAnswer))
