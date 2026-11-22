@@ -31,13 +31,15 @@ test("@staff @home owner-approved factual question reaches one verified worker; 
    [id.shift,cafe.businessId,id.employee]);
   await db.query("insert into public.ai_threads(id,business_id,owner_user_id,client_request_id,title) values($1,$2,$3,$4,'Employee question approval')",
    [id.thread,cafe.businessId,cafe.owner.userId,randomUUID()]);
-  const task=(await db.query("insert into public.operating_tasks(business_id,id,owner_user_id,agent_id,kind,entity_type,entity_id,status,payload,confidence,evidence) values($1,$2,$3,'olivia','data_quality','ingredient',$4,'needs_owner',$5::jsonb,'low','[]') returning updated_at",
+  const task=(await db.query(`insert into public.operating_tasks(business_id,id,owner_user_id,agent_id,kind,entity_type,entity_id,status,payload,confidence,evidence) values($1,$2,$3,'olivia','data_quality','ingredient',$4,'needs_owner',$5::jsonb,'low','[]') returning to_char(updated_at at time zone 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"') as source_revision`,
    [cafe.businessId,id.source,cafe.owner.userId,randomUUID(),JSON.stringify({title:"Cup usage needs a physical check"})])).rows[0];
   const effect={sourceKind:"operating_task",sourceTaskId:id.source,employeeId:id.employee,
    question,reason:"Sales and inventory records do not prove the physical count",
    evidence:[{source:"order_lines",asOf:new Date().toISOString()}],
    followUpAfter:new Date(Date.now()+3*3600_000).toISOString(),
-   sourceRevision:new Date(task.updated_at).toISOString(),employeeName:"Counted stock worker"};
+   sourceRevision:task.source_revision,employeeName:"Counted stock worker"};
+  // Never round PostgreSQL microseconds through JS Date; SQL compares exact revisions.
+  expect(task.source_revision).toMatch(/\.\d{6}Z$/);
   const hash=createHash("sha256").update(JSON.stringify(canonical(effect))).digest("hex");
   await db.query("insert into public.supervisor_proposals(id,business_id,owner_user_id,thread_id,request_key,capability_id,capability_version,canonical_effect_payload,effect_hash,baseline,monitor_spec,locale) values($1,$2,$3,$4,$5,'olivia.staff_question.v1',1,$6::jsonb,$7,'{}','{\"durationDays\":1,\"metricScope\":\"staff_question_receipt\"}','en')",
    [id.proposal,cafe.businessId,cafe.owner.userId,id.thread,randomUUID(),JSON.stringify(effect),hash]);
