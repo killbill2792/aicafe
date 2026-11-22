@@ -89,7 +89,7 @@ do $$
   and evidence @> jsonb_build_array(jsonb_build_object('source','owner_report',
   'facts',jsonb_build_object('answer','There are approximately 40 cups remaining.',
   'ownerMessageId',current_setting('test.staffquestion.owner_answer_message')::uuid,
-  'independentlyVerified',false))) then raise exception 'authenticated owner evidence missing';end if;
+  'independentlyVerified',false)))) then raise exception 'authenticated owner evidence missing';end if;
  if not exists(select 1 from public.supervisor_proposals where id=current_setting('test.staffquestion.rejected_proposal')::uuid and status='rejected' and baseline='{}'::jsonb) then raise exception 'equivalent pending draft not superseded';end if; if not exists(select 1 from public.supervisor_proposals where canonical_effect_payload->>'question'='Can you cover the evening shift?' and status='draft') then raise exception 'unrelated staff question was closed';end if; if exists(select 1 from public.staff_communication_requests where source_id=current_setting('test.staffquestion.owner_proposal')) then raise exception 'owner answer contacted worker';end if;
 end $$;
 do $$
