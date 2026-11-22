@@ -12,7 +12,7 @@ test("@staff @home owner-approved factual question reaches one verified worker; 
  test.setTimeout(220_000);
  const cafe=seededCafe(0),foreign=seededCafe(1);
  const id={thread:randomUUID(),source:"staff-question-e2e:"+randomUUID(),
-  employee:randomUUID(),worker:randomUUID(),proposal:randomUUID(),answerProposal:randomUUID(),
+  employee:randomUUID(),worker:randomUUID(),proposal:randomUUID(),answerProposal:randomUUID(),ignoreProposal:randomUUID(),
   ownerMessage:randomUUID(),shift:randomUUID()};
  const question="How many takeaway cups are left on the shelf?";
  const workerReply="There are 40 takeaway cups left on the shelf.";
@@ -88,6 +88,32 @@ test("@staff @home owner-approved factual question reaches one verified worker; 
   expect(employeeRows[0].n).toBe(1);
   expect((await db.query("select count(*)::int n from public.staff_communication_requests where business_id=$1 and source_id=$2",
    [cafe.businessId,id.proposal])).rows[0].n).toBe(1);
+
+   // Independent card: Ignore rejects exactly this question without outreach.
+   const ignoreQuestion="Do the spare cup lids still need counting?";
+   const ignoreEffect={...effect,question:ignoreQuestion};
+   const ignoreHash=createHash("sha256").update(JSON.stringify(canonical(ignoreEffect))).digest("hex");
+   await db.query("insert into public.supervisor_proposals(id,business_id,owner_user_id,thread_id,request_key,capability_id,capability_version,canonical_effect_payload,effect_hash,baseline,monitor_spec,locale) "+
+    "values($1,$2,$3,$4,$5,'olivia.staff_question.v1',1,$6::jsonb,$7,'{}',$8::jsonb,'en')",
+    [id.ignoreProposal,cafe.businessId,cafe.owner.userId,id.thread,randomUUID(),JSON.stringify(ignoreEffect),ignoreHash,
+     JSON.stringify({durationDays:1,metricScope:"staff_question_receipt"})]);
+   await db.query("insert into public.ai_messages(business_id,thread_id,owner_user_id,author_user_id,role,content_type,structured_content) "+
+    "values($1,$2,$3,null,'supervisor','blocks',$4::jsonb)",
+    [cafe.businessId,id.thread,cafe.owner.userId,JSON.stringify([{type:"text",text:"A separate check would require permission."},
+      {type:"proposal_card",proposalId:id.ignoreProposal}])]);
+   await openOwnedPage(owner,cafe,"?thread="+encodeURIComponent(id.thread));
+   const ignored=owner.getByRole("region",{name:"Ask an employee?"}).filter({hasText:ignoreQuestion});
+   await expect(ignored.getByRole("button",{name:"Ignore"})).toBeVisible();
+   const ignoreWait=owner.waitForResponse(resp=>resp.request().method()==="POST"&&resp.url().includes("/proposals"));
+   await ignored.getByRole("button",{name:"Ignore"}).click();
+   expect((await ignoreWait).status()).toBe(200);
+   expect((await db.query("select status from public.supervisor_proposals where id=$1",
+     [id.ignoreProposal])).rows[0].status).toBe("rejected");
+   expect((await db.query("select count(*)::int n from public.staff_communication_requests where source_id=$1",
+     [id.ignoreProposal])).rows[0].n).toBe(0);
+   const foreignProposal=await foreignCtx.request.get("/api/ai/threads/"+id.thread+"/proposals?ids="+id.ignoreProposal);
+   expect([401,403,404]).toContain(foreignProposal.status());
+
  }finally{
   for(const context of contexts)await context.close().catch(()=>{});
   if(connected){
