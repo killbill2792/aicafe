@@ -311,13 +311,24 @@ jobs:
             "CRON_SECRET=" + localCronSecret + "\n" +
             "ADMIN_EMAILS=" + TEST_CAFES[0].owner.email + "\n");
           NODE
-      - name: Start locally bound Next.js and verify login route readiness
+      # Authenticated E2 cannot rely on a hot-reloading dev server after ~20
+      # minutes of sequential owner/staff journeys. Its RSC compiler has
+      # dropped same-origin connections and produced unhandled rejections,
+      # obscuring real application failures. Test the deployed Webpack runtime
+      # on local disposable Supabase instead, with no Vercel deployment.
+      - name: Build local production Next.js browser target
+        run: npm run build -- --webpack
+      - name: Start locally bound production Next.js and verify login readiness
         run: |
           set -euo pipefail
-          npm run dev -- --webpack --hostname 127.0.0.1 --port 3000 > "$RUNNER_TEMP/e2e-next.log" 2>&1 &
+          npm run start -- --hostname 127.0.0.1 --port 3000 > "$RUNNER_TEMP/e2e-next.log" 2>&1 &
           echo $! > "$RUNNER_TEMP/e2e-next.pid"
           ready=0
           for attempt in $(seq 1 90); do
+            if ! kill -0 "$(cat "$RUNNER_TEMP/e2e-next.pid")" 2>/dev/null; then
+              tail -80 "$RUNNER_TEMP/e2e-next.log" || true
+              exit 1
+            fi
             if curl -fsSL 'http://127.0.0.1:3000/en/login' -o /dev/null; then ready=1; break; fi
             sleep 2
           done
