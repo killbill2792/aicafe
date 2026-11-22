@@ -77,8 +77,17 @@ test("@staff @home owner-approved factual question reaches one verified worker; 
   const assigned=worker.getByRole("article").filter({hasText:question});
   await expect(assigned).toBeVisible({timeout:20_000});
   await assigned.getByRole("textbox",{name:/Add a message or explain/}).fill(workerReply);
+  const answerWait=worker.waitForResponse(response=>
+   new URL(response.url()).pathname==="/api/staff-channel"&&response.request().method()==="POST");
   await assigned.getByRole("button",{name:"Mark complete"}).click();
-  await expect(worker.getByText(workerReply)).toBeVisible();
+  expect((await answerWait).status()).toBe(200);
+  await expect.poll(async()=>{
+   const res=await workerCtx.request.get("/api/staff-channel");
+   if(res.status()!==200)return false;
+   return (await res.json()).messages.some(m=>
+    m.actor==="employee"&&m.body===workerReply);
+  },{timeout:30_000}).toBe(true);
+  await expect(worker.getByText(workerReply)).toBeVisible({timeout:20_000});
   await owner.setViewportSize({width:1440,height:900});
   await openOwnedPage(owner,cafe,"staff");
   const history=owner.getByRole("region",{name:"Employee Supervisor communication history"});
