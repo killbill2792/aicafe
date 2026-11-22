@@ -781,7 +781,7 @@ describe("PR557 first-failure strict tool contract triage (no provider spend)",(
       required?:unknown;properties?:Record<string,unknown>};
     expect(p.additionalProperties).toBe(false);
     expect(p.required).toEqual(Object.keys(p.properties??{}));
-    expect(p.properties?.once_local_date).toEqual({type:["string","null"],format:"date"});
+    expect(p.properties?.once_local_date).toEqual({anyOf:[{type:"string",format:"date"},{type:"null"}]});
   });
   it("shows why old final recovery repeated the suspect tool schema instead of isolating it",async()=>{
     vi.stubEnv("SUPERVISOR_OPENAI_MODEL","gpt-6-luna");
