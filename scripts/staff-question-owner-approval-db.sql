@@ -3,7 +3,7 @@ begin;
 select gen_random_uuid() biz,gen_random_uuid() other_biz, gen_random_uuid() owner_id,gen_random_uuid() outsider,
  gen_random_uuid() staff_user,gen_random_uuid() employee, gen_random_uuid() task_uuid,gen_random_uuid() thread_id,
  gen_random_uuid() proposal,gen_random_uuid() owner_proposal,
- gen_random_uuid() rejected_proposal,gen_random_uuid() stale_proposal \gset
+ gen_random_uuid() rejected_proposal,gen_random_uuid() stale_proposal, gen_random_uuid() recovery_proposal \gset
 insert into auth.users(id,instance_id,aud,role,email,email_confirmed_at,encrypted_password,created_at,updated_at)
 select x,'00000000-0000-0000-0000-000000000000','authenticated','authenticated', x::text||'@example.invalid',now(),'',now(),now()
 from unnest(array[:'owner_id'::uuid,:'outsider'::uuid,:'staff_user'::uuid]) x; insert into public.businesses(id,name,timezone,currency,is_demo)
@@ -28,7 +28,7 @@ insert into public.operating_tasks(business_id,id,owner_user_id,agent_id, kind,e
    'evidence',jsonb_build_array(jsonb_build_object('source','order_lines','asOf','verified check')),
    'followUpAfter',statement_timestamp()+interval '4 hours', 'sourceRevision',t.updated_at,'employeeName','On-shift worker'),
   repeat('d',64),'{}','{"durationDays":1,"metricScope":"staff_question_receipt"}','en' from public.operating_tasks t
- cross join (values(:'proposal'::uuid),(:'owner_proposal'::uuid),(:'rejected_proposal'::uuid), (:'stale_proposal'::uuid)) v(id)
+ cross join (values(:'proposal'::uuid),(:'owner_proposal'::uuid),(:'rejected_proposal'::uuid), (:'stale_proposal'::uuid), (:'recovery_proposal'::uuid)) v(id)
  where t.business_id=:'biz' and t.id='staff-question-fixture:'||:'task_uuid';
 select set_config('test.staffquestion.biz',:'biz',true),
  set_config('test.staffquestion.owner',:'owner_id',true), set_config('test.staffquestion.outsider',:'outsider',true),
@@ -70,6 +70,43 @@ do $$
  begin if (select count(*) from public.staff_communication_requests where source_id=current_setting('test.staffquestion.proposal') and business_id=current_setting('test.staffquestion.biz')::uuid)<>1 then raise exception 'duplicate question';end if;
  if not exists(select 1 from public.supervisor_proposals where id=current_setting('test.staffquestion.proposal')::uuid and status='committed') then raise exception 'uncertain receipt was not safely reconciled';end if;
 end $$;
+-- An interrupted executing receipt is recoverable without resending.
+select public.supervisor_transition_proposal(:'biz',:'owner_id',:'recovery_proposal',1,'approve',null);
+select public.supervisor_claim_effect(:'biz',:'owner_id',:'thread_id',:'recovery_proposal',2,'click');
+select public.supervisor_commit_staff_question(:'biz',:'owner_id',:'thread_id',:'recovery_proposal',repeat('d',64))->>'id'
+ as recovery_request_id \gset
+select set_config('test.staffquestion.recovery_proposal',:'recovery_proposal',true),
+ set_config('test.staffquestion.recovery_request',:'recovery_request_id',true);
+select public.supervisor_reconcile_staff_question(:'biz',:'owner_id',:'thread_id',:'recovery_proposal');
+do $$
+begin
+ if not exists(select 1 from public.supervisor_proposals where id=current_setting('test.staffquestion.recovery_proposal')::uuid
+  and status='committed') then raise exception 'executing receipt not reconciled';end if;
+ if (select count(*) from public.staff_communication_requests where source_id=current_setting('test.staffquestion.recovery_proposal'))<>1
+ then raise exception 'executing receipt recovery duplicated dispatch';end if;
+end $$;
+-- A normal employee Send message can leave the request OPEN. An actual
+-- authenticated response must still suppress unanswered-question escalation.
+insert into public.staff_communication_messages
+ (business_id,employee_id,request_id,actor,response_code,body,channel,client_nonce)
+ values(:'biz',:'employee',:'recovery_request_id','employee','message',
+ 'There are forty takeaway cups on the shelf.','web',gen_random_uuid());
+update public.staff_communication_requests set due_at=statement_timestamp()-interval '1 second'
+ where id=:'recovery_request_id';
+do $$
+begin
+ if not exists(select 1 from public.staff_communication_requests
+   where id=current_setting('test.staffquestion.recovery_request')::uuid and status='open')
+ then raise exception 'factual employee message no longer exercises open status';end if;
+end $$;
+select public.staff_question_escalate_due(:'biz');
+do $$
+begin
+ if exists(select 1 from public.operating_tasks
+   where id='staff-question-unanswered:'||current_setting('test.staffquestion.recovery_request')||':'||current_setting('test.staffquestion.owner'))
+ then raise exception 'employee factual response incorrectly escalated as unanswered';end if;
+end $$;
+
 do $$
 begin
  begin
