@@ -39,14 +39,14 @@ function providerEventCode(event:Event):string{
   const row=response&&typeof response==="object"?response as Record<string,unknown>:null;
   const raw=row?.error??event.error;
   const error=raw&&typeof raw==="object"?raw as Record<string,unknown>:null;
-  const code=error?.code;
+  const code=error?.code??error?.type;
   return typeof code==="string"&&/^[a-z0-9_]{1,64}$/.test(code)?code:"unknown";
 }
 function providerTerminalFailure(event:Event,model:string):Error{
   const code=providerEventCode(event);
   // Never log provider messages, prompts, owner information or request bodies.
   console.error("supervisor_provider_terminal_failure",{model,kind:event.type,
-    code:providerAvailabilityCodes.has(code)?code:"other"});
+    code});
   return providerAvailabilityCodes.has(code)
     ?new ProviderAvailabilityError(code):new Error("provider_error");
 }
