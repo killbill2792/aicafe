@@ -158,6 +158,30 @@ describe("restricted staff communication APIs",()=>{
   expect((await post(browserRequest(""))).status).toBe(403);
   expect(mocks.reply).toHaveBeenCalledOnce();
  });
+ it("owner sends and assignments use the same verified browser Host origin without weakening CSRF",async()=>{
+  const message={employeeId:reply.requestId,body:"Please check your next shift",nonce:reply.nonce};
+  const assignment={employeeId:reply.requestId,kind:"task",title:"Check the cups",
+   prompt:"Report what you find",nonce:reply.nonce};
+  const browserRequest=(path:string,body:unknown,origin:string,host="127.0.0.1:3000")=>
+   new Request("http://localhost:3000/api/staff-channel/"+path,{
+    method:"POST",headers:{host,Origin:origin,"Content-Type":"application/json"},
+    body:JSON.stringify(body)});
+  const authorized="http://127.0.0.1:3000";
+  const delivered=await ownerPost(browserRequest("owner-message",message,authorized));
+  expect(delivered.status).toBe(200);
+  expect(mocks.ownerSend).toHaveBeenCalledExactlyOnceWith(message);
+  const assigned=await ownerAssign(browserRequest("owner-assignment",assignment,authorized));
+  expect(assigned.status).toBe(200);
+  expect(mocks.assign).toHaveBeenCalledExactlyOnceWith(assignment);
+  for(const forged of ["https://evil.test","", "http://otherhost:3000"]){
+   expect((await ownerPost(browserRequest("owner-message",message,forged))).status).toBe(403);
+   expect((await ownerAssign(browserRequest("owner-assignment",assignment,forged))).status).toBe(403);
+  }
+  expect((await ownerPost(browserRequest("owner-message",message,authorized,"attacker.test"))).status).toBe(403);
+  expect((await ownerAssign(browserRequest("owner-assignment",assignment,authorized,"attacker.test"))).status).toBe(403);
+  expect(mocks.ownerSend).toHaveBeenCalledOnce();
+  expect(mocks.assign).toHaveBeenCalledOnce();
+ });
  it("owner link API reuses owner authorization service and checks origin",async()=>{
   expect((await getLinks()).status).toBe(200);
   expect(mocks.links).toHaveBeenCalledOnce();
