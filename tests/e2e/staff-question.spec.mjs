@@ -44,9 +44,12 @@ test("@staff @home owner-approved factual question reaches one verified worker; 
   await db.query("insert into public.ai_messages(business_id,thread_id,owner_user_id,author_user_id,role,content_type,structured_content,grounding) values($1,$2,$3,null,'supervisor','blocks',$4::jsonb,$5::jsonb)",
    [cafe.businessId,id.thread,cafe.owner.userId,JSON.stringify([{type:"text",text:"I need a physical count before drawing conclusions."},{type:"proposal_card",proposalId:id.proposal}]),
     JSON.stringify({status:"partial",intent:"owner_review",evidence:[{source:"operating_task",identifier:id.source}]})]);
-  const ownerCtx=await browser.newContext({baseURL:"http://127.0.0.1:3000",viewport:{width:390,height:844},serviceWorkers:"block"});
+  const ownerCtx=await browser.newContext({baseURL:"http://127.0.0.1:3000",viewport:{width:1440,height:900},serviceWorkers:"block"});
   contexts.push(ownerCtx);const owner=await ownerCtx.newPage();
   await login(owner,cafe);
+  // Sign in with the visible desktop café header. Mobile navigation has a
+  // hidden copy of the café name, so switch to 390px after authentication.
+  await owner.setViewportSize({width:390,height:844});
   await openOwnedPage(owner,cafe,"?thread="+encodeURIComponent(id.thread));
   const proposal=owner.getByRole("region",{name:"Ask an employee?"});
   await expect(proposal).toBeVisible({timeout:30_000});
