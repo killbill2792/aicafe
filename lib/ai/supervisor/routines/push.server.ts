@@ -116,6 +116,14 @@ export async function deliverDuePushReports(db:SupabaseClient,limit=6):
   Promise<{sent:number;retried:number;failed:number}>{
   const result={sent:0,retried:0,failed:0};
   if(!pushAvailable())return result;
+  // The previous worker may have crashed after claiming its final allowed
+  // transport attempt. Settle those expired leases before admitting work;
+  // never send a fifth push. Count terminal failures in the cron telemetry.
+  const reap=await db.rpc("u4_reap_expired_push_receipts",{
+    p_now:new Date().toISOString(),p_limit:100,
+  });
+  if(reap.error){result.failed++;return result;}
+  result.failed+=Number(reap.data??0);
   for(let n=0;n<limit;n++){
     const claim=await db.rpc("u4_claim_push_receipt",{p_now:new Date().toISOString()});
     if(claim.error){result.failed++;break;}

@@ -692,6 +692,25 @@ describe("U4 once: actual disposable cross-café admission, restart and private 
       expect(statuses.rows.find(x=>x.device_hash===unclaimed)?.status)
         .toBe("dead");
       expect(statuses.rows.every(x=>x.lease_token===null)).toBe(true);
+      // Terminal attempt interrupted by a dead worker: no fifth send, no
+      // permanent orphaned lease, idempotent reaping and private service scope.
+      const interrupted=randomUUID(),expired=new Date(Date.parse(after)+10_000).toISOString();
+      const sweepAt=new Date(Date.parse(after)+11_000).toISOString();
+      await admin.query("insert into public.u4_push_receipts("+
+        "business_id,owner_user_id,device_hash,run_id,status,attempts,"+
+        "lease_token,lease_until) values($1,$2,$3,$4,'sending',4,$5,$6)",[
+          cafes[1],owners[1],delivery.deviceHash,interrupted,randomUUID(),expired,
+        ]);
+      expect(await call(workerB,"u4_reap_expired_push_receipts",[sweepAt,100])).toBe(1);
+      expect(await call(workerB,"u4_reap_expired_push_receipts",[sweepAt,100])).toBe(0);
+      const terminal=await admin.query("select status,attempts,lease_token,"+
+        "lease_until,last_failure from public.u4_push_receipts "+
+        "where business_id=$1 and run_id=$2",[cafes[1],interrupted]);
+      expect(terminal.rows).toEqual([{status:"dead",attempts:"4",
+        lease_token:null,lease_until:null,last_failure:"final_attempt_lease_expired"}]);
+      await expect(call(ownerB,"u4_reap_expired_push_receipts",[sweepAt,100]))
+        .rejects.toThrow();
+
 
       const full=await admin.query(
         "select u4_result->>'summary' summary from public.supervisor_routine_occurrences "+

@@ -44,6 +44,41 @@ alter table public.u4_push_receipts enable row level security;
 revoke all on public.u4_push_receipts from public,anon,authenticated;
 grant select,insert,update,delete on public.u4_push_receipts to service_role;
 
+-- Finish interrupted final attempts without another provider send. A claimed
+-- fourth attempt whose worker vanished must not remain in 'sending' forever.
+-- Service-only, bounded, SKIP LOCKED and idempotent across concurrent crons.
+create function public.u4_reap_expired_push_receipts(
+  p_now timestamptz,p_limit integer default 100
+) returns integer language plpgsql security definer set search_path=''
+as $u4_reap$
+declare finished integer;
+begin
+  if coalesce(auth.role(),'')<>'service_role' or p_now is null
+    or p_limit is null or p_limit not between 1 and 100
+  then raise exception 'push_reap_denied' using errcode='42501'; end if;
+  with expired as materialized(
+    select q.business_id,q.owner_user_id,q.device_hash,q.run_id
+    from public.u4_push_receipts q
+    where q.status='sending' and q.attempts>=4 and q.lease_until<=p_now
+    order by q.lease_until,q.created_at,q.run_id
+    limit p_limit
+    for update of q skip locked
+  )
+  update public.u4_push_receipts q set
+    status='dead',lease_token=null,lease_until=null,
+    last_failure='final_attempt_lease_expired'
+  from expired e
+  where q.business_id=e.business_id and q.owner_user_id=e.owner_user_id
+    and q.device_hash=e.device_hash and q.run_id=e.run_id;
+  get diagnostics finished=row_count;
+  return finished;
+end
+$u4_reap$;
+revoke all on function public.u4_reap_expired_push_receipts(timestamptz,integer)
+  from public,anon,authenticated;
+grant execute on function public.u4_reap_expired_push_receipts(timestamptz,integer)
+  to service_role;
+
 -- Claimed recipient, current membership and unchanged completed Work pointer
 -- are reverified on each transport attempt. A restarted cron safely reclaims
 -- expired sending leases; a separate process cannot claim the same receipt.

@@ -49,6 +49,9 @@ describe("U4 additive SQL authorization, recovery and delivery invariants",()=>{
     const text=file("20261122000003_u4_push_delivery.sql");
     expect(text).toContain("sealed_subscription text not null");
     expect(text).toContain("u4_close_revoked_push_receipts");
+    expect(text).toContain("u4_reap_expired_push_receipts");
+    expect(text).toContain("final_attempt_lease_expired");
+    expect(text).toContain("for update of q skip locked");
     expect(text).toContain("t.created_at>=p_now-interval '7 days'");
     expect(text).toContain("newer.payload->>'routineId'=t.payload->>'routineId'");
 
