@@ -26,7 +26,7 @@ test("@staff real worker login, shift explanation, cross-cafe and owner receipt"
    if(index===1){
    await db.query("insert into auth.users (instance_id,id,aud,role,email,encrypted_password,email_confirmed_at,raw_app_meta_data,raw_user_meta_data,created_at,updated_at,confirmation_token,recovery_token,email_change_token_new,email_change) values ('00000000-0000-0000-0000-000000000000',$1,'authenticated','authenticated',$2,extensions.crypt($3,extensions.gen_salt('bf')),now(),'{\"provider\":\"email\",\"providers\":[\"email\"]}','{}',now(),now(),'','','','')",
     [userId,email,password]);
-   await db.query("insert into auth.identities (id,user_id,provider_id,provider,identity_data,last_sign_in_at,created_at,updated_at) values($1,$1,$1,'email',$2::jsonb,now(),now(),now())",
+   await db.query("insert into auth.identities (id,user_id,provider_id,provider,identity_data,last_sign_in_at,created_at,updated_at) values($1::uuid,$1::uuid,$1::text,'email',$2::jsonb,now(),now(),now())",
     [userId,JSON.stringify({sub:userId,email,email_verified:true})]);
    }
    created.push({cafe,worker,userId,shiftId,email,password});
