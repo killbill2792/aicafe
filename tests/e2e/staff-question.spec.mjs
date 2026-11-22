@@ -97,10 +97,11 @@ test("@staff @home owner-approved factual question reaches one verified worker; 
     "values($1,$2,$3,$4,$5,'olivia.staff_question.v1',1,$6::jsonb,$7,'{}',$8::jsonb,'en')",
     [id.ignoreProposal,cafe.businessId,cafe.owner.userId,id.thread,randomUUID(),JSON.stringify(ignoreEffect),ignoreHash,
      JSON.stringify({durationDays:1,metricScope:"staff_question_receipt"})]);
-   await db.query("insert into public.ai_messages(business_id,thread_id,owner_user_id,author_user_id,role,content_type,structured_content) "+
-    "values($1,$2,$3,null,'supervisor','blocks',$4::jsonb)",
+   await db.query("insert into public.ai_messages(business_id,thread_id,owner_user_id,author_user_id,role,content_type,structured_content,grounding) "+
+    "values($1,$2,$3,null,'supervisor','blocks',$4::jsonb,$5::jsonb)",
     [cafe.businessId,id.thread,cafe.owner.userId,JSON.stringify([{type:"text",text:"A separate check would require permission."},
-      {type:"proposal_card",proposalId:id.ignoreProposal}])]);
+      {type:"proposal_card",proposalId:id.ignoreProposal}]),
+     JSON.stringify({status:"partial",intent:"owner_review",evidence:[{source:"operating_task",identifier:id.source}]})]);
    await openOwnedPage(owner,cafe,"?thread="+encodeURIComponent(id.thread));
    const ignored=owner.getByRole("region",{name:"Ask an employee?"}).filter({hasText:ignoreQuestion});
    await expect(ignored.getByRole("button",{name:"Ignore"})).toBeVisible();
