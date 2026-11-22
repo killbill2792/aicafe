@@ -2466,14 +2466,23 @@ test("@home U4 real private Work report and failed-run acknowledgment in two caf
       name:"active_business_id",value:foreign.businessId,
       url:"http://127.0.0.1:3000",httpOnly:true,
     }]);
+    const openResponse=page.waitForResponse(response=>
+      new URL(response.url()).pathname==="/api/ai/work/open");
     await page.goto("/api/ai/work/open?run="+ids.run);
+    const redirected=await openResponse;
+    expect(redirected.status()).toBe(303);
+    // Local production Next runs on HTTP; browsers can decline a Secure
+    // cookie on that transport. Prove the production route issues the exact
+    // owner-scoped Set-Cookie, with Secure and HttpOnly required for HTTPS.
+    const selectionCookie=redirected.headers()["set-cookie"]??"";
+    expect(selectionCookie).toContain("active_business_id="+owner.businessId);
+    expect(selectionCookie).toMatch(/;\\s*Secure/i);
+    expect(selectionCookie).toMatch(/;\\s*HttpOnly/i);
     await expect(page).toHaveURL(/\/operations\?agent=leo&status=watching&task=/u);
     expect(new URL(page.url()).hostname).toBe("127.0.0.1");
     await expect(page.locator('article[data-task-kind="u4_report"]')
       .filter({hasText:headline})).toContainText(summary,{timeout:25_000});
-    const selected=await page.context().cookies("http://127.0.0.1:3000");
-    expect(selected.find(cookie=>cookie.name==="active_business_id")?.value)
-      .toBe(owner.businessId);
+    expect(redirected.headers()["location"]??"").toContain("/operations?agent=leo&status=watching&task=");
     const stranger=await other.newPage();
     await login(stranger,foreign);
     await navigateLocal(stranger,"/en/operations?agent=leo&status=watching");
