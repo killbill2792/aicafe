@@ -274,3 +274,97 @@ revoke all on function public.supervisor_attach_staff_question_card() from publi
 create trigger supervisor_staff_question_report_card
  before insert on public.ai_messages for each row
  execute function public.supervisor_attach_staff_question_card();
+
+-- Extend the EXISTING durable claim gate only for an owner-answer report
+-- already stored under the exact original run message. Unknown effects,
+-- other tools, missing reports and revoked owner/attachments still block.
+create or replace function public.supervisor_run_claim(
+  p_business_id uuid, p_owner_user_id uuid, p_thread_id uuid, p_run_id uuid, p_worker_id uuid, p_lease_seconds integer
+) returns jsonb language plpgsql security definer set search_path = public as $$
+declare r public.supervisor_runs; s public.supervisor_run_steps; v_now timestamptz;
+begin
+  if coalesce(auth.role(),'') <> 'service_role' then raise exception 'service_role_only'; end if;
+  if p_worker_id is null or p_lease_seconds is null or p_lease_seconds not between 1 and 3600
+    then raise exception 'invalid_lease'; end if;
+  select * into r from public.supervisor_runs where business_id = p_business_id
+    and owner_user_id = p_owner_user_id and thread_id = p_thread_id
+    and id = p_run_id for update;
+  if not found then raise exception 'run_not_found'; end if;
+  if r.status = 'completed' then
+    return jsonb_build_object('kind', 'completed'); end if;
+  if r.status = 'blocked' then
+    return jsonb_build_object('kind', 'blocked'); end if;
+  select * into s from public.supervisor_run_steps
+    where business_id = p_business_id and run_id = p_run_id and status <> 'completed'
+    order by step_index limit 1 for update;
+  if not found then return jsonb_build_object('kind', 'ready_for_report'); end if;
+  v_now:=clock_timestamp();
+  if s.status = 'blocked' then return jsonb_build_object('kind', 'blocked'); end if;
+  if s.status = 'leased' and s.lease_until > v_now then
+    return jsonb_build_object('kind', 'busy'); end if;
+  if r.execution_version=2 then
+    if not public.supervisor_routine_owner_authorized(p_business_id,p_owner_user_id,p_thread_id) then
+      update public.supervisor_run_steps set status='blocked',error_code='authorization_revoked',
+        worker_id=null,claim_token=null,lease_until=null,updated_at=v_now where id=s.id;
+      update public.supervisor_runs set status='blocked',updated_at=v_now where id=r.id;
+      return jsonb_build_object('kind','blocked');
+    end if;
+    if r.input_attachment_version_hash is distinct from public.supervisor_owner_attachment_fingerprint_v2(r.business_id,r.owner_user_id,r.thread_id,r.input_attachment_ids) and s.step_key<>'verify_report' then
+      update public.supervisor_run_steps set status='blocked',error_code=case when s.checkpoint_phase='effect_pending' then 'effect_uncertain' else 'attachment_changed' end,
+        worker_id=null,claim_token=null,lease_until=null,updated_at=v_now where id=s.id;
+      update public.supervisor_runs set status='blocked',updated_at=v_now where id=r.id;
+      return jsonb_build_object('kind','blocked');
+    end if;
+    if s.next_retry_at>v_now then return jsonb_build_object('kind','busy'); end if;
+    if s.step_key='owner_turn' and exists(select 1 from public.supervisor_runs earlier
+       where earlier.business_id=r.business_id and earlier.owner_user_id=r.owner_user_id
+         and earlier.thread_id=r.thread_id and earlier.execution_version=2
+         and earlier.status in ('pending','running') and (earlier.created_at,earlier.id)<(r.created_at,r.id))
+       then return jsonb_build_object('kind','busy'); end if;
+  end if;
+  if s.status = 'leased' and s.retry_mode = 'reconcile'
+    and not (r.execution_version=2 and s.step_key='owner_turn'
+      and (s.checkpoint_phase in ('ready','provider_pending','read_pending')
+        or (s.checkpoint_phase='effect_pending'
+          and s.checkpoint_tool='record_staff_question_owner_answer'
+          -- Only the one independently recorded, owner-attributed report can
+          -- justify a claim after a lost checkpoint ACK. The Node journal
+          -- must still validate exact proposal, original message, operation
+          -- key, owner, café and absence of employee contact before unblocking.
+          and exists(select 1 from public.operating_tasks evidence
+            where evidence.business_id=r.business_id
+              and evidence.owner_user_id=r.owner_user_id
+              and evidence.kind='data_quality'
+              and evidence.entity_type='staff_question_answer'
+              and evidence.evidence @> jsonb_build_array(jsonb_build_object(
+                'source','owner_report','facts',jsonb_build_object(
+                  'ownerMessageId',r.request_key))))))) then
+    update public.supervisor_run_steps set status = 'blocked', error_code = case when r.execution_version=2 and s.checkpoint_phase='effect_pending' then 'effect_uncertain' else 'lease_expired' end,
+      worker_id = null, claim_token = null, lease_until = null, updated_at = v_now
+      where id = s.id;
+    update public.supervisor_runs set status = 'blocked', updated_at = v_now where id = r.id;
+    return jsonb_build_object('kind', 'blocked');
+  end if;
+  -- A repeatedly abandoned read/verification step cannot retry forever.
+  -- Uncertain effect steps retain their independent-receipt-only branch above.
+  if (r.execution_version=2 and s.step_key='owner_turn' and s.checkpoint_retry_count>=5)
+    or ((r.execution_version<>2 or s.step_key<>'owner_turn') and s.retry_mode='idempotent' and s.attempts>=5) then
+    update public.supervisor_run_steps set status='blocked',error_code='retry_exhausted',
+      worker_id=null,claim_token=null,lease_until=null,updated_at=v_now where id=s.id;
+    update public.supervisor_runs set status='blocked',updated_at=v_now where id=r.id;
+    return jsonb_build_object('kind','blocked');
+  end if;
+  update public.supervisor_run_steps
+    set status = 'leased', worker_id = p_worker_id, claim_token = gen_random_uuid(),
+      lease_until = v_now + make_interval(secs => p_lease_seconds),
+      attempts = attempts + 1, error_code = null, next_retry_at=null, updated_at = v_now,
+      checkpoint_retry_count=case when r.execution_version=2 and s.step_key='owner_turn' then checkpoint_retry_count+1 else checkpoint_retry_count end,
+      checkpoint_slice_progress=checkpoint_progress_count
+    where id = s.id returning * into s;
+  update public.supervisor_runs set status = 'running', updated_at = v_now where id = r.id;
+  return jsonb_build_object('kind', 'claimed', 'step', to_jsonb(s),
+    'idempotency_key', s.run_id::text || ':' || s.step_key);
+end $$;
+revoke all on function public.supervisor_run_claim(uuid,uuid,uuid,uuid,uuid,integer)
+ from public,anon,authenticated;
+grant execute on function public.supervisor_run_claim(uuid,uuid,uuid,uuid,uuid,integer) to service_role;
