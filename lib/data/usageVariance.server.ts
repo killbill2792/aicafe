@@ -183,7 +183,9 @@ export async function readUsageVariance(raw:z.input<typeof readInput>, explicit?
    return {posModifierId:key||"unmapped:"+s.id+":"+index,...metadata};
   });
   return {sourceLineId:s.id,menuItemId:s.menu_item_id,quantity:Number(s.quantity),businessDate:order.business_date,
-   closedAt:order.closed_at,locationId:order.location_id,modifiers:normalized};
+   // An open/unclosed POS order has no verified close time; an empty value
+   // deliberately matches no timecard rather than inventing a timestamp.
+   closedAt:order.closed_at??"",locationId:order.location_id,modifiers:normalized};
  });
  // Missing recipes are a separate source coverage defect from unknown pantry
  // prices or stock counts. Do not label a catalog item with no recipe as a
