@@ -8,13 +8,19 @@ const mocks=vi.hoisted(()=>({
   enqueue:vi.fn(async()=>2),
   investigate:vi.fn(async(_db:unknown,_now:Date,_maxSteps:number)=>({processed:1,collected:1,investigated:0,followUps:0,rechecked:0,failed:0})),
   routines:vi.fn(async(_db:unknown,_businessId:string,_timezone:string,_now:Date,_enqueue?:unknown)=>({routinesChecked:1,runs:1,notices:1,failed:0,evidenceChecks:1,investigationsQueued:2})),
+  objectives:vi.fn(async()=>({admitted:0,claimed:0,completed:0,failed:0,deferred:0})),
+  push:vi.fn(async()=>({sent:0,retried:0,failed:0})),
 }));
 vi.mock("@/lib/security/bearer",()=>({verifyBearer:(req:Request,secret:string)=>
   req.headers.get("authorization")==="Bearer "+secret}));
 vi.mock("@/lib/alerts/refreshDerived.server",()=>({refreshDerivedForBusiness:mocks.refresh,
   derivedRefreshSchemaMissing:(error:{code?:string}|null)=>error?.code==="PGRST202"}));
 vi.mock("@/lib/operating/commitments.server",()=>({deliverPendingCommitments:mocks.due}));
-vi.mock("@/lib/ai/supervisor/routines/dispatch.server",()=>({dispatchRoutinesForBusiness:mocks.routines}));
+vi.mock("@/lib/ai/supervisor/routines/dispatch.server",()=>({
+  dispatchRoutinesForBusiness:mocks.routines,
+  dispatchDueObjectivesAcrossCafes:mocks.objectives,
+}));
+vi.mock("@/lib/ai/supervisor/routines/push.server",()=>({deliverDuePushReports:mocks.push}));
 vi.mock("@/lib/ai/supervisor/routines/investigation.server",()=>({
   enqueueInvestigationsForOwner:mocks.enqueue,
   processDueInvestigations:mocks.investigate,
@@ -29,10 +35,10 @@ vi.mock("@/lib/supabase/admin",()=>({createAdminSupabaseClient:()=>({
       {id:"demo",timezone:"UTC",is_demo:true}],error:null};}}),
 })}));
 import {GET} from "./route";
-beforeEach(()=>{vi.stubEnv("CRON_SECRET","test-secret");vi.stubEnv("SUPERVISOR_RUN_WORKER_ENABLED","");vi.stubEnv("SUPERVISOR_DURABLE_CHAT_ENABLED","");mocks.ownerRun.mockReset().mockResolvedValue({processed:1,state:"completed"});mocks.refresh.mockClear();mocks.due.mockClear();mocks.routines.mockClear();mocks.enqueue.mockClear();mocks.investigate.mockReset()
+beforeEach(()=>{vi.useFakeTimers({toFake:["Date"]});vi.setSystemTime(new Date("2026-11-21T17:00:00Z"));vi.stubEnv("CRON_SECRET","test-secret");vi.stubEnv("SUPERVISOR_RUN_WORKER_ENABLED","");vi.stubEnv("SUPERVISOR_DURABLE_CHAT_ENABLED","");mocks.ownerRun.mockReset().mockResolvedValue({processed:1,state:"completed"});mocks.refresh.mockClear();mocks.due.mockClear();mocks.routines.mockClear();mocks.objectives.mockClear();mocks.push.mockClear();mocks.enqueue.mockClear();mocks.investigate.mockReset()
     .mockResolvedValueOnce({processed:1,collected:1,investigated:0,followUps:0,rechecked:0,failed:0})
     .mockResolvedValue({processed:1,collected:0,investigated:1,followUps:0,rechecked:0,failed:0});mocks.calls=0});
-afterEach(()=>vi.unstubAllEnvs());
+afterEach(()=>{vi.useRealTimers();vi.unstubAllEnvs();});
 describe("refresh-derived cron",()=>{
   it("requires authorization before even fetching businesses",async()=>{
     const result=await GET(new Request("https://example.test/api/cron/refresh-derived"));
@@ -143,5 +149,18 @@ describe("U1 refresh workload and lease timing",()=>{
       expect(mocks.refresh).toHaveBeenCalledTimes(2);
       expect(peak).toBe(1);
     }finally{mocks.refresh.mockReset().mockResolvedValue({businessDate:"2026-10-28",alertsCreated:0});}
+  });
+});
+
+describe("U4 minute tick retains durable refresh work",()=>{
+  it("admits pending café refresh even after a delayed quarter-hour tick",async()=>{
+    vi.setSystemTime(new Date("2026-11-22T17:07:00Z"));
+    const response=await GET(new Request("https://example.test/api/cron/refresh-derived",{
+      headers:{authorization:"Bearer test-secret"},
+    }));
+    expect(response.status).toBe(200);
+    expect(await response.json()).toMatchObject({checked:2,refreshed:2,
+      routines:{routinesChecked:2},heavyRefresh:true});
+    expect(mocks.refresh).toHaveBeenCalledTimes(2);
   });
 });

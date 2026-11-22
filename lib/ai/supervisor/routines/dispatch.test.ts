@@ -15,7 +15,7 @@ vi.mock("./objective.server",()=>({executeClaimedObjective:mocks.objective}));
 vi.mock("@/lib/scheduling/staffPublication.server",()=>({
   followUpStaffPublicationForBusiness:mocks.staff,
 }));
-import {dispatchRoutinesForBusiness,readActionablePriorities,orderRoutinesFairly,routinePageWindow} from "./dispatch.server";
+import {dispatchDueObjectivesAcrossCafes,dispatchRoutinesForBusiness,readActionablePriorities,orderRoutinesFairly,routinePageWindow} from "./dispatch.server";
 import {choosePriorities} from "./priority";
 function db(params?:{routines?:Record<string,unknown>[];owners?:{user_id:string}[];
   threads?:{id:string;owner_user_id:string}[];alerts?:Record<string,unknown>[];
@@ -65,7 +65,7 @@ function db(params?:{routines?:Record<string,unknown>[];owners?:{user_id:string}
       // scanner. A no-op mock returned commitments and falsely failed CI.
       not(field:string,operator:string,value:string){
         if(table!=="operating_tasks"||field!=="kind"||operator!=="in"||
-          value!=="(priority_notice,commitment,event_plan,event_change,event_report)")
+          value!=="(priority_notice,commitment,event_plan,event_change,event_report,u4_report,u4_run_failure)")
           throw new Error("Unexpected priority task exclusion");
         const forbidden=new Set(value.slice(1,-1).split(","));
         selected=selected.filter(row=>!forbidden.has(String((row as Record<string,unknown>)[field])));
@@ -188,6 +188,7 @@ describe("U4 fair scheduled work without a second queue",()=>{
 describe("U4 direct cron integration rather than isolated objective-only unit proof",()=>{
   it("claims new owner goal and system Watch behind 100 old routines on consecutive ticks",async()=>{
     vi.stubEnv("SUPERVISOR_U4_ENABLED","true");
+    vi.stubEnv("SUPERVISOR_U4_WATCH_ENABLED","true");
     try{
       mocks.candidates.mockReset().mockResolvedValue([
         {localDate:"2026-11-20",scheduledForUtc:null},
@@ -239,6 +240,7 @@ describe("U4 direct cron integration rather than isolated objective-only unit pr
   });
   it("creates a service Watch thread when the first-ever owner has no chat or alert",async()=>{
     vi.stubEnv("SUPERVISOR_U4_ENABLED","true");
+    vi.stubEnv("SUPERVISOR_U4_WATCH_ENABLED","true");
     try{
       mocks.ensureWatch.mockClear();
       const source=db({threads:[],routines:[],alerts:[],tasks:[]});
@@ -255,6 +257,7 @@ describe("U4 direct cron integration rather than isolated objective-only unit pr
 
   it("executes a full saved owner goal even when there are no existing alerts",async()=>{
     vi.stubEnv("SUPERVISOR_U4_ENABLED","true");
+    vi.stubEnv("SUPERVISOR_U4_WATCH_ENABLED","true");
     try{
       mocks.candidates.mockReset().mockResolvedValue([
         {localDate:"2026-11-20",scheduledForUtc:null},
@@ -468,4 +471,51 @@ it("does not treat a healthy owner without chat or actionable work as a failure"
  const result=await dispatchRoutinesForBusiness(db({threads:[]}),"cafe","America/Los_Angeles",new Date("2026-11-11T16:00:00Z"),enqueue);
  expect(result.failed).toBe(0);
  expect(enqueue).not.toHaveBeenCalled();
+});
+
+describe("U4 fast lane: independent cafés, no paid activation by default",()=>{
+  const candidates=(count:number)=>Array.from({length:count},(_,i)=>({
+    routine:{business_id:"cafe-"+i,id:"routine-"+i,owner_user_id:"owner-"+i,
+      thread_id:"thread-"+i,title:"Inspect real sales evidence",
+      cadence:"daily",weekdays:[],local_time:"08:00:00",
+      timezone:"America/Los_Angeles",status:"active",revision:1,
+      execution_mode:"objective",objective_text:"Inspect real sales evidence",
+      created_at:"2026-11-10T00:00:00Z",updated_at:"2026-11-10T00:00:00Z"},
+    localDate:"2026-11-21",scheduledForUtc:"2026-11-21T16:00:00Z",
+  }));
+  it("does not claim any paid work without explicit U4 activation",async()=>{
+    vi.stubEnv("SUPERVISOR_U4_ENABLED","false");
+    try{
+      const rpc=vi.fn();
+      expect(await dispatchDueObjectivesAcrossCafes({rpc} as never,
+        new Date("2026-11-21T16:30:00Z"))).toMatchObject({admitted:0,claimed:0});
+      expect(rpc).not.toHaveBeenCalled();
+    }finally{vi.unstubAllEnvs();}
+  });
+  it.each([1,10,100,500])("caps %i simultaneously due cafés to six independent slots",async count=>{
+    vi.stubEnv("SUPERVISOR_U4_ENABLED","true");
+    vi.stubEnv("SUPERVISOR_U4_WATCH_ENABLED","false");
+    mocks.claim.mockReset().mockImplementation(async(_db:unknown,scope:{businessId:string})=>{
+      if(scope.businessId==="cafe-0")throw Error("one café source failed");
+      return {runId:"run",leaseToken:"lease",revision:1};
+    });
+    mocks.finish.mockReset().mockResolvedValue(true);
+    mocks.objective.mockReset().mockResolvedValue(undefined);
+    const rpc=vi.fn(async(name:string)=>{
+      if(name!=="u4_due_objective_admission")throw Error("unexpected RPC");
+      return {data:candidates(count),error:null};
+    });
+    try{
+      const outcome=await dispatchDueObjectivesAcrossCafes({rpc} as never,
+        new Date("2026-11-21T16:30:00Z"));
+      expect(outcome.admitted).toBe(Math.min(count,6));
+      expect(outcome.failed).toBe(1);
+      expect(outcome.completed).toBe(Math.min(count,6)-1);
+      expect(mocks.objective).toHaveBeenCalledTimes(Math.min(count,6)-1);
+      for(const call of mocks.objective.mock.calls){
+        expect(call[1].routine.ownerUserId).toMatch(/^owner-\d+$/u);
+        expect(call[1].routine.businessId).toMatch(/^cafe-\d+$/u);
+      }
+    }finally{vi.unstubAllEnvs();}
+  });
 });

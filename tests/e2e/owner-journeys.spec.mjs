@@ -1246,6 +1246,12 @@ test("@purchasing proactive notice → repeated cron idempotency → owner-appro
     const page=await first.newPage();
     await login(page,own);
     await openOwnedPage(page,own,"?thread="+encodeURIComponent(id.thread));
+    // Direct disposable fixture rows bypass canonical import wake triggers.
+    // Request the same persisted refresh intent that real ingestion writes.
+    await db.query("insert into public.supervisor_derived_refresh_state"+
+      "(business_id,requested_version) values($1,1) on conflict(business_id)"+
+      " do update set requested_version=supervisor_derived_refresh_state.requested_version+1",
+      [own.businessId]);
     // Verify the existing scheduled dispatcher, not a test-inserted notice.
     // Runner provides a fresh random local cron bearer; no provider key here.
     if(!process.env.CRON_SECRET)throw Error("Task14B local cron credential unavailable");
@@ -1686,6 +1692,12 @@ test("@home Task15A scheduler detects reduced sales from actual daily source row
   // The disposable Next dev server may briefly reset its loopback socket
   // during compilation. Retry only transport failures; HTTP errors and every
   // source/SQL/alert assertion below remain failures, never fake success.
+  // Fixture source writes request the persisted derived wake; never insert a
+  // synthetic detector result or fake priority notice.
+  await db.query("insert into public.supervisor_derived_refresh_state"+
+    "(business_id,requested_version) values($1,1) on conflict(business_id)"+
+    " do update set requested_version=supervisor_derived_refresh_state.requested_version+1",
+    [own.businessId]);
   const tick=async()=>{
     for(let attempt=0;attempt<4;attempt++){
       try{
@@ -1710,6 +1722,7 @@ test("@home Task15A scheduler detects reduced sales from actual daily source row
   await expect(page.getByText("Sales declined",{exact:true}).first()).toBeVisible({timeout:30000});
   // Restore known healthy comparable source facts rather than marking the alert handled manually.
   await db.query("update public.daily_rollups set net_sales_cents=100000 where business_id=$1 and business_date between $2 and $3",[own.businessId,date(-7),end]);
+  await db.query("update public.supervisor_derived_refresh_state set requested_version=requested_version+1 where business_id=$1",[own.businessId]);
   expect([200,207]).toContain((await tick()).status());expect(await active()).toHaveLength(0);
   // No fixture downstream of the real detector; rollback source data in finally.
   if(!prior.rows.some(x=>x.id===rows[0].id))await db.query("delete from public.alerts where business_id=$1 and id=$2",[own.businessId,rows[0].id]);
@@ -2344,4 +2357,200 @@ test("@home Task16E stops an acknowledged live view without invoking a cancel or
     await db.query("delete from public.ai_threads where id=$1 and business_id=$2",[thread,owner.businessId]).catch(()=>{});
     await db.end();
   }
+});
+
+
+test("@home U4 real private Work report and failed-run acknowledgment in two café browser sessions",async({browser})=>{
+  test.setTimeout(120_000);
+  const owner=seededCafe(0),foreign=seededCafe(1);
+  const ids={thread:randomUUID(),goal:randomUUID(),routine:randomUUID(),
+    run:randomUUID(),fail:randomUUID()};
+  const headline="Disposable Luna objective "+ids.run.slice(0,8);
+  const summary="Disposable fixture: verified source details live only in this owner Work report.";
+  const db=new pg.Client({host:"127.0.0.1",port:54322,database:"postgres",
+    user:"postgres",password:"postgres",connectionTimeoutMillis:5000});
+  const own=await browser.newContext({baseURL:"http://127.0.0.1:3000",serviceWorkers:"block"});
+  const other=await browser.newContext({baseURL:"http://127.0.0.1:3000",serviceWorkers:"block"});
+  let connected=false;
+  try{
+    await db.connect();connected=true;
+    const day=new Date().toISOString().slice(0,10);
+    await db.query("insert into public.ai_threads(id,business_id,owner_user_id,client_request_id) "+
+      "values($1,$2,$3,$4)",[ids.thread,owner.businessId,owner.owner.userId,randomUUID()]);
+    await db.query("insert into public.ai_messages(id,business_id,thread_id,owner_user_id,"+
+      "author_user_id,role,content_type,text_content,client_message_id) "+
+      "values($1,$2,$3,$4,$4,'owner','text',$5,$6)",[
+        ids.goal,owner.businessId,ids.thread,owner.owner.userId,
+        "At the scheduled time check source-backed sales and follow up on stock anomalies.",
+        randomUUID()]);
+    await db.query("insert into public.supervisor_routines("+
+      "business_id,id,owner_user_id,thread_id,title,cadence,weekdays,local_time,"+
+      "timezone,execution_mode,objective_text,objective_source_message_id) "+
+      "values($1,$2,$3,$4,$5,'daily','{}','08:00','America/Los_Angeles','objective',$6,$7)",[
+        owner.businessId,ids.routine,owner.owner.userId,ids.thread,headline,
+        "At the scheduled time check source-backed sales and follow up on stock anomalies.",
+        ids.goal]);
+    await db.query("insert into public.supervisor_routine_occurrences("+
+      "business_id,routine_id,run_id,revision,local_date,scheduled_for_utc,"+
+      "state,attempts,receipt_ref,u4_result) "+
+      "values($1,$2,$3,1,$4,$5,'completed',1,$6,$7::jsonb)",[
+        owner.businessId,ids.routine,ids.run,day,day+"T16:00:00Z",
+        "u4-verified:"+ids.run,JSON.stringify({
+          summary,attention:"attention",proof:{quality:"partial",sourceCount:1,
+            sources:[{source:"fixture"}],externalEffects:"not_attempted"},
+        }),
+      ]);
+    const addTask=async(id,kind,status,payload)=>db.query(
+      "insert into public.operating_tasks(business_id,id,owner_user_id,agent_id,"+
+      "kind,status,payload,confidence,evidence,entity_type,entity_id,dedupe_key) "+
+      "values($1,$2,$3,'leo',$4,$5,$6::jsonb,'medium','[]','u4_routine',$7,$2)",[
+        owner.businessId,id,owner.owner.userId,kind,status,JSON.stringify(payload),ids.routine]);
+    await addTask("u4:"+ids.run,"u4_report","watching",{
+      title:headline,threadId:ids.thread,routineId:ids.routine,runId:ids.run,localDate:day,
+    });
+    await addTask("u4-failed:"+ids.fail,"u4_run_failure","needs_owner",{
+      title:headline,threadId:ids.thread,routineId:ids.routine,runId:ids.fail,localDate:day,
+    });
+    const page=await own.newPage();
+    await login(page,owner);
+    await openOwnedPage(page,owner,"operations");
+    const failure=page.locator('article[data-task-kind="u4_run_failure"]').filter({hasText:headline});
+    await expect(failure).toBeVisible();
+    await failure.getByRole("button",{name:"Mark reviewed"}).click();
+    await expect.poll(async()=>Number((await db.query(
+      "select count(*)::int n from public.operating_tasks "+
+      "where business_id=$1 and id=$2 and status='handled'",
+      [owner.businessId,"u4-failed:"+ids.fail])).rows[0].n)).toBe(1);
+    await navigateLocal(page,"/en/operations?agent=leo&status=watching");
+    const report=page.locator('article[data-task-kind="u4_report"]').filter({hasText:headline});
+    await expect(report).toContainText(summary,{timeout:25_000});
+    await expect(report.getByRole("link",{name:"Open original request"}))
+      .toHaveAttribute("href",new RegExp("thread="+ids.thread));
+    await page.reload();
+    await expect(page.locator('article[data-task-kind="u4_report"]')
+      .filter({hasText:headline})).toContainText(summary,{timeout:25_000});
+    // Same owner, different active café: the opaque push URL resolves the
+    // report's actual café by private Work scope before rendering.
+    await db.query("insert into public.memberships(business_id,user_id,role) "+
+      "values($1,$2,'owner')",[foreign.businessId,owner.owner.userId]);
+    await page.context().addCookies([{
+      name:"active_business_id",value:foreign.businessId,
+      url:"http://127.0.0.1:3000",httpOnly:true,
+    }]);
+    await page.goto("/api/ai/work/open?run="+ids.run);
+    await expect(page).toHaveURL(/\/operations\?agent=leo&status=watching&task=/u);
+    await expect(page.locator('article[data-task-kind="u4_report"]')
+      .filter({hasText:headline})).toContainText(summary,{timeout:25_000});
+    const selected=await page.context().cookies("http://127.0.0.1:3000");
+    expect(selected.find(cookie=>cookie.name==="active_business_id")?.value)
+      .toBe(owner.businessId);
+    const stranger=await other.newPage();
+    await login(stranger,foreign);
+    await navigateLocal(stranger,"/en/operations?agent=leo&status=watching");
+    await expect(stranger.getByText(headline,{exact:true})).toHaveCount(0);
+    await expect(stranger.getByText(summary,{exact:true})).toHaveCount(0);
+  }finally{
+    await Promise.all([own.close(),other.close()]);
+    if(connected){
+      await db.query("delete from public.memberships where business_id=$1 "+
+        "and user_id=$2",[foreign.businessId,owner.owner.userId]).catch(()=>{});
+      await db.query("delete from public.operating_tasks where business_id=$1 "+
+        "and id=any($2::text[])",[
+          owner.businessId,["u4:"+ids.run,"u4-failed:"+ids.fail],
+        ]).catch(()=>{});
+      await db.query("delete from public.supervisor_routines "+
+        "where business_id=$1 and id=$2",[owner.businessId,ids.routine]).catch(()=>{});
+      await db.query("delete from public.ai_messages where id=$1",[ids.goal]).catch(()=>{});
+      await db.query("delete from public.ai_threads where id=$1",[ids.thread]).catch(()=>{});
+      await db.end();
+    }
+  }
+});
+
+test("@home U4 owner deliberately opts into generic device push, revokes, and signs out",async({browser})=>{
+  test.setTimeout(110_000);
+  const cafe=seededCafe(0);
+  const calls=[];
+  const publicKey=Buffer.concat([Buffer.from([4]),Buffer.alloc(64)]).toString("base64url");
+  const context=await browser.newContext({baseURL:"http://127.0.0.1:3000",serviceWorkers:"block"});
+  const page=await context.newPage();
+  await page.addInitScript(()=>{
+    let active=false;
+    const subscription={
+      toJSON:()=>({
+        expirationTime:null,
+        endpoint:"https://fcm.googleapis.com/fcm/send/disposable-fixture",
+        keys:{p256dh:"BAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+          auth:"AAAAAAAAAAAAAAAAAAAAAA"}
+      }),
+      unsubscribe:async()=>{active=false;return true;},
+    };
+    const manager={
+      getSubscription:async()=>active?subscription:null,
+      subscribe:async()=>{active=true;return subscription;},
+    };
+    const reg={pushManager:manager};
+    Object.defineProperty(navigator,"serviceWorker",{
+      configurable:true,value:{ready:Promise.resolve(reg),
+        getRegistration:async()=>reg,register:async()=>reg},
+    });
+    Object.defineProperty(window,"PushManager",{
+      configurable:true,value:function MockPushManager(){},
+    });
+    window.__u4PushPermissionRequests=0;
+    Object.defineProperty(window,"Notification",{
+      configurable:true,value:{permission:"default",requestPermission:async()=>{
+        window.__u4PushPermissionRequests++;return "granted";
+      }},
+    });
+  });
+  await page.route("**/api/ai/push-subscriptions",async route=>{
+    const method=route.request().method();calls.push(method);
+    if(method==="POST"){
+      const body=route.request().postDataJSON();
+      if(body.checkEndpoint){
+        return route.fulfill({status:200,contentType:"application/json",
+          body:JSON.stringify({available:true,subscribed:true})});
+      }
+      expect(body.consent).toBe(true);
+      expect(body.subscription.expirationTime).toBeUndefined();
+      expect(body.subscription.endpoint).toMatch(/^https:\/\/fcm\.googleapis\.com\//u);
+      return route.fulfill({status:200,contentType:"application/json",
+        body:JSON.stringify({available:true,subscribed:true})});
+    }
+    if(method==="DELETE"){
+      const body=route.request().postDataJSON();
+      expect(body).toMatchObject(body.all?{all:true}:{
+        endpoint:"https://fcm.googleapis.com/fcm/send/disposable-fixture",
+      });
+      return route.fulfill({status:200,contentType:"application/json",
+        body:JSON.stringify({available:true,subscribed:false})});
+    }
+    return route.fulfill({status:200,contentType:"application/json",
+      body:JSON.stringify({available:true,subscribed:false,publicKey})});
+  });
+  try{
+    await login(page,cafe);
+    await openOwnedPage(page,cafe,"operations");
+    await expect(page.getByRole("heading",{name:"Luna report notifications"})).toBeVisible();
+    await expect.poll(async()=>page.evaluate(()=>window.__u4PushPermissionRequests)).toBe(0);
+    const section=page.locator("section").filter({has:page.getByRole("heading",{
+      name:"Luna report notifications"})});
+    await section.getByRole("button",{name:"Enable device notifications"}).click();
+    await expect(section.getByText("Notifications enabled. Reports remain private in Work."))
+      .toBeVisible();
+    expect(calls.filter(method=>method==="POST")).toHaveLength(1);
+    expect(await page.evaluate(()=>window.__u4PushPermissionRequests)).toBe(1);
+    await section.getByRole("button",{name:"Turn off notifications"}).click();
+    await expect(section.getByRole("button",{name:"Enable device notifications"})).toBeVisible();
+    expect(calls.filter(method=>method==="DELETE")).toHaveLength(1);
+    await section.getByRole("button",{name:"Enable device notifications"}).click();
+    await expect(section.getByRole("button",{name:"Turn off notifications"})).toBeVisible();
+    await navigateLocal(page,"/en/more");
+    await page.getByRole("button",{name:"Sign Out",exact:true}).click();
+    await expect(page).toHaveURL(/\/login(?:\?|$)/u,{timeout:30_000});
+    expect(calls.filter(method=>method==="DELETE")).toHaveLength(2);
+    // Logout on this browser must not revoke a separately opted-in phone.
+    expect(calls.filter(method=>method==="DELETE")).toHaveLength(2);
+  }finally{await context.close();}
 });

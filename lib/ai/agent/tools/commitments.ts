@@ -14,7 +14,7 @@ export const commitmentSchema=z.strictObject({
 export const commitmentTools={
   manage_commitment:{
     agentId:"leo",schema:commitmentSchema,
-    description:"Create a durable owner reminder or promised follow-up, list saved commitments, or close one. For 'remind me Tuesday' resolve Tuesday to an ISO café-local date using the provided café date and timezone; a missing clock time is null (due at start of that local day). Do not pretend a reminder was saved unless this tool succeeds. For close, list first to get the actual id. Never recreate a closed item.",
+    description:"Create ONLY a simple reminder/nudge that does not require source reads, research, comparisons or future autonomous action; otherwise use the existing manage_routine one-time objective. List saved commitments or close one. For 'remind me Tuesday' resolve Tuesday to an ISO café-local date using the provided café date and timezone; a missing clock time is null (due at start of that local day). Do not pretend a reminder was saved unless this tool succeeds. For close, list first to get the actual id. Never recreate a closed item.",
     execute:async(raw:unknown,ctx:AgentToolContext):Promise<AgentToolResult>=>{
       const input=commitmentSchema.parse(raw);
       // Server-injected verified owner port; never reauthenticates with cookies.

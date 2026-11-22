@@ -291,6 +291,42 @@
       },
       "minCount": 0,
       "maxCount": 0
+    },
+    {
+      "name": "private-work-pointer",
+      "kind": "owner",
+      "table": "public.operating_tasks",
+      "where": {
+        "business_id": {
+          "scope": "businessId"
+        },
+        "id": {
+          "scope": "workTaskId"
+        },
+        "kind": {
+          "eq": "u4_report"
+        },
+        "owner_user_id": {
+          "scope": "ownerUserId"
+        }
+      },
+      "minCount": 1,
+      "maxCount": 1
+    },
+    {
+      "name": "no-cross-cafe-work-pointer",
+      "kind": "isolation",
+      "table": "public.operating_tasks",
+      "where": {
+        "business_id": {
+          "scope": "foreignBusinessId"
+        },
+        "id": {
+          "scope": "workTaskId"
+        }
+      },
+      "minCount": 0,
+      "maxCount": 0
     }
   ]
 }

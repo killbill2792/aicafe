@@ -19,9 +19,17 @@ type TaskRow = {
 };
 
 function fromRow(row: TaskRow): OperatingTask {
-  return { id: row.id, businessId: row.business_id, agentId: row.agent_id, kind: row.kind,
+  // Older/partial JSON and nested unknown fields cannot crash the entire
+  // Operations route. Source authority stays in RLS; this only normalizes UI.
+  const payload = row.payload && typeof row.payload === "object" && !Array.isArray(row.payload)
+    ? row.payload : {} as OperatingTask["payload"];
+  const evidence = Array.isArray(row.evidence) ? row.evidence.filter(entry =>
+    entry && typeof entry === "object" && typeof entry.source === "string") : [];
+  const agentId = (["alex","olivia","maya","leo"] as string[]).includes(row.agent_id)
+    ? row.agent_id : "leo";
+  return { id: row.id, businessId: row.business_id, agentId, kind: row.kind,
     ...(row.entity_type ? { entityType: row.entity_type } : {}), ...(row.entity_id ? { entityId: row.entity_id } : {}),
-    status: row.status, payload: row.payload, confidence: row.confidence, evidence: row.evidence,
+    status: row.status, payload, confidence: row.confidence, evidence,
     createdAt: row.created_at, ...(row.resolved_at ? { resolvedAt: row.resolved_at } : {}),
     ...(row.origin ? { origin: row.origin } : {}),
     ...(row.owner_user_id ? { ownerUserId: row.owner_user_id } : {}),
@@ -71,8 +79,8 @@ export async function readPersistedOperatingTasks(businessId: string, explicit?:
   // owners' private commitments/priority notices and filter them only after the database read.
   if(explicit?.ownerUserId){
     if(!/^[0-9a-f-]{36}$/i.test(explicit.ownerUserId))throw new Error("Invalid owner scope");
-    query=query.or("kind.not.in.(commitment,priority_notice),owner_user_id.eq."+explicit.ownerUserId);
-  }else if(explicit)query=query.not("kind","in","(commitment,priority_notice)");
+    query=query.or("kind.not.in.(commitment,priority_notice,u4_report,u4_run_failure),owner_user_id.eq."+explicit.ownerUserId);
+  }else if(explicit)query=query.not("kind","in","(commitment,priority_notice,u4_report,u4_run_failure)");
   if(explicit?.kind)query=query.eq("kind",explicit.kind);
   const {data,error}=await query.order("created_at",{ascending:false});
   if (error) throw error;

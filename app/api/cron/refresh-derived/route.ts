@@ -3,7 +3,8 @@ import {createAdminSupabaseClient} from "@/lib/supabase/admin";
 import {verifyBearer} from "@/lib/security/bearer";
 import {refreshDerivedForBusiness,derivedRefreshSchemaMissing} from "@/lib/alerts/refreshDerived.server";
 import {deliverPendingCommitments} from "@/lib/operating/commitments.server";
-import {dispatchRoutinesForBusiness} from "@/lib/ai/supervisor/routines/dispatch.server";
+import {dispatchDueObjectivesAcrossCafes,dispatchRoutinesForBusiness} from "@/lib/ai/supervisor/routines/dispatch.server";
+import {deliverDuePushReports} from "@/lib/ai/supervisor/routines/push.server";
 import {enqueueInvestigationsForOwner,processDueInvestigations} from "@/lib/ai/supervisor/routines/investigation.server";
 export const runtime="nodejs";
 export const dynamic="force-dynamic";
@@ -11,7 +12,8 @@ export const maxDuration=300;
 const respond=(status:number,body:unknown)=>NextResponse.json(body,{
   status,headers:{"Cache-Control":"no-store"},
 });
-/** Every 15 minutes refresh derived rows tenant by tenant; no page-load writes. */
+/** The existing SQL admission ledger enforces 15-minute refresh and pending
+ * source wakes, independent of which minute a protected cron request arrives. */
 export async function GET(request:Request){
   if(!verifyBearer(request,process.env.CRON_SECRET))
     return respond(401,{error:"unauthorized"});
@@ -19,6 +21,11 @@ export async function GET(request:Request){
   let checked=0,refreshed=0,failed=0,deferred=0;
   const routines={routinesChecked:0,runs:0,notices:0,failed:0,evidenceChecks:0,investigationsQueued:0};
   const now=new Date();
+  // One existing cron authority: cheap due objectives run first, independent
+  // of the slower 15-minute derived refresh fleet window.
+  const dueObjectives=await dispatchDueObjectivesAcrossCafes(db,now).catch(()=>
+    ({admitted:0,claimed:0,completed:0,failed:1,deferred:0}));
+  const pushDelivery=await deliverDuePushReports(db,6).catch(()=>({sent:0,retried:0,failed:1}));
   const refreshAdmissionUntil=now.getTime()+180_000;
   const investigationAdmissionUntil=now.getTime()+225_000;
   // The legacy manual worker flag alone must not activate scheduled chat work.
@@ -50,6 +57,8 @@ export async function GET(request:Request){
   let commitments:{scopes:number;delivered:number;failed:number};
   try{commitments=await deliverPendingCommitments(db,now);}
   catch{commitments={scopes:0,delivered:0,failed:1};}
+  // SQL admits only due or newly queued café work. A missed quarter-hour
+  // cannot lose its source-change detection or owner priority notices.
   const pageSize=100;
   const scheduled=await db.rpc("supervisor_list_derived_refresh_businesses");
   const useLegacy=derivedRefreshSchemaMissing(scheduled.error);
@@ -79,7 +88,7 @@ export async function GET(request:Request){
         // Independent source-change triage follows the authoritative alert refresh.
         try{
           const outcome=await dispatchRoutinesForBusiness(db,business.id,business.timezone,new Date(),
-            enqueueInvestigationsForOwner);
+            enqueueInvestigationsForOwner,undefined,{skipObjectives:true});
           routines.routinesChecked+=outcome.routinesChecked;
           routines.runs+=outcome.runs;
           routines.notices+=outcome.notices;
@@ -93,7 +102,8 @@ export async function GET(request:Request){
   // A global fair, bounded slice across all cafés, not paid model calls per
   // business. The existing cron remains the only schedule for this capability.
   await investigateOne();
-  return respond(failed||commitments.failed||routines.failed||investigations.failed||ownerResult.failed||admissionDeferred?207:200,
-    {checked,refreshed,failed,deferred,commitments,routines,investigations,
+  return respond(failed||commitments.failed||routines.failed||investigations.failed||
+    dueObjectives.failed||pushDelivery.failed||ownerResult.failed||admissionDeferred?207:200,
+    {checked,refreshed,failed,deferred,dueObjectives,pushDelivery,heavyRefresh:true,commitments,routines,investigations,
       ...(ownerRunsEnabled?{ownerRuns:ownerResult}:{})});
 }

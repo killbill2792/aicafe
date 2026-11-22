@@ -8,7 +8,9 @@ export const manageRoutineSchema=z.strictObject({
   routine_id:z.uuid().nullable(),
   revision:z.number().int().positive().nullable(),
   title:z.string().trim().min(1).max(240).nullable(),
-  cadence:z.enum(["daily","weekly"]).nullable(),
+  cadence:z.enum(["once","daily","weekly"]).nullable(),
+  /** Café-local date for a single due occurrence; null for daily/weekly. */
+  once_local_date:z.iso.date().nullable().optional(),
   weekdays:z.array(z.number().int().min(1).max(7)).max(7).nullable(),
   local_time:z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/u).nullable(),
   /** Verified owner-message source, never model-authored objective prose. */
@@ -17,18 +19,19 @@ export const manageRoutineSchema=z.strictObject({
   source_page_offset:z.number().int().min(0).max(10000).nullable(),
 });
 function fullSchedule(input:z.infer<typeof manageRoutineSchema>){
-  if(!input.title||!input.cadence||!input.weekdays||!input.local_time)
-    throw new Error("Routine needs title, cadence, weekdays and local time");
+  if(!input.title||!input.cadence||!input.local_time)
+    throw new Error("Routine needs a title, cadence and local time");
   return routineScheduleSchema.parse({
     title:input.title,cadence:input.cadence,
-    weekdays:input.weekdays,localTime:input.local_time,
+    weekdays:input.weekdays??[],localTime:input.local_time,
+    ...(input.cadence==="once"?{onceLocalDate:input.once_local_date}:{}),
   });
 }
 export const routineTools={
   manage_routine:{
     agentId:"leo" as const,
     schema:manageRoutineSchema,
-    description:"Manage an owner's saved natural-language recurring café objective: create, list, edit schedule, edit objective, pause, resume or permanently revoke. A newly created routine preserves the full actual owner message as its objective and, when the U4 runtime is enabled, uses the existing single Luna agent to research the objective with authorized café tools and post a concise verified report. Do not reduce the objective to the title. A legacy routine continues its existing priority check until edited or deliberately converted. A routine never grants authority to spend, message anyone, change staffing/prices or execute external effects. The saved routine ID, revision and status are authoritative. Use the current café-local clock and ask for the schedule when missing; daily takes weekdays=[]; weekly takes ISO weekdays 1=Monday to 7=Sunday. List saved routines before editing or pausing to get exact routine_id and revision. For create, select goal_source_message_id from the authenticated owner-message IDs in this turn’s verified candidate list. When the original objective is not in the initial previews, use list_goal_sources with source_page_offset=0, then continue using the returned next_offset. Its scoped owner-only candidates are short previews: the database saves the entire original message. Select the ORIGINAL investigation request when a later owner reply only supplies a schedule; never substitute that clarification. Choose the current message ID for a single-turn complete request. Do not invent IDs; a missing source must be clarified rather than silently replaced with a scheduling response. Use edit_goal to update the owner objective from the actual authenticated owner message without restating the schedule; optional full schedule if both change. Use edit only for schedule changes with all fields, never to overwrite the goal. Revoke is irreversible. Never say a change was saved if the tool failed.",
+    description:"Manage an owner's saved natural-language café objective, once at a specified café-local date/time or on a recurring schedule: create, list, edit schedule, edit objective, pause, resume or permanently revoke. A newly created routine preserves the full actual owner message as its objective and, when the U4 runtime is enabled, uses the existing single Luna agent to research the objective with authorized café tools and post a concise verified report. Do not reduce the objective to the title. A legacy routine continues its existing priority check until edited or deliberately converted. A routine never grants authority to spend, message anyone, change staffing/prices or execute external effects. The saved routine ID, revision and status are authoritative. Use the current café-local clock and ask for the schedule when missing; once needs once_local_date (YYYY-MM-DD) and weekdays=[]; daily takes weekdays=[]; weekly takes ISO weekdays 1=Monday to 7=Sunday. Use manage_commitment only for a simple reminder, never for a requested future investigation. Resolve relative due times from the trusted café-local clock; never invent the owner’s full goal. List saved routines before editing or pausing to get exact routine_id and revision. For create, select goal_source_message_id from the authenticated owner-message IDs in this turn’s verified candidate list. When the original objective is not in the initial previews, use list_goal_sources with source_page_offset=0, then continue using the returned next_offset. Its scoped owner-only candidates are short previews: the database saves the entire original message. Select the ORIGINAL investigation request when a later owner reply only supplies a schedule; never substitute that clarification. Choose the current message ID for a single-turn complete request. Do not invent IDs; a missing source must be clarified rather than silently replaced with a scheduling response. Use edit_goal to update the owner objective from the actual authenticated owner message without restating the schedule; optional full schedule if both change. Use edit only for schedule changes with all fields, never to overwrite the goal. Revoke is irreversible. Never say a change was saved if the tool failed.",
     execute:async(raw:unknown,ctx:AgentToolContext):Promise<AgentToolResult>=>{
       const input=manageRoutineSchema.parse(raw);
       const port=ctx.routines;
@@ -48,9 +51,9 @@ export const routineTools={
       if(!input.routine_id||!input.revision)
         throw new Error("A saved routine ID and revision are required");
       if(input.action==="edit_goal"){
-        const supplied=[input.title,input.cadence,input.weekdays,input.local_time]
-          .filter(value=>value!==null);
-        if(supplied.length&&supplied.length!==4)
+        const supplied=[input.title,input.cadence,input.weekdays,input.local_time,input.once_local_date]
+          .filter(value=>value!==null&&value!==undefined);
+        if(supplied.length&&supplied.length!==4&&supplied.length!==5)
           throw new Error("Changing the objective and schedule together requires all schedule fields; partial changes cannot be silently ignored");
       }
       const status=input.action==="pause"?"paused" as const:
@@ -61,7 +64,8 @@ export const routineTools={
         ...(status?{status}:{}),
         ...(input.action==="edit"?{schedule:fullSchedule(input)}:{}),
         ...(input.action==="edit_goal"?{objectiveEdit:true,
-          ...(input.title&&input.cadence&&input.weekdays&&input.local_time?
+          ...(input.title&&input.cadence&&input.local_time&&
+            (input.cadence!=="once"||input.once_local_date)?
             {schedule:fullSchedule(input)}:{})}:{}),
       });
       return {...base,missing:[],routine};

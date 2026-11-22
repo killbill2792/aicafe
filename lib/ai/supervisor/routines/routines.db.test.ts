@@ -477,7 +477,15 @@ describe("U4 migrated model-objective and autonomous Watch SQL contract",()=>{
       const ownerReports=await admin.query("select grounding,structured_content from public.ai_messages where business_id=$1 and owner_user_id=$2 and role='supervisor' and grounding->'agentMetadata'->>'u4Kind'='routine'",[business,ownerId]);
       expect(ownerReports.rows).toHaveLength(1);
       expect(ownerReports.rows[0].grounding.agentMetadata.runId).toBe(first.run_id);
-      expect(ownerReports.rows[0].structured_content[0].text).toContain("recorded sales");
+      expect(ownerReports.rows[0].structured_content[0].text).toMatch(/Open Work/u);
+      expect(ownerReports.rows[0].structured_content[0].text)
+        .not.toContain("recorded sales");
+      const work=await admin.query("select owner_user_id,kind,payload from public.operating_tasks "+
+        "where business_id=$1 and id=$2",[business,"u4:"+first.run_id]);
+      expect(work.rows).toHaveLength(1);
+      expect(work.rows[0]).toMatchObject({owner_user_id:ownerId,kind:"u4_report",
+        payload:{runId:first.run_id,routineId}});
+      expect(audited.rows[0].u4_result.summary).toContain("recorded sales");
     }finally{
       await owner?.end();await worker?.end();
       await admin.query("delete from public.businesses where id=$1",[business]);
@@ -536,4 +544,298 @@ describe("U4 migrated model-objective and autonomous Watch SQL contract",()=>{
     }
   },120_000);
 
+});
+
+describe("U4 once: actual disposable cross-café admission, restart and private Work",()=>{
+  (sandbox?it:it.skip)("two cafés independently claim, recover and publish without cross-owner access",async()=>{
+    const admin=await connect("postgres");
+    const cafes=[randomUUID(),randomUUID()],owners=[randomUUID(),randomUUID()];
+    const threads=[randomUUID(),randomUUID()],goals=[randomUUID(),randomUUID()];
+    const routines=[randomUUID(),randomUUID()],otherRoutine=randomUUID();
+    const dueDate=new Date(Date.now()+2*86_400_000).toISOString().slice(0,10);
+    const due=dueDate+"T12:00:00.000Z";
+    const after=new Date(Date.parse(due)+60_000).toISOString();
+    const near=new Date(Date.parse(due)-60_000).toISOString();
+    let ownerA:Client|undefined,ownerB:Client|undefined;
+    let workerA:Client|undefined,workerB:Client|undefined;
+    const make=(i:number,id:string,message:string)=>[
+      cafes[i],owners[i],threads[i],"Evidence-backed daily exception review",
+      dueDate,"12:00",due,id,goals[i],goals[i],
+    ];
+    try{
+      for(let i=0;i<2;i++){
+        await admin.query("insert into auth.users(id,instance_id,aud,role,email,encrypted_password,created_at,updated_at) "+
+          "values($1,'00000000-0000-0000-0000-000000000000','authenticated','authenticated',$2,'',now(),now())",
+          [owners[i],"u4-once-"+owners[i]+"@example.invalid"]);
+        await admin.query("insert into public.businesses(id,name,timezone,is_demo) "+
+          "values($1,'Disposable U4 fleet café','UTC',false)",[cafes[i]]);
+        await admin.query("insert into public.memberships(business_id,user_id,role) "+
+          "values($1,$2,'owner')",[cafes[i],owners[i]]);
+        await admin.query("insert into public.ai_threads(id,business_id,owner_user_id,client_request_id) "+
+          "values($1,$2,$3,$4)",[threads[i],cafes[i],owners[i],randomUUID()]);
+        await admin.query("insert into public.ai_messages(id,business_id,thread_id,owner_user_id,"+
+          "author_user_id,role,content_type,text_content,client_message_id) "+
+          "values($1,$2,$3,$4,$4,'owner','text',$5,$6)",
+          [goals[i],cafes[i],threads[i],owners[i],
+            "At the agreed one-time date, investigate current sales and stock from source data.",
+            randomUUID()]);
+      }
+      ownerA=await connect("owner",owners[0]);
+      ownerB=await connect("owner",owners[1]);
+      workerA=await connect("service");
+      workerB=await connect("service");
+      const saveA=await call(ownerA,"u4_create_once_objective",make(0,routines[0],"ignored"));
+      const saveB=await call(ownerB,"u4_create_once_objective",make(1,routines[1],"ignored"));
+      expect(saveA).toMatchObject({
+        id:routines[0],cadence:"once",execution_mode:"objective",
+        objective_source_message_id:goals[0],
+      });
+      expect(saveB).toMatchObject({id:routines[1],cadence:"once",execution_mode:"objective"});
+      expect(saveA.objective_text).toContain("investigate current sales and stock");
+      expect((await call(ownerA,"u4_create_once_objective",
+        make(0,routines[0],"ignored"))).id).toBe(routines[0]);
+      await expect(call(ownerA,"u4_create_once_objective",
+        make(1,randomUUID(),"other-owner"))).rejects.toThrow();
+      // A competing same-café due goal cannot occupy another independent slot.
+      await call(ownerA,"u4_create_once_objective",make(0,otherRoutine,"ignored"));
+      expect(await call(workerA,"u4_due_objective_admission",[near,6,false])).toEqual([]);
+      const admitted=await call(workerA,"u4_due_objective_admission",[after,6,false]);
+      expect(admitted).toHaveLength(2);
+      expect(new Set(admitted.map((item:{routine:{business_id:string}})=>
+        item.routine.business_id))).toEqual(new Set(cafes));
+      const a=await call(workerA,"supervisor_claim_current_routine_occurrence",
+        [cafes[0],routines[0],1,dueDate,due,after]);
+      const b=await call(workerB,"supervisor_claim_current_routine_occurrence",
+        [cafes[1],routines[1],1,dueDate,due,after]);
+      expect(a?.run_id).toBeTruthy();
+      expect(b?.run_id).toBeTruthy();
+      expect(a.run_id).not.toBe(b.run_id);
+      expect(await call(workerB,"supervisor_claim_current_routine_occurrence",
+        [cafes[0],otherRoutine,1,dueDate,due,after])).toBeNull();
+      const stale=a.lease_token;
+      // Simulate the crash of café A's process. Café B lease remains usable.
+      await admin.query("update public.supervisor_routine_occurrences "+
+        "set lease_until=$3::timestamptz-interval '1 minute' "+
+        "where business_id=$1 and run_id=$2",[cafes[0],a.run_id,after]);
+      const resumed=await call(workerB,"supervisor_claim_current_routine_occurrence",
+        [cafes[0],routines[0],1,dueDate,due,after]);
+      expect(resumed.run_id).toBe(a.run_id);
+      expect(resumed.lease_token).not.toBe(stale);
+      // Two distinct consented devices on café B. A separate café A's device
+      // must never receive B's report. No actual network push is sent.
+      const hashes=["a".repeat(64),"b".repeat(64),"c".repeat(64)];
+      await admin.query("insert into public.u4_push_subscriptions "+
+        "(business_id,owner_user_id,device_hash,sealed_subscription,consent_at) "+
+        "values($1,$2,$3,$5,now()),($1,$2,$4,$5,now()),"+
+        "($6,$7,$8,$5,now())",[
+          cafes[1],owners[1],hashes[0],hashes[1],
+          "sealed_disposable_keys_not_provider_data".repeat(2),
+          cafes[0],owners[0],hashes[2],
+        ]);
+      const proof={sources:[{source:"cafe_state",identifier:"fixture_source",
+          view:"bounded source read",asOf:after}],sourceCount:1,
+        sourceDomains:["cafe_state"],quality:"partial",
+        missing:["Real provider execution not performed in this DB-only test."],
+        externalEffects:"not_attempted"};
+      expect(await call(workerB,"u4_publish_objective_report",[
+        cafes[1],routines[1],b.run_id,b.lease_token,
+        "DB fixture: report is saved once and delivered only to its owner.",
+        "attention",proof,after,
+      ])).toBe(true);
+      expect(await call(workerB,"u4_publish_objective_report",[
+        cafes[1],routines[1],b.run_id,b.lease_token,
+        "Duplicate fixture report","attention",proof,after,
+      ])).toBe(false);
+      const task=await admin.query(
+        "select id,owner_user_id,payload from public.operating_tasks "+
+        "where business_id=$1 and kind='u4_report'",[cafes[1]]);
+      expect(task.rows).toHaveLength(1);
+      expect(task.rows[0].owner_user_id).toBe(owners[1]);
+      expect(task.rows[0].payload.runId).toBe(b.run_id);
+      // Atomic report publication produced exactly one receipt per
+      // consented device on the matching owner/café; not on café A.
+      const queued=await admin.query("select device_hash,status from "+
+        "public.u4_push_receipts where business_id=$1 and run_id=$2",
+        [cafes[1],b.run_id]);
+      expect(queued.rows.map(x=>x.device_hash).sort()).toEqual(hashes.slice(0,2));
+      expect(queued.rows.every(x=>x.status==="pending")).toBe(true);
+      expect((await admin.query("select count(*)::int n from "+
+        "public.u4_push_receipts where business_id=$1",[cafes[0]])).rows[0].n).toBe(0);
+      // Browser users have no direct access to encrypted keys or receipts.
+      await expect(ownerB.query("select * from public.u4_push_receipts")).rejects.toThrow();
+      const delivery=await call(workerB,"u4_claim_push_receipt",[after]) as {
+        businessId:string;ownerUserId:string;deviceHash:string;
+        runId:string;leaseToken:string;sealedSubscription:string};
+      expect(delivery.businessId).toBe(cafes[1]);
+      expect(delivery.ownerUserId).toBe(owners[1]);
+      expect(hashes.slice(0,2)).toContain(delivery.deviceHash);
+      expect(delivery.sealedSubscription).not.toBe("");
+      expect(await call(workerB,"u4_finish_push_receipt",[
+        cafes[1],owners[1],delivery.deviceHash,b.run_id,
+        "00000000-0000-0000-0000-000000000000",true,false,
+        new Date(Date.parse(after)+5_000).toISOString(),
+      ])).toBe(false);
+      expect(await call(workerB,"u4_finish_push_receipt",[
+        cafes[1],owners[1],delivery.deviceHash,b.run_id,
+        delivery.leaseToken,true,false,
+        new Date(Date.parse(after)+5_000).toISOString(),
+      ])).toBe(true);
+      const unclaimed=hashes.slice(0,2).find(x=>x!==delivery.deviceHash)!;
+      await admin.query("update public.u4_push_subscriptions set revoked_at=$4 "+
+        "where business_id=$1 and owner_user_id=$2 and device_hash=$3",
+        [cafes[1],owners[1],unclaimed,after]);
+      const statuses=await admin.query("select device_hash,status,lease_token "+
+        "from public.u4_push_receipts where business_id=$1 and run_id=$2",
+        [cafes[1],b.run_id]);
+      expect(statuses.rows.find(x=>x.device_hash===delivery.deviceHash)?.status)
+        .toBe("sent");
+      expect(statuses.rows.find(x=>x.device_hash===unclaimed)?.status)
+        .toBe("dead");
+      expect(statuses.rows.every(x=>x.lease_token===null)).toBe(true);
+
+      const full=await admin.query(
+        "select u4_result->>'summary' summary from public.supervisor_routine_occurrences "+
+        "where business_id=$1 and run_id=$2",[cafes[1],b.run_id]);
+      expect(full.rows[0].summary).toContain("saved once");
+      const chat=await admin.query(
+        "select structured_content from public.ai_messages "+
+        "where business_id=$1 and grounding->'agentMetadata'->>'runId'=$2",
+        [cafes[1],b.run_id]);
+      expect(chat.rows).toHaveLength(1);
+      expect(chat.rows[0].structured_content[0].text).toContain("Open Work");
+      expect(chat.rows[0].structured_content[0].text).not.toContain("saved once");
+      expect((await ownerA.query("select id from public.operating_tasks "+
+        "where business_id=$1 and kind='u4_report'",[cafes[1]])).rows).toEqual([]);
+      expect((await ownerB.query("select id from public.operating_tasks "+
+        "where business_id=$1 and kind='u4_report'",[cafes[1]])).rows).toHaveLength(1);
+      // Owner A's access revoke cannot poison B's completed result.
+      await admin.query("delete from public.memberships where business_id=$1 "+
+        "and user_id=$2",[cafes[0],owners[0]]);
+      expect(await call(workerA,"u4_routine_lease_active",[
+        cafes[0],routines[0],a.run_id,resumed.lease_token,
+      ])).toBe(false);
+      expect((await admin.query("select state from public.supervisor_routine_occurrences "+
+        "where business_id=$1 and run_id=$2",[cafes[1],b.run_id])).rows)
+        .toEqual([{state:"completed"}]);
+    }finally{
+      await Promise.all([ownerA?.end(),ownerB?.end(),workerA?.end(),workerB?.end()]);
+      await admin.query("delete from public.businesses where id=any($1::uuid[])",[cafes]);
+      await admin.query("delete from auth.users where id=any($1::uuid[])",[owners]);
+      await admin.end();
+    }
+  },120_000);
+});
+
+// This is a real PostgreSQL admission benchmark, not a count-only mock. All
+// 500 cafés/owners/threads/messages/routines are disposable local fixtures.
+describe("U4 load admission with 1/10/100/500 independent cafés",()=>{
+  (sandbox?it:it.skip)("measures fair bounded admission, per-café capacity and recovery",async()=>{
+    const admin=await connect("postgres"),worker=await connect("service");
+    let owner:Client|undefined;
+    const now=new Date();
+    const asOf=new Date(now.getTime()+2*86_400_000);
+    const timings:Record<string,{p50:number;p95:number;count:number}>={};
+    let seeded=false;
+    try{
+      await admin.query("create temporary table u4_load("+
+        "ordinal integer,cafe uuid,owner_id uuid,thread uuid,msg uuid,routine uuid)");
+      // One synthetic owner across independently authorized cafés avoids
+      // provisioning 500 expensive Auth identities. The separate two-owner
+      // test above is the cross-owner/privacy boundary.
+      const fleetOwner=randomUUID();
+      await admin.query("insert into u4_load select n,gen_random_uuid(),"+
+        "$1::uuid,gen_random_uuid(),gen_random_uuid(),gen_random_uuid() "+
+        "from generate_series(1,500) n",[fleetOwner]);
+      seeded=true;
+      await admin.query("insert into auth.users(id,instance_id,aud,role,email,"+
+        "encrypted_password,created_at,updated_at) select owner_id,"+
+        "'00000000-0000-0000-0000-000000000000',"+
+        "'authenticated','authenticated',owner_id::text||'@example.invalid',"+
+        "'',now(),now() from u4_load where ordinal=1");
+      await admin.query("insert into public.businesses(id,name,timezone,is_demo) "+
+        "select cafe,'Disposable U4 capacity café','UTC',false from u4_load");
+      await admin.query("insert into public.memberships(business_id,user_id,role) "+
+        "select cafe,owner_id,'owner' from u4_load");
+      await admin.query("insert into public.ai_threads(id,business_id,owner_user_id,client_request_id) "+
+        "select thread,cafe,owner_id,gen_random_uuid() from u4_load");
+      await admin.query("insert into public.ai_messages(id,business_id,thread_id,"+
+        "owner_user_id,author_user_id,role,content_type,text_content,client_message_id) "+
+        "select msg,cafe,thread,owner_id,owner_id,'owner','text',"+
+        "'Inspect current recorded café facts without external effects.',gen_random_uuid() "+
+        "from u4_load");
+      await admin.query("insert into public.supervisor_routines("+
+        "business_id,id,owner_user_id,thread_id,title,cadence,weekdays,local_time,"+
+        "timezone,execution_mode,objective_text,objective_source_message_id) "+
+        "select cafe,routine,owner_id,thread,'Synthetic owner objective',"+
+        "'daily','{}','08:00','UTC','objective',"+
+        "'Inspect current recorded café facts without external effects.',msg "+
+        "from u4_load");
+      console.info("u4_load_seeded_disposable_cafes",500);
+      for(const count of [1,10,100,500]){
+        await admin.query("update public.supervisor_routines r set status="+
+          "case when l.ordinal<=$1 then 'active' else 'paused' end "+
+          "from u4_load l where r.business_id=l.cafe and r.id=l.routine",[count]);
+        const samples:number[]=[];
+        let last: Array<{routine:{business_id:string};localDate:string;
+          scheduledForUtc:string|null}>=[];
+        for(let repeat=0;repeat<3;repeat++){
+          const t=performance.now();
+          const value=await call(worker,"u4_due_objective_admission",[
+            asOf.toISOString(),6,false]);
+          samples.push(performance.now()-t);
+          last=value;
+        }
+        samples.sort((a,b)=>a-b);
+        timings[count]={count:last.length,p50:samples[1],p95:samples[2]};
+        console.info("u4_load_admission_sample",JSON.stringify({
+          configuredCafes:count,admitted:last.length,p50Ms:samples[1],p95Ms:samples[2],
+        }));
+        expect(last).toHaveLength(Math.min(count,6));
+        expect(new Set(last.map(x=>x.routine.business_id)).size).toBe(last.length);
+        expect(last.every(x=>Date.parse(x.scheduledForUtc!)<=asOf.getTime()))
+          .toBe(true);
+        // A 25-second admission budget at 500 café inputs is conservative
+        // compared with the existing serverless 300-second hard ceiling.
+        expect(samples[2]).toBeLessThan(25_000);
+      }
+      const first=await call(worker,"u4_due_objective_admission",[
+        asOf.toISOString(),6,false]) as Array<{
+          routine:{business_id:string;id:string;revision:number};
+          localDate:string;scheduledForUtc:string|null}>;
+      const leased:Array<{cafe:string;run:string}>=[];
+      for(const row of first){
+        const claimed=await call(worker,"supervisor_claim_current_routine_occurrence",[
+          row.routine.business_id,row.routine.id,row.routine.revision,
+          row.localDate,row.scheduledForUtc,asOf.toISOString()]);
+        expect(claimed?.run_id).toBeTruthy();
+        leased.push({cafe:row.routine.business_id,run:claimed.run_id});
+      }
+      expect(new Set(leased.map(x=>x.cafe)).size).toBe(6);
+      const next=await call(worker,"u4_due_objective_admission",[
+        asOf.toISOString(),6,false]) as Array<{routine:{business_id:string}}>;
+      expect(next).toHaveLength(6);
+      expect(next.every(x=>!leased.some(y=>y.cafe===x.routine.business_id))).toBe(true);
+      const member=(await admin.query("select owner_id from u4_load where ordinal=1")).rows[0];
+      owner=await connect("owner",member.owner_id);
+      await expect(call(owner,"u4_due_objective_admission",[
+        asOf.toISOString(),6,false])).rejects.toThrow();
+      // No café names, original owner prompts, or source values in metrics.
+      console.info("u4_disposable_fleet_admission_ms",JSON.stringify(timings));
+    }finally{
+      await Promise.allSettled([owner?.end(),worker.end()]);
+      if(seeded){
+        await admin.query("delete from public.supervisor_routines "+
+          "where business_id in(select cafe from u4_load)").catch(()=>{});
+        await admin.query("delete from public.ai_messages "+
+          "where business_id in(select cafe from u4_load)").catch(()=>{});
+        await admin.query("delete from public.ai_threads "+
+          "where business_id in(select cafe from u4_load)").catch(()=>{});
+        await admin.query("delete from public.businesses "+
+          "where id in(select cafe from u4_load)").catch(()=>{});
+        await admin.query("delete from auth.users "+
+          "where id in(select owner_id from u4_load)").catch(()=>{});
+      }
+      await admin.end();
+    }
+  },210_000);
 });

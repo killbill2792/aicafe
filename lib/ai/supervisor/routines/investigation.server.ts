@@ -473,20 +473,10 @@ export async function processNextInvestigation(db:SupabaseClient,now:Date,
       resultDomains:turn.results.map(item=>item.source).slice(0,12),
       verified:verified.ok,failureCode:verified.ok?null:verified.reason,
     });}catch{/* Instrumentation cannot influence production results. */}
-    // Do not publish unverified model assertions. But an exact source-bound read
-    // with missing corroboration can still generate a deterministic owner question.
-    // The existing awaiting_owner checkpoint and notification transaction carry it.
+    // Only a verified model response may be published or ask the owner a question.
+    // A source-only fallback must never invent a business-family question or
+    // turn missing corroboration into an apparently completed investigation.
     let report=verified.ok?verified:null;
-    if(!verified.ok&&synopsis.kind==="business_anomaly"&&verified.reason==="evidence_incomplete"){
-      const source=await readIncidentEvidence(db,c);
-      const selectors=object(source.selectors);
-      const family=selectors?.family;
-      if(source.missing.length===0&&typeof family==="string"){
-        const questions:Record<string,string>={data_gap:"Can you confirm or supply the missing business evidence in the relevant source screen?",stock_shortage:"Can you confirm the latest physical count and whether an order is already on its way?",stockout_risk:"Can you confirm the latest physical count and when your next delivery is due?",supplier_quote:"Can you confirm the latest comparable supplier quote and delivery terms?",early_clock_in:"Can you confirm the published shift and actual attendance record?"};
-        const question=questions[family]??"Can you confirm the relevant source records so I can finish checking this change?";
-        report={ok:true,text:customerIncident?"I could not verify enough customer evidence to make a reliable customer trend claim. I will recheck the retained Toast records and available source evidence, and keep this unresolved until I can verify it. No action was taken.":"I could not independently corroborate all the evidence for this business observation. "+question+" I will keep checking the source records. No external action was taken.",tools:["get_investigation_source"],missing:["independent_corroboration_missing"]};
-      }
-    }
     if(!report)throw new Error(verified.ok?"evidence_incomplete":verified.reason);
     // Entitlement can change while a paid model call is running. Recheck
     // before submitting a verified owner-facing report; SQL independently
@@ -521,17 +511,9 @@ export async function processNextInvestigation(db:SupabaseClient,now:Date,
           report={...report,missing:[...new Set([...report.missing,"stock_purchase_draft_unverified"])]};
         }
       }
-      if(!customerIncident&&report.missing.length&&!ownerQuestion&&!stockPurchaseProposalId&&!stockEmailProposalId){
-        const family=String(selector?.family??"");
-        ownerQuestion=family==="stockout_risk"||family==="stock_shortage"?
-          "What is the latest stock count, confirmed incoming delivery or current firm supplier quote?":
-          family==="supplier_quote"?"What current pack price, availability and delivery terms has the supplier confirmed?":
-          family==="data_gap"?"Can you identify or provide the missing source information for this observation?":
-          "What missing source details can you confirm for this business observation?";
-      }
     }
-    if(!customerIncident&&!ownerQuestion&&report.missing.length&&!stockPurchaseProposalId&&!stockEmailProposalId)
-      ownerQuestion="What additional information can you confirm so I can continue checking this issue?";
+    // A verified model response carries its own evidence gaps in its full text.
+    // Do not substitute a scripted owner question for the model's actual work.
     // The agent's complete, number-checked reply is the only owner-visible
     // result. An incomplete response is NEVER recorded as investigation done.
     const next:InvestigationCheckpoint={

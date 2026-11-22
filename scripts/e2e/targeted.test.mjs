@@ -37,6 +37,18 @@ test("Task15A Operations investigation reports require the signed-in @home brows
   }
 });
 
+test("PR557 real Work, opt-in browser push and sign-out map to seeded owner browser",()=>{
+  const paths=["components/operations/OwnerPushReports.tsx",
+    "components/operations/AcknowledgeFailedWork.tsx",
+    "components/more/SignOutButton.tsx"];
+  for(const path of paths){
+    const actual=classifyPaths([path]);
+    assert.equal(actual.required,true);
+    assert.deepEqual(actual.unmapped,[]);
+    assert.deepEqual(actual.scenarios,["home"]);
+    assert.equal(summarizeReport(report([["staff","passed"]]),actual.scenarios).status,"failed");
+  }
+});
 test("backend and docs are not delayed by unrelated browser jobs", () => {
   const decision = classifyPaths(["lib/ai/agent/loop.server.ts", "app/api/chat/route.ts", "docs/README.md"]);
   assert.equal(decision.required, false);
