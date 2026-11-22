@@ -305,7 +305,14 @@ export async function runOneTurn(p: TurnParams): Promise<{ replyId: string; repl
     // Use the current authenticated owner message as the sole answer source.
     const pendingStaffQuestions:Array<{proposalId:string;revision:number;question:string;employeeName:string}>=[];
     let pendingStaffQuestionReadUnavailable=false;
-    if(!external&&!owner.ownerInputResponse&&p.ownerText.trim()){
+    // The durable browser worker uses a scoped externalClient too. It is still
+    // an authenticated owner chat turn only when the claimed job, saved owner
+    // message, thread and live checkpoint all match. Connector/external turns
+    // without that durable fence must never reinterpret historical prose as
+    // an owner answer or dismiss an approval card.
+    const verifiedDurableOwnerTurn=Boolean(p.durableFence&&p.checkpoint&&job&&
+      p.durableFence.jobId===job.id&&job.ownerMessageId===owner.id&&job.threadId===id);
+    if((!external||verifiedDurableOwnerTurn)&&!owner.ownerInputResponse&&p.ownerText.trim()){
       try{
         const pending=await createAdminSupabaseClient().from("supervisor_proposals")
           .select("id,revision,canonical_effect_payload")
