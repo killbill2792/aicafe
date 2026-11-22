@@ -203,7 +203,7 @@ const periodSchema = z.strictObject({ period: z.union([z.string().min(1).max(32)
 const menuSchema = z.strictObject({ query: z.string().max(120).nullable(), limit: z.number().int().min(1).max(25).nullable() });
 const posPeriodSchema=z.strictObject({from:z.iso.date(),to:z.iso.date()});
 const posReadTools={
-  get_peak_hours:{schema:posPeriodSchema,description:"Read recorded hourly revenue and order counts for a date range."},
+  get_peak_hours:{schema:posPeriodSchema,description:"Read actual closed-day and provisional live hourly net revenue and order counts from the same café-scoped canonical source, with incomplete/stale coverage warnings."},
   get_employee_sales:{schema:posPeriodSchema,description:"Read recorded employee-attributed sales for a date range."},
   get_payroll_facts:{schema:posPeriodSchema,description:"Read imported pay-period facts without inferring missing wages or taxes."}
 };

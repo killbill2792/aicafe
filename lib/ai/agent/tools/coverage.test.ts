@@ -244,7 +244,7 @@ describe("today's sales use the live reading until the closeout import is in",()
   for(const tool of ["get_sales","get_profit"]){
    const r=await executeAgentTool(tool,{period:"today",ownerInputs:null},ctx);
    expect(r).toMatchObject({todayImported:false,todaySoFar:{provisional:true,available:true,
-    businessDate:"2026-10-24",readAt:"2026-10-24T18:30:00.000Z",netSalesCents:45_600,orders:52,openChecks:3,missing:[]}});
+    businessDate:"2026-10-24",readAt:"2026-10-24T18:30:00.000Z",netSalesCents:45_600,orders:52,openChecks:3,missing:["todayHourlyNotCaptured"]}});
   }
  });
  it("does not read live once today is imported",async()=>{

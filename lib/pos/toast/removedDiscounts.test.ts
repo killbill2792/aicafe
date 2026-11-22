@@ -52,7 +52,7 @@ describe("a discount removed at the register is not counted (as in Toast's repor
 
  it("today's live total uses the same rule",()=>{
   const page={orders:[parseToastBusinessOrder(order,restaurant,day,"America/Los_Angeles",4)],unparsed:[]};
-  const t=summarizeToastToday({businessDate:day,readAt:"2026-11-02T22:00:00.000Z",
+  const t=summarizeToastToday({businessDate:day,readAt:"2026-11-02T22:00:00.000Z",timezone:"America/Los_Angeles",
    pages:[page as never],locationsRead:1,locationsFailed:0,truncated:false});
   expect(t.discountsCents).toBe(176);
  });

@@ -21,7 +21,9 @@ export function todayReadingFreshness(readAt:string,timezone:string,locale:strin
 export function todayLiveMissing(t:TodaySoFar):string[]{
   return [...(t.locationsFailed?["todayLiveLocationsFailed:"+t.locationsFailed]:[]),
     ...(t.truncated?["todayLiveTruncated"]:[]),
-    ...(t.unparsedOrders?["todayLiveUnparsedOrders:"+t.unparsedOrders]:[])];
+    ...(t.unparsedOrders?["todayLiveUnparsedOrders:"+t.unparsedOrders]:[]),
+    ...(t.hourlySales===undefined?["todayHourlyNotCaptured"]:[]),
+    ...(t.hourlyUnassignedOrders?["todayHourlyTimestampMissing:"+t.hourlyUnassignedOrders]:[])];
 }
 
 /** "How's today going?": provisional sales so far for the current business day,
@@ -29,7 +31,7 @@ export function todayLiveMissing(t:TodaySoFar):string[]{
 export const todayTools={
   get_today_so_far:{
     agentId:"alex",schema:empty,
-    description:"Provisional sales so far for the current business day, read live from Toast (open and paid checks). Not final: the closeout import replaces it. Use when the owner asks about today; say it is so far only when fresh; if stale say last updated HH:MM, not so far today. Name any missing locations or a truncated read. For detail about today (which discounts, items, payments or servers), query cv_toast_records for today's business date: rows with status provisional are today's closed orders saved by the 15-minute job (open checks are added once closed).",
+    description:"Provisional café-local hourly buckets and sales so far for the current business day, read live from Toast (open and paid checks). Not final: the closeout import replaces it. Use when the owner asks about today; say it is so far only when fresh; if stale say last updated HH:MM, not so far today. Name any missing locations or a truncated read. For detail about today (which discounts, items, payments or servers), query cv_toast_records for today's business date: rows with status provisional are today's closed orders saved by the 15-minute job (open checks are added once closed).",
     execute:async(raw:unknown,ctx:AgentToolContext):Promise<AgentToolResult>=>{
       empty.parse(raw);
       if(!ctx.readTodaySoFar)return {source:"today_live",period:null,agentId:"alex",missing:["todayLiveReaderUnavailable"]};
@@ -43,7 +45,10 @@ export const todayTools={
         missing:todayLiveMissing(t),
         netSalesCents:t.netSalesCents,orders:t.orders,openChecks:t.openChecks,
         discountsCents:t.discountsCents,refundsCents:t.refundsCents,tipCents:t.tipCents,
-        topItems:t.topItems};
+        topItems:t.topItems,
+        hourlySales:t.hourlySales??null,hourlyUnassignedOrders:t.hourlyUnassignedOrders??null,
+        hourlySalesStatus:t.hourlySales===undefined?"unavailable":"provisional",
+        hourlySalesUnit:"cents",hourlyTimezone:ctx.timezone};
     },
   },
 } as const;

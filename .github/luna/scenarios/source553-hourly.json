@@ -1,0 +1,143 @@
+{
+  "id": "source553-hourly",
+  "mode": "generic",
+  "engine": "node-server",
+  "entrypoint": "evals/acceptance/live/source553-hourly.mjs",
+  "proof": "source553-hourly-proof.json",
+  "scope": "source553-hourly-scope.json",
+  "expectedTools": [
+    "get_peak_hours",
+    "query_data"
+  ],
+  "assertions": [
+    {
+      "name": "saved-owner-live-reading",
+      "kind": "source",
+      "table": "public.toast_today_live",
+      "where": {
+        "business_id": {
+          "scope": "businessId"
+        },
+        "business_date": {
+          "scope": "businessDate"
+        },
+        "net_sales_cents": {
+          "scope": "sourceCents"
+        }
+      },
+      "minCount": 1,
+      "maxCount": 1
+    },
+    {
+      "name": "canonical-owner-hour",
+      "kind": "source",
+      "table": "public.cv_sales_hours",
+      "where": {
+        "business_id": {
+          "scope": "businessId"
+        },
+        "business_date": {
+          "scope": "businessDate"
+        },
+        "net_sales_cents": {
+          "scope": "sourceCents"
+        },
+        "status": {
+          "eq": "provisional"
+        }
+      },
+      "minCount": 1,
+      "maxCount": 1
+    },
+    {
+      "name": "separate-cafe-reading",
+      "kind": "source",
+      "table": "public.toast_today_live",
+      "where": {
+        "business_id": {
+          "scope": "otherCafeId"
+        },
+        "business_date": {
+          "scope": "businessDate"
+        },
+        "net_sales_cents": {
+          "scope": "otherSourceCents"
+        }
+      },
+      "minCount": 1,
+      "maxCount": 1
+    },
+    {
+      "name": "first-owner-answer",
+      "kind": "owner",
+      "table": "public.ai_messages",
+      "where": {
+        "business_id": {
+          "scope": "businessId"
+        },
+        "thread_id": {
+          "scope": "threadId"
+        },
+        "id": {
+          "scope": "firstReplyId"
+        },
+        "role": {
+          "eq": "supervisor"
+        }
+      },
+      "minCount": 1,
+      "maxCount": 1
+    },
+    {
+      "name": "canonical-owner-answer",
+      "kind": "owner",
+      "table": "public.ai_messages",
+      "where": {
+        "business_id": {
+          "scope": "businessId"
+        },
+        "thread_id": {
+          "scope": "threadId"
+        },
+        "id": {
+          "scope": "replyId"
+        },
+        "role": {
+          "eq": "supervisor"
+        }
+      },
+      "minCount": 1,
+      "maxCount": 1
+    },
+    {
+      "name": "foreign-thread-denied",
+      "kind": "isolation",
+      "table": "public.ai_threads",
+      "where": {
+        "business_id": {
+          "scope": "otherCafeId"
+        },
+        "id": {
+          "scope": "threadId"
+        }
+      },
+      "minCount": 0,
+      "maxCount": 0
+    },
+    {
+      "name": "no-proposal-effect",
+      "kind": "source",
+      "table": "public.supervisor_proposals",
+      "where": {
+        "business_id": {
+          "scope": "businessId"
+        },
+        "thread_id": {
+          "scope": "threadId"
+        }
+      },
+      "minCount": 0,
+      "maxCount": 0
+    }
+  ]
+}
