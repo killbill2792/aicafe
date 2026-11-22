@@ -47,10 +47,10 @@ test("@staff @home owner-approved factual question reaches one verified worker; 
   const ownerCtx=await browser.newContext({baseURL:"http://127.0.0.1:3000",viewport:{width:1440,height:900},serviceWorkers:"block"});
   contexts.push(ownerCtx);const owner=await ownerCtx.newPage();
   await login(owner,cafe);
-  // Sign in with the visible desktop café header. Mobile navigation has a
-  // hidden copy of the café name, so switch to 390px after authentication.
-  await owner.setViewportSize({width:390,height:844});
+  // The shared authenticated-navigation helper asserts the visible desktop
+  // café header. Exercise the real responsive question UI after navigation.
   await openOwnedPage(owner,cafe,"?thread="+encodeURIComponent(id.thread));
+  await owner.setViewportSize({width:390,height:844});
   const proposal=owner.getByRole("region",{name:"Ask an employee?"});
   await expect(proposal).toBeVisible({timeout:30_000});
   await expect(proposal.getByText(question)).toBeVisible();
