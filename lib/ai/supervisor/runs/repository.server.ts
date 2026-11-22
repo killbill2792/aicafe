@@ -323,22 +323,31 @@ export async function openOwnerRunCheckpoint(scope:RunScope,runId:string,token:s
       .eq("business_id",s.businessId).eq("owner_user_id",s.ownerUserId)
       .eq("kind","data_quality").eq("entity_type","staff_question_answer")
       .contains("evidence",[{source:"owner_report",facts:{ownerMessageId:run.data.request_key}}])
-      .limit(3);
-    if(reportRows.error||!reportRows.data||reportRows.data.length!==1)
-      throw new Error("checkpoint_effect_uncertain");
-    const reportId=reportRows.data[0].id;
-    if(typeof reportId!=="string"||!reportId.startsWith("staff-question-owner-answer:"))
-      throw new Error("checkpoint_effect_uncertain");
-    const proposalId=reportId.slice("staff-question-owner-answer:".length);
-    if(!uuid.safeParse(proposalId).success)throw new Error("checkpoint_effect_uncertain");
-    const proposal=await scopedProposal(proposalId);
-    const originalRevision=proposal.revision-1;
-    if(proposal.status!=="rejected"||originalRevision<1||
-       operationKey(id,current.checkpoint_tool,{proposalId,revision:originalRevision})!==current.checkpoint_operation)
-      throw new Error("checkpoint_effect_uncertain");
-    const ref="staff_owner_report:"+proposalId+":"+run.data.request_key;
-    await recoverEffect(current.checkpoint_tool,ref);
-    await finish(ref);
+      .limit(33);
+    // One owner turn may legitimately answer several DIFFERENT questions.
+    // Identify the exact pending operation before enforcing uniqueness.
+    // This is bounded by 32, never a partial first-page guess.
+    if(reportRows.error||!reportRows.data||reportRows.data.length===0||
+       reportRows.data.length>32)throw new Error("checkpoint_effect_uncertain");
+    const matches:string[]=[];
+    for(const report of reportRows.data){
+      const reportId=report.id;
+      if(typeof reportId!=="string"||!reportId.startsWith("staff-question-owner-answer:"))
+        throw new Error("checkpoint_effect_uncertain");
+      const proposalId=reportId.slice("staff-question-owner-answer:".length);
+      if(!uuid.safeParse(proposalId).success)throw new Error("checkpoint_effect_uncertain");
+      const proposal=await scopedProposal(proposalId);
+      const originalRevision=proposal.revision-1;
+      if(proposal.status!=="rejected"||originalRevision<1)throw new Error("checkpoint_effect_uncertain");
+      if(operationKey(id,current.checkpoint_tool,{proposalId,revision:originalRevision})===
+         current.checkpoint_operation){
+        const ref="staff_owner_report:"+proposalId+":"+run.data.request_key;
+        await recoverEffect(current.checkpoint_tool,ref);
+        matches.push(ref);
+      }
+    }
+    if(matches.length!==1)throw new Error("checkpoint_effect_uncertain");
+    await finish(matches[0]);
   }
   if(current.checkpoint_phase!=="ready")
     await finish("abandoned:"+current.checkpoint_operation);
