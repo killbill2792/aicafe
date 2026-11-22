@@ -6,19 +6,6 @@ name: Toast DIAGNOSTIC capture (manual only)
 # Existing shared Toast 10-minute operational cron is separate.
 on:
   workflow_dispatch:
-    inputs:
-      mode:
-        description: Existing broad capture or one-time Standard API customer field probe
-        required: true
-        default: legacy_capture
-        type: choice
-        options:
-          - legacy_capture
-          - standard_customer_probe
-      cafe_name:
-        description: Exact connected café name (required only for standard_customer_probe)
-        required: false
-        type: string
 
 permissions:
   contents: read
@@ -29,7 +16,7 @@ concurrency:
 
 jobs:
   capture:
-    if: github.event_name == 'workflow_dispatch' && inputs.mode == 'legacy_capture'
+    if: github.event_name == 'workflow_dispatch'
     environment: toast-prod
     runs-on: ubuntu-latest
     timeout-minutes: 58
@@ -74,77 +61,4 @@ jobs:
             console.log('Toast capture: failed (details suppressed)');
           }
           if (exitCode !== 0 || !s || s.failed) process.exit(1);
-          NODE
-
-  # DIAGNOSTIC_ONLY: owner-invoked bounded Standard API field *presence* report.
-  # Runs ONLY from the trusted default branch because toast-prod credentials
-  # are intentionally restricted to trusted deployment branches. Never route
-  # protected secrets into unmerged PR code.
-  # Does not change imports, archive, customer identities, or schedules.
-  standard_customer_probe:
-    if: github.event_name == 'workflow_dispatch' && inputs.mode == 'standard_customer_probe' && github.ref_name == 'main'
-    environment: toast-prod
-    runs-on: ubuntu-latest
-    timeout-minutes: 12
-    permissions:
-      contents: read
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version: '22'
-          cache: npm
-      - run: npm ci --ignore-scripts
-      - run: npm install --no-save --package-lock=false --ignore-scripts tsx@4.20.6
-      - name: Verify field-presence counter (synthetic data only)
-        run: node --test scripts/diagnostic-toast-standard-customer-probe-core.test.mjs
-      - name: One-time Standard API probe (no raw response output)
-        shell: bash
-        env:
-          NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
-          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
-          TOKEN_ENCRYPTION_KEY: ${{ secrets.TOKEN_ENCRYPTION_KEY }}
-          TOAST_ALLOWED_API_HOSTS: ${{ secrets.TOAST_ALLOWED_API_HOSTS }}
-          TOAST_PROBE_CAFE_NAME: ${{ inputs.cafe_name }}
-        run: |
-          set +x
-          output="$(mktemp)"
-          trap 'rm -f "$output"' EXIT
-          set +e
-          NODE_OPTIONS=--conditions=react-server ./node_modules/.bin/tsx scripts/diagnostic-toast-standard-customer-probe.ts >"$output" 2>&1
-          code=$?
-          node - "$output" "$code" <<'NODE'
-          const fs = require('node:fs');
-          // Never echo original stdout/stderr: exceptions may contain private values.
-          const lines = fs.readFileSync(process.argv[2], 'utf8').trim().split('\n');
-          let r;
-          try { r = JSON.parse(lines.at(-1)); } catch {}
-          const endpointNames = ['bulk','order_detail','payment_detail'];
-          if (!r || !['completed','failed'].includes(r.status)) {
-            console.log('Toast Standard customer probe: failed (details suppressed)');
-            process.exit(1);
-          }
-          if (r.status === 'failed') {
-            const reasons = new Set(['probe_not_configured','cafe_not_unique_or_available',
-              'verified_restaurant_not_unique','invalid_location','no_eligible_source_orders',
-              'fewer_than_ten_eligible_orders','probe_unavailable']);
-            console.log('Toast Standard customer probe failed: ' +
-              (reasons.has(r.reason) ? r.reason : 'probe_unavailable'));
-            process.exit(1);
-          }
-          console.log('Toast Standard customer probe completed; zero raw payloads stored');
-          console.log('Orders sampled: ' + Number(r.sampleSize || 0));
-          console.log('Sample categories: ' + JSON.stringify(r.sampleCategoryCounts || {}));
-          for (const name of endpointNames) {
-            const x = r.endpoints?.[name];
-            const s = x?.requestCounts ?? {};
-            console.log(name + ' requests: ' + JSON.stringify({
-              attempted: Number(s.attempted || 0), success: Number(s.success || 0),
-              failed: Number(s.failed || 0), failureCategories: s.failureCategories || {}
-            }));
-            // Only predetermined field names and safe provider schema key names,
-            // with absent / explicit null / empty / populated counts. No values.
-            console.log(name + ' field coverage: ' + JSON.stringify(x?.fieldCoverage || {}));
-          }
-          if (Number(process.argv[3]) !== 0) process.exit(1);
           NODE
