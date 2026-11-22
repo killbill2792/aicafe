@@ -37,13 +37,48 @@ export async function readUsageBusinessDate():Promise<string>{
 }
 async function allRows<T>(load:(first:number,last:number)=>PromiseLike<{data:T[]|null;error:unknown}>,max=20000):Promise<T[]>{
  const all:T[]=[];
- for(let offset=0;offset<=max;offset+=500){
-  const {data,error}=await load(offset,offset+499);
-  if(error||!data)throw new Error("usage_data_unavailable");
+ for(let offset=0;offset<max;offset+=500){
+  const pageSize=Math.min(500,max-offset);
+  const {data,error}=await load(offset,offset+pageSize-1);
+  if(error||!data){
+   const code=error&&typeof error==="object"&&"code" in error?String(error.code):"";
+   throw new Error(code==="57014"?"usage_source_timeout":"usage_data_unavailable");
+  }
+  if(data.length>pageSize)throw new Error("usage_rows_exceed_safe_limit");
   all.push(...data);
-  if(data.length<500)return all;
+  if(data.length<pageSize)return all;
  }
+ // An exactly full final page must not silently conceal further source rows.
  throw new Error("usage_rows_exceed_safe_limit");
+}
+
+/** Fetch order IDs from the café/date-indexed parent BEFORE reading lines.
+ * The former child-first relational filter scanned the global id-ordered
+ * order_lines table and timed out for October 2026 at page zero.
+ * Every child batch is restricted to IDs returned by the owner/RLS-scoped
+ * orders query. Keep the source cap and verify parent membership defensively. */
+export async function readUsageOrderLines<O extends {id:string},L extends {order_id:string}>(
+ orders:readonly O[],
+ read:(orderIds:string[],first:number,last:number)=>PromiseLike<{data:L[]|null;error:unknown}>,
+ maxLines=20000
+):Promise<Array<L&{orders:O}>>{
+ const byId=new Map(orders.map(o=>[o.id,o]));
+ if(byId.size!==orders.length)throw new Error("usage_order_ids_not_unique");
+ const result:Array<L&{orders:O}>=[];
+ for(let start=0;start<orders.length;start+=400){
+  const batches:O[][]=[];
+  for(let offset=start;offset<Math.min(start+400,orders.length);offset+=100)
+   batches.push(orders.slice(offset,offset+100));
+  const chunks=await Promise.all(batches.map(batch=>
+   allRows((first,last)=>read(batch.map(o=>o.id),first,last),maxLines)));
+  for(const chunk of chunks)for(const line of chunk){
+   const order=byId.get(line.order_id);
+   if(!order)throw new Error("usage_source_scope_mismatch");
+   if(result.length>=maxLines)throw new Error("usage_rows_exceed_safe_limit");
+   result.push({...line,orders:order});
+  }
+ }
+ return result;
 }
 /** UI and Maya use this same owner-scoped read; no LLM/client-supplied business ID. */
 export async function readUsageVariance(raw:z.input<typeof readInput>, explicit?:{client:SupabaseClient;businessId:string}):Promise<{from:string;to:string;rows:UsageRow[];missing:string[];groupBy:string|null;provenance:{sales:string;recipes:string;counts:string;purchases:string;coverage:"complete"|"incomplete"}}>{
@@ -55,7 +90,7 @@ export async function readUsageVariance(raw:z.input<typeof readInput>, explicit?
  const selected=ingredients.filter(i=>!input.ingredient||
   i.id===input.ingredient||i.name.toLowerCase().includes(input.ingredient.toLowerCase()));
  const allIds=ingredients.map(i=>i.id),chosenIds=selected.map(i=>i.id);
- const [evidence,recipes,modifiers,addons,conversions,counts,purchases,sales] = await Promise.all([
+ const [evidence,recipes,modifiers,addons,conversions,counts,purchases,orders] = await Promise.all([
   db.rpc("pantry_usage_sales_evidence",{p_business_id:businessId,p_from:input.from,p_to:input.to}),
   allRows((a,b)=>db.from("recipe_lines").select("menu_item_id,ingredient_id,quantity,menu_items!inner(business_id)")
    .eq("menu_items.business_id",businessId).order("menu_item_id").order("ingredient_id").range(a,b),8000),
@@ -68,13 +103,16 @@ export async function readUsageVariance(raw:z.input<typeof readInput>, explicit?
   chosenIds.length?allRows((a,b)=>db.from("pantry_stock_purchases").select("ingredient_id,purchase_date,quantity_base")
     .eq("business_id",businessId).in("ingredient_id",chosenIds).gte("purchase_date",input.from).lte("purchase_date",input.to).is("voided_at",null)
     .order("id").range(a,b),8000):Promise.resolve([]),
-  allRows((a,b)=>db.from("order_lines").select("id,menu_item_id,quantity,modifiers,voided,orders!inner(business_id,business_date,closed_at,pos_order_id,location_id)")
-    .eq("orders.business_id",businessId).gte("orders.business_date",input.from).lte("orders.business_date",input.to)
-    .eq("orders.toast_excluded",false).is("orders.superseded_by",null)
+  allRows((a,b)=>db.from("orders").select("id,business_date,closed_at,pos_order_id,location_id")
+    .eq("business_id",businessId).gte("business_date",input.from).lte("business_date",input.to)
+    .eq("toast_excluded",false).is("superseded_by",null)
     .order("id").range(a,b),20000),
  ]);
  if(evidence.error||modifiers.error||addons.error||conversions.error||counts.error||!modifiers.data||!addons.data||!conversions.data||!counts.data)
   throw new Error("usage_data_unavailable");
+ const sales=await readUsageOrderLines(orders,(ids,a,b)=>
+  db.from("order_lines").select("id,order_id,menu_item_id,quantity,modifiers,voided")
+   .in("order_id",ids).order("id").range(a,b),20000);
  const e=evidence.data as {covered?:boolean;staff?:UsageStaff[];
   modifierMappings?:Array<{restaurantGuid?:string;locationRef?:string;provider?:"toast"|"square"|"csv";posModifierId:string;recipeId:string}>}|null;
  const mappedMods=scopedToastModifierRecipes(e?.modifierMappings??[],modifiers.data.map(m=>({
@@ -99,18 +137,19 @@ export async function readUsageVariance(raw:z.input<typeof readInput>, explicit?
  // unambiguous product-level ingredient match. Anything else remains unknown.
  const salesRows:UsageSale[]=sales.filter(s=>!s.voided).map(s=>{
   const order=s.orders as unknown as {
-   closed_at:string;business_date:string;location_id:string|null;pos_order_id:string;
+   closed_at:string|null;business_date:string;location_id:string|null;pos_order_id:string|null;
   };
+  const providerOrderId=order.pos_order_id??"";
   // The persisted Toast order ID carries the restaurant identity, whereas
   // an individual option GUID has no business-wide uniqueness guarantee.
-  const restaurantGuid=order.pos_order_id.match(/^toast:([0-9a-f-]{36}):/i)?.[1]??null;
+  const restaurantGuid=providerOrderId.match(/^toast:([0-9a-f-]{36}):/i)?.[1]??null;
   const sizeRecipe=recipesByItem.get(s.menu_item_id??"")??[];
   const savedMods=Array.isArray(s.modifiers)?s.modifiers as Array<{posModifierId?:string;name?:string;quantity?:number;priceCents?:number|null;parentPosModifierId?:string|null}>:[];
   const optionRows=addonsByItem.get(s.menu_item_id??"")??[];
   const normalized=savedMods.map((m,index)=>{
    const key=String(m.posModifierId??"");
-   const provider=order.pos_order_id.startsWith("toast:")?"toast":
-     order.pos_order_id.startsWith("square:")?"square":"csv";
+   const provider=providerOrderId.startsWith("toast:")?"toast":
+     providerOrderId.startsWith("square:")?"square":"csv";
    const locationRef=provider==="toast"?restaurantGuid:
      provider==="square"?order.location_id:order.location_id??"csv";
    const scoped=scopedModifierId(provider,locationRef,key);
