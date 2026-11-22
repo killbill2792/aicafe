@@ -1131,4 +1131,61 @@ SELECT pg_temp.assert_true(
   AND business_date='2026-11-18'),
  'other café retains its own independent provisional hour');
 
+-- Real PostgreSQL source/reader plan on a realistic, disposable 120-day,
+-- 3,600-order history. This runs after the complete migrated SQL and rolls back.
+-- Only synthetic references, aggregate counts and execution timing are logged.
+DO $customer_source_plan$
+DECLARE b uuid:=gen_random_uuid();r uuid:=gen_random_uuid();run uuid:=gen_random_uuid();
+ loc uuid:=gen_random_uuid();guest uuid:=gen_random_uuid();
+ start_day date:='2026-01-01';target_from date:='2026-04-01';
+ target_to date:='2026-04-30';plan jsonb;ms numeric;visits bigint;
+BEGIN
+ INSERT INTO public.businesses(id,name,is_demo,timezone)
+ VALUES(b,'Disposable performance café',false,'America/Los_Angeles');
+ INSERT INTO public.locations(id,business_id,name) VALUES(loc,b,'Synthetic location');
+ PERFORM public.toast_save_configuration(b,'https://ws-api.toasttab.com',
+  'synthetic-client','synthetic-ciphertext',
+  jsonb_build_array(jsonb_build_object('location_id',loc,'restaurant_guid',r)));
+ UPDATE public.toast_location_mappings SET verified_at=now()
+ WHERE business_id=b AND restaurant_guid=r;
+ INSERT INTO public.toast_sync_runs(id,business_id,restaurant_guid,kind,state)
+ VALUES(run,b,r,'backfill','running');
+ INSERT INTO public.toast_day_status(business_id,restaurant_guid,business_date,
+  import_state,recon_state,coverage_complete,unparsed_count,last_import_run_id)
+ SELECT b,r,start_day+day_number,'imported','checked_internal',true,0,run
+ FROM generate_series(0,119) day_number;
+ INSERT INTO public.toast_raw_records(
+  business_id,restaurant_guid,entity,business_date,payload,payload_sha256,
+  capture_key,run_id)
+ SELECT b,r,'order',start_day+day_number,
+  jsonb_build_object('guid',gen_random_uuid(),'checks',jsonb_build_array(
+    jsonb_build_object('guid',gen_random_uuid(),'amount',6,
+      'customer',case
+        when line_number=1 AND day_number in (0,40,100)
+        then jsonb_build_object('guid',guest)
+        when line_number<=6 then jsonb_build_object('guid',gen_random_uuid())
+        else 'null'::jsonb end,
+      'selections','[]'::jsonb))),
+  repeat('a',64),'perf:'||day_number||':'||line_number,run
+ FROM generate_series(0,119) day_number
+ CROSS JOIN generate_series(1,30) line_number;
+ PERFORM pg_temp.assert_true((select count(*)=3600
+  from public.toast_raw_records where business_id=b),
+  'history performance fixture contains 3,600 real canonical source orders');
+ EXECUTE format(
+  'EXPLAIN (ANALYZE, BUFFERS, FORMAT JSON)
+   SELECT count(*) FROM public.customer_visits_for(%L::uuid,%L::date,%L::date)',
+  b,target_from,target_to) INTO plan;
+ ms:=(plan #>> '{0,Execution Time}')::numeric;
+ RAISE NOTICE 'SOURCE PLAN: 120 imported days, 3600 orders, execution_ms=%, root=%',
+  ms,plan #>> '{0,Plan,Node Type}';
+ PERFORM pg_temp.assert_true(ms IS NOT NULL AND ms<30000,
+  'bounded historical customer_visits_for exceeds 30-second budget');
+ SELECT count(*) INTO visits FROM public.customer_visits_for(b,target_from,target_to);
+ PERFORM pg_temp.assert_true(visits>0 AND
+  EXISTS(SELECT 1 FROM public.customer_visits_for(b,target_from,target_to)
+   WHERE observed_visit_number=3 AND returning_visit=1),
+  'full previous history preserved through the selected 30-day window');
+END $customer_source_plan$;
+
 ROLLBACK;
