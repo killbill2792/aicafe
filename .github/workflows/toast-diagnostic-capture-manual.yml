@@ -7,6 +7,14 @@ name: Toast DIAGNOSTIC capture (manual only)
 on:
   workflow_dispatch:
     inputs:
+      mode:
+        description: Existing broad capture or one-time Standard API customer field probe
+        required: true
+        default: legacy_capture
+        type: choice
+        options:
+          - legacy_capture
+          - standard_customer_probe
       cafe_name:
         description: Exact connected café name (required only for standard_customer_probe)
         required: false
@@ -21,7 +29,7 @@ concurrency:
 
 jobs:
   capture:
-    if: github.event_name == 'workflow_dispatch' && github.ref_name != 'diag/toast-standard-customer-field-probe-20261121'
+    if: github.event_name == 'workflow_dispatch' && inputs.mode == 'legacy_capture'
     environment: toast-prod
     runs-on: ubuntu-latest
     timeout-minutes: 58
@@ -69,9 +77,12 @@ jobs:
           NODE
 
   # DIAGNOSTIC_ONLY: owner-invoked bounded Standard API field *presence* report.
+  # Runs ONLY from the trusted default branch because toast-prod credentials
+  # are intentionally restricted to trusted deployment branches. Never route
+  # protected secrets into unmerged PR code.
   # Does not change imports, archive, customer identities, or schedules.
   standard_customer_probe:
-    if: github.event_name == 'workflow_dispatch' && github.ref_name == 'diag/toast-standard-customer-field-probe-20261121'
+    if: github.event_name == 'workflow_dispatch' && inputs.mode == 'standard_customer_probe' && github.ref_name == 'main'
     environment: toast-prod
     runs-on: ubuntu-latest
     timeout-minutes: 12
