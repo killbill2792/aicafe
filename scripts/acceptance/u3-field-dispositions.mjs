@@ -11,8 +11,8 @@ const admitted=JSON.parse(migration.slice(start+tag.length,end));
 const byTable=new Map(admitted.map(s=>[s.table,s]));
 if(byTable.size!==admitted.length)throw Error("Duplicate approved relation in manifest");
 const archiveName=/^(toast_raw_|toast_day_pages$|toast_modified_orders_staging$)/;
-const secretName=/(credential|oauth|token|password|access_code|secret|webhook_subscription|api_key|private_key)/i;
-const platformName=/^(ai_|agent_|supervisor_|connector_|toast_|whatsapp_|csv_|scheduling_|staff_communication_|maintenance_case_|processing_fee_|purchase_order_dispatch|cafe_sync_|square_sync_|data_health_)/;
+const secretName=/(credential|oauth|token|password|access_code|secret|webhook_subscription|api_key|private_key|sealed_subscription|device_hash)/i;
+const platformName=/^(ai_|agent_|supervisor_|connector_|toast_|whatsapp_|csv_|scheduling_|staff_communication_|maintenance_case_|processing_fee_|purchase_order_dispatch|cafe_sync_|square_sync_|data_health_|u4_)/;
 const specialistName=/^(owner_facts|operating_tasks|operating_task_responses|alerts|staff_|scheduling_|city_|cafe_city_|cafe_event_|goals|decision_|supplier_|purchase_|product_|menu_|expense_|team_|uploads|vendor_|p1_)/;
 function steward(table){
  if(/^(toast_|pos_|orders|order_lines|menu_|recipe_|ingredient_|catalog_)/.test(table))return "POS and menu domain";

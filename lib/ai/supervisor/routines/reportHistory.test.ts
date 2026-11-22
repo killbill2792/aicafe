@@ -41,7 +41,7 @@ describe("U4 authenticated historical report follow-ups",()=>{
     expect(candidates[0].messageId).toBe(messageId);
     const {db,routines,occurrences}=scopedDb();
     const approved=await verifiedRoutineReportHistory(db as never,scope,threadId,candidates);
-    expect([...approved]).toEqual([messageId]);
+    expect([...approved.keys()]).toEqual([messageId]);
     expect(routines.eq).toHaveBeenCalledWith("owner_user_id",scope.ownerUserId);
     expect(routines.eq).toHaveBeenCalledWith("thread_id",threadId);
     expect(occurrences.eq).toHaveBeenCalledWith("business_id",scope.businessId);
@@ -74,7 +74,7 @@ describe("U4 authenticated historical report follow-ups",()=>{
     ];
     for(const {db} of situations){
       const approved=await verifiedRoutineReportHistory(db as never,scope,threadId,candidates);
-      expect([...approved]).toEqual([]);
+      expect([...approved.keys()]).toEqual([]);
     }
   });
   it("admits genuine partial/Gmail-origin reports only as stale text, not fresh facts",async()=>{
@@ -85,9 +85,52 @@ describe("U4 authenticated historical report follow-ups",()=>{
       revision:1,state:"completed",receipt_ref:"u4-verified:"+runId,
       u4_result:{summary:reportText,proof:{quality:"partial",
         externalEffects:"not_attempted"}}}});
-    expect([...await verifiedRoutineReportHistory(db as never,scope,threadId,candidates)])
+    expect([...(await verifiedRoutineReportHistory(db as never,scope,threadId,candidates)).keys()])
       .toEqual([messageId]);
     // The production runner never adds these messages to priorAssistant's
     // numeric evidence; it prepends a warning and asks Luna to re-read sources.
+  });
+});
+
+describe("U4 pointer-only chat rehydration",()=>{
+  const pointer:ConversationMessage={...report,blocks:[
+    {type:"text",text:"Luna review finished. Open Work to read the report."},
+    {type:"task_card",agent:"leo",title:"Recorded sales review",
+      status:"watching",href:"/operations?agent=leo&status=watching&task=u4:"+runId},
+  ]};
+  it("hydrates owner-private saved occurrence summary, never the receipt text",async()=>{
+    const candidates=routineReportCandidates([pointer],threadId,"2026-11-20T17:00:00Z");
+    expect(candidates).toHaveLength(1);
+    const {db}=scopedDb();
+    const recovered=await verifiedRoutineReportHistory(db as never,scope,threadId,candidates);
+    expect(recovered.get(messageId)).toBe(reportText);
+    expect(recovered.get(messageId)).not.toBe(candidates[0].text);
+  });
+  it("denies altered links, extra blocks, foreign, pending and inaccessible receipts",async()=>{
+    const attempts=[
+      {...pointer,blocks:[pointer.blocks![0],{
+        ...(pointer.blocks![1] as object),href:"/operations?task=u4:"+runId}]},
+      {...pointer,blocks:[...pointer.blocks!,{type:"text",text:"injected"}]},
+      {...pointer,blocks:[pointer.blocks![0],{
+        ...(pointer.blocks![1] as object),status:"handled"}]},
+      {...pointer,id:"aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"},
+    ];
+    for(const value of attempts)expect(routineReportCandidates([value],threadId,
+      "2026-11-20T17:00:00Z")).toEqual([]);
+    const candidates=routineReportCandidates([pointer],threadId,"2026-11-20T17:00:00Z");
+    const cases=[
+      scopedDb({routine:{id:routineId,owner_user_id:"foreign",thread_id:threadId,
+        execution_mode:"objective"}}),
+      scopedDb({occurrence:{routine_id:routineId,run_id:runId,revision:1,
+        state:"pending",receipt_ref:null,u4_result:null}}),
+      scopedDb({occurrence:{routine_id:routineId,run_id:runId,revision:1,
+        state:"completed",receipt_ref:"u4-verified:"+runId,
+        u4_result:{summary:"unverified",proof:{quality:"partial",
+          externalEffects:"not_attempted"}}}}),
+      scopedDb({error:true}),
+    ];
+    for(const {db} of cases)
+      expect((await verifiedRoutineReportHistory(db as never,scope,threadId,candidates)).size)
+        .toBe(0);
   });
 });

@@ -21,6 +21,8 @@ import type { ExpenseCategoryCode } from "@/lib/constants";
 import PriceReviewActions from "@/components/operations/PriceReviewActions";
 import ExperimentReportActions from "@/components/operations/ExperimentReportActions";
 import OwnerWhatsAppAlerts from "@/components/operations/OwnerWhatsAppAlerts";
+import OwnerPushReports from "@/components/operations/OwnerPushReports";
+import AcknowledgeFailedWork from "@/components/operations/AcknowledgeFailedWork";
 import { authenticatedConversationContext } from "@/lib/ai/conversations/auth.server";
 import { missingCostDestination } from "@/lib/expenses/expectedCosts";
 import { priceReviewDirection, priceReviewHref } from "@/lib/viewmodels/priceReviewTask";
@@ -63,6 +65,33 @@ export default async function OperationsPage({ searchParams }: { searchParams: P
     return (data??[]).flatMap(p=>typeof p.canonical_effect_payload?.maintenanceCaseId==="string"?
       [{caseId:p.canonical_effect_payload.maintenanceCaseId,id:p.id,threadId:p.thread_id}]:[]);
   }).catch(()=>undefined);
+  // The report body lives only on the RLS-protected U4 occurrence. A task
+  // carries a pointer, never a duplicate report or a client-chosen café scope.
+  const u4Reports = await authenticatedConversationContext().then(async({scope})=>{
+    if(scope.businessId!==snapshot.business.id)return new Map<string,string>();
+    const saved=[...team.watching,...team.handled].filter(row=>row.kind==="u4_report" &&
+      row.ownerUserId===scope.ownerUserId &&
+      typeof row.payload.runId==="string" &&
+      /^[0-9a-f]{8}-(?:[0-9a-f]{4}-){3}[0-9a-f]{12}$/iu.test(row.payload.runId));
+    if(!saved.length)return new Map<string,string>();
+    const db=await createServerSupabaseClient();
+    const {data,error}=await db.from("supervisor_routine_occurrences")
+      .select("business_id,routine_id,run_id,u4_result")
+      .eq("business_id",scope.businessId)
+      .in("run_id",saved.map(row=>String(row.payload.runId))).limit(100);
+    if(error)throw error;
+    const byRun=new Map((data??[]).flatMap(record=>{
+      const result=record.u4_result;
+      if(!result||typeof result!=="object"||Array.isArray(result)||
+        typeof result.summary!=="string"||result.summary.length>2600)return [];
+      return [[record.run_id,{routineId:record.routine_id,text:result.summary}]] as const;
+    }));
+    return new Map(saved.flatMap(row=>{
+      const found=byRun.get(String(row.payload.runId));
+      return found&&found.routineId===row.payload.routineId?
+        [[row.id,found.text] as const]:[];
+    }));
+  }).catch(()=>new Map<string,string>());
   const meta: CardMeta = { today: snapshot.todayDateStr, locale, currency: snapshot.business.currency ?? null, maintenanceStaff,vendorApprovals };
   const tops = topChatStartItems(inbox.items);
   const names: Record<AgentId, string> = { alex: "Alex", olivia: "Olivia", maya: "Maya", leo: "Leo" };
@@ -78,7 +107,7 @@ export default async function OperationsPage({ searchParams }: { searchParams: P
   const cards: TeamInboxCard[] = INBOX_STATUSES.flatMap((value) => rows[value].map((row) => ({ id: row.id, agentId: row.agentId, status: value,
     node: <TaskCard row={row} names={names} t={t} tExperiment={tExperiment} tBrief={tBrief} tGoals={tGoals} meta={meta}
       category={(code) => tCategories(code as ExpenseCategoryCode)} selectedTaskId={selectedTaskId}
-       maintenanceCopy={maintenanceCopy} /> })));
+      u4Report={u4Reports.get(row.id)} maintenanceCopy={maintenanceCopy} /> })));
   const copy: TeamInboxCopy = {
     eyebrow: t("eyebrow"), title: t("title"), intro: t("intro"),
     focusedOn: byAgent((agentId) => t("focusedOn", { name: names[agentId], role: roles[agentId] })),
@@ -112,6 +141,12 @@ export default async function OperationsPage({ searchParams }: { searchParams: P
       </div>}
       footer={<>
         <MaintenanceCaseCard copy={maintenanceCopy} />
+        {ownerCanSubscribe&&<OwnerPushReports copy={{
+          title:t("pushTitle"),description:t("pushDescription"),
+          enable:t("pushEnable"),disable:t("pushDisable"),
+          blocked:t("pushBlocked"),unsupported:t("pushUnsupported"),
+          enabled:t("pushEnabled"),error:t("pushError"),loading:t("pushLoading"),
+        }}/>}
         {ownerCanSubscribe && <OwnerWhatsAppAlerts copy={{
           title: t("whatsAppAlertsTitle"), description: t("whatsAppAlertsDescription"),
           loading: t("whatsAppAlertsLoading"), saved: t("whatsAppAlertsSaved"),
@@ -134,6 +169,10 @@ export default async function OperationsPage({ searchParams }: { searchParams: P
 function taskHref(task: OperatingTask): string {
   // Persisted Task15A investigation reports and Task14B approvals share the
   // owner inbox. Both must open their originally authorized Supervisor thread.
+  if((task.kind==="u4_report"||task.kind==="u4_run_failure")&&
+    typeof task.payload.threadId==="string"&&
+    task.payload.threadId.length>0)
+    return "/?thread="+encodeURIComponent(task.payload.threadId);
   if(task.kind==="priority_notice"&&typeof task.payload.threadId==="string"&&
     task.payload.threadId.length>0)
     return "/?thread="+encodeURIComponent(task.payload.threadId);
@@ -192,7 +231,7 @@ function firstLine(text: unknown): string {
   return typeof text === "string" ? (text.split("\n").map((line) => line.replace(/\*\*/g, "").trim()).find(Boolean) ?? "") : "";
 }
 
-function TaskCard({ row: task, names, t, tExperiment, tBrief, tGoals, category, selectedTaskId, meta, maintenanceCopy }: { row: OperatingTask | NeedsYouItem | ExpiredNeed; names: Record<AgentId, string>; t: OperationsT; tExperiment: Awaited<ReturnType<typeof getTranslations<"SupervisorExperiment">>>; tBrief: Awaited<ReturnType<typeof getTranslations<"DailyBrief">>>; tGoals: Awaited<ReturnType<typeof getTranslations<"Goals">>>; category: (code: string) => string; selectedTaskId: string|null; meta: CardMeta; maintenanceCopy: typeof enMessages.Maintenance }) {
+function TaskCard({ row: task, names, t, tExperiment, tBrief, tGoals, category, selectedTaskId, meta, maintenanceCopy, u4Report }: { row: OperatingTask | NeedsYouItem | ExpiredNeed; names: Record<AgentId, string>; t: OperationsT; tExperiment: Awaited<ReturnType<typeof getTranslations<"SupervisorExperiment">>>; tBrief: Awaited<ReturnType<typeof getTranslations<"DailyBrief">>>; tGoals: Awaited<ReturnType<typeof getTranslations<"Goals">>>; category: (code: string) => string; selectedTaskId: string|null; meta: CardMeta; maintenanceCopy: typeof enMessages.Maintenance; u4Report?:string }) {
   const visual = agentVisuals[task.agentId];
   if (isNeed(task)) return <NeedCard item={task} name={names[task.agentId]} selected={task.id === selectedTaskId} t={t} meta={meta} />;
   const price = task.kind === "price_review";
@@ -238,11 +277,21 @@ function TaskCard({ row: task, names, t, tExperiment, tBrief, tGoals, category, 
         action:t("openEventThread"),
       };
       case "commitment": return { title: String(task.payload.title ?? ""), detail: "", action: t("openEventThread") };
+      case "u4_report": return { title: String(task.payload.title ?? t("u4ReportTitle")),
+        detail: u4Report ?? t("u4ReportUnavailable"), action: t("u4ReportOriginal") };
+      case "u4_run_failure": return { title: t("u4FailureTitle",{
+          title:String(task.payload.title??t("u4ReportTitle"))}),
+        detail:t("u4FailureDetail"), action:t("u4ReportOriginal") };
       case "event_change": return { title: t("eventChangeReview", { event: String(task.payload.eventName ?? "") }), detail: t("eventChangeDetail"), action: t("eventChangeReviewAction") };
       case "event_plan":
         if (midRun) return { title: t("eventNoteTitle", { day }), detail: String(task.payload.note ?? ""), action: t("openEventThread") };
         if (eventReport) return { title: t("eventReportTask", { date: day }), detail: firstLine(task.payload.text), action: t("openEventThread") };
         return { title: t("eventPlanReview", { date: day }), detail: t("eventPlanDetail"), action: t("openEventThread") };
+      default:
+        // An older or newer task kind is still auditable; never dereference a
+        // missing nested title or throw while rendering the owner's Inbox.
+        return { title: t("unsupportedTaskTitle"), detail: t("unsupportedTaskDetail"),
+          action: t("openEventThread") };
     }
   })();
   const selected = task.id === selectedTaskId;
@@ -252,7 +301,7 @@ function TaskCard({ row: task, names, t, tExperiment, tBrief, tGoals, category, 
     className={`scroll-mt-24 rounded-card-lg border-s-4 p-[18px] ${visual.border} ${visual.softSurface} ${selected?"ring-4 ring-ink shadow-lg":""}`}>
     <div className="flex items-center gap-2"><AgentAvatar agentId={task.agentId} size="task"/><p className={`font-bold ${visual.accent}`}>{names[task.agentId]} · AI</p>{task.payload.pricingIsEstimate === true && <span className="ms-auto"><EstimatePill label={t("estimate")} /></span>}</div>
     <h2 className="mt-3 text-lg font-bold text-ink" dir="auto">{copy.title}</h2>
-    {copy.detail && <p className="mt-1 text-[17px] font-semibold text-ink" dir="auto">{copy.detail}</p>}
+    {copy.detail && <p className="mt-1 whitespace-pre-wrap text-[17px] font-semibold text-ink" dir="auto">{copy.detail}</p>}
     <MetaLine t={t} meta={meta} subjectDate={subjectDate} createdAt={task.createdAt} status={task.status}
       expiredReason={task.payload.expiredReason} keyNumber={experiment ? null : taskKeyNumber(task, t, meta)} />
     {experiment&&<div className="mt-3 space-y-2 text-[17px]">
@@ -266,6 +315,8 @@ function TaskCard({ row: task, names, t, tExperiment, tBrief, tGoals, category, 
         task.payload.recommendation==="keep"?"keep":task.payload.recommendation==="revert"?"revert":"adjust")})}</p>}
       {!midRun&&<p className="text-ink-muted">{tExperiment(task.payload.outcomeStatus==="complete"?"reportCompletedCaveat":"reportUncertain")}</p>}
     </div>}
+    {task.kind==="u4_run_failure"&&task.status==="needs_owner"&&
+      <AcknowledgeFailedWork taskId={task.id} label={t("u4FailureAcknowledge")}/>}
     {task.kind==="maintenance_issue"&&<MaintenanceCaseCard copy={maintenanceCopy} staff={meta.maintenanceStaff}
       vendorApprovals={meta.vendorApprovals?.filter(p=>p.caseId===task.id)}
       caseData={{taskId:task.id,equipmentLabel:String(task.payload.equipmentLabel??""),

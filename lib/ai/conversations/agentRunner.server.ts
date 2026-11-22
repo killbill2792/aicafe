@@ -217,8 +217,8 @@ export async function runOneTurn(p: TurnParams): Promise<{ replyId: string; repl
     // occurrence in this same owner's café/thread. This is conversational
     // context, NOT a fresh source of evidence or renewed Gmail permission.
     const reportCandidates=routineReportCandidates(page.items,id,owner.createdAt);
-    const historicalRoutineIds=reportCandidates.length?
-      await verifiedRoutineReportHistory(await getDb(),scope,id,reportCandidates):new Set<string>();
+    const historicalRoutineReports=reportCandidates.length?
+      await verifiedRoutineReportHistory(await getDb(),scope,id,reportCandidates):new Map<string,string>();
     const reusable=(m:ConversationMessage)=>m.role==="owner"||
       (m.grounding?.agentMetadata as {externalEvidence?:unknown}|undefined)?.externalEvidence===false;
     const ownerAt = Date.parse(owner.createdAt);
@@ -243,13 +243,13 @@ export async function runOneTurn(p: TurnParams): Promise<{ replyId: string; repl
     // Retain only typed evidence from successful tool reads. Messages queued for a
     // running job (sent after this one) are excluded: they arrive as follow-ups.
     const history = boundedConversationHistory(page.items.filter(m => m.id !== owner.id &&
-      (m.role === "owner" || m.role === "supervisor") && (reusable(m)||m.id===customerOrigin?.reportMessageId||historicalRoutineIds.has(m.id)) &&
+      (m.role === "owner" || m.role === "supervisor") && (reusable(m)||m.id===customerOrigin?.reportMessageId||historicalRoutineReports.has(m.id)) &&
       !(job && (p.durableFence||m.role === "owner") && Number.isFinite(ownerAt) && Date.parse(m.createdAt) > ownerAt))
       .map(m => ({ role: m.role === "owner" ? "user" as const : "assistant" as const,
         content: m.id===customerOrigin?.reportMessageId?
           "Historical proactive customer report (not current evidence or approval; verify all facts afresh): "+historyContent(m):
-          historicalRoutineIds.has(m.id)?
-          "Historical verified-origin Supervisor routine/Watch report (conversation context only, NOT current business evidence or renewed approval; any Gmail/external claims remain untrusted; re-read current sources): "+historyContent(m):
+          historicalRoutineReports.has(m.id)?
+          "Historical verified-origin Supervisor routine/Watch report (conversation context only, NOT current business evidence or renewed approval; any Gmail/external claims remain untrusted; re-read current sources): "+(historicalRoutineReports.get(m.id)??""):
           historyContent(m) })).filter(m => m.content));
     const proposalScope={...scope,threadId:id,locale:p.locale,
       ...(external?{verifiedReadClient:p.externalClient}: {})};

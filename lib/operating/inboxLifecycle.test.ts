@@ -107,3 +107,40 @@ describe("inbox lifecycle (read-only)", () => {
     expect(formatInboxDay("2026-11-02", "en")).toBe("Mon, Nov 2");
   });
 });
+
+describe("U4 report relevance and immutable Work history",()=>{
+  it("supersedes only the earlier active notice of the same owner's objective",()=>{
+    const make=(id:string,day:string,owner="owner")=>task(id,{
+      agentId:"leo",kind:"u4_report",ownerUserId:owner,status:"watching",
+      payload:{routineId:"routine-1",runId:id,localDate:day,title:"Review"},
+      createdAt:day+"T17:00:00Z",
+    });
+    const older=make("u4:run-old","2026-11-18");
+    const current=make("u4:run-new","2026-11-21");
+    const other=make("u4:run-peer","2026-11-19","another-owner");
+    const settled=settleInboxTasks([older,current,other],null,
+      new Date("2026-11-22T20:00:00Z"),"2026-11-22");
+    expect(Object.fromEntries(settled.map(item=>[item.id,
+      [item.status,item.payload.expiredReason??null]]))).toEqual({
+      "u4:run-new":["watching",null],
+      "u4:run-peer":["watching",null],
+      "u4:run-old":["expired","superseded"],
+    });
+  });
+  it("expires informational U4 badges but not an owner acknowledgment action",()=>{
+    const report=task("u4:old",{
+      kind:"u4_report",agentId:"leo",status:"watching",ownerUserId:"owner",
+      payload:{localDate:"2026-11-01",routineId:"r"},
+    });
+    const failure=task("u4-failed:run",{
+      kind:"u4_run_failure",agentId:"leo",status:"needs_owner",ownerUserId:"owner",
+      payload:{localDate:"2026-11-01",routineId:"r"},
+    });
+    const settled=settleInboxTasks([report,failure],null,
+      new Date("2026-11-21T22:00:00Z"),"2026-11-21");
+    expect(settled.find(x=>x.id===failure.id)?.status).toBe("needs_owner");
+    expect(settled.find(x=>x.id===report.id)?.status).toBeUndefined();
+    // The expired badge has aged out of the 14-day Handled list; the
+    // underlying occurrence still preserves its report/audit record.
+  });
+});

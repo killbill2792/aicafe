@@ -39,6 +39,7 @@ export default function SupervisorRoutineInlineCard({block,onEdit,disabled=false
         const verified=routineCardSchema.safeParse({
           type:"routine_card",routineId:row.id,title:row.title,
           cadence:row.cadence,weekdays:row.weekdays,localTime:row.localTime,
+        ...(row.cadence==="once"?{onceLocalDate:row.onceLocalDate}:{}),
           timezone:row.timezone,status:row.status,revision:row.revision,
         });
         if(!verified.success)throw Error("invalid_routine_receipt");
@@ -78,6 +79,7 @@ export default function SupervisorRoutineInlineCard({block,onEdit,disabled=false
       const updated=routineCardSchema.safeParse({
         type:"routine_card",routineId:r.id,title:r.title,
         cadence:r.cadence,weekdays:r.weekdays,localTime:r.localTime,
+        ...(r.cadence==="once"?{onceLocalDate:r.onceLocalDate}:{}),
         timezone:r.timezone,status:r.status,revision:r.revision,
       });
       if(!updated.success||updated.data.status!==
@@ -98,9 +100,11 @@ export default function SupervisorRoutineInlineCard({block,onEdit,disabled=false
   // Actual pause/delete still require a current owner-scoped SQL receipt.
   // ISO weekday labels come from the same verified English locale copy as
   // the owner routines drawer. Do not synthesize arbitrary dates in the UI.
-  const localDay=current.cadence==="weekly"?
-    current.weekdays.map(day=>en.SupervisorExperience.weekdayNames[day-1])
-      .filter(Boolean).join(", "):current.cadence;
+  const localDay=current.cadence==="once"&&current.onceLocalDate?
+    copy.onceOn.replace("{date}",current.onceLocalDate):
+    current.cadence==="weekly"?
+      current.weekdays.map(day=>en.SupervisorExperience.weekdayNames[day-1])
+        .filter(Boolean).join(", "):current.cadence;
   // The displayed status follows the actual verified receipt and read-back.
   const label=notice || (isDeleted?copy.deleteSaved:
     current.status==="paused"?copy.pausedSaved:
@@ -117,7 +121,7 @@ export default function SupervisorRoutineInlineCard({block,onEdit,disabled=false
         </summary>
         <div role="group" aria-label={copy.actions} className="absolute end-0 top-full z-10 mt-1 flex min-w-44 flex-col gap-1 rounded-xl border border-line bg-surface p-2 shadow-lg">
           <p className="max-w-64 break-words px-2 text-[14px] font-medium text-ink">{current.title}</p>
-          <p className="px-2 text-[13px] text-ink-muted">{localDay} · {current.localTime}</p>
+          <p className="px-2 text-[13px] text-ink-muted">{localDay} · {current.localTime} · {current.timezone}</p>
           <button type="button" disabled={busy||unavailable||!onEdit}
             onClick={()=>onEdit?.("Edit saved routine \""+current.title+"\" (routine ID "+current.routineId+", revision "+current.revision+"): ")}
             className="min-h-12 rounded-lg px-3 text-start text-[14px] hover:bg-surface2 disabled:opacity-50">{copy.editInChat}</button>

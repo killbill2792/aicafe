@@ -27,7 +27,8 @@ export function isScheduledOn(schedule:RoutineSchedule,localDate:string):boolean
   const day=new Date(localDate+"T00:00:00Z");
   if(!Number.isFinite(day.getTime())||day.toISOString().slice(0,10)!==localDate)return false;
   const weekday=day.getUTCDay()||7;
-  return schedule.cadence==="daily" ||
+  return (schedule.cadence==="once"&&schedule.onceLocalDate===localDate) ||
+    schedule.cadence==="daily" ||
     (schedule.cadence==="weekly"&&schedule.weekdays.includes(weekday));
 }
 /** Resolve a civil wall minute to the first eligible UTC minute on that local day.

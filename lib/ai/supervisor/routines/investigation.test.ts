@@ -2,7 +2,7 @@ import {describe,expect,it} from "vitest";
 import {precedingInvestigationReport} from "./investigation";
 import type {AgentTurn} from "@/lib/ai/agent/loop.server";
 import {checkNumbers} from "@/lib/ai/agent/checkNumbers";
-import {investigationPrompt,investigationReadTools,customerInvestigationTools,verifyInvestigationTurn,
+import {modelSelectedOwnerQuestion,universalInvestigationPrompt,investigationPrompt,investigationReadTools,customerInvestigationTools,verifyInvestigationTurn,
   relevantInvestigationTools,unsupportedExternalEffectClaim,type SourceSynopsis} from "./investigation";
 const source:SourceSynopsis={
   kind:"labor_variance",status:"new",severity:"high",quality:"partial",
@@ -451,4 +451,25 @@ it("only the immediately preceding verified, same-thread proactive report is eli
   expect(precedingInvestigationReport([{...report,grounding:{...report.grounding,status:"partial"}}],owner)).toBeNull();
   expect(precedingInvestigationReport([report,{...report,id:"owner2",role:"owner",createdAt:"2026-01-01T10:01:00Z"}],owner)).toBeNull();
   expect(precedingInvestigationReport([{...report,createdAt:"2026-01-01T10:03:00Z"}],owner)).toBeNull();
+});
+
+describe("U4 model-selected owner question durability contract",()=>{
+  it("extracts a unique question only from a verified complete model report",()=>{
+    const report="Recorded sales are unavailable; I will recheck the import.\n"+
+      "Owner question: Can you confirm whether the payment import is currently paused?";
+    expect(modelSelectedOwnerQuestion(report))
+      .toBe("Can you confirm whether the payment import is currently paused?");
+    for(const text of ["No owner-only answer is required.",
+      "Owner question: What?",
+      "Owner question: Did this change?\nOwner question: Is a second decision needed?",
+      "Owner question: Please visit https://bad.test to approve?"]){
+      expect(modelSelectedOwnerQuestion(text)).toBeNull();
+    }
+  });
+  it("directs existing model-driven research modes without scripted question content",()=>{
+    const source={kind:"business_anomaly",status:"new",severity:null,
+      quality:"partial",relatedAlerts:[],relatedTasks:[]};
+    expect(investigationPrompt(source as never,false)).toContain("Owner question:");
+    expect(universalInvestigationPrompt(source as never,false)).toContain("Owner question:");
+  });
 });

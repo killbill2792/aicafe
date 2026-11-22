@@ -75,8 +75,8 @@ export type SupervisorReplyBlock =
   | { type: "proposal_card"; proposalId: string }
   | { type: "experiment_card"; proposalId: string }
   | { type: "memory_card"; ruleId: string }
-  | {type:"routine_card";routineId:string;title:string;cadence:"daily"|"weekly";
-      weekdays:number[];localTime:string;timezone:string;status:"active"|"paused"|"revoked";revision:number}
+  | {type:"routine_card";routineId:string;title:string;cadence:"once"|"daily"|"weekly";
+      onceLocalDate?:string|null;weekdays:number[];localTime:string;timezone:string;status:"active"|"paused"|"revoked";revision:number}
   | { type: "text"; text: string }
   | { type: "warning"; code: string; text: string }
   | { type: "metric"; label: string; valueCents: number; source: EvidenceReference }
@@ -138,11 +138,17 @@ const memoryCardSchema=z.strictObject({type:z.literal("memory_card"),ruleId:z.uu
  * receipt. This is a compact UI reflection, not an authorization capability. */
 export const routineCardSchema=z.strictObject({
   type:z.literal("routine_card"),routineId:z.uuid(),
-  title:z.string().min(1).max(240),cadence:z.enum(["daily","weekly"]),
+  title:z.string().min(1).max(240),cadence:z.enum(["once","daily","weekly"]),
+  onceLocalDate:z.iso.date().nullable().optional(),
   weekdays:z.array(z.number().int().min(1).max(7)).max(7),
   localTime:z.string().regex(/^([01]\d|2[0-3]):[0-5]\d(?::[0-5]\d)?$/u),
   timezone:z.string().min(1).max(120),
   status:z.enum(["active","paused","revoked"]),revision:z.number().int().positive(),
+}).superRefine((row,ctx)=>{
+  if(row.cadence==="once"&&(!row.onceLocalDate||row.weekdays.length))
+    ctx.addIssue({code:"custom",path:["onceLocalDate"],message:"One-time due date missing"});
+  if(row.cadence!=="once"&&row.onceLocalDate)
+    ctx.addIssue({code:"custom",path:["onceLocalDate"],message:"Recurring due date invalid"});
 });
 const warningBlockSchema = z.strictObject({
   type: z.literal("warning"), code: z.string().min(1).max(80),

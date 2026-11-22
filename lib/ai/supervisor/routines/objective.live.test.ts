@@ -44,6 +44,9 @@ live("real Luna executes an authenticated full café goal through existing sched
   const dbURL=guard(env.ACCEPTANCE_DATABASE_URL,"postgres");
   const apiURL=guard(env.NEXT_PUBLIC_SUPABASE_URL,"api");
   vi.stubEnv("SUPERVISOR_U4_ENABLED","true");
+  // This explicit disposable owner-approved scenario alone opts Watch in.
+  // Production must not inherit Watch from the general U4 enabled flag.
+  vi.stubEnv("SUPERVISOR_U4_WATCH_ENABLED","true");
   const pg=new Client({connectionString:dbURL});
   const db=createClient(apiURL,env.SUPABASE_SERVICE_ROLE_KEY!,{
     auth:{persistSession:false,autoRefreshToken:false},
@@ -162,8 +165,20 @@ live("real Luna executes an authenticated full café goal through existing sched
       [businessId,threadId])).rows;
     expect(posts).toHaveLength(1);
     expect(posts[0].grounding?.agentMetadata?.runId).toBe(leased.runId);
-    expect(posts[0].structured_content?.filter((x:{type:string})=>x.type==="text")
-      .map((x:{text:string})=>x.text).join("")).toBe(result.report);
+    const receipt=posts[0].structured_content?.filter((x:{type:string})=>x.type==="text")
+      .map((x:{text:string})=>x.text).join("") as string;
+    expect(receipt).toContain("Open Work");
+    expect(receipt).not.toBe(result.report);
+    expect(posts[0].structured_content?.some((x:{type:string})=>
+      x.type==="task_card")).toBe(true);
+    expect(occurrence[0].u4_result?.summary).toBe(result.report);
+    const work=(await pg.query("select id,kind,owner_user_id,payload from public.operating_tasks "+
+      "where business_id=$1 and id=$2 and kind='u4_report'",
+      [businessId,"u4:"+leased.runId])).rows;
+    expect(work).toHaveLength(1);
+    expect(work[0].owner_user_id).toBe(ownerUserId);
+    expect(work[0].payload.runId).toBe(leased.runId);
+    expect(work[0].payload.routineId).toBe(routineId);
     // Independent no-chat, no-alert, no-task café. The real refresh-derived
     // scheduler must provision Watch and call the registered Luna loop itself.
     const watchBusinessId=randomUUID(),watchOwnerUserId=randomUUID(),stockId=randomUUID();
@@ -308,7 +323,8 @@ live("real Luna executes an authenticated full café goal through existing sched
       watch_healthy_control:"none",watch_changed_evidence:true,
       watch_no_initial_chat_or_detector:true,
       original_goal_preserved:true,no_unauthorized_effect:true,
-      persisted_lease_and_report:true,cross_domain_source_count:result.sourceCount,
+      persisted_lease_and_report:true,private_work_pointer:true,
+      concise_chat_receipt:true,cross_domain_source_count:result.sourceCount,
       integrated_proven:false,released_proven:false};
     mkdirSync("test-results/acceptance",{recursive:true});
     writeFileSync("test-results/acceptance/u4-autonomous-objectives-proof.json",
@@ -317,6 +333,7 @@ live("real Luna executes an authenticated full café goal through existing sched
       JSON.stringify({
         businessId,foreignBusinessId,ownerUserId,threadId,ownerMessageId,
         routineId,runId:leased.runId,replyId:posts[0].id,
+        workTaskId:"u4:"+leased.runId,
         watchBusinessId,watchOwnerUserId,watchThreadId,
         watchRoutineId,watchQuietRunId,watchRunId,watchReplyId,
         expectedProviderCalls:budget.calls,
