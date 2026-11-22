@@ -41,10 +41,12 @@ function orderChoice(row:OrderRow):Choice|null{
     !/^\d{4}-\d{2}-\d{2}$/.test(row.business_date))return null;
  const payments=arr(o.checks).flatMap(c=>record(c)?arr(c.payments):[])
   .filter(record);
- const matched=payments.find(p=>cleanGuid(p.guid));
+ // Prefer a real card transaction on split-tender checks: the purpose
+ // of this probe is to learn the individual Standard payment response shape.
+ const card=payments.find(p=>p.type==="CREDIT"&&cleanGuid(p.guid));
+ const cash=payments.find(p=>p.type==="CASH"&&cleanGuid(p.guid));
+ const matched=card??cash??payments.find(p=>cleanGuid(p.guid));
  const paymentGuid=matched?cleanGuid(matched.guid):null;
- const card=payments.find(p=>p.type==="CREDIT");
- const cash=payments.find(p=>p.type==="CASH");
  let sourceClass="other";
  if(o.source==="In Store"){
   if(card&&typeof card.cardEntryMode==="string"&&card.cardEntryMode.startsWith("EMV"))
