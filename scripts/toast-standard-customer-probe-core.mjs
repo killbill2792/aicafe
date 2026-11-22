@@ -30,9 +30,15 @@ const FIELD_PATHS = Object.freeze({
 });
 const SENSITIVE_KEY = /^(?:pan|primaryaccountnumber|cardnumber|paymentcardnumber|cvv|cvc|cvc2|cvv2|securitycode|magstripe|track\d*|password|secret|apikey|authtoken|accesstoken|refreshtoken|paymenttoken|cardtoken|authorization)$/i;
 const RELEVANT_PATH = /(?:customer|guest|cardholder|holdername|payer|name|email|phone|loyalty|fingerprint|paymentaccountreference|cardpaymentid|tab|delivery)/i;
+// Only code-reviewed, fixed schema keys may be reflected to public CI logs.
+// Unknown JSON object keys can themselves contain customer-supplied PII.
+const APPROVED_SEGMENTS = new Set([
+  ...Object.values(FIELD_PATHS).flat().flatMap(p => p.split(".")),
+  "checks", "payments", "cardholder", "cardInfo", "cardDetails", "paymentCard",
+]);
 const STATES = ["populated", "null", "empty", "absent"];
 const record = value => value !== null && typeof value === "object" && !Array.isArray(value);
-const allowedField = name => /^[A-Za-z][A-Za-z0-9_]{0,63}$/.test(name) && !SENSITIVE_KEY.test(name);
+const allowedField = name => /^[A-Za-z][A-Za-z0-9_]{0,63}$/.test(name) && !SENSITIVE_KEY.test(name) && APPROVED_SEGMENTS.has(name);
 
 export function fieldState(value, path) {
   let cur = value;
@@ -58,7 +64,7 @@ export function newFieldReport() {
   };
 }
 
-// Only provider schema *keys* meeting strict identifier syntax, never values.
+// Only *approved fixed schema keys* meeting strict syntax, never values.
 // A bounded scan finds surprises (including nested guest/name paths) without
 // returning raw objects, dynamic user-supplied property names, or secrets.
 function noteSchemaKeys(summary, kind, value) {
