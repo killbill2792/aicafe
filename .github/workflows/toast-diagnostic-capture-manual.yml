@@ -7,14 +7,6 @@ name: Toast DIAGNOSTIC capture (manual only)
 on:
   workflow_dispatch:
     inputs:
-      mode:
-        description: Manual diagnostic operation
-        required: true
-        type: choice
-        default: legacy_capture
-        options:
-          - legacy_capture
-          - standard_customer_probe
       cafe_name:
         description: Exact connected café name (required only for standard_customer_probe)
         required: false
@@ -29,7 +21,7 @@ concurrency:
 
 jobs:
   capture:
-    if: github.event_name == 'workflow_dispatch' && inputs.mode == 'legacy_capture'
+    if: github.event_name == 'workflow_dispatch' && github.ref_name != 'diag/toast-standard-customer-field-probe-20261121'
     environment: toast-prod
     runs-on: ubuntu-latest
     timeout-minutes: 58
@@ -79,7 +71,7 @@ jobs:
   # DIAGNOSTIC_ONLY: owner-invoked bounded Standard API field *presence* report.
   # Does not change imports, archive, customer identities, or schedules.
   standard_customer_probe:
-    if: github.event_name == 'workflow_dispatch' && inputs.mode == 'standard_customer_probe'
+    if: github.event_name == 'workflow_dispatch' && github.ref_name == 'diag/toast-standard-customer-field-probe-20261121'
     environment: toast-prod
     runs-on: ubuntu-latest
     timeout-minutes: 12
