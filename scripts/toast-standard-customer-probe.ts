@@ -84,19 +84,31 @@ async function run(){
  const name=process.env.TOAST_PROBE_CAFE_NAME;
  const url=process.env.NEXT_PUBLIC_SUPABASE_URL;
  const key=process.env.SUPABASE_SERVICE_ROLE_KEY;
- if(!name||name.length>150||!url||!key||
+ if((name&&name.length>150)||!url||!key||
     !process.env.TOKEN_ENCRYPTION_KEY||!process.env.TOAST_ALLOWED_API_HOSTS)
   throw new Error("probe_not_configured");
  const db=createClient(url,key,{auth:{autoRefreshToken:false,persistSession:false}});
- const {data:businesses,error:be}=await db.from("businesses")
-  .select("id,name").eq("name",name).limit(2);
- if(be||!businesses||businesses.length!==1)throw new Error("cafe_not_unique_or_available");
- const businessId=businesses[0].id as string;
- const {data:mappings,error:me}=await db.from("toast_location_mappings")
-  .select("restaurant_guid").eq("business_id",businessId)
-  .not("verified_at","is",null).limit(2);
- if(me||!mappings||mappings.length!==1)throw new Error("verified_restaurant_not_unique");
- const restaurantGuid=String(mappings[0].restaurant_guid);
+ // With no explicit name, fail closed unless there is precisely ONE verified
+ // Standard café mapping. This makes the one-off branch runnable even if the
+ // GitHub Actions UI reads workflow_dispatch inputs from the default branch.
+ let businessId:string,restaurantGuid:string;
+ if(name){
+  const {data:businesses,error:be}=await db.from("businesses")
+   .select("id,name").eq("name",name).limit(2);
+  if(be||!businesses||businesses.length!==1)throw new Error("cafe_not_unique_or_available");
+  businessId=String(businesses[0].id);
+  const {data:mappings,error:me}=await db.from("toast_location_mappings")
+   .select("restaurant_guid").eq("business_id",businessId)
+   .not("verified_at","is",null).limit(2);
+  if(me||!mappings||mappings.length!==1)throw new Error("verified_restaurant_not_unique");
+  restaurantGuid=String(mappings[0].restaurant_guid);
+ }else{
+  const {data:mappings,error:me}=await db.from("toast_location_mappings")
+   .select("business_id,restaurant_guid").not("verified_at","is",null).limit(2);
+  if(me||!mappings||mappings.length!==1)throw new Error("verified_restaurant_not_unique");
+  businessId=String(mappings[0].business_id);
+  restaurantGuid=String(mappings[0].restaurant_guid);
+ }
  if(!GUID.safeParse(restaurantGuid).success)throw new Error("invalid_location");
  const {data:rows,error:re}=await db.from("toast_raw_records")
   .select("entity_guid,restaurant_guid,business_date,payload")
