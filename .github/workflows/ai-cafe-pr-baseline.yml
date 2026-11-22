@@ -92,6 +92,9 @@ jobs:
         shard: [1, 2, 3]
     steps:
       - uses: actions/checkout@v4
+        with:
+          # Census validates pinned main ancestry and reviewed source blobs.
+          fetch-depth: 0
       - uses: actions/setup-node@v4
         with:
           node-version: 22
@@ -237,6 +240,7 @@ jobs:
           version: 2.121.0
       # Both are slow and independent, so they run side by side.
       - name: Install locked dependencies and start local Supabase once (database only, never production)
+        id: local_db
         run: |
           npm ci --ignore-scripts >"$RUNNER_TEMP/npm-ci.log" 2>&1 &
           npm_ci=$!
@@ -246,7 +250,30 @@ jobs:
           wait "$npm_ci" || npm_ci_status=$?
           cat "$RUNNER_TEMP/npm-ci.log"
           exit "$npm_ci_status"
+      - name: Inspect pristine migrated canonical schema and authenticated query paths
+        env:
+          AICAFE_CENSUS_DISPOSABLE_DB: '1'
+          AICAFE_CENSUS_DB_OUTPUT: test-results/acceptance/supervisor-migrated-census.json
+          OPENAI_API_KEY: ''
+        run: npx vitest run evals/acceptance/supervisor-census.test.ts -t 'actual migrated canonical SQL views'
+      - name: Upload exact-head migrated canonical census
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: aicafe-supervisor-migrated-census
+          path: test-results/acceptance/supervisor-migrated-census.json
+          if-no-files-found: warn
+          retention-days: 14
+      - name: Execute inherited POS owner-query parity preflight (SQL only, zero provider)
+        if: ${{ !cancelled() && steps.local_db.outcome == 'success' }}
+        env:
+          POS0E_E2_SQL_ONLY: '1'
+          AGENT_LIVE_EVAL: '0'
+          OPENAI_API_KEY: ''
+          AICAFE_QUERY_PARITY_LOCAL_DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:54322/postgres
+        run: npx vitest run lib/ai/agent/tools/dataQuery.ownerParity.live.test.ts
       - name: Run every SQL and database test
+        if: ${{ !cancelled() && steps.local_db.outcome == 'success' }}
         run: bash scripts/db/run-all.sh
       - name: Stop local Supabase
         if: always()
@@ -311,10 +338,13 @@ jobs:
             "CRON_SECRET=" + localCronSecret + "\n" +
             "ADMIN_EMAILS=" + TEST_CAFES[0].owner.email + "\n");
           NODE
-      - name: Start locally bound Next.js and verify login route readiness
+      - name: Build authenticated local production app (no preview or provider spend)
+        run: npm run build -- --webpack
+      - name: Start locally bound Next.js production build and verify login route readiness
         run: |
           set -euo pipefail
-          npm run dev -- --webpack --hostname 127.0.0.1 --port 3000 > "$RUNNER_TEMP/e2e-next.log" 2>&1 &
+          echo "AICAFE_E2E_BUILD=production" >> "$GITHUB_ENV"
+          npm run start -- --hostname 127.0.0.1 --port 3000 > "$RUNNER_TEMP/e2e-next.log" 2>&1 &
           echo $! > "$RUNNER_TEMP/e2e-next.pid"
           ready=0
           for attempt in $(seq 1 90); do
@@ -405,12 +435,37 @@ jobs:
           node-version: 22
           cache: npm
       - name: Install locked dependencies
+        id: owner_dependencies
         run: npm ci
       - name: Mutation-test owner-domain selection and proof validation
         run: node --test scripts/acceptance/owner-gate.test.mjs
+      - name: Execute inherited Task17C oracle tests when its stack is present
+        run: |
+          if git ls-files --error-unmatch evals/acceptance/live/task17c-oracle.test.mjs >/dev/null 2>&1; then
+            node --test evals/acceptance/live/task17c-oracle.test.mjs
+          else
+            echo "Task17C not present on this parent-only tree; combined oracle proof remains UNTESTED"
+          fi
+      - name: Mutation-test exhaustive Supervisor census and inherited operator evaluator accounting
+        run: node --test scripts/acceptance/supervisor-coverage.test.mjs evals/acceptance/task13b-operator-parity.test.mjs
+      - name: Discover Supervisor capabilities and run independent metric goldens
+        env:
+          AICAFE_CENSUS_OUTPUT: test-results/acceptance/supervisor-census.json
+        run: npx vitest run evals/acceptance/supervisor-census.test.ts
+      - name: Upload preliminary exact-head coverage census (not acceptance)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: aicafe-supervisor-coverage-census
+          path: test-results/acceptance/supervisor-census.json
+          if-no-files-found: error
+          retention-days: 14
       - name: Execute all selected registered domain regressions
+        id: owner_regressions
+        if: ${{ !cancelled() && steps.owner_dependencies.outcome == 'success' }}
         run: node scripts/acceptance/owner-gate.mjs run
       - name: Verify exact-head proof and actual case execution
+        if: ${{ !cancelled() && steps.owner_regressions.outcome == 'success' }}
         run: node scripts/acceptance/owner-gate.mjs verify
       - name: Upload redacted exact-head domain proof
         if: always()

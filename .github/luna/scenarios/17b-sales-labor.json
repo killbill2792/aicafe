@@ -1,0 +1,165 @@
+{
+  "id": "17b-sales-labor",
+  "mode": "generic",
+  "engine": "node-server",
+  "entrypoint": "evals/acceptance/live/task17b-cross-domain.mjs",
+  "proof": "17b-sales-labor-proof.json",
+  "scope": "17b-sales-labor-scope.json",
+  "expectedTools": [
+    "get_sales",
+    "get_labor",
+    "query_data"
+  ],
+  "assertions": [
+    {
+      "name": "closed-day-source",
+      "kind": "source",
+      "table": "public.daily_rollups",
+      "where": {
+        "business_id": {
+          "scope": "businessId"
+        },
+        "business_date": {
+          "scope": "salesDay"
+        },
+        "net_sales_cents": {
+          "scope": "salesCents"
+        },
+        "staff_wages_cents": {
+          "scope": "wageCents"
+        },
+        "staff_tax_cents": {
+          "scope": "staffTaxCents"
+        },
+        "sales_data_status": {
+          "eq": "actual"
+        }
+      },
+      "minCount": 1,
+      "maxCount": 1
+    },
+    {
+      "name": "corrected-day-source",
+      "kind": "source",
+      "table": "public.daily_rollups",
+      "where": {
+        "business_id": {
+          "scope": "businessId"
+        },
+        "business_date": {
+          "scope": "correctedDay"
+        },
+        "net_sales_cents": {
+          "scope": "correctedSalesCents"
+        },
+        "sales_data_status": {
+          "eq": "actual"
+        }
+      },
+      "minCount": 1,
+      "maxCount": 1
+    },
+    {
+      "name": "owner-reply-1",
+      "kind": "owner",
+      "table": "public.ai_messages",
+      "where": {
+        "business_id": {
+          "scope": "businessId"
+        },
+        "owner_user_id": {
+          "scope": "ownerUserId"
+        },
+        "thread_id": {
+          "scope": "threadId"
+        },
+        "id": {
+          "scope": "reply1"
+        },
+        "role": {
+          "eq": "supervisor"
+        }
+      },
+      "minCount": 1,
+      "maxCount": 1
+    },
+    {
+      "name": "owner-reply-2",
+      "kind": "owner",
+      "table": "public.ai_messages",
+      "where": {
+        "business_id": {
+          "scope": "businessId"
+        },
+        "owner_user_id": {
+          "scope": "ownerUserId"
+        },
+        "thread_id": {
+          "scope": "threadId"
+        },
+        "id": {
+          "scope": "reply2"
+        },
+        "role": {
+          "eq": "supervisor"
+        }
+      },
+      "minCount": 1,
+      "maxCount": 1
+    },
+    {
+      "name": "owner-reply-3",
+      "kind": "owner",
+      "table": "public.ai_messages",
+      "where": {
+        "business_id": {
+          "scope": "businessId"
+        },
+        "owner_user_id": {
+          "scope": "ownerUserId"
+        },
+        "thread_id": {
+          "scope": "threadId"
+        },
+        "id": {
+          "scope": "reply3"
+        },
+        "role": {
+          "eq": "supervisor"
+        }
+      },
+      "minCount": 1,
+      "maxCount": 1
+    },
+    {
+      "name": "no-read-only-effect",
+      "kind": "source",
+      "table": "public.supervisor_proposals",
+      "where": {
+        "business_id": {
+          "scope": "businessId"
+        },
+        "thread_id": {
+          "scope": "threadId"
+        }
+      },
+      "minCount": 0,
+      "maxCount": 0
+    },
+    {
+      "name": "foreign-thread-denied",
+      "kind": "isolation",
+      "table": "public.ai_messages",
+      "where": {
+        "business_id": {
+          "scope": "foreignBusinessId"
+        },
+        "thread_id": {
+          "scope": "threadId"
+        }
+      },
+      "minCount": 0,
+      "maxCount": 0
+    }
+  ]
+}
