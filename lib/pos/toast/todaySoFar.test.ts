@@ -1,7 +1,7 @@
 import {beforeEach,describe,expect,it,vi} from "vitest";
 import type {SupabaseClient} from "@supabase/supabase-js";
 vi.mock("server-only",()=>({}));
-import {currentToastBusinessDay} from "./todaySoFar";
+import {currentToastBusinessDay,summarizeToastToday} from "./todaySoFar";
 import {readToastTodaySoFar,clearTodaySoFarCache} from "./todaySoFar.server";
 import {executeAgentTool,schemas,type AgentToolContext} from "@/lib/ai/agent/tools";
 
@@ -23,9 +23,11 @@ function order(amount:number,opts:{status?:string;guid?:string;modified?:string;
       selections:[{guid:`eeeeeeee-eeee-4eee-8eee-${String(n).padStart(12,"0")}`,quantity:1,price:amount,
         displayName:opts.item??"Latte"}]}]};
 }
-function db(mappings:unknown[]){
+function db(mappings:unknown[],reportingTimezone:string|null=zone){
   const q={select:()=>q,eq:()=>q,not:async()=>({data:mappings,error:null})};
-  return {from:()=>q} as unknown as SupabaseClient;
+  const cafe={select:()=>cafe,eq:()=>cafe,
+    single:async()=>({data:reportingTimezone?{timezone:reportingTimezone}:null,error:null})};
+  return {from:(table:string)=>table==="businesses"?cafe:q} as unknown as SupabaseClient;
 }
 const mapping=(guid:string)=>({restaurant_guid:guid,toast_time_zone:zone,closeout_hour:4});
 
@@ -37,6 +39,22 @@ describe("today so far (live, provisional, never stored)",()=>{
     expect(currentToastBusinessDay(new Date("2026-10-29T12:00:00Z"),zone,4)).toBe("2026-10-29");
   });
 
+  it("uses the reporting timezone, not Toast closeout timezone, for live hourly labels",async()=>{
+    const read=await readToastTodaySoFar(db([mapping(r1)],"America/New_York"),
+      business,now,async(path)=>{
+        expect(path).toContain("businessDate=20261029");
+        return [order(4)];
+      });
+    expect(read).toMatchObject({available:true,value:{
+      businessDate:"2026-10-29",netSalesCents:400,
+      hourlySales:[{hourLocal:12,netSalesCents:400,ordersCount:1}],
+    }});
+  });
+  it("does not report mislabeled hourly data when the café reporting timezone is absent",async()=>{
+    expect(await readToastTodaySoFar(db([mapping(r1)],null),business,now,
+      async()=>[order(4)])).toEqual({
+        available:false,missing:["todayLiveReportingTimezoneUnavailable"]});
+  });
   it("sums open and closed checks across locations and keeps the latest order revision",async()=>{
     const same="cccccccc-cccc-4ccc-8ccc-999999999999";
     const request=vi.fn(async(path:string,guid:string)=>{
@@ -53,8 +71,35 @@ describe("today so far (live, provisional, never stored)",()=>{
     expect(read.value).toMatchObject({provisional:true,businessDate:"2026-10-29",
       netSalesCents:450+500+600+450,orders:4,openChecks:1,locationsRead:2,locationsFailed:0,truncated:false});
     expect(read.value.topItems[0]).toEqual({name:"Latte",quantity:3,netSalesCents:1500});
+    expect(read.value.hourlySales).toEqual([{hourLocal:9,netSalesCents:2000,ordersCount:4}]);
+    expect(read.value.hourlyUnassignedOrders).toBe(0);
   });
 
+  it("keeps a missing actual order timestamp out of hourly totals, never invents noon",async()=>{
+    const unknown={...order(4),openedDate:null};
+    const read=await readToastTodaySoFar(db([mapping(r1)]),business,now,
+      async()=>[unknown,order(2)]);
+    expect(read).toMatchObject({available:true,value:{
+      netSalesCents:600,orders:2,hourlyUnassignedOrders:1,
+      hourlySales:[{hourLocal:9,netSalesCents:200,ordersCount:1}],
+    }});
+  });
+  it("combines both real occurrences of DST fall-back hour, excluding unknown timestamps",()=>{
+    const fake=(guid:string,at:string,cents:number)=>({
+      guid,modifiedDate:at,hourObservedAt:at,
+      normalized:{netSalesCents:cents,grossSalesCents:cents,discountsCents:0,
+        refundsCents:0,tipCents:0,lines:[]},openChecks:0,
+    });
+    const page={unparsed:[],orders:[
+      fake("a","2026-11-01T08:30:00Z",100),
+      fake("b","2026-11-01T09:30:00Z",-20),
+    ]};
+    const got=summarizeToastToday({businessDate:"2026-11-01",
+      readAt:"2026-11-01T10:00:00Z",timezone:zone,
+      pages:[page as never],locationsRead:1,locationsFailed:0,truncated:false});
+    expect(got.hourlySales).toEqual([{hourLocal:1,netSalesCents:80,ordersCount:2}]);
+    expect(got.netSalesCents).toBe(80);
+  });
   it("reports a failed location instead of silently dropping its sales",async()=>{
     const request=vi.fn(async(_p:string,guid:string)=>{
       if(guid===r2)throw new Error("token secret");
@@ -102,9 +147,21 @@ describe("get_today_so_far chat tool",()=>{
       unparsedOrders:1,topItems:[],locationsRead:1,locationsFailed:1,truncated:true}})));
     expect(result).toMatchObject({source:"today_live",provisional:true,netSalesCents:12_345,
       period:{from:"2026-10-29",to:"2026-10-29"},
-      missing:["todayLiveLocationsFailed:1","todayLiveTruncated","todayLiveUnparsedOrders:1"]});
+      missing:["todayLiveLocationsFailed:1","todayLiveTruncated","todayLiveUnparsedOrders:1",
+        "todayHourlyNotCaptured"]});
   });
 
+  it("returns registered live hourly cents without fabricated identities",async()=>{
+    const t=await executeAgentTool("get_today_so_far",{},ctx(async()=>({available:true,value:{
+      provisional:true,businessDate:"2026-10-29",readAt:now.toISOString(),netSalesCents:900,
+      grossSalesCents:900,discountsCents:0,refundsCents:0,tipCents:0,orders:2,openChecks:0,
+      unparsedOrders:0,topItems:[],locationsRead:1,locationsFailed:0,truncated:false,
+      hourlySales:[{hourLocal:9,netSalesCents:900,ordersCount:2}],hourlyUnassignedOrders:0,
+    }})));
+    expect(t.hourlySales).toEqual([{hourLocal:9,netSalesCents:900,ordersCount:2}]);
+    expect(t.hourlySalesStatus).toBe("provisional");
+    expect(t.hourlySalesUnit).toBe("cents");
+  });
   it("says why when there is no live reader or the read fails",async()=>{
     expect((await executeAgentTool("get_today_so_far",{},ctx())).missing).toEqual(["todayLiveReaderUnavailable"]);
     expect((await executeAgentTool("get_today_so_far",{},ctx(async()=>{throw new Error("x");}))).missing)

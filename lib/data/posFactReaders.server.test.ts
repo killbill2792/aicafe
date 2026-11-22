@@ -35,10 +35,23 @@ describe("POS fact readers avoid PostgREST's one-thousand-row cap",()=>{
   if(result.available)expect(result.value.hours).toHaveLength(500);
   expect(result.quality.missingInputs).toContain("hourlySalesUnavailable");
  });
+ it("returns live provisional hour facts from the same canonical view with explicit gaps",async()=>{
+  const {db}=mockDatabase([{business_date:period.from,status:"provisional",
+    net_sales_cents:450,orders_count:2,data:{hour_local:11,location_id:null,
+     locations_failed:1,hourly_unassigned_orders:1,truncated:true,
+     source_as_of:"2026-08-22T18:00:00Z"}}],"cv_sales_hours");
+  const got=await posFactReaders(db,"b").peakHours(period);
+  expect(got.available).toBe(true);
+  if(got.available)expect(got.value.hours).toEqual([
+    {date:period.from,hourLocal:11,locationId:null,netSalesCents:450,ordersCount:2}]);
+  expect(got.quality.missingInputs).toEqual(expect.arrayContaining([
+   "hourlySalesProvisional","hourlySalesLocationsFailed",
+   "hourlySalesTruncated","hourlySalesTimestampGaps","hourlySalesStale"]));
+ });
  it("paginates hourly facts past 1,000 rows without losing totals",async()=>{
   const rows=Array.from({length:1205},(_,i)=>({business_date:period.from,
    hour_local:i%24,location_id:null,net_sales_cents:100,orders_count:1}));
-  const {db,ranges}=mockDatabase(rows,"hourly_sales_rollup");
+  const {db,ranges}=mockDatabase(rows,"cv_sales_hours");
   const result=await posFactReaders(db,"b").peakHours(period);
   expect(result.available).toBe(true);
   if(result.available)expect(result.value.hours).toHaveLength(1205);
@@ -47,7 +60,7 @@ describe("POS fact readers avoid PostgREST's one-thousand-row cap",()=>{
  it("never reports saturated reads as complete",async()=>{
   const rows=Array.from({length:20_000},()=>({business_date:period.from,hour_local:1,
    location_id:null,net_sales_cents:100,orders_count:1}));
-  const {db}=mockDatabase(rows,"hourly_sales_rollup");
+  const {db}=mockDatabase(rows,"cv_sales_hours");
   const result=await posFactReaders(db,"b").peakHours(period);
   expect(result.available).toBe(true);
   expect(result.quality.missingInputs).toContain("hourlySalesPageLimit");
@@ -57,7 +70,7 @@ describe("POS fact readers avoid PostgREST's one-thousand-row cap",()=>{
    guard.flags.mockResolvedValue([{date:period.from,status:"failed",needsLook:false}]);
    guard.unverified.mockResolvedValue(new Set([period.from]));
    const h=mockDatabase([{business_date:period.from,hour_local:10,
-     location_id:null,net_sales_cents:500,orders_count:1}],"hourly_sales_rollup");
+     location_id:null,net_sales_cents:500,orders_count:1}],"cv_sales_hours");
    const staff=mockDatabase([{business_date:period.from,employee_id:"e",net_sales_cents:500,
      orders_count:1}],"employee_sales_rollup");
    const hourly=await posFactReaders(h.db,"b").peakHours(period);
@@ -76,7 +89,7 @@ describe("POS fact readers avoid PostgREST's one-thousand-row cap",()=>{
    const longer={from:period.from,to:"2026-08-23"};
    const rows=[{business_date:period.from,hour_local:10,location_id:null,net_sales_cents:500,orders_count:1},
      {business_date:"2026-08-23",hour_local:11,location_id:null,net_sales_cents:700,orders_count:2}];
-   const {db}=mockDatabase(rows,"hourly_sales_rollup");
+   const {db}=mockDatabase(rows,"cv_sales_hours");
    const result=await posFactReaders(db,"b").peakHours(longer);
    expect(result.available).toBe(true);
    if(result.available)expect(result.value.hours).toMatchObject([{date:"2026-08-22",netSalesCents:500},
@@ -87,7 +100,7 @@ describe("POS fact readers avoid PostgREST's one-thousand-row cap",()=>{
    vi.stubEnv("TOAST_AUTO_IMPORT_ENABLED","true");
    guard.flags.mockRejectedValue(new Error("status down"));
    const {db}=mockDatabase([{business_date:period.from,hour_local:10,
-     location_id:null,net_sales_cents:500,orders_count:1}],"hourly_sales_rollup");
+     location_id:null,net_sales_cents:500,orders_count:1}],"cv_sales_hours");
    const result=await posFactReaders(db,"b").peakHours(period);
    expect(result.available).toBe(true);
    if(result.available)expect(result.value.hours).toHaveLength(1);
@@ -98,7 +111,7 @@ describe("POS fact readers avoid PostgREST's one-thousand-row cap",()=>{
   guard.unverified.mockResolvedValue(new Set([period.from]));
   guard.flags.mockResolvedValue([{date:period.from,status:"imported",needsLook:true}]);
   const {db}=mockDatabase([{business_date:period.from,hour_local:10,location_id:null,
-    net_sales_cents:500,orders_count:1}],"hourly_sales_rollup");
+    net_sales_cents:500,orders_count:1}],"cv_sales_hours");
   const result=await posFactReaders(db,"b").peakHours(period);
   expect(result.available).toBe(true);
   if(result.available)expect(result.value.hours).toHaveLength(1);

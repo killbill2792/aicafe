@@ -15,7 +15,19 @@ export const suppliesTools={
   execute:async(raw:unknown,ctx:AgentToolContext):Promise<AgentToolResult>=>{
    const input=usage.parse(raw);
    if(!ctx.tools.getUsageVariance)return {source:"usage_variance",period:{from:input.from,to:input.to},agentId:"maya",missing:["usageReaderUnavailable"],rows:null};
-   const result=await ctx.tools.getUsageVariance({from:input.from,to:input.to,ingredient:input.ingredient,groupBy:input.group_by});
+   let result;
+   try{
+    result=await ctx.tools.getUsageVariance({
+     from:input.from,to:input.to,ingredient:input.ingredient,groupBy:input.group_by
+    });
+   }catch(error){
+    // This is an actual source-read failure, not a zero-waste observation.
+    // Postgres 57014 gets a specific missing-data reason; never echo SQL/PII.
+    const msg=error instanceof Error?error.message:"";
+    const timeout=msg.includes("usage_source_timeout")||msg.includes("57014");
+    return {source:"usage_variance",period:{from:input.from,to:input.to},
+     agentId:"maya",missing:[timeout?"usageVarianceSourceTimeout":"usageVarianceReadFailed"],rows:null};
+   }
    return projectUsageTool(result);
   }
  },
@@ -37,7 +49,9 @@ export const suppliesTools={
           return {...choicePayload(choice,"product_costs",null),agentId:"maya"};
       }
       if(!ctx.tools.getProductEconomics)return {source:"product_costs",period:null,agentId:"maya",missing:["productCostReaderUnavailable"]};
-      const s=await ctx.tools.getProductEconomics(itemId);
+      const s=await ctx.tools.getProductEconomics(itemId).catch(()=>null);
+      if(!s)return {source:"product_costs",period:null,agentId:"maya",
+        missing:["productCostReadFailed"],item:null};
       if(!s.available)return {source:"product_costs",period:null,agentId:"maya",missing:s.quality.missingInputs};
       const v=s.value;
       return {source:"product_costs",period:null,agentId:"maya",missing:s.quality.missingInputs,
@@ -52,7 +66,9 @@ export const suppliesTools={
     execute:async(raw:unknown,ctx:AgentToolContext):Promise<AgentToolResult>=>{
       const {query,limit}=ingredients.parse(raw);
       if(!ctx.tools.getIngredientCosts)return {source:"ingredient_prices",period:null,agentId:"maya",missing:["ingredientReaderUnavailable"]};
-      const s=await ctx.tools.getIngredientCosts(ctx.asOf,query,limit??12);
+      const s=await ctx.tools.getIngredientCosts(ctx.asOf,query,limit??12).catch(()=>null);
+      if(!s)return {source:"ingredient_prices",period:null,agentId:"maya",
+        missing:["ingredientCostReadFailed"],items:null};
       if(!s.available)return {source:"ingredient_prices",period:null,agentId:"maya",
         missing:s.quality.missingInputs,items:null};
       let items=s.value.items;

@@ -93,7 +93,9 @@ describe("the live reading hands its own download to the order keeper",()=>{
  const now=new Date("2026-11-03T21:30:00Z");
  function db(){
   const q={select:()=>q,eq:()=>q,not:async()=>({data:[{restaurant_guid:r1,toast_time_zone:zone,closeout_hour:4}],error:null})};
-  return {from:()=>q} as unknown as SupabaseClient;
+  const cafe={select:()=>cafe,eq:()=>cafe,
+    single:async()=>({data:{timezone:zone},error:null})};
+  return {from:(table:string)=>table==="businesses"?cafe:q} as unknown as SupabaseClient;
  }
 
  it("the order keeper always gets a fresh download, even right after a cached read",async()=>{

@@ -58,19 +58,36 @@ export function posFactReaders(db:SupabaseClient,businessId:string){
   async peakHours(period:CafeStatePeriod):Promise<KnownSlice<PeakHourFacts>>{
    checkPeriod(period);
    const coverage=await toastCoverage(period);
-   const found=await readPages<{business_date:string;hour_local:number;location_id:string|null;net_sales_cents:unknown;orders_count:unknown}>((start,end)=>
-     db.from("hourly_sales_rollup").select("business_date,hour_local,location_id,net_sales_cents,orders_count")
+   const found=await readPages<{business_date:string;hour_local?:number;location_id?:string|null;
+     net_sales_cents:unknown;orders_count:unknown;status?:string;data?:Record<string,unknown>}>((start,end)=>
+     db.from("cv_sales_hours").select("business_date,net_sales_cents,orders_count,status,data")
      .eq("business_id",businessId).gte("business_date",period.from).lte("business_date",period.to)
-     .order("business_date").order("hour_local").order("location_id")
-     .order("net_sales_cents").order("orders_count").range(start,end));
+     .order("business_date").order("source_ref").range(start,end));
    if(found.error&&!found.rows.length)return missing("hourlySalesUnavailable");
    if(found.truncated&&!found.rows.length)return missing("hourlySalesPageLimit");
    if(!found.rows.length)return missing("noHourlySalesFacts");
    try{
-    const hours=found.rows.map(r=>({date:r.business_date,hourLocal:integer(r.hour_local),locationId:r.location_id,
-      netSalesCents:integer(r.net_sales_cents),ordersCount:integer(r.orders_count)}));
+    const hours=found.rows.map(r=>({
+      date:r.business_date,hourLocal:integer(r.data?.hour_local??r.hour_local),
+      locationId:(r.data?.location_id??r.location_id??null) as string|null,
+      netSalesCents:integer(r.net_sales_cents),ordersCount:integer(r.orders_count),
+    }));
+    const provisional=found.rows.some(r=>r.status==="provisional");
+    const failed=found.rows.some(r=>Number(r.data?.locations_failed??0)>0);
+    const truncated=found.rows.some(r=>r.data?.truncated===true);
+    const timestampGap=found.rows.some(r=>Number(r.data?.hourly_unassigned_orders??0)>0);
+    const stale=found.rows.some(r=>r.status==="provisional"&&
+      (typeof r.data?.source_as_of!=="string"||
+       !Number.isFinite(Date.parse(r.data.source_as_of))||
+       Date.now()-Date.parse(r.data.source_as_of)>15*60_000));
     return known({hours},[...missingDays(period,hours.map(r=>r.date),"hourlySalesDatesNotObserved"),
-      ...coverage.quality,...(found.error?["hourlySalesUnavailable"]:[]),...(found.truncated?["hourlySalesPageLimit"]:[])],coverage.notes);
+      ...coverage.quality,...(found.error?["hourlySalesUnavailable"]:[]),
+      ...(found.truncated?["hourlySalesPageLimit"]:[]),
+      ...(provisional?["hourlySalesProvisional"]:[]),
+      ...(failed?["hourlySalesLocationsFailed"]:[]),
+      ...(truncated?["hourlySalesTruncated"]:[]),
+      ...(timestampGap?["hourlySalesTimestampGaps"]:[]),
+      ...(stale?["hourlySalesStale"]:[])],coverage.notes);
    }catch{return missing("unsafeHourlySalesFacts");}
   },
   async employeeSales(period:CafeStatePeriod):Promise<KnownSlice<EmployeeSalesFacts>>{

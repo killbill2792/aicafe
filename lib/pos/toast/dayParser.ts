@@ -85,6 +85,8 @@ export type ToastParsedPayment={paymentGuid:string|null;orderGuid:string;busines
  amountCents:number|null;type:string|null;cardType:string|null;cardEntryMode:string|null;
  originalProcessingFeeCents:number|null};
 export type ToastParsedOrder={guid:string;modifiedDate:string;normalized:PosOrder|null;
+ /** Source timestamp only: never bucket the parser's synthetic noon fallback. */
+ hourObservedAt?:string|null;
  paymentFacts:ToastParsedPayment[];
  voids:ToastVoidFact[];refundFacts:ToastRefundFact[];
  includedChecks:number;openChecks:number;serviceChargesCents:number;gratuityCents:number;
@@ -270,6 +272,7 @@ export function parseToastBusinessOrder(payload:unknown,restaurantGuid:string,
   serviceChargesCents:services,gratuityCents:gratuity,lines
  }:null;
  return {guid:o.guid,modifiedDate:isoDate(o.modifiedDate)||"",
+  hourObservedAt:isoDate(o.closedDate)||isoDate(o.openedDate),
   normalized,voids,refundFacts,paymentFacts,includedChecks,openChecks,
   serviceChargesCents:services,gratuityCents:gratuity,warnings:w};
 }

@@ -94,6 +94,16 @@ describe("Toast day pages are redacted once in the app",()=>{
   expect(result).toEqual({card_info:{cardholderName:"Ana Lopez"},
    payment_method:{cardType:"VISA"},service:{status:"READY"}});
  });
+ it("drops first-six and first-five card prefixes at every operational nesting without dropping sales",()=>{
+  const source={checks:[{payments:[{first6Digits:"synthetic-sensitive-value",
+   first_6_digits:"synthetic-sensitive-value",FIRST6DIGITS:"synthetic-sensitive-value",
+   first5Digits:"synthetic-sensitive-value",amount:12.5,originalProcessingFee:0.41,
+   cardType:"VISA",type:"CREDIT"}]}]};
+  const result=redactToastRaw(source) as typeof source;
+  expect(result.checks[0].payments[0]).toEqual({amount:12.5,originalProcessingFee:0.41,
+   cardType:"VISA",type:"CREDIT"});
+  expect(JSON.stringify(result)).not.toContain("synthetic-sensitive-value");
+ });
  it("is stable when a page is redacted twice (staged pages are read back)",()=>{
   const once=redactToastRaw([order],0,"",undefined,"orders");
   expect(redactToastRaw(once,0,"",undefined,"orders")).toEqual(once);

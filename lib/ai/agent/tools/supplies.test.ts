@@ -22,6 +22,31 @@ describe("Maya read-only costs and unavailable inventory",()=>{
     expect((result.candidates as Array<{id:string}>).map(c=>c.id)).toEqual(["whole","oat"]);
   });
 
+  it("reproduces a whole-month variance source error without guessing zero waste",async()=>{
+    const r=await executeAgentTool("get_usage_variance",{
+      from:"2026-10-01",to:"2026-10-31",ingredient:null,group_by:null,
+    },ctx({getUsageVariance:async()=>{throw new Error("source unavailable");}}));
+    expect(r).toMatchObject({source:"usage_variance",rows:null,
+      missing:["usageVarianceReadFailed"]});
+  });
+  it("reports Postgres October timeout as source failure, never observed zero wastage",async()=>{
+    const r=await executeAgentTool("get_usage_variance",{
+      from:"2026-10-01",to:"2026-10-31",ingredient:null,group_by:null,
+    },ctx({getUsageVariance:async()=>{throw new Error("usage_source_timeout");}}));
+    expect(r).toMatchObject({source:"usage_variance",rows:null,
+      missing:["usageVarianceSourceTimeout"]});
+  });
+  it("labels failed cost sources without filling absent ingredient prices",async()=>{
+    const context=ctx({
+      getIngredientCosts:async()=>{throw new Error("read failed");},
+      getProductEconomics:async()=>{throw new Error("read failed");},
+    });
+    const ingredient=await executeAgentTool("get_ingredient_costs",{query:null,limit:null},context);
+    const product=await executeAgentTool("get_product_costs",{
+      itemId:"11111111-1111-4111-8111-111111111111"},context);
+    expect(ingredient).toMatchObject({items:null,missing:["ingredientCostReadFailed"]});
+    expect(product).toMatchObject({item:null,missing:["productCostReadFailed"]});
+  });
   it("keeps missing recipe cost unknown instead of free",async()=>{
     const r=await suppliesTools.get_product_costs.execute({itemId:"11111111-1111-4111-8111-111111111111"},ctx({
       getProductEconomics:async()=>({available:true,quality:{level:"high",missingInputs:["recipeMissing"],estimatedInputs:[],staleInputs:[]},
