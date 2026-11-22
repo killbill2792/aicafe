@@ -134,6 +134,18 @@ describe("restricted staff communication APIs",()=>{
   mocks.createLogin.mockRejectedValueOnce(new StaffChannelError("conflict"));
   expect((await postLinks(req(input))).status).toBe(409);
  });
+ it("accepts browser Host-origin when Next normalizes internal loopback URL, but never cross-origin",async()=>{
+  const payload={action:"create",employeeId:reply.requestId,email:"worker@example.test",password:"a-long-one-time-secret"};
+  const forwarded=overrides=>new Request("http://localhost:3000/api/staff-channel/link",{
+   method:"POST",headers:{"host":"127.0.0.1:3000",Origin:"http://127.0.0.1:3000",
+    "content-type":"application/json",...overrides},body:JSON.stringify(payload)});
+  const allowed=await postLinks(forwarded({}));
+  expect(allowed.status).toBe(200);
+  expect(mocks.createLogin).toHaveBeenCalledOnce();
+  expect((await postLinks(forwarded({Origin:"https://evil.test"}))).status).toBe(403);
+  expect((await postLinks(forwarded({Origin:""}))).status).toBe(403);
+  expect(mocks.createLogin).toHaveBeenCalledOnce();
+ });
  it("owner link API reuses owner authorization service and checks origin",async()=>{
   expect((await getLinks()).status).toBe(200);
   expect(mocks.links).toHaveBeenCalledOnce();
