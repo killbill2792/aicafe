@@ -61,7 +61,8 @@ export async function readToastTodaySoFar(db:SupabaseClient,businessId:string,no
     }catch{failed++;}
   }
   if(!read)return {available:false,missing:["todayLiveReadFailed"]};
-  const value=summarizeToastToday({businessDate,readAt:now.toISOString(),pages,
+  const value=summarizeToastToday({businessDate,readAt:now.toISOString(),
+    timezone:mappings[0].toast_time_zone!,pages,
     locationsRead:read,locationsFailed:failed,truncated});
   // Only cache a complete read, so a failed location is retried on the next question.
   if(!failed&&!truncated)cache.set(key,{at:now.getTime(),value});

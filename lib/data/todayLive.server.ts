@@ -14,7 +14,10 @@ const readingSchema=z.object({provisional:z.literal(true),businessDate:z.iso.dat
  netSalesCents:z.number().int(),grossSalesCents:z.number().int(),discountsCents:z.number().int(),
  refundsCents:z.number().int(),tipCents:z.number().int(),orders:z.number().int(),openChecks:z.number().int(),
  unparsedOrders:z.number().int(),topItems:z.array(z.object({name:z.string(),quantity:z.number(),netSalesCents:z.number().int()})),
- locationsRead:z.number().int(),locationsFailed:z.number().int(),truncated:z.boolean()});
+ locationsRead:z.number().int(),locationsFailed:z.number().int(),truncated:z.boolean(),
+ hourlySales:z.array(z.object({hourLocal:z.number().int().min(0).max(23),
+  netSalesCents:z.number().int(),ordersCount:z.number().int().nonnegative()})).max(24).optional(),
+ hourlyUnassignedOrders:z.number().int().nonnegative().optional()});
 const missingTable=(code:unknown)=>["42P01","PGRST205"].includes(String(code??""));
 
 /** The latest saved reading and its age, or null (none yet, or table not installed). */
