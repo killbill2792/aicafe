@@ -362,10 +362,15 @@ export async function runAgentTurn(args: {
       (final?0:finalOutputReserve):Infinity));
   // The migrated service-only capability permits expanded unattended work;
   // legacy workers still retain their old per-request and aggregate ceilings.
-  const outputLimit=(final:boolean)=>adaptive
-    ?requestOutputCap(policy,meteredOutput(),final,currentDurableProviderOutputCap()??(workerBudget?1200:Infinity))
-    :Math.min(expandedLuna&&!final&&!workerBudget?lunaToolOutputCap:finalOutputReserve,
-      currentDurableProviderOutputCap()??Infinity,outputRemaining(final));
+  // The existing durable SQL ledger permits 8192 only for Luna; a configured
+  // fallback must use the legacy <=1200 per-request ceiling, even if this turn
+  // began under Luna's expanded budget. Never bypass the same reservation RPC.
+  const outputLimit=(final:boolean)=>Math.min(
+    model===PRODUCTION_SUPERVISOR_OPENAI_MODEL?Infinity:1200,
+    adaptive
+      ?requestOutputCap(policy,meteredOutput(),final,currentDurableProviderOutputCap()??(workerBudget?1200:Infinity))
+      :Math.min(expandedLuna&&!final&&!workerBudget?lunaToolOutputCap:finalOutputReserve,
+          currentDurableProviderOutputCap()??Infinity,outputRemaining(final)));
   const reportedOutput=(event:Event)=> {
     const u=(event.response as {usage?:{output_tokens?:unknown}}|undefined)?.usage?.output_tokens;
     return typeof u==="number"&&Number.isSafeInteger(u)&&u>=0&&u<=1_000_000;
