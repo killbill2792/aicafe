@@ -2,6 +2,9 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import {SCENARIOS,classifyPaths, parseNameStatus, selectedScenarios, summarizeReport} from "./targeted.mjs";
 import browserConfig from "../../playwright.config.mjs";
+// Run the deferred real-Luna suite's pure negative oracles in ordinary CI.
+// The paid scenario itself still requires separately authorized local flags.
+import "../../evals/acceptance/live/staff-question.test.mjs";
 
 test("browser runner discovers owner, employee-channel and owner-question real journeys",()=>{
   const match=browserConfig.testMatch;
