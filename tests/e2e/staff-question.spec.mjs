@@ -107,6 +107,7 @@ test("@staff @home owner-approved factual question reaches one verified worker; 
       {type:"proposal_card",proposalId:id.ignoreProposal}]),
      JSON.stringify({status:"partial",intent:"owner_review",evidence:[{source:"operating_task",identifier:id.source}]})]);
    await openOwnedPage(owner,cafe,"?thread="+encodeURIComponent(id.thread));
+   await owner.setViewportSize({width:390,height:844});
    const ignored=owner.getByRole("region",{name:"Ask an employee?"}).filter({hasText:ignoreQuestion});
    await expect(ignored.getByRole("button",{name:"Ignore"})).toBeVisible();
    const ignoreWait=owner.waitForResponse(resp=>resp.request().method()==="POST"&&resp.url().includes("/proposals"));
