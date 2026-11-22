@@ -176,15 +176,64 @@ export async function openOwnerRunCheckpoint(scope:RunScope,runId:string,token:s
     await change(current.checkpoint_operation,"complete",null,receipt);
   };
   const scopedProposal=async(ref:string)=>{
-    const result=await db.from("supervisor_proposals").select("id,status,revision,capability_id,effect_hash")
+    const result=await db.from("supervisor_proposals").select("id,status,revision,capability_id,effect_hash,created_at,canonical_effect_payload")
       .eq("business_id",s.businessId).eq("owner_user_id",s.ownerUserId).eq("thread_id",s.threadId)
       .eq("id",uuid.parse(ref)).maybeSingle();
     if(result.error||!result.data)throw new Error("checkpoint_receipt_unavailable");
     return result.data;
   };
+  // A durable owner reply is an attributed *report*, not proof of physical
+  // inventory or staff outreach. Both IDs come from already-saved rows; no
+  // model-supplied prose is ever trusted as an effect receipt.
+  const verifyStaffOwnerReport=async(proposalId:string,ownerMessageId:string):Promise<ToolResult>=>{
+    const p=await scopedProposal(uuid.parse(proposalId));
+    if(p.capability_id!=="olivia.staff_question.v1"||p.status!=="rejected"||
+       !Number.isInteger(p.revision)||p.revision<2)
+      throw new Error("checkpoint_receipt_unavailable");
+    const message=await db.from("ai_messages").select("id,text_content,created_at")
+      .eq("business_id",s.businessId).eq("thread_id",s.threadId)
+      .eq("owner_user_id",s.ownerUserId).eq("author_user_id",s.ownerUserId)
+      .eq("id",uuid.parse(ownerMessageId)).eq("role","owner").eq("content_type","text")
+      .is("owner_input_response",null).is("owner_input_prompt_message_id",null).maybeSingle();
+    const raw=message.data?.text_content;
+    if(message.error||!message.data||typeof raw!=="string"||!raw.trim()||
+       raw.trim().length>1200||!Number.isFinite(Date.parse(message.data.created_at))||
+       Date.parse(message.data.created_at)<Date.parse(p.created_at))
+      throw new Error("checkpoint_receipt_unavailable");
+    const record=await db.from("operating_tasks").select("id,evidence")
+      .eq("business_id",s.businessId).eq("owner_user_id",s.ownerUserId)
+      .eq("id","staff-question-owner-answer:"+p.id)
+      .eq("kind","data_quality").eq("entity_type","staff_question_answer").maybeSingle();
+    const source=(p.canonical_effect_payload as {sourceTaskId?:unknown}|null)?.sourceTaskId;
+    const evidence=record.data?.evidence;
+    const matched=Array.isArray(evidence)&&evidence.some(entry=>{
+      if(!entry||typeof entry!=="object"||Array.isArray(entry))return false;
+      const x=entry as {source?:unknown;facts?:unknown};
+      if(x.source!=="owner_report"||!x.facts||typeof x.facts!=="object"||Array.isArray(x.facts))return false;
+      const facts=x.facts as Record<string,unknown>;
+      return facts.proposalId===proposalId&&facts.ownerUserId===s.ownerUserId&&
+       facts.ownerMessageId===ownerMessageId&&facts.answer===raw.trim()&&
+       facts.independentlyVerified===false&&facts.sourceTaskId===source;
+    });
+    if(record.error||!record.data||!matched)
+      throw new Error("checkpoint_receipt_unavailable");
+    const sent=await db.from("staff_communication_requests").select("id")
+      .eq("business_id",s.businessId).eq("source_type","owner_manual")
+      .eq("source_id",proposalId).limit(1);
+    if(sent.error||!sent.data||sent.data.length!==0)
+      throw new Error("checkpoint_receipt_unavailable");
+    return {source:"staff_question_owner_report",period:null,agentId:"olivia",
+      missing:[],saved:true,ownerReported:true,independentlyVerified:false,
+      proposalId,ownerMessageId,employeeContacted:false};
+  };
   const recoverEffect=async(name:string,ref:string):Promise<ToolResult>=>{
     const separator=ref.indexOf(":");
     const kind=ref.slice(0,separator),value=ref.slice(separator+1);
+    if(kind==="staff_owner_report"&&name==="record_staff_question_owner_answer"){
+      const ids=/^([a-f0-9-]{36}):([a-f0-9-]{36})$/.exec(value);
+      if(!ids)throw new Error("checkpoint_receipt_invalid");
+      return verifyStaffOwnerReport(uuid.parse(ids[1]),uuid.parse(ids[2]));
+    }
     if(kind==="proposal"&&proposalSources[name]){
       const p=await scopedProposal(value);
       return {source:proposalSources[name],period:null,missing:p.status==="draft"?[]:["prior_operation_already_recorded"],
@@ -252,7 +301,38 @@ export async function openOwnerRunCheckpoint(scope:RunScope,runId:string,token:s
   await assertLive();
   // A provider/read interrupted before ACK can be safely abandoned, but its
   // reservation/unknown usage is never refunded and is not a verified result.
-  if(current.checkpoint_phase==="effect_pending")throw new Error("checkpoint_effect_uncertain");
+  if(current.checkpoint_phase==="effect_pending"){
+    // A saved owner answer may have committed immediately before a lost ACK.
+    // Recover ONLY the exact original run message and deterministic operation.
+    // Every other unknown mutation remains quarantined; never redispatch it.
+    if(current.checkpoint_tool!=="record_staff_question_owner_answer"||
+       !current.checkpoint_operation)throw new Error("checkpoint_effect_uncertain");
+    const run=await db.from("supervisor_runs").select("request_key")
+      .eq("business_id",s.businessId).eq("owner_user_id",s.ownerUserId)
+      .eq("thread_id",s.threadId).eq("id",id).maybeSingle();
+    if(run.error||!run.data||!uuid.safeParse(run.data.request_key).success)
+      throw new Error("checkpoint_effect_uncertain");
+    const reportRows=await db.from("operating_tasks").select("id,evidence")
+      .eq("business_id",s.businessId).eq("owner_user_id",s.ownerUserId)
+      .eq("kind","data_quality").eq("entity_type","staff_question_answer")
+      .contains("evidence",[{source:"owner_report",facts:{ownerMessageId:run.data.request_key}}])
+      .limit(3);
+    if(reportRows.error||!reportRows.data||reportRows.data.length!==1)
+      throw new Error("checkpoint_effect_uncertain");
+    const reportId=reportRows.data[0].id;
+    if(typeof reportId!=="string"||!reportId.startsWith("staff-question-owner-answer:"))
+      throw new Error("checkpoint_effect_uncertain");
+    const proposalId=reportId.slice("staff-question-owner-answer:".length);
+    if(!uuid.safeParse(proposalId).success)throw new Error("checkpoint_effect_uncertain");
+    const proposal=await scopedProposal(proposalId);
+    const originalRevision=proposal.revision-1;
+    if(proposal.status!=="rejected"||originalRevision<1||
+       operationKey(id,current.checkpoint_tool,{proposalId,revision:originalRevision})!==current.checkpoint_operation)
+      throw new Error("checkpoint_effect_uncertain");
+    const ref="staff_owner_report:"+proposalId+":"+run.data.request_key;
+    await recoverEffect(current.checkpoint_tool,ref);
+    await finish(ref);
+  }
   if(current.checkpoint_phase!=="ready")
     await finish("abandoned:"+current.checkpoint_operation);
   const priorEffects=current.checkpoint_receipts.filter(x=>x.phase==="effect_pending"&&!x.receipt.startsWith("noop:"));
@@ -325,6 +405,12 @@ export async function openOwnerRunCheckpoint(scope:RunScope,runId:string,token:s
       }else if(name==="propose_purchases"&&Array.isArray(result.proposals)&&result.proposals.length){
         const parsed=z.array(z.object({proposalId:uuid})).min(1).max(10).safeParse(result.proposals);
         if(parsed.success)ref="purchase_batch:"+[...new Set(parsed.data.map(p=>p.proposalId))].join(",");
+      }else if(name==="record_staff_question_owner_answer"&&
+        result.source==="staff_question_owner_report"&&result.saved===true&&
+        result.ownerReported===true&&result.independentlyVerified===false&&
+        result.employeeContacted===false&&uuid.safeParse(result.proposalId).success&&
+        uuid.safeParse(result.ownerMessageId).success){
+        ref="staff_owner_report:"+result.proposalId+":"+result.ownerMessageId;
       }else if(name==="remember_cafe_fact"&&uuid.safeParse(result.ruleId).success){
         ref="memory:"+result.ruleId;
       }else if(name==="record_supplier_order_outcome"&&uuid.safeParse(result.reportId).success){
