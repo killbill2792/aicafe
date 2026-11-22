@@ -22,7 +22,7 @@
     },
     {
       "path": "/api/cron/refresh-derived",
-      "schedule": "* * * * *"
+      "schedule": "*/15 * * * *"
     },
     {
       "path": "/api/cron/daily-brief",

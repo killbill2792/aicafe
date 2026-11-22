@@ -1,4 +1,5 @@
 import {describe,it,expect,vi,beforeEach,afterEach} from "vitest";
+import {readFileSync} from "node:fs";
 vi.mock("server-only",()=>({}));
 const mocks=vi.hoisted(()=>({
   refresh:vi.fn(async(..._args:unknown[])=>({businessDate:"2026-10-28",alertsCreated:0})),
@@ -196,5 +197,16 @@ describe("U4 minute tick retains durable refresh work",()=>{
     expect(await response.json()).toMatchObject({checked:2,refreshed:2,
       routines:{routinesChecked:2},heavyRefresh:true});
     expect(mocks.refresh).toHaveBeenCalledTimes(2);
+  });
+});
+
+describe("U4 development/release boundary",()=>{
+  it("keeps the existing production cron cadence until separate minute-level authorization",()=>{
+    const config=JSON.parse(readFileSync("vercel.json","utf8")) as {
+      crons:Array<{path:string;schedule:string}>};
+    const entry=config.crons.find(x=>x.path==="/api/cron/refresh-derived");
+    expect(entry?.schedule).toBe("*/15 * * * *");
+    // The same route accepts any authenticated invocation minute, but the
+    // Vercel schedule cutover is a release action, not an implicit merge side effect.
   });
 });

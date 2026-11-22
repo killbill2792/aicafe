@@ -83,3 +83,18 @@
 ## COPY-PASTE CODING PROMPT — THIS NEW PR
 
 **Implement this draft PR directly; do not reopen planning or create more PRs.** Owner has approved the architecture and consolidated scope. Read \`AGENTS.md\`, \`PROGRESS.md\`, binding \`docs/rules/{ai-architecture,operating-board,workflow-and-review,acceptance-quality,safety-and-privacy}.md\`, the current main, and this exact contract. Keep one existing U4 agent and work authority; use U4 for genuine one-time objectives, not title-only commitments. Make the existing cron admission minute-granular and genuinely bounded/fair per café; preserve independent 15-minute derived refresh cadence and proper transactional claim/lease/backoff/recovery. Remove hardcoded business-family investigative questions but not evidence/permissions/revocation. Save the full report once in existing work/occurrence; show only concise chat status; extend existing Inbox/notifyOwner to manage relevance, optional PWA push and deep-link, no WhatsApp; fix Operations nested-record and English Profile translation crash class. Code in this same PR; use additive migrations, exact owner/tenant scope and tests. Do not touch #553 source work, #552 staff communication or Task17. Do not activate Watch or apply production migrations/config, conduct real café data changes, paid provider calls or release. Run full applicable CI, fix real failures, monitor, obtain clean current-head Codex, and keep the PR draft until the normal gates are satisfied. Mark every unexecuted end-to-end scenario explicitly NOT_PROVEN; do not ask the owner to diagnose CI.
+
+## Release-only minute schedule cutover (not authorized in this implementation PR)
+
+The existing code and local CI can handle a secured cron tick at any minute, and
+the admitted one-time objective records the exact café-local minute. **The
+deployed Vercel cron is deliberately left at its already-live `*/15 * * * *`
+schedule** in this development-stage merge: changing it to `* * * * *`
+automatically changes production workload even if model/push feature flags are
+off. Before the owner-authorized release of arbitrary-minute objectives,
+separately authorize and apply the single `vercel.json` cadence change,
+production additive migrations, any required environment settings, and staged
+Task17 source/provider/real-device acceptance. Until that release cutover, do
+**not** represent a one-time minute objective as operationally activated or
+guarantee a 4:03 production delivery. The owner-facing saved schedule remains a
+development capability, not a launch claim.
