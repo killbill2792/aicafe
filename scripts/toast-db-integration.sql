@@ -1082,4 +1082,53 @@ BEGIN
  perform pg_temp.assert_true(not has_table_privilege('authenticated','public.catalog_cost_history','UPDATE'),'owner cannot rewrite historical observations');
  perform pg_temp.assert_true(not has_function_privilege('anon','public.read_historical_ingredient_cost_proof(uuid,date,date)','EXECUTE'),'anonymous history reader denied');
 END $catalog_history$;
+-- #553 migrated-schema security: fresh/old source prefixes cannot leave
+-- the invoker reader even when historic operational JSON still retains keys.
+SELECT pg_temp.assert_true(
+ public.ai_query_path('data.first6Digits') is null and
+ public.ai_query_path('data.first_6_digits') is null and
+ public.ai_query_path('data.payments.0.first6Digits') is null and
+ public.ai_query_path('data.first5Digits') is null,
+ 'payment card prefix paths denied at SQL admission');
+SELECT pg_temp.assert_true(public.ai_query_path('data.amount') is not null
+ and public.ai_query_path('data.originalProcessingFee') is not null,
+ 'legitimate payment money remains admitted');
+SELECT pg_temp.assert_true(
+ public.ai_safe_retained_json('{"payments":[{"first6Digits":"synthetic-hidden","amount":4.50,
+ "cardType":"VISA"}]}'::jsonb)
+ = '{"payments":[{"amount":4.50,"cardType":"VISA"}]}'::jsonb,
+ 'old payment JSON strips prefixes while retaining money and card type');
+-- Unmodified historical sales and the existing live-day JSON share ONE view.
+-- The real reader still applies its business-id RLS.
+INSERT INTO public.toast_today_live(business_id,business_date,read_at,net_sales_cents,orders,reading)
+VALUES
+ ('aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa','2026-11-18','2026-11-18T21:00:00Z',
+  1200,2,'{"hourlySales":[{"hourLocal":12,"netSalesCents":1200,"ordersCount":2}],
+  "hourlyUnassignedOrders":0,"locationsFailed":0,"truncated":false,"unparsedOrders":0}'::jsonb),
+ ('bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb','2026-11-18','2026-11-18T21:00:00Z',
+  9900,1,'{"hourlySales":[{"hourLocal":12,"netSalesCents":9900,"ordersCount":1}],
+  "hourlyUnassignedOrders":0,"locationsFailed":0,"truncated":false,"unparsedOrders":0}'::jsonb)
+ON CONFLICT(business_id) DO UPDATE SET business_date=excluded.business_date,
+ read_at=excluded.read_at,net_sales_cents=excluded.net_sales_cents,
+ orders=excluded.orders,reading=excluded.reading;
+SELECT pg_temp.assert_true(
+ (SELECT count(*)=1 AND min(net_sales_cents)=1200 AND min(status)='provisional'
+  FROM public.cv_sales_hours WHERE business_id='aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa'
+   AND business_date='2026-11-18'),
+ 'provisional hour comes from saved permitted Toast reading, café isolated');
+INSERT INTO public.hourly_sales_rollup
+ (business_id,location_id,business_date,hour_local,net_sales_cents,orders_count)
+VALUES ('aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+ 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaa0001','2026-11-18',12,1300,2);
+SELECT pg_temp.assert_true(
+ (SELECT count(*)=1 AND min(net_sales_cents)=1300 AND min(status)='actual'
+  FROM public.cv_sales_hours WHERE business_id='aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa'
+   AND business_date='2026-11-18'),
+ 'closed-day source wins, never double counts provisional live hour');
+SELECT pg_temp.assert_true(
+ (SELECT count(*)=1 AND min(net_sales_cents)=9900
+  FROM public.cv_sales_hours WHERE business_id='bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb'
+  AND business_date='2026-11-18'),
+ 'other café retains its own independent provisional hour');
+
 ROLLBACK;

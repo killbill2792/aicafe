@@ -86,7 +86,7 @@ export type ToastParsedPayment={paymentGuid:string|null;orderGuid:string;busines
  originalProcessingFeeCents:number|null};
 export type ToastParsedOrder={guid:string;modifiedDate:string;normalized:PosOrder|null;
  /** Source timestamp only: never bucket the parser's synthetic noon fallback. */
- hourObservedAt:string|null;
+ hourObservedAt?:string|null;
  paymentFacts:ToastParsedPayment[];
  voids:ToastVoidFact[];refundFacts:ToastRefundFact[];
  includedChecks:number;openChecks:number;serviceChargesCents:number;gratuityCents:number;

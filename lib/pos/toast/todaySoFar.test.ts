@@ -1,7 +1,7 @@
 import {beforeEach,describe,expect,it,vi} from "vitest";
 import type {SupabaseClient} from "@supabase/supabase-js";
 vi.mock("server-only",()=>({}));
-import {currentToastBusinessDay} from "./todaySoFar";
+import {currentToastBusinessDay,summarizeToastToday} from "./todaySoFar";
 import {readToastTodaySoFar,clearTodaySoFarCache} from "./todaySoFar.server";
 import {executeAgentTool,schemas,type AgentToolContext} from "@/lib/ai/agent/tools";
 
@@ -65,6 +65,22 @@ describe("today so far (live, provisional, never stored)",()=>{
       netSalesCents:600,orders:2,hourlyUnassignedOrders:1,
       hourlySales:[{hourLocal:9,netSalesCents:200,ordersCount:1}],
     }});
+  });
+  it("combines both real occurrences of DST fall-back hour, excluding unknown timestamps",()=>{
+    const fake=(guid:string,at:string,cents:number)=>({
+      guid,modifiedDate:at,hourObservedAt:at,
+      normalized:{netSalesCents:cents,grossSalesCents:cents,discountsCents:0,
+        refundsCents:0,tipCents:0,lines:[]},openChecks:0,
+    });
+    const page={unparsed:[],orders:[
+      fake("a","2026-11-01T08:30:00Z",100),
+      fake("b","2026-11-01T09:30:00Z",-20),
+    ]};
+    const got=summarizeToastToday({businessDate:"2026-11-01",
+      readAt:"2026-11-01T10:00:00Z",timezone:zone,
+      pages:[page as never],locationsRead:1,locationsFailed:0,truncated:false});
+    expect(got.hourlySales).toEqual([{hourLocal:1,netSalesCents:80,ordersCount:2}]);
+    expect(got.netSalesCents).toBe(80);
   });
   it("reports a failed location instead of silently dropping its sales",async()=>{
     const request=vi.fn(async(_p:string,guid:string)=>{
