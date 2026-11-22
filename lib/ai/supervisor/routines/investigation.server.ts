@@ -32,7 +32,7 @@ import {maintenanceContext,pollMaintenanceVendorReplies} from "@/lib/ai/supervis
 import {investigationPrompt,universalInvestigationPrompt,investigationReadTools,
   customerInvestigationTools,maintenanceInvestigationTools,supplierResearchInvestigationTools,
   verifyInvestigationTurn,verifyUniversalInvestigationTurn,
-  unsupportedExternalEffectClaim,type InvestigationCheckpoint,type SourceSynopsis} from "./investigation";
+  unsupportedExternalEffectClaim,modelSelectedOwnerQuestion,type InvestigationCheckpoint,type SourceSynopsis} from "./investigation";
 
 
 type Claimed={
@@ -487,7 +487,9 @@ export async function processNextInvestigation(db:SupabaseClient,now:Date,
     // Re-read actual counts, usage and existing orders; no model quantity or approval.
     let stockPurchaseProposalId:string|undefined;
     let stockEmailProposalId:string|undefined;
-    let ownerQuestion:string|undefined;
+    // Bind only the model's fully verified, specifically selected question to
+    // existing SQL clarification/owner-answer provenance. No canned question.
+    let ownerQuestion=modelSelectedOwnerQuestion(report.text)??undefined;
     let stockProcurementStatus:string|undefined;
     if(synopsis.kind==="business_anomaly"){
       const source=await readIncidentEvidence(db,c),selector=object(source.selectors);
@@ -500,7 +502,8 @@ export async function processNextInvestigation(db:SupabaseClient,now:Date,
             stockPurchaseProposalId=draft.proposalId;
             stockProcurementStatus="A supplier order draft is available for your review and approval. This draft does not send an order.";
           }else if(draft.state==="existing"){
-            stockEmailProposalId=draft.emailProposalId;ownerQuestion=draft.question;
+            stockEmailProposalId=draft.emailProposalId;
+            ownerQuestion??=draft.question;
             stockProcurementStatus=draft.summary;
           }else if(draft.state==="missing"){
             stockProcurementStatus="Please confirm the missing stock count, supplier quote or delivery details. No purchase was authorized by this check.";
