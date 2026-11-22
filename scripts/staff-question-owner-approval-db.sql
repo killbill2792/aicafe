@@ -179,4 +179,57 @@ begin
  if exists(select 1 from public.staff_communication_requests where business_id=current_setting('test.staffquestion.biz')::uuid and source_id=current_setting('test.staffquestion.stale_proposal')) then
   raise exception 'failed authorization unexpectedly sent a staff request';end if;
 end $$;
+-- Existing U4 v2 claim stays fail-closed for unknown external effects. Only
+-- a previously persisted exact owner-answer report may be reclaimed after
+-- a lost ACK, and even then the Node checkpoint must verify operation identity.
+select gen_random_uuid() as answer_run,gen_random_uuid() as missing_run,
+ gen_random_uuid() as other_effect_run \gset
+insert into public.supervisor_runs
+ (id,business_id,owner_user_id,thread_id,request_key,plan_hash,status,
+  execution_version,input_locale,input_attachment_version_hash)
+values
+ (:'answer_run',:'biz',:'owner_id',:'thread_id',:'owner_answer_message',
+  repeat('a',64),'running',2,'en',encode(sha256(convert_to('[]','UTF8')),'hex')),
+ (:'missing_run',:'biz',:'owner_id',:'thread_id',gen_random_uuid(),
+  repeat('a',64),'running',2,'en',encode(sha256(convert_to('[]','UTF8')),'hex')),
+ (:'other_effect_run',:'biz',:'owner_id',:'thread_id',gen_random_uuid(),
+  repeat('a',64),'running',2,'en',encode(sha256(convert_to('[]','UTF8')),'hex'));
+insert into public.supervisor_run_steps
+ (business_id,run_id,step_key,step_index,retry_mode,status,worker_id,
+  claim_token,lease_until,attempts,checkpoint_phase,checkpoint_operation,checkpoint_tool)
+select :'biz',run.id,'owner_turn',1,'reconcile','leased',gen_random_uuid(),
+ gen_random_uuid(),clock_timestamp()-interval '5 minutes',1,'effect_pending',
+ gen_random_uuid(),
+ case when run.id=:'other_effect_run'::uuid then 'propose_staff_question'
+ else 'record_staff_question_owner_answer' end
+from public.supervisor_runs run
+where run.id in (:'answer_run',:'missing_run',:'other_effect_run');
+do $$
+declare b uuid:=current_setting('test.staffquestion.biz')::uuid;
+ o uuid:=current_setting('test.staffquestion.owner')::uuid;
+ th uuid:=current_setting('test.staffquestion.thread')::uuid;
+ reply_run uuid; absent_run uuid; other_run uuid; outcome jsonb;
+begin
+ select id into reply_run from public.supervisor_runs
+  where business_id=b and request_key=current_setting('test.staffquestion.owner_answer_message')::uuid;
+ select id into absent_run from public.supervisor_runs
+  where business_id=b and status='running' and id<>reply_run
+   and id in(select run_id from public.supervisor_run_steps
+    where checkpoint_tool='record_staff_question_owner_answer') limit 1;
+ select id into other_run from public.supervisor_runs
+  where business_id=b and status='running' and id<>reply_run
+   and id in(select run_id from public.supervisor_run_steps
+    where checkpoint_tool='propose_staff_question') limit 1;
+ if reply_run is null or absent_run is null or other_run is null
+ then raise exception 'durable expired claim fixture incomplete';end if;
+ outcome:=public.supervisor_run_claim(b,o,th,reply_run,gen_random_uuid(),60);
+ if outcome->>'kind'<>'claimed' then raise exception 'persisted owner report was not reclaimable';end if;
+ outcome:=public.supervisor_run_claim(b,o,th,absent_run,gen_random_uuid(),60);
+ if outcome->>'kind'<>'blocked' then raise exception 'unknown owner-answer effect replayed';end if;
+ outcome:=public.supervisor_run_claim(b,o,th,other_run,gen_random_uuid(),60);
+ if outcome->>'kind'<>'blocked' then raise exception 'different effect replayed using owner report';end if;
+ if exists(select 1 from public.staff_communication_requests
+  where business_id=b and source_id=current_setting('test.staffquestion.owner_proposal'))
+ then raise exception 'checkpoint recovery contacted an employee';end if;
+end $$;
 rollback;
