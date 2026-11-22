@@ -15,7 +15,7 @@ import {newFieldReport,observeOrder,observePayment,publicFieldReport}
 
 type OrderRow={entity_guid:string|null;restaurant_guid:string;business_date:string;payload:unknown};
 type Choice={guid:string;day:string;paymentGuid:string|null;sourceClass:string};
-type ReportStatus="ok"|"missing_permissions"|"rate_limited"|"authentication"|
+type ReportStatus="ok"|"missing_permissions"|"missing_scope_or_location"|"rate_limited"|"authentication"|
  "not_configured"|"unauthorized_location"|"invalid_response"|"timeout"|"unavailable";
 type EndpointName="bulk"|"order_detail"|"payment_detail";
 const MAX_ORDERS=20,DB_SCAN_LIMIT=350,MAX_RUN_MS=5*60*1000;
@@ -27,7 +27,7 @@ const record=(v:unknown):v is Record<string,unknown>=>
 const arr=(v:unknown):unknown[]=>Array.isArray(v)?v:[];
 const safeError=(e:unknown):ReportStatus=>{
  if(e instanceof ToastApiError){
-  if(["missing_permissions","rate_limited","authentication","not_configured",
+  if(["missing_permissions","missing_scope_or_location","rate_limited","authentication","not_configured",
       "unauthorized_location","invalid_response","timeout"].includes(e.category))
     return e.category as ReportStatus;
  }
