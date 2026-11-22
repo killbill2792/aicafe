@@ -32,7 +32,16 @@ function db(){
    const filters:Array<(x:Record<string,unknown>)=>boolean>=[];
    let max=1_000;
    const apply=()=>fake.tables[table]?.filter(x=>filters.every(f=>f(x))).slice(0,max)??[];
-   const q={
+   type Query={
+    select:(fields:string)=>Query;
+    eq:(key:string,value:unknown)=>Query;
+    is:(key:string,value:unknown)=>Query;
+    contains:(key:string,value:unknown)=>Query;
+    limit:(n:number)=>Promise<{data:Array<Record<string,unknown>>;error:null}>;
+    maybeSingle:()=>Promise<{data:Record<string,unknown>|null;error:{message:string}|null}>;
+    single:()=>Promise<{data:Record<string,unknown>|null;error:{message:string}|null}>;
+   };
+   const q:Query={
     select:(_fields:string)=>q,
     eq:(key:string,value:unknown)=>{filters.push(x=>x[key]===value);return q;},
     is:(key:string,value:unknown)=>{filters.push(x=>x[key]===value);return q;},
