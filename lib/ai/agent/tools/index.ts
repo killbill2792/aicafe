@@ -692,6 +692,9 @@ const durableEffectPorts:Readonly<Record<string,readonly string[]>>={
   manage_commitment:["commitments.create","commitments.close"],
   manage_routine:["routines.create","routines.change"],propose_gmail_action:["gmail.propose"],
   propose_maintenance_staff_assignment:["maintenance.proposeStaff"],
+  // The only model-invocable staff-question mutation ports. Neither contacts a worker.
+  propose_staff_question:["staffQuestionPropose"],
+  record_staff_question_owner_answer:["staffQuestionAnswer"],
   propose_maintenance_vendor_request:["maintenance.propose"],
   record_maintenance_repair_claim:["maintenance.recordRepairClaim"],
 };
