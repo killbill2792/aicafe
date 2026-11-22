@@ -154,7 +154,8 @@ test("@staff real worker login, shift explanation, cross-cafe and owner receipt"
    .toBeVisible({timeout:30_000});
   await expect(owner.getByText("I cannot work seven to two. I can arrive at 8 AM.")).toBeVisible();
   const conversation=owner.getByRole("region",{name:"Employee Supervisor communication history"});
-  await expect(conversation.getByText("Confirm your shift")).toBeVisible();
+  const answeredShift=conversation.locator("li").filter({hasText:"I cannot work seven to two. I can arrive at 8 AM."});
+  await expect(answeredShift.getByText("Confirm your shift")).toBeVisible();
   await expect(conversation.getByText("I cannot work seven to two. I can arrive at 8 AM.")).toBeVisible();
   expect((await staffCtx.request.get("/api/staff-channel/owner-history")).status()).toBe(403);
   const ownerHistory=await ownerCtx.request.get("/api/staff-channel/owner-history");
