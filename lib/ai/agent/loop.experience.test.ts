@@ -774,3 +774,75 @@ describe("U2 no-provider end-to-end execution receipts",()=>{
   }finally{vi.unstubAllEnvs();}
  });
 });
+
+describe("production Supervisor provider availability recovery (zero external calls)",()=>{
+  const done=(model:string)=>({type:"response.completed",response:{model,usage:{
+    input_tokens:60,output_tokens:12,input_tokens_details:{cached_tokens:0}},output:[]}});
+
+  it("retries only a first-request Luna server outage with the configured model and its eager tool contract",async()=>{
+    vi.stubEnv("SUPERVISOR_OPENAI_MODEL","gpt-6-luna");
+    vi.stubEnv("SUPERVISOR_OPENAI_FALLBACK_MODEL","gpt-4.1-mini");
+    try{
+      const {provider,requests}=recording([
+        [{type:"response.failed",response:{error:{code:"server_error"}}}],
+        [text("I can help with that."),done("gpt-4.1-mini")],
+      ]);
+      const result=await runAgentTurn({ownerText:"Hello",context:{...context},provider});
+      expect(result.endReason).toBe("complete");
+      expect(result.text).toBe("I can help with that.");
+      expect(result.usage.model).toBe("gpt-4.1-mini");
+      expect(result.usage.modelCalls).toBe(2);
+      expect(result.usage.toolCalls).toBe(0);
+      expect(requests.map(r=>r.model)).toEqual(["gpt-6-luna","gpt-4.1-mini"]);
+      expect(requests.map(r=>r.tool_choice)).toEqual(["auto","auto"]);
+      expect(requests[0].tools).toContainEqual({type:"tool_search"});
+      expect(requests[1].tools).not.toContainEqual({type:"tool_search"});
+      expect((requests[1].tools as Array<Record<string,unknown>>).every(t=>t.defer_loading===undefined)).toBe(true);
+      expect(result.usage.requests?.map(r=>r.requestedModel)).toEqual(["gpt-6-luna","gpt-4.1-mini"]);
+      expect(result.usage.requests?.map(r=>r.outcome)).toEqual(["failed","completed"]);
+    }finally{vi.unstubAllEnvs();}
+  });
+
+  it("recovers a prematurely closed stream without treating unverified model output as success",async()=>{
+    vi.stubEnv("SUPERVISOR_OPENAI_MODEL","gpt-6-luna");
+    vi.stubEnv("SUPERVISOR_OPENAI_FALLBACK_MODEL","gpt-4.1-mini");
+    try{
+      const {provider,requests}=recording([[],[text("Recovered."),done("gpt-4.1-mini")]]);
+      const result=await runAgentTurn({ownerText:"Hello",context:{...context},provider});
+      expect(result.endReason).toBe("complete");
+      expect(result.text).toBe("Recovered.");
+      expect(requests.map(r=>r.model)).toEqual(["gpt-6-luna","gpt-4.1-mini"]);
+    }finally{vi.unstubAllEnvs();}
+  });
+
+  it("never downgrades a rejected prompt, unknown provider error or content filter",async()=>{
+    vi.stubEnv("SUPERVISOR_OPENAI_MODEL","gpt-6-luna");
+    vi.stubEnv("SUPERVISOR_OPENAI_FALLBACK_MODEL","gpt-4.1-mini");
+    try{
+      for(const code of ["invalid_prompt","content_filter","unrecognized_code"]){
+        const event={type:"response.failed",response:{error:{code}}};
+        const {provider,requests}=recording([[event],[event]]);
+        const result=await runAgentTurn({ownerText:"Test",context:{...context},provider});
+        expect(result.endReason).toBe("provider_error");
+        expect(requests.map(r=>r.model)).toEqual(["gpt-6-luna","gpt-6-luna"]);
+        expect(requests.map(r=>r.tool_choice)).toEqual(["auto","none"]);
+      }
+    }finally{vi.unstubAllEnvs();}
+  });
+
+  it("does not change model once a source tool has been chosen and called",async()=>{
+    vi.stubEnv("SUPERVISOR_OPENAI_MODEL","gpt-6-luna");
+    vi.stubEnv("SUPERVISOR_OPENAI_FALLBACK_MODEL","gpt-4.1-mini");
+    try{
+      const {provider,requests}=recording([
+        [call("get_menu_items",'{"query":null,"limit":null}',"menu_repair_1"),completed],
+        [{type:"response.failed",response:{error:{code:"server_error"}}}],
+        [text("The result is incomplete."),done("gpt-6-luna")],
+      ]);
+      const result=await runAgentTurn({ownerText:"Read the menu",context:{...context},provider});
+      expect(result.usage.toolCalls).toBe(1);
+      expect(requests.map(r=>r.model)).toEqual(["gpt-6-luna","gpt-6-luna","gpt-6-luna"]);
+      expect(requests[2].tool_choice).toBe("none");
+    }finally{vi.unstubAllEnvs();}
+  });
+});
