@@ -2476,8 +2476,8 @@ test("@home U4 real private Work report and failed-run acknowledgment in two caf
     // owner-scoped Set-Cookie, with Secure and HttpOnly required for HTTPS.
     const selectionCookie=redirected.headers()["set-cookie"]??"";
     expect(selectionCookie).toContain("active_business_id="+owner.businessId);
-    expect(selectionCookie).toMatch(/;\\s*Secure/i);
-    expect(selectionCookie).toMatch(/;\\s*HttpOnly/i);
+    expect(selectionCookie).toMatch(/;\s*Secure/i);
+    expect(selectionCookie).toMatch(/;\s*HttpOnly/i);
     await expect(page).toHaveURL(/\/operations\?agent=leo&status=watching&task=/u);
     expect(new URL(page.url()).hostname).toBe("127.0.0.1");
     await expect(page.locator('article[data-task-kind="u4_report"]')
