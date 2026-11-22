@@ -1,10 +1,22 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import {readFileSync} from "node:fs";
 import {SCENARIOS,classifyPaths, parseNameStatus, selectedScenarios, summarizeReport} from "./targeted.mjs";
 import browserConfig from "../../playwright.config.mjs";
 // Run the deferred real-Luna suite's pure negative oracles in ordinary CI.
 // The paid scenario itself still requires separately authorized local flags.
 import "../../evals/acceptance/live/staff-question.test.mjs";
+
+test("authenticated browser CI runs a precompiled local production server, never a hot-reloading dev compiler",()=>{
+ const workflow=readFileSync(new URL("../../.github/workflows/ai-cafe-pr-baseline.yml",import.meta.url),"utf8");
+ const browser=workflow.split("  browser:")[1]?.split("\n  evaluator-integrity:")[0];
+ assert.ok(browser,"required browser acceptance job missing");
+ assert.match(browser,/npm run build -- --webpack/);
+ assert.match(browser,/npm run start -- --hostname 127\.0\.0\.1 --port 3000/);
+ assert.doesNotMatch(browser,/npm run dev --/);
+ assert.match(browser,/node scripts\/e2e\/targeted\.mjs run/);
+ assert.match(browser,/node scripts\/e2e\/targeted\.mjs verify/);
+});
 
 test("browser runner discovers owner, employee-channel and owner-question real journeys",()=>{
   const match=browserConfig.testMatch;
