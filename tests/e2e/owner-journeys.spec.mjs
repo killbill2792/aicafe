@@ -1895,7 +1895,9 @@ test("@home Task16E design baseline observes empty and long Supervisor conversat
 // disposable café. This is a synthetic presentation fixture, not model or
 // financial truth acceptance. Task17B/C/D own live evidence and effect proof.
 test("@home Task16E quiet shell, optional visuals, editable follow-up and mobile navigation",async({browser},testInfo)=>{
-  test.setTimeout(300_000);
+  // The six-width acceptance hits 12 real RSC navigations on a shared
+  // disposable Next dev runner; keep the full assertions, allow cold compiles.
+  test.setTimeout(420_000);
   const owner=seededCafe(0), empty=randomUUID(), thread=randomUUID(), replyId=randomUUID();
   const db=new pg.Client({host:"127.0.0.1",port:54322,database:"postgres",user:"postgres",password:"postgres",connectionTimeoutMillis:5000});
   const ctx=await browser.newContext({baseURL:"http://127.0.0.1:3000",serviceWorkers:"block"});
@@ -1914,7 +1916,9 @@ test("@home Task16E quiet shell, optional visuals, editable follow-up and mobile
     // The first viewport navigates to the empty fixture below. Avoid a redundant
     // full load wait; assert actual owner shell and fixture state on every navigation.
     async function openFixture(id){
-      const response=await page.goto("/en/?thread="+id,{waitUntil:"domcontentloaded",timeout:30000});
+      // commit requires a real HTTP response; the following owner-shell and
+      // thread-specific assertions prove hydration, not an early-navigation pass.
+      const response=await page.goto("/en/?thread="+id,{waitUntil:"commit",timeout:60000});
       expect(response?.ok()).toBe(true);
       await expect(page).not.toHaveURL(/\/login(?:\?|$)|\/onboarding(?:\?|$)/);
       // The authenticated desktop café label stays in the DOM on mobile but is
@@ -2476,7 +2480,10 @@ test("@home U4 owner deliberately opts into generic device push, revokes, and si
   const context=await browser.newContext({baseURL:"http://127.0.0.1:3000",serviceWorkers:"block"});
   const page=await context.newPage();
   await page.addInitScript(()=>{
-    let active=false;
+    // The browser's native PushSubscription persists between navigations.
+    // A page-scoped boolean would incorrectly reset when visiting /more,
+    // disguising a real sign-out consent-revocation regression.
+    const isActive=()=>sessionStorage.getItem("__u4_push_active")==="true";
     const subscription={
       endpoint:"https://fcm.googleapis.com/fcm/send/disposable-fixture",
       toJSON:()=>({
@@ -2485,11 +2492,11 @@ test("@home U4 owner deliberately opts into generic device push, revokes, and si
         keys:{p256dh:"BAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
           auth:"AAAAAAAAAAAAAAAAAAAAAA"}
       }),
-      unsubscribe:async()=>{active=false;return true;},
+      unsubscribe:async()=>{sessionStorage.removeItem("__u4_push_active");return true;},
     };
     const manager={
-      getSubscription:async()=>active?subscription:null,
-      subscribe:async()=>{active=true;return subscription;},
+      getSubscription:async()=>isActive()?subscription:null,
+      subscribe:async()=>{sessionStorage.setItem("__u4_push_active","true");return subscription;},
     };
     const reg={pushManager:manager};
     Object.defineProperty(navigator,"serviceWorker",{
@@ -2551,8 +2558,8 @@ test("@home U4 owner deliberately opts into generic device push, revokes, and si
     await navigateLocal(page,"/en/more");
     await page.getByRole("button",{name:"Sign Out",exact:true}).click();
     await expect(page).toHaveURL(/\/login(?:\?|$)/u,{timeout:30_000});
+    // Explicit disable and later logout each revoke this one device only.
     expect(calls.filter(method=>method==="DELETE")).toHaveLength(2);
-    // Logout on this browser must not revoke a separately opted-in phone.
-    expect(calls.filter(method=>method==="DELETE")).toHaveLength(2);
+    expect(await page.evaluate(()=>sessionStorage.getItem("__u4_push_active"))).toBeNull();
   }finally{await context.close();}
 });
