@@ -182,7 +182,7 @@ const approvedTask16aSet = new Set(approvedTask16aKeys.map(key => "SupervisorMan
 
 // U4 owner-approved routine controls are English-only, scoped to a NEW namespace
 // so the original Task16A permission contract stays frozen.
-const approvedU4RoutineKeys=["actions","pause","resume","delete","editInChat","paused","deleteConfirm","saved","deleteSaved","saveFailed","created","updated","pausedSaved","resumedSaved"] as const;
+const approvedU4RoutineKeys=["actions","pause","resume","delete","editInChat","onceOn","paused","deleteConfirm","saved","deleteSaved","saveFailed","created","updated","pausedSaved","resumedSaved"] as const;
 const approvedU4RoutineSet=new Set(approvedU4RoutineKeys.map(key=>"SupervisorRoutines."+key));
 
 const approvedTask14eAddCostKeys=["statementCashConfirm","statementCashDated","statementCashNickname","statementCashError"] as const;
@@ -267,12 +267,31 @@ describe("redesign 16 cleanup integration", () => {
     const englishOnly = /^(?:GmailConnect\.[^.]+|GmailApprovalCard\.[^.]+|More\.gmailConnect|StaffApprovalCard\.agentic[A-Z][^.]*|StaffStandingMandate\.[^.]+|SupervisorWork\.(?:heading|stale|more|effectReceipt|replyReceipt|status|copy))$/;
     // Task16E owner explicitly approved English-only additions, not arbitrary locale drift.
     const task16e=new Set([...["offline","sessionDenied","signInAgain","threadUnavailable","chooseFile","takePhoto","uploadUnconfirmed","filesUnverified","checkingFiles","removeSelection","searchLoadedChats","noMatchingChats","loadOlderChats","historyUnavailable","conversationFiles","workingQueued","recentResults","savedUpdate","moreRecent","currencyUnavailable","loadedReports","savedReport","openRoutineChat","weekdayNames","stopLiveView","streamDetached","latestReplyReady","readLatestMessage"].map(key=>"SupervisorExperience."+key),...["snapshot","timeUnknown","until","partial","eventStatuses","eventNotice","shiftNotice","estimate","noChange","compareAssumptions","baselineEstimate","scenarioEstimate","scenarioNotice","downloadReport","notRecorded","unitUnknown","calculatorNotice","invalidCalculation","resetAssumptions","sourceAttachments","sourceFile","previousDates","nextDates","savedEntries","noSavedEntries","scenarioEditFields","savedRecordCount","savedRecordCountNotice","categoryLabel","valueLabel","comparisonValues","calculationResult","eventEndUnknown"].map(key=>"SupervisorPresentation."+key)]);
+    // PR #557 is explicitly English-only: preserve each approved new label
+    // without weakening parity for unrelated or pre-existing strings.
+    const u4EnglishOnly=new Set([
+      "CafeProfile.locationOptional",
+      ...["unsupportedTaskTitle","unsupportedTaskDetail",
+        "u4ReportTitle","u4ReportUnavailable","u4ReportOriginal",
+        "u4FailureTitle","u4FailureDetail","u4FailureAcknowledge",
+        "pushTitle","pushDescription","pushEnable","pushDisable",
+        "pushBlocked","pushUnsupported","pushEnabled","pushError",
+        "pushLoading"].map(key=>"Operations."+key),
+    ]);
+    const english=localeMessages("en"),spanish=localeMessages("es"),
+      arabic=localeMessages("ar");
+    for(const key of u4EnglishOnly){
+      const [namespace,field]=key.split(".");
+      expect(english[namespace]?.[field],key).toEqual(expect.any(String));
+      expect(spanish[namespace]?.[field],key).toBeUndefined();
+      expect(arabic[namespace]?.[field],key).toBeUndefined();
+    }
     const keys = (locale: string) => {
       const messages = localeMessages(locale);
       return Object.entries(messages)
         .flatMap(([namespace, values]) => Object.keys(values).map(key => `${namespace}.${key}`))
         .filter(key => !englishOnly.test(key) && !approvedTask14bSet.has(key)
-          && !approvedTask14cSet.has(key) && !approvedTask15bSet.has(key) && !approvedTask16aSet.has(key) && !approvedU4RoutineSet.has(key) && !approvedTask16cSet.has(key) && !approvedTask14eSet.has(key) && !approvedCrewSelfServiceSet.has(key) && !staffChannelEnglishOnlySet.has(key) && !staffQuestionEnglishSet.has(key) && !task16e.has(key)
+          && !approvedTask14cSet.has(key) && !approvedTask15bSet.has(key) && !approvedTask16aSet.has(key) && !approvedU4RoutineSet.has(key) && !approvedTask16cSet.has(key) && !approvedTask14eSet.has(key) && !approvedCrewSelfServiceSet.has(key) && !staffChannelEnglishOnlySet.has(key) && !staffQuestionEnglishSet.has(key) && !task16e.has(key) && !u4EnglishOnly.has(key)
           && !["runAwaitingOwner","runAwaitingOwnerNext","runCancelled","runRetrying","cancelAction","cancelPending","cancelUncertain","cancelCompleted","cancelFailed"].some(name=>key==="SupervisorDurableWork."+name)
           && !/^SupervisorUsage\.(?:help|max|month|proactive|requests|title|unavailable)$/.test(key))
         .sort();

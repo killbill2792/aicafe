@@ -3,8 +3,8 @@
   "generatedFrom": "migrated pg_catalog physical schema + reviewed U3 SQL manifest",
   "modelAuthorization": false,
   "productionRowsIncluded": false,
-  "physicalTables": 221,
-  "physicalFields": 2492,
+  "physicalTables": 223,
+  "physicalFields": 2513,
   "approvedSqlRelations": 41,
   "reviewedFields": 387,
   "additionalLogicalViews": [
@@ -15,10 +15,10 @@
   "dispositionCounts": {
     "admitted_masked_personal_field": 14,
     "admitted_research_field": 373,
-    "internal_or_specialized_service": 1284,
+    "internal_or_specialized_service": 1301,
     "not_admitted_from_source": 106,
     "protected_operational_archive": 57,
-    "restricted_secret_or_auth": 76,
+    "restricted_secret_or_auth": 80,
     "scope_only": 36,
     "specialist_or_review_pending": 422,
     "unreviewed_not_admitted": 124
@@ -12605,6 +12605,20 @@
           "reason": "Operational workflow/audit/state; source-family tool or owner-specific review required"
         },
         {
+          "field": "once_due_at_utc",
+          "type": "timestamp with time zone",
+          "notNull": false,
+          "status": "internal_or_specialized_service",
+          "reason": "Operational workflow/audit/state; source-family tool or owner-specific review required"
+        },
+        {
+          "field": "once_local_date",
+          "type": "date",
+          "notNull": false,
+          "status": "internal_or_specialized_service",
+          "reason": "Operational workflow/audit/state; source-family tool or owner-specific review required"
+        },
+        {
           "field": "owner_user_id",
           "type": "uuid",
           "notNull": true,
@@ -18160,6 +18174,151 @@
           "notNull": false,
           "status": "restricted_secret_or_auth",
           "reason": "Credential, authorization or sensitive internal identifier; no universal research permission"
+        }
+      ]
+    },
+    {
+      "relation": "u4_push_receipts",
+      "sourceOwner": "Supervisor/data-platform source owner",
+      "fields": [
+        {
+          "field": "attempts",
+          "type": "bigint",
+          "notNull": true,
+          "status": "internal_or_specialized_service",
+          "reason": "Operational workflow/audit/state; source-family tool or owner-specific review required"
+        },
+        {
+          "field": "business_id",
+          "type": "uuid",
+          "notNull": true,
+          "status": "internal_or_specialized_service",
+          "reason": "Operational workflow/audit/state; source-family tool or owner-specific review required"
+        },
+        {
+          "field": "created_at",
+          "type": "timestamp with time zone",
+          "notNull": true,
+          "status": "internal_or_specialized_service",
+          "reason": "Operational workflow/audit/state; source-family tool or owner-specific review required"
+        },
+        {
+          "field": "delivered_at",
+          "type": "timestamp with time zone",
+          "notNull": false,
+          "status": "internal_or_specialized_service",
+          "reason": "Operational workflow/audit/state; source-family tool or owner-specific review required"
+        },
+        {
+          "field": "device_hash",
+          "type": "text",
+          "notNull": true,
+          "status": "restricted_secret_or_auth",
+          "reason": "Credential, authorization or sensitive internal identifier; no universal research permission"
+        },
+        {
+          "field": "last_failure",
+          "type": "text",
+          "notNull": false,
+          "status": "internal_or_specialized_service",
+          "reason": "Operational workflow/audit/state; source-family tool or owner-specific review required"
+        },
+        {
+          "field": "lease_token",
+          "type": "uuid",
+          "notNull": false,
+          "status": "restricted_secret_or_auth",
+          "reason": "Credential, authorization or sensitive internal identifier; no universal research permission"
+        },
+        {
+          "field": "lease_until",
+          "type": "timestamp with time zone",
+          "notNull": false,
+          "status": "internal_or_specialized_service",
+          "reason": "Operational workflow/audit/state; source-family tool or owner-specific review required"
+        },
+        {
+          "field": "next_retry_at",
+          "type": "timestamp with time zone",
+          "notNull": true,
+          "status": "internal_or_specialized_service",
+          "reason": "Operational workflow/audit/state; source-family tool or owner-specific review required"
+        },
+        {
+          "field": "owner_user_id",
+          "type": "uuid",
+          "notNull": true,
+          "status": "internal_or_specialized_service",
+          "reason": "Operational workflow/audit/state; source-family tool or owner-specific review required"
+        },
+        {
+          "field": "run_id",
+          "type": "uuid",
+          "notNull": true,
+          "status": "internal_or_specialized_service",
+          "reason": "Operational workflow/audit/state; source-family tool or owner-specific review required"
+        },
+        {
+          "field": "status",
+          "type": "text",
+          "notNull": true,
+          "status": "internal_or_specialized_service",
+          "reason": "Operational workflow/audit/state; source-family tool or owner-specific review required"
+        }
+      ]
+    },
+    {
+      "relation": "u4_push_subscriptions",
+      "sourceOwner": "Supervisor/data-platform source owner",
+      "fields": [
+        {
+          "field": "business_id",
+          "type": "uuid",
+          "notNull": true,
+          "status": "internal_or_specialized_service",
+          "reason": "Operational workflow/audit/state; source-family tool or owner-specific review required"
+        },
+        {
+          "field": "consent_at",
+          "type": "timestamp with time zone",
+          "notNull": true,
+          "status": "internal_or_specialized_service",
+          "reason": "Operational workflow/audit/state; source-family tool or owner-specific review required"
+        },
+        {
+          "field": "device_hash",
+          "type": "text",
+          "notNull": true,
+          "status": "restricted_secret_or_auth",
+          "reason": "Credential, authorization or sensitive internal identifier; no universal research permission"
+        },
+        {
+          "field": "owner_user_id",
+          "type": "uuid",
+          "notNull": true,
+          "status": "internal_or_specialized_service",
+          "reason": "Operational workflow/audit/state; source-family tool or owner-specific review required"
+        },
+        {
+          "field": "revoked_at",
+          "type": "timestamp with time zone",
+          "notNull": false,
+          "status": "internal_or_specialized_service",
+          "reason": "Operational workflow/audit/state; source-family tool or owner-specific review required"
+        },
+        {
+          "field": "sealed_subscription",
+          "type": "text",
+          "notNull": true,
+          "status": "restricted_secret_or_auth",
+          "reason": "Credential, authorization or sensitive internal identifier; no universal research permission"
+        },
+        {
+          "field": "updated_at",
+          "type": "timestamp with time zone",
+          "notNull": true,
+          "status": "internal_or_specialized_service",
+          "reason": "Operational workflow/audit/state; source-family tool or owner-specific review required"
         }
       ]
     },

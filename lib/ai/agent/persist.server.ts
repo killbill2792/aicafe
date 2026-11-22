@@ -103,6 +103,7 @@ export function agentReplyPayload(turn: AgentTurn) {
     const parsed=routineCardSchema.safeParse({
       type:"routine_card",routineId:row.id,title:row.title,
       cadence:row.cadence,weekdays:row.weekdays,localTime:row.localTime,
+        ...(row.cadence==="once"?{onceLocalDate:row.onceLocalDate}:{}),
       timezone:row.timezone,status:row.status,revision:row.revision,
     });
     return parsed.success?[parsed.data]:[];

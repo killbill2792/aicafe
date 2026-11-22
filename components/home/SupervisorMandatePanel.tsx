@@ -15,7 +15,7 @@ const copy=en.SupervisorMandateCenter;
 const routineCopy=en.SupervisorRoutines;
 type Tab="work"|"library"|"routines"|"permissions";
 type Thread={id:string;title:string|null;lastMessageAt?:string|null;createdAt:string};
-type Routine={id:string;threadId:string;title:string;cadence:"daily"|"weekly";localTime:string;
+type Routine={id:string;threadId:string;title:string;cadence:"once"|"daily"|"weekly";onceLocalDate?:string|null;localTime:string;
   status:"active"|"paused"|"revoked";weekdays:number[];timezone:string;revision:number};
 type Mandate={id:string;revision:number;capability_id:string;capability_version:number;
   limit_kind:"count";limit_value:number;period_kind:string;staff_week_start:string|null;
@@ -320,11 +320,12 @@ export default function SupervisorMandatePanel({threadId,threads,approvals,onSel
                 <div className="min-w-0 flex-1">
                   <strong className="block truncate text-[14px]">{r.title}</strong>
                   <span className="block truncate text-[12px] text-ink-muted">
-                    {r.cadence==="weekly"
-                      ?r.weekdays.map(day=>en.SupervisorExperience.weekdayNames[day-1])
-                        .filter(Boolean).join(", ")
-                      :r.cadence}
-                    {" · "+r.localTime+" · "}
+                    {r.cadence==="once"&&r.onceLocalDate?
+                       routineCopy.onceOn.replace("{date}",r.onceLocalDate):
+                       r.cadence==="weekly"?
+                         r.weekdays.map(day=>en.SupervisorExperience.weekdayNames[day-1])
+                           .filter(Boolean).join(", "):r.cadence}
+                    {" · "+r.localTime+" · "+r.timezone+" · "}
                     {r.status==="active"?copy.active:routineCopy.paused}
                   </span>
                 </div>

@@ -14,11 +14,17 @@ export type VerifiedRoutineTurn={
 };
 export const routineScheduleSchema=z.strictObject({
   title:z.string().trim().min(1).max(240),
-  cadence:z.enum(["daily","weekly"]),
+  cadence:z.enum(["once","daily","weekly"]),
+  /** Required only for a one-time goal, in the verified café's civil timezone. */
+  onceLocalDate:z.iso.date().nullable().optional(),
   /** ISO weekdays: Monday=1 to Sunday=7. Empty for daily schedules. */
   weekdays:z.array(z.number().int().min(1).max(7)).max(7),
   localTime:z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/u),
 }).superRefine((schedule,ctx)=>{
+  if(schedule.cadence==="once"&&(!schedule.onceLocalDate||schedule.weekdays.length!==0))
+    ctx.addIssue({code:"custom",path:["onceLocalDate"],message:"One-time routines need a local date and no weekdays"});
+  if(schedule.cadence!=="once"&&schedule.onceLocalDate)
+    ctx.addIssue({code:"custom",path:["onceLocalDate"],message:"Only one-time routines have a single date"});
   if(schedule.cadence==="daily"&&schedule.weekdays.length!==0)
     ctx.addIssue({code:"custom",path:["weekdays"],message:"Daily routines cannot select weekdays"});
   if(schedule.cadence==="weekly"&&schedule.weekdays.length===0)
@@ -37,7 +43,7 @@ export type RoutineRecord=RoutineSchedule & {
   executionMode?:"priority"|"objective"|"watch";
   objectiveText?:string|null;objectiveSourceMessageId?:string|null;
   objectiveUpdates?:readonly {sourceMessageId:string;text:string;revision:number}[];
-  createdAt:string;updatedAt:string;
+  createdAt:string;updatedAt:string;onceDueAtUtc?:string|null;
 };
 export type RoutineOccurrence={
   businessId:string;routineId:string;localDate:string;runId:string;

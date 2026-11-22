@@ -15,6 +15,23 @@ export default function SignOutButton({ labels }: { labels: { signOut: string; s
     setPending(true);
     setError(false);
     try {
+      // Stop device notifications before dropping the authenticated session.
+      // Optional transport failure never prevents sign-out.
+      try {
+        if ("serviceWorker" in navigator) {
+          const registration = await navigator.serviceWorker.getRegistration();
+          const subscription = await registration?.pushManager?.getSubscription();
+          if(subscription?.endpoint){
+            // Logout revokes only this browser's private endpoint across its
+            // cafés; a separate opted-in phone must remain independent.
+            const revoked=await fetch("/api/ai/push-subscriptions", {
+              method:"DELETE",headers:{"content-type":"application/json"},
+              body:JSON.stringify({endpoint:subscription.endpoint}),
+            });
+            if(revoked.ok)await subscription.unsubscribe();
+          }
+        }
+      } catch { /* optional device notices must never block logout */ }
       const { error: signOutError } = await createBrowserSupabaseClient().auth.signOut({ scope: "local" });
       if (signOutError) throw signOutError;
       router.replace("/login");

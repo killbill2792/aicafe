@@ -21,6 +21,7 @@ const isOpen = (task: OperatingTask) => task.status === "needs_owner" || task.st
 export function taskSubjectDate(task: OperatingTask): string | null {
   const p = task.payload;
   if (task.kind === "commitment" && isDate(task.dueLocalDate)) return task.dueLocalDate;
+  if (task.kind === "u4_report" && isDate(p.localDate)) return p.localDate;
   if (isDate(p.shiftDate)) return p.shiftDate;
   if (isDate(p.businessDate)) return p.businessDate;
   if (task.entityType === "event_day" && isDate(task.entityId)) return task.entityId;
@@ -45,7 +46,8 @@ export function retainActionablePrioritySource(task:OperatingTask):boolean{
 
 /** Items with nothing for the owner to decide. They belong in Watching, never Needs you. */
 export function isInformational(task: OperatingTask): boolean {
-  return task.kind === "daily_brief" || task.payload.midRun === true || isEventReport(task);
+  return task.kind === "daily_brief" || task.kind === "u4_report" ||
+    task.payload.midRun === true || isEventReport(task);
 }
 
 /** One stable key per real-world item. Two writers or two runs for the same thing collapse here. */
@@ -93,6 +95,13 @@ export function settleInboxTasks(stored: readonly OperatingTask[], derived: read
   const tasks = [...byKey.values()];
   const at = now.toISOString();
   const newestBrief = tasks.filter((task) => task.kind === "daily_brief").sort(newestFirst)[0];
+  // A newer run supersedes only the active informational notice. The older
+  // persisted occurrence/report remains auditable under its own run ID.
+  const newestU4=new Map<string,string>();
+  for(const candidate of tasks.filter(item=>item.kind==="u4_report").sort(newestFirst)){
+    const identity=candidate.ownerUserId+":"+candidate.payload.routineId;
+    if(!newestU4.has(identity))newestU4.set(identity,candidate.id);
+  }
   const settled = tasks.map((task): OperatingTask => {
     if (!isOpen(task)) return task;
     // A promised follow-up is durable; ordinary read-time expiry cannot close it.
@@ -100,6 +109,9 @@ export function settleInboxTasks(stored: readonly OperatingTask[], derived: read
     const day = taskSubjectDate(task);
     const age = day ? daysBetween(day, today) : null;
     if (task.kind === "daily_brief" && task !== newestBrief) return expire(task, "superseded", at);
+    if (task.kind === "u4_report" &&
+      newestU4.get(task.ownerUserId+":"+task.payload.routineId)!==task.id)
+      return expire(task, "superseded", at);
     // An event plan for a day that has passed can no longer be approved.
     if (task.kind === "event_plan" && task.payload.needsApproval === true && age !== null && age > 0) return expire(task, "past_day", at);
     if (task.kind === "staff_coverage" && age !== null && age > INBOX_LIMITS.shiftReviewDays) return expire(task, "past_day", at);

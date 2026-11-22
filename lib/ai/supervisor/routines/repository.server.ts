@@ -1,13 +1,15 @@
 import "server-only";
 import {z} from "zod";
 import {createHash} from "node:crypto";
+import {dueInstantForDate} from "./calendar";
 import type {SupabaseClient} from "@supabase/supabase-js";
 import {routineIdSchema,routineScheduleSchema,routineStatusSchema,
   type RoutineRecord,type RoutineSchedule,type VerifiedRoutineTurn} from "./contracts";
 
 type RoutineRow={
   business_id:string;id:string;owner_user_id:string;thread_id:string;
-  title:string;cadence:"daily"|"weekly";weekdays:number[];local_time:string;
+  title:string;cadence:"once"|"daily"|"weekly";weekdays:number[];local_time:string;
+  once_local_date?:string|null;once_due_at_utc?:string|null;
   timezone:string;status:RoutineRecord["status"];revision:number;
   created_at:string;updated_at:string;
   execution_mode?:"priority"|"objective"|"watch";
@@ -17,6 +19,8 @@ type RoutineRow={
 const asRoutine=(r:RoutineRow):RoutineRecord=>({
   id:r.id,businessId:r.business_id,ownerUserId:r.owner_user_id,threadId:r.thread_id,
   title:r.title,cadence:r.cadence,weekdays:r.weekdays,
+  ...(r.cadence==="once"?{onceLocalDate:r.once_local_date??null}:{}),
+  onceDueAtUtc:r.once_due_at_utc??null,
   localTime:String(r.local_time).slice(0,5),timezone:r.timezone,
   status:r.status,revision:r.revision,createdAt:r.created_at,updatedAt:r.updated_at,
   executionMode:r.execution_mode??"priority",objectiveText:r.objective_text??null,
@@ -42,6 +46,27 @@ export async function createOwnerRoutine(schedule:RoutineSchedule,turn:VerifiedR
   const stableId=hash?(hash.slice(0,8)+"-"+hash.slice(8,12)+"-4"+
     hash.slice(13,16)+"-a"+hash.slice(17,20)+"-"+hash.slice(20,32)):null;
   const u4Enabled=process.env.SUPERVISOR_U4_ENABLED==="true";
+  if(parsed.cadence==="once"){
+    if(!u4Enabled||!turn.ownerMessageId||!parsed.onceLocalDate)
+      throw new Error("One-time research requires enabled U4 and a verified owner goal");
+    const zoneRead=await turn.client.from("businesses").select("timezone")
+      .eq("id",turn.scope.businessId).single();
+    if(zoneRead.error||typeof zoneRead.data?.timezone!=="string")
+      throw new Error("Verified café timezone unavailable");
+    const due=dueInstantForDate(parsed.onceLocalDate,parsed.localTime,zoneRead.data.timezone);
+    // SQL returns an identical saved goal after its due time on a retry.
+    // A NEW past goal remains rejected by the source-authenticated RPC.
+    const {data,error}=await turn.client.rpc("u4_create_once_objective",{
+      p_business_id:turn.scope.businessId,p_owner_user_id:turn.scope.ownerUserId,
+      p_thread_id:turn.threadId,p_title:parsed.title,
+      p_due_local_date:parsed.onceLocalDate,p_local_time:parsed.localTime,
+      p_due_at_utc:due.toISOString(),p_routine_id:stableId,
+      p_owner_message_id:turn.ownerMessageId,
+      p_goal_source_message_id:turn.goalSourceMessageId??turn.ownerMessageId,
+    });
+    if(error||!data)throw error??new Error("One-time objective not saved");
+    return asRoutine(data as RoutineRow);
+  }
   const {data,error}=await turn.client.rpc(u4Enabled&&turn.ownerMessageId?
     "u4_create_objective_routine":"create_supervisor_routine",{
     p_business_id:turn.scope.businessId,p_owner_user_id:turn.scope.ownerUserId,

@@ -5,7 +5,7 @@ import type {ConversationMessage,ConversationScope} from "@/lib/ai/conversations
 
 type HistoricalRoutineReport={
   messageId:string;runId:string;routineId:string;revision:number;
-  quality:"verified"|"partial";text:string;
+  quality:"verified"|"partial";text:string;pointerOnly:boolean;
 };
 const uuid=/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/iu;
 const object=(v:unknown):v is Record<string,unknown>=>!!v&&
@@ -35,15 +35,23 @@ export function routineReportCandidates(messages:readonly ConversationMessage[],
         !["watch","routine"].includes(String(meta.u4Kind))||
         meta.externalEffects!=="not_attempted"||m.id!==reportId(meta.runId))
         return [];
-      // SQL inserts only bounded plain text blocks. Unexpected block types
-      // never enter the next model turn as trusted historical context.
-      if(!m.blocks.length||!m.blocks.every(b=>object(b)&&b.type==="text"&&
-        typeof b.text==="string"&&b.text.length>=1&&b.text.length<=1200))return [];
-      const text=m.blocks.map(b=>(b as {text:string}).text).join("");
+      // Only the SQL-generated plain text or exact short receipt+Work pointer
+      // can be re-admitted; a forged link or arbitrary card cannot.
+      const pointer=m.blocks.length===2&&object(m.blocks[0])&&
+        m.blocks[0].type==="text"&&
+        m.blocks[0].text==="Luna review finished. Open Work to read the report."&&
+        object(m.blocks[1])&&m.blocks[1].type==="task_card"&&
+        m.blocks[1].agent==="leo"&&m.blocks[1].status==="watching"&&
+        m.blocks[1].href==="/operations?agent=leo&status=watching&task=u4:"+meta.runId;
+      const legacy=m.blocks.length>0&&m.blocks.every(b=>object(b)&&b.type==="text"&&
+        typeof b.text==="string"&&b.text.length>=1&&b.text.length<=1200);
+      if(!pointer&&!legacy)return [];
+      const text=m.blocks.filter(b=>object(b)&&b.type==="text")
+        .map(b=>(b as {text:string}).text).join("");
       if(!text.trim()||text.length>2600)return [];
       return [{messageId:m.id,runId:meta.runId,routineId:meta.routineId,
         revision:Number(meta.revision),quality:m.grounding.status as "verified"|"partial",
-        text}];
+        text,pointerOnly:pointer}];
     });
 }
 
@@ -51,8 +59,8 @@ export function routineReportCandidates(messages:readonly ConversationMessage[],
  * permissions, numeric evidence, approval or an effect mandate. */
 export async function verifiedRoutineReportHistory(db:SupabaseClient,
   scope:ConversationScope,threadId:string,
-  candidates:readonly HistoricalRoutineReport[]):Promise<Set<string>>{
-  const verified=new Set<string>();
+  candidates:readonly HistoricalRoutineReport[]):Promise<Map<string,string>>{
+  const verified=new Map<string,string>();
   if(candidates.length===0)return verified;
   const reports=candidates.slice(-8);
   const [routines,occurrences]=await Promise.all([
@@ -80,8 +88,11 @@ export async function verifiedRoutineReportHistory(db:SupabaseClient,
       !object(result.proof)||result.proof.quality!==report.quality||
       result.proof.externalEffects!=="not_attempted")continue;
     const summary=result.summary.trim();
-    if(!summary||!report.text.startsWith(summary))continue;
-    verified.add(report.messageId);
+    // Rehydrate the saved report only through this authenticated, completed,
+    // owner/thread-scoped occurrence. The short chat pointer is not evidence.
+    if(!summary||summary.length>2600||
+      (!report.pointerOnly&&!report.text.startsWith(summary)))continue;
+    verified.set(report.messageId,summary);
   }
   return verified;
 }

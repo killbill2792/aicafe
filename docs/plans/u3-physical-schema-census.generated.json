@@ -1,5 +1,5 @@
 {
- "generatedFrom": "Public pg_catalog metadata; U4 extensions corroborated against disposable migrated CI run 44856900504, no business values",
+ "generatedFrom": "Public pg_catalog non-authorizing metadata; PR557 U4 additive schema corroborated from disposable migrated CI 45002094348; no café/customer rows",
  "notAuthorization": true,
  "classification": "all physical metadata denied to model until reviewed logical admission",
  "relations": [
@@ -12316,6 +12316,16 @@
      "objective_updates",
      "jsonb",
      true
+    ],
+    [
+     "once_local_date",
+     "date",
+     false
+    ],
+    [
+     "once_due_at_utc",
+     "timestamp with time zone",
+     false
     ]
    ],
    "relation": "supervisor_routines",
@@ -17389,6 +17399,131 @@
     {
      "target": "toast_api_credentials",
      "constraint": "toast_webhook_subscriptions_business_id_fkey"
+    }
+   ]
+  },
+  {
+   "relation": "u4_push_receipts",
+   "kind": "table",
+   "rls": true,
+   "columns": [
+    [
+     "business_id",
+     "uuid",
+     true
+    ],
+    [
+     "owner_user_id",
+     "uuid",
+     true
+    ],
+    [
+     "device_hash",
+     "text",
+     true
+    ],
+    [
+     "run_id",
+     "uuid",
+     true
+    ],
+    [
+     "status",
+     "text",
+     true
+    ],
+    [
+     "attempts",
+     "bigint",
+     true
+    ],
+    [
+     "next_retry_at",
+     "timestamp with time zone",
+     true
+    ],
+    [
+     "lease_token",
+     "uuid",
+     false
+    ],
+    [
+     "lease_until",
+     "timestamp with time zone",
+     false
+    ],
+    [
+     "delivered_at",
+     "timestamp with time zone",
+     false
+    ],
+    [
+     "last_failure",
+     "text",
+     false
+    ],
+    [
+     "created_at",
+     "timestamp with time zone",
+     true
+    ]
+   ],
+   "foreign_keys": [
+    {
+     "target": "u4_push_subscriptions",
+     "constraint": "u4_push_receipts_business_id_owner_user_id_device_hash_fkey"
+    }
+   ]
+  },
+  {
+   "relation": "u4_push_subscriptions",
+   "kind": "table",
+   "rls": true,
+   "columns": [
+    [
+     "business_id",
+     "uuid",
+     true
+    ],
+    [
+     "owner_user_id",
+     "uuid",
+     true
+    ],
+    [
+     "device_hash",
+     "text",
+     true
+    ],
+    [
+     "sealed_subscription",
+     "text",
+     true
+    ],
+    [
+     "consent_at",
+     "timestamp with time zone",
+     true
+    ],
+    [
+     "revoked_at",
+     "timestamp with time zone",
+     false
+    ],
+    [
+     "updated_at",
+     "timestamp with time zone",
+     true
+    ]
+   ],
+   "foreign_keys": [
+    {
+     "target": "businesses",
+     "constraint": "u4_push_subscriptions_business_id_fkey"
+    },
+    {
+     "target": "users",
+     "constraint": "u4_push_subscriptions_owner_user_id_fkey"
     }
    ]
   },

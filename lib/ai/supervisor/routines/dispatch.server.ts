@@ -50,7 +50,7 @@ export async function readActionablePriorities(db:SupabaseClient,scope:Scope,
       .eq("business_id",scope.businessId)
       .in("status",options?.includeNotified?["needs_owner","needs_response","watching"]:
         ["needs_owner","needs_response"])
-      .not("kind","in","(priority_notice,commitment,event_plan,event_change,event_report)")
+      .not("kind","in","(priority_notice,commitment,event_plan,event_change,event_report,u4_report,u4_run_failure)")
       .or("owner_user_id.is.null,owner_user_id.eq."+scope.ownerUserId)
       .order("created_at",{ascending:false}).limit(batchLimit),
     // The canonical approved-order proposal is the source; do not infer
@@ -91,7 +91,7 @@ export async function readActionablePriorities(db:SupabaseClient,scope:Scope,
   for(const raw of (tasks.data??[]) as DbRow[]){
     // Defense in depth if a custom/mock adapter fails to apply the DB filter:
     // never re-notify commitments or a previously generated priority notice.
-    if(["commitment","priority_notice","event_plan","event_change","event_report"].includes(String(raw.kind)))continue;
+    if(["commitment","priority_notice","event_plan","event_change","event_report","u4_report","u4_run_failure"].includes(String(raw.kind)))continue;
     if(raw.owner_user_id&&raw.owner_user_id!==scope.ownerUserId)continue;
     sources.push({
       businessId:scope.businessId,ownerUserId:scope.ownerUserId,
@@ -186,7 +186,8 @@ async function postForOwner(db:SupabaseClient,scope:Scope,now:Date,
 }
 type RoutineRow={
   business_id:string;id:string;owner_user_id:string;thread_id:string;
-  title:string;cadence:"daily"|"weekly";weekdays:number[];
+  title:string;cadence:"once"|"daily"|"weekly";weekdays:number[];
+  once_local_date?:string|null;once_due_at_utc?:string|null;
   local_time:string;timezone:string;status:"active"|"paused"|"revoked";
   revision:number;created_at:string;updated_at:string;
   execution_mode?:"priority"|"objective"|"watch";objective_text?:string|null;
@@ -196,6 +197,8 @@ function parseRoutine(row:RoutineRow):RoutineRecord{
   return {
     businessId:row.business_id,id:row.id,ownerUserId:row.owner_user_id,threadId:row.thread_id,
     title:row.title,cadence:row.cadence,weekdays:row.weekdays,
+    ...(row.cadence==="once"?{onceLocalDate:row.once_local_date??null}:{}),
+    onceDueAtUtc:row.once_due_at_utc??null,
     localTime:String(row.local_time).slice(0,5),timezone:row.timezone,
     status:row.status,revision:row.revision,
     createdAt:row.created_at,updatedAt:row.updated_at,
@@ -233,6 +236,7 @@ export async function dispatchRoutinesForBusiness(db:SupabaseClient,businessId:s
   /** Trusted acceptance may meter the real provider; production uses the
    * original configured Luna provider when this server-only port is absent. */
   modelProvider?:AgentProvider,
+  options:{skipObjectives?:boolean}={},
 ):Promise<RoutineDispatchResult>{
   if(!Number.isFinite(now.getTime()))throw new Error("Invalid routine now");
   const started=Date.now();
@@ -242,6 +246,9 @@ export async function dispatchRoutinesForBusiness(db:SupabaseClient,businessId:s
   const localDate=localDateAt(now,timezone);
   const result:RoutineDispatchResult={routinesChecked:0,runs:0,notices:0,failed:0,evidenceChecks:0,investigationsQueued:0};
   const u4Enabled=process.env.SUPERVISOR_U4_ENABLED==="true";
+  // Owner-requested objectives and unsolicited Watch are separate consents.
+  // Enabling U4 must NEVER silently start proactive model spending.
+  const watchEnabled=u4Enabled&&process.env.SUPERVISOR_U4_WATCH_ENABLED==="true";
   // Bound and rotate BOTH owner and routine cohorts. A fixed first-100
   // owner scan also permanently hides Watch for later café co-owners.
   // The original legacy window stays unchanged when U4 is off.
@@ -353,7 +360,7 @@ export async function dispatchRoutinesForBusiness(db:SupabaseClient,businessId:s
     // The default autonomous review is a SYSTEM-origin routine (hidden from
     // owner-created routines). Its SQL identity and original owner/thread
     // binding are verified; no fake owner chat utterance is inserted.
-    if(u4Enabled){
+    if(watchEnabled){
       try{
         const configured=process.env.SUPERVISOR_U4_WATCH_LOCAL_TIME??"09:00";
         if(!/^([01]\d|2[0-3]):[0-5]\d$/u.test(configured))
@@ -391,6 +398,8 @@ export async function dispatchRoutinesForBusiness(db:SupabaseClient,businessId:s
     }
   }
   for(const routine of routines){
+    if((routine.executionMode==="watch"&&!watchEnabled)||
+      (options.skipObjectives&&routine.executionMode!=="priority"))continue;
     result.routinesChecked++;
     if(!authorizedRoutineOwners.has(routine.ownerUserId)||routine.timezone!==timezone){
       result.failed++;continue;
@@ -459,5 +468,91 @@ export async function dispatchRoutinesForBusiness(db:SupabaseClient,businessId:s
       }
     }
   }
+  return result;
+}
+
+/** Cheap global due admission: the SAME routine/occurrence lease is reused by
+ * every café. SQL rotates only authorized due owners before any source fetch.
+ * Independent leased cafés execute concurrently; no cross-café await chain.
+ * The server-only flag NEVER activates unsolicited Watch by itself. */
+export async function dispatchDueObjectivesAcrossCafes(
+  db:SupabaseClient,now:Date,provider?:AgentProvider,
+):Promise<{admitted:number;claimed:number;completed:number;failed:number;deferred:number}>{
+  const result={admitted:0,claimed:0,completed:0,failed:0,deferred:0};
+  const batchStartedAt=Date.now();
+  if(process.env.SUPERVISOR_U4_ENABLED!=="true")return result;
+  const watchEnabled=process.env.SUPERVISOR_U4_WATCH_ENABLED==="true";
+  const selected=await db.rpc("u4_due_objective_admission",{
+    p_now:now.toISOString(),p_limit:6,p_watch_enabled:watchEnabled,
+  });
+  if(selected.error)throw Error("u4_due_admission_unavailable");
+  if(!Array.isArray(selected.data))throw Error("u4_due_admission_invalid");
+  type Candidate={routine:RoutineRow;localDate:string;scheduledForUtc:string|null};
+  const rows=(selected.data as unknown[]).filter((entry):entry is Candidate=>{
+    if(!entry||typeof entry!=="object"||Array.isArray(entry))return false;
+    const x=entry as Record<string,unknown>;
+    return !!x.routine&&typeof x.routine==="object"&&
+      typeof x.localDate==="string"&&/^\d{4}-\d{2}-\d{2}$/u.test(x.localDate)&&
+      (x.scheduledForUtc===null||typeof x.scheduledForUtc==="string");
+  }).slice(0,6);
+  result.admitted=rows.length;
+  const outcomes=await Promise.allSettled(rows.map(async row=>{
+    const routine=parseRoutine(row.routine);
+    if(routine.status!=="active"||!["objective","watch"].includes(routine.executionMode??"")||
+      routine.executionMode==="watch"&&!watchEnabled)
+      return "deferred" as const;
+    const at=new Date();
+    const due=row.scheduledForUtc?new Date(row.scheduledForUtc):
+      dueScheduleOnDate(routine,routine.timezone,row.localDate,at);
+    if(!due||!Number.isFinite(due.getTime())||due.getTime()>at.getTime())
+      return "deferred" as const;
+    let lease:Awaited<ReturnType<typeof claimRoutineOccurrence>>=null;
+    try{
+      lease=await claimRoutineOccurrence(db,{
+        businessId:routine.businessId,routineId:routine.id,
+        revision:routine.revision,localDate:row.localDate,dueAt:due,now:at,
+      });
+      if(!lease)return "deferred" as const;
+      await executeClaimedObjective(db,{
+        routine,lease,localDate:row.localDate,...(provider?{provider}:{}),
+      });
+      return "completed" as const;
+    }catch{
+      if(lease){
+        try{
+          await finishRoutineOccurrence(db,{
+            businessId:routine.businessId,routineId:routine.id,
+            runId:lease.runId,leaseToken:lease.leaseToken,
+            success:false,receiptRef:"u4_bounded_execution_failed",now:new Date(),
+          });
+        }catch{/* A failed finish stays leased until the existing reclaim window. */}
+      }
+      return lease?"claimed_failed" as const:"failed" as const;
+    }
+  }));
+  for(const outcome of outcomes){
+    if(outcome.status!=="fulfilled"){result.failed++;continue;}
+    switch(outcome.value){
+      case "completed":result.claimed++;result.completed++;break;
+      case "claimed_failed":result.claimed++;result.failed++;break;
+      case "failed":result.failed++;break;
+      default:result.deferred++;
+    }
+  }
+  // Admission-only due lag and workload metrics. We never log café IDs,
+  // owner utterances, source values or payment records.
+  const nowMs=Date.now();
+  const lagMs=rows.flatMap(row=>{
+    if(!row.scheduledForUtc)return [];
+    const timestamp=Date.parse(row.scheduledForUtc);
+    return Number.isFinite(timestamp)?[Math.max(0,nowMs-timestamp)]:[];
+  }).sort((a,b)=>a-b);
+  const percentile=(rank:number)=>lagMs.length?
+    lagMs[Math.min(lagMs.length-1,Math.ceil(rank*lagMs.length)-1)]:null;
+  console.info("u4_due_dispatch",{
+    ...result,lagSamples:lagMs.length,
+    admittedDueLagP50Ms:percentile(.5),admittedDueLagP95Ms:percentile(.95),
+    executionBatchMs:Math.max(0,Date.now()-batchStartedAt),
+  });
   return result;
 }
