@@ -75,6 +75,14 @@ export const routineTools={
 
 const {$schema:_routineToolSchema,...routineParameters}=z.toJSONSchema(manageRoutineSchema,{target:"draft-07"});
 void _routineToolSchema;
+// Match the registered tool registry's provider-wire hygiene: a standard ISO
+// date format makes Zod's generated leap-year regex redundant. This owner-only
+// extra tool bypasses the shared registry normalizer; keep runtime Zod strict.
+const onceDateAlternatives=(routineParameters.properties as
+  Record<string,{anyOf?:Array<Record<string,unknown>>}>|undefined)?.once_local_date?.anyOf;
+for(const alternative of onceDateAlternatives??[]){
+  if(alternative.type==="string"&&alternative.format==="date")delete alternative.pattern;
+}
 /** Advertised only on a server-verified owner thread via extraTools; unlike
  * global definitions, it cannot be offered by a caller without the owner port. */
 export const routineToolDefinition={
