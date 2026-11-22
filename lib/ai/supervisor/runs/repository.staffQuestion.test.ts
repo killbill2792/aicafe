@@ -164,6 +164,29 @@ describe("actual durable checkpoint for a natural authenticated staff-question o
   expect(save).toHaveBeenCalledTimes(1);
   expect(fake.tables.operating_tasks).toHaveLength(1);
  });
+ it("recovers the exact interrupted question when one owner message answered two drafts",async()=>{
+  const checkpoint=await open();
+  const {result,observation}=await callTool(checkpoint);
+  await checkpoint.endTool(result,observation.noEffect());
+  const secondProposalId=randomUUID(),secondArgs={proposalId:secondProposalId,revision:1};
+  const previous=fake.tables.supervisor_proposals[0];
+  fake.tables.supervisor_proposals.push({...previous,id:secondProposalId});
+  const oldReport=fake.tables.operating_tasks[0];
+  const originalFacts=(oldReport.evidence as Array<{source:string;facts:Record<string,unknown>}>)[0];
+  fake.tables.operating_tasks.push({...oldReport,id:"staff-question-owner-answer:"+secondProposalId,
+   evidence:[{source:"owner_report",facts:{...originalFacts.facts,proposalId:secondProposalId}}]});
+  expect(await checkpoint.beginTool(tool,secondArgs,false)).toBeNull();
+  // The second SQL owner-report commit was saved, but its ACK was lost.
+  expect(fake.tables.supervisor_run_steps[0].checkpoint_phase).toBe("effect_pending");
+  const restarted=await open();
+  const refs=fake.tables.supervisor_run_steps[0].checkpoint_receipts as Array<{receipt:string}>;
+  expect(refs).toHaveLength(2);
+  expect(refs[0].receipt).toBe(ref);
+  expect(refs[1].receipt).toBe("staff_owner_report:"+secondProposalId+":"+fake.ids.message);
+  expect(await restarted.beginTool(tool,secondArgs,false)).toMatchObject({
+   saved:true,proposalId:secondProposalId,ownerMessageId:fake.ids.message});
+  expect(fake.tables.staff_communication_requests).toHaveLength(0);
+ });
  it("quarantines missing, forged or cross-café evidence rather than approving an uncertain effect",async()=>{
   const checkpoint=await open();
   const {result,observation}=await callTool(checkpoint);
