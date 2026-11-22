@@ -146,6 +146,18 @@ describe("restricted staff communication APIs",()=>{
   expect((await postLinks(forwarded({Origin:""}))).status).toBe(403);
   expect(mocks.createLogin).toHaveBeenCalledOnce();
  });
+ it("accepts worker reply from its actual Host when the framework normalizes the internal URL",async()=>{
+  const browserRequest=(origin:string)=>
+   new Request("http://localhost:3000/api/staff-channel",{
+    method:"POST",headers:{"host":"127.0.0.1:3000",Origin:origin,
+     "content-type":"application/json"},body:JSON.stringify(reply)});
+  const valid=await post(browserRequest("http://127.0.0.1:3000"));
+  expect(valid.status).toBe(200);
+  expect(mocks.reply).toHaveBeenCalledOnce();
+  expect((await post(browserRequest("https://different.example"))).status).toBe(403);
+  expect((await post(browserRequest(""))).status).toBe(403);
+  expect(mocks.reply).toHaveBeenCalledOnce();
+ });
  it("owner link API reuses owner authorization service and checks origin",async()=>{
   expect((await getLinks()).status).toBe(200);
   expect(mocks.links).toHaveBeenCalledOnce();
