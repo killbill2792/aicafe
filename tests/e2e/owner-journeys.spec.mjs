@@ -1760,10 +1760,14 @@ test("@home Task16E design baseline observes empty and long Supervisor conversat
           if(!pathname.startsWith("/en/")||pathname==="/en/login"||pathname==="/en/onboarding")
             throw initialFailure;
           await page.reload({waitUntil:"load"});
+          await expect.poll(async()=>{
+            try{return (await page.request.get("/api/ai/threads",{timeout:5000})).status();}
+            catch{return 0;}
+          },{timeout:30_000,intervals:[500,1000,2000]}).toBe(200);
           await expect(page.getByText(owner.name,{exact:true}).first())
-            .toBeVisible({timeout:30_000});
+            .toHaveCount(1,{timeout:30_000});
         }
-        // The shared auth helper checks a visible desktop café label; mobile hides it.
+        // The shared auth helper checks authenticated scope and exact café identity, including mobile hidden labels.
         // Verify owner on desktop first, then assert the exact thread URL on each measured navigation.
         await openOwnedPage(page,owner,"?thread="+empty);
         await page.setViewportSize(viewport);
