@@ -370,7 +370,7 @@ export default function SupervisorProposalCard({threadId,proposalId,locale}:{
         </div>
         <p className="text-sm text-ink-muted">{c.replyInChat}</p>
       </div>}
-      {value.state==="uncertain"&&<button type="button" disabled={busy}
+      {(value.state==="applying"||value.state==="uncertain")&&<button type="button" disabled={busy}
         onClick={()=>void invoke("reconcile")} className="mt-3 min-h-12 rounded-xl border border-line px-4">{c.checkReceipt}</button>}
       {error&&<p role="alert" className="mt-2 text-neg">{c.error}</p>}
     </section>;
