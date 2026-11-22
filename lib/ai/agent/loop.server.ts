@@ -618,6 +618,10 @@ export async function runAgentTurn(args: {
           expandedLuna=model===PRODUCTION_SUPERVISOR_OPENAI_MODEL;
           projectedTools=projectProviderTools(allowedDefinitions,nativeSearch);
           console.warn("supervisor_model_fallback",{reason,model});
+          // Recheck authenticated evidence before EVERY model transport, including
+          // a fallback. Authorization loss must escape this provider-error catch;
+          // a later output check cannot undo disclosure to another model.
+          await args.beforeProviderRequest?.();
           try{calls=await call(false);}
           catch(fallbackError){
             if(fallbackError instanceof CheckpointFailure)throw fallbackError;
