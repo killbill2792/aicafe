@@ -223,7 +223,9 @@ test("@staff real worker login, shift explanation, cross-cafe and owner receipt"
   await blankReply.getByRole("button",{name:"Mark complete"}).click();
   await owner.reload();
   await expect(owner.getByRole("region",{name:"Employee Supervisor communication history"})
-   .getByText("Employee reported task complete — not independently verified")).toBeVisible({timeout:20_000});
+   .locator("li").filter({hasText:"Count takeaway cups"})
+   .getByText("Employee reported task complete — not independently verified",{exact:true}))
+   .toBeVisible({timeout:20_000});
   await otherOwner.reload();
   await expect(otherOwner.getByText("I cannot work seven to two. I can arrive at 8 AM.")).toHaveCount(0);
   const shift=(await db.query("select start_local,status from public.scheduled_shifts where id=$1",
