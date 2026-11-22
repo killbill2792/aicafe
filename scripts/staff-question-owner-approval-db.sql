@@ -35,6 +35,7 @@ select set_config('test.staffquestion.biz',:'biz',true),
  set_config('test.staffquestion.thread',:'thread_id',true), set_config('test.staffquestion.employee',:'employee',true),
  set_config('test.staffquestion.proposal',:'proposal',true), set_config('test.staffquestion.owner_proposal',:'owner_proposal',true),
  set_config('test.staffquestion.rejected_proposal',:'rejected_proposal',true),
+ set_config('test.staffquestion.stale_proposal',:'stale_proposal',true),
  set_config('test.staffquestion.task','staff-question-fixture:'||:'task_uuid',true), set_config('test.staffquestion.request','',true);
 insert into public.supervisor_investigations( business_id,owner_user_id,thread_id,source_type,source_id, revision_hash,stable_key,phase,evidence)
  values(:'biz',:'owner_id',:'thread_id','operating_task', 'staff-question-fixture:'||:'task_uuid',repeat('a',64),repeat('b',64),'awaiting_owner',
@@ -108,7 +109,7 @@ select public.supervisor_claim_effect(:'biz',:'owner_id',:'thread_id',:'stale_pr
 do $
 begin
  begin
-  perform public.supervisor_commit_staff_question(current_setting('test.staffquestion.biz')::uuid,current_setting('test.staffquestion.owner')::uuid,current_setting('test.staffquestion.thread')::uuid,:'stale_proposal'::uuid,repeat('x',64));
+  perform public.supervisor_commit_staff_question(current_setting('test.staffquestion.biz')::uuid,current_setting('test.staffquestion.owner')::uuid,current_setting('test.staffquestion.thread')::uuid,current_setting('test.staffquestion.stale_proposal')::uuid,repeat('x',64));
   raise exception 'wrong effect hash sent a question';
  exception when insufficient_privilege then null;end;
 end $;
@@ -116,7 +117,7 @@ update public.employees set staff_auth_user_id=null where business_id=:'biz' and
 do $
 begin
  begin
-  perform public.supervisor_commit_staff_question(current_setting('test.staffquestion.biz')::uuid,current_setting('test.staffquestion.owner')::uuid,current_setting('test.staffquestion.thread')::uuid,:'stale_proposal'::uuid,repeat('d',64));
+  perform public.supervisor_commit_staff_question(current_setting('test.staffquestion.biz')::uuid,current_setting('test.staffquestion.owner')::uuid,current_setting('test.staffquestion.thread')::uuid,current_setting('test.staffquestion.stale_proposal')::uuid,repeat('d',64));
   raise exception 'revoked employee link was accepted';
  exception when sqlstate '40001' then null;end;
 end $;
@@ -125,7 +126,7 @@ update public.scheduled_shifts set status='draft' where business_id=:'biz' and e
 do $
 begin
  begin
-  perform public.supervisor_commit_staff_question(current_setting('test.staffquestion.biz')::uuid,current_setting('test.staffquestion.owner')::uuid,current_setting('test.staffquestion.thread')::uuid,:'stale_proposal'::uuid,repeat('d',64));
+  perform public.supervisor_commit_staff_question(current_setting('test.staffquestion.biz')::uuid,current_setting('test.staffquestion.owner')::uuid,current_setting('test.staffquestion.thread')::uuid,current_setting('test.staffquestion.stale_proposal')::uuid,repeat('d',64));
   raise exception 'withdrawn published shift was accepted';
  exception when sqlstate '40001' then null;end;
 end $;
@@ -135,10 +136,10 @@ update public.operating_tasks set updated_at=updated_at+interval '1 minute'
 do $
 begin
  begin
-  perform public.supervisor_commit_staff_question(current_setting('test.staffquestion.biz')::uuid,current_setting('test.staffquestion.owner')::uuid,current_setting('test.staffquestion.thread')::uuid,:'stale_proposal'::uuid,repeat('d',64));
+  perform public.supervisor_commit_staff_question(current_setting('test.staffquestion.biz')::uuid,current_setting('test.staffquestion.owner')::uuid,current_setting('test.staffquestion.thread')::uuid,current_setting('test.staffquestion.stale_proposal')::uuid,repeat('d',64));
   raise exception 'changed source revision was accepted';
  exception when sqlstate '40001' then null;end;
- if exists(select 1 from public.staff_communication_requests where business_id=current_setting('test.staffquestion.biz')::uuid and source_id=:'stale_proposal') then
+ if exists(select 1 from public.staff_communication_requests where business_id=current_setting('test.staffquestion.biz')::uuid and source_id=current_setting('test.staffquestion.stale_proposal')) then
   raise exception 'failed authorization unexpectedly sent a staff request';end if;
 end $;
 rollback;
