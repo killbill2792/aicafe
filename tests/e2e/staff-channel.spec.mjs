@@ -165,9 +165,15 @@ test("@staff real worker login, shift explanation, cross-cafe and owner receipt"
   expect(ownerHistoryData.events.some(e=>e.actor==="employee"&&e.text==="I cannot work seven to two. I can arrive at 8 AM.")).toBe(true);
   await owner.locator("#staff-reply-person").selectOption(created[0].worker.id);
   await owner.locator("#staff-reply-body").fill("Thanks for the update. Can you confirm 8 AM?");
+  const ownerMessageReceipt=owner.waitForResponse(response=>
+   new URL(response.url()).pathname==="/api/staff-channel/owner-message"&&response.request().method()==="POST");
   await owner.getByRole("button",{name:"Send to employee"}).click();
-  await expect(owner.getByText("Message saved to this employee's work inbox. Not a read or delivery receipt."))
-   .toBeVisible();
+  expect((await ownerMessageReceipt).status()).toBe(200);
+  await expect(owner.getByText("Message saved in the employee's inbox (not a read receipt)."))
+   .toBeVisible({timeout:20_000});
+  const savedOwnerMessage=await db.query("select id from public.staff_communication_messages where business_id=$1 and employee_id=$2 and actor='owner' and body=$3",
+   [created[0].cafe.businessId,created[0].worker.id,"Thanks for the update. Can you confirm 8 AM?"]);
+  expect(savedOwnerMessage.rows).toHaveLength(1);
   // Owner's existing reply outbox refreshes the server component. Its
   // client transcript must adopt new props without a manual owner reload.
   await expect(owner.getByRole("region",{name:"Employee Supervisor communication history"})
@@ -192,8 +198,11 @@ test("@staff real worker login, shift explanation, cross-cafe and owner receipt"
   await owner.locator("#staff-work-kind").selectOption("checklist");
   await owner.locator("#staff-work-title").fill("Inspect opening grinder");
   await owner.locator("#staff-work-prompt").fill("Check grinder noise before opening");
+  const ownerAssignmentReceipt=owner.waitForResponse(response=>
+   new URL(response.url()).pathname==="/api/staff-channel/owner-assignment"&&response.request().method()==="POST");
   await owner.getByRole("button",{name:"Assign work"}).click();
-  await expect(owner.getByText("Assignment saved to this employee's work inbox."))
+  expect((await ownerAssignmentReceipt).status()).toBe(200);
+  await expect(owner.getByText("Assignment saved in the employee's inbox."))
    .toBeVisible({timeout:20_000});
   await staff.reload();
   const assigned=staff.getByRole("article").filter({hasText:"Inspect opening grinder"});
