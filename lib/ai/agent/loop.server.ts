@@ -24,6 +24,32 @@ import {ownerRunStatement,type OwnerRunCheckpoint,type MatchedOwnerAnswer} from 
 export type EndReason = "complete" | "budget" | "timeout" | "provider_error" | "tool_errors";
 type ToolCall = ProviderFunctionCall;
 type Event = { type: string; [key: string]: unknown };
+/** A provider-availability failure may use the explicitly configured fallback
+ * only before the model has produced usable output or executed any tools.
+ * Reject auth, bad parameters, content-filter and durable-fence errors. */
+class ProviderAvailabilityError extends Error {
+  constructor(readonly reason:string){super("provider_error");}
+}
+const providerAvailabilityCodes=new Set([
+  "server_error","rate_limit_exceeded","model_unavailable","model_not_found",
+  "temporarily_unavailable","overloaded","engine_overloaded",
+]);
+function providerEventCode(event:Event):string{
+  const response=event.response;
+  const row=response&&typeof response==="object"?response as Record<string,unknown>:null;
+  const raw=row?.error??event.error;
+  const error=raw&&typeof raw==="object"?raw as Record<string,unknown>:null;
+  const code=error?.code;
+  return typeof code==="string"&&/^[a-z0-9_]{1,64}$/.test(code)?code:"unknown";
+}
+function providerTerminalFailure(event:Event,model:string):Error{
+  const code=providerEventCode(event);
+  // Never log provider messages, prompts, owner information or request bodies.
+  console.error("supervisor_provider_terminal_failure",{model,kind:event.type,
+    code:providerAvailabilityCodes.has(code)?code:"other"});
+  return providerAvailabilityCodes.has(code)
+    ?new ProviderAvailabilityError(code):new Error("provider_error");
+}
 type ProviderFailureCode = "max_output_tokens" | "content_filter" | "incomplete_other" |
   "missing_terminal" | "provider_failed" | "stream_error";
 function incompleteProviderCode(event:Event):ProviderFailureCode{
@@ -108,13 +134,21 @@ export async function* openAIProvider(params: Record<string, unknown>, signal: A
   // Reserve the worst-case billable call BEFORE transport, even on retry.
   if(process.env.AICAFE_TASK14B_BUDGET_LEDGER)
     await reserveTask14bPaidRequest(params,serialized);
-  const response = await fetch("https://api.openai.com/v1/responses", {
-    method: "POST", signal, headers: { Authorization: "Bearer " + (process.env.OPENAI_API_KEY ?? ""),
-      "Content-Type": "application/json" },
-    body: serialized,
-  });
+  let response:Response;
+  try{
+    response=await fetch("https://api.openai.com/v1/responses", {
+      method:"POST",signal,headers:{Authorization:"Bearer "+(process.env.OPENAI_API_KEY??""),
+        "Content-Type":"application/json"},body:serialized,
+    });
+  }catch(error){
+    console.error("supervisor_provider_transport_failure",{model:String(params.model??"unknown"),
+      kind:error instanceof Error?error.name:"unknown"});
+    throw error;
+  }
   if (!response.ok || !response.body) {
     console.error("supervisor_provider_error",{model:String(params.model??"unknown"),status:response.status});
+    if(response.status===404||response.status===429||response.status>=500)
+      throw new ProviderAvailabilityError("http_"+response.status);
     throw new Error("provider_error");
   }
   const reader = response.body.getReader(), decoder = new TextDecoder();
@@ -181,7 +215,7 @@ export async function runAgentTurn(args: {
   if(!args.context.timezone)throw new Error("cafe_timezone_required");
   const now = args.now ?? Date.now, started = now();
   const workerBudget = currentWorkerBudget();
-  const model = configuredSupervisorModel();
+  let model = configuredSupervisorModel();
   // The independent legacy host reservation remains unchanged; native tools
   // must not silently expand the owner's approved paid acceptance envelope.
   const approvedLocalTask14b=process.env.AI_CAFE_LIVE_ACCEPTANCE==="OWNER_APPROVED_LOCAL_ONLY" &&
@@ -196,7 +230,7 @@ export async function runAgentTurn(args: {
   const trustedU2=approvedLocalTask14b&&process.env.AICAFE_SHARED_LUNA==="1"&&
     process.env.AICAFE_SHARED_LUNA_CANDIDATE==="1"&&process.env.AICAFE_SHARED_LUNA_SCENARIO==="u2-model-execution"&&
     !process.env.AICAFE_TASK14B_BUDGET_LEDGER;
-  const nativeSearch=usesNativeToolSearch(model,legacyPaid&&!trustedU2);
+  let nativeSearch=usesNativeToolSearch(model,legacyPaid&&!trustedU2);
   const policy=executionPolicy(model,workerBudget,legacyPaid);
   const deadline=started+policy.elapsedMs;
   const workDeadline=deadline-policy.finalTimeReserve;
@@ -316,7 +350,7 @@ export async function runAgentTurn(args: {
     name==="inspect_supplier_purchase"||name==="get_supplier_purchase_orders"||name==="inspect_purchase_reconciliation");
   const maxModelToolCalls=()=>adaptive?policy.maxWorkCalls:supplierWorkObserved()?6:5;
   const maxToolCalls=adaptive?policy.maxToolCalls:8;
-  const expandedLuna=model===PRODUCTION_SUPERVISOR_OPENAI_MODEL;
+  let expandedLuna=model===PRODUCTION_SUPERVISOR_OPENAI_MODEL;
   const finalOutputReserve=1200, lunaToolOutputCap=16_384, lunaTurnOutputCap=25_000;
   // The owner-approved Luna turn cap includes the final response reserve.
   // Actual usage (or the full request cap if unreported) reduces the next
@@ -402,7 +436,7 @@ export async function runAgentTurn(args: {
   const eligibleNames=allowedFunctionNames(allowedDefinitions);
   const seenCallIds=new Set<string>();
   let discoveryOnly=false;
-  const projectedTools=projectProviderTools(allowedDefinitions,nativeSearch);
+  let projectedTools=projectProviderTools(allowedDefinitions,nativeSearch);
   // Discovery is a provider transport choice, not a new local tool or route.
   const request = (final: boolean, outputCap:number) => ({
     model, instructions: agentInstructions(),
@@ -468,10 +502,14 @@ export async function runAgentTurn(args: {
           throw new Error("provider_incomplete");
         }
         if (event.type === "response.failed" || event.type === "error") {
-          terminal=event;failureCode="provider_failed";outputReported=reportedOutput(event);if(outputReported)recordReportedUsage(event);throw new Error("provider_error");
+          terminal=event;failureCode="provider_failed";outputReported=reportedOutput(event);if(outputReported)recordReportedUsage(event);throw providerTerminalFailure(event,model);
         }
       }
-      if (!completed) {failureCode="missing_terminal";throw new Error("provider_incomplete");}
+      if (!completed) {
+        failureCode="missing_terminal";
+        console.error("supervisor_provider_terminal_failure",{model,kind:"stream_end",code:"missing_terminal"});
+        throw new ProviderAvailabilityError("missing_terminal");
+      }
       await args.beforeAcceptResult?.();
       if(deferOutput&&text.length>callTextStart)args.onDelta?.(text.slice(callTextStart));
       const continuation=nativeSearch?canonicalHostedOutput(output,projectedTools,true).flatMap(item=>{
@@ -558,7 +596,34 @@ export async function runAgentTurn(args: {
       // it must escape the loop so no final request can resend private evidence.
       await args.beforeProviderRequest?.();
       try { calls = await call(false); }
-      catch (error) { if(error instanceof CheckpointFailure)throw error; await args.beforeAcceptResult?.(); endReason = now() >= workDeadline || controller.signal.aborted ? "timeout" : "provider_error"; break; }
+      catch (error) {
+        if(error instanceof CheckpointFailure)throw error;
+        const fallback=process.env.SUPERVISOR_OPENAI_FALLBACK_MODEL?.trim();
+        const canFallback=round===0&&usage.toolCalls===0&&!text.trim()&&
+          !args.serviceOrigin&&!args.toolNames&&!approvedLocalTask14b&&
+          model===PRODUCTION_SUPERVISOR_OPENAI_MODEL&&
+          !!fallback&&fallback!==model&&error instanceof ProviderAvailabilityError&&
+          !controller.signal.aborted&&now()<workDeadline;
+        if(canFallback){
+          const reason=(error as ProviderAvailabilityError).reason;
+          model=fallback!;
+          nativeSearch=usesNativeToolSearch(model,legacyPaid&&!trustedU2);
+          expandedLuna=model===PRODUCTION_SUPERVISOR_OPENAI_MODEL;
+          projectedTools=projectProviderTools(allowedDefinitions,nativeSearch);
+          console.warn("supervisor_model_fallback",{reason,model});
+          try{calls=await call(false);}
+          catch(fallbackError){
+            if(fallbackError instanceof CheckpointFailure)throw fallbackError;
+            await args.beforeAcceptResult?.();
+            endReason=now()>=workDeadline||controller.signal.aborted?"timeout":"provider_error";
+            break;
+          }
+        }else{
+          await args.beforeAcceptResult?.();
+          endReason=now()>=workDeadline||controller.signal.aborted?"timeout":"provider_error";
+          break;
+        }
+      }
       await args.beforeAcceptResult?.();
       if (!calls.length) {
         const cap = budgetStop();
@@ -790,7 +855,7 @@ export async function runAgentTurn(args: {
                 throw new Error("provider_incomplete");
               }
               if (event.type === "response.failed" || event.type === "error") {
-                terminal=event;failureCode="provider_failed";outputReported=reportedOutput(event);if(outputReported)recordReportedUsage(event);throw new Error("provider_error");
+                terminal=event;failureCode="provider_failed";outputReported=reportedOutput(event);if(outputReported)recordReportedUsage(event);throw providerTerminalFailure(event,model);
               }
               if (now() >= deadline) throw new Error("deadline");
               if (event.type === "response.output_text.delta" && typeof event.delta === "string") {
@@ -804,7 +869,11 @@ export async function runAgentTurn(args: {
                 recordReportedUsage(event);
               }
             }
-            if (!completed) {failureCode="missing_terminal";throw new Error("provider_incomplete");}
+            if (!completed) {
+        failureCode="missing_terminal";
+        console.error("supervisor_provider_terminal_failure",{model,kind:"stream_end",code:"missing_terminal"});
+        throw new ProviderAvailabilityError("missing_terminal");
+      }
             await args.beforeAcceptResult?.();
             if(deferOutput&&text.length>finalTextStart)args.onDelta?.(text.slice(finalTextStart));
             if (text.length > finalTextStart)
