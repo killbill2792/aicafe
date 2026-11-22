@@ -190,9 +190,9 @@ test("@staff real worker login, shift explanation, cross-cafe and owner receipt"
   await expect(owner.getByText("Historical note 35")).toBeVisible({timeout:20_000});
   await expect(owner.getByRole("button",{name:"Load older exchanges"})).toBeVisible();
   await owner.getByRole("button",{name:"Load older exchanges"}).click();
-  await expect(owner.getByText("Historical note 1")).toBeVisible({timeout:20_000});
+  await expect(owner.getByText("Historical note 1",{exact:true})).toBeVisible({timeout:20_000});
   await otherOwner.reload();
-  await expect(otherOwner.getByText("Historical note 1")).toHaveCount(0);
+  await expect(otherOwner.getByText("Historical note 1",{exact:true})).toHaveCount(0);
   // The same channel accepts a task/checklist from any future authorized
   // staff-workflow producer; the worker's completion is actual evidence.
   await owner.locator("#staff-work-kind").selectOption("checklist");
