@@ -2474,7 +2474,7 @@ test("@home U4 real private Work report and failed-run acknowledgment in two caf
     // Local production Next runs on HTTP; browsers can decline a Secure
     // cookie on that transport. Prove the production route issues the exact
     // owner-scoped Set-Cookie, with Secure and HttpOnly required for HTTPS.
-    const selectionCookie=redirected.headers()["set-cookie"]??"";
+    const selectionCookie=(await redirected.headerValue("set-cookie"))??"";
     expect(selectionCookie).toContain("active_business_id="+owner.businessId);
     expect(selectionCookie).toMatch(/;\s*Secure/i);
     expect(selectionCookie).toMatch(/;\s*HttpOnly/i);
