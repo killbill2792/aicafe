@@ -26,7 +26,7 @@ test("@staff real worker login, shift explanation, cross-cafe and owner receipt"
    if(index===1){
    await db.query("insert into auth.users (instance_id,id,aud,role,email,encrypted_password,email_confirmed_at,raw_app_meta_data,raw_user_meta_data,created_at,updated_at,confirmation_token,recovery_token,email_change_token_new,email_change) values ('00000000-0000-0000-0000-000000000000',$1,'authenticated','authenticated',$2,extensions.crypt($3,extensions.gen_salt('bf')),now(),'{\"provider\":\"email\",\"providers\":[\"email\"]}','{}',now(),now(),'','','','')",
     [userId,email,password]);
-   await db.query("insert into auth.identities (id,user_id,provider_id,provider,identity_data,last_sign_in_at,created_at,updated_at) values($1,$1,$1,'email',$2::jsonb,now(),now(),now())",
+   await db.query("insert into auth.identities (id,user_id,provider_id,provider,identity_data,last_sign_in_at,created_at,updated_at) values($1::uuid,$1::uuid,$1::text,'email',$2::jsonb,now(),now(),now())",
     [userId,JSON.stringify({sub:userId,email,email_verified:true})]);
    }
    created.push({cafe,worker,userId,shiftId,email,password});
@@ -45,12 +45,18 @@ test("@staff real worker login, shift explanation, cross-cafe and owner receipt"
   await owner.getByRole("button",{name:"Create employee login"}).click();
   const createdReceipt=await createReceipt;
   expect(createdReceipt.status()).toBe(200);
-  expect(await createdReceipt.json()).toEqual({linked:true,loginPath:"/crew/login"});
+  // The UI initiates router.refresh immediately after its successful response.
+  // Reading a second copy of that response body through Playwright can hang
+  // across RSC navigation. Verify the real owner UI and DB-linked identity
+  // instead; route unit tests independently assert the exact JSON contract.
   await expect(owner.getByText(/Staff login created and linked/)).toBeVisible();
   await expect(owner.getByRole("button",{name:"Copy staff sign-in link"})).toBeVisible();
   const firstAuth=await db.query("select id from auth.users where email=$1",[created[0].email]);
   expect(firstAuth.rows).toHaveLength(1);
   created[0].userId=firstAuth.rows[0].id;
+  const linked=(await db.query("select staff_auth_user_id::text from public.employees where business_id=$1 and id=$2",
+   [cafes[0].businessId,created[0].worker.id])).rows[0];
+  expect(linked.staff_auth_user_id).toBe(created[0].userId);
   // Linking updates the owner reply selector without a manual page reload.
   await expect(owner.locator('#staff-reply-person option[value="'+created[0].worker.id+'"]'))
    .toHaveCount(1,{timeout:20_000});
@@ -100,7 +106,18 @@ test("@staff real worker login, shift explanation, cross-cafe and owner receipt"
   await expect(card.getByText(/07:00.*14:00/)).toBeVisible();
   await card.getByRole("textbox",{name:/Add a message or explain/})
    .fill("I cannot work seven to two. I can arrive at 8 AM.");
+  const replyWait=staff.waitForResponse(response=>
+   new URL(response.url()).pathname==="/api/staff-channel"&&response.request().method()==="POST");
   await card.getByRole("button",{name:"Cannot work"}).click();
+  expect((await replyWait).status()).toBe(200);
+  // Read the employee-scoped canonical inbox as well as verifying the visible
+  // confirmed receipt; never pass a UI-only local echo for an unsaved answer.
+  await expect.poll(async()=>{
+   const res=await staffCtx.request.get("/api/staff-channel");
+   if(res.status()!==200)return false;
+   return (await res.json()).messages.some(m=>
+    m.actor==="employee"&&m.body==="I cannot work seven to two. I can arrive at 8 AM.");
+  },{timeout:30_000}).toBe(true);
   await expect(staff.getByText("I cannot work seven to two. I can arrive at 8 AM.")).toBeVisible({timeout:20_000});
 
   const inbox=await staffCtx.request.get("/api/staff-channel");
@@ -111,7 +128,12 @@ test("@staff real worker login, shift explanation, cross-cafe and owner receipt"
   expect(own.self.timecards.some(t=>t.id===otherCardId)).toBe(false);
   expect(own.self.breakNotices.map(a=>a.timecardId)).toContain(ownCardId);
   expect(JSON.stringify(own.self)).not.toContain(otherCardId);
-  expect(JSON.stringify(own)).not.toContain(created[1].worker.display_name);
+  // Two independent cafés can both employ someone named Aisha. A shared
+  // display name is not cross-tenant evidence; opaque source IDs are.
+  expect(own.name).toBe(created[0].worker.display_name);
+  for(const foreignId of [created[1].worker.id,created[1].shiftId,
+   created[1].timecardId,created[1].userId])
+   expect(JSON.stringify(own)).not.toContain(foreignId);
   expect((await staffCtx.request.get("/api/staff-channel/link")).status()).toBe(403);
   const businessesBefore=(await db.query("select count(*)::integer as n from public.businesses")).rows[0].n;
   const onboarding=await staffCtx.request.get("/en/onboarding",{maxRedirects:0});
@@ -132,7 +154,8 @@ test("@staff real worker login, shift explanation, cross-cafe and owner receipt"
    .toBeVisible({timeout:30_000});
   await expect(owner.getByText("I cannot work seven to two. I can arrive at 8 AM.")).toBeVisible();
   const conversation=owner.getByRole("region",{name:"Employee Supervisor communication history"});
-  await expect(conversation.getByText("Confirm your shift")).toBeVisible();
+  const answeredShift=conversation.locator("li").filter({hasText:"I cannot work seven to two. I can arrive at 8 AM."});
+  await expect(answeredShift.getByText("Confirm your shift")).toBeVisible();
   await expect(conversation.getByText("I cannot work seven to two. I can arrive at 8 AM.")).toBeVisible();
   expect((await staffCtx.request.get("/api/staff-channel/owner-history")).status()).toBe(403);
   const ownerHistory=await ownerCtx.request.get("/api/staff-channel/owner-history");
@@ -142,9 +165,15 @@ test("@staff real worker login, shift explanation, cross-cafe and owner receipt"
   expect(ownerHistoryData.events.some(e=>e.actor==="employee"&&e.text==="I cannot work seven to two. I can arrive at 8 AM.")).toBe(true);
   await owner.locator("#staff-reply-person").selectOption(created[0].worker.id);
   await owner.locator("#staff-reply-body").fill("Thanks for the update. Can you confirm 8 AM?");
+  const ownerMessageReceipt=owner.waitForResponse(response=>
+   new URL(response.url()).pathname==="/api/staff-channel/owner-message"&&response.request().method()==="POST");
   await owner.getByRole("button",{name:"Send to employee"}).click();
-  await expect(owner.getByText("Message saved to this employee's work inbox. Not a read or delivery receipt."))
-   .toBeVisible();
+  expect((await ownerMessageReceipt).status()).toBe(200);
+  await expect(owner.getByText("Message saved in the employee's inbox (not a read receipt)."))
+   .toBeVisible({timeout:20_000});
+  const savedOwnerMessage=await db.query("select id from public.staff_communication_messages where business_id=$1 and employee_id=$2 and actor='owner' and body=$3",
+   [created[0].cafe.businessId,created[0].worker.id,"Thanks for the update. Can you confirm 8 AM?"]);
+  expect(savedOwnerMessage.rows).toHaveLength(1);
   // Owner's existing reply outbox refreshes the server component. Its
   // client transcript must adopt new props without a manual owner reload.
   await expect(owner.getByRole("region",{name:"Employee Supervisor communication history"})
@@ -161,16 +190,19 @@ test("@staff real worker login, shift explanation, cross-cafe and owner receipt"
   await expect(owner.getByText("Historical note 35")).toBeVisible({timeout:20_000});
   await expect(owner.getByRole("button",{name:"Load older exchanges"})).toBeVisible();
   await owner.getByRole("button",{name:"Load older exchanges"}).click();
-  await expect(owner.getByText("Historical note 1")).toBeVisible({timeout:20_000});
+  await expect(owner.getByText("Historical note 1",{exact:true})).toBeVisible({timeout:20_000});
   await otherOwner.reload();
-  await expect(otherOwner.getByText("Historical note 1")).toHaveCount(0);
+  await expect(otherOwner.getByText("Historical note 1",{exact:true})).toHaveCount(0);
   // The same channel accepts a task/checklist from any future authorized
   // staff-workflow producer; the worker's completion is actual evidence.
   await owner.locator("#staff-work-kind").selectOption("checklist");
   await owner.locator("#staff-work-title").fill("Inspect opening grinder");
   await owner.locator("#staff-work-prompt").fill("Check grinder noise before opening");
+  const ownerAssignmentReceipt=owner.waitForResponse(response=>
+   new URL(response.url()).pathname==="/api/staff-channel/owner-assignment"&&response.request().method()==="POST");
   await owner.getByRole("button",{name:"Assign work"}).click();
-  await expect(owner.getByText("Assignment saved to this employee's work inbox."))
+  expect((await ownerAssignmentReceipt).status()).toBe(200);
+  await expect(owner.getByText("Assignment saved in the employee's inbox."))
    .toBeVisible({timeout:20_000});
   await staff.reload();
   const assigned=staff.getByRole("article").filter({hasText:"Inspect opening grinder"});
@@ -191,7 +223,9 @@ test("@staff real worker login, shift explanation, cross-cafe and owner receipt"
   await blankReply.getByRole("button",{name:"Mark complete"}).click();
   await owner.reload();
   await expect(owner.getByRole("region",{name:"Employee Supervisor communication history"})
-   .getByText("Employee reported task complete — not independently verified")).toBeVisible({timeout:20_000});
+   .locator("li").filter({hasText:"Count takeaway cups"})
+   .getByText("Employee reported task complete — not independently verified",{exact:true}))
+   .toBeVisible({timeout:20_000});
   await otherOwner.reload();
   await expect(otherOwner.getByText("I cannot work seven to two. I can arrive at 8 AM.")).toHaveCount(0);
   const shift=(await db.query("select start_local,status from public.scheduled_shifts where id=$1",

@@ -39,6 +39,8 @@ import {precedingInvestigationReport,type CustomerInvestigationOrigin} from "@/l
 import {SupervisorEffectGateway} from "@/lib/ai/supervisor/loop/effectGateway.server";
 import {gmailCapabilityId,type GmailProposalInput} from "@/lib/ai/supervisor/loop/gmail.server";
 import {maintenanceContext} from "@/lib/ai/supervisor/loop/maintenance.server";
+import {staffQuestionCapabilityId,staffQuestionEffect} from "@/lib/ai/supervisor/loop/staffQuestion.server";
+import {allowPendingStaffQuestionRead} from "./staffQuestionOwnerGate";
 import {gmailSearch,gmailListLabels,gmailRead,gmailReadThread,gmailReadAttachment} from "@/lib/connectors/gmail/provider.server";
 import {getConnectorAccount,allowsGmail,assertConnectorOwnerLive} from "@/lib/connectors/registry.server";
 import {gmailToolDefinitions} from "@/lib/ai/agent/tools";
@@ -300,6 +302,32 @@ export async function runOneTurn(p: TurnParams): Promise<{ replyId: string; repl
       return value;
     };
     const durableRead=p.durableFence&&p.externalClient?{...scope,threadId:id,...p.durableFence,client:p.externalClient}:null;
+    // Saved drafts are context only; NEVER approval or license to contact staff.
+    // Use the current authenticated owner message as the sole answer source.
+    const pendingStaffQuestions:Array<{proposalId:string;revision:number;question:string;employeeName:string}>=[];
+    let pendingStaffQuestionReadUnavailable=false;
+    if(allowPendingStaffQuestionRead({
+      external,ownerRole:owner.role,ownerContentType:owner.contentType,
+      ownerInputResponse:Boolean(owner.ownerInputResponse),ownerText:p.ownerText,
+      ownerId:owner.id,ownerThreadId:owner.threadId,threadId:id,
+      durableFence:p.durableFence??null,hasCheckpoint:Boolean(p.checkpoint),
+      job:job?{id:job.id,ownerMessageId:job.ownerMessageId,threadId:job.threadId}:null,
+    })){
+      try{
+        const pending=await createAdminSupabaseClient().from("supervisor_proposals")
+          .select("id,revision,canonical_effect_payload")
+          .eq("business_id",scope.businessId).eq("owner_user_id",scope.ownerUserId)
+          .eq("thread_id",id).eq("capability_id",staffQuestionCapabilityId)
+          .eq("status","draft").lte("created_at",owner.createdAt).order("created_at",{ascending:false}).limit(8);
+        if(pending.error)pendingStaffQuestionReadUnavailable=true;
+        else for(const row of pending.data??[]){
+          const checked=staffQuestionEffect.safeParse(row.canonical_effect_payload);
+          if(checked.success)pendingStaffQuestions.push({
+            proposalId:row.id,revision:row.revision,
+            question:checked.data.question,employeeName:checked.data.employeeName});
+        }
+      }catch{pendingStaffQuestionReadUnavailable=true;}
+    }
     const context: AgentToolContext = { tools, asOf: identity.asOf, locale: p.locale,timezone:identity.timezone,currency:identity.currency,
       ownerText:currentOwnerStatement,
       externalEvidencePresent:()=>sourceChecks.size>0,
@@ -309,6 +337,25 @@ export async function runOneTurn(p: TurnParams): Promise<{ replyId: string; repl
         threadId:id,mode:p.durableFence?"durable" as const:"owner" as const,
         ...(p.durableFence?{runId:p.durableFence.runId,leaseToken:p.durableFence.claimToken}:{})
        }),
+      staffQuestionPropose:async input=>{
+        await assertTurnSources();
+        const key=proposalRequestKey(id,JSON.stringify({ownerMessageId:owner.id,staffQuestion:input}));
+        const proposal=await proposeLoop(proposalScope,supervisorLoopRegistry,
+          new SupabaseLoopRepository(),staffQuestionCapabilityId,input,key);
+        if(proposal.status!=="draft")throw new Error("staff_question_no_longer_draft");
+        return {proposalId:proposal.id,revision:proposal.revision};
+      },
+      staffQuestionAnswer:async(proposalId,revision)=>{
+        if(!pendingStaffQuestions.some(q=>q.proposalId===proposalId&&q.revision===revision))
+          throw Error("staff_question_not_pending_for_owner_message");
+        await assertTurnSources();
+        const saved=await createAdminSupabaseClient().rpc("supervisor_answer_staff_question",{
+          p_business_id:scope.businessId,p_owner_user_id:scope.ownerUserId,
+          p_thread_id:id,p_proposal_id:proposalId,p_revision:revision,
+          p_owner_message_id:owner.id});
+        if(saved.error||saved.data?.answered!==true)throw Error("owner_report_not_saved");
+        return {proposalId,ownerMessageId:owner.id,employeeContacted:false as const};
+      },
       maintenance:{
         staff:async caseId=>maintenanceContext(await getDb(),proposalScope,{ownerMessage:{id:owner.id,text:currentOwnerStatement}}).staff(caseId),
         proposeStaff:async input=>maintenanceContext(await getDb(),proposalScope,{ownerMessage:{id:owner.id,text:currentOwnerStatement}}).proposeStaff(input),
@@ -839,7 +886,13 @@ export async function runOneTurn(p: TurnParams): Promise<{ replyId: string; repl
     failureStage = "model";
     const result = await runAgentTurn({ ownerText: p.ownerText, ownerImages:selected.images,
        ownerPdfs:selected.pdfs,ownerEvidence:selected.evidence,
-       history, matchedOwnerAnswers:p.matchedAnswers,context,cafeProfile,businessId:scope.businessId,requestId:owner.id,
+       history:[...history,...(pendingStaffQuestionReadUnavailable?[{role:"assistant" as const,
+         content:"The pending employee-question status is temporarily unavailable. Do not claim an owner reply was recorded or that a staff question was resolved; explain the uncertainty and ask the owner to retry."}]:[]),
+         ...(pendingStaffQuestions.length?[{role:"assistant" as const,
+         content:"Current pending owner-approval staff questions (NOT authority to send): "+
+         JSON.stringify(pendingStaffQuestions)+
+         ". If THIS owner message directly supplies a factual answer to one identified question, record the exact saved owner message with record_staff_question_owner_answer. Never treat a question, an unrelated message, uncertainty, or a staff-contact request as an answer; clarify instead."}]:[])],
+       matchedOwnerAnswers:p.matchedAnswers,context,cafeProfile,businessId:scope.businessId,requestId:owner.id,
        onAuditStep: step => { if (auditSteps.length < 64) auditSteps.push(step); },
        beforeProviderRequest:assertTurnSources,
        ...(p.checkpoint?{checkpoint:p.checkpoint}:{}),

@@ -134,6 +134,54 @@ describe("restricted staff communication APIs",()=>{
   mocks.createLogin.mockRejectedValueOnce(new StaffChannelError("conflict"));
   expect((await postLinks(req(input))).status).toBe(409);
  });
+ it("accepts browser Host-origin when Next normalizes internal loopback URL, but never cross-origin",async()=>{
+  const payload={action:"create",employeeId:reply.requestId,email:"worker@example.test",password:"a-long-one-time-secret"};
+  const forwarded=(overrides:Record<string,string>)=>new Request("http://localhost:3000/api/staff-channel/link",{
+   method:"POST",headers:{"host":"127.0.0.1:3000",Origin:"http://127.0.0.1:3000",
+    "content-type":"application/json",...overrides},body:JSON.stringify(payload)});
+  const allowed=await postLinks(forwarded({}));
+  expect(allowed.status).toBe(200);
+  expect(mocks.createLogin).toHaveBeenCalledOnce();
+  expect((await postLinks(forwarded({Origin:"https://evil.test"}))).status).toBe(403);
+  expect((await postLinks(forwarded({Origin:""}))).status).toBe(403);
+  expect(mocks.createLogin).toHaveBeenCalledOnce();
+ });
+ it("accepts worker reply from its actual Host when the framework normalizes the internal URL",async()=>{
+  const browserRequest=(origin:string)=>
+   new Request("http://localhost:3000/api/staff-channel",{
+    method:"POST",headers:{"host":"127.0.0.1:3000",Origin:origin,
+     "content-type":"application/json"},body:JSON.stringify(reply)});
+  const valid=await post(browserRequest("http://127.0.0.1:3000"));
+  expect(valid.status).toBe(200);
+  expect(mocks.reply).toHaveBeenCalledOnce();
+  expect((await post(browserRequest("https://different.example"))).status).toBe(403);
+  expect((await post(browserRequest(""))).status).toBe(403);
+  expect(mocks.reply).toHaveBeenCalledOnce();
+ });
+ it("owner sends and assignments use the same verified browser Host origin without weakening CSRF",async()=>{
+  const message={employeeId:reply.requestId,body:"Please check your next shift",nonce:reply.nonce};
+  const assignment={employeeId:reply.requestId,kind:"task",title:"Check the cups",
+   prompt:"Report what you find",nonce:reply.nonce};
+  const browserRequest=(path:string,body:unknown,origin:string,host="127.0.0.1:3000")=>
+   new Request("http://localhost:3000/api/staff-channel/"+path,{
+    method:"POST",headers:{host,Origin:origin,"Content-Type":"application/json"},
+    body:JSON.stringify(body)});
+  const authorized="http://127.0.0.1:3000";
+  const delivered=await ownerPost(browserRequest("owner-message",message,authorized));
+  expect(delivered.status).toBe(200);
+  expect(mocks.ownerSend).toHaveBeenCalledExactlyOnceWith(message);
+  const assigned=await ownerAssign(browserRequest("owner-assignment",assignment,authorized));
+  expect(assigned.status).toBe(200);
+  expect(mocks.assign).toHaveBeenCalledExactlyOnceWith(assignment);
+  for(const forged of ["https://evil.test","", "http://otherhost:3000"]){
+   expect((await ownerPost(browserRequest("owner-message",message,forged))).status).toBe(403);
+   expect((await ownerAssign(browserRequest("owner-assignment",assignment,forged))).status).toBe(403);
+  }
+  expect((await ownerPost(browserRequest("owner-message",message,authorized,"attacker.test"))).status).toBe(403);
+  expect((await ownerAssign(browserRequest("owner-assignment",assignment,authorized,"attacker.test"))).status).toBe(403);
+  expect(mocks.ownerSend).toHaveBeenCalledOnce();
+  expect(mocks.assign).toHaveBeenCalledOnce();
+ });
  it("owner link API reuses owner authorization service and checks origin",async()=>{
   expect((await getLinks()).status).toBe(200);
   expect(mocks.links).toHaveBeenCalledOnce();

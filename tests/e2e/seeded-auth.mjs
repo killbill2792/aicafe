@@ -68,13 +68,20 @@ export async function login(page, cafe) {
   await page.locator("#login-password").fill(cafe.owner.password);
   await page.locator("form button[type=submit]").click();
   await expect(page).not.toHaveURL(/\/login(?:\?|$)/, {timeout: 30_000});
-  await expect(page.getByText(cafe.name, {exact: true}).first())
-    .toBeVisible({timeout: 30_000});
+  // Authenticated session and café identity are independent checks. The
+  // responsive navigation may have ONLY a hidden copy of the café label;
+  // visibility is not a valid sign-in invariant on mobile.
+  await expect.poll(async()=>{
+    try{return (await page.request.get("/api/ai/threads",{timeout:5000})).status();}
+    catch{return 0;}
+  },{timeout:30_000,intervals:[500,1000,2000,3000]}).toBe(200);
+  await expect(page.getByText(cafe.name,{exact:true}).first()).toHaveCount(1,{timeout:30_000});
 }
 
 export async function openOwnedPage(page, cafe, pathname) {
   await navigateLocal(page,"/en/" + pathname);
   await expect(page).not.toHaveURL(/\/login(?:\?|$)|\/onboarding(?:\?|$)/);
-  await expect(page.getByText(cafe.name, {exact: true}).first())
-    .toBeVisible({timeout: 30_000});
+  // Scoped owned navigation still must render this exact café's identity.
+  // Hidden mobile navigation labels count as present, not as visible.
+  await expect(page.getByText(cafe.name,{exact:true}).first()).toHaveCount(1,{timeout:30_000});
 }

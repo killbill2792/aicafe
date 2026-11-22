@@ -6,6 +6,9 @@ import { getLocale, getTranslations } from "next-intl/server";
 import { hasLocale } from "next-intl";
 import { notFound } from "next/navigation";
 import { cookies } from "next/headers";
+import {redirect} from "next/navigation";
+import {getOptionalAuthenticatedUser} from "@/lib/auth/requireUser";
+import {isLinkedStaffUser} from "@/lib/staffCommunication/identity.server";
 import { parseModeCookie, parseThemeCookie } from "@/app/themes";
 import { routing, getDirection } from "@/i18n/routing";
 import TabBar from "@/components/TabBar";
@@ -80,6 +83,11 @@ export default async function LocaleLayout({
   if (!hasLocale(routing.locales, paramLocale)) {
     notFound();
   }
+
+  // Guard before the locale shell begins streaming: linked employees must
+  // never receive an owner-layout response, including onboarding or pricing.
+  const signedIn=await getOptionalAuthenticatedUser();
+  if(signedIn&&await isLinkedStaffUser(signedIn.id))redirect("/crew");
 
   const locale = await getLocale();
   const dir = getDirection(locale);

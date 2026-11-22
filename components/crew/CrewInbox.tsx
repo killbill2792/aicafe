@@ -4,6 +4,7 @@ import {useRouter} from "next/navigation";
 import en from "@/messages/en.json";
 import {createBrowserSupabaseClient} from "@/lib/supabase/client";
 import type {StaffMessage,StaffRequest,StaffOwnWork} from "@/lib/staffCommunication/channel.server";
+import {confirmedCrewMessage,visibleCrewHistory,type VerifiedCrewMessage} from "@/lib/staffCommunication/verifiedCrewHistory";
 import {crewOutboxKey,crewRejectedDraftKey,loadCrewPending,saveCrewPending,sameCrewOperation,
  deliverCrewWithRetry,type PendingCrewSubmission} from "@/lib/staffCommunication/pendingSend";
 export default function CrewInbox({name,requests,messages,self,authUserId}:{
@@ -20,6 +21,8 @@ export default function CrewInbox({name,requests,messages,self,authUserId}:{
  const [equipment,setEquipment]=useState("");
  const [severity,setSeverity]=useState("unknown");
  const [busy,setBusy]=useState(""),[feedback,setFeedback]=useState("");
+ const [confirmed,setConfirmed]=useState<VerifiedCrewMessage[]>([]);
+ const shownMessages=visibleCrewHistory(authUserId,messages,confirmed);
  const retryPending=useCallback(async()=>{
   const operation=pendingRef.current;
   if(!operation||sending.current)return;
@@ -85,6 +88,12 @@ export default function CrewInbox({name,requests,messages,self,authUserId}:{
    setPending(false);
    if(operation.requestId)setNotes(value=>({...value,[operation.requestId!]:""}));
    else {setReport("");setEquipment("");setSeverity("unknown");}
+   // The server RPC receipt confirms this exact nonce and body. Show it now,
+   // even if the later Next RSC refresh is delayed; no unverified click may
+   // enter the visible history, and server history wins once it arrives.
+   const verified=confirmedCrewMessage(authUserId,operation,receipt.receipt,new Date().toISOString());
+   setConfirmed(existing=>existing.some(row=>row.authUserId===authUserId&&row.message.id===verified.message.id)
+    ?existing:[verified,...existing]);
    setFeedback("Response saved. Your café supervisor can now review it.");
    router.refresh();
   }finally{sending.current=false;setBusy("");}
@@ -258,8 +267,8 @@ export default function CrewInbox({name,requests,messages,self,authUserId}:{
   </section>
   <section className="space-y-3" aria-labelledby="crew-history">
    <h2 id="crew-history" className="text-xl font-bold">My messages</h2>
-   {messages.length===0?<p className="text-ink-muted">You have not sent a message yet.</p>:
-    <ul className="space-y-2">{messages.map(m=><li key={m.id} className="rounded-xl border border-line bg-card p-4">
+   {shownMessages.length===0?<p className="text-ink-muted">You have not sent a message yet.</p>:
+    <ul className="space-y-2">{shownMessages.map(m=><li key={m.id} className="rounded-xl border border-line bg-card p-4">
      <p className="text-sm font-semibold capitalize">{m.actor==="owner"?"Message from café owner":m.response_code.replace("_"," ")}</p>
      {m.body&&<p className="mt-1 whitespace-pre-wrap break-words">{m.body}</p>}
      <time className="mt-1 block text-xs text-ink-muted" dateTime={m.received_at}>{new Date(m.received_at).toLocaleString()}</time>

@@ -1,4 +1,5 @@
 import {ownerStaffLoginList,ownerLinkExistingLogin,ownerCreateEmployeeLogin,StaffChannelError} from "@/lib/staffCommunication/channel.server";
+import {requireSameOrigin} from "@/lib/ai/conversations/http.server";
 export const runtime="nodejs";
 export const dynamic="force-dynamic";
 const headers={"Cache-Control":"no-store"};
@@ -8,8 +9,11 @@ export async function GET():Promise<Response>{
   {status:e instanceof StaffChannelError&&e.code==="unauthorized"?403:503,headers});}
 }
 export async function POST(request:Request):Promise<Response>{
- if(request.headers.get("origin")!==new URL(request.url).origin)
+ // Preserve the shared fail-closed Origin check while accepting the real
+ // browser Host when Next normalizes Request.url to an internal loopback host.
+ try{requireSameOrigin(request)}catch{
   return Response.json({error:"invalid_origin"},{status:403,headers});
+ }
  if(!request.headers.get("content-type")?.startsWith("application/json"))
   return Response.json({error:"invalid_type"},{status:415,headers});
  let input:unknown;

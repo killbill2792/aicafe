@@ -1,12 +1,16 @@
 import {assignOwnerStaffWork,StaffChannelError} from "@/lib/staffCommunication/channel.server";
+import {requireSameOrigin} from "@/lib/ai/conversations/http.server";
 export const runtime="nodejs";
 export const dynamic="force-dynamic";
 const headers={"Cache-Control":"no-store"};
 /** Manual owner-only assignment. Other autonomous PRs must use their own
  * approved effect gateway; this endpoint cannot be called with a model role. */
 export async function POST(request:Request):Promise<Response>{
- if(request.headers.get("origin")!==new URL(request.url).origin)
+ // Match the actual authenticated browser Host even if Next.js normalizes
+ // the internal Request.url. A missing or forged Origin still fails closed.
+ try{requireSameOrigin(request)}catch{
   return Response.json({error:"invalid_origin"},{status:403,headers});
+ }
  if(!request.headers.get("content-type")?.startsWith("application/json"))
   return Response.json({error:"invalid_type"},{status:415,headers});
  let raw:unknown;

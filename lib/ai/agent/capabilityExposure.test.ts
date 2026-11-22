@@ -3,6 +3,7 @@ import {supervisorLoopRegistry} from "@/lib/ai/supervisor/loop/priceExperiment.s
 import {agentToolDefinitions,gmailToolDefinitions} from "./tools";
 import {gmailCapabilityId} from "@/lib/ai/supervisor/loop/gmail.server";
 import {maintenanceStaffCapabilityId} from "@/lib/ai/supervisor/loop/maintenance.server";
+import {staffQuestionCapabilityId} from "@/lib/ai/supervisor/loop/staffQuestion.server";
 import {staffCapabilityId} from "@/lib/ai/supervisor/loop/staffProposals.server";
 import {staffProposalInputs} from "./tools/staffProposals";
 import {menuPriceChangeCapabilityId} from "@/lib/ai/supervisor/loop/menuPriceChange.server";
@@ -31,6 +32,7 @@ describe("loop capability exposure",()=>{
    [eventReadinessCapabilityId,"propose_event_plan"],
    [gmailCapabilityId,"propose_gmail_action"],
    [maintenanceStaffCapabilityId,"propose_maintenance_staff_assignment"],
+   [staffQuestionCapabilityId,"propose_staff_question"],
    ...Object.keys(staffProposalInputs).map(name=>[staffCapabilityId(name as keyof typeof staffProposalInputs),name] as [string,string]),
   ]);
   const tools=new Set([...agentToolDefinitions,...gmailToolDefinitions].map(tool=>tool.name));

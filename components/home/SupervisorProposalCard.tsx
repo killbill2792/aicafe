@@ -41,6 +41,9 @@ export type ProposalView={proposalId:string;revision:number;state:string;capabil
     accepted?:number;delivered?:number;read?:number;pending?:number;
     failed?:number;uncertain?:number;missing?:number};
   maintenanceAssignment?:{equipmentLabel:string;employeeName:string;prompt:string;purpose:"task"|"verify_working";dueAt:string|null};
+  staffQuestion?:{employeeName:string;question:string;reason:string;sourceTaskId:string;
+    followUpAfter:string;evidence:Array<{source:string;asOf:string}>;
+    answeredByOwner:string|null};
   gmail?:{operation:string;action:string|null;from:string;to:string[];cc:string[];bcc:string[];
     subject:string;body:string;messageId:string|null;threadId:string|null;labelId:string|null;labelName:string|null;
     maintenanceCaseId?:string;maintenanceDueAt?:string|null};};
@@ -134,8 +137,10 @@ export default function SupervisorProposalCard({threadId,proposalId,locale}:{
        .catch(()=>setError(true));
     };
     window.addEventListener("aicafe:purchase-cards-updated",refresh);
-    return ()=>window.removeEventListener("aicafe:purchase-cards-updated",refresh);
-  },[endpoint,proposalId]);
+    if(value?.staffQuestion)window.addEventListener("aicafe:conversation-updated",refresh);
+    return ()=>{window.removeEventListener("aicafe:purchase-cards-updated",refresh);
+      window.removeEventListener("aicafe:conversation-updated",refresh);};
+  },[endpoint,proposalId,value?.staffQuestion]);
   // An executing approval can still be writing in another tab. Refresh only
   // that state; never label an unverified in-flight operation as a failed write.
   useEffect(()=>{
@@ -341,6 +346,33 @@ export default function SupervisorProposalCard({threadId,proposalId,locale}:{
         className="mt-3 min-h-12 rounded-xl border border-line px-5 font-bold">
         {poCopy.reconcile}</button>}
       {error&&<p role="alert" className="mt-3 text-neg">{poCopy.approvalError}</p>}
+    </section>;
+  }
+  if(value.staffQuestion){
+    const q=value.staffQuestion,c=en.StaffQuestionApproval;
+    return <section aria-label={c.title} className="w-full min-w-0 max-w-2xl rounded-[22px] border border-line bg-surface p-5 text-ink">
+      <h3 className="text-xl font-bold">{c.title}</h3>
+      <p className="mt-2 font-semibold">{q.employeeName}</p>
+      <p className="mt-2 whitespace-pre-wrap">{q.question}</p>
+      <p className="mt-2 text-sm text-ink-muted">{q.reason}</p>
+      <p className="mt-2 text-xs text-ink-muted">{c.sourceNotice}</p>
+      {q.evidence.map((e,i)=><p key={i} className="text-xs text-ink-muted">{e.source} · {e.asOf}</p>)}
+      <p className="mt-2 text-xs text-ink-muted">{c.followUp} {q.followUpAfter}</p>
+      <p role="status" className="mt-2 font-semibold">{q.answeredByOwner?c.ownerAnswered:
+       value.state==="applied"?c.savedNotRead:value.state==="pending"?c.awaitingApproval:value.state}</p>
+      {q.answeredByOwner&&<p className="mt-2 whitespace-pre-wrap">{q.answeredByOwner}</p>}
+      {value.state==="pending"&&<div className="mt-4 space-y-3">
+        <div className="flex flex-wrap gap-2">
+          <button type="button" disabled={busy} onClick={()=>void invoke("approve")}
+            className="min-h-12 rounded-xl bg-accent px-4 font-bold text-on-accent disabled:opacity-50">{c.askEmployee}</button>
+          <button type="button" disabled={busy} onClick={()=>void invoke("cancel")}
+            className="min-h-12 rounded-xl border border-line px-4 font-bold disabled:opacity-50">{c.ignore}</button>
+        </div>
+        <p className="text-sm text-ink-muted">{c.replyInChat}</p>
+      </div>}
+      {(value.state==="applying"||value.state==="uncertain")&&<button type="button" disabled={busy}
+        onClick={()=>void invoke("reconcile")} className="mt-3 min-h-12 rounded-xl border border-line px-4">{c.checkReceipt}</button>}
+      {error&&<p role="alert" className="mt-2 text-neg">{c.error}</p>}
     </section>;
   }
   if(value.maintenanceAssignment){

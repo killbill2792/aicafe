@@ -1542,10 +1542,18 @@ test("@home Task16D authenticated responsive Supervisor work across conversation
       await expect(controls).toBeVisible();
       await expect(page.locator("[data-work-status]")).toHaveCount(0);
       await page.getByRole("button",{name:"Supervisor work",exact:true}).click();
-      // Work is owner-wide now: both saved conversations must remain visible
-      // by their own original identity, not a globally unique queued label.
-      await expect(work.locator('[data-work-id="run:'+runId+'"][data-work-status="queued"]')).toBeVisible();
-      await expect(work.locator('[data-work-id="run:'+otherRun+'"][data-work-status="queued"]')).toBeVisible();
+      // Work is owner-wide and paginated. Other retained pending records can
+      // occupy the first five cards, so expand the real UI before requiring
+      // BOTH original queued identities; never infer visibility from the DB.
+      await expect(work.locator("[data-work-status]").first()).toBeVisible({timeout:30_000});
+      const requested=[runId,otherRun].map(id=>work.locator('[data-work-id="run:'+id+'"][data-work-status="queued"]'));
+      for(let pageCount=0;pageCount<30;pageCount++){
+        if((await Promise.all(requested.map(card=>card.count()))).every(n=>n===1))break;
+        const more=work.getByRole("button",{name:"Show more saved work",exact:true});
+        if(!await more.isVisible().catch(()=>false))break;
+        await more.click();
+      }
+      for(const card of requested)await expect(card).toBeVisible();
       await page.keyboard.press("Escape");
       const before=await page.evaluate(()=>({
         viewport:window.innerWidth, documentWidth:document.documentElement.scrollWidth,
@@ -1765,10 +1773,14 @@ test("@home Task16E design baseline observes empty and long Supervisor conversat
           if(!pathname.startsWith("/en/")||pathname==="/en/login"||pathname==="/en/onboarding")
             throw initialFailure;
           await page.reload({waitUntil:"load"});
+          await expect.poll(async()=>{
+            try{return (await page.request.get("/api/ai/threads",{timeout:5000})).status();}
+            catch{return 0;}
+          },{timeout:30_000,intervals:[500,1000,2000]}).toBe(200);
           await expect(page.getByText(owner.name,{exact:true}).first())
-            .toBeVisible({timeout:30_000});
+            .toHaveCount(1,{timeout:30_000});
         }
-        // The shared auth helper checks a visible desktop café label; mobile hides it.
+        // The shared auth helper checks authenticated scope and exact café identity, including mobile hidden labels.
         // Verify owner on desktop first, then assert the exact thread URL on each measured navigation.
         await openOwnedPage(page,owner,"?thread="+empty);
         await page.setViewportSize(viewport);
@@ -2221,7 +2233,20 @@ test("@home Task16E adaptive answer survives reload, preserves prose and opens a
       await disclosure.getByText("Saved evidence and export",{exact:true}).click();
       const sourceLink=rich.getByRole("link",{name:"example-sales.csv",exact:true});
       await expect(sourceLink).toHaveAttribute("href",fileRoute+"/"+attachment.id);
-      const fileResponse=await ctx.request.get(fileRoute+"/"+attachment.id,{maxRedirects:0});
+      // The disposable Next dev server can drop one loopback GET while
+      // compiling other seeded journeys. Retry only a transport-reset
+      // on this idempotent private read; never retry an HTTP denial or 5xx.
+      const loadFile=()=>ctx.request.get(fileRoute+"/"+attachment.id,{maxRedirects:0});
+      let fileResponse;
+      try{fileResponse=await loadFile();}
+      catch(error){
+        if(!/ECONNRESET|EPIPE|ERR_CONNECTION_RESET/.test(String(error)))throw error;
+        await expect.poll(async()=>{
+          try{return (await ctx.request.get("/en/login",{timeout:5000})).ok();}
+          catch{return false;}
+        },{timeout:30_000,intervals:[500,1000,2000,3000]}).toBe(true);
+        fileResponse=await loadFile();
+      }
       expect(fileResponse.status()).toBe(302);
       const downloadEvent=page.waitForEvent("download");
       await rich.getByRole("button",{name:"Download saved answer report"}).click();
@@ -2441,14 +2466,23 @@ test("@home U4 real private Work report and failed-run acknowledgment in two caf
       name:"active_business_id",value:foreign.businessId,
       url:"http://127.0.0.1:3000",httpOnly:true,
     }]);
+    const openResponse=page.waitForResponse(response=>
+      new URL(response.url()).pathname==="/api/ai/work/open");
     await page.goto("/api/ai/work/open?run="+ids.run);
+    const redirected=await openResponse;
+    expect(redirected.status()).toBe(303);
+    // Local production Next runs on HTTP; browsers can decline a Secure
+    // cookie on that transport. Prove the production route issues the exact
+    // owner-scoped Set-Cookie, with Secure and HttpOnly required for HTTPS.
+    const selectionCookie=(await redirected.headerValue("set-cookie"))??"";
+    expect(selectionCookie).toContain("active_business_id="+owner.businessId);
+    expect(selectionCookie).toMatch(/;\s*Secure/i);
+    expect(selectionCookie).toMatch(/;\s*HttpOnly/i);
     await expect(page).toHaveURL(/\/operations\?agent=leo&status=watching&task=/u);
     expect(new URL(page.url()).hostname).toBe("127.0.0.1");
     await expect(page.locator('article[data-task-kind="u4_report"]')
       .filter({hasText:headline})).toContainText(summary,{timeout:25_000});
-    const selected=await page.context().cookies("http://127.0.0.1:3000");
-    expect(selected.find(cookie=>cookie.name==="active_business_id")?.value)
-      .toBe(owner.businessId);
+    expect(redirected.headers()["location"]??"").toContain("/operations?agent=leo&status=watching&task=");
     const stranger=await other.newPage();
     await login(stranger,foreign);
     await navigateLocal(stranger,"/en/operations?agent=leo&status=watching");

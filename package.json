@@ -12,7 +12,9 @@
     "test:watch": "vitest",
     "db:reset": "node scripts/db-reset.mjs",
     "eval:supervisor": "node evals/supervisor/verify-truth.mjs && node evals/supervisor/run.mjs && node evals/supervisor/wording-grader.mjs",
-    "test:e2e:targeted": "node scripts/e2e/targeted.mjs run"
+    "test:e2e:targeted": "node scripts/e2e/targeted.mjs run",
+    "eval:staff-question:preflight": "node --test evals/acceptance/live/staff-question.test.mjs",
+    "eval:staff-question:live": "node evals/acceptance/live/staff-question.mjs"
   },
   "dependencies": {
     "@json-render/core": "0.23.1",
