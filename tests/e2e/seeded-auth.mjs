@@ -68,13 +68,13 @@ export async function login(page, cafe) {
   await page.locator("#login-password").fill(cafe.owner.password);
   await page.locator("form button[type=submit]").click();
   await expect(page).not.toHaveURL(/\/login(?:\?|$)/, {timeout: 30_000});
-  await expect(page.getByText(cafe.name, {exact: true}).first())
+  await expect(page.getByText(cafe.name, {exact: true}).filter({visible:true}).first())
     .toBeVisible({timeout: 30_000});
 }
 
 export async function openOwnedPage(page, cafe, pathname) {
   await navigateLocal(page,"/en/" + pathname);
   await expect(page).not.toHaveURL(/\/login(?:\?|$)|\/onboarding(?:\?|$)/);
-  await expect(page.getByText(cafe.name, {exact: true}).first())
+  await expect(page.getByText(cafe.name, {exact: true}).filter({visible:true}).first())
     .toBeVisible({timeout: 30_000});
 }
