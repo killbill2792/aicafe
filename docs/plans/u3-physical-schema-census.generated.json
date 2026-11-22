@@ -17470,8 +17470,8 @@
    ],
    "foreign_keys": [
     {
-     "constraint": "u4_push_receipts_business_id_owner_user_id_device_hash_fkey",
-     "target": "u4_push_subscriptions"
+     "target": "u4_push_subscriptions",
+     "constraint": "u4_push_receipts_business_id_owner_user_id_device_hash_fkey"
     }
    ]
   },
@@ -17518,12 +17518,12 @@
    ],
    "foreign_keys": [
     {
-     "constraint": "u4_push_subscriptions_business_id_fkey",
-     "target": "businesses"
+     "target": "businesses",
+     "constraint": "u4_push_subscriptions_business_id_fkey"
     },
     {
-     "constraint": "u4_push_subscriptions_owner_user_id_fkey",
-     "target": "users"
+     "target": "users",
+     "constraint": "u4_push_subscriptions_owner_user_id_fkey"
     }
    ]
   },
