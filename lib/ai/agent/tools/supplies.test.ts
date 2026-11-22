@@ -29,6 +29,13 @@ describe("Maya read-only costs and unavailable inventory",()=>{
     expect(r).toMatchObject({source:"usage_variance",rows:null,
       missing:["usageVarianceReadFailed"]});
   });
+  it("reports Postgres October timeout as source failure, never observed zero wastage",async()=>{
+    const r=await executeAgentTool("get_usage_variance",{
+      from:"2026-10-01",to:"2026-10-31",ingredient:null,group_by:null,
+    },ctx({getUsageVariance:async()=>{throw new Error("usage_source_timeout");}}));
+    expect(r).toMatchObject({source:"usage_variance",rows:null,
+      missing:["usageVarianceSourceTimeout"]});
+  });
   it("labels failed cost sources without filling absent ingredient prices",async()=>{
     const context=ctx({
       getIngredientCosts:async()=>{throw new Error("read failed");},
