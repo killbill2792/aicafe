@@ -86,7 +86,7 @@ jobs:
       - run: npm ci --ignore-scripts
       - run: npm install --no-save --package-lock=false --ignore-scripts tsx@4.20.6
       - name: Verify field-presence counter (synthetic data only)
-        run: node --test scripts/toast-standard-customer-probe-core.test.mjs
+        run: node --test scripts/diagnostic-toast-standard-customer-probe-core.test.mjs
       - name: One-time Standard API probe (no raw response output)
         shell: bash
         env:
@@ -100,7 +100,7 @@ jobs:
           output="$(mktemp)"
           trap 'rm -f "$output"' EXIT
           set +e
-          NODE_OPTIONS=--conditions=react-server ./node_modules/.bin/tsx scripts/toast-standard-customer-probe.ts >"$output" 2>&1
+          NODE_OPTIONS=--conditions=react-server ./node_modules/.bin/tsx scripts/diagnostic-toast-standard-customer-probe.ts >"$output" 2>&1
           code=$?
           node - "$output" "$code" <<'NODE'
           const fs = require('node:fs');

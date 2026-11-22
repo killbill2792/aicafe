@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import {fieldState,newFieldReport,observeOrder,observePayment,publicFieldReport}
-  from "./toast-standard-customer-probe-core.mjs";
+  from "./diagnostic-toast-standard-customer-probe-core.mjs";
 
 test("preserves absent / explicit null / empty / populated as separate evidence",()=>{
  const obj={customer:null,tabName:" ",customerNotes:"Alice"};

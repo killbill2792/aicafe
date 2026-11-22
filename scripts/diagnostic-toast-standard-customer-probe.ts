@@ -11,7 +11,7 @@ import {createClient} from "@supabase/supabase-js";
 import {z} from "zod";
 import {createToastClient,GUID,ToastApiError} from "../lib/pos/toast/client";
 import {newFieldReport,observeOrder,observePayment,publicFieldReport}
-  from "./toast-standard-customer-probe-core.mjs";
+  from "./diagnostic-toast-standard-customer-probe-core.mjs";
 
 type OrderRow={entity_guid:string|null;restaurant_guid:string;business_date:string;payload:unknown};
 type Choice={guid:string;day:string;paymentGuid:string|null;sourceClass:string};
