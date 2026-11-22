@@ -24,15 +24,26 @@ export type LocationPages=(restaurantGuid:string,businessDate:string,pages:unkno
 
 export async function readToastTodaySoFar(db:SupabaseClient,businessId:string,now=new Date(),
   request?:Request,onLocationPages?:LocationPages):Promise<TodaySoFarRead>{
-  const {data,error}=await db.from("toast_location_mappings")
-    .select("restaurant_guid,toast_time_zone,closeout_hour")
-    .eq("business_id",businessId).not("verified_at","is",null);
+  // Toast timezone decides which provider businessDate to request. The café's
+  // reporting timezone decides live hour labels, exactly like the historical
+  // pos_rebuild_sales_fact_rollups_v1 result and the registered Supervisor.
+  const [{data,error},{data:cafe,error:cafeError}]=await Promise.all([
+    db.from("toast_location_mappings")
+      .select("restaurant_guid,toast_time_zone,closeout_hour")
+      .eq("business_id",businessId).not("verified_at","is",null),
+    db.from("businesses").select("timezone").eq("id",businessId).single(),
+  ]);
   if(error)return {available:false,missing:["todayLiveUnavailable"]};
   const mappings=((data??[]) as Mapping[]).filter(m=>m.toast_time_zone&&m.closeout_hour!=null);
   if(!mappings.length)return {available:false,missing:["todayLiveNoToastLocation"]};
+  const reportingZone=typeof cafe?.timezone==="string"?cafe.timezone:"";
+  try{
+    if(cafeError||!reportingZone)throw new Error("reporting_timezone_missing");
+    new Intl.DateTimeFormat("en-US",{timeZone:reportingZone}).format(now);
+  }catch{return {available:false,missing:["todayLiveReportingTimezoneUnavailable"]};}
   // All locations of one café share its business day; use the first mapping's clock.
   const businessDate=currentToastBusinessDay(now,mappings[0].toast_time_zone!,mappings[0].closeout_hour!);
-  const key=businessId+"|"+businessDate;
+  const key=businessId+"|"+businessDate+"|"+reportingZone;
   const hit=cache.get(key);
   if(hit&&!onLocationPages&&now.getTime()-hit.at<CACHE_MS)return {available:true,value:hit.value};
   const deadlineAt=Date.now()+READ_BUDGET_MS;
@@ -62,7 +73,7 @@ export async function readToastTodaySoFar(db:SupabaseClient,businessId:string,no
   }
   if(!read)return {available:false,missing:["todayLiveReadFailed"]};
   const value=summarizeToastToday({businessDate,readAt:now.toISOString(),
-    timezone:mappings[0].toast_time_zone!,pages,
+    timezone:reportingZone,pages,
     locationsRead:read,locationsFailed:failed,truncated});
   // Only cache a complete read, so a failed location is retried on the next question.
   if(!failed&&!truncated)cache.set(key,{at:now.getTime(),value});

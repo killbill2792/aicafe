@@ -4,7 +4,7 @@
  * Vercel, hosted Supabase, or a paid model from PR CI. */
 import {randomUUID} from "node:crypto";
 import {existsSync,realpathSync,writeFileSync} from "node:fs";
-import {resolve,dirname,sep} from "node:path";
+import {resolve,dirname} from "node:path";
 import {pathToFileURL} from "node:url";
 import {TEST_CAFES} from "../../../scripts/seed/cafes.mjs";
 import {assertLocalLiveEnvironment} from "./preflight.mjs";
@@ -13,7 +13,7 @@ import {matchedMoney} from "./u2-model-execution.mjs";
 const fail=reason=>{throw Error("source553_hourly_live:"+reason)};
 export function assertSource553Hourly({model,tools,text,cents,otherCents,foreignDenied,proposals}){
  requireObservedProductionModel(model,"gpt-6-luna");
- if(!Array.isArray(tools)||!tools.some(t=>t==="get_peak_hours"||t==="query_data"))
+ if(!Array.isArray(tools)||!["get_peak_hours","query_data"].every(t=>tools.includes(t)))
   fail("registered_hourly_reader_not_used");
  if(!matchedMoney(text,cents)||matchedMoney(text,otherCents))
   fail("canonical_money_or_tenant_mismatch");
@@ -74,11 +74,13 @@ async function main(){
   fail("explicit_paid_shared_luna_authorization_required");
  assertLocalLiveEnvironment(env);verifyCheckoutHead(env.HEAD_SHA);
  const args=process.argv.slice(2);
- if(args.length!==2||args[0]!=="--output")fail("private_output_required");
- const root=realpathSync(process.cwd()),output=resolve(args[1]);
- const parent=realpathSync(dirname(output));
- if((parent!==root&&!parent.startsWith(root+sep))||existsSync(output))
-  fail("fresh_local_evidence_required");
+ if(args.length!==4||args[0]!=="--output"||args[2]!=="--scope-output")
+  fail("private_proof_and_scope_required");
+ const proofRoot=realpathSync(env.AICAFE_SHARED_LUNA_PROOF_DIR??"/unconfigured");
+ const output=resolve(args[1]),scopeOut=resolve(args[3]);
+ if(output===scopeOut||[output,scopeOut].some(path=>
+   realpathSync(dirname(path))!==proofRoot||existsSync(path)))
+  fail("fresh_trusted_proof_directory_required");
  const [cafe,other]=TEST_CAFES;
  if(!cafe?.owner||!other?.owner||cafe.businessId===other.businessId)
   fail("independent_two_cafe_fixture_required");
@@ -121,19 +123,35 @@ async function main(){
   if(newThread.status()!==201)fail("thread_creation_failed");
   const thread=(await newThread.json()).thread?.id;
   if(!/^[0-9a-f-]{36}$/i.test(thread??""))fail("thread_missing");
-  const turn=await ownerTurn(owner.page,thread,
-   "For this café on "+date+", report the net sales at local 09:00 using the "+
-   "recorded hourly source. Show the money in "+cafe.currency+" and distinguish "+
-   "provisional live evidence from final closeout. Never claim a tab name "+
-   "identifies a repeat human. No actions or modifications.");
-  const saved=await db.query("SELECT id FROM public.ai_messages "+
-   "WHERE business_id=$1 AND thread_id=$2 AND role='owner' AND client_message_id=$3",
-   [cafe.businessId,thread,turn.clientMessageId]);
-  if(saved.rows.length!==1)fail("owner_message_missing");
-  const usage=await readPersistedModelUsage(db,cafe.businessId,saved.rows[0].id);
+  // Separate real owner turns make both canonical query and registered
+  // specialized reader independently observable, never hand-fed model facts.
+  const prompts=[
+    "For this café on "+date+", use get_peak_hours to report the recorded "+
+      "net sales at local 09:00. State when it is provisional, not final. "+
+      "Show "+cafe.currency+" with two decimals. Do not modify anything.",
+    "Cross-check the same "+date+" local 09:00 net sales using query_data "+
+      "on cv_sales_hours for this café, and distinguish provisional live "+
+      "records from a finalized closeout. A tab name never proves a "+
+      "returning human. No proposals, changes or other effects.",
+  ];
+  const turns=[],usages=[];
+  for(const prompt of prompts){
+    const turn=await ownerTurn(owner.page,thread,prompt);
+    const saved=await db.query("SELECT id FROM public.ai_messages "+
+      "WHERE business_id=$1 AND thread_id=$2 AND role='owner' AND client_message_id=$3",
+      [cafe.businessId,thread,turn.clientMessageId]);
+    if(saved.rows.length!==1)fail("owner_message_missing");
+    const usage=await readPersistedModelUsage(db,cafe.businessId,saved.rows[0].id);
+    requireObservedProductionModel(usage.model,"gpt-6-luna");
+    turns.push(turn);usages.push(usage);
+  }
+  const model=usages[1].model;
+  const expectedProviderCalls=usages.reduce((n,u)=>n+Number(u.model_call_count),0);
+  if(!Number.isSafeInteger(expectedProviderCalls)||expectedProviderCalls<2||
+     expectedProviderCalls>18)fail("unbounded_provider_calls");
   const answer=await db.query("SELECT structured_content FROM public.ai_messages "+
    "WHERE business_id=$1 AND thread_id=$2 AND role='supervisor' AND id=$3",
-   [cafe.businessId,thread,turn.done.reply.id]);
+   [cafe.businessId,thread,turns[1].done.reply.id]);
   if(answer.rows.length!==1)fail("persisted_response_missing");
   const blocks=answer.rows[0].structured_content;
   if(!Array.isArray(blocks)||blocks.some(b=>/proposal_card|experiment_card/.test(b.type??"")))
@@ -144,12 +162,21 @@ async function main(){
   foreign=await login(browser,other);
   const denied=await foreign.context.request.get("/api/ai/threads/"+thread);
   const foreignDenied=[401,403,404].includes(denied.status());
-  assertSource553Hourly({model:usage.model,tools:turn.tools,text:resultText,
+  const selectedTools=turns.flatMap(t=>t.tools);
+  assertSource553Hourly({model,tools:selectedTools,text:resultText,
    cents,otherCents,foreignDenied,proposals:actions.rows[0]?.count});
   writeFileSync(output,JSON.stringify({id:"source553-hourly",head_sha:env.HEAD_SHA,
-   schema_version:1,status:"passed",observed_model:usage.model,
+   schema_version:1,status:"passed",observed_model:model,
+   observedModelCalls:expectedProviderCalls,
    checks:{exactCanonicalCents:true,provisional:true,twoCafeIsolation:true,
-    registeredHourlyReader:true,noEffect:true}})+"\n",{mode:0o600,flag:"wx"});
+    registeredHourlyReader:true,canonicalQuery:true,noEffect:true}})+"\n",
+    {mode:0o600,flag:"wx"});
+  writeFileSync(scopeOut,JSON.stringify({
+    expectedProviderCalls,businessId:cafe.businessId,otherCafeId:other.businessId,
+    ownerUserId:cafe.owner.userId,threadId:thread,businessDate:date,
+    sourceCents:String(cents),otherSourceCents:String(otherCents),
+    firstReplyId:turns[0].done.reply.id,replyId:turns[1].done.reply.id,
+  })+"\n",{mode:0o600,flag:"wx"});
  }finally{
   await foreign?.context.close().catch(()=>{});
   await owner?.context.close().catch(()=>{});

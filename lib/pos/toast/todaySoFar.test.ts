@@ -23,9 +23,11 @@ function order(amount:number,opts:{status?:string;guid?:string;modified?:string;
       selections:[{guid:`eeeeeeee-eeee-4eee-8eee-${String(n).padStart(12,"0")}`,quantity:1,price:amount,
         displayName:opts.item??"Latte"}]}]};
 }
-function db(mappings:unknown[]){
+function db(mappings:unknown[],reportingTimezone:string|null=zone){
   const q={select:()=>q,eq:()=>q,not:async()=>({data:mappings,error:null})};
-  return {from:()=>q} as unknown as SupabaseClient;
+  const cafe={select:()=>cafe,eq:()=>cafe,
+    single:async()=>({data:reportingTimezone?{timezone:reportingTimezone}:null,error:null})};
+  return {from:(table:string)=>table==="businesses"?cafe:q} as unknown as SupabaseClient;
 }
 const mapping=(guid:string)=>({restaurant_guid:guid,toast_time_zone:zone,closeout_hour:4});
 
@@ -37,6 +39,22 @@ describe("today so far (live, provisional, never stored)",()=>{
     expect(currentToastBusinessDay(new Date("2026-10-29T12:00:00Z"),zone,4)).toBe("2026-10-29");
   });
 
+  it("uses the reporting timezone, not Toast closeout timezone, for live hourly labels",async()=>{
+    const read=await readToastTodaySoFar(db([mapping(r1)],"America/New_York"),
+      business,now,async(path)=>{
+        expect(path).toContain("businessDate=20261029");
+        return [order(4)];
+      });
+    expect(read).toMatchObject({available:true,value:{
+      businessDate:"2026-10-29",netSalesCents:400,
+      hourlySales:[{hourLocal:12,netSalesCents:400,ordersCount:1}],
+    }});
+  });
+  it("does not report mislabeled hourly data when the café reporting timezone is absent",async()=>{
+    expect(await readToastTodaySoFar(db([mapping(r1)],null),business,now,
+      async()=>[order(4)])).toEqual({
+        available:false,missing:["todayLiveReportingTimezoneUnavailable"]});
+  });
   it("sums open and closed checks across locations and keeps the latest order revision",async()=>{
     const same="cccccccc-cccc-4ccc-8ccc-999999999999";
     const request=vi.fn(async(path:string,guid:string)=>{
