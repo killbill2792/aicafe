@@ -83,11 +83,12 @@ describe("refresh-derived cron",()=>{
     expect(result.status).toBe(200);
     expect(mocks.ownerRun).not.toHaveBeenCalled();
   });
-  it("dispatches one bounded owner-run slice before the refresh scan, without replacing investigation dispatch",async()=>{
+  it("reserves actual source refreshes before slower queued owner work without dropping investigations",async()=>{
     vi.stubEnv("SUPERVISOR_RUN_WORKER_ENABLED","true");
     vi.stubEnv("SUPERVISOR_DURABLE_CHAT_ENABLED","true");
     mocks.ownerRun.mockImplementationOnce(async()=>{
-      expect(mocks.calls).toBe(0);
+      expect(mocks.refresh).toHaveBeenCalledTimes(2);
+      expect(mocks.calls).toBeGreaterThan(0);
       return {processed:1,state:"busy"};
     });
     const result=await GET(new Request("https://example.test/api/cron/refresh-derived",{
@@ -153,6 +154,39 @@ describe("U1 refresh workload and lease timing",()=>{
 });
 
 describe("U4 minute tick retains durable refresh work",()=>{
+  it("does not starve a due café refresh when all other work lanes are slow",async()=>{
+    vi.useFakeTimers();
+    const started=new Date("2026-11-21T17:00:00Z");
+    vi.setSystemTime(started);
+    vi.stubEnv("SUPERVISOR_RUN_WORKER_ENABLED","true");
+    vi.stubEnv("SUPERVISOR_DURABLE_CHAT_ENABLED","true");
+    mocks.objectives.mockImplementationOnce(async()=>{
+      vi.setSystemTime(new Date(started.getTime()+50_000));
+      return {admitted:6,claimed:6,completed:0,failed:0,deferred:6};
+    });
+    mocks.push.mockImplementationOnce(async()=>{
+      expect(mocks.refresh).toHaveBeenCalledTimes(2);
+      vi.setSystemTime(new Date(started.getTime()+130_000));
+      return {sent:0,retried:6,failed:0};
+    });
+    mocks.ownerRun.mockImplementationOnce(async()=>{
+      vi.setSystemTime(new Date(started.getTime()+195_000));
+      return {processed:1,state:"deferred"};
+    });
+    const response=await GET(new Request("https://example.test/api/cron/refresh-derived",{
+      headers:{authorization:"Bearer test-secret"},
+    }));
+    expect(response.status).toBe(200);
+    expect(await response.json()).toMatchObject({
+      checked:2,refreshed:2,routines:{routinesChecked:2},
+      dueObjectives:{deferred:6},ownerRuns:{processed:1},
+    });
+    expect(mocks.refresh.mock.invocationCallOrder[0])
+      .toBeLessThan(mocks.push.mock.invocationCallOrder[0]);
+    expect(mocks.refresh.mock.invocationCallOrder[0])
+      .toBeLessThan(mocks.ownerRun.mock.invocationCallOrder[0]);
+  });
+
   it("admits pending café refresh even after a delayed quarter-hour tick",async()=>{
     vi.setSystemTime(new Date("2026-11-22T17:07:00Z"));
     const response=await GET(new Request("https://example.test/api/cron/refresh-derived",{
