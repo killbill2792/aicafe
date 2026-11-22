@@ -1539,6 +1539,7 @@ test("@home Task16D authenticated responsive Supervisor work across conversation
       // Work is owner-wide and paginated. Other retained pending records can
       // occupy the first five cards, so expand the real UI before requiring
       // BOTH original queued identities; never infer visibility from the DB.
+      await expect(work.locator("[data-work-status]").first()).toBeVisible({timeout:30_000});
       const requested=[runId,otherRun].map(id=>work.locator('[data-work-id="run:'+id+'"][data-work-status="queued"]'));
       for(let pageCount=0;pageCount<30;pageCount++){
         if((await Promise.all(requested.map(card=>card.count()))).every(n=>n===1))break;
