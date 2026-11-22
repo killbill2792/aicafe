@@ -77,6 +77,7 @@ test("@staff @home owner-approved factual question reaches one verified worker; 
   await assigned.getByRole("textbox",{name:/Add a message or explain/}).fill(workerReply);
   await assigned.getByRole("button",{name:"Mark complete"}).click();
   await expect(worker.getByText(workerReply)).toBeVisible();
+  await owner.setViewportSize({width:1440,height:900});
   await openOwnedPage(owner,cafe,"staff");
   const history=owner.getByRole("region",{name:"Employee Supervisor communication history"});
   await expect(history.getByText(workerReply)).toBeVisible({timeout:30_000});
