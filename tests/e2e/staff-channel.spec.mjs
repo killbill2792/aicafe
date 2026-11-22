@@ -128,7 +128,12 @@ test("@staff real worker login, shift explanation, cross-cafe and owner receipt"
   expect(own.self.timecards.some(t=>t.id===otherCardId)).toBe(false);
   expect(own.self.breakNotices.map(a=>a.timecardId)).toContain(ownCardId);
   expect(JSON.stringify(own.self)).not.toContain(otherCardId);
-  expect(JSON.stringify(own)).not.toContain(created[1].worker.display_name);
+  // Two independent cafés can both employ someone named Aisha. A shared
+  // display name is not cross-tenant evidence; opaque source IDs are.
+  expect(own.name).toBe(created[0].worker.display_name);
+  for(const foreignId of [created[1].worker.id,created[1].shiftId,
+   created[1].timecardId,created[1].userId])
+   expect(JSON.stringify(own)).not.toContain(foreignId);
   expect((await staffCtx.request.get("/api/staff-channel/link")).status()).toBe(403);
   const businessesBefore=(await db.query("select count(*)::integer as n from public.businesses")).rows[0].n;
   const onboarding=await staffCtx.request.get("/en/onboarding",{maxRedirects:0});
