@@ -795,6 +795,7 @@ describe("production Supervisor provider availability recovery (zero external ca
       expect(result.usage.toolCalls).toBe(0);
       expect(requests.map(r=>r.model)).toEqual(["gpt-6-luna","gpt-4.1-mini"]);
       expect(requests[1].max_output_tokens).toBe(1200);
+      expect(requests[1].store).toBe(false);
       expect(requests.map(r=>r.tool_choice)).toEqual(["auto","auto"]);
       expect(requests[0].tools).toContainEqual({type:"tool_search"});
       expect(requests[1].tools).not.toContainEqual({type:"tool_search"});
