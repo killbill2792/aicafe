@@ -116,7 +116,7 @@ async function proposed(db,owner,cafe,worker,f){
    "the owner must approve each proposed question. Include real source/as-of evidence "+
    "and a follow-up a few hours from now.";
   const answer=await ownerTurn(owner.page,thread,instruction);
-  await verifiedTurn(db,cafe,thread,answer,"propose_staff_question");
+  const verified=await verifiedTurn(db,cafe,thread,answer,"propose_staff_question");
   const rows=await sql(db,"select id::text,business_id::text,owner_user_id::text,thread_id::text,capability_id,status,revision,canonical_effect_payload "+
     "from public.supervisor_proposals where business_id=$1 and thread_id=$2 and capability_id='olivia.staff_question.v1'",
     [cafe.businessId,thread]);
@@ -129,7 +129,7 @@ async function proposed(db,owner,cafe,worker,f){
   const card=(await cards.json()).cards?.[0];
   if(card?.state!=="pending"||card?.staffQuestion?.employeeName!==worker.name||
      card?.staffQuestion?.question!==p.canonical_effect_payload.question)fail("owner_question_card_mismatch");
-  return {thread,p,answer};
+  return {thread,p,answer,modelCalls:Number(verified.usage.model_call_count)};
 }
 async function main(){
   const env=process.env;assertLocalLiveEnvironment(env);verifyCheckoutHead(env.HEAD_SHA);
@@ -166,7 +166,7 @@ async function main(){
       [one.businessId,employeeId]);
     const worker={employeeId,name,email,password,userId};
     const f=await fixture(db,one,worker);
-    const ask=await proposed(db,owner,one,worker,f);calls++;
+    const ask=await proposed(db,owner,one,worker,f);calls+=ask.modelCalls;
     const foreignGet=await foreign.context.request.get("/api/ai/threads/"+ask.thread+"/proposals?ids="+ask.p.id);
     if(foreignGet.status()===200&&(await foreignGet.json()).cards?.length)fail("foreign_proposal_visible");
     const approval=await owner.context.request.post("/api/ai/threads/"+ask.thread+"/proposals",{
@@ -203,23 +203,23 @@ async function main(){
       fail("foreign_staff_history_leaked");
     // Independent second source + question. Normal Supervisor chat is the ONLY answer UI.
     const second=await fixture(db,one,worker);
-    const self=await proposed(db,owner,one,worker,second);calls++;
+    const self=await proposed(db,owner,one,worker,second);calls+=self.modelCalls;
     const checkNoOwnerReport=async()=>{
       const rows=await sql(db,"select status from public.supervisor_proposals where id=$1",[self.p.id]);
       const outbound=await sql(db,"select count(*)::int n from public.staff_communication_requests where business_id=$1 and source_id=$2",[one.businessId,self.p.id]);
       if(rows[0]?.status!=="draft"||outbound[0]?.n!==0)fail("unauthorized_or_ambiguous_owner_effect");
     };
     const unrelated=await ownerTurn(owner.page,self.thread,"Thanks for looking into it.");
-    await verifiedTurn(db,one,self.thread,unrelated);calls++;
+    const unrelatedProof=await verifiedTurn(db,one,self.thread,unrelated);calls+=Number(unrelatedProof.usage.model_call_count);
     if(unrelated.names.includes("record_staff_question_owner_answer"))fail("unrelated_text_used_as_answer");
     await checkNoOwnerReport();
     const ambiguous=await ownerTurn(owner.page,self.thread,"I do not know the remaining number.");
-    await verifiedTurn(db,one,self.thread,ambiguous);calls++;
+    const ambiguousProof=await verifiedTurn(db,one,self.thread,ambiguous);calls+=Number(ambiguousProof.usage.model_call_count);
     if(ambiguous.names.includes("record_staff_question_owner_answer"))fail("unknown_converted_to_fact");
     await checkNoOwnerReport();
     const answerText="I personally counted exactly 40 takeaway cups on that shelf.";
     const ownerAnswer=await ownerTurn(owner.page,self.thread,answerText);
-    const answerProof=await verifiedTurn(db,one,self.thread,ownerAnswer,"record_staff_question_owner_answer");calls++;
+    const answerProof=await verifiedTurn(db,one,self.thread,ownerAnswer,"record_staff_question_owner_answer");calls+=Number(answerProof.usage.model_call_count);
     const report=(await sql(db,"select owner_user_id::text,evidence from public.operating_tasks "+
       "where business_id=$1 and id=$2",[one.businessId,"staff-question-owner-answer:"+self.p.id]))[0];
     const outbound=await sql(db,"select count(*)::int n from public.staff_communication_requests where business_id=$1 and source_id=$2",[one.businessId,self.p.id]);
@@ -230,13 +230,18 @@ async function main(){
       fail("saved_owner_answer_not_visible");
     const receiptCount=await sql(db,"select count(*)::int n from public.staff_communication_requests where business_id=$1 and source_id=$2",[one.businessId,ask.p.id]);
     if(receiptCount[0]?.n!==1)fail("duplicate_employee_dispatch");
+    if(!Number.isSafeInteger(calls)||calls<5||calls>18)fail("provider_call_total_out_of_range");
     writeFileSync(files[0],JSON.stringify({schema_version:1,task:"pr552-staff-question",
       head_sha:env.HEAD_SHA,status:"passed",observed_model:"gpt-6-luna",model_turns:calls,
       cases:STAFF_QUESTION_CASES.map(c=>c.id),feature_proven:false,production_activated:false},null,2)+"\n",
       {mode:0o600,flag:"wx"});
     writeFileSync(files[1],JSON.stringify({businessId:one.businessId,foreignBusinessId:two.businessId,
-      firstThread:ask.thread,ownerAnswerThread:self.thread,ownerAnswerMessageId:answerProof.message.id,
-      firstSource:f.source,secondSource:second.source,employeeId,requestId:requests[0].id},null,2)+"\n",
+      ownerUserId:one.owner.userId,firstThread:ask.thread,firstProposalId:ask.p.id,
+      ownerAnswerThread:self.thread,ownerAnswerProposalId:self.p.id,
+      ownerAnswerTaskId:"staff-question-owner-answer:"+self.p.id,
+      ownerAnswerMessageId:answerProof.message.id,ownerAnswerReplyId:ownerAnswer.done.reply.id,
+      firstSource:f.source,secondSource:second.source,employeeId,
+      requestId:requests[0].id,expectedProviderCalls:calls},null,2)+"\n",
       {mode:0o600,flag:"wx"});
   }finally{
     await crew?.close().catch(()=>{});await foreign?.context.close().catch(()=>{});
