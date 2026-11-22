@@ -186,14 +186,14 @@ select gen_random_uuid() as answer_run,gen_random_uuid() as missing_run,
  gen_random_uuid() as other_effect_run \gset
 insert into public.supervisor_runs
  (id,business_id,owner_user_id,thread_id,request_key,plan_hash,status,
-  execution_version,input_locale,input_attachment_version_hash)
+  execution_version,input_locale,input_attachment_version_hash,created_at)
 values
  (:'answer_run',:'biz',:'owner_id',:'thread_id',:'owner_answer_message',
-  repeat('a',64),'running',2,'en',encode(sha256(convert_to('[]','UTF8')),'hex')),
+  repeat('a',64),'running',2,'en',encode(sha256(convert_to('[]','UTF8')),'hex'),now()-interval '3 minutes'),
  (:'missing_run',:'biz',:'owner_id',:'thread_id',gen_random_uuid(),
-  repeat('a',64),'running',2,'en',encode(sha256(convert_to('[]','UTF8')),'hex')),
+  repeat('a',64),'running',2,'en',encode(sha256(convert_to('[]','UTF8')),'hex'),now()-interval '2 minutes'),
  (:'other_effect_run',:'biz',:'owner_id',:'thread_id',gen_random_uuid(),
-  repeat('a',64),'running',2,'en',encode(sha256(convert_to('[]','UTF8')),'hex'));
+  repeat('a',64),'running',2,'en',encode(sha256(convert_to('[]','UTF8')),'hex'),now()-interval '1 minute');
 insert into public.supervisor_run_steps
  (business_id,run_id,step_key,step_index,retry_mode,status,worker_id,
   claim_token,lease_until,attempts,checkpoint_phase,checkpoint_operation,checkpoint_tool)
@@ -224,6 +224,11 @@ begin
  then raise exception 'durable expired claim fixture incomplete';end if;
  outcome:=public.supervisor_run_claim(b,o,th,reply_run,gen_random_uuid(),60);
  if outcome->>'kind'<>'claimed' then raise exception 'persisted owner report was not reclaimable';end if;
+ -- Release this synthetic run so an earlier active assignment does not make
+ -- the independent negative checks appear "busy" instead of "blocked".
+ update public.supervisor_run_steps set status='blocked',error_code='test_fence'
+  where run_id=reply_run;
+ update public.supervisor_runs set status='blocked' where id=reply_run;
  outcome:=public.supervisor_run_claim(b,o,th,absent_run,gen_random_uuid(),60);
  if outcome->>'kind'<>'blocked' then raise exception 'unknown owner-answer effect replayed';end if;
  outcome:=public.supervisor_run_claim(b,o,th,other_run,gen_random_uuid(),60);
