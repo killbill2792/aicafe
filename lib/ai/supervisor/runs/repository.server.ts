@@ -186,6 +186,13 @@ export async function openOwnerRunCheckpoint(scope:RunScope,runId:string,token:s
   // inventory or staff outreach. Both IDs come from already-saved rows; no
   // model-supplied prose is ever trusted as an effect receipt.
   const verifyStaffOwnerReport=async(proposalId:string,ownerMessageId:string):Promise<ToolResult>=>{
+    // The answered message must also be the original admitted owner turn of
+    // THIS durable run, not merely some other owner message in the café.
+    const run=await db.from("supervisor_runs").select("request_key")
+      .eq("business_id",s.businessId).eq("owner_user_id",s.ownerUserId)
+      .eq("thread_id",s.threadId).eq("id",id).maybeSingle();
+    if(run.error||run.data?.request_key!==ownerMessageId)
+      throw new Error("checkpoint_receipt_unavailable");
     const p=await scopedProposal(uuid.parse(proposalId));
     if(p.capability_id!=="olivia.staff_question.v1"||p.status!=="rejected"||
        !Number.isInteger(p.revision)||p.revision<2)
