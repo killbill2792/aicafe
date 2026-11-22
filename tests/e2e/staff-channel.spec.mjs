@@ -45,12 +45,18 @@ test("@staff real worker login, shift explanation, cross-cafe and owner receipt"
   await owner.getByRole("button",{name:"Create employee login"}).click();
   const createdReceipt=await createReceipt;
   expect(createdReceipt.status()).toBe(200);
-  expect(await createdReceipt.json()).toEqual({linked:true,loginPath:"/crew/login"});
+  // The UI initiates router.refresh immediately after its successful response.
+  // Reading a second copy of that response body through Playwright can hang
+  // across RSC navigation. Verify the real owner UI and DB-linked identity
+  // instead; route unit tests independently assert the exact JSON contract.
   await expect(owner.getByText(/Staff login created and linked/)).toBeVisible();
   await expect(owner.getByRole("button",{name:"Copy staff sign-in link"})).toBeVisible();
   const firstAuth=await db.query("select id from auth.users where email=$1",[created[0].email]);
   expect(firstAuth.rows).toHaveLength(1);
   created[0].userId=firstAuth.rows[0].id;
+  const linked=(await db.query("select staff_auth_user_id::text from public.employees where business_id=$1 and id=$2",
+   [cafes[0].businessId,created[0].worker.id])).rows[0];
+  expect(linked.staff_auth_user_id).toBe(created[0].userId);
   // Linking updates the owner reply selector without a manual page reload.
   await expect(owner.locator('#staff-reply-person option[value="'+created[0].worker.id+'"]'))
    .toHaveCount(1,{timeout:20_000});
