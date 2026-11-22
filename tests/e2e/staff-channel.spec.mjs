@@ -106,7 +106,18 @@ test("@staff real worker login, shift explanation, cross-cafe and owner receipt"
   await expect(card.getByText(/07:00.*14:00/)).toBeVisible();
   await card.getByRole("textbox",{name:/Add a message or explain/})
    .fill("I cannot work seven to two. I can arrive at 8 AM.");
+  const replyWait=staff.waitForResponse(response=>
+   new URL(response.url()).pathname==="/api/staff-channel"&&response.request().method()==="POST");
   await card.getByRole("button",{name:"Cannot work"}).click();
+  expect((await replyWait).status()).toBe(200);
+  // Read the employee-scoped canonical inbox as well as verifying the visible
+  // confirmed receipt; never pass a UI-only local echo for an unsaved answer.
+  await expect.poll(async()=>{
+   const res=await staffCtx.request.get("/api/staff-channel");
+   if(res.status()!==200)return false;
+   return (await res.json()).messages.some(m=>
+    m.actor==="employee"&&m.body==="I cannot work seven to two. I can arrive at 8 AM.");
+  },{timeout:30_000}).toBe(true);
   await expect(staff.getByText("I cannot work seven to two. I can arrive at 8 AM.")).toBeVisible({timeout:20_000});
 
   const inbox=await staffCtx.request.get("/api/staff-channel");
