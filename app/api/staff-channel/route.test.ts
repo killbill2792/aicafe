@@ -136,7 +136,7 @@ describe("restricted staff communication APIs",()=>{
  });
  it("accepts browser Host-origin when Next normalizes internal loopback URL, but never cross-origin",async()=>{
   const payload={action:"create",employeeId:reply.requestId,email:"worker@example.test",password:"a-long-one-time-secret"};
-  const forwarded=overrides=>new Request("http://localhost:3000/api/staff-channel/link",{
+  const forwarded=(overrides:Record<string,string>)=>new Request("http://localhost:3000/api/staff-channel/link",{
    method:"POST",headers:{"host":"127.0.0.1:3000",Origin:"http://127.0.0.1:3000",
     "content-type":"application/json",...overrides},body:JSON.stringify(payload)});
   const allowed=await postLinks(forwarded({}));
