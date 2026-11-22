@@ -1,9 +1,8 @@
 import {describe,expect,it} from "vitest";
 import {precedingInvestigationReport} from "./investigation";
-import {modelSelectedOwnerQuestion,investigationPrompt,universalInvestigationPrompt} from "./investigation";
 import type {AgentTurn} from "@/lib/ai/agent/loop.server";
 import {checkNumbers} from "@/lib/ai/agent/checkNumbers";
-import {investigationPrompt,investigationReadTools,customerInvestigationTools,verifyInvestigationTurn,
+import {modelSelectedOwnerQuestion,universalInvestigationPrompt,investigationPrompt,investigationReadTools,customerInvestigationTools,verifyInvestigationTurn,
   relevantInvestigationTools,unsupportedExternalEffectClaim,type SourceSynopsis} from "./investigation";
 const source:SourceSynopsis={
   kind:"labor_variance",status:"new",severity:"high",quality:"partial",
