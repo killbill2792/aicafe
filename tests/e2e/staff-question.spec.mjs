@@ -23,7 +23,7 @@ test("@staff @home owner-approved factual question reaches one verified worker; 
  try{
   await db.connect();connected=true;
   await db.query("insert into auth.users(instance_id,id,aud,role,email,encrypted_password,email_confirmed_at,raw_app_meta_data,raw_user_meta_data,created_at,updated_at,confirmation_token,recovery_token,email_change_token_new,email_change) values ('00000000-0000-0000-0000-000000000000',$1,'authenticated','authenticated',$2,extensions.crypt($3,extensions.gen_salt('bf')),now(),'{\"provider\":\"email\",\"providers\":[\"email\"]}','{}',now(),now(),'','','','')",[id.worker,email,password]);
-  await db.query("insert into auth.identities(id,user_id,provider_id,provider,identity_data,last_sign_in_at,created_at,updated_at) values($1,$1,$1,'email',$2::jsonb,now(),now(),now())",
+  await db.query("insert into auth.identities(id,user_id,provider_id,provider,identity_data,last_sign_in_at,created_at,updated_at) values($1::uuid,$1::uuid,$1::text,'email',$2::jsonb,now(),now(),now())",
    [id.worker,JSON.stringify({sub:id.worker,email,email_verified:true})]);
   await db.query("insert into public.employees(id,business_id,display_name,active,wage_period,wage_amount_cents,staff_auth_user_id) values($1,$2,'Counted stock worker',true,'hour',1800,$3)",
    [id.employee,cafe.businessId,id.worker]);
