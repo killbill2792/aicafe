@@ -2216,7 +2216,20 @@ test("@home Task16E adaptive answer survives reload, preserves prose and opens a
       await disclosure.getByText("Saved evidence and export",{exact:true}).click();
       const sourceLink=rich.getByRole("link",{name:"example-sales.csv",exact:true});
       await expect(sourceLink).toHaveAttribute("href",fileRoute+"/"+attachment.id);
-      const fileResponse=await ctx.request.get(fileRoute+"/"+attachment.id,{maxRedirects:0});
+      // The disposable Next dev server can drop one loopback GET while
+      // compiling other seeded journeys. Retry only a transport-reset
+      // on this idempotent private read; never retry an HTTP denial or 5xx.
+      const loadFile=()=>ctx.request.get(fileRoute+"/"+attachment.id,{maxRedirects:0});
+      let fileResponse;
+      try{fileResponse=await loadFile();}
+      catch(error){
+        if(!/ECONNRESET|EPIPE|ERR_CONNECTION_RESET/.test(String(error)))throw error;
+        await expect.poll(async()=>{
+          try{return (await ctx.request.get("/en/login",{timeout:5000})).ok();}
+          catch{return false;}
+        },{timeout:30_000,intervals:[500,1000,2000,3000]}).toBe(true);
+        fileResponse=await loadFile();
+      }
       expect(fileResponse.status()).toBe(302);
       const downloadEvent=page.waitForEvent("download");
       await rich.getByRole("button",{name:"Download saved answer report"}).click();
