@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {mkdtempSync,rmSync,writeFileSync,existsSync,utimesSync} from 'node:fs';
+import {mkdtempSync,rmSync,writeFileSync,existsSync,utimesSync,unlinkSync} from 'node:fs';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import {importMuseQuestions,readMuseQuestions,syncMuseQuestions,writeMuseQuestion} from './muse-owner-questions.mjs';
@@ -224,5 +224,59 @@ test('live question-state transaction is not overwritten by a second process',()
   assert.throws(()=>edit(f.path,'ignore','Do not ignore while another writer is active'),
    /lock held by another process/);
   assert.equal(readMuseQuestions(f.path).entries[q.id].status,'open');
+ }finally{f.cleanup();}
+});
+
+test('recovery treats an interrupted no-token send as uncertain, not safely retryable',async()=>{
+ const f=fixture();try{
+  edit(f.path,'ignore','Keep dismissed');
+  const without=await publishMuseQuestionAcks({repo,path:f.path,facts:facts(),token:null,now:at});
+  assert.equal(without.unconfigured,1);
+  const state=readMuseQuestions(f.path).entries[q.id];
+  assert.equal(state.github_sync.status,'no_token');
+  writeFileSync(f.path+'.publish.lock',JSON.stringify({
+   version:1,pid:999999999,observed_at:at,
+   in_flight:{question_id:q.id,event_id:state.github_sync.event_id}})+'\n');
+  let sends=0;
+  const recovered=await publishMuseQuestionAcks({repo,path:f.path,facts:facts(),token:'now-enabled',now:at,
+   fetchImpl:async()=>{sends++;throw Error('must not send again');}});
+  assert.equal(recovered.blocked,0);
+  assert.equal(sends,0);
+  assert.equal(readMuseQuestions(f.path).entries[q.id].github_sync.status,'uncertain');
+ }finally{f.cleanup();}
+});
+test('successful POST with a blocked outcome save remains uncertain and is never repeated',async()=>{
+ const f=fixture();try{
+  edit(f.path,'ignore','Dismiss request');
+  let sent=0;
+  const fetchImpl=async()=>{
+   sent++;
+   // Simulate the second Muse process holding the question-store lock
+   // exactly after GitHub accepted the POST, before the result is saved.
+   writeFileSync(f.path+'.lock',JSON.stringify({pid:process.pid})+'\n');
+   return {status:201,json:async()=>({id:123456911,html_url:urlFor(123456911)})};
+  };
+  const attempted=await publishMuseQuestionAcks({repo,path:f.path,facts:facts(),
+   token:'token',now:at,fetchImpl});
+  assert.equal(attempted.uncertain,1);
+  assert.equal(sent,1);
+  assert.equal(readMuseQuestions(f.path).entries[q.id].github_sync.status,'uncertain');
+  unlinkSync(f.path+'.lock');
+  const again=await publishMuseQuestionAcks({repo,path:f.path,facts:facts(),
+   token:'token',now:at,fetchImpl:async()=>{sent++;throw Error('should never duplicate');}});
+  assert.equal(sent,1);
+  assert.equal(again.published,0);
+ }finally{f.cleanup();}
+});
+test('failure to record write-ahead uncertainty prevents POST entirely',async()=>{
+ const f=fixture();try{
+  edit(f.path,'ignore','Dismiss request');
+  writeFileSync(f.path+'.lock',JSON.stringify({pid:process.pid})+'\n');
+  let sends=0;
+  const out=await publishMuseQuestionAcks({repo,path:f.path,facts:facts(),token:'token',now:at,
+   fetchImpl:async()=>{sends++;throw Error('not allowed');}});
+  assert.equal(out.blocked,1);
+  assert.equal(sends,0);
+  assert.equal(readMuseQuestions(f.path).entries[q.id].github_sync.status,'pending');
  }finally{f.cleanup();}
 });
