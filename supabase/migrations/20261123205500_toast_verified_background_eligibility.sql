@@ -1,3 +1,5 @@
+set lock_timeout='3s';
+set statement_timeout='45s';
 -- Require an explicitly verified Toast connection for unattended business analysis.
 -- The business/owner/thread join remains UUID-scoped; business names are only display labels.
 -- Nonconnected cafés retain their existing investigation state but cannot incur new paid calls.
