@@ -197,3 +197,16 @@ describe("U1 migrated worker lease clocks and transport ordering",()=>{
   }finally{await db.query("rollback");await db.end();}
  },30000);
 });
+
+describe("production-safe signup boundary",()=>{
+ (enabled?it:it.skip)("new owner receives no membership in shared Sunrise demo",async()=>{
+  const db=await connect(),owner=randomUUID();
+  try{
+   await db.query("begin");
+   await db.query("insert into public.businesses(id,name,timezone,is_demo) values ('11111111-1111-1111-1111-111111111111','Sunrise fixture','UTC',true) on conflict(id) do nothing");
+   await db.query("insert into auth.users(id,instance_id,aud,role,email,encrypted_password,created_at,updated_at) values ($1,'00000000-0000-0000-0000-000000000000','authenticated','authenticated',$2,'',now(),now())",[owner,owner+"@example.invalid"]);
+   const rows=await db.query("select business_id from public.memberships where user_id=$1 and business_id='11111111-1111-1111-1111-111111111111'",[owner]);
+   expect(rows.rows).toEqual([]);
+  }finally{await db.query("rollback");await db.end();}
+ },30000);
+});
