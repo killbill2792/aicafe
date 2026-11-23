@@ -10,6 +10,26 @@ const nonRequest=/\b(?:no (?:new |further |additional )?(?:owner )?(?:approval|d
 const postMerge=/\b(?:luna\s+authorization|(?:paid|bounded)\s+luna\s+(?:run|test|scenario)|(?:post|trigger|run)\s+\/aicafe-luna|approve|authorize|run|trigger|apply|configure|enable|provision|grant)\s+(?:(?:the|an?|one|existing|bounded)\s+){0,4}(?:production|deployment|release|live|paid|workflow|migration|secret|credential|environment)\b|\b(?:luna authorization|production migration|live model|paid execution|deployment|release)\s*:\s*(?:task|scenario|run|approval)\b|\b(?:production migration|live model|paid execution|deployment|release)\s+(?:approval|authorization)\s+(?:requested|required|needed)\b|\b(?:action required|single remaining execution action)[\s\S]{0,120}(?:run workflow|workflow_dispatch|production|migration|\/aicafe-luna)\b/i;
 const requestMarker=/^<!-- aicafe-owner-request:v1 ([a-f0-9]{40}) -->\s*/;
 const reportMarker=/^<!-- aicafe-integration-result:v1 (\{[^\n]{1,3500}\}) -->/;
+
+// Durable PR-scoped coordination receipts. These are delivery/attention state,
+// never owner approval or permission to execute development or production work.
+const ackMarker=/^<!-- aicafe-owner-state:v1 (\{[^\n]{1,450}\}) -->/;
+const ackStates=new Set(['acknowledged','answered','delivery_uncertain','delivered','ignored','resolved','reopened']);
+function readAck(c,allowed){
+ if(!allowed.has(c.author?.login))return null;
+ const match=String(c.body||'').match(ackMarker);if(!match)return null;
+ try{
+  const payload=JSON.parse(match[1]);
+  if(payload.v!==1||!/^comment-[1-9]\d{0,19}$/.test(payload.question_id)||
+     !/^comment-[1-9]\d{0,19}-r[1-9]\d{0,9}$/.test(payload.event_id)||
+     !payload.event_id.startsWith(payload.question_id+'-r')||
+     !ackStates.has(payload.state))return null;
+  return {question_id:payload.question_id,event_id:payload.event_id,state:payload.state,
+   url:c.url,created_at:c.createdAt,actor:c.author.login,
+   comment_id:Number(String(c.url).split('#issuecomment-').at(-1))};
+ }catch{return null;}
+}
+
 const statusWords=/\b(?:PROVEN|FAILED|NOT_PROVEN|BLOCKED|ACTION_REQUIRED)\b/;
 // Only an explicit, affirmative disposition line may close an existing request.
 // Free-form "approved request #..." is not safe: "not approved request #..." is common.
@@ -42,13 +62,14 @@ function report(c,pr){
    source:'unstructured_comment',independently_verified:false};
  return null;
 }
-export function inspectPrComments(pr,repo,{merged=false}={}){
- const result={comments:[],owner_requests:[],resolved_request_ids:[],integration_reports:[],
+export function inspectPrComments(pr,repo,{merged=false,ackAuthors=[]}={}){
+ const result={comments:[],owner_requests:[],ack_events:[],handling:[],resolved_request_ids:[],integration_reports:[],
   attention:[],owner_request_read_incomplete:pr.comments?.pageInfo?.hasPreviousPage!==false||
    !Array.isArray(pr.comments?.nodes),unresolved_review_threads:[],review_scan_incomplete:
    !Array.isArray(pr.reviewThreads?.nodes)||pr.reviewThreads?.pageInfo?.hasNextPage!==false};
  if(pr.headRepository?.nameWithOwner!==repo&&!(merged&&!pr.headRepository))return result;
  const resolved=new Set(),superseded=new Set(),sourceResolution=new Map();
+ const ackAllowed=new Set([repo.split('/')[0],...ackAuthors].filter(Boolean));
  for(const c of pr.comments?.nodes||[]){
   const body=String(c.body||''),id=String(c.url||'').match(/#issuecomment-(\d+)$/)?.[1];
   if(!id||!safeUrl(c.url,pr))continue;
@@ -56,6 +77,11 @@ export function inspectPrComments(pr,repo,{merged=false}={}){
   const value={id:'comment-'+id,url:c.url,created_at:c.createdAt,author:c.author?.login||null,
    summary:preview(body),trusted:verified,kind:'information'};
   result.comments.push(value);
+  const ack=readAck(c,ackAllowed);
+  if(ack){result.ack_events.push(ack);value.kind='coordination_receipt';continue;}
+  // Never classify a coordination receipt as a new owner question, including
+  // receipts from an untrusted author (which must not change any owner state).
+  if(body.startsWith('<!-- aicafe-owner-state:v1 '))continue;
   if(!verified)continue;
   const mark=body.match(requestMarker),stripped=text(body);
   const explicit=!!mark,asked=ownerWords.test(stripped)&&!(nonRequest.test(stripped)&&
@@ -80,6 +106,9 @@ export function inspectPrComments(pr,repo,{merged=false}={}){
   }
  }
   result.resolved_request_ids=[...resolved];
+ const ackByQuestion=new Map();
+ for(const event of result.ack_events.sort((a,b)=>a.comment_id-b.comment_id))
+  ackByQuestion.set(event.question_id,event);
  for(const q of result.owner_requests){
   const finished=resolved.has(q.id);
   const beforeMerge=merged&&pr.mergedAt&&Date.parse(q.created_at)<=Date.parse(pr.mergedAt);
@@ -88,8 +117,15 @@ export function inspectPrComments(pr,repo,{merged=false}={}){
    historical?'historical_after_merge':'needs_review';
   if(finished)q.resolution_source_url=sourceResolution.get(q.id)||null;
 
+  const ack=ackByQuestion.get(q.id);
+  if(ack){q.github_ack=ack;q.coordination_state=ack.state;}
+  // An explicit authenticated reopen overrides automatic merge archival;
+  // an acknowledgment suppresses repeats without pretending it is approval.
+  if(ack?.state==='reopened')q.disposition='needs_review';
+  const handled=ack&&ack.state!=='reopened';
+  if(handled)result.handling.push({id:q.id,state:ack.state,url:ack.url});
   // Closing a development PR archives old scope questions for display; not owner authorization.
-  if(q.disposition==='needs_review')result.attention.push({
+  if(q.disposition==='needs_review'&&!handled)result.attention.push({
    type:'owner_question',id:q.id,pr_number:pr.number,text:q.question,
    source_url:q.url,created_at:q.created_at,classification:q.classification,
    source:q.source});
