@@ -42,7 +42,9 @@ export async function publishMuseQuestionAcks({repo,path,facts,token=null,
  try{
   const current=readMuseQuestions(path);
   const prs=[...(facts?.prs||[]),...(facts?.merged_prs||[])];
-  const validFacts=facts?.version===1&&prs.length>=0&&typeof facts.observed_at==='string';
+  const observed=Date.parse(facts?.observed_at),clock=Date.parse(now);
+  const validFacts=facts?.version===1&&Number.isFinite(observed)&&Number.isFinite(clock)&&
+   clock>=observed&&clock-observed<=15*60*1000;
   if(!validFacts)return {...result,blocked:1};
   let written=0;
   for(const q of Object.values(current.entries||{})){
