@@ -122,3 +122,27 @@ test('local new decision remains authoritative while GitHub older sync is pendin
   assert.ok(stored.github_sync_conflict);
  }finally{f.cleanup();}
 });
+
+test('late older GitHub event cannot replace a newer explicit reopen',()=>{
+ const initial=importMuseQuestions({version:1,entries:{}},facts(),at);
+ const newest={event_id:q.id+'-r6-aaaaaaaaaaaaaaaa',question_id:q.id,
+  state:'reopened',comment_id:123456920,url:urlFor(123456920),
+  created_at:at,actor:'killbill2792'};
+ const older={...newest,event_id:q.id+'-r5-bbbbbbbbbbbbbbbb',
+  state:'ignored',comment_id:123456921,url:urlFor(123456921)};
+ const next=importMuseQuestions(initial,facts({...source(),ack_events:[newest,older]}),at);
+ assert.equal(next.entries[q.id].status,'open');
+ assert.equal(next.entries[q.id].last_github_sequence,6);
+});
+test('same-revision concurrent couriers create a visible conflict rather than last-writer wins',()=>{
+ const initial=importMuseQuestions({version:1,entries:{}},facts(),at);
+ const one={event_id:q.id+'-r3-aaaaaaaaaaaaaaaa',question_id:q.id,
+  state:'ignored',comment_id:123456922,url:urlFor(123456922),
+  created_at:at,actor:'muse'};
+ const two={...one,event_id:q.id+'-r3-bbbbbbbbbbbbbbbb',state:'reopened',
+  comment_id:123456923,url:urlFor(123456923),actor:'grok'};
+ const next=importMuseQuestions(initial,facts({...source(),ack_events:[one,two]}),at);
+ assert.equal(next.entries[q.id].status,'ignored');
+ assert.equal(next.entries[q.id].last_github_sequence,3);
+ assert.ok(next.entries[q.id].github_sync_conflict);
+});
