@@ -232,3 +232,12 @@ test('new unique receipt IDs from separate couriers remain independently auditab
  assert.equal(out.attention.length,1);
  assert.equal(out.owner_requests[0].coordination_state,'reopened');
 });
+
+test('a coder resolution sentence cannot dismiss an actual production grant',()=>{
+ const p=pr([mk(123456751,'Please authorize the production migration.'),
+  mk(123456752,'Resolves request #123456751')],{merged:true});
+ const out=inspectPrComments(p,repo,{merged:true});
+ assert.equal(out.owner_requests[0].classification,'release_or_live_approval');
+ assert.equal(out.owner_requests[0].disposition,'needs_review');
+ assert.equal(out.attention.length,1);
+});
