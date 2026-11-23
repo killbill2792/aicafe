@@ -27,17 +27,32 @@ export function importMuseQuestions(state,facts,now=new Date().toISOString()){
  const next=structuredClone(state);
  if(facts?.version!==1||!Array.isArray(facts.prs))return next;
  // Missing, edited, closed or deleted GitHub records do not answer a request.
- for(const p of facts?.prs||[]){
+ for(const p of [...(facts.prs||[]),...(facts.merged_prs||[])]){
   for(const q of p.owner_requests||[]){
    if(!idValid(q.id)||q.pr_number!==p.number||!text(q.question)||
     !/^https:\/\/github\.com\/[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+\/pull\/\d+$/.test(p.url||'')||
     !/^[a-f0-9]{40}$/.test(q.head_sha||'')||
     !q.url?.startsWith(p.url+'#issuecomment-')||q.url.split('#issuecomment-')[1]!==q.id.slice(8))continue;
    const old=next.entries[q.id];
+   const disposition=q.disposition||'needs_review';
+   const settled=disposition==='historical_after_merge'?'archived':
+    ['resolved_reported','superseded_reported'].includes(disposition)?'resolved_reported':null;
    if(!old){
-    next.entries[q.id]={...q,status:'open',revision:1,imported_at:now,history:[]};
-   }else if((old.question!==q.question||old.head_sha!==q.head_sha||old.pr_number!==q.pr_number)&&!old.source_changed){
-    old.source_changed=true;old.revision++;old.history.push({at:now,actor:'collector',event:'source_changed'});
+    next.entries[q.id]={...q,status:settled||'open',revision:1,imported_at:now,history:[],
+     ...(settled?{closure:'GitHub reported '+disposition+'; no owner authorization inferred'}:{})};
+   }else{
+    if((old.question!==q.question||
+       (old.source==='marked'&&q.source==='marked'&&old.head_sha!==q.head_sha)||
+       old.pr_number!==q.pr_number)&&!old.source_changed){
+     old.source_changed=true;old.revision++;old.history.push({at:now,actor:'collector',event:'source_changed'});
+    }
+    if(!old.classification&&q.classification)old.classification=q.classification;
+    if(!old.source&&q.source)old.source=q.source;
+    // Source reconciliation never invents approval or overwrites a local answer.
+    if(settled&&old.status==='open'&&!old.source_changed){
+     old.status=settled;old.closure='GitHub reported '+disposition+'; no owner authorization inferred';
+     old.revision++;old.history.push({at:now,actor:'collector',event:disposition});
+    }
    }
   }
  }
@@ -61,7 +76,7 @@ export function applyQuestionEdit(state,edit,{role,now=new Date().toISOString(),
   q.status='delivery_uncertain';q.delivery_chat_url=links[0];
  }else if(action==='confirm_delivery'&&q.status==='delivery_uncertain'){q.status='delivered';q.delivery_receipt=edit.detail;}
  else if(action==='confirm_not_sent'&&q.status==='delivery_uncertain'){q.status='answered';delete q.delivery_chat_url;}
- else if(action==='close'&&['open','answered','delivered'].includes(q.status)){q.status='closed';q.closure=edit.detail;}
+ else if(action==='close'&&['open','answered','delivered','resolved_reported','archived'].includes(q.status)){q.status='closed';q.closure=edit.detail;}
  else throw Error('Invalid question transition; do not replay uncertain delivery or use edited questions');
  q.revision++;q.history.push({at:now,actor:role,event:action,detail:edit.detail});
  return {...state,entries:{...state.entries,[q.id]:q}};
