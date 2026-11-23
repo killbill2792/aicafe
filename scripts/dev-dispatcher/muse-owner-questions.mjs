@@ -74,7 +74,8 @@ export function importMuseQuestions(state,facts,now=new Date().toISOString()){
     q.last_github_comment_id=event.comment_id;
     continue;
    }
-   if(q.github_sync&&['pending','uncertain','published_unverified'].includes(q.github_sync.status)){
+   // A newer local decision is authoritative even when GitHub write access is absent.
+   if(q.github_sync&&['pending','no_token','blocked_auth','uncertain','published_unverified'].includes(q.github_sync.status)){
     q.github_sync_conflict={event_id:event.event_id,url:event.url};
     continue;
    }
