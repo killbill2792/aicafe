@@ -58,7 +58,11 @@ export async function publishMuseQuestionAcks({repo,path,facts,token=null,
     recordMuseGithubSync(path,q.id,ack.event_id,{status:'verified',url:present.url},now);
     result.verified++;continue;
    }
-   if(!token){result.unconfigured++;continue;}
+   if(!token){
+    if(ack.status==='pending')recordMuseGithubSync(path,q.id,ack.event_id,
+     {status:'no_token'},now);
+    result.unconfigured++;continue;
+   }
    if(!writable.has(ack.status)){result.uncertain++;continue;}
    if(written>=maxWrites){result.pending++;continue;}
    if(!validPr(q.pr_number)||!(source.owner_requests||[]).some(r=>r.id===q.id)){
