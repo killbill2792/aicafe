@@ -59,7 +59,7 @@ test('missing token leaves question locally ignored and pending for later config
   const first=await publishMuseQuestionAcks({repo,path:f.path,facts:facts(),token:null,now:at});
   assert.equal(first.unconfigured,1);
   assert.equal(readMuseQuestions(f.path).entries[q.id].status,'ignored');
-  assert.equal(readMuseQuestions(f.path).entries[q.id].github_sync.status,'pending');
+  assert.equal(readMuseQuestions(f.path).entries[q.id].github_sync.status,'no_token');
   const sent=await publishMuseQuestionAcks({repo,path:f.path,facts:facts(),
    token:'configured',now:at,fetchImpl:async()=>({status:201,json:async()=>({
     id:123456803,html_url:urlFor(123456803)})})});
