@@ -303,10 +303,15 @@ function atomicJson(path,obj){
  writeFileSync(tmp,JSON.stringify(obj,null,2)+'\n',{mode:0o600,flag:'wx'});
  try{renameSync(tmp,path);}catch(e){try{unlinkSync(tmp);}catch{}throw e;}
 }
-export function reserveMuseActions(existing,planned,now){
+export function reserveMuseActions(existing,planned,now,{questions=null}={}){
  const next=structuredClone(existing||{version:1,events:{}});
  if(next.version!==1||!next.events)throw Error('Invalid Muse event record');
  const newly=[];
+ // Question notices already archived, resolved or closed are not pending deliveries.
+ // Preserve the event for audit, never infer that the owner approved its substance.
+ for(const e of Object.values(next.events))
+  if(questions&&e.question_id&&e.status==='suggested_unverified'&&
+     questions.entries?.[e.question_id]?.status!=='open')e.status='superseded';
  // Historical mutable-question suggestions are not current decision records.
  for(const e of Object.values(next.events))
   if(e.owner_question&&e.status==='suggested_unverified')e.status='superseded';
@@ -353,7 +358,7 @@ export async function runMuseLite({repo,token,home=join(homedir(),'.local','stat
  }
  const questions=syncMuseQuestions(questionsPath,error?null:facts,now);
  const result=museActions(error?null:facts,previous,notes,{now,questions});
- const reserved=reserveMuseActions(prior,result,now);
+ const reserved=reserveMuseActions(prior,result,now,{questions});
  if(!error)reserved.state.tracked_scan_cursor=tracked.length?
   (cursor+trackedBatch.length)%tracked.length:0;
  if(error){
