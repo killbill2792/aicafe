@@ -224,8 +224,13 @@ export function museActions(facts,previous,notes,{now=new Date().toISOString(),
  const openQuestions=Object.values(questions.entries||{}).filter(q=>!['closed','ignored','archived','resolved_reported'].includes(q.status));
  const held=new Set(openQuestions.filter(q=>['open','acknowledged','answered','delivery_uncertain','delivered'].includes(q.status)).map(q=>q.pr_number));
  for(const q of openQuestions){
-  if((facts?.merged_prs||[]).some(p=>p.number===q.pr_number)&&
-    q.classification!=='release_or_live_approval'&&!q.manually_reopened)continue;
+  const mergedPr=(facts?.merged_prs||[]).find(p=>p.number===q.pr_number);
+  // Only questions created BEFORE merge become historical. A verification
+  // chat may publish a new development question on the merged PR afterward.
+  if(mergedPr&&q.classification!=='release_or_live_approval'&&!q.manually_reopened&&
+    Number.isFinite(Date.parse(q.created_at))&&
+    Number.isFinite(Date.parse(mergedPr.merged_at))&&
+    Date.parse(q.created_at)<=Date.parse(mergedPr.merged_at))continue;
   const e=Object.values(records).find(e=>e.pr_number===q.pr_number);
   if(q.source_changed){blocked.push({pr_number:q.pr_number,reason:'Owner question source edited; close it locally and request a new comment',question_id:q.id});continue;}
   if(q.status==='open')actions.push({id:identity(['owner_request',q.id]),kind:'remind_owner',
