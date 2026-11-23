@@ -63,7 +63,7 @@ export function importMuseQuestions(state,facts,now=new Date().toISOString()){
    if(!q||q.pr_number!==p.number||q.source_changed||
       !Number.isSafeInteger(event.comment_id)||event.comment_id<=0||
       q.last_github_comment_id>=event.comment_id)continue;
-   if(q.github_sync?.event_id===event.event_id){
+   if(q.github_sync?.event_id===event.event_id&&q.github_sync.state===event.state){
     q.github_sync={...q.github_sync,status:'verified',url:event.url};
     q.last_github_comment_id=event.comment_id;
     continue;
