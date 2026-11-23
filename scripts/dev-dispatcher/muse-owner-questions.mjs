@@ -1,5 +1,5 @@
 // Local communication records, not an approval or execution authority.
-import {readFileSync,writeFileSync,renameSync,unlinkSync,mkdirSync,openSync,closeSync,existsSync} from 'node:fs';
+import {readFileSync,writeFileSync,renameSync,unlinkSync,mkdirSync,openSync,closeSync,existsSync,statSync,writeSync,fsyncSync} from 'node:fs';
 import {dirname} from 'node:path';
 import {validChatUrl} from './muse-local-notes.mjs';
 import {randomBytes} from 'node:crypto';
@@ -13,16 +13,55 @@ export function readMuseQuestions(path){
   throw Error('Invalid local owner-question records');
  return state;
 }
+const transactionLeaseMs=15*60*1000;
+function alive(pid){
+ if(!Number.isSafeInteger(pid)||pid<=0)return null;
+ try{process.kill(pid,0);return true;}
+ catch(e){return e?.code==='ESRCH'?false:true;}
+}
+function openTransactionLock(path){
+ const lock=path+'.lock';
+ let fd;
+ try{fd=openSync(lock,'wx',0o600);}
+ catch(e){
+  if(e?.code!=='EEXIST')throw e;
+  let stat,old;
+  try{
+   stat=statSync(lock);
+   try{old=JSON.parse(readFileSync(lock,'utf8'));}catch{}
+  }catch{throw Error('Question write lock unavailable; retry after current writer');}
+  // Fail closed for an active writer. A dead PID or an aged legacy lock
+  // can be reclaimed; a new write always re-reads the authoritative JSON.
+  const dead=alive(old?.pid)===false;
+  if(!dead&&Date.now()-stat.mtimeMs<=transactionLeaseMs)
+   throw Error('Question write lock held by another process');
+  try{
+   const same=statSync(lock);
+   if(same.ino!==stat.ino||same.dev!==stat.dev||same.mtimeMs!==stat.mtimeMs)
+    throw Error('Question lock replaced by concurrent writer');
+   unlinkSync(lock);
+   fd=openSync(lock,'wx',0o600);
+  }catch{throw Error('Question write lock recovery unavailable; retry');}
+ }
+ try{
+  const data=Buffer.from(JSON.stringify({pid:process.pid,created_at:new Date().toISOString()})+'\n');
+  writeSync(fd,data,0,data.length,0);fsyncSync(fd);
+  return fd;
+ }catch(e){
+  closeSync(fd);
+  try{unlinkSync(lock);}catch{}
+  throw e;
+ }
+}
 function transact(path,fn){
  mkdirSync(dirname(path),{recursive:true,mode:0o700});
- const lock=path+'.lock';let fd;
+ const lock=path+'.lock',fd=openTransactionLock(path);
  try{
-  fd=openSync(lock,'wx',0o600);
-  const next=fn(readMuseQuestions(path)),tmp=path+'.tmp-'+process.pid;
+  const next=fn(readMuseQuestions(path)),tmp=path+'.tmp-'+process.pid+'-'+randomBytes(6).toString('hex');
   try{writeFileSync(tmp,JSON.stringify(next,null,2)+'\n',{flag:'wx',mode:0o600});renameSync(tmp,path);}
   catch(e){try{unlinkSync(tmp);}catch{}throw e;}
   return next;
- }finally{if(fd!==undefined){closeSync(fd);unlinkSync(lock);}}
+ }finally{closeSync(fd);unlinkSync(lock);}
 }
 export function importMuseQuestions(state,facts,now=new Date().toISOString()){
  const next=structuredClone(state);
