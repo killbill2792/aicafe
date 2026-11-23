@@ -85,7 +85,7 @@ export async function observeHandoffRuns(facts,readRun){
  }
  return facts;
 }
-export function normalizeGithubFacts(response,now=new Date().toISOString()){
+export function normalizeGithubFacts(response,now=new Date().toISOString(),{ackAuthors=[]}={}){
  const repo=response?.data?.repository;
  if(response?.errors?.length||!repo?.pullRequests||repo.pullRequests.pageInfo?.hasNextPage)
   throw Error('Incomplete GitHub PR evidence; do not infer clean status');
@@ -94,7 +94,7 @@ export function normalizeGithubFacts(response,now=new Date().toISOString()){
   if(!Number.isInteger(p.number)||!/^https:\/\/github\.com\//.test(p.url||'')||
      !/^[a-f0-9]{40}$/.test(p.headRefOid||''))continue;
   const check=p.headRef?.target?.statusCheckRollup?.state;
-  const evidence=inspectPrComments(p,repo.nameWithOwner);
+  const evidence=inspectPrComments(p,repo.nameWithOwner,{ackAuthors});
   prs.push({...evidence,number:p.number,title:p.title,url:p.url,head_sha:p.headRefOid,
    draft:p.isDraft===true,merged:false,
    committed_at:p.headRef?.target?.committedDate||null,
@@ -105,7 +105,7 @@ export function normalizeGithubFacts(response,now=new Date().toISOString()){
  }
  return {version:1,observed_at:now,source:'github_graphql_read_only',
   prs,merged_prs:(repo.recentlyMerged?.nodes||[]).filter(p=>p.mergedAt).map(p=>{
-   const evidence=inspectPrComments(p,repo.nameWithOwner,{merged:true});
+   const evidence=inspectPrComments(p,repo.nameWithOwner,{merged:true,ackAuthors});
    const entry={...evidence,number:p.number,title:p.title,url:p.url,merged_at:p.mergedAt,
     head_sha:p.headRefOid,merge_sha:p.mergeCommit?.oid||null,merged:true};
    entry.summary=readablePrSummary(entry);return entry;
@@ -170,7 +170,8 @@ export async function completeReviewPages(response,readPage){
  return response;
 }
 export async function fetchGithubFacts({repo,token,fetchImpl=fetch,
- now=new Date().toISOString(),trackedPrNumbers=[]}={}){
+ now=new Date().toISOString(),trackedPrNumbers=[],
+ ackAuthors=String(process.env.MUSE_GITHUB_ACK_AUTHORS||'').split(',').map(s=>s.trim()).filter(Boolean)}={}){
  if(!/^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/.test(repo||'')||!token)
   throw Error('Read-only GitHub credentials and repository required');
  const [owner,name]=repo.split('/');
@@ -184,7 +185,7 @@ export async function fetchGithubFacts({repo,token,fetchImpl=fetch,
  const response=await read(QUERY,{owner,repo:name});
  await completeOwnerRequestPages(response,(number,before)=>read(OWNER_REQUEST_PAGE_QUERY,{owner,repo:name,number,before}));
  await completeReviewPages(response,(number,after)=>read(REVIEW_THREAD_PAGE_QUERY,{owner,repo:name,number,after}));
- const facts=normalizeGithubFacts(response,now);
+ const facts=normalizeGithubFacts(response,now,{ackAuthors});
  const present=new Set([...facts.prs,...facts.merged_prs].map(p=>p.number));
  const missing=[...new Set(trackedPrNumbers)].filter(n=>Number.isSafeInteger(n)&&n>0&&
   n<=9999999&&!present.has(n)).slice(0,20);
@@ -197,7 +198,7 @@ export async function fetchGithubFacts({repo,token,fetchImpl=fetch,
   await completeOwnerRequestPages(container,(number,before)=>read(OWNER_REQUEST_PAGE_QUERY,{owner,repo:name,number,before}));
   await completeReviewPages(container,(number,after)=>read(REVIEW_THREAD_PAGE_QUERY,{owner,repo:name,number,after}));
   for(const p of merged){
-   const evidence=inspectPrComments(p,repo,{merged:true});
+   const evidence=inspectPrComments(p,repo,{merged:true,ackAuthors});
    const entry={...evidence,number:p.number,title:p.title,url:p.url,merged_at:p.mergedAt,
     head_sha:p.headRefOid,merge_sha:p.mergeCommit?.oid||null,merged:true};
    entry.summary=readablePrSummary(entry);facts.merged_prs.push(entry);
@@ -219,11 +220,11 @@ export function museActions(facts,previous,notes,{now=new Date().toISOString(),
   actions.push({id,kind,task_id,pr_number,head_sha,chat_url,reason});
  };
  // The durable local records, not mutable PR fields, own question status.
- const openQuestions=Object.values(questions.entries||{}).filter(q=>!['closed','archived','resolved_reported'].includes(q.status));
- const held=new Set(openQuestions.filter(q=>['open','answered','delivery_uncertain'].includes(q.status)).map(q=>q.pr_number));
+ const openQuestions=Object.values(questions.entries||{}).filter(q=>!['closed','ignored','archived','resolved_reported'].includes(q.status));
+ const held=new Set(openQuestions.filter(q=>['open','acknowledged','answered','delivery_uncertain','delivered'].includes(q.status)).map(q=>q.pr_number));
  for(const q of openQuestions){
   if((facts?.merged_prs||[]).some(p=>p.number===q.pr_number)&&
-    q.classification!=='release_or_live_approval')continue;
+    q.classification!=='release_or_live_approval'&&!q.manually_reopened)continue;
   const e=Object.values(records).find(e=>e.pr_number===q.pr_number);
   if(q.source_changed){blocked.push({pr_number:q.pr_number,reason:'Owner question source edited; close it locally and request a new comment',question_id:q.id});continue;}
   if(q.status==='open')actions.push({id:identity(['owner_request',q.id]),kind:'remind_owner',
@@ -331,7 +332,7 @@ export async function runMuseLite({repo,token,home=join(homedir(),'.local','stat
  const existingQuestions=readMuseQuestions(questionsPath);
  const tracked=[...new Set([
   ...Object.values(existingQuestions.entries||{}).
-   filter(q=>['open','answered','delivery_uncertain'].includes(q.status)).map(q=>q.pr_number),
+   filter(q=>['open','acknowledged','answered','delivery_uncertain','delivered'].includes(q.status)).map(q=>q.pr_number),
   ...Object.values(notes.entries||{}).map(e=>e.pr_number)
  ].filter(n=>Number.isSafeInteger(n)&&n>0))].sort((a,b)=>a-b);
  const cache=join(home,'github-facts.json'),events=join(home,'events.json');
