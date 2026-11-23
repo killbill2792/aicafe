@@ -118,7 +118,10 @@ export function inspectPrComments(pr,repo,{merged=false,ackAuthors=[]}={}){
  for(const event of result.ack_events.sort((a,b)=>a.comment_id-b.comment_id))
   ackByQuestion.set(event.question_id,event);
  for(const q of result.owner_requests){
-  const finished=resolved.has(q.id);
+  // A developer's "resolved" sentence is not sufficient to dismiss a
+  // production, migration or paid-run grant. Only authenticated courier/owner
+  // disposition can remove those from the attention inbox.
+  const finished=resolved.has(q.id)&&q.classification!=='release_or_live_approval';
   const beforeMerge=merged&&pr.mergedAt&&Date.parse(q.created_at)<=Date.parse(pr.mergedAt);
   const historical=beforeMerge&&q.classification==='development_question';
   q.disposition=finished?(superseded.has(q.id)?'superseded_reported':'resolved_reported'):
