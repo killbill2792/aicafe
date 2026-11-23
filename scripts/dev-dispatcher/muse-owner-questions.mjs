@@ -58,18 +58,28 @@ export function importMuseQuestions(state,facts,now=new Date().toISOString()){
   }
   // PR comments are the portable coordination history. Do not overwrite a
   // newer local decision while its own receipt is still awaiting confirmation.
-  const ordered=[...(p.ack_events||[])].sort((a,b)=>a.comment_id-b.comment_id);
+  const seq=e=>Number(e.sequence??e.event_id?.match(/-r([1-9]\d*)/)?.[1]);
+  const ordered=[...(p.ack_events||[])].sort((a,b)=>seq(a)-seq(b)||a.comment_id-b.comment_id);
   for(const event of ordered){
-   const q=next.entries[event.question_id];
+   const q=next.entries[event.question_id],sequence=seq(event);
    if(!q||q.pr_number!==p.number||q.source_changed||
       !Number.isSafeInteger(event.comment_id)||event.comment_id<=0||
-      q.last_github_comment_id>=event.comment_id)continue;
+      !Number.isSafeInteger(sequence)||sequence<1||
+      sequence<(q.last_github_sequence||0)||
+      (sequence===(q.last_github_sequence||0)&&
+       q.last_github_comment_id>=event.comment_id))continue;
    if(q.github_sync?.event_id===event.event_id&&q.github_sync.state===event.state){
     q.github_sync={...q.github_sync,status:'verified',url:event.url};
+    q.last_github_sequence=sequence;
     q.last_github_comment_id=event.comment_id;
     continue;
    }
    if(q.github_sync&&['pending','uncertain','published_unverified'].includes(q.github_sync.status)){
+    q.github_sync_conflict={event_id:event.event_id,url:event.url};
+    continue;
+   }
+   if(sequence===(q.last_github_sequence||0)&&
+      q.github_sync?.event_id!==event.event_id){
     q.github_sync_conflict={event_id:event.event_id,url:event.url};
     continue;
    }
@@ -81,7 +91,8 @@ export function importMuseQuestions(state,facts,now=new Date().toISOString()){
    if(event.state==='reopened')q.manually_reopened=true;
    q.github_sync={event_id:event.event_id,state:event.state,status:'verified',url:event.url};
    q.last_github_comment_id=event.comment_id;
-   q.revision++;
+   q.last_github_sequence=sequence;
+   q.revision=Math.max(q.revision,sequence)+1;
    q.history.push({at:now,actor:'github:'+event.actor,event:'shared_state',state:event.state,url:event.url});
   }
  }
