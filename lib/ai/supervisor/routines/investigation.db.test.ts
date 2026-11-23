@@ -56,6 +56,9 @@ describe("Task 15A migrated, agentic investigation SQL integration",()=>{
           [owners[i],"investigation-"+owners[i]+"@example.invalid"]);
         await admin.query("insert into public.businesses(id,name,timezone,is_demo) values ($1,$2,'America/Los_Angeles',false)",
           [cafes[i],"Disposable investigation café"]);
+        // A paid unattended lease requires a verified Toast source. Synthetic
+        // credentials exist only inside the disposable DB acceptance sandbox.
+        await admin.query("insert into public.toast_api_credentials(business_id,api_origin,client_id,client_secret_enc,state) values ($1,'https://example.invalid','sandbox-id','sandbox-placeholder','verified')",[cafes[i]]);
         await admin.query("insert into public.memberships(business_id,user_id,role) values ($1,$2,'owner')",
           [cafes[i],owners[i]]);
         await admin.query("insert into public.ai_threads(id,business_id,owner_user_id,client_request_id) values ($1,$2,$3,$4)",
