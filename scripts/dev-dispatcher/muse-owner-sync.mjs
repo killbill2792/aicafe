@@ -11,7 +11,7 @@ const validRepo=s=>/^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/.test(s||'');
 const validPr=n=>Number.isSafeInteger(n)&&n>0&&n<=9999999;
 function asReceipt(q){
  const ack=q.github_sync;
- if(!ack||!/^comment-[1-9]\d{0,19}-r[1-9]\d{0,9}$/.test(ack.event_id||'')||
+ if(!ack||!/^comment-[1-9]\d{0,19}-r[1-9]\d{0,9}(?:-[a-f0-9]{16})?$/.test(ack.event_id||'')||
    !ack.event_id.startsWith(q.id+'-r')||
    !['acknowledged','answered','delivery_uncertain','delivered','ignored','resolved','reopened'].includes(ack.state))
   return null;
