@@ -36,6 +36,9 @@ section{margin-top:18px}details{padding:7px;border-bottom:1px solid #e2e2e2}
 <p id="muse-pr-freshness">Loading last read-only GitHub snapshot…</p>
 <div class="tablewrap"><table><thead><tr><th>PR</th><th>Last commit</th><th>Observed CI</th><th>Codex</th><th>Owner decision / workflow handoff</th><th>ChatGPT</th></tr></thead><tbody id="muse-prs"></tbody></table></div>
 <div id="muse-merges"></div>
+<h3>PR evidence and owner attention</h3>
+<p>Questions here are observations, not approvals. Merged development questions are kept in history, not the active count. Live/production requests remain visible until reconciled.</p>
+<div class="tablewrap"><table><thead><tr><th>PR</th><th>State</th><th>Owner attention</th><th>Review findings</th><th>Integration acceptance</th><th>Source</th></tr></thead><tbody id="muse-evidence"></tbody></table></div>
 <h3>Muse next suggested actions</h3><div id="muse-actions"></div>
 <p>These are observed GitHub facts, not approval or guaranteed merge readiness. If monitoring fails, the last observation is labeled stale; local notes remain editable.</p>
 </section>
@@ -86,6 +89,8 @@ async function refreshMusePrs(){
     '<td>'+esc(p.head_sha?.slice(0,8))+' · '+age(p.committed_at)+'</td>'+
     '<td>'+esc(p.ci)+(fresh?'':' (stale)')+'</td><td>'+esc(p.codex)+(fresh?'':' (stale)')+'</td>'+
     '<td>'+(p.owner_request_read_incomplete!==false?'<strong>Question scan incomplete — inspect earlier comments</strong>':'')+
+    ((p.attention||[]).filter(q=>!localQuestions.entries?.[q.id]||localQuestions.entries[q.id].status==='open').length?
+      '<p>Possible owner decisions: '+esc((p.attention||[]).filter(q=>!localQuestions.entries?.[q.id]||localQuestions.entries[q.id].status==='open').length)+'</p>':'')+
     (p.workflow_handoff?'<p>Coder report: '+esc(p.workflow_handoff.state)+' · '+esc(p.workflow_handoff.next)+
      (p.workflow_handoff.observed?' · Luna '+esc(p.workflow_handoff.observed)+' '+esc(p.workflow_handoff.conclusion||''):'')+
      '</p>':'')+(fresh?'':'<small>Stale: verify on PR before acting</small>')+'</td>'+
@@ -93,6 +98,26 @@ async function refreshMusePrs(){
  }).join('')||'<tr><td colspan="6">No open PRs observed</td></tr>';
  el('muse-merges').textContent='Recently merged (observed): '+
   (facts.merged_prs||[]).slice(0,8).map(x=>'#'+x.number).join(', ');
+ const all=[...(facts.prs||[]),...(facts.merged_prs||[])];
+ el('muse-evidence').innerHTML=all.map(p=>{
+  const active=(p.attention||[]).filter(a=>!localQuestions.entries?.[a.id]||
+    localQuestions.entries[a.id].status==='open');
+  const latest=(p.integration_reports||[]).at(-1);
+  const matching=latest&&latest.merge_sha&&p.merge_sha&&latest.merge_sha===p.merge_sha;
+  const acceptance=latest?(matching?
+    'Reported '+latest.status+' — evidence not independently verified':
+    'Report not matched to this merge; verification needed'):'Not reported';
+  const snippets=active.slice(0,3).map(a=>'<p><a target="_blank" rel="noopener noreferrer" href="'+esc(a.source_url)+'">'+
+    esc(a.text.slice(0,230))+'</a></p>').join('');
+  return '<tr><td><a target="_blank" rel="noopener noreferrer" href="'+esc(p.url)+'">#'+esc(p.number)+'</a> '+esc(p.title)+'</td>'+
+   '<td>'+esc(p.merged?'Merged':'Open')+'</td>'+
+   '<td>'+(active.length?'<strong>'+active.length+' needs review</strong>'+snippets:'No outstanding question detected')+
+    (p.owner_request_read_incomplete?'<p>Comment scan incomplete</p>':'')+'</td>'+
+   '<td>'+esc((p.unresolved_review_threads||[]).length)+' unresolved'+
+    (p.review_scan_incomplete?' (scan incomplete)':'')+'</td>'+
+   '<td>'+esc(acceptance)+'</td>'+
+   '<td>'+(latest?'<a target="_blank" rel="noopener noreferrer" href="'+esc(latest.source_url)+'">Verification report</a>':'PR comments: '+esc(p.comments?.length||0))+'</td></tr>';
+ }).join('')||'<tr><td colspan="6">No recent PR evidence</td></tr>';
 }
 async function refreshMuseActions(){
  const response=await fetch('/api/muse-actions',{cache:'no-store'});
@@ -110,7 +135,10 @@ async function refreshQuestions(){
  const response=await fetch('/api/muse-questions',{cache:'no-store'});
  if(!response.ok)throw Error('Question records HTTP '+response.status);
  localQuestions=await response.json();
- el('muse-questions').innerHTML=Object.values(localQuestions.entries||{}).sort((a,b)=>
+ const allQuestions=Object.values(localQuestions.entries||{});
+ const activeQuestions=allQuestions.filter(q=>['open','answered','delivery_uncertain'].includes(q.status));
+ const archivedQuestions=allQuestions.filter(q=>!['open','answered','delivery_uncertain'].includes(q.status));
+ const renderQuestions=items=>items.sort((a,b)=>
   Number(a.status==='closed')-Number(b.status==='closed')||String(b.created_at).localeCompare(String(a.created_at))).map(q=>{
    const links=[...new Set(Object.values(localNotes.entries||{}).filter(e=>e.pr_number===q.pr_number).map(e=>e.chat_url).filter(Boolean))];
    return '<details'+(q.status==='open'||q.status==='delivery_uncertain'?' open':'')+'><summary>PR #'+esc(q.pr_number)+' · '+esc(q.id)+' · '+esc(q.status)+(q.source_changed?' · SOURCE EDITED':'')+'</summary>'+
@@ -121,12 +149,18 @@ async function refreshQuestions(){
     (q.delivery_receipt?'<p>Reported delivery evidence: '+esc(q.delivery_receipt)+'</p>':'')+
     (q.closure?'<p>Closure: '+esc(q.closure)+'</p>':'')+
     '<button data-question="'+esc(q.id)+'">Edit local record</button></details>';
-  }).join('')||'<p>No imported questions. Absence is not proof that a coder has no blocker.</p>';
+  }).join('');
+ el('muse-questions').innerHTML='<p><strong>'+activeQuestions.length+' active</strong> · '+archivedQuestions.length+
+  ' resolved or historical (not counted as pending)</p>'+
+  (renderQuestions(activeQuestions)||'<p>No active owner questions.</p>')+
+  '<details><summary>Show resolved and historical question records ('+archivedQuestions.length+')</summary>'+
+  (renderQuestions(archivedQuestions)||'<p>None</p>')+'</details>';
  for(const button of document.querySelectorAll('[data-question]'))button.onclick=()=>{
   const q=localQuestions.entries[button.dataset.question];
   selectedQuestion={id:q.id,expected_revision:q.revision};el('question-id').value=q.id;
   el('question-detail').value='';el('question-result').textContent='Selected revision '+q.revision;
  };
+ refreshMusePrs().catch(()=>{});
  if(selectedQuestion&&localQuestions.entries[selectedQuestion.id]?.revision!==selectedQuestion.expected_revision)
   el('question-result').textContent='Record changed elsewhere. Select it again before saving.';
 }
