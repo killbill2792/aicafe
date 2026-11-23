@@ -129,3 +129,22 @@ test('an unmarked explicit execution action stays visible after merge',()=>{
  assert.equal(out.owner_requests[0].classification,'release_or_live_approval');
  assert.equal(out.attention.length,1);
 });
+
+test('one unlinked owner approval report clears only the one earlier scope request',()=>{
+ const earlier=mk(123456718,'Please approve Task 17B architecture and exact file scope.');
+ const reply=mk(123456719,'Owner approval received in originating chat; scope approved. Continue.',
+  {createdAt:'2026-11-19T11:00:00Z'});
+ const observed=inspectPrComments(pr([earlier,reply]),repo);
+ assert.equal(observed.attention.length,0);
+ assert.equal(observed.owner_requests[0].disposition,'resolved_reported');
+ assert.equal(observed.owner_requests[0].resolution_source_url,reply.url);
+});
+test('unlinked approval cannot clear two different outstanding owner requests',()=>{
+ const observed=inspectPrComments(pr([
+  mk(123456720,'Please approve Task A architecture.'),
+  mk(123456721,'Please approve Task B separate scope.'),
+  mk(123456722,'Owner approval recorded in the originating chat.',
+   {createdAt:'2026-11-19T11:00:00Z'})
+ ]),repo);
+ assert.equal(observed.attention.length,2);
+});
