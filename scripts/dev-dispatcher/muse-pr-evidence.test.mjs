@@ -199,3 +199,36 @@ test('receipt cannot spoof authorization or use another question ID',()=>{
  assert.equal(result.owner_requests[0].disposition,'needs_review');
  assert.equal(result.ack_events.length,1);
 });
+
+test('same-head exact repeated request is one owner decision with linked history',()=>{
+ const p=pr([mk(123456741,'Please approve the test files?'),
+  mk(123456742,'  Please   approve the test files? ')]);
+ const out=inspectPrComments(p,repo);
+ assert.equal(out.owner_requests.length,2);
+ assert.equal(out.attention.length,1);
+ assert.equal(out.owner_requests[1].disposition,'duplicate_reported');
+ assert.equal(out.owner_requests[1].duplicate_of,'comment-123456741');
+ const imported=importMuseQuestions({version:1,entries:{}},
+  {version:1,prs:[{...out,number:488,url:p.url}],merged_prs:[]});
+ assert.equal(imported.entries['comment-123456742'].status,'archived');
+ assert.equal(imported.entries['comment-123456741'].status,'open');
+});
+test('same words against a genuinely different head are not silently deduplicated',()=>{
+ const p=pr([mk(123456743,marker('Approve this test change?')),
+  mk(123456744,'<!-- aicafe-owner-request:v1 '+('c'.repeat(40))+
+   ' -->\nApprove this test change?')]);
+ const out=inspectPrComments(p,repo);
+ assert.equal(out.owner_requests.length,2);
+ assert.equal(out.attention.length,2);
+});
+test('new unique receipt IDs from separate couriers remain independently auditable',()=>{
+ const p=pr([mk(123456745,'Please approve these scenarios.'),
+  mk(123456746,receipt('comment-123456745','comment-123456745-r2-aaaaaaaaaaaaaaaa','ignored'),
+   {author:'muse'}),
+  mk(123456747,receipt('comment-123456745','comment-123456745-r2-bbbbbbbbbbbbbbbb','reopened'),
+   {author:'grok'})]);
+ const out=inspectPrComments(p,repo,{ackAuthors:['muse','grok']});
+ assert.equal(out.ack_events.length,2);
+ assert.equal(out.attention.length,1);
+ assert.equal(out.owner_requests[0].coordination_state,'reopened');
+});
