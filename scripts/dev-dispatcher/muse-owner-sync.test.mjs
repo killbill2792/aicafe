@@ -207,3 +207,22 @@ test('legacy orphaned empty lock is recovered without risking duplicate requests
   assert.equal(readMuseQuestions(f.path).entries[q.id].github_sync.status,'uncertain');
  }finally{f.cleanup();}
 });
+
+test('crashed local question-state transaction lock does not stall future owner decisions',()=>{
+ const f=fixture();try{
+  const lock=f.path+'.lock';
+  writeFileSync(lock,JSON.stringify({pid:999999999,created_at:at})+'\n');
+  const edited=edit(f.path,'ignore','This owner request can be ignored');
+  assert.equal(edited.entries[q.id].status,'ignored');
+  assert.equal(existsSync(lock),false);
+ }finally{f.cleanup();}
+});
+test('live question-state transaction is not overwritten by a second process',()=>{
+ const f=fixture();try{
+  const lock=f.path+'.lock';
+  writeFileSync(lock,JSON.stringify({pid:process.pid,created_at:at})+'\n');
+  assert.throws(()=>edit(f.path,'ignore','Do not ignore while another writer is active'),
+   /lock held by another process/);
+  assert.equal(readMuseQuestions(f.path).entries[q.id].status,'open');
+ }finally{f.cleanup();}
+});
