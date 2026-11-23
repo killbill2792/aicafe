@@ -34,7 +34,7 @@ test('explicit marker is accepted, even without owner-action keywords; untrusted
 });
 test('an explicit resolution reports closure without inventing an approval',()=>{
  const p=pr([mk(123456707,'Please approve the architecture.'),
-  mk(123456708,'Owner approved in the originating chat. Resolves request #123456707.')]);
+  mk(123456708,'Owner approved in the originating chat.\nResolves request #123456707.')]);
  const observed=inspectPrComments(p,repo);
  assert.equal(observed.owner_requests.length,1);
  assert.equal(observed.owner_requests[0].disposition,'resolved_reported');
@@ -130,14 +130,13 @@ test('an unmarked explicit execution action stays visible after merge',()=>{
  assert.equal(out.attention.length,1);
 });
 
-test('one unlinked owner approval report clears only the one earlier scope request',()=>{
+test('unlinked approval is not proof of settling a separate owner question',()=>{
  const earlier=mk(123456718,'Please approve Task 17B architecture and exact file scope.');
  const reply=mk(123456719,'Owner approval received in originating chat; scope approved. Continue.',
   {createdAt:'2026-11-19T11:00:00Z'});
  const observed=inspectPrComments(pr([earlier,reply]),repo);
- assert.equal(observed.attention.length,0);
- assert.equal(observed.owner_requests[0].disposition,'resolved_reported');
- assert.equal(observed.owner_requests[0].resolution_source_url,reply.url);
+ assert.equal(observed.attention.length,1);
+ assert.equal(observed.owner_requests[0].disposition,'needs_review');
 });
 test('unlinked approval cannot clear two different outstanding owner requests',()=>{
  const observed=inspectPrComments(pr([
@@ -147,4 +146,56 @@ test('unlinked approval cannot clear two different outstanding owner requests',(
    {createdAt:'2026-11-19T11:00:00Z'})
  ]),repo);
  assert.equal(observed.attention.length,2);
+});
+
+test('Luna paid scenario authorization remains pending after development PR merge',()=>{
+ const p=pr([mk(123456730,marker(
+  'Luna authorization: Task 14C, scenario 14c, maximum $0.20. Recommend one shared run; Post /aicafe-luna to execute.'))],{merged:true});
+ const observed=inspectPrComments(p,repo,{merged:true});
+ assert.equal(observed.owner_requests[0].classification,'release_or_live_approval');
+ assert.equal(observed.owner_requests[0].disposition,'needs_review');
+ assert.equal(observed.attention.length,1);
+});
+test('a new question cannot resolve itself with previous approval context',()=>{
+ const p=pr([mk(123456731,
+  'Owner approved Task A. Please approve the additional test file scope.')]);
+ const result=inspectPrComments(p,repo);
+ assert.equal(result.owner_requests[0].disposition,'needs_review');
+ assert.equal(result.attention.length,1);
+});
+test('a denied request mention is never positive resolution',()=>{
+ const p=pr([mk(123456732,'Please approve the production migration.'),
+  mk(123456733,'The owner has not approved request #123456732; please wait.')]);
+ const result=inspectPrComments(p,repo);
+ assert.equal(result.owner_requests[0].disposition,'needs_review');
+ assert.equal(result.attention.length,1);
+});
+const receipt=(questionId,eventId,state)=>'<!-- aicafe-owner-state:v1 '+
+ JSON.stringify({v:1,question_id:questionId,event_id,state})+' -->\n'+'Status only';
+test('authorized GitHub receipt suppresses repeat attention and preserves source',()=>{
+ const p=pr([mk(123456734,'Please approve the additional implementation files.'),
+  mk(123456735,receipt('comment-123456734','comment-123456734-r2','ignored'),
+   {author:'muse'}),mk(123456736,receipt('comment-123456734',
+   'comment-123456734-r3','reopened'),{author:'muse'})]);
+ const allowed=inspectPrComments(p,repo,{ackAuthors:['muse']});
+ assert.equal(allowed.ack_events.length,2);
+ assert.equal(allowed.owner_requests.length,1);
+ assert.equal(allowed.attention.length,1,'an explicit later reopen returns to owner attention');
+ const before=inspectPrComments(pr(p.comments.nodes.slice(0,2)),repo,{ackAuthors:['muse']});
+ assert.equal(before.attention.length,0);
+ assert.equal(before.handling[0].state,'ignored');
+ assert.equal(before.comments[1].kind,'coordination_receipt');
+ const without=inspectPrComments(pr(p.comments.nodes.slice(0,2)),repo);
+ assert.equal(without.attention.length,1,'unallowlisted courier cannot silence a question');
+});
+test('receipt cannot spoof authorization or use another question ID',()=>{
+ const p=pr([mk(123456737,'Please approve release.'),
+  mk(123456738,receipt('comment-123456739','comment-123456739-r1','ignored'),
+   {author:'muse'}),
+  mk(123456740,receipt('comment-123456737','comment-123456737-r2','approved'),
+   {author:'muse'})]);
+ const result=inspectPrComments(p,repo,{ackAuthors:['muse']});
+ assert.equal(result.attention.length,1);
+ assert.equal(result.owner_requests[0].disposition,'needs_review');
+ assert.equal(result.ack_events.length,1);
 });
