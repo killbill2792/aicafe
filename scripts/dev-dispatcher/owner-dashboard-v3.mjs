@@ -8,6 +8,7 @@ import {join,dirname} from 'node:path';
 import {homedir} from 'node:os';
 import {readMuseNotes,writeMuseNote} from './muse-local-notes.mjs';
 import {readMuseQuestions,syncMuseQuestions,writeMuseQuestion} from './muse-owner-questions.mjs';
+import {publishMuseQuestionAcks} from './muse-owner-sync.mjs';
 import {timingSafeEqual} from 'node:crypto';
 import {GitHubLedger} from './ledger.mjs';
 import {settings} from './settings.mjs';
@@ -160,7 +161,24 @@ export function startOwnerDashboard({ownerPassword,musePassword,ledger,port=7359
    const facts=existsSync(path)?JSON.parse(readFileSync(path,'utf8')):null;
    return facts?syncMuseQuestions(questionPath,facts):readMuseQuestions(questionPath);
   },
-  saveQuestion:async(edit,opts)=>writeMuseQuestion(questionPath,edit,{...opts,notes:readMuseNotes(notesPath)}),
+  saveQuestion:async(edit,opts)=>{
+   writeMuseQuestion(questionPath,edit,{...opts,notes:readMuseNotes(notesPath)});
+   // Local state saves immediately. If a fresh GitHub snapshot is present,
+   // publish the portable receipt in this same request; otherwise the existing
+   // Muse monitor completes synchronization on its next tick.
+   const repo=process.env.GITHUB_REPOSITORY;
+   const factsPath=join(dirname(notesPath),'github-facts.json');
+   if(repo&&existsSync(factsPath)){
+    try{
+     const facts=JSON.parse(readFileSync(factsPath,'utf8'));
+     const writeToken=process.env.MUSE_GITHUB_COMMENT_TOKEN||
+      (process.env.MUSE_GITHUB_COMMENT_WRITE==='1'?
+       (process.env.GITHUB_TOKEN||process.env.GH_TOKEN):null);
+     await publishMuseQuestionAcks({repo,path:questionPath,facts,token:writeToken});
+    }catch{/* the local record and pending GitHub sync status remain durable */}
+   }
+   return readMuseQuestions(questionPath);
+  },
   readFacts:async()=>{
    const path=join(dirname(notesPath),'github-facts.json');
    if(!existsSync(path))throw Error('Muse monitor not yet run');

@@ -62,6 +62,30 @@ existing local task note; the exact hidden question cannot be discovered by GitH
 Use the PR-body workflow handoff only when necessary for pending work/unknown
 blockers, not as a recurring checklist. GitHub remains read-only to the collector.
 
+**After-merge verification return path (Muse or Grok Bot):** The courier may open an existing
+or new ChatGPT verification chat under owner-configured policy, supplying the verified PR,
+merge SHA and acceptance scope. The verification chat must post ONE new top-level comment
+on that ORIGINAL merged PR before claiming reported completion. Use an immutable
+source-linked record (replace all placeholders with actual GitHub facts):
+
+```text
+<!-- aicafe-integration-result:v1 {"merge_sha":"FULL_40_HEX_MERGE_SHA","status":"NOT_PROVEN","evidence_urls":[]} -->
+Integration acceptance: NOT_PROVEN. Include tested scenarios, actual job/deployment
+URLs, migration/config checks, failures and explicit owner actions. No inferred pass.
+```
+
+Allowed reported statuses: PROVEN, FAILED, NOT_PROVEN, BLOCKED, ACTION_REQUIRED.
+The collector labels every ChatGPT result **reported, not independently verified**.
+A receipt only proves publication, not acceptance, production activation or owner
+authorization. The courier must confirm a matching comment exists for the exact
+merge SHA, keep an absent or stale receipt as unreported and reconcile delivery in
+its existing local notes. Do not silently retry an uncertain browser send.
+GitHub supplies comment/review/CI/merge facts only; it does NOT decide what Muse,
+Grok Bot, the owner or the coding chat should do next. An owner may change courier
+policy without a repository PR. Closed/merged development-only owner questions
+are retained as history, not ongoing approvals; separate release/prod/live grants
+are never inferred from merge.
+
 **Foreground rule:** after a push or CI/Codex/Luna launch, monitor the actual check
 in the same execution session; check around every 20–30 seconds, remain for at least
 60 seconds while pending where execution permits, and handle terminal results immediately.
