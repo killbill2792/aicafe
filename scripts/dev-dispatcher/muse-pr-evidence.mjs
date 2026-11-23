@@ -25,7 +25,7 @@ function readAck(c,allowed){
      !payload.event_id.startsWith(payload.question_id+'-r')||
      !ackStates.has(payload.state))return null;
   return {question_id:payload.question_id,event_id:payload.event_id,state:payload.state,
-   sequence:Number(payload.event_id.match(/-r([1-9]\\d*)/)[1]),
+   sequence:Number(payload.event_id.match(/-r([1-9]\d*)/)[1]),
    url:c.url,created_at:c.createdAt,actor:c.author.login,
    comment_id:Number(String(c.url).split('#issuecomment-').at(-1))};
  }catch{return null;}
