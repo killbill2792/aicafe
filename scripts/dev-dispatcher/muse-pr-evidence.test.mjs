@@ -171,7 +171,7 @@ test('a denied request mention is never positive resolution',()=>{
  assert.equal(result.attention.length,1);
 });
 const receipt=(questionId,eventId,state)=>'<!-- aicafe-owner-state:v1 '+
- JSON.stringify({v:1,question_id:questionId,event_id,state})+' -->\n'+'Status only';
+ JSON.stringify({v:1,question_id:questionId,event_id:eventId,state})+' -->\n'+'Status only';
 test('authorized GitHub receipt suppresses repeat attention and preserves source',()=>{
  const p=pr([mk(123456734,'Please approve the additional implementation files.'),
   mk(123456735,receipt('comment-123456734','comment-123456734-r2','ignored'),
