@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {museActions,normalizeGithubFacts,fetchGithubFacts,reserveMuseActions,runMuseLite,observeHandoffRuns,completeOwnerRequestPages} from './muse-lite.mjs';
+import {museActions,normalizeGithubFacts,fetchGithubFacts,reserveMuseActions,runMuseLite,observeHandoffRuns,completeOwnerRequestPages,trackedPrQuery} from './muse-lite.mjs';
 import {readMuseQuestions,syncMuseQuestions,writeMuseQuestion,importMuseQuestions} from './muse-owner-questions.mjs';
 import {mkdtempSync,rmSync} from 'node:fs';
 import {tmpdir} from 'node:os';
@@ -280,4 +280,45 @@ test('removal or outage never implies answer; missing publication triggers recov
  const actions=museActions(after,previous,notes('waiting_owner'),{now}).actions;
  assert.equal(actions[0].kind,'continue_chat');
  assert.match(actions[0].reason,/unreported owner request/);
+});
+
+test('merged PR comment is imported and old development approval is archived without asking owner again',()=>{
+ const raw=github('SUCCESS',[]),p=raw.data.repository.pullRequests.nodes[0];
+ raw.data.repository.pullRequests.nodes=[];
+ raw.data.repository.recentlyMerged.nodes=[{number:488,title:p.title,url:p.url,mergedAt:'2026-11-16T19:59:00Z',
+  headRefOid:sha,authorAssociation:'OWNER',headRepository:{nameWithOwner:'killbill2792/aicafe'},
+  mergeCommit:{oid:'b'.repeat(40)},comments:{pageInfo:{hasPreviousPage:false},
+  nodes:[request(101,'Approve development-only scope?')]},
+  reviewThreads:{pageInfo:{hasNextPage:false},nodes:[]}}];
+ const facts=normalizeGithubFacts(raw,now);
+ assert.equal(facts.merged_prs[0].owner_requests.length,1);
+ const questions=importMuseQuestions(empty(),facts,now);
+ assert.equal(questions.entries['comment-101'].status,'archived');
+ assert.equal(museActions(facts,previous,notes(),{now,questions}).actions.length,1);
+ assert.equal(museActions(facts,previous,notes(),{now,questions}).actions[0].kind,'plan_next');
+});
+test('tracked merged PR read reconciles questions beyond the last 25 without a dispatcher write',async()=>{
+ const raw=github('SUCCESS',[]),trackedNumber=467,query=trackedPrQuery([trackedNumber]);
+ assert.match(query,/pr467:pullRequest\(number:467\)/);
+ assert.doesNotMatch(query,/mutation/);
+ const tracked={number:trackedNumber,title:'Earlier merged PR',
+  url:'https://github.com/killbill2792/aicafe/pull/467',mergedAt:'2026-11-15T12:00:00Z',
+  headRefOid:sha,headRepository:{nameWithOwner:'killbill2792/aicafe'},mergeCommit:{oid:'c'.repeat(40)},
+  comments:{pageInfo:{hasPreviousPage:false},nodes:[{...request(123456777,'Approve only test scope?'),
+   url:'https://github.com/killbill2792/aicafe/pull/467#issuecomment-123456777'}]},
+  reviewThreads:{pageInfo:{hasNextPage:false},nodes:[]}};
+ let calls=0;
+ const fetched=await fetchGithubFacts({repo:'killbill2792/aicafe',token:'read-only-token',
+  trackedPrNumbers:[trackedNumber],now,fetchImpl:async(url,opts)=>{
+   calls++;assert.equal(url,'https://api.github.com/graphql');
+   const payload=JSON.parse(opts.body);
+   if(payload.query.includes('MuseTracked'))return {ok:true,json:async()=>({data:{repository:{
+    nameWithOwner:'killbill2792/aicafe',pr467:tracked}}})};
+   return {ok:true,json:async()=>raw};
+  }});
+ assert.equal(calls,2);
+ assert.equal(fetched.merged_prs.length,1);
+ assert.equal(fetched.merged_prs[0].attention.length,0);
+ const q=importMuseQuestions(empty(),fetched,now);
+ assert.equal(q.entries['comment-123456777'].status,'archived');
 });
