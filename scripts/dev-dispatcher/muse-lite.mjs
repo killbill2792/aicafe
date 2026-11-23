@@ -10,6 +10,7 @@ import {pathToFileURL} from 'node:url';
 import {readMuseNotes} from './muse-local-notes.mjs';
 import {parseCodexReviewState} from './github.mjs';
 import {syncMuseQuestions} from './muse-owner-questions.mjs';
+import {inspectPrComments,readablePrSummary} from './muse-pr-evidence.mjs';
 
 const millis=t=>{const n=Date.parse(t||'');return Number.isFinite(n)?n:null;};
 const identity=a=>createHash('sha256').update(JSON.stringify(a)).digest('hex').slice(0,24);
@@ -25,10 +26,16 @@ export const QUERY=`query MuseMonitor($owner:String!,$repo:String!){
     labels(first:100){pageInfo{hasNextPage} nodes{name}}
     headRef{target{... on Commit{committedDate statusCheckRollup{state}}}}
     comments(last:100){pageInfo{hasPreviousPage startCursor} nodes{body createdAt url authorAssociation author{login}}}
+    reviewThreads(first:100){pageInfo{hasNextPage} nodes{id isResolved comments(first:1){nodes{body url author{login}}}}}
    }
   }
   recentlyMerged:pullRequests(states:MERGED,first:25,orderBy:{field:UPDATED_AT,direction:DESC}){
-   nodes{number title url mergedAt headRefOid}
+   nodes{number title url mergedAt headRefOid authorAssociation
+     headRepository{nameWithOwner}
+     mergeCommit{oid}
+     comments(last:100){pageInfo{hasPreviousPage startCursor} nodes{body createdAt url authorAssociation author{login}}}
+     reviewThreads(first:100){pageInfo{hasNextPage} nodes{id isResolved comments(first:1){nodes{body url author{login}}}}}
+    }
   }
  }
 }`;
@@ -40,18 +47,6 @@ function codexStatus(comments,head){
   .map(c=>parseCodexReviewState(c.body||'',head)?.state)
   .filter(Boolean);
  return states.at(-1)||'unknown';
-}
-// A single immutable PR comment is the transport. Its author may ASK, never approve.
-function ownerRequests(p,repo){
- if(p.headRepository?.nameWithOwner!==repo)return [];
- return (p.comments?.nodes||[]).flatMap(c=>{
-  const m=String(c.body||'').match(/^<!-- aicafe-owner-request:v1 ([a-f0-9]{40}) -->\s*([\s\S]{1,2000})$/);
-  const id=String(c.url||'').match(/#issuecomment-([1-9]\d{0,19})$/)?.[1]||'';
-  if(!m||!trusted(c.authorAssociation)||!c.author?.login||c.author.login.endsWith('[bot]')||
-     !/^[1-9]\d{0,19}$/.test(id)||c.url!==p.url+'#issuecomment-'+id||!m[2].trim())return [];
-  return [{id:'comment-'+id,pr_number:p.number,head_sha:m[1],question:m[2].trim(),url:c.url,
-    author:c.author.login,created_at:c.createdAt}];
- });
 }
 // The coder's report is a handoff, never proof of successful execution.
 function workflowHandoff(p,repo){
@@ -99,19 +94,22 @@ export function normalizeGithubFacts(response,now=new Date().toISOString()){
   if(!Number.isInteger(p.number)||!/^https:\/\/github\.com\//.test(p.url||'')||
      !/^[a-f0-9]{40}$/.test(p.headRefOid||''))continue;
   const check=p.headRef?.target?.statusCheckRollup?.state;
-  prs.push({number:p.number,title:p.title,url:p.url,head_sha:p.headRefOid,
+  const evidence=inspectPrComments(p,repo.nameWithOwner);
+  prs.push({...evidence,number:p.number,title:p.title,url:p.url,head_sha:p.headRefOid,
    draft:p.isDraft===true,merged:false,
    committed_at:p.headRef?.target?.committedDate||null,
    ci:check==='SUCCESS'?'observed_green':check==='FAILURE'||check==='ERROR'?'failure':
       check==='PENDING'?'pending':'unknown',
    codex:codexStatus(p.comments?.nodes,p.headRefOid),
-   owner_requests:ownerRequests(p,repo.nameWithOwner),
-   owner_request_read_incomplete:p.comments?.pageInfo?.hasPreviousPage!==false||!Array.isArray(p.comments?.nodes),
    workflow_handoff:workflowHandoff(p,repo.nameWithOwner)});
  }
  return {version:1,observed_at:now,source:'github_graphql_read_only',
-  prs,merged_prs:(repo.recentlyMerged?.nodes||[]).filter(p=>p.mergedAt)
-    .map(p=>({number:p.number,title:p.title,url:p.url,merged_at:p.mergedAt}))};
+  prs,merged_prs:(repo.recentlyMerged?.nodes||[]).filter(p=>p.mergedAt).map(p=>{
+   const evidence=inspectPrComments(p,repo.nameWithOwner,{merged:true});
+   const entry={...evidence,number:p.number,title:p.title,url:p.url,merged_at:p.mergedAt,
+    head_sha:p.headRefOid,merge_sha:p.mergeCommit?.oid||null,merged:true};
+   entry.summary=readablePrSummary(entry);return entry;
+  })};
 }
 // Same read-only connection, only paginate PRs whose latest page is incomplete.
 export const OWNER_REQUEST_PAGE_QUERY=`query MuseCommentPage($owner:String!,$repo:String!,$number:Int!,$before:String!){
@@ -120,7 +118,8 @@ export const OWNER_REQUEST_PAGE_QUERY=`query MuseCommentPage($owner:String!,$rep
  }}}
 }`;
 export async function completeOwnerRequestPages(response,readPage){
- for(const p of response?.data?.repository?.pullRequests?.nodes||[]){
+ for(const p of [...(response?.data?.repository?.pullRequests?.nodes||[]),
+  ...(response?.data?.repository?.recentlyMerged?.nodes||[])]){
   const seen=new Set();let count=0;
   while(p.comments?.pageInfo?.hasPreviousPage&&count++<20){
    const cursor=p.comments.pageInfo.startCursor;
@@ -164,9 +163,11 @@ export function museActions(facts,previous,notes,{now=new Date().toISOString(),
   actions.push({id,kind,task_id,pr_number,head_sha,chat_url,reason});
  };
  // The durable local records, not mutable PR fields, own question status.
- const openQuestions=Object.values(questions.entries||{}).filter(q=>q.status!=='closed');
+ const openQuestions=Object.values(questions.entries||{}).filter(q=>!['closed','archived','resolved_reported'].includes(q.status));
  const held=new Set(openQuestions.filter(q=>['open','answered','delivery_uncertain'].includes(q.status)).map(q=>q.pr_number));
  for(const q of openQuestions){
+  if((facts?.merged_prs||[]).some(p=>p.number===q.pr_number)&&
+    q.classification!=='release_or_live_approval')continue;
   const e=Object.values(records).find(e=>e.pr_number===q.pr_number);
   if(q.source_changed){blocked.push({pr_number:q.pr_number,reason:'Owner question source edited; close it locally and request a new comment',question_id:q.id});continue;}
   if(q.status==='open')actions.push({id:identity(['owner_request',q.id]),kind:'remind_owner',
