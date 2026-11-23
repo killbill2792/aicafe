@@ -2,7 +2,7 @@
 // This is NOT a dispatcher, scheduler, code writer, or grant of owner approval.
 // Local question disposition is usable without a write token; GitHub publication
 // is a portable cross-courier receipt with a stable event identity.
-import {openSync,closeSync,unlinkSync} from 'node:fs';
+import {openSync,closeSync,unlinkSync,readFileSync,statSync,writeSync,ftruncateSync,fsyncSync} from 'node:fs';
 import {readMuseQuestions,recordMuseGithubSync} from './muse-owner-questions.mjs';
 
 const eligible=new Set(['pending','no_token','uncertain','blocked_auth','published_unverified']);
@@ -31,15 +31,75 @@ export function githubAttentionComment(q){
    reopened:'Owner question reopened for attention'
   }[body.state])+'.\nOriginal question: '+q.url;
 }
+
+// A PID-backed lock is reclaimable after a killed Muse process. Record the
+// event in durable storage BEFORE the network write so recovery can mark only
+// that event uncertain, never blindly submit it again.
+const lockLeaseMs=15*60*1000;
+function writeLock(fd,body){
+ const buf=Buffer.from(JSON.stringify(body)+'\n','utf8');
+ ftruncateSync(fd,0);writeSync(fd,buf,0,buf.length,0);fsyncSync(fd);
+}
+function processAlive(pid){
+ if(!Number.isSafeInteger(pid)||pid<=0)return null;
+ try{process.kill(pid,0);return true;}
+ catch(e){return e?.code==='ESRCH'?false:true;}
+}
+function recoverDeadPublicationLock(lockPath,questionPath,now){
+ let previous=null,stat;
+ try{
+  stat=statSync(lockPath);
+  try{previous=JSON.parse(readFileSync(lockPath,'utf8'));}catch{}
+ }catch{return false;}
+ const died=processAlive(previous?.pid)===false;
+ const stale=Date.now()-stat.mtimeMs>lockLeaseMs;
+ // An unidentifiable recent lock may still belong to a live process.
+ if(!died&&!stale)return false;
+ // Do not accidentally unlink a lock replaced since its examination.
+ try{
+  const again=statSync(lockPath);
+  if(again.ino!==stat.ino||again.dev!==stat.dev||again.mtimeMs!==stat.mtimeMs)return false;
+  const q=readMuseQuestions(questionPath);
+  const flight=previous?.in_flight;
+  if(flight?.question_id&&flight?.event_id){
+   const entry=q.entries?.[flight.question_id];
+   if(entry?.github_sync?.event_id===flight.event_id&&
+      entry.github_sync.status==='pending')
+    recordMuseGithubSync(questionPath,flight.question_id,flight.event_id,
+     {status:'uncertain'},now);
+  }else if(!previous?.pid){
+   // Legacy empty lock has no in-flight identity. Fail closed on any pending
+   // sends but free the publisher to progress with other, known-safe events.
+   for(const entry of Object.values(q.entries||{}))
+    if(entry.github_sync?.status==='pending')
+     recordMuseGithubSync(questionPath,entry.id,entry.github_sync.event_id,
+      {status:'uncertain'},now);
+  }
+  unlinkSync(lockPath);return true;
+ }catch{return false;}
+}
+
 export async function publishMuseQuestionAcks({repo,path,facts,token=null,
  fetchImpl=fetch,now=new Date().toISOString(),maxWrites=5}={}){
  if(!validRepo(repo)||!path)throw Error('GitHub synchronization repository/path required');
  const result={published:0,verified:0,pending:0,unconfigured:0,uncertain:0,blocked:0};
  // Prevent duplicate sends from overlapping Muse timer/browser processes.
+ const lockPath=path+'.publish.lock';
  let lock=null;
- try{lock=openSync(path+'.publish.lock','wx',0o600);}
- catch(e){if(e?.code==='EEXIST')return {...result,blocked:1};throw e;}
+ try{lock=openSync(lockPath,'wx',0o600);}
+ catch(e){
+  if(e?.code!=='EEXIST')throw e;
+  if(!recoverDeadPublicationLock(lockPath,path,now))
+   return {...result,blocked:1};
+  try{lock=openSync(lockPath,'wx',0o600);}
+  catch(err){if(err?.code==='EEXIST')return {...result,blocked:1};throw err;}
+ }
+ let inFlight=null;
+ const updateLock=()=>{
+  writeLock(lock,{version:1,pid:process.pid,observed_at:now,in_flight:inFlight});
+ };
  try{
+  updateLock();
   const current=readMuseQuestions(path);
   const prs=[...(facts?.prs||[]),...(facts?.merged_prs||[])];
   const observed=Date.parse(facts?.observed_at),clock=Date.parse(now);
@@ -72,8 +132,10 @@ export async function publishMuseQuestionAcks({repo,path,facts,token=null,
    // The comment contains state only, never the private owner response.
    const body=githubAttentionComment(q);
    written++;
+   inFlight={question_id:q.id,event_id:ack.event_id};
+   updateLock();
    try{
-    const res=await fetchImpl(url,{method:'POST',headers:{
+    const res=await fetchImpl(url,{method:'POST',signal:AbortSignal.timeout(30000),headers:{
      Authorization:'Bearer '+token,Accept:'application/vnd.github+json',
      'Content-Type':'application/json','X-GitHub-Api-Version':'2022-11-28'
     },body:JSON.stringify({body})});
@@ -100,8 +162,10 @@ export async function publishMuseQuestionAcks({repo,path,facts,token=null,
     // Inspect the next authoritative read; never auto-resend blindly.
     recordMuseGithubSync(path,q.id,ack.event_id,{status:'uncertain'},now);
     result.uncertain++;
+   }finally{
+    inFlight=null;updateLock();
    }
   }
   return result;
- }finally{closeSync(lock);unlinkSync(path+'.publish.lock');}
+ }finally{closeSync(lock);unlinkSync(lockPath);}
 }
