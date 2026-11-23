@@ -57,8 +57,18 @@ export async function sendDailyBriefs(db:SupabaseClient,now=new Date(),outbox?:B
     const {data,error}=await db.from("businesses").select("id,name,timezone,currency,is_demo")
       .order("id",{ascending:true}).range(offset,offset+99);
     if(error)throw new Error("businesses_unavailable");
-    for(const b of (data??[]) as Business[]){
-      if(b.is_demo)continue; // Sample cafés have no owner to brief.
+    const cafes=(data??[]) as Business[];
+    const candidates=cafes.filter(cafe=>!cafe.is_demo);
+    // A disconnected café has no verified POS baseline to brief. Batch the
+    // credential lookup by UUID; never use a non-unique café display name.
+    const connected=candidates.length?
+      await db.from("toast_api_credentials").select("business_id").eq("state","verified")
+        .in("business_id",candidates.map(cafe=>cafe.id)):
+      {data:[],error:null};
+    if(connected.error)throw new Error("toast_connection_eligibility_unavailable");
+    const eligible=new Set((connected.data??[]).map(row=>row.business_id));
+    for(const b of cafes){
+      if(b.is_demo||!eligible.has(b.id))continue;
       const result=await runCafeBrief(db,b,now,{kind:"scheduled",outbox}).catch(async(error:unknown)=>{
         const reason=error instanceof Error&&error.message==="brief_run_persistence_failed"
           ?"run_record_persistence_failed":"brief_processing_failed";
