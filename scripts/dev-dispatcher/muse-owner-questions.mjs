@@ -58,8 +58,25 @@ function transact(path,fn){
  const lock=path+'.lock',fd=openTransactionLock(path);
  try{
   const next=fn(readMuseQuestions(path)),tmp=path+'.tmp-'+process.pid+'-'+randomBytes(6).toString('hex');
-  try{writeFileSync(tmp,JSON.stringify(next,null,2)+'\n',{flag:'wx',mode:0o600});renameSync(tmp,path);}
-  catch(e){try{unlinkSync(tmp);}catch{}throw e;}
+  let tmpFd;
+  try{
+   // This file is the write-ahead "uncertain" journal for GitHub comments.
+   // Atomic rename alone is NOT crash-durable: flush the bytes, rename,
+   // then flush the containing directory before allowing a network POST.
+   tmpFd=openSync(tmp,'wx',0o600);
+   writeFileSync(tmpFd,JSON.stringify(next,null,2)+'\n');
+   fsyncSync(tmpFd);
+   closeSync(tmpFd);tmpFd=undefined;
+   renameSync(tmp,path);
+   const dirFd=openSync(dirname(path),'r');
+   try{fsyncSync(dirFd);}finally{closeSync(dirFd);}
+  }catch(e){
+   if(tmpFd!==undefined)try{closeSync(tmpFd);}catch{}
+   try{unlinkSync(tmp);}catch{}
+   // Fail closed on failed fsync: even if rename occurred, never claim a
+   // durable send state or begin the GitHub POST on this error.
+   throw e;
+  }
   return next;
  }finally{closeSync(fd);unlinkSync(lock);}
 }
