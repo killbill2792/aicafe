@@ -55,6 +55,9 @@ live("generated sales data gap, real model investigation, exact owner response, 
   for(const [business,owner] of [[businessId,ownerUserId],[foreignBusinessId,foreignOwnerId]]){
    await admin.query("insert into auth.users(id,instance_id,aud,role,email,encrypted_password,created_at,updated_at) values ($1,'00000000-0000-0000-0000-000000000000','authenticated','authenticated',$2,'',now(),now())",[owner,owner+"@example.invalid"]);
    await admin.query("insert into public.businesses(id,name,timezone,currency,is_demo) values($1,'Disposable proactive answer cafe','UTC','USD',false)",[business]);
+   // Paid autonomous acceptance requires a verified synthetic Toast source.
+   // This is an isolated local DB fixture, never a real API credential.
+   await admin.query("insert into public.toast_api_credentials(business_id,api_origin,client_id,client_secret_enc,state) values ($1,'https://example.invalid','fixture-only','no-secret','verified')",[business]);
    await admin.query("insert into public.cafe_access(business_id,mode) values($1,'grandfathered') on conflict (business_id) do update set mode='grandfathered',access_end=null",[business]);
    await admin.query("insert into public.memberships(business_id,user_id,role) values($1,$2,'owner')",[business,owner]);
   }
