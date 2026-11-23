@@ -334,8 +334,7 @@ export async function runMuseLite({repo,token,home=join(homedir(),'.local','stat
  const questionsPath=join(home,'owner-questions.json');
  const existingQuestions=readMuseQuestions(questionsPath);
  const tracked=[...new Set([
-  ...Object.values(existingQuestions.entries||{}).
-   filter(q=>['open','acknowledged','answered','delivery_uncertain','delivered'].includes(q.status)).map(q=>q.pr_number),
+  ...Object.values(existingQuestions.entries||{}).map(q=>q.pr_number),
   ...Object.values(notes.entries||{}).map(e=>e.pr_number)
  ].filter(n=>Number.isSafeInteger(n)&&n>0))].sort((a,b)=>a-b);
  const cache=join(home,'github-facts.json'),events=join(home,'events.json');
