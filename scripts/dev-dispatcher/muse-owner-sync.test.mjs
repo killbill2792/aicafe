@@ -56,12 +56,12 @@ test('local ignore is immediately effective; GitHub receipt is private-data-free
 test('missing token leaves question locally ignored and pending for later configuration',async()=>{
  const f=fixture();try{
   edit(f.path,'ignore','Ignore until reopened');
-  const first=await publishMuseQuestionAcks({repo,path:f.path,facts:facts(),token:null});
+  const first=await publishMuseQuestionAcks({repo,path:f.path,facts:facts(),token:null,now:at});
   assert.equal(first.unconfigured,1);
   assert.equal(readMuseQuestions(f.path).entries[q.id].status,'ignored');
   assert.equal(readMuseQuestions(f.path).entries[q.id].github_sync.status,'pending');
   const sent=await publishMuseQuestionAcks({repo,path:f.path,facts:facts(),
-   token:'configured',fetchImpl:async()=>({status:201,json:async()=>({
+   token:'configured',now:at,fetchImpl:async()=>({status:201,json:async()=>({
     id:123456803,html_url:urlFor(123456803)})})});
   assert.equal(sent.published,1);
  }finally{f.cleanup();}
@@ -71,11 +71,11 @@ test('uncertain network write is NOT retried, only verified on subsequent read',
   edit(f.path,'answer','Private owner answer');
   let count=0;
   await publishMuseQuestionAcks({repo,path:f.path,facts:facts(),token:'token',
-   fetchImpl:async()=>{count++;throw Error('network interrupted after write');}});
+   fetchImpl:async()=>{count++;throw Error('network interrupted after write');},now:at});
   const current=readMuseQuestions(f.path).entries[q.id];
   assert.equal(current.github_sync.status,'uncertain');
   await publishMuseQuestionAcks({repo,path:f.path,facts:facts(),token:'token',
-   fetchImpl:async()=>{count++;throw Error('must not resend');}});
+   fetchImpl:async()=>{count++;throw Error('must not resend');},now:at});
   assert.equal(count,1);
   const receipt={event_id:current.github_sync.event_id,question_id:q.id,
    state:'answered',comment_id:123456804,url:urlFor(123456804),created_at:at,actor:'killbill2792'};
@@ -88,11 +88,11 @@ test('403 cannot silently become confirmed and stale read cannot cause a duplica
   edit(f.path,'acknowledge','Picked up by Muse');
   let count=0;
   const denied=await publishMuseQuestionAcks({repo,path:f.path,facts:facts(),token:'wrong',
-   fetchImpl:async()=>{count++;return {status:403};}});
+   fetchImpl:async()=>{count++;return {status:403};},now:at});
   assert.equal(denied.blocked,1);
   assert.equal(readMuseQuestions(f.path).entries[q.id].github_sync.status,'blocked_auth');
   await publishMuseQuestionAcks({repo,path:f.path,facts:facts(),token:'wrong',
-   fetchImpl:async()=>{count++;return {status:201};}});
+   fetchImpl:async()=>{count++;return {status:201};},now:at});
   assert.equal(count,1);
  }finally{f.cleanup();}
 });
