@@ -165,9 +165,11 @@ describe("sending the daily brief at each café's own time",()=>{
       {id:"other-id",name:"My café",timezone:zone,currency:"USD",is_demo:false,
         open:"06:30",owners:["owner-two"],toastConnected:false},
     ];
-    const {db,writes}=fakeDb({cafes});
+    const {db,writes,runs}=fakeDb({cafes});
     const result=await sendDailyBriefs(db,at("05:00"));
-    expect(result).toMatchObject({checked:1,sent:1,failed:0});
+    expect(result).toMatchObject({checked:2,sent:1,skipped:1,failed:0});
+    expect(runs).toContainEqual(expect.objectContaining({business_id:"other-id",
+      step:"eligibility",outcome:"skipped",reason:"toast_not_verified"}));
     expect(writes.filter(row=>row.table==="ai_messages").map(row=>row.business_id))
       .toEqual(["connected-id"]);
     expect(writes.filter(row=>row.table==="ai_messages").some(row=>row.business_id==="other-id"))
