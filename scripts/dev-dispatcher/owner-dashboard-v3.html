@@ -48,9 +48,9 @@ section{margin-top:18px}details{padding:7px;border-bottom:1px solid #e2e2e2}
 <p>Questions arrive from coding PR comments. Muse and the owner record the actual answer, send it to the saved chat and record evidence of delivery. These records do not authorize spend, merging or production actions.</p>
 <div id="muse-questions"></div>
 <label>Question ID<input id="question-id" readonly></label>
-<label>Action<select id="question-action"><option value="answer">Record owner's answer</option><option value="claim_delivery">Reserve delivery (before sending)</option><option value="confirm_delivery">Confirm observed delivery</option><option value="confirm_not_sent">Verify not sent (allow retry)</option><option value="close">Close with reason</option></select></label>
+<label>Action<select id="question-action"><option value="acknowledge">Muse picked up this request</option><option value="answer">Record owner's answer</option><option value="claim_delivery">Reserve delivery (before sending)</option><option value="confirm_delivery">Confirm observed delivery</option><option value="confirm_not_sent">Verify not sent (allow retry)</option><option value="close">Close with reason</option><option value="ignore">Ignore / dismiss this request</option><option value="reopen">Reopen a previously handled request</option><option value="retry_github_sync">Retry GitHub synchronization after checking absence</option></select></label>
 <label>Exact answer or evidence<textarea id="question-detail" rows="4" cols="55"></textarea></label>
-<button id="question-save">Save local question record</button><p id="question-result"></p>
+<button id="question-save">Save question state</button><p>Changes are effective locally immediately. GitHub receives an acknowledgment through the existing Muse monitor when its comment token is configured. Synchronization errors remain visible; no approval is inferred.</p><p id="question-result"></p>
 </section>
 <section>
 <h2>Muse coordination notes</h2>
@@ -136,8 +136,9 @@ async function refreshQuestions(){
  if(!response.ok)throw Error('Question records HTTP '+response.status);
  localQuestions=await response.json();
  const allQuestions=Object.values(localQuestions.entries||{});
- const activeQuestions=allQuestions.filter(q=>['open','answered','delivery_uncertain'].includes(q.status));
- const archivedQuestions=allQuestions.filter(q=>!['open','answered','delivery_uncertain'].includes(q.status));
+ const ownerQuestions=allQuestions.filter(q=>q.status==='open');
+ const courierQuestions=allQuestions.filter(q=>['acknowledged','answered','delivery_uncertain','delivered'].includes(q.status));
+ const archivedQuestions=allQuestions.filter(q=>!['open','acknowledged','answered','delivery_uncertain','delivered'].includes(q.status));
  const renderQuestions=items=>items.sort((a,b)=>
   Number(a.status==='closed')-Number(b.status==='closed')||String(b.created_at).localeCompare(String(a.created_at))).map(q=>{
    const links=[...new Set(Object.values(localNotes.entries||{}).filter(e=>e.pr_number===q.pr_number).map(e=>e.chat_url).filter(Boolean))];
@@ -148,12 +149,18 @@ async function refreshQuestions(){
     (q.answer?'<p>Recorded answer ('+esc(q.answer_recorded_by)+'): '+esc(q.answer)+'</p>':'')+
     (q.delivery_receipt?'<p>Reported delivery evidence: '+esc(q.delivery_receipt)+'</p>':'')+
     (q.closure?'<p>Closure: '+esc(q.closure)+'</p>':'')+
-    '<button data-question="'+esc(q.id)+'">Edit local record</button></details>';
+    (q.duplicate_of?'<p>Repeated question, first recorded as '+esc(q.duplicate_of)+'</p>':'')+
+    (q.github_sync?'<p>GitHub synchronization: <strong>'+esc(q.github_sync.status)+'</strong>'+
+     (q.github_sync.url?' · <a target="_blank" rel="noopener noreferrer" href="'+esc(q.github_sync.url)+'">Receipt on PR</a>':'')+
+     (q.github_sync_conflict?' · conflicting remote receipt needs review':'')+'</p>':'<p>GitHub synchronization not yet requested</p>')+
+    '<button data-question="'+esc(q.id)+'">Update record</button></details>';
   }).join('');
- el('muse-questions').innerHTML='<p><strong>'+activeQuestions.length+' active</strong> · '+archivedQuestions.length+
-  ' resolved or historical (not counted as pending)</p>'+
-  (renderQuestions(activeQuestions)||'<p>No active owner questions.</p>')+
-  '<details><summary>Show resolved and historical question records ('+archivedQuestions.length+')</summary>'+
+ el('muse-questions').innerHTML='<p><strong>'+ownerQuestions.length+' need owner review</strong> · '+
+  courierQuestions.length+' with Muse · '+archivedQuestions.length+' resolved, ignored or historical</p>'+
+  (renderQuestions(ownerQuestions)||'<p>No unanswered owner requests.</p>')+
+  '<details><summary>Muse handling ('+courierQuestions.length+')</summary>'+
+  (renderQuestions(courierQuestions)||'<p>None</p>')+'</details>'+
+  '<details><summary>Resolved, ignored and historical ('+archivedQuestions.length+')</summary>'+
   (renderQuestions(archivedQuestions)||'<p>None</p>')+'</details>';
  for(const button of document.querySelectorAll('[data-question]'))button.onclick=()=>{
   const q=localQuestions.entries[button.dataset.question];
@@ -172,7 +179,8 @@ el('question-save').onclick=async()=>{
   const v=await r.json();if(!r.ok)throw Error(v.error||'HTTP '+r.status);
   selectedQuestion={id:v.entry.id,expected_revision:v.entry.revision};
   el('question-detail').value='';await refreshQuestions();
-  el('question-result').textContent='Saved locally: '+v.entry.status+' (not authorization)';
+  el('question-result').textContent='Saved: '+v.entry.status+
+   ' · GitHub: '+(v.entry.github_sync?.status||'not requested')+' (never authorization)';
  }catch(e){el('question-result').textContent='Not saved: '+e.message;}
 };
 async function refreshNotes(){
