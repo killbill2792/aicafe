@@ -106,6 +106,14 @@ export function inspectPrComments(pr,repo,{merged=false,ackAuthors=[]}={}){
   }
  }
   result.resolved_request_ids=[...resolved];
+ const duplicates=new Map();
+ for(const q of [...result.owner_requests].sort((a,b)=>String(a.created_at).localeCompare(String(b.created_at))||
+  Number(a.id.slice(8))-Number(b.id.slice(8)))){
+  const key=[q.head_sha,q.classification,q.question.toLowerCase().replace(/\\s+/g,' ').replace(/[?.!]+$/,'').trim()].join('::');
+  const previous=duplicates.get(key);
+  if(previous)q.duplicate_of=previous;
+  else duplicates.set(key,q.id);
+ }
  const ackByQuestion=new Map();
  for(const event of result.ack_events.sort((a,b)=>a.comment_id-b.comment_id))
   ackByQuestion.set(event.question_id,event);
@@ -114,6 +122,7 @@ export function inspectPrComments(pr,repo,{merged=false,ackAuthors=[]}={}){
   const beforeMerge=merged&&pr.mergedAt&&Date.parse(q.created_at)<=Date.parse(pr.mergedAt);
   const historical=beforeMerge&&q.classification==='development_question';
   q.disposition=finished?(superseded.has(q.id)?'superseded_reported':'resolved_reported'):
+   q.duplicate_of?'duplicate_reported':
    historical?'historical_after_merge':'needs_review';
   if(finished)q.resolution_source_url=sourceResolution.get(q.id)||null;
 
