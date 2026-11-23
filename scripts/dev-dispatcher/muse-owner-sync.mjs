@@ -64,14 +64,14 @@ function recoverDeadPublicationLock(lockPath,questionPath,now){
   if(flight?.question_id&&flight?.event_id){
    const entry=q.entries?.[flight.question_id];
    if(entry?.github_sync?.event_id===flight.event_id&&
-      entry.github_sync.status==='pending')
+      ['pending','no_token'].includes(entry.github_sync.status))
     recordMuseGithubSync(questionPath,flight.question_id,flight.event_id,
      {status:'uncertain'},now);
   }else if(!previous?.pid){
    // Legacy empty lock has no in-flight identity. Fail closed on any pending
    // sends but free the publisher to progress with other, known-safe events.
    for(const entry of Object.values(q.entries||{}))
-    if(entry.github_sync?.status==='pending')
+    if(['pending','no_token'].includes(entry.github_sync?.status))
      recordMuseGithubSync(questionPath,entry.id,entry.github_sync.event_id,
       {status:'uncertain'},now);
   }
@@ -131,6 +131,19 @@ export async function publishMuseQuestionAcks({repo,path,facts,token=null,
    const url='https://api.github.com/repos/'+repo+'/issues/'+q.pr_number+'/comments';
    // The comment contains state only, never the private owner response.
    const body=githubAttentionComment(q);
+   // Write-ahead delivery intent is mandatory. A crash at ANY later point
+   // leaves this event non-writable, preventing a duplicate GitHub comment.
+   let armed;
+   try{
+    armed=recordMuseGithubSync(path,q.id,ack.event_id,{status:'uncertain'},now);
+   }catch{
+    // State-store contention means the POST must NOT start.
+    result.blocked++;continue;
+   }
+   if(armed.entries?.[q.id]?.github_sync?.event_id!==ack.event_id||
+      armed.entries[q.id].github_sync.status!=='uncertain'){
+    result.blocked++;continue;
+   }
    written++;
    inFlight={question_id:q.id,event_id:ack.event_id};
    updateLock();
@@ -144,23 +157,21 @@ export async function publishMuseQuestionAcks({repo,path,facts,token=null,
      result.blocked++;continue;
     }
     if(res.status!==201){
-     recordMuseGithubSync(path,q.id,ack.event_id,{status:'uncertain'},now);
+     // The write-ahead uncertain status already protects against replay.
      result.uncertain++;continue;
     }
     const published=await res.json();
     const expected=source.url+'#issuecomment-'+published?.id;
     if(!Number.isSafeInteger(published?.id)||published.id<=0||
        published.html_url!==expected){
-     recordMuseGithubSync(path,q.id,ack.event_id,{status:'uncertain'},now);
      result.uncertain++;continue;
     }
     recordMuseGithubSync(path,q.id,ack.event_id,{status:'published_unverified',
       url:published.html_url},now);
     result.published++;
    }catch{
-    // A failed or interrupted POST may have succeeded at GitHub.
-    // Inspect the next authoritative read; never auto-resend blindly.
-    recordMuseGithubSync(path,q.id,ack.event_id,{status:'uncertain'},now);
+    // Write-ahead state is already uncertain. Even if an outcome save fails,
+    // the same event cannot be sent again until it is checked on GitHub.
     result.uncertain++;
    }finally{
     inFlight=null;updateLock();
