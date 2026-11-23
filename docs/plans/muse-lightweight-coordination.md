@@ -91,7 +91,10 @@ No token leaves the local decision effective but GitHub synchronization pending.
 The existing question UI shows the status and source receipt. The owner/Muse may
 choose `retry_github_sync` only after checking that an uncertain post is absent.
 A read outage, stale GitHub snapshot, missing PR or unresolved duplicate must
-never count as a successful synchronization. Grok Bot or another courier can
+never count as a successful synchronization. If the write token belongs to a separate
+bot account, add that exact authenticated login to `MUSE_GITHUB_ACK_AUTHORS` before
+considering its posted receipts verified; never infer trust from the comment text.
+Grok Bot or another courier can
 consume the same source-linked comments with its own authenticated read access;
 neither bot inherits private owner authority from the marker.
 
