@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {museActions,normalizeGithubFacts,fetchGithubFacts,reserveMuseActions,runMuseLite,observeHandoffRuns,completeOwnerRequestPages,trackedPrQuery} from './muse-lite.mjs';
+import {museActions,normalizeGithubFacts,fetchGithubFacts,reserveMuseActions,runMuseLite,observeHandoffRuns,completeOwnerRequestPages,trackedPrQuery,completeReviewPages} from './muse-lite.mjs';
 import {readMuseQuestions,syncMuseQuestions,writeMuseQuestion,importMuseQuestions} from './muse-owner-questions.mjs';
 import {mkdtempSync,rmSync} from 'node:fs';
 import {tmpdir} from 'node:os';
@@ -321,4 +321,22 @@ test('tracked merged PR read reconciles questions beyond the last 25 without a d
  assert.equal(fetched.merged_prs[0].attention.length,0);
  const q=importMuseQuestions(empty(),fetched,now);
  assert.equal(q.entries['comment-123456777'].status,'archived');
+});
+
+test('all review pages are scanned before declaring the review summary complete',async()=>{
+ const raw=github('SUCCESS',[]),p=raw.data.repository.pullRequests.nodes[0];
+ p.reviewThreads={pageInfo:{hasNextPage:true,endCursor:'one'},nodes:[
+  {id:'old',isResolved:true,comments:{nodes:[]}}]};
+ await completeReviewPages(raw,async(number,cursor)=>{
+  assert.equal(number,488);assert.equal(cursor,'one');
+  return {data:{repository:{pullRequest:{reviewThreads:{
+   pageInfo:{hasNextPage:false,endCursor:'two'},
+   nodes:[{id:'later',isResolved:false,comments:{nodes:[{body:'Address the tenant regression',
+    url:'https://github.com/killbill2792/aicafe/pull/488#discussion_r987',
+    author:{login:'maintainer'}}]}]}]}}}}};
+ });
+ const out=normalizeGithubFacts(raw,now).prs[0];
+ assert.equal(out.review_scan_incomplete,false);
+ assert.equal(out.unresolved_review_threads.length,1);
+ assert.equal(out.unresolved_review_threads[0].id,'later');
 });
