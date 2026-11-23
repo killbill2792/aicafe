@@ -40,7 +40,7 @@ export function inspectPrComments(pr,repo,{merged=false}={}){
    !Array.isArray(pr.comments?.nodes),unresolved_review_threads:[],review_scan_incomplete:
    pr.reviewThreads?.pageInfo?.hasNextPage===true};
  if(pr.headRepository?.nameWithOwner!==repo&&!(merged&&!pr.headRepository))return result;
- const resolved=new Set(),superseded=new Set();
+ const resolved=new Set(),superseded=new Set(),sourceResolution=new Map(),unlinkedApprovals=[];
  for(const c of pr.comments?.nodes||[]){
   const body=String(c.body||''),id=String(c.url||'').match(/#issuecomment-(\d+)$/)?.[1];
   if(!id||!safeUrl(c.url,pr))continue;
@@ -63,8 +63,17 @@ export function inspectPrComments(pr,repo,{merged=false}={}){
   }
   const rep=report({...c,id,url:c.url},pr);
   if(rep){result.integration_reports.push(rep);value.kind='integration_report';}
-  const links=resolutions(body);for(const l of links)resolved.add(l);
+  const links=resolutions(body);for(const l of links){resolved.add(l);sourceResolution.set(l,c.url);}
+  if(!links.length&&/\b(?:owner (?:explicitly |already |has )?approved|owner approval (?:received|recorded|granted)|approval received in (?:the )?originating chat|approved in (?:the )?(?:owner|originating) chat)\b/i.test(stripped))
+   unlinkedApprovals.push({at:c.createdAt,url:c.url});
   if(/\bsupersedes?\b/i.test(body))for(const l of links)superseded.add(l);
+ }
+ // A source-reported approval with no comment reference can resolve only a
+ // single earlier development question. More than one remains ambiguous.
+ for(const reply of unlinkedApprovals.sort((a,b)=>String(a.at).localeCompare(String(b.at)))){
+  const candidates=result.owner_requests.filter(q=>q.classification==='development_question'&&
+   !resolved.has(q.id)&&Date.parse(q.created_at)<=Date.parse(reply.at));
+  if(candidates.length===1){resolved.add(candidates[0].id);sourceResolution.set(candidates[0].id,reply.url);}
  }
  result.resolved_request_ids=[...resolved];
  for(const q of result.owner_requests){
@@ -73,6 +82,8 @@ export function inspectPrComments(pr,repo,{merged=false}={}){
   const historical=beforeMerge&&q.classification==='development_question';
   q.disposition=finished?(superseded.has(q.id)?'superseded_reported':'resolved_reported'):
    historical?'historical_after_merge':'needs_review';
+  if(finished)q.resolution_source_url=sourceResolution.get(q.id)||null;
+
   // Closing a development PR archives old scope questions for display; not owner authorization.
   if(q.disposition==='needs_review')result.attention.push({
    type:'owner_question',id:q.id,pr_number:pr.number,text:q.question,
