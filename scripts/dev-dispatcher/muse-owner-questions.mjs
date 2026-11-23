@@ -2,6 +2,7 @@
 import {readFileSync,writeFileSync,renameSync,unlinkSync,mkdirSync,openSync,closeSync,existsSync} from 'node:fs';
 import {dirname} from 'node:path';
 import {validChatUrl} from './muse-local-notes.mjs';
+import {randomBytes} from 'node:crypto';
 
 const text=(v,max=2000)=>typeof v==='string'&&v.trim()&&v.length<=max&&!/[\x00-\x08\x0b-\x1f\x7f]/.test(v);
 const idValid=id=>typeof id==='string'&&/^comment-[1-9]\d{0,19}$/.test(id);
@@ -123,7 +124,7 @@ export function applyQuestionEdit(state,edit,{role,now=new Date().toISOString(),
  }else throw Error('Invalid question transition; do not replay uncertain delivery or use edited questions');
  q.revision++;q.history.push({at:now,actor:role,event:action,detail:edit.detail});
  if(shared){
-  q.github_sync={event_id:q.id+'-r'+q.revision,state:shared,status:'pending'};
+  q.github_sync={event_id:q.id+'-r'+q.revision+'-'+randomBytes(8).toString('hex'),state:shared,status:'pending'};
   delete q.github_sync_conflict;
  }
  return {...state,entries:{...state.entries,[q.id]:q}};
