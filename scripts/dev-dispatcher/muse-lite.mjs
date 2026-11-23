@@ -26,7 +26,7 @@ export const QUERY=`query MuseMonitor($owner:String!,$repo:String!){
     labels(first:100){pageInfo{hasNextPage} nodes{name}}
     headRef{target{... on Commit{committedDate statusCheckRollup{state}}}}
     comments(last:100){pageInfo{hasPreviousPage startCursor} nodes{body createdAt url authorAssociation author{login}}}
-    reviewThreads(first:100){pageInfo{hasNextPage} nodes{id isResolved comments(first:1){nodes{body url author{login}}}}}
+    reviewThreads(first:100){pageInfo{hasNextPage endCursor} nodes{id isResolved comments(first:1){nodes{body url author{login}}}}}
    }
   }
   recentlyMerged:pullRequests(states:MERGED,first:25,orderBy:{field:UPDATED_AT,direction:DESC}){
@@ -34,7 +34,7 @@ export const QUERY=`query MuseMonitor($owner:String!,$repo:String!){
      headRepository{nameWithOwner}
      mergeCommit{oid}
      comments(last:100){pageInfo{hasPreviousPage startCursor} nodes{body createdAt url authorAssociation author{login}}}
-     reviewThreads(first:100){pageInfo{hasNextPage} nodes{id isResolved comments(first:1){nodes{body url author{login}}}}}
+     reviewThreads(first:100){pageInfo{hasNextPage endCursor} nodes{id isResolved comments(first:1){nodes{body url author{login}}}}}
     }
   }
  }
@@ -143,9 +143,31 @@ export function trackedPrQuery(numbers){
   ${safe.map(n=>`pr${n}:pullRequest(number:${n}){number title url mergedAt headRefOid authorAssociation
    headRepository{nameWithOwner} mergeCommit{oid}
    comments(last:100){pageInfo{hasPreviousPage startCursor} nodes{body createdAt url authorAssociation author{login}}}
-   reviewThreads(first:100){pageInfo{hasNextPage} nodes{id isResolved comments(first:1){nodes{body url author{login}}}}}
+   reviewThreads(first:100){pageInfo{hasNextPage endCursor} nodes{id isResolved comments(first:1){nodes{body url author{login}}}}}
   }`).join('\n')}
  }}`;
+}
+export const REVIEW_THREAD_PAGE_QUERY=`query MuseReviewPage($owner:String!,$repo:String!,$number:Int!,$after:String!){
+ repository(owner:$owner,name:$repo){pullRequest(number:$number){
+ reviewThreads(first:100,after:$after){pageInfo{hasNextPage endCursor}
+ nodes{id isResolved comments(first:1){nodes{body url author{login}}}}}
+ }}}
+`;
+export async function completeReviewPages(response,readPage){
+ for(const p of [...(response?.data?.repository?.pullRequests?.nodes||[]),
+  ...(response?.data?.repository?.recentlyMerged?.nodes||[])]){
+  const seen=new Set();let count=0;
+  while(p.reviewThreads?.pageInfo?.hasNextPage&&count++<20){
+   const cursor=p.reviewThreads.pageInfo.endCursor;
+   if(!cursor||seen.has(cursor))break;
+   seen.add(cursor);
+   const result=await readPage(p.number,cursor);
+   const page=result?.data?.repository?.pullRequest?.reviewThreads;
+   if(result?.errors?.length||!Array.isArray(page?.nodes)||!page.pageInfo)break;
+   p.reviewThreads={nodes:[...p.reviewThreads.nodes,...page.nodes],pageInfo:page.pageInfo};
+  }
+ }
+ return response;
 }
 export async function fetchGithubFacts({repo,token,fetchImpl=fetch,
  now=new Date().toISOString(),trackedPrNumbers=[]}={}){
@@ -161,6 +183,7 @@ export async function fetchGithubFacts({repo,token,fetchImpl=fetch,
  };
  const response=await read(QUERY,{owner,repo:name});
  await completeOwnerRequestPages(response,(number,before)=>read(OWNER_REQUEST_PAGE_QUERY,{owner,repo:name,number,before}));
+ await completeReviewPages(response,(number,after)=>read(REVIEW_THREAD_PAGE_QUERY,{owner,repo:name,number,after}));
  const facts=normalizeGithubFacts(response,now);
  const present=new Set([...facts.prs,...facts.merged_prs].map(p=>p.number));
  const missing=[...new Set(trackedPrNumbers)].filter(n=>Number.isSafeInteger(n)&&n>0&&
@@ -172,6 +195,7 @@ export async function fetchGithubFacts({repo,token,fetchImpl=fetch,
    .filter(p=>p?.mergedAt&&p?.number);
   const container={data:{repository:{pullRequests:{nodes:[]},recentlyMerged:{nodes:merged}}}};
   await completeOwnerRequestPages(container,(number,before)=>read(OWNER_REQUEST_PAGE_QUERY,{owner,repo:name,number,before}));
+  await completeReviewPages(container,(number,after)=>read(REVIEW_THREAD_PAGE_QUERY,{owner,repo:name,number,after}));
   for(const p of merged){
    const evidence=inspectPrComments(p,repo,{merged:true});
    const entry={...evidence,number:p.number,title:p.title,url:p.url,merged_at:p.mergedAt,
