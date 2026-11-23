@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {mkdtempSync,rmSync} from 'node:fs';
+import {mkdtempSync,rmSync,writeFileSync,existsSync,utimesSync} from 'node:fs';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import {importMuseQuestions,readMuseQuestions,syncMuseQuestions,writeMuseQuestion} from './muse-owner-questions.mjs';
@@ -145,4 +145,65 @@ test('same-revision concurrent couriers create a visible conflict rather than la
  assert.equal(next.entries[q.id].status,'ignored');
  assert.equal(next.entries[q.id].last_github_sequence,3);
  assert.ok(next.entries[q.id].github_sync_conflict);
+});
+
+test('offline or unauthorized GitHub write cannot let an older receipt erase a local answer',()=>{
+ for(const blocked of ['no_token','blocked_auth']){
+  const f=fixture();try{
+   edit(f.path,'answer','A newer private answer remains authoritative');
+   const old={event_id:q.id+'-r1-aaaaaaaaaaaaaaaa',question_id:q.id,
+    state:'resolved',comment_id:123456999,url:urlFor(123456999),
+    created_at:at,actor:'killbill2792',sequence:1};
+   const state=readMuseQuestions(f.path);
+   state.entries[q.id].github_sync.status=blocked;
+   writeFileSync(f.path,JSON.stringify(state));
+   const imported=syncMuseQuestions(f.path,facts({...source(),ack_events:[old]}),at);
+   assert.equal(imported.entries[q.id].status,'answered');
+   assert.equal(imported.entries[q.id].answer,'A newer private answer remains authoritative');
+   assert.ok(imported.entries[q.id].github_sync_conflict);
+   assert.equal(imported.entries[q.id].github_sync.status,blocked);
+  }finally{f.cleanup();}
+ }
+});
+test('dead publication process lock recovers without resending an uncertain POST',async()=>{
+ const f=fixture();try{
+  edit(f.path,'ignore','Keep ignored locally');
+  const pending=readMuseQuestions(f.path).entries[q.id].github_sync;
+  writeFileSync(f.path+'.publish.lock',JSON.stringify({
+   version:1,pid:999999999,observed_at:at,
+   in_flight:{question_id:q.id,event_id:pending.event_id}})+'\n');
+  let sends=0;
+  const out=await publishMuseQuestionAcks({repo,path:f.path,facts:facts(),token:'mock',
+   now:at,fetchImpl:async()=>{sends++;throw Error('must not blindly repeat');}});
+  assert.equal(out.blocked,0);
+  assert.equal(sends,0);
+  assert.equal(readMuseQuestions(f.path).entries[q.id].github_sync.status,'uncertain');
+  assert.equal(existsSync(f.path+'.publish.lock'),false);
+ }finally{f.cleanup();}
+});
+test('active publisher lock is retained rather than stolen by another process',async()=>{
+ const f=fixture();try{
+  edit(f.path,'ignore','Keep locally');
+  writeFileSync(f.path+'.publish.lock',JSON.stringify({
+   version:1,pid:process.pid,observed_at:at,in_flight:null})+'\n');
+  const out=await publishMuseQuestionAcks({repo,path:f.path,facts:facts(),token:'mock',
+   now:at,fetchImpl:async()=>{throw Error('unexpected publication');}});
+  assert.equal(out.blocked,1);
+  assert.equal(existsSync(f.path+'.publish.lock'),true);
+  assert.equal(readMuseQuestions(f.path).entries[q.id].github_sync.status,'pending');
+ }finally{f.cleanup();}
+});
+test('legacy orphaned empty lock is recovered without risking duplicate requests',async()=>{
+ const f=fixture();try{
+  edit(f.path,'ignore','Keep locally');
+  const lock=f.path+'.publish.lock';
+  writeFileSync(lock,'');
+  const old=new Date(Date.now()-20*60*1000);
+  utimesSync(lock,old,old);
+  const out=await publishMuseQuestionAcks({repo,path:f.path,facts:facts(),token:'mock',
+   now:at,fetchImpl:async()=>{throw Error('must inspect GitHub first');}});
+  assert.equal(out.blocked,0);
+  assert.equal(existsSync(lock),false);
+  assert.equal(readMuseQuestions(f.path).entries[q.id].github_sync.status,'uncertain');
+ }finally{f.cleanup();}
 });
