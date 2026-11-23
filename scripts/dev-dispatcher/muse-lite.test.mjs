@@ -285,7 +285,7 @@ test('removal or outage never implies answer; missing publication triggers recov
 test('merged PR comment is imported and old development approval is archived without asking owner again',()=>{
  const raw=github('SUCCESS',[]),p=raw.data.repository.pullRequests.nodes[0];
  raw.data.repository.pullRequests.nodes=[];
- raw.data.repository.recentlyMerged.nodes=[{number:488,title:p.title,url:p.url,mergedAt:'2026-11-16T19:59:00Z',
+ raw.data.repository.recentlyMerged.nodes=[{number:488,title:p.title,url:p.url,mergedAt:'2026-11-16T20:05:00Z',
   headRefOid:sha,authorAssociation:'OWNER',headRepository:{nameWithOwner:'killbill2792/aicafe'},
   mergeCommit:{oid:'b'.repeat(40)},comments:{pageInfo:{hasPreviousPage:false},
   nodes:[request(101,'Approve development-only scope?')]},
@@ -302,7 +302,7 @@ test('tracked merged PR read reconciles questions beyond the last 25 without a d
  assert.match(query,/pr467:pullRequest\(number:467\)/);
  assert.doesNotMatch(query,/mutation/);
  const tracked={number:trackedNumber,title:'Earlier merged PR',
-  url:'https://github.com/killbill2792/aicafe/pull/467',mergedAt:'2026-11-15T12:00:00Z',
+  url:'https://github.com/killbill2792/aicafe/pull/467',mergedAt:'2026-11-17T12:00:00Z',
   headRefOid:sha,headRepository:{nameWithOwner:'killbill2792/aicafe'},mergeCommit:{oid:'c'.repeat(40)},
   comments:{pageInfo:{hasPreviousPage:false},nodes:[{...request(123456777,'Approve only test scope?'),
    url:'https://github.com/killbill2792/aicafe/pull/467#issuecomment-123456777'}]},
