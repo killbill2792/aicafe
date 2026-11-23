@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {mkdtempSync,rmSync,writeFileSync,existsSync,utimesSync,unlinkSync} from 'node:fs';
+import {mkdtempSync,rmSync,writeFileSync,existsSync,utimesSync,unlinkSync,readdirSync} from 'node:fs';
+import {spawnSync} from 'node:child_process';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import {importMuseQuestions,readMuseQuestions,syncMuseQuestions,writeMuseQuestion} from './muse-owner-questions.mjs';
@@ -278,5 +279,27 @@ test('failure to record write-ahead uncertainty prevents POST entirely',async()=
   assert.equal(out.blocked,1);
   assert.equal(sends,0);
   assert.equal(readMuseQuestions(f.path).entries[q.id].github_sync.status,'pending');
+ }finally{f.cleanup();}
+});
+
+test('question write-ahead state survives immediate forced child-process exit',()=>{
+ const f=fixture();try{
+  const child=`import {readMuseQuestions,writeMuseQuestion} from './scripts/dev-dispatcher/muse-owner-questions.mjs';
+   const path=process.env.MUSE_CHILD_Q_PATH;
+   const before=readMuseQuestions(path).entries['comment-123456801'];
+   writeMuseQuestion(path,{id:before.id,expected_revision:before.revision,
+    action:'ignore',detail:'Durably recorded before GitHub POST'},
+    {role:'muse',now:'2026-11-23T20:00:00Z',notes:{entries:{}}});
+   process.exit(99);`;
+  const result=spawnSync(process.execPath,['--input-type=module','-e',child],{
+   cwd:process.cwd(),env:{...process.env,MUSE_CHILD_Q_PATH:f.path},encoding:'utf8'});
+  assert.equal(result.status,99,result.stderr);
+  const saved=readMuseQuestions(f.path).entries[q.id];
+  assert.equal(saved.status,'ignored');
+  assert.equal(saved.github_sync.status,'pending');
+  assert.match(saved.github_sync.event_id,/^comment-123456801-r\d+-[a-f0-9]{16}$/);
+  const stray=readdirSync(f.path.slice(0,f.path.lastIndexOf('/'))).
+   filter(name=>name.includes('.tmp-')||name.endsWith('.lock'));
+  assert.deepEqual(stray,[],'no unflushed temporary or stale local lock remains');
  }finally{f.cleanup();}
 });
