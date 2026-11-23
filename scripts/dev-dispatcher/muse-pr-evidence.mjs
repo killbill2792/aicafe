@@ -38,7 +38,7 @@ export function inspectPrComments(pr,repo,{merged=false}={}){
  const result={comments:[],owner_requests:[],resolved_request_ids:[],integration_reports:[],
   attention:[],owner_request_read_incomplete:pr.comments?.pageInfo?.hasPreviousPage!==false||
    !Array.isArray(pr.comments?.nodes),unresolved_review_threads:[],review_scan_incomplete:
-   pr.reviewThreads?.pageInfo?.hasNextPage===true};
+   !Array.isArray(pr.reviewThreads?.nodes)||pr.reviewThreads?.pageInfo?.hasNextPage!==false};
  if(pr.headRepository?.nameWithOwner!==repo&&!(merged&&!pr.headRepository))return result;
  const resolved=new Set(),superseded=new Set(),sourceResolution=new Map(),unlinkedApprovals=[];
  for(const c of pr.comments?.nodes||[]){
