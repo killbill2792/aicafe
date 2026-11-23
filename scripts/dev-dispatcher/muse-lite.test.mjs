@@ -341,3 +341,13 @@ test('all review pages are scanned before declaring the review summary complete'
  assert.equal(out.unresolved_review_threads.length,1);
  assert.equal(out.unresolved_review_threads[0].id,'later');
 });
+
+test('historical owner notices are superseded in local pending counts, not deleted',()=>{
+ const old={version:1,events:{old:{id:'old',question_id:'comment-101',
+  status:'suggested_unverified',created_at:now}}};
+ const questions={version:1,entries:{'comment-101':{status:'archived'}}};
+ const result=reserveMuseActions(old,{actions:[]},now,{questions});
+ assert.equal(result.state.events.old.status,'superseded');
+ assert.equal(Object.values(result.state.events).filter(e=>e.status==='suggested_unverified').length,0);
+ assert.equal(result.new_actions.length,0);
+});
