@@ -22,7 +22,7 @@ function report(c,pr){
   try{
    const r=JSON.parse(m[1]);
    if(!/^[a-f0-9]{40}$/.test(r.merge_sha||'')||!['PROVEN','FAILED','NOT_PROVEN','BLOCKED','ACTION_REQUIRED'].includes(r.status))return null;
-   return {source_comment_id:'comment-'+c.id,source_url:c.url,merge_sha:r.merge_sha,
+   return {source_comment_id:'comment-'+String(c.url||'').split('#issuecomment-').at(-1),source_url:c.url,merge_sha:r.merge_sha,
     status:r.status,summary:preview(s),evidence_urls:Array.isArray(r.evidence_urls)?
      r.evidence_urls.filter(u=>typeof u==='string'&&u.startsWith('https://github.com/')).slice(0,20):[],
     source:'chatgpt_pr_report',independently_verified:false};
@@ -39,7 +39,7 @@ export function inspectPrComments(pr,repo,{merged=false}={}){
   attention:[],owner_request_read_incomplete:pr.comments?.pageInfo?.hasPreviousPage!==false||
    !Array.isArray(pr.comments?.nodes),unresolved_review_threads:[],review_scan_incomplete:
    pr.reviewThreads?.pageInfo?.hasNextPage===true};
- if(pr.headRepository?.nameWithOwner!==repo)return result;
+ if(pr.headRepository?.nameWithOwner!==repo&&!(merged&&!pr.headRepository))return result;
  const resolved=new Set(),superseded=new Set();
  for(const c of pr.comments?.nodes||[]){
   const body=String(c.body||''),id=String(c.url||'').match(/#issuecomment-(\d+)$/)?.[1];
@@ -54,7 +54,8 @@ export function inspectPrComments(pr,repo,{merged=false}={}){
    !/\b(?:please\s+(?:approve|authorize|confirm)|do you approve|owner decision needed)\b/i.test(stripped));
   if(explicit||asked){
    const kind=postMerge.test(stripped)?'release_or_live_approval':'development_question';
-   const q={id:value.id,pr_number:pr.number,head_sha:mark?.[1]||pr.headRefOid,
+   const q={id:value.id,pr_number:pr.number,head_sha:mark?.[1]||pr.headRefOid||pr.mergeCommit?.oid,
+    head_bound:!!mark,
     question:stripped.slice(0,2000),url:c.url,author:value.author,created_at:c.createdAt,
     classification:kind,source:explicit?'marked':'inferred_from_text'};
    result.owner_requests.push(q);
