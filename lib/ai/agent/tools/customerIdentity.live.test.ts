@@ -67,6 +67,9 @@ live("retained customer identity or observed trend, real model investigation, is
    const location=randomUUID();
    await admin.query("insert into public.locations(id,business_id,name) values($1,$2,\'Fixture location\')",[location,cafe]);
    await admin.query("select public.toast_save_configuration($1,\'https://ws-api.toasttab.com\',\'synthetic_client\',\'synthetic_ciphertext\',jsonb_build_array(jsonb_build_object(\'location_id\',$2::uuid,\'restaurant_guid\',$3::uuid)))",[cafe,location,rest]);
+   // The local acceptance fixture uses a synthetic credential; no external Toast call.
+   // Verify this exact disposable business for autonomous claim admission.
+   await admin.query("update public.toast_api_credentials set state='verified' where business_id=$1 and state='configured'",[cafe]);
   }
   if(scenario==="pos0ef-customer-trends"||scenario==="pos0ef-customer-detail"){
    // Source-backed positive control: 35 linked account references, each
