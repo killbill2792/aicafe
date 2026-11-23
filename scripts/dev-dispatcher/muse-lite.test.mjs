@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {museActions,normalizeGithubFacts,fetchGithubFacts,reserveMuseActions,runMuseLite,observeHandoffRuns,completeOwnerRequestPages} from './muse-lite.mjs';
+import {museActions,normalizeGithubFacts,fetchGithubFacts,reserveMuseActions,runMuseLite,observeHandoffRuns,completeOwnerRequestPages,trackedPrQuery,completeReviewPages} from './muse-lite.mjs';
 import {readMuseQuestions,syncMuseQuestions,writeMuseQuestion,importMuseQuestions} from './muse-owner-questions.mjs';
 import {mkdtempSync,rmSync} from 'node:fs';
 import {tmpdir} from 'node:os';
@@ -280,4 +280,100 @@ test('removal or outage never implies answer; missing publication triggers recov
  const actions=museActions(after,previous,notes('waiting_owner'),{now}).actions;
  assert.equal(actions[0].kind,'continue_chat');
  assert.match(actions[0].reason,/unreported owner request/);
+});
+
+test('merged PR comment is imported and old development approval is archived without asking owner again',()=>{
+ const raw=github('SUCCESS',[]),p=raw.data.repository.pullRequests.nodes[0];
+ raw.data.repository.pullRequests.nodes=[];
+ raw.data.repository.recentlyMerged.nodes=[{number:488,title:p.title,url:p.url,mergedAt:'2026-11-16T20:05:00Z',
+  headRefOid:sha,authorAssociation:'OWNER',headRepository:{nameWithOwner:'killbill2792/aicafe'},
+  mergeCommit:{oid:'b'.repeat(40)},comments:{pageInfo:{hasPreviousPage:false},
+  nodes:[request(101,'Approve development-only scope?')]},
+  reviewThreads:{pageInfo:{hasNextPage:false},nodes:[]}}];
+ const facts=normalizeGithubFacts(raw,now);
+ assert.equal(facts.merged_prs[0].owner_requests.length,1);
+ const questions=importMuseQuestions(empty(),facts,now);
+ assert.equal(questions.entries['comment-101'].status,'archived');
+ assert.equal(museActions(facts,previous,notes(),{now,questions}).actions.length,1);
+ assert.equal(museActions(facts,previous,notes(),{now,questions}).actions[0].kind,'plan_next');
+});
+test('tracked merged PR read reconciles questions beyond the last 25 without a dispatcher write',async()=>{
+ const raw=github('SUCCESS',[]),trackedNumber=467,query=trackedPrQuery([trackedNumber]);
+ assert.match(query,/pr467:pullRequest\(number:467\)/);
+ assert.doesNotMatch(query,/mutation/);
+ const tracked={number:trackedNumber,title:'Earlier merged PR',
+  url:'https://github.com/killbill2792/aicafe/pull/467',mergedAt:'2026-11-17T12:00:00Z',
+  headRefOid:sha,headRepository:{nameWithOwner:'killbill2792/aicafe'},mergeCommit:{oid:'c'.repeat(40)},
+  comments:{pageInfo:{hasPreviousPage:false},nodes:[{...request(123456777,'Approve only test scope?'),
+   url:'https://github.com/killbill2792/aicafe/pull/467#issuecomment-123456777'}]},
+  reviewThreads:{pageInfo:{hasNextPage:false},nodes:[]}};
+ let calls=0;
+ const fetched=await fetchGithubFacts({repo:'killbill2792/aicafe',token:'read-only-token',
+  trackedPrNumbers:[trackedNumber],now,fetchImpl:async(url,opts)=>{
+   calls++;assert.equal(url,'https://api.github.com/graphql');
+   const payload=JSON.parse(opts.body);
+   if(payload.query.includes('MuseTracked'))return {ok:true,json:async()=>({data:{repository:{
+    nameWithOwner:'killbill2792/aicafe',pr467:tracked}}})};
+   return {ok:true,json:async()=>raw};
+  }});
+ assert.equal(calls,2);
+ assert.equal(fetched.merged_prs.length,1);
+ assert.equal(fetched.merged_prs[0].attention.length,0);
+ const q=importMuseQuestions(empty(),fetched,now);
+ assert.equal(q.entries['comment-123456777'].status,'archived');
+});
+
+test('all review pages are scanned before declaring the review summary complete',async()=>{
+ const raw=github('SUCCESS',[]),p=raw.data.repository.pullRequests.nodes[0];
+ p.reviewThreads={pageInfo:{hasNextPage:true,endCursor:'one'},nodes:[
+  {id:'old',isResolved:true,comments:{nodes:[]}}]};
+ await completeReviewPages(raw,async(number,cursor)=>{
+  assert.equal(number,488);assert.equal(cursor,'one');
+  const later={id:'later',isResolved:false,comments:{nodes:[{
+   body:'Address the tenant regression',
+   url:'https://github.com/killbill2792/aicafe/pull/488#discussion_r987',
+   author:{login:'maintainer'}}]}};
+  return {data:{repository:{pullRequest:{reviewThreads:{
+   pageInfo:{hasNextPage:false,endCursor:'two'},nodes:[later]}}}}};
+ });
+ const out=normalizeGithubFacts(raw,now).prs[0];
+ assert.equal(out.review_scan_incomplete,false);
+ assert.equal(out.unresolved_review_threads.length,1);
+ assert.equal(out.unresolved_review_threads[0].id,'later');
+});
+
+test('historical owner notices are superseded in local pending counts, not deleted',()=>{
+ const old={version:1,events:{old:{id:'old',question_id:'comment-101',
+  status:'suggested_unverified',created_at:now}}};
+ const questions={version:1,entries:{'comment-101':{status:'archived'}}};
+ const result=reserveMuseActions(old,{actions:[]},now,{questions});
+ assert.equal(result.state.events.old.status,'superseded');
+ assert.equal(Object.values(result.state.events).filter(e=>e.status==='suggested_unverified').length,0);
+ assert.equal(result.new_actions.length,0);
+});
+
+test('new owner question after merge still triggers courier reminder',()=>{
+ const facts=normalizeGithubFacts(github(),now);
+ facts.prs=[];
+ facts.merged_prs=[{number:488,merged_at:'2026-11-16T19:58:00Z'}];
+ const newer={id:'comment-123456995',pr_number:488,
+  created_at:'2026-11-16T19:59:00Z',classification:'development_question',
+  status:'open',head_sha:sha,url:'https://github.com/killbill2792/aicafe/pull/488#issuecomment-123456995',
+  question:'Please approve additional post-merge acceptance files?'};
+ const result=museActions(facts,previous,notes(),{now,questions:{entries:{[newer.id]:newer}}});
+ assert.ok(result.actions.some(a=>a.kind==='remind_owner'&&a.question_id===newer.id));
+ const uncertain={...newer,status:'delivery_uncertain'};
+ const interrupted=museActions(facts,previous,notes(),{now,questions:{entries:{[newer.id]:uncertain}}});
+ assert.ok(interrupted.blocked.some(b=>b.question_id===newer.id&&/delivery uncertain/i.test(b.reason)));
+});
+test('pre-merge development-only question is historical, without hiding a later question',()=>{
+ const facts=normalizeGithubFacts(github(),now);
+ facts.prs=[];
+ facts.merged_prs=[{number:488,merged_at:'2026-11-16T19:58:00Z'}];
+ const earlier={id:'comment-123456994',pr_number:488,
+  created_at:'2026-11-16T19:55:00Z',classification:'development_question',
+  status:'open',head_sha:sha,url:'https://github.com/killbill2792/aicafe/pull/488#issuecomment-123456994',
+  question:'Earlier scope approval request'};
+ const out=museActions(facts,previous,notes(),{now,questions:{entries:{[earlier.id]:earlier}}});
+ assert.equal(out.actions.some(a=>a.question_id===earlier.id),false);
 });

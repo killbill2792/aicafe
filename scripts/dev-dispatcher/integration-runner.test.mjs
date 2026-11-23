@@ -38,3 +38,18 @@ test('unassociated PR skips safely and missing approved scenario proof fails clo
    fetchFn:async()=>({ok:true,json:async()=>[f.pr]})}),/approved acceptance/);
  }finally{f.cleanup();}
 });
+
+test('missing per-capability evidence produces durable NOT_PROVEN proof, not a false success',async()=>{
+ const f=fixture();try{
+  f.pr.body='## No aicafe acceptance marker';
+  const output=join(f.cwd,'missing-proof.json');
+  const result=await executeMainIntegration({sha,repo,token:'example',runId:'25',
+   cwd:f.cwd,queue:f.queue,output,fetchFn:async()=>({ok:true,json:async()=>[f.pr]})});
+  assert.equal(result.skipped,true);
+  assert.equal(result.reason,'no_acceptance_evidence');
+  const proof=JSON.parse((await import('node:fs')).readFileSync(output,'utf8'));
+  assert.equal(proof.capability_acceptance,'NOT_PROVEN');
+  assert.equal(proof.proof_executed,false);
+  assert.equal(proof.merge_sha,sha);
+ }finally{f.cleanup();}
+});
