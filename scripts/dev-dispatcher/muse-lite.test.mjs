@@ -329,11 +329,12 @@ test('all review pages are scanned before declaring the review summary complete'
   {id:'old',isResolved:true,comments:{nodes:[]}}]};
  await completeReviewPages(raw,async(number,cursor)=>{
   assert.equal(number,488);assert.equal(cursor,'one');
+  const later={id:'later',isResolved:false,comments:{nodes:[{
+   body:'Address the tenant regression',
+   url:'https://github.com/killbill2792/aicafe/pull/488#discussion_r987',
+   author:{login:'maintainer'}}]}};
   return {data:{repository:{pullRequest:{reviewThreads:{
-   pageInfo:{hasNextPage:false,endCursor:'two'},
-   nodes:[{id:'later',isResolved:false,comments:{nodes:[{body:'Address the tenant regression',
-    url:'https://github.com/killbill2792/aicafe/pull/488#discussion_r987',
-    author:{login:'maintainer'}}]}]}]}}}}};
+   pageInfo:{hasNextPage:false,endCursor:'two'},nodes:[later]}}}}};
  });
  const out=normalizeGithubFacts(raw,now).prs[0];
  assert.equal(out.review_scan_incomplete,false);
