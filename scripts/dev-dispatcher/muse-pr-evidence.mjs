@@ -7,14 +7,22 @@ const text=s=>String(s||'').replace(/<!--[^]*?-->/g,'').trim();
 const preview=s=>text(s).replace(/\s+/g,' ').slice(0,1600);
 const ownerWords=/\b(?:please\s+(?:explicitly\s+)?(?:approve|authorize|confirm|decide|choose|review and approve|run workflow)|(?:owner|your)\s+(?:approval|authorization|decision|action|sign[- ]?off|input)\s+(?:is\s+)?(?:required|needed|requested)|(?:request|need|requires?)\s+(?:an?\s+)?(?:owner|your)\s+(?:approval|authorization|decision)|(?:action|required|decision)\s+(?:from|for)\s+(?:the\s+)?owner|do you approve|approval required|owner decision needed|single remaining execution action|required owner action|owner action required|(?:owner|authenticated user|you)\s+(?:must|need to|needs to|should)\s+(?:select|run|click|configure|approve|authorize|confirm))\b/i;
 const nonRequest=/\b(?:no (?:new |further |additional )?(?:owner )?(?:approval|decision) (?:required|needed|requested)|not (?:an? )?(?:owner )?(?:approval|authorization) request|approval (?:was |has been )?(?:received|recorded|granted)|owner (?:has )?approved|already approved|approved in (?:the )?(?:owner|originating) chat)\b/i;
-const postMerge=/\b(?:approve|authorize|run|trigger|apply|configure|enable|provision|grant)\s+(?:(?:the|an?|one|existing|bounded)\s+){0,4}(?:production|deployment|release|live|paid|workflow|migration|secret|credential|environment)\b|\b(?:production migration|live model|paid execution|deployment|release)\s+(?:approval|authorization)\s+(?:requested|required|needed)\b|\b(?:action required|single remaining execution action)[\s\S]{0,120}(?:run workflow|workflow_dispatch|production|migration)\b/i;
+const postMerge=/\b(?:luna\s+authorization|(?:paid|bounded)\s+luna\s+(?:run|test|scenario)|(?:post|trigger|run)\s+\/aicafe-luna|approve|authorize|run|trigger|apply|configure|enable|provision|grant)\s+(?:(?:the|an?|one|existing|bounded)\s+){0,4}(?:production|deployment|release|live|paid|workflow|migration|secret|credential|environment)\b|\b(?:luna authorization|production migration|live model|paid execution|deployment|release)\s*:\s*(?:task|scenario|run|approval)\b|\b(?:production migration|live model|paid execution|deployment|release)\s+(?:approval|authorization)\s+(?:requested|required|needed)\b|\b(?:action required|single remaining execution action)[\s\S]{0,120}(?:run workflow|workflow_dispatch|production|migration|\/aicafe-luna)\b/i;
 const requestMarker=/^<!-- aicafe-owner-request:v1 ([a-f0-9]{40}) -->\s*/;
 const reportMarker=/^<!-- aicafe-integration-result:v1 (\{[^\n]{1,3500}\}) -->/;
 const statusWords=/\b(?:PROVEN|FAILED|NOT_PROVEN|BLOCKED|ACTION_REQUIRED)\b/;
-const reference=/\b(?:resolves?|resolved|supersedes?|superseded|addresses|answered|satisfied|approved|closing)\s+(?:owner\s+)?(?:request\s+|question\s+|comment\s+)?(?:#issuecomment-|#)?(\d{7,20})\b/gi;
+// Only an explicit, affirmative disposition line may close an existing request.
+// Free-form "approved request #..." is not safe: "not approved request #..." is common.
+const reference=/^(?:resolves?|resolved|supersedes?|superseded|answered|closing)\s+(?:owner\s+)?(?:request\s+|question\s+|comment\s+)?(?:#issuecomment-|#)?(\d{7,20})\b/i;
 function resolutions(body){
- const ids=[];for(const match of String(body||'').matchAll(reference))ids.push('comment-'+match[1]);
- return [...new Set(ids)];
+ const found=[];let superseded=false;
+ for(const line of String(body||'').split('\n')){
+  const trimmed=line.trim().replace(/^(?:[-*]\s+)?/,'');
+  if(/^(?:not|no|never|without|unresolved|don't|cannot|can't)\b/i.test(trimmed))continue;
+  const m=trimmed.match(reference);
+  if(m){found.push('comment-'+m[1]);if(/^super(?:sede|sedes|seded)/i.test(trimmed))superseded=true;}
+ }
+ return {ids:[...new Set(found)],superseded};
 }
 function report(c,pr){
  const s=String(c.body||'');const m=s.match(reportMarker);
@@ -40,7 +48,7 @@ export function inspectPrComments(pr,repo,{merged=false}={}){
    !Array.isArray(pr.comments?.nodes),unresolved_review_threads:[],review_scan_incomplete:
    !Array.isArray(pr.reviewThreads?.nodes)||pr.reviewThreads?.pageInfo?.hasNextPage!==false};
  if(pr.headRepository?.nameWithOwner!==repo&&!(merged&&!pr.headRepository))return result;
- const resolved=new Set(),superseded=new Set(),sourceResolution=new Map(),unlinkedApprovals=[];
+ const resolved=new Set(),superseded=new Set(),sourceResolution=new Map();
  for(const c of pr.comments?.nodes||[]){
   const body=String(c.body||''),id=String(c.url||'').match(/#issuecomment-(\d+)$/)?.[1];
   if(!id||!safeUrl(c.url,pr))continue;
@@ -63,19 +71,15 @@ export function inspectPrComments(pr,repo,{merged=false}={}){
   }
   const rep=report({...c,id,url:c.url},pr);
   if(rep){result.integration_reports.push(rep);value.kind='integration_report';}
-  const links=resolutions(body);for(const l of links){resolved.add(l);sourceResolution.set(l,c.url);}
-  if(!links.length&&/\b(?:owner (?:explicitly |already |has )?approved|owner approval (?:received|recorded|granted)|approval received in (?:the )?originating chat|approved in (?:the )?(?:owner|originating) chat)\b/i.test(stripped))
-   unlinkedApprovals.push({at:c.createdAt,url:c.url});
-  if(/\bsupersedes?\b/i.test(body))for(const l of links)superseded.add(l);
+  const links=resolutions(body);
+  // Only exact, distinct source-comment references can close a request.
+  // Unlinked "owner approved" sentences are informational, never an approval.
+  if(value.kind!=='owner_request')for(const l of links.ids){
+   resolved.add(l);sourceResolution.set(l,c.url);
+   if(links.superseded)superseded.add(l);
+  }
  }
- // A source-reported approval with no comment reference can resolve only a
- // single earlier development question. More than one remains ambiguous.
- for(const reply of unlinkedApprovals.sort((a,b)=>String(a.at).localeCompare(String(b.at)))){
-  const candidates=result.owner_requests.filter(q=>q.classification==='development_question'&&
-   !resolved.has(q.id)&&Date.parse(q.created_at)<=Date.parse(reply.at));
-  if(candidates.length===1){resolved.add(candidates[0].id);sourceResolution.set(candidates[0].id,reply.url);}
- }
- result.resolved_request_ids=[...resolved];
+  result.resolved_request_ids=[...resolved];
  for(const q of result.owner_requests){
   const finished=resolved.has(q.id);
   const beforeMerge=merged&&pr.mergedAt&&Date.parse(q.created_at)<=Date.parse(pr.mergedAt);
