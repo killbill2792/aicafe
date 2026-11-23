@@ -36,6 +36,7 @@ function useEvidence(e:MorningBriefEvidence,posComplete=true){
 
 type Row=Record<string,unknown>;
 type FakeCafe={id:string;name:string;timezone:string|null;currency:string;is_demo:boolean;
+  toastConnected?:boolean;
   open:string|null;owners:string[];thread?:boolean;locale?:string;already?:boolean;taskExists?:boolean};
 function fakeDb(o:{open?:string|null;already?:boolean;thread?:boolean;owners?:string[];timezone?:string|null;
   countFails?:boolean;locale?:string;taskMissing?:boolean;cafes?:FakeCafe[];
@@ -87,7 +88,10 @@ function fakeDb(o:{open?:string|null;already?:boolean;thread?:boolean;owners?:st
         table==="supervisor_proposals"?(cafe.locale?{locale:cafe.locale}:null):
         table==="operating_tasks"&&cafe.already&&cafe.taskExists!==false?{id:"task"}:null};
     };
-    self.then=(resolve:(v:unknown)=>void)=>resolve(o.countFails&&countQuery?
+    self.then=(resolve:(v:unknown)=>void)=>resolve(table==="toast_api_credentials"?
+      {data:cafes.filter(cafe=>!cafe.is_demo&&cafe.toastConnected!==false)
+        .map(cafe=>({business_id:cafe.id})),error:null}:
+      o.countFails&&countQuery?
       {count:null,error:{message:"down"}}:{count:2,error:null});
     self.upsert=async(row:Row,options?:{ignoreDuplicates?:boolean})=>{
       if(table==="morning_brief_runs"){
@@ -153,6 +157,21 @@ describe("sending the daily brief at each café's own time",()=>{
     expect(writes[2]).toMatchObject({op:"update",status:"expired"});
     expect(reasons(runs)).toEqual([["u1","in_app","sent","in_app","posted"],
       ["u1","whatsapp","skipped","whatsapp","whatsapp_not_configured"]]);
+  });
+  it("skips disconnected cafes even when another cafe has the identical display name",async()=>{
+    const cafes:FakeCafe[]=[
+      {id:"connected-id",name:"My café",timezone:zone,currency:"USD",is_demo:false,
+        open:"06:30",owners:["owner-one"],toastConnected:true},
+      {id:"other-id",name:"My café",timezone:zone,currency:"USD",is_demo:false,
+        open:"06:30",owners:["owner-two"],toastConnected:false},
+    ];
+    const {db,writes}=fakeDb({cafes});
+    const result=await sendDailyBriefs(db,at("05:00"));
+    expect(result).toMatchObject({checked:1,sent:1,failed:0});
+    expect(writes.filter(row=>row.table==="ai_messages").map(row=>row.business_id))
+      .toEqual(["connected-id"]);
+    expect(writes.filter(row=>row.table==="ai_messages").some(row=>row.business_id==="other-id"))
+      .toBe(false);
   });
   it("café opening at 6:30 sends before 6:30; café opening at 9:00 sends before 9:00; unknown hours by 6:00",async()=>{
     useEvidence(evidence(),false); // POS still syncing: each café waits until its own send-anyway time.
