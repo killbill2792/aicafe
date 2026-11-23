@@ -35,7 +35,7 @@ export function importMuseQuestions(state,facts,now=new Date().toISOString()){
     !q.url?.startsWith(p.url+'#issuecomment-')||q.url.split('#issuecomment-')[1]!==q.id.slice(8))continue;
    const old=next.entries[q.id];
    const disposition=q.disposition||'needs_review';
-   const settled=disposition==='historical_after_merge'?'archived':
+   const settled=['historical_after_merge','duplicate_reported'].includes(disposition)?'archived':
     ['resolved_reported','superseded_reported'].includes(disposition)?'resolved_reported':null;
    if(!old){
     next.entries[q.id]={...q,status:settled||'open',revision:1,imported_at:now,history:[],
