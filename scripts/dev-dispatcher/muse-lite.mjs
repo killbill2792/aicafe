@@ -10,6 +10,7 @@ import {pathToFileURL} from 'node:url';
 import {readMuseNotes} from './muse-local-notes.mjs';
 import {parseCodexReviewState} from './github.mjs';
 import {syncMuseQuestions,readMuseQuestions} from './muse-owner-questions.mjs';
+import {publishMuseQuestionAcks} from './muse-owner-sync.mjs';
 import {inspectPrComments,readablePrSummary} from './muse-pr-evidence.mjs';
 
 const millis=t=>{const n=Date.parse(t||'');return Number.isFinite(n)?n:null;};
@@ -326,7 +327,9 @@ export function reserveMuseActions(existing,planned,now,{questions=null}={}){
  return {state:next,new_actions:newly};
 }
 export async function runMuseLite({repo,token,home=join(homedir(),'.local','state','aicafe-muse'),
- now=new Date().toISOString(),fetchImpl=fetch}={}){
+ now=new Date().toISOString(),fetchImpl=fetch,
+ writeToken=process.env.MUSE_GITHUB_COMMENT_TOKEN||
+  (process.env.MUSE_GITHUB_COMMENT_WRITE==='1'?token:null)}={}){
  const notes=readMuseNotes(join(home,'notes.json'));
  const questionsPath=join(home,'owner-questions.json');
  const existingQuestions=readMuseQuestions(questionsPath);
@@ -357,7 +360,14 @@ export async function runMuseLite({repo,token,home=join(homedir(),'.local','stat
   }
   catch(e){facts=previous;error=String(e.message||e);}
  }
- const questions=syncMuseQuestions(questionsPath,error?null:facts,now);
+ syncMuseQuestions(questionsPath,error?null:facts,now);
+ let ghSync={published:0,verified:0,pending:0,unconfigured:0,uncertain:0,blocked:0};
+ if(!error){
+  try{ghSync=await publishMuseQuestionAcks({repo,path:questionsPath,facts,token:writeToken,
+   fetchImpl,now});}
+  catch(e){ghSync={...ghSync,blocked:1,error:String(e.message||e).slice(0,140)};}
+ }
+ const questions=readMuseQuestions(questionsPath);
  const result=museActions(error?null:facts,previous,notes,{now,questions});
  const reserved=reserveMuseActions(prior,result,now,{questions});
  if(!error)reserved.state.tracked_scan_cursor=tracked.length?
@@ -371,7 +381,7 @@ export async function runMuseLite({repo,token,home=join(homedir(),'.local','stat
  if(!error)atomicJson(cache,facts);
  return {observed_at:now,github_read:error?'unavailable':'verified',
    last_github_observed_at:facts?.observed_at||null,
-   actions:reserved.new_actions,holds:result.blocked,
+   actions:reserved.new_actions,holds:result.blocked,github_ack_sync:ghSync,
    pending:Object.values(reserved.state.events).filter(x=>x.status==='suggested_unverified').length};
 }
 if(process.argv[1]&&import.meta.url===pathToFileURL(process.argv[1]).href){
