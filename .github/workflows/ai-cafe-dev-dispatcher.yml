@@ -11,6 +11,7 @@ on:
       - '.github/workflows/ai-cafe-dev-dispatcher.yml'
 permissions:
   contents: read
+  pull-requests: read
 jobs:
   unit:
     name: Muse and archived dispatcher safety tests (no effects)
@@ -22,3 +23,20 @@ jobs:
         with:
           node-version: '22'
       - run: node --test scripts/dev-dispatcher/*.test.mjs scripts/dev-dispatcher/bridge/*.test.mjs
+      - name: Live read-only PR comment and review evidence contract
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+        run: |
+          node --input-type=module <<'NODE'
+          import {fetchGithubFacts} from './scripts/dev-dispatcher/muse-lite.mjs';
+          const facts=await fetchGithubFacts({repo:process.env.GITHUB_REPOSITORY,
+            token:process.env.GITHUB_TOKEN});
+          const pr=facts.prs.find(p=>p.number===Number(process.env.PR_NUMBER));
+          if(!pr||!Array.isArray(pr.comments)||!Array.isArray(pr.owner_requests)||
+            !Array.isArray(pr.unresolved_review_threads)||!Array.isArray(facts.merged_prs))
+            throw Error('Actual GitHub PR evidence contract incomplete');
+          console.log('Read-only PR evidence verified for #'+pr.number+
+            '; open='+facts.prs.length+' recently_merged='+facts.merged_prs.length);
+          NODE
