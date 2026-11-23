@@ -21,7 +21,7 @@ function readAck(c,allowed){
  try{
   const payload=JSON.parse(match[1]);
   if(payload.v!==1||!/^comment-[1-9]\d{0,19}$/.test(payload.question_id)||
-     !/^comment-[1-9]\d{0,19}-r[1-9]\d{0,9}$/.test(payload.event_id)||
+     !/^comment-[1-9]\d{0,19}-r[1-9]\d{0,9}(?:-[a-f0-9]{16})?$/.test(payload.event_id)||
      !payload.event_id.startsWith(payload.question_id+'-r')||
      !ackStates.has(payload.state))return null;
   return {question_id:payload.question_id,event_id:payload.event_id,state:payload.state,
@@ -109,7 +109,7 @@ export function inspectPrComments(pr,repo,{merged=false,ackAuthors=[]}={}){
  const duplicates=new Map();
  for(const q of [...result.owner_requests].sort((a,b)=>String(a.created_at).localeCompare(String(b.created_at))||
   Number(a.id.slice(8))-Number(b.id.slice(8)))){
-  const key=[q.head_sha,q.classification,q.question.toLowerCase().replace(/\\s+/g,' ').replace(/[?.!]+$/,'').trim()].join('::');
+  const key=[q.head_sha,q.classification,q.question.toLowerCase().replace(/\s+/g,' ').replace(/[?.!]+$/,'').trim()].join('::');
   const previous=duplicates.get(key);
   if(previous)q.duplicate_of=previous;
   else duplicates.set(key,q.id);
