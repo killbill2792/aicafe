@@ -121,3 +121,11 @@ test('incomplete and untrusted scans never imply no open owner decision',()=>{
  assert.equal(observed.owner_request_read_incomplete,true);
  assert.equal(observed.review_scan_incomplete,true);
 });
+
+test('an unmarked explicit execution action stays visible after merge',()=>{
+ const p=pr([mk(123456717,'Single remaining execution action: an authenticated user must select Run workflow in the protected environment.',
+  {createdAt:'2026-11-21T10:00:00Z'})],{merged:true});
+ const out=inspectPrComments(p,repo,{merged:true});
+ assert.equal(out.owner_requests[0].classification,'release_or_live_approval');
+ assert.equal(out.attention.length,1);
+});
