@@ -351,3 +351,29 @@ test('historical owner notices are superseded in local pending counts, not delet
  assert.equal(Object.values(result.state.events).filter(e=>e.status==='suggested_unverified').length,0);
  assert.equal(result.new_actions.length,0);
 });
+
+test('new owner question after merge still triggers courier reminder',()=>{
+ const facts=normalizeGithubFacts(github(),now);
+ facts.prs=[];
+ facts.merged_prs=[{number:488,merged_at:'2026-11-16T19:58:00Z'}];
+ const newer={id:'comment-123456995',pr_number:488,
+  created_at:'2026-11-16T19:59:00Z',classification:'development_question',
+  status:'open',head_sha:sha,url:'https://github.com/killbill2792/aicafe/pull/488#issuecomment-123456995',
+  question:'Please approve additional post-merge acceptance files?'};
+ const result=museActions(facts,previous,notes(),{now,questions:{entries:{[newer.id]:newer}}});
+ assert.ok(result.actions.some(a=>a.kind==='remind_owner'&&a.question_id===newer.id));
+ const uncertain={...newer,status:'delivery_uncertain'};
+ const interrupted=museActions(facts,previous,notes(),{now,questions:{entries:{[newer.id]:uncertain}}});
+ assert.ok(interrupted.blocked.some(b=>b.question_id===newer.id&&/delivery uncertain/i.test(b.reason)));
+});
+test('pre-merge development-only question is historical, without hiding a later question',()=>{
+ const facts=normalizeGithubFacts(github(),now);
+ facts.prs=[];
+ facts.merged_prs=[{number:488,merged_at:'2026-11-16T19:58:00Z'}];
+ const earlier={id:'comment-123456994',pr_number:488,
+  created_at:'2026-11-16T19:55:00Z',classification:'development_question',
+  status:'open',head_sha:sha,url:'https://github.com/killbill2792/aicafe/pull/488#issuecomment-123456994',
+  question:'Earlier scope approval request'};
+ const out=museActions(facts,previous,notes(),{now,questions:{entries:{[earlier.id]:earlier}}});
+ assert.equal(out.actions.some(a=>a.question_id===earlier.id),false);
+});
