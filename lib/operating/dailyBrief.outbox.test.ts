@@ -36,7 +36,7 @@ function dbFactory(existing=false,opts:{revoked?:boolean;wrongCafe?:boolean;task
   const mutations:Array<{table:string;op:string;row:unknown}>=[],runs:Array<Record<string,unknown>>=[];
   const q=(table:string)=>{
     const self:Record<string,unknown>={};
-    for(const method of ["select","order","limit","neq","eq"])self[method]=()=>self;
+    for(const method of ["select","order","limit","neq","eq","in"])self[method]=()=>self;
     self.range=async()=>({data:table==="businesses"?
       [{id:"cafe-a",name:"Shop A",timezone:"America/Los_Angeles",currency:"USD",is_demo:false}]:
       table==="memberships"?[{user_id:existing?"owner-original":"owner-a"}]:[],error:null});
@@ -48,7 +48,8 @@ function dbFactory(existing=false,opts:{revoked?:boolean;wrongCafe?:boolean;task
       table==="memberships"?(opts.revoked?null:{user_id:existing?"owner-original":"owner-a"}):
       table==="ai_threads"?{id:existing?"thread-original":"thread-a"}:
       table==="operating_tasks"&&existing&&!opts.taskMissing?{id:"existing-task"}:null});
-    self.then=(resolve:(v:unknown)=>void)=>resolve({count:1,error:null});
+    self.then=(resolve:(v:unknown)=>void)=>resolve(table==="toast_api_credentials"?
+      {data:[{business_id:"cafe-a"}],error:null}:{count:1,error:null});
     self.insert=async(row:unknown)=>{mutations.push({table,op:"insert",row});return {error:null};};
     self.upsert=async(row:Record<string,unknown>)=>{
       if(table==="morning_brief_runs")runs.push(row);else mutations.push({table,op:"upsert",row});
