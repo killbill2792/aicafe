@@ -567,7 +567,6 @@ export async function refreshBusinessAnomalies(db:SupabaseClient,businessId:stri
    if([current,previous].some(p=>p&&(p.expectedLocationDays??0)>0&&!p.complete))
     await gap("customer_identity_coverage",true);
    return;
-   return;
   }
   const ready=current!==null&&previous!==null&&customerCoverageReady(current)&&customerCoverageReady(previous);
   const currentCoverage=current&&identityCoverage(current),previousCoverage=previous&&identityCoverage(previous);
@@ -590,7 +589,8 @@ export async function refreshBusinessAnomalies(db:SupabaseClient,businessId:stri
     const [a,b]=await Promise.all([customerDistribution(db,businessId,recent,dimension,current.returningVisits),
      customerDistribution(db,businessId,old,dimension,previous.returningVisits)]);
     if(a&&b)for(const m of compareCustomerDistributions(a,b,current,previous))await persist(fact("customer_trend",m.key,m.current,m.previous,m.unit,m.active,from,to));
-   }catch{optionalFailed=true;}
+    await gap("reader_unavailable:customer_distribution_"+dimension,false);
+   }catch{await gap("reader_unavailable:customer_distribution_"+dimension,true);}
   }
   // A lapse is a snapshot, not just a visit in the current week. Compare
   // equal 90-day active-reference lookbacks ending on the comparable dates.
@@ -602,7 +602,8 @@ export async function refreshBusinessAnomalies(db:SupabaseClient,businessId:stri
     const [a,b]=await Promise.all([customerCadence(db,businessId,aWindow,kind),customerCadence(db,businessId,bWindow,kind)]);
     const m=a&&b?compareCustomerCadence(kind,a,b,current,previous):null;
     if(m)await persist(fact("customer_trend",m.key,m.current,m.previous,m.unit,m.active,aWindow.from,aWindow.to));
-   }catch{optionalFailed=true;}
+    await gap("reader_unavailable:customer_cadence_"+kind,false);
+   }catch{await gap("reader_unavailable:customer_cadence_"+kind,true);}
   }
   // Equal first-observed cohort weeks and equal elapsed follow-up windows per horizon.
   // Sequential horizons bound DB fan-out; unsupported windows do not resolve incidents.
@@ -620,7 +621,8 @@ export async function refreshBusinessAnomalies(db:SupabaseClient,businessId:stri
      const m=compareCustomerCohorts(a,b,cohortCoverage,priorCoverage,horizon);
      if(m)await persist(fact("customer_trend",m.key,m.current,m.previous,m.unit,m.active,cohort.from,to));
     }
-   }catch{optionalFailed=true;}
+    await gap("reader_unavailable:customer_cohort_"+horizon+"d",false);
+   }catch{await gap("reader_unavailable:customer_cohort_"+horizon+"d",true);}
   }
   // Each optional family has its own sanitized gap, independent of other evidence.
  });
