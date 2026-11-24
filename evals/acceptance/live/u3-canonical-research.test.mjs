@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import {matchedCount,assertU3ObservedEvidence,resolveU3ProofPaths,observedProviderCalls,completedSqlReceiptCount} from "./u3-canonical-research.mjs";
+import {matchedCount,assertU3ObservedEvidence,resolveU3ProofPaths,observedProviderCalls,completedSqlReceiptCount,matchedLocalTime,assertU3HistoryEvidence} from "./u3-canonical-research.mjs";
 
 test("U3 independent count check rejects substring, wrong count and absent source",()=>{
  assert.equal(matchedCount("17 orders and 61 order lines",17),true);
@@ -36,4 +36,17 @@ test("SQL evidence requires a committed complete-page server receipt, not a tool
  assert.equal(completedSqlReceiptCount("model said "+receipt),0);
  assert.equal(completedSqlReceiptCount("u3_sql_research_failure { code: 'query_timeout' }"),0);
  assert.equal(completedSqlReceiptCount(receipt+"\n"+receipt.replace("a1234567","b1234567")),2);
+});
+
+test("historical oracle requires exact local punches, night revenue, ranking and missing evidence",()=>{
+ const oracle={total:180,night:{n:120,cents:"123456"},top:{name:"Night Orchard Tea",units:360},employeeName:"Harbor Sample",
+  punches:[{clock_in:"22:15",clock_out:"02:45",break_start:"23:17",break_end:"23:47"},{clock_in:"21:10",clock_out:null}]};
+ const ok={model:"gpt-6-luna",tools:["query_data"],oracle,proposals:0,sqlReceipts:1,
+  text:"180 total orders, 120 night orders, net 1,234.56, Night Orchard Tea 360 units. Harbor Sample: 10:15 PM to 2:45 AM, break 11:17 PM to 11:47 PM. Next clock-in 21:10, clock-out missing."};
+ assert.doesNotThrow(()=>assertU3HistoryEvidence(ok));
+ for(const [a,b] of [["360","361"],["1,234.56","1,234.57"],["11:17 PM","11:18 PM"],["missing","complete"],["Night Orchard Tea","Foreign Orchard Tea"]])
+  assert.throws(()=>assertU3HistoryEvidence({...ok,text:ok.text.replace(a,b)}),/historical_independent_source_result_mismatch/);
+ assert.throws(()=>assertU3HistoryEvidence({...ok,sqlReceipts:0}),/historical_committed_research_missing/);
+ assert.equal(matchedLocalTime("122:15","22:15"),false);
+ assert.equal(matchedLocalTime("2:45 AM","02:45"),true);
 });
