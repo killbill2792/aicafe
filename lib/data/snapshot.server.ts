@@ -423,39 +423,25 @@ async function readHistoricalBusinessSnapshot(
   const [rollups,recurring,expenses,locations,itemSales]=await Promise.all([
     readDailyFactRows(supabase,businessId,period.from,period.to)
       .then(data=>({data,error:null}),(error:Error)=>({data:null,error})),
-    supabase.from("recurring_costs")
-      .select("id,category_code,amount_cents,frequency,is_estimate,active_from,active_to")
-      .eq("business_id",businessId).lte("active_from",period.to).order("id",{ascending:true}).range(0,999),
-    supabase.from("expenses").select("id,category_code,amount_cents,status,spent_on")
-      .eq("business_id",businessId).gte("spent_on",first).lte("spent_on",monthEnd).order("spent_on",{ascending:true}).order("category_code",{ascending:true}).order("id",{ascending:true}).range(0,999),
+    snapshotPaged("historical_recurring_costs",(start,end)=>supabase.from("recurring_costs")
+      .select("id,category_code,amount_cents,frequency,is_estimate,active_from,active_to",{count:"exact"})
+      .eq("business_id",businessId).lte("active_from",period.to)
+      .order("id",{ascending:true}).range(start,end),row=>row.id),
+    snapshotPaged("historical_expenses",(start,end)=>supabase.from("expenses")
+      .select("id,category_code,amount_cents,status,spent_on",{count:"exact"})
+      .eq("business_id",businessId).gte("spent_on",first).lte("spent_on",monthEnd)
+      .order("id",{ascending:true}).range(start,end),row=>row.id),
     supabase.from("locations").select("open_hours")
       .eq("business_id",businessId).order("name",{ascending:true}).limit(1),
     readPeriodItemSales(supabase,businessId,period),
   ]);
   for(const result of [rollups,recurring,expenses,locations])
     if(result.error)throw result.error;
-  // Page every historical record. PostgREST commonly caps queries at 1,000 rows.
-  // The shared daily reader already reads every page.
+  // The same stable, exact full-row read as Home/Money, with historical date
+  // scope. Never splice a differently sorted second page into a financial total.
   const allRollups=[...(rollups.data??[])];
-  const allExpenses=[...(expenses.data??[])];
-  for(let offset=1000;offset<=allExpenses.length;offset+=1000){
-    const page=await supabase.from("expenses").select("id,category_code,amount_cents,status,spent_on")
-      .eq("business_id",businessId).gte("spent_on",first).lte("spent_on",monthEnd)
-      .order("spent_on",{ascending:true}).order("category_code",{ascending:true}).range(offset,offset+999);
-    if(page.error)throw page.error;
-    allExpenses.push(...(page.data??[]));
-    if((page.data??[]).length<1000)break;
-  }
-  const allRecurring=[...(recurring.data??[])];
-  for(let offset=1000;offset<=allRecurring.length;offset+=1000){
-    const page=await supabase.from("recurring_costs")
-      .select("id,category_code,amount_cents,frequency,is_estimate,active_from,active_to")
-      .eq("business_id",businessId).lte("active_from",period.to)
-      .order("id",{ascending:true}).range(offset,offset+999);
-    if(page.error)throw page.error;
-    allRecurring.push(...(page.data??[]));
-    if((page.data??[]).length<1000)break;
-  }
+  const allExpenses=expenses.data;
+  const allRecurring=recurring.data;
   const recorded=allRollups.map(rowToDailyFacts);
   const sales=recorded.filter(d=>d.salesDataStatus!=="missing");
   const months:string[]=[];
