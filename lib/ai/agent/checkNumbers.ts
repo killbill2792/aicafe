@@ -363,6 +363,17 @@ export function compactEvidence(results:readonly AgentToolResult[],limit=100):Nu
        (c.breakEvidence==="recorded"&&typeof breaks==="number"&&Number.isSafeInteger(breaks)&&breaks>0))
        values.push({key:cardScope+"recordedBreakCount",value:breaks as number,unit:"count"});
     }
+    // Daily rollups have a unique café/date grain. Require the actual
+    // business date, source status and amount from the SAME direct binding.
+    // A renamed unrelated value or an hourly/order total cannot satisfy it.
+    for(const row of directU3Rows(r,"daily_rollups")){
+      if(typeof row.business_date!=="string"||!/^\d{4}-\d{2}-\d{2}$/u.test(row.business_date))continue;
+      if(!Object.hasOwn(row,"net_sales_cents")||!Object.hasOwn(row,"sales_data_status"))continue;
+      const key="u3DatedMetric/sales/day:"+row.business_date+"/observedCents";
+      invalidatedKeys.push(key);
+      const amount=u3ReceiptNumber(row.net_sales_cents,"cents");
+      if(row.sales_data_status==="actual"&&amount)values.push({key,value:amount.value,unit:"cents"});
+    }
     const observedTimes=[...observedHours([r]),...observedShifts([r]),
       ...observedTimecardClocks([r])];
     // Current-turn verification has the full returned source evidence. Only
@@ -1137,6 +1148,10 @@ function datedFinancialScope(text:string,start:number,end:number):{date:string|n
 function evidenceSupportsDatedMoney(evidence:readonly NumericEvidence[],
   date:string,cents:number,metric:string):boolean {
   return evidence.some(entry=>{
+    // SQL direct observations carry the canonical row and date rather than a
+    // reporting-tool name or a model-selected alias.
+    if(entry.values.some(v=>v.unit==="cents"&&Math.abs(v.value-cents)<=1&&
+      v.key===`u3DatedMetric/${metric}/day:${date}/observedCents`))return true;
     // Goal observations carry their *validated* metric identity
     // alongside the date. Money from item margin or per-hour sales cannot
     // prove TOTAL daily sales just because the cent amounts happen to match.

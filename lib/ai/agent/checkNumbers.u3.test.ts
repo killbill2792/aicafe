@@ -240,3 +240,19 @@ describe("direct SQL source-row provenance",()=>{
   expect(checkNumbers("Sam clocked out at 3:00 PM on November 15, 2026.","",[make(1,{finish:null})],"en",prior)).not.toEqual([]);
  });
 });
+
+
+describe("SQL daily source-row date and metric evidence",()=>{
+ const make=(status="actual",binding=1,amount="12345")=>({...receipt(),rows:[{day:"2026-11-15",total:amount,state:status}],evidence:{...(receipt().evidence as object),column_units:{total:"cents"},column_origins:{day:{relation:"daily_rollups",column:"business_date",binding:1},total:{relation:"daily_rollups",column:"net_sales_cents",binding},state:{relation:"daily_rollups",column:"sales_data_status",binding:1}}}}) as AgentToolResult;
+ it("accepts directly observed daily sales without a reporting-tool requirement",()=>{
+  expect(checkNumbers("Sales on 2026-11-15 were $123.45.","",[make()],"en")).toEqual([]);
+  for(const wrong of ["Sales on 2026-11-16 were $123.45.","Labor on 2026-11-15 was $123.45."])
+   expect(checkNumbers(wrong,"",[make()],"en")).not.toEqual([]);
+  expect(checkNumbers("Sales on 2026-11-15 were $123.45.","",[make("missing")],"en")).not.toEqual([]);
+  expect(checkNumbers("Sales on 2026-11-15 were $123.45.","",[make("actual",2)],"en")).not.toEqual([]);
+ });
+ it("withdraws a previously observed daily total when refreshed as missing",()=>{
+  const saved=compactEvidence([make()]);
+  expect(checkNumbers("Sales on 2026-11-15 were $123.45.","",[make("missing")],"en",saved)).not.toEqual([]);
+ });
+});
