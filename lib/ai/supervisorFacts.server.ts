@@ -21,6 +21,36 @@ const safeCents=(value:unknown)=>{
  const n=typeof value==="number"?value:typeof value==="string"&&/^-?\d+$/.test(value)?Number(value):NaN;
  return Number.isSafeInteger(n)?n:null;
 };
+/** One stable, tenant-scoped PostgREST page at a time. Row caps are transport
+ * limits, not business limits: continue until the exact full set is proved.
+ * Requiring unique immutable IDs and a stable exact count fails closed on
+ * concurrent page drift, rather than silently publishing a partial subtotal. */
+async function readCompletePaged<T>(
+ read:(start:number,end:number)=>Promise<{data:T[]|null;error:unknown;count?:number|null}>,
+ identity:(row:T)=>unknown
+):Promise<T[]|null>{
+ const rows:T[]=[];const seen=new Set<string>();let expected:number|null=null;
+ for(let start=0;;start+=1000){
+  if(!Number.isSafeInteger(start+999))return null;
+  const page=await read(start,start+999);
+  if(page.error)throw page.error;
+  if(!Array.isArray(page.data)||page.data.length>1000)return null;
+  if(page.count!=null){
+   if(!Number.isSafeInteger(page.count)||page.count<0||
+      (expected!==null&&expected!==page.count))return null;
+   expected=page.count;
+  }
+  for(const row of page.data){
+   const key=identity(row);
+   if(typeof key!=="string"||!key||seen.has(key))return null;
+   seen.add(key);rows.push(row);
+  }
+  if(expected!==null&&rows.length>expected)return null;
+  if(expected!==null&&rows.length===expected)break;
+  if(page.data.length<1000)break;
+ }
+ return expected===null||rows.length===expected?rows:null;
+}
 function known<T>(value: T, estimated = false): KnownSlice<T> {
   return { available: true, value, quality: {
     level: estimated ? "medium" : "high",
@@ -62,11 +92,11 @@ export function supervisorFactReaders(client: SupabaseClient, authorizedBusiness
     },
     async monthlyBills(businessId: string): Promise<KnownSlice<MonthlyBills>> {
       assertScope(businessId);
-      const { data, error, count } = await client.from("recurring_costs")
-        .select("amount_cents, frequency, is_estimate", {count:"exact"})
-        .eq("business_id", businessId).is("active_to", null);
-      if (error) throw error;
-      if (!completeRows(data,count)) return missing("recurringBillsCoverageUnverified");
+      const data=await readCompletePaged((start,end)=>client.from("recurring_costs")
+        .select("id,amount_cents,frequency,is_estimate",{count:"exact"})
+        .eq("business_id",businessId).is("active_to",null)
+        .order("id",{ascending:true}).range(start,end),row=>row.id);
+      if(!data)return missing("recurringBillsCoverageUnverified");
       if (!data?.length) return missing("recurringBillsNotConfigured");
       if(data.some(row=>safeCents(row.amount_cents)===null||
         !["monthly","weekly","quarterly","yearly"].includes(row.frequency)))
@@ -83,11 +113,11 @@ export function supervisorFactReaders(client: SupabaseClient, authorizedBusiness
 
     async recordedExpenses(businessId: string, period: CafeStatePeriod): Promise<KnownSlice<RecordedExpenses>> {
       assertScope(businessId);
-      const { data, error, count } = await client.from("expenses")
-        .select("amount_cents, status", {count:"exact"}).eq("business_id", businessId)
-        .gte("spent_on", period.from).lte("spent_on", period.to);
-      if (error) throw error;
-      if(!completeRows(data,count))return missing("recordedExpensesCoverageUnverified");
+      const data=await readCompletePaged((start,end)=>client.from("expenses")
+        .select("id,amount_cents,status",{count:"exact"}).eq("business_id",businessId)
+        .gte("spent_on",period.from).lte("spent_on",period.to)
+        .order("id",{ascending:true}).range(start,end),row=>row.id);
+      if(!data)return missing("recordedExpensesCoverageUnverified");
       const actual = (data ?? []).filter((row) => row.status === "actual");
       if (!actual.length) return missing("noRecordedActualExpenseEntries");
       if(actual.some(row=>safeCents(row.amount_cents)===null))
@@ -110,18 +140,17 @@ export function supervisorFactReaders(client: SupabaseClient, authorizedBusiness
       const covered=await readCoveredSalesDates(client,businessId,period.from,period.to);
       const coverage=resolveItemSalesCoverage(connections??[],period,covered);
       if(!coverage.covered)return missing("itemSalesCoverage");
-      const [items, quantities] = await Promise.all([
-        client.from("menu_items").select("id, name, category").eq("business_id", businessId),
-        client.rpc("menu_item_quantities_sold", {
-          p_business_id: businessId, p_from: period.from, p_to: period.to,
-        }),
+      const [items, quantityRows] = await Promise.all([
+        readCompletePaged((start,end)=>client.from("menu_items")
+          .select("id,name,category",{count:"exact"}).eq("business_id",businessId)
+          .order("id",{ascending:true}).range(start,end),row=>row.id),
+        readCompletePaged((start,end)=>client.rpc("menu_item_quantities_sold",{
+          p_business_id:businessId,p_from:period.from,p_to:period.to
+        },{count:"exact"}).order("menu_item_id",{ascending:true}).range(start,end),
+          row=>row.menu_item_id),
       ]);
-      if (items.error) throw items.error;
-      if (quantities.error) throw quantities.error;
-      if(!completeRows(items.data,null)||!Array.isArray(quantities.data)||
-         quantities.data.length>=1000)return missing("productSalesRowsIncomplete");
-      const quantityRows = (quantities.data ?? []) as Array<{ menu_item_id: string; total_quantity: number | string }>;
-      const knownIds=new Set((items.data??[]).map(item=>item.id));
+      if(!items||!quantityRows)return missing("productSalesRowsIncomplete");
+      const knownIds=new Set(items.map(item=>item.id));
       const seenIds=new Set<string>();
       for(const row of quantityRows){
        const units=Number(row.total_quantity);
@@ -133,7 +162,7 @@ export function supervisorFactReaders(client: SupabaseClient, authorizedBusiness
       const byId = new Map<string, number>(quantityRows.map((row) =>
         [row.menu_item_id, Number(row.total_quantity)]));
       // Preserve archived products, as historic sales can include inactive menu items.
-      const sold=(items.data ?? []).map((item) => ({
+      const sold=items.map((item) => ({
         id: item.id, name: item.name,
         category: item.category === "food" ? "food" as const : "drink" as const,
         units: byId.get(item.id) ?? 0,
