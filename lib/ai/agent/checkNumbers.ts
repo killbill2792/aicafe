@@ -795,7 +795,8 @@ type ShiftPersonClaim = {kind:"general"}|{kind:"named";name:string}|{kind:"unres
 // sentence connectors/weekdays instead of turning "Monday Ada" or "Ada on"
 // into a different employee identity. Preserve genuine two-word names.
 function normalizedEmployeeName(raw:string):string {
-  const connectors=new Set(["on","for","the","at","in","by","of","a","an","de","el","la"]);
+  const connectors=new Set(["on","for","the","at","in","by","of","a","an","de","el","la",
+    "and","then","but","while","or"]);
   const weekdays=new Set(["monday","tuesday","wednesday","thursday","friday","saturday",
     "sunday","mon","tue","wed","thu","fri","sat","sun","lunes","martes","miércoles",
     "miercoles","jueves","viernes","sábado","sabado","domingo"]);
