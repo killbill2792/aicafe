@@ -425,7 +425,12 @@ export async function runU3Sql(ctx:U3SqlContext,raw:unknown){
     if(aggregateOnly&&rows.some(row=>
      !row||typeof row!=="object"||Array.isArray(row)||
      Object.entries(row).some(([key,value])=>
-      /name|email|phone|address|employee|customer|person|account|identity|recipient/i.test(key)&&value!==null)))
+      /name|email|phone|address|employee|customer|person|account|identity|recipient/i.test(key)&&value!==null&&
+      // A count or amount with an attested numeric SQL lineage cannot become
+      // private text merely because the model labels it customer_count.
+      !(Object.hasOwn(plan.outputUnits,key)&&
+       (typeof value==="number"&&Number.isFinite(value)||
+        typeof value==="string"&&/^[+-]?\d+(?:\.\d+)?$/u.test(value))))))
      throw Error("unattended_aggregate_required");
    });
    stage.value="result";

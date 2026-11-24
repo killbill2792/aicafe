@@ -325,6 +325,23 @@ describe.skipIf(!active)("U3 migrated registered tool + private connection",()=>
    expect(result.rows).toEqual([]);
   }
  });
+ it("allows attested aggregate aliases but denies unreduced source rows off turn",async()=>{
+  const offturn={...scoped,aggregateOnly:true};
+  const result=await dataQueryTools.query_data.execute(input("SELECT COUNT(*) AS customer_count FROM orders"),offturn);
+  expect(result.error).toBeUndefined();
+  expect(result.rows).toEqual([{customer_count:"1"}]);
+  for(const sql of [
+   "SELECT net_sales_cents FROM orders WHERE EXISTS(SELECT count(*) FROM orders)",
+   "SELECT sum(net_sales_cents) OVER() AS total FROM orders"
+  ]){
+   const denied=await dataQueryTools.query_data.execute(input(sql),offturn);
+   expect(denied.error).toBe("unattended_aggregate_required");
+   expect(denied.rows).toEqual([]);
+   const owner=await dataQueryTools.query_data.execute(input(sql),scoped);
+   expect(owner.error).toBeUndefined();
+   expect(owner.rows).toHaveLength(1);
+  }
+ });
  it("rejects private whole-row alias leakage through actual registered SQL tool",async()=>{
   const offturn={...scoped,aggregateOnly:true};
   for(const sql of [

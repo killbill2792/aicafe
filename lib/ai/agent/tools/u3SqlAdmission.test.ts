@@ -127,6 +127,24 @@ describe("U3 governed PostgreSQL AST admission",()=>{
    admitted,0,true,["business_date","net_sales_cents"]))
    .rejects.toThrow("unattended_aggregate_required");
  });
+ it("requires reducing aggregation in the returned grain rather than an unrelated subquery or window",async()=>{
+  const columns=["net_sales_cents"];
+  for(const sql of [
+   "SELECT net_sales_cents FROM orders WHERE EXISTS(SELECT count(*) FROM orders)",
+   "SELECT sum(net_sales_cents) OVER() AS total FROM orders",
+   "SELECT net_sales_cents,(SELECT count(*) FROM orders) AS n FROM orders",
+   "WITH x AS (SELECT count(*) AS n FROM orders) SELECT net_sales_cents FROM orders",
+   "WITH x AS (SELECT count(*) AS n FROM orders) SELECT net_sales_cents FROM orders CROSS JOIN x"
+  ]){
+   await expect(admitU3Sql(sql,admitted,0,true,columns)).rejects.toThrow("unattended_aggregate_required");
+   await expect(admitU3Sql(sql,admitted)).resolves.toMatchObject({relations:["orders"]});
+  }
+  for(const sql of [
+   "SELECT count(*) AS customer_count FROM orders",
+   "WITH x AS (SELECT sum(net_sales_cents) AS net_sales_cents FROM orders) SELECT net_sales_cents FROM x",
+   "SELECT net_sales_cents FROM (SELECT sum(net_sales_cents) AS net_sales_cents FROM orders) x"
+  ])await expect(admitU3Sql(sql,admitted,0,true,columns)).resolves.toMatchObject({relations:["orders"]});
+ });
  it("derives trusted calculator units from source columns and SQL expressions, never aliases",async()=>{
   const units={net_sales_cents:"cents" as const,orders_count:"count" as const};
   const money=await admitU3Sql("SELECT SUM(net_sales_cents) AS result FROM orders",admitted,0,false,[],units);

@@ -298,13 +298,6 @@ export async function admitU3Sql(sql:string,allowedRelations:readonly string[],
  if(starSeen&&[...reads].some(rel=>rel==="toast_records"||
    Object.hasOwn(relationUnits?.[rel]??{},"data")))
   throw new U3AdmissionError("explicit_columns_required");
- if(aggregateOnly){
-  const target=(tree.stmts[0].stmt?.SelectStmt as {targetList?:unknown})?.targetList;
-  if(!Array.isArray(target)||!target.length||
-   ![...called].some(fn=>["count","sum","avg","min","max","stddev_pop",
-    "stddev_samp","variance","bool_and","bool_or"].includes(fn)))
-   throw Error("unattended_aggregate_required");
- }
 
  // Resolve dimensions and direct-column identity through actual SELECT
  // scope, not output labels. Computed expressions retain unit when their
@@ -316,6 +309,45 @@ export async function admitU3Sql(sql:string,allowedRelations:readonly string[],
  type Binding={name:string;columns:Columns};
  const obj=(x:unknown):N|null=>x&&typeof x==="object"&&!Array.isArray(x)?x as N:null;
  const unwrap=(x:unknown,key:string):N|null=>{const v=obj(x);return v?obj(v[key])??v:null;};
+ // An aggregate in a nested predicate or window does not reduce the
+ // top-level source rows. Prove the actual returned grain; projections over
+ // already-aggregated CTEs/subqueries remain composable without another sum.
+ const reducingFunctions=new Set(["count","sum","avg","min","max","stddev_pop",
+  "stddev_samp","variance","var_pop","var_samp","bool_and","bool_or",
+  "percentile_cont","percentile_disc"]);
+ function hasReducingAggregate(node:unknown):boolean{
+  if(Array.isArray(node))return node.some(hasReducingAggregate);
+  const entry=obj(node);if(!entry)return false;
+  if(entry.SelectStmt||entry.SubLink)return false;
+  const fn=obj(entry.FuncCall);
+  if(fn&&!fn.over&&reducingFunctions.has(functionName(fn)??""))return true;
+  return Object.values(entry).some(hasReducingAggregate);
+ }
+ function reducedGrain(node:unknown,inherited:ReadonlyMap<string,boolean>):boolean{
+  const select=unwrap(node,"SelectStmt");if(!select)return false;
+  const local=new Map(inherited);
+  const clause=unwrap(select.withClause,"WithClause");
+  for(const raw of Array.isArray(clause?.ctes)?clause.ctes:[]){
+   const c=unwrap(raw,"CommonTableExpr");
+   if(c&&typeof c.ctename==="string")local.set(c.ctename,reducedGrain(c.ctequery,local));
+  }
+  if(select.larg&&select.rarg)
+   return reducedGrain(select.larg,local)&&reducedGrain(select.rarg,local);
+  if(hasReducingAggregate(select.targetList)||hasReducingAggregate(select.havingClause))return true;
+  const reducedFrom=(raw:unknown):boolean=>{
+   const entry=obj(raw);if(!entry)return false;
+   const rel=obj(entry.RangeVar);
+   if(rel&&typeof rel.relname==="string")return !rel.schemaname&&local.get(rel.relname)===true;
+   const derived=obj(entry.RangeSubselect);
+   if(derived)return reducedGrain(derived.subquery,local);
+   const join=obj(entry.JoinExpr);
+   return !!join&&reducedFrom(join.larg)&&reducedFrom(join.rarg);
+  };
+  const from=Array.isArray(select.fromClause)?select.fromClause:[];
+  return from.length>0&&from.every(reducedFrom);
+ }
+ if(aggregateOnly&&!reducedGrain(tree.stmts[0].stmt,new Map()))
+  throw Error("unattended_aggregate_required");
  const recognized=(v:unknown):Unit=>v==="cents"||v==="microcents"||v==="count"||v==="percent"||v==="ratio"?v:null;
  let bindingSequence=0;
  const baseColumns=(rel:string):Columns=>{

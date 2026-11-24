@@ -936,12 +936,15 @@ export async function runOneTurn(p: TurnParams): Promise<{ replyId: string; repl
     failureStage = "persist";
     let reply: Awaited<ReturnType<typeof persistAgentReply>>;
     try {
-      if (!result.text.trim()) throw new AgentEmptyReplyError();
       await assertTurnSources();
-      // Keep transient or budget-limited slices nonterminal. Their real
-      // provider usage is recorded by the existing finally block below.
+      // A slice can exhaust its resource allowance after committing research
+      // receipts but before emitting prose. Classify continuation before the
+      // empty-reply guard; a blank *completed* answer remains an error.
+      // The existing fenced checkpoint and spend accounting still govern
+      // whether this assignment may resume.
       if(p.durableFence&&!result.results.some(r=>r.source==="ask_owner"&&r.missing.length===0)&&result.endReason!=="complete")
         throw new Error("durable_retry_pending");
+      if (!result.text.trim()) throw new AgentEmptyReplyError();
       reply = p.durableFence?await persistAgentReply(scope, owner, result,p.durableFence):await persistAgentReply(scope, owner, result);
     } finally {
       // Billable usage must be counted even for blank, oversized or failed writes.
