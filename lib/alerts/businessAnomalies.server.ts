@@ -45,7 +45,7 @@ async function customerAggregate(db:SupabaseClient,businessId:string,view:"cv_to
  return {row:row??null,complete:result.customerCoverage?.complete===true&&result.missing.every(x=>x==="empty")&&(!("notes" in result)||!result.notes?.length),error:null,coverage:result.customerCoverage};
 }
 const checkFilters=[{column:"record_type",op:"=",value:"check"},{column:"counts_in_sales",op:"=",value:true}];
-type CustomerSourcePeriod=CustomerPeriod&{expectedLocationDays?:number; optionalReadFailed?:boolean; optionalFailures?:string[]};
+type CustomerSourcePeriod=CustomerPeriod&{expectedLocationDays?:number; optionalReadFailed?:boolean; optionalFailures?:string[]; optionalAttempted?:boolean};
 async function customerPeriod(db:SupabaseClient,businessId:string,window:CustomerRange,detail=true):Promise<CustomerSourcePeriod|null>{
  const checks=await customerAggregate(db,businessId,"cv_toast_records",window,[
   customerMetrics("count","source_ref"),customerMetrics("count","data.aiCafeCustomer.identityRef"),
@@ -118,7 +118,7 @@ async function customerPeriod(db:SupabaseClient,businessId:string,window:Custome
    queryNumber(contribution.row,"avg_historical_recipe_contribution_cents"):null,
   knownHistoryAccounts:history?.complete&&history.row?queryCount(history.row,"count_history_account_net_sales_cents")??undefined:undefined,
   averageHistoryAccountCents:history?.complete&&history.row?queryNumber(history.row,"avg_history_account_net_sales_cents"):null,
-  complete:checks.complete&&visits.complete,expectedLocationDays,optionalReadFailed:optionalFailures.length>0,optionalFailures};
+  complete:checks.complete&&visits.complete,expectedLocationDays,optionalReadFailed:optionalFailures.length>0,optionalFailures,optionalAttempted:detailReady};
 }
 async function customerCadence(db:SupabaseClient,businessId:string,window:CustomerRange,
  kind:"lapse"|"reappearance"):Promise<CustomerCadenceSample|null>{
@@ -595,7 +595,7 @@ export async function refreshBusinessAnomalies(db:SupabaseClient,businessId:stri
   // An unavailable/low-coverage source is a data-gap incident, not customer
   // churn or verified recovery. Never close an existing trend on missing data.
   await gap("customer_identity_coverage",!comparable);
-  if(current&&previous&&current.linkedChecks>0&&previous.linkedChecks>0){
+  if(current?.optionalAttempted&&previous?.optionalAttempted){
    for(const name of ["recipe_contribution","behavior","account_history"])
     await gap("reader_unavailable:customer_"+name,
      !!(current.optionalFailures?.includes(name)||previous.optionalFailures?.includes(name)));
