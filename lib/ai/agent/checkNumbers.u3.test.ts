@@ -104,6 +104,8 @@ describe("recorded labor punch verifier, not roster or invented model prose",()=
      "Maya had a clock-in at 9:00 AM on November 15, 2026.",
      "Maya’s recorded clock-in was 9:00 AM on November 15, 2026.",
      "Maya's recorded clock-in was 9:00 AM on November 15, 2026.",
+     "Maya had her clock-in at 9:00 AM on November 15, 2026.",
+     "Maya’s timecard lists a clock-in at 9:00 AM on November 15, 2026.",
      "Sam clocked in at 9:00 AM on November 16, 2026.",
      "Sam clocked in at 8:00 AM on November 15, 2026.",
      "Sam worked 7 hours.",
