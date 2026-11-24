@@ -83,15 +83,31 @@ export function rankPriority(source:PrioritySource,now:Date):PriorityDecision{
     ownerAction?"Owner task needs review":"Task response needs review";
   return {source,revisionHash,priority,reason,stableKey};
 }
+/** Eligibility is source-driven and shared by notice publication and model-queue
+ * admission. Detector data gaps describe incomplete/failed observations, not
+ * independent owner-actionable business losses. They belong to engineering
+ * readiness/recovery, not to a paid autonomous investigation or owner notice.
+ * Explicit owner conversation remains available through the normal tools. */
+export function requiresOwnerAttention(source:PrioritySource):boolean{
+  if(source.sourceType==="alert"&&source.kind==="business_anomaly"){
+    const evidence=source.evidence;
+    if(evidence&&typeof evidence==="object"&&!Array.isArray(evidence)){
+      const fact=evidence as Record<string,unknown>;
+      if(fact.family==="data_gap"||fact.quality==="technical_failure"||
+        fact.quality==="not_matured")return false;
+    }
+  }
+  return true;
+}
 export function choosePriorities(sources:readonly PrioritySource[],now:Date,limit=3,
   options?:{includeWatching?:boolean}):PriorityDecision[]{
-  const candidates=sources.filter(s=>
+  const candidates=sources.filter(s=>requiresOwnerAttention(s)&&(
     (s.sourceType==="alert"&&(s.status==="new"||s.status==="seen"))||
     (s.sourceType==="operating_task"&&!alreadyNotifiedTaskKinds.has(s.kind)&&
       (s.status==="needs_owner"||s.status==="needs_response"||
        (options?.includeWatching===true&&s.status==="watching")))||
     (s.sourceType==="supplier_po"&&s.status==="draft")||
-    (s.sourceType==="supplier_dispatch"&&s.status==="approved_for_ordering"))
+    (s.sourceType==="supplier_dispatch"&&s.status==="approved_for_ordering")))
     .map(s=>rankPriority(s,now));
   return candidates.sort((a,b)=>b.priority-a.priority||
     a.source.createdAt.localeCompare(b.source.createdAt)||
