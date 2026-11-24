@@ -199,7 +199,7 @@ describe.skipIf(!active)("U3 migrated registered tool + private connection",()=>
   if(!admin)throw Error("admin_missing");
   const employee=randomUUID(),card=randomUUID();
   await admin.query("INSERT INTO public.employees(id,business_id,display_name) VALUES($1,$2,'Sam')",[employee,ids.a]);
-  await admin.query("INSERT INTO public.timecards(id,business_id,employee_id,clock_in,clock_out,source_type) VALUES($1,$2,$3,'2026-11-15T09:00:00Z','2026-11-15T15:00:00Z','toast')",[card,ids.a,employee]);
+  await admin.query("INSERT INTO public.timecards(id,business_id,employee_id,clock_in,clock_out,source_type) VALUES($1,$2,$3,'2026-11-15T09:00:00Z','2026-11-15T15:00:00Z','connected_pos')",[card,ids.a,employee]);
   try{
    const result=await dataQueryTools.query_data.execute(input("SELECT timecard_id,employee_name,timezone,clock_in,clock_out,recorded_break_count FROM recorded_timecards"),scoped);
    expect(result.error).toBeUndefined();

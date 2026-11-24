@@ -392,7 +392,7 @@ export async function runU3Sql(ctx:U3SqlContext,raw:unknown){
    stage.value="admission";
    const plan=await admitU3Sql(p.sql,list.map(r=>r.name),p.parameters?.length??0,
     aggregateOnly,[...safeOffturnColumns],knownColumnUnits,relationUnits satisfies U3RelationUnits);
-   if(plan.relations.includes("toast_records")&&
+   if(plan.relations.some(relation=>relation==="toast_records"||relation==="toast_changes")&&
      (p.date_from===null||p.date_to===null))throw Error("invalid_query");
    // Each page revalidates the signed owner/café/thread/lease in PostgreSQL.
    // The opaque cursor protects the exact SQL/parameters/window/scope from
