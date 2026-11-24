@@ -329,3 +329,85 @@ where t.business_id=a.business_id and t.kind='priority_notice'
   and a.kind='business_anomaly'
   and (a.payload->>'family'='data_gap' or
        a.payload->>'quality' in ('technical_failure','not_matured'));
+
+-- The U3 retained operational Toast views independently enforced the same
+-- arbitrary 31-day cap. Preserve the original signed tenant/owner/mode, field
+-- scrubbing, source date-pair validation and SECURITY DEFINER owner; remove only
+-- the interval-length rejection. Heavy SQL still meets PostgreSQL statement
+-- timeout, planner admission and per-page output controls.
+CREATE OR REPLACE FUNCTION u3_research_private.toast_operational_records()
+RETURNS TABLE(
+ source text,source_ref text,status text,business_date date,record_type text,
+ record_ref text,order_ref text,check_ref text,counts_in_sales boolean,data jsonb
+) LANGUAGE sql STABLE SECURITY DEFINER SET search_path=''
+AS $u3_toast_records$
+ SELECT r.source,
+  CASE WHEN s.mode='owner' THEN r.source_ref ELSE NULL END,
+  r.status,r.business_date,r.record_type,
+  CASE WHEN s.mode='owner' THEN r.record_ref ELSE NULL END,
+  CASE WHEN s.mode='owner' THEN r.order_ref ELSE NULL END,
+  CASE WHEN s.mode='owner' THEN r.check_ref ELSE NULL END,
+  r.counts_in_sales,
+  CASE WHEN s.mode='owner' THEN r.data ELSE NULL::jsonb END
+ FROM u3_research_private.scope() s
+ CROSS JOIN LATERAL (
+  SELECT nullif(current_setting('aicafe.u3_date_from',true),'')::date AS from_day,
+   nullif(current_setting('aicafe.u3_date_to',true),'')::date AS to_day
+ ) u3_window
+ CROSS JOIN LATERAL public.toast_records_for(s.business_id,
+    CASE WHEN u3_window.from_day IS NOT NULL AND u3_window.to_day IS NOT NULL
+      AND u3_window.to_day>=u3_window.from_day
+      THEN u3_window.from_day ELSE '9999-12-31'::date END,
+    CASE WHEN u3_window.from_day IS NOT NULL AND u3_window.to_day IS NOT NULL
+      AND u3_window.to_day>=u3_window.from_day
+      THEN u3_window.to_day ELSE '0001-01-01'::date END) r
+ WHERE u3_window.from_day IS NOT NULL AND u3_window.to_day IS NOT NULL
+   AND u3_window.to_day>=u3_window.from_day
+  
+$u3_toast_records$;
+
+CREATE OR REPLACE FUNCTION u3_research_private.toast_change_rows()
+RETURNS TABLE(
+ change_id bigint,entity text,entity_guid uuid,business_date date,
+ changed_at timestamptz,field_path text,before_scalar text,after_scalar text
+) LANGUAGE sql STABLE SECURITY DEFINER SET search_path=''
+AS $u3_change_rows$
+ SELECT
+  c.id,c.entity,
+  CASE WHEN s.mode='owner' THEN c.entity_guid ELSE NULL::uuid END,
+  c.business_date,c.changed_at,n.named_path,
+  CASE WHEN s.mode='owner'
+    AND jsonb_typeof(e.value->'before') IN ('string','number','boolean')
+    AND length(e.value->>'before')<=256
+    THEN e.value->>'before' ELSE NULL END,
+  CASE WHEN s.mode='owner'
+    AND jsonb_typeof(e.value->'after') IN ('string','number','boolean')
+    AND length(e.value->>'after')<=256
+    THEN e.value->>'after' ELSE NULL END
+ FROM u3_research_private.scope() s
+ CROSS JOIN LATERAL (
+  SELECT nullif(current_setting('aicafe.u3_date_from',true),'')::date AS from_day,
+    nullif(current_setting('aicafe.u3_date_to',true),'')::date AS to_day
+ ) u3_window
+ JOIN public.toast_raw_changes c ON c.business_id=s.business_id
+ CROSS JOIN LATERAL jsonb_array_elements(c.changes) e(value)
+ CROSS JOIN LATERAL (
+  SELECT 'data.' || btrim(regexp_replace(
+     coalesce(e.value->>'path',''), '\[[^]]+\]', '.0','g'),'.') AS named_path
+ ) n
+ WHERE u3_window.from_day IS NOT NULL AND u3_window.to_day IS NOT NULL
+  AND u3_window.to_day>=u3_window.from_day
+ 
+  AND coalesce(c.business_date,(c.changed_at AT TIME ZONE 'UTC')::date)
+      BETWEEN u3_window.from_day AND u3_window.to_day
+  AND length(n.named_path)<=512
+  AND public.ai_query_path(n.named_path) IS NOT NULL
+  AND n.named_path !~* '(^|\.)(note|notes|instructions|comment|comments|memo|message|freeText|text|description)(\.|$)'
+  AND (jsonb_typeof(e.value->'before') IN ('string','number','boolean','null')
+    OR jsonb_typeof(e.value->'after') IN ('string','number','boolean','null'))
+$u3_change_rows$;
+
+comment on view u3_research.toast_records is
+ 'Scoped retained Toast operational objects from the existing scrubbed toast_records_for reader. Requires caller-supplied valid business-date bounds of any length, verified signed café/owner/mode and indexed read-only research. Current state does not establish historical completeness; no raw diagnostic data or unrestricted nested JSON.';
+comment on view u3_research.toast_changes is
+ 'Scoped historical Toast scalar change observations in a caller-supplied valid business-date window of any length. Changes are not a complete historical event log; individual source fields and identities remain owner-only under the signed scope.';
