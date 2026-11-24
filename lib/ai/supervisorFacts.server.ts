@@ -11,12 +11,6 @@ export type RecordedExpenses = { totalCents: number };
 export type ItemSalesCoverage = ReturnType<typeof resolveSalesCoverage>;
 export type SoldProduct = { id: string; name: string; category: "drink" | "food"; units: number };
 
-/** A PostgREST result may be silently capped (typically at 1,000 rows).
- * A subtotal is not a certified total; count and safe integer cents are
- * independent prerequisites for owner-facing financial facts. */
-function completeRows(rows:unknown[]|null|undefined,count:number|null|undefined){
- return Array.isArray(rows)&&rows.length<1000&&(count==null||count===rows.length);
-}
 const safeCents=(value:unknown)=>{
  const n=typeof value==="number"?value:typeof value==="string"&&/^-?\d+$/.test(value)?Number(value):NaN;
  return Number.isSafeInteger(n)?n:null;
