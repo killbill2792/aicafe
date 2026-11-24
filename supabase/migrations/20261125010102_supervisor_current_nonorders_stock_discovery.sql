@@ -11,6 +11,9 @@
 -- Shared by the existing Toast reader, inventory view and field discovery.
 -- Never read diagnostic samples. Preserve per-café policy, staged-source
 -- verification, all currently retained fields and secret-safe JSON shape.
+set lock_timeout='5s';
+set statement_timeout='45s';
+
 create or replace function public.toast_current_nonorders_for(
  p_business_id uuid,p_from date,p_to date,p_record_type text)
 returns table(
