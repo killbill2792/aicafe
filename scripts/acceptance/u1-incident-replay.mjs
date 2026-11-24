@@ -27,6 +27,7 @@ export function extractIncidentFixture(source){
 export const historicalFixtureRef="1a9d1aaeabc521928f4d7a0ae27403b37ed2deea";
 export function adaptHistoricalFixture(fixture){
  const changes=[
+  ['import type { AgentToolContext } from "./tools";','import type { AgentToolContext,AgentToolResult } from "./tools";\nimport type {OwnerRunCheckpoint} from "@/lib/ai/supervisor/runs/contracts";',1],
   ["call(\"get_sales\",'{\"period\":\"today\",\"ownerInputs\":null}',","call(\"query_data\",'{\"official_metric\":{\"id\":\"sales\",\"period_mode\":null,\"period\":\"today\"}}',",1],
   ["call(\"get_sales\",JSON.stringify({period,ownerInputs:null}),","call(\"query_data\",JSON.stringify({official_metric:{id:\"sales\",period_mode:null,period}}),",3],
   ["call(\"get_peak_hours\",JSON.stringify(period),","call(\"query_data\",JSON.stringify({official_metric:{id:\"hourly_sales\",period_mode:null,period}}),",2],

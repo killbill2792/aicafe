@@ -162,7 +162,7 @@ describe.skipIf(!active)("U3 migrated registered tool + private connection",()=>
    }
    const stock=await dataQueryTools.query_data.execute(input("SELECT ingredient_name,quantity,quantity_unit,evidence_state FROM inventory_observations WHERE source='app'"),scoped);
    expect(stock.error).toBeUndefined();
-   expect(stock.rows).toEqual([{ingredient_name:"Local synthetic milk",quantity:"0",quantity_unit:"ml",evidence_state:"dated_owner_count"}]);
+   expect(stock.rows).toEqual([{ingredient_name:"Local synthetic milk",quantity:"0.0000",quantity_unit:"ml",evidence_state:"dated_owner_count"}]);
    const quotes=await dataQueryTools.query_data.execute(input("SELECT supplier_name,price_cents,currency_code FROM supplier_quotes"),scoped);
    expect(quotes.error).toBeUndefined();
    expect(quotes.rows).toEqual([{supplier_name:"Local supplier",price_cents:450,currency_code:"USD"}]);
