@@ -79,6 +79,9 @@ describe("Task 15A migrated, agentic investigation SQL integration",()=>{
       expect(await rpc(a,"supervisor_enqueue_investigation",[
         cafes[0],owners[0],threads[0],"alert",technical,
         hex("c"),hex("d"),350,anchor])).toBe(false);
+      await admin.query("update public.alerts set kind='meal_break' where id=$1",[technical]);
+      expect(await rpc(a,"supervisor_enqueue_investigation",[
+        cafes[0],owners[0],threads[0],"alert",technical,hex("c"),hex("d"),350,anchor])).toBe(false);
       expect(await rpc(a,"post_supervisor_priority_notice",[
         cafes[0],owners[0],threads[0],"alert",technical,
         hex("c"),hex("d"),"Actionable café alert needs review",anchor])).toBe(false);

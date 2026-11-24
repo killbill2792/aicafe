@@ -11,8 +11,8 @@ set statement_timeout='45s';
 CREATE FUNCTION public.supervisor_alert_evidence_eligible(p_kind text,p_payload jsonb)
 RETURNS boolean LANGUAGE sql IMMUTABLE SET search_path='' AS $eligible$
  SELECT CASE
-  WHEN p_kind IS DISTINCT FROM 'business_anomaly' THEN true
   WHEN p_payload->>'quality' IN ('technical_failure','not_matured') THEN false
+  WHEN p_kind IS DISTINCT FROM 'business_anomaly' THEN true
   WHEN p_payload->>'family'='data_gap' THEN coalesce(
    p_payload->>'quality'='missing' AND p_payload->'current'='1'::jsonb
    AND p_payload->>'unit'='coverage' AND (

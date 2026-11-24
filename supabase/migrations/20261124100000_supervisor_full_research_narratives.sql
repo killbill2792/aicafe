@@ -28,7 +28,8 @@ begin
   if p_source_type='alert' then
     perform 1 from public.alerts a
       where a.business_id=p_business_id and a.id::text=p_source_id
-        and a.status in ('new','seen') for share;
+        and a.status in ('new','seen')
+        and public.supervisor_alert_evidence_eligible(a.kind,a.payload) for share;
   elsif p_source_type='operating_task' then
     perform 1 from public.operating_tasks t
       where t.business_id=p_business_id and t.id=p_source_id

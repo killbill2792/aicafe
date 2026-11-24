@@ -52,6 +52,12 @@ describe("proactive priority ranking and source revision",()=>{
     const outage={...missing,sourceId:"unavailable",evidence:{...missing.evidence,quality:"technical_failure"}};
     expect(choosePriorities([missing,outage],now,10).map(x=>x.source.sourceId)).toEqual(["missing-count"]);
   });
+  it("excludes explicit technical and immature observations across alert kinds",()=>{
+    const now=new Date("2026-11-23T00:00:00Z");
+    const sources=["meal_break","sales_anomaly","custom_alert"].flatMap(kind=>
+      ["technical_failure","not_matured"].map(quality=>({...base,kind,sourceId:kind+quality,evidence:{quality}})));
+    expect(choosePriorities(sources,now,10)).toEqual([]);
+  });
   it("admits verified missing inputs independently of their source or subject",()=>{
     const now=new Date("2026-11-23T00:00:00Z");
     const sources=["bank_statement","employee_confirmation","supplier_document"].map(subject=>({
