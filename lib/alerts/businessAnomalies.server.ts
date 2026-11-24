@@ -79,7 +79,14 @@ async function customerPeriod(db:SupabaseClient,businessId:string,window:Custome
   try{const result=await promise;if(result.error)optionalFailures.push(name);return result;}
   catch{optionalFailures.push(name);return null;}
  };
- const [contribution,behaviors,history]=detail?await Promise.all([
+ // Don't spend expensive optional retained-JSON / historical reads if
+ // core source coverage cannot support a comparable customer claim.
+ // Keep a previous optional gap until that subreader really runs again.
+ const detailReady=detail&&checks.complete&&visits.complete&&total>0&&
+  linked>=CUSTOMER_MONITOR_POLICY.minimumLinkedChecks&&
+  linked/total>=CUSTOMER_MONITOR_POLICY.minimumIdentityCoverage&&
+  (queryCount(visits.row,"count_source_ref")??0)>=CUSTOMER_MONITOR_POLICY.minimumVisits;
+ const [contribution,behaviors,history]=detailReady?await Promise.all([
   optional("recipe_contribution",customerAggregate(db,businessId,"cv_customer_visits",window,[
    customerMetrics("count","historical_recipe_contribution_cents"),customerMetrics("avg","historical_recipe_contribution_cents")],[])),
   optional("behavior",customerAggregate(db,businessId,"cv_toast_records",window,[
