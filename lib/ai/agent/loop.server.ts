@@ -235,7 +235,7 @@ export async function runAgentTurn(args: {
   const adaptive=model===PRODUCTION_SUPERVISOR_OPENAI_MODEL&&(!legacyPaid||trustedNativeResearch);
   let nativeSearch=usesNativeToolSearch(model,legacyPaid&&!trustedU2&&!trustedNativeResearch);
   let usedAvailabilityFallback=false;
-  const policy=executionPolicy(model,workerBudget,legacyPaid&&!trustedNativeResearch);
+  const policy=executionPolicy(model,workerBudget,legacyPaid&&!trustedNativeResearch,trustedNativeResearch);
   const deadline=started+policy.elapsedMs;
   const workDeadline=deadline-policy.finalTimeReserve;
   const controller = new AbortController();
