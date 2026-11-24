@@ -153,6 +153,17 @@ describe("U3 governed PostgreSQL AST admission",()=>{
   const ratio=await admitU3Sql("WITH x AS (SELECT sum(net_sales_cents) AS sales FROM orders) SELECT sales/sales AS share FROM x",admitted,0,false,[],{},rels);
   expect(ratio.outputUnits).toEqual({share:"ratio"});
  });
+ it("never attests monetary units through a positional column rename",async()=>{
+  const rels={orders:{net_sales_cents:"cents" as const,orders_count:"count" as const}};
+  for(const sql of [
+   "WITH x(net_sales_cents, other) AS (SELECT orders_count,net_sales_cents FROM orders) SELECT net_sales_cents FROM x",
+   "SELECT net_sales_cents FROM (SELECT orders_count,net_sales_cents FROM orders) x(net_sales_cents,other)",
+   "SELECT x.net_sales_cents FROM orders x(orders_count,net_sales_cents)"
+  ]){
+   const plan=await admitU3Sql(sql,admitted,0,false,[],{},rels);
+   expect(plan.outputUnits).toEqual({});
+  }
+ });
  it("classifies rejected SQL without returning raw model or database contents",async()=>{
   await expect(admitU3Sql("SELECT pg_sleep(1) FROM orders",admitted)).rejects.toMatchObject({message:"invalid_query",reason:"unapproved_function"});
   await expect(admitU3Sql("SELECT count(*) FROM public.orders",admitted)).rejects.toMatchObject({message:"invalid_query",reason:"unapproved_relation"});

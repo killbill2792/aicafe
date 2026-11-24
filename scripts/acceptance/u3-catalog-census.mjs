@@ -118,6 +118,29 @@ expectedLogical.set("toast_changes",[
  "change_id","entity","entity_guid","business_date","changed_at",
  "field_path","before_scalar","after_scalar"
 ]);
+// Additional reviewed projections use the same signed scope and restricted
+// role, but have different grains/columns from their physical sources.
+expectedLogical.set("cafe_settings",[
+ "timezone","currency","opened_on","payroll_tax_rate","payroll_tax_rate_status",
+ "payroll_tax_rate_source","target_operating_margin","target_operating_margin_status",
+ "owner_monthly_payroll_extras_cents","owner_monthly_payroll_extras_updated_at",
+ "target_ingredient_cost_rate","target_ingredient_cost_rate_status"
+]);
+expectedLogical.set("opening_hours",[
+ "location_id","timezone","weekday","hours_status","interval_index","open_time","close_time"
+]);
+expectedLogical.set("timecard_breaks",[
+ "timecard_id","employee_id","clock_in","clock_out","source_type","source_provider",
+ "pos_last_synced_at","recorded_break_count","break_index","break_start","break_end","paid"
+]);
+expectedLogical.set("current_owner_facts",[
+ "fact_key","unit","period_scope","source","created_at","updated_at",
+ "value_type","numeric_value","boolean_value"
+]);
+expectedLogical.set("processing_fee_daily_facts",[
+ "business_date","amount_cents","status","source_type","provider","updated_at"
+]);
+expectedLogical.set("expense_categories",["code","qb_account_type","is_running_cost"]);
 const observedLogical=new Map();
 for(const column of logicalColumns??[]){
  const list=observedLogical.get(column.relation)??[];

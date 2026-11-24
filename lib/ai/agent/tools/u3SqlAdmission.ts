@@ -393,7 +393,18 @@ export async function admitU3Sql(sql:string,allowedRelations:readonly string[],
   }
   return result;
  }
- const outputUnits=Object.fromEntries([...projection(tree.stmts[0].stmt,new Map())].filter(
+ // A positional column alias can rename an unknown-unit column into a money
+ // label. Never attest it using the original names. Ordinary SQL execution
+ // remains available; explicit target AS aliases retain normal lineage.
+ const hasOrdinalAlias=(node:unknown):boolean=>{
+  if(!node||typeof node!=="object")return false;
+  if(Array.isArray(node))return node.some(hasOrdinalAlias);
+  return Object.entries(node).some(([key,value])=>
+   ((key==="colnames"||key==="aliascolnames")&&Array.isArray(value)&&value.length>0)||
+   hasOrdinalAlias(value));
+ };
+ const projected=projection(tree.stmts[0].stmt,new Map());
+ const outputUnits=Object.fromEntries([...(hasOrdinalAlias(tree)?new Map<string,Unit>():projected)].filter(
   (entry):entry is [string,U3TrustedUnit]=>entry[1]!==null));
  return {relations:[...reads].sort(),functions:[...called].sort(),
   nodeCount:nodes,cteCount:nCtes,outputUnits,
