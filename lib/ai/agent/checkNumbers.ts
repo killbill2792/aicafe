@@ -731,14 +731,22 @@ function timeRole(text:string, clock:ClockSpan):TimeRole|null {
   // Unlike scheduled-shift times, an actual employee punch must match
   // a recorded timecard and its own café-local date/employee. Never accept
   // a scheduled shift as evidence somebody truly clocked in or out.
-  const punch=[...phrase.matchAll(/\b(?:clock(?:ed|ing)?[ -]?(?:in|out)|punch(?:ed|ing)?[ -]?(?:in|out)|check(?:ed)?[ -]?(?:in|out))\b/giu)].at(-1)?.[0]?.toLowerCase();
-  if(punch)return /(?:out)$/u.test(punch)?"clockOut":"clockIn";
+  const punches=[...phrase.matchAll(/\b(?:clock(?:ed|ing)?[ -]?(?:in|out)|punch(?:ed|ing)?[ -]?(?:in|out)|check(?:ed)?[ -]?(?:in|out))\b/giu)];
   // EN/ES/AR owner prose is free-form. Recognize common shift paraphrases
   // and localized hours, but never exempt an unrecognized business clock.
   const actions=[...phrase.matchAll(
     /\b(?:shift\s+(?:starts?|begins?|ends?|finishes?)|(?:starts?|begins?|ends?|finishes?)\s+(?:his|her|their|the|a)\s+(?:[\p{L}]+\s+){0,3}shift|(?:open|opens|opening|close|closes|closing|abrimos|abre|abren|abrir|apertura|cerramos|cierra|cierran|cerrar|cierre))\b|\bturno\b[^.!?;\n]{0,30}\b(?:empieza|comienza|inicia|termina|finaliza)\b|(?:نفتح|يفتح|تفتح|نغلق|يغلق|تغلق|الإغلاق|إغلاق|الافتتاح|وردية[^.!?;\n]{0,30}(?:تبدأ|تنتهي|يبدأ|ينتهي)|مناوبة[^.!?;\n]{0,30}(?:تبدأ|تنتهي|يبدأ|ينتهي))/giu
   )];
-  const last=actions.at(-1)?.[0]?.toLowerCase()??"";
+  // Clock claims in one sentence may alternate between a punch, scheduled
+  // shift and business hours. A past punch must never override a later
+  // "opens"/"closes"/"shift starts" action for the next clock token.
+  const punch=punches.at(-1);
+  const action=actions.at(-1);
+  if(punch&&(!action||(punch.index??-1)>(action.index??-1))){
+    const token=punch[0].toLowerCase();
+    return /(?:out)$/u.test(token)?"clockOut":"clockIn";
+  }
+  const last=action?.[0]?.toLowerCase()??"";
   if(!last)return null;
   if(/\b(?:shift|turno)\b|(?:وردية|مناوبة)/iu.test(last))
     return /\b(?:ends?|finishes?|termina|finaliza)\b|(?:تنتهي|ينتهي)/iu.test(last)?"shiftEnd":"shiftStart";
