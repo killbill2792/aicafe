@@ -14,6 +14,7 @@ export type DataQueryContext={
  mode?:"owner"|"investigation"|"durable"|"routine";aggregateOnly?:boolean;
  sourceType?:string;sourceId?:string;runId?:string;leaseToken?:string;
  resultBudgetBytes?:number;
+ deadlineAt?:number;
  /** Internal fixed operational preview; never selected by model arguments. */
  previewOnly?:boolean;
  /** Isolated deterministic evaluator transport; never admitted in a deployed runtime. */

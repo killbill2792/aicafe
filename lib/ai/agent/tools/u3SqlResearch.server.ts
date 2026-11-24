@@ -19,11 +19,18 @@ export type U3SqlContext={
  mode?:"owner"|"investigation"|"durable"|"routine";aggregateOnly?:boolean;
  sourceType?:string;sourceId?:string;runId?:string;leaseToken?:string;
  resultBudgetBytes?:number;
+ /** Server-owned absolute work deadline; never taken from SQL arguments. */
+ deadlineAt?:number;
 };
 // Transport/context page bounds, NEVER total query, date or evidence ceilings.
 // The fetch batch bounds in-flight database rows, not the result size or model calls.
 const FETCH_BATCH=32;
-const QUERY_TIME_MS=8000;
+const DIRECT_RESEARCH_SLICE_MS=60000;
+function remainingResearchTime(deadlineAt:number){
+ const remaining=Math.floor(deadlineAt-Date.now());
+ if(!Number.isSafeInteger(remaining)||remaining<=0)throw Error("query_timeout");
+ return remaining;
+}
 const CURSOR_PREFIX="DECLARE u3_result NO SCROLL CURSOR FOR SELECT * FROM (";
 const scopeSchema=z.strictObject({
  businessId:z.uuid(),ownerUserId:z.uuid(),threadId:z.uuid(),
@@ -131,6 +138,7 @@ async function signedCapability(ctx:U3SqlContext):Promise<string>{
 }
 async function withinScope<T>(ctx:U3SqlContext,callback:(client:PoolClient,observedAt:unknown)=>Promise<T>,
  requestedWindow?:{date_from:string|null;date_to:string|null}):Promise<T>{
+ const deadlineAt=ctx.deadlineAt??Date.now()+DIRECT_RESEARCH_SLICE_MS;
  if(!u3SqlConfigured())throw Error("research_not_configured");
  // The server mints the capability only after authenticating the real owner,
  // café, original thread and durable/off-turn lease. Never log or return it.
@@ -146,8 +154,8 @@ async function withinScope<T>(ctx:U3SqlContext,callback:(client:PoolClient,obser
   await client.query("BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY");
   begun=true;
   // Static trusted SET statements share one transport, not model SQL.
-  await client.query("SET LOCAL statement_timeout = '8000ms'; "+
-   "SET LOCAL lock_timeout = '300ms'; SET LOCAL work_mem = '4MB'; "+
+  await client.query("SELECT set_config('statement_timeout',$1,true)",[String(remainingResearchTime(deadlineAt))]);
+  await client.query("SET LOCAL lock_timeout = '300ms'; SET LOCAL work_mem = '4MB'; "+
    "SET LOCAL search_path = u3_research, pg_catalog");
   const role=(await client.query(
    "SELECT current_user AS name,(SELECT rolsuper OR rolbypassrls FROM pg_roles "+
@@ -299,8 +307,8 @@ export function unsafeStructuredToastResult(rows:readonly unknown[]):boolean{
  * The real wall-clock/statement resource budget applies to the full scan. */
 async function readResearchPage(client:PoolClient,sql:string,parameters:readonly unknown[],
  offset:number,limit:number|null,resultBudgetBytes:number,validate:(rows:unknown[])=>void,
- collector:ResearchPageCollector|null,spool:DurableResearchSpool|null){
- const started=Date.now();
+ collector:ResearchPageCollector|null,spool:DurableResearchSpool|null,deadlineAt:number){
+ await client.query("SELECT set_config('statement_timeout',$1,true)",[String(remainingResearchTime(deadlineAt))]);
  await client.query({text:CURSOR_PREFIX+sql+") AS u3_bounded",values:[...parameters]});
  const rows:unknown[]=[];let bytes=2,totalRows=0,pageFull=false;
  // A complete response needs no second serialized copy of the result.
@@ -311,8 +319,7 @@ async function readResearchPage(client:PoolClient,sql:string,parameters:readonly
  };
  const digest=createHash("sha256");
  while(true){
-  const remaining=QUERY_TIME_MS-(Date.now()-started);
-  if(remaining<=0)throw Error("query_timeout");
+  const remaining=remainingResearchTime(deadlineAt);
   await client.query("SELECT set_config('statement_timeout',$1,true)",[String(remaining)]); // hardcode-ok: PostgreSQL bind placeholder
   const result=await client.query("FETCH FORWARD "+FETCH_BATCH+" FROM u3_result");
   const batch:unknown[]=result.rows;
@@ -341,7 +348,7 @@ async function readResearchPage(client:PoolClient,sql:string,parameters:readonly
   if(batch.length<FETCH_BATCH)break;
   await spool?.flush();
  }
- if(Date.now()-started>QUERY_TIME_MS)throw Error("query_timeout");
+ remainingResearchTime(deadlineAt);
  return {rows,totalRows,digest:digest.digest("hex"),truncated:offset+rows.length<totalRows};
 }
 // Only fixed error categories and SQLSTATE values are returned to the model.
@@ -385,6 +392,7 @@ export function safeU3SqlErrorCode(e:unknown){
  * arguments, DB errors or owner IDs are ever returned as tool evidence. */
 export async function runU3Sql(ctx:U3SqlContext,raw:unknown){
  const startedAt=Date.now();
+ const deadlineAt=ctx.deadlineAt??startedAt+DIRECT_RESEARCH_SLICE_MS;
  const stage:{value:"scope"|"catalog"|"admission"|"query"|"result"}={value:"scope"};
  const parsed=u3SqlSchema.safeParse(raw);
  if(!parsed.success)return {source:"u3_canonical_research",period:null,
@@ -394,7 +402,7 @@ export async function runU3Sql(ctx:U3SqlContext,raw:unknown){
   if(!Number.isSafeInteger(resultBudgetBytes)||resultBudgetBytes<2)throw Error("research_context_exhausted");
   stage.value="admission";
   if(Buffer.byteLength(JSON.stringify(parsed.data.parameters??[]),"utf8")>256*1024)throw new U3AdmissionError("parser_resource_bound");
-  const committed=await withinScope(ctx,async (client,asOf)=>{
+  const committed=await withinScope({...ctx,deadlineAt},async (client,asOf)=>{
    stage.value="catalog";
    const list=await sources(client);
    if(!list.length)throw Error("research_not_configured");
@@ -502,7 +510,7 @@ export async function runU3Sql(ctx:U3SqlContext,raw:unknown){
        (typeof value==="number"&&Number.isFinite(value)||
         typeof value==="string"&&/^[+-]?\d+(?:\.\d+)?$/u.test(value))))))
      throw Error("unattended_aggregate_required");
-   },collector,spool);
+   },collector,spool,deadlineAt);
    stage.value="result";
    // Independent unfiltered denominator from the same scoped DB snapshot.
    const rawCoverage=customerEvidence?(await client.query(

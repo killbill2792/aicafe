@@ -295,6 +295,7 @@ export async function runAgentTurn(args: {
     ?newResolveState(matched[matched.length-1].answer,[...(args.history??[]),{role:"user",content:args.ownerText},...matchedHistory.slice(0,-1)])
     :newResolveState(args.ownerText,args.history);
   args.context.resolveState=resolveState;
+  args.context.researchDeadlineAt=()=>Date.now()+Math.max(0,workDeadline-now());
   args.context.ownerMessages=[...(args.history??[]).filter(m=>m.role==="user").map(m=>m.content),...matched.map(pair=>pair.answer)];
   // Tool context is authenticated; owner facts are loaded once per turn.
   Object.assign(args.context,{savedOwnerFacts:args.ownerFacts??[]});

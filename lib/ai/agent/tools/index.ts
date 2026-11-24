@@ -79,6 +79,7 @@ export type AgentToolContext = {
   canonicalData?:()=>Promise<DataQueryContext>;
   /** Server-measured next-request capacity, never model supplied. */
   researchPageBytes?:()=>number;
+  researchDeadlineAt?:()=>number;
   /** Only the currently fenced owner-run loop installs this in-memory port. */
   retainedResearch?:()=>readonly import("@/lib/ai/supervisor/runs/contracts").RestoredResearchRead[];
   /** Owner-verified staff communication evidence for off-turn investigations,
@@ -396,7 +397,7 @@ export async function executeAgentTool(name: string, raw: unknown, ctx: AgentToo
     const canonicalOnly=!toast&&typeof selector.relation!=="string"&&
       (selector.source==="canonical"||(typeof selector.view==="string"&&selector.source!=="research"));
     if(canonicalOnly||!ctx.canonicalData)return dataQueryTools.describe_data.execute(raw);
-    try{return await dataQueryTools.describe_data.execute(raw,{...await ctx.canonicalData(),resultBudgetBytes:ctx.researchPageBytes?.()});}
+    try{return await dataQueryTools.describe_data.execute(raw,{...await ctx.canonicalData(),resultBudgetBytes:ctx.researchPageBytes?.(),deadlineAt:ctx.researchDeadlineAt?.()});}
     catch{
       const source=toast?"toast_fields":"u3_semantic_catalog";
       return {source,period:null,missing:["source_read_failed"],error:"source_read_failed"};
@@ -420,7 +421,7 @@ export async function executeAgentTool(name: string, raw: unknown, ctx: AgentToo
         return readRetainedResearch(ctx.retainedResearch(),parsed.data.restore_receipt,
           parsed.data.restore_path??"result",parsed.data.restore_offset??0,ctx.researchPageBytes?.()??0);
       }
-      const result=await dataQueryTools.query_data.execute(raw,{...scope,resultBudgetBytes:ctx.researchPageBytes?.()});
+      const result=await dataQueryTools.query_data.execute(raw,{...scope,resultBudgetBytes:ctx.researchPageBytes?.(),deadlineAt:ctx.researchDeadlineAt?.()});
       return typeof selector.sql==="string"?recordResearchAttempt(result,selector.retry_of,ctx.turnResults?.()??[]):result;
     }
     catch{
