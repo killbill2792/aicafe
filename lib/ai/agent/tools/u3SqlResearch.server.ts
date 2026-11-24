@@ -261,7 +261,7 @@ const fitRows=(rows:unknown[])=>{
  }
  return {rows:kept,cut:false};
 };
-function safeCode(e:unknown){
+export function safeU3SqlErrorCode(e:unknown){
  const s=e instanceof Error?e.message:"";
  if(e&&typeof e==="object"&&"code" in e&&typeof e.code==="string"){
   if(e.code==="57014")return "query_timeout";
@@ -385,7 +385,7 @@ export async function runU3Sql(ctx:U3SqlContext,raw:unknown){
    };
   },{date_from:parsed.data.date_from,date_to:parsed.data.date_to});
  }catch(e){
-  const code=safeCode(e);
+  const code=safeU3SqlErrorCode(e);
   // Structured operational telemetry is deliberately limited to finite safe
   // reason/stage labels. Never log the SQL, bind values, café, owner, ticket,
   // private connection error, source row, or raw provider diagnostic.
