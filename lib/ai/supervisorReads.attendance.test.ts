@@ -134,7 +134,7 @@ describe("shifts with no hourly wage",()=>{
     const q=(data:unknown)=>{const query:Record<string,unknown>={};
       for(const k of ["select","eq","gte","lte","order","in","neq","is"])query[k]=()=>query;
       query.limit=async()=>data;
-      query.range=async()=>({...data,count:Array.isArray((data as {data?:unknown[]}).data)?
+      query.range=async()=>({...(data as Record<string,unknown>),count:Array.isArray((data as {data?:unknown[]}).data)?
         (data as {data:unknown[]}).data.length:null});
       query.then=(yes:(v:unknown)=>unknown)=>Promise.resolve(data).then(yes);
       return query;};
