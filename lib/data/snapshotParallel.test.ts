@@ -20,10 +20,10 @@ function mockDb(){
       target_operating_margin:.15,target_operating_margin_status:"default",
       owner_monthly_payroll_extras_cents:1200}],
     locations:[{open_hours:null}],
-    recurring_costs:[{category_code:"rent",amount_cents:60000,is_estimate:false,
+    recurring_costs:[{id:"rent-bill",frequency:"monthly",category_code:"rent",amount_cents:60000,is_estimate:false,
       active_from:"2026-01-01",active_to:null}],
     expenses:[],recovery_order:[],menu_items:[],timecards:[],
-    alerts:[{impact_cents:240}],
+    alerts:[{id:"alert-1",impact_cents:240}],
   };
   const client={
     from(table:string){
