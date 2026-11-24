@@ -215,6 +215,43 @@ it("the scheduled anomaly pass reconciles only comparable customer evidence and 
  }
 });
 
+it("processes 201 actual inventory observations without losing the final ingredient",async()=>{
+ const rows=Array.from({length:201},(_,i)=>({
+  source:"app",status:"actual",business_date:"2026-11-18",
+  source_ref:"stock:"+String(i).padStart(4,"0"),quantity:0,
+  data:{ingredient_id:"99999999-9999-4999-8999-"+String(i).padStart(12,"0"),
+   ingredient_name:"Ingredient "+i,base_unit:"g",count_date:"2026-11-18"}
+ }));
+ const offsets:number[]=[];
+ inputs.stock.mockImplementation(async(_db:unknown,_business:string,view:string,
+  _range:unknown,_limit:number,options?:{offset?:number})=>{
+  if(view!=="cv_inventory")return {rows:[],notes:[],error:null,truncated:false};
+  const offset=options?.offset??0;offsets.push(offset);
+  return {rows:rows.slice(offset,offset+100),notes:[],error:null,
+   truncated:offset+100<rows.length};
+ });
+ inputs.usage.mockResolvedValue({rows:[],provenance:{coverage:"incomplete"}});
+ const seen:Array<{p_key:string;p_active:boolean}>=[];
+ const rpc=vi.fn(async(name:string,args:{p_key:string;p_active:boolean})=>{
+  if(name==="supervisor_reconcile_business_anomaly")seen.push(args);
+  return {data:name==="supervisor_prior_recipe_evidence"?[]:true,error:null};
+ });
+ try{
+  await refreshBusinessAnomalies({rpc} as never,"cafe","2026-11-19",
+   "America/Los_Angeles",new Date("2026-11-19T20:00:00Z")).catch(()=>{
+    // Unrelated source readers can fail independently in this focused fixture.
+   });
+  expect(offsets).toEqual([0,100,200]);
+  expect(seen.filter(v=>v.p_key.startsWith("stock_shortage:"))).toHaveLength(201);
+  expect(seen).toContainEqual(expect.objectContaining({
+   p_key:"stock_shortage:99999999-9999-4999-8999-000000000200",p_active:true}));
+  expect(seen).toContainEqual(expect.objectContaining({
+   p_key:"data_gap:stock_counts",p_active:false}));
+ }finally{
+  inputs.stock.mockResolvedValue({rows:[],notes:[],error:null,truncated:false});
+ }
+});
+
 it("wakes only the matching published shift for late clock-in/out evidence",async()=>{
  const shift={source:"app",status:"actual",business_date:"2026-11-22",
   data:{id:"shift-22-a",employee_id:"employee-a",shift_status:"published",
