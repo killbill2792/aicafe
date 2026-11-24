@@ -86,7 +86,8 @@ CREATE TRIGGER supervisor_clear_terminal_research_reads
 
 -- Receipt metadata is private, server-generated and individually validated.
 -- Do not terminate a progressing owner assignment at an arbitrary 256 entries.
+-- Reason: The old validated CHECK already guarantees array shape; replace only its arbitrary 256-entry and 64 KiB history ceilings atomically with the array CHECK below. Validate in the subsequent migration to avoid holding the exclusive DDL lock during a scan.
+-- squawk-ignore ban-drop-constraint
 ALTER TABLE public.supervisor_run_steps DROP CONSTRAINT supervisor_run_steps_checkpoint_receipts_check;
 ALTER TABLE public.supervisor_run_steps ADD CONSTRAINT supervisor_run_steps_checkpoint_receipts_check
  CHECK (jsonb_typeof(checkpoint_receipts)='array') NOT VALID;
-ALTER TABLE public.supervisor_run_steps VALIDATE CONSTRAINT supervisor_run_steps_checkpoint_receipts_check;
