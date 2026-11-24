@@ -298,10 +298,22 @@ export const dataQueryTools={
      });
     }catch{research={missing:["source_read_failed"]};}
    }
+   // A failed optional U3 research probe must not masquerade as successful
+   // discovery just because the legacy dictionary was readable. Surface the
+   // sanitized failure at the same level as canonical discovery's status.
+   const researchMissing=research&&typeof research==="object"&&
+     "missing" in research&&Array.isArray(research.missing)?
+     research.missing.filter((v):v is string=>typeof v==="string"):[];
+   const researchFailure=researchMissing.find(v=>[
+     "source_read_failed","research_not_configured","research_scope_denied",
+     "research_invalid_scope","research_connection_untrusted",
+   ].includes(v));
    return {source:"canonical_dictionary",period:null,
-    missing:[...(candidates.length===0&&research===null?["empty"]:[])],
-    search:term,page_offset:from,next_offset:next,total_matches:candidates.length,
-    views:page,research,fields:[],truncated:false,retainedFields:undefined};
+    missing:[...(candidates.length===0&&research===null?["empty"]:[]),
+      ...(researchFailure?[researchFailure]:[])],
+    error:researchFailure,search:term,page_offset:from,next_offset:next,
+    total_matches:candidates.length,views:page,research,fields:[],
+    truncated:false,retainedFields:undefined};
   }
  },
  query_data:{
