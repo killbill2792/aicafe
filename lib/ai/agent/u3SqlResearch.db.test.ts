@@ -331,6 +331,40 @@ describe.skipIf(!active)("U3 migrated registered tool + private connection",()=>
   expect(result.error).toBe("research_scope_denied");
   expect(result.rows).toEqual([]);
  });
+ it("uses canonical customer history and the unfiltered denominator through general SQL",async()=>{
+  if(!admin)throw Error("sandbox unavailable");
+  const date="2026-10-26",restA=randomUUID(),restB=randomUUID(),customer=randomUUID(),product=randomUUID();
+  const payload=(amount:number)=>({guid:randomUUID(),checks:[{guid:randomUUID(),amount,
+   customer:{guid:customer,firstName:"Synthetic"},payments:[{guid:randomUUID(),type:"CASH",amount}],
+   selections:[{guid:randomUUID(),item:{guid:product},quantity:2,price:amount}]}]});
+  await admin.query("INSERT INTO public.toast_raw_records(business_id,restaurant_guid,entity,business_date,payload,payload_sha256,capture_key) VALUES ($1,$2,'order',$3,$4,$5,$6),($7,$8,'order',$3,$9,$10,$11)",
+   [ids.a,restA,date,JSON.stringify(payload(12)),randomBytes(32).toString("hex"),"live:u3-customer-a",
+    ids.b,restB,date,JSON.stringify(payload(47)),randomBytes(32).toString("hex"),"live:u3-customer-b"]);
+  try{
+   const oracle=await admin.query("SELECT COUNT(*) AS n, SUM(net_sales_cents) AS total_cents FROM public.customer_visits_for($1,$2,$2)",[ids.a,date]);
+   expect(Number(oracle.rows[0].n)).toBeGreaterThan(0);
+   const range={date_from:date,date_to:date};
+   const result=await dataQueryTools.query_data.execute({...input("SELECT COUNT(*) AS n,SUM(net_sales_cents) AS total_cents FROM customer_visits"),...range},scoped);
+   expect(result.error).toBeUndefined();
+   expect(result.rows).toEqual(oracle.rows);
+   const denominator=(await admin.query("SELECT public.customer_query_coverage($1,$2,$2) AS coverage",[ids.a,date])).rows[0].coverage;
+   expect(result).toMatchObject({customerEvidence:true,customerCoverage:denominator,period:{from:date,to:date}});
+   const filtered=await dataQueryTools.query_data.execute({...input("SELECT COUNT(*) AS n FROM customer_visits WHERE net_sales_cents=0"),...range},scoped);
+   expect(filtered.rows).toEqual([{n:"0"}]);
+   expect(filtered).toMatchObject({customerCoverage:denominator});
+   const offturn=await dataQueryTools.query_data.execute({...input("SELECT COUNT(*) AS n,SUM(net_sales_cents) AS total_cents FROM customer_visits"),...range},{...scoped,aggregateOnly:true});
+   expect(offturn.rows).toEqual(oracle.rows);
+   expect(offturn).toMatchObject({customerCoverage:denominator,aggregateOnly:true});
+   const denied=await dataQueryTools.query_data.execute({...input("SELECT MAX(identity_ref) AS alias FROM customer_visits"),...range},{...scoped,aggregateOnly:true});
+   expect(denied.error).toBeDefined();
+   const items=await dataQueryTools.query_data.execute({...input("SELECT COUNT(*) AS n FROM customer_products"),...range},scoped);
+   const productOracle=await admin.query("SELECT COUNT(*) AS n FROM public.customer_products_for($1,$2,$2)",[ids.a,date]);
+   expect(items.rows).toEqual(productOracle.rows);
+   expect(Number(productOracle.rows[0].n)).toBeGreaterThan(0);
+  }finally{
+   await admin.query("DELETE FROM public.toast_raw_records WHERE business_id IN ($1,$2) AND capture_key IN ('live:u3-customer-a','live:u3-customer-b')",[ids.a,ids.b]);
+  }
+ });
  it("generates cross-café join and fanout fixtures, checks independent money oracle, and records matched costs",async()=>{
   if(!admin)throw Error("admin_missing");
   // Reproducible metamorphic data; no owner-question string drives data routing.

@@ -364,7 +364,7 @@ export const dataQueryTools={
     ].includes(code));
     return {...result,empty:result.rows.length===0,
       error:failure??undefined,rowCount:result.rows.length,
-      aggregate:undefined,scopeWarning:undefined,customerCoverage:undefined,
+      aggregate:undefined,scopeWarning:undefined,
       sourceMix:{}};
    }
    if(p.cursor!==null&&p.cursor!==undefined)return empty("invalid_query");

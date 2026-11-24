@@ -392,7 +392,8 @@ export async function runU3Sql(ctx:U3SqlContext,raw:unknown){
    stage.value="admission";
    const plan=await admitU3Sql(p.sql,list.map(r=>r.name),p.parameters?.length??0,
     aggregateOnly,[...safeOffturnColumns],knownColumnUnits,relationUnits satisfies U3RelationUnits);
-   if(plan.relations.some(relation=>relation==="toast_records"||relation==="toast_changes")&&
+   const customerEvidence=plan.relations.some(relation=>["customer_visits","customer_products","customer_coverage"].includes(relation));
+   if((customerEvidence||plan.relations.some(relation=>relation==="toast_records"||relation==="toast_changes"))&&
      (p.date_from===null||p.date_to===null))throw Error("invalid_query");
    // Each page revalidates the signed owner/café/thread/lease in PostgreSQL.
    // The opaque cursor protects the exact SQL/parameters/window/scope from
@@ -427,9 +428,34 @@ export async function runU3Sql(ctx:U3SqlContext,raw:unknown){
      throw Error("unattended_aggregate_required");
    });
    stage.value="result";
-   if(prior&&(prior.digest!==fit.digest||prior.totalRows!==fit.totalRows))
+   // Independent unfiltered denominator from the same scoped DB snapshot.
+   const rawCoverage=customerEvidence?(await client.query(
+    "SELECT eligible_check_count,linked_check_count,named_check_count,known_money_check_count,"+
+    "linked_known_money_check_count,recorded_net_cents,linked_recorded_net_cents,"+
+    "expected_location_days,complete_location_days,complete FROM u3_research.customer_coverage"
+   )).rows[0]:undefined;
+   const integer=(value:unknown):number|null=>{
+    if(value===null||value===undefined)return null;
+    const n=Number(value);return Number.isSafeInteger(n)?n:null;
+   };
+   const customerCoverage=rawCoverage?{
+    scope:"all_eligible_checks_in_period" as const,
+    eligibleChecks:integer(rawCoverage.eligible_check_count),
+    linkedChecks:integer(rawCoverage.linked_check_count),
+    namedChecks:integer(rawCoverage.named_check_count),
+    knownMoneyChecks:integer(rawCoverage.known_money_check_count),
+    linkedKnownMoneyChecks:integer(rawCoverage.linked_known_money_check_count),
+    recordedNetCents:integer(rawCoverage.recorded_net_cents),
+    linkedRecordedNetCents:integer(rawCoverage.linked_recorded_net_cents),
+    expectedLocationDays:integer(rawCoverage.expected_location_days),
+    completeLocationDays:integer(rawCoverage.complete_location_days),
+    complete:rawCoverage.complete===true
+   }:undefined;
+   const digest=customerEvidence?createHash("sha256").update(fit.digest)
+    .update(JSON.stringify(customerCoverage??null)).digest("hex"):fit.digest;
+   if(prior&&(prior.digest!==digest||prior.totalRows!==fit.totalRows))
     throw Error("research_snapshot_changed");
-   const snapshot:ResearchSnapshot=prior??{id:randomUUID(),digest:fit.digest,totalRows:fit.totalRows,
+   const snapshot:ResearchSnapshot=prior??{id:randomUUID(),digest,totalRows:fit.totalRows,
     asOf:asOf instanceof Date?asOf.toISOString():String(asOf??"")};
    const truncated=fit.truncated;
    // A single oversized source row must not cause a cursor loop that never
@@ -438,8 +464,11 @@ export async function runU3Sql(ctx:U3SqlContext,raw:unknown){
    const nextOffset=offset+fit.rows.length;
    if(!Number.isSafeInteger(nextOffset))throw Error("invalid_query");
    const nextCursor=truncated?researchNextCursor(cursorInput,nextOffset,key,snapshot):null;
-   return {source:"u3_canonical_research",period:null,
-    missing:truncated?["result_truncated"]:[],rows:fit.rows,
+   return {source:"u3_canonical_research",
+    period:customerEvidence&&p.date_from&&p.date_to?{from:p.date_from,to:p.date_to}:null,
+    missing:[...(truncated?["result_truncated"]:[]),
+     ...(customerEvidence&&!customerCoverage?.complete?["customer_source_coverage_incomplete"]:[])],rows:fit.rows,
+    customerEvidence,customerCoverage,aggregateOnly,
     rowCount:fit.rows.length,truncated,
     page_offset:offset,next_cursor:nextCursor,page_complete:!truncated,
     // Exact full-result equivalence is proved on every page; this is not

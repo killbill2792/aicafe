@@ -141,7 +141,7 @@ function verifiedEventEvidence(result:AgentToolResult,from:string,to:string):boo
 /** Validate the actual unfiltered period denominator before accepting any
  * customer finding. A complete flag alone is not evidence of sufficient identity. */
 function customerCoverageReceipt(result:AgentToolResult){
-  if(result.source!=="canonical_data"||result.error||result.truncated||result.customerEvidence!==true||
+  if(!["canonical_data","u3_canonical_research"].includes(result.source)||result.error||result.truncated||result.customerEvidence!==true||
     result.aggregateOnly!==true||!result.period||result.period.from>result.period.to)return null;
   const c=result.customerCoverage;
   if(!c||typeof c!=="object")return null;
@@ -492,7 +492,7 @@ export function verifyUniversalInvestigationTurn(
      !equal(p.current,selector.current)||!equal(p.previous,selector.previous))
     return {ok:false,reason:"evidence_incomplete"};
    if(!observed.some(c=>c.name==="query_data"&&
-     c.result.source==="canonical_data"&&
+     ["canonical_data","u3_canonical_research"].includes(c.result.source)&&
      c.result.customerEvidence===true&&c.result.aggregateOnly===true&&
      qualifiedCustomerTrendCoverage(c.result,
        typeof selector.subject==="string"&&selector.subject.startsWith("anonymous_"))))
