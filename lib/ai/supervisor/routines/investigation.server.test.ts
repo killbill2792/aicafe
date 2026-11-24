@@ -66,7 +66,8 @@ const agentResult=(patch:Record<string,unknown>={})=>({
 });
 function db(claims:Record<string,unknown>[],options?:{
   sourceError?:boolean;sourceStatus?:string;sourceKind?:string;
-  alertPayload?:Record<string,unknown>;timecard?:Record<string,unknown>|null;
+  alertPayload?:Record<string,unknown>;alertPayloads?:Record<string,unknown>[];
+  timecard?:Record<string,unknown>|null;
   taskStatus?:string;relatedTasks?:Record<string,unknown>[];
 }){
   const calls:Array<{name:string;args:Record<string,unknown>}>=[];
@@ -90,7 +91,7 @@ function db(claims:Record<string,unknown>[],options?:{
           {data:null,error:new Error("source offline")}:
           {data:table==="alerts"?{
             ...source,kind:options?.sourceKind??source.kind,
-            payload:options?.alertPayload??source.payload,
+            payload:options?.alertPayloads?.shift()??options?.alertPayload??source.payload,
             status:options?.sourceStatus??"new",
           }:table==="timecards"?options?.timecard??null:{
             kind:options?.sourceKind??"data_quality",status:options?.taskStatus??"needs_owner",
@@ -245,6 +246,22 @@ describe("Task 15A operational end-to-end orchestration (recorded source/model)"
     expect(mocks.paidGate).not.toHaveBeenCalled();
     expect(mocks.model).not.toHaveBeenCalled();
     expect(d.calls.find(call=>call.name==="supervisor_fail_investigation")?.args.p_error).toBe("source_unavailable");
+  });
+  it("rechecks a source that became unavailable between claim and model reservation",async()=>{
+    const input={family:"data_gap",subject:"supplier_document",quality:"missing",current:1,unit:"coverage",gapReason:"missing_business_input"};
+    const d=db([{...investigating}],{sourceKind:"business_anomaly",alertPayloads:[
+      input,{...input,quality:"technical_failure",gapReason:"technical_failure"},
+    ]});
+    expect(await processNextInvestigation(d.client,now)).toMatchObject({processed:1,failed:1});
+    expect(mocks.paidGate).not.toHaveBeenCalled();
+    expect(mocks.model).not.toHaveBeenCalled();
+  });
+  it("does not pay again when an unchanged open alert is merely marked seen",async()=>{
+    const d=db([{...following}],{sourceStatus:"seen"});
+    expect(await processNextInvestigation(d.client,now)).toMatchObject({processed:1,rechecked:1,failed:0});
+    expect(mocks.paidGate).not.toHaveBeenCalled();
+    expect(mocks.model).not.toHaveBeenCalled();
+    expect(mocks.notify).not.toHaveBeenCalled();
   });
   it("retains prior findings across a worker restart without paying for unanswered owner work",async()=>{
     const d=db([{...investigating},{...following}]);

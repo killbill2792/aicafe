@@ -130,6 +130,8 @@ async function readIncidentEvidence(db:SupabaseClient,c:Claimed):
   if(c.source_type==="operating_task"&&row.owner_user_id&&
     row.owner_user_id!==c.owner_user_id)throw new Error("authorization_revoked");
   const raw=object(row.payload);
+  if(c.source_type==="alert"&&!eligibleAlertEvidence(String(row.kind),raw))
+    throw Error("source_unavailable");
   const selected:Record<string,string|number|boolean|null>={};
   const textKeys=["timecardId","employeeId","date","categoryCode",
     "monthKey","ownerChoice","snoozeUntil","suggestedPriceSource",
@@ -155,6 +157,8 @@ async function readIncidentEvidence(db:SupabaseClient,c:Claimed):
   if(row.kind==="business_anomaly"&&raw){
     for(const key of ["family","subject","unit","from","to","asOf"])if(typeof raw[key]==="string"&&String(raw[key]).length<=160)selected[key]=String(raw[key]);
     for(const key of ["current","previous"])if(typeof raw[key]==="number"&&Number.isFinite(raw[key]))selected[key]=Number(raw[key]);
+    if(raw.family==="data_gap"&&eligibleAlertEvidence(String(row.kind),raw))
+      selected.gapReason="missing_business_input";
   }
   const missing:string[]=[];
   let linkedTimecard:Record<string,unknown>|null=null;
@@ -318,7 +322,9 @@ export async function processNextInvestigation(db:SupabaseClient,now:Date,
     // for the same episode, and verified owner answers are linked by SQL.
     const unchanged=(checkpoint.sourceRevision===undefined||checkpoint.sourceRevision===c.revision_hash)&&
       checkpoint.pendingRelevantRevision!==c.revision_hash&&
-      synopsis.kind===earlier.kind&&synopsis.status===earlier.status&&
+      synopsis.kind===earlier.kind&&
+      (c.source_type==="alert"&&isOpen(c,synopsis.status)&&isOpen(c,earlier.status)||
+        synopsis.status===earlier.status)&&
       synopsis.quality===earlier.quality&&synopsis.severity===earlier.severity&&
       // An elapsed due-date threshold is a clock tick, not new evidence.
       // Editing the actual maintenance due date must change the source hash
