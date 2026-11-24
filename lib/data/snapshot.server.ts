@@ -115,7 +115,7 @@ export async function getBusinessSnapshotFromDb(
           label: RUNNING_COST_LABELS[code] ?? code,
           amountCents: expensesThisMonth.reduce((sum, e) => sum + e.amount_cents, 0),
           amountSource: "recorded_expense" as const,
-          actualTodayCents:expensesThisMonth.filter(e=>e.spent_on===todayDateStr)
+          actualTodayCents:expensesThisMonth.filter(e=>e.spent_on===todayDateStr&&e.status==="actual")
             .reduce((sum,e)=>sum+e.amount_cents,0),
           isEstimate: expensesThisMonth.some((e) => e.status === "estimated"),
           isMissing: false,
