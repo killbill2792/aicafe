@@ -18,6 +18,15 @@ describe("U3 governed PostgreSQL AST admission",()=>{
   const meta=await admitU3Sql(sql,admitted,sql.includes("$1")?1:0);
   expect(meta.relations.length).toBeGreaterThan(0);
  });
+ it("requires a top-level order rather than a nested/window order for result paging",async()=>{
+  const ordered=await admitU3Sql("SELECT id FROM orders ORDER BY id",admitted);
+  expect(ordered.hasTopLevelOrder).toBe(true);
+  const bare=await admitU3Sql("SELECT id FROM orders",admitted);
+  expect(bare.hasTopLevelOrder).toBe(false);
+  const nested=await admitU3Sql(
+   "WITH x AS (SELECT id FROM orders ORDER BY id) SELECT id FROM x",admitted);
+  expect(nested.hasTopLevelOrder).toBe(false);
+ });
  it.each([
   "SELECT * FROM public.orders",
   "SELECT * FROM pg_catalog.pg_roles",
