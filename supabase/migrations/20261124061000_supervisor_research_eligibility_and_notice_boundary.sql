@@ -220,6 +220,15 @@ begin
   end if;
   if not v_found then return false; end if;
   v_task_id:='priority:'||p_stable_key;
+  -- A delayed retry of ANY already-published revision must be harmless.
+  -- Check the durable receipt BEFORE touching another revision. The source
+  -- lock above serializes concurrently published revisions for alert/task
+  -- notices, just as the PO lock does for supplier dispatch.
+  if exists(select 1 from public.operating_tasks t
+    where t.business_id=p_business_id and t.owner_user_id=p_owner_user_id
+      and t.id=v_task_id and t.kind='priority_notice') then
+    return false;
+  end if;
   if p_source_type in ('alert','operating_task','supplier_po') then
     -- A changed alert/task/proposal revision makes an earlier *open* generic
     -- attention row obsolete. Keep its audit/history (handled), never reopen
@@ -230,6 +239,10 @@ begin
       updated_at=p_as_of
       where t.business_id=p_business_id and t.owner_user_id=p_owner_user_id
         and t.kind='priority_notice'
+        -- Investigation:... IDs are SUBSTANTIVE reports with unanswered
+        -- owner questions, even though the task kind shares the priority
+        -- inbox type. Only the generic priority:... notice is supersedable.
+        and t.id like 'priority:%'
         and t.status in ('needs_owner','needs_response','watching')
         and t.payload->>'sourceType'=p_source_type
         and t.payload->>'sourceId'=p_source_id
@@ -240,11 +253,7 @@ begin
     -- NEVER close the newest unresolved notice on a delayed retry. The PO
     -- row is locked above, so this read and the following supersession are
     -- serialized against all other vendor notice writers.
-    if exists(select 1 from public.operating_tasks t
-      where t.business_id=p_business_id and t.owner_user_id=p_owner_user_id
-        and t.id=v_task_id and t.kind='priority_notice') then
-      return false;
-    end if;
+    -- The common durable-receipt guard above also protects supplier dispatch.
     -- Changes from not_prepared -> prepared -> Gmail-accepted alter the
     -- revision hash. Keep one owner action per PO, closing the superseded
     -- notice before inserting the new source revision in THIS transaction.
