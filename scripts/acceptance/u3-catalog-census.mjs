@@ -2,6 +2,7 @@
 // Use only a disposable migrated local Supabase database. No business rows read.
 import {readFileSync,writeFileSync} from "node:fs";
 import pg from "pg";
+import {expectedLogical} from "./u3-reviewed-logical-catalog.mjs";
 const {Client}=pg;
 const snapshotPath="docs/plans/u3-physical-schema-census.generated.json";
 const connection=process.env.U3_CATALOG_DB_URL;
@@ -102,22 +103,6 @@ const removed=reference.relations.filter(x=>!current.has(x.relation)).map(x=>x.r
 // Independently compare the entire reviewed physical-to-logical research surface
 // against the *actually migrated* SQL views. This is a generated schema-property
 // check, not a fixed collection of owner-question scenarios.
-const migration=readFileSync("supabase/migrations/20261120210000_u3_canonical_research.sql","utf8");
-const tag="$u3_sources$";
-const begin=migration.indexOf(tag),end=migration.indexOf(tag,begin+tag.length);
-if(begin<0||end<0)throw Error("U3 source admission manifest missing");
-const manifest=JSON.parse(migration.slice(begin+tag.length,end));
-if(!Array.isArray(manifest)||!manifest.length)
- throw Error("U3 source admission manifest empty");
-const expectedLogical=new Map(manifest.map(source=>[source.table,source.fields]));
-expectedLogical.set("toast_records",[
- "source","source_ref","status","business_date","record_type","record_ref",
- "order_ref","check_ref","counts_in_sales","data"
-]);
-expectedLogical.set("toast_changes",[
- "change_id","entity","entity_guid","business_date","changed_at",
- "field_path","before_scalar","after_scalar"
-]);
 const observedLogical=new Map();
 for(const column of logicalColumns??[]){
  const list=observedLogical.get(column.relation)??[];

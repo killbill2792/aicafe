@@ -17,7 +17,7 @@ const failedSlice=(reason:string)=>({available:false as const,value:null,
  quality:{level:"low" as const,missingInputs:[reason],estimatedInputs:[] as string[],staleInputs:[] as string[]}});
 const empty = z.strictObject({});
 const range = z.strictObject({ from: z.iso.date(), to: z.iso.date() });
-const period = z.strictObject({ period: z.union([z.string().min(1).max(32),z.strictObject({preset:z.enum(["today","week","month","last_week","last_month","ytd"])}),z.strictObject({from:z.iso.date(),to:z.iso.date()})]) });
+const period = z.strictObject({ period: z.union([z.string().min(1).max(32),z.strictObject({preset:z.enum(["today","week","month","last_week","last_month","ytd"])}),z.strictObject({from:z.iso.date(),to:z.iso.date()})]), timecards_page_offset:z.number().int().nonnegative().optional(), labor_days_page_offset:z.number().int().nonnegative().optional() });
 const missing = (source: string, period: {from:string;to:string}|null, reasons: string[]): AgentToolResult => ({
   source, period, agentId:"olivia", missing: reasons.length ? reasons : ["sourceUnavailable"],
 });
@@ -61,7 +61,7 @@ export const staffTools = {
   },
   get_schedule: {
     agentId:"olivia",schema:range,
-    description:"Read confirmed dated shifts for a business-local week. Old recurring patterns are not confirmed attendance or shifts.",
+    description:"Optional shared current schedule-display projection, including merged Toast planned shifts and missingness. This bounded display preview is not complete historical research; use query_data for arbitrary date ranges and full source detail. Old recurring patterns are not confirmed attendance or shifts.",
     execute:async(raw:unknown,ctx:AgentToolContext):Promise<AgentToolResult>=>{
       const {from,to}=range.parse(raw),period={from,to};
       if(from>to)return missing("scheduled_shifts",period,["scheduleRangeInvalid"]);
@@ -109,9 +109,10 @@ export const staffTools = {
     },
   },
   get_labor: {
-    agentId:"olivia",schema:period,description:"Labor-day costs and individual actual clock-in/clock-out evidence (up to 80 recent timecards in the selected period). attendance.recordedTimecards lists employee, local date, clock times, gross elapsed hours, and documented break evidence; none_recorded means no break punch, NOT proof no break occurred. This is the correct reader for owner questions about who worked, missing lunch punches, or unclosed shifts. missingWageShifts lists the only finished shifts with no hourly wage (date, person, hours); every other laborDays entry is recorded. When wages are missing, give the known labor total, name those shifts, and ask only for those people's hourly wage — never ask the owner for a labor total over a range.",
+    agentId:"olivia",schema:period,description:"Labor-day costs and individual actual clock-in/clock-out evidence (complete count and 100 recorded punch details per page, with recordedTimecardsNextOffset to continue without a total cap; laborDays returns 31 dates per page with laborDaysNextOffset, using labor_days_page_offset for a different page without changing the requested period). attendance.recordedTimecards lists employee, local date, clock times, gross elapsed hours, and documented break evidence; none_recorded means no break punch, NOT proof no break occurred. This is the correct reader for owner questions about who worked, missing lunch punches, or unclosed shifts. missingWageShifts lists the only finished shifts with no hourly wage (date, person, hours); every other laborDays entry is recorded. When wages are missing, give the known labor total, name those shifts, and ask only for those people's hourly wage — never ask the owner for a labor total over a range.",
     execute:async(raw:unknown,ctx:AgentToolContext):Promise<AgentToolResult>=>{
-      const resolved=resolveOwnerPeriod(period.parse(raw).period,{asOf:ctx.asOf,timezone:ctx.timezone},ctx.resolveState);
+      const args=period.parse(raw);
+      const resolved=resolveOwnerPeriod(args.period,{asOf:ctx.asOf,timezone:ctx.timezone},ctx.resolveState);
       if(resolved.status!=="resolved")return periodChoicePayload("labor_and_attendance",resolved);
       const p={from:resolved.value.from,to:resolved.value.to};
       const [labor,attendance,ownerPayroll,toastScopes,reviews,sales]=await Promise.all([
@@ -119,7 +120,7 @@ export const staffTools = {
           ctx.tools.getLaborMetrics(p).catch(()=>failedSlice("laborReadFailed")):
           Promise.resolve(failedSlice("laborReaderUnavailable")),
         ctx.tools.getStaffAttendance?
-          ctx.tools.getStaffAttendance(p,ctx.timezone).catch(()=>failedSlice("staffAttendanceReadFailed")):
+          ctx.tools.getStaffAttendance(p,ctx.timezone,args.timecards_page_offset).catch(()=>failedSlice("staffAttendanceReadFailed")):
           Promise.resolve(failedSlice("attendanceReaderUnavailable")),
         ctx.tools.getOwnerMonthlyPayrollExtras?.().catch(()=>failedSlice("payrollExtrasReadFailed")),
         ctx.tools.getToastScopeCoverage?.().catch(()=>failedSlice("toastScopeReadFailed")),
@@ -128,6 +129,14 @@ export const staffTools = {
           Promise.resolve(failedSlice("salesReaderUnavailable")),
       ]);
       const salesWarnings=sales.quality.missingInputs;
+      // Labor-day details are a transport page. The owner-selected window's
+      // period totals below still use all returned canonical labor/sales days.
+      // A preview must not masquerade as the entire source history.
+      const laborOffset=args.labor_days_page_offset??0;
+      const laborPage=labor.available?
+        labor.value.slice(laborOffset,laborOffset+31):null;
+      const laborNext=labor.available&&laborOffset+laborPage!.length<labor.value.length?
+        laborOffset+laborPage!.length:null;
       const issues=[...labor.quality.missingInputs,...attendance.quality.missingInputs,
         ...(labor.available?labor.value.filter(d=>d.wageStatus==="missing"||d.wagesCents===null||d.staffTaxCents===null)
          .map(d=>"laborWageUnknown:"+d.date):[])];
@@ -199,7 +208,11 @@ export const staffTools = {
            ["ownerMonthlyPayrollExtrasNotSet"]:[])],explain,estimated:[...labor.quality.estimatedInputs,...attendance.quality.estimatedInputs,
           ...(labor.available?labor.value.filter(d=>d.wageStatus==="estimate")
            .map(d=>"laborWageEstimate:"+d.date):[])],
-        laborDays:labor.available?labor.value.slice(-31).map(d=>({
+        laborDaysTotal:labor.available?labor.value.length:null,
+        laborDaysPageOffset:laborOffset,
+        laborDaysNextOffset:laborNext,
+        laborDaysPageComplete:labor.available&&laborNext===null,
+        laborDays:laborPage?laborPage.map(d=>({
           date:d.date,wagesCents:d.wagesCents,staffTaxCents:d.staffTaxCents,
           loadedStaffCostCents:d.loadedStaffCostCents,wageStatus:d.wageStatus})):null,
         attendanceTracked:attendance.available?attendance.value.attendanceTracked:null,

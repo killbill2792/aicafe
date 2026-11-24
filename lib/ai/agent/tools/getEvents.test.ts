@@ -8,9 +8,10 @@ const context=(read:AgentToolContext["savedEvents"]):AgentToolContext=>({
 
 describe("get_events: saved-only, owner-scoped read",()=>{
  it("publishes a strict schema and never accepts a café id from the model",async()=>{
-  const tool=agentToolDefinitions.find(t=>t.name==="get_events");
+  expect(agentToolDefinitions.some(t=>t.name==="get_events")).toBe(false);
+  const tool=agentToolDefinitions.find(t=>t.name==="query_data");
   expect(tool?.strict).toBe(true);
-  expect(tool?.parameters.required).toEqual(["from","to","cityEventId","cafeEventId"]);
+  expect(tool?.parameters.properties).not.toHaveProperty("businessId");
   await expect(executeAgentTool("get_events",{from:"2026-10-01",to:"2026-10-31",businessId:"other"},
    context(vi.fn()))).rejects.toThrow();
  });

@@ -207,7 +207,8 @@ async function anonymousCustomerPeriod(db:SupabaseClient,businessId:string,windo
  return {checks:total,knownMoneyChecks:known,netCents:queryNumber(checks.row,"sum_data.aiCafeCustomer.netSalesCents"),itemUnits:units,complete:checks.complete,optionalReadFailed:!!items.error||!items.complete};
 }
 
-type Observation={family:BusinessSignal;subject:string;current:number;previous:number;unit:string;active:boolean;asOf:string;from:string;to:string};
+type GapReason="missing_business_input"|"coverage_unverified"|"technical_failure";
+type Observation={gapReason?:GapReason;family:BusinessSignal;subject:string;current:number;previous:number;unit:string;active:boolean;asOf:string;from:string;to:string};
 const day=(date:string,offset:number)=>new Date(Date.parse(date+"T12:00:00Z")+offset*86400000).toISOString().slice(0,10);
 const clean=(q:{missingInputs:string[];estimatedInputs:string[];staleInputs:string[]})=>!q.missingInputs.length&&!q.estimatedInputs.length&&!q.staleInputs.length;
 const finite=(v:unknown):v is number=>typeof v==="number"&&Number.isFinite(v);
@@ -296,12 +297,12 @@ export async function refreshBusinessAnomalies(db:SupabaseClient,businessId:stri
  async function persist(o:Observation|null){
   if(!o)return;
   const {data,error}=await db.rpc("supervisor_reconcile_business_anomaly",{p_business_id:businessId,p_key:o.family+":"+o.subject,p_active:o.active,
-   p_payload:{...o,dedupeKey:o.family+":"+o.subject,quality:o.family==="data_gap"||o.family==="missed_clock_evidence"?"missing":["stockout_risk","live_sales_decline","live_sales_growth","overstaffed_hour"].includes(o.family)?"partial":"verified",severity:o.family==="stock_shortage"?"high":"warning"}});
+   p_payload:{...o,dedupeKey:o.family+":"+o.subject,quality:o.gapReason==="technical_failure"?"technical_failure":o.family==="data_gap"||o.family==="missed_clock_evidence"?"missing":["stockout_risk","live_sales_decline","live_sales_growth","overstaffed_hour"].includes(o.family)?"partial":"verified",severity:o.family==="stock_shortage"?"high":"warning"}});
   if(error)throw error;
   if(data===true)created++;
  }
- async function gap(subject:string,missing:boolean){
-  await persist(fact("data_gap",subject,missing?1:0,0,"coverage",missing,"",""));
+ async function gap(subject:string,missing:boolean,gapReason:GapReason=subject.startsWith("reader_unavailable:")?"technical_failure":"coverage_unverified"){
+  await persist({...fact("data_gap",subject,missing?1:0,0,"coverage",missing,"",""),gapReason});
  }
  const work=[
   async()=>{
@@ -335,7 +336,7 @@ export async function refreshBusinessAnomalies(db:SupabaseClient,businessId:stri
    for(const item of a.value.items){const before=prev.get(item.id);
     if(before&&before.baseUnit===item.baseUnit)await persist(compareBusinessFacts("ingredient_cost",item.id,item.costPerBaseUnitMicros,before.costPerBaseUnitMicros,"micros_per_"+item.baseUnit,old.to,today,today,"up"));
    }
-   await gap("ingredient_prices",a.quality.missingInputs.includes("ingredientPricesMissing"));
+   await gap("ingredient_prices",a.quality.missingInputs.includes("ingredientPricesMissing"),"missing_business_input");
    // Same CURRENT size recipe priced at two observed ingredient-price dates.
    // This is not a historical recipe or historical realized profit claim.
    const beforePrices=Object.fromEntries(b.value.items.filter(i=>finite(i.costPerBaseUnitMicros)).map(i=>[i.id,i.costPerBaseUnitMicros!]));
@@ -389,7 +390,7 @@ export async function refreshBusinessAnomalies(db:SupabaseClient,businessId:stri
     offset+=raw.rows.length;
    }
    const stock={rows:stockRows};
-   await gap("stock_counts",!stock.rows.some(s=>s.source==="app"&&(s.source_as_of===to||s.source_as_of===today)&&s.quantity!==null));
+   await gap("stock_counts",!stock.rows.some(s=>s.source==="app"&&(s.source_as_of===to||s.source_as_of===today)&&s.quantity!==null),"missing_business_input");
    const counts=new Map<string,typeof stock.rows[number]>();
    for(const count of stock.rows.filter(s=>s.source==="app"&&s.ingredient_id&&s.quantity!==null&&s.quantity_unit&&(s.source_as_of===to||s.source_as_of===today)).sort((a,b)=>String(b.source_as_of).localeCompare(String(a.source_as_of)))){
     if(!counts.has(count.ingredient_id!))counts.set(count.ingredient_id!,count);

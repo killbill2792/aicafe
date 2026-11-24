@@ -29,8 +29,11 @@ export type RecordedTimecard={
 /** Attendance history is not a payroll or compliance finding. All details
  * are scoped to the verified user's café and a bounded requested period. */
 export type StaffAttendance={
-  timecardCount:number;onClockCount:number|null;attendanceTracked:boolean;
+  timecardCount:number|null;onClockCount:number|null;attendanceTracked:boolean;
   recordedTimecards?:RecordedTimecard[];missingWageShifts?:MissingWageShift[];
+  recordedTimecardsPageOffset?:number;recordedTimecardsNextOffset?:number|null;
+  recordedTimecardsPageComplete?:boolean;
+  pageConsistency?:"independent_read_only_snapshot";
 };
 const quality = (missingInputs: string[] = []) => ({
   level: (missingInputs.length ? "low" : "high") as "low" | "high",
@@ -120,7 +123,7 @@ export function supervisorHistoricalReaders(client: SupabaseClient, businessId: 
         (links??[]).length>10000?["menuModifierLinksTruncated"]:[]
       ) };
     },
-    async staffAttendance(id: string, period: CafeStatePeriod, timezone: string): Promise<KnownSlice<StaffAttendance>> {
+    async staffAttendance(id: string, period: CafeStatePeriod, timezone: string, pageOffset=0): Promise<KnownSlice<StaffAttendance>> {
       /** Finished shifts with no hourly wage, from the same labor view the Staff screen uses. */
       async function missingWageShifts(businessId: string, range: CafeStatePeriod):
         Promise<{shifts:MissingWageShift[]|null;missing:string[]}> {
@@ -150,32 +153,62 @@ export function supervisorHistoricalReaders(client: SupabaseClient, businessId: 
       assertScope(id);
       const start = fromZonedTime(period.from+"T00:00:00",timezone).toISOString();
       const end = fromZonedTime(period.to+"T23:59:59.999",timezone).toISOString();
-      const [records,people] = await Promise.all([
-        client.from("timecards").select("id,employee_id,clock_in,clock_out,source_type,breaks")
-          .eq("business_id",id).gte("clock_in",start).lte("clock_in",end).limit(501),
-        client.from("employees").select("id").eq("business_id",id).eq("active",true).limit(501),
-      ]);
-      if (records.error) throw records.error;
-      if (people.error) throw people.error;
-      if ((people.data ?? []).length>500) return missing("activeTeamTruncated");
-      const active = new Set((people.data ?? []).map(p=>p.id));
-      // Real recorded timecards remain attendance history even after someone is
-      // deactivated or a POS worker is not linked to a roster member. Restrict
-      // only the *currently on-clock* count to the authenticated active team.
-      // An owner_schedule projection is never recorded attendance.
-      const actual = (records.data ?? []).slice(0,500).filter(row =>
-        row.source_type !== "owner_schedule");
-      const tracked = actual.length > 0;
-      // Last 80 actual punches supply direct evidence for owner questions.
-      // Do not infer that absent punches mean the employee skipped a break.
-      const latest=actual.slice().sort((a,b)=>
-        String(b.clock_in).localeCompare(String(a.clock_in))).slice(0,80);
+      // A page is a physical transport/context bound, not a business answer
+      // limit. The model can ask for ANY page, including records beyond 80/501.
+      // A stable ordering is required for traversal. Page-independent reads can
+      // change between requests; never claim a single cross-page snapshot.
+      if(!Number.isSafeInteger(pageOffset)||pageOffset<0)throw Error("invalid_attendance_page");
+      const pageSize=100;
+      const {data:page,error:recordError,count:exactCount}=await client.from("timecards")
+        .select("id,employee_id,clock_in,clock_out,source_type,breaks",{count:"exact"})
+        .eq("business_id",id).gte("clock_in",start).lte("clock_in",end)
+        .neq("source_type","owner_schedule")
+        .order("clock_in",{ascending:false}).order("id",{ascending:false})
+        .range(pageOffset,pageOffset+pageSize-1);
+      if(recordError)throw recordError;
+      const actual=page??[];
+      // Never infer that a full page is the entire employee history.
+      const total=typeof exactCount==="number"?exactCount:
+        pageOffset===0&&actual.length<pageSize?actual.length:null;
+      const nextOffset=total!==null?
+        pageOffset+actual.length<total?pageOffset+actual.length:null:
+        actual.length===pageSize?pageOffset+pageSize:null;
+      const tracked=total!==null?total>0:actual.length>0;
+      // Traverse the active roster independently: excluding archived people
+      // from active headcount must NOT remove their historical punch evidence.
+      const active=new Set<string>();
+      for(let rosterOffset=0;;rosterOffset+=500){
+        const {data:people,error:peopleError}=await client.from("employees")
+          .select("id").eq("business_id",id).eq("active",true)
+          .order("id",{ascending:true}).range(rosterOffset,rosterOffset+499);
+        if(peopleError)throw peopleError;
+        for(const person of people??[])active.add(person.id);
+        if((people??[]).length<500)break;
+        if(!Number.isSafeInteger(rosterOffset+500))throw Error("invalid_attendance_page");
+      }
+      // Only verified active on-clock timecards count towards the current
+      // roster. Server-side exact count avoids sampling across historical pages.
+      let onClockCount:number|null=0;
+      const activeIds=[...active];
+      for(let i=0;i<activeIds.length;i+=75){
+        const {error:clockError,count:clockCount}=await client.from("timecards")
+          .select("id",{head:true,count:"exact"})
+          .eq("business_id",id).gte("clock_in",start).lte("clock_in",end)
+          .neq("source_type","owner_schedule").is("clock_out",null)
+          .in("employee_id",activeIds.slice(i,i+75));
+        if(clockError)throw clockError;
+        if(typeof clockCount!=="number")onClockCount=null;
+        else if(onClockCount!==null)onClockCount+=clockCount;
+      }
+      // These are exactly one page of real recorded punches. No hidden
+      // first-80/first-500 clipping, and no owner schedule projection.
+      const latest=actual;
       const ids=[...new Set(latest.map(row=>row.employee_id)
         .filter((x):x is string=>typeof x==="string"&&x.length>0))];
       const names=new Map<string,string|null>();
       if(ids.length){
         const personNames=await client.from("employees").select("id,display_name")
-          .eq("business_id",id).in("id",ids).limit(81);
+          .eq("business_id",id).in("id",ids).limit(pageSize+1);
         if(personNames.error)throw personNames.error;
         for(const row of personNames.data??[])
           names.set(row.id,row.display_name??null);
@@ -206,14 +239,19 @@ export function supervisorHistoricalReaders(client: SupabaseClient, businessId: 
       });
       const unpaid = await missingWageShifts(id, period);
       return { available:true, value:{
-        timecardCount:actual.length,
-        onClockCount:tracked ? actual.filter(row=>row.clock_out===null && active.has(row.employee_id)).length : null,
+        timecardCount:total,
+        onClockCount:tracked?onClockCount:null,
         attendanceTracked:tracked,recordedTimecards,
+        recordedTimecardsPageOffset:pageOffset,
+        recordedTimecardsNextOffset:nextOffset,
+        recordedTimecardsPageComplete:nextOffset===null&&total!==null,
+        pageConsistency:"independent_read_only_snapshot",
         // Unreadable is not "none": leave it out so nothing claims every wage is known.
         ...(unpaid.shifts?{missingWageShifts:unpaid.shifts}:{}),
       },quality:quality([
-        ...((records.data ?? []).length>500?["timecardResultTruncated"]:[]),
-        ...(actual.length>80?["recordedTimecardsTruncated"]:[]),
+        ...(total===null?["timecardCountUnavailable"]:[]),
+        ...(nextOffset!==null?["recordedTimecardsMorePages"]:[]),
+        ...(onClockCount===null?["onClockCountUnavailable"]:[]),
         ...(!tracked?["attendanceNotTracked"]:[]),
         ...unpaid.missing,
       ]) };

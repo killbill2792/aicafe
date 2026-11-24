@@ -1,9 +1,11 @@
 import { describe, expect, it, vi } from "vitest";
 import { runAgentTurn, type AgentProvider } from "./loop.server";
-import type { AgentToolContext } from "./tools";
+import type { AgentToolContext,AgentToolResult } from "./tools";
+import type {OwnerRunCheckpoint} from "@/lib/ai/supervisor/runs/contracts";
 
 const context: AgentToolContext = {
   locale: "en", asOf: "2026-10-21", timezone: "America/Los_Angeles",
+  canonicalData:async()=>({businessId:"aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",db:{} as never}),
   tools: {
     getMenuCatalog: async () => ({ available: true,
       quality: { level: "high", missingInputs: [], estimatedInputs: [], staleInputs: [] },
@@ -26,18 +28,37 @@ function fixture(rounds: Array<Array<Record<string, unknown>>>): AgentProvider {
   };
 }
 describe("recorded Responses streaming fixtures", () => {
+  it("continues an authorized durable read without calling its source again",async()=>{
+    const id="11111111-1111-4111-8111-111111111111";
+    const source:AgentToolResult={source:"u3_canonical_research",period:null,missing:[],
+      rows:[{net_sales_cents:"12500"}],evidence:{receipt_id:id,scope:"verified_owner_cafe_lease",column_units:{net_sales_cents:"cents"}}};
+    const begin=vi.fn(async()=>null);
+    const checkpoint:OwnerRunCheckpoint={assertLive:async()=>{},beginProvider:async()=>{},endProvider:async()=>{},
+      beginTool:begin,endTool:async()=>{},resumeContext:async()=>null,canYield:()=>true,yieldForRetry:async()=>true,
+      researchReads:()=>[{ref:id,name:"query_data",arguments:JSON.stringify({sql:"SELECT net_sales_cents FROM orders"}),result:source}]};
+    const calc={purpose:"Recorded sales",screen_number:"none",inputs:[{name:"amount",label:"Recorded sales",tool:"query_data",path:"rows.0.net_sales_cents",receipt_id:id,fact_key:null,owner_value:null,owner_unit:null}],steps:[{id:"total",label:"Total",op:"sum",args:["amount"]}]};
+    const provider:AgentProvider=async function*(params){
+      expect(JSON.stringify(params.input)).toContain(id);
+      if(begin.mock.calls.length===0){yield call("calculate",JSON.stringify(calc),"calculate-retained");yield completed;}
+      else{yield text("Recorded sales were $125.00.");yield completed;}
+    };
+    const turn=await runAgentTurn({ownerText:"Finish the recorded sales calculation",context:{...context},provider,checkpoint});
+    expect(begin).toHaveBeenCalledTimes(1);
+    expect(turn.results.find(r=>r.source==="calculate")).toMatchObject({result:{unit:"cents",valueCents:12500}});
+    expect(turn.text).toContain("$125.00");
+  });
   it("keeps the exact model menu answer when profit read fails",async()=>{
     const failing:AgentToolContext={...context,tools:{...context.tools,
       getProfitability:async()=>{throw new Error("private SQL connection details");}
     }};
     const turn=await runAgentTurn({ownerText:"Show latte pricing and last month's profit",
       context:failing,provider:fixture([
-        [call("get_menu_items",'{"query":null,"limit":null}',"menu-ok"),
-         call("get_profit",'{"period":"last_month","ownerInputs":null}',"profit-fail"),completed],
+        [call("query_data",'{"view":null,"sql":"SELECT name,price_cents FROM menu_items ORDER BY id","parameters":null,"columns":null,"filters":null,"group_by":null,"metrics":null,"date_from":null,"date_to":null,"order_by":null,"limit":null}',"menu-ok"),
+         call("query_data",'{"official_metric":{"id":"profit","period_mode":null,"profit_period":"last_month"}}',"profit-fail"),completed],
         [text("The menu lists Latte at $4.50."),completed]
       ])});
-    expect(turn.results.some(x=>x.source==="menu_items"&&x.missing.length===0)).toBe(true);
-    expect(turn.results.some(x=>x.source==="get_profit"&&x.error==="internal")).toBe(true);
+    expect(turn.results.some(x=>x.source==="u3_canonical_research"&&x.missing.length===0)).toBe(true);
+    expect(turn.results.some(x=>x.source==="query_data"&&x.error==="internal")).toBe(true);
     expect(turn.text).toBe("The menu lists Latte at $4.50.");
     expect(turn.text).not.toContain("private SQL");
   });
@@ -68,7 +89,7 @@ describe("recorded Responses streaming fixtures", () => {
     let requests=0,checks=0;
     const provider:AgentProvider=async function*(){
       requests++;
-      yield call("get_menu_items",'{"query":null,"limit":null}',"first");
+      yield call("query_data",'{"view":null,"sql":"SELECT name,price_cents FROM menu_items ORDER BY id","parameters":null,"columns":null,"filters":null,"group_by":null,"metrics":null,"date_from":null,"date_to":null,"order_by":null,"limit":null}',"first");
       yield completed;
     };
     await expect(runAgentTurn({ownerText:"Inspect selected invoice",
@@ -83,7 +104,7 @@ describe("recorded Responses streaming fixtures", () => {
     let requests=0,checks=0;
     const provider:AgentProvider=async function*(){
       requests++;
-      yield call("get_menu_items",'{"wrong":true}',"bad-"+requests);
+      yield call("get_attention_items",'{"wrong":true}',"bad-"+requests);
       yield completed;
     };
     await expect(runAgentTurn({ownerText:"Inspect invoice",context,provider,
@@ -160,23 +181,20 @@ describe("recorded Responses streaming fixtures", () => {
   });
   it("calls one bounded read tool, then answers", async () => {
     const result = await runAgentTurn({ownerText:"Menu?",context,provider:fixture([
-      [call("get_menu_items",'{"query":null,"limit":null}',"call1"),completed],
+      [call("query_data",'{"view":null,"sql":"SELECT name,price_cents FROM menu_items ORDER BY id","parameters":null,"columns":null,"filters":null,"group_by":null,"metrics":null,"date_from":null,"date_to":null,"order_by":null,"limit":null}',"call1"),completed],
       [text("Latte costs $4.50."),completed],
     ])});
     expect(result.usage.toolCalls).toBe(1);
     expect(result.status.status).toBe("complete");
-    expect(result.results).toMatchObject([{ source: "menu_items", period: null, agentId:"alex", missing: [], items: [
-      { id: "item-1", name: "Latte", category: "drink", priceCents: 450,
-        unit:"cents",priceSource:"initial",realizedAvgCents:null,priceCheck:"unknown",pricePeriod:null,priceEvidenceStatus:"unknown" },
-    ] }]);
+    expect(result.results).toMatchObject([{source:"u3_canonical_research",period:null,missing:[],rows:[{name:"Latte",price_cents:450}]}]);
     expect(result.unverified).toEqual([]);
   });
   it("makes exactly one no-tool final call on repeated tool failures", async () => {
     const requests: Record<string, unknown>[] = [];
     const provider: AgentProvider = async function* (params) {
       requests.push(params);
-      if (requests.length === 1) {yield call("get_menu_items",'{"wrong":1}',"bad1");yield completed;}
-      else if (requests.length === 2) {yield call("get_menu_items",'{"wrong":1}',"bad2");yield completed;}
+      if (requests.length === 1) {yield call("get_attention_items",'{"wrong":1}',"bad1");yield completed;}
+      else if (requests.length === 2) {yield call("get_attention_items",'{"wrong":1}',"bad2");yield completed;}
       else {yield text("I could not check that menu yet.");yield completed;}
     };
     const result = await runAgentTurn({ownerText:"Menu?",context,provider});
@@ -199,7 +217,7 @@ describe("recorded Responses streaming fixtures", () => {
       requests.push(params);
       if (requests.length === 1) {
         for (let i = 0; i < 9; i++)
-          yield call("get_menu_items",'{"query":null,"limit":null}',"call-"+i);
+          yield call("query_data",'{"view":null,"sql":"SELECT name,price_cents FROM menu_items ORDER BY id","parameters":null,"columns":null,"filters":null,"group_by":null,"metrics":null,"date_from":null,"date_to":null,"order_by":null,"limit":null}',"call-"+i);
         yield completed;
       } else { yield text("Only part of the menu could be checked."); yield completed; }
     };
@@ -222,7 +240,7 @@ describe("recorded Responses streaming fixtures", () => {
     const provider: AgentProvider = async function* (params) {
       requests.push(params);
       if (requests.length === 1) {
-        yield call("get_menu_items", '{"query":null,"limit":null}', "read-1");
+        yield call("query_data", '{"view":null,"sql":"SELECT name,price_cents FROM menu_items ORDER BY id","parameters":null,"columns":null,"filters":null,"group_by":null,"metrics":null,"date_from":null,"date_to":null,"order_by":null,"limit":null}', "read-1");
         yield completed;
       } else if (requests.length === 2) {
         yield text("Interrupted ");
@@ -259,7 +277,7 @@ describe("recorded Responses streaming fixtures", () => {
     const provider: AgentProvider = async function* () {
       count++;
       if (count === 5) throw new Error("lost");
-      yield call("get_menu_items",'{"query":null,"limit":null}',"read-"+count);
+      yield call("query_data",'{"view":null,"sql":"SELECT name,price_cents FROM menu_items ORDER BY id","parameters":null,"columns":null,"filters":null,"group_by":null,"metrics":null,"date_from":null,"date_to":null,"order_by":null,"limit":null}',"read-"+count);
       yield completed;
     };
     const result = await runAgentTurn({ownerText:"Menu?",context,provider});
@@ -273,7 +291,7 @@ describe("recorded Responses streaming fixtures", () => {
       const provider: AgentProvider = async function* (params) {
         requests.push(params);
         if (requests.length <= 2) {
-          yield call("get_menu_items",'{"wrong":1}',"bad-"+requests.length);
+          yield call("get_attention_items",'{"wrong":1}',"bad-"+requests.length);
           yield completed;
         } else {
           yield text("Partial final answer.");
@@ -309,7 +327,7 @@ describe("recorded Responses streaming fixtures", () => {
       calls++;
       if(calls===1){
         yield text("Safe. ");
-        yield call("get_menu_items", '{"query":null,"limit":null}', "read-1");
+        yield call("query_data", '{"view":null,"sql":"SELECT name,price_cents FROM menu_items ORDER BY id","parameters":null,"columns":null,"filters":null,"group_by":null,"metrics":null,"date_from":null,"date_to":null,"order_by":null,"limit":null}', "read-1");
         yield completed;
       }else if(calls===2){yield text("Wrong");throw new Error("lost");}
       else {yield text("Final.");yield completed;}
@@ -326,16 +344,12 @@ describe("recorded Responses streaming fixtures", () => {
     try {
       const requests: Record<string, unknown>[] = [];
       const hung: AgentToolContext = {
-        ...context, tools: {
-          ...context.tools,
-          getMenuCatalog: async () => new Promise<Awaited<ReturnType<
-            AgentToolContext["tools"]["getMenuCatalog"]>>>(() => {}),
-        },
+        ...context, canonicalData:async()=>new Promise<Awaited<ReturnType<NonNullable<AgentToolContext["canonicalData"]>>>>(()=>{}),
       };
       const provider: AgentProvider = async function* (params) {
         requests.push(params);
         if (requests.length === 1) {
-          yield call("get_menu_items",'{"query":null,"limit":null}',"timed-read");
+          yield call("query_data",'{"view":null,"sql":"SELECT name,price_cents FROM menu_items ORDER BY id","parameters":null,"columns":null,"filters":null,"group_by":null,"metrics":null,"date_from":null,"date_to":null,"order_by":null,"limit":null}',"timed-read");
           yield completed;
         } else {
           yield text("The menu read timed out; I cannot verify it yet.");
@@ -361,7 +375,7 @@ describe("recorded Responses streaming fixtures", () => {
     let count = 0;
     const provider: AgentProvider = async function* () {
       count++;
-      yield call("get_menu_items",'{"query":null,"limit":null}', "call-"+count);
+      yield call("query_data",'{"view":null,"sql":"SELECT name,price_cents FROM menu_items ORDER BY id","parameters":null,"columns":null,"filters":null,"group_by":null,"metrics":null,"date_from":null,"date_to":null,"order_by":null,"limit":null}', "call-"+count);
       yield completed;
     };
     const result = await runAgentTurn({ownerText:"Menu?",context,provider});
@@ -375,12 +389,12 @@ describe("tool start labels and cross-turn numeric grounding",()=>{
   it("attributes actual tool starts and does not re-label plain completion",async()=>{
     const starts:Array<{name:string;agentId:string}>=[];
     const result=await runAgentTurn({ownerText:"Menu?",context,provider:fixture([
-      [call("get_menu_items",'{"query":null,"limit":null}',"label-1"),completed],
+      [call("query_data",'{"view":null,"sql":"SELECT name,price_cents FROM menu_items ORDER BY id","parameters":null,"columns":null,"filters":null,"group_by":null,"metrics":null,"date_from":null,"date_to":null,"order_by":null,"limit":null}',"label-1"),completed],
       [text("A latte costs $4.50."),completed],
     ]),onTool:(name,agentId)=>starts.push({name,agentId})});
-    expect(starts).toEqual([{name:"get_menu_items",agentId:"alex"}]);
+    expect(starts).toEqual([{name:"query_data",agentId:"alex"}]);
     expect(result.agentIds).toEqual(["alex"]);
-    expect(result.evidence?.flatMap(entry=>entry.values).find(v=>v.key==="items:item-1/priceCents")?.value).toBe(450);
+    expect(result.evidence?.flatMap(entry=>entry.values).find(v=>v.key==="u3Receipt/11111111-1111-4111-8111-111111111111/row:0/price_cents")?.value).toBe(450);
   });
   it("does not convert a previously formatted assistant list into sales evidence",async()=>{
     const formatted="1. Review your menu\n2. Check your staffing";
@@ -419,13 +433,26 @@ describe("admin audit does not change the chat result", () => {
   it("reports ordered model/tool audit steps without raw tool arguments", async () => {
     const steps: Array<{kind:string; inputSummary?:string; toolName?:string}> = [];
     await runAgentTurn({ownerText:"Menu?",context,provider:fixture([
-      [call("get_menu_items",'{"query":"private-owner-value","limit":null}',"audit-call-1"),completed],
+      [call("query_data",'{"view":null,"sql":"SELECT name,price_cents FROM menu_items WHERE name=$1","parameters":["private-owner-value"],"columns":null,"filters":null,"group_by":null,"metrics":null,"date_from":null,"date_to":null,"order_by":null,"limit":null}',"audit-call-1"),completed],
       [text("Here is your menu."),completed],
     ]),onAuditStep: step => steps.push(step)});
     expect(steps.map(step=>step.kind)).toEqual(["model_call","tool_call","model_call"]);
-    expect(steps[1].toolName).toBe("get_menu_items");
+    expect(steps[1].toolName).toBe("query_data");
     expect(JSON.stringify(steps)).not.toContain("private-owner-value");
   });
+});
+
+// Mock only the database transport in recorded provider tests. The actual
+// general research declaration, dispatch, grounding and loop remain active.
+vi.mock("./tools/u3SqlResearch.server",async importOriginal=>{
+ const actual=await importOriginal<typeof import("./tools/u3SqlResearch.server")>();
+ return {...actual,u3SqlConfigured:()=>true,runU3Sql:async()=>({
+  source:"u3_canonical_research",period:null,missing:[],rows:[{"name":"Latte","price_cents":450}],
+  empty:false,truncated:false,page_complete:true,
+  evidence:{receipt_id:"11111111-1111-4111-8111-111111111111",scope:"verified_owner_cafe_lease",
+   query_fingerprint:"a".repeat(64),catalog_version:"a".repeat(16),column_units:{price_cents:"cents"},
+   column_origins:{name:{relation:"menu_items",column:"name",binding:1},price_cents:{relation:"menu_items",column:"price_cents",binding:1}},
+   relation_names:["menu_items"]}})};
 });
 
 describe("U1 incident regression: exact requested dates and useful synthesis",()=>{
@@ -436,7 +463,7 @@ describe("U1 incident regression: exact requested dates and useful synthesis",()
     const ctx:AgentToolContext={...context,tools:{...context.tools,getSalesTrend:sales}};
     const result=await runAgentTurn({ownerText:"What are today's sales?",context:ctx,
       provider:fixture([
-        [call("get_sales",'{"period":"today","ownerInputs":null}',"u1-today-sales"),completed],
+        [call("query_data",'{"official_metric":{"id":"sales","period_mode":null,"period":"today"}}',"u1-today-sales"),completed],
         [text("Today's closing sales are not available; I cannot verify a total."),completed],
       ])});
     expect(result.text).toBe("Today's closing sales are not available; I cannot verify a total.");
@@ -452,7 +479,7 @@ describe("U1 incident regression: exact requested dates and useful synthesis",()
         missingInputs:["noCoveredSalesRows"],estimatedInputs:[],staleInputs:[]}});
     const result=await runAgentTurn({ownerText:"Research sales from 2025-10-22 through 2026-10-20",
       context:{...context,tools:{...context.tools,getSalesTrend:sales}},
-      provider:fixture([[call("get_sales",JSON.stringify({period,ownerInputs:null}),"u1-owner-year"),completed],
+      provider:fixture([[call("query_data",JSON.stringify({official_metric:{id:"sales",period_mode:null,period}}),"u1-owner-year"),completed],
         [text("No recorded sales totals are available for that requested interval."),completed]])});
     expect(sales.mock.calls).toEqual([[period]]);
     expect(result.results[0]).toMatchObject({period,missing:["noCoveredSalesRows"]});
@@ -473,9 +500,9 @@ describe("U1 incident regression: exact requested dates and useful synthesis",()
     const provider:AgentProvider=async function*(params){
       requests.push(params);
       if(requests.length===1){
-        yield call("get_sales",JSON.stringify({period,ownerInputs:null}),"u1-mixed-sales");
-        yield call("get_peak_hours",JSON.stringify(period),"u1-mixed-peak");
-        yield call("get_profit",JSON.stringify({period,ownerInputs:null}),"u1-mixed-profit");
+        yield call("query_data",JSON.stringify({official_metric:{id:"sales",period_mode:null,period}}),"u1-mixed-sales");
+        yield call("query_data",JSON.stringify({official_metric:{id:"hourly_sales",period_mode:null,period}}),"u1-mixed-peak");
+        yield call("query_data",JSON.stringify({official_metric:{id:"profit",period_mode:null,profit_period:period}}),"u1-mixed-profit");
       }else yield text(answer);
       yield completed;
     };
@@ -487,7 +514,7 @@ describe("U1 incident regression: exact requested dates and useful synthesis",()
     expect(result.results).toEqual(expect.arrayContaining([
       expect.objectContaining({source:"daily_rollups",period,missing:["noCoveredSalesRows"]}),
       expect.objectContaining({source:"get_peak_hours",period,missing:["hourlyCoverageMissing"]}),
-      expect.objectContaining({source:"get_profit",error:"internal"}),
+      expect.objectContaining({source:"query_data",error:"internal"}),
     ]));
     const outputs=(requests[1].input as Array<Record<string,unknown>>)
       .filter(x=>x.type==="function_call_output");
@@ -529,9 +556,9 @@ describe("U1 controlled incident timing fixture (no provider)",()=>{
       const provider:AgentProvider=async function*(params){
         requests.push(params);
         if(requests.length===1){
-          yield call("get_sales",JSON.stringify({period,ownerInputs:null}),"u1-delayed-sales");
-          yield call("get_peak_hours",JSON.stringify(period),"u1-delayed-peak");
-          yield call("get_profit",JSON.stringify({period,ownerInputs:null}),"u1-delayed-profit");
+          yield call("query_data",JSON.stringify({official_metric:{id:"sales",period_mode:null,period}}),"u1-delayed-sales");
+          yield call("query_data",JSON.stringify({official_metric:{id:"hourly_sales",period_mode:null,period}}),"u1-delayed-peak");
+          yield call("query_data",JSON.stringify({official_metric:{id:"profit",period_mode:null,profit_period:period}}),"u1-delayed-profit");
         }else{
           // Reproduce a late but completed final synthesis, not a real network wait.
           await new Promise<void>(resolve=>setTimeout(resolve,11684));
@@ -552,7 +579,7 @@ describe("U1 controlled incident timing fixture (no provider)",()=>{
         expect.objectContaining({source:"daily_rollups",period,netSalesCents:4820}),
         expect.objectContaining({source:"get_peak_hours",period,totalNetSalesCents:4820,
           totalOrdersCount:12,topHours:[{hourLocal:10,netSalesCents:3000,ordersCount:8},{hourLocal:14,netSalesCents:1820,ordersCount:4}]}),
-        expect.objectContaining({source:"get_profit",period,missing:["deadline_exceeded"]}),
+        expect.objectContaining({source:"query_data",period,missing:["deadline_exceeded"]}),
       ]));
       expect(requests[1].tool_choice).toBe("none");
       expect((requests[1].input as Array<Record<string,unknown>>).filter(x=>x.type==="function_call_output")

@@ -6,8 +6,7 @@
   "proof": "14e-cash-position-proof.json",
   "scope": "14e-cash-position-scope.json",
   "expectedTools": [
-    "get_cashflow_evidence",
-    "get_bills"
+    "query_data"
   ],
   "assertions": [
     {

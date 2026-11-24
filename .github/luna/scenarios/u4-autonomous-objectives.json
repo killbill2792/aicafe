@@ -6,8 +6,7 @@
   "proof": "u4-autonomous-objectives-proof.json",
   "scope": "u4-autonomous-objectives-scope.json",
   "expectedTools": [
-    "get_sales",
-    "get_inventory"
+    "query_data"
   ],
   "assertions": [
     {

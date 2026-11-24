@@ -66,7 +66,7 @@ function numbersIn(answer,unit){
 function assertDates(reply,context){
   const replay=replays[String(context?.vars?.caseId??"")];
   assert.ok(replay,"unknown recorded case");
-  const expected=replay.tools.map(c=>c.args?.period)
+  const expected=replay.tools.map(c=>c.args?.official_metric?.period??c.args?.period)
     .find(p=>p&&typeof p.from==="string"&&typeof p.to==="string");
   if(!expected)return;
   assert.ok(reply.results.some(r=>r.period?.from===expected.from&&
@@ -97,7 +97,7 @@ module.exports.metric=(output,context)=>check(()=>{
   const wanted=seed.sqlTruth[cfg.truth];
   assert.equal(typeof wanted,"number","missing SQL numeric truth");
   const results=reply.results.filter(result=>result.source===cfg.source);
-  assert.ok(results.length>0,"Supervisor did not call "+cfg.source);
+  assert.ok(results.length>0,"Verified source evidence missing: "+cfg.source);
   const observed=pathAt(results.at(-1),cfg.field);
   assert.equal(typeof observed,"number",cfg.field+" is not a numeric tool result");
   const tolerance=cfg.tolerance??(cfg.unit==="percent"?0.0001:1);
@@ -111,7 +111,12 @@ module.exports.name=(output,context)=>check(()=>{
   const reply=decoded(output),cfg=context.vars.check;
   const wanted=seed.sqlTruth[cfg.truth];
   assert.equal(typeof wanted,"string","missing SQL identity truth");
-  assert.ok(reply.results.some(r=>r.source===cfg.source),"expected read missing");
+  const catalog=reply.results.find(r=>r.source===cfg.source&&r.view==="cv_menu");
+  assert.ok(catalog?.rows?.some(r=>r.data?.name===wanted),"expected catalog identity missing");
+  const active=seed.menu.filter(item=>item.active);
+  const rows=catalog.rows.map(r=>r.data);
+  assert.equal(rows.length,active.length,"comparison skipped active items");
+  for(const item of active)assert.ok(rows.some(r=>r.id===item.id&&r.price_cents===item.priceCents),"catalog observation differs from seed");
   assert.ok(reply.answer.toLowerCase().includes(wanted.toLowerCase()),
     "Supervisor failed to identify "+wanted);
   assert.deepEqual(reply.unverified,[],"answer contains unsupported numbers");
@@ -154,7 +159,9 @@ module.exports.missing=(output)=>check(()=>{
 });
 module.exports.inventory=(output)=>check(()=>{
   const reply=decoded(output);
-  assert.ok(reply.results.some(r=>r.source==="inventory"&&
-    r.missing.includes("inventoryNotTracked")),"inventory status not read");
+  assert.ok(reply.results.some(r=>r.source==="canonical_data"&&r.view==="cv_inventory"&&
+    Array.isArray(r.rows)&&r.rows.length===0&&r.missing.includes("empty")&&
+    !r.missing.includes("inventoryReaderUnavailable")&&r.truncated===false),
+    "successful empty inventory source was not observed");
   assert.match(reply.answer,/not tracked|don't track|not recorded|unknown|unavailable/i);
 });

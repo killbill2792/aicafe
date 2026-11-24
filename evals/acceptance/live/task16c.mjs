@@ -120,7 +120,7 @@ async function measure(){
    "purchase-order records before answering. Do not send, approve or change anything.",
    [attachment]);
   if(good.error||good.done?.endReason!=="complete"||!uuid(good.done?.reply?.id)||
-    !["get_menu_items","get_supplier_purchase_orders"].every(n=>good.names.includes(n)))
+    !["query_data","get_supplier_purchase_orders"].every(n=>good.names.includes(n)))
    fail("model_did_not_use_both_registered_readers");
   const own=await db.query("select id::text from public.ai_messages where "+
    "business_id=$1 and thread_id=$2 and client_message_id=$3 and role='owner'",

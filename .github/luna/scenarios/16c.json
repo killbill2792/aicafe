@@ -6,7 +6,7 @@
   "proof": "16c-proof.json",
   "scope": "16c-scope.json",
   "expectedTools": [
-    "get_menu_items",
+    "query_data",
     "get_supplier_purchase_orders",
     "web_search"
   ],

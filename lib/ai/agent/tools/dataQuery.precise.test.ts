@@ -84,16 +84,32 @@ describe("one universal query for applied discount uses and distinct orders",()=
   });
   expect(invalid.missing).toContain("invalid_query");
  });
- it("caps sampled field discovery so records cannot flood the model context",async()=>{
+ it("paginates field discovery at the current transport allowance without losing later fields",async()=>{
   const huge=Array.from({length:90},(_,i)=>({
    field:"data.sample_"+i,type:"string",example:"X".repeat(100)
   }));
   const rpc=vi.fn(async()=>({data:huge,error:null}));
   const result=await dataQueryTools.describe_data.execute({record_type:"item_discount",view:null},
-   {db:{rpc} as never,businessId});
+   {db:{rpc} as never,businessId,resultBudgetBytes:9000});
   expect(result.truncated).toBe(true);
-  expect(JSON.stringify(result.fields).length).toBeLessThanOrEqual(6000);
+  expect(Buffer.byteLength(JSON.stringify(result.fields),"utf8")).toBeLessThanOrEqual(9000);
+  expect(Buffer.byteLength(JSON.stringify(result.fields),"utf8")).toBeGreaterThan(6000);
   expect(result.missing).toContain("result_truncated");
+  const laterFields:unknown[]=[];
+  let offset="next_offset" in result?result.next_offset??null:null;
+  while(offset!==null){
+   const next=await dataQueryTools.describe_data.execute({record_type:"item_discount",view:null,
+    page_offset:offset,page_size:30},{db:{rpc} as never,businessId,resultBudgetBytes:9000});
+   laterFields.push(...next.fields);
+   const nextOffset="next_offset" in next?next.next_offset??null:null;
+   if(nextOffset!==null)expect(nextOffset).toBeGreaterThan(offset);
+   offset=nextOffset;
+  }
+  expect(laterFields).toEqual(expect.arrayContaining([expect.objectContaining({field:"data.sample_89"})]));
+  const noProgress=await dataQueryTools.describe_data.execute({record_type:"item_discount",view:null},
+   {db:{rpc} as never,businessId,resultBudgetBytes:0});
+  expect(noProgress.missing).toContain("row_exceeds_page_budget");
+  expect(noProgress).toMatchObject({next_offset:null,truncated:true});
  });
 });
 const unplannedQueries=[

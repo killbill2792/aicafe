@@ -38,7 +38,7 @@ test("@home fresh registration owns a private café and never inherits shared de
     user:"postgres",password:"postgres",connectionTimeoutMillis:5000});
   const context=await browser.newContext({baseURL:"http://127.0.0.1:3000",serviceWorkers:"block"});
   const email=randomUUID()+"@example.invalid",password=randomUUID()+"!Ab12";
-  let userId=null,connected=false;
+  let userId=null,concurrentUserId=null,connected=false;
   try{
     await db.connect();connected=true;
     const created=await admin.auth.admin.createUser({
@@ -72,17 +72,32 @@ test("@home fresh registration owns a private café and never inherits shared de
     // in this disposable CI environment is NOT needed to prove isolation.
     const threads=await context.request.get("/api/ai/threads");
     expect(threads.status()).toBe(200);
+    // Independently reproduce first-creation concurrency on a second fresh
+    // identity; do not pre-provision the browser signup fixture.
+    const race=await admin.auth.admin.createUser({email:randomUUID()+"@example.invalid",password,email_confirm:true});
+    if(race.error||!race.data.user)throw Error("concurrency_fixture_unavailable");
+    concurrentUserId=race.data.user.id;
+    // Concurrent first renders use the same service-only transaction. Exercise
+    // the database boundary deterministically before verifying the browser.
+    const params={p_user_id:concurrentUserId,p_name:"Private signup fixture",p_recovery_order:["rent","utilities_power","water","internet","insurance","loan","software","supplies","repairs","other"]};
+    const concurrent=await Promise.all(Array.from({length:4},()=>admin.rpc("ensure_private_onboarding_cafe",params)));
+    expect(concurrent.every(r=>!r.error&&typeof r.data==="string")).toBe(true);
+    expect(new Set(concurrent.map(r=>r.data)).size).toBe(1);
+    const createdMemberships=await db.query("select business_id from public.memberships where user_id=$1",[concurrentUserId]);
+    expect(createdMemberships.rows).toHaveLength(1);
+    const recovery=await db.query("select bucket_code from public.recovery_order where business_id=$1 order by position",[concurrent[0].data]);
+    expect(recovery.rows.map(row=>row.bucket_code)).toEqual(params.p_recovery_order);
   }finally{
     await context.close();
     if(connected){
-      if(userId){
-        const owned=await db.query("select business_id from public.memberships where user_id=$1",[userId]);
+      for(const id of [userId,concurrentUserId].filter(Boolean)){
+        const owned=await db.query("select business_id from public.memberships where user_id=$1",[id]);
         for(const row of owned.rows)
           await db.query("delete from public.businesses where id=$1 and is_demo=false",[row.business_id]);
       }
       await db.end();
     }
-    if(userId)await admin.auth.admin.deleteUser(userId);
+    for(const id of [userId,concurrentUserId].filter(Boolean))await admin.auth.admin.deleteUser(id);
   }
 });
 
@@ -1345,9 +1360,9 @@ test("@purchasing proactive notice → repeated cron idempotency → owner-appro
       " and grounding #>> '{evidence,0,source}'='supplier_po'"+
       " and grounding #>> '{evidence,0,identifier}'=$3",
       [own.businessId,id.thread,id.proposal]);
-    expect(messages.rows).toHaveLength(1);
-    expect(messages.rows[0].grounding).toMatchObject({status:"verified",intent:"priority_notice",
-      evidence:[{source:"supplier_po",identifier:id.proposal}]});
+    // Owner already has a real proposal card in this thread; the recurring
+    // reminder is an attention item, not another generic Supervisor reply.
+    expect(messages.rows).toHaveLength(0);
     // A second real scheduler tick without another owner message must reuse
     // the same persisted inbox/chat receipt across independent cron invocations.
     const secondTick=await first.request.get("/api/cron/refresh-derived",{
@@ -1367,11 +1382,10 @@ test("@purchasing proactive notice → repeated cron idempotency → owner-appro
       " and grounding #>> '{evidence,0,source}'='supplier_po'"+
       " and grounding #>> '{evidence,0,identifier}'=$3",
       [own.businessId,id.thread,id.proposal]);
-    expect(dedupedMessages.rows).toEqual([{id:messages.rows[0].id}]);
-    // Reopened owner chat must show the real cron-generated notice.
+    expect(dedupedMessages.rows).toEqual([]);
+    // Reopened owner chat retains its existing verified proposal cards,
+    // without a synthetic cron-generated assistant message.
     await page.reload();
-    await expect(page.getByText("Supplier purchase-order draft needs your approval",{exact:false}).first())
-      .toBeVisible({timeout:30_000});
     const cards=page.getByRole("region",{name:"Supplier purchase-order approval"});
     await expect(cards).toHaveCount(2,{timeout:30_000});
     const historical=cards.first(),card=cards.last();

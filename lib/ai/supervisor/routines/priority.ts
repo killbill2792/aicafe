@@ -33,8 +33,13 @@ export function priorityRevision(source:PrioritySource):string{
   const sourceEvidence=source.evidence;
   const evidence=source.sourceType==="alert"&&source.kind==="business_anomaly"&&
     sourceEvidence&&typeof sourceEvidence==="object"&&!Array.isArray(sourceEvidence)
-    ?Object.fromEntries(Object.entries(sourceEvidence).filter(([key])=>
-      !["asOf","from","to"].includes(key)))
+    ?Object.fromEntries(Object.entries(sourceEvidence).filter(([key,value])=>
+      !["asOf","from","to"].includes(key)&&
+      // This one legacy detector already certified missing physical counts.
+      // Adding the explicit classification on refresh is not new evidence.
+      !(key==="gapReason"&&value==="missing_business_input"&&
+        (sourceEvidence as Record<string,unknown>).family==="data_gap"&&
+        (sourceEvidence as Record<string,unknown>).subject==="stock_counts")))
     :sourceEvidence;
   return digest(JSON.stringify(canonical({
     type:source.sourceType,id:source.sourceId,kind:source.kind,
@@ -83,15 +88,32 @@ export function rankPriority(source:PrioritySource,now:Date):PriorityDecision{
     ownerAction?"Owner task needs review":"Task response needs review";
   return {source,revisionHash,priority,reason,stableKey};
 }
+/** Verified missing business inputs are actionable regardless of the source.
+ * Readers attest absence only after a successful canonical read; uncertain
+ * coverage and technical failures are recovery work, not owner requests.
+ * Keep the previous stock-count receipt readable until its detector refresh. */
+export function eligibleAlertEvidence(kind:string,evidence:unknown):boolean{
+  if(kind!=="business_anomaly"||!evidence||typeof evidence!=="object"||Array.isArray(evidence))
+    return true;
+  const fact=evidence as Record<string,unknown>;
+  if(fact.quality==="technical_failure"||fact.quality==="not_matured")return false;
+  if(fact.family!=="data_gap")return true;
+  return fact.quality==="missing"&&fact.current===1&&fact.unit==="coverage"&&
+    (fact.gapReason==="missing_business_input"||
+      (fact.gapReason===undefined&&fact.subject==="stock_counts"));
+}
+export function requiresOwnerAttention(source:PrioritySource):boolean{
+  return source.sourceType!=="alert"||eligibleAlertEvidence(source.kind,source.evidence);
+}
 export function choosePriorities(sources:readonly PrioritySource[],now:Date,limit=3,
   options?:{includeWatching?:boolean}):PriorityDecision[]{
-  const candidates=sources.filter(s=>
+  const candidates=sources.filter(s=>requiresOwnerAttention(s)&&(
     (s.sourceType==="alert"&&(s.status==="new"||s.status==="seen"))||
     (s.sourceType==="operating_task"&&!alreadyNotifiedTaskKinds.has(s.kind)&&
       (s.status==="needs_owner"||s.status==="needs_response"||
        (options?.includeWatching===true&&s.status==="watching")))||
     (s.sourceType==="supplier_po"&&s.status==="draft")||
-    (s.sourceType==="supplier_dispatch"&&s.status==="approved_for_ordering"))
+    (s.sourceType==="supplier_dispatch"&&s.status==="approved_for_ordering")))
     .map(s=>rankPriority(s,now));
   return candidates.sort((a,b)=>b.priority-a.priority||
     a.source.createdAt.localeCompare(b.source.createdAt)||

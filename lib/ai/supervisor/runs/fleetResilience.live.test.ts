@@ -252,7 +252,7 @@ run("real Luna recovers the same investigation after SIGKILL and real lease expi
   const tools=incident[0].evidence.modelTools as string[];
   expect(tools[0]).toBe("get_investigation_source");
   expect(tools).toContain("get_staff_messages");
-  expect(tools.some(t=>["get_schedule","get_week_schedule","get_coverage_gaps"].includes(t)))
+  expect(tools.some(t=>["query_data","get_coverage_gaps"].includes(t)))
    .toBe(true);
   expect(providerCompletions).toBeGreaterThanOrEqual(2);
   const ownerPosts=(await admin.query("select role,grounding->>'intent' as intent from public.ai_messages "+

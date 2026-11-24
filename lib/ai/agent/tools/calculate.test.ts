@@ -1,7 +1,7 @@
 import {describe,expect,it} from "vitest";
 import {calculateTools} from "./calculate";
-import {schemas,executeAgentTool,agentToolDefinitions,type AgentToolContext,type AgentToolResult} from "./index";
-import {SCREEN_NUMBERS,SCREEN_NUMBER_IDS} from "../screenNumbers";
+import {executeAgentTool,agentToolDefinitions,type AgentToolContext,type AgentToolResult} from "./index";
+import {SCREEN_NUMBER_IDS} from "../screenNumbers";
 import {explainLineSchema} from "../explain";
 import {checkNumbers} from "../checkNumbers";
 import {questionFromReasons} from "@/lib/ownerFacts/questions";
@@ -69,6 +69,24 @@ describe("calculate tool",()=>{
   });
 });
 
+describe("source-attested ingredient-rate arithmetic",()=>{
+ it("converts stored microcents exactly before multiplying by a verified quantity",async()=>{
+  const research:AgentToolResult={source:"u3_canonical_research",period:null,missing:[],truncated:false,
+    rows:[{rate:"125001",quantity:"200"}],
+    evidence:{scope:"verified_owner_cafe_lease",receipt_id:"11111111-1111-4111-8111-111111111111",
+     query_fingerprint:"a".repeat(64),catalog_version:"b".repeat(16),
+     column_units:{rate:"microcents",quantity:"count"}}};
+  const args={purpose:"Ingredient use",screen_number:"none",
+   inputs:[{...input("rate","query_data","rows.0.rate"),receipt_id:"11111111-1111-4111-8111-111111111111"},{...input("quantity","query_data","rows.0.quantity"),receipt_id:"11111111-1111-4111-8111-111111111111"}],
+   steps:[{id:"cost",label:"Ingredient cost",op:"multiply",args:["rate","quantity"]}]};
+  const r=await calculateTools.calculate.execute(args,ctx([{name:"query_data",result:research}]));
+  expect(r).toMatchObject({result:{unit:"cents",valueCents:25},kind:"calculation"});
+  const legacy:AgentToolResult={source:"ingredient_prices",period:null,missing:[],items:[{costPerBaseUnitMicros:125001,quantity:200}]};
+  const old=await calculateTools.calculate.execute({...args,inputs:[input("rate","get_ingredient_costs","items.0.costPerBaseUnitMicros"),input("quantity","get_ingredient_costs","items.0.quantity")]},ctx([{name:"get_ingredient_costs",result:legacy}]));
+  expect(old.result).toEqual(r.result);
+ });
+});
+
 describe("calculate uses what the owner says",()=>{
   const rentTurn=[...turn,{name:"get_bills",result:{source:"recurring_bills",period:null,missing:[],monthlyEquivalentCents:300000} as AgentToolResult}];
   const rentWhatIf=(c:AgentToolContext)=>calculateTools.calculate.execute({purpose:"Monthly bills if rent goes up",screen_number:"none",
@@ -118,22 +136,32 @@ describe("calculate uses what the owner says",()=>{
   });
 });
 
-describe("calculate never rebuilds a screen number",()=>{
-  it("lists exactly the owner-approved screen numbers, each backed by real tools",()=>{
-    expect(SCREEN_NUMBER_IDS.sort()).toEqual(["break_even","card_fees","item_cost","labor_cost","profit"]);
-    for(const tools of Object.values(SCREEN_NUMBERS))for(const tool of tools)expect(Object.hasOwn(schemas,tool)).toBe(true);
+describe("metric identity is independent of tool name",()=>{
+  it("keeps official metric topics without assigning exclusive tool authority",()=>{
+    expect([...SCREEN_NUMBER_IDS].sort()).toEqual(["break_even","card_fees","item_cost","labor_cost","profit"]);
   });
-  it.each(SCREEN_NUMBER_IDS)("%s from parts is refused; building on its tool's number is allowed",async id=>{
-    const steps=[{id:"r",label:"r",op:"subtract" as const,args:["a","b"]}];
-    const parts=await calculateTools.calculate.execute({purpose:"rebuilt",screen_number:id,
-      inputs:[input("a","query_data","rows.0.net_sales_cents"),input("b","query_data","rows.0.cost_cents")],steps},ctx(turn));
-    expect(parts.refused).toBe("screenNumberComesFromItsTool");
-    const tool=SCREEN_NUMBERS[id][0];
-    const own:AgentToolResult={source:tool,period,missing:[],valueCents:30000};
-    const built=await calculateTools.calculate.execute({purpose:"what-if",screen_number:id,
-      inputs:[input("a",tool,"valueCents"),input("b","query_data","rows.0.cost_cents")],steps},
-      ctx([...turn,{name:tool,result:own}]));
-    expect(built.refused).toBeUndefined();
+  it.each(SCREEN_NUMBER_IDS)("allows independent %s arithmetic without asserting official screen parity",async id=>{
+    const actual=await calculateTools.calculate.execute({purpose:"Independent calculation",screen_number:id,
+      inputs:[input("a","query_data","rows.0.net_sales_cents"),input("b","query_data","rows.0.cost_cents")],
+      steps:[{id:"r",label:"r",op:"subtract",args:["a","b"]}]},ctx(turn));
+    expect(actual).toMatchObject({metric_topic:id,metric_basis:"independent_calculation",result:{unit:"cents",valueCents:70000}});
+    expect(actual.refused).toBeUndefined();
+  });
+  it("marks explicit hypothetical inputs as estimates, never owner facts",async()=>{
+    const actual=await calculateTools.calculate.execute({purpose:"Alternative cost scenario",screen_number:"profit",
+      inputs:[input("a","query_data","rows.0.net_sales_cents"),
+        {...input("b",null,null),assumption:{value:25000,unit:"cents",basis:"Hypothetical equipment lease"}}],
+      steps:[{id:"r",label:"r",op:"subtract",args:["a","b"]}]},ctx(turn));
+    expect(actual).toMatchObject({kind:"estimate",metric_basis:"independent_calculation",result:{unit:"cents",valueCents:75000},
+      assumptions:[{name:"b",basis:"Hypothetical equipment lease"}]});
+    expect(actual.ownerProvided).toBeUndefined();
+  });
+  it("does not turn incomplete input into an actual complete calculation",async()=>{
+    const actual=await calculateTools.calculate.execute({purpose:"Recorded partial costs",screen_number:"profit",
+      inputs:[input("a","query_data","rows.0.net_sales_cents"),input("b","get_cost_summary","knownTotalCents")],
+      steps:[{id:"r",label:"r",op:"subtract",args:["a","b"]}]},
+      ctx([turn[0],{...turn[1],result:{...costs,missing:["coverage_missing"]}}]));
+    expect(actual).toMatchObject({kind:"estimate",missing:["incompleteCalculationInputs"],basedOnPartialData:["get_cost_summary"]});
   });
   it("is offered to the model as a strict tool and dispatched",async()=>{
     expect(agentToolDefinitions.find(t=>t.name==="calculate")?.strict).toBe(true);
@@ -144,6 +172,18 @@ describe("calculate never rebuilds a screen number",()=>{
 
 
 describe("U3 receipt-bound exact research calculation",()=>{
+ it("selects two independent official shared values by their original receipts, not the common function name",async()=>{
+  const earlier="11111111-1111-4111-8111-111111111111",later="22222222-2222-4222-8222-222222222222";
+  const records=[{name:"query_data",result:{source:"product_costs",period:null,missing:[],
+    metric_basis:"official_shared_definition",item:{recipeCostCents:190},evidence:{receipt_id:earlier}}},
+   {name:"query_data",result:{source:"product_costs",period:null,missing:[],
+    metric_basis:"official_shared_definition",item:{recipeCostCents:310},evidence:{receipt_id:later}}}];
+  const r=await calculateTools.calculate.execute({purpose:"Compare current product costs",
+   inputs:[{...input("a","query_data","item.recipeCostCents"),receipt_id:earlier},
+     {...input("b","query_data","item.recipeCostCents"),receipt_id:later}],
+   steps:[{id:"difference",label:"Difference",op:"subtract",args:["b","a"]}]},ctx(records));
+  expect(r).toMatchObject({result:{unit:"cents",valueCents:120},kind:"calculation"});
+ });
  const older="11111111-1111-4111-8111-111111111111";
  const newer="22222222-2222-4222-8222-222222222222";
  const sql=(receipt_id:string,value:string)=>({
@@ -157,6 +197,22 @@ describe("U3 receipt-bound exact research calculation",()=>{
   inputs:[{name:"amount",label:"Verified amount",tool,path,receipt_id,
    fact_key:null,owner_value:null,owner_unit:null}],
   steps:[{id:"result",label:"Amount",op:"sum",args:["amount"]}]
+ });
+ it("can calculate from an earlier page after the exact snapshot has been completely traversed",async()=>{
+  const make=(id:string,amount:string,index:number):{name:string;result:AgentToolResult}=>({name:"query_data",result:{
+   ...sql(id,amount).result,rows:[{net_sales_cents:amount}],rowCount:1,
+   page_consistency:"verified_same_result",total_rows:2,page_offset:index,
+   page_complete:index===1,truncated:index===0,next_cursor:index?null:"signed",
+   missing:index?[]:["result_truncated"],
+   evidence:{...(sql(id,amount).result.evidence as object),query_fingerprint:"a".repeat(64),
+    catalog_version:"b".repeat(16),snapshot_id:"33333333-3333-4333-8333-333333333333",
+    snapshot_digest:"c".repeat(64),as_of:"2026-11-24T00:00:00Z"}
+  }});
+  const first=make(older,"12345",0),last=make(newer,"67890",1);
+  expect(await calculateTools.calculate.execute(query(older),ctx([first])))
+   .toMatchObject({kind:"estimate",missing:["incompleteCalculationInputs"],result:{unit:"cents",valueCents:12345}});
+  expect(await calculateTools.calculate.execute(query(older),ctx([first,last])))
+   .toMatchObject({result:{unit:"cents",valueCents:12345}});
  });
  it("selects the exact earlier receipt rather than the latest invocation of the same tool",async()=>{
   const actual=await calculateTools.calculate.execute(query(older),ctx(row));
@@ -176,7 +232,7 @@ describe("U3 receipt-bound exact research calculation",()=>{
   const refused=await calculateTools.calculate.execute(query(older),ctx([withoutUnit]));
   expect(refused.refused).toBe("researchUnitUnverified");
  });
- it("refuses ambiguous, fabricated, missing, fractional-cent and untyped SQL evidence",async()=>{
+ it("refuses ambiguous, fabricated, missing and untyped SQL evidence",async()=>{
   expect((await calculateTools.calculate.execute(query(null),ctx(row))).refused)
    .toBe("researchReceiptRequired");
   expect((await calculateTools.calculate.execute(
@@ -184,10 +240,40 @@ describe("U3 receipt-bound exact research calculation",()=>{
    .toBe("receiptNotFound");
   expect((await calculateTools.calculate.execute(query(older,"query_data","rows.0.unknown"),ctx(row))).refused)
    .toBe("pathIsNotANumber");
-  expect((await calculateTools.calculate.execute(query(older),ctx([
-   sql(older,"12345.25")]))).refused).toBe("researchUnitUnverified");
-  expect((await calculateTools.calculate.execute(query(older),ctx([{
+  const fractional=await calculateTools.calculate.execute({
+   ...query(older),
+   inputs:[...query(older).inputs,said("n",4,"count")],
+   steps:[{id:"total",label:"Four average orders",op:"multiply",args:["amount","n"]}]
+  },withOwner(ctx([sql(older,"12345.25")]),"For 4 orders"));
+  expect(fractional).toMatchObject({result:{unit:"cents",valueCents:49381}});
+  expect(await calculateTools.calculate.execute(query(older),ctx([{
    ...sql(older,"12345"),result:{...sql(older,"12345").result,missing:["result_truncated"]}
-  }]))).refused).toBe("incompleteResearchEvidence");
+  }]))).toMatchObject({kind:"estimate",missing:["incompleteCalculationInputs"],result:{unit:"cents",valueCents:12345}});
+ });
+});
+
+describe("exact calculator continuation",()=>{
+ it("reuses earlier unrounded results and refuses fabricated or out-of-turn receipts",async()=>{
+  const first=await calculateTools.calculate.execute({purpose:"Split money",screen_number:"none",
+   inputs:[input("a","query_data","rows.0.net_sales_cents"),said("b",3,"count")],
+   steps:[{id:"split",label:"Split",op:"divide",args:["a","b"]}]},
+   withOwner(ctx(turn),"Split between 3 people"));
+  expect(first.result).toEqual({unit:"cents",valueCents:33333});
+  const id=(first.evidence as {receipt_id:string}).receipt_id;
+  const next={purpose:"Recover original total",screen_number:"none",
+   inputs:[{...input("a","calculate","result"),receipt_id:id},said("b",3,"count")],
+   steps:[{id:"whole",label:"Whole",op:"multiply",args:["a","b"]}]};
+  const second=await calculateTools.calculate.execute(next,
+   withOwner(ctx([...turn,{name:"calculate",result:first}]),"Multiply by 3"));
+  expect(second).toMatchObject({kind:"estimate",result:{unit:"cents",valueCents:100000}});
+  expect((await calculateTools.calculate.execute(next,withOwner(ctx(turn),"Multiply by 3"))).refused).toBe("receiptNotFound");
+  expect((await calculateTools.calculate.execute(next,withOwner(ctx([{name:"calculate",result:{...first}}]),"Multiply by 3"))).refused).toBe("calculationReceiptUnavailable");
+ });
+ it("accepts a complete cost structure with more than twelve inputs without splitting the model call",async()=>{
+  const inputs=Array.from({length:20},(_,i)=>({...input("cost"+i,null,null),assumption:{value:i+1,unit:"cents",basis:"Hypothetical scenario line "+i}}));
+  const result=await calculateTools.calculate.execute({purpose:"Alternative cost structure",screen_number:"profit",inputs,
+   steps:[{id:"total",label:"Total",op:"sum",args:inputs.map(x=>x.name)}]},ctx([]));
+  expect(result).toMatchObject({kind:"estimate",result:{unit:"cents",valueCents:210}});
+  for(const line of result.explain as unknown[])expect(explainLineSchema.safeParse(line).success).toBe(true);
  });
 });

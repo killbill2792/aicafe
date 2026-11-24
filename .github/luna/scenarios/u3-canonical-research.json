@@ -6,7 +6,6 @@
   "proof": "u3-canonical-research-proof.json",
   "scope": "u3-canonical-research-scope.json",
   "expectedTools": [
-    "describe_data",
     "query_data"
   ],
   "assertions": [
@@ -83,6 +82,102 @@
         },
         "thread_id": {
           "scope": "threadId"
+        }
+      },
+      "minCount": 0,
+      "maxCount": 0
+    },
+    {
+      "name": "historical-owner-answer",
+      "kind": "owner",
+      "table": "public.ai_messages",
+      "where": {
+        "business_id": {
+          "scope": "businessId"
+        },
+        "thread_id": {
+          "scope": "threadId"
+        },
+        "id": {
+          "scope": "historicalReplyId"
+        },
+        "role": {
+          "eq": "supervisor"
+        }
+      },
+      "minCount": 1,
+      "maxCount": 1
+    },
+    {
+      "name": "historical-employee",
+      "kind": "source",
+      "table": "public.employees",
+      "where": {
+        "business_id": {
+          "scope": "businessId"
+        },
+        "id": {
+          "scope": "historicalEmployeeId"
+        }
+      },
+      "minCount": 1,
+      "maxCount": 1
+    },
+    {
+      "name": "historical-order",
+      "kind": "source",
+      "table": "public.orders",
+      "where": {
+        "business_id": {
+          "scope": "businessId"
+        },
+        "id": {
+          "scope": "historicalOrderId"
+        }
+      },
+      "minCount": 1,
+      "maxCount": 1
+    },
+    {
+      "name": "historical-timecard",
+      "kind": "source",
+      "table": "public.timecards",
+      "where": {
+        "business_id": {
+          "scope": "businessId"
+        },
+        "id": {
+          "scope": "historicalTimecardId"
+        }
+      },
+      "minCount": 1,
+      "maxCount": 1
+    },
+    {
+      "name": "historical-open-timecard",
+      "kind": "source",
+      "table": "public.timecards",
+      "where": {
+        "business_id": {
+          "scope": "businessId"
+        },
+        "id": {
+          "scope": "historicalOpenTimecardId"
+        }
+      },
+      "minCount": 1,
+      "maxCount": 1
+    },
+    {
+      "name": "foreign-historical-employee",
+      "kind": "isolation",
+      "table": "public.employees",
+      "where": {
+        "business_id": {
+          "scope": "otherCafeId"
+        },
+        "id": {
+          "scope": "historicalEmployeeId"
         }
       },
       "minCount": 0,

@@ -102,10 +102,10 @@ async function measure(){
   if(!uuid(attachment))fail("attachment_missing");
   const good=await turn(first.page,thread,
     "Read only: summarize the attached supplier quote. Report the exact product, quantity and reference code. "+
-    "Compare against the canonical cafe menu and existing supplier purchase orders; use get_menu_items and get_supplier_purchase_orders. "+
+    "Compare against the canonical cafe menu and existing supplier purchase orders; research both saved sources through the registered tools. "+
     "Do not send emails, change prices, create purchases, record stock or do any other action.",[attachment]);
   if(good.error||good.done?.endReason!=="complete"||
-     !["get_menu_items","get_supplier_purchase_orders"].every(n=>good.names.includes(n)))
+     !["query_data","get_supplier_purchase_orders"].every(n=>good.names.includes(n)))
    fail("registered_source_reads_missing");
   const reply=JSON.stringify(good.done?.reply??{});
   if(!reply.includes(canary)||!reply.includes("47")||!/oat milk/i.test(reply))

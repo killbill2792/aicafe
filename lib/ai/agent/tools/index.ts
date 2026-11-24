@@ -1,8 +1,11 @@
+import {authorizedU3Detail} from "./u3SqlResearch.server";
 import { presentationTools,presentResponse } from "./presentation";
 import { laborKnown } from "@/lib/calc";
 import { z } from "zod";
+import {randomUUID} from "node:crypto";
 import {askOwnerTools} from "./askOwner";
-import {dataQueryTools,type DataQueryContext} from "./dataQuery";
+import {dataQueryTools,dataQuerySchema,describeSchema,type DataQueryContext} from "./dataQuery";
+import {recordResearchAttempt} from "../researchRecovery";
 import {gmailTools} from "./gmail";
 import {maintenanceTools} from "./maintenance";
 import {staffQuestionTools} from "./staffQuestion";
@@ -33,12 +36,14 @@ import type {SupplierOrderStatus} from "@/lib/data/supplierPurchasing.server";
 import {priceExperimentTools} from "./priceExperiment";
 import {priceMonitorTools} from "./priceMonitor";
 import type {OwnerToastObservation} from "@/lib/ai/supervisor/loop/reads.server";
-import {ownerInputsSchema,ownerAmountForPeriod,ownerConflict} from "./ownerInputs";
+import {ownerInputsSchema,ownerMetricPeriodSchema,ownerAmountForPeriod,ownerConflict} from "./ownerInputs";
+import {injectSavedOwnerInputs} from "@/lib/ownerFacts/inject";
 import {moneyChoiceCandidates,chosenMoneySource,replayedMoneyChoice} from "../resolveMoney";
 import {staffProposalTools} from "./staffProposals";
 import {memoryTools,type CafeMemoryPort} from "./memory";
 import {scenarioTools} from "./scenarios";
 import {calculateTools} from "./calculate";
+import {readRetainedResearch,retainedResearchCatalog} from "../retainedResearch";
 import {eventsTools} from "./events";
 import {savedEventsTools} from "./getEvents";
 import {eventPlanTools,type EventPlanPort} from "./eventPlan";
@@ -75,6 +80,10 @@ export type AgentToolContext = {
   currency?:string|null;
   /** Authenticated owner-scoped reader. Never populated from model arguments. */
   canonicalData?:()=>Promise<DataQueryContext>;
+  /** Server-measured next-request capacity, never model supplied. */
+  researchPageBytes?:()=>number;
+  /** Only the currently fenced owner-run loop installs this in-memory port. */
+  retainedResearch?:()=>readonly import("@/lib/ai/supervisor/runs/contracts").RestoredResearchRead[];
   /** Owner-verified staff communication evidence for off-turn investigations,
    * not a worker chat or model-supplied employee selector. */
   staffMessages?:{read:()=>ReturnType<
@@ -196,6 +205,7 @@ export type AgentToolContext = {
     ownerSavings:typeof import("@/lib/actions/oliviaPlanning").previewOliviaOwnerSavings;
   };
   ownerFacts?:readonly import("@/lib/ownerFacts/inject").SavedFact[];
+  savedOwnerFacts?:readonly import("@/lib/ownerFacts/inject").SavedFact[];
   menuPriceEvidence?:(items:ReadonlyArray<{id:string;priceCents:number}>)=>Promise<Record<string,import("@/lib/data/menuPriceEvidence.server").MenuPriceEvidence>>;
   readPriceMonitors?:()=>Promise<Array<OwnerToastObservation|{proposalId:string;threadId:string;productName:string;status:string;startDate:string|null;durationDays:number|null;day:number|null;oldPriceCents:number|null;newPriceCents:number|null;reportStatus:string|null}>>;
   proposals?: {proposePriceChange(input:{productId:string;newPriceCents:number}):Promise<{proposalId:string;revision:number;productName:string;oldPriceCents:number;newPriceCents:number}>;
@@ -203,7 +213,7 @@ export type AgentToolContext = {
     proposeStaff?(input:{name:import("./staffProposals").StaffProposalName;input:unknown}):Promise<{proposalId:string;revision:number;capabilityId:string}>;
     proposePurchases?(input:z.infer<typeof purchaseToolInput>):Promise<Array<{proposalId?:string;revision?:number;name:string;saved?:boolean;error?:string}>>;};
 };
-const periodSchema = z.strictObject({ period: z.union([z.string().min(1).max(32),z.strictObject({preset:z.enum(["today","week","month","last_week","last_month","ytd"])}),z.strictObject({from:z.iso.date(),to:z.iso.date()})]),ownerInputs:ownerInputsSchema.nullable().optional() });
+const periodSchema = z.strictObject({period:ownerMetricPeriodSchema,ownerInputs:ownerInputsSchema.nullable().optional()});
 // Nullable values are semantically optional while retaining the all-required OpenAI strict schema.
 const menuSchema = z.strictObject({ query: z.string().max(120).nullable(), limit: z.number().int().min(1).max(25).nullable() });
 const posPeriodSchema=z.strictObject({from:z.iso.date(),to:z.iso.date()});
@@ -219,7 +229,8 @@ export type AgentToolName = keyof typeof schemas;
  * strict schema accepts a target must declare the corresponding field here;
  * creation inputs have explicit exemptions below. */
 export const resolverCoverage:Partial<Record<AgentToolName,readonly string[]>>={
-  get_profit:["period"],get_sales:["period"],get_break_even:["period"],get_menu_items:["query"],
+  query_data:["official_metric.period","official_metric.entity_id","official_metric.entity_name"],
+   get_profit:["period"],get_sales:["period"],get_break_even:["period"],get_menu_items:["query"],
   get_labor:["period"],get_team:["name"],get_shift_cost:["employee_id"],
   get_expenses:["period","category"],get_cost_summary:["period"],
   get_item_sales:["period","query"],get_price_recommendation:["itemId"],
@@ -254,7 +265,7 @@ export function agentForTool(name:string):"alex"|"olivia"|"maya"|"leo"{return na
 const descriptions: Record<string, string> = {
   get_profit: "Read profit for today, trailing seven days or the calendar month. Report missing inputs.",
   get_sales: "Read covered daily sales in a current calendar period. Closed days only; for today, a todaySoFar provisional reading is attached when today is not imported. If stale, say last updated HH:MM rather than so far today.",
-  get_menu_items: "Search active menu items by optional query, with optional limit up to 25. Send null when omitted.",
+  get_menu_items: "Optional current catalog identity resolver and shared price-evidence preview. Search active items by name; choose only verified identities. For complete arbitrary catalog, historical price or sales research use query_data. Send null when omitted.",
 };
 /** OpenAI strict mode needs every property listed in `required` at every nesting level;
  * one gap rejects the whole request (HTTP 400), so the chat fails on every question.
@@ -310,10 +321,17 @@ const baseToolDefinitions = (Object.keys(schemas) as AgentToolName[]).map(name =
     strict: true as const, parameters:{...requireEveryProperty(parameters) as typeof parameters,required} };
 });
 /** Function names stay plain strings: memory and capability gating add or filter by name. */
-// Routine management is a verified-owner-only additional function, rather
-// than a global public tool. Keep the existing baseline tool contract stable.
+// Retired model-facing reports retain internal shared readers and legacy
+// receipt compatibility. Their evidence is available via common research:
+// profit/break_even use the optional official shared definition; opening_hours
+// and employee_sales_rollup are normal discoverable SQL sources.
+export const retiredResearchTools:ReadonlySet<AgentToolName>=new Set([
+  "get_profit","get_break_even","get_business_hours","get_employee_sales","get_expenses","get_bills","get_sales","get_peak_hours","get_labor","get_staff","get_cost_summary","get_ingredient_costs","get_payroll_facts","get_item_sales","get_product_costs","get_usage_variance","get_goal_status","get_labor_rules","get_nearby_events",
+  "get_menu_items","get_inventory","get_schedule","get_team","get_week_schedule","get_cashflow_evidence","get_events"
+]);
+// Routine management remains a verified-owner-only additional function.
 export const agentToolDefinitions:Array<Omit<(typeof baseToolDefinitions)[number],"name">&{name:string}>=
-  baseToolDefinitions.filter(tool=>tool.name!=="get_investigation_source"&&tool.name!=="manage_routine"&&!["search_gmail","list_gmail_labels","read_gmail","read_gmail_thread","read_gmail_attachment","propose_gmail_action"].includes(tool.name));
+  baseToolDefinitions.filter(tool=>tool.name!=="get_investigation_source"&&tool.name!=="manage_routine"&&!retiredResearchTools.has(tool.name)&&!["search_gmail","list_gmail_labels","read_gmail","read_gmail_thread","read_gmail_attachment","propose_gmail_action"].includes(tool.name));
 /** Offered only for a verified connected owner. Default cafés keep their existing tools. */
 /** Offered only when a server-claimed autonomous run explicitly requests it. */
 export const investigationToolDefinition=baseToolDefinitions.find(t=>t.name==="get_investigation_source")!;
@@ -322,6 +340,14 @@ export const agentLabelsPrompt = "Field labels by language (use matching languag
   JSON.stringify({ en: en.AgentFields, es: es.AgentFields, ar: ar.AgentFields });
 
 export const requestedPeriod=calcRequestedPeriod;
+export function researchPeriodChoice(input:Record<string,unknown>):unknown{
+ const metric=input.official_metric;
+ if(!metric||typeof metric!=="object"||Array.isArray(metric))return null;
+ const m=metric as Record<string,unknown>;
+ if(!["profit","expenses","sales","hourly_sales","labor","business_costs","payroll","item_sales","usage_variance"].includes(String(m.id)))return null;
+ return m.period??m.profit_period??(typeof input.date_from==="string"&&typeof input.date_to==="string"?
+  {from:input.date_from,to:input.date_to}:null);
+}
 
 function absent(source: string, period: CafeStatePeriod | null, missing: string[]): AgentToolResult {
   return { source, period, agentId:source==="profitability"?"leo":"alex",
@@ -367,16 +393,154 @@ export async function executeAgentTool(name: string, raw: unknown, ctx: AgentToo
   if(name==="search_maintenance_vendor")return maintenanceTools.search_maintenance_vendor.execute(raw,ctx);
   if(name==="propose_maintenance_vendor_request")return maintenanceTools.propose_maintenance_vendor_request.execute(raw,ctx);
   if(name==="describe_data"){
-    // Field names for one Toast record type need the café-scoped reader.
-    const scoped=raw&&typeof raw==="object"&&typeof (raw as {record_type?:unknown}).record_type==="string";
-    if(!scoped||!ctx.canonicalData)return dataQueryTools.describe_data.execute(raw);
-    try{return dataQueryTools.describe_data.execute(raw,await ctx.canonicalData());}
-    catch{return {source:"toast_fields",period:null,missing:["source_read_failed"]};}
+    // Research relation discovery needs the SAME authenticated scope as
+    // execution. Passing scope only for Toast record_type made ordinary SQL
+    // discovery unavailable to the real model even when U3 was configured.
+    const selector=raw&&typeof raw==="object"?raw as Record<string,unknown>:{};
+    if(selector.source==="retained"){
+      const parsed=describeSchema.safeParse({record_type:null,view:null,relation:null,source:null,
+        field_prefix:null,search:null,page_offset:null,page_size:null,...selector});
+      if(!parsed.success||!ctx.retainedResearch||[parsed.data.record_type,parsed.data.view,
+        parsed.data.relation,parsed.data.field_prefix,parsed.data.search].some(v=>v!==null))
+        return {source:"retained_research_catalog",period:null,missing:["invalid_retained_receipt"],error:"invalid_retained_receipt"};
+      return retainedResearchCatalog(ctx.retainedResearch(),parsed.data.page_offset??0,
+        parsed.data.page_size,ctx.researchPageBytes?.()??0);
+    }
+    const toast=typeof selector.record_type==="string";
+    const canonicalOnly=!toast&&typeof selector.relation!=="string"&&
+      (selector.source==="canonical"||(typeof selector.view==="string"&&selector.source!=="research"));
+    if(canonicalOnly||!ctx.canonicalData)return dataQueryTools.describe_data.execute(raw);
+    try{return await dataQueryTools.describe_data.execute(raw,{...await ctx.canonicalData(),resultBudgetBytes:ctx.researchPageBytes?.()});}
+    catch{
+      const source=toast?"toast_fields":"u3_semantic_catalog";
+      return {source,period:null,missing:["source_read_failed"],error:"source_read_failed"};
+    }
   }
   if(name==="query_data"){
     if(!ctx.canonicalData)return {source:"canonical_data",period:null,missing:["canonical_reader_unavailable"],rows:[],empty:true};
-    try{return dataQueryTools.query_data.execute(raw,await ctx.canonicalData());}
-    catch{return {source:"canonical_data",period:null,missing:["source_read_failed"],rows:[],empty:true};}
+    try{
+      const sourceScope=await ctx.canonicalData();
+      const scope={...sourceScope,aggregateOnly:sourceScope.aggregateOnly===true||sourceScope.mode==="routine"||sourceScope.mode==="investigation"};
+      const selector=raw&&typeof raw==="object"?raw as Record<string,unknown>:{};
+      if(selector.restore_receipt!=null||selector.restore_path!=null||selector.restore_offset!=null){
+        const parsed=dataQuerySchema.safeParse({view:null,sql:null,parameters:null,cursor:null,
+          columns:null,filters:null,group_by:null,metrics:null,date_from:null,date_to:null,order_by:null,limit:null,...selector});
+        if(!parsed.success||!parsed.data.restore_receipt||!ctx.retainedResearch||
+          [parsed.data.official_metric,parsed.data.view,parsed.data.sql,parsed.data.parameters,
+           parsed.data.cursor,parsed.data.columns,parsed.data.filters,parsed.data.group_by,
+           parsed.data.metrics,parsed.data.date_from,parsed.data.date_to,parsed.data.order_by,
+           parsed.data.limit,parsed.data.retry_of].some(v=>v!=null))
+          return {source:"retained_research_receipt",period:null,missing:["invalid_retained_receipt"],error:"invalid_retained_receipt"};
+        return readRetainedResearch(ctx.retainedResearch(),parsed.data.restore_receipt,
+          parsed.data.restore_path??"result",parsed.data.restore_offset??0,ctx.researchPageBytes?.()??0);
+      }
+      if(selector.official_metric!=null){
+        const invalid=(code:string):AgentToolResult=>({source:"official_metric",period:null,missing:[code],error:code,rows:[],empty:true});
+        if(!scope.db||!z.uuid().safeParse(scope.businessId).success)return invalid("invalid_scope");
+        const parsed=dataQuerySchema.safeParse({view:null,sql:null,parameters:null,cursor:null,
+          columns:null,filters:null,group_by:null,metrics:null,date_from:null,date_to:null,
+          order_by:null,limit:null,...selector});
+        if(!parsed.success)return invalid("invalid_query");
+        const p=parsed.data;
+        if(!p.official_metric||[p.view,p.sql,p.parameters,p.cursor??null,p.columns,p.filters,
+          p.group_by,p.metrics,p.order_by,p.limit].some(v=>v!==null))return invalid("invalid_query");
+        const metric=p.official_metric;
+        // Exact shared calculations use the same independently verified
+        // responsibility as relational SQL; legacy view compatibility stays
+        // aggregate-protected off-turn.
+        const protectedMetric=scope.aggregateOnly&&["cashflow_stress","payroll","goal_score","labor_rules","usage_variance","current_staff","labor"].includes(metric.id)&&
+          !await authorizedU3Detail({...scope,aggregateOnly:scope.aggregateOnly});
+        if(protectedMetric&&(metric.id==="cashflow_stress"||metric.id==="payroll"||metric.id==="goal_score"||metric.id==="labor_rules"||metric.id==="usage_variance"&&metric.dimension==="staff"))return invalid("owner_research_required");
+         if(metric.entity_id!=null&&!["product_cost","goal_score"].includes(metric.id)||
+           metric.entity_name!=null&&!["item_sales","usage_variance"].includes(metric.id)||
+           metric.dimension!=null&&metric.id!=="usage_variance")return invalid("invalid_query");
+        if(metric.horizon_days!=null&&metric.id!=="cashflow_stress")return invalid("invalid_query");
+        let result:AgentToolResult;
+        if(metric.id==="planned_week_labor"||metric.id==="cashflow_stress"){
+          if(metric.period_mode!==null||metric.profit_period!=null||metric.profit_owner_inputs!=null||metric.break_even_overrides!=null||metric.period!=null||metric.entity_id!=null||metric.entity_name!=null||metric.dimension!=null)return invalid("invalid_query");
+          if(metric.id==="planned_week_labor"){
+            if(p.date_to!==null)return invalid("invalid_date_range");
+            const calculation=await scheduleReadTools.get_week_schedule.execute({week_start:p.date_from},ctx);
+            const {shifts:_shifts,...totals}=calculation;void _shifts;
+            result=totals;
+          }else{
+            if(p.date_from!==null||p.date_to!==null)return invalid("invalid_date_range");
+            // Exact existing stress calculation; documentary records are independently queryable.
+            result=await moneyTools.get_cashflow_evidence.execute({horizonDays:metric.horizon_days??30},ctx);
+          }
+        }else if(metric.id==="profit"){
+          if(metric.period_mode!==null||metric.break_even_overrides!=null||metric.period!=null&&metric.profit_period!=null)
+            return invalid("invalid_query");
+          const period=metric.period??metric.profit_period??(p.date_from&&p.date_to&&p.date_from<=p.date_to?
+            {from:p.date_from,to:p.date_to}:null);
+          if(!period||(metric.profit_period!=null||metric.period!=null)&&(p.date_from!==null||p.date_to!==null))
+            return invalid("invalid_date_range");
+          const supplied={period,ownerInputs:metric.profit_owner_inputs??null};
+          const saved=ctx.savedOwnerFacts??ctx.ownerFacts??[];
+          result=await executeAgentTool("get_profit",saved.length?injectSavedOwnerInputs(supplied,saved,true):supplied,ctx);
+        }else if(metric.id!=="break_even"){
+          if(metric.period_mode!==null||metric.profit_period!=null||metric.profit_owner_inputs!=null||metric.break_even_overrides!=null)
+            return invalid("invalid_query");
+          if(metric.id==="product_cost"||metric.id==="goal_score"){
+             if(metric.period!=null||p.date_from!==null||p.date_to!==null)return invalid("invalid_date_range");
+             if(metric.id==="product_cost"&&!metric.entity_id)return invalid("invalid_query");
+             result=metric.id==="product_cost"?await suppliesTools.get_product_costs.execute({itemId:metric.entity_id},ctx):await goalTools.get_goal_status.execute({goal_id:metric.entity_id??null},ctx);
+           }else if(metric.id==="recurring_bills"||metric.id==="current_staff"||metric.id==="labor_rules"){
+            if(metric.period!=null||p.date_from!==null||p.date_to!==null)return invalid("invalid_date_range");
+            result=metric.id==="recurring_bills"?await moneyTools.get_bills.execute({},ctx):metric.id==="labor_rules"?await scheduleReadTools.get_labor_rules.execute({},ctx):await staffTools.get_staff.execute({},ctx);
+          }else{
+            const period=metric.period??(p.date_from&&p.date_to&&p.date_from<=p.date_to?
+              {from:p.date_from,to:p.date_to}:null);
+            if(!period||metric.period!=null&&(p.date_from!==null||p.date_to!==null))return invalid("invalid_date_range");
+            if(metric.id==="expenses")result=await moneyTools.get_expenses.execute({period,category:null},ctx);
+            else if(metric.id==="business_costs")result=await moneyTools.get_cost_summary.execute({period},ctx);
+            else if(metric.id==="sales")result=await executeAgentTool("get_sales",{period,ownerInputs:null},ctx);
+            else if(metric.id==="labor")result=await staffTools.get_labor.execute({period},ctx);
+             else if(metric.id==="item_sales")result=await salesTools.get_item_sales.execute({period,query:metric.entity_name??null},ctx);
+             else if(metric.id==="usage_variance"){
+               const checked=resolveOwnerPeriod(period,{asOf:ctx.asOf,timezone:ctx.timezone},ctx.resolveState);
+               if(checked.status!=="resolved")return periodChoicePayload("usage_variance",checked);
+               result=await suppliesTools.get_usage_variance.execute({from:checked.value.from,to:checked.value.to,ingredient:metric.entity_name??null,group_by:metric.dimension??null},ctx);
+             }
+            else{
+              const checked=resolveOwnerPeriod(period,{asOf:ctx.asOf,timezone:ctx.timezone},ctx.resolveState);
+              if(checked.status!=="resolved")return periodChoicePayload(metric.id==="payroll"?"get_payroll_facts":"get_peak_hours",checked);
+              result=await executeAgentTool(metric.id==="payroll"?"get_payroll_facts":"get_peak_hours",{from:checked.value.from,to:checked.value.to},ctx);
+            }
+          }
+        }else{
+          if(metric.period!=null||metric.profit_period!=null||metric.profit_owner_inputs!=null)return invalid("invalid_query");
+          if(p.date_from!==null||p.date_to!==null)return invalid("invalid_date_range");
+          const overrides=metric.break_even_overrides??{};
+          const supplied={...overrides,period:metric.period_mode??"month"};
+          const saved=ctx.savedOwnerFacts??ctx.ownerFacts??[];
+          const inputs=saved.length?injectSavedOwnerInputs(supplied,saved,true):supplied;
+          result=await moneyTools.get_break_even.execute(inputs,ctx);
+        }
+        // Preserve every completeness, period, estimate and provenance field
+        // from the existing screen calculation. Do not upgrade partial values
+        // or label independent model arithmetic as an official metric.
+        // Unattended SQL access is aggregate-only; do not bypass that
+        // boundary through an official metric's legacy reader.
+        if(protectedMetric&&metric.id==="current_staff"){
+          const {people:_people,...aggregate}=result;void _people;result=aggregate;
+        }
+        if(protectedMetric&&metric.id==="labor"){
+          const {attendance:_attendance,missingWageShifts:_shifts,pendingPosStaffReviews:_reviews,...aggregate}=result;
+          void _attendance;void _shifts;void _reviews;result=aggregate;
+        }
+        return {...result,metric_id:metric.id,metric_basis:"official_shared_definition",
+          evidence:{...(result.evidence&&typeof result.evidence==="object"&&!Array.isArray(result.evidence)?result.evidence:{}),
+           receipt_id:randomUUID(),authority:"official_shared_definition"}};
+      }
+      const result=await dataQueryTools.query_data.execute(raw,{...scope,resultBudgetBytes:ctx.researchPageBytes?.()});
+      return typeof selector.sql==="string"?recordResearchAttempt(result,selector.retry_of,ctx.turnResults?.()??[]):result;
+    }
+    catch(error){
+      const selector=raw&&typeof raw==="object"?raw as Record<string,unknown>:{};
+      if(selector.official_metric!=null)throw error;
+      return {source:"canonical_data",period:null,missing:["source_read_failed"],rows:[],empty:true};
+    }
   }
   if(name==="draft_week_schedule")return draftScheduleTools.draft_week_schedule.execute(raw,ctx);
   if(name==="simulate_staff_absence")return draftScheduleTools.simulate_staff_absence.execute(raw,ctx);

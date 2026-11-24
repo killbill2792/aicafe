@@ -97,7 +97,7 @@ async function ownerTurn(page,thread,text,phase){
    calls:Number.isSafeInteger(calls)&&calls>=0?calls:null,
    providerFailures,
    tools:result.names.filter(n=>[
-    "get_cashflow_evidence","get_bills","get_expenses","calculate"].includes(n))
+    "query_data","calculate"].includes(n))
   }));
   fail("real_supervisor_"+code);
  }
@@ -139,7 +139,7 @@ async function main(){
   const beforeExpenses=await count("select count(*) n from public.expenses where business_id=$1",[scope.businessId]);
   const turn=async(prompt,phase)=>{
    const result=await ownerTurn(connection.page,thread,prompt,phase);
-   if(!result.names.includes("get_cashflow_evidence")||!result.names.includes("get_bills"))fail("missing_real_financial_reads");
+   if(!result.names.includes("query_data"))fail("missing_real_financial_reads");
    const msg=(await query(db,"select id from public.ai_messages where business_id=$1 and thread_id=$2 and client_message_id=$3 and role='owner'",[scope.businessId,thread,result.clientMessageId]))[0];
    if(!msg)fail("owner_message_not_persisted");
    const usage=await readPersistedModelUsage(db,scope.businessId,msg.id);

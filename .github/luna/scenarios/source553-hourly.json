@@ -6,7 +6,6 @@
   "proof": "source553-hourly-proof.json",
   "scope": "source553-hourly-scope.json",
   "expectedTools": [
-    "get_peak_hours",
     "query_data"
   ],
   "assertions": [
@@ -40,7 +39,7 @@
           "scope": "businessDate"
         },
         "net_sales_cents": {
-          "scope": "sourceCents"
+          "scope": "hourlyCents"
         },
         "status": {
           "eq": "provisional"

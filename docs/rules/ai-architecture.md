@@ -4,8 +4,9 @@ One conversational agent with ONE streaming tool-calling loop per owner turn (Op
 
 - **OpenAI is the brain.** The model decides which tools to call, what to ask and how to answer.
   Code does not pre-decide intent with regexes or keyword routers.
-- **Tools:** typed, strict JSON Schema (`strict:true`), zod input, compact results (≤ ~1.5k tokens:
-  totals, top rows, ids, units, source + period, `missing[]`). One tool per business capability.
+- **Tools:** typed, strict JSON Schema (`strict:true`), zod input, compact operational previews (totals, ids, units, source + period, `missing[]`).
+  Research results use actual available context bytes with explicit complete traversal;
+  no fixed token or row ceiling on business evidence. One tool per distinct business capability.
   One read-only data-query interface (`describe_data`/`query_data`) and one general
   `calculate` tool remain authoritative. For legacy execution, use only reviewed
   canonical views. The U3 approved target permits model-authored analytical SELECT
@@ -67,9 +68,50 @@ remain useful inputs, never the intellectual decision-maker.
   Keep original canonical metric functions and existing operational source lineage.
   Approval to develop and merge U3 does not itself enable a production SQL endpoint,
   authorize paid model runs, or bypass production migration checks.
-- Prefer verified provider-native deferred tool discovery and model-selected
+- **Research coverage is objective-selected, not defined by a 31-day date
+  interval, 100 lifetime rows, 6 KB lifetime response or an 80/501
+  timecard sample.** SQL is interpreted by the existing PostgreSQL AST and
+  governed source catalog; per-page physical execution/context transport is
+  allowed only when it returns explicit completeness, a reauthorized and
+  tamper-resistant continuation cursor, source period, original SQL/parameters
+  and appropriate missing/error states. A complete answer requires exhausting
+  relevant pages or asking PostgreSQL to perform the selected aggregate; a
+  partial page, failure or snapshot change is never certified as a total.
+  A continuation either retrieves the same authorized immutable observation
+  or proves exact full-result equality in a fresh read-only transaction; it
+  is not a fabricated cross-page MVCC view. A bounded encrypted transport
+  cache is optional and may not impose a total result ceiling. Owner questions
+  permit authorized employee detail; unattended research permits reviewed
+  nonpersonal detail while preserving private individual-level protection.
+  Prompt packing, compact evidence and final synthesis must preserve
+  incomplete/missing status and traceable numeric authority.
+- SQL discovery is a schema operation, not a mandatory question workflow. Return the full admitted relation inventory and matching relation fields by default; pagination is optional when the catalog fits; otherwise return explicit continuation. Return finite safe SQLSTATE/rejection diagnostics so the model can repair a query, never raw database messages or credentials. A PostgreSQL estimated plan cost is not a physical resource budget: no unconditional EXPLAIN-before-SELECT or estimated-cost rejection. Retain actual DB timeout, bounded connections, read-only transactions, work memory, scope and transport protection pending measured resource evidence. Permit reviewed pure PostgreSQL transformations of admitted fields (including local-time and window analysis) without introducing question-specific code.
+- Ordinary staff/labor tool details likewise use source-counted,
+  owner-scoped pagination of recorded punches. The model chooses relevant
+  period and page continuation; no fixed first-80 or first-500 evidence sample
+  is a completeness claim. A UI preview may be brief while authenticated
+  research can traverse all pages. A missing punch is not proof that a break
+  was missed; an unverified paid hour or source fault is never a zero.
+- The existing source-revision/incident key governs which source and date
+  materially change the waiting investigation. Technical data gaps/expected
+  immaturity are engineering readiness, not independent owner action or a
+  paid model task. Concrete owner action is requested once, then awaits a
+  real owner response or relevant source change; unrelated data does not
+  reopen it. Normal alerts/reminders/approvals live in the owner attention
+  surface, not duplicate Supervisor chat turns; actual findings and owner
+  questions remain conversational. Historical audit entries are preserved.
+
+- Make describe_data, query_data and calculate immediately available whenever authorized. Prefer verified provider-native deferred tool discovery for other capabilities and model-selected
   context over full schema repetition. No mandatory custom discover-before-read
   gate or keyword routing. Preserve strict schemas, runtime validation and authorization.
+- Separate hard *physical* resource/cost/concurrency/time safeguards from
+  arbitrary *business evidence* ceilings. A worker's bounded invocation is
+  not an abandoned owner objective; use existing durable lease/checkpoint
+  continuation for meaningful work, account for actual failed attempts and
+  cached/reasoning tokens, and stop nonproductive retries. A single fixed
+  invocation allowance cannot be represented as a limit on the owner's
+  authorized historical scope. Safety admission, privacy and approved effect
+  checks remain binding on every continuation.
 - Resource policy must permit objective-appropriate thinking and final synthesis.
   A simple answer should be quick; a detailed second-store feasibility study may
   need more research, longer reasoning and a substantial sourced answer.

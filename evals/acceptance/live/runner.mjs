@@ -11,6 +11,20 @@ import {assertLocalLiveEnvironment,assertLiveManifest} from "./preflight.mjs";
 
 const error=code=>{throw new Error("live_capture:"+code);};
 const slug=s=>String(s).toLowerCase().replace(/[^a-z0-9]+/g,"_").replace(/^_|_$/g,"");
+/** Count original SQL observations that ran and were completely read in this
+ * isolated turn. A later encrypted snapshot page can finish the same result. */
+export function completedSqlReceiptCount(log){
+ if(typeof log!=="string")return 0;
+ const clean=log.replace(/\x1b\[[0-9;]*m/g,"");
+ const id=String.raw`([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})`;
+ const pattern=new RegExp(String.raw`^\s*u3_sql_research_receipt\s*\{\s*receipt_id:\s*['"]${id}['"],\s*duration_ms:\s*\d+,\s*relation_count:\s*[1-9]\d*,\s*page_complete:\s*(true|false)(?:,\s*page_retrieval:\s*['"](executed_query|retained_result)['"])?(?:,\s*snapshot_id:\s*['"]${id}['"])?\s*\}`,"gm");
+ const executed=new Set(),completed=new Set();
+ for(const [,receipt,complete,retrieval,snapshot] of clean.matchAll(pattern)){
+  if(retrieval!=="retained_result")executed.add(snapshot??receipt);
+  if(complete==="true")completed.add(snapshot??receipt);
+ }
+ return [...completed].filter(snapshot=>executed.has(snapshot)).length;
+}
 /** A logged fallback is not evidence of the production Luna model. */
 export function requireObservedProductionModel(observed,expected){
  if(typeof expected!=="string"||!expected||observed!==expected)

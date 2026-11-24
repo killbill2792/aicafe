@@ -371,8 +371,10 @@ describe("U4 migrated model-objective and autonomous Watch SQL contract",()=>{
         "and run_id=$3",[business,routineId,first.run_id]);
       expect(observed.rows).toHaveLength(1);
       expect(observed.rows[0].u4_checkpoint).toMatchObject({
-        lastStage:"tool_complete",
+        lastStage:"tool_complete",research_count:1,
       });
+      expect(await call(worker,"u4_load_research_reads",[business,routineId,first.run_id,first.lease_token,0])).toHaveLength(1);
+      await expect(call(owner,"u4_load_research_reads",[business,routineId,first.run_id,first.lease_token,0])).rejects.toThrow();
       expect(observed.rows[0]).toMatchObject({run_id:first.run_id,state:"running"});
       expect(Number(observed.rows[0].attempts)).toBe(1);
       // Simulate lease expiry after the genuine process death; this advances
@@ -399,11 +401,11 @@ describe("U4 migrated model-objective and autonomous Watch SQL contract",()=>{
       expect(await call(worker,"u4_routine_lease_active",[
         business,routineId,resumed.run_id,resumed.lease_token,
       ])).toBe(true);
+      await expect(call(worker,"u4_load_research_reads",[business,routineId,first.run_id,originalLease,0])).rejects.toThrow();
+      expect(await call(worker,"u4_load_research_reads",[business,routineId,resumed.run_id,resumed.lease_token,0])).toHaveLength(1);
       first=resumed;
-      // Resume the SAME work identity on another real process. It reads the
-      // checkpoint only as historical progress, independently runs get_sales
-      // again, reserves model calls against the same owner quota, and posts
-      // through the production U4 report RPC.
+      // Resume the same work identity and exact encrypted observation on a
+      // replacement process without repeating the completed source query.
       const resumeDirectory=mkdtempSync(join(tmpdir(),"u4-resumed-loop-"));
       const resumeMarker=join(resumeDirectory,"checkpoint.txt");
       const resumeProcess=spawn(process.execPath,[
@@ -464,7 +466,8 @@ describe("U4 migrated model-objective and autonomous Watch SQL contract",()=>{
         [business,ownerId,first.run_id]);
       // The pre-death provider call remains charged. Recovery cannot start
       // a new owner quota, reset its original run, or reuse a prior lease.
-      expect(actualUsage.rows.length).toBeGreaterThanOrEqual(3);
+      expect(actualUsage.rows.length).toBe(2);
+      expect((await admin.query("select count(*)::int as n from u3_research_private.routine_research_receipts where run_id=$1",[first.run_id])).rows[0].n).toBe(0);
       expect(actualUsage.rows.every(row=>row.status==="completed"&&
         Number(row.model_call_count)===1)).toBe(true);
       const audited=await admin.query("select state,receipt_ref,u4_result from public.supervisor_routine_occurrences where business_id=$1 and run_id=$2",[business,first.run_id]);
@@ -637,9 +640,12 @@ describe("U4 once: actual disposable cross-café admission, restart and private 
         sourceDomains:["cafe_state"],quality:"partial",
         missing:["Real provider execution not performed in this DB-only test."],
         externalEffects:"not_attempted"};
+      const longReport="DB fixture: report is saved once and delivered only to its owner. "+
+        "Observed source context and historical operational evidence. ".repeat(100)+"Final next step.";
+      expect(longReport.length).toBeGreaterThan(2600);
       expect(await call(workerB,"u4_publish_objective_report",[
         cafes[1],routines[1],b.run_id,b.lease_token,
-        "DB fixture: report is saved once and delivered only to its owner.",
+        longReport,
         "attention",proof,after,
       ])).toBe(true);
       expect(await call(workerB,"u4_publish_objective_report",[
@@ -715,7 +721,7 @@ describe("U4 once: actual disposable cross-café admission, restart and private 
       const full=await admin.query(
         "select u4_result->>'summary' summary from public.supervisor_routine_occurrences "+
         "where business_id=$1 and run_id=$2",[cafes[1],b.run_id]);
-      expect(full.rows[0].summary).toContain("saved once");
+      expect(full.rows[0].summary).toBe(longReport);
       const chat=await admin.query(
         "select structured_content from public.ai_messages "+
         "where business_id=$1 and grounding->'agentMetadata'->>'runId'=$2",

@@ -18,39 +18,56 @@ export type CalcOutcome=
   {ok:false;code:string;stepId?:string};
 
 const MAX_ABS=BigInt(Number.MAX_SAFE_INTEGER);
+// Bound BigInt memory/CPU, not the number of business inputs or steps. A
+// normalized 4096-bit rational far exceeds displayed integer-cent precision;
+// intermediate products remain at most twice this size before reduction.
+const MAX_RATIONAL_BITS=4096;
+class ArithmeticResourceLimit extends Error {}
 const abs=(x:bigint)=>x<BigInt(0)?-x:x;
 const gcd=(a:bigint,b:bigint):bigint=>{a=abs(a);b=abs(b);while(b){[a,b]=[b,a%b];}return a||BigInt(1);};
 function make(n:bigint,d:bigint,unit:CalcUnit):CalcValue{
   if(d<BigInt(0)){n=-n;d=-d;}
   const g=gcd(n,d);
-  return {n:n/g,d:d/g,unit};
+  const numerator=n/g,denominator=d/g;
+  if(abs(numerator).toString(2).length>MAX_RATIONAL_BITS||denominator.toString(2).length>MAX_RATIONAL_BITS)
+    throw new ArithmeticResourceLimit();
+  return {n:numerator,d:denominator,unit};
 }
 
 /** Exact decimal as returned by PostgreSQL NUMERIC/BIGINT. The model cannot
  * invent these values: the caller must bind them to a verified tool receipt.
  * No Number() conversion, binary float, or unreviewed amount rounding. */
 export function exactDecimal(text:string,unit:CalcUnit,scale=1):CalcValue|null{
- if(typeof text!=="string"||text.length>60||
-   !/^[+-]?(?:0|[1-9][0-9]*)(?:\.[0-9]{1,20})?$/u.test(text)||
+ if(typeof text!=="string"||
+   !/^[+-]?(?:0|[1-9][0-9]*)(?:\.[0-9]+)?$/u.test(text)||
    !Number.isSafeInteger(scale)||scale<1)return null;
  const negative=text.startsWith("-");
  const clean=text.replace(/^[+-]/u,"");
- const [whole,frac=""]=clean.split(".");
+ const [whole,fraction=""]=clean.split(".");
+ // Strip insignificant zeroes before applying the physical rational bound.
+ // Decimal precision is not a business rule; bound BigInt allocation instead.
+ const frac=fraction.replace(/0+$/u,"");
  const digits=(whole+frac).replace(/^0+(?=\d)/u,"");
- if(digits.length>45)return null;
- let numerator:bigint;
- try{numerator=BigInt(digits);}catch{return null;}
- if(negative)numerator=-numerator;
- return make(numerator,BigInt(10)**BigInt(frac.length)*BigInt(scale),unit);
+ if(digits.length>MAX_RATIONAL_BITS||frac.length>MAX_RATIONAL_BITS)return null;
+ try{
+   const numerator=BigInt(digits)*(negative?-BigInt(1):BigInt(1));
+   return make(numerator,BigInt(10)**BigInt(frac.length)*BigInt(scale),unit);
+ }catch(e){
+   if(e instanceof ArithmeticResourceLimit)return null;
+   throw e;
+ }
 }
 
 /** Exact value of a finite JS number, read through its shortest decimal form. */
 export function exactNumber(value:number,unit:CalcUnit,scale=1):CalcValue|null{
   if(!Number.isFinite(value)||Math.abs(value)>Number.MAX_SAFE_INTEGER)return null;
-  const text=value.toFixed(10).replace(/0+$/u,"").replace(/\.$/u,"");
-  const [whole,frac=""]=text.split(".");
-  const d=BigInt(10)**BigInt(frac.length)*BigInt(scale);
-  return make(BigInt(whole+frac),d,unit);
+  if(!Number.isSafeInteger(scale)||scale<1)return null;
+  const [mantissa,exponent="0"]=String(value).split("e");
+  const [whole,frac=""]=mantissa.split(".");
+  const power=Number(exponent)-frac.length;
+  const digits=BigInt(whole+frac);
+  return make(power>=0?digits*BigInt(10)**BigInt(power):digits,
+    BigInt(scale)*(power<0?BigInt(10)**BigInt(-power):BigInt(1)),unit);
 }
 
 /** Round half away from zero to the nearest multiple of 1/per. */
@@ -126,7 +143,11 @@ export function runCalculation(inputs:ReadonlyMap<string,CalcValue>,steps:readon
       if(!value)return {ok:false,code:"unknownArg:"+name,stepId:step.id};
       args.push(value);
     }
-    const value=apply(step.op,args);
+    let value:CalcValue|string;
+    try{value=apply(step.op,args);}catch(e){
+      if(e instanceof ArithmeticResourceLimit)return {ok:false,code:"arithmeticResourceLimit",stepId:step.id};
+      throw e;
+    }
     if(typeof value==="string")return {ok:false,code:value,stepId:step.id};
     const display=shown(value);
     if(!display)return {ok:false,code:"valueTooLarge",stepId:step.id};

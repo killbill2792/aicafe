@@ -214,6 +214,29 @@ describe("Olivia bounded reads",()=>{
     expect(r.missing).toContain("laborWageUnknown:2026-10-22");
     expect(r.laborDays).toHaveLength(1);
   });
+  it("traverses labor days beyond the previous last-31 preview without silent clipping",async()=>{
+    const start=Date.parse("2026-07-01T12:00:00Z");
+    const days=Array.from({length:70},(_,i)=>({
+      date:new Date(start+i*86400000).toISOString().slice(0,10),
+      wagesCents:1000,staffTaxCents:100,loadedStaffCostCents:1100,
+      wageStatus:"actual" as const
+    }));
+    const tools=ctx({getLaborMetrics:async()=>({available:true,value:days,quality:q})});
+    const interval={from:"2026-07-01",to:"2026-09-08"};
+    const first=await staffTools.get_labor.execute({period:interval},tools);
+    const second=await staffTools.get_labor.execute({period:interval,labor_days_page_offset:31},tools);
+    const final=await staffTools.get_labor.execute({period:interval,labor_days_page_offset:62},tools);
+    expect([first.laborDays,second.laborDays,final.laborDays].map(p=>(p as unknown[]).length))
+      .toEqual([31,31,8]);
+    expect([first.laborDaysNextOffset,second.laborDaysNextOffset,final.laborDaysNextOffset])
+      .toEqual([31,62,null]);
+    expect([first.laborDaysTotal,second.laborDaysTotal,final.laborDaysTotal])
+      .toEqual([70,70,70]);
+    expect(final.laborDaysPageComplete).toBe(true);
+    const seen=[first,second,final].flatMap(p=>(p.laborDays as {date:string}[]).map(d=>d.date));
+    expect(new Set(seen).size).toBe(70);
+    expect(seen).toEqual(days.map(d=>d.date));
+  });
   it("returns source-backed clock-in/out evidence even if wages are unavailable",async()=>{
     const actual={timecardId:"12345678-1234-4123-8123-123456789abc",
       employeeName:"Sam",localDate:"2026-10-22",

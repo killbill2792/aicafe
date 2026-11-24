@@ -87,7 +87,7 @@ export const checkpointRowSchema=z.object({
   checkpoint_receipts:z.array(z.object({
     operation:z.uuid(),phase:z.enum(["provider_pending","read_pending","effect_pending"]),
     tool:z.string().nullable(),receipt:z.string().max(400),
-  })).max(256),
+  })),
 });
 export type CheckpointRow=z.infer<typeof checkpointRowSchema>;
 
@@ -100,6 +100,26 @@ export function recoverableReadSelector(name:string,raw:unknown,resultPeriod?:un
   const range=z.strictObject({from:z.iso.date(),to:z.iso.date()}).refine(x=>x.from<=x.to);
   const week=z.strictObject({week_start:z.iso.date().nullable()});
   const item=z.strictObject({itemId:z.uuid()});
+  if(name==="query_data"){
+    // Persist only the exact safe shared metric/range; never model SQL,
+    // parameter data, arbitrary filters or owner overrides in a checkpoint.
+    if(!raw||typeof raw!=="object"||Array.isArray(raw))return null;
+    const r=raw as Record<string,unknown>;
+    if(Object.entries(r).some(([k,v])=>!["official_metric","date_from","date_to"].includes(k)&&v!=null))return null;
+    const metric=z.strictObject({id:z.enum(["profit","expenses","recurring_bills","sales","hourly_sales","labor","current_staff","business_costs","payroll","product_cost","goal_score","item_sales","usage_variance","labor_rules"]),period_mode:z.null(),
+      entity_id:z.uuid().nullable().optional(),entity_name:z.null().optional(),dimension:z.null().optional(),
+      period:z.unknown().optional(),profit_period:z.unknown().optional(),profit_owner_inputs:z.null().optional(),
+      break_even_overrides:z.null().optional()}).safeParse(r.official_metric);
+    if(!metric.success)return null;
+    if(metric.data.id==="product_cost"||metric.data.id==="goal_score")return metric.data.period==null&&metric.data.profit_period==null&&r.date_from==null&&r.date_to==null&&(metric.data.id==="goal_score"||metric.data.entity_id!=null)?
+      {official_metric:{id:metric.data.id,period_mode:null,entity_id:metric.data.entity_id??null}}:null;
+    if(metric.data.entity_id!=null)return null;
+    if(metric.data.id==="recurring_bills"||metric.data.id==="current_staff"||metric.data.id==="labor_rules")return metric.data.period==null&&metric.data.profit_period==null&&r.date_from==null&&r.date_to==null?
+      {official_metric:{id:metric.data.id,period_mode:null}}:null;
+    const period=range.safeParse(resultPeriod??metric.data.period??metric.data.profit_period??{from:r.date_from,to:r.date_to});
+    return period.success?{official_metric:{id:metric.data.id,period_mode:null},
+      date_from:period.data.from,date_to:period.data.to}:null;
+  }
   if(["get_staff","get_inventory","get_labor_rules","get_bills","get_supervisor_permissions"].includes(name))
     return empty.safeParse(raw).success?{}:null;
   if(["get_peak_hours","get_employee_sales","get_payroll_facts"].includes(name)){
@@ -120,7 +140,13 @@ export function recoverableReadSelector(name:string,raw:unknown,resultPeriod?:un
   return null;
 }
 export type OwnerReadReference={name:string;selector:Record<string,unknown>};
+export type RestoredResearchRead={
+ ref:string;name:"describe_data"|"query_data"|"calculate";arguments:string;
+ result:import("@/lib/ai/agent/tools").AgentToolResult;
+};
 export type OwnerRunCheckpoint = {
+  /** Investigation lease checkpoint: existing claim-scoped repair receipt remains available. */
+  investigationResearch?:true;
   assertLive:()=>Promise<void>;
   beginProvider:()=>Promise<void>;
   endProvider:(completed:boolean)=>Promise<void>;
@@ -128,6 +154,7 @@ export type OwnerRunCheckpoint = {
   endTool:(result:import("@/lib/ai/agent/tools").AgentToolResult,noEffect?:boolean)=>Promise<void>;
   resumeContext:()=>Promise<string|null>;
   readReferences?:()=>readonly OwnerReadReference[];
+  researchReads?:()=>readonly RestoredResearchRead[];
   restoredResults?:()=>Promise<import("@/lib/ai/agent/tools").AgentToolResult[]>;
   canYield:()=>boolean;
   yieldForRetry:(seconds:number,kind?:"retry"|"technical"|"contended")=>Promise<boolean>;

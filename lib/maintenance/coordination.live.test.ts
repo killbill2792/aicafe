@@ -171,7 +171,7 @@ live("real gpt-6-luna proposes vendor outreach and independently verified staff 
     expect(proof[0].toolNames.length).toBeGreaterThanOrEqual(3);
     expect(providerCompletions).toBeGreaterThanOrEqual(2);
     expect(providerCompletions).toBe(ledger.calls);
-    expect(proof[0].toolNames).toContain("get_expenses");
+    expect(proof[0].toolNames).toContain("query_data");
     const loopScope={...scope,locale:"en" as const,verifiedReadClient:db};
     const repo=new SupabaseLoopRepository();
     const draft=async(capability:string)=>{

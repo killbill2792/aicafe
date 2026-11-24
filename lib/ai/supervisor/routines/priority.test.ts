@@ -29,6 +29,58 @@ describe("proactive priority ranking and source revision",()=>{
     expect(ranked[0].source.sourceId).toBe("high-risk");
     expect(ranked[0].reason).toBe("Actionable café alert needs review");
   });
+  it("does not spend investigation or notice capacity on known detector data gaps",()=>{
+    const now=new Date("2026-11-23T00:00:00Z");
+    const outage={...base,kind:"business_anomaly",sourceId:"gap:reader_unavailable:customer_intelligence",
+      evidence:{family:"data_gap",subject:"reader_unavailable:customer_intelligence",
+        quality:"missing",current:1,previous:0,asOf:"2026-11-23"}};
+    const immature={...base,kind:"business_anomaly",sourceId:"gap:product_recipe_history",
+      evidence:{family:"data_gap",subject:"product_recipe_history",quality:"missing"}};
+    const genuine={...base,kind:"business_anomaly",sourceId:"sales-decline",
+      severity:"critical",confidence:"high",
+      evidence:{family:"sales_decline",subject:"cafe",quality:"verified",verified:true}};
+    const actions=[outage,immature,genuine];
+    expect(choosePriorities(actions,now,10).map(x=>x.source.sourceId))
+      .toEqual(["sales-decline"]);
+    expect(choosePriorities(actions,now,10,{includeWatching:true}).map(x=>x.source.sourceId))
+      .toEqual(["sales-decline"]);
+  });
+  it("keeps a verified missing physical count actionable while excluding an unavailable reader",()=>{
+    const now=new Date("2026-11-23T00:00:00Z");
+    const missing={...base,kind:"business_anomaly",sourceId:"missing-count",
+      evidence:{family:"data_gap",subject:"stock_counts",quality:"missing",current:1,unit:"coverage"}};
+    const outage={...missing,sourceId:"unavailable",evidence:{...missing.evidence,quality:"technical_failure"}};
+    expect(choosePriorities([missing,outage],now,10).map(x=>x.source.sourceId)).toEqual(["missing-count"]);
+  });
+  it("admits verified missing inputs independently of their source or subject",()=>{
+    const now=new Date("2026-11-23T00:00:00Z");
+    const sources=["bank_statement","employee_confirmation","supplier_document"].map(subject=>({
+      ...base,kind:"business_anomaly",sourceId:subject,
+      evidence:{family:"data_gap",subject,quality:"missing",current:1,unit:"coverage",gapReason:"missing_business_input"},
+    }));
+    const invalid=sources.flatMap(source=>["coverage_unverified","technical_failure"].map(gapReason=>({
+      ...source,sourceId:source.sourceId+gapReason,evidence:{...source.evidence,gapReason},
+    })));
+    expect(choosePriorities([...sources,...invalid],now,10).map(x=>x.source.sourceId).sort())
+      .toEqual(sources.map(x=>x.sourceId).sort());
+  });
+  it("preserves the original stock incident revision when the detector adds its explicit missing-input classification",()=>{
+    const prior={...base,kind:"business_anomaly",sourceId:"stock",
+      evidence:{family:"data_gap",subject:"stock_counts",quality:"missing",current:1,unit:"coverage",asOf:"2026-11-23"}};
+    const classified={...prior,evidence:{...prior.evidence,gapReason:"missing_business_input",asOf:"2026-11-24"}};
+    expect(priorityRevision(classified)).toBe(priorityRevision(prior));
+    expect(priorityRevision({...classified,evidence:{...classified.evidence,gapReason:"technical_failure"}}))
+      .not.toBe(priorityRevision(prior));
+    const other={...prior,evidence:{...prior.evidence,subject:"ingredient_prices"}};
+    expect(priorityRevision({...other,evidence:{...other.evidence,gapReason:"missing_business_input"}}))
+      .not.toBe(priorityRevision(other));
+  });
+  it("does not suppress explicit evidence-backed missing punch incidents",()=>{
+    const now=new Date("2026-11-23T00:00:00Z");
+    const punch={...base,kind:"business_anomaly",sourceId:"punch:shift-1",
+      evidence:{family:"missed_clock_evidence",subject:"shift-1",quality:"missing"}};
+    expect(choosePriorities([punch],now,10)).toHaveLength(1);
+  });
   it("does not elevate an unverified critical outage above verified work",()=>{
     const now=new Date("2026-11-11T00:00:00Z");
     const outage={...base,sourceId:"outage",severity:"critical",

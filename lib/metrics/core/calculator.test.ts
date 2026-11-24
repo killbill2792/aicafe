@@ -63,8 +63,29 @@ describe("U3 exact PostgreSQL numeric source arithmetic",()=>{
   }
  });
  it("rejects exponent, nondecimal, absurd precision and nonfinite inputs",()=>{
-  for(const value of ["NaN","Infinity","1e8","1.000000000000000000000001","1,200",""])
+  for(const value of ["NaN","Infinity","1e8","0."+"0".repeat(4096)+"1","1,200",""])
    expect(exactDecimal(value,"cents")).toBeNull();
   expect(exactDecimal("1200","cents")).toMatchObject({n:BigInt(1200),d:BigInt(1)});
+  expect(exactDecimal("1.000000000000000000000001","cents")).toEqual({
+   n:BigInt("1000000000000000000000001"),d:BigInt("1000000000000000000000000"),unit:"cents"});
+  expect(exactDecimal("1200."+"0".repeat(100),"cents")).toEqual(exactDecimal("1200","cents"));
+ });
+});
+
+describe("calculator physical arithmetic limits, not business step counts",()=>{
+ it("preserves a tiny finite input instead of rounding it to zero",()=>{
+  expect(exactNumber(1e-12,"ratio")).toEqual({n:BigInt(1),d:BigInt(1000000000000),unit:"ratio"});
+ });
+ it("accepts many independent costs and many sequential steps",()=>{
+  const inputs=Object.fromEntries(Array.from({length:40},(_,i)=>["v"+i,cents(i+1)]));
+  const steps:Parameters<typeof runCalculation>[1]=[
+   {id:"total",op:"sum",args:Object.keys(inputs)},
+   ...Array.from({length:40},(_,i)=>({id:"s"+i,op:"sum" as const,args:[i===0?"total":"s"+(i-1)]}))
+  ];
+  expect(run(inputs,steps)).toMatchObject({ok:true,result:{shown:{unit:"cents",valueCents:820}}});
+ });
+ it("stops exponential exact-denominator growth even when displayed values remain tiny",()=>{
+  const steps=Array.from({length:20},(_,i)=>({id:"s"+i,op:"multiply" as const,args:Array(2).fill(i===0?"rate":"s"+(i-1))}));
+  expect(run({rate:exactDecimal("0.1","ratio")!},steps)).toMatchObject({ok:false,code:"arithmeticResourceLimit"});
  });
 });

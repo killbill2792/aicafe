@@ -6,10 +6,15 @@ import {getFixtureSnapshot} from "@/lib/data/fixtureSnapshot";
 import {buildProfitAndCostsViewModel} from "@/lib/viewmodels/moneyViewModel";
 import {todayReadingFreshness} from "./tools/today";
 
+const eventSqlRead=vi.hoisted(()=>vi.fn());
+vi.mock("./tools/u3SqlResearch.server",async importOriginal=>{
+  const actual=await importOriginal<typeof import("./tools/u3SqlResearch.server")>();
+  return {...actual,u3SqlConfigured:()=>true,runU3Sql:eventSqlRead};
+});
 const quality={level:"high" as const,missingInputs:[],estimatedInputs:[],staleInputs:[]};
 const unavailable={available:false as const,value:null,
   quality:{...quality,level:"low" as const,missingInputs:["noCoveredSalesRows"]}};
-const profile='Café profile (authenticated, not owner message): {"name":"Seiyun Yemeni Coffee","city":"San Jose","region":"California","country":"US","currency":"USD","timezone":"America/Los_Angeles"}' + ". For events, use saved get_events/get_nearby_events for this city; never ask the owner for a city already in the profile.";
+const profile='Café profile (authenticated, not owner message): {"name":"Seiyun Yemeni Coffee","city":"San Jose","region":"California","country":"US","currency":"USD","timezone":"America/Los_Angeles"}' + ". For events, use relevant saved or current evidence for this city; never ask the owner for a city already in the profile.";
 const context=():AgentToolContext=>({
   asOf:"2026-11-03",timezone:"America/Los_Angeles",locale:"en",currency:"USD",
   tools:{getSalesTrend:vi.fn(async()=>unavailable)} as unknown as AgentToolContext["tools"],
@@ -81,19 +86,23 @@ describe("Supervisor owner demo: shared model and core metric paths",()=>{
     }));
     const ctx=context();
     ctx.savedEvents=savedEvents as unknown as AgentToolContext["savedEvents"];
+    ctx.canonicalData=async()=>({businessId:"aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",db:{} as never});
+    const sql="SELECT name,start_date FROM cafe_events WHERE start_date BETWEEN $1 AND $2";
+    eventSqlRead.mockResolvedValueOnce({source:"u3_canonical_research",period:null,missing:[],rows:[{name:"Downtown Market",start_date:"2026-11-08"}],truncated:false});
     ctx.webSearch=webSearch;
     const seen:Record<string,unknown>[]=[];
     const provider:AgentProvider=async function* (params){
       seen.push(params as Record<string,unknown>);
       if(seen.length===1)yield {type:"response.output_item.done",item:{
-        type:"function_call",name:"get_events",arguments:JSON.stringify({
-          from:"2026-11-03",to:"2026-11-16",cityEventId:null}),call_id:"city-1"}};
+        type:"function_call",name:"query_data",arguments:JSON.stringify({
+          view:null,sql,parameters:["2026-11-03","2026-11-16"],columns:null,filters:null,group_by:null,metrics:null,date_from:null,date_to:null,order_by:null,limit:null}),call_id:"city-1"}};
       else yield {type:"response.output_text.delta",
         delta:"Near your café in San Jose: Downtown Market on November 8."};
       yield completion;
     };
     const answer=await runAgentTurn({ownerText:"Events near my café?",context:ctx,cafeProfile:profile,provider});
-    expect(savedEvents).toHaveBeenCalledWith("2026-11-03","2026-11-16");
+    expect(eventSqlRead).toHaveBeenCalledWith(expect.objectContaining({businessId:"aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"}),expect.objectContaining({sql,parameters:["2026-11-03","2026-11-16"]}));
+    expect(savedEvents).not.toHaveBeenCalled();
     expect(webSearch).not.toHaveBeenCalled();
     expect(answer.text).toContain("San Jose: Downtown Market");
     expect(answer.text).not.toMatch(/what city|which neighborhood/i);

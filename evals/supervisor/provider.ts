@@ -67,13 +67,28 @@ const tools = {
   getPosImportReviews:async()=>present([]),
 };
 const allowedTools:AgentToolName[]=[
-  "get_menu_items","get_labor","get_product_costs","get_item_sales",
-  "get_inventory","calculate",
+  "describe_data","query_data","calculate",
 ];
 const context = ():AgentToolContext=>({
   tools:tools as unknown as AgentToolContext["tools"],
   locale:"en",asOf:seed.profile.asOf,timezone:seed.profile.timezone,
   currency:seed.profile.currency,
+  canonicalData:async()=>({
+    businessId:"aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+    db:{rpc:async(name:string,args:{p_view?:string;p_filters?:Array<{column:string;op:string;value:unknown}>;p_limit?:number|null})=>{
+      if(name!=="ai_query_view"||!["cv_inventory","cv_menu"].includes(args.p_view??""))
+        throw Error("unseeded canonical read");
+      const observed=args.p_view==="cv_menu"?seed.menu.map(item=>({data:{
+        id:item.id,name:item.name,price_cents:item.priceCents,is_active:item.active,category:item.category,
+      }})).filter(row=>(args.p_filters??[]).every(filter=>{
+        if(filter.op!=="="||!filter.column.startsWith("data."))throw Error("unseeded filter");
+        return (row.data as Record<string,unknown>)[filter.column.slice(5)]===filter.value;
+      })):[];
+      const rows=observed.slice(0,args.p_limit??undefined);
+      return {data:{rows,rowCount:rows.length,sourceCount:rows.length,truncated:rows.length<observed.length,
+        sourceMix:rows.length?{app:rows.length}:{},hasIncomplete:false,currentDayIncomplete:false},error:null};
+    }} as never,
+  }),
 });
 /**
  * Recorded Responses *model* events drive the real tool loop. Every tool

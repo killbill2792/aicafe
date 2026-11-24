@@ -12,7 +12,7 @@ import type {SupervisorEconomicsRead} from "@/lib/data/supervisorEconomics.serve
 import {breakEvenSnapshotInputs,type BreakEvenPeriodMode,type BreakEvenInputOptions} from "@/lib/viewmodels/breakEvenViewModel";
 import {shiftCafeDate} from "@/lib/metrics/core/clock";
 import {safeSumCents} from "@/lib/calc/explainMath";
-import {ownerInputsSchema,ownerPeriod} from "./ownerInputs";
+import {breakEvenOverridesSchema,ownerPeriod} from "./ownerInputs";
 import {prorate,calendarMonth} from "@/lib/calc/periods";
 import {figure} from "@/lib/calc/supervisorEconomics";
 import {dailyBreakEvenSalesCents} from "@/lib/metrics/core/breakEven";
@@ -20,13 +20,7 @@ import {dailyBreakEvenSalesCents} from "@/lib/metrics/core/breakEven";
 const period=z.strictObject({period:z.union([z.string().min(1).max(32),z.strictObject({preset:z.enum(["today","week","month","last_week","last_month","ytd"])}),z.strictObject({from:z.iso.date(),to:z.iso.date()})])});
 const empty=z.strictObject({});
 // Nullable for the Responses strict-tool schema. Omitted fields keep existing callers working.
-const breakEvenInput=z.strictObject({
-  ownerIngredientPackagingPercent:z.number().min(0).max(99.99).nullable().optional(),
-  ownerProcessingFeePercent:z.number().min(0).max(99.99).nullable().optional(),
-  ownerNetSalesCents:z.number().int().nonnegative().nullable().optional(),
-  ownerSalesDays:z.number().int().positive().nullable().optional(),
-  ownerOpenDaysPerMonth:z.number().int().min(1).max(31).nullable().optional(),
-  ownerInputs:ownerInputsSchema.nullable().optional(),
+const breakEvenInput=breakEvenOverridesSchema.extend({
   period:z.enum(["month","month_to_date","today"]).nullable().optional(),
 });
 const unavailable=(source:string,period:{from:string;to:string}|null,missing:string[]):AgentToolResult=>
@@ -190,7 +184,7 @@ export const moneyTools={
         // The recorded expense total covers ALL categories. Never present it as
         // the selected category's spend.
         recordedActualTotalCents:filterCategory?null:recorded.available?recorded.value.totalCents:null,
-        categories:categories.available?categories.value.filter(c=>filterCategory===null||filterCategory===c.categoryCode).slice(0,15).map(v=>({
+        categories:categories.available?categories.value.filter(c=>filterCategory===null||filterCategory===c.categoryCode).map(v=>({
           label:v.label,categoryCode:v.categoryCode,amountCents:v.isMissing?null:v.amountCents,
           isEstimate:v.isEstimate,isMissing:v.isMissing})):null};
     },
@@ -207,7 +201,7 @@ export const moneyTools={
   },
   get_cashflow_evidence:{
     agentId:"leo",schema:z.strictObject({statementUploadId:z.uuid().nullable().optional(),rowOffset:z.number().int().nonnegative().max(10000).nullable().optional(),horizonDays:z.number().int().min(1).max(90).nullable().optional(),invoiceOffset:z.number().int().nonnegative().max(500).nullable().optional(),invoiceReference:z.string().trim().min(1).max(160).nullable().optional()}),
-    description:"Dated cash, claims, allocations, recurring dates, conditional stress (horizonDays 1–90). statementUploadId/rowOffset for rows; exact invoiceReference or invoiceOffset=claimNextOffset for claims. Not live cash/unpaid debt.",
+    description:"Optional exact shared cashflow stress calculation and documentary settlement context. Dated cash, claims, allocations, recurring dates, conditional stress (horizonDays 1–90). Use query_data for complete saved transaction, invoice, bill or allocation research. statementUploadId/rowOffset for preview rows; exact invoiceReference or invoiceOffset=claimNextOffset for claims. Not live cash/unpaid debt.",
     execute:async(raw:unknown,ctx:AgentToolContext):Promise<AgentToolResult>=>{
       const selection=z.strictObject({statementUploadId:z.uuid().nullable().optional(),rowOffset:z.number().int().nonnegative().max(10000).nullable().optional(),horizonDays:z.number().int().min(1).max(90).nullable().optional(),invoiceOffset:z.number().int().nonnegative().max(500).nullable().optional(),invoiceReference:z.string().trim().min(1).max(160).nullable().optional()}).parse(raw);
       const base={source:"cashflow_evidence",period:null,agentId:"leo" as const,

@@ -16,6 +16,7 @@ const fact=(fact_key:string,value_json:unknown):SavedFact=>({
  fact_key,value_json,created_at:"2026-10-28T00:00:00Z",unit:null,period_scope:null
 });
 const context:AgentToolContext={asOf:"2026-10-28",timezone:"America/Los_Angeles",locale:"en",currency:"EUR",
+ canonicalData:async()=>({businessId:"aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",db:{} as never}),
  tools:{
   getMenuCatalog:async()=>({available:true,value:[],quality:{level:"high",missingInputs:[],estimatedInputs:[],staleInputs:[]}}),
   getSalesTrend:async()=>({available:false,value:null,quality:{level:"low",missingInputs:[],estimatedInputs:[],staleInputs:[]}}),
@@ -37,7 +38,7 @@ describe("model-driven milk swap in the real chat loop",()=>{
   const turn=await runAgentTurn({
    ownerText:"What was profit last week and what should oat milk cost?",
    ownerFacts:saved("oat"),context:{...context},provider:fixture([
-    [call("get_profit",{period:"last_week",ownerInputs:null},"p"),
+    [call("query_data",{official_metric:{id:"profit",period_mode:null,profit_period:"last_week"}},"p"),
      call("milk_swap_price",args("oat milk"),"m"),completed],
     [say("Last week's profit is not yet verified; oat milk 16 oz needs a €1.70 upcharge (estimate)."),completed]
    ])});

@@ -31,16 +31,16 @@ async function asked(ownerText:string,provider?:AgentProvider){
 }
 
 describe("golden ask questions: what the model is told",()=>{
- it("asks only for owner-only facts and never for POS figures",async()=>{
+ it("seeks missing facts from appropriate sources before asking the owner",async()=>{
   let instructions="";
   const provider:AgentProvider=async function*(params){
    instructions=String((params as {instructions?:unknown}).instructions);
    yield {type:"response.output_text.delta",delta:"OK."} as never;yield completed as never;};
   await runAgentTurn({ownerText:"Hi",context:context(),provider});
-  expect(instructions).toContain("Ask the owner with ask_owner only for what only the owner knows");
-  expect(instructions).toContain("Never ask the owner for a figure the POS records");
-  expect(instructions).toContain("say exactly what is missing and when it should arrive, and do not ask");
-  expect(instructions).toContain("If an owner-only fact is empty, failed or uncertain, give the partial answer and call ask_owner");
+  expect(instructions).toContain("Use all appropriate authorized sources for missing facts");
+  expect(instructions).toContain("verified staff replies");
+  expect(instructions).toContain("Ask the owner with ask_owner only when genuinely needed and the owner is the appropriate source or decision-maker");
+  expect(instructions).toContain("Missing evidence is not zero, a technical failure or a reason to ask the same question again");
   expect(agentToolDefinitions.find(d=>d.name==="ask_owner")?.description)
    .toContain("never for a figure the POS records");
  });

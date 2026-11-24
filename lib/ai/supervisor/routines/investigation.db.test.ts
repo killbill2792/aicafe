@@ -68,6 +68,73 @@ describe("Task 15A migrated, agentic investigation SQL integration",()=>{
         [cafes[0],taskId]);
       a=await connect("service");b=await connect("service");
       ownerClient=await connect("owner",owners[0]);
+      // Known source-data faults have no owner-loss facts: neither the
+      // model queue nor a generic notice may publish them. The database
+      // enforces this independently of the TypeScript priority classifier.
+      const technical=randomUUID();
+      await admin.query("insert into public.alerts(id,business_id,kind,status,payload) values ($1,$2,'business_anomaly','new',$3::jsonb)",
+        [technical,cafes[0],JSON.stringify({family:"data_gap",
+          subject:"reader_unavailable:customer_intelligence",quality:"technical_failure",
+          severity:"critical"})]);
+      expect(await rpc(a,"supervisor_enqueue_investigation",[
+        cafes[0],owners[0],threads[0],"alert",technical,
+        hex("c"),hex("d"),350,anchor])).toBe(false);
+      expect(await rpc(a,"post_supervisor_priority_notice",[
+        cafes[0],owners[0],threads[0],"alert",technical,
+        hex("c"),hex("d"),"Actionable café alert needs review",anchor])).toBe(false);
+      expect((await admin.query("select count(*)::int n from public.ai_messages where business_id=$1 and thread_id=$2 and grounding->>'intent' in ('priority_notice','priority_investigation_exception')",
+        [cafes[0],threads[0]])).rows[0].n).toBe(0);
+
+      const missingCount=randomUUID();
+      await admin.query("insert into public.alerts(id,business_id,kind,status,payload) values ($1,$2,'business_anomaly','new',$3::jsonb)",
+        [missingCount,cafes[0],JSON.stringify({family:"data_gap",subject:"stock_counts",quality:"missing",current:1,unit:"coverage"})]);
+      expect(await rpc(a,"supervisor_enqueue_investigation",[
+        cafes[0],owners[0],threads[0],"alert",missingCount,hex("3"),hex("4"),100,anchor
+      ])).toBe(true);
+      await admin.query("delete from public.supervisor_investigations where business_id=$1 and source_id=$2",[cafes[0],missingCount]);
+      for(const subject of ["bank_statement","employee_confirmation","supplier_document"]){
+        const input=randomUUID();
+        for(const gapReason of ["coverage_unverified","technical_failure","missing_business_input"]){
+          const payload={family:"data_gap",subject,quality:"missing",current:1,unit:"coverage",gapReason};
+          await admin.query("insert into public.alerts(id,business_id,kind,status,payload) values ($1,$2,'business_anomaly','new',$3) on conflict(id) do update set payload=excluded.payload",[input,cafes[0],JSON.stringify(payload)]);
+          expect(await rpc(a,"supervisor_enqueue_investigation",[
+            cafes[0],owners[0],threads[0],"alert",input,hex("3"),hex("4"),100,anchor
+          ])).toBe(gapReason==="missing_business_input");
+        }
+        await admin.query("delete from public.supervisor_investigations where business_id=$1 and source_id=$2",[cafes[0],input]);
+        await admin.query("delete from public.alerts where business_id=$1 and id=$2",[cafes[0],input]);
+      }
+      await admin.query("delete from public.alerts where business_id=$1 and id=$2",[cafes[0],missingCount]);
+
+      // One genuine, evidence-backed source remains actionable; a changed
+      // revision supersedes its *open* notification, not the audit history.
+      const genuine=randomUUID();
+      await admin.query(
+        "insert into public.alerts(id,business_id,kind,status,payload) values ($1,$2,'business_anomaly','new',$3::jsonb)",
+        [genuine,cafes[0],JSON.stringify({family:"sales_decline",subject:"cafe",
+          current:100,previous:200,unit:"cents",quality:"verified",severity:"high"})]);
+      const notice=(revision:string,key:string)=>[
+        cafes[0],owners[0],threads[0],"alert",genuine,revision,key,
+        "Actionable café alert needs review",anchor
+      ];
+      const originalNotice=notice(hex("e"),hex("f"));
+      expect(await rpc(a,"post_supervisor_priority_notice",originalNotice)).toBe(true);
+      expect(await rpc(a,"post_supervisor_priority_notice",originalNotice)).toBe(false);
+      const updatedNotice=notice(hex("1"),hex("2"));
+      expect(await rpc(b,"post_supervisor_priority_notice",updatedNotice)).toBe(true);
+      // P1 regression: delayed retry of an OLD already-published revision
+      // must not handle the still-open NEWER owner action.
+      expect(await rpc(a,"post_supervisor_priority_notice",originalNotice)).toBe(false);
+      const history=await admin.query(
+        "select id,status from public.operating_tasks where business_id=$1 and kind='priority_notice' "+
+        "and payload->>'sourceType'='alert' and payload->>'sourceId'=$2 order by id",
+        [cafes[0],genuine]);
+      expect(history.rows).toHaveLength(2);
+      expect(history.rows.map(x=>x.status).sort()).toEqual(["handled","needs_owner"]);
+      expect((await admin.query(
+        "select count(*)::int n from public.ai_messages where business_id=$1 and thread_id=$2 "+
+        "and grounding->>'intent'='priority_notice'",[cafes[0],threads[0]])).rows[0].n).toBe(0);
+
       // U1: unattended scopes are limited to the explicit current owner binding,
       // even though the worker uses service_role. No private credential is returned.
       expect(await rpc(a,"toast_business_scope_summary",[cafes[0],owners[0]])).toEqual({menus:null,labor:null});
@@ -105,6 +172,25 @@ describe("Task 15A migrated, agentic investigation SQL integration",()=>{
         [stamp(now,3)]) as Record<string,unknown>;
       expect(investigate.phase).toBe("investigate");
       expect(investigate.step_version).toBe(1);
+      const work=(await admin.query("select u3_research_private.investigation_work_id(i) as id from public.supervisor_investigations i where business_id=$1 and source_id=$2",[cafes[0],alerts[0]])).rows[0].id;
+      const fence=[cafes[0],owners[0],threads[0],"alert",alerts[0],work,investigate.lease_token];
+      await expect(rpc(ownerClient,"supervisor_investigation_research_checkpoint",[...fence,"load"])).rejects.toThrow();
+      expect(await rpc(a,"supervisor_investigation_research_checkpoint",[...fence,"load"])).toEqual([]);
+      expect(await rpc(a,"supervisor_investigation_research_checkpoint",[...fence,"yield"])).toBe(false);
+      const operation=randomUUID();
+      expect(await rpc(a,"supervisor_investigation_research_checkpoint",[...fence,"store",0,operation,hex("c"),"synthetic-encrypted-receipt","query_data"])).toBe(true);
+      expect(await rpc(a,"supervisor_investigation_research_checkpoint",[...fence,"load"])).toEqual([expect.objectContaining({operation,ciphertext:"synthetic-encrypted-receipt"})]);
+      expect(await rpc(a,"supervisor_investigation_research_checkpoint",[...fence.slice(0,5),randomUUID(),investigate.lease_token,"load"])).toBe(false);
+      expect(await rpc(a,"supervisor_investigation_research_checkpoint",[...fence,"yield"])).toBe(true);
+      expect(await rpc(a,"supervisor_investigation_research_checkpoint",[...fence,"load"])).toBe(false);
+      const resumed=await rpc(a,"supervisor_claim_investigation",[stamp(now,3)]) as Record<string,unknown>;
+      expect(resumed.episode_id).toBe(investigate.episode_id);
+      expect(resumed.step_version).toBe(investigate.step_version);
+      expect(resumed.lease_token).not.toBe(investigate.lease_token);
+      const resumedFence=[...fence.slice(0,6),resumed.lease_token];
+      expect(await rpc(a,"supervisor_investigation_research_checkpoint",[...resumedFence,"load"])).toEqual([expect.objectContaining({operation})]);
+      expect(await rpc(a,"supervisor_investigation_research_checkpoint",[...resumedFence,"yield"])).toBe(false);
+      investigate.lease_token=resumed.lease_token;
       expect(await rpc(a,"supervisor_finish_investigation",
         finish(investigate,"investigated",{...checkpoint,missing:["laborDaysIncomplete"]},
           "Sales and staffing were checked. Both have coverage gaps; ask the owner before any change.",
@@ -131,6 +217,18 @@ describe("Task 15A migrated, agentic investigation SQL integration",()=>{
         owner_user_id:owners[0],thread_id:threads[0],intent:"priority_investigation"});
       const ownerInbox=await ownerClient.query("select id from public.operating_tasks where kind='priority_notice' and id like 'investigation:%'");
       expect(ownerInbox.rows.map(row=>row.id)).toEqual([inbox.rows[0].id]);
+      // P1 regression: a generic reminder for the SAME underlying alert
+      // must never close the real investigation's unanswered owner question.
+      // Both share kind='priority_notice', but only priority:... IDs are
+      // generic and supersedable; investigation:... reports are substantive.
+      expect(await rpc(a,"post_supervisor_priority_notice",[
+        cafes[0],owners[0],threads[0],"alert",alerts[0],
+        hex("d"),hex("c"),"Actionable café alert needs review",stamp(now,5)
+      ])).toBe(true);
+      const afterReminder=await admin.query(
+        "select id,status from public.operating_tasks where business_id=$1 and id=$2",
+        [cafes[0],inbox.rows[0].id]);
+      expect(afterReminder.rows).toEqual([{id:inbox.rows[0].id,status:"needs_owner"}]);
       expect(await rpc(b,"supervisor_claim_investigation",[stamp(now,5)])).toBeNull();
       // A second café can progress independently even with the first waiting.
       expect(await rpc(a,"supervisor_enqueue_investigation",
@@ -236,14 +334,14 @@ describe("Task 15A migrated, agentic investigation SQL integration",()=>{
       // pg returns bigint counters as strings. Check the exact numeric value.
       expect(Number(blocked.rows[0].failure_count)).toBe(3);
       expect((await admin.query("select count(*)::int n from public.ai_messages where business_id=$1 and thread_id=$2 and grounding->>'intent'='priority_investigation_exception'",
-        [cafes[0],threads[0]])).rows[0].n).toBe(1);
+        [cafes[0],threads[0]])).rows[0].n).toBe(0);
       expect(await rpc(a,"supervisor_claim_investigation",[stamp(now,120)])).toBeNull();
       // The old six-hour paid retry loop must never revive unchanged
       // technical failures, even days after the first incident.
       expect(await rpc(a,"supervisor_claim_investigation",
         [stamp(now,500)])).toBeNull();
       expect((await admin.query("select count(*)::int n from public.ai_messages where business_id=$1 and thread_id=$2 and grounding->>'intent'='priority_investigation_exception'",
-        [cafes[0],threads[0]])).rows[0].n).toBe(1);
+        [cafes[0],threads[0]])).rows[0].n).toBe(0);
       // Material source revision, not an arbitrary retry of an uncertain effect,
       // safely reopens investigation with a fresh checkpoint and newer priority.
       expect(await rpc(a,"supervisor_enqueue_investigation",[
@@ -642,8 +740,14 @@ describe("Task 15A migrated, agentic investigation SQL integration",()=>{
       expect(renewed.episode_id).not.toBe(first.episode_id);
       expect(await rpc(service,"supervisor_finish_investigation",
         finish(renewed,"collected",null,6*60+10))).toBe(true);
+      // A correction before the researched report continues the same work.
+      expect(await rpc(service,"supervisor_enqueue_investigation",
+        enqueue(hex("1"),hex("2"),6*60+11))).toBe(true);
+      expect(await rpc(service,"supervisor_enqueue_investigation",
+        enqueue(hex("1"),hex("2"),6*60+11))).toBe(false);
       const renewedInvestigation=await rpc(service,"supervisor_claim_investigation",
         [stamp(now,6*60+11)]) as Record<string,unknown>;
+      expect(renewedInvestigation).toMatchObject({episode_id:renewed.episode_id,phase:"investigate",revision_hash:hex("1")});
       expect(await rpc(service,"supervisor_finish_investigation",
         finish(renewedInvestigation,"investigated",
           "A new issue is now open; the owner needs a fresh review.",6*60+12)))
@@ -812,9 +916,8 @@ describe("Task 15A exact owner response binding",()=>{
    worker=await connect("service");owner=await connect("owner",ownerId);
    const enqueue=(rev:string,at:string)=>rpc(worker!,"supervisor_enqueue_investigation",[...scope,"alert",alertId,hex(rev),hex(rev),400,at]);
    const claim=(at:string)=>rpc(worker!,"supervisor_claim_investigation",[at]);
-   const narrative="Observed evidence. ".repeat(90)+"Please confirm the current stock count; delivery is not independently verified.";
-   expect(narrative.length).toBeGreaterThan(1300);
-   expect(narrative.length).toBeLessThanOrEqual(1800);
+   const narrative="Observed evidence. ".repeat(150)+"Please confirm the current stock count; delivery is not independently verified.";
+   expect(narrative.length).toBeGreaterThan(1800);
    const finish=(c:Record<string,unknown>,outcome:string,evidence:unknown,at:string)=>rpc(worker!,"supervisor_finish_investigation",[...scope,"alert",alertId,c.revision_hash,c.lease_token,outcome,JSON.stringify(evidence),outcome==="collected"?null:narrative,at]);
    expect(await enqueue("a",stamp(now,-3))).toBe(true);
    const first=await claim(stamp(now,-3));

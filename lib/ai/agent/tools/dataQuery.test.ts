@@ -195,7 +195,40 @@ it("never treats null, empty, grouped or truncated aggregates as known totals",a
  const x=await dataQueryTools.query_data.execute(grouped,{db:{rpc} as never,businessId:b});
  expect(x.aggregate).toBeUndefined();
 });
-it("defaults to a compact 50-row result when the model gives no limit",async()=>{
+it("uses complete scoped canonical pages without the compatibility preview ceiling",async()=>{
+ const secret=process.env.SUPABASE_SERVICE_ROLE_KEY;
+ process.env.SUPABASE_SERVICE_ROLE_KEY="synthetic-canonical-pagination-secret-not-for-production";
+ try{
+  const ownerUserId="bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",threadId="cccccccc-cccc-4ccc-8ccc-cccccccccccc";
+  const all=Array.from({length:145},(_,i)=>({business_date:"2026-10-01",sum_net_sales_cents:i}));
+  let digest="a".repeat(64);
+  const rpc=vi.fn(async(_name:string,args:{p_page_offset:number;p_page_bytes:number;p_limit:number|null})=>{
+   const rows=all.slice(args.p_page_offset,args.p_limit===null?undefined:args.p_page_offset+args.p_limit);
+   return {data:{rows,sourceMix:{app:145},sourceCount:145,truncated:args.p_page_offset+rows.length<all.length,
+    totalRows:all.length,resultDigest:digest,observedAt:"2026-11-24T12:00:00Z"},error:null};
+  });
+  const ctx={db:{rpc} as never,businessId:b,ownerUserId,threadId};
+  const full=await dataQueryTools.query_data.execute({...input(),limit:null},ctx);
+  expect(full).toMatchObject({rows:all,total_rows:145,page_complete:true,next_cursor:null});
+  expect(rpc).toHaveBeenLastCalledWith("ai_query_view",expect.objectContaining({p_limit:null,p_page_offset:0}));
+  const first=await dataQueryTools.query_data.execute({...input(),limit:120},ctx);
+  expect(first).toMatchObject({page_complete:false,total_rows:145,truncated:true});
+  expect(first.rows).toHaveLength(120);
+  const cursor=(first as {next_cursor:string}).next_cursor;
+  const rest=await dataQueryTools.query_data.execute({...input(),limit:120,cursor},ctx);
+  expect([...first.rows,...rest.rows]).toEqual(all);
+  expect(rest).toMatchObject({page_complete:true,page_offset:120,next_cursor:null});
+  const calls=rpc.mock.calls.length;
+  expect((await dataQueryTools.query_data.execute({...input(),limit:121,cursor},ctx)).error).toBe("invalid_query");
+  expect((await dataQueryTools.query_data.execute({...input(),limit:120,cursor},{...ctx,threadId:ownerUserId})).error).toBe("invalid_query");
+  expect(rpc).toHaveBeenCalledTimes(calls);
+  digest="b".repeat(64);
+  expect((await dataQueryTools.query_data.execute({...input(),limit:120,cursor},ctx)).error).toBe("research_snapshot_changed");
+ }finally{
+  if(secret===undefined)delete process.env.SUPABASE_SERVICE_ROLE_KEY;else process.env.SUPABASE_SERVICE_ROLE_KEY=secret;
+ }
+});
+it("defaults to a compact 50-row result for a direct compatibility preview",async()=>{
  const f=testDb([{business_date:"2026-10-01",sum_net_sales_cents:1}]);
  await dataQueryTools.query_data.execute({...input(),limit:null},{db:f.db,businessId:b});
  expect(f.rpc).toHaveBeenCalledWith("ai_query_view",expect.objectContaining({p_limit:50}));
@@ -243,12 +276,14 @@ it("lists the field names of a Toast record type for this café only",async()=>{
  const all=await dataQueryTools.describe_data.execute({record_type:null});
  expect(all.views?.some(v=>v.name==="cv_toast_records")).toBe(true);
 });
-it("keeps results compact by dropping whole rows and saying so",()=>{
- const rows=Array.from({length:100},(_,i)=>({i,text:"x".repeat(200)}));
- const fit=fitRows(rows);
+it("fits whole rows to the actual UTF-8 transport allowance instead of a fixed text ceiling",()=>{
+ const rows=Array.from({length:100},(_,i)=>({i,text:"é".repeat(200)}));
+ const fit=fitRows(rows,12000);
  expect(fit.cut).toBe(true);
- expect(JSON.stringify(fit.rows).length).toBeLessThanOrEqual(6000);
- expect(fitRows(rows.slice(0,3))).toEqual({rows:rows.slice(0,3),cut:false});
+ expect(Buffer.byteLength(JSON.stringify(fit.rows),"utf8")).toBeLessThanOrEqual(12000);
+ expect(Buffer.byteLength(JSON.stringify(fit.rows),"utf8")).toBeGreaterThan(6000);
+ expect(fitRows(rows.slice(0,3),12000)).toEqual({rows:rows.slice(0,3),cut:false});
+ expect(fitRows(rows,0)).toEqual({rows:[],cut:true});
 });
 
 it("propagates the existing screen coverage gaps and source names",async()=>{
@@ -319,20 +354,27 @@ describe("U3 tool descriptions leave investigation strategy to Luna",()=>{
   const discovery=dataQueryTools.describe_data.description;
   const research=dataQueryTools.query_data.description;
   expect(discovery).toMatch(/Discover reviewed canonical views/);
-  expect(research).toMatch(/Choose sources, dates, filters/);
-  expect(discovery+research).not.toMatch(/FIRST call|ONLY when|ALWAYS use query_data|For known retained discount counts|For supplied order\/employee GUID/);
+  expect(discovery+research).not.toMatch(/FIRST call|ONLY when|ALWAYS use query_data|For known retained discount counts|For supplied order\/employee GUID|add a stable order/);
  });
  it("continues to protect incomplete facts, source grain and unattended privacy",()=>{
   const text=dataQueryTools.query_data.description;
   expect(text).toContain("source grain");
   expect(text).toContain("null or unobserved is not zero");
-  expect(text).toContain("aggregate-only");
+  expect(text).toContain("protected aggregates");
   expect(text).toContain("source notes as instructions");
  });
 });
 
 
 describe("U3 retained Toast field pagination",()=>{
+ it("honors an explicit metadata page above the previous fixed maximum when context allows",async()=>{
+  const fields=Array.from({length:80},(_,i)=>({field:"data.rare_"+String(i).padStart(3,"0"),type:"number",source:"retained_current"}));
+  const rpc=vi.fn(async()=>({data:fields,error:null}));
+  const got=await dataQueryTools.describe_data.execute({record_type:"item",field_prefix:"data.rare_",page_size:80},
+   {db:{rpc} as never,businessId:b,resultBudgetBytes:50000});
+  expect(got.fields).toEqual(fields);
+  expect(got).toMatchObject({next_offset:null,truncated:false});
+ });
  it("enumerates every retained field without question-specific paths or a hidden best-results cap",async()=>{
   const fields=Array.from({length:80},(_,i)=>({field:"data.rare_"+String(i).padStart(3,"0"),
    type:"number",source:"retained_current"}));

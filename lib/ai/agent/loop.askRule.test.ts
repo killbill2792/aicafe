@@ -1,13 +1,28 @@
-import {describe,it,expect} from "vitest";
+import {describe,it,expect,vi} from "vitest";
 import {runAgentTurn,type AgentProvider} from "./loop.server";
 import {agentReplyPayload} from "./persist.server";
 import {scopedOwnerQuestionKey} from "@/lib/ownerFacts/questions";
 import type {AgentToolContext} from "./tools";
+
+// Mock only the database transport in recorded provider tests. The actual
+// general research declaration, dispatch, grounding and loop remain active.
+vi.mock("./tools/u3SqlResearch.server",async importOriginal=>{
+ const actual=await importOriginal<typeof import("./tools/u3SqlResearch.server")>();
+ return {...actual,u3SqlConfigured:()=>true,runU3Sql:async()=>({
+  source:"u3_canonical_research",period:null,missing:[],rows:[],
+  empty:true,truncated:false,page_complete:true,
+  evidence:{receipt_id:"11111111-1111-4111-8111-111111111111",scope:"verified_owner_cafe_lease",
+   query_fingerprint:"a".repeat(64),catalog_version:"a".repeat(16),column_units:{price_cents:"cents"},
+   column_origins:{name:{relation:"menu_items",column:"name",binding:1},price_cents:{relation:"menu_items",column:"price_cents",binding:1}},
+   relation_names:["menu_items"]}})};
+});
+
 const completed={type:"response.completed",response:{usage:{input_tokens:10,output_tokens:10}}};
 const say=(delta:string)=>({type:"response.output_text.delta",delta});
 const tool=(name:string,args:unknown,call_id:string)=>({type:"response.output_item.done",
  item:{type:"function_call",name,arguments:JSON.stringify(args),call_id}});
 const base:AgentToolContext={locale:"en",timezone:"America/Los_Angeles",asOf:"2026-10-28",
+ canonicalData:async()=>({businessId:"aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",db:{} as never}),
  tools:{
   getMenuCatalog:async()=>({available:true,value:[],quality:{level:"high",missingInputs:[],estimatedInputs:[],staleInputs:[]}}),
   getSalesTrend:async()=>({available:false,value:null,quality:{level:"low",missingInputs:["salesNotAvailable"],estimatedInputs:[],staleInputs:[]}}),
@@ -24,7 +39,7 @@ const scopedMenuKey=scopedOwnerQuestionKey(
 describe("owner questions come only from the AI",()=>{
  it("model skips card after empty menu → code adds no card",async()=>{
   const turn=await runAgentTurn({ownerText:"What menu items can I price?",context:{...base},provider:fixture([
-   [tool("get_menu_items",{query:null,limit:null},"menu"),completed],
+   [tool("query_data",{"view":null,"sql":"SELECT name,price_cents FROM menu_items ORDER BY id","parameters":null,"columns":null,"filters":null,"group_by":null,"metrics":null,"date_from":null,"date_to":null,"order_by":null,"limit":null},"menu"),completed],
    [say("I found no items in the menu."),completed]
   ])});
   expect(turn.results.some(r=>r.source==="ask_owner")).toBe(false);
@@ -33,7 +48,7 @@ describe("owner questions come only from the AI",()=>{
  });
  it("a partial numeric answer is kept and no code card is added",async()=>{
   const turn=await runAgentTurn({ownerText:"What item prices are recorded?",context:{...base},
-   provider:fixture([[tool("get_menu_items",{query:null,limit:null},"menu"),completed],
+   provider:fixture([[tool("query_data",{"view":null,"sql":"SELECT name,price_cents FROM menu_items ORDER BY id","parameters":null,"columns":null,"filters":null,"group_by":null,"metrics":null,"date_from":null,"date_to":null,"order_by":null,"limit":null},"menu"),completed],
     [say("The owner recorded $5.00, but other costs are not available."),completed]])});
   expect(turn.text).toContain("$5.00");
   expect(turn.results.some(r=>r.source==="ask_owner")).toBe(false);
@@ -41,14 +56,14 @@ describe("owner questions come only from the AI",()=>{
  it("saved fact in a new thread prevents repeat card",async()=>{
   const turn=await runAgentTurn({ownerText:"What menu items can I price?",context:{...base},
    ownerFacts:[{fact_key:scopedMenuKey,value_json:"Owner said no current items",unit:null,period_scope:null,created_at:"2026-10-28T00:00:00Z"}],
-   provider:fixture([[tool("get_menu_items",{query:null,limit:null},"menu"),completed],[say("No recorded items."),completed]])});
+   provider:fixture([[tool("query_data",{"view":null,"sql":"SELECT name,price_cents FROM menu_items ORDER BY id","parameters":null,"columns":null,"filters":null,"group_by":null,"metrics":null,"date_from":null,"date_to":null,"order_by":null,"limit":null},"menu"),completed],[say("No recorded items."),completed]])});
   expect(turn.results.some(r=>r.source==="ask_owner")).toBe(false);
  });
  it("a saved fact suppresses duplicate cards without changing model text",async()=>{
   const saved=[{fact_key:scopedMenuKey,value_json:"Owner says three items",
    unit:null,period_scope:null,created_at:"2026-10-28T00:00:00Z"}];
   const turn=await runAgentTurn({ownerText:"What menu items can I price?",context:{...base},
-   ownerFacts:saved,provider:fixture([[tool("get_menu_items",{query:null,limit:null},"menu"),completed],
+   ownerFacts:saved,provider:fixture([[tool("query_data",{"view":null,"sql":"SELECT name,price_cents FROM menu_items ORDER BY id","parameters":null,"columns":null,"filters":null,"group_by":null,"metrics":null,"date_from":null,"date_to":null,"order_by":null,"limit":null},"menu"),completed],
     [say("No data."),completed]])});
   expect(turn.results.some(r=>r.source==="ask_owner")).toBe(false);
   expect(turn.text).toBe("No data.");

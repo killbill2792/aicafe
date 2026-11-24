@@ -7,7 +7,7 @@
   "scope": "15b-scope.json",
   "expectedTools": [
     "get_investigation_source",
-    "get_expenses",
+    "query_data",
     "search_maintenance_vendor",
     "propose_maintenance_vendor_request",
     "record_maintenance_repair_claim",

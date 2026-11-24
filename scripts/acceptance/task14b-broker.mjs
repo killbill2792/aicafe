@@ -157,7 +157,8 @@ export function reservationForRequest(body,reasoningRegistry=new Map(),allowNati
    if(tool.type==="tool_search"){
      if(!onlyKeys(tool,["type"]))fail("provider_built_in_tools_forbidden");
    }else{
-     if(tool.type!=="function"||tool.defer_loading!==true||tool.strict!==true||
+     const eagerResearch=["describe_data","query_data","calculate"].includes(tool.name)&&tool.defer_loading===undefined;
+     if(tool.type!=="function"||(!eagerResearch&&tool.defer_loading!==true)||tool.strict!==true||
        !inlineName(tool.name)||registry.has(tool.name)||
        !onlyKeys(tool,["type","name","description","strict","parameters","defer_loading"]))fail("provider_built_in_tools_forbidden");
      registry.set(tool.name,tool);
@@ -350,7 +351,7 @@ export function startTrustedBroker({
   fail("provider_key_missing");
  if(typeof token!=="string"||token.length<40)fail("broker_token_missing");
  if(typeof auditFile!=="string"||!auditFile.startsWith("/"))fail("audit_path_missing");
- const reserved=new PaidReservation(head,process.env.SCENARIO==="u2-model-execution");
+ const reserved=new PaidReservation(head,["u2-model-execution","u3-canonical-research"].includes(process.env.SCENARIO));
  // Provenance belongs only to this broker run; never persists ciphertext.
  const trustedReasoning=new Map();
  saveAudit(auditFile,reserved);

@@ -6,11 +6,23 @@ const period=z.union([
  z.strictObject({days:z.number().int().positive().max(3660)}),
  z.strictObject({unit:z.literal("month")}),
 ]);
+export const ownerMetricPeriodSchema=z.union([z.string().min(1).max(32),
+ z.strictObject({preset:z.enum(["today","week","month","last_week","last_month","ytd"])}),
+ z.strictObject({from:z.iso.date(),to:z.iso.date()})]);
 export const ownerInputsSchema=z.strictObject({
  netSalesCents:cents.nullable(),salesPeriod:period.nullable(),
  laborCents:cents.nullable(),laborPeriod:period.nullable(),
  rentCents:cents.nullable(),otherOverheadCents:cents.nullable(),overheadPeriod:period.nullable(),
  unitCostCents:cents.nullable(),itemsSoldPerDay:z.number().positive().finite().nullable(),
+});
+/** Shared screen inputs, also accepted by the universal query interface. */
+export const breakEvenOverridesSchema=z.strictObject({
+ ownerIngredientPackagingPercent:z.number().min(0).max(99.99).nullable().optional(),
+ ownerProcessingFeePercent:z.number().min(0).max(99.99).nullable().optional(),
+ ownerNetSalesCents:z.number().int().nonnegative().nullable().optional(),
+ ownerSalesDays:z.number().int().positive().nullable().optional(),
+ ownerOpenDaysPerMonth:z.number().int().min(1).max(31).nullable().optional(),
+ ownerInputs:ownerInputsSchema.nullable().optional()
 });
 export type OwnerInputs=z.infer<typeof ownerInputsSchema>;
 export const emptyOwnerInputs:OwnerInputs={

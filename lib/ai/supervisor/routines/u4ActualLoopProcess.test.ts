@@ -20,7 +20,7 @@ import {routineObjectiveCheckpoint,verifyObjectiveTurn} from "./objective.server
 
 const run=process.env.U4_ACTUAL_LOOP_CHILD==="1"?it:it.skip;
 const allowedRpc=new Set([
-  "u4_routine_lease_active","u4_checkpoint_model_step",
+  "u4_routine_lease_active","u4_checkpoint_model_step","u4_store_research_read","u4_load_research_reads",
   "supervisor_reserve_investigation_model_call",
   "supervisor_complete_investigation_model_call",
   "u4_publish_objective_report",
@@ -40,6 +40,8 @@ run("survives actual recorded model and registered source tool across SIGKILL",a
          typeof x==="string"&&uuid.test(x)))
     throw Error("u4_disposable_actual_loop_preflight_failed");
   const mode=env.U4_PROCESS_MODE!;
+  // Test-only encryption key in an explicitly disposable, zero-provider child.
+  env.SUPABASE_SERVICE_ROLE_KEY??="disposable-u4-research-checkpoint-test-key";
   const businessId=env.U4_CRASH_BUSINESS!;
   const ownerUserId=env.U4_CRASH_OWNER!;
   const threadId=env.U4_CRASH_THREAD!;
@@ -71,7 +73,7 @@ run("survives actual recorded model and registered source tool across SIGKILL",a
         const data=observed.rows[0]?.data;
         // This marker is emitted only AFTER an actual get_sales tool result
         // reached the production checkpoint and the DB acknowledged commit.
-        if(name==="u4_checkpoint_model_step"&&args.p_stage==="tool_complete"&&
+        if(name==="u4_store_research_read"&&
            data===true&&mode==="crash"){
           writeFileSync(env.U4_PROCESS_MARKER!,"tool_complete_committed\n",{flag:"wx"});
           await new Promise<never>(()=>{});
@@ -126,6 +128,7 @@ run("survives actual recorded model and registered source tool across SIGKILL",a
       expect(resumed).not.toContain("4875");
     }
     const originalSourceRead=async(period:{from:string;to:string})=>{
+      if(mode==="resume")throw Error("restored_receipt_must_not_repeat_source_read");
       await assertLease();
       const rows=await db.query("select business_date::text as day,"+
         "net_sales_cents,orders_count from public.daily_rollups "+
@@ -140,7 +143,7 @@ run("survives actual recorded model and registered source tool across SIGKILL",a
     };
     const context={
       locale:"en",timezone:"America/Los_Angeles",currency:"USD",
-      asOf:"2026-11-21",
+      asOf:"2026-11-21",canonicalData:async()=>({businessId,db:{} as never,aggregateOnly:true}),
       tools:{
         getSalesTrend:originalSourceRead,
         getProfitability:async()=>({available:false}),
@@ -153,11 +156,10 @@ run("survives actual recorded model and registered source tool across SIGKILL",a
       usage:{input_tokens:30,output_tokens:12,input_tokens_details:{cached_tokens:0}},
     }};
     const recorded:AgentProvider=async function*(){
-      if(requests++===0){
+      if(requests++===0&&mode==="crash"){
         yield {type:"response.output_item.done",item:{
-          type:"function_call",name:"get_sales",call_id:"u4-durable-sales",
-          arguments:JSON.stringify({period:{from:"2026-11-20",to:"2026-11-20"},
-            ownerInputs:null}),
+          type:"function_call",name:"query_data",call_id:"u4-durable-sales",
+          arguments:JSON.stringify({official_metric:{id:"sales",period_mode:null,period:{from:"2026-11-20",to:"2026-11-20"}}}),
         }} as never;
       }else{
         yield {type:"response.output_text.delta",
@@ -173,14 +175,14 @@ run("survives actual recorded model and registered source tool across SIGKILL",a
       maxElapsedMs:45_000,maxModelCalls:4,maxToolCalls:3,
       maxInputTokens:72_000,maxOutputTokens:2400,
     },()=>runAgentTurn({
-      ownerText:"Re-read the actual café sales on this original routine run.",
-      serviceOrigin:true,toolNames:["get_sales"],
+      ownerText:"Review the actual café sales on this original routine run.",
+      serviceOrigin:true,toolNames:["query_data"],
       context,provider:metered.provider,checkpoint,
     }));
     expect(metered.problem()).toBeNull();
-    const observed=turn.toolInvocations?.find(x=>x.name==="get_sales");
+    const observed=turn.toolInvocations?.find(x=>x.name==="query_data");
     expect(observed?.result.netSalesCents).toBe(4875);
-    expect(turn.usage.toolCalls).toBe(1);
+    expect(turn.usage.toolCalls).toBe(0);
     const verified=verifyObjectiveTurn(turn,routine as never);
     expect(verified.sourceDomains).toContain("recorded_sales");
     if(mode!=="resume")throw Error("u4_crash_process_should_have_been_killed");

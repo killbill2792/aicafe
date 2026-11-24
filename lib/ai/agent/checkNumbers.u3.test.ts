@@ -1,6 +1,7 @@
 import {describe,expect,it} from "vitest";
 import {compactEvidence,checkNumbers,hasVerifiedU3NumericObservation} from "./checkNumbers";
 import type {AgentToolResult} from "./tools";
+import {statusFromResults} from "./status";
 
 const receipt=()=>({
  source:"u3_canonical_research",period:null,missing:[],truncated:false,
@@ -68,6 +69,13 @@ describe("U3 SQL source receipts in numeric claim verification",()=>{
    expect(checkNumbers("$999.99.","",[untrusted as unknown as AgentToolResult],"en"))
     .not.toEqual([]);
   }
+ });
+ it("verifies ingredient microcent rates in display currency, not as raw whole cents",()=>{
+  const base=receipt();
+  const r={...base,rows:[{rate:"2000000"}],evidence:{...(base.evidence as object),column_units:{rate:"microcents"}}};
+  expect(compactEvidence([r]).flatMap(v=>v.values)).toEqual([expect.objectContaining({unit:"cents",value:2})]);
+  expect(checkNumbers("Ingredient cost is $0.02 per gram.","",[r],"en")).toEqual([]);
+  expect(checkNumbers("Ingredient cost is $20,000 per gram.","",[r],"en")).not.toEqual([]);
  });
  it("rejects fractional cents, unsafe huge integers and high-precision coercions",()=>{
   const original=receipt() as Record<string,unknown>;
@@ -142,6 +150,27 @@ describe("recorded labor punch verifier, not roster or invented model prose",()=
    expect(checkNumbers("Sam clocked in at 9:30 AM on November 15, 2026.",
      "",[],"en",saved)).toEqual([]);
  });
+ it("checks every returned current-turn punch, including beyond the old clock cap",()=>{
+   const base=(observed.attendance as {recordedTimecards:Array<Record<string,unknown>>}).recordedTimecards[0];
+   const cards=Array.from({length:100},(_,i)=>({...base,
+     timecardId:"00000000-0000-4000-8000-"+String(i+1).padStart(12,"0"),
+     ...(i===99?{employeeName:"Maya",clockIn:"2026-11-15T18:05:00Z",clockInLocal:"10:05",
+      clockOut:"2026-11-16T00:05:00Z",clockOutLocal:"16:05"}:{})
+   }));
+   const many={...observed,attendance:{recordedTimecards:cards}} as AgentToolResult;
+   expect(compactEvidence([many],Infinity).flatMap(r=>r.times)).toHaveLength(200);
+   expect(checkNumbers("Maya clocked in at 10:05 AM on November 15, 2026.",
+     "",[many],"en")).toEqual([]);
+   expect(checkNumbers("Maya clocked in at 9:00 AM on November 15, 2026.",
+     "",[many],"en")).not.toEqual([]);
+ });
+ it("preserves earlier independent pages and withdraws a corrected record by identity",()=>{
+   const first=(observed.attendance as {recordedTimecards:Array<Record<string,unknown>>}).recordedTimecards[0];
+   const second={...first,timecardId:"22345678-1234-4123-8123-123456789abc",employeeName:"Maya",clockIn:"2026-11-15T18:05:00Z",clockInLocal:"10:05",clockOut:"2026-11-16T00:05:00Z",clockOutLocal:"16:05"};
+   const page=(card:Record<string,unknown>,offset:number)=>({...observed,attendance:{recordedTimecards:[card],recordedTimecardsPageOffset:offset}}) as AgentToolResult;
+   expect(checkNumbers("Sam clocked in at 9:00 AM on November 15, 2026. Maya clocked in at 10:05 AM on November 15, 2026.","",[page(first,0),page(second,100)],"en")).toEqual([]);
+   expect(checkNumbers("Maya clocked out at 4:05 PM on November 15, 2026.","",[page(first,0),page(second,100),page({...second,clockOut:null,clockOutLocal:null,elapsedHours:null},100)],"en")).not.toEqual([]);
+ });
  it("recognizes owner-facing named punch phrasing only for the right employee",()=>{
    expect(checkNumbers("Sam had a clock-in at 9:00 AM on November 15, 2026.","",
      [observed],"en")).toEqual([]);
@@ -170,5 +199,67 @@ describe("recorded labor punch verifier, not roster or invented model prose",()=
    expect(compactEvidence([falseDuration as AgentToolResult]).flatMap(v=>v.values)
      .some(v=>v.key.endsWith("elapsedHours"))).toBe(false);
    expect(checkNumbers("Sam worked 9 hours.","",[falseDuration as AgentToolResult],"en")).not.toEqual([]);
+ });
+});
+
+describe("complete SQL snapshot receipts across pages",()=>{
+ const page=(offset:number,amount:string,final:boolean,digest="c".repeat(64)):AgentToolResult=>{
+  const base=receipt();
+  return {...base,rows:[{amount_cents:amount}],rowCount:1,
+   page_consistency:"verified_same_result",total_rows:2,page_offset:offset,
+   page_complete:final,truncated:!final,next_cursor:final?null:"signed-cursor",
+   missing:final?[]:["result_truncated"],
+   evidence:{...(base.evidence as object),
+    receipt_id:offset?"22222222-2222-4222-8222-222222222222":"11111111-1111-4111-8111-111111111111",
+    snapshot_id:"33333333-3333-4333-8333-333333333333",snapshot_digest:digest,
+    as_of:"2026-11-24T00:00:00Z"}};
+ };
+ const status=(rows:AgentToolResult[])=>statusFromResults(rows.map((result,i)=>({
+  name:"query_data",callId:String(i),arguments:JSON.stringify({cursor:i}),result})));
+ it("verifies early and final rows after a complete same-result traversal without clearing unrelated gaps",()=>{
+  const first=page(0,"12345",false),last=page(1,"54321",true);
+  expect(status([first,last])).toEqual({status:"complete",missing:[]});
+  expect(checkNumbers("$123.45 and $543.21.","",[first,last],"en")).toEqual([]);
+  expect(status([first,last,{source:"expenses",period:null,missing:["expense_gap"]}]))
+   .toEqual({status:"partial",missing:["expense_gap"]});
+  expect(first.truncated).toBe(true); // original provider receipt is unchanged
+ });
+ it("does not accept missing prefixes, different snapshots or other business gaps as complete",()=>{
+  const first=page(0,"12345",false),last=page(1,"54321",true);
+  for(const rows of [[first],[last],[first,page(1,"54321",true,"d".repeat(64))],
+   [{...first,missing:["result_truncated","source_read_failed"]},last]]){
+   expect(status(rows).status).toBe("partial");
+   expect(compactEvidence(rows).flatMap(x=>x.values)).toEqual([]);
+  }
+ });
+});
+
+describe("direct SQL source-row provenance",()=>{
+ const fields={card:"timecard_id",worker:"employee_name",tz:"timezone",start:"clock_in",finish:"clock_out",breaks:"recorded_break_count"};
+ const row={card:"12345678-1234-4123-8123-123456789abc",worker:"Sam",tz:"America/Los_Angeles",start:"2026-11-15T17:00:00Z",finish:"2026-11-15T23:00:00Z",breaks:0};
+ const make=(workerBinding=1,extra:Record<string,unknown>={})=>({...receipt(),rows:[{...row,...extra}],evidence:{...(receipt().evidence as object),column_units:{},
+  column_origins:Object.fromEntries(Object.entries(fields).map(([label,column])=>[label,{relation:"recorded_timecards",column,binding:label==="worker"?workerBinding:1}]))}}) as AgentToolResult;
+ it("verifies real SQL clock observations and duration, not model-selected aliases or different rows",()=>{
+  expect(checkNumbers("Sam clocked in at 9:00 AM on November 15, 2026. Sam worked 6 hours.","",[make()],"en")).toEqual([]);
+  expect(checkNumbers("Sam clocked in at 9:00 AM on November 15, 2026.","",[make(2)],"en")).not.toEqual([]);
+  expect(checkNumbers("Sam clocked in at 10:00 AM on November 15, 2026.","",[make()],"en")).not.toEqual([]);
+  const prior=compactEvidence([make()]);
+  expect(checkNumbers("Sam clocked out at 3:00 PM on November 15, 2026.","",[make(1,{finish:null})],"en",prior)).not.toEqual([]);
+ });
+});
+
+
+describe("SQL daily source-row date and metric evidence",()=>{
+ const make=(status="actual",binding=1,amount="12345")=>({...receipt(),rows:[{day:"2026-11-15",total:amount,state:status}],evidence:{...(receipt().evidence as object),column_units:{total:"cents"},column_origins:{day:{relation:"daily_rollups",column:"business_date",binding:1},total:{relation:"daily_rollups",column:"net_sales_cents",binding},state:{relation:"daily_rollups",column:"sales_data_status",binding:1}}}}) as AgentToolResult;
+ it("accepts directly observed daily sales without a reporting-tool requirement",()=>{
+  expect(checkNumbers("Sales on 2026-11-15 were $123.45.","",[make()],"en")).toEqual([]);
+  for(const wrong of ["Sales on 2026-11-16 were $123.45.","Labor on 2026-11-15 was $123.45."])
+   expect(checkNumbers(wrong,"",[make()],"en")).not.toEqual([]);
+  expect(checkNumbers("Sales on 2026-11-15 were $123.45.","",[make("missing")],"en")).not.toEqual([]);
+  expect(checkNumbers("Sales on 2026-11-15 were $123.45.","",[make("actual",2)],"en")).not.toEqual([]);
+ });
+ it("withdraws a previously observed daily total when refreshed as missing",()=>{
+  const saved=compactEvidence([make()]);
+  expect(checkNumbers("Sales on 2026-11-15 were $123.45.","",[make("missing")],"en",saved)).not.toEqual([]);
  });
 });

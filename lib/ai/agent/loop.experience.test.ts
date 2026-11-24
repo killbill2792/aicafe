@@ -8,8 +8,23 @@ import { memoryToolDefinition } from "./tools/memory";
 import { routineToolDefinition } from "./tools/routines";
 import type { AgentToolContext } from "./tools";
 
+
+// Mock only the database transport in recorded provider tests. The actual
+// general research declaration, dispatch, grounding and loop remain active.
+vi.mock("./tools/u3SqlResearch.server",async importOriginal=>{
+ const actual=await importOriginal<typeof import("./tools/u3SqlResearch.server")>();
+ return {...actual,u3SqlConfigured:()=>true,runU3Sql:async()=>({
+  source:"u3_canonical_research",period:null,missing:[],rows:[{"name":"Latte","price_cents":450}],
+  empty:false,truncated:false,page_complete:true,
+  evidence:{receipt_id:"11111111-1111-4111-8111-111111111111",scope:"verified_owner_cafe_lease",
+   query_fingerprint:"a".repeat(64),catalog_version:"a".repeat(16),column_units:{price_cents:"cents"},
+   column_origins:{name:{relation:"menu_items",column:"name",binding:1},price_cents:{relation:"menu_items",column:"price_cents",binding:1}},
+   relation_names:["menu_items"]}})};
+});
+
 const context: AgentToolContext = {
   locale: "en", asOf: "2026-10-21", timezone: "America/Los_Angeles",
+  canonicalData:async()=>({businessId:"aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",db:{} as never}),
   tools: {
     getMenuCatalog: async () => ({ available: true,
       quality: { level: "high", missingInputs: [], estimatedInputs: [], staleInputs: [] },
@@ -240,7 +255,7 @@ describe("café memory in context ()", () => {
 describe("mid-run follow-ups ()", () => {
   it("reads a follow-up before the next model call and reports it as answered", async () => {
     const { requests, provider } = recording([
-      [call("get_menu_items", '{"query":null,"limit":null}', "c1"), completed],
+      [call("query_data", '{"view":null,"sql":"SELECT name,price_cents FROM menu_items ORDER BY id","parameters":null,"columns":null,"filters":null,"group_by":null,"metrics":null,"date_from":null,"date_to":null,"order_by":null,"limit":null}', "c1"), completed],
       [text("Latte is $4.50 and yes, oat milk is available."), completed],
     ]);
     const box = inbox([[{ id: "11111111-1111-4111-8111-111111111111", text: "and do we have oat milk?" }]]);
@@ -279,7 +294,7 @@ describe("mid-run follow-ups ()", () => {
     vi.setSystemTime(0);
     try {
       const { requests, provider } = recording([
-        [call("get_menu_items", '{"query":null,"limit":null}', "c1"), completed],
+        [call("query_data", '{"view":null,"sql":"SELECT name,price_cents FROM menu_items ORDER BY id","parameters":null,"columns":null,"filters":null,"group_by":null,"metrics":null,"date_from":null,"date_to":null,"order_by":null,"limit":null}', "c1"), completed],
         [text("Final answer."), completed],
       ]);
       let enteredInbox = false;
@@ -306,7 +321,7 @@ describe("mid-run follow-ups ()", () => {
   it("does not acknowledge inbox messages if every model response after reading them fails", async () => {
     const failed = { type: "response.failed" };
     const { provider, requests } = recording([
-      [call("get_menu_items", '{"query":null,"limit":null}', "c1"), completed],
+      [call("query_data", '{"view":null,"sql":"SELECT name,price_cents FROM menu_items ORDER BY id","parameters":null,"columns":null,"filters":null,"group_by":null,"metrics":null,"date_from":null,"date_to":null,"order_by":null,"limit":null}', "c1"), completed],
       [failed],
       [failed],
     ]);
@@ -321,8 +336,8 @@ describe("mid-run follow-ups ()", () => {
   it("does not claim follow-ups from a tool-only model response when no final answer completes", async () => {
     const failed = { type: "response.failed" };
     const { provider, requests } = recording([
-      [call("get_menu_items", '{"query":null,"limit":null}', "c1"), completed],
-      [call("get_menu_items", '{"query":null,"limit":null}', "c2"), completed],
+      [call("query_data", '{"view":null,"sql":"SELECT name,price_cents FROM menu_items ORDER BY id","parameters":null,"columns":null,"filters":null,"group_by":null,"metrics":null,"date_from":null,"date_to":null,"order_by":null,"limit":null}', "c1"), completed],
+      [call("query_data", '{"view":null,"sql":"SELECT name,price_cents FROM menu_items ORDER BY id","parameters":null,"columns":null,"filters":null,"group_by":null,"metrics":null,"date_from":null,"date_to":null,"order_by":null,"limit":null}', "c2"), completed],
       [failed],
       [failed],
     ]);
@@ -355,7 +370,7 @@ describe("incomplete provider response diagnostics and fail-closed tool recovery
     isolated();
     try{
       const {requests,provider}=recording([
-        [text("Unverified partial text"),call("get_menu_items",'{"query":null,"limit":null}',"partial_call"),
+        [text("Unverified partial text"),call("query_data",'{"view":null,"sql":"SELECT name,price_cents FROM menu_items ORDER BY id","parameters":null,"columns":null,"filters":null,"group_by":null,"metrics":null,"date_from":null,"date_to":null,"order_by":null,"limit":null}',"partial_call"),
           {type:"response.incomplete",response:{incomplete_details:{reason:"max_output_tokens"},
             model:"unverified_model",usage:{input_tokens:100,output_tokens:1200,input_tokens_details:{cached_tokens:20}}}}],
         [text("I could not verify the requested information."),completed]
@@ -415,7 +430,7 @@ describe("incomplete provider response diagnostics and fail-closed tool recovery
 describe("Luna tool reasoning stays within the owner-approved aggregate output allowance",()=>{
   const doneWith=(n:number)=>({type:"response.completed",response:{model:"gpt-6-luna",
     usage:{input_tokens:40,output_tokens:n}}});
-  const menu=(id:string)=>call("get_menu_items",'{"query":null,"limit":null}',id);
+  const menu=(id:string)=>call("query_data",'{"view":null,"sql":"SELECT name,price_cents FROM menu_items ORDER BY id","parameters":null,"columns":null,"filters":null,"group_by":null,"metrics":null,"date_from":null,"date_to":null,"order_by":null,"limit":null}',id);
   const limits=(requests:Record<string,unknown>[])=>requests.map(r=>[r.tool_choice,r.max_output_tokens]);
   it("allows 16384 then only the remaining work allocation, retaining final 8192",async()=>{
     vi.stubEnv("SUPERVISOR_OPENAI_MODEL","gpt-6-luna");
@@ -494,7 +509,7 @@ describe("Luna tool reasoning stays within the owner-approved aggregate output a
       const r=await withWorkerBudget({maxElapsedMs:55000,maxModelCalls:6,maxToolCalls:7,
         maxInputTokens:72000,maxOutputTokens:4800},()=>runAgentTurn({
           ownerText:"Investigate the saved alert.",context:{...context},provider:metered.provider,
-          toolNames:["get_menu_items"]}));
+          toolNames:["query_data"]}));
       expect(metered.problem()).toBeNull();
       expect(limits(responses.requests)).toEqual([["auto",1200],[fault?"none":"auto",1200]]);
       expect(r.usage.modelCalls).toBe(2);
@@ -565,7 +580,7 @@ describe("saved supplier order communication is distinct from creating a new PO"
     expect(String(requests[0].instructions)).not.toContain("or an explicit 'do not create an order', use read-only tools only");
     const names=(requests[0].tools as Array<{name:string}>).map(x=>x.name);
     expect(names).toEqual((requests[1].tools as Array<{name:string}>).map(x=>x.name));
-    expect(names).toEqual(expect.arrayContaining(["get_supplier_purchase_orders","propose_supplier_purchase_order","propose_supplier_vendor_email","get_menu_items"]));
+    expect(names).toEqual(expect.arrayContaining(["get_supplier_purchase_orders","propose_supplier_purchase_order","propose_supplier_vendor_email","query_data"]));
   });
   it("preserves read-only comparison/status requests without preparing any action",async()=>{
     const ports=purchasing();
@@ -607,15 +622,15 @@ describe("Task16E optional composition in the single existing agent loop",()=>{
 
 it("advertises actual result references on the native continuation and preserves the plain answer",async()=>{
  const {requests,provider}=recording([
-  [call("get_menu_items",'{"query":null,"limit":null}',"menu_read"),completed],
-  [call("present_response",JSON.stringify({layout:"stack",panels:[{source:"menu_items",field:"rows",kind:"table",ref:"r1"}],groups:[{layout:"grid",items:["p0"]}],suggestions:[]}),"ui_read"),completed],
+  [call("query_data",'{"view":"cv_sales_days","sql":null,"parameters":null,"columns":["business_date","net_sales_cents"],"filters":null,"group_by":null,"metrics":null,"date_from":"2026-10-21","date_to":"2026-10-21","order_by":null,"limit":null}',"menu_read"),completed],
+  [call("present_response",JSON.stringify({layout:"stack",panels:[{source:"canonical_data",field:"rows",kind:"table",ref:"r1"}],groups:[{layout:"grid",items:["p0"]}],suggestions:[]}),"ui_read"),completed],
   [text("Latte is on the saved menu."),completed]
  ]);
- const result=await runAgentTurn({ownerText:"What is on my menu?",context:{...context,currency:"USD"},provider});
+ const result=await runAgentTurn({ownerText:"What is on my menu?",context:{...context,currency:"USD",canonicalData:async()=>({businessId:"aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",db:{rpc:async()=>({data:{rows:[{business_date:"2026-10-21",net_sales_cents:450}],truncated:false,missing:[]},error:null})} as never})},provider});
  expect(result.text).toBe("Latte is on the saved menu.");
  const output=(requests[1].input as Array<Record<string,unknown>>).find(x=>x.type==="function_call_output"&&x.call_id==="menu_read");
- expect(JSON.parse(String(output?.output))).toMatchObject({source:"menu_items",presentationRef:"r1"});
- expect(result.results).toContainEqual(expect.objectContaining({source:"response_presentation",accepted:true,presentation:expect.objectContaining({groups:[{layout:"grid",items:["table0"]}],tables:[expect.objectContaining({rows:[expect.arrayContaining(["Latte",450]) ]})]})}));
+ expect(JSON.parse(String(output?.output))).toMatchObject({source:"canonical_data",presentationRef:"r1"});
+ expect(result.results).toContainEqual(expect.objectContaining({source:"response_presentation",accepted:true,presentation:expect.objectContaining({groups:[{layout:"grid",items:["table0"]}],tables:[expect.objectContaining({rows:[expect.arrayContaining(["2026-10-21",450]) ]})]})}));
  expect(JSON.stringify(requests[2].input)).toContain("Visual selection only");
 });
 
@@ -634,9 +649,9 @@ describe("U1 matched recorded incident — checkpoint and presentation variation
       missingInputs:["testSourceUnavailable"],estimatedInputs:[],staleInputs:[]}};
     for(const withPresentation of [false,true]){
       const {requests,provider}=recording([
-        [call("get_sales",JSON.stringify({period,ownerInputs:null}),"u1-sales"),completed],
-        [call("get_peak_hours",JSON.stringify(period),"u1-peak"),completed],
-        [call("get_profit",JSON.stringify({period,ownerInputs:null}),"u1-profit"),completed],
+        [call("query_data",JSON.stringify({official_metric:{id:"sales",period_mode:null,period}}),"u1-sales"),completed],
+        [call("query_data",JSON.stringify({official_metric:{id:"hourly_sales",period_mode:null,period}}),"u1-peak"),completed],
+        [call("query_data",JSON.stringify({official_metric:{id:"profit",period_mode:null,profit_period:period}}),"u1-profit"),completed],
         ...(withPresentation?[[call("present_response",JSON.stringify({layout:"stack",panels:[],suggestions:[]}),"u1-visual"),completed]]:[]),
         [text(answer),completed],
       ]);
@@ -670,12 +685,12 @@ describe("one Supervisor native discovery transport",()=>{
  it("continues a hosted search using only canonical registered definitions and pairs the actual selected function",async()=>{
    vi.stubEnv("SUPERVISOR_OPENAI_MODEL","gpt-6-luna");
    try{
-     const discovery={type:"output_item.done",item:{type:"tool_search_call",execution:"server",call_id:null,status:"completed",arguments:{paths:["get_menu_items"]}}};
-     const loaded={type:"response.output_item.done",item:{type:"tool_search_output",execution:"server",call_id:null,status:"completed",tools:[{type:"function",name:"get_menu_items",description:"untrusted"}]}};
-     const {requests,provider}=recording([[{...discovery,type:"response.output_item.done"},loaded,call("get_menu_items",'{"query":null,"limit":null}',"native_menu"),completed],[text("Menu reviewed."),completed]]);
+     const discovery={type:"output_item.done",item:{type:"tool_search_call",execution:"server",call_id:null,status:"completed",arguments:{paths:["query_data"]}}};
+     const loaded={type:"response.output_item.done",item:{type:"tool_search_output",execution:"server",call_id:null,status:"completed",tools:[{type:"function",name:"query_data",description:"untrusted"}]}};
+     const {requests,provider}=recording([[{...discovery,type:"response.output_item.done"},loaded,call("query_data",'{"view":null,"sql":"SELECT name,price_cents FROM menu_items ORDER BY id","parameters":null,"columns":null,"filters":null,"group_by":null,"metrics":null,"date_from":null,"date_to":null,"order_by":null,"limit":null}',"native_menu"),completed],[text("Menu reviewed."),completed]]);
      const result=await runAgentTurn({ownerText:"Read the menu.",context:{...context},provider});
      expect(result.endReason).toBe("complete");
-     expect(result.tools).toContain("get_menu_items");
+     expect(result.tools).toContain("query_data");
      expect(requests[0].tools).toContainEqual({type:"tool_search"});
      const second=JSON.stringify(requests[1].input);
      expect(second).toContain("native_menu");
@@ -690,7 +705,7 @@ describe("U2 no-provider end-to-end execution receipts",()=>{
  const done=(outputTokens:number)=>({type:"response.completed",response:{model:"gpt-6-luna",usage:{
   input_tokens:400,output_tokens:outputTokens,input_tokens_details:{cached_tokens:100},
   output_tokens_details:{reasoning_tokens:Math.min(outputTokens,100)}},output:[]}});
- const menu=(id:string)=>call("get_menu_items",'{"query":null,"limit":null}',id);
+ const menu=(id:string)=>call("query_data",'{"view":null,"sql":"SELECT name,price_cents FROM menu_items ORDER BY id","parameters":null,"columns":null,"filters":null,"group_by":null,"metrics":null,"date_from":null,"date_to":null,"order_by":null,"limit":null}',id);
  it("finishes an ordinary greeting with one request and no forced investigation",async()=>{
   vi.stubEnv("SUPERVISOR_OPENAI_MODEL","gpt-6-luna");
   try{
@@ -746,7 +761,7 @@ describe("U2 no-provider end-to-end execution receipts",()=>{
    const metered=meteredInvestigationProvider(db,scope,provider,8192);
    const result=await withWorkerBudget({maxElapsedMs:55000,maxModelCalls:8,maxToolCalls:24,
     maxInputTokens:240000,maxOutputTokens:32768},()=>runAgentTurn({ownerText:"Investigate this objective.",
-     context:{...context},provider:metered.provider,toolNames:["get_menu_items"]}),8192);
+     context:{...context},provider:metered.provider,toolNames:["query_data"]}),8192);
    expect(result.endReason).toBe(fault?"provider_error":"complete");
    expect(requests.map(p=>p.max_output_tokens)).toEqual([8192,8192]);
    expect(result.usage.outputTokens).toBe(5300);
@@ -760,11 +775,11 @@ describe("U2 no-provider end-to-end execution receipts",()=>{
  it("rejects provider discovery of a tool outside the admitted worker registry before dispatch",async()=>{
   vi.stubEnv("SUPERVISOR_OPENAI_MODEL","gpt-6-luna");
   try{
-   const search={type:"response.output_item.done",item:{type:"tool_search_call",execution:"server",call_id:null,status:"completed",arguments:{paths:["get_menu_items"]}}};
+   const search={type:"response.output_item.done",item:{type:"tool_search_call",execution:"server",call_id:null,status:"completed",arguments:{paths:["query_data"]}}};
    const fake={type:"response.output_item.done",item:{type:"tool_search_output",execution:"server",call_id:null,status:"completed",tools:[{type:"function",name:"propose_purchases"}]}};
    const {provider,requests}=recording([[search,fake,call("propose_purchases","{}","unsafe_call"),done(200)],[text("Unable to confirm evidence."),done(100)]]);
    const onTool=vi.fn();
-   const result=await runAgentTurn({ownerText:"Read only",context:{...context},provider,toolNames:["get_menu_items"],onTool});
+   const result=await runAgentTurn({ownerText:"Read only",context:{...context},provider,toolNames:["query_data"],onTool});
    expect(result.endReason).toBe("provider_error");
    expect(onTool).not.toHaveBeenCalled();
    expect(result.results).toEqual([]);
@@ -901,7 +916,7 @@ describe("production Supervisor provider availability recovery (zero external ca
     vi.stubEnv("SUPERVISOR_OPENAI_FALLBACK_MODEL","gpt-4.1-mini");
     try{
       const {provider,requests}=recording([
-        [call("get_menu_items",'{"query":null,"limit":null}',"menu_repair_1"),completed],
+        [call("query_data",'{"view":null,"sql":"SELECT name,price_cents FROM menu_items ORDER BY id","parameters":null,"columns":null,"filters":null,"group_by":null,"metrics":null,"date_from":null,"date_to":null,"order_by":null,"limit":null}',"menu_repair_1"),completed],
         [{type:"response.failed",response:{error:{code:"server_error"}}}],
         [text("The result is incomplete."),done("gpt-6-luna")],
       ]);

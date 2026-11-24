@@ -1,7 +1,8 @@
 import type {AgentTurn} from "@/lib/ai/agent/loop.server";
 import type {AgentToolName,AgentToolResult} from "@/lib/ai/agent/tools";
 import {CUSTOMER_MONITOR_POLICY,customerTrendEvidenceFields} from "@/lib/metrics/core/customers";
-import {hasVerifiedU3NumericObservation} from "@/lib/ai/agent/checkNumbers";
+import {hasVerifiedU3NumericObservation,hasVerifiedU3DirectObservation} from "@/lib/ai/agent/checkNumbers";
+import {unreplacedResearchAttempts,completeResearchAttempts} from "@/lib/ai/agent/researchRecovery";
 
 /** Task 15A uses the SAME registered Supervisor model/tool loop, restricted to
  * evidence reads. Only a verified owner's later turn can reach the registered
@@ -106,7 +107,7 @@ const nonObservationKeys=new Set([
   "sourceCount","rowCount","sourceMix","available","empty","quality",
   "status","readAt","readTime","lastUpdated","freshnessLabel","provisional",
   "stale","hasIncomplete","currentDayIncomplete","todayImported",
-  "lastFullDay","lastFullDayTotals",
+  "lastFullDay","lastFullDayTotals","evidence","metric_basis","official_metric",
 ]);
 function observedValue(value:unknown,depth=0):boolean{
   if(typeof value==="number")return Number.isFinite(value);
@@ -140,7 +141,7 @@ function verifiedEventEvidence(result:AgentToolResult,from:string,to:string):boo
 /** Validate the actual unfiltered period denominator before accepting any
  * customer finding. A complete flag alone is not evidence of sufficient identity. */
 function customerCoverageReceipt(result:AgentToolResult){
-  if(result.source!=="canonical_data"||result.error||result.truncated||result.customerEvidence!==true||
+  if(!["canonical_data","u3_canonical_research"].includes(result.source)||result.error||result.truncated||result.customerEvidence!==true||
     result.aggregateOnly!==true||!result.period||result.period.from>result.period.to)return null;
   const c=result.customerCoverage;
   if(!c||typeof c!=="object")return null;
@@ -169,16 +170,18 @@ function qualifiedCustomerTrendCoverage(result:AgentToolResult,anonymous=false):
     c.linkedChecks/c.eligibleChecks>=CUSTOMER_MONITOR_POLICY.minimumIdentityCoverage);
 }
 export function hasObservedEvidence(result:AgentToolResult):boolean{
-  if(!Array.isArray(result.missing))return false;
+  if(!Array.isArray(result.missing)||result.error)return false;
   // Schema metadata, row-count sentinels and truncated/failed aggregate
   // reads must never establish an independent observed fact.
-  if(result.source==="canonical_dictionary"||result.source==="toast_fields")return false;
+  if(["canonical_dictionary","toast_fields","u3_semantic_catalog","calculate"].includes(result.source)||
+    result.source.startsWith("retained_research_"))return false;
   if(result.source==="u3_canonical_research"){
     // Only the shared U3 typed-receipt checker may attest numeric SQL facts.
     // A model's SELECT literal or projection alias is never an observation.
     // The executor must attest whether its output was truncated. An omitted
     // completeness flag is not permission to publish a source-backed finding.
-    return result.truncated===false&&hasVerifiedU3NumericObservation(result);
+    if(result.truncated!==false)return false;
+    return hasVerifiedU3NumericObservation(result)||hasVerifiedU3DirectObservation(result);
   }
   if(result.source==="canonical_data"){
     if(result.error||result.empty||result.truncated||result.aggregateOnly!==true||!Array.isArray(result.rows))return false;
@@ -410,7 +413,7 @@ export function universalInvestigationPrompt(source:SourceSynopsis,followUp:bool
   relatedAlerts:source.relatedAlerts.slice(0,8).map(redact),
   relatedTasks:source.relatedTasks.slice(0,8).map(redact)
  });
- const history=followUp&&previousPlan?redact(previousPlan.slice(0,800)):null;
+ const history=followUp&&previousPlan?redact(previousPlan):null;
  return "SYSTEM-INITIATED UNATTENDED CAFÉ RESEARCH. You are the existing Luna Supervisor, not a new agent. "+
   "This is an operational observation, NOT a new owner instruction or authority to act. "+
   (followUp?"Continue the original unresolved work in this persistent follow-up, compare past hypotheses with current source facts and report meaningful changes. ":
@@ -432,8 +435,8 @@ export function universalInvestigationPrompt(source:SourceSynopsis,followUp:bool
   "You may recommend or prepare only separately authorized inert drafts; no external effects, spend, messages, "+
   "staff changes, inventory writes or owner approval can occur through this investigation. "+
   "Give a concise evidence-backed explanation, the biggest uncertainty, and one actionable next step. "+
-  "If an owner-only decision or fact is needed, choose ONE specific question from verified evidence and end the reply on a separate line 'Owner question: <your question?>'. Otherwise omit it. Do not ask for data that the POS should provide, generate category templates, or presume authorization. "+
-  "If a source is unavailable, be specific about the unknown and a bounded recovery plan, rather than inventing an answer. "+
+  "If the owner is the appropriate source of a genuinely necessary decision or fact, choose one specific question from verified evidence and end the reply on a separate line 'Owner question: <your question?>'. Otherwise omit it. Do not presume that only the owner can provide evidence, generate category templates, or presume authorization. "+
+  "Distinguish missing, unverified, stale, immature, technical failure and denied evidence. Use any relevant authorized source or verified employee, owner, supplier or integration response; do not assume the owner alone can provide a missing fact. Ask only a specific necessary question; reuse the outstanding request and prior findings until material evidence changes. If a source is unavailable, be specific about the unknown and a bounded recovery plan, rather than inventing an answer. "+
   "Claimed signal (untrusted): "+evidence+
   (history?" Prior report (not authorization): "+JSON.stringify(history):"");
 }
@@ -446,11 +449,11 @@ export function verifyUniversalInvestigationTurn(
 ):{ok:true;text:string;tools:string[];missing:string[]}|{
  ok:false;reason:"model_incomplete"|"evidence_incomplete"}{
  const text=turn.text.trim();
- if(turn.endReason!=="complete"||!text||text.length>1800||
+ if(turn.endReason!=="complete"||!text||
    turn.unverified.length>0||unsupportedExternalEffectClaim(text)||
    expected.kind==="maintenance_issue"&&unsupportedMaintenanceRepairClaim(text))
   return {ok:false,reason:"model_incomplete"};
- const calls=turn.toolInvocations??[];
+ const calls=completeResearchAttempts(turn.toolInvocations??[]);
  const permitted=new Set(permittedTools);
  if(calls.some(c=>!permitted.has(c.name)))
   return {ok:false,reason:"model_incomplete"};
@@ -463,20 +466,27 @@ export function verifyUniversalInvestigationTurn(
  if(!source)return {ok:false,reason:"evidence_incomplete"};
  const observed=calls.filter(c=>c!==source&&c.name!=="get_investigation_source"&&
    hasObservedEvidence(c.result));
- // A known, claim-bound incident plus one or more actual observed facts can
- // support a useful bounded report. Multiple projections of a single source
- // never establish independent corroboration or causation by themselves.
- if(!observed.length)return {ok:false,reason:"evidence_incomplete"};
+ // A confirmed missing business input is itself a claim-bound observation.
+ // The incident reader rechecks eligibility and supplies this marker; an
+ // arbitrary empty SQL result or failed reader cannot establish it. Do not
+ // force unrelated corroboration or a paid retry just to report the gap.
+ const gap=source.result.selectors as {family?:unknown;gapReason?:unknown}|undefined;
+ const verifiedMissingInput=expected.sourceType==="alert"&&expected.kind==="business_anomaly"&&
+  gap?.family==="data_gap"&&gap.gapReason==="missing_business_input";
+ // Multiple projections of one source never establish independent causation.
+ if(!observed.length&&!verifiedMissingInput)return {ok:false,reason:"evidence_incomplete"};
  if(expected.kind==="supplier_receiving"){
   const selectors=source.result.selectors as {entityId?:unknown}|undefined;
   const id=selectors?.entityId;
-  if(typeof id!=="string"||!observed.some(c=>c.name==="inspect_purchase_reconciliation"&&
+  if(typeof id!=="string"||!observed.some(c=>c.result.source==="purchase_reconciliation"&&
     c.result.reconciliation&&typeof c.result.reconciliation==="object"&&
     (c.result.reconciliation as {purchaseOrderId?:unknown}).purchaseOrderId===id))
    return {ok:false,reason:"evidence_incomplete"};
  }
  if(expected.kind==="money_update"&&expected.sourceId.startsWith("financial-review:")&&
-   !observed.some(c=>c.name==="get_cashflow_evidence"))
+   !observed.some(c=>c.result.source==="cashflow_evidence"||c.name==="query_data"&&c.result.source==="u3_canonical_research"&&
+     Array.isArray((c.result.evidence as {relation_names?:unknown}|undefined)?.relation_names)&&
+     (c.result.evidence as {relation_names:string[]}).relation_names.some(name=>name.startsWith("financial_"))))
   return {ok:false,reason:"evidence_incomplete"};
  if(expected.kind==="business_anomaly"){
   const selector=source.result.selectors as {family?:unknown;subject?:unknown;
@@ -491,7 +501,7 @@ export function verifyUniversalInvestigationTurn(
      !equal(p.current,selector.current)||!equal(p.previous,selector.previous))
     return {ok:false,reason:"evidence_incomplete"};
    if(!observed.some(c=>c.name==="query_data"&&
-     c.result.source==="canonical_data"&&
+     ["canonical_data","u3_canonical_research"].includes(c.result.source)&&
      c.result.customerEvidence===true&&c.result.aggregateOnly===true&&
      qualifiedCustomerTrendCoverage(c.result,
        typeof selector.subject==="string"&&selector.subject.startsWith("anonymous_"))))
@@ -500,13 +510,15 @@ export function verifyUniversalInvestigationTurn(
  }
  for(const c of calls.filter(c=>c.name==="propose_supplier_discrepancy_followup")){
   if(c.result.proposalCreated===true&&
-   (c.result.approvalRequired!==true||c.result.sent!==false||
+   (expected.kind!=="supplier_receiving"||
+    c.result.purchaseOrderId!==(source.result.selectors as {entityId?:unknown}|undefined)?.entityId||
+    c.result.approvalRequired!==true||c.result.sent!==false||
     typeof c.result.proposalId!=="string"))
    return {ok:false,reason:"evidence_incomplete"};
  }
  const names=[...new Set(observed.map(c=>c.name))];
  return {ok:true,text,tools:["get_investigation_source",...names],
-  missing:[...new Set(calls.flatMap(c=>c.result.missing??[]))].slice(0,20)};
+  missing:[...new Set(unreplacedResearchAttempts(calls).flatMap(c=>c.result.missing??[]))]};
 }
 
 /** No receipt or effect authorization is available to a system-triggered

@@ -5,7 +5,7 @@
   "entrypoint": "evals/acceptance/live/task15d.mjs",
   "proof": "15d-proof.json",
   "scope": "15d-scope.json",
-  "expectedTools": ["get_menu_items","get_supplier_purchase_orders"],
+  "expectedTools": ["query_data","get_supplier_purchase_orders"],
   "assertions": [
     { "name": "selected-adversarial-file", "kind": "source", "table": "public.ai_attachments",
       "where": {

@@ -4,10 +4,7 @@
  * Run after the migrated-catalog parity gate; no business rows are read. */
 import {readFileSync,writeFileSync} from "node:fs";
 const census=JSON.parse(readFileSync("docs/plans/u3-physical-schema-census.generated.json","utf8"));
-const migration=readFileSync("supabase/migrations/20261120210000_u3_canonical_research.sql","utf8");
-const tag="$u3_sources$",start=migration.indexOf(tag),end=migration.indexOf(tag,start+tag.length);
-if(start<0||end<0)throw Error("U3 reviewed source manifest unavailable");
-const admitted=JSON.parse(migration.slice(start+tag.length,end));
+import {manifest as admitted,expectedLogical} from "./u3-reviewed-logical-catalog.mjs";
 const byTable=new Map(admitted.map(s=>[s.table,s]));
 if(byTable.size!==admitted.length)throw Error("Duplicate approved relation in manifest");
 const archiveName=/^(toast_raw_|toast_day_pages$|toast_modified_orders_staging$)/;
@@ -29,7 +26,9 @@ function disposition(table,column){
    "Reviewed model-visible field with authenticated owner-only data; masked in unattended work":
    "Reviewed model-visible field; access still requires signed scope, RLS and query admission"
  ];
- if(reviewed&&column==="business_id")return ["scope_only",
+ if(expectedLogical.get(table)?.includes(column))return ["reviewed_logical_projection",
+  "Corresponding field exposed through reviewed signed-scope logical view; not a raw table grant. Exact source, masking and semantics remain in SQL"];
+ if((reviewed||expectedLogical.has(table))&&column==="business_id")return ["scope_only",
   "Verified café isolation field, intentionally not projected as a model-selected business value"];
  if(secretName.test(table)||secretName.test(column))return ["restricted_secret_or_auth",
   "Credential, authorization or sensitive internal identifier; no universal research permission"];
@@ -65,13 +64,14 @@ const counts={};
 for(const relation of records)for(const field of relation.fields)
  counts[field.status]=(counts[field.status]??0)+1;
 const result={
- schemaVersion:1,generatedFrom:"migrated pg_catalog physical schema + reviewed U3 SQL manifest",
+ schemaVersion:1,generatedFrom:"migrated pg_catalog physical schema + complete reviewed U3 logical catalog",
  modelAuthorization:false,productionRowsIncluded:false,
  physicalTables:records.length,
  physicalFields:records.reduce((n,r)=>n+r.fields.length,0),
- approvedSqlRelations:admitted.length,
- reviewedFields:admitted.reduce((n,r)=>n+r.fields.length,0),
- additionalLogicalViews:["toast_records","toast_changes"],
+ approvedSqlRelations:expectedLogical.size,
+ reviewedFields:[...expectedLogical.values()].reduce((n,fields)=>n+fields.length,0),
+ additionalLogicalViews:[...expectedLogical.keys()].filter(name=>!byTable.has(name)).sort(),
+ logicalResearchCatalog:[...expectedLogical].sort(([a],[b])=>a.localeCompare(b)).map(([relation,fields])=>({relation,fields:[...fields].sort()})),
  legend:"Non-admitted fields require authorized specialist or explicit source/field review, not automatic exposure.",
  dispositionCounts:Object.fromEntries(Object.entries(counts).sort(([a],[b])=>a.localeCompare(b))),
  relations:records

@@ -45,7 +45,7 @@ const following={...base,phase:"awaiting_owner",step_version:2,
   evidence:{source:synopsis,collectedAt:now.toISOString()}};
 const agentResult=(patch:Record<string,unknown>={})=>({
   text:"I checked sales and labor coverage. Staffing remains uncertain. Review the owner approval card before any change; I will check again.",
-  endReason:"complete",tools:["get_investigation_source","get_sales","get_labor"],unverified:[],
+  endReason:"complete",tools:["get_investigation_source","query_data"],unverified:[],
   results:[{source:"investigation_source",period:null,missing:[],
       sourceType:"alert",sourceId:"alert-a",incidentKind:"sales_anomaly"},
     {source:"sales",period:null,missing:[],netSalesCents:12000,
@@ -56,9 +56,9 @@ const agentResult=(patch:Record<string,unknown>={})=>({
     {name:"get_investigation_source",result:{source:"investigation_source",
       period:null,missing:[],sourceType:"alert",sourceId:"alert-a",
       incidentKind:"sales_anomaly"}},
-    {name:"get_sales",result:{source:"sales",period:null,missing:[],
+    {name:"query_data",result:{source:"sales",period:null,missing:[],
       netSalesCents:12000,days:[{date:"2026-11-14",netSalesCents:12000}]}},
-    {name:"get_labor",result:{source:"labor",period:null,missing:["unverifiedWages"],
+    {name:"query_data",result:{source:"labor",period:null,missing:["unverifiedWages"],
       laborDays:[{date:"2026-11-14",wagesCents:2000,wageStatus:"missing"}]}},
   ],
   usage:{modelCalls:2,toolCalls:2,inputTokens:100,outputTokens:100,cachedTokens:0,latencyMs:200},
@@ -66,15 +66,17 @@ const agentResult=(patch:Record<string,unknown>={})=>({
 });
 function db(claims:Record<string,unknown>[],options?:{
   sourceError?:boolean;sourceStatus?:string;sourceKind?:string;
-  alertPayload?:Record<string,unknown>;timecard?:Record<string,unknown>|null;
-  taskStatus?:string;relatedTasks?:Record<string,unknown>[];
+  alertPayload?:Record<string,unknown>;alertPayloads?:Record<string,unknown>[];
+  timecard?:Record<string,unknown>|null;
+  taskStatus?:string;relatedTasks?:Record<string,unknown>[];yieldResearch?:boolean;
 }){
   const calls:Array<{name:string;args:Record<string,unknown>}>=[];
   const reads:Array<{table:string;column:string;value:unknown}>=[];
   const client={
     rpc:vi.fn(async(name:string,args:Record<string,unknown>)=>{
       calls.push({name,args});
-      return {data:name==="supervisor_claim_investigation"?claims.shift()??null:true,error:null};
+      return {data:name==="supervisor_claim_investigation"?claims.shift()??null:
+        name==="supervisor_investigation_research_checkpoint"?(args.p_action==="load"?[]:args.p_action==="yield"?options?.yieldResearch===true:true):true,error:null};
     }),
     from:(table:string)=>{
       let excluded=new Set<string>();
@@ -90,7 +92,7 @@ function db(claims:Record<string,unknown>[],options?:{
           {data:null,error:new Error("source offline")}:
           {data:table==="alerts"?{
             ...source,kind:options?.sourceKind??source.kind,
-            payload:options?.alertPayload??source.payload,
+            payload:options?.alertPayloads?.shift()??options?.alertPayload??source.payload,
             status:options?.sourceStatus??"new",
           }:table==="timecards"?options?.timecard??null:{
             kind:options?.sourceKind??"data_quality",status:options?.taskStatus??"needs_owner",
@@ -217,8 +219,9 @@ describe("Task 15A operational end-to-end orchestration (recorded source/model)"
     expect(modelInput.ownerText).toContain("as many or as few useful available tools");
     expect(modelInput.ownerText).not.toContain("at least TWO");
     expect(modelInput.toolNames).toContain("get_investigation_source");
-    expect(modelInput.toolNames).toContain("get_sales");
-    expect(modelInput.toolNames).toContain("get_labor");
+    expect(modelInput.toolNames).toContain("query_data");
+    expect(modelInput.toolNames).not.toContain("get_sales");
+    expect(modelInput.toolNames).not.toContain("get_labor");
     expect(modelInput.toolNames).not.toContain("propose_staff_change");
     expect(modelInput.toolNames).not.toContain("propose_gmail_action");
     // The model may only inspect the SQL-claimed café/owner/source.
@@ -232,8 +235,46 @@ describe("Task 15A operational end-to-end orchestration (recorded source/model)"
     const saved=d.calls.find(x=>x.name==="supervisor_finish_investigation")?.args;
     expect(saved?.p_outcome).toBe("investigated");
     expect(saved?.p_narrative).toBe(agentResult().text);
-    expect(saved?.p_evidence).toMatchObject({modelTools:["get_investigation_source","get_sales","get_labor"],
+    expect(saved?.p_evidence).toMatchObject({modelTools:["get_investigation_source","query_data"],
       missing:["unverifiedWages"]});
+  });
+  it("rejects a claimed source that became technically unavailable before reserving model work",async()=>{
+    const d=db([{...investigating}],{sourceKind:"business_anomaly",alertPayload:{
+      family:"data_gap",subject:"stock_counts",quality:"technical_failure",
+    }});
+    const result=await processNextInvestigation(d.client,now);
+    expect(result).toMatchObject({processed:1,failed:1});
+    expect(mocks.paidGate).not.toHaveBeenCalled();
+    expect(mocks.model).not.toHaveBeenCalled();
+    expect(d.calls.find(call=>call.name==="supervisor_fail_investigation")?.args.p_error).toBe("source_unavailable");
+  });
+  it("rechecks a source that became unavailable between claim and model reservation",async()=>{
+    const input={family:"data_gap",subject:"supplier_document",quality:"missing",current:1,unit:"coverage",gapReason:"missing_business_input"};
+    const d=db([{...investigating}],{sourceKind:"business_anomaly",alertPayloads:[
+      input,{...input,quality:"technical_failure",gapReason:"technical_failure"},
+    ]});
+    expect(await processNextInvestigation(d.client,now)).toMatchObject({processed:1,failed:1});
+    expect(mocks.paidGate).not.toHaveBeenCalled();
+    expect(mocks.model).not.toHaveBeenCalled();
+  });
+  it("does not pay again when an unchanged open alert is merely marked seen",async()=>{
+    const d=db([{...following}],{sourceStatus:"seen"});
+    expect(await processNextInvestigation(d.client,now)).toMatchObject({processed:1,rechecked:1,failed:0});
+    expect(mocks.paidGate).not.toHaveBeenCalled();
+    expect(mocks.model).not.toHaveBeenCalled();
+    expect(mocks.notify).not.toHaveBeenCalled();
+  });
+  it("yields productive unfinished investigation research without publishing a partial report",async()=>{
+    const d=db([{...investigating}],{yieldResearch:true});
+    mocks.model.mockImplementationOnce(async(input)=>{
+      expect(input.checkpoint.investigationResearch).toBe(true);
+      return agentResult({endReason:"budget"});
+    });
+    const status=await processNextInvestigation(d.client,now);
+    expect(status).toMatchObject({processed:1,failed:0,investigated:0});
+    expect(d.calls.find(call=>call.name==="supervisor_investigation_research_checkpoint"&&call.args.p_action==="yield")).toBeDefined();
+    expect(mocks.notify).not.toHaveBeenCalled();
+    expect(d.calls.some(call=>call.name==="supervisor_finish_investigation"||call.name==="supervisor_fail_investigation")).toBe(false);
   });
   it("retains prior findings across a worker restart without paying for unanswered owner work",async()=>{
     const d=db([{...investigating},{...following}]);
@@ -368,12 +409,12 @@ describe("Task 15A operational end-to-end orchestration (recorded source/model)"
       ]));
       return agentResult({toolInvocations:[
         {name:"get_investigation_source",result:exact},
-        {name:"get_labor",result:{source:"labor_and_attendance",period:null,
+        {name:"query_data",result:{source:"labor_and_attendance",period:null,
           missing:["wagesIncomplete"],laborDays:[{date:"2026-11-14",wagesCents:null,
             wageStatus:"missing"}]}},
         // Dated shift schedule is independent of attendance/labor. Payroll
         // is a second labor projection and cannot corroborate itself.
-        {name:"get_week_schedule",result:{source:"scheduled_shifts",period:null,
+        {name:"query_data",result:{source:"scheduled_shifts",period:null,
           missing:[],scheduleSet:true,shifts:[{date:"2026-11-14",id:"shift-a"}]}},
       ]});
     });
@@ -396,8 +437,8 @@ describe("Task 15A operational end-to-end orchestration (recorded source/model)"
       expect(exact).toMatchObject({missing:["timecard_not_verified"],linkedTimecard:null});
       return agentResult({toolInvocations:[
         {name:"get_investigation_source",result:exact},
-        {name:"get_labor",result:{source:"labor_and_attendance",period:null,missing:[]}},
-        {name:"get_payroll_facts",result:{source:"payroll_facts",period:null,missing:[]}},
+        {name:"query_data",result:{source:"labor_and_attendance",period:null,missing:[]}},
+        {name:"query_data",result:{source:"payroll_facts",period:null,missing:[]}},
       ]});
     });
     expect(await processNextInvestigation(d.client,now))
@@ -409,9 +450,9 @@ describe("Task 15A operational end-to-end orchestration (recorded source/model)"
       {name:"get_investigation_source",result:{source:"investigation_source",
         period:null,missing:[],sourceType:"alert",sourceId:"alert-a",
         incidentKind:"sales_anomaly"}},
-      {name:"get_labor",result:{source:"labor_and_attendance",
+      {name:"query_data",result:{source:"labor_and_attendance",
         period:null,missing:["laborReaderUnavailable"],laborDays:null}},
-      {name:"get_week_schedule",result:{source:"scheduled_shifts",
+      {name:"query_data",result:{source:"scheduled_shifts",
         period:null,missing:["scheduleReadFailed"],shifts:null}},
     ]}));
     const d=db([{...investigating}]);
@@ -424,7 +465,7 @@ describe("Task 15A operational end-to-end orchestration (recorded source/model)"
   });
   it("does not silently publish a one-tool answer as a multi-step investigation",async()=>{
     mocks.model.mockResolvedValue(agentResult({toolInvocations:[
-      {name:"get_sales",result:{source:"sales",period:null,missing:[]}},
+      {name:"query_data",result:{source:"sales",period:null,missing:[]}},
     ]}));
     const d=db([{...investigating}]);
     expect(await processNextInvestigation(d.client,now)).toMatchObject({failed:1,investigated:0});
@@ -438,8 +479,8 @@ describe("Task 15A operational end-to-end orchestration (recorded source/model)"
       {name:"get_investigation_source",result:{source:"investigation_source",
         period:null,missing:[],sourceType:"alert",sourceId:"other-alert",
         incidentKind:"sales_anomaly"}},
-      {name:"get_sales",result:{source:"sales",period:null,missing:[]}},
-      {name:"get_labor",result:{source:"labor",period:null,missing:[]}},
+      {name:"query_data",result:{source:"sales",period:null,missing:[]}},
+      {name:"query_data",result:{source:"labor",period:null,missing:[]}},
     ]}));
     const d=db([{...investigating}]);
     expect(await processNextInvestigation(d.client,now)).toMatchObject({
@@ -455,15 +496,14 @@ describe("Task 15A operational end-to-end orchestration (recorded source/model)"
     {name:"missing evidence",draft:{state:"missing"},status:"Please confirm the missing stock count",expected:{missing:["stock_purchase_evidence_missing"]}},
     {name:"unverified draft",draft:null,status:"I could not verify the purchase draft",expected:{missing:["stock_purchase_draft_unverified"]}},
   ])("preserves the whole verified stock report and stores separate procurement status: $name",async({draft,status,expected})=>{
-    const text="Observed evidence. ".repeat(90)+"The closing qualification must remain intact; delivery is not independently verified.";
-    expect(text.length).toBeGreaterThan(1300);
-    expect(text.length).toBeLessThanOrEqual(1800);
+    const text="Observed evidence. ".repeat(150)+"The closing qualification must remain intact; delivery is not independently verified.";
+    expect(text.length).toBeGreaterThan(1800);
     const selectors={family:"stockout_risk",subject:"ingredient-a"};
     const exact={source:"investigation_source",period:null,missing:[],sourceType:"alert",sourceId:"alert-a",incidentKind:"business_anomaly",selectors};
     const inventory={source:"inventory",period:null,missing:[],rows:[{id:"ingredient-a",quantity:2}]};
     const costs={source:"ingredient_costs",period:null,missing:[],rows:[{id:"ingredient-a",unitCostCents:10}]};
     mocks.model.mockResolvedValue(agentResult({text,results:[exact,inventory,costs],toolInvocations:[
-      {name:"get_investigation_source",result:exact},{name:"get_inventory",result:inventory},{name:"get_ingredient_costs",result:costs},
+      {name:"get_investigation_source",result:exact},{name:"query_data",result:inventory},{name:"query_data",result:costs},
     ]}));
     if(draft)mocks.stockDraft.mockResolvedValue(draft);
     else mocks.stockDraft.mockRejectedValue(Error("draft not verified"));

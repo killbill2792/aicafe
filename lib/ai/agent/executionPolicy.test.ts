@@ -1,5 +1,5 @@
 import {describe,it,expect} from "vitest";
-import {executionPolicy,requestOutputCap,providerUsageReceipt,requestComposition} from "./executionPolicy";
+import {executionPolicy,requestOutputCap,providerUsageReceipt,requestComposition,researchPageBudget,providerTextAccounting} from "./executionPolicy";
 describe("technical execution budgets, not business intent routing",()=>{
  it("reserves synthesis tokens for complex work and retains old provider constraints",()=>{
    const p=executionPolicy("gpt-6-luna",undefined,false);
@@ -51,4 +51,20 @@ it("separates discovered schema replay from business evidence",()=>{
  expect(m.discoveredSchemaBytes).toBe(Buffer.byteLength(JSON.stringify(schema)));
  expect(m.toolEvidenceBytes).toBe(Buffer.byteLength(JSON.stringify(evidence)));
  expect(JSON.stringify(m)).not.toContain("private");
+});
+
+describe("research transport capacity",()=>{
+ it("adapts pages to the measured request instead of a fixed row or byte cap",()=>{
+  expect(researchPageBudget(10000)).toBeGreaterThan(24576);
+  expect(researchPageBudget(100000)).toBeLessThan(researchPageBudget(10000));
+  expect(researchPageBudget(120000,120000)).toBe(0);
+  expect(researchPageBudget(10000,120000)).toBeLessThan(researchPageBudget(10000));
+ });
+ it("discounts only real user binary media from text capacity",()=>{
+  const media="data:image/png;base64,"+"A".repeat(100000);
+  const params={input:[{role:"user",content:[{type:"input_image",image_url:media}]}]};
+  expect(providerTextAccounting(params).bytes).toBeLessThan(1000);
+  expect(providerTextAccounting(params).multimedia).toBe(true);
+  expect(providerTextAccounting({input:[{role:"assistant",content:[{type:"input_image",image_url:media}]}]}).bytes).toBeGreaterThan(100000);
+ });
 });

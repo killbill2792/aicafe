@@ -88,7 +88,8 @@ jobs:
       pull-requests: read
       issues: read
       actions: read
-    runs-on: ubuntu-latest
+    # Pin the stable runner image rather than silently following ubuntu-latest.
+    runs-on: ubuntu-24.04
     timeout-minutes: 40
     env:
       HEAD_SHA: ${{ needs.authorize.outputs.head }}
@@ -176,19 +177,9 @@ jobs:
           test -s "$RUNNER_TEMP/luna-approved-source.json"
       - name: Migrate a fresh disposable local Supabase only
         working-directory: candidate
-        run: |
-          set -euo pipefail
-          supabase start -x realtime,imgproxy,mailpit,postgres-meta,studio,edge-runtime,logflare,vector,supavisor
-          supabase db reset --local --yes
-          pg_isready -q -h 127.0.0.1 -p 54322 -U postgres
-          # pg_isready is not proof of an authenticated SQL read. The
-          # trusted host must be able to attest the disposable DB before spend.
-          command -v psql >/dev/null
-          PGPASSWORD=postgres PGOPTIONS="-c default_transaction_read_only=on" psql \
-            -X -q -t -A -h 127.0.0.1 -p 54322 -U postgres -d postgres \
-            -v ON_ERROR_STOP=1 -c "select json_build_object('ready',true)->>'ready'" \
-            | grep -qx true
-          supabase status -o json > "$RUNNER_TEMP/luna-local-supabase.json"
+        run: bash ../coordinator/scripts/acceptance/shared-luna-db.sh
+      - name: Provision and verify disposable restricted U3 research login
+        run: bash coordinator/scripts/acceptance/shared-luna-u3.sh
       - name: Export masked disposable keys and a random capped proxy token
         run: |
           set -euo pipefail
@@ -256,7 +247,7 @@ jobs:
             -e OPENAI_API_KEY='sk-local_disposable_proxy_key_not_real' \
             -e AICAFE_14B_BROKER_TOKEN="$AICAFE_14B_BROKER_TOKEN" \
             -e AI_CAFE_LIVE_ACCEPTANCE -e APP_URL -e ACCEPTANCE_DATABASE_URL \
-            -e SUPERVISOR_OPENAI_MODEL \
+            -e SUPERVISOR_OPENAI_MODEL -e AICAFE_RESEARCH_SQL_ENABLED -e AICAFE_RESEARCH_DATABASE_URL \
             -e SUPERVISOR_OPENAI_FALLBACK_MODEL='gpt-4.1-mini' \
             -e HEAD_SHA -e SCENARIO -e AICAFE_SHARED_LUNA_CANDIDATE=1 \
             -e NEXT_PUBLIC_SUPABASE_URL -e NEXT_PUBLIC_SUPABASE_ANON_KEY -e SUPABASE_SERVICE_ROLE_KEY \

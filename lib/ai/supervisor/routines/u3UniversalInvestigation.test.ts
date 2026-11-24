@@ -41,6 +41,14 @@ describe("U3 model-led autonomous investigation",()=>{
   expect(follow).toContain("Continue the original unresolved work");
   expect(follow).not.toContain("07:00");
  });
+ it("does not discard a long verified report or the final context of an earlier investigation",()=>{
+  const report="Observed evidence and uncertainty. ".repeat(100)+"Closing qualification.";
+  expect(report.length).toBeGreaterThan(1800);
+  expect(verifyUniversalInvestigationTurn(turn({text:report}),expected,permitted))
+   .toMatchObject({ok:true,text:report});
+  const follow=universalInvestigationPrompt(signal,true,"Earlier source notes. ".repeat(100)+"Final unresolved hypothesis.");
+  expect(follow).toContain("Final unresolved hypothesis.");
+ });
  it("accepts unfamiliar incidents with source-backed research in a model-chosen order",()=>{
   const reordered=[analytics,caseRead];
   const result=verifyUniversalInvestigationTurn(turn({
@@ -61,6 +69,54 @@ describe("U3 model-led autonomous investigation",()=>{
   expect(verifyUniversalInvestigationTurn(turn({
    toolInvocations:[caseRead,{...analytics,result:{...analytics.result,truncated:true}}]}),
    expected,permitted)).toEqual({ok:false,reason:"evidence_incomplete"});
+ });
+ it("allows a claim-verified missing input without inventing a second observation",()=>{
+  const target={...expected,kind:"business_anomaly"};
+  const missing={...caseRead,result:{...caseRead.result,incidentKind:target.kind,
+   selectors:{family:"data_gap",gapReason:"missing_business_input",subject:"ingredient_prices"}}};
+  const report="The ingredient price is missing. Obtain the current supplier price before calculating margin.";
+  expect(verifyUniversalInvestigationTurn(turn({text:report,toolInvocations:[missing],
+    results:[missing.result]}),target,permitted)).toMatchObject({ok:true,tools:["get_investigation_source"]});
+  for(const gapReason of ["coverage_unverified","technical_failure",undefined]){
+   const source={...missing,result:{...missing.result,
+    selectors:{...missing.result.selectors,gapReason}}};
+   expect(verifyUniversalInvestigationTurn(turn({text:report,toolInvocations:[source],
+    results:[source.result]}),target,permitted)).toEqual({ok:false,reason:"evidence_incomplete"});
+  }
+  expect(verifyUniversalInvestigationTurn(turn({text:report,toolInvocations:[missing],
+    results:[missing.result],unverified:[{text:"invented",start:0,end:8,kind:"number"}]}),
+    target,permitted)).toEqual({ok:false,reason:"model_incomplete"});
+ });
+ it("does not mistake discovery, failed readers or scenario arithmetic for observed business facts",()=>{
+  const metadata={name:"describe_data",result:{source:"u3_semantic_catalog",period:null,
+    missing:[],total:32,relations:[{name:"orders",fieldsTotal:12}]}};
+  const hypothetical={name:"calculate",result:{source:"calculate",period:null,
+    missing:[],result:12000,estimated:true}};
+  const failed={name:"get_sales",result:{source:"daily_rollups",period:null,
+    missing:["source_read_failed"],error:"source_read_failed",days:[{netSalesCents:0}]}};
+  for(const read of [metadata,hypothetical,failed]){
+   expect(verifyUniversalInvestigationTurn(turn({toolInvocations:[caseRead,read],
+     results:[caseRead.result,read.result]}),expected,permitted))
+     .toEqual({ok:false,reason:"evidence_incomplete"});
+  }
+  expect(verifyUniversalInvestigationTurn(turn({toolInvocations:[metadata,analytics,hypothetical,caseRead]}),
+    expected,permitted)).toMatchObject({ok:true});
+ });
+ it("binds receiving findings and inert proposals to the actual claimed order",()=>{
+  const target={...expected,kind:"supplier_receiving"};
+  const source={...caseRead,result:{...caseRead.result,incidentKind:target.kind,
+    selectors:{entityId:"po-a"}}};
+  const receiving={name:"inspect_purchase_reconciliation",result:{source:"purchase_reconciliation",
+    period:null,missing:[],reconciliation:{purchaseOrderId:"po-a",lines:[{acceptedQuantity:2}]}}};
+  const proposal={name:"propose_supplier_discrepancy_followup",result:{source:"gmail_proposal",
+    period:null,missing:[],proposalCreated:true,approvalRequired:true,sent:false,
+    purchaseOrderId:"po-a",proposalId:"draft"}};
+  const admitted=[...permitted,proposal.name];
+  expect(verifyUniversalInvestigationTurn(turn({toolInvocations:[source,receiving,proposal]}),target,admitted))
+    .toMatchObject({ok:true});
+  expect(verifyUniversalInvestigationTurn(turn({toolInvocations:[source,receiving,
+    {...proposal,result:{...proposal.result,purchaseOrderId:"po-b"}}]}),target,admitted))
+    .toEqual({ok:false,reason:"evidence_incomplete"});
  });
  it("rejects model-picked SQL constants without attested source units",()=>{
   const forged={...analytics,result:{...analytics.result,

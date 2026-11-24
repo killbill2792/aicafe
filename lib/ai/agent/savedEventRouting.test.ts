@@ -27,27 +27,34 @@ const savedEvents=vi.fn(async()=>({events:[event],plans:[{
     observedDays:1,expectedDays:1,days:[{date:"2026-10-31",actualCents:1200,typicalCents:1100}],
   },
 }]})) as unknown as NonNullable<AgentToolContext["savedEvents"]>;
+const sqlRead=vi.hoisted(()=>vi.fn());
+vi.mock("./tools/u3SqlResearch.server",async importOriginal=>{
+  const actual=await importOriginal<typeof import("./tools/u3SqlResearch.server")>();
+  return {...actual,u3SqlConfigured:()=>true,runU3Sql:sqlRead};
+});
 function context(over:Partial<AgentToolContext>={}):AgentToolContext{
   return {locale:"en",asOf:"2026-10-30",timezone:"America/Chicago",
-    tools:{} as AgentToolContext["tools"],savedEvents,...over};
+    tools:{} as AgentToolContext["tools"],savedEvents,
+    canonicalData:async()=>({businessId:"aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",db:{} as never}),...over};
 }
 
 beforeEach(()=>vi.clearAllMocks());
 
 describe("Supervisor event chat always reuses saved Home facts",()=>{
-  it("does not re-run paid discovery even if an older model calls get_nearby_events",async()=>{
+  it("does not re-run paid discovery when the model requests saved event evidence",async()=>{
     const searchNearbyEvents=vi.fn(async()=>{throw new Error("paid discovery should not run");});
     const webSearch=vi.fn(async()=>{throw new Error("web search should not run");});
-    const {provider,requests}=scripted("get_nearby_events",
-      {start_date:"2026-10-30",days:3},"The saved town market moved; please check its source.");
+    const sql="SELECT name,status,source_url FROM cafe_events WHERE start_date BETWEEN $1 AND $2";
+    sqlRead.mockResolvedValueOnce({source:"u3_canonical_research",period:null,missing:[],rows:[{name:event.name,status:event.status,source_url:event.sourceUrl}],truncated:false});
+    const {provider,requests}=scripted("query_data",
+      {view:null,sql,parameters:["2026-10-30","2026-11-01"],columns:null,filters:null,group_by:null,metrics:null,date_from:null,date_to:null,order_by:null,limit:null},"The saved town market moved; please check its source.");
     const turn=await runAgentTurn({ownerText:"What changed with our saved town market?",
       context:context({searchNearbyEvents,webSearch}),provider});
     expect(turn.endReason).toBe("complete");
-    expect(turn.tools).toEqual(["get_nearby_events"]);
-    expect(turn.results[0]).toMatchObject({source:"cafe_events",searched:false,
-      events:[{name:"Town market",status:"moved",sourceUrl:"https://city.example/market"}],
-      plans:[{status:"committed",reportStatus:"complete"}]});
-    expect(savedEvents).toHaveBeenCalledWith("2026-10-30","2026-11-01");
+    expect(turn.tools).toEqual(["query_data"]);
+    expect(turn.results[0]).toMatchObject({source:"u3_canonical_research",rows:[{name:event.name,status:event.status,source_url:event.sourceUrl}]});
+    expect(sqlRead).toHaveBeenCalledWith(expect.objectContaining({businessId:"aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"}),expect.objectContaining({sql,parameters:["2026-10-30","2026-11-01"]}));
+    expect(savedEvents).not.toHaveBeenCalled();
     expect(searchNearbyEvents).not.toHaveBeenCalled();
     expect(webSearch).not.toHaveBeenCalled();
     expect(requests).toHaveLength(2);

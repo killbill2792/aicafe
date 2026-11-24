@@ -1,17 +1,19 @@
 ## 7. Numbers and money (non-negotiable)
 1. Money is integer cents. Never floats. Format only at display.
-2. **The model never does arithmetic in its head.** Screen numbers come from `lib/metrics/core/`.
-   All other math goes through the calculator tool, with steps shown.
-   - *Screen numbers* (profit, labor cost, card fees, break-even, item cost) have one definition in
-     `lib/metrics/core/`. When an answer needs one, the model uses the tool that returns it, so the chat
-     always matches the screens. This list grows only when a new number is added to a screen.
-   - *Everything else:* the model reads the data with `describe_data`/`query_data` and the other read
-     tools, decides the method, and does every sum through the one `calculate` tool: + − × ÷, sum and
-     percent only. No money definitions and no code execution. Every input comes from a tool result
-     or a saved owner fact. The answer shows inputs, formula and steps, labeled calculation or estimate.
-     A test ensures the calculator is never used to rebuild a screen number.
-   - No new tool or scenario per question type. A new tool is added only for new data or a new action.
-   *Why:* models make arithmetic mistakes, and owners act on these numbers.
+2. **Verified information and correct arithmetic are the authority, not a named tool.** Official
+   screen metrics retain their shared definitions in `lib/metrics/core/`: same sources, period,
+   currency, inputs and assumptions must produce the same result. Make the shared calculation
+   basis and results accessible through common research, not dedicated model-facing reporting tools.
+   - The model chooses analytical SQL for relational calculations and the one general calculator
+     for further exact arithmetic. No mental arithmetic, mandatory call order or redundant calculation.
+   - Independent calculations and alternatives may use verified SQL receipts, authorized saved facts,
+     owner-supplied numbers and explicitly hypothetical assumptions. Never present an assumption as
+     an actual observation or imply an independently computed metric is official screen parity.
+     Show relevant inputs, formula, period, units, source and uncertainty. Arithmetic correctness
+     does not establish business correctness.
+   - No new tool per question type. Preserve unique operational capabilities and shared calculation
+     engines; consolidate redundant model-facing retrieval after equivalent information and parity
+     are verified. Never invent a stored value, conceal partial evidence, or bypass source authority.
 3. Every number the model states must come from a tool result or the owner's own words.
    `lib/ai/agent/checkNumbers.ts` compares them after the reply. A mismatch is logged and the figure gets
    an "unverified" chip. Never delete the sentence and never call a second LLM to review.

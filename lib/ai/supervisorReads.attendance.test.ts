@@ -6,24 +6,40 @@ vi.mock("server-only",()=>({}));
 const BUSINESS="11111111-1111-4111-8111-111111111111";
 const day={from:"2026-10-25",to:"2026-10-25"};
 
-function source(records:Array<{employee_id:string|null;clock_in:string;clock_out:string|null;source_type:string}>) {
+function source(records:Array<{id?:string;employee_id:string|null;clock_in:string;clock_out:string|null;source_type:string}>) {
   const reads:string[]=[];
   const client={
     from(table:string){
       reads.push(table);
       if(table==="timecards"){
-        const query={
-          select:()=>query,eq:()=>query,gte:()=>query,lte:()=>query,
-          limit:async()=>({data:records,error:null}),
+        let head=false,filterClock=false,employees:string[]|null=null;
+        const q={
+          select:(_columns:string,opts?:{head?:boolean})=>{head=opts?.head===true;return q;},
+          eq:()=>q,gte:()=>q,lte:()=>q,neq:()=>q,order:()=>q,
+          is:(field:string)=>{if(field==="clock_out")filterClock=true;return q;},
+          in:(field:string,ids:string[])=>{if(field==="employee_id")employees=ids;return q;},
+          range:async(start:number,end:number)=>{
+            const filtered=records.filter(row=>row.source_type!=="owner_schedule");
+            return {data:filtered.slice(start,end+1),count:filtered.length,error:null};
+          },
+          then:(fn:(v:unknown)=>unknown)=>{
+            const filtered=records.filter(row=>row.source_type!=="owner_schedule"&&
+              (!filterClock||row.clock_out===null)&&
+              (employees===null||row.employee_id!==null&&employees.includes(row.employee_id)));
+            return Promise.resolve({data:head?null:filtered,count:filtered.length,error:null}).then(fn);
+          }
         };
-        return query;
+        return q;
       }
       if(table==="employees"){
-        const query={
-          select:()=>query,eq:()=>query,in:()=>query,
+        const q={
+          select:()=>q,eq:()=>q,in:()=>q,order:()=>q,
+          range:async(start:number,end:number)=>({
+            data:[{id:"current",display_name:"Sam"}].slice(start,end+1),error:null
+          }),
           limit:async()=>({data:[{id:"current",display_name:"Sam"}],error:null}),
         };
-        return query;
+        return q;
       }
       throw new Error("unexpected table "+table);
     },
@@ -83,6 +99,27 @@ describe("historical attendance versus active on-clock roster",()=>{
     expect(result.value.recordedTimecards?.find(x=>x.clockOut==="2026-10-25T20:00:00Z"))
       .toMatchObject({breakEvidence:"recorded",recordedBreakCount:1});
   });
+  it("traverses all 217 recorded punches in pages and reports the complete source count",async()=>{
+    const records=Array.from({length:217},(_,i)=>({
+      ...card("current",i%2===0?null:"2026-10-25T19:00:00Z"),
+      id:"synthetic-punch-"+i,breaks:[],
+    }));
+    const {client}=source(records);
+    const reader=supervisorHistoricalReaders(client,BUSINESS);
+    const pages=await Promise.all([0,100,200].map(offset=>
+      reader.staffAttendance(BUSINESS,day,"America/Los_Angeles",offset)));
+    for(const p of pages)expect(p.available).toBe(true);
+    const [first,second,last]=pages.map(p=>p.value!);
+    expect([first.recordedTimecards?.length,second.recordedTimecards?.length,
+      last.recordedTimecards?.length]).toEqual([100,100,17]);
+    expect(pages.map(p=>p.value?.timecardCount)).toEqual([217,217,217]);
+    expect(first.recordedTimecardsNextOffset).toBe(100);
+    expect(second.recordedTimecardsNextOffset).toBe(200);
+    expect(last.recordedTimecardsNextOffset).toBe(null);
+    expect(last.recordedTimecardsPageComplete).toBe(true);
+    expect(first.onClockCount).toBe(109);
+    expect(new Set(pages.flatMap(p=>p.value?.recordedTimecards?.map(t=>t.timecardId)??[])).size).toBe(217);
+  });
   it("rejects a different business before consulting timecards",async()=>{
     const {client,reads}=source([]);
     await expect(supervisorHistoricalReaders(client,BUSINESS).staffAttendance(
@@ -95,8 +132,10 @@ describe("historical attendance versus active on-clock roster",()=>{
 describe("shifts with no hourly wage",()=>{
   function withUnpaid(rows:unknown[]|"error"){
     const q=(data:unknown)=>{const query:Record<string,unknown>={};
-      for(const k of ["select","eq","gte","lte","order","in"])query[k]=()=>query;
+      for(const k of ["select","eq","gte","lte","order","in","neq","is"])query[k]=()=>query;
       query.limit=async()=>data;
+      query.range=async()=>({...(data as Record<string,unknown>),count:Array.isArray((data as {data?:unknown[]}).data)?
+        (data as {data:unknown[]}).data.length:null});
       query.then=(yes:(v:unknown)=>unknown)=>Promise.resolve(data).then(yes);
       return query;};
     return {from(table:string){
