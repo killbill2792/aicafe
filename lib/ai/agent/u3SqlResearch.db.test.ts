@@ -198,13 +198,13 @@ describe.skipIf(!active)("U3 migrated registered tool + private connection",()=>
  it("verifies actual named timecard observations from SQL source lineage",async()=>{
   if(!admin)throw Error("admin_missing");
   const employee=randomUUID(),card=randomUUID();
-  await admin.query("INSERT INTO public.employees(id,business_id,display_name) VALUES($1,$2,'Synthetic Clock Sam')",[employee,ids.a]);
+  await admin.query("INSERT INTO public.employees(id,business_id,display_name) VALUES($1,$2,'Sam')",[employee,ids.a]);
   await admin.query("INSERT INTO public.timecards(id,business_id,employee_id,clock_in,clock_out,source_type) VALUES($1,$2,$3,'2026-11-15T09:00:00Z','2026-11-15T15:00:00Z','toast')",[card,ids.a,employee]);
   try{
    const result=await dataQueryTools.query_data.execute(input("SELECT timecard_id,employee_name,timezone,clock_in,clock_out,recorded_break_count FROM recorded_timecards"),scoped);
    expect(result.error).toBeUndefined();
    expect(result.rows).toHaveLength(1);
-   expect(checkNumbers("Synthetic Clock Sam clocked in at 9:00 AM on November 15, 2026. Synthetic Clock Sam worked 6 hours.","",[result as unknown as AgentToolResult],"en")).toEqual([]);
+   expect(checkNumbers("Sam clocked in at 9:00 AM on November 15, 2026. Sam worked 6 hours.","",[result as unknown as AgentToolResult],"en")).toEqual([]);
    const other=await dataQueryTools.query_data.execute(input("SELECT count(*) AS n FROM recorded_timecards"),{...scoped,aggregateOnly:true});
    expect(other.error).toBe("unattended_aggregate_required");
   }finally{
@@ -288,10 +288,10 @@ describe.skipIf(!active)("U3 migrated registered tool + private connection",()=>
   expect(all.error).toBeUndefined();
   expect(all.rows).toHaveLength(1);
   expect(all.rows[0]).toMatchObject({id:ids.orderA,net_sales_cents:"1100"});
-  expect(all.evidence).toMatchObject({column_units:{net_sales_cents:"cents"},column_origins:{net_sales_cents:{relation:"orders",column:"net_sales_cents"}}});
+  expect((all as unknown as AgentToolResult).evidence).toMatchObject({column_units:{net_sales_cents:"cents"},column_origins:{net_sales_cents:{relation:"orders",column:"net_sales_cents"}}});
   const result=await dataQueryTools.query_data.execute(input("SELECT SUM(CASE WHEN net_sales_cents>0 THEN net_sales_cents ELSE 0 END) AS positive, ROUND(AVG(net_sales_cents),0) AS average FROM orders"),scoped);
   expect(result.error).toBeUndefined();
-  expect(result.evidence).toMatchObject({column_units:{positive:"cents",average:"cents"}});
+  expect((result as unknown as AgentToolResult).evidence).toMatchObject({column_units:{positive:"cents",average:"cents"}});
   expect(checkNumbers("$11.00.","",[result as unknown as AgentToolResult],"en")).toEqual([]);
   const duplicate=await dataQueryTools.query_data.execute(input("SELECT o.*,l.* FROM orders o JOIN order_lines l ON o.id=l.order_id"),scoped);
   expect(duplicate.error).toBe("duplicate_result_columns");

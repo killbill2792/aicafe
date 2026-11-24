@@ -2,7 +2,6 @@ import {z} from "zod";
 import {randomUUID} from "node:crypto";
 import type {AgentToolContext,AgentToolResult} from "./index";
 import {CALC_OPS,exactDecimal,exactNumber,runCalculation,type CalcOp,type CalcShown,type CalcUnit,type CalcValue} from "@/lib/metrics/core/calculator";
-import {SCREEN_NUMBER_IDS} from "../screenNumbers";
 import type {ExplainLine} from "../explain";
 import type {CardValue} from "@/lib/format/values";
 import {ownerStatedAmounts} from "../checkNumbers";
@@ -11,7 +10,7 @@ import {completeResearchAttempts} from "../researchRecovery";
 const name=z.string().regex(/^[a-z][a-z0-9_]{0,39}$/u);
 const calculateInput=z.strictObject({
   purpose:z.string().trim().min(1).max(120),
-  screen_number:z.enum(["none",...SCREEN_NUMBER_IDS]),
+  screen_number:z.string().trim().min(1).nullable().optional(),
   inputs:z.array(z.strictObject({
     name,label:z.string().trim().min(1).max(50),
     tool:z.string().max(64).nullable(),
@@ -190,7 +189,7 @@ export const calculateTools={
             ref:input.tool+":"+(input.receipt_id?input.receipt_id+":":"")+input.path,
             estimate:isEstimate(hit.result),owner:false,
             partial:hit.result.missing.length>0,period:hit.result.period});
-        }else if(input.fact_key&&!input.tool&&!input.path&&!owner){
+        }else if(input.fact_key&&!input.tool&&!input.path&&!owner&&!input.receipt_id){
           const fact=facts.find(f=>f.fact_key===input.fact_key);
           if(!fact)return refuse("factNotSaved",input.fact_key);
           if(typeof fact.value_json!=="number")return refuse("factIsNotANumber",input.fact_key);
@@ -199,7 +198,7 @@ export const calculateTools={
           if(!exact)return refuse("invalidNumber",input.fact_key);
           inputs.push({name:input.name,label:input.label,value:exact,from:"owner_fact",ref:input.fact_key,
             estimate:false,owner:true,partial:false,period:null});
-        }else if(input.owner_value!==null&&input.owner_unit!==null&&!input.tool&&!input.path&&!input.fact_key){
+        }else if(input.owner_value!==null&&input.owner_unit!==null&&!input.tool&&!input.path&&!input.fact_key&&!input.receipt_id){
           // The owner's own words this turn or in recent messages (incl. a typed card answer).
           const v=input.owner_value,unit=input.owner_unit;
           const said=ownerSaid(scoped,ctx.locale);
@@ -254,7 +253,7 @@ export const calculateTools={
           [{value:resultShown.quantity,unit:"count" as const}]:[];
       const result:AgentToolResult={source:"calculate",period,agentId:"leo",missing:partial?["incompleteCalculationInputs"]:[],numberEstimates,
         evidence:{receipt_id:randomUUID(),authority:"exact_arithmetic_from_verified_inputs"},
-        metric_topic:p.screen_number,metric_basis:"independent_calculation",
+        metric_topic:p.screen_number??"none",metric_basis:"independent_calculation",
         ...(inputs.some(i=>i.from==="assumption")?{assumptions:inputs.filter(i=>i.from==="assumption").map(i=>({name:i.name,basis:i.ref}))}:{}),
         kind:estimate?"estimate":"calculation",purpose:p.purpose,formula:expr.get(run.result.id),
         inputs:inputs.map(i=>({name:i.name,label:i.label,from:i.from,ref:i.ref,unit:unitName[i.value.unit],...shownOf.get(i.name)})),
