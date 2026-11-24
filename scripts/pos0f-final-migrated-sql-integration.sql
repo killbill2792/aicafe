@@ -73,7 +73,7 @@ BEGIN
     SELECT oid, proname
       FROM pg_proc
      WHERE pronamespace = 'public'::regnamespace
-       AND proname IN ('toast_records_for','ai_toast_fields','ai_query_view')
+       AND proname IN ('toast_records_for','toast_current_nonorders_for','ai_toast_fields','ai_query_view')
   LOOP
     PERFORM pg_temp.pos0f_reject_diagnostic_definition(
       pg_get_functiondef(p.oid),
@@ -81,6 +81,7 @@ BEGIN
   END LOOP;
   PERFORM pg_temp.pos0f_assert(
     to_regprocedure('public.toast_records_for(uuid,date,date)') IS NOT NULL
+    AND to_regprocedure('public.toast_current_nonorders_for(uuid,date,date,text)') IS NOT NULL
     AND to_regprocedure('public.ai_toast_fields(uuid,text)') IS NOT NULL
     AND to_regprocedure('public.ai_query_view(uuid,text,text[],jsonb,text[],jsonb,date,date,jsonb,integer)') IS NOT NULL,
     'The one existing registered SQL reader and field/query functions must exist');
@@ -257,6 +258,37 @@ BEGIN
      '[{"guid":"foreign-diagnostic-poison","amount":22222.00}]'::jsonb,
      ARRAY['guid','amount'],gen_random_uuid(),null);
 
+  -- #564: same operational current-object projection for the stock view,
+  -- retained field discovery and the original Toast source reader. A proof
+  -- with null provider quantity stays null and no diagnostic record may enter.
+  PERFORM pg_temp.pos0f_assert(
+    (SELECT count(*)=1 FROM public.toast_current_nonorders_for(
+      a,null,null,'stock/v1/inventory'))
+    AND (SELECT count(*)=0 FROM public.toast_current_nonorders_for(
+      b,null,null,'stock/v1/inventory'))
+    AND NOT EXISTS (
+      (SELECT r.source_ref,r.status,r.record_ref,r.business_date,r.data
+       FROM public.toast_records_for(a,null,null) r
+       WHERE r.record_type='stock/v1/inventory'
+       EXCEPT
+       SELECT c.source_ref,c.status,c.record_ref,c.business_date,c.data
+       FROM public.toast_current_nonorders_for(
+        a,null,null,'stock/v1/inventory') c)
+      UNION ALL
+      (SELECT c.source_ref,c.status,c.record_ref,c.business_date,c.data
+       FROM public.toast_current_nonorders_for(
+        a,null,null,'stock/v1/inventory') c
+       EXCEPT
+       SELECT r.source_ref,r.status,r.record_ref,r.business_date,r.data
+       FROM public.toast_records_for(a,null,null) r
+       WHERE r.record_type='stock/v1/inventory')),
+    'stock-only shared current projection matches every operational Toast field without diagnostic or foreign data');
+  PERFORM pg_temp.pos0f_assert(
+    public.ai_toast_fields(a,'stock/v1/inventory') @>
+      '[{"field":"data.status","type":"string"},{"field":"data.guid","type":"string"}]'::jsonb
+    AND NOT (public.ai_toast_fields(a,'stock/v1/inventory') @>
+      '[{"field":"data.quantity","type":"number"}]'::jsonb),
+    'current stock discoverability preserves string fields and does not invent numeric evidence from NULL');
   PERFORM pg_temp.pos0f_assert(
     (SELECT count(*)=1 AND sum(amount_cents)=1250
       FROM public.cv_cash WHERE business_id=a),
@@ -337,6 +369,7 @@ BEGIN
   EXECUTE 'set local role authenticated';
   PERFORM pg_temp.pos0f_assert(
     (SELECT count(*)=0 FROM public.toast_records_for(a,null,null))
+    AND (SELECT count(*)=0 FROM public.toast_current_nonorders_for(a,null,null,'stock/v1/inventory'))
     AND NOT has_table_privilege('public.toast_raw_records','SELECT'),
     'Nonmember cannot read A via the shared reader or direct current archive');
   result := public.ai_query_view(a,'cv_cash',null::text[],'[]'::jsonb,
@@ -353,7 +386,9 @@ BEGIN
   EXECUTE 'set local role authenticated';
   PERFORM pg_temp.pos0f_assert(
     (SELECT count(*)=5 FROM public.toast_records_for(a,null,null))
-    AND (SELECT count(*)=0 FROM public.toast_records_for(b,null,null)),
+    AND (SELECT count(*)=0 FROM public.toast_records_for(b,null,null))
+    AND (SELECT count(*)=1 FROM public.toast_current_nonorders_for(a,null,null,'stock/v1/inventory'))
+    AND (SELECT count(*)=0 FROM public.toast_current_nonorders_for(b,null,null,'stock/v1/inventory')),
     'Member reads exact A current facts, never another café');
   result := public.ai_query_view(a,'cv_cash',null::text[],'[]'::jsonb,
     null::text[],'[{"fn":"sum","column":"amount_cents"}]'::jsonb,
