@@ -4,7 +4,7 @@ import {Pool,type PoolClient} from "pg";
 import {z} from "zod";
 import type {SupabaseClient} from "@supabase/supabase-js";
 import {createAdminSupabaseClient} from "@/lib/supabase/admin";
-import {admitU3Sql,type U3TrustedUnit} from "./u3SqlAdmission";
+import {admitU3Sql,U3AdmissionError,type U3TrustedUnit} from "./u3SqlAdmission";
 import {validateResearchConnection} from "./u3ResearchConnection";
 import {researchNextCursor,researchPageOffset} from "./u3SqlCursor";
 
@@ -122,7 +122,7 @@ async function signedCapability(ctx:U3SqlContext):Promise<string>{
   throw Error("research_scope_denied");
  return data;
 }
-async function withinScope<T>(ctx:U3SqlContext,callback:(client:PoolClient)=>Promise<T>,
+async function withinScope<T>(ctx:U3SqlContext,callback:(client:PoolClient,observedAt:unknown)=>Promise<T>,
  requestedWindow?:{date_from:string|null;date_to:string|null}):Promise<T>{
  if(!u3SqlConfigured())throw Error("research_not_configured");
  // The server mints the capability only after authenticating the real owner,
@@ -134,29 +134,33 @@ async function withinScope<T>(ctx:U3SqlContext,callback:(client:PoolClient)=>Pro
   throw Error("research_connection_failed");}
  let begun=false;
  try{
+  // Pin and verify the actual connection that will execute this transaction,
+  // including when a transaction-mode pooler is in use.
+  await client.query("BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY");
+  begun=true;
+  // Static trusted SET statements share one transport, not model SQL.
+  await client.query("SET LOCAL statement_timeout = '8000ms'; "+
+   "SET LOCAL lock_timeout = '300ms'; SET LOCAL work_mem = '4MB'; "+
+   "SET LOCAL search_path = u3_research, pg_catalog");
   const role=(await client.query(
    "SELECT current_user AS name,(SELECT rolsuper OR rolbypassrls FROM pg_roles "+
    "WHERE rolname=current_user) AS privileged")).rows[0];
   if(role?.name!=="aicafe_research"||role?.privileged!==false)
    throw Error("research_connection_untrusted");
-  await client.query("BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY");
-  begun=true;
-  await client.query("SET LOCAL statement_timeout = '8000ms'");
-  await client.query("SET LOCAL lock_timeout = '300ms'");
-  await client.query("SET LOCAL work_mem = '4MB'");
-  await client.query("SET LOCAL search_path = u3_research, pg_catalog");
-  // Trusted application operation, NEVER a model-authored SQL call.
-  await client.query("SELECT set_config('aicafe.u3_research_scope',$1,true)",[ticket]); // hardcode-ok: PostgreSQL bind placeholder
-  if(requestedWindow){
-   const {date_from:from,date_to:to}=requestedWindow;
-   if(from!==null&&to!==null){
-    const distance=(Date.parse(to+"T00:00:00Z")-Date.parse(from+"T00:00:00Z"))/86_400_000;
-    if(!Number.isFinite(distance)||distance<0)throw Error("invalid_query");
-   }else if(from!==null||to!==null)throw Error("invalid_query");
-   await client.query("SELECT set_config('aicafe.u3_date_from',$1,true),"+ // hardcode-ok: PostgreSQL bind placeholder
-    "set_config('aicafe.u3_date_to',$2,true)",[from??"",to??""]); // hardcode-ok: PostgreSQL bind placeholder
-  }
-  const result=await callback(client);
+  const from=requestedWindow?.date_from??null,to=requestedWindow?.date_to??null;
+  if(from!==null&&to!==null){
+   const distance=(Date.parse(to+"T00:00:00Z")-Date.parse(from+"T00:00:00Z"))/86_400_000;
+   if(!Number.isFinite(distance)||distance<0)throw Error("invalid_query");
+  }else if(from!==null||to!==null)throw Error("invalid_query");
+  // One parameterized trusted round trip establishes the signed scope,
+  // optional date window and actual DB transaction observation timestamp.
+  // Never expose the private setting values or signed capability.
+  const observed=(await client.query(
+   "SELECT set_config('aicafe.u3_research_scope',$1,true),"+ // hardcode-ok: PostgreSQL bind placeholder
+   "set_config('aicafe.u3_date_from',$2,true),"+ // hardcode-ok: PostgreSQL bind placeholder
+   "set_config('aicafe.u3_date_to',$3,true),transaction_timestamp() AS observed_at",
+   [ticket,from??"",to??""])).rows[0]?.observed_at;
+  const result=await callback(client,observed);
   await client.query("COMMIT");
   begun=false;
   return result;
@@ -197,39 +201,41 @@ async function sources(client:PoolClient):Promise<U3Relation[]>{
  cachedCatalog={until:Date.now()+45000,relations:result};
  return result;
 }
+/** Catalog metadata is finite, approved schema information, not raw rows.
+ * Unqualified discovery lists all available relation names. A relation match
+ * returns its full schema by default, as a general database connector does;
+ * explicit paging remains a choice for unusually large catalogs. */
+export function selectU3Catalog(all:readonly U3Relation[],p:{
+ search?:string|null;relation?:string|null;offset?:number|null;limit?:number|null
+}){
+ const term=p.search?.trim().toLocaleLowerCase("en")||null;
+ const relationMatch=(r:U3Relation)=>term!==null&&(r.name.toLocaleLowerCase("en").includes(term)||
+  (r.description??"").toLocaleLowerCase("en").includes(term));
+ const fieldMatch=(c:U3Column)=>term!==null&&(c.name.toLocaleLowerCase("en").includes(term)||
+  c.unit.toLocaleLowerCase("en").includes(term));
+ const available=all.filter(r=>(!p.relation||r.name===p.relation)&&
+  (p.relation||term===null||relationMatch(r)||r.columns.some(fieldMatch)));
+ const offset=p.offset??0,detail=Boolean(p.relation);
+ const total=detail?(available[0]?.columns.length??0):available.length;
+ const limit=p.limit??Math.max(0,total-offset);
+ const matching=detail?available:available.slice(offset,offset+limit);
+ const relations=matching.map(r=>{
+  const fields=detail||relationMatch(r)?r.columns:term===null?[]:r.columns.filter(fieldMatch);
+  return {name:r.name,meaning:r.description??"Reviewed logical source; consult field definitions.",
+   relationships:r.relationships,columns:detail?fields.slice(offset,offset+limit):fields,
+   columnCount:r.columns.length,fieldsTotal:detail?fields.length:undefined};
+ });
+ const next=offset+limit<total?offset+limit:null;
+ return {source:"u3_semantic_catalog",period:null,
+  missing:available.length?(next!==null?["result_truncated"]:[]):["empty"],relations,
+  total:available.length,fields_total:detail?total:undefined,page_offset:offset,
+  next_offset:next,truncated:next!==null,
+  catalog_version:createHash("sha256").update(JSON.stringify(all)).digest("hex").slice(0,16)};
+}
 export async function describeU3Catalog(ctx:U3SqlContext,p:{
  search?:string|null;relation?:string|null;offset?:number|null;limit?:number|null
 }){
- return withinScope(ctx,async client=>{
-  const all=await sources(client);
-  const term=p.search?.trim().toLocaleLowerCase("en")??null;
-  const available=all.filter(r=>(!p.relation||r.name===p.relation)&&(
-   term===null||r.name.toLocaleLowerCase("en").includes(term)||
-   (r.description??"").toLocaleLowerCase("en").includes(term)||
-   r.columns.some(c=>c.name.toLocaleLowerCase("en").includes(term))));
-  const offset=p.offset??0,limit=Math.min(p.limit??20,30);
-  const detail=p.relation!==null&&p.relation!==undefined;
-  // For a named relation, paginate its FIELDS rather than just the one
-  // relation row. Otherwise deeper admitted columns remain unreachable.
-  const matching=detail?available:available.slice(offset,offset+limit);
-  const out=matching.map(r=>{
-   const fields=detail?r.columns:(term!==null?
-    r.columns.filter(c=>c.name.toLocaleLowerCase("en").includes(term)):[]);
-   return {name:r.name,
-    meaning:r.description??"Reviewed logical source; consult field definitions.",
-    relationships:r.relationships,
-    columns:detail?fields.slice(offset,offset+limit):fields.slice(0,12),
-    columnCount:r.columns.length,
-    fieldsTotal:detail?fields.length:undefined};
-  });
-  const total=detail?(available[0]?.columns.length??0):available.length;
-  return {source:"u3_semantic_catalog",period:null,
-   missing:available.length?[]:["empty"],relations:out,
-   total:available.length,fields_total:detail?total:undefined,page_offset:offset,
-   next_offset:offset+limit<total?offset+limit:null,
-   catalog_version:createHash("sha256").update(JSON.stringify(all)).digest("hex").slice(0,16)
-  };
- });
+ return withinScope(ctx,async client=>selectU3Catalog(await sources(client),p));
 }
 /** Protect the legacy retained-data archive from nested-object extraction,
  * including objects serialized by PostgreSQL as text. */
@@ -261,6 +267,27 @@ const fitRows=(rows:unknown[])=>{
  }
  return {rows:kept,cut:false};
 };
+// Only fixed error categories and SQLSTATE values are returned to the model.
+// Raw database messages can contain source values, credentials or internal
+// schema names. Never forward them (or log them) to gain recoverability.
+const queryDiagnosticReasons:Readonly<Record<string,string>>=Object.freeze({
+ "42601":"sql_syntax","42703":"undefined_column","42P01":"undefined_relation",
+ "42883":"undefined_function_or_operator","42804":"datatype_mismatch",
+ "42803":"grouping_error","42P10":"invalid_column_reference","22P02":"invalid_literal",
+ "22012":"division_by_zero","22003":"numeric_out_of_range","57014":"statement_timeout",
+ "42501":"permission_denied"
+});
+export function safeU3SqlDiagnostic(e:unknown,sqlLength:number){
+ if(e instanceof U3AdmissionError)return {reason:e.reason};
+ if(!e||typeof e!=="object"||!("code" in e)||typeof e.code!=="string"||
+   !Object.hasOwn(queryDiagnosticReasons,e.code))return undefined;
+ // PostgreSQL positions refer to the actual submitted SELECT wrapper.
+ // Only include an offset that maps into the model's own query text.
+ const position="position" in e&&typeof e.position==="string"&&/^\d+$/.test(e.position)?
+  Number(e.position)-"SELECT * FROM (".length:NaN;
+ return {sqlstate:e.code,reason:queryDiagnosticReasons[e.code],
+  ...(Number.isSafeInteger(position)&&position>=1&&position<=sqlLength?{query_position:position}:{})};
+}
 export function safeU3SqlErrorCode(e:unknown){
  const s=e instanceof Error?e.message:"";
  if(e&&typeof e==="object"&&"code" in e&&typeof e.code==="string"){
@@ -286,7 +313,7 @@ export async function runU3Sql(ctx:U3SqlContext,raw:unknown){
  if(!parsed.success)return {source:"u3_canonical_research",period:null,
   missing:["invalid_query"],rows:[],truncated:false};
  try{
-  const committedPage=await withinScope(ctx,async client=>{
+  const committedPage=await withinScope(ctx,async (client,asOf)=>{
    stage="catalog";
    const list=await sources(client);
    if(!list.length)throw Error("research_not_configured");
@@ -346,11 +373,11 @@ export async function runU3Sql(ctx:U3SqlContext,raw:unknown){
     " OFFSET "+offset;
    const parameters=p.parameters??[];
    stage="query";
-   const explained=await client.query({text:"EXPLAIN (FORMAT JSON) "+statement,values:parameters});
-   const planJson=explained.rows[0]?.["QUERY PLAN"];
-   const totalCost=Array.isArray(planJson)?planJson[0]?.Plan?.["Total Cost"]:null;
-   if(typeof totalCost==="number"&&totalCost>2500000)throw Error("invalid_query");
-   const asOf=(await client.query("SELECT transaction_timestamp() AS observed_at")).rows[0]?.observed_at;
+   // PostgreSQL cost is a dimensionless estimate, not elapsed time or a
+   // physical resource limit. Planning twice and rejecting by an arbitrary
+   // cost number blocks legitimate indexed/aggregate work. The actual query
+   // is still bounded by the same server statement/lock timeout, work_mem,
+   // admitted AST, isolated role, pool limit and result transport.
    const result=await client.query({text:statement,values:parameters});
    const rows=Array.isArray(result.rows)?result.rows:[];
    if(plan.relations.includes("toast_records")&&unsafeStructuredToastResult(rows))
@@ -409,7 +436,9 @@ export async function runU3Sql(ctx:U3SqlContext,raw:unknown){
    code,stage:safeStage,configured:u3SqlConfigured()
   });
   return {source:"u3_canonical_research",period:null,missing:[code],
-   error_stage:safeStage,rows:[],rowCount:0,truncated:false,
+   error_stage:safeStage,
+   ...(safeStage==="query"||safeStage==="admission"?{diagnostic:safeU3SqlDiagnostic(e,parsed.data.sql.trim().replace(/;\s*$/,"").length)}:{}),
+   rows:[],rowCount:0,truncated:false,
    page_complete:false,next_cursor:null};
  }
 }

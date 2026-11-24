@@ -13,6 +13,9 @@ describe("U3 governed PostgreSQL AST admission",()=>{
   "SELECT count(*) FROM orders WHERE business_date BETWEEN DATE '2026-11-01' AND DATE '2026-11-20'",
   "SELECT count(*) FROM orders WHERE net_sales_cents > $1",
   "SELECT count(*) FROM orders WHERE EXISTS (SELECT 1 FROM order_lines l WHERE l.order_id=orders.id)",
+  "SELECT date_bin(interval '30 minutes',closed_at,timestamp with time zone '2026-01-01 00:00+00') AS bucket,count(*) FROM orders GROUP BY bucket",
+  "SELECT timezone('America/Los_Angeles',closed_at)::date AS local_day,count(*) FROM orders GROUP BY local_day",
+  "SELECT split_part(pos_order_id,'-',1) AS part,count(*) FROM orders GROUP BY part",
   "SELECT record_type, data #>> '{customer,firstName}' AS observed_field FROM toast_records",
  ])("accepts model-composed valid analytical SQL: %s",async sql=>{
   const meta=await admitU3Sql(sql,admitted,sql.includes("$1")?1:0);
@@ -139,6 +142,11 @@ describe("U3 governed PostgreSQL AST admission",()=>{
    "SELECT net_sales_cents FROM (SELECT COUNT(*) AS net_sales_cents FROM orders) x",
    admitted,0,false,[],units);
   expect(derived.outputUnits).toEqual({});
+ });
+ it("classifies rejected SQL without returning raw model or database contents",async()=>{
+  await expect(admitU3Sql("SELECT pg_sleep(1) FROM orders",admitted)).rejects.toMatchObject({message:"invalid_query",reason:"unapproved_function"});
+  await expect(admitU3Sql("SELECT count(*) FROM public.orders",admitted)).rejects.toMatchObject({message:"invalid_query",reason:"unapproved_relation"});
+  await expect(admitU3Sql("SELECT count(*) FROM orders WHERE id=$2",admitted,1)).rejects.toMatchObject({message:"invalid_query",reason:"unbound_parameter"});
  });
  it("cannot change café or role from a query parameter",async()=>{
   await expect(admitU3Sql("SELECT count(*) FROM orders WHERE id=$1",admitted,0))

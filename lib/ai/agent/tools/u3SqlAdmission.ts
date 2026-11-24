@@ -26,7 +26,13 @@ const functions=new Set([
  "bool_and","bool_or","stddev_pop","stddev_samp","variance","var_pop",
  "var_samp","percentile_cont","percentile_disc","lag","lead","first_value",
  "last_value","row_number","rank","dense_rank","ntile","power","sqrt",
- "mod","sign","trunc","width_bucket"
+ "mod","sign","trunc","width_bucket",
+ // Pure built-in transformations of already admitted source values. In
+ // particular AT TIME ZONE is parsed as the timezone() function; rejecting
+ // it makes ordinary business-local timestamp research impossible.
+ "timezone","date_bin","to_char","split_part","replace","concat","concat_ws",
+ "strpos","position","initcap","regexp_replace","regexp_count","regexp_like",
+ "regexp_substr","regexp_instr","cume_dist","percent_rank","nth_value"
 ]);
 const operators=new Set([
  "=","<>","!=","<",">","<=",">=","+","-","*","/","%","^","||",
@@ -96,17 +102,23 @@ const castName=(n:Record<string,unknown>)=>{
 /** Rejects unbounded or unsafe AST shapes before acquiring a database lock.
  * A successful parse alone is NEVER authorization. The executor must also
  * use a dedicated no-BYPASSRLS scope-bound role and approved research views. */
+export type U3AdmissionReason="statement_not_read_only"|"syntax"|"parser_resource_bound"|
+ "unapproved_relation"|"explicit_columns_required"|"unapproved_function"|"unapproved_operator"|
+ "unapproved_cast"|"unbound_parameter"|"unsupported_recursive_query"|"no_admitted_source";
+export class U3AdmissionError extends Error{
+ constructor(readonly reason:U3AdmissionReason){super("invalid_query");this.name="U3AdmissionError";}
+}
 export async function admitU3Sql(sql:string,allowedRelations:readonly string[],
  parameterCount=0,aggregateOnly=false,offturnColumns:readonly string[]=[],
  knownColumnUnits:Readonly<Record<string,U3TrustedUnit|null>>={}):Promise<U3SqlAdmission>{
  if(typeof sql!=="string"||sql.length>MAX_SQL||!sql.trim()||
   parameterCount<0||parameterCount>48)throw Error("invalid_query");
  const parsed=await parser.parse(sql);
- if(parsed.error||!parsed.tree)throw Error("invalid_query");
+ if(parsed.error||!parsed.tree)throw new U3AdmissionError("syntax");
  const tree=parsed.tree as unknown as {stmts?:Array<{stmt?:Record<string,unknown>}>};
  if(!Array.isArray(tree.stmts)||tree.stmts.length!==1||
   !tree.stmts[0]?.stmt||!("SelectStmt" in tree.stmts[0].stmt))
-  throw Error("invalid_query");
+  throw new U3AdmissionError("statement_not_read_only");
  const catalog=new Set(allowedRelations);
  // Privacy admission depends on source/field semantics, never model aliases.
  // Derived numeric/date-safe columns are admitted as a set from the verified
@@ -182,13 +194,13 @@ export async function admitU3Sql(sql:string,allowedRelations:readonly string[],
     typeof n==="number"||typeof n==="boolean")return;
   if(Array.isArray(n)){n.forEach(value=>walk(value,false));return;}
   if(typeof n!=="object")throw Error("invalid_query");
-  nodes++;if(nodes>MAX_NODES)throw Error("invalid_query");
+  nodes++;if(nodes>MAX_NODES)throw new U3AdmissionError("parser_resource_bound");
   for(const [kind,raw] of Object.entries(n)){
-   if(prohibited.has(kind))throw Error("invalid_query");
+   if(prohibited.has(kind))throw new U3AdmissionError("statement_not_read_only");
    // SELECT * materializes the entire retained Toast JSON object, including
    // historical fields that never passed named-path secret admission.
    // Explicit columns are required; COUNT(*) is encoded as FuncCall.agg_star.
-   if(kind==="A_Star")throw Error("invalid_query");
+   if(kind==="A_Star")throw new U3AdmissionError("explicit_columns_required");
    // PostgreSQL table/CTE column-alias lists rewrite the *names* of source
    // columns. Our privacy and dimensional admission use approved source names,
    // so aliases for table columns are not supported until lineage resolution
@@ -201,7 +213,7 @@ export async function admitU3Sql(sql:string,allowedRelations:readonly string[],
    if(kind==="RangeSubselect")unitAmbiguousDerivedSource=true;
    // Reject recursive CTEs regardless of parser nesting or SelectStmt wrapper.
    if(kind==="WithClause"&&raw&&typeof raw==="object"&&
-      (raw as {recursive?:unknown}).recursive===true)throw Error("invalid_query");
+      (raw as {recursive?:unknown}).recursive===true)throw new U3AdmissionError("unsupported_recursive_query");
    if(kind==="A_Expr"&&raw&&typeof raw==="object"){
     const e=raw as {name?:unknown;lexpr?:unknown;rexpr?:unknown};
     if(["#>>","->>"].includes(name(e.name)??"")&&
@@ -230,7 +242,7 @@ export async function admitU3Sql(sql:string,allowedRelations:readonly string[],
     const r=raw as {relname?:unknown;schemaname?:unknown;catalogname?:unknown};
     const rel=typeof r.relname==="string"?r.relname:"";
     if(r.catalogname||r.schemaname&&r.schemaname!=="u3_research"||
-      !rel||!catalog.has(rel)&&!ctes.has(rel))throw Error("invalid_query");
+      !rel||!catalog.has(rel)&&!ctes.has(rel))throw new U3AdmissionError("unapproved_relation");
     if(catalog.has(rel)){
      reads.add(rel);
      if(aggregateOnly&&["employees","timecards","scheduled_shifts","cafe_decisions",
@@ -251,21 +263,21 @@ export async function admitU3Sql(sql:string,allowedRelations:readonly string[],
    }
    if(kind==="FuncCall"){
     const fn=functionName(raw as Record<string,unknown>);
-    if(!fn||!functions.has(fn))throw Error("invalid_query");
+    if(!fn||!functions.has(fn))throw new U3AdmissionError("unapproved_function");
     called.add(fn);
    }
    if(kind==="TypeCast"){
     const type=castName(raw as Record<string,unknown>);
-    if(!type||!casts.has(type))throw Error("invalid_query");
+    if(!type||!casts.has(type))throw new U3AdmissionError("unapproved_cast");
    }
    if(kind==="A_Expr"){
     const op=name((raw as {name?:unknown}).name);
-    if(op!==null&&!operators.has(op))throw Error("invalid_query");
+    if(op!==null&&!operators.has(op))throw new U3AdmissionError("unapproved_operator");
    }
    if(kind==="ParamRef"){
     const index=(raw as {number?:unknown}).number;
     if(typeof index!=="number"||index<1||index>parameterCount)
-      throw Error("invalid_query");
+      throw new U3AdmissionError("unbound_parameter");
    }
    if(kind==="SQLValueFunction"){
     const op=(raw as {op?:unknown}).op;
@@ -276,7 +288,7 @@ export async function admitU3Sql(sql:string,allowedRelations:readonly string[],
   }
  }
  walk(tree);
- if(!reads.size)throw Error("invalid_query");
+ if(!reads.size)throw new U3AdmissionError("no_admitted_source");
  if(aggregateOnly){
   const target=(tree.stmts[0].stmt?.SelectStmt as {targetList?:unknown})?.targetList;
   if(!Array.isArray(target)||!target.length||

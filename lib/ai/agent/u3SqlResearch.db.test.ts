@@ -135,6 +135,8 @@ describe.skipIf(!active)("U3 migrated registered tool + private connection",()=>
   expect(d.source).toBe("u3_semantic_catalog");
   expect(JSON.stringify(d)).toContain("orders");
   expect(JSON.stringify(d)).not.toContain("connector_credentials");
+  expect(JSON.stringify(d)).toContain("net_sales_cents");
+  expect(JSON.stringify(d)).toContain("business_date");
  });
  it("runs a real model-selected join with accurate café-isolated money",async()=>{
   const result=await dataQueryTools.query_data.execute(input(
@@ -144,6 +146,16 @@ describe.skipIf(!active)("U3 migrated registered tool + private connection",()=>
   expect(result.missing).toEqual([]);
   expect(Number((result.rows[0] as Record<string,unknown>).cents)).toBe(1100);
   expect(JSON.stringify(result)).not.toContain("4200");
+ });
+ it("recovers a real PostgreSQL undefined column with a safe repair diagnostic and independent correct result",async()=>{
+  const bad=await dataQueryTools.query_data.execute(input("SELECT missing_research_test_column FROM orders"),scoped);
+  expect(bad.error).toBe("query_syntax_error");
+  expect(bad).toMatchObject({diagnostic:{reason:"undefined_column",sqlstate:"42703"}});
+  expect(JSON.stringify(bad)).not.toContain("missing_research_test_column");
+  const corrected=await dataQueryTools.query_data.execute(input(
+   "SELECT timezone('UTC',closed_at)::date AS observed_day,sum(net_sales_cents) AS amount FROM orders GROUP BY observed_day"),scoped);
+  expect(corrected.error).toBeUndefined();
+  expect(Number((corrected.rows[0] as Record<string,unknown>).amount)).toBe(1100);
  });
  it("denies model SQL mutation, forbidden relations and raw data exposure",async()=>{
   for(const sql of [
