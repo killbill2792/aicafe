@@ -85,6 +85,32 @@ describe("Task 15A migrated, agentic investigation SQL integration",()=>{
       expect((await admin.query("select count(*)::int n from public.ai_messages where business_id=$1 and thread_id=$2 and grounding->>'intent' in ('priority_notice','priority_investigation_exception')",
         [cafes[0],threads[0]])).rows[0].n).toBe(0);
 
+      // One genuine, evidence-backed source remains actionable; a changed
+      // revision supersedes its *open* notification, not the audit history.
+      const genuine=randomUUID();
+      await admin.query(
+        "insert into public.alerts(id,business_id,kind,status,payload) values ($1,$2,'business_anomaly','new',$3::jsonb)",
+        [genuine,cafes[0],JSON.stringify({family:"sales_decline",subject:"cafe",
+          current:100,previous:200,unit:"cents",quality:"verified",severity:"high"})]);
+      const notice=(revision:string,key:string)=>[
+        cafes[0],owners[0],threads[0],"alert",genuine,revision,key,
+        "Actionable café alert needs review",anchor
+      ];
+      const originalNotice=notice(hex("e"),hex("f"));
+      expect(await rpc(a,"post_supervisor_priority_notice",originalNotice)).toBe(true);
+      expect(await rpc(a,"post_supervisor_priority_notice",originalNotice)).toBe(false);
+      const updatedNotice=notice(hex("1"),hex("2"));
+      expect(await rpc(b,"post_supervisor_priority_notice",updatedNotice)).toBe(true);
+      const history=await admin.query(
+        "select id,status from public.operating_tasks where business_id=$1 and kind='priority_notice' "+
+        "and payload->>'sourceType'='alert' and payload->>'sourceId'=$2 order by id",
+        [cafes[0],genuine]);
+      expect(history.rows).toHaveLength(2);
+      expect(history.rows.map(x=>x.status).sort()).toEqual(["handled","needs_owner"]);
+      expect((await admin.query(
+        "select count(*)::int n from public.ai_messages where business_id=$1 and thread_id=$2 "+
+        "and grounding->>'intent'='priority_notice'",[cafes[0],threads[0]])).rows[0].n).toBe(0);
+
       // U1: unattended scopes are limited to the explicit current owner binding,
       // even though the worker uses service_role. No private credential is returned.
       expect(await rpc(a,"toast_business_scope_summary",[cafes[0],owners[0]])).toEqual({menus:null,labor:null});
