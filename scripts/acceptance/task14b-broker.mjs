@@ -351,7 +351,7 @@ export function startTrustedBroker({
   fail("provider_key_missing");
  if(typeof token!=="string"||token.length<40)fail("broker_token_missing");
  if(typeof auditFile!=="string"||!auditFile.startsWith("/"))fail("audit_path_missing");
- const reserved=new PaidReservation(head,process.env.SCENARIO==="u2-model-execution");
+ const reserved=new PaidReservation(head,["u2-model-execution","u3-canonical-research"].includes(process.env.SCENARIO));
  // Provenance belongs only to this broker run; never persists ciphertext.
  const trustedReasoning=new Map();
  saveAudit(auditFile,reserved);

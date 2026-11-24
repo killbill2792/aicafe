@@ -358,6 +358,9 @@ async function candidate(){
     AICAFE_SHARED_LUNA:"1",
     AICAFE_SHARED_LUNA_HEAD:process.env.HEAD_SHA,
     AICAFE_SHARED_LUNA_SCENARIO:id,
+    // Trusted host and broker advance together; never infer the new protocol
+    // from a candidate manifest or widen the authorized spend envelope.
+    AICAFE_SHARED_LUNA_NATIVE_RESEARCH:id==="u3-canonical-research"?"1":"0",
     AICAFE_SHARED_LUNA_PROOF_DIR:dir,
     AI_CAFE_LIVE_ACCEPTANCE:"OWNER_APPROVED_LOCAL_ONLY",
     SUPERVISOR_OPENAI_MODEL:"gpt-6-luna",

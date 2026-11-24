@@ -128,7 +128,7 @@ export function matchedLocalTime(text,value){
  if(typeof text!=="string"||!/^\d{2}:\d{2}$/.test(value??""))return false;
  const [h,m]=value.split(":");
  const hour=Number(h),short=hour%12||12,meridiem=hour>=12?"p":"a";
- return new RegExp("(^|[^0-9])(?:"+Number(h)+":"+m+"|"+value+"|"+short+":"+m+"\\s*"+meridiem+"\\.?m\\.?)(?![0-9])","i").test(text);
+ return new RegExp("(^|[^0-9])(?:(?:"+Number(h)+":"+m+"|"+value+")(?![0-9]|\\s*[ap]\\.?m)|"+short+":"+m+"\\s*"+meridiem+"\\.?m\\.?)(?![0-9])","i").test(text);
 }
 export function assertU3HistoryEvidence({model,tools,text,oracle,proposals,sqlReceipts}){
  requireObservedProductionModel(model,"gpt-6-luna");
@@ -300,6 +300,7 @@ async function main(){
    checks:{sourceMatch:true,registeredResearch:true,committedSqlResearch:true,foreignDenied:true,noEffect:true},
    completedSqlReceipts:sqlReceipts+historicalSqlReceipts,
    historicalCrossDomain:true,historicalElapsedMs,
+   nativeResearchHost:env.AICAFE_SHARED_LUNA_NATIVE_RESEARCH==="1",
    observedModelCalls:scope.expectedProviderCalls})+"\n",{mode:0o600,flag:"wx"});
   writeFileSync(scopeOut,JSON.stringify(scope)+"\n",{mode:0o600,flag:"wx"});
  }finally{

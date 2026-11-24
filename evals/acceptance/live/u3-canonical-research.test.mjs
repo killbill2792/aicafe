@@ -49,4 +49,5 @@ test("historical oracle requires exact local punches, night revenue, ranking and
  assert.throws(()=>assertU3HistoryEvidence({...ok,sqlReceipts:0}),/historical_committed_research_missing/);
  assert.equal(matchedLocalTime("122:15","22:15"),false);
  assert.equal(matchedLocalTime("2:45 AM","02:45"),true);
+ assert.equal(matchedLocalTime("2:45 PM","02:45"),false);
 });
