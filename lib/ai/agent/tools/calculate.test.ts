@@ -77,7 +77,7 @@ describe("source-attested ingredient-rate arithmetic",()=>{
      query_fingerprint:"a".repeat(64),catalog_version:"b".repeat(16),
      column_units:{rate:"microcents",quantity:"count"}}};
   const args={purpose:"Ingredient use",screen_number:"none",
-   inputs:[input("rate","query_data","rows.0.rate"),input("quantity","query_data","rows.0.quantity")],
+   inputs:[{...input("rate","query_data","rows.0.rate"),receipt_id:"11111111-1111-4111-8111-111111111111"},{...input("quantity","query_data","rows.0.quantity"),receipt_id:"11111111-1111-4111-8111-111111111111"}],
    steps:[{id:"cost",label:"Ingredient cost",op:"multiply",args:["rate","quantity"]}]};
   const r=await calculateTools.calculate.execute(args,ctx([{name:"query_data",result:research}]));
   expect(r).toMatchObject({result:{unit:"cents",valueCents:25},kind:"calculation"});
