@@ -37,6 +37,15 @@ describe("U3 server-signed research cursor",()=>{
   ];
   for(const p of attempts)expect(()=>researchPageOffset(p,cursor,key)).toThrow("invalid_query");
  });
+ it("continues the same durable snapshot across a revalidated replacement lease, never another run",()=>{
+  const first={...input,mode:"durable",runId:"run-a",leaseToken:"old"};
+  const cursor=researchNextCursor(first,150,key,snapshot);
+  expect(researchPageOffset({...first,leaseToken:"replacement"},cursor,key)).toBe(150);
+  expect(()=>researchPageOffset({...first,runId:"run-b",leaseToken:"replacement"},cursor,key)).toThrow("invalid_query");
+  const investigation={...input,mode:"investigation",sourceType:"alert",sourceId:"a",leaseToken:"old"};
+  const restricted=researchNextCursor(investigation,150,key,snapshot);
+  expect(()=>researchPageOffset({...investigation,leaseToken:"replacement"},restricted,key)).toThrow("invalid_query");
+ });
  it("rejects crafted, tampered, malformed, unsigned and overflowing offsets",()=>{
   const cursor=researchNextCursor(input,7,key,snapshot);
   for(const attempt of [cursor.slice(0,-1)+(cursor.endsWith("A")?"B":"A"),"junk",

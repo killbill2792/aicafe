@@ -57,7 +57,8 @@ export function completeResearchResults(results:readonly AgentToolResult[]):Agen
    (end<total&&(end===start||typeof result.next_cursor!=="string"))||
    (end===total&&result.next_cursor!==null))continue;
   candidates.add(result);
-  if(result.missing.some(x=>x!=="result_truncated"))continue;
+  // Source coverage and transport completeness are separate. Preserve all
+  // genuine missing-input flags when joining verified contiguous pages.
   const key=JSON.stringify([e.snapshot_id,e.snapshot_digest,e.query_fingerprint,e.catalog_version,e.as_of,total]);
   const pages=groups.get(key)??[];
   pages.push({result,start,end,total,final:end===total});groups.set(key,pages);

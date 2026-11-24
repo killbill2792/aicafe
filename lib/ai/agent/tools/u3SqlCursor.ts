@@ -14,7 +14,12 @@ type FingerprintInput={
 export type ResearchSnapshot={id:string;digest:string;asOf:string;totalRows:number};
 const invalid=()=>new Error("invalid_query");
 function fingerprint(input:FingerprintInput):string{
- return createHash("sha256").update(JSON.stringify(input)).digest("hex");
+ // A durable run may obtain a replacement lease after a worker crash.
+ // Its cursor is bound to the original run/owner/café/thread and exact SQL;
+ // withinScope independently validates the CURRENT lease before using it.
+ // Investigation and routine tickets retain their individual lease binding.
+ const bound=input.mode==="durable"&&input.runId?{...input,leaseToken:null}:input;
+ return createHash("sha256").update(JSON.stringify(bound)).digest("hex");
 }
 function mac(body:string,secret:string):Buffer{
  if(!secret||secret.length<24)throw new Error("research_not_configured");

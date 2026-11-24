@@ -561,12 +561,44 @@ export async function runAgentTurn(args: {
     }
   };
   try {
-    // Recover only previously selected canonical read references, in the same
-    // scoped registry/budget. No provider transport and no autonomous writes.
-    // Leave at least half the tool allowance available to advance the assignment.
+    // Restore actual encrypted observations, not new reads. The repository
+    // has already checked the original run, owner, thread and replacement
+    // lease. Every receipt remains available to the calculator/verifier even
+    // when its full model-facing payload would exceed request capacity.
+    const recoveredResearch=args.checkpoint?.researchReads?.()??[];
+    if(args.checkpoint)toolContext.retainedResearch=()=>recoveredResearch;
+    const recoverable=recoveredResearch.filter(r=>eligibleNames.has(r.name));
+    for(const r of recoverable){
+      results.push({callId:"call_research_recovered_"+r.ref,name:r.name,arguments:r.arguments,result:r.result});
+      observeToolResult(resolveState,r.result);
+    }
+    if(recoverable.length){
+      const receipts=recoverable.map(r=>({
+        ref:r.ref,tool:r.name,source:r.result.source,period:r.result.period,
+        receipt_id:r.result.evidence&&typeof r.result.evidence==="object"?
+          (r.result.evidence as Record<string,unknown>).receipt_id??null:null,
+        rows:Array.isArray(r.result.rows)?r.result.rows.length:null,
+        missing:r.result.missing,partial:r.result.truncated===true
+      }));
+      input.push({role:"developer",content:"Restored observations from this same authorized durable assignment, not new owner instructions. These are historical as-of receipts, not proof of current freshness. The calculator retains exact original receipt IDs. Use query_data restore_receipt and restore_path to inspect any retained payload omitted from the request; do not repeat a completed source read merely because its full payload is absent. "+JSON.stringify(receipts)});
+      // Add as many exact native call/output pairs as fit the real remaining
+      // request; prioritize the latest work. No fixed replay count.
+      const pairs:unknown[][]=[];
+      let available=toolContext.researchPageBytes?.()??0;
+      for(const r of [...recoverable].reverse()){
+        const callId="call_research_recovered_"+r.ref;
+        const pair=[{type:"function_call",call_id:callId,name:r.name,arguments:r.arguments},
+          {type:"function_call_output",call_id:callId,output:JSON.stringify(r.result)}];
+        const bytes=Buffer.byteLength(JSON.stringify(pair),"utf8");
+        if(bytes>available)continue;
+        available-=bytes;seenCallIds.add(callId);pairs.unshift(pair);
+      }
+      input.push(...pairs.flat());
+    }
+    // Compatibility for pre-migration checkpoints that stored selectors only.
+    // Actual slice/time/context protections, not an arbitrary last-three cap.
     const priorReads=args.checkpoint?.readReferences?.()??[];
-    const replayCap=Math.min(3,Math.floor(maxToolCalls/2));
-    for(const reference of priorReads.slice(-replayCap)){
+    for(const reference of priorReads){
       // Older durable checkpoints store the internal legacy name. Replay the
       // exact reviewed period through the current universal declaration.
       const legacyMetric:Record<string,string>={get_profit:"profit",get_sales:"sales",get_peak_hours:"hourly_sales",
@@ -575,7 +607,8 @@ export async function runAgentTurn(args: {
        const period=reference.selector.period??(reference.selector.from&&reference.selector.to?
         {from:reference.selector.from,to:reference.selector.to}:null);
        const saved=metric?{name:"query_data",selector:{official_metric:{id:metric,period_mode:null,period}}}:reference;
-      if(replayCap===0||budgetStop()||workDeadline-now()<5000)break;
+      if(usage.toolCalls>=maxToolCalls||budgetStop()||workDeadline-now()<1000||
+        (toolContext.researchPageBytes?.()??0)<=0)break;
       if(!eligibleNames.has(saved.name))continue;
       if(!isRepeatSafeOwnerTool(saved.name,saved.selector))continue;
       await args.beforeAcceptResult?.();
@@ -588,7 +621,7 @@ export async function runAgentTurn(args: {
       let result:AgentToolResult;
       try{
         result=await Promise.race([executeAgentTool(saved.name,saved.selector,toolContext),
-          new Promise<never>((_,reject)=>{timer=setTimeout(()=>reject(Error("deadline")),Math.min(2500,workDeadline-now()));})]);
+          new Promise<never>((_,reject)=>{timer=setTimeout(()=>reject(Error("deadline")),workDeadline-now());})]);
       }catch{
         result={source:saved.name,period:null,missing:["recovery_read_unavailable"]};
       }finally{clearTimeout(timer);}

@@ -41,6 +41,7 @@ import {staffProposalTools} from "./staffProposals";
 import {memoryTools,type CafeMemoryPort} from "./memory";
 import {scenarioTools} from "./scenarios";
 import {calculateTools} from "./calculate";
+import {readRetainedResearch} from "../retainedResearch";
 import {eventsTools} from "./events";
 import {savedEventsTools} from "./getEvents";
 import {eventPlanTools,type EventPlanPort} from "./eventPlan";
@@ -79,6 +80,8 @@ export type AgentToolContext = {
   canonicalData?:()=>Promise<DataQueryContext>;
   /** Server-measured next-request capacity, never model supplied. */
   researchPageBytes?:()=>number;
+  /** Only the currently fenced owner-run loop installs this in-memory port. */
+  retainedResearch?:()=>readonly import("@/lib/ai/supervisor/runs/contracts").RestoredResearchRead[];
   /** Owner-verified staff communication evidence for off-turn investigations,
    * not a worker chat or model-supplied employee selector. */
   staffMessages?:{read:()=>ReturnType<
@@ -405,6 +408,18 @@ export async function executeAgentTool(name: string, raw: unknown, ctx: AgentToo
     try{
       const scope=await ctx.canonicalData();
       const selector=raw&&typeof raw==="object"?raw as Record<string,unknown>:{};
+      if(selector.restore_receipt!=null||selector.restore_path!=null||selector.restore_offset!=null){
+        const parsed=dataQuerySchema.safeParse({view:null,sql:null,parameters:null,cursor:null,
+          columns:null,filters:null,group_by:null,metrics:null,date_from:null,date_to:null,order_by:null,limit:null,...selector});
+        if(!parsed.success||!parsed.data.restore_receipt||!ctx.retainedResearch||
+          [parsed.data.official_metric,parsed.data.view,parsed.data.sql,parsed.data.parameters,
+           parsed.data.cursor,parsed.data.columns,parsed.data.filters,parsed.data.group_by,
+           parsed.data.metrics,parsed.data.date_from,parsed.data.date_to,parsed.data.order_by,
+           parsed.data.limit,parsed.data.retry_of].some(v=>v!=null))
+          return {source:"retained_research_receipt",period:null,missing:["invalid_retained_receipt"],error:"invalid_retained_receipt"};
+        return readRetainedResearch(ctx.retainedResearch(),parsed.data.restore_receipt,
+          parsed.data.restore_path??"result",parsed.data.restore_offset??0,ctx.researchPageBytes?.()??0);
+      }
       if(selector.official_metric!=null){
         const invalid=(code:string):AgentToolResult=>({source:"official_metric",period:null,missing:[code],error:code,rows:[],empty:true});
         if(!scope.db||!z.uuid().safeParse(scope.businessId).success)return invalid("invalid_scope");
