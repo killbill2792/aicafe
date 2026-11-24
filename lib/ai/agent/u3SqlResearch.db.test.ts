@@ -40,6 +40,30 @@ const input=(sql:string)=>({
  metrics:null,date_from:null,date_to:null,order_by:null,limit:10
 });
 describe.skipIf(!active)("U3 migrated registered tool + private connection",()=>{
+ it("discovers saved public event provenance and current cafe associations without foreign cafe links",async()=>{
+  if(!admin)throw Error("test admin unavailable");
+  const publicEvents=[randomUUID(),randomUUID()],localEvents=[randomUUID(),randomUUID()];
+  const day="2025-01-18";
+  try{
+   for(const [index,business] of [ids.a,ids.b].entries()){
+    await admin.query("INSERT INTO public.city_events(id,city_key,identity_key,name,kind,start_date,end_date,last_checked_at) VALUES($1,$2,$3,$4,'festival',$5,$5,now())",[publicEvents[index],"synthetic-city",randomBytes(32).toString("hex"),"Synthetic public festival "+index,day]);
+    await admin.query("INSERT INTO public.city_event_sources(city_event_id,source_url,observed_name,observed_at) VALUES($1,$2,$3,now())",[publicEvents[index],"https://example.invalid/event/"+index,"Synthetic public festival "+index]);
+    await admin.query("INSERT INTO public.cafe_events(id,business_id,name,kind,start_date,end_date) VALUES($1,$2,$3,'holiday',$4,$4)",[localEvents[index],business,"Synthetic local event "+index,day]);
+    await admin.query("INSERT INTO public.cafe_city_event_links(business_id,cafe_event_id,city_event_id) VALUES($1,$2,$3)",[business,localEvents[index],publicEvents[index]]);
+   }
+   const result=await dataQueryTools.query_data.execute(input("SELECT e.name,s.source_url FROM cafe_city_event_links l JOIN city_events e ON e.id=l.city_event_id JOIN city_event_sources s ON s.city_event_id=e.id WHERE e.city_key='synthetic-city'"),scoped);
+   expect(result.error).toBeUndefined();
+   expect(result.rows).toEqual([{name:"Synthetic public festival 0",source_url:"https://example.invalid/event/0"}]);
+   const menu=await dataQueryTools.query_data.execute(input("SELECT description,prep_seconds,pos_pricing_strategy,pos_archived_at FROM menu_items WHERE false"),scoped);
+   expect(menu.error).toBeUndefined();
+  }finally{
+   await admin.query("DELETE FROM public.cafe_city_event_links WHERE cafe_event_id=ANY($1::uuid[])",[localEvents]);
+   await admin.query("DELETE FROM public.cafe_events WHERE id=ANY($1::uuid[])",[localEvents]);
+   await admin.query("DELETE FROM public.city_event_sources WHERE city_event_id=ANY($1::uuid[])",[publicEvents]);
+   await admin.query("DELETE FROM public.city_events WHERE id=ANY($1::uuid[])",[publicEvents]);
+  }
+ });
+
  beforeAll(async()=>{
   if(!connection)throw Error("U3_SQL_DB_URL missing");
   const u=new URL(connection);

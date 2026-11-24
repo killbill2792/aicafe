@@ -110,6 +110,13 @@ const manifest=JSON.parse(migration.slice(begin+tag.length,end));
 if(!Array.isArray(manifest)||!manifest.length)
  throw Error("U3 source admission manifest empty");
 const expectedLogical=new Map(manifest.map(source=>[source.table,source.fields]));
+expectedLogical.set("menu_items",[...expectedLogical.get("menu_items"),"description","prep_seconds","pos_pricing_strategy","pos_archived_at"]);
+expectedLogical.set("city_events",["id","city_key","name","kind","start_date","end_date","start_time","end_time","time_source_url","venue","venue_address","last_checked_at","duration_source_url","duration_verified_at","start_at","end_at","source_timezone","lifecycle_status","lifecycle_verified_at"]);
+expectedLogical.set("city_event_sources",["city_event_id","source_url","observed_name","observed_at"]);
+expectedLogical.set("city_source_coverage",["city_key","source_key","window_from","window_to","status","last_checked_at","last_completed_at","scan_from","scan_to","window_reason","search_attempted","is_scan_root","failure_category"]);
+expectedLogical.set("city_places",["id","city_key","name","kind","address","source_url","calendar_url","last_checked_at","visitor_info_url","visitor_approach","visitor_approach_source_url","entrance","entrance_source_url","source_status","source_checked_at"]);
+expectedLogical.set("cafe_city_event_links",["cafe_event_id","city_event_id","linked_at"]);
+expectedLogical.set("cafe_neighborhood_source_coverage",["scope","status","retry_eligible","checked_at","last_completed_at","failure_category","places_found","discarded_candidates"]);
 expectedLogical.set("inventory_observations",["source","source_ref","status","business_date","menu_item_ref","ingredient_id","ingredient_name","quantity_unit","quantity","stock_status","reported_stock_status","evidence_state","source_as_of","checked_at","source_status","observed_count"]);
 expectedLogical.set("supplier_quotes",["id","ingredient_id","supplier_name","item_name","price_cents","package_count","package_unit","source_kind","quoted_on","evidence_status","created_at","currency_code","valid_until","available_status","available_checked_at","delivery_on"]);
 expectedLogical.set("goal_metrics",["goal_id","title","status","created_at","monitoring_start_date","days","baseline_from","baseline_to","currency","metric_id","metric_role","metric_key","item_id","item_name","comparator","target_kind","target","checkin_cadence","checkin_audience"]);
