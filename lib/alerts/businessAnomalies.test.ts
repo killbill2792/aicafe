@@ -170,12 +170,14 @@ it("the scheduled anomaly pass reconciles only comparable customer evidence and 
   for(const subject of [modifier,basket])expect(await readCustomerTrendComparison({rpc} as never,"cafe",subject,{from:"2026-11-12",to:"2026-11-18"})).toMatchObject({key:subject,current:.8,previous:.4,active:true});
   for(const horizon of [7,30,60,90])expect(incidents.get(`customer_trend:observed_return_${horizon}d`)).toBe(false);
   optionalFailure=true;rpc.mockClear();
-  await expect(run()).rejects.toThrow("business_anomaly_refresh_incomplete");
+  await run(); // A failed optional contribution read cannot abort identity/visit research.
   expect(rpc).toHaveBeenCalledWith("supervisor_reconcile_business_anomaly",expect.objectContaining({p_key:"customer_trend:returning_visit_share",p_active:true}));
   expect(rpc.mock.calls.some(([,p])=>p.p_key==="customer_trend:average_recipe_contribution")).toBe(false);
-  expect(incidents.get("data_gap:reader_unavailable:customer_intelligence")).toBe(true);
+  expect(incidents.get("data_gap:reader_unavailable:customer_recipe_contribution")).toBe(true);
+  expect(incidents.get("data_gap:reader_unavailable:customer_intelligence")).toBe(false);
   expect(incidents.get("customer_trend:average_recipe_contribution")).toBe(true);
   optionalFailure=false;low=true;rpc.mockClear();await run();
+  expect(incidents.get("data_gap:reader_unavailable:customer_recipe_contribution")).toBe(false);
   expect(incidents.get("data_gap:customer_identity_coverage")).toBe(true);
   expect(rpc).toHaveBeenCalledWith("supervisor_reconcile_business_anomaly",expect.objectContaining({p_key:"customer_trend:anonymous_check_spend",p_active:true}));
   expect(rpc).toHaveBeenCalledWith("supervisor_reconcile_business_anomaly",expect.objectContaining({p_key:"customer_trend:anonymous_items_per_check",p_active:true}));
