@@ -43,6 +43,10 @@ DECLARE
   p record;
   result jsonb;
   bad_count integer;
+  latency_started timestamptz;
+  stock_p95 numeric;
+  discovery_p95 numeric;
+  sample_count integer;
 BEGIN
   -- Behavioral negative regression: PostgreSQL must THROW for definitions
   -- actually containing a diagnostic table, including inside a function body.
@@ -397,5 +401,49 @@ BEGIN
     (result->'rows'->0->>'sum_amount_cents')::integer=1250,
     'Authorized owner receives same 1250 screen/query cash cents');
   EXECUTE 'reset role';
+
+  -- #564 production-size data shape, in this ROLLED BACK disposable DB only.
+  -- Real café stock query timed out with 12,480 unrelated operational orders.
+  -- Keep all 12,500 fixture orders: no history/date or field cutoff permitted.
+  INSERT INTO public.toast_raw_records
+   (business_id,restaurant_guid,entity,entity_guid,business_date,
+    payload,payload_sha256,capture_key)
+  SELECT a,restaurant_a,'order',gen_random_uuid(),'2026-10-25'::date,
+   jsonb_build_object('guid',gen_random_uuid()::text,'checks',
+    jsonb_build_array(
+     jsonb_build_object('guid',gen_random_uuid()::text,'selections',
+      jsonb_build_array(jsonb_build_object('guid',gen_random_uuid()::text,
+       'item',jsonb_build_object('name','Unrelated order'),
+       'price',9.99,'tax',0.67,'modifiers',jsonb_build_array(
+        jsonb_build_object('guid',gen_random_uuid()::text,'name','Extra'))))))),
+   md5(g.n::text)||md5(g.n::text),'live:stock-discovery-load:'||g.n::text
+  FROM generate_series(1,12500) g(n);
+  PERFORM pg_temp.pos0f_assert(
+   (SELECT count(*)=12500 FROM public.toast_raw_records
+    WHERE business_id=a AND entity='order'
+      AND capture_key LIKE 'live:stock-discovery-load:%'),
+   'stock field-discovery latency fixture includes 12,500 unrelated operational orders');
+  CREATE TEMP TABLE pg_temp.pos0f_source_latency(kind text,ms numeric) ON COMMIT DROP;
+  FOR sample_count IN 1..12 LOOP
+    latency_started:=clock_timestamp();
+    PERFORM count(*) FROM public.cv_inventory
+     WHERE business_id=a AND source='toast';
+    INSERT INTO pg_temp.pos0f_source_latency VALUES
+     ('inventory',1000*extract(epoch from clock_timestamp()-latency_started));
+    latency_started:=clock_timestamp();
+    PERFORM public.ai_toast_fields(a,'stock/v1/inventory');
+    INSERT INTO pg_temp.pos0f_source_latency VALUES
+     ('fields',1000*extract(epoch from clock_timestamp()-latency_started));
+  END LOOP;
+  SELECT percentile_cont(0.95) WITHIN GROUP(ORDER BY ms)::numeric
+   INTO stock_p95 FROM pg_temp.pos0f_source_latency WHERE kind='inventory';
+  SELECT percentile_cont(0.95) WITHIN GROUP(ORDER BY ms)::numeric
+   INTO discovery_p95 FROM pg_temp.pos0f_source_latency WHERE kind='fields';
+  PERFORM pg_temp.pos0f_assert(
+   stock_p95<2000 AND discovery_p95<2000,
+   '12,500 unrelated orders must not make inventory/discovery timeout: stock p95='
+     ||stock_p95||'ms, fields p95='||discovery_p95||'ms');
+  RAISE NOTICE 'POS0f #564: 12,500-order scoped stock p95=% ms; stock field p95=% ms (12 reads each)',
+    round(stock_p95,1),round(discovery_p95,1);
 END $pos0f$;
 ROLLBACK;
