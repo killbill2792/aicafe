@@ -265,7 +265,7 @@ describe.skipIf(!active)("U3 migrated registered tool + private connection",()=>
   try{
    await admin.query(
     "INSERT INTO public.orders(id,business_id,pos_order_id,closed_at,business_date,gross_sales_cents,net_sales_cents) "+
-    "SELECT gen_random_uuid(),$1,'u3-cursor-'+i::text,now(),"+
+    "SELECT gen_random_uuid(),$1,'u3-cursor-'||i::text,now(),"+
       "date '2026-01-01'+(i-1),100+i,100+i FROM generate_series(1,137) AS i",[ids.a]);
    const sql="SELECT id,business_date,net_sales_cents FROM u3_research.orders ORDER BY business_date,id";
    let cursor:string|null=null,pages=0,complete=false;
