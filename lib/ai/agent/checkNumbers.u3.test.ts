@@ -151,6 +151,17 @@ describe("recorded labor punch verifier, not roster or invented model prose",()=
    expect(checkNumbers("Clock-in at 9:00 AM on November 15, 2026 was recorded.","",
      [observed],"en")).toEqual([]);
  });
+ it("selects the closest punch, operating-hours or shift action per clock",()=>{
+   for(const assertion of [
+     "Sam clocked in at 9:00 AM and the café opens at 9:00 AM on November 15, 2026.",
+     "Sam clocked in at 9:00 AM and the café closes at 9:00 AM on November 15, 2026.",
+     "Sam clocked in at 9:00 AM and her shift starts at 9:00 AM on November 15, 2026.",
+     "The café opens at 9:00 AM and Sam clocked in at 9:00 AM on November 15, 2026.",
+   ])expect(checkNumbers(assertion,"",[observed],"en")).not.toEqual([]);
+   expect(checkNumbers(
+     "Sam clocked in at 9:00 AM and Sam clocked out at 3:00 PM on November 15, 2026.",
+     "",[observed],"en")).toEqual([]);
+ });
  it("rejects a fabricated elapsed duration even when the tool shape resembles labor",()=>{
    const falseDuration={...observed,attendance:{recordedTimecards:[{
      ...(observed.attendance as {recordedTimecards:Array<Record<string,unknown>>}).recordedTimecards[0],
