@@ -596,17 +596,26 @@ describe.skipIf(!active)("U3 migrated registered tool + private connection",()=>
  });
  it("measures concurrent registered research over multi-month realistic volume with two independent cafe oracles",async()=>{
   if(!admin)throw Error("admin_missing");
-  const fixtures=2400,perCafe=fixtures/2;
+  // Approximately the 90-day reference cafe volume per tenant, not a
+  // production query, total-row policy or model/provider cost benchmark.
+  const fixtures=24000,perCafe=fixtures/2,days=90;
   const prefix="u3-concurrent-";
   const foreign={...scoped,businessId:ids.b,ownerUserId:ids.ob,threadId:ids.tb};
   try{
    await admin.query("INSERT INTO public.orders(id,business_id,pos_order_id,closed_at,business_date,gross_sales_cents,net_sales_cents) "+
     "SELECT gen_random_uuid(),CASE WHEN i%2=0 THEN $1::uuid ELSE $2::uuid END,$3||i::text,now(),"+
-    "date '2025-01-01'+(i%365),100+i,100+i FROM generate_series(1,$4::int) i",[ids.a,ids.b,prefix,fixtures]);
-   const oracle=await admin.query("SELECT business_id,COUNT(*)::text AS n,SUM(net_sales_cents)::text AS cents FROM public.orders WHERE business_id IN ($1,$2) AND pos_order_id LIKE $3 GROUP BY business_id",[ids.a,ids.b,prefix+"%"]);
-   expect(oracle.rows).toHaveLength(2);
-   const expected=new Map(oracle.rows.map(row=>[String(row.business_id),{n:String(row.n),cents:String(row.cents)}]));
-   for(const result of expected.values())expect(Number(result.n)).toBe(perCafe);
+    "date '2025-01-01'+(((i-1)/2)%$5::int),100+i,100+i FROM generate_series(1,$4::int) i",[ids.a,ids.b,prefix,fixtures,days]);
+   const oracle=await admin.query("SELECT business_id,to_char(business_date,'YYYY-MM') AS month,COUNT(*)::text AS n,SUM(net_sales_cents)::text AS cents "+
+    "FROM public.orders WHERE business_id IN ($1,$2) AND pos_order_id LIKE $3 GROUP BY business_id,month ORDER BY business_id,month",[ids.a,ids.b,prefix+"%"]);
+   const expected=new Map<string,Array<{month:string;n:string;cents:string;sales_rank:string}>>();
+   for(const cafe of [ids.a,ids.b]){
+    const months=oracle.rows.filter(row=>row.business_id===cafe).map(row=>({month:String(row.month),n:String(row.n),cents:String(row.cents)}));
+    expect(months.length).toBeGreaterThan(1);
+    expect(months.reduce((sum,row)=>sum+Number(row.n),0)).toBe(perCafe);
+    expected.set(cafe,months.map(row=>({...row,sales_rank:String(1+months.filter(other=>Number(other.cents)>Number(row.cents)).length)})));
+   }
+   const sql="WITH monthly AS (SELECT to_char(business_date,'YYYY-MM') AS month,COUNT(*) AS n,SUM(net_sales_cents) AS cents "+
+    "FROM orders WHERE pos_order_id LIKE $1 GROUP BY 1) SELECT month,n,cents,RANK() OVER (ORDER BY cents DESC) AS sales_rank FROM monthly ORDER BY month";
    // Both owners use the actual registered research entry point and distinct
    // signed tickets on the same bounded shared research connection pool.
    const timings:number[]=[];
@@ -615,23 +624,24 @@ describe.skipIf(!active)("U3 migrated registered tool + private connection",()=>
      const context:AgentToolContext={asOf:"2026-11-24",timezone:"UTC",locale:"en",
       tools:{} as AgentToolContext["tools"],canonicalData:async()=>scope};
      const started=performance.now();
-     const r=await executeAgentTool("query_data",{...input("SELECT COUNT(*) AS n,SUM(net_sales_cents) AS cents FROM orders WHERE pos_order_id LIKE $1"),parameters:[prefix+"%"]},context);
+     const r=await executeAgentTool("query_data",{...input(sql),parameters:[prefix+"%"],limit:null},context);
      timings.push(performance.now()-started);
      expect(r.error).toBeUndefined();
-     expect(r.rows).toEqual([expected.get(scope.businessId)]);
+     expect(r.rows).toEqual(expected.get(scope.businessId));
      expect(r).toMatchObject({page_complete:true,truncated:false});
     }));
    }
    timings.sort((a,b)=>a-b);
-   console.log("U3_CONCURRENT_REGISTERED_MEASUREMENT",JSON.stringify({generatedOrders:fixtures,
+   console.log("U3_CONCURRENT_REGISTERED_MEASUREMENT",JSON.stringify({generatedOrders:fixtures,ordersPerCafe:perCafe,days,
     distinctCafes:2,parallelRequests:4,requests:timings.length,modelCalls:0,
+    queryShape:"monthly CTE aggregation and ranking window",
     p50Ms:Number(timings[Math.ceil(timings.length*.5)-1].toFixed(2)),
     p95Ms:Number(timings[Math.ceil(timings.length*.95)-1].toFixed(2)),
     caveat:"Disposable normalized orders and actual research pool; not production or provider cost"}));
   }finally{
    await admin.query("DELETE FROM public.orders WHERE business_id IN ($1,$2) AND pos_order_id LIKE $3",[ids.a,ids.b,prefix+"%"]).catch(()=>{});
   }
- });
+ },60000);
  it("traverses the actual invoker-RLS canonical reader beyond its old row and byte preview caps",async()=>{
   if(!admin)throw Error("admin_missing");
   const db=admin,prefix="u3-legacy-pages-",from="2025-01-01",to="2025-04-01";
