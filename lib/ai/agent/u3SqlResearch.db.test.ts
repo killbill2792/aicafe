@@ -136,6 +136,29 @@ describe.skipIf(!active)("U3 migrated registered tool + private connection",()=>
   if(priorCursorSecret===undefined)delete process.env.SUPABASE_SERVICE_ROLE_KEY;
   else process.env.SUPABASE_SERVICE_ROLE_KEY=priorCursorSecret;
  });
+ it("reads all saved normalized statement transactions through general SQL without crossing owner scope",async()=>{
+  if(!admin)throw Error("admin_missing");
+  const day="2026-01-01";
+  const docs:string[]=[];
+  try{
+   for(const [business,owner,count,amount] of [[ids.a,ids.oa,600,125],[ids.b,ids.ob,2,900]] as const){
+    const rows=Array.from({length:count},(_,i)=>({i,date:day,amountCents:amount,balanceCents:(i+1)*amount}));
+    await admin.query("BEGIN");
+    try{
+     await admin.query("SELECT set_config('request.jwt.claim.role','service_role',true)");
+     const saved=await admin.query("SELECT public.supervisor_record_statement_evidence($1,$2,$3,$4,'USD',$5,$5,0,$6,$7::jsonb) AS id",[business,owner,randomBytes(32).toString("hex"),randomBytes(32).toString("hex"),day,count*amount,JSON.stringify(rows)]);
+     docs.push(saved.rows[0].id);
+     await admin.query("COMMIT");
+    }catch(e){await admin.query("ROLLBACK");throw e;}
+   }
+   const result=await dataQueryTools.query_data.execute(input("SELECT count(*) AS transactions,sum(t.amount_cents) AS movement_cents,max(d.closing_cents) AS closing_cents FROM financial_statement_transactions t JOIN financial_statement_documents d ON d.statement_id=t.statement_id"),scoped);
+   expect(result.error).toBeUndefined();
+   expect(result.rows).toEqual([{transactions:"600",movement_cents:"75000",closing_cents:"75000"}]);
+   const denied=await dataQueryTools.query_data.execute(input("SELECT count(*) FROM financial_statement_transactions"),{...scoped,aggregateOnly:true});
+   expect(denied.error).toBeDefined();
+   expect(denied.rows??[]).toEqual([]);
+  }finally{if(docs.length)await admin.query("DELETE FROM public.uploads WHERE id=ANY($1::uuid[])",[docs]);}
+ });
  it("preserves unfamiliar actual expense labels and recurring links across the real SQL surface",async()=>{
   if(!admin)throw Error("admin_missing");
   const cost=randomUUID(),expense=randomUUID(),foreign=randomUUID();
@@ -334,7 +357,7 @@ describe.skipIf(!active)("U3 migrated registered tool + private connection",()=>
    "WITH summary AS (SELECT SUM(net_sales_cents) AS arbitrary_total FROM orders) SELECT arbitrary_total FROM summary ORDER BY arbitrary_total"),offturn);
   expect(derived.error).toBeUndefined();
   expect(derived.rows).toEqual([{arbitrary_total:"1100"}]);
-  expect(derived.evidence).toMatchObject({column_units:{arbitrary_total:"cents"}});
+  expect((derived as AgentToolResult).evidence).toMatchObject({column_units:{arbitrary_total:"cents"}});
   for(const sql of [
    "SELECT net_sales_cents FROM orders WHERE EXISTS(SELECT count(*) FROM orders)",
    "SELECT sum(net_sales_cents) OVER() AS total FROM orders"

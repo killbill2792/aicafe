@@ -107,7 +107,7 @@ const nonObservationKeys=new Set([
   "sourceCount","rowCount","sourceMix","available","empty","quality",
   "status","readAt","readTime","lastUpdated","freshnessLabel","provisional",
   "stale","hasIncomplete","currentDayIncomplete","todayImported",
-  "lastFullDay","lastFullDayTotals",
+  "lastFullDay","lastFullDayTotals","evidence","metric_basis","official_metric",
 ]);
 function observedValue(value:unknown,depth=0):boolean{
   if(typeof value==="number")return Number.isFinite(value);
