@@ -2,6 +2,7 @@ import {describe,expect,it,vi} from "vitest";
 vi.mock("server-only",()=>({}));
 vi.mock("./u3SqlResearch.server",()=>({
   u3SqlConfigured:()=>true,
+  safeU3SqlErrorCode:()=> "source_read_failed",
   describeU3Catalog:vi.fn(async()=>{throw new Error("private transport details must not escape");}),
   runU3Sql:vi.fn()
 }));
