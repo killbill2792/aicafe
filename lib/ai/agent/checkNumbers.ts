@@ -94,35 +94,28 @@ function appendGoalNumericEvidence(
   }
 }
 
-/** Convert a PostgreSQL NUMERIC/INT8 *source receipt* to the checker’s
- * existing bounded display units. Do not coerce arbitrary numeric strings,
- * round fractional cents/counts, or accept unsafe IEEE-754 integers. */
+/** Convert a source-attested exact decimal into the checker's display units.
+ * Round only at the display boundary, using integer arithmetic rather than
+ * floating-point coercion; the original receipt stays exact for calculation.
+ * Counts outside the safe display range are not numeric evidence. */
 function u3ReceiptNumber(raw:unknown,unit:unknown):
   {value:number;unit:"cents"|"count"|"bps"|"ratio"}|null{
  const text=typeof raw==="string"?raw:
   typeof raw==="number"&&Number.isFinite(raw)?String(raw):"";
- if(!/^-?(?:0|[1-9][0-9]*)(?:\.[0-9]+)?$/.test(text)||text.length>70)return null;
+ if(!/^-?(?:0|[1-9][0-9]*)(?:\.[0-9]+)?$/.test(text)||text.length>1235)return null;
+ if(unit!=="cents"&&unit!=="microcents"&&unit!=="count"&&unit!=="percent"&&unit!=="ratio")return null;
  const [integer,fraction=""]=text.split(".");
- if(unit==="cents"||unit==="microcents"||unit==="count"){
-  if(fraction&&!/^0+$/.test(fraction))return null;
-  const n=BigInt(integer);
-  if(n>BigInt(Number.MAX_SAFE_INTEGER)||n<BigInt(Number.MIN_SAFE_INTEGER))return null;
-  return unit==="microcents"?{value:Number(n)/1000000,unit:"cents"}:{value:Number(n),unit};
- }
- if(unit!=="percent"&&unit!=="ratio")return null;
- // The checker is a finite-number verifier. Preserve source decimal precision
- // at the conversion boundary and refuse values that cannot be represented
- // within its explicitly bounded percentage/ratio display granularity.
- const places=unit==="percent"?2:6;
- if(fraction.length>places&&!/^0+$/.test(fraction.slice(places)))return null;
- const digits=fraction.slice(0,places).padEnd(places,"0");
- const base=BigInt(integer)*BigInt(10**places)+
-  BigInt(digits)*(integer.startsWith("-")?-BigInt(1):BigInt(1));
- if(base>BigInt(Number.MAX_SAFE_INTEGER)||base<BigInt(Number.MIN_SAFE_INTEGER))return null;
- const numeric=Number(base)/(10**places);
- if(!Number.isFinite(numeric))return null;
- return unit==="percent"?{value:numeric*100,unit:"bps"}:
-  {value:numeric,unit:"ratio"};
+ const sign=integer.startsWith("-")?-1n:1n;
+ const n=BigInt(integer.replace("-","")+fraction),d=10n**BigInt(fraction.length);
+ if(n>BigInt(Number.MAX_SAFE_INTEGER)*d*(unit==="microcents"?1000000n:1n))return null;
+ // Money is displayed in cents; percentages in basis points. Ratios keep
+ // four decimal places (one basis point), and quantity counts keep hundredths.
+ const scale=unit==="percent"?100n:unit==="ratio"?10000n:unit==="count"?100n:1n;
+ const denominator=unit==="microcents"?d*1000000n:d;
+ const rounded=sign*(n*scale*2n+denominator)/(denominator*2n);
+ if(rounded>BigInt(Number.MAX_SAFE_INTEGER)||rounded<BigInt(Number.MIN_SAFE_INTEGER))return null;
+ const value=Number(rounded)/(unit==="count"||unit==="ratio"?Number(scale):1);
+ return {value,unit:unit==="percent"?"bps":unit==="microcents"?"cents":unit};
 }
 function completeU3Proof(r:AgentToolResult):Record<string,unknown>|null{
  if(r.source!=="u3_canonical_research"||r.error||

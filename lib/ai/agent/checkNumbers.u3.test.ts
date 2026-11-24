@@ -77,12 +77,14 @@ describe("U3 SQL source receipts in numeric claim verification",()=>{
   expect(checkNumbers("Ingredient cost is $0.02 per gram.","",[r],"en")).toEqual([]);
   expect(checkNumbers("Ingredient cost is $20,000 per gram.","",[r],"en")).not.toEqual([]);
  });
- it("rejects fractional cents, unsafe huge integers and high-precision coercions",()=>{
+ it("rounds only source-attested display amounts and refuses unsafe huge integers",()=>{
   const original=receipt() as Record<string,unknown>;
   const bad={...original,rows:[{
    amount_cents:"12345.5",orders:"9007199254740993",percent:"12.3456789"
   }]};
-  expect(compactEvidence([bad as unknown as AgentToolResult]).flatMap(v=>v.values)).toEqual([]);
+  expect(compactEvidence([bad as unknown as AgentToolResult]).flatMap(v=>v.values)).toEqual([
+   expect.objectContaining({unit:"cents",value:12346}),expect.objectContaining({unit:"bps",value:1235})
+  ]);
  });
 });
 

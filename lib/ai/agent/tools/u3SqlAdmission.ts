@@ -419,6 +419,15 @@ export async function admitU3Sql(sql:string,allowedRelations:readonly string[],
   return v.isnull===true||i!==null&&(i.ival===0||i.ival===undefined)||
    typeof f?.fval==="string"&&/^[+-]?0+(?:\.0+)?$/u.test(f.fval);
  };
+ // A numeric scale is not a source of evidence on its own. Recognize only
+ // exact unit conversions here; other constants remain untyped.
+ const scalar=(node:unknown,value:1|100):boolean=>{
+  const v=obj(obj(node)?.A_Const);
+  if(!v)return false;
+  const i=obj(v.ival),f=obj(v.fval);
+  return i?.ival===value||typeof f?.fval==="string"&&
+   new RegExp("^"+value+"(?:\\.0+)?$","u").test(f.fval);
+ };
  const compatible=(nodes:unknown[],bindings:Binding[]):Unit=>{
   const units=nodes.map(n=>infer(n,bindings));
   const typed=units.filter((u):u is U3TrustedUnit=>u!==null);
@@ -459,6 +468,12 @@ export async function admitU3Sql(sql:string,allowedRelations:readonly string[],
    if((op==="+"||op==="-")&&left!==null&&neutral(expr.rexpr))return left;
    if(op==="+"&&right!==null&&neutral(expr.lexpr))return right;
    if(op==="/"&&left!==null&&left===right)return "ratio";
+   // PostgreSQL decimal promotion and ratio-to-percent conversions retain
+   // the original observed numeric lineage; literals alone never gain units.
+   if((op==="*"||op==="/")&&left!==null&&scalar(expr.rexpr,1))return left;
+   if(op==="*"&&right!==null&&scalar(expr.lexpr,1))return right;
+   if(op==="*"&&((left==="ratio"&&scalar(expr.rexpr,100))||(right==="ratio"&&scalar(expr.lexpr,100))))return "percent";
+   if(op==="/"&&left==="percent"&&scalar(expr.rexpr,100))return "ratio";
    return null;
   }
   const cast=obj(v.TypeCast);
