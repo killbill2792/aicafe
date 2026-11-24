@@ -1,3 +1,7 @@
+import {getFixtureSnapshot} from "@/lib/data/fixtureSnapshot";
+import {businessCostSummaryFromSnapshot} from "@/lib/operating/businessCosts";
+import {breakEvenSnapshotInputs} from "@/lib/viewmodels/breakEvenViewModel";
+import {type Economics} from "@/lib/calc/supervisorEconomics";
 import {readdirSync, readFileSync} from "node:fs";
 import {describe,it,expect,vi} from "vitest";
 import {agentToolDefinitions,executeAgentTool,retiredResearchTools,type AgentToolContext,type AgentToolName} from "./index";
@@ -148,5 +152,84 @@ describe("registered general research does not dispatch named reports",()=>{
   }
   expect(readEconomics).not.toHaveBeenCalled();
   expect(rpc).not.toHaveBeenCalled();
+ });
+});
+
+describe("internal application calculations preserved independently of model research",()=>{
+ it("retains exact shared expense and recurring-bill calculations without model-facing reporting functions",async()=>{
+  const {context}=caller();
+  const q={level:"high" as const,missingInputs:[],estimatedInputs:[],staleInputs:[]};
+  const categoryRows=Array.from({length:21},(_,i)=>({categoryCode:"custom_"+i,label:"Cost "+i,amountCents:100+i,isEstimate:true,isMissing:false}));
+  const ctx:AgentToolContext={...context,tools:{...context.tools,
+   getRecordedExpenses:async()=>({available:true,value:{totalCents:12000} as never,quality:q}),
+   getExpenseSummary:async()=>({available:true,value:categoryRows as never,quality:q}),
+   getMonthlyBills:async()=>({available:true,value:{totalCents:15000} as never,quality:{...q,estimatedInputs:["configured_cost"]}})}};
+  for(const name of ["get_expenses","get_bills"])expect(agentToolDefinitions.some(t=>t.name===name)).toBe(false);
+  const period={from:"2026-10-01",to:"2026-10-20"};
+  const expenses=await executeAgentTool("get_expenses",{period,category:null},ctx);
+  expect(expenses.categories).toHaveLength(21);
+  expect(expenses.recordedActualTotalCents).toBe(12000);
+  const recurring=await executeAgentTool("get_bills",{},ctx);
+  expect(recurring.estimated).toBe(true);
+ });
+
+ it("returns the same break-even calculation, period and quality as the shared screen basis",async()=>{
+  const snapshot=getFixtureSnapshot();
+  const basis=breakEvenSnapshotInputs(snapshot);
+  const {context,rpc}=caller();
+  const ctx:AgentToolContext={...context,asOf:snapshot.todayDateStr,
+   readEconomics:async()=>({canonicalBreakEven:basis,
+    economics:{openDaysBasis:"opening_hours"} as unknown as Economics,
+    items:[],staff:[],ownerMonthlyPayrollExtrasCents:null,ownerIngredientRate:null})};
+  const result=await executeAgentTool("get_break_even",{period:"month"},ctx);
+  expect(result.monthlyBreakEvenCents).toBe(basis.shared.salesPerMonthCents);
+  expect(rpc).not.toHaveBeenCalled();
+ });
+ it("retires the redundant model-facing break-even tool but preserves every shared period and override",async()=>{
+  expect(agentToolDefinitions.some(t=>t.name==="get_break_even")).toBe(false);
+  const snapshot=getFixtureSnapshot();
+  const {context}=caller();
+  const ctx:AgentToolContext={...context,asOf:snapshot.todayDateStr,
+   readEconomics:async()=>({canonicalBreakEven:breakEvenSnapshotInputs(snapshot),
+    canonicalSnapshot:snapshot,
+    economics:{openDaysBasis:"opening_hours"} as unknown as Economics,
+    items:[],staff:[],ownerMonthlyPayrollExtrasCents:null,ownerIngredientRate:null})};
+  for(const period of ["today","month_to_date","month"] as const){
+   for(const overrides of [null,{ownerIngredientPackagingPercent:22,ownerProcessingFeePercent:3,
+      ownerOpenDaysPerMonth:24,ownerNetSalesCents:123456,ownerSalesDays:4}]){
+    const old=await executeAgentTool("get_break_even",{period,...overrides},ctx);
+    expect(old.error).toBeUndefined();
+    expect(old.monthlyBreakEvenCents).not.toBeNull();
+   }
+  }
+ });
+ it("retires the redundant model-facing profit declaration without losing period or shared-screen parity",async()=>{
+  expect(agentToolDefinitions.some(t=>t.name==="get_profit")).toBe(false);
+  const {context}=caller();
+  const quality={level:"high" as const,missingInputs:[],estimatedInputs:[],staleInputs:[]};
+  const ctx:AgentToolContext={...context,tools:{
+   ...context.tools,getProfitability:async()=>({available:true,value:{netSalesCents:20000,
+    totalCostsCents:10000,ownerProfitCents:10000,operatingMargin:.5,
+    coveredSalesDays:20,expectedSalesDays:20},quality})}};
+  for(const period of ["month","last_month","last_week",{from:"2023-01-01",to:"2026-10-20"}] as const){
+   const old=await executeAgentTool("get_profit",{period},ctx);
+   expect(old.error).toBeUndefined();
+   expect(old.ownerProfitCents).toBe(10000);
+  }
+ });
+ it("retires the cost summary report while preserving the official period, coverage and unknown components",async()=>{
+  const snapshot=getFixtureSnapshot();
+  const {context}=caller();
+  const period={from:snapshot.monthKey+"-01",to:snapshot.todayDateStr};
+  const observed=businessCostSummaryFromSnapshot(snapshot,period);
+  const partial={...observed,completeness:"partial" as const,
+   observed:{...observed.observed,loadedStaff:false},missingInputs:["staffCostsUnobserved"]};
+  const ctx:AgentToolContext={...context,asOf:snapshot.todayDateStr,tools:{...context.tools,getBusinessCostSummary:async()=>partial}};
+  expect(agentToolDefinitions.some(t=>t.name==="get_cost_summary")).toBe(false);
+  const old=await executeAgentTool("get_cost_summary",{period},ctx);
+  expect(old.components).toMatchObject({loadedStaffCents:null});
+  expect(old.missing).toContain("staffCostsUnobserved");
+  const missing=await executeAgentTool("get_cost_summary",{period},context);
+  expect(missing.missing).toContain("costSummaryReaderUnavailable");
  });
 });

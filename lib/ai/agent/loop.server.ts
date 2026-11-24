@@ -617,7 +617,7 @@ export async function runAgentTurn(args: {
       const saved=reference;
       if(usage.toolCalls>=maxToolCalls||budgetStop()||workDeadline-now()<1000||
         (toolContext.researchPageBytes?.()??0)<=0)break;
-      if(!eligibleNames.has(saved.name))continue;
+      if(saved.name==="query_data"||!eligibleNames.has(saved.name))continue;
       if(!isRepeatSafeOwnerTool(saved.name,saved.selector))continue;
       await args.beforeAcceptResult?.();
       await boundary(()=>args.checkpoint!.assertLive());
