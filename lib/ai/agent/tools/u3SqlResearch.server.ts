@@ -158,7 +158,7 @@ async function withinScope<T>(ctx:U3SqlContext,callback:(client:PoolClient,obser
   const observed=(await client.query(
    "SELECT set_config('aicafe.u3_research_scope',$1,true),"+ // hardcode-ok: PostgreSQL bind placeholder
    "set_config('aicafe.u3_date_from',$2,true),"+ // hardcode-ok: PostgreSQL bind placeholder
-   "set_config('aicafe.u3_date_to',$3,true),transaction_timestamp() AS observed_at",
+   "set_config('aicafe.u3_date_to',$3,true),transaction_timestamp() AS observed_at", // hardcode-ok: PostgreSQL bind placeholder
    [ticket,from??"",to??""])).rows[0]?.observed_at;
   const result=await callback(client,observed);
   await client.query("COMMIT");
@@ -308,13 +308,13 @@ export function safeU3SqlErrorCode(e:unknown){
  * arguments, DB errors or owner IDs are ever returned as tool evidence. */
 export async function runU3Sql(ctx:U3SqlContext,raw:unknown){
  const startedAt=Date.now();
- let stage:"scope"|"catalog"|"admission"|"query"|"result"="scope";
+ const stage:{value:"scope"|"catalog"|"admission"|"query"|"result"}={value:"scope"};
  const parsed=u3SqlSchema.safeParse(raw);
  if(!parsed.success)return {source:"u3_canonical_research",period:null,
   missing:["invalid_query"],rows:[],truncated:false};
  try{
   const committedPage=await withinScope(ctx,async (client,asOf)=>{
-   stage="catalog";
+   stage.value="catalog";
    const list=await sources(client);
    if(!list.length)throw Error("research_not_configured");
    const p=parsed.data;
@@ -348,7 +348,7 @@ export async function runU3Sql(ctx:U3SqlContext,raw:unknown){
     else if(!Object.hasOwn(knownColumnUnits,col.name))
      knownColumnUnits[col.name]=unit;
    }
-   stage="admission";
+   stage.value="admission";
    const plan=await admitU3Sql(p.sql,list.map(r=>r.name),p.parameters?.length??0,
     ctx.aggregateOnly===true,[...safeOffturnColumns],knownColumnUnits);
    if(plan.relations.includes("toast_records")&&
@@ -372,7 +372,7 @@ export async function runU3Sql(ctx:U3SqlContext,raw:unknown){
    const statement="SELECT * FROM ("+bounded+") AS u3_bounded LIMIT "+(count+1)+
     " OFFSET "+offset;
    const parameters=p.parameters??[];
-   stage="query";
+   stage.value="query";
    // PostgreSQL cost is a dimensionless estimate, not elapsed time or a
    // physical resource limit. Planning twice and rejecting by an arbitrary
    // cost number blocks legitimate indexed/aggregate work. The actual query
@@ -382,7 +382,7 @@ export async function runU3Sql(ctx:U3SqlContext,raw:unknown){
    const rows=Array.isArray(result.rows)?result.rows:[];
    if(plan.relations.includes("toast_records")&&unsafeStructuredToastResult(rows))
     throw Error("invalid_query");
-   stage="result";
+   stage.value="result";
    const fit=fitRows(rows.slice(0,count));
    const truncated=rows.length>fit.rows.length;
    // PostgreSQL does not promise row ordering without a top-level ORDER BY.
@@ -431,7 +431,7 @@ export async function runU3Sql(ctx:U3SqlContext,raw:unknown){
   // reason/stage labels. Never log the SQL, bind values, café, owner, ticket,
   // private connection error, source row, or raw provider diagnostic.
   const safeStage=code==="research_connection_untrusted"||code==="research_connection_failed"?
-   "connection":code==="research_scope_denied"?"scope":stage;
+   "connection":code==="research_scope_denied"?"scope":stage.value;
   if(code!=="invalid_query")console.warn("u3_sql_research_failure",{
    code,stage:safeStage,configured:u3SqlConfigured()
   });
