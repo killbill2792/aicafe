@@ -33,7 +33,10 @@ describe("U1 migrated coordination, contention and recovery",()=>{
   const cafes=[randomUUID(),randomUUID()],uid=randomUUID();
   try{
    await admin.query("insert into auth.users(id,instance_id,aud,role,email,encrypted_password,created_at,updated_at) values ($1,'00000000-0000-0000-0000-000000000000','authenticated','authenticated',$2,'',now(),now())",[uid,uid+"@example.invalid"]);
-   for(const id of cafes)await admin.query("insert into public.businesses(id,name,timezone,is_demo) values ($1,'U1 synthetic cafe','UTC',false)",[id]);
+   for(const id of cafes){
+    await admin.query("insert into public.businesses(id,name,timezone,is_demo) values ($1,'U1 synthetic cafe','UTC',false)",[id]);
+    await admin.query("insert into public.toast_api_credentials(business_id,api_origin,client_id,client_secret_enc,state) values ($1,'https://example.invalid','sandbox-id','sandbox-placeholder','verified')",[id]);
+   }
    await admin.query("insert into public.memberships(business_id,user_id,role) values ($1,$2,'owner')",[cafes[0],uid]);
    a=await connect("service_role");b=await connect("service_role");owner=await connect("authenticated",uid);
    await expect(claim(owner,cafes[0],true)).rejects.toThrow();
@@ -147,6 +150,11 @@ describe("U1 migrated worker lease clocks and transport ordering",()=>{
    const stale=new Date(Date.now()-240000).toISOString();
    const args=[cafe,uid,thread,"alert",alert,"a".repeat(64),"b".repeat(64),315,stale];
    expect((await db.query("select public.supervisor_enqueue_investigation($1,$2,$3,$4,$5,$6,$7,$8,$9) result",args)).rows[0].result).toBe(true);
+   // No verified Toast connection: an unattended investigation must not be leased or billed.
+   expect((await db.query("select public.supervisor_claim_investigation($1) result",[stale])).rows[0].result).toBeNull();
+   await db.query("reset role");
+   await db.query("insert into public.toast_api_credentials(business_id,api_origin,client_id,client_secret_enc,state) values ($1,'https://example.invalid','sandbox-id','sandbox-placeholder','verified')",[cafe]);
+   await db.query("set local role service_role");
    const claimed=(await db.query("select public.supervisor_claim_investigation($1) result",[stale])).rows[0].result;
    expect(claimed.source_id).toBe(alert);
    await db.query("reset role");
@@ -186,6 +194,19 @@ describe("U1 migrated worker lease clocks and transport ordering",()=>{
    expect(await finish(first.lease_token)).toBe(false);
    expect(await finish(recovered.lease_token)).toBe(true);
    expect((await take()).wamid).toBe(later);
+  }finally{await db.query("rollback");await db.end();}
+ },30000);
+});
+
+describe("production-safe signup boundary",()=>{
+ (enabled?it:it.skip)("new owner receives no membership in shared Sunrise demo",async()=>{
+  const db=await connect(),owner=randomUUID();
+  try{
+   await db.query("begin");
+   await db.query("insert into public.businesses(id,name,timezone,is_demo) values ('11111111-1111-1111-1111-111111111111','Sunrise fixture','UTC',true) on conflict(id) do nothing");
+   await db.query("insert into auth.users(id,instance_id,aud,role,email,encrypted_password,created_at,updated_at) values ($1,'00000000-0000-0000-0000-000000000000','authenticated','authenticated',$2,'',now(),now())",[owner,owner+"@example.invalid"]);
+   const rows=await db.query("select business_id from public.memberships where user_id=$1 and business_id='11111111-1111-1111-1111-111111111111'",[owner]);
+   expect(rows.rows).toEqual([]);
   }finally{await db.query("rollback");await db.end();}
  },30000);
 });

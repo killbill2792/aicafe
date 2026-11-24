@@ -56,6 +56,9 @@ describe("Task 15A migrated, agentic investigation SQL integration",()=>{
           [owners[i],"investigation-"+owners[i]+"@example.invalid"]);
         await admin.query("insert into public.businesses(id,name,timezone,is_demo) values ($1,$2,'America/Los_Angeles',false)",
           [cafes[i],"Disposable investigation café"]);
+        // A paid unattended lease requires a verified Toast source. Synthetic
+        // credentials exist only inside the disposable DB acceptance sandbox.
+        await admin.query("insert into public.toast_api_credentials(business_id,api_origin,client_id,client_secret_enc,state) values ($1,'https://example.invalid','sandbox-id','sandbox-placeholder','verified')",[cafes[i]]);
         await admin.query("insert into public.memberships(business_id,user_id,role) values ($1,$2,'owner')",
           [cafes[i],owners[i]]);
         await admin.query("insert into public.ai_threads(id,business_id,owner_user_id,client_request_id) values ($1,$2,$3,$4)",
@@ -312,6 +315,7 @@ describe("Task 15A migrated, agentic investigation SQL integration",()=>{
           [owner,"15a-source-race-"+owner+"@example.invalid"]);
       }
       await admin.query("insert into public.businesses(id,name,timezone,is_demo) values ($1,'Disposable source race café','America/Los_Angeles',false)",[business]);
+      await admin.query("insert into public.toast_api_credentials(business_id,api_origin,client_id,client_secret_enc,state) values ($1,'https://example.invalid','fixture-client','fixture-placeholder','verified')",[business]);
       for(const owner of owners){
         await admin.query("insert into public.memberships(business_id,user_id,role) values ($1,$2,'owner')",
           [business,owner]);
@@ -401,6 +405,7 @@ describe("Task 15A migrated, agentic investigation SQL integration",()=>{
       await admin.query("insert into auth.users(id,instance_id,aud,role,email,encrypted_password,created_at,updated_at) values ($1,'00000000-0000-0000-0000-000000000000','authenticated','authenticated',$2,'',now(),now())",
         [owner,"investigation-watch-"+owner+"@example.invalid"]);
       await admin.query("insert into public.businesses(id,name,timezone,is_demo) values ($1,'Watch transition café','America/Los_Angeles',false)",[business]);
+      await admin.query("insert into public.toast_api_credentials(business_id,api_origin,client_id,client_secret_enc,state) values ($1,'https://example.invalid','fixture-client','fixture-placeholder','verified')",[business]);
       await admin.query("insert into public.memberships(business_id,user_id,role) values ($1,$2,'owner')",
         [business,owner]);
       await admin.query("insert into public.ai_threads(id,business_id,owner_user_id,client_request_id) values ($1,$2,$3,$4)",
@@ -580,6 +585,7 @@ describe("Task 15A migrated, agentic investigation SQL integration",()=>{
       await admin.query("insert into auth.users(id,instance_id,aud,role,email,encrypted_password,created_at,updated_at) values ($1,'00000000-0000-0000-0000-000000000000','authenticated','authenticated',$2,'',now(),now())",
         [owner,"investigation-closure-"+owner+"@example.invalid"]);
       await admin.query("insert into public.businesses(id,name,timezone,is_demo) values ($1,'Closure café','America/Los_Angeles',false)",[business]);
+      await admin.query("insert into public.toast_api_credentials(business_id,api_origin,client_id,client_secret_enc,state) values ($1,'https://example.invalid','fixture-client','fixture-placeholder','verified')",[business]);
       await admin.query("insert into public.memberships(business_id,user_id,role) values ($1,$2,'owner')",
         [business,owner]);
       await admin.query("insert into public.ai_threads(id,business_id,owner_user_id,client_request_id) values ($1,$2,$3,$4)",
@@ -693,6 +699,7 @@ describe("Task 15A migrated, agentic investigation SQL integration",()=>{
         await admin.query("insert into auth.users(id,instance_id,aud,role,email,encrypted_password,created_at,updated_at) values ($1,'00000000-0000-0000-0000-000000000000','authenticated','authenticated',$2,'',now(),now())",
           [owner,"15a-blocked-recovery-"+owner+"@example.invalid"]);
       await admin.query("insert into public.businesses(id,name,timezone,is_demo) values ($1,'Recovery café','America/Los_Angeles',false)",[business]);
+      await admin.query("insert into public.toast_api_credentials(business_id,api_origin,client_id,client_secret_enc,state) values ($1,'https://example.invalid','fixture-client','fixture-placeholder','verified')",[business]);
       for(const owner of owners)
         await admin.query("insert into public.memberships(business_id,user_id,role) values ($1,$2,'owner')",
           [business,owner]);
@@ -776,6 +783,7 @@ describe("business anomaly durable source",()=>{
   const args=(active:boolean,current:number)=>[cafe,key,active,JSON.stringify({...payload,current})];
   try{
    await admin.query("insert into public.businesses(id,name,timezone,is_demo) values($1,'Disposable anomaly café','America/Los_Angeles',false)",[cafe]);
+      await admin.query("insert into public.toast_api_credentials(business_id,api_origin,client_id,client_secret_enc,state) values ($1,'https://example.invalid','fixture-client','fixture-placeholder','verified')",[cafe]);
    await admin.query("insert into auth.users(id,instance_id,aud,role,email,encrypted_password,created_at,updated_at) values ($1,\u002700000000-0000-0000-0000-000000000000\u0027,\u0027authenticated\u0027,\u0027authenticated\u0027,$2,\u0027\u0027,now(),now())",[ownerId,"proactive-"+ownerId+"@example.invalid"]);
    await admin.query("insert into public.memberships(business_id,user_id,role) values($1,$2,\u0027owner\u0027)",[cafe,ownerId]);
    expect(await rpc(a,"supervisor_ensure_proactive_thread",[cafe,ownerId])).toBeNull();
@@ -807,6 +815,7 @@ describe("Task 15A exact owner response binding",()=>{
   try{
    await admin.query("insert into auth.users(id,instance_id,aud,role,email,encrypted_password,created_at,updated_at) values ($1,'00000000-0000-0000-0000-000000000000','authenticated','authenticated',$2,'',now(),now())",[ownerId,"investigation-answer-"+ownerId+"@example.invalid"]);
    await admin.query("insert into public.businesses(id,name,timezone,is_demo) values($1,$2,'UTC',false)",[businessId,"Disposable answer café"]);
+      await admin.query("insert into public.toast_api_credentials(business_id,api_origin,client_id,client_secret_enc,state) values ($1,'https://example.invalid','fixture-client','fixture-placeholder','verified')",[businessId]);
    await admin.query("insert into public.memberships(business_id,user_id,role) values($1,$2,'owner')",[businessId,ownerId]);
    await admin.query("insert into public.ai_threads(id,business_id,owner_user_id,client_request_id) values($1,$2,$3,$4)",[threadId,businessId,ownerId,randomUUID()]);
    await admin.query("insert into public.alerts(id,business_id,kind,status,payload) values($1,$2,'business_anomaly','new',$3)",[alertId,businessId,JSON.stringify({family:"stockout_risk",subject:randomUUID(),quality:"partial"})]);
@@ -868,6 +877,7 @@ describe("Task 15A proactive procurement café-wide draft fence",()=>{
   const payload={family:"stock_shortage",subject:ingredient,quality:"verified"};
   try{
    await admin.query("insert into public.businesses(id,name,timezone,is_demo) values($1,'Disposable stock café','UTC',false)",[cafe]);
+      await admin.query("insert into public.toast_api_credentials(business_id,api_origin,client_id,client_secret_enc,state) values ($1,'https://example.invalid','fixture-client','fixture-placeholder','verified')",[cafe]);
    for(let i=0;i<2;i++){
     await admin.query("insert into auth.users(id,instance_id,aud,role,email,encrypted_password,created_at,updated_at) values($1,'00000000-0000-0000-0000-000000000000','authenticated','authenticated',$2,'',now(),now())",[owners[i],owners[i]+"@example.invalid"]);
     await admin.query("insert into public.memberships(business_id,user_id,role) values($1,$2,'owner')",[cafe,owners[i]]);

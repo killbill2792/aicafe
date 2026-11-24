@@ -29,6 +29,7 @@ describe("U2 migrated execution ledger",()=>{
   for(let i=0;i<2;i++){
    await admin.query("insert into auth.users(id,instance_id,aud,role,email,encrypted_password,created_at,updated_at) values ($1,'00000000-0000-0000-0000-000000000000','authenticated','authenticated',$2,'',now(),now())",[owners[i],owners[i]+"@example.invalid"]);
    await admin.query("insert into public.businesses(id,name,timezone,is_demo) values ($1,'Disposable U2','UTC',false)",[cafes[i]]);
+   await admin.query("insert into public.toast_api_credentials(business_id,api_origin,client_id,client_secret_enc,state) values ($1,'https://example.invalid','fixture-client','fixture-placeholder','verified')",[cafes[i]]);
    await admin.query("insert into public.memberships(business_id,user_id,role) values ($1,$2,'owner')",[cafes[i],owners[i]]);
    await admin.query("insert into public.ai_threads(id,business_id,owner_user_id,client_request_id) values ($1,$2,$3,$4)",[threads[i],cafes[i],owners[i],randomUUID()]);
   }
