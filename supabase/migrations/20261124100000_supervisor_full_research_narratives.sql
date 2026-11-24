@@ -5,6 +5,8 @@
 set lock_timeout = '3s';
 set statement_timeout = '45s';
 
+-- Reason: replace the arbitrary report-length ceiling; text remains nonempty at the fenced writer and existing authorization/evidence checks are unchanged.
+-- squawk-ignore ban-drop-constraint
 alter table public.supervisor_investigations drop constraint investigation_narrative_size;
 
 create or replace function public.supervisor_finish_investigation(
