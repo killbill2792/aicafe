@@ -211,7 +211,7 @@ try{
  const messageCount=await one("select count(*)::int as n from public.ai_messages"+
    " where business_id=$1 and thread_id=$2 and grounding->>'intent'='priority_notice'",
    [a.cafe,a.thread]);
- check(messageCount.n===1,"saved owner follow-up is delivered to the original Supervisor chat exactly once");
+ check(messageCount.n===0,"supplier draft reminder stays in attention; the existing approval card is already in Supervisor chat");
  await fails(()=>asRole(a.owner,()=>remind(afterTwoHours)),/permission denied|Service role required/);
  const foreignReminder=await one("select public.post_supervisor_priority_notice("+
    "$1,$2,$3,$4,$5,$6,$7,$8,$9::timestamptz) as posted",
