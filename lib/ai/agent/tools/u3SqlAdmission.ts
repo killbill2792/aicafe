@@ -307,10 +307,10 @@ export async function admitU3Sql(sql:string,allowedRelations:readonly string[],
  const baseColumns=(rel:string):Columns=>new Map(Object.entries(
    relationUnits?relationUnits[rel]??{}:knownColumnUnits).map(([k,v])=>[k,recognized(v)]));
  const targetName=(target:N)=>{
-  if(typeof target.name==="string")return target.name;
+  if(typeof target.name==="string"&&target.name.length>0)return target.name;
   const v=obj(target.val);
   const ref=obj(v?.ColumnRef);
-  return ref?name(ref.fields)?.split(".").at(-1)??null:
+  return ref&&Array.isArray(ref.fields)?stringNode(ref.fields.at(-1)):
    obj(v?.FuncCall)?functionName(obj(v?.FuncCall)!):null;
  };
  const infer=(node:unknown,bindings:Binding[]):Unit=>{
@@ -357,10 +357,9 @@ export async function admitU3Sql(sql:string,allowedRelations:readonly string[],
    const c=unwrap(raw,"CommonTableExpr");
    if(c&&typeof c.ctename==="string")local.set(c.ctename,projection(c.ctequery,local));
   }
-  if(select.larg&&select.rarg){
-   const left=[...projection(select.larg,local)],right=[...projection(select.rarg,local)];
-   return new Map(left.map(([label,unit],i)=>[label,right.length===left.length&&right[i]?.[1]===unit?unit:null]));
-  }
+  // Set operations are readable; their positional projection requires full
+  // lineage (including unnamed columns). Never guess monetary units.
+  if(select.larg&&select.rarg)return new Map();
   const bindings:Binding[]=[];
   const from=(raw:unknown):void=>{
    const entry=obj(raw);if(!entry)return;
