@@ -103,13 +103,16 @@ it("the scheduled anomaly pass reconciles only comparable customer evidence and 
  inputs.usage.mockResolvedValue({rows:[],provenance:{coverage:"incomplete"}});
  inputs.quotes.mockResolvedValue({quotes:[],ingredients:[],currency:"USD",truncated:false});
  inputs.snapshot.mockResolvedValue({});
- let low=false,changed=true,emptySource=false,emptyComplete=false,optionalFailure=false;
+ let low=false,changed=true,emptySource=false,emptyComplete=false,optionalFailure=false,modifierFailure=false,anonymousItemFailure=false;
  const implementation=async(raw:unknown)=>{
   const p=raw as {view:string;date_from:string;group_by?:string[];metrics:Array<{column:string}>};
   const recent=p.date_from==="2026-11-12"||p.date_from==="2026-08-21";
   if(emptySource)return {rows:[{count_source_ref:0,"count_data.aiCafeCustomer.identityRef":0,
    "count_data.aiCafeCustomer.displayName":0}],missing:["empty"],truncated:false,error:undefined,
    customerCoverage:{complete:emptyComplete,eligibleChecks:0,linkedChecks:0,expectedLocationDays:7}};
+  if((modifierFailure&&p.view==="cv_customer_products"&&p.group_by?.[0]==="modifier_ref")||
+     (anonymousItemFailure&&p.view==="cv_toast_records"&&p.metrics.some(m=>m.column==="data.quantity")))
+   throw Error("source_read_failed");
   if(optionalFailure&&p.metrics.some(m=>m.column==="historical_recipe_contribution_cents"))
    return {rows:[],missing:["source_read_failed"],error:"source_read_failed",truncated:false};
   if(p.view==="cv_customer_products"){
@@ -169,15 +172,20 @@ it("the scheduled anomaly pass reconciles only comparable customer evidence and 
   expect(incidents.get("customer_trend:"+basket)).toBe(true);
   for(const subject of [modifier,basket])expect(await readCustomerTrendComparison({rpc} as never,"cafe",subject,{from:"2026-11-12",to:"2026-11-18"})).toMatchObject({key:subject,current:.8,previous:.4,active:true});
   for(const horizon of [7,30,60,90])expect(incidents.get(`customer_trend:observed_return_${horizon}d`)).toBe(false);
-  optionalFailure=true;rpc.mockClear();
+  optionalFailure=true;modifierFailure=true;anonymousItemFailure=true;rpc.mockClear();
   await run(); // A failed optional contribution read cannot abort identity/visit research.
   expect(rpc).toHaveBeenCalledWith("supervisor_reconcile_business_anomaly",expect.objectContaining({p_key:"customer_trend:returning_visit_share",p_active:true}));
   expect(rpc.mock.calls.some(([,p])=>p.p_key==="customer_trend:average_recipe_contribution")).toBe(false);
   expect(incidents.get("data_gap:reader_unavailable:customer_recipe_contribution")).toBe(true);
+  expect(incidents.get("data_gap:reader_unavailable:customer_distribution_modifier")).toBe(true);
+  expect(incidents.get("data_gap:reader_unavailable:customer_anonymous_items")).toBe(true);
   expect(incidents.get("data_gap:reader_unavailable:customer_intelligence")).toBe(false);
   expect(incidents.get("customer_trend:average_recipe_contribution")).toBe(true);
-  optionalFailure=false;low=true;rpc.mockClear();await run();
+  optionalFailure=false;modifierFailure=false;anonymousItemFailure=false;low=true;rpc.mockClear();await run();
   expect(incidents.get("data_gap:reader_unavailable:customer_recipe_contribution")).toBe(false);
+  expect(incidents.get("data_gap:reader_unavailable:customer_anonymous_items")).toBe(false);
+  // Distribution was not read at low identity coverage: do not invent its recovery.
+  expect(incidents.get("data_gap:reader_unavailable:customer_distribution_modifier")).toBe(true);
   expect(incidents.get("data_gap:customer_identity_coverage")).toBe(true);
   expect(rpc).toHaveBeenCalledWith("supervisor_reconcile_business_anomaly",expect.objectContaining({p_key:"customer_trend:anonymous_check_spend",p_active:true}));
   expect(rpc).toHaveBeenCalledWith("supervisor_reconcile_business_anomaly",expect.objectContaining({p_key:"customer_trend:anonymous_items_per_check",p_active:true}));
@@ -201,6 +209,7 @@ it("the scheduled anomaly pass reconciles only comparable customer evidence and 
   expect(incidents.get("customer_trend:returning_product_mix:11111111-1111-4111-8111-111111111111")).toBe(false);
   expect(incidents.get("customer_trend:"+modifier)).toBe(false);
   expect(incidents.get("customer_trend:"+basket)).toBe(false);
+  expect(incidents.get("data_gap:reader_unavailable:customer_distribution_modifier")).toBe(false);
  }finally{
   inputs.customer.mockImplementation(async()=>({rows:[{count_source_ref:0,"count_data.aiCafeCustomer.identityRef":0,"count_data.aiCafeCustomer.displayName":0}],missing:[],truncated:false,error:undefined}));
  }
