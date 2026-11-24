@@ -306,7 +306,7 @@ describe.skipIf(!active)("U3 migrated registered tool + private connection",()=>
    ...input(sql),date_from:"2023-01-01",date_to:"2026-11-23"
   },scoped);
   expect(result.error).toBeUndefined();
-  expect(result.page_complete).toBe(true);
+  expect((result as typeof result & {page_complete?:boolean}).page_complete).toBe(true);
  });
  it("rechecks actual original-owner authorization after revocation",async()=>{
   if(!admin)throw Error("admin_missing");
