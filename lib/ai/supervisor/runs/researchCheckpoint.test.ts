@@ -12,7 +12,7 @@ const period={from:"2026-11-01",to:"2026-11-01"};
 const source:AgentToolResult={source:"u3_canonical_research",period,missing:[],
  rows:[{amount:"100000",orders:3}],evidence:{receipt_id:receipt,scope:"verified_owner_cafe_lease",column_units:{amount:"cents",orders:"count"}}};
 function context(turn:Array<{name:string;result:AgentToolResult}>):AgentToolContext{
- return {asOf:"2026-11-02",timezone:"UTC",locale:"en",turnResults:()=>turn} as AgentToolContext;
+ return {asOf:"2026-11-02",timezone:"UTC",locale:"en",tools:{} as AgentToolContext["tools"],turnResults:()=>turn};
 }
 const input=(name:string,tool:string,path:string,receipt_id:string)=>({name,label:name,tool,path,receipt_id,fact_key:null,owner_value:null,owner_unit:null});
 describe("same-run encrypted research continuation",()=>{

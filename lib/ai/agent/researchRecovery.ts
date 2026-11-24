@@ -57,8 +57,9 @@ export function completeResearchResults(results:readonly AgentToolResult[]):Agen
    (end<total&&(end===start||typeof result.next_cursor!=="string"))||
    (end===total&&result.next_cursor!==null))continue;
   candidates.add(result);
-  // Source coverage and transport completeness are separate. Preserve all
-  // genuine missing-input flags when joining verified contiguous pages.
+  // Only the known server-issued customer coverage warning is independent
+  // of successful transport. Source-read failures cannot complete a snapshot.
+  if(result.missing.some(x=>x!=="result_truncated"&&x!=="customer_source_coverage_incomplete"))continue;
   const key=JSON.stringify([e.snapshot_id,e.snapshot_digest,e.query_fingerprint,e.catalog_version,e.as_of,total]);
   const pages=groups.get(key)??[];
   pages.push({result,start,end,total,final:end===total});groups.set(key,pages);
