@@ -142,6 +142,20 @@ describe("recorded labor punch verifier, not roster or invented model prose",()=
    expect(checkNumbers("Sam clocked in at 9:30 AM on November 15, 2026.",
      "",[],"en",saved)).toEqual([]);
  });
+ it("checks every returned current-turn punch, including beyond the old clock cap",()=>{
+   const base=(observed.attendance as {recordedTimecards:Array<Record<string,unknown>>}).recordedTimecards[0];
+   const cards=Array.from({length:100},(_,i)=>({...base,
+     timecardId:"00000000-0000-4000-8000-"+String(i+1).padStart(12,"0"),
+     ...(i===99?{employeeName:"Maya",clockIn:"2026-11-15T18:05:00Z",clockInLocal:"10:05",
+      clockOut:"2026-11-16T00:05:00Z",clockOutLocal:"16:05"}:{})
+   }));
+   const many={...observed,attendance:{recordedTimecards:cards}} as AgentToolResult;
+   expect(compactEvidence([many],Infinity).flatMap(r=>r.times)).toHaveLength(200);
+   expect(checkNumbers("Maya clocked in at 10:05 AM on November 15, 2026.",
+     "",[many],"en")).toEqual([]);
+   expect(checkNumbers("Maya clocked in at 9:00 AM on November 15, 2026.",
+     "",[many],"en")).not.toEqual([]);
+ });
  it("recognizes owner-facing named punch phrasing only for the right employee",()=>{
    expect(checkNumbers("Sam had a clock-in at 9:00 AM on November 15, 2026.","",
      [observed],"en")).toEqual([]);

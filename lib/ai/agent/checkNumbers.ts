@@ -316,8 +316,11 @@ export function compactEvidence(results:readonly AgentToolResult[],limit=100):Nu
         }
       }
     }
-    const times=[...observedHours([r]),...observedShifts([r]),
-      ...observedTimecardClocks([r])].slice(0,r.source==="labor_and_attendance"?160:60);
+    const observedTimes=[...observedHours([r]),...observedShifts([r]),
+      ...observedTimecardClocks([r])];
+    // Current-turn verification has the full returned source evidence. Only
+    // the compact cross-turn persistence representation is bounded here.
+    const times=Number.isFinite(limit)?observedTimes.slice(0,r.source==="labor_and_attendance"?160:60):observedTimes;
     let timeScope:TimeScope|undefined;
     // Successful canonical labor reads supersede old timecard clock and
     // duration facts, including records now open/unknown or absent. A failed
@@ -369,7 +372,7 @@ export function compactEvidence(results:readonly AgentToolResult[],limit=100):Nu
         priceUpdates.push({id:r.itemId,priceCents:r.currentPriceCents});
       else if(r.currentPriceCents===null)invalidatedPriceIds.push(r.itemId);
     }
-    return {tool:r.source,values,times,timeScope,prices:prices.slice(0,25),
+    return {tool:r.source,values,times,timeScope,prices:Number.isFinite(limit)?prices.slice(0,25):prices,
       invalidatedKeys:[...new Set(invalidatedKeys)],invalidatedPriceIds,priceUpdates};
   });
   if(Number.isFinite(limit)){
@@ -433,7 +436,7 @@ function reconcileSavedEvidence(entries:readonly NumericEvidence[]):NumericEvide
     }
     slot.priceUpdates.push(...(entry.priceUpdates??[]).filter(p=>
       typeof p.id==="string"&&Number.isSafeInteger(p.priceCents)));
-    const times=(entry.times??[]).slice(0,entry.timeScope?.kind==="timecards"?160:60).filter(t=>
+    const times=(entry.times??[]).filter(t=>
       t&&typeof t.time==="string"&&/^(?:[01]\d|2[0-3]):[0-5]\d$/u.test(t.time)&&
       typeof t.day==="string"&&typeof t.role==="string"&&typeof t.complete==="boolean");
     if(entry.timeScope?.kind==="timecards"){
