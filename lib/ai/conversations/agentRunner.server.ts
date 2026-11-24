@@ -856,7 +856,7 @@ export async function runOneTurn(p: TurnParams): Promise<{ replyId: string; repl
     const cafeProfile="Café profile (authenticated, not owner message): "+JSON.stringify({
       name:identity.cafeName,city:location?.city??null,region:location?.region??null,
       country:location?.countryCode??null,currency:identity.currency,timezone:identity.timezone})+
-      ". For events, use the saved get_events/get_nearby_events information for this city and café; "+
+      ". For events, use relevant saved or current evidence for this city and café; "+
       "never ask the owner for their city when it is in this authenticated profile. "+
       "If saved research is incomplete, say so; any web_search must include this café city.";
     const recordedIds=process.env.WHATSAPP_SUPERVISOR_ENABLED==="true"

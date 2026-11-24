@@ -9,7 +9,7 @@ import {todayReadingFreshness} from "./tools/today";
 const quality={level:"high" as const,missingInputs:[],estimatedInputs:[],staleInputs:[]};
 const unavailable={available:false as const,value:null,
   quality:{...quality,level:"low" as const,missingInputs:["noCoveredSalesRows"]}};
-const profile='Café profile (authenticated, not owner message): {"name":"Seiyun Yemeni Coffee","city":"San Jose","region":"California","country":"US","currency":"USD","timezone":"America/Los_Angeles"}' + ". For events, use saved get_events/get_nearby_events for this city; never ask the owner for a city already in the profile.";
+const profile='Café profile (authenticated, not owner message): {"name":"Seiyun Yemeni Coffee","city":"San Jose","region":"California","country":"US","currency":"USD","timezone":"America/Los_Angeles"}' + ". For events, use relevant saved or current evidence for this city; never ask the owner for a city already in the profile.";
 const context=():AgentToolContext=>({
   asOf:"2026-11-03",timezone:"America/Los_Angeles",locale:"en",currency:"USD",
   tools:{getSalesTrend:vi.fn(async()=>unavailable)} as unknown as AgentToolContext["tools"],

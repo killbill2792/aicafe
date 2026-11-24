@@ -23,10 +23,9 @@ const context=(over:Partial<AgentToolContext>={}):AgentToolContext=>({
 });
 
 describe("get_nearby_events compatibility: the single saved reader",()=>{
- it("publishes the backward-compatible strict schema without accepting café/location IDs",async()=>{
+ it("keeps the internal compatibility handler without publishing a duplicate tool or accepting café/location IDs",async()=>{
    const tool=agentToolDefinitions.find(t=>t.name==="get_nearby_events");
-   expect(tool?.strict).toBe(true);
-   expect(tool?.parameters.required).toEqual(["start_date","days"]);
+   expect(tool).toBeUndefined();
    await expect(executeAgentTool("get_nearby_events",
      {start_date:null,days:null,businessId:"other"},context())).rejects.toThrow();
  });

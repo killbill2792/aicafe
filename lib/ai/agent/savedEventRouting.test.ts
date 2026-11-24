@@ -35,15 +35,15 @@ function context(over:Partial<AgentToolContext>={}):AgentToolContext{
 beforeEach(()=>vi.clearAllMocks());
 
 describe("Supervisor event chat always reuses saved Home facts",()=>{
-  it("does not re-run paid discovery even if an older model calls get_nearby_events",async()=>{
+  it("does not re-run paid discovery when the model requests saved event evidence",async()=>{
     const searchNearbyEvents=vi.fn(async()=>{throw new Error("paid discovery should not run");});
     const webSearch=vi.fn(async()=>{throw new Error("web search should not run");});
-    const {provider,requests}=scripted("get_nearby_events",
-      {start_date:"2026-10-30",days:3},"The saved town market moved; please check its source.");
+    const {provider,requests}=scripted("get_events",
+      {from:"2026-10-30",to:"2026-11-01"},"The saved town market moved; please check its source.");
     const turn=await runAgentTurn({ownerText:"What changed with our saved town market?",
       context:context({searchNearbyEvents,webSearch}),provider});
     expect(turn.endReason).toBe("complete");
-    expect(turn.tools).toEqual(["get_nearby_events"]);
+    expect(turn.tools).toEqual(["get_events"]);
     expect(turn.results[0]).toMatchObject({source:"cafe_events",searched:false,
       events:[{name:"Town market",status:"moved",sourceUrl:"https://city.example/market"}],
       plans:[{status:"committed",reportStatus:"complete"}]});
