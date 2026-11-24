@@ -13,8 +13,17 @@ export function validateResearchConnection(raw:string,publicSupabaseUrl:string|u
   const hostname=url.hostname.toLowerCase();
   const username=decodeURIComponent(url.username);
   const pooler=/^[a-z0-9-]+\.pooler\.supabase\.com$/u.test(hostname);
-  const localTest=process.env.NODE_ENV==="test"&&
-    ["127.0.0.1","localhost"].includes(hostname);
+  // The actual shared acceptance runs the app in Next development mode.
+  // Its explicit disposable envelope is narrower than the existing unit-test path.
+  const localLive=process.env.NODE_ENV==="development"&&
+    process.env.AI_CAFE_LIVE_ACCEPTANCE==="OWNER_APPROVED_LOCAL_ONLY"&&
+    process.env.AICAFE_SHARED_LUNA_CANDIDATE==="1"&&
+    process.env.APP_URL==="http://127.0.0.1:3000"&&
+    publicSupabaseUrl==="http://127.0.0.1:54321"&&
+    !process.env.VERCEL_URL&&!process.env.VERCEL_ENV&&!process.env.SUPABASE_PROJECT_REF&&
+    hostname==="127.0.0.1"&&url.port==="54322";
+  const localTest=(process.env.NODE_ENV==="test"&&
+    ["127.0.0.1","localhost"].includes(hostname))||localLive;
   const direct=projectRef!==null&&hostname===`db.${projectRef}.supabase.co`;
   const validUser=pooler?
     (projectRef!==null&&username===`aicafe_research.${projectRef}`):
