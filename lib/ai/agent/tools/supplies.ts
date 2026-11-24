@@ -108,7 +108,7 @@ export const suppliesTools={
           // through projectInventoryEvidence below. Generic unattended
           // query_data stays aggregate-only, so Luna cannot choose arbitrary
           // individual records or personal fields via this allowance.
-          aggregateOnly:false,
+          aggregateOnly:false,previewOnly:true,
         });
         const evidence=projectInventoryEvidence(result.rows);
         const missing=[...new Set([...(result.missing??[]),...evidence.missing])];

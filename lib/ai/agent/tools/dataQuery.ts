@@ -15,6 +15,8 @@ export type DataQueryContext={
  mode?:"owner"|"investigation"|"durable"|"routine";aggregateOnly?:boolean;
  sourceType?:string;sourceId?:string;runId?:string;leaseToken?:string;
  resultBudgetBytes?:number;
+ /** Internal fixed operational preview; never selected by model arguments. */
+ previewOnly?:boolean;
 };
 const DEFAULT_ROWS=50,MAX_ROWS=100;
 /** Current-source operational views. Storing a row is not proof that the
@@ -396,7 +398,7 @@ export const dataQueryTools={
    // existing canonical reader. Do not silently fall back to a capped preview
    // if the migrated overload is missing. Old direct preview clients keep
    // their original contract, not the research interface.
-   const paged=z.uuid().safeParse(ctx.ownerUserId).success&&z.uuid().safeParse(ctx.threadId).success;
+   const paged=!ctx.previewOnly&&z.uuid().safeParse(ctx.ownerUserId).success&&z.uuid().safeParse(ctx.threadId).success;
    if(!paged&&(p.cursor!=null||p.limit!==null&&p.limit>MAX_ROWS||
     (p.columns?.length??0)>20||(p.filters?.length??0)>15||
     (p.group_by?.length??0)>4||(p.metrics?.length??0)>10||
@@ -472,7 +474,7 @@ export const dataQueryTools={
      p_metrics:p.metrics??[],p_date_from:p.date_from,p_date_to:p.date_to,
      p_order_by:p.order_by,p_limit:paged?p.limit:p.limit??DEFAULT_ROWS
     };
-    const budget=Math.min(researchPageBudget(),ctx.resultBudgetBytes??researchPageBudget());
+    const budget=Math.min(256*1024,researchPageBudget(),ctx.resultBudgetBytes??researchPageBudget());
     if(paged&&(!Number.isSafeInteger(budget)||budget<2))return empty("research_context_exhausted");
     const cursorInput={
      businessId:ctx.businessId,ownerUserId:ctx.ownerUserId??"",threadId:ctx.threadId??"",
@@ -491,7 +493,7 @@ export const dataQueryTools={
     const {data,error}=await ctx.db.rpc("ai_query_view",{
      ...rpcArgs,...(paged?{p_page_offset:offset,p_page_bytes:budget}:{})
     });
-    if(error)return empty(safeReadFailure(error));
+    if(error)return empty(paged&&error.code==="57014"?"query_timeout":paged&&error.code==="42501"?"research_scope_denied":safeReadFailure(error));
     const result=data as {rows?:unknown[];rowCount?:number;truncated?:boolean;
       sourceMix?:Record<string,number>;sourceCount?:number;hasIncomplete?:boolean;
       currentDayIncomplete?:boolean;customerCoverage?:unknown;
