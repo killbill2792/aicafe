@@ -165,6 +165,20 @@ begin
     then raise exception 'Routine owner mismatch' using errcode='42501'; end if;
   elsif p_run_id is not null or p_lease_token is not null
   then raise exception 'Invalid independent notice lease' using errcode='42501'; end if;
+  -- Serialize notice revisions against the original actionable source.
+  -- Otherwise two distinct source revisions can interleave and leave two
+  -- owner "Needs you" cards for the same café fact.
+  if p_source_type='alert' then
+    perform 1 from public.alerts a
+      where a.business_id=p_business_id and a.id::text=p_source_id
+      for update;
+    if not found then return false; end if;
+  elsif p_source_type='operating_task' then
+    perform 1 from public.operating_tasks t
+      where t.business_id=p_business_id and t.id=p_source_id
+      for update;
+    if not found then return false; end if;
+  end if;
   if p_source_type='alert' then
     select exists(select 1 from public.alerts a where a.business_id=p_business_id
       and a.id::text=p_source_id and a.status in ('new','seen')
@@ -205,20 +219,6 @@ begin
       and (t.owner_user_id is null or t.owner_user_id=p_owner_user_id)) into v_found;
   end if;
   if not v_found then return false; end if;
-  -- Serialize notice revisions against the original actionable source.
-  -- Otherwise two distinct source revisions can interleave and leave two
-  -- owner "Needs you" cards for the same café fact.
-  if p_source_type='alert' then
-    perform 1 from public.alerts a
-      where a.business_id=p_business_id and a.id::text=p_source_id
-      for update;
-    if not found then return false; end if;
-  elsif p_source_type='operating_task' then
-    perform 1 from public.operating_tasks t
-      where t.business_id=p_business_id and t.id=p_source_id
-      for update;
-    if not found then return false; end if;
-  end if;
   v_task_id:='priority:'||p_stable_key;
   if p_source_type in ('alert','operating_task','supplier_po') then
     -- A changed alert/task/proposal revision makes an earlier *open* generic
