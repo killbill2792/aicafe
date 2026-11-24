@@ -9,7 +9,7 @@ set statement_timeout='45s';
 create or replace function public.ai_query_view(
  p_business_id uuid,p_view text,p_columns text[],p_filters jsonb,
  p_group_by text[],p_metrics jsonb,p_date_from date,p_date_to date,
- p_order_by jsonb,p_limit bigint,p_page_offset bigint,p_page_bytes integer
+ p_order_by jsonb,p_limit bigint,p_page_offset bigint,p_page_bytes integer,p_preview boolean default false
 ) returns jsonb language plpgsql stable security invoker
  set search_path=public set work_mem='4MB' as $query$
 declare
@@ -21,7 +21,7 @@ declare
  v_where text:='business_id = $1';v_select text:='';v_group text:='';
  v_sql text;v_rows jsonb;v_mix jsonb;v_n bigint:=0;v_record record;
  v_digest bytea:=pg_catalog.sha256(''::bytea);
- v_order text:='';v_field text;v_dir text;v_expr text;v_path text[];v_has_data boolean;v_source text;
+ v_preview_limit text:='';v_order text:='';v_field text;v_dir text;v_expr text;v_path text[];v_has_data boolean;v_source text;
  v_source_count bigint;v_incomplete boolean;
  v_today date;v_current_day boolean:=false;
  v_bounded jsonb:='[]'::jsonb;v_row jsonb;v_bytes integer:=2;
@@ -163,6 +163,10 @@ begin
   then raise exception 'invalid order by';end if;
   v_order:=format(' order by %I %s',v_field,v_dir);
  end if;
+ if p_preview then
+  if p_limit is null or p_limit>100 or p_page_offset<>0 then raise exception 'invalid limit';end if;
+  v_preview_limit:=format(' limit %s',p_limit+1);
+ end if;
  -- Reuse one materialized, tenant/date-filtered source for coverage and
  -- the selected result. Order the *finished* projection with a stable
  -- JSONB tie-breaker. Equal full rows are interchangeable, not missing.
@@ -179,11 +183,11 @@ begin
     'sourceMix',(select coalesce(jsonb_object_agg(source,n),'{}'::jsonb)
       from (select source,count(*) n from scoped_source group by source) tally)) payload
   ),
-  ordered_rows as (select row_number() over (%s) ordinal,to_jsonb(q) payload from result_rows q)
+  ordered_rows as (select row_number() over (%s) ordinal,to_jsonb(q) payload from result_rows q %s%s)
   select 0::bigint ordinal,payload from summary
   union all select ordinal,payload from ordered_rows
   order by ordinal
- $page$,v_source,v_where,v_select,v_group,v_order);
+ $page$,v_source,v_where,v_select,v_group,v_order,v_order,v_preview_limit);
  -- Iterate the full ordered result under the invoker's statement timeout;
  -- only the requested fitting prefix is retained in the returned JSONB.
  -- Hash every result row, not only the page, to detect source changes on
@@ -237,9 +241,9 @@ begin
   else jsonb_build_object('customerCoverage',v_customer_coverage) end;
 end $query$;
 
-revoke all on function public.ai_query_view(uuid,text,text[],jsonb,text[],jsonb,date,date,jsonb,bigint,bigint,integer)
+revoke all on function public.ai_query_view(uuid,text,text[],jsonb,text[],jsonb,date,date,jsonb,bigint,bigint,integer,boolean)
  from public,anon,authenticated;
-grant execute on function public.ai_query_view(uuid,text,text[],jsonb,text[],jsonb,date,date,jsonb,bigint,bigint,integer)
+grant execute on function public.ai_query_view(uuid,text,text[],jsonb,text[],jsonb,date,date,jsonb,bigint,bigint,integer,boolean)
  to authenticated,service_role;
 
 -- Historical API callers retain their original preview contract. Delegate to

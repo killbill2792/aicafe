@@ -54,6 +54,13 @@ describe("get_payroll_facts known-only wages",()=>{
     const known=await executeAgentTool("get_payroll_facts",
       {from:"2026-06-15",to:"2026-06-15"},makeContext("actual"));
     expect(known.observedLaborWagesCents).toBe(1250);
+    const owner=makeContext("actual");
+    const scope={db:{} as never,businessId:"00000000-0000-4000-8000-000000000001"};
+    owner.canonicalData=async()=>scope;
+    const selector={official_metric:{id:"payroll",period_mode:null},date_from:"2026-06-15",date_to:"2026-06-15"};
+    expect(await executeAgentTool("query_data",selector,owner)).toMatchObject({...known,metric_id:"payroll",metric_basis:"official_shared_definition"});
+    owner.canonicalData=async()=>({...scope,mode:"routine"});
+    expect(await executeAgentTool("query_data",selector,owner)).toMatchObject({error:"owner_research_required"});
     expect(known.observedWageStatus).toBe("recorded");
   });
 });

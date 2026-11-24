@@ -323,7 +323,7 @@ const baseToolDefinitions = (Object.keys(schemas) as AgentToolName[]).map(name =
 // profit/break_even use the optional official shared definition; opening_hours
 // and employee_sales_rollup are normal discoverable SQL sources.
 export const retiredResearchTools:ReadonlySet<AgentToolName>=new Set([
-  "get_profit","get_break_even","get_business_hours","get_employee_sales","get_expenses","get_bills","get_sales","get_peak_hours","get_labor","get_staff","get_cost_summary"
+  "get_profit","get_break_even","get_business_hours","get_employee_sales","get_expenses","get_bills","get_sales","get_peak_hours","get_labor","get_staff","get_cost_summary","get_ingredient_costs","get_payroll_facts"
 ]);
 // Routine management remains a verified-owner-only additional function.
 export const agentToolDefinitions:Array<Omit<(typeof baseToolDefinitions)[number],"name">&{name:string}>=
@@ -340,7 +340,7 @@ export function researchPeriodChoice(input:Record<string,unknown>):unknown{
  const metric=input.official_metric;
  if(!metric||typeof metric!=="object"||Array.isArray(metric))return null;
  const m=metric as Record<string,unknown>;
- if(!["profit","expenses","sales","hourly_sales","labor","business_costs"].includes(String(m.id)))return null;
+ if(!["profit","expenses","sales","hourly_sales","labor","business_costs","payroll"].includes(String(m.id)))return null;
  return m.period??m.profit_period??(typeof input.date_from==="string"&&typeof input.date_to==="string"?
   {from:input.date_from,to:input.date_to}:null);
 }
@@ -415,7 +415,8 @@ export async function executeAgentTool(name: string, raw: unknown, ctx: AgentToo
   if(name==="query_data"){
     if(!ctx.canonicalData)return {source:"canonical_data",period:null,missing:["canonical_reader_unavailable"],rows:[],empty:true};
     try{
-      const scope=await ctx.canonicalData();
+      const sourceScope=await ctx.canonicalData();
+      const scope={...sourceScope,aggregateOnly:sourceScope.aggregateOnly===true||sourceScope.mode==="routine"||sourceScope.mode==="investigation"};
       const selector=raw&&typeof raw==="object"?raw as Record<string,unknown>:{};
       if(selector.restore_receipt!=null||selector.restore_path!=null||selector.restore_offset!=null){
         const parsed=dataQuerySchema.safeParse({view:null,sql:null,parameters:null,cursor:null,
@@ -440,6 +441,7 @@ export async function executeAgentTool(name: string, raw: unknown, ctx: AgentToo
         if(!p.official_metric||[p.view,p.sql,p.parameters,p.cursor??null,p.columns,p.filters,
           p.group_by,p.metrics,p.order_by,p.limit].some(v=>v!==null))return invalid("invalid_query");
         const metric=p.official_metric;
+        if(scope.aggregateOnly&&metric.id==="payroll")return invalid("owner_research_required");
         let result:AgentToolResult;
         if(metric.id==="profit"){
           if(metric.period_mode!==null||metric.break_even_overrides!=null||metric.period!=null&&metric.profit_period!=null)
@@ -467,8 +469,8 @@ export async function executeAgentTool(name: string, raw: unknown, ctx: AgentToo
             else if(metric.id==="labor")result=await staffTools.get_labor.execute({period},ctx);
             else{
               const checked=resolveOwnerPeriod(period,{asOf:ctx.asOf,timezone:ctx.timezone},ctx.resolveState);
-              if(checked.status!=="resolved")return periodChoicePayload("get_peak_hours",checked);
-              result=await executeAgentTool("get_peak_hours",{from:checked.value.from,to:checked.value.to},ctx);
+              if(checked.status!=="resolved")return periodChoicePayload(metric.id==="payroll"?"get_payroll_facts":"get_peak_hours",checked);
+              result=await executeAgentTool(metric.id==="payroll"?"get_payroll_facts":"get_peak_hours",{from:checked.value.from,to:checked.value.to},ctx);
             }
           }
         }else{

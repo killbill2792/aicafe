@@ -212,7 +212,7 @@ async function sources(client:PoolClient):Promise<U3Relation[]>{
  * explicit paging remains a choice for unusually large catalogs. */
 export function selectU3Catalog(all:readonly U3Relation[],p:{
  search?:string|null;relation?:string|null;offset?:number|null;limit?:number|null
-}){
+},availableBytes=researchPageBudget()){
  const term=p.search?.trim().toLocaleLowerCase("en")||null;
  const relationMatch=(r:U3Relation)=>term!==null&&(r.name.toLocaleLowerCase("en").includes(term)||
   (r.description??"").toLocaleLowerCase("en").includes(term));
@@ -230,12 +230,24 @@ export function selectU3Catalog(all:readonly U3Relation[],p:{
    relationships:r.relationships,columns:detail?fields.slice(offset,offset+limit):fields,
    columnCount:r.columns.length,fieldsTotal:detail?fields.length:undefined};
  });
- const next=offset+limit<total?offset+limit:null;
- return {source:"u3_semantic_catalog",period:null,
-  missing:available.length?(next!==null?["result_truncated"]:[]):["empty"],relations,
-  total:available.length,fields_total:detail?total:undefined,page_offset:offset,
-  next_offset:next,truncated:next!==null,
-  catalog_version:createHash("sha256").update(JSON.stringify(all)).digest("hex").slice(0,16)};
+ const version=createHash("sha256").update(JSON.stringify(all)).digest("hex").slice(0,16);
+ const budget=Math.max(0,Math.min(availableBytes,researchPageBudget()));
+ let count=detail?(relations[0]?.columns.length??0):relations.length;
+ const build=()=>{
+  const next=offset+count<total?offset+count:null;
+  return {source:"u3_semantic_catalog",period:null,
+   missing:available.length?(next!==null?["result_truncated"]:[]):["empty"],relations,
+   total:available.length,fields_total:detail?total:undefined,page_offset:offset,
+   next_offset:next,truncated:next!==null,catalog_version:version};
+ };
+ while(count>0&&Buffer.byteLength(JSON.stringify(build()),"utf8")>budget){
+  if(detail)relations[0].columns.pop();
+  else relations.pop();
+  count--;
+ }
+ if(count===0&&offset<total)return {...build(),relations:[],next_offset:null,
+  truncated:true,missing:["row_exceeds_page_budget"]};
+ return build();
 }
 export async function describeU3Catalog(ctx:U3SqlContext,p:{
  search?:string|null;relation?:string|null;offset?:number|null;limit?:number|null
@@ -244,7 +256,7 @@ export async function describeU3Catalog(ctx:U3SqlContext,p:{
   const all=await sources(client);
   const aggregateOnly=ctx.aggregateOnly===true||ctx.mode==="routine"||ctx.mode==="investigation";
   const visible=aggregateOnly?all.filter(r=>!ownerOnlyResearchRelations.has(r.name)):all;
-  return selectU3Catalog(visible,p);
+  return selectU3Catalog(visible,p,ctx.resultBudgetBytes);
  });
 }
 /** Protect the legacy retained-data archive from nested-object extraction,

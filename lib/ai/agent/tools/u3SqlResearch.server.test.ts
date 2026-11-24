@@ -40,7 +40,15 @@ describe("connector-style research discovery and safe repair diagnostics",()=>{
   expect(page).toMatchObject({next_offset:30,truncated:true,missing:["result_truncated"]});
   expect(selectU3Catalog(catalog,{relation:"timecards",offset:30,limit:30}).relations[0].columns).toHaveLength(5);
  });
- it("returns useful fixed PostgreSQL diagnostics, never raw source values or messages",()=>{
+ it("continues relation detail using available context bytes",()=>{
+   const first=selectU3Catalog(catalog,{relation:"timecards"},1200);
+   expect(first.next_offset).toBeGreaterThan(0);
+   expect(first.next_offset).toBeLessThan(35);
+   expect(first.truncated).toBe(true);
+   const second=selectU3Catalog(catalog,{relation:"timecards",offset:first.next_offset});
+   expect([...first.relations[0].columns,...second.relations[0].columns]).toEqual(catalog[41].columns);
+  });
+  it("returns useful fixed PostgreSQL diagnostics, never raw source values or messages",()=>{
   const err={code:"42703",position:String("DECLARE u3_result NO SCROLL CURSOR FOR SELECT * FROM (".length+8),message:"secret column value",detail:"private",hint:"private"};
   expect(safeU3SqlDiagnostic(err,20)).toEqual({sqlstate:"42703",reason:"undefined_column",query_position:8});
   expect(safeU3SqlDiagnostic({...err,position:"999999"},20)).toEqual({sqlstate:"42703",reason:"undefined_column"});
