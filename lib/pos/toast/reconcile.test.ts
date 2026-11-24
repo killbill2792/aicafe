@@ -152,9 +152,9 @@ describe("paid-date list contains noncapturing payment attempts",()=>{
  const orderGuid="11111111-1111-4111-8111-111111111111";
  const source=(status:string)=> {
   const orders=orderWithAutoGratAndGiftCard();
-  orders[0].checks[0].payments.push({
-   guid:extra,amount:999,tipAmount:0,paymentStatus:status,paidBusinessDate:20261016
-  });
+  orders[0].checks[0].payments.push(Object.assign({
+   guid:extra,amount:999,tipAmount:0,paymentStatus:status
+  },{paidBusinessDate:20261016}));
   return orders;
  };
  it.each(["DENIED","VOIDED","CANCELLED","ERROR","ERROR_NETWORK"])(
