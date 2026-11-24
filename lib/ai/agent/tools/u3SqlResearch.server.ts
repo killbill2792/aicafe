@@ -273,7 +273,8 @@ export function safeU3SqlErrorCode(e:unknown){
  return ["invalid_query","unattended_aggregate_required","research_invalid_scope",
   "research_not_configured","research_scope_denied",
   "research_connection_untrusted","research_connection_failed","query_timeout",
-  "row_exceeds_page_budget","query_syntax_error","query_execution_error"].includes(s)?s:"source_read_failed";
+  "row_exceeds_page_budget","stable_order_required",
+  "query_syntax_error","query_execution_error"].includes(s)?s:"source_read_failed";
 }
 /** Model SQL can use joins, windows, CTEs and nested analytics, but only on
  * the RLS-protected admitted logical research sources. No raw SQL text, model
@@ -356,6 +357,9 @@ export async function runU3Sql(ctx:U3SqlContext,raw:unknown){
    stage="result";
    const fit=fitRows(rows.slice(0,count));
    const truncated=rows.length>fit.rows.length;
+   // PostgreSQL does not promise row ordering without a top-level ORDER BY.
+   // Never offer an offset cursor for a result whose next page could reorder.
+   if(truncated&&!plan.hasTopLevelOrder)throw Error("stable_order_required");
    // A single oversized source row must not cause a cursor loop that never
    // advances or an apparently complete empty business observation.
    if(truncated&&fit.rows.length===0)throw Error("row_exceeds_page_budget");
