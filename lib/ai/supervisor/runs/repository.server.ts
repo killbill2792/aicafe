@@ -433,8 +433,7 @@ export async function openOwnerRunCheckpoint(scope:RunScope,runId:string,token:s
         if(!currentReadKey)throw Error("checkpoint_operation_missing");
         const tool=current.checkpoint_tool;
         if(isResearchCheckpointTool(tool)&&current.checkpoint_operation&&
-          !(tool==="query_data"&&currentReadRaw&&typeof currentReadRaw==="object"&&
-            typeof (currentReadRaw as Record<string,unknown>).restore_receipt==="string")){
+          !result.source.startsWith("retained_research_")){
           const operation=current.checkpoint_operation;
           const ciphertext=encryptResearchCheckpoint(scopeForResearch,operation,tool,currentReadRaw,result);
           current=await callRpc("supervisor_store_research_read_v3",{...identity,

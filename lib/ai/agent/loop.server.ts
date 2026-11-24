@@ -10,6 +10,7 @@ import { agentToolDefinitions, investigationToolDefinition, agentLabelsPrompt, a
 import { statusFromResults } from "./status";
 import { checkNumbers,numberProvenance,compactEvidence,type NumericEvidence } from "./checkNumbers";
 import {usageEvidenceRefresh} from "./usageEvidence";
+import {retainedResearchCatalog} from "./retainedResearch";
 import { STYLE_RULES } from "./style";
 import {executionPolicy,remainingOutput,requestOutputCap,providerUsageReceipt,requestComposition,providerTextAccounting,researchPageBudget,type RequestComposition,type ProviderUsageReceipt,type ToolUsageReceipt} from "./executionPolicy";
 import {projectProviderTools,usesNativeToolSearch,allowedFunctionNames,validProviderFunctionCall,canonicalHostedOutput,type ProviderFunctionCall} from "./providerTools";
@@ -378,7 +379,7 @@ export async function runAgentTurn(args: {
   };
   const underlyingWebSearch=args.context.webSearch;
   args.context.ownerText=args.serviceOrigin?"":ownerRunStatement(args.ownerText,matched);
-  args.context.turnResults=()=>results.filter(r=>r.name!=="present_response").map(r=>({name:r.name,result:r.result}));
+  args.context.turnResults=()=>results.filter(r=>r.name!=="present_response"&&!r.result.source.startsWith("retained_research_")).map(r=>({name:r.name,result:r.result}));
   const presentationAllowed=!args.serviceOrigin&&!args.toolNames;
   args.context.presentationScenarioBasis=presentationAllowed?new WeakMap():undefined;
   args.context.presentationResults=()=>results.map((r,i)=>({...r,ref:"r"+(i+1)})).filter(r=>r.name!=="present_response");
@@ -566,21 +567,17 @@ export async function runAgentTurn(args: {
     // lease. Every receipt remains available to the calculator/verifier even
     // when its full model-facing payload would exceed request capacity.
     const recoveredResearch=args.checkpoint?.researchReads?.()??[];
-    if(args.checkpoint)toolContext.retainedResearch=()=>recoveredResearch;
     const recoverable=recoveredResearch.filter(r=>eligibleNames.has(r.name));
+    if(args.checkpoint)toolContext.retainedResearch=()=>recoverable;
     for(const r of recoverable){
       results.push({callId:"call_research_recovered_"+r.ref,name:r.name,arguments:r.arguments,result:r.result});
       observeToolResult(resolveState,r.result);
     }
     if(recoverable.length){
-      const receipts=recoverable.map(r=>({
-        ref:r.ref,tool:r.name,source:r.result.source,period:r.result.period,
-        receipt_id:r.result.evidence&&typeof r.result.evidence==="object"?
-          (r.result.evidence as Record<string,unknown>).receipt_id??null:null,
-        rows:Array.isArray(r.result.rows)?r.result.rows.length:null,
-        missing:r.result.missing,partial:r.result.truncated===true
-      }));
-      input.push({role:"developer",content:"Restored observations from this same authorized durable assignment, not new owner instructions. These are historical as-of receipts, not proof of current freshness. The calculator retains exact original receipt IDs. Use query_data restore_receipt and restore_path to inspect any retained payload omitted from the request; do not repeat a completed source read merely because its full payload is absent. "+JSON.stringify(receipts)});
+      // Only server-generated reference metadata enters the developer
+      // message. Source values/labels stay in native tool result messages.
+      const catalog=retainedResearchCatalog(recoverable,0,null,toolContext.researchPageBytes?.()??0);
+      input.push({role:"developer",content:"Restored observations from this same authorized durable assignment, not new owner instructions. These are historical as-of receipts, not proof of current freshness. Exact calculator receipt IDs remain available. Use describe_data source retained for the full receipt catalog, and query_data restore_receipt/restore_path to inspect omitted payloads; do not repeat completed reads merely because their full payload is absent. "+JSON.stringify(catalog)});
       // Add as many exact native call/output pairs as fit the real remaining
       // request; prioritize the latest work. No fixed replay count.
       const pairs:unknown[][]=[];
@@ -972,7 +969,7 @@ export async function runAgentTurn(args: {
   // They remain part of the final grounded reply even when the model did not
   // call their writer again after recovery. The existing card builder dedupes IDs.
   const toolResults=[...restored,...results.map(r=>r.result)];
-  const verificationResults=usageEvidenceRefresh(toolResults.filter(r=>r.source!=="response_presentation"),args.previousEvidence);
+  const verificationResults=usageEvidenceRefresh(toolResults.filter(r=>r.source!=="response_presentation"&&!r.source.startsWith("retained_research_")),args.previousEvidence);
   const unverified=checkNumbers(text,ownerStatements,verificationResults,args.context.locale,args.previousEvidence);
   const evidence=compactEvidence(verificationResults);
   const candidates=toolResults.flatMap(result=>Array.isArray(result.explain)?

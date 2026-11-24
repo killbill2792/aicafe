@@ -2,7 +2,7 @@ import { presentationTools,presentResponse } from "./presentation";
 import { laborKnown } from "@/lib/calc";
 import { z } from "zod";
 import {askOwnerTools} from "./askOwner";
-import {dataQueryTools,dataQuerySchema,type DataQueryContext} from "./dataQuery";
+import {dataQueryTools,dataQuerySchema,describeSchema,type DataQueryContext} from "./dataQuery";
 import {recordResearchAttempt} from "../researchRecovery";
 import {gmailTools} from "./gmail";
 import {maintenanceTools} from "./maintenance";
@@ -41,7 +41,7 @@ import {staffProposalTools} from "./staffProposals";
 import {memoryTools,type CafeMemoryPort} from "./memory";
 import {scenarioTools} from "./scenarios";
 import {calculateTools} from "./calculate";
-import {readRetainedResearch} from "../retainedResearch";
+import {readRetainedResearch,retainedResearchCatalog} from "../retainedResearch";
 import {eventsTools} from "./events";
 import {savedEventsTools} from "./getEvents";
 import {eventPlanTools,type EventPlanPort} from "./eventPlan";
@@ -393,6 +393,15 @@ export async function executeAgentTool(name: string, raw: unknown, ctx: AgentToo
     // execution. Passing scope only for Toast record_type made ordinary SQL
     // discovery unavailable to the real model even when U3 was configured.
     const selector=raw&&typeof raw==="object"?raw as Record<string,unknown>:{};
+    if(selector.source==="retained"){
+      const parsed=describeSchema.safeParse({record_type:null,view:null,relation:null,source:null,
+        field_prefix:null,search:null,page_offset:null,page_size:null,...selector});
+      if(!parsed.success||!ctx.retainedResearch||[parsed.data.record_type,parsed.data.view,
+        parsed.data.relation,parsed.data.field_prefix,parsed.data.search].some(v=>v!==null))
+        return {source:"retained_research_catalog",period:null,missing:["invalid_retained_receipt"],error:"invalid_retained_receipt"};
+      return retainedResearchCatalog(ctx.retainedResearch(),parsed.data.page_offset??0,
+        parsed.data.page_size,ctx.researchPageBytes?.()??0);
+    }
     const toast=typeof selector.record_type==="string";
     const canonicalOnly=!toast&&typeof selector.relation!=="string"&&
       (selector.source==="canonical"||(typeof selector.view==="string"&&selector.source!=="research"));

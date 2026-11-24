@@ -173,7 +173,8 @@ export function hasObservedEvidence(result:AgentToolResult):boolean{
   if(!Array.isArray(result.missing)||result.error)return false;
   // Schema metadata, row-count sentinels and truncated/failed aggregate
   // reads must never establish an independent observed fact.
-  if(["canonical_dictionary","toast_fields","u3_semantic_catalog","calculate"].includes(result.source))return false;
+  if(["canonical_dictionary","toast_fields","u3_semantic_catalog","calculate"].includes(result.source)||
+    result.source.startsWith("retained_research_"))return false;
   if(result.source==="u3_canonical_research"){
     // Only the shared U3 typed-receipt checker may attest numeric SQL facts.
     // A model's SELECT literal or projection alias is never an observation.

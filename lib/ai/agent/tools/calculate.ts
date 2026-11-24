@@ -195,9 +195,9 @@ export const calculateTools={
           if(isResearch&&!input.receipt_id)return refuse("researchReceiptRequired",input.tool);
           if(isResearch&&!/^rows\.\d+\.[a-zA-Z_][a-zA-Z0-9_]{0,99}$/u.test(input.path))
             return refuse("researchRowPathRequired",input.path);
-          if(isResearch&&(hit.result.missing.length>0||
-            (hit.result as Record<string,unknown>).truncated===true))
-            return refuse("incompleteResearchEvidence",input.tool);
+          if(isResearch&&(!hit.result.evidence||typeof hit.result.evidence!=="object"||
+            (hit.result.evidence as Record<string,unknown>).scope!=="verified_owner_cafe_lease"))
+            return refuse("researchReceiptUnverified",input.tool);
           const value=readPath(hit.result,input.path);
           if(value===null)return refuse("inputIsUnknown",input.name+" ("+input.path+" is null; never use it as zero)");
           if(typeof value!=="number"&&
@@ -218,7 +218,7 @@ export const calculateTools={
           inputs.push({name:input.name,label:input.label,value:exact,from:"tool",
             ref:input.tool+":"+(input.receipt_id?input.receipt_id+":":"")+input.path,
             estimate:isEstimate(hit.result),owner:false,
-            partial:hit.result.missing.length>0,period:hit.result.period});
+            partial:hit.result.missing.length>0||hit.result.truncated===true,period:hit.result.period});
         }else if(input.fact_key&&!input.tool&&!input.path&&!owner&&!input.receipt_id){
           const fact=facts.find(f=>f.fact_key===input.fact_key);
           if(!fact)return refuse("factNotSaved",input.fact_key);

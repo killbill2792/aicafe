@@ -179,8 +179,8 @@ describe("U3 receipt-bound exact research calculation",()=>{
     snapshot_digest:"c".repeat(64),as_of:"2026-11-24T00:00:00Z"}
   }});
   const first=make(older,"12345",0),last=make(newer,"67890",1);
-  expect((await calculateTools.calculate.execute(query(older),ctx([first]))).refused)
-   .toBe("incompleteResearchEvidence");
+  expect(await calculateTools.calculate.execute(query(older),ctx([first])))
+   .toMatchObject({kind:"estimate",missing:["incompleteCalculationInputs"],result:{unit:"cents",valueCents:12345}});
   expect(await calculateTools.calculate.execute(query(older),ctx([first,last])))
    .toMatchObject({result:{unit:"cents",valueCents:12345}});
  });
@@ -216,9 +216,9 @@ describe("U3 receipt-bound exact research calculation",()=>{
    steps:[{id:"total",label:"Four average orders",op:"multiply",args:["amount","n"]}]
   },withOwner(ctx([sql(older,"12345.25")]),"For 4 orders"));
   expect(fractional).toMatchObject({result:{unit:"cents",valueCents:49381}});
-  expect((await calculateTools.calculate.execute(query(older),ctx([{
+  expect(await calculateTools.calculate.execute(query(older),ctx([{
    ...sql(older,"12345"),result:{...sql(older,"12345").result,missing:["result_truncated"]}
-  }]))).refused).toBe("incompleteResearchEvidence");
+  }]))).toMatchObject({kind:"estimate",missing:["incompleteCalculationInputs"],result:{unit:"cents",valueCents:12345}});
  });
 });
 

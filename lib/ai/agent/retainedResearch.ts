@@ -42,3 +42,27 @@ export function readRetainedResearch(reads:readonly RestoredResearchRead[],ref:s
  const end=offset+rows.length;
  return {...envelope,next_offset:end<value.length?end:null,truncated:end<value.length};
 }
+
+/** Discover retained result references without exposing private data as
+ * developer instructions. The page allowance follows provider capacity. */
+export function retainedResearchCatalog(reads:readonly RestoredResearchRead[],offset:number,limit:number|null,budget:number):AgentToolResult{
+ const fail=(code:string):AgentToolResult=>({source:"retained_research_catalog",period:null,missing:[code],error:code});
+ if(!Number.isSafeInteger(offset)||offset<0||offset>reads.length||budget<=0)return fail("invalid_retained_offset");
+ const entries:Array<Record<string,unknown>>=[];
+ const base={source:"retained_research_catalog",period:null,missing:[],total:reads.length,page_offset:offset};
+ const bytes=(v:unknown)=>Buffer.byteLength(JSON.stringify(v),"utf8");
+ let size=bytes({...base,entries,next_offset:offset,truncated:true});
+ for(let i=offset;i<reads.length&&(limit===null||entries.length<limit);i++){
+  const r=reads[i],e=r.result.evidence;
+  const entry={ref:r.ref,tool:r.name,source:r.result.source,period:r.result.period,
+   receipt_id:e&&typeof e==="object"?(e as Record<string,unknown>).receipt_id??null:null,
+   rows:Array.isArray(r.result.rows)?r.result.rows.length:null,
+   missing_count:r.result.missing.length,partial:r.result.truncated===true};
+  const n=bytes(entry)+(entries.length?1:0);
+  if(size+n+64>budget)break;
+  entries.push(entry);size+=n;
+ }
+ const end=offset+entries.length;
+ if(end===offset&&offset<reads.length)return {...fail("retained_catalog_exceeds_context"),total:reads.length};
+ return {...base,entries,next_offset:end<reads.length?end:null,truncated:end<reads.length};
+}

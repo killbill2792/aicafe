@@ -10,7 +10,7 @@ export const isResearchCheckpointTool=(name:unknown):name is z.infer<typeof rese
 type Scope=RunScope&{runId:string};
 const payload=z.strictObject({
  version:z.literal(1),name:researchName,arguments:z.string(),
- result:z.looseObject({source:z.string(),period:z.object({from:z.string(),to:z.string()}).nullable(),
+ result:z.looseObject({source:z.string(),period:z.looseObject({from:z.string(),to:z.string()}).nullable(),
   missing:z.array(z.string()),agentId:z.enum(["alex","olivia","maya","leo"]).optional()}),
  exact:z.unknown()
 });
