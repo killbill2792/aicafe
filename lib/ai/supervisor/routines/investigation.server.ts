@@ -34,9 +34,8 @@ import {proposeLoop} from "@/lib/ai/supervisor/loop/engine";
 import {supervisorLoopRegistry} from "@/lib/ai/supervisor/loop/priceExperiment.server";
 import {SupabaseLoopRepository} from "@/lib/ai/supervisor/loop/supabase.server";
 import {proposalRequestKey} from "@/lib/ai/supervisor/loop/requestKeys";
-import {investigationPrompt,universalInvestigationPrompt,investigationReadTools,
-  customerInvestigationTools,maintenanceInvestigationTools,supplierResearchInvestigationTools,
-  verifyInvestigationTurn,verifyUniversalInvestigationTurn,
+import {universalInvestigationPrompt,investigationReadTools,maintenanceInvestigationTools,
+  verifyUniversalInvestigationTurn,
   unsupportedExternalEffectClaim,modelSelectedOwnerQuestion,type InvestigationCheckpoint,type SourceSynopsis} from "./investigation";
 
 
@@ -361,7 +360,6 @@ export async function processNextInvestigation(db:SupabaseClient,now:Date,
     const identity=await readSupervisorCafeIdentity(c.business_id,db);
     // Strategy selection is model-led whether optional U3 SQL is configured or not.
     // SQL availability changes a tool capability, never Luna's investigation policy.
-    const universalResearch=true;
     const scope={businessId:c.business_id,ownerUserId:c.owner_user_id};
     const maintenance=maintenanceContext(db,maintenanceScope,{lease:maintenanceLease});
     let mailbox:Awaited<ReturnType<typeof getConnectorAccount>>=null;
@@ -386,7 +384,7 @@ export async function processNextInvestigation(db:SupabaseClient,now:Date,
         sourceType:c.source_type,sourceId:c.source_id,
         leaseToken:c.lease_token,aggregateOnly:true
        }),
-      ...((customerIncident||universalResearch)?{savedEvents:(from:string,to:string,options?:{cityEventId?:string})=>readSavedEventTimeline(db,scope,from,to,options)}:{}),
+      savedEvents:(from:string,to:string,options?:{cityEventId?:string})=>readSavedEventTimeline(db,scope,from,to,options),
       ...(supplierResearch?{webSearch:async(_modelQuery:string,budget?:WebSearchBudget)=>{
         if(searched)return {available:false as const,reason:"budget" as const};
         searched=true;
@@ -456,20 +454,15 @@ export async function processNextInvestigation(db:SupabaseClient,now:Date,
     // The same one-Supervisor run chooses its evidence and source queries.
     // Cost/resource caps constrain execution, not a mandatory number/order of
     // unrelated data reads. Keep the original claim, permissions and effects.
-    const permitted=universalResearch?
-      ([...new Set([
+    const permitted=[...new Set([
         ...investigationReadTools,
-        ...(context.savedEvents?["get_events" as const]:[]),
+        "get_events" as const,
         ...(context.webSearch?["web_search" as const]:[]),
         ...(synopsis.kind==="maintenance_issue"?maintenanceInvestigationTools:[]),
         "propose_staff_question" as const,
         ...(context.receivingFollowup?["propose_supplier_discrepancy_followup" as const]:[]),
-      ])] as import("@/lib/ai/agent/tools").AgentToolName[]):
-      (synopsis.kind==="maintenance_issue"?[...maintenanceInvestigationTools]:synopsis.kind==="supplier_receiving"?
-        [...investigationReadTools,"propose_supplier_discrepancy_followup" as const]:
-        supplierResearch?[...supplierResearchInvestigationTools]:
-        customerIncident?[...customerInvestigationTools]:[...investigationReadTools]);
-    const prompt=(universalResearch?universalInvestigationPrompt:investigationPrompt)(
+      ])] as import("@/lib/ai/agent/tools").AgentToolName[];
+    const prompt=universalInvestigationPrompt(
       synopsis,c.phase==="awaiting_owner",
       synopsis.kind==="maintenance_issue"?null:c.narrative??null);
     const turn=await withWorkerBudget({
@@ -485,9 +478,7 @@ export async function processNextInvestigation(db:SupabaseClient,now:Date,
     }),providerOutputCap);
     if(metered.problem())throw new Error(metered.problem()!);
     const expected={sourceType:c.source_type,sourceId:c.source_id,kind:synopsis.kind};
-    const verified=universalResearch?
-      verifyUniversalInvestigationTurn(turn,expected,permitted):
-      verifyInvestigationTurn(turn,expected);
+    const verified=verifyUniversalInvestigationTurn(turn,expected,permitted);
     // Callback exists only for the trusted, opt-in live acceptance runner.
     // A model's fabricated action claim or numeric value is never logged.
     try{onModelProof?.({
