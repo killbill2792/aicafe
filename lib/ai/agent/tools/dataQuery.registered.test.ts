@@ -1,6 +1,9 @@
 import {describe,it,expect,vi} from "vitest";
 import {agentToolDefinitions,executeAgentTool,type AgentToolContext} from "./index";
 import {dataQueryTools} from "./dataQuery";
+import {getFixtureSnapshot} from "@/lib/data/fixtureSnapshot";
+import {breakEvenSnapshotInputs} from "@/lib/viewmodels/breakEvenViewModel";
+import {type Economics} from "@/lib/calc/supervisorEconomics";
 
 const businessId="aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
 const caller=()=> {
@@ -120,5 +123,32 @@ describe("canonical data available to authenticated chat, not only standalone to
   },await context.canonicalData());
   expect(result.error).toBe("invalid_query");
   expect(rpc).not.toHaveBeenCalled();
+ });
+});
+
+describe("optional official shared metric selection in registered query_data",()=>{
+ it("returns the same break-even calculation, period and quality as the shared screen basis",async()=>{
+  const snapshot=getFixtureSnapshot();
+  const basis=breakEvenSnapshotInputs(snapshot);
+  const {context,rpc}=caller();
+  const ctx:AgentToolContext={...context,asOf:snapshot.todayDateStr,
+   readEconomics:async()=>({canonicalBreakEven:basis,
+    economics:{openDaysBasis:"opening_hours"} as unknown as Economics,
+    items:[],staff:[],ownerMonthlyPayrollExtrasCents:null,ownerIngredientRate:null})};
+  const result=await executeAgentTool("query_data",{official_metric:{id:"break_even",period_mode:"month"}},ctx);
+  const existing=await executeAgentTool("get_break_even",{period:"month"},ctx);
+  expect(result).toEqual({...existing,metric_id:"break_even",metric_basis:"official_shared_definition"});
+  expect(result.monthlyBreakEvenCents).toBe(basis.shared.salesPerMonthCents);
+  expect(rpc).not.toHaveBeenCalled();
+ });
+ it("rejects ambiguous mixed selectors and missing scope before accessing a metric",async()=>{
+  const {context}=caller();
+  const readEconomics=vi.fn(async()=>{throw Error("must not be called");});
+  const ctx={...context,readEconomics};
+  const args={official_metric:{id:"break_even",period_mode:"month"}};
+  expect((await executeAgentTool("query_data",{...args,sql:"select 1"},ctx)).missing).toContain("invalid_query");
+  expect((await executeAgentTool("query_data",{...args,date_from:"2026-10-01"},ctx)).missing).toContain("invalid_date_range");
+  expect((await executeAgentTool("query_data",args,{...ctx,canonicalData:undefined})).missing).toContain("canonical_reader_unavailable");
+  expect(readEconomics).not.toHaveBeenCalled();
  });
 });

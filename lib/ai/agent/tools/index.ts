@@ -2,7 +2,7 @@ import { presentationTools,presentResponse } from "./presentation";
 import { laborKnown } from "@/lib/calc";
 import { z } from "zod";
 import {askOwnerTools} from "./askOwner";
-import {dataQueryTools,type DataQueryContext} from "./dataQuery";
+import {dataQueryTools,dataQuerySchema,type DataQueryContext} from "./dataQuery";
 import {gmailTools} from "./gmail";
 import {maintenanceTools} from "./maintenance";
 import {staffQuestionTools} from "./staffQuestion";
@@ -383,7 +383,36 @@ export async function executeAgentTool(name: string, raw: unknown, ctx: AgentToo
   }
   if(name==="query_data"){
     if(!ctx.canonicalData)return {source:"canonical_data",period:null,missing:["canonical_reader_unavailable"],rows:[],empty:true};
-    try{return await dataQueryTools.query_data.execute(raw,await ctx.canonicalData());}
+    try{
+      const scope=await ctx.canonicalData();
+      const selector=raw&&typeof raw==="object"?raw as Record<string,unknown>:{};
+      if(selector.official_metric!=null){
+        const invalid=(code:string):AgentToolResult=>({source:"official_metric",period:null,missing:[code],error:code,rows:[],empty:true});
+        if(!scope.db||!z.uuid().safeParse(scope.businessId).success)return invalid("invalid_scope");
+        const parsed=dataQuerySchema.safeParse({view:null,sql:null,parameters:null,cursor:null,
+          columns:null,filters:null,group_by:null,metrics:null,date_from:null,date_to:null,
+          order_by:null,limit:null,...selector});
+        if(!parsed.success)return invalid("invalid_query");
+        const p=parsed.data;
+        if(!p.official_metric||[p.view,p.sql,p.parameters,p.cursor??null,p.columns,p.filters,
+          p.group_by,p.metrics,p.order_by,p.limit].some(v=>v!==null))return invalid("invalid_query");
+        const metric=p.official_metric;
+        let result:AgentToolResult;
+        if(metric.id==="profit"){
+          if(metric.period_mode!==null||!p.date_from||!p.date_to||p.date_from>p.date_to)
+            return invalid("invalid_date_range");
+          result=await executeAgentTool("get_profit",{period:{from:p.date_from,to:p.date_to}},ctx);
+        }else{
+          if(!metric.period_mode||p.date_from!==null||p.date_to!==null)return invalid("invalid_date_range");
+          result=await moneyTools.get_break_even.execute({period:metric.period_mode},ctx);
+        }
+        // Preserve every completeness, period, estimate and provenance field
+        // from the existing screen calculation. Do not upgrade partial values
+        // or label independent model arithmetic as an official metric.
+        return {...result,metric_id:metric.id,metric_basis:"official_shared_definition"};
+      }
+      return await dataQueryTools.query_data.execute(raw,scope);
+    }
     catch{return {source:"canonical_data",period:null,missing:["source_read_failed"],rows:[],empty:true};}
   }
   if(name==="draft_week_schedule")return draftScheduleTools.draft_week_schedule.execute(raw,ctx);
