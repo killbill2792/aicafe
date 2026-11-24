@@ -304,7 +304,7 @@ describe.skipIf(!active)("U3 migrated registered tool + private connection",()=>
     date_from:"2025-01-01",date_to:"2026-11-23"
    },scoped);
    expect(unsafe.error).toBe("stable_order_required");
-   expect(unsafe.page_complete).toBe(false);
+   expect((unsafe as typeof unsafe & {page_complete?:boolean}).page_complete).toBe(false);
   }finally{
    await admin.query("DELETE FROM public.orders WHERE business_id=$1 AND pos_order_id LIKE 'u3-cursor-%'",[ids.a]).catch(()=>{});
   }
