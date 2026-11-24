@@ -168,6 +168,22 @@ describe("U3 receipt-bound exact research calculation",()=>{
    fact_key:null,owner_value:null,owner_unit:null}],
   steps:[{id:"result",label:"Amount",op:"sum",args:["amount"]}]
  });
+ it("can calculate from an earlier page after the exact snapshot has been completely traversed",async()=>{
+  const make=(id:string,amount:string,index:number):{name:string;result:AgentToolResult}=>({name:"query_data",result:{
+   ...sql(id,amount).result,rows:[{net_sales_cents:amount}],rowCount:1,
+   page_consistency:"verified_same_result",total_rows:2,page_offset:index,
+   page_complete:index===1,truncated:index===0,next_cursor:index?null:"signed",
+   missing:index?[]:["result_truncated"],
+   evidence:{...(sql(id,amount).result.evidence as object),query_fingerprint:"a".repeat(64),
+    catalog_version:"b".repeat(16),snapshot_id:"33333333-3333-4333-8333-333333333333",
+    snapshot_digest:"c".repeat(64),as_of:"2026-11-24T00:00:00Z"}
+  }});
+  const first=make(older,"12345",0),last=make(newer,"67890",1);
+  expect((await calculateTools.calculate.execute(query(older),ctx([first]))).refused)
+   .toBe("incompleteResearchEvidence");
+  expect(await calculateTools.calculate.execute(query(older),ctx([first,last])))
+   .toMatchObject({result:{unit:"cents",valueCents:12345}});
+ });
  it("selects the exact earlier receipt rather than the latest invocation of the same tool",async()=>{
   const actual=await calculateTools.calculate.execute(query(older),ctx(row));
   expect(actual.refused).toBeUndefined();

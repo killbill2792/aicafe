@@ -17,6 +17,7 @@ import {notifyOwner} from "@/lib/operating/notifyOwner.server";
 import {getConnectorAccount,allowsGmail} from "@/lib/connectors/registry.server";
 import {gmailSearch,gmailListLabels,gmailRead,gmailReadThread,gmailReadAttachment} from "@/lib/connectors/gmail/provider.server";
 import {canonicalEvidenceDomain,canonicalQuerySourceFamily,hasObservedEvidence,investigationReadTools,unsupportedExternalEffectClaim} from "./investigation";
+import {completeResearchAttempts} from "@/lib/ai/agent/researchRecovery";
 import {meteredInvestigationProvider} from "./investigationUsage.server";
 import type {RoutineRecord} from "./contracts";
 import type {ClaimedRoutine} from "./repository.server";
@@ -159,7 +160,7 @@ export function verifyObjectiveTurn(turn:AgentTurn,routine:RoutineRecord):Object
   if((turn.toolInvocations??[]).some(call=>
     !admitted.includes(call.name as AgentToolName)))
     throw Error("u4_unadmitted_tool_invocation");
-  const reads=(turn.toolInvocations??[]).filter(call=>
+  const reads=completeResearchAttempts(turn.toolInvocations??[]).filter(call=>
     admitted.includes(call.name as AgentToolName)&&
     // Catalogs and mailbox labels describe capabilities, not observed
     // business facts. A model cannot pass acceptance using discovery alone.

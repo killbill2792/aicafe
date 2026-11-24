@@ -1,4 +1,5 @@
 import { tokenizeNumbers } from "./numberTokens";
+import {completeResearchResults} from "./researchRecovery";
 import type { AgentLocale, AgentToolResult } from "./tools";
 import { menuPriceDifferenceCents } from "@/lib/calc/agentPriceDifferences";
 import { metricCatalog,metricKeySchema } from "@/lib/calc/metrics/catalog";
@@ -163,7 +164,7 @@ export function hasVerifiedU3NumericObservation(result:AgentToolResult):boolean{
 /** Collect the complete current observations first. Apply the persistence cap
  * only after collection, prioritizing recent reads and high-value prices. */
 export function compactEvidence(results:readonly AgentToolResult[],limit=100):NumericEvidence[]{
-  const gathered=results.map(r=>{
+  const gathered=completeResearchResults(results).map(r=>{
     const values:NumericEvidence["values"]=[];
     const invalidatedKeys:string[]=[];
     const periodKey=r.period?r.period.from+"/"+r.period.to+"/":"";

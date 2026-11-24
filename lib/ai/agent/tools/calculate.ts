@@ -6,6 +6,7 @@ import {SCREEN_NUMBER_IDS} from "../screenNumbers";
 import type {ExplainLine} from "../explain";
 import type {CardValue} from "@/lib/format/values";
 import {ownerStatedAmounts} from "../checkNumbers";
+import {completeResearchAttempts} from "../researchRecovery";
 
 const name=z.string().regex(/^[a-z][a-z0-9_]{0,39}$/u);
 const calculateInput=z.strictObject({
@@ -123,7 +124,7 @@ export const calculateTools={
         {receipt_id:null,assumption:null,...item}:item):untrusted.inputs;
       const p=calculateInput.parse({...untrusted,inputs:provided});
       const scoped=ctx as CalcContext;
-      const turn=(scoped.turnResults?.()??[]).filter(r=>r.name!=="ask_owner");
+      const turn=completeResearchAttempts((scoped.turnResults?.()??[]).filter(r=>r.name!=="ask_owner"));
       const facts=scoped.savedOwnerFacts??[];
       const inputs:Input[]=[];
       const inputNames=new Set<string>();

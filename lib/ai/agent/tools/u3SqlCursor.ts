@@ -44,7 +44,7 @@ export function researchPage(input:FingerprintInput,cursor:string|null|undefined
    !/^[A-Za-z0-9_-]{43}$/.test(parts[1]))throw invalid();
  const expected=mac(parts[0],secret);
  const actual=Buffer.from(parts[1],"base64url");
- if(actual.length!==expected.length||!timingSafeEqual(actual,expected))throw invalid();
+ if(actual.toString("base64url")!==parts[1]||actual.length!==expected.length||!timingSafeEqual(actual,expected))throw invalid();
  let parsed:unknown;
  try{parsed=JSON.parse(Buffer.from(parts[0],"base64url").toString("utf8"));}
  catch{throw invalid();}

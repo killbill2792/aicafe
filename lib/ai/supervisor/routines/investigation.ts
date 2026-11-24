@@ -2,7 +2,7 @@ import type {AgentTurn} from "@/lib/ai/agent/loop.server";
 import type {AgentToolName,AgentToolResult} from "@/lib/ai/agent/tools";
 import {CUSTOMER_MONITOR_POLICY,customerTrendEvidenceFields} from "@/lib/metrics/core/customers";
 import {hasVerifiedU3NumericObservation} from "@/lib/ai/agent/checkNumbers";
-import {unreplacedResearchAttempts} from "@/lib/ai/agent/researchRecovery";
+import {unreplacedResearchAttempts,completeResearchAttempts} from "@/lib/ai/agent/researchRecovery";
 
 /** Task 15A uses the SAME registered Supervisor model/tool loop, restricted to
  * evidence reads. Only a verified owner's later turn can reach the registered
@@ -451,7 +451,7 @@ export function verifyUniversalInvestigationTurn(
    turn.unverified.length>0||unsupportedExternalEffectClaim(text)||
    expected.kind==="maintenance_issue"&&unsupportedMaintenanceRepairClaim(text))
   return {ok:false,reason:"model_incomplete"};
- const calls=turn.toolInvocations??[];
+ const calls=completeResearchAttempts(turn.toolInvocations??[]);
  const permitted=new Set(permittedTools);
  if(calls.some(c=>!permitted.has(c.name)))
   return {ok:false,reason:"model_incomplete"};

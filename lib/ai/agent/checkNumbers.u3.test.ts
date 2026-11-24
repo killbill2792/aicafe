@@ -1,6 +1,7 @@
 import {describe,expect,it} from "vitest";
 import {compactEvidence,checkNumbers,hasVerifiedU3NumericObservation} from "./checkNumbers";
 import type {AgentToolResult} from "./tools";
+import {statusFromResults} from "./status";
 
 const receipt=()=>({
  source:"u3_canonical_research",period:null,missing:[],truncated:false,
@@ -184,5 +185,37 @@ describe("recorded labor punch verifier, not roster or invented model prose",()=
    expect(compactEvidence([falseDuration as AgentToolResult]).flatMap(v=>v.values)
      .some(v=>v.key.endsWith("elapsedHours"))).toBe(false);
    expect(checkNumbers("Sam worked 9 hours.","",[falseDuration as AgentToolResult],"en")).not.toEqual([]);
+ });
+});
+
+describe("complete SQL snapshot receipts across pages",()=>{
+ const page=(offset:number,amount:string,final:boolean,digest="c".repeat(64)):AgentToolResult=>{
+  const base=receipt();
+  return {...base,rows:[{amount_cents:amount}],rowCount:1,
+   page_consistency:"verified_same_result",total_rows:2,page_offset:offset,
+   page_complete:final,truncated:!final,next_cursor:final?null:"signed-cursor",
+   missing:final?[]:["result_truncated"],
+   evidence:{...(base.evidence as object),
+    receipt_id:offset?"22222222-2222-4222-8222-222222222222":"11111111-1111-4111-8111-111111111111",
+    snapshot_id:"33333333-3333-4333-8333-333333333333",snapshot_digest:digest,
+    as_of:"2026-11-24T00:00:00Z"}};
+ };
+ const status=(rows:AgentToolResult[])=>statusFromResults(rows.map((result,i)=>({
+  name:"query_data",callId:String(i),arguments:JSON.stringify({cursor:i}),result})));
+ it("verifies early and final rows after a complete same-result traversal without clearing unrelated gaps",()=>{
+  const first=page(0,"12345",false),last=page(1,"54321",true);
+  expect(status([first,last])).toEqual({status:"complete",missing:[]});
+  expect(checkNumbers("$123.45 and $543.21.","",[first,last],"en")).toEqual([]);
+  expect(status([first,last,{source:"expenses",period:null,missing:["expense_gap"]}]))
+   .toEqual({status:"partial",missing:["expense_gap"]});
+  expect(first.truncated).toBe(true); // original provider receipt is unchanged
+ });
+ it("does not accept missing prefixes, different snapshots or other business gaps as complete",()=>{
+  const first=page(0,"12345",false),last=page(1,"54321",true);
+  for(const rows of [[first],[last],[first,page(1,"54321",true,"d".repeat(64))],
+   [{...first,missing:["result_truncated","source_read_failed"]},last]]){
+   expect(status(rows).status).toBe("partial");
+   expect(compactEvidence(rows).flatMap(x=>x.values)).toEqual([]);
+  }
  });
 });
