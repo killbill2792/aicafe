@@ -320,7 +320,7 @@ const baseToolDefinitions = (Object.keys(schemas) as AgentToolName[]).map(name =
 // profit/break_even use the optional official shared definition; opening_hours
 // and employee_sales_rollup are normal discoverable SQL sources.
 export const retiredResearchTools:ReadonlySet<AgentToolName>=new Set([
-  "get_profit","get_break_even","get_business_hours","get_employee_sales","get_expenses","get_bills"
+  "get_profit","get_break_even","get_business_hours","get_employee_sales","get_expenses","get_bills","get_sales","get_peak_hours","get_labor","get_staff"
 ]);
 // Routine management remains a verified-owner-only additional function.
 export const agentToolDefinitions:Array<Omit<(typeof baseToolDefinitions)[number],"name">&{name:string}>=
@@ -337,7 +337,7 @@ export function researchPeriodChoice(input:Record<string,unknown>):unknown{
  const metric=input.official_metric;
  if(!metric||typeof metric!=="object"||Array.isArray(metric))return null;
  const m=metric as Record<string,unknown>;
- if(m.id!=="profit"&&m.id!=="expenses")return null;
+ if(!["profit","expenses","sales","hourly_sales","labor"].includes(String(m.id)))return null;
  return m.period??m.profit_period??(typeof input.date_from==="string"&&typeof input.date_to==="string"?
   {from:input.date_from,to:input.date_to}:null);
 }
@@ -427,17 +427,24 @@ export async function executeAgentTool(name: string, raw: unknown, ctx: AgentToo
           const supplied={period,ownerInputs:metric.profit_owner_inputs??null};
           const saved=ctx.savedOwnerFacts??ctx.ownerFacts??[];
           result=await executeAgentTool("get_profit",saved.length?injectSavedOwnerInputs(supplied,saved,true):supplied,ctx);
-        }else if(metric.id==="expenses"||metric.id==="recurring_bills"){
+        }else if(metric.id!=="break_even"){
           if(metric.period_mode!==null||metric.profit_period!=null||metric.profit_owner_inputs!=null||metric.break_even_overrides!=null)
             return invalid("invalid_query");
-          if(metric.id==="recurring_bills"){
+          if(metric.id==="recurring_bills"||metric.id==="current_staff"){
             if(metric.period!=null||p.date_from!==null||p.date_to!==null)return invalid("invalid_date_range");
-            result=await moneyTools.get_bills.execute({},ctx);
+            result=metric.id==="recurring_bills"?await moneyTools.get_bills.execute({},ctx):await staffTools.get_staff.execute({},ctx);
           }else{
             const period=metric.period??(p.date_from&&p.date_to&&p.date_from<=p.date_to?
               {from:p.date_from,to:p.date_to}:null);
             if(!period||metric.period!=null&&(p.date_from!==null||p.date_to!==null))return invalid("invalid_date_range");
-            result=await moneyTools.get_expenses.execute({period,category:null},ctx);
+            if(metric.id==="expenses")result=await moneyTools.get_expenses.execute({period,category:null},ctx);
+            else if(metric.id==="sales")result=await executeAgentTool("get_sales",{period,ownerInputs:null},ctx);
+            else if(metric.id==="labor")result=await staffTools.get_labor.execute({period},ctx);
+            else{
+              const checked=resolveOwnerPeriod(period,{asOf:ctx.asOf,timezone:ctx.timezone},ctx.resolveState);
+              if(checked.status!=="resolved")return periodChoicePayload("get_peak_hours",checked);
+              result=await executeAgentTool("get_peak_hours",{from:checked.value.from,to:checked.value.to},ctx);
+            }
           }
         }else{
           if(metric.period!=null||metric.profit_period!=null||metric.profit_owner_inputs!=null)return invalid("invalid_query");
@@ -451,6 +458,15 @@ export async function executeAgentTool(name: string, raw: unknown, ctx: AgentToo
         // Preserve every completeness, period, estimate and provenance field
         // from the existing screen calculation. Do not upgrade partial values
         // or label independent model arithmetic as an official metric.
+        // Unattended SQL access is aggregate-only; do not bypass that
+        // boundary through an official metric's legacy reader.
+        if(scope.aggregateOnly&&metric.id==="current_staff"){
+          const {people:_people,...aggregate}=result;void _people;result=aggregate;
+        }
+        if(scope.aggregateOnly&&metric.id==="labor"){
+          const {attendance:_attendance,missingWageShifts:_shifts,pendingPosStaffReviews:_reviews,...aggregate}=result;
+          void _attendance;void _shifts;void _reviews;result=aggregate;
+        }
         return {...result,metric_id:metric.id,metric_basis:"official_shared_definition"};
       }
       const result=await dataQueryTools.query_data.execute(raw,{...scope,resultBudgetBytes:ctx.researchPageBytes?.()});

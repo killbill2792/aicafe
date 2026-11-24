@@ -635,8 +635,8 @@ describe("U1 matched recorded incident — checkpoint and presentation variation
       missingInputs:["testSourceUnavailable"],estimatedInputs:[],staleInputs:[]}};
     for(const withPresentation of [false,true]){
       const {requests,provider}=recording([
-        [call("get_sales",JSON.stringify({period,ownerInputs:null}),"u1-sales"),completed],
-        [call("get_peak_hours",JSON.stringify(period),"u1-peak"),completed],
+        [call("query_data",JSON.stringify({official_metric:{id:"sales",period_mode:null,period}}),"u1-sales"),completed],
+        [call("query_data",JSON.stringify({official_metric:{id:"hourly_sales",period_mode:null,period}}),"u1-peak"),completed],
         [call("query_data",JSON.stringify({official_metric:{id:"profit",period_mode:null,profit_period:period}}),"u1-profit"),completed],
         ...(withPresentation?[[call("present_response",JSON.stringify({layout:"stack",panels:[],suggestions:[]}),"u1-visual"),completed]]:[]),
         [text(answer),completed],

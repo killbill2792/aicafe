@@ -437,7 +437,7 @@ describe("U1 incident regression: exact requested dates and useful synthesis",()
     const ctx:AgentToolContext={...context,tools:{...context.tools,getSalesTrend:sales}};
     const result=await runAgentTurn({ownerText:"What are today's sales?",context:ctx,
       provider:fixture([
-        [call("get_sales",'{"period":"today","ownerInputs":null}',"u1-today-sales"),completed],
+        [call("query_data",'{"official_metric":{"id":"sales","period_mode":null,"period":"today"}}',"u1-today-sales"),completed],
         [text("Today's closing sales are not available; I cannot verify a total."),completed],
       ])});
     expect(result.text).toBe("Today's closing sales are not available; I cannot verify a total.");
@@ -453,7 +453,7 @@ describe("U1 incident regression: exact requested dates and useful synthesis",()
         missingInputs:["noCoveredSalesRows"],estimatedInputs:[],staleInputs:[]}});
     const result=await runAgentTurn({ownerText:"Research sales from 2025-10-22 through 2026-10-20",
       context:{...context,tools:{...context.tools,getSalesTrend:sales}},
-      provider:fixture([[call("get_sales",JSON.stringify({period,ownerInputs:null}),"u1-owner-year"),completed],
+      provider:fixture([[call("query_data",JSON.stringify({official_metric:{id:"sales",period_mode:null,period}}),"u1-owner-year"),completed],
         [text("No recorded sales totals are available for that requested interval."),completed]])});
     expect(sales.mock.calls).toEqual([[period]]);
     expect(result.results[0]).toMatchObject({period,missing:["noCoveredSalesRows"]});
@@ -474,8 +474,8 @@ describe("U1 incident regression: exact requested dates and useful synthesis",()
     const provider:AgentProvider=async function*(params){
       requests.push(params);
       if(requests.length===1){
-        yield call("get_sales",JSON.stringify({period,ownerInputs:null}),"u1-mixed-sales");
-        yield call("get_peak_hours",JSON.stringify(period),"u1-mixed-peak");
+        yield call("query_data",JSON.stringify({official_metric:{id:"sales",period_mode:null,period}}),"u1-mixed-sales");
+        yield call("query_data",JSON.stringify({official_metric:{id:"hourly_sales",period_mode:null,period}}),"u1-mixed-peak");
         yield call("query_data",JSON.stringify({official_metric:{id:"profit",period_mode:null,profit_period:period}}),"u1-mixed-profit");
       }else yield text(answer);
       yield completed;
@@ -530,8 +530,8 @@ describe("U1 controlled incident timing fixture (no provider)",()=>{
       const provider:AgentProvider=async function*(params){
         requests.push(params);
         if(requests.length===1){
-          yield call("get_sales",JSON.stringify({period,ownerInputs:null}),"u1-delayed-sales");
-          yield call("get_peak_hours",JSON.stringify(period),"u1-delayed-peak");
+          yield call("query_data",JSON.stringify({official_metric:{id:"sales",period_mode:null,period}}),"u1-delayed-sales");
+          yield call("query_data",JSON.stringify({official_metric:{id:"hourly_sales",period_mode:null,period}}),"u1-delayed-peak");
           yield call("query_data",JSON.stringify({official_metric:{id:"profit",period_mode:null,profit_period:period}}),"u1-delayed-profit");
         }else{
           // Reproduce a late but completed final synthesis, not a real network wait.

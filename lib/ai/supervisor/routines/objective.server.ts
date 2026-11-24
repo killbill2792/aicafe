@@ -175,12 +175,16 @@ export function verifyObjectiveTurn(turn:AgentTurn,routine:RoutineRecord):Object
     // separately proved lineage, never count it as an independent SECOND
     // source alongside a registered canonical read of the same facts.
     if(call.result.source==="u3_canonical_research")return "other:u3_signed_sql";
-    if(call.name==="query_data")
-      return canonicalQuerySourceFamily(call.result.view);
     if(call.result.metric_basis==="official_shared_definition"){
       if(call.result.source==="expenses")return "recorded_expenses";
       if(call.result.source==="recurring_bills")return "configured_recurring_bills";
+      if(["daily_rollups","today_live","get_peak_hours"].includes(call.result.source))return "recorded_sales";
+      if(call.result.source==="labor_and_attendance")return "attendance_and_labor";
+      if(call.result.source==="current_staff")return "staff_roster";
+      if(call.result.source==="profitability")return "other:derived_profit";
     }
+    if(call.name==="query_data")
+      return canonicalQuerySourceFamily(call.result.view);
     return canonicalEvidenceDomain[call.name as AgentToolName]??
       "other:"+String(call.result.source).slice(0,80);
   };

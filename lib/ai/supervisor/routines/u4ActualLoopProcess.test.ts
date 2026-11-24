@@ -140,7 +140,7 @@ run("survives actual recorded model and registered source tool across SIGKILL",a
     };
     const context={
       locale:"en",timezone:"America/Los_Angeles",currency:"USD",
-      asOf:"2026-11-21",
+      asOf:"2026-11-21",canonicalData:async()=>({businessId,db:{} as never,aggregateOnly:true}),
       tools:{
         getSalesTrend:originalSourceRead,
         getProfitability:async()=>({available:false}),
@@ -155,9 +155,8 @@ run("survives actual recorded model and registered source tool across SIGKILL",a
     const recorded:AgentProvider=async function*(){
       if(requests++===0){
         yield {type:"response.output_item.done",item:{
-          type:"function_call",name:"get_sales",call_id:"u4-durable-sales",
-          arguments:JSON.stringify({period:{from:"2026-11-20",to:"2026-11-20"},
-            ownerInputs:null}),
+          type:"function_call",name:"query_data",call_id:"u4-durable-sales",
+          arguments:JSON.stringify({official_metric:{id:"sales",period_mode:null,period:{from:"2026-11-20",to:"2026-11-20"}}}),
         }} as never;
       }else{
         yield {type:"response.output_text.delta",
@@ -174,11 +173,11 @@ run("survives actual recorded model and registered source tool across SIGKILL",a
       maxInputTokens:72_000,maxOutputTokens:2400,
     },()=>runAgentTurn({
       ownerText:"Re-read the actual café sales on this original routine run.",
-      serviceOrigin:true,toolNames:["get_sales"],
+      serviceOrigin:true,toolNames:["query_data"],
       context,provider:metered.provider,checkpoint,
     }));
     expect(metered.problem()).toBeNull();
-    const observed=turn.toolInvocations?.find(x=>x.name==="get_sales");
+    const observed=turn.toolInvocations?.find(x=>x.name==="query_data");
     expect(observed?.result.netSalesCents).toBe(4875);
     expect(turn.usage.toolCalls).toBe(1);
     const verified=verifyObjectiveTurn(turn,routine as never);

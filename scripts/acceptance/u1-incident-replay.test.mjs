@@ -28,6 +28,12 @@ test("fixture extraction discards unrelated older tests and refuses incomplete f
 test("historical fixture adapter preserves assertions and only changes the reviewed profit interface",()=>{
  const input=[
   '  tools: {',
+  "call(\"get_sales\",'{\"period\":\"today\",\"ownerInputs\":null}',\"fixture-0\")",
+  "call(\"get_sales\",JSON.stringify({period,ownerInputs:null}),\"fixture-0\")",
+  "call(\"get_sales\",JSON.stringify({period,ownerInputs:null}),\"fixture-1\")",
+  "call(\"get_sales\",JSON.stringify({period,ownerInputs:null}),\"fixture-2\")",
+  "call(\"get_peak_hours\",JSON.stringify(period),\"fixture-0\")",
+  "call(\"get_peak_hours\",JSON.stringify(period),\"fixture-1\")",
   'call("get_profit",JSON.stringify({period,ownerInputs:null}),"a")',
   'call("get_profit",JSON.stringify({period,ownerInputs:null}),"b")',
   '{source:"get_profit",error:"internal"}',
@@ -35,7 +41,7 @@ test("historical fixture adapter preserves assertions and only changes the revie
   'expect(result.usage.latencyMs).toBe(59684);'
  ].join("\n");
  const output=adaptHistoricalFixture(input);
- assert.equal(output.split('call("query_data"').length-1,2);
+ assert.equal(output.split('call("query_data"').length-1,8);
  assert.ok(output.includes('expect(result.usage.latencyMs).toBe(59684);'));
  assert.ok(output.includes('canonicalData:async'));
  assert.ok(output.includes('{source:"query_data",period,missing:["deadline_exceeded"]}'));

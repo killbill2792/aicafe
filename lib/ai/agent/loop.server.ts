@@ -569,9 +569,12 @@ export async function runAgentTurn(args: {
     for(const reference of priorReads.slice(-replayCap)){
       // Older durable checkpoints store the internal legacy name. Replay the
       // exact reviewed period through the current universal declaration.
-      const saved=reference.name==="get_profit"?
-       {name:"query_data",selector:{official_metric:{id:"profit",period_mode:null,
-        profit_period:reference.selector.period}}}:reference;
+      const legacyMetric:Record<string,string>={get_profit:"profit",get_sales:"sales",get_peak_hours:"hourly_sales",
+        get_labor:"labor",get_staff:"current_staff",get_expenses:"expenses",get_bills:"recurring_bills"};
+       const metric=legacyMetric[reference.name];
+       const period=reference.selector.period??(reference.selector.from&&reference.selector.to?
+        {from:reference.selector.from,to:reference.selector.to}:null);
+       const saved=metric?{name:"query_data",selector:{official_metric:{id:metric,period_mode:null,period}}}:reference;
       if(replayCap===0||budgetStop()||workDeadline-now()<5000)break;
       if(!eligibleNames.has(saved.name))continue;
       if(!isRepeatSafeOwnerTool(saved.name,saved.selector))continue;
