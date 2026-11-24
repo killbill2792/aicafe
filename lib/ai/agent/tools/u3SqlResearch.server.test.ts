@@ -41,7 +41,7 @@ describe("connector-style research discovery and safe repair diagnostics",()=>{
   expect(selectU3Catalog(catalog,{relation:"timecards",offset:30,limit:30}).relations[0].columns).toHaveLength(5);
  });
  it("returns useful fixed PostgreSQL diagnostics, never raw source values or messages",()=>{
-  const err={code:"42703",position:String("SELECT * FROM (".length+8),message:"secret column value",detail:"private",hint:"private"};
+  const err={code:"42703",position:String("DECLARE u3_result NO SCROLL CURSOR FOR SELECT * FROM (".length+8),message:"secret column value",detail:"private",hint:"private"};
   expect(safeU3SqlDiagnostic(err,20)).toEqual({sqlstate:"42703",reason:"undefined_column",query_position:8});
   expect(safeU3SqlDiagnostic({...err,position:"999999"},20)).toEqual({sqlstate:"42703",reason:"undefined_column"});
   expect(safeU3SqlDiagnostic({code:"unknown",message:"private"},20)).toBeUndefined();

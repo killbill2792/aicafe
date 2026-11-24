@@ -284,6 +284,21 @@ describe.skipIf(!active)("U3 migrated registered tool + private connection",()=>
     "SELECT gen_random_uuid(),$1,'u3-cursor-'||i::text,now(),"+
       "date '2026-01-01'+(i-1),100+i,100+i FROM generate_series(1,137) AS i",[ids.a]);
    const sql="SELECT id,business_date,net_sales_cents FROM u3_research.orders ORDER BY business_date,id";
+   // A compact result exceeding 100 rows must complete without extra model calls.
+   const compact=await dataQueryTools.query_data.execute({
+    ...input("SELECT net_sales_cents FROM u3_research.orders WHERE net_sales_cents < $1 ORDER BY net_sales_cents"),
+    parameters:[4200],limit:null,date_from:"2025-01-01",date_to:"2026-11-23"
+   },scoped);
+   expect(compact.error).toBeUndefined();
+   expect(compact.rows).toHaveLength(138);
+   expect(compact.truncated).toBe(false);
+   expect(compact).toMatchObject({page_complete:true,next_cursor:null});
+   const explicit=await dataQueryTools.query_data.execute({
+    ...input("SELECT net_sales_cents FROM u3_research.orders ORDER BY net_sales_cents"),limit:200
+   },scoped);
+   expect(explicit.error).toBeUndefined();
+   expect(explicit.rows).toHaveLength(138);
+   expect(explicit).toMatchObject({page_complete:true,next_cursor:null});
    let cursor:string|null=null,pages=0,complete=false;
    const seen:string[]=[];
    do{

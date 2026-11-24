@@ -11,7 +11,7 @@ type FingerprintInput={
   mode:string;sourceType:string|null;sourceId:string|null;
   runId:string|null;leaseToken:string|null;
   sql:string;parameters:readonly (string|number|boolean|null)[]|null;
-  date_from:string|null;date_to:string|null;limit:number;
+  date_from:string|null;date_to:string|null;limit:number|null;
 };
 const invalid=()=>new Error("invalid_query");
 function fingerprint(input:FingerprintInput):string{

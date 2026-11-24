@@ -17,7 +17,10 @@ export type U3SqlContext={
  sourceType?:string;sourceId?:string;runId?:string;leaseToken?:string;
 };
 // Transport/context page bounds, NEVER total query, date or evidence ceilings.
-const MAX_ROWS=100,MAX_RESULT_CHARS=24_576,MAX_SQL_CHARS=12000;
+// The fetch batch bounds in-flight database rows, not the result size or model calls.
+const FETCH_BATCH=32,MAX_RESULT_BYTES=24_576,MAX_SQL_CHARS=12000;
+const QUERY_TIME_MS=8000;
+const CURSOR_PREFIX="DECLARE u3_result NO SCROLL CURSOR FOR SELECT * FROM (";
 const scopeSchema=z.strictObject({
  businessId:z.uuid(),ownerUserId:z.uuid(),threadId:z.uuid(),
  mode:z.enum(["owner","investigation","durable","routine"]),
@@ -29,7 +32,7 @@ export const u3SqlSchema=z.strictObject({
  parameters:z.array(z.union([
   z.string().max(512),z.number().finite(),z.boolean(),z.null()
  ])).max(48).nullable(),
- limit:z.number().int().min(1).max(MAX_ROWS).nullable(),
+ limit:z.number().int().positive().max(Number.MAX_SAFE_INTEGER).nullable(),
  cursor:z.string().min(30).max(512).nullable().optional(),
  date_from:z.iso.date().nullable(),date_to:z.iso.date().nullable()
 });
@@ -256,17 +259,33 @@ export function unsafeStructuredToastResult(rows:readonly unknown[]):boolean{
  });
 }
 
-const fitRows=(rows:unknown[])=>{
- const kept:unknown[]=[];let bytes=2;
- for(const row of rows){
-  const str=JSON.stringify(row);
-  if(!str)continue;
-  bytes+=str.length+1;
-  if(bytes>MAX_RESULT_CHARS)return {rows:kept,cut:true};
-  kept.push(row);
+/** Fetch one admitted SELECT in the same verified snapshot. Internal fetch
+ * batches do not become model tool calls. Stop at the existing UTF-8 transport
+ * envelope or a model-chosen page size, never at an implicit business row count.
+ * The transaction closes the cursor on both commit and rollback. */
+async function readResearchPage(client:PoolClient,sql:string,parameters:readonly unknown[],
+ offset:number,limit:number|null,validate:(rows:unknown[])=>void){
+ const started=Date.now();
+ await client.query({text:CURSOR_PREFIX+sql+") AS u3_bounded OFFSET "+offset,values:[...parameters]});
+ const rows:unknown[]=[];let bytes=2;
+ while(true){
+  const remaining=QUERY_TIME_MS-(Date.now()-started);
+  if(remaining<=0)throw Error("query_timeout");
+  // Preserve the original single-query wall-clock allowance across FETCHes.
+  await client.query("SELECT set_config('statement_timeout',$1,true)",[String(remaining)]); // hardcode-ok: PostgreSQL bind placeholder
+  const amount=limit===null?FETCH_BATCH:Math.min(FETCH_BATCH,limit-rows.length+1);
+  const result=await client.query("FETCH FORWARD "+amount+" FROM u3_result");
+  const batch:unknown[]=result.rows;
+  validate(batch);
+  for(const row of batch){
+   const size=Buffer.byteLength(JSON.stringify(row),"utf8")+(rows.length?1:0);
+   if((limit!==null&&rows.length===limit)||bytes+size>MAX_RESULT_BYTES)
+    return {rows,truncated:true};
+   rows.push(row);bytes+=size;
+  }
+  if(batch.length<amount)return {rows,truncated:false};
  }
- return {rows:kept,cut:false};
-};
+}
 // Only fixed error categories and SQLSTATE values are returned to the model.
 // Raw database messages can contain source values, credentials or internal
 // schema names. Never forward them (or log them) to gain recoverability.
@@ -284,7 +303,7 @@ export function safeU3SqlDiagnostic(e:unknown,sqlLength:number){
  // PostgreSQL positions refer to the actual submitted SELECT wrapper.
  // Only include an offset that maps into the model's own query text.
  const position="position" in e&&typeof e.position==="string"&&/^\d+$/.test(e.position)?
-  Number(e.position)-"SELECT * FROM (".length:NaN;
+  Number(e.position)-CURSOR_PREFIX.length:NaN;
  return {sqlstate:e.code,reason:queryDiagnosticReasons[e.code],
   ...(Number.isSafeInteger(position)&&position>=1&&position<=sqlLength?{query_position:position}:{})};
 }
@@ -357,7 +376,7 @@ export async function runU3Sql(ctx:U3SqlContext,raw:unknown){
    // The opaque cursor protects the exact SQL/parameters/window/scope from
    // substitution. Pagination is applied AFTER the full owner-chosen SELECT,
    // never inside a CTE/join/window where it could change the answer.
-   const count=p.limit??50;
+   const count=p.limit;
    const cursorInput={
     businessId:ctx.businessId,ownerUserId:ctx.ownerUserId??"",
     threadId:ctx.threadId??"",mode:ctx.mode??"owner",
@@ -369,8 +388,6 @@ export async function runU3Sql(ctx:U3SqlContext,raw:unknown){
    const key=process.env.SUPABASE_SERVICE_ROLE_KEY??"";
    const offset=researchPageOffset(cursorInput,p.cursor,key);
    const bounded=p.sql.trim().replace(/;\s*$/,"");
-   const statement="SELECT * FROM ("+bounded+") AS u3_bounded LIMIT "+(count+1)+
-    " OFFSET "+offset;
    const parameters=p.parameters??[];
    stage.value="query";
    // PostgreSQL cost is a dimensionless estimate, not elapsed time or a
@@ -378,13 +395,12 @@ export async function runU3Sql(ctx:U3SqlContext,raw:unknown){
    // cost number blocks legitimate indexed/aggregate work. The actual query
    // is still bounded by the same server statement/lock timeout, work_mem,
    // admitted AST, isolated role, pool limit and result transport.
-   const result=await client.query({text:statement,values:parameters});
-   const rows=Array.isArray(result.rows)?result.rows:[];
-   if(plan.relations.includes("toast_records")&&unsafeStructuredToastResult(rows))
-    throw Error("invalid_query");
+   const fit=await readResearchPage(client,bounded,parameters,offset,count,rows=>{
+    if(plan.relations.includes("toast_records")&&unsafeStructuredToastResult(rows))
+     throw Error("invalid_query");
+   });
    stage.value="result";
-   const fit=fitRows(rows.slice(0,count));
-   const truncated=rows.length>fit.rows.length;
+   const truncated=fit.truncated;
    // PostgreSQL does not promise row ordering without a top-level ORDER BY.
    // Never offer an offset cursor for a result whose next page could reorder.
    if(truncated&&!plan.hasTopLevelOrder)throw Error("stable_order_required");
