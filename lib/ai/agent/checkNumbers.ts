@@ -141,6 +141,15 @@ function completeU3Proof(r:AgentToolResult):Record<string,unknown>|null{
   Array.isArray(proof.column_units))return null;
  return proof;
 }
+/** Direct nonnumeric source evidence must pass the same complete signed
+ * receipt validation as numeric observations, not just use a plausible alias. */
+export function hasVerifiedU3DirectObservation(r:AgentToolResult):boolean{
+ const proof=completeU3Proof(r),relations=proof?.relation_names;
+ if(!Array.isArray(relations))return false;
+ return relations.some(relation=>typeof relation==="string"&&directU3Rows(r,relation).some(row=>
+  Object.values(row).some(value=>typeof value==="string"&&value.trim().length>0||
+   typeof value==="boolean"||typeof value==="number"&&Number.isFinite(value))));
+}
 /** Reconstruct only the direct columns of the SAME trusted SQL binding.
  * An output alias, CASE, constant or another self-join row cannot fabricate
  * employee, date, timestamp or menu-item identity. */

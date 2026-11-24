@@ -74,19 +74,18 @@ const watch={...objective,title:"Luna Watch",executionMode:"watch" as const,
   objectiveText:"Look for independently verified important café issues."};
 const lease={runId:"22222222-2222-4222-8222-222222222222",
   leaseToken:"33333333-3333-4333-8333-333333333333",revision:3};
-const source={source:"cafe_sales",period:{from:"2026-11-13",to:"2026-11-20"},
-  missing:[],sales:{amountCents:10424,currency:"USD",complete:true}};
+const source={source:"canonical_data",view:"cv_sales_days",period:{from:"2026-11-13",to:"2026-11-20"},missing:[],rows:[{sum_net_sales_cents:10424}],rowCount:1,sourceMix:{app:1},aggregateOnly:true,truncated:false};
 const turn=(text:string,overrides:Record<string,unknown>={})=>({
   text,endReason:"complete",unverified:[],results:[],
-  toolInvocations:[{name:"get_sales",result:source}],
+  toolInvocations:[{name:"query_data",result:source}],
   usage:{modelCalls:2,toolCalls:1,inputTokens:280,outputTokens:70},
   ...overrides,
 }) as never;
 describe("U4 objective evidence and model autonomy",()=>{
   it("has broad existing registered reads but cannot manage routines or execute an effect",()=>{
-    expect(objectiveReadTools).toContain("get_sales");
-    expect(objectiveReadTools).toContain("get_inventory");
-    expect(objectiveReadTools).toContain("get_events");
+    expect(objectiveReadTools).not.toContain("get_sales");
+    expect(objectiveReadTools).not.toContain("get_inventory");
+    expect(objectiveReadTools).not.toContain("get_events");
     expect(objectiveReadTools).toContain("get_staff_messages");
     expect(watchReadTools).not.toContain("get_staff_messages");
     expect(watchReadTools).not.toContain("get_labor");
@@ -113,9 +112,9 @@ describe("U4 objective evidence and model autonomy",()=>{
   it("accepts any real source read instead of forcing two hardcoded tools",()=>{
     const result=verifyObjectiveTurn(turn("Sales context suggests reviewing staffing."),objective);
     expect(result).toMatchObject({attention:"attention",sourceCount:1,
-      observedToolNames:["get_sales"]});
+      observedToolNames:["query_data"]});
     expect(result.sourceRefs).toMatchObject([{
-      tool:"get_sales",source:"cafe_sales",domain:"recorded_sales",
+      tool:"query_data",source:"canonical_data",domain:"recorded_sales",
       period:{from:"2026-11-13",to:"2026-11-20"},
     }]);
     expect(result.sourceRefs[0].evidenceDigest).toMatch(/^[0-9a-f]{64}$/u);
@@ -124,18 +123,17 @@ describe("U4 objective evidence and model autonomy",()=>{
   it("does not inflate corroboration from repeated calls or differently named views of one source",()=>{
     const same=verifyObjectiveTurn(turn("ATTENTION: Recorded sales need review.",{
       toolInvocations:[
-        {name:"get_sales",result:source},
-        {name:"get_sales",result:source},
-        {name:"get_item_sales",result:{...source,items:[{quantity:4}]}},
+        {name:"query_data",result:source},
+        {name:"query_data",result:source},
+        {name:"query_data",result:{...source,view:"cv_item_sales",rows:[{sum_quantity:4}]}},
       ],
     }),watch);
     expect(same.sourceCount).toBe(1);
     expect(same.sourceDomains).toEqual(["recorded_sales"]);
     const independent=verifyObjectiveTurn(turn("Review independent sales and inventory.",{
       toolInvocations:[
-        {name:"get_sales",result:source},
-        {name:"get_inventory",result:{source:"stock_snapshot",period:null,
-          missing:[],items:[{quantity:3}]}},
+        {name:"query_data",result:source},
+        {name:"query_data",result:{...source,view:"cv_inventory",rows:[{count_quantity:3}]}},
       ],
     }),objective);
     expect(independent.sourceCount).toBe(2);
@@ -146,14 +144,14 @@ describe("U4 objective evidence and model autonomy",()=>{
       missing:[],ownerProfitCents:5024};
     const checked=verifyObjectiveTurn(turn("Review source-backed margin carefully.",{
       toolInvocations:[
-        {name:"get_sales",result:source},
-        {name:"get_profit",result:computed},
+        {name:"query_data",result:source},
+        {name:"query_data",result:{...computed,metric_basis:"official_shared_definition"}},
       ],
     }),objective);
     expect(checked.sourceCount).toBe(1);
     expect(checked.sourceDomains).toEqual(["recorded_sales"]);
     expect(checked.sourceRefs).toHaveLength(2);
-    expect(checked.sourceRefs[1].domain).toBe("other:derived_cafe_profit");
+    expect(checked.sourceRefs[1].domain).toBe("other:derived_profit");
   });
   it("attributes each canonical query to its real source, not generically to sales",()=>{
     const fromQuery=(view:string)=>({source:"canonical_data",view,
@@ -162,10 +160,9 @@ describe("U4 objective evidence and model autonomy",()=>{
       aggregateOnly:true,truncated:false});
     const result=verifyObjectiveTurn(turn("Review recorded sales and scheduling evidence.",{
       toolInvocations:[
-        {name:"get_sales",result:source},
+        {name:"query_data",result:source},
         {name:"query_data",result:fromQuery("cv_sales_days")},
-        {name:"get_schedule",result:{source:"schedule",period:null,
-          missing:[],shifts:[{durationHours:6}]}},
+        {name:"query_data",result:fromQuery("cv_shifts")},
         {name:"query_data",result:fromQuery("cv_shifts")},
         {name:"query_data",result:fromQuery("cv_cash")},
         {name:"query_data",result:fromQuery("cv_cash")},
@@ -191,7 +188,7 @@ describe("U4 objective evidence and model autonomy",()=>{
         relation_names:["orders","order_lines"],query_fingerprint:"a".repeat(64)},
     };
     const alongside=verifyObjectiveTurn(turn("Recorded sales need verification.",{
-      toolInvocations:[{name:"get_sales",result:source},
+      toolInvocations:[{name:"query_data",result:source},
         {name:"query_data",result:signedSql}],
     }),objective);
     expect(alongside.sourceCount).toBe(1);
@@ -207,11 +204,11 @@ describe("U4 objective evidence and model autonomy",()=>{
   it("hashes all original observed source bytes without persisting their raw text",()=>{
     const common="recorded-context:".repeat(1300);
     const a=verifyObjectiveTurn(turn("Source A recorded." ,{
-      toolInvocations:[{name:"get_sales",result:{...source,
+      toolInvocations:[{name:"query_data",result:{...source,
         sourceNote:common+"suffix-a"}}],
     }),objective);
     const b=verifyObjectiveTurn(turn("Source B recorded.",{
-      toolInvocations:[{name:"get_sales",result:{...source,
+      toolInvocations:[{name:"query_data",result:{...source,
         sourceNote:common+"suffix-b"}}],
     }),objective);
     expect(a.sourceRefs[0].evidenceDigest).not.toBe(b.sourceRefs[0].evidenceDigest);
@@ -295,7 +292,7 @@ describe("U4 objective evidence and model autonomy",()=>{
     };
     expect(observedObjectiveEvidence(stock)).toBe(true);
     const checked=verifyObjectiveTurn(turn("Recorded inventory contains a dated zero and an unknown Toast item.",{
-      toolInvocations:[{name:"get_inventory",result:stock}],
+      toolInvocations:[{name:"query_data",result:stock}],
       results:[stock],
     }),objective);
     expect(checked.sourceCount).toBe(1);
@@ -312,7 +309,7 @@ describe("U4 objective evidence and model autonomy",()=>{
     })).toBe(false);
     expect(observedObjectiveEvidence({...source,missing:["source_unavailable"]})).toBe(false);
     expect(()=>verifyObjectiveTurn(turn("ATTENTION: Trust me.",{
-      toolInvocations:[{name:"get_sales",result:{source:"sales",period:null,missing:[]}}],
+      toolInvocations:[{name:"query_data",result:{source:"sales",period:null,missing:[]}}],
     }),watch)).toThrow("u4_no_verified_source_observation");
   });
   it("rejects unsupported numeric facts, model failure, unsupported external effects",()=>{
@@ -335,7 +332,7 @@ describe("U4 owner-only connector capability and independent mailbox revocation"
   it("refuses an unexpected external effect even alongside genuine café facts",()=>{
     const effectAttempt=turn("Review real café evidence.",{
       toolInvocations:[
-        {name:"get_sales",result:source},
+        {name:"query_data",result:source},
         {name:"propose_price_change",result:{
           source:"price_proposal",period:null,missing:[],proposalCreated:true,
         }},
@@ -345,7 +342,7 @@ describe("U4 owner-only connector capability and independent mailbox revocation"
       .toThrow("u4_unadmitted_tool_invocation");
     expect(()=>verifyObjectiveTurn(turn("NO_ACTION_REQUIRED: Sales are normal.",{
       toolInvocations:[
-        {name:"get_sales",result:source},
+        {name:"query_data",result:source},
         {name:"read_gmail",result:{
           source:"gmail",period:null,missing:[],message:{id:"vendor-msg-987654"},
         }},
@@ -443,7 +440,7 @@ describe("U4 original work-identity checkpoints",()=>{
     expect(calls.every(c=>!JSON.stringify(c[1]).includes("99999"))).toBe(true);
     const continuation=await checkpoint.resumeContext();
     expect(continuation).toContain("RESUMED ORIGINAL ROUTINE OCCURRENCE");
-    expect(continuation).toContain("get_sales");
+    expect(continuation).not.toContain("get_sales");
     expect(continuation).not.toContain("99999");
     expect(await checkpoint.restoredResults?.()).toEqual([]);
   });
@@ -508,7 +505,7 @@ describe("U4 scheduled model execution persists only verified outcomes",()=>{
     expect(args?.ownerText).toContain("Review next week's staffing, stock, demand and costs.");
     expect(args?.ownerText).toContain("SYSTEM-EXECUTED OWNER ROUTINE");
     expect(args?.ownerText).toContain("PRIOR_ASSESSMENTS=[]");
-    expect(args?.toolNames).toContain("get_inventory");
+    expect(args?.toolNames).not.toContain("get_inventory");
     expect(args?.toolNames).toContain("describe_data");
     expect(args?.toolNames).toContain("query_data");
     expect(args?.context.staffMessages).toBeDefined();
@@ -530,8 +527,8 @@ describe("U4 scheduled model execution persists only verified outcomes",()=>{
     const rpc=vi.fn(async()=>({data:true,error:null}));
     const db={rpc,...mockRoutineHistory()} as never;
     vi.mocked(runAgentTurn).mockImplementationOnce(async args=>{
-      expect(args.toolNames).toContain("get_week_schedule");
-      expect(args.toolNames).toContain("get_cashflow_evidence");
+      expect(args.toolNames).not.toContain("get_week_schedule");
+      expect(args.toolNames).not.toContain("get_cashflow_evidence");
       const week=await args.context.readWeekSchedule?.("2026-11-16");
       const finance=await args.context.financialEvidenceRead?.({horizonDays:14});
       expect(week).toMatchObject({ok:true});

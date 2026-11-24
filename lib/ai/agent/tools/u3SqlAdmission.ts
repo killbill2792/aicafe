@@ -8,7 +8,7 @@ const parser=new PgParser({version:17});
 // Bound pre-parse memory and actual AST traversal, not the length of an
 // ordinary analytical statement. The transport/provider also bounds requests.
 // The byte guard is a defensive parser resource limit, not a business rule.
-const MAX_PARSER_BYTES=256*1024,MAX_NODES=1800;
+const MAX_PARSER_BYTES=256*1024;
 const prohibited=new Set([
  "InsertStmt","UpdateStmt","DeleteStmt","MergeStmt","CopyStmt","CallStmt",
  "DoStmt","CreateStmt","AlterTableStmt","DropStmt","TruncateStmt",
@@ -144,6 +144,15 @@ export async function admitU3Sql(sql:string,allowedRelations:readonly string[],
  if(!Array.isArray(tree.stmts)||tree.stmts.length!==1||
   !tree.stmts[0]?.stmt||!("SelectStmt" in tree.stmts[0].stmt))
   throw new U3AdmissionError("statement_not_read_only");
+ // Protect the recursive lineage walker from stack exhaustion, without a
+ // flat AST-node ceiling that rejects wide but legitimate analytical SQL.
+ const pending:Array<{value:unknown;depth:number}>=[{value:tree,depth:0}];
+ while(pending.length){
+  const {value,depth}=pending.pop()!;
+  if(depth>256)throw new U3AdmissionError("parser_resource_bound");
+  if(value&&typeof value==="object")
+   for(const child of Object.values(value))pending.push({value:child,depth:depth+1});
+ }
  const catalog=new Set(allowedRelations);
  // Privacy admission depends on source/field semantics, never model aliases.
  // Derived numeric/date-safe columns are admitted as a set from the verified
@@ -219,7 +228,7 @@ export async function admitU3Sql(sql:string,allowedRelations:readonly string[],
     typeof n==="number"||typeof n==="boolean")return;
   if(Array.isArray(n)){n.forEach(value=>walk(value,false));return;}
   if(typeof n!=="object")throw Error("invalid_query");
-  nodes++;if(nodes>MAX_NODES)throw new U3AdmissionError("parser_resource_bound");
+  nodes++;
   for(const [kind,raw] of Object.entries(n)){
    if(prohibited.has(kind))throw new U3AdmissionError("statement_not_read_only");
    // Ordinary scoped relational views expose only reviewed business fields.

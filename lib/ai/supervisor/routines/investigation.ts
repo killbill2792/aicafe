@@ -1,7 +1,7 @@
 import type {AgentTurn} from "@/lib/ai/agent/loop.server";
 import type {AgentToolName,AgentToolResult} from "@/lib/ai/agent/tools";
 import {CUSTOMER_MONITOR_POLICY,customerTrendEvidenceFields} from "@/lib/metrics/core/customers";
-import {hasVerifiedU3NumericObservation} from "@/lib/ai/agent/checkNumbers";
+import {hasVerifiedU3NumericObservation,hasVerifiedU3DirectObservation} from "@/lib/ai/agent/checkNumbers";
 import {unreplacedResearchAttempts,completeResearchAttempts} from "@/lib/ai/agent/researchRecovery";
 
 /** Task 15A uses the SAME registered Supervisor model/tool loop, restricted to
@@ -181,27 +181,7 @@ export function hasObservedEvidence(result:AgentToolResult):boolean{
     // The executor must attest whether its output was truncated. An omitted
     // completeness flag is not permission to publish a source-backed finding.
     if(result.truncated!==false)return false;
-    if(hasVerifiedU3NumericObservation(result))return true;
-    // A signed direct column observation (for example a saved event name,
-    // source state or recorded timestamp) is evidence too. A SELECT literal
-    // or arbitrary output alias has no column origin and cannot qualify.
-    const proof=result.evidence;
-    if(!proof||typeof proof!=="object"||Array.isArray(proof))return false;
-    const e=proof as Record<string,unknown>;
-    if(e.scope!=="verified_owner_cafe_lease"||typeof e.receipt_id!=="string"||
-      !Array.isArray(e.relation_names)||!e.column_origins||typeof e.column_origins!=="object"||
-      Array.isArray(e.column_origins)||!Array.isArray(result.rows))return false;
-    const relations=e.relation_names;
-    return result.rows.some(row=>row&&typeof row==="object"&&!Array.isArray(row)&&
-      Object.entries(e.column_origins as Record<string,unknown>).some(([label,raw])=>{
-        if(!raw||typeof raw!=="object"||Array.isArray(raw))return false;
-        const origin=raw as Record<string,unknown>;
-        if(!relations.includes(origin.relation)||typeof origin.column!=="string"||
-          !Number.isSafeInteger(origin.binding))return false;
-        const value=(row as Record<string,unknown>)[label];
-        return typeof value==="boolean"||typeof value==="number"&&Number.isFinite(value)||
-          typeof value==="string"&&value.trim().length>0;
-      }));
+    return hasVerifiedU3NumericObservation(result)||hasVerifiedU3DirectObservation(result);
   }
   if(result.source==="canonical_data"){
     if(result.error||result.empty||result.truncated||result.aggregateOnly!==true||!Array.isArray(result.rows))return false;

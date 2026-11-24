@@ -41,6 +41,10 @@ describe("U3 governed PostgreSQL AST admission",()=>{
   const result=await admitU3Sql("WITH "+ctes+" SELECT n FROM c0",admitted);
   expect(result.cteCount).toBe(15);
  });
+ it("accepts a wide analytical query without the former flat AST node ceiling",async()=>{
+  const sql="SELECT count(*) FROM orders WHERE net_sales_cents IN ("+Array.from({length:1900},(_,i)=>String(i)).join(",")+")";
+  expect((await admitU3Sql(sql,admitted)).nodeCount).toBeGreaterThan(1800);
+ });
  it("requires a top-level order rather than a nested/window order for result paging",async()=>{
   const ordered=await admitU3Sql("SELECT id FROM orders ORDER BY id",admitted);
   expect(ordered.hasTopLevelOrder).toBe(true);
