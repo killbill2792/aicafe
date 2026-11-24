@@ -2,10 +2,6 @@ import {readdirSync, readFileSync} from "node:fs";
 import {describe,it,expect,vi} from "vitest";
 import {agentToolDefinitions,executeAgentTool,retiredResearchTools,type AgentToolContext,type AgentToolName} from "./index";
 import {dataQueryTools} from "./dataQuery";
-import {getFixtureSnapshot} from "@/lib/data/fixtureSnapshot";
-import {businessCostSummaryFromSnapshot} from "@/lib/operating/businessCosts";
-import {breakEvenSnapshotInputs} from "@/lib/viewmodels/breakEvenViewModel";
-import {type Economics} from "@/lib/calc/supervisorEconomics";
 
 const businessId="aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
 const caller=()=> {
@@ -136,102 +132,21 @@ describe("canonical data available to authenticated chat, not only standalone to
  });
 });
 
-describe("optional official shared metric selection in registered query_data",()=>{
- it("retains exact shared expense and recurring-bill calculations without model-facing reporting functions",async()=>{
-  const {context}=caller();
-  const q={level:"high" as const,missingInputs:[],estimatedInputs:[],staleInputs:[]};
-  const categoryRows=Array.from({length:21},(_,i)=>({categoryCode:"custom_"+i,label:"Cost "+i,amountCents:100+i,isEstimate:true,isMissing:false}));
-  const ctx:AgentToolContext={...context,tools:{...context.tools,
-   getRecordedExpenses:async()=>({available:true,value:{totalCents:12000} as never,quality:q}),
-   getExpenseSummary:async()=>({available:true,value:categoryRows as never,quality:q}),
-   getMonthlyBills:async()=>({available:true,value:{totalCents:15000} as never,quality:{...q,estimatedInputs:["configured_cost"]}})}};
-  for(const name of ["get_expenses","get_bills"])expect(agentToolDefinitions.some(t=>t.name===name)).toBe(false);
-  const period={from:"2026-10-01",to:"2026-10-20"};
-  const expenses=await executeAgentTool("query_data",{official_metric:{id:"expenses",period_mode:null,period}},ctx);
-  expect(expenses).toEqual({...await executeAgentTool("get_expenses",{period,category:null},ctx),metric_id:"expenses",metric_basis:"official_shared_definition",evidence:{receipt_id:expect.stringMatching(/^[a-f0-9-]{36}$/i),authority:"official_shared_definition"}});
-  expect(expenses.categories).toHaveLength(21);
-  expect(expenses.recordedActualTotalCents).toBe(12000);
-  const recurring=await executeAgentTool("query_data",{official_metric:{id:"recurring_bills",period_mode:null}},ctx);
-  expect(recurring).toEqual({...await executeAgentTool("get_bills",{},ctx),metric_id:"recurring_bills",metric_basis:"official_shared_definition",evidence:{receipt_id:expect.stringMatching(/^[a-f0-9-]{36}$/i),authority:"official_shared_definition"}});
-  expect(recurring.estimated).toBe(true);
- });
-
- it("returns the same break-even calculation, period and quality as the shared screen basis",async()=>{
-  const snapshot=getFixtureSnapshot();
-  const basis=breakEvenSnapshotInputs(snapshot);
+describe("registered general research does not dispatch named reports",()=>{
+ it("does not declare or execute any retired official metric selector",async()=>{
+  const definition=agentToolDefinitions.find(t=>t.name==="query_data");
+  expect(definition?.parameters.properties).not.toHaveProperty("official_metric");
   const {context,rpc}=caller();
-  const ctx:AgentToolContext={...context,asOf:snapshot.todayDateStr,
-   readEconomics:async()=>({canonicalBreakEven:basis,
-    economics:{openDaysBasis:"opening_hours"} as unknown as Economics,
-    items:[],staff:[],ownerMonthlyPayrollExtrasCents:null,ownerIngredientRate:null})};
-  const result=await executeAgentTool("query_data",{official_metric:{id:"break_even",period_mode:"month"}},ctx);
-  const existing=await executeAgentTool("get_break_even",{period:"month"},ctx);
-  expect(result).toEqual({...existing,metric_id:"break_even",metric_basis:"official_shared_definition",evidence:{receipt_id:expect.stringMatching(/^[a-f0-9-]{36}$/i),authority:"official_shared_definition"}});
-  expect(result.monthlyBreakEvenCents).toBe(basis.shared.salesPerMonthCents);
-  expect(rpc).not.toHaveBeenCalled();
- });
- it("retires the redundant model-facing break-even tool but preserves every shared period and override",async()=>{
-  expect(agentToolDefinitions.some(t=>t.name==="get_break_even")).toBe(false);
-  const snapshot=getFixtureSnapshot();
-  const {context}=caller();
-  const ctx:AgentToolContext={...context,asOf:snapshot.todayDateStr,
-   readEconomics:async()=>({canonicalBreakEven:breakEvenSnapshotInputs(snapshot),
-    canonicalSnapshot:snapshot,
-    economics:{openDaysBasis:"opening_hours"} as unknown as Economics,
-    items:[],staff:[],ownerMonthlyPayrollExtrasCents:null,ownerIngredientRate:null})};
-  for(const period of ["today","month_to_date","month"] as const){
-   for(const overrides of [null,{ownerIngredientPackagingPercent:22,ownerProcessingFeePercent:3,
-      ownerOpenDaysPerMonth:24,ownerNetSalesCents:123456,ownerSalesDays:4}]){
-    const old=await executeAgentTool("get_break_even",{period,...overrides},ctx);
-    const unified=await executeAgentTool("query_data",{official_metric:{id:"break_even",
-     period_mode:period,break_even_overrides:overrides}},ctx);
-    expect(unified).toEqual({...old,metric_id:"break_even",metric_basis:"official_shared_definition",evidence:{receipt_id:expect.stringMatching(/^[a-f0-9-]{36}$/i),authority:"official_shared_definition"}});
-   }
-  }
- });
- it("retires the redundant model-facing profit declaration without losing period or shared-screen parity",async()=>{
-  expect(agentToolDefinitions.some(t=>t.name==="get_profit")).toBe(false);
-  const {context}=caller();
-  const quality={level:"high" as const,missingInputs:[],estimatedInputs:[],staleInputs:[]};
-  const ctx:AgentToolContext={...context,tools:{
-   ...context.tools,getProfitability:async()=>({available:true,value:{netSalesCents:20000,
-    totalCostsCents:10000,ownerProfitCents:10000,operatingMargin:.5,
-    coveredSalesDays:20,expectedSalesDays:20},quality})}};
-  for(const period of ["month","last_month","last_week",{from:"2023-01-01",to:"2026-10-20"}] as const){
-   const old=await executeAgentTool("get_profit",{period},ctx);
-   const unified=await executeAgentTool("query_data",{official_metric:{id:"profit",
-    period_mode:null,profit_period:period}},ctx);
-   expect(unified).toEqual({...old,metric_id:"profit",metric_basis:"official_shared_definition",evidence:{receipt_id:expect.stringMatching(/^[a-f0-9-]{36}$/i),authority:"official_shared_definition"}});
-  }
-  expect((await executeAgentTool("query_data",{official_metric:{id:"profit",period_mode:null,
-   profit_period:"month"},date_from:"2026-10-01",date_to:"2026-10-20"},ctx)).error)
-   .toBe("invalid_date_range");
- });
- it("retires the cost summary report while preserving the official period, coverage and unknown components",async()=>{
-  const snapshot=getFixtureSnapshot();
-  const {context}=caller();
-  const period={from:snapshot.monthKey+"-01",to:snapshot.todayDateStr};
-  const observed=businessCostSummaryFromSnapshot(snapshot,period);
-  const partial={...observed,completeness:"partial" as const,
-   observed:{...observed.observed,loadedStaff:false},missingInputs:["staffCostsUnobserved"]};
-  const ctx:AgentToolContext={...context,asOf:snapshot.todayDateStr,tools:{...context.tools,getBusinessCostSummary:async()=>partial}};
-  expect(agentToolDefinitions.some(t=>t.name==="get_cost_summary")).toBe(false);
-  const old=await executeAgentTool("get_cost_summary",{period},ctx);
-  const unified=await executeAgentTool("query_data",{official_metric:{id:"business_costs",period_mode:null,period}},ctx);
-  expect(unified).toEqual({...old,metric_id:"business_costs",metric_basis:"official_shared_definition",evidence:{receipt_id:expect.stringMatching(/^[a-f0-9-]{36}$/i),authority:"official_shared_definition"}});
-  expect(unified.components).toMatchObject({loadedStaffCents:null});
-  expect(unified.missing).toContain("staffCostsUnobserved");
-  const missing=await executeAgentTool("query_data",{official_metric:{id:"business_costs",period_mode:null,period}},context);
-  expect(missing.missing).toContain("costSummaryReaderUnavailable");
- });
- it("rejects ambiguous mixed selectors and missing scope before accessing a metric",async()=>{
-  const {context}=caller();
   const readEconomics=vi.fn(async()=>{throw Error("must not be called");});
   const ctx={...context,readEconomics};
-  const args={official_metric:{id:"break_even",period_mode:"month"}};
-  expect((await executeAgentTool("query_data",{...args,sql:"select 1"},ctx)).missing).toContain("invalid_query");
-  expect((await executeAgentTool("query_data",{...args,date_from:"2026-10-01"},ctx)).missing).toContain("invalid_date_range");
-  expect((await executeAgentTool("query_data",args,{...ctx,canonicalData:undefined})).missing).toContain("canonical_reader_unavailable");
+  for(const id of ["profit","break_even","expenses","recurring_bills","sales","hourly_sales",
+   "labor","current_staff","business_costs","payroll","item_sales","product_cost","usage_variance",
+   "goal_score","labor_rules","planned_week_labor","cashflow_stress"]){
+   const selector={official_metric:{id,period_mode:null}};
+   expect((await executeAgentTool("query_data",selector,ctx)).error).toBe("invalid_query");
+   expect((await executeAgentTool("query_data",{...selector,sql:"select 1"},ctx)).error).toBe("invalid_query");
+  }
   expect(readEconomics).not.toHaveBeenCalled();
+  expect(rpc).not.toHaveBeenCalled();
  });
 });
