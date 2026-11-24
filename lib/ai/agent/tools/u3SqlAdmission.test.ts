@@ -18,6 +18,17 @@ describe("U3 governed PostgreSQL AST admission",()=>{
   const meta=await admitU3Sql(sql,admitted,sql.includes("$1")?1:0);
   expect(meta.relations.length).toBeGreaterThan(0);
  });
+ it("does not impose arbitrary 18-relation or 12-CTE research ceilings",async()=>{
+  const relations=Array.from({length:21},(_,i)=>"orders o"+i);
+  const joined=relations.reduce((q,table,i)=>
+    q+(i===0?" FROM ":" JOIN ")+table+(i?" ON o0.id=o"+i+".id":""),"SELECT count(*) AS n");
+  const meta=await admitU3Sql(joined,admitted);
+  expect(meta.relations).toContain("orders");
+  const ctes=Array.from({length:15},(_,i)=>
+    "c"+i+" AS (SELECT count(*) AS n FROM orders)").join(",");
+  const result=await admitU3Sql("WITH "+ctes+" SELECT n FROM c0",admitted);
+  expect(result.cteCount).toBe(15);
+ });
  it("requires a top-level order rather than a nested/window order for result paging",async()=>{
   const ordered=await admitU3Sql("SELECT id FROM orders ORDER BY id",admitted);
   expect(ordered.hasTopLevelOrder).toBe(true);
