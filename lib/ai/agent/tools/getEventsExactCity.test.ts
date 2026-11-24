@@ -17,12 +17,12 @@ const context=(savedEvents:NonNullable<AgentToolContext["savedEvents"]>):AgentTo
 });
 
 describe("G exact owner-selected city event via existing get_events and canonical port",()=>{
-  it("exposes a strict nullable cityEventId with no café scope chosen by the model",()=>{
-    const tool=agentToolDefinitions.find(x=>x.name==="get_events");
+  it("retires the separate model declaration; general SQL binds exact event identity without a model-selected cafe",()=>{
+    expect(agentToolDefinitions.some(x=>x.name==="get_events")).toBe(false);
+    const tool=agentToolDefinitions.find(x=>x.name==="query_data");
     expect(tool?.strict).toBe(true);
-    expect(tool?.parameters.required).toEqual(["from","to","cityEventId","cafeEventId"]);
-    expect(JSON.stringify(tool?.parameters.properties?.cityEventId)).toContain("null");
-    expect(JSON.stringify(tool?.parameters.properties?.cafeEventId)).toContain("null");
+    expect(tool?.parameters.properties).toHaveProperty("sql");
+    expect(tool?.parameters.properties).toHaveProperty("parameters");
     expect(JSON.stringify(tool?.parameters)).not.toContain("businessId");
   });
   it("retrieves the seventh or 501st same-day event by exact ID instead of the six-item summary",async()=>{

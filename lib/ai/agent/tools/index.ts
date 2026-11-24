@@ -1,3 +1,4 @@
+import {authorizedU3Detail} from "./u3SqlResearch.server";
 import { presentationTools,presentResponse } from "./presentation";
 import { laborKnown } from "@/lib/calc";
 import { z } from "zod";
@@ -325,7 +326,8 @@ const baseToolDefinitions = (Object.keys(schemas) as AgentToolName[]).map(name =
 // profit/break_even use the optional official shared definition; opening_hours
 // and employee_sales_rollup are normal discoverable SQL sources.
 export const retiredResearchTools:ReadonlySet<AgentToolName>=new Set([
-  "get_profit","get_break_even","get_business_hours","get_employee_sales","get_expenses","get_bills","get_sales","get_peak_hours","get_labor","get_staff","get_cost_summary","get_ingredient_costs","get_payroll_facts","get_item_sales","get_product_costs","get_usage_variance","get_goal_status","get_labor_rules","get_nearby_events"
+  "get_profit","get_break_even","get_business_hours","get_employee_sales","get_expenses","get_bills","get_sales","get_peak_hours","get_labor","get_staff","get_cost_summary","get_ingredient_costs","get_payroll_facts","get_item_sales","get_product_costs","get_usage_variance","get_goal_status","get_labor_rules","get_nearby_events",
+  "get_menu_items","get_inventory","get_schedule","get_team","get_week_schedule","get_cashflow_evidence","get_events"
 ]);
 // Routine management remains a verified-owner-only additional function.
 export const agentToolDefinitions:Array<Omit<(typeof baseToolDefinitions)[number],"name">&{name:string}>=
@@ -443,12 +445,30 @@ export async function executeAgentTool(name: string, raw: unknown, ctx: AgentToo
         if(!p.official_metric||[p.view,p.sql,p.parameters,p.cursor??null,p.columns,p.filters,
           p.group_by,p.metrics,p.order_by,p.limit].some(v=>v!==null))return invalid("invalid_query");
         const metric=p.official_metric;
-        if(scope.aggregateOnly&&(metric.id==="payroll"||metric.id==="goal_score"||metric.id==="labor_rules"||metric.id==="usage_variance"&&metric.dimension==="staff"))return invalid("owner_research_required");
+        // Exact shared calculations use the same independently verified
+        // responsibility as relational SQL; legacy view compatibility stays
+        // aggregate-protected off-turn.
+        const protectedMetric=scope.aggregateOnly&&["cashflow_stress","payroll","goal_score","labor_rules","usage_variance","current_staff","labor"].includes(metric.id)&&
+          !await authorizedU3Detail({...scope,aggregateOnly:scope.aggregateOnly});
+        if(protectedMetric&&(metric.id==="cashflow_stress"||metric.id==="payroll"||metric.id==="goal_score"||metric.id==="labor_rules"||metric.id==="usage_variance"&&metric.dimension==="staff"))return invalid("owner_research_required");
          if(metric.entity_id!=null&&!["product_cost","goal_score"].includes(metric.id)||
            metric.entity_name!=null&&!["item_sales","usage_variance"].includes(metric.id)||
            metric.dimension!=null&&metric.id!=="usage_variance")return invalid("invalid_query");
+        if(metric.horizon_days!=null&&metric.id!=="cashflow_stress")return invalid("invalid_query");
         let result:AgentToolResult;
-        if(metric.id==="profit"){
+        if(metric.id==="planned_week_labor"||metric.id==="cashflow_stress"){
+          if(metric.period_mode!==null||metric.profit_period!=null||metric.profit_owner_inputs!=null||metric.break_even_overrides!=null||metric.period!=null||metric.entity_id!=null||metric.entity_name!=null||metric.dimension!=null)return invalid("invalid_query");
+          if(metric.id==="planned_week_labor"){
+            if(p.date_to!==null)return invalid("invalid_date_range");
+            const calculation=await scheduleReadTools.get_week_schedule.execute({week_start:p.date_from},ctx);
+            const {shifts:_shifts,...totals}=calculation;void _shifts;
+            result=totals;
+          }else{
+            if(p.date_from!==null||p.date_to!==null)return invalid("invalid_date_range");
+            // Exact existing stress calculation; documentary records are independently queryable.
+            result=await moneyTools.get_cashflow_evidence.execute({horizonDays:metric.horizon_days??30},ctx);
+          }
+        }else if(metric.id==="profit"){
           if(metric.period_mode!==null||metric.break_even_overrides!=null||metric.period!=null&&metric.profit_period!=null)
             return invalid("invalid_query");
           const period=metric.period??metric.profit_period??(p.date_from&&p.date_to&&p.date_from<=p.date_to?
@@ -502,10 +522,10 @@ export async function executeAgentTool(name: string, raw: unknown, ctx: AgentToo
         // or label independent model arithmetic as an official metric.
         // Unattended SQL access is aggregate-only; do not bypass that
         // boundary through an official metric's legacy reader.
-        if(scope.aggregateOnly&&metric.id==="current_staff"){
+        if(protectedMetric&&metric.id==="current_staff"){
           const {people:_people,...aggregate}=result;void _people;result=aggregate;
         }
-        if(scope.aggregateOnly&&metric.id==="labor"){
+        if(protectedMetric&&metric.id==="labor"){
           const {attendance:_attendance,missingWageShifts:_shifts,pendingPosStaffReviews:_reviews,...aggregate}=result;
           void _attendance;void _shifts;void _reviews;result=aggregate;
         }

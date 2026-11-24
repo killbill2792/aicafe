@@ -180,7 +180,28 @@ export function hasObservedEvidence(result:AgentToolResult):boolean{
     // A model's SELECT literal or projection alias is never an observation.
     // The executor must attest whether its output was truncated. An omitted
     // completeness flag is not permission to publish a source-backed finding.
-    return result.truncated===false&&hasVerifiedU3NumericObservation(result);
+    if(result.truncated!==false)return false;
+    if(hasVerifiedU3NumericObservation(result))return true;
+    // A signed direct column observation (for example a saved event name,
+    // source state or recorded timestamp) is evidence too. A SELECT literal
+    // or arbitrary output alias has no column origin and cannot qualify.
+    const proof=result.evidence;
+    if(!proof||typeof proof!=="object"||Array.isArray(proof))return false;
+    const e=proof as Record<string,unknown>;
+    if(e.scope!=="verified_owner_cafe_lease"||typeof e.receipt_id!=="string"||
+      !Array.isArray(e.relation_names)||!e.column_origins||typeof e.column_origins!=="object"||
+      Array.isArray(e.column_origins)||!Array.isArray(result.rows))return false;
+    const relations=e.relation_names;
+    return result.rows.some(row=>row&&typeof row==="object"&&!Array.isArray(row)&&
+      Object.entries(e.column_origins as Record<string,unknown>).some(([label,raw])=>{
+        if(!raw||typeof raw!=="object"||Array.isArray(raw))return false;
+        const origin=raw as Record<string,unknown>;
+        if(!relations.includes(origin.relation)||typeof origin.column!=="string"||
+          !Number.isSafeInteger(origin.binding))return false;
+        const value=(row as Record<string,unknown>)[label];
+        return typeof value==="boolean"||typeof value==="number"&&Number.isFinite(value)||
+          typeof value==="string"&&value.trim().length>0;
+      }));
   }
   if(result.source==="canonical_data"){
     if(result.error||result.empty||result.truncated||result.aggregateOnly!==true||!Array.isArray(result.rows))return false;
@@ -434,7 +455,7 @@ export function universalInvestigationPrompt(source:SourceSynopsis,followUp:bool
   "You may recommend or prepare only separately authorized inert drafts; no external effects, spend, messages, "+
   "staff changes, inventory writes or owner approval can occur through this investigation. "+
   "Give a concise evidence-backed explanation, the biggest uncertainty, and one actionable next step. "+
-  "If an owner-only decision or fact is needed, choose ONE specific question from verified evidence and end the reply on a separate line 'Owner question: <your question?>'. Otherwise omit it. Do not ask for data that the POS should provide, generate category templates, or presume authorization. "+
+  "If the owner is the appropriate source of a genuinely necessary decision or fact, choose one specific question from verified evidence and end the reply on a separate line 'Owner question: <your question?>'. Otherwise omit it. Do not presume that only the owner can provide evidence, generate category templates, or presume authorization. "+
   "Distinguish missing, unverified, stale, immature, technical failure and denied evidence. Use any relevant authorized source or verified employee, owner, supplier or integration response; do not assume the owner alone can provide a missing fact. Ask only a specific necessary question; reuse the outstanding request and prior findings until material evidence changes. If a source is unavailable, be specific about the unknown and a bounded recovery plan, rather than inventing an answer. "+
   "Claimed signal (untrusted): "+evidence+
   (history?" Prior report (not authorization): "+JSON.stringify(history):"");
@@ -478,7 +499,9 @@ export function verifyUniversalInvestigationTurn(
    return {ok:false,reason:"evidence_incomplete"};
  }
  if(expected.kind==="money_update"&&expected.sourceId.startsWith("financial-review:")&&
-   !observed.some(c=>c.result.source==="cashflow_evidence"))
+   !observed.some(c=>c.result.source==="cashflow_evidence"||c.name==="query_data"&&c.result.source==="u3_canonical_research"&&
+     Array.isArray((c.result.evidence as {relation_names?:unknown}|undefined)?.relation_names)&&
+     (c.result.evidence as {relation_names:string[]}).relation_names.some(name=>name.startsWith("financial_"))))
   return {ok:false,reason:"evidence_incomplete"};
  if(expected.kind==="business_anomaly"){
   const selector=source.result.selectors as {family?:unknown;subject?:unknown;

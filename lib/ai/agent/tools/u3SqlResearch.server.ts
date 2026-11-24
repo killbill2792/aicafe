@@ -250,12 +250,24 @@ export function selectU3Catalog(all:readonly U3Relation[],p:{
   truncated:true,missing:["row_exceeds_page_budget"]};
  return build();
 }
+// The database, not a model argument or a blanket execution-mode check,
+// determines whether the current signed responsibility permits detail.
+async function privateDetailAllowed(client:PoolClient,ctx:U3SqlContext):Promise<boolean>{
+ if(ctx.mode!=="routine"&&ctx.mode!=="investigation")return ctx.aggregateOnly!==true;
+ const result=await client.query("SELECT u3_research.authorized_detail() AS allowed");
+ return result.rows[0]?.allowed===true;
+}
+export async function authorizedU3Detail(ctx:U3SqlContext):Promise<boolean>{
+ if(ctx.mode!=="routine"&&ctx.mode!=="investigation")return ctx.aggregateOnly!==true;
+ if(!u3SqlConfigured())return false;
+ return withinScope(ctx,client=>privateDetailAllowed(client,ctx));
+}
 export async function describeU3Catalog(ctx:U3SqlContext,p:{
  search?:string|null;relation?:string|null;offset?:number|null;limit?:number|null
 }){
  return withinScope(ctx,async client=>{
   const all=await sources(client);
-  const aggregateOnly=ctx.aggregateOnly===true||ctx.mode==="routine"||ctx.mode==="investigation";
+  const aggregateOnly=!await privateDetailAllowed(client,ctx);
   const visible=aggregateOnly?all.filter(r=>!ownerOnlyResearchRelations.has(r.name)):all;
   return selectU3Catalog(visible,p,ctx.resultBudgetBytes);
  });
@@ -376,7 +388,7 @@ export async function runU3Sql(ctx:U3SqlContext,raw:unknown){
    // Off-turn privacy is source/field-based, not a regex over model-
    // selected output aliases. These are reusable data classes rather than
    // question patterns; personal IDs, text and unrestricted JSON are excluded.
-   const aggregateOnly=ctx.aggregateOnly===true||ctx.mode==="routine"||ctx.mode==="investigation";
+   let aggregateOnly=!await privateDetailAllowed(client,ctx);
    const offturnByRelation=Object.fromEntries(list.map(r=>[r.name,
     ownerOnlyResearchRelations.has(r.name)?[]:
     r.columns.filter(c=>
@@ -408,8 +420,16 @@ export async function runU3Sql(ctx:U3SqlContext,raw:unknown){
      knownColumnUnits[col.name]=unit;
    }
    stage.value="admission";
-   const plan=await admitU3Sql(p.sql,list.map(r=>r.name),p.parameters?.length??0,
-    aggregateOnly,[...safeOffturnColumns],knownColumnUnits,relationUnits satisfies U3RelationUnits,offturnByRelation);
+   const admit=(protectedRead:boolean)=>admitU3Sql(p.sql,list.map(r=>r.name),p.parameters?.length??0,
+    protectedRead,[...safeOffturnColumns],knownColumnUnits,relationUnits satisfies U3RelationUnits,offturnByRelation);
+   let plan=await admit(aggregateOnly);
+   // Even authorized off-turn operational research preserves the existing
+   // customer and retained-provider masking. Revalidate their actual input
+   // lineage and reduced result grain, not model-selected aliases.
+   if(!aggregateOnly&&(ctx.mode==="routine"||ctx.mode==="investigation")&&
+     plan.relations.some(r=>["customer_visits","customer_products","customer_coverage","toast_records","toast_changes"].includes(r))){
+    aggregateOnly=true;plan=await admit(true);
+   }
    const customerEvidence=plan.relations.some(relation=>["customer_visits","customer_products","customer_coverage"].includes(relation));
    if((customerEvidence||plan.relations.some(relation=>relation==="toast_records"||relation==="toast_changes"))&&
      (p.date_from===null||p.date_to===null))throw Error("invalid_query");

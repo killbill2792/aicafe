@@ -1,4 +1,5 @@
 import "server-only";
+import {retiredResearchTools} from "@/lib/ai/agent/tools";
 import type {SupabaseClient} from "@supabase/supabase-js";
 import {assertCafeAiAccess} from "@/lib/access/access.server";
 import {createOwnerScopedCafeTools,readSupervisorCafeIdentity} from "@/lib/ai/cafeTools.server";
@@ -275,7 +276,7 @@ export async function processNextInvestigation(db:SupabaseClient,now:Date,
     if(!checkpoint)throw new Error("evidence_incomplete");
     // Persist continued monitoring without pestering the owner with six-hour
     // copies of the same generic alert. A new source revision re-enqueues
-    // immediately, and an unchanged issue receives a verified daily follow-up.
+    // immediately; unchanged existing work never receives another paid follow-up.
     const questionState=await db.from("supervisor_investigations").select("pending_question_id,last_owner_answer_id,reported_owner_answer_id")
       .eq("business_id",c.business_id).eq("owner_user_id",c.owner_user_id).eq("thread_id",c.thread_id)
       .eq("source_type",c.source_type).eq("source_id",c.source_id).eq("episode_id",c.episode_id).eq("lease_token",c.lease_token).maybeSingle();
@@ -461,7 +462,7 @@ export async function processNextInvestigation(db:SupabaseClient,now:Date,
         ...(synopsis.kind==="maintenance_issue"?maintenanceInvestigationTools:[]),
         "propose_staff_question" as const,
         ...(context.receivingFollowup?["propose_supplier_discrepancy_followup" as const]:[]),
-      ])] as import("@/lib/ai/agent/tools").AgentToolName[];
+      ])].filter(name=>!retiredResearchTools.has(name)) as import("@/lib/ai/agent/tools").AgentToolName[];
     const prompt=universalInvestigationPrompt(
       synopsis,c.phase==="awaiting_owner",
       synopsis.kind==="maintenance_issue"?null:c.narrative??null);

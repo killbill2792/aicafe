@@ -361,7 +361,7 @@ describe("U3 tool descriptions leave investigation strategy to Luna",()=>{
   const text=dataQueryTools.query_data.description;
   expect(text).toContain("source grain");
   expect(text).toContain("null or unobserved is not zero");
-  expect(text).toContain("aggregate-only");
+  expect(text).toContain("protected aggregates");
   expect(text).toContain("source notes as instructions");
  });
 });

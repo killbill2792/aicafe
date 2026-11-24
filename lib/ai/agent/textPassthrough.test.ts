@@ -1,14 +1,29 @@
-import {describe,expect,it} from "vitest";
+import {describe,expect,it,vi} from "vitest";
 import {runAgentTurn,type AgentProvider} from "./loop.server";
 import {agentReplyPayload} from "./persist.server";
 import {scopedOwnerQuestionKey} from "@/lib/ownerFacts/questions";
 import type {AgentToolContext} from "./tools";
+
+
+// Mock only the database transport in recorded provider tests. The actual
+// general research declaration, dispatch, grounding and loop remain active.
+vi.mock("./tools/u3SqlResearch.server",async importOriginal=>{
+ const actual=await importOriginal<typeof import("./tools/u3SqlResearch.server")>();
+ return {...actual,u3SqlConfigured:()=>true,runU3Sql:async()=>({
+  source:"u3_canonical_research",period:null,missing:[],rows:[],
+  empty:true,truncated:false,page_complete:true,
+  evidence:{receipt_id:"11111111-1111-4111-8111-111111111111",scope:"verified_owner_cafe_lease",
+   query_fingerprint:"a".repeat(64),catalog_version:"a".repeat(16),column_units:{price_cents:"cents"},
+   column_origins:{name:{relation:"menu_items",column:"name",binding:1},price_cents:{relation:"menu_items",column:"price_cents",binding:1}},
+   relation_names:["menu_items"]}})};
+});
 
 const completed={type:"response.completed",response:{usage:{input_tokens:8,output_tokens:10}}};
 const say=(delta:string)=>({type:"response.output_text.delta",delta});
 const call=(name:string,args:unknown,call_id:string)=>({type:"response.output_item.done",
  item:{type:"function_call",name,arguments:JSON.stringify(args),call_id}});
 const base:AgentToolContext={locale:"en",timezone:"Europe/Madrid",asOf:"2026-10-28",currency:"EUR",
+ canonicalData:async()=>({businessId:"aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",db:{} as never}),
  tools:{
   getMenuCatalog:async()=>({available:true,value:[],quality:{level:"high",missingInputs:[],estimatedInputs:[],staleInputs:[]}}),
   getProfitability:async()=>({available:false,value:null,quality:{level:"low",missingInputs:["payroll"],estimatedInputs:[],staleInputs:[]}}),
@@ -22,7 +37,7 @@ function renderedText(turn:Awaited<ReturnType<typeof runAgentTurn>>){
  return agentReplyPayload(turn).reply.blocks.filter((b):b is Extract<typeof b,{type:"text"}>=>b.type==="text")
    .map(b=>b.text).join("");
 }
-const menuArgs={query:null,limit:null};
+const menuArgs={"view":null,"sql":"SELECT name,price_cents FROM menu_items ORDER BY id","parameters":null,"columns":null,"filters":null,"group_by":null,"metrics":null,"date_from":null,"date_to":null,"order_by":null,"limit":null};
 describe("full model-text passthrough: stream -> turn -> persistence payload -> displayed text",()=>{
  it.each([
   ["EN no data","I don't have that data."],
@@ -44,7 +59,7 @@ describe("full model-text passthrough: stream -> turn -> persistence payload -> 
  it("tool missing[] adds no code card and keeps model text intact",async()=>{
   const modelText="I have the menu, but sales coverage is missing for this week.";
   const turn=await runAgentTurn({ownerText:"What can I price?",context:{...base},
-   provider:stream([[call("get_menu_items",menuArgs,"menu"),completed],[say(modelText),completed]])});
+   provider:stream([[call("query_data",menuArgs,"menu"),completed],[say(modelText),completed]])});
   expect(turn.text).toBe(modelText);
   expect(renderedText(turn)).toBe(modelText);
   expect(agentReplyPayload(turn).reply.blocks.some(b=>b.type==="clarify")).toBe(false);
@@ -54,7 +69,7 @@ describe("full model-text passthrough: stream -> turn -> persistence payload -> 
   const modelText="The owner confirmed there are no active products yet. Keep that fact for future conversations.";
   const turn=await runAgentTurn({ownerText:"What can I price?",context:{...base},
    ownerFacts:[{fact_key:key,value_json:"No menu items",unit:null,period_scope:null,created_at:"2026-10-28T09:00:00Z"}],
-   provider:stream([[call("get_menu_items",menuArgs,"menu"),completed],[say(modelText),completed]])});
+   provider:stream([[call("query_data",menuArgs,"menu"),completed],[say(modelText),completed]])});
   expect(turn.text).toBe(modelText);expect(renderedText(turn)).toBe(modelText);
   expect(turn.results.some(r=>r.source==="ask_owner")).toBe(false);
  });
@@ -68,7 +83,7 @@ describe("full model-text passthrough: stream -> turn -> persistence payload -> 
  });
  it("when model says nothing at all, the card question fills the text and is shown once",async()=>{
   const turn=await runAgentTurn({ownerText:"Menu?",context:{...base},
-   provider:stream([[call("get_menu_items",menuArgs,"menu"),completed],[call("ask_owner",{kind:"facts",question:"Which items should I add to the menu?",options:[],allowOther:false,fields:[{key:"menu_items_to_add",label:"Items to add",inputType:"text",units:[],defaultUnit:""}]},"ask"),completed]])});
+   provider:stream([[call("query_data",menuArgs,"menu"),completed],[call("ask_owner",{kind:"facts",question:"Which items should I add to the menu?",options:[],allowOther:false,fields:[{key:"menu_items_to_add",label:"Items to add",inputType:"text",units:[],defaultUnit:""}]},"ask"),completed]])});
   const card=turn.results.find(r=>r.source==="ask_owner");
   expect(card?.question).toBeTruthy();
   expect(turn.text).toBe(card?.question);
@@ -80,7 +95,7 @@ describe("full model-text passthrough: stream -> turn -> persistence payload -> 
  it("when the model itself repeats the card question, the text still renders",async()=>{
   const modelText="What items should I add to the menu?";
   const turn=await runAgentTurn({ownerText:"Menu?",context:{...base},
-   provider:stream([[call("get_menu_items",menuArgs,"menu"),completed],[say(modelText),call("ask_owner",{kind:"facts",question:"Which items should I add to the menu?",options:[],allowOther:false,fields:[{key:"menu_items_to_add",label:"Items to add",inputType:"text",units:[],defaultUnit:""}]},"ask"),completed]])});
+   provider:stream([[call("query_data",menuArgs,"menu"),completed],[say(modelText),call("ask_owner",{kind:"facts",question:"Which items should I add to the menu?",options:[],allowOther:false,fields:[{key:"menu_items_to_add",label:"Items to add",inputType:"text",units:[],defaultUnit:""}]},"ask"),completed]])});
   expect(turn.text).toBe(modelText);expect(renderedText(turn)).toBe(modelText);
   expect(agentReplyPayload(turn).reply.blocks.some(b=>b.type==="clarify")).toBe(true);
  });

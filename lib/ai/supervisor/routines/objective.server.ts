@@ -5,7 +5,7 @@ import type {SupabaseClient} from "@supabase/supabase-js";
 import {assertCafeAiAccess} from "@/lib/access/access.server";
 import {createOwnerScopedCafeTools,readSupervisorCafeIdentity} from "@/lib/ai/cafeTools.server";
 import {openAIProvider,runAgentTurn,type AgentProvider,type AgentTurn} from "@/lib/ai/agent/loop.server";
-import type {AgentToolName,AgentToolResult} from "@/lib/ai/agent/tools";
+import {retiredResearchTools,type AgentToolName,type AgentToolResult} from "@/lib/ai/agent/tools";
 import {assertDurablePaidTurnAllowed} from "@/lib/ai/supervisor/runs/worker.server";
 import type {OwnerRunCheckpoint,RestoredResearchRead} from "@/lib/ai/supervisor/runs/contracts";
 import {encryptResearchCheckpoint,decryptResearchCheckpoint,isResearchCheckpointTool} from "@/lib/ai/supervisor/runs/researchCheckpoint.server";
@@ -30,10 +30,9 @@ import type {ClaimedRoutine} from "./repository.server";
 export const objectiveReadTools:readonly AgentToolName[]=[
   ...investigationReadTools.filter(name=>
     !["get_investigation_source"].includes(name)),
-  "get_events",
   "search_gmail","list_gmail_labels","read_gmail","read_gmail_thread",
   "read_gmail_attachment",
-];
+].filter(name=>!retiredResearchTools.has(name as AgentToolName)) as AgentToolName[];
 /** Default unrequested research intentionally excludes individual staff/payroll
  * detail, while preserving broad sales, cost, labor, inventory, schedules and
  * events investigation. This is a privacy boundary, not a research script. */
