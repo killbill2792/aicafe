@@ -1137,7 +1137,7 @@ test("@purchasing owner verifies a supplier phone/portal channel and a Gmail add
   const db=new pg.Client({host:"127.0.0.1",port:54322,database:"postgres",
     user:"postgres",password:"postgres",connectionTimeoutMillis:5000});
   const supplierId=randomUUID(),supplier="Task14C Vendor "+supplierId.slice(0,8);
-  let connected=false;
+  let connected=false,previousToastState=null;
   const first=await browser.newContext({baseURL:"http://127.0.0.1:3000",serviceWorkers:"block"});
   const second=await browser.newContext({baseURL:"http://127.0.0.1:3000",serviceWorkers:"block"});
   try{
@@ -1251,7 +1251,11 @@ test("@purchasing proactive notice → repeated cron idempotency → owner-appro
   // PR #560: paid unattended research is eligible only when Toast is
   // verified. This is an isolated local-only credential state, NOT a usable
   // provider token or an actual restaurant connection.
-  await db.query("insert into public.toast_api_credentials(business_id,api_origin,client_id,client_secret_enc,state) values ($1,'https://example.invalid','e2e-synthetic-verified','fixture-no-network','verified') on conflict (business_id) do nothing",
+  // An earlier synthetic inventory test may already have a placeholder
+  // credential for this business. Temporarily verify that same fixture
+  // without overwriting its private connection identity.
+  previousToastState=(await db.query("select state from public.toast_api_credentials where business_id=$1",[own.businessId])).rows[0]?.state??null;
+  await db.query("insert into public.toast_api_credentials(business_id,api_origin,client_id,client_secret_enc,state) values ($1,'https://example.invalid','e2e-synthetic-verified','fixture-no-network','verified') on conflict (business_id) do update set state='verified'",
     [own.businessId]);
     await db.query("insert into public.ingredients(id,business_id,name,base_unit) values($1,$2,$3,'ml')",
       [id.ingredient,own.businessId,name]);
@@ -1462,6 +1466,7 @@ test("@purchasing proactive notice → repeated cron idempotency → owner-appro
           [own.businessId,id.ingredient]]
       ];
       for(const [query,params] of queries)await db.query(query,params).catch(()=>{});
+    if(previousToastState!==null)await db.query("update public.toast_api_credentials set state=$2 where business_id=$1",[own.businessId,previousToastState]).catch(()=>{});
     await db.query("delete from public.toast_api_credentials where business_id=$1 and client_id='e2e-synthetic-verified'",[own.businessId]).catch(()=>{});
       await db.end();
     }
@@ -1751,7 +1756,7 @@ test("@home Task15A scheduler detects reduced sales from actual daily source row
  const own=seededCafe(0);
  const db=new pg.Client({host:"127.0.0.1",port:54322,database:"postgres",user:"postgres",password:"postgres",connectionTimeoutMillis:5000});
  const context=await browser.newContext({baseURL:"http://127.0.0.1:3000",serviceWorkers:"block"});
- let original=[],activeSchedules=[],connected=false;
+ let original=[],activeSchedules=[],connected=false,previousToastState=null;
  const today=new Intl.DateTimeFormat("en-CA",{timeZone:own.timezone,year:"numeric",month:"2-digit",day:"2-digit"}).format(new Date());
  const date=(n)=>new Date(Date.parse(today+"T12:00:00Z")+n*86400000).toISOString().slice(0,10);
  const start=date(-14),end=date(-1);
@@ -1761,7 +1766,11 @@ test("@home Task15A scheduler detects reduced sales from actual daily source row
   // PR #560: paid unattended research is eligible only when Toast is
   // verified. This is an isolated local-only credential state, NOT a usable
   // provider token or an actual restaurant connection.
-  await db.query("insert into public.toast_api_credentials(business_id,api_origin,client_id,client_secret_enc,state) values ($1,'https://example.invalid','e2e-synthetic-verified','fixture-no-network','verified') on conflict (business_id) do nothing",
+  // An earlier synthetic inventory test may already have a placeholder
+  // credential for this business. Temporarily verify that same fixture
+  // without overwriting its private connection identity.
+  previousToastState=(await db.query("select state from public.toast_api_credentials where business_id=$1",[own.businessId])).rows[0]?.state??null;
+  await db.query("insert into public.toast_api_credentials(business_id,api_origin,client_id,client_secret_enc,state) values ($1,'https://example.invalid','e2e-synthetic-verified','fixture-no-network','verified') on conflict (business_id) do update set state='verified'",
     [own.businessId]);
   original=(await db.query("select to_jsonb(d) row from public.daily_rollups d where business_id=$1 and business_date between $2 and $3",[own.businessId,start,end])).rows.map(x=>x.row);
   // Isolate stored actual daily source facts from unrelated schedule materialization.
@@ -1812,6 +1821,7 @@ test("@home Task15A scheduler detects reduced sales from actual daily source row
    await db.query("delete from public.daily_rollups where business_id=$1 and business_date between $2 and $3",[own.businessId,start,end]);
    if(original.length)await db.query("insert into public.daily_rollups select * from jsonb_populate_recordset(null::public.daily_rollups,$1::jsonb)",[JSON.stringify(original)]);
    await db.query("update public.staff_schedules set active=true where business_id=$1 and id=any($2::uuid[])",[own.businessId,activeSchedules]);
+    if(previousToastState!==null)await db.query("update public.toast_api_credentials set state=$2 where business_id=$1",[own.businessId,previousToastState]).catch(()=>{});
     await db.query("delete from public.toast_api_credentials where business_id=$1 and client_id='e2e-synthetic-verified'",[own.businessId]).catch(()=>{});
    await db.end();
   }
