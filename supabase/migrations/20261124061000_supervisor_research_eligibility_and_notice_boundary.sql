@@ -363,7 +363,7 @@ AS $u3_toast_records$
       THEN u3_window.to_day ELSE '0001-01-01'::date END) r
  WHERE u3_window.from_day IS NOT NULL AND u3_window.to_day IS NOT NULL
    AND u3_window.to_day>=u3_window.from_day
-  
+
 $u3_toast_records$;
 
 CREATE OR REPLACE FUNCTION u3_research_private.toast_change_rows()
@@ -397,7 +397,7 @@ AS $u3_change_rows$
  ) n
  WHERE u3_window.from_day IS NOT NULL AND u3_window.to_day IS NOT NULL
   AND u3_window.to_day>=u3_window.from_day
- 
+
   AND coalesce(c.business_date,(c.changed_at AT TIME ZONE 'UTC')::date)
       BETWEEN u3_window.from_day AND u3_window.to_day
   AND length(n.named_path)<=512
