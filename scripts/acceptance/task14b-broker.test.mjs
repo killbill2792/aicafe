@@ -526,6 +526,10 @@ test("expanded tool-capable allowance charges every reserved and replayed token 
  const admitted=reservationForRequest(bodyFor(native),new Map(),true);
  assert.ok(admitted.reservedMicros>0&&admitted.reservedMicros<=MAX_RESERVATION_MICROS);
  assert.deepEqual(admitted.params.input.slice(-2),[call,loaded]);
+ const eager=["describe_data","query_data","calculate"].map(name=>({type:"function",name,description:"Research",strict:true,parameters:{type:"object",properties:{},required:[],additionalProperties:false}}));
+ const withResearch={...native,tools:[...eager,...native.tools]};
+ assert.ok(reservationForRequest(bodyFor(withResearch),new Map(),true).reservedMicros>0);
+ assert.throws(()=>reservationForRequest(bodyFor({...withResearch,tools:[{...eager[0],name:"unreviewed_eager"},...native.tools]}),new Map(),true),/provider_built_in_tools_forbidden/);
  for(const input of [[...params.input,call],[...params.input,loaded],[...params.input,call,{...loaded,tools:[{...definition,name:"unknown_tool"}]}],
   [...params.input,{...call,execution:"client"},loaded],[...params.input,call,{...loaded,tools:[{...definition,parameters:{evil:true}}]}]])
    assert.throws(()=>reservationForRequest(bodyFor({...native,input}),new Map(),true),/provider_built_in_tools_forbidden/);
