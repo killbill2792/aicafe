@@ -143,7 +143,7 @@ run("survives actual recorded model and registered source tool across SIGKILL",a
       const rows=await db.query("SELECT net_sales_cents,orders_count FROM public.daily_rollups WHERE business_id=$1 AND business_date=$2",[businessId,"2026-11-20"]);
       return {source:"u3_canonical_research",period:{from:"2026-11-20",to:"2026-11-20"},missing:[],rows:rows.rows,
         truncated:false,page_complete:true,evidence:{scope:"verified_owner_cafe_lease",authority:"approved_logical_source",
-          receipt_id:randomUUID(),query_fingerprint:"a".repeat(64),catalog_version:"a".repeat(16),relation_names:["daily_rollups"],column_units:{net_sales_cents:"cents",orders_count:"count"}}} as Awaited<ReturnType<typeof runU3Sql>>;
+          receipt_id:randomUUID(),query_fingerprint:"a".repeat(64),catalog_version:"a".repeat(16),relation_names:["daily_rollups"],column_units:{net_sales_cents:"cents",orders_count:"count"}}} as unknown as Awaited<ReturnType<typeof runU3Sql>>;
     });
     const context={
       locale:"en",timezone:"America/Los_Angeles",currency:"USD",

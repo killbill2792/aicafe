@@ -62,7 +62,7 @@ const readSql:typeof runU3Sql=async(_scope,raw)=>{
    missing:[],rows,truncated:false,page_complete:true,rowCount:rows.length,
    evidence:{scope:"verified_owner_cafe_lease",authority:"approved_logical_source",receipt_id:randomUUID(),
     query_fingerprint:createHash("sha256").update(p.sql).digest("hex"),catalog_version:"a".repeat(16),
-    relation_names:plan.relations,column_units:plan.outputUnits,column_origins:plan.outputOrigins}} as Awaited<ReturnType<typeof runU3Sql>>;
+    relation_names:plan.relations,column_units:plan.outputUnits,column_origins:plan.outputOrigins}} as unknown as Awaited<ReturnType<typeof runU3Sql>>;
  }finally{db.close();}
 };
 const allowedTools:AgentToolName[]=["describe_data","query_data","calculate"];

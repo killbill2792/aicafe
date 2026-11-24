@@ -440,23 +440,23 @@ describe("incomplete provider response diagnostics and fail-closed tool recovery
   });
 });
 
-describe("Luna tool reasoning stays within the owner-approved aggregate output allowance",()=>{
+describe("Luna honors actual worker and provider budgets without a fixed interactive aggregate ceiling",()=>{
   const doneWith=(n:number)=>({type:"response.completed",response:{model:"gpt-6-luna",
     usage:{input_tokens:40,output_tokens:n}}});
   const menu=(id:string)=>call("query_data",'{"view":null,"sql":"SELECT name,price_cents FROM menu_items ORDER BY id","parameters":null,"columns":null,"filters":null,"group_by":null,"metrics":null,"date_from":null,"date_to":null,"order_by":null,"limit":null}',id);
   const limits=(requests:Record<string,unknown>[])=>requests.map(r=>[r.tool_choice,r.max_output_tokens]);
-  it("allows 16384 then only the remaining work allocation, retaining final 8192",async()=>{
+  it("continues an interactive turn beyond the former work-output allowance",async()=>{
     vi.stubEnv("SUPERVISOR_OPENAI_MODEL","gpt-6-luna");
     try{
       const {requests,provider}=recording([[menu("a"),doneWith(16384)],[menu("b"),doneWith(8192)],[text("Summary."),doneWith(8192)]]);
       const r=await runAgentTurn({ownerText:"Read my menu.",context:{...context},provider});
-      expect(limits(requests)).toEqual([["auto",16384],["auto",8192],["none",8192]]);
+      expect(limits(requests)).toEqual([["auto",16384],["auto",16384],["auto",16384]]);
       expect(r.usage.outputTokens).toBe(32768);
       expect(r.usage.toolCalls).toBe(2);
-      expect(r.endReason).toBe("budget");
+      expect(r.endReason).toBe("complete");
     }finally{vi.unstubAllEnvs()}
   });
-  it("supplier reads retain the same 32768 aggregate limit",async()=>{
+  it("supplier research follows the same interactive policy",async()=>{
     vi.stubEnv("SUPERVISOR_OPENAI_MODEL","gpt-6-luna");
     try{
       const {requests,provider}=recording([[call("get_supplier_purchase_orders","{}","po"),doneWith(16384)],
@@ -467,8 +467,25 @@ describe("Luna tool reasoning stays within the owner-approved aggregate output a
       }} as AgentToolContext;
       const r=await runAgentTurn({ownerText:"Read my supplier orders.",context:ctx,provider});
       expect(r.tools).toContain("get_supplier_purchase_orders");
-      expect(limits(requests)).toEqual([["auto",16384],["auto",8192],["none",8192]]);
+      expect(limits(requests)).toEqual([["auto",16384],["auto",16384],["auto",16384]]);
       expect(r.usage.outputTokens).toBe(32768);
+    }finally{vi.unstubAllEnvs()}
+  });
+  it("completes productive research beyond seven model calls and twenty-four tool calls",async()=>{
+    vi.stubEnv("SUPERVISOR_OPENAI_MODEL","gpt-6-luna");
+    try{
+      const rounds=Array.from({length:9},(_,round)=>[
+        ...Array.from({length:3},(_,i)=>call("query_data",JSON.stringify({
+          sql:"SELECT net_sales_cents FROM daily_rollups WHERE business_date = $1",
+          parameters:["2026-10-"+String(round*3+i+1).padStart(2,"0")],limit:null,
+          date_from:null,date_to:null}),"research-"+round+"-"+i)),
+        doneWith(100)
+      ]);
+      const {provider}=recording([...rounds,[text("Research complete."),doneWith(50)]]);
+      const result=await runAgentTurn({ownerText:"Research sales for each requested date.",context:{...context},provider});
+      expect(result.endReason).toBe("complete");
+      expect(result.usage.modelCalls).toBe(10);
+      expect(result.usage.toolCalls).toBe(27);
     }finally{vi.unstubAllEnvs()}
   });
   it("never exceeds a durable worker's remaining output",async()=>{
@@ -540,7 +557,7 @@ describe("Luna tool reasoning stays within the owner-approved aggregate output a
       const {requests,provider}=recording([[menu("a"),{type:"response.completed",response:{model:"gpt-6-luna"}}],
         [menu("b"),doneWith(8192)],[text("Summary."),doneWith(8192)]]);
       const r=await runAgentTurn({ownerText:"Read the menu.",context:{...context},provider});
-      expect(limits(requests)).toEqual([["auto",16384],["auto",8192],["none",8192]]);
+      expect(limits(requests)).toEqual([["auto",16384],["auto",16384],["auto",16384]]);
       expect(r.usage.outputTokens).toBe(16384);
     }finally{vi.unstubAllEnvs()}
   });
@@ -667,7 +684,7 @@ describe("U1 matched recorded incident — checkpoint and presentation variation
         [text(answer),completed],
       ]);
       const mock=vi.mocked(runU3Sql);vi.clearAllMocks();
-      for(let i=0;i<3;i++)mock.mockImplementationOnce(async(_ctx,raw)=>sqlFixture(raw,[],["testSourceUnavailable"]) as Awaited<ReturnType<typeof runU3Sql>>);
+      for(let i=0;i<3;i++)mock.mockImplementationOnce(async(_ctx,raw)=>sqlFixture(raw,[],["testSourceUnavailable"]) as unknown as Awaited<ReturnType<typeof runU3Sql>>);
       const ctx=context;
       const result=await runAgentTurn({ownerText:"For October 20, 2026, report sales, peak hours and profit.",context:ctx,provider,
         ...(useCheckpoint?{checkpoint}:{}),});

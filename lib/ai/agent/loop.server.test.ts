@@ -72,7 +72,7 @@ describe("recorded Responses streaming fixtures", () => {
   it("keeps the exact model menu answer when profit read fails",async()=>{
     const mock=vi.mocked(runU3Sql);
     const menu=await mock({} as never,{});
-    mock.mockResolvedValueOnce(menu).mockResolvedValueOnce({...sqlFixture({sql:costsSql},[],["query_execution_error"]),error_stage:"query"} as Awaited<ReturnType<typeof runU3Sql>>);
+    mock.mockResolvedValueOnce(menu).mockResolvedValueOnce({...sqlFixture({sql:costsSql},[],["query_execution_error"]),error_stage:"query"} as unknown as Awaited<ReturnType<typeof runU3Sql>>);
     const turn=await runAgentTurn({ownerText:"Show latte pricing and last month's profit",context,provider:fixture([
       [call("query_data",JSON.stringify({sql:"SELECT name,price_cents FROM menu_items ORDER BY id",parameters:null,date_from:null,date_to:null,limit:null}),"menu-ok"),
        call("query_data",sqlArgs(costsSql,{from:"2026-09-01",to:"2026-09-30"}),"profit-fail"),completed],
@@ -471,7 +471,7 @@ describe("U1 incident regression: exact requested dates and useful synthesis",()
   it("does not ask for an unrequested year of sales after today's closed day is missing",async()=>{
     const period={from:context.asOf,to:context.asOf};
     const mock=vi.mocked(runU3Sql);mock.mockClear();
-    mock.mockImplementationOnce(async(_ctx,raw)=>sqlFixture(raw,[],["noCoveredSalesRows"]) as Awaited<ReturnType<typeof runU3Sql>>);
+    mock.mockImplementationOnce(async(_ctx,raw)=>sqlFixture(raw,[],["noCoveredSalesRows"]) as unknown as Awaited<ReturnType<typeof runU3Sql>>);
     const result=await runAgentTurn({ownerText:"What are today's sales?",context,provider:fixture([
       [call("query_data",sqlArgs(salesSql,period),"u1-today-sales"),completed],
       [text("Today's closing sales are not available; I cannot verify a total."),completed]
@@ -484,7 +484,7 @@ describe("U1 incident regression: exact requested dates and useful synthesis",()
   it("preserves an explicitly requested long historical interval instead of limiting research to today",async()=>{
     const period={from:"2025-10-22",to:"2026-10-20"};
     const mock=vi.mocked(runU3Sql);mock.mockClear();
-    mock.mockImplementationOnce(async(_ctx,raw)=>sqlFixture(raw,[],["noCoveredSalesRows"]) as Awaited<ReturnType<typeof runU3Sql>>);
+    mock.mockImplementationOnce(async(_ctx,raw)=>sqlFixture(raw,[],["noCoveredSalesRows"]) as unknown as Awaited<ReturnType<typeof runU3Sql>>);
     const result=await runAgentTurn({ownerText:"Research sales from 2025-10-22 through 2026-10-20",context,provider:fixture([
       [call("query_data",sqlArgs(salesSql,period),"u1-owner-year"),completed],
       [text("No recorded sales totals are available for that requested interval."),completed]
@@ -498,7 +498,7 @@ describe("U1 incident regression: exact requested dates and useful synthesis",()
     const period={from:"2026-10-20",to:"2026-10-20"};
     const mock=vi.mocked(runU3Sql);mock.mockClear();
     for(const reason of ["noCoveredSalesRows","hourlyCoverageMissing","query_execution_error"])
-      mock.mockImplementationOnce(async(_ctx,raw)=>sqlFixture(raw,[],[reason]) as Awaited<ReturnType<typeof runU3Sql>>);
+      mock.mockImplementationOnce(async(_ctx,raw)=>sqlFixture(raw,[],[reason]) as unknown as Awaited<ReturnType<typeof runU3Sql>>);
     const requests:Record<string,unknown>[]=[];
     const answer="Sales and hourly data are missing for the requested date. Profit could not be verified.";
     const provider:AgentProvider=async function*(params){
@@ -531,10 +531,10 @@ describe("U1 controlled incident timing fixture (no provider)",()=>{
       const mock=vi.mocked(runU3Sql);mock.mockClear();
       mock.mockImplementationOnce(async(_ctx,raw)=>{
         await new Promise<void>(resolve=>setTimeout(resolve,20776));
-        return sqlFixture(raw,[{net_sales_cents:4820,orders_count:12}]) as Awaited<ReturnType<typeof runU3Sql>>;
+        return sqlFixture(raw,[{net_sales_cents:4820,orders_count:12}]) as unknown as Awaited<ReturnType<typeof runU3Sql>>;
       }).mockImplementationOnce(async(_ctx,raw)=>{
         await new Promise<void>(resolve=>setTimeout(resolve,483));
-        return sqlFixture(raw,[{hour_local:10,net_sales_cents:3000,orders_count:8},{hour_local:14,net_sales_cents:1820,orders_count:4}]) as Awaited<ReturnType<typeof runU3Sql>>;
+        return sqlFixture(raw,[{hour_local:10,net_sales_cents:3000,orders_count:8},{hour_local:14,net_sales_cents:1820,orders_count:4}]) as unknown as Awaited<ReturnType<typeof runU3Sql>>;
       }).mockImplementationOnce(()=>new Promise(()=>{}));
       const requests:Record<string,unknown>[]=[];
       const answer="Recorded sales were $48.20. Hourly activity is available, but I could not verify profit.";
