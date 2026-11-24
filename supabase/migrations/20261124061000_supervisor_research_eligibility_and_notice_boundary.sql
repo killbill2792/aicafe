@@ -243,7 +243,7 @@ begin
         select 1 from public.alerts a where a.business_id=p_business_id
           and a.id::text=p_source_id and a.payload->>'quality'='verified'
       ) then 'high'
-      else 'unknown' end,
+      else 'low' end,
     jsonb_build_array(jsonb_build_object('source',p_source_type,
       'facts',jsonb_build_object('sourceId',p_source_id,
         'revisionHash',p_revision_hash,'asOf',p_as_of::text))),
