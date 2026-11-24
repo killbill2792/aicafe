@@ -1,3 +1,4 @@
+import {investigationResearchIdentity} from "./investigationCheckpoint.server";
 import {beforeEach,afterEach,describe,expect,it,vi} from "vitest";
 vi.mock("server-only",()=>({}));
 const mocks=vi.hoisted(()=>({
@@ -275,6 +276,15 @@ describe("Task 15A operational end-to-end orchestration (recorded source/model)"
     expect(d.calls.find(call=>call.name==="supervisor_investigation_research_checkpoint"&&call.args.p_action==="yield")).toBeDefined();
     expect(mocks.notify).not.toHaveBeenCalled();
     expect(d.calls.some(call=>call.name==="supervisor_finish_investigation"||call.name==="supervisor_fail_investigation")).toBe(false);
+  });
+  it("resumes productive awaiting-owner research instead of silently treating it as unchanged",async()=>{
+    const d=db([{...following,evidence:{...following.evidence,
+      researchContinuation:investigationResearchIdentity(following,null)}}],{yieldResearch:true});
+    mocks.model.mockResolvedValueOnce(agentResult({endReason:"budget"}));
+    const result=await processNextInvestigation(d.client,now);
+    expect(result).toMatchObject({processed:1,rechecked:0,failed:0});
+    expect(mocks.model).toHaveBeenCalledOnce();
+    expect(d.calls.some(x=>x.name==="supervisor_investigation_research_checkpoint"&&x.args.p_action==="yield")).toBe(true);
   });
   it("retains prior findings across a worker restart without paying for unanswered owner work",async()=>{
     const d=db([{...investigating},{...following}]);

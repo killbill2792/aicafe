@@ -79,6 +79,16 @@ BEGIN
    p_tool='describe_data' OR EXISTS(SELECT 1 FROM u3_research_private.investigation_research_receipts j
      WHERE j.work_id=p_work_id AND j.progress_key=p_progress_key))
   ON CONFLICT(work_id,operation) DO NOTHING;
+  -- A restart after a completed read must not lose an admitted follow-up
+  -- merely because a vendor reply was already imported on the first slice.
+  IF FOUND AND p_tool<>'describe_data' AND EXISTS (
+    SELECT 1 FROM u3_research_private.investigation_research_receipts r
+     WHERE r.work_id=p_work_id AND r.operation=p_operation AND NOT r.yielded
+  ) THEN
+   UPDATE public.supervisor_investigations SET evidence=jsonb_set(coalesce(evidence,'{}'::jsonb),
+    '{researchContinuation}',to_jsonb(p_work_id::text),true)
+   WHERE business_id=p_business_id AND owner_user_id=p_owner_user_id AND source_type=p_source_type AND source_id=p_source_id;
+  END IF;
   RETURN 'true'::jsonb;
  END IF;
  UPDATE u3_research_private.investigation_research_receipts SET yielded=true WHERE work_id=p_work_id AND NOT yielded;
@@ -91,6 +101,25 @@ BEGIN
 END $checkpoint$;
 REVOKE ALL ON FUNCTION public.supervisor_investigation_research_checkpoint(uuid,uuid,uuid,text,text,uuid,uuid,text,bigint,uuid,text,text,text) FROM PUBLIC,anon,authenticated,aicafe_research,aicafe_research_view_owner;
 GRANT EXECUTE ON FUNCTION public.supervisor_investigation_research_checkpoint(uuid,uuid,uuid,text,text,uuid,uuid,text,bigint,uuid,text,text,text) TO service_role;
+
+-- Retain the existing unanswered-question pause, except while a previously
+-- admitted productive slice is still unfinished. A completed report replaces
+-- its checkpoint and removes the marker; it is not a new evidence revision.
+CREATE OR REPLACE FUNCTION public.supervisor_pause_unanswered_investigation()
+RETURNS trigger LANGUAGE plpgsql SET search_path=public AS $pause$
+BEGIN
+ IF new.phase='awaiting_owner'
+  AND (new.last_owner_answer_id IS NULL OR new.last_owner_answer_id=new.reported_owner_answer_id)
+  AND new.evidence->>'pendingRelevantRevision' IS DISTINCT FROM new.revision_hash
+  AND new.evidence->>'researchContinuation' IS NULL
+  AND NOT (new.source_type='operating_task' AND EXISTS(
+   SELECT 1 FROM public.operating_tasks t
+   WHERE t.business_id=new.business_id AND t.id=new.source_id AND t.kind='maintenance_issue'
+     AND t.status IN ('needs_owner','needs_response','watching'))) THEN
+  new.next_retry_at='infinity'::timestamptz;
+ END IF;
+ RETURN new;
+END $pause$;
 
 -- Stale work cannot be restored; discard ephemeral receipts on a completed
 -- step, changed relevant revision/reply, changed thread or terminal phase.

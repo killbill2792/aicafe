@@ -321,7 +321,8 @@ export async function processNextInvestigation(db:SupabaseClient,now:Date,
     // alert is NOT a change to THIS incident's evidence. Real source revisions
     // are handled by the SQL enqueue which moves awaiting_owner -> investigate
     // for the same episode, and verified owner answers are linked by SQL.
-    const unchanged=(checkpoint.sourceRevision===undefined||checkpoint.sourceRevision===c.revision_hash)&&
+    const continuing=checkpoint.researchContinuation===investigationResearchIdentity(c,answerId??null);
+    const unchanged=!continuing&&(checkpoint.sourceRevision===undefined||checkpoint.sourceRevision===c.revision_hash)&&
       checkpoint.pendingRelevantRevision!==c.revision_hash&&
       synopsis.kind===earlier.kind&&
       (c.source_type==="alert"&&isOpen(c,synopsis.status)&&isOpen(c,earlier.status)||

@@ -270,6 +270,8 @@ export type InvestigationCheckpoint={
   sourceRevision?:string;
   /** New evidence was signalled by the service-only issue-specific enqueue. */
   pendingRelevantRevision?:string;
+  /** Server-fenced identity of unfinished productive research, not new source evidence. */
+  researchContinuation?:string;
   stockEmailProposalId?:string;
   customerLinkedActions?:CustomerActionObservation[];
   /** Server-observed procurement status, never part of the model narrative. */
