@@ -195,7 +195,40 @@ it("never treats null, empty, grouped or truncated aggregates as known totals",a
  const x=await dataQueryTools.query_data.execute(grouped,{db:{rpc} as never,businessId:b});
  expect(x.aggregate).toBeUndefined();
 });
-it("defaults to a compact 50-row result when the model gives no limit",async()=>{
+it("uses complete scoped canonical pages without the compatibility preview ceiling",async()=>{
+ const secret=process.env.SUPABASE_SERVICE_ROLE_KEY;
+ process.env.SUPABASE_SERVICE_ROLE_KEY="synthetic-canonical-pagination-secret-not-for-production";
+ try{
+  const ownerUserId="bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",threadId="cccccccc-cccc-4ccc-8ccc-cccccccccccc";
+  const all=Array.from({length:145},(_,i)=>({business_date:"2026-10-01",sum_net_sales_cents:i}));
+  let digest="a".repeat(64);
+  const rpc=vi.fn(async(_name:string,args:{p_page_offset:number;p_page_bytes:number;p_limit:number|null})=>{
+   const rows=all.slice(args.p_page_offset,args.p_limit===null?undefined:args.p_page_offset+args.p_limit);
+   return {data:{rows,sourceMix:{app:145},sourceCount:145,truncated:args.p_page_offset+rows.length<all.length,
+    totalRows:all.length,resultDigest:digest,observedAt:"2026-11-24T12:00:00Z"},error:null};
+  });
+  const ctx={db:{rpc} as never,businessId:b,ownerUserId,threadId};
+  const full=await dataQueryTools.query_data.execute({...input(),limit:null},ctx);
+  expect(full).toMatchObject({rows:all,total_rows:145,page_complete:true,next_cursor:null});
+  expect(rpc).toHaveBeenLastCalledWith("ai_query_view",expect.objectContaining({p_limit:null,p_page_offset:0}));
+  const first=await dataQueryTools.query_data.execute({...input(),limit:120},ctx);
+  expect(first).toMatchObject({page_complete:false,total_rows:145,truncated:true});
+  expect(first.rows).toHaveLength(120);
+  const cursor=(first as {next_cursor:string}).next_cursor;
+  const rest=await dataQueryTools.query_data.execute({...input(),limit:120,cursor},ctx);
+  expect([...first.rows,...rest.rows]).toEqual(all);
+  expect(rest).toMatchObject({page_complete:true,page_offset:120,next_cursor:null});
+  const calls=rpc.mock.calls.length;
+  expect((await dataQueryTools.query_data.execute({...input(),limit:121,cursor},ctx)).error).toBe("invalid_query");
+  expect((await dataQueryTools.query_data.execute({...input(),limit:120,cursor},{...ctx,threadId:ownerUserId})).error).toBe("invalid_query");
+  expect(rpc).toHaveBeenCalledTimes(calls);
+  digest="b".repeat(64);
+  expect((await dataQueryTools.query_data.execute({...input(),limit:120,cursor},ctx)).error).toBe("research_snapshot_changed");
+ }finally{
+  if(secret===undefined)delete process.env.SUPABASE_SERVICE_ROLE_KEY;else process.env.SUPABASE_SERVICE_ROLE_KEY=secret;
+ }
+});
+it("defaults to a compact 50-row result for a direct compatibility preview",async()=>{
  const f=testDb([{business_date:"2026-10-01",sum_net_sales_cents:1}]);
  await dataQueryTools.query_data.execute({...input(),limit:null},{db:f.db,businessId:b});
  expect(f.rpc).toHaveBeenCalledWith("ai_query_view",expect.objectContaining({p_limit:50}));

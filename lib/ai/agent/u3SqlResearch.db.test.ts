@@ -531,6 +531,61 @@ describe.skipIf(!active)("U3 migrated registered tool + private connection",()=>
    await admin.query("DELETE FROM public.orders WHERE business_id IN ($1,$2) AND pos_order_id LIKE $3",[ids.a,ids.b,prefix+"%"]).catch(()=>{});
   }
  });
+ it("traverses the actual invoker-RLS canonical reader beyond its old row and byte preview caps",async()=>{
+  if(!admin)throw Error("admin_missing");
+  const db=admin,prefix="u3-legacy-pages-",from="2025-01-01",to="2025-04-01";
+  const rpc=async(name:string,p:Record<string,unknown>)=>{
+   if(name!=="ai_query_view")return {data:null,error:{message:"unexpected RPC"}};
+   await db.query("BEGIN");
+   try{
+    await db.query("SET LOCAL ROLE authenticated");
+    await db.query("SELECT set_config('request.jwt.claim.sub',$1,true),set_config('request.jwt.claim.role','authenticated',true)",[ids.oa]);
+    const r=await db.query("SELECT public.ai_query_view($1::uuid,$2::text,$3::text[],$4::jsonb,$5::text[],$6::jsonb,$7::date,$8::date,$9::jsonb,$10::bigint,$11::bigint,$12::integer) AS result",
+     [p.p_business_id,p.p_view,p.p_columns,JSON.stringify(p.p_filters),p.p_group_by,JSON.stringify(p.p_metrics),p.p_date_from,p.p_date_to,
+      p.p_order_by===null?null:JSON.stringify(p.p_order_by),p.p_limit,p.p_page_offset,p.p_page_bytes]);
+    await db.query("COMMIT");
+    return {data:r.rows[0].result,error:null};
+   }catch(e){await db.query("ROLLBACK");return {data:null,error:e};}
+  };
+  const context:AgentToolContext={asOf:"2026-11-24",timezone:"UTC",locale:"en",
+   tools:{} as AgentToolContext["tools"],canonicalData:async()=>({...scoped,db:{rpc} as never})};
+  const selector={view:"cv_orders",sql:null,parameters:null,columns:["source_ref","business_date","net_sales_cents"],
+   filters:null,group_by:null,metrics:null,date_from:from,date_to:to,order_by:{column:"source_ref",direction:"asc"},limit:null};
+  try{
+   await db.query("INSERT INTO public.orders(id,business_id,pos_order_id,closed_at,business_date,gross_sales_cents,net_sales_cents) "+
+    "SELECT gen_random_uuid(),CASE WHEN i<=160 THEN $1::uuid ELSE $2::uuid END,$3||i::text,now(),date '2025-01-01'+(i%90),100+i,100+i FROM generate_series(1,163) i",[ids.a,ids.b,prefix]);
+   const oracle=await db.query("SELECT to_jsonb(q) AS row FROM (SELECT source_ref,business_date,net_sales_cents FROM public.cv_orders WHERE business_id=$1 AND business_date BETWEEN $2 AND $3 ORDER BY source_ref) q",[ids.a,from,to]);
+   expect(oracle.rows).toHaveLength(160);
+   const full=await executeAgentTool("query_data",selector,context);
+   expect(full.error).toBeUndefined();
+   expect(full.rows).toEqual(oracle.rows.map(r=>r.row));
+   expect(Buffer.byteLength(JSON.stringify(full.rows),"utf8")).toBeGreaterThan(6000);
+   expect(full).toMatchObject({page_complete:true,total_rows:160,next_cursor:null});
+   const narrow={...context,researchPageBytes:()=>2500};
+   let cursor:string|null=null;const seen:unknown[]=[];let pages=0;
+   do{
+    const r=await executeAgentTool("query_data",{...selector,cursor},narrow);
+    expect(r.error).toBeUndefined();
+    expect(r.page_consistency).toBe("verified_same_result");
+    expect(Array.isArray(r.rows)).toBe(true);
+    seen.push(...r.rows as unknown[]);
+    cursor=(r.next_cursor as string|null)??null;
+    expect(r.page_complete).toBe(cursor===null);
+    expect(++pages).toBeLessThan(40);
+   }while(cursor!==null);
+   expect(pages).toBeGreaterThan(1);
+   expect(seen).toEqual(oracle.rows.map(r=>r.row));
+   const first=await executeAgentTool("query_data",selector,narrow);
+   expect(first.next_cursor).toBeTruthy();
+   await db.query("UPDATE public.orders SET net_sales_cents=999 WHERE business_id=$1 AND pos_order_id=$2",[ids.a,prefix+"1"]);
+   const stale=await executeAgentTool("query_data",{...selector,cursor:first.next_cursor},narrow);
+   expect(stale).toMatchObject({error:"research_snapshot_changed",rows:[]});
+   const foreign=await executeAgentTool("query_data",selector,{...context,canonicalData:async()=>({...scoped,businessId:ids.b,db:{rpc} as never})});
+   expect(foreign.rows).toEqual([]);
+  }finally{
+   await db.query("DELETE FROM public.orders WHERE business_id IN ($1,$2) AND pos_order_id LIKE $3",[ids.a,ids.b,prefix+"%"]).catch(()=>{});
+  }
+ });
  it("uses historical ingredient price revisions and exact source units without a capped ingredient reader",async()=>{
   if(!admin)throw Error("admin_missing");
   const local=randomUUID(),unknown=randomUUID(),foreign=randomUUID();
