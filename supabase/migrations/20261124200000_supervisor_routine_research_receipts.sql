@@ -12,9 +12,9 @@ CREATE TABLE u3_research_private.routine_research_receipts (
  ciphertext text NOT NULL CHECK (length(ciphertext)>0),
  yielded boolean NOT NULL DEFAULT false,
  PRIMARY KEY(run_id,operation),
- UNIQUE(run_id,checkpoint_seq),
- UNIQUE(run_id,progress_key)
+ UNIQUE(run_id,checkpoint_seq)
 );
+CREATE INDEX routine_research_progress_idx ON u3_research_private.routine_research_receipts(run_id,progress_key);
 -- Reason: New private table, no client policy or prior access.
 -- squawk-ignore ban-alter-row-level-security
 ALTER TABLE u3_research_private.routine_research_receipts ENABLE ROW LEVEL SECURITY;
@@ -81,9 +81,10 @@ BEGIN
  SELECT u4_checkpoint INTO journal FROM public.supervisor_routine_occurrences
   WHERE business_id=p_business_id AND routine_id=p_routine_id AND run_id=p_run_id;
  n:=coalesce((journal->>'research_count')::bigint,0);
- INSERT INTO u3_research_private.routine_research_receipts(run_id,operation,checkpoint_seq,progress_key,ciphertext)
- VALUES(p_run_id,p_operation,n+1,p_progress_key,p_ciphertext)
- ON CONFLICT(run_id,progress_key) DO NOTHING;
+ INSERT INTO u3_research_private.routine_research_receipts(run_id,operation,checkpoint_seq,progress_key,ciphertext,yielded)
+ VALUES(p_run_id,p_operation,n+1,p_progress_key,p_ciphertext,
+  p_tool='describe_data' OR EXISTS(SELECT 1 FROM u3_research_private.routine_research_receipts
+   WHERE run_id=p_run_id AND progress_key=p_progress_key));
  IF FOUND THEN
   UPDATE public.supervisor_routine_occurrences
    SET u4_checkpoint=jsonb_set(u4_checkpoint,'{research_count}',to_jsonb(n+1))

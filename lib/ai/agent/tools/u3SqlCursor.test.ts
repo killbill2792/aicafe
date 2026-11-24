@@ -42,6 +42,10 @@ describe("U3 server-signed research cursor",()=>{
   const cursor=researchNextCursor(first,150,key,snapshot);
   expect(researchPageOffset({...first,leaseToken:"replacement"},cursor,key)).toBe(150);
   expect(()=>researchPageOffset({...first,runId:"run-b",leaseToken:"replacement"},cursor,key)).toThrow("invalid_query");
+  const routine={...first,mode:"routine"};
+  const routineCursor=researchNextCursor(routine,150,key,snapshot);
+  expect(researchPageOffset({...routine,leaseToken:"replacement"},routineCursor,key)).toBe(150);
+  expect(()=>researchPageOffset({...routine,runId:"other-routine"},routineCursor,key)).toThrow("invalid_query");
   const investigation={...input,mode:"investigation",sourceType:"alert",sourceId:"a",leaseToken:"old"};
   const restricted=researchNextCursor(investigation,150,key,snapshot);
   expect(()=>researchPageOffset({...investigation,leaseToken:"replacement"},restricted,key)).toThrow("invalid_query");

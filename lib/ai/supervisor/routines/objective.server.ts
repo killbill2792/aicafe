@@ -117,8 +117,8 @@ export function routineObjectiveCheckpoint(db:SupabaseClient,params:{
         // repeated discovery, timestamps or a rephrased query. The complete
         // original result remains encrypted; the server-generated key is a
         // deduplication hint, never an independent source receipt.
-        const {evidence:_evidence,query_attempt_id:_attempt,retry_of:_retry,
-          as_of:_asOf,snapshot_id:_snapshot,next_cursor:_cursor,...stable}=result;
+        const stable=Object.fromEntries(Object.entries(result).filter(([key])=>
+          !["evidence","query_attempt_id","retry_of","as_of","snapshot_id","next_cursor","receipt_id","calculation_receipt_id"].includes(key)));
         const key=digest({name:opened.name,result:stable});
         const operation=randomUUID();
         const ciphertext=encryptResearchCheckpoint(researchScope,operation,opened.name,opened.raw,result);
