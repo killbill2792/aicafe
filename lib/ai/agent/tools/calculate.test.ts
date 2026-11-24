@@ -172,6 +172,18 @@ describe("metric identity is independent of tool name",()=>{
 
 
 describe("U3 receipt-bound exact research calculation",()=>{
+ it("selects two independent official shared values by their original receipts, not the common function name",async()=>{
+  const earlier="11111111-1111-4111-8111-111111111111",later="22222222-2222-4222-8222-222222222222";
+  const records=[{name:"query_data",result:{source:"product_costs",period:null,missing:[],
+    metric_basis:"official_shared_definition",item:{recipeCostCents:190},evidence:{receipt_id:earlier}}},
+   {name:"query_data",result:{source:"product_costs",period:null,missing:[],
+    metric_basis:"official_shared_definition",item:{recipeCostCents:310},evidence:{receipt_id:later}}}];
+  const r=await calculateTools.calculate.execute({purpose:"Compare current product costs",
+   inputs:[{...input("a","query_data","item.recipeCostCents"),receipt_id:earlier},
+     {...input("b","query_data","item.recipeCostCents"),receipt_id:later}],
+   steps:[{id:"difference",label:"Difference",op:"subtract",args:["b","a"]}]},ctx(records));
+  expect(r).toMatchObject({result:{unit:"cents",valueCents:120},kind:"calculation"});
+ });
  const older="11111111-1111-4111-8111-111111111111";
  const newer="22222222-2222-4222-8222-222222222222";
  const sql=(receipt_id:string,value:string)=>({

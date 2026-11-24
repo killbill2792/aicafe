@@ -1,6 +1,7 @@
 import { presentationTools,presentResponse } from "./presentation";
 import { laborKnown } from "@/lib/calc";
 import { z } from "zod";
+import {randomUUID} from "node:crypto";
 import {askOwnerTools} from "./askOwner";
 import {dataQueryTools,dataQuerySchema,describeSchema,type DataQueryContext} from "./dataQuery";
 import {recordResearchAttempt} from "../researchRecovery";
@@ -508,7 +509,9 @@ export async function executeAgentTool(name: string, raw: unknown, ctx: AgentToo
           const {attendance:_attendance,missingWageShifts:_shifts,pendingPosStaffReviews:_reviews,...aggregate}=result;
           void _attendance;void _shifts;void _reviews;result=aggregate;
         }
-        return {...result,metric_id:metric.id,metric_basis:"official_shared_definition"};
+        return {...result,metric_id:metric.id,metric_basis:"official_shared_definition",
+          evidence:{...(result.evidence&&typeof result.evidence==="object"&&!Array.isArray(result.evidence)?result.evidence:{}),
+           receipt_id:randomUUID(),authority:"official_shared_definition"}};
       }
       const result=await dataQueryTools.query_data.execute(raw,{...scope,resultBudgetBytes:ctx.researchPageBytes?.()});
       return typeof selector.sql==="string"?recordResearchAttempt(result,selector.retry_of,ctx.turnResults?.()??[]):result;

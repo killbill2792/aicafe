@@ -20,7 +20,8 @@ describe("shared research metric selection",()=>{
    const ctx=context();
    const expected=await executeAgentTool(tool,params,ctx);
    expect(await executeAgentTool("query_data",{official_metric:{...metric,period_mode:null}},ctx))
-    .toEqual({...expected,metric_id:metric.id,metric_basis:"official_shared_definition"});
+    .toMatchObject({...expected,metric_id:metric.id,metric_basis:"official_shared_definition",
+      evidence:{receipt_id:expect.stringMatching(/^[a-f0-9-]{36}$/i),authority:"official_shared_definition"}});
   });
  }
  it("rejects unrelated selectors and owner-private scheduled research",async()=>{

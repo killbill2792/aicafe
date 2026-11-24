@@ -330,6 +330,11 @@ describe.skipIf(!active)("U3 migrated registered tool + private connection",()=>
   const result=await dataQueryTools.query_data.execute(input("SELECT COUNT(*) AS customer_count FROM orders"),offturn);
   expect(result.error).toBeUndefined();
   expect(result.rows).toEqual([{customer_count:"1"}]);
+  const derived=await dataQueryTools.query_data.execute(input(
+   "WITH summary AS (SELECT SUM(net_sales_cents) AS arbitrary_total FROM orders) SELECT arbitrary_total FROM summary ORDER BY arbitrary_total"),offturn);
+  expect(derived.error).toBeUndefined();
+  expect(derived.rows).toEqual([{arbitrary_total:"1100"}]);
+  expect(derived.evidence).toMatchObject({column_units:{arbitrary_total:"cents"}});
   for(const sql of [
    "SELECT net_sales_cents FROM orders WHERE EXISTS(SELECT count(*) FROM orders)",
    "SELECT sum(net_sales_cents) OVER() AS total FROM orders"

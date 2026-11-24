@@ -561,8 +561,13 @@ export async function admitU3Sql(sql:string,allowedRelations:readonly string[],
      const first=bindings.length;from(join.larg);
      const middle=bindings.length;from(join.rarg);
      const left=bindings.slice(first,middle),right=bindings.slice(middle);
-     const leftFields=new Map(left.flatMap(b=>[...b.columns]));
-     const rightFields=new Map(right.flatMap(b=>[...b.columns]));
+     const mergeFields=(items:PrivacyBinding[]):PrivacyColumns=>{
+      const columns:PrivacyColumns=new Map();
+      for(const b of items)for(const [key,safe] of b.columns)
+       columns.set(key,columns.has(key)?false:safe);
+      return columns;
+     };
+     const leftFields=mergeFields(left),rightFields=mergeFields(right);
      // USING/NATURAL can reference source fields without ColumnRef AST nodes.
      const keys=join.isNatural?[...leftFields.keys()].filter(k=>rightFields.has(k)):
       Array.isArray(join.usingClause)?join.usingClause.map(stringNode):[];
