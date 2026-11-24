@@ -47,7 +47,7 @@ export const goalTools={
   },
   record_checkin:{
     agentId:"leo",schema:recordCheckinSchema,
-    description:"Save the owner's answer (yes, somewhat or no, plus an optional note) to a goal check-in question they were asked in chat. Use the goal_id from get_goal_status; date null means the latest open check-in.",
+    description:"Save the owner's answer (yes, somewhat or no, plus an optional note) to a goal check-in question they were asked in chat. Use the verified goal UUID from saved goal evidence or query_data official_metric goal_score; date null means the latest open check-in.",
     execute:async(raw:unknown,ctx:AgentToolContext):Promise<AgentToolResult>=>{
       const v=recordCheckinSchema.parse(raw);
       if(!ctx.goals)return {source:"goal_checkin",period:null,missing:["not_supported"]};

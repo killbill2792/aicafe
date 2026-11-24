@@ -23,7 +23,7 @@ describe("registered inventory dispatch", () => {
 describe("Task 11/12/13A/14A integrated Supervisor registry",()=>{
   it("keeps inventory, stock actions, staff planning and absence previews in one strict tool registry",()=>{
     const publicNames=agentToolDefinitions.map(x=>x.name);
-    for(const name of ["get_inventory","get_usage_variance","query_data","describe_data","calculate",
+    for(const name of ["get_inventory","query_data","describe_data","calculate",
       "draft_week_schedule","simulate_staff_absence","propose_purchases",
       "get_supplier_purchase_orders","inspect_purchase_reconciliation","propose_purchase_receiving","propose_invoice_reconciliation","propose_supplier_discrepancy_followup","inspect_supplier_purchase","propose_supplier_purchase_order"]){
       expect(publicNames).toContain(name);
@@ -171,8 +171,8 @@ describe("numbers, statuses, and strict tool contracts", () => {
     expect(agentToolDefinitions.map(t=>t.name)).toEqual(["present_response","ask_owner","describe_data","query_data","get_attention_items","get_menu_items",
       "get_schedule","get_staff_coordination_cases","get_staff_messages","get_team","get_week_schedule","get_labor_rules",
       "get_coverage_gaps","get_shift_cost",
-      "get_cashflow_evidence","propose_financial_settlement","propose_financial_bill","get_usage_variance","get_product_costs","get_inventory",
-      "get_item_sales","get_price_recommendation","get_today_so_far","draft_week_schedule","simulate_staff_absence","suggest_new_item_price","milk_swap_price","simulate_scenario","calculate","propose_price_change","propose_price_experiment","get_price_monitor_status","propose_goal","record_checkin","get_goal_status",
+      "get_cashflow_evidence","propose_financial_settlement","propose_financial_bill","get_inventory",
+      "get_price_recommendation","get_today_so_far","draft_week_schedule","simulate_staff_absence","suggest_new_item_price","milk_swap_price","simulate_scenario","calculate","propose_price_change","propose_price_experiment","get_price_monitor_status","propose_goal","record_checkin",
       "propose_schedule","propose_shift_change","propose_add_staff","propose_staff_change",
       "propose_availability_change","propose_rule_change","propose_send_schedule","propose_purchases","get_supplier_purchase_orders","inspect_purchase_reconciliation","propose_purchase_receiving","propose_invoice_reconciliation","propose_supplier_discrepancy_followup","inspect_supplier_purchase","propose_supplier_purchase_order","record_supplier_order_outcome","propose_supplier_vendor_email","get_nearby_events","get_events","propose_event_plan","inspect_public_page","web_search","manage_commitment","get_supervisor_permissions","get_maintenance_staff_candidates","propose_maintenance_staff_assignment","record_maintenance_repair_claim","search_maintenance_vendor","propose_maintenance_vendor_request","get_maintenance_cases","propose_staff_question","record_staff_question_owner_answer"]);
     expect(agentToolDefinitions.every(t=>t.strict)).toBe(true);

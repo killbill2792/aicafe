@@ -568,10 +568,10 @@ describe("Task16E presentation capability census",()=>{
  it("explicitly classifies every registered tool for universal research migration",()=>{
   const researchDisposition={
    core:["describe_data","query_data","calculate"],
-   retired:["get_profit","get_break_even","get_business_hours","get_employee_sales","get_expenses","get_bills","get_sales","get_peak_hours","get_labor","get_staff","get_cost_summary","get_ingredient_costs","get_payroll_facts"],
+   retired:["get_profit","get_break_even","get_business_hours","get_employee_sales","get_expenses","get_bills","get_sales","get_peak_hours","get_labor","get_staff","get_cost_summary","get_ingredient_costs","get_payroll_facts","get_item_sales","get_product_costs","get_usage_variance","get_goal_status"],
    // Remaining compatibility readers are not the exclusive research authority.
    // Retire only after independently proving their source/completeness parity.
-   pendingParity:["get_menu_items","get_item_sales","get_product_costs","get_usage_variance","get_inventory","get_schedule","get_team","get_week_schedule","get_labor_rules","get_cashflow_evidence","get_goal_status","get_events"],
+   pendingParity:["get_menu_items","get_inventory","get_schedule","get_team","get_week_schedule","get_labor_rules","get_cashflow_evidence","get_events"],
    calculation:["get_coverage_gaps","get_shift_cost","get_price_recommendation","draft_week_schedule","simulate_staff_absence","suggest_new_item_price","milk_swap_price","simulate_scenario"],
    live:["get_today_so_far"],
    operational:["get_attention_items","get_investigation_source","get_staff_coordination_cases","get_staff_messages","get_price_monitor_status","get_supplier_purchase_orders","inspect_purchase_reconciliation","inspect_supplier_purchase","get_supervisor_permissions","get_maintenance_staff_candidates","get_maintenance_cases"],
