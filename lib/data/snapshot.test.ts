@@ -14,7 +14,7 @@ vi.mock("@/lib/pos/processingFeeEstimate.server",()=>({
 }));
 import {getBusinessSnapshotFromDb} from "./snapshot.server";
 import {formatInTimeZone} from "date-fns-tz";
-function mockDb(){
+function mockDb(options:{sold?:Array<{menu_item_id:string;total_quantity:number}>}={}){
   const reads:string[]=[];const writes:string[]=[];
   const data:Record<string,Record<string,unknown>[]>={
     businesses:[{id:"c1",name:"Café",timezone:"America/Los_Angeles",payroll_tax_rate:.12,
@@ -44,7 +44,18 @@ function mockDb(){
         data:range?records.slice(range.start,range.end+1):records}).then(onSuccess)},
     };
     return builder;
-  },rpc(){writes.push("rpc");throw Error("RPC in page load")}};
+  },rpc(name:string){
+    if(name==="menu_item_quantities_sold"&&options.sold){
+      const sold=options.sold;let start=0,end=999;
+      const q={order(){return q},
+        range(a:number,b:number){start=a;end=b;return q},
+        then(resolve:(v:unknown)=>unknown){return Promise.resolve({
+          data:sold.slice(start,end+1),error:null,count:sold.length
+        }).then(resolve)}};
+      return q;
+    }
+    writes.push("rpc");throw Error("Unexpected RPC in page load");
+  }};
   return {db:db as unknown as SupabaseClient,reads,writes,seed:data};
 }
 describe("getSnapshot read-only current snapshot and Home database budget",()=>{
@@ -61,6 +72,22 @@ describe("getSnapshot read-only current snapshot and Home database budget",()=>{
     expect(reads).toHaveLength(10);
     expect(reads.filter(table=>table==="alerts")).toHaveLength(1);
     expect(reads.filter(table=>table==="daily_rollups")).toHaveLength(1);
+  });
+  it("keeps all 1001 menu records and their sold quantities across full source pages",async()=>{
+    const menu=Array.from({length:1001},(_,i)=>({
+      id:"menu-"+String(i).padStart(6,"0"),name:"Product "+i,
+      price_cents:750,prep_seconds:15,category:"food",is_active:true
+    }));
+    const sold=menu.map(item=>({menu_item_id:item.id,total_quantity:2}));
+    const {db,seed,reads,writes}=mockDb({sold});
+    seed.menu_items=menu;
+    seed.recipe_lines=[];seed.menu_item_cost_fallbacks=[];
+    seed.menu_combo_components=[];seed.ingredient_prices=[];
+    const result=await getBusinessSnapshotFromDb(db,"c1","today");
+    expect(result.menuItems).toHaveLength(1001);
+    expect(result.menuItems[1000]).toMatchObject({id:"menu-001000",quantitySoldLast28Days:2});
+    expect(reads.filter(table=>table==="menu_items")).toHaveLength(2);
+    expect(writes).toEqual([]);
   });
   it("never silently drops actual receipts after the 1000-row PostgREST page boundary",async()=>{
     const {db,seed,reads}=mockDb();
