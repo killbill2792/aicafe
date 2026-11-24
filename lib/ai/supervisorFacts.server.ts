@@ -20,7 +20,7 @@ const safeCents=(value:unknown)=>{
  * Requiring unique immutable IDs and a stable exact count fails closed on
  * concurrent page drift, rather than silently publishing a partial subtotal. */
 async function readCompletePaged<T>(
- read:(start:number,end:number)=>Promise<{data:T[]|null;error:unknown;count?:number|null}>,
+ read:(start:number,end:number)=>PromiseLike<{data:T[]|null;error:unknown;count?:number|null}>,
  identity:(row:T)=>unknown
 ):Promise<T[]|null>{
  const rows:T[]=[];const seen=new Set<string>();let expected:number|null=null;
