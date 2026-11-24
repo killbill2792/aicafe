@@ -19,6 +19,25 @@ export function extractIncidentFixture(source){
  // modifying any historical runtime sources.
  return source.slice(0,first)+source.slice(start);
 }
+// The last verified pre-retirement fixture used the historical get_profit
+// interface. Replaying new function names against older runtimes would test
+// unsupported-tool handling, not the recorded incident. Keep the old fixture
+// immutable and require the current fixture to differ ONLY in this explicit
+// transport adapter; all four incident assertions and timings must survive.
+export const historicalFixtureRef="1a9d1aaeabc521928f4d7a0ae27403b37ed2deea";
+export function adaptHistoricalFixture(fixture){
+ const changes=[
+  ['  tools: {','  canonicalData:async()=>({businessId:"aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",db:{} as never}),\n  tools: {',1],
+  ['call("get_profit",JSON.stringify({period,ownerInputs:null}),','call("query_data",JSON.stringify({official_metric:{id:"profit",period_mode:null,profit_period:period}}),',2],
+  ['{source:"get_profit",error:"internal"}','{source:"query_data",error:"internal"}',1],
+  ['{source:"get_profit",period,missing:["deadline_exceeded"]}','{source:"query_data",period,missing:["deadline_exceeded"]}',1]
+ ];
+ for(const [before,after,count] of changes){
+  if(fixture.split(before).length-1!==count)throw Error("Historical fixture adapter input drift");
+  fixture=fixture.replaceAll(before,after);
+ }
+ return fixture;
+}
 export function evaluateReplay(report,expectOldDefect){
  const cases=report.testResults?.flatMap(file=>file.assertionResults??[])??[];
  if(cases.length!==4)throw Error("Expected all four matched incident assertions");
@@ -43,6 +62,11 @@ export function runReplay(root){
  const head=git(["rev-parse","HEAD"]);
  if(!/^[0-9a-f]{40}$/.test(head))throw Error("Invalid checkout head");
  const fixture=extractIncidentFixture(readFileSync(join(root,"lib/ai/agent/loop.server.test.ts"),"utf8"));
+ if(command(root,"git",["cat-file","-e",historicalFixtureRef+"^{commit}"],{allowFailure:true}).status!==0)
+  git(["fetch","--no-tags","--depth=1","origin",historicalFixtureRef],{timeout:90000});
+ const historicalFixture=extractIncidentFixture(git(["show",historicalFixtureRef+":lib/ai/agent/loop.server.test.ts"]));
+ if(adaptHistoricalFixture(historicalFixture).trim()!==fixture.trim())
+  throw Error("Candidate incident fixture drifted beyond the reviewed universal-tool adapter");
  const scratch=mkdtempSync(join(tmpdir(),"aicafe-u1-replay-"));
  const receipt=[];
  const originalLock=readFileSync(join(root,"package-lock.json"),"utf8");
@@ -59,14 +83,14 @@ export function runReplay(root){
      symlinkSync(join(root,"node_modules"),join(dir,"node_modules"),"dir");
     else command(dir,"npm",["ci","--ignore-scripts","--no-audit","--no-fund"],{timeout:180000});
     const file=join(dir,"lib/ai/agent/u1HistoricalReplay.test.ts");
-    writeFileSync(file,fixture,{flag:"wx"});
+    writeFileSync(file,ref===head?fixture:historicalFixture,{flag:"wx"});
     const reportPath=join(scratch,"report-"+index+".json");
     const result=command(dir,process.execPath,[join(dir,"node_modules/vitest/vitest.mjs"),"run","lib/ai/agent/u1HistoricalReplay.test.ts","--reporter=json","--outputFile",reportPath],{timeout:90000,allowFailure:true});
     if(!existsSync(reportPath))throw Error("Historical fixture did not execute: "+result.stderr?.slice(-1500));
     const expectedOld=index<2;
     if(result.status!==(expectedOld?1:0))throw Error("Unexpected replay process exit for "+ref);
     const checked=evaluateReplay(JSON.parse(readFileSync(reportPath,"utf8")),expectedOld);
-    receipt.push({ref,...checked});
+    receipt.push({ref,fixtureInterface:ref===head?"universal_query":"historical_profit",...checked});
     console.log("U1_MATCHED_REPLAY "+JSON.stringify(receipt.at(-1)));
    }finally{git(["worktree","remove","--force",dir]);}
   }
