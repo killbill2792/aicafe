@@ -45,6 +45,13 @@ describe("proactive priority ranking and source revision",()=>{
     expect(choosePriorities(actions,now,10,{includeWatching:true}).map(x=>x.source.sourceId))
       .toEqual(["sales-decline"]);
   });
+  it("keeps a verified missing physical count actionable while excluding an unavailable reader",()=>{
+    const now=new Date("2026-11-23T00:00:00Z");
+    const missing={...base,kind:"business_anomaly",sourceId:"missing-count",
+      evidence:{family:"data_gap",subject:"stock_counts",quality:"missing",current:1,unit:"coverage"}};
+    const outage={...missing,sourceId:"unavailable",evidence:{...missing.evidence,quality:"technical_failure"}};
+    expect(choosePriorities([missing,outage],now,10).map(x=>x.source.sourceId)).toEqual(["missing-count"]);
+  });
   it("does not suppress explicit evidence-backed missing punch incidents",()=>{
     const now=new Date("2026-11-23T00:00:00Z");
     const punch={...base,kind:"business_anomaly",sourceId:"punch:shift-1",

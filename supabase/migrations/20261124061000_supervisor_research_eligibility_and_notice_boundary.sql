@@ -5,13 +5,29 @@
 set lock_timeout='3s';
 set statement_timeout='45s';
 
+-- Only the canonical detector's observed absence of a physical count is
+-- currently actionable among its coverage-gap records. Gates on a normal
+-- alert and on a pending investigation use the same evidence distinction.
+CREATE FUNCTION public.supervisor_alert_evidence_eligible(p_kind text,p_payload jsonb)
+RETURNS boolean LANGUAGE sql IMMUTABLE SET search_path='' AS $eligible$
+ SELECT CASE
+  WHEN p_kind IS DISTINCT FROM 'business_anomaly' THEN true
+  WHEN p_payload->>'quality' IN ('technical_failure','not_matured') THEN false
+  WHEN p_payload->>'family'='data_gap' THEN coalesce(
+   p_payload->>'subject'='stock_counts' AND p_payload->>'quality'='missing'
+   AND p_payload->'current'='1'::jsonb AND p_payload->>'unit'='coverage',false)
+  ELSE true
+ END
+$eligible$;
+REVOKE ALL ON FUNCTION public.supervisor_alert_evidence_eligible(text,jsonb) FROM PUBLIC,anon,authenticated;
+
 CREATE OR REPLACE FUNCTION public.supervisor_enqueue_investigation(p_business_id uuid, p_owner_user_id uuid, p_thread_id uuid, p_source_type text, p_source_id text, p_revision_hash text, p_stable_key text, p_priority integer, p_now timestamp with time zone)
  RETURNS boolean
  LANGUAGE plpgsql
  SECURITY DEFINER
  SET search_path TO 'public'
 AS $function$
-declare v_open boolean;v_episode uuid;v_anomaly boolean:=false;
+declare v_open boolean;v_episode uuid;
 begin
   if coalesce(auth.role(),'')<>'service_role' then
     raise exception 'Service role required' using errcode='42501'; end if;
@@ -27,9 +43,7 @@ begin
     select exists(select 1 from public.alerts a
       where a.business_id=p_business_id and a.id::text=p_source_id
         and a.status in ('new','seen')
-        and not (a.kind='business_anomaly' and
-          (a.payload->>'family'='data_gap' or
-           a.payload->>'quality' in ('technical_failure','not_matured'))))
+        and public.supervisor_alert_evidence_eligible(a.kind,a.payload))
        into v_open;
   else
     select exists(select 1 from public.operating_tasks t
@@ -39,39 +53,20 @@ begin
         and (t.owner_user_id is null or t.owner_user_id=p_owner_user_id)) into v_open;
   end if;
   if not v_open then return false; end if;
-  -- Rolling business-source data revisions are not a new incident. Keep the
-  -- outstanding owner question, answer and episode; fence the old revision.
-  if p_source_type='alert' then
-    select exists(select 1 from public.alerts a where a.business_id=p_business_id
-       and a.id::text=p_source_id and a.kind='business_anomaly') into v_anomaly;
-  end if;
-  -- A relevant source revision wakes the SAME episode, but leaves its
-  -- owner question answerable. The pendingRelevantRevision token is set by
-  -- service-only enqueue, consumed by the investigation checkpoint, and
-  -- NEVER minted by a periodic cron timestamp or unrelated café row.
-  if v_anomaly then
-    update public.supervisor_investigations set revision_hash=p_revision_hash,
-      stable_key=p_stable_key,priority=p_priority,next_retry_at=p_now,updated_at=p_now,
-      evidence=case when phase='awaiting_owner' then
-        jsonb_set(coalesce(evidence,'{}'::jsonb),'{pendingRelevantRevision}',
-          to_jsonb(p_revision_hash),true) else evidence end,
-      failure_count=0,last_error=null
-      where business_id=p_business_id and owner_user_id=p_owner_user_id and thread_id=p_thread_id
-       and source_type=p_source_type and source_id=p_source_id
-       and phase in ('collect','investigate','awaiting_owner')
-       and revision_hash<>p_revision_hash and (lease_until is null or lease_until<=p_now);
-    if found then return true;end if;
-  else
-    update public.supervisor_investigations set revision_hash=p_revision_hash,
-      stable_key=p_stable_key,priority=p_priority,next_retry_at=p_now,updated_at=p_now,
-      evidence=jsonb_set(coalesce(evidence,'{}'::jsonb),
-        '{pendingRelevantRevision}',to_jsonb(p_revision_hash),true),
-      failure_count=0,last_error=null
-      where business_id=p_business_id and owner_user_id=p_owner_user_id and thread_id=p_thread_id
-       and source_type=p_source_type and source_id=p_source_id and phase='awaiting_owner'
-       and revision_hash<>p_revision_hash and (lease_until is null or lease_until<=p_now);
-    if found then return true;end if;
-  end if;
+  -- Preserve the active episode, its original research and any open
+  -- question. With the current lease released, exactly one update can wake
+  -- the same work for a given material source revision.
+  update public.supervisor_investigations set revision_hash=p_revision_hash,
+    stable_key=p_stable_key,priority=p_priority,next_retry_at=p_now,updated_at=p_now,
+    evidence=case when phase='awaiting_owner' then
+      jsonb_set(coalesce(evidence,'{}'::jsonb),'{pendingRelevantRevision}',
+        to_jsonb(p_revision_hash),true) else evidence end,
+    failure_count=0,last_error=null
+    where business_id=p_business_id and owner_user_id=p_owner_user_id and thread_id=p_thread_id
+     and source_type=p_source_type and source_id=p_source_id
+     and phase in ('collect','investigate','awaiting_owner')
+     and revision_hash<>p_revision_hash and (lease_until is null or lease_until<=p_now);
+  if found then return true;end if;
   insert into public.supervisor_investigations
     (business_id,owner_user_id,thread_id,source_type,source_id,
      revision_hash,stable_key,priority,next_retry_at)
@@ -182,9 +177,7 @@ begin
   if p_source_type='alert' then
     select exists(select 1 from public.alerts a where a.business_id=p_business_id
       and a.id::text=p_source_id and a.status in ('new','seen')
-        and not (a.kind='business_anomaly' and
-          (a.payload->>'family'='data_gap' or
-           a.payload->>'quality' in ('technical_failure','not_matured'))))
+        and public.supervisor_alert_evidence_eligible(a.kind,a.payload))
       into v_found;
   elsif p_source_type='supplier_po' then
     select exists(select 1 from public.supervisor_proposals p
@@ -350,9 +343,7 @@ from public.alerts a
 where i.business_id=a.business_id and i.source_type='alert'
   and i.source_id=a.id::text
   and i.phase in ('collect','investigate','awaiting_owner')
-  and a.kind='business_anomaly'
-  and (a.payload->>'family'='data_gap' or
-       a.payload->>'quality' in ('technical_failure','not_matured'));
+  and not public.supervisor_alert_evidence_eligible(a.kind,a.payload);
 
 -- The technical attention row is no longer actionable. Do not delete audit
 -- and do not modify any item which the owner already handled.
@@ -364,9 +355,7 @@ where t.business_id=a.business_id and t.kind='priority_notice'
   and t.status in ('needs_owner','needs_response','watching')
   and t.payload->>'sourceType'='alert'
   and t.payload->>'sourceId'=a.id::text
-  and a.kind='business_anomaly'
-  and (a.payload->>'family'='data_gap' or
-       a.payload->>'quality' in ('technical_failure','not_matured'));
+  and not public.supervisor_alert_evidence_eligible(a.kind,a.payload);
 
 -- The U3 retained operational Toast views independently enforced the same
 -- arbitrary 31-day cap. Preserve the original signed tenant/owner/mode, field

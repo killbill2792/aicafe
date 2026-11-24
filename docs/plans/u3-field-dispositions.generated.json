@@ -5,8 +5,8 @@
   "productionRowsIncluded": false,
   "physicalTables": 223,
   "physicalFields": 2513,
-  "approvedSqlRelations": 87,
-  "reviewedFields": 926,
+  "approvedSqlRelations": 88,
+  "reviewedFields": 936,
   "additionalLogicalViews": [
     "cafe_city_event_links",
     "cafe_neighborhood_source_coverage",
@@ -37,6 +37,7 @@
     "opening_hours",
     "pos_scheduled_shifts",
     "processing_fee_daily_facts",
+    "provisional_hourly_sales",
     "recorded_timecards",
     "recovery_order",
     "scheduling_coverage_requirements",
@@ -907,6 +908,21 @@
         "source_type",
         "status",
         "updated_at"
+      ]
+    },
+    {
+      "relation": "provisional_hourly_sales",
+      "fields": [
+        "business_date",
+        "hour_local",
+        "hourly_unassigned_orders",
+        "locations_failed",
+        "net_sales_cents",
+        "orders_count",
+        "source_as_of",
+        "status",
+        "truncated",
+        "unparsed_orders"
       ]
     },
     {

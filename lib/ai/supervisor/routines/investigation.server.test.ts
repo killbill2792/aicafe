@@ -236,6 +236,16 @@ describe("Task 15A operational end-to-end orchestration (recorded source/model)"
     expect(saved?.p_evidence).toMatchObject({modelTools:["get_investigation_source","query_data"],
       missing:["unverifiedWages"]});
   });
+  it("rejects a claimed source that became technically unavailable before reserving model work",async()=>{
+    const d=db([{...investigating}],{sourceKind:"business_anomaly",alertPayload:{
+      family:"data_gap",subject:"stock_counts",quality:"technical_failure",
+    }});
+    const result=await processNextInvestigation(d.client,now);
+    expect(result).toMatchObject({processed:1,failed:1});
+    expect(mocks.paidGate).not.toHaveBeenCalled();
+    expect(mocks.model).not.toHaveBeenCalled();
+    expect(d.calls.find(call=>call.name==="supervisor_fail_investigation")?.args.p_error).toBe("source_unavailable");
+  });
   it("retains prior findings across a worker restart without paying for unanswered owner work",async()=>{
     const d=db([{...investigating},{...following}]);
     const result=await processDueInvestigations(d.client,now,2);

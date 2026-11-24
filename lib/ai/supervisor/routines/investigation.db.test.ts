@@ -85,6 +85,15 @@ describe("Task 15A migrated, agentic investigation SQL integration",()=>{
       expect((await admin.query("select count(*)::int n from public.ai_messages where business_id=$1 and thread_id=$2 and grounding->>'intent' in ('priority_notice','priority_investigation_exception')",
         [cafes[0],threads[0]])).rows[0].n).toBe(0);
 
+      const missingCount=randomUUID();
+      await admin.query("insert into public.alerts(id,business_id,kind,status,payload) values ($1,$2,'business_anomaly','new',$3::jsonb)",
+        [missingCount,cafes[0],JSON.stringify({family:"data_gap",subject:"stock_counts",quality:"missing",current:1,unit:"coverage"})]);
+      expect(await rpc(a,"supervisor_enqueue_investigation",[
+        cafes[0],owners[0],threads[0],"alert",missingCount,hex("3"),hex("4"),100,anchor
+      ])).toBe(true);
+      await admin.query("delete from public.supervisor_investigations where business_id=$1 and source_id=$2",[cafes[0],missingCount]);
+      await admin.query("delete from public.alerts where business_id=$1 and id=$2",[cafes[0],missingCount]);
+
       // One genuine, evidence-backed source remains actionable; a changed
       // revision supersedes its *open* notification, not the audit history.
       const genuine=randomUUID();
@@ -700,8 +709,14 @@ describe("Task 15A migrated, agentic investigation SQL integration",()=>{
       expect(renewed.episode_id).not.toBe(first.episode_id);
       expect(await rpc(service,"supervisor_finish_investigation",
         finish(renewed,"collected",null,6*60+10))).toBe(true);
+      // A correction before the researched report continues the same work.
+      expect(await rpc(service,"supervisor_enqueue_investigation",
+        enqueue(hex("1"),hex("2"),6*60+11))).toBe(true);
+      expect(await rpc(service,"supervisor_enqueue_investigation",
+        enqueue(hex("1"),hex("2"),6*60+11))).toBe(false);
       const renewedInvestigation=await rpc(service,"supervisor_claim_investigation",
         [stamp(now,6*60+11)]) as Record<string,unknown>;
+      expect(renewedInvestigation).toMatchObject({episode_id:renewed.episode_id,phase:"investigate",revision_hash:hex("1")});
       expect(await rpc(service,"supervisor_finish_investigation",
         finish(renewedInvestigation,"investigated",
           "A new issue is now open; the owner needs a fresh review.",6*60+12)))

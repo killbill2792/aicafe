@@ -27,7 +27,7 @@ import {prepareSupplierDiscrepancyFollowup} from "@/lib/ai/supervisor/loop/suppl
 import {readStaffMessagesForVerifiedOwner} from "@/lib/staffCommunication/channel.server";
 import {getWeekSchedule as readScopedWeekSchedule} from "@/lib/data/staffSchedule.server";
 import {prepareProactiveStockDraft} from "./stockDraft.server";
-import {alreadyNotifiedTaskKinds} from "./priority";
+import {alreadyNotifiedTaskKinds,eligibleAlertEvidence} from "./priority";
 import {getConnectorAccount,allowsGmail} from "@/lib/connectors/registry.server";
 import {maintenanceContext,pollMaintenanceVendorReplies} from "@/lib/ai/supervisor/loop/maintenance.server";
 import {staffQuestionCapabilityId} from "@/lib/ai/supervisor/loop/staffQuestion.server";
@@ -82,6 +82,8 @@ async function collectSource(db:SupabaseClient,c:Claimed,now:Date):Promise<Sourc
     throw new Error("authorization_revoked");
   const payload=object(c.source_type==="alert"?row.payload:
     Array.isArray(row.evidence)?row.evidence[0]:row.evidence);
+  if(c.source_type==="alert"&&!eligibleAlertEvidence(String(row.kind),payload))
+    throw Error("source_unavailable");
   const facts=object(payload?.facts);
   const quality=payload?.quality??facts?.quality??row.confidence;
   const severity=payload?.severity??facts?.severity;
@@ -172,7 +174,7 @@ async function readIncidentEvidence(db:SupabaseClient,c:Claimed):
         linkedTimecard={id:linked.data.id,employeeId:linked.data.employee_id,
           clockIn:linked.data.clock_in,clockOut:linked.data.clock_out,
           breaks:Array.isArray(linked.data.breaks)?
-            linked.data.breaks.slice(0,12).map(b=>{
+            linked.data.breaks.map(b=>{
               const value=object(b);
               return {start:typeof value?.start==="string"?value.start:null,
                 end:typeof value?.end==="string"?value.end:null};
