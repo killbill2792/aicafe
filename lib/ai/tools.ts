@@ -250,8 +250,8 @@ export class BusinessScopedCafeTools {
   getProductSales(period: CafeStatePeriod) { return this.tools.getProductSales(this.businessId, period); }
   getItemSalesCoverage(period: CafeStatePeriod) { return this.tools.getItemSalesCoverage(this.businessId, period); }
   getMenuCatalog() { return this.tools.getMenuCatalog(this.businessId); }
-  getStaffAttendance(period: CafeStatePeriod, timezone: string) {
-    return this.tools.getStaffAttendance(this.businessId, period, timezone);
+  getStaffAttendance(period: CafeStatePeriod, timezone: string, pageOffset?:number) {
+    return this.tools.getStaffAttendance(this.businessId, period, timezone, pageOffset);
   }
   getCurrentStaff() {return this.tools.getCurrentStaff(this.businessId);}
   getRecurringSchedule(period:CafeStatePeriod,asOf:string) {return this.tools.getRecurringSchedule(this.businessId,period,asOf);}
