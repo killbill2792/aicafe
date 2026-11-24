@@ -4,10 +4,11 @@ import {Pool,type PoolClient} from "pg";
 import {z} from "zod";
 import type {SupabaseClient} from "@supabase/supabase-js";
 import {createAdminSupabaseClient} from "@/lib/supabase/admin";
-import {admitU3Sql,U3AdmissionError,ownerOnlyResearchRelations,type U3TrustedUnit,type U3RelationUnits} from "./u3SqlAdmission";
+import {admitU3Sql,U3AdmissionError,ownerOnlyResearchRelations,unattendedDetailAllowed,unattendedDetailFields,type U3TrustedUnit,type U3RelationUnits} from "./u3SqlAdmission";
 import {researchPageBudget} from "../executionPolicy";
 import {validateResearchConnection} from "./u3ResearchConnection";
 import {researchNextCursor,researchPage,type ResearchSnapshot} from "./u3SqlCursor";
+import {ResearchPageCollector,researchPageCache} from "./u3SqlPageCache";
 
 /** One research executor for the existing query_data tool.
  * No service-role client receives model-authored SQL. Scope is a server-only
@@ -280,11 +281,12 @@ export function unsafeStructuredToastResult(rows:readonly unknown[]):boolean{
 
 /** Stream the complete result in one repeatable-read transaction. Hash every
  * serialized row in its actual order, retaining only the requested page in
- * memory. Subsequent pages must match this exact ordered result before any
- * rows are returned. No unbounded process cache or persistent raw-data copy.
+ * memory. A bounded, encrypted, short-lived transport cache can retain a
+ * complete observation; otherwise later pages revalidate its exact digest.
  * The real wall-clock/statement resource budget applies to the full scan. */
 async function readResearchPage(client:PoolClient,sql:string,parameters:readonly unknown[],
- offset:number,limit:number|null,resultBudgetBytes:number,validate:(rows:unknown[])=>void){
+ offset:number,limit:number|null,resultBudgetBytes:number,validate:(rows:unknown[])=>void,
+ collector:ResearchPageCollector|null){
  const started=Date.now();
  await client.query({text:CURSOR_PREFIX+sql+") AS u3_bounded",values:[...parameters]});
  const rows:unknown[]=[];let bytes=2,totalRows=0,pageFull=false;
@@ -303,6 +305,7 @@ async function readResearchPage(client:PoolClient,sql:string,parameters:readonly
    const size=Buffer.byteLength(serialized,"utf8");
    // Length prefix makes the byte stream unambiguous across row boundaries.
    digest.update(String(size)+":").update(serialized);
+   collector?.add(row,size);
    const index=totalRows++;
    if(index<offset||pageFull)continue;
    if((limit!==null&&rows.length===limit)||bytes+size+(rows.length?1:0)>resultBudgetBytes){
@@ -365,7 +368,7 @@ export async function runU3Sql(ctx:U3SqlContext,raw:unknown){
   if(!Number.isSafeInteger(resultBudgetBytes)||resultBudgetBytes<2)throw Error("research_context_exhausted");
   stage.value="admission";
   if(Buffer.byteLength(JSON.stringify(parsed.data.parameters??[]),"utf8")>256*1024)throw new U3AdmissionError("parser_resource_bound");
-  const committedPage=await withinScope(ctx,async (client,asOf)=>{
+  const committed=await withinScope(ctx,async (client,asOf)=>{
    stage.value="catalog";
    const list=await sources(client);
    if(!list.length)throw Error("research_not_configured");
@@ -377,6 +380,7 @@ export async function runU3Sql(ctx:U3SqlContext,raw:unknown){
    const offturnByRelation=Object.fromEntries(list.map(r=>[r.name,
     ownerOnlyResearchRelations.has(r.name)?[]:
     r.columns.filter(c=>
+     (Object.hasOwn(unattendedDetailFields,r.name)&&unattendedDetailFields[r.name].includes(c.name))||
      c.unit==="integer_cent"||c.unit==="microcent"||
      c.unit==="cafe_business_date"||c.unit==="minutes"||c.unit==="hours"||
      c.unit==="source_specific_unit"||c.unit==="boolean"||
@@ -432,10 +436,23 @@ export async function runU3Sql(ctx:U3SqlContext,raw:unknown){
    // cost number blocks legitimate indexed/aggregate work. The actual query
    // is still bounded by the same server statement/lock timeout, work_mem,
    // admitted AST, isolated role, pool limit and result transport.
-   const fit=await readResearchPage(client,bounded,parameters,offset,count,resultBudgetBytes,rows=>{
+   // Do not retain customer, raw Toast or owner-private relation observations
+   // in a process cache. Their original independently scoped replay remains.
+   const retainable=!customerEvidence&&plan.relations.every(r=>
+    !ownerOnlyResearchRelations.has(r)&&r!=="toast_records"&&r!=="toast_changes");
+   // Cache access follows fresh signed capability issuance, exact query cursor
+   // verification and current admission. The scoped settings view also forces
+   // SQL-side membership/lease validation, even on a transport cache hit.
+   const retained=retainable&&prior?researchPageCache.read(prior,offset,count,resultBudgetBytes):null;
+   if(retained){
+    const active=await client.query("SELECT 1 FROM u3_research.cafe_settings LIMIT 1");
+    if(active.rows.length!==1)throw Error("research_scope_denied");
+   }
+   const collector=retainable&&!retained?new ResearchPageCollector():null;
+   const fit=retained??await readResearchPage(client,bounded,parameters,offset,count,resultBudgetBytes,rows=>{
     if(plan.relations.includes("toast_records")&&unsafeStructuredToastResult(rows))
      throw Error("invalid_query");
-    if(aggregateOnly&&rows.some(row=>
+    if(aggregateOnly&&!unattendedDetailAllowed(plan.relations)&&rows.some(row=>
      !row||typeof row!=="object"||Array.isArray(row)||
      Object.entries(row).some(([key,value])=>
       /name|email|phone|address|employee|customer|person|account|identity|recipient/i.test(key)&&value!==null&&
@@ -445,7 +462,7 @@ export async function runU3Sql(ctx:U3SqlContext,raw:unknown){
        (typeof value==="number"&&Number.isFinite(value)||
         typeof value==="string"&&/^[+-]?\d+(?:\.\d+)?$/u.test(value))))))
      throw Error("unattended_aggregate_required");
-   });
+   },collector);
    stage.value="result";
    // Independent unfiltered denominator from the same scoped DB snapshot.
    const rawCoverage=customerEvidence?(await client.query(
@@ -495,16 +512,16 @@ export async function runU3Sql(ctx:U3SqlContext,raw:unknown){
    const nextOffset=offset+fit.rows.length;
    if(!Number.isSafeInteger(nextOffset))throw Error("invalid_query");
    const nextCursor=truncated?researchNextCursor(cursorInput,nextOffset,key,snapshot):null;
-   return {source:"u3_canonical_research",
+   const page={source:"u3_canonical_research",
     period:customerEvidence&&p.date_from&&p.date_to?{from:p.date_from,to:p.date_to}:null,
     missing:[...(truncated?["result_truncated"]:[]),
      ...(customerEvidence&&!customerCoverage?.complete?["customer_source_coverage_incomplete"]:[])],rows:fit.rows,
     customerEvidence,customerCoverage,aggregateOnly,
     rowCount:fit.rows.length,truncated,
     page_offset:offset,next_cursor:nextCursor,page_complete:!truncated,
-    // Exact full-result equivalence is proved on every page; this is not
-    // a long-lived exported PostgreSQL MVCC transaction.
-    page_consistency:"verified_same_result",total_rows:fit.totalRows,
+    // Continue the original immutable observation, or revalidate its entire
+    // digest on cache miss. Neither path mixes rows across snapshots.
+    page_consistency:"verified_same_result",page_retrieval:retained?"retained_result":"executed_query",total_rows:fit.totalRows,
     evidence:{receipt_id:randomUUID(),snapshot_id:snapshot.id,
      snapshot_digest:snapshot.digest,as_of:snapshot.asOf,
      query_fingerprint:createHash("sha256").update(p.sql).digest("hex"),
@@ -513,14 +530,17 @@ export async function runU3Sql(ctx:U3SqlContext,raw:unknown){
      relation_names:plan.relations,functions:plan.functions,
      authority:"approved_logical_source",scope:"verified_owner_cafe_lease"}
    };
+   return {page,snapshot,records:truncated?collector?.finish()??null:null};
   },{date_from:parsed.data.date_from,date_to:parsed.data.date_to});
+  const committedPage=committed.page;
+  researchPageCache.remember(committed.snapshot,committed.records);
   // Record only a committed, validated result (never raw café/owner/SQL
   // values). Correlate the safe returned receipt with execution telemetry.
   console.info("u3_sql_research_receipt",{
    receipt_id:committedPage.evidence.receipt_id,
    duration_ms:Math.max(0,Date.now()-startedAt),
    relation_count:committedPage.evidence.relation_names.length,
-   page_complete:committedPage.page_complete
+   page_complete:committedPage.page_complete,page_retrieval:committedPage.page_retrieval
   });
   return committedPage;
  }catch(e){

@@ -77,9 +77,12 @@ remain useful inputs, never the intellectual decision-maker.
   and appropriate missing/error states. A complete answer requires exhausting
   relevant pages or asking PostgreSQL to perform the selected aggregate; a
   partial page, failure or snapshot change is never certified as a total.
-  Each page is an independent read-only snapshot, not a fabricated single
-  cross-page MVCC view. Owner questions permit authorized employee detail;
-  unattended research still excludes private individual-level exposure.
+  A continuation either retrieves the same authorized immutable observation
+  or proves exact full-result equality in a fresh read-only transaction; it
+  is not a fabricated cross-page MVCC view. A bounded encrypted transport
+  cache is optional and may not impose a total result ceiling. Owner questions
+  permit authorized employee detail; unattended research permits reviewed
+  nonpersonal detail while preserving private individual-level protection.
   Prompt packing, compact evidence and final synthesis must preserve
   incomplete/missing status and traceable numeric authority.
 - SQL discovery is a schema operation, not a mandatory question workflow. Return the full admitted relation inventory and matching relation fields by default; pagination is optional when the catalog fits; otherwise return explicit continuation. Return finite safe SQLSTATE/rejection diagnostics so the model can repair a query, never raw database messages or credentials. A PostgreSQL estimated plan cost is not a physical resource budget: no unconditional EXPLAIN-before-SELECT or estimated-cost rejection. Retain actual DB timeout, bounded connections, read-only transactions, work memory, scope and transport protection pending measured resource evidence. Permit reviewed pure PostgreSQL transformations of admitted fields (including local-time and window analysis) without introducing question-specific code.

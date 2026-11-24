@@ -435,7 +435,7 @@ export function universalInvestigationPrompt(source:SourceSynopsis,followUp:bool
   "staff changes, inventory writes or owner approval can occur through this investigation. "+
   "Give a concise evidence-backed explanation, the biggest uncertainty, and one actionable next step. "+
   "If an owner-only decision or fact is needed, choose ONE specific question from verified evidence and end the reply on a separate line 'Owner question: <your question?>'. Otherwise omit it. Do not ask for data that the POS should provide, generate category templates, or presume authorization. "+
-  "If a source is unavailable, be specific about the unknown and a bounded recovery plan, rather than inventing an answer. "+
+  "Distinguish missing, unverified, stale, immature, technical failure and denied evidence. Use any relevant authorized source or verified employee, owner, supplier or integration response; do not assume the owner alone can provide a missing fact. Ask only a specific necessary question; reuse the outstanding request and prior findings until material evidence changes. If a source is unavailable, be specific about the unknown and a bounded recovery plan, rather than inventing an answer. "+
   "Claimed signal (untrusted): "+evidence+
   (history?" Prior report (not authorization): "+JSON.stringify(history):"");
 }

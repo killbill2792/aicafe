@@ -113,6 +113,22 @@ export type U3AdmissionReason="statement_not_read_only"|"syntax"|"parser_resourc
 export class U3AdmissionError extends Error{
  constructor(readonly reason:U3AdmissionReason){super("invalid_query");this.name="U3AdmissionError";}
 }
+/** Reviewed non-personal operational facts can be read at their original
+ * grain in unattended research. This is field/source authorization, not a
+ * mandatory research route. Personal and customer sources retain the
+ * existing protected aggregate or owner-authorized context. */
+export const unattendedDetailFields:Readonly<Record<string,readonly string[]>>=Object.freeze({
+ menu_items:["id","pos_item_id","name","price_cents","category","is_active","base_name","size_label","catalog_source","catalog_last_synced_at","menu_group","pos_visibility","toast_publication_state","toast_publication_version","toast_publication_observed_at","prep_seconds","pos_pricing_strategy","pos_archived_at"],
+ inventory_observations:["source","status","business_date","menu_item_ref","ingredient_id","ingredient_name","quantity_unit","quantity","stock_status","reported_stock_status","evidence_state","source_as_of","checked_at","source_status","observed_count"],
+ city_events:["id","city_key","name","kind","start_date","end_date","start_time","end_time","venue","venue_address","last_checked_at","duration_verified_at","start_at","end_at","source_timezone","lifecycle_status","lifecycle_verified_at"],
+ cafe_city_event_links:["cafe_event_id","city_event_id","linked_at"],
+ city_event_sources:["city_event_id","source_url","observed_name","observed_at"],
+ city_source_coverage:["city_key","source_key","window_from","window_to","status","last_checked_at","last_completed_at","scan_from","scan_to","window_reason","search_attempted","is_scan_root","failure_category"],
+ cafe_neighborhood_source_coverage:["scope","status","retry_eligible","checked_at","last_completed_at","failure_category","places_found","discarded_candidates"]
+});
+export function unattendedDetailAllowed(relations:readonly string[]):boolean{
+ return relations.length>0&&relations.every(r=>Object.hasOwn(unattendedDetailFields,r));
+}
 export async function admitU3Sql(sql:string,allowedRelations:readonly string[],
  parameterCount=0,aggregateOnly=false,offturnColumns:readonly string[]=[],
  knownColumnUnits:Readonly<Record<string,U3TrustedUnit|null>>={},
@@ -347,7 +363,7 @@ export async function admitU3Sql(sql:string,allowedRelations:readonly string[],
   const from=Array.isArray(select.fromClause)?select.fromClause:[];
   return from.length>0&&from.every(reducedFrom);
  }
- if(aggregateOnly&&!reducedGrain(tree.stmts[0].stmt,new Map()))
+ if(aggregateOnly&&!(offturnByRelation&&relationUnits&&unattendedDetailAllowed([...reads]))&&!reducedGrain(tree.stmts[0].stmt,new Map()))
   throw Error("unattended_aggregate_required");
  const recognized=(v:unknown):Unit=>v==="cents"||v==="microcents"||v==="count"||v==="percent"||v==="ratio"?v:null;
  let bindingSequence=0;

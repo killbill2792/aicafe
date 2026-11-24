@@ -801,7 +801,13 @@ describe.skipIf(!active)("U3 migrated registered tool + private connection",()=>
    expect(token).toEqual(expect.any(String));
    await admin.query("UPDATE public.orders SET net_sales_cents=net_sales_cents+1 WHERE business_id=$1 AND pos_order_id='u3-cursor-137'",[ids.a]);
    const changed=await dataQueryTools.query_data.execute({...input(sql),limit:50,cursor:token},scoped);
-   expect(changed).toMatchObject({error:"research_snapshot_changed",rows:[],page_complete:false});
+   // A retained observation is immutable even when the underlying source
+   // changes; on cache miss the original digest must instead reject replay.
+   if(changed.error)expect(changed).toMatchObject({error:"research_snapshot_changed",rows:[],page_complete:false});
+   else{
+    expect(changed).toMatchObject({page_retrieval:"retained_result",page_consistency:"verified_same_result",page_complete:false});
+    expect((changed.rows as Array<{id:string}>).map(v=>v.id)).toEqual(oracle.rows.slice(50,100).map(v=>v.id));
+   }
    const restart=await dataQueryTools.query_data.execute({...input(sql),limit:50},scoped);
    expect(restart.error).toBeUndefined();
   }finally{

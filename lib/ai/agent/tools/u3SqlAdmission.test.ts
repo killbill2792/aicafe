@@ -155,6 +155,15 @@ describe("U3 governed PostgreSQL AST admission",()=>{
   await expect(admit("WITH x AS (SELECT e.net_sales_cents AS amount_cents FROM expenses e) SELECT sum(amount_cents) FROM x")).rejects.toThrow("unattended_aggregate_required");
   await expect(admit("SELECT sum(o.net_sales_cents) FROM orders o JOIN expenses e ON e.net_sales_cents=o.net_sales_cents")).rejects.toThrow("unattended_aggregate_required");
  });
+ it("allows explicit nonpersonal detail but not a cross-source privacy bypass",async()=>{
+  const units={menu_items:{id:null,name:null,price_cents:"cents" as const,description:null},orders:{net_sales_cents:"cents" as const}};
+  const safe={menu_items:["id","name","price_cents"],orders:["net_sales_cents"]};
+  const admit=(sql:string)=>admitU3Sql(sql,["menu_items","orders"],0,true,[],{},units,safe);
+  await expect(admit("SELECT name,price_cents FROM menu_items ORDER BY id")).resolves.toMatchObject({relations:["menu_items"],outputUnits:{price_cents:"cents"}});
+  await expect(admit("SELECT description FROM menu_items")).rejects.toThrow("unattended_aggregate_required");
+  await expect(admit("SELECT name,net_sales_cents FROM menu_items CROSS JOIN orders")).rejects.toThrow("unattended_aggregate_required");
+  await expect(admit("SELECT * FROM menu_items")).rejects.toThrow("unattended_aggregate_required");
+ });
  it("derives trusted calculator units from source columns and SQL expressions, never aliases",async()=>{
   const units={net_sales_cents:"cents" as const,orders_count:"count" as const};
   const money=await admitU3Sql("SELECT SUM(net_sales_cents) AS result FROM orders",admitted,0,false,[],units);

@@ -1,9 +1,10 @@
 import {createHash,createHmac,timingSafeEqual} from "node:crypto";
 
 /** An opaque cursor binds the exact authorized query, scope and full ordered
- * result digest. Each continuation revalidates the complete result in a new
- * repeatable-read transaction. A changed result is rejected, never spliced
- * into the earlier observation. No source rows or SQL are stored in a token. */
+ * result digest. A continuation retrieves the original validated observation
+ * if still retained, otherwise revalidates the complete result in a new
+ * repeatable-read transaction. No changed rows are spliced into it.
+ * No source rows or SQL are stored in a token. */
 type FingerprintInput={
  businessId:string;ownerUserId:string;threadId:string;
  mode:string;sourceType:string|null;sourceId:string|null;
