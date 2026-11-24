@@ -325,7 +325,7 @@ const baseToolDefinitions = (Object.keys(schemas) as AgentToolName[]).map(name =
 // profit/break_even use the optional official shared definition; opening_hours
 // and employee_sales_rollup are normal discoverable SQL sources.
 export const retiredResearchTools:ReadonlySet<AgentToolName>=new Set([
-  "get_profit","get_break_even","get_business_hours","get_employee_sales","get_expenses","get_bills","get_sales","get_peak_hours","get_labor","get_staff","get_cost_summary","get_ingredient_costs","get_payroll_facts","get_item_sales","get_product_costs","get_usage_variance","get_goal_status"
+  "get_profit","get_break_even","get_business_hours","get_employee_sales","get_expenses","get_bills","get_sales","get_peak_hours","get_labor","get_staff","get_cost_summary","get_ingredient_costs","get_payroll_facts","get_item_sales","get_product_costs","get_usage_variance","get_goal_status","get_labor_rules"
 ]);
 // Routine management remains a verified-owner-only additional function.
 export const agentToolDefinitions:Array<Omit<(typeof baseToolDefinitions)[number],"name">&{name:string}>=
@@ -443,7 +443,7 @@ export async function executeAgentTool(name: string, raw: unknown, ctx: AgentToo
         if(!p.official_metric||[p.view,p.sql,p.parameters,p.cursor??null,p.columns,p.filters,
           p.group_by,p.metrics,p.order_by,p.limit].some(v=>v!==null))return invalid("invalid_query");
         const metric=p.official_metric;
-        if(scope.aggregateOnly&&(metric.id==="payroll"||metric.id==="goal_score"||metric.id==="usage_variance"&&metric.dimension==="staff"))return invalid("owner_research_required");
+        if(scope.aggregateOnly&&(metric.id==="payroll"||metric.id==="goal_score"||metric.id==="labor_rules"||metric.id==="usage_variance"&&metric.dimension==="staff"))return invalid("owner_research_required");
          if(metric.entity_id!=null&&!["product_cost","goal_score"].includes(metric.id)||
            metric.entity_name!=null&&!["item_sales","usage_variance"].includes(metric.id)||
            metric.dimension!=null&&metric.id!=="usage_variance")return invalid("invalid_query");
@@ -465,9 +465,9 @@ export async function executeAgentTool(name: string, raw: unknown, ctx: AgentToo
              if(metric.period!=null||p.date_from!==null||p.date_to!==null)return invalid("invalid_date_range");
              if(metric.id==="product_cost"&&!metric.entity_id)return invalid("invalid_query");
              result=metric.id==="product_cost"?await suppliesTools.get_product_costs.execute({itemId:metric.entity_id},ctx):await goalTools.get_goal_status.execute({goal_id:metric.entity_id??null},ctx);
-           }else if(metric.id==="recurring_bills"||metric.id==="current_staff"){
+           }else if(metric.id==="recurring_bills"||metric.id==="current_staff"||metric.id==="labor_rules"){
             if(metric.period!=null||p.date_from!==null||p.date_to!==null)return invalid("invalid_date_range");
-            result=metric.id==="recurring_bills"?await moneyTools.get_bills.execute({},ctx):await staffTools.get_staff.execute({},ctx);
+            result=metric.id==="recurring_bills"?await moneyTools.get_bills.execute({},ctx):metric.id==="labor_rules"?await scheduleReadTools.get_labor_rules.execute({},ctx):await staffTools.get_staff.execute({},ctx);
           }else{
             const period=metric.period??(p.date_from&&p.date_to&&p.date_from<=p.date_to?
               {from:p.date_from,to:p.date_to}:null);
