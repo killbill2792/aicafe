@@ -76,7 +76,7 @@ async function customerPeriod(db:SupabaseClient,businessId:string,window:Custome
  // Optional reader errors must not erase independently verified visit facts.
  const optionalFailures:string[]=[];
  const optional=async(name:string,promise:ReturnType<typeof customerAggregate>)=>{
-  try{const result=await promise;if(result.error)optionalFailures.push(name);return result;}
+  try{const result=await promise;if(result.error||!result.complete)optionalFailures.push(name);return result;}
   catch{optionalFailures.push(name);return null;}
  };
  // Don't spend expensive optional retained-JSON / historical reads if
@@ -204,7 +204,7 @@ async function anonymousCustomerPeriod(db:SupabaseClient,businessId:string,windo
  const total=queryCount(checks.row,"count_source_ref"),known=queryCount(checks.row,"count_data.aiCafeCustomer.netSalesCents");
  if(total===null||known===null)return null;
  const units=items.complete&&items.row&&queryCount(items.row,"count_data.quantity")!==null&&queryCount(items.row,"count_data.quantity")===queryCount(items.row,"count_source_ref")?queryNumber(items.row,"sum_data.quantity"):null;
- return {checks:total,knownMoneyChecks:known,netCents:queryNumber(checks.row,"sum_data.aiCafeCustomer.netSalesCents"),itemUnits:units,complete:checks.complete,optionalReadFailed:!!items.error};
+ return {checks:total,knownMoneyChecks:known,netCents:queryNumber(checks.row,"sum_data.aiCafeCustomer.netSalesCents"),itemUnits:units,complete:checks.complete,optionalReadFailed:!!items.error||!items.complete};
 }
 
 type Observation={family:BusinessSignal;subject:string;current:number;previous:number;unit:string;active:boolean;asOf:string;from:string;to:string};
@@ -608,8 +608,10 @@ export async function refreshBusinessAnomalies(db:SupabaseClient,businessId:stri
    try{
     const [a,b]=await Promise.all([customerDistribution(db,businessId,recent,dimension,current.returningVisits),
      customerDistribution(db,businessId,old,dimension,previous.returningVisits)]);
-    if(a&&b)for(const m of compareCustomerDistributions(a,b,current,previous))await persist(fact("customer_trend",m.key,m.current,m.previous,m.unit,m.active,from,to));
-    await gap("reader_unavailable:customer_distribution_"+dimension,false);
+    if(a&&b){
+     for(const m of compareCustomerDistributions(a,b,current,previous))await persist(fact("customer_trend",m.key,m.current,m.previous,m.unit,m.active,from,to));
+     await gap("reader_unavailable:customer_distribution_"+dimension,false);
+    }
    }catch{await gap("reader_unavailable:customer_distribution_"+dimension,true);}
   }
   // A lapse is a snapshot, not just a visit in the current week. Compare
@@ -622,7 +624,7 @@ export async function refreshBusinessAnomalies(db:SupabaseClient,businessId:stri
     const [a,b]=await Promise.all([customerCadence(db,businessId,aWindow,kind),customerCadence(db,businessId,bWindow,kind)]);
     const m=a&&b?compareCustomerCadence(kind,a,b,current,previous):null;
     if(m)await persist(fact("customer_trend",m.key,m.current,m.previous,m.unit,m.active,aWindow.from,aWindow.to));
-    await gap("reader_unavailable:customer_cadence_"+kind,false);
+    if(a?.complete&&b?.complete)await gap("reader_unavailable:customer_cadence_"+kind,false);
    }catch{await gap("reader_unavailable:customer_cadence_"+kind,true);}
   }
   // Equal first-observed cohort weeks and equal elapsed follow-up windows per horizon.
@@ -640,8 +642,8 @@ export async function refreshBusinessAnomalies(db:SupabaseClient,businessId:stri
     if(a&&b){
      const m=compareCustomerCohorts(a,b,cohortCoverage,priorCoverage,horizon);
      if(m)await persist(fact("customer_trend",m.key,m.current,m.previous,m.unit,m.active,cohort.from,to));
+     if(a.complete&&b.complete)await gap("reader_unavailable:customer_cohort_"+horizon+"d",false);
     }
-    await gap("reader_unavailable:customer_cohort_"+horizon+"d",false);
    }catch{await gap("reader_unavailable:customer_cohort_"+horizon+"d",true);}
   }
   // Each optional family has its own sanitized gap, independent of other evidence.
