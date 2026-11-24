@@ -155,6 +155,8 @@ module.exports.missing=(output)=>check(()=>{
 module.exports.inventory=(output)=>check(()=>{
   const reply=decoded(output);
   assert.ok(reply.results.some(r=>r.source==="inventory"&&
-    r.missing.includes("inventoryNotTracked")),"inventory status not read");
+    r.inventory===null&&r.missing.includes("empty")&&
+    !r.missing.includes("inventoryReaderUnavailable")&&r.truncated===false),
+    "successful empty inventory source was not observed");
   assert.match(reply.answer,/not tracked|don't track|not recorded|unknown|unavailable/i);
 });

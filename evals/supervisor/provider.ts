@@ -74,7 +74,15 @@ const context = ():AgentToolContext=>({
   tools:tools as unknown as AgentToolContext["tools"],
   locale:"en",asOf:seed.profile.asOf,timezone:seed.profile.timezone,
   currency:seed.profile.currency,
-  canonicalData:async()=>({businessId:"aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",db:{} as never}),
+  canonicalData:async()=>({
+    businessId:"aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+    db:{rpc:async(name:string,args:{p_view?:string})=>{
+      if(name!=="ai_query_view"||args.p_view!=="cv_inventory")
+        throw Error("unseeded canonical read");
+      return {data:{rows:[],rowCount:0,sourceCount:0,truncated:false,
+        sourceMix:{},hasIncomplete:false,currentDayIncomplete:false},error:null};
+    }} as never,
+  }),
 });
 /**
  * Recorded Responses *model* events drive the real tool loop. Every tool

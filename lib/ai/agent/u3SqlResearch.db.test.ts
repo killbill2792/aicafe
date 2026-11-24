@@ -545,7 +545,7 @@ describe.skipIf(!active)("U3 migrated registered tool + private connection",()=>
      JSON.stringify([{path:".properties.verified.quantity",before:3,after:5}]),
      JSON.stringify([{path:".properties.verified.quantity",before:5,after:9}])]);
    const result=await dataQueryTools.query_data.execute({
-    ...input("SELECT business_date,after_scalar FROM u3_research.toast_changes ORDER BY business_date"),
+    ...input("SELECT business_date::text AS business_date,after_scalar FROM u3_research.toast_changes ORDER BY business_date"),
     date_from:"2023-01-01",date_to:"2026-11-23"
    },scoped);
    expect(result.error).toBeUndefined();

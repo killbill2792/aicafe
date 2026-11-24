@@ -876,6 +876,15 @@ function mentionedWeekdays(text:string,clock:ClockSpan,clocks:ClockSpan[]):strin
     const tail=mentions(text.slice(clockEnd(next),sentenceEnd),clockEnd(next));
     return [...new Set(tail.map(m=>m.day))];
   }
+  // In "Monday opens at 7 and closes at 4", the explicit preceding
+  // weekday governs both endpoints. Do not carry it across another
+  // weekday or sentence (those are already resolved above).
+  if(prev&&((timeRole(text,prev)==="open"&&timeRole(text,clock)==="close")||
+    (timeRole(text,prev)==="shiftStart"&&timeRole(text,clock)==="shiftEnd"))){
+    const priorStart=clocks.filter(m=>m.index<prev.index&&m.index>=sentenceStart).at(-1);
+    const start=priorStart?clockEnd(priorStart):sentenceStart;
+    return [...new Set(mentions(text.slice(start,prev.index),start).map(m=>m.day))];
+  }
   return [];
 
 }
