@@ -1,12 +1,12 @@
 #!/usr/bin/env node
 /** U2 live acceptance through the existing authenticated Supervisor and trusted native-tool broker. */
 import {randomUUID} from "node:crypto";
-import {existsSync,realpathSync,writeFileSync} from "node:fs";
+import {existsSync,readFileSync,realpathSync,statSync,writeFileSync} from "node:fs";
 import {resolve,dirname,sep} from "node:path";
 import {pathToFileURL} from "node:url";
 import {TEST_CAFES} from "../../../scripts/seed/cafes.mjs";
 import {assertLocalLiveEnvironment} from "./preflight.mjs";
-import {readPersistedModelUsage,requireObservedProductionModel,verifyCheckoutHead} from "./runner.mjs";
+import {completedSqlReceiptCount,readPersistedModelUsage,requireObservedProductionModel,verifyCheckoutHead} from "./runner.mjs";
 
 const fail=code=>{throw Error("u2_model_execution_live:"+code)};
 const query=async(db,sql,args=[]) => (await db.query(sql,args)).rows;
@@ -102,7 +102,7 @@ export function matchedMoney(text,cents){
  const value=Number(cents);
  if(!Number.isSafeInteger(value)||value<0||typeof text!=="string")return false;
  const exact=(value/100).toFixed(2);
- return text.replace(/,/g,"").split(/[^0-9.]+/).includes(exact);
+ return text.replace(/,/g,"").match(/-?\d+(?:\.\d+)?/g)?.includes(exact)??false;
 }
 export function assertNativeReceipts(receipts){
  if(!Array.isArray(receipts)||receipts.length<2||receipts.some(r=>r.model!=="gpt-6-luna"||r.outcome!=="completed"||r.nativeSearch!==true||
@@ -148,8 +148,13 @@ async function main(){
    if(!Array.isArray(blocks)||blocks.some(b=>b.type==="proposal_card"||b.type==="experiment_card"))fail("unexpected_effect");
    return {replyId:actual.done.reply.id,calls:Number(usage.model_call_count),receipts,names:actual.names,text:blocks.filter(b=>b.type==="text").map(b=>b.text).join("")};
   };
+  const serverLog=resolve(dirname(file),"next.log");
+  const start=statSync(serverLog).size;
   const first=await run("I'm assessing a second coffee shop. For "+sales.day+", what were this cafe's actual recorded net sales, and what is our current saved "+menu.name+" menu price? Give both as "+cafe.currency+" with two decimal places, then distinguish recorded facts from assumptions. Read only. Do not create or change anything.");
-  if(!first.names.includes("query_data"))fail("independent_business_reads_missing");
+  const log=readFileSync(serverLog);
+  if(log.length<start||!first.names.includes("query_data")||
+    !completedSqlReceiptCount(log.subarray(start).toString("utf8")))
+    fail("independent_business_reads_missing");
   if(!matchedMoney(first.text,menu.price_cents)||!matchedMoney(first.text,sales.net_sales_cents))fail("independent_money_oracle_failed");
   assertNativeReceipts(first.receipts);
   await connection.page.close();connection.page=await connection.context.newPage();

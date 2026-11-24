@@ -39,7 +39,7 @@
           "scope": "businessDate"
         },
         "net_sales_cents": {
-          "scope": "sourceCents"
+          "scope": "hourlyCents"
         },
         "status": {
           "eq": "provisional"

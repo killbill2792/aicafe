@@ -1,4 +1,4 @@
-import {randomUUID,createHash} from "node:crypto";
+import {randomUUID} from "node:crypto";
 import {mkdirSync,writeFileSync} from "node:fs";
 import {Client} from "pg";
 import {createClient} from "@supabase/supabase-js";
@@ -8,7 +8,7 @@ import {it,expect,vi} from "vitest";
 vi.mock("server-only",()=>({}));
 import {openAIProvider,type AgentProvider} from "@/lib/ai/agent/loop.server";
 import {configuredSupervisorModel} from "@/lib/ai/conversations/modelConfig";
-import {processDueInvestigations,
+import {enqueueInvestigationsForOwner,processDueInvestigations,
   processNextInvestigation,type InvestigationModelProofSummary} from "./investigation.server";
 const scenario="15a-proactive-owner-answer";
 const enabled=process.env.AICAFE_SHARED_LUNA==="1"&&process.env.AICAFE_SHARED_LUNA_SCENARIO===scenario&&process.env.AI_CAFE_LIVE_ACCEPTANCE==="OWNER_APPROVED_LOCAL_ONLY";
@@ -75,9 +75,8 @@ live("generated meal-break evidence, real model investigation, and an exact owne
    [businessId,timecardId])).rows;
   expect(alert).toHaveLength(1);
   const sourceId=alert[0].id as string;
-  const hash=createHash("sha256").update(JSON.stringify(alert[0].payload)).digest("hex");
-  const queued=await db.rpc("supervisor_enqueue_investigation",{p_business_id:businessId,p_owner_user_id:ownerUserId,p_thread_id:threadId,p_source_type:"alert",p_source_id:sourceId,p_revision_hash:hash,p_stable_key:hash,p_priority:400,p_now:now.toISOString()});
-  expect(queued.error).toBeNull();expect(queued.data).toBe(true);
+  const scan=(time:Date)=>enqueueInvestigationsForOwner(db,{...scope,localDate:time.toISOString().slice(0,10)},time);
+  expect(await scan(now)).toBe(1);
   expect(await processDueInvestigations(db,now,2,provider,capture)).toMatchObject({processed:2,collected:1,investigated:1,failed:0});
   const row=async()=>(await admin.query("select episode_id,phase,pending_question_id,last_owner_answer_id,reported_owner_answer_id from public.supervisor_investigations where business_id=$1 and source_id=$2",[businessId,sourceId])).rows[0];
   const first=await row();expect(first.phase).toBe("awaiting_owner");expect(first.pending_question_id).toBeTruthy();
@@ -85,11 +84,7 @@ live("generated meal-break evidence, real model investigation, and an exact owne
   const beforeRepeat=ledger.calls;
   await generateAlerts(db,businessId);
   const later=new Date(now.getTime()+86_400_000);
-  const repeat=await db.rpc("supervisor_enqueue_investigation",{p_business_id:businessId,
-   p_owner_user_id:ownerUserId,p_thread_id:threadId,p_source_type:"alert",p_source_id:sourceId,
-   p_revision_hash:hash,p_stable_key:hash,p_priority:400,p_now:later.toISOString()});
-  expect(repeat.error).toBeNull();
-  expect(repeat.data).toBe(false);
+  expect(await scan(later)).toBe(0);
   expect(await processNextInvestigation(db,later,provider,capture)).toMatchObject({processed:0});
   expect(ledger.calls).toBe(beforeRepeat);
   expect(await row()).toEqual(first);

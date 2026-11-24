@@ -11,10 +11,11 @@ test("source553 real-Luna acceptance requires exact registered evidence and tena
  assert.throws(()=>assertSource553Hourly({...sample,model:"mock"}),/unexpected_runtime_model/);
  assert.throws(()=>assertSource553Hourly({...sample,tools:[]}),/registered_hourly_reader_not_used/);
  assert.throws(()=>assertSource553Hourly({...sample,sqlReceipts:0}),/hourly_sql_not_completed/);
+ assert.throws(()=>assertSource553Hourly({...sample,text:"Provisional sales were $12.34."}),/requested_hour_missing/);
  assert.throws(()=>assertSource553Hourly({...sample,tools:["get_peak_hours"]}),/registered_hourly_reader_not_used/);
  assert.throws(()=>assertSource553Hourly({...sample,cents:100}),/canonical_money_or_tenant_mismatch/);
  assert.throws(()=>assertSource553Hourly({...sample,otherCents:1234}),/canonical_money_or_tenant_mismatch/);
- assert.throws(()=>assertSource553Hourly({...sample,text:"Sales were $12.34"}),/uncertainty_not_disclosed/);
+ assert.throws(()=>assertSource553Hourly({...sample,text:"Sales at 9 a.m. were $12.34"}),/uncertainty_not_disclosed/);
  assert.throws(()=>assertSource553Hourly({...sample,foreignDenied:false}),/cross_cafe_thread_access/);
  assert.throws(()=>assertSource553Hourly({...sample,proposals:1}),/unexpected_effect/);
 });

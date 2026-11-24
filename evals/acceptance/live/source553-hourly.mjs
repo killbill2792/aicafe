@@ -8,9 +8,8 @@ import {resolve,dirname} from "node:path";
 import {pathToFileURL} from "node:url";
 import {TEST_CAFES} from "../../../scripts/seed/cafes.mjs";
 import {assertLocalLiveEnvironment} from "./preflight.mjs";
-import {readPersistedModelUsage,requireObservedProductionModel,verifyCheckoutHead} from "./runner.mjs";
+import {completedSqlReceiptCount,readPersistedModelUsage,requireObservedProductionModel,verifyCheckoutHead} from "./runner.mjs";
 import {matchedMoney} from "./u2-model-execution.mjs";
-import {completedSqlReceiptCount} from "./u3-canonical-research.mjs";
 const fail=reason=>{throw Error("source553_hourly_live:"+reason)};
 export function assertSource553Hourly({model,tools,text,cents,otherCents,foreignDenied,proposals,sqlReceipts}){
  requireObservedProductionModel(model,"gpt-6-luna");
@@ -19,6 +18,7 @@ export function assertSource553Hourly({model,tools,text,cents,otherCents,foreign
  if(!Number.isSafeInteger(sqlReceipts)||sqlReceipts<1)fail("hourly_sql_not_completed");
  if(!matchedMoney(text,cents)||matchedMoney(text,otherCents))
   fail("canonical_money_or_tenant_mismatch");
+ if(!/\b(?:09:00|9:00|9\s*a\.?\s*m\.?)(?!\d)/iu.test(text))fail("requested_hour_missing");
  if(!/provisional|not final|subject to change|pending closeout/i.test(text))
   fail("live_source_uncertainty_not_disclosed");
  if(!foreignDenied)fail("cross_cafe_thread_access");
@@ -95,24 +95,25 @@ async function main(){
   const date=new Intl.DateTimeFormat("en-CA",{timeZone:cafe.timezone??"America/Los_Angeles",
    year:"numeric",month:"2-digit",day:"2-digit"}).format(new Date());
   if(!/^\d{4}-\d{2}-\d{2}$/.test(date))fail("cafe_date_unknown");
-  const sourceHour=9,cents=1234,otherCents=9876;
+  const sourceHour=9,cents=1234,otherCents=9876,afternoonCents=421;
   // Strictly disposable local DB, after the complete source migrations.
   for(const [id,value] of [[cafe.businessId,cents],[other.businessId,otherCents]]){
    await db.query(
     "INSERT INTO public.toast_today_live(business_id,business_date,read_at,net_sales_cents,orders,reading) "+
-    "VALUES ($1,$2,now(),$3,2,$4::jsonb) ON CONFLICT(business_id) DO UPDATE SET "+
+    "VALUES ($1,$2,now(),$3,3,$4::jsonb) ON CONFLICT(business_id) DO UPDATE SET "+
     "business_date=excluded.business_date,read_at=excluded.read_at,"+
     "net_sales_cents=excluded.net_sales_cents,orders=excluded.orders,reading=excluded.reading",
-    [id,date,value,JSON.stringify({provisional:true,netSalesCents:value,
+    [id,date,value+afternoonCents,JSON.stringify({provisional:true,netSalesCents:value+afternoonCents,
      locationsRead:1,locationsFailed:0,truncated:false,unparsedOrders:0,
      hourlyUnassignedOrders:0,
-     hourlySales:[{hourLocal:sourceHour,netSalesCents:value,ordersCount:2}]})]);
+     hourlySales:[{hourLocal:sourceHour,netSalesCents:value,ordersCount:2},
+      {hourLocal:14,netSalesCents:afternoonCents,ordersCount:1}]})]);
   }
   const observed=await db.query(
    "SELECT business_id,net_sales_cents,status,data->>'hour_local' AS hour_local "+
    "FROM public.cv_sales_hours WHERE business_id IN ($1,$2) "+
-   "AND business_date=$3 AND status='provisional'",
-   [cafe.businessId,other.businessId,date]);
+   "AND business_date=$3 AND status='provisional' AND data->>'hour_local'=$4",
+   [cafe.businessId,other.businessId,date,String(sourceHour)]);
   if(observed.rows.length!==2||
    observed.rows.find(x=>x.business_id===cafe.businessId)?.net_sales_cents!=cents||
    observed.rows.find(x=>x.business_id===other.businessId)?.net_sales_cents!=otherCents||
@@ -179,7 +180,8 @@ async function main(){
   writeFileSync(scopeOut,JSON.stringify({
     expectedProviderCalls,businessId:cafe.businessId,otherCafeId:other.businessId,
     ownerUserId:cafe.owner.userId,threadId:thread,businessDate:date,
-    sourceCents:String(cents),otherSourceCents:String(otherCents),
+    sourceCents:String(cents+afternoonCents),otherSourceCents:String(otherCents+afternoonCents),
+    hourlyCents:String(cents),
     firstReplyId:turns[0].done.reply.id,replyId:turns[1].done.reply.id,
   })+"\n",{mode:0o600,flag:"wx"});
  }finally{

@@ -8,7 +8,7 @@ import {resolve,dirname} from "node:path";
 import {pathToFileURL} from "node:url";
 import {TEST_CAFES} from "../../../scripts/seed/cafes.mjs";
 import {assertLocalLiveEnvironment} from "./preflight.mjs";
-import {readPersistedModelUsage,requireObservedProductionModel,verifyCheckoutHead} from "./runner.mjs";
+import {completedSqlReceiptCount,readPersistedModelUsage,requireObservedProductionModel,verifyCheckoutHead} from "./runner.mjs";
 import {matchedMoney} from "./u2-model-execution.mjs";
 
 const fail=(reason)=>{throw Error("u3_canonical_research_live:"+reason);};
@@ -16,17 +16,6 @@ const query=async(db,sql,args=[])=> (await db.query(sql,args)).rows;
 export function matchedCount(text,n){
  if(!Number.isSafeInteger(n)||n<0||typeof text!=="string")return false;
  return new RegExp("(^|[^0-9])"+String(n)+"([^0-9]|$)").test(text.replace(/,/g,""));
-}
-/** Parse only the server's post-commit receipt, not a tool-start event or model text.
- * The local runner serves one research turn in this byte window. No raw SQL,
- * row values, credentials or owner data are copied to the proof. */
-export function completedSqlReceiptCount(log){
- if(typeof log!=="string")return 0;
- const clean=log.replace(/\x1b\[[0-9;]*m/g,"");
- const ids=new Set();
- const pattern=/^\s*u3_sql_research_receipt\s*\{\s*receipt_id:\s*['"]([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})['"],\s*duration_ms:\s*\d+,\s*relation_count:\s*[1-9]\d*,\s*page_complete:\s*true(?:,\s*page_retrieval:\s*['"]executed_query['"])?\s*\}/gm;
- for(const match of clean.matchAll(pattern))ids.add(match[1]);
- return ids.size;
 }
 export function assertU3ObservedEvidence({model,tools,text,orders,lines,cents,proposals,sqlReceipts}){
  requireObservedProductionModel(model,"gpt-6-luna");

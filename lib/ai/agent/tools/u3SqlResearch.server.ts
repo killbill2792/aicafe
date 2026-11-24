@@ -581,7 +581,8 @@ export async function runU3Sql(ctx:U3SqlContext,raw:unknown){
    receipt_id:committedPage.evidence.receipt_id,
    duration_ms:Math.max(0,Date.now()-startedAt),
    relation_count:committedPage.evidence.relation_names.length,
-   page_complete:committedPage.page_complete,page_retrieval:committedPage.page_retrieval
+   page_complete:committedPage.page_complete,page_retrieval:committedPage.page_retrieval,
+   snapshot_id:committedPage.evidence.snapshot_id
   });
   return committedPage;
  }catch(e){

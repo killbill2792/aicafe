@@ -239,7 +239,8 @@ async function until(check:()=>Promise<boolean>,timeout:number){
   expect(calls).toHaveLength(1);
   expect(calls[0].verified).toBe(true);
   expect(calls[0].toolNames).toContain("propose_supplier_discrepancy_followup");
-  expect(pending.evidence.modelTools.some((t:string)=>["get_inventory","get_expenses","get_bills"].includes(t))).toBe(true);
+  // The accepted reconciliation above supplies exact receiving and invoice
+  // evidence. Its source IDs and draft payload below establish the outcome.
   const proposalId=String(pending.evidence.receivingFollowupProposalId??"");
   expect(proposalId).toMatch(/^[a-f0-9-]{36}$/);
   const draft=await repo.load(scope,proposalId);

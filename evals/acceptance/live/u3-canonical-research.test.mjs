@@ -1,6 +1,7 @@
+import {completedSqlReceiptCount} from "./runner.mjs";
 import test from "node:test";
 import assert from "node:assert/strict";
-import {matchedCount,assertU3ObservedEvidence,resolveU3ProofPaths,observedProviderCalls,completedSqlReceiptCount,matchedLocalTime,assertU3HistoryEvidence} from "./u3-canonical-research.mjs";
+import {matchedCount,assertU3ObservedEvidence,resolveU3ProofPaths,observedProviderCalls,matchedLocalTime,assertU3HistoryEvidence} from "./u3-canonical-research.mjs";
 
 test("U3 independent count check rejects substring, wrong count and absent source",()=>{
  assert.equal(matchedCount("17 orders and 61 order lines",17),true);
@@ -34,6 +35,13 @@ test("SQL evidence requires a committed complete-page server receipt, not a tool
  const executed=receipt.replace("true\n","true,\n  page_retrieval: 'executed_query'\n");
  assert.equal(completedSqlReceiptCount(executed),1);
  assert.equal(completedSqlReceiptCount(executed.replace("executed_query","retained_result")),0);
+ const snapshot="11111111-1111-4111-8111-111111111111";
+ const first=executed.replace("true","false").replace("\n}",",\n  snapshot_id: '"+snapshot+"'\n}");
+ const last=first.replace("false","true").replace("executed_query","retained_result").replace("a1234567","b1234567");
+ assert.equal(completedSqlReceiptCount(first+"\n"+last),1);
+ assert.equal(completedSqlReceiptCount(last),0);
+ assert.equal(completedSqlReceiptCount(first+"\n"+last.replace(snapshot,"22222222-2222-4222-8222-222222222222")),0);
+
 
  assert.equal(completedSqlReceiptCount(receipt.replace("true","false")),0);
  assert.equal(completedSqlReceiptCount(receipt.replace("relation_count: 2","relation_count: 0")),0);
