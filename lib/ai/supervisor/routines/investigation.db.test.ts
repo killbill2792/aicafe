@@ -78,7 +78,7 @@ describe("Task 15A migrated, agentic investigation SQL integration",()=>{
           severity:"critical"})]);
       expect(await rpc(a,"supervisor_enqueue_investigation",[
         cafes[0],owners[0],threads[0],"alert",technical,
-        hex("c"),hex("d"),500,anchor])).toBe(false);
+        hex("c"),hex("d"),350,anchor])).toBe(false);
       expect(await rpc(a,"post_supervisor_priority_notice",[
         cafes[0],owners[0],threads[0],"alert",technical,
         hex("c"),hex("d"),"Unverified source read",anchor])).toBe(false);
