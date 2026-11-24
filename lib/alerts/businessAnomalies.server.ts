@@ -366,9 +366,22 @@ export async function refreshBusinessAnomalies(db:SupabaseClient,businessId:stri
     await persist(fact("high_contribution",row.id,row.contribution,total,"current_recipe_contribution_cents",row.contribution/total>=.25,from,to));
   },
   async()=>{
-   const raw=await readCanonicalView(db,businessId,"cv_inventory",{dateFrom:to,dateTo:today},101);
-   if(raw.error||raw.truncated||raw.rows.length>100)throw Error("inventory_unavailable");
-   const stock=projectInventoryEvidence(raw.rows,100);
+   // Page the SAME invoker-RLS canonical reader instead of treating the
+   // 101st legitimate inventory row as a source failure. Bound each query and
+   // projection, but never silently drop an ingredient or stock observation.
+   const stockRows:ReturnType<typeof projectInventoryEvidence>["rows"]=[];
+   let offset=0;
+   for(;;){
+    const raw=await readCanonicalView(db,businessId,"cv_inventory",{dateFrom:to,dateTo:today},100,{offset});
+    if(raw.error)throw Error("inventory_unavailable");
+    const projected=projectInventoryEvidence(raw.rows,100);
+    if(projected.truncated)throw Error("inventory_projection_truncated");
+    stockRows.push(...projected.rows);
+    if(!raw.truncated)break;
+    if(!raw.rows.length)throw Error("inventory_reader_stalled");
+    offset+=raw.rows.length;
+   }
+   const stock={rows:stockRows};
    await gap("stock_counts",!stock.rows.some(s=>s.source==="app"&&(s.source_as_of===to||s.source_as_of===today)&&s.quantity!==null));
    const counts=new Map<string,typeof stock.rows[number]>();
    for(const count of stock.rows.filter(s=>s.source==="app"&&s.ingredient_id&&s.quantity!==null&&s.quantity_unit&&(s.source_as_of===to||s.source_as_of===today)).sort((a,b)=>String(b.source_as_of).localeCompare(String(a.source_as_of)))){
