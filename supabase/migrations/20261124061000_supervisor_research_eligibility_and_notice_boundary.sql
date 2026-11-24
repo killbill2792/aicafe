@@ -406,8 +406,3 @@ AS $u3_change_rows$
   AND (jsonb_typeof(e.value->'before') IN ('string','number','boolean','null')
     OR jsonb_typeof(e.value->'after') IN ('string','number','boolean','null'))
 $u3_change_rows$;
-
-comment on view u3_research.toast_records is
- 'Scoped retained Toast operational objects from the existing scrubbed toast_records_for reader. Requires caller-supplied valid business-date bounds of any length, verified signed café/owner/mode and indexed read-only research. Current state does not establish historical completeness; no raw diagnostic data or unrestricted nested JSON.';
-comment on view u3_research.toast_changes is
- 'Scoped historical Toast scalar change observations in a caller-supplied valid business-date window of any length. Changes are not a complete historical event log; individual source fields and identities remain owner-only under the signed scope.';
