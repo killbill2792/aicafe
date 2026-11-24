@@ -2,7 +2,7 @@ import {beforeEach,afterEach,describe,expect,it,vi} from "vitest";
 vi.mock("server-only",()=>({}));
 const mocks=vi.hoisted(()=>({
   model:vi.fn(),access:vi.fn(),tools:vi.fn(),identity:vi.fn(),
-  budget:vi.fn(),notify:vi.fn(),priorities:vi.fn(),paidGate:vi.fn(),stockDraft:vi.fn(),linkedProposals:vi.fn(),attempt:vi.fn(),
+  budget:vi.fn(),notify:vi.fn(),priorities:vi.fn(),paidGate:vi.fn(),stockDraft:vi.fn(),linkedProposals:vi.fn(),attempt:vi.fn(),vendorPoll:vi.fn(),
 }));
 vi.mock("@/lib/access/access.server",()=>({assertCafeAiAccess:mocks.access}));
 vi.mock("@/lib/ai/cafeTools.server",()=>({
@@ -19,6 +19,10 @@ vi.mock("./dispatch.server",()=>({readActionablePriorities:mocks.priorities}));
 vi.mock("./stockDraft.server",()=>({prepareProactiveStockDraft:mocks.stockDraft}));
 vi.mock("@/lib/ai/supervisor/loop/reads.server",()=>({readOwnerProposals:mocks.linkedProposals}));
 vi.mock("@/lib/ai/supervisor/loop/effectGateway.server",()=>({SupervisorEffectGateway:class{readAttempt=mocks.attempt;}}));
+vi.mock("@/lib/ai/supervisor/loop/maintenance.server",async(importOriginal)=>({
+  ...(await importOriginal<typeof import("@/lib/ai/supervisor/loop/maintenance.server")>()),
+  pollMaintenanceVendorReplies:mocks.vendorPoll,
+}));
 import {enqueueInvestigationsForOwner,processNextInvestigation,processDueInvestigations}
   from "./investigation.server";
 const source={kind:"sales_anomaly",status:"new",payload:{
@@ -89,7 +93,7 @@ function db(claims:Record<string,unknown>[],options?:{
             payload:options?.alertPayload??source.payload,
             status:options?.sourceStatus??"new",
           }:table==="timecards"?options?.timecard??null:{
-            kind:"data_quality",status:options?.taskStatus??"needs_owner",
+            kind:options?.sourceKind??"data_quality",status:options?.taskStatus??"needs_owner",
             owner_user_id:"owner-a",confidence:"high",evidence:[],
             payload:{awaitingPriceApplication:true,priceAppliedToPos:false},
             entity_type:"menu_item",entity_id:"item-a",
@@ -122,6 +126,7 @@ beforeEach(()=>{
   mocks.stockDraft.mockReset().mockResolvedValue({state:"missing"});
   mocks.linkedProposals.mockReset().mockResolvedValue([]);
   mocks.attempt.mockReset().mockResolvedValue(null);
+  mocks.vendorPoll.mockReset().mockResolvedValue({added:0,missing:[]});
 });
 afterEach(()=>{if(previousKey===undefined)delete process.env.OPENAI_API_KEY;
   else process.env.OPENAI_API_KEY=previousKey;});
@@ -230,22 +235,45 @@ describe("Task 15A operational end-to-end orchestration (recorded source/model)"
     expect(saved?.p_evidence).toMatchObject({modelTools:["get_investigation_source","get_sales","get_labor"],
       missing:["unverifiedWages"]});
   });
-  it("reenters unresolved work after a restart without inventing owner consent",async()=>{
+  it("retains prior findings across a worker restart without paying for unanswered owner work",async()=>{
     const d=db([{...investigating},{...following}]);
     const result=await processDueInvestigations(d.client,now,2);
-    expect(result).toMatchObject({processed:2,investigated:1,followUps:1,failed:0});
-    expect(mocks.model).toHaveBeenCalledTimes(2);
-    // Same cron invocation can immediately continue work after a persisted
-    // collect step; repeated frozen timestamps would delay it 15 minutes.
+    expect(result).toMatchObject({processed:2,investigated:1,rechecked:1,followUps:0,failed:0});
+    expect(mocks.model).toHaveBeenCalledTimes(1);
     const claims=d.calls.filter(x=>x.name==="supervisor_claim_investigation");
     expect(Date.parse(String(claims[1].args.p_now)))
       .toBeGreaterThan(Date.parse(String(claims[0].args.p_now)));
-    expect(mocks.model.mock.calls[1][0].ownerText).toContain("persistent follow-up");
-    expect(mocks.model.mock.calls[1][0].ownerText).toContain("Previous owner-visible plan");
     expect(d.calls.filter(x=>x.name==="supervisor_finish_investigation")
-      .map(x=>x.args.p_outcome)).toEqual(["investigated","followed_up"]);
+      .map(x=>x.args.p_outcome)).toEqual(["investigated","rechecked"]);
     expect(d.calls.every(x=>!x.name.includes("commit_effect")&&
       !x.name.includes("approve"))).toBe(true);
+  });
+  it("does not restart an unanswered owner question after weeks or an old technical error",async()=>{
+    const daysAgo=new Date(now.getTime()-14*86400000).toISOString();
+    const d=db([{...following,last_error:"model_incomplete",evidence:{
+      ...following.evidence,lastOwnerUpdate:daysAgo,
+    }}]);
+    const result=await processNextInvestigation(d.client,new Date(now.getTime()+15*86400000));
+    expect(result).toMatchObject({processed:1,rechecked:1,followUps:0,failed:0});
+    expect(mocks.model).not.toHaveBeenCalled();
+    expect(mocks.notify).not.toHaveBeenCalled();
+  });
+  it("polls an awaiting-owner maintenance vendor without paying for changed Gmail diagnostics",async()=>{
+    const maintenance={kind:"maintenance_issue",status:"needs_owner",quality:"high",
+      severity:null,relatedAlerts:[],relatedTasks:[],maintenanceDueAt:null,maintenanceOverdue:false};
+    const lease={...following,source_type:"operating_task",source_id:"maintenance-case-a",
+      evidence:{source:maintenance,collectedAt:now.toISOString(),lastOwnerUpdate:now.toISOString(),
+        maintenanceReadMissing:[]}};
+    mocks.vendorPoll.mockResolvedValueOnce({added:0,missing:["maintenance_gmail_read_unavailable"]});
+    const d=db([lease],{sourceKind:"maintenance_issue",relatedTasks:[]});
+    const r=await processNextInvestigation(d.client,new Date(now.getTime()+6*60*60*1000));
+    expect(r).toMatchObject({processed:1,rechecked:1,followUps:0,failed:0});
+    expect(mocks.vendorPoll).toHaveBeenCalledOnce();
+    expect(mocks.model).not.toHaveBeenCalled();
+    expect(d.calls.find(x=>x.name==="supervisor_finish_investigation")?.args)
+      .toMatchObject({p_outcome:"rechecked",
+        p_evidence:expect.objectContaining({
+          maintenanceReadMissing:["maintenance_gmail_read_unavailable"]})});
   });
   it("silently checkpoints unchanged short-interval monitoring without owner-message spam",async()=>{
     const d=db([{...following,last_error:null,evidence:{

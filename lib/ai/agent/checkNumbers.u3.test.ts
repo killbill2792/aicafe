@@ -77,3 +77,98 @@ describe("U3 SQL source receipts in numeric claim verification",()=>{
   expect(compactEvidence([bad as unknown as AgentToolResult]).flatMap(v=>v.values)).toEqual([]);
  });
 });
+
+describe("recorded labor punch verifier, not roster or invented model prose",()=>{
+ const id="12345678-1234-4123-8123-123456789abc";
+ const observed={
+   source:"labor_and_attendance",period:{from:"2026-11-15",to:"2026-11-15"},
+   missing:[],attendance:{recordedTimecards:[{
+     timecardId:id,employeeName:"Sam",localDate:"2026-11-15",
+     clockIn:"2026-11-15T17:00:00Z",clockInLocal:"09:00",
+     clockOut:"2026-11-15T23:00:00Z",clockOutLocal:"15:00",
+     clockOutLocalDate:"2026-11-15",elapsedHours:6,
+     recordedBreakCount:0,breakEvidence:"none_recorded",sourceType:"toast",
+   }]},
+ } as AgentToolResult;
+ it("admits the employee's real duration and local clocks, never an assumed actual meal break",()=>{
+   const entries=compactEvidence([observed]);
+   expect(entries.flatMap(r=>r.values)).toEqual(expect.arrayContaining([
+     expect.objectContaining({key:expect.stringContaining("elapsedHours"),value:6,unit:"count"}),
+     expect.objectContaining({key:expect.stringContaining("recordedBreakCount"),value:0,unit:"count"}),
+   ]));
+   expect(checkNumbers("Sam clocked in at 9:00 AM on November 15, 2026. Sam clocked out at 3:00 PM on November 15, 2026. Sam worked 6 hours.","",[observed],"en")).toEqual([]);
+ });
+ it("rejects wrong person, wrong date, wrong clock and fabricated worked hours",()=>{
+   for(const text of [
+     "Maya clocked in at 9:00 AM on November 15, 2026.",
+     "Maya had a clock-in at 9:00 AM on November 15, 2026.",
+     "Maya’s recorded clock-in was 9:00 AM on November 15, 2026.",
+     "Maya's recorded clock-in was 9:00 AM on November 15, 2026.",
+     "Maya had her clock-in at 9:00 AM on November 15, 2026.",
+     "Maya’s timecard lists a clock-in at 9:00 AM on November 15, 2026.",
+     "Sam clocked in at 9:00 AM on November 16, 2026.",
+     "Sam clocked in at 8:00 AM on November 15, 2026.",
+     "Sam worked 7 hours.",
+     "Maya worked 6 hours.",
+     "Sam worked 6 hours on November 16, 2026.",
+   ])expect(checkNumbers(text,"",[observed],"en")).not.toEqual([]);
+ });
+ it("withdraws old duration and clock-out proof when an authoritative punch is reopened",()=>{
+   const saved=compactEvidence([observed]);
+   const initial="Sam clocked out at 3:00 PM on November 15, 2026. Sam worked 6 hours.";
+   expect(checkNumbers(initial,"",[], "en",saved)).toEqual([]);
+   const card=(observed.attendance as {recordedTimecards:Array<Record<string,unknown>>}).recordedTimecards[0];
+   const reopened={...observed,attendance:{recordedTimecards:[{
+     ...card,clockOut:null,clockOutLocal:null,clockOutLocalDate:null,elapsedHours:null,
+   }]}} as AgentToolResult;
+   const unsupported=checkNumbers(initial,"",[reopened],"en",saved);
+   expect(unsupported.length).toBeGreaterThan(0);
+   expect(checkNumbers("Sam clocked in at 9:00 AM on November 15, 2026.","",
+     [reopened],"en",saved)).toEqual([]);
+ });
+ it("preserves clock evidence beyond the thirtieth closed timecard after reconciliation",()=>{
+   const cards=Array.from({length:31},(_,i)=>({
+     timecardId:"00000000-0000-4000-8000-"+String(i+1).padStart(12,"0"),
+     employeeName:"Sam",localDate:"2026-11-15",
+     clockIn:"2026-11-15T"+String(17).padStart(2,"0")+":"+String(i).padStart(2,"0")+":00Z",
+     clockInLocal:"09:"+String(i).padStart(2,"0"),
+     clockOut:"2026-11-15T23:"+String(i).padStart(2,"0")+":00Z",
+     clockOutLocal:"15:"+String(i).padStart(2,"0"),
+     clockOutLocalDate:"2026-11-15",elapsedHours:6,recordedBreakCount:0,
+     breakEvidence:"none_recorded",sourceType:"toast",
+   }));
+   const many={...observed,attendance:{recordedTimecards:cards}} as AgentToolResult;
+   const saved=compactEvidence([many]);
+   expect(checkNumbers("Sam clocked in at 9:30 AM on November 15, 2026.",
+     "",[],"en",saved)).toEqual([]);
+ });
+ it("recognizes owner-facing named punch phrasing only for the right employee",()=>{
+   expect(checkNumbers("Sam had a clock-in at 9:00 AM on November 15, 2026.","",
+     [observed],"en")).toEqual([]);
+   expect(checkNumbers("Sam’s recorded clock-in was 9:00 AM on November 15, 2026.","",
+     [observed],"en")).toEqual([]);
+   // Without person identity, a generic recorded punch can still be stated.
+   expect(checkNumbers("Clock-in at 9:00 AM on November 15, 2026 was recorded.","",
+     [observed],"en")).toEqual([]);
+ });
+ it("selects the closest punch, operating-hours or shift action per clock",()=>{
+   for(const assertion of [
+     "Sam clocked in at 9:00 AM and the café opens at 9:00 AM on November 15, 2026.",
+     "Sam clocked in at 9:00 AM and the café closes at 9:00 AM on November 15, 2026.",
+     "Sam clocked in at 9:00 AM and her shift starts at 9:00 AM on November 15, 2026.",
+     "The café opens at 9:00 AM and Sam clocked in at 9:00 AM on November 15, 2026.",
+   ])expect(checkNumbers(assertion,"",[observed],"en")).not.toEqual([]);
+   expect(checkNumbers(
+     "Sam clocked in at 9:00 AM and Sam clocked out at 3:00 PM on November 15, 2026.",
+     "",[observed],"en")).toEqual([]);
+ });
+ it("rejects a fabricated elapsed duration even when the tool shape resembles labor",()=>{
+   const falseDuration={...observed,attendance:{recordedTimecards:[{
+     ...(observed.attendance as {recordedTimecards:Array<Record<string,unknown>>}).recordedTimecards[0],
+     elapsedHours:9,
+   }]}};
+   expect(compactEvidence([falseDuration as AgentToolResult]).flatMap(v=>v.values)
+     .some(v=>v.key.endsWith("elapsedHours"))).toBe(false);
+   expect(checkNumbers("Sam worked 9 hours.","",[falseDuration as AgentToolResult],"en")).not.toEqual([]);
+ });
+});

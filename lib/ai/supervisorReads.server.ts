@@ -4,7 +4,7 @@ import {getToastCheckEvidence} from "@/lib/data/getToastCheckEvidence";
 import {getTranslations} from "next-intl/server";
 import {readToastDayTrust} from "@/lib/data/toastDayTrust.server";
 import type { SupabaseClient } from "@supabase/supabase-js";
-import { fromZonedTime } from "date-fns-tz";
+import { fromZonedTime, formatInTimeZone } from "date-fns-tz";
 import { readDailyFacts, readSalesCoverageBounds } from "@/lib/data/dailyFacts.server";
 import { readMenuCatalogRows } from "@/lib/data/menuCatalog.server";
 import type { DailyFacts } from "@/lib/calc";
@@ -19,8 +19,19 @@ export type MenuCatalogProduct = { id: string; name: string; category: "drink" |
  options:Array<{name:string;priceCents:number|null}>}> };
 /** A finished shift with no hourly wage: the one thing to ask the owner about. */
 export type MissingWageShift = { date: string; employeeName: string | null; hours: number | null };
-export type StaffAttendance = { timecardCount: number; onClockCount: number | null; attendanceTracked: boolean;
-  missingWageShifts?: MissingWageShift[] };
+export type RecordedTimecard={
+  timecardId:string;employeeName:string|null;localDate:string;
+  clockIn:string;clockInLocal:string|null;clockOut:string|null;
+  clockOutLocal:string|null;clockOutLocalDate:string|null;
+  elapsedHours:number|null;breakEvidence:"recorded"|"none_recorded"|"unknown";
+  recordedBreakCount:number|null;sourceType:string;
+};
+/** Attendance history is not a payroll or compliance finding. All details
+ * are scoped to the verified user's café and a bounded requested period. */
+export type StaffAttendance={
+  timecardCount:number;onClockCount:number|null;attendanceTracked:boolean;
+  recordedTimecards?:RecordedTimecard[];missingWageShifts?:MissingWageShift[];
+};
 const quality = (missingInputs: string[] = []) => ({
   level: (missingInputs.length ? "low" : "high") as "low" | "high",
   missingInputs, estimatedInputs: [] as string[], staleInputs: [] as string[],
@@ -140,7 +151,7 @@ export function supervisorHistoricalReaders(client: SupabaseClient, businessId: 
       const start = fromZonedTime(period.from+"T00:00:00",timezone).toISOString();
       const end = fromZonedTime(period.to+"T23:59:59.999",timezone).toISOString();
       const [records,people] = await Promise.all([
-        client.from("timecards").select("employee_id,clock_in,clock_out,source_type")
+        client.from("timecards").select("id,employee_id,clock_in,clock_out,source_type,breaks")
           .eq("business_id",id).gte("clock_in",start).lte("clock_in",end).limit(501),
         client.from("employees").select("id").eq("business_id",id).eq("active",true).limit(501),
       ]);
@@ -155,15 +166,54 @@ export function supervisorHistoricalReaders(client: SupabaseClient, businessId: 
       const actual = (records.data ?? []).slice(0,500).filter(row =>
         row.source_type !== "owner_schedule");
       const tracked = actual.length > 0;
+      // Last 80 actual punches supply direct evidence for owner questions.
+      // Do not infer that absent punches mean the employee skipped a break.
+      const latest=actual.slice().sort((a,b)=>
+        String(b.clock_in).localeCompare(String(a.clock_in))).slice(0,80);
+      const ids=[...new Set(latest.map(row=>row.employee_id)
+        .filter((x):x is string=>typeof x==="string"&&x.length>0))];
+      const names=new Map<string,string|null>();
+      if(ids.length){
+        const personNames=await client.from("employees").select("id,display_name")
+          .eq("business_id",id).in("id",ids).limit(81);
+        if(personNames.error)throw personNames.error;
+        for(const row of personNames.data??[])
+          names.set(row.id,row.display_name??null);
+      }
+      const recordedTimecards:RecordedTimecard[]=latest.map(row=>{
+        const begin=Date.parse(row.clock_in);
+        const finish=row.clock_out?Date.parse(row.clock_out):NaN;
+        const valid=Number.isFinite(begin)&&Number.isFinite(finish)&&finish>=begin;
+        return {
+          timecardId:row.id,
+          employeeName:row.employee_id?names.get(row.employee_id)??null:null,
+          localDate:Number.isFinite(begin)?
+            formatInTimeZone(new Date(begin),timezone,"yyyy-MM-dd"):"unknown",
+          clockIn:row.clock_in,
+          clockInLocal:Number.isFinite(begin)?
+            formatInTimeZone(new Date(begin),timezone,"HH:mm"):null,
+          clockOut:row.clock_out,
+          clockOutLocal:Number.isFinite(finish)?
+            formatInTimeZone(new Date(finish),timezone,"HH:mm"):null,
+          clockOutLocalDate:Number.isFinite(finish)?
+            formatInTimeZone(new Date(finish),timezone,"yyyy-MM-dd"):null,
+          elapsedHours:valid?Math.round((finish-begin)/36000)/100:null,
+          breakEvidence:!Array.isArray(row.breaks)?"unknown":
+            row.breaks.length>0?"recorded":"none_recorded",
+          recordedBreakCount:Array.isArray(row.breaks)?row.breaks.length:null,
+          sourceType:row.source_type,
+        };
+      });
       const unpaid = await missingWageShifts(id, period);
       return { available:true, value:{
         timecardCount:actual.length,
         onClockCount:tracked ? actual.filter(row=>row.clock_out===null && active.has(row.employee_id)).length : null,
-        attendanceTracked:tracked,
+        attendanceTracked:tracked,recordedTimecards,
         // Unreadable is not "none": leave it out so nothing claims every wage is known.
         ...(unpaid.shifts?{missingWageShifts:unpaid.shifts}:{}),
       },quality:quality([
         ...((records.data ?? []).length>500?["timecardResultTruncated"]:[]),
+        ...(actual.length>80?["recordedTimecardsTruncated"]:[]),
         ...(!tracked?["attendanceNotTracked"]:[]),
         ...unpaid.missing,
       ]) };

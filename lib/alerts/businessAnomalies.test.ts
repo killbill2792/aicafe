@@ -15,7 +15,7 @@ vi.mock("@/lib/data/usageVariance.server",()=>({readUsageVariance:inputs.usage})
 vi.mock("@/lib/data/supplierPurchasing.server",()=>({readSupplierPurchasingEvidence:inputs.quotes}));
 vi.mock("@/lib/data/snapshot.server",()=>({getBusinessSnapshotFromDb:inputs.snapshot}));
 vi.mock("@/lib/operating/cafeState",()=>({cafeStateFromSnapshot:()=>({profitability:{available:false,value:null,quality:{missingInputs:["historical"],estimatedInputs:[],staleInputs:[]}}})}));
-import {compareBusinessFacts,compareCheckedRefunds,refreshBusinessAnomalies,readCustomerTrendComparison} from "./businessAnomalies.server";
+import {compareBusinessFacts,compareCheckedRefunds,refreshBusinessAnomalies,readCustomerTrendComparison,matchPublishedShiftPunch} from "./businessAnomalies.server";
 describe("canonical observation boundaries",()=>{
  it("distinguishes certified zero refunds, missing coverage and positive recovery",()=>{
   const check=(a:number|null,b:number|null)=>compareCheckedRefunds(a,b,"2026-11-12","2026-11-18");
@@ -202,4 +202,74 @@ it("the scheduled anomaly pass reconciles only comparable customer evidence and 
  }finally{
   inputs.customer.mockImplementation(async()=>({rows:[{count_source_ref:0,"count_data.aiCafeCustomer.identityRef":0,"count_data.aiCafeCustomer.displayName":0}],missing:[],truncated:false,error:undefined}));
  }
+});
+
+it("wakes only the matching published shift for late clock-in/out evidence",async()=>{
+ const shift={source:"app",status:"actual",business_date:"2026-11-22",
+  data:{id:"shift-22-a",employee_id:"employee-a",shift_status:"published",
+   start_local:"09:00",end_local:"15:00"}};
+ const card=(date:string,person:string,closed:boolean)=>({
+  source:"toast",status:"actual",business_date:date,
+  data:{id:date+":"+person,employee_id:person,
+   clock_in:date+"T17:00:00Z",
+   clock_out:closed?date+"T23:00:00Z":null}
+ });
+ const observe=async(punches:unknown[])=>{
+  inputs.stock.mockImplementation(async(
+   _db:unknown,_business:string,view:string)=>{
+   if(view==="cv_shifts")return {rows:[shift],error:null,truncated:false};
+   if(view==="cv_labor_entries")return {rows:punches,error:null,truncated:false};
+   return {rows:[],error:null,truncated:false};
+  });
+  inputs.sales.mockResolvedValue({available:false,value:null,quality:{
+   missingInputs:[],estimatedInputs:[],staleInputs:[]}});
+  const seen:Array<{p_key:string;p_active:boolean;p_payload:Record<string,unknown>}>=[];
+  const rpc=vi.fn(async(name:string,args:{p_key:string;p_active:boolean;p_payload:Record<string,unknown>})=>{
+    if(name==="supervisor_reconcile_business_anomaly")seen.push(args);
+    return {data:name==="supervisor_prior_recipe_evidence"?[]:true,error:null};
+  });
+  await refreshBusinessAnomalies({rpc} as never,"cafe","2026-11-23",
+   "America/Los_Angeles",new Date("2026-11-23T20:00:00Z")).catch(()=>{
+    // Other optional source readers are intentionally unavailable in this
+    // focused case; inspection must still reconcile the independent shift.
+  });
+  return seen.filter(x=>x.p_key.startsWith("missed_clock_evidence:"));
+ };
+ const unrelated=await observe([card("2026-11-23","employee-b",true)]);
+ expect(unrelated).toEqual([expect.objectContaining({
+  p_key:"missed_clock_evidence:shift-22-a",p_active:true})]);
+ const missing=await observe([card("2026-11-22","employee-b",true)]);
+ expect(missing).toEqual([expect.objectContaining({
+  p_key:"missed_clock_evidence:shift-22-a",p_active:true})]);
+ const open=await observe([card("2026-11-22","employee-a",false)]);
+ expect(open).toEqual(expect.arrayContaining([
+  expect.objectContaining({p_key:"missed_clock_evidence:shift-22-a",p_active:false}),
+  expect.objectContaining({p_key:"missed_clock_evidence:shift-22-a:clock-out",p_active:true}),
+ ]));
+ const closed=await observe([card("2026-11-22","employee-a",true)]);
+ expect(closed).toEqual(expect.arrayContaining([
+  expect.objectContaining({p_key:"missed_clock_evidence:shift-22-a:clock-out",p_active:false}),
+ ]));
+});
+
+describe("timecard attribution requires one shift-matching actual interval",()=>{
+ const start=Date.parse("2026-11-22T21:00:00Z"),end=Date.parse("2026-11-23T04:00:00Z");
+ const early={clock_in:"2026-11-22T15:00:00Z",clock_out:"2026-11-22T19:00:00Z"};
+ const lateOpen={clock_in:"2026-11-22T21:10:00Z",clock_out:null};
+ const lateClosed={clock_in:"2026-11-22T21:10:00Z",clock_out:"2026-11-23T04:00:00Z"};
+ it("cannot resolve the later shift using a different completed same-day timecard",()=>{
+   expect(matchPublishedShiftPunch(start,end,[early,lateOpen])).toEqual({
+     matched:true,clockOutRecorded:false,ambiguous:false});
+   expect(matchPublishedShiftPunch(start,end,[early,lateClosed])).toEqual({
+     matched:true,clockOutRecorded:true,ambiguous:false});
+ });
+ it("remains an evidence gap for two ambiguous overlapping intervals",()=>{
+   expect(matchPublishedShiftPunch(start,end,[lateOpen,lateClosed])).toEqual({
+     matched:false,clockOutRecorded:false,ambiguous:true});
+ });
+ it("rejects an unrelated prior-day/invalid punch as evidence of this shift",()=>{
+   expect(matchPublishedShiftPunch(start,end,[early,{
+     clock_in:"unreadable",clock_out:null,
+   }])).toEqual({matched:false,clockOutRecorded:false,ambiguous:false});
+ });
 });

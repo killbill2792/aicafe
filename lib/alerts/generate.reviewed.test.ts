@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { DEMO_BUSINESS_ID } from "@/lib/constants";
-import { generateAlerts, hasOpenAlert } from "./generate";
+import { generateAlerts, hasOpenAlert, mealBreakMaterialEvidenceChanged } from "./generate";
 import { blocksGeneratedAlert, withOwnerDisposition } from "./reconcile";
 
 function fakeClient() {
@@ -25,6 +25,24 @@ function fakeClient() {
   const from = vi.fn(() => { statuses = null; return q; });
   return { db: { from } as unknown as SupabaseClient, from, q };
 }
+
+describe("timecard material change fingerprints",()=>{
+ const open={dedupeKey:"shift-a",employeeId:"emp-a",date:"2026-11-15",
+   clockIn:"2026-11-15T17:00:00Z",clockOut:null,breaks:[],
+   shiftHours:5,impactCents:1500};
+ it("does not reopen an open shift on hourly cron ticks",()=>{
+   expect(mealBreakMaterialEvidenceChanged(open,{...open,shiftHours:6.5,impactCents:2000,
+      lastImportedAt:"2026-11-16T00:45:00Z"})).toBe(false);
+ });
+ it("detects only the specific late punch or break correction",()=>{
+   expect(mealBreakMaterialEvidenceChanged(open,{...open,
+     clockOut:"2026-11-16T00:00:00Z",shiftHours:7})).toBe(true);
+   expect(mealBreakMaterialEvidenceChanged(open,{...open,
+     breaks:[{start:"2026-11-15T19:30:00Z",end:"2026-11-15T20:00:00Z"}]})).toBe(true);
+   expect(mealBreakMaterialEvidenceChanged(open,{...open,
+     dedupeKey:"shift-b",employeeId:"emp-b"})).toBe(true);
+ });
+});
 
 describe("generated alert lifecycle and owner intent", () => {
   it("never queries or writes the shared demo when generating alerts", async () => {

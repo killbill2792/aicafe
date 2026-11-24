@@ -71,7 +71,13 @@ export function scenariosForPath(path) {
       path === "components/staff/StaffCommunicationHistory.tsx" ||
       path === "components/staff/StaffReplyComposer.tsx" ||
       path === "components/staff/StaffCoordinationPanel.tsx") return ["staff"];
-  if (path === "app/[locale]/onboarding/page.tsx") return ["staff"];
+  // Toast-first registration renders this component; the seeded @staff
+  // browser journey includes the new-owner onboarding and worker denial.
+  if (path === "app/[locale]/onboarding/page.tsx" ||
+      path === "components/onboarding/RegisterChoice.tsx" ||
+      path === "components/onboarding/RegisterChoice.test.ts") return ["staff"];
+  // The bills contract test covers owner bill editing after Toast-first setup.
+  if(path==="components/addcost/redesign03Flows.test.ts")return ["money"];
   if (path === "app/[locale]/pricing/page.tsx") return ["staff"];
   if (path === "app/[locale]/staff/page.tsx" ||
       path === "components/staff/StaffWorkspace.tsx" ||

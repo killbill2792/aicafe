@@ -5,7 +5,7 @@ import { metricCatalog,metricKeySchema } from "@/lib/calc/metrics/catalog";
 import { sumCents } from "@/lib/calc/money";
 
 export type MenuPrice = {id:string;name:string;priceCents:number};
-export type TimeScope = {kind:"hours";days:string[]} | {kind:"schedule";from:string;to:string;exhaustive?:boolean};
+export type TimeScope = {kind:"hours";days:string[]} | {kind:"schedule";from:string;to:string;exhaustive?:boolean} | {kind:"timecards"};
 export type NumericEvidence = {tool:string;values:Array<{key:string;value:number;unit:"cents"|"bps"|"ratio"|"count";
   provenance?:"estimate";detail?:"breakEvenSales"|"salesGap"|"dailyOverhead"|"pricing"}>;
   times?:VerifiedTime[];timeScope?:TimeScope;prices?:MenuPrice[];
@@ -24,6 +24,8 @@ const COUNTABLE_FIELDS = new Set(["count","itemCount","quantity","units","totalU
   "missingProductCostCount","drinksNeededPerDay","drinksPerHour","todayDrinks",
   "ordersCount","staffCount","shiftCount","employeesCount","attendanceCount",
   "timecardCount","onClockCount"]);
+// Timecard durations/breaks are employee- and date-scoped. Never promote
+// them into globally interchangeable counts just because numbers coincide.
 const trustedCountKey=(key:string)=>key.includes("u3VerifiedCount/")||
   key.includes("calculateResultCount")||
   COUNTABLE_FIELDS.has(key.split("/").at(-1)??"")||
@@ -275,8 +277,55 @@ export function compactEvidence(results:readonly AgentToolResult[],limit=100):Nu
       }
     }
     appendGoalNumericEvidence(r,values,invalidatedKeys);
-    const times=[...observedHours([r]),...observedShifts([r])].slice(0,60);
+    // No model-authored projection can create clock or duration evidence:
+    // only the canonical get_labor response with a stable timecard ID, valid
+    // local date and internally consistent recorded timestamps is admitted.
+    if(r.source==="labor_and_attendance"&&r.attendance&&
+      typeof r.attendance==="object"&&!Array.isArray(r.attendance)){
+      const attendance=r.attendance as Record<string,unknown>;
+      const cards=Array.isArray(attendance.recordedTimecards)?
+        attendance.recordedTimecards:[];
+      for(const raw of cards.slice(0,80)){
+        if(!raw||typeof raw!=="object"||Array.isArray(raw))continue;
+        const c=raw as Record<string,unknown>;
+        if(typeof c.timecardId!=="string"||
+          !/^[a-f0-9-]{36}$/iu.test(c.timecardId)||
+          typeof c.localDate!=="string"||
+          !/^\d{4}-\d{2}-\d{2}$/u.test(c.localDate)||
+          typeof c.clockIn!=="string"||!Number.isFinite(Date.parse(c.clockIn)))continue;
+        const inAt=Date.parse(c.clockIn);
+        const outAt=typeof c.clockOut==="string"?Date.parse(c.clockOut):NaN;
+        const hours=Number.isFinite(outAt)&&outAt>=inAt?
+          Math.round((outAt-inAt)/36000)/100:null;
+        const cardScope=periodKey+"timecard:"+c.timecardId+"/day:"+
+          c.localDate+"/person:"+encodeURIComponent(
+            typeof c.employeeName==="string"?c.employeeName.trim().toLocaleLowerCase():"")+"/";
+        // A prior closed punch may now be corrected to an unknown clock-out.
+        // Invalidating the field even on null prevents stale saved duration.
+        invalidatedKeys.push(cardScope+"elapsedHours");
+        if(hours!==null&&typeof c.elapsedHours==="number"&&
+          Math.abs(c.elapsedHours-hours)<0.001){
+          values.push({key:cardScope+"elapsedHours",value:hours,unit:"count"});
+        }
+        invalidatedKeys.push(cardScope+"recordedBreakCount");
+        const breaks=c.recordedBreakCount;
+        if((c.breakEvidence==="none_recorded"&&breaks===0)||
+          (c.breakEvidence==="recorded"&&typeof breaks==="number"&&
+            Number.isSafeInteger(breaks)&&breaks>0)){
+          values.push({key:cardScope+"recordedBreakCount",value:breaks as number,unit:"count"});
+        }
+      }
+    }
+    const times=[...observedHours([r]),...observedShifts([r]),
+      ...observedTimecardClocks([r])].slice(0,r.source==="labor_and_attendance"?160:60);
     let timeScope:TimeScope|undefined;
+    // Successful canonical labor reads supersede old timecard clock and
+    // duration facts, including records now open/unknown or absent. A failed
+    // read must not wipe previously established evidence.
+    if(r.source==="labor_and_attendance"&&!r.error&&r.attendance&&
+       typeof r.attendance==="object"&&!Array.isArray(r.attendance)&&
+       Array.isArray((r.attendance as Record<string,unknown>).recordedTimecards))
+      timeScope={kind:"timecards"};
     if(r.source==="locations.open_hours"){
       // Successful partial configuration explicitly invalidates the days
       // listed as unset; a network/reader failure does not.
@@ -336,7 +385,7 @@ export function compactEvidence(results:readonly AgentToolResult[],limit=100):Nu
   }
   return gathered.filter(e=>e.values.length>0||e.times.length>0||
     (e.timeScope?.kind==="hours"&&e.timeScope.days.length>0)||
-    e.timeScope?.kind==="schedule"||e.prices.length>0||
+    e.timeScope?.kind==="schedule"||e.timeScope?.kind==="timecards"||e.prices.length>0||
     e.invalidatedKeys.length>0||e.invalidatedPriceIds.length>0||e.priceUpdates.length>0);
 }
 /** Saved turns arrive oldest first. An updated value for the same
@@ -352,6 +401,12 @@ function reconcileSavedEvidence(entries:readonly NumericEvidence[]):NumericEvide
   for(const entry of entries){
     let slot=bySource.get(entry.tool);
     if(!slot){slot={values:new Map(),times:[],prices:new Map(),priceUpdates:[]};bySource.set(entry.tool,slot);}
+    // The latest successful labor snapshot replaces all previously saved
+    // timecard facts from this source. They cannot remain verified after a
+    // changed or cleared clock-out, or after the reader changes its window.
+    if(entry.timeScope?.kind==="timecards"){
+      for(const key of slot.values.keys())if(key.includes("timecard:"))slot.values.delete(key);
+    }
     const grouped=new Map<string,Value[]>();
     for(const v of entry.values){
       if(typeof v.key!=="string"||!Number.isFinite(v.value))continue;
@@ -378,10 +433,15 @@ function reconcileSavedEvidence(entries:readonly NumericEvidence[]):NumericEvide
     }
     slot.priceUpdates.push(...(entry.priceUpdates??[]).filter(p=>
       typeof p.id==="string"&&Number.isSafeInteger(p.priceCents)));
-    const times=(entry.times??[]).slice(0,60).filter(t=>
+    const times=(entry.times??[]).slice(0,entry.timeScope?.kind==="timecards"?160:60).filter(t=>
       t&&typeof t.time==="string"&&/^(?:[01]\d|2[0-3]):[0-5]\d$/u.test(t.time)&&
       typeof t.day==="string"&&typeof t.role==="string"&&typeof t.complete==="boolean");
-    if(entry.timeScope?.kind==="hours"){
+    if(entry.timeScope?.kind==="timecards"){
+      // Superseded canonical punches must not survive from saved chat turns.
+      // Keep opening-hours and schedule observations in their own roles.
+      slot.times=slot.times.filter(t=>t.role!=="clockIn"&&t.role!=="clockOut");
+      slot.times.push(...times);
+    }else if(entry.timeScope?.kind==="hours"){
       const updated=new Set(entry.timeScope.days);
       slot.times=slot.times.filter(t=>!(["open","close"].includes(t.role)&&updated.has(t.day)));
       slot.times.push(...times);
@@ -623,7 +683,7 @@ const DAY_MENTIONS = [
   {key:"fri", pattern:/\b(?:friday|fri|viernes)\b|الجمعة/iu},
   {key:"sat", pattern:/\b(?:saturday|sat|sábado|sabado)\b|السبت/iu},
 ];
-type TimeRole = "open"|"close"|"shiftStart"|"shiftEnd";
+type TimeRole = "open"|"close"|"shiftStart"|"shiftEnd"|"clockIn"|"clockOut";
 type ClockSpan = RegExpMatchArray & {index:number};
 type VerifiedTime = {day:string;time:string;role:TimeRole;complete:boolean;person:string|null;
   validFrom?:string;validTo?:string;dated?:boolean};
@@ -668,12 +728,25 @@ function timeRole(text:string, clock:ClockSpan):TimeRole|null {
       /\b(?:open|opens|opening|abrimos|abre|abren)\s+from\s*$/iu.test(beforeFirst))
       return "close";
   }
+  // Unlike scheduled-shift times, an actual employee punch must match
+  // a recorded timecard and its own café-local date/employee. Never accept
+  // a scheduled shift as evidence somebody truly clocked in or out.
+  const punches=[...phrase.matchAll(/\b(?:clock(?:ed|ing)?[ -]?(?:in|out)|punch(?:ed|ing)?[ -]?(?:in|out)|check(?:ed)?[ -]?(?:in|out))\b/giu)];
   // EN/ES/AR owner prose is free-form. Recognize common shift paraphrases
   // and localized hours, but never exempt an unrecognized business clock.
   const actions=[...phrase.matchAll(
     /\b(?:shift\s+(?:starts?|begins?|ends?|finishes?)|(?:starts?|begins?|ends?|finishes?)\s+(?:his|her|their|the|a)\s+(?:[\p{L}]+\s+){0,3}shift|(?:open|opens|opening|close|closes|closing|abrimos|abre|abren|abrir|apertura|cerramos|cierra|cierran|cerrar|cierre))\b|\bturno\b[^.!?;\n]{0,30}\b(?:empieza|comienza|inicia|termina|finaliza)\b|(?:نفتح|يفتح|تفتح|نغلق|يغلق|تغلق|الإغلاق|إغلاق|الافتتاح|وردية[^.!?;\n]{0,30}(?:تبدأ|تنتهي|يبدأ|ينتهي)|مناوبة[^.!?;\n]{0,30}(?:تبدأ|تنتهي|يبدأ|ينتهي))/giu
   )];
-  const last=actions.at(-1)?.[0]?.toLowerCase()??"";
+  // Clock claims in one sentence may alternate between a punch, scheduled
+  // shift and business hours. A past punch must never override a later
+  // "opens"/"closes"/"shift starts" action for the next clock token.
+  const punch=punches.at(-1);
+  const action=actions.at(-1);
+  if(punch&&(!action||(punch.index??-1)>(action.index??-1))){
+    const token=punch[0].toLowerCase();
+    return /(?:out)$/u.test(token)?"clockOut":"clockIn";
+  }
+  const last=action?.[0]?.toLowerCase()??"";
   if(!last)return null;
   if(/\b(?:shift|turno)\b|(?:وردية|مناوبة)/iu.test(last))
     return /\b(?:ends?|finishes?|termina|finaliza)\b|(?:تنتهي|ينتهي)/iu.test(last)?"shiftEnd":"shiftStart";
@@ -722,7 +795,8 @@ type ShiftPersonClaim = {kind:"general"}|{kind:"named";name:string}|{kind:"unres
 // sentence connectors/weekdays instead of turning "Monday Ada" or "Ada on"
 // into a different employee identity. Preserve genuine two-word names.
 function normalizedEmployeeName(raw:string):string {
-  const connectors=new Set(["on","for","the","at","in","by","of","a","an","de","el","la"]);
+  const connectors=new Set(["on","for","the","at","in","by","of","a","an","de","el","la",
+    "and","then","but","while","or"]);
   const weekdays=new Set(["monday","tuesday","wednesday","thursday","friday","saturday",
     "sunday","mon","tue","wed","thu","fri","sat","sun","lunes","martes","miércoles",
     "miercoles","jueves","viernes","sábado","sabado","domingo"]);
@@ -760,6 +834,35 @@ function assertedShiftPerson(text:string,clock:ClockSpan):ShiftPersonClaim {
     return {kind:"unresolved"};
   return {kind:"general"};
 }
+/** Only a named employee or a truly general statement may match
+ * timecard clock evidence. A different employee's timecard cannot verify
+ * "Sam clocked in at ..." simply because the hour coincides. */
+function assertedPunchPerson(text:string,clock:ClockSpan):ShiftPersonClaim{
+  const prefix=text.slice(0,clock.index);
+  const start=sentenceBoundary(prefix);
+  const before=text.slice(start,clock.index);
+  const suffix=text.slice(clockEnd(clock));
+  const end=suffix.search(/[.!?;\n]/u);
+  const after=suffix.slice(0,end<0?undefined:end);
+  const forPerson=(before+" "+after).match(/\bfor\s+([\p{L}\p{M}]+(?:[ \t-]+[\p{L}\p{M}]+)?)/iu);
+  if(forPerson)return {kind:"named",name:normalizedEmployeeName(forPerson[1])};
+  const subject=[...before.matchAll(/\b([\p{L}\p{M}]+(?:[ \t-]+[\p{L}\p{M}]+)?)\s+(?:clocked|punched|checked)\s+(?:in|out)\b/giu)].at(-1);
+  if(subject)return {kind:"named",name:normalizedEmployeeName(subject[1])};
+  // Owner-facing descriptions may attribute a punch without saying
+  // "Maya clocked in": e.g. "Maya had a clock-in" or "Maya's recorded
+  // clock-in was...". These are named assertions, never general punches.
+  const possessive=[...before.matchAll(/\b([\p{L}\p{M}]+(?:[ \t-]+[\p{L}\p{M}]+)?)['’]s\s+(?:[\p{L}\p{M}]+[ \t]+){0,4}(?:clock[ -]?(?:in|out)|punch[ -]?(?:in|out))\b/giu)].at(-1);
+  if(possessive)return {kind:"named",name:normalizedEmployeeName(possessive[1])};
+  const owned=[...before.matchAll(/\b([\p{L}\p{M}]+(?:[ \t-]+[\p{L}\p{M}]+)?)\s+(?:had|has|reported|recorded)\s+(?:(?:a|an|the|his|her|their)\s+)?(?:(?:recorded|actual)\s+)?(?:clock[ -]?(?:in|out)|punch[ -]?(?:in|out))\b/giu)].at(-1);
+  if(owned)return {kind:"named",name:normalizedEmployeeName(owned[1])};
+  // If a named employee relationship is apparent but the full name cannot
+  // be parsed, rejecting the time is safer than borrowing any employee's
+  // matching clock. Anonymous punches remain eligible for general claims.
+  if(/['’]s[^.!?;\n]{0,90}\b(?:clock[ -]?(?:in|out)|punch[ -]?(?:in|out))\b|\bfor\s+\S+|\b(?:had|has|reported|recorded)[^.!?;\n]{0,70}\b(?:clock[ -]?(?:in|out)|punch[ -]?(?:in|out))\b/iu.test(before+" "+after))
+    return {kind:"unresolved"};
+  return {kind:"general"};
+}
+
 const CALENDAR_MONTHS:Record<string,number>={
   january:1,jan:1,enero:1,يناير:1, february:2,feb:2,febrero:2,فبراير:2,
   march:3,mar:3,marzo:3,مارس:3, april:4,apr:4,abril:4,أبريل:4,ابريل:4,
@@ -829,6 +932,44 @@ function observedHours(results:readonly AgentToolResult[]):VerifiedTime[] {
   }
   return known;
 }
+/** Clock evidence is derived only from the trusted labor reader and
+ * local timestamps prepared with the café timezone. Never use UTC ISO text
+ * as if it were local shift time. */
+function observedTimecardClocks(results:readonly AgentToolResult[]):VerifiedTime[]{
+ const known:VerifiedTime[]=[];
+ for(const r of results){
+  if(r.source!=="labor_and_attendance"||!r.attendance||
+    typeof r.attendance!=="object"||Array.isArray(r.attendance))continue;
+  const attendance=r.attendance as Record<string,unknown>;
+  const cards=Array.isArray(attendance.recordedTimecards)?
+    attendance.recordedTimecards:[];
+  for(const raw of cards.slice(0,80)){
+   if(!raw||typeof raw!=="object"||Array.isArray(raw))continue;
+   const c=raw as Record<string,unknown>;
+   if(typeof c.timecardId!=="string"||!/^[a-f0-9-]{36}$/iu.test(c.timecardId)||
+     typeof c.localDate!=="string"||!/^(?:19|20|21)\d{2}-\d{2}-\d{2}$/u.test(c.localDate))continue;
+   const dt=new Date(c.localDate+"T12:00:00Z");
+   if(!Number.isFinite(dt.getTime())||dt.toISOString().slice(0,10)!==c.localDate)continue;
+   const name=typeof c.employeeName==="string"&&c.employeeName.trim()?
+     c.employeeName.trim().toLocaleLowerCase():null;
+   const day=DAY_MENTIONS[dt.getUTCDay()]?.key;
+   if(!day)continue;
+   for(const [rawTime,rawDate,role] of [
+     [c.clockInLocal,c.localDate,"clockIn"],[c.clockOutLocal,c.clockOutLocalDate,"clockOut"],
+   ] as const){
+     if(typeof rawTime!=="string"||!/^(?:[01]\d|2[0-3]):[0-5]\d$/u.test(rawTime)||
+       typeof rawDate!=="string"||!/^(?:19|20|21)\d{2}-\d{2}-\d{2}$/u.test(rawDate))continue;
+     const localDt=new Date(rawDate+"T12:00:00Z");
+     if(!Number.isFinite(localDt.getTime())||
+       localDt.toISOString().slice(0,10)!==rawDate)continue;
+     known.push({day:DAY_MENTIONS[localDt.getUTCDay()].key,time:rawTime,
+       role,complete:false,person:name,validFrom:rawDate,validTo:rawDate,dated:true});
+   }
+  }
+ }
+ return known;
+}
+
 function observedShifts(results:readonly AgentToolResult[]):VerifiedTime[] {
   const known:VerifiedTime[]=[];
   const clock=/^(?:[01]\d|2[0-3]):[0-5]\d$/u;
@@ -1260,7 +1401,7 @@ export function checkNumbers(text: string, ownerText: string, results: readonly 
           prior.lastIndexOf("!"),prior.lastIndexOf("?"),prior.lastIndexOf(";"))+1;
         const sentenceEnd=text.slice(clockEnd(clock)).search(/[.!?;\n]/u);
         const sentence=text.slice(sentenceStart,sentenceEnd<0?text.length:clockEnd(clock)+sentenceEnd);
-        return /\b(?:open|opening|opens|close|closing|closes|hours|shift|starts?|ends?|begins?|finishes?|abrimos|abrir|abre|abren|apertura|cerramos|cerrar|cierra|cierre|turno)\b|(?:نفتح|نغلق|يفتح|يغلق|وردية|مناوبة|الافتتاح|الإغلاق)/iu.test(sentence);
+        return /\b(?:clock(?:ed|ing)?[ -]?(?:in|out)|punch(?:ed|ing)?[ -]?(?:in|out)|open|opening|opens|close|closing|closes|hours|shift|starts?|ends?|begins?|finishes?|abrimos|abrir|abre|abren|apertura|cerramos|cerrar|cierra|cierre|turno)\b|(?:نفتح|نغلق|يفتح|يغلق|وردية|مناوبة|الافتتاح|الإغلاق)/iu.test(sentence);
       }
       const canonical=canonicalClock(clock);
       if(canonical){
@@ -1269,7 +1410,8 @@ export function checkNumbers(text: string, ownerText: string, results: readonly 
         const calendarDay=claimedDate?DAY_MENTIONS[new Date(claimedDate+"T12:00:00Z").getUTCDay()]?.key:null;
         const dateAgrees=claimedDate!==null&&
           (!claimedDate||days.length===0||days.includes(calendarDay??""));
-        const person=role.startsWith("shift")?assertedShiftPerson(text,clock):{kind:"general" as const};
+        const person=role.startsWith("shift")?assertedShiftPerson(text,clock):
+          role==="clockIn"||role==="clockOut"?assertedPunchPerson(text,clock):{kind:"general" as const};
         const verified=dateAgrees&&person.kind!=="unresolved"&&(days.length?days:[null]).every(day=>observed.some(h=>
           h.time===canonical&&h.role===role&&(day===null?(h.complete||(h.dated&&claimedDate===h.validFrom)):h.day===day)&&
           (!h.dated||(typeof claimedDate==="string"&&claimedDate===h.validFrom))&&
@@ -1286,7 +1428,8 @@ export function checkNumbers(text: string, ownerText: string, results: readonly 
           const ownerDate=claimedClockDate(ownerText,ownerClock,ownerClocks);
           if(claimedDate===null||ownerDate===null)return false;
           if(claimedDate&&ownerDate!==claimedDate)return false;
-          const ownerPerson=role.startsWith("shift")?assertedShiftPerson(ownerText,ownerClock):{kind:"general" as const};
+          const ownerPerson=role.startsWith("shift")?assertedShiftPerson(ownerText,ownerClock):
+            role==="clockIn"||role==="clockOut"?assertedPunchPerson(ownerText,ownerClock):{kind:"general" as const};
           if(person.kind==="unresolved"||ownerPerson.kind==="unresolved")return false;
           return person.kind==="general"||
             (person.kind==="named"&&ownerPerson.kind==="named"&&ownerPerson.name===person.name);
@@ -1307,7 +1450,8 @@ export function checkNumbers(text: string, ownerText: string, results: readonly 
         day:/days?|días?/iu,week:/weeks?|semanas?/iu,month:/months?|meses?/iu,
       };
       const fromTools=evidence.some(entry=>entry.values.some(value=>
-        value.unit==="count"&&unitKey[v.durationUnit!].test(value.key)&&value.value===v.value));
+        value.unit==="count"&&unitKey[v.durationUnit!].test(value.key)&&
+        value.value===v.value&&timecardDurationMatchesClaim(text,v.start,v.end,value.key)));
       return !(fromOwner||fromTools);
     }
     // Named price and comparison claims are identity-sensitive. Validate
@@ -1359,6 +1503,30 @@ export function checkNumbers(text: string, ownerText: string, results: readonly 
 /** The numeric value is not the metric identity. Only attach an estimate
  * explanation when its clause explicitly identifies that business metric.
  * Return null for named items or ambiguous prose, never invent attribution. */
+/** Numeric worked-hour proof must also match the employee and business-local
+ * date when the reply names either. A matching six-hour shift belonging to
+ * another worker cannot verify "Maya worked six hours". */
+function timecardDurationMatchesClaim(text:string,start:number,end:number,key:string):boolean{
+  if(!key.includes("timecard:"))return true;
+  const before=text.slice(0,start);
+  const beginning=Math.max(before.lastIndexOf("\n"),before.lastIndexOf("."),
+    before.lastIndexOf("!"),before.lastIndexOf("?"),before.lastIndexOf(";"))+1;
+  const following=text.slice(end);
+  const afterEnd=following.search(/[.!?;\n]/u);
+  const sentence=text.slice(beginning,afterEnd<0?text.length:end+afterEnd);
+  const date=parseCalendarReference(sentence);
+  if(date===null)return false;
+  if(date!==undefined&&!key.includes("/day:"+date+"/"))return false;
+  const explicit=[...sentence.matchAll(/(?:^|[^\p{L}\p{M}])([\p{L}\p{M}]+(?:[ \t-]+[\p{L}\p{M}]+)?)\s+(?:worked|logged|clocked|spent|completed|had|trabaj[oó]|labor[oó])\b/giu)].at(-1);
+  const forPerson=sentence.match(/\bfor\s+([\p{L}\p{M}]+(?:[ \t-]+[\p{L}\p{M}]+)?)(?=\s|$)/iu);
+  const named=forPerson?.[1]??explicit?.[1];
+  if(named){
+    const person=encodeURIComponent(normalizedEmployeeName(named));
+    return key.includes("/person:"+person+"/");
+  }
+  return true;
+}
+
 function estimateClaimMetric(text:string,start:number,end:number):"breakEvenSales"|"salesGap"|"dailyOverhead"|null {
   const before=text.slice(Math.max(0,start-160),start);
   const prior=before.split(/(?:[!?;,]\s*|\.(?!\d)\s+|\n)/u).at(-1)??"";

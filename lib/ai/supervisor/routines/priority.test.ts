@@ -53,6 +53,29 @@ describe("proactive priority ranking and source revision",()=>{
       ...base,status:"seen",evidence:{lastCheckedAt:"after",quality:"partial"},
     }));
   });
+  it("ignores unrelated business dates when deciding whether an anomaly changed",()=>{
+    const common={...base,kind:"business_anomaly",sourceId:"missing-hour:employee-a:2026-11-15",
+      evidence:{family:"missed_clock_evidence",subject:"employee-a:2026-11-15",
+        current:1,previous:0,quality:"missing",from:"2026-11-08",
+        to:"2026-11-15",asOf:"2026-11-15"}};
+    expect(priorityRevision(common)).toBe(priorityRevision({...common,
+      evidence:{...common.evidence,from:"2026-11-09",
+        to:"2026-11-16",asOf:"2026-11-16"}}));
+    expect(priorityRevision(common)).not.toBe(priorityRevision({...common,
+      evidence:{...common.evidence,current:0,quality:"verified"}}));
+    expect(priorityRevision(common)).not.toBe(priorityRevision({...common,
+      sourceId:"missing-hour:employee-b:2026-11-15"}));
+  });
+  it("tracks the exact employee timecard, not unrelated new punches",()=>{
+    const clock={...base,kind:"meal_break",sourceId:"timecard-a",
+      evidence:{dedupeKey:"timecard-a",employeeId:"employee-a",
+        date:"2026-11-15",clockIn:"2026-11-15T09:00:00Z",
+        clockOut:null,breaks:[],shiftHours:5}};
+    expect(priorityRevision(clock)).toBe(priorityRevision({...clock,
+      evidence:{...clock.evidence,lastCheckedAt:"2026-11-16T12:00:00Z"}}));
+    expect(priorityRevision(clock)).not.toBe(priorityRevision({...clock,
+      evidence:{...clock.evidence,clockOut:"2026-11-15T16:00:00Z"}}));
+  });
   it("distinguishes material task action changes but not alert seen status",()=>{
     const task={...base,sourceType:"operating_task" as const,
       status:"needs_response",kind:"supply_check"};

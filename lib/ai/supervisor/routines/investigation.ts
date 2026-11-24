@@ -265,6 +265,8 @@ export type InvestigationCheckpoint={
   stockPurchaseProposalId?:string;
   ownerQuestion?:string;
   sourceRevision?:string;
+  /** New evidence was signalled by the service-only issue-specific enqueue. */
+  pendingRelevantRevision?:string;
   stockEmailProposalId?:string;
   customerLinkedActions?:CustomerActionObservation[];
   /** Server-observed procurement status, never part of the model narrative. */

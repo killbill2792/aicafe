@@ -3,6 +3,7 @@ import "server-only";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
 import { isSupabaseConfigured } from "@/lib/supabase/client";
 import { getActiveBusinessId } from "@/lib/data/getActiveBusinessId";
+import {isLinkedStaffUser} from "@/lib/staffCommunication/identity.server";
 import {
   compensationProvenance, normalizeSchedulingWallTime, type CompensationProvenance,
 } from "@/lib/calc/scheduling/availability";
@@ -24,9 +25,16 @@ export async function requireSchedulingOwner(): Promise<
   const { data: { user }, error: authError } = await supabase.auth.getUser();
   if (authError || !user) return null;
 
-  // Use authenticated, cookie-selected membership; never accept a model- or
-  // client-supplied business ID. A manager or shared demo member cannot write.
-  const businessId = await getActiveBusinessId(user.id);
+  // Staff logins (even if mistakenly assigned a conflicting owner
+  // membership) may never acquire owner/scheduling authority.
+  if(await isLinkedStaffUser(user.id))return null;
+  // A newly registered user has no café until private Toast-first onboarding.
+  // This is a normal unauthorized owner-route case, not a 503 storage failure.
+  const businessId=await getActiveBusinessId(user.id).catch((error:unknown)=>{
+    if(error instanceof Error&&error.message==="own_business_required")return null;
+    throw error;
+  });
+  if(!businessId)return null;
   // Shared demo access grants all signups owner membership. Never trust its
   // mutable is_demo flag alone; the fixed demo tenant is not schedulable.
   if (businessId === "11111111-1111-1111-1111-111111111111") return null;

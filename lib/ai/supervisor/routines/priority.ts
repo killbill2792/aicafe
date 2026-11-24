@@ -28,6 +28,14 @@ function digest(s:string):string{
   return createHash("sha256").update(s).digest("hex");
 }
 export function priorityRevision(source:PrioritySource):string{
+  // Rolling asOf/from/to report dates do not prove a business fact changed.
+  // Re-open an anomaly only for a changed subject, severity or observed value.
+  const sourceEvidence=source.evidence;
+  const evidence=source.sourceType==="alert"&&source.kind==="business_anomaly"&&
+    sourceEvidence&&typeof sourceEvidence==="object"&&!Array.isArray(sourceEvidence)
+    ?Object.fromEntries(Object.entries(sourceEvidence).filter(([key])=>
+      !["asOf","from","to"].includes(key)))
+    :sourceEvidence;
   return digest(JSON.stringify(canonical({
     type:source.sourceType,id:source.sourceId,kind:source.kind,
     // Seen-only alert acknowledgement is not new evidence; an actionable task
@@ -35,7 +43,7 @@ export function priorityRevision(source:PrioritySource):string{
     status:source.sourceType==="alert"?"open":source.status,
     dueAt:source.dueAt??null,confidence:source.confidence??null,
     severity:source.severity??null,dedupeKey:source.dedupeKey??null,
-    evidence:source.evidence??null,
+    evidence:evidence??null,
   })));
 }
 export function rankPriority(source:PrioritySource,now:Date):PriorityDecision{
