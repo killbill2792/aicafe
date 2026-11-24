@@ -204,7 +204,8 @@ export type ObjectiveOutcome={
 // SQL source lineage records facts even when every read uses query_data.
 const sqlSourceDomains:Readonly<Record<string,string>>={
   orders:"recorded_sales",order_lines:"recorded_sales",
-  daily_rollups:"recorded_sales",hourly_rollups:"recorded_sales",
+  daily_rollups:"recorded_sales",hourly_sales_rollup:"recorded_sales",
+  provisional_hourly_sales:"recorded_sales",
   inventory_observations:"stock_and_inventory",pantry_stock_counts:"stock_and_inventory",
 };
 function sqlSourceDomain(result:AgentToolResult):string{

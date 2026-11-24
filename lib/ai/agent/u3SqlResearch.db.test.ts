@@ -867,6 +867,30 @@ describe.skipIf(!active)("U3 migrated registered tool + private connection",()=>
    await admin.query("DELETE FROM public.orders WHERE business_id=$1 AND pos_order_id LIKE $2",[ids.a,prefix+"%"]);
   }
  });
+ it("queries saved provisional hourly sales with the same closeout rules and café isolation as the app",async()=>{
+  if(!admin)throw Error("admin_missing");
+  const date="2026-10-17";
+  try{
+   await admin.query("INSERT INTO public.toast_today_live(business_id,business_date,read_at,net_sales_cents,orders,reading) "+
+    "VALUES($1,$3,now(),2450,2,$4::jsonb),($2,$3,now(),9999,7,$5::jsonb)",[ids.a,ids.b,date,
+     JSON.stringify({hourlySales:[{hourLocal:9,netSalesCents:2450,ordersCount:2}],locationsFailed:0,truncated:false}),
+     JSON.stringify({hourlySales:[{hourLocal:9,netSalesCents:9999,ordersCount:7}]})]);
+   const selection={...input("SELECT hour_local,net_sales_cents,orders_count,status,locations_failed,truncated "+
+    "FROM provisional_hourly_sales WHERE business_date=$1::date"),parameters:[date],limit:null};
+   const actual=await dataQueryTools.query_data.execute(selection,scoped);
+   expect(actual.error).toBeUndefined();
+   expect(actual.rows).toEqual([{hour_local:9,net_sales_cents:"2450",orders_count:2,
+    status:"provisional",locations_failed:"0",truncated:false}]);
+   await admin.query("INSERT INTO public.hourly_sales_rollup(business_id,business_date,hour_local,net_sales_cents,orders_count) "+
+    "VALUES($1,$2,9,2500,3)",[ids.a,date]);
+   const closed=await dataQueryTools.query_data.execute(selection,scoped);
+   expect(closed.error).toBeUndefined();
+   expect(closed).toMatchObject({rows:[],page_complete:true});
+  }finally{
+   await admin.query("DELETE FROM public.hourly_sales_rollup WHERE business_id=$1 AND business_date=$2",[ids.a,date]);
+   await admin.query("DELETE FROM public.toast_today_live WHERE business_id IN ($1,$2)",[ids.a,ids.b]);
+  }
+ });
  it("returns nonempty multi-year Toast change evidence, not a silent date-window rejection",async()=>{
   if(!admin)throw Error("admin_missing");
   const old=randomUUID(),recent=randomUUID(),foreign=randomUUID();

@@ -24,7 +24,7 @@ export function completedSqlReceiptCount(log){
  if(typeof log!=="string")return 0;
  const clean=log.replace(/\x1b\[[0-9;]*m/g,"");
  const ids=new Set();
- const pattern=/^\s*u3_sql_research_receipt\s*\{\s*receipt_id:\s*['"]([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})['"],\s*duration_ms:\s*\d+,\s*relation_count:\s*[1-9]\d*,\s*page_complete:\s*true\s*\}/gm;
+ const pattern=/^\s*u3_sql_research_receipt\s*\{\s*receipt_id:\s*['"]([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})['"],\s*duration_ms:\s*\d+,\s*relation_count:\s*[1-9]\d*,\s*page_complete:\s*true(?:,\s*page_retrieval:\s*['"]executed_query['"])?\s*\}/gm;
  for(const match of clean.matchAll(pattern))ids.add(match[1]);
  return ids.size;
 }

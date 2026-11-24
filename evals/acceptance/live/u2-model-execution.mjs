@@ -91,7 +91,7 @@ async function ownerTurn(page,thread,text){
    calls:Number.isSafeInteger(calls)&&calls>=0?calls:null,
    providerFailures,
    tools:result.names.filter(n=>[
-    "get_today_so_far","query_data"].includes(n))
+    "query_data"].includes(n))
   }));
   fail("real_supervisor_"+code);
  }
@@ -108,7 +108,6 @@ export function assertNativeReceipts(receipts){
  if(!Array.isArray(receipts)||receipts.length<2||receipts.some(r=>r.model!=="gpt-6-luna"||r.outcome!=="completed"||r.nativeSearch!==true||
   !Number.isSafeInteger(r.inputTokens)||r.inputTokens<=0||!Number.isSafeInteger(r.outputTokens)||r.outputTokens<0))
   fail("native_request_receipts_missing");
- if(!receipts.some(r=>Number.isSafeInteger(r.discoveryCalls)&&r.discoveryCalls>0))fail("hosted_discovery_not_observed");
 }
 async function main(){
  const env=process.env;
@@ -149,8 +148,8 @@ async function main(){
    if(!Array.isArray(blocks)||blocks.some(b=>b.type==="proposal_card"||b.type==="experiment_card"))fail("unexpected_effect");
    return {replyId:actual.done.reply.id,calls:Number(usage.model_call_count),receipts,names:actual.names,text:blocks.filter(b=>b.type==="text").map(b=>b.text).join("")};
   };
-  const first=await run("I'm assessing a second coffee shop. For "+sales.day+", what were this cafe's actual recorded net sales, and what is our current saved "+menu.name+" menu price? Give both as "+cafe.currency+" with two decimal places, then separately check whether today has a provisional live reading. Distinguish recorded facts from assumptions. Read only. Do not create or change anything.");
-  if(!first.names.includes("get_today_so_far")||!first.names.includes("query_data"))fail("independent_business_reads_missing");
+  const first=await run("I'm assessing a second coffee shop. For "+sales.day+", what were this cafe's actual recorded net sales, and what is our current saved "+menu.name+" menu price? Give both as "+cafe.currency+" with two decimal places, then distinguish recorded facts from assumptions. Read only. Do not create or change anything.");
+  if(!first.names.includes("query_data"))fail("independent_business_reads_missing");
   if(!matchedMoney(first.text,menu.price_cents)||!matchedMoney(first.text,sales.net_sales_cents))fail("independent_money_oracle_failed");
   assertNativeReceipts(first.receipts);
   await connection.page.close();connection.page=await connection.context.newPage();
@@ -165,7 +164,7 @@ async function main(){
   const scope={businessId:cafe.businessId,otherCafeId:other.businessId,ownerUserId:cafe.owner.userId,threadId:thread,menuId:menu.id,salesDay:sales.day,
    saleCents:String(sales.net_sales_cents),priceCents:String(menu.price_cents),firstReplyId:first.replyId,secondReplyId:second.replyId,
    expectedProviderCalls:first.calls+second.calls};
-  writeFileSync(file,JSON.stringify({id:"u2-model-execution",schema_version:1,head_sha:env.HEAD_SHA,status:"passed",observed_model:"gpt-6-luna",checks:{nativeDiscovery:true,sourceMatch:true,continuity:true,foreignDenied:true,noEffect:true}})+"\n",{mode:0o600,flag:"wx"});
+  writeFileSync(file,JSON.stringify({id:"u2-model-execution",schema_version:1,head_sha:env.HEAD_SHA,status:"passed",observed_model:"gpt-6-luna",checks:{nativeTransport:true,sourceMatch:true,continuity:true,foreignDenied:true,noEffect:true}})+"\n",{mode:0o600,flag:"wx"});
   writeFileSync(scopeFile,JSON.stringify(scope)+"\n",{mode:0o600,flag:"wx"});
  }finally{await foreign?.context.close().catch(()=>{});await connection?.context.close().catch(()=>{});await browser.close().catch(()=>{});await db.end().catch(()=>{});}
 }

@@ -354,8 +354,7 @@ describe("U3 tool descriptions leave investigation strategy to Luna",()=>{
   const discovery=dataQueryTools.describe_data.description;
   const research=dataQueryTools.query_data.description;
   expect(discovery).toMatch(/Discover reviewed canonical views/);
-  expect(research).toMatch(/Choose sources, dates, filters/);
-  expect(discovery+research).not.toMatch(/FIRST call|ONLY when|ALWAYS use query_data|For known retained discount counts|For supplied order\/employee GUID/);
+  expect(discovery+research).not.toMatch(/FIRST call|ONLY when|ALWAYS use query_data|For known retained discount counts|For supplied order\/employee GUID|add a stable order/);
  });
  it("continues to protect incomplete facts, source grain and unattended privacy",()=>{
   const text=dataQueryTools.query_data.description;

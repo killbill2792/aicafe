@@ -3,18 +3,20 @@
  * Creates only two disposable café hourly-reading fixtures; never calls Toast,
  * Vercel, hosted Supabase, or a paid model from PR CI. */
 import {randomUUID} from "node:crypto";
-import {existsSync,realpathSync,writeFileSync} from "node:fs";
+import {existsSync,readFileSync,realpathSync,statSync,writeFileSync} from "node:fs";
 import {resolve,dirname} from "node:path";
 import {pathToFileURL} from "node:url";
 import {TEST_CAFES} from "../../../scripts/seed/cafes.mjs";
 import {assertLocalLiveEnvironment} from "./preflight.mjs";
 import {readPersistedModelUsage,requireObservedProductionModel,verifyCheckoutHead} from "./runner.mjs";
 import {matchedMoney} from "./u2-model-execution.mjs";
+import {completedSqlReceiptCount} from "./u3-canonical-research.mjs";
 const fail=reason=>{throw Error("source553_hourly_live:"+reason)};
-export function assertSource553Hourly({model,tools,text,cents,otherCents,foreignDenied,proposals}){
+export function assertSource553Hourly({model,tools,text,cents,otherCents,foreignDenied,proposals,sqlReceipts}){
  requireObservedProductionModel(model,"gpt-6-luna");
  if(!Array.isArray(tools)||!tools.includes("query_data"))
   fail("registered_hourly_reader_not_used");
+ if(!Number.isSafeInteger(sqlReceipts)||sqlReceipts<1)fail("hourly_sql_not_completed");
  if(!matchedMoney(text,cents)||matchedMoney(text,otherCents))
   fail("canonical_money_or_tenant_mismatch");
  if(!/provisional|not final|subject to change|pending closeout/i.test(text))
@@ -123,20 +125,22 @@ async function main(){
   if(newThread.status()!==201)fail("thread_creation_failed");
   const thread=(await newThread.json()).thread?.id;
   if(!/^[0-9a-f-]{36}$/i.test(thread??""))fail("thread_missing");
-  // Separate real owner turns make both canonical query and registered
-  // specialized reader independently observable, never hand-fed model facts.
   const prompts=[
-    "For this café on "+date+", use get_peak_hours to report the recorded "+
-      "net sales at local 09:00. State when it is provisional, not final. "+
-      "Show "+cafe.currency+" with two decimals. Do not modify anything.",
-    "Cross-check the same "+date+" local 09:00 net sales using query_data "+
-      "on cv_sales_hours for this café, and distinguish provisional live "+
-      "records from a finalized closeout. A tab name never proves a "+
-      "returning human. No proposals, changes or other effects.",
+    "What were this café's recorded net sales in the 9 a.m. local hour on "+date+
+      "? Give the exact amount in "+cafe.currency+" and tell me whether the figure is final. Read only.",
+    "Remind me of the hour and amount, and explain whether the recorded figure could still change after closeout. Read only.",
   ];
   const turns=[],usages=[];
+  const serverLog=resolve(proofRoot,"next.log");
+  const start=statSync(serverLog).size;
+  let executedSql=0;
   for(const prompt of prompts){
     const turn=await ownerTurn(owner.page,thread,prompt);
+    if(turns.length===0){
+      const log=readFileSync(serverLog);
+      if(log.length<start)fail("research_log_replaced");
+      executedSql=completedSqlReceiptCount(log.subarray(start).toString("utf8"));
+    }
     const saved=await db.query("SELECT id FROM public.ai_messages "+
       "WHERE business_id=$1 AND thread_id=$2 AND role='owner' AND client_message_id=$3",
       [cafe.businessId,thread,turn.clientMessageId]);
@@ -149,22 +153,23 @@ async function main(){
   const expectedProviderCalls=usages.reduce((n,u)=>n+Number(u.model_call_count),0);
   if(!Number.isSafeInteger(expectedProviderCalls)||expectedProviderCalls<2||
      expectedProviderCalls>18)fail("unbounded_provider_calls");
-  const answer=await db.query("SELECT structured_content FROM public.ai_messages "+
-   "WHERE business_id=$1 AND thread_id=$2 AND role='supervisor' AND id=$3",
-   [cafe.businessId,thread,turns[1].done.reply.id]);
-  if(answer.rows.length!==1)fail("persisted_response_missing");
-  const blocks=answer.rows[0].structured_content;
-  if(!Array.isArray(blocks)||blocks.some(b=>/proposal_card|experiment_card/.test(b.type??"")))
-   fail("unexpected_effect_card");
-  const resultText=blocks.filter(b=>b.type==="text").map(b=>b.text).join("");
   const actions=await db.query("SELECT count(*)::integer AS count FROM public.supervisor_proposals "+
    "WHERE business_id=$1 AND thread_id=$2",[cafe.businessId,thread]);
   foreign=await login(browser,other);
   const denied=await foreign.context.request.get("/api/ai/threads/"+thread);
   const foreignDenied=[401,403,404].includes(denied.status());
-  const selectedTools=turns.flatMap(t=>t.tools);
-  assertSource553Hourly({model,tools:selectedTools,text:resultText,
-   cents,otherCents,foreignDenied,proposals:actions.rows[0]?.count});
+  for(const turn of turns){
+   const answer=await db.query("SELECT structured_content FROM public.ai_messages "+
+    "WHERE business_id=$1 AND thread_id=$2 AND role='supervisor' AND id=$3",
+    [cafe.businessId,thread,turn.done.reply.id]);
+   if(answer.rows.length!==1)fail("persisted_response_missing");
+   const blocks=answer.rows[0].structured_content;
+   if(!Array.isArray(blocks)||blocks.some(b=>/proposal_card|experiment_card/.test(b.type??"")))
+    fail("unexpected_effect_card");
+   const text=blocks.filter(b=>b.type==="text").map(b=>b.text).join("");
+   assertSource553Hourly({model,tools:turns[0].tools,text,cents,otherCents,foreignDenied,
+    proposals:actions.rows[0]?.count,sqlReceipts:executedSql});
+  }
   writeFileSync(output,JSON.stringify({id:"source553-hourly",head_sha:env.HEAD_SHA,
    schema_version:1,status:"passed",observed_model:model,
    observedModelCalls:expectedProviderCalls,

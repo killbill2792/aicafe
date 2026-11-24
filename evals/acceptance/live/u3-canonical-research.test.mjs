@@ -31,6 +31,10 @@ test("U3 proof rejects non-runner and repository paths and requires observed pro
 test("SQL evidence requires a committed complete-page server receipt, not a tool invocation",()=>{
  const receipt="u3_sql_research_receipt {\n  receipt_id: 'a1234567-1234-4123-8123-123456789abc',\n  duration_ms: 37,\n  relation_count: 2,\n  page_complete: true\n}";
  assert.equal(completedSqlReceiptCount("event: tool query_data\n"+receipt+"\n"+receipt),1);
+ const executed=receipt.replace("true\n","true,\n  page_retrieval: 'executed_query'\n");
+ assert.equal(completedSqlReceiptCount(executed),1);
+ assert.equal(completedSqlReceiptCount(executed.replace("executed_query","retained_result")),0);
+
  assert.equal(completedSqlReceiptCount(receipt.replace("true","false")),0);
  assert.equal(completedSqlReceiptCount(receipt.replace("relation_count: 2","relation_count: 0")),0);
  assert.equal(completedSqlReceiptCount("model said "+receipt),0);

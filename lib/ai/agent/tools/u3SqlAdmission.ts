@@ -119,6 +119,7 @@ export class U3AdmissionError extends Error{
  * existing protected aggregate or owner-authorized context. */
 export const unattendedDetailFields:Readonly<Record<string,readonly string[]>>=Object.freeze({
  menu_items:["id","pos_item_id","name","price_cents","category","is_active","base_name","size_label","catalog_source","catalog_last_synced_at","menu_group","pos_visibility","toast_publication_state","toast_publication_version","toast_publication_observed_at","prep_seconds","pos_pricing_strategy","pos_archived_at"],
+ provisional_hourly_sales:["business_date","hour_local","net_sales_cents","orders_count","status","source_as_of","hourly_unassigned_orders","locations_failed","truncated","unparsed_orders"],
  inventory_observations:["source","status","business_date","menu_item_ref","ingredient_id","ingredient_name","quantity_unit","quantity","stock_status","reported_stock_status","evidence_state","source_as_of","checked_at","source_status","observed_count"],
  city_events:["id","city_key","name","kind","start_date","end_date","start_time","end_time","venue","venue_address","last_checked_at","duration_verified_at","start_at","end_at","source_timezone","lifecycle_status","lifecycle_verified_at"],
  cafe_city_event_links:["cafe_event_id","city_event_id","linked_at"],
