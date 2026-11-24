@@ -3,7 +3,7 @@ import { AsyncLocalStorage } from "node:async_hooks";
 import {randomUUID} from "node:crypto";
 import type {SupabaseClient} from "@supabase/supabase-js";
 import {PRODUCTION_SUPERVISOR_OPENAI_MODEL,configuredSupervisorModel} from "@/lib/ai/conversations/modelConfig";
-import {providerUsageReceipt,requestComposition} from "@/lib/ai/agent/executionPolicy";
+import {providerUsageReceipt,requestComposition,providerTextAccounting,DURABLE_PROVIDER_INPUT_UPPER,PROVIDER_FRAMING_BYTES} from "@/lib/ai/agent/executionPolicy";
 import {modelTokenUsage,standardModelTokenRates,estimateModelCallCostMicros,hostedWebActualCostMicros} from "@/lib/calc/supervisorTokenCost";
 
 /** Caps come from authenticated server configuration, never a model reply.
@@ -160,26 +160,9 @@ export async function reserveDurableProviderRequest(
     // All text/tool outputs, filenames and ordinary URL bytes still count.
     // Unknown media types are not discounted. Known inline media reserves the
     // full existing short-context ceiling; measured usage remains fenced.
-    let multimedia=false;
-    const accountingInput=Array.isArray(params.input)?params.input.map(item=>{
-      if(!item||typeof item!=="object"||item.role!=="user"||!Array.isArray(item.content))return item;
-      return {...item,content:item.content.map((part:unknown)=>{
-        if(!part||typeof part!=="object")return part;
-        const p=part as Record<string,unknown>;
-        const field=p.type==="input_image"?"image_url":p.type==="input_file"?"file_data":null;
-        if(!field||typeof p[field]!=="string")return part;
-        multimedia=true;
-        const raw=p[field];
-        const prefix=p.type==="input_image"?
-          /^data:image\/(?:jpeg|png|webp);base64,/u.exec(raw)?.[0]:
-          /^data:application\/pdf;base64,/u.exec(raw)?.[0];
-        if(!prefix||raw.length<=prefix.length||!/^[+\/A-Za-z0-9]+={0,2}$/u.test(raw.slice(prefix.length)))return part;
-        return {...p,[field]:prefix};
-      })};
-    }):params.input;
-    const serialized=JSON.stringify({...params,input:accountingInput});
-    const inputUpper=Math.max(Buffer.byteLength(serialized,"utf8")+4096,
-      multimedia||kind==="hosted_web"?272000:1);
+    const {bytes,multimedia}=providerTextAccounting(params);
+    const inputUpper=Math.max(bytes+PROVIDER_FRAMING_BYTES,
+      multimedia||kind==="hosted_web"?DURABLE_PROVIDER_INPUT_UPPER:1);
     const rates=standardModelTokenRates(model,params.service_tier,inputUpper);
     const primary=model===configuredSupervisorModel();
     const configuredInput=primary?process.env.SUPERVISOR_INPUT_USD_PER_MILLION_TOKENS:undefined;
@@ -188,7 +171,7 @@ export async function reserveDurableProviderRequest(
     const outRate=Math.max(Number(rates?.output),Number(configuredOutput??0));
     const hostedRate=process.env.SUPERVISOR_WORKER_HOSTED_WEB_RESERVE_MICROS;
     const hostedFee=kind==="hosted_web"?(hostedRate===undefined?null:configuredReserve(hostedRate,0)):0;
-    if(inputUpper>272000) throw new Error("durable_provider_request_invalid");
+    if(inputUpper>DURABLE_PROVIDER_INPUT_UPPER) throw new Error("durable_provider_request_invalid");
     const estimate=hostedFee===null?null:Math.ceil(inputUpper*inRate+output*outRate)+hostedFee;
     // An unknown rate remains NULL telemetry, never a commercial refusal for Max.
     const costUpper=estimate!==null&&Number.isSafeInteger(estimate)&&estimate>=0?estimate:null;

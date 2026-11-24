@@ -115,7 +115,7 @@ export async function admitU3Sql(sql:string,allowedRelations:readonly string[],
  knownColumnUnits:Readonly<Record<string,U3TrustedUnit|null>>={},
  relationUnits?:U3RelationUnits):Promise<U3SqlAdmission>{
  if(typeof sql!=="string"||!sql.trim()||
-  parameterCount<0||parameterCount>48)throw Error("invalid_query");
+  parameterCount<0||parameterCount>65535)throw Error("invalid_query");
  if(Buffer.byteLength(sql,"utf8")>MAX_PARSER_BYTES)
   throw new U3AdmissionError("parser_resource_bound");
  const parsed=await parser.parse(sql);

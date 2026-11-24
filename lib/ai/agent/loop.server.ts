@@ -1,6 +1,6 @@
 import { ZodError } from "zod";
 import {presentationSourceNames} from "@/lib/ai/conversations/presentation";
-import {reserveTask14bPaidRequest} from "./task14bPaidBudget.server";
+import {reserveTask14bPaidRequest,TASK14B_MAX_REQUEST_BYTES} from "./task14bPaidBudget.server";
 import { currentWorkerBudget, recordWorkerTurnUsage, usageStopReason,reserveDurableProviderRequest,currentDurableProviderOutputCap } from "@/lib/ai/supervisor/runs/usage.server";
 import {redactToolFailure,redactedErrorStack} from "./redactToolError";
 import {safeToolError} from "./toolErrors";
@@ -11,7 +11,7 @@ import { statusFromResults } from "./status";
 import { checkNumbers,numberProvenance,compactEvidence,type NumericEvidence } from "./checkNumbers";
 import {usageEvidenceRefresh} from "./usageEvidence";
 import { STYLE_RULES } from "./style";
-import {executionPolicy,remainingOutput,requestOutputCap,providerUsageReceipt,requestComposition,type RequestComposition,type ProviderUsageReceipt,type ToolUsageReceipt} from "./executionPolicy";
+import {executionPolicy,remainingOutput,requestOutputCap,providerUsageReceipt,requestComposition,providerTextAccounting,researchPageBudget,type RequestComposition,type ProviderUsageReceipt,type ToolUsageReceipt} from "./executionPolicy";
 import {projectProviderTools,usesNativeToolSearch,allowedFunctionNames,validProviderFunctionCall,canonicalHostedOutput,type ProviderFunctionCall} from "./providerTools";
 import {newResolveState,observeToolResult,resolveOwnerPeriod,localizedPeriodLabel} from "./resolve";
 import {acceptedExplainLines,type ExplainLine} from "./explain";
@@ -451,6 +451,10 @@ export async function runAgentTurn(args: {
     tool_choice: final ? "none" : "auto", stream: true,
     max_output_tokens: outputCap, prompt_cache_key: agentPromptCacheKey(), input,
   });
+  toolContext.researchPageBytes=()=>{
+    const params=request(false,outputLimit(false));
+    return approvedLocalTask14b?researchPageBudget(Buffer.byteLength(JSON.stringify(params),"utf8"),TASK14B_MAX_REQUEST_BYTES):researchPageBudget(providerTextAccounting(params).bytes);
+  };
   const providerFailureCodes:ProviderFailureCode[]=[];
   const recordReportedUsage=(event:Event)=>{
     // Terminal responses can include billed tokens even when incomplete.

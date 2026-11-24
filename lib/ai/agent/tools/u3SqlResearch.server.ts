@@ -5,6 +5,7 @@ import {z} from "zod";
 import type {SupabaseClient} from "@supabase/supabase-js";
 import {createAdminSupabaseClient} from "@/lib/supabase/admin";
 import {admitU3Sql,U3AdmissionError,type U3TrustedUnit,type U3RelationUnits} from "./u3SqlAdmission";
+import {researchPageBudget} from "../executionPolicy";
 import {validateResearchConnection} from "./u3ResearchConnection";
 import {researchNextCursor,researchPage,type ResearchSnapshot} from "./u3SqlCursor";
 
@@ -15,10 +16,11 @@ export type U3SqlContext={
  db:SupabaseClient;businessId:string;ownerUserId?:string;threadId?:string;
  mode?:"owner"|"investigation"|"durable"|"routine";aggregateOnly?:boolean;
  sourceType?:string;sourceId?:string;runId?:string;leaseToken?:string;
+ resultBudgetBytes?:number;
 };
 // Transport/context page bounds, NEVER total query, date or evidence ceilings.
 // The fetch batch bounds in-flight database rows, not the result size or model calls.
-const FETCH_BATCH=32,MAX_RESULT_BYTES=24_576;
+const FETCH_BATCH=32;
 const QUERY_TIME_MS=8000;
 const CURSOR_PREFIX="DECLARE u3_result NO SCROLL CURSOR FOR SELECT * FROM (";
 const scopeSchema=z.strictObject({
@@ -30,8 +32,8 @@ const scopeSchema=z.strictObject({
 export const u3SqlSchema=z.strictObject({
  sql:z.string().min(1),
  parameters:z.array(z.union([
-  z.string().max(512),z.number().finite(),z.boolean(),z.null()
- ])).max(48).nullable(),
+  z.string(),z.number().finite(),z.boolean(),z.null()
+ ])).nullable(),
  limit:z.number().int().positive().max(Number.MAX_SAFE_INTEGER).nullable(),
  cursor:z.string().min(30).max(512).nullable().optional(),
  date_from:z.iso.date().nullable(),date_to:z.iso.date().nullable()
@@ -265,7 +267,7 @@ export function unsafeStructuredToastResult(rows:readonly unknown[]):boolean{
  * rows are returned. No unbounded process cache or persistent raw-data copy.
  * The real wall-clock/statement resource budget applies to the full scan. */
 async function readResearchPage(client:PoolClient,sql:string,parameters:readonly unknown[],
- offset:number,limit:number|null,validate:(rows:unknown[])=>void){
+ offset:number,limit:number|null,resultBudgetBytes:number,validate:(rows:unknown[])=>void){
  const started=Date.now();
  await client.query({text:CURSOR_PREFIX+sql+") AS u3_bounded",values:[...parameters]});
  const rows:unknown[]=[];let bytes=2,totalRows=0,pageFull=false;
@@ -284,7 +286,7 @@ async function readResearchPage(client:PoolClient,sql:string,parameters:readonly
    digest.update(String(size)+":").update(serialized);
    const index=totalRows++;
    if(index<offset||pageFull)continue;
-   if((limit!==null&&rows.length===limit)||bytes+size+(rows.length?1:0)>MAX_RESULT_BYTES){
+   if((limit!==null&&rows.length===limit)||bytes+size+(rows.length?1:0)>resultBudgetBytes){
     pageFull=true;continue;
    }
    rows.push(row);bytes+=size+(rows.length>1?1:0);
@@ -327,7 +329,7 @@ export function safeU3SqlErrorCode(e:unknown){
  return ["invalid_query","unattended_aggregate_required","research_invalid_scope",
   "research_not_configured","research_scope_denied",
   "research_connection_untrusted","research_connection_failed","query_timeout",
-  "row_exceeds_page_budget","stable_order_required","research_snapshot_changed",
+  "row_exceeds_page_budget","research_context_exhausted","stable_order_required","research_snapshot_changed",
   "query_syntax_error","query_execution_error"].includes(s)?s:"source_read_failed";
 }
 /** Model SQL can use joins, windows, CTEs and nested analytics, but only on
@@ -340,6 +342,10 @@ export async function runU3Sql(ctx:U3SqlContext,raw:unknown){
  if(!parsed.success)return {source:"u3_canonical_research",period:null,
   missing:["invalid_query"],rows:[],truncated:false};
  try{
+  const resultBudgetBytes=Math.min(researchPageBudget(),ctx.resultBudgetBytes??researchPageBudget());
+  if(!Number.isSafeInteger(resultBudgetBytes)||resultBudgetBytes<2)throw Error("research_context_exhausted");
+  stage.value="admission";
+  if(Buffer.byteLength(JSON.stringify(parsed.data.parameters??[]),"utf8")>256*1024)throw new U3AdmissionError("parser_resource_bound");
   const committedPage=await withinScope(ctx,async (client,asOf)=>{
    stage.value="catalog";
    const list=await sources(client);
@@ -405,7 +411,7 @@ export async function runU3Sql(ctx:U3SqlContext,raw:unknown){
    // cost number blocks legitimate indexed/aggregate work. The actual query
    // is still bounded by the same server statement/lock timeout, work_mem,
    // admitted AST, isolated role, pool limit and result transport.
-   const fit=await readResearchPage(client,bounded,parameters,offset,count,rows=>{
+   const fit=await readResearchPage(client,bounded,parameters,offset,count,resultBudgetBytes,rows=>{
     if(plan.relations.includes("toast_records")&&unsafeStructuredToastResult(rows))
      throw Error("invalid_query");
     if(ctx.aggregateOnly&&rows.some(row=>

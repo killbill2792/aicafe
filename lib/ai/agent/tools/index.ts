@@ -77,6 +77,8 @@ export type AgentToolContext = {
   currency?:string|null;
   /** Authenticated owner-scoped reader. Never populated from model arguments. */
   canonicalData?:()=>Promise<DataQueryContext>;
+  /** Server-measured next-request capacity, never model supplied. */
+  researchPageBytes?:()=>number;
   /** Owner-verified staff communication evidence for off-turn investigations,
    * not a worker chat or model-supplied employee selector. */
   staffMessages?:{read:()=>ReturnType<
@@ -433,7 +435,7 @@ export async function executeAgentTool(name: string, raw: unknown, ctx: AgentToo
         // or label independent model arithmetic as an official metric.
         return {...result,metric_id:metric.id,metric_basis:"official_shared_definition"};
       }
-      const result=await dataQueryTools.query_data.execute(raw,scope);
+      const result=await dataQueryTools.query_data.execute(raw,{...scope,resultBudgetBytes:ctx.researchPageBytes?.()});
       return typeof selector.sql==="string"?recordResearchAttempt(result,selector.retry_of,ctx.turnResults?.()??[]):result;
     }
     catch(error){

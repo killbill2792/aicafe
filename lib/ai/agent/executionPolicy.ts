@@ -91,3 +91,33 @@ export function providerUsageReceipt(p:{requestedModel:string;kind:ProviderUsage
   discoveryCalls:items?items.filter(i=>record(i).type==="tool_search_call").length:null,
   ...(p.composition!==undefined?{composition:p.composition}:{})};
 }
+
+/** Shared provider accounting; never mutate or omit transmitted evidence. */
+export const DURABLE_PROVIDER_INPUT_UPPER=272000;
+export const PROVIDER_FRAMING_BYTES=4096;
+export function providerTextAccounting(params:Record<string,unknown>){
+    let multimedia=false;
+    const accountingInput=Array.isArray(params.input)?params.input.map(item=>{
+      if(!item||typeof item!=="object"||item.role!=="user"||!Array.isArray(item.content))return item;
+      return {...item,content:item.content.map((part:unknown)=>{
+        if(!part||typeof part!=="object")return part;
+        const p=part as Record<string,unknown>;
+        const field=p.type==="input_image"?"image_url":p.type==="input_file"?"file_data":null;
+        if(!field||typeof p[field]!=="string")return part;
+        multimedia=true;
+        const raw=p[field];
+        const prefix=p.type==="input_image"?
+          /^data:image\/(?:jpeg|png|webp);base64,/u.exec(raw)?.[0]:
+          /^data:application\/pdf;base64,/u.exec(raw)?.[0];
+        if(!prefix||raw.length<=prefix.length||!/^[+\/A-Za-z0-9]+={0,2}$/u.test(raw.slice(prefix.length)))return part;
+        return {...p,[field]:prefix};
+      })};
+    }):params.input;
+    const serialized=JSON.stringify({...params,input:accountingInput});
+    return {bytes:Buffer.byteLength(serialized,"utf8"),multimedia};
+}
+/** Page allowance from remaining request capacity. Reserve for escaping, the
+ * tool envelope and subsequent reasoning. This is not a total query limit. */
+export function researchPageBudget(requestBytes=0,requestLimit=DURABLE_PROVIDER_INPUT_UPPER-PROVIDER_FRAMING_BYTES){
+ return Math.max(0,Math.floor((requestLimit-requestBytes-2*PROVIDER_FRAMING_BYTES)/2));
+}
