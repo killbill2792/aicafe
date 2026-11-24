@@ -260,7 +260,6 @@
           "name": "calculate",
           "args": {
             "purpose": "Recorded unit margin for Cocoa",
-            "screen_number": "none",
             "inputs": [
               {
                 "name": "price",

@@ -175,7 +175,7 @@ function interactiveCalculation(r:AgentToolResult,encoded:string,ctx:Pick<AgentT
  let a:unknown;try{a=JSON.parse(encoded)}catch{return null}
  // Never edit screen metrics or stored facts. The owner can modify only an
  // explicit assumption they supplied in this read-only calculation.
- if(!obj(a)||a.screen_number!=="none"||typeof r.purpose!=="string"||!Array.isArray(a.inputs))return null;
+ if(!obj(a)||typeof r.purpose!=="string"||!Array.isArray(a.inputs))return null;
  const originalInputs=a.inputs;
  // Rounded displays are not exact calculation operands. Fixed cents are
  // exact in the existing calculator; owner assumptions must reproduce the
