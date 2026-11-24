@@ -171,6 +171,14 @@ describe.skipIf(!active)("U3 migrated registered tool + private connection",()=>
   expect(Number(((result.rows as Record<string,unknown>[])[0]).cents)).toBe(1100);
   expect(JSON.stringify(result)).not.toContain("4200");
  });
+ it("executes SQL beyond the former character ceiling through the registered tool and real scoped DB",async()=>{
+  const context={asOf:"2026-11-24",timezone:"UTC",locale:"en",
+   tools:{} as AgentToolContext["tools"],canonicalData:async()=>scoped} satisfies AgentToolContext;
+  const result=await executeAgentTool("query_data",input(
+   "SELECT "+(" ".repeat(13000))+"SUM(net_sales_cents) AS amount FROM orders"),context);
+  expect(result.error).toBeUndefined();
+  expect(Number((result.rows[0] as Record<string,unknown>).amount)).toBe(1100);
+ });
  it("recovers a real PostgreSQL undefined column with a safe repair diagnostic and independent correct result",async()=>{
   const bad=await dataQueryTools.query_data.execute(input("SELECT missing_research_test_column FROM orders"),scoped);
   expect(bad.error).toBe("query_syntax_error");

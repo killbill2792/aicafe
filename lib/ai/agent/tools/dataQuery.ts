@@ -37,7 +37,7 @@ export const dataQuerySchema=z.strictObject({
   period_mode:z.enum(["today","month_to_date","month"]).nullable()
  }).nullable().optional(),
  view:z.enum(canonicalViewNames).nullable(),
- sql:z.string().min(1).max(12000).nullable(),
+ sql:z.string().min(1).nullable(),
  parameters:z.array(z.union([z.string().max(512),z.number().finite(),z.boolean(),z.null()])).max(48).nullable(),
  // A signed continuation for an unchanged SQL query, not an arbitrary offset.
  cursor:z.string().min(30).max(512).nullable().optional(),

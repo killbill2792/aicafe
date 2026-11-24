@@ -5,9 +5,10 @@ import {isDataField,toastOfficialFieldCatalog} from "@/lib/data/canonical/dictio
  * forms remain model-directed; the validator enforces only scope, syntax
  * class, known-safe functions and finite resource complexity. */
 const parser=new PgParser({version:17});
-// Bound actual parser work and the PostgreSQL EXPLAIN/statement resource
-// budget, NOT the number of business joins or model-chosen CTEs.
-const MAX_SQL=12000,MAX_NODES=1800;
+// Bound pre-parse memory and actual AST traversal, not the length of an
+// ordinary analytical statement. The transport/provider also bounds requests.
+// The byte guard is a defensive parser resource limit, not a business rule.
+const MAX_PARSER_BYTES=256*1024,MAX_NODES=1800;
 const prohibited=new Set([
  "InsertStmt","UpdateStmt","DeleteStmt","MergeStmt","CopyStmt","CallStmt",
  "DoStmt","CreateStmt","AlterTableStmt","DropStmt","TruncateStmt",
@@ -113,8 +114,10 @@ export async function admitU3Sql(sql:string,allowedRelations:readonly string[],
  parameterCount=0,aggregateOnly=false,offturnColumns:readonly string[]=[],
  knownColumnUnits:Readonly<Record<string,U3TrustedUnit|null>>={},
  relationUnits?:U3RelationUnits):Promise<U3SqlAdmission>{
- if(typeof sql!=="string"||sql.length>MAX_SQL||!sql.trim()||
+ if(typeof sql!=="string"||!sql.trim()||
   parameterCount<0||parameterCount>48)throw Error("invalid_query");
+ if(Buffer.byteLength(sql,"utf8")>MAX_PARSER_BYTES)
+  throw new U3AdmissionError("parser_resource_bound");
  const parsed=await parser.parse(sql);
  if(parsed.error||!parsed.tree)throw new U3AdmissionError("syntax");
  const tree=parsed.tree as unknown as {stmts?:Array<{stmt?:Record<string,unknown>}>};

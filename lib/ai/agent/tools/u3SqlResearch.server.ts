@@ -18,7 +18,7 @@ export type U3SqlContext={
 };
 // Transport/context page bounds, NEVER total query, date or evidence ceilings.
 // The fetch batch bounds in-flight database rows, not the result size or model calls.
-const FETCH_BATCH=32,MAX_RESULT_BYTES=24_576,MAX_SQL_CHARS=12000;
+const FETCH_BATCH=32,MAX_RESULT_BYTES=24_576;
 const QUERY_TIME_MS=8000;
 const CURSOR_PREFIX="DECLARE u3_result NO SCROLL CURSOR FOR SELECT * FROM (";
 const scopeSchema=z.strictObject({
@@ -28,7 +28,7 @@ const scopeSchema=z.strictObject({
  runId:z.uuid().nullable(),leaseToken:z.uuid().nullable()
 });
 export const u3SqlSchema=z.strictObject({
- sql:z.string().min(1).max(MAX_SQL_CHARS),
+ sql:z.string().min(1),
  parameters:z.array(z.union([
   z.string().max(512),z.number().finite(),z.boolean(),z.null()
  ])).max(48).nullable(),

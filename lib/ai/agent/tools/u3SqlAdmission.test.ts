@@ -21,6 +21,12 @@ describe("U3 governed PostgreSQL AST admission",()=>{
   const meta=await admitU3Sql(sql,admitted,sql.includes("$1")?1:0);
   expect(meta.relations.length).toBeGreaterThan(0);
  });
+ it("accepts a valid analytical statement beyond the former character limit while bounding parser resources",async()=>{
+  const long="SELECT "+(" ".repeat(13000))+"count(*) AS n FROM orders";
+  expect((await admitU3Sql(long,admitted)).relations).toContain("orders");
+  await expect(admitU3Sql("SELECT "+" ".repeat(256*1024)+"count(*) FROM orders",admitted))
+   .rejects.toMatchObject({reason:"parser_resource_bound"});
+ });
  it("does not impose arbitrary 18-relation or 12-CTE research ceilings",async()=>{
   const relations=Array.from({length:21},(_,i)=>"orders o"+i);
   const joined=relations.reduce((q,table,i)=>
