@@ -5,7 +5,9 @@ import {isDataField,toastOfficialFieldCatalog} from "@/lib/data/canonical/dictio
  * forms remain model-directed; the validator enforces only scope, syntax
  * class, known-safe functions and finite resource complexity. */
 const parser=new PgParser({version:17});
-const MAX_SQL=12000,MAX_NODES=1800,MAX_RELATIONS=18,MAX_CTES=12;
+// Bound actual parser work and the PostgreSQL EXPLAIN/statement resource
+// budget, NOT the number of business joins or model-chosen CTEs.
+const MAX_SQL=12000,MAX_NODES=1800;
 const prohibited=new Set([
  "InsertStmt","UpdateStmt","DeleteStmt","MergeStmt","CopyStmt","CallStmt",
  "DoStmt","CreateStmt","AlterTableStmt","DropStmt","TruncateStmt",
@@ -126,9 +128,8 @@ export async function admitU3Sql(sql:string,allowedRelations:readonly string[],
   }
  }
  collect(tree);
- if(nCtes>MAX_CTES)throw Error("invalid_query");
  const reads=new Set<string>(),called=new Set<string>();
- let nodes=0,rangeCount=0,unitAmbiguousDerivedSource=false;
+ let nodes=0,unitAmbiguousDerivedSource=false;
  // PostgreSQL resolves a single, bare table/CTE alias as a whole composite
  // row whenever it is not a real column. That can be cast to text or passed
  // to aggregate functions, leaking IDs and private fields. Apply this rule
@@ -231,7 +232,7 @@ export async function admitU3Sql(sql:string,allowedRelations:readonly string[],
     if(r.catalogname||r.schemaname&&r.schemaname!=="u3_research"||
       !rel||!catalog.has(rel)&&!ctes.has(rel))throw Error("invalid_query");
     if(catalog.has(rel)){
-     reads.add(rel);rangeCount++;
+     reads.add(rel);
      if(aggregateOnly&&["employees","timecards","scheduled_shifts","cafe_decisions",
       "employee_pay_period_facts","staff_availability_rules",
       "staff_availability_exceptions"].includes(rel))
@@ -275,7 +276,7 @@ export async function admitU3Sql(sql:string,allowedRelations:readonly string[],
   }
  }
  walk(tree);
- if(!reads.size||rangeCount>MAX_RELATIONS)throw Error("invalid_query");
+ if(!reads.size)throw Error("invalid_query");
  if(aggregateOnly){
   const target=(tree.stmts[0].stmt?.SelectStmt as {targetList?:unknown})?.targetList;
   if(!Array.isArray(target)||!target.length||
