@@ -67,7 +67,7 @@ const tools = {
   getPosImportReviews:async()=>present([]),
 };
 const allowedTools:AgentToolName[]=[
-  "get_menu_items","query_data","get_product_costs","get_item_sales",
+  "get_menu_items","query_data",
   "get_inventory","calculate",
 ];
 const context = ():AgentToolContext=>({

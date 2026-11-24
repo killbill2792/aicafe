@@ -91,7 +91,7 @@ export async function seedU3HistoryOracle(db,cafe,other){
   for(const [i,owner] of [cafe,other].entries()){
    await db.query("INSERT INTO public.orders(id,business_id,pos_order_id,closed_at,business_date,gross_sales_cents,net_sales_cents) "+
     "SELECT gen_random_uuid(),$1,$2||i::text,((date '2025-01-01'+((i-1)%75)) + CASE "+
-    "WHEN i%3=0 THEN interval '23 hours 45 minutes' WHEN i%3=1 THEN interval '1 day 45 minutes' ELSE interval '14 hours' END) AT TIME ZONE $3::text,"+
+    "WHEN i%3=0 THEN interval '23 hours 45 minutes' WHEN i%3=1 THEN interval '24 hours 45 minutes' ELSE interval '14 hours' END) AT TIME ZONE $3::text,"+
     "date '2025-01-01'+((i-1)%75),1000+i+$4,1000+i+$4 FROM generate_series(1,180) i",
     [owner.businessId,prefix,owner.timezone,i*10000]);
    await db.query("INSERT INTO public.order_lines(id,order_id,name,quantity,net_sales_cents) "+
@@ -119,9 +119,12 @@ export async function seedU3HistoryOracle(db,cafe,other){
   "to_char((breaks->0->>'start')::timestamptz AT TIME ZONE $3::text,'HH24:MI') break_start,"+
   "to_char((breaks->0->>'end')::timestamptz AT TIME ZONE $3::text,'HH24:MI') break_end FROM public.timecards WHERE business_id=$1 AND employee_id=$2 ORDER BY clock_in",
   [cafe.businessId,employeeId,cafe.timezone]);
- if(total?.n!==180||night?.n!==120||!Number.isSafeInteger(Number(night.cents))||
-  top?.units!==360||punches.length!==2||punches[0].clock_out===null||punches[1].clock_out!==null)
-  fail("history_fixture_oracle_incomplete");
+ if(total?.n!==180)fail("history_fixture_order_count_"+String(total?.n));
+ if(night?.n!==120||!Number.isSafeInteger(Number(night.cents))||Number(night.cents)<=0)
+  fail("history_fixture_night_count_"+String(night?.n));
+ if(top?.units!==360)fail("history_fixture_top_units_"+String(top?.units));
+ if(punches.length!==2||punches[0].clock_out===null||punches[1].clock_out!==null)
+  fail("history_fixture_timecards_incomplete_"+String(punches.length));
  return {from,to,employeeId,employeeName,timecardId,openCardId,total:total.n,night,top,punches};
 }
 export function matchedLocalTime(text,value){
