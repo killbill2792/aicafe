@@ -163,8 +163,10 @@ describe("Task13D shared workflow isolation (no secrets, no provider)",()=>{
  it("executes shared pre-spend migration, readiness and SQL denials before any broker launch",()=>{
   const root=temp();
   try{
-   const actual=sharedShellStep("Migrate a fresh disposable local Supabase only",
-    "Export masked disposable keys and a random capped proxy token");
+   const workflow=readFileSync(".github/workflows/ai-cafe-luna-shared.yml","utf8");
+   expect(workflow).toContain("run: bash ../coordinator/scripts/acceptance/shared-luna-db.sh");
+   const actual=readFileSync("scripts/acceptance/shared-luna-db.sh","utf8");
+   mockCommand(root,"ss",'exit 0');
    const bin=mockCommand(root,"supabase",
     'if [ "$1" = "status" ]; then printf "{}\\n"; fi\nif [ "$1" = "db" ] && [ "$FAIL_MIGRATION" = "1" ]; then exit 42; fi\nexit 0');
    mockCommand(root,"pg_isready",'if [ "$FAIL_READY" = "1" ]; then exit 43; fi\nexit 0');

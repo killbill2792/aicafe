@@ -3,8 +3,8 @@
  * source-to-tool evidence and independent SQL truth, without approving effects.
  * Never run in regular PR CI or without the shared-Luna owner authorization. */
 import {randomUUID} from "node:crypto";
-import {existsSync,realpathSync,writeFileSync} from "node:fs";
-import {resolve,dirname,sep} from "node:path";
+import {existsSync,realpathSync,readFileSync,statSync,writeFileSync} from "node:fs";
+import {resolve,dirname} from "node:path";
 import {pathToFileURL} from "node:url";
 import {TEST_CAFES} from "../../../scripts/seed/cafes.mjs";
 import {assertLocalLiveEnvironment} from "./preflight.mjs";
@@ -17,12 +17,60 @@ export function matchedCount(text,n){
  if(!Number.isSafeInteger(n)||n<0||typeof text!=="string")return false;
  return new RegExp("(^|[^0-9])"+String(n)+"([^0-9]|$)").test(text.replace(/,/g,""));
 }
-export function assertU3ObservedEvidence({model,tools,text,orders,lines,cents,proposals}){
+/** Parse only the server's post-commit receipt, not a tool-start event or model text.
+ * The local runner serves one research turn in this byte window. No raw SQL,
+ * row values, credentials or owner data are copied to the proof. */
+export function completedSqlReceiptCount(log){
+ if(typeof log!=="string")return 0;
+ const clean=log.replace(/\x1b\[[0-9;]*m/g,"");
+ const ids=new Set();
+ const pattern=/^\s*u3_sql_research_receipt\s*\{\s*receipt_id:\s*['"]([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})['"],\s*duration_ms:\s*\d+,\s*relation_count:\s*[1-9]\d*,\s*page_complete:\s*true\s*\}/gm;
+ for(const match of clean.matchAll(pattern))ids.add(match[1]);
+ return ids.size;
+}
+export function assertU3ObservedEvidence({model,tools,text,orders,lines,cents,proposals,sqlReceipts}){
  requireObservedProductionModel(model,"gpt-6-luna");
  if(!Array.isArray(tools)||!tools.includes("query_data"))fail("registered_research_tool_not_used");
+ if(!Number.isSafeInteger(sqlReceipts)||sqlReceipts<1)fail("committed_sql_research_not_observed");
  if(!matchedMoney(text,cents)||!matchedCount(text,orders)||!matchedCount(text,lines))
   fail("independent_source_result_mismatch");
  if(proposals!==0)fail("unapproved_effect_created");
+}
+export function resolveU3ProofPaths(args,env){
+ if(env.AICAFE_SHARED_LUNA_CANDIDATE!=="1"||env.AICAFE_SHARED_LUNA_PROOF_DIR!=="/proof"||
+   args.length!==4||args[0]!=="--output"||args[2]!=="--scope-output")
+  fail("private_output_and_scope_required");
+ const out=resolve(args[1]),scopeOut=resolve(args[3]);
+ if(out!=="/proof/u3-canonical-research-proof.json"||scopeOut!=="/proof/u3-canonical-research-scope.json")
+  fail("fresh_local_evidence_path_required");
+ for(const path of [out,scopeOut]){
+  if(realpathSync(dirname(path))!=="/proof"||existsSync(path))fail("fresh_local_evidence_path_required");
+ }
+ return {out,scopeOut};
+}
+export function observedProviderCalls(usage){
+ const n=Number(usage?.model_call_count);
+ if(!Number.isSafeInteger(n)||n<1)fail("missing_provider_call_count");
+ return n;
+}
+/** The exact independent oracle also runs in zero-provider disposable CI. */
+export async function readU3Oracle(db,businessId){
+ const days=await query(db,"SELECT o.business_date::text AS day "+
+  "FROM public.orders o WHERE o.business_id=$1 GROUP BY o.business_date "+
+  "HAVING sum(o.net_sales_cents)>0 ORDER BY o.business_date DESC LIMIT 1",
+  [businessId]);
+ const date=days[0]?.day;
+ if(!/^\d{4}-\d{2}-\d{2}$/.test(date??""))fail("synthetic_source_date_missing");
+ const [orders]=await query(db,"SELECT count(*)::int n, "+
+  "sum(net_sales_cents)::text cents FROM public.orders "+
+  "WHERE business_id=$1 AND business_date=$2",[businessId,date]);
+ const [lines]=await query(db,"SELECT count(*)::int n,min(o.id::text) sample_order_id "+
+  "FROM public.order_lines l JOIN public.orders o ON o.id=l.order_id "+
+  "WHERE o.business_id=$1 AND o.business_date=$2",[businessId,date]);
+ if(!orders||!lines||orders.n<1||lines.n<1||Number(orders.cents)<=0)
+  fail("independent_oracle_missing");
+ if(!/^[0-9a-f-]{36}$/i.test(lines.sample_order_id??""))fail("independent_oracle_missing");
+ return {date,orders,lines};
 }
 async function login(browser,cafe){
  const context=await browser.newContext({baseURL:"http://127.0.0.1:3000",serviceWorkers:"block"});
@@ -90,14 +138,7 @@ async function main(){
  const args=process.argv.slice(2);
  if(args.length!==4||args[0]!=="--output"||args[2]!=="--scope-output")
   fail("private_output_and_scope_required");
- const root=realpathSync(process.cwd());
- const out=resolve(args[1]),scopeOut=resolve(args[3]);
- if(out===scopeOut)fail("different_evidence_files_required");
- for(const path of [out,scopeOut]){
-  const parent=realpathSync(dirname(path));
-  if((parent!==root&&!parent.startsWith(root+sep))||existsSync(path))
-   fail("fresh_local_evidence_path_required");
- }
+ const {out,scopeOut}=resolveU3ProofPaths(args,env);
  const cafe=TEST_CAFES[0],other=TEST_CAFES[1];
  if(!cafe?.owner||!other?.owner||cafe.businessId===other.businessId)
   fail("two_disposable_cafes_required");
@@ -107,20 +148,7 @@ async function main(){
  let owner=null,foreign=null;
  await db.connect();
  try{
-  const days=await query(db,"SELECT o.business_date::text AS day "+
-   "FROM public.orders o WHERE o.business_id=$1 GROUP BY o.business_date "+
-   "HAVING sum(o.net_sales_cents)>0 ORDER BY o.business_date DESC LIMIT 1",
-   [cafe.businessId]);
-  const date=days[0]?.day;
-  if(!/^\d{4}-\d{2}-\d{2}$/.test(date??""))fail("synthetic_source_date_missing");
-  const [orders]=await query(db,"SELECT count(*)::int n, "+
-   "sum(net_sales_cents)::text cents FROM public.orders "+
-   "WHERE business_id=$1 AND business_date=$2",[cafe.businessId,date]);
-  const [lines]=await query(db,"SELECT count(*)::int n,min(o.id)::text sample_order_id "+
-   "FROM public.order_lines l JOIN public.orders o ON o.id=l.order_id "+
-   "WHERE o.business_id=$1 AND o.business_date=$2",[cafe.businessId,date]);
-  if(!orders||!lines||orders.n<1||lines.n<1||Number(orders.cents)<=0)
-   fail("independent_oracle_missing");
+  const {date,orders,lines}=await readU3Oracle(db,cafe.businessId);
   owner=await login(browser,cafe);
   const response=await owner.context.request.post("/api/ai/threads",{
    headers:{Origin:"http://127.0.0.1:3000"},
@@ -128,6 +156,8 @@ async function main(){
   if(response.status()!==201)fail("thread_creation_failed");
   const thread=(await response.json()).thread?.id;
   if(!/^[0-9a-f-]{36}$/i.test(thread??""))fail("thread_id_missing");
+  const serverLog=resolve(dirname(out),"next.log");
+  const logStart=statSync(serverLog).size;
   const turn=await ownerTurn(owner.page,thread,
    "For "+date+", investigate this cafe's actual recorded order count, "+
    "order-line count and net sales, without multiplying the sales total "+
@@ -149,19 +179,25 @@ async function main(){
   const text=blocks.filter(b=>b.type==="text").map(b=>b.text).join("");
   const proposals=await query(db,"SELECT count(*)::int n FROM public.supervisor_proposals "+
    "WHERE business_id=$1 AND thread_id=$2",[cafe.businessId,thread]);
+  const log=readFileSync(serverLog);
+  if(log.length<logStart)fail("research_log_replaced");
+  const sqlReceipts=completedSqlReceiptCount(log.subarray(logStart).toString("utf8"));
   assertU3ObservedEvidence({model:usage.model,tools:turn.names,text,
-   orders:orders.n,lines:lines.n,cents:Number(orders.cents),proposals:proposals[0]?.n});
+   orders:orders.n,lines:lines.n,cents:Number(orders.cents),proposals:proposals[0]?.n,sqlReceipts});
+  console.log("U3: committed SQL research receipts="+sqlReceipts+"; independent SQL answer verified.");
   foreign=await login(browser,other);
   const denied=await foreign.context.request.get("/api/ai/threads/"+thread);
   if(![401,403,404].includes(denied.status()))fail("cross_cafe_thread_visible");
   const scope={businessId:cafe.businessId,otherCafeId:other.businessId,
    ownerUserId:cafe.owner.userId,threadId:thread,replyId:turn.done.reply.id,
    businessDate:date,sampleOrderId:lines.sample_order_id,
-   orderCount:orders.n,lineCount:lines.n,netCents:String(orders.cents)};
+   orderCount:orders.n,lineCount:lines.n,netCents:String(orders.cents),
+   expectedProviderCalls:observedProviderCalls(usage)};
   writeFileSync(out,JSON.stringify({id:"u3-canonical-research",schema_version:1,
    head_sha:env.HEAD_SHA,status:"passed",observed_model:usage.model,
-   checks:{sourceMatch:true,registeredResearch:true,foreignDenied:true,noEffect:true},
-   observedModelCalls:Number(usage.model_call_count)})+"\n",{mode:0o600,flag:"wx"});
+   checks:{sourceMatch:true,registeredResearch:true,committedSqlResearch:true,foreignDenied:true,noEffect:true},
+   completedSqlReceipts:sqlReceipts,
+   observedModelCalls:observedProviderCalls(usage)})+"\n",{mode:0o600,flag:"wx"});
   writeFileSync(scopeOut,JSON.stringify(scope)+"\n",{mode:0o600,flag:"wx"});
  }finally{
   await foreign?.context.close().catch(()=>{});
