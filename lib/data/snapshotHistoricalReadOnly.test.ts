@@ -34,7 +34,7 @@ function readOnlyClient(expenseCount=0){
       staff_tax_source:"recorded",sales_data_status:"actual",
       card_fees_cents:300,card_fees_status:"actual",voids_cents:0,
     })),
-    recurring_costs:[{category_code:"rent",amount_cents:300000,is_estimate:false,
+    recurring_costs:[{id:"rent-bill",frequency:"monthly",category_code:"rent",amount_cents:300000,is_estimate:false,
       active_from:"2026-01-01",active_to:null}],
     expenses:Array.from({length:expenseCount},(_,i)=>({id:"expense-"+i,category_code:"rent",
       amount_cents:100,status:"actual",spent_on:"2026-09-30"})),
@@ -42,7 +42,7 @@ function readOnlyClient(expenseCount=0){
   const client={
     from(table:string){
       tables.push(table);
-      const result={data:values[table]??[],error:null};
+      const result={data:values[table]??[],error:null,count:(values[table]??[]).length};
       let first=0,last=Number.MAX_SAFE_INTEGER;
       const q={
         select(){return q;},
