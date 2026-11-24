@@ -842,14 +842,14 @@ function assertedPunchPerson(text:string,clock:ClockSpan):ShiftPersonClaim{
   // Owner-facing descriptions may attribute a punch without saying
   // "Maya clocked in": e.g. "Maya had a clock-in" or "Maya's recorded
   // clock-in was...". These are named assertions, never general punches.
-  const possessive=[...before.matchAll(/\b([\p{L}\p{M}]+(?:[ \t-]+[\p{L}\p{M}]+)?)['’]s\s+(?:(?:recorded|actual|reported)\s+){0,3}(?:clock[ -]?(?:in|out)|punch[ -]?(?:in|out))\b/giu)].at(-1);
+  const possessive=[...before.matchAll(/\b([\p{L}\p{M}]+(?:[ \t-]+[\p{L}\p{M}]+)?)['’]s\s+(?:[\p{L}\p{M}]+[ \t]+){0,4}(?:clock[ -]?(?:in|out)|punch[ -]?(?:in|out))\b/giu)].at(-1);
   if(possessive)return {kind:"named",name:normalizedEmployeeName(possessive[1])};
-  const owned=[...before.matchAll(/\b([\p{L}\p{M}]+(?:[ \t-]+[\p{L}\p{M}]+)?)\s+(?:had|has|reported|recorded)\s+(?:(?:a|an|the)\s+)?(?:(?:recorded|actual)\s+)?(?:clock[ -]?(?:in|out)|punch[ -]?(?:in|out))\b/giu)].at(-1);
+  const owned=[...before.matchAll(/\b([\p{L}\p{M}]+(?:[ \t-]+[\p{L}\p{M}]+)?)\s+(?:had|has|reported|recorded)\s+(?:(?:a|an|the|his|her|their)\s+)?(?:(?:recorded|actual)\s+)?(?:clock[ -]?(?:in|out)|punch[ -]?(?:in|out))\b/giu)].at(-1);
   if(owned)return {kind:"named",name:normalizedEmployeeName(owned[1])};
   // If a named employee relationship is apparent but the full name cannot
   // be parsed, rejecting the time is safer than borrowing any employee's
   // matching clock. Anonymous punches remain eligible for general claims.
-  if(/['’]s\s+(?:(?:recorded|actual|reported)\s+){0,3}(?:clock|punch)|\bfor\s+\S+|\b(?:had|has|reported|recorded)\s+(?:(?:a|an|the)\s+)?(?:(?:recorded|actual)\s+)?(?:clock[ -]?in|clock[ -]?out|punch[ -]?in|punch[ -]?out)/iu.test(before+" "+after))
+  if(/['’]s[^.!?;\n]{0,90}\b(?:clock[ -]?(?:in|out)|punch[ -]?(?:in|out))\b|\bfor\s+\S+|\b(?:had|has|reported|recorded)[^.!?;\n]{0,70}\b(?:clock[ -]?(?:in|out)|punch[ -]?(?:in|out))\b/iu.test(before+" "+after))
     return {kind:"unresolved"};
   return {kind:"general"};
 }
