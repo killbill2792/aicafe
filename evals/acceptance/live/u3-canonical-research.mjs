@@ -41,6 +41,25 @@ export function observedProviderCalls(usage){
  if(!Number.isSafeInteger(n)||n<1)fail("missing_provider_call_count");
  return n;
 }
+/** The exact independent oracle also runs in zero-provider disposable CI. */
+export async function readU3Oracle(db,businessId){
+ const days=await query(db,"SELECT o.business_date::text AS day "+
+  "FROM public.orders o WHERE o.business_id=$1 GROUP BY o.business_date "+
+  "HAVING sum(o.net_sales_cents)>0 ORDER BY o.business_date DESC LIMIT 1",
+  [businessId]);
+ const date=days[0]?.day;
+ if(!/^\d{4}-\d{2}-\d{2}$/.test(date??""))fail("synthetic_source_date_missing");
+ const [orders]=await query(db,"SELECT count(*)::int n, "+
+  "sum(net_sales_cents)::text cents FROM public.orders "+
+  "WHERE business_id=$1 AND business_date=$2",[businessId,date]);
+ const [lines]=await query(db,"SELECT count(*)::int n,min(o.id::text) sample_order_id "+
+  "FROM public.order_lines l JOIN public.orders o ON o.id=l.order_id "+
+  "WHERE o.business_id=$1 AND o.business_date=$2",[businessId,date]);
+ if(!orders||!lines||orders.n<1||lines.n<1||Number(orders.cents)<=0)
+  fail("independent_oracle_missing");
+ if(!/^[0-9a-f-]{36}$/i.test(lines.sample_order_id??""))fail("independent_oracle_missing");
+ return {date,orders,lines};
+}
 async function login(browser,cafe){
  const context=await browser.newContext({baseURL:"http://127.0.0.1:3000",serviceWorkers:"block"});
  const page=await context.newPage();
@@ -117,20 +136,7 @@ async function main(){
  let owner=null,foreign=null;
  await db.connect();
  try{
-  const days=await query(db,"SELECT o.business_date::text AS day "+
-   "FROM public.orders o WHERE o.business_id=$1 GROUP BY o.business_date "+
-   "HAVING sum(o.net_sales_cents)>0 ORDER BY o.business_date DESC LIMIT 1",
-   [cafe.businessId]);
-  const date=days[0]?.day;
-  if(!/^\d{4}-\d{2}-\d{2}$/.test(date??""))fail("synthetic_source_date_missing");
-  const [orders]=await query(db,"SELECT count(*)::int n, "+
-   "sum(net_sales_cents)::text cents FROM public.orders "+
-   "WHERE business_id=$1 AND business_date=$2",[cafe.businessId,date]);
-  const [lines]=await query(db,"SELECT count(*)::int n,min(o.id)::text sample_order_id "+
-   "FROM public.order_lines l JOIN public.orders o ON o.id=l.order_id "+
-   "WHERE o.business_id=$1 AND o.business_date=$2",[cafe.businessId,date]);
-  if(!orders||!lines||orders.n<1||lines.n<1||Number(orders.cents)<=0)
-   fail("independent_oracle_missing");
+  const {date,orders,lines}=await readU3Oracle(db,cafe.businessId);
   owner=await login(browser,cafe);
   const response=await owner.context.request.post("/api/ai/threads",{
    headers:{Origin:"http://127.0.0.1:3000"},

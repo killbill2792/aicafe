@@ -60,6 +60,25 @@ jobs:
         run: bash scripts/acceptance/shared-luna-db.sh
       - name: Verify actual restricted research login
         run: bash scripts/acceptance/shared-luna-u3.sh
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Install dependencies for exact U3 source oracle
+        run: npm ci
+      - name: Execute the real U3 source oracle without a model
+        run: |
+          node --input-type=module <<'NODE'
+          import pg from 'pg';
+          import { TEST_CAFES } from './scripts/seed/cafes.mjs';
+          import { readU3Oracle } from './evals/acceptance/live/u3-canonical-research.mjs';
+          const db=new pg.Client({connectionString:'postgresql://postgres:postgres@127.0.0.1:54322/postgres'});
+          await db.connect();
+          try {
+            await db.query('SET default_transaction_read_only=on');
+            for (const cafe of TEST_CAFES) await readU3Oracle(db,cafe.businessId);
+            console.log('Independent source oracle verified for both disposable cafes.');
+          } finally { await db.end(); }
+          NODE
       - name: Destroy the disposable database
         if: always()
         run: supabase stop --no-backup
