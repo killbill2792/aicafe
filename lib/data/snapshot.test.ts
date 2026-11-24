@@ -13,6 +13,7 @@ vi.mock("@/lib/pos/processingFeeEstimate.server",()=>({
   getOwnerConfirmedProcessingFeePlans:hooks.plans,
 }));
 import {getBusinessSnapshotFromDb} from "./snapshot.server";
+import {formatInTimeZone} from "date-fns-tz";
 function mockDb(){
   const reads:string[]=[];const writes:string[]=[];
   const data:Record<string,Record<string,unknown>[]>={
@@ -40,7 +41,7 @@ function mockDb(){
     };
     return builder;
   },rpc(){writes.push("rpc");throw Error("RPC in page load")}};
-  return {db:db as unknown as SupabaseClient,reads,writes};
+  return {db:db as unknown as SupabaseClient,reads,writes,seed:data};
 }
 describe("getSnapshot read-only current snapshot and Home database budget",()=>{
   it("makes zero inserts/updates/deletes and no alert/schedule regeneration",async()=>{
@@ -56,5 +57,17 @@ describe("getSnapshot read-only current snapshot and Home database budget",()=>{
     expect(reads).toHaveLength(10);
     expect(reads.filter(table=>table==="alerts")).toHaveLength(1);
     expect(reads.filter(table=>table==="daily_rollups")).toHaveLength(1);
+  });
+  it("never labels estimated expense rows as actual cash spent today",async()=>{
+    const {db,seed}=mockDb();
+    const today=formatInTimeZone(new Date(),"America/Los_Angeles","yyyy-MM-dd");
+    seed.expenses=[
+      {category_code:"rent",amount_cents:1500,status:"actual",spent_on:today},
+      {category_code:"rent",amount_cents:5000,status:"estimated",spent_on:today}
+    ];
+    const result=await getBusinessSnapshotFromDb(db,"c1","today");
+    expect(result.runningCostLines.find(line=>line.categoryCode==="rent"))
+      .toMatchObject({amountCents:6500,actualTodayCents:1500,
+        amountSource:"recorded_expense",isEstimate:true});
   });
 });
