@@ -165,8 +165,14 @@ try{
   ownerRows.rows.some(r=>r.source==="toast"&&r.quantity===null),
   "Pantry and registered canonical query read identical bounded state");
  const def=(await one("select pg_get_viewdef('public.cv_inventory'::regclass) as definition")).definition;
- check(def.includes("toast_records_for")&&def.includes("toast_stock_source_receipts"),
- "view must rely on operational current records and the scoped source receipt");
+ check(def.includes("toast_current_nonorders_for")&&def.includes("toast_stock_source_receipts"),
+ "view must reuse stock-filtered safe operational current reader and scoped receipt");
+ const helper=(await one("select pg_get_functiondef('public.toast_current_nonorders_for(uuid,date,date,text)'::regprocedure) as definition")).definition;
+ check(helper.includes("toast_raw_records")&&helper.includes("toast_records_allowed")&&
+   helper.includes("ai_safe_retained_json")&&!helper.includes("toast_raw_samples"),
+   "shared current-object reader retains operational authority, owner isolation and secret scrub");
+ check(Number((await one("select count(*)::int as n from public.toast_current_nonorders_for($1,null,null,'stock/v1/inventory')",[ids.cafe])).n)===1,
+   "stock-specific operational projection does not return unrelated order families");
  check((await one(`select reloptions @> array['security_invoker=true'] as ok
  from pg_class where oid='public.cv_inventory'::regclass`)).ok,
  "view remains RLS invoker");
