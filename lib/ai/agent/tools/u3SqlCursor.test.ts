@@ -37,7 +37,7 @@ describe("U3 server-signed research cursor",()=>{
  });
  it("rejects crafted, tampered, malformed, unsigned and overflowing offsets",()=>{
   const cursor=researchNextCursor(input,7,key);
-  for(const attempt of [cursor.slice(0,-1)+"A","junk",
+  for(const attempt of [cursor.slice(0,-1)+(cursor.endsWith("A")?"B":"A"),"junk",
    "abc."+("A".repeat(43)),"",cursor+"bad"])
    expect(()=>researchPageOffset(input,attempt,key)).toThrow("invalid_query");
   expect(()=>researchPageOffset(input,cursor,"different long service signing secret")).toThrow("invalid_query");
