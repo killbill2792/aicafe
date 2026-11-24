@@ -6,6 +6,9 @@ const period=z.union([
  z.strictObject({days:z.number().int().positive().max(3660)}),
  z.strictObject({unit:z.literal("month")}),
 ]);
+export const ownerMetricPeriodSchema=z.union([z.string().min(1).max(32),
+ z.strictObject({preset:z.enum(["today","week","month","last_week","last_month","ytd"])}),
+ z.strictObject({from:z.iso.date(),to:z.iso.date()})]);
 export const ownerInputsSchema=z.strictObject({
  netSalesCents:cents.nullable(),salesPeriod:period.nullable(),
  laborCents:cents.nullable(),laborPeriod:period.nullable(),

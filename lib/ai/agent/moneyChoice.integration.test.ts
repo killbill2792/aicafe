@@ -19,7 +19,8 @@ const recommendation={
   dataQuality:{...quality},
 };
 const makeContext=():AgentToolContext=>({asOf:"2026-10-24",locale:"en",
-  timezone:"America/Los_Angeles",tools:{
+  timezone:"America/Los_Angeles",
+  canonicalData:async()=>({businessId:"aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",db:{} as never}),tools:{
     getProfitability:async()=>yes({netSalesCents:20000,totalCostsCents:10000,
       ownerProfitCents:10000,operatingMargin:0.5,coveredSalesDays:24,expectedSalesDays:24}),
     getSalesTrend:async()=>yes([{date:"2026-10-24",netSalesCents:20000}] as never),
@@ -38,7 +39,7 @@ describe("trusted owner-vs-recorded monetary clarification",()=>{
  it("runs sales conflict → validated card → owner-selected fact without inventing profit",async()=>{
    const context=makeContext();
    context.resolveState=newResolveState("I had $300 in sales, not $200");
-   const first=await executeAgentTool("get_profit",{period:"month",ownerInputs},context);
+   const first=await executeAgentTool("query_data",{official_metric:{id:"profit",period_mode:null,profit_period:"month",profit_owner_inputs:ownerInputs}},context);
    expect(first.needsOwnerChoice).toBe(true);
    expect(first.missing).toContain("ownerChoiceRequired");
    expect(first.netSalesCents).toBeNull();
@@ -48,19 +49,19 @@ describe("trusted owner-vs-recorded monetary clarification",()=>{
      question:"Which sales value should I use?",options,allowOther:false},context);
    expect(card.missing).toEqual([]);
    context.resolveState=choiceReply("Which sales value should I use?",options,1);
-   const chosen=await executeAgentTool("get_profit",{period:"month",ownerInputs:null},context);
+   const chosen=await executeAgentTool("query_data",{official_metric:{id:"profit",period_mode:null,profit_period:"month",profit_owner_inputs:null}},context);
    expect(chosen).toMatchObject({selectedMoneySource:"ownerProvided",netSalesCents:30000,
      ownerProfitCents:null,totalCostsCents:null,needsOwnerChoice:false});
    expect(chosen.missing).toContain("recordedProfitNotApplicable");
    context.resolveState=choiceReply("Which sales value should I use?",options,0);
-   const recorded=await executeAgentTool("get_profit",{period:"month",ownerInputs:null},context);
+   const recorded=await executeAgentTool("query_data",{official_metric:{id:"profit",period_mode:null,profit_period:"month",profit_owner_inputs:null}},context);
    expect(recorded).toMatchObject({selectedMoneySource:"recorded",netSalesCents:20000,
      ownerProfitCents:10000,needsOwnerChoice:false});
  });
  it("labels owner sales for a different date range instead of silently ignoring them",async()=>{
    const ctx=makeContext();
    const shortPeriodOwner={...ownerInputs,salesPeriod:{from:"2026-10-01",to:"2026-10-22"}};
-   const r=await executeAgentTool("get_profit",{period:"month",ownerInputs:shortPeriodOwner},ctx);
+   const r=await executeAgentTool("query_data",{official_metric:{id:"profit",period_mode:null,profit_period:"month",profit_owner_inputs:shortPeriodOwner}},ctx);
    expect(r).toMatchObject({netSalesCents:20000,ownerReportedSalesCents:30000,
      ownerReportedSalesPeriod:{from:"2026-10-01",to:"2026-10-22"}});
    expect(r.missing).toContain("ownerSalesPeriodMismatch");
@@ -68,11 +69,11 @@ describe("trusted owner-vs-recorded monetary clarification",()=>{
  });
  it("requires a fresh choice if recorded sales change after the card",async()=>{
    const ctx=makeContext();ctx.resolveState=newResolveState("My sales were $300");
-   const first=await executeAgentTool("get_profit",{period:"month",ownerInputs},ctx);
+   const first=await executeAgentTool("query_data",{official_metric:{id:"profit",period_mode:null,profit_period:"month",profit_owner_inputs:ownerInputs}},ctx);
    const opts=optionsFrom(first);ctx.resolveState=choiceReply("Select sales",opts,1);
    ctx.tools.getProfitability=async()=>yes({netSalesCents:21000,totalCostsCents:10000,
       ownerProfitCents:11000,operatingMargin:0.52,coveredSalesDays:24,expectedSalesDays:24});
-   const answer=await executeAgentTool("get_profit",{period:"month",ownerInputs:null},ctx);
+   const answer=await executeAgentTool("query_data",{official_metric:{id:"profit",period_mode:null,profit_period:"month",profit_owner_inputs:null}},ctx);
    expect(answer.missing).toContain("sourceChoiceExpired");
    expect(answer.netSalesCents).toBeUndefined();
  });
@@ -100,7 +101,7 @@ describe("trusted owner-vs-recorded monetary clarification",()=>{
  });
  it("rejects invented option labels or source IDs not found in trusted tool results",async()=>{
    const ctx=makeContext();ctx.resolveState=newResolveState("Sales mismatch");
-   const first=await executeAgentTool("get_profit",{period:"month",ownerInputs},ctx);
+   const first=await executeAgentTool("query_data",{official_metric:{id:"profit",period_mode:null,profit_period:"month",profit_owner_inputs:ownerInputs}},ctx);
    observeToolResult(ctx.resolveState,first);
    const options=optionsFrom(first);
    const untrusted=await askOwnerTools.ask_owner.execute({question:"Which value?",

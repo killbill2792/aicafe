@@ -4,6 +4,7 @@ import type { AgentToolContext } from "./tools";
 
 const context: AgentToolContext = {
   locale: "en", asOf: "2026-10-21", timezone: "America/Los_Angeles",
+  canonicalData:async()=>({businessId:"aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",db:{} as never}),
   tools: {
     getMenuCatalog: async () => ({ available: true,
       quality: { level: "high", missingInputs: [], estimatedInputs: [], staleInputs: [] },
@@ -33,11 +34,11 @@ describe("recorded Responses streaming fixtures", () => {
     const turn=await runAgentTurn({ownerText:"Show latte pricing and last month's profit",
       context:failing,provider:fixture([
         [call("get_menu_items",'{"query":null,"limit":null}',"menu-ok"),
-         call("get_profit",'{"period":"last_month","ownerInputs":null}',"profit-fail"),completed],
+         call("query_data",'{"official_metric":{"id":"profit","period_mode":null,"profit_period":"last_month"}}',"profit-fail"),completed],
         [text("The menu lists Latte at $4.50."),completed]
       ])});
     expect(turn.results.some(x=>x.source==="menu_items"&&x.missing.length===0)).toBe(true);
-    expect(turn.results.some(x=>x.source==="get_profit"&&x.error==="internal")).toBe(true);
+    expect(turn.results.some(x=>x.source==="query_data"&&x.error==="internal")).toBe(true);
     expect(turn.text).toBe("The menu lists Latte at $4.50.");
     expect(turn.text).not.toContain("private SQL");
   });
@@ -475,7 +476,7 @@ describe("U1 incident regression: exact requested dates and useful synthesis",()
       if(requests.length===1){
         yield call("get_sales",JSON.stringify({period,ownerInputs:null}),"u1-mixed-sales");
         yield call("get_peak_hours",JSON.stringify(period),"u1-mixed-peak");
-        yield call("get_profit",JSON.stringify({period,ownerInputs:null}),"u1-mixed-profit");
+        yield call("query_data",JSON.stringify({official_metric:{id:"profit",period_mode:null,profit_period:period}}),"u1-mixed-profit");
       }else yield text(answer);
       yield completed;
     };
@@ -487,7 +488,7 @@ describe("U1 incident regression: exact requested dates and useful synthesis",()
     expect(result.results).toEqual(expect.arrayContaining([
       expect.objectContaining({source:"daily_rollups",period,missing:["noCoveredSalesRows"]}),
       expect.objectContaining({source:"get_peak_hours",period,missing:["hourlyCoverageMissing"]}),
-      expect.objectContaining({source:"get_profit",error:"internal"}),
+      expect.objectContaining({source:"query_data",error:"internal"}),
     ]));
     const outputs=(requests[1].input as Array<Record<string,unknown>>)
       .filter(x=>x.type==="function_call_output");
@@ -531,7 +532,7 @@ describe("U1 controlled incident timing fixture (no provider)",()=>{
         if(requests.length===1){
           yield call("get_sales",JSON.stringify({period,ownerInputs:null}),"u1-delayed-sales");
           yield call("get_peak_hours",JSON.stringify(period),"u1-delayed-peak");
-          yield call("get_profit",JSON.stringify({period,ownerInputs:null}),"u1-delayed-profit");
+          yield call("query_data",JSON.stringify({official_metric:{id:"profit",period_mode:null,profit_period:period}}),"u1-delayed-profit");
         }else{
           // Reproduce a late but completed final synthesis, not a real network wait.
           await new Promise<void>(resolve=>setTimeout(resolve,11684));
@@ -552,7 +553,7 @@ describe("U1 controlled incident timing fixture (no provider)",()=>{
         expect.objectContaining({source:"daily_rollups",period,netSalesCents:4820}),
         expect.objectContaining({source:"get_peak_hours",period,totalNetSalesCents:4820,
           totalOrdersCount:12,topHours:[{hourLocal:10,netSalesCents:3000,ordersCount:8},{hourLocal:14,netSalesCents:1820,ordersCount:4}]}),
-        expect.objectContaining({source:"get_profit",period,missing:["deadline_exceeded"]}),
+        expect.objectContaining({source:"query_data",period,missing:["deadline_exceeded"]}),
       ]));
       expect(requests[1].tool_choice).toBe("none");
       expect((requests[1].input as Array<Record<string,unknown>>).filter(x=>x.type==="function_call_output")

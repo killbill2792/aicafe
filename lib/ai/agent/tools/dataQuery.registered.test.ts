@@ -160,6 +160,24 @@ describe("optional official shared metric selection in registered query_data",()
    }
   }
  });
+ it("retires the redundant model-facing profit declaration without losing period or shared-screen parity",async()=>{
+  expect(agentToolDefinitions.some(t=>t.name==="get_profit")).toBe(false);
+  const {context}=caller();
+  const quality={level:"high" as const,missingInputs:[],estimatedInputs:[],staleInputs:[]};
+  const ctx:AgentToolContext={...context,tools:{
+   ...context.tools,getProfitability:async()=>({available:true,value:{netSalesCents:20000,
+    totalCostsCents:10000,ownerProfitCents:10000,operatingMargin:.5,
+    coveredSalesDays:20,expectedSalesDays:20},quality})}};
+  for(const period of ["month","last_month","last_week",{from:"2023-01-01",to:"2026-10-20"}] as const){
+   const old=await executeAgentTool("get_profit",{period},ctx);
+   const unified=await executeAgentTool("query_data",{official_metric:{id:"profit",
+    period_mode:null,profit_period:period}},ctx);
+   expect(unified).toEqual({...old,metric_id:"profit",metric_basis:"official_shared_definition"});
+  }
+  expect((await executeAgentTool("query_data",{official_metric:{id:"profit",period_mode:null,
+   profit_period:"month"},date_from:"2026-10-01",date_to:"2026-10-20"},ctx)).error)
+   .toBe("invalid_date_range");
+ });
  it("rejects ambiguous mixed selectors and missing scope before accessing a metric",async()=>{
   const {context}=caller();
   const readEconomics=vi.fn(async()=>{throw Error("must not be called");});

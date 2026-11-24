@@ -34,7 +34,7 @@ import type {SupplierOrderStatus} from "@/lib/data/supplierPurchasing.server";
 import {priceExperimentTools} from "./priceExperiment";
 import {priceMonitorTools} from "./priceMonitor";
 import type {OwnerToastObservation} from "@/lib/ai/supervisor/loop/reads.server";
-import {ownerInputsSchema,ownerAmountForPeriod,ownerConflict} from "./ownerInputs";
+import {ownerInputsSchema,ownerMetricPeriodSchema,ownerAmountForPeriod,ownerConflict} from "./ownerInputs";
 import {injectSavedOwnerInputs} from "@/lib/ownerFacts/inject";
 import {moneyChoiceCandidates,chosenMoneySource,replayedMoneyChoice} from "../resolveMoney";
 import {staffProposalTools} from "./staffProposals";
@@ -206,7 +206,7 @@ export type AgentToolContext = {
     proposeStaff?(input:{name:import("./staffProposals").StaffProposalName;input:unknown}):Promise<{proposalId:string;revision:number;capabilityId:string}>;
     proposePurchases?(input:z.infer<typeof purchaseToolInput>):Promise<Array<{proposalId?:string;revision?:number;name:string;saved?:boolean;error?:string}>>;};
 };
-const periodSchema = z.strictObject({ period: z.union([z.string().min(1).max(32),z.strictObject({preset:z.enum(["today","week","month","last_week","last_month","ytd"])}),z.strictObject({from:z.iso.date(),to:z.iso.date()})]),ownerInputs:ownerInputsSchema.nullable().optional() });
+const periodSchema = z.strictObject({period:ownerMetricPeriodSchema,ownerInputs:ownerInputsSchema.nullable().optional()});
 // Nullable values are semantically optional while retaining the all-required OpenAI strict schema.
 const menuSchema = z.strictObject({ query: z.string().max(120).nullable(), limit: z.number().int().min(1).max(25).nullable() });
 const posPeriodSchema=z.strictObject({from:z.iso.date(),to:z.iso.date()});
@@ -316,7 +316,7 @@ const baseToolDefinitions = (Object.keys(schemas) as AgentToolName[]).map(name =
 // Routine management is a verified-owner-only additional function, rather
 // than a global public tool. Keep the existing baseline tool contract stable.
 export const agentToolDefinitions:Array<Omit<(typeof baseToolDefinitions)[number],"name">&{name:string}>=
-  baseToolDefinitions.filter(tool=>tool.name!=="get_investigation_source"&&tool.name!=="manage_routine"&&tool.name!=="get_break_even"&&!["search_gmail","list_gmail_labels","read_gmail","read_gmail_thread","read_gmail_attachment","propose_gmail_action"].includes(tool.name));
+  baseToolDefinitions.filter(tool=>tool.name!=="get_investigation_source"&&tool.name!=="manage_routine"&&tool.name!=="get_break_even"&&tool.name!=="get_profit"&&!["search_gmail","list_gmail_labels","read_gmail","read_gmail_thread","read_gmail_attachment","propose_gmail_action"].includes(tool.name));
 /** Offered only for a verified connected owner. Default cafés keep their existing tools. */
 /** Offered only when a server-claimed autonomous run explicitly requests it. */
 export const investigationToolDefinition=baseToolDefinitions.find(t=>t.name==="get_investigation_source")!;
@@ -325,6 +325,14 @@ export const agentLabelsPrompt = "Field labels by language (use matching languag
   JSON.stringify({ en: en.AgentFields, es: es.AgentFields, ar: ar.AgentFields });
 
 export const requestedPeriod=calcRequestedPeriod;
+export function researchPeriodChoice(input:Record<string,unknown>):unknown{
+ const metric=input.official_metric;
+ if(!metric||typeof metric!=="object"||Array.isArray(metric))return null;
+ const m=metric as Record<string,unknown>;
+ if(m.id!=="profit")return null;
+ return m.profit_period??(typeof input.date_from==="string"&&typeof input.date_to==="string"?
+  {from:input.date_from,to:input.date_to}:null);
+}
 
 function absent(source: string, period: CafeStatePeriod | null, missing: string[]): AgentToolResult {
   return { source, period, agentId:source==="profitability"?"leo":"alex",
@@ -402,10 +410,17 @@ export async function executeAgentTool(name: string, raw: unknown, ctx: AgentToo
         const metric=p.official_metric;
         let result:AgentToolResult;
         if(metric.id==="profit"){
-          if(metric.period_mode!==null||metric.break_even_overrides!=null||!p.date_from||!p.date_to||p.date_from>p.date_to)
+          if(metric.period_mode!==null||metric.break_even_overrides!=null)
+            return invalid("invalid_query");
+          const period=metric.profit_period??(p.date_from&&p.date_to&&p.date_from<=p.date_to?
+            {from:p.date_from,to:p.date_to}:null);
+          if(!period||metric.profit_period!=null&&(p.date_from!==null||p.date_to!==null))
             return invalid("invalid_date_range");
-          result=await executeAgentTool("get_profit",{period:{from:p.date_from,to:p.date_to}},ctx);
+          const supplied={period,ownerInputs:metric.profit_owner_inputs??null};
+          const saved=ctx.savedOwnerFacts??ctx.ownerFacts??[];
+          result=await executeAgentTool("get_profit",saved.length?injectSavedOwnerInputs(supplied,saved,true):supplied,ctx);
         }else{
+          if(metric.profit_period!=null||metric.profit_owner_inputs!=null)return invalid("invalid_query");
           if(p.date_from!==null||p.date_to!==null)return invalid("invalid_date_range");
           const overrides=metric.break_even_overrides??{};
           const supplied={...overrides,period:metric.period_mode??"month"};
@@ -421,7 +436,11 @@ export async function executeAgentTool(name: string, raw: unknown, ctx: AgentToo
       const result=await dataQueryTools.query_data.execute(raw,scope);
       return typeof selector.sql==="string"?recordResearchAttempt(result,selector.retry_of,ctx.turnResults?.()??[]):result;
     }
-    catch{return {source:"canonical_data",period:null,missing:["source_read_failed"],rows:[],empty:true};}
+    catch(error){
+      const selector=raw&&typeof raw==="object"?raw as Record<string,unknown>:{};
+      if(selector.official_metric!=null)throw error;
+      return {source:"canonical_data",period:null,missing:["source_read_failed"],rows:[],empty:true};
+    }
   }
   if(name==="draft_week_schedule")return draftScheduleTools.draft_week_schedule.execute(raw,ctx);
   if(name==="simulate_staff_absence")return draftScheduleTools.simulate_staff_absence.execute(raw,ctx);

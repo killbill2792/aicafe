@@ -10,6 +10,7 @@ import type { AgentToolContext } from "./tools";
 
 const context: AgentToolContext = {
   locale: "en", asOf: "2026-10-21", timezone: "America/Los_Angeles",
+  canonicalData:async()=>({businessId:"aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",db:{} as never}),
   tools: {
     getMenuCatalog: async () => ({ available: true,
       quality: { level: "high", missingInputs: [], estimatedInputs: [], staleInputs: [] },
@@ -636,7 +637,7 @@ describe("U1 matched recorded incident — checkpoint and presentation variation
       const {requests,provider}=recording([
         [call("get_sales",JSON.stringify({period,ownerInputs:null}),"u1-sales"),completed],
         [call("get_peak_hours",JSON.stringify(period),"u1-peak"),completed],
-        [call("get_profit",JSON.stringify({period,ownerInputs:null}),"u1-profit"),completed],
+        [call("query_data",JSON.stringify({official_metric:{id:"profit",period_mode:null,profit_period:period}}),"u1-profit"),completed],
         ...(withPresentation?[[call("present_response",JSON.stringify({layout:"stack",panels:[],suggestions:[]}),"u1-visual"),completed]]:[]),
         [text(answer),completed],
       ]);

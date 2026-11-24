@@ -387,6 +387,13 @@ it("stores only reviewed canonical read selectors; never arbitrary source conten
  expect(recoverableReadSelector("get_sales",{period:"last_month"},{from:"2026-10-01",to:"2026-10-31"})).toEqual({period:{from:"2026-10-01",to:"2026-10-31"}});
  expect(recoverableReadSelector("get_sales",{period:{from:"2026-10-01",to:"2026-10-31"}})).toEqual({period:{from:"2026-10-01",to:"2026-10-31"}});
  expect(recoverableReadSelector("get_profit",{period:"today",ownerInputs:{netSalesCents:123}}, {from:"2026-11-19",to:"2026-11-19"})).toBeNull();
+    const period={from:"2026-11-19",to:"2026-11-19"};
+    expect(recoverableReadSelector("query_data",{official_metric:{id:"profit",period_mode:null,
+      profit_period:"today"}},period)).toEqual({official_metric:{id:"profit",period_mode:null},
+      date_from:period.from,date_to:period.to});
+    expect(recoverableReadSelector("query_data",{sql:"SELECT * FROM orders"},period)).toBeNull();
+    expect(recoverableReadSelector("query_data",{official_metric:{id:"profit",period_mode:null,
+      profit_owner_inputs:{netSalesCents:123}}},period)).toBeNull();
  expect(recoverableReadSelector("search_gmail",{query:"private supplier invoice"})).toBeNull();
  expect(recoverableReadSelector("propose_purchases",{})).toBeNull();
  expect(recoverableReadSelector("get_inventory",{secret:"private"})).toBeNull();
