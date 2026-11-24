@@ -16,7 +16,8 @@ export type U3SqlContext={
  mode?:"owner"|"investigation"|"durable"|"routine";aggregateOnly?:boolean;
  sourceType?:string;sourceId?:string;runId?:string;leaseToken?:string;
 };
-const MAX_ROWS=100,MAX_RESULT_CHARS=6000,MAX_SQL_CHARS=12000;
+// Transport/context page bounds, NEVER total query, date or evidence ceilings.
+const MAX_ROWS=100,MAX_RESULT_CHARS=24_576,MAX_SQL_CHARS=12000;
 const scopeSchema=z.strictObject({
  businessId:z.uuid(),ownerUserId:z.uuid(),threadId:z.uuid(),
  mode:z.enum(["owner","investigation","durable","routine"]),
@@ -262,21 +263,29 @@ const fitRows=(rows:unknown[])=>{
 };
 function safeCode(e:unknown){
  const s=e instanceof Error?e.message:"";
- if(e&&typeof e==="object"&&"code" in e&&e.code==="57014")return "query_timeout";
+ if(e&&typeof e==="object"&&"code" in e&&typeof e.code==="string"){
+  if(e.code==="57014")return "query_timeout";
+  if(e.code==="42501")return "research_scope_denied";
+  if(["42601","42703","42P01","42883","42804","42803","42P10","22P02"].includes(e.code))
+    return "query_syntax_error";
+  if(["22012","22003"].includes(e.code))return "query_execution_error";
+ }
  return ["invalid_query","unattended_aggregate_required","research_invalid_scope",
   "research_not_configured","research_scope_denied",
   "research_connection_untrusted","research_connection_failed","query_timeout",
-  "row_exceeds_page_budget"].includes(s)?s:"source_read_failed";
+  "row_exceeds_page_budget","query_syntax_error","query_execution_error"].includes(s)?s:"source_read_failed";
 }
 /** Model SQL can use joins, windows, CTEs and nested analytics, but only on
  * the RLS-protected admitted logical research sources. No raw SQL text, model
  * arguments, DB errors or owner IDs are ever returned as tool evidence. */
 export async function runU3Sql(ctx:U3SqlContext,raw:unknown){
+ let stage:"scope"|"catalog"|"admission"|"query"|"result"="scope";
  const parsed=u3SqlSchema.safeParse(raw);
  if(!parsed.success)return {source:"u3_canonical_research",period:null,
   missing:["invalid_query"],rows:[],truncated:false};
  try{
   return await withinScope(ctx,async client=>{
+   stage="catalog";
    const list=await sources(client);
    if(!list.length)throw Error("research_not_configured");
    const p=parsed.data;
@@ -310,6 +319,7 @@ export async function runU3Sql(ctx:U3SqlContext,raw:unknown){
     else if(!Object.hasOwn(knownColumnUnits,col.name))
      knownColumnUnits[col.name]=unit;
    }
+   stage="admission";
    const plan=await admitU3Sql(p.sql,list.map(r=>r.name),p.parameters?.length??0,
     ctx.aggregateOnly===true,[...safeOffturnColumns],knownColumnUnits);
    if(plan.relations.includes("toast_records")&&
@@ -333,6 +343,7 @@ export async function runU3Sql(ctx:U3SqlContext,raw:unknown){
    const statement="SELECT * FROM ("+bounded+") AS u3_bounded LIMIT "+(count+1)+
     " OFFSET "+offset;
    const parameters=p.parameters??[];
+   stage="query";
    const explained=await client.query({text:"EXPLAIN (FORMAT JSON) "+statement,values:parameters});
    const planJson=explained.rows[0]?.["QUERY PLAN"];
    const totalCost=Array.isArray(planJson)?planJson[0]?.Plan?.["Total Cost"]:null;
@@ -342,6 +353,7 @@ export async function runU3Sql(ctx:U3SqlContext,raw:unknown){
    const rows=Array.isArray(result.rows)?result.rows:[];
    if(plan.relations.includes("toast_records")&&unsafeStructuredToastResult(rows))
     throw Error("invalid_query");
+   stage="result";
    const fit=fitRows(rows.slice(0,count));
    const truncated=rows.length>fit.rows.length;
    // A single oversized source row must not cause a cursor loop that never
@@ -374,7 +386,16 @@ export async function runU3Sql(ctx:U3SqlContext,raw:unknown){
   },{date_from:parsed.data.date_from,date_to:parsed.data.date_to});
  }catch(e){
   const code=safeCode(e);
+  // Structured operational telemetry is deliberately limited to finite safe
+  // reason/stage labels. Never log the SQL, bind values, café, owner, ticket,
+  // private connection error, source row, or raw provider diagnostic.
+  const safeStage=code==="research_connection_untrusted"||code==="research_connection_failed"?
+   "connection":code==="research_scope_denied"?"scope":stage;
+  if(code!=="invalid_query")console.warn("u3_sql_research_failure",{
+   code,stage:safeStage,configured:u3SqlConfigured()
+  });
   return {source:"u3_canonical_research",period:null,missing:[code],
-   rows:[],rowCount:0,truncated:false,page_complete:false,next_cursor:null};
+   error_stage:safeStage,rows:[],rowCount:0,truncated:false,
+   page_complete:false,next_cursor:null};
  }
 }
