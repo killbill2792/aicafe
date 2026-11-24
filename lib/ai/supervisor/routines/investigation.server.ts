@@ -491,6 +491,7 @@ export async function processNextInvestigation(db:SupabaseClient,now:Date,
     if(metered.problem())throw new Error(metered.problem()!);
     if((turn.endReason==="budget"||turn.endReason==="timeout")&&research.canYield()&&
       await research.yieldForRetry(60,"technical"))return result;
+    await research.assertLive();
     const expected={sourceType:c.source_type,sourceId:c.source_id,kind:synopsis.kind};
     const verified=verifyUniversalInvestigationTurn(turn,expected,permitted);
     // Callback exists only for the trusted, opt-in live acceptance runner.

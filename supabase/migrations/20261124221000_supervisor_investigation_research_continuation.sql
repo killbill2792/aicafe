@@ -5,7 +5,8 @@ set statement_timeout='45s';
 
 CREATE FUNCTION u3_research_private.investigation_work_id(i public.supervisor_investigations)
 RETURNS uuid LANGUAGE sql IMMUTABLE SET search_path='' AS $identity$
- SELECT md5(i.episode_id::text||':'||i.revision_hash||':'||i.step_version::text||':'||coalesce(i.last_owner_answer_id::text,''))::uuid
+ SELECT (substr(h,1,8)||'-'||substr(h,9,4)||'-4'||substr(h,14,3)||'-a'||substr(h,18,3)||'-'||substr(h,21,12))::uuid
+ FROM (SELECT md5(i.episode_id::text||':'||i.revision_hash||':'||i.step_version::text||':'||coalesce(i.last_owner_answer_id::text,'')) AS h) k
 $identity$;
 REVOKE ALL ON FUNCTION u3_research_private.investigation_work_id(public.supervisor_investigations) FROM PUBLIC,anon,authenticated;
 
