@@ -18,7 +18,7 @@ function completeRows(rows:unknown[]|null|undefined,count:number|null|undefined)
  return Array.isArray(rows)&&rows.length<1000&&(count==null||count===rows.length);
 }
 const safeCents=(value:unknown)=>{
- const n=typeof value==="number"||typeof value==="string"?Number(value):NaN;
+ const n=typeof value==="number"?value:typeof value==="string"&&/^-?\d+$/.test(value)?Number(value):NaN;
  return Number.isSafeInteger(n)?n:null;
 };
 function known<T>(value: T, estimated = false): KnownSlice<T> {
@@ -109,7 +109,7 @@ export function supervisorFactReaders(client: SupabaseClient, authorizedBusiness
       if (connectionError) throw connectionError;
       const covered=await readCoveredSalesDates(client,businessId,period.from,period.to);
       const coverage=resolveItemSalesCoverage(connections??[],period,covered);
-      if(!coverage.coveredDays)return missing("itemSalesCoverage");
+      if(!coverage.covered)return missing("itemSalesCoverage");
       const [items, quantities] = await Promise.all([
         client.from("menu_items").select("id, name, category").eq("business_id", businessId),
         client.rpc("menu_item_quantities_sold", {
