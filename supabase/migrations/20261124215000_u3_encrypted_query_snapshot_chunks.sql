@@ -9,13 +9,13 @@ CREATE TABLE u3_research_private.query_snapshot_chunks (
  snapshot_id uuid NOT NULL,
  thread_id uuid NOT NULL REFERENCES public.ai_threads(id) ON DELETE CASCADE,
  start_row bigint NOT NULL CHECK (start_row>=0),
- row_count integer NOT NULL CHECK (row_count>0),
+ row_count bigint NOT NULL CHECK (row_count>0),
  ciphertext text NOT NULL CHECK (length(ciphertext)>0),
  expires_at timestamptz NOT NULL,
  PRIMARY KEY(scope_key,snapshot_id,start_row)
 );
 CREATE INDEX query_snapshot_expiry_idx ON u3_research_private.query_snapshot_chunks(expires_at);
--- New private encrypted table; no client or research-role policies.
+-- Reason: New private encrypted table with no client grants or research-role policies.
 -- squawk-ignore ban-alter-row-level-security
 ALTER TABLE u3_research_private.query_snapshot_chunks ENABLE ROW LEVEL SECURITY;
 REVOKE ALL ON u3_research_private.query_snapshot_chunks FROM PUBLIC,anon,authenticated,service_role,aicafe_research,aicafe_research_view_owner;

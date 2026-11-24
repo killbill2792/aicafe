@@ -3,20 +3,6 @@ import { runAgentTurn, type AgentProvider } from "./loop.server";
 import type { AgentToolContext,AgentToolResult } from "./tools";
 import type {OwnerRunCheckpoint} from "@/lib/ai/supervisor/runs/contracts";
 
-
-// Mock only the database transport in recorded provider tests. The actual
-// general research declaration, dispatch, grounding and loop remain active.
-vi.mock("./tools/u3SqlResearch.server",async importOriginal=>{
- const actual=await importOriginal<typeof import("./tools/u3SqlResearch.server")>();
- return {...actual,u3SqlConfigured:()=>true,runU3Sql:async()=>({
-  source:"u3_canonical_research",period:null,missing:[],rows:[{"name":"Latte","price_cents":450}],
-  empty:false,truncated:false,page_complete:true,
-  evidence:{receipt_id:"11111111-1111-4111-8111-111111111111",scope:"verified_owner_cafe_lease",
-   query_fingerprint:"a".repeat(64),catalog_version:"a".repeat(16),column_units:{price_cents:"cents"},
-   column_origins:{name:{relation:"menu_items",column:"name",binding:1},price_cents:{relation:"menu_items",column:"price_cents",binding:1}},
-   relation_names:["menu_items"]}})};
-});
-
 const context: AgentToolContext = {
   locale: "en", asOf: "2026-10-21", timezone: "America/Los_Angeles",
   canonicalData:async()=>({businessId:"aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",db:{} as never}),
@@ -454,6 +440,19 @@ describe("admin audit does not change the chat result", () => {
     expect(steps[1].toolName).toBe("query_data");
     expect(JSON.stringify(steps)).not.toContain("private-owner-value");
   });
+});
+
+// Mock only the database transport in recorded provider tests. The actual
+// general research declaration, dispatch, grounding and loop remain active.
+vi.mock("./tools/u3SqlResearch.server",async importOriginal=>{
+ const actual=await importOriginal<typeof import("./tools/u3SqlResearch.server")>();
+ return {...actual,u3SqlConfigured:()=>true,runU3Sql:async()=>({
+  source:"u3_canonical_research",period:null,missing:[],rows:[{"name":"Latte","price_cents":450}],
+  empty:false,truncated:false,page_complete:true,
+  evidence:{receipt_id:"11111111-1111-4111-8111-111111111111",scope:"verified_owner_cafe_lease",
+   query_fingerprint:"a".repeat(64),catalog_version:"a".repeat(16),column_units:{price_cents:"cents"},
+   column_origins:{name:{relation:"menu_items",column:"name",binding:1},price_cents:{relation:"menu_items",column:"price_cents",binding:1}},
+   relation_names:["menu_items"]}})};
 });
 
 describe("U1 incident regression: exact requested dates and useful synthesis",()=>{

@@ -93,7 +93,7 @@ live("real Luna executes an authenticated full café goal through existing sched
       [businessId]);
     if(sourceCounts.rows[0].sales<1||sourceCounts.rows[0].stock<1)
       throw Error("u4_live_independent_sales_stock_seed_missing");
-    // Ingredients alone cannot satisfy get_inventory: that registered reader
+    // Ingredients alone cannot establish inventory observations: the source
     // requires a café-local *dated* stock count (or verified Toast receipt).
     // Seed a real row in this disposable PostgreSQL instance, then inspect
     // the SAME canonical cv_inventory view the registered tool will read.
@@ -148,8 +148,8 @@ live("real Luna executes an authenticated full café goal through existing sched
     });
     expect(result.attention).toBe("attention");
     expect(result.sourceCount).toBeGreaterThanOrEqual(2);
-    expect(result.observedToolNames).toContain("get_sales");
-    expect(result.observedToolNames).toContain("get_inventory");
+    expect(result.observedToolNames).toContain("query_data");
+    expect(result.sourceDomains).toEqual(expect.arrayContaining(["recorded_sales","stock_and_inventory"]));
     expect(providerCompletions).toBe(budget.calls);
     expect(providerCompletions).toBeGreaterThanOrEqual(2);
     const occurrence=(await pg.query("select state,receipt_ref,u4_result from "+

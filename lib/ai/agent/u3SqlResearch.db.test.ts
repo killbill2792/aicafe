@@ -5,17 +5,18 @@ import {afterAll,beforeAll,describe,expect,it,vi} from "vitest";
 
 vi.mock("server-only",()=>({}));
 const bridge=vi.hoisted(()=>({
- issue:null as null|((input:Record<string,unknown>)=>Promise<{
-  data:string|null;error:{message:string}|null
+ call:null as null|((name:string,input:Record<string,unknown>)=>Promise<{
+  data:unknown;error:{message:string}|null
  }>)
 }));
 vi.mock("@/lib/supabase/admin",()=>({
  createAdminSupabaseClient:()=>({
-  rpc:async(_name:string,input:Record<string,unknown>)=>
-   bridge.issue?.(input)??{data:null,error:{message:"local_source_unavailable"}}
+  rpc:async(name:string,input:Record<string,unknown>)=>
+   bridge.call?.(name,input)??{data:null,error:{message:"local_source_unavailable"}}
  })
 }));
 import {dataQueryTools} from "./tools/dataQuery";
+import {ResearchPageCollector,researchPageCache} from "./tools/u3SqlPageCache";
 import {compactEvidence,checkNumbers} from "./checkNumbers";
 import {executeAgentTool,type AgentToolResult,type AgentToolContext} from "./tools";
 
@@ -112,18 +113,23 @@ describe.skipIf(!active)("U3 migrated registered tool + private connection",()=>
   // The fixture shares one administrative connection for scope minting.
   // Serialize that transaction, not the real research pool or queries.
   let mintTail:Promise<void>=Promise.resolve();
-  bridge.issue=p=>{
+  bridge.call=(name,p)=>{
    const issue=mintTail.then(async()=>{
    if(!admin)return {data:null,error:{message:"admin_unavailable"}};
    await admin.query("BEGIN");
    try{
     await admin.query("SELECT set_config('request.jwt.claim.role','service_role',true)");
-    const call=await admin.query(
-     "SELECT public.u3_issue_research_scope($1,$2,$3,$4,$5,$6,$7,$8) AS ticket",
-     [p.p_business_id,p.p_owner_user_id,p.p_thread_id,p.p_mode,p.p_source_type,
-      p.p_source_id,p.p_run_id,p.p_lease_token]);
+    const scope=[p.p_business_id,p.p_owner_user_id,p.p_thread_id,p.p_mode,p.p_source_type,
+     p.p_source_id,p.p_run_id,p.p_lease_token];
+    const call=name==="u3_issue_research_scope"
+     ?await admin.query("SELECT public.u3_issue_research_scope($1,$2,$3,$4,$5,$6,$7,$8) AS result",scope)
+     :name==="u3_query_snapshot_chunk"
+      ?await admin.query("SELECT public.u3_query_snapshot_chunk($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12) AS result",
+       [...scope,p.p_snapshot_id,p.p_start_row,p.p_row_count,p.p_ciphertext])
+      :null;
+    if(!call)throw Error("unexpected research RPC");
     await admin.query("COMMIT");
-    return {data:call.rows[0]?.ticket??null,error:null};
+    return {data:call.rows[0]?.result??null,error:null};
    }catch{
     await admin.query("ROLLBACK").catch(()=>{});
     return {data:null,error:{message:"scope_denied"}};
@@ -134,7 +140,7 @@ describe.skipIf(!active)("U3 migrated registered tool + private connection",()=>
   };
  });
  afterAll(async()=>{
-  bridge.issue=null;
+  bridge.call=null;
   if(admin){
    // The active source is disposable. Do not leave an interactive research
    // credential or synthetic business record after the acceptance test.
@@ -812,6 +818,53 @@ describe.skipIf(!active)("U3 migrated registered tool + private connection",()=>
    expect(restart.error).toBeUndefined();
   }finally{
    await admin.query("DELETE FROM public.orders WHERE business_id=$1 AND pos_order_id LIKE 'u3-cursor-%'",[ids.a]).catch(()=>{});
+  }
+ });
+ it("only retains detail when it needs continuation and preserves the original SQL result across workers",async()=>{
+  if(!admin)throw Error("admin_missing");
+  const worker=vi.spyOn(researchPageCache,"read").mockReturnValue(null);
+  const collect=vi.spyOn(ResearchPageCollector.prototype,"add");
+  const snapshots=async()=>Number((await admin!.query(
+   "SELECT count(*) FROM u3_research_private.query_snapshot_chunks WHERE thread_id=$1",[ids.ta])).rows[0].count);
+  const prefix="u3-durable-snapshot-";
+  try{
+   await admin.query("INSERT INTO public.orders(id,business_id,pos_order_id,closed_at,business_date,gross_sales_cents,net_sales_cents) "+
+    "SELECT gen_random_uuid(),$1,$2||i::text,now(),current_date,i,i FROM generate_series(1,140) i",[ids.a,prefix]);
+   const before=await snapshots();
+   const sql="SELECT id,net_sales_cents,$1::text AS note FROM orders";
+   const complete=await dataQueryTools.query_data.execute({
+    ...input(sql),parameters:["x".repeat(600)],limit:null,
+   },scoped);
+   expect(complete).toMatchObject({page_complete:true,next_cursor:null});
+   expect(complete.rows).toHaveLength(141);
+   expect(collect).not.toHaveBeenCalled();
+   expect(await snapshots()).toBe(before);
+   const note="x".repeat(2200);
+   const detail={...input(sql),parameters:[note],limit:null};
+   const first=await dataQueryTools.query_data.execute(detail,scoped);
+   expect(first).toMatchObject({page_complete:false,page_retrieval:"executed_query",total_rows:141});
+   let cursor=(first as {next_cursor?:string|null}).next_cursor;
+   expect(cursor).toEqual(expect.any(String));
+   expect(await snapshots()).toBeGreaterThanOrEqual(before+2);
+   await admin.query("UPDATE public.orders SET net_sales_cents=99999 WHERE business_id=$1 AND pos_order_id LIKE $2",
+    [ids.a,prefix+"%"]);
+   const observed=[...first.rows];
+   for(let pages=1;cursor;pages++){
+    expect(pages).toBeLessThan(5);
+    const result=await dataQueryTools.query_data.execute({...detail,cursor},scoped);
+    expect(result).toMatchObject({page_retrieval:"retained_result",total_rows:141});
+    observed.push(...result.rows);
+    cursor=(result as {next_cursor?:string|null}).next_cursor;
+    expect(result).toMatchObject({page_complete:cursor===null});
+   }
+   const key=(row:unknown)=>(row as {id:string}).id;
+   const byId=(a:unknown,b:unknown)=>key(a).localeCompare(key(b));
+   const expected=complete.rows.map(row=>({...row as object,note})).sort(byId);
+   expect(observed.sort(byId)).toEqual(expected);
+  }finally{
+   worker.mockRestore();
+   collect.mockRestore();
+   await admin.query("DELETE FROM public.orders WHERE business_id=$1 AND pos_order_id LIKE $2",[ids.a,prefix+"%"]);
   }
  });
  it("returns nonempty multi-year Toast change evidence, not a silent date-window rejection",async()=>{

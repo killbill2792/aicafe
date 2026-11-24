@@ -303,6 +303,12 @@ async function readResearchPage(client:PoolClient,sql:string,parameters:readonly
  const started=Date.now();
  await client.query({text:CURSOR_PREFIX+sql+") AS u3_bounded",values:[...parameters]});
  const rows:unknown[]=[];let bytes=2,totalRows=0,pageFull=false;
+ // A complete response needs no second serialized copy of the result.
+ let retaining=offset>0;
+ const retain=(row:unknown,size:number)=>{
+  collector?.add(row,size);
+  spool?.add(row,size);
+ };
  const digest=createHash("sha256");
  while(true){
   const remaining=QUERY_TIME_MS-(Date.now()-started);
@@ -318,12 +324,17 @@ async function readResearchPage(client:PoolClient,sql:string,parameters:readonly
    const size=Buffer.byteLength(serialized,"utf8");
    // Length prefix makes the byte stream unambiguous across row boundaries.
    digest.update(String(size)+":").update(serialized);
-   collector?.add(row,size);
-   spool?.add(row,size);
+   if(retaining)retain(row,size);
    const index=totalRows++;
    if(index<offset||pageFull)continue;
    if((limit!==null&&rows.length===limit)||bytes+size+(rows.length?1:0)>resultBudgetBytes){
-    pageFull=true;continue;
+    pageFull=true;
+    if(!retaining&&(collector||spool)){
+     for(const prefixRow of rows)retain(prefixRow,Buffer.byteLength(JSON.stringify(prefixRow),"utf8"));
+     retain(row,size);
+     retaining=true;
+    }
+    continue;
    }
    rows.push(row);bytes+=size+(rows.length>1?1:0);
   }

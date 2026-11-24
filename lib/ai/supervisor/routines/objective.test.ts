@@ -279,6 +279,26 @@ describe("U4 objective evidence and model autonomy",()=>{
       toolInvocations:[{name:"query_data",result:fakeSql}],
     }),watch)).toThrow("u4_no_verified_source_observation");
   });
+  it("recognizes separate sales and inventory evidence through the same SQL tool",()=>{
+    const scope="verified_owner_cafe_lease";
+    const sqlRead=(id:string,relation:string,column:string,unit:string,value:string)=>({
+      name:"query_data",result:{source:"u3_canonical_research",period:null,missing:[],
+        truncated:false,rows:[{[column]:value}],
+        evidence:{scope,receipt_id:id,catalog_version:"a".repeat(16),query_fingerprint:"b".repeat(64),
+          relation_names:[relation],column_units:{[column]:unit},
+          column_origins:{[column]:{relation,column,binding:1}}},
+      },
+    });
+    const sales=sqlRead("11111111-1111-4111-8111-111111111111","orders","net_sales_cents","cents","2000");
+    const stock=sqlRead("22222222-2222-4222-8222-222222222222","inventory_observations","quantity","count","3");
+    const repeat=sqlRead("33333333-3333-4333-8333-333333333333","order_lines","net_sales_cents","cents","2000");
+    const outcome=verifyObjectiveTurn(turn("Observed sales and stock.",{
+      toolInvocations:[sales,stock,repeat],
+    }),objective);
+    expect(outcome.sourceDomains).toEqual(["recorded_sales","stock_and_inventory"]);
+    expect(outcome.sourceCount).toBe(2);
+    expect(outcome.observedToolNames).toEqual(["query_data"]);
+  });
   it("uses genuinely observed partial stock without treating stale Toast inventory as evidence",()=>{
     const stock={
       source:"inventory",period:{from:"2026-11-20",to:"2026-11-20"},
