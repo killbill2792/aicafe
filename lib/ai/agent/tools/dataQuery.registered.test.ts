@@ -139,11 +139,11 @@ describe("optional official shared metric selection in registered query_data",()
   for(const name of ["get_expenses","get_bills"])expect(agentToolDefinitions.some(t=>t.name===name)).toBe(false);
   const period={from:"2026-10-01",to:"2026-10-20"};
   const expenses=await executeAgentTool("query_data",{official_metric:{id:"expenses",period_mode:null,period}},ctx);
-  expect(expenses).toEqual({...await executeAgentTool("get_expenses",{period,category:null},ctx),metric_id:"expenses",metric_basis:"official_shared_definition"});
+  expect(expenses).toEqual({...await executeAgentTool("get_expenses",{period,category:null},ctx),metric_id:"expenses",metric_basis:"official_shared_definition",evidence:{receipt_id:expect.stringMatching(/^[a-f0-9-]{36}$/i),authority:"official_shared_definition"}});
   expect(expenses.categories).toHaveLength(21);
   expect(expenses.recordedActualTotalCents).toBe(12000);
   const recurring=await executeAgentTool("query_data",{official_metric:{id:"recurring_bills",period_mode:null}},ctx);
-  expect(recurring).toEqual({...await executeAgentTool("get_bills",{},ctx),metric_id:"recurring_bills",metric_basis:"official_shared_definition"});
+  expect(recurring).toEqual({...await executeAgentTool("get_bills",{},ctx),metric_id:"recurring_bills",metric_basis:"official_shared_definition",evidence:{receipt_id:expect.stringMatching(/^[a-f0-9-]{36}$/i),authority:"official_shared_definition"}});
   expect(recurring.estimated).toBe(true);
  });
 
@@ -157,7 +157,7 @@ describe("optional official shared metric selection in registered query_data",()
     items:[],staff:[],ownerMonthlyPayrollExtrasCents:null,ownerIngredientRate:null})};
   const result=await executeAgentTool("query_data",{official_metric:{id:"break_even",period_mode:"month"}},ctx);
   const existing=await executeAgentTool("get_break_even",{period:"month"},ctx);
-  expect(result).toEqual({...existing,metric_id:"break_even",metric_basis:"official_shared_definition"});
+  expect(result).toEqual({...existing,metric_id:"break_even",metric_basis:"official_shared_definition",evidence:{receipt_id:expect.stringMatching(/^[a-f0-9-]{36}$/i),authority:"official_shared_definition"}});
   expect(result.monthlyBreakEvenCents).toBe(basis.shared.salesPerMonthCents);
   expect(rpc).not.toHaveBeenCalled();
  });
@@ -176,7 +176,7 @@ describe("optional official shared metric selection in registered query_data",()
     const old=await executeAgentTool("get_break_even",{period,...overrides},ctx);
     const unified=await executeAgentTool("query_data",{official_metric:{id:"break_even",
      period_mode:period,break_even_overrides:overrides}},ctx);
-    expect(unified).toEqual({...old,metric_id:"break_even",metric_basis:"official_shared_definition"});
+    expect(unified).toEqual({...old,metric_id:"break_even",metric_basis:"official_shared_definition",evidence:{receipt_id:expect.stringMatching(/^[a-f0-9-]{36}$/i),authority:"official_shared_definition"}});
    }
   }
  });
@@ -192,7 +192,7 @@ describe("optional official shared metric selection in registered query_data",()
    const old=await executeAgentTool("get_profit",{period},ctx);
    const unified=await executeAgentTool("query_data",{official_metric:{id:"profit",
     period_mode:null,profit_period:period}},ctx);
-   expect(unified).toEqual({...old,metric_id:"profit",metric_basis:"official_shared_definition"});
+   expect(unified).toEqual({...old,metric_id:"profit",metric_basis:"official_shared_definition",evidence:{receipt_id:expect.stringMatching(/^[a-f0-9-]{36}$/i),authority:"official_shared_definition"}});
   }
   expect((await executeAgentTool("query_data",{official_metric:{id:"profit",period_mode:null,
    profit_period:"month"},date_from:"2026-10-01",date_to:"2026-10-20"},ctx)).error)
@@ -209,7 +209,7 @@ describe("optional official shared metric selection in registered query_data",()
   expect(agentToolDefinitions.some(t=>t.name==="get_cost_summary")).toBe(false);
   const old=await executeAgentTool("get_cost_summary",{period},ctx);
   const unified=await executeAgentTool("query_data",{official_metric:{id:"business_costs",period_mode:null,period}},ctx);
-  expect(unified).toEqual({...old,metric_id:"business_costs",metric_basis:"official_shared_definition"});
+  expect(unified).toEqual({...old,metric_id:"business_costs",metric_basis:"official_shared_definition",evidence:{receipt_id:expect.stringMatching(/^[a-f0-9-]{36}$/i),authority:"official_shared_definition"}});
   expect(unified.components).toMatchObject({loadedStaffCents:null});
   expect(unified.missing).toContain("staffCostsUnobserved");
   const missing=await executeAgentTool("query_data",{official_metric:{id:"business_costs",period_mode:null,period}},context);
