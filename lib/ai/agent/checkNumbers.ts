@@ -140,7 +140,7 @@ function verifiedU3Evidence(r:AgentToolResult,periodKey:string){
   !proof.column_units||typeof proof.column_units!=="object"||
   Array.isArray(proof.column_units))return values;
  const units=proof.column_units as Record<string,unknown>;
- for(const [rowIndex,row] of r.rows.slice(0,100).entries()){
+ for(const [rowIndex,row] of r.rows.entries()){
   if(!row||typeof row!=="object"||Array.isArray(row))continue;
   for(const [column,raw] of Object.entries(row)){
    if(!Object.hasOwn(units,column))continue;
@@ -285,7 +285,7 @@ export function compactEvidence(results:readonly AgentToolResult[],limit=100):Nu
       const attendance=r.attendance as Record<string,unknown>;
       const cards=Array.isArray(attendance.recordedTimecards)?
         attendance.recordedTimecards:[];
-      for(const raw of cards.slice(0,80)){
+      for(const raw of cards){
         if(!raw||typeof raw!=="object"||Array.isArray(raw))continue;
         const c=raw as Record<string,unknown>;
         if(typeof c.timecardId!=="string"||
@@ -943,7 +943,7 @@ function observedTimecardClocks(results:readonly AgentToolResult[]):VerifiedTime
   const attendance=r.attendance as Record<string,unknown>;
   const cards=Array.isArray(attendance.recordedTimecards)?
     attendance.recordedTimecards:[];
-  for(const raw of cards.slice(0,80)){
+  for(const raw of cards){
    if(!raw||typeof raw!=="object"||Array.isArray(raw))continue;
    const c=raw as Record<string,unknown>;
    if(typeof c.timecardId!=="string"||!/^[a-f0-9-]{36}$/iu.test(c.timecardId)||

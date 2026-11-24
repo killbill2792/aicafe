@@ -12,6 +12,8 @@ export type ProviderFunctionCall={type:"function_call";name:string;arguments:str
 export function usesNativeToolSearch(model:string,isolatedLegacy:boolean):boolean{
  return model===PRODUCTION_SUPERVISOR_OPENAI_MODEL&&!isolatedLegacy;
 }
+// These are the general-purpose research primitives, not a question router.
+const immediateResearch=new Set(["describe_data","query_data","calculate"]);
 export function projectProviderTools(definitions:readonly unknown[],native:boolean):unknown[]{
  const seen=new Set<string>();
  const functions=definitions.map(raw=>{
@@ -19,7 +21,7 @@ export function projectProviderTools(definitions:readonly unknown[],native:boole
    !namePattern.test(raw.name)||seen.has(raw.name)||raw.strict!==true)
     throw Error("invalid_provider_tool_registry");
   seen.add(raw.name);
-  return native?{...raw,defer_loading:true}:raw;
+  return native&&!immediateResearch.has(raw.name)?{...raw,defer_loading:true}:raw;
  });
  // No invented business categories, intent router, custom search tool or second registry.
  return native&&functions.length?[...functions,{type:"tool_search"}]:functions;

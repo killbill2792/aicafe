@@ -1,7 +1,7 @@
 import {describe,expect,it} from "vitest";
 import {calculateTools} from "./calculate";
-import {schemas,executeAgentTool,agentToolDefinitions,type AgentToolContext,type AgentToolResult} from "./index";
-import {SCREEN_NUMBERS,SCREEN_NUMBER_IDS} from "../screenNumbers";
+import {executeAgentTool,agentToolDefinitions,type AgentToolContext,type AgentToolResult} from "./index";
+import {SCREEN_NUMBER_IDS} from "../screenNumbers";
 import {explainLineSchema} from "../explain";
 import {checkNumbers} from "../checkNumbers";
 import {questionFromReasons} from "@/lib/ownerFacts/questions";
@@ -118,22 +118,32 @@ describe("calculate uses what the owner says",()=>{
   });
 });
 
-describe("calculate never rebuilds a screen number",()=>{
-  it("lists exactly the owner-approved screen numbers, each backed by real tools",()=>{
-    expect(SCREEN_NUMBER_IDS.sort()).toEqual(["break_even","card_fees","item_cost","labor_cost","profit"]);
-    for(const tools of Object.values(SCREEN_NUMBERS))for(const tool of tools)expect(Object.hasOwn(schemas,tool)).toBe(true);
+describe("metric identity is independent of tool name",()=>{
+  it("keeps official metric topics without assigning exclusive tool authority",()=>{
+    expect([...SCREEN_NUMBER_IDS].sort()).toEqual(["break_even","card_fees","item_cost","labor_cost","profit"]);
   });
-  it.each(SCREEN_NUMBER_IDS)("%s from parts is refused; building on its tool's number is allowed",async id=>{
-    const steps=[{id:"r",label:"r",op:"subtract" as const,args:["a","b"]}];
-    const parts=await calculateTools.calculate.execute({purpose:"rebuilt",screen_number:id,
-      inputs:[input("a","query_data","rows.0.net_sales_cents"),input("b","query_data","rows.0.cost_cents")],steps},ctx(turn));
-    expect(parts.refused).toBe("screenNumberComesFromItsTool");
-    const tool=SCREEN_NUMBERS[id][0];
-    const own:AgentToolResult={source:tool,period,missing:[],valueCents:30000};
-    const built=await calculateTools.calculate.execute({purpose:"what-if",screen_number:id,
-      inputs:[input("a",tool,"valueCents"),input("b","query_data","rows.0.cost_cents")],steps},
-      ctx([...turn,{name:tool,result:own}]));
-    expect(built.refused).toBeUndefined();
+  it.each(SCREEN_NUMBER_IDS)("allows independent %s arithmetic without asserting official screen parity",async id=>{
+    const actual=await calculateTools.calculate.execute({purpose:"Independent calculation",screen_number:id,
+      inputs:[input("a","query_data","rows.0.net_sales_cents"),input("b","query_data","rows.0.cost_cents")],
+      steps:[{id:"r",label:"r",op:"subtract",args:["a","b"]}]},ctx(turn));
+    expect(actual).toMatchObject({metric_topic:id,metric_basis:"independent_calculation",result:{unit:"cents",valueCents:70000}});
+    expect(actual.refused).toBeUndefined();
+  });
+  it("marks explicit hypothetical inputs as estimates, never owner facts",async()=>{
+    const actual=await calculateTools.calculate.execute({purpose:"Alternative cost scenario",screen_number:"profit",
+      inputs:[input("a","query_data","rows.0.net_sales_cents"),
+        {...input("b",null,null),assumption:{value:25000,unit:"cents",basis:"Hypothetical equipment lease"}}],
+      steps:[{id:"r",label:"r",op:"subtract",args:["a","b"]}]},ctx(turn));
+    expect(actual).toMatchObject({kind:"estimate",metric_basis:"independent_calculation",result:{unit:"cents",valueCents:75000},
+      assumptions:[{name:"b",basis:"Hypothetical equipment lease"}]});
+    expect(actual.ownerProvided).toBeUndefined();
+  });
+  it("does not turn incomplete input into an actual complete calculation",async()=>{
+    const actual=await calculateTools.calculate.execute({purpose:"Recorded partial costs",screen_number:"profit",
+      inputs:[input("a","query_data","rows.0.net_sales_cents"),input("b","get_cost_summary","knownTotalCents")],
+      steps:[{id:"r",label:"r",op:"subtract",args:["a","b"]}]},
+      ctx([turn[0],{...turn[1],result:{...costs,missing:["coverage_missing"]}}]));
+    expect(actual).toMatchObject({kind:"estimate",missing:["incompleteCalculationInputs"],basedOnPartialData:["get_cost_summary"]});
   });
   it("is offered to the model as a strict tool and dispatched",async()=>{
     expect(agentToolDefinitions.find(t=>t.name==="calculate")?.strict).toBe(true);

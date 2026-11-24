@@ -14,6 +14,11 @@ describe("native discovery uses only the admitted existing registry",()=>{
    expect(allowedFunctionNames([a,b])).toEqual(new Set([a.name,b.name]));
    expect(()=>projectProviderTools([a,a],true)).toThrow("invalid_provider_tool_registry");
  });
+ it("makes the three authorized research primitives immediately callable, without a discovery round",()=>{
+   const core=["describe_data","query_data","calculate"].map(name=>({...a,name}));
+   expect(projectProviderTools([...core,b],true)).toEqual([...core,{...b,defer_loading:true},{type:"tool_search"}]);
+   expect(projectProviderTools([b],true)).not.toContainEqual(core[0]);
+ });
  it("replays canonical declarations rather than provider-injected parameters",()=>{
    const registry=projectProviderTools([a],true);
    expect(canonicalHostedOutput([search,output([{...a,parameters:{evil:true}}])],registry,true)).toEqual([search,output([{...a,defer_loading:true}])]);

@@ -97,7 +97,7 @@ remain useful inputs, never the intellectual decision-maker.
   surface, not duplicate Supervisor chat turns; actual findings and owner
   questions remain conversational. Historical audit entries are preserved.
 
-- Prefer verified provider-native deferred tool discovery and model-selected
+- Make describe_data, query_data and calculate immediately available whenever authorized. Prefer verified provider-native deferred tool discovery for other capabilities and model-selected
   context over full schema repetition. No mandatory custom discover-before-read
   gate or keyword routing. Preserve strict schemas, runtime validation and authorization.
 - Separate hard *physical* resource/cost/concurrency/time safeguards from

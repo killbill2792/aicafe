@@ -1,7 +1,7 @@
 import {z} from "zod";
 import type {AgentToolContext,AgentToolResult} from "./index";
 import {CALC_OPS,exactDecimal,exactNumber,runCalculation,type CalcOp,type CalcShown,type CalcUnit,type CalcValue} from "@/lib/metrics/core/calculator";
-import {SCREEN_NUMBERS,SCREEN_NUMBER_IDS,type ScreenNumber} from "../screenNumbers";
+import {SCREEN_NUMBER_IDS} from "../screenNumbers";
 import type {ExplainLine} from "../explain";
 import type {CardValue} from "@/lib/format/values";
 import {ownerStatedAmounts} from "../checkNumbers";
@@ -9,7 +9,7 @@ import {ownerStatedAmounts} from "../checkNumbers";
 const name=z.string().regex(/^[a-z][a-z0-9_]{0,39}$/u);
 const calculateInput=z.strictObject({
   purpose:z.string().trim().min(1).max(120),
-  screen_number:z.enum(["none",...SCREEN_NUMBER_IDS] as [string,...string[]]),
+  screen_number:z.enum(["none",...SCREEN_NUMBER_IDS]),
   inputs:z.array(z.strictObject({
     name,label:z.string().trim().min(1).max(50),
     tool:z.string().max(64).nullable(),
@@ -18,6 +18,8 @@ const calculateInput=z.strictObject({
     fact_key:z.string().max(120).nullable(),
     owner_value:z.number().finite().nullable(),
     owner_unit:z.enum(["cents","percent","count"]).nullable(),
+    // Explicitly hypothetical, never represented as an observed business input.
+    assumption:z.strictObject({value:z.number().finite(),unit:z.enum(["cents","percent","count","ratio"]),basis:z.string().trim().min(1).max(500)}).nullable().optional(),
   })).min(1).max(12),
   steps:z.array(z.strictObject({
     id:name,label:z.string().trim().min(1).max(50),
@@ -29,7 +31,7 @@ const calculateInput=z.strictObject({
 type TurnResult={name:string;result:AgentToolResult};
 type SavedFact={fact_key:string;value_json:unknown;unit:string|null};
 type CalcContext=AgentToolContext&{turnResults?:()=>readonly TurnResult[];savedOwnerFacts?:readonly SavedFact[]};
-type Input={name:string;label:string;value:CalcValue;from:"tool"|"owner_fact"|"owner_said";ref:string;estimate:boolean;owner:boolean;partial:boolean;
+type Input={name:string;label:string;value:CalcValue;from:"tool"|"owner_fact"|"owner_said"|"assumption";ref:string;estimate:boolean;owner:boolean;partial:boolean;
   period:{from:string;to:string}|null};
 
 /** Unit from the field name the value was read from. Never guessed from the number. */
@@ -68,7 +70,7 @@ function readPath(root:unknown,path:string):unknown{
   }
   return node;
 }
-const isEstimate=(r:AgentToolResult)=>r.status==="estimate"||r.provenance==="estimate"||
+const isEstimate=(r:AgentToolResult)=>r.status==="estimate"||r.provenance==="estimate"||r.kind==="estimate"||
   (Array.isArray(r.estimated)&&r.estimated.length>0)||(typeof r.estimated==="boolean"&&r.estimated);
 /** Refusals are for the model to fix, never owner questions: no error/missing keys. */
 const refuse=(code:string,detail?:string):AgentToolResult=>
@@ -97,14 +99,13 @@ const unitName:Record<CalcUnit,string>={cents:"cents",percent:"percent",count:"c
 export const calculateTools={
   calculate:{
     agentId:"leo" as const,schema:calculateInput,
-    description:"The only way to do arithmetic (+ − × ÷, sum, percent_of) for numbers that are NOT screen numbers. "+
-      "Screen numbers (profit, labor cost, card fees, break-even, item cost) come only from their own tools; "+
-      "set screen_number to the one this result is about, or none, and start from that tool's number. "+
+    description:"Perform exact traceable arithmetic (+ − × ÷, sum, percent_of) over verified authorized inputs. SQL may already have performed the needed arithmetic; do not repeat it unnecessarily. "+
+      "screen_number describes the metric topic, not permission or proof of official screen parity. Use the actual café-specific inputs and shared metric definition for official comparisons; label independently chosen assumptions and alternative definitions distinctly. "+
       "Each input reads ONE number: either tool + path (dot path into the exact tool result, e.g. rows.0.net_sales_cents), "+
       "and for U3 SQL research include that result's exact evidence.receipt_id, with a query-receipt-verified numeric column unit; aliases alone do not establish units. Otherwise set receipt_id to null. "+
       "or fact_key (a saved owner fact, including a question-card answer), "+
       "or owner_value + owner_unit for a number the owner said in chat (cents for money, 20 for 20%, plain count). "+
-      "Set the unused fields to null. Never type any other number. Say You told me for owner numbers. "+
+      "For hypothetical scenarios only, provide assumption {value,unit,basis}; disclose that it is hypothetical, not observed or owner-provided. Set unused fields to null. Never invent a recorded value. Say You told me for owner numbers. "+
       "Steps run in order; args name inputs or earlier step ids; percent_of takes (percent, value). "+
       "Show the inputs, formula and steps in How I got this, and label the result Calculation or Estimate as returned.",
     async execute(raw:unknown,ctx:AgentToolContext):Promise<AgentToolResult>{
@@ -112,7 +113,7 @@ export const calculateTools={
         raw as Record<string,unknown>:{};
       const provided=Array.isArray(untrusted.inputs)?untrusted.inputs.map(item=>
         item&&typeof item==="object"&&!Array.isArray(item)?
-        {receipt_id:null,...item}:item):untrusted.inputs;
+        {receipt_id:null,assumption:null,...item}:item):untrusted.inputs;
       const p=calculateInput.parse({...untrusted,inputs:provided});
       const scoped=ctx as CalcContext;
       const turn=(scoped.turnResults?.()??[]).filter(r=>r.name!=="calculate"&&r.name!=="ask_owner");
@@ -121,7 +122,14 @@ export const calculateTools={
       for(const input of p.inputs){
         if(inputs.some(i=>i.name===input.name))return refuse("duplicateName",input.name);
         const owner=input.owner_value!==null||input.owner_unit!==null;
-        if(input.tool&&input.path&&!input.fact_key&&!owner){
+        if(input.assumption){
+          if(input.tool||input.path||input.fact_key||owner||input.receipt_id)return refuse("ambiguousInput",input.name);
+          const {value,unit,basis}=input.assumption;
+          const exact=unit==="cents"&&!Number.isInteger(value)?null:exactNumber(value,unit,unit==="percent"?100:1);
+          if(!exact)return refuse("invalidNumber",input.name);
+          inputs.push({name:input.name,label:input.label,value:exact,from:"assumption",ref:basis,
+            estimate:true,owner:false,partial:false,period:null});
+        }else if(input.tool&&input.path&&!input.fact_key&&!owner){
           const candidates=turn.filter(r=>r.name===input.tool);
           const receipt=(r:TurnResult)=>{
             const evidence=(r.result as Record<string,unknown>).evidence;
@@ -182,12 +190,6 @@ export const calculateTools={
             estimate:false,owner:true,partial:false,period:null});
         }else return refuse("inputNeedsToolAndPathOrFactKey",input.name);
       }
-      // Never rebuild a screen number: a result about one must start from its own tool.
-      if(p.screen_number!=="none"){
-        const allowed:readonly string[]=SCREEN_NUMBERS[p.screen_number as ScreenNumber];
-        if(!inputs.some(i=>i.from==="tool"&&allowed.includes(i.ref.split(":")[0])))
-          return refuse("screenNumberComesFromItsTool","call "+allowed.join(" or ")+" and use its number as an input");
-      }
       const run=runCalculation(new Map(inputs.map(i=>[i.name,i.value])),p.steps);
       if(!run.ok)return refuse(run.code,run.stepId);
       const labels=new Map<string,string>([...inputs.map(i=>[i.name,i.label] as const),...p.steps.map(s=>[s.id,s.label] as const)]);
@@ -196,8 +198,9 @@ export const calculateTools={
         const parts=s.args.map(a=>expr.get(a)??a);
         expr.set(s.id,s===p.steps[p.steps.length-1]?parts.join(symbol[s.op]):"("+parts.join(symbol[s.op])+")");
       }
-      const estimate=inputs.some(i=>i.estimate||i.owner);
-      const provenance:ExplainLine["provenance"]=inputs.some(i=>i.estimate)?"estimate":
+      const partial=inputs.some(i=>i.partial);
+      const estimate=inputs.some(i=>i.estimate||i.owner)||partial;
+      const provenance:ExplainLine["provenance"]=inputs.some(i=>i.estimate)||partial?"estimate":
         inputs.some(i=>i.owner)?"ownerProvided":"recorded";
       const periodInputs=inputs.map(i=>i.period).filter((p):p is {from:string;to:string}=>p!==null);
       const periods=[...new Set(periodInputs.map(p=>p.from+"/"+p.to))];
@@ -221,7 +224,9 @@ export const calculateTools={
         resultShown.unit==="percent"?[{value:resultShown.valueBps,unit:"bps" as const}]:
         resultShown.unit==="count"&&Number.isInteger(resultShown.quantity)?
           [{value:resultShown.quantity,unit:"count" as const}]:[];
-      return {source:"calculate",period,agentId:"leo",missing:[],numberEstimates,
+      return {source:"calculate",period,agentId:"leo",missing:partial?["incompleteCalculationInputs"]:[],numberEstimates,
+        metric_topic:p.screen_number,metric_basis:"independent_calculation",
+        ...(inputs.some(i=>i.from==="assumption")?{assumptions:inputs.filter(i=>i.from==="assumption").map(i=>({name:i.name,basis:i.ref}))}:{}),
         kind:estimate?"estimate":"calculation",purpose:p.purpose,formula:expr.get(run.result.id),
         inputs:inputs.map(i=>({name:i.name,label:i.label,from:i.from,ref:i.ref,unit:unitName[i.value.unit],...shownOf.get(i.name)})),
         steps:run.steps.map(s=>({id:s.id,label:labels.get(s.id),op:s.op,args:s.args,...s.shown})),
