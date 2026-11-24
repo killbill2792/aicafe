@@ -160,6 +160,56 @@ describe.skipIf(!active)("U3 migrated registered tool + private connection",()=>
   expect(superseded.error).toBeUndefined();
   expect(superseded.rows).toEqual([]);
  });
+ it("uses the same authenticated business facts in interactive and durable owner research",async()=>{
+  if(!admin)throw Error("admin_missing");
+  const employeeA=randomUUID(),employeeB=randomUUID(),message=randomUUID();
+  await admin.query("INSERT INTO public.employees(id,business_id,display_name,default_hourly_wage_cents) VALUES($1,$2,'Synthetic staff A',2100),($3,$4,'Synthetic staff B',3200)",[employeeA,ids.a,employeeB,ids.b]);
+  await admin.query("INSERT INTO public.ai_messages(id,business_id,owner_user_id,thread_id,author_user_id,role,content_type,text_content,client_message_id) VALUES($1,$2,$3,$4,$3,'owner','text','Synthetic durable research',gen_random_uuid())",[message,ids.a,ids.oa,ids.ta]);
+  await admin.query("SELECT set_config('request.jwt.claim.role','service_role',false)");
+  let runId:string|undefined;
+  try{
+   const scope=[ids.a,ids.oa,ids.ta];
+   const admitted=(await admin.query("SELECT public.supervisor_admit_owner_run_v2($1,$2,$3,$4,$5,$6,$7) AS result",[...scope,message,"c".repeat(64),"en",[]])).rows[0].result;
+   runId=admitted.id;
+   const claim=async()=>(await admin!.query("SELECT public.supervisor_run_claim($1,$2,$3,$4,$5,30) AS result",[...scope,runId,randomUUID()])).rows[0].result;
+   const auth=await claim();
+   expect(auth.step.step_key).toBe("authorize_owner");
+   await admin.query("SELECT public.supervisor_run_complete_step($1,$2,$3,$4,$5,$6,$7)",[...scope,runId,"authorize_owner",auth.step.claim_token,"owner:"+message]);
+   const ownerTurn=await claim();
+   expect(ownerTurn.step.step_key).toBe("owner_turn");
+   const durable={...scoped,mode:"durable" as const,runId,leaseToken:ownerTurn.step.claim_token};
+   const sql=input("SELECT id,display_name,default_hourly_wage_cents FROM employees ORDER BY id");
+   const interactive=await dataQueryTools.query_data.execute(sql,scoped);
+   const resumed=await dataQueryTools.query_data.execute(sql,durable);
+   expect(interactive.rows).toEqual([{id:employeeA,display_name:"Synthetic staff A",default_hourly_wage_cents:"2100"}]);
+   expect(resumed.error).toBeUndefined();
+   expect(resumed.rows).toEqual(interactive.rows);
+   expect((await dataQueryTools.query_data.execute(input("SELECT count(*) AS n FROM staff_schedules"),{...durable,aggregateOnly:true})).error).toBe("unattended_aggregate_required");
+   await admin.query("UPDATE public.supervisor_run_steps SET lease_until=now()-interval '1 second' WHERE run_id=$1 AND step_key='owner_turn'",[runId]);
+   const expired=await dataQueryTools.query_data.execute(sql,durable);
+   expect(expired.error).toBe("research_scope_denied");
+   expect(expired.rows).toEqual([]);
+  }finally{
+   if(runId)await admin.query("DELETE FROM public.supervisor_runs WHERE id=$1",[runId]);
+   await admin.query("DELETE FROM public.ai_messages WHERE id=$1",[message]);
+   await admin.query("DELETE FROM public.employees WHERE id IN ($1,$2)",[employeeA,employeeB]);
+  }
+ });
+ it("discovers newly admitted business configuration and source quality through the same SQL interface",async()=>{
+  if(!admin)throw Error("admin_missing");
+  await admin.query("INSERT INTO public.team_rules(business_id,meal_break_minutes) VALUES($1,35),($2,45) ON CONFLICT(business_id) DO UPDATE SET meal_break_minutes=excluded.meal_break_minutes",[ids.a,ids.b]);
+  const context={asOf:"2026-11-24",timezone:"UTC",locale:"en",tools:{} as AgentToolContext["tools"],canonicalData:async()=>scoped} satisfies AgentToolContext;
+  const d=await executeAgentTool("describe_data",{source:"research",search:"team_rules"},context);
+  expect(d.missing).toEqual([]);
+  expect(JSON.stringify(d)).toContain("meal_break_minutes");
+  const rules=await dataQueryTools.query_data.execute(input("SELECT meal_break_minutes FROM team_rules"),scoped);
+  expect(rules.error).toBeUndefined();
+  expect(rules.rows).toEqual([{meal_break_minutes:35}]);
+  const catalog=await executeAgentTool("describe_data",{source:"research",search:"toast_day_status"},context);
+  expect(catalog.missing).toEqual([]);
+  expect(JSON.stringify(catalog)).toContain("coverage_complete");
+  expect(JSON.stringify(catalog)).not.toContain("orders_snapshot_sha256");
+ });
  it("runs a real model-selected join with accurate café-isolated money",async()=>{
   const context={asOf:"2026-11-24",timezone:"UTC",locale:"en",
    tools:{} as AgentToolContext["tools"],canonicalData:async()=>scoped} satisfies AgentToolContext;

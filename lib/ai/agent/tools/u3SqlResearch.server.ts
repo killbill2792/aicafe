@@ -4,7 +4,7 @@ import {Pool,type PoolClient} from "pg";
 import {z} from "zod";
 import type {SupabaseClient} from "@supabase/supabase-js";
 import {createAdminSupabaseClient} from "@/lib/supabase/admin";
-import {admitU3Sql,U3AdmissionError,type U3TrustedUnit,type U3RelationUnits} from "./u3SqlAdmission";
+import {admitU3Sql,U3AdmissionError,ownerOnlyResearchRelations,type U3TrustedUnit,type U3RelationUnits} from "./u3SqlAdmission";
 import {researchPageBudget} from "../executionPolicy";
 import {validateResearchConnection} from "./u3ResearchConnection";
 import {researchNextCursor,researchPage,type ResearchSnapshot} from "./u3SqlCursor";
@@ -354,10 +354,9 @@ export async function runU3Sql(ctx:U3SqlContext,raw:unknown){
    // Off-turn privacy is source/field-based, not a regex over model-
    // selected output aliases. These are reusable data classes rather than
    // question patterns; personal IDs, text and unrestricted JSON are excluded.
+   const aggregateOnly=ctx.aggregateOnly===true||ctx.mode==="routine"||ctx.mode==="investigation";
    const safeOffturnColumns=new Set(list.flatMap(r=>
-    ["employees","timecards","scheduled_shifts","cafe_decisions",
-      "employee_pay_period_facts","timecard_breaks","current_owner_facts","staff_availability_rules",
-      "staff_availability_exceptions"].includes(r.name)?[]:
+    ownerOnlyResearchRelations.has(r.name)?[]:
     r.columns.filter(c=>
      c.unit==="integer_cent"||c.unit==="microcent"||
      c.unit==="cafe_business_date"||c.unit==="minutes"||c.unit==="hours"||
@@ -385,7 +384,7 @@ export async function runU3Sql(ctx:U3SqlContext,raw:unknown){
    }
    stage.value="admission";
    const plan=await admitU3Sql(p.sql,list.map(r=>r.name),p.parameters?.length??0,
-    ctx.aggregateOnly===true,[...safeOffturnColumns],knownColumnUnits,relationUnits satisfies U3RelationUnits);
+    aggregateOnly,[...safeOffturnColumns],knownColumnUnits,relationUnits satisfies U3RelationUnits);
    if(plan.relations.includes("toast_records")&&
      (p.date_from===null||p.date_to===null))throw Error("invalid_query");
    // Each page revalidates the signed owner/café/thread/lease in PostgreSQL.
@@ -397,7 +396,7 @@ export async function runU3Sql(ctx:U3SqlContext,raw:unknown){
     businessId:ctx.businessId,ownerUserId:ctx.ownerUserId??"",
     threadId:ctx.threadId??"",mode:ctx.mode??"owner",
     sourceType:ctx.sourceType??null,sourceId:ctx.sourceId??null,
-    runId:ctx.runId??null,leaseToken:ctx.leaseToken??null,aggregateOnly:ctx.aggregateOnly===true,
+    runId:ctx.runId??null,leaseToken:ctx.leaseToken??null,aggregateOnly,
     sql:p.sql,parameters:p.parameters??null,date_from:p.date_from,
     date_to:p.date_to,limit:count
    };
@@ -414,7 +413,7 @@ export async function runU3Sql(ctx:U3SqlContext,raw:unknown){
    const fit=await readResearchPage(client,bounded,parameters,offset,count,resultBudgetBytes,rows=>{
     if(plan.relations.includes("toast_records")&&unsafeStructuredToastResult(rows))
      throw Error("invalid_query");
-    if(ctx.aggregateOnly&&rows.some(row=>
+    if(aggregateOnly&&rows.some(row=>
      !row||typeof row!=="object"||Array.isArray(row)||
      Object.entries(row).some(([key,value])=>
       /name|email|phone|address|employee|customer|person|account|identity|recipient/i.test(key)&&value!==null)))

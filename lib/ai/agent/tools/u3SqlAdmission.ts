@@ -72,6 +72,8 @@ for(const source of Object.values(toastOfficialFieldCatalog)){
  }
 }
 
+export const ownerOnlyResearchRelations:ReadonlySet<string>=new Set(["employees","timecards","scheduled_shifts","cafe_decisions","employee_pay_period_facts","timecard_breaks","current_owner_facts","staff_availability_rules","staff_availability_exceptions","staff_schedules","pos_scheduled_shifts","staff_scheduling_preferences","staff_qualifications","staff_custom_rules"]);
+
 export type U3TrustedUnit="cents"|"count"|"percent"|"ratio";
 export type U3RelationUnits=Readonly<Record<string,Readonly<Record<string,U3TrustedUnit|null>>>>;
 export type U3SqlAdmission={relations:string[];functions:string[];nodeCount:number;cteCount:number;
@@ -245,9 +247,7 @@ export async function admitU3Sql(sql:string,allowedRelations:readonly string[],
       !rel||!catalog.has(rel)&&!ctes.has(rel))throw new U3AdmissionError("unapproved_relation");
     if(catalog.has(rel)){
      reads.add(rel);
-     if(aggregateOnly&&["employees","timecards","scheduled_shifts","cafe_decisions",
-      "employee_pay_period_facts","timecard_breaks","current_owner_facts","staff_availability_rules",
-      "staff_availability_exceptions"].includes(rel))
+     if(aggregateOnly&&ownerOnlyResearchRelations.has(rel))
       throw Error("unattended_aggregate_required");
     }
    }

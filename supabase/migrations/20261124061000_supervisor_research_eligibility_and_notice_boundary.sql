@@ -380,13 +380,13 @@ RETURNS TABLE(
 ) LANGUAGE sql STABLE SECURITY DEFINER SET search_path=''
 AS $u3_toast_records$
  SELECT r.source,
-  CASE WHEN s.mode='owner' THEN r.source_ref ELSE NULL END,
+  CASE WHEN s.mode IN ('owner','durable') THEN r.source_ref ELSE NULL END,
   r.status,r.business_date,r.record_type,
-  CASE WHEN s.mode='owner' THEN r.record_ref ELSE NULL END,
-  CASE WHEN s.mode='owner' THEN r.order_ref ELSE NULL END,
-  CASE WHEN s.mode='owner' THEN r.check_ref ELSE NULL END,
+  CASE WHEN s.mode IN ('owner','durable') THEN r.record_ref ELSE NULL END,
+  CASE WHEN s.mode IN ('owner','durable') THEN r.order_ref ELSE NULL END,
+  CASE WHEN s.mode IN ('owner','durable') THEN r.check_ref ELSE NULL END,
   r.counts_in_sales,
-  CASE WHEN s.mode='owner' THEN r.data ELSE NULL::jsonb END
+  CASE WHEN s.mode IN ('owner','durable') THEN r.data ELSE NULL::jsonb END
  FROM u3_research_private.scope() s
  CROSS JOIN LATERAL (
   SELECT nullif(current_setting('aicafe.u3_date_from',true),'')::date AS from_day,
@@ -412,13 +412,13 @@ RETURNS TABLE(
 AS $u3_change_rows$
  SELECT
   c.id,c.entity,
-  CASE WHEN s.mode='owner' THEN c.entity_guid ELSE NULL::uuid END,
+  CASE WHEN s.mode IN ('owner','durable') THEN c.entity_guid ELSE NULL::uuid END,
   c.business_date,c.changed_at,n.named_path,
-  CASE WHEN s.mode='owner'
+  CASE WHEN s.mode IN ('owner','durable')
     AND jsonb_typeof(e.value->'before') IN ('string','number','boolean')
     AND length(e.value->>'before')<=256
     THEN e.value->>'before' ELSE NULL END,
-  CASE WHEN s.mode='owner'
+  CASE WHEN s.mode IN ('owner','durable')
     AND jsonb_typeof(e.value->'after') IN ('string','number','boolean')
     AND length(e.value->>'after')<=256
     THEN e.value->>'after' ELSE NULL END

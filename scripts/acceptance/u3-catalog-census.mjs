@@ -141,6 +141,16 @@ expectedLogical.set("processing_fee_daily_facts",[
  "business_date","amount_cents","status","source_type","provider","updated_at"
 ]);
 expectedLogical.set("expense_categories",["code","qb_account_type","is_running_cost"]);
+expectedLogical.set("toast_day_status",["business_date","import_state","recon_state","imported_at","net_sales_cents","gross_sales_cents","discounts_cents","refunds_cents","tax_cents","tip_cents","order_count","open_check_count","service_charges_cents","gratuity_cents","toast_net_sales_cents","toast_orders_count","toast_discount_cents","toast_refund_cents","delta_net_cents","delta_orders","recon_source","reconciled_at","unparsed_count","coverage_complete","analytics_state","delta_discount_cents","delta_refund_cents","delta_void_orders","void_amount_gap_cents","last_recon_attempt_at","paid_other_day","owner_confirmed_at"]);
+expectedLogical.set("menu_item_cost_fallbacks",["menu_item_id","cost_cents","source_type","status","updated_at"]);
+expectedLogical.set("team_rules",["meal_break_enabled","meal_break_minutes","meal_break_after_minutes","rest_break_enabled","rest_break_minutes","rest_break_every_minutes","weekly_ot_enabled","weekly_ot_after_minutes","ot_multiplier_bp","daily_ot_enabled","daily_ot_after_minutes","max_shift_enabled","max_shift_minutes","min_shift_enabled","min_shift_minutes","min_rest_enabled","min_rest_minutes","coverage_enabled","min_headcount","owner_set","updated_at","prep_minutes_before_open","prep_minutes_after_close"]);
+expectedLogical.set("staff_schedules",["id","employee_id","day_of_week","start_time","end_time","unpaid_break_minutes","hourly_wage_cents","effective_from","effective_to","active"]);
+expectedLogical.set("pos_scheduled_shifts",["location_id","provider","external_shift_id","external_employee_id","external_job_id","scheduled_start","scheduled_end","deleted","last_synced_at"]);
+expectedLogical.set("staff_scheduling_preferences",["id","employee_id","effective_from","effective_to","min_weekly_minutes","desired_weekly_minutes","max_weekly_minutes","max_daily_minutes","source","confirmation","confirmed_at","revision","updated_at","unavailable_weekdays"]);
+expectedLogical.set("staff_qualifications",["id","employee_id","location_id","qualification_code","valid_from","valid_to","source","confirmation","confirmed_at","revision","updated_at"]);
+expectedLogical.set("scheduling_coverage_requirements",["id","location_id","day_of_week","local_date","effective_from","effective_to","start_local","end_local","overnight","min_headcount","qualification_code","min_overlap_minutes","priority","source","confirmation","confirmed_at","revision","updated_at"]);
+expectedLogical.set("staff_custom_rules",["id","rule_text","active","created_at","updated_at"]);
+expectedLogical.set("recovery_order",["bucket_code","position"]);
 const observedLogical=new Map();
 for(const column of logicalColumns??[]){
  const list=observedLogical.get(column.relation)??[];
