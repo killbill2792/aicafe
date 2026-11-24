@@ -37,6 +37,10 @@ export function resolveU3ProofPaths(args,env){
  }
  return {out,scopeOut};
 }
+/** The legacy broker cannot certify production-native research parity. */
+export function requireNativeResearchHost(env){
+ if(env.AICAFE_SHARED_LUNA_NATIVE_RESEARCH!=="1")fail("native_research_host_required");
+}
 export function observedProviderCalls(usage){
  const n=Number(usage?.model_call_count);
  if(!Number.isSafeInteger(n)||n<1)fail("missing_provider_call_count");
@@ -193,6 +197,7 @@ async function main(){
    env.AICAFE_SHARED_LUNA_SCENARIO!=="u3-canonical-research"||
    env.AICAFE_SHARED_LUNA_CANDIDATE!=="1")
   fail("explicit_shared_luna_authorization_required");
+ requireNativeResearchHost(env);
  if(env.AICAFE_RESEARCH_SQL_ENABLED!=="true"||!env.AICAFE_RESEARCH_DATABASE_URL)
   fail("governed_research_connection_missing");
  // Trusted paid acceptance may run only against the disposable migrated DB.

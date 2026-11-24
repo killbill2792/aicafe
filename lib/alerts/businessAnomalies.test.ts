@@ -41,7 +41,7 @@ it("scheduled source reads create material incidents, retain unknown history and
  inputs.sales.mockImplementation(async(_id:string,period:{from:string;to:string})=>({available:true,value:rows(period.from,period.from==="2026-11-12"?current:1000),quality:unknown?{...q,missingInputs:["salesCoverage"]}:q}));
  inputs.wages.mockImplementation(async(_db:unknown,_id:string,from:string)=>rows(from,1000));
  inputs.expenses.mockResolvedValue({available:false,value:null,quality:q});
- inputs.costs.mockResolvedValue({value:{items:[]},quality:q});
+ inputs.costs.mockResolvedValue({value:{items:[]},quality:{...q,missingInputs:["ingredientPricesMissing"]}});
  inputs.products.mockResolvedValue({available:false,value:null,quality:q});
  inputs.menu.mockResolvedValue({items:[]});
  inputs.stock.mockResolvedValue({rows:[],error:null,truncated:false});
@@ -62,6 +62,7 @@ it("scheduled source reads create material incidents, retain unknown history and
  expect(incidents.get("data_gap:sales_coverage")).toBe(true);
  expect(rpc).toHaveBeenCalledWith("supervisor_reconcile_business_anomaly",expect.objectContaining({p_key:"data_gap:sales_coverage",p_active:true,p_payload:expect.objectContaining({gapReason:"coverage_unverified"})}));
  expect(rpc).toHaveBeenCalledWith("supervisor_reconcile_business_anomaly",expect.objectContaining({p_key:"data_gap:stock_counts",p_active:true,p_payload:expect.objectContaining({gapReason:"missing_business_input"})}));
+ expect(rpc).toHaveBeenCalledWith("supervisor_reconcile_business_anomaly",expect.objectContaining({p_key:"data_gap:ingredient_prices",p_active:true,p_payload:expect.objectContaining({gapReason:"missing_business_input"})}));
  unknown=false;current=1000;await run();
  expect(incidents.get("sales_decline:cafe")).toBe(false);
  expect(incidents.get("data_gap:sales_coverage")).toBe(false);

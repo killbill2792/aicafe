@@ -1,7 +1,7 @@
 import {completedSqlReceiptCount} from "./runner.mjs";
 import test from "node:test";
 import assert from "node:assert/strict";
-import {matchedCount,assertU3ObservedEvidence,resolveU3ProofPaths,observedProviderCalls,matchedLocalTime,assertU3HistoryEvidence} from "./u3-canonical-research.mjs";
+import {matchedCount,assertU3ObservedEvidence,resolveU3ProofPaths,observedProviderCalls,matchedLocalTime,assertU3HistoryEvidence,requireNativeResearchHost} from "./u3-canonical-research.mjs";
 
 test("U3 independent count check rejects substring, wrong count and absent source",()=>{
  assert.equal(matchedCount("17 orders and 61 order lines",17),true);
@@ -13,12 +13,18 @@ test("U3 live oracle requires observed Luna, registered research and no effects"
  const ok={model:"gpt-6-luna",tools:["describe_data","query_data"],
   text:"17 orders, 61 order lines, recorded sales 1,234.56",orders:17,lines:61,cents:123456,proposals:0,sqlReceipts:1};
  assert.doesNotThrow(()=>assertU3ObservedEvidence(ok));
+ assert.doesNotThrow(()=>assertU3ObservedEvidence({...ok,tools:["query_data"]}));
  assert.throws(()=>assertU3ObservedEvidence({...ok,tools:["get_sales"]}),/registered_research_tool_not_used/);
  assert.throws(()=>assertU3ObservedEvidence({...ok,model:"mock"}),/unexpected_runtime_model/);
  assert.throws(()=>assertU3ObservedEvidence({...ok,cents:12345}),/independent_source_result_mismatch/);
  assert.throws(()=>assertU3ObservedEvidence({...ok,proposals:1}),/unapproved_effect_created/);
  assert.throws(()=>assertU3ObservedEvidence({...ok,sqlReceipts:0}),/committed_sql_research_not_observed/);
  assert.throws(()=>assertU3ObservedEvidence({...ok,sqlReceipts:undefined}),/committed_sql_research_not_observed/);
+});
+
+test("U3 acceptance fails before provider access on the legacy runner",()=>{
+ assert.doesNotThrow(()=>requireNativeResearchHost({AICAFE_SHARED_LUNA_NATIVE_RESEARCH:"1"}));
+ for(const value of [undefined,"0","true"])assert.throws(()=>requireNativeResearchHost({AICAFE_SHARED_LUNA_NATIVE_RESEARCH:value}),/native_research_host_required/);
 });
 
 test("U3 proof rejects non-runner and repository paths and requires observed provider calls",()=>{

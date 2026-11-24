@@ -323,7 +323,7 @@ export async function refreshBusinessAnomalies(db:SupabaseClient,businessId:stri
    for(const item of a.value.items){const before=prev.get(item.id);
     if(before&&before.baseUnit===item.baseUnit)await persist(compareBusinessFacts("ingredient_cost",item.id,item.costPerBaseUnitMicros,before.costPerBaseUnitMicros,"micros_per_"+item.baseUnit,old.to,today,today,"up"));
    }
-   await gap("ingredient_prices",a.quality.missingInputs.includes("ingredientPricesMissing"));
+   await gap("ingredient_prices",a.quality.missingInputs.includes("ingredientPricesMissing"),"missing_business_input");
    // Same CURRENT size recipe priced at two observed ingredient-price dates.
    // This is not a historical recipe or historical realized profit claim.
    const beforePrices=Object.fromEntries(b.value.items.filter(i=>finite(i.costPerBaseUnitMicros)).map(i=>[i.id,i.costPerBaseUnitMicros!]));

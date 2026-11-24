@@ -6,7 +6,6 @@
   "proof": "u3-canonical-research-proof.json",
   "scope": "u3-canonical-research-scope.json",
   "expectedTools": [
-    "describe_data",
     "query_data"
   ],
   "assertions": [
