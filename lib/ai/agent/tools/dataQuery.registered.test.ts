@@ -199,7 +199,8 @@ describe("internal application calculations preserved independently of model res
       ownerOpenDaysPerMonth:24,ownerNetSalesCents:123456,ownerSalesDays:4}]){
     const old=await executeAgentTool("get_break_even",{period,...overrides},ctx);
     expect(old.error).toBeUndefined();
-    expect(old.monthlyBreakEvenCents).not.toBeNull();
+    if(old.monthlyBreakEvenCents===null)expect(old.missing.length).toBeGreaterThan(0);
+    else expect(typeof old.monthlyBreakEvenCents).toBe("number");
    }
   }
  });

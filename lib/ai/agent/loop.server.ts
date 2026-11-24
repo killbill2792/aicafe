@@ -591,7 +591,7 @@ export async function runAgentTurn(args: {
         // Historical observations remain in the retained catalog and numeric
         // verifier. Only replay a native call if its keys belong to the
         // current declaration; a removed selector is not callable again.
-        const declaration=allowedDefinitions.find(d=>d.name===r.name);
+        const declaration=agentToolDefinitions.find(d=>d.name===r.name);
         const properties=(declaration?.parameters as {properties?:Record<string,unknown>}|undefined)?.properties;
         try{
           const prior=JSON.parse(r.arguments) as unknown;
