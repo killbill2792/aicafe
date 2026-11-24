@@ -166,6 +166,21 @@ describe.skipIf(!active)("U3 migrated registered tool + private connection",()=>
   if(priorCursorSecret===undefined)delete process.env.SUPABASE_SERVICE_ROLE_KEY;
   else process.env.SUPABASE_SERVICE_ROLE_KEY=priorCursorSecret;
  });
+ it("reads saved staffing cases across their full history without crossing café scope",async()=>{
+  if(!admin)throw Error("admin_missing");
+  const a=randomUUID(),b=randomUUID();
+  try{
+   await admin.query("INSERT INTO public.staff_coordination_cases(id,business_id,source_kind,source_key,case_kind,role_needed) VALUES($1,$2,'owner_record',$1::uuid::text,'recruitment','Local role'),($3,$4,'owner_record',$3::uuid::text,'recruitment','Foreign role')",[a,ids.a,b,ids.b]);
+   await admin.query("INSERT INTO public.staff_coordination_evidence(business_id,case_id,evidence_key,source_kind,source_id,source_revision) VALUES($1,$2,'decision','owner_decision','local','1'),($3,$4,'decision','owner_decision','foreign','1')",[ids.a,a,ids.b,b]);
+   const result=await dataQueryTools.query_data.execute(input("SELECT c.role_needed,e.source_id FROM staff_coordination_cases c JOIN staff_coordination_evidence e ON e.case_id=c.id"),scoped);
+   expect(result.error).toBeUndefined();
+   expect(result.rows).toEqual([{role_needed:"Local role",source_id:"local"}]);
+   for(const relation of ["staff_communication_requests","staff_communication_messages","staff_coordination_cases","staff_coordination_evidence","maintenance_cases","maintenance_case_events"]){
+    const result=await dataQueryTools.query_data.execute(input("SELECT count(*) FROM "+relation),{...scoped,aggregateOnly:true});
+    expect(result.error).toBeDefined();
+   }
+  }finally{await admin.query("DELETE FROM public.staff_coordination_cases WHERE id IN ($1,$2)",[a,b]);}
+ });
  it("reads all saved normalized statement transactions through general SQL without crossing owner scope",async()=>{
   if(!admin)throw Error("admin_missing");
   const day="2026-01-01";

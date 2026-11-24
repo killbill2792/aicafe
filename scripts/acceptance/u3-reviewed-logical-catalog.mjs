@@ -84,4 +84,11 @@ expectedLogical.set("event_readiness_links",["plan_id","event_id"]);
 expectedLogical.set("event_readiness_actions",["plan_id","action_index","area","action_text","reason","checklist_state","checklist_updated_at"]);
 expectedLogical.set("event_readiness_observations",["plan_id","business_date","coverage","event_activity","actual_cents","typical_cents","change_percent","baseline_days","hourly_coverage","evidence_source","recorded_at"]);
 
+expectedLogical.set("staff_communication_requests",["id","employee_id","kind","source_type","source_id","source_revision","title","prompt","status","due_at","created_at","updated_at"]);
+expectedLogical.set("staff_communication_messages",["id","employee_id","request_id","actor","response_code","body","channel","received_at"]);
+expectedLogical.set("staff_coordination_cases",["id","source_kind","case_kind","employee_id","location_id","role_needed","from_date","to_date","state","decision","revision","next_check_at","created_at","updated_at"]);
+expectedLogical.set("staff_coordination_evidence",["id","case_id","source_kind","source_id","source_revision","observed_at"]);
+expectedLogical.set("maintenance_cases",["id","status","equipment_label","reported_symptom","severity","maintenance_stage","repair_verified","external_sent","reported_at","due_at","created_at","updated_at"]);
+expectedLogical.set("maintenance_case_events",["id","task_id","kind","actor_kind","source_kind","working_confirmed","occurred_at","created_at"]);
+
 export {manifest,expectedLogical};
