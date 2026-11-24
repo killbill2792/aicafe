@@ -129,6 +129,23 @@ describe.skipIf(!active)("U3 migrated registered tool + private connection",()=>
   if(priorCursorSecret===undefined)delete process.env.SUPABASE_SERVICE_ROLE_KEY;
   else process.env.SUPABASE_SERVICE_ROLE_KEY=priorCursorSecret;
  });
+ it("preserves unfamiliar actual expense labels and recurring links across the real SQL surface",async()=>{
+  if(!admin)throw Error("admin_missing");
+  const cost=randomUUID(),expense=randomUUID(),foreign=randomUUID();
+  try{
+   await admin.query("INSERT INTO public.recurring_costs(id,business_id,category_code,label,amount_cents,frequency,is_estimate,active_from,source) VALUES($1,$2,'repairs','Synthetic periodic maintenance',1234,'monthly',false,current_date,'owner')",[cost,ids.a]);
+   await admin.query("INSERT INTO public.expenses(id,business_id,spent_on,amount_cents,category_code,source,status,dedupe_key,custom_label,recurring_cost_id) VALUES($1,$2,current_date,1234,'repairs','manual','actual',$1::uuid::text,'Synthetic uncommon expense',$3)",[expense,ids.a,cost]);
+   await admin.query("INSERT INTO public.expenses(id,business_id,spent_on,amount_cents,category_code,source,status,dedupe_key,custom_label) VALUES($1,$2,current_date,9876,'repairs','manual','actual',$1::uuid::text,'Foreign synthetic expense')",[foreign,ids.b]);
+   const result=await dataQueryTools.query_data.execute(input("SELECT e.custom_label,e.amount_cents,r.label AS commitment FROM expenses e LEFT JOIN recurring_costs r ON e.recurring_cost_id=r.id"),scoped);
+   expect(result.missing).toEqual([]);
+   expect(JSON.stringify(result)).toContain("Synthetic uncommon expense");
+   expect(JSON.stringify(result)).toContain("Synthetic periodic maintenance");
+   expect(JSON.stringify(result)).not.toContain("Foreign synthetic expense");
+  }finally{
+   await admin.query("DELETE FROM public.expenses WHERE id IN ($1,$2)",[expense,foreign]);
+   await admin.query("DELETE FROM public.recurring_costs WHERE id=$1",[cost]);
+  }
+ });
  it("discovers admitted relational sources through the real scoped SQL catalog",async()=>{
   const context={asOf:"2026-11-24",timezone:"UTC",locale:"en",
    tools:{} as AgentToolContext["tools"],canonicalData:async()=>scoped} satisfies AgentToolContext;

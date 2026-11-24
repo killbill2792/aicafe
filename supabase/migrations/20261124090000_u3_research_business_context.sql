@@ -340,4 +340,16 @@ ALTER VIEW u3_research.recorded_timecards OWNER TO aicafe_research_view_owner;
 REVOKE ALL ON u3_research.recorded_timecards FROM PUBLIC,anon,authenticated;
 GRANT SELECT ON u3_research.recorded_timecards TO aicafe_research;
 
+-- Preserve unfamiliar owner-recorded cost labels and explicit links to
+-- recurring commitments. A generic category code alone cannot identify them.
+GRANT SELECT (custom_label,recurring_cost_id) ON public.expenses TO aicafe_research_view_owner;
+CREATE OR REPLACE VIEW u3_research.expenses WITH (security_barrier=true) AS
+ SELECT src.id,src.spent_on,src.amount_cents,src.vendor,src.category_code,
+ src.source,src.status,src.confidence,src.created_at,
+ CASE WHEN u3_research_private.mode() IN ('owner','durable') THEN src.custom_label ELSE NULL END AS custom_label,
+ src.recurring_cost_id
+ FROM public.expenses src;
+COMMENT ON VIEW u3_research.expenses IS
+ 'Recorded expense rows. Category definitions alone are not costs. custom_label preserves owner-specific expenses in owner and durable modes. recurring_cost_id links an actual/estimated expense to a recurring commitment; do not count both as independent incurred costs. Respect status, date and confidence.';
+
 REVOKE aicafe_research_view_owner FROM postgres;

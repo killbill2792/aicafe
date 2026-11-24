@@ -152,6 +152,7 @@ expectedLogical.set("scheduling_coverage_requirements",["id","location_id","day_
 expectedLogical.set("staff_custom_rules",["id","rule_text","active","created_at","updated_at"]);
 expectedLogical.set("recovery_order",["bucket_code","position"]);
 expectedLogical.set("recorded_timecards",["timecard_id","employee_id","employee_name","timezone","clock_in","clock_out","source_type","source_provider","wage_source","hourly_wage_cents","pos_last_synced_at","provider_regular_hours","provider_overtime_hours","recorded_break_count"]);
+expectedLogical.set("expenses",[...expectedLogical.get("expenses"),"custom_label","recurring_cost_id"]);
 const observedLogical=new Map();
 for(const column of logicalColumns??[]){
  const list=observedLogical.get(column.relation)??[];
