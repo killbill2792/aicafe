@@ -64,6 +64,17 @@ describe("proactive priority ranking and source revision",()=>{
     expect(choosePriorities([...sources,...invalid],now,10).map(x=>x.source.sourceId).sort())
       .toEqual(sources.map(x=>x.sourceId).sort());
   });
+  it("preserves the original stock incident revision when the detector adds its explicit missing-input classification",()=>{
+    const prior={...base,kind:"business_anomaly",sourceId:"stock",
+      evidence:{family:"data_gap",subject:"stock_counts",quality:"missing",current:1,unit:"coverage",asOf:"2026-11-23"}};
+    const classified={...prior,evidence:{...prior.evidence,gapReason:"missing_business_input",asOf:"2026-11-24"}};
+    expect(priorityRevision(classified)).toBe(priorityRevision(prior));
+    expect(priorityRevision({...classified,evidence:{...classified.evidence,gapReason:"technical_failure"}}))
+      .not.toBe(priorityRevision(prior));
+    const other={...prior,evidence:{...prior.evidence,subject:"ingredient_prices"}};
+    expect(priorityRevision({...other,evidence:{...other.evidence,gapReason:"missing_business_input"}}))
+      .not.toBe(priorityRevision(other));
+  });
   it("does not suppress explicit evidence-backed missing punch incidents",()=>{
     const now=new Date("2026-11-23T00:00:00Z");
     const punch={...base,kind:"business_anomaly",sourceId:"punch:shift-1",

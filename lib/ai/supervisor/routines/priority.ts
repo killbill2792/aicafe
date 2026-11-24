@@ -33,8 +33,13 @@ export function priorityRevision(source:PrioritySource):string{
   const sourceEvidence=source.evidence;
   const evidence=source.sourceType==="alert"&&source.kind==="business_anomaly"&&
     sourceEvidence&&typeof sourceEvidence==="object"&&!Array.isArray(sourceEvidence)
-    ?Object.fromEntries(Object.entries(sourceEvidence).filter(([key])=>
-      !["asOf","from","to"].includes(key)))
+    ?Object.fromEntries(Object.entries(sourceEvidence).filter(([key,value])=>
+      !["asOf","from","to"].includes(key)&&
+      // This one legacy detector already certified missing physical counts.
+      // Adding the explicit classification on refresh is not new evidence.
+      !(key==="gapReason"&&value==="missing_business_input"&&
+        (sourceEvidence as Record<string,unknown>).family==="data_gap"&&
+        (sourceEvidence as Record<string,unknown>).subject==="stock_counts")))
     :sourceEvidence;
   return digest(JSON.stringify(canonical({
     type:source.sourceType,id:source.sourceId,kind:source.kind,
