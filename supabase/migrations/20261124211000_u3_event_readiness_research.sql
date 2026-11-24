@@ -71,4 +71,3 @@ COMMENT ON VIEW u3_research.event_readiness_observations IS 'Saved event monitor
 ALTER VIEW u3_research.event_readiness_observations OWNER TO aicafe_research_view_owner;
 REVOKE ALL ON u3_research.event_readiness_observations FROM PUBLIC,anon,authenticated;
 GRANT SELECT ON u3_research.event_readiness_observations TO aicafe_research;
-

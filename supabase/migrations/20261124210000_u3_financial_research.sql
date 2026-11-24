@@ -79,4 +79,3 @@ COMMENT ON VIEW u3_research.financial_settlement_evidence IS 'Verified saved all
 ALTER VIEW u3_research.financial_settlement_evidence OWNER TO aicafe_research_view_owner;
 REVOKE ALL ON u3_research.financial_settlement_evidence FROM PUBLIC,anon,authenticated;
 GRANT SELECT ON u3_research.financial_settlement_evidence TO aicafe_research;
-
