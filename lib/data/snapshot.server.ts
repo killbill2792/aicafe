@@ -77,19 +77,33 @@ export async function getBusinessSnapshotFromDb(
     await Promise.all([
       timeReader("Snapshot","dailyFacts",()=>readDailyFactRows(supabase,businessId,prevMonthStart,todayDateStr))
         .then(data=>({data,error:null}),(error:Error)=>({data:null,error})),
-      timeReader("Snapshot","recurringCosts",async()=>supabase.from("recurring_costs")
-        .select("category_code, amount_cents, frequency, is_estimate, active_from, active_to").eq("business_id",businessId)),
-      timeReader("Snapshot","expenses",async()=>supabase.from("expenses").select("category_code, amount_cents, status, spent_on")
-        .eq("business_id",businessId).gte("spent_on",monthStart).lte("spent_on",todayDateStr)),
-      timeReader("Snapshot","priorExpenses",async()=>supabase.from("expenses").select("category_code")
-        .eq("business_id",businessId).gte("spent_on",prevMonthStart).lte("spent_on",prevMonthEnd)),
+      timeReader("Snapshot","recurringCosts",()=>snapshotPaged("recurring_costs",
+        (start,end)=>supabase.from("recurring_costs")
+         .select("id,category_code,amount_cents,frequency,is_estimate,active_from,active_to",{count:"exact"})
+         .eq("business_id",businessId).order("id",{ascending:true}).range(start,end),
+        row=>row.id)),
+      timeReader("Snapshot","expenses",()=>snapshotPaged("expenses",
+        (start,end)=>supabase.from("expenses")
+         .select("id,category_code,amount_cents,status,spent_on",{count:"exact"})
+         .eq("business_id",businessId).gte("spent_on",monthStart).lte("spent_on",todayDateStr)
+         .order("id",{ascending:true}).range(start,end),
+        row=>row.id)),
+      timeReader("Snapshot","priorExpenses",()=>snapshotPaged("prior_expenses",
+        (start,end)=>supabase.from("expenses")
+         .select("id,category_code",{count:"exact"})
+         .eq("business_id",businessId).gte("spent_on",prevMonthStart).lte("spent_on",prevMonthEnd)
+         .order("id",{ascending:true}).range(start,end),
+        row=>row.id)),
       timeReader("Snapshot","recoveryOrder",async()=>supabase.from("recovery_order")
         .select("bucket_code, position").eq("business_id",businessId).order("position",{ascending:true})),
       timeReader("Snapshot","menuCosts",()=>getMenuItemSnapshots(supabase,businessId,todayDateStr)),
       timeReader("Snapshot","periodItemSales",()=>readPeriodItemSales(supabase,businessId,{from:periodFrom,to:todayDateStr})),
       timeReader("Snapshot","staffShifts",()=>getStaffShiftsToday(supabase,businessId,timezone,todayDateStr)),
-      timeReader("Snapshot","alerts",async()=>supabase.from("alerts").select("impact_cents",{count:"exact"})
-        .eq("business_id",businessId).in("status",["new","seen"])),
+      timeReader("Snapshot","alerts",()=>snapshotPaged("alerts",
+        (start,end)=>supabase.from("alerts").select("id,impact_cents",{count:"exact"})
+         .eq("business_id",businessId).in("status",["new","seen"])
+         .order("id",{ascending:true}).range(start,end),
+        row=>row.id)),
       timeReader("Snapshot","feePlans",()=>getOwnerConfirmedProcessingFeePlans(supabase,businessId)),
     ]);
   const {data:rollupRows,error:rollupError}=rollupResult;
