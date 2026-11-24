@@ -374,7 +374,7 @@ export async function runU3Sql(ctx:U3SqlContext,raw:unknown){
    // selected output aliases. These are reusable data classes rather than
    // question patterns; personal IDs, text and unrestricted JSON are excluded.
    const aggregateOnly=ctx.aggregateOnly===true||ctx.mode==="routine"||ctx.mode==="investigation";
-   const safeOffturnColumns=new Set(list.flatMap(r=>
+   const offturnByRelation=Object.fromEntries(list.map(r=>[r.name,
     ownerOnlyResearchRelations.has(r.name)?[]:
     r.columns.filter(c=>
      c.unit==="integer_cent"||c.unit==="microcent"||
@@ -384,7 +384,8 @@ export async function runU3Sql(ctx:U3SqlContext,raw:unknown){
        !/(?:_id|_ref|_guid|^id$|^phone|^postal)/i.test(c.name)||
      ["status","category","source","source_channel","dining_option",
       "toast_excluded","sales_data_status"].includes(c.name)
-    ).map(c=>c.name)));
+    ).map(c=>c.name)]));
+   const safeOffturnColumns=new Set(Object.values(offturnByRelation).flat());
    // Exact calculator units come from the authorized catalog and parsed SQL
    // projection, never an arbitrary alias such as "net_sales_cents".
    const knownColumnUnits:Record<string,U3TrustedUnit|null>={};
@@ -404,7 +405,7 @@ export async function runU3Sql(ctx:U3SqlContext,raw:unknown){
    }
    stage.value="admission";
    const plan=await admitU3Sql(p.sql,list.map(r=>r.name),p.parameters?.length??0,
-    aggregateOnly,[...safeOffturnColumns],knownColumnUnits,relationUnits satisfies U3RelationUnits);
+    aggregateOnly,[...safeOffturnColumns],knownColumnUnits,relationUnits satisfies U3RelationUnits,offturnByRelation);
    const customerEvidence=plan.relations.some(relation=>["customer_visits","customer_products","customer_coverage"].includes(relation));
    if((customerEvidence||plan.relations.some(relation=>relation==="toast_records"||relation==="toast_changes"))&&
      (p.date_from===null||p.date_to===null))throw Error("invalid_query");

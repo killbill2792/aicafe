@@ -117,13 +117,16 @@ export async function seedU3HistoryOracle(db,cafe,other){
  const [top]=await query(db,"SELECT l.name,sum(l.quantity)::int units FROM public.order_lines l JOIN public.orders o ON o.id=l.order_id WHERE "+filter+" GROUP BY l.name ORDER BY units DESC,l.name LIMIT 1",args);
  const punches=await query(db,"SELECT id,to_char(clock_in AT TIME ZONE $3::text,'HH24:MI') clock_in,to_char(clock_out AT TIME ZONE $3::text,'HH24:MI') clock_out,"+
   "to_char((breaks->0->>'start')::timestamptz AT TIME ZONE $3::text,'HH24:MI') break_start,"+
-  "to_char((breaks->0->>'end')::timestamptz AT TIME ZONE $3::text,'HH24:MI') break_end FROM public.timecards WHERE business_id=$1 AND employee_id=$2 ORDER BY clock_in",
+  "to_char((breaks->0->>'end')::timestamptz AT TIME ZONE $3::text,'HH24:MI') break_end FROM public.timecards t WHERE business_id=$1 AND employee_id=$2 ORDER BY t.clock_in,t.id",
   [cafe.businessId,employeeId,cafe.timezone]);
  if(total?.n!==180)fail("history_fixture_order_count_"+String(total?.n));
  if(night?.n!==120||!Number.isSafeInteger(Number(night.cents))||Number(night.cents)<=0)
   fail("history_fixture_night_count_"+String(night?.n));
  if(top?.units!==360)fail("history_fixture_top_units_"+String(top?.units));
- if(punches.length!==2||punches[0].clock_out===null||punches[1].clock_out!==null)
+ if(punches.length!==2||punches[0].id!==timecardId||punches[1].id!==openCardId||
+  punches[0].clock_in!=="22:15"||punches[0].clock_out!=="02:45"||
+  punches[0].break_start!=="23:17"||punches[0].break_end!=="23:47"||
+  punches[1].clock_in!=="21:10"||punches[1].clock_out!==null)
   fail("history_fixture_timecards_incomplete_"+String(punches.length));
  return {from,to,employeeId,employeeName,timecardId,openCardId,total:total.n,night,top,punches};
 }

@@ -116,7 +116,8 @@ export class U3AdmissionError extends Error{
 export async function admitU3Sql(sql:string,allowedRelations:readonly string[],
  parameterCount=0,aggregateOnly=false,offturnColumns:readonly string[]=[],
  knownColumnUnits:Readonly<Record<string,U3TrustedUnit|null>>={},
- relationUnits?:U3RelationUnits):Promise<U3SqlAdmission>{
+ relationUnits?:U3RelationUnits,
+ offturnByRelation?:Readonly<Record<string,readonly string[]>>):Promise<U3SqlAdmission>{
  if(typeof sql!=="string"||!sql.trim()||
   parameterCount<0||parameterCount>65535)throw Error("invalid_query");
  if(Buffer.byteLength(sql,"utf8")>MAX_PARSER_BYTES)
@@ -257,7 +258,7 @@ export async function admitU3Sql(sql:string,allowedRelations:readonly string[],
       throw Error("unattended_aggregate_required");
     }
    }
-   if(kind==="ColumnRef"&&aggregateOnly){
+   if(kind==="ColumnRef"&&aggregateOnly&&!offturnByRelation){
     const fields=(raw as {fields?:unknown}).fields;
     if(!Array.isArray(fields)||!fields.length)throw Error("unattended_aggregate_required");
     const last=fields[fields.length-1];
@@ -498,6 +499,115 @@ export async function admitU3Sql(sql:string,allowedRelations:readonly string[],
    add(label,direct(target.val,bindings)??{unit:infer(target.val,bindings)});
   }
   return result;
+ }
+ // Production supplies the actual relation-specific privacy catalog. Validate
+ // input column references in their lexical SELECT scope; an identically
+ // named field in a different relation is not authorization. A derived alias
+ // of validated evidence is safe independently of its spelling.
+ if(aggregateOnly&&offturnByRelation&&relationUnits){
+  type PrivacyColumns=Map<string,boolean>;
+  type PrivacyBinding={name:string;columns:PrivacyColumns};
+  const deny=():never=>{throw Error("unattended_aggregate_required");};
+  const localFields=(rel:string):PrivacyColumns=>new Map(Object.keys(relationUnits[rel]??{})
+   .map(column=>[column,(offturnByRelation[rel]??[]).includes(column)]));
+  function checkedSelect(node:unknown,inherited:ReadonlyMap<string,PrivacyColumns>,outer:PrivacyBinding[][]):PrivacyColumns{
+   const select=unwrap(node,"SelectStmt");if(!select)return deny();
+   const local=new Map(inherited);
+   const withClause=unwrap(select.withClause,"WithClause");
+   for(const raw of Array.isArray(withClause?.ctes)?withClause.ctes:[]){
+    const ct=unwrap(raw,"CommonTableExpr");
+    if(ct&&typeof ct.ctename==="string")local.set(ct.ctename,checkedSelect(ct.ctequery,local,outer));
+   }
+   const bindings:PrivacyBinding[]=[];
+   function checkRef(raw:unknown,allowOutput?:PrivacyColumns){
+    const ref=obj(raw);
+    const parts=Array.isArray(ref?.fields)?ref.fields.map(stringNode):[];
+    if(!parts.length||parts.some(p=>p===null))return deny();
+    const column=parts.at(-1)!,qualifier=parts.length>1?parts.at(-2):null;
+    if(qualifier===null&&allowOutput?.get(column)===true)return;
+    for(const scope of [bindings,...outer]){
+     const qualified=qualifier===null?scope:scope.filter(b=>b.name===qualifier);
+     const candidates=qualified.filter(b=>b.columns.has(column));
+     if(candidates.length){
+      if(candidates.length!==1||candidates[0].columns.get(column)!==true)return deny();
+      return;
+     }
+     if(qualifier!==null&&qualified.length)return deny();
+    }
+    return deny();
+   }
+   function scan(raw:unknown):void{
+    if(Array.isArray(raw)){raw.forEach(scan);return;}
+    const entry=obj(raw);if(!entry)return;
+    if(entry.SelectStmt){checkedSelect(entry,local,[bindings,...outer]);return;}
+    if(entry.ColumnRef){checkRef(entry.ColumnRef);return;}
+    Object.values(entry).forEach(scan);
+   }
+   function from(raw:unknown):void{
+    const entry=obj(raw);if(!entry)return;
+    const rel=obj(entry.RangeVar);
+    if(rel&&typeof rel.relname==="string"){
+     const columns=!rel.schemaname?local.get(rel.relname):undefined;
+     bindings.push({name:aliasName(rel.alias)??rel.relname,columns:columns??localFields(rel.relname)});return;
+    }
+    const derived=obj(entry.RangeSubselect);
+    if(derived){
+     const label=aliasName(derived.alias);
+     const columns=checkedSelect(derived.subquery,local,derived.lateral?[bindings,...outer]:outer);
+     if(label)bindings.push({name:label,columns});return;
+    }
+    const join=obj(entry.JoinExpr);
+    if(join){
+     const first=bindings.length;from(join.larg);
+     const middle=bindings.length;from(join.rarg);
+     const left=bindings.slice(first,middle),right=bindings.slice(middle);
+     const leftFields=new Map(left.flatMap(b=>[...b.columns]));
+     const rightFields=new Map(right.flatMap(b=>[...b.columns]));
+     // USING/NATURAL can reference source fields without ColumnRef AST nodes.
+     const keys=join.isNatural?[...leftFields.keys()].filter(k=>rightFields.has(k)):
+      Array.isArray(join.usingClause)?join.usingClause.map(stringNode):[];
+     for(const key of keys)if(!key||leftFields.get(key)!==true||rightFields.get(key)!==true)return deny();
+     scan(join.quals);
+     const label=aliasName(join.alias);
+     if(label){
+      const combined=new Map(leftFields);
+      for(const [key,safe] of rightFields)combined.set(key,combined.has(key)?combined.get(key)===true&&safe:safe);
+      bindings.splice(first,bindings.length-first,{name:label,columns:combined});
+     }
+    }
+   }
+   for(const raw of Array.isArray(select.fromClause)?select.fromClause:[])from(raw);
+   let output:PrivacyColumns=new Map();
+   if(select.larg&&select.rarg){
+    output=checkedSelect(select.larg,local,outer);
+    checkedSelect(select.rarg,local,outer);
+   }else{
+    for(const raw of Array.isArray(select.targetList)?select.targetList:[]){
+     const target=unwrap(raw,"ResTarget");if(!target)continue;
+     scan(target.val);
+     const label=targetName(target);if(label)output.set(label,true);
+    }
+   }
+   for(const [key,value] of Object.entries(select)){
+    if(["withClause","fromClause","targetList","larg","rarg","sortClause","groupClause"].includes(key))continue;
+    scan(value);
+   }
+   // PostgreSQL allows top-level ORDER BY output labels and GROUP BY labels
+   // not shadowed by input columns. Do not confuse either with a base field
+   // in a nested expression.
+   for(const raw of Array.isArray(select.sortClause)?select.sortClause:[]){
+    const sort=unwrap(raw,"SortBy"),value=obj(sort?.node);
+    if(value?.ColumnRef)checkRef(value.ColumnRef,output);else scan(sort?.node);
+   }
+   for(const raw of Array.isArray(select.groupClause)?select.groupClause:[]){
+    const ref=obj(obj(raw)?.ColumnRef);
+    const label=Array.isArray(ref?.fields)&&ref.fields.length===1?stringNode(ref.fields[0]):null;
+    if(label&&output.get(label)===true&&!bindings.some(b=>b.columns.has(label)))continue;
+    scan(raw);
+   }
+   return output;
+  }
+  checkedSelect(tree.stmts[0].stmt,new Map(),[]);
  }
  const projected=projection(tree.stmts[0].stmt,new Map());
  const outputUnits=Object.fromEntries([...projected].flatMap(([label,field])=>

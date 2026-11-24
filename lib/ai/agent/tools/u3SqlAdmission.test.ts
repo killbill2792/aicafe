@@ -145,6 +145,16 @@ describe("U3 governed PostgreSQL AST admission",()=>{
    "SELECT net_sales_cents FROM (SELECT sum(net_sales_cents) AS net_sales_cents FROM orders) x"
   ])await expect(admitU3Sql(sql,admitted,0,true,columns)).resolves.toMatchObject({relations:["orders"]});
  });
+ it("resolves unattended aggregate aliases against actual source-specific privacy",async()=>{
+  const units={orders:{business_date:null,net_sales_cents:"cents" as const},expenses:{business_date:null,net_sales_cents:null,amount_cents:"cents" as const}};
+  const safe={orders:["business_date","net_sales_cents"],expenses:["business_date","amount_cents"]};
+  const admit=(sql:string)=>admitU3Sql(sql,["orders","expenses"],0,true,["business_date","net_sales_cents","amount_cents"],{},units,safe);
+  await expect(admit("WITH daily AS (SELECT business_date, sum(net_sales_cents) AS total FROM orders GROUP BY business_date) SELECT business_date,total FROM daily ORDER BY total")).resolves.toMatchObject({outputUnits:{total:"cents"}});
+  await expect(admit("SELECT sum(amount_cents) AS revenue FROM expenses ORDER BY revenue")).resolves.toMatchObject({outputUnits:{revenue:"cents"}});
+  await expect(admit("SELECT min(e.net_sales_cents) AS value FROM expenses e")).rejects.toThrow("unattended_aggregate_required");
+  await expect(admit("WITH x AS (SELECT e.net_sales_cents AS amount_cents FROM expenses e) SELECT sum(amount_cents) FROM x")).rejects.toThrow("unattended_aggregate_required");
+  await expect(admit("SELECT sum(o.net_sales_cents) FROM orders o JOIN expenses e ON e.net_sales_cents=o.net_sales_cents")).rejects.toThrow("unattended_aggregate_required");
+ });
  it("derives trusted calculator units from source columns and SQL expressions, never aliases",async()=>{
   const units={net_sales_cents:"cents" as const,orders_count:"count" as const};
   const money=await admitU3Sql("SELECT SUM(net_sales_cents) AS result FROM orders",admitted,0,false,[],units);
