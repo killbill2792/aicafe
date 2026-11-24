@@ -153,6 +153,18 @@ async function generateVoidsAlert(supabase: SupabaseClient, businessId: string, 
   return 1;
 }
 
+/** Only persisted, incident-scoped punch facts can wake a paid investigation.
+ * Elapsed shift hours of an OPEN punch change with the current clock and are
+ * deliberately excluded, as are imported timestamps and display-name edits. */
+export function mealBreakMaterialEvidenceChanged(
+  before:Record<string,unknown>,after:Record<string,unknown>):boolean{
+  const facts=(p:Record<string,unknown>)=>JSON.stringify({
+    dedupeKey:p.dedupeKey,employeeId:p.employeeId,date:p.date,
+    clockIn:p.clockIn,clockOut:p.clockOut,breaks:p.breaks,
+  });
+  return facts(before)!==facts(after);
+}
+
 async function generateMealBreakAlerts(supabase: SupabaseClient, businessId: string, timezone: string): Promise<number> {
   const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
   const { data: timecards, error: readError } = await supabase
@@ -162,6 +174,19 @@ async function generateMealBreakAlerts(supabase: SupabaseClient, businessId: str
     .gte("clock_in", sevenDaysAgo);
 
   if (readError || !timecards) throw new Error("timecard_source_unavailable");
+  // A late corrected punch must update ONLY the matching timecard alert.
+  // This single bounded read also avoids one full alert scan per shift.
+  const existing = await supabase.from("alerts").select("id,status,payload")
+    .eq("business_id",businessId).eq("kind","meal_break");
+  if(existing.error)throw new Error("meal_break_alerts_unavailable");
+  const byTimecard = new Map<string,Array<{id:string;status:string;payload:Record<string,unknown>}>>();
+  for(const row of existing.data??[]){
+    const payload=row.payload && typeof row.payload==="object"&&!Array.isArray(row.payload)
+      ?row.payload as Record<string,unknown>:null;
+    if(!payload||typeof payload.dedupeKey!=="string")continue;
+    byTimecard.set(payload.dedupeKey,[...(byTimecard.get(payload.dedupeKey)??[]),
+      {id:row.id,status:row.status,payload}]);
+  }
   let created = 0;
   const verifiedHealthyKeys = new Set<string>();
   for (const tc of timecards) {
@@ -176,16 +201,31 @@ async function generateMealBreakAlerts(supabase: SupabaseClient, businessId: str
       verifiedHealthyKeys.add(dedupeKey);
       continue;
     }
-    if (await hasOpenAlert(supabase, businessId, "meal_break", dedupeKey, true, true)) continue;
-
     const employee = tc.employees as unknown as { display_name: string } | { display_name: string }[] | null;
     const employeeName = Array.isArray(employee) ? employee[0]?.display_name : employee?.display_name;
-
+    const payload={dedupeKey,timecardId:tc.id,employeeId:tc.employee_id,
+      employeeName:employeeName??null,date:formatInTimeZone(tc.clock_in,timezone,"yyyy-MM-dd"),
+      clockIn:tc.clock_in,clockOut:tc.clock_out,breaks:tc.breaks??[],
+      reasonCode:"NO_QUALIFYING_30_MIN_BREAK_BY_HOUR_5",
+      shiftHours:status.shiftHours,impactBasis:"ONE_HOUR_REGULAR_WAGE_ESTIMATE"};
+    const prior=byTimecard.get(dedupeKey)??[];
+    const open=prior.find(row=>row.status==="new"||row.status==="seen");
+    if(open){
+      // Only a change to THIS employee/shift's substantive facts reopens the
+      // existing investigation. Other dates, shifts or identical re-imports
+      // must not change the alert revision.
+      if(mealBreakMaterialEvidenceChanged(open.payload,payload)){
+        const {error}=await supabase.from("alerts")
+          .update({payload,impact_cents:status.penaltyCents})
+          .eq("business_id",businessId).eq("id",open.id).in("status",["new","seen"]);
+        if(error)throw new Error("alert_evidence_update_failed");
+      }
+      continue;
+    }
+    if(prior.some(row=>blocksGeneratedAlert(
+      row.status as "new"|"seen"|"resolved"|"dismissed",row.payload)))continue;
     const { error } = await supabase.from("alerts").insert({
-      business_id: businessId,
-      kind: "meal_break",
-      impact_cents: status.penaltyCents,
-      payload: { dedupeKey, timecardId: tc.id, employeeId: tc.employee_id, employeeName: employeeName ?? null, date: formatInTimeZone(tc.clock_in, timezone, "yyyy-MM-dd"), clockIn: tc.clock_in, clockOut: tc.clock_out, breaks: tc.breaks ?? [], reasonCode: "NO_QUALIFYING_30_MIN_BREAK_BY_HOUR_5", shiftHours: status.shiftHours, impactBasis: "ONE_HOUR_REGULAR_WAGE_ESTIMATE" },
+      business_id:businessId,kind:"meal_break",impact_cents:status.penaltyCents,payload,
     });
     if (error) throw new Error("alert_insert_failed");
     created += 1;

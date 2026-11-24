@@ -309,21 +309,29 @@ export async function processNextInvestigation(db:SupabaseClient,now:Date,
           revision:proposal.revision,attemptState:attempt?.state??null};
       }));
     }
-    const lastUpdate=Date.parse(checkpoint.lastOwnerUpdate??"");
     const earlier=checkpoint.source;
-    const unchanged=(synopsis.kind!=="business_anomaly"||checkpoint.sourceRevision===c.revision_hash)&&synopsis.kind===earlier.kind&&synopsis.status===earlier.status&&
+    // A cron tick, elapsed day, previous transient error or another unrelated
+    // alert is NOT a change to THIS incident's evidence. Real source revisions
+    // are handled by the SQL enqueue which moves awaiting_owner -> investigate
+    // for the same episode, and verified owner answers are linked by SQL.
+    const unchanged=(checkpoint.sourceRevision===undefined||checkpoint.sourceRevision===c.revision_hash)&&
+      checkpoint.pendingRelevantRevision!==c.revision_hash&&
+      synopsis.kind===earlier.kind&&synopsis.status===earlier.status&&
       synopsis.quality===earlier.quality&&synopsis.severity===earlier.severity&&
-      synopsis.maintenanceDueAt===earlier.maintenanceDueAt&&synopsis.maintenanceOverdue===earlier.maintenanceOverdue&&
-      synopsis.relatedAlerts.length===earlier.relatedAlerts.length&&
-      synopsis.relatedTasks.length===earlier.relatedTasks.length&&
-      synopsis.relatedAlerts.every((item,i)=>item===earlier.relatedAlerts[i])&&
-      synopsis.relatedTasks.every((item,i)=>item===earlier.relatedTasks[i]);
-    if(c.phase==="awaiting_owner"&&!newAnswer&&!c.last_error&&unchanged&&vendorPoll.added===0&&JSON.stringify(vendorPoll.missing)===JSON.stringify(checkpoint.maintenanceReadMissing??[])&&
-      JSON.stringify(customerLinkedActions??[])===JSON.stringify(checkpoint.customerLinkedActions??[])&&
-      Number.isFinite(lastUpdate)&&now.getTime()-lastUpdate>=0&&
-      now.getTime()-lastUpdate<24*60*60*1000){
-      const silent:InvestigationCheckpoint={...checkpoint,unchangedChecks:
-        (checkpoint.unchangedChecks??0)+1};
+      // An elapsed due-date threshold is a clock tick, not new evidence.
+      // Editing the actual maintenance due date must change the source hash
+      // and is already handled by pendingRelevantRevision above.
+      (synopsis.kind==="maintenance_issue"||
+        synopsis.maintenanceDueAt===earlier.maintenanceDueAt&&
+        synopsis.maintenanceOverdue===earlier.maintenanceOverdue);
+    if(c.phase==="awaiting_owner"&&!newAnswer&&unchanged&&
+      vendorPoll.added===0&&
+      // Gmail connection quality changes are diagnostics, not permission to
+      // pay for a new investigation while still waiting for the owner.
+      JSON.stringify(customerLinkedActions??[])===JSON.stringify(checkpoint.customerLinkedActions??[])){
+      const silent:InvestigationCheckpoint={...checkpoint,
+        ...(synopsis.kind==="maintenance_issue"?{maintenanceReadMissing:vendorPoll.missing}:{}),
+        unchangedChecks:(checkpoint.unchangedChecks??0)+1};
       if(!await finish(db,c,new Date(),"rechecked",silent,null))
         throw new Error("storage_failed");
       result.rechecked=1;return result;

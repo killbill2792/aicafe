@@ -216,7 +216,11 @@ test("@staff real worker login, shift explanation, cross-cafe and owner receipt"
   // A structured completion with NO optional text must remain visible.
   await owner.locator("#staff-work-title").fill("Count takeaway cups");
   await owner.locator("#staff-work-prompt").fill("Report the count if known");
+  const secondAssignmentReceipt=owner.waitForResponse(response=>
+   new URL(response.url()).pathname==="/api/staff-channel/owner-assignment"&&response.request().method()==="POST");
   await owner.getByRole("button",{name:"Assign work"}).click();
+  expect((await secondAssignmentReceipt).status()).toBe(200);
+  await expect(owner.getByText("Assignment saved in the employee's inbox.")).toBeVisible();
   await staff.reload();
   const blankReply=staff.getByRole("article").filter({hasText:"Count takeaway cups"});
   await expect(blankReply).toBeVisible({timeout:20_000});

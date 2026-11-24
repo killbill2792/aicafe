@@ -117,6 +117,14 @@ describe("PR 10: More and café profile share authenticated identity reads", () 
     expect(state.from).not.toHaveBeenCalledWith("memberships");
   });
 
+  it("keeps the More page badge reader empty and usable before any real café exists", async () => {
+    state.memberships.mockResolvedValue([demo]);
+    state.active.mockRejectedValue(new Error("own_business_required"));
+    expect(await getMoreBadgeInputs("owner-1")).toEqual({});
+    expect(state.active).not.toHaveBeenCalled();
+    expect(state.from).not.toHaveBeenCalled();
+  });
+
   it("does not query badges for a selected demo or an inaccessible café", async () => {
     mockBadgeQueries();
     state.active.mockResolvedValueOnce("demo").mockResolvedValueOnce("unrelated-cafe");

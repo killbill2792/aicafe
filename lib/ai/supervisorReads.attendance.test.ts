@@ -20,8 +20,8 @@ function source(records:Array<{employee_id:string|null;clock_in:string;clock_out
       }
       if(table==="employees"){
         const query={
-          select:()=>query,eq:()=>query,
-          limit:async()=>({data:[{id:"current"}],error:null}),
+          select:()=>query,eq:()=>query,in:()=>query,
+          limit:async()=>({data:[{id:"current",display_name:"Sam"}],error:null}),
         };
         return query;
       }
@@ -57,6 +57,31 @@ describe("historical attendance versus active on-clock roster",()=>{
     expect(result.value.timecardCount).toBe(1);
     expect(result.value.onClockCount).toBe(0);
     expect(result.value.attendanceTracked).toBe(true);
+  });
+  it("reports actual punch times and missing recorded breaks without asserting missed meals",async()=>{
+    const data=[
+      {...card("current","2026-10-25T23:00:00Z"),breaks:[]},
+      {...card("archived",null),breaks:null},
+      {...card("current","2026-10-25T20:00:00Z"),breaks:[{
+        start:"2026-10-25T18:00:00Z",end:"2026-10-25T18:30:00Z",
+      }]},
+    ];
+    const {client}=source(data);
+    const result=await supervisorHistoricalReaders(client,BUSINESS).staffAttendance(
+      BUSINESS,day,"America/Los_Angeles");
+    expect(result.available).toBe(true);
+    if(!result.available)return;
+    expect(result.value.recordedTimecards).toHaveLength(3);
+    const noPunch=result.value.recordedTimecards?.find(x=>x.clockOut==="2026-10-25T23:00:00Z");
+    expect(noPunch).toMatchObject({
+      employeeName:"Sam",localDate:"2026-10-25",elapsedHours:6,
+      breakEvidence:"none_recorded",recordedBreakCount:0,
+    });
+    expect(result.value.recordedTimecards?.find(x=>x.clockOut===null)).toMatchObject({
+      elapsedHours:null,breakEvidence:"unknown",
+    });
+    expect(result.value.recordedTimecards?.find(x=>x.clockOut==="2026-10-25T20:00:00Z"))
+      .toMatchObject({breakEvidence:"recorded",recordedBreakCount:1});
   });
   it("rejects a different business before consulting timecards",async()=>{
     const {client,reads}=source([]);

@@ -65,6 +65,13 @@ async function readMissingFeeDays(db: CafeDb, businessId: string, timezone: stri
 /** Read-only, scoped to the user's selected real café. Unavailable sources have no badge. */
 export async function getMoreBadgeInputs(userId: string | undefined): Promise<MoreBadgeInputs> {
   if (!userId || !isSupabaseConfigured()) return {};
+  // /more must remain reachable while private café creation is incomplete.
+  // Reuse cached memberships without ever substituting a shared demo cafe.
+  const memberships = await readActiveBusinessMemberships(userId);
+  if (!memberships.some(row => {
+    const raw=row.businesses as unknown as {is_demo:boolean}|{is_demo:boolean}[]|null;
+    return (Array.isArray(raw)?raw[0]?.is_demo:raw?.is_demo)===false;
+  })) return {};
   const db = await createServerSupabaseClient();
   const businessId = await getActiveBusinessId(userId);
   // The active selector and the onboarding guard already read these authenticated

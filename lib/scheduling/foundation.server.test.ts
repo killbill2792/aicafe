@@ -9,9 +9,13 @@ const mocks = vi.hoisted(() => ({
   apiMaxRows: null as number | null,
   rpc: vi.fn(),
   activeBusinessId: "10000000-0000-4000-8000-000000000001",
+  linkedWorker: false,
 }));
 
 vi.mock("server-only", () => ({}));
+vi.mock("@/lib/staffCommunication/identity.server", () => ({
+  isLinkedStaffUser: async () => mocks.linkedWorker,
+}));
 vi.mock("@/lib/supabase/client", () => ({ isSupabaseConfigured: () => true }));
 vi.mock("@/lib/data/getActiveBusinessId", () => ({
   getActiveBusinessId: async () => mocks.activeBusinessId,
@@ -69,6 +73,20 @@ import { executeFoundationCommand, readSchedulingFoundation } from "./foundation
 
 const id = (n: number) => `30000000-0000-4000-8000-${String(n).padStart(12, "0")}`;
 
+describe("scheduling worker versus owner authorization",()=>{
+  beforeEach(()=>{
+    process.env.SCHEDULING_FOUNDATION_ENABLED="true";
+    mocks.rpc.mockReset();
+    mocks.activeBusinessId="10000000-0000-4000-8000-000000000001";
+    mocks.linkedWorker=false;
+  });
+  it("rejects a linked employee even if a conflicting owner membership exists",async()=>{
+    mocks.linkedWorker=true;
+    expect(await readSchedulingFoundation()).toEqual({ok:false,error:"unauthorized"});
+    expect(mocks.rpc).not.toHaveBeenCalled();
+  });
+});
+
 describe("scheduling foundation compensation read is fail closed", () => {
   beforeEach(() => {
     mocks.compensation = [];
@@ -79,6 +97,7 @@ describe("scheduling foundation compensation read is fail closed", () => {
     mocks.apiMaxRows = null;
     mocks.rpc.mockReset();
     mocks.activeBusinessId = "10000000-0000-4000-8000-000000000001";
+    mocks.linkedWorker = false;
     process.env.SCHEDULING_FOUNDATION_ENABLED = "true";
   });
 

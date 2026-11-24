@@ -56,9 +56,7 @@ describe("Task 15A migrated, agentic investigation SQL integration",()=>{
           [owners[i],"investigation-"+owners[i]+"@example.invalid"]);
         await admin.query("insert into public.businesses(id,name,timezone,is_demo) values ($1,$2,'America/Los_Angeles',false)",
           [cafes[i],"Disposable investigation café"]);
-        // A paid unattended lease requires a verified Toast source. Synthetic
-        // credentials exist only inside the disposable DB acceptance sandbox.
-        await admin.query("insert into public.toast_api_credentials(business_id,api_origin,client_id,client_secret_enc,state) values ($1,'https://example.invalid','sandbox-id','sandbox-placeholder','verified')",[cafes[i]]);
+    await admin.query("insert into public.toast_api_credentials(business_id,api_origin,client_id,client_secret_enc,state) values ($1,'https://example.invalid','fixture-client','fixture-placeholder','verified')",[cafes[i]]);
         await admin.query("insert into public.memberships(business_id,user_id,role) values ($1,$2,'owner')",
           [cafes[i],owners[i]]);
         await admin.query("insert into public.ai_threads(id,business_id,owner_user_id,client_request_id) values ($1,$2,$3,$4)",
@@ -219,10 +217,9 @@ describe("Task 15A migrated, agentic investigation SQL integration",()=>{
         finish(retry,"collected",checkpoint,null,stamp(now,18)))).toBe(false);
       expect(await rpc(b,"supervisor_finish_investigation",
         finish(recovered,"collected",checkpoint,null,stamp(now,18)))).toBe(true);
-      // A repeated model failure is not silently dropped. After five bounded
-      // attempts, the source stays open, an owner-visible exception is saved
-      // once, and no additional paid/model work is claimed.
-      const attempts=[[19,20],[23,24],[29,30],[39,40],[57,58]];
+      // A technical failure has at most three paid retries, then becomes
+      // visibly blocked until genuinely relevant source evidence changes.
+      const attempts=[[19,20],[23,24],[29,30]];
       for(const [claimedAt,failedAt] of attempts){
         const lease=await rpc(a,"supervisor_claim_investigation",
           [stamp(now,claimedAt)]) as Record<string,unknown>;
@@ -235,22 +232,16 @@ describe("Task 15A migrated, agentic investigation SQL integration",()=>{
       const blocked=await admin.query("select phase,last_error,failure_count from public.supervisor_investigations where business_id=$1 and owner_user_id=$2 and source_type='operating_task' and source_id=$3",
         [cafes[0],owners[0],taskId]);
       expect(blocked.rows).toHaveLength(1);
-      expect(blocked.rows[0]).toMatchObject({phase:"investigate",last_error:"model_incomplete"});
+      expect(blocked.rows[0]).toMatchObject({phase:"blocked",last_error:"model_incomplete"});
       // pg returns bigint counters as strings. Check the exact numeric value.
-      expect(Number(blocked.rows[0].failure_count)).toBe(5);
+      expect(Number(blocked.rows[0].failure_count)).toBe(3);
       expect((await admin.query("select count(*)::int n from public.ai_messages where business_id=$1 and thread_id=$2 and grounding->>'intent'='priority_investigation_exception'",
         [cafes[0],threads[0]])).rows[0].n).toBe(1);
       expect(await rpc(a,"supervisor_claim_investigation",[stamp(now,120)])).toBeNull();
-      // Source evidence did not change, but provider recovery MUST resume
-      // automatically after the long cooldown; the warning remains one message.
-      const automaticRetry=await rpc(a,"supervisor_claim_investigation",
-        [stamp(now,500)]) as Record<string,unknown>;
-      expect(automaticRetry.source_id).toBe(taskId);
-      expect(automaticRetry.phase).toBe("investigate");
-      expect(await rpc(a,"supervisor_fail_investigation",[
-        cafes[0],owners[0],"operating_task",taskId,automaticRetry.lease_token,
-        "provider_unavailable",stamp(now,501),
-      ])).toBe(true);
+      // The old six-hour paid retry loop must never revive unchanged
+      // technical failures, even days after the first incident.
+      expect(await rpc(a,"supervisor_claim_investigation",
+        [stamp(now,500)])).toBeNull();
       expect((await admin.query("select count(*)::int n from public.ai_messages where business_id=$1 and thread_id=$2 and grounding->>'intent'='priority_investigation_exception'",
         [cafes[0],threads[0]])).rows[0].n).toBe(1);
       // Material source revision, not an arbitrary retry of an uncertain effect,
@@ -315,7 +306,7 @@ describe("Task 15A migrated, agentic investigation SQL integration",()=>{
           [owner,"15a-source-race-"+owner+"@example.invalid"]);
       }
       await admin.query("insert into public.businesses(id,name,timezone,is_demo) values ($1,'Disposable source race café','America/Los_Angeles',false)",[business]);
-      await admin.query("insert into public.toast_api_credentials(business_id,api_origin,client_id,client_secret_enc,state) values ($1,'https://example.invalid','fixture-client','fixture-placeholder','verified')",[business]);
+    await admin.query("insert into public.toast_api_credentials(business_id,api_origin,client_id,client_secret_enc,state) values ($1,'https://example.invalid','fixture-client','fixture-placeholder','verified')",[business]);
       for(const owner of owners){
         await admin.query("insert into public.memberships(business_id,user_id,role) values ($1,$2,'owner')",
           [business,owner]);
@@ -405,7 +396,7 @@ describe("Task 15A migrated, agentic investigation SQL integration",()=>{
       await admin.query("insert into auth.users(id,instance_id,aud,role,email,encrypted_password,created_at,updated_at) values ($1,'00000000-0000-0000-0000-000000000000','authenticated','authenticated',$2,'',now(),now())",
         [owner,"investigation-watch-"+owner+"@example.invalid"]);
       await admin.query("insert into public.businesses(id,name,timezone,is_demo) values ($1,'Watch transition café','America/Los_Angeles',false)",[business]);
-      await admin.query("insert into public.toast_api_credentials(business_id,api_origin,client_id,client_secret_enc,state) values ($1,'https://example.invalid','fixture-client','fixture-placeholder','verified')",[business]);
+    await admin.query("insert into public.toast_api_credentials(business_id,api_origin,client_id,client_secret_enc,state) values ($1,'https://example.invalid','fixture-client','fixture-placeholder','verified')",[business]);
       await admin.query("insert into public.memberships(business_id,user_id,role) values ($1,$2,'owner')",
         [business,owner]);
       await admin.query("insert into public.ai_threads(id,business_id,owner_user_id,client_request_id) values ($1,$2,$3,$4)",
@@ -585,7 +576,7 @@ describe("Task 15A migrated, agentic investigation SQL integration",()=>{
       await admin.query("insert into auth.users(id,instance_id,aud,role,email,encrypted_password,created_at,updated_at) values ($1,'00000000-0000-0000-0000-000000000000','authenticated','authenticated',$2,'',now(),now())",
         [owner,"investigation-closure-"+owner+"@example.invalid"]);
       await admin.query("insert into public.businesses(id,name,timezone,is_demo) values ($1,'Closure café','America/Los_Angeles',false)",[business]);
-      await admin.query("insert into public.toast_api_credentials(business_id,api_origin,client_id,client_secret_enc,state) values ($1,'https://example.invalid','fixture-client','fixture-placeholder','verified')",[business]);
+    await admin.query("insert into public.toast_api_credentials(business_id,api_origin,client_id,client_secret_enc,state) values ($1,'https://example.invalid','fixture-client','fixture-placeholder','verified')",[business]);
       await admin.query("insert into public.memberships(business_id,user_id,role) values ($1,$2,'owner')",
         [business,owner]);
       await admin.query("insert into public.ai_threads(id,business_id,owner_user_id,client_request_id) values ($1,$2,$3,$4)",
@@ -607,16 +598,10 @@ describe("Task 15A migrated, agentic investigation SQL integration",()=>{
         finish(investigating,"investigated",
           "The timecard evidence is incomplete; ask the owner for the missing actuals.",5)))
         .toBe(true);
-      // Only the calendar is advanced: the durable queue itself decides when
-      // the next unattended follow-up may run, with no new owner message.
-      const following=await rpc(service,"supervisor_claim_investigation",
-        [stamp(now,6*60+6)]) as Record<string,unknown>;
-      expect(following.phase).toBe("awaiting_owner");
-      expect(following.episode_id).toBe(first.episode_id);
-      expect(await rpc(service,"supervisor_finish_investigation",
-        finish(following,"followed_up",
-          "Still awaiting confirmed labor coverage; no schedule change has been made.",6*60+7)))
-        .toBe(true);
+      // Owner hasn't answered; a clock tick six hours later cannot spend
+      // money or create another report for exactly the same timecard.
+      expect(await rpc(service,"supervisor_claim_investigation",
+        [stamp(now,6*60+6)])).toBeNull();
       // A different, unrelated owner-private notice must NOT be rewritten by
       // settlement of this exact alert.
       const unrelated="investigation:unrelated:"+randomUUID();
@@ -625,14 +610,14 @@ describe("Task 15A migrated, agentic investigation SQL integration",()=>{
           sourceType:"alert",sourceId:randomUUID(),episodeId:randomUUID()}),owner]);
       const before=await admin.query("select id,status,payload->>'episodeId' episode from public.operating_tasks where business_id=$1 and kind='priority_notice' and payload->>'sourceId'=$2 order by id",
         [business,alert]);
-      expect(before.rows).toHaveLength(2);
+      expect(before.rows).toHaveLength(1);
       expect(before.rows.every(row=>row.status==="needs_owner"&&
         row.episode===first.episode_id)).toBe(true);
       await admin.query("update public.alerts set status='dismissed' where business_id=$1 and id=$2",
         [business,alert]);
       const closed=await admin.query("select id,status,resolved_at from public.operating_tasks where business_id=$1 and kind='priority_notice' and payload->>'sourceId'=$2",
         [business,alert]);
-      expect(closed.rows).toHaveLength(2);
+      expect(closed.rows).toHaveLength(1);
       expect(closed.rows.every(row=>row.status==="handled"&&row.resolved_at!==null))
         .toBe(true);
       expect((await admin.query("select status from public.operating_tasks where business_id=$1 and id=$2",
@@ -668,11 +653,16 @@ describe("Task 15A migrated, agentic investigation SQL integration",()=>{
       expect(newOpen.rows).toHaveLength(1);
       expect(await rpc(service,"supervisor_enqueue_investigation",
         enqueue(hex("e"),hex("f"),6*60+13))).toBe(true);
+      const continued=await admin.query("select episode_id,phase from public.supervisor_investigations where business_id=$1 and source_id=$2",
+        [business,alert]);
+      // The owner question stays answerable while new scoped evidence
+      // wakes this SAME episode for one bounded follow-up.
+      expect(continued.rows[0]).toMatchObject({episode_id:renewed.episode_id,phase:"awaiting_owner"});
       const archived=await admin.query("select id,status,resolved_at from public.operating_tasks where business_id=$1 and kind='priority_notice' and payload->>'sourceId'=$2",
         [business,alert]);
-      expect(archived.rows).toHaveLength(3);
-      expect(archived.rows.every(row=>row.status==="handled"&&row.resolved_at!==null))
-        .toBe(true);
+      expect(archived.rows).toHaveLength(2);
+      expect(archived.rows.filter(row=>row.status==="handled")).toHaveLength(1);
+      expect(archived.rows.filter(row=>row.status==="needs_owner")).toHaveLength(1);
       expect((await admin.query("select status from public.operating_tasks where business_id=$1 and id=$2",
         [business,unrelated])).rows).toEqual([{status:"needs_owner"}]);
     }finally{
@@ -699,7 +689,7 @@ describe("Task 15A migrated, agentic investigation SQL integration",()=>{
         await admin.query("insert into auth.users(id,instance_id,aud,role,email,encrypted_password,created_at,updated_at) values ($1,'00000000-0000-0000-0000-000000000000','authenticated','authenticated',$2,'',now(),now())",
           [owner,"15a-blocked-recovery-"+owner+"@example.invalid"]);
       await admin.query("insert into public.businesses(id,name,timezone,is_demo) values ($1,'Recovery café','America/Los_Angeles',false)",[business]);
-      await admin.query("insert into public.toast_api_credentials(business_id,api_origin,client_id,client_secret_enc,state) values ($1,'https://example.invalid','fixture-client','fixture-placeholder','verified')",[business]);
+    await admin.query("insert into public.toast_api_credentials(business_id,api_origin,client_id,client_secret_enc,state) values ($1,'https://example.invalid','fixture-client','fixture-placeholder','verified')",[business]);
       for(const owner of owners)
         await admin.query("insert into public.memberships(business_id,user_id,role) values ($1,$2,'owner')",
           [business,owner]);
@@ -783,7 +773,7 @@ describe("business anomaly durable source",()=>{
   const args=(active:boolean,current:number)=>[cafe,key,active,JSON.stringify({...payload,current})];
   try{
    await admin.query("insert into public.businesses(id,name,timezone,is_demo) values($1,'Disposable anomaly café','America/Los_Angeles',false)",[cafe]);
-      await admin.query("insert into public.toast_api_credentials(business_id,api_origin,client_id,client_secret_enc,state) values ($1,'https://example.invalid','fixture-client','fixture-placeholder','verified')",[cafe]);
+    await admin.query("insert into public.toast_api_credentials(business_id,api_origin,client_id,client_secret_enc,state) values ($1,'https://example.invalid','fixture-client','fixture-placeholder','verified')",[cafe]);
    await admin.query("insert into auth.users(id,instance_id,aud,role,email,encrypted_password,created_at,updated_at) values ($1,\u002700000000-0000-0000-0000-000000000000\u0027,\u0027authenticated\u0027,\u0027authenticated\u0027,$2,\u0027\u0027,now(),now())",[ownerId,"proactive-"+ownerId+"@example.invalid"]);
    await admin.query("insert into public.memberships(business_id,user_id,role) values($1,$2,\u0027owner\u0027)",[cafe,ownerId]);
    expect(await rpc(a,"supervisor_ensure_proactive_thread",[cafe,ownerId])).toBeNull();
@@ -815,7 +805,7 @@ describe("Task 15A exact owner response binding",()=>{
   try{
    await admin.query("insert into auth.users(id,instance_id,aud,role,email,encrypted_password,created_at,updated_at) values ($1,'00000000-0000-0000-0000-000000000000','authenticated','authenticated',$2,'',now(),now())",[ownerId,"investigation-answer-"+ownerId+"@example.invalid"]);
    await admin.query("insert into public.businesses(id,name,timezone,is_demo) values($1,$2,'UTC',false)",[businessId,"Disposable answer café"]);
-      await admin.query("insert into public.toast_api_credentials(business_id,api_origin,client_id,client_secret_enc,state) values ($1,'https://example.invalid','fixture-client','fixture-placeholder','verified')",[businessId]);
+    await admin.query("insert into public.toast_api_credentials(business_id,api_origin,client_id,client_secret_enc,state) values ($1,'https://example.invalid','fixture-client','fixture-placeholder','verified')",[businessId]);
    await admin.query("insert into public.memberships(business_id,user_id,role) values($1,$2,'owner')",[businessId,ownerId]);
    await admin.query("insert into public.ai_threads(id,business_id,owner_user_id,client_request_id) values($1,$2,$3,$4)",[threadId,businessId,ownerId,randomUUID()]);
    await admin.query("insert into public.alerts(id,business_id,kind,status,payload) values($1,$2,'business_anomaly','new',$3)",[alertId,businessId,JSON.stringify({family:"stockout_risk",subject:randomUUID(),quality:"partial"})]);
@@ -849,6 +839,22 @@ describe("Task 15A exact owner response binding",()=>{
    await expect(rpc(owner,"supervisor_answer_investigation_question",args)).rejects.toThrow();
    await expect(rpc(worker,"supervisor_answer_investigation_question",[randomUUID(),...args.slice(1)])).rejects.toThrow();
    const oldClaim=await claim(stamp(now,1));
+   // Source changed while an owner question was still unanswered. Exhaust
+   // the three paid technical retries, preserve its question identity, then
+   // prove the original owner answer still works.
+   const fail=async(c:Record<string,unknown>,at:string)=>
+     rpc(worker!,"supervisor_fail_investigation",[
+       businessId,ownerId,"alert",alertId,c.lease_token,"model_incomplete",at]);
+   expect(await fail(oldClaim,stamp(now,1.2))).toBe(true);
+   const retry2=await claim(stamp(now,4));
+   expect(retry2).toMatchObject({phase:"awaiting_owner",episode_id:q.episode_id});
+   expect(await fail(retry2,stamp(now,4.2))).toBe(true);
+   const retry3=await claim(stamp(now,9));
+   expect(retry3).toMatchObject({phase:"awaiting_owner",episode_id:q.episode_id});
+   expect(await fail(retry3,stamp(now,9.2))).toBe(true);
+   const paused=(await admin.query("select phase,failure_count,pending_question_id,next_retry_at from public.supervisor_investigations where business_id=$1",[businessId])).rows[0];
+   expect(paused).toMatchObject({phase:"awaiting_owner",failure_count:"3",pending_question_id:q.pending_question_id});
+   expect(await claim(stamp(now,25))).toBeNull();
    expect(await rpc(worker,"supervisor_answer_investigation_question",args)).toBe(q.episode_id);
    expect(await rpc(worker,"supervisor_answer_investigation_question",args)).toBe(q.episode_id);
    await expect(rpc(worker,"ai_agent_job_start",[...scope,answer])).rejects.toThrow("durable_job_owned");
@@ -877,7 +883,7 @@ describe("Task 15A proactive procurement café-wide draft fence",()=>{
   const payload={family:"stock_shortage",subject:ingredient,quality:"verified"};
   try{
    await admin.query("insert into public.businesses(id,name,timezone,is_demo) values($1,'Disposable stock café','UTC',false)",[cafe]);
-      await admin.query("insert into public.toast_api_credentials(business_id,api_origin,client_id,client_secret_enc,state) values ($1,'https://example.invalid','fixture-client','fixture-placeholder','verified')",[cafe]);
+    await admin.query("insert into public.toast_api_credentials(business_id,api_origin,client_id,client_secret_enc,state) values ($1,'https://example.invalid','fixture-client','fixture-placeholder','verified')",[cafe]);
    for(let i=0;i<2;i++){
     await admin.query("insert into auth.users(id,instance_id,aud,role,email,encrypted_password,created_at,updated_at) values($1,'00000000-0000-0000-0000-000000000000','authenticated','authenticated',$2,'',now(),now())",[owners[i],owners[i]+"@example.invalid"]);
     await admin.query("insert into public.memberships(business_id,user_id,role) values($1,$2,'owner')",[cafe,owners[i]]);
@@ -907,5 +913,36 @@ describe("Task 15A proactive procurement café-wide draft fence",()=>{
    await admin.query("delete from auth.users where id=any($1::uuid[])",[owners]);
    await Promise.all([admin.end(),a.end(),b.end()]);
   }
+ },30000);
+});
+
+describe("No paid owner-retry but allow deterministic vendor-source polling",()=>{
+ (sandbox?it:it.skip)("keeps maintenance Gmail polling due while ordinary unanswered work sleeps forever",async()=>{
+  const db=await connect("postgres"),business=randomUUID(),owner=randomUUID(),
+    thread=randomUUID(),maintenance="maintenance:"+randomUUID(),other="coverage:"+randomUUID();
+  try{
+    await db.query("begin");
+    // A fixture is not an authorized maintenance effect. Establish only the
+    // same transaction-local transition guard the production maintenance
+    // gateway sets, never disable the trigger or grant a persistent bypass.
+    await db.query("select set_config('app.maintenance_case_transition','allowed',true)");
+    await db.query("insert into auth.users(id,instance_id,aud,role,email,encrypted_password,created_at,updated_at) values ($1,'00000000-0000-0000-0000-000000000000','authenticated','authenticated',$2,'',now(),now())",
+      [owner,owner+"@example.invalid"]);
+    await db.query("insert into public.businesses(id,name,timezone,is_demo) values ($1,'Disposable vendor-poll fixture','UTC',false)",[business]);
+    await db.query("insert into public.toast_api_credentials(business_id,api_origin,client_id,client_secret_enc,state) values ($1,'https://example.invalid','fixture-client','fixture-placeholder','verified')",[business]);
+    await db.query("insert into public.memberships(business_id,user_id,role) values ($1,$2,'owner')",[business,owner]);
+    await db.query("insert into public.ai_threads(id,business_id,owner_user_id,client_request_id) values ($1,$2,$3,$4)",
+      [thread,business,owner,randomUUID()]);
+    for(const [id,kind] of [[maintenance,"maintenance_issue"],[other,"staff_coverage"]]){
+      await db.query("insert into public.operating_tasks(business_id,id,agent_id,kind,status,payload,confidence,evidence,owner_user_id) values ($1,$2,'leo',$3,'needs_owner','{}','high','[]',$4)",
+        [business,id,kind,owner]);
+      await db.query("insert into public.supervisor_investigations(business_id,owner_user_id,thread_id,source_type,source_id,revision_hash,stable_key,priority,phase,next_retry_at) values ($1,$2,$3,'operating_task',$4,$5,$6,180,'awaiting_owner',now()+interval '6 hours')",
+        [business,owner,thread,id,"a".repeat(64),"b".repeat(64)]);
+    }
+    const rows=await db.query("select source_id,isfinite(next_retry_at) as active_poll from public.supervisor_investigations where business_id=$1 order by source_id",[business]);
+    const byId=new Map(rows.rows.map(x=>[x.source_id,x.active_poll]));
+    expect(byId.get(maintenance)).toBe(true);
+    expect(byId.get(other)).toBe(false);
+  }finally{await db.query("rollback");await db.end();}
  },30000);
 });

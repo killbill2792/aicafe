@@ -5,6 +5,7 @@ import {z} from "zod";
 import type {SupabaseClient} from "@supabase/supabase-js";
 import {createAdminSupabaseClient} from "@/lib/supabase/admin";
 import {admitU3Sql,type U3TrustedUnit} from "./u3SqlAdmission";
+import {validateResearchConnection} from "./u3ResearchConnection";
 
 /** One research executor for the existing query_data tool.
  * No service-role client receives model-authored SQL. Scope is a server-only
@@ -76,12 +77,10 @@ function getPool():Pool{
  if(pool)return pool;
  const raw=process.env.AICAFE_RESEARCH_DATABASE_URL;
  if(!raw)throw Error("research_not_configured");
- let url:URL;
- try{url=new URL(raw);}catch{throw Error("research_connection_untrusted");}
- if(!["postgres:","postgresql:"].includes(url.protocol)||
-  decodeURIComponent(url.username)!=="aicafe_research"||
-  !url.hostname||!url.pathname||url.pathname==="/")
-  throw Error("research_connection_untrusted");
+ // Validates the database role, exact Supabase project and pooler username.
+ // The transaction below separately verifies current_user is a non-BYPASSRLS
+ // aicafe_research role after connecting.
+ validateResearchConnection(raw,process.env.NEXT_PUBLIC_SUPABASE_URL);
  pool=new Pool({connectionString:raw,max:2,connectionTimeoutMillis:4000,
   idleTimeoutMillis:5000,allowExitOnIdle:true,
   application_name:"aicafe-u3-research"});

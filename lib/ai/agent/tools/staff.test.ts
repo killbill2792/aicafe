@@ -214,6 +214,23 @@ describe("Olivia bounded reads",()=>{
     expect(r.missing).toContain("laborWageUnknown:2026-10-22");
     expect(r.laborDays).toHaveLength(1);
   });
+  it("returns source-backed clock-in/out evidence even if wages are unavailable",async()=>{
+    const actual={timecardId:"12345678-1234-4123-8123-123456789abc",
+      employeeName:"Sam",localDate:"2026-10-22",
+      clockIn:"2026-10-22T16:00:00Z",clockInLocal:"09:00",
+      clockOut:"2026-10-22T22:00:00Z",clockOutLocal:"15:00",
+      clockOutLocalDate:"2026-10-22",
+      elapsedHours:6,breakEvidence:"none_recorded" as const,
+      recordedBreakCount:0,sourceType:"connected_pos"};
+    const r=await staffTools.get_labor.execute({period:"today"},ctx({
+      getStaffAttendance:async()=>({available:true,value:{
+        timecardCount:1,onClockCount:0,attendanceTracked:true,
+        recordedTimecards:[actual]},quality:q}),
+    }));
+    expect(r.attendance).toMatchObject({recordedTimecards:[actual]});
+    expect(r.laborDays).toBeNull();
+    expect(r.missing).toContain("laborReaderUnavailable");
+  });
   it("keeps attendance unavailable separate from labor",async()=>{
     const r=await staffTools.get_labor.execute({period:"today"},ctx({
       getLaborMetrics:async()=>({available:true,value:[{date:"2026-10-22",wagesCents:1500,

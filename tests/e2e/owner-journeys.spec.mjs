@@ -1,6 +1,7 @@
 import {test, expect} from "@playwright/test";
 import {randomUUID,createHash} from "node:crypto";
 import pg from "pg";
+import {createClient} from "@supabase/supabase-js";
 import {assertDisposableEnvironment, seededCafe, login, openOwnedPage,navigateLocal}
   from "./seeded-auth.mjs";
 
@@ -24,6 +25,66 @@ async function assertAccessibleControls(page){
     assertNamedAXControls(nodes);
   }finally{await session.detach();}
 }
+
+test("@home fresh registration owns a private café and never inherits shared demo",async({browser})=>{
+  test.setTimeout(100_000);
+  const url=process.env.NEXT_PUBLIC_SUPABASE_URL,secret=process.env.SUPABASE_SERVICE_ROLE_KEY;
+  if(!url||!secret)throw Error("Disposable E2 owner signup requires local Supabase");
+  // No real customer accounts or provider calls. The same local-only admission
+  // guard runs before even constructing the temporary admin auth client.
+  assertDisposableEnvironment();
+  const admin=createClient(url,secret,{auth:{persistSession:false,autoRefreshToken:false}});
+  const db=new pg.Client({host:"127.0.0.1",port:54322,database:"postgres",
+    user:"postgres",password:"postgres",connectionTimeoutMillis:5000});
+  const context=await browser.newContext({baseURL:"http://127.0.0.1:3000",serviceWorkers:"block"});
+  const email=randomUUID()+"@example.invalid",password=randomUUID()+"!Ab12";
+  let userId=null,connected=false;
+  try{
+    await db.connect();connected=true;
+    const created=await admin.auth.admin.createUser({
+      email,password,email_confirm:true,user_metadata:{cafe_name:"Private signup fixture"},
+    });
+    if(created.error||!created.data.user)throw Error("signup_fixture_unavailable");
+    userId=created.data.user.id;
+    // The #560 signup trigger remains installed but inert on a migrated DB.
+    const before=await db.query("select business_id from public.memberships where user_id=$1",[userId]);
+    expect(before.rows).toEqual([]);
+    const page=await context.newPage();
+    await navigateLocal(page,"/en/login");
+    await page.locator("#email").fill(email);
+    await page.locator("#login-password").fill(password);
+    await page.locator("form button[type=submit]").click();
+    await expect(page).not.toHaveURL(/\/login(?:\?|$)/,{timeout:30000});
+    await navigateLocal(page,"/en/onboarding");
+    await expect(page.getByRole("heading",{name:"Connect your register"})).toBeVisible({timeout:20000});
+    const memberships=await db.query("select m.business_id,m.role,b.name,b.is_demo from public.memberships m join public.businesses b on b.id=m.business_id where m.user_id=$1",[userId]);
+    expect(memberships.rows).toHaveLength(1);
+    expect(memberships.rows[0]).toMatchObject({
+      role:"owner",name:"Private signup fixture",is_demo:false,
+    });
+    expect(memberships.rows[0].business_id).not.toBe("11111111-1111-1111-1111-111111111111");
+    const toast=page.getByRole("link",{name:"I use Toast"});
+    if(await toast.count())await expect(toast).toHaveAttribute("href",/\/more\/toast$/);
+    else await expect(page.getByText("Toast import isn't available yet. We'll let you know.")).toBeVisible();
+    expect(await page.locator('a[href*="/uploads"],a[href*="demo"]').count()).toBe(0);
+    expect(await page.getByText("Skip for now").count()).toBe(0);
+    // Authentication and the private café are real; the optional Toast secret
+    // in this disposable CI environment is NOT needed to prove isolation.
+    const threads=await context.request.get("/api/ai/threads");
+    expect(threads.status()).toBe(200);
+  }finally{
+    await context.close();
+    if(connected){
+      if(userId){
+        const owned=await db.query("select business_id from public.memberships where user_id=$1",[userId]);
+        for(const row of owned.rows)
+          await db.query("delete from public.businesses where id=$1 and is_demo=false",[row.business_id]);
+      }
+      await db.end();
+    }
+    if(userId)await admin.auth.admin.deleteUser(userId);
+  }
+});
 
 test("@home Task16A authenticated mobile owner views library/routines/permissions and revokes a scoped mandate",async({browser})=>{
   // Two authenticated cafés, multiple database mutations, and two full browser reloads.
@@ -1187,6 +1248,11 @@ test("@purchasing proactive notice → repeated cron idempotency → owner-appro
   const second=await browser.newContext({baseURL:"http://127.0.0.1:3000",serviceWorkers:"block"});
   try{
     await db.connect();connected=true;
+  // PR #560: paid unattended research is eligible only when Toast is
+  // verified. This is an isolated local-only credential state, NOT a usable
+  // provider token or an actual restaurant connection.
+  await db.query("insert into public.toast_api_credentials(business_id,api_origin,client_id,client_secret_enc,state) values ($1,'https://example.invalid','e2e-synthetic-verified','fixture-no-network','verified') on conflict (business_id) do nothing",
+    [own.businessId]);
     await db.query("insert into public.ingredients(id,business_id,name,base_unit) values($1,$2,$3,'ml')",
       [id.ingredient,own.businessId,name]);
     await db.query("insert into public.ai_supplier_quotes("+
@@ -1396,6 +1462,7 @@ test("@purchasing proactive notice → repeated cron idempotency → owner-appro
           [own.businessId,id.ingredient]]
       ];
       for(const [query,params] of queries)await db.query(query,params).catch(()=>{});
+    await db.query("delete from public.toast_api_credentials where business_id=$1 and client_id='e2e-synthetic-verified'",[own.businessId]).catch(()=>{});
       await db.end();
     }
   }
@@ -1691,6 +1758,11 @@ test("@home Task15A scheduler detects reduced sales from actual daily source row
  if(!process.env.CRON_SECRET)throw Error("Task15A local cron credential unavailable");
  try{
   await db.connect();connected=true;
+  // PR #560: paid unattended research is eligible only when Toast is
+  // verified. This is an isolated local-only credential state, NOT a usable
+  // provider token or an actual restaurant connection.
+  await db.query("insert into public.toast_api_credentials(business_id,api_origin,client_id,client_secret_enc,state) values ($1,'https://example.invalid','e2e-synthetic-verified','fixture-no-network','verified') on conflict (business_id) do nothing",
+    [own.businessId]);
   original=(await db.query("select to_jsonb(d) row from public.daily_rollups d where business_id=$1 and business_date between $2 and $3",[own.businessId,start,end])).rows.map(x=>x.row);
   // Isolate stored actual daily source facts from unrelated schedule materialization.
   activeSchedules=(await db.query("select id from public.staff_schedules where business_id=$1 and active",[own.businessId])).rows.map(row=>row.id);
@@ -1740,6 +1812,7 @@ test("@home Task15A scheduler detects reduced sales from actual daily source row
    await db.query("delete from public.daily_rollups where business_id=$1 and business_date between $2 and $3",[own.businessId,start,end]);
    if(original.length)await db.query("insert into public.daily_rollups select * from jsonb_populate_recordset(null::public.daily_rollups,$1::jsonb)",[JSON.stringify(original)]);
    await db.query("update public.staff_schedules set active=true where business_id=$1 and id=any($2::uuid[])",[own.businessId,activeSchedules]);
+    await db.query("delete from public.toast_api_credentials where business_id=$1 and client_id='e2e-synthetic-verified'",[own.businessId]).catch(()=>{});
    await db.end();
   }
  }

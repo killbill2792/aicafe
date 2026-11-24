@@ -36,11 +36,13 @@ describe("Redesign 03 screen contracts", () => {
     expect(action).toContain('is_estimate: parsed.data.isEstimate ?? false');
     expect(reader).toContain("isEstimate: r.is_estimate");
     const page = source("app/[locale]/more/bills/page.tsx");
+    // Bill editing remains supported in More > Bills. Toast-first onboarding
+    // no longer forces the owner through recurring bills before connecting POS.
     const onboarding = source("app/[locale]/onboarding/page.tsx");
-    for (const label of ["amountKindLabel", "amountActual", "amountEstimate", "estimateBadge"]) {
+    for (const label of ["amountKindLabel", "amountActual", "amountEstimate", "estimateBadge"])
       expect(page).toContain(label + ': t("' + label + '")');
-      expect(onboarding).toContain(label + ': tBills("' + label + '")');
-    }
+    expect(onboarding).toContain("RegisterChoice");
+    expect(onboarding).not.toContain("BillsManager");
   });
 
   it("makes the Bills Add cost link a full-size keyboard-accessible touch target", () => {

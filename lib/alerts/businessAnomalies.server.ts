@@ -249,6 +249,30 @@ export async function readCustomerTrendComparison(db:SupabaseClient,businessId:s
  return compareCustomerPeriods(a,b).find(m=>m.key===subject)??null;
 }
 const fact=(family:BusinessSignal,subject:string,current:number,previous:number,unit:string,active:boolean,from:string,to:string):Observation=>({family,subject,current,previous,unit,active,asOf:to,from,to});
+/** Conservative schedule-to-punch attribution. A same-day employee match is
+ * insufficient: two actual shifts may exist for one published schedule.
+ * Without a direct schedule_id in the canonical view, require ONE plausible
+ * start within two hours of the published shift start; ambiguous or missing
+ * attribution never proves a clock-out. */
+export function matchPublishedShiftPunch(
+  start:number,end:number,
+  candidates:ReadonlyArray<{clock_in:unknown;clock_out?:unknown}>,
+):{matched:boolean;clockOutRecorded:boolean;ambiguous:boolean}{
+  if(!Number.isFinite(start)||!Number.isFinite(end)||end<=start)
+    return {matched:false,clockOutRecorded:false,ambiguous:false};
+  const possible=candidates.filter(row=>{
+    const at=typeof row.clock_in==="string"?Date.parse(row.clock_in):NaN;
+    return Number.isFinite(at)&&at>=start-120*60000&&
+      at<=Math.min(start+120*60000,end);
+  });
+  if(possible.length!==1)
+    return {matched:false,clockOutRecorded:false,ambiguous:possible.length>1};
+  const inAt=Date.parse(String(possible[0].clock_in));
+  const outAt=typeof possible[0].clock_out==="string"?Date.parse(possible[0].clock_out):NaN;
+  return {matched:true,clockOutRecorded:Number.isFinite(outAt)&&
+    outAt>=Math.max(inAt,start-120*60000),ambiguous:false};
+}
+
 /** One scheduled consumer of existing canonical readers. Compare closed, equal-length weeks;
  * absence and estimated wages are not actuals. Threshold is a review heuristic, not a loss claim.
  * Every family is isolated so a failing data source cannot halt other business work. */
@@ -400,9 +424,31 @@ export async function refreshBusinessAnomalies(db:SupabaseClient,businessId:stri
    if(!finite(start)||now.getTime()<start+15*60000)continue;
    const sameDayShifts=shifts.rows.filter(e=>e.business_date===date&&e.source==="app"&&obj(e.data).employee_id===shift.employee_id&&obj(e.data).shift_status==="published");
    if(sameDayShifts.length!==1)continue;
-   const matching=labor.rows.some(e=>e.business_date===date&&obj(e.data).employee_id===shift.employee_id&&typeof obj(e.data).clock_in==="string");
-   // Missing attendance is a request for evidence, NEVER proof of absence.
-   if(date===today||matching)await persist(fact("missed_clock_evidence",shift.id,matching?1:0,1,"recorded_clock_in",!matching,date,date));
+   const sameEmployee=labor.rows.filter(e=>e.business_date===date&&
+     obj(e.data).employee_id===shift.employee_id);
+   let expectedEnd=typeof shift.end_local==="string"&&
+      /^([01]\d|2[0-3]):[0-5]\d/.test(shift.end_local)?
+        fromZonedTime(date+"T"+shift.end_local,timezone).getTime():NaN;
+   if(finite(expectedEnd)&&expectedEnd<=start)
+     expectedEnd=fromZonedTime(day(date,1)+"T"+shift.end_local,timezone).getTime();
+   // For a shift without a documented end, do not invent a clock-out.
+   const punch=matchPublishedShiftPunch(start,
+     finite(expectedEnd)?expectedEnd:start+12*3600000,
+     sameEmployee.map(entry=>({
+       clock_in:obj(entry.data).clock_in,clock_out:obj(entry.data).clock_out,
+     })));
+   const matching=punch.matched;
+   // A published shift and missing/incomplete punch give a data-quality
+   // question, never a proven absence or labor-compliance conclusion.
+   await persist(fact("missed_clock_evidence",shift.id,
+     matching?1:0,1,"recorded_clock_in",!matching,date,date));
+   if(matching&&finite(expectedEnd)&&now.getTime()>=expectedEnd+15*60000){
+     // Only a uniquely matched actual timecard can resolve this shift's gap.
+     // A different completed timecard cannot mask a later open interval.
+     const closed=punch.clockOutRecorded;
+     await persist(fact("missed_clock_evidence",shift.id+":clock-out",
+       closed?1:0,1,"recorded_clock_out",!closed,date,date));
+   }
   }
   for(const entry of labor.rows){
    const row=obj(entry.data);

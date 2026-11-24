@@ -16,11 +16,7 @@ import RegisterChoice from "./RegisterChoice";
 import ToastConnectionForm from "@/components/more/ToastConnectionForm";
 
 const labels={
- connectSquare:"Connect Square",
- squareNotConfigured:"Square unavailable",
- useToast:"Use Toast",useClover:"Use Clover",useOther:"Use Other",
- csvHint:"Upload CSV files for Clover or Other",
- skip:"Skip"
+ useToast:"Connect Toast",unavailable:"Toast setup is unavailable"
 };
 const connectionLabels={
  notEnabled:"Toast setup is currently unavailable",
@@ -46,47 +42,29 @@ const connectionLabels={
  chooseApiUrl:"Choose API URL under Technical details"
 };
 
-function choice(locale:string,squareConfigured=true,toastEnabled=true){
- return renderToStaticMarkup(createElement(RegisterChoice,{
-  locale,squareConfigured,toastEnabled,labels
- }));
+function choice(toastEnabled=true){
+ return renderToStaticMarkup(createElement(RegisterChoice,{toastEnabled,labels}));
 }
 function anchorFor(markup:string,text:string){
  const matches=[...markup.matchAll(/<a\b([^>]*)>([\s\S]*?)<\/a>/g)];
  return matches.find(([, ,content])=>content.includes(text));
 }
 
-describe("Register choice navigation across mobile locales",()=>{
- it.each(["en","es","ar"])(
-  "routes Toast directly to setup and keeps Clover/Other on uploads in %s",locale=>{
-   const html=choice(locale);
-   expect(anchorFor(html,"Use Toast")?.[1]).toContain('href="/more/toast"');
-   expect(anchorFor(html,"Use Clover")?.[1]).toContain('href="/more/uploads"');
-   expect(anchorFor(html,"Use Other")?.[1]).toContain('href="/more/uploads"');
-   // The complete visual tile remains a single touch/click target.
-   for(const label of ["Use Toast","Use Clover","Use Other"]){
-    const attrs=anchorFor(html,label)?.[1]??"";
-    expect(attrs).toContain("flex");
-    expect(attrs).toContain("rounded-2xl");
-    expect(attrs).toContain("p-4");
-   }
-   expect(anchorFor(html,"Skip")?.[1]).toContain('href="/onboarding?step=2"');
-  }
- );
- it("hides Toast only when its server-controlled feature flag is off",()=>{
-  const html=choice("en",true,false);
-  expect(anchorFor(html,"Use Toast")).toBeUndefined();
-  expect(anchorFor(html,"Use Clover")?.[1]).toContain('href="/more/uploads"');
+describe("Toast-first private-café onboarding",()=>{
+ it("offers only the owner-connected Toast setup",()=>{
+  const html=choice();
+  expect(anchorFor(html,"Connect Toast")?.[1]).toContain('href="/more/toast"');
+  expect(html).not.toContain("Use Clover");
+  expect(html).not.toContain("Connect Square");
+  expect(html).not.toContain('href="/more/uploads"');
+  expect(html).not.toContain("Skip");
+  expect(html).not.toContain("Demo");
  });
- it("preserves Square OAuth with locale and configured/unavailable behavior",()=>{
-  expect(anchorFor(choice("es"),"Connect Square")?.[1])
-   .toContain('href="/api/pos/square/connect?locale=es"');
-  const disabled=choice("es",false);
-  const square=anchorFor(disabled,"Connect Square")?.[1]??"";
-  expect(square).toContain('href="#"');
-  expect(square).toContain('aria-disabled="true"');
-  expect(disabled).toContain("Square unavailable");
-  expect(anchorFor(disabled,"Use Toast")?.[1]).toContain('href="/more/toast"');
+ it("does not send owner to a broken Toast link if disabled",()=>{
+  const html=choice(false);
+  expect(anchorFor(html,"Connect Toast")).toBeUndefined();
+  expect(html).toContain("Toast setup is unavailable");
+  expect(html).not.toContain('href="/more/uploads"');
  });
 });
 

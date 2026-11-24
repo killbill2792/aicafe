@@ -109,7 +109,7 @@ export const staffTools = {
     },
   },
   get_labor: {
-    agentId:"olivia",schema:period,description:"Labor-day costs, including estimated inputs, and recorded attendance for a current period. missingWageShifts lists the only finished shifts with no hourly wage (date, person, hours); every other laborDays entry is recorded. When wages are missing, give the known labor total, name those shifts, and ask only for those people's hourly wage — never ask the owner for a labor total over a range.",
+    agentId:"olivia",schema:period,description:"Labor-day costs and individual actual clock-in/clock-out evidence (up to 80 recent timecards in the selected period). attendance.recordedTimecards lists employee, local date, clock times, gross elapsed hours, and documented break evidence; none_recorded means no break punch, NOT proof no break occurred. This is the correct reader for owner questions about who worked, missing lunch punches, or unclosed shifts. missingWageShifts lists the only finished shifts with no hourly wage (date, person, hours); every other laborDays entry is recorded. When wages are missing, give the known labor total, name those shifts, and ask only for those people's hourly wage — never ask the owner for a labor total over a range.",
     execute:async(raw:unknown,ctx:AgentToolContext):Promise<AgentToolResult>=>{
       const resolved=resolveOwnerPeriod(period.parse(raw).period,{asOf:ctx.asOf,timezone:ctx.timezone},ctx.resolveState);
       if(resolved.status!=="resolved")return periodChoicePayload("labor_and_attendance",resolved);
