@@ -66,7 +66,7 @@ function numbersIn(answer,unit){
 function assertDates(reply,context){
   const replay=replays[String(context?.vars?.caseId??"")];
   assert.ok(replay,"unknown recorded case");
-  const expected=replay.tools.map(c=>c.args?.period)
+  const expected=replay.tools.map(c=>c.args?.official_metric?.period??c.args?.period)
     .find(p=>p&&typeof p.from==="string"&&typeof p.to==="string");
   if(!expected)return;
   assert.ok(reply.results.some(r=>r.period?.from===expected.from&&
@@ -97,7 +97,7 @@ module.exports.metric=(output,context)=>check(()=>{
   const wanted=seed.sqlTruth[cfg.truth];
   assert.equal(typeof wanted,"number","missing SQL numeric truth");
   const results=reply.results.filter(result=>result.source===cfg.source);
-  assert.ok(results.length>0,"Supervisor did not call "+cfg.source);
+  assert.ok(results.length>0,"Verified source evidence missing: "+cfg.source);
   const observed=pathAt(results.at(-1),cfg.field);
   assert.equal(typeof observed,"number",cfg.field+" is not a numeric tool result");
   const tolerance=cfg.tolerance??(cfg.unit==="percent"?0.0001:1);

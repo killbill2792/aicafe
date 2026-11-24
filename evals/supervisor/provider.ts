@@ -67,13 +67,14 @@ const tools = {
   getPosImportReviews:async()=>present([]),
 };
 const allowedTools:AgentToolName[]=[
-  "get_menu_items","get_labor","get_product_costs","get_item_sales",
+  "get_menu_items","query_data","get_product_costs","get_item_sales",
   "get_inventory","calculate",
 ];
 const context = ():AgentToolContext=>({
   tools:tools as unknown as AgentToolContext["tools"],
   locale:"en",asOf:seed.profile.asOf,timezone:seed.profile.timezone,
   currency:seed.profile.currency,
+  canonicalData:async()=>({businessId:"aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",db:{} as never}),
 });
 /**
  * Recorded Responses *model* events drive the real tool loop. Every tool
