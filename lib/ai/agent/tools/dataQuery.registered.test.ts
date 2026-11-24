@@ -127,6 +127,25 @@ describe("canonical data available to authenticated chat, not only standalone to
 });
 
 describe("optional official shared metric selection in registered query_data",()=>{
+ it("retains exact shared expense and recurring-bill calculations without model-facing reporting functions",async()=>{
+  const {context}=caller();
+  const q={level:"high" as const,missingInputs:[],estimatedInputs:[],staleInputs:[]};
+  const categoryRows=Array.from({length:21},(_,i)=>({categoryCode:"custom_"+i,label:"Cost "+i,amountCents:100+i,isEstimate:true,isMissing:false}));
+  const ctx:AgentToolContext={...context,tools:{...context.tools,
+   getRecordedExpenses:async()=>({available:true,value:{totalCents:12000} as never,quality:q}),
+   getExpenseSummary:async()=>({available:true,value:categoryRows as never,quality:q}),
+   getMonthlyBills:async()=>({available:true,value:{totalCents:15000} as never,quality:{...q,estimatedInputs:["configured_cost"]}})}};
+  for(const name of ["get_expenses","get_bills"])expect(agentToolDefinitions.some(t=>t.name===name)).toBe(false);
+  const period={from:"2026-10-01",to:"2026-10-20"};
+  const expenses=await executeAgentTool("query_data",{official_metric:{id:"expenses",period_mode:null,period}},ctx);
+  expect(expenses).toEqual({...await executeAgentTool("get_expenses",{period,category:null},ctx),metric_id:"expenses",metric_basis:"official_shared_definition"});
+  expect(expenses.categories).toHaveLength(21);
+  expect(expenses.recordedActualTotalCents).toBe(12000);
+  const recurring=await executeAgentTool("query_data",{official_metric:{id:"recurring_bills",period_mode:null}},ctx);
+  expect(recurring).toEqual({...await executeAgentTool("get_bills",{},ctx),metric_id:"recurring_bills",metric_basis:"official_shared_definition"});
+  expect(recurring.estimated).toBe(true);
+ });
+
  it("returns the same break-even calculation, period and quality as the shared screen basis",async()=>{
   const snapshot=getFixtureSnapshot();
   const basis=breakEvenSnapshotInputs(snapshot);

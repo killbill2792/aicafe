@@ -177,6 +177,10 @@ export function verifyObjectiveTurn(turn:AgentTurn,routine:RoutineRecord):Object
     if(call.result.source==="u3_canonical_research")return "other:u3_signed_sql";
     if(call.name==="query_data")
       return canonicalQuerySourceFamily(call.result.view);
+    if(call.result.metric_basis==="official_shared_definition"){
+      if(call.result.source==="expenses")return "recorded_expenses";
+      if(call.result.source==="recurring_bills")return "configured_recurring_bills";
+    }
     return canonicalEvidenceDomain[call.name as AgentToolName]??
       "other:"+String(call.result.source).slice(0,80);
   };

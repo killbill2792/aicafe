@@ -106,12 +106,14 @@ export function recoverableReadSelector(name:string,raw:unknown,resultPeriod?:un
     if(!raw||typeof raw!=="object"||Array.isArray(raw))return null;
     const r=raw as Record<string,unknown>;
     if(Object.entries(r).some(([k,v])=>!["official_metric","date_from","date_to"].includes(k)&&v!=null))return null;
-    const metric=z.strictObject({id:z.literal("profit"),period_mode:z.null(),
-      profit_period:z.unknown().optional(),profit_owner_inputs:z.null().optional(),
+    const metric=z.strictObject({id:z.enum(["profit","expenses","recurring_bills"]),period_mode:z.null(),
+      period:z.unknown().optional(),profit_period:z.unknown().optional(),profit_owner_inputs:z.null().optional(),
       break_even_overrides:z.null().optional()}).safeParse(r.official_metric);
     if(!metric.success)return null;
-    const period=range.safeParse(resultPeriod??{from:r.date_from,to:r.date_to});
-    return period.success?{official_metric:{id:"profit",period_mode:null},
+    if(metric.data.id==="recurring_bills")return metric.data.period==null&&metric.data.profit_period==null&&r.date_from==null&&r.date_to==null?
+      {official_metric:{id:metric.data.id,period_mode:null}}:null;
+    const period=range.safeParse(resultPeriod??metric.data.period??metric.data.profit_period??{from:r.date_from,to:r.date_to});
+    return period.success?{official_metric:{id:metric.data.id,period_mode:null},
       date_from:period.data.from,date_to:period.data.to}:null;
   }
   if(["get_staff","get_inventory","get_labor_rules","get_bills","get_supervisor_permissions"].includes(name))

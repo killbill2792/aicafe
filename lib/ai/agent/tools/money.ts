@@ -184,7 +184,7 @@ export const moneyTools={
         // The recorded expense total covers ALL categories. Never present it as
         // the selected category's spend.
         recordedActualTotalCents:filterCategory?null:recorded.available?recorded.value.totalCents:null,
-        categories:categories.available?categories.value.filter(c=>filterCategory===null||filterCategory===c.categoryCode).slice(0,15).map(v=>({
+        categories:categories.available?categories.value.filter(c=>filterCategory===null||filterCategory===c.categoryCode).map(v=>({
           label:v.label,categoryCode:v.categoryCode,amountCents:v.isMissing?null:v.amountCents,
           isEstimate:v.isEstimate,isMissing:v.isMissing})):null};
     },

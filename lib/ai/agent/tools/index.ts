@@ -320,7 +320,7 @@ const baseToolDefinitions = (Object.keys(schemas) as AgentToolName[]).map(name =
 // profit/break_even use the optional official shared definition; opening_hours
 // and employee_sales_rollup are normal discoverable SQL sources.
 export const retiredResearchTools:ReadonlySet<AgentToolName>=new Set([
-  "get_profit","get_break_even","get_business_hours","get_employee_sales"
+  "get_profit","get_break_even","get_business_hours","get_employee_sales","get_expenses","get_bills"
 ]);
 // Routine management remains a verified-owner-only additional function.
 export const agentToolDefinitions:Array<Omit<(typeof baseToolDefinitions)[number],"name">&{name:string}>=
@@ -337,8 +337,8 @@ export function researchPeriodChoice(input:Record<string,unknown>):unknown{
  const metric=input.official_metric;
  if(!metric||typeof metric!=="object"||Array.isArray(metric))return null;
  const m=metric as Record<string,unknown>;
- if(m.id!=="profit")return null;
- return m.profit_period??(typeof input.date_from==="string"&&typeof input.date_to==="string"?
+ if(m.id!=="profit"&&m.id!=="expenses")return null;
+ return m.period??m.profit_period??(typeof input.date_from==="string"&&typeof input.date_to==="string"?
   {from:input.date_from,to:input.date_to}:null);
 }
 
@@ -418,17 +418,29 @@ export async function executeAgentTool(name: string, raw: unknown, ctx: AgentToo
         const metric=p.official_metric;
         let result:AgentToolResult;
         if(metric.id==="profit"){
-          if(metric.period_mode!==null||metric.break_even_overrides!=null)
+          if(metric.period_mode!==null||metric.break_even_overrides!=null||metric.period!=null&&metric.profit_period!=null)
             return invalid("invalid_query");
-          const period=metric.profit_period??(p.date_from&&p.date_to&&p.date_from<=p.date_to?
+          const period=metric.period??metric.profit_period??(p.date_from&&p.date_to&&p.date_from<=p.date_to?
             {from:p.date_from,to:p.date_to}:null);
-          if(!period||metric.profit_period!=null&&(p.date_from!==null||p.date_to!==null))
+          if(!period||(metric.profit_period!=null||metric.period!=null)&&(p.date_from!==null||p.date_to!==null))
             return invalid("invalid_date_range");
           const supplied={period,ownerInputs:metric.profit_owner_inputs??null};
           const saved=ctx.savedOwnerFacts??ctx.ownerFacts??[];
           result=await executeAgentTool("get_profit",saved.length?injectSavedOwnerInputs(supplied,saved,true):supplied,ctx);
+        }else if(metric.id==="expenses"||metric.id==="recurring_bills"){
+          if(metric.period_mode!==null||metric.profit_period!=null||metric.profit_owner_inputs!=null||metric.break_even_overrides!=null)
+            return invalid("invalid_query");
+          if(metric.id==="recurring_bills"){
+            if(metric.period!=null||p.date_from!==null||p.date_to!==null)return invalid("invalid_date_range");
+            result=await moneyTools.get_bills.execute({},ctx);
+          }else{
+            const period=metric.period??(p.date_from&&p.date_to&&p.date_from<=p.date_to?
+              {from:p.date_from,to:p.date_to}:null);
+            if(!period||metric.period!=null&&(p.date_from!==null||p.date_to!==null))return invalid("invalid_date_range");
+            result=await moneyTools.get_expenses.execute({period,category:null},ctx);
+          }
         }else{
-          if(metric.profit_period!=null||metric.profit_owner_inputs!=null)return invalid("invalid_query");
+          if(metric.period!=null||metric.profit_period!=null||metric.profit_owner_inputs!=null)return invalid("invalid_query");
           if(p.date_from!==null||p.date_to!==null)return invalid("invalid_date_range");
           const overrides=metric.break_even_overrides??{};
           const supplied={...overrides,period:metric.period_mode??"month"};
