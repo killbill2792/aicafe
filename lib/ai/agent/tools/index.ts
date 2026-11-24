@@ -367,15 +367,23 @@ export async function executeAgentTool(name: string, raw: unknown, ctx: AgentToo
   if(name==="search_maintenance_vendor")return maintenanceTools.search_maintenance_vendor.execute(raw,ctx);
   if(name==="propose_maintenance_vendor_request")return maintenanceTools.propose_maintenance_vendor_request.execute(raw,ctx);
   if(name==="describe_data"){
-    // Field names for one Toast record type need the café-scoped reader.
-    const scoped=raw&&typeof raw==="object"&&typeof (raw as {record_type?:unknown}).record_type==="string";
-    if(!scoped||!ctx.canonicalData)return dataQueryTools.describe_data.execute(raw);
-    try{return dataQueryTools.describe_data.execute(raw,await ctx.canonicalData());}
-    catch{return {source:"toast_fields",period:null,missing:["source_read_failed"]};}
+    // Research relation discovery needs the SAME authenticated scope as
+    // execution. Passing scope only for Toast record_type made ordinary SQL
+    // discovery unavailable to the real model even when U3 was configured.
+    const selector=raw&&typeof raw==="object"?raw as Record<string,unknown>:{};
+    const toast=typeof selector.record_type==="string";
+    const canonicalOnly=!toast&&typeof selector.relation!=="string"&&
+      (selector.source==="canonical"||(typeof selector.view==="string"&&selector.source!=="research"));
+    if(canonicalOnly||!ctx.canonicalData)return dataQueryTools.describe_data.execute(raw);
+    try{return await dataQueryTools.describe_data.execute(raw,await ctx.canonicalData());}
+    catch{
+      const source=toast?"toast_fields":"u3_semantic_catalog";
+      return {source,period:null,missing:["source_read_failed"],error:"source_read_failed"};
+    }
   }
   if(name==="query_data"){
     if(!ctx.canonicalData)return {source:"canonical_data",period:null,missing:["canonical_reader_unavailable"],rows:[],empty:true};
-    try{return dataQueryTools.query_data.execute(raw,await ctx.canonicalData());}
+    try{return await dataQueryTools.query_data.execute(raw,await ctx.canonicalData());}
     catch{return {source:"canonical_data",period:null,missing:["source_read_failed"],rows:[],empty:true};}
   }
   if(name==="draft_week_schedule")return draftScheduleTools.draft_week_schedule.execute(raw,ctx);

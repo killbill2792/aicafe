@@ -266,7 +266,9 @@ export const dataQueryTools={
    if(relation!==null||source==="research"){
     if(!ctx?.ownerUserId||!ctx?.threadId||!u3SqlConfigured())
      return {source:"u3_semantic_catalog",period:null,views:[],
-      missing:["capability_unavailable"],relations:[],fields:[],truncated:false,retainedFields:undefined};
+      missing:[!ctx?.ownerUserId||!ctx?.threadId?"research_invalid_scope":"research_not_configured"],
+      error:!ctx?.ownerUserId||!ctx?.threadId?"research_invalid_scope":"research_not_configured",
+      relations:[],fields:[],truncated:false,retainedFields:undefined};
     try{return {...await describeU3Catalog(ctx,{search,relation,offset,limit:pageSize}),views:[],fields:[],retainedFields:undefined};}catch(e){const error=safeU3SqlErrorCode(e);return {source:"u3_semantic_catalog",period:null,views:[],
      missing:[error],error,relations:[],fields:[],truncated:false,retainedFields:undefined};}
    }
@@ -293,7 +295,7 @@ export const dataQueryTools={
    const next=from+size<candidates.length?from+size:null;
    const page=candidates.slice(from,from+size).map(({matched:_matched,...item})=>item);
    let research:unknown=null;
-   if(source!=="canonical"&&u3SqlConfigured()&&ctx?.ownerUserId&&ctx.threadId){
+   if(view===null&&source!=="canonical"&&u3SqlConfigured()&&ctx?.ownerUserId&&ctx.threadId){
     try{
      research=await describeU3Catalog(ctx,{
       search,relation:null,offset,limit:pageSize

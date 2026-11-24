@@ -17,7 +17,7 @@ vi.mock("@/lib/supabase/admin",()=>({
 }));
 import {dataQueryTools} from "./tools/dataQuery";
 import {compactEvidence,checkNumbers} from "./checkNumbers";
-import type {AgentToolResult} from "./tools";
+import {executeAgentTool,type AgentToolResult,type AgentToolContext} from "./tools";
 
 // The only database accepted by this proof is a migrated disposable localhost
 // Supabase fixture. Nothing in this suite can reach a production project.
@@ -130,7 +130,9 @@ describe.skipIf(!active)("U3 migrated registered tool + private connection",()=>
   else process.env.SUPABASE_SERVICE_ROLE_KEY=priorCursorSecret;
  });
  it("discovers admitted relational sources through the real scoped SQL catalog",async()=>{
-  const d=await dataQueryTools.describe_data.execute({source:"research",search:"orders"},scoped);
+  const context={asOf:"2026-11-24",timezone:"UTC",locale:"en",
+   tools:{} as AgentToolContext["tools"],canonicalData:async()=>scoped} satisfies AgentToolContext;
+  const d=await executeAgentTool("describe_data",{source:"research",search:"orders"},context);
   expect(d.missing).toEqual([]);
   expect(d.source).toBe("u3_semantic_catalog");
   expect(JSON.stringify(d)).toContain("orders");
@@ -139,12 +141,14 @@ describe.skipIf(!active)("U3 migrated registered tool + private connection",()=>
   expect(JSON.stringify(d)).toContain("business_date");
  });
  it("runs a real model-selected join with accurate café-isolated money",async()=>{
-  const result=await dataQueryTools.query_data.execute(input(
+  const context={asOf:"2026-11-24",timezone:"UTC",locale:"en",
+   tools:{} as AgentToolContext["tools"],canonicalData:async()=>scoped} satisfies AgentToolContext;
+  const result=await executeAgentTool("query_data",input(
    "SELECT SUM(i.net_sales_cents) AS cents FROM u3_research.orders o "+
-   "JOIN u3_research.order_lines i ON i.order_id=o.id"),scoped);
+   "JOIN u3_research.order_lines i ON i.order_id=o.id"),context);
   expect(result.error).toBeUndefined();
   expect(result.missing).toEqual([]);
-  expect(Number((result.rows[0] as Record<string,unknown>).cents)).toBe(1100);
+  expect(Number(((result.rows as Record<string,unknown>[])[0]).cents)).toBe(1100);
   expect(JSON.stringify(result)).not.toContain("4200");
  });
  it("recovers a real PostgreSQL undefined column with a safe repair diagnostic and independent correct result",async()=>{
