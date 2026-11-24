@@ -961,7 +961,7 @@ export async function runAgentTurn(args: {
     modelCalls: usage.modelCalls, toolCalls: usage.toolCalls,
     inputTokens: usage.inputTokens, outputTokens: meteredOutput() });
   await args.beforeAcceptResult?.();
-  const status = statusFromResults(results.filter(r=>r.name!=="present_response"));
+  const status = statusFromResults(results.filter(r=>r.name!=="present_response"&&!r.result.source.startsWith("retained_research_")));
   const ownerStatements=[...(args.history??[]).filter(m=>m.role==="user").map(m=>m.content),
     ...(args.serviceOrigin?[]:[args.ownerText]),...matched.map(pair=>pair.answer),...absorbed.map(m=>m.text)].join("\n");
   const restored=await args.checkpoint?.restoredResults?.()??[];

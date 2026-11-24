@@ -79,6 +79,14 @@ BEGIN
 END $clear$;
 REVOKE ALL ON FUNCTION u3_research_private.clear_terminal_research_reads() FROM PUBLIC,anon,authenticated;
 CREATE TRIGGER supervisor_clear_terminal_research_reads
- AFTER UPDATE OF status ON public.supervisor_run_steps
- FOR EACH ROW WHEN (NEW.status IN ('completed','blocked') AND OLD.status IS DISTINCT FROM NEW.status)
+ AFTER UPDATE OF status,error_code ON public.supervisor_run_steps
+ FOR EACH ROW WHEN ((NEW.status='completed' OR (NEW.status='blocked' AND NEW.error_code IS DISTINCT FROM 'awaiting_owner'))
+ AND (OLD.status IS DISTINCT FROM NEW.status OR OLD.error_code IS DISTINCT FROM NEW.error_code))
  EXECUTE FUNCTION u3_research_private.clear_terminal_research_reads();
+
+-- Receipt metadata is private, server-generated and individually validated.
+-- Do not terminate a progressing owner assignment at an arbitrary 256 entries.
+ALTER TABLE public.supervisor_run_steps DROP CONSTRAINT supervisor_run_steps_checkpoint_receipts_check;
+ALTER TABLE public.supervisor_run_steps ADD CONSTRAINT supervisor_run_steps_checkpoint_receipts_check
+ CHECK (jsonb_typeof(checkpoint_receipts)='array') NOT VALID;
+ALTER TABLE public.supervisor_run_steps VALIDATE CONSTRAINT supervisor_run_steps_checkpoint_receipts_check;

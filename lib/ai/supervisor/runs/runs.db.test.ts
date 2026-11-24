@@ -420,12 +420,15 @@ describe("Task 6/15C v2 durable owner admission and checkpoint fencing",()=>{
       const job=await call(a,"supervisor_start_owner_job_v2",[...scope,run.id,oldToken]);
       expect(job).toMatchObject({owner_message_id:messageId,durable_run_id:run.id,status:"running"});
       await expect(call(a,"ai_agent_job_start",[...scope,messageId])).rejects.toThrow("durable_job_owned");
-      const operation=randomUUID(),receipt="source:"+randomUUID();
+      const operation=randomUUID(),receipt="read:"+"a".repeat(32)+"_"+"b".repeat(64)+":ref:durable",ciphertext="opaque-test-ciphertext";
       const checkpoint=(token:string,seq:number,op:string,action:string,tool:string|null,ref:string|null)=>[...scope,run.id,token,seq,op,action,tool,ref];
-      expect(await call(a,"supervisor_checkpoint_owner_run_v2",checkpoint(oldToken,0,operation,"begin_read","get_sales",null)))
+      expect(await call(a,"supervisor_checkpoint_owner_run_v2",checkpoint(oldToken,0,operation,"begin_read","query_data",null)))
         .toMatchObject({checkpoint_seq:1,checkpoint_phase:"read_pending",checkpoint_operation:operation});
-      expect(await call(a,"supervisor_checkpoint_owner_run_v2",checkpoint(oldToken,1,operation,"complete",null,receipt)))
-        .toMatchObject({checkpoint_seq:2,checkpoint_phase:"ready",checkpoint_receipts:[{operation,phase:"read_pending",tool:"get_sales",receipt}]});
+      expect(await call(a,"supervisor_store_research_read_v3",[...scope,run.id,oldToken,1,operation,receipt,ciphertext]))
+        .toMatchObject({checkpoint_seq:2,checkpoint_phase:"ready",checkpoint_receipts:[{operation,phase:"read_pending",tool:"query_data",receipt}]});
+      expect(await call(a,"supervisor_load_research_reads_v3",[...scope,run.id,oldToken,0])).toEqual([{operation,checkpoint_seq:2,ciphertext}]);
+      await expect(call(denied,"supervisor_load_research_reads_v3",[...scope,run.id,oldToken,0])).rejects.toThrow();
+      await expect(a.query("select ciphertext from u3_research_private.owner_research_receipts")).rejects.toThrow();
       // A second provider operation is pending when the actual worker dies.
       const providerOp=randomUUID();
       await call(a,"supervisor_checkpoint_owner_run_v2",checkpoint(oldToken,2,providerOp,"begin_provider",null,null));
@@ -436,6 +439,10 @@ describe("Task 6/15C v2 durable owner admission and checkpoint fencing",()=>{
       const token=resumed.step.claim_token;
       expect(token).not.toBe(oldToken);
       expect((await call(b,"supervisor_start_owner_job_v2",[...scope,run.id,token])).id).toBe(job.id);
+      expect(await call(b,"supervisor_load_research_reads_v3",[...scope,run.id,token,0])).toEqual([{operation,checkpoint_seq:2,ciphertext}]);
+      expect(await call(b,"supervisor_load_research_reads_v3",[...scope,run.id,token,2])).toEqual([]);
+      await expect(call(a,"supervisor_load_research_reads_v3",[...scope,run.id,oldToken,0])).rejects.toThrow("research_checkpoint_scope_denied");
+      await expect(call(b,"supervisor_load_research_reads_v3",[randomUUID(),ownerId,threadId,run.id,token,0])).rejects.toThrow("research_checkpoint_scope_denied");
       expect(await call(a,"supervisor_update_owner_job_v2",[...scope,run.id,oldToken,job.id,"heartbeat",null,null,null])).toBe(false);
       await expect(call(a,"supervisor_checkpoint_owner_run_v2",checkpoint(oldToken,3,providerOp,"complete",null,"provider:"+randomUUID()))).rejects.toThrow("checkpoint_claim_conflict");
       await expect(call(b,"supervisor_checkpoint_owner_run_v2",[randomUUID(),...checkpoint(token,3,providerOp,"complete",null,"provider:"+randomUUID()).slice(1)])).rejects.toThrow("checkpoint_run_unavailable");
@@ -454,6 +461,7 @@ describe("Task 6/15C v2 durable owner admission and checkpoint fencing",()=>{
       await expect(call(a,"supervisor_checkpoint_owner_run_v2",checkpoint(token,5,effect,"complete",null,"effect:"+randomUUID()))).rejects.toThrow("checkpoint_run_unavailable");
       const saved=await admin.query("select r.status,s.checkpoint_seq,s.checkpoint_phase,s.checkpoint_receipts from public.supervisor_runs r join public.supervisor_run_steps s on s.run_id=r.id and s.business_id=r.business_id where r.id=$1 and s.step_key='owner_turn'",[run.id]);
       expect(saved.rows).toMatchObject([{status:"blocked",checkpoint_seq:"5",checkpoint_phase:"effect_pending",checkpoint_receipts:[{operation,receipt},{operation:providerOp}]}]);
+      expect((await admin.query("select count(*)::int as n from u3_research_private.owner_research_receipts j join public.supervisor_run_steps s on s.id=j.step_id where s.run_id=$1",[run.id])).rows[0].n).toBe(0);
       await admin.query("update storage.objects set metadata=jsonb_build_object('size',42,'eTag','replaced') where id=$1",[objectId]);
       await expect(call(a,"supervisor_admit_owner_run_v2",admit)).rejects.toThrow("owner_run_input_conflict");
       // Synthetic metadata only: preserve the Storage API deletion guard.
@@ -487,10 +495,14 @@ describe("Task 6/15C exact matched owner clarification and final reply",()=>{
    const first=await call(a,"supervisor_run_claim",[...scope,run.id,randomUUID(),30]);
    const token=first.step.claim_token;
    const job=await call(a,"supervisor_start_owner_job_v2",[...scope,run.id,token]);
+   const retainedOp=randomUUID(),retainedRef="read:"+"c".repeat(32)+"_"+"d".repeat(64)+":ref:durable";
+   await call(a,"supervisor_checkpoint_owner_run_v2",[...scope,run.id,token,0,retainedOp,"begin_read","query_data",null]);
+   await call(a,"supervisor_store_research_read_v3",[...scope,run.id,token,1,retainedOp,retainedRef,"opaque-owner-wait"]);
    const questionId=randomUUID();
    const grounding={status:"requires_owner_input",ownerMessageId:messageId,durableRunId:run.id,durableQuestionId:questionId};
    const question=await call(a,"supervisor_publish_owner_question_v2",[...scope,run.id,token,job.id,questionId,JSON.stringify([{type:"clarify",question:"Which date?",options:[{label:"Today",value:"today"}],allowOther:true}]),JSON.stringify(grounding)]);
    expect(question.id).toBe(questionId);
+   expect((await admin.query("select ciphertext from u3_research_private.owner_research_receipts j join public.supervisor_run_steps s on s.id=j.step_id where s.run_id=$1",[run.id])).rows).toEqual([{ciphertext:"opaque-owner-wait"}]);
    expect((await call(a,"supervisor_run_claim",[...scope,run.id,randomUUID(),30])).kind).toBe("blocked");
    const answerId=randomUUID();await insert(answerId,"Today");
    await expect(call(a,"supervisor_answer_owner_run_v2",[...scope,randomUUID(),answerId])).rejects.toThrow();
