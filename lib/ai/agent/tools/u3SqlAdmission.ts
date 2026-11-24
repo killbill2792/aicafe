@@ -220,8 +220,9 @@ export async function admitU3Sql(sql:string,allowedRelations:readonly string[],
    if((kind==="colnames"||kind==="aliascolnames")&&
       Array.isArray(raw)&&raw.length>0)throw Error("invalid_query");
    // Reject recursive CTEs regardless of parser nesting or SelectStmt wrapper.
-   if(kind==="WithClause"&&raw&&typeof raw==="object"&&
-      (raw as {recursive?:unknown}).recursive===true)throw new U3AdmissionError("unsupported_recursive_query");
+   if((kind==="WithClause"||kind==="withClause")&&raw&&typeof raw==="object"&&
+      ((raw as {recursive?:unknown}).recursive===true||
+       (raw as {WithClause?:{recursive?:unknown}}).WithClause?.recursive===true))throw new U3AdmissionError("unsupported_recursive_query");
    if(kind==="A_Expr"&&raw&&typeof raw==="object"){
     const e=raw as {name?:unknown;lexpr?:unknown;rexpr?:unknown};
     if(["#>>","->>"].includes(name(e.name)??"")&&
