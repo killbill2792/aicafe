@@ -315,10 +315,16 @@ const baseToolDefinitions = (Object.keys(schemas) as AgentToolName[]).map(name =
     strict: true as const, parameters:{...requireEveryProperty(parameters) as typeof parameters,required} };
 });
 /** Function names stay plain strings: memory and capability gating add or filter by name. */
-// Routine management is a verified-owner-only additional function, rather
-// than a global public tool. Keep the existing baseline tool contract stable.
+// Retired model-facing reports retain internal shared readers and legacy
+// receipt compatibility. Their evidence is available via common research:
+// profit/break_even use the optional official shared definition; opening_hours
+// and employee_sales_rollup are normal discoverable SQL sources.
+export const retiredResearchTools:ReadonlySet<AgentToolName>=new Set([
+  "get_profit","get_break_even","get_business_hours","get_employee_sales"
+]);
+// Routine management remains a verified-owner-only additional function.
 export const agentToolDefinitions:Array<Omit<(typeof baseToolDefinitions)[number],"name">&{name:string}>=
-  baseToolDefinitions.filter(tool=>tool.name!=="get_investigation_source"&&tool.name!=="manage_routine"&&tool.name!=="get_break_even"&&tool.name!=="get_profit"&&!["search_gmail","list_gmail_labels","read_gmail","read_gmail_thread","read_gmail_attachment","propose_gmail_action"].includes(tool.name));
+  baseToolDefinitions.filter(tool=>tool.name!=="get_investigation_source"&&tool.name!=="manage_routine"&&!retiredResearchTools.has(tool.name)&&!["search_gmail","list_gmail_labels","read_gmail","read_gmail_thread","read_gmail_attachment","propose_gmail_action"].includes(tool.name));
 /** Offered only for a verified connected owner. Default cafés keep their existing tools. */
 /** Offered only when a server-claimed autonomous run explicitly requests it. */
 export const investigationToolDefinition=baseToolDefinitions.find(t=>t.name==="get_investigation_source")!;

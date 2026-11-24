@@ -523,6 +523,36 @@ describe.skipIf(!active)("U3 migrated registered tool + private connection",()=>
    await admin.query("DELETE FROM public.toast_raw_changes WHERE entity_guid IN ($1,$2,$3)",[old,recent,foreign]);
   }
  });
+ it("answers configured hours and employee-attributed sales through ordinary SQL after model-facing report retirement",async()=>{
+  if(!admin)throw Error("admin_missing");
+  const locationA=randomUUID(),locationB=randomUUID(),employeeA=randomUUID(),employeeB=randomUUID();
+  try{
+   await admin.query("INSERT INTO public.locations(id,business_id,name,timezone,open_hours) VALUES ($1,$2,'Research location A','UTC',$5::jsonb),($3,$4,'Research location B','UTC',$6::jsonb)",[locationA,ids.a,locationB,ids.b,JSON.stringify({mon:[["07:00","16:00"]],tue:[]}),JSON.stringify({mon:[["09:00","22:00"]]})]);
+   await admin.query("INSERT INTO public.employees(id,business_id,display_name) VALUES ($1,$2,'Research employee A'),($3,$4,'Research employee B')",[employeeA,ids.a,employeeB,ids.b]);
+   await admin.query("INSERT INTO public.employee_sales_rollup(business_id,business_date,employee_id,net_sales_cents,orders_count) VALUES ($1,'2026-11-01',$3,3500,3),($1,'2026-11-02',$3,700,1),($2,'2026-11-01',$4,9900,9)",[ids.a,ids.b,employeeA,employeeB]);
+   const hours=await dataQueryTools.query_data.execute({...input("SELECT location_id,weekday,hours_status,open_time,close_time FROM opening_hours ORDER BY weekday"),limit:null},scoped);
+   expect(hours.error).toBeUndefined();
+   const rows=hours.rows as Array<Record<string,unknown>>;
+   expect(rows).toHaveLength(7);
+   expect(rows.find(r=>r.weekday==="mon")).toMatchObject({location_id:locationA,hours_status:"open",open_time:"07:00",close_time:"16:00"});
+   expect(rows.find(r=>r.weekday==="tue")).toMatchObject({hours_status:"closed",open_time:null});
+   expect(rows.find(r=>r.weekday==="wed")).toMatchObject({hours_status:"unknown",open_time:null});
+   expect(checkNumbers("On Monday the café opens at 7:00 AM and closes at 4:00 PM.","",[hours as unknown as AgentToolResult],"en")).toEqual([]);
+   expect(checkNumbers("On Monday the café opens at 9:00 AM.","",[hours as unknown as AgentToolResult],"en").length).toBeGreaterThan(0);
+   const fabricated=await dataQueryTools.query_data.execute(input("SELECT location_id,weekday,hours_status,'09:00'::text AS open_time FROM opening_hours WHERE weekday='mon'"),scoped);
+   expect(checkNumbers("On Monday the café opens at 9:00 AM.","",[fabricated as unknown as AgentToolResult],"en").length).toBeGreaterThan(0);
+   const sales=await dataQueryTools.query_data.execute(input("SELECT e.display_name,SUM(s.net_sales_cents) AS attributed_cents,SUM(s.orders_count) AS attributed_orders FROM employee_sales_rollup s JOIN employees e ON e.id=s.employee_id WHERE s.business_date BETWEEN '2026-11-01' AND '2026-11-02' GROUP BY e.display_name"),scoped);
+   expect(sales.error).toBeUndefined();
+   expect(sales.rows).toEqual([{display_name:"Research employee A",attributed_cents:"4200",attributed_orders:"4"}]);
+   const actual=await admin.query("SELECT e.display_name,SUM(s.net_sales_cents)::text AS attributed_cents,SUM(s.orders_count)::text AS attributed_orders FROM public.employee_sales_rollup s JOIN public.employees e ON e.id=s.employee_id WHERE s.business_id=$1 GROUP BY e.display_name",[ids.a]);
+   expect(sales.rows).toEqual(actual.rows);
+   expect(checkNumbers("Recorded employee-attributed sales were $42.00.","",[sales as unknown as AgentToolResult],"en")).toEqual([]);
+  }finally{
+   await admin.query("DELETE FROM public.employee_sales_rollup WHERE employee_id IN ($1,$2)",[employeeA,employeeB]);
+   await admin.query("DELETE FROM public.employees WHERE id IN ($1,$2)",[employeeA,employeeB]);
+   await admin.query("DELETE FROM public.locations WHERE id IN ($1,$2)",[locationA,locationB]);
+  }
+ });
  it("rechecks actual original-owner authorization after revocation",async()=>{
   if(!admin)throw Error("admin_missing");
   await admin.query("DELETE FROM public.memberships WHERE business_id=$1 AND user_id=$2",

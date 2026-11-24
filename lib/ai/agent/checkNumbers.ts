@@ -1003,6 +1003,23 @@ function claimedClockDate(text:string,clock:ClockSpan,clocks:ClockSpan[]):string
 function observedHours(results:readonly AgentToolResult[]):VerifiedTime[] {
   const known:VerifiedTime[]=[];
   for(const r of results){
+    if(r.source==="u3_canonical_research"){
+      // Direct same-binding provenance only. A fabricated alias, literal or
+      // unrelated join cannot turn a clock into a configured opening time.
+      const rows=directU3Rows(r,"opening_hours");
+      const locations=new Set(rows.map(row=>row.location_id));
+      if(locations.size!==1||typeof rows[0]?.location_id!=="string")continue;
+      for(const row of rows){
+        const day=DAY_MENTIONS.find(d=>d.key===row.weekday)?.key;
+        if(!day||row.hours_status!=="open")continue;
+        for(const [field,role] of [["open_time","open"],["close_time","close"]] as const){
+          const time=row[field];
+          if(typeof time==="string"&&/^(?:[01]\d|2[0-3]):[0-5]\d$/u.test(time))
+            known.push({day,time,role,complete:false,person:null});
+        }
+      }
+      continue;
+    }
     if(!/hours/.test(r.source))continue;
     const raw=r.hours??r.weekly;
     if(!raw||typeof raw!=="object"||Array.isArray(raw))continue;
