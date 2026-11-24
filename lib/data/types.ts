@@ -24,7 +24,10 @@ export type RunningCostLine = {
   label: string;
   amountCents: number;
   /** Actual expenses already recorded this month must not be prorated as recurring bills. */
-  amountSource?: "recorded_expense" | "recurring" | "missing";
+  amountSource?: "recorded_expense" | "recurring" | "mixed" | "missing";
+  /** Separate observed receipts from uncovered configured monthly commitments. */
+  recordedExpenseCents?:number;
+  recurringEstimateCents?:number;
   isEstimate: boolean;
   isMissing: boolean;
   /** Of the actual month-to-date expenses, the amount specifically spent today. */

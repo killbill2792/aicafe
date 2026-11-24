@@ -1,12 +1,10 @@
 import "server-only";
 import {readDailyFactRows} from "./dailyFacts.server";
 import { formatInTimeZone, fromZonedTime } from "date-fns-tz";
-import { buildDayWindows, evaluateRecipeCost, resolveProductCost, type ExpenseCategoryCode } from "@/lib/calc";
-import { RUNNING_COST_CODES, RUNNING_COST_LABELS, rowToDailyFacts } from "./runningCostCatalog";
+import { buildDayWindows, evaluateRecipeCost, resolveProductCost } from "@/lib/calc";
+import { runningCostLinesForMonth, rowToDailyFacts } from "./runningCostCatalog";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { BusinessSnapshot, MenuItemSnapshot, RunningCostLine, StaffShift } from "./types";
-import { isExpectedCostCategory } from "@/lib/expenses/expectedCosts";
-import {recurringCostMonthlyEquivalentCents} from "@/lib/expenses/recurringMonthlyTotal";
 import { normalizeOpenHours } from "@/lib/business/openHours";
 import { readPeriodItemSales } from "./periodItemSales.server";
 import {readMenuComboCostComponents} from "./comboCosts.server";
@@ -84,7 +82,7 @@ export async function getBusinessSnapshotFromDb(
         row=>row.id)),
       timeReader("Snapshot","expenses",()=>snapshotPaged("expenses",
         (start,end)=>supabase.from("expenses")
-         .select("id,category_code,amount_cents,status,spent_on",{count:"exact"})
+         .select("id,category_code,amount_cents,status,spent_on,recurring_cost_id",{count:"exact"})
          .eq("business_id",businessId).gte("spent_on",monthStart).lte("spent_on",todayDateStr)
          .order("id",{ascending:true}).range(start,end),
         row=>row.id)),
@@ -121,51 +119,10 @@ export async function getBusinessSnapshotFromDb(
   if (recoveryOrderResult.error) throw recoveryOrderResult.error;
 
   const recoveryOrder = (recoveryOrderResult.data ?? []).map((r) => r.bucket_code);
-  const orderedCodes = recoveryOrder.length > 0 ? recoveryOrder : RUNNING_COST_CODES;
-
-  const runningCostLines: RunningCostLine[] = orderedCodes
-    .filter((code): code is ExpenseCategoryCode => RUNNING_COST_CODES.includes(code as ExpenseCategoryCode))
-    .map((code) => {
-      // A category (most often "other") can have more than one active recurring-cost row — e.g.
-      // several distinct labeled bills that don't fit a fixed category — so every active row
-      // must be summed, not just the first one found.
-      const activeRecurring = (recurringResult.data ?? []).filter(
-        (r) => r.category_code === code && r.active_from <= todayDateStr && (!r.active_to || r.active_to >= todayDateStr),
-      );
-      const expensesThisMonth = (expensesResult.data ?? []).filter((e) => e.category_code === code);
-      const isExpected = isExpectedCostCategory(code, {
-        hasActiveRecurring: activeRecurring.length > 0,
-        hadActualPreviousMonth: (priorExpenseResult.data ?? []).some((expense) => expense.category_code === code),
-      });
-
-      if (expensesThisMonth.length > 0) {
-        return {
-          categoryCode: code,
-          label: RUNNING_COST_LABELS[code] ?? code,
-          amountCents: expensesThisMonth.reduce((sum, e) => sum + e.amount_cents, 0),
-          amountSource: "recorded_expense" as const,
-          actualTodayCents:expensesThisMonth.filter(e=>e.spent_on===todayDateStr&&e.status==="actual")
-            .reduce((sum,e)=>sum+e.amount_cents,0),
-          isEstimate: expensesThisMonth.some((e) => e.status === "estimated"),
-          isMissing: false,
-          isExpected: true,
-        };
-      }
-      if (activeRecurring.length > 0) {
-        return {
-          categoryCode: code,
-          label: RUNNING_COST_LABELS[code] ?? code,
-          amountCents: activeRecurring.reduce((sum,r)=>sum+recurringCostMonthlyEquivalentCents({
-             amountCents:Number(r.amount_cents),
-             frequency:r.frequency as "monthly"|"weekly"|"quarterly"|"yearly"}),0),
-          amountSource: "recurring" as const,
-          isEstimate: activeRecurring.some((r) => r.is_estimate),
-          isMissing: false,
-          isExpected: true,
-        };
-      }
-      return { categoryCode: code, label: RUNNING_COST_LABELS[code] ?? code, amountCents: 0, isEstimate: false, isMissing: isExpected, isExpected };
-    });
+  const runningCostLines=runningCostLinesForMonth({expenses:expensesResult.data,recurring:recurringResult.data,
+    priorExpenses:priorExpenseResult.data,from:monthStart,to:todayDateStr,today:todayDateStr,
+    historical:false,order:recoveryOrder});
+  const orderedCodes=runningCostLines.map(line=>line.categoryCode);
 
   // Requested period, not last28Days, remains the item-cost evidence boundary.
   if(alertsRead.error)throw alertsRead.error;
@@ -428,7 +385,7 @@ async function readHistoricalBusinessSnapshot(
       .eq("business_id",businessId).lte("active_from",period.to)
       .order("id",{ascending:true}).range(start,end),row=>row.id),
     snapshotPaged("historical_expenses",(start,end)=>supabase.from("expenses")
-      .select("id,category_code,amount_cents,status,spent_on",{count:"exact"})
+      .select("id,category_code,amount_cents,status,spent_on,recurring_cost_id",{count:"exact"})
       .eq("business_id",businessId).gte("spent_on",first).lte("spent_on",monthEnd)
       .order("id",{ascending:true}).range(start,end),row=>row.id),
     supabase.from("locations").select("open_hours")
@@ -456,39 +413,22 @@ async function readHistoricalBusinessSnapshot(
   const monthlyAmounts:import("@/lib/calc").CategoryMonthlyAmount[]=[];
   const missingExpenseCategories:string[]=[];
   const estimatedExpenseCategories:string[]=[];
-  const relevantCodes=RUNNING_COST_CODES;
+  const linesByMonth=new Map<string,RunningCostLine[]>();
   for(const key of months){
-    const finalDay=key+"-"+String(new Date(Number(key.slice(0,4)),Number(key.slice(5,7)),0)
-      .getDate()).padStart(2,"0");
-    for(const categoryCode of relevantCodes){
-      const actual=allExpenses.filter(r=>r.category_code===categoryCode&&
-        r.spent_on>=key+"-01"&&r.spent_on<=finalDay);
-      const configured=allRecurring.filter(r=>r.category_code===categoryCode&&
-        r.active_from<=finalDay&&(!r.active_to||r.active_to>=key+"-01"));
-      const rows=actual.length?actual:configured;
-      const amountCents=actual.length?
-         actual.reduce((sum,r)=>sum+Number(r.amount_cents),0):
-         configured.reduce((sum,r)=>sum+recurringCostMonthlyEquivalentCents({
-           amountCents:Number(r.amount_cents),
-           frequency:r.frequency as "monthly"|"weekly"|"quarterly"|"yearly"}),0);
-      const isEstimate=actual.length?actual.some(r=>r.status==="estimated"):
-        configured.some(r=>r.is_estimate);
-      const isMissing=rows.length===0;
+    const finalDay=key+"-"+String(new Date(Number(key.slice(0,4)),Number(key.slice(5,7)),0).getDate()).padStart(2,"0");
+    const lines=runningCostLinesForMonth({expenses:allExpenses,recurring:allRecurring,from:key+"-01",
+      to:finalDay,today,historical:key<today.slice(0,7),
+      priorExpenses:allExpenses.filter(e=>e.spent_on<key+"-01")});
+    linesByMonth.set(key,lines);
+    for(const line of lines){
+      const {categoryCode,amountCents,isEstimate,isMissing}=line;
       monthlyAmounts.push({monthKey:key,categoryCode,amountCents,isEstimate,isMissing});
       if(isEstimate)estimatedExpenseCategories.push("expense:"+categoryCode+":"+key);
-      if(isMissing&&(allRecurring.some(r=>r.category_code===categoryCode)||
-        allExpenses.some(r=>r.category_code===categoryCode)))
-        missingExpenseCategories.push("expense:"+categoryCode+":"+key);
+      if(isMissing)missingExpenseCategories.push("expense:"+categoryCode+":"+key);
     }
   }
   const monthKey=last;
-  const lastAmounts=monthlyAmounts.filter(r=>r.monthKey===monthKey);
-  const runningCostLines:RunningCostLine[]=lastAmounts.map(line=>({
-    categoryCode:line.categoryCode as ExpenseCategoryCode,
-    label:RUNNING_COST_LABELS[line.categoryCode as ExpenseCategoryCode]??line.categoryCode,
-    amountCents:line.amountCents,isEstimate:line.isEstimate,
-    isMissing:line.isMissing,isExpected:missingExpenseCategories.some(x=>x.startsWith("expense:"+line.categoryCode+":")),
-  }));
+  const runningCostLines=linesByMonth.get(monthKey)??[];
   const ownerFeePlans=await getOwnerConfirmedProcessingFeePlans(supabase,businessId);
   return {
     business:{id:business.id,name:business.name,timezone:business.timezone,
@@ -513,7 +453,7 @@ async function readHistoricalBusinessSnapshot(
     todayHasData:recorded.some(d=>d.date===today&&d.salesDataStatus!=="missing"),
     previousMonthDays:sales.filter(d=>d.date.slice(0,7)!==monthKey),
     previousMonthRecordedDays:recorded.filter(d=>d.date.slice(0,7)!==monthKey),
-    runningCostLines,recoveryOrder:RUNNING_COST_CODES,
+    runningCostLines,recoveryOrder:runningCostLines.map(line=>line.categoryCode),
     menuItems:[],allCostProducts:[],periodItemSales:itemSales,breakEvenProductCosts:[],
     alerts:{count:0,leakingCents:0},staffShiftsToday:[],staffNowIso:new Date().toISOString(),
     historicalPeriod:{days:sales,recorded,monthlyAmounts,

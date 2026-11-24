@@ -37,7 +37,7 @@ function readOnlyClient(expenseCount=0){
     recurring_costs:[{id:"rent-bill",frequency:"monthly",category_code:"rent",amount_cents:300000,is_estimate:false,
       active_from:"2026-01-01",active_to:null}],
     expenses:Array.from({length:expenseCount},(_,i)=>({id:"expense-"+i,category_code:"rent",
-      amount_cents:100,status:"actual",spent_on:"2026-09-30"})),
+      amount_cents:100,status:"actual",spent_on:"2026-09-30",recurring_cost_id:"rent-bill"})),
   };
   const client={
     from(table:string){
