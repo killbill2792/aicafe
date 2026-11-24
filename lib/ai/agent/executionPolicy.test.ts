@@ -53,8 +53,7 @@ it("separates discovered schema replay from business evidence",()=>{
  expect(JSON.stringify(m)).not.toContain("private");
 });
 
-import {describe as contextDescribe} from "vitest";
-contextDescribe("research transport capacity",()=>{
+describe("research transport capacity",()=>{
  it("adapts pages to the measured request instead of a fixed row or byte cap",()=>{
   expect(researchPageBudget(10000)).toBeGreaterThan(24576);
   expect(researchPageBudget(100000)).toBeLessThan(researchPageBudget(10000));

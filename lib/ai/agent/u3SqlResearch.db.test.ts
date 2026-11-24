@@ -321,6 +321,31 @@ describe.skipIf(!active)("U3 migrated registered tool + private connection",()=>
    expect(compact.rows).toHaveLength(138);
    expect(compact.truncated).toBe(false);
    expect(compact).toMatchObject({page_complete:true,next_cursor:null});
+   // A wide result must fit when measured context allows it, regardless of
+   // the former 24 KiB ceiling. Smaller request capacity uses the same cursor.
+   const wideSql="SELECT id,$1::text AS note FROM u3_research.orders ORDER BY id";
+   const wideInput={...input(wideSql),parameters:["x".repeat(300)],limit:null};
+   const wide=await dataQueryTools.query_data.execute(wideInput,scoped);
+   expect(wide.error).toBeUndefined();
+   expect(wide.rows).toHaveLength(138);
+   expect(Buffer.byteLength(JSON.stringify(wide.rows),"utf8")).toBeGreaterThan(24576);
+   expect(wide).toMatchObject({page_complete:true});
+   const narrow=await dataQueryTools.query_data.execute(wideInput,{...scoped,resultBudgetBytes:3000});
+   expect(narrow.error).toBeUndefined();
+   expect(narrow.rows.length).toBeGreaterThan(0);
+   expect(narrow.rows.length).toBeLessThan(138);
+   expect(narrow).toMatchObject({page_complete:false,total_rows:138});
+   const remainder=await dataQueryTools.query_data.execute({...wideInput,cursor:(narrow as {next_cursor:string}).next_cursor},scoped);
+   expect(remainder.error).toBeUndefined();
+   expect([...narrow.rows,...remainder.rows]).toEqual(wide.rows);
+   expect(remainder).toMatchObject({page_complete:true});
+   const noCapacity=await dataQueryTools.query_data.execute(wideInput,{...scoped,resultBudgetBytes:0});
+   expect(noCapacity).toMatchObject({error:"research_context_exhausted",rows:[]});
+   const longBind=await dataQueryTools.query_data.execute({...input("SELECT $1::text AS note FROM u3_research.orders LIMIT 1"),parameters:["y".repeat(800)]},scoped);
+   expect(longBind.rows).toEqual([{note:"y".repeat(800)}]);
+   const manyBind=await dataQueryTools.query_data.execute({...input("SELECT COUNT(*) AS n FROM u3_research.orders WHERE net_sales_cents IN ("+Array.from({length:64},(_,i)=>"$"+(i+1)).join(",")+")"),parameters:Array.from({length:64},(_,i)=>101+i)},scoped);
+   expect(manyBind.error).toBeUndefined();
+   expect(Number((manyBind.rows[0] as Record<string,unknown>).n)).toBe(64);
    const explicit=await dataQueryTools.query_data.execute({
     ...input("SELECT net_sales_cents FROM u3_research.orders ORDER BY net_sales_cents"),limit:200
    },scoped);

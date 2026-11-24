@@ -453,7 +453,7 @@ export async function runAgentTurn(args: {
   });
   toolContext.researchPageBytes=()=>{
     const params=request(false,outputLimit(false));
-    return approvedLocalTask14b?researchPageBudget(Buffer.byteLength(JSON.stringify(params),"utf8"),TASK14B_MAX_REQUEST_BYTES):researchPageBudget(providerTextAccounting(params).bytes);
+    return legacyPaid?researchPageBudget(Buffer.byteLength(JSON.stringify(params),"utf8"),TASK14B_MAX_REQUEST_BYTES):researchPageBudget(providerTextAccounting(params).bytes);
   };
   const providerFailureCodes:ProviderFailureCode[]=[];
   const recordReportedUsage=(event:Event)=>{
