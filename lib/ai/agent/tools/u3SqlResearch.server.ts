@@ -280,12 +280,13 @@ export function safeU3SqlErrorCode(e:unknown){
  * the RLS-protected admitted logical research sources. No raw SQL text, model
  * arguments, DB errors or owner IDs are ever returned as tool evidence. */
 export async function runU3Sql(ctx:U3SqlContext,raw:unknown){
+ const startedAt=Date.now();
  let stage:"scope"|"catalog"|"admission"|"query"|"result"="scope";
  const parsed=u3SqlSchema.safeParse(raw);
  if(!parsed.success)return {source:"u3_canonical_research",period:null,
   missing:["invalid_query"],rows:[],truncated:false};
  try{
-  return await withinScope(ctx,async client=>{
+  const committedPage=await withinScope(ctx,async client=>{
    stage="catalog";
    const list=await sources(client);
    if(!list.length)throw Error("research_not_configured");
@@ -388,6 +389,15 @@ export async function runU3Sql(ctx:U3SqlContext,raw:unknown){
      authority:"approved_logical_source",scope:"verified_owner_cafe_lease"}
    };
   },{date_from:parsed.data.date_from,date_to:parsed.data.date_to});
+  // Record only a committed, validated result (never raw café/owner/SQL
+  // values). Correlate the safe returned receipt with execution telemetry.
+  console.info("u3_sql_research_receipt",{
+   receipt_id:committedPage.evidence.receipt_id,
+   duration_ms:Math.max(0,Date.now()-startedAt),
+   relation_count:committedPage.evidence.relation_names.length,
+   page_complete:committedPage.page_complete
+  });
+  return committedPage;
  }catch(e){
   const code=safeU3SqlErrorCode(e);
   // Structured operational telemetry is deliberately limited to finite safe
