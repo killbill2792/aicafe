@@ -11,6 +11,16 @@ export type RecordedExpenses = { totalCents: number };
 export type ItemSalesCoverage = ReturnType<typeof resolveSalesCoverage>;
 export type SoldProduct = { id: string; name: string; category: "drink" | "food"; units: number };
 
+/** A PostgREST result may be silently capped (typically at 1,000 rows).
+ * A subtotal is not a certified total; count and safe integer cents are
+ * independent prerequisites for owner-facing financial facts. */
+function completeRows(rows:unknown[]|null|undefined,count:number|null|undefined){
+ return Array.isArray(rows)&&rows.length<1000&&(count==null||count===rows.length);
+}
+const safeCents=(value:unknown)=>{
+ const n=typeof value==="number"||typeof value==="string"?Number(value):NaN;
+ return Number.isSafeInteger(n)?n:null;
+};
 function known<T>(value: T, estimated = false): KnownSlice<T> {
   return { available: true, value, quality: {
     level: estimated ? "medium" : "high",
@@ -52,28 +62,39 @@ export function supervisorFactReaders(client: SupabaseClient, authorizedBusiness
     },
     async monthlyBills(businessId: string): Promise<KnownSlice<MonthlyBills>> {
       assertScope(businessId);
-      const { data, error } = await client.from("recurring_costs")
-        .select("amount_cents, frequency, is_estimate")
+      const { data, error, count } = await client.from("recurring_costs")
+        .select("amount_cents, frequency, is_estimate", {count:"exact"})
         .eq("business_id", businessId).is("active_to", null);
       if (error) throw error;
+      if (!completeRows(data,count)) return missing("recurringBillsCoverageUnverified");
       if (!data?.length) return missing("recurringBillsNotConfigured");
+      if(data.some(row=>safeCents(row.amount_cents)===null||
+        !["monthly","weekly","quarterly","yearly"].includes(row.frequency)))
+        return missing("recurringBillsAmountsUnverified");
       const costs = data.map((row) => ({
-        amountCents: Number(row.amount_cents),
+        amountCents: safeCents(row.amount_cents)!,
         frequency: row.frequency as "monthly" | "weekly" | "quarterly" | "yearly",
       }));
-      return known({ totalCents: totalMonthlyRecurringCostsCents(costs) },
+      const total=totalMonthlyRecurringCostsCents(costs);
+      if(!Number.isSafeInteger(total))return missing("recurringBillsAmountsUnverified");
+      return known({ totalCents: total },
         data.some((row) => row.is_estimate));
     },
 
     async recordedExpenses(businessId: string, period: CafeStatePeriod): Promise<KnownSlice<RecordedExpenses>> {
       assertScope(businessId);
-      const { data, error } = await client.from("expenses")
-        .select("amount_cents, status").eq("business_id", businessId)
+      const { data, error, count } = await client.from("expenses")
+        .select("amount_cents, status", {count:"exact"}).eq("business_id", businessId)
         .gte("spent_on", period.from).lte("spent_on", period.to);
       if (error) throw error;
+      if(!completeRows(data,count))return missing("recordedExpensesCoverageUnverified");
       const actual = (data ?? []).filter((row) => row.status === "actual");
       if (!actual.length) return missing("noRecordedActualExpenseEntries");
-      return known({ totalCents: actual.reduce((sum, row) => sum + Number(row.amount_cents), 0) });
+      if(actual.some(row=>safeCents(row.amount_cents)===null))
+        return missing("recordedExpensesAmountsUnverified");
+      const total=actual.reduce((sum,row)=>sum+safeCents(row.amount_cents)!,0);
+      return Number.isSafeInteger(total)?known({totalCents:total}):
+        missing("recordedExpensesAmountsUnverified");
     },
 
     /** Order-lines RPC is invoker-security, scoped by business AND its underlying RLS.
@@ -97,7 +118,18 @@ export function supervisorFactReaders(client: SupabaseClient, authorizedBusiness
       ]);
       if (items.error) throw items.error;
       if (quantities.error) throw quantities.error;
+      if(!completeRows(items.data,null)||!Array.isArray(quantities.data)||
+         quantities.data.length>=1000)return missing("productSalesRowsIncomplete");
       const quantityRows = (quantities.data ?? []) as Array<{ menu_item_id: string; total_quantity: number | string }>;
+      const knownIds=new Set((items.data??[]).map(item=>item.id));
+      const seenIds=new Set<string>();
+      for(const row of quantityRows){
+       const units=Number(row.total_quantity);
+       if(typeof row.menu_item_id!=="string"||!knownIds.has(row.menu_item_id)||
+          seenIds.has(row.menu_item_id)||!Number.isSafeInteger(units)||units<0)
+        return missing("productSalesMappingUnverified");
+       seenIds.add(row.menu_item_id);
+      }
       const byId = new Map<string, number>(quantityRows.map((row) =>
         [row.menu_item_id, Number(row.total_quantity)]));
       // Preserve archived products, as historic sales can include inactive menu items.
