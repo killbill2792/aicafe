@@ -145,6 +145,8 @@ export type RestoredResearchRead={
  result:import("@/lib/ai/agent/tools").AgentToolResult;
 };
 export type OwnerRunCheckpoint = {
+  /** Investigation lease checkpoint: existing claim-scoped repair receipt remains available. */
+  investigationResearch?:true;
   assertLive:()=>Promise<void>;
   beginProvider:()=>Promise<void>;
   endProvider:(completed:boolean)=>Promise<void>;

@@ -49,6 +49,10 @@ describe("U3 server-signed research cursor",()=>{
   const investigation={...input,mode:"investigation",sourceType:"alert",sourceId:"a",leaseToken:"old"};
   const restricted=researchNextCursor(investigation,150,key,snapshot);
   expect(()=>researchPageOffset({...investigation,leaseToken:"replacement"},restricted,key)).toThrow("invalid_query");
+  const continued={...investigation,runId:"incident-revision-step"};
+  const cursor2=researchNextCursor(continued,150,key,snapshot);
+  expect(researchPageOffset({...continued,leaseToken:"replacement"},cursor2,key)).toBe(150);
+  expect(()=>researchPageOffset({...continued,runId:"changed-evidence"},cursor2,key)).toThrow("invalid_query");
  });
  it("rejects crafted, tampered, malformed, unsigned and overflowing offsets",()=>{
   const cursor=researchNextCursor(input,7,key,snapshot);

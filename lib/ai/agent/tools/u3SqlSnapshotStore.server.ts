@@ -9,7 +9,7 @@ import type {ResearchSnapshot} from "./u3SqlCursor";
 const CHUNK_BYTES=256*1024;
 const scopeParts=(ctx:U3SqlContext)=>[ctx.businessId,ctx.ownerUserId,ctx.threadId,
  ctx.mode??"owner",ctx.sourceType??null,ctx.sourceId??null,ctx.runId??null,
- ctx.mode==="routine"||ctx.mode==="durable"?null:ctx.leaseToken??null];
+ ctx.mode==="routine"||ctx.mode==="durable"||ctx.mode==="investigation"&&ctx.runId?null:ctx.leaseToken??null];
 function key(){
  const secret=process.env.SUPABASE_SERVICE_ROLE_KEY;
  if(!secret||secret.length<24)throw Error("research_not_configured");

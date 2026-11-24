@@ -172,6 +172,25 @@ describe("Task 15A migrated, agentic investigation SQL integration",()=>{
         [stamp(now,3)]) as Record<string,unknown>;
       expect(investigate.phase).toBe("investigate");
       expect(investigate.step_version).toBe(1);
+      const work=(await admin.query("select u3_research_private.investigation_work_id(i) as id from public.supervisor_investigations i where business_id=$1 and source_id=$2",[cafes[0],alerts[0]])).rows[0].id;
+      const fence=[cafes[0],owners[0],threads[0],"alert",alerts[0],work,investigate.lease_token];
+      await expect(rpc(ownerClient,"supervisor_investigation_research_checkpoint",[...fence,"load"])).rejects.toThrow();
+      expect(await rpc(a,"supervisor_investigation_research_checkpoint",[...fence,"load"])).toEqual([]);
+      expect(await rpc(a,"supervisor_investigation_research_checkpoint",[...fence,"yield"])).toBe(false);
+      const operation=randomUUID();
+      expect(await rpc(a,"supervisor_investigation_research_checkpoint",[...fence,"store",0,operation,hex("c"),"synthetic-encrypted-receipt","query_data"])).toBe(true);
+      expect(await rpc(a,"supervisor_investigation_research_checkpoint",[...fence,"load"])).toEqual([expect.objectContaining({operation,ciphertext:"synthetic-encrypted-receipt"})]);
+      expect(await rpc(a,"supervisor_investigation_research_checkpoint",[...fence.slice(0,5),randomUUID(),investigate.lease_token,"load"])).toBe(false);
+      expect(await rpc(a,"supervisor_investigation_research_checkpoint",[...fence,"yield"])).toBe(true);
+      expect(await rpc(a,"supervisor_investigation_research_checkpoint",[...fence,"load"])).toBe(false);
+      const resumed=await rpc(a,"supervisor_claim_investigation",[stamp(now,3)]) as Record<string,unknown>;
+      expect(resumed.episode_id).toBe(investigate.episode_id);
+      expect(resumed.step_version).toBe(investigate.step_version);
+      expect(resumed.lease_token).not.toBe(investigate.lease_token);
+      const resumedFence=[...fence.slice(0,6),resumed.lease_token];
+      expect(await rpc(a,"supervisor_investigation_research_checkpoint",[...resumedFence,"load"])).toEqual([expect.objectContaining({operation})]);
+      expect(await rpc(a,"supervisor_investigation_research_checkpoint",[...resumedFence,"yield"])).toBe(false);
+      investigate.lease_token=resumed.lease_token;
       expect(await rpc(a,"supervisor_finish_investigation",
         finish(investigate,"investigated",{...checkpoint,missing:["laborDaysIncomplete"]},
           "Sales and staffing were checked. Both have coverage gaps; ask the owner before any change.",

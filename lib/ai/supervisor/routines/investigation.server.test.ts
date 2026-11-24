@@ -68,14 +68,15 @@ function db(claims:Record<string,unknown>[],options?:{
   sourceError?:boolean;sourceStatus?:string;sourceKind?:string;
   alertPayload?:Record<string,unknown>;alertPayloads?:Record<string,unknown>[];
   timecard?:Record<string,unknown>|null;
-  taskStatus?:string;relatedTasks?:Record<string,unknown>[];
+  taskStatus?:string;relatedTasks?:Record<string,unknown>[];yieldResearch?:boolean;
 }){
   const calls:Array<{name:string;args:Record<string,unknown>}>=[];
   const reads:Array<{table:string;column:string;value:unknown}>=[];
   const client={
     rpc:vi.fn(async(name:string,args:Record<string,unknown>)=>{
       calls.push({name,args});
-      return {data:name==="supervisor_claim_investigation"?claims.shift()??null:true,error:null};
+      return {data:name==="supervisor_claim_investigation"?claims.shift()??null:
+        name==="supervisor_investigation_research_checkpoint"?(args.p_action==="load"?[]:args.p_action==="yield"?options?.yieldResearch===true:true):true,error:null};
     }),
     from:(table:string)=>{
       let excluded=new Set<string>();
@@ -262,6 +263,18 @@ describe("Task 15A operational end-to-end orchestration (recorded source/model)"
     expect(mocks.paidGate).not.toHaveBeenCalled();
     expect(mocks.model).not.toHaveBeenCalled();
     expect(mocks.notify).not.toHaveBeenCalled();
+  });
+  it("yields productive unfinished investigation research without publishing a partial report",async()=>{
+    const d=db([{...investigating}],{yieldResearch:true});
+    mocks.model.mockImplementationOnce(async(input)=>{
+      expect(input.checkpoint.investigationResearch).toBe(true);
+      return agentResult({endReason:"budget"});
+    });
+    const status=await processNextInvestigation(d.client,now);
+    expect(status).toMatchObject({processed:1,failed:0,investigated:0});
+    expect(d.calls.find(call=>call.name==="supervisor_investigation_research_checkpoint"&&call.args.p_action==="yield")).toBeDefined();
+    expect(mocks.notify).not.toHaveBeenCalled();
+    expect(d.calls.some(call=>call.name==="supervisor_finish_investigation"||call.name==="supervisor_fail_investigation")).toBe(false);
   });
   it("retains prior findings across a worker restart without paying for unanswered owner work",async()=>{
     const d=db([{...investigating},{...following}]);

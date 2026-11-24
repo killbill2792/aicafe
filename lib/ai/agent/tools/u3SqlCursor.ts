@@ -19,8 +19,9 @@ function fingerprint(input:FingerprintInput):string{
  // Its cursor is bound to the original run/owner/café/thread and exact SQL;
  // withinScope independently validates the CURRENT lease before using it.
  // Routine occurrences have the same original-work identity and independently
- // fenced current lease. Investigation tickets retain individual lease binding.
- const bound=(input.mode==="durable"||input.mode==="routine")&&input.runId?{...input,leaseToken:null}:input;
+ // fenced current lease. Investigations with a server-derived work identity
+ // are bound to the original evidence revision, step and owner reply instead.
+ const bound=(input.mode==="durable"||input.mode==="routine"||input.mode==="investigation")&&input.runId?{...input,leaseToken:null}:input;
  return createHash("sha256").update(JSON.stringify(bound)).digest("hex");
 }
 function mac(body:string,secret:string):Buffer{

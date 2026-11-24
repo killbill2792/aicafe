@@ -443,7 +443,7 @@ export async function runAgentTurn(args: {
     },
   }:args.context;
   const allowedDefinitions=[...agentToolDefinitions.filter(t=>(!args.toolNames||args.toolNames.includes(t.name as AgentToolName))&&
-      (!args.checkpoint||t.name!=="record_maintenance_repair_claim")&&(t.name!=="present_response"||presentationAllowed)),
+      (!args.checkpoint||args.checkpoint.investigationResearch||t.name!=="record_maintenance_repair_claim")&&(t.name!=="present_response"||presentationAllowed)),
       ...(args.toolNames?.includes("get_investigation_source")&&args.context.investigation?[investigationToolDefinition]:[]),
       ...(args.toolNames?[]:args.extraTools??[])];
   const eligibleNames=allowedFunctionNames(allowedDefinitions);
