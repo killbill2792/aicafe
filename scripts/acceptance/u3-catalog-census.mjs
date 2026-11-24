@@ -110,6 +110,11 @@ const manifest=JSON.parse(migration.slice(begin+tag.length,end));
 if(!Array.isArray(manifest)||!manifest.length)
  throw Error("U3 source admission manifest empty");
 const expectedLogical=new Map(manifest.map(source=>[source.table,source.fields]));
+expectedLogical.set("inventory_observations",["source","source_ref","status","business_date","menu_item_ref","ingredient_id","ingredient_name","quantity_unit","quantity","stock_status","reported_stock_status","evidence_state","source_as_of","checked_at","source_status","observed_count"]);
+expectedLogical.set("supplier_quotes",["id","ingredient_id","supplier_name","item_name","price_cents","package_count","package_unit","source_kind","quoted_on","evidence_status","created_at","currency_code","valid_until","available_status","available_checked_at","delivery_on"]);
+expectedLogical.set("goal_metrics",["goal_id","title","status","created_at","monitoring_start_date","days","baseline_from","baseline_to","currency","metric_id","metric_role","metric_key","item_id","item_name","comparator","target_kind","target","checkin_cadence","checkin_audience"]);
+expectedLogical.set("goal_observations",["goal_id","metric_id","metric_key","sample_date","observed_date","observation_kind","value_cents","value_count","coverage_ratio","evidence_source","recorded_at"]);
+expectedLogical.set("goal_checkins",["goal_id","checkin_id","business_date","status","question","audience","answer","note","created_at","resolved_at"]);
 expectedLogical.set("toast_records",[
  "source","source_ref","status","business_date","record_type","record_ref",
  "order_ref","check_ref","counts_in_sales","data"

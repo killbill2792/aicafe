@@ -72,7 +72,7 @@ for(const source of Object.values(toastOfficialFieldCatalog)){
  }
 }
 
-export const ownerOnlyResearchRelations:ReadonlySet<string>=new Set(["employees","timecards","scheduled_shifts","cafe_decisions","employee_pay_period_facts","timecard_breaks","current_owner_facts","staff_availability_rules","staff_availability_exceptions","staff_schedules","pos_scheduled_shifts","staff_scheduling_preferences","staff_qualifications","staff_custom_rules","recorded_timecards"]);
+export const ownerOnlyResearchRelations:ReadonlySet<string>=new Set(["employees","timecards","scheduled_shifts","cafe_decisions","employee_pay_period_facts","timecard_breaks","current_owner_facts","staff_availability_rules","staff_availability_exceptions","staff_schedules","pos_scheduled_shifts","staff_scheduling_preferences","staff_qualifications","staff_custom_rules","recorded_timecards","supplier_quotes","goal_metrics","goal_observations","goal_checkins"]);
 
 export type U3TrustedUnit="cents"|"count"|"percent"|"ratio";
 export type U3RelationUnits=Readonly<Record<string,Readonly<Record<string,U3TrustedUnit|null>>>>;

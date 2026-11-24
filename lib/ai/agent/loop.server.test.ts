@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import { runAgentTurn, type AgentProvider } from "./loop.server";
-import type { AgentToolContext } from "./tools";
+import type { AgentToolContext,AgentToolResult } from "./tools";
+import type {OwnerRunCheckpoint} from "@/lib/ai/supervisor/runs/contracts";
 
 const context: AgentToolContext = {
   locale: "en", asOf: "2026-10-21", timezone: "America/Los_Angeles",
@@ -27,6 +28,25 @@ function fixture(rounds: Array<Array<Record<string, unknown>>>): AgentProvider {
   };
 }
 describe("recorded Responses streaming fixtures", () => {
+  it("continues an authorized durable read without calling its source again",async()=>{
+    const id="11111111-1111-4111-8111-111111111111";
+    const source:AgentToolResult={source:"u3_canonical_research",period:null,missing:[],
+      rows:[{net_sales_cents:"12500"}],evidence:{receipt_id:id,scope:"verified_owner_cafe_lease",column_units:{net_sales_cents:"cents"}}};
+    const begin=vi.fn(async()=>null);
+    const checkpoint:OwnerRunCheckpoint={assertLive:async()=>{},beginProvider:async()=>{},endProvider:async()=>{},
+      beginTool:begin,endTool:async()=>{},resumeContext:async()=>null,canYield:()=>true,yieldForRetry:async()=>true,
+      researchReads:()=>[{ref:id,name:"query_data",arguments:JSON.stringify({sql:"SELECT net_sales_cents FROM orders"}),result:source}]};
+    const calc={purpose:"Recorded sales",screen_number:"none",inputs:[{name:"amount",label:"Recorded sales",tool:"query_data",path:"rows.0.net_sales_cents",receipt_id:id,fact_key:null,owner_value:null,owner_unit:null}],steps:[{id:"total",label:"Total",op:"sum",args:["amount"]}]};
+    const provider:AgentProvider=async function*(params){
+      expect(JSON.stringify(params.input)).toContain(id);
+      if(begin.mock.calls.length===0){yield call("calculate",JSON.stringify(calc),"calculate-retained");yield completed;}
+      else{yield text("Recorded sales were $125.00.");yield completed;}
+    };
+    const turn=await runAgentTurn({ownerText:"Finish the recorded sales calculation",context:{...context},provider,checkpoint});
+    expect(begin).toHaveBeenCalledTimes(1);
+    expect(turn.results.find(r=>r.source==="calculate")).toMatchObject({result:{unit:"cents",valueCents:12500}});
+    expect(turn.text).toContain("$125.00");
+  });
   it("keeps the exact model menu answer when profit read fails",async()=>{
     const failing:AgentToolContext={...context,tools:{...context.tools,
       getProfitability:async()=>{throw new Error("private SQL connection details");}

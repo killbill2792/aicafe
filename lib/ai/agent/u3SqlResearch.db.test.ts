@@ -146,6 +146,40 @@ describe.skipIf(!active)("U3 migrated registered tool + private connection",()=>
    await admin.query("DELETE FROM public.recurring_costs WHERE id=$1",[cost]);
   }
  });
+ it("researches saved supplier quotes, dated stock counts and goal observations through one scoped SQL surface",async()=>{
+  if(!admin)throw Error("admin_missing");
+  const ingredientA=randomUUID(),ingredientB=randomUUID(),quoteA=randomUUID(),quoteB=randomUUID(),goalA=randomUUID(),goalB=randomUUID();
+  const day="2026-11-22";
+  const effect=(title:string)=>({title,days:14,proposedOn:"2026-11-01",baselineFrom:"2026-10-18",baselineTo:"2026-10-31",currency:"USD",
+   metrics:[{id:"primary",role:"primary",metricKey:"net_sales",itemId:null,itemName:null,comparator:"gte",targetKind:"relative_pct",target:10}]});
+  try{
+   await admin.query("INSERT INTO public.ingredients(id,business_id,name,base_unit) VALUES($1,$2,'Local synthetic milk','ml'),($3,$4,'Foreign synthetic milk','ml')",[ingredientA,ids.a,ingredientB,ids.b]);
+   await admin.query("INSERT INTO public.pantry_stock_counts(business_id,ingredient_id,count_date,quantity_base,entered_quantity,entered_unit) VALUES($1,$2,$5,0,0,'ml'),($3,$4,$5,999,999,'ml')",[ids.a,ingredientA,ids.b,ingredientB,day]);
+   await admin.query("INSERT INTO public.ai_supplier_quotes(id,business_id,owner_user_id,client_request_id,supplier_name,item_name,ingredient_id,price_cents,package_count,package_unit,source_kind,quoted_on,currency_code) VALUES($1,$2,$3,gen_random_uuid(),'Local supplier','Milk',$4,450,1,'gal','supplier_quote',$9,'USD'),($5,$6,$7,gen_random_uuid(),'Foreign supplier','Milk',$8,999,1,'gal','supplier_quote',$9,'USD')",[quoteA,ids.a,ids.oa,ingredientA,quoteB,ids.b,ids.ob,ingredientB,day]);
+   for(const [id,business,owner,thread,title,amount] of [[goalA,ids.a,ids.oa,ids.ta,"Local goal",12500],[goalB,ids.b,ids.ob,ids.tb,"Foreign goal",99999]] as const){
+    await admin.query("INSERT INTO public.supervisor_proposals(id,business_id,owner_user_id,thread_id,request_key,capability_id,capability_version,canonical_effect_payload,effect_hash,baseline,monitor_spec,locale) VALUES($1,$2,$3,$4,gen_random_uuid(),'leo.goal.v1',1,$5::jsonb,repeat('a',64),'{}','{}','en')",[id,business,owner,thread,JSON.stringify(effect(title))]);
+    await admin.query("INSERT INTO public.supervisor_monitor_samples(business_id,proposal_id,business_date,observation,evidence_source) VALUES($1,$2,$3,$4::jsonb,'daily_rollups')",[business,id,day,JSON.stringify({values:{primary:{value:amount,coverage:1}},baseline:{primary:[{date:"2026-10-25",value:10000,coverage:1}]}})]);
+   }
+   const stock=await dataQueryTools.query_data.execute(input("SELECT ingredient_name,quantity,quantity_unit,evidence_state FROM inventory_observations WHERE source='app'"),scoped);
+   expect(stock.error).toBeUndefined();
+   expect(stock.rows).toEqual([{ingredient_name:"Local synthetic milk",quantity:"0",quantity_unit:"ml",evidence_state:"dated_owner_count"}]);
+   const quotes=await dataQueryTools.query_data.execute(input("SELECT supplier_name,price_cents,currency_code FROM supplier_quotes"),scoped);
+   expect(quotes.error).toBeUndefined();
+   expect(quotes.rows).toEqual([{supplier_name:"Local supplier",price_cents:450,currency_code:"USD"}]);
+   const goal=await dataQueryTools.query_data.execute(input("SELECT g.title,o.value_cents,o.coverage_ratio FROM goal_metrics g JOIN goal_observations o ON g.goal_id=o.goal_id AND g.metric_id=o.metric_id WHERE o.observation_kind='test'"),scoped);
+   expect(goal.error).toBeUndefined();
+   expect(goal.rows).toEqual([{title:"Local goal",value_cents:"12500",coverage_ratio:"1"}]);
+   for(const relation of ["supplier_quotes","goal_metrics","goal_observations","goal_checkins"]){
+    const denied=await dataQueryTools.query_data.execute(input("SELECT COUNT(*) AS n FROM "+relation),{...scoped,aggregateOnly:true});
+    expect(denied.error).toBe("unattended_aggregate_required");
+   }
+  }finally{
+   await admin.query("DELETE FROM public.supervisor_proposals WHERE id IN ($1,$2)",[goalA,goalB]);
+   await admin.query("DELETE FROM public.ai_supplier_quotes WHERE id IN ($1,$2)",[quoteA,quoteB]);
+   await admin.query("DELETE FROM public.pantry_stock_counts WHERE ingredient_id IN ($1,$2)",[ingredientA,ingredientB]);
+   await admin.query("DELETE FROM public.ingredients WHERE id IN ($1,$2)",[ingredientA,ingredientB]);
+  }
+ });
  it("discovers admitted relational sources through the real scoped SQL catalog",async()=>{
   const context={asOf:"2026-11-24",timezone:"UTC",locale:"en",
    tools:{} as AgentToolContext["tools"],canonicalData:async()=>scoped} satisfies AgentToolContext;
