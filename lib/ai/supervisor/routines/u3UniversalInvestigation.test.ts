@@ -70,6 +70,23 @@ describe("U3 model-led autonomous investigation",()=>{
    toolInvocations:[caseRead,{...analytics,result:{...analytics.result,truncated:true}}]}),
    expected,permitted)).toEqual({ok:false,reason:"evidence_incomplete"});
  });
+ it("allows a claim-verified missing input without inventing a second observation",()=>{
+  const target={...expected,kind:"business_anomaly"};
+  const missing={...caseRead,result:{...caseRead.result,incidentKind:target.kind,
+   selectors:{family:"data_gap",gapReason:"missing_business_input",subject:"ingredient_prices"}}};
+  const report="The ingredient price is missing. Obtain the current supplier price before calculating margin.";
+  expect(verifyUniversalInvestigationTurn(turn({text:report,toolInvocations:[missing],
+    results:[missing.result]}),target,permitted)).toMatchObject({ok:true,tools:["get_investigation_source"]});
+  for(const gapReason of ["coverage_unverified","technical_failure",undefined]){
+   const source={...missing,result:{...missing.result,
+    selectors:{...missing.result.selectors,gapReason}}};
+   expect(verifyUniversalInvestigationTurn(turn({text:report,toolInvocations:[source],
+    results:[source.result]}),target,permitted)).toEqual({ok:false,reason:"evidence_incomplete"});
+  }
+  expect(verifyUniversalInvestigationTurn(turn({text:report,toolInvocations:[missing],
+    results:[missing.result],unverified:[{text:"invented",start:0,end:8,kind:"number"}]}),
+    target,permitted)).toEqual({ok:false,reason:"model_incomplete"});
+ });
  it("does not mistake discovery, failed readers or scenario arithmetic for observed business facts",()=>{
   const metadata={name:"describe_data",result:{source:"u3_semantic_catalog",period:null,
     missing:[],total:32,relations:[{name:"orders",fieldsTotal:12}]}};

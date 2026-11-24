@@ -466,10 +466,15 @@ export function verifyUniversalInvestigationTurn(
  if(!source)return {ok:false,reason:"evidence_incomplete"};
  const observed=calls.filter(c=>c!==source&&c.name!=="get_investigation_source"&&
    hasObservedEvidence(c.result));
- // A known, claim-bound incident plus one or more actual observed facts can
- // support a useful bounded report. Multiple projections of a single source
- // never establish independent corroboration or causation by themselves.
- if(!observed.length)return {ok:false,reason:"evidence_incomplete"};
+ // A confirmed missing business input is itself a claim-bound observation.
+ // The incident reader rechecks eligibility and supplies this marker; an
+ // arbitrary empty SQL result or failed reader cannot establish it. Do not
+ // force unrelated corroboration or a paid retry just to report the gap.
+ const gap=source.result.selectors as {family?:unknown;gapReason?:unknown}|undefined;
+ const verifiedMissingInput=expected.sourceType==="alert"&&expected.kind==="business_anomaly"&&
+  gap?.family==="data_gap"&&gap.gapReason==="missing_business_input";
+ // Multiple projections of one source never establish independent causation.
+ if(!observed.length&&!verifiedMissingInput)return {ok:false,reason:"evidence_incomplete"};
  if(expected.kind==="supplier_receiving"){
   const selectors=source.result.selectors as {entityId?:unknown}|undefined;
   const id=selectors?.entityId;
