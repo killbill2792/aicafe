@@ -49,6 +49,12 @@ test("@home fresh registration owns a private café and never inherits shared de
     // The #560 signup trigger remains installed but inert on a migrated DB.
     const before=await db.query("select business_id from public.memberships where user_id=$1",[userId]);
     expect(before.rows).toEqual([]);
+    // Concurrent first renders use the same service-only transaction. Exercise
+    // the database boundary deterministically before verifying the browser.
+    const params={p_user_id:userId,p_name:"Private signup fixture",p_recovery_order:["rent","utilities_power","water","internet","insurance","loan","software","supplies","repairs","other"]};
+    const concurrent=await Promise.all(Array.from({length:4},()=>admin.rpc("ensure_private_onboarding_cafe",params)));
+    expect(concurrent.every(r=>!r.error&&typeof r.data==="string")).toBe(true);
+    expect(new Set(concurrent.map(r=>r.data)).size).toBe(1);
     const page=await context.newPage();
     await navigateLocal(page,"/en/login");
     await page.locator("#email").fill(email);

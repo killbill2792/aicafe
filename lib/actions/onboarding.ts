@@ -34,34 +34,14 @@ export async function ensureOwnBusiness(): Promise<{ businessId: string } | { er
   if(await isLinkedStaffUser(user.id))
     return {error:"staff_account_restricted"};
 
-  const { data: memberships } = await supabase.from("memberships").select("business_id, businesses(is_demo)").eq("user_id", user.id);
-  const own = (memberships ?? []).find((m) => {
-    const b = m.businesses as unknown as { is_demo: boolean } | { is_demo: boolean }[] | null;
-    const isDemo = Array.isArray(b) ? b[0]?.is_demo : b?.is_demo;
-    return isDemo === false;
-  });
-  if (own) {
-    return { businessId: own.business_id };
-  }
-
-  const admin = createAdminSupabaseClient();
-  // Registration metadata is display input only; the authenticated user determines ownership.
+  // The signed-in owner is verified above; the database serializes first
+  // creation across concurrent page renders and server instances.
   const requestedName = typeof user.user_metadata?.cafe_name === "string" ? user.user_metadata.cafe_name.trim().slice(0, 80) : "";
-  const { data: business, error: businessError } = await admin
-    .from("businesses")
-    .insert({ name: requestedName || "My café", is_demo: false })
-    .select("id")
-    .single();
-  if (businessError || !business) return { error: businessError?.message ?? "Could not create your business." };
-
-  const { error: membershipError } = await admin
-    .from("memberships")
-    .insert({ business_id: business.id, user_id: user.id, role: "owner", can_see_profit: true });
-  if (membershipError) return { error: membershipError.message };
-
-  await admin.from("recovery_order").insert(DEFAULT_RECOVERY_ORDER.map((code, i) => ({ business_id: business.id, bucket_code: code, position: i })));
-
-  return { businessId: business.id };
+  const {data:businessId,error}=await createAdminSupabaseClient().rpc("ensure_private_onboarding_cafe",{
+    p_user_id:user.id,p_name:requestedName||"My café",p_recovery_order:DEFAULT_RECOVERY_ORDER,
+  });
+  if(error||typeof businessId!=="string")return {error:"Could not create your business."};
+  return {businessId};
 }
 
 export async function setPayrollTaxRate(ratePercent: number): Promise<{ ok: boolean; error?: string }> {
