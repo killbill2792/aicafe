@@ -93,11 +93,11 @@ export function rankPriority(source:PrioritySource,now:Date):PriorityDecision{
  * coverage and technical failures are recovery work, not owner requests.
  * Keep the previous stock-count receipt readable until its detector refresh. */
 export function eligibleAlertEvidence(kind:string,evidence:unknown):boolean{
-  if(kind!=="business_anomaly"||!evidence||typeof evidence!=="object"||Array.isArray(evidence))
+  if(!evidence||typeof evidence!=="object"||Array.isArray(evidence))
     return true;
   const fact=evidence as Record<string,unknown>;
   if(fact.quality==="technical_failure"||fact.quality==="not_matured")return false;
-  if(fact.family!=="data_gap")return true;
+  if(kind!=="business_anomaly"||fact.family!=="data_gap")return true;
   return fact.quality==="missing"&&fact.current===1&&fact.unit==="coverage"&&
     (fact.gapReason==="missing_business_input"||
       (fact.gapReason===undefined&&fact.subject==="stock_counts"));

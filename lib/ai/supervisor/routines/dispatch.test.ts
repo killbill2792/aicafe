@@ -20,7 +20,7 @@ import {choosePriorities} from "./priority";
 function db(params?:{routines?:Record<string,unknown>[];owners?:{user_id:string}[];
   threads?:{id:string;owner_user_id:string}[];alerts?:Record<string,unknown>[];
   tasks?:Record<string,unknown>[];proposals?:Record<string,unknown>[];
-  occurrences?:Record<string,unknown>[];newThread?:string;revokedThreadOwner?:string}) {
+  occurrences?:Record<string,unknown>[];investigations?:Record<string,unknown>[];newThread?:string;revokedThreadOwner?:string}) {
   const rows:Record<string,Record<string,unknown>[]>={
     memberships:params?.owners??[{user_id:"owner"}],
     ai_threads:params?.threads??[{id:"thread",owner_user_id:"owner"}],
@@ -29,6 +29,7 @@ function db(params?:{routines?:Record<string,unknown>[];owners?:{user_id:string}
     alerts:params?.alerts??[],
     operating_tasks:params?.tasks??[],
     supervisor_proposals:params?.proposals??[],
+    supervisor_investigations:params?.investigations??[],
   };
   return {rpc:async(name:string,args?:{p_owner_user_id?:string})=>{
     if(name==="supervisor_ensure_proactive_thread")return {data:params?.newThread??null,error:params?.revokedThreadOwner&&args?.p_owner_user_id===params.revokedThreadOwner?{code:"42501"}:null};
@@ -56,7 +57,7 @@ function db(params?:{routines?:Record<string,unknown>[];owners?:{user_id:string}
       },
       in(field:string,values:string[]){
         if((table==="operating_tasks"&&field==="dedupe_key")||
-          (table==="memberships"&&field==="user_id"))
+          (table==="memberships"&&field==="user_id")||(table==="supervisor_investigations"&&field==="source_id"))
           selected=selected.filter(row=>values.includes(String(row[field])));
         return builder;
       },
@@ -65,7 +66,7 @@ function db(params?:{routines?:Record<string,unknown>[];owners?:{user_id:string}
       // scanner. A no-op mock returned commitments and falsely failed CI.
       not(field:string,operator:string,value:string){
         if(table!=="operating_tasks"||field!=="kind"||operator!=="in"||
-          value!=="(priority_notice,commitment,event_plan,event_change,event_report,u4_report,u4_run_failure)")
+          value!=="(priority_notice,commitment,event_plan,event_change,event_report,u4_report,u4_run_failure,daily_brief)")
           throw new Error("Unexpected priority task exclusion");
         const forbidden=new Set(value.slice(1,-1).split(","));
         selected=selected.filter(row=>!forbidden.has(String((row as Record<string,unknown>)[field])));
@@ -447,6 +448,21 @@ describe("bounded independent routine dispatch",()=>{
     ]);
     expect(investigations.map(x=>x.source.sourceId)).toContain("urgent-alert");
     expect(investigations.map(x=>x.source.sourceId)).toContain("watching-task");
+  });
+  it("does not let unchanged high-priority incidents or the first source page starve new or changed work",async()=>{
+    const now=new Date("2026-11-16T14:00:00Z");
+    const scope={businessId:"cafe",ownerUserId:"owner",threadId:"thread",localDate:"2026-11-16"};
+    const alerts=Array.from({length:131},(_,i)=>({id:"incident-"+i,kind:"meal_break",status:"new",
+      created_at:"2026-11-15T00:00:00Z",payload:{severity:"critical",quality:"verified",minutes:31}}));
+    const prior=choosePriorities(alerts.slice(0,130).map(row=>({
+      ...scope,sourceType:"alert" as const,sourceId:row.id,kind:row.kind,status:row.status,
+      createdAt:row.created_at,severity:"critical",dedupeKey:null,evidence:row.payload,
+    })),now,130);
+    const investigations=prior.map(d=>({source_type:"alert",source_id:d.source.sourceId,
+      revision_hash:d.revisionHash,priority:d.priority,phase:"awaiting_owner",last_error:null}));
+    alerts[5].payload.minutes=40;
+    const decisions=await readActionablePriorities(db({alerts,investigations}),scope,now,{includeNotified:true,limit:25});
+    expect(decisions.map(d=>d.source.sourceId).sort()).toEqual(["incident-130","incident-5"]);
   });
   it("does not mix private tasks across owners",async()=>{
     const decisions=await readActionablePriorities(db({tasks:[

@@ -37,22 +37,37 @@ function safeSeverity(payload:unknown):string|null{
   const severity=(payload as Record<string,unknown>).severity;
   return severity==="critical"||severity==="high"?severity:null;
 }
+/** Exhaust the authorized investigation candidate stream in transport-sized
+ * pages. A processing limit is not a source-discovery limit. The stable second
+ * order key prevents ties from silently losing older open incidents. */
+async function incidentCandidatePages(read:(start:number,end:number)=>PromiseLike<{data:unknown;error:unknown}>){
+ const data:DbRow[]=[];
+ for(let start=0;;start+=batchLimit){
+  const page=await read(start,start+batchLimit-1);
+  if(page.error)return {data:[],error:page.error};
+  if(!Array.isArray(page.data))throw Error("investigation_candidates_unavailable");
+  data.push(...page.data as DbRow[]);
+  if(page.data.length<batchLimit)return {data,error:null};
+ }
+}
 /** Read existing authoritative alert/task rows; do NOT use cached café money or
  * infer that a missing/failed provider is a verified zero. */
 export async function readActionablePriorities(db:SupabaseClient,scope:Scope,
   now:Date,options?:{includeNotified?:boolean;limit?:number}):Promise<PriorityDecision[]>{
+  const alertQuery=()=>db.from("alerts").select("id,kind,status,payload,created_at")
+    .eq("business_id",scope.businessId).in("status",["new","seen"])
+    .order("created_at",{ascending:false}).order("id",{ascending:false});
+  const taskQuery=()=>db.from("operating_tasks")
+    .select("id,kind,status,due_at,confidence,evidence,created_at,owner_user_id")
+    .eq("business_id",scope.businessId)
+    .in("status",options?.includeNotified?["needs_owner","needs_response","watching"]:
+      ["needs_owner","needs_response"])
+    .not("kind","in","(priority_notice,commitment,event_plan,event_change,event_report,u4_report,u4_run_failure,daily_brief)")
+    .or("owner_user_id.is.null,owner_user_id.eq."+scope.ownerUserId)
+    .order("created_at",{ascending:false}).order("id",{ascending:false});
   const [alerts,tasks,purchaseDrafts,approvedOrders]=await Promise.all([
-    db.from("alerts").select("id,kind,status,payload,created_at")
-      .eq("business_id",scope.businessId).in("status",["new","seen"])
-      .order("created_at",{ascending:false}).limit(batchLimit),
-    db.from("operating_tasks")
-      .select("id,kind,status,due_at,confidence,evidence,created_at,owner_user_id")
-      .eq("business_id",scope.businessId)
-      .in("status",options?.includeNotified?["needs_owner","needs_response","watching"]:
-        ["needs_owner","needs_response"])
-      .not("kind","in","(priority_notice,commitment,event_plan,event_change,event_report,u4_report,u4_run_failure)")
-      .or("owner_user_id.is.null,owner_user_id.eq."+scope.ownerUserId)
-      .order("created_at",{ascending:false}).limit(batchLimit),
+    options?.includeNotified?incidentCandidatePages((start,end)=>alertQuery().range(start,end)):alertQuery().limit(batchLimit),
+    options?.includeNotified?incidentCandidatePages((start,end)=>taskQuery().range(start,end)):taskQuery().limit(batchLimit),
     // The canonical approved-order proposal is the source; do not infer
     // stockouts, create new purchase drafts, or invent owner authorization.
     // Supplier purchase-order drafts belong to the approval notice lane.
@@ -91,7 +106,7 @@ export async function readActionablePriorities(db:SupabaseClient,scope:Scope,
   for(const raw of (tasks.data??[]) as DbRow[]){
     // Defense in depth if a custom/mock adapter fails to apply the DB filter:
     // never re-notify commitments or a previously generated priority notice.
-    if(["commitment","priority_notice","event_plan","event_change","event_report","u4_report","u4_run_failure"].includes(String(raw.kind)))continue;
+    if(["commitment","priority_notice","event_plan","event_change","event_report","u4_report","u4_run_failure","daily_brief"].includes(String(raw.kind)))continue;
     if(raw.owner_user_id&&raw.owner_user_id!==scope.ownerUserId)continue;
     sources.push({
       businessId:scope.businessId,ownerUserId:scope.ownerUserId,
@@ -153,13 +168,36 @@ export async function readActionablePriorities(db:SupabaseClient,scope:Scope,
   const eligible=options?.includeNotified?
     sources.filter(source=>source.sourceType==="alert"||
       source.sourceType==="operating_task"):sources;
-  const ranked=choosePriorities(eligible,now,batchLimit*2,
+  const ranked=choosePriorities(eligible,now,options?.includeNotified?eligible.length:batchLimit*2,
     {includeWatching:options?.includeNotified===true});
   if(ranked.length===0)return [];
-  // Durable autonomous investigation must examine known unresolved issues even
-  // when an earlier generic notice was already delivered. The notice path
-  // below still excludes that revision and cannot spam duplicate inbox tasks.
-  if(options?.includeNotified)return ranked.slice(0,Math.max(0,Math.min(batchLimit,options.limit??25)));
+  // Repeated unchanged open incidents are already represented by the existing
+  // durable queue. Filter them BEFORE applying the work-admission limit so a
+  // café with many old alerts cannot starve a new incident or relevant change.
+  if(options?.includeNotified){
+    const limit=Math.max(0,Math.min(batchLimit,options.limit??25));
+    const pending:PriorityDecision[]=[];
+    for(let start=0;start<ranked.length&&pending.length<limit;start+=batchLimit){
+      const batch=ranked.slice(start,start+batchLimit);
+      const {data,error}=await db.from("supervisor_investigations")
+        .select("source_type,source_id,revision_hash,priority,phase,last_error")
+        .eq("business_id",scope.businessId).eq("owner_user_id",scope.ownerUserId)
+        .in("source_id",[...new Set(batch.map(d=>d.source.sourceId))]).limit(batchLimit*2);
+      if(error)throw error;
+      const existing=new Map((data??[]).map(row=>[row.source_type+":"+row.source_id,row]));
+      for(const d of batch){
+        const row=existing.get(d.source.sourceType+":"+d.source.sourceId);
+        // Match the existing SQL enqueue's legitimate reopen/reassignment
+        // exceptions. The RPC remains the final concurrent admission fence.
+        const reopen=row?.phase==="resolved"&&row.last_error==="source_closed"||
+          row?.phase==="blocked"&&["source_missing","source_reassigned","authorization_revoked"].includes(String(row.last_error));
+        if(!row||row.revision_hash!==d.revisionHash||Number(row.priority)!==d.priority||reopen)
+          pending.push(d);
+        if(pending.length===limit)break;
+      }
+    }
+    return pending;
+  }
   const {data:receipts,error:receiptError}=await db.from("operating_tasks")
     .select("dedupe_key").eq("business_id",scope.businessId)
     .eq("owner_user_id",scope.ownerUserId).eq("kind","priority_notice")
