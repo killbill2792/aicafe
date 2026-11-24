@@ -48,7 +48,7 @@ export function routineReportCandidates(messages:readonly ConversationMessage[],
       if(!pointer&&!legacy)return [];
       const text=m.blocks.filter(b=>object(b)&&b.type==="text")
         .map(b=>(b as {text:string}).text).join("");
-      if(!text.trim()||text.length>2600)return [];
+      if(!text.trim())return [];
       return [{messageId:m.id,runId:meta.runId,routineId:meta.routineId,
         revision:Number(meta.revision),quality:m.grounding.status as "verified"|"partial",
         text,pointerOnly:pointer}];
@@ -90,7 +90,7 @@ export async function verifiedRoutineReportHistory(db:SupabaseClient,
     const summary=result.summary.trim();
     // Rehydrate the saved report only through this authenticated, completed,
     // owner/thread-scoped occurrence. The short chat pointer is not evidence.
-    if(!summary||summary.length>2600||
+    if(!summary||
       (!report.pointerOnly&&!report.text.startsWith(summary)))continue;
     verified.set(report.messageId,summary);
   }

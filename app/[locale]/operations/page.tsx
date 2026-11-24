@@ -83,7 +83,7 @@ export default async function OperationsPage({ searchParams }: { searchParams: P
     const byRun=new Map((data??[]).flatMap(record=>{
       const result=record.u4_result;
       if(!result||typeof result!=="object"||Array.isArray(result)||
-        typeof result.summary!=="string"||result.summary.length>2600)return [];
+        typeof result.summary!=="string"||!result.summary.trim())return [];
       return [[record.run_id,{routineId:record.routine_id,text:result.summary}]] as const;
     }));
     return new Map(saved.flatMap(row=>{

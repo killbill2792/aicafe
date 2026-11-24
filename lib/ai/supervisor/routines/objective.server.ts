@@ -17,7 +17,7 @@ import {notifyOwner} from "@/lib/operating/notifyOwner.server";
 import {getConnectorAccount,allowsGmail} from "@/lib/connectors/registry.server";
 import {gmailSearch,gmailListLabels,gmailRead,gmailReadThread,gmailReadAttachment} from "@/lib/connectors/gmail/provider.server";
 import {canonicalEvidenceDomain,canonicalQuerySourceFamily,hasObservedEvidence,investigationReadTools,unsupportedExternalEffectClaim} from "./investigation";
-import {completeResearchAttempts} from "@/lib/ai/agent/researchRecovery";
+import {completeResearchAttempts,unreplacedResearchAttempts} from "@/lib/ai/agent/researchRecovery";
 import {meteredInvestigationProvider} from "./investigationUsage.server";
 import type {RoutineRecord} from "./contracts";
 import type {ClaimedRoutine} from "./repository.server";
@@ -221,12 +221,11 @@ export function verifyObjectiveTurn(turn:AgentTurn,routine:RoutineRecord):Object
     report=report.replace((quiet??important)![0],"").trim();
     if(!report)throw Error("u4_empty_watch_reason");
   }
-  if(report.length>2600)throw Error("u4_report_too_long");
   return {
     attention,report,
     observedToolNames:[...new Set(reads.map(call=>call.name))].slice(0,12),
-    missing:[...new Set((turn.results??[]).flatMap(r=>
-      Array.isArray(r.missing)?r.missing:[]))].slice(0,12),
+    missing:[...new Set(unreplacedResearchAttempts(completeResearchAttempts(turn.toolInvocations??[])).flatMap(c=>
+      Array.isArray(c.result.missing)?c.result.missing:[]))],
     sourceCount:sourceDomains.length,sourceDomains,sourceRefs,
   };
 }
@@ -319,7 +318,7 @@ export async function executeClaimedObjective(db:SupabaseClient,params:{
     return typeof r.summary==="string"&&
       (r.attention==="attention"||r.attention==="none")?
       [{date:entry.local_date,attention:r.attention,
-        previousConclusion:r.summary.slice(0,900)}]:[];
+        previousConclusion:r.summary}]:[];
   });
   const origin=routine.executionMode==="watch"?
     "SYSTEM-INITIATED LUNA WATCH. No owner asked this question. Independently decide what is materially important using verified café data. Choose registered read tools as needed; no forced domain or tool order. If there is NO meaningful owner decision or action, begin your final reply NO_ACTION_REQUIRED: and explain the assessment concisely. Otherwise begin ATTENTION: and state the evidence and actionable next step. No external effects.":

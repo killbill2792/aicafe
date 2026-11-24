@@ -104,6 +104,12 @@ describe("U4 objective evidence and model autonomy",()=>{
     expect(watchReadTools).not.toContain("read_gmail");
     expect(watchReadTools).not.toContain("read_gmail_attachment");
   });
+  it("preserves long verified research reports and Watch narratives",()=>{
+    const report="Observed operational evidence, source context and uncertainty. ".repeat(100)+"Final recommendation.";
+    expect(report.length).toBeGreaterThan(2600);
+    expect(verifyObjectiveTurn(turn(report),objective).report).toBe(report);
+    expect(verifyObjectiveTurn(turn("ATTENTION: "+report),watch).report).toBe(report);
+  });
   it("accepts any real source read instead of forcing two hardcoded tools",()=>{
     const result=verifyObjectiveTurn(turn("Sales context suggests reviewing staffing."),objective);
     expect(result).toMatchObject({attention:"attention",sourceCount:1,
@@ -521,13 +527,14 @@ describe("U4 scheduled model execution persists only verified outcomes",()=>{
     vi.mocked(runAgentTurn).mockResolvedValueOnce(turn("Evidence changed; revise last conclusion."));
     const rpc=vi.fn(async()=>({data:true,error:null}));
     const last=[{local_date:"2026-11-19",u4_result:{
-      attention:"attention",summary:"Potential supply interruption; verify again."}}];
+      attention:"attention",summary:"Potential supply interruption; "+ "Historical hypothesis. ".repeat(150)+"Verify final source gap again."}}];
     await executeClaimedObjective({rpc,...mockRoutineHistory(last)} as never,{
       routine:objective,lease,localDate:"2026-11-20",
       provider:(async function*(){}) as never,
     });
     const prompt=vi.mocked(runAgentTurn).mock.calls.at(-1)?.[0]?.ownerText;
     expect(prompt).toContain("Potential supply interruption");
+    expect(prompt).toContain("Verify final source gap again.");
     expect(prompt).toContain("NOT current verified source evidence");
   });
   it("silent Watch never invokes owner notice, but commits its source receipt",async()=>{

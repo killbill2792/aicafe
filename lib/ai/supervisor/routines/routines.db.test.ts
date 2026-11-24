@@ -637,9 +637,12 @@ describe("U4 once: actual disposable cross-café admission, restart and private 
         sourceDomains:["cafe_state"],quality:"partial",
         missing:["Real provider execution not performed in this DB-only test."],
         externalEffects:"not_attempted"};
+      const longReport="DB fixture: report is saved once and delivered only to its owner. "+
+        "Observed source context and historical operational evidence. ".repeat(100)+"Final next step.";
+      expect(longReport.length).toBeGreaterThan(2600);
       expect(await call(workerB,"u4_publish_objective_report",[
         cafes[1],routines[1],b.run_id,b.lease_token,
-        "DB fixture: report is saved once and delivered only to its owner.",
+        longReport,
         "attention",proof,after,
       ])).toBe(true);
       expect(await call(workerB,"u4_publish_objective_report",[
@@ -715,7 +718,7 @@ describe("U4 once: actual disposable cross-café admission, restart and private 
       const full=await admin.query(
         "select u4_result->>'summary' summary from public.supervisor_routine_occurrences "+
         "where business_id=$1 and run_id=$2",[cafes[1],b.run_id]);
-      expect(full.rows[0].summary).toContain("saved once");
+      expect(full.rows[0].summary).toBe(longReport);
       const chat=await admin.query(
         "select structured_content from public.ai_messages "+
         "where business_id=$1 and grounding->'agentMetadata'->>'runId'=$2",
