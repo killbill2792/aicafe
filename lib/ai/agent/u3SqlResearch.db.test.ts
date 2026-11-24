@@ -297,6 +297,14 @@ describe.skipIf(!active)("U3 migrated registered tool + private connection",()=>
    expect(pages).toBeGreaterThanOrEqual(3);
    expect(seen).toEqual(oracle.rows.map(v=>v.id));
    expect(new Set(seen).size).toBe(138);
+   // A query with >1 page but no stable top-level ORDER BY must not
+   // advertise exhaustive offset traversal or silently skip source rows.
+   const unsafe=await dataQueryTools.query_data.execute({
+    ...input("SELECT id FROM u3_research.orders"),limit:50,
+    date_from:"2025-01-01",date_to:"2026-11-23"
+   },scoped);
+   expect(unsafe.error).toBe("stable_order_required");
+   expect(unsafe.page_complete).toBe(false);
   }finally{
    await admin.query("DELETE FROM public.orders WHERE business_id=$1 AND pos_order_id LIKE 'u3-cursor-%'",[ids.a]).catch(()=>{});
   }
