@@ -68,6 +68,23 @@ describe("Task 15A migrated, agentic investigation SQL integration",()=>{
         [cafes[0],taskId]);
       a=await connect("service");b=await connect("service");
       ownerClient=await connect("owner",owners[0]);
+      // Known source-data faults have no owner-loss facts: neither the
+      // model queue nor a generic notice may publish them. The database
+      // enforces this independently of the TypeScript priority classifier.
+      const technical=randomUUID();
+      await admin.query("insert into public.alerts(id,business_id,kind,status,payload) values ($1,$2,'business_anomaly','new',$3::jsonb)",
+        [technical,cafes[0],JSON.stringify({family:"data_gap",
+          subject:"reader_unavailable:customer_intelligence",quality:"technical_failure",
+          severity:"critical"})]);
+      expect(await rpc(a,"supervisor_enqueue_investigation",[
+        cafes[0],owners[0],threads[0],"alert",technical,
+        hex("c"),hex("d"),500,anchor])).toBe(false);
+      expect(await rpc(a,"post_supervisor_priority_notice",[
+        cafes[0],owners[0],threads[0],"alert",technical,
+        hex("c"),hex("d"),"Unverified source read",anchor])).toBe(false);
+      expect((await admin.query("select count(*)::int n from public.ai_messages where business_id=$1 and thread_id=$2 and grounding->>'intent' in ('priority_notice','priority_investigation_exception')",
+        [cafes[0],threads[0]])).rows[0].n).toBe(0);
+
       // U1: unattended scopes are limited to the explicit current owner binding,
       // even though the worker uses service_role. No private credential is returned.
       expect(await rpc(a,"toast_business_scope_summary",[cafes[0],owners[0]])).toEqual({menus:null,labor:null});
@@ -236,14 +253,14 @@ describe("Task 15A migrated, agentic investigation SQL integration",()=>{
       // pg returns bigint counters as strings. Check the exact numeric value.
       expect(Number(blocked.rows[0].failure_count)).toBe(3);
       expect((await admin.query("select count(*)::int n from public.ai_messages where business_id=$1 and thread_id=$2 and grounding->>'intent'='priority_investigation_exception'",
-        [cafes[0],threads[0]])).rows[0].n).toBe(1);
+        [cafes[0],threads[0]])).rows[0].n).toBe(0);
       expect(await rpc(a,"supervisor_claim_investigation",[stamp(now,120)])).toBeNull();
       // The old six-hour paid retry loop must never revive unchanged
       // technical failures, even days after the first incident.
       expect(await rpc(a,"supervisor_claim_investigation",
         [stamp(now,500)])).toBeNull();
       expect((await admin.query("select count(*)::int n from public.ai_messages where business_id=$1 and thread_id=$2 and grounding->>'intent'='priority_investigation_exception'",
-        [cafes[0],threads[0]])).rows[0].n).toBe(1);
+        [cafes[0],threads[0]])).rows[0].n).toBe(0);
       // Material source revision, not an arbitrary retry of an uncertain effect,
       // safely reopens investigation with a fresh checkpoint and newer priority.
       expect(await rpc(a,"supervisor_enqueue_investigation",[
