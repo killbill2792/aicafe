@@ -81,7 +81,7 @@ describe("Task 15A migrated, agentic investigation SQL integration",()=>{
         hex("c"),hex("d"),350,anchor])).toBe(false);
       expect(await rpc(a,"post_supervisor_priority_notice",[
         cafes[0],owners[0],threads[0],"alert",technical,
-        hex("c"),hex("d"),"Unverified source read",anchor])).toBe(false);
+        hex("c"),hex("d"),"Actionable café alert needs review",anchor])).toBe(false);
       expect((await admin.query("select count(*)::int n from public.ai_messages where business_id=$1 and thread_id=$2 and grounding->>'intent' in ('priority_notice','priority_investigation_exception')",
         [cafes[0],threads[0]])).rows[0].n).toBe(0);
 
