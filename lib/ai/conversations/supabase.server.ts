@@ -122,6 +122,12 @@ export class SupabaseConversationRepository implements ConversationRepository {
       .select(MESSAGE_COLUMNS)
       .eq("business_id", scope.businessId).eq("owner_user_id", scope.ownerUserId)
       .eq("thread_id", threadId)
+      // Generic priority notices and terminal technical diagnostics belong in
+      // owner attention/engineering, not the Supervisor conversation timeline.
+      // Filter BEFORE pagination, preserving order, cursors and older history.
+      // Grounding is null for owner turns; legitimate research/question intents
+      // and all older non-notice Supervisor messages remain visible.
+      .or("grounding.is.null,grounding->>intent.is.null,grounding->>intent.not.in.(priority_notice,priority_investigation_exception)")
       .order("created_at", { ascending: false }).order("id", { ascending: false })
       .range(offset, offset + PAGE_SIZE);
     if (error) throw error;
