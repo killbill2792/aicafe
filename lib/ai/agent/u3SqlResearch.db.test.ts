@@ -32,6 +32,7 @@ let admin:Client|null=null;
 let password="";
 const priorFlag=process.env.AICAFE_RESEARCH_SQL_ENABLED;
 const priorUrl=process.env.AICAFE_RESEARCH_DATABASE_URL;
+const priorCursorSecret=process.env.SUPABASE_SERVICE_ROLE_KEY;
 const scoped={db:{} as never,businessId:ids.a,ownerUserId:ids.oa,
  threadId:ids.ta,mode:"owner" as const};
 const input=(sql:string)=>({
@@ -60,6 +61,8 @@ describe.skipIf(!active)("U3 migrated registered tool + private connection",()=>
   researchUrl.password=password;
   process.env.AICAFE_RESEARCH_DATABASE_URL=researchUrl.toString();
   process.env.AICAFE_RESEARCH_SQL_ENABLED="true";
+  // Synthetic signing key is allowed only for this disposable test fixture.
+  process.env.SUPABASE_SERVICE_ROLE_KEY=priorCursorSecret??randomBytes(32).toString("hex");
   await admin.query(
    "INSERT INTO auth.users(id,instance_id,aud,role,email,encrypted_password,created_at,updated_at) "+
    "VALUES($1,'00000000-0000-0000-0000-000000000000','authenticated','authenticated',"+
@@ -123,6 +126,8 @@ describe.skipIf(!active)("U3 migrated registered tool + private connection",()=>
   else process.env.AICAFE_RESEARCH_SQL_ENABLED=priorFlag;
   if(priorUrl===undefined)delete process.env.AICAFE_RESEARCH_DATABASE_URL;
   else process.env.AICAFE_RESEARCH_DATABASE_URL=priorUrl;
+  if(priorCursorSecret===undefined)delete process.env.SUPABASE_SERVICE_ROLE_KEY;
+  else process.env.SUPABASE_SERVICE_ROLE_KEY=priorCursorSecret;
  });
  it("discovers admitted relational sources through the real scoped SQL catalog",async()=>{
   const d=await dataQueryTools.describe_data.execute({source:"research",search:"orders"},scoped);
@@ -253,6 +258,55 @@ describe.skipIf(!active)("U3 migrated registered tool + private connection",()=>
    await admin.query("DELETE FROM public.order_lines WHERE id=ANY($1::uuid[])",[insertedLines]).catch(()=>{});
    await admin.query("DELETE FROM public.orders WHERE id=ANY($1::uuid[])",[insertedOrders]).catch(()=>{});
   }
+ });
+ it("traverses every historical ordered SQL row across pages without any total cap",async()=>{
+  if(!admin)throw Error("admin_missing");
+  // Historical source dates and result size exceed the original ceilings.
+  try{
+   await admin.query(
+    "INSERT INTO public.orders(id,business_id,pos_order_id,closed_at,business_date,gross_sales_cents,net_sales_cents) "+
+    "SELECT gen_random_uuid(),$1,'u3-cursor-'+i::text,now(),"+
+      "date '2026-01-01'+(i-1),100+i,100+i FROM generate_series(1,137) AS i",[ids.a]);
+   const sql="SELECT id,business_date,net_sales_cents FROM u3_research.orders ORDER BY business_date,id";
+   let cursor:string|null=null,pages=0,seen:string[]=[],complete=false;
+   do{
+    const result=await dataQueryTools.query_data.execute({
+     ...input(sql),limit:50,date_from:"2025-01-01",
+     date_to:"2026-11-23",cursor
+    },scoped);
+    expect(result.error).toBeUndefined();
+    const page=result as typeof result&{
+     next_cursor?:string|null;page_complete?:boolean;
+     page_consistency?:string
+    };
+    expect(page.page_consistency).toBe("independent_read_only_snapshot");
+    for(const item of result.rows){
+     const row=item as Record<string,unknown>;
+     seen.push(String(row.id));
+     expect(Number(row.net_sales_cents)).toBeLessThan(4200);
+    }
+    pages++;
+    expect(pages).toBeLessThan(20);
+    cursor=page.next_cursor??null;
+    complete=page.page_complete===true;
+    expect(complete).toBe(cursor===null);
+    expect(result.truncated).toBe(!complete);
+   }while(cursor!==null);
+   const oracle=await admin.query("SELECT id::text FROM public.orders WHERE business_id=$1 ORDER BY business_date,id",[ids.a]);
+   expect(pages).toBeGreaterThanOrEqual(3);
+   expect(seen).toEqual(oracle.rows.map(v=>v.id));
+   expect(new Set(seen).size).toBe(138);
+  }finally{
+   await admin.query("DELETE FROM public.orders WHERE business_id=$1 AND pos_order_id LIKE 'u3-cursor-%'",[ids.a]).catch(()=>{});
+  }
+ });
+ it("allows multi-year, scoped Toast changes under the same verified window",async()=>{
+  const sql="SELECT count(*) AS n FROM u3_research.toast_changes";
+  const result=await dataQueryTools.query_data.execute({
+   ...input(sql),date_from:"2023-01-01",date_to:"2026-11-23"
+  },scoped);
+  expect(result.error).toBeUndefined();
+  expect(result.page_complete).toBe(true);
  });
  it("rechecks actual original-owner authorization after revocation",async()=>{
   if(!admin)throw Error("admin_missing");
