@@ -1,6 +1,10 @@
 -- Extend the existing tenant-scoped research surface, without creating new
 -- stores, writers, provider reads or credentials. All views are read-only to
 -- the model role and have the same signed scope/RLS as the original surface.
+-- Match the existing bounded migration policy; do not leave DDL waiting indefinitely.
+set lock_timeout='3s';
+set statement_timeout='45s';
+
 GRANT aicafe_research_view_owner TO postgres WITH SET TRUE;
 
 GRANT SELECT (id,timezone,currency,opened_on,payroll_tax_rate,payroll_tax_rate_status,
