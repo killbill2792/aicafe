@@ -13,7 +13,7 @@ CREATE TABLE u3_research_private.owner_research_receipts (
  PRIMARY KEY(step_id,operation),
  UNIQUE(step_id,checkpoint_seq)
 );
--- New private table: no grants or RLS policies for browser/research roles.
+-- Reason: New private table starts empty; enable RLS before granting any access, with no browser or research policies.
 -- squawk-ignore ban-alter-row-level-security
 ALTER TABLE u3_research_private.owner_research_receipts ENABLE ROW LEVEL SECURITY;
 REVOKE ALL ON u3_research_private.owner_research_receipts FROM PUBLIC,anon,authenticated,service_role,aicafe_research,aicafe_research_view_owner;
