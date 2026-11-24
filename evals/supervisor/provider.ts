@@ -54,11 +54,10 @@ const readSql:typeof runU3Sql=async(_scope,raw)=>{
    db.prepare("INSERT INTO ingredient_prices VALUES(?,?)").run(item.id,item.recipeCostCents*1000000);
    db.prepare("INSERT INTO order_lines VALUES(?,?,?,?)").run("fixture-order",item.id,item.unitsOct19,0);
   }
-  // SQLite accepts PostgreSQL $n named binds; use ?n positional binds and
-  // never interpolate model-controlled values into the statement.
-  const statement=db.prepare(p.sql.replace(/\$(\d+)/g,"?$1"));
-  const binds=(p.parameters??[]).map(x=>typeof x==="boolean"?Number(x):x);
-  const rows=statement.all(...binds);
+  // SQLite accepts PostgreSQL-style $n as named parameters.
+  const statement=db.prepare(p.sql);
+  const binds=Object.fromEntries((p.parameters??[]).map((x,i)=>["$"+(i+1),typeof x==="boolean"?Number(x):x]));
+  const rows=Object.keys(binds).length?statement.all(binds):statement.all();
   return {source:"u3_canonical_research",period:p.date_from&&p.date_to?{from:p.date_from,to:p.date_to}:null,
    missing:[],rows,truncated:false,page_complete:true,rowCount:rows.length,
    evidence:{scope:"verified_owner_cafe_lease",authority:"approved_logical_source",receipt_id:randomUUID(),
