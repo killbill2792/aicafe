@@ -83,16 +83,19 @@ export function rankPriority(source:PrioritySource,now:Date):PriorityDecision{
     ownerAction?"Owner task needs review":"Task response needs review";
   return {source,revisionHash,priority,reason,stableKey};
 }
-/** A verified absence of business input is actionable. A failed or immature
- * source read is backend recovery work. The stock detector emits this missing
- * input only after its canonical read succeeds and finds no current count. */
+/** Verified missing business inputs are actionable regardless of the source.
+ * Readers attest absence only after a successful canonical read; uncertain
+ * coverage and technical failures are recovery work, not owner requests.
+ * Keep the previous stock-count receipt readable until its detector refresh. */
 export function eligibleAlertEvidence(kind:string,evidence:unknown):boolean{
   if(kind!=="business_anomaly"||!evidence||typeof evidence!=="object"||Array.isArray(evidence))
     return true;
   const fact=evidence as Record<string,unknown>;
   if(fact.quality==="technical_failure"||fact.quality==="not_matured")return false;
   if(fact.family!=="data_gap")return true;
-  return fact.subject==="stock_counts"&&fact.quality==="missing"&&fact.current===1&&fact.unit==="coverage";
+  return fact.quality==="missing"&&fact.current===1&&fact.unit==="coverage"&&
+    (fact.gapReason==="missing_business_input"||
+      (fact.gapReason===undefined&&fact.subject==="stock_counts"));
 }
 export function requiresOwnerAttention(source:PrioritySource):boolean{
   return source.sourceType!=="alert"||eligibleAlertEvidence(source.kind,source.evidence);

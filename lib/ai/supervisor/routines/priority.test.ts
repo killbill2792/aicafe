@@ -52,6 +52,18 @@ describe("proactive priority ranking and source revision",()=>{
     const outage={...missing,sourceId:"unavailable",evidence:{...missing.evidence,quality:"technical_failure"}};
     expect(choosePriorities([missing,outage],now,10).map(x=>x.source.sourceId)).toEqual(["missing-count"]);
   });
+  it("admits verified missing inputs independently of their source or subject",()=>{
+    const now=new Date("2026-11-23T00:00:00Z");
+    const sources=["bank_statement","employee_confirmation","supplier_document"].map(subject=>({
+      ...base,kind:"business_anomaly",sourceId:subject,
+      evidence:{family:"data_gap",subject,quality:"missing",current:1,unit:"coverage",gapReason:"missing_business_input"},
+    }));
+    const invalid=sources.flatMap(source=>["coverage_unverified","technical_failure"].map(gapReason=>({
+      ...source,sourceId:source.sourceId+gapReason,evidence:{...source.evidence,gapReason},
+    })));
+    expect(choosePriorities([...sources,...invalid],now,10).map(x=>x.source.sourceId).sort())
+      .toEqual(sources.map(x=>x.sourceId).sort());
+  });
   it("does not suppress explicit evidence-backed missing punch incidents",()=>{
     const now=new Date("2026-11-23T00:00:00Z");
     const punch={...base,kind:"business_anomaly",sourceId:"punch:shift-1",

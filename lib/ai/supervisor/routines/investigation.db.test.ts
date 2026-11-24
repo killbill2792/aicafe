@@ -92,6 +92,18 @@ describe("Task 15A migrated, agentic investigation SQL integration",()=>{
         cafes[0],owners[0],threads[0],"alert",missingCount,hex("3"),hex("4"),100,anchor
       ])).toBe(true);
       await admin.query("delete from public.supervisor_investigations where business_id=$1 and source_id=$2",[cafes[0],missingCount]);
+      for(const subject of ["bank_statement","employee_confirmation","supplier_document"]){
+        const input=randomUUID();
+        for(const gapReason of ["coverage_unverified","technical_failure","missing_business_input"]){
+          const payload={family:"data_gap",subject,quality:"missing",current:1,unit:"coverage",gapReason};
+          await admin.query("insert into public.alerts(id,business_id,kind,status,payload) values ($1,$2,'business_anomaly','new',$3) on conflict(id) do update set payload=excluded.payload",[input,cafes[0],JSON.stringify(payload)]);
+          expect(await rpc(a,"supervisor_enqueue_investigation",[
+            cafes[0],owners[0],threads[0],"alert",input,hex("3"),hex("4"),100,anchor
+          ])).toBe(gapReason==="missing_business_input");
+        }
+        await admin.query("delete from public.supervisor_investigations where business_id=$1 and source_id=$2",[cafes[0],input]);
+        await admin.query("delete from public.alerts where business_id=$1 and id=$2",[cafes[0],input]);
+      }
       await admin.query("delete from public.alerts where business_id=$1 and id=$2",[cafes[0],missingCount]);
 
       // One genuine, evidence-backed source remains actionable; a changed

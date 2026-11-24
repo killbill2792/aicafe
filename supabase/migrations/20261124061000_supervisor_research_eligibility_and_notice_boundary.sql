@@ -5,17 +5,19 @@
 set lock_timeout='3s';
 set statement_timeout='45s';
 
--- Only the canonical detector's observed absence of a physical count is
--- currently actionable among its coverage-gap records. Gates on a normal
--- alert and on a pending investigation use the same evidence distinction.
+-- A successful canonical observation of missing business input is actionable
+-- regardless of its subject. Unverified coverage is not. Preserve old stock
+-- receipts until the existing detector refreshes them with gapReason.
 CREATE FUNCTION public.supervisor_alert_evidence_eligible(p_kind text,p_payload jsonb)
 RETURNS boolean LANGUAGE sql IMMUTABLE SET search_path='' AS $eligible$
  SELECT CASE
   WHEN p_kind IS DISTINCT FROM 'business_anomaly' THEN true
   WHEN p_payload->>'quality' IN ('technical_failure','not_matured') THEN false
   WHEN p_payload->>'family'='data_gap' THEN coalesce(
-   p_payload->>'subject'='stock_counts' AND p_payload->>'quality'='missing'
-   AND p_payload->'current'='1'::jsonb AND p_payload->>'unit'='coverage',false)
+   p_payload->>'quality'='missing' AND p_payload->'current'='1'::jsonb
+   AND p_payload->>'unit'='coverage' AND (
+    p_payload->>'gapReason'='missing_business_input' OR
+    (NOT (p_payload ? 'gapReason') AND p_payload->>'subject'='stock_counts')),false)
   ELSE true
  END
 $eligible$;

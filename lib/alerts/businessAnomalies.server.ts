@@ -194,7 +194,8 @@ async function anonymousCustomerPeriod(db:SupabaseClient,businessId:string,windo
  return {checks:total,knownMoneyChecks:known,netCents:queryNumber(checks.row,"sum_data.aiCafeCustomer.netSalesCents"),itemUnits:units,complete:checks.complete,optionalReadFailed:!!items.error};
 }
 
-type Observation={family:BusinessSignal;subject:string;current:number;previous:number;unit:string;active:boolean;asOf:string;from:string;to:string};
+type GapReason="missing_business_input"|"coverage_unverified"|"technical_failure";
+type Observation={gapReason?:GapReason;family:BusinessSignal;subject:string;current:number;previous:number;unit:string;active:boolean;asOf:string;from:string;to:string};
 const day=(date:string,offset:number)=>new Date(Date.parse(date+"T12:00:00Z")+offset*86400000).toISOString().slice(0,10);
 const clean=(q:{missingInputs:string[];estimatedInputs:string[];staleInputs:string[]})=>!q.missingInputs.length&&!q.estimatedInputs.length&&!q.staleInputs.length;
 const finite=(v:unknown):v is number=>typeof v==="number"&&Number.isFinite(v);
@@ -283,12 +284,12 @@ export async function refreshBusinessAnomalies(db:SupabaseClient,businessId:stri
  async function persist(o:Observation|null){
   if(!o)return;
   const {data,error}=await db.rpc("supervisor_reconcile_business_anomaly",{p_business_id:businessId,p_key:o.family+":"+o.subject,p_active:o.active,
-   p_payload:{...o,dedupeKey:o.family+":"+o.subject,quality:o.family==="data_gap"||o.family==="missed_clock_evidence"?"missing":["stockout_risk","live_sales_decline","live_sales_growth","overstaffed_hour"].includes(o.family)?"partial":"verified",severity:o.family==="stock_shortage"?"high":"warning"}});
+   p_payload:{...o,dedupeKey:o.family+":"+o.subject,quality:o.gapReason==="technical_failure"?"technical_failure":o.family==="data_gap"||o.family==="missed_clock_evidence"?"missing":["stockout_risk","live_sales_decline","live_sales_growth","overstaffed_hour"].includes(o.family)?"partial":"verified",severity:o.family==="stock_shortage"?"high":"warning"}});
   if(error)throw error;
   if(data===true)created++;
  }
- async function gap(subject:string,missing:boolean){
-  await persist(fact("data_gap",subject,missing?1:0,0,"coverage",missing,"",""));
+ async function gap(subject:string,missing:boolean,gapReason:GapReason="coverage_unverified"){
+  await persist({...fact("data_gap",subject,missing?1:0,0,"coverage",missing,"",""),gapReason});
  }
  const work=[
   async()=>{
@@ -363,7 +364,7 @@ export async function refreshBusinessAnomalies(db:SupabaseClient,businessId:stri
    const raw=await readCanonicalView(db,businessId,"cv_inventory",{dateFrom:to,dateTo:today},101);
    if(raw.error||raw.truncated||raw.rows.length>100)throw Error("inventory_unavailable");
    const stock=projectInventoryEvidence(raw.rows,100);
-   await gap("stock_counts",!stock.rows.some(s=>s.source==="app"&&(s.source_as_of===to||s.source_as_of===today)&&s.quantity!==null));
+   await gap("stock_counts",!stock.rows.some(s=>s.source==="app"&&(s.source_as_of===to||s.source_as_of===today)&&s.quantity!==null),"missing_business_input");
    const counts=new Map<string,typeof stock.rows[number]>();
    for(const count of stock.rows.filter(s=>s.source==="app"&&s.ingredient_id&&s.quantity!==null&&s.quantity_unit&&(s.source_as_of===to||s.source_as_of===today)).sort((a,b)=>String(b.source_as_of).localeCompare(String(a.source_as_of)))){
     if(!counts.has(count.ingredient_id!))counts.set(count.ingredient_id!,count);
@@ -623,8 +624,8 @@ export async function refreshBusinessAnomalies(db:SupabaseClient,businessId:stri
  for(let offset=0;offset<work.length;offset+=familyConcurrency){
   const results=await Promise.allSettled(work.slice(offset,offset+familyConcurrency).map(async(run,index)=>{
    const name=names[offset+index];
-   try{await run();}catch(error){await gap("reader_unavailable:"+name,true);throw error;}
-   await gap("reader_unavailable:"+name,false);
+   try{await run();}catch(error){await gap("reader_unavailable:"+name,true,"technical_failure");throw error;}
+   await gap("reader_unavailable:"+name,false,"technical_failure");
   }));
   if(results.some(r=>r.status==="rejected"))incomplete=true;
  }

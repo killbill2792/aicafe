@@ -60,6 +60,8 @@ it("scheduled source reads create material incidents, retain unknown history and
  expect(incidents.get("sales_decline:cafe")).toBe(true);
  expect(rpc.mock.calls.some(([,args])=>args.p_key==="sales_decline:cafe")).toBe(false);
  expect(incidents.get("data_gap:sales_coverage")).toBe(true);
+ expect(rpc).toHaveBeenCalledWith("supervisor_reconcile_business_anomaly",expect.objectContaining({p_key:"data_gap:sales_coverage",p_active:true,p_payload:expect.objectContaining({gapReason:"coverage_unverified"})}));
+ expect(rpc).toHaveBeenCalledWith("supervisor_reconcile_business_anomaly",expect.objectContaining({p_key:"data_gap:stock_counts",p_active:true,p_payload:expect.objectContaining({gapReason:"missing_business_input"})}));
  unknown=false;current=1000;await run();
  expect(incidents.get("sales_decline:cafe")).toBe(false);
  expect(incidents.get("data_gap:sales_coverage")).toBe(false);
@@ -70,7 +72,7 @@ it("a failed reader persists an explicit gap without blocking independently veri
  inputs.expenses.mockRejectedValueOnce(Error("source_read_failed"));
  const rpc=vi.fn(async()=>({data:true,error:null}));
  await expect(refreshBusinessAnomalies({rpc} as never,"cafe","2026-11-19","America/Los_Angeles",new Date("2026-11-19T20:00:00Z"))).rejects.toThrow("business_anomaly_refresh_incomplete");
- expect(rpc).toHaveBeenCalledWith("supervisor_reconcile_business_anomaly",expect.objectContaining({p_key:"data_gap:reader_unavailable:expenses",p_active:true}));
+ expect(rpc).toHaveBeenCalledWith("supervisor_reconcile_business_anomaly",expect.objectContaining({p_key:"data_gap:reader_unavailable:expenses",p_active:true,p_payload:expect.objectContaining({gapReason:"technical_failure",quality:"technical_failure"})}));
  expect(rpc).toHaveBeenCalledWith("supervisor_reconcile_business_anomaly",expect.objectContaining({p_key:"sales_decline:cafe",p_active:true}));
 });
 
