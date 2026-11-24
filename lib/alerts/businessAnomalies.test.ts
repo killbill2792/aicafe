@@ -182,7 +182,9 @@ it("the scheduled anomaly pass reconciles only comparable customer evidence and 
   expect(incidents.get("data_gap:reader_unavailable:customer_intelligence")).toBe(false);
   expect(incidents.get("customer_trend:average_recipe_contribution")).toBe(true);
   optionalFailure=false;modifierFailure=false;anonymousItemFailure=false;low=true;rpc.mockClear();await run();
-  expect(incidents.get("data_gap:reader_unavailable:customer_recipe_contribution")).toBe(false);
+  // Core linkage is insufficient, so neither optional historical nor grouped
+  // distribution reader was called: preserve their prior technical gaps.
+  expect(incidents.get("data_gap:reader_unavailable:customer_recipe_contribution")).toBe(true);
   expect(incidents.get("data_gap:reader_unavailable:customer_anonymous_items")).toBe(false);
   // Distribution was not read at low identity coverage: do not invent its recovery.
   expect(incidents.get("data_gap:reader_unavailable:customer_distribution_modifier")).toBe(true);
@@ -204,6 +206,7 @@ it("the scheduled anomaly pass reconciles only comparable customer evidence and 
   expect(incidents.get("customer_trend:returning_visit_share")).toBe(false);
   expect(incidents.get("customer_trend:linked_revenue_concentration")).toBe(false);
   expect(incidents.get("customer_trend:average_recipe_contribution")).toBe(false);
+  expect(incidents.get("data_gap:reader_unavailable:customer_recipe_contribution")).toBe(false);
   expect(incidents.get("customer_trend:observed_long_gap_share")).toBe(false);
   expect(incidents.get("customer_trend:observed_reappearance_share")).toBe(false);
   expect(incidents.get("customer_trend:returning_product_mix:11111111-1111-4111-8111-111111111111")).toBe(false);
