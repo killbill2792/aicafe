@@ -323,7 +323,7 @@ const baseToolDefinitions = (Object.keys(schemas) as AgentToolName[]).map(name =
 // profit/break_even use the optional official shared definition; opening_hours
 // and employee_sales_rollup are normal discoverable SQL sources.
 export const retiredResearchTools:ReadonlySet<AgentToolName>=new Set([
-  "get_profit","get_break_even","get_business_hours","get_employee_sales","get_expenses","get_bills","get_sales","get_peak_hours","get_labor","get_staff"
+  "get_profit","get_break_even","get_business_hours","get_employee_sales","get_expenses","get_bills","get_sales","get_peak_hours","get_labor","get_staff","get_cost_summary"
 ]);
 // Routine management remains a verified-owner-only additional function.
 export const agentToolDefinitions:Array<Omit<(typeof baseToolDefinitions)[number],"name">&{name:string}>=
@@ -340,7 +340,7 @@ export function researchPeriodChoice(input:Record<string,unknown>):unknown{
  const metric=input.official_metric;
  if(!metric||typeof metric!=="object"||Array.isArray(metric))return null;
  const m=metric as Record<string,unknown>;
- if(!["profit","expenses","sales","hourly_sales","labor"].includes(String(m.id)))return null;
+ if(!["profit","expenses","sales","hourly_sales","labor","business_costs"].includes(String(m.id)))return null;
  return m.period??m.profit_period??(typeof input.date_from==="string"&&typeof input.date_to==="string"?
   {from:input.date_from,to:input.date_to}:null);
 }
@@ -462,6 +462,7 @@ export async function executeAgentTool(name: string, raw: unknown, ctx: AgentToo
               {from:p.date_from,to:p.date_to}:null);
             if(!period||metric.period!=null&&(p.date_from!==null||p.date_to!==null))return invalid("invalid_date_range");
             if(metric.id==="expenses")result=await moneyTools.get_expenses.execute({period,category:null},ctx);
+            else if(metric.id==="business_costs")result=await moneyTools.get_cost_summary.execute({period},ctx);
             else if(metric.id==="sales")result=await executeAgentTool("get_sales",{period,ownerInputs:null},ctx);
             else if(metric.id==="labor")result=await staffTools.get_labor.execute({period},ctx);
             else{

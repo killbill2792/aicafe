@@ -599,7 +599,7 @@ export async function runAgentTurn(args: {
       // Older durable checkpoints store the internal legacy name. Replay the
       // exact reviewed period through the current universal declaration.
       const legacyMetric:Record<string,string>={get_profit:"profit",get_sales:"sales",get_peak_hours:"hourly_sales",
-        get_labor:"labor",get_staff:"current_staff",get_expenses:"expenses",get_bills:"recurring_bills"};
+        get_labor:"labor",get_staff:"current_staff",get_expenses:"expenses",get_bills:"recurring_bills",get_cost_summary:"business_costs"};
        const metric=legacyMetric[reference.name];
        const period=reference.selector.period??(reference.selector.from&&reference.selector.to?
         {from:reference.selector.from,to:reference.selector.to}:null);

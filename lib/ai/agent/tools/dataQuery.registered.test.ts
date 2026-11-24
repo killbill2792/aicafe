@@ -2,6 +2,7 @@ import {describe,it,expect,vi} from "vitest";
 import {agentToolDefinitions,executeAgentTool,type AgentToolContext} from "./index";
 import {dataQueryTools} from "./dataQuery";
 import {getFixtureSnapshot} from "@/lib/data/fixtureSnapshot";
+import {businessCostSummaryFromSnapshot} from "@/lib/operating/businessCosts";
 import {breakEvenSnapshotInputs} from "@/lib/viewmodels/breakEvenViewModel";
 import {type Economics} from "@/lib/calc/supervisorEconomics";
 
@@ -196,6 +197,23 @@ describe("optional official shared metric selection in registered query_data",()
   expect((await executeAgentTool("query_data",{official_metric:{id:"profit",period_mode:null,
    profit_period:"month"},date_from:"2026-10-01",date_to:"2026-10-20"},ctx)).error)
    .toBe("invalid_date_range");
+ });
+ it("retires the cost summary report while preserving the official period, coverage and unknown components",async()=>{
+  const snapshot=getFixtureSnapshot();
+  const {context}=caller();
+  const period={from:snapshot.monthKey+"-01",to:snapshot.todayDateStr};
+  const observed=businessCostSummaryFromSnapshot(snapshot,period);
+  const partial={...observed,completeness:"partial" as const,
+   observed:{...observed.observed,loadedStaff:false},missingInputs:["staffCostsUnobserved"]};
+  const ctx:AgentToolContext={...context,asOf:snapshot.todayDateStr,tools:{...context.tools,getBusinessCostSummary:async()=>partial}};
+  expect(agentToolDefinitions.some(t=>t.name==="get_cost_summary")).toBe(false);
+  const old=await executeAgentTool("get_cost_summary",{period},ctx);
+  const unified=await executeAgentTool("query_data",{official_metric:{id:"business_costs",period_mode:null,period}},ctx);
+  expect(unified).toEqual({...old,metric_id:"business_costs",metric_basis:"official_shared_definition"});
+  expect(unified.components).toMatchObject({loadedStaffCents:null});
+  expect(unified.missing).toContain("staffCostsUnobserved");
+  const missing=await executeAgentTool("query_data",{official_metric:{id:"business_costs",period_mode:null,period}},context);
+  expect(missing.missing).toContain("costSummaryReaderUnavailable");
  });
  it("rejects ambiguous mixed selectors and missing scope before accessing a metric",async()=>{
   const {context}=caller();

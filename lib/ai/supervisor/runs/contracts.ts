@@ -106,7 +106,7 @@ export function recoverableReadSelector(name:string,raw:unknown,resultPeriod?:un
     if(!raw||typeof raw!=="object"||Array.isArray(raw))return null;
     const r=raw as Record<string,unknown>;
     if(Object.entries(r).some(([k,v])=>!["official_metric","date_from","date_to"].includes(k)&&v!=null))return null;
-    const metric=z.strictObject({id:z.enum(["profit","expenses","recurring_bills","sales","hourly_sales","labor","current_staff"]),period_mode:z.null(),
+    const metric=z.strictObject({id:z.enum(["profit","expenses","recurring_bills","sales","hourly_sales","labor","current_staff","business_costs"]),period_mode:z.null(),
       period:z.unknown().optional(),profit_period:z.unknown().optional(),profit_owner_inputs:z.null().optional(),
       break_even_overrides:z.null().optional()}).safeParse(r.official_metric);
     if(!metric.success)return null;
