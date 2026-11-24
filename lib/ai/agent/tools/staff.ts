@@ -17,7 +17,7 @@ const failedSlice=(reason:string)=>({available:false as const,value:null,
  quality:{level:"low" as const,missingInputs:[reason],estimatedInputs:[] as string[],staleInputs:[] as string[]}});
 const empty = z.strictObject({});
 const range = z.strictObject({ from: z.iso.date(), to: z.iso.date() });
-const period = z.strictObject({ period: z.union([z.string().min(1).max(32),z.strictObject({preset:z.enum(["today","week","month","last_week","last_month","ytd"])}),z.strictObject({from:z.iso.date(),to:z.iso.date()})]) });
+const period = z.strictObject({ period: z.union([z.string().min(1).max(32),z.strictObject({preset:z.enum(["today","week","month","last_week","last_month","ytd"])}),z.strictObject({from:z.iso.date(),to:z.iso.date()})]), timecards_page_offset:z.number().int().nonnegative().optional() });
 const missing = (source: string, period: {from:string;to:string}|null, reasons: string[]): AgentToolResult => ({
   source, period, agentId:"olivia", missing: reasons.length ? reasons : ["sourceUnavailable"],
 });
@@ -109,9 +109,10 @@ export const staffTools = {
     },
   },
   get_labor: {
-    agentId:"olivia",schema:period,description:"Labor-day costs and individual actual clock-in/clock-out evidence (up to 80 recent timecards in the selected period). attendance.recordedTimecards lists employee, local date, clock times, gross elapsed hours, and documented break evidence; none_recorded means no break punch, NOT proof no break occurred. This is the correct reader for owner questions about who worked, missing lunch punches, or unclosed shifts. missingWageShifts lists the only finished shifts with no hourly wage (date, person, hours); every other laborDays entry is recorded. When wages are missing, give the known labor total, name those shifts, and ask only for those people's hourly wage — never ask the owner for a labor total over a range.",
+    agentId:"olivia",schema:period,description:"Labor-day costs and individual actual clock-in/clock-out evidence (complete count and 100 recorded punch details per page, with recordedTimecardsNextOffset to continue without a total cap). attendance.recordedTimecards lists employee, local date, clock times, gross elapsed hours, and documented break evidence; none_recorded means no break punch, NOT proof no break occurred. This is the correct reader for owner questions about who worked, missing lunch punches, or unclosed shifts. missingWageShifts lists the only finished shifts with no hourly wage (date, person, hours); every other laborDays entry is recorded. When wages are missing, give the known labor total, name those shifts, and ask only for those people's hourly wage — never ask the owner for a labor total over a range.",
     execute:async(raw:unknown,ctx:AgentToolContext):Promise<AgentToolResult>=>{
-      const resolved=resolveOwnerPeriod(period.parse(raw).period,{asOf:ctx.asOf,timezone:ctx.timezone},ctx.resolveState);
+      const args=period.parse(raw);
+      const resolved=resolveOwnerPeriod(args.period,{asOf:ctx.asOf,timezone:ctx.timezone},ctx.resolveState);
       if(resolved.status!=="resolved")return periodChoicePayload("labor_and_attendance",resolved);
       const p={from:resolved.value.from,to:resolved.value.to};
       const [labor,attendance,ownerPayroll,toastScopes,reviews,sales]=await Promise.all([
@@ -119,7 +120,7 @@ export const staffTools = {
           ctx.tools.getLaborMetrics(p).catch(()=>failedSlice("laborReadFailed")):
           Promise.resolve(failedSlice("laborReaderUnavailable")),
         ctx.tools.getStaffAttendance?
-          ctx.tools.getStaffAttendance(p,ctx.timezone).catch(()=>failedSlice("staffAttendanceReadFailed")):
+          ctx.tools.getStaffAttendance(p,ctx.timezone,args.timecards_page_offset).catch(()=>failedSlice("staffAttendanceReadFailed")):
           Promise.resolve(failedSlice("attendanceReaderUnavailable")),
         ctx.tools.getOwnerMonthlyPayrollExtras?.().catch(()=>failedSlice("payrollExtrasReadFailed")),
         ctx.tools.getToastScopeCoverage?.().catch(()=>failedSlice("toastScopeReadFailed")),

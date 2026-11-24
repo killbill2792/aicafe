@@ -36,7 +36,7 @@ export interface CafeToolset {
   getProductSales(businessId: string, period: CafeStatePeriod): Promise<KnownSlice<SoldProduct[]>>;
   getItemSalesCoverage(businessId: string, period: CafeStatePeriod): Promise<KnownSlice<ItemSalesCoverage>>;
   getMenuCatalog(businessId: string): Promise<KnownSlice<MenuCatalogProduct[]>>;
-  getStaffAttendance(businessId: string, period: CafeStatePeriod, timezone: string): Promise<KnownSlice<StaffAttendance>>;
+  getStaffAttendance(businessId: string, period: CafeStatePeriod, timezone: string, pageOffset?:number): Promise<KnownSlice<StaffAttendance>>;
   getCurrentStaff(businessId: string): Promise<KnownSlice<CurrentStaffProjection>>;
   getRecurringSchedule(businessId: string, period: CafeStatePeriod, asOf: string): Promise<KnownSlice<ScheduleProjection>>;
   getBreakEven(businessId: string): Promise<KnownSlice<BreakEvenProjection>>;
@@ -163,8 +163,8 @@ export class StructuredCafeTools implements CafeToolset {
   getMenuCatalog(businessId: string) {
     return this.historicalReaders?.menuCatalog(businessId) ?? Promise.resolve(missing<MenuCatalogProduct[]>("menuCatalog"));
   }
-  getStaffAttendance(businessId: string, period: CafeStatePeriod, timezone: string) {
-    return this.historicalReaders?.staffAttendance(businessId, period, timezone) ??
+  getStaffAttendance(businessId: string, period: CafeStatePeriod, timezone: string, pageOffset?:number) {
+    return this.historicalReaders?.staffAttendance(businessId, period, timezone, pageOffset) ??
       Promise.resolve(missing<StaffAttendance>("timecards"));
   }
   getCurrentStaff(businessId:string) {
