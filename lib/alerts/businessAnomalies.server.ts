@@ -45,7 +45,7 @@ async function customerAggregate(db:SupabaseClient,businessId:string,view:"cv_to
  return {row:row??null,complete:result.customerCoverage?.complete===true&&result.missing.every(x=>x==="empty")&&(!("notes" in result)||!result.notes?.length),error:null,coverage:result.customerCoverage};
 }
 const checkFilters=[{column:"record_type",op:"=",value:"check"},{column:"counts_in_sales",op:"=",value:true}];
-type CustomerSourcePeriod=CustomerPeriod&{expectedLocationDays?:number; optionalReadFailed?:boolean};
+type CustomerSourcePeriod=CustomerPeriod&{expectedLocationDays?:number; optionalReadFailed?:boolean; optionalFailures?:string[]};
 async function customerPeriod(db:SupabaseClient,businessId:string,window:CustomerRange,detail=true):Promise<CustomerSourcePeriod|null>{
  const checks=await customerAggregate(db,businessId,"cv_toast_records",window,[
   customerMetrics("count","source_ref"),customerMetrics("count","data.aiCafeCustomer.identityRef"),
@@ -74,16 +74,21 @@ async function customerPeriod(db:SupabaseClient,businessId:string,window:Custome
  // Cohort comparisons only need linkage/visit coverage. Avoid repeatedly
  // fetching unrelated cost and behavior summaries for every old window.
  // Optional reader errors must not erase independently verified visit facts.
+ const optionalFailures:string[]=[];
+ const optional=async(name:string,promise:ReturnType<typeof customerAggregate>)=>{
+  try{const result=await promise;if(result.error)optionalFailures.push(name);return result;}
+  catch{optionalFailures.push(name);return null;}
+ };
  const [contribution,behaviors,history]=detail?await Promise.all([
-  customerAggregate(db,businessId,"cv_customer_visits",window,[
-   customerMetrics("count","historical_recipe_contribution_cents"),customerMetrics("avg","historical_recipe_contribution_cents")],[]),
-  customerAggregate(db,businessId,"cv_toast_records",window,[
+  optional("recipe_contribution",customerAggregate(db,businessId,"cv_customer_visits",window,[
+   customerMetrics("count","historical_recipe_contribution_cents"),customerMetrics("avg","historical_recipe_contribution_cents")],[])),
+  optional("behavior",customerAggregate(db,businessId,"cv_toast_records",window,[
    customerMetrics("count","data.aiCafeCustomer.discountParticipation"),customerMetrics("avg","data.aiCafeCustomer.discountParticipation"),
    customerMetrics("count","data.aiCafeCustomer.loyaltyParticipation"),customerMetrics("avg","data.aiCafeCustomer.loyaltyParticipation"),
    customerMetrics("count","data.aiCafeCustomer.recordedRefundCents"),customerMetrics("avg","data.aiCafeCustomer.recordedRefundCents")],
-   [...checkFilters,{column:"data.aiCafeCustomer.identityRef",op:"is_not_null",value:null}]),
-  customerAggregate(db,businessId,"cv_customer_visits",window,[
-   customerMetrics("count","history_account_net_sales_cents"),customerMetrics("avg","history_account_net_sales_cents")],[])
+   [...checkFilters,{column:"data.aiCafeCustomer.identityRef",op:"is_not_null",value:null}])),
+  optional("account_history",customerAggregate(db,businessId,"cv_customer_visits",window,[
+   customerMetrics("count","history_account_net_sales_cents"),customerMetrics("avg","history_account_net_sales_cents")],[]))
  ]):[null,null,null];
  const measured=(field:string)=>behaviors?.complete&&behaviors.row&&queryCount(behaviors.row,"count_data.aiCafeCustomer."+field)===linked?
   queryNumber(behaviors.row,"avg_data.aiCafeCustomer."+field):null;
@@ -106,7 +111,7 @@ async function customerPeriod(db:SupabaseClient,businessId:string,window:Custome
    queryNumber(contribution.row,"avg_historical_recipe_contribution_cents"):null,
   knownHistoryAccounts:history?.complete&&history.row?queryCount(history.row,"count_history_account_net_sales_cents")??undefined:undefined,
   averageHistoryAccountCents:history?.complete&&history.row?queryNumber(history.row,"avg_history_account_net_sales_cents"):null,
-  complete:checks.complete&&visits.complete,expectedLocationDays,optionalReadFailed:!!(contribution?.error||behaviors?.error||history?.error)};
+  complete:checks.complete&&visits.complete,expectedLocationDays,optionalReadFailed:optionalFailures.length>0,optionalFailures};
 }
 async function customerCadence(db:SupabaseClient,businessId:string,window:CustomerRange,
  kind:"lapse"|"reappearance"):Promise<CustomerCadenceSample|null>{
