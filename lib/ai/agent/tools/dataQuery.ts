@@ -1,7 +1,7 @@
 import "server-only";
 import {z} from "zod";
 import type {SupabaseClient} from "@supabase/supabase-js";
-import {describeU3Catalog,runU3Sql,u3SqlConfigured} from "./u3SqlResearch.server";
+import {describeU3Catalog,runU3Sql,u3SqlConfigured,safeU3SqlErrorCode} from "./u3SqlResearch.server";
 import {readToastDayTrust} from "@/lib/data/toastDayTrust.server";
 import {canonicalDictionary,canonicalViewNames,
  isCanonicalColumn,isDataField,toastOfficialFieldCatalog,type CanonicalView} from "@/lib/data/canonical/dictionary";
@@ -298,7 +298,7 @@ export const dataQueryTools={
      research=await describeU3Catalog(ctx,{
       search,relation:null,offset,limit:pageSize
      });
-    }catch{research={missing:["source_read_failed"]};}
+    }catch(e){research={missing:[safeU3SqlErrorCode(e)]};}
    }
    // A failed optional U3 research probe must not masquerade as successful
    // discovery just because the legacy dictionary was readable. Surface the
@@ -309,6 +309,8 @@ export const dataQueryTools={
    const researchFailure=researchMissing.find(v=>[
      "source_read_failed","research_not_configured","research_scope_denied",
      "research_invalid_scope","research_connection_untrusted",
+     "research_connection_failed","query_timeout","query_syntax_error",
+     "query_execution_error"
    ].includes(v));
    return {source:"canonical_dictionary",period:null,
     missing:[...(candidates.length===0&&research===null?["empty"]:[]),
@@ -339,7 +341,8 @@ export const dataQueryTools={
       "invalid_query","unattended_aggregate_required","research_invalid_scope",
       "research_not_configured","research_scope_denied",
       "research_connection_untrusted","research_connection_failed",
-      "query_timeout","row_exceeds_page_budget","source_read_failed"
+      "query_timeout","query_syntax_error","query_execution_error",
+      "row_exceeds_page_budget","source_read_failed"
     ].includes(code));
     return {...result,empty:result.rows.length===0,
       error:failure??undefined,rowCount:result.rows.length,
