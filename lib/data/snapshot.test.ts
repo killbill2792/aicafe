@@ -27,17 +27,21 @@ function mockDb(){
   };
   const db={from(table:string){
     reads.push(table);
-    const payload={data:data[table]??[],error:null,count:0};
+    const records=data[table]??[];
+    const payload={data:records,error:null,count:records.length};
+    let range:{start:number;end:number}|null=null;
     const builder={
       select(){return builder},eq(){return builder},gte(){return builder},lte(){return builder},
-      in(){return builder},order(){return builder},limit(){return builder},range(){return builder},
+      in(){return builder},order(){return builder},limit(){return builder},
+      range(start:number,end:number){range={start,end};return builder},
       single:async()=>({...payload,data:payload.data[0]??null}),
       maybeSingle:async()=>({...payload,data:payload.data[0]??null}),
       insert(){writes.push("insert");throw Error("Write in page load")},
       update(){writes.push("update");throw Error("Write in page load")},
       upsert(){writes.push("upsert");throw Error("Write in page load")},
       delete(){writes.push("delete");throw Error("Write in page load")},
-      then(onSuccess:(value:typeof payload)=>unknown){return Promise.resolve(payload).then(onSuccess)},
+      then(onSuccess:(value:typeof payload)=>unknown){return Promise.resolve({...payload,
+        data:range?records.slice(range.start,range.end+1):records}).then(onSuccess)},
     };
     return builder;
   },rpc(){writes.push("rpc");throw Error("RPC in page load")}};
@@ -58,12 +62,33 @@ describe("getSnapshot read-only current snapshot and Home database budget",()=>{
     expect(reads.filter(table=>table==="alerts")).toHaveLength(1);
     expect(reads.filter(table=>table==="daily_rollups")).toHaveLength(1);
   });
+  it("never silently drops actual receipts after the 1000-row PostgREST page boundary",async()=>{
+    const {db,seed,reads}=mockDb();
+    const today=formatInTimeZone(new Date(),"America/Los_Angeles","yyyy-MM-dd");
+    seed.expenses=Array.from({length:1001},(_,i)=>({
+      id:"receipt-"+String(i).padStart(5,"0"),category_code:"rent",
+      amount_cents:100,status:"actual",spent_on:today
+    }));
+    const result=await getBusinessSnapshotFromDb(db,"c1","today");
+    expect(result.runningCostLines.find(line=>line.categoryCode==="rent"))
+      .toMatchObject({amountCents:100100,actualTodayCents:100100,
+        amountSource:"recorded_expense",isEstimate:false});
+    expect(reads.filter(table=>table==="expenses").length).toBeGreaterThan(2);
+  });
+  it("rejects duplicated financial identities instead of manufacturing a complete source",async()=>{
+    const {db,seed}=mockDb();
+    const today=formatInTimeZone(new Date(),"America/Los_Angeles","yyyy-MM-dd");
+    seed.expenses=[{id:"same",category_code:"rent",amount_cents:100,status:"actual",spent_on:today},
+      {id:"same",category_code:"rent",amount_cents:200,status:"actual",spent_on:today}];
+    await expect(getBusinessSnapshotFromDb(db,"c1","today"))
+      .rejects.toThrow("snapshot_source_incomplete:expenses");
+  });
   it("never labels estimated expense rows as actual cash spent today",async()=>{
     const {db,seed}=mockDb();
     const today=formatInTimeZone(new Date(),"America/Los_Angeles","yyyy-MM-dd");
     seed.expenses=[
-      {category_code:"rent",amount_cents:1500,status:"actual",spent_on:today},
-      {category_code:"rent",amount_cents:5000,status:"estimated",spent_on:today}
+      {id:"rent-actual",category_code:"rent",amount_cents:1500,status:"actual",spent_on:today},
+      {id:"rent-estimate",category_code:"rent",amount_cents:5000,status:"estimated",spent_on:today}
     ];
     const result=await getBusinessSnapshotFromDb(db,"c1","today");
     expect(result.runningCostLines.find(line=>line.categoryCode==="rent"))
