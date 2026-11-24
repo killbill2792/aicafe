@@ -137,11 +137,21 @@ describe("U3 governed PostgreSQL AST admission",()=>{
   const cte=await admitU3Sql(
    "WITH x AS (SELECT COUNT(*) AS net_sales_cents FROM orders) SELECT net_sales_cents FROM x",
    admitted,0,false,[],units);
-  expect(cte.outputUnits).toEqual({});
+  expect(cte.outputUnits).toEqual({net_sales_cents:"count"});
   const derived=await admitU3Sql(
    "SELECT net_sales_cents FROM (SELECT COUNT(*) AS net_sales_cents FROM orders) x",
    admitted,0,false,[],units);
-  expect(derived.outputUnits).toEqual({});
+  expect(derived.outputUnits).toEqual({net_sales_cents:"count"});
+ });
+ it("attests actual scoped monetary units through CTE, joins and windows without trusting renamed literals",async()=>{
+  const rels={orders:{id:null,net_sales_cents:"cents" as const},order_lines:{order_id:null,net_sales_cents:"cents" as const}};
+  const result=await admitU3Sql("WITH daily AS (SELECT sum(o.net_sales_cents) AS sales FROM orders o JOIN order_lines l ON l.order_id=o.id) SELECT sales,lag(sales) OVER(ORDER BY sales) AS previous FROM daily",
+   admitted,0,false,[],{},rels);
+  expect(result.outputUnits).toEqual({sales:"cents",previous:"cents"});
+  const forged=await admitU3Sql("WITH x AS (SELECT 12345 AS net_sales_cents FROM orders) SELECT net_sales_cents FROM x",admitted,0,false,[],{},rels);
+  expect(forged.outputUnits).toEqual({});
+  const ratio=await admitU3Sql("WITH x AS (SELECT sum(net_sales_cents) AS sales FROM orders) SELECT sales/sales AS share FROM x",admitted,0,false,[],{},rels);
+  expect(ratio.outputUnits).toEqual({share:"ratio"});
  });
  it("classifies rejected SQL without returning raw model or database contents",async()=>{
   await expect(admitU3Sql("SELECT pg_sleep(1) FROM orders",admitted)).rejects.toMatchObject({message:"invalid_query",reason:"unapproved_function"});

@@ -72,6 +72,7 @@ for(const source of Object.values(toastOfficialFieldCatalog)){
 }
 
 export type U3TrustedUnit="cents"|"count"|"percent"|"ratio";
+export type U3RelationUnits=Readonly<Record<string,Readonly<Record<string,U3TrustedUnit|null>>>>;
 export type U3SqlAdmission={relations:string[];functions:string[];nodeCount:number;cteCount:number;
  outputUnits:Record<string,U3TrustedUnit>;hasTopLevelOrder:boolean};
 const stringNode=(input:unknown)=>{
@@ -110,7 +111,8 @@ export class U3AdmissionError extends Error{
 }
 export async function admitU3Sql(sql:string,allowedRelations:readonly string[],
  parameterCount=0,aggregateOnly=false,offturnColumns:readonly string[]=[],
- knownColumnUnits:Readonly<Record<string,U3TrustedUnit|null>>={}):Promise<U3SqlAdmission>{
+ knownColumnUnits:Readonly<Record<string,U3TrustedUnit|null>>={},
+ relationUnits?:U3RelationUnits):Promise<U3SqlAdmission>{
  if(typeof sql!=="string"||sql.length>MAX_SQL||!sql.trim()||
   parameterCount<0||parameterCount>48)throw Error("invalid_query");
  const parsed=await parser.parse(sql);
@@ -141,7 +143,7 @@ export async function admitU3Sql(sql:string,allowedRelations:readonly string[],
  }
  collect(tree);
  const reads=new Set<string>(),called=new Set<string>();
- let nodes=0,unitAmbiguousDerivedSource=false;
+ let nodes=0;
  // PostgreSQL resolves a single, bare table/CTE alias as a whole composite
  // row whenever it is not a real column. That can be cast to text or passed
  // to aggregate functions, leaking IDs and private fields. Apply this rule
@@ -207,10 +209,6 @@ export async function admitU3Sql(sql:string,allowedRelations:readonly string[],
    // is implemented. Ordinary table aliases and output aliases remain legal.
    if((kind==="colnames"||kind==="aliascolnames")&&
       Array.isArray(raw)&&raw.length>0)throw Error("invalid_query");
-   // Derived/aliased CTE and set-operation columns may shadow source names.
-   // Research may still use them, but the exact calculator cannot treat a
-   // projected alias as proof of its original monetary dimension.
-   if(kind==="RangeSubselect")unitAmbiguousDerivedSource=true;
    // Reject recursive CTEs regardless of parser nesting or SelectStmt wrapper.
    if(kind==="WithClause"&&raw&&typeof raw==="object"&&
       (raw as {recursive?:unknown}).recursive===true)throw new U3AdmissionError("unsupported_recursive_query");
@@ -233,7 +231,6 @@ export async function admitU3Sql(sql:string,allowedRelations:readonly string[],
    }
    if(kind==="SelectStmt"&&raw&&typeof raw==="object"){
     const s=raw as Record<string,unknown>;
-    if(s.larg||s.rarg)unitAmbiguousDerivedSource=true;
     if(s.intoClause||Array.isArray(s.lockingClause)&&s.lockingClause.length||
       (s.withClause as {WithClause?:{recursive?:boolean}}|undefined)?.WithClause?.recursive)
       throw Error("invalid_query");
@@ -297,63 +294,108 @@ export async function admitU3Sql(sql:string,allowedRelations:readonly string[],
    throw Error("unattended_aggregate_required");
  }
 
- // A model-authored SELECT alias is NOT source authority. Infer a unit only
- // from the approved source column and operation, not from the output name.
- // Unsafe/ambiguous expressions remain calculable as SQL research but do not
- // become a trusted input to the exact canonical calculator.
+ // Resolve dimensions through actual SELECT scope and derived columns.
+ // A spelling match to an unrelated physical column is not provenance.
+ // Unknown expressions remain readable, but never become verified money.
  type N=Record<string,unknown>;
- const recognized=(v:unknown):U3TrustedUnit|null=>
-  v==="cents"||v==="count"||v==="percent"||v==="ratio"?v:null;
- const infer=(node:unknown):U3TrustedUnit|null=>{
-  if(!node||typeof node!=="object"||Array.isArray(node))return null;
-  const obj=node as N;
-  if(obj.ColumnRef&&typeof obj.ColumnRef==="object"){
-   const fields=(obj.ColumnRef as {fields?:unknown}).fields;
-   if(!Array.isArray(fields)||!fields.length)return null;
-   const col=stringNode(fields[fields.length-1]);
-   return col?recognized(knownColumnUnits[col]):null;
+ type Unit=U3TrustedUnit|null;
+ type Columns=Map<string,Unit>;
+ type Binding={name:string;columns:Columns};
+ const obj=(x:unknown):N|null=>x&&typeof x==="object"&&!Array.isArray(x)?x as N:null;
+ const unwrap=(x:unknown,key:string):N|null=>{const v=obj(x);return v?obj(v[key])??v:null;};
+ const recognized=(v:unknown):Unit=>v==="cents"||v==="count"||v==="percent"||v==="ratio"?v:null;
+ const baseColumns=(rel:string):Columns=>new Map(Object.entries(
+   relationUnits?relationUnits[rel]??{}:knownColumnUnits).map(([k,v])=>[k,recognized(v)]));
+ const targetName=(target:N)=>{
+  if(typeof target.name==="string")return target.name;
+  const v=obj(target.val);
+  const ref=obj(v?.ColumnRef);
+  return ref?name(ref.fields)?.split(".").at(-1)??null:
+   obj(v?.FuncCall)?functionName(obj(v?.FuncCall)!):null;
+ };
+ const infer=(node:unknown,bindings:Binding[]):Unit=>{
+  const v=obj(node);if(!v)return null;
+  const ref=obj(v.ColumnRef);
+  if(ref){
+   if(!Array.isArray(ref.fields)||ref.fields.length<1||ref.fields.length>3)return null;
+   const parts=ref.fields.map(stringNode);
+   if(parts.some(part=>part===null))return null;
+   const col=parts.at(-1)!;
+   const qualifier=parts.length>1?parts.at(-2):null;
+   const candidates=bindings.filter(b=>(qualifier===null||b.name===qualifier)&&b.columns.has(col));
+   return candidates.length===1?candidates[0].columns.get(col)??null:null;
   }
-  if(obj.FuncCall&&typeof obj.FuncCall==="object"){
-   const fn=obj.FuncCall as N,operation=functionName(fn);
+  const fn=obj(v.FuncCall);
+  if(fn){
+   const operation=functionName(fn),args=Array.isArray(fn.args)?fn.args:[];
    if(operation==="count")return "count";
-   if(!["sum","min","max"].includes(operation??""))return null;
-   const args=fn.args;
-   return Array.isArray(args)&&args.length===1?infer(args[0]):null;
+   if(["sum","min","max","avg","first_value","last_value"].includes(operation??"")&&args.length===1)
+    return infer(args[0],bindings);
+   if(["lag","lead","nth_value"].includes(operation??"")&&args.length>=1&&args.length<=3){
+    const first=infer(args[0],bindings);
+    return args.length<3||infer(args[2],bindings)===first?first:null;
+   }
+   return null;
   }
-  if(obj.A_Expr&&typeof obj.A_Expr==="object"){
-   const expr=obj.A_Expr as N,op=name(expr.name);
-   const left=infer(expr.lexpr),right=infer(expr.rexpr);
-   return (op==="+"||op==="-")&&left!==null&&left===right?left:null;
+  const expr=obj(v.A_Expr);
+  if(expr){
+   const op=name(expr.name),left=infer(expr.lexpr,bindings),right=infer(expr.rexpr,bindings);
+   if((op==="+"||op==="-")&&left!==null&&left===right)return left;
+   if(op==="/"&&left!==null&&left===right)return "ratio";
+   return null;
   }
-  if(obj.TypeCast&&typeof obj.TypeCast==="object"){
-   const cast=obj.TypeCast as N,type=castName(cast);
-   return ["int2","int4","int8","smallint","integer","bigint",
-    "numeric","decimal"].includes(type??"")?infer(cast.arg):null;
-  }
+  const cast=obj(v.TypeCast);
+  if(cast)return ["int2","int4","int8","smallint","integer","bigint","numeric","decimal"].includes(castName(cast)??"")?
+   infer(cast.arg,bindings):null;
   return null;
  };
- const outputUnits:Record<string,U3TrustedUnit>={};
- const targets=(tree.stmts[0].stmt.SelectStmt as {targetList?:unknown}).targetList;
- const seenLabels=new Set<string>();
- // Check ALL result labels before trusting ANY unit. PostgreSQL allows
- // duplicate column labels and node-postgres overwrites object properties
- // with later values, including constants deliberately mislabeled as money.
- if(Array.isArray(targets))for(const t of targets){
-  if(!t||typeof t!=="object"||!("ResTarget" in t))continue;
-  const target=(t as {ResTarget?:{name?:unknown;val?:unknown}}).ResTarget;
-  const value=target?.val;
-  const fallback=value&&typeof value==="object"&&"ColumnRef" in value?
-   name((value as {ColumnRef?:{fields?:unknown}}).ColumnRef?.fields)?.split(".").at(-1):
-   value&&typeof value==="object"&&"FuncCall" in value?
-    functionName((value as {FuncCall:N}).FuncCall):null;
-  const alias=typeof target?.name==="string"?target.name:fallback;
-  if(!alias||!/^[a-zA-Z_][a-zA-Z0-9_]{0,99}$/.test(alias))continue;
-  if(seenLabels.has(alias))throw Error("invalid_query");
-  seenLabels.add(alias);
-  if(nCtes!==0||unitAmbiguousDerivedSource)continue;
-  const unit=infer(value);
-  if(unit)outputUnits[alias]=unit;
+ function projection(node:unknown,inherited:ReadonlyMap<string,Columns>):Columns{
+  const select=unwrap(node,"SelectStmt");if(!select)return new Map();
+  const local=new Map(inherited);
+  const withClause=unwrap(select.withClause,"WithClause");
+  for(const raw of Array.isArray(withClause?.ctes)?withClause.ctes:[]){
+   const c=unwrap(raw,"CommonTableExpr");
+   if(c&&typeof c.ctename==="string")local.set(c.ctename,projection(c.ctequery,local));
+  }
+  if(select.larg&&select.rarg){
+   const left=[...projection(select.larg,local)],right=[...projection(select.rarg,local)];
+   return new Map(left.map(([label,unit],i)=>[label,right.length===left.length&&right[i]?.[1]===unit?unit:null]));
+  }
+  const bindings:Binding[]=[];
+  const from=(raw:unknown):void=>{
+   const entry=obj(raw);if(!entry)return;
+   const rel=obj(entry.RangeVar);
+   if(rel&&typeof rel.relname==="string"){
+    const columns=local.get(rel.relname)??(catalog.has(rel.relname)?baseColumns(rel.relname):new Map());
+    bindings.push({name:aliasName(rel.alias)??rel.relname,columns});return;
+   }
+   const derived=obj(entry.RangeSubselect);
+   if(derived){
+    const label=aliasName(derived.alias);
+    if(label)bindings.push({name:label,columns:projection(derived.subquery,local)});
+    return;
+   }
+   const join=obj(entry.JoinExpr);
+   if(join){
+    // An aliased JOIN hides its input names. Do not guess its composite
+    // projection; ordinary joins retain each underlying qualified binding.
+    if(aliasName(join.alias))return;
+    from(join.larg);from(join.rarg);
+   }
+  };
+  for(const item of Array.isArray(select.fromClause)?select.fromClause:[])from(item);
+  const result:Columns=new Map();
+  for(const raw of Array.isArray(select.targetList)?select.targetList:[]){
+   const target=unwrap(raw,"ResTarget");if(!target)continue;
+   const label=targetName(target);
+   if(!label||!/^[a-zA-Z_][a-zA-Z0-9_]{0,99}$/.test(label))continue;
+   if(result.has(label))throw Error("invalid_query");
+   result.set(label,infer(target.val,bindings));
+  }
+  return result;
  }
+ const outputUnits=Object.fromEntries([...projection(tree.stmts[0].stmt,new Map())].filter(
+  (entry):entry is [string,U3TrustedUnit]=>entry[1]!==null));
  return {relations:[...reads].sort(),functions:[...called].sort(),
   nodeCount:nodes,cteCount:nCtes,outputUnits,
   hasTopLevelOrder:Array.isArray((tree.stmts[0].stmt.SelectStmt as {sortClause?:unknown}).sortClause)&&

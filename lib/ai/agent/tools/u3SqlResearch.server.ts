@@ -4,7 +4,7 @@ import {Pool,type PoolClient} from "pg";
 import {z} from "zod";
 import type {SupabaseClient} from "@supabase/supabase-js";
 import {createAdminSupabaseClient} from "@/lib/supabase/admin";
-import {admitU3Sql,U3AdmissionError,type U3TrustedUnit} from "./u3SqlAdmission";
+import {admitU3Sql,U3AdmissionError,type U3TrustedUnit,type U3RelationUnits} from "./u3SqlAdmission";
 import {validateResearchConnection} from "./u3ResearchConnection";
 import {researchNextCursor,researchPageOffset} from "./u3SqlCursor";
 
@@ -356,12 +356,14 @@ export async function runU3Sql(ctx:U3SqlContext,raw:unknown){
    // Exact calculator units come from the authorized catalog and parsed SQL
    // projection, never an arbitrary alias such as "net_sales_cents".
    const knownColumnUnits:Record<string,U3TrustedUnit|null>={};
+   const relationUnits:Record<string,Record<string,U3TrustedUnit|null>>={};
    for(const relation of list)for(const col of relation.columns){
     const unit:U3TrustedUnit|null=col.unit==="integer_cent"?"cents":
      /(?:^|_)(?:count|orders|items|visits|rows)$/.test(col.name)&&
        ["int2","int4","int8","numeric"].includes(col.type)?"count":
      /(?:^|_)percent$/.test(col.name)?"percent":
      /(?:^|_)(?:ratio|share|margin)$/.test(col.name)?"ratio":null;
+    (relationUnits[relation.name]??={})[col.name]=unit;
     if(Object.hasOwn(knownColumnUnits,col.name)&&knownColumnUnits[col.name]!==unit)
      knownColumnUnits[col.name]=null;
     else if(!Object.hasOwn(knownColumnUnits,col.name))
@@ -369,7 +371,7 @@ export async function runU3Sql(ctx:U3SqlContext,raw:unknown){
    }
    stage.value="admission";
    const plan=await admitU3Sql(p.sql,list.map(r=>r.name),p.parameters?.length??0,
-    ctx.aggregateOnly===true,[...safeOffturnColumns],knownColumnUnits);
+    ctx.aggregateOnly===true,[...safeOffturnColumns],knownColumnUnits,relationUnits satisfies U3RelationUnits);
    if(plan.relations.includes("toast_records")&&
      (p.date_from===null||p.date_to===null))throw Error("invalid_query");
    // Each page revalidates the signed owner/café/thread/lease in PostgreSQL.
