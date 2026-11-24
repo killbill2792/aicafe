@@ -138,10 +138,13 @@ export function supervisorFactReaders(client: SupabaseClient, authorizedBusiness
         readCompletePaged((start,end)=>client.from("menu_items")
           .select("id,name,category",{count:"exact"}).eq("business_id",businessId)
           .order("id",{ascending:true}).range(start,end),row=>row.id),
-        readCompletePaged((start,end)=>client.rpc("menu_item_quantities_sold",{
-          p_business_id:businessId,p_from:period.from,p_to:period.to
-        },{count:"exact"}).order("menu_item_id",{ascending:true}).range(start,end),
-          row=>row.menu_item_id),
+        readCompletePaged<{menu_item_id:string;total_quantity:number|string}>(async(start,end)=>{
+          const page=await client.rpc("menu_item_quantities_sold",{
+            p_business_id:businessId,p_from:period.from,p_to:period.to
+          },{count:"exact"}).order("menu_item_id",{ascending:true}).range(start,end);
+          return {...page,data:page.data as
+            Array<{menu_item_id:string;total_quantity:number|string}>|null};
+        },row=>row.menu_item_id),
       ]);
       if(!items||!quantityRows)return missing("productSalesRowsIncomplete");
       const knownIds=new Set(items.map(item=>item.id));
