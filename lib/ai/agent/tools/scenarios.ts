@@ -18,7 +18,7 @@ const schema=z.strictObject({
 });
 export const scenarioTools={simulate_scenario:{
  agentId:"leo",schema,
- description:"Use for what-if scenarios requiring the shared business simulation. It is read-only: no proposal/card or POS write. Supply changes in integer cents: +50000 for $500 rent, +10 for ten cents; Use verified itemId and staffId from authorized current catalog and team evidence. For ambiguous names ask_owner before simulating. The tool returns before, after, difference and estimated evidence. Only call a propose_* tool after the owner later says do it.",
+ description:"Use for what-if scenarios requiring the shared business simulation. It is read-only: no proposal/card or POS write. Supply changes in integer cents: 50000 for 500 units of the café's currency, 10 for ten cents; use verified itemId and staffId from authorized current catalog and team evidence. For ambiguous names ask_owner before simulating. The tool returns before, after, difference and estimated evidence. Only call a propose_* tool after the owner later says do it.",
  execute:async(raw:unknown,ctx:AgentToolContext):Promise<AgentToolResult>=>{
   const v=schema.parse(raw);
   if(!ctx.readEconomics)return {source:"scenario",period:null,missing:["economicsReaderUnavailable"]};

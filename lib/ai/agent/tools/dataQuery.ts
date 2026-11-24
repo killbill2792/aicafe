@@ -392,6 +392,7 @@ export const dataQueryTools={
     return {...result,empty:result.rows.length===0,
       error:failure??undefined,rowCount:result.rows.length,
       aggregate:undefined,scopeWarning:undefined,
+      customerCoverage:customerCoverageSchema.safeParse("customerCoverage" in result?result.customerCoverage:undefined).data,
       sourceMix:{}};
    }
    // The registered, authenticated path uses the paged overload of the

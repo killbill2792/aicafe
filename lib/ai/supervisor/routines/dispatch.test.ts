@@ -492,6 +492,19 @@ describe("U4 fast lane: independent cafés, no paid activation by default",()=>{
       expect(rpc).not.toHaveBeenCalled();
     }finally{vi.unstubAllEnvs();}
   });
+  it("does not finish or notify a progress-yielded objective",async()=>{
+    vi.stubEnv("SUPERVISOR_U4_ENABLED","true");
+    vi.stubEnv("SUPERVISOR_U4_WATCH_ENABLED","false");
+    mocks.claim.mockReset().mockResolvedValue({runId:"run",leaseToken:"lease",revision:1});
+    mocks.finish.mockReset().mockResolvedValue(true);
+    mocks.objective.mockReset().mockResolvedValue({yielded:true,attention:"none",sourceCount:0});
+    try{
+      const rpc=vi.fn(async()=>({data:candidates(1),error:null}));
+      expect(await dispatchDueObjectivesAcrossCafes({rpc} as never,new Date("2026-11-21T16:30:00Z")))
+       .toMatchObject({admitted:1,completed:0,failed:0,deferred:1});
+      expect(mocks.finish).not.toHaveBeenCalled();
+    }finally{vi.unstubAllEnvs();}
+  });
   it.each([1,10,100,500])("caps %i simultaneously due cafés to six independent slots",async count=>{
     vi.stubEnv("SUPERVISOR_U4_ENABLED","true");
     vi.stubEnv("SUPERVISOR_U4_WATCH_ENABLED","false");
@@ -500,7 +513,7 @@ describe("U4 fast lane: independent cafés, no paid activation by default",()=>{
       return {runId:"run",leaseToken:"lease",revision:1};
     });
     mocks.finish.mockReset().mockResolvedValue(true);
-    mocks.objective.mockReset().mockResolvedValue(undefined);
+    mocks.objective.mockReset().mockResolvedValue({attention:"attention",sourceCount:1});
     const rpc=vi.fn(async(name:string)=>{
       if(name!=="u4_due_objective_admission")throw Error("unexpected RPC");
       return {data:candidates(count),error:null};
