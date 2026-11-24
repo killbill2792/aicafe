@@ -1,5 +1,6 @@
 import "server-only";
 import {readCoveredSalesDates} from "@/lib/data/dailyFacts.server";
+import {readCompletePaged} from "@/lib/data/completePages";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { CafeStatePeriod, KnownSlice } from "@/lib/operating/types";
 import { totalMonthlyRecurringCostsCents } from "@/lib/expenses/recurringMonthlyTotal";
@@ -11,6 +12,10 @@ export type RecordedExpenses = { totalCents: number };
 export type ItemSalesCoverage = ReturnType<typeof resolveSalesCoverage>;
 export type SoldProduct = { id: string; name: string; category: "drink" | "food"; units: number };
 
+const safeCents=(value:unknown)=>{
+ const n=typeof value==="number"?value:typeof value==="string"&&/^-?\d+$/.test(value)?Number(value):NaN;
+ return Number.isSafeInteger(n)?n:null;
+};
 function known<T>(value: T, estimated = false): KnownSlice<T> {
   return { available: true, value, quality: {
     level: estimated ? "medium" : "high",
@@ -52,28 +57,39 @@ export function supervisorFactReaders(client: SupabaseClient, authorizedBusiness
     },
     async monthlyBills(businessId: string): Promise<KnownSlice<MonthlyBills>> {
       assertScope(businessId);
-      const { data, error } = await client.from("recurring_costs")
-        .select("amount_cents, frequency, is_estimate")
-        .eq("business_id", businessId).is("active_to", null);
-      if (error) throw error;
+      const data=await readCompletePaged((start,end)=>client.from("recurring_costs")
+        .select("id,amount_cents,frequency,is_estimate",{count:"exact"})
+        .eq("business_id",businessId).is("active_to",null)
+        .order("id",{ascending:true}).range(start,end),row=>row.id);
+      if(!data)return missing("recurringBillsCoverageUnverified");
       if (!data?.length) return missing("recurringBillsNotConfigured");
+      if(data.some(row=>safeCents(row.amount_cents)===null||
+        !["monthly","weekly","quarterly","yearly"].includes(row.frequency)))
+        return missing("recurringBillsAmountsUnverified");
       const costs = data.map((row) => ({
-        amountCents: Number(row.amount_cents),
+        amountCents: safeCents(row.amount_cents)!,
         frequency: row.frequency as "monthly" | "weekly" | "quarterly" | "yearly",
       }));
-      return known({ totalCents: totalMonthlyRecurringCostsCents(costs) },
+      const total=totalMonthlyRecurringCostsCents(costs);
+      if(!Number.isSafeInteger(total))return missing("recurringBillsAmountsUnverified");
+      return known({ totalCents: total },
         data.some((row) => row.is_estimate));
     },
 
     async recordedExpenses(businessId: string, period: CafeStatePeriod): Promise<KnownSlice<RecordedExpenses>> {
       assertScope(businessId);
-      const { data, error } = await client.from("expenses")
-        .select("amount_cents, status").eq("business_id", businessId)
-        .gte("spent_on", period.from).lte("spent_on", period.to);
-      if (error) throw error;
+      const data=await readCompletePaged((start,end)=>client.from("expenses")
+        .select("id,amount_cents,status",{count:"exact"}).eq("business_id",businessId)
+        .gte("spent_on",period.from).lte("spent_on",period.to)
+        .order("id",{ascending:true}).range(start,end),row=>row.id);
+      if(!data)return missing("recordedExpensesCoverageUnverified");
       const actual = (data ?? []).filter((row) => row.status === "actual");
       if (!actual.length) return missing("noRecordedActualExpenseEntries");
-      return known({ totalCents: actual.reduce((sum, row) => sum + Number(row.amount_cents), 0) });
+      if(actual.some(row=>safeCents(row.amount_cents)===null))
+        return missing("recordedExpensesAmountsUnverified");
+      const total=actual.reduce((sum,row)=>sum+safeCents(row.amount_cents)!,0);
+      return Number.isSafeInteger(total)?known({totalCents:total}):
+        missing("recordedExpensesAmountsUnverified");
     },
 
     /** Order-lines RPC is invoker-security, scoped by business AND its underlying RLS.
@@ -88,20 +104,33 @@ export function supervisorFactReaders(client: SupabaseClient, authorizedBusiness
       if (connectionError) throw connectionError;
       const covered=await readCoveredSalesDates(client,businessId,period.from,period.to);
       const coverage=resolveItemSalesCoverage(connections??[],period,covered);
-      if(!coverage.coveredDays)return missing("itemSalesCoverage");
-      const [items, quantities] = await Promise.all([
-        client.from("menu_items").select("id, name, category").eq("business_id", businessId),
-        client.rpc("menu_item_quantities_sold", {
-          p_business_id: businessId, p_from: period.from, p_to: period.to,
-        }),
+      if(!coverage.covered)return missing("itemSalesCoverage");
+      const [items, quantityRows] = await Promise.all([
+        readCompletePaged((start,end)=>client.from("menu_items")
+          .select("id,name,category",{count:"exact"}).eq("business_id",businessId)
+          .order("id",{ascending:true}).range(start,end),row=>row.id),
+        readCompletePaged<{menu_item_id:string;total_quantity:number|string}>(async(start,end)=>{
+          const page=await client.rpc("menu_item_quantities_sold",{
+            p_business_id:businessId,p_from:period.from,p_to:period.to
+          },{count:"exact"}).order("menu_item_id",{ascending:true}).range(start,end);
+          return {...page,data:page.data as
+            Array<{menu_item_id:string;total_quantity:number|string}>|null};
+        },row=>row.menu_item_id),
       ]);
-      if (items.error) throw items.error;
-      if (quantities.error) throw quantities.error;
-      const quantityRows = (quantities.data ?? []) as Array<{ menu_item_id: string; total_quantity: number | string }>;
+      if(!items||!quantityRows)return missing("productSalesRowsIncomplete");
+      const knownIds=new Set(items.map(item=>item.id));
+      const seenIds=new Set<string>();
+      for(const row of quantityRows){
+       const units=Number(row.total_quantity);
+       if(typeof row.menu_item_id!=="string"||!knownIds.has(row.menu_item_id)||
+          seenIds.has(row.menu_item_id)||!Number.isSafeInteger(units)||units<0)
+        return missing("productSalesMappingUnverified");
+       seenIds.add(row.menu_item_id);
+      }
       const byId = new Map<string, number>(quantityRows.map((row) =>
         [row.menu_item_id, Number(row.total_quantity)]));
       // Preserve archived products, as historic sales can include inactive menu items.
-      const sold=(items.data ?? []).map((item) => ({
+      const sold=items.map((item) => ({
         id: item.id, name: item.name,
         category: item.category === "food" ? "food" as const : "drink" as const,
         units: byId.get(item.id) ?? 0,
