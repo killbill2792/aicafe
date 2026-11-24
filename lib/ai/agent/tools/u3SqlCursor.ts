@@ -17,8 +17,9 @@ function fingerprint(input:FingerprintInput):string{
  // A durable run may obtain a replacement lease after a worker crash.
  // Its cursor is bound to the original run/owner/café/thread and exact SQL;
  // withinScope independently validates the CURRENT lease before using it.
- // Investigation and routine tickets retain their individual lease binding.
- const bound=input.mode==="durable"&&input.runId?{...input,leaseToken:null}:input;
+ // Routine occurrences have the same original-work identity and independently
+ // fenced current lease. Investigation tickets retain individual lease binding.
+ const bound=(input.mode==="durable"||input.mode==="routine")&&input.runId?{...input,leaseToken:null}:input;
  return createHash("sha256").update(JSON.stringify(bound)).digest("hex");
 }
 function mac(body:string,secret:string):Buffer{

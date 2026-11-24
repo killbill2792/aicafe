@@ -1,12 +1,14 @@
 import "server-only";
-import {createHash} from "node:crypto";
+import {createHash,randomUUID} from "node:crypto";
+import {z} from "zod";
 import type {SupabaseClient} from "@supabase/supabase-js";
 import {assertCafeAiAccess} from "@/lib/access/access.server";
 import {createOwnerScopedCafeTools,readSupervisorCafeIdentity} from "@/lib/ai/cafeTools.server";
 import {openAIProvider,runAgentTurn,type AgentProvider,type AgentTurn} from "@/lib/ai/agent/loop.server";
 import type {AgentToolName,AgentToolResult} from "@/lib/ai/agent/tools";
 import {assertDurablePaidTurnAllowed} from "@/lib/ai/supervisor/runs/worker.server";
-import type {OwnerRunCheckpoint} from "@/lib/ai/supervisor/runs/contracts";
+import type {OwnerRunCheckpoint,RestoredResearchRead} from "@/lib/ai/supervisor/runs/contracts";
+import {encryptResearchCheckpoint,decryptResearchCheckpoint,isResearchCheckpointTool} from "@/lib/ai/supervisor/runs/researchCheckpoint.server";
 import {loadModelExecutionCap,withWorkerBudget} from "@/lib/ai/supervisor/runs/usage.server";
 import {readSavedEventTimeline} from "@/lib/data/cafeEvents.server";
 import {getWeekSchedule as scopedWeekSchedule} from "@/lib/data/staffSchedule.server";
@@ -75,14 +77,19 @@ const digest=(value:unknown)=>{
   try{text=JSON.stringify(value);}catch{text="unserializable";}
   return createHash("sha256").update(text).digest("hex");
 };
-/** Checkpoints belong to the original durable occurrence. They contain ONLY
- * step categories, registered tool names and SHA-256, not private source
- * values, tool arguments, provider text or fabricated owner instructions.
- * The resumed model must independently read current café facts again. */
+/** The existing occurrence journal remains metadata-only. The same encrypted
+ * research checkpoint mechanism as owner runs stores authorized observations
+ * in private, ephemeral storage, fenced by the original occurrence and current
+ * lease. Only successful research receipts are recoverable; effects and
+ * external mailbox results are never retained here. */
 export function routineObjectiveCheckpoint(db:SupabaseClient,params:{
   routine:RoutineRecord;lease:ClaimedRoutine;assertLease:()=>Promise<void>;
 }):OwnerRunCheckpoint{
   const {routine,lease,assertLease}=params;
+  const researchScope={businessId:routine.businessId,ownerUserId:routine.ownerUserId,threadId:routine.threadId,runId:lease.runId};
+  const fence={p_business_id:routine.businessId,p_routine_id:routine.id,p_run_id:lease.runId,p_lease_token:lease.leaseToken};
+  const reads:RestoredResearchRead[]=[];
+  let pending:{name:string;raw:unknown;repeatSafe:boolean}|null=null;
   const record=async(stage:"provider_start"|"provider_complete"|"provider_uncertain"|
     "tool_start"|"tool_complete",tool:string|null=null,value:unknown=null)=>{
     await assertLease();
@@ -97,10 +104,30 @@ export function routineObjectiveCheckpoint(db:SupabaseClient,params:{
     assertLive:assertLease,
     beginProvider:async()=>record("provider_start"),
     endProvider:async completed=>record(completed?"provider_complete":"provider_uncertain"),
-    beginTool:async(name,raw,_repeatSafe)=>{
-      await record("tool_start",name,raw);return null;
+    beginTool:async(name,raw,repeatSafe)=>{
+      await record("tool_start",name,raw);pending={name,raw,repeatSafe};return null;
     },
     endTool:async(result)=>{
+      const opened=pending;pending=null;
+      if(opened?.repeatSafe&&isResearchCheckpointTool(opened.name)&&!result.error&&
+        !result.source.startsWith("retained_research_")&&
+        !result.missing.some(reason=>/(?:read_failed|unavailable|invalid_|denied|query_timeout|context_exhausted|not_configured)/iu.test(reason))){
+        await assertLease();
+        // Progress is based on new source evidence, not generated receipt IDs,
+        // repeated discovery, timestamps or a rephrased query. The complete
+        // original result remains encrypted; the server-generated key is a
+        // deduplication hint, never an independent source receipt.
+        const {evidence:_evidence,query_attempt_id:_attempt,retry_of:_retry,
+          as_of:_asOf,snapshot_id:_snapshot,next_cursor:_cursor,...stable}=result;
+        const key=digest({name:opened.name,result:stable});
+        const operation=randomUUID();
+        const ciphertext=encryptResearchCheckpoint(researchScope,operation,opened.name,opened.raw,result);
+        const {data,error}=await db.rpc("u4_store_research_read",{
+          ...fence,p_operation:operation,p_progress_key:key,p_ciphertext:ciphertext,p_tool:opened.name
+        });
+        if(error||data!==true)throw Error("u4_checkpoint_lease_lost");
+        return;
+      }
       await record("tool_complete",null,{
         source:result.source,missing:result.missing,
         error:typeof result.error==="string"?result.error:null,
@@ -115,6 +142,25 @@ export function routineObjectiveCheckpoint(db:SupabaseClient,params:{
       const checkpoint=data?.u4_checkpoint;
       if(!checkpoint||typeof checkpoint!=="object"||Array.isArray(checkpoint))return null;
       const steps:unknown[]=Array.isArray(checkpoint.steps)?checkpoint.steps:[];
+      const expected=typeof checkpoint.research_count==="number"?checkpoint.research_count:0;
+      reads.length=0;
+      if(expected>0){
+        const pageSchema=z.array(z.object({operation:z.uuid(),checkpoint_seq:z.number().int().positive(),ciphertext:z.string()}));
+        let after=0;
+        for(;;){
+          await assertLease();
+          const page=await db.rpc("u4_load_research_reads",{...fence,p_after_seq:after});
+          if(page.error)throw Error("research_checkpoint_scope_denied");
+          const parsed=pageSchema.parse(page.data);
+          if(!parsed.length)break;
+          for(const row of parsed){
+            if(row.checkpoint_seq<=after)throw Error("research_checkpoint_invalid");
+            reads.push(decryptResearchCheckpoint(researchScope,row.operation,row.ciphertext));
+            after=row.checkpoint_seq;
+          }
+        }
+        if(reads.length!==expected)throw Error("research_checkpoint_incomplete");
+      }
       const known=steps.filter((v:unknown):v is {stage:string;tool?:string}=>{
         if(!v||typeof v!=="object"||Array.isArray(v))return false;
         const r=v as Record<string,unknown>;
@@ -126,19 +172,27 @@ export function routineObjectiveCheckpoint(db:SupabaseClient,params:{
         "work was interrupted or yielded. Checkpoint events: "+
         JSON.stringify(known)+". These are NOT source evidence, a "+
         "finished report, a business action or an owner message. "+
-        "Choose and re-execute relevant authorized source reads and "+
-        "verify current truth before answering. The original "+
+        "Restore previously completed research receipts when available; "+
+        "choose additional authorized source reads only as needed and verify current truth before answering. The original "+
         "routine run identity, budget and approval boundaries remain in force.";
     },
     readReferences:()=>[],
+    researchReads:()=>reads,
     restoredResults:async()=>[],
-    canYield:()=>false,
-    yieldForRetry:async()=>false,
+    canYield:()=>pending===null,
+    yieldForRetry:async(_seconds,kind)=>{
+      if(kind!=="technical"||pending!==null)return false;
+      await assertLease();
+      const {data,error}=await db.rpc("u4_yield_research_slice",fence);
+      if(error)throw Error("u4_checkpoint_lease_lost");
+      return data===true;
+    },
   };
 }
 
 export type ObjectiveOutcome={
   attention:"attention"|"none";
+  yielded?:true;
   report:string;
   observedToolNames:string[];
   missing:string[];
@@ -383,6 +437,8 @@ export async function executeClaimedObjective(db:SupabaseClient,params:{
     requestId:lease.runId,
   }),cap);
   if(metered.problem())throw Error(metered.problem()!);
+  if((turn.endReason==="budget"||turn.endReason==="timeout")&&checkpoint.canYield()&&
+    await checkpoint.yieldForRetry(60,"technical"))return {yielded:true,attention:"none",report:"",observedToolNames:[],missing:[],sourceCount:0,sourceDomains:[],sourceRefs:[]};
   const verified=verifyObjectiveTurn(turn,routine);
   await recheckGmail();
   await assertCafeAiAccess(routine.businessId);

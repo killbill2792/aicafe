@@ -432,6 +432,7 @@ export async function dispatchRoutinesForBusiness(db:SupabaseClient,businessId:s
             routine,lease,localDate:candidate.localDate,
             ...(modelProvider?{provider:modelProvider}:{}),
           });
+          if(outcome.yielded)continue;
           result.runs++;
           result.evidenceChecks+=outcome.sourceCount;
           if(routine.executionMode==="objective"||outcome.attention==="attention")
@@ -513,10 +514,10 @@ export async function dispatchDueObjectivesAcrossCafes(
         revision:routine.revision,localDate:row.localDate,dueAt:due,now:at,
       });
       if(!lease)return "deferred" as const;
-      await executeClaimedObjective(db,{
+      const outcome=await executeClaimedObjective(db,{
         routine,lease,localDate:row.localDate,...(provider?{provider}:{}),
       });
-      return "completed" as const;
+      return outcome.yielded?"deferred" as const:"completed" as const;
     }catch{
       if(lease){
         try{

@@ -447,6 +447,33 @@ describe("U4 original work-identity checkpoints",()=>{
     expect(continuation).not.toContain("99999");
     expect(await checkpoint.restoredResults?.()).toEqual([]);
   });
+  it("retains encrypted core research and yields only through the fenced progress RPC",async()=>{
+    const old=process.env.SUPABASE_SERVICE_ROLE_KEY;
+    process.env.SUPABASE_SERVICE_ROLE_KEY="synthetic-routine-research-key-not-production";
+    try{
+      let receipt:Record<string,unknown>|null=null;
+      const rpc=vi.fn(async(name:string,args?:Record<string,unknown>)=>{
+        if(name==="u4_store_research_read"){receipt=args??null;return {data:true,error:null};}
+        if(name==="u4_load_research_reads")return {data:args?.p_after_seq===0&&receipt?
+          [{operation:receipt.p_operation,checkpoint_seq:1,ciphertext:receipt.p_ciphertext}]:[],error:null};
+        return {data:true,error:null};
+      });
+      const from=vi.fn(()=>({select:()=>({eq:()=>({eq:()=>({eq:()=>({
+        maybeSingle:async()=>({data:{u4_checkpoint:{steps:[{stage:"tool_complete",tool:"query_data"}],research_count:1}},error:null})
+      })})})})}));
+      const ctx={routine:objective,lease,assertLease:async()=>{}};
+      const first=routineObjectiveCheckpoint({rpc,from} as never,ctx);
+      const result={source:"canonical_data",period:null,missing:[],rows:[{secret:"test-value"}]};
+      await first.beginTool("query_data",{view:"cv_orders"},true);
+      await first.endTool(result);
+      expect(JSON.stringify(receipt)).not.toContain("test-value");
+      expect(await first.yieldForRetry(60,"technical")).toBe(true);
+      const resumed=routineObjectiveCheckpoint({rpc,from} as never,ctx);
+      await resumed.resumeContext();
+      expect(resumed.researchReads?.()).toMatchObject([{name:"query_data",result}]);
+      expect(await resumed.yieldForRetry(60,"retry")).toBe(false);
+    }finally{if(old===undefined)delete process.env.SUPABASE_SERVICE_ROLE_KEY;else process.env.SUPABASE_SERVICE_ROLE_KEY=old;}
+  });
   it("fails closed when checkpoint DB rejects its exact lease",async()=>{
     const rpc=vi.fn(async()=>({data:false,error:null}));
     const checkpoint=routineObjectiveCheckpoint({rpc} as never,{
