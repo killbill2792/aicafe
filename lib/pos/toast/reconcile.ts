@@ -18,7 +18,7 @@ class StaleImportError extends Error{}
 type Status=DayCheckState&{import_state:string;orders_snapshot_sha256:string|null;
  net_sales_cents:number;order_count:number;discounts_cents:number;refunds_cents:number;
  tax_cents?:number|null;tip_cents?:number|null;
- unparsed_count:number;imported_at:string|null;last_import_run_id?:string|null};
+ unparsed_count:number;coverage_complete?:boolean|null;imported_at:string|null;last_import_run_id?:string|null};
 const fail=(deadlineAt:number)=>{if(Date.now()>=deadlineAt)throw new ToastApiError("timeout");};
 const day8=(date:string)=>date.replaceAll("-","");
 const sum=(a:number[])=>a.reduce((x,y)=>x+y,0);
@@ -326,16 +326,31 @@ async function internalDay(db:SupabaseClient,p:Location,day:string,status:Status
   await cache.save(key,result);return result;
  };
  let paidOtherDay=0,unknownOrder=false;const otherDays=new Set<string>();
- const rawPayments=new Map<string,{date:string;order:string}>();
+ // The paid-date GUID endpoint also lists declined/voided attempts. They
+ // are not captured money and must not be classified as missing orders.
+ // Trust an exclusion only when the latest, complete source order carries the
+ // same payment GUID, order GUID, paid date and terminal status.
+ const rawPayments=new Map<string,{date:string;order:string;excluded:boolean}>();
+ const nonCapturing=new Set(["VOIDED","DENIED","CANCELLED","ERROR","ERROR_NETWORK"]);
+ const duplicated=new Set<string>();
  for(const raw of rows){
-  if(!raw||typeof raw!=="object")continue;
-  const o=raw as {guid?:string;checks?:{payments?:{guid?:string;paidBusinessDate?:number}[]}[]};
+  if(!raw||typeof raw!=="object"||Array.isArray(raw))continue;
+  const o=raw as Record<string,unknown>;
   if(!Array.isArray(o.checks))continue;
-  for(const c of o.checks){
-   if(!c||typeof c!=="object"||!Array.isArray(c.payments))continue;
-   for(const pay of c.payments){
-    if(pay&&typeof pay==="object"&&typeof pay.guid==="string"&&typeof o.guid==="string")
-     rawPayments.set(pay.guid,{date:String(pay.paidBusinessDate),order:o.guid});
+  const orderEligible=!o.deleted&&!o.voided&&!o.createdInTestMode&&!o.excessFood;
+  for(const entry of o.checks){
+   if(!entry||typeof entry!=="object"||Array.isArray(entry))continue;
+   const c=entry as Record<string,unknown>;
+   if(!Array.isArray(c.payments))continue;
+   for(const entryPayment of c.payments){
+    if(!entryPayment||typeof entryPayment!=="object"||Array.isArray(entryPayment))continue;
+    const pay=entryPayment as Record<string,unknown>;
+    if(typeof pay.guid!=="string"||typeof o.guid!=="string")continue;
+    const value={date:String(pay.paidBusinessDate),order:o.guid,
+     excluded:orderEligible&&!c.deleted&&!c.voided&&
+      (pay.voided===true||nonCapturing.has(String(pay.paymentStatus??"")))};
+    if(rawPayments.has(pay.guid))duplicated.add(pay.guid);
+    rawPayments.set(pay.guid,value);
    }
   }
  }
@@ -355,6 +370,15 @@ async function internalDay(db:SupabaseClient,p:Location,day:string,status:Status
   const payment=await paymentDetail(guid);
   if(payment.guid!==guid||String(payment.paidBusinessDate)!==day8(day)){
    proof.reasons.push("payment_guid_mismatch");continue;
+  }
+  const sourcePayment=rawPayments.get(guid);
+  if(status.coverage_complete===true&&status.unparsed_count===0&&
+     !duplicated.has(guid)&&sourcePayment?.excluded===true&&
+     sourcePayment.order===payment.orderGuid&&
+     sourcePayment.date===String(payment.paidBusinessDate)){
+   // No recovery shortcut for a captured/unknown payment. Eligible captured
+   // amounts must still pass the independent check and day money comparisons.
+   continue;
   }
   // Import state and canonical order existence cannot prove an individual
   // order was read successfully: an unparsed reimport retains old rows.
@@ -445,7 +469,7 @@ async function internalDay(db:SupabaseClient,p:Location,day:string,status:Status
 export async function reconcileToastDays(db:SupabaseClient,p:Location,deadlineAt:number){
  let mode=await detectToastCheckMode(db,p.businessId,p.restaurantGuid,p.timeZone,deadlineAt);
  const {data:days,error:de}=await db.from("toast_day_status")
-  .select("business_date,import_state,recon_state,orders_snapshot_sha256,net_sales_cents,order_count,discounts_cents,refunds_cents,tax_cents,tip_cents,unparsed_count,warnings,imported_at,last_import_run_id,last_recon_attempt_at,internal_state,internal_reasons,paid_other_day,payment_repull_at,analytics_state,recon_source,reconciled_at,last_error_category")
+  .select("business_date,import_state,recon_state,orders_snapshot_sha256,net_sales_cents,order_count,discounts_cents,refunds_cents,tax_cents,tip_cents,unparsed_count,coverage_complete,warnings,imported_at,last_import_run_id,last_recon_attempt_at,internal_state,internal_reasons,paid_other_day,payment_repull_at,analytics_state,recon_source,reconciled_at,last_error_category")
   .eq("business_id",p.businessId).eq("restaurant_guid",p.restaurantGuid)
   .eq("import_state","imported").is("rechecking_reason",null)
   // Supabase .or() calls overwrite the same PostgREST "or" query key.
