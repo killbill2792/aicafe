@@ -5,7 +5,7 @@ vi.mock("server-only", () => ({}));
 
 import { resolveItemSalesCoverage, supervisorFactReaders } from "./supervisorFacts.server";
 
-type Result = { data: unknown; error: null };
+type Result = { data: unknown; error: null; count?:number|null };
 function query(result: Result) {
   const q = {
     select: () => q, eq: () => q, is: () => q,
@@ -43,6 +43,29 @@ describe("Supervisor owner-scoped facts", () => {
     expect(client.from).toHaveBeenCalledWith("expenses");
   });
 
+  it("does not certify silently capped expense results or partial count reads",async()=>{
+    const period={from:"2026-10-01",to:"2026-10-10"};
+    const thousand=Array.from({length:1000},()=>({amount_cents:100,status:"actual"}));
+    const truncated={from:vi.fn(()=>query({data:thousand,error:null,count:1001}))} as unknown as SupabaseClient;
+    expect(await supervisorFactReaders(truncated,"cafe-a").recordedExpenses("cafe-a",period))
+      .toMatchObject({available:false,quality:{missingInputs:["recordedExpensesCoverageUnverified"]}});
+    const countMismatch={from:vi.fn(()=>query({data:thousand.slice(0,2),error:null,count:3}))} as unknown as SupabaseClient;
+    expect(await supervisorFactReaders(countMismatch,"cafe-a").recordedExpenses("cafe-a",period))
+      .toMatchObject({available:false,quality:{missingInputs:["recordedExpensesCoverageUnverified"]}});
+  });
+
+  it("does not turn out-of-range actual money into verified expense or bill totals",async()=>{
+    const period={from:"2026-10-01",to:"2026-10-10"};
+    const expenses={from:vi.fn(()=>query({data:[
+      {amount_cents:"9007199254740993",status:"actual"}],error:null,count:1}))} as unknown as SupabaseClient;
+    expect(await supervisorFactReaders(expenses,"cafe-a").recordedExpenses("cafe-a",period))
+      .toMatchObject({available:false,quality:{missingInputs:["recordedExpensesAmountsUnverified"]}});
+    const bills={from:vi.fn(()=>query({data:[
+      {amount_cents:100,frequency:"unrecognized",is_estimate:false}],error:null,count:1}))} as unknown as SupabaseClient;
+    expect(await supervisorFactReaders(bills,"cafe-a").monthlyBills("cafe-a"))
+      .toMatchObject({available:false,quality:{missingInputs:["recurringBillsAmountsUnverified"]}});
+  });
+
   it("does not promote item quantities to complete totals without verified backfill", async () => {
     const client = { from: vi.fn(() => query({ data: [], error: null })), rpc: vi.fn() } as unknown as SupabaseClient;
     const result = await supervisorFactReaders(client, "cafe-a").productSales("cafe-a", {
@@ -69,6 +92,19 @@ describe("Supervisor owner-scoped facts", () => {
     expect(client.rpc).toHaveBeenCalledWith("menu_item_quantities_sold", {
       p_business_id: "cafe-a", p_from: "2026-10-01", p_to: "2026-10-10",
     });
+  });
+
+  it("does not certify product sales with orphan, duplicated or unsafe quantities",async()=>{
+    const period={from:"2026-10-01",to:"2026-10-10"};
+    const client={
+      from:vi.fn((table:string)=>query({data:table==="pos_connections"
+        ?[{provider:"square",last_synced_at:"2026-10-10T23:00:00Z",
+           backfill_completed_at:"2026-10-01T20:00:00Z"}]
+        :[{id:"known",name:"Latte",category:"drink"}],error:null})),
+      rpc:vi.fn(async()=>({data:[{menu_item_id:"orphan",total_quantity:5}],error:null})),
+    } as unknown as SupabaseClient;
+    const result=await supervisorFactReaders(client,"cafe-a").productSales("cafe-a",period);
+    expect(result).toMatchObject({available:false,quality:{missingInputs:["productSalesMappingUnverified"]}});
   });
 
   it("only proves explicitly contracted Square item-sales backfill; unknown provider remains unproven",()=>{
