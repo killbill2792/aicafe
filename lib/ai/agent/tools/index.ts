@@ -3,6 +3,7 @@ import { laborKnown } from "@/lib/calc";
 import { z } from "zod";
 import {askOwnerTools} from "./askOwner";
 import {dataQueryTools,dataQuerySchema,type DataQueryContext} from "./dataQuery";
+import {recordResearchAttempt} from "../researchRecovery";
 import {gmailTools} from "./gmail";
 import {maintenanceTools} from "./maintenance";
 import {staffQuestionTools} from "./staffQuestion";
@@ -411,7 +412,8 @@ export async function executeAgentTool(name: string, raw: unknown, ctx: AgentToo
         // or label independent model arithmetic as an official metric.
         return {...result,metric_id:metric.id,metric_basis:"official_shared_definition"};
       }
-      return await dataQueryTools.query_data.execute(raw,scope);
+      const result=await dataQueryTools.query_data.execute(raw,scope);
+      return typeof selector.sql==="string"?recordResearchAttempt(result,selector.retry_of,ctx.turnResults?.()??[]):result;
     }
     catch{return {source:"canonical_data",period:null,missing:["source_read_failed"],rows:[],empty:true};}
   }

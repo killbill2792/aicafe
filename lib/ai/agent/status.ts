@@ -1,4 +1,5 @@
 import type { AgentToolResult } from "./tools";
+import {unreplacedResearchAttempts} from "./researchRecovery";
 
 export type AgentStatus = { status: "complete" | "partial"; missing: string[] };
 /** A logical operation is identified by its function name and normalized arguments, not call_id. */
@@ -6,7 +7,7 @@ export function statusFromResults(results: readonly {
   callId: string; name: string; arguments: string; result: AgentToolResult;
 }[]): AgentStatus {
   const latest = new Map<string, AgentToolResult>();
-  for (const attempt of results) {
+  for (const attempt of unreplacedResearchAttempts(results)) {
     let normalized = attempt.arguments;
     try {
       const parsed: unknown = JSON.parse(attempt.arguments);

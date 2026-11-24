@@ -2,6 +2,7 @@ import type {AgentTurn} from "@/lib/ai/agent/loop.server";
 import type {AgentToolName,AgentToolResult} from "@/lib/ai/agent/tools";
 import {CUSTOMER_MONITOR_POLICY,customerTrendEvidenceFields} from "@/lib/metrics/core/customers";
 import {hasVerifiedU3NumericObservation} from "@/lib/ai/agent/checkNumbers";
+import {unreplacedResearchAttempts} from "@/lib/ai/agent/researchRecovery";
 
 /** Task 15A uses the SAME registered Supervisor model/tool loop, restricted to
  * evidence reads. Only a verified owner's later turn can reach the registered
@@ -508,7 +509,7 @@ export function verifyUniversalInvestigationTurn(
  }
  const names=[...new Set(observed.map(c=>c.name))];
  return {ok:true,text,tools:["get_investigation_source",...names],
-  missing:[...new Set(calls.flatMap(c=>c.result.missing??[]))].slice(0,20)};
+  missing:[...new Set(unreplacedResearchAttempts(calls).flatMap(c=>c.result.missing??[]))]};
 }
 
 /** No receipt or effect authorization is available to a system-triggered
