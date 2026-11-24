@@ -62,10 +62,14 @@ async function pullDay(db:SupabaseClient,p:Location,day:string,deadlineAt:number
  * never downloads the whole day from Toast again. Null when the archive has
  * no copy of that import (days imported before the archive existed). */
 async function savedDay(db:SupabaseClient,p:Location,day:string,runId:string|null|undefined){
- if(!runId)return null;
+ if(!runId||!GUID.safeParse(runId).success)return null;
  const rows=await readAllPages((start,end)=>db.from("toast_raw_records").select("payload")
   .eq("business_id",p.businessId).eq("restaurant_guid",p.restaurantGuid)
-  .eq("business_date",day).eq("entity","order").eq("run_id",runId)
+  .eq("business_date",day).eq("entity","order")
+  // Latest importer leaves unchanged objects with an old run_id but updates
+  // seen_run_id. Reconcile exactly the same logical generation as the
+  // operational toast_records_for reader, never a partial previous import.
+  .or(`run_id.eq.${runId},seen_run_id.eq.${runId}`)
   .order("id").range(start,end)) as Array<{payload:unknown}>;
  return rows.length?rows.map(row=>row.payload):null;
 }
@@ -283,8 +287,8 @@ async function internalDay(db:SupabaseClient,p:Location,day:string,status:Status
  deadlineAt:number){
  const cache=proofCache(db,p,day,status),cached=await cache.load();
  // Check the saved day; only Toast's payment list below is read from Toast.
- const rows=await savedDay(db,p,day,status.last_import_run_id)??
-  await pullDay(db,p,day,deadlineAt,cache,cached);
+ const stored=await savedDay(db,p,day,status.last_import_run_id);
+ const rows=stored??await pullDay(db,p,day,deadlineAt,cache,cached);
  const proof=internalOrderProof(rows,p,day,status.orders_snapshot_sha256,status.unparsed_count);
  let comparison:ReturnType<typeof compareDayMoney>|null=null;
  const evidence:EvidencePatch={};
@@ -372,7 +376,7 @@ async function internalDay(db:SupabaseClient,p:Location,day:string,status:Status
    proof.reasons.push("payment_guid_mismatch");continue;
   }
   const sourcePayment=rawPayments.get(guid);
-  if(status.coverage_complete===true&&status.unparsed_count===0&&
+  if(stored!==null&&status.coverage_complete===true&&status.unparsed_count===0&&
      !duplicated.has(guid)&&sourcePayment?.excluded===true&&
      sourcePayment.order===payment.orderGuid&&
      sourcePayment.date===String(payment.paidBusinessDate)){
