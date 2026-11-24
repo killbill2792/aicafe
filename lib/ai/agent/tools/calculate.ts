@@ -58,9 +58,9 @@ function exactResearchField(verifiedUnit:unknown,value:string|number):CalcValue|
   verifiedUnit==="percent"||verifiedUnit==="ratio"?verifiedUnit:null;
  if(!unit)return null;
  const scale=unit==="percent"?100:1;
- const exact=exactDecimal(amount,unit,scale);
- if(!exact||unit==="cents"&&exact.n%exact.d!==BigInt(0))return null;
- return exact;
+ // A verified SQL average may contain fractional cents. Keep the exact
+ // rational until the display boundary, rather than rejecting the aggregate.
+ return exactDecimal(amount,unit,scale);
 }
 function readPath(root:unknown,path:string):unknown{
   let node=root;
@@ -85,7 +85,8 @@ const refuse=(code:string,detail?:string):AgentToolResult=>
 const symbol:Record<CalcOp,string>={add:" + ",subtract:" − ",multiply:" × ",divide:" ÷ ",sum:" + ",percent_of:" × "};
 const formulaFor:Record<CalcOp,ExplainLine["formula"]>={add:"sum",sum:"sum",subtract:"subtract",
   multiply:"multiply",percent_of:"multiply",divide:"divide"};
-function card(s:CalcShown):CardValue|null{
+function card(s:CalcShown|undefined):CardValue|null{
+  if(!s)return null;
   if(s.unit==="cents")return {kind:"money",cents:s.valueCents};
   if(s.unit==="percent")return {kind:"percent",bps:s.valueBps};
   if(s.unit==="count"&&Number.isInteger(s.quantity))return {kind:"count",n:s.quantity};

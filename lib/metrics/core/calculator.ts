@@ -38,18 +38,24 @@ function make(n:bigint,d:bigint,unit:CalcUnit):CalcValue{
  * invent these values: the caller must bind them to a verified tool receipt.
  * No Number() conversion, binary float, or unreviewed amount rounding. */
 export function exactDecimal(text:string,unit:CalcUnit,scale=1):CalcValue|null{
- if(typeof text!=="string"||text.length>60||
-   !/^[+-]?(?:0|[1-9][0-9]*)(?:\.[0-9]{1,20})?$/u.test(text)||
+ if(typeof text!=="string"||
+   !/^[+-]?(?:0|[1-9][0-9]*)(?:\.[0-9]+)?$/u.test(text)||
    !Number.isSafeInteger(scale)||scale<1)return null;
  const negative=text.startsWith("-");
  const clean=text.replace(/^[+-]/u,"");
- const [whole,frac=""]=clean.split(".");
+ const [whole,fraction=""]=clean.split(".");
+ // Strip insignificant zeroes before applying the physical rational bound.
+ // Decimal precision is not a business rule; bound BigInt allocation instead.
+ const frac=fraction.replace(/0+$/u,"");
  const digits=(whole+frac).replace(/^0+(?=\d)/u,"");
- if(digits.length>45)return null;
- let numerator:bigint;
- try{numerator=BigInt(digits);}catch{return null;}
- if(negative)numerator=-numerator;
- return make(numerator,BigInt(10)**BigInt(frac.length)*BigInt(scale),unit);
+ if(digits.length>MAX_RATIONAL_BITS||frac.length>MAX_RATIONAL_BITS)return null;
+ try{
+   const numerator=BigInt(digits)*(negative?-BigInt(1):BigInt(1));
+   return make(numerator,BigInt(10)**BigInt(frac.length)*BigInt(scale),unit);
+ }catch(e){
+   if(e instanceof ArithmeticResourceLimit)return null;
+   throw e;
+ }
 }
 
 /** Exact value of a finite JS number, read through its shortest decimal form. */

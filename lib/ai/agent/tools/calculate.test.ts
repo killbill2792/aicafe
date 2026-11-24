@@ -186,7 +186,7 @@ describe("U3 receipt-bound exact research calculation",()=>{
   const refused=await calculateTools.calculate.execute(query(older),ctx([withoutUnit]));
   expect(refused.refused).toBe("researchUnitUnverified");
  });
- it("refuses ambiguous, fabricated, missing, fractional-cent and untyped SQL evidence",async()=>{
+ it("refuses ambiguous, fabricated, missing and untyped SQL evidence",async()=>{
   expect((await calculateTools.calculate.execute(query(null),ctx(row))).refused)
    .toBe("researchReceiptRequired");
   expect((await calculateTools.calculate.execute(
@@ -194,8 +194,12 @@ describe("U3 receipt-bound exact research calculation",()=>{
    .toBe("receiptNotFound");
   expect((await calculateTools.calculate.execute(query(older,"query_data","rows.0.unknown"),ctx(row))).refused)
    .toBe("pathIsNotANumber");
-  expect((await calculateTools.calculate.execute(query(older),ctx([
-   sql(older,"12345.25")]))).refused).toBe("researchUnitUnverified");
+  const fractional=await calculateTools.calculate.execute({
+   ...query(older),
+   inputs:[...query(older).inputs,said("n",4,"count")],
+   steps:[{id:"total",label:"Four average orders",op:"multiply",args:["amount","n"]}]
+  },withOwner(ctx([sql(older,"12345.25")]),"For 4 orders"));
+  expect(fractional).toMatchObject({result:{unit:"cents",valueCents:49381}});
   expect((await calculateTools.calculate.execute(query(older),ctx([{
    ...sql(older,"12345"),result:{...sql(older,"12345").result,missing:["result_truncated"]}
   }]))).refused).toBe("incompleteResearchEvidence");
