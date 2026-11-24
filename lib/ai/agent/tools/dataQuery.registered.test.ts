@@ -1,5 +1,6 @@
+import {readdirSync, readFileSync} from "node:fs";
 import {describe,it,expect,vi} from "vitest";
-import {agentToolDefinitions,executeAgentTool,type AgentToolContext} from "./index";
+import {agentToolDefinitions,executeAgentTool,retiredResearchTools,type AgentToolContext,type AgentToolName} from "./index";
 import {dataQueryTools} from "./dataQuery";
 import {getFixtureSnapshot} from "@/lib/data/fixtureSnapshot";
 import {businessCostSummaryFromSnapshot} from "@/lib/operating/businessCosts";
@@ -20,6 +21,14 @@ const caller=()=> {
  return {rpc,context};
 };
 describe("canonical data available to authenticated chat, not only standalone tools",()=>{
+ it("keeps all live scenario tool evidence on the active research registry",()=>{
+  const scenarios=new URL("../../../../.github/luna/scenarios/",import.meta.url);
+  const retired=readdirSync(scenarios).filter(file=>file.endsWith(".json")).flatMap(file=>{
+   const manifest=JSON.parse(readFileSync(new URL(file,scenarios),"utf8")) as {expectedTools?:AgentToolName[]};
+   return (manifest.expectedTools??[]).filter(tool=>retiredResearchTools.has(tool)).map(tool=>({file,tool}));
+  });
+  expect(retired).toEqual([]);
+ });
  it("registers both functions for the model and returns the dictionary",async()=>{
   expect(agentToolDefinitions.some(t=>t.name==="describe_data")).toBe(true);
   expect(agentToolDefinitions.some(t=>t.name==="query_data")).toBe(true);

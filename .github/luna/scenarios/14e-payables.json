@@ -6,8 +6,7 @@
   "proof": "14e-payables-proof.json",
   "scope": "14e-payables-scope.json",
   "expectedTools": [
-    "get_cashflow_evidence",
-    "get_bills",
+    "query_data",
     "propose_invoice_reconciliation",
     "propose_financial_bill"
   ],

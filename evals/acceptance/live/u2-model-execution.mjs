@@ -91,7 +91,7 @@ async function ownerTurn(page,thread,text){
    calls:Number.isSafeInteger(calls)&&calls>=0?calls:null,
    providerFailures,
    tools:result.names.filter(n=>[
-    "get_menu_items","query_data"].includes(n))
+    "get_today_so_far","query_data"].includes(n))
   }));
   fail("real_supervisor_"+code);
  }
@@ -149,8 +149,8 @@ async function main(){
    if(!Array.isArray(blocks)||blocks.some(b=>b.type==="proposal_card"||b.type==="experiment_card"))fail("unexpected_effect");
    return {replyId:actual.done.reply.id,calls:Number(usage.model_call_count),receipts,names:actual.names,text:blocks.filter(b=>b.type==="text").map(b=>b.text).join("")};
   };
-  const first=await run("I'm assessing a second coffee shop. For "+sales.day+", what were this cafe's actual recorded net sales, and what is our current saved "+menu.name+" menu price? Give both as "+cafe.currency+" with two decimal places, then distinguish recorded facts from assumptions. Read only. Do not create or change anything.");
-  if(!first.names.includes("get_menu_items")||!first.names.includes("query_data"))fail("independent_business_reads_missing");
+  const first=await run("I'm assessing a second coffee shop. For "+sales.day+", what were this cafe's actual recorded net sales, and what is our current saved "+menu.name+" menu price? Give both as "+cafe.currency+" with two decimal places, then separately check whether today has a provisional live reading. Distinguish recorded facts from assumptions. Read only. Do not create or change anything.");
+  if(!first.names.includes("get_today_so_far")||!first.names.includes("query_data"))fail("independent_business_reads_missing");
   if(!matchedMoney(first.text,menu.price_cents)||!matchedMoney(first.text,sales.net_sales_cents))fail("independent_money_oracle_failed");
   assertNativeReceipts(first.receipts);
   await connection.page.close();connection.page=await connection.context.newPage();

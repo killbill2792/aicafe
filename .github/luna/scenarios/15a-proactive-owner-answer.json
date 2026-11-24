@@ -7,7 +7,7 @@
   "scope": "15a-proactive-owner-answer-scope.json",
   "expectedTools": [
     "get_investigation_source",
-    "get_sales"
+    "query_data"
   ],
   "assertions": [
     {
@@ -22,7 +22,7 @@
           "scope": "businessId"
         },
         "kind": {
-          "eq": "business_anomaly"
+          "eq": "meal_break"
         },
         "status": {
           "eq": "new"

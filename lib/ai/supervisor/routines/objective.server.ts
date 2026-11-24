@@ -205,7 +205,7 @@ export type ObjectiveOutcome={
 const sqlSourceDomains:Readonly<Record<string,string>>={
   orders:"recorded_sales",order_lines:"recorded_sales",
   daily_rollups:"recorded_sales",hourly_rollups:"recorded_sales",
-  inventory_observations:"stock_and_inventory",inventory_snapshots:"stock_and_inventory",
+  inventory_observations:"stock_and_inventory",pantry_stock_counts:"stock_and_inventory",
 };
 function sqlSourceDomain(result:AgentToolResult):string{
   const evidence=result.evidence as {relation_names?:unknown}|undefined;

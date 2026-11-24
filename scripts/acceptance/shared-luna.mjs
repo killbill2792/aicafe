@@ -36,7 +36,9 @@ export function validateScenario(m,id){
       /^evals\/acceptance\/live\/[a-zA-Z0-9_-]+\.mjs$/.test(m.entrypoint))),
     "Invalid generic test entrypoint");
   ensure(m.proof===id+"-proof.json"&&m.scope===id+"-scope.json","Invalid proof filenames");
-  ensure(Array.isArray(m.expectedTools)&&m.expectedTools.length>=2&&m.expectedTools.length<=20&&
+  ensure(Array.isArray(m.expectedTools)&&m.expectedTools.length<=20&&
+    (m.expectedTools.length>=2||m.expectedTools.length===1&&m.expectedTools[0]==="query_data")&&
+    new Set(m.expectedTools).size===m.expectedTools.length&&
     m.expectedTools.every(t=>typeof t==="string"&&/^[a-z][a-z0-9_]{1,79}$/.test(t)),"Real registered tool names required");
   ensure(Array.isArray(m.assertions)&&m.assertions.length>=3&&m.assertions.length<=20,"Independent DB assertions required");
   const kinds=new Set();

@@ -6,7 +6,7 @@
   "proof": "8b-multiday-lifecycle-proof.json",
   "scope": "8b-multiday-lifecycle-scope.json",
   "expectedTools": [
-    "get_events",
+    "query_data",
     "propose_event_plan"
   ],
   "assertions": [

@@ -13,7 +13,7 @@ import {matchedMoney} from "./u2-model-execution.mjs";
 const fail=reason=>{throw Error("source553_hourly_live:"+reason)};
 export function assertSource553Hourly({model,tools,text,cents,otherCents,foreignDenied,proposals}){
  requireObservedProductionModel(model,"gpt-6-luna");
- if(!Array.isArray(tools)||!["get_peak_hours","query_data"].every(t=>tools.includes(t)))
+ if(!Array.isArray(tools)||!tools.includes("query_data"))
   fail("registered_hourly_reader_not_used");
  if(!matchedMoney(text,cents)||matchedMoney(text,otherCents))
   fail("canonical_money_or_tenant_mismatch");

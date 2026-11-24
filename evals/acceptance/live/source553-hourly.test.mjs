@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import {assertSource553Hourly} from "./source553-hourly.mjs";
 import {resolve} from "node:path";
 import {readScenario} from "../../../scripts/acceptance/shared-luna.mjs";
-const sample={model:"gpt-6-luna",tools:["get_peak_hours","query_data"],
+const sample={model:"gpt-6-luna",tools:["query_data"],
  text:"Provisional live sales were $12.34 at 09:00; not final.",cents:1234,
  otherCents:9876,foreignDenied:true,proposals:0};
 test("source553 real-Luna acceptance requires exact registered evidence and tenant denial",()=>{
@@ -20,7 +20,7 @@ test("source553 real-Luna acceptance requires exact registered evidence and tena
 
 test("source553 scenario is source-controlled and accepted by the shared no-spend Luna catalog",()=>{
  const manifest=readScenario(resolve(import.meta.dirname,"../../.."),"source553-hourly");
- assert.deepEqual(manifest.expectedTools,["get_peak_hours","query_data"]);
+ assert.deepEqual(manifest.expectedTools,["query_data"]);
  assert.equal(manifest.entrypoint,"evals/acceptance/live/source553-hourly.mjs");
  assert.deepEqual(new Set(manifest.assertions.map(a=>a.kind)),
   new Set(["source","owner","isolation"]));

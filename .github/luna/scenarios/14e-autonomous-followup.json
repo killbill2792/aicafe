@@ -7,8 +7,7 @@
   "scope": "14e-autonomous-followup-scope.json",
   "expectedTools": [
     "get_investigation_source",
-    "get_cashflow_evidence",
-    "get_bills"
+    "query_data"
   ],
   "assertions": [
     {

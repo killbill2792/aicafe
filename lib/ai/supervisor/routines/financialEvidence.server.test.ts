@@ -107,7 +107,7 @@ async function until(check:()=>Promise<boolean>,ms:number){
 
   expect(await processNextInvestigation(db,new Date(),provider,x=>calls.push(x))).toMatchObject({investigated:1,failed:0});
   const pending=await checkpoint();expect(pending).toMatchObject({episode_id:episode,phase:"awaiting_owner"});
-  expect(pending.evidence.modelTools).toEqual(expect.arrayContaining(["get_investigation_source","get_cashflow_evidence","get_bills"]));
+  expect(pending.evidence.modelTools).toEqual(expect.arrayContaining(["get_investigation_source","query_data"]));
   expect(calls[0]?.verified).toBe(true);
   expect((await dispatch()).investigationsQueued).toBe(0);
   const before=await count("ai_messages","and role='supervisor'");
@@ -117,7 +117,7 @@ async function until(check:()=>Promise<boolean>,ms:number){
    expect(tick.failed).toBe(0);if(!tick.processed)throw Error("14e_changed_source_not_due");
   }
   const after=await checkpoint();expect(after.episode_id).toBe(episode);expect(after.phase).toBe("awaiting_owner");
-  expect(after.evidence.modelTools).toEqual(expect.arrayContaining(["get_investigation_source","get_cashflow_evidence","get_bills"]));
+  expect(after.evidence.modelTools).toEqual(expect.arrayContaining(["get_investigation_source","query_data"]));
   expect(calls.length).toBeGreaterThanOrEqual(2);
   expect(calls.every(x=>x.verified&&!x.externalEffectClaim&&x.unverifiedCount===0)).toBe(true);
   expect(await count("ai_messages","and role='supervisor'")).toBeGreaterThan(before);

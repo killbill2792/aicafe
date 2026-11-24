@@ -24,10 +24,10 @@ const requireLocal=(value:string|undefined,kind:"db"|"api"):string=>{
   return value;
 };
 
-import {refreshBusinessAnomalies} from "@/lib/alerts/businessAnomalies.server";
+import {generateAlerts} from "@/lib/alerts/generate";
 import {authorizedExternalConversation} from "@/lib/ai/conversations/authorizedTurn.server";
 
-live("generated sales data gap, real model investigation, exact owner response, retained unresolved source",async()=>{
+live("generated meal-break evidence, real model investigation, and an exact owner response to the same episode",async()=>{
  const head=process.env.AICAFE_SHARED_LUNA_HEAD;
  if(!/^[a-f0-9]{40}$/.test(head??"")||configuredSupervisorModel()!=="gpt-6-luna"||!process.env.OPENAI_API_KEY||!process.env.SUPABASE_SERVICE_ROLE_KEY)
    throw Error("15a_live_configuration");
@@ -36,7 +36,7 @@ live("generated sales data gap, real model investigation, exact owner response, 
  const db=createClient(requireLocal(process.env.NEXT_PUBLIC_SUPABASE_URL,"api"),process.env.SUPABASE_SERVICE_ROLE_KEY,{auth:{persistSession:false,autoRefreshToken:false}});
  const businessId=randomUUID(),ownerUserId=randomUUID(),threadId=randomUUID(),foreignBusinessId=randomUUID(),foreignOwnerId=randomUUID();
  const scope={businessId,ownerUserId,threadId};
- const now=new Date(),today=now.toISOString().slice(0,10);
+ const now=new Date();
  let ledger=emptyInvestigationLiveLedger(),providerCompletions=0;
  const proofs:InvestigationModelProofSummary[]=[];
  const capture=(p:InvestigationModelProofSummary)=>proofs.push(p);
@@ -62,12 +62,17 @@ live("generated sales data gap, real model investigation, exact owner response, 
    await admin.query("insert into public.memberships(business_id,user_id,role) values($1,$2,'owner')",[business,owner]);
   }
   await admin.query("insert into public.ai_threads(id,business_id,owner_user_id,client_request_id) values($1,$2,$3,$4)",[threadId,businessId,ownerUserId,randomUUID()]);
-  // Actual detector, not an invented alert fixture. Other independent reader
-  // failures are permitted only if the exact target source was truly saved.
-  await refreshBusinessAnomalies(db,businessId,today,"UTC",now).catch(error=>{
-   if(!(error instanceof Error)||error.message!=="business_anomaly_refresh_incomplete")throw error;
-  });
-  const alert=(await admin.query("select id,payload from public.alerts where business_id=$1 and kind='business_anomaly' and status='new' and payload->>'dedupeKey'='data_gap:sales_coverage'",[businessId])).rows;
+  const employeeId=randomUUID(),timecardId=randomUUID();
+  await admin.query("insert into public.employees(id,business_id,display_name) values($1,$2,'Disposable barista')",
+   [employeeId,businessId]);
+  await admin.query("insert into public.timecards(id,business_id,employee_id,clock_in,clock_out,hourly_wage_cents,breaks) "+
+   "values($1,$2,$3,$4::timestamptz-interval '8 hours',$4::timestamptz-interval '1 hour',1800,'[]'::jsonb)",
+   [timecardId,businessId,employeeId,now.toISOString()]);
+  // Generate the alert from the actual recorded timecard, never seed a
+  // technical coverage diagnostic as a paid business investigation.
+  await generateAlerts(db,businessId);
+  const alert=(await admin.query("select id,payload from public.alerts where business_id=$1 and kind='meal_break' and status='new' and payload->>'timecardId'=$2",
+   [businessId,timecardId])).rows;
   expect(alert).toHaveLength(1);
   const sourceId=alert[0].id as string;
   const hash=createHash("sha256").update(JSON.stringify(alert[0].payload)).digest("hex");
@@ -77,11 +82,22 @@ live("generated sales data gap, real model investigation, exact owner response, 
   const row=async()=>(await admin.query("select episode_id,phase,pending_question_id,last_owner_answer_id,reported_owner_answer_id from public.supervisor_investigations where business_id=$1 and source_id=$2",[businessId,sourceId])).rows[0];
   const first=await row();expect(first.phase).toBe("awaiting_owner");expect(first.pending_question_id).toBeTruthy();
   const questionId=first.pending_question_id as string;
+  const beforeRepeat=ledger.calls;
+  await generateAlerts(db,businessId);
+  const later=new Date(now.getTime()+86_400_000);
+  const repeat=await db.rpc("supervisor_enqueue_investigation",{p_business_id:businessId,
+   p_owner_user_id:ownerUserId,p_thread_id:threadId,p_source_type:"alert",p_source_id:sourceId,
+   p_revision_hash:hash,p_stable_key:hash,p_priority:400,p_now:later.toISOString()});
+  expect(repeat.error).toBeNull();
+  expect(repeat.data).toBe(false);
+  expect(await processNextInvestigation(db,later,provider,capture)).toMatchObject({processed:0});
+  expect(ledger.calls).toBe(beforeRepeat);
+  expect(await row()).toEqual(first);
   const service=await authorizedExternalConversation(scope,threadId);
   const unrelated=await service.addOwnerMessage(threadId,randomUUID(),"This is a separate question.");
   expect((await row()).pending_question_id).toBe(questionId);
   await expect(authorizedExternalConversation({businessId:foreignBusinessId,ownerUserId:foreignOwnerId},threadId)).rejects.toThrow();
-  const answer=await service.addOwnerMessage(threadId,randomUUID(),"I do not have the sales records yet. Please keep checking the source.");
+  const answer=await service.addOwnerMessage(threadId,randomUUID(),"I cannot confirm whether the break happened outside the recorded punches. Keep the original case open while I check.");
   const args={p_business_id:businessId,p_owner_user_id:ownerUserId,p_thread_id:threadId,p_question_id:questionId,p_answer_id:answer.id,p_response:{questionId,action:"supply"}};
   const foreign=await db.rpc("supervisor_answer_investigation_question",{...args,p_business_id:foreignBusinessId,p_owner_user_id:foreignOwnerId});
   expect(foreign.error).toBeTruthy();
@@ -97,7 +113,7 @@ live("generated sales data gap, real model investigation, exact owner response, 
   expect((await admin.query("select status from public.alerts where id=$1",[sourceId])).rows[0].status).toBe("new");
   expect((await admin.query("select count(*)::int n from public.supervisor_effect_attempts where business_id=$1",[businessId])).rows[0].n).toBe(0);
   const toolNames=[...new Set(proofs.flatMap(p=>p.toolNames))];
-  expect(toolNames).toContain("get_investigation_source");expect(toolNames).toContain("get_sales");
+  expect(toolNames).toContain("get_investigation_source");expect(toolNames).toContain("query_data");
   expect(providerCompletions).toBe(ledger.calls);expect(ledger.calls).toBeGreaterThanOrEqual(4);
   const proof={schema_version:1,task:scenario,head_sha:head,status:"passed",observed_model:"gpt-6-luna",provider:"openai_responses",provider_calls:ledger.calls,provider_completions:providerCompletions,tool_names:toolNames,actual_source_detector:true,exact_owner_answer:true,same_episode:true,no_unapproved_effect:true,feature_proven:false,integrated_proven:false,released_proven:false};
   mkdirSync("test-results/acceptance",{recursive:true});

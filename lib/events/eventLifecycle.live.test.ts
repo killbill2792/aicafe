@@ -95,12 +95,12 @@ run("real Luna reads exact multi-day event, prepares proactively, preserves deci
    expect((await readExactCafeEvent(db,businessId,cafeEventId,endDate,endDate))?.id).toBe(cafeEventId);
    expect(await readExactCafeEvent(db,foreignBusinessId,cafeEventId,endDate,endDate)).toBeNull();
    const chat=await runAgentTurn({businessId,requestId:randomUUID(),
-     ownerText:"What is the exact saved event on "+endDate+" [id:"+cafeEventId+"]? Read get_events with that ID and date, and explain the verified duration without assuming sales.",
-     toolNames:["get_events"],context:{asOf:today,timezone,locale:"en",threadId,
-       savedEvents:(from,to,options)=>readSavedEventTimeline(db,scope,from,to,options),
+     ownerText:"What is the exact saved event on "+endDate+" [id:"+cafeEventId+"]? Use the saved event and source verification to explain its duration without assuming sales.",
+     toolNames:["describe_data","query_data","calculate"],context:{asOf:today,timezone,locale:"en",threadId,
+       canonicalData:async()=>({db,businessId,ownerUserId:ownerId,threadId,mode:"owner" as const}),
        tools:{getProfitability:async()=>{throw Error("unavailable")},getSalesTrend:async()=>{throw Error("unavailable")},getMenuCatalog:async()=>{throw Error("unavailable")}}}});
    expect(chat.usage.model).toBe("gpt-6-luna");
-   expect(chat.results.some(r=>r.source==="cafe_events"&&JSON.stringify(r).includes(cafeEventId))).toBe(true);
+   expect(chat.results.some(r=>r.source==="u3_canonical_research"&&Array.isArray(r.rows)&&JSON.stringify(r.rows).includes(cafeEventId))).toBe(true);
    expect(await draftDay(db,{id:businessId,timezone,is_demo:false},ownerId,"en",today,
      {date:startDate,events:[event],hash:effectHash(eventPlanFacts([event]))},[],timeline,eventAssessmentSourceHash(timeline))).toBe(true);
    const plans=(await readSavedEventTimeline(db,scope,startDate,endDate)).plans;

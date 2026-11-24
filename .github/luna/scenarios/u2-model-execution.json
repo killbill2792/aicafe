@@ -6,7 +6,7 @@
   "proof": "u2-model-execution-proof.json",
   "scope": "u2-model-execution-scope.json",
   "expectedTools": [
-    "get_menu_items",
+    "get_today_so_far",
     "query_data"
   ],
   "assertions": [
