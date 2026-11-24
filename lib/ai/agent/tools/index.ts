@@ -406,7 +406,7 @@ export async function executeAgentTool(name: string, raw: unknown, ctx: AgentToo
     const canonicalOnly=!toast&&typeof selector.relation!=="string"&&
       (selector.source==="canonical"||(typeof selector.view==="string"&&selector.source!=="research"));
     if(canonicalOnly||!ctx.canonicalData)return dataQueryTools.describe_data.execute(raw);
-    try{return await dataQueryTools.describe_data.execute(raw,await ctx.canonicalData());}
+    try{return await dataQueryTools.describe_data.execute(raw,{...await ctx.canonicalData(),resultBudgetBytes:ctx.researchPageBytes?.()});}
     catch{
       const source=toast?"toast_fields":"u3_semantic_catalog";
       return {source,period:null,missing:["source_read_failed"],error:"source_read_failed"};

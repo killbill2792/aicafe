@@ -243,12 +243,14 @@ it("lists the field names of a Toast record type for this café only",async()=>{
  const all=await dataQueryTools.describe_data.execute({record_type:null});
  expect(all.views?.some(v=>v.name==="cv_toast_records")).toBe(true);
 });
-it("keeps results compact by dropping whole rows and saying so",()=>{
- const rows=Array.from({length:100},(_,i)=>({i,text:"x".repeat(200)}));
- const fit=fitRows(rows);
+it("fits whole rows to the actual UTF-8 transport allowance instead of a fixed text ceiling",()=>{
+ const rows=Array.from({length:100},(_,i)=>({i,text:"é".repeat(200)}));
+ const fit=fitRows(rows,12000);
  expect(fit.cut).toBe(true);
- expect(JSON.stringify(fit.rows).length).toBeLessThanOrEqual(6000);
- expect(fitRows(rows.slice(0,3))).toEqual({rows:rows.slice(0,3),cut:false});
+ expect(Buffer.byteLength(JSON.stringify(fit.rows),"utf8")).toBeLessThanOrEqual(12000);
+ expect(Buffer.byteLength(JSON.stringify(fit.rows),"utf8")).toBeGreaterThan(6000);
+ expect(fitRows(rows.slice(0,3),12000)).toEqual({rows:rows.slice(0,3),cut:false});
+ expect(fitRows(rows,0)).toEqual({rows:[],cut:true});
 });
 
 it("propagates the existing screen coverage gaps and source names",async()=>{
