@@ -455,9 +455,8 @@ describe("Task 15A operational end-to-end orchestration (recorded source/model)"
     {name:"missing evidence",draft:{state:"missing"},status:"Please confirm the missing stock count",expected:{missing:["stock_purchase_evidence_missing"]}},
     {name:"unverified draft",draft:null,status:"I could not verify the purchase draft",expected:{missing:["stock_purchase_draft_unverified"]}},
   ])("preserves the whole verified stock report and stores separate procurement status: $name",async({draft,status,expected})=>{
-    const text="Observed evidence. ".repeat(90)+"The closing qualification must remain intact; delivery is not independently verified.";
-    expect(text.length).toBeGreaterThan(1300);
-    expect(text.length).toBeLessThanOrEqual(1800);
+    const text="Observed evidence. ".repeat(150)+"The closing qualification must remain intact; delivery is not independently verified.";
+    expect(text.length).toBeGreaterThan(1800);
     const selectors={family:"stockout_risk",subject:"ingredient-a"};
     const exact={source:"investigation_source",period:null,missing:[],sourceType:"alert",sourceId:"alert-a",incidentKind:"business_anomaly",selectors};
     const inventory={source:"inventory",period:null,missing:[],rows:[{id:"ingredient-a",quantity:2}]};

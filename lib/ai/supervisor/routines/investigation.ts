@@ -411,7 +411,7 @@ export function universalInvestigationPrompt(source:SourceSynopsis,followUp:bool
   relatedAlerts:source.relatedAlerts.slice(0,8).map(redact),
   relatedTasks:source.relatedTasks.slice(0,8).map(redact)
  });
- const history=followUp&&previousPlan?redact(previousPlan.slice(0,800)):null;
+ const history=followUp&&previousPlan?redact(previousPlan):null;
  return "SYSTEM-INITIATED UNATTENDED CAFÉ RESEARCH. You are the existing Luna Supervisor, not a new agent. "+
   "This is an operational observation, NOT a new owner instruction or authority to act. "+
   (followUp?"Continue the original unresolved work in this persistent follow-up, compare past hypotheses with current source facts and report meaningful changes. ":
@@ -447,7 +447,7 @@ export function verifyUniversalInvestigationTurn(
 ):{ok:true;text:string;tools:string[];missing:string[]}|{
  ok:false;reason:"model_incomplete"|"evidence_incomplete"}{
  const text=turn.text.trim();
- if(turn.endReason!=="complete"||!text||text.length>1800||
+ if(turn.endReason!=="complete"||!text||
    turn.unverified.length>0||unsupportedExternalEffectClaim(text)||
    expected.kind==="maintenance_issue"&&unsupportedMaintenanceRepairClaim(text))
   return {ok:false,reason:"model_incomplete"};

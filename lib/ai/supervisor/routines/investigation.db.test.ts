@@ -870,9 +870,8 @@ describe("Task 15A exact owner response binding",()=>{
    worker=await connect("service");owner=await connect("owner",ownerId);
    const enqueue=(rev:string,at:string)=>rpc(worker!,"supervisor_enqueue_investigation",[...scope,"alert",alertId,hex(rev),hex(rev),400,at]);
    const claim=(at:string)=>rpc(worker!,"supervisor_claim_investigation",[at]);
-   const narrative="Observed evidence. ".repeat(90)+"Please confirm the current stock count; delivery is not independently verified.";
-   expect(narrative.length).toBeGreaterThan(1300);
-   expect(narrative.length).toBeLessThanOrEqual(1800);
+   const narrative="Observed evidence. ".repeat(150)+"Please confirm the current stock count; delivery is not independently verified.";
+   expect(narrative.length).toBeGreaterThan(1800);
    const finish=(c:Record<string,unknown>,outcome:string,evidence:unknown,at:string)=>rpc(worker!,"supervisor_finish_investigation",[...scope,"alert",alertId,c.revision_hash,c.lease_token,outcome,JSON.stringify(evidence),outcome==="collected"?null:narrative,at]);
    expect(await enqueue("a",stamp(now,-3))).toBe(true);
    const first=await claim(stamp(now,-3));

@@ -41,6 +41,14 @@ describe("U3 model-led autonomous investigation",()=>{
   expect(follow).toContain("Continue the original unresolved work");
   expect(follow).not.toContain("07:00");
  });
+ it("does not discard a long verified report or the final context of an earlier investigation",()=>{
+  const report="Observed evidence and uncertainty. ".repeat(100)+"Closing qualification.";
+  expect(report.length).toBeGreaterThan(1800);
+  expect(verifyUniversalInvestigationTurn(turn({text:report}),expected,permitted))
+   .toMatchObject({ok:true,text:report});
+  const follow=universalInvestigationPrompt(signal,true,"Earlier source notes. ".repeat(100)+"Final unresolved hypothesis.");
+  expect(follow).toContain("Final unresolved hypothesis.");
+ });
  it("accepts unfamiliar incidents with source-backed research in a model-chosen order",()=>{
   const reordered=[analytics,caseRead];
   const result=verifyUniversalInvestigationTurn(turn({
