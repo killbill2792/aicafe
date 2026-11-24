@@ -16,6 +16,8 @@ export type DataQueryContext={
  resultBudgetBytes?:number;
  /** Internal fixed operational preview; never selected by model arguments. */
  previewOnly?:boolean;
+ /** Isolated deterministic evaluator transport; never admitted in a deployed runtime. */
+ testSqlTransport?:typeof runU3Sql;
 };
 const DEFAULT_ROWS=50,MAX_ROWS=100;
 /** Current-source operational views. Storing a row is not proof that the
@@ -366,8 +368,9 @@ export const dataQueryTools={
    if(p.restore_receipt!=null||p.restore_path!=null||p.restore_offset!=null)return empty("retained_receipt_requires_durable_context");
    if(p.sql!==null){
     if([p.view,p.columns,p.filters,p.group_by,p.metrics,p.order_by].some(v=>v!==null))return empty("invalid_query");
-    if(!u3SqlConfigured())return empty("capability_unavailable");
-    const result=await runU3Sql(ctx,{sql:p.sql,parameters:p.parameters,limit:p.limit,
+    const fixture=process.env.NODE_ENV==="test"?ctx.testSqlTransport:undefined;
+    if(!fixture&&!u3SqlConfigured())return empty("capability_unavailable");
+    const result=await (fixture??runU3Sql)(ctx,{sql:p.sql,parameters:p.parameters,limit:p.limit,
       cursor:p.cursor,date_from:p.date_from,date_to:p.date_to});
     // Preserve the existing registered-tool contract for legacy consumers.
     // Failed SQL is not a successful empty business observation.

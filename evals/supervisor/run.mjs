@@ -11,7 +11,7 @@ const file=join(dir,"results.json");
 try{
   const bin=process.platform==="win32"?"node_modules/.bin/promptfoo.cmd":"node_modules/.bin/promptfoo";
   const cmd=spawnSync(bin,["eval","--config","evals/supervisor/promptfooconfig.yaml",
-    "--no-cache","--no-share","--output",file],{stdio:"inherit",env:process.env});
+    "--no-cache","--no-share","--output",file],{stdio:"inherit",env:{...process.env,NODE_ENV:"test"}});
   try{
     const report=JSON.parse(readFileSync(file,"utf8"));
     const rows=report.results?.results??[];

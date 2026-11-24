@@ -66,7 +66,7 @@ function numbersIn(answer,unit){
 function assertDates(reply,context){
   const replay=replays[String(context?.vars?.caseId??"")];
   assert.ok(replay,"unknown recorded case");
-  const expected=replay.tools.map(c=>c.args?.official_metric?.period??c.args?.period)
+  const expected=replay.tools.map(c=>c.args?.date_from&&c.args?.date_to?{from:c.args.date_from,to:c.args.date_to}:c.args?.period)
     .find(p=>p&&typeof p.from==="string"&&typeof p.to==="string");
   if(!expected)return;
   assert.ok(reply.results.some(r=>r.period?.from===expected.from&&
@@ -98,7 +98,8 @@ module.exports.metric=(output,context)=>check(()=>{
   assert.equal(typeof wanted,"number","missing SQL numeric truth");
   const results=reply.results.filter(result=>result.source===cfg.source);
   assert.ok(results.length>0,"Verified source evidence missing: "+cfg.source);
-  const observed=pathAt(results.at(-1),cfg.field);
+  const raw=pathAt(results.at(-1),cfg.field);
+  const observed=typeof raw==="number"?raw/(cfg.scale??1):raw;
   assert.equal(typeof observed,"number",cfg.field+" is not a numeric tool result");
   const tolerance=cfg.tolerance??(cfg.unit==="percent"?0.0001:1);
   assert.ok(Math.abs(observed-wanted)<=tolerance,
@@ -111,10 +112,10 @@ module.exports.name=(output,context)=>check(()=>{
   const reply=decoded(output),cfg=context.vars.check;
   const wanted=seed.sqlTruth[cfg.truth];
   assert.equal(typeof wanted,"string","missing SQL identity truth");
-  const catalog=reply.results.find(r=>r.source===cfg.source&&r.view==="cv_menu");
-  assert.ok(catalog?.rows?.some(r=>r.data?.name===wanted),"expected catalog identity missing");
+  const catalog=reply.results.find(r=>r.source===cfg.source&&r.evidence?.relation_names?.includes("menu_items"));
+  assert.ok(catalog?.rows?.some(r=>r.name===wanted),"expected catalog identity missing");
   const active=seed.menu.filter(item=>item.active);
-  const rows=catalog.rows.map(r=>r.data);
+  const rows=catalog.rows;
   assert.equal(rows.length,active.length,"comparison skipped active items");
   for(const item of active)assert.ok(rows.some(r=>r.id===item.id&&r.price_cents===item.priceCents),"catalog observation differs from seed");
   assert.ok(reply.answer.toLowerCase().includes(wanted.toLowerCase()),
@@ -123,8 +124,8 @@ module.exports.name=(output,context)=>check(()=>{
 });
 module.exports.margin=(output)=>check(()=>{
   const reply=decoded(output);
-  const rows=reply.results.filter(r=>r.source==="product_costs"&&r.item)
-    .map(r=>r.item);
+  const rows=reply.results.filter(r=>r.source==="u3_canonical_research"&&r.evidence?.relation_names?.includes("recipe_lines"))
+    .flatMap(r=>r.rows).map(r=>({id:r.id,name:r.name,priceCents:r.price_cents,recipeCostCents:r.quantity*r.cost_per_base_unit_micros/1000000}));
   const menu=seed.menu;
   assert.ok(rows.length>=menu.length,"margin comparison skipped item cost reads");
   for(const item of menu){
@@ -148,10 +149,10 @@ module.exports.margin=(output)=>check(()=>{
 });
 module.exports.missing=(output)=>check(()=>{
   const reply=decoded(output);
-  const labor=reply.results.find(r=>r.source==="labor_and_attendance");
+  const labor=reply.results.find(r=>r.source==="u3_canonical_research"&&r.evidence?.relation_names?.includes("daily_rollups"));
   assert.ok(labor,"labor reader wasn't used");
-  assert.equal(labor.laborCostPercent,seed.sqlTruth.day21LaborRate);
-  assert.ok(labor.missing.some(s=>s.startsWith("laborWageUnknown:")),
+  assert.equal(labor.rows[0].labor_ratio,seed.sqlTruth.day21LaborRate);
+  assert.ok(labor.rows[0].missing_wages>0,
     "missing wage was hidden");
   assert.match(reply.answer,/missing|unknown|not recorded|not available|incomplete|cannot verify|don't have/i,
     "owner was not told what is unknown");
@@ -159,9 +160,8 @@ module.exports.missing=(output)=>check(()=>{
 });
 module.exports.inventory=(output)=>check(()=>{
   const reply=decoded(output);
-  assert.ok(reply.results.some(r=>r.source==="canonical_data"&&r.view==="cv_inventory"&&
-    Array.isArray(r.rows)&&r.rows.length===0&&r.missing.includes("empty")&&
-    !r.missing.includes("inventoryReaderUnavailable")&&r.truncated===false),
+  assert.ok(reply.results.some(r=>r.source==="u3_canonical_research"&&r.evidence?.relation_names?.includes("inventory_observations")&&
+    Array.isArray(r.rows)&&r.rows.length===0&&!r.error&&r.truncated===false),
     "successful empty inventory source was not observed");
   assert.match(reply.answer,/not tracked|don't track|not recorded|unknown|unavailable/i);
 });

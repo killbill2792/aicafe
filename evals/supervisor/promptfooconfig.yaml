@@ -13,7 +13,7 @@ tests:
     vars:
       caseId: labor-day-19
       question: "For October 19, 2026, what percent of sales went to staff labor?"
-      check: {truth: day19LaborRate, source: labor_and_attendance, field: laborCostPercent, unit: percent, tolerance: 0.0001}
+      check: {truth: day19LaborRate, source: u3_canonical_research, field: rows.0.labor_ratio, unit: percent, tolerance: 0.0001}
     assert:
       - type: javascript
         value: file://assertions.cjs:metric
@@ -21,7 +21,7 @@ tests:
     vars:
       caseId: labor-loaded-19
       question: "What was the known staff labor cost on October 19, 2026?"
-      check: {truth: day19LaborCents, source: labor_and_attendance, field: laborDays.0.loadedStaffCostCents, unit: cents, tolerance: 1}
+      check: {truth: day19LaborCents, source: u3_canonical_research, field: rows.0.loaded_staff_cents, unit: cents, tolerance: 1}
     assert:
       - type: javascript
         value: file://assertions.cjs:metric
@@ -29,15 +29,15 @@ tests:
     vars:
       caseId: labor-day-20
       question: "What was the labor percentage on October 20, 2026?"
-      check: {truth: day20LaborRate, source: labor_and_attendance, field: laborCostPercent, unit: percent, tolerance: 0.0001}
+      check: {truth: day20LaborRate, source: u3_canonical_research, field: rows.0.labor_ratio, unit: percent, tolerance: 0.0001}
     assert:
       - type: javascript
         value: file://assertions.cjs:metric
-  - description: Two days are aggregated through the one canonical labor calculation
+  - description: Two days are aggregated by SQL on the recorded labor facts
     vars:
       caseId: labor-two-days
       question: "For October 19 through October 20, 2026, what percentage of sales did labor cost?"
-      check: {truth: twoDayLaborRate, source: labor_and_attendance, field: laborCostPercent, unit: percent, tolerance: 0.0001}
+      check: {truth: twoDayLaborRate, source: u3_canonical_research, field: rows.0.labor_ratio, unit: percent, tolerance: 0.0001}
     assert:
       - type: javascript
         value: file://assertions.cjs:metric
@@ -52,7 +52,7 @@ tests:
     vars:
       caseId: latte-price
       question: "What is the menu price of House Latte?"
-      check: {truth: lattePriceCents, source: canonical_data, field: rows.0.data.price_cents, unit: cents, tolerance: 1}
+      check: {truth: lattePriceCents, source: u3_canonical_research, field: rows.0.price_cents, unit: cents, tolerance: 1}
     assert:
       - type: javascript
         value: file://assertions.cjs:metric
@@ -60,15 +60,15 @@ tests:
     vars:
       caseId: tea-price
       question: "What is the current menu price for Spiced Tea?"
-      check: {truth: teaPriceCents, source: canonical_data, field: rows.0.data.price_cents, unit: cents, tolerance: 1}
+      check: {truth: teaPriceCents, source: u3_canonical_research, field: rows.0.price_cents, unit: cents, tolerance: 1}
     assert:
       - type: javascript
         value: file://assertions.cjs:metric
-  - description: Recipe cost comes from the product economics tool
+  - description: Recipe cost from the original recorded recipe line and ingredient price
     vars:
       caseId: cocoa-cost
       question: "How much does Cocoa cost us in its known recipe cost per item?"
-      check: {truth: cocoaCostCents, source: product_costs, field: item.recipeCostCents, unit: cents, tolerance: 1}
+      check: {truth: cocoaCostCents, source: u3_canonical_research, field: rows.0.cost_per_base_unit_micros, scale: 1000000, unit: cents, tolerance: 1}
     assert:
       - type: javascript
         value: file://assertions.cjs:metric
@@ -76,7 +76,7 @@ tests:
     vars:
       caseId: lowest-price
       question: "Which item on the active menu has the lowest current price?"
-      check: {truth: lowestPriceName, source: canonical_data}
+      check: {truth: lowestPriceName, source: u3_canonical_research}
     assert:
       - type: javascript
         value: file://assertions.cjs:name
@@ -84,7 +84,7 @@ tests:
     vars:
       caseId: highest-price
       question: "Which active menu item has the highest current price?"
-      check: {truth: highestPriceName, source: canonical_data}
+      check: {truth: highestPriceName, source: u3_canonical_research}
     assert:
       - type: javascript
         value: file://assertions.cjs:name
@@ -92,7 +92,7 @@ tests:
     vars:
       caseId: latte-units
       question: "How many units of House Latte were sold on October 19, 2026?"
-      check: {truth: latteUnits, source: item_sales, field: items.0.units, unit: count, tolerance: 0}
+      check: {truth: latteUnits, source: u3_canonical_research, field: rows.0.units, unit: count, tolerance: 0}
     assert:
       - type: javascript
         value: file://assertions.cjs:metric
