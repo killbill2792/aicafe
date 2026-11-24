@@ -330,13 +330,13 @@ where t.business_id=a.business_id and t.kind='priority_notice'
   and (a.payload->>'family'='data_gap' or
        a.payload->>'quality' in ('technical_failure','not_matured'));
 
--- Maintain immutable message rows and their original text for audit. A
--- separately authorized conversation read excludes superseded system notices;
--- no owner turns, real completed findings or specific questions are changed.
+-- Preserve the original verified/partial content status and original
+-- message text for auditing. The Supervisor message CHECK does not permit
+-- inventing a new status; use separate, explicit system-notice metadata.
 update public.ai_messages
 set grounding=jsonb_set(coalesce(grounding,'{}'::jsonb),
-                       '{status}','"superseded"'::jsonb,true)
+                       '{systemNoticeSuperseded}','true'::jsonb,true)
 where role='supervisor' and
       grounding->>'intent' in
       ('priority_notice','priority_investigation_exception')
-      and grounding->>'status' is distinct from 'superseded';
+      and grounding->>'systemNoticeSuperseded' is distinct from 'true';
