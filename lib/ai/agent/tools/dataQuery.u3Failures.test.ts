@@ -36,14 +36,17 @@ describe("real registered SQL discovery carries authenticated scope",()=>{
   ownerUserId:"bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
   threadId:"cccccccc-cccc-4ccc-8ccc-cccccccccccc",db:{} as never};
  const context=()=>({asOf:"2026-11-24",timezone:"UTC",locale:"en",
-  tools:{} as AgentToolContext["tools"],canonicalData:vi.fn(async()=>scope)} satisfies AgentToolContext);
+  tools:{} as AgentToolContext["tools"],canonicalData:vi.fn(async()=>scope),researchPageBytes:()=>32000} satisfies AgentToolContext);
  it("passes the trusted owner/café/thread context for ordinary research discovery",async()=>{
   const ctx=context();
   for(const raw of [{source:"research",relation:"orders"},{source:"auto",search:"sales"},{}]){
    vi.mocked(describeU3Catalog).mockClear();
    const actual=await executeAgentTool("describe_data",raw,ctx);
    expect(describeU3Catalog).toHaveBeenCalledOnce();
-   expect(describeU3Catalog).toHaveBeenCalledWith(expect.objectContaining({...scope,resultBudgetBytes:expect.any(Number)}),expect.objectContaining({search:"sales"}));
+   expect(describeU3Catalog).toHaveBeenCalledWith(expect.objectContaining({...scope,resultBudgetBytes:expect.any(Number)}),expect.objectContaining({search:"search" in raw?raw.search:null,relation:"relation" in raw?raw.relation:null}));
+   const budget=vi.mocked(describeU3Catalog).mock.calls[0]?.[0].resultBudgetBytes;
+   expect(budget).toBeGreaterThan(0);
+   expect(budget).toBeLessThanOrEqual(32000);
    expect(actual.error).toBe("source_read_failed");
    expect(JSON.stringify(actual)).not.toContain("private transport details");
   }
