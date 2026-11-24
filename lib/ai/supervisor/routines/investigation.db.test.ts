@@ -101,6 +101,9 @@ describe("Task 15A migrated, agentic investigation SQL integration",()=>{
       expect(await rpc(a,"post_supervisor_priority_notice",originalNotice)).toBe(false);
       const updatedNotice=notice(hex("1"),hex("2"));
       expect(await rpc(b,"post_supervisor_priority_notice",updatedNotice)).toBe(true);
+      // P1 regression: delayed retry of an OLD already-published revision
+      // must not handle the still-open NEWER owner action.
+      expect(await rpc(a,"post_supervisor_priority_notice",originalNotice)).toBe(false);
       const history=await admin.query(
         "select id,status from public.operating_tasks where business_id=$1 and kind='priority_notice' "+
         "and payload->>'sourceType'='alert' and payload->>'sourceId'=$2 order by id",
@@ -174,6 +177,18 @@ describe("Task 15A migrated, agentic investigation SQL integration",()=>{
         owner_user_id:owners[0],thread_id:threads[0],intent:"priority_investigation"});
       const ownerInbox=await ownerClient.query("select id from public.operating_tasks where kind='priority_notice' and id like 'investigation:%'");
       expect(ownerInbox.rows.map(row=>row.id)).toEqual([inbox.rows[0].id]);
+      // P1 regression: a generic reminder for the SAME underlying alert
+      // must never close the real investigation's unanswered owner question.
+      // Both share kind='priority_notice', but only priority:... IDs are
+      // generic and supersedable; investigation:... reports are substantive.
+      expect(await rpc(a,"post_supervisor_priority_notice",[
+        cafes[0],owners[0],threads[0],"alert",alerts[0],
+        hex("d"),hex("c"),"Actionable café alert needs review",stamp(now,5)
+      ])).toBe(true);
+      const afterReminder=await admin.query(
+        "select id,status from public.operating_tasks where business_id=$1 and id=$2",
+        [cafes[0],inbox.rows[0].id]);
+      expect(afterReminder.rows).toEqual([{id:inbox.rows[0].id,status:"needs_owner"}]);
       expect(await rpc(b,"supervisor_claim_investigation",[stamp(now,5)])).toBeNull();
       // A second café can progress independently even with the first waiting.
       expect(await rpc(a,"supervisor_enqueue_investigation",
