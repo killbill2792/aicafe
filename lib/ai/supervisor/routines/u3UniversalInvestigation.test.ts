@@ -62,6 +62,37 @@ describe("U3 model-led autonomous investigation",()=>{
    toolInvocations:[caseRead,{...analytics,result:{...analytics.result,truncated:true}}]}),
    expected,permitted)).toEqual({ok:false,reason:"evidence_incomplete"});
  });
+ it("does not mistake discovery, failed readers or scenario arithmetic for observed business facts",()=>{
+  const metadata={name:"describe_data",result:{source:"u3_semantic_catalog",period:null,
+    missing:[],total:32,relations:[{name:"orders",fieldsTotal:12}]}};
+  const hypothetical={name:"calculate",result:{source:"calculate",period:null,
+    missing:[],result:12000,estimated:true}};
+  const failed={name:"get_sales",result:{source:"daily_rollups",period:null,
+    missing:["source_read_failed"],error:"source_read_failed",days:[{netSalesCents:0}]}};
+  for(const read of [metadata,hypothetical,failed]){
+   expect(verifyUniversalInvestigationTurn(turn({toolInvocations:[caseRead,read],
+     results:[caseRead.result,read.result]}),expected,permitted))
+     .toEqual({ok:false,reason:"evidence_incomplete"});
+  }
+  expect(verifyUniversalInvestigationTurn(turn({toolInvocations:[metadata,analytics,hypothetical,caseRead]}),
+    expected,permitted)).toMatchObject({ok:true});
+ });
+ it("binds receiving findings and inert proposals to the actual claimed order",()=>{
+  const target={...expected,kind:"supplier_receiving"};
+  const source={...caseRead,result:{...caseRead.result,incidentKind:target.kind,
+    selectors:{entityId:"po-a"}}};
+  const receiving={name:"inspect_purchase_reconciliation",result:{source:"purchase_reconciliation",
+    period:null,missing:[],reconciliation:{purchaseOrderId:"po-a",lines:[{acceptedQuantity:2}]}}};
+  const proposal={name:"propose_supplier_discrepancy_followup",result:{source:"gmail_proposal",
+    period:null,missing:[],proposalCreated:true,approvalRequired:true,sent:false,
+    purchaseOrderId:"po-a",proposalId:"draft"}};
+  const admitted=[...permitted,proposal.name];
+  expect(verifyUniversalInvestigationTurn(turn({toolInvocations:[source,receiving,proposal]}),target,admitted))
+    .toMatchObject({ok:true});
+  expect(verifyUniversalInvestigationTurn(turn({toolInvocations:[source,receiving,
+    {...proposal,result:{...proposal.result,purchaseOrderId:"po-b"}}]}),target,admitted))
+    .toEqual({ok:false,reason:"evidence_incomplete"});
+ });
  it("rejects model-picked SQL constants without attested source units",()=>{
   const forged={...analytics,result:{...analytics.result,
     rows:[{fakeCents:99999}],evidence:{...analytics.result.evidence,column_units:{}}}};

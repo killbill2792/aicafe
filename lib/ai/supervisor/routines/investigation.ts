@@ -169,10 +169,10 @@ function qualifiedCustomerTrendCoverage(result:AgentToolResult,anonymous=false):
     c.linkedChecks/c.eligibleChecks>=CUSTOMER_MONITOR_POLICY.minimumIdentityCoverage);
 }
 export function hasObservedEvidence(result:AgentToolResult):boolean{
-  if(!Array.isArray(result.missing))return false;
+  if(!Array.isArray(result.missing)||result.error)return false;
   // Schema metadata, row-count sentinels and truncated/failed aggregate
   // reads must never establish an independent observed fact.
-  if(result.source==="canonical_dictionary"||result.source==="toast_fields")return false;
+  if(["canonical_dictionary","toast_fields","u3_semantic_catalog","calculate"].includes(result.source))return false;
   if(result.source==="u3_canonical_research"){
     // Only the shared U3 typed-receipt checker may attest numeric SQL facts.
     // A model's SELECT literal or projection alias is never an observation.
@@ -470,13 +470,13 @@ export function verifyUniversalInvestigationTurn(
  if(expected.kind==="supplier_receiving"){
   const selectors=source.result.selectors as {entityId?:unknown}|undefined;
   const id=selectors?.entityId;
-  if(typeof id!=="string"||!observed.some(c=>c.name==="inspect_purchase_reconciliation"&&
+  if(typeof id!=="string"||!observed.some(c=>c.result.source==="purchase_reconciliation"&&
     c.result.reconciliation&&typeof c.result.reconciliation==="object"&&
     (c.result.reconciliation as {purchaseOrderId?:unknown}).purchaseOrderId===id))
    return {ok:false,reason:"evidence_incomplete"};
  }
  if(expected.kind==="money_update"&&expected.sourceId.startsWith("financial-review:")&&
-   !observed.some(c=>c.name==="get_cashflow_evidence"))
+   !observed.some(c=>c.result.source==="cashflow_evidence"))
   return {ok:false,reason:"evidence_incomplete"};
  if(expected.kind==="business_anomaly"){
   const selector=source.result.selectors as {family?:unknown;subject?:unknown;
@@ -500,7 +500,9 @@ export function verifyUniversalInvestigationTurn(
  }
  for(const c of calls.filter(c=>c.name==="propose_supplier_discrepancy_followup")){
   if(c.result.proposalCreated===true&&
-   (c.result.approvalRequired!==true||c.result.sent!==false||
+   (expected.kind!=="supplier_receiving"||
+    c.result.purchaseOrderId!==(source.result.selectors as {entityId?:unknown}|undefined)?.entityId||
+    c.result.approvalRequired!==true||c.result.sent!==false||
     typeof c.result.proposalId!=="string"))
    return {ok:false,reason:"evidence_incomplete"};
  }
