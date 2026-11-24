@@ -195,6 +195,23 @@ describe.skipIf(!active)("U3 migrated registered tool + private connection",()=>
    await admin.query("DELETE FROM public.employees WHERE id IN ($1,$2)",[employeeA,employeeB]);
   }
  });
+ it("verifies actual named timecard observations from SQL source lineage",async()=>{
+  if(!admin)throw Error("admin_missing");
+  const employee=randomUUID(),card=randomUUID();
+  await admin.query("INSERT INTO public.employees(id,business_id,display_name) VALUES($1,$2,'Synthetic Clock Sam')",[employee,ids.a]);
+  await admin.query("INSERT INTO public.timecards(id,business_id,employee_id,clock_in,clock_out,source_type) VALUES($1,$2,$3,'2026-11-15T09:00:00Z','2026-11-15T15:00:00Z','toast')",[card,ids.a,employee]);
+  try{
+   const result=await dataQueryTools.query_data.execute(input("SELECT timecard_id,employee_name,timezone,clock_in,clock_out,recorded_break_count FROM recorded_timecards"),scoped);
+   expect(result.error).toBeUndefined();
+   expect(result.rows).toHaveLength(1);
+   expect(checkNumbers("Synthetic Clock Sam clocked in at 9:00 AM on November 15, 2026. Synthetic Clock Sam worked 6 hours.","",[result as unknown as AgentToolResult],"en")).toEqual([]);
+   const other=await dataQueryTools.query_data.execute(input("SELECT count(*) AS n FROM recorded_timecards"),{...scoped,aggregateOnly:true});
+   expect(other.error).toBe("unattended_aggregate_required");
+  }finally{
+   await admin.query("DELETE FROM public.timecards WHERE id=$1",[card]);
+   await admin.query("DELETE FROM public.employees WHERE id=$1",[employee]);
+  }
+ });
  it("discovers newly admitted business configuration and source quality through the same SQL interface",async()=>{
   if(!admin)throw Error("admin_missing");
   await admin.query("INSERT INTO public.team_rules(business_id,meal_break_minutes) VALUES($1,35),($2,45) ON CONFLICT(business_id) DO UPDATE SET meal_break_minutes=excluded.meal_break_minutes",[ids.a,ids.b]);

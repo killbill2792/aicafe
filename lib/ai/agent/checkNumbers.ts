@@ -6,7 +6,7 @@ import { metricCatalog,metricKeySchema } from "@/lib/calc/metrics/catalog";
 import { sumCents } from "@/lib/calc/money";
 
 export type MenuPrice = {id:string;name:string;priceCents:number};
-export type TimeScope = {kind:"hours";days:string[]} | {kind:"schedule";from:string;to:string;exhaustive?:boolean} | {kind:"timecards"};
+export type TimeScope = {kind:"hours";days:string[]} | {kind:"schedule";from:string;to:string;exhaustive?:boolean} | {kind:"timecards";replaceAll?:boolean;cards?:Array<{id:string;clockIn:boolean;clockOut:boolean;breaks:boolean}>};
 export type NumericEvidence = {tool:string;values:Array<{key:string;value:number;unit:"cents"|"bps"|"ratio"|"count";
   provenance?:"estimate";detail?:"breakEvenSales"|"salesGap"|"dailyOverhead"|"pricing"}>;
   times?:VerifiedTime[];timeScope?:TimeScope;prices?:MenuPrice[];
@@ -124,12 +124,11 @@ function u3ReceiptNumber(raw:unknown,unit:unknown):
  return unit==="percent"?{value:numeric*100,unit:"bps"}:
   {value:numeric,unit:"ratio"};
 }
-function verifiedU3Evidence(r:AgentToolResult,periodKey:string){
- const values:NumericEvidence["values"]=[];
+function completeU3Proof(r:AgentToolResult):Record<string,unknown>|null{
  if(r.source!=="u3_canonical_research"||r.error||
-  r.missing.length>0||r.truncated===true||!Array.isArray(r.rows))return values;
+  r.missing.length>0||r.truncated===true||!Array.isArray(r.rows))return null;
  const e=r.evidence;
- if(!e||typeof e!=="object"||Array.isArray(e))return values;
+ if(!e||typeof e!=="object"||Array.isArray(e))return null;
  const proof=e as Record<string,unknown>;
  if(proof.scope!=="verified_owner_cafe_lease"||
   typeof proof.receipt_id!=="string"||
@@ -139,7 +138,72 @@ function verifiedU3Evidence(r:AgentToolResult,periodKey:string){
   typeof proof.catalog_version!=="string"||
   !/^[a-f0-9]{16}$/i.test(proof.catalog_version)||
   !proof.column_units||typeof proof.column_units!=="object"||
-  Array.isArray(proof.column_units))return values;
+  Array.isArray(proof.column_units))return null;
+ return proof;
+}
+/** Reconstruct only the direct columns of the SAME trusted SQL binding.
+ * An output alias, CASE, constant or another self-join row cannot fabricate
+ * employee, date, timestamp or menu-item identity. */
+function directU3Rows(r:AgentToolResult,relation:string):Array<Record<string,unknown>>{
+ const proof=completeU3Proof(r);
+ const origins=proof?.column_origins;
+ if(!origins||typeof origins!=="object"||Array.isArray(origins)||!Array.isArray(r.rows))return [];
+ const out:Record<string,unknown>[]=[];
+ for(const row of r.rows){
+  if(!row||typeof row!=="object"||Array.isArray(row))continue;
+  const bindings=new Map<number,Record<string,unknown>>();
+  for(const [label,origin] of Object.entries(origins)){
+   if(!origin||typeof origin!=="object"||Array.isArray(origin)||origin.relation!==relation||
+    typeof origin.column!=="string"||!Number.isSafeInteger(origin.binding)||
+    !Object.hasOwn(row,label))continue;
+   const fields=bindings.get(origin.binding)??Object.create(null) as Record<string,unknown>;
+   if(Object.hasOwn(fields,origin.column))continue;
+   fields[origin.column]=(row as Record<string,unknown>)[label];
+   bindings.set(origin.binding,fields);
+  }
+  out.push(...bindings.values());
+ }
+ return out;
+}
+const actualTimestamp=(v:unknown):string|null=>{
+ const d=v instanceof Date?v:typeof v==="string"?new Date(v):null;
+ return d&&Number.isFinite(d.getTime())?d.toISOString():null;
+};
+function localPunch(timestamp:string|null,timezone:unknown):{date:string;time:string}|null{
+ if(!timestamp||typeof timezone!=="string")return null;
+ try{
+  const parts=new Intl.DateTimeFormat("en-CA",{timeZone:timezone,year:"numeric",month:"2-digit",day:"2-digit",hour:"2-digit",minute:"2-digit",hourCycle:"h23"}).formatToParts(new Date(timestamp));
+  const get=(kind:string)=>parts.find(p=>p.type===kind)?.value??"";
+  const date=get("year")+"-"+get("month")+"-"+get("day"),time=get("hour")+":"+get("minute");
+  return /^\d{4}-\d{2}-\d{2}$/u.test(date)&&/^(?:[01]\d|2[0-3]):[0-5]\d$/u.test(time)?{date,time}:null;
+ }catch{return null;}
+}
+function observedCards(r:AgentToolResult):Array<Record<string,unknown>>{
+ if(r.error)return [];
+ if(r.source==="labor_and_attendance"&&r.attendance&&typeof r.attendance==="object"&&!Array.isArray(r.attendance)){
+  const rows=(r.attendance as Record<string,unknown>).recordedTimecards;
+  return Array.isArray(rows)?rows.filter(x=>x&&typeof x==="object"&&!Array.isArray(x)):[];
+ }
+ return directU3Rows(r,"recorded_timecards").flatMap(row=>{
+  if(typeof row.timecard_id!=="string"||!/^[a-f0-9-]{36}$/iu.test(row.timecard_id))return [];
+  const clockIn=actualTimestamp(row.clock_in),clockOut=actualTimestamp(row.clock_out);
+  const start=localPunch(clockIn,row.timezone),end=localPunch(clockOut,row.timezone);
+  if(!start&&!end)return [];
+  const breakCount=u3ReceiptNumber(row.recorded_break_count,"count")?.value??null;
+  const elapsed=clockIn&&clockOut&&Date.parse(clockOut)>=Date.parse(clockIn)?
+   Math.round((Date.parse(clockOut)-Date.parse(clockIn))/36000)/100:null;
+  return [{timecardId:row.timecard_id,employeeName:typeof row.employee_name==="string"?row.employee_name:null,
+   localDate:start?.date??end?.date,clockIn,clockInLocal:start?.time??null,
+   ...(Object.hasOwn(row,"clock_out")?{clockOut,clockOutLocal:end?.time??null,clockOutLocalDate:end?.date??null}:{}),
+   elapsedHours:elapsed,breakEvidence:breakCount===null?"unknown":breakCount===0?"none_recorded":"recorded",
+   ...(Object.hasOwn(row,"recorded_break_count")?{recordedBreakCount:breakCount}:{}),
+   clockInObserved:Object.hasOwn(row,"clock_in"),clockOutObserved:Object.hasOwn(row,"clock_out")}];
+ });
+}
+function verifiedU3Evidence(r:AgentToolResult,periodKey:string){
+ const values:NumericEvidence["values"]=[];
+ const proof=completeU3Proof(r);
+ if(!proof||!Array.isArray(r.rows))return values;
  const units=proof.column_units as Record<string,unknown>;
  for(const [rowIndex,row] of r.rows.entries()){
   if(!row||typeof row!=="object"||Array.isArray(row))continue;
@@ -278,44 +342,26 @@ export function compactEvidence(results:readonly AgentToolResult[],limit=100):Nu
       }
     }
     appendGoalNumericEvidence(r,values,invalidatedKeys);
-    // No model-authored projection can create clock or duration evidence:
-    // only the canonical get_labor response with a stable timecard ID, valid
-    // local date and internally consistent recorded timestamps is admitted.
-    if(r.source==="labor_and_attendance"&&r.attendance&&
-      typeof r.attendance==="object"&&!Array.isArray(r.attendance)){
-      const attendance=r.attendance as Record<string,unknown>;
-      const cards=Array.isArray(attendance.recordedTimecards)?
-        attendance.recordedTimecards:[];
-      for(const raw of cards){
-        if(!raw||typeof raw!=="object"||Array.isArray(raw))continue;
-        const c=raw as Record<string,unknown>;
-        if(typeof c.timecardId!=="string"||
-          !/^[a-f0-9-]{36}$/iu.test(c.timecardId)||
-          typeof c.localDate!=="string"||
-          !/^\d{4}-\d{2}-\d{2}$/u.test(c.localDate)||
-          typeof c.clockIn!=="string"||!Number.isFinite(Date.parse(c.clockIn)))continue;
-        const inAt=Date.parse(c.clockIn);
-        const outAt=typeof c.clockOut==="string"?Date.parse(c.clockOut):NaN;
-        const hours=Number.isFinite(outAt)&&outAt>=inAt?
-          Math.round((outAt-inAt)/36000)/100:null;
-        const cardScope=periodKey+"timecard:"+c.timecardId+"/day:"+
-          c.localDate+"/person:"+encodeURIComponent(
-            typeof c.employeeName==="string"?c.employeeName.trim().toLocaleLowerCase():"")+"/";
-        // A prior closed punch may now be corrected to an unknown clock-out.
-        // Invalidating the field even on null prevents stale saved duration.
-        invalidatedKeys.push(cardScope+"elapsedHours");
-        if(hours!==null&&typeof c.elapsedHours==="number"&&
-          Math.abs(c.elapsedHours-hours)<0.001){
-          values.push({key:cardScope+"elapsedHours",value:hours,unit:"count"});
-        }
-        invalidatedKeys.push(cardScope+"recordedBreakCount");
-        const breaks=c.recordedBreakCount;
-        if((c.breakEvidence==="none_recorded"&&breaks===0)||
-          (c.breakEvidence==="recorded"&&typeof breaks==="number"&&
-            Number.isSafeInteger(breaks)&&breaks>0)){
-          values.push({key:cardScope+"recordedBreakCount",value:breaks as number,unit:"count"});
-        }
-      }
+    // Canonical source identity, not a tool name, establishes a punch.
+    // SQL joins can provide direct row proof; arbitrary aliases cannot.
+    const cards=observedCards(r);
+    for(const c of cards){
+      if(typeof c.timecardId!=="string"||!/^[a-f0-9-]{36}$/iu.test(c.timecardId)||
+       typeof c.localDate!=="string"||!/^\d{4}-\d{2}-\d{2}$/u.test(c.localDate))continue;
+      const inAt=typeof c.clockIn==="string"?Date.parse(c.clockIn):NaN;
+      const outAt=typeof c.clockOut==="string"?Date.parse(c.clockOut):NaN;
+      const hours=Number.isFinite(inAt)&&Number.isFinite(outAt)&&outAt>=inAt?
+       Math.round((outAt-inAt)/36000)/100:null;
+      const cardScope=periodKey+"timecard:"+c.timecardId+"/day:"+c.localDate+"/person:"+
+       encodeURIComponent(typeof c.employeeName==="string"?c.employeeName.trim().toLocaleLowerCase():"")+"/";
+      if(c.clockInObserved!==false||c.clockOutObserved!==false)invalidatedKeys.push(cardScope+"elapsedHours");
+      if(hours!==null&&typeof c.elapsedHours==="number"&&Math.abs(c.elapsedHours-hours)<0.001)
+       values.push({key:cardScope+"elapsedHours",value:hours,unit:"count"});
+      if(Object.hasOwn(c,"recordedBreakCount"))invalidatedKeys.push(cardScope+"recordedBreakCount");
+      const breaks=c.recordedBreakCount;
+      if((c.breakEvidence==="none_recorded"&&breaks===0)||
+       (c.breakEvidence==="recorded"&&typeof breaks==="number"&&Number.isSafeInteger(breaks)&&breaks>0))
+       values.push({key:cardScope+"recordedBreakCount",value:breaks as number,unit:"count"});
     }
     const observedTimes=[...observedHours([r]),...observedShifts([r]),
       ...observedTimecardClocks([r])];
@@ -326,10 +372,15 @@ export function compactEvidence(results:readonly AgentToolResult[],limit=100):Nu
     // Successful canonical labor reads supersede old timecard clock and
     // duration facts, including records now open/unknown or absent. A failed
     // read must not wipe previously established evidence.
-    if(r.source==="labor_and_attendance"&&!r.error&&r.attendance&&
-       typeof r.attendance==="object"&&!Array.isArray(r.attendance)&&
-       Array.isArray((r.attendance as Record<string,unknown>).recordedTimecards))
-      timeScope={kind:"timecards"};
+    const attendance=r.source==="labor_and_attendance"&&!r.error&&r.attendance&&
+      typeof r.attendance==="object"&&!Array.isArray(r.attendance)?r.attendance as Record<string,unknown>:null;
+    if(Array.isArray(attendance?.recordedTimecards)||cards.length){
+      timeScope={kind:"timecards",replaceAll:attendance!==null&&
+        !(typeof attendance.recordedTimecardsPageOffset==="number"&&attendance.recordedTimecardsPageOffset>0),
+        cards:cards.flatMap(c=>typeof c.timecardId==="string"?[{id:c.timecardId,
+         clockIn:c.clockInObserved!==false,clockOut:c.clockOutObserved!==false,
+         breaks:Object.hasOwn(c,"recordedBreakCount")}]:[])};
+    }
     if(r.source==="locations.open_hours"){
       // Successful partial configuration explicitly invalidates the days
       // listed as unset; a network/reader failure does not.
@@ -365,6 +416,11 @@ export function compactEvidence(results:readonly AgentToolResult[],limit=100):Nu
         prices.push({id:row.id,name:row.name,priceCents:row.priceCents});
     };
     if(r.source==="menu_items"&&Array.isArray(r.items))r.items.forEach(record);
+    for(const row of directU3Rows(r,"menu_items")){
+      if(!Object.hasOwn(row,"price_cents"))continue;
+      const price=row.price_cents===null?null:u3ReceiptNumber(row.price_cents,"cents")?.value;
+      if(price!==undefined)record({id:row.id,name:row.name,priceCents:price});
+    }
     if(r.source==="product_costs")record(r.item);
     // Pricing engine exposes a stable itemId and the CURRENT price; do not
     // substitute its recommendation, or fabricate a display name.
@@ -409,7 +465,26 @@ function reconcileSavedEvidence(entries:readonly NumericEvidence[]):NumericEvide
     // timecard facts from this source. They cannot remain verified after a
     // changed or cleared clock-out, or after the reader changes its window.
     if(entry.timeScope?.kind==="timecards"){
-      for(const key of slot.values.keys())if(key.includes("timecard:"))slot.values.delete(key);
+      const scope=entry.timeScope;
+      const all=scope.replaceAll!==false;
+      const observed=new Map((scope.cards??[]).map(c=>[c.id,c]));
+      // The same recorded card can arrive through the legacy reader or SQL.
+      // First-page refresh withdraws old snapshots; later pages only refresh
+      // their actual card identities. An absent clock-out cannot stay verified.
+      for(const prior of bySource.values()){
+        for(const key of prior.values.keys()){
+          const id=key.match(/(?:^|\/)timecard:([^/]+)\//u)?.[1];
+          const card=id?observed.get(id):undefined;
+          if(id&&(all||card&&(key.endsWith("recordedBreakCount")?card.breaks:card.clockIn||card.clockOut)))
+           prior.values.delete(key);
+        }
+        prior.times=prior.times.filter(t=>{
+          if(t.role!=="clockIn"&&t.role!=="clockOut")return true;
+          if(all)return false;
+          const card=t.timecardId?observed.get(t.timecardId):undefined;
+          return t.timecardId!==undefined?!(card&&(t.role==="clockIn"?card.clockIn:card.clockOut)):observed.size===0;
+        });
+      }
     }
     const grouped=new Map<string,Value[]>();
     for(const v of entry.values){
@@ -443,7 +518,6 @@ function reconcileSavedEvidence(entries:readonly NumericEvidence[]):NumericEvide
     if(entry.timeScope?.kind==="timecards"){
       // Superseded canonical punches must not survive from saved chat turns.
       // Keep opening-hours and schedule observations in their own roles.
-      slot.times=slot.times.filter(t=>t.role!=="clockIn"&&t.role!=="clockOut");
       slot.times.push(...times);
     }else if(entry.timeScope?.kind==="hours"){
       const updated=new Set(entry.timeScope.days);
@@ -690,7 +764,7 @@ const DAY_MENTIONS = [
 type TimeRole = "open"|"close"|"shiftStart"|"shiftEnd"|"clockIn"|"clockOut";
 type ClockSpan = RegExpMatchArray & {index:number};
 type VerifiedTime = {day:string;time:string;role:TimeRole;complete:boolean;person:string|null;
-  validFrom?:string;validTo?:string;dated?:boolean};
+  validFrom?:string;validTo?:string;dated?:boolean;timecardId?:string};
 const clockEnd = (clock:ClockSpan) => clock.index+clock[0].length;
 // The clock token includes the meridiem: dropping Arabic "مساءً" silently
 // turns a 5 PM closing claim into the wrong 05:00 morning assertion.
@@ -942,11 +1016,7 @@ function observedHours(results:readonly AgentToolResult[]):VerifiedTime[] {
 function observedTimecardClocks(results:readonly AgentToolResult[]):VerifiedTime[]{
  const known:VerifiedTime[]=[];
  for(const r of results){
-  if(r.source!=="labor_and_attendance"||!r.attendance||
-    typeof r.attendance!=="object"||Array.isArray(r.attendance))continue;
-  const attendance=r.attendance as Record<string,unknown>;
-  const cards=Array.isArray(attendance.recordedTimecards)?
-    attendance.recordedTimecards:[];
+  const cards=observedCards(r);
   for(const raw of cards){
    if(!raw||typeof raw!=="object"||Array.isArray(raw))continue;
    const c=raw as Record<string,unknown>;
@@ -967,7 +1037,7 @@ function observedTimecardClocks(results:readonly AgentToolResult[]):VerifiedTime
      if(!Number.isFinite(localDt.getTime())||
        localDt.toISOString().slice(0,10)!==rawDate)continue;
      known.push({day:DAY_MENTIONS[localDt.getUTCDay()].key,time:rawTime,
-       role,complete:false,person:name,validFrom:rawDate,validTo:rawDate,dated:true});
+       role,complete:false,person:name,validFrom:rawDate,validTo:rawDate,dated:true,timecardId:c.timecardId});
    }
   }
  }
@@ -1038,7 +1108,8 @@ function canonicalPricesExistInRead(previous:readonly NumericEvidence[],
   return previous.some(e=>(e.prices?.length??0)>0)||
     current.some(r=>{
       const items=r.source==="menu_items"&&Array.isArray(r.items)?r.items:
-        r.source==="product_costs"?[r.item]:[];
+        r.source==="product_costs"?[r.item]:directU3Rows(r,"menu_items").map(row=>({
+         id:row.id,name:row.name,priceCents:u3ReceiptNumber(row.price_cents,"cents")?.value}));
       return items.some(item=>item&&typeof item==="object"&&
         typeof item.id==="string"&&typeof item.name==="string"&&
         typeof item.priceCents==="number");

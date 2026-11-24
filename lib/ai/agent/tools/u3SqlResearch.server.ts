@@ -240,7 +240,12 @@ export function selectU3Catalog(all:readonly U3Relation[],p:{
 export async function describeU3Catalog(ctx:U3SqlContext,p:{
  search?:string|null;relation?:string|null;offset?:number|null;limit?:number|null
 }){
- return withinScope(ctx,async client=>selectU3Catalog(await sources(client),p));
+ return withinScope(ctx,async client=>{
+  const all=await sources(client);
+  const aggregateOnly=ctx.aggregateOnly===true||ctx.mode==="routine"||ctx.mode==="investigation";
+  const visible=aggregateOnly?all.filter(r=>!ownerOnlyResearchRelations.has(r.name)):all;
+  return selectU3Catalog(visible,p);
+ });
 }
 /** Protect the legacy retained-data archive from nested-object extraction,
  * including objects serialized by PostgreSQL as text. */

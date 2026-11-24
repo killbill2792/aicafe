@@ -157,6 +157,13 @@ describe("recorded labor punch verifier, not roster or invented model prose",()=
    expect(checkNumbers("Maya clocked in at 9:00 AM on November 15, 2026.",
      "",[many],"en")).not.toEqual([]);
  });
+ it("preserves earlier independent pages and withdraws a corrected record by identity",()=>{
+   const first=(observed.attendance as {recordedTimecards:Array<Record<string,unknown>>}).recordedTimecards[0];
+   const second={...first,timecardId:"22345678-1234-4123-8123-123456789abc",employeeName:"Maya",clockIn:"2026-11-15T18:05:00Z",clockInLocal:"10:05",clockOut:"2026-11-16T00:05:00Z",clockOutLocal:"16:05"};
+   const page=(card:Record<string,unknown>,offset:number)=>({...observed,attendance:{recordedTimecards:[card],recordedTimecardsPageOffset:offset}}) as AgentToolResult;
+   expect(checkNumbers("Sam clocked in at 9:00 AM on November 15, 2026. Maya clocked in at 10:05 AM on November 15, 2026.","",[page(first,0),page(second,100)],"en")).toEqual([]);
+   expect(checkNumbers("Maya clocked out at 4:05 PM on November 15, 2026.","",[page(first,0),page(second,100),page({...second,clockOut:null,clockOutLocal:null,elapsedHours:null},100)],"en")).not.toEqual([]);
+ });
  it("recognizes owner-facing named punch phrasing only for the right employee",()=>{
    expect(checkNumbers("Sam had a clock-in at 9:00 AM on November 15, 2026.","",
      [observed],"en")).toEqual([]);
@@ -217,5 +224,19 @@ describe("complete SQL snapshot receipts across pages",()=>{
    expect(status(rows).status).toBe("partial");
    expect(compactEvidence(rows).flatMap(x=>x.values)).toEqual([]);
   }
+ });
+});
+
+describe("direct SQL source-row provenance",()=>{
+ const fields={card:"timecard_id",worker:"employee_name",tz:"timezone",start:"clock_in",finish:"clock_out",breaks:"recorded_break_count"};
+ const row={card:"12345678-1234-4123-8123-123456789abc",worker:"Sam",tz:"America/Los_Angeles",start:"2026-11-15T17:00:00Z",finish:"2026-11-15T23:00:00Z",breaks:0};
+ const make=(workerBinding=1,extra:Record<string,unknown>={})=>({...receipt(),rows:[{...row,...extra}],evidence:{...(receipt().evidence as object),column_units:{},
+  column_origins:Object.fromEntries(Object.entries(fields).map(([label,column])=>[label,{relation:"recorded_timecards",column,binding:label==="worker"?workerBinding:1}]))}}) as AgentToolResult;
+ it("verifies real SQL clock observations and duration, not model-selected aliases or different rows",()=>{
+  expect(checkNumbers("Sam clocked in at 9:00 AM on November 15, 2026. Sam worked 6 hours.","",[make()],"en")).toEqual([]);
+  expect(checkNumbers("Sam clocked in at 9:00 AM on November 15, 2026.","",[make(2)],"en")).not.toEqual([]);
+  expect(checkNumbers("Sam clocked in at 10:00 AM on November 15, 2026.","",[make()],"en")).not.toEqual([]);
+  const prior=compactEvidence([make()]);
+  expect(checkNumbers("Sam clocked out at 3:00 PM on November 15, 2026.","",[make(1,{finish:null})],"en",prior)).not.toEqual([]);
  });
 });

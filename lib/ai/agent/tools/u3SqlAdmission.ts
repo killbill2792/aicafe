@@ -72,7 +72,7 @@ for(const source of Object.values(toastOfficialFieldCatalog)){
  }
 }
 
-export const ownerOnlyResearchRelations:ReadonlySet<string>=new Set(["employees","timecards","scheduled_shifts","cafe_decisions","employee_pay_period_facts","timecard_breaks","current_owner_facts","staff_availability_rules","staff_availability_exceptions","staff_schedules","pos_scheduled_shifts","staff_scheduling_preferences","staff_qualifications","staff_custom_rules"]);
+export const ownerOnlyResearchRelations:ReadonlySet<string>=new Set(["employees","timecards","scheduled_shifts","cafe_decisions","employee_pay_period_facts","timecard_breaks","current_owner_facts","staff_availability_rules","staff_availability_exceptions","staff_schedules","pos_scheduled_shifts","staff_scheduling_preferences","staff_qualifications","staff_custom_rules","recorded_timecards"]);
 
 export type U3TrustedUnit="cents"|"count"|"percent"|"ratio";
 export type U3RelationUnits=Readonly<Record<string,Readonly<Record<string,U3TrustedUnit|null>>>>;
@@ -454,7 +454,10 @@ export async function admitU3Sql(sql:string,allowedRelations:readonly string[],
     // Do not certify an ambiguous wildcard's dimensions; the actual
     // executor independently rejects duplicate returned field labels.
     if(selected.length!==1)return new Map();
-    for(const [label,field] of selected[0].columns)add(label,field);
+    for(const [label,field] of selected[0].columns){
+     if(result.has(label))throw Error("duplicate_result_columns");
+     add(label,field);
+    }
     continue;
    }
    const label=targetName(target);

@@ -230,10 +230,10 @@ CREATE OR REPLACE VIEW u3_research.staff_availability_exceptions WITH (security_
 
 -- Additional explicitly reviewed business facts; the scoped source RLS and
 -- view predicate both fence the new data, with personal rows owner-only.
-GRANT SELECT (business_id,business_date,import_state,recon_state,imported_at,net_sales_cents,gross_sales_cents,discounts_cents,refunds_cents,tax_cents,tip_cents,order_count,open_check_count,service_charges_cents,gratuity_cents,toast_net_sales_cents,toast_orders_count,toast_discount_cents,toast_refund_cents,delta_net_cents,delta_orders,recon_source,reconciled_at,unparsed_count,coverage_complete,analytics_state,delta_discount_cents,delta_refund_cents,delta_void_orders,void_amount_gap_cents,last_recon_attempt_at,paid_other_day,owner_confirmed_at) ON public.toast_day_status TO aicafe_research_view_owner;
+GRANT SELECT (business_id,restaurant_guid,business_date,import_state,recon_state,imported_at,net_sales_cents,gross_sales_cents,discounts_cents,refunds_cents,tax_cents,tip_cents,order_count,open_check_count,service_charges_cents,gratuity_cents,toast_net_sales_cents,toast_orders_count,toast_discount_cents,toast_refund_cents,delta_net_cents,delta_orders,recon_source,reconciled_at,unparsed_count,coverage_complete,analytics_state,delta_discount_cents,delta_refund_cents,delta_void_orders,void_amount_gap_cents,last_recon_attempt_at,paid_other_day,owner_confirmed_at) ON public.toast_day_status TO aicafe_research_view_owner;
 CREATE POLICY u3_research_scoped_select ON public.toast_day_status FOR SELECT TO aicafe_research_view_owner USING (business_id=(SELECT u3_research_private.business_id()));
 CREATE VIEW u3_research.toast_day_status WITH (security_barrier=true) AS
- SELECT business_date,import_state,recon_state,imported_at,net_sales_cents,gross_sales_cents,discounts_cents,refunds_cents,tax_cents,tip_cents,order_count,open_check_count,service_charges_cents,gratuity_cents,toast_net_sales_cents,toast_orders_count,toast_discount_cents,toast_refund_cents,delta_net_cents,delta_orders,recon_source,reconciled_at,unparsed_count,coverage_complete,analytics_state,delta_discount_cents,delta_refund_cents,delta_void_orders,void_amount_gap_cents,last_recon_attempt_at,paid_other_day,owner_confirmed_at FROM public.toast_day_status WHERE business_id=(SELECT u3_research_private.business_id());
+ SELECT restaurant_guid,business_date,import_state,recon_state,imported_at,net_sales_cents,gross_sales_cents,discounts_cents,refunds_cents,tax_cents,tip_cents,order_count,open_check_count,service_charges_cents,gratuity_cents,toast_net_sales_cents,toast_orders_count,toast_discount_cents,toast_refund_cents,delta_net_cents,delta_orders,recon_source,reconciled_at,unparsed_count,coverage_complete,analytics_state,delta_discount_cents,delta_refund_cents,delta_void_orders,void_amount_gap_cents,last_recon_attempt_at,paid_other_day,owner_confirmed_at FROM public.toast_day_status WHERE business_id=(SELECT u3_research_private.business_id());
 COMMENT ON VIEW u3_research.toast_day_status IS 'One register/day import and reconciliation status. Several register rows can occur on a café date; do not sum duplicate sources or interpret a missing day as zero. Check coverage_complete, import_state, recon_state, analytics_state and observed timestamps before certifying actual totals. No raw payload, internal error or credential fields.';
 ALTER VIEW u3_research.toast_day_status OWNER TO aicafe_research_view_owner;
 REVOKE ALL ON u3_research.toast_day_status FROM PUBLIC,anon,authenticated;
@@ -319,5 +319,25 @@ COMMENT ON VIEW u3_research.recovery_order IS 'Owner-configured ordering of reco
 ALTER VIEW u3_research.recovery_order OWNER TO aicafe_research_view_owner;
 REVOKE ALL ON u3_research.recovery_order FROM PUBLIC,anon,authenticated;
 GRANT SELECT ON u3_research.recovery_order TO aicafe_research;
+
+-- A recorded punch is a reusable relational grain, not a question-specific
+-- report. The actual source record, same-café employee identity and café
+-- timezone travel together; the model remains free to select and join fields.
+CREATE VIEW u3_research.recorded_timecards WITH (security_barrier=true) AS
+ SELECT t.id AS timecard_id,t.employee_id,e.display_name AS employee_name,b.timezone,
+ t.clock_in,t.clock_out,t.source_type,t.source_provider,t.wage_source,t.hourly_wage_cents,
+ t.pos_last_synced_at,t.provider_regular_hours,t.provider_overtime_hours,
+ CASE WHEN jsonb_typeof(t.breaks)='array' THEN jsonb_array_length(t.breaks) END AS recorded_break_count
+ FROM public.timecards t
+ JOIN public.businesses b ON b.id=t.business_id
+ LEFT JOIN public.employees e ON e.business_id=t.business_id AND e.id=t.employee_id
+ WHERE t.business_id=(SELECT u3_research_private.business_id())
+ AND (SELECT u3_research_private.mode()) IN ('owner','durable')
+ AND t.source_type<>'owner_schedule';
+COMMENT ON VIEW u3_research.recorded_timecards IS
+ 'One actual recorded timecard (not owner-schedule projection), including same-café employee and café timezone. Clock-in/out are absolute observed timestamps; use timezone for local date/time. Gross elapsed time is not necessarily paid labor; NULL clock-out is unknown. NULL break count is unknown; zero means no break recorded, not proof none occurred.';
+ALTER VIEW u3_research.recorded_timecards OWNER TO aicafe_research_view_owner;
+REVOKE ALL ON u3_research.recorded_timecards FROM PUBLIC,anon,authenticated;
+GRANT SELECT ON u3_research.recorded_timecards TO aicafe_research;
 
 REVOKE aicafe_research_view_owner FROM postgres;

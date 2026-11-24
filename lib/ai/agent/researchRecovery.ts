@@ -5,7 +5,7 @@ import type {AgentToolResult} from "./tools";
 // café facts. A later scoped SELECT may repair them without making an earlier
 // unrelated source failure or partial result disappear.
 const repairable=new Set(["invalid_query","query_syntax_error","query_execution_error",
- "query_timeout","row_exceeds_page_budget","stable_order_required","research_snapshot_changed"]);
+ "query_timeout","row_exceeds_page_budget","duplicate_result_columns","stable_order_required","research_snapshot_changed"]);
 type Attempt={name:string;result:AgentToolResult};
 export function recordResearchAttempt(result:AgentToolResult,retryOf:unknown,
  prior:readonly Attempt[]):AgentToolResult{
