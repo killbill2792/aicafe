@@ -166,6 +166,22 @@ describe.skipIf(!active)("U3 migrated registered tool + private connection",()=>
   if(priorCursorSecret===undefined)delete process.env.SUPABASE_SERVICE_ROLE_KEY;
   else process.env.SUPABASE_SERVICE_ROLE_KEY=priorCursorSecret;
  });
+ it("queries original workflow facts and retains strict owner-private access",async()=>{
+  if(!admin)throw Error("admin_missing");
+  const a=randomUUID(),b=randomUUID();
+  try{
+   await admin.query("INSERT INTO public.alerts(id,business_id,kind,impact_cents,payload,status) VALUES($1,$2,'data_quality',1200,'{}','open'),($3,$4,'data_quality',9900,'{}','open')",[a,ids.a,b,ids.b]);
+   const result=await dataQueryTools.query_data.execute({...input("SELECT id,impact_cents FROM alerts WHERE id IN ($1,$2)"),parameters:[a,b]},scoped);
+   expect(result.error).toBeUndefined();
+   expect(result.rows).toEqual([{id:a,impact_cents:"1200"}]);
+   for(const relation of ["operating_tasks","alerts","supervisor_proposals","supplier_proposal_lines","supervisor_effect_attempts","supervisor_reports","supervisor_monitor_windows","purchase_order_dispatches","purchase_order_channel_reports","purchase_order_events","cafe_supplier_order_contacts","supplier_po_draft_replacements"]){
+    const result=await dataQueryTools.query_data.execute(input("SELECT count(*) FROM "+relation),scoped);
+    expect(result.error).toBeUndefined();
+    const denied=await dataQueryTools.query_data.execute(input("SELECT count(*) FROM "+relation),{...scoped,aggregateOnly:true});
+    expect(denied.error).toBeDefined();
+   }
+  }finally{await admin.query("DELETE FROM public.alerts WHERE id IN ($1,$2)",[a,b]);}
+ });
  it("reads saved staffing cases across their full history without crossing café scope",async()=>{
   if(!admin)throw Error("admin_missing");
   const a=randomUUID(),b=randomUUID();
@@ -524,7 +540,7 @@ describe.skipIf(!active)("U3 migrated registered tool + private connection",()=>
    const denominator=(await admin.query("SELECT public.customer_query_coverage($1,$2,$2) AS coverage",[ids.a,date])).rows[0].coverage;
    expect(result).toMatchObject({customerEvidence:true,customerCoverage:denominator,period:{from:date,to:date}});
    // Customer rows and their independent denominator must survive a changed source and cache miss.
-   const detail={...input("SELECT business_date,net_sales_cents,n FROM customer_visits CROSS JOIN (VALUES (1),(2),(3)) AS series(n) ORDER BY business_date,n"),...range,limit:1};
+   const detail={...input("SELECT business_date,net_sales_cents,1 AS n FROM customer_visits UNION ALL SELECT business_date,net_sales_cents,2 AS n FROM customer_visits UNION ALL SELECT business_date,net_sales_cents,3 AS n FROM customer_visits ORDER BY business_date,n"),...range,limit:1};
    const first=await dataQueryTools.query_data.execute(detail,scoped);
    expect(first).toMatchObject({page_complete:false,page_retrieval:"executed_query",customerCoverage:denominator});
    const token=(first as {next_cursor:string}).next_cursor;

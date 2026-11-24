@@ -488,9 +488,8 @@ export async function runU3Sql(ctx:U3SqlContext,raw:unknown){
    const snapshotId=prior?.id??randomUUID();
    // Persist only the actual already-admitted projection, encrypted under the existing signed scope.
    // Private source results never enter the shared process cache.
-   const durableEligible=true;
    const retained=prior?(retainable?researchPageCache.read(prior,offset,count,resultBudgetBytes):null)??
-    (durableEligible?await readDurableResearchPage(ctx,prior,offset,count,resultBudgetBytes):null):null;
+    await readDurableResearchPage(ctx,prior,offset,count,resultBudgetBytes):null;
    if(prior&&!retained)throw Error("research_snapshot_unavailable");
    const retainedMetadata=prior&&customerEvidence?await readSnapshotMetadata(ctx,prior):null;
    if(prior&&customerEvidence&&(!retainedMetadata||typeof retainedMetadata!=="object"||
@@ -501,7 +500,7 @@ export async function runU3Sql(ctx:U3SqlContext,raw:unknown){
     if(active.rows.length!==1)throw Error("research_scope_denied");
    }
    const collector=retainable&&!retained?new ResearchPageCollector():null;
-   const spool=durableEligible&&!prior&&!retained?new DurableResearchSpool(ctx,snapshotId):null;
+   const spool=!prior&&!retained?new DurableResearchSpool(ctx,snapshotId):null;
    const fit=retained??await readResearchPage(client,bounded,parameters,offset,count,resultBudgetBytes,rows=>{
     if(plan.relations.includes("toast_records")&&unsafeStructuredToastResult(rows))
      throw Error("invalid_query");

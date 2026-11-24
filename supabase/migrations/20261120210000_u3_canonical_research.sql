@@ -217,7 +217,8 @@ DECLARE
   predicate text;
   missing text;
 BEGIN
-  FOR cfg IN SELECT value FROM jsonb_array_elements($u3_sources$[
+  FOR cfg IN SELECT value FROM jsonb_array_elements($u3_sources$
+[
   {
     "table": "daily_rollups",
     "fields": [
@@ -474,7 +475,8 @@ BEGIN
       "tax_cents",
       "total_cents",
       "approved_at",
-      "created_at"
+      "created_at",
+      "proposal_id"
     ]
   },
   {
@@ -492,7 +494,9 @@ BEGIN
       "unit_price_cents",
       "subtotal_cents",
       "quoted_on",
-      "delivery_on"
+      "delivery_on",
+      "quote_id",
+      "ordinal"
     ]
   },
   {
@@ -599,7 +603,8 @@ BEGIN
       "source_ref",
       "revision",
       "voided_at",
-      "expense_line_id"
+      "expense_line_id",
+      "line_id"
     ]
   },
   {
@@ -850,7 +855,8 @@ BEGIN
       "checked_at"
     ]
   }
-]$u3_sources$::jsonb) LOOP
+]
+$u3_sources$::jsonb) LOOP
     rel:=cfg->>'table';
     SELECT array_agg(value) INTO fields FROM jsonb_array_elements_text(cfg->'fields');
     SELECT coalesce(array_agg(value),ARRAY[]::text[]) INTO sensitive
