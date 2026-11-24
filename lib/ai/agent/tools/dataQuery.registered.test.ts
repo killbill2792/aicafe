@@ -141,6 +141,25 @@ describe("optional official shared metric selection in registered query_data",()
   expect(result.monthlyBreakEvenCents).toBe(basis.shared.salesPerMonthCents);
   expect(rpc).not.toHaveBeenCalled();
  });
+ it("retires the redundant model-facing break-even tool but preserves every shared period and override",async()=>{
+  expect(agentToolDefinitions.some(t=>t.name==="get_break_even")).toBe(false);
+  const snapshot=getFixtureSnapshot();
+  const {context}=caller();
+  const ctx:AgentToolContext={...context,asOf:snapshot.todayDateStr,
+   readEconomics:async()=>({canonicalBreakEven:breakEvenSnapshotInputs(snapshot),
+    canonicalSnapshot:snapshot,
+    economics:{openDaysBasis:"opening_hours"} as unknown as Economics,
+    items:[],staff:[],ownerMonthlyPayrollExtrasCents:null,ownerIngredientRate:null})};
+  for(const period of ["today","month_to_date","month"] as const){
+   for(const overrides of [null,{ownerIngredientPackagingPercent:22,ownerProcessingFeePercent:3,
+      ownerOpenDaysPerMonth:24,ownerNetSalesCents:123456,ownerSalesDays:4}]){
+    const old=await executeAgentTool("get_break_even",{period,...overrides},ctx);
+    const unified=await executeAgentTool("query_data",{official_metric:{id:"break_even",
+     period_mode:period,break_even_overrides:overrides}},ctx);
+    expect(unified).toEqual({...old,metric_id:"break_even",metric_basis:"official_shared_definition"});
+   }
+  }
+ });
  it("rejects ambiguous mixed selectors and missing scope before accessing a metric",async()=>{
   const {context}=caller();
   const readEconomics=vi.fn(async()=>{throw Error("must not be called");});

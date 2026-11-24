@@ -177,7 +177,7 @@ describe.skipIf(!active)("U3 migrated registered tool + private connection",()=>
   const result=await executeAgentTool("query_data",input(
    "SELECT "+(" ".repeat(13000))+"SUM(net_sales_cents) AS amount FROM orders"),context);
   expect(result.error).toBeUndefined();
-  expect(Number((result.rows[0] as Record<string,unknown>).amount)).toBe(1100);
+  expect(Number((result.rows as Record<string,unknown>[])[0].amount)).toBe(1100);
  });
  it("recovers a real PostgreSQL undefined column with a safe repair diagnostic and independent correct result",async()=>{
   const bad=await dataQueryTools.query_data.execute(input("SELECT missing_research_test_column FROM orders"),scoped);

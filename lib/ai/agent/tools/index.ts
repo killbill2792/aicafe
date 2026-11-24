@@ -35,6 +35,7 @@ import {priceExperimentTools} from "./priceExperiment";
 import {priceMonitorTools} from "./priceMonitor";
 import type {OwnerToastObservation} from "@/lib/ai/supervisor/loop/reads.server";
 import {ownerInputsSchema,ownerAmountForPeriod,ownerConflict} from "./ownerInputs";
+import {injectSavedOwnerInputs} from "@/lib/ownerFacts/inject";
 import {moneyChoiceCandidates,chosenMoneySource,replayedMoneyChoice} from "../resolveMoney";
 import {staffProposalTools} from "./staffProposals";
 import {memoryTools,type CafeMemoryPort} from "./memory";
@@ -197,6 +198,7 @@ export type AgentToolContext = {
     ownerSavings:typeof import("@/lib/actions/oliviaPlanning").previewOliviaOwnerSavings;
   };
   ownerFacts?:readonly import("@/lib/ownerFacts/inject").SavedFact[];
+  savedOwnerFacts?:readonly import("@/lib/ownerFacts/inject").SavedFact[];
   menuPriceEvidence?:(items:ReadonlyArray<{id:string;priceCents:number}>)=>Promise<Record<string,import("@/lib/data/menuPriceEvidence.server").MenuPriceEvidence>>;
   readPriceMonitors?:()=>Promise<Array<OwnerToastObservation|{proposalId:string;threadId:string;productName:string;status:string;startDate:string|null;durationDays:number|null;day:number|null;oldPriceCents:number|null;newPriceCents:number|null;reportStatus:string|null}>>;
   proposals?: {proposePriceChange(input:{productId:string;newPriceCents:number}):Promise<{proposalId:string;revision:number;productName:string;oldPriceCents:number;newPriceCents:number}>;
@@ -314,7 +316,7 @@ const baseToolDefinitions = (Object.keys(schemas) as AgentToolName[]).map(name =
 // Routine management is a verified-owner-only additional function, rather
 // than a global public tool. Keep the existing baseline tool contract stable.
 export const agentToolDefinitions:Array<Omit<(typeof baseToolDefinitions)[number],"name">&{name:string}>=
-  baseToolDefinitions.filter(tool=>tool.name!=="get_investigation_source"&&tool.name!=="manage_routine"&&!["search_gmail","list_gmail_labels","read_gmail","read_gmail_thread","read_gmail_attachment","propose_gmail_action"].includes(tool.name));
+  baseToolDefinitions.filter(tool=>tool.name!=="get_investigation_source"&&tool.name!=="manage_routine"&&tool.name!=="get_break_even"&&!["search_gmail","list_gmail_labels","read_gmail","read_gmail_thread","read_gmail_attachment","propose_gmail_action"].includes(tool.name));
 /** Offered only for a verified connected owner. Default cafés keep their existing tools. */
 /** Offered only when a server-claimed autonomous run explicitly requests it. */
 export const investigationToolDefinition=baseToolDefinitions.find(t=>t.name==="get_investigation_source")!;
@@ -400,12 +402,16 @@ export async function executeAgentTool(name: string, raw: unknown, ctx: AgentToo
         const metric=p.official_metric;
         let result:AgentToolResult;
         if(metric.id==="profit"){
-          if(metric.period_mode!==null||!p.date_from||!p.date_to||p.date_from>p.date_to)
+          if(metric.period_mode!==null||metric.break_even_overrides!=null||!p.date_from||!p.date_to||p.date_from>p.date_to)
             return invalid("invalid_date_range");
           result=await executeAgentTool("get_profit",{period:{from:p.date_from,to:p.date_to}},ctx);
         }else{
-          if(!metric.period_mode||p.date_from!==null||p.date_to!==null)return invalid("invalid_date_range");
-          result=await moneyTools.get_break_even.execute({period:metric.period_mode},ctx);
+          if(p.date_from!==null||p.date_to!==null)return invalid("invalid_date_range");
+          const overrides=metric.break_even_overrides??{};
+          const supplied={...overrides,period:metric.period_mode??"month"};
+          const saved=ctx.savedOwnerFacts??ctx.ownerFacts??[];
+          const inputs=saved.length?injectSavedOwnerInputs(supplied,saved,true):supplied;
+          result=await moneyTools.get_break_even.execute(inputs,ctx);
         }
         // Preserve every completeness, period, estimate and provenance field
         // from the existing screen calculation. Do not upgrade partial values

@@ -12,6 +12,15 @@ export const ownerInputsSchema=z.strictObject({
  rentCents:cents.nullable(),otherOverheadCents:cents.nullable(),overheadPeriod:period.nullable(),
  unitCostCents:cents.nullable(),itemsSoldPerDay:z.number().positive().finite().nullable(),
 });
+/** Shared screen inputs, also accepted by the universal query interface. */
+export const breakEvenOverridesSchema=z.strictObject({
+ ownerIngredientPackagingPercent:z.number().min(0).max(99.99).nullable().optional(),
+ ownerProcessingFeePercent:z.number().min(0).max(99.99).nullable().optional(),
+ ownerNetSalesCents:z.number().int().nonnegative().nullable().optional(),
+ ownerSalesDays:z.number().int().positive().nullable().optional(),
+ ownerOpenDaysPerMonth:z.number().int().min(1).max(31).nullable().optional(),
+ ownerInputs:ownerInputsSchema.nullable().optional()
+});
 export type OwnerInputs=z.infer<typeof ownerInputsSchema>;
 export const emptyOwnerInputs:OwnerInputs={
  netSalesCents:null,salesPeriod:null,laborCents:null,laborPeriod:null,

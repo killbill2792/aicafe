@@ -12,7 +12,7 @@ import type {SupervisorEconomicsRead} from "@/lib/data/supervisorEconomics.serve
 import {breakEvenSnapshotInputs,type BreakEvenPeriodMode,type BreakEvenInputOptions} from "@/lib/viewmodels/breakEvenViewModel";
 import {shiftCafeDate} from "@/lib/metrics/core/clock";
 import {safeSumCents} from "@/lib/calc/explainMath";
-import {ownerInputsSchema,ownerPeriod} from "./ownerInputs";
+import {breakEvenOverridesSchema,ownerPeriod} from "./ownerInputs";
 import {prorate,calendarMonth} from "@/lib/calc/periods";
 import {figure} from "@/lib/calc/supervisorEconomics";
 import {dailyBreakEvenSalesCents} from "@/lib/metrics/core/breakEven";
@@ -20,13 +20,7 @@ import {dailyBreakEvenSalesCents} from "@/lib/metrics/core/breakEven";
 const period=z.strictObject({period:z.union([z.string().min(1).max(32),z.strictObject({preset:z.enum(["today","week","month","last_week","last_month","ytd"])}),z.strictObject({from:z.iso.date(),to:z.iso.date()})])});
 const empty=z.strictObject({});
 // Nullable for the Responses strict-tool schema. Omitted fields keep existing callers working.
-const breakEvenInput=z.strictObject({
-  ownerIngredientPackagingPercent:z.number().min(0).max(99.99).nullable().optional(),
-  ownerProcessingFeePercent:z.number().min(0).max(99.99).nullable().optional(),
-  ownerNetSalesCents:z.number().int().nonnegative().nullable().optional(),
-  ownerSalesDays:z.number().int().positive().nullable().optional(),
-  ownerOpenDaysPerMonth:z.number().int().min(1).max(31).nullable().optional(),
-  ownerInputs:ownerInputsSchema.nullable().optional(),
+const breakEvenInput=breakEvenOverridesSchema.extend({
   period:z.enum(["month","month_to_date","today"]).nullable().optional(),
 });
 const unavailable=(source:string,period:{from:string;to:string}|null,missing:string[]):AgentToolResult=>
