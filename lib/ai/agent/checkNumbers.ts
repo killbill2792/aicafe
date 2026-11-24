@@ -105,14 +105,14 @@ function u3ReceiptNumber(raw:unknown,unit:unknown):
  if(!/^-?(?:0|[1-9][0-9]*)(?:\.[0-9]+)?$/.test(text)||text.length>1235)return null;
  if(unit!=="cents"&&unit!=="microcents"&&unit!=="count"&&unit!=="percent"&&unit!=="ratio")return null;
  const [integer,fraction=""]=text.split(".");
- const sign=integer.startsWith("-")?-1n:1n;
- const n=BigInt(integer.replace("-","")+fraction),d=10n**BigInt(fraction.length);
- if(n>BigInt(Number.MAX_SAFE_INTEGER)*d*(unit==="microcents"?1000000n:1n))return null;
+ const sign=integer.startsWith("-")?-BigInt(1):BigInt(1);
+ const n=BigInt(integer.replace("-","")+fraction),d=BigInt(10)**BigInt(fraction.length);
+ if(n>BigInt(Number.MAX_SAFE_INTEGER)*d*(unit==="microcents"?BigInt(1000000):BigInt(1)))return null;
  // Money is displayed in cents; percentages in basis points. Ratios keep
  // four decimal places (one basis point), and quantity counts keep hundredths.
- const scale=unit==="percent"?100n:unit==="ratio"?10000n:unit==="count"?100n:1n;
- const denominator=unit==="microcents"?d*1000000n:d;
- const rounded=sign*(n*scale*2n+denominator)/(denominator*2n);
+ const scale=unit==="percent"?BigInt(100):unit==="ratio"?BigInt(10000):unit==="count"?BigInt(100):BigInt(1);
+ const denominator=unit==="microcents"?d*BigInt(1000000):d;
+ const rounded=sign*(n*scale*BigInt(2)+denominator)/(denominator*BigInt(2));
  if(rounded>BigInt(Number.MAX_SAFE_INTEGER)||rounded<BigInt(Number.MIN_SAFE_INTEGER))return null;
  const value=Number(rounded)/(unit==="count"||unit==="ratio"?Number(scale):1);
  return {value,unit:unit==="percent"?"bps":unit==="microcents"?"cents":unit};
