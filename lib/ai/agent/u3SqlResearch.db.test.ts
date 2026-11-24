@@ -140,6 +140,26 @@ describe.skipIf(!active)("U3 migrated registered tool + private connection",()=>
   expect(JSON.stringify(d)).toContain("net_sales_cents");
   expect(JSON.stringify(d)).toContain("business_date");
  });
+ it("exposes actual café settings and current scalar owner facts without cross-café leakage",async()=>{
+  if(!admin)throw Error("admin_missing");
+  await admin.query("UPDATE public.businesses SET owner_monthly_payroll_extras_cents=12345 WHERE id=$1",[ids.a]);
+  await admin.query("UPDATE public.businesses SET owner_monthly_payroll_extras_cents=67890 WHERE id=$1",[ids.b]);
+  await admin.query("INSERT INTO public.owner_facts(business_id,fact_key,value_json,unit,source,created_by) VALUES ($1,'u3_test_equipment_lease','12345'::jsonb,'cents','owner',$2),($3,'u3_test_equipment_lease','67890'::jsonb,'cents','owner',$4)",[ids.a,ids.oa,ids.b,ids.ob]);
+  const settings=await dataQueryTools.query_data.execute(input("SELECT currency,owner_monthly_payroll_extras_cents FROM cafe_settings"),scoped);
+  expect(settings.error).toBeUndefined();
+  expect(settings.rows).toHaveLength(1);
+  expect(Number((settings.rows[0] as Record<string,unknown>).owner_monthly_payroll_extras_cents)).toBe(12345);
+  const facts=await dataQueryTools.query_data.execute(input("SELECT fact_key,numeric_value,unit FROM current_owner_facts"),scoped);
+  expect(facts.error).toBeUndefined();
+  expect(facts.rows).toHaveLength(1);
+  expect(Number((facts.rows[0] as Record<string,unknown>).numeric_value)).toBe(12345);
+  const denied=await dataQueryTools.query_data.execute(input("SELECT COUNT(*) AS n FROM current_owner_facts"),{...scoped,aggregateOnly:true});
+  expect(denied.error).toBe("unattended_aggregate_required");
+  await admin.query("UPDATE public.owner_facts SET superseded_at=now() WHERE business_id=$1 AND fact_key='u3_test_equipment_lease'",[ids.a]);
+  const superseded=await dataQueryTools.query_data.execute(input("SELECT fact_key,numeric_value FROM current_owner_facts"),scoped);
+  expect(superseded.error).toBeUndefined();
+  expect(superseded.rows).toEqual([]);
+ });
  it("runs a real model-selected join with accurate café-isolated money",async()=>{
   const context={asOf:"2026-11-24",timezone:"UTC",locale:"en",
    tools:{} as AgentToolContext["tools"],canonicalData:async()=>scoped} satisfies AgentToolContext;

@@ -243,7 +243,7 @@ export async function admitU3Sql(sql:string,allowedRelations:readonly string[],
     if(catalog.has(rel)){
      reads.add(rel);
      if(aggregateOnly&&["employees","timecards","scheduled_shifts","cafe_decisions",
-      "employee_pay_period_facts","staff_availability_rules",
+      "employee_pay_period_facts","timecard_breaks","current_owner_facts","staff_availability_rules",
       "staff_availability_exceptions"].includes(rel))
       throw Error("unattended_aggregate_required");
     }
