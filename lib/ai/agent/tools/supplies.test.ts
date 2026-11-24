@@ -103,10 +103,10 @@ describe("Maya read-only costs and unavailable inventory",()=>{
     expect(got.inventory).toBeNull();
     expect(got.missing).toContain("source_read_failed");
   });
-  it("actually dispatches registered Supervisor stock for the signed-in café with current, historic and zero evidence",async()=>{
+  it("preserves internal Supervisor stock projection for the signed-in café with current, historic and zero evidence",async()=>{
     // Calling suppliesTools.get_inventory directly is NOT enough. This exercises
     // the production name dispatcher and reproduces the context-loss regression.
-    expect(agentToolDefinitions.some(tool=>tool.name==="get_inventory")).toBe(true);
+    expect(agentToolDefinitions.some(tool=>tool.name==="get_inventory")).toBe(false);
     const businessId="aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
     const rpc=vi.fn(async(name:string,args:Record<string,unknown>)=>{
       expect(name).toBe("ai_query_view");

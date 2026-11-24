@@ -111,7 +111,12 @@ module.exports.name=(output,context)=>check(()=>{
   const reply=decoded(output),cfg=context.vars.check;
   const wanted=seed.sqlTruth[cfg.truth];
   assert.equal(typeof wanted,"string","missing SQL identity truth");
-  assert.ok(reply.results.some(r=>r.source===cfg.source),"expected read missing");
+  const catalog=reply.results.find(r=>r.source===cfg.source&&r.view==="cv_menu");
+  assert.ok(catalog?.rows?.some(r=>r.data?.name===wanted),"expected catalog identity missing");
+  const active=seed.menu.filter(item=>item.active);
+  const rows=catalog.rows.map(r=>r.data);
+  assert.equal(rows.length,active.length,"comparison skipped active items");
+  for(const item of active)assert.ok(rows.some(r=>r.id===item.id&&r.price_cents===item.priceCents),"catalog observation differs from seed");
   assert.ok(reply.answer.toLowerCase().includes(wanted.toLowerCase()),
     "Supervisor failed to identify "+wanted);
   assert.deepEqual(reply.unverified,[],"answer contains unsupported numbers");
@@ -154,8 +159,8 @@ module.exports.missing=(output)=>check(()=>{
 });
 module.exports.inventory=(output)=>check(()=>{
   const reply=decoded(output);
-  assert.ok(reply.results.some(r=>r.source==="inventory"&&
-    r.inventory===null&&r.missing.includes("empty")&&
+  assert.ok(reply.results.some(r=>r.source==="canonical_data"&&r.view==="cv_inventory"&&
+    Array.isArray(r.rows)&&r.rows.length===0&&r.missing.includes("empty")&&
     !r.missing.includes("inventoryReaderUnavailable")&&r.truncated===false),
     "successful empty inventory source was not observed");
   assert.match(reply.answer,/not tracked|don't track|not recorded|unknown|unavailable/i);

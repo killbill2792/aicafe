@@ -100,10 +100,32 @@
       "question": "What is the menu price of House Latte?",
       "tools": [
         {
-          "name": "get_menu_items",
+          "name": "query_data",
           "args": {
-            "query": "House Latte",
-            "limit": null
+            "sql": null,
+            "parameters": null,
+            "group_by": null,
+            "metrics": null,
+            "date_from": "2026-10-21",
+            "date_to": "2026-10-21",
+            "order_by": null,
+            "limit": null,
+            "view": "cv_menu",
+            "columns": [
+              "data"
+            ],
+            "filters": [
+              {
+                "column": "data.is_active",
+                "op": "=",
+                "value": true
+              },
+              {
+                "column": "data.name",
+                "op": "=",
+                "value": "House Latte"
+              }
+            ]
           }
         }
       ],
@@ -113,10 +135,32 @@
       "question": "What is the current menu price for Spiced Tea?",
       "tools": [
         {
-          "name": "get_menu_items",
+          "name": "query_data",
           "args": {
-            "query": "Spiced Tea",
-            "limit": null
+            "sql": null,
+            "parameters": null,
+            "group_by": null,
+            "metrics": null,
+            "date_from": "2026-10-21",
+            "date_to": "2026-10-21",
+            "order_by": null,
+            "limit": null,
+            "view": "cv_menu",
+            "columns": [
+              "data"
+            ],
+            "filters": [
+              {
+                "column": "data.is_active",
+                "op": "=",
+                "value": true
+              },
+              {
+                "column": "data.name",
+                "op": "=",
+                "value": "Spiced Tea"
+              }
+            ]
           }
         }
       ],
@@ -142,10 +186,27 @@
       "question": "Which item on the active menu has the lowest current price?",
       "tools": [
         {
-          "name": "get_menu_items",
+          "name": "query_data",
           "args": {
-            "query": null,
-            "limit": null
+            "sql": null,
+            "parameters": null,
+            "group_by": null,
+            "metrics": null,
+            "date_from": "2026-10-21",
+            "date_to": "2026-10-21",
+            "order_by": null,
+            "limit": null,
+            "view": "cv_menu",
+            "columns": [
+              "data"
+            ],
+            "filters": [
+              {
+                "column": "data.is_active",
+                "op": "=",
+                "value": true
+              }
+            ]
           }
         }
       ],
@@ -155,10 +216,27 @@
       "question": "Which active menu item has the highest current price?",
       "tools": [
         {
-          "name": "get_menu_items",
+          "name": "query_data",
           "args": {
-            "query": null,
-            "limit": null
+            "sql": null,
+            "parameters": null,
+            "group_by": null,
+            "metrics": null,
+            "date_from": "2026-10-21",
+            "date_to": "2026-10-21",
+            "order_by": null,
+            "limit": null,
+            "view": "cv_menu",
+            "columns": [
+              "data"
+            ],
+            "filters": [
+              {
+                "column": "data.is_active",
+                "op": "=",
+                "value": true
+              }
+            ]
           }
         }
       ],
@@ -274,8 +352,24 @@
       "question": "How many units of ingredients are currently in stock?",
       "tools": [
         {
-          "name": "get_inventory",
-          "args": {}
+          "name": "query_data",
+          "args": {
+            "sql": null,
+            "parameters": null,
+            "group_by": null,
+            "metrics": null,
+            "date_from": "2026-10-21",
+            "date_to": "2026-10-21",
+            "order_by": null,
+            "limit": null,
+            "view": "cv_inventory",
+            "columns": [
+              "source",
+              "quantity",
+              "data"
+            ],
+            "filters": null
+          }
         }
       ],
       "answer": "Ingredient stock quantities are not tracked, so I cannot give a verified count."

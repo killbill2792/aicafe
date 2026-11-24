@@ -408,7 +408,7 @@ describe("tool start labels and cross-turn numeric grounding",()=>{
     ]),onTool:(name,agentId)=>starts.push({name,agentId})});
     expect(starts).toEqual([{name:"query_data",agentId:"alex"}]);
     expect(result.agentIds).toEqual(["alex"]);
-    expect(result.evidence?.flatMap(entry=>entry.values).find(v=>v.key==="items:item-1/priceCents")?.value).toBe(450);
+    expect(result.evidence?.flatMap(entry=>entry.values).find(v=>v.key==="u3Receipt/11111111-1111-4111-8111-111111111111/row:0/price_cents")?.value).toBe(450);
   });
   it("does not convert a previously formatted assistant list into sales evidence",async()=>{
     const formatted="1. Review your menu\n2. Check your staffing";
