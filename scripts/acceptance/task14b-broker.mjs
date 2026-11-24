@@ -12,6 +12,9 @@ import {createServer} from "node:http";
 import {readFileSync,writeFileSync,renameSync} from "node:fs";
 import {randomUUID,timingSafeEqual,createHash} from "node:crypto";
 
+// Trusted transport compatibility for the already-reviewed #562 acceptance suite.
+// This selects protocol only: it cannot select a paid run or alter its limits.
+export const nativeResearchScenarios=Object.freeze(["u3-canonical-research","source553-hourly","u4-autonomous-objectives","15a-proactive-owner-answer","13c","13d","14e-cash-position","14e-payables","14e-settlement-boundary","14e-autonomous-followup","14d-autonomous","8b-multiday-lifecycle","16c"]);
 export const MAX_RESERVATION_MICROS=180_000;
 export const MAX_CALLS=18;
 // Real owner-only v7 reached five completed provider tool turns, then a sixth
@@ -351,7 +354,7 @@ export function startTrustedBroker({
   fail("provider_key_missing");
  if(typeof token!=="string"||token.length<40)fail("broker_token_missing");
  if(typeof auditFile!=="string"||!auditFile.startsWith("/"))fail("audit_path_missing");
- const reserved=new PaidReservation(head,["u2-model-execution","u3-canonical-research"].includes(process.env.SCENARIO));
+ const reserved=new PaidReservation(head,process.env.SCENARIO==="u2-model-execution"||nativeResearchScenarios.includes(process.env.SCENARIO));
  // Provenance belongs only to this broker run; never persists ciphertext.
  const trustedReasoning=new Map();
  saveAudit(auditFile,reserved);

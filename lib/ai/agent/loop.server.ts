@@ -225,18 +225,17 @@ export async function runAgentTurn(args: {
     typeof process.env.AICAFE_14B_BROKER_TOKEN==="string" &&
     process.env.AICAFE_14B_BROKER_TOKEN.length>=40;
   const legacyPaid=approvedLocalTask14b||Boolean(process.env.AICAFE_TASK14B_BUDGET_LEDGER);
-  // The trusted-main runner advertises U3 native support only when its broker
+  // The trusted-main runner advertises native research support only when its broker
   // has the matching reviewed transport validator. An older host remains
   // compatible, but its legacy run must not be presented as native parity.
   const trustedShared=approvedLocalTask14b&&process.env.AICAFE_SHARED_LUNA==="1"&&
     process.env.AICAFE_SHARED_LUNA_CANDIDATE==="1"&&!process.env.AICAFE_TASK14B_BUDGET_LEDGER;
   const trustedU2=trustedShared&&process.env.AICAFE_SHARED_LUNA_SCENARIO==="u2-model-execution";
-  const trustedU3=trustedShared&&process.env.AICAFE_SHARED_LUNA_SCENARIO==="u3-canonical-research"&&
-    process.env.AICAFE_SHARED_LUNA_NATIVE_RESEARCH==="1";
-  const adaptive=model===PRODUCTION_SUPERVISOR_OPENAI_MODEL&&(!legacyPaid||trustedU3);
-  let nativeSearch=usesNativeToolSearch(model,legacyPaid&&!trustedU2&&!trustedU3);
+  const trustedNativeResearch=trustedShared&&process.env.AICAFE_SHARED_LUNA_NATIVE_RESEARCH==="1";
+  const adaptive=model===PRODUCTION_SUPERVISOR_OPENAI_MODEL&&(!legacyPaid||trustedNativeResearch);
+  let nativeSearch=usesNativeToolSearch(model,legacyPaid&&!trustedU2&&!trustedNativeResearch);
   let usedAvailabilityFallback=false;
-  const policy=executionPolicy(model,workerBudget,legacyPaid&&!trustedU3);
+  const policy=executionPolicy(model,workerBudget,legacyPaid&&!trustedNativeResearch);
   const deadline=started+policy.elapsedMs;
   const workDeadline=deadline-policy.finalTimeReserve;
   const controller = new AbortController();
@@ -372,9 +371,9 @@ export async function runAgentTurn(args: {
   // began under Luna's expanded budget. Never bypass the same reservation RPC.
   const outputLimit=(final:boolean)=>Math.min(
     model===PRODUCTION_SUPERVISOR_OPENAI_MODEL?Infinity:1200,
-    // Native U3 uses the production work policy only inside the existing
+    // Native research acceptance uses production work policy only inside the existing
     // trusted host's smaller final/request/cumulative spend envelope.
-    trustedU3&&final?1200:Infinity,
+    trustedNativeResearch&&final?1200:Infinity,
     adaptive
       ?requestOutputCap(policy,meteredOutput(),final,currentDurableProviderOutputCap()??(workerBudget?1200:Infinity))
       :Math.min(expandedLuna&&!final&&!workerBudget?lunaToolOutputCap:finalOutputReserve,
@@ -662,7 +661,7 @@ export async function runAgentTurn(args: {
           const reason=(error as ProviderAvailabilityError).reason;
           model=fallback!;
           usedAvailabilityFallback=true;
-          nativeSearch=usesNativeToolSearch(model,legacyPaid&&!trustedU2&&!trustedU3);
+          nativeSearch=usesNativeToolSearch(model,legacyPaid&&!trustedU2&&!trustedNativeResearch);
           expandedLuna=model===PRODUCTION_SUPERVISOR_OPENAI_MODEL;
           projectedTools=projectProviderTools(allowedDefinitions,nativeSearch);
           console.warn("supervisor_model_fallback",{reason,model});
