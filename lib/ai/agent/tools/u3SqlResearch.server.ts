@@ -9,7 +9,7 @@ import {researchPageBudget} from "../executionPolicy";
 import {validateResearchConnection} from "./u3ResearchConnection";
 import {researchNextCursor,researchPage,type ResearchSnapshot} from "./u3SqlCursor";
 import {ResearchPageCollector,researchPageCache} from "./u3SqlPageCache";
-import {DurableResearchSpool,readDurableResearchPage} from "./u3SqlSnapshotStore.server";
+import {DurableResearchSpool,readDurableResearchPage,writeSnapshotMetadata,readSnapshotMetadata} from "./u3SqlSnapshotStore.server";
 
 /** One research executor for the existing query_data tool.
  * No service-role client receives model-authored SQL. Scope is a server-only
@@ -384,7 +384,7 @@ export function safeU3SqlErrorCode(e:unknown){
  return ["invalid_query","unattended_aggregate_required","research_invalid_scope",
   "research_not_configured","research_scope_denied",
   "research_connection_untrusted","research_connection_failed","query_timeout",
-  "row_exceeds_page_budget","duplicate_result_columns","research_context_exhausted","stable_order_required","research_snapshot_changed",
+  "row_exceeds_page_budget","duplicate_result_columns","research_context_exhausted","stable_order_required","research_snapshot_changed","research_snapshot_unavailable",
   "query_syntax_error","query_execution_error"].includes(s)?s:"source_read_failed";
 }
 /** Model SQL can use joins, windows, CTEs and nested analytics, but only on
@@ -486,11 +486,16 @@ export async function runU3Sql(ctx:U3SqlContext,raw:unknown){
    // verification and current admission. The scoped settings view also forces
    // SQL-side membership/lease validation, even on a transport cache hit.
    const snapshotId=prior?.id??randomUUID();
-   // Private reviewed operational views also support encrypted durable storage;
-   // raw retained provider rows and customer coverage retain exact replay.
-   const durableEligible=!customerEvidence&&!plan.relations.some(r=>r==="toast_records"||r==="toast_changes");
+   // Persist only the actual already-admitted projection, encrypted under the existing signed scope.
+   // Private source results never enter the shared process cache.
+   const durableEligible=true;
    const retained=prior?(retainable?researchPageCache.read(prior,offset,count,resultBudgetBytes):null)??
     (durableEligible?await readDurableResearchPage(ctx,prior,offset,count,resultBudgetBytes):null):null;
+   if(prior&&!retained)throw Error("research_snapshot_unavailable");
+   const retainedMetadata=prior&&customerEvidence?await readSnapshotMetadata(ctx,prior):null;
+   if(prior&&customerEvidence&&(!retainedMetadata||typeof retainedMetadata!=="object"||
+     !("rowDigest" in retainedMetadata)||typeof retainedMetadata.rowDigest!=="string"||
+     !("coverage" in retainedMetadata)))throw Error("research_snapshot_unavailable");
    if(retained){
     const active=await client.query("SELECT 1 FROM u3_research.cafe_settings LIMIT 1");
     if(active.rows.length!==1)throw Error("research_scope_denied");
@@ -513,7 +518,7 @@ export async function runU3Sql(ctx:U3SqlContext,raw:unknown){
    },collector,spool,deadlineAt);
    stage.value="result";
    // Independent unfiltered denominator from the same scoped DB snapshot.
-   const rawCoverage=customerEvidence?(await client.query(
+   const rawCoverage=customerEvidence&&!prior?(await client.query(
     "SELECT eligible_check_count,linked_check_count,named_check_count,known_money_check_count,"+
     "linked_known_money_check_count,recorded_net_cents,linked_recorded_net_cents,"+
     "expected_location_days,complete_location_days,complete FROM u3_research.customer_coverage"
@@ -538,7 +543,7 @@ export async function runU3Sql(ctx:U3SqlContext,raw:unknown){
    // Invalid counts are unavailable, never invented zeroes.
    const natural=(n:number|null):n is number=>n!==null&&n>=0;
    const c=candidateCoverage;
-   const customerCoverage=c&&natural(c.eligibleChecks)&&natural(c.linkedChecks)&&
+   const freshCoverage=c&&natural(c.eligibleChecks)&&natural(c.linkedChecks)&&
     natural(c.namedChecks)&&natural(c.knownMoneyChecks)&&natural(c.linkedKnownMoneyChecks)&&
     natural(c.expectedLocationDays)&&natural(c.completeLocationDays)&&
     c.linkedChecks<=c.eligibleChecks&&c.namedChecks<=c.eligibleChecks&&
@@ -547,7 +552,10 @@ export async function runU3Sql(ctx:U3SqlContext,raw:unknown){
     {...c,eligibleChecks:c.eligibleChecks,linkedChecks:c.linkedChecks,namedChecks:c.namedChecks,
      knownMoneyChecks:c.knownMoneyChecks,linkedKnownMoneyChecks:c.linkedKnownMoneyChecks,
      expectedLocationDays:c.expectedLocationDays,completeLocationDays:c.completeLocationDays}:undefined;
-   const digest=customerEvidence?createHash("sha256").update(fit.digest)
+   const metadata=retainedMetadata as {rowDigest:string;coverage:typeof freshCoverage|null}|null;
+   const customerCoverage=prior&&customerEvidence?metadata?.coverage??undefined:freshCoverage;
+   const rowDigest=prior&&customerEvidence?metadata!.rowDigest:fit.digest;
+   const digest=customerEvidence?createHash("sha256").update(rowDigest)
     .update(JSON.stringify(customerCoverage??null)).digest("hex"):fit.digest;
    if(prior&&(prior.digest!==digest||prior.totalRows!==fit.totalRows))
     throw Error("research_snapshot_changed");
@@ -578,9 +586,11 @@ export async function runU3Sql(ctx:U3SqlContext,raw:unknown){
      relation_names:plan.relations,functions:plan.functions,
      authority:"approved_logical_source",scope:"verified_owner_cafe_lease"}
    };
-   return {page,snapshot,records:truncated?collector?.finish()??null:null,spool:truncated?spool:null};
+   return {page,snapshot,records:truncated?collector?.finish()??null:null,spool:truncated?spool:null,metadata:customerEvidence&&!prior?{rowDigest,coverage:customerCoverage??null}:null};
   },{date_from:parsed.data.date_from,date_to:parsed.data.date_to});
   await committed.spool?.flush(true);
+  if(committed.spool&&!committed.spool.isAvailable())throw Error("research_snapshot_unavailable");
+  if(committed.spool&&committed.metadata)await writeSnapshotMetadata(ctx,committed.snapshot,committed.metadata);
   const committedPage=committed.page;
   researchPageCache.remember(committed.snapshot,committed.records);
   // Record only a committed, validated result (never raw café/owner/SQL

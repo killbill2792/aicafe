@@ -523,6 +523,22 @@ describe.skipIf(!active)("U3 migrated registered tool + private connection",()=>
    expect(result.rows).toEqual(oracle.rows);
    const denominator=(await admin.query("SELECT public.customer_query_coverage($1,$2,$2) AS coverage",[ids.a,date])).rows[0].coverage;
    expect(result).toMatchObject({customerEvidence:true,customerCoverage:denominator,period:{from:date,to:date}});
+   // Customer rows and their independent denominator must survive a changed source and cache miss.
+   const detail={...input("SELECT business_date,net_sales_cents,n FROM customer_visits CROSS JOIN (VALUES (1),(2),(3)) AS series(n) ORDER BY business_date,n"),...range,limit:1};
+   const first=await dataQueryTools.query_data.execute(detail,scoped);
+   expect(first).toMatchObject({page_complete:false,page_retrieval:"executed_query",customerCoverage:denominator});
+   const token=(first as {next_cursor:string}).next_cursor;
+   expect(token).toEqual(expect.any(String));
+   const worker=vi.spyOn(researchPageCache,"read").mockReturnValue(null);
+   try{
+    await admin.query("INSERT INTO public.toast_raw_records(business_id,restaurant_guid,entity,business_date,payload,payload_sha256,capture_key) VALUES ($1,$2,'order',$3,$4,$5,$6)",
+     [ids.a,restA,date,JSON.stringify(payload(95)),randomBytes(32).toString("hex"),"live:u3-customer-new"]);
+    const next=await dataQueryTools.query_data.execute({...detail,cursor:token},scoped);
+    expect(next).toMatchObject({page_retrieval:"retained_result",customerCoverage:denominator,rows:[{business_date:expect.anything(),net_sales_cents:expect.anything(),n:2}]});
+   }finally{
+    worker.mockRestore();
+    await admin.query("DELETE FROM public.toast_raw_records WHERE business_id=$1 AND capture_key='live:u3-customer-new'",[ids.a]);
+   }
    const filtered=await dataQueryTools.query_data.execute({...input("SELECT COUNT(*) AS n FROM customer_visits WHERE net_sales_cents=0"),...range},scoped);
    expect(filtered.rows).toEqual([{n:"0"}]);
    expect(filtered).toMatchObject({customerCoverage:denominator});

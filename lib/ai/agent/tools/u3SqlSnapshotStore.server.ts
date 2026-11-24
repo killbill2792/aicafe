@@ -44,7 +44,7 @@ async function rpc(ctx:U3SqlContext,id:string,start:number,count:number|null,cip
  return data;
 }
 /** Stream only complete authenticated observations; failure falls back to
- * replay, never silently omits a source row or creates a business ceiling. */
+ * an explicit unavailable observation, never silently omits a source row or creates a business ceiling. */
 export class DurableResearchSpool{
  private rows:unknown[]=[];
  private bytes=0;
@@ -55,6 +55,7 @@ export class DurableResearchSpool{
   if(!this.available)return;
   this.rows.push(row);this.bytes+=size+32;
  }
+ isAvailable(){return this.available;}
  async flush(force=false){
   if(!this.available||!this.rows.length||!force&&this.bytes<CHUNK_BYTES)return;
   const rows=this.rows,start=this.start;
@@ -65,6 +66,19 @@ export class DurableResearchSpool{
     this.available=false;
   }catch{this.available=false;}
  }
+}
+export async function writeSnapshotMetadata(ctx:U3SqlContext,snapshot:ResearchSnapshot,metadata:unknown){
+ const data=await rpc(ctx,snapshot.id,snapshot.totalRows,1,encryptSnapshotChunk(ctx,snapshot.id,snapshot.totalRows,[metadata]));
+ if(!data||typeof data!=="object"||!("stored" in data)||data.stored!==true)throw Error("research_snapshot_unavailable");
+}
+export async function readSnapshotMetadata(ctx:U3SqlContext,snapshot:ResearchSnapshot){
+ try{
+  const data=await rpc(ctx,snapshot.id,snapshot.totalRows,null,null);
+  if(!data||typeof data!=="object"||Array.isArray(data))return null;
+  const d=data as Record<string,unknown>;
+  if(Number(d.start_row)!==snapshot.totalRows||Number(d.row_count)!==1||typeof d.ciphertext!=="string")return null;
+  return decryptSnapshotChunk(ctx,snapshot.id,snapshot.totalRows,1,d.ciphertext)[0]??null;
+ }catch{return null;}
 }
 export async function readDurableResearchPage(ctx:U3SqlContext,snapshot:ResearchSnapshot,offset:number,
  limit:number|null,budget:number){

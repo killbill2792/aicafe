@@ -5,8 +5,8 @@
   "productionRowsIncluded": false,
   "physicalTables": 223,
   "physicalFields": 2513,
-  "approvedSqlRelations": 88,
-  "reviewedFields": 936,
+  "approvedSqlRelations": 94,
+  "reviewedFields": 996,
   "additionalLogicalViews": [
     "cafe_city_event_links",
     "cafe_neighborhood_source_coverage",
@@ -33,6 +33,8 @@
     "goal_metrics",
     "goal_observations",
     "inventory_observations",
+    "maintenance_case_events",
+    "maintenance_cases",
     "menu_item_cost_fallbacks",
     "opening_hours",
     "pos_scheduled_shifts",
@@ -41,6 +43,10 @@
     "recorded_timecards",
     "recovery_order",
     "scheduling_coverage_requirements",
+    "staff_communication_messages",
+    "staff_communication_requests",
+    "staff_coordination_cases",
+    "staff_coordination_evidence",
     "staff_custom_rules",
     "staff_preference_windows",
     "staff_qualifications",
@@ -671,6 +677,36 @@
       ]
     },
     {
+      "relation": "maintenance_case_events",
+      "fields": [
+        "actor_kind",
+        "created_at",
+        "id",
+        "kind",
+        "occurred_at",
+        "source_kind",
+        "task_id",
+        "working_confirmed"
+      ]
+    },
+    {
+      "relation": "maintenance_cases",
+      "fields": [
+        "created_at",
+        "due_at",
+        "equipment_label",
+        "external_sent",
+        "id",
+        "maintenance_stage",
+        "repair_verified",
+        "reported_at",
+        "reported_symptom",
+        "severity",
+        "status",
+        "updated_at"
+      ]
+    },
+    {
       "relation": "menu_combo_components",
       "fields": [
         "buy_in_cost_cents",
@@ -1124,6 +1160,66 @@
       ]
     },
     {
+      "relation": "staff_communication_messages",
+      "fields": [
+        "actor",
+        "body",
+        "channel",
+        "employee_id",
+        "id",
+        "received_at",
+        "request_id",
+        "response_code"
+      ]
+    },
+    {
+      "relation": "staff_communication_requests",
+      "fields": [
+        "created_at",
+        "due_at",
+        "employee_id",
+        "id",
+        "kind",
+        "prompt",
+        "source_id",
+        "source_revision",
+        "source_type",
+        "status",
+        "title",
+        "updated_at"
+      ]
+    },
+    {
+      "relation": "staff_coordination_cases",
+      "fields": [
+        "case_kind",
+        "created_at",
+        "decision",
+        "employee_id",
+        "from_date",
+        "id",
+        "location_id",
+        "next_check_at",
+        "revision",
+        "role_needed",
+        "source_kind",
+        "state",
+        "to_date",
+        "updated_at"
+      ]
+    },
+    {
+      "relation": "staff_coordination_evidence",
+      "fields": [
+        "case_id",
+        "id",
+        "observed_at",
+        "source_id",
+        "source_kind",
+        "source_revision"
+      ]
+    },
+    {
       "relation": "staff_custom_rules",
       "fields": [
         "active",
@@ -1438,13 +1534,13 @@
   "dispositionCounts": {
     "admitted_masked_personal_field": 14,
     "admitted_research_field": 373,
-    "internal_or_specialized_service": 1225,
+    "internal_or_specialized_service": 1194,
     "not_admitted_from_source": 87,
     "protected_operational_archive": 57,
     "restricted_secret_or_auth": 80,
-    "reviewed_logical_projection": 255,
-    "scope_only": 53,
-    "specialist_or_review_pending": 267,
+    "reviewed_logical_projection": 303,
+    "scope_only": 58,
+    "specialist_or_review_pending": 245,
     "unreviewed_not_admitted": 102
   },
   "relations": [
@@ -6107,8 +6203,8 @@
           "field": "actor_kind",
           "type": "text",
           "notNull": true,
-          "status": "internal_or_specialized_service",
-          "reason": "Operational workflow/audit/state; source-family tool or owner-specific review required"
+          "status": "reviewed_logical_projection",
+          "reason": "Corresponding field exposed through reviewed signed-scope logical view; not a raw table grant. Exact source, masking and semantics remain in SQL"
         },
         {
           "field": "actor_user_id",
@@ -6121,22 +6217,22 @@
           "field": "business_id",
           "type": "uuid",
           "notNull": true,
-          "status": "internal_or_specialized_service",
-          "reason": "Operational workflow/audit/state; source-family tool or owner-specific review required"
+          "status": "scope_only",
+          "reason": "Verified café isolation field, intentionally not projected as a model-selected business value"
         },
         {
           "field": "created_at",
           "type": "timestamp with time zone",
           "notNull": true,
-          "status": "internal_or_specialized_service",
-          "reason": "Operational workflow/audit/state; source-family tool or owner-specific review required"
+          "status": "reviewed_logical_projection",
+          "reason": "Corresponding field exposed through reviewed signed-scope logical view; not a raw table grant. Exact source, masking and semantics remain in SQL"
         },
         {
           "field": "id",
           "type": "uuid",
           "notNull": true,
-          "status": "internal_or_specialized_service",
-          "reason": "Operational workflow/audit/state; source-family tool or owner-specific review required"
+          "status": "reviewed_logical_projection",
+          "reason": "Corresponding field exposed through reviewed signed-scope logical view; not a raw table grant. Exact source, masking and semantics remain in SQL"
         },
         {
           "field": "idempotency_key",
@@ -6149,8 +6245,8 @@
           "field": "kind",
           "type": "text",
           "notNull": true,
-          "status": "internal_or_specialized_service",
-          "reason": "Operational workflow/audit/state; source-family tool or owner-specific review required"
+          "status": "reviewed_logical_projection",
+          "reason": "Corresponding field exposed through reviewed signed-scope logical view; not a raw table grant. Exact source, masking and semantics remain in SQL"
         },
         {
           "field": "note",
@@ -6163,8 +6259,8 @@
           "field": "occurred_at",
           "type": "timestamp with time zone",
           "notNull": true,
-          "status": "internal_or_specialized_service",
-          "reason": "Operational workflow/audit/state; source-family tool or owner-specific review required"
+          "status": "reviewed_logical_projection",
+          "reason": "Corresponding field exposed through reviewed signed-scope logical view; not a raw table grant. Exact source, masking and semantics remain in SQL"
         },
         {
           "field": "source_id",
@@ -6177,22 +6273,22 @@
           "field": "source_kind",
           "type": "text",
           "notNull": true,
-          "status": "internal_or_specialized_service",
-          "reason": "Operational workflow/audit/state; source-family tool or owner-specific review required"
+          "status": "reviewed_logical_projection",
+          "reason": "Corresponding field exposed through reviewed signed-scope logical view; not a raw table grant. Exact source, masking and semantics remain in SQL"
         },
         {
           "field": "task_id",
           "type": "text",
           "notNull": true,
-          "status": "internal_or_specialized_service",
-          "reason": "Operational workflow/audit/state; source-family tool or owner-specific review required"
+          "status": "reviewed_logical_projection",
+          "reason": "Corresponding field exposed through reviewed signed-scope logical view; not a raw table grant. Exact source, masking and semantics remain in SQL"
         },
         {
           "field": "working_confirmed",
           "type": "boolean",
           "notNull": true,
-          "status": "internal_or_specialized_service",
-          "reason": "Operational workflow/audit/state; source-family tool or owner-specific review required"
+          "status": "reviewed_logical_projection",
+          "reason": "Corresponding field exposed through reviewed signed-scope logical view; not a raw table grant. Exact source, masking and semantics remain in SQL"
         }
       ]
     },
@@ -10969,8 +11065,8 @@
           "field": "actor",
           "type": "text",
           "notNull": true,
-          "status": "internal_or_specialized_service",
-          "reason": "Operational workflow/audit/state; source-family tool or owner-specific review required"
+          "status": "reviewed_logical_projection",
+          "reason": "Corresponding field exposed through reviewed signed-scope logical view; not a raw table grant. Exact source, masking and semantics remain in SQL"
         },
         {
           "field": "author_user_id",
@@ -10983,22 +11079,22 @@
           "field": "body",
           "type": "text",
           "notNull": false,
-          "status": "internal_or_specialized_service",
-          "reason": "Operational workflow/audit/state; source-family tool or owner-specific review required"
+          "status": "reviewed_logical_projection",
+          "reason": "Corresponding field exposed through reviewed signed-scope logical view; not a raw table grant. Exact source, masking and semantics remain in SQL"
         },
         {
           "field": "business_id",
           "type": "uuid",
           "notNull": true,
-          "status": "internal_or_specialized_service",
-          "reason": "Operational workflow/audit/state; source-family tool or owner-specific review required"
+          "status": "scope_only",
+          "reason": "Verified café isolation field, intentionally not projected as a model-selected business value"
         },
         {
           "field": "channel",
           "type": "text",
           "notNull": true,
-          "status": "internal_or_specialized_service",
-          "reason": "Operational workflow/audit/state; source-family tool or owner-specific review required"
+          "status": "reviewed_logical_projection",
+          "reason": "Corresponding field exposed through reviewed signed-scope logical view; not a raw table grant. Exact source, masking and semantics remain in SQL"
         },
         {
           "field": "client_nonce",
@@ -11011,15 +11107,15 @@
           "field": "employee_id",
           "type": "uuid",
           "notNull": true,
-          "status": "internal_or_specialized_service",
-          "reason": "Operational workflow/audit/state; source-family tool or owner-specific review required"
+          "status": "reviewed_logical_projection",
+          "reason": "Corresponding field exposed through reviewed signed-scope logical view; not a raw table grant. Exact source, masking and semantics remain in SQL"
         },
         {
           "field": "id",
           "type": "uuid",
           "notNull": true,
-          "status": "internal_or_specialized_service",
-          "reason": "Operational workflow/audit/state; source-family tool or owner-specific review required"
+          "status": "reviewed_logical_projection",
+          "reason": "Corresponding field exposed through reviewed signed-scope logical view; not a raw table grant. Exact source, masking and semantics remain in SQL"
         },
         {
           "field": "provider_event_id",
@@ -11032,22 +11128,22 @@
           "field": "received_at",
           "type": "timestamp with time zone",
           "notNull": true,
-          "status": "internal_or_specialized_service",
-          "reason": "Operational workflow/audit/state; source-family tool or owner-specific review required"
+          "status": "reviewed_logical_projection",
+          "reason": "Corresponding field exposed through reviewed signed-scope logical view; not a raw table grant. Exact source, masking and semantics remain in SQL"
         },
         {
           "field": "request_id",
           "type": "uuid",
           "notNull": false,
-          "status": "internal_or_specialized_service",
-          "reason": "Operational workflow/audit/state; source-family tool or owner-specific review required"
+          "status": "reviewed_logical_projection",
+          "reason": "Corresponding field exposed through reviewed signed-scope logical view; not a raw table grant. Exact source, masking and semantics remain in SQL"
         },
         {
           "field": "response_code",
           "type": "text",
           "notNull": true,
-          "status": "internal_or_specialized_service",
-          "reason": "Operational workflow/audit/state; source-family tool or owner-specific review required"
+          "status": "reviewed_logical_projection",
+          "reason": "Corresponding field exposed through reviewed signed-scope logical view; not a raw table grant. Exact source, masking and semantics remain in SQL"
         }
       ]
     },
@@ -11059,92 +11155,92 @@
           "field": "business_id",
           "type": "uuid",
           "notNull": true,
-          "status": "internal_or_specialized_service",
-          "reason": "Operational workflow/audit/state; source-family tool or owner-specific review required"
+          "status": "scope_only",
+          "reason": "Verified café isolation field, intentionally not projected as a model-selected business value"
         },
         {
           "field": "created_at",
           "type": "timestamp with time zone",
           "notNull": true,
-          "status": "internal_or_specialized_service",
-          "reason": "Operational workflow/audit/state; source-family tool or owner-specific review required"
+          "status": "reviewed_logical_projection",
+          "reason": "Corresponding field exposed through reviewed signed-scope logical view; not a raw table grant. Exact source, masking and semantics remain in SQL"
         },
         {
           "field": "due_at",
           "type": "timestamp with time zone",
           "notNull": false,
-          "status": "internal_or_specialized_service",
-          "reason": "Operational workflow/audit/state; source-family tool or owner-specific review required"
+          "status": "reviewed_logical_projection",
+          "reason": "Corresponding field exposed through reviewed signed-scope logical view; not a raw table grant. Exact source, masking and semantics remain in SQL"
         },
         {
           "field": "employee_id",
           "type": "uuid",
           "notNull": true,
-          "status": "internal_or_specialized_service",
-          "reason": "Operational workflow/audit/state; source-family tool or owner-specific review required"
+          "status": "reviewed_logical_projection",
+          "reason": "Corresponding field exposed through reviewed signed-scope logical view; not a raw table grant. Exact source, masking and semantics remain in SQL"
         },
         {
           "field": "id",
           "type": "uuid",
           "notNull": true,
-          "status": "internal_or_specialized_service",
-          "reason": "Operational workflow/audit/state; source-family tool or owner-specific review required"
+          "status": "reviewed_logical_projection",
+          "reason": "Corresponding field exposed through reviewed signed-scope logical view; not a raw table grant. Exact source, masking and semantics remain in SQL"
         },
         {
           "field": "kind",
           "type": "text",
           "notNull": true,
-          "status": "internal_or_specialized_service",
-          "reason": "Operational workflow/audit/state; source-family tool or owner-specific review required"
+          "status": "reviewed_logical_projection",
+          "reason": "Corresponding field exposed through reviewed signed-scope logical view; not a raw table grant. Exact source, masking and semantics remain in SQL"
         },
         {
           "field": "prompt",
           "type": "text",
           "notNull": true,
-          "status": "internal_or_specialized_service",
-          "reason": "Operational workflow/audit/state; source-family tool or owner-specific review required"
+          "status": "reviewed_logical_projection",
+          "reason": "Corresponding field exposed through reviewed signed-scope logical view; not a raw table grant. Exact source, masking and semantics remain in SQL"
         },
         {
           "field": "source_id",
           "type": "text",
           "notNull": true,
-          "status": "internal_or_specialized_service",
-          "reason": "Operational workflow/audit/state; source-family tool or owner-specific review required"
+          "status": "reviewed_logical_projection",
+          "reason": "Corresponding field exposed through reviewed signed-scope logical view; not a raw table grant. Exact source, masking and semantics remain in SQL"
         },
         {
           "field": "source_revision",
           "type": "text",
           "notNull": true,
-          "status": "internal_or_specialized_service",
-          "reason": "Operational workflow/audit/state; source-family tool or owner-specific review required"
+          "status": "reviewed_logical_projection",
+          "reason": "Corresponding field exposed through reviewed signed-scope logical view; not a raw table grant. Exact source, masking and semantics remain in SQL"
         },
         {
           "field": "source_type",
           "type": "text",
           "notNull": true,
-          "status": "internal_or_specialized_service",
-          "reason": "Operational workflow/audit/state; source-family tool or owner-specific review required"
+          "status": "reviewed_logical_projection",
+          "reason": "Corresponding field exposed through reviewed signed-scope logical view; not a raw table grant. Exact source, masking and semantics remain in SQL"
         },
         {
           "field": "status",
           "type": "text",
           "notNull": true,
-          "status": "internal_or_specialized_service",
-          "reason": "Operational workflow/audit/state; source-family tool or owner-specific review required"
+          "status": "reviewed_logical_projection",
+          "reason": "Corresponding field exposed through reviewed signed-scope logical view; not a raw table grant. Exact source, masking and semantics remain in SQL"
         },
         {
           "field": "title",
           "type": "text",
           "notNull": true,
-          "status": "internal_or_specialized_service",
-          "reason": "Operational workflow/audit/state; source-family tool or owner-specific review required"
+          "status": "reviewed_logical_projection",
+          "reason": "Corresponding field exposed through reviewed signed-scope logical view; not a raw table grant. Exact source, masking and semantics remain in SQL"
         },
         {
           "field": "updated_at",
           "type": "timestamp with time zone",
           "notNull": true,
-          "status": "internal_or_specialized_service",
-          "reason": "Operational workflow/audit/state; source-family tool or owner-specific review required"
+          "status": "reviewed_logical_projection",
+          "reason": "Corresponding field exposed through reviewed signed-scope logical view; not a raw table grant. Exact source, masking and semantics remain in SQL"
         }
       ]
     },
@@ -11190,22 +11286,22 @@
           "field": "business_id",
           "type": "uuid",
           "notNull": true,
-          "status": "specialist_or_review_pending",
-          "reason": "Potential business fact; use existing authorized specialist or review before new SQL admission"
+          "status": "scope_only",
+          "reason": "Verified café isolation field, intentionally not projected as a model-selected business value"
         },
         {
           "field": "case_kind",
           "type": "text",
           "notNull": true,
-          "status": "specialist_or_review_pending",
-          "reason": "Potential business fact; use existing authorized specialist or review before new SQL admission"
+          "status": "reviewed_logical_projection",
+          "reason": "Corresponding field exposed through reviewed signed-scope logical view; not a raw table grant. Exact source, masking and semantics remain in SQL"
         },
         {
           "field": "created_at",
           "type": "timestamp with time zone",
           "notNull": true,
-          "status": "specialist_or_review_pending",
-          "reason": "Potential business fact; use existing authorized specialist or review before new SQL admission"
+          "status": "reviewed_logical_projection",
+          "reason": "Corresponding field exposed through reviewed signed-scope logical view; not a raw table grant. Exact source, masking and semantics remain in SQL"
         },
         {
           "field": "created_by",
@@ -11232,43 +11328,43 @@
           "field": "decision",
           "type": "text",
           "notNull": false,
-          "status": "specialist_or_review_pending",
-          "reason": "Potential business fact; use existing authorized specialist or review before new SQL admission"
+          "status": "reviewed_logical_projection",
+          "reason": "Corresponding field exposed through reviewed signed-scope logical view; not a raw table grant. Exact source, masking and semantics remain in SQL"
         },
         {
           "field": "employee_id",
           "type": "uuid",
           "notNull": false,
-          "status": "specialist_or_review_pending",
-          "reason": "Potential business fact; use existing authorized specialist or review before new SQL admission"
+          "status": "reviewed_logical_projection",
+          "reason": "Corresponding field exposed through reviewed signed-scope logical view; not a raw table grant. Exact source, masking and semantics remain in SQL"
         },
         {
           "field": "from_date",
           "type": "date",
           "notNull": false,
-          "status": "specialist_or_review_pending",
-          "reason": "Potential business fact; use existing authorized specialist or review before new SQL admission"
+          "status": "reviewed_logical_projection",
+          "reason": "Corresponding field exposed through reviewed signed-scope logical view; not a raw table grant. Exact source, masking and semantics remain in SQL"
         },
         {
           "field": "id",
           "type": "uuid",
           "notNull": true,
-          "status": "specialist_or_review_pending",
-          "reason": "Potential business fact; use existing authorized specialist or review before new SQL admission"
+          "status": "reviewed_logical_projection",
+          "reason": "Corresponding field exposed through reviewed signed-scope logical view; not a raw table grant. Exact source, masking and semantics remain in SQL"
         },
         {
           "field": "location_id",
           "type": "uuid",
           "notNull": false,
-          "status": "specialist_or_review_pending",
-          "reason": "Potential business fact; use existing authorized specialist or review before new SQL admission"
+          "status": "reviewed_logical_projection",
+          "reason": "Corresponding field exposed through reviewed signed-scope logical view; not a raw table grant. Exact source, masking and semantics remain in SQL"
         },
         {
           "field": "next_check_at",
           "type": "timestamp with time zone",
           "notNull": false,
-          "status": "specialist_or_review_pending",
-          "reason": "Potential business fact; use existing authorized specialist or review before new SQL admission"
+          "status": "reviewed_logical_projection",
+          "reason": "Corresponding field exposed through reviewed signed-scope logical view; not a raw table grant. Exact source, masking and semantics remain in SQL"
         },
         {
           "field": "retention_at",
@@ -11281,15 +11377,15 @@
           "field": "revision",
           "type": "bigint",
           "notNull": true,
-          "status": "specialist_or_review_pending",
-          "reason": "Potential business fact; use existing authorized specialist or review before new SQL admission"
+          "status": "reviewed_logical_projection",
+          "reason": "Corresponding field exposed through reviewed signed-scope logical view; not a raw table grant. Exact source, masking and semantics remain in SQL"
         },
         {
           "field": "role_needed",
           "type": "text",
           "notNull": false,
-          "status": "specialist_or_review_pending",
-          "reason": "Potential business fact; use existing authorized specialist or review before new SQL admission"
+          "status": "reviewed_logical_projection",
+          "reason": "Corresponding field exposed through reviewed signed-scope logical view; not a raw table grant. Exact source, masking and semantics remain in SQL"
         },
         {
           "field": "source_key",
@@ -11302,29 +11398,29 @@
           "field": "source_kind",
           "type": "text",
           "notNull": true,
-          "status": "specialist_or_review_pending",
-          "reason": "Potential business fact; use existing authorized specialist or review before new SQL admission"
+          "status": "reviewed_logical_projection",
+          "reason": "Corresponding field exposed through reviewed signed-scope logical view; not a raw table grant. Exact source, masking and semantics remain in SQL"
         },
         {
           "field": "state",
           "type": "text",
           "notNull": true,
-          "status": "specialist_or_review_pending",
-          "reason": "Potential business fact; use existing authorized specialist or review before new SQL admission"
+          "status": "reviewed_logical_projection",
+          "reason": "Corresponding field exposed through reviewed signed-scope logical view; not a raw table grant. Exact source, masking and semantics remain in SQL"
         },
         {
           "field": "to_date",
           "type": "date",
           "notNull": false,
-          "status": "specialist_or_review_pending",
-          "reason": "Potential business fact; use existing authorized specialist or review before new SQL admission"
+          "status": "reviewed_logical_projection",
+          "reason": "Corresponding field exposed through reviewed signed-scope logical view; not a raw table grant. Exact source, masking and semantics remain in SQL"
         },
         {
           "field": "updated_at",
           "type": "timestamp with time zone",
           "notNull": true,
-          "status": "specialist_or_review_pending",
-          "reason": "Potential business fact; use existing authorized specialist or review before new SQL admission"
+          "status": "reviewed_logical_projection",
+          "reason": "Corresponding field exposed through reviewed signed-scope logical view; not a raw table grant. Exact source, masking and semantics remain in SQL"
         }
       ]
     },
@@ -11336,15 +11432,15 @@
           "field": "business_id",
           "type": "uuid",
           "notNull": true,
-          "status": "specialist_or_review_pending",
-          "reason": "Potential business fact; use existing authorized specialist or review before new SQL admission"
+          "status": "scope_only",
+          "reason": "Verified café isolation field, intentionally not projected as a model-selected business value"
         },
         {
           "field": "case_id",
           "type": "uuid",
           "notNull": true,
-          "status": "specialist_or_review_pending",
-          "reason": "Potential business fact; use existing authorized specialist or review before new SQL admission"
+          "status": "reviewed_logical_projection",
+          "reason": "Corresponding field exposed through reviewed signed-scope logical view; not a raw table grant. Exact source, masking and semantics remain in SQL"
         },
         {
           "field": "evidence_key",
@@ -11357,36 +11453,36 @@
           "field": "id",
           "type": "uuid",
           "notNull": true,
-          "status": "specialist_or_review_pending",
-          "reason": "Potential business fact; use existing authorized specialist or review before new SQL admission"
+          "status": "reviewed_logical_projection",
+          "reason": "Corresponding field exposed through reviewed signed-scope logical view; not a raw table grant. Exact source, masking and semantics remain in SQL"
         },
         {
           "field": "observed_at",
           "type": "timestamp with time zone",
           "notNull": true,
-          "status": "specialist_or_review_pending",
-          "reason": "Potential business fact; use existing authorized specialist or review before new SQL admission"
+          "status": "reviewed_logical_projection",
+          "reason": "Corresponding field exposed through reviewed signed-scope logical view; not a raw table grant. Exact source, masking and semantics remain in SQL"
         },
         {
           "field": "source_id",
           "type": "text",
           "notNull": true,
-          "status": "specialist_or_review_pending",
-          "reason": "Potential business fact; use existing authorized specialist or review before new SQL admission"
+          "status": "reviewed_logical_projection",
+          "reason": "Corresponding field exposed through reviewed signed-scope logical view; not a raw table grant. Exact source, masking and semantics remain in SQL"
         },
         {
           "field": "source_kind",
           "type": "text",
           "notNull": true,
-          "status": "specialist_or_review_pending",
-          "reason": "Potential business fact; use existing authorized specialist or review before new SQL admission"
+          "status": "reviewed_logical_projection",
+          "reason": "Corresponding field exposed through reviewed signed-scope logical view; not a raw table grant. Exact source, masking and semantics remain in SQL"
         },
         {
           "field": "source_revision",
           "type": "text",
           "notNull": true,
-          "status": "specialist_or_review_pending",
-          "reason": "Potential business fact; use existing authorized specialist or review before new SQL admission"
+          "status": "reviewed_logical_projection",
+          "reason": "Corresponding field exposed through reviewed signed-scope logical view; not a raw table grant. Exact source, masking and semantics remain in SQL"
         }
       ]
     },
