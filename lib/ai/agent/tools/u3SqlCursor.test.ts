@@ -1,5 +1,7 @@
 import {describe,expect,it} from "vitest";
-import {researchNextCursor,researchPageOffset} from "./u3SqlCursor";
+import {researchNextCursor,researchPageOffset,researchPage} from "./u3SqlCursor";
+const snapshot={id:"11111111-1111-4111-8111-111111111111",digest:"a".repeat(64),
+ asOf:"2026-11-24T00:00:00.000Z",totalRows:2500};
 const key="synthetic service signing key secret at least 24 chars";
 const input={
  businessId:"aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
@@ -15,14 +17,14 @@ describe("U3 server-signed research cursor",()=>{
   expect(researchPageOffset(input,null,key)).toBe(0);
   let offset=0;
   for(let page=0;page<20;page++){
-   const cursor=researchNextCursor(input,offset+100,key);
+   const cursor=researchNextCursor(input,offset+100,key,snapshot);
    offset=researchPageOffset(input,cursor,key);
    expect(offset).toBe((page+1)*100);
   }
   expect(offset).toBe(2000);
  });
  it("binds every cursor to SQL, parameters, window, owner/café/thread and lease",()=>{
-  const cursor=researchNextCursor(input,150,key);
+  const cursor=researchNextCursor(input,150,key,snapshot);
   const attempts=[
    {...input,businessId:"another-cafe"},
    {...input,ownerUserId:"other"},
@@ -31,25 +33,26 @@ describe("U3 server-signed research cursor",()=>{
    {...input,parameters:[31]},
    {...input,date_to:"2026-11-24"},
    {...input,mode:"investigation",sourceType:"alert",sourceId:"a",leaseToken:"lease"},
-   {...input,limit:50}
+   {...input,limit:50},{...input,aggregateOnly:true}
   ];
   for(const p of attempts)expect(()=>researchPageOffset(p,cursor,key)).toThrow("invalid_query");
  });
  it("rejects crafted, tampered, malformed, unsigned and overflowing offsets",()=>{
-  const cursor=researchNextCursor(input,7,key);
+  const cursor=researchNextCursor(input,7,key,snapshot);
   for(const attempt of [cursor.slice(0,-1)+(cursor.endsWith("A")?"B":"A"),"junk",
    "abc."+("A".repeat(43)),"",cursor+"bad"])
    expect(()=>researchPageOffset(input,attempt,key)).toThrow("invalid_query");
   expect(()=>researchPageOffset(input,cursor,"different long service signing secret")).toThrow("invalid_query");
   for(const offset of [0,-1,1.5,Number.MAX_SAFE_INTEGER+1,Infinity])
-   expect(()=>researchNextCursor(input,offset,key)).toThrow("invalid_query");
+   expect(()=>researchNextCursor(input,offset,key,snapshot)).toThrow("invalid_query");
  });
  it("does not expose source text, café ID or the secret in the cursor",()=>{
-  const cursor=researchNextCursor(input,100,key);
+  const cursor=researchNextCursor(input,100,key,snapshot);
   expect(cursor).not.toContain(input.businessId);
   expect(cursor).not.toContain("net_sales_cents");
   expect(cursor).not.toContain(key);
   const payload=JSON.parse(Buffer.from(cursor.split(".")[0],"base64url").toString("utf8"));
-  expect(Object.keys(payload).sort()).toEqual(["h","o","v"]);
+  expect(Object.keys(payload).sort()).toEqual(["h","o","s","v"]);
+  expect(researchPage(input,cursor,key)).toEqual({offset:100,snapshot});
  });
 });

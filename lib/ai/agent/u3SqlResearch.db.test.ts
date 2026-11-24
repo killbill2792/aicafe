@@ -339,7 +339,7 @@ describe.skipIf(!active)("U3 migrated registered tool + private connection",()=>
      next_cursor?:string|null;page_complete?:boolean;
      page_consistency?:string
     };
-    expect(page.page_consistency).toBe("independent_read_only_snapshot");
+    expect(page.page_consistency).toBe("verified_same_result");
     for(const item of result.rows){
      const row=item as Record<string,unknown>;
      seen.push(String(row.id));
@@ -356,14 +356,23 @@ describe.skipIf(!active)("U3 migrated registered tool + private connection",()=>
    expect(pages).toBeGreaterThanOrEqual(3);
    expect(seen).toEqual(oracle.rows.map(v=>v.id));
    expect(new Set(seen).size).toBe(138);
-   // A query with >1 page but no stable top-level ORDER BY must not
-   // advertise exhaustive offset traversal or silently skip source rows.
-   const unsafe=await dataQueryTools.query_data.execute({
-    ...input("SELECT id FROM u3_research.orders"),limit:50,
-    date_from:"2025-01-01",date_to:"2026-11-23"
+   // Unordered queries may be paged if the actual ordered result remains
+   // identical; no invented ordering is imposed on the model's SELECT.
+   const unordered=await dataQueryTools.query_data.execute({
+    ...input("SELECT id FROM u3_research.orders"),limit:50
    },scoped);
-   expect(unsafe.error).toBe("stable_order_required");
-   expect((unsafe as typeof unsafe & {page_complete?:boolean}).page_complete).toBe(false);
+   expect(unordered.error).toBeUndefined();
+   expect(unordered).toMatchObject({page_complete:false,page_consistency:"verified_same_result"});
+   // Mutate a row OUTSIDE the first page, leaving the prefix unchanged.
+   // A prefix-only digest would miss this. No mixed snapshot rows may escape.
+   const first=await dataQueryTools.query_data.execute({...input(sql),limit:50},scoped);
+   const token=(first as {next_cursor?:string}).next_cursor;
+   expect(token).toEqual(expect.any(String));
+   await admin.query("UPDATE public.orders SET net_sales_cents=net_sales_cents+1 WHERE business_id=$1 AND pos_order_id='u3-cursor-137'",[ids.a]);
+   const changed=await dataQueryTools.query_data.execute({...input(sql),limit:50,cursor:token},scoped);
+   expect(changed).toMatchObject({error:"research_snapshot_changed",rows:[],page_complete:false});
+   const restart=await dataQueryTools.query_data.execute({...input(sql),limit:50},scoped);
+   expect(restart.error).toBeUndefined();
   }finally{
    await admin.query("DELETE FROM public.orders WHERE business_id=$1 AND pos_order_id LIKE 'u3-cursor-%'",[ids.a]).catch(()=>{});
   }

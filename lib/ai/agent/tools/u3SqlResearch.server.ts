@@ -6,7 +6,7 @@ import type {SupabaseClient} from "@supabase/supabase-js";
 import {createAdminSupabaseClient} from "@/lib/supabase/admin";
 import {admitU3Sql,U3AdmissionError,type U3TrustedUnit,type U3RelationUnits} from "./u3SqlAdmission";
 import {validateResearchConnection} from "./u3ResearchConnection";
-import {researchNextCursor,researchPageOffset} from "./u3SqlCursor";
+import {researchNextCursor,researchPage,type ResearchSnapshot} from "./u3SqlCursor";
 
 /** One research executor for the existing query_data tool.
  * No service-role client receives model-authored SQL. Scope is a server-only
@@ -259,32 +259,40 @@ export function unsafeStructuredToastResult(rows:readonly unknown[]):boolean{
  });
 }
 
-/** Fetch one admitted SELECT in the same verified snapshot. Internal fetch
- * batches do not become model tool calls. Stop at the existing UTF-8 transport
- * envelope or a model-chosen page size, never at an implicit business row count.
- * The transaction closes the cursor on both commit and rollback. */
+/** Stream the complete result in one repeatable-read transaction. Hash every
+ * serialized row in its actual order, retaining only the requested page in
+ * memory. Subsequent pages must match this exact ordered result before any
+ * rows are returned. No unbounded process cache or persistent raw-data copy.
+ * The real wall-clock/statement resource budget applies to the full scan. */
 async function readResearchPage(client:PoolClient,sql:string,parameters:readonly unknown[],
  offset:number,limit:number|null,validate:(rows:unknown[])=>void){
  const started=Date.now();
- await client.query({text:CURSOR_PREFIX+sql+") AS u3_bounded OFFSET "+offset,values:[...parameters]});
- const rows:unknown[]=[];let bytes=2;
+ await client.query({text:CURSOR_PREFIX+sql+") AS u3_bounded",values:[...parameters]});
+ const rows:unknown[]=[];let bytes=2,totalRows=0,pageFull=false;
+ const digest=createHash("sha256");
  while(true){
   const remaining=QUERY_TIME_MS-(Date.now()-started);
   if(remaining<=0)throw Error("query_timeout");
-  // Preserve the original single-query wall-clock allowance across FETCHes.
   await client.query("SELECT set_config('statement_timeout',$1,true)",[String(remaining)]); // hardcode-ok: PostgreSQL bind placeholder
-  const amount=limit===null?FETCH_BATCH:Math.min(FETCH_BATCH,limit-rows.length+1);
-  const result=await client.query("FETCH FORWARD "+amount+" FROM u3_result");
+  const result=await client.query("FETCH FORWARD "+FETCH_BATCH+" FROM u3_result");
   const batch:unknown[]=result.rows;
   validate(batch);
   for(const row of batch){
-   const size=Buffer.byteLength(JSON.stringify(row),"utf8")+(rows.length?1:0);
-   if((limit!==null&&rows.length===limit)||bytes+size>MAX_RESULT_BYTES)
-    return {rows,truncated:true};
-   rows.push(row);bytes+=size;
+   const serialized=JSON.stringify(row);
+   const size=Buffer.byteLength(serialized,"utf8");
+   // Length prefix makes the byte stream unambiguous across row boundaries.
+   digest.update(String(size)+":").update(serialized);
+   const index=totalRows++;
+   if(index<offset||pageFull)continue;
+   if((limit!==null&&rows.length===limit)||bytes+size+(rows.length?1:0)>MAX_RESULT_BYTES){
+    pageFull=true;continue;
+   }
+   rows.push(row);bytes+=size+(rows.length>1?1:0);
   }
-  if(batch.length<amount)return {rows,truncated:false};
+  if(batch.length<FETCH_BATCH)break;
  }
+ if(Date.now()-started>QUERY_TIME_MS)throw Error("query_timeout");
+ return {rows,totalRows,digest:digest.digest("hex"),truncated:offset+rows.length<totalRows};
 }
 // Only fixed error categories and SQLSTATE values are returned to the model.
 // Raw database messages can contain source values, credentials or internal
@@ -319,7 +327,7 @@ export function safeU3SqlErrorCode(e:unknown){
  return ["invalid_query","unattended_aggregate_required","research_invalid_scope",
   "research_not_configured","research_scope_denied",
   "research_connection_untrusted","research_connection_failed","query_timeout",
-  "row_exceeds_page_budget","stable_order_required",
+  "row_exceeds_page_budget","stable_order_required","research_snapshot_changed",
   "query_syntax_error","query_execution_error"].includes(s)?s:"source_read_failed";
 }
 /** Model SQL can use joins, windows, CTEs and nested analytics, but only on
@@ -383,12 +391,12 @@ export async function runU3Sql(ctx:U3SqlContext,raw:unknown){
     businessId:ctx.businessId,ownerUserId:ctx.ownerUserId??"",
     threadId:ctx.threadId??"",mode:ctx.mode??"owner",
     sourceType:ctx.sourceType??null,sourceId:ctx.sourceId??null,
-    runId:ctx.runId??null,leaseToken:ctx.leaseToken??null,
+    runId:ctx.runId??null,leaseToken:ctx.leaseToken??null,aggregateOnly:ctx.aggregateOnly===true,
     sql:p.sql,parameters:p.parameters??null,date_from:p.date_from,
     date_to:p.date_to,limit:count
    };
    const key=process.env.SUPABASE_SERVICE_ROLE_KEY??"";
-   const offset=researchPageOffset(cursorInput,p.cursor,key);
+   const {offset,snapshot:prior}=researchPage(cursorInput,p.cursor,key);
    const bounded=p.sql.trim().replace(/;\s*$/,"");
    const parameters=p.parameters??[];
    stage.value="query";
@@ -400,33 +408,33 @@ export async function runU3Sql(ctx:U3SqlContext,raw:unknown){
    const fit=await readResearchPage(client,bounded,parameters,offset,count,rows=>{
     if(plan.relations.includes("toast_records")&&unsafeStructuredToastResult(rows))
      throw Error("invalid_query");
+    if(ctx.aggregateOnly&&rows.some(row=>
+     !row||typeof row!=="object"||Array.isArray(row)||
+     Object.entries(row).some(([key,value])=>
+      /name|email|phone|address|employee|customer|person|account|identity|recipient/i.test(key)&&value!==null)))
+     throw Error("unattended_aggregate_required");
    });
    stage.value="result";
+   if(prior&&(prior.digest!==fit.digest||prior.totalRows!==fit.totalRows))
+    throw Error("research_snapshot_changed");
+   const snapshot:ResearchSnapshot=prior??{id:randomUUID(),digest:fit.digest,totalRows:fit.totalRows,
+    asOf:asOf instanceof Date?asOf.toISOString():String(asOf??"")};
    const truncated=fit.truncated;
-   // PostgreSQL does not promise row ordering without a top-level ORDER BY.
-   // Never offer an offset cursor for a result whose next page could reorder.
-   if(truncated&&!plan.hasTopLevelOrder)throw Error("stable_order_required");
    // A single oversized source row must not cause a cursor loop that never
    // advances or an apparently complete empty business observation.
    if(truncated&&fit.rows.length===0)throw Error("row_exceeds_page_budget");
    const nextOffset=offset+fit.rows.length;
    if(!Number.isSafeInteger(nextOffset))throw Error("invalid_query");
-   const nextCursor=truncated?researchNextCursor(cursorInput,nextOffset,key):null;
-   if(ctx.aggregateOnly&&fit.rows.some(row=>
-    !row||typeof row!=="object"||Array.isArray(row)||
-    Object.entries(row).some(([key,value])=>
-      /name|email|phone|address|employee|customer|person|account|identity|recipient/i.test(key)
-      &&value!==null)))
-    throw Error("unattended_aggregate_required");
+   const nextCursor=truncated?researchNextCursor(cursorInput,nextOffset,key,snapshot):null;
    return {source:"u3_canonical_research",period:null,
     missing:truncated?["result_truncated"]:[],rows:fit.rows,
     rowCount:fit.rows.length,truncated,
     page_offset:offset,next_cursor:nextCursor,page_complete:!truncated,
-    // The cursor binds query identity, not a cross-request MVCC snapshot.
-    // Never certify mutable multi-page results as one consistent read.
-    page_consistency:"independent_read_only_snapshot",
-    evidence:{receipt_id:randomUUID(),
-     as_of:asOf instanceof Date?asOf.toISOString():String(asOf??""),
+    // Exact full-result equivalence is proved on every page; this is not
+    // a long-lived exported PostgreSQL MVCC transaction.
+    page_consistency:"verified_same_result",total_rows:fit.totalRows,
+    evidence:{receipt_id:randomUUID(),snapshot_id:snapshot.id,
+     snapshot_digest:snapshot.digest,as_of:snapshot.asOf,
      query_fingerprint:createHash("sha256").update(p.sql).digest("hex"),
      column_units:plan.outputUnits,
      catalog_version:createHash("sha256").update(JSON.stringify(list)).digest("hex").slice(0,16),
