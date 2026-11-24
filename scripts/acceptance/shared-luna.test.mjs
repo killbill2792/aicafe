@@ -475,13 +475,13 @@ test("actual shared DB preflight rejects unavailable authenticated SQL before br
     const b=yaml.indexOf("      - name: Export masked disposable keys and a random capped proxy token\n",a);
     const broker=yaml.indexOf("      - name: Start bounded trusted broker on host",b);
     assert.ok(a>=0&&b>a&&broker>b,"actual DB step must precede paid broker");
-    const section=yaml.slice(a,b),mark="        run: |\n";
-    assert.ok(section.includes(mark));
-    const shell=section.slice(section.indexOf(mark)+mark.length).split("\n")
-      .map(line=>line.startsWith("          ")?line.slice(10):line).join("\n");
+    const section=yaml.slice(a,b);
+    assert.ok(section.includes("bash ../coordinator/scripts/acceptance/shared-luna-db.sh"));
+    const shell=readFileSync(join(import.meta.dirname,"shared-luna-db.sh"),"utf8");
     const mock=(name,body)=>{
       const path=join(bin,name);writeFileSync(path,"#!/bin/sh\n"+body+"\n",{mode:0o700});
     };
+    mock("ss",'if [ "$MODE" = occupied ]; then printf "LISTEN 0 128 0.0.0.0:54322 0.0.0.0:*\\n"; fi');
     mock("supabase",'if [ "$1" = status ]; then printf "{}\\n"; fi\nif [ "$1" = db ] && [ "$MODE" = migration-fail ]; then exit 41; fi\nexit 0');
     mock("pg_isready",'if [ "$MODE" = readiness-fail ]; then exit 42; fi\nexit 0');
     const capture=join(work,"sql-invocation");
@@ -490,7 +490,7 @@ test("actual shared DB preflight rejects unavailable authenticated SQL before br
       cwd:candidate,encoding:"utf8",env:{...process.env,
         PATH:bin+":"+process.env.PATH,RUNNER_TEMP:work,MODE:mode,SQL_CAPTURE:capture}
     });
-    for(const mode of ["migration-fail","readiness-fail","sql-fail","wrong-output"]){
+    for(const mode of ["occupied","migration-fail","readiness-fail","sql-fail","wrong-output"]){
       rmSync(capture,{force:true});
       const denied=run(mode);
       assert.notEqual(denied.status,0,mode);

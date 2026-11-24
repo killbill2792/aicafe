@@ -4,7 +4,7 @@
  * Never run in regular PR CI or without the shared-Luna owner authorization. */
 import {randomUUID} from "node:crypto";
 import {existsSync,realpathSync,writeFileSync} from "node:fs";
-import {resolve,dirname,sep} from "node:path";
+import {resolve,dirname} from "node:path";
 import {pathToFileURL} from "node:url";
 import {TEST_CAFES} from "../../../scripts/seed/cafes.mjs";
 import {assertLocalLiveEnvironment} from "./preflight.mjs";
@@ -23,6 +23,23 @@ export function assertU3ObservedEvidence({model,tools,text,orders,lines,cents,pr
  if(!matchedMoney(text,cents)||!matchedCount(text,orders)||!matchedCount(text,lines))
   fail("independent_source_result_mismatch");
  if(proposals!==0)fail("unapproved_effect_created");
+}
+export function resolveU3ProofPaths(args,env){
+ if(env.AICAFE_SHARED_LUNA_CANDIDATE!=="1"||env.AICAFE_SHARED_LUNA_PROOF_DIR!=="/proof"||
+   args.length!==4||args[0]!=="--output"||args[2]!=="--scope-output")
+  fail("private_output_and_scope_required");
+ const out=resolve(args[1]),scopeOut=resolve(args[3]);
+ if(out!=="/proof/u3-canonical-research-proof.json"||scopeOut!=="/proof/u3-canonical-research-scope.json")
+  fail("fresh_local_evidence_path_required");
+ for(const path of [out,scopeOut]){
+  if(realpathSync(dirname(path))!=="/proof"||existsSync(path))fail("fresh_local_evidence_path_required");
+ }
+ return {out,scopeOut};
+}
+export function observedProviderCalls(usage){
+ const n=Number(usage?.model_call_count);
+ if(!Number.isSafeInteger(n)||n<1)fail("missing_provider_call_count");
+ return n;
 }
 async function login(browser,cafe){
  const context=await browser.newContext({baseURL:"http://127.0.0.1:3000",serviceWorkers:"block"});
@@ -90,14 +107,7 @@ async function main(){
  const args=process.argv.slice(2);
  if(args.length!==4||args[0]!=="--output"||args[2]!=="--scope-output")
   fail("private_output_and_scope_required");
- const root=realpathSync(process.cwd());
- const out=resolve(args[1]),scopeOut=resolve(args[3]);
- if(out===scopeOut)fail("different_evidence_files_required");
- for(const path of [out,scopeOut]){
-  const parent=realpathSync(dirname(path));
-  if((parent!==root&&!parent.startsWith(root+sep))||existsSync(path))
-   fail("fresh_local_evidence_path_required");
- }
+ const {out,scopeOut}=resolveU3ProofPaths(args,env);
  const cafe=TEST_CAFES[0],other=TEST_CAFES[1];
  if(!cafe?.owner||!other?.owner||cafe.businessId===other.businessId)
   fail("two_disposable_cafes_required");
@@ -157,11 +167,12 @@ async function main(){
   const scope={businessId:cafe.businessId,otherCafeId:other.businessId,
    ownerUserId:cafe.owner.userId,threadId:thread,replyId:turn.done.reply.id,
    businessDate:date,sampleOrderId:lines.sample_order_id,
-   orderCount:orders.n,lineCount:lines.n,netCents:String(orders.cents)};
+   orderCount:orders.n,lineCount:lines.n,netCents:String(orders.cents),
+   expectedProviderCalls:observedProviderCalls(usage)};
   writeFileSync(out,JSON.stringify({id:"u3-canonical-research",schema_version:1,
    head_sha:env.HEAD_SHA,status:"passed",observed_model:usage.model,
    checks:{sourceMatch:true,registeredResearch:true,foreignDenied:true,noEffect:true},
-   observedModelCalls:Number(usage.model_call_count)})+"\n",{mode:0o600,flag:"wx"});
+   observedModelCalls:observedProviderCalls(usage)})+"\n",{mode:0o600,flag:"wx"});
   writeFileSync(scopeOut,JSON.stringify(scope)+"\n",{mode:0o600,flag:"wx"});
  }finally{
   await foreign?.context.close().catch(()=>{});
