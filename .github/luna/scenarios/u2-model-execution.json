@@ -7,7 +7,7 @@
   "scope": "u2-model-execution-scope.json",
   "expectedTools": [
     "get_menu_items",
-    "get_sales"
+    "query_data"
   ],
   "assertions": [
     {

@@ -25,7 +25,7 @@ const TOAST_COVERAGE_VIEWS:ReadonlySet<CanonicalView>=new Set([
  "cv_sales_days","cv_sales_hours","cv_item_sales","cv_payments",
  "cv_discounts","cv_voids_refunds","cv_card_fees","cv_orders","cv_toast_records","cv_customer_visits","cv_customer_products"
 ]);
-const atom=z.union([z.string().max(256),z.number().finite(),z.boolean()]);
+const atom=z.union([z.string(),z.number().finite(),z.boolean()]);
 // Match ai_query_path: sixteen nested segments can legitimately exceed 100 total chars.
 const queryField=z.string().max(1024);
 const filter=z.strictObject({column:queryField,
@@ -317,13 +317,24 @@ export const dataQueryTools={
      ...(view||term!==null?{columns:relationMatch?fields:matched}:{}),
      matched:term===null||relationMatch||matched.length>0};
    }).filter(item=>item.matched);
-   const from=offset??0,size=pageSize??Math.max(0,candidates.length-from);
-   const next=from+size<candidates.length?from+size:null;
-   const page=candidates.slice(from,from+size).map(({matched:_matched,...item})=>item);
+   const from=offset??0;
+   const total=view?(candidates[0]?.columns?.length??0):candidates.length;
+   const size=pageSize??Math.max(0,total-from);
+   const budget=Math.min(ctx?.resultBudgetBytes??researchPageBudget(),researchPageBudget());
+   const dual=view===null&&source!=="canonical"&&u3SqlConfigured()&&!!ctx?.ownerUserId&&!!ctx.threadId;
+   const localBudget=Math.floor(dual?budget/2:budget);
+   const page=(view?candidates.map(({matched:_matched,...item})=>({...item,columns:item.columns?.slice(from,from+size)})):
+    candidates.slice(from,from+size).map(({matched:_matched,...item})=>item));
+   let count=view?(page[0]?.columns?.length??0):page.length;
+   while(count>0&&Buffer.byteLength(JSON.stringify(page),"utf8")>Math.max(0,localBudget-1024)){
+    if(view)page[0].columns?.pop();else page.pop();count--;
+   }
+   const tooLarge=count===0&&from<total;
+   const next=!tooLarge&&from+count<total?from+count:null;
    let research:unknown=null;
    if(view===null&&source!=="canonical"&&u3SqlConfigured()&&ctx?.ownerUserId&&ctx.threadId){
     try{
-     research=await describeU3Catalog(ctx,{
+     research=await describeU3Catalog({...ctx,resultBudgetBytes:Math.max(0,budget-localBudget-1024)}, {
       search,relation:null,offset,limit:pageSize
      });
     }catch(e){research={missing:[safeU3SqlErrorCode(e)]};}
@@ -340,12 +351,14 @@ export const dataQueryTools={
      "research_connection_failed","query_timeout","query_syntax_error",
      "query_execution_error"
    ].includes(v));
+   const researchPartial=research!==null&&typeof research==="object"&&"truncated" in research&&research.truncated===true;
    return {source:"canonical_dictionary",period:null,
     missing:[...(candidates.length===0&&research===null?["empty"]:[]),
-      ...(researchFailure?[researchFailure]:[]),...(next!==null?["result_truncated"]:[])],
+      ...(researchFailure?[researchFailure]:[]),...(tooLarge?["row_exceeds_page_budget"]:[]),
+      ...(next!==null||researchPartial?["result_truncated"]:[])],
     error:researchFailure,search:term,page_offset:from,next_offset:next,
-    total_matches:candidates.length,views:page,research,fields:[],
-    truncated:next!==null,retainedFields:undefined};
+    total_matches:candidates.length,fields_total:view?total:undefined,views:tooLarge?[]:page,research,fields:[],
+    truncated:next!==null||tooLarge||researchPartial,retainedFields:undefined};
   }
  },
  query_data:{
@@ -488,7 +501,9 @@ export const dataQueryTools={
       !Number.isSafeInteger(result.totalRows)||result.totalRows<0||
       typeof result.resultDigest!=="string"||!/^[0-9a-f]{64}$/u.test(result.resultDigest)||
       typeof result.observedAt!=="string"||!Number.isFinite(Date.parse(result.observedAt))||
-      !Array.isArray(result.rows)||typeof result.truncated!=="boolean"))
+      !Array.isArray(result.rows)||typeof result.truncated!=="boolean"||
+      (offset<=result.totalRows&&(offset+result.rows.length>result.totalRows||
+       result.truncated!==(offset+result.rows.length<result.totalRows)))))
      return empty("source_read_failed");
     const truncated=paged?offset+fit.rows.length<(result?.totalRows??0):result?.truncated===true||fit.cut;
     if(ctx.aggregateOnly&&!unattendedRowsAllowed(fit.rows,p))return empty("unattended_aggregate_required");

@@ -265,7 +265,7 @@ begin
    then jsonb_array_length(f->'value')>100 else false end)
  then raise exception 'invalid in';end if;
  return public.ai_query_view(p_business_id,p_view,p_columns,p_filters,p_group_by,p_metrics,
-  p_date_from,p_date_to,p_order_by,p_limit::bigint,0::bigint,6000)
+  p_date_from,p_date_to,p_order_by,p_limit::bigint,0::bigint,6000,true)
   - array['totalRows','resultDigest','observedAt'];
 end $preview$;
 

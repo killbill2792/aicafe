@@ -4,8 +4,9 @@ One conversational agent with ONE streaming tool-calling loop per owner turn (Op
 
 - **OpenAI is the brain.** The model decides which tools to call, what to ask and how to answer.
   Code does not pre-decide intent with regexes or keyword routers.
-- **Tools:** typed, strict JSON Schema (`strict:true`), zod input, compact results (≤ ~1.5k tokens:
-  totals, top rows, ids, units, source + period, `missing[]`). One tool per business capability.
+- **Tools:** typed, strict JSON Schema (`strict:true`), zod input, compact operational previews (totals, ids, units, source + period, `missing[]`).
+  Research results use actual available context bytes with explicit complete traversal;
+  no fixed token or row ceiling on business evidence. One tool per distinct business capability.
   One read-only data-query interface (`describe_data`/`query_data`) and one general
   `calculate` tool remain authoritative. For legacy execution, use only reviewed
   canonical views. The U3 approved target permits model-authored analytical SELECT
@@ -81,7 +82,7 @@ remain useful inputs, never the intellectual decision-maker.
   unattended research still excludes private individual-level exposure.
   Prompt packing, compact evidence and final synthesis must preserve
   incomplete/missing status and traceable numeric authority.
-- SQL discovery is a schema operation, not a mandatory question workflow. Return the full admitted relation inventory and matching relation fields by default; explicit pagination is optional. Return finite safe SQLSTATE/rejection diagnostics so the model can repair a query, never raw database messages or credentials. A PostgreSQL estimated plan cost is not a physical resource budget: no unconditional EXPLAIN-before-SELECT or estimated-cost rejection. Retain actual DB timeout, bounded connections, read-only transactions, work memory, scope and transport protection pending measured resource evidence. Permit reviewed pure PostgreSQL transformations of admitted fields (including local-time and window analysis) without introducing question-specific code.
+- SQL discovery is a schema operation, not a mandatory question workflow. Return the full admitted relation inventory and matching relation fields by default; pagination is optional when the catalog fits; otherwise return explicit continuation. Return finite safe SQLSTATE/rejection diagnostics so the model can repair a query, never raw database messages or credentials. A PostgreSQL estimated plan cost is not a physical resource budget: no unconditional EXPLAIN-before-SELECT or estimated-cost rejection. Retain actual DB timeout, bounded connections, read-only transactions, work memory, scope and transport protection pending measured resource evidence. Permit reviewed pure PostgreSQL transformations of admitted fields (including local-time and window analysis) without introducing question-specific code.
 - Ordinary staff/labor tool details likewise use source-counted,
   owner-scoped pagination of recorded punches. The model chooses relevant
   period and page continuation; no fixed first-80 or first-500 evidence sample

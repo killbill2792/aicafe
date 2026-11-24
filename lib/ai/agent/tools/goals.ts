@@ -34,7 +34,7 @@ export type GoalPort={
 export const goalTools={
   propose_goal:{
     agentId:"leo",schema:proposeGoalSchema,
-    description:"Draft a goal for the owner to confirm, e.g. 'average ticket up 5% for 30 days'. Metrics: net_sales, orders, avg_ticket (whole café) or item_units, item_revenue (one menu item: find its UUID with get_menu_items). Suggest one guardrail when a change could hurt another number (e.g. orders not_below 10). A goal tracks numbers; it changes nothing.",
+    description:"Draft a goal for the owner to confirm, e.g. 'average ticket up 5% for 30 days'. Metrics: net_sales, orders, avg_ticket (whole café) or item_units, item_revenue (one menu item: use its verified active catalog UUID). Suggest one guardrail when a change could hurt another number (e.g. orders not_below 10). A goal tracks numbers; it changes nothing.",
     execute:async(raw:unknown,ctx:AgentToolContext):Promise<AgentToolResult>=>{
       const v=proposeGoalSchema.parse(raw);
       if(!ctx.goals)return {source:"goal_proposal",period:null,missing:["not_supported"]};
