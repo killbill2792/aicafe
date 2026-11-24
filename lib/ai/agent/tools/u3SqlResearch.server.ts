@@ -6,6 +6,7 @@ import type {SupabaseClient} from "@supabase/supabase-js";
 import {createAdminSupabaseClient} from "@/lib/supabase/admin";
 import {admitU3Sql,type U3TrustedUnit} from "./u3SqlAdmission";
 import {validateResearchConnection} from "./u3ResearchConnection";
+import {researchNextCursor,researchPageOffset} from "./u3SqlCursor";
 
 /** One research executor for the existing query_data tool.
  * No service-role client receives model-authored SQL. Scope is a server-only
@@ -28,6 +29,7 @@ export const u3SqlSchema=z.strictObject({
   z.string().max(512),z.number().finite(),z.boolean(),z.null()
  ])).max(48).nullable(),
  limit:z.number().int().min(1).max(MAX_ROWS).nullable(),
+ cursor:z.string().min(30).max(512).nullable().optional(),
  date_from:z.iso.date().nullable(),date_to:z.iso.date().nullable()
 });
 export type U3Column={name:string;type:string;nullable:boolean;unit:string};
@@ -125,7 +127,10 @@ async function withinScope<T>(ctx:U3SqlContext,callback:(client:PoolClient)=>Pro
  // The server mints the capability only after authenticating the real owner,
  // café, original thread and durable/off-turn lease. Never log or return it.
  const ticket=await signedCapability(ctx);
- const client=await getPool().connect();
+ let client:PoolClient;
+ try{client=await getPool().connect();}
+ catch(e){if(e instanceof Error&&e.message==="research_connection_untrusted")throw e;
+  throw Error("research_connection_failed");}
  let begun=false;
  try{
   const role=(await client.query(
@@ -145,7 +150,7 @@ async function withinScope<T>(ctx:U3SqlContext,callback:(client:PoolClient)=>Pro
    const {date_from:from,date_to:to}=requestedWindow;
    if(from!==null&&to!==null){
     const distance=(Date.parse(to+"T00:00:00Z")-Date.parse(from+"T00:00:00Z"))/86_400_000;
-    if(!Number.isFinite(distance)||distance<0||distance>31)throw Error("invalid_query");
+    if(!Number.isFinite(distance)||distance<0)throw Error("invalid_query");
    }else if(from!==null||to!==null)throw Error("invalid_query");
    await client.query("SELECT set_config('aicafe.u3_date_from',$1,true),"+ // hardcode-ok: PostgreSQL bind placeholder
     "set_config('aicafe.u3_date_to',$2,true)",[from??"",to??""]); // hardcode-ok: PostgreSQL bind placeholder
@@ -257,9 +262,11 @@ const fitRows=(rows:unknown[])=>{
 };
 function safeCode(e:unknown){
  const s=e instanceof Error?e.message:"";
+ if(e&&typeof e==="object"&&"code" in e&&e.code==="57014")return "query_timeout";
  return ["invalid_query","unattended_aggregate_required","research_invalid_scope",
   "research_not_configured","research_scope_denied",
-  "research_connection_untrusted"].includes(s)?s:"source_read_failed";
+  "research_connection_untrusted","research_connection_failed","query_timeout",
+  "row_exceeds_page_budget"].includes(s)?s:"source_read_failed";
 }
 /** Model SQL can use joins, windows, CTEs and nested analytics, but only on
  * the RLS-protected admitted logical research sources. No raw SQL text, model
@@ -307,9 +314,24 @@ export async function runU3Sql(ctx:U3SqlContext,raw:unknown){
     ctx.aggregateOnly===true,[...safeOffturnColumns],knownColumnUnits);
    if(plan.relations.includes("toast_records")&&
      (p.date_from===null||p.date_to===null))throw Error("invalid_query");
+   // Each page revalidates the signed owner/café/thread/lease in PostgreSQL.
+   // The opaque cursor protects the exact SQL/parameters/window/scope from
+   // substitution. Pagination is applied AFTER the full owner-chosen SELECT,
+   // never inside a CTE/join/window where it could change the answer.
    const count=p.limit??50;
+   const cursorInput={
+    businessId:ctx.businessId,ownerUserId:ctx.ownerUserId??"",
+    threadId:ctx.threadId??"",mode:ctx.mode??"owner",
+    sourceType:ctx.sourceType??null,sourceId:ctx.sourceId??null,
+    runId:ctx.runId??null,leaseToken:ctx.leaseToken??null,
+    sql:p.sql,parameters:p.parameters??null,date_from:p.date_from,
+    date_to:p.date_to,limit:count
+   };
+   const key=process.env.SUPABASE_SERVICE_ROLE_KEY??"";
+   const offset=researchPageOffset(cursorInput,p.cursor,key);
    const bounded=p.sql.trim().replace(/;\s*$/,"");
-   const statement="SELECT * FROM ("+bounded+") AS u3_bounded LIMIT "+(count+1);
+   const statement="SELECT * FROM ("+bounded+") AS u3_bounded LIMIT "+(count+1)+
+    " OFFSET "+offset;
    const parameters=p.parameters??[];
    const explained=await client.query({text:"EXPLAIN (FORMAT JSON) "+statement,values:parameters});
    const planJson=explained.rows[0]?.["QUERY PLAN"];
@@ -321,7 +343,13 @@ export async function runU3Sql(ctx:U3SqlContext,raw:unknown){
    if(plan.relations.includes("toast_records")&&unsafeStructuredToastResult(rows))
     throw Error("invalid_query");
    const fit=fitRows(rows.slice(0,count));
-   const truncated=rows.length>count||fit.cut;
+   const truncated=rows.length>fit.rows.length;
+   // A single oversized source row must not cause a cursor loop that never
+   // advances or an apparently complete empty business observation.
+   if(truncated&&fit.rows.length===0)throw Error("row_exceeds_page_budget");
+   const nextOffset=offset+fit.rows.length;
+   if(!Number.isSafeInteger(nextOffset))throw Error("invalid_query");
+   const nextCursor=truncated?researchNextCursor(cursorInput,nextOffset,key):null;
    if(ctx.aggregateOnly&&fit.rows.some(row=>
     !row||typeof row!=="object"||Array.isArray(row)||
     Object.entries(row).some(([key,value])=>
@@ -331,6 +359,10 @@ export async function runU3Sql(ctx:U3SqlContext,raw:unknown){
    return {source:"u3_canonical_research",period:null,
     missing:truncated?["result_truncated"]:[],rows:fit.rows,
     rowCount:fit.rows.length,truncated,
+    page_offset:offset,next_cursor:nextCursor,page_complete:!truncated,
+    // The cursor binds query identity, not a cross-request MVCC snapshot.
+    // Never certify mutable multi-page results as one consistent read.
+    page_consistency:"independent_read_only_snapshot",
     evidence:{receipt_id:randomUUID(),
      as_of:asOf instanceof Date?asOf.toISOString():String(asOf??""),
      query_fingerprint:createHash("sha256").update(p.sql).digest("hex"),
@@ -343,6 +375,6 @@ export async function runU3Sql(ctx:U3SqlContext,raw:unknown){
  }catch(e){
   const code=safeCode(e);
   return {source:"u3_canonical_research",period:null,missing:[code],
-   rows:[],rowCount:0,truncated:false};
+   rows:[],rowCount:0,truncated:false,page_complete:false,next_cursor:null};
  }
 }
