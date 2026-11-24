@@ -40,6 +40,36 @@ type Input={name:string;label:string;value:CalcValue;from:"tool"|"owner_fact"|"o
 // the underlying rational or reuse a receipt from another turn/café.
 const exactCalculations=new WeakMap<AgentToolResult,{values:Map<string,CalcValue>;estimate:boolean;partial:boolean;owner:boolean}>();
 
+// Private server-side continuation only. The exact rational never appears in
+// the tool result or a model argument, nor can a model install a receipt.
+const exactSnapshotSchema=z.strictObject({
+ values:z.array(z.tuple([z.string().regex(/^(?:result|steps\.\d+)$/),z.strictObject({
+  n:z.string().regex(/^-?\d{1,1235}$/),d:z.string().regex(/^[1-9]\d{0,1234}$/),
+  unit:z.enum(["cents","count","percent","ratio"])
+ })])),
+ estimate:z.boolean(),partial:z.boolean(),owner:z.boolean()
+});
+export function snapshotExactCalculation(result:AgentToolResult){
+ const exact=exactCalculations.get(result);
+ if(!exact)return null;
+ return {...exact,values:[...exact.values].map(([path,v])=>[path,{n:v.n.toString(),d:v.d.toString(),unit:v.unit}] as const)};
+}
+export function restoreExactCalculation(result:AgentToolResult,raw:unknown){
+ if(raw===null)return;
+ if(result.source!=="calculate"||result.refused||result.error)throw Error("research_checkpoint_invalid");
+ const saved=exactSnapshotSchema.parse(raw);
+ const values=new Map<string,CalcValue>();
+ for(const [path,v] of saved.values){
+  if(values.has(path))throw Error("research_checkpoint_invalid");
+  const n=BigInt(v.n),d=BigInt(v.d);
+  if(n.toString(2).replace("-","").length>4096||d.toString(2).length>4096)
+   throw Error("research_checkpoint_invalid");
+  values.set(path,{n,d,unit:v.unit});
+ }
+ if(!values.has("result"))throw Error("research_checkpoint_invalid");
+ exactCalculations.set(result,{...saved,values});
+}
+
 /** Unit from the field name the value was read from. Never guessed from the number. */
 function unitForField(field:string,value:number):CalcValue|null{
   if(/cents$/iu.test(field))return Number.isInteger(value)?exactNumber(value,"cents"):null;

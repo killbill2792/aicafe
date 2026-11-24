@@ -136,6 +136,10 @@ export function recoverableReadSelector(name:string,raw:unknown,resultPeriod?:un
   return null;
 }
 export type OwnerReadReference={name:string;selector:Record<string,unknown>};
+export type RestoredResearchRead={
+ ref:string;name:"describe_data"|"query_data"|"calculate";arguments:string;
+ result:import("@/lib/ai/agent/tools").AgentToolResult;
+};
 export type OwnerRunCheckpoint = {
   assertLive:()=>Promise<void>;
   beginProvider:()=>Promise<void>;
@@ -144,6 +148,7 @@ export type OwnerRunCheckpoint = {
   endTool:(result:import("@/lib/ai/agent/tools").AgentToolResult,noEffect?:boolean)=>Promise<void>;
   resumeContext:()=>Promise<string|null>;
   readReferences?:()=>readonly OwnerReadReference[];
+  researchReads?:()=>readonly RestoredResearchRead[];
   restoredResults?:()=>Promise<import("@/lib/ai/agent/tools").AgentToolResult[]>;
   canYield:()=>boolean;
   yieldForRetry:(seconds:number,kind?:"retry"|"technical"|"contended")=>Promise<boolean>;

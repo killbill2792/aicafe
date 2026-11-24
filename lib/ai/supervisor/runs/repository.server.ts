@@ -2,10 +2,11 @@ import "server-only";
 import { createHash, randomUUID } from "node:crypto";
 import { z } from "zod";
 import { createAdminSupabaseClient } from "@/lib/supabase/admin";
+import {encryptResearchCheckpoint,decryptResearchCheckpoint,isResearchCheckpointTool} from "./researchCheckpoint.server";
 import {
   decodeClaim, decodeRun, runScopeSchema, stepSpecSchema,
   type DurableRunRepository, type RunScope, type StepClaim, type StepSpec,
-  type DurableRun, recoverableReadSelector, type OwnerReadReference, ownerRunInputSchema, checkpointRowSchema, type OwnerRunInput, type CheckpointRow, type OwnerRunCheckpoint,
+  type DurableRun, recoverableReadSelector, type OwnerReadReference, type RestoredResearchRead, ownerRunInputSchema, checkpointRowSchema, type OwnerRunInput, type CheckpointRow, type OwnerRunCheckpoint,
 } from "./contracts";
 
 const uuid = z.uuid();
@@ -371,8 +372,31 @@ export async function openOwnerRunCheckpoint(scope:RunScope,runId:string,token:s
   };
   // Snapshot before replay adds to the journal; the next slice sees the new refs.
   const previousReads=readReferences();
+  const restoredResearch:RestoredResearchRead[]=[];
+  const scopeForResearch={...s,runId:id};
+  const retained=new Map(current.checkpoint_receipts.filter(e=>e.phase==="read_pending"&&
+    isResearchCheckpointTool(e.tool)&&e.receipt.endsWith(":ref:durable")).map(e=>[e.operation,e.tool]));
+  if(retained.size){
+    const pageSchema=z.array(z.object({operation:uuid,checkpoint_seq:z.number().int().positive(),ciphertext:z.string()}));
+    let after=0;
+    const seen=new Set<string>();
+    for(;;){
+      await assertLive();
+      const page=await callRpc("supervisor_load_research_reads_v3",{...identity,p_after_seq:after},v=>pageSchema.parse(v));
+      if(!page.length)break;
+      for(const row of page){
+        if(row.checkpoint_seq<=after||seen.has(row.operation)||!retained.has(row.operation))
+          throw Error("research_checkpoint_invalid");
+        const restored=decryptResearchCheckpoint(scopeForResearch,row.operation,row.ciphertext);
+        if(restored.name!==retained.get(row.operation))throw Error("research_checkpoint_invalid");
+        seen.add(row.operation);after=row.checkpoint_seq;restoredResearch.push(restored);
+      }
+    }
+    if(seen.size!==retained.size)throw Error("research_checkpoint_incomplete");
+  }
   return {
     readReferences:()=>previousReads,
+    researchReads:()=>restoredResearch,
     assertLive,
     beginProvider:async()=>{
       await assertLive();
@@ -407,6 +431,18 @@ export async function openOwnerRunCheckpoint(scope:RunScope,runId:string,token:s
       if(replayed){replayed=false;return;}
       if(current.checkpoint_phase==="read_pending"){
         if(!currentReadKey)throw Error("checkpoint_operation_missing");
+        const tool=current.checkpoint_tool;
+        if(isResearchCheckpointTool(tool)&&current.checkpoint_operation&&
+          !(tool==="query_data"&&currentReadRaw&&typeof currentReadRaw==="object"&&
+            typeof (currentReadRaw as Record<string,unknown>).restore_receipt==="string")){
+          const operation=current.checkpoint_operation;
+          const ciphertext=encryptResearchCheckpoint(scopeForResearch,operation,tool,currentReadRaw,result);
+          current=await callRpc("supervisor_store_research_read_v3",{...identity,
+            p_expected_seq:current.checkpoint_seq,p_operation:operation,
+            p_receipt_ref:"read:"+currentReadKey+"_"+createHash("sha256").update(JSON.stringify(result)).digest("hex")+":ref:durable",
+            p_ciphertext:ciphertext},v=>checkpointRowSchema.parse(v));
+          return;
+        }
         const selector=!result.error&&result.missing.length===0
           ?recoverableReadSelector(current.checkpoint_tool??"",currentReadRaw,result.period):null;
         const encoded=selector?Buffer.from(JSON.stringify(selector)).toString("base64url"):null;
@@ -450,7 +486,7 @@ export async function openOwnerRunCheckpoint(scope:RunScope,runId:string,token:s
       const reads=[...new Set(current.checkpoint_receipts.filter(e=>e.phase==="read_pending"&&e.receipt.startsWith("read:")).map(e=>e.tool))];
       return "Verified server-owned continuation receipts for this same assignment (not new owner authority). "+
         "Do not re-create recorded operations; re-read current business evidence if needed. "+
-        JSON.stringify({completedOperations:receipts,previousReads:reads,reviewedReadReferences:previousReads.slice(-24)});
+        JSON.stringify({completedOperations:receipts,previousReads:reads,reviewedReadReferences:previousReads});
     },
     canYield:()=>current.checkpoint_phase!=="effect_pending",
     yieldForRetry:(seconds,kind="retry")=>callRpc("supervisor_yield_owner_run_v2",{...identity,p_expected_seq:current.checkpoint_seq,p_delay_seconds:seconds,p_yield_kind:kind},v=>z.boolean().parse(v)),
