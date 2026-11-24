@@ -32,7 +32,7 @@ Raw owner identities, Supabase project identifiers, integration status by named 
 - `supervisor_fail_investigation` increments `failure_count` to max 5; after five errors it schedules `next_retry_at = now + 6 hours` **forever**, never terminally pausing the paid worker.
 - `lib/ai/supervisor/routines/investigation.server.ts`'s silent `awaiting_owner` recheck applies only while `lastOwnerUpdate` is **under 24 hours**, `last_error` is empty, and evidence remains identical. Once the window expires, or an error exists, the model can run again even with no owner response.
 - Re-queue reads priorities with `includeNotified: true`; the alert/task remaining open means it stays eligible without a meaningful source-change requirement.
-- One `daily-brief:2026-10-31` investigation is still active with `model_incomplete` and repeated attempts in late November. Review why daily briefs enter the paid incident queue.
+- A historical daily-brief fixture can enter the paid incident queue and repeatedly fail model verification; test and exclude this entire non-incident class without publishing any live task key, dates or attempts.
 
 **Evidence:** `public.supervisor_investigations`, `public.supervisor_system_usage_events`, `public.alerts`; code `supabase/migrations/20261116000001_supervisor_system_usage_quota.sql`, `lib/ai/supervisor/routines/investigation.server.ts`, `lib/ai/supervisor/routines/dispatch.server.ts`.
 
@@ -81,8 +81,8 @@ Raw owner identities, Supabase project identifiers, integration status by named 
 ### P1-3 — U3 relational SQL search was shipped but is not activated in production
 
 - PR [#547](https://github.com/killbill2792/aicafe/pull/547) merged and the governed `u3_research` schema/views exist.
-- Production Vercel has **neither** `AICAFE_RESEARCH_SQL_ENABLED` nor `AICAFE_RESEARCH_DATABASE_URL`.
-- `aicafe_research` DB role was observed with `rolcanlogin=false`. A dedicated least-privilege connection, credentials, scoped session policy and acceptance are prerequisites—not merely setting `SQL_ENABLED=true`.
+- The research feature requires separately authorized server-only configuration; do not publish a private environment's actual flags or connection status here.
+- The restricted `aicafe_research` role must remain NOLOGIN until a separately authorized least-privilege connection, scoped session policy and acceptance are in place—not merely enabling a feature flag.
 - `query_data` intentionally falls back to a limited canonical-view mode if SQL is unavailable; some questions need authorized relational timecards/provenance that the legacy tool cannot answer.
 
 **Architecture decisions:** Who provisions/rotates the research login? How are tenant UUID, owner/unattended mode, date window, SELECT-only relation catalog, RLS/security-barrier, timeouts, query row and cost limits enforced? What is the failure fallback and what gets logged without secrets?
@@ -102,7 +102,7 @@ Raw owner identities, Supabase project identifiers, integration status by named 
 
 ### P1-5 — Toast eligibility rollout and stale queues need closure; **do not duplicate PR #560**
 
-- Verified Toast is the current admission rule for paid background investigation and derived refresh in the **production database**; disconnected/unlinked synthetic fixture cafés must not be automatically analyzed.
+- Verified Toast is the intended admission rule for paid background investigation and derived refresh; disconnected/unlinked synthetic fixture cafés must not be automatically analyzed. Verify deployment separately in an authorized private environment.
 - The corresponding source migration and daily-brief application gate were merged in **PR #560** on November 23; verify it against this branch and the pending migration.
 - Audit all unattended entry points, claim paths, fallbacks, delivery paths and current queued work. Enforce eligibility by business UUID + verified credential state, not café names; never silently hide a requested owner action.
 
@@ -111,9 +111,9 @@ Raw owner identities, Supabase project identifiers, integration status by named 
 ### P2-6 — Automatic investigations and U4 Watch overlap in business purpose but are not the same mechanism
 
 - **Automatic investigations:** react to an existing `alerts` or `operating_tasks` source; currently active.
-- **U4 owner objectives:** owner explicitly schedules one-time/daily/weekly work; `SUPERVISOR_U4_ENABLED` absent/off in production, no saved routines.
-- **U4 Watch:** unsolicited periodic review to discover potential concerns, distinct consent/cost; `SUPERVISOR_U4_WATCH_ENABLED` absent/off.
-- **U4 push:** separate optional delivery; flag absent/off.
+- **U4 owner objectives:** owner explicitly schedules one-time/daily/weekly work; availability in a given environment must be checked privately, not inferred from this audit.
+- **U4 Watch:** unsolicited periodic review to discover potential concerns, with separate consent and cost; it must remain disabled during this change.
+- **U4 push:** separate optional delivery; it must remain disabled during this change.
 - Architecture must specify whether the same evidence may activate both an incident and a Watch report, how Watch reuses existing incident/evidence state, and how to avoid double-billing or duplicate owner notifications. **No U4/Watch activation now.**
 
 **Reference:** `lib/ai/supervisor/routines/dispatch.server.ts`, `lib/ai/supervisor/routines/objective.server.ts`.
@@ -166,8 +166,8 @@ Raw owner identities, Supabase project identifiers, integration status by named 
 
 1. **GitHub:** exact-head TypeScript/ESLint, full Vitest, migration/DB security and recurrence tests, seeded Playwright, production build, prompts/evaluator acceptance and fresh clean Codex review. Do not merge with unresolved failures/findings.
 2. **Migration order:** reconcile with and preserve PR #560's verified-Toast SQL gate; test new owner question wake and cross-tenant scope on a migrated disposable database. Apply approved migration to production only after safe merge and verification.
-3. **Research activation:** the restricted research account currently starts with NOLOGIN. Provision its private login, verify non-BYPASSRLS owner isolation and SQL admission, then set `AICAFE_RESEARCH_DATABASE_URL` and `AICAFE_RESEARCH_SQL_ENABLED=true` as Vercel **server-only** production secrets. Until then governed SQL research is **not live**. Never use a Supabase admin password.
-4. **Post-deploy owner acceptance:** repeat the actual sample dates the verified fixture café timecard questions and verify source-backed clock-in/out, duration, break evidence and timestamps; no fabricated lunch-break findings.
+3. **Research activation:** the restricted research account must start with NOLOGIN. Under separate authorization provision its private login, verify non-BYPASSRLS owner isolation and SQL admission, then configure server-only research secrets. Until then governed SQL research is **not live**. Never use a Supabase admin password.
+4. **Post-deploy owner acceptance:** repeat authorized, privately held actual timecard questions in a protected environment and verify source-backed clock-in/out, duration, break evidence and timestamps; no private dates or identity data in public receipts and no fabricated lunch-break findings.
 5. **Retry and spending evidence:** same open meal-break issue with no owner answer produces zero additional paid AI model attempts for multiple cron cycles/days; an unrelated Toast date or employee punch also produces zero. A matching late arrival causes one bounded event-specific reconsideration or deterministic resolution.
 6. **Onboarding:** new user only sees their own café, never the shared shared demo dataset, and can connect Toast. Do not delete preexisting shared demo records/memberships until every real owner and backfill path is protected.
 7. **U4 / Watch:** leave `SUPERVISOR_U4_ENABLED`, `SUPERVISOR_U4_WATCH_ENABLED`, and `SUPERVISOR_U4_PUSH_ENABLED` off. The automatic incident fix is independent from those flags.
