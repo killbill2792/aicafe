@@ -27,6 +27,7 @@ test("fixture extraction discards unrelated older tests and refuses incomplete f
 
 test("historical fixture adapter preserves assertions and only changes the reviewed profit interface",()=>{
  const input=[
+  'import type { AgentToolContext } from "./tools";',
   '  tools: {',
   "call(\"get_sales\",'{\"period\":\"today\",\"ownerInputs\":null}',\"fixture-0\")",
   "call(\"get_sales\",JSON.stringify({period,ownerInputs:null}),\"fixture-0\")",
