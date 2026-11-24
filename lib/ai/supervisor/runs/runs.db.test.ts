@@ -462,6 +462,18 @@ describe("Task 6/15C v2 durable owner admission and checkpoint fencing",()=>{
       const saved=await admin.query("select r.status,s.checkpoint_seq,s.checkpoint_phase,s.checkpoint_receipts from public.supervisor_runs r join public.supervisor_run_steps s on s.run_id=r.id and s.business_id=r.business_id where r.id=$1 and s.step_key='owner_turn'",[run.id]);
       expect(saved.rows).toMatchObject([{status:"blocked",checkpoint_seq:"5",checkpoint_phase:"effect_pending",checkpoint_receipts:[{operation,receipt},{operation:providerOp}]}]);
       expect((await admin.query("select count(*)::int as n from u3_research_private.owner_research_receipts j join public.supervisor_run_steps s on s.id=j.step_id where s.run_id=$1",[run.id])).rows[0].n).toBe(0);
+      // The migrated array constraint is validated, but no longer rejects a
+      // progressing assignment solely for receipt count or metadata size.
+      const shape=await admin.query("select convalidated from pg_constraint where conrelid='public.supervisor_run_steps'::regclass and conname='supervisor_run_steps_checkpoint_receipts_check'");
+      expect(shape.rows).toEqual([{convalidated:true}]);
+      const extended=Array.from({length:300},()=>({operation:randomUUID(),phase:"read_pending",tool:"query_data",receipt:"read:"+"a".repeat(32)+"_"+"b".repeat(64)+":ref:durable"}));
+      // Exercise only the storage constraint on the disposable terminal step;
+      // the fenced RPC behavior is independently tested above.
+      const history=JSON.stringify(extended);
+      expect(Buffer.byteLength(history)).toBeGreaterThan(65536);
+      const large=await admin.query("update public.supervisor_run_steps set checkpoint_receipts=$2::jsonb where run_id=$1 and step_key='owner_turn' returning jsonb_array_length(checkpoint_receipts) as n",[run.id,history]);
+      expect(large.rows).toEqual([{n:300}]);
+      await expect(admin.query("update public.supervisor_run_steps set checkpoint_receipts='{}'::jsonb where run_id=$1 and step_key='owner_turn'",[run.id])).rejects.toThrow("supervisor_run_steps_checkpoint_receipts_check");
       await admin.query("update storage.objects set metadata=jsonb_build_object('size',42,'eTag','replaced') where id=$1",[objectId]);
       await expect(call(a,"supervisor_admit_owner_run_v2",admit)).rejects.toThrow("owner_run_input_conflict");
       // Synthetic metadata only: preserve the Storage API deletion guard.
