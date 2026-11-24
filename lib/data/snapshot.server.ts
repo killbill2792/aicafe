@@ -227,14 +227,12 @@ async function getStaffShiftsToday(
   const dayStartUtc = fromZonedTime(`${todayDateStr}T00:00:00`, timezone).toISOString();
   const dayEndUtc = fromZonedTime(`${todayDateStr}T23:59:59.999`, timezone).toISOString();
 
-  const { data, error } = await supabase
-    .from("timecards")
-    .select("id, employee_id, schedule_id, source_type, source_provider, clock_in, clock_out, hourly_wage_cents, breaks, provider_regular_hours, provider_overtime_hours, employees(display_name, role)")
-    .eq("business_id", businessId)
-    .gte("clock_in", dayStartUtc)
-    .lte("clock_in", dayEndUtc)
-    .order("clock_in", { ascending: true });
-  if (error) throw error;
+  const {data}=await snapshotPaged("timecards",
+    (start,end)=>supabase.from("timecards")
+     .select("id,employee_id,schedule_id,source_type,source_provider,clock_in,clock_out,hourly_wage_cents,breaks,provider_regular_hours,provider_overtime_hours,employees(display_name,role)",{count:"exact"})
+     .eq("business_id",businessId).gte("clock_in",dayStartUtc).lte("clock_in",dayEndUtc)
+     .order("clock_in",{ascending:true}).order("id",{ascending:true})
+     .range(start,end),row=>row.id);
   // Preserve every recorded timecard for earned wages, including staff who were
   // deactivated later today and imports not yet linked to a roster member.
   // Current-roster filtering belongs ONLY in buildStaffViewModel.onShift.
@@ -265,11 +263,11 @@ async function getMenuItemSnapshots(
   businessId: string,
   todayDateStr: string,
 ): Promise<MenuItemSnapshot[]> {
-  const { data: items, error: itemsError } = await supabase
-    .from("menu_items")
-    .select("id, name, price_cents, prep_seconds, category, is_active")
-    .eq("business_id", businessId);
-  if (itemsError) throw itemsError;
+  const {data:items}=await snapshotPaged("menu_items",
+    (start,end)=>supabase.from("menu_items")
+     .select("id,name,price_cents,prep_seconds,category,is_active",{count:"exact"})
+     .eq("business_id",businessId).order("id",{ascending:true}).range(start,end),
+     row=>row.id);
   if (!items || items.length === 0) return [];
 
   const itemIds = items.map((i) => i.id);
