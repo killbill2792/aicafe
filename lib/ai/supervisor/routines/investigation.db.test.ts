@@ -184,7 +184,11 @@ describe("Task 15A migrated, agentic investigation SQL integration",()=>{
       expect(await rpc(a,"supervisor_investigation_research_checkpoint",[...fence,"store",0,operation,hex("c"),"synthetic-encrypted-receipt","query_data"])).toBe(true);
       expect(await rpc(a,"supervisor_investigation_research_checkpoint",[...fence,"load"])).toEqual([expect.objectContaining({operation,ciphertext:"synthetic-encrypted-receipt"})]);
       expect(await rpc(a,"supervisor_investigation_research_checkpoint",[...fence.slice(0,5),randomUUID(),investigate.lease_token,"load"])).toBe(false);
+      const snapshot=randomUUID();
+      const chunkFence=[cafes[0],owners[0],threads[0],"investigation","alert",alerts[0],work,investigate.lease_token,snapshot];
+      expect(await rpc(a,"u3_query_snapshot_chunk",[...chunkFence,0,1,"synthetic-encrypted-chunk"])).toEqual({stored:true});
       expect(await rpc(a,"supervisor_investigation_research_checkpoint",[...fence,"yield"])).toBe(true);
+      await expect(rpc(a,"u3_query_snapshot_chunk",[...chunkFence,0,null,null])).rejects.toThrow();
       expect(await rpc(a,"supervisor_investigation_research_checkpoint",[...fence,"load"])).toBe(false);
       const resumed=await rpc(a,"supervisor_claim_investigation",[stamp(now,3)]) as Record<string,unknown>;
       expect(resumed.episode_id).toBe(investigate.episode_id);
@@ -192,12 +196,20 @@ describe("Task 15A migrated, agentic investigation SQL integration",()=>{
       expect(resumed.lease_token).not.toBe(investigate.lease_token);
       const resumedFence=[...fence.slice(0,6),resumed.lease_token];
       expect(await rpc(a,"supervisor_investigation_research_checkpoint",[...resumedFence,"load"])).toEqual([expect.objectContaining({operation})]);
+      expect(resumed.evidence).toMatchObject({researchContinuation:work});
+      const resumedChunkFence=[...chunkFence.slice(0,7),resumed.lease_token,snapshot];
+      expect(await rpc(a,"u3_query_snapshot_chunk",[...resumedChunkFence,0,null,null])).toEqual({
+        start_row:0,row_count:1,ciphertext:"synthetic-encrypted-chunk",
+      });
+      await expect(rpc(a,"u3_query_snapshot_chunk",[...resumedChunkFence.slice(0,6),randomUUID(),resumed.lease_token,snapshot,0,null,null])).rejects.toThrow();
       expect(await rpc(a,"supervisor_investigation_research_checkpoint",[...resumedFence,"yield"])).toBe(false);
       investigate.lease_token=resumed.lease_token;
       expect(await rpc(a,"supervisor_finish_investigation",
         finish(investigate,"investigated",{...checkpoint,missing:["laborDaysIncomplete"]},
           "Sales and staffing were checked. Both have coverage gaps; ask the owner before any change.",
           stamp(now,4)))).toBe(true);
+      expect((await admin.query("select count(*)::int n from u3_research_private.investigation_research_receipts where work_id=$1",[work])).rows[0].n).toBe(0);
+      await expect(rpc(a,"u3_query_snapshot_chunk",[...resumedChunkFence,0,null,null])).rejects.toThrow();
       // A successful investigation records one REAL Supervisor thread message,
       // never a forged owner request, and enters bounded follow-up monitoring.
       const messages=await admin.query("select role,grounding->>'intent' intent,grounding->>'status' status from public.ai_messages where business_id=$1 and thread_id=$2 and grounding->>'intent'='priority_investigation'",
