@@ -152,6 +152,13 @@ describe("U3 governed PostgreSQL AST admission",()=>{
    admitted,0,false,[],units);
   expect(derived.outputUnits).toEqual({net_sales_cents:"count"});
  });
+ it("retains the microcent source scale without treating raw ingredient prices as whole cents",async()=>{
+  const relations={ingredient_prices:{ingredient_id:null,cost_per_base_unit_micros:"microcents" as const}};
+  const r=await admitU3Sql("SELECT cost_per_base_unit_micros AS rate,MAX(cost_per_base_unit_micros) OVER() AS high,COUNT(*) OVER() AS n FROM ingredient_prices",["ingredient_prices"],0,false,[],{},relations);
+  expect(r.outputUnits).toEqual({rate:"microcents",high:"microcents",n:"count"});
+  const f=await admitU3Sql("SELECT 2000000 AS cost_per_base_unit_micros FROM ingredient_prices",["ingredient_prices"],0,false,[],{},relations);
+  expect(f.outputUnits).toEqual({});
+ });
  it("attests actual scoped monetary units through CTE, joins and windows without trusting renamed literals",async()=>{
   const rels={orders:{id:null,net_sales_cents:"cents" as const},order_lines:{order_id:null,net_sales_cents:"cents" as const}};
   const result=await admitU3Sql("WITH daily AS (SELECT sum(o.net_sales_cents) AS sales FROM orders o JOIN order_lines l ON l.order_id=o.id) SELECT sales,lag(sales) OVER(ORDER BY sales) AS previous FROM daily",

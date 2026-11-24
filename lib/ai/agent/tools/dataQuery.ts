@@ -162,7 +162,7 @@ export const describeSchema=z.strictObject({
  field_prefix:z.string().max(1024).nullable(),
  search:z.string().min(1).max(120).nullable(),
  page_offset:z.number().int().min(0).max(Number.MAX_SAFE_INTEGER).nullable(),
- page_size:z.number().int().min(1).max(30).nullable()
+ page_size:z.number().int().positive().max(Number.MAX_SAFE_INTEGER).nullable()
 });
 /** Official fields are schema definitions, NOT confirmation of granted Toast
  * permissions or observed/current business values. The registered tool merges
@@ -270,7 +270,7 @@ export const dataQueryTools={
      // Preserve compact legacy first-page behavior when pagination is omitted.
      const from=offset??0;
      const requested=offset!==null||pageSize!==null
-      ?matching.slice(from,from+(pageSize??30)):matching;
+      ?matching.slice(from,from+(pageSize??Math.max(0,matching.length-from))):matching;
      const fit=fitRows(requested,ctx.resultBudgetBytes);
      const noProgress=fit.cut&&fit.rows.length===0;
      const next=!noProgress&&from+fit.rows.length<matching.length?from+fit.rows.length:null;
@@ -315,7 +315,7 @@ export const dataQueryTools={
      ...(view||term!==null?{columns:relationMatch?fields:matched}:{}),
      matched:term===null||relationMatch||matched.length>0};
    }).filter(item=>item.matched);
-   const from=offset??0,size=pageSize??30;
+   const from=offset??0,size=pageSize??Math.max(0,candidates.length-from);
    const next=from+size<candidates.length?from+size:null;
    const page=candidates.slice(from,from+size).map(({matched:_matched,...item})=>item);
    let research:unknown=null;
@@ -340,10 +340,10 @@ export const dataQueryTools={
    ].includes(v));
    return {source:"canonical_dictionary",period:null,
     missing:[...(candidates.length===0&&research===null?["empty"]:[]),
-      ...(researchFailure?[researchFailure]:[])],
+      ...(researchFailure?[researchFailure]:[]),...(next!==null?["result_truncated"]:[])],
     error:researchFailure,search:term,page_offset:from,next_offset:next,
     total_matches:candidates.length,views:page,research,fields:[],
-    truncated:false,retainedFields:undefined};
+    truncated:next!==null,retainedFields:undefined};
   }
  },
  query_data:{

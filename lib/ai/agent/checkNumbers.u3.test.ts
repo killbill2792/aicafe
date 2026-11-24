@@ -70,6 +70,13 @@ describe("U3 SQL source receipts in numeric claim verification",()=>{
     .not.toEqual([]);
   }
  });
+ it("verifies ingredient microcent rates in display currency, not as raw whole cents",()=>{
+  const base=receipt();
+  const r={...base,rows:[{rate:"2000000"}],evidence:{...(base.evidence as object),column_units:{rate:"microcents"}}};
+  expect(compactEvidence([r]).flatMap(v=>v.values)).toEqual([expect.objectContaining({unit:"cents",value:2})]);
+  expect(checkNumbers("Ingredient cost is $0.02 per gram.","",[r],"en")).toEqual([]);
+  expect(checkNumbers("Ingredient cost is $20,000 per gram.","",[r],"en")).not.toEqual([]);
+ });
  it("rejects fractional cents, unsafe huge integers and high-precision coercions",()=>{
   const original=receipt() as Record<string,unknown>;
   const bad={...original,rows:[{

@@ -73,6 +73,7 @@ export function restoreExactCalculation(result:AgentToolResult,raw:unknown){
 /** Unit from the field name the value was read from. Never guessed from the number. */
 function unitForField(field:string,value:number):CalcValue|null{
   if(/cents$/iu.test(field))return Number.isInteger(value)?exactNumber(value,"cents"):null;
+  if(/^(?:costPerBaseUnitMicros|cost_per_base_unit_micros)$/u.test(field))return exactNumber(value,"cents",1000000);
   if(/bps$/iu.test(field))return exactNumber(value,"percent",10000);
   if(/percent$/iu.test(field))return exactNumber(value,"percent",100);
   if(/(?:rate|ratio|margin|share)$/iu.test(field))return exactNumber(value,"percent");
@@ -83,6 +84,7 @@ function unitForField(field:string,value:number):CalcValue|null{
 function exactResearchField(verifiedUnit:unknown,value:string|number):CalcValue|null{
  const amount=typeof value==="string"?value:
    Number.isFinite(value)?String(value):"";
+ if(verifiedUnit==="microcents")return exactDecimal(amount,"cents",1000000);
  const unit:CalcUnit|null=
   verifiedUnit==="cents"||verifiedUnit==="count"||
   verifiedUnit==="percent"||verifiedUnit==="ratio"?verifiedUnit:null;

@@ -335,6 +335,14 @@ describe("U3 tool descriptions leave investigation strategy to Luna",()=>{
 
 
 describe("U3 retained Toast field pagination",()=>{
+ it("honors an explicit metadata page above the previous fixed maximum when context allows",async()=>{
+  const fields=Array.from({length:80},(_,i)=>({field:"data.rare_"+String(i).padStart(3,"0"),type:"number",source:"retained_current"}));
+  const rpc=vi.fn(async()=>({data:fields,error:null}));
+  const got=await dataQueryTools.describe_data.execute({record_type:"item",field_prefix:"data.rare_",page_size:80},
+   {db:{rpc} as never,businessId:b,resultBudgetBytes:50000});
+  expect(got.fields).toEqual(fields);
+  expect(got).toMatchObject({next_offset:null,truncated:false});
+ });
  it("enumerates every retained field without question-specific paths or a hidden best-results cap",async()=>{
   const fields=Array.from({length:80},(_,i)=>({field:"data.rare_"+String(i).padStart(3,"0"),
    type:"number",source:"retained_current"}));

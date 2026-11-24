@@ -74,7 +74,7 @@ for(const source of Object.values(toastOfficialFieldCatalog)){
 
 export const ownerOnlyResearchRelations:ReadonlySet<string>=new Set(["employees","timecards","scheduled_shifts","cafe_decisions","employee_pay_period_facts","timecard_breaks","current_owner_facts","staff_availability_rules","staff_availability_exceptions","staff_schedules","pos_scheduled_shifts","staff_scheduling_preferences","staff_qualifications","staff_custom_rules","recorded_timecards","supplier_quotes","goal_metrics","goal_observations","goal_checkins"]);
 
-export type U3TrustedUnit="cents"|"count"|"percent"|"ratio";
+export type U3TrustedUnit="cents"|"microcents"|"count"|"percent"|"ratio";
 export type U3RelationUnits=Readonly<Record<string,Readonly<Record<string,U3TrustedUnit|null>>>>;
 export type U3ColumnOrigin={relation:string;column:string;binding:number};
 export type U3SqlAdmission={relations:string[];functions:string[];nodeCount:number;cteCount:number;
@@ -316,7 +316,7 @@ export async function admitU3Sql(sql:string,allowedRelations:readonly string[],
  type Binding={name:string;columns:Columns};
  const obj=(x:unknown):N|null=>x&&typeof x==="object"&&!Array.isArray(x)?x as N:null;
  const unwrap=(x:unknown,key:string):N|null=>{const v=obj(x);return v?obj(v[key])??v:null;};
- const recognized=(v:unknown):Unit=>v==="cents"||v==="count"||v==="percent"||v==="ratio"?v:null;
+ const recognized=(v:unknown):Unit=>v==="cents"||v==="microcents"||v==="count"||v==="percent"||v==="ratio"?v:null;
  let bindingSequence=0;
  const baseColumns=(rel:string):Columns=>{
   const binding=++bindingSequence;

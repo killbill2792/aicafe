@@ -69,6 +69,24 @@ describe("calculate tool",()=>{
   });
 });
 
+describe("source-attested ingredient-rate arithmetic",()=>{
+ it("converts stored microcents exactly before multiplying by a verified quantity",async()=>{
+  const research:AgentToolResult={source:"u3_canonical_research",period:null,missing:[],truncated:false,
+    rows:[{rate:"125001",quantity:"200"}],
+    evidence:{scope:"verified_owner_cafe_lease",receipt_id:"11111111-1111-4111-8111-111111111111",
+     query_fingerprint:"a".repeat(64),catalog_version:"b".repeat(16),
+     column_units:{rate:"microcents",quantity:"count"}}};
+  const args={purpose:"Ingredient use",screen_number:"none",
+   inputs:[input("rate","query_data","rows.0.rate"),input("quantity","query_data","rows.0.quantity")],
+   steps:[{id:"cost",label:"Ingredient cost",op:"multiply",args:["rate","quantity"]}]};
+  const r=await calculateTools.calculate.execute(args,ctx([{name:"query_data",result:research}]));
+  expect(r).toMatchObject({result:{unit:"cents",valueCents:25},kind:"calculation"});
+  const legacy:AgentToolResult={source:"ingredient_prices",period:null,missing:[],items:[{costPerBaseUnitMicros:125001,quantity:200}]};
+  const old=await calculateTools.calculate.execute({...args,inputs:[input("rate","get_ingredient_costs","items.0.costPerBaseUnitMicros"),input("quantity","get_ingredient_costs","items.0.quantity")]},ctx([{name:"get_ingredient_costs",result:legacy}]));
+  expect(old.result).toEqual(r.result);
+ });
+});
+
 describe("calculate uses what the owner says",()=>{
   const rentTurn=[...turn,{name:"get_bills",result:{source:"recurring_bills",period:null,missing:[],monthlyEquivalentCents:300000} as AgentToolResult}];
   const rentWhatIf=(c:AgentToolContext)=>calculateTools.calculate.execute({purpose:"Monthly bills if rent goes up",screen_number:"none",

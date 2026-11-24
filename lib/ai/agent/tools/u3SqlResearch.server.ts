@@ -379,6 +379,7 @@ export async function runU3Sql(ctx:U3SqlContext,raw:unknown){
    const relationUnits:Record<string,Record<string,U3TrustedUnit|null>>={};
    for(const relation of list)for(const col of relation.columns){
     const unit:U3TrustedUnit|null=col.unit==="integer_cent"?"cents":
+     col.unit==="microcent"?"microcents":
      /(?:^|_)(?:count|orders|items|visits|rows)$/.test(col.name)&&
        ["int2","int4","int8","numeric"].includes(col.type)?"count":
      /(?:^|_)percent$/.test(col.name)?"percent":

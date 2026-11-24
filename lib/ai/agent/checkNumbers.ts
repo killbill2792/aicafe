@@ -103,11 +103,11 @@ function u3ReceiptNumber(raw:unknown,unit:unknown):
   typeof raw==="number"&&Number.isFinite(raw)?String(raw):"";
  if(!/^-?(?:0|[1-9][0-9]*)(?:\.[0-9]+)?$/.test(text)||text.length>70)return null;
  const [integer,fraction=""]=text.split(".");
- if(unit==="cents"||unit==="count"){
+ if(unit==="cents"||unit==="microcents"||unit==="count"){
   if(fraction&&!/^0+$/.test(fraction))return null;
   const n=BigInt(integer);
   if(n>BigInt(Number.MAX_SAFE_INTEGER)||n<BigInt(Number.MIN_SAFE_INTEGER))return null;
-  return {value:Number(n),unit};
+  return unit==="microcents"?{value:Number(n)/1000000,unit:"cents"}:{value:Number(n),unit};
  }
  if(unit!=="percent"&&unit!=="ratio")return null;
  // The checker is a finite-number verifier. Preserve source decimal precision
