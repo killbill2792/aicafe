@@ -147,6 +147,68 @@ describe("Toast independent check proof (25, auto-gratuity, deferred gifts)",()=
    .toContain("missing_payment_guid");
  });
 });
+describe("paid-date list contains noncapturing payment attempts",()=>{
+ const extra="ffffffff-ffff-4fff-8fff-ffffffffffff";
+ const orderGuid="11111111-1111-4111-8111-111111111111";
+ const source=(status:string)=> {
+  const orders=orderWithAutoGratAndGiftCard();
+  orders[0].checks[0].payments.push({
+   guid:extra,amount:999,tipAmount:0,paymentStatus:status,paidBusinessDate:20261016
+  });
+  return orders;
+ };
+ it.each(["DENIED","VOIDED","CANCELLED","ERROR","ERROR_NETWORK"])(
+  "does not backfill a complete stored order solely for a %s payment",async(paymentStatus)=>{
+   const f=fakeDb(false);
+   Object.assign(f.item,{coverage_complete:true});
+   const rows=source(paymentStatus);
+   mocked.request.mockImplementation(async(path:string)=>{
+    if(path.includes("paidBusinessDate"))return [payment,extra];
+    if(path.includes("/payments/"+extra))return {
+     guid:extra,orderGuid,paidBusinessDate:20261016};
+    if(path.includes("/orders/v2/orders/"))throw Error("unnecessary order lookup");
+    return rows;
+   });
+   await reconcileToastDays(f.db,p,Date.now()+20000);
+   expect(f.item).toMatchObject({recon_state:"checked_internal",internal_state:"matched",
+    last_error_category:null,payment_repull_at:null});
+   expect(f.calls).not.toContain("toast_queue_backfill");
+   expect(mocked.request.mock.calls.some(([path])=>String(path).includes("/orders/v2/orders/"))).toBe(false);
+  });
+ });
+ it("refuses the shortcut if an excluded attempt has conflicting provider order identity",async()=>{
+  const f=fakeDb(false);Object.assign(f.item,{coverage_complete:true});
+  const different="eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee";
+  mocked.request.mockImplementation(async(path:string)=>{
+   if(path.includes("paidBusinessDate"))return [payment,extra];
+   if(path.includes("/payments/"+extra))return {
+    guid:extra,orderGuid:different,paidBusinessDate:20261016};
+   if(path.includes("/orders/v2/orders/"+different))return {
+    guid:different,businessDate:20261016};
+   return source("DENIED");
+  });
+  await reconcileToastDays(f.db,p,Date.now()+20000);
+  expect(f.item.recon_state).toBe("pending");
+  expect(f.item.internal_reasons).toContain("unknown_payment_order");
+  expect(f.certifiedVoids).toBe(false);
+ });
+ it("refuses the shortcut without complete imported-day evidence",async()=>{
+  const f=fakeDb(false);Object.assign(f.item,{coverage_complete:false});
+  mocked.request.mockImplementation(async(path:string)=>{
+   if(path.includes("paidBusinessDate"))return [payment,extra];
+   if(path.includes("/payments/"+extra))return {
+    guid:extra,orderGuid,paidBusinessDate:20261016};
+   if(path.includes("/orders/v2/orders/"+orderGuid))return {
+    guid:orderGuid,businessDate:20261016};
+   return source("VOIDED");
+  });
+  await reconcileToastDays(f.db,p,Date.now()+20000);
+  expect(f.item.recon_state).toBe("pending");
+  expect(f.item.internal_reasons).toContain("unknown_payment_order");
+  expect(f.certifiedVoids).toBe(false);
+ });
+});
+
 describe("Toast reconciliation paths: ERA 202, matched, mismatch and internal",()=>{
  it("flags ERA +4 cents as a real mismatch beyond one-cent tolerance",async()=>{
   const f=fakeDb(true);mocked.getDay.mockResolvedValue({pending:false,rows:[{
