@@ -1137,7 +1137,7 @@ test("@purchasing owner verifies a supplier phone/portal channel and a Gmail add
   const db=new pg.Client({host:"127.0.0.1",port:54322,database:"postgres",
     user:"postgres",password:"postgres",connectionTimeoutMillis:5000});
   const supplierId=randomUUID(),supplier="Task14C Vendor "+supplierId.slice(0,8);
-  let connected=false,previousToastState=null;
+  let connected=false;
   const first=await browser.newContext({baseURL:"http://127.0.0.1:3000",serviceWorkers:"block"});
   const second=await browser.newContext({baseURL:"http://127.0.0.1:3000",serviceWorkers:"block"});
   try{
@@ -1243,7 +1243,7 @@ test("@purchasing proactive notice → repeated cron idempotency → owner-appro
     value&&typeof value==="object"?Object.fromEntries(Object.entries(value)
       .sort(([a],[b])=>a.localeCompare(b)).map(([key,v])=>[key,canonical(v)])):value;
   const hash=createHash("sha256").update(JSON.stringify(canonical(effect))).digest("hex");
-  let connected=false;
+  let connected=false,previousToastState=null;
   const first=await browser.newContext({baseURL:"http://127.0.0.1:3000",serviceWorkers:"block"});
   const second=await browser.newContext({baseURL:"http://127.0.0.1:3000",serviceWorkers:"block"});
   try{
