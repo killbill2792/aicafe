@@ -21,7 +21,7 @@ export const savedEventsTools={
  get_events:{
   agentId:"alex",
   schema:getEventsInput,
-  description:"Read saved events, holidays, preparation decisions and reports (90-day range). Pass cafeEventId for [id:UUID] and cityEventId for [cityId:UUID] to resolve the exact tapped event and requested dates beyond compact lists. Missing is not absence. No web research or executed effects implied.",
+  description:"Optional shared saved-event timeline and exact event selection/readiness projection (90-day display preview). Use query_data for complete historical or cross-domain event research. Pass cafeEventId for [id:UUID] and cityEventId for [cityId:UUID] to resolve the exact tapped event and requested dates beyond compact lists. Missing is not absence. No web research or executed effects implied.",
   execute:async(raw:unknown,ctx:AgentToolContext):Promise<AgentToolResult>=>{
    const v=getEventsInput.parse(raw);
    const ms=Date.parse(v.to+"T00:00:00Z")-Date.parse(v.from+"T00:00:00Z");

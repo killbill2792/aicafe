@@ -569,9 +569,15 @@ describe("Task16E presentation capability census",()=>{
   const researchDisposition={
    core:["describe_data","query_data","calculate"],
    retired:["get_profit","get_break_even","get_business_hours","get_employee_sales","get_expenses","get_bills","get_sales","get_peak_hours","get_labor","get_staff","get_cost_summary","get_ingredient_costs","get_payroll_facts","get_item_sales","get_product_costs","get_usage_variance","get_goal_status","get_labor_rules","get_nearby_events"],
-   // Remaining compatibility readers are not the exclusive research authority.
-   // Retire only after independently proving their source/completeness parity.
-   pendingParity:["get_menu_items","get_inventory","get_schedule","get_team","get_week_schedule","get_cashflow_evidence","get_events"],
+   // Exact existing operational projections have independent purpose-specific
+   // semantics: identity resolution, merged current roster, shared planning
+   // calculations, documentary reconciliation and exact event selection.
+   // None is mandatory for general stored-data research. Their source detail
+   // is discoverable through the same relational research interface.
+   operationalProjection:["get_menu_items","get_schedule","get_team","get_week_schedule","get_cashflow_evidence","get_events"],
+   // Current stock observation remains the existing operational reader;
+   // its source-readiness proof also depends on the stacked #564 producer.
+   currentStock:["get_inventory"],
    calculation:["get_coverage_gaps","get_shift_cost","get_price_recommendation","draft_week_schedule","simulate_staff_absence","suggest_new_item_price","milk_swap_price","simulate_scenario"],
    live:["get_today_so_far"],
    operational:["get_attention_items","get_investigation_source","get_staff_coordination_cases","get_staff_messages","get_price_monitor_status","get_supplier_purchase_orders","inspect_purchase_reconciliation","inspect_supplier_purchase","get_supervisor_permissions","get_maintenance_staff_candidates","get_maintenance_cases"],

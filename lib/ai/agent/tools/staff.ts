@@ -61,7 +61,7 @@ export const staffTools = {
   },
   get_schedule: {
     agentId:"olivia",schema:range,
-    description:"Read confirmed dated shifts for a business-local week. Old recurring patterns are not confirmed attendance or shifts.",
+    description:"Optional shared current schedule-display projection, including merged Toast planned shifts and missingness. This bounded display preview is not complete historical research; use query_data for arbitrary date ranges and full source detail. Old recurring patterns are not confirmed attendance or shifts.",
     execute:async(raw:unknown,ctx:AgentToolContext):Promise<AgentToolResult>=>{
       const {from,to}=range.parse(raw),period={from,to};
       if(from>to)return missing("scheduled_shifts",period,["scheduleRangeInvalid"]);

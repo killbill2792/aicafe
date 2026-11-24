@@ -264,7 +264,7 @@ export function agentForTool(name:string):"alex"|"olivia"|"maya"|"leo"{return na
 const descriptions: Record<string, string> = {
   get_profit: "Read profit for today, trailing seven days or the calendar month. Report missing inputs.",
   get_sales: "Read covered daily sales in a current calendar period. Closed days only; for today, a todaySoFar provisional reading is attached when today is not imported. If stale, say last updated HH:MM rather than so far today.",
-  get_menu_items: "Search active menu items by optional query, with optional limit up to 25. Send null when omitted.",
+  get_menu_items: "Optional current catalog identity resolver and shared price-evidence preview. Search active items by name; choose only verified identities. For complete arbitrary catalog, historical price or sales research use query_data. Send null when omitted.",
 };
 /** OpenAI strict mode needs every property listed in `required` at every nesting level;
  * one gap rejects the whole request (HTTP 400), so the chat fails on every question.

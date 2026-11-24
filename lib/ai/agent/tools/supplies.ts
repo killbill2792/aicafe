@@ -83,7 +83,7 @@ export const suppliesTools={
     },
   },
   get_inventory:{
-    agentId:"maya",schema:empty,description:"Read café-scoped dated inventory counts and Toast menu-item stock through the existing canonical reader. Never infer that an omitted Toast item has zero stock, or that a stale count is current.",
+    agentId:"maya",schema:empty,description:"Optional current-stock operational observation and freshness preview through the existing canonical reader. Use query_data for complete dated inventory source research. Never infer that an omitted Toast item has zero stock, or that a stale count is current.",
     execute:async(raw:unknown,ctx?:AgentToolContext):Promise<AgentToolResult>=>{
       empty.parse(raw);
       if(!ctx?.canonicalData||!ctx.timezone)

@@ -78,7 +78,7 @@ export const scheduleReadTools={
  },
  get_team:{
   agentId:"olivia",schema:namedWeek,
-  description:"Read active team, individual weekly hours and wage estimate flags. Pass week_start as YYYY-MM-DD Monday or null for this business week.",
+  description:"Optional current team identity resolution and exact shared weekly wage/hour calculation. Pass week_start as YYYY-MM-DD Monday or null for this business week. Use query_data for complete staff or historical source research.",
   execute:async(raw:unknown,ctx:AgentToolContext):Promise<AgentToolResult>=>{
    const input=namedWeek.parse(raw),ws=await localWeek(input.week_start,ctx);
    const result=await readWeek(ws,ctx);
@@ -145,7 +145,7 @@ export const scheduleReadTools={
  },
  get_week_schedule:{
   agentId:"olivia",schema:week,
-  description:"Read dated owner schedule for a business-local Monday-to-Sunday week, including estimated wages, shifts, totals and coverage gaps. Pass null for current week.",
+  description:"Optional exact shared weekly schedule calculation and current roster projection, including estimated wages, totals and coverage gaps. Pass null for current week. Use query_data for complete cross-period source research.",
   execute:async(raw:unknown,ctx:AgentToolContext):Promise<AgentToolResult>=>{
    const p=week.parse(raw),ws=await localWeek(p.week_start,ctx);
    const result=await readWeek(ws,ctx);

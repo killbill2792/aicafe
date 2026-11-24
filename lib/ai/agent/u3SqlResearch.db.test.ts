@@ -291,8 +291,9 @@ describe.skipIf(!active)("U3 migrated registered tool + private connection",()=>
    for(const [i,business] of [ids.a,ids.b].entries()){
     await admin.query("INSERT INTO public.locations(id,business_id,name,timezone) VALUES($1,$2,$3,'UTC')",[loc[i],business,"Synthetic roster location "+i]);
     await admin.query("INSERT INTO public.employees(id,business_id,display_name,min_weekly_minutes,max_weekly_minutes) VALUES($1,$2,$3,600,1200)",[employees[i],business,"Owner team name "+i]);
+    await admin.query("INSERT INTO public.toast_api_credentials(business_id,api_origin,client_id,client_secret_enc) VALUES($1,'https://example.invalid','fixture_only','synthetic_ciphertext')",[business]);
     await admin.query("INSERT INTO public.toast_location_mappings(business_id,location_id,restaurant_guid) VALUES($1,$2,$3)",[business,loc[i],restaurants[i]]);
-    await admin.query("INSERT INTO public.toast_employee_directory(business_id,restaurant_guid,employee_guid,display_name,linked_employee_id,fetched_at) VALUES($1,$2,$3,'Duplicate provider name',$4,now())",[business,restaurants[i],externalEmployee,employees[i]]);
+    await admin.query("INSERT INTO public.toast_employee_directory(business_id,restaurant_guid,employee_guid,display_name,linked_employee_id,linked_at,fetched_at) VALUES($1,$2,$3,'Duplicate provider name',$4,now(),now())",[business,restaurants[i],externalEmployee,employees[i]]);
     await admin.query("INSERT INTO public.pos_scheduled_shifts(business_id,location_id,provider,external_shift_id,external_employee_id,scheduled_start,scheduled_end,last_synced_at) VALUES($1,$2,'toast',$3,$4,'2025-01-01T08:00:00Z','2025-01-01T12:00:00Z',now())",[business,loc[i],"synthetic-shift-"+i,externalEmployee]);
    }
    const result=await dataQueryTools.query_data.execute(input("SELECT p.external_shift_id,e.display_name,e.min_weekly_minutes FROM pos_scheduled_shifts p JOIN toast_location_mappings m ON p.location_id=m.location_id JOIN toast_employee_directory d ON d.restaurant_guid=m.restaurant_guid AND d.employee_guid::text=p.external_employee_id JOIN employees e ON e.id=d.linked_employee_id WHERE p.provider='toast' AND NOT p.deleted"),scoped);
@@ -302,6 +303,7 @@ describe.skipIf(!active)("U3 migrated registered tool + private connection",()=>
    await admin.query("DELETE FROM public.pos_scheduled_shifts WHERE location_id=ANY($1::uuid[])",[loc]);
    await admin.query("DELETE FROM public.toast_employee_directory WHERE restaurant_guid=ANY($1::uuid[])",[restaurants]);
    await admin.query("DELETE FROM public.toast_location_mappings WHERE location_id=ANY($1::uuid[])",[loc]);
+   await admin.query("DELETE FROM public.toast_api_credentials WHERE business_id=ANY($1::uuid[]) AND client_id='fixture_only'",[[ids.a,ids.b]]);
    await admin.query("DELETE FROM public.employees WHERE id=ANY($1::uuid[])",[employees]);
    await admin.query("DELETE FROM public.locations WHERE id=ANY($1::uuid[])",[loc]);
   }
