@@ -190,7 +190,8 @@ async function anonymousCustomerPeriod(db:SupabaseClient,businessId:string,windo
   customerAggregate(db,businessId,"cv_toast_records",window,[customerMetrics("count","source_ref"),
    customerMetrics("count","data.quantity"),customerMetrics("sum","data.quantity"),
    customerMetrics("count","data.aiCafeCustomer.identityRef")],
-   [{column:"record_type",op:"=",value:"item"},{column:"counts_in_sales",op:"=",value:true}])]);
+   [{column:"record_type",op:"=",value:"item"},{column:"counts_in_sales",op:"=",value:true}])
+   .catch(()=>({row:null,complete:false,error:"source_read_failed" as const}))]);
  if(checks.error)throw Error("anonymous_customer_check_read_failed");
  if(!checks.row)return null;
  const total=queryCount(checks.row,"count_source_ref"),known=queryCount(checks.row,"count_data.aiCafeCustomer.netSalesCents");
@@ -545,16 +546,18 @@ export async function refreshBusinessAnomalies(db:SupabaseClient,businessId:stri
  // Customer coverage and trends consume the same registered SQL aggregate
  // tools as interactive Supervisor; no second scheduler or person store.
  work.push(async()=>{
-  let anonymousFailed=false;
+  let anonymousFailed=false,anonymousOptionalFailed=false;
   // Independent transaction summaries run even when identity is unavailable.
   try{
    const [a,b]=await Promise.all([anonymousCustomerPeriod(db,businessId,recent),anonymousCustomerPeriod(db,businessId,old)]);
    if(a&&b)for(const m of compareAnonymousCustomerPeriods(a,b))await persist(fact("customer_trend",m.key,m.current,m.previous,m.unit,m.active,from,to));
-   anonymousFailed=!!(a?.optionalReadFailed||b?.optionalReadFailed);
+   anonymousOptionalFailed=!!(a?.optionalReadFailed||b?.optionalReadFailed);
   }catch{anonymousFailed=true;}
+  await gap("reader_unavailable:customer_anonymous_checks",anonymousFailed);
+  if(!anonymousFailed)await gap("reader_unavailable:customer_anonymous_items",anonymousOptionalFailed);
   const [current,previous]=await Promise.all([
    customerPeriod(db,businessId,recent),customerPeriod(db,businessId,old)]);
-  if(anonymousFailed&&!current&&!previous)throw Error("anonymous_customer_reader_failed");
+  if(anonymousFailed&&!current&&!previous)return;
   if(!current&&!previous)return; // no established Toast customer source
   if((current?.checks??0)+(previous?.checks??0)===0){
    // A verified connection with expected source days but no complete order
@@ -563,7 +566,7 @@ export async function refreshBusinessAnomalies(db:SupabaseClient,businessId:stri
    // evidence of identity loss or recovery; preserve prior incidents.
    if([current,previous].some(p=>p&&(p.expectedLocationDays??0)>0&&!p.complete))
     await gap("customer_identity_coverage",true);
-   if(anonymousFailed)throw Error("anonymous_customer_reader_failed");
+   return;
    return;
   }
   const ready=current!==null&&previous!==null&&customerCoverageReady(current)&&customerCoverageReady(previous);
@@ -573,11 +576,12 @@ export async function refreshBusinessAnomalies(db:SupabaseClient,businessId:stri
   // An unavailable/low-coverage source is a data-gap incident, not customer
   // churn or verified recovery. Never close an existing trend on missing data.
   await gap("customer_identity_coverage",!comparable);
-  let optionalFailed=anonymousFailed||!!(current?.optionalReadFailed||previous?.optionalReadFailed);
-  if(!comparable||!current||!previous){
-   if(optionalFailed)throw Error("customer_optional_reader_failed");
-   return;
+  if(current&&previous&&current.linkedChecks>0&&previous.linkedChecks>0){
+   for(const name of ["recipe_contribution","behavior","account_history"])
+    await gap("reader_unavailable:customer_"+name,
+     !!(current.optionalFailures?.includes(name)||previous.optionalFailures?.includes(name)));
   }
+  if(!comparable||!current||!previous)return;
   for(const m of compareCustomerPeriods(current,previous))await persist(fact("customer_trend",m.key,m.current,m.previous,m.unit,m.active,from,to));
   // Each optional family can fail independently. Keep other source-backed
   // comparisons and persist the existing reader gap after all attempts.
@@ -618,7 +622,7 @@ export async function refreshBusinessAnomalies(db:SupabaseClient,businessId:stri
     }
    }catch{optionalFailed=true;}
   }
-  if(optionalFailed)throw Error("customer_optional_reader_failed");
+  // Each optional family has its own sanitized gap, independent of other evidence.
  });
  const names=["catalog_history","sales","wages","expenses","ingredient_product_cost","inventory_usage","supplier_quotes","operating_margin","attendance","refunds","live_sales","hourly_staff_pressure","cost_recovery","customer_intelligence"];
  let incomplete=false;
