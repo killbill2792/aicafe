@@ -16,6 +16,21 @@ import type {OwnerFeePlan} from "@/lib/metrics/core/fees";
 import {shiftCafeDate} from "@/lib/metrics/core/clock";
 import {hasSalesCoverage} from "@/lib/calc/dayWindows";
 import {timeReader} from "@/lib/perf/timeReader.server";
+import {readCompletePaged} from "./completePages";
+
+/** Same authorized PostgREST read as the Home/Money screens, but through all
+ * pages, not the default 1,000-row partial slice. Callers supply stable ordering
+ * and business/date scope; any ambiguous page fails closed, never as zero cost. */
+async function snapshotPaged<T>(
+ label:string,
+ fetch:(start:number,end:number)=>PromiseLike<{data:T[]|null;error:unknown;count?:number|null}>,
+ identity:(row:T)=>unknown
+):Promise<{data:T[];error:null;count:number}>{
+ const data=await readCompletePaged(fetch,identity);
+ if(data===null)throw new Error("snapshot_source_incomplete:"+label);
+ return {data,error:null,count:data.length};
+}
+
 
 /** Real Supabase-backed snapshot. Untested against a live project (see PROGRESS.md "Needs connecting"). */
 export async function getBusinessSnapshotFromDb(
