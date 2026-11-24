@@ -1,4 +1,5 @@
 import {z} from "zod";
+import {randomUUID} from "node:crypto";
 import type {AgentToolContext,AgentToolResult} from "./index";
 import {CALC_OPS,exactDecimal,exactNumber,runCalculation,type CalcOp,type CalcShown,type CalcUnit,type CalcValue} from "@/lib/metrics/core/calculator";
 import {SCREEN_NUMBER_IDS} from "../screenNumbers";
@@ -20,12 +21,12 @@ const calculateInput=z.strictObject({
     owner_unit:z.enum(["cents","percent","count"]).nullable(),
     // Explicitly hypothetical, never represented as an observed business input.
     assumption:z.strictObject({value:z.number().finite(),unit:z.enum(["cents","percent","count","ratio"]),basis:z.string().trim().min(1).max(500)}).nullable().optional(),
-  })).min(1).max(12),
+  })).min(1),
   steps:z.array(z.strictObject({
     id:name,label:z.string().trim().min(1).max(50),
     op:z.enum(CALC_OPS as [CalcOp,...CalcOp[]]),
-    args:z.array(name).min(1).max(8),
-  })).min(1).max(12),
+    args:z.array(name).min(1),
+  })).min(1),
 });
 
 type TurnResult={name:string;result:AgentToolResult};
@@ -33,6 +34,11 @@ type SavedFact={fact_key:string;value_json:unknown;unit:string|null};
 type CalcContext=AgentToolContext&{turnResults?:()=>readonly TurnResult[];savedOwnerFacts?:readonly SavedFact[]};
 type Input={name:string;label:string;value:CalcValue;from:"tool"|"owner_fact"|"owner_said"|"assumption";ref:string;estimate:boolean;owner:boolean;partial:boolean;
   period:{from:string;to:string}|null};
+
+// Exact intermediate values stay in the actual result object's lifetime.
+// The model gets a receipt and displayed numbers, never authority to supply
+// the underlying rational or reuse a receipt from another turn/café.
+const exactCalculations=new WeakMap<AgentToolResult,{values:Map<string,CalcValue>;estimate:boolean;partial:boolean;owner:boolean}>();
 
 /** Unit from the field name the value was read from. Never guessed from the number. */
 function unitForField(field:string,value:number):CalcValue|null{
@@ -102,7 +108,7 @@ export const calculateTools={
     description:"Perform exact traceable arithmetic (+ − × ÷, sum, percent_of) over verified authorized inputs. SQL may already have performed the needed arithmetic; do not repeat it unnecessarily. "+
       "screen_number describes the metric topic, not permission or proof of official screen parity. Use the actual café-specific inputs and shared metric definition for official comparisons; label independently chosen assumptions and alternative definitions distinctly. "+
       "Each input reads ONE number: either tool + path (dot path into the exact tool result, e.g. rows.0.net_sales_cents), "+
-      "and for U3 SQL research include that result's exact evidence.receipt_id, with a query-receipt-verified numeric column unit; aliases alone do not establish units. Otherwise set receipt_id to null. "+
+      "For SQL rows use the exact evidence.receipt_id and typed numeric column, e.g. rows.0.amount. For an earlier calculator result use tool calculate, its exact evidence.receipt_id and path result or steps.<zero-based index>; this preserves the unrounded value. Otherwise set receipt_id to null. "+
       "or fact_key (a saved owner fact, including a question-card answer), "+
       "or owner_value + owner_unit for a number the owner said in chat (cents for money, 20 for 20%, plain count). "+
       "For hypothetical scenarios only, provide assumption {value,unit,basis}; disclose that it is hypothetical, not observed or owner-provided. Set unused fields to null. Never invent a recorded value. Say You told me for owner numbers. "+
@@ -116,11 +122,13 @@ export const calculateTools={
         {receipt_id:null,assumption:null,...item}:item):untrusted.inputs;
       const p=calculateInput.parse({...untrusted,inputs:provided});
       const scoped=ctx as CalcContext;
-      const turn=(scoped.turnResults?.()??[]).filter(r=>r.name!=="calculate"&&r.name!=="ask_owner");
+      const turn=(scoped.turnResults?.()??[]).filter(r=>r.name!=="ask_owner");
       const facts=scoped.savedOwnerFacts??[];
       const inputs:Input[]=[];
+      const inputNames=new Set<string>();
       for(const input of p.inputs){
-        if(inputs.some(i=>i.name===input.name))return refuse("duplicateName",input.name);
+        if(inputNames.has(input.name))return refuse("duplicateName",input.name);
+        inputNames.add(input.name);
         const owner=input.owner_value!==null||input.owner_unit!==null;
         if(input.assumption){
           if(input.tool||input.path||input.fact_key||owner||input.receipt_id)return refuse("ambiguousInput",input.name);
@@ -141,8 +149,21 @@ export const calculateTools={
             [...candidates].reverse()[0];
           if(!hit)return refuse(input.receipt_id?"receiptNotFound":"toolNotCalledThisTurn",
             input.receipt_id??input.tool);
+          if(hit.result.source==="calculate"){
+            if(!input.receipt_id)return refuse("calculationReceiptRequired",input.name);
+            const prior=exactCalculations.get(hit.result);
+            const exact=prior?.values.get(input.path);
+            if(!prior||!exact)return refuse("calculationReceiptUnavailable",input.path);
+            inputs.push({name:input.name,label:input.label,value:exact,from:"tool",
+              ref:"calculate:"+input.receipt_id+":"+input.path,estimate:prior.estimate,
+              owner:prior.owner,partial:prior.partial,period:hit.result.period});
+            continue;
+          }
+          if(hit.result.error||hit.result.refused)return refuse("inputSourceFailed",input.name);
           const isResearch=hit.result.source==="u3_canonical_research";
           if(isResearch&&!input.receipt_id)return refuse("researchReceiptRequired",input.tool);
+          if(isResearch&&!/^rows\.\d+\.[a-zA-Z_][a-zA-Z0-9_]{0,99}$/u.test(input.path))
+            return refuse("researchRowPathRequired",input.path);
           if(isResearch&&(hit.result.missing.length>0||
             (hit.result as Record<string,unknown>).truncated===true))
             return refuse("incompleteResearchEvidence",input.tool);
@@ -196,7 +217,12 @@ export const calculateTools={
       const expr=new Map<string,string>(inputs.map(i=>[i.name,i.name]));
       for(const s of p.steps){
         const parts=s.args.map(a=>expr.get(a)??a);
-        expr.set(s.id,s===p.steps[p.steps.length-1]?parts.join(symbol[s.op]):"("+parts.join(symbol[s.op])+")");
+        // A formula DAG can expand exponentially if earlier steps are
+        // duplicated. Use named step references once the display expression
+        // would exceed the existing explanation display size.
+        const expanded=parts.join(symbol[s.op]);
+        const formula=expanded.length<=240?expanded:s.args.join(symbol[s.op]);
+        expr.set(s.id,s===p.steps[p.steps.length-1]?formula:"("+formula+")");
       }
       const partial=inputs.some(i=>i.partial);
       const estimate=inputs.some(i=>i.estimate||i.owner)||partial;
@@ -224,7 +250,8 @@ export const calculateTools={
         resultShown.unit==="percent"?[{value:resultShown.valueBps,unit:"bps" as const}]:
         resultShown.unit==="count"&&Number.isInteger(resultShown.quantity)?
           [{value:resultShown.quantity,unit:"count" as const}]:[];
-      return {source:"calculate",period,agentId:"leo",missing:partial?["incompleteCalculationInputs"]:[],numberEstimates,
+      const result:AgentToolResult={source:"calculate",period,agentId:"leo",missing:partial?["incompleteCalculationInputs"]:[],numberEstimates,
+        evidence:{receipt_id:randomUUID(),authority:"exact_arithmetic_from_verified_inputs"},
         metric_topic:p.screen_number,metric_basis:"independent_calculation",
         ...(inputs.some(i=>i.from==="assumption")?{assumptions:inputs.filter(i=>i.from==="assumption").map(i=>({name:i.name,basis:i.ref}))}:{}),
         kind:estimate?"estimate":"calculation",purpose:p.purpose,formula:expr.get(run.result.id),
@@ -234,6 +261,8 @@ export const calculateTools={
         ...(inputs.some(i=>i.owner)?{ownerProvided:inputs.filter(i=>i.owner).map(i=>i.name)}:{}),
         ...(inputs.some(i=>i.partial)?{basedOnPartialData:inputs.filter(i=>i.partial).map(i=>i.ref.split(":")[0])}:{}),
         explain};
+      exactCalculations.set(result,{values:new Map([["result",run.result.value],...run.steps.map((step,index)=>["steps."+index,step.value] as const)]),estimate,partial,owner:inputs.some(i=>i.owner)});
+      return result;
     },
   },
 };

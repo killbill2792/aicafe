@@ -5,7 +5,7 @@ import type {NumericEvidence} from "./checkNumbers";
 /** The only source of calculation disclosures is trusted deterministic tool output. */
 export const explainLineSchema=z.strictObject({
  label:z.string().trim().min(1).max(120),
- inputs:z.array(z.strictObject({name:z.string().trim().min(1).max(50),value:cardValueSchema})).min(1).max(8),
+ inputs:z.array(z.strictObject({name:z.string().trim().min(1).max(50),value:cardValueSchema})).min(1),
  formula:z.enum(["multiply","sum","divide","ratio","prorate","subtract","breakEven","scenarioNegate","scenarioPrice","scenarioCost","scenarioShift","scenarioWage","scenarioVolume","scenarioProrate"]),
  result:cardValueSchema,
  period:z.strictObject({from:z.iso.date(),to:z.iso.date()}).nullable(),

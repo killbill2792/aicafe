@@ -201,3 +201,29 @@ describe("U3 receipt-bound exact research calculation",()=>{
   }]))).refused).toBe("incompleteResearchEvidence");
  });
 });
+
+describe("exact calculator continuation",()=>{
+ it("reuses earlier unrounded results and refuses fabricated or out-of-turn receipts",async()=>{
+  const first=await calculateTools.calculate.execute({purpose:"Split money",screen_number:"none",
+   inputs:[input("a","query_data","rows.0.net_sales_cents"),said("b",3,"count")],
+   steps:[{id:"split",label:"Split",op:"divide",args:["a","b"]}]},
+   withOwner(ctx(turn),"Split between 3 people"));
+  expect(first.result).toEqual({unit:"cents",valueCents:33333});
+  const id=(first.evidence as {receipt_id:string}).receipt_id;
+  const next={purpose:"Recover original total",screen_number:"none",
+   inputs:[{...input("a","calculate","result"),receipt_id:id},said("b",3,"count")],
+   steps:[{id:"whole",label:"Whole",op:"multiply",args:["a","b"]}]};
+  const second=await calculateTools.calculate.execute(next,
+   withOwner(ctx([...turn,{name:"calculate",result:first}]),"Multiply by 3"));
+  expect(second).toMatchObject({kind:"estimate",result:{unit:"cents",valueCents:100000}});
+  expect((await calculateTools.calculate.execute(next,withOwner(ctx(turn),"Multiply by 3"))).refused).toBe("receiptNotFound");
+  expect((await calculateTools.calculate.execute(next,withOwner(ctx([{name:"calculate",result:{...first}}]),"Multiply by 3"))).refused).toBe("calculationReceiptUnavailable");
+ });
+ it("accepts a complete cost structure with more than twelve inputs without splitting the model call",async()=>{
+  const inputs=Array.from({length:20},(_,i)=>({...input("cost"+i,null,null),assumption:{value:i+1,unit:"cents",basis:"Hypothetical scenario line "+i}}));
+  const result=await calculateTools.calculate.execute({purpose:"Alternative cost structure",screen_number:"profit",inputs,
+   steps:[{id:"total",label:"Total",op:"sum",args:inputs.map(x=>x.name)}]},ctx([]));
+  expect(result).toMatchObject({kind:"estimate",result:{unit:"cents",valueCents:210}});
+  for(const line of result.explain as unknown[])expect(explainLineSchema.safeParse(line).success).toBe(true);
+ });
+});
