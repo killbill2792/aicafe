@@ -65,7 +65,7 @@ for(const source of Object.values(toastOfficialFieldCatalog)){
 
 export type U3TrustedUnit="cents"|"count"|"percent"|"ratio";
 export type U3SqlAdmission={relations:string[];functions:string[];nodeCount:number;cteCount:number;
- outputUnits:Record<string,U3TrustedUnit>};
+ outputUnits:Record<string,U3TrustedUnit>;hasTopLevelOrder:boolean};
 const stringNode=(input:unknown)=>{
  if(!input||typeof input!=="object"||!("String" in input))return null;
  const val=(input as {String?:{sval?:unknown}}).String?.sval;
@@ -342,5 +342,7 @@ export async function admitU3Sql(sql:string,allowedRelations:readonly string[],
   if(unit)outputUnits[alias]=unit;
  }
  return {relations:[...reads].sort(),functions:[...called].sort(),
-  nodeCount:nodes,cteCount:nCtes,outputUnits};
+  nodeCount:nodes,cteCount:nCtes,outputUnits,
+  hasTopLevelOrder:Array.isArray((tree.stmts[0].stmt.SelectStmt as {sortClause?:unknown}).sortClause)&&
+   ((tree.stmts[0].stmt.SelectStmt as {sortClause?:unknown[]}).sortClause??[]).length>0};
 }
