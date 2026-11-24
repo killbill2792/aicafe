@@ -272,30 +272,60 @@ async function getMenuItemSnapshots(
 
   const itemIds = items.map((i) => i.id);
 
-  const [{ data: recipeLines, error: recipeError }, { data: quantitySoldRows, error: quantityError }, { data: aggregateCosts, error: aggregateCostError }] = await Promise.all([
-    supabase.from("recipe_lines").select("menu_item_id, ingredient_id, quantity").in("menu_item_id", itemIds),
-    supabase.rpc("menu_item_quantities_sold", {
-      p_business_id: businessId,
-      p_from: shiftCafeDate(todayDateStr,-28),
-      p_to: shiftCafeDate(todayDateStr,-1),
-    }),
-    supabase.from("menu_item_cost_fallbacks").select("menu_item_id, cost_cents, status").eq("business_id", businessId).in("menu_item_id", itemIds),
-  ]);
-  if (quantityError) throw quantityError;
-  if (recipeError) throw recipeError;
-  if (aggregateCostError) throw aggregateCostError;
+  // Source IDs remain scoped to this café and batch sizes bound URL length.
+  // Page each batch by immutable source identity; any incomplete source fails
+  // closed, never as a fabricated zero quantity or missing recipe ingredient.
+  const recipeLines:Array<{menu_item_id:string;ingredient_id:string;quantity:number}>=[];
+  const aggregateCosts:Array<{menu_item_id:string;cost_cents:number|null;status:string}>=[];
+  const {data:quantitySoldRows}=await snapshotPaged<{
+    menu_item_id:string;total_quantity:number|string
+  }>("menu_item_quantities_sold",async(start,end)=>{
+     const page=await supabase.rpc("menu_item_quantities_sold",{
+       p_business_id:businessId,
+       p_from:shiftCafeDate(todayDateStr,-28),p_to:shiftCafeDate(todayDateStr,-1)
+     },{count:"exact"}).order("menu_item_id",{ascending:true}).range(start,end);
+     return {...page,data:page.data as
+       Array<{menu_item_id:string;total_quantity:number|string}>|null};
+  },row=>row.menu_item_id);
+  const knownItems=new Set(itemIds);
+  if(quantitySoldRows.some(row=>!knownItems.has(row.menu_item_id)||
+    !Number.isSafeInteger(Number(row.total_quantity))||Number(row.total_quantity)<0))
+    throw new Error("snapshot_product_sales_mapping_unverified");
+  for(let i=0;i<itemIds.length;i+=100){
+    const batch=itemIds.slice(i,i+100);
+    const [recipes,costs]=await Promise.all([
+      snapshotPaged("recipe_lines",(start,end)=>supabase.from("recipe_lines")
+        .select("menu_item_id,ingredient_id,quantity",{count:"exact"})
+        .in("menu_item_id",batch).order("menu_item_id",{ascending:true})
+        .order("ingredient_id",{ascending:true}).range(start,end),
+        row=>row.menu_item_id+":"+row.ingredient_id),
+      snapshotPaged("menu_item_cost_fallbacks",(start,end)=>supabase.from("menu_item_cost_fallbacks")
+        .select("menu_item_id,cost_cents,status",{count:"exact"})
+        .eq("business_id",businessId).in("menu_item_id",batch)
+        .order("menu_item_id",{ascending:true}).range(start,end),
+        row=>row.menu_item_id),
+    ]);
+    recipeLines.push(...recipes.data);
+    aggregateCosts.push(...costs.data);
+  }
 
-  const ingredientIds = [...new Set((recipeLines ?? []).map((r) => r.ingredient_id))];
-  const { data: priceRows, error: priceError } =
-    ingredientIds.length > 0
-      ? await supabase
-          .from("ingredient_prices")
-          .select("ingredient_id, effective_from, cost_per_base_unit_micros")
-          .in("ingredient_id", ingredientIds)
-          .lte("effective_from", todayDateStr)
-          .order("effective_from", { ascending: true }).order("recorded_at", { ascending: true }).order("id", { ascending: true })
-      : { data: [], error: null };
-  if (priceError) throw priceError;
+  const ingredientIds=[...new Set(recipeLines.map(row=>row.ingredient_id))];
+  const priceRows:Array<{id:string;ingredient_id:string;effective_from:string;
+    recorded_at:string;cost_per_base_unit_micros:number}>=[];
+  for(let i=0;i<ingredientIds.length;i+=100){
+    const batch=ingredientIds.slice(i,i+100);
+    const page=await snapshotPaged("ingredient_prices",(start,end)=>
+      supabase.from("ingredient_prices")
+       .select("id,ingredient_id,effective_from,recorded_at,cost_per_base_unit_micros",
+         {count:"exact"})
+       .in("ingredient_id",batch).lte("effective_from",todayDateStr)
+       .order("id",{ascending:true}).range(start,end),row=>row.id);
+    priceRows.push(...page.data);
+  }
+  // Preserve prior canonical effective-date, recording-date and ID precedence
+  // across pages from disjoint ingredient batches.
+  priceRows.sort((a,b)=>a.effective_from.localeCompare(b.effective_from)||
+    a.recorded_at.localeCompare(b.recorded_at)||a.id.localeCompare(b.id));
 
   const latestPriceMicros: Record<string, number> = {};
   for (const row of priceRows ?? []) {
