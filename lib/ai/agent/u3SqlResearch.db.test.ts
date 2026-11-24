@@ -337,7 +337,7 @@ describe.skipIf(!active)("U3 migrated registered tool + private connection",()=>
   const payload=(amount:number)=>({guid:randomUUID(),checks:[{guid:randomUUID(),amount,
    customer:{guid:customer,firstName:"Synthetic"},payments:[{guid:randomUUID(),type:"CASH",amount}],
    selections:[{guid:randomUUID(),item:{guid:product},quantity:2,price:amount}]}]});
-  await admin.query("INSERT INTO public.toast_raw_records(business_id,restaurant_guid,entity,business_date,payload,payload_sha256,capture_key) VALUES ($1,$2,'order',$3,$4,$5,$6),($7,$8,'order',$3,$9,$10,$11)",
+  await admin.query("INSERT INTO public.toast_raw_records(business_id,restaurant_guid,entity,business_date,payload,payload_sha256,capture_key) VALUES ($1,$2,'order',$3,$4,$5,$6),($7,$8,'order',$9,$10,$11,$12)",
    [ids.a,restA,date,JSON.stringify(payload(12)),randomBytes(32).toString("hex"),"live:u3-customer-a",
     ids.b,restB,date,JSON.stringify(payload(47)),randomBytes(32).toString("hex"),"live:u3-customer-b"]);
   try{

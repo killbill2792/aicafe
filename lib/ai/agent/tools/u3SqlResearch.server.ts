@@ -438,7 +438,7 @@ export async function runU3Sql(ctx:U3SqlContext,raw:unknown){
     if(value===null||value===undefined)return null;
     const n=Number(value);return Number.isSafeInteger(n)?n:null;
    };
-   const customerCoverage=rawCoverage?{
+   const candidateCoverage=rawCoverage?{
     scope:"all_eligible_checks_in_period" as const,
     eligibleChecks:integer(rawCoverage.eligible_check_count),
     linkedChecks:integer(rawCoverage.linked_check_count),
@@ -451,6 +451,18 @@ export async function runU3Sql(ctx:U3SqlContext,raw:unknown){
     completeLocationDays:integer(rawCoverage.complete_location_days),
     complete:rawCoverage.complete===true
    }:undefined;
+   // Invalid counts are unavailable, never invented zeroes.
+   const natural=(n:number|null):n is number=>n!==null&&n>=0;
+   const c=candidateCoverage;
+   const customerCoverage=c&&natural(c.eligibleChecks)&&natural(c.linkedChecks)&&
+    natural(c.namedChecks)&&natural(c.knownMoneyChecks)&&natural(c.linkedKnownMoneyChecks)&&
+    natural(c.expectedLocationDays)&&natural(c.completeLocationDays)&&
+    c.linkedChecks<=c.eligibleChecks&&c.namedChecks<=c.eligibleChecks&&
+    c.knownMoneyChecks<=c.eligibleChecks&&c.linkedKnownMoneyChecks<=c.linkedChecks&&
+    c.completeLocationDays<=c.expectedLocationDays?
+    {...c,eligibleChecks:c.eligibleChecks,linkedChecks:c.linkedChecks,namedChecks:c.namedChecks,
+     knownMoneyChecks:c.knownMoneyChecks,linkedKnownMoneyChecks:c.linkedKnownMoneyChecks,
+     expectedLocationDays:c.expectedLocationDays,completeLocationDays:c.completeLocationDays}:undefined;
    const digest=customerEvidence?createHash("sha256").update(fit.digest)
     .update(JSON.stringify(customerCoverage??null)).digest("hex"):fit.digest;
    if(prior&&(prior.digest!==digest||prior.totalRows!==fit.totalRows))
