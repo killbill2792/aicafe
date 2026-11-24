@@ -154,7 +154,7 @@ async function withinScope<T>(ctx:U3SqlContext,callback:(client:PoolClient,obser
   await client.query("BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY");
   begun=true;
   // Static trusted SET statements share one transport, not model SQL.
-  await client.query("SELECT set_config('statement_timeout',$1,true)",[String(remainingResearchTime(deadlineAt))]);
+  await client.query("SELECT set_config('statement_timeout',$1,true)",[String(remainingResearchTime(deadlineAt))]); // hardcode-ok: PostgreSQL bind parameter, not currency
   await client.query("SET LOCAL lock_timeout = '300ms'; SET LOCAL work_mem = '4MB'; "+
    "SET LOCAL search_path = u3_research, pg_catalog");
   const role=(await client.query(
@@ -308,7 +308,7 @@ export function unsafeStructuredToastResult(rows:readonly unknown[]):boolean{
 async function readResearchPage(client:PoolClient,sql:string,parameters:readonly unknown[],
  offset:number,limit:number|null,resultBudgetBytes:number,validate:(rows:unknown[])=>void,
  collector:ResearchPageCollector|null,spool:DurableResearchSpool|null,deadlineAt:number){
- await client.query("SELECT set_config('statement_timeout',$1,true)",[String(remainingResearchTime(deadlineAt))]);
+ await client.query("SELECT set_config('statement_timeout',$1,true)",[String(remainingResearchTime(deadlineAt))]); // hardcode-ok: PostgreSQL bind parameter, not currency
  await client.query({text:CURSOR_PREFIX+sql+") AS u3_bounded",values:[...parameters]});
  const rows:unknown[]=[];let bytes=2,totalRows=0,pageFull=false;
  // A complete response needs no second serialized copy of the result.

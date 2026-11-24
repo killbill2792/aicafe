@@ -96,11 +96,24 @@ function recordedProvider(replay:ReplayCase):AgentProvider {
           !!tool&&typeof tool==="object"&&
           (tool as {name?:string}).name===call.name);
         if(!offered)throw new Error("production tool missing: "+call.name);
+        let callArgs=call.args;
+        if(call.name==="calculate"){
+          const previous=input.filter((x):x is {type:string;call_id:string;output:string}=>!!x&&typeof x==="object"&&(x as {type?:string}).type==="function_call_output");
+          const observed=previous.flatMap(x=>{try{return [JSON.parse(x.output)];}catch{return [];}});
+          const calc=call.args as {inputs:{tool?:string;path?:string;receipt_id?:string}[]};
+          callArgs={...calc,inputs:calc.inputs.map(v=>{
+            if(v.tool!=="query_data"||v.receipt_id)return v;
+            const column=v.path?.split(".").at(-1);
+            const source=observed.findLast(x=>x.source==="u3_canonical_research"&&column&&x.evidence?.column_units?.[column]);
+            if(!source?.evidence?.receipt_id)throw Error("Recorded calculation needs observed SQL receipt");
+            return {...v,receipt_id:source.evidence.receipt_id};
+          })};
+        }
         const id="eval-read-"+round+"-"+i;
         allIds.push(id);
         yield {type:"response.output_item.done",item:{
           type:"function_call",name:call.name,
-          arguments:JSON.stringify(call.args),call_id:id,
+          arguments:JSON.stringify(callArgs),call_id:id,
         }};
       }
     }else if(round===rounds.length+1){
