@@ -159,6 +159,25 @@ describe.skipIf(!active)("U3 migrated registered tool + private connection",()=>
    expect(denied.rows??[]).toEqual([]);
   }finally{if(docs.length)await admin.query("DELETE FROM public.uploads WHERE id=ANY($1::uuid[])",[docs]);}
  });
+ it("researches saved event decisions, checklist states and historical observations without the event preview date ceiling",async()=>{
+  if(!admin)throw Error("admin_missing");
+  const plans=[randomUUID(),randomUUID()],events=[randomUUID(),randomUUID()];
+  const day="2025-01-05";
+  try{
+   for(const [index,business,owner,thread,amount] of [[0,ids.a,ids.oa,ids.ta,2300],[1,ids.b,ids.ob,ids.tb,9999]] as const){
+    await admin.query("INSERT INTO public.cafe_events(id,business_id,name,kind,start_date,end_date) VALUES($1,$2,$3,'holiday',$4,$4)",[events[index],business,"Synthetic event "+index,day]);
+    const effect={startDate:day,endDate:day,eventIds:[events[index]],summary:"Synthetic plan "+index,importance:"medium",expectedBusyHours:[],actions:[{area:"prep",action:"Prepare extra cups",reason:"Observed demand"}]};
+    await admin.query("INSERT INTO public.supervisor_proposals(id,business_id,owner_user_id,thread_id,request_key,capability_id,capability_version,canonical_effect_payload,effect_hash,baseline,monitor_spec,locale) VALUES($1,$2,$3,$4,gen_random_uuid(),'alex.event_readiness.v1',1,$5::jsonb,repeat('a',64),'{}','{}','en')",[plans[index],business,owner,thread,JSON.stringify(effect)]);
+    await admin.query("INSERT INTO public.supervisor_monitor_samples(business_id,proposal_id,business_date,observation,evidence_source) VALUES($1,$2,$3,$4::jsonb,'daily_rollups')",[business,plans[index],day,JSON.stringify({coverage:"actual",actualCents:amount,typicalCents:2000,baselineDays:4})]);
+   }
+   const result=await dataQueryTools.query_data.execute(input("SELECT e.name,a.checklist_state,o.actual_cents,o.typical_cents FROM event_readiness_links l JOIN cafe_events e ON e.id::text=l.event_id JOIN event_readiness_actions a ON a.plan_id=l.plan_id JOIN event_readiness_observations o ON o.plan_id=l.plan_id WHERE o.business_date < CURRENT_DATE - 90"),scoped);
+   expect(result.error).toBeUndefined();
+   expect(result.rows).toEqual([{name:"Synthetic event 0",checklist_state:"pending",actual_cents:"2300",typical_cents:"2000"}]);
+  }finally{
+   await admin.query("DELETE FROM public.supervisor_proposals WHERE id=ANY($1::uuid[])",[plans]);
+   await admin.query("DELETE FROM public.cafe_events WHERE id=ANY($1::uuid[])",[events]);
+  }
+ });
  it("preserves unfamiliar actual expense labels and recurring links across the real SQL surface",async()=>{
   if(!admin)throw Error("admin_missing");
   const cost=randomUUID(),expense=randomUUID(),foreign=randomUUID();
