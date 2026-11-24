@@ -284,6 +284,28 @@ describe.skipIf(!active)("U3 migrated registered tool + private connection",()=>
   expect(superseded.error).toBeUndefined();
   expect(superseded.rows).toEqual([]);
  });
+ it("joins provider planned shifts to the exact saved roster identity, without matching by name",async()=>{
+  if(!admin)throw Error("admin_missing");
+  const loc=[randomUUID(),randomUUID()],restaurants=[randomUUID(),randomUUID()],employees=[randomUUID(),randomUUID()],externalEmployee=randomUUID();
+  try{
+   for(const [i,business] of [ids.a,ids.b].entries()){
+    await admin.query("INSERT INTO public.locations(id,business_id,name,timezone) VALUES($1,$2,$3,'UTC')",[loc[i],business,"Synthetic roster location "+i]);
+    await admin.query("INSERT INTO public.employees(id,business_id,display_name,min_weekly_minutes,max_weekly_minutes) VALUES($1,$2,$3,600,1200)",[employees[i],business,"Owner team name "+i]);
+    await admin.query("INSERT INTO public.toast_location_mappings(business_id,location_id,restaurant_guid) VALUES($1,$2,$3)",[business,loc[i],restaurants[i]]);
+    await admin.query("INSERT INTO public.toast_employee_directory(business_id,restaurant_guid,employee_guid,display_name,linked_employee_id,fetched_at) VALUES($1,$2,$3,'Duplicate provider name',$4,now())",[business,restaurants[i],externalEmployee,employees[i]]);
+    await admin.query("INSERT INTO public.pos_scheduled_shifts(business_id,location_id,provider,external_shift_id,external_employee_id,scheduled_start,scheduled_end,last_synced_at) VALUES($1,$2,'toast',$3,$4,'2025-01-01T08:00:00Z','2025-01-01T12:00:00Z',now())",[business,loc[i],"synthetic-shift-"+i,externalEmployee]);
+   }
+   const result=await dataQueryTools.query_data.execute(input("SELECT p.external_shift_id,e.display_name,e.min_weekly_minutes FROM pos_scheduled_shifts p JOIN toast_location_mappings m ON p.location_id=m.location_id JOIN toast_employee_directory d ON d.restaurant_guid=m.restaurant_guid AND d.employee_guid::text=p.external_employee_id JOIN employees e ON e.id=d.linked_employee_id WHERE p.provider='toast' AND NOT p.deleted"),scoped);
+   expect(result.error).toBeUndefined();
+   expect(result.rows).toEqual([{external_shift_id:"synthetic-shift-0",display_name:"Owner team name 0",min_weekly_minutes:600}]);
+  }finally{
+   await admin.query("DELETE FROM public.pos_scheduled_shifts WHERE location_id=ANY($1::uuid[])",[loc]);
+   await admin.query("DELETE FROM public.toast_employee_directory WHERE restaurant_guid=ANY($1::uuid[])",[restaurants]);
+   await admin.query("DELETE FROM public.toast_location_mappings WHERE location_id=ANY($1::uuid[])",[loc]);
+   await admin.query("DELETE FROM public.employees WHERE id=ANY($1::uuid[])",[employees]);
+   await admin.query("DELETE FROM public.locations WHERE id=ANY($1::uuid[])",[loc]);
+  }
+ });
  it("uses the same authenticated business facts in interactive and durable owner research",async()=>{
   if(!admin)throw Error("admin_missing");
   const employeeA=randomUUID(),employeeB=randomUUID(),message=randomUUID();

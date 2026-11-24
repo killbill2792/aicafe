@@ -110,6 +110,12 @@ const manifest=JSON.parse(migration.slice(begin+tag.length,end));
 if(!Array.isArray(manifest)||!manifest.length)
  throw Error("U3 source admission manifest empty");
 const expectedLogical=new Map(manifest.map(source=>[source.table,source.fields]));
+expectedLogical.set("employees",[...expectedLogical.get("employees"),"pos_team_member_id","min_weekly_minutes","max_weekly_minutes","available_days","pos_display_name","pos_last_role","pos_last_wage_cents","pos_last_active"]);
+expectedLogical.set("scheduled_shifts",[...expectedLogical.get("scheduled_shifts"),"break_source","repeat_schedule_id","proposal_id","created_at","updated_at"]);
+expectedLogical.set("toast_location_mappings",["location_id","restaurant_guid","verified_at","toast_time_zone","closeout_hour","info_refreshed_at","toast_start_date"]);
+expectedLogical.set("toast_employee_directory",["restaurant_guid","employee_guid","display_name","deleted","linked_employee_id","linked_at","fetched_at"]);
+expectedLogical.set("staff_preference_windows",["id","employee_id","day_of_week","start_local","end_local","overnight","preference","strength","effective_from","effective_to","source","confirmation","confirmed_at","revision","created_at","updated_at"]);
+expectedLogical.set("staff_scheduling_compensation",["id","employee_id","cash_cost_state","eligibility_verified_at","revision","created_at","updated_at"]);
 expectedLogical.set("menu_items",[...expectedLogical.get("menu_items"),"description","prep_seconds","pos_pricing_strategy","pos_archived_at"]);
 expectedLogical.set("city_events",["id","city_key","name","kind","start_date","end_date","start_time","end_time","time_source_url","venue","venue_address","last_checked_at","duration_source_url","duration_verified_at","start_at","end_at","source_timezone","lifecycle_status","lifecycle_verified_at"]);
 expectedLogical.set("city_event_sources",["city_event_id","source_url","observed_name","observed_at"]);
