@@ -1345,9 +1345,9 @@ test("@purchasing proactive notice → repeated cron idempotency → owner-appro
       " and grounding #>> '{evidence,0,source}'='supplier_po'"+
       " and grounding #>> '{evidence,0,identifier}'=$3",
       [own.businessId,id.thread,id.proposal]);
-    expect(messages.rows).toHaveLength(1);
-    expect(messages.rows[0].grounding).toMatchObject({status:"verified",intent:"priority_notice",
-      evidence:[{source:"supplier_po",identifier:id.proposal}]});
+    // Owner already has a real proposal card in this thread; the recurring
+    // reminder is an attention item, not another generic Supervisor reply.
+    expect(messages.rows).toHaveLength(0);
     // A second real scheduler tick without another owner message must reuse
     // the same persisted inbox/chat receipt across independent cron invocations.
     const secondTick=await first.request.get("/api/cron/refresh-derived",{
@@ -1367,11 +1367,10 @@ test("@purchasing proactive notice → repeated cron idempotency → owner-appro
       " and grounding #>> '{evidence,0,source}'='supplier_po'"+
       " and grounding #>> '{evidence,0,identifier}'=$3",
       [own.businessId,id.thread,id.proposal]);
-    expect(dedupedMessages.rows).toEqual([{id:messages.rows[0].id}]);
-    // Reopened owner chat must show the real cron-generated notice.
+    expect(dedupedMessages.rows).toEqual([]);
+    // Reopened owner chat retains its existing verified proposal cards,
+    // without a synthetic cron-generated assistant message.
     await page.reload();
-    await expect(page.getByText("Supplier purchase-order draft needs your approval",{exact:false}).first())
-      .toBeVisible({timeout:30_000});
     const cards=page.getByRole("region",{name:"Supplier purchase-order approval"});
     await expect(cards).toHaveCount(2,{timeout:30_000});
     const historical=cards.first(),card=cards.last();
