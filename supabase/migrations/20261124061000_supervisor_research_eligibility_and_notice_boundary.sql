@@ -205,7 +205,36 @@ begin
       and (t.owner_user_id is null or t.owner_user_id=p_owner_user_id)) into v_found;
   end if;
   if not v_found then return false; end if;
+  -- Serialize notice revisions against the original actionable source.
+  -- Otherwise two distinct source revisions can interleave and leave two
+  -- owner "Needs you" cards for the same café fact.
+  if p_source_type='alert' then
+    perform 1 from public.alerts a
+      where a.business_id=p_business_id and a.id::text=p_source_id
+      for update;
+    if not found then return false; end if;
+  elsif p_source_type='operating_task' then
+    perform 1 from public.operating_tasks t
+      where t.business_id=p_business_id and t.id=p_source_id
+      for update;
+    if not found then return false; end if;
+  end if;
   v_task_id:='priority:'||p_stable_key;
+  if p_source_type in ('alert','operating_task','supplier_po') then
+    -- A changed alert/task/proposal revision makes an earlier *open* generic
+    -- attention row obsolete. Keep its audit/history (handled), never reopen
+    -- or overwrite already-resolved owner decisions. Same-revision retries
+    -- remain idempotent through the existing stable task ID and unique key.
+    update public.operating_tasks t set
+      status='handled',resolved_at=coalesce(t.resolved_at,p_as_of),
+      updated_at=p_as_of
+      where t.business_id=p_business_id and t.owner_user_id=p_owner_user_id
+        and t.kind='priority_notice'
+        and t.status in ('needs_owner','needs_response','watching')
+        and t.payload->>'sourceType'=p_source_type
+        and t.payload->>'sourceId'=p_source_id
+        and t.id<>v_task_id;
+  end if;
   if p_source_type='supplier_dispatch' then
     -- A previously published revision (even already handled/superseded) must
     -- NEVER close the newest unresolved notice on a delayed retry. The PO
