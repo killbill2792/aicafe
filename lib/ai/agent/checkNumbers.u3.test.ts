@@ -101,6 +101,9 @@ describe("recorded labor punch verifier, not roster or invented model prose",()=
  it("rejects wrong person, wrong date, wrong clock and fabricated worked hours",()=>{
    for(const text of [
      "Maya clocked in at 9:00 AM on November 15, 2026.",
+     "Maya had a clock-in at 9:00 AM on November 15, 2026.",
+     "Maya’s recorded clock-in was 9:00 AM on November 15, 2026.",
+     "Maya's recorded clock-in was 9:00 AM on November 15, 2026.",
      "Sam clocked in at 9:00 AM on November 16, 2026.",
      "Sam clocked in at 8:00 AM on November 15, 2026.",
      "Sam worked 7 hours.",
@@ -136,6 +139,15 @@ describe("recorded labor punch verifier, not roster or invented model prose",()=
    const saved=compactEvidence([many]);
    expect(checkNumbers("Sam clocked in at 9:30 AM on November 15, 2026.",
      "",[],"en",saved)).toEqual([]);
+ });
+ it("recognizes owner-facing named punch phrasing only for the right employee",()=>{
+   expect(checkNumbers("Sam had a clock-in at 9:00 AM on November 15, 2026.","",
+     [observed],"en")).toEqual([]);
+   expect(checkNumbers("Sam’s recorded clock-in was 9:00 AM on November 15, 2026.","",
+     [observed],"en")).toEqual([]);
+   // Without person identity, a generic recorded punch can still be stated.
+   expect(checkNumbers("Clock-in at 9:00 AM on November 15, 2026 was recorded.","",
+     [observed],"en")).toEqual([]);
  });
  it("rejects a fabricated elapsed duration even when the tool shape resembles labor",()=>{
    const falseDuration={...observed,attendance:{recordedTimecards:[{
