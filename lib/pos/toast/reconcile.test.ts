@@ -177,7 +177,6 @@ describe("paid-date list contains noncapturing payment attempts",()=>{
    expect(f.calls).not.toContain("toast_queue_backfill");
    expect(mocked.request.mock.calls.some(([path])=>String(path).includes("/orders/v2/orders/"))).toBe(false);
   });
- });
  it("refuses the shortcut if an excluded attempt has conflicting provider order identity",async()=>{
   const f=fakeDb(false);Object.assign(f.item,{coverage_complete:true,last_import_run_id:report});
   f.setArchive(source("DENIED"));
