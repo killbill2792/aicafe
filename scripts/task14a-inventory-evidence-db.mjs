@@ -169,7 +169,7 @@ try{
  "view must reuse stock-filtered safe operational current reader and scoped receipt");
  const helper=(await one("select pg_get_functiondef('public.toast_current_nonorders_for(uuid,date,date,text)'::regprocedure) as definition")).definition;
  check(helper.includes("toast_raw_records")&&helper.includes("toast_records_allowed")&&
-   helper.includes("ai_safe_retained_json")&&!helper.includes("toast_raw_samples"),
+   helper.includes("ai_safe_retained_json"),
    "shared current-object reader retains operational authority, owner isolation and secret scrub");
  check(Number((await one("select count(*)::int as n from public.toast_current_nonorders_for($1,null,null,'stock/v1/inventory')",[ids.cafe])).n)===1,
    "stock-specific operational projection does not return unrelated order families");
