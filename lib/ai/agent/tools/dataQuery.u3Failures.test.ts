@@ -43,7 +43,7 @@ describe("real registered SQL discovery carries authenticated scope",()=>{
    vi.mocked(describeU3Catalog).mockClear();
    const actual=await executeAgentTool("describe_data",raw,ctx);
    expect(describeU3Catalog).toHaveBeenCalledOnce();
-   expect(describeU3Catalog).toHaveBeenCalledWith(scope,expect.any(Object));
+   expect(describeU3Catalog).toHaveBeenCalledWith(expect.objectContaining({...scope,resultBudgetBytes:expect.any(Number)}),expect.objectContaining({search:"sales"}));
    expect(actual.error).toBe("source_read_failed");
    expect(JSON.stringify(actual)).not.toContain("private transport details");
   }
