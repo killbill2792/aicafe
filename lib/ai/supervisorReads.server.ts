@@ -31,9 +31,9 @@ export type RecordedTimecard={
 export type StaffAttendance={
   timecardCount:number|null;onClockCount:number|null;attendanceTracked:boolean;
   recordedTimecards?:RecordedTimecard[];missingWageShifts?:MissingWageShift[];
-  recordedTimecardsPageOffset:number;recordedTimecardsNextOffset:number|null;
-  recordedTimecardsPageComplete:boolean;
-  pageConsistency:"independent_read_only_snapshot";
+  recordedTimecardsPageOffset?:number;recordedTimecardsNextOffset?:number|null;
+  recordedTimecardsPageComplete?:boolean;
+  pageConsistency?:"independent_read_only_snapshot";
 };
 const quality = (missingInputs: string[] = []) => ({
   level: (missingInputs.length ? "low" : "high") as "low" | "high",
