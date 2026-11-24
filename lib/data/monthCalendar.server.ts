@@ -1,8 +1,9 @@
 import "server-only";
 import { readDailyFactRows } from "./dailyFacts.server";
 import type { SupabaseClient } from "@supabase/supabase-js";
-import type { CategoryMonthlyAmount, DailyFacts, ExpenseCategoryCode } from "@/lib/calc";
-import { RUNNING_COST_CODES, rowToDailyFacts } from "./runningCostCatalog";
+import type { CategoryMonthlyAmount, DailyFacts } from "@/lib/calc";
+import { runningCostLinesForMonth, rowToDailyFacts } from "./runningCostCatalog";
+import {readCompletePaged} from "./completePages";
 import { normalizeOpenHours, type OpenHours } from "@/lib/business/openHours";
 
 export type MonthCalendarData = {
@@ -44,18 +45,14 @@ export async function getMonthCalendarFromDb(
   const [rollupResult, expensesResult, recurringResult, locationResult] = await Promise.all([
     readDailyFactRows(supabase, businessId, monthStart, monthEnd)
       .then((data) => ({ data, error: null }), (error: Error) => ({ data: null, error })),
-    supabase
-      .from("expenses")
-      .select("category_code, amount_cents, status")
-      .eq("business_id", businessId)
-      .gte("spent_on", monthStart)
-      .lte("spent_on", monthEnd),
-    supabase
-      .from("recurring_costs")
-      .select("category_code, amount_cents, is_estimate, active_from, active_to")
-      .eq("business_id", businessId)
-      .lte("active_from", monthEnd)
-      .or(`active_to.is.null,active_to.gte.${monthStart}`),
+    readCompletePaged((start,end)=>supabase.from("expenses")
+      .select("id,category_code,amount_cents,status,spent_on,recurring_cost_id",{count:"exact"})
+      .eq("business_id",businessId).gte("spent_on",monthStart).lte("spent_on",monthEnd)
+      .order("id",{ascending:true}).range(start,end),row=>row.id),
+    readCompletePaged((start,end)=>supabase.from("recurring_costs")
+      .select("id,category_code,amount_cents,frequency,is_estimate,active_from,active_to",{count:"exact"})
+      .eq("business_id",businessId).lte("active_from",monthEnd)
+      .or(`active_to.is.null,active_to.gte.${monthStart}`).order("id",{ascending:true}).range(start,end),row=>row.id),
     supabase
       .from("locations")
       .select("open_hours")
@@ -65,39 +62,16 @@ export async function getMonthCalendarFromDb(
       .maybeSingle(),
   ]);
   if (rollupResult.error) throw rollupResult.error;
-  if (expensesResult.error) throw expensesResult.error;
-  if (recurringResult.error) throw recurringResult.error;
+  if(expensesResult===null||recurringResult===null)throw Error("calendar_cost_source_incomplete");
   if (locationResult.error) throw locationResult.error;
 
   const days = (rollupResult.data ?? []).map(rowToDailyFacts);
 
-  const categoryAmounts: CategoryMonthlyAmount[] = RUNNING_COST_CODES.map((code: ExpenseCategoryCode) => {
-    const expensesThisMonth = (expensesResult.data ?? []).filter((e) => e.category_code === code);
-    if (expensesThisMonth.length > 0) {
-      return {
-        categoryCode: code,
-        monthKey,
-        amountCents: expensesThisMonth.reduce((sum, e) => sum + e.amount_cents, 0),
-        isEstimate: expensesThisMonth.some((e) => e.status === "estimated"),
-        isMissing: false,
-      };
-    }
-
-    const activeRecurring = (recurringResult.data ?? []).filter((r) => r.category_code === code);
-    if (activeRecurring.length > 0) {
-      return {
-        categoryCode: code,
-        monthKey,
-        amountCents: activeRecurring.reduce((sum, r) => sum + r.amount_cents, 0),
-        // A past month's recurring fallback can't be confirmed accurate for that month specifically
-        // (see this function's doc comment) — only the live current month trusts the row's own flag.
-        isEstimate: isCurrentMonth ? activeRecurring.some((r) => r.is_estimate) : true,
-        isMissing: false,
-      };
-    }
-
-    return { categoryCode: code, monthKey, amountCents: 0, isEstimate: false, isMissing: true };
-  });
+  const categoryAmounts:CategoryMonthlyAmount[]=runningCostLinesForMonth({
+    expenses:expensesResult,recurring:recurringResult,from:monthStart,to:monthEnd,
+    today:monthEnd,historical:!isCurrentMonth
+  }).map(line=>({categoryCode:line.categoryCode,monthKey,amountCents:line.amountCents,
+    isEstimate:line.isEstimate,isMissing:line.amountSource==="missing"}));
 
   return { monthKey, daysInMonth, days, categoryAmounts, openHours: isCurrentMonth ? normalizeOpenHours(locationResult.data?.open_hours) : null };
 }
