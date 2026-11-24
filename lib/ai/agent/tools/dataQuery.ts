@@ -357,6 +357,7 @@ export const dataQueryTools={
   execute:async(raw:unknown,ctx:DataQueryContext)=>{
    const parsed=dataQuerySchema.safeParse({
     sql:null,parameters:null,cursor:null,view:null,date_from:null,date_to:null,
+    columns:null,filters:null,group_by:null,metrics:null,order_by:null,limit:null,
     ...(raw&&typeof raw==="object"?raw:{})
    });
    if(!parsed.success)return empty("invalid_query");
@@ -364,7 +365,8 @@ export const dataQueryTools={
    if(!z.uuid().safeParse(ctx.businessId).success||!ctx.db)return empty("invalid_scope");
    if(p.restore_receipt!=null||p.restore_path!=null||p.restore_offset!=null)return empty("retained_receipt_requires_durable_context");
    if(p.sql!==null){
-    if(p.view!==null||!u3SqlConfigured())return empty("capability_unavailable");
+    if([p.view,p.columns,p.filters,p.group_by,p.metrics,p.order_by].some(v=>v!==null))return empty("invalid_query");
+    if(!u3SqlConfigured())return empty("capability_unavailable");
     const result=await runU3Sql(ctx,{sql:p.sql,parameters:p.parameters,limit:p.limit,
       cursor:p.cursor,date_from:p.date_from,date_to:p.date_to});
     // Preserve the existing registered-tool contract for legacy consumers.

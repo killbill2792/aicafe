@@ -16,14 +16,14 @@ vi.mock("./tools/u3SqlResearch.server",async importOriginal=>{
 });
 const salesSql="SELECT net_sales_cents FROM daily_rollups WHERE business_date BETWEEN $1 AND $2 ORDER BY business_date";
 const hoursSql="SELECT hour_local,net_sales_cents,orders_count FROM hourly_sales_rollup WHERE business_date BETWEEN $1 AND $2 ORDER BY business_date,hour_local";
-const costsSql="SELECT amount_cents FROM expenses WHERE expense_date BETWEEN $1 AND $2";
+const costsSql="SELECT amount_cents FROM expenses WHERE spent_on BETWEEN $1 AND $2";
 const sqlArgs=(sql:string,period:{from:string;to:string})=>JSON.stringify({sql,parameters:[period.from,period.to],date_from:period.from,date_to:period.to,limit:null});
 const sqlFixture=(raw:unknown,rows:unknown[],missing:string[]=[])=>{
  const args=raw as {date_from?:string;date_to?:string;sql:string};
  const relation=args.sql.includes("hourly_sales_rollup")?"hourly_sales_rollup":args.sql.includes("expenses")?"expenses":"daily_rollups";
  return {source:"u3_canonical_research",period:args.date_from&&args.date_to?{from:args.date_from,to:args.date_to}:null,rows,missing,
   truncated:false,page_complete:true,evidence:{scope:"verified_owner_cafe_lease",authority:"approved_logical_source",
-  receipt_id:"11111111-1111-4111-8111-111111111111",column_units:{net_sales_cents:"cents",amount_cents:"cents",orders_count:"count"},relation_names:[relation]}};
+  receipt_id:"11111111-1111-4111-8111-111111111111",query_fingerprint:"a".repeat(64),catalog_version:"a".repeat(16),column_units:{net_sales_cents:"cents",amount_cents:"cents",orders_count:"count"},relation_names:[relation]}};
 };
 const context: AgentToolContext = {
   locale: "en", asOf: "2026-10-21", timezone: "America/Los_Angeles",
