@@ -500,13 +500,28 @@ describe.skipIf(!active)("U3 migrated registered tool + private connection",()=>
    await admin.query("DELETE FROM public.orders WHERE business_id=$1 AND pos_order_id LIKE 'u3-cursor-%'",[ids.a]).catch(()=>{});
   }
  });
- it("allows multi-year, scoped Toast changes under the same verified window",async()=>{
-  const sql="SELECT count(*) AS n FROM u3_research.toast_changes";
-  const result=await dataQueryTools.query_data.execute({
-   ...input(sql),date_from:"2023-01-01",date_to:"2026-11-23"
-  },scoped);
-  expect(result.error).toBeUndefined();
-  expect((result as typeof result & {page_complete?:boolean}).page_complete).toBe(true);
+ it("returns nonempty multi-year Toast change evidence, not a silent date-window rejection",async()=>{
+  if(!admin)throw Error("admin_missing");
+  const old=randomUUID(),recent=randomUUID(),foreign=randomUUID();
+  try{
+   await admin.query("INSERT INTO public.toast_raw_changes(business_id,restaurant_guid,entity,entity_guid,business_date,changes) VALUES "+
+    "($1,NULL,'employee',$3,'2023-02-01',$6::jsonb),($1,NULL,'employee',$4,'2026-11-01',$7::jsonb),($2,NULL,'employee',$5,'2025-01-01',$8::jsonb)",
+    [ids.a,ids.b,old,recent,foreign,
+     JSON.stringify([{path:".properties.verified.quantity",before:1,after:3}]),
+     JSON.stringify([{path:".properties.verified.quantity",before:3,after:5}]),
+     JSON.stringify([{path:".properties.verified.quantity",before:5,after:9}])]);
+   const result=await dataQueryTools.query_data.execute({
+    ...input("SELECT business_date,after_scalar FROM u3_research.toast_changes ORDER BY business_date"),
+    date_from:"2023-01-01",date_to:"2026-11-23"
+   },scoped);
+   expect(result.error).toBeUndefined();
+   expect(result.rows).toEqual([{business_date:"2023-02-01",after_scalar:"3"},{business_date:"2026-11-01",after_scalar:"5"}]);
+   expect(result).toMatchObject({page_complete:true,truncated:false});
+   const independent=await admin.query("SELECT business_date::text AS business_date,changes->0->>'after' AS after_scalar FROM public.toast_raw_changes WHERE business_id=$1 AND entity_guid IN ($2,$3) ORDER BY business_date",[ids.a,old,recent]);
+   expect(result.rows).toEqual(independent.rows);
+  }finally{
+   await admin.query("DELETE FROM public.toast_raw_changes WHERE entity_guid IN ($1,$2,$3)",[old,recent,foreign]);
+  }
  });
  it("rechecks actual original-owner authorization after revocation",async()=>{
   if(!admin)throw Error("admin_missing");

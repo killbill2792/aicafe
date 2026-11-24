@@ -209,6 +209,23 @@ SELECT (SELECT count(*) FROM u3_research.toast_records WHERE record_type='employ
  SELECT 1/0;
 \endif
 
+-- A wide historical window must not silently turn retained records into zero.
+SELECT set_config('aicafe.u3_date_from',(current_date-800)::text,true),
+ set_config('aicafe.u3_date_to',current_date::text,true);
+SELECT (SELECT count(*) FROM u3_research.toast_records WHERE record_type='employee')=1 AS wide_toast,
+ (SELECT count(*) FROM u3_research.toast_changes)=1 AS wide_change
+\gset
+\if :wide_toast
+\else
+ \echo 'U3 wide-window operational Toast records unavailable or leaked'
+ SELECT 1/0;
+\endif
+\if :wide_change
+\else
+ \echo 'U3 wide-window Toast changes unavailable or leaked'
+ SELECT 1/0;
+\endif
+
 -- The scope GUC itself is not authority; HMAC integrity is mandatory.
 SELECT set_config('aicafe.u3_research_scope','',true);
 SELECT (SELECT count(*) FROM u3_research.orders)=0 AS no_ticket_denied
