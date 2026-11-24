@@ -29,6 +29,28 @@ describe("proactive priority ranking and source revision",()=>{
     expect(ranked[0].source.sourceId).toBe("high-risk");
     expect(ranked[0].reason).toBe("Actionable café alert needs review");
   });
+  it("does not spend investigation or notice capacity on known detector data gaps",()=>{
+    const now=new Date("2026-11-23T00:00:00Z");
+    const outage={...base,kind:"business_anomaly",sourceId:"gap:reader_unavailable:customer_intelligence",
+      evidence:{family:"data_gap",subject:"reader_unavailable:customer_intelligence",
+        quality:"missing",current:1,previous:0,asOf:"2026-11-23"}};
+    const immature={...base,kind:"business_anomaly",sourceId:"gap:product_recipe_history",
+      evidence:{family:"data_gap",subject:"product_recipe_history",quality:"missing"}};
+    const genuine={...base,kind:"business_anomaly",sourceId:"sales-decline",
+      severity:"critical",confidence:"high",
+      evidence:{family:"sales_decline",subject:"cafe",quality:"verified",verified:true}};
+    const actions=[outage,immature,genuine];
+    expect(choosePriorities(actions,now,10).map(x=>x.source.sourceId))
+      .toEqual(["sales-decline"]);
+    expect(choosePriorities(actions,now,10,{includeWatching:true}).map(x=>x.source.sourceId))
+      .toEqual(["sales-decline"]);
+  });
+  it("does not suppress explicit evidence-backed missing punch incidents",()=>{
+    const now=new Date("2026-11-23T00:00:00Z");
+    const punch={...base,kind:"business_anomaly",sourceId:"punch:shift-1",
+      evidence:{family:"missed_clock_evidence",subject:"shift-1",quality:"missing"}};
+    expect(choosePriorities([punch],now,10)).toHaveLength(1);
+  });
   it("does not elevate an unverified critical outage above verified work",()=>{
     const now=new Date("2026-11-11T00:00:00Z");
     const outage={...base,sourceId:"outage",severity:"critical",
