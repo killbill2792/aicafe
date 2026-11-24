@@ -266,6 +266,20 @@ describe.skipIf(!active)("U3 migrated registered tool + private connection",()=>
   expect(legal.error).toBeUndefined();
   expect(Number((legal.rows[0] as Record<string,unknown>).result)).toBe(1100);
  });
+ it("supports safe relational wildcard reads and real conditional SQL arithmetic without a calculator detour",async()=>{
+  const all=await dataQueryTools.query_data.execute(input("SELECT * FROM orders"),scoped);
+  expect(all.error).toBeUndefined();
+  expect(all.rows).toHaveLength(1);
+  expect(all.rows[0]).toMatchObject({id:ids.orderA,net_sales_cents:"1100"});
+  expect(all.evidence).toMatchObject({column_units:{net_sales_cents:"cents"},column_origins:{net_sales_cents:{relation:"orders",column:"net_sales_cents"}}});
+  const result=await dataQueryTools.query_data.execute(input("SELECT SUM(CASE WHEN net_sales_cents>0 THEN net_sales_cents ELSE 0 END) AS positive, ROUND(AVG(net_sales_cents),0) AS average FROM orders"),scoped);
+  expect(result.error).toBeUndefined();
+  expect(result.evidence).toMatchObject({column_units:{positive:"cents",average:"cents"}});
+  expect(checkNumbers("$11.00.","",[result as unknown as AgentToolResult],"en")).toEqual([]);
+  const duplicate=await dataQueryTools.query_data.execute(input("SELECT o.*,l.* FROM orders o JOIN order_lines l ON o.id=l.order_id"),scoped);
+  expect(duplicate.error).toBe("duplicate_result_columns");
+  expect(duplicate.rows).toEqual([]);
+ });
  it("never accepts a model-chosen numeric SQL label as verified money",async()=>{
   const result=await dataQueryTools.query_data.execute(input(
    'SELECT 99999 AS "fakeCents" FROM u3_research.orders'),scoped);

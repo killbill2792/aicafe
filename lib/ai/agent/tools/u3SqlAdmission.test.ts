@@ -7,6 +7,9 @@ const admitted=["orders","order_lines","daily_rollups","menu_items","ingredients
 describe("U3 governed PostgreSQL AST admission",()=>{
  it.each([
   "SELECT count(*) AS n FROM u3_research.orders",
+  "SELECT * FROM u3_research.orders",
+  "SELECT o.* FROM orders o",
+  "WITH selected AS (SELECT * FROM orders) SELECT * FROM selected",
   "SELECT business_date,sum(net_sales_cents) AS total FROM u3_research.daily_rollups GROUP BY business_date ORDER BY business_date",
   "SELECT o.business_date,sum(i.net_sales_cents) AS item_total FROM u3_research.orders o JOIN u3_research.order_lines i ON i.order_id=o.id GROUP BY o.business_date",
   "WITH daily AS (SELECT business_date,sum(net_sales_cents) AS sales FROM u3_research.daily_rollups GROUP BY business_date) SELECT business_date,sales,LAG(sales) OVER(ORDER BY business_date) AS previous FROM daily",
@@ -158,6 +161,19 @@ describe("U3 governed PostgreSQL AST admission",()=>{
   expect(forged.outputUnits).toEqual({});
   const ratio=await admitU3Sql("WITH x AS (SELECT sum(net_sales_cents) AS sales FROM orders) SELECT sales/sales AS share FROM x",admitted,0,false,[],{},rels);
   expect(ratio.outputUnits).toEqual({share:"ratio"});
+ });
+ it("attests direct column identity across aliases but not model computations or unrelated source bindings",async()=>{
+  const rels={orders:{id:null,net_sales_cents:"cents" as const,orders_count:"count" as const}};
+  const query=(sql:string)=>admitU3Sql(sql,admitted,0,false,[],{},rels);
+  const all=await query("SELECT o.* FROM orders o");
+  expect(all.outputUnits).toEqual({net_sales_cents:"cents",orders_count:"count"});
+  expect(all.outputOrigins.id).toMatchObject({relation:"orders",column:"id"});
+  const derived=await query("WITH x AS (SELECT id,net_sales_cents FROM orders) SELECT a.id AS id,a.net_sales_cents AS amount,b.net_sales_cents AS other FROM x a JOIN x b ON a.id=b.id");
+  expect(derived.outputOrigins.id.binding).toBe(derived.outputOrigins.amount.binding);
+  expect(derived.outputOrigins.other.binding).not.toBe(derived.outputOrigins.amount.binding);
+  const computed=await query("SELECT SUM(COALESCE(net_sales_cents,0)) AS total, ROUND(AVG(net_sales_cents),0) AS average, SUM(CASE WHEN orders_count>0 THEN net_sales_cents ELSE 0 END) AS selected, SUM(COALESCE(net_sales_cents,12345)) AS untyped FROM orders");
+  expect(computed.outputUnits).toEqual({total:"cents",average:"cents",selected:"cents"});
+  expect(computed.outputOrigins).toEqual({});
  });
  it("rejects positional column renames before they can bypass privacy or unit admission",async()=>{
   const rels={orders:{net_sales_cents:"cents" as const,orders_count:"count" as const}};

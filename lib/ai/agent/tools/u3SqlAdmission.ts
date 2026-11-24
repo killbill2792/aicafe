@@ -76,8 +76,9 @@ export const ownerOnlyResearchRelations:ReadonlySet<string>=new Set(["employees"
 
 export type U3TrustedUnit="cents"|"count"|"percent"|"ratio";
 export type U3RelationUnits=Readonly<Record<string,Readonly<Record<string,U3TrustedUnit|null>>>>;
+export type U3ColumnOrigin={relation:string;column:string;binding:number};
 export type U3SqlAdmission={relations:string[];functions:string[];nodeCount:number;cteCount:number;
- outputUnits:Record<string,U3TrustedUnit>;hasTopLevelOrder:boolean};
+ outputUnits:Record<string,U3TrustedUnit>;outputOrigins:Record<string,U3ColumnOrigin>;hasTopLevelOrder:boolean};
 const stringNode=(input:unknown)=>{
  if(!input||typeof input!=="object"||!("String" in input))return null;
  const val=(input as {String?:{sval?:unknown}}).String?.sval;
@@ -148,7 +149,7 @@ export async function admitU3Sql(sql:string,allowedRelations:readonly string[],
  }
  collect(tree);
  const reads=new Set<string>(),called=new Set<string>();
- let nodes=0;
+ let nodes=0,starSeen=false;
  // PostgreSQL resolves a single, bare table/CTE alias as a whole composite
  // row whenever it is not a real column. That can be cast to text or passed
  // to aggregate functions, leaking IDs and private fields. Apply this rule
@@ -204,10 +205,14 @@ export async function admitU3Sql(sql:string,allowedRelations:readonly string[],
   nodes++;if(nodes>MAX_NODES)throw new U3AdmissionError("parser_resource_bound");
   for(const [kind,raw] of Object.entries(n)){
    if(prohibited.has(kind))throw new U3AdmissionError("statement_not_read_only");
-   // SELECT * materializes the entire retained Toast JSON object, including
-   // historical fields that never passed named-path secret admission.
-   // Explicit columns are required; COUNT(*) is encoded as FuncCall.agg_star.
-   if(kind==="A_Star")throw new U3AdmissionError("explicit_columns_required");
+   // Ordinary scoped relational views expose only reviewed business fields.
+   // Wildcards are legitimate owner SQL there. Raw retained JSON or an
+   // unattended row enumeration must still use explicit safe projections.
+   // COUNT(*) is encoded as FuncCall.agg_star and is not a row wildcard.
+   if(kind==="A_Star"){
+    if(aggregateOnly)throw Error("unattended_aggregate_required");
+    starSeen=true;
+   }
    // PostgreSQL table/CTE column-alias lists rewrite the *names* of source
    // columns. Our privacy and dimensional admission use approved source names,
    // so aliases for table columns are not supported until lineage resolution
@@ -289,6 +294,9 @@ export async function admitU3Sql(sql:string,allowedRelations:readonly string[],
  }
  walk(tree);
  if(!reads.size)throw new U3AdmissionError("no_admitted_source");
+ if(starSeen&&[...reads].some(rel=>rel==="toast_records"||
+   Object.hasOwn(relationUnits?.[rel]??{},"data")))
+  throw new U3AdmissionError("explicit_columns_required");
  if(aggregateOnly){
   const target=(tree.stmts[0].stmt?.SelectStmt as {targetList?:unknown})?.targetList;
   if(!Array.isArray(target)||!target.length||
@@ -297,18 +305,34 @@ export async function admitU3Sql(sql:string,allowedRelations:readonly string[],
    throw Error("unattended_aggregate_required");
  }
 
- // Resolve dimensions through actual SELECT scope and derived columns.
- // A spelling match to an unrelated physical column is not provenance.
- // Unknown expressions remain readable, but never become verified money.
+ // Resolve dimensions and direct-column identity through actual SELECT
+ // scope, not output labels. Computed expressions retain unit when their
+ // operands justify it, but never inherit a direct source-row identity.
  type N=Record<string,unknown>;
  type Unit=U3TrustedUnit|null;
- type Columns=Map<string,Unit>;
+ type Field={unit:Unit;origin?:U3ColumnOrigin};
+ type Columns=Map<string,Field>;
  type Binding={name:string;columns:Columns};
  const obj=(x:unknown):N|null=>x&&typeof x==="object"&&!Array.isArray(x)?x as N:null;
  const unwrap=(x:unknown,key:string):N|null=>{const v=obj(x);return v?obj(v[key])??v:null;};
  const recognized=(v:unknown):Unit=>v==="cents"||v==="count"||v==="percent"||v==="ratio"?v:null;
- const baseColumns=(rel:string):Columns=>new Map(Object.entries(
-   relationUnits?relationUnits[rel]??{}:knownColumnUnits).map(([k,v])=>[k,recognized(v)]));
+ let bindingSequence=0;
+ const baseColumns=(rel:string):Columns=>{
+  const binding=++bindingSequence;
+  return new Map(Object.entries(relationUnits?relationUnits[rel]??{}:knownColumnUnits)
+   .map(([column,v])=>[column,{unit:recognized(v),origin:{relation:rel,column,binding}}]));
+ };
+ // A CTE reused under two aliases represents two independent row bindings.
+ // Never combine a clock from one binding with a person from another.
+ const rebind=(columns:Columns):Columns=>{
+  const instances=new Map<number,number>();
+  return new Map([...columns].map(([label,field])=>{
+   if(!field.origin)return [label,field];
+   const {binding}=field.origin;
+   if(!instances.has(binding))instances.set(binding,++bindingSequence);
+   return [label,{...field,origin:{...field.origin,binding:instances.get(binding)!}}];
+  }));
+ };
  const targetName=(target:N)=>{
   if(typeof target.name==="string"&&target.name.length>0)return target.name;
   const v=obj(target.val);
@@ -316,23 +340,41 @@ export async function admitU3Sql(sql:string,allowedRelations:readonly string[],
   return ref&&Array.isArray(ref.fields)?stringNode(ref.fields.at(-1)):
    obj(v?.FuncCall)?functionName(obj(v?.FuncCall)!):null;
  };
+ const direct=(node:unknown,bindings:Binding[]):Field|null=>{
+  const ref=obj(obj(node)?.ColumnRef);
+  if(!ref||!Array.isArray(ref.fields)||ref.fields.length<1||ref.fields.length>3)return null;
+  const parts=ref.fields.map(stringNode);
+  if(parts.some(part=>part===null))return null;
+  const col=parts.at(-1)!;
+  const qualifier=parts.length>1?parts.at(-2):null;
+  const candidates=bindings.filter(b=>(qualifier===null||b.name===qualifier)&&b.columns.has(col));
+  return candidates.length===1?candidates[0].columns.get(col)??null:null;
+ };
+ // The zero/null branch is dimension-neutral. Nonzero untyped literals
+ // never establish a currency/count by a conveniently chosen output label.
+ const neutral=(node:unknown):boolean=>{
+  const v=obj(obj(node)?.A_Const);
+  if(!v)return false;
+  const i=obj(v.ival),f=obj(v.fval);
+  return v.isnull===true||i!==null&&(i.ival===0||i.ival===undefined)||
+   typeof f?.fval==="string"&&/^[+-]?0+(?:\.0+)?$/u.test(f.fval);
+ };
+ const compatible=(nodes:unknown[],bindings:Binding[]):Unit=>{
+  const units=nodes.map(n=>infer(n,bindings));
+  const typed=units.filter((u):u is U3TrustedUnit=>u!==null);
+  return typed.length&&typed.every(u=>u===typed[0])&&
+   units.every((u,i)=>u!==null||neutral(nodes[i]))?typed[0]:null;
+ };
  const infer=(node:unknown,bindings:Binding[]):Unit=>{
   const v=obj(node);if(!v)return null;
-  const ref=obj(v.ColumnRef);
-  if(ref){
-   if(!Array.isArray(ref.fields)||ref.fields.length<1||ref.fields.length>3)return null;
-   const parts=ref.fields.map(stringNode);
-   if(parts.some(part=>part===null))return null;
-   const col=parts.at(-1)!;
-   const qualifier=parts.length>1?parts.at(-2):null;
-   const candidates=bindings.filter(b=>(qualifier===null||b.name===qualifier)&&b.columns.has(col));
-   return candidates.length===1?candidates[0].columns.get(col)??null:null;
-  }
+  if(v.ColumnRef)return direct(node,bindings)?.unit??null;
   const fn=obj(v.FuncCall);
   if(fn){
    const operation=functionName(fn),args=Array.isArray(fn.args)?fn.args:[];
    if(operation==="count")return "count";
-   if(["sum","min","max","avg","first_value","last_value"].includes(operation??"")&&args.length===1)
+   if(["sum","min","max","avg","first_value","last_value","abs","floor","ceil","ceiling"].includes(operation??"")&&args.length===1)
+    return infer(args[0],bindings);
+   if(["round","trunc"].includes(operation??"")&&args.length>=1&&args.length<=2)
     return infer(args[0],bindings);
    if(["lag","lead","nth_value"].includes(operation??"")&&args.length>=1&&args.length<=3){
     const first=infer(args[0],bindings);
@@ -340,10 +382,22 @@ export async function admitU3Sql(sql:string,allowedRelations:readonly string[],
    }
    return null;
   }
+  const coalesce=obj(v.CoalesceExpr),minmax=obj(v.MinMaxExpr);
+  if(coalesce||minmax)return compatible(Array.isArray((coalesce??minmax)?.args)?(coalesce??minmax)!.args as unknown[]:[],bindings);
+  const conditional=obj(v.CaseExpr);
+  if(conditional){
+   const branches=(Array.isArray(conditional.args)?conditional.args:[])
+    .map(x=>unwrap(x,"CaseWhen")?.result);
+   if(conditional.defresult!==undefined)branches.push(conditional.defresult);
+   return compatible(branches,bindings);
+  }
   const expr=obj(v.A_Expr);
   if(expr){
    const op=name(expr.name),left=infer(expr.lexpr,bindings),right=infer(expr.rexpr,bindings);
+   if(expr.kind==="AEXPR_NULLIF")return left;
    if((op==="+"||op==="-")&&left!==null&&left===right)return left;
+   if((op==="+"||op==="-")&&left!==null&&neutral(expr.rexpr))return left;
+   if(op==="+"&&right!==null&&neutral(expr.lexpr))return right;
    if(op==="/"&&left!==null&&left===right)return "ratio";
    return null;
   }
@@ -360,15 +414,16 @@ export async function admitU3Sql(sql:string,allowedRelations:readonly string[],
    const c=unwrap(raw,"CommonTableExpr");
    if(c&&typeof c.ctename==="string")local.set(c.ctename,projection(c.ctequery,local));
   }
-  // Set operations are readable; their positional projection requires full
-  // lineage (including unnamed columns). Never guess monetary units.
+  // Set operations are readable, but positional lineage through multiple
+  // SELECTs is not inferred unless independently proven.
   if(select.larg&&select.rarg)return new Map();
   const bindings:Binding[]=[];
   const from=(raw:unknown):void=>{
    const entry=obj(raw);if(!entry)return;
    const rel=obj(entry.RangeVar);
    if(rel&&typeof rel.relname==="string"){
-    const columns=local.get(rel.relname)??(catalog.has(rel.relname)?baseColumns(rel.relname):new Map());
+    const derived=local.get(rel.relname);
+    const columns=derived?rebind(derived):catalog.has(rel.relname)?baseColumns(rel.relname):new Map();
     bindings.push({name:aliasName(rel.alias)??rel.relname,columns});return;
    }
    const derived=obj(entry.RangeSubselect);
@@ -379,28 +434,42 @@ export async function admitU3Sql(sql:string,allowedRelations:readonly string[],
    }
    const join=obj(entry.JoinExpr);
    if(join){
-    // An aliased JOIN hides its input names. Do not guess its composite
-    // projection; ordinary joins retain each underlying qualified binding.
     if(aliasName(join.alias))return;
     from(join.larg);from(join.rarg);
    }
   };
   for(const item of Array.isArray(select.fromClause)?select.fromClause:[])from(item);
   const result:Columns=new Map();
+  const add=(label:string,field:Field)=>{
+   if(result.has(label))throw Error("invalid_query");
+   result.set(label,field);
+  };
   for(const raw of Array.isArray(select.targetList)?select.targetList:[]){
    const target=unwrap(raw,"ResTarget");if(!target)continue;
+   const ref=obj(obj(target.val)?.ColumnRef);
+   if(Array.isArray(ref?.fields)&&Object.hasOwn(obj(ref.fields.at(-1))??{},"A_Star")){
+    const qualifier=ref.fields.length>1?stringNode(ref.fields.at(-2)):null;
+    const selected=bindings.filter(b=>qualifier===null||b.name===qualifier);
+    // PostgreSQL handles JOIN USING/NATURAL and unknown derived columns.
+    // Do not certify an ambiguous wildcard's dimensions; the actual
+    // executor independently rejects duplicate returned field labels.
+    if(selected.length!==1)return new Map();
+    for(const [label,field] of selected[0].columns)add(label,field);
+    continue;
+   }
    const label=targetName(target);
    if(!label||!/^[a-zA-Z_][a-zA-Z0-9_]{0,99}$/.test(label))continue;
-   if(result.has(label))throw Error("invalid_query");
-   result.set(label,infer(target.val,bindings));
+   add(label,direct(target.val,bindings)??{unit:infer(target.val,bindings)});
   }
   return result;
  }
  const projected=projection(tree.stmts[0].stmt,new Map());
- const outputUnits=Object.fromEntries([...projected].filter(
-  (entry):entry is [string,U3TrustedUnit]=>entry[1]!==null));
+ const outputUnits=Object.fromEntries([...projected].flatMap(([label,field])=>
+  field.unit===null?[]:[[label,field.unit] as const]));
+ const outputOrigins=Object.fromEntries([...projected].flatMap(([label,field])=>
+  field.origin?[[label,field.origin] as const]:[]));
  return {relations:[...reads].sort(),functions:[...called].sort(),
-  nodeCount:nodes,cteCount:nCtes,outputUnits,
+  nodeCount:nodes,cteCount:nCtes,outputUnits,outputOrigins,
   hasTopLevelOrder:Array.isArray((tree.stmts[0].stmt.SelectStmt as {sortClause?:unknown}).sortClause)&&
    ((tree.stmts[0].stmt.SelectStmt as {sortClause?:unknown[]}).sortClause??[]).length>0};
 }

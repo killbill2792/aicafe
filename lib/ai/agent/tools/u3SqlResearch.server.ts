@@ -278,6 +278,8 @@ async function readResearchPage(client:PoolClient,sql:string,parameters:readonly
   await client.query("SELECT set_config('statement_timeout',$1,true)",[String(remaining)]); // hardcode-ok: PostgreSQL bind placeholder
   const result=await client.query("FETCH FORWARD "+FETCH_BATCH+" FROM u3_result");
   const batch:unknown[]=result.rows;
+  if(new Set(result.fields.map(field=>field.name)).size!==result.fields.length)
+   throw Error("duplicate_result_columns");
   validate(batch);
   for(const row of batch){
    const serialized=JSON.stringify(row);
@@ -329,7 +331,7 @@ export function safeU3SqlErrorCode(e:unknown){
  return ["invalid_query","unattended_aggregate_required","research_invalid_scope",
   "research_not_configured","research_scope_denied",
   "research_connection_untrusted","research_connection_failed","query_timeout",
-  "row_exceeds_page_budget","research_context_exhausted","stable_order_required","research_snapshot_changed",
+  "row_exceeds_page_budget","duplicate_result_columns","research_context_exhausted","stable_order_required","research_snapshot_changed",
   "query_syntax_error","query_execution_error"].includes(s)?s:"source_read_failed";
 }
 /** Model SQL can use joins, windows, CTEs and nested analytics, but only on
@@ -441,7 +443,7 @@ export async function runU3Sql(ctx:U3SqlContext,raw:unknown){
     evidence:{receipt_id:randomUUID(),snapshot_id:snapshot.id,
      snapshot_digest:snapshot.digest,as_of:snapshot.asOf,
      query_fingerprint:createHash("sha256").update(p.sql).digest("hex"),
-     column_units:plan.outputUnits,
+     column_units:plan.outputUnits,column_origins:plan.outputOrigins,
      catalog_version:createHash("sha256").update(JSON.stringify(list)).digest("hex").slice(0,16),
      relation_names:plan.relations,functions:plan.functions,
      authority:"approved_logical_source",scope:"verified_owner_cafe_lease"}
