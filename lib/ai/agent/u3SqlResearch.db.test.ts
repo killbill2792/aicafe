@@ -85,7 +85,11 @@ describe.skipIf(!active)("U3 migrated registered tool + private connection",()=>
   await admin.query("INSERT INTO public.order_lines(id,order_id,name,quantity,net_sales_cents) "+
     "VALUES($1,$2,'Synthetic item A',1,1100),($3,$4,'Synthetic item B',1,4200)",
     [ids.lineA,ids.orderA,ids.lineB,ids.orderB]);
-  bridge.issue=async p=>{
+  // The fixture shares one administrative connection for scope minting.
+  // Serialize that transaction, not the real research pool or queries.
+  let mintTail:Promise<void>=Promise.resolve();
+  bridge.issue=p=>{
+   const issue=mintTail.then(async()=>{
    if(!admin)return {data:null,error:{message:"admin_unavailable"}};
    await admin.query("BEGIN");
    try{
@@ -100,6 +104,9 @@ describe.skipIf(!active)("U3 migrated registered tool + private connection",()=>
     await admin.query("ROLLBACK").catch(()=>{});
     return {data:null,error:{message:"scope_denied"}};
    }
+   });
+   mintTail=issue.then(()=>undefined,()=>undefined);
+   return issue;
   };
  });
  afterAll(async()=>{
@@ -467,6 +474,72 @@ describe.skipIf(!active)("U3 migrated registered tool + private connection",()=>
   }finally{
    await admin.query("DELETE FROM public.order_lines WHERE id=ANY($1::uuid[])",[insertedLines]).catch(()=>{});
    await admin.query("DELETE FROM public.orders WHERE id=ANY($1::uuid[])",[insertedOrders]).catch(()=>{});
+  }
+ });
+ it("measures concurrent registered research over multi-month realistic volume with two independent cafe oracles",async()=>{
+  if(!admin)throw Error("admin_missing");
+  const fixtures=2400,perCafe=fixtures/2;
+  const prefix="u3-concurrent-";
+  const foreign={...scoped,businessId:ids.b,ownerUserId:ids.ob,threadId:ids.tb};
+  try{
+   await admin.query("INSERT INTO public.orders(id,business_id,pos_order_id,closed_at,business_date,gross_sales_cents,net_sales_cents) "+
+    "SELECT gen_random_uuid(),CASE WHEN i%2=0 THEN $1::uuid ELSE $2::uuid END,$3||i::text,now(),"+
+    "date '2025-01-01'+(i%365),100+i,100+i FROM generate_series(1,$4::int) i",[ids.a,ids.b,prefix,fixtures]);
+   const oracle=await admin.query("SELECT business_id,COUNT(*)::text AS n,SUM(net_sales_cents)::text AS cents FROM public.orders WHERE business_id IN ($1,$2) AND pos_order_id LIKE $3 GROUP BY business_id",[ids.a,ids.b,prefix+"%"]);
+   expect(oracle.rows).toHaveLength(2);
+   const expected=new Map(oracle.rows.map(row=>[String(row.business_id),{n:String(row.n),cents:String(row.cents)}]));
+   for(const result of expected.values())expect(Number(result.n)).toBe(perCafe);
+   // Both owners use the actual registered research entry point and distinct
+   // signed tickets on the same bounded shared research connection pool.
+   const timings:number[]=[];
+   for(let round=0;round<3;round++){
+    await Promise.all([scoped,foreign,scoped,foreign].map(async(scope)=>{
+     const context:AgentToolContext={asOf:"2026-11-24",timezone:"UTC",locale:"en",
+      tools:{} as AgentToolContext["tools"],canonicalData:async()=>scope};
+     const started=performance.now();
+     const r=await executeAgentTool("query_data",{...input("SELECT COUNT(*) AS n,SUM(net_sales_cents) AS cents FROM orders WHERE pos_order_id LIKE $1"),parameters:[prefix+"%"]},context);
+     timings.push(performance.now()-started);
+     expect(r.error).toBeUndefined();
+     expect(r.rows).toEqual([expected.get(scope.businessId)]);
+     expect(r).toMatchObject({page_complete:true,truncated:false});
+    }));
+   }
+   timings.sort((a,b)=>a-b);
+   console.log("U3_CONCURRENT_REGISTERED_MEASUREMENT",JSON.stringify({generatedOrders:fixtures,
+    distinctCafes:2,parallelRequests:4,requests:timings.length,modelCalls:0,
+    p50Ms:Number(timings[Math.ceil(timings.length*.5)-1].toFixed(2)),
+    p95Ms:Number(timings[Math.ceil(timings.length*.95)-1].toFixed(2)),
+    caveat:"Disposable normalized orders and actual research pool; not production or provider cost"}));
+  }finally{
+   await admin.query("DELETE FROM public.orders WHERE business_id IN ($1,$2) AND pos_order_id LIKE $3",[ids.a,ids.b,prefix+"%"]).catch(()=>{});
+  }
+ });
+ it("uses historical ingredient price revisions and exact source units without a capped ingredient reader",async()=>{
+  if(!admin)throw Error("admin_missing");
+  const local=randomUUID(),unknown=randomUUID(),foreign=randomUUID();
+  try{
+   await admin.query("INSERT INTO public.ingredients(id,business_id,name,base_unit) VALUES($1,$2,'Scoped price history','g'),($3,$2,'Unpriced ingredient','g'),($4,$5,'Foreign ingredient','g')",[local,ids.a,unknown,foreign,ids.b]);
+   await admin.query("INSERT INTO public.ingredient_prices(ingredient_id,effective_from,cost_per_base_unit_micros,source,recorded_at) VALUES "+
+    "($1,'2026-01-01',1000000,'manual','2026-01-01T00:00:00Z'),($1,'2026-05-01',2000000,'manual','2026-05-01T00:00:00Z'),"+
+    "($1,'2026-05-01',3000000,'manual','2026-05-01T01:00:00Z'),($1,'2026-12-01',9000000,'manual','2026-12-01T00:00:00Z'),"+
+    "($2,'2026-01-01',99000000,'manual','2026-01-01T00:00:00Z')",[local,foreign]);
+   const date="2026-06-01";
+   const oracle=await admin.query("SELECT i.name,i.base_unit,p.cost_per_base_unit_micros,p.effective_from::text AS effective_from FROM public.ingredients i "+
+    "LEFT JOIN LATERAL (SELECT cost_per_base_unit_micros,effective_from FROM public.ingredient_prices WHERE ingredient_id=i.id AND effective_from <= $2::date ORDER BY effective_from DESC,recorded_at DESC,id DESC LIMIT 1) p ON true "+
+    "WHERE i.business_id=$1 ORDER BY i.name",[ids.a,date]);
+   const sql="WITH prices AS (SELECT ingredient_id,cost_per_base_unit_micros,effective_from,ROW_NUMBER() OVER(PARTITION BY ingredient_id ORDER BY effective_from DESC,recorded_at DESC,id DESC) AS rn FROM ingredient_prices WHERE effective_from <= $1::date) "+
+    "SELECT i.name,i.base_unit,p.cost_per_base_unit_micros,p.effective_from::text AS effective_from FROM ingredients i LEFT JOIN prices p ON p.ingredient_id=i.id AND p.rn=1 ORDER BY i.name";
+   const r=await dataQueryTools.query_data.execute({...input(sql),parameters:[date],limit:null},scoped);
+   expect(r.error).toBeUndefined();
+   expect(r.rows).toEqual(oracle.rows);
+   expect(r.rows).toHaveLength(2);
+   expect(r.rows[0]).toMatchObject({name:"Scoped price history",cost_per_base_unit_micros:"3000000",effective_from:"2026-05-01"});
+   expect(r.rows[1]).toMatchObject({name:"Unpriced ingredient",cost_per_base_unit_micros:null,effective_from:null});
+   expect((r as unknown as AgentToolResult).evidence).toMatchObject({column_units:{cost_per_base_unit_micros:"microcents"}});
+   expect(checkNumbers("The recorded ingredient price is $0.03 per gram.","",[r as unknown as AgentToolResult],"en")).toEqual([]);
+  }finally{
+   await admin.query("DELETE FROM public.ingredient_prices WHERE ingredient_id IN ($1,$2,$3)",[local,unknown,foreign]).catch(()=>{});
+   await admin.query("DELETE FROM public.ingredients WHERE id IN ($1,$2,$3)",[local,unknown,foreign]).catch(()=>{});
   }
  });
  it("traverses every historical ordered SQL row across pages without any total cap",async()=>{
