@@ -92,18 +92,18 @@ function BillForm({
   return (
     <div className="flex flex-col gap-2.5 rounded-2xl bg-paper p-3.5">
       {showLabelField && (
-        <label className="flex flex-col gap-1 text-[17px] font-semibold">
+        <label className="flex flex-col gap-1 text-[1.0625rem] font-semibold">
           {labels.labelLabel}
           <input
             type="text"
             value={label}
             onChange={(e) => setLabel(e.target.value)}
             placeholder={labels.labelPlaceholder}
-            className="min-h-12 rounded-xl border border-line px-2.5 text-[17px]"
+            className="min-h-12 rounded-xl border border-line px-2.5 text-[1.0625rem]"
           />
         </label>
       )}
-      <label className="flex items-center justify-between gap-2 text-[17px] font-semibold">
+      <label className="flex items-center justify-between gap-2 text-[1.0625rem] font-semibold">
         {labels.amountLabel}
         <input
           ref={amountInputRef}
@@ -113,13 +113,13 @@ function BillForm({
           step="0.01"
           value={amount}
           onChange={(e) => setAmount(e.target.value)}
-          className="min-h-12 w-28 rounded-xl border border-line px-2.5 text-end text-[17px]"
+          className="min-h-12 w-28 rounded-xl border border-line px-2.5 text-end text-[1.0625rem]"
         />
       </label>
-      <p className="text-[13px] text-ink-muted">{labels.amountHint}</p>
-      <label className="flex flex-col gap-1 text-[17px] font-semibold">
+      <p className="text-[0.8125rem] text-ink-muted">{labels.amountHint}</p>
+      <label className="flex flex-col gap-1 text-[1.0625rem] font-semibold">
         {labels.amountKindLabel}
-        <select value={isEstimate ? "estimate" : "actual"} onChange={(e) => setIsEstimate(e.target.value === "estimate")} className="min-h-12 w-full rounded-xl border border-line bg-card px-3 text-[17px]">
+        <select value={isEstimate ? "estimate" : "actual"} onChange={(e) => setIsEstimate(e.target.value === "estimate")} className="min-h-12 w-full rounded-xl border border-line bg-card px-3 text-[1.0625rem]">
           <option value="actual">{labels.amountActual}</option>
           <option value="estimate">{labels.amountEstimate}</option>
         </select>
@@ -132,16 +132,16 @@ function BillForm({
           max={31}
           value={dueDay}
           onChange={(e) => setDueDay(e.target.value)}
-          className="min-h-12 w-20 rounded-xl border border-line px-2.5 text-end text-[17px]"
+          className="min-h-12 w-20 rounded-xl border border-line px-2.5 text-end text-[1.0625rem]"
         />
       </label>
-      {error && <p role="alert" className="text-[17px] text-warn">{error}</p>}
+      {error && <p role="alert" className="text-[1.0625rem] text-warn">{error}</p>}
       <div className="flex gap-2">
-        <button type="button" onClick={handleSave} disabled={isPending || !canSave} className="min-h-12 flex-1 rounded-full bg-accent text-[17px] font-bold text-on-accent disabled:opacity-40">
+        <button type="button" onClick={handleSave} disabled={isPending || !canSave} className="min-h-12 flex-1 rounded-full bg-accent text-[1.0625rem] font-bold text-on-accent disabled:opacity-40">
           {labels.save}
         </button>
         {existing && (
-          <button type="button" onClick={handleDelete} disabled={isPending} className="min-h-12 rounded-full border border-warn px-4 text-[17px] font-bold text-warn">
+          <button type="button" onClick={handleDelete} disabled={isPending} className="min-h-12 rounded-full border border-warn px-4 text-[1.0625rem] font-bold text-warn">
             {labels.delete}
           </button>
         )}
@@ -197,14 +197,14 @@ export default function BillsManager({
           <div key={category} ref={initialCategory === category ? targetRef : undefined} className="flex flex-col gap-2.5 rounded-card-lg bg-card p-4">
             <button type="button" onClick={() => toggle(category)} className="flex min-h-12 items-center gap-3">
               <PlainIcon code={category} size={32} color="currentColor" />
-              <span className="flex-1 text-start text-[17px] font-bold">{categoryLabels[category]}</span>
+              <span className="flex-1 text-start text-[1.0625rem] font-bold">{categoryLabels[category]}</span>
               {existing ? (
-                <span className="flex flex-wrap items-center justify-end gap-2 text-[17px] font-bold">
+                <span className="flex flex-wrap items-center justify-end gap-2 text-[1.0625rem] font-bold">
                   {money.format(existing.amountCents / 100)}
-                  {existing.isEstimate && <span className="rounded-full bg-warn-tint px-2.5 py-1 text-[13px] font-semibold text-warn">{labels.estimateBadge}</span>}
+                  {existing.isEstimate && <span className="rounded-full bg-warn-tint px-2.5 py-1 text-[0.8125rem] font-semibold text-warn">{labels.estimateBadge}</span>}
                 </span>
               ) : (
-                <span className="rounded-full bg-warn-tint px-2.5 py-1 text-[13px] font-bold text-warn">{labels.missing}</span>
+                <span className="rounded-full bg-warn-tint px-2.5 py-1 text-[0.8125rem] font-bold text-warn">{labels.missing}</span>
               )}
             </button>
             {isOpen && (
@@ -232,10 +232,10 @@ export default function BillsManager({
           <div key={bill.id} ref={initialCategory === OTHER_CATEGORY && bill.id === initialOpenKey ? targetRef : undefined} className="flex flex-col gap-2.5 rounded-card-lg bg-card p-4">
             <button type="button" onClick={() => toggle(bill.id)} className="flex items-center gap-3">
               <PlainIcon code={OTHER_CATEGORY} size={32} color="currentColor" />
-              <span className="min-w-0 flex-1 truncate text-start text-[17px] font-bold">{bill.label}</span>
-              <span className="flex flex-wrap items-center justify-end gap-2 text-[17px] font-bold">
+              <span className="min-w-0 flex-1 truncate text-start text-[1.0625rem] font-bold">{bill.label}</span>
+              <span className="flex flex-wrap items-center justify-end gap-2 text-[1.0625rem] font-bold">
                 {money.format(bill.amountCents / 100)}
-                {bill.isEstimate && <span className="rounded-full bg-warn-tint px-2.5 py-1 text-[13px] font-semibold text-warn">{labels.estimateBadge}</span>}
+                {bill.isEstimate && <span className="rounded-full bg-warn-tint px-2.5 py-1 text-[0.8125rem] font-semibold text-warn">{labels.estimateBadge}</span>}
               </span>
             </button>
             {isOpen && (
@@ -269,13 +269,13 @@ export default function BillsManager({
         <button
           type="button"
           onClick={() => toggle(NEW_OTHER_KEY)}
-          className="flex items-center gap-3 rounded-card-lg bg-card p-4 text-start text-[17px] font-bold text-good"
+          className="flex items-center gap-3 rounded-card-lg bg-card p-4 text-start text-[1.0625rem] font-bold text-good"
         >
           <PlainIcon code={OTHER_CATEGORY} size={32} color="currentColor" />
           {labels.addAnother}
         </button>
       )}
-      <Link href="/add-cost" className="mt-2 flex min-h-12 items-center rounded-lg px-2 text-start text-[17px] text-ink-muted underline underline-offset-2 focus-visible:outline-2 focus-visible:outline-offset-2">{labels.variableCostHint}</Link>
+      <Link href="/add-cost" className="mt-2 flex min-h-12 items-center rounded-lg px-2 text-start text-[1.0625rem] text-ink-muted underline underline-offset-2 focus-visible:outline-2 focus-visible:outline-offset-2">{labels.variableCostHint}</Link>
     </div>
   );
 }

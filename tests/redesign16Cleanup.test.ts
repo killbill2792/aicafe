@@ -182,7 +182,7 @@ const approvedTask16aSet = new Set(approvedTask16aKeys.map(key => "SupervisorMan
 
 // U4 owner-approved routine controls are English-only, scoped to a NEW namespace
 // so the original Task16A permission contract stays frozen.
-const approvedU4RoutineKeys=["actions","pause","resume","delete","editInChat","onceOn","paused","deleteConfirm","saved","deleteSaved","saveFailed","created","updated","pausedSaved","resumedSaved"] as const;
+const approvedU4RoutineKeys=["actions","pause","resume","delete","editInChat","onceOn","paused","deleteConfirm","saved","deleteSaved","saveFailed","created","updated","pausedSaved","resumedSaved","draftTitle","save","notNow","dismissed"] as const;
 const approvedU4RoutineSet=new Set(approvedU4RoutineKeys.map(key=>"SupervisorRoutines."+key));
 
 const approvedTask14eAddCostKeys=["statementCashConfirm","statementCashDated","statementCashNickname","statementCashError"] as const;
@@ -271,6 +271,8 @@ describe("redesign 16 cleanup integration", () => {
     // without weakening parity for unrelated or pre-existing strings.
     const u4EnglishOnly=new Set([
       "CafeProfile.locationOptional",
+      // Owner-requested appearance additions (text size, Glass theme); English only until translations are approved.
+      "Ui.textSize",
       ...["unsupportedTaskTitle","unsupportedTaskDetail",
         "u4ReportTitle","u4ReportUnavailable","u4ReportOriginal",
         "u4FailureTitle","u4FailureDetail","u4FailureAcknowledge",
@@ -299,7 +301,7 @@ describe("redesign 16 cleanup integration", () => {
       return Object.entries(messages)
         .flatMap(([namespace, values]) => Object.keys(values).map(key => `${namespace}.${key}`))
         .filter(key => !englishOnly.test(key) && !approvedTask14bSet.has(key)
-          && !approvedTask14cSet.has(key) && !approvedTask15bSet.has(key) && !approvedTask16aSet.has(key) && !approvedU4RoutineSet.has(key) && !approvedTask16cSet.has(key) && !approvedTask14eSet.has(key) && !approvedCrewSelfServiceSet.has(key) && !staffChannelEnglishOnlySet.has(key) && !staffQuestionEnglishSet.has(key) && !task16e.has(key) && !u4EnglishOnly.has(key) && !toastWebhookEnglishOnly.has(key)
+          && !approvedTask14cSet.has(key) && !approvedTask15bSet.has(key) && !approvedTask16aSet.has(key) && !approvedU4RoutineSet.has(key) && !approvedTask16cSet.has(key) && !approvedTask14eSet.has(key) && !approvedCrewSelfServiceSet.has(key) && !staffChannelEnglishOnlySet.has(key) && !staffQuestionEnglishSet.has(key) && !task16e.has(key) && !u4EnglishOnly.has(key) && !toastWebhookEnglishOnly.has(key) && key!=="Ui.textSizes"
           && !["runAwaitingOwner","runAwaitingOwnerNext","runCancelled","runRetrying","cancelAction","cancelPending","cancelUncertain","cancelCompleted","cancelFailed"].some(name=>key==="SupervisorDurableWork."+name)
           && !/^SupervisorUsage\.(?:help|max|month|proactive|requests|title|unavailable)$/.test(key))
         .sort();

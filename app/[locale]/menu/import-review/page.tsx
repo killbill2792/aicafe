@@ -20,9 +20,9 @@ export default async function ImportReviewPage({searchParams}: {searchParams: Pr
   const backHref = source && params.uploadId ? `/more/uploads/${encodeURIComponent(params.uploadId)}` : "/menu";
   return <PageShell className="flex flex-col gap-3.5 px-4 pb-4 pt-6">
     <BackHeader title={t("matchItems")} subtitle={rows.length ? t("keepYourWork") : undefined} backHref={backHref} backLabel={common("back")}/>
-    {params.result === "error" && <p role="alert" className="rounded-card-lg border border-line bg-card p-4 text-[17px] text-ink">{t("matchError")}</p>}
-    {params.result === "matched" && <p role="status" className="rounded-card-lg bg-card p-4 text-[17px] text-ink">{t(rows.length ? "matchSaved" : "matchDone")}</p>}
-    {rows.length === 0 ? <div className="rounded-card-lg bg-card p-5 text-[17px] text-ink-muted">
+    {params.result === "error" && <p role="alert" className="rounded-card-lg border border-line bg-card p-4 text-[1.0625rem] text-ink">{t("matchError")}</p>}
+    {params.result === "matched" && <p role="status" className="rounded-card-lg bg-card p-4 text-[1.0625rem] text-ink">{t(rows.length ? "matchSaved" : "matchDone")}</p>}
+    {rows.length === 0 ? <div className="rounded-card-lg bg-card p-5 text-[1.0625rem] text-ink-muted">
       <p>{t("noMatches")}</p>
       <Link href="/" className="mt-3 inline-flex min-h-12 items-center font-semibold text-accent-text underline">{t("backHome")}</Link>
     </div> : rows.map(row=><section key={row.id} className="flex flex-col gap-3 rounded-card-lg bg-card p-[18px]">

@@ -24,15 +24,15 @@ export default function TodayAtAGlanceCard({
       <div className="grid grid-cols-2 gap-2">
         {stats.map((s) => (
           <div key={s.label} className="flex flex-col gap-0.5 rounded-2xl bg-surface2 p-3">
-            <span className="text-[13px] font-semibold text-ink-muted">{s.label}</span>
+            <span className="text-[0.8125rem] font-semibold text-ink-muted">{s.label}</span>
             <span className="break-words text-lg font-extrabold text-ink">{s.value}</span>
           </div>
         ))}
-        {secondaryStat && <div className="col-span-2 px-1 text-[13px] font-semibold text-ink-muted">{secondaryStat}</div>}
+        {secondaryStat && <div className="col-span-2 px-1 text-[0.8125rem] font-semibold text-ink-muted">{secondaryStat}</div>}
       </div>
       <div className="flex items-center gap-3.5">
         {icon && <FillIcon code={icon.code} pctCovered={icon.pctCovered} size={64} />}
-        <p className="m-0 flex-1 text-[16px] leading-snug text-ink">{caption}</p>
+        <p className="m-0 flex-1 text-[1rem] leading-snug text-ink">{caption}</p>
       </div>
     </section>
   );

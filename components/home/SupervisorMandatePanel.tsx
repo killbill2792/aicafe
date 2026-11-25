@@ -251,7 +251,7 @@ export default function SupervisorMandatePanel({threadId,threads,approvals,onSel
     }}
     className="supervisor-drawer fixed inset-y-0 start-0 end-auto m-0 h-full max-h-none w-full max-w-[440px] flex-col border-e border-line bg-surface text-ink backdrop:bg-fg/30 open:flex">
       <header className="flex items-center justify-between px-4 py-3">
-        <h2 className="font-headline text-[19px] font-medium tracking-tight text-ink">{copy.title}</h2>
+        <h2 className="font-headline text-[1.1875rem] font-medium tracking-tight text-ink">{copy.title}</h2>
         <button ref={closeButton} type="button" onClick={onClose} aria-label={copy.close}
           className="flex h-12 w-12 items-center justify-center rounded-xl focus-visible:outline focus-visible:outline-2 focus-visible:outline-ink">
           <X size={22} aria-hidden="true"/>
@@ -269,7 +269,7 @@ export default function SupervisorMandatePanel({threadId,threads,approvals,onSel
               setTab(id);
             }}
             aria-current={tab===id?"page":undefined}
-            className={"flex min-h-12 items-center justify-center gap-1.5 rounded-full px-2 text-[14px] font-medium focus-visible:outline focus-visible:outline-2 focus-visible:outline-ink "+
+            className={"flex min-h-12 items-center justify-center gap-1.5 rounded-full px-2 text-[0.875rem] font-medium focus-visible:outline focus-visible:outline-2 focus-visible:outline-ink "+
               (tab===id?"bg-surface2 text-ink":"text-ink-muted hover:bg-surface2")}>
             <Icon size={17} aria-hidden="true"/><span>{label}</span>
           </button>)}
@@ -278,25 +278,25 @@ export default function SupervisorMandatePanel({threadId,threads,approvals,onSel
         {tab==="work"&&(mandateThreadId?<SupervisorWorkStatus items={work.items} unavailable={work.unavailable}
           loading={work.loading} showEmpty onOpen={onOpenWork} disabled={disabled}/>:<p role="status">{copy.emptyChats}</p>)}
         {tab==="library"&&<section aria-label={copy.savedChats} className="space-y-2">
-          <h3 className="text-[15px] font-medium text-ink-muted">{copy.savedChats}</h3>
-          <label className="flex min-h-12 items-center gap-2 rounded-lg border border-line px-3"><Search size={18} aria-hidden="true"/><span className="sr-only">{en.SupervisorExperience.searchLoadedChats}</span><input type="search" value={search} onChange={e=>setSearch(e.target.value)} placeholder={en.SupervisorExperience.searchLoadedChats} className="min-w-0 flex-1 bg-transparent text-[17px] text-ink"/></label>
+          <h3 className="text-[0.9375rem] font-medium text-ink-muted">{copy.savedChats}</h3>
+          <label className="flex min-h-12 items-center gap-2 rounded-lg border border-line px-3"><Search size={18} aria-hidden="true"/><span className="sr-only">{en.SupervisorExperience.searchLoadedChats}</span><input type="search" value={search} onChange={e=>setSearch(e.target.value)} placeholder={en.SupervisorExperience.searchLoadedChats} className="min-w-0 flex-1 bg-transparent text-[1.0625rem] text-ink"/></label>
           {allThreads.length===0&&<p className="text-sm text-ink-muted">{copy.emptyChats}</p>}
           {noMatches&&<p role="status" className="text-sm text-ink-muted">{en.SupervisorExperience.noMatchingChats}</p>}
           {filteredThreads.map(thread=><button key={thread.id} type="button" data-library-thread={thread.id}
             disabled={disabled} onClick={()=>{onSelectThread(thread.id,thread);onClose();}}
             aria-current={thread.id===threadId?"page":undefined}
-            className="block min-h-12 w-full rounded-lg px-3 py-2 text-start text-[17px] font-normal leading-snug text-ink hover:bg-surface2 focus-visible:outline focus-visible:outline-2 focus-visible:outline-ink">
+            className="block min-h-12 w-full rounded-lg px-3 py-2 text-start text-[1.0625rem] font-normal leading-snug text-ink hover:bg-surface2 focus-visible:outline focus-visible:outline-2 focus-visible:outline-ink">
             {thread.title||copy.savedChats}
           </button>)}
           {historyError&&<p role="alert" className="text-sm text-ink-muted">{historyError}</p>}
-          {historyOffset!==null&&<button type="button" disabled={historyBusy} onClick={()=>void loadHistory()} className="min-h-12 rounded-lg border border-line px-3 text-[15px] text-ink">{historyBusy?copy.loading:en.SupervisorExperience.loadOlderChats}</button>}
+          {historyOffset!==null&&<button type="button" disabled={historyBusy} onClick={()=>void loadHistory()} className="min-h-12 rounded-lg border border-line px-3 text-[0.9375rem] text-ink">{historyBusy?copy.loading:en.SupervisorExperience.loadOlderChats}</button>}
           {filteredReports.length>0&&onOpenReport&&<section aria-label={en.SupervisorExperience.loadedReports} className="border-t border-line pt-3">
-            <h3 className="text-[15px] font-medium text-ink-muted">{en.SupervisorExperience.loadedReports}</h3>
-            {filteredReports.map(report=><button key={report.id} type="button" disabled={disabled} data-library-report={report.id} onClick={()=>{onOpenReport(report.id);onClose();}} className="flex min-h-12 w-full items-center gap-2 rounded-lg px-2 text-start hover:bg-surface2 disabled:opacity-50"><BookOpen size={18} className="shrink-0" aria-hidden="true"/><span className="min-w-0 break-words text-[17px]">{report.title??en.SupervisorExperience.savedReport}<span className="block text-[13px] text-ink-muted">{humanTime(report.createdAt)}</span></span></button>)}
+            <h3 className="text-[0.9375rem] font-medium text-ink-muted">{en.SupervisorExperience.loadedReports}</h3>
+            {filteredReports.map(report=><button key={report.id} type="button" disabled={disabled} data-library-report={report.id} onClick={()=>{onOpenReport(report.id);onClose();}} className="flex min-h-12 w-full items-center gap-2 rounded-lg px-2 text-start hover:bg-surface2 disabled:opacity-50"><BookOpen size={18} className="shrink-0" aria-hidden="true"/><span className="min-w-0 break-words text-[1.0625rem]">{report.title??en.SupervisorExperience.savedReport}<span className="block text-[0.8125rem] text-ink-muted">{humanTime(report.createdAt)}</span></span></button>)}
           </section>}
           {files&&files.threadId===threadId&&filteredFiles.length>0&&<section aria-label={en.SupervisorExperience.conversationFiles} className="border-t border-line pt-3">
-            <h3 className="text-[15px] font-medium text-ink-muted">{en.SupervisorExperience.conversationFiles}</h3>
-            {filteredFiles.map(file=><a key={file.id} href={"/api/ai/threads/"+encodeURIComponent(files.threadId)+"/attachments/"+encodeURIComponent(file.id)} target="_blank" rel="noopener noreferrer" className="flex min-h-12 min-w-0 items-center gap-2 rounded-lg px-2 text-[17px] text-ink underline hover:bg-surface2"><Paperclip size={18} className="shrink-0" aria-hidden="true"/><span className="min-w-0 break-all">{file.originalName}</span></a>)}
+            <h3 className="text-[0.9375rem] font-medium text-ink-muted">{en.SupervisorExperience.conversationFiles}</h3>
+            {filteredFiles.map(file=><a key={file.id} href={"/api/ai/threads/"+encodeURIComponent(files.threadId)+"/attachments/"+encodeURIComponent(file.id)} target="_blank" rel="noopener noreferrer" className="flex min-h-12 min-w-0 items-center gap-2 rounded-lg px-2 text-[1.0625rem] text-ink underline hover:bg-surface2"><Paperclip size={18} className="shrink-0" aria-hidden="true"/><span className="min-w-0 break-all">{file.originalName}</span></a>)}
           </section>}
         </section>}
         {tab==="routines"&&<section aria-label={copy.routineTitle} className="space-y-3">
@@ -318,8 +318,8 @@ export default function SupervisorMandatePanel({threadId,threads,approvals,onSel
               <div className="flex items-center gap-2">
                 <Clock3 size={16} className="shrink-0 text-ink-muted" aria-hidden="true"/>
                 <div className="min-w-0 flex-1">
-                  <strong className="block truncate text-[14px]">{r.title}</strong>
-                  <span className="block truncate text-[12px] text-ink-muted">
+                  <strong className="block truncate text-[0.875rem]">{r.title}</strong>
+                  <span className="block truncate text-[0.75rem] text-ink-muted">
                     {r.cadence==="once"&&r.onceLocalDate?
                        routineCopy.onceOn.replace("{date}",r.onceLocalDate):
                        r.cadence==="weekly"?
@@ -336,17 +336,17 @@ export default function SupervisorMandatePanel({threadId,threads,approvals,onSel
                   </summary>
                   <div className="mt-1 flex flex-col gap-1" role="group" aria-label={routineCopy.actions}>
                     <button type="button" disabled={disabled||!!routineBusy}
-                      className="min-h-12 rounded-lg px-3 text-start text-[14px] hover:bg-surface2 disabled:opacity-50"
+                      className="min-h-12 rounded-lg px-3 text-start text-[0.875rem] hover:bg-surface2 disabled:opacity-50"
                       onClick={()=>{onEditRoutine(r);onClose();}}>
                       {routineCopy.editInChat}
                     </button>
                     <button type="button" disabled={disabled||!!routineBusy}
-                      className="min-h-12 rounded-lg px-3 text-start text-[14px] hover:bg-surface2 disabled:opacity-50"
+                      className="min-h-12 rounded-lg px-3 text-start text-[0.875rem] hover:bg-surface2 disabled:opacity-50"
                       onClick={()=>void changeRoutine(r,r.status==="active"?"pause":"resume")}>
                       {r.status==="active"?routineCopy.pause:routineCopy.resume}
                     </button>
                     <button type="button" disabled={disabled||!!routineBusy}
-                      className="min-h-12 rounded-lg px-3 text-start text-[14px] text-neg hover:bg-surface2 disabled:opacity-50"
+                      className="min-h-12 rounded-lg px-3 text-start text-[0.875rem] text-neg hover:bg-surface2 disabled:opacity-50"
                       onClick={()=>void changeRoutine(r,"delete")}>
                       {routineCopy.delete}
                     </button>
@@ -384,7 +384,7 @@ export default function SupervisorMandatePanel({threadId,threads,approvals,onSel
             return <article key={m.id+":"+m.revision}
               className="space-y-2 rounded-xl border border-line bg-surface p-3">
               <div className="flex items-center justify-between gap-2">
-                <strong className="text-[15px]">{capabilityName(m.capability_id)}</strong>
+                <strong className="text-[0.9375rem]">{capabilityName(m.capability_id)}</strong>
                 <span className="text-xs font-semibold text-ink-muted">{statusLabel(status)}</span>
               </div>
               <p className="text-sm text-ink-muted">
@@ -450,7 +450,7 @@ export default function SupervisorMandatePanel({threadId,threads,approvals,onSel
       </div>
       <div className="shrink-0 border-t border-line px-3">
         <Link href={threadId?"/more/supervisor-access?thread="+encodeURIComponent(threadId):"/more/supervisor-access"}
-          className="flex min-h-12 items-center gap-2 rounded-lg px-2 text-[15px] font-medium text-ink hover:bg-surface2 focus-visible:outline focus-visible:outline-2 focus-visible:outline-ink"><ShieldCheck size={18} aria-hidden="true"/>{en.SupervisorAccess.title}</Link>
+          className="flex min-h-12 items-center gap-2 rounded-lg px-2 text-[0.9375rem] font-medium text-ink hover:bg-surface2 focus-visible:outline focus-visible:outline-2 focus-visible:outline-ink"><ShieldCheck size={18} aria-hidden="true"/>{en.SupervisorAccess.title}</Link>
       </div>
       {languageSwitch}
   </dialog>;

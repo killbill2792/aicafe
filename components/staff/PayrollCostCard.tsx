@@ -103,7 +103,7 @@ export default function PayrollCostCard({
   return (
     <section className="flex flex-col gap-3 rounded-card-lg bg-card p-[18px]">
       <div>
-        <h2 className="text-[17px] font-bold text-ink">{labels.title}</h2>
+        <h2 className="text-[1.0625rem] font-bold text-ink">{labels.title}</h2>
         <p className="mt-1 text-sm leading-snug text-ink-muted">{labels.body}</p>
       </div>
 

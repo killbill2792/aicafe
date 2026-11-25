@@ -35,7 +35,7 @@ export default function TeamInbox({ members, cards, copy, staffRulesLink, footer
     need: (member: TeamMemberState) => copy.team.need[member.agentId] };
 
   return <>
-    <header><p className="text-sm font-semibold text-ink-muted">{copy.eyebrow}</p><h1 className="font-headline text-3xl font-bold text-ink">{copy.title}</h1><p className="mt-1 text-[17px] text-ink-muted">{agent ? copy.focusedOn[agent] : copy.intro}</p></header>
+    <header><p className="text-sm font-semibold text-ink-muted">{copy.eyebrow}</p><h1 className="font-headline text-3xl font-bold text-ink">{copy.title}</h1><p className="mt-1 text-[1.0625rem] text-ink-muted">{agent ? copy.focusedOn[agent] : copy.intro}</p></header>
     <AITeamCard team={team} copy={teamCopy} selectedAgent={agent} selectedStatus={params.get("status") ? status : undefined}
       extraQuery={extraQuery} onSelect={(agentId) => go({ agent: agentId })} />
     {staffRulesLink}
@@ -45,7 +45,7 @@ export default function TeamInbox({ members, cards, copy, staffRulesLink, footer
         <div className="min-w-0">
           <p className="text-sm font-semibold text-ink-muted">{copy.rules.title}</p>
           <h2 id="selected-agent-rules" className="truncate font-headline text-2xl font-bold text-ink">{copy.rules.heading[agent ?? "supervisor"]}</h2>
-          <p className="mt-1 text-[17px] text-ink-muted">{copy.rules.intro}</p>
+          <p className="mt-1 text-[1.0625rem] text-ink-muted">{copy.rules.intro}</p>
         </div>
       </div>
       <TeamRulesManager selectedAgent={agent ?? "supervisor"} copy={copy.rules.manager} />
@@ -63,7 +63,7 @@ export default function TeamInbox({ members, cards, copy, staffRulesLink, footer
       </a>)}
     </nav>
     {shown.length === 0
-      ? <section className="rounded-card-lg bg-card p-[18px]"><p className="text-[17px] text-ink-muted">{copy.empty[status]}</p></section>
+      ? <section className="rounded-card-lg bg-card p-[18px]"><p className="text-[1.0625rem] text-ink-muted">{copy.empty[status]}</p></section>
       : <section className="flex flex-col gap-3">{shown.map((card) => <div key={card.status + ":" + card.id} className="contents">{card.node}</div>)}</section>}
     {footer}
     {(!agent || agent === "olivia") && <p className="rounded-2xl bg-paper p-3 text-sm text-ink-muted">{copy.transportUnavailable}</p>}

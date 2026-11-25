@@ -1,5 +1,5 @@
 {
- "generatedFrom": "fully migrated local Supabase pg_catalog; no business rows",
+ "generatedFrom": "Public pg_catalog non-authorizing metadata; PR557 U4 additive schema corroborated from disposable migrated CI 45002094348; no café/customer rows",
  "notAuthorization": true,
  "classification": "all physical metadata denied to model until reviewed logical admission",
  "relations": [
@@ -1711,6 +1711,68 @@
     {
      "target": "businesses",
      "constraint": "cafe_neighborhood_source_coverage_business_id_fkey"
+    }
+   ]
+  },
+  {
+   "rls": true,
+   "kind": "table",
+   "columns": [
+    [
+     "id",
+     "uuid",
+     true
+    ],
+    [
+     "business_id",
+     "uuid",
+     true
+    ],
+    [
+     "topic",
+     "text",
+     true
+    ],
+    [
+     "note",
+     "text",
+     true
+    ],
+    [
+     "basis",
+     "text",
+     true
+    ],
+    [
+     "created_at",
+     "timestamp with time zone",
+     true
+    ],
+    [
+     "confirmed_at",
+     "timestamp with time zone",
+     true
+    ],
+    [
+     "retired_at",
+     "timestamp with time zone",
+     false
+    ],
+    [
+     "retired_by",
+     "uuid",
+     false
+    ]
+   ],
+   "relation": "cafe_notes",
+   "foreign_keys": [
+    {
+     "target": "businesses",
+     "constraint": "cafe_notes_business_id_fkey"
+    },
+    {
+     "target": "users",
+     "constraint": "cafe_notes_retired_by_fkey"
     }
    ]
   },

@@ -16,7 +16,7 @@ export type SupplierCopy={
  saved:string;error:string;history:string;empty:string;notVerified:string;currencyMissing:string;
  search:string;searchButton:string;searchUnavailable:string;webNotice:string;comparison:string;
 };
-const field="min-h-12 w-full rounded-xl border border-line bg-surface p-3 text-[17px] text-ink";
+const field="min-h-12 w-full rounded-xl border border-line bg-surface p-3 text-[1.0625rem] text-ink";
 async function read<T>(resp:Response):Promise<T>{if(!resp.ok)throw new Error();return resp.json() as Promise<T>;}
 export default function SupplierEvidenceManager({copy,today,currency}:{copy:SupplierCopy;today:string;currency:string|null}){
   const locale=useLocale();
@@ -90,59 +90,59 @@ export default function SupplierEvidenceManager({copy,today,currency}:{copy:Supp
  const comparison=currencyComparable&&quotes[0].itemName.toLocaleLowerCase()===quotes[1].itemName.toLocaleLowerCase()
   ?compareSupplierQuotePrices(quotes[1],quotes[0]):null;
  return <div className="flex flex-col gap-4">
-  <p className="rounded-2xl border border-line bg-warn-soft p-4 text-[17px] text-ink">
+  <p className="rounded-2xl border border-line bg-warn-soft p-4 text-[1.0625rem] text-ink">
    {copy.description}</p>
   <form onSubmit={(e)=>void submit(e)} className="rounded-2xl bg-card p-4">
    <div className="grid gap-3 md:grid-cols-2">
     {([[copy.supplier,supplier,setSupplier],[copy.item,item,setItem],[copy.price,dollars,setDollars]] as const).map(
-     ([label,value,change])=><label key={label} className="text-[17px] font-semibold text-ink">{label}
+     ([label,value,change])=><label key={label} className="text-[1.0625rem] font-semibold text-ink">{label}
       <input className={field+" mt-1"} required maxLength={120} value={value}
        onChange={e=>{change(e.target.value);requestId.current=null;}}/></label>)}
-    <label className="text-[17px] font-semibold text-ink">{copy.count}
+    <label className="text-[1.0625rem] font-semibold text-ink">{copy.count}
      <input className={field+" mt-1"} type="number" min="1" max="100000" required
       value={count} onChange={e=>{setCount(e.target.value);requestId.current=null;}}/></label>
-    <label className="text-[17px] font-semibold text-ink">{copy.unit}
+    <label className="text-[1.0625rem] font-semibold text-ink">{copy.unit}
      <select className={field+" mt-1"} value={unit} onChange={e=>{setUnit(e.target.value);requestId.current=null;}}>
       {["each","oz","lb","kg","gal","liter","case"].map(x=><option key={x}>{x}</option>)}</select></label>
-    <label className="text-[17px] font-semibold text-ink">{extra.quoteCurrency}
+    <label className="text-[1.0625rem] font-semibold text-ink">{extra.quoteCurrency}
      <input className={field+" mt-1"} required maxLength={3} pattern="[A-Z]{3}"
       value={quoteCurrency} onChange={e=>{setQuoteCurrency(e.target.value.toUpperCase());requestId.current=null;}}/></label>
-    <label className="text-[17px] font-semibold text-ink">{extra.availability}
+    <label className="text-[1.0625rem] font-semibold text-ink">{extra.availability}
      <select className={field+" mt-1"} value={availability}
       onChange={e=>{setAvailability(e.target.value as typeof availability);requestId.current=null;}}>
       <option value="unknown">{extra.notConfirmed}</option><option value="confirmed">{extra.ownerConfirmed}</option>
       <option value="unavailable">{extra.unavailable}</option></select></label>
-    {availability==="confirmed"&&<label className="text-[17px] font-semibold text-ink">{extra.availabilityCheckedOn}
+    {availability==="confirmed"&&<label className="text-[1.0625rem] font-semibold text-ink">{extra.availabilityCheckedOn}
      <input className={field+" mt-1"} type="date" required max={today} value={availableCheckedAt}
       onChange={e=>{setAvailableCheckedAt(e.target.value);requestId.current=null;}}/></label>}
-    <label className="text-[17px] font-semibold text-ink">{extra.expires}
+    <label className="text-[1.0625rem] font-semibold text-ink">{extra.expires}
      <input className={field+" mt-1"} type="date" min={quotedOn||undefined} value={validUntil}
       onChange={e=>{setValidUntil(e.target.value);requestId.current=null;}}/></label>
-    <label className="text-[17px] font-semibold text-ink">{extra.deliveryDate}
+    <label className="text-[1.0625rem] font-semibold text-ink">{extra.deliveryDate}
      <input className={field+" mt-1"} type="date" value={deliveryOn}
       onChange={e=>{setDeliveryOn(e.target.value);requestId.current=null;}}/></label>
-    <label className="text-[17px] font-semibold text-ink">{copy.sourceKind}
+    <label className="text-[1.0625rem] font-semibold text-ink">{copy.sourceKind}
      <select className={field+" mt-1"} value={kind} onChange={e=>{setKind(e.target.value);requestId.current=null;}}>
       {["supplier_quote","supplier_email","public_listing"].map(x=><option key={x}>{x}</option>)}</select></label>
-    <label className="text-[17px] font-semibold text-ink">{copy.sourceUrl}
+    <label className="text-[1.0625rem] font-semibold text-ink">{copy.sourceUrl}
      <input className={field+" mt-1"} type="url" value={url}
       onChange={e=>{setUrl(e.target.value);requestId.current=null;}}/></label>
-    <label className="text-[17px] font-semibold text-ink">{copy.date}
+    <label className="text-[1.0625rem] font-semibold text-ink">{copy.date}
      <input className={field+" mt-1"} type="date" value={quotedOn}
       max={today}
       onChange={e=>{setQuotedOn(e.target.value);requestId.current=null;}}/></label>
    </div>
-   <button className="mt-4 min-h-12 rounded-full bg-ink px-5 text-[17px] font-bold text-paper"
+   <button className="mt-4 min-h-12 rounded-full bg-ink px-5 text-[1.0625rem] font-bold text-paper"
     disabled={busy||!parseSupplierDollars(dollars)||!/^[A-Z]{3}$/u.test(quoteCurrency)||
       availability==="confirmed"&&!availableCheckedAt}>{busy?copy.saving:copy.save}</button>
   </form>
   <section className="rounded-2xl bg-card p-4">
    <h2 className="font-headline text-2xl font-bold text-ink">{copy.history}</h2>
-   {!quotes.length&&<p className="mt-2 text-[17px] text-ink-muted">{copy.empty}</p>}
-   {comparison?.comparable&&<p className="mt-3 text-[17px] text-ink">
+   {!quotes.length&&<p className="mt-2 text-[1.0625rem] text-ink-muted">{copy.empty}</p>}
+   {comparison?.comparable&&<p className="mt-3 text-[1.0625rem] text-ink">
     {copy.comparison}: {formatPrice(comparison.differenceCents,quotes[0].currencyCode)} ({copy.notVerified})</p>}
    <ul className="mt-3 space-y-3">{quotes.map(q=><li key={q.id}
-    className="rounded-xl border border-line p-3 text-[17px] text-ink">
+    className="rounded-xl border border-line p-3 text-[1.0625rem] text-ink">
     <strong>{q.itemName} · {formatPrice(q.priceCents,q.currencyCode)}</strong>
     <p>{q.supplierName} · {q.packageCount} {q.packageUnit} · {q.quotedOn}</p>
     <p className="text-ink-muted">{copy.notVerified} · {q.sourceKind} · {q.availableStatus} · {q.availableCheckedAt??extra.dateUnknown}</p>
@@ -153,22 +153,22 @@ export default function SupplierEvidenceManager({copy,today,currency}:{copy:Supp
   </section>
   <section className="rounded-2xl bg-card p-4">
    <h2 className="font-headline text-2xl font-bold text-ink">{copy.search}</h2>
-   <p className="mt-2 text-[17px] text-ink-muted">{copy.webNotice}</p>
+   <p className="mt-2 text-[1.0625rem] text-ink-muted">{copy.webNotice}</p>
    <div className="mt-2 flex flex-wrap gap-2">
     <input className={field+" flex-1"} value={query} maxLength={120}
      onChange={e=>setQuery(e.target.value)}/>
     <button type="button" onClick={()=>void research()} disabled={busy||query.trim().length<3}
-     className="min-h-12 rounded-full bg-ink px-5 text-[17px] font-bold text-paper disabled:opacity-50">{copy.searchButton}</button>
+     className="min-h-12 rounded-full bg-ink px-5 text-[1.0625rem] font-bold text-paper disabled:opacity-50">{copy.searchButton}</button>
    </div>
    <ul className="mt-3 space-y-2">{sources.map((source)=><li key={source.url}
     className="rounded-xl border border-line p-3">
     <a href={source.url} target="_blank" rel="noopener noreferrer"
-     className="break-all text-[17px] font-semibold text-ink underline">{source.title}</a>
-    <p className="text-[17px] text-ink-muted">{source.snippet}</p>
+     className="break-all text-[1.0625rem] font-semibold text-ink underline">{source.title}</a>
+    <p className="text-[1.0625rem] text-ink-muted">{source.snippet}</p>
     <p className="text-sm text-ink-muted">{copy.notVerified} · {source.queriedAt}</p>
    </li>)}</ul>
   </section>
   <SupplierVendorCommunicationManager/>
-  <p role="status" aria-live="polite" className="text-[17px] text-ink">{notice}</p>
+  <p role="status" aria-live="polite" className="text-[1.0625rem] text-ink">{notice}</p>
  </div>;
 }

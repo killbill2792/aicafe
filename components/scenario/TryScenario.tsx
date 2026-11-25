@@ -64,7 +64,7 @@ export default function TryScenario({ items, base, currency, hoursComplete = tru
   }
 
   return <div className="flex flex-col gap-4">
-    <label className="flex flex-col gap-2 text-[17px] font-semibold">
+    <label className="flex flex-col gap-2 text-[1.0625rem] font-semibold">
       {t("changeType")}
       <select className="min-h-12 rounded-xl border border-line bg-card px-3" value={kind}
         onChange={event => pickType(event.target.value as typeof kind)}>
@@ -72,63 +72,63 @@ export default function TryScenario({ items, base, currency, hoursComplete = tru
         <option value="staff">{t("kindStaff")}</option>
       </select>
     </label>
-    {kind !== "staff" && !presetKind && <label className="flex flex-col gap-2 text-[17px] font-semibold">
+    {kind !== "staff" && !presetKind && <label className="flex flex-col gap-2 text-[1.0625rem] font-semibold">
       {t("pickDrink")}
       <select className="min-h-12 rounded-xl border border-line bg-card px-3" value={id} onChange={event => pickItem(event.target.value)}>
         {drinks.map(item => <option key={item.id} value={item.id}>{item.name}</option>)}
       </select>
     </label>}
-    {presetKind && <p className="rounded-xl bg-surface p-3 text-[17px]">{t(presetKind === "allPrices" ? "allPricesExplanation" : "milkExplanation")}</p>}
-    {kind === "staff" ? <label className="flex flex-col gap-2 text-[17px] font-semibold">
+    {presetKind && <p className="rounded-xl bg-surface p-3 text-[1.0625rem]">{t(presetKind === "allPrices" ? "allPricesExplanation" : "milkExplanation")}</p>}
+    {kind === "staff" ? <label className="flex flex-col gap-2 text-[1.0625rem] font-semibold">
       {t("staffHours")}<input className="min-h-12 rounded-xl border border-line bg-card px-3" type="number" min="0" max="24" step="0.5"
         value={staffHours} onChange={event => { setStaffHours(event.target.value); setStaffAfternoonOnly(false); }} />
-    </label> : !presetKind && <label className="flex flex-col gap-2 text-[17px] font-semibold">
+    </label> : !presetKind && <label className="flex flex-col gap-2 text-[1.0625rem] font-semibold">
       {kind === "price" ? t("newPrice") : t("newIngredientCost")}
       <input className="min-h-12 rounded-xl border border-line bg-card px-3" type="number" min="0" step="0.01"
         value={value} onChange={event => setValue(event.target.value)} />
     </label>}
     <div className="flex flex-wrap gap-2">
-      <button type="button" onClick={() => preset("price", 25)} className="min-h-12 rounded-full bg-surface px-3 text-[15px] font-semibold">{t("presetPrice")}</button>
-      <button type="button" onClick={() => preset("staff", 0)} className="min-h-12 rounded-full bg-surface px-3 text-[15px] font-semibold">{t("presetStaff")}</button>
-      <button type="button" onClick={() => preset("ingredient", 100)} className="min-h-12 rounded-full bg-surface px-3 text-[15px] font-semibold">{t("presetMilk")}</button>
+      <button type="button" onClick={() => preset("price", 25)} className="min-h-12 rounded-full bg-surface px-3 text-[0.9375rem] font-semibold">{t("presetPrice")}</button>
+      <button type="button" onClick={() => preset("staff", 0)} className="min-h-12 rounded-full bg-surface px-3 text-[0.9375rem] font-semibold">{t("presetStaff")}</button>
+      <button type="button" onClick={() => preset("ingredient", 100)} className="min-h-12 rounded-full bg-surface px-3 text-[0.9375rem] font-semibold">{t("presetMilk")}</button>
     </div>
-    {historyBlocker === "closedDaySales" ? <div className="rounded-xl bg-surface p-4 text-[17px]">
+    {historyBlocker === "closedDaySales" ? <div className="rounded-xl bg-surface p-4 text-[1.0625rem]">
       <p>{t("closedDaySales")}</p>
       <Link href="/more/cafe-profile?focus=hours" className="mt-2 inline-flex min-h-12 items-center font-bold text-staff underline">
         {t("setCafeHours")}
       </Link>
-    </div> : historyBlocker === "salesCoverageGaps" ? <div className="rounded-xl bg-surface p-4 text-[17px]">
+    </div> : historyBlocker === "salesCoverageGaps" ? <div className="rounded-xl bg-surface p-4 text-[1.0625rem]">
       <p>{t("uncoveredSalesDates")}</p>
       <Link href="/more/uploads/sales" className="mt-2 inline-flex min-h-12 items-center font-bold text-staff underline">
         {t("uploadSales")}
       </Link>
     </div> :
-    kind === "staff" && base && base.monthlyStaffCents <= 0 ? <p className="rounded-xl bg-surface p-4 text-[17px]">{t("staffUnknown")}</p> :
-    !base ? <p className="rounded-xl bg-surface p-4 text-[17px]">{t("baselineUnknown")}</p> :
+    kind === "staff" && base && base.monthlyStaffCents <= 0 ? <p className="rounded-xl bg-surface p-4 text-[1.0625rem]">{t("staffUnknown")}</p> :
+    !base ? <p className="rounded-xl bg-surface p-4 text-[1.0625rem]">{t("baselineUnknown")}</p> :
       kind !== "staff" && !presetKind && (!picked || picked.costStatus !== "READY" || picked.quantitySoldLast28Days <= 0) ?
-        <p className="rounded-xl bg-surface p-4 text-[17px]">{t("noItemSales")}</p> :
+        <p className="rounded-xl bg-surface p-4 text-[1.0625rem]">{t("noItemSales")}</p> :
       result ? <section aria-live="polite" className="grid gap-3 sm:grid-cols-2">
         <div className="rounded-2xl bg-surface p-4">
-          <p className="text-[17px]">{t("effectBreakEven")}</p>
+          <p className="text-[1.0625rem]">{t("effectBreakEven")}</p>
           {result.monthlyBreakEvenCents === null || breakEvenHistoryUnreliable
-            ? <p className="text-[17px] text-ink-muted">{t("breakEvenUnknown")}</p>
+            ? <p className="text-[1.0625rem] text-ink-muted">{t("breakEvenUnknown")}</p>
             : <strong className="block text-2xl">{money.format(result.monthlyBreakEvenCents / 100)}</strong>}
           {result.breakEvenChangeCents !== null && !breakEvenHistoryUnreliable &&
-            <p className="text-[15px]">{money.format(result.breakEvenChangeCents / 100)}</p>}
+            <p className="text-[0.9375rem]">{money.format(result.breakEvenChangeCents / 100)}</p>}
         </div>
         <div className="rounded-2xl bg-surface p-4">
-          <p className="text-[17px]">{t("effectProfit")}</p>
+          <p className="text-[1.0625rem]">{t("effectProfit")}</p>
           <strong className="block text-2xl">{money.format(result.monthlyProfitChangeCents / 100)}</strong>
         </div>
-      </section> : <p className="rounded-xl bg-surface p-4 text-[17px]">{t("baselineUnknown")}</p>}
-    {base && base.salesDaysCovered>0 && <p role="note" className="text-[17px] text-ink-muted">{common("basedOnDays",{days:base.salesDaysCovered})}</p>}
+      </section> : <p className="rounded-xl bg-surface p-4 text-[1.0625rem]">{t("baselineUnknown")}</p>}
+    {base && base.salesDaysCovered>0 && <p role="note" className="text-[1.0625rem] text-ink-muted">{common("basedOnDays",{days:base.salesDaysCovered})}</p>}
     {base && base.salesDaysCovered>0 && (base.salesDaysCovered<7 || salesCoverageGaps || closedDaySales) &&
-      <Link href="/more/uploads/sales" className="min-h-12 text-[17px] font-bold underline">{t("uploadSales")}</Link>}
-    {base && <p className="text-[17px] text-ink-muted">{t("coverageAssumption", {
+      <Link href="/more/uploads/sales" className="min-h-12 text-[1.0625rem] font-bold underline">{t("uploadSales")}</Link>}
+    {base && <p className="text-[1.0625rem] text-ink-muted">{t("coverageAssumption", {
       salesDays: new Intl.NumberFormat(locale).format(base.salesDaysCovered),
       openDays: new Intl.NumberFormat(locale).format(base.operatingDaysInMonth),
     })}</p>}
-    {!hoursComplete && <p className="text-[17px] text-ink-muted">{t("hoursNotSetAssumption")}</p>}
-    <p className="text-[15px] text-ink-muted">{kind === "staff" ? t("wageAssumption") : t("priceAssumption")}</p>
+    {!hoursComplete && <p className="text-[1.0625rem] text-ink-muted">{t("hoursNotSetAssumption")}</p>}
+    <p className="text-[0.9375rem] text-ink-muted">{kind === "staff" ? t("wageAssumption") : t("priceAssumption")}</p>
   </div>;
 }

@@ -75,17 +75,17 @@ export default function GmailConnectionPanel(){
       <p>{copy.ownerApproves}</p>
     </div>
     {connected&&data?.accountId&&<div className="mt-5 space-y-3">
-      <h3 className="text-[17px] font-semibold">{copy.operationHeading}</h3>
-      <p className="text-[15px] text-ink-muted">{copy.googleScopeNotice}</p>
+      <h3 className="text-[1.0625rem] font-semibold">{copy.operationHeading}</h3>
+      <p className="text-[0.9375rem] text-ink-muted">{copy.googleScopeNotice}</p>
       {( [
         ["read",copy.opRead],["draft",copy.opDraft],
         ["send",copy.opSend],["organize",copy.opOrganize],
       ] as const).map(([operation,label])=><div key={operation}
         className="flex min-w-0 items-center justify-between gap-3 border-b border-line py-2">
-        <span className="min-w-0 text-[15px]">{label}</span>
+        <span className="min-w-0 text-[0.9375rem]">{label}</span>
         <button type="button" role="switch" aria-checked={data.enabledOperations.includes(operation)}
           aria-label={label} disabled={busy} onClick={()=>void toggle(operation)}
-          className="min-h-12 min-w-20 shrink-0 rounded-xl border border-line px-3 text-[15px] font-semibold disabled:opacity-50">
+          className="min-h-12 min-w-20 shrink-0 rounded-xl border border-line px-3 text-[0.9375rem] font-semibold disabled:opacity-50">
           {busy?copy.operationSaving:data.enabledOperations.includes(operation)?copy.operationOn:copy.operationOff}
         </button>
       </div>)}

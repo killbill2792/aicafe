@@ -45,7 +45,7 @@ export default function ToastSummaryComparison({businessId,days,currency,onSaved
    setDrafts([{...draft,restaurantGuid:day.restaurantGuid,source:"typed"}]);setMessage(t("summaryConfirmHint"));
   }catch{setMessage(t("summaryNumberError"));}
  }
- return <section className="rounded-card-lg bg-card p-5 text-[17px]" dir={locale==="ar"?"rtl":"ltr"}>
+ return <section className="rounded-card-lg bg-card p-5 text-[1.0625rem]" dir={locale==="ar"?"rtl":"ltr"}>
   <h2 className="text-xl font-bold">{t("summaryTitle")}</h2><p className="text-muted">{t("summaryOptional")}</p>
   {days.map(day=><details key={day.restaurantGuid+day.date} className="border-b border-line py-2">
    <summary className="min-h-12 cursor-pointer py-3">{t("summaryCompareDay",{date:day.date})}</summary>

@@ -19,7 +19,7 @@ export default async function OnboardingPage(){
     Boolean(process.env.TOAST_ALLOWED_API_HOSTS?.trim());
   return <PageShell className="flex flex-col gap-5 px-4 py-6 pb-10">
     <h1 className="text-2xl font-bold text-ink">{t("step1Title")}</h1>
-    <p className="text-[15px] text-ink-muted">{t("step1Subtitle")}</p>
+    <p className="text-[0.9375rem] text-ink-muted">{t("step1Subtitle")}</p>
     {"error" in cafe?
       <p className="rounded-2xl bg-warn-tint p-4 text-sm text-warn">
         Unable to set up your café. Please try signing in again.

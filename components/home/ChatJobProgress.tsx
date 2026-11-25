@@ -21,7 +21,7 @@ export default function ChatJobProgress({ locale, acknowledged, steps, note }: {
   const copy = chatExperienceCopy(locale);
   const line = note || progressLines(steps, copy).at(-1) || (acknowledged ? copy.ack : null);
   if (!line) return null;
-  return <div className="flex w-full items-center gap-2 text-[15px] leading-snug text-ink-muted"
+  return <div className="flex w-full items-center gap-2 text-[0.9375rem] leading-snug text-ink-muted"
     role="status" aria-live="polite" aria-atomic="true" data-testid="supervisor-live-progress"
     dir={locale === "ar" ? "rtl" : "ltr"}>
     <CafeActivity/><span className="min-w-0 truncate" title={line}>{line}</span>

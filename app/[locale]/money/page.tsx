@@ -103,7 +103,7 @@ export default async function MoneyPage({
       <header className="flex items-center justify-between gap-3 px-1">
         <div className="flex flex-col gap-0.5">
           <div className="text-sm font-medium text-ink-muted">{snapshot.todayDateStr}</div>
-          <div className="text-[22px] font-bold text-ink">{snapshot.business.name}</div>
+          <div className="text-[1.375rem] font-bold text-ink">{snapshot.business.name}</div>
         </div>
         <div className="flex items-center gap-2">
           <Link href="/more/bills" className="flex min-h-12 items-center gap-1.5 rounded-full border border-line px-3.5 text-sm font-bold text-ink no-underline">

@@ -45,20 +45,20 @@ export default function MemoryCard({ ruleId, locale }: { ruleId: string; locale:
     finally { setBusy(false); }
   };
 
-  if (!rule) return error ? <p role="alert" className="text-[15px] text-neg">{copy.error}</p>
-    : <p role="status" className="text-[15px] text-ink-muted">{copy.loading}</p>;
+  if (!rule) return error ? <p role="alert" className="text-[0.9375rem] text-neg">{copy.error}</p>
+    : <p role="status" className="text-[0.9375rem] text-ink-muted">{copy.loading}</p>;
   const agents = copy.agents as Record<string, string>;
   const status = rule.status === "active" ? copy.saved : rule.status === "rejected" ? copy.notSaved
     : rule.status === "paused" ? copy.paused : null;
-  const button = "min-h-12 min-w-12 rounded-xl px-4 text-[17px] font-bold focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ink disabled:opacity-50";
+  const button = "min-h-12 min-w-12 rounded-xl px-4 text-[1.0625rem] font-bold focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ink disabled:opacity-50";
   return <section dir={locale === "ar" ? "rtl" : "ltr"} aria-label={copy.title}
     className="w-full min-w-0 max-w-2xl rounded-[22px] border border-line bg-surface p-4 text-ink shadow-sm">
     <div className="flex flex-wrap items-center justify-between gap-2">
-      <p className="text-[15px] font-semibold text-ink-muted">{copy.title}</p>
+      <p className="text-[0.9375rem] font-semibold text-ink-muted">{copy.title}</p>
       {status && <span role="status" className="rounded-full bg-surface2 px-3 py-1 text-sm font-bold">{status}</span>}
     </div>
-    <p className="mt-2 break-words text-[17px] font-semibold">{rule.instruction}</p>
-    <p className="mt-1 text-[14px] text-ink-muted">{agents[rule.agentId] ?? agents.supervisor}</p>
+    <p className="mt-2 break-words text-[1.0625rem] font-semibold">{rule.instruction}</p>
+    <p className="mt-1 text-[0.875rem] text-ink-muted">{agents[rule.agentId] ?? agents.supervisor}</p>
     {rule.status === "draft" && <div className="mt-4 flex flex-wrap gap-2">
       <button type="button" disabled={busy} className={button + " bg-accent text-on-accent"}
         onClick={() => void decide("approve")}>{copy.approve}</button>

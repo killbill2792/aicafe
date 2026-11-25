@@ -26,24 +26,24 @@ export default function FinancialSettingsForm({initialIngredientRate,initialOwne
   });
  };
  return <div className="flex flex-col gap-5">
-  <label className="flex flex-col gap-2 text-[17px] font-semibold text-ink">
+  <label className="flex flex-col gap-2 text-[1.0625rem] font-semibold text-ink">
    {labels.ingredient}
    <input type="number" inputMode="decimal" min="0" max="99.99" step="0.01"
     value={ingredient} placeholder={labels.none}
     onChange={e=>{setIngredient(e.target.value);setState("idle");}}
     className="min-h-12 rounded-xl border border-line bg-card p-3" />
-   <span className="text-[15px] font-normal text-ink-muted">{labels.ingredientHint}</span>
+   <span className="text-[0.9375rem] font-normal text-ink-muted">{labels.ingredientHint}</span>
   </label>
-  <label className="flex flex-col gap-2 text-[17px] font-semibold text-ink">
+  <label className="flex flex-col gap-2 text-[1.0625rem] font-semibold text-ink">
    {labels.monthlyPayroll}
    <input type="number" inputMode="decimal" min="0" step="0.01"
     value={payroll} placeholder={labels.none}
     onChange={e=>{setPayroll(e.target.value);setState("idle");}}
     className="min-h-12 rounded-xl border border-line bg-card p-3" />
-   <span className="text-[15px] font-normal text-ink-muted">{labels.monthlyPayrollHint}</span>
+   <span className="text-[0.9375rem] font-normal text-ink-muted">{labels.monthlyPayrollHint}</span>
   </label>
   <button type="button" onClick={submit} disabled={pending}
-   className="min-h-12 rounded-xl bg-accent px-4 text-[17px] font-semibold text-white">
+   className="min-h-12 rounded-xl bg-accent px-4 text-[1.0625rem] font-semibold text-white">
     {pending?labels.saving:labels.save}
   </button>
   {state==="saved"&&<p role="status" className="text-good">{labels.saved}</p>}

@@ -417,7 +417,6 @@ describe("Task16E presentation capability census",()=>{
     "get_price_monitor_status",
     "inspect_purchase_reconciliation",
     "get_nearby_events",
-    "inspect_public_page",
     "web_search",
     "get_supervisor_permissions",
     "search_gmail",

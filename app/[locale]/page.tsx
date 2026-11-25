@@ -206,7 +206,7 @@ export default async function HomePage({ searchParams }: { searchParams: Promise
     }
   })();
   return <PageShell wide className="flex flex-col gap-0 px-0 pb-0 pt-0 md:gap-4 md:px-4 md:pb-4 md:pt-4">
-    {cafeAccess&&(cafeAccess.remind||!cafeAccess.active)&&<p role="status" className="rounded-xl border border-amber-300 p-4 text-[17px]">
+    {cafeAccess&&(cafeAccess.remind||!cafeAccess.active)&&<p role="status" className="rounded-xl border border-amber-300 p-4 text-[1.0625rem]">
       {cafeAccess.remind ? tAccess("renewSoon",{date:cafeAccess.accessEnd??""}) : tAccess("expired")}
       {" "}<Link href="/pricing" className="underline">{tAccess("haveCode")}</Link>
     </p>}

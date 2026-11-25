@@ -46,8 +46,8 @@ function BucketRow({
       <FillIcon code={bucket.code as ExpenseIconCode} pctCovered={bucket.pctCovered} covered={covered} size={52} />
       <div className="flex min-w-0 flex-1 flex-col gap-1.5">
         <div className="flex flex-wrap items-center justify-between gap-x-2">
-          <span className="break-words text-[17px] font-bold text-ink">{label}</span>
-          <span className="break-words text-[17px] font-bold text-ink">
+          <span className="break-words text-[1.0625rem] font-bold text-ink">{label}</span>
+          <span className="break-words text-[1.0625rem] font-bold text-ink">
             <Money cents={bucket.amountCents} />
           </span>
         </div>
@@ -60,7 +60,7 @@ function BucketRow({
             <div className="h-2.5 rounded-full bg-line">
               <div className="h-2.5 rounded-full bg-good" style={{ width: `${bucket.pctCovered}%` }} />
             </div>
-            <span className="text-[13px] font-semibold text-ink">
+            <span className="text-[0.8125rem] font-semibold text-ink">
               {t("paidBackToGo", { pct: Math.round(bucket.pctCovered), amount: formatCents(bucket.centsToGo) })}
             </span>
           </div>
@@ -153,10 +153,10 @@ export default async function CostRecoveryView({ snapshot, calMonthKey, toastCon
       <section className="rounded-card-lg bg-card p-5">
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div>
-            <span className="text-[15px] font-semibold text-ink-muted">{t("monthlyBreakEven")}</span>
+            <span className="text-[0.9375rem] font-semibold text-ink-muted">{t("monthlyBreakEven")}</span>
             {vm.breakEven.kind === "ready" ? (
               <>
-                <div className="mt-1 font-headline text-[40px] font-bold leading-none text-ink">
+                <div className="mt-1 font-headline text-[2.5rem] font-bold leading-none text-ink">
                   <Money cents={vm.breakEven.breakEvenSalesCents} />
                 </div>
                 <p className="mt-2 text-sm leading-snug text-ink-muted">{t("breakEvenSalesNeeded")}</p>
@@ -171,7 +171,7 @@ export default async function CostRecoveryView({ snapshot, calMonthKey, toastCon
               </>
             )}
           </div>
-          <Link href="/more/plan" className="mt-3 inline-flex min-h-12 items-center text-[17px] font-bold text-staff underline">{t("seePlan")}</Link>
+          <Link href="/more/plan" className="mt-3 inline-flex min-h-12 items-center text-[1.0625rem] font-bold text-staff underline">{t("seePlan")}</Link>
           {vm.breakEvenUsesEstimates && (
             <span className="rounded-full bg-paper px-2.5 py-1 text-xs font-bold text-ink-muted">{t("estimateLower")}</span>
           )}
@@ -195,11 +195,11 @@ export default async function CostRecoveryView({ snapshot, calMonthKey, toastCon
       <section className="flex flex-wrap items-center gap-4 rounded-card-lg bg-card p-5">
         {heroIcon && <FillIcon code={heroIcon.code as ExpenseIconCode} pctCovered={overallPctCovered} size={104} covered={vm.allCovered} />}
         <div className="flex min-w-[220px] flex-1 flex-col gap-1.5">
-          <span className="text-[15px] font-semibold text-ink-muted">{t("billCoverageThisMonth")}</span>
-          <span className="whitespace-nowrap font-headline text-[40px] font-bold leading-none">
+          <span className="text-[0.9375rem] font-semibold text-ink-muted">{t("billCoverageThisMonth")}</span>
+          <span className="whitespace-nowrap font-headline text-[2.5rem] font-bold leading-none">
             <Money cents={totalPaidBackCents} />
           </span>
-          <span className="text-[15px] font-semibold">{t("paidBackOf", { amount: formatCents(vm.totalCents) })}</span>
+          <span className="text-[0.9375rem] font-semibold">{t("paidBackOf", { amount: formatCents(vm.totalCents) })}</span>
           {!vm.allCovered && vm.buckets[vm.buckets.length - 1]?.projectedCoveredOn && (
             <span className="text-sm font-bold text-good">
               {t("allCoveredBy", { date: shortDate(vm.buckets[vm.buckets.length - 1].projectedCoveredOn!) })}

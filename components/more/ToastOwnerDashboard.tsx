@@ -125,7 +125,7 @@ export default function ToastOwnerDashboard({businessId,currency,children}:{busi
  const yesterday=lastLoadedAt?dateShift(localDate(data.timeZone,lastLoadedAt),-1):"";
  const relative=data.lastGoodSyncAt&&lastLoadedAt?new Intl.RelativeTimeFormat(locale,{numeric:"auto"}).format(
   -Math.max(0,Math.round((lastLoadedAt-Date.parse(data.lastGoodSyncAt))/3600000)),"hour"):t("noSyncYet");
- return <>{lead}<div className="flex flex-col gap-4 text-[17px]" dir={locale==="ar"?"rtl":"ltr"}>
+ return <>{lead}<div className="flex flex-col gap-4 text-[1.0625rem]" dir={locale==="ar"?"rtl":"ltr"}>
   {data.connection==="connected"&&<section className="rounded-card-lg bg-card p-4 text-sm text-muted">
     {t("ownerPayrollLimitsNote")}
   </section>}
