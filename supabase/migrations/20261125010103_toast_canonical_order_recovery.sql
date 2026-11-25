@@ -115,7 +115,7 @@ begin
    where business_id=p_business_id and restaurant_guid=p_restaurant_guid and business_date=d
     and entity='order' and entity_guid=g order by last_seen desc,id desc limit 1;
   if found and public.toast_time_or_null(prior.payload->>'modifiedDate')>public.toast_time_or_null(payload->>'modifiedDate') then continue;end if;
-  if d>=current_day and not exists(select 1 from public.toast_day_status s
+  if d>=current_day-1 and not exists(select 1 from public.toast_day_status s
     where s.business_id=p_business_id and s.restaurant_guid=p_restaurant_guid and s.business_date=d and s.import_state='imported') then
    result:=public.toast_archive_order(p_business_id,p_restaurant_guid,g,d,payload,sha,null,null,null,
     'live:'||p_restaurant_guid::text||':'||d::text||':'||g::text,false);
@@ -128,7 +128,7 @@ begin
    end if;
   elsif prior.id is null or prior.payload_sha256<>sha then
    perform public.toast_queue_owner_repull(p_business_id,p_restaurant_guid,d);
-   update public.toast_day_status set recon_state='pending',last_recon_attempt_at=null
+   update public.toast_day_status set recon_state='pending',last_recon_attempt_at=null,internal_state=null
     where business_id=p_business_id and restaurant_guid=p_restaurant_guid and business_date=d
      and import_state='imported' and recon_state<>'pending';
    update public.daily_rollups set voids_status='unknown',voids_source=null

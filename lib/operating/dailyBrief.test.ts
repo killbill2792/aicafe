@@ -26,7 +26,7 @@ const hours=(open:string|null)=>open===null?null:
 function evidence(o:Partial<MorningBriefEvidence>={}):MorningBriefEvidence{
   return {businessName:"Shop A",currency:"USD",today:"2026-11-03",yesterday:"2026-11-02",
     netSalesCents:240_000,sold:{available:true,linked:[{id:"latte",units:9}],unlinked:[]},
-    menu:[{id:"latte",name:"Latte",base_name:null,category:"Espresso"}],categoryLabels:new Map(),
+    menu:[{id:"latte",name:"Latte",base_name:null,category:"Espresso"}],categoryLabels:new Map([["Espresso",true]]),
     events:{available:true,items:[],coverage:"complete"},...o};
 }
 function useEvidence(e:MorningBriefEvidence,posComplete=true){
@@ -370,4 +370,18 @@ describe("sending the daily brief at each café's own time",()=>{
   await sendDailyBriefs(f.db,at("12:00"));
   expect(evidenceMock.read).not.toHaveBeenCalled();
  });
+});
+
+it("waits for unfinished brief inputs and stops re-reading them once a brief was sent",async()=>{
+ const f=fakeDb();
+ useEvidence(evidence({events:{available:false,items:[],coverage:null}}));
+ await sendDailyBriefs(f.db,at("05:00"));
+ expect(f.runs.some(row=>row.reason==="brief_evidence_not_complete")).toBe(true);
+ expect(f.writes.filter(row=>row.table==="ai_messages")).toHaveLength(0);
+ useEvidence(evidence());
+ await sendDailyBriefs(f.db,at("05:15"));
+ expect(f.writes.filter(row=>row.table==="ai_messages")).toHaveLength(1);
+ evidenceMock.read.mockClear();
+ await sendDailyBriefs(f.db,at("05:30"));
+ expect(evidenceMock.read).not.toHaveBeenCalled();
 });

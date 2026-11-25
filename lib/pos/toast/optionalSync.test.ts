@@ -288,3 +288,14 @@ describe("independent POS0b modified labor freshness within POS0c-owned optional
   expect(m.catalog).not.toHaveBeenCalled();
  });
 });
+
+it("checks menu metadata only once per local day unless an event requests it",async()=>{
+ const f=mockDB({menus:true,labor:false,config:false});
+ await syncToastOptionalSources(f.db,scope,now,Date.now()+60000);
+ await syncToastOptionalSources(f.db,scope,new Date(now.getTime()+10*60000),Date.now()+60000);
+ expect(m.request.mock.calls.filter(call=>call[0]==="/menus/v2/metadata")).toHaveLength(1);
+ expect(m.catalog).toHaveBeenCalledTimes(1);
+ await syncToastOptionalSources(f.db,scope,new Date(now.getTime()+20*60000),Date.now()+60000,"menu");
+ expect(m.request.mock.calls.filter(call=>call[0]==="/menus/v2/metadata")).toHaveLength(2);
+ expect(m.catalog).toHaveBeenCalledTimes(1);
+});

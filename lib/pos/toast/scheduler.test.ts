@@ -245,7 +245,7 @@ describe("leased Toast cron phases (spec C1, 13, 16, 17, 20, 21)",()=>{
   f.runs.push({id:"stuck-backfill",kind:"backfill",state:"paused_rate_limited",
    requested_from:"2026-09-12",requested_to:"2026-09-12",days_done:0,days_total:1,cursor:{},
    resume_at:new Date(now.getTime()+3600_000).toISOString()});
-  await runToastSyncTick(f.db,now,Date.now()+60000);
+  await runToastSyncTick(f.db,new Date("2026-10-23T04:00:00-07:00"),Date.now()+60000);
   expect(m.paymentGaps).toHaveBeenCalledTimes(1);
  });
  it("starts a queued 65-day first backfill before four repulls, within the full single-café tick",async()=>{
@@ -415,5 +415,8 @@ it("runs closeout only on the fifteen-minute dispatcher without redoing live or 
  const f=makeDB();
  await runToastSyncTick(f.db,now,Date.now()+60000,"closeout");
  expect(f.calls).toContain("toast_queue_daily");expect(m.reconcile).toHaveBeenCalledOnce();
- expect(m.live).not.toHaveBeenCalled();expect(m.optional).not.toHaveBeenCalled();
+ expect(m.live).toHaveBeenCalledWith(f.db,expect.objectContaining({closeoutDay:d}),now,expect.any(Number));expect(m.optional).not.toHaveBeenCalled();
+ m.live.mockClear();m.importDay.mockClear();
+ await runToastSyncTick(f.db,now,Date.now()+60000,"closeout");
+ expect(m.live).not.toHaveBeenCalled();expect(m.importDay).not.toHaveBeenCalled();
 });

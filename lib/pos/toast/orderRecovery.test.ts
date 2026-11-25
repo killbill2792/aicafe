@@ -1,6 +1,6 @@
 import {describe,it,expect,vi} from "vitest";
 vi.mock("server-only",()=>({}));
-import {orderRecoveryCadence,orderRecoveryWindow} from "./orderRecovery";
+import {orderRecoveryCadence,orderRecoveryWindow,toastShouldPollOrders} from "./orderRecovery";
 describe("webhook-primary incremental fallback",()=>{
  it("uses the same ten-minute live recovery even with a configured webhook",()=>{
   expect(orderRecoveryCadence(true,false)).toBe(600000);
@@ -20,4 +20,12 @@ describe("webhook-primary incremental fallback",()=>{
   expect(result?.until.toISOString()).toBe("2026-11-25T09:58:00.000Z");
   expect(orderRecoveryWindow("2026-11-25T09:58:00Z",new Date("2026-11-25T08:00:00Z"),new Date("2026-11-25T10:00:00Z"))).toBeNull();
  });
+});
+
+it("stops known closed hours after one closing catch-up; unknown hours stay live",()=>{
+ const hours={mon:[["08:00","16:00"]] as [string,string][]};
+ const now=new Date("2026-11-24T00:10:00Z");
+ expect(toastShouldPollOrders(hours,"America/Los_Angeles",now,"2026-11-23T23:58:00Z")).toBe(true);
+ expect(toastShouldPollOrders(hours,"America/Los_Angeles",now,"2026-11-24T00:08:00Z")).toBe(false);
+ expect(toastShouldPollOrders(null,"America/Los_Angeles",now,null)).toBe(true);
 });
