@@ -72,7 +72,9 @@ export async function getMonthCalendarFromDb(
     today:monthEnd,historical:!isCurrentMonth
   }).map(line=>({categoryCode:line.categoryCode,monthKey,amountCents:line.amountCents,
     isEstimate:line.isEstimate,isMissing:line.isMissing,
-    recordedExpenses:line.expenseEvidence?.flatMap(e=>e.kind==="expense"?[{date:e.date,amountCents:e.amountCents}]:[]),
+    recordedExpenseCents:line.recordedExpenseCents,
+    possibleAdditionalForecastCents:line.possibleAdditionalForecastCents,
+    recordedExpenses:line.expenseEvidence?.flatMap(e=>e.kind==="expense"?[{date:e.date,amountCents:e.amountCents,status:e.status}]:[]),
     recurringEstimateCents:line.recurringEstimateCents}));
 
   return { monthKey, daysInMonth, days, categoryAmounts, openHours: isCurrentMonth ? normalizeOpenHours(locationResult.data?.open_hours) : null };

@@ -85,7 +85,9 @@ describe("canonical snapshot independent read phases",()=>{
     expect(snapshot.monthActualDays.map(d=>d.netSalesCents)).toEqual([12345]);
     expect(snapshot.periodItemSales?.period).toEqual({from:"2026-10-24",to:"2026-10-30"});
     expect(snapshot.runningCostLines.find(row=>row.categoryCode==="rent")).toMatchObject({
-      amountCents:60000,isMissing:false,isEstimate:false,
+      amountCents:60000,isMissing:false,isEstimate:true,recordedExpenseCents:0,
+      recurringEstimateCents:60000,amountSource:"recurring",
+      expenseEvidence:[{kind:"recurring",id:"rent-bill",amountCents:60000,isEstimate:false,remainingForecastCents:60000}],
     });
     expect(snapshot.alerts).toEqual({count:1,leakingCents:240});
     expect(snapshot).toMatchObject({ownerFeePlans:[]});

@@ -425,9 +425,14 @@ async function readHistoricalBusinessSnapshot(
     linesByMonth.set(key,lines);
     for(const line of lines){
       const {categoryCode,amountCents,isEstimate,isMissing}=line;
-      monthlyAmounts.push({monthKey:key,categoryCode,amountCents,isEstimate,isMissing});
+      monthlyAmounts.push({monthKey:key,categoryCode,amountCents,isEstimate,isMissing,
+         recordedExpenseCents:line.recordedExpenseCents,
+         recurringEstimateCents:line.recurringEstimateCents,
+         possibleAdditionalForecastCents:line.possibleAdditionalForecastCents,
+         recordedExpenses:line.expenseEvidence?.flatMap(e=>e.kind==="expense"?
+           [{date:e.date,amountCents:e.amountCents,status:e.status}]:[])});
       if(isEstimate)estimatedExpenseCategories.push("expense:"+categoryCode+":"+key);
-      if(isMissing)missingExpenseCategories.push("expense:"+categoryCode+":"+key);
+      if(isMissing||line.forecastOverlapUncertain)missingExpenseCategories.push("expense:"+categoryCode+":"+key);
     }
   }
   const monthKey=last;
