@@ -10,7 +10,13 @@ import {executeResearchTool,researchToolDefinitions,type ResearchScope} from "./
  * When ON, owner chat turns use ONLY describe_database, run_sql and calculate;
  * no legacy reporting tool is offered alongside them. */
 export function sqlResearchEnabled():boolean{
-  return process.env.SUPERVISOR_SQL_RESEARCH==="on";
+  if(process.env.SUPERVISOR_SQL_RESEARCH==="on")return true;
+  // Owner-approved shared Luna runs of the sql-research scenarios only: the
+  // trusted runner sets these on a disposable localhost stack, never hosted.
+  return process.env.AI_CAFE_LIVE_ACCEPTANCE==="OWNER_APPROVED_LOCAL_ONLY"&&
+    process.env.NEXT_PUBLIC_SUPABASE_URL==="http://127.0.0.1:54321"&&
+    !process.env.VERCEL_ENV&&
+    /^sql-research-[a-z0-9-]+$/u.test(process.env.AICAFE_SHARED_LUNA_SCENARIO??"");
 }
 
 /** Intentionally short: what Supervisor is and what it can reach. How to
@@ -29,6 +35,14 @@ type FunctionCall={type:"function_call";name:string;call_id:string;arguments:str
 
 /** Time the owner's request may keep researching before a final answer is
  * forced. Platform limit (route maxDuration), not a business rule. */
+/** Per-request output ceiling (includes reasoning). A forced final answer
+ * uses the existing 1200-token final ceiling. Resource limits only. */
+function outputCap(final:boolean):number{
+  const configured=Number(process.env.SUPERVISOR_RESEARCH_MAX_OUTPUT_TOKENS);
+  const step=Number.isSafeInteger(configured)&&configured>0?configured:4096;
+  const durable=currentDurableProviderOutputCap();
+  return Math.min(step,durable??Infinity,final?1200:Infinity);
+}
 function elapsedLimitMs():number{
   const configured=Number(process.env.SUPERVISOR_RESEARCH_MAX_MS);
   return Number.isSafeInteger(configured)&&configured>0?configured:120_000;
@@ -84,11 +98,9 @@ export async function runResearchTurn(args:{
   /** One Responses request through the same transport and paid-usage ledger as the legacy loop. */
   const call=async(final:boolean):Promise<{calls:FunctionCall[];answer:string}>=>{
     await args.beforeProviderRequest?.();
-    const cap=currentDurableProviderOutputCap();
     const params:Record<string,unknown>={model,instructions:RESEARCH_INSTRUCTIONS,
       tools:researchToolDefinitions,tool_choice:final?"none":"auto",stream:true,store:false,
-      include:["reasoning.encrypted_content"],
-      ...(cap?{max_output_tokens:cap}:{}),input};
+      max_output_tokens:outputCap(final),input};
     const startedCall=now();
     const checkpoint=args.checkpoint;
     if(checkpoint)await checkpoint.beginProvider();
@@ -134,9 +146,7 @@ export async function runResearchTurn(args:{
     // Stateless continuation: replay this response's items in order.
     for(const item of output){
       const row=item as Record<string,unknown>;
-      if(row.type==="reasoning"&&typeof row.encrypted_content==="string")
-        input.push({type:"reasoning",id:row.id,summary:Array.isArray(row.summary)?row.summary:[],encrypted_content:row.encrypted_content});
-      else if(row.type==="function_call")input.push({type:"function_call",name:row.name,call_id:row.call_id,arguments:row.arguments});
+      if(row.type==="function_call")input.push({type:"function_call",name:row.name,call_id:row.call_id,arguments:row.arguments});
       else if(row.type==="message")input.push({role:"assistant",content:answer});
     }
     return {calls,answer};
