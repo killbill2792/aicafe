@@ -2693,9 +2693,10 @@ test("@home verified Toast owner prepares and activates webhook without exposing
   const created=await admin.auth.admin.createUser({email,password,email_confirm:true,user_metadata:{cafe_name:"Webhook fixture"}});
   if(created.error||!created.data.user)throw Error("fixture user failed");
   userId=created.data.user.id;
-  const fixture=await admin.rpc("ensure_private_onboarding_cafe",{p_user_id:userId,p_name:"Webhook fixture",p_recovery_order:["rent","utilities_power","water","internet","insurance","loan","software","supplies","repairs","other"]});
-  if(fixture.error||typeof fixture.data!=="string")throw Error("fixture café failed");
-  businessId=fixture.data;
+   // Create the private café directly: the atomic onboarding RPC is not part of main.
+  const business=await db.query("insert into public.businesses(name,timezone,is_demo) values('Webhook fixture','America/Los_Angeles',false) returning id");
+  businessId=business.rows[0].id;
+  await db.query("insert into public.memberships(business_id,user_id,role) values($1,$2,'owner')",[businessId,userId]);
   const location=randomUUID(),restaurant=randomUUID();
   await db.query("insert into public.locations(id,business_id,name) values($1,$2,'Webhook fixture location')",[location,businessId]);
   await db.query("insert into public.toast_api_credentials(business_id,api_origin,client_id,client_secret_enc,state,last_verified_at) values($1,'https://ws-api.toasttab.com','synthetic','not-a-provider-credential','verified',now())",[businessId]);
