@@ -94,7 +94,19 @@ run("real Luna recovers the same investigation after SIGKILL and real lease expi
   threadId:ids.thread,localDate:""};
  let budget=emptyInvestigationLiveLedger(),providerCompletions=0;
  const observations:InvestigationModelProofSummary[]=[];
+ const observedStaffClaims=new Set<string>();
  const provider:AgentProvider=async function*(params,signal){
+  // Inspect the evidence actually supplied to the real model, not merely a
+  // tool name. Never persist the contents of an employee message in proof.
+  if(Array.isArray(params.input))for(const item of params.input){
+   if(!item||typeof item!=="object"||!("output" in item)||typeof item.output!=="string")continue;
+   try{
+    const result=JSON.parse(item.output);
+    const linked=result.linkedStaffSource;
+    if(linked?.relation==="staff_communication_messages"&&linked.actor==="employee"&&
+       linked.response_code==="decline"&&typeof linked.id==="string")observedStaffClaims.add(linked.id);
+   }catch{/* Not a JSON tool result. */}
+  }
   if(params.model!=="gpt-6-luna"||typeof params.max_output_tokens!=="number")
     throw Error("15c_live_unexpected_model");
   // The existing trusted-main, secret-isolating 14B Responses broker caps
@@ -250,10 +262,9 @@ run("real Luna recovers the same investigation after SIGKILL and real lease expi
   expect(incident[0].episode_id).toBe(episode);
   expect(Number(incident[0].step_version)).toBe(2);
   const tools=incident[0].evidence.modelTools as string[];
-  expect(tools[0]).toBe("get_investigation_source");
-  expect(tools).toContain("get_staff_messages");
-  expect(tools.some(t=>["query_data","get_coverage_gaps"].includes(t)))
-   .toBe(true);
+  expect(tools).toContain("get_investigation_source");
+  expect(observedStaffClaims.has(messages[0].id)).toBe(true);
+  expect(tools).not.toContain("get_staff_messages");
   expect(providerCompletions).toBeGreaterThanOrEqual(2);
   const ownerPosts=(await admin.query("select role,grounding->>'intent' as intent from public.ai_messages "+
    "where business_id=$1 and thread_id=$2",[ids.business,ids.thread])).rows;
