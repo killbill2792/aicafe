@@ -24,6 +24,12 @@ vi.mock("./tools/u3SqlResearch.server",async importOriginal=>{
    column_origins:{name:{relation:"menu_items",column:"name",binding:1},price_cents:{relation:"menu_items",column:"price_cents",binding:1}},
    relation_names:["menu_items"]}}))};
 });
+const purchaseStatusArgs=JSON.stringify({sql:"SELECT id,status FROM purchase_orders ORDER BY id",parameters:null});
+const purchaseResult=(rows:unknown[])=>({
+ source:"u3_canonical_research",period:null,missing:[],rows,empty:rows.length===0,truncated:false,page_complete:true,
+ evidence:{receipt_id:"11111111-1111-4111-8111-111111111111",scope:"verified_owner_cafe_lease",
+ query_fingerprint:"a".repeat(64),catalog_version:"a".repeat(16),column_units:{},relation_names:["purchase_orders"]}
+}) as unknown as Awaited<ReturnType<typeof runU3Sql>>;
 const salesSql="SELECT net_sales_cents FROM daily_rollups WHERE business_date BETWEEN $1 AND $2 ORDER BY business_date";
 const hoursSql="SELECT hour_local,net_sales_cents,orders_count FROM hourly_sales_rollup WHERE business_date BETWEEN $1 AND $2 ORDER BY business_date,hour_local";
 const costsSql="SELECT amount_cents FROM expenses WHERE spent_on BETWEEN $1 AND $2";
@@ -68,10 +74,11 @@ function inbox(batches: OwnerFollowUp[][]) {
 
 describe("Task14B trusted broker request-shape preflight (zero provider cost)",()=>{
   it("replays original-order encrypted reasoning with function call and tool result, without narrowing tools",async()=>{
+    vi.mocked(runU3Sql).mockResolvedValueOnce(purchaseResult([]));
     const {requests,provider}=recording([
       [{type:"response.output_item.done",item:{type:"reasoning",
         id:"rs_local_issued",status:"completed",summary:[],encrypted_content:"U".repeat(512)}},
-       call("get_supplier_purchase_orders","{}","call_purchase_1"),completed],
+       call("query_data",purchaseStatusArgs,"call_purchase_1"),completed],
       [text("The saved purchasing history is empty."),completed]
     ]);
     const ctx={...context,purchasing:{
@@ -89,7 +96,7 @@ describe("Task14B trusted broker request-shape preflight (zero provider cost)",(
       const result=await runAgentTurn({ownerText:"Read my saved supplier purchase orders.",
         context:ctx,provider});
       expect(result.endReason).toBe("complete");
-      expect(result.tools).toContain("get_supplier_purchase_orders");
+      expect(result.tools).toContain("query_data");
     }finally{vi.unstubAllEnvs();}
     expect(requests).toHaveLength(2);
     const next=requests[1].input as Array<Record<string,unknown>>;
@@ -99,14 +106,14 @@ describe("Task14B trusted broker request-shape preflight (zero provider cost)",(
     expect(history.map(x=>x.type)).toEqual(["reasoning","function_call","function_call_output"]);
     expect(history[0]).toEqual({type:"reasoning",id:"rs_local_issued",
       status:"completed",summary:[],encrypted_content:"U".repeat(512)});
-    expect(next).toContainEqual({type:"function_call",name:"get_supplier_purchase_orders",
-      arguments:"{}",call_id:"call_purchase_1"});
+    expect(next).toContainEqual({type:"function_call",name:"query_data",
+      arguments:purchaseStatusArgs,call_id:"call_purchase_1"});
     expect(next.some(x=>x.type==="function_call_output"&&x.call_id==="call_purchase_1")).toBe(true);
     expect(JSON.stringify(requests[1])).toContain("rs_local_issued");
     expect(JSON.stringify(requests[1])).not.toContain("fc_opaque_remote");
     expect(Buffer.byteLength(JSON.stringify(requests[1]),"utf8")).toBeLessThanOrEqual(120_000);
     const names=(requests[1].tools as Array<{name:string}>).map(x=>x.name);
-    expect(names).toContain("get_supplier_purchase_orders");
+    expect(names).toContain("query_data");
     expect(names).toContain("inspect_supplier_purchase");
     expect(names).toContain("propose_supplier_purchase_order");
   });
@@ -459,14 +466,15 @@ describe("Luna honors actual worker and provider budgets without a fixed interac
   it("supplier research follows the same interactive policy",async()=>{
     vi.stubEnv("SUPERVISOR_OPENAI_MODEL","gpt-6-luna");
     try{
-      const {requests,provider}=recording([[call("get_supplier_purchase_orders","{}","po"),doneWith(16384)],
+      vi.mocked(runU3Sql).mockResolvedValueOnce(purchaseResult([]));
+      const {requests,provider}=recording([[call("query_data",purchaseStatusArgs,"po"),doneWith(16384)],
         [menu("b"),doneWith(8192)],[text("Summary."),doneWith(8192)]]);
       const ctx={...context,purchasing:{
         list:async()=>({orders:[],truncated:false,drafts:[],draftsTruncated:false,unresolvedApprovals:[],unresolvedApprovalsTruncated:false}),
         inspect:vi.fn(),propose:vi.fn()
       }} as AgentToolContext;
       const r=await runAgentTurn({ownerText:"Read my supplier orders.",context:ctx,provider});
-      expect(r.tools).toContain("get_supplier_purchase_orders");
+      expect(r.tools).toContain("query_data");
       expect(limits(requests)).toEqual([["auto",16384],["auto",16384],["auto",16384]]);
       expect(r.usage.outputTokens).toBe(32768);
     }finally{vi.unstubAllEnvs()}
@@ -588,14 +596,16 @@ describe("saved supplier order communication is distinct from creating a new PO"
   }
   it("sends coherent stable instructions and executes a recorded read/prepare sequence without creating a PO",async()=>{
     const ports=purchasing();
-    const {requests,provider}=recording([[call("get_supplier_purchase_orders","{}","read_po"),completed],
+    vi.mocked(runU3Sql).mockResolvedValueOnce(purchaseResult([{id:po,status:"approved_for_ordering"}]));
+    const {requests,provider}=recording([[call("query_data",purchaseStatusArgs,"read_po"),completed],
       [call("propose_supplier_vendor_email",JSON.stringify({purchaseOrderId:po}),"draft_email"),completed],
       [text("The email approval is prepared. Nothing has been sent."),completed]]);
     const result=await runAgentTurn({ownerText:"Prepare an email approval for my existing approved order "+po+
       ". Do not create another order or send anything.",
       context:{...context,purchasing:ports} as unknown as AgentToolContext,provider});
-    expect(result.tools).toEqual(["get_supplier_purchase_orders","propose_supplier_vendor_email"]);
-    expect(ports.list).toHaveBeenCalledTimes(1);
+    expect(result.tools).toEqual(["query_data","propose_supplier_vendor_email"]);
+    expect(ports.list).not.toHaveBeenCalled();
+    expect(result.results).toContainEqual(expect.objectContaining({source:"u3_canonical_research",rows:[{id:po,status:"approved_for_ordering"}]}));
     expect(ports.proposeVendorSend).toHaveBeenCalledExactlyOnceWith({purchaseOrderId:po});
     expect(ports.propose).not.toHaveBeenCalled();
     expect(ports.inspect).not.toHaveBeenCalled();
@@ -610,15 +620,15 @@ describe("saved supplier order communication is distinct from creating a new PO"
     expect(String(requests[0].instructions)).not.toContain("or an explicit 'do not create an order', use read-only tools only");
     const names=(requests[0].tools as Array<{name:string}>).map(x=>x.name);
     expect(names).toEqual((requests[1].tools as Array<{name:string}>).map(x=>x.name));
-    expect(names).toEqual(expect.arrayContaining(["get_supplier_purchase_orders","propose_supplier_purchase_order","propose_supplier_vendor_email","query_data"]));
+    expect(names).toEqual(expect.arrayContaining(["query_data","propose_supplier_purchase_order","propose_supplier_vendor_email"]));
   });
   it("preserves read-only comparison/status requests without preparing any action",async()=>{
     const ports=purchasing();
-    const {requests,provider}=recording([[call("get_supplier_purchase_orders","{}","read_po"),completed],
+    const {requests,provider}=recording([[call("query_data",purchaseStatusArgs,"read_po"),completed],
       [text("The order is saved and approved internally."),completed]]);
     const r=await runAgentTurn({ownerText:"Review my saved order status only, no action.",
       context:{...context,purchasing:ports} as unknown as AgentToolContext,provider});
-    expect(r.tools).toEqual(["get_supplier_purchase_orders"]);
+    expect(r.tools).toEqual(["query_data"]);
     expect(ports.propose).not.toHaveBeenCalled();
     expect(ports.proposeVendorSend).not.toHaveBeenCalled();
     expect(ports.recordOwnerOutcome).not.toHaveBeenCalled();
