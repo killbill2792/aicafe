@@ -42,6 +42,27 @@ describe("runningCostLinesForPeriod — reconciles exactly with the aggregate to
     expect(runningCostLinesForPeriod(snapshot,"month").find(line=>line.categoryCode==="rent")).toMatchObject({amountCents:0,isMissing:true});
   });
 
+  it.each([
+    {date:"2026-10-01",amount:90000,missing:true},
+    {date:"2026-10-30",amount:0,missing:false},
+  ])("scopes receipt evidence to the selected week: $date / $amount", ({date,amount,missing}) => {
+    const receipt={id:"rent-oct",category_code:"rent",amount_cents:amount,status:"actual",spent_on:date};
+    const previous=runningCostLinesForMonth({expenses:[receipt],recurring:[],from:"2026-10-01",to:"2026-10-31",today:"2026-11-02",historical:true});
+    const current=runningCostLinesForMonth({expenses:[],recurring:[],priorExpenses:[receipt],from:"2026-11-01",to:"2026-11-30",today:"2026-11-02",historical:false});
+    const snapshot={...buildSnapshot(current),monthKey:"2026-11",todayDateStr:"2026-11-02",previousRunningCostLines:previous};
+    expect(current.find(line=>line.categoryCode==="rent")).toMatchObject({isMissing:true});
+    const week=runningCostLinesForPeriod(snapshot,"week");
+    expect(week.find(line=>line.categoryCode==="rent")).toMatchObject({amountCents:0,isMissing:missing,isEstimate:false});
+    expect(week.reduce((sum,line)=>sum+line.amountCents,0)).toBe(roundHalfUpToCent(runningCostsForPeriod(snapshot,"week")));
+  });
+
+  it("does not label an in-window actual receipt as estimated due to an unrelated dated estimate", () => {
+    const previous=runningCostLinesForMonth({expenses:[{id:"estimated-oct",category_code:"rent",amount_cents:90000,status:"estimated",spent_on:"2026-10-01"}],recurring:[],from:"2026-10-01",to:"2026-10-31",today:"2026-11-02",historical:true});
+    const current=runningCostLinesForMonth({expenses:[{id:"actual-nov",category_code:"rent",amount_cents:50000,status:"actual",spent_on:"2026-11-01"}],recurring:[],from:"2026-11-01",to:"2026-11-30",today:"2026-11-02",historical:false});
+    const snapshot={...buildSnapshot(current),monthKey:"2026-11",todayDateStr:"2026-11-02",previousRunningCostLines:previous};
+    expect(runningCostLinesForPeriod(snapshot,"week").find(line=>line.categoryCode==="rent")).toMatchObject({amountCents:50000,isMissing:false,isEstimate:false});
+  });
+
   it("merges estimate evidence only from overlapping months", () => {
     const snapshot={...buildSnapshot([{categoryCode:"rent" as const,label:"Rent",amountCents:31000,isMissing:false,isEstimate:false}]),
       previousRunningCostLines:[{categoryCode:"rent" as const,label:"Rent",amountCents:30000,isMissing:false,isEstimate:true}]};
