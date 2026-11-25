@@ -12,6 +12,7 @@ import {syncToastOperationalSources} from "./operationalCopy";
 import {reconcileToastOperationalHealth} from "./operationalStaging";
 import {readAllPages} from "./readAllPages";
 import {reconcileToastDays} from "./reconcile";
+import {finalizeToastPaymentWindow} from "./paymentDates";
 import {queueToastMissingDays} from "./missingDays";
 
 type Mapping={business_id:string;location_id:string;restaurant_guid:string;
@@ -297,6 +298,11 @@ export async function runToastSyncTick(db:SupabaseClient,now=new Date(),
     locationId:m.location_id,timeZone:m.toast_time_zone,
     closeoutHour:m.closeout_hour
    },deadlineAt);
+   });
+   await isolated("final_payments",async()=>{
+    const day=eligibleClosedDay(now,m.toast_time_zone,m.closeout_hour);
+    if(day)await finalizeToastPaymentWindow(db,{businessId:m.business_id,restaurantGuid:m.restaurant_guid,
+     timezone:m.toast_time_zone,closeoutHour:m.closeout_hour},day,now,Math.min(deadlineAt,Date.now()+45000));
    });
 
     continue;

@@ -5,7 +5,7 @@ vi.mock("./client",async original=>({
  ...(await original<typeof import("./client")>()),
  createToastClient:()=>({request:h.get})
 }));
-import {stageToastPaymentDateReview} from "./paymentDates";
+import {stageToastPaymentDateReview,needsFinalPaymentDetail} from "./paymentDates";
 import type {SupabaseClient} from "@supabase/supabase-js";
 const request={businessId:"aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
  restaurantGuid:"bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",businessDate:"2026-10-01"};
@@ -35,4 +35,16 @@ describe("Toast refund-date evidence",()=>{
   await expect(stageToastPaymentDateReview({rpc} as unknown as SupabaseClient,request)).rejects.toThrow();
   expect(rpc).not.toHaveBeenCalled();
  });
+});
+
+
+it("only requests final payment details for adjustments, missing fees or unfinished captures",()=>{
+ const guid="cccccccc-cccc-4ccc-8ccc-cccccccccccc";
+ const base={payment_ref:guid,payment_type:"CREDIT",payment_status:"CAPTURED",original_processing_fee_cents:23,status:"actual"};
+ expect(needsFinalPaymentDetail({guid,adjustment:false},[base])).toBe(false);
+ expect(needsFinalPaymentDetail({guid,adjustment:true},[base])).toBe(true);
+ expect(needsFinalPaymentDetail({guid,adjustment:false},[{...base,original_processing_fee_cents:null}])).toBe(true);
+ expect(needsFinalPaymentDetail({guid,adjustment:false},[{...base,payment_status:"AUTHORIZED"}])).toBe(true);
+ expect(needsFinalPaymentDetail({guid,adjustment:false},[{...base,payment_type:"CASH",original_processing_fee_cents:null}])).toBe(false);
+ expect(needsFinalPaymentDetail({guid,adjustment:false},[])).toBe(true);
 });

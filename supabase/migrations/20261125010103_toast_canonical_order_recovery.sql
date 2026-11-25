@@ -688,7 +688,13 @@ returns boolean language sql stable security invoker set search_path=public as $
  select 1 from public.toast_location_mappings m
  where m.business_id=p_business_id and m.restaurant_guid=p_restaurant_guid
    and m.verified_at is not null
-   and (not exists(select 1 from public.toast_day_status d where d.business_id=m.business_id
+   and (exists(select 1 from public.toast_day_status d where d.business_id=m.business_id
+     and d.restaurant_guid=m.restaurant_guid and d.business_date<=p_day and d.import_state='imported'
+     and d.business_date>=coalesce((select nullif(s.operational_sources->'final_payments'->>'completed_through','')::date+1
+       from public.toast_optional_sync_state s where s.business_id=m.business_id and s.restaurant_guid=m.restaurant_guid),
+       case when p_now>=(((p_day+1)::timestamp+make_interval(hours=>m.closeout_hour)) at time zone m.toast_time_zone)+interval '6 hours' then p_day else p_day-1 end)
+     and p_now>=(((d.business_date+1)::timestamp+make_interval(hours=>m.closeout_hour)) at time zone m.toast_time_zone)+interval '6 hours')
+   or not exists(select 1 from public.toast_day_status d where d.business_id=m.business_id
      and d.restaurant_guid=m.restaurant_guid and d.business_date=p_day and d.import_state='imported')
    or exists(select 1 from public.toast_day_status d where d.business_id=m.business_id
      and d.restaurant_guid=m.restaurant_guid and d.business_date<=p_day
@@ -704,3 +710,160 @@ returns boolean language sql stable security invoker set search_path=public as $
 $$;
 revoke all on function public.toast_closeout_due(uuid,uuid,date,timestamptz) from public,anon,authenticated;
 grant execute on function public.toast_closeout_due(uuid,uuid,date,timestamptz) to service_role;
+
+
+-- The payment endpoint can expose a captured fee before Orders does. Preserve
+-- that actual provider fact in the existing payment row, not a second archive.
+create or replace function public.toast_refresh_typed_payment_facts()
+returns trigger language plpgsql security definer set search_path=public as $facts$
+begin
+ if auth.role()<>'service_role' and current_user not in ('postgres','supabase_admin')
+ then raise exception 'service role only';end if;
+ if new.import_state<>'imported' or new.last_import_run_id is null
+  or (tg_op='UPDATE' and new.imported_at is not distinct from old.imported_at)
+ then return new;end if;
+ -- Keep earlier independently verified capture fees until the refreshed source
+ -- proves a different amount/status. Mark rows first; remove only truly absent
+ -- rows after a complete generation has been upserted.
+ update public.toast_payment_facts set status='needs_match'
+  where business_id=new.business_id and restaurant_guid=new.restaurant_guid
+   and business_date=new.business_date;
+ -- Payments are read from inside the latest import's orders (the archive no
+ -- longer keeps separate payment rows). Same payment refs as before: the
+ -- payment GUID, else its position in the order's import page.
+ with orders as (
+  select r.payload,r.first_seen,r.run_id,r.source_page,r.source_index
+  from public.toast_raw_records r
+  where r.business_id=new.business_id and r.restaurant_guid=new.restaurant_guid
+   and r.business_date=new.business_date and r.entity='order'
+   and (r.run_id=new.last_import_run_id or r.seen_run_id=new.last_import_run_id)
+ ), pays as (
+  select coalesce(
+    case when p.raw->>'guid' ~* '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$'
+     then ((p.raw->>'guid')::uuid)::text end,
+    'payment:'||o.run_id::text||':'||new.business_date::text||':'||o.source_page::text||':'||
+     o.source_index::text||':'||c.idx::text||':'||p.idx::text) as ref,
+   p.raw as payload,o.first_seen
+  from orders o
+  cross join lateral jsonb_array_elements(case when jsonb_typeof(o.payload->'checks')='array'
+   then o.payload->'checks' else '[]'::jsonb end) with ordinality as c(raw,idx)
+  cross join lateral jsonb_array_elements(case when jsonb_typeof(c.raw->'payments')='array'
+   then c.raw->'payments' else '[]'::jsonb end) with ordinality as p(raw,idx)
+ ), raw as (
+  select distinct on (ref) ref,payload,first_seen from pays
+  order by ref,first_seen desc
+ )
+ insert into public.toast_payment_facts(
+ business_id,restaurant_guid,business_date,payment_ref,payment_type,card_type,
+ card_entry_mode,payment_status,amount_cents,tip_cents,
+ original_processing_fee_cents,processing_fee_cents,fee_status,fee_basis,status,first_seen)
+ select new.business_id,new.restaurant_guid,new.business_date,r.ref,
+ left(r.payload->>'type',80),left(r.payload->>'cardType',80),
+ left(r.payload->>'cardEntryMode',80),left(r.payload->>'paymentStatus',80),
+ case when jsonb_typeof(r.payload->'amount')='number'
+  then round((r.payload->>'amount')::numeric*100)::bigint else null end,
+ case when jsonb_typeof(r.payload->'tipAmount')='number'
+  then round((r.payload->>'tipAmount')::numeric*100)::bigint else null end,
+ case when jsonb_typeof(r.payload->'originalProcessingFee')='number'
+  then round((r.payload->>'originalProcessingFee')::numeric*100)::bigint else null end,
+ case when upper(regexp_replace(coalesce(r.payload->>'type',''),'[^a-zA-Z]','','g'))
+  in ('CASH','GIFTCARD','GIFTCERTIFICATE') then 0
+  when jsonb_typeof(r.payload->'originalProcessingFee')='number'
+  then round((r.payload->>'originalProcessingFee')::numeric*100)::bigint else null end,
+ case when upper(regexp_replace(coalesce(r.payload->>'type',''),'[^a-zA-Z]','','g'))
+  in ('CASH','GIFTCARD','GIFTCERTIFICATE')
+  or jsonb_typeof(r.payload->'originalProcessingFee')='number' then 'actual'
+  else 'missing' end,
+ case when upper(regexp_replace(coalesce(r.payload->>'type',''),'[^a-zA-Z]','','g'))
+  in ('CASH','GIFTCARD','GIFTCERTIFICATE') then 'cash_or_gift'
+  when jsonb_typeof(r.payload->'originalProcessingFee')='number' then 'toast'
+  else 'missing' end,
+ case when jsonb_typeof(r.payload->'amount')='number' then 'actual'
+  else 'open' end,r.first_seen
+ from raw r
+ on conflict(business_id,restaurant_guid,business_date,payment_ref) do update
+ set payment_type=excluded.payment_type,card_type=excluded.card_type,
+ card_entry_mode=excluded.card_entry_mode,payment_status=excluded.payment_status,
+ amount_cents=excluded.amount_cents,tip_cents=excluded.tip_cents,
+ original_processing_fee_cents=case when excluded.original_processing_fee_cents is null and excluded.payment_status='CAPTURED'
+    and toast_payment_facts.payment_status='CAPTURED'
+    and excluded.payment_type=toast_payment_facts.payment_type
+    and excluded.amount_cents is not distinct from toast_payment_facts.amount_cents
+    and toast_payment_facts.original_processing_fee_cents is not null
+    then toast_payment_facts.original_processing_fee_cents else excluded.original_processing_fee_cents end,
+ processing_fee_cents=case when excluded.original_processing_fee_cents is null and excluded.payment_status='CAPTURED'
+    and toast_payment_facts.payment_status='CAPTURED'
+    and excluded.payment_type=toast_payment_facts.payment_type
+    and excluded.amount_cents is not distinct from toast_payment_facts.amount_cents
+    and toast_payment_facts.original_processing_fee_cents is not null
+    then toast_payment_facts.original_processing_fee_cents else excluded.processing_fee_cents end,
+ fee_status=case when excluded.original_processing_fee_cents is null and excluded.payment_status='CAPTURED'
+    and toast_payment_facts.payment_status='CAPTURED'
+    and excluded.payment_type=toast_payment_facts.payment_type
+    and excluded.amount_cents is not distinct from toast_payment_facts.amount_cents
+    and toast_payment_facts.original_processing_fee_cents is not null then 'actual' else excluded.fee_status end,
+ fee_basis=case when excluded.original_processing_fee_cents is null and excluded.payment_status='CAPTURED'
+    and toast_payment_facts.payment_status='CAPTURED'
+    and excluded.payment_type=toast_payment_facts.payment_type
+    and excluded.amount_cents is not distinct from toast_payment_facts.amount_cents
+    and toast_payment_facts.original_processing_fee_cents is not null then 'toast' else excluded.fee_basis end,
+ status=excluded.status,first_seen=excluded.first_seen;
+ if new.unparsed_count=0 then
+  delete from public.toast_payment_facts where business_id=new.business_id
+   and restaurant_guid=new.restaurant_guid and business_date=new.business_date and status='needs_match';
+ end if;
+ return new;
+end $facts$;
+
+revoke all on function public.toast_refresh_typed_payment_facts() from public,anon,authenticated;
+
+create or replace function public.toast_apply_verified_payment_fee(
+ p_business_id uuid,p_restaurant_guid uuid,p_order_guid uuid,p_payment_guid uuid,
+ p_amount_cents bigint,p_fee_cents bigint)
+returns boolean language plpgsql security invoker set search_path=public as $$
+declare target_day date; affected integer;
+begin
+ if auth.role() is distinct from 'service_role' or p_amount_cents is null or p_fee_cents is null
+  or p_fee_cents<0 then raise exception 'invalid payment fee evidence';end if;
+ -- Require the independently returned order and payment to match the current,
+ -- committed archive. Never guess a cross-day payment's order business date.
+ select min(f.business_date) into target_day from public.toast_payment_facts f
+  where f.business_id=p_business_id and f.restaurant_guid=p_restaurant_guid and f.payment_ref=p_payment_guid::text
+   and exists(select 1 from public.toast_raw_records r join public.toast_day_status d
+    on d.business_id=r.business_id and d.restaurant_guid=r.restaurant_guid and d.business_date=r.business_date
+    where r.business_id=f.business_id and r.restaurant_guid=f.restaurant_guid and r.business_date=f.business_date
+     and r.entity='order' and r.entity_guid=p_order_guid and d.import_state='imported'
+     and (r.run_id=d.last_import_run_id or r.seen_run_id=d.last_import_run_id)
+     and exists(select 1 from jsonb_array_elements(case when jsonb_typeof(r.payload->'checks')='array' then r.payload->'checks' else '[]'::jsonb end) c
+      cross join lateral jsonb_array_elements(case when jsonb_typeof(c->'payments')='array' then c->'payments' else '[]'::jsonb end) x
+      where x->>'guid'=p_payment_guid::text));
+ if target_day is null then return false;end if;
+ perform pg_advisory_xact_lock(hashtextextended('toast-day:'||p_business_id::text||':'||target_day::text,0));
+ if not exists(select 1 from public.toast_location_mappings where business_id=p_business_id and restaurant_guid=p_restaurant_guid and verified_at is not null) then return false;end if;
+ update public.toast_payment_facts f set original_processing_fee_cents=p_fee_cents,
+  processing_fee_cents=p_fee_cents,fee_status='actual',fee_basis='toast'
+ where f.business_id=p_business_id and f.restaurant_guid=p_restaurant_guid and f.business_date=target_day
+   and f.payment_ref=p_payment_guid::text and f.payment_type='CREDIT' and f.payment_status='CAPTURED'
+   and f.amount_cents=p_amount_cents and f.status='actual'
+   and (f.original_processing_fee_cents is distinct from p_fee_cents or f.fee_status<>'actual' or f.fee_basis<>'toast')
+   and exists(select 1 from public.toast_raw_records r join public.toast_day_status d
+     on d.business_id=r.business_id and d.restaurant_guid=r.restaurant_guid and d.business_date=r.business_date
+     where r.business_id=f.business_id and r.restaurant_guid=f.restaurant_guid and r.business_date=f.business_date
+      and r.entity='order' and r.entity_guid=p_order_guid and d.import_state='imported'
+      and (r.run_id=d.last_import_run_id or r.seen_run_id=d.last_import_run_id)
+      and exists(select 1 from jsonb_array_elements(case when jsonb_typeof(r.payload->'checks')='array' then r.payload->'checks' else '[]'::jsonb end) c
+       cross join lateral jsonb_array_elements(case when jsonb_typeof(c->'payments')='array' then c->'payments' else '[]'::jsonb end) x
+       where x->>'guid'=p_payment_guid::text));
+ get diagnostics affected=row_count;
+ if affected>0 then
+  insert into public.toast_rollup_refresh_jobs(business_id,business_date) values(p_business_id,target_day)
+  on conflict(business_id,business_date) do update set generation=gen_random_uuid(),requested_at=now(),retry_at=now(),attempts=0,last_error_category=null;
+  return true;
+ end if;
+ return exists(select 1 from public.toast_payment_facts f where f.business_id=p_business_id and f.restaurant_guid=p_restaurant_guid
+  and f.business_date=target_day and f.payment_ref=p_payment_guid::text and f.payment_type='CREDIT'
+  and f.payment_status='CAPTURED' and f.amount_cents=p_amount_cents and f.status='actual'
+  and f.original_processing_fee_cents=p_fee_cents and f.fee_status='actual' and f.fee_basis='toast');
+end $$;
+revoke all on function public.toast_apply_verified_payment_fee(uuid,uuid,uuid,uuid,bigint,bigint) from public,anon,authenticated;
+grant execute on function public.toast_apply_verified_payment_fee(uuid,uuid,uuid,uuid,bigint,bigint) to service_role;

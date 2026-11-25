@@ -2,7 +2,7 @@ import {beforeEach,describe,expect,it,vi} from "vitest";
 import type {SupabaseClient} from "@supabase/supabase-js";
 
 const m=vi.hoisted(()=>({live:vi.fn(),importDay:vi.fn(),reconcile:vi.fn(),optional:vi.fn(),firstCatalog:vi.fn(),
- refresh:vi.fn(),costs:vi.fn(),request:vi.fn(),paymentGaps:vi.fn(),operational:vi.fn(),operationalHealth:vi.fn()}));
+ refresh:vi.fn(),costs:vi.fn(),request:vi.fn(),paymentGaps:vi.fn(),operational:vi.fn(),operationalHealth:vi.fn(),finalPayments:vi.fn()}));
 vi.mock("server-only",()=>({}));
 vi.mock("./orderRecovery",()=>({pollToastOrderRevisions:m.live}));
 vi.mock("./orderIngestion",()=>({prepareToastOrderRevision:(_scope:unknown,row:{businessDate?:number})=>{
@@ -11,6 +11,7 @@ vi.mock("./orderIngestion",()=>({prepareToastOrderRevision:(_scope:unknown,row:{
 }}));
 vi.mock("./dayImport",()=>({importToastBusinessDay:m.importDay}));
 vi.mock("./reconcile",()=>({reconcileToastDays:m.reconcile}));
+vi.mock("./paymentDates",()=>({finalizeToastPaymentWindow:m.finalPayments}));
 vi.mock("./optionalSync",()=>({syncToastOptionalSources:m.optional,ensureToastFirstCatalog:m.firstCatalog}));
 vi.mock("./restaurantInfo",()=>({refreshToastRestaurantInfo:m.refresh}));
 vi.mock("./missingDays",()=>({queueToastMissingDays:m.paymentGaps}));
@@ -419,6 +420,7 @@ it("runs closeout only on the fifteen-minute dispatcher without redoing live or 
  m.live.mockClear();m.importDay.mockClear();
  await runToastSyncTick(f.db,now,Date.now()+60000,"closeout");
  expect(m.live).not.toHaveBeenCalled();expect(m.importDay).not.toHaveBeenCalled();
+ expect(m.finalPayments).not.toHaveBeenCalled();
 });
 
 
