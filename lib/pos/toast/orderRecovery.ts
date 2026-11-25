@@ -3,7 +3,7 @@ import type {SupabaseClient} from "@supabase/supabase-js";
 import {z} from "zod";
 import {fromZonedTime} from "date-fns-tz";
 import {createToastClient,ToastApiError,toToastTimestamp} from "./client";
-import {ingestToastOrderRevision} from "./orderIngestion";
+import {prepareToastOrderRevision} from "./orderIngestion";
 import {orderEventRetryAt} from "./orderQueue";
 import {isCafeCurrentlyOpen} from "./poll";
 import {currentToastBusinessDay} from "./todaySoFar";
@@ -30,16 +30,17 @@ export async function pollToastOrderRevisions(db:SupabaseClient,p:Params,now=new
   db.from("toast_location_mappings").select("toast_time_zone,closeout_hour,verified_at")
    .eq("business_id",p.businessId).eq("restaurant_guid",p.restaurantGuid).eq("location_id",p.locationId).maybeSingle(),
   db.from("locations").select("open_hours").eq("business_id",p.businessId).eq("id",p.locationId).maybeSingle(),
-  db.from("toast_sync_health").select("last_order_poll_at").eq("business_id",p.businessId)
+  db.from("toast_sync_health").select("canonical_order_poll_at,canonical_live_day").eq("business_id",p.businessId)
    .eq("restaurant_guid",p.restaurantGuid).maybeSingle()
  ]);
  if(me||le||he)throw new ToastApiError("unavailable");
  if(!m?.verified_at||!m.toast_time_zone||m.closeout_hour==null||!l)throw new ToastApiError("unauthorized_location");
  const scope={businessId:p.businessId,restaurantGuid:p.restaurantGuid,timezone:m.toast_time_zone,closeoutHour:m.closeout_hour};
- const cursor=h?.last_order_poll_at as string|null|undefined;
+ const cursor=h?.canonical_order_poll_at as string|null|undefined;
  const hours=normalizeOpenHours(l.open_hours);
  const open=!hours||!Object.prototype.hasOwnProperty.call(hours,OPEN_HOURS_DAY_KEYS[new Date(Date.parse(localClock(now,scope.timezone).today+"T12:00:00Z")).getUTCDay()])||isCafeCurrentlyOpen(hours,scope.timezone,now);
- if(cursor&&now.getTime()-Date.parse(cursor)<orderRecoveryCadence(open,false))
+ const liveDay=currentToastBusinessDay(now,scope.timezone,scope.closeoutHour);
+ if(h?.canonical_live_day===liveDay&&cursor&&now.getTime()-Date.parse(cursor)<orderRecoveryCadence(open,false))
   return {skipped:"not_due",fetched:0};
  const {data:lease,error:claimError}=await db.rpc("toast_claim_poll",{p_business_id:p.businessId,
   p_restaurant_guid:p.restaurantGuid,p_kind:"orders"});
@@ -48,37 +49,50 @@ export async function pollToastOrderRevisions(db:SupabaseClient,p:Params,now=new
  const budget=Math.min(deadlineAt,Date.now()+60000);
  let failure:unknown=null,until:string|null=null,fetched=0;
  try{
-  // On first activation cover the previous and current provider business
-  // days. The existing daily reconciliation remains the completeness backstop.
-  const day=addCalendarDays(currentToastBusinessDay(now,scope.timezone,scope.closeoutHour),-1);
+  const day=liveDay;
   const bootstrap=fromZonedTime(day+"T"+String(scope.closeoutHour).padStart(2,"0")+":00:00",scope.timezone);
-  // Re-read the cursor after acquiring the lease, never use a stale snapshot.
-  const {data:latest,error}=await db.from("toast_sync_health").select("last_order_poll_at")
-   .eq("business_id",p.businessId).eq("restaurant_guid",p.restaurantGuid).maybeSingle();
-  if(error)throw new ToastApiError("unavailable");
-  const window=orderRecoveryWindow(latest?.last_order_poll_at??null,bootstrap,now);
-  if(window){
-   const client=createToastClient(db,p.businessId);
-   for(let page=1;;page++){
-    if(Date.now()>=budget)throw new ToastApiError("timeout");
-    const rows=await client.request("/orders/v2/ordersBulk?startDate="+toToastTimestamp(window.since)+
-     "&endDate="+toToastTimestamp(window.until)+"&pageSize=100&page="+page,
-     p.restaurantGuid,z.array(z.unknown()),{deadlineAt:budget});
-    if(rows.length>100)throw new ToastApiError("invalid_response");
-    for(const row of rows){
-     if(Date.now()>=budget)throw new ToastApiError("timeout");
-     await ingestToastOrderRevision(db,scope,row,now);fetched++;
-    }
-    if(rows.length<100){until=window.until.toISOString();break;}
-   }
+  const client=createToastClient(db,p.businessId);
+  while(Date.now()<budget){
+   const [{data:latest,error},{data:progress,error:pe}]=await Promise.all([
+    db.from("toast_sync_health").select("canonical_order_poll_at,canonical_live_day")
+     .eq("business_id",p.businessId).eq("restaurant_guid",p.restaurantGuid).maybeSingle(),
+    db.from("toast_order_poll_progress").select("window_since,window_until,next_page,bootstrap_day")
+     .eq("business_id",p.businessId).eq("restaurant_guid",p.restaurantGuid).eq("canonical",true).maybeSingle()
+   ]);
+   if(error||pe)throw new ToastApiError("unavailable");
+   const bootDay=progress?progress.bootstrap_day:latest?.canonical_live_day!==day?day:null;
+   // A complete business-day seed is needed once on a new day, including
+   // orders opened before closeout. Subsequent updates use modification time.
+   const window=progress?{since:new Date(progress.window_since),until:new Date(progress.window_until)}:
+    bootDay?{since:new Date(Math.min(bootstrap.getTime(),now.getTime()-2*MINUTE)),until:now}:
+    orderRecoveryWindow(latest?.canonical_order_poll_at??null,bootstrap,now);
+   if(!window)break;
+   if(window.since>=window.until)throw new ToastApiError("invalid_response");
+   const page=progress?.next_page??1;
+   const query=bootDay?"businessDate="+String(bootDay).replaceAll("-",""):
+    "startDate="+toToastTimestamp(window.since)+"&endDate="+toToastTimestamp(window.until);
+   const rows=await client.request("/orders/v2/ordersBulk?"+query+"&pageSize=100&page="+page,
+    p.restaurantGuid,z.array(z.unknown()),{deadlineAt:budget});
+   if(rows.length>100)throw new ToastApiError("invalid_response");
+   const prepared=rows.map(row=>prepareToastOrderRevision(scope,row));
+   if(bootDay&&prepared.some(row=>row.day!==bootDay))throw new ToastApiError("invalid_response");
+   const {data:receipt,error:writeError}=await db.rpc("toast_commit_canonical_order_page",{
+    p_business_id:p.businessId,p_restaurant_guid:p.restaurantGuid,p_nonce:lease,
+    p_since:window.since.toISOString(),p_until:window.until.toISOString(),p_page:page,
+    p_rows:prepared,p_has_more:rows.length===100,p_bootstrap_day:bootDay});
+   if(writeError||typeof receipt?.changed!=="number"||typeof receipt?.complete!=="boolean")throw new ToastApiError("unavailable");
+   fetched+=rows.length;
+   if(receipt.complete&&!bootDay)until=window.until.toISOString();
+   if(receipt.complete&&!bootDay&&window.until.getTime()>=now.getTime()-2*MINUTE)break;
   }
+
  }catch(e){failure=e;}
  // An interrupted window is replayed, never certified complete. Existing
  // per-object idempotency and active repair dedupe make replays safe.
  const category=failure instanceof ToastApiError?failure.category:failure?"unavailable":null;
  const {data:finished,error:finishError}=await db.rpc("toast_finish_poll",{
   p_business_id:p.businessId,p_restaurant_guid:p.restaurantGuid,p_kind:"orders",p_nonce:lease,
-  p_cursor_at:failure?null:until,p_success:failure===null,
+  p_cursor_at:null,p_success:failure===null,
   p_retry_after:failure?orderEventRetryAt(failure,2):null,p_failure:category});
  if(finishError||!finished)throw new ToastApiError("unavailable");
  if(failure)throw failure;
