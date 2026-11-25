@@ -490,7 +490,6 @@ export async function processNextInvestigation(db:SupabaseClient,now:Date,
     // unrelated data reads. Keep the original claim, permissions and effects.
     const permitted=[...new Set([
         ...investigationReadTools,
-        "get_events" as const,
         ...(context.webSearch?["web_search" as const]:[]),
         ...(synopsis.kind==="maintenance_issue"?maintenanceInvestigationTools:[]),
         "propose_staff_question" as const,

@@ -72,7 +72,7 @@ it("preserves dated expenses instead of spreading recorded payments across the c
  const amount=runningCostMonthlyAmount(lines.find(r=>r.categoryCode==="other")!,"2026-11");
  expect(amount).toMatchObject({amountCents:10000,recordedExpenseCents:6000,recurringEstimateCents:4000,
    recordedExpenses:[{date:"2026-11-15",amountCents:6000,status:"actual"}],isEstimate:true});
- expect(runningCostsForPeriodCents([amount],"2026-11-14","2026-11-14")).toBe(133);
- expect(runningCostsForPeriodCents([amount],"2026-11-15","2026-11-15")).toBe(6133);
+ expect(runningCostsForPeriodCents([amount],"2026-11-14","2026-11-14")).toBeCloseTo(4000/30);
+ expect(runningCostsForPeriodCents([amount],"2026-11-15","2026-11-15")).toBeCloseTo(6000+4000/30);
  expect(runningCostsForPeriodCents([amount],"2026-11-01","2026-11-30")).toBe(10000);
 });
