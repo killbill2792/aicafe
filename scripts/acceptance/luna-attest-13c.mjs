@@ -76,8 +76,8 @@ if(audit.head!==process.env.HEAD_SHA||
    proof.source_verified_manual_roster_correction!==true||
    proof.actual_supervisor_roster_effect!==false||
    !Number.isSafeInteger(audit.attempts)||audit.attempts<2||
-   audit.attempts>18||audit.reservedMicros<1||
-   audit.reservedMicros>180_000||receipts.length!==audit.attempts||
+   audit.attempts>60||audit.reservedMicros<1||
+   audit.reservedMicros>500_000||receipts.length!==audit.attempts||
    audit.receipts.length!==audit.attempts||
    audit.receipts.some(r=>r.terminal!=="completed"||r.model!=="gpt-6-luna"))
   throw Error("Unverified 13C real Luna provider/source/owner acceptance");

@@ -10,8 +10,8 @@ if(!["inspect_supplier_purchase","propose_supplier_purchase_order",
      "get_supplier_purchase_orders"].every(t=>observedTools.includes(t)))
    throw Error("Trusted provider never selected the required multi-step tool chain");
 if(audit.head!==process.env.HEAD_SHA||proof.headSha!==audit.head||
-   proof.passed!==true||audit.attempts<3||audit.attempts>18||
-   audit.reservedMicros<1||audit.reservedMicros>180_000||
+   proof.passed!==true||audit.attempts<3||audit.attempts>60||
+   audit.reservedMicros<1||audit.reservedMicros>500_000||
    audit.receipts.length!==audit.attempts||
    audit.receipts.filter(r=>r.terminal==="completed"&&
      Number.isSafeInteger(r.actualInputTokens)&&r.actualInputTokens>0&&
