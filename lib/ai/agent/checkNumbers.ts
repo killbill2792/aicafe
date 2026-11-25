@@ -1,5 +1,5 @@
 import { tokenizeNumbers } from "./numberTokens";
-import {completeResearchResults} from "./researchRecovery";
+import {completeResearchResults,researchNumericUnit} from "./researchRecovery";
 import type { AgentLocale, AgentToolResult } from "./tools";
 import { menuPriceDifferenceCents } from "@/lib/calc/agentPriceDifferences";
 import { metricCatalog,metricKeySchema } from "@/lib/calc/metrics/catalog";
@@ -27,7 +27,7 @@ const COUNTABLE_FIELDS = new Set(["count","itemCount","quantity","units","totalU
   "timecardCount","onClockCount"]);
 // Timecard durations/breaks are employee- and date-scoped. Never promote
 // them into globally interchangeable counts just because numbers coincide.
-const trustedCountKey=(key:string)=>!key.includes("u3VerifiedDuration/")&&(key.includes("u3VerifiedCount/")||
+const trustedCountKey=(key:string)=>!key.includes("u3VerifiedDuration/")&&!key.includes("u3VerifiedQuantity/")&&(key.includes("u3VerifiedCount/")||
   key.includes("calculateResultCount")||
   COUNTABLE_FIELDS.has(key.split("/").at(-1)??"")||
   COUNTABLE_COLLECTIONS.has((key.split("/").at(-1)??"").replace(/Length$/u,"")));
@@ -206,15 +206,15 @@ function verifiedU3Evidence(r:AgentToolResult,periodKey:string){
  const values:NumericEvidence["values"]=[];
  const proof=completeU3Proof(r);
  if(!proof||!Array.isArray(r.rows))return values;
- const units=proof.column_units as Record<string,unknown>;
  for(const [rowIndex,row] of r.rows.entries()){
   if(!row||typeof row!=="object"||Array.isArray(row))continue;
   for(const [column,raw] of Object.entries(row)){
-   if(!Object.hasOwn(units,column))continue;
+   const unit=researchNumericUnit(r,row as Record<string,unknown>,column);
    // Duration provenance is distinct from generic counts, even when the
    // model gives a count an hours/minutes alias. The unit comes from SQL lineage.
-   const duration=units[column]==="hours"?"hour":units[column]==="minutes"?"minute":units[column]==="seconds"?"second":null;
-   const accepted=u3ReceiptNumber(raw,duration?"count":units[column]);
+   const duration=unit==="hours"?"hour":unit==="minutes"?"minute":unit==="seconds"?"second":null;
+   const measurement=unit==="g"?"gram":unit==="ml"?"milliliter":null;
+   const accepted=u3ReceiptNumber(raw,duration||measurement?"count":unit);
    if(!accepted)continue;
    // Preserve direct recorded-duration identity, using only the same binding.
    let identity="";
@@ -232,7 +232,7 @@ function verifiedU3Evidence(r:AgentToolResult,periodKey:string){
      identity="timecard:"+(typeof fields.timecard_id==="string"?fields.timecard_id:"unbound")+
        "/day:"+(date??"")+"/person:"+encodeURIComponent(person)+"/";
    }
-   const key=periodKey+(duration?"u3VerifiedDuration/"+duration+"/":accepted.unit==="count"?"u3VerifiedCount/":"u3Receipt/")+
+   const key=periodKey+(duration?"u3VerifiedDuration/"+duration+"/":measurement?"u3VerifiedQuantity/"+measurement+"/":accepted.unit==="count"?"u3VerifiedCount/":"u3Receipt/")+
     identity+proof.receipt_id+"/row:"+rowIndex+"/"+column;
    values.push({key,value:accepted.value,unit:accepted.unit});
   }
@@ -314,6 +314,12 @@ export function compactEvidence(results:readonly AgentToolResult[],limit=100):Nu
         const key=periodKey+"u3VerifiedDuration/"+duration+"/calculate";
         values.push({key,value:value.valueDuration,unit:"count"});
         invalidatedKeys.push(key);
+      }
+      const measurement=value.unit==="g"?"gram":value.unit==="ml"?"milliliter":null;
+      if(measurement&&typeof value.valueQuantity==="number"&&Number.isFinite(value.valueQuantity)&&r.numberEstimates.some(entry=>
+           entry&&typeof entry==="object"&&"unit" in entry&&"value" in entry&&entry.unit===value.unit&&entry.value===value.valueQuantity)){
+         const key=periodKey+"u3VerifiedQuantity/"+measurement+"/calculate";
+         values.push({key,value:value.valueQuantity,unit:"count"});invalidatedKeys.push(key);
       }
       const amount=typeof value.valueCents==="number"?{unit:"cents" as const,n:value.valueCents}:
         typeof value.valueBps==="number"?{unit:"bps" as const,n:value.valueBps}:
@@ -672,7 +678,9 @@ function isCalendarNumber(text: string, start: number, end: number, value: numbe
   return false;
 }
 /** Keep calendar durations separate from arbitrary sales/item counts. */
-function durationUnitFamily(text:string):"second"|"hour"|"minute"|"day"|"week"|"month"|null{
+function durationUnitFamily(text:string):"second"|"hour"|"minute"|"day"|"week"|"month"|"gram"|"milliliter"|null{
+ if(/(?:^|[^\p{L}])(?:g|grams?|gramos?)(?!\p{L})/iu.test(text))return "gram";
+ if(/(?:^|[^\p{L}])(?:ml|milliliters?|millilitres?|mililitros?)(?!\p{L})/iu.test(text))return "milliliter";
  if(/(?:seconds?|secs?|segundos?|ثوان|ثانية)/iu.test(text))return "second";
  if(/(?:hours?|hrs?|horas?|ساعات?|ساعة)/iu.test(text))return "hour";
  if(/(?:minutes?|mins?|minutos?|دقائق?|دقيقة)/iu.test(text))return "minute";
@@ -1594,12 +1602,13 @@ export function checkNumbers(text: string, ownerText: string, results: readonly 
         ownerSpoken.some(o=>o.kind==="number"&&o.durationUnit===v.durationUnit&&o.value===v.value);
       const unitKey:Record<NonNullable<typeof v.durationUnit>,RegExp>={
         second:/seconds?|secs?|segundos?/iu,hour:/hours?|hrs?|horas?/iu,minute:/minutes?|mins?|minutos?/iu,
-        day:/days?|días?/iu,week:/weeks?|semanas?/iu,month:/months?|meses?/iu,
+        day:/days?|días?/iu,week:/weeks?|semanas?/iu,month:/months?|meses?/iu,gram:/(?!)/u,milliliter:/(?!)/u,
       };
       const fromTools=evidence.some(entry=>entry.values.some(value=>
         value.unit==="count"&&
         (value.key.includes("u3VerifiedDuration/")?value.key.includes("u3VerifiedDuration/"+v.durationUnit+"/"):
-          !value.key.includes("u3VerifiedCount/")&&unitKey[v.durationUnit!].test(value.key))&&
+          value.key.includes("u3VerifiedQuantity/")?value.key.includes("u3VerifiedQuantity/"+v.durationUnit+"/"):
+           !value.key.includes("u3VerifiedCount/")&&unitKey[v.durationUnit!].test(value.key))&&
         value.value===v.value&&timecardDurationMatchesClaim(text,v.start,v.end,value.key)));
       return !(fromOwner||fromTools);
     }

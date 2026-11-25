@@ -451,7 +451,8 @@ export async function runU3Sql(ctx:U3SqlContext,raw:unknown){
      (col.unit==="seconds"||col.unit==="minutes"||col.unit==="hours")&&
        ["int2","int4","int8","numeric","float4","float8"].includes(col.type)?col.unit:
      // Reviewed quantity fields representing sold item units, not mixed ingredient or inventory units.
-     relation.name==="order_lines"&&col.name==="quantity"?"count":
+     (["order_lines","item_sale_observations","customer_products"].includes(relation.name)&&col.name==="quantity")||
+       (["supplier_proposal_lines","purchase_order_lines"].includes(relation.name)&&col.name==="packs")?"count":
      /(?:^|_)(?:count|orders|items|visits|rows)$/.test(col.name)&&
        ["int2","int4","int8","numeric"].includes(col.type)?"count":
      /(?:^|_)percent$/.test(col.name)?"percent":

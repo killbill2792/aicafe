@@ -11,7 +11,7 @@ const clock="(?:"+D+"{1,2}:"+D+"{2}(?::"+D+"{2})?(?:\\s*(?:a\\.?m\\.?|p\\.?m\\.?
 const months="(?:Jan(?:uary)?|Feb(?:ruary)?|Mar(?:ch)?|Apr(?:il)?|May|Jun(?:e)?|Jul(?:y)?|Aug(?:ust)?|Sep(?:tember)?|Oct(?:ober)?|Nov(?:ember)?|Dec(?:ember)?|ene(?:ro)?|feb(?:rero)?|marzo|abr(?:il)?|mayo|junio|julio|ago(?:sto)?|septiembre|setiembre|octubre|noviembre|diciembre|يناير|فبراير|مارس|أبريل|ابريل|مايو|يونيو|يوليو|أغسطس|اغسطس|سبتمبر|أكتوبر|اكتوبر|نوفمبر|ديسمبر)";
 const weekday="(?:Mon(?:day)?|Tue(?:sday)?|Wed(?:nesday)?|Thu(?:rsday)?|Fri(?:day)?|Sat(?:urday)?|Sun(?:day)?|lun(?:es)?|mar(?:tes)?|mié(?:rcoles)?|mie(?:rcoles)?|jue(?:ves)?|vie(?:rnes)?|sáb(?:ado)?|sab(?:ado)?|dom(?:ingo)?)";
 const date="(?:"+D+"{4}-"+D+"{1,2}-"+D+"{1,2}|(?:"+weekday+"\\s+)?"+D+"{1,2}\\/"+D+"{1,2}(?:\\/"+D+"{2,4})?|"+months+"\\s+"+D+"{1,2}(?:,\\s*"+D+"{4})?|"+D+"{1,2}\\s+(?:de\\s+)?"+months+"(?:\\s+"+D+"{4})?)";
-const durationUnit="(?:seconds?|secs?|segundos?|ثوان|ثانية|hours?|hrs?|minutes?|mins?|min|days?|weeks?|months?|días?|semanas?|horas?|hora|minutos?|meses?|ساعات?|ساعة|دقائق?|دقيقة|أيام|ايام|أسابيع|اسابيع|أشهر|شهور)";
+const durationUnit="(?:grams?|gramos?|milliliters?|millilitres?|mililitros?|ml|g|seconds?|secs?|segundos?|ثوان|ثانية|hours?|hrs?|minutes?|mins?|min|days?|weeks?|months?|días?|semanas?|horas?|hora|minutos?|meses?|ساعات?|ساعة|دقائق?|دقيقة|أيام|ايام|أسابيع|اسابيع|أشهر|شهور)";
 const join="(?:\\s*(?:[–—-]|\\bto\\b|\\ba\\b|إلى)\\s*)";
 const normal=(s:string)=>s.replace(/[٠-٩]/g,c=>String(c.charCodeAt(0)-0x660)).replace(/[۰-۹]/g,c=>String(c.charCodeAt(0)-0x6f0));
 /** Mixed punctuation uses its rightmost decimal mark; otherwise use the locale. */

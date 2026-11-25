@@ -1,11 +1,11 @@
 import {z} from "zod";
 import {randomUUID} from "node:crypto";
 import type {AgentToolContext,AgentToolResult} from "./index";
-import {CALC_OPS,DURATION_UNITS,isDurationUnit,exactDecimal,exactNumber,runCalculation,type CalcOp,type CalcShown,type CalcUnit,type CalcValue} from "@/lib/metrics/core/calculator";
+import {CALC_OPS,DURATION_UNITS,QUANTITY_UNITS,isDurationUnit,isQuantityUnit,exactDecimal,exactNumber,runCalculation,type CalcOp,type CalcShown,type CalcUnit,type CalcValue} from "@/lib/metrics/core/calculator";
 import type {ExplainLine} from "../explain";
 import type {CardValue} from "@/lib/format/values";
 import {ownerStatedAmounts} from "../checkNumbers";
-import {completeResearchAttempts} from "../researchRecovery";
+import {completeResearchAttempts,researchNumericUnit} from "../researchRecovery";
 
 const name=z.string().regex(/^[a-z][a-z0-9_]{0,39}$/u);
 const calculateInput=z.strictObject({
@@ -19,7 +19,7 @@ const calculateInput=z.strictObject({
     owner_value:z.number().finite().nullable(),
     owner_unit:z.enum(["cents","percent","count"]).nullable(),
     // Explicitly hypothetical, never represented as an observed business input.
-    assumption:z.strictObject({value:z.number().finite(),unit:z.enum(["cents","percent","count","ratio",...DURATION_UNITS]),basis:z.string().trim().min(1).max(500)}).nullable().optional(),
+    assumption:z.strictObject({value:z.number().finite(),unit:z.enum(["cents","percent","count","ratio",...DURATION_UNITS,...QUANTITY_UNITS]),basis:z.string().trim().min(1).max(500)}).nullable().optional(),
   })).min(1),
   steps:z.array(z.strictObject({
     id:name,label:z.string().trim().min(1).max(50),
@@ -44,7 +44,7 @@ const exactCalculations=new WeakMap<AgentToolResult,{values:Map<string,CalcValue
 const exactSnapshotSchema=z.strictObject({
  values:z.array(z.tuple([z.string().regex(/^(?:result|steps\.\d+)$/),z.strictObject({
   n:z.string().regex(/^-?\d{1,1235}$/),d:z.string().regex(/^[1-9]\d{0,1234}$/),
-  unit:z.enum(["cents","count","percent","ratio",...DURATION_UNITS])
+  unit:z.enum(["cents","count","percent","ratio",...DURATION_UNITS,...QUANTITY_UNITS])
  })])),
  estimate:z.boolean(),partial:z.boolean(),owner:z.boolean()
 });
@@ -87,7 +87,7 @@ function exactResearchField(verifiedUnit:unknown,value:string|number):CalcValue|
  if(verifiedUnit==="basis_points")return exactDecimal(amount,"percent",10000);
  const unit:CalcUnit|null=
   verifiedUnit==="cents"||verifiedUnit==="count"||
-  verifiedUnit==="percent"||verifiedUnit==="ratio"||isDurationUnit(verifiedUnit)?verifiedUnit:null;
+  verifiedUnit==="percent"||verifiedUnit==="ratio"||isDurationUnit(verifiedUnit)||isQuantityUnit(verifiedUnit)?verifiedUnit:null;
  if(!unit)return null;
  const scale=unit==="percent"?100:1;
  // A verified SQL average may contain fractional cents. Keep the exact
@@ -133,7 +133,7 @@ function ownerSaid(ctx:CalcContext,locale:AgentToolContext["locale"]){
   }
   return all;
 }
-const unitName:Record<CalcUnit,string>={cents:"cents",percent:"percent",count:"count",ratio:"ratio",seconds:"seconds",minutes:"minutes",hours:"hours"};
+const unitName:Record<CalcUnit,string>={cents:"cents",percent:"percent",count:"count",ratio:"ratio",seconds:"seconds",minutes:"minutes",hours:"hours",g:"g",ml:"ml"};
 
 export const calculateTools={
   calculate:{
@@ -141,7 +141,7 @@ export const calculateTools={
     description:"Perform exact traceable arithmetic (+ − × ÷, sum, percent_of) over verified authorized inputs. SQL may already have performed the needed arithmetic; do not repeat it unnecessarily. "+
       "Independently chosen assumptions and alternative definitions are not official screen values; label their basis accurately. "+
       "Each input reads ONE number: either tool + path (dot path into the exact tool result, e.g. rows.0.net_sales_cents), "+
-      "For SQL rows use the exact evidence.receipt_id and typed numeric column, e.g. rows.0.amount. Attested seconds, minutes and hours retain their units; compatible durations convert exactly during arithmetic. Use SQL for rates or other derived dimensions not represented by this calculator. For an earlier calculator result use tool calculate, its exact evidence.receipt_id and path result or steps.<zero-based index>; this preserves the unrounded value. Otherwise set receipt_id to null. "+
+      "For SQL rows use the exact evidence.receipt_id and typed numeric column, e.g. rows.0.amount. Attested seconds, minutes, hours, grams and milliliters retain their units; compatible durations convert exactly. For source-defined quantities select their own recorded unit from the same source binding. Use SQL for rates or other derived dimensions not represented by this calculator. For an earlier calculator result use tool calculate, its exact evidence.receipt_id and path result or steps.<zero-based index>; this preserves the unrounded value. Otherwise set receipt_id to null. "+
       "or fact_key (a saved owner fact, including a question-card answer), "+
       "or owner_value + owner_unit for a number the owner said in chat (cents for money, 20 for 20%, plain count). "+
       "For hypothetical scenarios only, provide assumption {value,unit,basis}; disclose that it is hypothetical, not observed or owner-provided. Set unused fields to null. Never invent a recorded value. Say You told me for owner numbers. "+
@@ -209,13 +209,9 @@ export const calculateTools={
             !(isResearch&&typeof value==="string"))
             return refuse("pathIsNotANumber",input.path);
           const field=input.path.split(".").at(-1)??"";
-          const e=(hit.result as Record<string,unknown>).evidence;
-          const proof=e&&typeof e==="object"&&!Array.isArray(e)?
-            (e as Record<string,unknown>).column_units:null;
-          const columnUnits=proof&&typeof proof==="object"&&!Array.isArray(proof)?
-            proof as Record<string,unknown>:null;
-          const attestedUnit=columnUnits&&Object.hasOwn(columnUnits,field)?
-            columnUnits[field]:null;
+          const sourceRow=isResearch?readPath(hit.result,input.path.split(".").slice(0,2).join(".")):null;
+          const attestedUnit=sourceRow&&typeof sourceRow==="object"&&!Array.isArray(sourceRow)?
+            researchNumericUnit(hit.result,sourceRow as Record<string,unknown>,field):null;
           const exact=isResearch?
             exactResearchField(attestedUnit,value as string|number):
             unitForField(field,value as number);
@@ -286,7 +282,8 @@ export const calculateTools={
         resultShown.unit==="percent"?[{value:resultShown.valueBps,unit:"bps" as const}]:
         resultShown.unit==="count"&&Number.isInteger(resultShown.quantity)?
           [{value:resultShown.quantity,unit:"count" as const}]:
-        "valueDuration" in resultShown?[{value:resultShown.valueDuration,unit:resultShown.unit}]:[];
+        "valueDuration" in resultShown?[{value:resultShown.valueDuration,unit:resultShown.unit}]:
+         "valueQuantity" in resultShown?[{value:resultShown.valueQuantity,unit:resultShown.unit}]:[];
       const result:AgentToolResult={source:"calculate",period,agentId:"leo",missing:partial?["incompleteCalculationInputs"]:[],numberEstimates,
         evidence:{receipt_id:randomUUID(),authority:"exact_arithmetic_from_verified_inputs"},
         ...(inputs.some(i=>i.from==="assumption")?{assumptions:inputs.filter(i=>i.from==="assumption").map(i=>({name:i.name,basis:i.ref}))}:{}),

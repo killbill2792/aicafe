@@ -251,6 +251,21 @@ describe("U3 receipt-bound exact research calculation",()=>{
   },ctx([{name:"calculate",result:actual}]));
   expect(next.result).toEqual({unit:"minutes",valueDuration:120});
  });
+ it("calculates same-source measured quantities without conflating grams, milliliters or item counts",async()=>{
+  const base=sql(older,"123");
+  const origin=(column:string,binding=1)=>({relation:"inventory_observations",column,binding});
+  const make=(unit:string,binding=1)=>({...base,result:{...base.result,rows:[{amount:"12.25",u:unit}],
+   evidence:{...(base.result.evidence as object),column_units:{},column_origins:{amount:origin("quantity"),u:origin("quantity_unit",binding)}}}});
+  const read=query(older,"query_data","rows.0.amount");
+  const measured=await calculateTools.calculate.execute(read,ctx([make("g")]));
+  expect(measured.result).toEqual({unit:"g",valueQuantity:12.25});
+  expect(checkNumbers("Recorded quantity: 12.25 grams.","",[measured],"en")).toEqual([]);
+  expect(checkNumbers("Recorded quantity: 12.25 ml.","",[measured],"en")).not.toEqual([]);
+  expect(checkNumbers("There were 12.25 orders.","",[measured],"en")).not.toEqual([]);
+  expect((await calculateTools.calculate.execute(read,ctx([make("g",2)]))).refused).toBe("researchUnitUnverified");
+  expect((await calculateTools.calculate.execute(read,ctx([make("ml")]))).result).toEqual({unit:"ml",valueQuantity:12.25});
+  expect((await calculateTools.calculate.execute({...read,inputs:[...read.inputs,{...input("volume",null,null),assumption:{value:5,unit:"ml",basis:"Hypothetical volume"}}],steps:[{id:"r",label:"Total",op:"add",args:["amount","volume"]}]},ctx([make("g")]))).refused).toBe("unitsDiffer");
+ });
  it("never treats a forged SQL alias as authoritative money units",async()=>{
   const countAsCents={...sql(older,"7"),result:{...sql(older,"7").result,
    evidence:{receipt_id:older,scope:"verified_owner_cafe_lease",
