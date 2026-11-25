@@ -39,12 +39,15 @@ export async function stageToastPaymentDateReview(db:SupabaseClient,
 
 const entrySchema=z.object({guid:GUID,adjustment:z.boolean(),
  fee:z.object({orderGuid:GUID,amountCents:z.number().int(),feeCents:z.number().int().nonnegative()}).optional()});
-const pendingDetailSchema=z.object({entry:entrySchema,day:z.iso.date(),attempts:z.number().int().positive(),retry_at:z.string()});
+const pendingDetailSchema=z.object({entry:entrySchema,day:z.iso.date(),attempts:z.number().int().positive(),retry_at:z.string().nullable()});
 const progressSchema=z.object({completed_through:z.iso.date().optional(),day:z.iso.date().optional(),
  entries:z.array(entrySchema).optional(),next:z.number().int().nonnegative().optional(),
  deferred:z.array(entrySchema).optional(),retry_at:z.string().optional(),pending_details:z.array(pendingDetailSchema).optional()}).passthrough();
 type Entry=z.infer<typeof entrySchema>;
 type PendingDetail=z.infer<typeof pendingDetailSchema>;
+// Bound the number of source attempts. Retain exhausted evidence with no next
+// retry; a new payment-date review can reopen it without inventing a fee.
+const MAX_DETAIL_ATTEMPTS=8;
 const detailRetry=(now:Date,attempts:number)=>new Date(now.getTime()+Math.min(24*60,15*2**Math.min(attempts-1,7))*60000).toISOString();
 type KnownPayment={payment_ref:string;payment_type:string|null;payment_status:string|null;
  original_processing_fee_cents:number|null;status:string};
@@ -87,17 +90,18 @@ export async function finalizeToastPaymentWindow(db:SupabaseClient,p:FinalScope,
  // is separate durable work. Only targeted GETs are repeated, with capped
  // exponential delay. A saved verified fee retries locally instead.
  const updateStatus=()=>{
-  const pending=Boolean(progress.pending_details?.length),deferred=Boolean(progress.deferred?.length);
-  progress.error=pending?"payment_detail_pending":deferred?"payment_order_pending":null;
+  const pending=Boolean(progress.pending_details?.some(x=>x.retry_at!==null)),deferred=Boolean(progress.deferred?.length);
+  const unresolved=Boolean(progress.pending_details?.some(x=>x.retry_at===null));
+  progress.error=pending?"payment_detail_pending":deferred?"payment_order_pending":unresolved?"payment_detail_unresolved":null;
   if(!progress.day){
-   progress.status=pending||deferred?"pending":"current";
-   if(!pending&&!deferred)progress.last_success_at=now.toISOString();
+   progress.status=pending||deferred?"pending":unresolved?"unresolved":"current";
+   if(!pending&&!deferred&&!unresolved)progress.last_success_at=now.toISOString();
   }
  };
  const enqueueDetail=(entry:Entry,day:string,attempts:number,error?:unknown)=>{
   const backoff=detailRetry(now,attempts);
   const retryAt=error instanceof ToastApiError&&error.retryAt&&Date.parse(error.retryAt)>Date.parse(backoff)?error.retryAt:backoff;
-  const pending:PendingDetail={entry,day,attempts,retry_at:retryAt};
+  const pending:PendingDetail={entry,day,attempts,retry_at:attempts>=MAX_DETAIL_ATTEMPTS?null:retryAt};
   progress.pending_details=[...(progress.pending_details??[]).filter(x=>x.entry.guid!==entry.guid||x.day!==day),pending];
  };
  const reviewDetail=async(entry:Entry,day:string,first:boolean)=>{
@@ -145,7 +149,7 @@ export async function finalizeToastPaymentWindow(db:SupabaseClient,p:FinalScope,
   await save();
  }
  // Retry a bounded due batch, while allowing newer payment days to proceed.
- const due=(progress.pending_details??[]).filter(x=>Date.parse(x.retry_at)<=now.getTime())
+ const due=(progress.pending_details??[]).filter((x):x is PendingDetail&{retry_at:string}=>x.retry_at!==null&&Date.parse(x.retry_at)<=now.getTime())
   .sort((a,b)=>Date.parse(a.retry_at)-Date.parse(b.retry_at)).slice(0,50);
  for(const pending of due){
   if(Date.now()>=deadlineAt)break;

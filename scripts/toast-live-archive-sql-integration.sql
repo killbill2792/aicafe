@@ -276,6 +276,9 @@ BEGIN
   where business_id=b and restaurant_guid=r;
  perform pg_temp.assert_true(not public.toast_closeout_due(b,r,d,((d+1)::timestamp+interval '12 hours') at time zone 'America/Los_Angeles'),'unfinished capture not polled before due');
  perform pg_temp.assert_true(public.toast_closeout_due(b,r,d,((d+1)::timestamp+interval '12 hours 15 minutes') at time zone 'America/Los_Angeles'),'unfinished payment detail remains due after list completion');
+ update public.toast_optional_sync_state set operational_sources=jsonb_set(operational_sources,'{final_payments,pending_details,0,retry_at}','null'::jsonb)
+  where business_id=b and restaurant_guid=r;
+ perform pg_temp.assert_true(not public.toast_closeout_due(b,r,d,((d+1)::timestamp+interval '1 day') at time zone 'America/Los_Angeles'),'exhausted capture evidence remains stored without scheduling another attempt');
  update public.toast_optional_sync_state set operational_sources=operational_sources#-'{final_payments,pending_details}' where business_id=b and restaurant_guid=r;
  perform pg_temp.assert_true(not public.toast_closeout_due(b,r,d,((d+1)::timestamp+interval '12 hours 15 minutes') at time zone 'America/Los_Angeles'),'verified detail completion stops closeout work');
 END $revision$;
