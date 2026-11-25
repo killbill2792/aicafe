@@ -8,7 +8,7 @@ import {orderEventRetryAt} from "./orderQueue";
 import {isCafeCurrentlyOpen} from "./poll";
 import {currentToastBusinessDay} from "./todaySoFar";
 import {localClock} from "./scheduleDates";
-import {normalizeOpenHours,OPEN_HOURS_DAY_KEYS} from "@/lib/business/openHours";
+import {normalizeOpenHours,OPEN_HOURS_DAY_KEYS,type OpenHours} from "@/lib/business/openHours";
 
 const MINUTE=60000;
 export const orderRecoveryCadence=(open:boolean,_webhookSeen:boolean)=>
@@ -24,7 +24,15 @@ export function orderRecoveryWindow(cursor:string|null,bootstrap:Date,now:Date){
  if(previous>=end)return null;
  return {since:new Date(previous-2*MINUTE),until:new Date(Math.min(end,previous+60*MINUTE))};
 }
-type Params={businessId:string;restaurantGuid:string;locationId:string;force?:boolean};
+export function toastOpenOrUnknown(raw:OpenHours|null,zone:string,now:Date){
+ const hours=normalizeOpenHours(raw);
+ return !hours||!Object.prototype.hasOwnProperty.call(hours,OPEN_HOURS_DAY_KEYS[new Date(Date.parse(localClock(now,zone).today+"T12:00:00Z")).getUTCDay()])||isCafeCurrentlyOpen(hours,zone,now);
+}
+export function toastShouldPollOrders(raw:OpenHours|null,zone:string,now:Date,cursor:string|null){
+ // One catch-up after closing, if the last successful cursor was during operations.
+ return toastOpenOrUnknown(raw,zone,now)||Boolean(cursor&&toastOpenOrUnknown(raw,zone,new Date(cursor)));
+}
+type Params={businessId:string;restaurantGuid:string;locationId:string;force?:boolean;closeoutDay?:string};
 export async function pollToastOrderRevisions(db:SupabaseClient,p:Params,now=new Date(),deadlineAt=Date.now()+60000){
  const [{data:m,error:me},{data:l,error:le},{data:h,error:he},{data:pending,error:pendingError}]=await Promise.all([
   db.from("toast_location_mappings").select("toast_time_zone,closeout_hour,verified_at")
@@ -39,11 +47,11 @@ export async function pollToastOrderRevisions(db:SupabaseClient,p:Params,now=new
  if(!m?.verified_at||!m.toast_time_zone||m.closeout_hour==null||!l)throw new ToastApiError("unauthorized_location");
  const scope={businessId:p.businessId,restaurantGuid:p.restaurantGuid,timezone:m.toast_time_zone,closeoutHour:m.closeout_hour};
  const cursor=h?.canonical_order_poll_at as string|null|undefined;
- const hours=normalizeOpenHours(l.open_hours);
- const open=!hours||!Object.prototype.hasOwnProperty.call(hours,OPEN_HOURS_DAY_KEYS[new Date(Date.parse(localClock(now,scope.timezone).today+"T12:00:00Z")).getUTCDay()])||isCafeCurrentlyOpen(hours,scope.timezone,now);
- if(!open&&!p.force&&!pending)return {skipped:"closed",fetched:0};
+ const open=toastOpenOrUnknown(l.open_hours,scope.timezone,now);
+ const shouldPoll=toastShouldPollOrders(l.open_hours,scope.timezone,now,cursor??null);
+ if(!shouldPoll&&!p.force&&!pending&&!p.closeoutDay)return {skipped:"closed",fetched:0};
  const liveDay=currentToastBusinessDay(now,scope.timezone,scope.closeoutHour);
- if(!p.force&&!pending&&h?.canonical_live_day===liveDay&&cursor&&now.getTime()-Date.parse(cursor)<orderRecoveryCadence(open,false))
+ if(!p.force&&!p.closeoutDay&&!pending&&h?.canonical_live_day===liveDay&&cursor&&now.getTime()-Date.parse(cursor)<orderRecoveryCadence(open||shouldPoll,false))
   return {skipped:"not_due",fetched:0};
  const {data:lease,error:claimError}=await db.rpc("toast_claim_poll",{p_business_id:p.businessId,
   p_restaurant_guid:p.restaurantGuid,p_kind:"orders"});
@@ -52,7 +60,7 @@ export async function pollToastOrderRevisions(db:SupabaseClient,p:Params,now=new
  const budget=Math.min(deadlineAt,Date.now()+60000);
  let failure:unknown=null,until:string|null=null,fetched=0;
  try{
-  const day=liveDay;
+  const day=p.closeoutDay??liveDay;
   const bootstrap=fromZonedTime(day+"T"+String(scope.closeoutHour).padStart(2,"0")+":00:00",scope.timezone);
   const client=createToastClient(db,p.businessId);
   while(Date.now()<budget){
@@ -63,7 +71,7 @@ export async function pollToastOrderRevisions(db:SupabaseClient,p:Params,now=new
      .eq("business_id",p.businessId).eq("restaurant_guid",p.restaurantGuid).eq("canonical",true).maybeSingle()
    ]);
    if(error||pe)throw new ToastApiError("unavailable");
-   const bootDay=progress?progress.bootstrap_day:latest?.canonical_live_day!==day?day:null;
+   const bootDay=progress?progress.bootstrap_day:!p.closeoutDay&&latest?.canonical_live_day!==day?day:null;
    // A complete business-day seed is needed once on a new day, including
    // orders opened before closeout. Subsequent updates use modification time.
    const window=progress?{since:new Date(progress.window_since),until:new Date(progress.window_until)}:

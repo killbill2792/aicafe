@@ -50,7 +50,7 @@ export async function ensureToastFirstCatalog(db:SupabaseClient,p:Location,
 }
 
 export async function syncToastOptionalSources(db:SupabaseClient,p:Location,
- now:Date,deadlineAt:number,mode?:"menu"){
+ now:Date,deadlineAt:number,mode?:"menu",respectHours=false){
  if(Date.now()>=deadlineAt)return {menu:"deferred",labor:"deferred"};
  const {data:credentials,error:ce}=await db.from("toast_api_credentials")
   .select("scopes_available").eq("business_id",p.business_id).maybeSingle();
@@ -184,6 +184,13 @@ export async function syncToastOptionalSources(db:SupabaseClient,p:Location,
   if(phaseFailures.length)throw new ToastApiError(phaseFailures[0]);
   return {menu,labor:"deferred",version:verifiedMenuVersion};
  }
+ let active=true;
+ if(respectHours){
+  const {data:loc,error}=await db.from("locations").select("open_hours").eq("business_id",p.business_id).eq("id",p.location_id).maybeSingle();
+  if(error)throw new ToastApiError("unavailable");
+  const {toastOpenOrUnknown}=await import("./orderRecovery");
+  active=toastOpenOrUnknown(loc?.open_hours??null,p.toast_time_zone,now);
+ }
  const lastModified=sourceStates.labor_modified??{};
  const saveModified=async(patch:Record<string,unknown>)=>{
   sourceStates.labor_modified={...sourceStates.labor_modified,...patch};
@@ -193,7 +200,7 @@ export async function syncToastOptionalSources(db:SupabaseClient,p:Location,
   if(lastModified.status!=="missing_permissions")
    await saveModified({status:"missing_permissions",last_checked_at:now.toISOString(),
     error:"missing_permissions",next_at:null});
- }else if(staffReady&&Date.now()<deadlineAt&&
+ }else if(active&&staffReady&&Date.now()<deadlineAt&&
   (typeof lastModified.next_at!=="string"||
    Date.parse(lastModified.next_at)<=now.getTime())){
   const checked=now.toISOString();

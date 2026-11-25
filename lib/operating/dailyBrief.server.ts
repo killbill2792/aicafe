@@ -201,10 +201,13 @@ export async function runCafeBrief(db:SupabaseClient,b:Business,now:Date,
   const evidence=await readBriefEvidence(db,{businessId:b.id,businessName:b.name??"",
     currency:b.currency},schedule,now);
   const missing=evidence.content.missing;
-  // Wait for yesterday's POS data only while there is still time before the latest send.
+  // Wait for available brief data points while there is still time before the latest send.
   if(!test&&schedule.phase==="window"&&!evidence.posComplete)
     return cafeStep(schedule.today,{step:"pos_sync",outcome:"waiting",
       reason:"yesterday_pos_data_not_complete",details:{...scheduleDetails,missing}},
+      {schedule:scheduleInfo,missing});
+  if(!test&&schedule.phase==="window"&&missing.some(reason=>["events_unavailable","event_research_incomplete","drink_labels_incomplete"].includes(reason)))
+    return cafeStep(schedule.today,{step:"content",outcome:"waiting",reason:"brief_evidence_not_complete",details:{...scheduleDetails,missing}},
       {schedule:scheduleInfo,missing});
   if(!evidence.content.hasSomethingToSay&&schedule.phase!=="missed")
     return cafeStep(schedule.today,{step:"content",outcome:"skipped",reason:"nothing_to_say",

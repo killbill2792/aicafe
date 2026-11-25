@@ -237,7 +237,7 @@ function operationalPlan(now:Date,timeZone:string,closeoutHour:number):Operation
  ];
 }
 export async function syncToastOperationalSources(db:SupabaseClient,
- p:ToastCopyScope & {closeoutHour:number},now:Date,deadlineAt:number,
+ p:ToastCopyScope & {closeoutHour:number;respectHours?:boolean},now:Date,deadlineAt:number,
  event?:{family:"availability"|"ordering";at:string}){
  const {data:credentials,error:ce}=await db.from("toast_api_credentials").select("scopes_available")
   .eq("business_id",p.businessId).maybeSingle();
@@ -257,11 +257,25 @@ export async function syncToastOperationalSources(db:SupabaseClient,
   if(error)throw new ToastApiError("unavailable");
  };
  const client=createToastClient(db,p.businessId);
+ let open=true;
+ if(p.respectHours&&!event){
+  const {data:loc,error}=await db.from("locations").select("open_hours").eq("business_id",p.businessId).eq("id",p.locationId).maybeSingle();
+  if(error)throw new ToastApiError("unavailable");
+  const {toastOpenOrUnknown}=await import("./orderRecovery");
+  open=toastOpenOrUnknown(loc?.open_hours??null,p.timezone,now);
+ }
  const attempts:string[]=[];
  for(const op of operationalPlan(now,p.timezone,p.closeoutHour)){
   if(Date.now()>=deadlineAt)break;
   if(event&&op.family!==event.family)continue;
   const previous=states[op.key]??{};
+  if(p.respectHours&&!event){
+   const priorDay=previous.last_success_at?localClock(new Date(previous.last_success_at),p.timezone).today:null;
+   const local=localClock(now,p.timezone);
+   const daily=op.key.endsWith("_previous")||op.key==="kitchen_stations"||op.key==="ordering_schedule";
+   if(daily){if(priorDay===local.today)continue;if(local.minutes<p.closeoutHour*60)continue;}
+   else if(!open)continue;
+  }
   if(event&&previous.last_success_at&&Date.parse(previous.last_success_at)>=Date.parse(event.at))continue;
   if(previous.next_at&&Date.parse(previous.next_at)>now.getTime()&&(!event||previous.error))continue;
   const checked=now.toISOString();

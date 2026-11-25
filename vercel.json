@@ -22,7 +22,7 @@
     },
     {
       "path": "/api/cron/daily-brief",
-      "schedule": "*/15 * * * *"
+      "schedule": "4,19,34,49 * * * *"
     },
     {
       "path": "/api/cron/events-lookahead",

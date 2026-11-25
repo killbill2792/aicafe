@@ -68,11 +68,12 @@ async function queueDaily(db:SupabaseClient,m:Mapping,day:string){
   .select("import_state").eq("business_id",m.business_id)
   .eq("restaurant_guid",m.restaurant_guid).eq("business_date",day).maybeSingle();
  if(error)throw new ToastApiError("unavailable");
- if(existing?.import_state==="imported")return;
+ if(existing?.import_state==="imported")return false;
  const {error:queued}=await db.rpc("toast_queue_daily",{
   p_business_id:m.business_id,p_restaurant_guid:m.restaurant_guid,p_date:day
  });
  if(queued)throw new ToastApiError("unavailable");
+ return true;
 }
 async function queueFirstBackfill(db:SupabaseClient,m:Mapping,now:Date){
  const {data,error}=await db.from("toast_sync_runs").select("id")
@@ -260,10 +261,20 @@ export async function runToastSyncTick(db:SupabaseClient,now=new Date(),
   };
   try {
    if(mode==="closeout"){
+   await isolated("closeout_orders",async()=>{
+    const day=eligibleClosedDay(now,m.toast_time_zone,m.closeout_hour);
+    if(!day)return;
+    const {data:status,error}=await db.from("toast_day_status").select("import_state")
+     .eq("business_id",m.business_id).eq("restaurant_guid",m.restaurant_guid).eq("business_date",day).maybeSingle();
+    if(error)throw new ToastApiError("unavailable");
+    if(status?.import_state==="imported")return;
+    const {pollToastOrderRevisions}=await import("./orderRecovery");
+    await pollToastOrderRevisions(db,{businessId:m.business_id,restaurantGuid:m.restaurant_guid,locationId:m.location_id,closeoutDay:day},now,Math.min(deadlineAt,Date.now()+30000));
+   });
    await isolated("daily",async()=>{
    const closed=eligibleClosedDay(now,m.toast_time_zone,m.closeout_hour);
    if(closed&&Date.now()<deadlineAt){
-    await queueDaily(db,m,closed);
+    if(!await queueDaily(db,m,closed))return;
     const {data:daily,error:dailyErr}=await db.from("toast_sync_runs")
      .select("id,kind,state,requested_from,requested_to,days_done,days_total,cursor,resume_at")
      .eq("business_id",m.business_id).eq("restaurant_guid",m.restaurant_guid)
@@ -312,7 +323,7 @@ export async function runToastSyncTick(db:SupabaseClient,now=new Date(),
    await isolated("daily",async()=>{
    const closed=eligibleClosedDay(now,m.toast_time_zone,m.closeout_hour);
    if(closed&&Date.now()<deadlineAt){
-    await queueDaily(db,m,closed);
+    if(!await queueDaily(db,m,closed))return;
     const {data:daily,error:dailyErr}=await db.from("toast_sync_runs")
      .select("id,kind,state,requested_from,requested_to,days_done,days_total,cursor,resume_at")
      .eq("business_id",m.business_id).eq("restaurant_guid",m.restaurant_guid)
@@ -326,7 +337,8 @@ export async function runToastSyncTick(db:SupabaseClient,now=new Date(),
    await isolated("operational",async()=>{
     if(Date.now()<deadlineAt)await syncToastOperationalSources(db,{
      businessId:m.business_id,restaurantGuid:m.restaurant_guid,
-     locationId:m.location_id,timezone:m.toast_time_zone,closeoutHour:m.closeout_hour
+     locationId:m.location_id,timezone:m.toast_time_zone,closeoutHour:m.closeout_hour,
+     respectHours:mode==="operations"
     },now,Math.min(deadlineAt,Date.now()+12000));
    });
    await isolated("backfill",async()=>{
@@ -368,7 +380,7 @@ export async function runToastSyncTick(db:SupabaseClient,now=new Date(),
    const resumes=((pending??[]) as Run[]).filter(r=>shouldResume(r,Date.now()));
    for(const run of resumes.filter(r=>r.state!=="queued")){
     if(Date.now()>=deadlineAt)break;
-    if(run.kind==="backfill"||coveredByBackfill(run))continue;
+    if(run.kind==="backfill"||coveredByBackfill(run)||(mode==="operations"&&run.kind==="daily"&&run.requested_from===eligibleClosedDay(now,m.toast_time_zone,m.closeout_hour)))continue;
     processed+=await runDue(db,m,run,deadlineAt,5,paceHistorical);
    }
    });
@@ -383,7 +395,7 @@ export async function runToastSyncTick(db:SupabaseClient,now=new Date(),
    // saved payments (card fees), with growing waits between tries. Runs in
    // the repull phase below, with the shared pacing. Not gated on pending
    // backfills: a stuck one-day backfill must never stop other days' repair.
-   if(now.getUTCMinutes()<10&&Date.now()<deadlineAt)
+   if(localClock(now,m.toast_time_zone).minutes>=m.closeout_hour*60&&localClock(now,m.toast_time_zone).minutes<m.closeout_hour*60+10&&Date.now()<deadlineAt)
     await queueToastMissingDays(db,m,localClock(now,m.toast_time_zone).today,deadlineAt);
    });
    await isolated("repull",async()=>{
@@ -402,7 +414,7 @@ export async function runToastSyncTick(db:SupabaseClient,now=new Date(),
    });
    await isolated("optional",async()=>{
    if(Date.now()<deadlineAt)
-    await syncToastOptionalSources(db,m,now,deadlineAt);
+    await syncToastOptionalSources(db,m,now,deadlineAt,undefined,mode==="operations");
    });
    await isolated("queued",async()=>{
    if(Date.now()>=deadlineAt)return;
@@ -418,7 +430,7 @@ export async function runToastSyncTick(db:SupabaseClient,now=new Date(),
     (b.requested_from??"").localeCompare(a.requested_from??""));
    for(const run of sorted){
     if(Date.now()>=deadlineAt)break;
-    if(run.kind==="backfill"||coveredByBackfill(run)||
+    if(run.kind==="backfill"||coveredByBackfill(run)||(mode==="operations"&&run.kind==="daily"&&run.requested_from===eligibleClosedDay(now,m.toast_time_zone,m.closeout_hour))||
      !shouldResume(run,Date.now()))continue;
     processed+=await runDue(db,m,run,deadlineAt,1,paceHistorical);
    }
