@@ -249,7 +249,9 @@ async function getMenuItemSnapshots(
   },row=>row.menu_item_id);
   const knownItems=new Set(itemIds);
   if(quantitySoldRows.some(row=>!knownItems.has(row.menu_item_id)||
-    !Number.isSafeInteger(Number(row.total_quantity))||Number(row.total_quantity)<0))
+    (typeof row.total_quantity!=="number"&&(typeof row.total_quantity!=="string"||!row.total_quantity.trim()))||
+    !Number.isFinite(Number(row.total_quantity))||Number(row.total_quantity)<0||
+    Number(row.total_quantity)>Number.MAX_SAFE_INTEGER))
     throw new Error("snapshot_product_sales_mapping_unverified");
   for(let i=0;i<itemIds.length;i+=100){
     const batch=itemIds.slice(i,i+100);
