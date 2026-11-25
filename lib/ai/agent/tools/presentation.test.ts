@@ -480,7 +480,7 @@ describe("Task16E presentation capability census",()=>{
     "get_payroll_facts"
   ],
   "query_data": [
-    "canonical_data"
+    "canonical_data", "u3_canonical_research"
   ],
   "get_staff": [
     "current_staff"
