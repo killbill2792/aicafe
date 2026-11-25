@@ -39,10 +39,13 @@ export async function stageToastPaymentDateReview(db:SupabaseClient,
 
 const entrySchema=z.object({guid:GUID,adjustment:z.boolean(),
  fee:z.object({orderGuid:GUID,amountCents:z.number().int(),feeCents:z.number().int().nonnegative()}).optional()});
+const pendingDetailSchema=z.object({entry:entrySchema,day:z.iso.date(),attempts:z.number().int().positive(),retry_at:z.string()});
 const progressSchema=z.object({completed_through:z.iso.date().optional(),day:z.iso.date().optional(),
  entries:z.array(entrySchema).optional(),next:z.number().int().nonnegative().optional(),
- deferred:z.array(entrySchema).optional(),retry_at:z.string().optional()}).passthrough();
+ deferred:z.array(entrySchema).optional(),retry_at:z.string().optional(),pending_details:z.array(pendingDetailSchema).optional()}).passthrough();
 type Entry=z.infer<typeof entrySchema>;
+type PendingDetail=z.infer<typeof pendingDetailSchema>;
+const detailRetry=(now:Date,attempts:number)=>new Date(now.getTime()+Math.min(24*60,15*2**Math.min(attempts-1,7))*60000).toISOString();
 type KnownPayment={payment_ref:string;payment_type:string|null;payment_status:string|null;
  original_processing_fee_cents:number|null;status:string};
 export function needsFinalPaymentDetail(entry:Entry,known:KnownPayment[]){
@@ -79,6 +82,48 @@ export async function finalizeToastPaymentWindow(db:SupabaseClient,p:FinalScope,
    p_restaurant_guid:p.restaurantGuid,p_order_guid:fee.orderGuid,p_payment_guid:entry.guid,
    p_amount_cents:fee.amountCents,p_fee_cents:fee.feeCents});
   if(error)throw new ToastApiError("unavailable");return data===true;};
+ const client=createToastClient(db,p.businessId);
+ // The source review cursor tracks listed GUIDs; unresolved capture/fee detail
+ // is separate durable work. Only targeted GETs are repeated, with capped
+ // exponential delay. A saved verified fee retries locally instead.
+ const updateStatus=()=>{
+  const pending=Boolean(progress.pending_details?.length),deferred=Boolean(progress.deferred?.length);
+  progress.error=pending?"payment_detail_pending":deferred?"payment_order_pending":null;
+  if(!progress.day)progress.status=pending||deferred?"pending":"current";
+ };
+ const enqueueDetail=(entry:Entry,day:string,attempts:number)=>{
+  const pending={entry,day,attempts,retry_at:detailRetry(now,attempts)};
+  progress.pending_details=[...(progress.pending_details??[]).filter(x=>x.entry.guid!==entry.guid||x.day!==day),pending];
+ };
+ const reviewDetail=async(entry:Entry,day:string,first:boolean)=>{
+  const payment=await client.request("/orders/v2/payments/"+entry.guid,p.restaurantGuid,paymentDetailSchema,{deadlineAt});
+  if(payment.guid.toLowerCase()!==entry.guid)throw new ToastApiError("invalid_response");
+  const status=String(payment.paymentStatus??"").toUpperCase();
+  const type=String(payment.type??"").toUpperCase().replace(/[^A-Z]/g,"");
+  const failed=["VOIDED","DENIED","CANCELLED","ERROR","ERROR_NETWORK"].includes(status);
+  if(!entry.adjustment&&failed)return true;
+  if(!entry.adjustment&&String(payment.paidBusinessDate)!==day.replaceAll("-",""))
+   throw new ToastApiError("invalid_response");
+  const orderGuid=payment.orderGuid;
+  if(!orderGuid)throw new ToastApiError("invalid_response");
+  const amount=payment.amount,fee=payment.originalProcessingFee;
+  if(type==="CREDIT"&&status==="CAPTURED"&&amount!=null&&fee!=null&&fee>=0){
+   const verified={...entry,fee:{orderGuid,amountCents:Math.round(amount*100),feeCents:Math.round(fee*100)}};
+   const applied=await apply(verified);
+   if(entry.adjustment||!applied)await fetchAndIngestToastOrder(db,p,orderGuid,deadlineAt);
+   if(!applied)progress.deferred=[...(progress.deferred??[]).filter(e=>e.guid!==entry.guid),verified];
+   return true;
+  }
+  if(!failed&&type==="CREDIT"){
+   // An authorized credit payment or captured payment with missing fee/amount
+   // is still incomplete after the six-hour window. Fetch the order once;
+   // later attempts request only the payment until final evidence arrives.
+   if(first)await fetchAndIngestToastOrder(db,p,orderGuid,deadlineAt);
+   return false;
+  }
+  await fetchAndIngestToastOrder(db,p,orderGuid,deadlineAt);
+  return true;
+ };
  // An unresolved fee must not hold up the rest of the day or a later day.
  // Retrying a saved receipt is local only; it never refetches Toast.
  if(progress.deferred?.length&&(!progress.retry_at||Date.parse(progress.retry_at)<=now.getTime())){
@@ -88,9 +133,24 @@ export async function finalizeToastPaymentWindow(db:SupabaseClient,p:FinalScope,
   }
   progress.deferred=remaining;
   progress.retry_at=remaining.length?new Date(now.getTime()+15*60000).toISOString():undefined;
-  progress.error=remaining.length?"payment_order_pending":null;
-  if(!progress.day)progress.status=remaining.length?"pending":"current";
+  updateStatus();
   await save();
+ }
+ // Retry a bounded due batch, while allowing newer payment days to proceed.
+ const due=(progress.pending_details??[]).filter(x=>Date.parse(x.retry_at)<=now.getTime())
+  .sort((a,b)=>Date.parse(a.retry_at)-Date.parse(b.retry_at)).slice(0,50);
+ for(const pending of due){
+  if(Date.now()>=deadlineAt)break;
+  try{
+   const complete=await reviewDetail(pending.entry,pending.day,false);
+   progress.pending_details=(progress.pending_details??[]).filter(x=>x.entry.guid!==pending.entry.guid||x.day!==pending.day);
+   if(!complete)enqueueDetail(pending.entry,pending.day,pending.attempts+1);
+   if(progress.deferred?.length&&!progress.retry_at)progress.retry_at=detailRetry(now,1);
+   updateStatus();await save();
+  }catch(e){
+   enqueueDetail(pending.entry,pending.day,pending.attempts+1);
+   updateStatus();await save();throw e;
+  }
  }
  if(progress.completed_through&&progress.completed_through>=latest&&!progress.day)return;
  const day=progress.day??(progress.completed_through?addCalendarDays(progress.completed_through,1):latest);
@@ -99,7 +159,6 @@ export async function finalizeToastPaymentWindow(db:SupabaseClient,p:FinalScope,
   .eq("business_id",p.businessId).eq("restaurant_guid",p.restaurantGuid).eq("business_date",day).maybeSingle();
  if(ie)throw new ToastApiError("unavailable");
  if(imported?.import_state!=="imported")return;
- const client=createToastClient(db,p.businessId);
  if(!progress.entries||progress.day!==day){
   const ids=new Map<string,boolean>(),events:{kind:"refunded"|"voided";guids:string[]}[]=[];
   for(const [kind,param] of [["paid","paidBusinessDate"],["refunded","refundBusinessDate"],["voided","voidBusinessDate"]] as const){
@@ -116,7 +175,7 @@ export async function finalizeToastPaymentWindow(db:SupabaseClient,p:FinalScope,
     if(error)throw new ToastApiError("unavailable");
    }
   }
-  progress={completed_through:progress.completed_through,day,deferred:progress.deferred,retry_at:progress.retry_at,
+  progress={completed_through:progress.completed_through,day,deferred:progress.deferred,retry_at:progress.retry_at,pending_details:progress.pending_details,
    entries:[...ids].map(([guid,adjustment])=>({guid,adjustment})),next:0,status:"pending",error:null};
   await save();
  }
@@ -141,24 +200,7 @@ export async function finalizeToastPaymentWindow(db:SupabaseClient,p:FinalScope,
      if(!await apply(entry))progress.deferred=[...(progress.deferred??[]),entry];
      progress.next=index+1;continue;
     }
-    const payment=await client.request("/orders/v2/payments/"+entry.guid,p.restaurantGuid,paymentDetailSchema,{deadlineAt});
-    if(payment.guid.toLowerCase()!==entry.guid)throw new ToastApiError("invalid_response");
-    const failed=["VOIDED","DENIED","CANCELLED","ERROR","ERROR_NETWORK"].includes(String(payment.paymentStatus??""));
-    if(!entry.adjustment&&failed){progress.next=index+1;continue;}
-    if(!entry.adjustment&&String(payment.paidBusinessDate)!==day.replaceAll("-",""))
-     throw new ToastApiError("invalid_response");
-    const orderGuid=payment.orderGuid;
-    if(!orderGuid)throw new ToastApiError("invalid_response");
-    const amount=payment.amount,fee=payment.originalProcessingFee;
-    if(payment.type==="CREDIT"&&payment.paymentStatus==="CAPTURED"&&amount!=null&&fee!=null&&fee>=0){
-     const verified={...entry,fee:{orderGuid,amountCents:Math.round(amount*100),feeCents:Math.round(fee*100)}};
-     const applied=await apply(verified);
-     if(entry.adjustment||!applied)await fetchAndIngestToastOrder(db,p,orderGuid,deadlineAt);
-     if(!applied){
-      progress.deferred=[...(progress.deferred??[]),verified];
-      // Save only the verified numeric receipt, never the payment response.
-     }
-    }else await fetchAndIngestToastOrder(db,p,orderGuid,deadlineAt);
+    if(!await reviewDetail(entry,day,true))enqueueDetail(entry,day,1);
     progress.next=index+1;
    }
   }catch(e){await save();throw e;}
@@ -167,10 +209,11 @@ export async function finalizeToastPaymentWindow(db:SupabaseClient,p:FinalScope,
  if((progress.next??0)===start)break;
  }
  if((progress.next??0)>=entries.length){
-  const deferred=progress.deferred??[];
-  progress={completed_through:day,status:deferred.length?"pending":"current",
-   last_success_at:new Date().toISOString(),error:deferred.length?"payment_order_pending":null,
-   count:entries.length,deferred,retry_at:deferred.length?new Date(now.getTime()+15*60000).toISOString():undefined};
+  const deferred=progress.deferred??[],pending_details=progress.pending_details??[];
+  progress={completed_through:day,status:deferred.length||pending_details.length?"pending":"current",
+   last_success_at:new Date().toISOString(),error:null,
+   count:entries.length,deferred,pending_details,retry_at:deferred.length?(progress.retry_at??detailRetry(now,1)):undefined};
+  updateStatus();
  }
  await save();
 }

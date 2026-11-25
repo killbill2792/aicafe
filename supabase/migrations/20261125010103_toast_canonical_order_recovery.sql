@@ -717,6 +717,10 @@ returns boolean language sql stable security invoker set search_path=public as $
      and s.restaurant_guid=m.restaurant_guid
      and jsonb_array_length(coalesce(s.operational_sources->'final_payments'->'deferred','[]'::jsonb))>0
      and coalesce((s.operational_sources->'final_payments'->>'retry_at')::timestamptz,p_now)<=p_now)
+   or exists(select 1 from public.toast_optional_sync_state s
+     cross join lateral jsonb_array_elements(coalesce(s.operational_sources->'final_payments'->'pending_details','[]'::jsonb)) x
+     where s.business_id=m.business_id and s.restaurant_guid=m.restaurant_guid
+      and (x->>'retry_at')::timestamptz<=p_now)
    or exists(select 1 from public.toast_day_status d where d.business_id=m.business_id
      and d.restaurant_guid=m.restaurant_guid and d.business_date<=p_day and d.import_state='imported'
      and d.business_date>=coalesce((select nullif(s.operational_sources->'final_payments'->>'completed_through','')::date+1
