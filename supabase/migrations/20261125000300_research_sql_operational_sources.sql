@@ -87,3 +87,43 @@ grant execute on function public.supervisor_research_sql(uuid, uuid, text) to se
 
 comment on function public.supervisor_research_sql(uuid, uuid, text) is
   'Supervisor research: one read-only SELECT as the verified café owner under RLS, narrowed to one café. Server-only.';
+
+-- Definer helpers that trust the database role. Research reaches the database through the service-role
+-- client, where the role setting stays 'service_role' inside definer functions, so those helpers would treat
+-- research as a trusted server job and ignore café scope. While a research café is set they must behave
+-- exactly as for the signed-in owner: owner membership of that one café, nothing else.
+create or replace function public.toast_records_allowed(p_business_id uuid)
+returns boolean
+language sql
+stable security definer
+set search_path to 'public'
+as $$
+ select (current_setting('role',true) is distinct from 'authenticated'
+         and coalesce(nullif(current_setting('app.supervisor_research_business_id', true), ''), '') = '')
+  or public.scheduling_is_owner(p_business_id) $$;
+
+create or replace function public.toast_stock_source_receipts(p_business_id uuid)
+returns table(restaurant_guid uuid, checked_at text, successful_at text, source_status text, observed_count integer)
+language plpgsql
+stable security definer
+set search_path to 'public', 'pg_temp'
+as $$
+begin
+ if p_business_id is null or ((coalesce(current_setting('role',true),'authenticated') not in ('none','service_role')
+   or coalesce(nullif(current_setting('app.supervisor_research_business_id', true), ''), '') <> '')
+  and (auth.uid() is null
+   or not coalesce(public.scheduling_is_owner(p_business_id),false)))
+ then raise exception 'stock_source_scope_denied' using errcode='42501'; end if;
+ return query
+ select s.restaurant_guid,
+  nullif(s.operational_sources->'stock_inventory'->>'last_checked_at',''),
+  nullif(s.operational_sources->'stock_inventory'->>'last_success_at',''),
+  case when s.operational_sources->'stock_inventory'->>'status' in ('current','empty')
+   then s.operational_sources->'stock_inventory'->>'status' else 'failed' end,
+  case when jsonb_typeof(s.operational_sources->'stock_inventory'->'count')='number'
+    and (s.operational_sources->'stock_inventory'->>'count') ~ '^[0-9]{1,8}$'
+   then (s.operational_sources->'stock_inventory'->>'count')::integer end
+ from public.toast_optional_sync_state s
+ where s.business_id=p_business_id and s.operational_sources ? 'stock_inventory'
+ order by s.restaurant_guid limit 100;
+end $$;

@@ -1,4 +1,4 @@
-import {randomUUID} from "node:crypto";
+import {createHash,randomUUID} from "node:crypto";
 import {Client} from "pg";
 import type {SupabaseClient} from "@supabase/supabase-js";
 import {afterAll,beforeAll,describe,expect,it} from "vitest";
@@ -111,6 +111,29 @@ describe.skipIf(!enabled)("direct SQL research on the migrated database",()=>{
     }
     // An operational read still works.
     expect((await sql(scope(cafeA),"select count(*)::int as n from orders")).ok).toBe(true);
+  });
+
+  it("keeps café scope inside definer helpers that trust the database role (service-role transport)",async()=>{
+    for(const [cafe,ref] of [[cafeA,"a"],[otherCafe,"other"]])
+      await admin.query("insert into public.toast_raw_records(business_id,entity,business_date,payload,payload_sha256,capture_key) "+
+        "values ($1,'order',current_date,$2::jsonb,$3,$4)",
+        [cafe,JSON.stringify({guid:randomUUID(),checks:[]}),createHash("sha256").update("scope-"+ref+cafe).digest("hex"),"live:scope-"+ref+"-"+cafe]);
+    try{
+      // The operational record reader returns only this café's records, never another café's.
+      const seen=await sql(scope(cafeA),"select distinct business_id from public.toast_records_for(null,null,null)");
+      expect(seen.ok).toBe(true);
+      const ids=(seen.rows as {business_id:string}[]).map(r=>r.business_id);
+      expect(ids).toContain(cafeA);
+      expect(ids.filter(id=>id!==cafeA)).toEqual([]);
+      const other=await sql(scope(cafeA),"select count(*)::int as n from public.toast_records_for('"+otherCafe+"',null,null)");
+      expect(other.ok?(other.rows as {n:number}[])[0].n:0).toBe(0);
+      const receipts=await sql(scope(cafeA),"select * from public.toast_stock_source_receipts('"+otherCafe+"')");
+      expect(receipts.ok).toBe(false);
+      expect(String(receipts.error)).toContain("stock_source_scope_denied");
+      expect((await sql(scope(cafeA),"select * from public.toast_stock_source_receipts('"+cafeA+"')")).ok).toBe(true);
+    }finally{
+      await admin.query("delete from public.toast_raw_records where business_id = any($1)",[[cafeA,otherCafe]]);
+    }
   });
 
   it("is read-only and returns useful SQL errors",async()=>{
