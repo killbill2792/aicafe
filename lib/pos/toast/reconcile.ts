@@ -8,7 +8,8 @@ import {createToastAnalyticsClient} from "./analyticsClient";
 import {toastMoneyCents} from "./adapter";
 import {compareToastAnalytics,checkToastPaymentBalance,checkToastSelectionBalance} from "@/lib/calc/toastReconciliation";
 import {readAllPages} from "./readAllPages";
-import {localClock} from "./scheduleDates";
+import {localClock,addCalendarDays} from "./scheduleDates";
+import {fromZonedTime} from "date-fns-tz";
 import {parseToastDayPage} from "./dayParser";
 import {nextDayCheckState,type DayCheckEvent,type DayCheckState} from "./dayCheckState";
 import {compareDayMoney,DAY_CHECK_TOLERANCE_CENTS} from "@/lib/data/canonical/dayCheck";
@@ -472,6 +473,10 @@ async function internalDay(db:SupabaseClient,p:Location,day:string,status:Status
  await cache.clear();
  return internal;
 }
+export function toastPaymentEvidenceReady(day:string,zone:string,closeoutHour:number,now:Date){
+ const close=fromZonedTime(addCalendarDays(day,1)+"T"+String(closeoutHour).padStart(2,"0")+":00:00",zone);
+ return now.getTime()>=close.getTime()+6*3600000;
+}
 export async function reconcileToastDays(db:SupabaseClient,p:Location,deadlineAt:number){
  let mode=await detectToastCheckMode(db,p.businessId,p.restaurantGuid,p.timeZone,deadlineAt);
  const {data:days,error:de}=await db.from("toast_day_status")
@@ -487,11 +492,12 @@ export async function reconcileToastDays(db:SupabaseClient,p:Location,deadlineAt
  for(const item of days??[]){
   if(Date.now()>=deadlineAt)break;
   const day=item.business_date as string,status=item as Status;
+  if(!toastPaymentEvidenceReady(day,p.timeZone,p.closeoutHour,new Date()))continue;
   const scoped={...p,expectedImportedAt:status.imported_at};
   if(status.last_recon_attempt_at&&
    Date.now()-Date.parse(status.last_recon_attempt_at)<(status.recon_state==="pending"?9:60)*60000)
    continue;
-  // Each check downloads the whole day from Toast again. A day waiting for
+  // Each check uses stored order evidence and the independent payment list. A day waiting for
   // another day's re-import is checked hourly, not every 9 minutes; a day
   // whose payment order Toast never gave us is checked once a day.
   const sinceAttempt=status.last_recon_attempt_at?Date.now()-Date.parse(status.last_recon_attempt_at):Infinity;

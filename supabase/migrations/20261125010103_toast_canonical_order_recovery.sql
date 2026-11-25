@@ -310,3 +310,144 @@ begin
 end $$;
 revoke all on function public.toast_use_canonical_order_coverage(uuid,uuid,date) from public,anon,authenticated;
 grant execute on function public.toast_use_canonical_order_coverage(uuid,uuid,date) to service_role;
+
+-- A scheduled scan can meet an already queued canonical repair. Coalesce on
+-- either unique constraint and retain conservative void-completeness status.
+CREATE OR REPLACE FUNCTION public.toast_checkpoint_repull_scan_page(p_business_id uuid, p_restaurant_guid uuid, p_local_day date, p_scan_start timestamp with time zone, p_scan_end timestamp with time zone, p_window_start timestamp with time zone, p_window_end timestamp with time zone, p_page integer, p_last_page boolean, p_days jsonb)
+ RETURNS boolean
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'public'
+AS $function$
+declare v_state public.toast_repull_scan_state%rowtype;
+ v_day date;v_added boolean;v_zone text;
+begin
+ if auth.role()<>'service_role' then raise exception 'service role only';end if;
+ if p_scan_start is null or p_scan_end is null or
+  p_scan_end<=p_scan_start or p_scan_end-p_scan_start>interval '30 days' or
+  p_window_start<p_scan_start or p_window_start>=p_scan_end or
+  p_window_end<>least(p_scan_end,p_window_start+interval '7 days') or
+  mod(extract(epoch from p_window_start-p_scan_start)::bigint,604800)<>0 or
+  p_page not between 1 and 300 or p_last_page is null or
+  jsonb_typeof(p_days)<>'array' or jsonb_array_length(p_days)>100 or
+  (not p_last_page and p_page=300) then
+  raise exception 'invalid modified scan page';end if;
+ select toast_time_zone into v_zone from public.toast_location_mappings
+ where business_id=p_business_id and restaurant_guid=p_restaurant_guid
+ and verified_at is not null for share;
+ if v_zone is null then raise exception 'unverified restaurant';end if;
+ insert into public.toast_repull_scan_state(business_id,restaurant_guid)
+ values(p_business_id,p_restaurant_guid) on conflict do nothing;
+ select * into v_state from public.toast_repull_scan_state
+ where business_id=p_business_id and restaurant_guid=p_restaurant_guid for update;
+ if v_state.scan_local_day is null then
+  if p_page<>1 or p_window_start<>p_scan_start or
+   v_state.last_local_day>=p_local_day then
+   raise exception 'invalid scan restart';end if;
+  update public.toast_repull_scan_state set
+   scan_local_day=p_local_day,scan_start=p_scan_start,
+   scan_end=p_scan_end,scan_window_start=p_window_start,scan_page=1
+  where business_id=p_business_id and restaurant_guid=p_restaurant_guid;
+ elsif v_state.scan_local_day is distinct from p_local_day or
+  v_state.scan_start is distinct from p_scan_start or
+  v_state.scan_end is distinct from p_scan_end or
+  v_state.scan_window_start is distinct from p_window_start or
+  v_state.scan_page is distinct from p_page then
+  raise exception 'stale modified scan checkpoint';end if;
+
+ for v_day in select distinct value::date from jsonb_array_elements_text(p_days) loop
+  if v_day<'2015-12-02'::date or v_day>=p_local_day then
+   raise exception 'invalid modified order day';end if;
+  insert into public.toast_sync_runs(business_id,restaurant_guid,kind,
+   requested_from,requested_to,scan_local_day,days_total)
+  values(p_business_id,p_restaurant_guid,'repull_modified',v_day,v_day,p_local_day,1)
+  on conflict do nothing;
+  v_added:=found;
+  if v_added then
+   update public.toast_day_status set recon_state='pending',last_recon_attempt_at=null
+   where business_id=p_business_id and restaurant_guid=p_restaurant_guid
+    and business_date=v_day and import_state='imported';
+   update public.daily_rollups set voids_status='unknown',voids_source=null
+   where business_id=p_business_id and (business_date=v_day or business_date in(
+    select f.void_business_date from public.toast_void_facts f
+    where f.business_id=p_business_id and f.order_business_date=v_day));
+  end if;
+ end loop;
+
+ if p_last_page and p_window_end=p_scan_end then
+  -- Retain the historical certification contract, without repeating per-page
+  -- jobs. This RPC atomically stamps the completed scan and covered void days.
+  perform public.toast_commit_repull_scan_window(p_business_id,
+   p_restaurant_guid,p_local_day,'[]'::jsonb,p_scan_start,p_scan_end);
+  update public.toast_repull_scan_state set scan_local_day=null,scan_start=null,
+   scan_end=null,scan_window_start=null,scan_page=null
+  where business_id=p_business_id and restaurant_guid=p_restaurant_guid;
+ elsif p_last_page then
+  update public.toast_repull_scan_state set scan_window_start=p_window_end,
+   scan_page=1 where business_id=p_business_id and restaurant_guid=p_restaurant_guid;
+ else
+  update public.toast_repull_scan_state set scan_page=p_page+1
+  where business_id=p_business_id and restaurant_guid=p_restaurant_guid;
+ end if;
+ return true;
+end $function$
+;
+CREATE OR REPLACE FUNCTION public.toast_certify_day_voids(p_business_id uuid, p_date date)
+ RETURNS boolean
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'public'
+AS $function$
+declare eligible integer;complete_count integer;unknown_amounts integer;v_total bigint;
+begin
+ if auth.role()<>'service_role' then raise exception 'service role only';end if;
+ perform pg_advisory_xact_lock(hashtextextended(
+  'toast-void:'||p_business_id::text||':'||p_date::text,0));
+ select count(*),
+  count(*) filter(where s.import_state='imported'
+   and s.unparsed_count=0 and s.coverage_complete
+   and s.recon_state in ('matched','checked_internal')
+   and c.scanned_at is not null
+   and not exists(select 1 from public.toast_day_owner_flags f
+    where f.business_id=m.business_id and f.restaurant_guid=m.restaurant_guid
+     and f.business_date=p_date and f.cleared_at is null)
+   and not exists(select 1 from public.toast_sync_runs pending
+    where pending.business_id=m.business_id
+     and pending.restaurant_guid=m.restaurant_guid
+     and pending.kind='repull_modified'
+     and ((pending.scan_local_day=c.scan_local_day and pending.state<>'completed')
+       or (pending.state in ('queued','running','paused_rate_limited') and pending.requested_from<=p_date))))
+ into eligible,complete_count
+ from public.toast_location_mappings m
+ left join public.toast_day_status s on s.business_id=m.business_id
+  and s.restaurant_guid=m.restaurant_guid and s.business_date=p_date
+ left join public.toast_void_repull_coverage c on c.business_id=m.business_id
+  and c.restaurant_guid=m.restaurant_guid and c.business_date=p_date
+ where m.business_id=p_business_id and m.verified_at is not null
+  and p_date>=coalesce(m.toast_start_date,p_date);
+ select count(*) into unknown_amounts from public.toast_void_facts
+  where business_id=p_business_id and void_business_date=p_date
+   and (amount_cents is null or amount_basis='amount_missing');
+ if eligible=0 or complete_count<>eligible or unknown_amounts>0 then
+  update public.daily_rollups set voids_status='unknown',voids_source=null
+   where business_id=p_business_id and business_date=p_date;
+  return false;
+ end if;
+ select coalesce(sum(amount_cents),0) into v_total
+ from public.toast_void_facts where business_id=p_business_id
+  and void_business_date=p_date;
+ update public.daily_rollups set voids_status='complete',voids_source='toast',
+  voids_cents=v_total where business_id=p_business_id and business_date=p_date;
+ return found;
+end $function$
+;
+create or replace function public.toast_constrained_stock_guids(p_business_id uuid,p_restaurant_guid uuid)
+returns jsonb language plpgsql security invoker set search_path=public as $$
+begin
+ if auth.role() is distinct from 'service_role' then raise exception 'service role only';end if;
+ return (select coalesce(jsonb_agg(distinct entity_guid),'[]'::jsonb)
+  from public.toast_raw_records where business_id=p_business_id and restaurant_guid=p_restaurant_guid
+   and entity='stock/v1/inventory' and entity_guid is not null and payload->>'status' in ('OUT_OF_STOCK','QUANTITY'));
+end $$;
+revoke all on function public.toast_constrained_stock_guids(uuid,uuid) from public,anon,authenticated;
+grant execute on function public.toast_constrained_stock_guids(uuid,uuid) to service_role;

@@ -298,6 +298,25 @@ export async function syncToastOperationalSources(db:SupabaseClient,
     if(nextToken===cursor||page===24)throw new ToastApiError("invalid_response");
     cursor=nextToken;
    }
+   // Toast's list omits fully in-stock items. Verify any formerly constrained
+   // item missing from the list by GUID rather than retaining a false stockout.
+   if(op.family==="stock"){
+    const {data:prior,error:priorError}=await db.rpc("toast_constrained_stock_guids",{
+     p_business_id:p.businessId,p_restaurant_guid:p.restaurantGuid});
+    if(priorError||!Array.isArray(prior)||prior.some(id=>!GUID.safeParse(id).success))
+     throw new ToastApiError("unavailable");
+    const present=new Set(data.map(row=>String(row.guid).toLowerCase()));
+    const missing=prior.filter((id:string)=>!present.has(id.toLowerCase()));
+    for(let start=0;start<missing.length;start+=100){
+     const ids=missing.slice(start,start+100);
+     const found=await client.request("/stock/v1/inventory/search",p.restaurantGuid,
+      z.array(operationalStock),{deadlineAt,stockSearchGuids:ids});
+     const actual=new Set(found.map(row=>row.guid.toLowerCase()));
+     if(found.length!==ids.length||ids.some((id:string)=>!actual.has(id.toLowerCase()))||
+        found.some(row=>row.itemGuidValidity==="INVALID"))throw new ToastApiError("invalid_response");
+     data.push(...found);
+    }
+   }
    const rows=data.map(row=>{
      const key=nativeOperationalKey(op.endpoint,row,op.businessDate);
      const clean=redactToastRaw(row) as Record<string,unknown>;

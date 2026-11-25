@@ -16,7 +16,7 @@ vi.mock("./dayParser",()=>({parseToastDayPage:()=>({orders:[{
  guid:"11111111-1111-4111-8111-111111111111",modifiedDate:"",
  normalized:{netSalesCents:10000,discountsCents:0,refundsCents:0,taxCents:0,tipCents:0}
 }],unparsed:[]})}));
-import {reconcileToastDays,internalOrderProof} from "./reconcile";
+import {reconcileToastDays,internalOrderProof,toastPaymentEvidenceReady} from "./reconcile";
 const business="aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
 const restaurant="bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb";
 const location="cccccccc-cccc-4ccc-8ccc-cccccccccccc";
@@ -817,4 +817,9 @@ describe("The day check uses the day saved at import",()=>{
   await reconcileToastDays(f.db,p,Date.now()+20000);
   expect(mocked.request.mock.calls.some(c=>String(c[0]).includes("ordersBulk"))).toBe(true);
  });
+});
+
+it("does not check payment evidence before six hours after the actual café closeout",()=>{
+ expect(toastPaymentEvidenceReady("2026-10-22","America/Los_Angeles",4,new Date("2026-10-23T16:59:59Z"))).toBe(false);
+ expect(toastPaymentEvidenceReady("2026-10-22","America/Los_Angeles",4,new Date("2026-10-23T17:00:00Z"))).toBe(true);
 });
