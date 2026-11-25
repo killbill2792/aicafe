@@ -165,6 +165,39 @@ export async function runCafeBrief(db:SupabaseClient,b:Business,now:Date,
   if(test&&b.is_demo)return cafeStep(schedule.today,
     {step:"cafe",outcome:"skipped",reason:"demo_cafe"},{schedule:scheduleInfo});
 
+  // Once all current owners have a terminal scheduled in-app result, no
+  // repeated daily metrics, history reads, AI work, or delivery construction.
+  // WhatsApp outbox delivery/retry remains independently due-driven.
+  if(!test){
+    let offset=0,allTerminal=true,ownerCount=0;
+    for(;;){
+      const page=await db.from("memberships").select("user_id")
+       .eq("business_id",b.id).eq("role","owner")
+       .order("created_at",{ascending:true}).order("user_id",{ascending:true}).range(offset,offset+99);
+      if(page.error){allTerminal=false;break;}
+      for(const owner of page.data??[]){
+       ownerCount++;
+       const ledger=await db.from("morning_brief_runs").select("outcome,reason")
+        .eq("business_id",b.id).eq("local_date",schedule.today).eq("owner_key",owner.user_id)
+        .eq("channel","in_app").eq("run_kind","scheduled").maybeSingle();
+       // A completed website brief may still need outbox repair; only suppress
+       // when both channel ledger rows are terminal/durably queued.
+       if(ledger.error||!(ledger.data?.outcome==="sent"||ledger.data?.reason==="missed_send_window")){
+        allTerminal=false;break;
+       }
+       const delivery=await db.from("morning_brief_runs").select("outcome,reason")
+        .eq("business_id",b.id).eq("local_date",schedule.today).eq("owner_key",owner.user_id)
+        .eq("channel","whatsapp").eq("run_kind","scheduled").maybeSingle();
+       if(delivery.error||!delivery.data||!["sent","queued","skipped"].includes(delivery.data.outcome)){
+        allTerminal=false;break;
+       }
+      }
+      if(!allTerminal||(page.data??[]).length<100)break;
+      offset+=100;
+    }
+    if(allTerminal&&ownerCount)return {step:"schedule",outcome:"skipped",reason:"not_due",businessId:b.id,
+     localDate:schedule.today,schedule:scheduleInfo,owners:[]};
+  }
   const evidence=await readBriefEvidence(db,{businessId:b.id,businessName:b.name??"",
     currency:b.currency},schedule,now);
   const missing=evidence.content.missing;

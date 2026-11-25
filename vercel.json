@@ -39,10 +39,6 @@
     {
       "path": "/api/cron/data-health",
       "schedule": "20 17 * * *"
-    },
-    {
-      "path": "/api/cron/menu-labels",
-      "schedule": "35 * * * *"
     }
   ]
 }

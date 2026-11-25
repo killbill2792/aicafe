@@ -75,6 +75,7 @@ export async function syncToastOptionalSources(db:SupabaseClient,p:Location,
    phaseFailures.push(e instanceof ToastApiError?e.category:"unavailable");
  };
  let menu="scope_missing",labor="scope_missing";
+ let verifiedMenuVersion:string|null=null;
  let staffReady=Boolean(state?.roster_copied_at);
  const scope={businessId:p.business_id,restaurantGuid:p.restaurant_guid,deadlineAt,
   locationId:p.location_id,timezone:p.toast_time_zone};
@@ -92,11 +93,13 @@ export async function syncToastOptionalSources(db:SupabaseClient,p:Location,
     await update({menu_last_updated:published.receipt.publicationVersion,
      menu_checked_local_day:local.today,menu_copied_at:new Date().toISOString()});
     menu="updated";
+    verifiedMenuVersion=published.receipt.publicationVersion;
    }else{
     // An unchanged version uses only the cheap metadata endpoint.
     if(state?.menu_checked_local_day!==local.today)
      await update({menu_checked_local_day:local.today});
     menu="unchanged";
+    verifiedMenuVersion=meta.lastUpdated;
    }
 
   }catch(e){recordFailure(e);}
@@ -155,6 +158,26 @@ export async function syncToastOptionalSources(db:SupabaseClient,p:Location,
  const sourceStates=(state?.operational_sources&&typeof state.operational_sources==="object"&&
   !Array.isArray(state.operational_sources))
    ?{...state.operational_sources as Record<string,Record<string,unknown>>}:{};
+ // A successful menu publication is the only automatic labeling trigger.
+ // Persist the version independently from catalog-copy completion so a model
+ // failure retries labels without downloading the entire menu again.
+ const labelState=sourceStates.menu_labels??{};
+ if(verifiedMenuVersion&&labelState.complete_version!==verifiedMenuVersion&&
+    (labelState.pending_version!==verifiedMenuVersion||typeof labelState.next_at!=="string"||
+     Date.parse(labelState.next_at)<=now.getTime())&&Date.now()+16000<deadlineAt){
+  try{
+   const {labelNewMenuCategories}=await import("@/lib/menu/drinkLabels.server");
+   await labelNewMenuCategories(db,p.business_id,undefined,true);
+   sourceStates.menu_labels={complete_version:verifiedMenuVersion,status:"complete",
+    last_success_at:now.toISOString()};
+   await update({operational_sources:sourceStates});
+  }catch{
+   sourceStates.menu_labels={...labelState,pending_version:verifiedMenuVersion,status:"retry",
+    next_at:new Date(now.getTime()+60*60000).toISOString()};
+   await update({operational_sources:sourceStates});
+   recordFailure(new ToastApiError("unavailable"));
+  }
+ }
  const lastModified=sourceStates.labor_modified??{};
  const saveModified=async(patch:Record<string,unknown>)=>{
   sourceStates.labor_modified={...sourceStates.labor_modified,...patch};

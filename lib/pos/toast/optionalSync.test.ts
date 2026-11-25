@@ -1,7 +1,8 @@
 import {beforeEach,describe,expect,it,vi} from "vitest";
 import type {SupabaseClient} from "@supabase/supabase-js";
-const m=vi.hoisted(()=>({request:vi.fn(),roster:vi.fn(),catalog:vi.fn(),labor:vi.fn(),attendance:vi.fn(),staged:vi.fn()}));
+const m=vi.hoisted(()=>({labels:vi.fn(),request:vi.fn(),roster:vi.fn(),catalog:vi.fn(),labor:vi.fn(),attendance:vi.fn(),staged:vi.fn()}));
 vi.mock("server-only",()=>({}));
+vi.mock("@/lib/menu/drinkLabels.server",()=>({labelNewMenuCategories:m.labels}));
 vi.mock("./client",async()=>{
  const {z}=await import("zod");
  class ToastApiError extends Error{constructor(public category:string, public status?:number, public retryAt?:string){super(category);}}
@@ -64,6 +65,7 @@ function mockDB(scopes:Record<string,boolean>,alreadyCopied=false,stale=false,le
 }
 beforeEach(()=>{
  Object.values(m).forEach(fn=>fn.mockReset());
+ m.labels.mockResolvedValue(0);
  m.roster.mockResolvedValue({staged:0});
  m.catalog.mockResolvedValue({staged:0,receipt:{restaurantGuid:restaurant,
   publicationVersion:"2026-10-23T00:00:00Z",observedAt:"2026-10-23T19:00:00Z"}});
@@ -274,5 +276,15 @@ describe("independent POS0b modified labor freshness within POS0c-owned optional
    expect(f.sourceState().labor_modified).toMatchObject({
      status:"missing_scope_or_location",complete_through:first.complete_through,
      last_success_at:first.last_success_at});
+ });
+});
+
+ describe("publication-driven category labeling",()=>{
+ it("labels a verified version once, without redownloading an unchanged catalog",async()=>{
+  const f=mockDB({menus:true,labor:false,config:false},true,false,true);
+  await syncToastOptionalSources(f.db,scope,now,Date.now()+60000);
+  await syncToastOptionalSources(f.db,scope,new Date(now.getTime()+600000),Date.now()+60000);
+  expect(m.labels).toHaveBeenCalledTimes(1);
+  expect(m.catalog).not.toHaveBeenCalled();
  });
 });

@@ -360,3 +360,14 @@ describe("sending the daily brief at each café's own time",()=>{
     expect(early.runs.every(x=>x.run_kind==="test")).toBe(true);
   });
 });
+
+ describe("completed scheduled briefs stay idle",()=>{
+ it("does not reload financial evidence again after the morning brief is posted",async()=>{
+  useEvidence(evidence());
+  const f=fakeDb();
+  await sendDailyBriefs(f.db,at("05:00"));
+  evidenceMock.read.mockClear();
+  await sendDailyBriefs(f.db,at("12:00"));
+  expect(evidenceMock.read).not.toHaveBeenCalled();
+ });
+});
