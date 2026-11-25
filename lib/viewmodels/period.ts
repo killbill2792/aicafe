@@ -138,7 +138,7 @@ export function runningCostsForPeriod(snapshot: BusinessSnapshot, period: Period
  * the selected period instead of the full month — so a "Today" or "Week" view shows Rent at its
  * actual share of that period, not the full monthly amount, matching the already-prorated total
  * and owner-profit figures computed from `runningCostsForPeriod` above. `label`/`isEstimate`/
- * `isMissing` reflect the months actually overlapping the selected period.
+ * `isMissing` reflect evidence contributing to the selected calendar dates.
  *
  * Money is integer cents everywhere (CLAUDE.md rule 1), and the displayed rows must sum to
  * exactly the same rounded total the rest of the screen shows — rounding each category
@@ -167,14 +167,29 @@ export function runningCostLinesForPeriod(snapshot: BusinessSnapshot, period: Pe
   return [...byCode.values()].map(group => {
     const line = group[group.length - 1];
     const amountCents = allocatedByCategory.get(line.categoryCode) ?? 0;
-    // A missing month must not hide a known payment or estimate from another
-    // overlapping month. An unused category is not proof of a known cost.
-    const known = group.some(row => !row.isMissing && (row.isExpected !== false || row.amountCents !== 0));
+    // Only dated receipts within this period or an allocated recurring
+    // forecast prove a cost here. A receipt elsewhere in an overlapping
+    // month cannot turn a missing month into a confirmed zero.
+    const known = group.some(row => {
+      if (row.isMissing) return false;
+      if (row.expenseEvidence === undefined) {
+        // Legacy monthly amounts are prorated over the overlapping dates.
+        return row.isExpected !== false || row.amountCents !== 0;
+      }
+      return row.expenseEvidence.some(e => e.kind === "expense" && e.date >= start && e.date <= end)
+        || (row.recurringEstimateCents ?? 0) > 0;
+    });
+    const estimated = group.some(row => !row.isMissing && row.isEstimate && (
+      row.expenseEvidence === undefined ||
+      row.expenseEvidence.some(e => e.kind === "expense" && e.date >= start && e.date <= end && e.status !== "actual") ||
+      (row.recurringEstimateCents ?? 0) > 0 ||
+      (row.possibleAdditionalForecastCents ?? 0) > 0
+    ));
     return {
       ...line,
       amountCents,
       isMissing: amountCents === 0 && !known && group.some(row => row.isMissing),
-      isEstimate: group.some(row => !row.isMissing && row.isEstimate),
+      isEstimate: estimated,
       isExpected: group.some(row => row.isExpected === true) ? true : line.isExpected,
     };
   });
