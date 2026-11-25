@@ -56,3 +56,72 @@ describe("SQL research presentation",()=>{
   expect(result.toolInvocations).toHaveLength(2);
  });
 });
+
+describe("failed SQL research provider streams",()=>{
+ const done={type:"response.completed",response:{usage:{input_tokens:1,output_tokens:1}}};
+ const say=(delta:string)=>({type:"response.output_text.delta",delta});
+ const query={type:"response.output_item.done",item:{type:"function_call",name:"run_sql",call_id:"costs",arguments:JSON.stringify({sql:"select category, amount_cents from expenses"})}};
+ const earlier="I will check the expense records.";
+ const wrong="❌ Expenses were $900.";
+ const corrected="Recorded wages were $12.";
+ it.each(["response.failed","response.incomplete","error","disconnect","throw"])("rolls back only the failed call (%s) before recovering",async failure=>{
+  let calls=0,client="";
+  const resets:number[]=[];
+  const rpc=vi.fn().mockResolvedValue({data:{ok:true,rows},error:null});
+  const provider:AgentProvider=async function*(params){
+   calls++;
+   if(calls===1){yield say(earlier+"\n\n");yield query;yield done;return;}
+   if(calls===2){
+    yield say(wrong+"\n\n");
+    expect(client).toBe(earlier+"\n\n"+wrong);
+    yield say("Unfinished second paragraph");
+    if(failure==="throw")throw Error("connection lost");
+    if(failure!=="disconnect")yield {type:failure};
+    return;
+   }
+   expect(calls).toBe(3);
+   expect(client).toBe(earlier);
+   expect(params.tool_choice).toBe("none");
+   expect(JSON.stringify(params.input)).not.toContain(wrong);
+   yield say(corrected+fence({panels:[chart]}));yield done;
+  };
+  const turn=await runResearchTurn({ownerText:"Check expenses",cafeContext:"Cafe",provider,
+   scope:{db:{rpc} as never,businessId:"business",ownerUserId:"owner"},actions:{context:ctx as AgentToolContext,definitions:[]},
+   onDelta:delta=>{client+=delta;},onReset:count=>{resets.push(count);client=client.slice(0,client.length-count);}});
+  expect(calls).toBe(3);expect(rpc).toHaveBeenCalledTimes(1);
+  expect(resets).toEqual([("\n\n"+wrong).length]);
+  expect(turn.text).toBe(earlier+"\n\n"+corrected);
+  expect(client).toBe(turn.text);
+  expect(turn.results.at(-1)).toMatchObject({source:"response_presentation",accepted:true});
+ });
+ it("also rolls back a failed recovery request",async()=>{
+  let calls=0,client="";
+  const resets:number[]=[];
+  const recovery="Another incomplete conclusion.";
+  const rpc=vi.fn().mockResolvedValue({data:{ok:true,rows},error:null});
+  const provider:AgentProvider=async function*(){
+   calls++;
+   if(calls===1){yield say(earlier);yield query;yield done;return;}
+   yield say((calls===2?wrong:recovery)+"\n\n");
+   yield {type:"response.failed"};
+  };
+  const turn=await runResearchTurn({ownerText:"Check expenses",cafeContext:"Cafe",provider,
+   scope:{db:{rpc} as never,businessId:"business",ownerUserId:"owner"},
+   onDelta:delta=>{client+=delta;},onReset:count=>{resets.push(count);client=client.slice(0,client.length-count);}});
+  expect(calls).toBe(3);
+  expect(resets).toEqual([("\n\n"+wrong).length,("\n\n"+recovery).length]);
+  expect(turn.text).toBe(earlier);
+  expect(client).toBe(earlier);
+  expect(turn.endReason).toBe("provider_error");
+ });
+ it("does not retain a failed first response even when there is no research to recover",async()=>{
+  let client="";
+  const provider:AgentProvider=async function*(){yield say(wrong+"\n\n");yield {type:"response.failed"};};
+  const turn=await runResearchTurn({ownerText:"Check expenses",cafeContext:"Cafe",provider,
+   scope:{db:{} as never,businessId:"business",ownerUserId:"owner"},
+   onDelta:delta=>{client+=delta;},onReset:count=>{client=client.slice(0,client.length-count);}});
+  expect(turn.text).toBe("");
+  expect(client).toBe("");
+  expect(turn.endReason).toBe("provider_error");
+ });
+});

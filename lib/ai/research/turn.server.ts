@@ -72,6 +72,7 @@ export async function runResearchTurn(args:{
   provider?:AgentProvider;
   now?:()=>number;
   onDelta?:(delta:string)=>void;
+  onReset?:(discardChars:number)=>void;
   onTool?:(name:string,agentId:string)=>void;
   onAuditStep?:(step:AgentAuditStep)=>void;
   beforeProviderRequest?:()=>Promise<void>;
@@ -140,6 +141,7 @@ export async function runResearchTurn(args:{
     const startedCall=now();
     const checkpoint=args.checkpoint;
     if(checkpoint)await checkpoint.beginProvider();
+    const callTextStart=text.length;
     let completed=false,answer="",thinking="",delivered="";
     const output:unknown[]=[],calls:FunctionCall[]=[];
     try{
@@ -189,9 +191,17 @@ export async function runResearchTurn(args:{
         }
       }finally{if(timer!==undefined)clearTimeout(timer);}
       if(!completed)throw new Error("provider_error");
+      await args.beforeAcceptResult?.();
       if(checkpoint)await checkpoint.endProvider(true);
       if(thinking)summary+=(summary?"\n\n":"")+thinking;
     }catch(error){
+      // Only this failed response is incomplete. Preserve earlier successful
+      // paragraphs and remove the exact streamed suffix (including its separator).
+      const discardChars=text.length-callTextStart;
+      if(discardChars>0){
+        text=text.slice(0,callTextStart);
+        args.onReset?.(discardChars);
+      }
       if(checkpoint)await checkpoint.endProvider(false).catch(()=>undefined);
       throw error;
     }finally{
@@ -238,7 +248,6 @@ export async function runResearchTurn(args:{
       const reason=stop();
       if(reason==="timeout"){endReason=reason;break;}
       const {calls,answer,delivered}=await call(reason!==null);
-      await args.beforeAcceptResult?.();
       if(answer.trim())appendAnswer(answer,delivered);
       if(!calls.length||reason!==null){
         if(reason)endReason=reason;
@@ -282,7 +291,6 @@ export async function runResearchTurn(args:{
       try{
         input.push({role:"developer",content:"A research step failed. Answer the owner now with what you found, and say what is still unknown."});
         const {answer,delivered}=await call(true);
-        await args.beforeAcceptResult?.();
         if(answer.trim())appendAnswer(answer,delivered);
       }catch{/* the owner gets the existing retryable error */}
     }
