@@ -183,6 +183,31 @@ begin
        and canonical_effect_payload->>'sourceKind'='owner_chat'))<>1
  then raise exception 'owner-chat question to an off-shift worker was not sent exactly once';end if;
 end $$;
+-- The owner may message the same worker as many times as they like, even with the same words: each owner
+-- message is its own source, proposal and request.
+do $$
+declare i int; v_msg uuid; v_prop uuid; v_sent int;
+begin
+ for i in 1..3 loop
+  v_msg:=gen_random_uuid(); v_prop:=gen_random_uuid();
+  insert into public.ai_messages(id,business_id,thread_id,owner_user_id,author_user_id,role,content_type,text_content,client_message_id)
+   values(v_msg,current_setting('test.staffquestion.biz')::uuid,current_setting('test.staffquestion.thread')::uuid,current_setting('test.staffquestion.owner')::uuid,
+    current_setting('test.staffquestion.owner')::uuid,'owner','text','Tell the worker the shift starts at 9 (again '||i||')',gen_random_uuid());
+  insert into public.supervisor_proposals(id,business_id,owner_user_id,thread_id,request_key,capability_id,capability_version,
+   canonical_effect_payload,effect_hash,baseline,monitor_spec,locale)
+   select v_prop,m.business_id,m.owner_user_id,m.thread_id,gen_random_uuid(),'olivia.staff_question.v1',1,
+    jsonb_build_object('sourceKind','owner_chat','sourceTaskId',m.id,'employeeId',current_setting('test.staffquestion.employee'),'question','Your shift starts at 9.',
+     'reason','Owner asked in chat','evidence',jsonb_build_array(jsonb_build_object('source','owner_message','asOf','now')),
+     'followUpAfter',statement_timestamp()+interval '4 hours','sourceRevision',m.created_at,'employeeName','On-shift worker'),
+    repeat('d',64),'{}','{"durationDays":1,"metricScope":"staff_question_receipt"}','en' from public.ai_messages m where m.id=v_msg;
+  perform public.supervisor_transition_proposal(current_setting('test.staffquestion.biz')::uuid,current_setting('test.staffquestion.owner')::uuid,v_prop,1,'approve',null);
+  perform public.supervisor_claim_effect(current_setting('test.staffquestion.biz')::uuid,current_setting('test.staffquestion.owner')::uuid,current_setting('test.staffquestion.thread')::uuid,v_prop,2,'click');
+  perform public.supervisor_commit_staff_question(current_setting('test.staffquestion.biz')::uuid,current_setting('test.staffquestion.owner')::uuid,current_setting('test.staffquestion.thread')::uuid,v_prop,repeat('d',64));
+ end loop;
+ select count(*) into v_sent from public.staff_communication_requests r join public.supervisor_proposals p on p.id::text=r.source_id
+  where p.canonical_effect_payload->>'sourceKind'='owner_chat' and r.business_id=current_setting('test.staffquestion.biz')::uuid;
+ if v_sent<>4 then raise exception 'repeated owner messages to the same worker were blocked (sent %)',v_sent;end if;
+end $$;
 update public.scheduled_shifts set status='sent' where business_id=:'biz' and employee_id=:'employee';
 update public.operating_tasks set updated_at=updated_at+interval '1 minute'
  where business_id=:'biz' and id=current_setting('test.staffquestion.task');
