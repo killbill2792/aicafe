@@ -49,6 +49,8 @@ $$;
 
 -- Policies that check memberships directly (not through a helper) read it
 -- under RLS, so one restrictive policy narrows them too.
+-- Reason: this migration owns the policy; dropping it only makes re-running the file idempotent, and it is recreated on the next line.
+-- squawk-ignore ban-drop-policy
 drop policy if exists "supervisor research cafe scope" on public.memberships;
 create policy "supervisor research cafe scope" on public.memberships
   as restrictive for select
