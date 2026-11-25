@@ -67,7 +67,7 @@ describe("owner-click-only proactive worker question",()=>{
   expect(draft.effect).toMatchObject({employeeName:"Priya",sourceKind:"operating_task",sourceRevision,employeeId:employee});
   expect(draft.monitorSpec.metricScope).toBe("staff_question_receipt");
   expect(staffQuestionCapabilityId).toBe("olivia.staff_question.v1");
-  expect(db.from).toHaveBeenCalledWith("scheduled_shifts");
+  expect(db.from).not.toHaveBeenCalledWith("scheduled_shifts");
   expect(createAdminSupabaseClient).not.toHaveBeenCalled();
  });
  it("also supports a source-backed active alert from an inventory anomaly",async()=>{
@@ -76,13 +76,13 @@ describe("owner-click-only proactive worker question",()=>{
   expect(draft.effect).toMatchObject({sourceKind:"alert",sourceRevision});
   expect(db.from).toHaveBeenCalledWith("alerts");
  });
- it("refuses an unlinked, inactive, or off-shift worker",async()=>{
+ it("refuses an unlinked or inactive worker, but not one who is simply off shift (the owner approves the card)",async()=>{
   dbRows({linked:false});
   await expect(staffQuestionCapability.simulate(scope,input)).rejects.toThrow();
   dbRows({staffActive:false});
   await expect(staffQuestionCapability.simulate(scope,input)).rejects.toThrow();
   dbRows({onShift:false});
-  await expect(staffQuestionCapability.simulate(scope,input)).rejects.toThrow("worker_not_on_current_published_shift");
+  await expect(staffQuestionCapability.simulate(scope,input)).resolves.toMatchObject({effect:{employeeId:employee}});
  });
  it("only the already-claimed effect commit invokes the verified SQL receipt",async()=>{
   const rpc=vi.fn(async()=>({data:{id:thread,replayed:false},error:null}));

@@ -5,7 +5,7 @@ import type {AgentToolContext,AgentToolResult} from "./index";
 export const staffQuestionTools={
  propose_staff_question:{
   agentId:"olivia" as const,schema:staffQuestionInput,
-  description:"After reading the actual café evidence and current published schedule, propose asking one linked employee who is scheduled on-shift a narrow factual question. Pass the exact alert or operating-task source type/ID, source/as-of evidence and a future follow-up time. The owner may approve staff contact, ignore, or reply naturally in the existing chat. This tool NEVER sends an employee message or updates stock/roster; unknown facts stay unknown.",
+  description:"After reading the actual café evidence, propose asking one active, linked employee a narrow factual question (the owner approves the card before anything is sent). Pass the exact alert or operating-task source type/ID, source/as-of evidence and a future follow-up time. The owner may approve staff contact, ignore, or reply naturally in the existing chat. This tool NEVER sends an employee message or updates stock/roster; unknown facts stay unknown.",
   execute:async(raw:unknown,ctx:AgentToolContext):Promise<AgentToolResult>=>{
    const input=staffQuestionInput.parse(raw);
    try{

@@ -29,7 +29,8 @@ export const RESEARCH_INSTRUCTIONS=
   "cite what you found, and say when it isn't legal advice. "+
   "To change something or contact someone, use the action tools (propose_*, Gmail, routines, staff questions): each only prepares an approval card for the owner, "+
   "and nothing happens until the owner approves it, so never say it was done before then. "+
-  "If a tool returns an error or finds nothing, fix the input or search again by yourself before giving up.";
+  "If a tool returns an error or finds nothing, fix the input or search again by yourself before giving up. "+
+  "When something you need is missing from the café's data (for example no published schedule for today), say so plainly and ask the owner for it with ask_owner instead of guessing.";
 
 /** Registered tools that prepare an owner-approval card, record an outcome or ask the owner; reads are covered by SQL. */
 export const isResearchActionTool=(name:string)=>/^propose_/u.test(name)||
