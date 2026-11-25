@@ -117,7 +117,7 @@ describe("Supervisor owner-scoped facts", () => {
     const period={from:"2026-10-01",to:"2026-10-10"};
     const rows=Array.from({length:1001},(_,i)=>({
       id:"menu:"+String(i).padStart(5,"0"),name:"Item "+i,category:"food"}));
-    const quantities=rows.map(item=>({menu_item_id:item.id,total_quantity:2}));
+    const quantities=rows.map((item,i)=>({menu_item_id:item.id,total_quantity:i===999?1.5:i===1000?"2.25":2}));
     const client={
       from:vi.fn((table:string)=>query({data:table==="pos_connections"
         ?[{provider:"square",last_synced_at:"2026-10-10T23:00:00Z",
@@ -129,7 +129,18 @@ describe("Supervisor owner-scoped facts", () => {
     expect(result.available).toBe(true);
     if(!result.available)return;
     expect(result.value).toHaveLength(1001);
-    expect(result.value[1000]).toMatchObject({id:"menu:01000",units:2});
+    expect(result.value[999]).toMatchObject({id:"menu:00999",units:1.5});
+    expect(result.value[1000]).toMatchObject({id:"menu:01000",units:2.25});
+  });
+
+  it.each([-1, Infinity, NaN, Number.MAX_SAFE_INTEGER+1, ""])("does not certify invalid sold quantities %s",async(total_quantity)=>{
+    const period={from:"2026-10-01",to:"2026-10-10"};
+    const client={from:vi.fn((table:string)=>query({data:table==="pos_connections"
+      ?[{provider:"square",last_synced_at:"2026-10-10T23:00:00Z",backfill_completed_at:"2026-10-01T20:00:00Z"}]
+      :[{id:"known",name:"Latte",category:"drink"}],error:null})),
+      rpc:vi.fn(()=>query({data:[{menu_item_id:"known",total_quantity}],error:null}))} as unknown as SupabaseClient;
+    expect(await supervisorFactReaders(client,"cafe-a").productSales("cafe-a",period))
+      .toMatchObject({available:false,quality:{missingInputs:["productSalesMappingUnverified"]}});
   });
 
   it("does not certify product sales with orphan, duplicated or unsafe quantities",async()=>{
