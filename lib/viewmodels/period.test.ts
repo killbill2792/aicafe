@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { roundHalfUpToCent, zeroDailyFacts } from "@/lib/calc";
 import { previousPeriodCoverage, previousPeriodDays, runningCostLinesForPeriod, runningCostsForPeriod } from "./period";
 import type { BusinessSnapshot } from "@/lib/data/types";
+import { runningCostLinesForMonth } from "@/lib/data/runningCostCatalog";
 
 /** A minimal, otherwise-empty snapshot — these functions only read `runningCostLines`, `monthKey`,
  * and `todayDateStr`, so everything else just needs to be structurally valid. October has 31 days,
@@ -29,6 +30,26 @@ function buildSnapshot(runningCostLines: BusinessSnapshot["runningCostLines"]): 
 }
 
 describe("runningCostLinesForPeriod — reconciles exactly with the aggregate total", () => {
+  it("keeps dated previous-month rent visible when the current month is missing", () => {
+    const receipt={id:"rent-oct",category_code:"rent",amount_cents:90000,status:"actual",spent_on:"2026-10-30"};
+    const previous=runningCostLinesForMonth({expenses:[receipt],recurring:[],from:"2026-10-01",to:"2026-10-31",today:"2026-11-02",historical:true});
+    const current=runningCostLinesForMonth({expenses:[],recurring:[],priorExpenses:[receipt],from:"2026-11-01",to:"2026-11-30",today:"2026-11-02",historical:false});
+    const snapshot={...buildSnapshot(current),monthKey:"2026-11",todayDateStr:"2026-11-02",previousRunningCostLines:previous};
+    expect(current.find(line=>line.categoryCode==="rent")).toMatchObject({isMissing:true});
+    const week=runningCostLinesForPeriod(snapshot,"week");
+    expect(week.find(line=>line.categoryCode==="rent")).toMatchObject({amountCents:90000,isMissing:false,isEstimate:false});
+    expect(week.reduce((sum,line)=>sum+line.amountCents,0)).toBe(roundHalfUpToCent(runningCostsForPeriod(snapshot,"week")));
+    expect(runningCostLinesForPeriod(snapshot,"month").find(line=>line.categoryCode==="rent")).toMatchObject({amountCents:0,isMissing:true});
+  });
+
+  it("merges estimate evidence only from overlapping months", () => {
+    const snapshot={...buildSnapshot([{categoryCode:"rent" as const,label:"Rent",amountCents:31000,isMissing:false,isEstimate:false}]),
+      previousRunningCostLines:[{categoryCode:"rent" as const,label:"Rent",amountCents:30000,isMissing:false,isEstimate:true}]};
+    expect(runningCostLinesForPeriod(snapshot,"week")[0]).toMatchObject({amountCents:7000,isMissing:false,isEstimate:true});
+    expect(runningCostLinesForPeriod(snapshot,"today")[0]).toMatchObject({amountCents:1000,isMissing:false,isEstimate:false});
+    expect(runningCostLinesForPeriod(snapshot,"month")[0]).toMatchObject({amountCents:1000,isMissing:false,isEstimate:false});
+  });
+
   it("three $100/mo lines in a 31-day month: rows sum to the rounded aggregate, not independent rounding (PR #6 review example)", () => {
     // Each line prorated for "today" (1 of 31 days) = 10,000 / 31 = 322.5806...¢. Rounding each
     // independently gives 323×3 = 969¢; the true aggregate 967.7419...¢ rounds to 968¢.
