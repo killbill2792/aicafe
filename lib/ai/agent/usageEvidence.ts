@@ -42,7 +42,7 @@ export function usageEvidenceRefresh(
    const prefix=period+row.ingredientId+":group:";
    for(const old of observations){
     for(const v of old.values){
-     if(v.unit!=="count"||!v.key.startsWith(prefix)||
+     if(!["count","g","ml"].includes(v.unit)||!v.key.startsWith(prefix)||
       !v.key.endsWith("/quantity"))continue;
      const id=v.key.slice(period.length,-"/quantity".length);
      if(!live.has(id))revoked.add(id);

@@ -4,7 +4,7 @@ import type {AgentToolContext,AgentToolResult} from "./index";
 import {CALC_OPS,DURATION_UNITS,QUANTITY_UNITS,isDurationUnit,isQuantityUnit,exactDecimal,exactNumber,runCalculation,type CalcOp,type CalcShown,type CalcUnit,type CalcValue} from "@/lib/metrics/core/calculator";
 import type {ExplainLine} from "../explain";
 import type {CardValue} from "@/lib/format/values";
-import {ownerStatedAmounts} from "../checkNumbers";
+import {ownerStatedAmounts,ownerStatedMeasures} from "../checkNumbers";
 import {completeResearchAttempts,researchNumericUnit} from "../researchRecovery";
 
 const name=z.string().regex(/^[a-z][a-z0-9_]{0,39}$/u);
@@ -17,7 +17,7 @@ const calculateInput=z.strictObject({
     receipt_id:z.uuid().nullable(),
     fact_key:z.string().max(120).nullable(),
     owner_value:z.number().finite().nullable(),
-    owner_unit:z.enum(["cents","percent","count"]).nullable(),
+    owner_unit:z.enum(["cents","percent","count",...DURATION_UNITS,...QUANTITY_UNITS]).nullable(),
     // Explicitly hypothetical, never represented as an observed business input.
     assumption:z.strictObject({value:z.number().finite(),unit:z.enum(["cents","percent","count","ratio",...DURATION_UNITS,...QUANTITY_UNITS]),basis:z.string().trim().min(1).max(500)}).nullable().optional(),
   })).min(1),
@@ -128,12 +128,12 @@ function card(s:CalcShown|undefined):CardValue|null{
 function ownerSaid(ctx:CalcContext,locale:AgentToolContext["locale"]){
   const all={money:new Set<number>(),percent:new Set<number>(),number:new Set<number>()};
   for(const text of [...(ctx.ownerMessages??[]),...(ctx.ownerText?[ctx.ownerText]:[])]){
-    const found=ownerStatedAmounts(text,locale,true);
+    const found=ownerStatedAmounts(text,locale);
     for(const k of ["money","percent","number"] as const)for(const v of found[k])all[k].add(v);
   }
   return all;
 }
-const unitName:Record<CalcUnit,string>={cents:"cents",percent:"percent",count:"count",ratio:"ratio",seconds:"seconds",minutes:"minutes",hours:"hours",g:"g",ml:"ml"};
+const unitName:Record<CalcUnit,string>={cents:"cents",percent:"percent",count:"count",ratio:"ratio",seconds:"seconds",minutes:"minutes",hours:"hours",days:"days",weeks:"weeks",months:"months",g:"g",ml:"ml"};
 
 export const calculateTools={
   calculate:{
@@ -143,7 +143,7 @@ export const calculateTools={
       "Each input reads ONE number: either tool + path (dot path into the exact tool result, e.g. rows.0.net_sales_cents), "+
       "For SQL rows use the exact evidence.receipt_id and typed numeric column, e.g. rows.0.amount. Attested seconds, minutes, hours, grams and milliliters retain their units; compatible durations convert exactly. For source-defined quantities select their own recorded unit from the same source binding. Use SQL for rates or other derived dimensions not represented by this calculator. For an earlier calculator result use tool calculate, its exact evidence.receipt_id and path result or steps.<zero-based index>; this preserves the unrounded value. Otherwise set receipt_id to null. "+
       "or fact_key (a saved owner fact, including a question-card answer), "+
-      "or owner_value + owner_unit for a number the owner said in chat (cents for money, 20 for 20%, plain count). "+
+      "or owner_value + owner_unit for a number the owner said in chat (cents for money, 20 for 20%, plain count, or the actual stated duration/measurement unit). "+
       "For hypothetical scenarios only, provide assumption {value,unit,basis}; disclose that it is hypothetical, not observed or owner-provided. Set unused fields to null. Never invent a recorded value. Say You told me for owner numbers. "+
       "Steps run in order; args name inputs or earlier step ids; percent_of takes (percent, value). "+
       "Show the inputs, formula and steps in How I got this, and label the result Calculation or Estimate as returned.",
@@ -225,7 +225,7 @@ export const calculateTools={
           if(!fact)return refuse("factNotSaved",input.fact_key);
           if(typeof fact.value_json!=="number")return refuse("factIsNotANumber",input.fact_key);
           const field=fact.unit==="cents"?"cents":fact.unit==="percent"?"percent":input.fact_key;
-          const exact=unitForField(field,fact.value_json);
+          const exact=isDurationUnit(fact.unit)||isQuantityUnit(fact.unit)?exactNumber(fact.value_json,fact.unit):unitForField(field,fact.value_json);
           if(!exact)return refuse("invalidNumber",input.fact_key);
           inputs.push({name:input.name,label:input.label,value:exact,from:"owner_fact",ref:input.fact_key,
             estimate:false,owner:true,partial:false,period:null});
@@ -236,8 +236,11 @@ export const calculateTools={
           const key=unit==="cents"?"money":unit==="percent"?"percent":"number";
           const want=unit==="percent"?Math.round(v*100):v;
           if(unit==="cents"&&!Number.isInteger(v))return refuse("centsMustBeWhole",input.name);
-          if(!said[key].has(want))return refuse("ownerDidNotSayThis",input.name+" ("+v+" "+unit+")");
-          const exact=unit==="cents"?exactNumber(v,"cents"):unit==="percent"?exactNumber(v,"percent",100):exactNumber(v,"count");
+          const stated=isDurationUnit(unit)||isQuantityUnit(unit)?
+            [...(scoped.ownerMessages??[]),...(scoped.ownerText?[scoped.ownerText]:[])].some(text=>ownerStatedMeasures(text,ctx.locale,unit).has(want)):
+            said[key].has(want);
+          if(!stated)return refuse("ownerDidNotSayThis",input.name+" ("+v+" "+unit+")");
+          const exact=exactNumber(v,unit,unit==="percent"?100:1);
           if(!exact)return refuse("invalidNumber",input.name);
           inputs.push({name:input.name,label:input.label,value:exact,from:"owner_said",ref:"owner",
             estimate:false,owner:true,partial:false,period:null});
