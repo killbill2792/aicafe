@@ -3,8 +3,8 @@
   "generatedFrom": "migrated pg_catalog physical schema + reviewed U3 SQL manifest",
   "modelAuthorization": false,
   "productionRowsIncluded": false,
-  "physicalTables": 223,
-  "physicalFields": 2513,
+  "physicalTables": 224,
+  "physicalFields": 2522,
   "approvedSqlRelations": 41,
   "reviewedFields": 387,
   "additionalLogicalViews": [
@@ -21,7 +21,7 @@
     "restricted_secret_or_auth": 80,
     "scope_only": 36,
     "specialist_or_review_pending": 422,
-    "unreviewed_not_admitted": 124
+    "unreviewed_not_admitted": 133
   },
   "relations": [
     {
@@ -2009,6 +2009,75 @@
         },
         {
           "field": "status",
+          "type": "text",
+          "notNull": true,
+          "status": "unreviewed_not_admitted",
+          "reason": "Physical object alone cannot prove safe business meaning, source authority or tenant permission"
+        }
+      ]
+    },
+    {
+      "relation": "cafe_notes",
+      "sourceOwner": "Supervisor/data-platform source owner",
+      "fields": [
+        {
+          "field": "basis",
+          "type": "text",
+          "notNull": true,
+          "status": "unreviewed_not_admitted",
+          "reason": "Physical object alone cannot prove safe business meaning, source authority or tenant permission"
+        },
+        {
+          "field": "business_id",
+          "type": "uuid",
+          "notNull": true,
+          "status": "unreviewed_not_admitted",
+          "reason": "Physical object alone cannot prove safe business meaning, source authority or tenant permission"
+        },
+        {
+          "field": "confirmed_at",
+          "type": "timestamp with time zone",
+          "notNull": true,
+          "status": "unreviewed_not_admitted",
+          "reason": "Physical object alone cannot prove safe business meaning, source authority or tenant permission"
+        },
+        {
+          "field": "created_at",
+          "type": "timestamp with time zone",
+          "notNull": true,
+          "status": "unreviewed_not_admitted",
+          "reason": "Physical object alone cannot prove safe business meaning, source authority or tenant permission"
+        },
+        {
+          "field": "id",
+          "type": "uuid",
+          "notNull": true,
+          "status": "unreviewed_not_admitted",
+          "reason": "Physical object alone cannot prove safe business meaning, source authority or tenant permission"
+        },
+        {
+          "field": "note",
+          "type": "text",
+          "notNull": true,
+          "status": "unreviewed_not_admitted",
+          "reason": "Physical object alone cannot prove safe business meaning, source authority or tenant permission"
+        },
+        {
+          "field": "retired_at",
+          "type": "timestamp with time zone",
+          "notNull": false,
+          "status": "unreviewed_not_admitted",
+          "reason": "Physical object alone cannot prove safe business meaning, source authority or tenant permission"
+        },
+        {
+          "field": "retired_by",
+          "type": "uuid",
+          "notNull": false,
+          "status": "unreviewed_not_admitted",
+          "reason": "Physical object alone cannot prove safe business meaning, source authority or tenant permission"
+        },
+        {
+          "field": "topic",
           "type": "text",
           "notNull": true,
           "status": "unreviewed_not_admitted",
