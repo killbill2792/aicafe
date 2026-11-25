@@ -87,3 +87,30 @@ export function completeResearchAttempts<T extends Attempt>(attempts:readonly T[
  const normalized=completeResearchResults(attempts.map(a=>a.result));
  return attempts.map((a,i)=>normalized[i]===a.result?a:{...a,result:normalized[i]});
 }
+
+/** Resolve a unit from trusted projection lineage or the quantity's own
+ * recorded unit, never a model alias, literal, or another joined row. */
+export function researchNumericUnit(result:AgentToolResult,row:Record<string,unknown>,column:string):unknown{
+ const proof=result.evidence;
+ if(!proof||typeof proof!=="object"||Array.isArray(proof))return null;
+ const e=proof as Record<string,unknown>;
+ if(e.scope!=="verified_owner_cafe_lease")return null;
+ const units=e.column_units;
+ if(units&&typeof units==="object"&&!Array.isArray(units)&&Object.hasOwn(units,column))
+   return (units as Record<string,unknown>)[column];
+ const origins=e.column_origins;
+ if(!origins||typeof origins!=="object"||Array.isArray(origins))return null;
+ type Origin={relation?:unknown;column?:unknown;binding?:unknown};
+ const origin=(origins as Record<string,Origin>)[column];
+ if(!origin||!Number.isSafeInteger(origin.binding))return null;
+ const unitField=origin.relation==="inventory_observations"&&origin.column==="quantity"?"quantity_unit":
+   (origin.relation==="supplier_proposal_lines"||origin.relation==="purchase_order_lines")&&origin.column==="needed_base_quantity"?"base_unit":
+   origin.relation==="pantry_stock_purchases"&&origin.column==="entered_quantity"?"entered_unit":null;
+ if(!unitField)return null;
+ const candidates=Object.entries(origins as Record<string,Origin>).filter(([label,o])=>o&&typeof o==="object"&&
+   o.relation===origin.relation&&o.binding===origin.binding&&o.column===unitField&&Object.hasOwn(row,label));
+ if(!candidates.length)return null;
+ const unit=row[candidates[0][0]];
+ if(candidates.some(([label])=>row[label]!==unit))return null;
+ return unit==="g"||unit==="ml"?unit:unit==="each"?"count":null;
+}

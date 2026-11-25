@@ -4,7 +4,10 @@
 
 export const DURATION_UNITS=["seconds","minutes","hours"] as const;
 export type DurationUnit=typeof DURATION_UNITS[number];
-export type CalcUnit="cents"|"count"|"percent"|"ratio"|DurationUnit;
+export const QUANTITY_UNITS=["g","ml"] as const;
+export type QuantityUnit=typeof QUANTITY_UNITS[number];
+export const isQuantityUnit=(unit:unknown):unit is QuantityUnit=>QUANTITY_UNITS.some(candidate=>candidate===unit);
+export type CalcUnit="cents"|"count"|"percent"|"ratio"|DurationUnit|QuantityUnit;
 export const isDurationUnit=(unit:unknown):unit is DurationUnit =>
   DURATION_UNITS.some(candidate=>candidate===unit);
 const durationSeconds:Record<DurationUnit,bigint>={seconds:BigInt(1),minutes:BigInt(60),hours:BigInt(3600)};
@@ -16,7 +19,7 @@ export type CalcValue={n:bigint;d:bigint;unit:CalcUnit};
 export type CalcStep={id:string;op:CalcOp;args:readonly string[]};
 export type CalcShown=
   {unit:"cents";valueCents:number}|{unit:"percent";valueBps:number}|
-  {unit:"count";quantity:number}|{unit:"ratio";valueRatio:number}|{unit:DurationUnit;valueDuration:number};
+  {unit:"count";quantity:number}|{unit:"ratio";valueRatio:number}|{unit:DurationUnit;valueDuration:number}|{unit:QuantityUnit;valueQuantity:number};
 export type CalcStepResult={id:string;op:CalcOp;args:readonly string[];value:CalcValue;shown:CalcShown};
 export type CalcOutcome=
   {ok:true;steps:CalcStepResult[];result:CalcStepResult}|
@@ -88,6 +91,7 @@ function shown(v:CalcValue):CalcShown|null{
     case "percent":{const b=roundTo(v,BigInt(10000));return abs(b)>MAX_ABS?null:{unit:"percent",valueBps:Number(b)};}
     case "count":{const q=pick(BigInt(100));return q===null?null:{unit:"count",quantity:q};}
     case "ratio":{const r=pick(BigInt(10000));return r===null?null:{unit:"ratio",valueRatio:r};}
+    case "g":case "ml":{const valueQuantity=pick(BigInt(100));return valueQuantity===null?null:{unit:v.unit,valueQuantity};}
     case "seconds":case "minutes":case "hours":{
       const valueDuration=pick(BigInt(100));return valueDuration===null?null:{unit:v.unit,valueDuration};
     }
@@ -97,6 +101,11 @@ function shown(v:CalcValue):CalcShown|null{
 const isShare=(u:CalcUnit)=>u==="percent"||u==="ratio";
 /** Unit of a × b, or null when the product has no meaning (cents × cents). */
 function productUnit(a:CalcUnit,b:CalcUnit):CalcUnit|null{
+  if(isQuantityUnit(a)||isQuantityUnit(b)){
+    if(isQuantityUnit(a)&&(isShare(b)||b==="count"))return a;
+    if(isQuantityUnit(b)&&(isShare(a)||a==="count"))return b;
+    return null;
+  }
   if(isDurationUnit(a)||isDurationUnit(b)){
     if(isDurationUnit(a)&&(isShare(b)||b==="count"))return a;
     if(isDurationUnit(b)&&(isShare(a)||a==="count"))return b;
@@ -109,6 +118,10 @@ function productUnit(a:CalcUnit,b:CalcUnit):CalcUnit|null{
 }
 /** Unit of a ÷ b. Same units give a share; money ÷ count stays money. */
 function quotientUnit(a:CalcUnit,b:CalcUnit):CalcUnit|null{
+  if(isQuantityUnit(a)||isQuantityUnit(b)){
+    if(isQuantityUnit(a)&&a===b)return "ratio";
+    return isQuantityUnit(a)&&(isShare(b)||b==="count")?a:null;
+  }
   if(isDurationUnit(a)||isDurationUnit(b)){
     if(isDurationUnit(a)&&isDurationUnit(b))return "ratio";
     return isDurationUnit(a)&&(isShare(b)||b==="count")?a:null;
