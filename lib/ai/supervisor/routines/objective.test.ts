@@ -86,7 +86,7 @@ describe("U4 objective evidence and model autonomy",()=>{
     expect(objectiveReadTools).not.toContain("get_sales");
     expect(objectiveReadTools).not.toContain("get_inventory");
     expect(objectiveReadTools).not.toContain("get_events");
-    expect(objectiveReadTools).toContain("get_staff_messages");
+    expect(objectiveReadTools).not.toContain("get_staff_messages");
     expect(watchReadTools).not.toContain("get_staff_messages");
     expect(watchReadTools).not.toContain("get_labor");
     expect(watchReadTools).toContain("query_data");

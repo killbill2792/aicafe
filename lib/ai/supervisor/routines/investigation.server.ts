@@ -162,6 +162,27 @@ async function readIncidentEvidence(db:SupabaseClient,c:Claimed):
       selected.gapReason="missing_business_input";
   }
   const missing:string[]=[];
+  // The claim reader independently resolves the exact employee submission or
+  // coordination case, not a model-selected identity or a capped history.
+  let linkedStaffSource:Record<string,unknown>|null=null;
+  if(c.source_type==="operating_task"&&["staff_message","staff_coordination_case"].includes(String(row.entity_type))&&row.kind!=="maintenance_issue"){
+    if(typeof row.entity_id!=="string")missing.push("staff_source_identity_unavailable");
+    else if(row.entity_type==="staff_message"){
+      const message=await db.from("staff_communication_messages")
+        .select("id,employee_id,request_id,actor,response_code,body,channel,received_at")
+        .eq("business_id",c.business_id).eq("id",row.entity_id).maybeSingle();
+      if(message.error)throw Error("source_unavailable");
+      if(!message.data||message.data.actor!=="employee")missing.push("staff_source_not_verified");
+      else linkedStaffSource={relation:"staff_communication_messages",...message.data};
+    }else{
+      const staffCase=await db.from("staff_coordination_cases")
+        .select("id,employee_id,case_kind,state,source_kind,location_id,role_needed,from_date,to_date,decision,revision,next_check_at")
+        .eq("business_id",c.business_id).eq("id",row.entity_id).maybeSingle();
+      if(staffCase.error)throw Error("source_unavailable");
+      if(!staffCase.data)missing.push("staff_source_not_verified");
+      else linkedStaffSource={relation:"staff_coordination_cases",...staffCase.data};
+    }
+  }
   let linkedTimecard:Record<string,unknown>|null=null;
   if(c.source_type==="alert"&&row.kind==="meal_break"){
     const timecardId=selected.timecardId;
@@ -205,7 +226,7 @@ async function readIncidentEvidence(db:SupabaseClient,c:Claimed):
   return {source:"investigation_source",period:null,agentId:"alex",
     sourceType:c.source_type,sourceId:c.source_id,
     incidentKind:stringField(row.kind),sourceStatus:stringField(row.status,24),
-    selectors:selected,linkedTimecard,maintenanceHistory,
+    selectors:selected,linkedTimecard,maintenanceHistory,linkedStaffSource,
     missing};
 }
 async function finish(db:SupabaseClient,c:Claimed,now:Date,

@@ -182,6 +182,24 @@ describe.skipIf(!active)("U3 migrated registered tool + private connection",()=>
    }
   }finally{await admin.query("DELETE FROM public.alerts WHERE id IN ($1,$2)",[a,b]);}
  });
+ it("reads the original employee response and associated request and roster identity, not a capped report",async()=>{
+  if(!admin)throw Error("admin_missing");
+  const employees=[randomUUID(),randomUUID()],requests=[randomUUID(),randomUUID()],messages=[randomUUID(),randomUUID()];
+  try{
+   for(const [i,business] of [ids.a,ids.b].entries()){
+    await admin.query("INSERT INTO public.employees(id,business_id,display_name) VALUES($1,$2,$3)",[employees[i],business,"Fixture employee "+i]);
+    await admin.query("INSERT INTO public.staff_communication_requests(id,business_id,employee_id,kind,source_type,source_id,source_revision,title,prompt,status) VALUES($1,$2,$3,'shift_confirmation','scheduled_shift',$4,'1',$5,'Confirm shift','responded')",[requests[i],business,employees[i],randomUUID(),"Fixture request "+i]);
+    await admin.query("INSERT INTO public.staff_communication_messages(id,business_id,employee_id,request_id,actor,response_code,body,channel,client_nonce) VALUES($1,$2,$3,$4,'employee','decline',$5,'web',gen_random_uuid())",[messages[i],business,employees[i],requests[i],"Fixture reply "+i]);
+   }
+   const result=await dataQueryTools.query_data.execute(input("SELECT m.id,e.display_name,r.title,r.status,m.response_code,m.body,m.channel FROM staff_communication_messages m JOIN staff_communication_requests r ON r.id=m.request_id JOIN employees e ON e.id=m.employee_id WHERE m.actor='employee'"),scoped);
+   expect(result.error).toBeUndefined();
+   expect(result.rows).toEqual([{id:messages[0],display_name:"Fixture employee 0",title:"Fixture request 0",status:"responded",response_code:"decline",body:"Fixture reply 0",channel:"web"}]);
+  }finally{
+   await admin.query("DELETE FROM public.staff_communication_messages WHERE id=ANY($1::uuid[])",[messages]);
+   await admin.query("DELETE FROM public.staff_communication_requests WHERE id=ANY($1::uuid[])",[requests]);
+   await admin.query("DELETE FROM public.employees WHERE id=ANY($1::uuid[])",[employees]);
+  }
+ });
  it("reads saved staffing cases across their full history without crossing café scope",async()=>{
   if(!admin)throw Error("admin_missing");
   const a=randomUUID(),b=randomUUID();
