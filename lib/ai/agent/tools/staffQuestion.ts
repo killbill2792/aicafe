@@ -13,8 +13,12 @@ export const staffQuestionTools={
     const proposal=await ctx.staffQuestionPropose(input);
     return {source:"staff_question_proposal",period:null,agentId:"olivia",missing:[],
      draft:true,saved:false,requiredApproval:"owner_click",...proposal};
-   }catch{return {source:"staff_question_proposal",period:null,agentId:"olivia",
-     missing:["staff_question_source_or_worker_unavailable"],draft:false,saved:false};}
+   }catch(error){
+    // The server's own refusal codes (for example worker_not_on_current_published_shift) are safe, fixed
+    // identifiers; pass them on so Supervisor can tell the owner exactly why and what else is possible.
+    const code=error instanceof Error&&/^[a-z][a-z0-9_]{2,80}$/u.test(error.message)?error.message:null;
+    return {source:"staff_question_proposal",period:null,agentId:"olivia",
+     missing:["staff_question_source_or_worker_unavailable"],draft:false,saved:false,...(code?{reason:code}:{})};}
   },
  },
  record_staff_question_owner_answer:{

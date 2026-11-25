@@ -44,3 +44,17 @@ describe("research turn action tools",()=>{
     expect(turn.text).toContain("approval");
   });
 });
+
+describe("staff question refusal",()=>{
+  it("tells the model why the server declined, so it can explain or choose another way",async()=>{
+    const {staffQuestionTools}=await import("@/lib/ai/agent/tools/staffQuestion");
+    const input={sourceKind:"alert",sourceTaskId:"a1",employeeId:"0b0f1b4e-7b1e-4b8e-8f4e-0b0f1b4e7b1e",
+      question:"Did you get your meal break?",reason:"alert",evidence:[{source:"timecards",asOf:"2026-11-21"}],
+      followUpAfter:"2999-01-01T00:00:00Z"};
+    const decline=(m:string)=>staffQuestionTools.propose_staff_question.execute(input,
+      {staffQuestionPropose:async()=>{throw new Error(m);}} as never);
+    expect(await decline("worker_not_on_current_published_shift")).toMatchObject({draft:false,reason:"worker_not_on_current_published_shift"});
+    // Free-form messages (possible internals) are never passed on.
+    expect((await decline("connect ECONNREFUSED 10.0.0.1:5432")).reason).toBeUndefined();
+  });
+});
