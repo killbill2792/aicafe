@@ -17,4 +17,12 @@ describe("research answer numbers",()=>{
   it("uses numbers the owner wrote and calculator results",()=>{
     expect(unsupportedNumbers("That is 187.5 per day.",["I pay 6000 a month",JSON.stringify({ok:true,result:{value:"187.5",unit:"cents"}})])).toEqual([]);
   });
+  it("verifies negative figures instead of treating the minus as a date separator",()=>{
+    expect(unsupportedNumbers("Net profit was -12999.00 USD.",[]).map(f=>f.text)).toEqual(["-12999.00"]);
+    expect(unsupportedNumbers("Net profit was -12999.00 USD, down -4.5%.",["12999","4.5"])).toEqual([]);
+    expect(unsupportedNumbers("Loss of (-8,400) this month",["rows",JSON.stringify({net:-8400})])).toEqual([]);
+    // Dates and times are still structure, and a hyphenated range keeps both sides checked.
+    expect(unsupportedNumbers("On 2026-11-25 at 13:30 it was fine.",[])).toEqual([]);
+    expect(unsupportedNumbers("Between 500-900 orders",[JSON.stringify({a:500})]).map(f=>f.text)).toEqual(["900"]);
+  });
 });

@@ -5,15 +5,20 @@ const NUMBER=/(?<![\w.,])(\d{1,3}(?:,\d{3})+|\d+)(?:\.(\d+))?(%?)/gu;
 
 type Found={text:string;start:number;end:number;value:number;decimals:number;percent:boolean};
 
-function numbersIn(text:string,skipTimesAndDates:boolean):Found[]{
+/** Dates (2026-11-25), clock times (13:30) and ranges of whole numbers are structure, not figures. */
+const STRUCTURE=/\d{4}-\d{2}-\d{2}|\d{1,2}:\d{2}(?::\d{2})?/gu;
+
+function numbersIn(text:string,skipStructure:boolean):Found[]{
+  const spans:Array<[number,number]>=[];
+  if(skipStructure)for(const m of text.matchAll(STRUCTURE))spans.push([m.index??0,(m.index??0)+m[0].length]);
   const found:Found[]=[];
   for(const m of text.matchAll(NUMBER)){
     const start=m.index??0,end=start+m[0].length;
-    const before=text[start-1]??"",after=text[end]??"";
-    // Times (13:00), dates (2026-11-25) and ranges are not figures to verify.
-    if(skipTimesAndDates&&(before===":"||after===":"||before==="-"||(after==="-"&&/\d/u.test(text[end+1]??""))))continue;
+    if(spans.some(([from,to])=>start>=from&&end<=to))continue;
+    // A minus sign right before the digits belongs to the figure ("-12999.00"), so signed losses are verified too.
+    const signed=skipStructure&&text[start-1]==="-"&&!/[\w)]/u.test(text[start-2]??"");
     const value=Number(m[1].replace(/,/gu,"")+(m[2]?"."+m[2]:""));
-    if(Number.isFinite(value))found.push({text:m[0],start,end,value,decimals:m[2]?.length??0,percent:m[3]==="%"});
+    if(Number.isFinite(value))found.push({text:(signed?"-":"")+m[0],start:signed?start-1:start,end,value,decimals:m[2]?.length??0,percent:m[3]==="%"});
   }
   return found;
 }
