@@ -74,8 +74,9 @@ for(const source of Object.values(toastOfficialFieldCatalog)){
 
 export const ownerOnlyResearchRelations:ReadonlySet<string>=new Set(["employees","timecards","scheduled_shifts","cafe_decisions","employee_pay_period_facts","timecard_breaks","current_owner_facts","staff_availability_rules","staff_availability_exceptions","staff_schedules","pos_scheduled_shifts","staff_scheduling_preferences","staff_qualifications","staff_custom_rules","recorded_timecards","supplier_quotes","goal_metrics","goal_observations","goal_checkins","financial_statement_documents","financial_statement_transactions","financial_invoice_claims","financial_bill_claims","financial_settlement_evidence","event_readiness_plans","event_readiness_links","event_readiness_actions","event_readiness_observations","toast_location_mappings","toast_employee_directory","staff_preference_windows","staff_scheduling_compensation","staff_communication_requests","staff_communication_messages","staff_coordination_cases","staff_coordination_evidence","maintenance_cases","maintenance_case_events","operating_tasks","alerts","supervisor_proposals","supplier_proposal_lines","supervisor_effect_attempts","supervisor_reports","supervisor_monitor_windows","purchase_order_dispatches","purchase_order_channel_reports","purchase_order_events","cafe_supplier_order_contacts","supplier_po_draft_replacements","pos_catalog_matches","pos_import_reviews","pos_connection_status","toast_connection_status","connector_account_status","supervisor_monitor_samples","toast_analytics_results","toast_open_labor_summaries","toast_order_observation_details","order_observations","cash_observations","kitchen_observations","dining_option_observations"]);
 
-export type U3TrustedUnit="cents"|"microcents"|"count"|"percent"|"ratio"|"basis_points"|"seconds"|"minutes"|"hours";
-export type U3RelationUnits=Readonly<Record<string,Readonly<Record<string,U3TrustedUnit|null>>>>;
+export type U3TrustedUnit="cents"|"microcents"|"count"|"percent"|"ratio"|"basis_points"|"seconds"|"minutes"|"hours"|"days";
+export type U3SourceUnit=U3TrustedUnit|"date_value"|"timestamp_value"|"timestamptz_value"|"elapsed_interval";
+export type U3RelationUnits=Readonly<Record<string,Readonly<Record<string,U3SourceUnit|null>>>>;
 export type U3ColumnOrigin={relation:string;column:string;binding:number};
 export type U3SqlAdmission={relations:string[];functions:string[];nodeCount:number;cteCount:number;
  outputUnits:Record<string,U3TrustedUnit>;outputOrigins:Record<string,U3ColumnOrigin>;outputDependencies:Record<string,U3ColumnOrigin[]>;hasTopLevelOrder:boolean};
@@ -132,7 +133,7 @@ export function unattendedDetailAllowed(relations:readonly string[]):boolean{
 }
 export async function admitU3Sql(sql:string,allowedRelations:readonly string[],
  parameterCount=0,aggregateOnly=false,offturnColumns:readonly string[]=[],
- knownColumnUnits:Readonly<Record<string,U3TrustedUnit|null>>={},
+ knownColumnUnits:Readonly<Record<string,U3SourceUnit|null>>={},
  relationUnits?:U3RelationUnits,
  offturnByRelation?:Readonly<Record<string,readonly string[]>>):Promise<U3SqlAdmission>{
  if(typeof sql!=="string"||!sql.trim()||
@@ -330,7 +331,7 @@ export async function admitU3Sql(sql:string,allowedRelations:readonly string[],
  // scope, not output labels. Computed expressions retain unit when their
  // operands justify it, but never inherit a direct source-row identity.
  type N=Record<string,unknown>;
- type Unit=U3TrustedUnit|null;
+ type Unit=U3SourceUnit|null;
  type Field={unit:Unit;origin?:U3ColumnOrigin;dependencies?:U3ColumnOrigin[]};
  type Columns=Map<string,Field>;
  type Binding={name:string;columns:Columns};
@@ -375,7 +376,8 @@ export async function admitU3Sql(sql:string,allowedRelations:readonly string[],
  }
  if(aggregateOnly&&!(offturnByRelation&&relationUnits&&unattendedDetailAllowed([...reads]))&&!reducedGrain(tree.stmts[0].stmt,new Map()))
   throw Error("unattended_aggregate_required");
- const recognized=(v:unknown):Unit=>v==="cents"||v==="microcents"||v==="count"||v==="percent"||v==="ratio"||v==="basis_points"||v==="seconds"||v==="minutes"||v==="hours"?v:null;
+ const isNumericUnit=(v:unknown):v is U3TrustedUnit=>v==="cents"||v==="microcents"||v==="count"||v==="percent"||v==="ratio"||v==="basis_points"||v==="seconds"||v==="minutes"||v==="hours"||v==="days";
+ const recognized=(v:unknown):Unit=>isNumericUnit(v)||v==="date_value"||v==="timestamp_value"||v==="timestamptz_value"||v==="elapsed_interval"?v:null;
  let bindingSequence=0;
  const baseColumns=(rel:string):Columns=>{
   const binding=++bindingSequence;
@@ -447,7 +449,7 @@ export async function admitU3Sql(sql:string,allowedRelations:readonly string[],
  };
  const compatible=(nodes:unknown[],bindings:Binding[]):Unit=>{
   const units=nodes.map(n=>infer(n,bindings));
-  const typed=units.filter((u):u is U3TrustedUnit=>u!==null);
+  const typed=units.filter((u):u is U3SourceUnit=>u!==null);
   return typed.length&&typed.every(u=>u===typed[0])&&
    units.every((u,i)=>u!==null||neutral(nodes[i]))?typed[0]:null;
  };
@@ -458,6 +460,12 @@ export async function admitU3Sql(sql:string,allowedRelations:readonly string[],
   if(fn){
    const operation=functionName(fn),args=Array.isArray(fn.args)?fn.args:[];
    if(operation==="count")return "count";
+   // Epoch is a duration only when its operand is an elapsed interval
+   // derived from recorded timestamps, not an arbitrary timestamp or age.
+   if((operation==="extract"||operation==="date_part")&&args.length===2){
+    const field=obj(obj(obj(args[0])?.A_Const)?.sval)?.sval;
+    return typeof field==="string"&&field.toLowerCase()==="epoch"&&infer(args[1],bindings)==="elapsed_interval"?"seconds":null;
+   }
    if(["sum","min","max","avg","first_value","last_value","abs","floor","ceil","ceiling"].includes(operation??"")&&args.length===1)
     return infer(args[0],bindings);
    if(["round","trunc"].includes(operation??"")&&args.length>=1&&args.length<=2)
@@ -481,10 +489,14 @@ export async function admitU3Sql(sql:string,allowedRelations:readonly string[],
   if(expr){
    const op=name(expr.name),left=infer(expr.lexpr,bindings),right=infer(expr.rexpr,bindings);
    if(expr.kind==="AEXPR_NULLIF")return left;
-   if((op==="+"||op==="-")&&left!==null&&left===right)return left;
+   if(op==="-"&&left===right){
+    if(left==="date_value")return "days";
+    if(left==="timestamp_value"||left==="timestamptz_value")return "elapsed_interval";
+   }
+   if((op==="+"||op==="-")&&left!==null&&left===right&&(isNumericUnit(left)||left==="elapsed_interval"))return left;
    if((op==="+"||op==="-")&&left!==null&&neutral(expr.rexpr))return left;
    if(op==="+"&&right!==null&&neutral(expr.lexpr))return right;
-   if(op==="/"&&left!==null&&left===right)return "ratio";
+   if(op==="/"&&isNumericUnit(left)&&left===right)return "ratio";
    // PostgreSQL decimal promotion and ratio-to-percent conversions retain
    // the original observed numeric lineage; literals alone never gain units.
    if((op==="*"||op==="/")&&left!==null&&scalar(expr.rexpr,1))return left;
@@ -500,8 +512,11 @@ export async function admitU3Sql(sql:string,allowedRelations:readonly string[],
    return null;
   }
   const cast=obj(v.TypeCast);
-  if(cast)return ["int2","int4","int8","smallint","integer","bigint","numeric","decimal"].includes(castName(cast)??"")?
-   infer(cast.arg,bindings):null;
+  if(cast){
+   const type=castName(cast),unit=infer(cast.arg,bindings);
+   if(type==="date"&&(unit==="date_value"||unit==="timestamp_value"||unit==="timestamptz_value"))return "date_value";
+   return ["int2","int4","int8","smallint","integer","bigint","numeric","decimal"].includes(type??"")&&isNumericUnit(unit)?unit:null;
+  }
   return null;
  };
  function projection(node:unknown,inherited:ReadonlyMap<string,Columns>):Columns{
@@ -680,7 +695,7 @@ export async function admitU3Sql(sql:string,allowedRelations:readonly string[],
  }
  const projected=projection(tree.stmts[0].stmt,new Map());
  const outputUnits=Object.fromEntries([...projected].flatMap(([label,field])=>
-  field.unit===null?[]:[[label,field.unit] as const]));
+  isNumericUnit(field.unit)?[[label,field.unit] as const]:[]));
  const outputOrigins=Object.fromEntries([...projected].flatMap(([label,field])=>
   field.origin?[[label,field.origin] as const]:[]));
  const outputDependencies=Object.fromEntries([...projected].map(([label,field])=>[label,field.dependencies??(field.origin?[field.origin]:[])]));

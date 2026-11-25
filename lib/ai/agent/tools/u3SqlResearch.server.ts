@@ -4,7 +4,7 @@ import {Pool,type PoolClient} from "pg";
 import {z} from "zod";
 import type {SupabaseClient} from "@supabase/supabase-js";
 import {createAdminSupabaseClient} from "@/lib/supabase/admin";
-import {admitU3Sql,U3AdmissionError,ownerOnlyResearchRelations,unattendedDetailAllowed,unattendedDetailFields,type U3TrustedUnit,type U3RelationUnits} from "./u3SqlAdmission";
+import {admitU3Sql,U3AdmissionError,ownerOnlyResearchRelations,unattendedDetailAllowed,unattendedDetailFields,type U3SourceUnit,type U3RelationUnits} from "./u3SqlAdmission";
 import {researchPageBudget} from "../executionPolicy";
 import {validateResearchConnection} from "./u3ResearchConnection";
 import {researchNextCursor,researchPage,type ResearchSnapshot} from "./u3SqlCursor";
@@ -443,10 +443,10 @@ export async function runU3Sql(ctx:U3SqlContext,raw:unknown){
    const safeOffturnColumns=new Set(Object.values(offturnByRelation).flat());
    // Exact calculator units come from the authorized catalog and parsed SQL
    // projection, never an arbitrary alias such as "net_sales_cents".
-   const knownColumnUnits:Record<string,U3TrustedUnit|null>={};
-   const relationUnits:Record<string,Record<string,U3TrustedUnit|null>>={};
+   const knownColumnUnits:Record<string,U3SourceUnit|null>={};
+   const relationUnits:Record<string,Record<string,U3SourceUnit|null>>={};
    for(const relation of list)for(const col of relation.columns){
-    const unit:U3TrustedUnit|null=col.unit==="integer_cent"?"cents":
+    const unit:U3SourceUnit|null=col.type==="date"?"date_value":col.type==="timestamp"?"timestamp_value":col.type==="timestamptz"?"timestamptz_value":col.unit==="integer_cent"?"cents":
      col.unit==="microcent"?"microcents":
      col.unit==="basis_points"?"basis_points":
      (col.unit==="seconds"||col.unit==="minutes"||col.unit==="hours")&&
