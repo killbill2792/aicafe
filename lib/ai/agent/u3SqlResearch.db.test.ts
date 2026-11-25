@@ -197,6 +197,9 @@ describe.skipIf(!active)("U3 migrated registered tool + private connection",()=>
   }finally{
    await admin.query("DELETE FROM public.staff_communication_messages WHERE id=ANY($1::uuid[])",[messages]);
    await admin.query("DELETE FROM public.staff_communication_requests WHERE id=ANY($1::uuid[])",[requests]);
+   // The actual employee-decline trigger creates a coordination case and
+   // evidence. Remove this test's generated dependants before its employees.
+   await admin.query("DELETE FROM public.staff_coordination_cases WHERE employee_id=ANY($1::uuid[])",[employees]);
    await admin.query("DELETE FROM public.employees WHERE id=ANY($1::uuid[])",[employees]);
   }
  });
