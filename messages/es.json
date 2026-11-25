@@ -2531,8 +2531,6 @@
   "Ui": {
     "theme": "Tema",
     "themeDescription": "Elige cómo se ve tu cafetería.",
-    "textSize": "Text size",
-    "textSizes": { "small": "Small", "default": "Default", "large": "Large", "xlarge": "Extra large" },
     "chooseTheme": "Colores del tema",
     "appearance": "Apariencia",
     "light": "Claro",
@@ -2543,7 +2541,6 @@
     "unverified": "Sin verificar",
     "themes": {
       "freshPour": "Café fresco",
-      "glass": "Glass",
       "nightRoast": "Tueste nocturno",
       "marketGreen": "Verde mercado",
       "berryMocha": "Moca de frutos rojos",

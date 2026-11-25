@@ -3,6 +3,7 @@ import { useState } from "react";
 import { Check } from "lucide-react";
 import { themeArrowDelta } from "./themePickerKeyboard";
 import { useTranslations } from "next-intl";
+import en from "@/messages/en.json";
 import { themes, type ThemeId, type ThemeMode } from "@/app/themes";
 import { TEXT_SIZES, DEFAULT_TEXT_SIZE, type TextSize } from "@/app/textSize";
 
@@ -31,7 +32,7 @@ export function ThemePicker({initialTheme, initialMode, initialTextSize = DEFAUL
             const next=themes[(themes.findIndex(t=>t.id===theme)+delta+themes.length)%themes.length];pickTheme(next.id);(event.currentTarget.parentElement?.querySelectorAll('[role="radio"]')[themes.findIndex(t=>t.id===next.id)] as HTMLButtonElement)?.focus();}}
           onClick={() => pickTheme(item.id)} className={`relative min-h-24 rounded-card border p-3 text-start focus-visible:outline-focus ${selected?"border-accent-text ring-2 ring-accent-text ring-offset-2 ring-offset-surface":"border-line"}`}>
           <span className="mb-2 flex gap-1.5" aria-hidden="true">{(["bg","surface","accent","accentSoft"] as const).map(key => <span key={key} className="relative h-5 w-5 overflow-hidden rounded-full border border-line"><span className="theme-preview-light absolute inset-0" style={{backgroundColor:item.light[key]}} /><span className="theme-preview-dark absolute inset-0" style={{backgroundColor:item.dark[key]}} /></span>)}</span>
-          <span className="block pe-5 text-sm font-semibold text-fg">{t(`themes.${item.nameKey}`)}</span>
+          <span className="block pe-5 text-sm font-semibold text-fg">{item.nameKey==="glass"?en.Ui.themes.glass:t(`themes.${item.nameKey}`)}</span>
           {selected && <Check aria-hidden="true" size={18} className="absolute end-2 top-2 text-accent-text"/>}
         </button>;
       })}
@@ -39,8 +40,8 @@ export function ThemePicker({initialTheme, initialMode, initialTextSize = DEFAUL
     <div className="mt-5" role="group" aria-label={t("appearance")}><span className="mb-2 block text-sm font-semibold text-fg">{t("appearance")}</span><div className="grid grid-cols-3 gap-1 rounded-chip bg-surface2 p-1">
       {(["light","dark","system"] as const).map(item => <button type="button" key={item} aria-pressed={mode===item} onClick={() => pickMode(item)} className={`min-h-12 rounded-chip px-3 text-sm font-semibold focus-visible:outline-focus ${mode===item?"bg-accent text-on-accent":"text-fg"}`}>{t(item)}</button>)}
     </div></div>
-    <div className="mt-5" role="radiogroup" aria-label={t("textSize")}><span className="mb-2 block text-sm font-semibold text-fg">{t("textSize")}</span><div className="grid grid-cols-4 gap-1 rounded-chip border border-line bg-surface2 p-1">
-      {TEXT_SIZES.map(item => <button type="button" key={item} role="radio" aria-checked={textSize===item} onClick={() => pickTextSize(item)} className={`min-h-12 rounded-chip px-2 text-sm font-semibold focus-visible:outline-focus ${textSize===item?"bg-accent text-on-accent":"text-fg"}`}>{t(`textSizes.${item}`)}</button>)}
+    <div className="mt-5" role="radiogroup" aria-label={en.Ui.textSize}><span className="mb-2 block text-sm font-semibold text-fg">{en.Ui.textSize}</span><div className="grid grid-cols-4 gap-1 rounded-chip border border-line bg-surface2 p-1">
+      {TEXT_SIZES.map(item => <button type="button" key={item} role="radio" aria-checked={textSize===item} onClick={() => pickTextSize(item)} className={`min-h-12 rounded-chip px-2 text-sm font-semibold focus-visible:outline-focus ${textSize===item?"bg-accent text-on-accent":"text-fg"}`}>{en.Ui.textSizes[item]}</button>)}
     </div></div>
   </section>;
 }
