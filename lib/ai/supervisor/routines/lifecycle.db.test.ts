@@ -119,7 +119,7 @@ describe.skipIf(!sandbox)("background lifecycle on the migrated database",()=>{
   it("clears the existing backlog: stale and duplicate notices, closed and unrunnable investigations",async()=>{
     const admin=new Client({connectionString:url});await admin.connect();
     const verified=randomUUID(),unverified=randomUUID(),owner=randomUUID(),thread=randomUUID();
-    const hygiene=readFileSync("supabase/migrations/20261125000400_background_lifecycle.sql","utf8").split("-- (1) Notices")[1].replace(/^[^\n]*\n/u,"");
+    const hygiene=readFileSync("supabase/migrations/20261125010105_background_lifecycle.sql","utf8").split("-- (1) Notices")[1].replace(/^[^\n]*\n/u,"");
     const ids={resolved:randomUUID(),technical:randomUUID(),open:randomUUID(),gated:randomUUID()};
     try{
       await admin.query("insert into auth.users(id,instance_id,aud,role,email,encrypted_password,created_at,updated_at) values ($1,'00000000-0000-0000-0000-000000000000','authenticated','authenticated',$2,'',now(),now())",[owner,owner+"@example.invalid"]);

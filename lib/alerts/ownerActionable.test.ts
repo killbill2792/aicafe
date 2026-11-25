@@ -20,7 +20,7 @@ describe("owner-actionable alerts",()=>{
       expect(isOwnerActionableAlert("business_anomaly",gap(subject)),subject).toBe(false);
   });
   it("matches the list enforced in the database",()=>{
-    const sql=readFileSync("supabase/migrations/20261125000400_background_lifecycle.sql","utf8");
+    const sql=readFileSync("supabase/migrations/20261125010105_background_lifecycle.sql","utf8");
     const listed=/supervisor_alert_owner_actionable[\s\S]*?in \(([^)]*)\)/u.exec(sql)?.[1]??"";
     const inSql=[...listed.matchAll(/'([a-z_:]+)'/gu)].map(m=>m[1]).sort();
     expect(inSql).toEqual([...OWNER_INPUT_GAP_SUBJECTS].sort());
