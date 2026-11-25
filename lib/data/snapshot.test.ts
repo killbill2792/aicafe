@@ -14,7 +14,7 @@ vi.mock("@/lib/pos/processingFeeEstimate.server",()=>({
 }));
 import {getBusinessSnapshotFromDb} from "./snapshot.server";
 import {formatInTimeZone} from "date-fns-tz";
-function mockDb(options:{sold?:Array<{menu_item_id:string;total_quantity:number}>}={}){
+function mockDb(options:{sold?:Array<{menu_item_id:string;total_quantity:number|string}>}={}){
   const reads:string[]=[];const writes:string[]=[];
   const data:Record<string,Record<string,unknown>[]>={
     businesses:[{id:"c1",name:"Café",timezone:"America/Los_Angeles",payroll_tax_rate:.12,
@@ -78,16 +78,22 @@ describe("getSnapshot read-only current snapshot and Home database budget",()=>{
       id:"menu-"+String(i).padStart(6,"0"),name:"Product "+i,
       price_cents:750,prep_seconds:15,category:"food",is_active:true
     }));
-    const sold=menu.map(item=>({menu_item_id:item.id,total_quantity:2}));
+    const sold=menu.map((item,i)=>({menu_item_id:item.id,total_quantity:i===999?1.5:i===1000?"2.25":2}));
     const {db,seed,reads,writes}=mockDb({sold});
     seed.menu_items=menu;
     seed.recipe_lines=[];seed.menu_item_cost_fallbacks=[];
     seed.menu_combo_components=[];seed.ingredient_prices=[];
     const result=await getBusinessSnapshotFromDb(db,"c1","today");
     expect(result.menuItems).toHaveLength(1001);
-    expect(result.menuItems[1000]).toMatchObject({id:"menu-001000",quantitySoldLast28Days:2});
+    expect(result.menuItems[999]).toMatchObject({id:"menu-000999",quantitySoldLast28Days:1.5});
+    expect(result.menuItems[1000]).toMatchObject({id:"menu-001000",quantitySoldLast28Days:2.25});
     expect(reads.filter(table=>table==="menu_items")).toHaveLength(2);
     expect(writes).toEqual([]);
+  });
+  it.each([-1, Infinity, NaN, Number.MAX_SAFE_INTEGER+1, ""])("rejects invalid sold quantities %s",async(total_quantity)=>{
+    const {db,seed}=mockDb({sold:[{menu_item_id:"menu-1",total_quantity}]});
+    seed.menu_items=[{id:"menu-1",name:"Product",price_cents:750,prep_seconds:15,category:"food",is_active:true}];
+    await expect(getBusinessSnapshotFromDb(db,"c1","today")).rejects.toThrow("snapshot_product_sales_mapping_unverified");
   });
   it("never silently drops actual receipts after the 1000-row PostgREST page boundary",async()=>{
     const {db,seed,reads}=mockDb();
