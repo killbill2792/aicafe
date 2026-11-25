@@ -729,7 +729,7 @@ export async function runAgentTurn(args: {
         if (usage.toolCalls >= maxToolCalls || now() >= workDeadline || stopBeforeTool) {
           endReason = now() >= workDeadline ? "timeout" : stopBeforeTool ?? "budget";
           for (const skipped of calls.slice(index)) {
-            const error = endReason === "timeout" ? "deadline_exceeded" : endReason === "tool_errors" ? "tool_errors" : "budget_exceeded";
+            const error = endReason === "timeout" ? "deadline_exceeded" : "budget_exceeded";
             input.push({ type: "function_call_output", call_id: skipped.call_id, output: JSON.stringify({ error }) });
             results.push({ callId: skipped.call_id, name: skipped.name, arguments: skipped.arguments,
               result: { source: skipped.name, period: null, missing: [error] } });
