@@ -84,6 +84,7 @@ function exactResearchField(verifiedUnit:unknown,value:string|number):CalcValue|
  const amount=typeof value==="string"?value:
    Number.isFinite(value)?String(value):"";
  if(verifiedUnit==="microcents")return exactDecimal(amount,"cents",1000000);
+ if(verifiedUnit==="basis_points")return exactDecimal(amount,"percent",10000);
  const unit:CalcUnit|null=
   verifiedUnit==="cents"||verifiedUnit==="count"||
   verifiedUnit==="percent"||verifiedUnit==="ratio"?verifiedUnit:null;

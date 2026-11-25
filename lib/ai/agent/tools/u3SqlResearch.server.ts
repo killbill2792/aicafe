@@ -79,6 +79,7 @@ const columnUnit=(field:string,type:string)=>{
  if(field==="business_date"||field.endsWith("_date"))return "cafe_business_date";
  if(field.endsWith("_minutes"))return "minutes";
  if(field.endsWith("_hours"))return "hours";
+ if(/_(?:bps|bp)$/.test(field))return "basis_points";
  if(field==="quantity"||field.endsWith("_quantity"))return "source_specific_unit";
  if(field.endsWith("_id")||field==="id")return "stable_relation_key_not_people_count";
  if(type==="bool")return "boolean";
@@ -445,6 +446,9 @@ export async function runU3Sql(ctx:U3SqlContext,raw:unknown){
    for(const relation of list)for(const col of relation.columns){
     const unit:U3TrustedUnit|null=col.unit==="integer_cent"?"cents":
      col.unit==="microcent"?"microcents":
+     col.unit==="basis_points"?"basis_points":
+     // Reviewed quantity fields representing sold item units, not mixed ingredient or inventory units.
+     relation.name==="order_lines"&&col.name==="quantity"?"count":
      /(?:^|_)(?:count|orders|items|visits|rows)$/.test(col.name)&&
        ["int2","int4","int8","numeric"].includes(col.type)?"count":
      /(?:^|_)percent$/.test(col.name)?"percent":

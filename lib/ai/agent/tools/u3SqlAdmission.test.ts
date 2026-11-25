@@ -200,6 +200,11 @@ describe("U3 governed PostgreSQL AST admission",()=>{
   const literal=await admitU3Sql("SELECT 100*1234 AS sales FROM orders",admitted,0,false,[],units);
   expect(literal.outputUnits).toEqual({});
  });
+ it("attests stored basis-point scale without promoting model aliases",async()=>{
+  const relations={team_rules:{ot_multiplier_bp:"basis_points" as const}};
+  const r=await admitU3Sql("SELECT ot_multiplier_bp AS multiplier,15000 AS fake FROM team_rules",["team_rules"],0,false,[],{},relations);
+  expect(r.outputUnits).toEqual({multiplier:"basis_points"});
+ });
  it("retains the microcent source scale without treating raw ingredient prices as whole cents",async()=>{
   const relations={ingredient_prices:{ingredient_id:null,cost_per_base_unit_micros:"microcents" as const}};
   const r=await admitU3Sql("SELECT cost_per_base_unit_micros AS rate,MAX(cost_per_base_unit_micros) OVER() AS high,COUNT(*) OVER() AS n FROM ingredient_prices",["ingredient_prices"],0,false,[],{},relations);

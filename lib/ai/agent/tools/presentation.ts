@@ -192,6 +192,10 @@ function researchTable(r:AgentToolResult,ctx:Pick<AgentToolContext,"currency"|"a
  const rows=r.rows.slice(0,30).map(row=>obj(row)?keys.map(key=>{
   if(!Object.hasOwn(row,key))return undefined;
   const value=row[key];
+  if(typeof value==="string"&&["cents","microcents","count","ratio"].includes(String(units[key]))&&/^-?\d+(?:\.\d+)?$/.test(value)){
+   const n=Number(value);
+   return Number.isFinite(n)&&Math.abs(n)<=Number.MAX_SAFE_INTEGER?n:undefined;
+  }
   return value===null||typeof value==="string"||typeof value==="boolean"||typeof value==="number"?value:undefined;
  }):[]);
  if(rows.some(row=>row.length!==keys.length||row.some(value=>value===undefined)))return null;
