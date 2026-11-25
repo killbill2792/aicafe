@@ -6,7 +6,7 @@
   "proof": "14c-proof.json",
   "scope": "14c-scope.json",
   "expectedTools": [
-    "get_supplier_purchase_orders",
+    "query_data",
     "propose_supplier_vendor_email",
     "record_supplier_order_outcome"
   ],

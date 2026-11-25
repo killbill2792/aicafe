@@ -13,7 +13,7 @@ import {resolve,dirname,sep} from "node:path";
 import {pathToFileURL} from "node:url";
 import {TEST_CAFES} from "../../../scripts/seed/cafes.mjs";
 import {assertLocalLiveEnvironment} from "./preflight.mjs";
-import {readPersistedModelUsage,requireObservedProductionModel,verifyCheckoutHead} from "./runner.mjs";
+import {markSqlEvidence,readPersistedModelUsage,requireObservedProductionModel,verifyCheckoutHead} from "./runner.mjs";
 
 const fail=code=>{throw Error("task14c_live:"+code)};
 const query=async(db,sql,args=[]) => (await db.query(sql,args)).rows;
@@ -101,7 +101,7 @@ async function ownerTurn(page,thread,text,phase){
    calls:Number.isSafeInteger(calls)&&calls>=0?calls:null,
    providerFailures,
    tools:result.names.filter(n=>[
-    "get_supplier_purchase_orders","propose_supplier_vendor_email","record_supplier_order_outcome"].includes(n))
+    "query_data","propose_supplier_vendor_email","record_supplier_order_outcome"].includes(n))
   }));
   fail("real_supervisor_"+code);
  }
@@ -196,12 +196,14 @@ async function main(){
     "(select count(*)::int from public.expenses where business_id=$1) expenses",
     [scope.businessId]))[0];
   const before=await countSideEffects();
+  const verifyPreparedSources=markSqlEvidence(file);
   const turn=await ownerTurn(connection.page,thread,
    "This existing saved purchase order "+id.po+" is already approved internally. "+
    "Please read the saved supplier order and its verified Gmail contact, "+
    "then PREPARE a separate exact Gmail send approval for me. Do not send "+
    "anything yet and do not create a new purchase order.","prepare_gmail");
-  const required=["get_supplier_purchase_orders","propose_supplier_vendor_email"];
+  verifyPreparedSources([["purchase_orders","purchase_order_lines"]]);
+  const required=["query_data","propose_supplier_vendor_email"];
   let cursor=-1;for(const name of required){
    const at=turn.names.indexOf(name,cursor+1);
    if(at<0)fail("registered_supervisor_tool_sequence_missing_"+name);
@@ -280,8 +282,10 @@ async function main(){
     " by phone today. I am explicitly reporting that supplier outcome as the owner. "+
     "Please save this as an owner-reported phone outcome for this exact PO and "+
     "do not send the prepared Gmail draft. Copy my complete message verbatim as the report note.";
+  const verifyOutcomeSources=markSqlEvidence(file);
   const outcomeTurn=await ownerTurn(connection.page,thread,ownerReport,"record_owner_outcome");
-  const outcomeRequired=["get_supplier_purchase_orders","record_supplier_order_outcome"];
+  verifyOutcomeSources([["purchase_orders","purchase_order_lines"]]);
+  const outcomeRequired=["query_data","record_supplier_order_outcome"];
   cursor=-1;for(const name of outcomeRequired){
     const at=outcomeTurn.names.indexOf(name,cursor+1);
     if(at<0)fail("registered_supervisor_outcome_tool_missing_"+name);

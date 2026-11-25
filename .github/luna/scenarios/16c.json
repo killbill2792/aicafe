@@ -7,7 +7,6 @@
   "scope": "16c-scope.json",
   "expectedTools": [
     "query_data",
-    "get_supplier_purchase_orders",
     "web_search"
   ],
   "assertions": [

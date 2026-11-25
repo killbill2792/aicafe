@@ -70,6 +70,12 @@ describe("U3 SQL source receipts in numeric claim verification",()=>{
     .not.toEqual([]);
   }
  });
+ it("verifies a stored basis-point rate in percentage units",()=>{
+  const base=receipt();
+  const r={...base,rows:[{rate:"1250"}],evidence:{...(base.evidence as object),column_units:{rate:"basis_points"}}};
+  expect(compactEvidence([r]).flatMap(v=>v.values)).toEqual([expect.objectContaining({unit:"bps",value:1250})]);
+  expect(checkNumbers("The saved rate is 12.5%.","",[r],"en")).toEqual([]);
+ });
  it("verifies ingredient microcent rates in display currency, not as raw whole cents",()=>{
   const base=receipt();
   const r={...base,rows:[{rate:"2000000"}],evidence:{...(base.evidence as object),column_units:{rate:"microcents"}}};

@@ -103,7 +103,7 @@ function u3ReceiptNumber(raw:unknown,unit:unknown):
  const text=typeof raw==="string"?raw:
   typeof raw==="number"&&Number.isFinite(raw)?String(raw):"";
  if(!/^-?(?:0|[1-9][0-9]*)(?:\.[0-9]+)?$/.test(text)||text.length>1235)return null;
- if(unit!=="cents"&&unit!=="microcents"&&unit!=="count"&&unit!=="percent"&&unit!=="ratio")return null;
+ if(unit!=="cents"&&unit!=="microcents"&&unit!=="count"&&unit!=="percent"&&unit!=="ratio"&&unit!=="basis_points")return null;
  const [integer,fraction=""]=text.split(".");
  const sign=integer.startsWith("-")?-BigInt(1):BigInt(1);
  const n=BigInt(integer.replace("-","")+fraction),d=BigInt(10)**BigInt(fraction.length);
@@ -115,7 +115,7 @@ function u3ReceiptNumber(raw:unknown,unit:unknown):
  const rounded=sign*(n*scale*BigInt(2)+denominator)/(denominator*BigInt(2));
  if(rounded>BigInt(Number.MAX_SAFE_INTEGER)||rounded<BigInt(Number.MIN_SAFE_INTEGER))return null;
  const value=Number(rounded)/(unit==="count"||unit==="ratio"?Number(scale):1);
- return {value,unit:unit==="percent"?"bps":unit==="microcents"?"cents":unit};
+ return {value,unit:unit==="percent"||unit==="basis_points"?"bps":unit==="microcents"?"cents":unit};
 }
 function completeU3Proof(r:AgentToolResult):Record<string,unknown>|null{
  if(r.source!=="u3_canonical_research"||r.error||

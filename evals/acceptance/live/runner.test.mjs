@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import {toScaled,stockRows,expectedAfter,ledgerWrites,proposalLines,planOwnerApprovals,approveExpectedPurchases,observedOutcome,readPersistedModelUsage,requireCompletedTurn,verifyCheckoutHead,requireObservedProductionModel,allCasesAccountedFor,failureCode} from "./runner.mjs";
+import {hasCompletedSqlSources,completedSqlReceiptCount,toScaled,stockRows,expectedAfter,ledgerWrites,proposalLines,planOwnerApprovals,approveExpectedPurchases,observedOutcome,readPersistedModelUsage,requireCompletedTurn,verifyCheckoutHead,requireObservedProductionModel,allCasesAccountedFor,failureCode} from "./runner.mjs";
 
 const milk={name:"Whole milk",base_unit:"ml",quantity_base:"5.2500"};
 const beans={name:"Espresso beans",base_unit:"g",quantity_base:"12.5000"};
@@ -200,4 +200,20 @@ test("owner approval uses real authenticated proposal route and verifies committ
   /live_capture:approved_effect_not_committed/);
  await assert.rejects(approveExpectedPurchases(request({error:"conflict"},409),thread,expected),
   /live_capture:purchase_owner_approval_409/);
+});
+
+test("source-family proof uses completed original SQL receipts, not tool starts, unrelated reads or retained-only results",()=>{
+ const id="11111111-1111-4111-8111-111111111111";
+ const id2="22222222-2222-4222-8222-222222222222";
+ const record=(receipt,names,complete=true,retrieval="executed_query",snapshot=receipt)=>
+  "u3_sql_research_receipt { receipt_id: '"+receipt+"', duration_ms: 2, relation_count: "+names.split(",").length+", page_complete: "+complete+", page_retrieval: '"+retrieval+"', snapshot_id: '"+snapshot+"', relation_names: '"+names+"' }\n";
+ const menu=record(id,"menu_items"),po=record(id2,"purchase_orders");
+ const families=[["menu_items"],["purchase_orders","purchase_order_lines"]];
+ assert.equal(hasCompletedSqlSources(menu+po,families),true);
+ assert.equal(completedSqlReceiptCount(menu+po),2);
+ assert.equal(hasCompletedSqlSources(menu,families),false);
+ assert.equal(hasCompletedSqlSources(menu+record(id2,"purchase_orders",false),families),false);
+ assert.equal(hasCompletedSqlSources(menu+record(id2,"purchase_orders",true,"retained_result"),families),false);
+ assert.equal(hasCompletedSqlSources(menu+record(id2,"purchase_orders",false)+record(id2,"purchase_orders",true,"retained_result"),families),true);
+ assert.equal(hasCompletedSqlSources(menu+po.replace("relation_count: 1","relation_count: 2"),families),false);
 });

@@ -2,6 +2,17 @@ import {describe,it,expect,vi} from "vitest";
 import {runAgentTurn,type AgentProvider} from "./loop.server";
 import type {AgentToolContext} from "./tools";
 import {agentReplyPayload} from "./persist.server";
+import {runU3Sql} from "./tools/u3SqlResearch.server";
+vi.mock("./tools/u3SqlResearch.server",async importOriginal=>{
+ const actual=await importOriginal<typeof import("./tools/u3SqlResearch.server")>();
+ return {...actual,u3SqlConfigured:()=>true,runU3Sql:vi.fn()};
+});
+const draftResearchArgs=JSON.stringify({sql:"SELECT p.id,p.revision,p.supplier_name,p.subtotal_cents,p.currency_code,l.item_name FROM supervisor_proposals p JOIN supplier_proposal_lines l ON l.proposal_id=p.id WHERE p.capability_id='maya.supplier_purchase_order.v1' AND p.status='draft' ORDER BY p.id,l.line_index",parameters:null});
+function savedDraftRows(rows:unknown[]){
+ return {source:"u3_canonical_research",period:null,missing:[],rows,empty:rows.length===0,truncated:false,page_complete:true,
+ evidence:{receipt_id:"11111111-1111-4111-8111-111111111111",scope:"verified_owner_cafe_lease",query_fingerprint:"a".repeat(64),
+ catalog_version:"a".repeat(16),column_units:{subtotal_cents:"cents"},relation_names:["supervisor_proposals","supplier_proposal_lines"]}} as unknown as Awaited<ReturnType<typeof runU3Sql>>;
+}
 const completed={type:"response.completed",response:{usage:{
  input_tokens:100,output_tokens:25,input_tokens_details:{cached_tokens:0}}}};
 const call=(name:string,args:string,id:string)=>({type:"response.output_item.done",
@@ -29,6 +40,7 @@ function playback(rounds:Array<Array<Record<string,unknown>>>){
  return {provider,requests};
 }
 const baseContext={
+ canonicalData:async()=>({businessId:"aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",db:{} as never}),
  locale:"en" as const,asOf:"2026-11-13",timezone:"America/Los_Angeles",
  tools:{
   getMenuCatalog:async()=>({available:true,value:[],quality:{
@@ -95,7 +107,7 @@ describe("Task14B agentic purchasing: Supervisor works through a goal, not Q&A",
   expect(requests[0].tools).toEqual(expect.arrayContaining([
    expect.objectContaining({name:"inspect_supplier_purchase"}),
    expect.objectContaining({name:"propose_supplier_purchase_order"}),
-   expect.objectContaining({name:"get_supplier_purchase_orders"})
+   expect.objectContaining({name:"query_data"})
   ]));
   expect((requests[0].tools as unknown[]).length).toBeGreaterThan(30);
   expect(requests.slice(0,-1).every(r=>r.tool_choice==="auto")).toBe(true);
@@ -141,8 +153,9 @@ describe("Task14B agentic purchasing: Supervisor works through a goal, not Q&A",
   const ctx={...baseContext,purchasing:{
    list,inspect:vi.fn(async()=>({...plan,offers:[{...plan.offers[0],subtotalCents:3150}]})),propose
   }} as unknown as AgentToolContext;
+  vi.mocked(runU3Sql).mockResolvedValueOnce(savedDraftRows([{id:oldId,revision:1,supplier_name:"Farm A",item_name:"Milk",subtotal_cents:2250,currency_code:"CAD"}]));
   const {requests,provider}=playback([
-   [call("get_supplier_purchase_orders","{}","list-original"),completed],
+   [call("query_data",draftResearchArgs,"list-original"),completed],
    [call("inspect_supplier_purchase",args(7),"inspect-corrected"),completed],
    [call("propose_supplier_purchase_order",proposalArgs(7,oldId),"propose-corrected"),completed],
    [text("I replaced only the selected milk draft with seven gallons. It remains unapproved."),completed],
@@ -151,7 +164,8 @@ describe("Task14B agentic purchasing: Supervisor works through a goal, not Q&A",
   expect(agentReplyPayload(corrected).reply.blocks)
    .toContainEqual({type:"proposal_card",proposalId:"44444444-4444-4444-8444-444444444444"});
   expect(requests).toHaveLength(4);
-  expect(list).toHaveBeenCalledOnce();
+  expect(list).not.toHaveBeenCalled();
+  expect(corrected.results).toContainEqual(expect.objectContaining({source:"u3_canonical_research",rows:[expect.objectContaining({id:oldId,item_name:"Milk"})]}));
   expect(proposed).toEqual([{quantity:7,replaceProposalId:oldId}]);
   expect(propose).toHaveBeenCalledOnce();
   expect(Object.hasOwn(ctx,"approve")).toBe(false);
@@ -168,15 +182,16 @@ describe("Task14B agentic purchasing: Supervisor works through a goal, not Q&A",
     revision:1,supplierName:"Farm A",subtotalCents:2250,currency:"CAD"};
   });
   const ctx={...baseContext,purchasing:{list,inspect,propose}} as unknown as AgentToolContext;
+  vi.mocked(runU3Sql).mockImplementationOnce(async()=>{steps.push("sql");return savedDraftRows([]);});
   const {provider}=playback([
-   [call("get_supplier_purchase_orders","{}","status-1"),completed],
+   [call("query_data",draftResearchArgs,"status-1"),completed],
    [call("inspect_supplier_purchase",args(5),"fresh-evidence-2"),completed],
    [call("propose_supplier_purchase_order",proposalArgs(5,null),"fresh-draft-3"),completed],
    [text("I inspected current quotes and saved a new milk order for your approval. The stale approval remains closed; I did not retry the old order."),completed]
   ]);
   const outcome=await runAgentTurn({ownerText:"The old milk order expired. Refresh the quotes and prepare a new approval.",
    context:ctx,provider});
-  expect(steps).toEqual(["list","inspect","propose"]);
+  expect(steps).toEqual(["sql","inspect","propose"]);
   expect(propose).toHaveBeenCalledWith(JSON.parse(proposalArgs(5,null)));
   expect(outcome.text).toContain("new milk order");
   expect(Object.hasOwn(ctx,"approve")).toBe(false);
@@ -197,14 +212,15 @@ describe("Task14B agentic purchasing: Supervisor works through a goal, not Q&A",
      itemName:"Flour",neededBaseQuantity:10000,baseUnit:"g",
      packs:10,packQuantity:1,packUnit:"kg",priceCents:90,lineSubtotalCents:900}]}]};
   const ctx={...baseContext,purchasing:{inspect:vi.fn(async()=>flourPlan),propose,list}} as unknown as AgentToolContext;
+  vi.mocked(runU3Sql).mockResolvedValueOnce(savedDraftRows([{id:"55555555-5555-4555-8555-555555555555",revision:1,supplier_name:"Farm A",item_name:"Milk",subtotal_cents:2250,currency_code:"CAD"}]));
   const {provider}=playback([
-   [call("get_supplier_purchase_orders","{}","list-before-new"),completed],
+   [call("query_data",draftResearchArgs,"list-before-new"),completed],
    [call("inspect_supplier_purchase",flourArgs,"inspect-separate"),completed],
    [call("propose_supplier_purchase_order",flourProposal,"propose-separate"),completed],
    [text("I prepared a separate flour order and left the milk draft untouched."),completed]
   ]);
   await runAgentTurn({ownerText:"Prepare a separate flour order to increase pastry production.",context:ctx,provider});
-  expect(list).toHaveBeenCalledOnce();
+  expect(list).not.toHaveBeenCalled();
   expect(propose).toHaveBeenCalledWith(JSON.parse(flourProposal));
  });
 });

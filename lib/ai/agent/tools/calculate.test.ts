@@ -70,6 +70,17 @@ describe("calculate tool",()=>{
 });
 
 describe("source-attested ingredient-rate arithmetic",()=>{
+ it("uses basis points as exact percentages instead of treating them as whole percentages",async()=>{
+  const receipt_id="11111111-1111-4111-8111-111111111111";
+  const research:AgentToolResult={source:"u3_canonical_research",period:null,missing:[],truncated:false,
+   rows:[{rate:"1250",base:"120000"}],evidence:{scope:"verified_owner_cafe_lease",receipt_id,
+    column_units:{rate:"basis_points",base:"cents"}}};
+  const r=await calculateTools.calculate.execute({purpose:"Apply saved rate",
+   inputs:[{...input("rate","query_data","rows.0.rate"),receipt_id},{...input("base","query_data","rows.0.base"),receipt_id}],
+   steps:[{id:"amount",label:"Amount",op:"multiply",args:["rate","base"]}]},
+   ctx([{name:"query_data",result:research}]));
+  expect(r.result).toEqual({unit:"cents",valueCents:15000});
+ });
  it("converts stored microcents exactly before multiplying by a verified quantity",async()=>{
   const research:AgentToolResult={source:"u3_canonical_research",period:null,missing:[],truncated:false,
     rows:[{rate:"125001",quantity:"200"}],

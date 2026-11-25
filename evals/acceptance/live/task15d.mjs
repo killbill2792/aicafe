@@ -7,7 +7,7 @@ import {resolve,dirname,sep} from "node:path";
 import {pathToFileURL} from "node:url";
 import {TEST_CAFES} from "../../../scripts/seed/cafes.mjs";
 import {assertLocalLiveEnvironment} from "./preflight.mjs";
-import {readPersistedModelUsage,requireObservedProductionModel,verifyCheckoutHead} from "./runner.mjs";
+import {markSqlEvidence,readPersistedModelUsage,requireObservedProductionModel,verifyCheckoutHead} from "./runner.mjs";
 
 const fail=code=>{throw Error("task15d_live:"+code);};
 const local="http://127.0.0.1:3000";
@@ -100,13 +100,15 @@ async function measure(){
   if(upload.status()!==201)fail("file_upload_failed");
   const attachment=(await upload.json()).attachment?.id;
   if(!uuid(attachment))fail("attachment_missing");
+  const verifySources=markSqlEvidence(files[0]);
   const good=await turn(first.page,thread,
     "Read only: summarize the attached supplier quote. Report the exact product, quantity and reference code. "+
     "Compare against the canonical cafe menu and existing supplier purchase orders; research both saved sources through the registered tools. "+
     "Do not send emails, change prices, create purchases, record stock or do any other action.",[attachment]);
   if(good.error||good.done?.endReason!=="complete"||
-     !["query_data","get_supplier_purchase_orders"].every(n=>good.names.includes(n)))
+     !good.names.includes("query_data"))
    fail("registered_source_reads_missing");
+  verifySources([["menu_items"],["purchase_orders","purchase_order_lines"]]);
   const reply=JSON.stringify(good.done?.reply??{});
   if(!reply.includes(canary)||!reply.includes("47")||!/oat milk/i.test(reply))
    fail("legitimate_quote_facts_missing");
