@@ -46,7 +46,7 @@ type CafeContext={db:SupabaseClient;b:Business&{timezone:string};schedule:BriefS
 const states=(db:SupabaseClient)=>new SnapshotCafeStateService(
   async(id,period)=>getBusinessSnapshotFromDb(db,id,period??"month"));
 
-/** Cron: every café, every 5 minutes; each café decides whether it is due. */
+/** Cron: every café, every 15 minutes; each café decides whether it is due. */
 const BLOCKED_IN_APP_REASONS=new Set(["missed_send_window","no_timezone","invalid_timezone",
   "no_owner","no_chat_thread"]);
 

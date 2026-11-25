@@ -133,7 +133,9 @@ function itemsSold(e:MorningBriefEvidence,copy:Copy):BriefContent["items"]{
     }),
     ...e.sold.unlinked.map(s=>({name:safeText(s.name,120),category:s.category,units:s.units})),
   ].filter(l=>Number.isFinite(l.units)&&l.units>0&&l.name);
-  if(!lines.length)return {mode:"unavailable",total:null,drinks:null,best:null};
+  if(!lines.length)return e.netSalesCents===0&&e.sold.linked.length===0&&e.sold.unlinked.length===0
+    ?{mode:"drinks",total:0,drinks:0,best:null}
+    :{mode:"unavailable",total:null,drinks:null,best:null};
   const best=(rows:typeof lines)=>{
     const totals=new Map<string,number>();
     for(const r of rows)totals.set(r.name,(totals.get(r.name)??0)+r.units);
