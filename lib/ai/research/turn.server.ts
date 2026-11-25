@@ -108,12 +108,18 @@ export async function runResearchTurn(args:{
   const evidence:string[]=[];
   const queries=new Map<string,Record<string,unknown>>();
   let summary="";
-  const appendAnswer=(answer:string)=>{
-    const parsed=splitResearchPresentation(answer,queries,args.actions?.context);
-    if(parsed.text){const delta=(text?"\n\n":"")+parsed.text;text+=delta;args.onDelta?.(delta);}
-    if(parsed.presentation)invocations.push({name:"present_response",result:{source:"response_presentation",period:null,missing:[],accepted:true,presentation:parsed.presentation}});
-  };
+  const presentations:AgentToolResult[]=[];
   let text="",endReason:EndReason="complete";
+  const appendText=(part:string,continuing=false)=>{
+    if(!part)return;
+    const delta=(!continuing&&text?"\n\n":"")+part;
+    text+=delta;args.onDelta?.(delta);
+  };
+  const appendAnswer=(answer:string,delivered:string)=>{
+    const parsed=splitResearchPresentation(answer,queries,args.actions?.context);
+    if(parsed.text.startsWith(delivered))appendText(parsed.text.slice(delivered.length),Boolean(delivered));
+    if(parsed.presentation)presentations.push({source:"response_presentation",period:null,missing:[],accepted:true,presentation:parsed.presentation});
+  };
 
   // Only an existing durable background run's own budget can end research early.
   const stop=()=>{
@@ -123,7 +129,7 @@ export async function runResearchTurn(args:{
   };
 
   /** One Responses request through the same transport and paid-usage ledger as the legacy loop. */
-  const call=async(final:boolean):Promise<{calls:FunctionCall[];answer:string}>=>{
+  const call=async(final:boolean):Promise<{calls:FunctionCall[];answer:string;delivered:string}>=>{
     await args.beforeProviderRequest?.();
     const params:Record<string,unknown>={model,...(broker?{instructions}:
         {...(/^gpt-6/u.test(model)?{include:["reasoning.encrypted_content"],reasoning:{summary:"auto"}}:{}),prompt_cache_key:"supervisor-sql-research-v1"}),
@@ -132,7 +138,7 @@ export async function runResearchTurn(args:{
     const startedCall=now();
     const checkpoint=args.checkpoint;
     if(checkpoint)await checkpoint.beginProvider();
-    let completed=false,answer="",thinking="";
+    let completed=false,answer="",thinking="",delivered="";
     const output:unknown[]=[],calls:FunctionCall[]=[];
     try{
       const reservation=await reserveDurableProviderRequest(params);
@@ -140,7 +146,19 @@ export async function runResearchTurn(args:{
       const controller=new AbortController();
       {
         for await(const event of provider(params,controller.signal) as AsyncIterable<Event>){
-          if(event.type==="response.output_text.delta"&&typeof event.delta==="string")answer+=event.delta;
+          if(event.type==="response.output_text.delta"&&typeof event.delta==="string"){
+            answer+=event.delta;
+            // Deliver completed natural paragraphs without exposing an unfinished
+            // presentation selection. Recheck the existing scoped evidence first.
+            const fence=answer.search(/^[ \t]*\x60{3}cafe-ui(?:[ \t]|\r?$)/mu);
+            const prose=fence<0?answer:answer.slice(0,fence);
+            const boundary=prose.lastIndexOf("\n\n");
+            const prefix=boundary<0?"":prose.slice(0,boundary).trim();
+            if(prefix.length>delivered.length&&prefix.startsWith(delivered)){
+              await args.beforeAcceptResult?.();
+              appendText(prefix.slice(delivered.length),Boolean(delivered));delivered=prefix;
+            }
+          }
           if(event.type==="response.reasoning_summary_part.added"){if(thinking)summary+=(summary?"\n\n":"")+thinking;thinking="";}
           if(event.type==="response.reasoning_summary_text.delta"&&typeof event.delta==="string"){
             thinking+=event.delta;
@@ -185,7 +203,7 @@ export async function runResearchTurn(args:{
       else if(row.type==="function_call")input.push({type:"function_call",name:row.name,call_id:row.call_id,arguments:row.arguments});
       else if(row.type==="message")input.push({type:"message",role:"assistant",content:[{type:"output_text",text:answer,annotations:[]}]});
     }
-    return {calls,answer};
+    return {calls,answer,delivered};
   };
 
   /** Same durable checkpoint and effect observation as the legacy loop; errors come back to the model as data. */
@@ -214,9 +232,9 @@ export async function runResearchTurn(args:{
   try{
     for(;;){
       const reason=stop();
-      const {calls,answer}=await call(reason!==null);
+      const {calls,answer,delivered}=await call(reason!==null);
       await args.beforeAcceptResult?.();
-      if(answer.trim())appendAnswer(answer);
+      if(answer.trim())appendAnswer(answer,delivered);
       if(!calls.length||reason!==null){
         if(reason)endReason=reason;
         break;
@@ -232,6 +250,8 @@ export async function runResearchTurn(args:{
           failed=Boolean(record.error);
           input.push({type:"function_call_output",call_id:fc.call_id,output:JSON.stringify(record)});
         }else{
+          const readOnly=["run_sql","describe_database","calculate","search_web"].includes(fc.name);
+          if(readOnly&&args.checkpoint)await args.checkpoint.beginTool(fc.name,fc.arguments,true);
           const result=await executeResearchTool({...args.scope,webSearch:args.webSearch??args.scope.webSearch,privateValues},fc.name,fc.arguments);
           await args.beforeAcceptResult?.();
           const ref=fc.name==="run_sql"&&result.ok===true?"q"+(queries.size+1):null;
@@ -240,6 +260,7 @@ export async function runResearchTurn(args:{
           failed=result.ok===false;
           if(!failed)evidence.push(JSON.stringify(result));
           record={source:"sql_research",period:null,missing:[],agentId:"alex",tool:fc.name,...(failed?{error:"research_tool_error"}:{})};
+          if(readOnly&&args.checkpoint)await args.checkpoint.endTool({...record,result});
         }
         invocations.push({name:fc.name,result:record});
         audit({kind:"tool_call",toolName:fc.name,inputSummary:"Research tool",outputSummary:failed?"Error returned to model":"Completed",
@@ -250,12 +271,12 @@ export async function runResearchTurn(args:{
     if(error instanceof Error&&/durable|checkpoint|reservation/u.test(error.message))throw error;
     endReason="provider_error";
     // Never leave the owner with nothing after real research: answer from the evidence gathered so far.
-    if(invocations.length&&!text){
+    if(invocations.length&&!args.checkpoint){
       try{
         input.push({role:"developer",content:"A research step failed. Answer the owner now with what you found, and say what is still unknown."});
-        const {answer}=await call(true);
+        const {answer,delivered}=await call(true);
         await args.beforeAcceptResult?.();
-        if(answer.trim())appendAnswer(answer);
+        if(answer.trim())appendAnswer(answer,delivered);
       }catch{/* the owner gets the existing retryable error */}
     }
   }
@@ -264,6 +285,6 @@ export async function runResearchTurn(args:{
   return {text,endReason,status:{status:"complete",missing:[]},
     // Same promise as the standard path: a figure with no source in this turn's evidence is shown as unverified.
     unverified:text?unsupportedNumbers(text,[args.ownerText,args.cafeContext,...(args.history??[]).map(h=>h.content),...evidence]):[],
-    results:[...await args.checkpoint?.restoredResults?.()??[],...invocations.map(i=>i.result)],toolInvocations:invocations,tools,
+    results:[...(await args.checkpoint?.restoredResults?.()??[]),...invocations.map(i=>i.result),...presentations],toolInvocations:invocations,tools,
     agentIds:tools.length?["alex"]:[],usage};
 }
