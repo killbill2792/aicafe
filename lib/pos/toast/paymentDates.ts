@@ -53,7 +53,7 @@ export function needsFinalPaymentDetail(entry:Entry,known:KnownPayment[]){
  return !["CASH","GIFTCARD","GIFTCERTIFICATE"].includes(type)&&
   !(type==="CREDIT"&&row.payment_status==="CAPTURED"&&row.original_processing_fee_cents!=null);
 }
-const paymentDetailSchema=z.object({guid:GUID,orderGuid:GUID,paidBusinessDate:z.number().int(),
+const paymentDetailSchema=z.object({guid:GUID,orderGuid:GUID.nullish(),paidBusinessDate:z.number().int().nullish(),
  type:z.string().nullish(),paymentStatus:z.string().nullish(),amount:z.number().finite().nullish(),
  originalProcessingFee:z.number().finite().nullish()});
 type FinalScope={businessId:string;restaurantGuid:string;timezone:string;closeoutHour:number};
@@ -144,19 +144,21 @@ export async function finalizeToastPaymentWindow(db:SupabaseClient,p:FinalScope,
     const payment=await client.request("/orders/v2/payments/"+entry.guid,p.restaurantGuid,paymentDetailSchema,{deadlineAt});
     if(payment.guid.toLowerCase()!==entry.guid)throw new ToastApiError("invalid_response");
     const failed=["VOIDED","DENIED","CANCELLED","ERROR","ERROR_NETWORK"].includes(String(payment.paymentStatus??""));
+    if(!entry.adjustment&&failed){progress.next=index+1;continue;}
     if(!entry.adjustment&&String(payment.paidBusinessDate)!==day.replaceAll("-",""))
      throw new ToastApiError("invalid_response");
-    if(!entry.adjustment&&failed){progress.next=index+1;continue;}
+    const orderGuid=payment.orderGuid;
+    if(!orderGuid)throw new ToastApiError("invalid_response");
     const amount=payment.amount,fee=payment.originalProcessingFee;
     if(payment.type==="CREDIT"&&payment.paymentStatus==="CAPTURED"&&amount!=null&&fee!=null&&fee>=0){
-     const verified={...entry,fee:{orderGuid:payment.orderGuid,amountCents:Math.round(amount*100),feeCents:Math.round(fee*100)}};
+     const verified={...entry,fee:{orderGuid,amountCents:Math.round(amount*100),feeCents:Math.round(fee*100)}};
      const applied=await apply(verified);
-     if(entry.adjustment||!applied)await fetchAndIngestToastOrder(db,p,payment.orderGuid,deadlineAt);
+     if(entry.adjustment||!applied)await fetchAndIngestToastOrder(db,p,orderGuid,deadlineAt);
      if(!applied){
       progress.deferred=[...(progress.deferred??[]),verified];
       // Save only the verified numeric receipt, never the payment response.
      }
-    }else await fetchAndIngestToastOrder(db,p,payment.orderGuid,deadlineAt);
+    }else await fetchAndIngestToastOrder(db,p,orderGuid,deadlineAt);
     progress.next=index+1;
    }
   }catch(e){await save();throw e;}

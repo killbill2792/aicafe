@@ -840,7 +840,8 @@ begin
      and (r.run_id=d.last_import_run_id or r.seen_run_id=d.last_import_run_id)
      and exists(select 1 from jsonb_array_elements(case when jsonb_typeof(r.payload->'checks')='array' then r.payload->'checks' else '[]'::jsonb end) c
       cross join lateral jsonb_array_elements(case when jsonb_typeof(c->'payments')='array' then c->'payments' else '[]'::jsonb end) x
-      where x->>'guid'=p_payment_guid::text));
+      where x->>'guid'=p_payment_guid::text))
+  having count(*)=1;
  if target_day is null then return false;end if;
  perform pg_advisory_xact_lock(hashtextextended('toast-day:'||p_business_id::text||':'||target_day::text,0));
  if not exists(select 1 from public.toast_location_mappings where business_id=p_business_id and restaurant_guid=p_restaurant_guid and verified_at is not null) then return false;end if;
@@ -867,7 +868,15 @@ begin
  return exists(select 1 from public.toast_payment_facts f where f.business_id=p_business_id and f.restaurant_guid=p_restaurant_guid
   and f.business_date=target_day and f.payment_ref=p_payment_guid::text and f.payment_type='CREDIT'
   and f.payment_status='CAPTURED' and f.amount_cents=p_amount_cents and f.status='actual'
-  and f.original_processing_fee_cents=p_fee_cents and f.fee_status='actual' and f.fee_basis='toast');
+  and f.original_processing_fee_cents=p_fee_cents and f.fee_status='actual' and f.fee_basis='toast'
+  and exists(select 1 from public.toast_raw_records r join public.toast_day_status d
+   on d.business_id=r.business_id and d.restaurant_guid=r.restaurant_guid and d.business_date=r.business_date
+   where r.business_id=f.business_id and r.restaurant_guid=f.restaurant_guid and r.business_date=f.business_date
+    and r.entity='order' and r.entity_guid=p_order_guid and d.import_state='imported'
+    and (r.run_id=d.last_import_run_id or r.seen_run_id=d.last_import_run_id)
+    and exists(select 1 from jsonb_array_elements(case when jsonb_typeof(r.payload->'checks')='array' then r.payload->'checks' else '[]'::jsonb end) c
+     cross join lateral jsonb_array_elements(case when jsonb_typeof(c->'payments')='array' then c->'payments' else '[]'::jsonb end) x
+     where x->>'guid'=p_payment_guid::text)));
 end $$;
 revoke all on function public.toast_apply_verified_payment_fee(uuid,uuid,uuid,uuid,bigint,bigint) from public,anon,authenticated;
 grant execute on function public.toast_apply_verified_payment_fee(uuid,uuid,uuid,uuid,bigint,bigint) to service_role;
