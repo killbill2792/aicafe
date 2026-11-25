@@ -173,7 +173,7 @@ export async function seedU3FinancialOracle(db,cafes){
     "VALUES($1,$2,'other',$3,$4,'monthly',false,$5,$6),($7,$2,'other',$8,$9,'yearly',false,$5,$6)",
     [monthlyId,id,monthlyLabel,135000+i*51000,range.first,range.last,annualId,annualLabel,924000+i*192000]);
    await db.query("INSERT INTO public.expenses(id,business_id,spent_on,amount_cents,category_code,source,status,recurring_cost_id,custom_label,dedupe_key) "+
-    "VALUES($1,$2,$3,$4,'other','manual','actual',$5,$6,$1::text),"+
+    "VALUES($1::uuid,$2,$3,$4,'other','manual','actual',$5,$6,($1::uuid)::text),"+
     "(gen_random_uuid(),$2,$3,$7,'other','manual','actual',NULL,$8,$9),"+
     "(gen_random_uuid(),$2,$3,19000,'other','manual','estimated',$10,$11,$12)",
     [expenseId,id,range.first,45000+i*23000,monthlyId,monthlyLabel,28000+i*17000,oneTimeLabel,

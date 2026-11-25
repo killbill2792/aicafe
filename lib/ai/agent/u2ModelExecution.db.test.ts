@@ -102,8 +102,22 @@ describe("U2 durable owner execution",()=>{
   const summary=[...scope,messageId,run.id,[a,b],"gpt-6-luna",200,6000,2,0,200,JSON.stringify({requests:[receipt,receipt],tools:[]})];
   await rpc(service,"supervisor_record_durable_usage_increment",summary);
   await expect(rpc(service,"supervisor_record_durable_usage_increment",summary)).rejects.toThrow();
+  // Actual migrated accounting must accept an extended owner turn and preserve
+  // every receipt, not merely allow the in-memory loop to run.
+  const more=Array.from({length:9},()=>randomUUID());
+  for(const id of more){
+   await rpc(service,"supervisor_reserve_durable_model_call",[id,...scope,run.id,messageId,job.id,token,"gpt-6-luna",2000,8192,100,30,100000,100000,10000,100]);
+   await settle(id);
+  }
+  const toolReceipts=Array.from({length:27},()=>({name:"query_data",durationMs:1,resultBytes:200,returnedRows:1,outcome:"complete"}));
+  const extended=[...scope,messageId,run.id,more,"gpt-6-luna",900,27000,9,27,900,JSON.stringify({requests:more.map(()=>receipt),tools:toolReceipts})];
+  await rpc(service,"supervisor_record_durable_usage_increment",extended);
+  await expect(rpc(service,"supervisor_record_durable_usage_increment",extended)).rejects.toThrow();
+  const counted=await admin.query("select model_call_count,tool_call_count,reserved_model_call_count,execution_metrics from public.ai_usage_events where owner_message_id=$1",[messageId]);
+  expect(counted.rows[0]).toMatchObject({model_call_count:11,tool_call_count:27,reserved_model_call_count:11});
+  expect(counted.rows[0].execution_metrics[1].tools).toEqual(toolReceipts);
   const rows=await admin.query("select attempt_id,status,output_tokens,execution_metrics from public.supervisor_system_usage_events where business_id=$1",[businessId]);
-  expect(rows.rows).toHaveLength(2);
+  expect(rows.rows).toHaveLength(11);
   for(const row of rows.rows)expect(row).toMatchObject({status:"completed",output_tokens:"3000",execution_metrics:receipt});
  }finally{await service.end();await admin.query("delete from public.businesses where id=$1",[businessId]);await admin.query("delete from auth.users where id=$1",[ownerId]);await admin.end();}
  },30000);

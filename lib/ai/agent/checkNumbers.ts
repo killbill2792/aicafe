@@ -211,9 +211,12 @@ function verifiedU3Evidence(r:AgentToolResult,periodKey:string){
   if(!row||typeof row!=="object"||Array.isArray(row))continue;
   for(const [column,raw] of Object.entries(row)){
    if(!Object.hasOwn(units,column))continue;
-   const accepted=u3ReceiptNumber(raw,units[column]);
+   // Duration provenance is distinct from generic counts, even when the
+   // model gives a count an hours/minutes alias. The unit comes from SQL lineage.
+   const duration=units[column]==="hours"?"hour":units[column]==="minutes"?"minute":units[column]==="seconds"?"second":null;
+   const accepted=u3ReceiptNumber(raw,duration?"count":units[column]);
    if(!accepted)continue;
-   const key=periodKey+(accepted.unit==="count"?"u3VerifiedCount/":"u3Receipt/")+
+   const key=periodKey+(duration?"u3VerifiedDuration/"+duration+"/":accepted.unit==="count"?"u3VerifiedCount/":"u3Receipt/")+
     proof.receipt_id+"/row:"+rowIndex+"/"+column;
    values.push({key,value:accepted.value,unit:accepted.unit});
   }
@@ -644,7 +647,8 @@ function isCalendarNumber(text: string, start: number, end: number, value: numbe
   return false;
 }
 /** Keep calendar durations separate from arbitrary sales/item counts. */
-function durationUnitFamily(text:string):"hour"|"minute"|"day"|"week"|"month"|null{
+function durationUnitFamily(text:string):"second"|"hour"|"minute"|"day"|"week"|"month"|null{
+ if(/(?:seconds?|secs?|segundos?|ثوان|ثانية)/iu.test(text))return "second";
  if(/(?:hours?|hrs?|horas?|ساعات?|ساعة)/iu.test(text))return "hour";
  if(/(?:minutes?|mins?|minutos?|دقائق?|دقيقة)/iu.test(text))return "minute";
  if(/(?:days?|días?|أيام|ايام)/iu.test(text))return "day";
@@ -1564,11 +1568,13 @@ export function checkNumbers(text: string, ownerText: string, results: readonly 
       const fromOwner=ownerNumbers.some(o=>o.durationUnit===v.durationUnit&&o.value===v.value)||
         ownerSpoken.some(o=>o.kind==="number"&&o.durationUnit===v.durationUnit&&o.value===v.value);
       const unitKey:Record<NonNullable<typeof v.durationUnit>,RegExp>={
-        hour:/hours?|hrs?|horas?/iu,minute:/minutes?|mins?|minutos?/iu,
+        second:/seconds?|secs?|segundos?/iu,hour:/hours?|hrs?|horas?/iu,minute:/minutes?|mins?|minutos?/iu,
         day:/days?|días?/iu,week:/weeks?|semanas?/iu,month:/months?|meses?/iu,
       };
       const fromTools=evidence.some(entry=>entry.values.some(value=>
-        value.unit==="count"&&unitKey[v.durationUnit!].test(value.key)&&
+        value.unit==="count"&&
+        (value.key.includes("u3VerifiedDuration/")?value.key.includes("u3VerifiedDuration/"+v.durationUnit+"/"):
+          !value.key.includes("u3VerifiedCount/")&&unitKey[v.durationUnit!].test(value.key))&&
         value.value===v.value&&timecardDurationMatchesClaim(text,v.start,v.end,value.key)));
       return !(fromOwner||fromTools);
     }

@@ -4,6 +4,11 @@ import {askOwnerSchema,askOwnerTools} from "./askOwner";
 import {newResolveState,observeToolResult} from "../resolve";
 import type {AgentToolContext} from "./index";
 import {clarifyBlockSchema} from "@/lib/ai/conversations/contracts";
+import {runU3Sql} from "./u3SqlResearch.server";
+vi.mock("./u3SqlResearch.server",async importOriginal=>{
+ const actual=await importOriginal<typeof import("./u3SqlResearch.server")>();
+ return {...actual,u3SqlConfigured:()=>true,runU3Sql:vi.fn()};
+});
 const hot="11111111-1111-4111-8111-111111111111",iced="22222222-2222-4222-8222-222222222222";
 const options=[{label:"Latte — Hot",value:hot},{label:"Latte — Iced",value:iced}];
 function context(){
@@ -263,12 +268,7 @@ describe("ask_owner tool",()=>{
  });
  it("recovers from a wrong ask_owner decision to the actual registered POS reader in one turn",async()=>{
   const ownerText="How many individual item selections across these two days had quantity at least two?";
-  const metricQuery={view:"cv_toast_records",columns:null,filters:[
-   {column:"record_type",op:"=",value:"item"},
-   {column:"counts_in_sales",op:"=",value:true},
-   {column:"data.quantity",op:">=",value:2}
-  ],group_by:null,metrics:[{fn:"count",column:"source_ref"}],
-  date_from:"2026-11-08",date_to:"2026-11-09",order_by:null,limit:10};
+  const metricQuery={sql:"SELECT count(*) AS selection_count FROM toast_records WHERE record_type=$1 AND counts_in_sales AND (data->>'quantity')::numeric >= $2",parameters:["item",2],date_from:"2026-11-08",date_to:"2026-11-09",limit:null};
   const ownerCard={kind:"facts",question:"How many item selections were sold?",
    options:[],allowOther:false,fields:[{key:"item_count",label:"Item count",
     inputType:"number",units:[],defaultUnit:""}]};
@@ -284,11 +284,12 @@ describe("ask_owner tool",()=>{
   const provider:AgentProvider=async function*(){
    for(const event of rounds[round++]??[])yield event as never;
   };
-  const rpc=vi.fn(async(name:string)=>{
-   if(name==="ai_query_view")return {data:{rows:[{count_source_ref:2}],
-    sourceCount:2,sourceMix:{toast:2},truncated:false},error:null};
-   return {data:[],error:null};
-  });
+  const rpc=vi.fn();
+  vi.mocked(runU3Sql).mockResolvedValueOnce({
+   source:"u3_canonical_research",period:{from:metricQuery.date_from,to:metricQuery.date_to},missing:[],
+   rows:[{selection_count:2}],empty:false,truncated:false,page_complete:true,
+   evidence:{receipt_id:"11111111-1111-4111-8111-111111111111",scope:"verified_owner_cafe_lease",query_fingerprint:"a".repeat(64),catalog_version:"a".repeat(16),column_units:{selection_count:"count"},relation_names:["toast_records"]}
+  } as unknown as Awaited<ReturnType<typeof runU3Sql>>);
   const context={asOf:"2026-11-09",timezone:"America/Los_Angeles",locale:"en",
    canonicalData:async()=>({db:{rpc} as never,
     businessId:"aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"}),
@@ -304,13 +305,12 @@ describe("ask_owner tool",()=>{
   expect(turn.tools).toEqual(expect.arrayContaining(["ask_owner","query_data"]));
   expect(turn.results.find(x=>x.source==="ask_owner")).toMatchObject({
    error:"numericOwnerInputUnverified",missing:["numericOwnerInputUnverified"],nextTool:"query_data"});
-  expect(turn.results.find(x=>x.source==="canonical_data")).toMatchObject({
-   aggregate:{metric:"count_source_ref",value:2}});
+  expect(turn.results.find(x=>x.source==="u3_canonical_research")).toMatchObject({
+   rows:[{selection_count:2}]});
   expect(turn.results.some(x=>x.source==="ask_owner"&&x.missing.length===0)).toBe(false);
   expect(turn.text).toContain("Number: 2");
-  expect(rpc).toHaveBeenCalledWith("ai_query_view",expect.objectContaining({
-   p_view:"cv_toast_records",p_filters:metricQuery.filters,p_metrics:metricQuery.metrics
-  }));
+  expect(runU3Sql).toHaveBeenCalledWith(expect.objectContaining({businessId:"aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"}),expect.objectContaining(metricQuery));
+  expect(rpc).not.toHaveBeenCalled();
  });
 
 });

@@ -70,6 +70,15 @@ describe("U3 SQL source receipts in numeric claim verification",()=>{
     .not.toEqual([]);
   }
  });
+ it("uses attested duration units instead of trusting model-selected count aliases",()=>{
+  const base=receipt();
+  const count={...base,rows:[{hours:"7"}],evidence:{...(base.evidence as object),column_units:{hours:"count"}}};
+  const duration={...base,rows:[{elapsed:"7"}],evidence:{...(base.evidence as object),column_units:{elapsed:"hours"}}};
+  expect(checkNumbers("The recorded duration was 7 hours.","",[duration],"en")).toEqual([]);
+  expect(checkNumbers("The recorded duration was 7 hours.","",[count],"en")).not.toEqual([]);
+  expect(checkNumbers("There were 7 orders.","",[duration],"en")).not.toEqual([]);
+  expect(checkNumbers("The recorded duration was 7 minutes.","",[duration],"en")).not.toEqual([]);
+ });
  it("verifies a stored basis-point rate in percentage units",()=>{
   const base=receipt();
   const r={...base,rows:[{rate:"1250"}],evidence:{...(base.evidence as object),column_units:{rate:"basis_points"}}};

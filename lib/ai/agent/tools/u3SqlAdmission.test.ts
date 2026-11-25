@@ -200,6 +200,11 @@ describe("U3 governed PostgreSQL AST admission",()=>{
   const literal=await admitU3Sql("SELECT 100*1234 AS sales FROM orders",admitted,0,false,[],units);
   expect(literal.outputUnits).toEqual({});
  });
+ it("attests duration conversions without promoting counts renamed as hours",async()=>{
+  const relations={timecards:{worked_seconds:"seconds" as const}};
+  const r=await admitU3Sql("SELECT SUM(worked_seconds)::numeric/3600 AS elapsed,SUM(worked_seconds)::numeric/60 AS duration,COUNT(*) AS hours FROM timecards",["timecards"],0,false,[],{},relations);
+  expect(r.outputUnits).toEqual({elapsed:"hours",duration:"minutes",hours:"count"});
+ });
  it("attests stored basis-point scale without promoting model aliases",async()=>{
   const relations={team_rules:{ot_multiplier_bp:"basis_points" as const}};
   const r=await admitU3Sql("SELECT ot_multiplier_bp AS multiplier,15000 AS fake FROM team_rules",["team_rules"],0,false,[],{},relations);
