@@ -63,7 +63,8 @@ const config: Config = {
   darkMode: ["class", '[data-mode="dark"]'],
   theme: { extend: {
     colors,
-    fontFamily: { headline: ["var(--font-jakarta)", "system-ui", "sans-serif"], body: ["var(--font-inter)", "system-ui", "sans-serif"], arabic: ["var(--font-ibm-plex-arabic)", "system-ui", "sans-serif"] },
+    // The device's own font (SF on iPhone, Roboto on Android, Segoe on Windows), so the installed web app looks native.
+    fontFamily: { headline: ["system-ui", "-apple-system", "BlinkMacSystemFont", "\"Segoe UI\"", "Roboto", "\"Helvetica Neue\"", "Arial", "\"Noto Sans\"", "sans-serif", "\"Apple Color Emoji\"", "\"Segoe UI Emoji\""], body: ["system-ui", "-apple-system", "BlinkMacSystemFont", "\"Segoe UI\"", "Roboto", "\"Helvetica Neue\"", "Arial", "\"Noto Sans\"", "sans-serif", "\"Apple Color Emoji\"", "\"Segoe UI Emoji\""], arabic: ["system-ui", "-apple-system", "BlinkMacSystemFont", "\"Segoe UI\"", "Roboto", "\"Helvetica Neue\"", "Arial", "\"Noto Sans\"", "sans-serif", "\"Apple Color Emoji\"", "\"Segoe UI Emoji\""] },
     fontSize: { "money-lg": ["80px", { lineHeight: "1.1" }], "money-md": ["56px", { lineHeight: "1.1" }], "money-sm": ["44px", { lineHeight: "1.15" }] },
     borderRadius: { card: "20px", "card-lg": "24px", chip: "999px" },
     boxShadow: { card: "var(--shadow-card)" },
