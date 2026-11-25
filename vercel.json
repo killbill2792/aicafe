@@ -37,10 +37,6 @@
       "schedule": "10 15 * * *"
     },
     {
-      "path": "/api/cron/whatsapp-supervisor",
-      "schedule": "* * * * *"
-    },
-    {
       "path": "/api/cron/data-health",
       "schedule": "20 17 * * *"
     },
