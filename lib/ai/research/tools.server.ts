@@ -6,7 +6,9 @@ import {CALC_OPS,exactDecimal,runCalculation,type CalcOp,type CalcUnit,type Calc
  * function `supervisor_research_sql` as the verified owner under RLS, one café) and calculate (existing
  * exact calculator). Security is enforced in the database; no business logic here. */
 
-export type ResearchScope={db:SupabaseClient;businessId:string;ownerUserId:string};
+export type ResearchScope={db:SupabaseClient;businessId:string;ownerUserId:string;
+  /** The existing owner-permissioned public web search (one path); absent when unavailable. */
+  webSearch?:(query:string)=>Promise<unknown>};
 
 const UNITS=["cents","count","percent","ratio"] as const;
 export const researchToolDefinitions=[
@@ -21,6 +23,11 @@ export const researchToolDefinitions=[
       "On an error you get PostgreSQL's message; fix the SQL and try again.",
     parameters:{type:"object",additionalProperties:false,required:["sql"],properties:{
       sql:{type:"string",description:"A single SELECT statement."}}}},
+  {type:"function",name:"search_web",strict:true,
+    description:"Search the public web for current outside information, such as the labor, tax or health rules for this café's own location. "+
+      "Returns a short sourced summary. Never put private café data in the query.",
+    parameters:{type:"object",additionalProperties:false,required:["query"],properties:{
+      query:{type:"string",description:"A public question, including the café's city and state or country when location matters."}}}},
   {type:"function",name:"calculate",strict:true,
     description:"Exact arithmetic on numbers you retrieved. Inputs are decimal strings with a unit: cents (money in minor units), count, "+
       "percent (\"12.5\" means 12.5%) or ratio. Steps run in order; each step's args name inputs or earlier steps. "+
@@ -108,6 +115,10 @@ export async function executeResearchTool(scope:ResearchScope,name:string,rawArg
       return await describeDatabase(scope,Array.isArray(args.tables)?args.tables.map(String):null);
     if(name==="run_sql")
       return typeof args.sql==="string"&&args.sql.trim()?await runSql(scope,args.sql):{ok:false,error:"sql is required"};
+    if(name==="search_web"){
+      if(!scope.webSearch||typeof args.query!=="string")return {ok:false,error:"web search is not available"};
+      return {ok:true,result:await scope.webSearch(args.query)};
+    }
     if(name==="calculate")
       return calculate({inputs:Array.isArray(args.inputs)?args.inputs as never:[],steps:Array.isArray(args.steps)?args.steps as never:[]});
     return {ok:false,error:"unknown tool "+name};

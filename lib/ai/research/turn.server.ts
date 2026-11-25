@@ -24,6 +24,8 @@ export const RESEARCH_INSTRUCTIONS=
   "Use them whenever the answer depends on café data, as much as the question needs. "+
   "Answer directly in the owner's language, concise for simple questions and thorough for hard ones. "+
   "Base numbers on what you retrieved, say which data they come from, and say plainly when something is missing or uncertain. "+
+  "For questions about rules or law, use the café's own location from its profile, look up the current rules for that place with search_web, "+
+  "cite what you found, and say when it isn't legal advice. "+
   "You cannot change anything in the café; if the owner asks for a change, say so.";
 
 type Event={type:string;[key:string]:unknown};
@@ -45,6 +47,8 @@ export async function runResearchTurn(args:{
   ownerEvidence?:readonly string[];
   history?:ReadonlyArray<{role:"user"|"assistant";content:string}>;
   scope:ResearchScope;
+  /** Public web lookups through the existing owner-permissioned search; omit to disable. */
+  webSearch?:(query:string)=>Promise<unknown>;
   /** Authenticated café facts: name, currency, time zone, local date. */
   cafeContext:string;
   provider?:AgentProvider;
@@ -94,7 +98,7 @@ export async function runResearchTurn(args:{
     await args.beforeProviderRequest?.();
     const params:Record<string,unknown>={model,...(broker?{instructions:RESEARCH_INSTRUCTIONS}:
         {...(/^gpt-6/u.test(model)?{include:["reasoning.encrypted_content"]}:{}),prompt_cache_key:"supervisor-sql-research-v1"}),
-      tools:researchToolDefinitions,tool_choice:final?"none":"auto",stream:true,store:false,
+      tools:args.webSearch?researchToolDefinitions:researchToolDefinitions.filter(t=>t.name!=="search_web"),tool_choice:final?"none":"auto",stream:true,store:false,
       ...(outputCap(final)?{max_output_tokens:outputCap(final)}:{}),input};
     const startedCall=now();
     const checkpoint=args.checkpoint;
@@ -162,7 +166,7 @@ export async function runResearchTurn(args:{
       for(const fc of calls){
         args.onTool?.(fc.name,"alex");
         const toolStarted=now();
-        const result=await executeResearchTool(args.scope,fc.name,fc.arguments);
+        const result=await executeResearchTool({...args.scope,webSearch:args.webSearch??args.scope.webSearch},fc.name,fc.arguments);
         usage.toolCalls++;
         input.push({type:"function_call_output",call_id:fc.call_id,output:JSON.stringify(result)});
         const failed=result.ok===false;
