@@ -662,15 +662,15 @@ describe("Task16E optional composition in the single existing agent loop",()=>{
 
 it("advertises actual result references on the native continuation and preserves the plain answer",async()=>{
  const {requests,provider}=recording([
-  [call("query_data",'{"view":"cv_sales_days","sql":null,"parameters":null,"columns":["business_date","net_sales_cents"],"filters":null,"group_by":null,"metrics":null,"date_from":"2026-10-21","date_to":"2026-10-21","order_by":null,"limit":null}',"menu_read"),completed],
-  [call("present_response",JSON.stringify({layout:"stack",panels:[{source:"canonical_data",field:"rows",kind:"table",ref:"r1"}],groups:[{layout:"grid",items:["p0"]}],suggestions:[]}),"ui_read"),completed],
+  [call("query_data",JSON.stringify({sql:"SELECT name,price_cents FROM menu_items ORDER BY name",parameters:null}),"menu_read"),completed],
+  [call("present_response",JSON.stringify({layout:"stack",panels:[{source:"u3_canonical_research",field:"rows",kind:"table",ref:"r1"}],groups:[{layout:"grid",items:["p0"]}],suggestions:[]}),"ui_read"),completed],
   [text("Latte is on the saved menu."),completed]
  ]);
  const result=await runAgentTurn({ownerText:"What is on my menu?",context:{...context,currency:"USD",canonicalData:async()=>({businessId:"aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",db:{rpc:async()=>({data:{rows:[{business_date:"2026-10-21",net_sales_cents:450}],truncated:false,missing:[]},error:null})} as never})},provider});
  expect(result.text).toBe("Latte is on the saved menu.");
  const output=(requests[1].input as Array<Record<string,unknown>>).find(x=>x.type==="function_call_output"&&x.call_id==="menu_read");
- expect(JSON.parse(String(output?.output))).toMatchObject({source:"canonical_data",presentationRef:"r1"});
- expect(result.results).toContainEqual(expect.objectContaining({source:"response_presentation",accepted:true,presentation:expect.objectContaining({groups:[{layout:"grid",items:["table0"]}],tables:[expect.objectContaining({rows:[expect.arrayContaining(["2026-10-21",450]) ]})]})}));
+ expect(JSON.parse(String(output?.output))).toMatchObject({source:"u3_canonical_research",presentationRef:"r1"});
+ expect(result.results).toContainEqual(expect.objectContaining({source:"response_presentation",accepted:true,presentation:expect.objectContaining({groups:[{layout:"grid",items:["table0"]}],tables:[expect.objectContaining({rows:[expect.arrayContaining(["Latte",450]) ]})]})}));
  expect(JSON.stringify(requests[2].input)).toContain("Visual selection only");
 });
 

@@ -170,6 +170,39 @@ function canonicalTable(r:AgentToolResult,encoded:string,ctx:Pick<AgentToolConte
   scope:scopeText,columns:keys.map(({label,unit})=>({label,unit})),rows});
  return parsed.success?parsed.data:null;
 }
+// Present only scalar cells from the exact authorized SQL receipt, not from
+// model-supplied values. Unknown numeric units are displayed as stored values,
+// rather than inferring money, percentages or counts from an output alias.
+function researchTable(r:AgentToolResult,ctx:Pick<AgentToolContext,"currency"|"asOf">):RecordTable|null{
+ if(r.source!=="u3_canonical_research"||r.error||!Array.isArray(r.rows)||!r.rows.length||
+  !obj(r.evidence)||r.evidence.scope!=="verified_owner_cafe_lease"||typeof r.evidence.receipt_id!=="string"||
+  !obj(r.rows[0]))return null;
+ const units=obj(r.evidence.column_units)?r.evidence.column_units:{};
+ const origins=obj(r.evidence.column_origins)?r.evidence.column_origins:{};
+ const sensitive=/(?:business_id|source_ref|_ref$|(?:^|[._])id$|email|phone|password|token|secret|credential)/i;
+ const keys=Object.keys(r.rows[0]).filter(key=>{
+  const origin=origins[key];
+  return !sensitive.test(key)&&!(obj(origin)&&typeof origin.column==="string"&&sensitive.test(origin.column))&&key!=="data";
+ });
+ // A presentation is optional. Do not silently drop dimensions or claim that
+ // a truncated display is a complete answer.
+ if(keys.length!==Object.keys(r.rows[0]).length||!keys.length||keys.length>8)return null;
+ const columns=keys.map(key=>({label:key.replaceAll("_"," ").slice(0,140),
+  unit:["cents","microcents","count","ratio"].includes(String(units[key]))?units[key]:"stored"}));
+ const rows=r.rows.slice(0,30).map(row=>obj(row)?keys.map(key=>{
+  if(!Object.hasOwn(row,key))return undefined;
+  const value=row[key];
+  return value===null||typeof value==="string"||typeof value==="boolean"||typeof value==="number"?value:undefined;
+ }):[]);
+ if(rows.some(row=>row.length!==keys.length||row.some(value=>value===undefined)))return null;
+ const parsed=recordTableSchema.safeParse({title:"SQL research results",view:"tool_sql_research",
+  from:r.period?.from??ctx.asOf,to:r.period?.to??ctx.asOf,asOf:ctx.asOf,
+  currency:columns.some(c=>c.unit==="cents"||c.unit==="microcents")?ctx.currency??null:null,
+  coverage:r.truncated||r.missing.length||r.rows.length>30?"partial":"stored",
+  scope:r.period?"Selected SQL receipt; see answer for source, scope and limitations.":"Selected SQL receipt; observation date, not a claimed business period. See answer for scope.",
+  columns,rows});
+ return parsed.success?parsed.data:null;
+}
 function interactiveCalculation(r:AgentToolResult,encoded:string,ctx:Pick<AgentToolContext,"currency"|"asOf">):InteractiveCalc|null{
  if(r.source!=="calculate"||r.refused||r.missing.length||r.basedOnPartialData||!Array.isArray(r.inputs)||!Array.isArray(r.steps)||!obj(r.result))return null;
  let a:unknown;try{a=JSON.parse(encoded)}catch{return null}
@@ -684,7 +717,7 @@ export function presentResponse(raw:unknown,ctx:Pick<AgentToolContext,"currency"
    if(s.kind==="table"&&(s.field==="rows"||s.source==="cashflow_evidence"&&s.field.startsWith("rows:"))){
      const candidates=s.source==="canonical_data"?selected.filter(x=>x.name==="query_data"&&matching(x.result)).flatMap(x=>{
        const table=canonicalTable(x.result,x.arguments,ctx);return table?[table]:[];
-     }):(s.ref?selected:results).filter(x=>matching(x.result)).flatMap(x=>{const table=readerTable(x.result,ctx,s.field);return table?[table]:[]});
+     }):(s.ref?selected:results).filter(x=>matching(x.result)).flatMap(x=>{const table=s.source==="u3_canonical_research"?researchTable(x.result,ctx):readerTable(x.result,ctx,s.field);return table?[table]:[]});
      const distinct=[...new Map(candidates.map(t=>[JSON.stringify(t),t])).values()];
      if(distinct.length===1&&tables.length<8){slots.set("p"+i,"table"+tables.length);tables.push(distinct[0]);}
      return [];
@@ -741,5 +774,5 @@ export function presentResponse(raw:unknown,ctx:Pick<AgentToolContext,"currency"
  return {...empty,accepted:true,presentation:arranged.success?arranged.data:block.data};
 }
 export const presentationTools={
- present_response:{schema:presentationInputSchema,description:"Optional evidence UI (not invented values). Use exact prior result source/ref. daily_rollups daily_sales; item_sales item_units; profitability net_sales/total_costs/owner_profit; canonical_data exact aggregate alias/rows; expenses recorded_expenses; business_costs cost_components; product_costs recipe_cost; supplier_purchase_plan subtotal/rows; labor_and_attendance daily_labor_cost/rows. Other listed sources: rows or table:<column_label_snake_case>. cashflow_evidence rows:statement/balances/recurring/claims/stress. Groups p0–p7, agenda/scenario/calculator/files/report/suggestions; g0–g11 nested stack/grid/compare(same units)/details(descriptive nonnumeric title). Agenda from saved events or schedule; scenario monthly_profit/monthly_break_even/monthly_target_sales/item_margin from simulate_scenario; calculator after calculate with editable owner assumptions; report text export; files selected same-turn sources. Suggestions only edit draft. Answer fully in words; visuals optional."},
+ present_response:{schema:presentationInputSchema,description:"Optional evidence UI (not invented values). Use exact prior result source/ref. daily_rollups daily_sales; item_sales item_units; profitability net_sales/total_costs/owner_profit; u3_canonical_research rows (authorized SQL receipt); canonical_data legacy stored evidence; expenses recorded_expenses; business_costs cost_components; product_costs recipe_cost; supplier_purchase_plan subtotal/rows; labor_and_attendance daily_labor_cost/rows. Other listed sources: rows or table:<column_label_snake_case>. cashflow_evidence rows:statement/balances/recurring/claims/stress. Groups p0–p7, agenda/scenario/calculator/files/report/suggestions; g0–g11 nested stack/grid/compare(same units)/details(descriptive nonnumeric title). Agenda from saved events or schedule; scenario monthly_profit/monthly_break_even/monthly_target_sales/item_margin from simulate_scenario; calculator after calculate with editable owner assumptions; report text export; files selected same-turn sources. Suggestions only edit draft. Answer fully in words; visuals optional."},
 };

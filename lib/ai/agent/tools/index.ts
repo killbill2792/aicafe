@@ -2,7 +2,7 @@ import { presentationTools,presentResponse } from "./presentation";
 import { laborKnown } from "@/lib/calc";
 import { z } from "zod";
 import {askOwnerTools} from "./askOwner";
-import {dataQueryTools,dataQuerySchema,describeSchema,type DataQueryContext} from "./dataQuery";
+import {dataQueryTools,dataQuerySchema,modelResearchQueryAllowed,describeSchema,type DataQueryContext} from "./dataQuery";
 import {recordResearchAttempt} from "../researchRecovery";
 import {gmailTools} from "./gmail";
 import {maintenanceTools} from "./maintenance";
@@ -359,7 +359,7 @@ export function blocksExternalControlMutation(name:string,raw:unknown,ownerText:
  return (readOnly||simpleRead)&&(name.startsWith("propose_")||name==="draft_week_schedule"||
    name==="record_supplier_order_outcome");
 }
-export async function executeAgentTool(name: string, raw: unknown, ctx: AgentToolContext): Promise<AgentToolResult> {
+export async function executeAgentTool(name: string, raw: unknown, ctx: AgentToolContext, modelFacing=false): Promise<AgentToolResult> {
   if(ctx.externalEvidencePresent?.()&&blocksExternalControlMutation(name,raw,ctx.ownerText??""))
     return {source:name,period:null,missing:["owner_action_confirmation_required"]};
   // Flag-gated extra tool: only offered to the model when CHAT_MEMORY is on.
@@ -406,6 +406,8 @@ export async function executeAgentTool(name: string, raw: unknown, ctx: AgentToo
     }
   }
   if(name==="query_data"){
+    if(modelFacing&&!modelResearchQueryAllowed(raw))
+      return {source:"u3_canonical_research",period:null,missing:["invalid_query"],error:"invalid_query",rows:[],empty:true};
     if(!ctx.canonicalData)return {source:"canonical_data",period:null,missing:["canonical_reader_unavailable"],rows:[],empty:true};
     try{
       const sourceScope=await ctx.canonicalData();

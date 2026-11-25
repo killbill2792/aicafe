@@ -629,7 +629,7 @@ export async function runAgentTurn(args: {
       let timer:ReturnType<typeof setTimeout>|undefined;
       let result:AgentToolResult;
       try{
-        result=await Promise.race([executeAgentTool(saved.name,saved.selector,toolContext),
+        result=await Promise.race([executeAgentTool(saved.name,saved.selector,toolContext,true),
           new Promise<never>((_,reject)=>{timer=setTimeout(()=>reject(Error("deadline")),workDeadline-now());})]);
       }catch{
         result={source:saved.name,period:null,missing:["recovery_read_unavailable"]};
@@ -744,7 +744,7 @@ export async function runAgentTurn(args: {
           result = recovered??await Promise.race([effectiveArgs===null?
             Promise.resolve({source:"ask_owner",period:null,missing:["alreadySaved"],
               error:"ownerFactAlreadySaved"} as AgentToolResult):
-            executeAgentTool(tool.name,effectiveArgs,observedEffect?.context??toolContext).finally(()=>observedEffect?.settle()),
+            executeAgentTool(tool.name,effectiveArgs,observedEffect?.context??toolContext,true).finally(()=>observedEffect?.settle()),
             new Promise<never>((_, reject) => {
               const left = workDeadline - now();
               if (left <= 0) reject(new Error("deadline"));

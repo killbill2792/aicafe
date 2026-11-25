@@ -137,6 +137,18 @@ describe("canonical data available to authenticated chat, not only standalone to
 });
 
 describe("registered general research does not dispatch named reports",()=>{
+ it("declares only SQL and receipt transport, and rejects the old model acquisition path before database access",async()=>{
+  const definition=agentToolDefinitions.find(t=>t.name==="query_data");
+  expect(definition?.parameters.properties).toHaveProperty("sql");
+  const {context,rpc}=caller();
+  for(const key of ["view","columns","filters","group_by","metrics","order_by"])
+   expect(definition?.parameters.properties).not.toHaveProperty(key);
+  for(const input of [{view:"cv_orders"},{sql:"select 1",view:"cv_orders"},{sql:"select 1",metrics:[]}]){
+   const result=await executeAgentTool("query_data",input,context,true);
+   expect(result.error).toBe("invalid_query");
+  }
+  expect(rpc).not.toHaveBeenCalled();
+ });
  it("does not declare or execute any retired official metric selector",async()=>{
   const definition=agentToolDefinitions.find(t=>t.name==="query_data");
   expect(definition?.parameters.properties).not.toHaveProperty("official_metric");
