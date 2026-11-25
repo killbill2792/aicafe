@@ -25,10 +25,10 @@ on:
         required: true
         default: 'all'
       max_budget_usd:
-        description: 'One-run cumulative maximum reserved spend (default $0.20); increase explicitly for all'
+        description: 'One-run cumulative maximum reserved spend ($0.50 per scenario; default $0.50); increase explicitly for more'
         type: string
         required: true
-        default: '0.20'
+        default: '0.50'
 # One paid run at a time across this shared runner; preserve queued owner grants.
 # Non-owner/general PR comments should never consume the scarce paid FIFO slot.
 concurrency:
