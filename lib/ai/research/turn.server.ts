@@ -6,6 +6,7 @@ import {executeAgentTool,isRepeatSafeOwnerTool,observeDurableToolEffect,type Age
 import {safeToolError} from "@/lib/ai/agent/toolErrors";
 import type {OwnerRunCheckpoint} from "@/lib/ai/supervisor/runs/contracts";
 import {unsupportedNumbers} from "./verify";
+import {splitResearchPresentation,SQL_PRESENTATION_HINT} from "./presentation";
 import {executeResearchTool,researchToolDefinitions,type ResearchScope} from "./tools.server";
 
 /** Server switch, default OFF. When ON, owner chat uses ONLY describe_database, run_sql and calculate. */
@@ -87,8 +88,9 @@ export async function runResearchTurn(args:{
   // context, then history and the question; every later item is appended, never edited or shortened.
   // The owner-approved local acceptance broker only accepts top-level instructions and no reasoning replay.
   const broker=process.env.AI_CAFE_LIVE_ACCEPTANCE==="OWNER_APPROVED_LOCAL_ONLY"&&process.env.AICAFE_SHARED_LUNA_CANDIDATE==="1";
+  const instructions=RESEARCH_INSTRUCTIONS+(args.actions?" "+SQL_PRESENTATION_HINT:"");
   const input:unknown[]=[
-    ...(broker?[]:[{role:"developer",content:RESEARCH_INSTRUCTIONS}]),
+    ...(broker?[]:[{role:"developer",content:instructions}]),
     {role:"developer",content:args.cafeContext},
     ...(continuation?[{role:"developer",content:continuation}]:[]),
     ...(args.history??[]),
@@ -104,6 +106,13 @@ export async function runResearchTurn(args:{
   const privateValues=new Set<string>();
   /** Everything retrieved or calculated this turn; the answer's figures are checked against it. */
   const evidence:string[]=[];
+  const queries=new Map<string,Record<string,unknown>>();
+  let summary="";
+  const appendAnswer=(answer:string)=>{
+    const parsed=splitResearchPresentation(answer,queries,args.actions?.context);
+    if(parsed.text){const delta=(text?"\n\n":"")+parsed.text;text+=delta;args.onDelta?.(delta);}
+    if(parsed.presentation)invocations.push({name:"present_response",result:{source:"response_presentation",period:null,missing:[],accepted:true,presentation:parsed.presentation}});
+  };
   let text="",endReason:EndReason="complete";
 
   // Only an existing durable background run's own budget can end research early.
@@ -116,7 +125,7 @@ export async function runResearchTurn(args:{
   /** One Responses request through the same transport and paid-usage ledger as the legacy loop. */
   const call=async(final:boolean):Promise<{calls:FunctionCall[];answer:string}>=>{
     await args.beforeProviderRequest?.();
-    const params:Record<string,unknown>={model,...(broker?{instructions:RESEARCH_INSTRUCTIONS}:
+    const params:Record<string,unknown>={model,...(broker?{instructions}:
         {...(/^gpt-6/u.test(model)?{include:["reasoning.encrypted_content"],reasoning:{summary:"auto"}}:{}),prompt_cache_key:"supervisor-sql-research-v1"}),
       tools:[...researchToolDefinitions.filter(t=>(t.name!=="search_web"||args.webSearch)&&(!/_cafe_note$/u.test(t.name)||args.scope.notes)),...(args.actions?.definitions??[])],tool_choice:final?"none":"auto",stream:true,store:false,
       ...(outputCap(final)?{max_output_tokens:outputCap(final)}:{}),input};
@@ -132,10 +141,10 @@ export async function runResearchTurn(args:{
       {
         for await(const event of provider(params,controller.signal) as AsyncIterable<Event>){
           if(event.type==="response.output_text.delta"&&typeof event.delta==="string")answer+=event.delta;
-          if(event.type==="response.reasoning_summary_part.added")thinking="";
+          if(event.type==="response.reasoning_summary_part.added"){if(thinking)summary+=(summary?"\n\n":"")+thinking;thinking="";}
           if(event.type==="response.reasoning_summary_text.delta"&&typeof event.delta==="string"){
             thinking+=event.delta;
-            try{args.onThinking?.(thinking.replace(/\*\*/gu,""));}catch{/* display only */}
+            try{args.onThinking?.([summary,thinking].filter(Boolean).join("\n\n"));}catch{/* display only */}
           }
           if(event.type==="response.output_item.done"&&event.item&&typeof event.item==="object"){
             const item=event.item as Record<string,unknown>;
@@ -159,6 +168,7 @@ export async function runResearchTurn(args:{
       }
       if(!completed)throw new Error("provider_error");
       if(checkpoint)await checkpoint.endProvider(true);
+      if(thinking)summary+=(summary?"\n\n":"")+thinking;
     }catch(error){
       if(checkpoint)await checkpoint.endProvider(false).catch(()=>undefined);
       throw error;
@@ -205,9 +215,9 @@ export async function runResearchTurn(args:{
     for(;;){
       const reason=stop();
       const {calls,answer}=await call(reason!==null);
+      await args.beforeAcceptResult?.();
+      if(answer.trim())appendAnswer(answer);
       if(!calls.length||reason!==null){
-        await args.beforeAcceptResult?.();
-        text=answer;
         if(reason)endReason=reason;
         break;
       }
@@ -223,7 +233,10 @@ export async function runResearchTurn(args:{
           input.push({type:"function_call_output",call_id:fc.call_id,output:JSON.stringify(record)});
         }else{
           const result=await executeResearchTool({...args.scope,webSearch:args.webSearch??args.scope.webSearch,privateValues},fc.name,fc.arguments);
-          input.push({type:"function_call_output",call_id:fc.call_id,output:JSON.stringify(result)});
+          await args.beforeAcceptResult?.();
+          const ref=fc.name==="run_sql"&&result.ok===true?"q"+(queries.size+1):null;
+          if(ref)queries.set(ref,result);
+          input.push({type:"function_call_output",call_id:fc.call_id,output:JSON.stringify(ref?{...result,presentationRef:ref}:result)});
           failed=result.ok===false;
           if(!failed)evidence.push(JSON.stringify(result));
           record={source:"sql_research",period:null,missing:[],agentId:"alex",tool:fc.name,...(failed?{error:"research_tool_error"}:{})};
@@ -233,7 +246,6 @@ export async function runResearchTurn(args:{
           durationMs:Math.max(0,now()-toolStarted),...(failed?{error:"research_tool_error"}:{})});
       }
     }
-    if(text)args.onDelta?.(text);
   }catch(error){
     if(error instanceof Error&&/durable|checkpoint|reservation/u.test(error.message))throw error;
     endReason="provider_error";
@@ -243,7 +255,7 @@ export async function runResearchTurn(args:{
         input.push({role:"developer",content:"A research step failed. Answer the owner now with what you found, and say what is still unknown."});
         const {answer}=await call(true);
         await args.beforeAcceptResult?.();
-        if(answer.trim()){text=answer;args.onDelta?.(text);}
+        if(answer.trim())appendAnswer(answer);
       }catch{/* the owner gets the existing retryable error */}
     }
   }
@@ -252,6 +264,6 @@ export async function runResearchTurn(args:{
   return {text,endReason,status:{status:"complete",missing:[]},
     // Same promise as the standard path: a figure with no source in this turn's evidence is shown as unverified.
     unverified:text?unsupportedNumbers(text,[args.ownerText,args.cafeContext,...(args.history??[]).map(h=>h.content),...evidence]):[],
-    results:invocations.map(i=>i.result),toolInvocations:invocations,tools,
+    results:[...await args.checkpoint?.restoredResults?.()??[],...invocations.map(i=>i.result)],toolInvocations:invocations,tools,
     agentIds:tools.length?["alex"]:[],usage};
 }

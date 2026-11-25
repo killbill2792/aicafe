@@ -11,7 +11,7 @@ const point=z.strictObject({label,value:z.number().finite().min(-Number.MAX_SAFE
 export const presentationPanelSchema=z.strictObject({
   kind:z.enum(["metric","table","ranked_table","bar","line","donut"]),
   title:label,unit:z.enum(["cents","count","items","units","seconds","minutes","hours","days","ratio","ratio squared","indicator","cents/hour"]),currency:z.string().regex(/^[A-Z]{3}$/).nullable(),
-  from:date,to:date,asOf:date,source:z.enum(presentationSourceNames),
+  from:date,to:date,asOf:date,source:z.enum([...presentationSourceNames,"sql_research"] as const),
   sourceDetail:z.string().max(500).optional(),measurement:z.string().trim().min(1).max(80).optional(),
   coverage:z.enum(["partial","estimate"]).optional(),
   points:z.array(point).min(1).max(30),
