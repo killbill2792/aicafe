@@ -68,7 +68,9 @@ export function categoryMonthlyAmounts(snapshot: BusinessSnapshot): CategoryMont
       categoryCode:line.categoryCode,monthKey,amountCents:line.amountCents,
       isEstimate:line.isEstimate,isMissing:line.isMissing,
       ...(includeEvidence&&line.expenseEvidence?{
-       recordedExpenses:line.expenseEvidence.flatMap(e=>e.kind==="expense"?[{date:e.date,amountCents:e.amountCents}]:[]),
+       recordedExpenses:line.expenseEvidence.flatMap(e=>e.kind==="expense"?[{date:e.date,amountCents:e.amountCents,status:e.status}]:[]),
+       recordedExpenseCents:line.recordedExpenseCents,
+       possibleAdditionalForecastCents:line.possibleAdditionalForecastCents,
        recurringEstimateCents:line.recurringEstimateCents??0
       }:{})
     }));

@@ -13,7 +13,7 @@ describe("obligation-level monthly cost evidence",()=>{
    {id:"repair",category_code:"other",amount_cents:2000,status:"actual",spent_on:"2026-11-15"},
   ]});
   expect(lines.find(r=>r.categoryCode==="other")).toMatchObject({amountCents:70000,recordedExpenseCents:51000,
-   recurringEstimateCents:19000,possibleAdditionalForecastCents:2000,forecastOverlapUncertain:true,amountSource:"mixed",actualTodayCents:51000,isEstimate:true});
+   recurringEstimateCents:19000,possibleAdditionalForecastCents:2000,forecastUpperCents:72000,forecastOverlapUncertain:true,amountSource:"mixed",actualTodayCents:51000,isEstimate:true});
  });
  it("preserves separate labels, source dates, recurring amounts and partial payments without assuming behaviour",()=>{
   const lines=runningCostLinesForMonth({...context,recurring:[{
@@ -34,6 +34,27 @@ describe("obligation-level monthly cost evidence",()=>{
    expenses:[{id:"future",category_code:"other",amount_cents:20000,status:"actual",spent_on:"2026-11-21",recurring_cost_id:"security"}]});
   expect(lines.find(r=>r.categoryCode==="other")).toMatchObject({recordedExpenseCents:0,recurringEstimateCents:20000,
     expenseEvidence:[{kind:"recurring",id:"security"}],isEstimate:true});
+ });
+ it("keeps estimated linked entries separate from observed actual payments",()=>{
+  const lines=runningCostLinesForMonth({...context,expenses:[
+    {id:"actual",category_code:"other",amount_cents:10000,status:"actual",spent_on:"2026-11-05",recurring_cost_id:"rent"},
+    {id:"estimate",category_code:"other",amount_cents:15000,status:"estimated",spent_on:"2026-11-08",recurring_cost_id:"rent"}
+  ]});
+  const line=lines.find(r=>r.categoryCode==="other");
+  expect(line).toMatchObject({recordedExpenseCents:25000,recordedActualCents:10000,recordedEstimatedCents:15000,
+    recurringEstimateCents:45000,forecastUpperCents:70000,isEstimate:true});
+  expect(line?.expenseEvidence?.find(e=>e.id==="rent")).toMatchObject({linkedRecordedCents:25000,
+    linkedActualCents:10000,linkedEstimatedCents:15000,remainingForecastCents:25000});
+ });
+ it("does not make a long-ended or estimated receipt an expected current bill",()=>{
+  const lines=runningCostLinesForMonth({...context,recurring:[],expenses:[],priorExpenses:[
+   {category_code:"rent",status:"actual",spent_on:"2026-09-15"},
+   {category_code:"insurance",status:"estimated",spent_on:"2026-10-15"},
+   {category_code:"internet",status:"actual",spent_on:"2026-10-15"}
+  ]});
+  expect(lines.find(r=>r.categoryCode==="rent")).toMatchObject({isExpected:false,isMissing:false});
+  expect(lines.find(r=>r.categoryCode==="insurance")).toMatchObject({isExpected:false,isMissing:false});
+  expect(lines.find(r=>r.categoryCode==="internet")).toMatchObject({isExpected:true,isMissing:true});
  });
  it("preserves unfamiliar categories even when omitted from recovery order",()=>{
   const lines=runningCostLinesForMonth({...context,order:["rent"],expenses:[

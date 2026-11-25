@@ -25,7 +25,7 @@ export type RunningCostEvidence =
     status:string;recurringCostId:string|null;costBehaviour:"unknown"}
  | {kind:"recurring";id:string;label:string;amountCents:number;frequency:string;source:string|null;
     dueDay:number|null;activeFrom:string;activeTo:string|null;isEstimate:boolean;
-    monthlyEquivalentCents:number;linkedRecordedCents:number;remainingForecastCents:number;
+    monthlyEquivalentCents:number;linkedRecordedCents:number;linkedActualCents:number;linkedEstimatedCents:number;remainingForecastCents:number;
     costBehaviour:"unknown"};
 
 export type RunningCostLine = {
@@ -36,9 +36,13 @@ export type RunningCostLine = {
   amountSource?: "recorded_expense" | "recurring" | "mixed" | "missing";
   /** Separate observed receipts from uncovered configured monthly commitments. */
   recordedExpenseCents?:number;
+  recordedActualCents?:number;
+  recordedEstimatedCents?:number;
   expenseEvidence?:RunningCostEvidence[];
-  /** Known recorded + remaining obligations, before resolving ambiguous unlinked overlap. */
+  /** Difference between the lower and upper forecast when overlap is unknown. */
   possibleAdditionalForecastCents?:number;
+  /** Full recorded entries plus all outstanding obligations, not a certified total. */
+  forecastUpperCents?:number;
   forecastOverlapUncertain?:boolean;
   recurringEstimateCents?:number;
   isEstimate: boolean;

@@ -128,8 +128,9 @@ export function breakEvenSnapshotInputs(snapshot:BusinessSnapshot,options:BreakE
   const unoverriddenLines=snapshot.runningCostLines.filter(line=>!line.isMissing&&
     !(line.categoryCode==="rent"&&options.monthlyRentCentsOverride!==undefined)&&
     !(line.categoryCode!=="rent"&&options.monthlyOtherOverheadCentsOverride!==undefined));
-  const incurredBillsMtd=unoverriddenLines.reduce((total,line)=>total+(line.recordedExpenseCents??
-    (line.amountSource==="recorded_expense"?line.amountCents:0)),0);
+  const incurredBillsMtd=unoverriddenLines.reduce((total,line)=>total+(line.expenseEvidence?
+    line.expenseEvidence.reduce((sum,e)=>sum+(e.kind==="expense"&&lastClosed!==null&&e.date<=lastClosed?e.amountCents:0),0):
+    line.recordedExpenseCents??(line.amountSource==="recorded_expense"?line.amountCents:0)),0);
   const recurringBillsMtd=unoverriddenLines.reduce((total,line)=>total+(line.recurringEstimateCents??
     (line.amountSource!=="recorded_expense"?line.amountCents:0)),0)+
     (options.monthlyRentCentsOverride??0)+(options.monthlyOtherOverheadCentsOverride??0);

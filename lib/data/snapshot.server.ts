@@ -377,6 +377,8 @@ async function readHistoricalBusinessSnapshot(
   if(period.from>today)throw new Error("Historical period has no completed dates");
   period={...period,to:period.to>today?today:period.to};
   const first=period.from.slice(0,7)+"-01";
+  const [firstYear,firstMonth]=first.slice(0,7).split("-").map(Number);
+  const precedingMonthStart=(firstMonth===1?String(firstYear-1).padStart(4,"0")+"-12":String(firstYear).padStart(4,"0")+"-"+String(firstMonth-1).padStart(2,"0"))+"-01";
   const last=period.to.slice(0,7);
   const [year,month]=last.split("-").map(Number);
   const monthEnd=last+"-"+String(new Date(year,month,0).getDate()).padStart(2,"0");
@@ -389,7 +391,7 @@ async function readHistoricalBusinessSnapshot(
       .order("id",{ascending:true}).range(start,end),row=>row.id),
     snapshotPaged("historical_expenses",(start,end)=>supabase.from("expenses")
       .select("id,category_code,amount_cents,status,spent_on,recurring_cost_id,custom_label,vendor,source",{count:"exact"})
-      .eq("business_id",businessId).gte("spent_on",first).lte("spent_on",monthEnd)
+      .eq("business_id",businessId).gte("spent_on",precedingMonthStart).lte("spent_on",monthEnd)
       .order("id",{ascending:true}).range(start,end),row=>row.id),
     supabase.from("locations").select("open_hours")
       .eq("business_id",businessId).order("name",{ascending:true}).limit(1),
@@ -409,9 +411,9 @@ async function readHistoricalBusinessSnapshot(
   while(cursor<=last+"-01"){
     months.push(cursor.slice(0,7));
     const [y,m]=cursor.split("-").map(Number);
-    const next=new Date(Date.UTC(y,m,1)).toISOString().slice(0,7);
-    cursor=next+"-01";
-    if(months.length>2400)throw new Error("Historical period exceeds supported calendar bounds");
+    if(cursor.slice(0,7)===last)break;
+    const nextYear=m===12?y+1:y,nextMonth=m===12?1:m+1;
+    cursor=String(nextYear).padStart(4,"0")+"-"+String(nextMonth).padStart(2,"0")+"-01";
   }
   const monthlyAmounts:import("@/lib/calc").CategoryMonthlyAmount[]=[];
   const missingExpenseCategories:string[]=[];
