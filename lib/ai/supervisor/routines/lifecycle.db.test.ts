@@ -128,7 +128,7 @@ describe.skipIf(!sandbox)("background lifecycle on the migrated database",()=>{
       // The same question on two sources creates one card and two answer dependencies.
       const first=await alert("meal_break",{dedupeKey:randomUUID()}),second=await alert("meal_break",{dedupeKey:randomUUID()});
       const question="Which supplier sent the delivery on Monday?";
-      const complete=async(id:string,q:string,at:number)=>{
+      const complete=async(id:string,q:string,at:number,narrative="Observed evidence.\nOwner question: "+q)=>{
         expect(await rpc(service,"supervisor_enqueue_investigation",[cafe,owner,thread,"alert",id,hex("e"),key(id),200,stamp(now,at)])).toBe(true);
         const evidence={source:{kind:"meal_break",quality:"partial"},collectedAt:stamp(now,at),ownerQuestion:q};
         const collect=await rpc(service,"supervisor_claim_investigation",[stamp(now,at)]) as Record<string,unknown>;
@@ -136,16 +136,19 @@ describe.skipIf(!sandbox)("background lifecycle on the migrated database",()=>{
         expect(await rpc(service,"supervisor_finish_investigation",[cafe,owner,thread,"alert",id,hex("e"),collect.lease_token,"collected",JSON.stringify(evidence),null,stamp(now,at+1)])).toBe(true);
         const claim=await rpc(service,"supervisor_claim_investigation",[stamp(now,at+1)]) as Record<string,unknown>;
         expect(claim.source_id).toBe(id);
-        expect(await rpc(service,"supervisor_finish_investigation",[cafe,owner,thread,"alert",id,hex("e"),claim.lease_token,"investigated",JSON.stringify(evidence),"Observed evidence.\nOwner question: "+q,stamp(now,at+2)])).toBe(true);
+        expect(await rpc(service,"supervisor_finish_investigation",[cafe,owner,thread,"alert",id,hex("e"),claim.lease_token,"investigated",JSON.stringify(evidence),narrative,stamp(now,at+2)])).toBe(true);
       };
       await complete(first,question,6000);
-      await complete(second,"which supplier sent the delivery on monday?",6010);
+      const secondNarrative="Observed evidence depends on the existing delivery question.\nWaiting for your answer to earlier question A.";
+      await complete(second,"which supplier sent the delivery on monday?",6010,secondNarrative);
       const one=(await admin.query("select episode_id,pending_question_id,shared_question_id from public.supervisor_investigations where source_id=$1",[first])).rows[0];
       const two=(await admin.query("select pending_question_id,shared_question_id,phase from public.supervisor_investigations where source_id=$1",[second])).rows[0];
       expect(one.pending_question_id).toBeTruthy();
       expect(two).toMatchObject({pending_question_id:null,shared_question_id:one.pending_question_id,phase:"awaiting_owner"});
       expect(await count("select count(*) n from public.ai_messages where business_id=$1 and grounding ? 'durableQuestionId'")).toBe(1);
-      expect(await count("select count(*) n from public.ai_messages where business_id=$1 and grounding->'evidence'->0->>'identifier'=$2 and structured_content::text ilike '%owner question:%'",[cafe,second])).toBe(0);
+      const message=(await admin.query("select structured_content from public.ai_messages where business_id=$1 and grounding->'evidence'->0->>'identifier'=$2 and grounding->>'intent'='priority_investigation'",[cafe,second])).rows[0];
+      expect(message.structured_content).toEqual([{type:"text",text:secondNarrative}]);
+      expect((await admin.query("select narrative from public.supervisor_investigations where source_id=$1",[second])).rows[0].narrative).toBe(secondNarrative);
       expect(await rpc(service,"supervisor_claim_investigation",[stamp(now,6020)])).toBeNull();
       const answer=randomUUID();
       await admin.query("insert into public.ai_messages(id,business_id,owner_user_id,thread_id,author_user_id,role,content_type,text_content,client_message_id) values($1,$2,$3,$4,$3,'owner','text','Acme delivered it',$5)",[answer,cafe,owner,thread,randomUUID()]);

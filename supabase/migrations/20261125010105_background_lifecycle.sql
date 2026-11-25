@@ -418,11 +418,6 @@ begin
           public.supervisor_normalize_question(p_evidence->>'ownerQuestion'))
       order by m.created_at,m.id limit 1 for share of i;
     end if;
-    if v_shared_question is not null or v.pending_question_id is not null then
-      -- A duplicate must not be repeated in the plain text either.
-      p_narrative:=btrim(regexp_replace(p_narrative,E'(^|\\n)Owner question:[^\\n]*','','gi'));
-      if p_narrative='' then p_narrative:='Waiting for the answer to the question already open in this conversation.';end if;
-    end if;
   end if;
   update public.supervisor_investigations set phase=v_phase,evidence=p_evidence,
     narrative=case when p_outcome in ('collected','rechecked') then narrative else btrim(p_narrative) end,
