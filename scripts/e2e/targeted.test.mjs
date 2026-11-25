@@ -89,7 +89,7 @@ test("unknown browser UI cannot silently skip required proof", () => {
   const unexercised = classifyPaths([
     "app/[locale]/staff/rules/page.tsx",
     "app/[locale]/menu/new/page.tsx",
-    "components/money/ProfitCostsView.tsx",
+    "components/money/NeverRestyledWidget.tsx",
     "app/[locale]/onboarding/new-flow/page.tsx",
   ]);
   assert.equal(unexercised.required, true);

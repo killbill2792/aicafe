@@ -6,6 +6,70 @@ import {pathToFileURL} from "node:url";
 export const SCENARIOS = Object.freeze(["home", "staff", "menu", "money", "gmail", "purchasing"]);
 const ALL = SCENARIOS;
 
+// Screens restyled by the glass/rem text-size design change (look only, no behaviour change). The
+// global theme files already require every journey; these exact paths run the same full set.
+// Other unknown UI still fails closed.
+const GLASS_RESTYLE = new Set([
+  "app/[locale]/menu/import-review/page.tsx",
+  "app/[locale]/more/alerts/[id]/page.tsx",
+  "app/[locale]/more/alerts/page.tsx",
+  "app/[locale]/more/cafe-profile/page.tsx",
+  "app/[locale]/more/plan/page.tsx",
+  "app/[locale]/more/uploads/page.tsx",
+  "app/[locale]/operations/experiments/page.tsx",
+  "app/[locale]/privacy/page.tsx",
+  "app/admin/cafes/page.tsx",
+  "app/admin/conversations/page.tsx",
+  "app/textSize.ts",
+  "components/SignupForm.tsx",
+  "components/access/RedeemCodeForm.tsx",
+  "components/admin/CodeConsole.tsx",
+  "components/alerts/AlertCard.tsx",
+  "components/bills/BillsManager.tsx",
+  "components/menu/AggregateProductCostEditor.tsx",
+  "components/menu/AllSizesRecipe.tsx",
+  "components/menu/InlinePantryTable.tsx",
+  "components/menu/InventoryModifierPanel.tsx",
+  "components/menu/InventoryPurchasePanel.tsx",
+  "components/menu/MenuAddonsPanel.tsx",
+  "components/menu/MenuComboBuilder.tsx",
+  "components/menu/MenuPricePreview.tsx",
+  "components/menu/MilkSizePrices.tsx",
+  "components/menu/NewMenuItemForm.tsx",
+  "components/menu/NewPantryInlineRow.tsx",
+  "components/menu/ProductDetailScreen.tsx",
+  "components/money/CostRecoveryView.tsx",
+  "components/money/MonthCalendar.tsx",
+  "components/money/ProfitCostsView.labor.test.tsx",
+  "components/money/ProfitCostsView.tsx",
+  "components/more/CafeProfileForm.tsx",
+  "components/more/FinancialSettingsForm.tsx",
+  "components/more/ProfitGoalSimulator.tsx",
+  "components/more/ToastConnectionForm.tsx",
+  "components/more/ToastOnboardingChecklist.tsx",
+  "components/more/ToastOwnerDashboard.tsx",
+  "components/more/ToastSummaryComparison.tsx",
+  "components/operations/AITeamCard.tsx",
+  "components/operations/ExperimentReportActions.tsx",
+  "components/operations/OwnerWhatsAppAlerts.tsx",
+  "components/operations/TeamInbox.tsx",
+  "components/operations/TeamRulesManager.tsx",
+  "components/scenario/TryScenario.tsx",
+  "components/shared/EstimatePill.tsx",
+  "components/shared/LanguageSwitch.tsx",
+  "components/shared/PeriodSwitch.tsx",
+  "components/shared/TodayAtAGlanceCard.tsx",
+  "components/staff/DayTimeline.tsx",
+  "components/staff/OwnerScheduleSendPanel.tsx",
+  "components/staff/PayrollCostCard.tsx",
+  "components/staff/StaffDraftApprovalCard.tsx",
+  "components/staff/WeekGrid.tsx",
+  "components/ui/ThemePicker.tsx",
+  "components/uploads/LaborCsvImporter.tsx",
+  "components/uploads/ProcessingFeeImporter.tsx",
+  "components/uploads/SalesCsvImporter.tsx",
+]);
+
 // Recognize real user journeys, not just *.spec.* changes. Unknown browser UI
 // must fail closed instead of permitting an untested screen to merge.
 export function scenariosForPath(path) {
@@ -25,7 +89,7 @@ export function scenariosForPath(path) {
       path === "components/shared/BackHeader.tsx" ||
       path.startsWith("lib/auth/") ||
       path.startsWith("lib/supabase/") ||
-      path === "messages/en.json") return ALL;
+      path === "messages/en.json" || GLASS_RESTYLE.has(path)) return ALL;
   // The owner More page contains Gmail controls and is a restricted owner
   // navigation destination for workers. Require BOTH real browser journeys.
   if (path === "app/[locale]/more/page.tsx") return ["staff","gmail"];
