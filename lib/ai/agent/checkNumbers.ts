@@ -27,10 +27,10 @@ const COUNTABLE_FIELDS = new Set(["count","itemCount","quantity","units","totalU
   "timecardCount","onClockCount"]);
 // Timecard durations/breaks are employee- and date-scoped. Never promote
 // them into globally interchangeable counts just because numbers coincide.
-const trustedCountKey=(key:string)=>key.includes("u3VerifiedCount/")||
+const trustedCountKey=(key:string)=>!key.includes("u3VerifiedDuration/")&&(key.includes("u3VerifiedCount/")||
   key.includes("calculateResultCount")||
   COUNTABLE_FIELDS.has(key.split("/").at(-1)??"")||
-  COUNTABLE_COLLECTIONS.has((key.split("/").at(-1)??"").replace(/Length$/u,""));
+  COUNTABLE_COLLECTIONS.has((key.split("/").at(-1)??"").replace(/Length$/u,"")));
 
 /** Goal detail has generic "current / baseline / target / value" fields.
  * They are not evidence until their metric identity, catalog unit and

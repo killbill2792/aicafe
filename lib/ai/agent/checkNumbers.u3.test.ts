@@ -77,6 +77,8 @@ describe("U3 SQL source receipts in numeric claim verification",()=>{
   expect(checkNumbers("The recorded duration was 7 hours.","",[duration],"en")).toEqual([]);
   expect(checkNumbers("The recorded duration was 7 hours.","",[count],"en")).not.toEqual([]);
   expect(checkNumbers("There were 7 orders.","",[duration],"en")).not.toEqual([]);
+  const misleadingAlias={...duration,rows:[{quantity:"7"}],evidence:{...(duration.evidence as object),column_units:{quantity:"hours"}}};
+  expect(checkNumbers("There were 7 orders.","",[misleadingAlias],"en")).not.toEqual([]);
   expect(checkNumbers("The recorded duration was 7 minutes.","",[duration],"en")).not.toEqual([]);
  });
  it("verifies a stored basis-point rate in percentage units",()=>{
