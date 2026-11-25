@@ -232,6 +232,16 @@ describe("recorded Responses streaming fixtures", () => {
     expect(result.endReason).toBe("tool_errors");
     expect(result.status).toMatchObject({status:"partial"});
   });
+  it("allows distinct corrective tool attempts after consecutive failures",async()=>{
+    const result=await runAgentTurn({ownerText:"Menu?",context,provider:fixture([
+      [call("calculate",'{"wrong":1}',"bad_a"),call("calculate",'{"wrong":2}',"bad_b"),completed],
+      [call("query_data",JSON.stringify({sql:"SELECT name,price_cents FROM menu_items ORDER BY id"}),"correct"),completed],
+      [text("Latte costs $4.50."),completed]
+    ])});
+    expect(result.endReason).toBe("complete");
+    expect(result.usage.modelCalls).toBe(3);
+    expect(result.results.some(r=>r.source==="u3_canonical_research"&&Array.isArray(r.rows)&&r.rows.length===1)).toBe(true);
+  });
   it("returns Zod details and pairs every skipped call when tool budget is exceeded", async () => {
     const requests: Record<string, unknown>[] = [];
     const provider: AgentProvider = async function* (params) {

@@ -343,7 +343,17 @@ export async function runAgentTurn(args: {
     toolCalls:final&&adaptive?0:usage.toolCalls, inputTokens: usage.inputTokens,
     outputTokens: meteredOutput(),
   }, workerBudget) : null;
-  let text = "", endReason: EndReason = "complete", failures = 0, finished = false;
+  let text = "", endReason: EndReason = "complete", finished = false;
+  // Exact failed requests are not new evidence. Allow distinct corrective work;
+  // do not issue the same failed operation again in this unchanged turn.
+  const failedRequests=new Map<string,AgentToolResult>();
+  const failedRequestKey=(name:string,wire:string)=>{
+    try{
+      const canonical=(value:unknown):unknown=>Array.isArray(value)?value.map(canonical):
+       value&&typeof value==="object"?Object.fromEntries(Object.entries(value).filter(([key])=>key!=="retry_of").sort(([a],[b])=>a.localeCompare(b)).map(([k,v])=>[k,canonical(v)])):value;
+      return JSON.stringify([name,canonical(JSON.parse(wire))]);
+    }catch{return JSON.stringify([name,wire]);}
+  };
   let askedQuestion:string|null=null;
   const audit = (step: AgentAuditStep) => { try { args.onAuditStep?.(step); } catch { /* audit is non-critical */ } };
   // A hosted web search is another Responses model request, not a free data read.
@@ -650,7 +660,7 @@ export async function runAgentTurn(args: {
       if (now() >= workDeadline) { endReason = "timeout"; break; }
       const cap = budgetStop();
       if (cap) { endReason = cap; break; }
-      if (round > 0) await readFollowUps();
+      if (round > 0 && await readFollowUps())failedRequests.clear();
       if(usage.modelCalls>=maxModelToolCalls()||outputLimit(false)<=0){endReason="budget";break;}
       let calls: ToolCall[];
       // Permission loss is an authorization failure, NOT a provider error:
@@ -697,6 +707,7 @@ export async function runAgentTurn(args: {
         // The owner added something while this answer streamed: answer it in the
         // same reply (one extra bounded call) instead of silently dropping it.
         if (round < maxModelToolCalls()-1 && usage.modelCalls < maxModelToolCalls() && await readFollowUps()) {
+          failedRequests.clear();
           if (text && !text.endsWith("\n")) { text += "\n\n"; // allowed: separator between model responses to live follow-ups
              args.onDelta?.("\n\n"); }
           continue;
@@ -705,10 +716,11 @@ export async function runAgentTurn(args: {
         if(!text.trim()){endReason="provider_error";break;}
         finished = true; break;
       }
+      let newAttempt=false;
       for (let index = 0; index < calls.length; index++) {
         const tool = calls[index];
-        if (usage.toolCalls >= maxToolCalls || now() >= workDeadline || failures >= 2 || budgetStop()) {
-          endReason = now() >= workDeadline || budgetStop() === "timeout" ? "timeout" : failures >= 2 ? "tool_errors" : "budget";
+        if (usage.toolCalls >= maxToolCalls || now() >= workDeadline || budgetStop()) {
+          endReason = now() >= workDeadline || budgetStop() === "timeout" ? "timeout" : "budget";
           for (const skipped of calls.slice(index)) {
             const error = endReason === "timeout" ? "deadline_exceeded" : endReason === "tool_errors" ? "tool_errors" : "budget_exceeded";
             input.push({ type: "function_call_output", call_id: skipped.call_id, output: JSON.stringify({ error }) });
@@ -721,6 +733,9 @@ export async function runAgentTurn(args: {
         usage.toolCalls++;
         startedTools.push(tool.name);
         args.onTool?.(tool.name,agentForTool(tool.name));
+        const failedKey=failedRequestKey(tool.name,tool.arguments);
+        const repeatedFailure=failedRequests.get(failedKey);
+        if(!repeatedFailure)newAttempt=true;
         let result: AgentToolResult;
         const toolStart = now();
         let toolError: string | undefined;
@@ -728,6 +743,8 @@ export async function runAgentTurn(args: {
         let observedEffect:ReturnType<typeof observeDurableToolEffect>|undefined;
         let toolTimer: ReturnType<typeof setTimeout> | undefined;
         try {
+          if(repeatedFailure){result=repeatedFailure;}
+          else {
           if(!eligibleNames.has(tool.name))
             throw new Error("tool_not_available");
           const parsedArgs=JSON.parse(tool.arguments);
@@ -753,10 +770,9 @@ export async function runAgentTurn(args: {
               if (left <= 0) reject(new Error("deadline"));
               else toolTimer = setTimeout(() => reject(new Error("deadline")), left);
             })]);
-          failures = 0;
+          }
         } catch (error) {
           if(error instanceof CheckpointFailure)throw error;
-          failures++;
           const failedPeriod=(()=>{
             try{
               const input=JSON.parse(tool.arguments) as Record<string,unknown>;
@@ -829,6 +845,7 @@ export async function runAgentTurn(args: {
           }
         }catch{ /* Invalid tool arguments already have a localized failure. */ }
         if(checkpointOpened)await boundary(()=>args.checkpoint!.endTool(result,observedEffect?.noEffect()??false));
+        if(!repeatedFailure&&typeof result.error==="string")failedRequests.set(failedKey,result);
         results.push({ callId: tool.call_id, name: tool.name, arguments: tool.arguments, result });
         if(tool.name!=="present_response")observeToolResult(resolveState,result);
         // This tool selects prior evidence; retain the sanitized snapshot in
@@ -875,14 +892,14 @@ export async function runAgentTurn(args: {
           for(const skipped of calls.slice(index+1))input.push({type:"function_call_output",call_id:skipped.call_id,output:JSON.stringify({error:"ask_owner_ends_turn"})});
           break;
         }
-        if (now() >= workDeadline || failures >= 2 || budgetStop()) {
-          endReason = now() >= workDeadline || budgetStop() === "timeout" ? "timeout" : budgetStop() === "budget" ? "budget" : "tool_errors";
+        if (now() >= workDeadline || budgetStop()) {
+          endReason = now() >= workDeadline || budgetStop() === "timeout" ? "timeout" : "budget";
           // Respond to all calls already returned in this response before the next request.
           for (const skipped of calls.slice(index + 1)) {
             input.push({ type: "function_call_output", call_id: skipped.call_id,
-              output: JSON.stringify({ error: endReason === "timeout" ? "deadline_exceeded" : "tool_errors" }) });
+              output: JSON.stringify({ error: endReason === "timeout" ? "deadline_exceeded" : "budget_exceeded" }) });
             results.push({ callId: skipped.call_id, name: skipped.name, arguments: skipped.arguments,
-              result: { source: skipped.name, period: null, missing: [endReason === "timeout" ? "deadline_exceeded" : "tool_errors"] } });
+              result: { source: skipped.name, period: null, missing: [endReason === "timeout" ? "deadline_exceeded" : "budget_exceeded"] } });
           }
           break;
         }
@@ -890,6 +907,7 @@ export async function runAgentTurn(args: {
       if(askedQuestion){if(!text.trim()){text=askedQuestion; // allowed: empty-reply fill
        }break;}
       if (endReason !== "complete") break;
+      if(!newAttempt){endReason="tool_errors";break;}
       if (round === maxModelToolCalls()-1 || usage.modelCalls>=maxModelToolCalls() || usage.toolCalls >= maxToolCalls || budgetStop()) { endReason = budgetStop() ?? "budget"; break; }
     }
     if (!finished && endReason === "complete") endReason = "budget";

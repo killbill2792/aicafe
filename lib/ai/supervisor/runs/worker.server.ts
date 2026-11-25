@@ -161,15 +161,18 @@ export async function reconcileVerifiedOwnerStep(
   if (!receipt || receipt.endReason !== "complete" ||
     receipt.ref !== supervisorReplyIdFor(run.requestKey)) return false;
   await repository.reconcile(run.scope, run.id, "owner_turn", receipt.ref); return true; }
-function configuredBudget(expanded=false): WorkerBudget { const limit = (value: string | undefined, fallback: number) => {
+export function configuredBudget(expanded=false): WorkerBudget { const limit = (value: string | undefined, fallback: number) => {
     if (value === undefined) return fallback;
     if (!/^\d+$/.test(value) || !Number.isSafeInteger(Number(value)))
       throw new Error("invalid_worker_budget_setting"); return Number(value); }; return {
     maxElapsedMs: limit(process.env.SUPERVISOR_WORKER_MAX_ELAPSED_MS, 60000),
-    maxModelCalls: limit(process.env.SUPERVISOR_WORKER_MAX_MODEL_CALLS, expanded?8:6),
-    maxToolCalls: limit(process.env.SUPERVISOR_WORKER_MAX_TOOL_CALLS, expanded?24:8),
-    maxInputTokens: limit(process.env.SUPERVISOR_WORKER_MAX_INPUT_TOKENS, expanded?240000:60000),
-    maxOutputTokens: limit(process.env.SUPERVISOR_WORKER_MAX_OUTPUT_TOKENS, expanded?32768:7200), }; }
+    // The SQL reservation contract accepts up to 1000 attempts per claim. The
+    // ordinary adaptive worker is bounded by its actual lease and measured
+    // usage, not an arbitrary 8-call business-work limit.
+    maxModelCalls: limit(process.env.SUPERVISOR_WORKER_MAX_MODEL_CALLS, expanded?1000:6),
+    maxToolCalls: limit(process.env.SUPERVISOR_WORKER_MAX_TOOL_CALLS, expanded?Number.MAX_SAFE_INTEGER:8),
+    maxInputTokens: limit(process.env.SUPERVISOR_WORKER_MAX_INPUT_TOKENS, expanded?Number.MAX_SAFE_INTEGER:60000),
+    maxOutputTokens: limit(process.env.SUPERVISOR_WORKER_MAX_OUTPUT_TOKENS, expanded?Number.MAX_SAFE_INTEGER:7200), }; }
 /** Match the browser/WhatsApp paid-turn gates with an explicit scoped
  * service-role client. A delayed durable turn must not bypass current café
  * entitlement or the owner's UTC daily model-call quota. */
