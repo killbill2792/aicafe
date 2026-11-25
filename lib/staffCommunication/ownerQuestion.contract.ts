@@ -2,7 +2,7 @@ import {z} from "zod";
 /** Existing Luna proposal/effect gateway must bind these to an owner, café,
  * thread and checked source. Never accept an actor or café ID from the model. */
 export const staffQuestionInput=z.strictObject({
- sourceKind:z.enum(["operating_task","alert"]),
+ sourceKind:z.enum(["operating_task","alert","owner_chat"]),
  sourceTaskId:z.string().min(1).max(160),
  employeeId:z.uuid(),
  question:z.string().trim().min(5).max(800),

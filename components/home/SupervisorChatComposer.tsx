@@ -820,6 +820,9 @@ export default function SupervisorChatComposer({
                 const step: AgentJobStep = { tool: stepTool, agent: stepAgent };
                 setLiveSteps((steps) => [...steps, step].slice(-12));
               }
+            } else if (type === "thinking" && typeof event.text === "string") {
+              // Luna's own running summary of what it is working out.
+              setLiveNote(event.text.trim().slice(-400));
             } else if (type === "followup") {
               setLiveNote(liveCopy.followUpRead);
             } else if (type === "delta" && typeof event.text === "string") {

@@ -150,11 +150,12 @@ export default function ClarifyCard({block,locale,copy,state,choice,disabled,onS
      {failure&&<p role="alert" className="text-[17px] text-neg">{failure==="save"?copy.clarifySaveError:copy.clarifyFillError}</p>}
    </section>;
  }
- return <section dir={locale==="ar"?"rtl":"ltr"} className="space-y-3 rounded-2xl border border-line bg-surface p-3">
-   <h3 className="text-[17px] font-semibold text-ink">{block.question}</h3>
-   <div className="space-y-2">{block.options.map((o,i)=><button key={o.value} type="button" disabled={disabled}
-     onClick={()=>onSend(o.label)} className="flex min-h-12 w-full items-center gap-3 rounded-xl border border-line bg-surface2 px-3 text-start text-[17px] font-semibold text-ink focus-visible:outline focus-visible:outline-2 focus-visible:outline-ink disabled:opacity-50">
-     <span aria-hidden="true" className="flex size-8 shrink-0 items-center justify-center rounded-full bg-accent-soft text-sm">{String.fromCharCode(65+i)}</span><span>{o.label}</span>
+ // Compact glass card: a bold question and quiet lettered rows (same text size as the chat).
+ return <section dir={locale==="ar"?"rtl":"ltr"} className="space-y-2 rounded-3xl border border-line/60 bg-surface/70 p-4 shadow-lg backdrop-blur-xl">
+   <h3 className="text-[17px] font-semibold leading-snug text-ink">{block.question}</h3>
+   <div className="space-y-1.5">{block.options.map((o,i)=><button key={o.value} type="button" disabled={disabled}
+     onClick={()=>onSend(o.label)} className="flex min-h-11 w-full items-center gap-3 rounded-2xl bg-surface2/60 px-2.5 text-start text-[17px] text-ink transition-colors hover:bg-surface2 focus-visible:outline focus-visible:outline-2 focus-visible:outline-ink disabled:opacity-50">
+     <span aria-hidden="true" className="flex size-7 shrink-0 items-center justify-center rounded-lg border border-line/70 text-sm text-ink-muted">{String.fromCharCode(65+i)}</span><span>{o.label}</span>
    </button>)}</div>
    {block.allowOther&&(other?<form className="space-y-2" onSubmit={e=>{e.preventDefault();if(typed.trim()&&!disabled){
      onSend(pricingOtherResponse(typed,block.options,copy));

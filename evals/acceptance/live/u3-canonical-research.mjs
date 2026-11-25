@@ -60,7 +60,7 @@ export async function readU3Oracle(db,businessId){
  if(!/^[0-9a-f-]{36}$/i.test(lines.sample_order_id??""))fail("independent_oracle_missing");
  return {date,orders,lines};
 }
-async function login(browser,cafe){
+export async function login(browser,cafe){
  const context=await browser.newContext({baseURL:"http://127.0.0.1:3000",serviceWorkers:"block"});
  const page=await context.newPage();
  await page.goto("/en/login");
@@ -70,7 +70,7 @@ async function login(browser,cafe){
  await page.getByText(cafe.name,{exact:true}).first().waitFor({timeout:30000});
  return {context,page};
 }
-async function ownerTurn(page,thread,text){
+export async function ownerTurn(page,thread,text){
  const clientMessageId=randomUUID();
  const result=await page.evaluate(async({thread,text,clientMessageId})=>{
   const ac=new AbortController(),timer=setTimeout(()=>ac.abort(),180000);
