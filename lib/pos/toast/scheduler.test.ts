@@ -420,7 +420,7 @@ it("runs closeout only on the fifteen-minute dispatcher without redoing live or 
  m.live.mockClear();m.importDay.mockClear();
  await runToastSyncTick(f.db,now,Date.now()+60000,"closeout");
  expect(m.live).not.toHaveBeenCalled();expect(m.importDay).not.toHaveBeenCalled();
- expect(m.finalPayments).not.toHaveBeenCalled();
+ expect(m.finalPayments).toHaveBeenCalledTimes(2);
 });
 
 
@@ -437,4 +437,5 @@ it("does not claim a closeout lease or read Toast after the daily work is comple
  expect(m.reconcile).not.toHaveBeenCalled();
  expect(m.live).not.toHaveBeenCalled();
  expect(m.importDay).not.toHaveBeenCalled();
+ expect(m.finalPayments).not.toHaveBeenCalled();
 });
