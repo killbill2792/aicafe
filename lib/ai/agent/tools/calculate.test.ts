@@ -241,6 +241,15 @@ describe("U3 receipt-bound exact research calculation",()=>{
     steps:[{id:"total",label:"Duration",op:"add",args:["amount","elapsed"]}]
   },ctx([record]));
   expect(actual).toMatchObject({result:{unit:"minutes",valueDuration:120},numberEstimates:[{unit:"minutes",value:120}]});
+  expect(checkNumbers("The total duration is 120 minutes.","",[actual],"en")).toEqual([]);
+  expect(checkNumbers("There were 120 orders.","",[actual],"en")).not.toEqual([]);
+  expect(checkNumbers("The total duration is 120 hours.","",[actual],"en")).not.toEqual([]);
+  const receipt_id=(actual.evidence as {receipt_id:string}).receipt_id;
+  const next=await calculateTools.calculate.execute({
+   purpose:"Re-use exact duration",inputs:[{...input("duration","calculate","result"),receipt_id}],
+   steps:[{id:"total",label:"Duration",op:"sum",args:["duration"]}]
+  },ctx([{name:"calculate",result:actual}]));
+  expect(next.result).toEqual({unit:"minutes",valueDuration:120});
  });
  it("never treats a forged SQL alias as authoritative money units",async()=>{
   const countAsCents={...sql(older,"7"),result:{...sql(older,"7").result,

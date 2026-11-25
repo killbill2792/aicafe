@@ -1,6 +1,6 @@
 import {scenarioEditorSchema,evaluateScenarioEditor} from "./scenarioPresentation";
 import { z } from "zod";
-import {exactNumber,runCalculation,CALC_OPS,type CalcOp,type CalcShown} from "@/lib/metrics/core/calculator";
+import {exactNumber,runCalculation,CALC_OPS,type CalcOp} from "@/lib/metrics/core/calculator";
 
 /** Versioned, renderer-independent, serializable UI. No client code or action bindings. */
 const label=z.string().min(1).max(140);
@@ -76,7 +76,7 @@ export type RecordTable=z.infer<typeof recordTableSchema>;
 export type InteractiveCalc=z.infer<typeof interactiveCalcSchema>;
 /** Reuse the one exact arithmetic engine. Local values are hypothetical, never
  * written to the business or attached to an approval or trusted output. */
-export function evaluatePresentationCalc(c:InteractiveCalc,changes:Readonly<Record<string,string>>={}):CalcShown|null{
+export function evaluatePresentationCalc(c:InteractiveCalc,changes:Readonly<Record<string,string>>={}):InteractiveCalc["original"]|null{
  const entries=new Map<string,NonNullable<ReturnType<typeof exactNumber>>>();
  for(const input of c.inputs){
   const v=input.value;
@@ -94,7 +94,11 @@ export function evaluatePresentationCalc(c:InteractiveCalc,changes:Readonly<Reco
   entries.set(input.id,value);
  }
  const outcome=runCalculation(entries,c.steps);
- return outcome.ok?outcome.result.shown:null;
+ if(!outcome.ok)return null;
+ // The editor accepts the existing four scalar display units only; richer
+ // typed research results remain available to Luna and its textual answer.
+ const displayed=calcShown.safeParse(outcome.result.shown);
+ return displayed.success?displayed.data:null;
 }
 /** A bounded semantic grouping grammar, independent of the renderer. Leaf
  * references identify only already validated snapshot components. */

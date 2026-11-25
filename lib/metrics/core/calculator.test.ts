@@ -90,7 +90,7 @@ describe("calculator physical arithmetic limits, not business step counts",()=>{
  });
 });
 
- describe("source-typed duration arithmetic",()=>{
+describe("source-typed duration arithmetic",()=>{
   it("adds compatible durations exactly and divides across duration units",()=>{
     const a=exactDecimal("1.25","hours")!,b=exactDecimal("45","minutes")!;
     const r=run({a,b},[{id:"total",op:"add",args:["a","b"]},{id:"ratio",op:"divide",args:["total","b"]}]);
