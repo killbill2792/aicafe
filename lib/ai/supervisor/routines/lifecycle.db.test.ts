@@ -2,6 +2,7 @@ import {createHash,randomUUID} from "node:crypto";
 import {readFileSync} from "node:fs";
 import {Client} from "pg";
 import {describe,expect,it} from "vitest";
+import {isOwnerActionableAlert,OWNER_INPUT_GAP_SUBJECTS} from "@/lib/alerts/ownerActionable";
 
 // Disposable migrated database only (never a real café database).
 const sandbox=process.env.SUPERVISOR_LIFECYCLE_DB_SANDBOX_ONLY==="1";
@@ -25,6 +26,28 @@ const stamp=(d:Date,minutes=0)=>new Date(d.getTime()+minutes*60_000).toISOString
 const REASON="Actionable café alert needs review";
 
 describe.skipIf(!sandbox)("background lifecycle on the migrated database",()=>{
+  it("enforces TypeScript and SQL owner-actionability parity on migrated functions",async()=>{
+    const service=await connect();
+    try{
+      const cases:[string,unknown,boolean][]=[
+        ["meal_break",{},true],["voids",{},true],["business_anomaly",null,true],
+        ["business_anomaly",[],true],["business_anomaly",{family:"live_sales_decline",subject:"cafe"},true],
+        ["business_anomaly",{family:"customer_trend",subject:"returning"},true],
+        ...OWNER_INPUT_GAP_SUBJECTS.map((subject):[string,unknown,boolean]=>["business_anomaly",{family:"data_gap",subject},true]),
+        ...["reader_unavailable:expenses","reader_unavailable:cost_recovery","sales_coverage","live_sales_coverage",
+          "hourly_staff_pressure_coverage","customer_identity_coverage","operating_margin_coverage",
+          "cost_recovery_coverage","refund_order_cohort_coverage","product_recipe_history","unknown",null]
+          .map((subject):[string,unknown,boolean]=>["business_anomaly",{family:"data_gap",subject},false]),
+        ["business_anomaly",{family:"data_gap"},false],
+      ];
+      for(const [kind,payload,expected] of cases){
+        const ts=isOwnerActionableAlert(kind,payload);
+        expect(ts).toBe(expected);
+        expect(await rpc(service,"supervisor_alert_owner_actionable",[kind,JSON.stringify(payload)])).toBe(ts);
+      }
+    }finally{await service.end();}
+  });
+
   it("keeps system conditions out of notices and investigations, posts one notice per waiting item, closes silently, never posts technical failures",async()=>{
     const admin=new Client({connectionString:url});await admin.connect();
     const service=await connect();
@@ -101,6 +124,36 @@ describe.skipIf(!sandbox)("background lifecycle on the migrated database",()=>{
       // Identical evidence never wakes a blocked investigation.
       expect(await enqueue(another,hex("a"))).toBe(false);
       expect(await rpc(service,"supervisor_claim_investigation",[stamp(now,5000)])).toBeNull();
+
+      // The same question on two sources creates one card and two answer dependencies.
+      const first=await alert("meal_break",{dedupeKey:randomUUID()}),second=await alert("meal_break",{dedupeKey:randomUUID()});
+      const question="Which supplier sent the delivery on Monday?";
+      const complete=async(id:string,q:string,at:number)=>{
+        expect(await rpc(service,"supervisor_enqueue_investigation",[cafe,owner,thread,"alert",id,hex("e"),key(id),200,stamp(now,at)])).toBe(true);
+        const evidence={source:{kind:"meal_break",quality:"partial"},collectedAt:stamp(now,at),ownerQuestion:q};
+        const collect=await rpc(service,"supervisor_claim_investigation",[stamp(now,at)]) as Record<string,unknown>;
+        expect(collect.source_id).toBe(id);
+        expect(await rpc(service,"supervisor_finish_investigation",[cafe,owner,thread,"alert",id,hex("e"),collect.lease_token,"collected",JSON.stringify(evidence),null,stamp(now,at+1)])).toBe(true);
+        const claim=await rpc(service,"supervisor_claim_investigation",[stamp(now,at+1)]) as Record<string,unknown>;
+        expect(claim.source_id).toBe(id);
+        expect(await rpc(service,"supervisor_finish_investigation",[cafe,owner,thread,"alert",id,hex("e"),claim.lease_token,"investigated",JSON.stringify(evidence),"Observed evidence.\\nOwner question: "+q,stamp(now,at+2)])).toBe(true);
+      };
+      await complete(first,question,6000);
+      await complete(second,"which supplier sent the delivery on monday?",6010);
+      const one=(await admin.query("select episode_id,pending_question_id,shared_question_id from public.supervisor_investigations where source_id=$1",[first])).rows[0];
+      const two=(await admin.query("select pending_question_id,shared_question_id,phase from public.supervisor_investigations where source_id=$1",[second])).rows[0];
+      expect(one.pending_question_id).toBeTruthy();
+      expect(two).toMatchObject({pending_question_id:null,shared_question_id:one.pending_question_id,phase:"awaiting_owner"});
+      expect(await count("select count(*) n from public.ai_messages where business_id=$1 and grounding ? 'durableQuestionId'")).toBe(1);
+      expect(await count("select count(*) n from public.ai_messages where business_id=$1 and grounding->'evidence'->0->>'identifier'=$2 and structured_content::text ilike '%owner question:%'",[cafe,second])).toBe(0);
+      expect(await rpc(service,"supervisor_claim_investigation",[stamp(now,6020)])).toBeNull();
+      const answer=randomUUID();
+      await admin.query("insert into public.ai_messages(id,business_id,owner_user_id,thread_id,author_user_id,role,content_type,text_content,client_message_id) values($1,$2,$3,$4,$3,'owner','text','Acme delivered it',$5)",[answer,cafe,owner,thread,randomUUID()]);
+      expect(await rpc(service,"supervisor_answer_investigation_question",[cafe,owner,thread,one.pending_question_id,answer,JSON.stringify({questionId:one.pending_question_id,action:"supply"})])).toBe(one.episode_id);
+      const resumed=(await admin.query("select source_id,last_owner_answer_id,pending_question_id,shared_question_id,next_retry_at < 'infinity'::timestamptz as due from public.supervisor_investigations where source_id=any($1)",[[first,second]])).rows;
+      expect(resumed).toHaveLength(2);
+      for(const row of resumed)expect(row).toMatchObject({last_owner_answer_id:answer,pending_question_id:null,shared_question_id:null,due:true});
+      expect(await count("select count(*) n from public.operating_tasks where business_id=$1 and kind='priority_notice' and payload->>'intent'='priority_investigation' and status='needs_owner'")).toBe(0);
     }finally{
       await service.end();
       await admin.query("delete from public.operating_tasks where business_id=$1",[cafe]);

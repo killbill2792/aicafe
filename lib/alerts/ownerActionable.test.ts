@@ -1,4 +1,3 @@
-import {readFileSync} from "node:fs";
 import {describe,expect,it} from "vitest";
 import {isOwnerActionableAlert,OWNER_INPUT_GAP_SUBJECTS} from "./ownerActionable";
 
@@ -18,11 +17,5 @@ describe("owner-actionable alerts",()=>{
       "hourly_staff_pressure_coverage","customer_identity_coverage","operating_margin_coverage","cost_recovery_coverage",
       "refund_order_cohort_coverage","product_recipe_history"])
       expect(isOwnerActionableAlert("business_anomaly",gap(subject)),subject).toBe(false);
-  });
-  it("matches the list enforced in the database",()=>{
-    const sql=readFileSync("supabase/migrations/20261125010105_background_lifecycle.sql","utf8");
-    const listed=/supervisor_alert_owner_actionable[\s\S]*?in \(([^)]*)\)/u.exec(sql)?.[1]??"";
-    const inSql=[...listed.matchAll(/'([a-z_:]+)'/gu)].map(m=>m[1]).sort();
-    expect(inSql).toEqual([...OWNER_INPUT_GAP_SUBJECTS].sort());
   });
 });

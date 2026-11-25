@@ -8,7 +8,6 @@ import {createWebSearch,type WebSearchBudget} from "@/lib/ai/agent/webSearch.ser
 import {ownerPublicWebSearch} from "@/lib/connectors/publicWeb.server";
 import {readPrimaryLocation} from "@/lib/data/cafeLocation.server";
 import {readSavedEventTimeline} from "@/lib/data/cafeEvents.server";
-import {openQuestionAlreadyAsked} from "./ownerQuestionDedupe.server";
 import {readCustomerTrendComparison} from "@/lib/alerts/businessAnomalies.server";
 import {customerTrendEvidenceFields} from "@/lib/metrics/core/customers";
 import {readOwnerProposals} from "@/lib/ai/supervisor/loop/reads.server";
@@ -516,9 +515,7 @@ export async function processNextInvestigation(db:SupabaseClient,now:Date,
     // Bind only the model's fully verified, specifically selected question to
     // existing SQL clarification/owner-answer provenance. No canned question.
     let ownerQuestion=modelSelectedOwnerQuestion(report.text)??undefined;
-    // The same question is never open twice: report the findings without asking it again.
-    if(ownerQuestion&&await openQuestionAlreadyAsked(db,{businessId:c.business_id,ownerUserId:c.owner_user_id,
-      sourceType:c.source_type,sourceId:c.source_id},ownerQuestion))ownerQuestion=undefined;
+    // The fenced SQL checkpoint deduplicates live questions and retains their answer dependency.
     let stockProcurementStatus:string|undefined;
     if(synopsis.kind==="business_anomaly"){
       const source=await readIncidentEvidence(db,c),selector=object(source.selectors);
