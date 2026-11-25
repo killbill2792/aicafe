@@ -101,3 +101,9 @@ describe("queueing only the missing days",()=>{
   expect(rpc).not.toHaveBeenCalled();
  });
 });
+
+ it("does not restart exhausted automatic repairs when old attempts age out",()=>{
+  const now=Date.parse("2026-11-25T12:00:00Z");
+  const runs=Array.from({length:5},(_,i)=>({requested_from:"2026-10-20",requested_to:"2026-10-20",state:"completed",started_at:new Date(now-(100+i*24)*H).toISOString()}));
+  expect(mayRetryDay("2026-10-20",runs,now)).toBe(false);
+ });

@@ -89,7 +89,7 @@ async function queueFirstBackfill(db:SupabaseClient,m:Mapping,now:Date){
 async function scanModifiedDates(db:SupabaseClient,m:Mapping,now:Date,deadlineAt:number){
  const clock=localClock(now,m.toast_time_zone);
  const {data:last,error}=await db.from("toast_repull_scan_state")
-  .select("last_local_day,scan_local_day,scan_start,scan_end,scan_window_start,scan_page")
+  .select("last_local_day,last_window_end,scan_local_day,scan_start,scan_end,scan_window_start,scan_page")
   .eq("business_id",m.business_id).eq("restaurant_guid",m.restaurant_guid).maybeSingle();
  if(error)throw new ToastApiError("unavailable");
  // An unfinished scan is resumed even after midnight or before the next day's
@@ -100,7 +100,11 @@ async function scanModifiedDates(db:SupabaseClient,m:Mapping,now:Date,deadlineAt
  const days=Number.isInteger(configured)?Math.min(30,Math.max(1,configured)):7;
  const scanDay=last?.scan_local_day??clock.today;
  const scanEnd=last?.scan_end?new Date(last.scan_end).getTime():now.getTime();
- const scanStart=last?.scan_start?new Date(last.scan_start).getTime():scanEnd-days*DAY;
+ // The reconciliation scan overlaps just enough to prove the complete previous
+ // business day, never seven days repeatedly. Resume any unfinished old scan.
+ const coverageStart=scanEnd-2*DAY;
+ const scanStart=last?.scan_start?new Date(last.scan_start).getTime():
+  last?.last_window_end?Math.max(scanEnd-30*DAY,Math.min(coverageStart,Date.parse(last.last_window_end)-120000)):scanEnd-days*DAY;
  let windowStart=last?.scan_window_start?new Date(last.scan_window_start).getTime():scanStart;
  let page=last?.scan_page??1;
  if(!Number.isFinite(scanStart)||!Number.isFinite(scanEnd)||scanStart>=scanEnd||

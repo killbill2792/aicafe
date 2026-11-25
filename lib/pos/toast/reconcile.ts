@@ -433,7 +433,7 @@ async function internalDay(db:SupabaseClient,p:Location,day:string,status:Status
  // A day whose recovery already ran out keeps its verdict on the daily
  // re-check: re-pulling it again stored a fresh copy of the whole day each
  // time and never changed what Toast returns.
- const exhausted=status.last_error_category==="unverified_payment_order";
+ const exhausted=status.last_error_category==="unverified_payment_order"||status.warnings?.payment_recovery_exhausted===1;
  const repulled=exhausted||Boolean(status.payment_repull_at)&&(
   [...otherDays].every(date=>(otherStatus??[]).some(d=>
    d.business_date===date&&d.imported_at&&Date.parse(d.imported_at)>Date.parse(status.payment_repull_at!)))||
@@ -443,12 +443,14 @@ async function internalDay(db:SupabaseClient,p:Location,day:string,status:Status
     reasons:["unknown_payment_order"],paidOtherDay});
    return null;
   }else {
-   // Let the modified-order scan import the other day before declaring a mismatch.
+   // An existing recovery is still waiting for its already-queued imports.
+   if(status.payment_repull_at)return null;
+   // Queue only coalesced, targeted repairs for this discrepancy.
    const today=localClock(new Date(),p.timeZone).today;
    for(const date of new Set([...otherDays,day])){
     if(date>=today)continue;
-    const {error}=await db.rpc("toast_queue_backfill",{p_business_id:p.businessId,
-     p_restaurant_guid:p.restaurantGuid,p_from:date,p_to:date});
+    const {error}=await db.rpc("toast_queue_owner_repull",{p_business_id:p.businessId,
+     p_restaurant_guid:p.restaurantGuid,p_date:date});
     if(error)throw new ToastApiError("unavailable");
    }
    await writeReconciliation(db,p,day,status,{type:"payment_recovery_queued"});return null;
@@ -494,7 +496,7 @@ export async function reconcileToastDays(db:SupabaseClient,p:Location,deadlineAt
   // whose payment order Toast never gave us is checked once a day.
   const sinceAttempt=status.last_recon_attempt_at?Date.now()-Date.parse(status.last_recon_attempt_at):Infinity;
   if(status.payment_repull_at&&sinceAttempt<60*60000)continue;
-  if(status.last_error_category==="unverified_payment_order"&&sinceAttempt<24*3600000)continue;
+  if((status.last_error_category==="unverified_payment_order"||status.warnings?.payment_recovery_exhausted===1)&&sinceAttempt<24*3600000)continue;
   try {
    const {data:cred,error:credError}=await db.from("toast_analytics_credentials")
     .select("verified_at").eq("business_id",p.businessId).maybeSingle();

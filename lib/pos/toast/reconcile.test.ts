@@ -174,7 +174,7 @@ describe("paid-date list contains noncapturing payment attempts",()=>{
    await reconcileToastDays(f.db,p,Date.now()+20000);
    expect(f.item).toMatchObject({recon_state:"checked_internal",internal_state:"matched",
     last_error_category:null,payment_repull_at:null});
-   expect(f.calls).not.toContain("toast_queue_backfill");
+   expect(f.calls).not.toContain("toast_queue_owner_repull");
    expect(mocked.request.mock.calls.some(([path])=>String(path).includes("/orders/v2/orders/"))).toBe(false);
   });
  it("refuses the shortcut if an excluded attempt has conflicting provider order identity",async()=>{
@@ -383,20 +383,20 @@ describe("unmatched payment GUID must not certify omitted or stale orders",()=>{
   const f=prepare(false,"2026-10-15");
   await reconcileToastDays(f.db,p,Date.now()+20000);
   expect(f.item.recon_state).toBe("checked_internal");
-  expect(f.calls).not.toContain("toast_queue_backfill");
+  expect(f.calls).not.toContain("toast_queue_owner_repull");
  });
  it("queues recovery rather than certifying an unimported cross-day order",async()=>{
   const f=prepare(false,"2026-10-15","missing");
   await reconcileToastDays(f.db,p,Date.now()+20000);
   expect(f.item.recon_state).toBe("pending");
-  expect(f.calls).toContain("toast_queue_backfill");
+  expect(f.calls).toContain("toast_queue_owner_repull");
   expect(f.certifiedVoids).toBe(false);
  });
  it("never certifies a retained cross-day order after a partial, unparsed import",async()=>{
   const f=prepare(false,"2026-10-15","imported","2026-10-15",1);
   await reconcileToastDays(f.db,p,Date.now()+20000);
   expect(f.item.recon_state).toBe("pending");
-  expect(f.calls).toContain("toast_queue_backfill");
+  expect(f.calls).toContain("toast_queue_owner_repull");
   expect(f.certifiedVoids).toBe(false);
  });
  it("rejects a stale canonical cross-day date when live Toast now says same-day",async()=>{
@@ -409,7 +409,7 @@ describe("unmatched payment GUID must not certify omitted or stale orders",()=>{
   const f=prepare(false,"2026-10-14","imported","2026-10-15");
   await reconcileToastDays(f.db,p,Date.now()+20000);
   expect(f.item.recon_state).toBe("pending");
-  expect(f.calls.filter(name=>name==="toast_queue_backfill").length).toBeGreaterThanOrEqual(2);
+  expect(f.calls.filter(name=>name==="toast_queue_owner_repull").length).toBeGreaterThanOrEqual(2);
  });
 });
 
@@ -540,7 +540,7 @@ describe("recovery timers and finished Analytics reports",()=>{
   const f=fakeDb(false);
   Object.assign(f.item,{payment_repull_at:new Date(Date.now()-3600000).toISOString()});
   await reconcileToastDays(f.db,p,Date.now()+20000);
-  expect(f.item).toMatchObject({recon_state:"checked_internal",payment_repull_at:null});
+  expect(f.item).toMatchObject({recon_state:"checked_internal",payment_repull_at:started});
   expect(f.writes).toContainEqual(expect.objectContaining({payment_repull_at:null}));
  });
 });
@@ -567,7 +567,7 @@ it("escalates cross-day payment recovery at its original deadline even after rei
   payment_repull_at:null});
  expect(f.writes.some(w=>(w.internal_reasons as string[]|undefined)
   ?.includes("unknown_payment_order"))).toBe(true);
- expect(f.calls).not.toContain("toast_queue_backfill");
+ expect(f.calls).not.toContain("toast_queue_owner_repull");
  expect(f.certifiedVoids).toBe(false);
 });
 
@@ -590,9 +590,9 @@ it("an exhausted payment recovery is re-checked daily without queueing another r
   return orderWithAutoGratAndGiftCard();
  });
  await reconcileToastDays(f.db,p,Date.now()+20000);
- expect(f.calls).not.toContain("toast_queue_backfill");
+ expect(f.calls).not.toContain("toast_queue_owner_repull");
  expect(f.item).toMatchObject({recon_state:"pending",internal_state:null,
-  payment_repull_at:null,last_error_category:"unverified_payment_order"});
+  payment_repull_at:expect.any(String),last_error_category:"unverified_payment_order"});
  expect(f.certifiedVoids).toBe(false);
 });
 

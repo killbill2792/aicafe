@@ -244,3 +244,23 @@ begin
 end $$;
 revoke all on function public.toast_refresh_canonical_live(uuid) from public,anon,authenticated;
 grant execute on function public.toast_refresh_canonical_live(uuid) to service_role;
+
+-- Imported days are only re-queued by a real changed order, never by its
+-- appearance in an overlapping modification scan. Keep the scan's independent
+-- completeness evidence and associate actual repair jobs with that evidence.
+create or replace function public.toast_changed_order_days(p_business_id uuid,p_restaurant_guid uuid,p_rows jsonb)
+returns jsonb language plpgsql security invoker set search_path=public as $$
+declare result jsonb;
+begin
+ if auth.role() is distinct from 'service_role' or jsonb_typeof(p_rows) is distinct from 'array' or jsonb_array_length(p_rows)>100 then raise exception 'invalid revision comparison';end if;
+ select coalesce(jsonb_agg(distinct x->>'day'),'[]'::jsonb) into result
+ from jsonb_array_elements(p_rows) x
+ where not exists(select 1 from public.toast_raw_records r
+  where r.business_id=p_business_id and r.restaurant_guid=p_restaurant_guid and r.entity='order'
+   and r.business_date=(x->>'day')::date and r.entity_guid=(x->'payload'->>'guid')::uuid
+   and (r.payload_sha256=encode(sha256(convert_to((x->'payload')::text,'UTF8')),'hex')
+    or public.toast_time_or_null(r.payload->>'modifiedDate')>public.toast_time_or_null(x->'payload'->>'modifiedDate')));
+ return result;
+end $$;
+revoke all on function public.toast_changed_order_days(uuid,uuid,jsonb) from public,anon,authenticated;
+grant execute on function public.toast_changed_order_days(uuid,uuid,jsonb) to service_role;
