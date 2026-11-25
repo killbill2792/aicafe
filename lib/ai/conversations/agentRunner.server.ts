@@ -61,6 +61,7 @@ import type { NumericEvidence } from "@/lib/ai/agent/checkNumbers";
 import {ownerRunStatement,type OwnerRunCheckpoint} from "@/lib/ai/supervisor/runs/contracts";
 import type {DurableReplyFence} from "./replyWriter.server";
 import { runAgentTurn, type OwnerFollowUp } from "@/lib/ai/agent/loop.server";
+import {cafeNotesContext,cafeNotesPort} from "@/lib/ai/research/notes.server";
 import {isResearchActionTool,runResearchTurn,sqlResearchEnabled} from "@/lib/ai/research/turn.server";
 import {createOwnerCommitment,listOwnerCommitments,closeOwnerCommitment} from "@/lib/operating/commitments.server";
 import {createOwnerRoutine,listOwnerRoutines,changeOwnerRoutine} from "@/lib/ai/supervisor/routines/repository.server";
@@ -888,12 +889,16 @@ export async function runOneTurn(p: TurnParams): Promise<{ replyId: string; repl
     // SUPERVISOR_SQL_RESEARCH=on: database discovery, SQL and calculate only.
     // The owner/café scope above is already verified; the database function
     // re-verifies ownership and applies RLS for this one café.
-    const result = sqlResearchEnabled() ? await runResearchTurn({ ownerText: p.ownerText,
+    const researchOn=sqlResearchEnabled();
+    const notesClient=researchOn?await getDb():null;
+    const result = researchOn ? await runResearchTurn({ ownerText: p.ownerText,
       ownerImages:selected.images, ownerPdfs:selected.pdfs, ownerEvidence:selected.evidence, history,
-      scope:{db:createAdminSupabaseClient(),businessId:scope.businessId,ownerUserId:scope.ownerUserId},
+      scope:{db:createAdminSupabaseClient(),businessId:scope.businessId,ownerUserId:scope.ownerUserId,
+        notes:cafeNotesPort(notesClient!,scope.businessId)},
       cafeContext:"Café (authenticated, not an owner message): "+JSON.stringify({name:identity.cafeName,
         currency:identity.currency,timezone:identity.timezone,localDate:identity.asOf,
-        city:location?.city??null,region:location?.region??null,country:location?.countryCode??null}),
+        city:location?.city??null,region:location?.region??null,country:location?.countryCode??null})+
+        "\n"+await cafeNotesContext(notesClient!,scope.businessId,ownerFactRead.facts,identity.asOf),
       // Luna writes its own public queries. Only the owner's public-web permission applies, plus a check
       // that no private café text is inside the query (tools.server.ts); no wording filter on the owner.
       webSearch:q=>ownerPublicWebSearch(scope,async()=>{

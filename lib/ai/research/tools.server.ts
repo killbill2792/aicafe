@@ -10,7 +10,9 @@ export type ResearchScope={db:SupabaseClient;businessId:string;ownerUserId:strin
   /** The existing owner-permissioned public web search (one path); absent when unavailable. */
   webSearch?:(query:string)=>Promise<unknown>;
   /** Text read from the café's private data this turn; a public query may not contain it. */
-  privateValues?:Set<string>};
+  privateValues?:Set<string>;
+  /** Café notes (what Supervisor has learned about this café), saved with the owner's own session. */
+  notes?:{save:(topic:string,note:string,basis:string)=>Promise<void>;forget:(topic:string)=>Promise<boolean>}};
 
 /** Remember text values read from café data so they can never be sent to a public search. */
 function rememberPrivate(scope:ResearchScope,rows:unknown){
@@ -52,6 +54,17 @@ export const researchToolDefinitions=[
         name:{type:"string"},value:{type:"string"},unit:{type:"string",enum:[...UNITS]}}}},
       steps:{type:"array",items:{type:"object",additionalProperties:false,required:["id","op","args"],properties:{
         id:{type:"string"},op:{type:"string",enum:[...CALC_OPS]},args:{type:"array",items:{type:"string"}}}}}}}},
+  {type:"function",name:"remember_cafe_note",strict:true,
+    description:"Save something you learned about this café that will help next time (a pattern, a habit, a working assumption, a preference), "+
+      "or update an existing note by reusing its topic. Say where it came from. Notes can go stale and live data always wins, so do not save numbers that are better read from the database. "+
+      "Tell the owner when you save one.",
+    parameters:{type:"object",additionalProperties:false,required:["topic","note","basis"],properties:{
+      topic:{type:"string",description:"Short lowercase key such as busy_hours or staff.break_habits."},
+      note:{type:"string",description:"The note, in plain words."},
+      basis:{type:"string",description:"What it was learned from (the data you read, or what the owner said), with the date."}}}},
+  {type:"function",name:"forget_cafe_note",strict:true,
+    description:"Retire a café note by topic, when it is wrong, outdated, or the owner asks you to forget it.",
+    parameters:{type:"object",additionalProperties:false,required:["topic"],properties:{topic:{type:"string"}}}},
 ] as const;
 
 async function callDatabase(scope:ResearchScope,sql:string):Promise<Record<string,unknown>>{
@@ -135,6 +148,15 @@ export async function executeResearchTool(scope:ResearchScope,name:string,rawArg
       const leaked=privateTextIn(scope,args.query);
       if(leaked)return {ok:false,error:"The query contains text from your private café data (\""+leaked+"\"). Public searches must not include it; rewrite the query without it."};
       return {ok:true,result:await scope.webSearch(args.query)};
+    }
+    if(name==="remember_cafe_note"||name==="forget_cafe_note"){
+      if(!scope.notes)return {ok:false,error:"café notes are not available"};
+      const topic=typeof args.topic==="string"?args.topic.trim().toLowerCase():"";
+      if(!/^[a-z][a-z0-9_.:-]{0,79}$/u.test(topic))return {ok:false,error:"topic must be a short lowercase key like busy_hours"};
+      if(name==="forget_cafe_note")return {ok:true,forgotten:await scope.notes.forget(topic)};
+      if(typeof args.note!=="string"||!args.note.trim()||typeof args.basis!=="string"||!args.basis.trim())return {ok:false,error:"note and basis are required"};
+      await scope.notes.save(topic,args.note.trim().slice(0,1000),args.basis.trim().slice(0,500));
+      return {ok:true,saved:topic};
     }
     if(name==="calculate")
       return calculate({inputs:Array.isArray(args.inputs)?args.inputs as never:[],steps:Array.isArray(args.steps)?args.steps as never:[]});

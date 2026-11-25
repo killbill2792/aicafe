@@ -30,6 +30,9 @@ export const RESEARCH_INSTRUCTIONS=
   "To change something or contact someone, use the action tools (propose_*, Gmail, routines, staff questions): each only prepares an approval card for the owner, "+
   "and nothing happens until the owner approves it, so never say it was done before then. "+
   "If a tool returns an error or finds nothing, fix the input or search again by yourself before giving up. "+
+  "The café context lists notes: what you or the owner learned about this café, each with where it came from and when it was last confirmed. "+
+  "They are hints, not facts: live data wins, an old note or one the data contradicts should be rechecked with the owner, then updated or forgotten. "+
+  "When you learn something lasting about the café, save it with remember_cafe_note. "+
   "When something you need is missing from the café's data (for example no published schedule for today), say so plainly and ask the owner for it with ask_owner instead of guessing.";
 
 /** Registered tools that prepare an owner-approval card, record an outcome or ask the owner; reads are covered by SQL. */
@@ -112,7 +115,7 @@ export async function runResearchTurn(args:{
     await args.beforeProviderRequest?.();
     const params:Record<string,unknown>={model,...(broker?{instructions:RESEARCH_INSTRUCTIONS}:
         {...(/^gpt-6/u.test(model)?{include:["reasoning.encrypted_content"],reasoning:{summary:"auto"}}:{}),prompt_cache_key:"supervisor-sql-research-v1"}),
-      tools:[...(args.webSearch?researchToolDefinitions:researchToolDefinitions.filter(t=>t.name!=="search_web")),...(args.actions?.definitions??[])],tool_choice:final?"none":"auto",stream:true,store:false,
+      tools:[...researchToolDefinitions.filter(t=>(t.name!=="search_web"||args.webSearch)&&(!/_cafe_note$/u.test(t.name)||args.scope.notes)),...(args.actions?.definitions??[])],tool_choice:final?"none":"auto",stream:true,store:false,
       ...(outputCap(final)?{max_output_tokens:outputCap(final)}:{}),input};
     const startedCall=now();
     const checkpoint=args.checkpoint;
