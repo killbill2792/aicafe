@@ -132,6 +132,14 @@ expectedLogical.set("toast_analytics_results",["restaurant_guid","business_date"
 
 expectedLogical.set("toast_open_labor_summaries",["restaurant_guid","external_time_entry_id","external_employee_id","clock_in","clock_out","hourly_wage_cents","wage_status","status","deleted","provider_regular_hours","provider_overtime_hours"]);
 
-expectedLogical.set("toast_order_observation_details",["restaurant_guid","business_date","order_guid","order_duration_seconds","source_seen_at","captured_at","detail_kind","detail_index","check_guid","selection_guid","modifier_guid","detail_guid","name","amount_cents","tax_rate","level","reason_guid","event_business_date"]);
+expectedLogical.set("toast_order_observation_details",["restaurant_guid","business_date","order_guid","order_duration_seconds","detail_kind","detail_index","check_guid","selection_guid","modifier_guid","detail_guid","name","amount_cents","tax_rate","level","reason_guid","event_business_date"]);
+
+expectedLogical.set("order_observations",["source","source_ref","status","business_date","order_ref","dining_option","source_channel","guest_count","net_sales_cents"]);
+
+expectedLogical.set("cash_observations",["source","source_ref","status","business_date","entry_type","amount_cents","cash_drawer_ref","employee_ref"]);
+
+expectedLogical.set("kitchen_observations",["source","source_ref","status","business_date","order_ref","ticket_ref","fired_at","started_at","ready_at","prep_station_ref"]);
+
+expectedLogical.set("dining_option_observations",["source","source_ref","status","business_date","dining_option_ref","dining_option_name"]);
 
 export {manifest,expectedLogical};

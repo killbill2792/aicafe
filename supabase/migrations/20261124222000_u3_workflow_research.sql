@@ -480,10 +480,10 @@ REVOKE ALL ON u3_research.toast_open_labor_summaries FROM PUBLIC,anon,authentica
 GRANT SELECT ON u3_research.toast_open_labor_summaries TO aicafe_research;
 
 CREATE FUNCTION u3_research_private.toast_order_observation_details_rows()
-RETURNS TABLE(restaurant_guid uuid,business_date date,order_guid uuid,order_duration_seconds bigint,source_seen_at timestamptz,captured_at timestamptz,detail_kind text,detail_index bigint,check_guid text,selection_guid text,modifier_guid text,detail_guid text,name text,amount_cents numeric,tax_rate numeric,level text,reason_guid text,event_business_date text)
+RETURNS TABLE(restaurant_guid uuid,business_date date,order_guid uuid,order_duration_seconds bigint,detail_kind text,detail_index bigint,check_guid text,selection_guid text,modifier_guid text,detail_guid text,name text,amount_cents numeric,tax_rate numeric,level text,reason_guid text,event_business_date text)
 LANGUAGE sql STABLE SECURITY DEFINER SET search_path='' AS $rows$
- SELECT r.restaurant_guid,r.business_date,r.order_guid,r.order_duration_seconds,r.source_seen_at,r.captured_at,d.kind,x.n,x.value->>'checkGuid',x.value->>'selectionGuid',x.value->>'modifierGuid',x.value->>'guid',x.value->>'name',COALESCE(CASE WHEN jsonb_typeof(x.value->'amountCents')='number' THEN (x.value->>'amountCents')::numeric END,CASE WHEN jsonb_typeof(x.value->'taxAmountCents')='number' THEN (x.value->>'taxAmountCents')::numeric END,CASE WHEN jsonb_typeof(x.value->'priceCents')='number' THEN (x.value->>'priceCents')::numeric END),CASE WHEN jsonb_typeof(x.value->'taxRate')='number' THEN (x.value->>'taxRate')::numeric END,x.value->>'level',x.value->>'reasonGuid',x.value->>'businessDate'
- FROM u3_research_private.scope() s JOIN public.toast_current_typed_order_facts_v r ON r.business_id=s.business_id CROSS JOIN LATERAL (VALUES ('check_discount',r.check_discounts),('item_discount',r.item_discounts),('item_tax',r.item_taxes),('modifier_price',r.modifier_prices),('void',r.void_details),('refund',r.refund_details)) d(kind,items) CROSS JOIN LATERAL jsonb_array_elements(d.items) WITH ORDINALITY x(value,n)
+ SELECT r.restaurant_guid,r.business_date,r.order_guid,r.order_duration_seconds,d.kind,x.n,x.value->>'checkGuid',x.value->>'selectionGuid',x.value->>'modifierGuid',x.value->>'guid',x.value->>'name',COALESCE(CASE WHEN jsonb_typeof(x.value->'amountCents')='number' THEN (x.value->>'amountCents')::numeric END,CASE WHEN jsonb_typeof(x.value->'taxAmountCents')='number' THEN (x.value->>'taxAmountCents')::numeric END,CASE WHEN jsonb_typeof(x.value->'priceCents')='number' THEN (x.value->>'priceCents')::numeric END),CASE WHEN jsonb_typeof(x.value->'taxRate')='number' THEN (x.value->>'taxRate')::numeric END,x.value->>'level',x.value->>'reasonGuid',x.value->>'businessDate'
+ FROM u3_research_private.scope() s JOIN public.toast_current_typed_order_facts_v r ON r.business_id=s.business_id CROSS JOIN LATERAL (VALUES ('check_discount',r.check_discounts),('item_discount',r.item_discounts),('item_tax',r.item_taxes),('modifier_price',r.modifier_prices),('void',r.void_details),('refund',r.refund_details)) d(kind,items) CROSS JOIN LATERAL jsonb_array_elements(CASE WHEN jsonb_typeof(d.items)='array' THEN d.items ELSE '[]'::jsonb END) WITH ORDINALITY x(value,n)
  WHERE s.mode IN ('owner','durable')
 $rows$;
 REVOKE ALL ON FUNCTION u3_research_private.toast_order_observation_details_rows() FROM PUBLIC,anon,authenticated,aicafe_research;
@@ -493,5 +493,66 @@ COMMENT ON VIEW u3_research.toast_order_observation_details IS 'One safe typed d
 ALTER VIEW u3_research.toast_order_observation_details OWNER TO aicafe_research_view_owner;
 REVOKE ALL ON u3_research.toast_order_observation_details FROM PUBLIC,anon,authenticated;
 GRANT SELECT ON u3_research.toast_order_observation_details TO aicafe_research;
+
+
+CREATE FUNCTION u3_research_private.order_observations_rows()
+RETURNS TABLE(source text,source_ref text,status text,business_date date,order_ref text,dining_option text,source_channel text,guest_count integer,net_sales_cents bigint)
+LANGUAGE sql STABLE SECURITY DEFINER SET search_path='' AS $rows$
+ SELECT r.source,r.source_ref,r.status,r.business_date,r.order_ref,r.dining_option,r.source_channel,r.guest_count,r.net_sales_cents
+ FROM u3_research_private.scope() s JOIN public.cv_orders r ON r.business_id=s.business_id
+ WHERE s.mode IN ('owner','durable')
+$rows$;
+REVOKE ALL ON FUNCTION u3_research_private.order_observations_rows() FROM PUBLIC,anon,authenticated,aicafe_research;
+GRANT EXECUTE ON FUNCTION u3_research_private.order_observations_rows() TO aicafe_research_view_owner,aicafe_research;
+CREATE VIEW u3_research.order_observations WITH (security_barrier=true) AS SELECT * FROM u3_research_private.order_observations_rows();
+COMMENT ON VIEW u3_research.order_observations IS 'One canonical order observation; guest count is not a customer identity. Preserve provider coverage and status.';
+ALTER VIEW u3_research.order_observations OWNER TO aicafe_research_view_owner;
+REVOKE ALL ON u3_research.order_observations FROM PUBLIC,anon,authenticated;
+GRANT SELECT ON u3_research.order_observations TO aicafe_research;
+
+CREATE FUNCTION u3_research_private.cash_observations_rows()
+RETURNS TABLE(source text,source_ref text,status text,business_date date,entry_type text,amount_cents bigint,cash_drawer_ref text,employee_ref text)
+LANGUAGE sql STABLE SECURITY DEFINER SET search_path='' AS $rows$
+ SELECT r.source,r.source_ref,r.status,r.business_date,r.entry_type,r.amount_cents,r.cash_drawer_ref,r.employee_ref
+ FROM u3_research_private.scope() s JOIN public.cv_cash r ON r.business_id=s.business_id
+ WHERE s.mode IN ('owner','durable')
+$rows$;
+REVOKE ALL ON FUNCTION u3_research_private.cash_observations_rows() FROM PUBLIC,anon,authenticated,aicafe_research;
+GRANT EXECUTE ON FUNCTION u3_research_private.cash_observations_rows() TO aicafe_research_view_owner,aicafe_research;
+CREATE VIEW u3_research.cash_observations WITH (security_barrier=true) AS SELECT * FROM u3_research_private.cash_observations_rows();
+COMMENT ON VIEW u3_research.cash_observations IS 'Saved cash drawer entry; not bank balance or independently verified settlement.';
+ALTER VIEW u3_research.cash_observations OWNER TO aicafe_research_view_owner;
+REVOKE ALL ON u3_research.cash_observations FROM PUBLIC,anon,authenticated;
+GRANT SELECT ON u3_research.cash_observations TO aicafe_research;
+
+CREATE FUNCTION u3_research_private.kitchen_observations_rows()
+RETURNS TABLE(source text,source_ref text,status text,business_date date,order_ref text,ticket_ref text,fired_at text,started_at text,ready_at text,prep_station_ref text)
+LANGUAGE sql STABLE SECURITY DEFINER SET search_path='' AS $rows$
+ SELECT r.source,r.source_ref,r.status,r.business_date,r.order_ref,r.ticket_ref,r.fired_at,r.started_at,r.ready_at,r.prep_station_ref
+ FROM u3_research_private.scope() s JOIN public.cv_kitchen r ON r.business_id=s.business_id
+ WHERE s.mode IN ('owner','durable')
+$rows$;
+REVOKE ALL ON FUNCTION u3_research_private.kitchen_observations_rows() FROM PUBLIC,anon,authenticated,aicafe_research;
+GRANT EXECUTE ON FUNCTION u3_research_private.kitchen_observations_rows() TO aicafe_research_view_owner,aicafe_research;
+CREATE VIEW u3_research.kitchen_observations WITH (security_barrier=true) AS SELECT * FROM u3_research_private.kitchen_observations_rows();
+COMMENT ON VIEW u3_research.kitchen_observations IS 'Saved kitchen ticket events and timestamps, not a complete order-time measurement without coverage.';
+ALTER VIEW u3_research.kitchen_observations OWNER TO aicafe_research_view_owner;
+REVOKE ALL ON u3_research.kitchen_observations FROM PUBLIC,anon,authenticated;
+GRANT SELECT ON u3_research.kitchen_observations TO aicafe_research;
+
+CREATE FUNCTION u3_research_private.dining_option_observations_rows()
+RETURNS TABLE(source text,source_ref text,status text,business_date date,dining_option_ref text,dining_option_name text)
+LANGUAGE sql STABLE SECURITY DEFINER SET search_path='' AS $rows$
+ SELECT r.source,r.source_ref,r.status,r.business_date,r.dining_option_ref,r.dining_option_name
+ FROM u3_research_private.scope() s JOIN public.cv_dining_options r ON r.business_id=s.business_id
+ WHERE s.mode IN ('owner','durable')
+$rows$;
+REVOKE ALL ON FUNCTION u3_research_private.dining_option_observations_rows() FROM PUBLIC,anon,authenticated,aicafe_research;
+GRANT EXECUTE ON FUNCTION u3_research_private.dining_option_observations_rows() TO aicafe_research_view_owner,aicafe_research;
+CREATE VIEW u3_research.dining_option_observations WITH (security_barrier=true) AS SELECT * FROM u3_research_private.dining_option_observations_rows();
+COMMENT ON VIEW u3_research.dining_option_observations IS 'Saved dining option names and references, not observed sales.';
+ALTER VIEW u3_research.dining_option_observations OWNER TO aicafe_research_view_owner;
+REVOKE ALL ON u3_research.dining_option_observations FROM PUBLIC,anon,authenticated;
+GRANT SELECT ON u3_research.dining_option_observations TO aicafe_research;
 
 REVOKE aicafe_research_view_owner FROM postgres;

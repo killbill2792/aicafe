@@ -5,14 +5,15 @@
   "productionRowsIncluded": false,
   "physicalTables": 223,
   "physicalFields": 2513,
-  "approvedSqlRelations": 119,
-  "reviewedFields": 1292,
+  "approvedSqlRelations": 123,
+  "reviewedFields": 1323,
   "additionalLogicalViews": [
     "alerts",
     "cafe_city_event_links",
     "cafe_neighborhood_source_coverage",
     "cafe_settings",
     "cafe_supplier_order_contacts",
+    "cash_observations",
     "city_event_sources",
     "city_events",
     "city_places",
@@ -22,6 +23,7 @@
     "customer_coverage",
     "customer_products",
     "customer_visits",
+    "dining_option_observations",
     "event_readiness_actions",
     "event_readiness_links",
     "event_readiness_observations",
@@ -37,12 +39,14 @@
     "goal_observations",
     "inventory_observations",
     "item_sale_observations",
+    "kitchen_observations",
     "maintenance_case_events",
     "maintenance_cases",
     "menu_item_cost_fallbacks",
     "opening_hours",
     "operating_tasks",
     "order_discount_observations",
+    "order_observations",
     "payment_observations",
     "pos_catalog_matches",
     "pos_connection_status",
@@ -199,6 +203,19 @@
         "display_name",
         "id",
         "normalized_name"
+      ]
+    },
+    {
+      "relation": "cash_observations",
+      "fields": [
+        "amount_cents",
+        "business_date",
+        "cash_drawer_ref",
+        "employee_ref",
+        "entry_type",
+        "source",
+        "source_ref",
+        "status"
       ]
     },
     {
@@ -411,6 +428,17 @@
         "staff_tax_status",
         "staff_wages_cents",
         "voids_cents"
+      ]
+    },
+    {
+      "relation": "dining_option_observations",
+      "fields": [
+        "business_date",
+        "dining_option_name",
+        "dining_option_ref",
+        "source",
+        "source_ref",
+        "status"
       ]
     },
     {
@@ -748,6 +776,21 @@
       ]
     },
     {
+      "relation": "kitchen_observations",
+      "fields": [
+        "business_date",
+        "fired_at",
+        "order_ref",
+        "prep_station_ref",
+        "ready_at",
+        "source",
+        "source_ref",
+        "started_at",
+        "status",
+        "ticket_ref"
+      ]
+    },
+    {
       "relation": "locations",
       "fields": [
         "city",
@@ -983,6 +1026,20 @@
         "pos_item_id",
         "quantity",
         "voided"
+      ]
+    },
+    {
+      "relation": "order_observations",
+      "fields": [
+        "business_date",
+        "dining_option",
+        "guest_count",
+        "net_sales_cents",
+        "order_ref",
+        "source",
+        "source_channel",
+        "source_ref",
+        "status"
       ]
     },
     {
@@ -1926,7 +1983,6 @@
       "fields": [
         "amount_cents",
         "business_date",
-        "captured_at",
         "check_guid",
         "detail_guid",
         "detail_index",
@@ -1940,7 +1996,6 @@
         "reason_guid",
         "restaurant_guid",
         "selection_guid",
-        "source_seen_at",
         "tax_rate"
       ]
     },
