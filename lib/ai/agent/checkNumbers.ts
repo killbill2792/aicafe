@@ -7,7 +7,7 @@ import { sumCents } from "@/lib/calc/money";
 
 export type MenuPrice = {id:string;name:string;priceCents:number};
 export type TimeScope = {kind:"hours";days:string[]} | {kind:"schedule";from:string;to:string;exhaustive?:boolean} | {kind:"timecards";replaceAll?:boolean;cards?:Array<{id:string;clockIn:boolean;clockOut:boolean;breaks:boolean}>};
-export type NumericEvidence = {tool:string;values:Array<{key:string;value:number;unit:"cents"|"bps"|"ratio"|"count";
+export type NumericEvidence = {tool:string;values:Array<{key:string;value:number;unit:"cents"|"bps"|"ratio"|"count"|"g"|"ml";
   provenance?:"estimate";detail?:"breakEvenSales"|"salesGap"|"dailyOverhead"|"pricing"}>;
   times?:VerifiedTime[];timeScope?:TimeScope;prices?:MenuPrice[];
   invalidatedKeys?:string[];invalidatedPriceIds?:string[];
@@ -298,6 +298,22 @@ export function compactEvidence(results:readonly AgentToolResult[],limit=100):Nu
     // SELECT 99999 AS "fakeCents" would otherwise become verified money even
     // with no attested source unit or with truncated evidence.
     if(r.source!=="u3_canonical_research")walk(r,"",0,rootScope);
+    // Retain the existing stable usage item key so refresh tombstones still
+    // revoke it. The canonical projection carries the actual measurement
+    // unit on each item; never authorize those measures as generic counts.
+    if(r.source==="usage_variance"&&Array.isArray(r.items)){
+      const units=new Map<string,"g"|"ml">();
+      for(const item of r.items){
+        if(!item||typeof item!=="object"||Array.isArray(item))continue;
+        const row=item as Record<string,unknown>;
+        if(typeof row.id==="string"&&(row.unit==="g"||row.unit==="ml"))
+          units.set(periodKey+"items:"+row.id+"/quantity",row.unit);
+      }
+      for(const value of values){
+        const unit=units.get(value.key);
+        if(unit)value.unit=unit;
+      }
+    }
     // PostgreSQL bigint/NUMERIC values may be strings. Only complete,
     // source-attested SQL receipts contribute numeric verification evidence.
     const verified=verifiedU3Evidence(r,periodKey);
@@ -1605,10 +1621,12 @@ export function checkNumbers(text: string, ownerText: string, results: readonly 
         day:/days?|días?/iu,week:/weeks?|semanas?/iu,month:/months?|meses?/iu,gram:/(?!)/u,milliliter:/(?!)/u,
       };
       const fromTools=evidence.some(entry=>entry.values.some(value=>
-        value.unit==="count"&&
+        ((value.unit==="g"&&v.durationUnit==="gram")||
+         (value.unit==="ml"&&v.durationUnit==="milliliter")||
+         value.unit==="count"&&
         (value.key.includes("u3VerifiedDuration/")?value.key.includes("u3VerifiedDuration/"+v.durationUnit+"/"):
           value.key.includes("u3VerifiedQuantity/")?value.key.includes("u3VerifiedQuantity/"+v.durationUnit+"/"):
-           !value.key.includes("u3VerifiedCount/")&&unitKey[v.durationUnit!].test(value.key))&&
+           !value.key.includes("u3VerifiedCount/")&&unitKey[v.durationUnit!].test(value.key)))&&
         value.value===v.value&&timecardDurationMatchesClaim(text,v.start,v.end,value.key)));
       return !(fromOwner||fromTools);
     }

@@ -17,6 +17,9 @@ describe("budgeted Maya usage evidence",()=>{
   ]));
   expect(checkNumbers("Expected 400 ml, actual 450 ml, 12.5% over", "", [result], "en")).toEqual([]);
   expect(checkNumbers("Expected 999 ml", "", [result], "en")).toHaveLength(1);
+  expect(checkNumbers("Expected 400 grams", "", [result], "en")).toHaveLength(1);
+  expect(checkNumbers("400 orders", "", [result], "en")).toHaveLength(1);
+  expect(checkNumbers("Expected 400 ml", "", [], "en", evidence)).toEqual([]);
  });
  it("preserves missing actuals as null rather than generating zero evidence",()=>{
   const r=projectUsageTool({from:"2026-10-20",to:"2026-10-21",rows:[{...milk,actual:null,differencePct:null,status:null}],missing:["endCount"],groupBy:null});
