@@ -267,6 +267,12 @@ export async function runToastSyncTick(db:SupabaseClient,now=new Date(),
      processed+=await runDue(db,m,daily as Run,deadlineAt,5,paceHistorical);
    }
    });
+   await isolated("order_recovery",async()=>{
+    if(process.env.TOAST_POLLING_ENABLED!=="true")return;
+    const {pollToastOrderRevisions}=await import("./orderRecovery");
+    await pollToastOrderRevisions(db,{businessId:m.business_id,restaurantGuid:m.restaurant_guid,
+     locationId:m.location_id},now,Math.min(deadlineAt,Date.now()+60000));
+   });
    await isolated("operational",async()=>{
     if(Date.now()<deadlineAt)await syncToastOperationalSources(db,{
      businessId:m.business_id,restaurantGuid:m.restaurant_guid,
