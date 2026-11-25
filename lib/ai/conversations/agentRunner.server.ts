@@ -61,6 +61,7 @@ import type { NumericEvidence } from "@/lib/ai/agent/checkNumbers";
 import {ownerRunStatement,type OwnerRunCheckpoint} from "@/lib/ai/supervisor/runs/contracts";
 import type {DurableReplyFence} from "./replyWriter.server";
 import { runAgentTurn, type OwnerFollowUp } from "@/lib/ai/agent/loop.server";
+import {runResearchTurn,sqlResearchEnabled} from "@/lib/ai/research/turn.server";
 import {createOwnerCommitment,listOwnerCommitments,closeOwnerCommitment} from "@/lib/operating/commitments.server";
 import {createOwnerRoutine,listOwnerRoutines,changeOwnerRoutine} from "@/lib/ai/supervisor/routines/repository.server";
 import {routineReportCandidates,verifiedRoutineReportHistory} from "@/lib/ai/supervisor/routines/reportHistory.server";
@@ -884,7 +885,24 @@ export async function runOneTurn(p: TurnParams): Promise<{ replyId: string; repl
     // authenticated attachment route, never a signed URL or object path.
     context.presentationAttachments=[...selectedIds];
     failureStage = "model";
-    const result = await runAgentTurn({ ownerText: p.ownerText, ownerImages:selected.images,
+    // SUPERVISOR_SQL_RESEARCH=on: database discovery, SQL and calculate only.
+    // The owner/café scope above is already verified; the database function
+    // re-verifies ownership and applies RLS for this one café.
+    const result = sqlResearchEnabled() ? await runResearchTurn({ ownerText: p.ownerText,
+      ownerImages:selected.images, ownerPdfs:selected.pdfs, ownerEvidence:selected.evidence, history,
+      scope:{db:createAdminSupabaseClient(),businessId:scope.businessId,ownerUserId:scope.ownerUserId},
+      cafeContext:"Café (authenticated, not an owner message): "+JSON.stringify({name:identity.cafeName,
+        currency:identity.currency,timezone:identity.timezone,localDate:identity.asOf,
+        city:location?.city??null,country:location?.countryCode??null}),
+      onAuditStep: step => { if (auditSteps.length < 64) auditSteps.push(step); },
+      beforeProviderRequest:assertTurnSources, beforeAcceptResult:assertTurnSources,
+      ...(p.checkpoint?{checkpoint:p.checkpoint}:{}),
+      onTool:(name,agentId)=>{
+        emit("tool",{name,agentId});
+        if (job && jobs && isJobStepAgent(agentId)) steps = steps.then(() => p.recordDurableStep
+          ?p.recordDurableStep({tool:name,agent:agentId}):jobs.recordAgentJobStep(job.id, { tool: name, agent: agentId }));
+      },
+      onDelta: delta => emit("delta", { text: delta }) }) : await runAgentTurn({ ownerText: p.ownerText, ownerImages:selected.images,
        ownerPdfs:selected.pdfs,ownerEvidence:selected.evidence,
        history:[...history,...(pendingStaffQuestionReadUnavailable?[{role:"assistant" as const,
          content:"The pending employee-question status is temporarily unavailable. Do not claim an owner reply was recorded or that a staff question was resolved; explain the uncertainty and ask the owner to retry."}]:[]),
