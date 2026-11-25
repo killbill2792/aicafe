@@ -5,6 +5,10 @@ const m=vi.hoisted(()=>({live:vi.fn(),importDay:vi.fn(),reconcile:vi.fn(),option
  refresh:vi.fn(),costs:vi.fn(),request:vi.fn(),paymentGaps:vi.fn(),operational:vi.fn(),operationalHealth:vi.fn()}));
 vi.mock("server-only",()=>({}));
 vi.mock("./orderRecovery",()=>({pollToastOrderRevisions:m.live}));
+vi.mock("./orderIngestion",()=>({prepareToastOrderRevision:(_scope:unknown,row:{businessDate?:number})=>{
+ if(!row?.businessDate)throw new Error("invalid date");
+ const d=String(row.businessDate);return {day:d.slice(0,4)+"-"+d.slice(4,6)+"-"+d.slice(6),payload:row};
+}}));
 vi.mock("./dayImport",()=>({importToastBusinessDay:m.importDay}));
 vi.mock("./reconcile",()=>({reconcileToastDays:m.reconcile}));
 vi.mock("./optionalSync",()=>({syncToastOptionalSources:m.optional,ensureToastFirstCatalog:m.firstCatalog}));
@@ -84,6 +88,7 @@ function makeDB(){
      runs.push({id:"daily",kind:"daily",requested_from:String(args.p_date),
       requested_to:String(args.p_date),state:"queued",days_done:0,days_total:1,cursor:{},resume_at:null});
    }else if(name==="toast_queue_backfill")backfillQueued=true;
+   else if(name==="toast_changed_order_days")return {data:[...new Set((args.p_rows as {day:string}[]).map(row=>row.day))],error:null};
    else if(name==="toast_checkpoint_repull_scan_page"){
     if(!scan.scan_local_day){
      scan.scan_local_day=String(args.p_local_day);

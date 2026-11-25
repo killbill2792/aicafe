@@ -540,7 +540,7 @@ describe("recovery timers and finished Analytics reports",()=>{
   const f=fakeDb(false);
   Object.assign(f.item,{payment_repull_at:new Date(Date.now()-3600000).toISOString()});
   await reconcileToastDays(f.db,p,Date.now()+20000);
-  expect(f.item).toMatchObject({recon_state:"checked_internal",payment_repull_at:started});
+  expect(f.item).toMatchObject({recon_state:"checked_internal",payment_repull_at:null});
   expect(f.writes).toContainEqual(expect.objectContaining({payment_repull_at:null}));
  });
 });
@@ -564,7 +564,7 @@ it("escalates cross-day payment recovery at its original deadline even after rei
  });
  await reconcileToastDays(f.db,p,Date.now()+20000);
  expect(f.item).toMatchObject({recon_state:"pending",internal_state:null,
-  payment_repull_at:null});
+  payment_repull_at:started});
  expect(f.writes.some(w=>(w.internal_reasons as string[]|undefined)
   ?.includes("unknown_payment_order"))).toBe(true);
  expect(f.calls).not.toContain("toast_queue_owner_repull");

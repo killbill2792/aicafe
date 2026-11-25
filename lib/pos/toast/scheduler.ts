@@ -6,6 +6,7 @@ import {refreshToastRestaurantInfo} from "./restaurantInfo";
 import {createToastClient,ToastApiError,toToastTimestamp} from "./client";
 import {retryToastRollupRefreshes} from "./rollupRetries";
 import {z} from "zod";
+import {prepareToastOrderRevision} from "./orderIngestion";
 import {syncToastOptionalSources,ensureToastFirstCatalog} from "./optionalSync";
 import {syncToastOperationalSources} from "./operationalCopy";
 import {reconcileToastOperationalHealth} from "./operationalStaging";
@@ -120,26 +121,13 @@ async function scanModifiedDates(db:SupabaseClient,m:Mapping,now:Date,deadlineAt
     "&endDate="+toToastTimestamp(new Date(windowEnd))+"&pageSize=100&page="+page;
    const rows=await client.request(path,m.restaurant_guid,z.array(z.unknown()),{deadlineAt});
    if(rows.length>100||page===300&&rows.length===100)throw new ToastApiError("invalid_response");
-   const discovered=new Set<string>();
-   for(const o of rows){
-    if(typeof o!=="object"||o===null)throw new ToastApiError("invalid_response");
-    const row=o as {businessDate?:unknown;openedDate?:unknown};
-    const txt=typeof row.businessDate==="number"&&Number.isInteger(row.businessDate)
-     ?String(row.businessDate):"";
-    let day:string;
-    if(/^20\d{6}$/.test(txt)){
-     day=txt.slice(0,4)+"-"+txt.slice(4,6)+"-"+txt.slice(6);
-     if(Number.isNaN(Date.parse(day+"T12:00:00Z")))
-      throw new ToastApiError("invalid_response");
-    }else if(typeof row.openedDate==="string"&&Number.isFinite(Date.parse(
-     row.openedDate.replace(/([+-]\d{2})(\d{2})$/,"$1:$2")))){
-     const opened=new Date(row.openedDate.replace(/([+-]\d{2})(\d{2})$/,"$1:$2"));
-     const localOpened=localClock(opened,m.toast_time_zone);
-     day=localOpened.minutes<m.closeout_hour*60
-      ?addCalendarDays(localOpened.today,-1):localOpened.today;
-    }else throw new ToastApiError("invalid_response");
-    if(day<scanDay)discovered.add(day);
-   }
+   const prepared=rows.map(row=>prepareToastOrderRevision({businessId:m.business_id,restaurantGuid:m.restaurant_guid,
+    timezone:m.toast_time_zone,closeoutHour:m.closeout_hour},row)).filter(row=>row.day<scanDay);
+   const {data:changedDays,error:compareError}=await db.rpc("toast_changed_order_days",{
+    p_business_id:m.business_id,p_restaurant_guid:m.restaurant_guid,p_rows:prepared});
+   if(compareError||!Array.isArray(changedDays)||changedDays.some(d=>typeof d!=="string"||d>=scanDay))
+    throw new ToastApiError("unavailable");
+   const discovered=new Set<string>(changedDays as string[]);
    // A page and its affected whole-day jobs are committed atomically. Unlike
    // the old all-or-nothing scan, a timed-out tick retains its page cursor.
    // The final watermark/void coverage advances ONLY on the terminal page.
