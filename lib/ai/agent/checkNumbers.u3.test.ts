@@ -269,6 +269,13 @@ describe("direct SQL source-row provenance",()=>{
   expect(checkNumbers("Maya worked 7 hours.","",[typed],"en")).not.toEqual([]);
   expect(checkNumbers("There were 7 orders.","",[typed],"en")).not.toEqual([]);
  });
+ it("binds an elapsed expression to the actual recorded timecard dependencies",()=>{
+  const base=make();
+  const derived={...base,rows:[{...row,elapsed:"6"}],evidence:{...(base.evidence as object),column_units:{elapsed:"hours"},
+    column_dependencies:{elapsed:[{relation:"recorded_timecards",column:"clock_in",binding:1},{relation:"recorded_timecards",column:"clock_out",binding:1}]}}};
+  expect(checkNumbers("Sam worked 6 hours.","",[derived],"en")).toEqual([]);
+  expect(checkNumbers("Maya worked 6 hours.","",[derived],"en")).not.toEqual([]);
+ });
  it("verifies real SQL clock observations and duration, not model-selected aliases or different rows",()=>{
   expect(checkNumbers("Sam clocked in at 9:00 AM on November 15, 2026. Sam worked 6 hours.","",[make()],"en")).toEqual([]);
   expect(checkNumbers("Sam clocked in at 9:00 AM on November 15, 2026.","",[make(2)],"en")).not.toEqual([]);

@@ -205,6 +205,12 @@ describe("U3 governed PostgreSQL AST admission",()=>{
   const r=await admitU3Sql("SELECT SUM(worked_seconds)::numeric/3600 AS elapsed,SUM(worked_seconds)::numeric/60 AS duration,COUNT(*) AS hours FROM timecards",["timecards"],0,false,[],{},relations);
   expect(r.outputUnits).toEqual({elapsed:"hours",duration:"minutes",hours:"count"});
  });
+ it("attests elapsed timestamp differences and calendar date differences without trusting component or literal aliases",async()=>{
+  const relations={timecards:{clock_in:"timestamptz_value" as const,clock_out:"timestamptz_value" as const,local_date:"date_value" as const}};
+  const result=await admitU3Sql("SELECT EXTRACT(EPOCH FROM clock_out-clock_in) AS elapsed,EXTRACT(EPOCH FROM clock_out-clock_in)/3600 AS elapsed_hours,clock_out::date-local_date AS calendar_days,EXTRACT(hour FROM clock_in) AS hour_component,EXTRACT(EPOCH FROM clock_in) AS timestamp_epoch FROM timecards",["timecards"],0,false,[],{},relations);
+  expect(result.outputUnits).toEqual({elapsed:"seconds",elapsed_hours:"hours",calendar_days:"days"});
+  expect(result.outputDependencies.elapsed).toEqual(expect.arrayContaining([expect.objectContaining({column:"clock_in"}),expect.objectContaining({column:"clock_out"})]));
+ });
  it("attests stored basis-point scale without promoting model aliases",async()=>{
   const relations={team_rules:{ot_multiplier_bp:"basis_points" as const}};
   const r=await admitU3Sql("SELECT ot_multiplier_bp AS multiplier,15000 AS fake FROM team_rules",["team_rules"],0,false,[],{},relations);

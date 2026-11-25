@@ -225,7 +225,13 @@ function verifiedU3Evidence(r:AgentToolResult,periodKey:string){
    // Preserve direct recorded-duration identity, using only the same binding.
    let identity="";
    const origins=proof.column_origins as Record<string,unknown>|undefined;
-   const origin=origins?.[column] as {relation?:unknown;binding?:unknown}|undefined;
+   type Origin={relation?:unknown;binding?:unknown};
+   const directOrigin=origins?.[column] as Origin|undefined;
+   const deps=(proof.column_dependencies as Record<string,Origin[]>|undefined)?.[column]??[];
+   const cardDeps=Array.isArray(deps)?deps.filter(o=>o?.relation==="recorded_timecards"&&Number.isSafeInteger(o.binding)):[];
+   const cardBindings=new Set(cardDeps.map(o=>o.binding));
+   const origin=directOrigin??(cardBindings.size===1?cardDeps[0]:undefined);
+   if(duration&&cardBindings.size>1)identity="timecard:unbound/day:/person:/";
    if(duration&&origin?.relation==="recorded_timecards"&&Number.isSafeInteger(origin.binding)){
      const fields:Record<string,unknown>=Object.create(null);
      for(const [label,rawOrigin] of Object.entries(origins??{})){
