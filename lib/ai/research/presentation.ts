@@ -1,5 +1,5 @@
 import {z} from "zod";
-import {presentationPanelSchema,recordTableSchema,richPresentationSchema,descriptiveGroupTitle,type PresentationPanel,type RecordTable,type RichPresentation} from "@/lib/ai/conversations/presentation";
+import {presentationPanelSchema,recordTableSchema,richPresentationSchema,descriptiveGroupTitle,interactiveCalcSchema,evaluatePresentationCalc,type InteractiveCalc,type PresentationPanel,type RecordTable,type RichPresentation} from "@/lib/ai/conversations/presentation";
 
 /** Optional selections inside ordinary model output. Use the same renderer and
  * stored block as every other Supervisor answer. No query, model call or effect
@@ -8,13 +8,13 @@ export const SQL_PRESENTATION_HINT=
  "Answer naturally in Markdown. When useful, you can append a cafe-ui fenced JSON block to the same answer: "+
  '{"layout":"grid","panels":[{"ref":"q1","kind":"bar","x":"category","y":"amount_cents"}],"report":true}. '+
  "Use presentationRef from successful run_sql results and their exact column aliases. Kinds: metric, bar, line, donut, ranked_table, table (columns array for a multi-column table). "+
- "Use descriptive titles if needed. You can select multiple panels, a downloadable report or selected files. This is optional; no need to repeat values in the JSON.";
+ "Use descriptive titles if needed. You can select multiple panels, a downloadable report or selected files, or a local what-if calculator with calculator:{ref,editable:[input names]} from calculate. This is optional; no need to repeat values in the JSON.";
 const selection=z.object({
  ref:z.string(),kind:z.enum(["metric","bar","line","donut","ranked_table","table"]),
  x:z.string().optional(),y:z.string().optional(),columns:z.array(z.string()).optional(),title:z.string().optional(),
 });
 const envelope=z.object({layout:z.enum(["stack","grid"]).optional(),panels:z.array(z.unknown()).optional(),
- report:z.boolean().optional(),files:z.boolean().optional()});
+ report:z.boolean().optional(),files:z.boolean().optional(),calculator:z.object({ref:z.string(),editable:z.array(z.string())}).optional()});
 type Selection=z.infer<typeof selection>;
 type Context={asOf:string;currency?:string|null;presentationAttachments?:readonly string[]};
 type Row=Record<string,unknown>;
@@ -56,17 +56,41 @@ function panel(s:Selection,rows:Row[],ctx:Context):PresentationPanel|null{
  return p.success?p.data:null;
 }
 
+function calculator(raw:Row,editable:string[],ctx:Context):InteractiveCalc|null{
+ if(raw.ok!==true||!obj(raw.calculationInput)||!obj(raw.result))return null;
+ const {inputs,steps}=raw.calculationInput;
+ if(!Array.isArray(inputs)||!Array.isArray(steps))return null;
+ const shown=(v:unknown,u:unknown)=>{
+  if(typeof v!=="string"||!/^[-+]?(?:\d+\.?\d*|\.\d+)$/u.test(v))return null;
+  const n=Number(v);
+  if(!Number.isFinite(n))return null;
+  if(u==="cents"&&Number.isSafeInteger(n))return {unit:u,valueCents:n};
+  if(u==="percent"&&Number.isSafeInteger(Math.round(n*100))&&Math.round(n*100)/100===n)return {unit:u,valueBps:Math.round(n*100)};
+  if(u==="count")return {unit:u,quantity:n};
+  if(u==="ratio")return {unit:u,valueRatio:n};
+  return null;
+ };
+ const parsed=interactiveCalcSchema.safeParse({title:"What-if calculation",asOf:ctx.asOf,currency:ctx.currency??null,
+  inputs:inputs.map(i=>obj(i)?{id:i.name,label:name(String(i.name)),value:shown(i.value,i.unit),editable:editable.includes(String(i.name))&&i.unit!=="ratio"}:null),
+  steps,original:shown(raw.result.value,raw.result.unit)});
+ if(!parsed.success)return null;
+ const reproduced=evaluatePresentationCalc(parsed.data);
+ return reproduced&&JSON.stringify(reproduced)===JSON.stringify(parsed.data.original)?parsed.data:null;
+}
+
 /** Parse only the optional fenced UI selection, not the answer itself. Bad
  * selections cannot discard valid siblings or any ordinary Markdown. */
 export function splitResearchPresentation(raw:string,queries:ReadonlyMap<string,Row>,ctx?:Context):{text:string;presentation?:RichPresentation}{
  const panels:PresentationPanel[]=[],tables:RecordTable[]=[];
  let layout:"stack"|"grid"="stack",report=false,files=false;
+ let calc:InteractiveCalc|null=null;
  const text=raw.replace(/^[ \t]*\x60{3}cafe-ui[ \t]*\r?\n[\s\S]*?(?:^[ \t]*\x60{3}[ \t]*(?=\r?$)|$(?![\s\S]))/gmu,block=>{
   try{
    const body=block.replace(/^[ \t]*\x60{3}cafe-ui[ \t]*\r?\n/u,"").replace(/\r?\n[ \t]*\x60{3}[ \t]*$/u,"");
    const parsed=envelope.safeParse(JSON.parse(body));
    if(!parsed.success||!ctx)return "";
    layout=parsed.data.layout??layout;report=report||parsed.data.report===true;files=files||parsed.data.files===true;
+   if(parsed.data.calculator){const q=queries.get(parsed.data.calculator.ref);if(q)calc=calculator(q,parsed.data.calculator.editable,ctx)??calc;}
    for(const value of parsed.data.panels??[]){
     const s=selection.safeParse(value);if(!s.success)continue;
     const q=queries.get(s.data.ref);
@@ -84,6 +108,6 @@ export function splitResearchPresentation(raw:string,queries:ReadonlyMap<string,
  });
  const attachments=files?[...new Set(ctx?.presentationAttachments??[])].slice(0,3):[];
  const block=richPresentationSchema.safeParse({type:"rich_presentation",version:1,layout,panels,suggestions:[],
-  ...(tables.length?{tables}:{}),...(report?{report:true}:{}),...(attachments.length?{files:attachments}:{})});
+  ...(tables.length?{tables}:{}),...(calc?{calculator:calc}:{}),...(report?{report:true}:{}),...(attachments.length?{files:attachments}:{})});
  return {text:text.trim(),...(block.success?{presentation:block.data}:{})};
 }

@@ -118,13 +118,15 @@ export async function runResearchTurn(args:{
   const appendAnswer=(answer:string,delivered:string)=>{
     const parsed=splitResearchPresentation(answer,queries,args.actions?.context);
     if(parsed.text.startsWith(delivered))appendText(parsed.text.slice(delivered.length),Boolean(delivered));
+    else if(parsed.text)appendText(parsed.text);
+    if(!text&&parsed.presentation)appendText("Here are the results from the retrieved information.");
     if(parsed.presentation)presentations.push({source:"response_presentation",period:null,missing:[],accepted:true,presentation:parsed.presentation});
   };
 
   // Only an existing durable background run's own budget can end research early.
   const stop=()=>{
     const budget=currentWorkerBudget();
-    return budget?usageStopReason({elapsedMs:Math.max(0,now()-started),modelCalls:usage.modelCalls,
+    return budget?usageStopReason({elapsedMs:0,modelCalls:usage.modelCalls,
       toolCalls:usage.toolCalls,inputTokens:usage.inputTokens,outputTokens:usage.outputTokens},budget):null;
   };
 
@@ -144,7 +146,9 @@ export async function runResearchTurn(args:{
       const reservation=await reserveDurableProviderRequest(params);
       reservation?.launched();usage.modelCalls++;
       const controller=new AbortController();
-      {
+      const remaining=currentWorkerBudget()?.maxElapsedMs;
+      const timer=remaining===undefined?undefined:setTimeout(()=>controller.abort(),remaining);
+      try{
         for await(const event of provider(params,controller.signal) as AsyncIterable<Event>){
           if(event.type==="response.output_text.delta"&&typeof event.delta==="string"){
             answer+=event.delta;
@@ -183,7 +187,7 @@ export async function runResearchTurn(args:{
           if(event.type==="response.failed"||event.type==="response.incomplete"||event.type==="error")
             throw new Error("provider_error");
         }
-      }
+      }finally{if(timer!==undefined)clearTimeout(timer);}
       if(!completed)throw new Error("provider_error");
       if(checkpoint)await checkpoint.endProvider(true);
       if(thinking)summary+=(summary?"\n\n":"")+thinking;
@@ -232,6 +236,7 @@ export async function runResearchTurn(args:{
   try{
     for(;;){
       const reason=stop();
+      if(reason==="timeout"){endReason=reason;break;}
       const {calls,answer,delivered}=await call(reason!==null);
       await args.beforeAcceptResult?.();
       if(answer.trim())appendAnswer(answer,delivered);
@@ -254,8 +259,8 @@ export async function runResearchTurn(args:{
           if(readOnly&&args.checkpoint)await args.checkpoint.beginTool(fc.name,fc.arguments,true);
           const result=await executeResearchTool({...args.scope,webSearch:args.webSearch??args.scope.webSearch,privateValues},fc.name,fc.arguments);
           await args.beforeAcceptResult?.();
-          const ref=fc.name==="run_sql"&&result.ok===true?"q"+(queries.size+1):null;
-          if(ref)queries.set(ref,result);
+          const ref=["run_sql","calculate"].includes(fc.name)&&result.ok===true?"q"+(queries.size+1):null;
+          if(ref)queries.set(ref,fc.name==="calculate"?{...result,calculationInput:JSON.parse(fc.arguments)}:result);
           input.push({type:"function_call_output",call_id:fc.call_id,output:JSON.stringify(ref?{...result,presentationRef:ref}:result)});
           failed=result.ok===false;
           if(!failed)evidence.push(JSON.stringify(result));
@@ -267,9 +272,10 @@ export async function runResearchTurn(args:{
           durationMs:Math.max(0,now()-toolStarted),...(failed?{error:"research_tool_error"}:{})});
       }
     }
+    if(!text&&endReason==="complete")throw Error("provider_empty_answer");
   }catch(error){
     if(error instanceof Error&&/durable|checkpoint|reservation/u.test(error.message))throw error;
-    endReason="provider_error";
+    endReason=stop()==="timeout"?"timeout":"provider_error";
     // Never leave the owner with nothing after real research: answer from the evidence gathered so far.
     if(invocations.length&&!args.checkpoint){
       try{
