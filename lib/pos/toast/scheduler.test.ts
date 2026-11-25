@@ -1,11 +1,17 @@
 import {beforeEach,describe,expect,it,vi} from "vitest";
 import type {SupabaseClient} from "@supabase/supabase-js";
 
-const m=vi.hoisted(()=>({importDay:vi.fn(),reconcile:vi.fn(),optional:vi.fn(),firstCatalog:vi.fn(),
- refresh:vi.fn(),costs:vi.fn(),request:vi.fn(),paymentGaps:vi.fn(),operational:vi.fn(),operationalHealth:vi.fn()}));
+const m=vi.hoisted(()=>({live:vi.fn(),importDay:vi.fn(),reconcile:vi.fn(),optional:vi.fn(),firstCatalog:vi.fn(),
+ refresh:vi.fn(),costs:vi.fn(),request:vi.fn(),paymentGaps:vi.fn(),operational:vi.fn(),operationalHealth:vi.fn(),finalPayments:vi.fn()}));
 vi.mock("server-only",()=>({}));
+vi.mock("./orderRecovery",()=>({pollToastOrderRevisions:m.live}));
+vi.mock("./orderIngestion",()=>({prepareToastOrderRevision:(_scope:unknown,row:{businessDate?:number})=>{
+ if(!row?.businessDate)throw new Error("invalid date");
+ const d=String(row.businessDate);return {day:d.slice(0,4)+"-"+d.slice(4,6)+"-"+d.slice(6),payload:row};
+}}));
 vi.mock("./dayImport",()=>({importToastBusinessDay:m.importDay}));
 vi.mock("./reconcile",()=>({reconcileToastDays:m.reconcile}));
+vi.mock("./paymentDates",()=>({finalizeToastPaymentWindow:m.finalPayments}));
 vi.mock("./optionalSync",()=>({syncToastOptionalSources:m.optional,ensureToastFirstCatalog:m.firstCatalog}));
 vi.mock("./restaurantInfo",()=>({refreshToastRestaurantInfo:m.refresh}));
 vi.mock("./missingDays",()=>({queueToastMissingDays:m.paymentGaps}));
@@ -77,12 +83,14 @@ function makeDB(){
   },
   async rpc(name:string,args:Record<string,unknown>={}){
    calls.push(name);
+   if(name==="toast_use_canonical_order_coverage")return {data:false,error:null};
    if(name==="toast_acquire_lease")return {data:claim?"lease-1":null,error:null};
    if(name==="toast_queue_daily"){
     if(!runs.some(r=>r.kind==="daily"&&r.requested_from===args.p_date))
      runs.push({id:"daily",kind:"daily",requested_from:String(args.p_date),
       requested_to:String(args.p_date),state:"queued",days_done:0,days_total:1,cursor:{},resume_at:null});
    }else if(name==="toast_queue_backfill")backfillQueued=true;
+   else if(name==="toast_changed_order_days")return {data:[...new Set((args.p_rows as {day:string}[]).map(row=>row.day))],error:null};
    else if(name==="toast_checkpoint_repull_scan_page"){
     if(!scan.scan_local_day){
      scan.scan_local_day=String(args.p_local_day);
@@ -121,6 +129,7 @@ function makeDB(){
 beforeEach(()=>{
  vi.stubEnv("TOAST_AUTO_IMPORT_ENABLED","true");
  for(const fn of Object.values(m))fn.mockReset();
+ m.live.mockResolvedValue({skipped:"leased_or_not_verified",fetched:0});
  m.request.mockResolvedValue([]);
  m.optional.mockResolvedValue({menu:"skipped",labor:"skipped"});
  m.firstCatalog.mockResolvedValue(false);
@@ -237,7 +246,7 @@ describe("leased Toast cron phases (spec C1, 13, 16, 17, 20, 21)",()=>{
   f.runs.push({id:"stuck-backfill",kind:"backfill",state:"paused_rate_limited",
    requested_from:"2026-09-12",requested_to:"2026-09-12",days_done:0,days_total:1,cursor:{},
    resume_at:new Date(now.getTime()+3600_000).toISOString()});
-  await runToastSyncTick(f.db,now,Date.now()+60000);
+  await runToastSyncTick(f.db,new Date("2026-10-23T04:00:00-07:00"),Date.now()+60000);
   expect(m.paymentGaps).toHaveBeenCalledTimes(1);
  });
  it("starts a queued 65-day first backfill before four repulls, within the full single-café tick",async()=>{
@@ -394,4 +403,39 @@ it("reconciles owner-visible operational health after optional phases, even on a
  expect(sequence).toEqual(["optional","health"]);
  expect(result.errors).toBeGreaterThanOrEqual(1);
  expect(f.calls.at(-1)).toBe("toast_release_lease");
+});
+
+it("runs live and operational sync without the daily closeout job",async()=>{
+ const f=makeDB();m.live.mockResolvedValue({fetched:1,completedWindow:true});
+ await runToastSyncTick(f.db,now,Date.now()+60000,"operations");
+ expect(m.live).toHaveBeenCalledOnce();expect(f.calls).toContain("toast_refresh_canonical_live");
+ expect(f.calls).not.toContain("toast_queue_daily");expect(m.reconcile).not.toHaveBeenCalled();
+});
+
+it("runs closeout only on the fifteen-minute dispatcher without redoing live or optional sync",async()=>{
+ const f=makeDB();
+ await runToastSyncTick(f.db,now,Date.now()+60000,"closeout");
+ expect(f.calls).toContain("toast_queue_daily");expect(m.reconcile).toHaveBeenCalledOnce();
+ expect(m.live).toHaveBeenCalledWith(f.db,expect.objectContaining({closeoutDay:d}),now,expect.any(Number));expect(m.optional).not.toHaveBeenCalled();
+ m.live.mockClear();m.importDay.mockClear();
+ await runToastSyncTick(f.db,now,Date.now()+60000,"closeout");
+ expect(m.live).not.toHaveBeenCalled();expect(m.importDay).not.toHaveBeenCalled();
+ expect(m.finalPayments).toHaveBeenCalledTimes(2);
+});
+
+
+it("does not claim a closeout lease or read Toast after the daily work is complete",async()=>{
+ const f=makeDB();
+ const rpc=f.db.rpc.bind(f.db);
+ vi.spyOn(f.db,"rpc").mockImplementation((...args:Parameters<typeof rpc>)=>{
+  if(args[0]==="toast_closeout_due")return Promise.resolve({data:false,error:null}) as unknown as ReturnType<typeof rpc>;
+  return rpc(...args);
+ });
+ await runToastSyncTick(f.db,now,Date.now()+60000,"closeout");
+ expect(f.db.rpc).toHaveBeenCalledWith("toast_closeout_due",{p_business_id:b,p_restaurant_guid:g,p_day:d,p_now:now.toISOString()});
+ expect(f.calls).not.toContain("toast_acquire_lease");
+ expect(m.reconcile).not.toHaveBeenCalled();
+ expect(m.live).not.toHaveBeenCalled();
+ expect(m.importDay).not.toHaveBeenCalled();
+ expect(m.finalPayments).not.toHaveBeenCalled();
 });

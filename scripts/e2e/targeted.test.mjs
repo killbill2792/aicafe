@@ -157,3 +157,7 @@ test("Task14B supplier UI and approval card require actual purchasing browser pr
   ["gmail","purchasing"]);
  assert.equal(summarizeReport(report([["home","passed"]]),["purchasing"]).status,"failed");
 });
+
+test("Toast webhook setup requires real authenticated owner browser proof",()=>{
+ for(const path of ["components/more/ToastConnectionForm.tsx","components/more/ToastWebhookSetup.tsx","app/[locale]/more/toast/page.tsx"]) assert.deepEqual(classifyPaths([path]),{scenarios:["home"],unmapped:[],required:true});
+});

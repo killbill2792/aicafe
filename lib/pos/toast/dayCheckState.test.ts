@@ -158,10 +158,10 @@ describe("unresolved payment recovery remains visible",()=>{
   expect(result.warnings.unknown_payment_order).toBe(1);
   expect(result.recon_state).toBe("pending");
  });
- it("ends exhausted retries with a visible error and clears the old deadline",()=>{
+ it("ends exhausted retries with a visible error and retains the durable recovery marker",()=>{
   const result=nextDayCheckState(day({recon_state:"pending",recon_source:null}),
    {type:"payment_recovery_exhausted",reasons:["unknown_payment_order"],paidOtherDay:1},at);
-  expect(result).toMatchObject({recon_state:"pending",payment_repull_at:null,
+  expect(result).toMatchObject({recon_state:"pending",payment_repull_at:"2026-10-24T09:00:00Z",
    last_error_category:"unverified_payment_order",paid_other_day:1});
   expect(result.internal_reasons).toContain("unknown_payment_order");
  });

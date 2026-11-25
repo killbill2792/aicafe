@@ -1,19 +1,23 @@
 import {beforeEach,afterEach,describe,it,expect,vi} from "vitest";
-const mocks=vi.hoisted(()=>({db:vi.fn(),send:vi.fn(),dispatch:vi.fn(),enqueue:vi.fn()}));
+const mocks=vi.hoisted(()=>({db:vi.fn(),send:vi.fn(),dispatch:vi.fn(),enqueue:vi.fn(),closeout:vi.fn()}));
 vi.mock("@/lib/supabase/admin",()=>({createAdminSupabaseClient:mocks.db}));
 vi.mock("@/lib/operating/dailyBrief.server",()=>({sendDailyBriefs:mocks.send}));
 vi.mock("@/lib/whatsapp/morningBriefDelivery.server",()=>({briefOutboxHook:()=>mocks.enqueue,dispatchDueMorningBriefs:mocks.dispatch}));
+vi.mock("@/lib/pos/toast/scheduler",()=>({runToastSyncTick:mocks.closeout}));
 import {GET} from "./route";
 const req=(header?:string)=>new Request("https://example.test/api/cron/daily-brief",{headers:header?{authorization:header}:{}});
 const old={secret:process.env.CRON_SECRET,flag:process.env.DAILY_BRIEF_ENABLED};
 beforeEach(()=>{
   process.env.CRON_SECRET="the-private-cron-secret";delete process.env.DAILY_BRIEF_ENABLED;
+  vi.stubEnv("TOAST_AUTO_IMPORT_ENABLED","false");
+  mocks.closeout.mockReset().mockResolvedValue({errors:0});
   mocks.db.mockReset().mockReturnValue({});
   mocks.send.mockReset().mockResolvedValue({checked:1,sent:1,skipped:0,failed:0,failureReasons:[]});
   mocks.dispatch.mockReset().mockResolvedValue({accepted:0,retryResponses:0,failed:0,uncertain:0});
   mocks.enqueue.mockReset().mockResolvedValue(undefined);
 });
 afterEach(()=>{
+  vi.unstubAllEnvs();
   if(old.secret===undefined)delete process.env.CRON_SECRET;else process.env.CRON_SECRET=old.secret;
   if(old.flag===undefined)delete process.env.DAILY_BRIEF_ENABLED;else process.env.DAILY_BRIEF_ENABLED=old.flag;
 });
@@ -52,4 +56,11 @@ describe("daily brief cron",()=>{
     expect(res.status).toBe(503);
     expect(JSON.stringify(await res.json())).not.toContain("secret");
   });
+});
+
+it("checks closeout even when daily brief is disabled",async()=>{
+ vi.stubEnv("TOAST_AUTO_IMPORT_ENABLED","true");
+ const r=await GET(req("Bearer the-private-cron-secret"));
+ expect(r.status).toBe(200);expect(mocks.closeout).toHaveBeenCalledWith({},expect.any(Date),expect.any(Number),"closeout");
+ expect(mocks.send).not.toHaveBeenCalled();
 });

@@ -2,6 +2,7 @@ import {verifyBearer} from "@/lib/security/bearer";
 import {NextResponse} from "next/server";
 import {z} from "zod";
 import {createAdminSupabaseClient} from "@/lib/supabase/admin";
+import {pollToastOrderRevisions} from "@/lib/pos/toast/orderRecovery";
 import {pollToastLocation} from "@/lib/pos/toast/poll";
 import {GUID,ToastApiError} from "@/lib/pos/toast/client";
 export const runtime="nodejs";
@@ -20,7 +21,8 @@ export async function POST(request:Request) {
    return respond(415,{error:"invalid_request"});
  const data=args.safeParse(await request.json().catch(()=>null));
  if(!data.success)return respond(400,{error:"invalid_request"});
- try{return respond(200,await pollToastLocation(createAdminSupabaseClient(),data.data));}
+ try{const db=createAdminSupabaseClient();
+  return respond(200,await (data.data.kind==="orders"?pollToastOrderRevisions(db,data.data):pollToastLocation(db,data.data)));}
  catch(error){
   const reason=error instanceof ToastApiError?error.category:"unavailable";
   return respond(reason==="rate_limited"?429:503,{error:reason});

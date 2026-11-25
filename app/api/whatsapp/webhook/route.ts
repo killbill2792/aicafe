@@ -1,6 +1,5 @@
 import {MAX_WEBHOOK_BYTES,parseWebhook,verifyChallenge,verifySignature} from "@/lib/whatsapp/webhook";
 import {TEST_PHONE_NUMBER_ID} from "@/lib/whatsapp/transport";
-import {acceptSignedMessage} from "@/lib/whatsapp/identity.server";
 import {recordSignedStatus} from "@/lib/whatsapp/queue.server";
 import {recordSignedStaffScheduleStatus} from "@/lib/scheduling/staffPublication.server";
 import {acceptSignedStaffText} from "@/lib/whatsapp/staffReplies.server";
@@ -63,9 +62,10 @@ export async function POST(request:Request):Promise<Response>{
   try{
     for(const event of events){
       if(event.type==="message"){
-        if(event.phoneId===(process.env.WHATSAPP_PHONE_NUMBER_ID??TEST_PHONE_NUMBER_ID))
-          await acceptSignedMessage(event);
-        else await acceptSignedStaffText(event);
+        // Owner conversational Supervisor is retired; acknowledge signed owner
+        // messages without enqueueing a turn. Keep staff replies and delivery receipts.
+        if(event.phoneId!==(process.env.WHATSAPP_PHONE_NUMBER_ID??TEST_PHONE_NUMBER_ID))
+          await acceptSignedStaffText(event);
       }else if(event.phoneId===(process.env.WHATSAPP_PHONE_NUMBER_ID??TEST_PHONE_NUMBER_ID)){
         await recordSignedStatus(event);
       }else{

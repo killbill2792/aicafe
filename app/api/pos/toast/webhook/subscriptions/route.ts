@@ -3,12 +3,15 @@ import {z} from "zod";
 import {encryptToken} from "@/lib/security/tokenCrypto";
 import {authorizeToastOwner} from "@/lib/pos/toast/ownerAccess";
 import {GUID} from "@/lib/pos/toast/client";
+import {toastWebhookKinds} from "@/lib/pos/toast/webhookSignature";
 export const runtime="nodejs";
 export const dynamic="force-dynamic";
 const body=z.discriminatedUnion("action",[
- z.object({action:z.literal("prepare"),businessId:GUID}).strict(),
+ z.object({action:z.literal("prepare"),businessId:GUID,eventKind:z.enum(toastWebhookKinds).default("orders")}).strict(),
  z.object({action:z.literal("register_secret"),businessId:GUID,
   subscriptionId:GUID,signingSecret:z.string().min(32).max(4096)}).strict(),
+ z.object({action:z.literal("activate"),businessId:GUID,subscriptionId:GUID}).strict(),
+ z.object({action:z.literal("deactivate"),businessId:GUID,subscriptionId:GUID}).strict(),
  z.object({action:z.literal("revoke"),businessId:GUID,subscriptionId:GUID}).strict()
 ]);
 const reply=(status:number,data:unknown)=>NextResponse.json(data,{status,
@@ -26,13 +29,13 @@ export async function GET(request:Request){
  const db=await authorizeToastOwner(id);
  if(!db)return reply(403,{error:"not_authorized"});
  const {data,error}=await db.from("toast_webhook_subscriptions")
-  .select("id,enabled,created_at").eq("business_id",id).order("created_at",{ascending:false}).limit(5);
+  .select("id,enabled,created_at,signing_secret_enc,event_kind").eq("business_id",id).order("created_at",{ascending:false}).limit(50);
  if(error)return reply(503,{error:"unavailable"});
  let origin:string|null=null;
  try{origin=publicToastWebhookOrigin();}catch{}
  return reply(200,{subscriptions:(data??[]).map(s=>({
-  ...s,webhookUrl:origin?origin+"/api/pos/toast/webhook/"+s.id:null
- })),receiverGloballyEnabled:process.env.TOAST_WEBHOOKS_ENABLED==="true",
+  id:s.id,enabled:s.enabled,eventKind:s.event_kind,created_at:s.created_at,secretStored:Boolean(s.signing_secret_enc),webhookUrl:origin?origin+"/api/pos/toast/webhook/"+s.id:null
+ })),receiverGloballyEnabled:process.env.TOAST_WEBHOOKS_ENABLED==="true"&&process.env.TOAST_JOBS_ENABLED==="true",
  signingSecretsExposed:false});
 }
 export async function POST(request:Request){
@@ -50,16 +53,28 @@ export async function POST(request:Request){
    .select("restaurant_guid").eq("business_id",p.businessId).not("verified_at","is",null).limit(1);
   if(mapError||!verified?.length)return reply(409,{error:"test_connection_first"});
   const {data:row,error}=await db.from("toast_webhook_subscriptions").insert({
-    business_id:p.businessId,signing_secret_enc:null,enabled:false
+    business_id:p.businessId,signing_secret_enc:null,enabled:false,event_kind:p.eventKind
   }).select("id").single();
   if(error||!row)return reply(503,{error:"unavailable"});
   return reply(201,{subscriptionId:row.id,
    webhookUrl:origin+"/api/pos/toast/webhook/"+row.id,
-   enabled:false,next:"Create Toast Orders subscription, register its secret securely. Do not activate."});
+   enabled:false,next:"Create the selected Toast subscription, register its signing secret securely, then activate."});
  }
  const {data:row,error}=await db.from("toast_webhook_subscriptions")
-  .select("id,enabled").eq("business_id",p.businessId).eq("id",p.subscriptionId).maybeSingle();
+  .select("id,enabled,signing_secret_enc").eq("business_id",p.businessId).eq("id",p.subscriptionId).maybeSingle();
  if(error||!row)return reply(404,{error:"not_found"});
+ if(p.action==="activate"||p.action==="deactivate"){
+  if(p.action==="activate"){
+   if(!row.signing_secret_enc)return reply(409,{error:"register_secret_first"});
+   if(process.env.TOAST_WEBHOOKS_ENABLED!=="true"||process.env.TOAST_JOBS_ENABLED!=="true")return reply(503,{error:"webhook_disabled"});
+   const {data:verified,error:mapError}=await db.from("toast_location_mappings").select("restaurant_guid").eq("business_id",p.businessId).not("verified_at","is",null).limit(1);
+   if(mapError||!verified?.length)return reply(409,{error:"test_connection_first"});
+  }
+  const enabled=p.action==="activate";
+  const {error:write}=await db.from("toast_webhook_subscriptions").update({enabled}).eq("business_id",p.businessId).eq("id",p.subscriptionId).eq("enabled",row.enabled);
+  if(write)return reply(503,{error:"unavailable"});
+  return reply(200,{subscriptionId:p.subscriptionId,enabled});
+ }
  if(row.enabled)return reply(409,{error:"disable_active_subscription_first"});
  const {error:write}=await db.from("toast_webhook_subscriptions").update(
   p.action==="register_secret"?{signing_secret_enc:encryptToken(p.signingSecret),enabled:false}:

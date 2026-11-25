@@ -54,7 +54,7 @@ export function nextDayCheckState(current:DayCheckState,event:DayCheckEvent,at:s
    next.internal_reasons=[...event.reasons];
    next.paid_other_day=event.paidOtherDay;
    for(const reason of event.reasons)next.warnings[reason]=1;
-   next.payment_repull_at=null;next.last_error_category=null;
+   next.payment_repull_at=null;delete next.warnings.payment_recovery_exhausted;next.last_error_category=null;
    next.reconciled_at=at;internalVerdict();break;
   case "internal_missing":
    next.internal_state=null;next.internal_reasons=[...event.reasons];
@@ -67,7 +67,8 @@ export function nextDayCheckState(current:DayCheckState,event:DayCheckEvent,at:s
    next.internal_state=null;next.internal_reasons=[...event.reasons];
    next.paid_other_day=event.paidOtherDay;
    for(const reason of event.reasons)next.warnings[reason]=1;
-   next.payment_repull_at=null;
+   next.payment_repull_at??=at;
+   next.warnings.payment_recovery_exhausted=1;
    next.last_error_category="unverified_payment_order";
    next.recon_state=externalMismatch?"mismatch":"pending";
    if(!externalMismatch)next.recon_source=null;

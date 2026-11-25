@@ -46,7 +46,7 @@ type CafeContext={db:SupabaseClient;b:Business&{timezone:string};schedule:BriefS
 const states=(db:SupabaseClient)=>new SnapshotCafeStateService(
   async(id,period)=>getBusinessSnapshotFromDb(db,id,period??"month"));
 
-/** Cron: every café, every 5 minutes; each café decides whether it is due. */
+/** Cron: every café, every 15 minutes; each café decides whether it is due. */
 const BLOCKED_IN_APP_REASONS=new Set(["missed_send_window","no_timezone","invalid_timezone",
   "no_owner","no_chat_thread"]);
 
@@ -165,13 +165,49 @@ export async function runCafeBrief(db:SupabaseClient,b:Business,now:Date,
   if(test&&b.is_demo)return cafeStep(schedule.today,
     {step:"cafe",outcome:"skipped",reason:"demo_cafe"},{schedule:scheduleInfo});
 
+  // Once all current owners have a terminal scheduled in-app result, no
+  // repeated daily metrics, history reads, AI work, or delivery construction.
+  // WhatsApp outbox delivery/retry remains independently due-driven.
+  if(!test){
+    let offset=0,allTerminal=true,ownerCount=0;
+    for(;;){
+      const page=await db.from("memberships").select("user_id")
+       .eq("business_id",b.id).eq("role","owner")
+       .order("created_at",{ascending:true}).order("user_id",{ascending:true}).range(offset,offset+99);
+      if(page.error){allTerminal=false;break;}
+      for(const owner of page.data??[]){
+       ownerCount++;
+       const ledger=await db.from("morning_brief_runs").select("outcome,reason")
+        .eq("business_id",b.id).eq("local_date",schedule.today).eq("owner_key",owner.user_id)
+        .eq("channel","in_app").eq("run_kind","scheduled").maybeSingle();
+       // A completed website brief may still need outbox repair; only suppress
+       // when both channel ledger rows are terminal/durably queued.
+       if(ledger.error||!(ledger.data?.outcome==="sent"||ledger.data?.reason==="missed_send_window")){
+        allTerminal=false;break;
+       }
+       const delivery=await db.from("morning_brief_runs").select("outcome,reason")
+        .eq("business_id",b.id).eq("local_date",schedule.today).eq("owner_key",owner.user_id)
+        .eq("channel","whatsapp").eq("run_kind","scheduled").maybeSingle();
+       if(delivery.error||!delivery.data||!["sent","queued","skipped"].includes(delivery.data.outcome)){
+        allTerminal=false;break;
+       }
+      }
+      if(!allTerminal||(page.data??[]).length<100)break;
+      offset+=100;
+    }
+    if(allTerminal&&ownerCount)return {step:"schedule",outcome:"skipped",reason:"not_due",businessId:b.id,
+     localDate:schedule.today,schedule:scheduleInfo,owners:[]};
+  }
   const evidence=await readBriefEvidence(db,{businessId:b.id,businessName:b.name??"",
     currency:b.currency},schedule,now);
   const missing=evidence.content.missing;
-  // Wait for yesterday's POS data only while there is still time before the latest send.
+  // Wait for available brief data points while there is still time before the latest send.
   if(!test&&schedule.phase==="window"&&!evidence.posComplete)
     return cafeStep(schedule.today,{step:"pos_sync",outcome:"waiting",
       reason:"yesterday_pos_data_not_complete",details:{...scheduleDetails,missing}},
+      {schedule:scheduleInfo,missing});
+  if(!test&&schedule.phase==="window"&&missing.some(reason=>["events_unavailable","event_research_incomplete","drink_labels_incomplete"].includes(reason)))
+    return cafeStep(schedule.today,{step:"content",outcome:"waiting",reason:"brief_evidence_not_complete",details:{...scheduleDetails,missing}},
       {schedule:scheduleInfo,missing});
   if(!evidence.content.hasSomethingToSay&&schedule.phase!=="missed")
     return cafeStep(schedule.today,{step:"content",outcome:"skipped",reason:"nothing_to_say",

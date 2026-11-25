@@ -1,19 +1,19 @@
 import {describe,it,expect} from "vitest";
 import {addCalendarDays,deriveNextRunDay,eligibleClosedDay,localClock} from "./scheduleDates";
 describe("Toast cron local calendar boundaries: acceptance 13",()=>{
- it("schedules October 31 exactly once after fallback closeout+1",()=>{
-  const justBefore=new Date("2026-11-01T12:59:00Z");
-  const due=new Date("2026-11-01T13:00:00Z");
-  expect(localClock(justBefore,"America/Los_Angeles").minutes).toBe(299);
+ it("schedules October 31 exactly once after configured closeout",()=>{
+  const justBefore=new Date("2026-11-01T11:59:00Z");
+  const due=new Date("2026-11-01T12:00:00Z");
+  expect(localClock(justBefore,"America/Los_Angeles").minutes).toBe(239);
   expect(eligibleClosedDay(justBefore,"America/Los_Angeles",4)).toBeNull();
   expect(eligibleClosedDay(due,"America/Los_Angeles",4)).toBe("2026-10-31");
   expect(eligibleClosedDay(new Date("2026-11-01T14:00:00Z"),
    "America/Los_Angeles",4)).toBe("2026-10-31");
  });
  it("does not double-fire after the spring-forward clock transition",()=>{
-  expect(eligibleClosedDay(new Date("2027-03-14T11:59:00Z"),
+  expect(eligibleClosedDay(new Date("2027-03-14T10:59:00Z"),
    "America/Los_Angeles",4)).toBeNull();
-  expect(eligibleClosedDay(new Date("2027-03-14T12:00:00Z"),
+  expect(eligibleClosedDay(new Date("2027-03-14T11:00:00Z"),
    "America/Los_Angeles",4)).toBe("2027-03-13");
  });
 });

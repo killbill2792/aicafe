@@ -8,11 +8,61 @@ import {createToastClient,GUID,ToastApiError} from "./client";
 import {parseToastDayPage,type ToastParsedOrder,type ToastUnparsed,type ToastVoidFact} from "./dayParser";
 import {recomputeDailyRollup} from "../rollup";
 import {afterToastImport} from "./afterImport";
+import {readAllPages} from "./readAllPages";
 
 const daySchema=z.iso.date();
 type Params={businessId:string;locationId:string;restaurantGuid:string;businessDate:string;runId:string;deadlineAt?:number};
 type StoredPage={page:number;payload:unknown[]};
+type RevisionWork={revision:{only:boolean;orders:Record<string,unknown>};token:string};
 const sum=(values:number[])=>values.reduce((a,b)=>a+b,0);
+/** Exact existing parser/checksum proof; no missing historical records may be
+ * turned into a zero or erased by a partial provider revision. */
+export function buildRevisionPages(baseline:unknown[],revisions:Record<string,unknown>,checksum:string,
+ scope:{restaurantGuid:string;businessDate:string;timezone:string;closeoutHour:number}):StoredPage[]|null{
+ const {restaurantGuid,businessDate,timezone,closeoutHour}=scope;
+ const parse=(rows:unknown[])=>parseToastDayPage(rows,restaurantGuid,businessDate,timezone,closeoutHour);
+ const before=parse(baseline);
+ if(before.unparsed.length||before.orders.length!==baseline.length)return null;
+ const seen=new Map<string,ToastParsedOrder>();
+ for(const record of before.orders){
+  const prev=seen.get(record.guid);
+  if(!prev||prev.modifiedDate<=record.modifiedDate)seen.set(record.guid,record);
+ }
+ const sorted=[...seen.values()].sort((a,b)=>a.guid.localeCompare(b.guid));
+ if(seen.size!==baseline.length||createHash("sha256").update(JSON.stringify(sorted)).digest("hex")!==checksum)return null;
+ const source=new Map<string,unknown>(baseline.map(row=>[(row as {guid:string}).guid.toLowerCase(),row]));
+ for(const [key,row] of Object.entries(revisions)){
+  const parsed=parse([row]);
+  if(parsed.unparsed.length||parsed.orders.length!==1||parsed.orders[0].guid.toLowerCase()!==key.toLowerCase())return null;
+  const prior=seen.get(parsed.orders[0].guid);
+  if(!prior||prior.modifiedDate<=parsed.orders[0].modifiedDate)source.set(key.toLowerCase(),row);
+ }
+ const rows=[...source.entries()].sort(([a],[b])=>a.localeCompare(b)).map(([,row])=>row);
+ const pages:StoredPage[]=[];
+ for(let start=0;start<=rows.length;start+=100)pages.push({page:pages.length+1,payload:rows.slice(start,start+100)});
+ return pages.length<=300?pages:null;
+}
+async function beginRevision(db:SupabaseClient,p:Params,force=false):Promise<RevisionWork>{
+ const {data,error}=await db.rpc("toast_begin_revision_import",{p_business_id:p.businessId,p_restaurant_guid:p.restaurantGuid,
+  p_date:p.businessDate,p_run_id:p.runId,p_force_full:force});
+ if(error||typeof data?.token!=="string"||typeof data.revision?.only!=="boolean"||!data.revision.orders)
+  throw new ToastApiError("unavailable");
+ return data as RevisionWork;
+}
+async function localRevisionPages(db:SupabaseClient,p:Params,work:RevisionWork,timezone:string,closeoutHour:number){
+ const {data:base,error}=await db.from("toast_day_status")
+  .select("import_state,coverage_complete,unparsed_count,last_import_run_id,orders_snapshot_sha256")
+  .eq("business_id",p.businessId).eq("restaurant_guid",p.restaurantGuid).eq("business_date",p.businessDate).maybeSingle();
+ if(error)throw new ToastApiError("unavailable");
+ if(!base||base.import_state!=="imported"||!base.coverage_complete||base.unparsed_count!==0||
+    !GUID.safeParse(base.last_import_run_id).success||typeof base.orders_snapshot_sha256!=="string")return null;
+ const rows=await readAllPages((start,end)=>db.from("toast_raw_records").select("payload")
+  .eq("business_id",p.businessId).eq("restaurant_guid",p.restaurantGuid).eq("business_date",p.businessDate).eq("entity","order")
+  .or("run_id.eq."+base.last_import_run_id+",seen_run_id.eq."+base.last_import_run_id).order("id").range(start,end));
+ const pages=buildRevisionPages(rows.map(row=>row.payload),work.revision.orders,base.orders_snapshot_sha256,
+  {restaurantGuid:p.restaurantGuid,businessDate:p.businessDate,timezone,closeoutHour});
+ return pages?{pages,baseRunId:base.last_import_run_id as string}:null;
+}
 function tally(w:Record<string,number>,next:Record<string,number>){
  for(const [key,value] of Object.entries(next))w[key]=(w[key]??0)+value;
 }
@@ -22,7 +72,7 @@ export async function importToastBusinessDay(db:SupabaseClient,p:Params){
  const {data:m,error:me}=await db.from("toast_location_mappings")
    .select("location_id,verified_at,toast_time_zone,closeout_hour")
    .eq("business_id",p.businessId).eq("restaurant_guid",p.restaurantGuid).maybeSingle();
- const {data:run,error:re}=await db.from("toast_sync_runs").select("state,restaurant_guid,business_id,cursor")
+ const {data:run,error:re}=await db.from("toast_sync_runs").select("state,restaurant_guid,business_id,cursor,kind")
    .eq("id",p.runId).eq("business_id",p.businessId).eq("restaurant_guid",p.restaurantGuid).maybeSingle();
  if(re||!run||!["queued","running","paused_rate_limited"].includes(run.state))
    throw new ToastApiError("unauthorized_location");
@@ -43,8 +93,17 @@ export async function importToastBusinessDay(db:SupabaseClient,p:Params){
  const pages:StoredPage[]=[];
  const deadlineAt=p.deadlineAt??Date.now()+240000;
  let page=1;
+ let revision:RevisionWork|null=null,localBase:string|null=null;
  try{
-  for(;page<=300;page++){
+  if(run.kind==="repull_modified"){
+   revision=await beginRevision(db,p);
+   if(revision.revision.only){
+    const local=await localRevisionPages(db,p,revision,m.toast_time_zone,m.closeout_hour);
+    if(local){pages.push(...local.pages);localBase=local.baseRunId;}
+    else revision=await beginRevision(db,p,true);
+   }
+  }
+  for(;!localBase&&page<=300;page++){
    if(Date.now()>=deadlineAt)throw new ToastApiError("timeout");
    const {data:staged,error:se}=await db.from("toast_day_pages").select("payload")
      .eq("run_id",p.runId).eq("business_date",p.businessDate).eq("page",page).maybeSingle();
@@ -104,15 +163,16 @@ export async function importToastBusinessDay(db:SupabaseClient,p:Params){
    parsed_order_guids:orders.map(x=>x.guid),unparsed
   };
   if(Date.now()>=deadlineAt)throw new ToastApiError("timeout");
-  const {data:result,error}=await db.rpc("toast_import_day",{
-   p_business_id:p.businessId,p_location_id:p.locationId,
+  const args={p_business_id:p.businessId,p_location_id:p.locationId,
    p_restaurant_guid:p.restaurantGuid,p_business_date:p.businessDate,
-   p_orders:normalized,p_summary:summary,p_run_id:p.runId
-  });
+   p_orders:normalized,p_summary:summary,p_run_id:p.runId};
+  const {data:result,error}=revision?await db.rpc("toast_commit_revision_day",{...args,
+   p_revision_token:revision.token,p_base_run_id:localBase,p_local_pages:localBase?pages.map(p=>p.payload):null}):
+   await db.rpc("toast_import_day",args);
   if(error){
    // The error code only (e.g. 57014 = statement timeout); never the payload.
    console.error("toast_import_day_failed",{code:error.code??null});
-   throw new ToastApiError("unavailable");
+   throw new ToastApiError(error.code==="40001"?"timeout":"unavailable");
   }
   // The canonical day has committed. Narrow ordinary relinks to that day;
   // the existing SQL handler widens only for unresolved prior failure or

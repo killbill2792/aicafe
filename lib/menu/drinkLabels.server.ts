@@ -47,7 +47,7 @@ export const classifyWithOpenAi:DrinkClassifier=async categories=>{
 /** Labels the café's not-yet-labeled categories and saves them. Never throws:
  * a failure only means those items are left out of today's top drink. */
 export async function labelNewMenuCategories(db:SupabaseClient,businessId:string,
- classify:DrinkClassifier=classifyWithOpenAi):Promise<number>{
+ classify:DrinkClassifier=classifyWithOpenAi,requireComplete=false):Promise<number>{
  const started=Date.now();
  let asked=0,saved=0,outcome="none";
  try{
@@ -71,9 +71,12 @@ export async function labelNewMenuCategories(db:SupabaseClient,businessId:string
   const labels=(await classify(input)).filter(l=>wanted.has(l.category));
   await saveAiMenuCategoryLabels(db,businessId,labels);
   saved=labels.length;outcome="saved";
+  if(requireComplete&&(new Set(labels.map(l=>l.category)).size!==wanted.size||input.length<byCategory.size))
+   throw new Error("menu_labels_incomplete");
   return saved;
  }catch{
   outcome="failed";
+  if(requireComplete)throw new Error("menu_labels_unavailable");
   return 0;
  }finally{
   // Counts only: never category names, items or prompt text.

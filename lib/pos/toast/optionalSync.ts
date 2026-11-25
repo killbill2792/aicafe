@@ -50,7 +50,7 @@ export async function ensureToastFirstCatalog(db:SupabaseClient,p:Location,
 }
 
 export async function syncToastOptionalSources(db:SupabaseClient,p:Location,
- now:Date,deadlineAt:number){
+ now:Date,deadlineAt:number,mode?:"menu",respectHours=false){
  if(Date.now()>=deadlineAt)return {menu:"deferred",labor:"deferred"};
  const {data:credentials,error:ce}=await db.from("toast_api_credentials")
   .select("scopes_available").eq("business_id",p.business_id).maybeSingle();
@@ -75,10 +75,13 @@ export async function syncToastOptionalSources(db:SupabaseClient,p:Location,
    phaseFailures.push(e instanceof ToastApiError?e.category:"unavailable");
  };
  let menu="scope_missing",labor="scope_missing";
+ let verifiedMenuVersion:string|null=null;
  let staffReady=Boolean(state?.roster_copied_at);
  const scope={businessId:p.business_id,restaurantGuid:p.restaurant_guid,deadlineAt,
   locationId:p.location_id,timezone:p.toast_time_zone};
- if(scopes.menus!==false&&Date.now()<deadlineAt){
+ if(state?.menu_copied_at&&state.menu_checked_local_day!==null)verifiedMenuVersion=state.menu_last_updated??null;
+ // Webhook forces metadata verification; otherwise one successful lightweight check per local day.
+ if(scopes.menus!==false&&Date.now()<deadlineAt&&(mode==="menu"||!state?.menu_copied_at||state.menu_checked_local_day!==local.today)){
   try{
    const meta=await createToastClient(db,p.business_id)
     .request("/menus/v2/metadata",p.restaurant_guid,dateSchema,{deadlineAt});
@@ -92,16 +95,18 @@ export async function syncToastOptionalSources(db:SupabaseClient,p:Location,
     await update({menu_last_updated:published.receipt.publicationVersion,
      menu_checked_local_day:local.today,menu_copied_at:new Date().toISOString()});
     menu="updated";
+    verifiedMenuVersion=published.receipt.publicationVersion;
    }else{
     // An unchanged version uses only the cheap metadata endpoint.
     if(state?.menu_checked_local_day!==local.today)
      await update({menu_checked_local_day:local.today});
     menu="unchanged";
+    verifiedMenuVersion=meta.lastUpdated;
    }
 
   }catch(e){recordFailure(e);}
  }
- if(scopes.labor!==false&&Date.now()<deadlineAt){
+ if(mode!=="menu"&&scopes.labor!==false&&Date.now()<deadlineAt){
   if(!state?.roster_copied_at||state?.roster_local_day!==local.today){
    try{await copyToastStaff(db,scope);await update({roster_local_day:local.today,
     roster_copied_at:new Date().toISOString()});staffReady=true;}
@@ -155,6 +160,37 @@ export async function syncToastOptionalSources(db:SupabaseClient,p:Location,
  const sourceStates=(state?.operational_sources&&typeof state.operational_sources==="object"&&
   !Array.isArray(state.operational_sources))
    ?{...state.operational_sources as Record<string,Record<string,unknown>>}:{};
+ // A successful menu publication is the only automatic labeling trigger.
+ // Persist the version independently from catalog-copy completion so a model
+ // failure retries labels without downloading the entire menu again.
+ const labelState=sourceStates.menu_labels??{};
+ if(verifiedMenuVersion&&labelState.complete_version!==verifiedMenuVersion&&
+    (labelState.pending_version!==verifiedMenuVersion||typeof labelState.next_at!=="string"||
+     Date.parse(labelState.next_at)<=now.getTime())&&Date.now()+16000<deadlineAt){
+  try{
+   const {labelNewMenuCategories}=await import("@/lib/menu/drinkLabels.server");
+   await labelNewMenuCategories(db,p.business_id,undefined,true);
+   sourceStates.menu_labels={complete_version:verifiedMenuVersion,status:"complete",
+    last_success_at:now.toISOString()};
+   await update({operational_sources:sourceStates});
+  }catch{
+   sourceStates.menu_labels={...labelState,pending_version:verifiedMenuVersion,status:"retry",
+    next_at:new Date(now.getTime()+60*60000).toISOString()};
+   await update({operational_sources:sourceStates});
+   recordFailure(new ToastApiError("unavailable"));
+  }
+ }
+ if(mode==="menu"){
+  if(phaseFailures.length)throw new ToastApiError(phaseFailures[0]);
+  return {menu,labor:"deferred",version:verifiedMenuVersion};
+ }
+ let active=true;
+ if(respectHours){
+  const {data:loc,error}=await db.from("locations").select("open_hours").eq("business_id",p.business_id).eq("id",p.location_id).maybeSingle();
+  if(error)throw new ToastApiError("unavailable");
+  const {toastOpenOrUnknown}=await import("./orderRecovery");
+  active=toastOpenOrUnknown(loc?.open_hours??null,p.toast_time_zone,now);
+ }
  const lastModified=sourceStates.labor_modified??{};
  const saveModified=async(patch:Record<string,unknown>)=>{
   sourceStates.labor_modified={...sourceStates.labor_modified,...patch};
@@ -164,7 +200,7 @@ export async function syncToastOptionalSources(db:SupabaseClient,p:Location,
   if(lastModified.status!=="missing_permissions")
    await saveModified({status:"missing_permissions",last_checked_at:now.toISOString(),
     error:"missing_permissions",next_at:null});
- }else if(staffReady&&Date.now()<deadlineAt&&
+ }else if(active&&staffReady&&Date.now()<deadlineAt&&
   (typeof lastModified.next_at!=="string"||
    Date.parse(lastModified.next_at)<=now.getTime())){
   const checked=now.toISOString();
