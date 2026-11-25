@@ -348,7 +348,7 @@ describe.skipIf(!active)("U3 migrated registered tool + private connection",()=>
   try{
    for(const [i,business] of [ids.a,ids.b].entries()){
     await admin.query("INSERT INTO public.locations(id,business_id,name,timezone) VALUES($1,$2,$3,'UTC')",[loc[i],business,"Synthetic roster location "+i]);
-    await admin.query("INSERT INTO public.employees(id,business_id,display_name,min_weekly_minutes,max_weekly_minutes) VALUES($1,$2,$3,600,1200)",[employees[i],business,"Owner team name "+i]);
+    await admin.query("INSERT INTO public.employees(id,business_id,display_name,min_weekly_minutes,max_weekly_minutes) VALUES($1,$2,$3,600,1200)",[employees[i],business,i===0?"Ada":"Maya"]);
     await admin.query("INSERT INTO public.toast_api_credentials(business_id,api_origin,client_id,client_secret_enc) VALUES($1,'https://example.invalid','fixture_only','synthetic_ciphertext')",[business]);
     await admin.query("INSERT INTO public.toast_location_mappings(business_id,location_id,restaurant_guid) VALUES($1,$2,$3)",[business,loc[i],restaurants[i]]);
     await admin.query("INSERT INTO public.toast_employee_directory(business_id,restaurant_guid,employee_guid,display_name,linked_employee_id,linked_at,fetched_at) VALUES($1,$2,$3,'Duplicate provider name',$4,now(),now())",[business,restaurants[i],externalEmployee,employees[i]]);
@@ -356,7 +356,27 @@ describe.skipIf(!active)("U3 migrated registered tool + private connection",()=>
    }
    const result=await dataQueryTools.query_data.execute(input("SELECT p.external_shift_id,e.display_name,e.min_weekly_minutes FROM pos_scheduled_shifts p JOIN toast_location_mappings m ON p.location_id=m.location_id JOIN toast_employee_directory d ON d.restaurant_guid=m.restaurant_guid AND d.employee_guid::text=p.external_employee_id JOIN employees e ON e.id=d.linked_employee_id WHERE p.provider='toast' AND NOT p.deleted"),scoped);
    expect(result.error).toBeUndefined();
-   expect(result.rows).toEqual([{external_shift_id:"synthetic-shift-0",display_name:"Owner team name 0",min_weekly_minutes:600}]);
+   expect(result.rows).toEqual([{external_shift_id:"synthetic-shift-0",display_name:"Ada",min_weekly_minutes:600}]);
+   // Exercise the actual scoped SQL executor's column-origin receipt, not
+   // only a model-free unit fixture. The local name wins over the provider
+   // label, and planned time is never an actual punch.
+   const clocks=await dataQueryTools.query_data.execute(input("SELECT p.location_id,p.provider,p.external_shift_id,p.external_employee_id,p.scheduled_start,p.scheduled_end,p.deleted,m.location_id AS mapping_location,m.restaurant_guid AS mapping_restaurant,d.restaurant_guid AS directory_restaurant,d.employee_guid,d.linked_employee_id,d.display_name AS provider_name,e.id AS local_employee_id,e.display_name,c.timezone FROM pos_scheduled_shifts p JOIN toast_location_mappings m ON p.location_id=m.location_id JOIN toast_employee_directory d ON d.restaurant_guid=m.restaurant_guid AND d.employee_guid::text=p.external_employee_id JOIN employees e ON e.id=d.linked_employee_id CROSS JOIN cafe_settings c WHERE p.provider='toast' AND NOT p.deleted"),scoped);
+   expect(clocks.error).toBeUndefined();
+   expect(clocks.rows).toHaveLength(1);
+   const results=[clocks as unknown as AgentToolResult];
+   expect(checkNumbers("Ada's shift starts at 08:00 on 2025-01-01.","",results,"en")).toEqual([]);
+   expect(checkNumbers("Maya's shift starts at 08:00 on 2025-01-01.","",results,"en")).not.toEqual([]);
+   expect(checkNumbers("Ada clocked in at 08:00 on 2025-01-01.","",results,"en")).not.toEqual([]);
+   const localShift=randomUUID();
+   try{
+    await admin.query("INSERT INTO public.scheduled_shifts(id,business_id,employee_id,local_date,start_local,end_local,status,source) VALUES($1,$2,$3,'2025-01-02','07:00','14:00','sent','owner')",[localShift,ids.a,employees[0]]);
+    const local=await dataQueryTools.query_data.execute(input("SELECT s.id,s.employee_id,s.local_date,s.start_local,s.end_local,s.overnight,s.status,s.source,s.deleted_at,e.id AS worker_id,e.display_name FROM scheduled_shifts s JOIN employees e ON e.id=s.employee_id WHERE s.local_date='2025-01-02'"),scoped);
+    expect(local.error).toBeUndefined();
+    expect(local.rows).toHaveLength(1);
+    expect(checkNumbers("Ada's shift starts at 07:00 on 2025-01-02.","",[local as unknown as AgentToolResult],"en")).toEqual([]);
+   }finally{
+    await admin.query("DELETE FROM public.scheduled_shifts WHERE id=$1",[localShift]);
+   }
   }finally{
    await admin.query("DELETE FROM public.pos_scheduled_shifts WHERE location_id=ANY($1::uuid[])",[loc]);
    await admin.query("DELETE FROM public.toast_employee_directory WHERE restaurant_guid=ANY($1::uuid[])",[restaurants]);
