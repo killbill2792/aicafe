@@ -179,3 +179,16 @@ describe("modern Supervisor conversation shell", () => {
     expect(home).not.toContain('<header className="flex items-center justify-between gap-3 px-1">');
   });
 });
+
+describe("decorative Supervisor landing", () => {
+  it("reuses the existing cup without claiming work and confines the glow to the empty transcript", () => {
+    const source = readFileSync("components/home/SupervisorChatComposer.tsx", "utf8");
+    const css = readFileSync("app/globals.css", "utf8");
+    expect(source).toContain('!hasChatMessages&&startReady&&!threadUnavailable&&<div className="supervisor-landing"');
+    expect(source).toContain('<CafeActivity brewing={false}/>');
+    expect(css).toContain(".supervisor-shell:has(.supervisor-landing)::before");
+    expect(css).toContain("pointer-events: none");
+    expect(css).toMatch(/@media \(prefers-reduced-motion: reduce\)\s*\{\s*\.supervisor-shell:has\(\.supervisor-landing\)::before/);
+    expect(source).toContain("grid-cols-[3rem_minmax(0,1fr)_3rem_3rem]");
+  });
+});

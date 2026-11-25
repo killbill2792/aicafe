@@ -1272,7 +1272,10 @@ export default function SupervisorChatComposer({
       onScroll={onTranscriptScroll} role="log" aria-live="off" aria-label={copy.threads} tabIndex={0}>
       <div ref={messageContent} className="mx-auto flex min-h-full w-full max-w-[46rem] min-w-0 flex-col items-stretch justify-start gap-5">
       {workNotice&&<p role="status" className="text-sm text-ink-muted">{workNotice}</p>}
-      {!hasChatMessages&&startReady&&!threadUnavailable&&<SupervisorWelcome heading={copy.emptyHeading} intro={copy.emptyIntro}/>}
+      {!hasChatMessages&&startReady&&!threadUnavailable&&<div className="supervisor-landing">
+        <div className="supervisor-landing-cup" aria-hidden="true"><CafeActivity brewing={false}/></div>
+        <SupervisorWelcome heading={copy.emptyHeading} intro={copy.emptyIntro}/>
+      </div>}
       {!hasChatMessages&&!enabled&&<p role="status" className="text-[1.0625rem] text-ink-muted">{copy.unavailable}</p>}
       {nextOffset !== null && <button type="button" onClick={() => void loadOlder()} disabled={loading||offline}
         className="mx-auto flex min-h-12 items-center gap-2 rounded-xl px-4 text-[0.9375rem] font-semibold text-ink underline hover:bg-surface2">
@@ -1369,7 +1372,7 @@ export default function SupervisorChatComposer({
         copy={{en,es,ar}[locale].SupervisorExperiment}
         initialProposalId={initialProposalId} refreshVersion={messages.length} />
     </div>}
-    <div className="mx-auto mt-auto w-full max-w-[49rem] shrink-0 bg-surface px-2 pb-[max(0.5rem,env(safe-area-inset-bottom))] pt-1 sm:px-4">
+    <div className="supervisor-composer-tray mx-auto mt-auto w-full max-w-[49rem] shrink-0 bg-surface px-2 pb-[max(0.5rem,env(safe-area-inset-bottom))] pt-1 sm:px-4">
       {attachments.length > 0 && <div className="mb-2 flex flex-wrap gap-2" aria-label={copy.addAttachment}>
         {attachments.map(file=><div key={file.id}
           className="inline-flex max-w-full min-h-10 items-center gap-1 rounded-xl bg-surface ps-3 text-[0.875rem] font-semibold text-ink">
@@ -1415,7 +1418,7 @@ export default function SupervisorChatComposer({
         <button type="button" disabled={offline} className="flex min-h-12 flex-1 items-center gap-2 rounded-lg px-3 text-start hover:bg-surface2 disabled:opacity-50" onClick={()=>pickAttachment(true)}><Camera size={18} aria-hidden="true"/>{en.SupervisorExperience.takePhoto}</button>
       </div>}
       <form onSubmit={(event) => { event.preventDefault(); void sendText(draft); }}
-        className="glass grid grid-cols-[48px_minmax(0,1fr)_48px_48px] items-end gap-1 rounded-[26px] p-1 focus-within:border-accent">
+        className="glass grid grid-cols-[3rem_minmax(0,1fr)_3rem_3rem] items-end gap-1 rounded-[26px] p-1 focus-within:border-accent">
         <input ref={filePicker} type="file" className="sr-only" tabIndex={-1} aria-hidden="true"
           accept=".txt,.csv,.xlsx,.pdf,.jpg,.jpeg,.png,.webp,text/plain,text/csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/pdf,image/jpeg,image/png,image/webp"
           onChange={(event) => void attach(event)} />

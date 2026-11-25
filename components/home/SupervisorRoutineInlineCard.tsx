@@ -59,9 +59,9 @@ function RoutineDraft({block,threadId,disabled}:{block:unknown;threadId?:string;
     <p className="flex items-center gap-2 text-[0.875rem] text-ink-muted"><Clock3 size={16} className="shrink-0" aria-hidden="true"/>{copy.draftTitle}</p>
     <p className="mt-1 break-words text-[1.0625rem] font-medium text-ink">{d.title}</p>
     <p className="text-[0.875rem] text-ink-muted">{when} · {d.localTime}</p>
-    <div className="mt-3 flex gap-2">
+    <div className="mt-3 flex flex-wrap gap-2">
       <button type="button" onClick={()=>void save()} disabled={busy||disabled||!threadId}
-        className="min-h-11 flex-1 rounded-full bg-accent px-4 text-[0.9375rem] font-medium text-on-accent disabled:opacity-50">{copy.save}</button>
+        className="min-h-11 max-w-full rounded-full bg-accent px-4 text-[0.9375rem] font-medium text-on-accent disabled:opacity-50">{copy.save}</button>
       <button type="button" onClick={()=>setDismissed(true)} disabled={busy}
         className="min-h-11 rounded-full px-4 text-[0.9375rem] text-ink-muted hover:bg-surface2">{copy.notNow}</button>
     </div>
