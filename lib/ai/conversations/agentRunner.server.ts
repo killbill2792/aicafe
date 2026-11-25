@@ -938,7 +938,8 @@ export async function runOneTurn(p: TurnParams): Promise<{ replyId: string; repl
         if (job && jobs && isJobStepAgent(agentId)) steps = steps.then(() => p.recordDurableStep
           ?p.recordDurableStep({tool:name,agent:agentId}):jobs.recordAgentJobStep(job.id, { tool: name, agent: agentId }));
       },
-      onDelta: delta => emit("delta", { text: delta }) }) : await runAgentTurn({ ownerText: p.ownerText, ownerImages:selected.images,
+      onDelta: delta => emit("delta", { text: delta }),
+      onReset: discardChars => emit("reset", { discardChars }) }) : await runAgentTurn({ ownerText: p.ownerText, ownerImages:selected.images,
        ownerPdfs:selected.pdfs,ownerEvidence:selected.evidence,
        history:[...history,...(pendingStaffQuestionReadUnavailable?[{role:"assistant" as const,
          content:"The pending employee-question status is temporarily unavailable. Do not claim an owner reply was recorded or that a staff question was resolved; explain the uncertainty and ask the owner to retry."}]:[]),

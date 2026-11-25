@@ -13,7 +13,7 @@ const CUSTOMERS={loyal:"cust-ana-ruiz",lapsed:"cust-ben-carter"};
 
 const fail=reason=>{throw Error("sql_research_live:"+reason);};
 const rows=async(db,sql,args=[])=>(await db.query(sql,args)).rows;
-const SCENARIOS=new Set(["business","profit","staffing","attention","pricing","brief","customers"].map(x=>"sql-research-"+x));
+const SCENARIOS=new Set(["business","profit","staffing","attention","pricing","brief","customers","presentation"].map(x=>"sql-research-"+x));
 
 /** Does the text state this amount (cents) in major units, with or without decimals? */
 export function mentionsAmount(text,cents){
@@ -52,7 +52,8 @@ async function oracle(db,cafe,other){
   const [weakest]=await rows(db,"select business_date::text as day, sum(net_sales_cents)::bigint cents from public.orders where business_id=$1 and "+window+
     " group by 1 order by 2 asc limit 1",[cafe.businessId,start,end]);
   const [endDay]=await rows(db,"select sum(net_sales_cents)::bigint cents from public.orders where business_id=$1 and business_date=$2::date",[cafe.businessId,end]);
-  return {start,end,sales,otherSales,items,weakest,endDay};
+  const daily=await rows(db,"select business_date::text as day,sum(net_sales_cents)::bigint cents from public.orders where business_id=$1 and "+window+" group by 1 order by 1",[cafe.businessId,start,end]);
+  return {start,end,sales,otherSales,items,weakest,endDay,daily};
 }
 /** Synthetic customer IDs on this café's orders (disposable DB): one loyal regular, one regular who
  * stopped coming 8 days before the end of the window, and occasional guests. */
@@ -78,6 +79,7 @@ function questionsFor(id,o,alerts){
   const said=(t,name)=>t.toLowerCase().replace(/[\s_]+/g,"-").includes(name.replace("cust-",""));
   const period=o.start+" to "+o.end;
   const q={
+    "sql-research-presentation":{q:"Show me the pattern of daily net sales from "+period+" and the total.",hard:t=>({total:mentionsAmount(t,o.sales.cents)})},
     "sql-research-business":{q:"How is my business doing over the last two weeks ("+period+"), and what should I focus on this week?",
       hard:t=>({...deep(t),netSalesStated:mentionsAmount(t,o.sales.cents),noOtherCafe:!mentionsAmount(t,o.otherSales.cents)})},
     "sql-research-profit":{q:"Am I making money? From "+period+", where is my money going, and which 3 changes are worth the most?",
@@ -143,6 +145,7 @@ async function main(){
       // An honest "the query failed" answer is a failure of the pathway, never a pass.
       const hard={completed:complete,noDataFailure:!/query (?:is )?(?:failing|returning an error)|couldn[’']t retrieve|can[’']t (?:retrieve|verify)|not a function/i.test(text),
         ...(complete?item.hard(text):{})};
+      if(id==="sql-research-presentation")hard.exactVisual=(reply?.structured_content??[]).some(b=>b.type==="rich_presentation"&&b.panels?.some(p=>p.source==="sql_research"&&["line","bar"].includes(p.kind)&&p.unit==="cents"&&p.currency===cafe.currency&&p.points.length===o.daily.length&&o.daily.every(d=>p.points.some(v=>v.label===d.day&&v.value===Number(d.cents)))));
       if("usedSqlMoreThanOnce" in hard)hard.usedSqlMoreThanOnce=turn.names.filter(n=>n==="run_sql").length>=2;
       const soft=complete&&item.soft?item.soft(text):{};
       const passed=Object.values(hard).every(Boolean);hardFailures+=passed?0:1;

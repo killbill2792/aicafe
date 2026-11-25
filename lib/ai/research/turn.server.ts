@@ -6,6 +6,7 @@ import {executeAgentTool,isRepeatSafeOwnerTool,observeDurableToolEffect,type Age
 import {safeToolError} from "@/lib/ai/agent/toolErrors";
 import type {OwnerRunCheckpoint} from "@/lib/ai/supervisor/runs/contracts";
 import {unsupportedNumbers} from "./verify";
+import {splitResearchPresentation,SQL_PRESENTATION_HINT} from "./presentation";
 import {executeResearchTool,researchToolDefinitions,type ResearchScope} from "./tools.server";
 
 /** Server switch, default OFF. When ON, owner chat uses ONLY describe_database, run_sql and calculate. */
@@ -71,6 +72,7 @@ export async function runResearchTurn(args:{
   provider?:AgentProvider;
   now?:()=>number;
   onDelta?:(delta:string)=>void;
+  onReset?:(discardChars:number)=>void;
   onTool?:(name:string,agentId:string)=>void;
   onAuditStep?:(step:AgentAuditStep)=>void;
   beforeProviderRequest?:()=>Promise<void>;
@@ -87,8 +89,9 @@ export async function runResearchTurn(args:{
   // context, then history and the question; every later item is appended, never edited or shortened.
   // The owner-approved local acceptance broker only accepts top-level instructions and no reasoning replay.
   const broker=process.env.AI_CAFE_LIVE_ACCEPTANCE==="OWNER_APPROVED_LOCAL_ONLY"&&process.env.AICAFE_SHARED_LUNA_CANDIDATE==="1";
+  const instructions=RESEARCH_INSTRUCTIONS+(args.actions?" "+SQL_PRESENTATION_HINT:"");
   const input:unknown[]=[
-    ...(broker?[]:[{role:"developer",content:RESEARCH_INSTRUCTIONS}]),
+    ...(broker?[]:[{role:"developer",content:instructions}]),
     {role:"developer",content:args.cafeContext},
     ...(continuation?[{role:"developer",content:continuation}]:[]),
     ...(args.history??[]),
@@ -104,38 +107,68 @@ export async function runResearchTurn(args:{
   const privateValues=new Set<string>();
   /** Everything retrieved or calculated this turn; the answer's figures are checked against it. */
   const evidence:string[]=[];
+  const queries=new Map<string,Record<string,unknown>>();
+  let summary="";
+  const presentations:AgentToolResult[]=[];
   let text="",endReason:EndReason="complete";
+  const appendText=(part:string,continuing=false)=>{
+    if(!part)return;
+    const delta=(!continuing&&text?"\n\n":"")+part;
+    text+=delta;args.onDelta?.(delta);
+  };
+  const appendAnswer=(answer:string,delivered:string)=>{
+    const parsed=splitResearchPresentation(answer,queries,args.actions?.context);
+    if(parsed.text.startsWith(delivered))appendText(parsed.text.slice(delivered.length),Boolean(delivered));
+    else if(parsed.text)appendText(parsed.text);
+    if(!text&&parsed.presentation)appendText("Here are the results from the retrieved information.");
+    if(parsed.presentation)presentations.push({source:"response_presentation",period:null,missing:[],accepted:true,presentation:parsed.presentation});
+  };
 
   // Only an existing durable background run's own budget can end research early.
   const stop=()=>{
     const budget=currentWorkerBudget();
-    return budget?usageStopReason({elapsedMs:Math.max(0,now()-started),modelCalls:usage.modelCalls,
+    return budget?usageStopReason({elapsedMs:0,modelCalls:usage.modelCalls,
       toolCalls:usage.toolCalls,inputTokens:usage.inputTokens,outputTokens:usage.outputTokens},budget):null;
   };
 
   /** One Responses request through the same transport and paid-usage ledger as the legacy loop. */
-  const call=async(final:boolean):Promise<{calls:FunctionCall[];answer:string}>=>{
+  const call=async(final:boolean):Promise<{calls:FunctionCall[];answer:string;delivered:string}>=>{
     await args.beforeProviderRequest?.();
-    const params:Record<string,unknown>={model,...(broker?{instructions:RESEARCH_INSTRUCTIONS}:
+    const params:Record<string,unknown>={model,...(broker?{instructions}:
         {...(/^gpt-6/u.test(model)?{include:["reasoning.encrypted_content"],reasoning:{summary:"auto"}}:{}),prompt_cache_key:"supervisor-sql-research-v1"}),
       tools:[...researchToolDefinitions.filter(t=>(t.name!=="search_web"||args.webSearch)&&(!/_cafe_note$/u.test(t.name)||args.scope.notes)),...(args.actions?.definitions??[])],tool_choice:final?"none":"auto",stream:true,store:false,
       ...(outputCap(final)?{max_output_tokens:outputCap(final)}:{}),input};
     const startedCall=now();
     const checkpoint=args.checkpoint;
     if(checkpoint)await checkpoint.beginProvider();
-    let completed=false,answer="",thinking="";
+    const callTextStart=text.length;
+    let completed=false,answer="",thinking="",delivered="";
     const output:unknown[]=[],calls:FunctionCall[]=[];
     try{
       const reservation=await reserveDurableProviderRequest(params);
       reservation?.launched();usage.modelCalls++;
       const controller=new AbortController();
-      {
+      const remaining=currentWorkerBudget()?.maxElapsedMs;
+      const timer=remaining===undefined?undefined:setTimeout(()=>controller.abort(),remaining);
+      try{
         for await(const event of provider(params,controller.signal) as AsyncIterable<Event>){
-          if(event.type==="response.output_text.delta"&&typeof event.delta==="string")answer+=event.delta;
-          if(event.type==="response.reasoning_summary_part.added")thinking="";
+          if(event.type==="response.output_text.delta"&&typeof event.delta==="string"){
+            answer+=event.delta;
+            // Deliver completed natural paragraphs without exposing an unfinished
+            // presentation selection. Recheck the existing scoped evidence first.
+            const fence=answer.search(/^[ \t]*\x60{3}cafe-ui(?:[ \t]|\r?$)/mu);
+            const prose=fence<0?answer:answer.slice(0,fence);
+            const boundary=prose.lastIndexOf("\n\n");
+            const prefix=boundary<0?"":prose.slice(0,boundary).trim();
+            if(prefix.length>delivered.length&&prefix.startsWith(delivered)){
+              await args.beforeAcceptResult?.();
+              appendText(prefix.slice(delivered.length),Boolean(delivered));delivered=prefix;
+            }
+          }
+          if(event.type==="response.reasoning_summary_part.added"){if(thinking)summary+=(summary?"\n\n":"")+thinking;thinking="";}
           if(event.type==="response.reasoning_summary_text.delta"&&typeof event.delta==="string"){
             thinking+=event.delta;
-            try{args.onThinking?.(thinking.replace(/\*\*/gu,""));}catch{/* display only */}
+            try{args.onThinking?.([summary,thinking].filter(Boolean).join("\n\n"));}catch{/* display only */}
           }
           if(event.type==="response.output_item.done"&&event.item&&typeof event.item==="object"){
             const item=event.item as Record<string,unknown>;
@@ -156,10 +189,19 @@ export async function runResearchTurn(args:{
           if(event.type==="response.failed"||event.type==="response.incomplete"||event.type==="error")
             throw new Error("provider_error");
         }
-      }
+      }finally{if(timer!==undefined)clearTimeout(timer);}
       if(!completed)throw new Error("provider_error");
+      await args.beforeAcceptResult?.();
       if(checkpoint)await checkpoint.endProvider(true);
+      if(thinking)summary+=(summary?"\n\n":"")+thinking;
     }catch(error){
+      // Only this failed response is incomplete. Preserve earlier successful
+      // paragraphs and remove the exact streamed suffix (including its separator).
+      const discardChars=text.length-callTextStart;
+      if(discardChars>0){
+        text=text.slice(0,callTextStart);
+        args.onReset?.(discardChars);
+      }
       if(checkpoint)await checkpoint.endProvider(false).catch(()=>undefined);
       throw error;
     }finally{
@@ -175,7 +217,7 @@ export async function runResearchTurn(args:{
       else if(row.type==="function_call")input.push({type:"function_call",name:row.name,call_id:row.call_id,arguments:row.arguments});
       else if(row.type==="message")input.push({type:"message",role:"assistant",content:[{type:"output_text",text:answer,annotations:[]}]});
     }
-    return {calls,answer};
+    return {calls,answer,delivered};
   };
 
   /** Same durable checkpoint and effect observation as the legacy loop; errors come back to the model as data. */
@@ -202,16 +244,17 @@ export async function runResearchTurn(args:{
   };
 
   try{
-    for(;;){
+    research:for(;;){
       const reason=stop();
-      const {calls,answer}=await call(reason!==null);
+      if(reason==="timeout"){endReason=reason;break;}
+      const {calls,answer,delivered}=await call(reason!==null);
+      if(answer.trim())appendAnswer(answer,delivered);
       if(!calls.length||reason!==null){
-        await args.beforeAcceptResult?.();
-        text=answer;
         if(reason)endReason=reason;
         break;
       }
       for(const fc of calls){
+        if(stop()==="timeout"){endReason="timeout";break research;}
         args.onTool?.(fc.name,"alex");
         const toolStarted=now();
         usage.toolCalls++;
@@ -222,28 +265,33 @@ export async function runResearchTurn(args:{
           failed=Boolean(record.error);
           input.push({type:"function_call_output",call_id:fc.call_id,output:JSON.stringify(record)});
         }else{
+          const readOnly=["run_sql","describe_database","calculate","search_web"].includes(fc.name);
+          if(readOnly&&args.checkpoint)await args.checkpoint.beginTool(fc.name,fc.arguments,true);
           const result=await executeResearchTool({...args.scope,webSearch:args.webSearch??args.scope.webSearch,privateValues},fc.name,fc.arguments);
-          input.push({type:"function_call_output",call_id:fc.call_id,output:JSON.stringify(result)});
+          await args.beforeAcceptResult?.();
+          const ref=["run_sql","calculate"].includes(fc.name)&&result.ok===true?"q"+(queries.size+1):null;
+          if(ref)queries.set(ref,fc.name==="calculate"?{...result,calculationInput:JSON.parse(fc.arguments)}:result);
+          input.push({type:"function_call_output",call_id:fc.call_id,output:JSON.stringify(ref?{...result,presentationRef:ref}:result)});
           failed=result.ok===false;
           if(!failed)evidence.push(JSON.stringify(result));
           record={source:"sql_research",period:null,missing:[],agentId:"alex",tool:fc.name,...(failed?{error:"research_tool_error"}:{})};
+          if(readOnly&&args.checkpoint)await args.checkpoint.endTool({...record,result});
         }
         invocations.push({name:fc.name,result:record});
         audit({kind:"tool_call",toolName:fc.name,inputSummary:"Research tool",outputSummary:failed?"Error returned to model":"Completed",
           durationMs:Math.max(0,now()-toolStarted),...(failed?{error:"research_tool_error"}:{})});
       }
     }
-    if(text)args.onDelta?.(text);
+    if(!text&&endReason==="complete")throw Error("provider_empty_answer");
   }catch(error){
     if(error instanceof Error&&/durable|checkpoint|reservation/u.test(error.message))throw error;
-    endReason="provider_error";
+    endReason=stop()==="timeout"?"timeout":"provider_error";
     // Never leave the owner with nothing after real research: answer from the evidence gathered so far.
-    if(invocations.length&&!text){
+    if(invocations.length&&!args.checkpoint){
       try{
         input.push({role:"developer",content:"A research step failed. Answer the owner now with what you found, and say what is still unknown."});
-        const {answer}=await call(true);
-        await args.beforeAcceptResult?.();
-        if(answer.trim()){text=answer;args.onDelta?.(text);}
+        const {answer,delivered}=await call(true);
+        if(answer.trim())appendAnswer(answer,delivered);
       }catch{/* the owner gets the existing retryable error */}
     }
   }
@@ -252,6 +300,6 @@ export async function runResearchTurn(args:{
   return {text,endReason,status:{status:"complete",missing:[]},
     // Same promise as the standard path: a figure with no source in this turn's evidence is shown as unverified.
     unverified:text?unsupportedNumbers(text,[args.ownerText,args.cafeContext,...(args.history??[]).map(h=>h.content),...evidence]):[],
-    results:invocations.map(i=>i.result),toolInvocations:invocations,tools,
+    results:[...(await args.checkpoint?.restoredResults?.()??[]),...invocations.map(i=>i.result),...presentations],toolInvocations:invocations,tools,
     agentIds:tools.length?["alex"]:[],usage};
 }

@@ -14,6 +14,7 @@ import { activeOwnerQuestionMessageId, clarifyCardState, beginOptimisticOwner, s
   hasInsertedHistoryPage, isTranscriptNearBottom, transcriptScrollTarget, isDuplicateLinkedExperimentCard, mergeLatestConversationPage, prependConversationPage, loadedSavedReports, conversationLocation } from "./supervisorChatBehavior";
 import { ChatMarkdown, SourceLegend } from "./ChatMarkdown";
 import dynamic from "next/dynamic";
+import PresentationBoundary from "./PresentationBoundary";
 const SupervisorRichPresentation=dynamic(()=>import("./SupervisorRichPresentation"));
 import FactSummary from "./FactSummary";
 import SupervisorRoutineInlineCard from "./SupervisorRoutineInlineCard";
@@ -194,7 +195,7 @@ function SupervisorMessage({ message, copy, locale, cafeCurrency, storedFiles, o
           return <ChatMarkdown key={i} text={group.text} locale={locale} unverified={joinedAgentTextSpans(group,rawSpans)} labels={provenanceLabels} showLegend={false}/>;
         if(isDuplicateLinkedExperimentCard(group.block,message.threadId,linkedThreadId,linkedProposalId))
           return null;
-        if(record(group.block)&&group.block.type==="rich_presentation")return <SupervisorRichPresentation key={i} block={group.block} message={message} attachments={storedFiles} locale={locale} onSuggest={onSuggest} disabled={suggestionsDisabled}/>;
+        if(record(group.block)&&group.block.type==="rich_presentation")return <PresentationBoundary key={i}><SupervisorRichPresentation block={group.block} message={message} attachments={storedFiles} locale={locale} onSuggest={onSuggest} disabled={suggestionsDisabled}/></PresentationBoundary>;
         if(record(group.block)&&group.block.type==="how"&&Array.isArray(group.block.lines)){
           const lines=group.block.lines.slice(0,20).flatMap(line=>{
             const parsed=explainLineSchema.safeParse(line);
@@ -823,7 +824,7 @@ export default function SupervisorChatComposer({
               }
             } else if (type === "thinking" && typeof event.text === "string") {
               // Luna's own running summary of what it is working out.
-              setLiveNote(event.text.trim().slice(-400));
+              setLiveNote(event.text);
             } else if (type === "followup") {
               setLiveNote(liveCopy.followUpRead);
             } else if (type === "delta" && typeof event.text === "string") {

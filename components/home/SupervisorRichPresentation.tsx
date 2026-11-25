@@ -1,6 +1,7 @@
 "use client";
 import {createContext,useContext,useId,useMemo,useState} from "react";
 import dynamic from "next/dynamic";
+import PresentationBoundary from "./PresentationBoundary";
 import {JSONUIProvider,Renderer,type ComponentRegistry} from "@json-render/react";
 import {Paperclip} from "lucide-react";
 import type {StoredAttachment} from "@/lib/ai/conversations/attachments";
@@ -49,9 +50,9 @@ function Panel({panel,locale}:{panel:PresentationPanel;locale:string}){
   <figcaption className="text-[1.0625rem] font-medium leading-snug text-ink">{panel.title}</figcaption>
   {panel.coverage&&<p id={coverageId} className="text-[0.8125rem] text-ink-muted">{panel.coverage==="partial"?copy.partial:copy.estimate}</p>}
   {panel.kind==="metric"?<p className="break-words font-headline text-[1.875rem] font-medium leading-tight tracking-tight tabular-nums text-ink">{format(panel.points[0].value)}</p>:
-   (panel.kind==="table"||panel.kind==="ranked_table")?table:<><Chart panel={panel} format={format}/>
+   (panel.kind==="table"||panel.kind==="ranked_table")?table:<><PresentationBoundary fallback={table}><Chart panel={panel} format={format}/></PresentationBoundary>
     <details className="text-ink"><summary aria-label={detailsLabel+": "+panel.title} className="flex min-h-12 cursor-pointer items-center text-[0.9375rem] text-accent-text underline underline-offset-4 focus-visible:outline focus-visible:outline-2 focus-visible:outline-ink">{detailsLabel}</summary>{table}</details></>}
-  <p id={evidenceId} className="break-words text-[0.8125rem] leading-relaxed text-ink-muted">{panel.from} – {panel.to} · {panel.sourceDetail??(panel.source==="daily_rollups"?"Sales records":panel.source==="item_sales"?"Item sales":panel.source==="canonical_data"?panel.sourceDetail??"Canonical records":panel.source==="expenses"?"Recorded expenses":panel.source==="business_costs"?"Business costs":panel.source==="product_costs"?"Product economics":panel.source==="supplier_purchase_plan"?"Supplier quotes":panel.source==="purchase_orders"?"Purchase orders":panel.source==="inventory"?"Inventory":panel.source==="menu_items"?"Menu":"Profitability")} · {copy.snapshot} {panel.asOf}</p>
+  <p id={evidenceId} className="break-words text-[0.8125rem] leading-relaxed text-ink-muted">{panel.source!=="sql_research"&&<>{panel.from} – {panel.to} · </>}{panel.sourceDetail??(panel.source==="daily_rollups"?"Sales records":panel.source==="item_sales"?"Item sales":panel.source==="canonical_data"?panel.sourceDetail??"Canonical records":panel.source==="expenses"?"Recorded expenses":panel.source==="business_costs"?"Business costs":panel.source==="product_costs"?"Product economics":panel.source==="supplier_purchase_plan"?"Supplier quotes":panel.source==="purchase_orders"?"Purchase orders":panel.source==="inventory"?"Inventory":panel.source==="menu_items"?"Menu":"Profitability")} · {copy.snapshot} {panel.asOf}</p>
  </figure>;
 }
 function ComparisonView({panels,locale}:{panels:PresentationPanel[];locale:string}){
@@ -64,7 +65,7 @@ function ComparisonView({panels,locale}:{panels:PresentationPanel[];locale:strin
  const fmt=new Intl.NumberFormat(locale,["cents","cents/hour"].includes(first.unit)&&first.currency?{style:"currency",currency:first.currency,minimumFractionDigits:2,maximumFractionDigits:2}:{maximumFractionDigits:20});
  const format=(v:number)=>fmt.format(["cents","cents/hour"].includes(first.unit)?v/100:v);
  return <figure data-testid="supervisor-comparison" className="min-w-0 space-y-2 py-2">
-  <ComparisonChart series={series} labels={labels} line={line} format={format}/>
+  <PresentationBoundary><ComparisonChart series={series} labels={labels} line={line} format={format}/></PresentationBoundary>
   <div className="flex flex-wrap gap-3 text-[0.8125rem] text-ink-muted">{series.map(s=><span key={s.id}>{s.label}</span>)}</div>
   <div role="region" className="overflow-x-auto focus-visible:outline focus-visible:outline-2 focus-visible:outline-ink" tabIndex={0} aria-label={copy.comparisonValues}>
    <table aria-describedby={evidenceId} className="w-full text-[0.9375rem] tabular-nums"><caption className="sr-only">{copy.comparisonValues}</caption><thead><tr><th scope="col" className="py-2 text-start">{first.currency??first.measurement??first.unit}</th>{series.map(s=><th key={s.id} scope="col" className="px-2 text-end">{s.label}</th>)}</tr></thead>
@@ -126,7 +127,7 @@ function RecordTableView({table,locale}:{table:RecordTable;locale:string}){
  };
  return <figure data-testid="supervisor-record-table" className="min-w-0 space-y-2 py-2">
   <figcaption className="font-medium text-ink">{table.title}</figcaption>
-  <p id={evidenceId} className="break-words text-[0.8125rem] text-ink-muted">{table.view} · {table.from} – {table.to} · {copy.snapshot} {table.asOf}{table.coverage==="partial"?" · "+copy.partial:""}</p>
+  <p id={evidenceId} className="break-words text-[0.8125rem] text-ink-muted">{table.view==="tool_sql_research"?"SQL query":table.view} · {table.view!=="tool_sql_research"&&<>{table.from} – {table.to} · </>}{copy.snapshot} {table.asOf}{table.coverage==="partial"?" · "+copy.partial:""}</p>
   <p id={scopeId} className="break-words text-[0.8125rem] text-ink-muted">{table.scope}</p>
   <div role="region" tabIndex={0} aria-label={table.title} className="max-w-full overflow-x-auto overscroll-x-contain focus-visible:outline focus-visible:outline-2 focus-visible:outline-ink">
    <table aria-describedby={evidenceId+" "+scopeId} className="w-full text-[0.9375rem] tabular-nums"><caption className="sr-only">{table.title}</caption>
@@ -229,7 +230,7 @@ export default function SupervisorRichPresentation({block,locale,onSuggest,disab
  if(!parsed.success)return null;
  const data=parsed.data,composed=Boolean(data.groups?.some(g=>g.id));
  return <PresentationControls.Provider value={{data,message,attachments,onSuggest,disabled}}><section className="min-w-0 space-y-3" data-testid="supervisor-rich-presentation">
-  {(presentationLeaves(data).length>0||composed)&&<JSONUIProvider registry={registry}><Renderer spec={presentationSpec(data)} registry={registry}/></JSONUIProvider>}
+  {(presentationLeaves(data).length>0||composed)&&<PresentationBoundary><JSONUIProvider registry={registry}><Renderer spec={presentationSpec(data)} registry={registry}/></JSONUIProvider></PresentationBoundary>}
   {!composed&&<><ControlView kind="files"/><ControlView kind="report"/><ControlView kind="suggestions"/></>}
  </section></PresentationControls.Provider>;
 }

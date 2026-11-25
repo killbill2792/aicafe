@@ -374,3 +374,16 @@ describe("adaptive Markdown headings",()=>{
   expect(html).not.toContain("<script>");
  });
 });
+
+
+it("wraps two-column financial tables and preserves nested checklist formatting",()=>{
+ const html=renderToStaticMarkup(createElement(ChatMarkdown,{text:"| Expense | Amount |\n| --- | ---: |\n| Estimated ingredient and recurring costs | $123.45 |\n\n- [x] Verified\n  - [ ] Confirm payroll\n    Supporting detail\n- Finish"}));
+ expect(html).toContain("table-fixed");
+ expect(html).not.toContain("min-w-max");
+ expect(html).toContain("overflow-wrap:anywhere");
+ expect(html.match(/<ul/g)).toHaveLength(2);
+ expect(html.match(/type=\"checkbox\"/g)).toHaveLength(2);
+ expect(html).toContain("Supporting detail");
+ expect(html).toContain("$123.45");
+ expect(html).not.toContain("[x]");
+});

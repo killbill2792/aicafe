@@ -135,7 +135,7 @@ function SourceUnderline({tone,label,children}:{tone:keyof typeof tones;label:st
   </>;
 }
 type SourceLine = { text: string; start: number };
-type ListMarker = { ordered: boolean; number: number; content: string; contentStart: number };
+type ListMarker = { ordered: boolean; number: number; content: string; contentStart: number; indent:number; checked?:boolean };
 
 function sourceLines(source: string): SourceLine[] {
   let offset = 0;
@@ -148,18 +148,19 @@ function sourceLines(source: string): SourceLine[] {
 }
 
 function listMarker(line: SourceLine): ListMarker | null {
-  // Only top-level list markers are supported. Indentation is limited to three
-  // spaces to avoid treating indented code as a list.
-  const number = /^ {0,3}(\d+)[.)] +(.+)$/.exec(line.text);
+  const indent=line.text.match(/^[ \t]*/u)?.[0].replaceAll("\t","    ").length??0;
+  const number = /^[ \t]*(\d+)[.)] +(.+)$/.exec(line.text);
   if (number) return {
-    ordered: true, number: Number(number[1]), content: number[2],
+    ordered: true, indent, number: Number(number[1]), content: number[2],
     contentStart: line.start + number[0].length - number[2].length,
   };
-  const bullet = /^ {0,3}[-*+] +(.+)$/.exec(line.text);
-  if (bullet) return {
-    ordered: false, number: 0, content: bullet[1],
-    contentStart: line.start + bullet[0].length - bullet[1].length,
-  };
+  const bullet = /^[ \t]*[-*+] +(.+)$/.exec(line.text);
+  if (bullet){
+    const task=/^\[([ xX])\] +(.+)$/u.exec(bullet[1]);
+    const content=task?task[2]:bullet[1];
+    return {ordered:false,indent,number:0,content,contentStart:line.start+bullet[0].length-content.length,
+      ...(task?{checked:task[1]!==" "}:{})};
+  }
   return null;
 }
 
@@ -343,43 +344,49 @@ export function ChatMarkdown({text,unverified=[],label,labels,locale="en",showLe
       const alignment=(i:number)=>table.align[i]==="center"?"text-center":table.align[i]==="end"?"text-end":"text-start";
       blocks.push(<div key={firstLine} role="region" aria-label="Response table" tabIndex={0}
         className="max-w-full overflow-x-auto rounded-lg border border-line focus-visible:outline focus-visible:outline-2 focus-visible:outline-ink">
-        <table dir={locale==="ar"?"rtl":"auto"} className="w-full min-w-max border-collapse text-[1.0625rem]">
+        <table dir={locale==="ar"?"rtl":"auto"} className={`w-full border-collapse text-[1.0625rem] ${table.head.length<=2?"table-fixed":"min-w-max"}`}>
          <caption className="sr-only">Response table</caption>
-         <thead><tr>{table.head.map((cell,i)=><th key={i} scope="col" className={`border-b border-line bg-surface2 px-3 py-2 font-semibold ${alignment(i)}`}>{inlineMarkdown(cell.text,cell.start,spans,copy,badged,locale)}</th>)}</tr></thead>
-         <tbody>{rows.map((cells,j)=><tr key={j}>{cells.map((cell,i)=><td key={i} className={`border-b border-line px-3 py-2 ${alignment(i)}`}>{inlineMarkdown(cell.text,cell.start,spans,copy,badged,locale)}</td>)}</tr>)}</tbody>
+         <thead><tr>{table.head.map((cell,i)=><th key={i} scope="col" className={`border-b border-line bg-surface2 px-3 py-2 font-semibold align-top whitespace-normal [overflow-wrap:anywhere] ${alignment(i)}`}>{inlineMarkdown(cell.text,cell.start,spans,copy,badged,locale)}</th>)}</tr></thead>
+         <tbody>{rows.map((cells,j)=><tr key={j}>{cells.map((cell,i)=><td key={i} className={`border-b border-line px-3 py-2 align-top whitespace-normal [overflow-wrap:anywhere] ${alignment(i)}`}>{inlineMarkdown(cell.text,cell.start,spans,copy,badged,locale)}</td>)}</tr>)}</tbody>
         </table>
       </div>);
       continue;
     }
     const first = listMarker(lines[index]);
     if (first) {
-      const ordered = first.ordered;
-      const firstNumber = first.number;
-      const entries: ReactNode[] = [];
-      const listStart = index;
-      while (index < lines.length) {
-        const marker = listMarker(lines[index]);
-        if (!marker || marker.ordered !== ordered) {
-          // Markdown allows blank lines between list items. Only consume them
-          // if the next nonblank line is another marker of this list type.
-          if (!lines[index].text.trim()) {
-            let lookahead = index;
-            while (lookahead < lines.length && !lines[lookahead].text.trim()) lookahead++;
-            const next = lookahead < lines.length ? listMarker(lines[lookahead]) : null;
-            if (next && next.ordered === ordered) { index = lookahead; continue; }
+      const readList=(start:number):{node:ReactNode;next:number}=>{
+        const initial=listMarker(lines[start])!;
+        const entries:ReactNode[]=[];
+        let cursor=start;
+        while(cursor<lines.length){
+          const marker=listMarker(lines[cursor]);
+          if(!marker||marker.indent!==initial.indent||marker.ordered!==initial.ordered)break;
+          const key=cursor++;
+          const item=inlineMarkdown(marker.content,marker.contentStart,spans,copy,badged,locale);
+          const children:ReactNode[]=[];
+          while(cursor<lines.length){
+            let next=cursor;
+            while(next<lines.length&&!lines[next].text.trim())next++;
+            if(next>=lines.length)break;
+            const sub=listMarker(lines[next]);
+            if(sub&&sub.indent>initial.indent){
+              const nested=readList(next);children.push(nested.node);cursor=nested.next;continue;
+            }
+            if(!sub&&next===cursor&&/^[ \t]+\S/u.test(lines[next].text)&&
+                (lines[next].text.match(/^[ \t]*/u)?.[0].length??0)>initial.indent&&!headingMarker(lines[next])){
+              const line=lines[next],part=line.text.trimStart();
+              children.push(<p key={next} className="whitespace-pre-wrap">{inlineMarkdown(part,line.start+line.text.length-part.length,spans,copy,badged,locale)}</p>);
+              cursor=next+1;continue;
+            }
+            if(sub&&sub.indent===initial.indent&&sub.ordered===initial.ordered)cursor=next;
+            break;
           }
-          break;
+          const checkbox=marker.checked===undefined?null:<input type="checkbox" checked={marker.checked} disabled aria-label={marker.content} className="me-2 align-middle accent-current"/>;
+          entries.push(<li key={key} value={marker.ordered?marker.number:undefined} className={marker.checked===undefined?"ps-1":"list-none ps-1"}>{checkbox}{item}{children}</li>);
         }
-        const item = inlineMarkdown(marker.content, marker.contentStart, spans, copy, badged,locale);
-        entries.push(ordered
-          ? <li key={index} value={marker.number} className="ps-1">{item}</li>
-          : <li key={index} className="ps-1">{item}</li>);
-        index++;
-      }
-      blocks.push(ordered
-        ? <ol key={listStart} start={firstNumber} className="list-decimal space-y-1 ps-6">{entries}</ol>
-        : <ul key={listStart} className="list-disc space-y-1 ps-6">{entries}</ul>);
-      continue;
+        return {node:initial.ordered?<ol key={start} start={initial.number} className="list-decimal space-y-1 ps-6">{entries}</ol>:<ul key={start} className="list-disc space-y-1 ps-6">{entries}</ul>,next:cursor};
+      };
+      const list=readList(index);blocks.push(list.node);index=list.next;continue;
     }
     const start = index;
     const rows: ReactNode[] = [];
