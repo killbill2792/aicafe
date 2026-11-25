@@ -17,6 +17,9 @@
 -- Errors are returned as data (message, detail, hint, position) so the model
 -- can correct its SQL. The platform's existing statement timeout still applies.
 
+set lock_timeout = '5s';
+set statement_timeout = '60s';
+
 -- 1. Café narrowing for the definer membership helpers. When the setting is
 --    unset (every existing code path) behaviour is unchanged.
 create or replace function public.is_member(target_business_id uuid)
@@ -63,7 +66,6 @@ $$;
 
 -- Policies that check memberships directly (not through a helper) read it
 -- under RLS, so one restrictive policy narrows them too.
-drop policy if exists "supervisor research cafe scope" on public.memberships;
 create policy "supervisor research cafe scope" on public.memberships
   as restrictive for select
   using (coalesce(nullif(current_setting('app.supervisor_research_business_id', true), ''),
