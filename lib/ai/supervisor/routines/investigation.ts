@@ -247,6 +247,9 @@ export function modelSelectedOwnerQuestion(report:string):string|null{
   if(question.length<12||question.length>200||!question.endsWith("?")||
     /[<>\x00-\x1f]/u.test(question)||/https?:\/\/|@\w+\.\w+/iu.test(question))
     return null;
+  // A filler question ("what additional information can you confirm?") names nothing the owner can answer.
+  if(/\b(additional|more|other|further)\s+(information|details|context|info)\b|\banything else\b|\bwhat else\b/iu.test(question))
+    return null;
   return question;
 }
 

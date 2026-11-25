@@ -1,11 +1,14 @@
 import {createHash} from "node:crypto";
 import type {PriorityDecision,PrioritySource} from "./contracts";
+import {isOwnerActionableAlert} from "@/lib/alerts/ownerActionable";
 
 /** Tasks already published by their authoritative notice writer are not fresh
  * priority evidence. Retain them in their original inbox; never duplicate
  * their owner notification through Task 7. */
 export const alreadyNotifiedTaskKinds=new Set([
   "priority_notice","commitment","event_plan","event_change","event_report",
+  // A dated report, never an incident to notify or investigate.
+  "daily_brief",
 ]);
 const volatile=new Set(["lastCheckedAt","last_checked_at","polledAt","polled_at",
   "seenAt","seen_at","updatedAt","updated_at","reconciledAt","reconciled_at"]);
@@ -83,15 +86,19 @@ export function rankPriority(source:PrioritySource,now:Date):PriorityDecision{
     ownerAction?"Owner task needs review":"Task response needs review";
   return {source,revisionHash,priority,reason,stableKey};
 }
+/** System conditions (reader outages, import lag, derived coverage) are never owner notices. */
+export function requiresOwnerAttention(source:PrioritySource):boolean{
+  return source.sourceType!=="alert"||isOwnerActionableAlert(source.kind,source.evidence);
+}
 export function choosePriorities(sources:readonly PrioritySource[],now:Date,limit=3,
   options?:{includeWatching?:boolean}):PriorityDecision[]{
-  const candidates=sources.filter(s=>
+  const candidates=sources.filter(s=>requiresOwnerAttention(s)&&(
     (s.sourceType==="alert"&&(s.status==="new"||s.status==="seen"))||
     (s.sourceType==="operating_task"&&!alreadyNotifiedTaskKinds.has(s.kind)&&
       (s.status==="needs_owner"||s.status==="needs_response"||
        (options?.includeWatching===true&&s.status==="watching")))||
     (s.sourceType==="supplier_po"&&s.status==="draft")||
-    (s.sourceType==="supplier_dispatch"&&s.status==="approved_for_ordering"))
+    (s.sourceType==="supplier_dispatch"&&s.status==="approved_for_ordering")))
     .map(s=>rankPriority(s,now));
   return candidates.sort((a,b)=>b.priority-a.priority||
     a.source.createdAt.localeCompare(b.source.createdAt)||

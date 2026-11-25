@@ -1,3 +1,4 @@
+import { isOwnerActionableAlert } from "@/lib/alerts/ownerActionable";
 import "server-only";
 import {getToastCheckEvidence} from "./getToastCheckEvidence";
 import { subDays } from "date-fns";
@@ -93,7 +94,7 @@ export async function getMoreBadgeInputs(userId: string | undefined): Promise<Mo
     db.from("recurring_costs")
       .select("id,category_code,label,amount_cents,frequency,due_day,is_estimate")
       .eq("business_id", businessId).is("active_to", null),
-    db.from("alerts").select("id", { head: true, count: "exact" })
+    db.from("alerts").select("id,kind,payload")
       .eq("business_id", businessId).in("status", ["new", "seen"]),
     membership.role === "owner" ? readToastState(businessId) : Promise.resolve(undefined),
   ]);
@@ -115,7 +116,7 @@ export async function getMoreBadgeInputs(userId: string | undefined): Promise<Mo
     }));
   }
   if (alerts.status === "fulfilled" && !alerts.value.error)
-    result.alertCount = alerts.value.count;
+    result.alertCount = (alerts.value.data ?? []).filter((row) => isOwnerActionableAlert(String(row.kind), row.payload)).length;
   if (toast.status === "fulfilled") result.toast = toast.value;
   return result;
 }

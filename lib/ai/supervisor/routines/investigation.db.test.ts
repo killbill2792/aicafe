@@ -164,13 +164,14 @@ describe("Task 15A migrated, agentic investigation SQL integration",()=>{
       expect(staleOwnerActions.rows).toEqual([{n:0}]);
       const resolution=await admin.query("select grounding->>'intent' intent from public.ai_messages where business_id=$1 and thread_id=$2 and grounding->>'intent'='priority_investigation_resolution'",
         [cafes[0],threads[0]]);
-      expect(resolution.rows).toEqual([{intent:"priority_investigation_resolution"}]);
+      // Closed silently: the owner was not waiting on a question, so no chat message.
+      expect(resolution.rows).toEqual([]);
       expect((await closingActor.query("select id from public.ai_messages where business_id=$1 and thread_id=$2",
         [cafes[0],threads[0]])).rows).toEqual([]);
       await closingActor.query("update public.alerts set status='dismissed' where business_id=$1 and id=$2",
         [cafes[0],alerts[0]]);
       expect((await admin.query("select count(*)::int n from public.ai_messages where business_id=$1 and thread_id=$2 and grounding->>'intent'='priority_investigation_resolution'",
-        [cafes[0],threads[0]])).rows).toEqual([{n:1}]);
+        [cafes[0],threads[0]])).rows).toEqual([{n:0}]);
       await admin.query("delete from public.memberships where business_id=$1 and user_id=$2",
         [cafes[0],owners[1]]);
       // Terminate the claimed second-café investigation by revoking membership.
@@ -235,15 +236,16 @@ describe("Task 15A migrated, agentic investigation SQL integration",()=>{
       expect(blocked.rows[0]).toMatchObject({phase:"blocked",last_error:"model_incomplete"});
       // pg returns bigint counters as strings. Check the exact numeric value.
       expect(Number(blocked.rows[0].failure_count)).toBe(3);
+      // A technical failure is kept on the row for the health check, never posted into the owner's chat.
       expect((await admin.query("select count(*)::int n from public.ai_messages where business_id=$1 and thread_id=$2 and grounding->>'intent'='priority_investigation_exception'",
-        [cafes[0],threads[0]])).rows[0].n).toBe(1);
+        [cafes[0],threads[0]])).rows[0].n).toBe(0);
       expect(await rpc(a,"supervisor_claim_investigation",[stamp(now,120)])).toBeNull();
       // The old six-hour paid retry loop must never revive unchanged
       // technical failures, even days after the first incident.
       expect(await rpc(a,"supervisor_claim_investigation",
         [stamp(now,500)])).toBeNull();
       expect((await admin.query("select count(*)::int n from public.ai_messages where business_id=$1 and thread_id=$2 and grounding->>'intent'='priority_investigation_exception'",
-        [cafes[0],threads[0]])).rows[0].n).toBe(1);
+        [cafes[0],threads[0]])).rows[0].n).toBe(0);
       // Material source revision, not an arbitrary retry of an uncertain effect,
       // safely reopens investigation with a fresh checkpoint and newer priority.
       expect(await rpc(a,"supervisor_enqueue_investigation",[
@@ -497,7 +499,7 @@ describe("Task 15A migrated, agentic investigation SQL integration",()=>{
         [business,taskId]);
       expect(closed.rows).toEqual([{phase:"resolved",last_error:"source_closed"}]);
       expect((await admin.query("select count(*)::int n from public.ai_messages where business_id=$1 and grounding->>'intent'='priority_investigation_resolution'",
-        [business])).rows[0].n).toBe(1);
+        [business])).rows[0].n).toBe(0);
       // Deterministic source recurrence may have EXACTLY the same hash.
       await admin.query("update public.operating_tasks set status='needs_owner' where business_id=$1 and id=$2",
         [business,taskId]);
@@ -548,8 +550,8 @@ describe("Task 15A migrated, agentic investigation SQL integration",()=>{
       const resolutionMessages=await admin.query(
         "select id from public.ai_messages where business_id=$1 and grounding->>'intent'='priority_investigation_resolution'",
         [business]);
-      expect(resolutionMessages.rows).toHaveLength(2);
-      expect(new Set(resolutionMessages.rows.map(row=>row.id)).size).toBe(2);
+      // Silent closure: no owner was waiting on a question, so no follow-up chat messages.
+      expect(resolutionMessages.rows).toHaveLength(0);
     }finally{
       await service?.end();
       await admin.query("delete from public.businesses where id=$1",[business]);
@@ -624,11 +626,11 @@ describe("Task 15A migrated, agentic investigation SQL integration",()=>{
         [business,unrelated])).rows).toEqual([{status:"needs_owner"}]);
       const resolution=await admin.query("select count(*)::int n from public.ai_messages where business_id=$1 and grounding->>'intent'='priority_investigation_resolution'",
         [business]);
-      expect(resolution.rows).toEqual([{n:1}]);
+      expect(resolution.rows).toEqual([{n:0}]);
       await admin.query("update public.alerts set status='dismissed' where business_id=$1 and id=$2",
         [business,alert]);
       expect((await admin.query("select count(*)::int n from public.ai_messages where business_id=$1 and grounding->>'intent'='priority_investigation_resolution'",
-        [business])).rows).toEqual([{n:1}]);
+        [business])).rows).toEqual([{n:0}]);
 
       // Reopening with new source evidence creates a fresh episode and one
       // actionable report. A later material revision supersedes that report
