@@ -1,6 +1,6 @@
 import {beforeEach,describe,expect,it,vi} from "vitest";
 import {createWebSearch,extractWebSearchAnswer} from "../webSearch.server";
-import {ownerPublicPage,ownerPublicSearchTerms,projectOwnerPublicQuery,publicPageInput} from "./webSearch";
+import {ownerPublicSearchTerms,projectOwnerPublicQuery} from "./webSearch";
 import {agentToolDefinitions,executeAgentTool,type AgentToolContext} from "./index";
 
 const input={asOf:"2026-10-30",timezone:"America/Chicago",locale:"en"} as AgentToolContext;
@@ -10,44 +10,7 @@ const message=(text:string,annotations:unknown[]=[])=>
     {type:"message",content:[{type:"output_text",text,annotations}]}]});
 const cited={type:"url_citation",title:"Official parade route",url:"https://city.example.org/parade"};
 
-describe("exact page inspection",()=>{
- it("does not send unsupported URL schema format to OpenAI but still validates every URL at runtime",async()=>{
-   const def=agentToolDefinitions.find(t=>t.name==="inspect_public_page");
-   expect(def).toMatchObject({name:"inspect_public_page",type:"function",strict:true,
-     parameters:{type:"object",additionalProperties:false,required:["url"],
-       properties:{url:{type:"string",maxLength:500}}}});
-   const json=JSON.stringify(def?.parameters);
-   expect(json).not.toContain('"format":"uri"');
-   expect(() => publicPageInput.parse({url:"not-a-url"})).toThrow();
-   expect(() => publicPageInput.parse({url:"https://example.org",extra:"unsafe"})).toThrow();
-   expect(() => publicPageInput.parse({url:"https://example.org/"+"a".repeat(501)})).toThrow();
-   const webSearch=vi.fn();
-   const ctx={...input,ownerText:"Please read https://supplier.example.com/catalog",webSearch};
-   await expect(executeAgentTool("inspect_public_page",{url:"not-a-url"},ctx)).rejects.toThrow();
-   await expect(executeAgentTool("inspect_public_page",{url:"http://supplier.example.com/catalog"},ctx))
-     .resolves.toMatchObject({missing:["owner_public_page_required"]});
-   expect(webSearch).not.toHaveBeenCalled();
- });
- it("never opens model-suggested or private URLs",()=>{
-  expect(ownerPublicPage("http://supplier.example.com","http://supplier.example.com")).toBeNull();
-  expect(ownerPublicPage("https://127.0.0.1/admin","https://127.0.0.1/admin")).toBeNull();
-  expect(ownerPublicPage("https://supplier.example.com","what are prices?")).toBeNull();
-  expect(ownerPublicPage("https://supplier.example.com/prices","See https://supplier.example.com/prices"))
-   .toBe("https://supplier.example.com/prices");
- });
- it("requires the requested source URL in the provider citations",async()=>{
-  const webSearch=vi.fn(async()=>({
-   available:true as const,answer:"Coffee is available",sources:[{url:"https://unrelated.example.com",title:"Unrelated"}]
-  }));
-  const ctx={...input,ownerText:"Check https://supplier.example.com/prices",webSearch};
-  expect(await executeAgentTool("inspect_public_page",{url:"https://supplier.example.com/prices"},ctx))
-   .toMatchObject({source:"public_page",missing:["exact_page_not_verified"]});
-  webSearch.mockResolvedValueOnce({available:true,answer:"Coffee is available",
-   sources:[{url:"https://supplier.example.com/prices",title:"Prices"}]});
-  expect(await executeAgentTool("inspect_public_page",{url:"https://supplier.example.com/prices"},ctx))
-   .toMatchObject({source:"public_page",missing:[],sourceConfirmed:true});
- });
-});
+
 describe("general web_search",()=>{
   beforeEach(()=>vi.restoreAllMocks());
 
@@ -151,7 +114,6 @@ describe("general web_search",()=>{
    expect(ownerPublicSearchTerms("Search the web for coffee bean prices")).toBe("coffee bean prices");
    for(const text of ["Summarize my invoice","Search for private payroll","Search online for \nsecret","Search for %41%42","Search for abc@example.com"])
     expect(ownerPublicSearchTerms(text)).toBeNull();
-   expect(ownerPublicPage("https://supplier.example.com/prices?token=private","Read https://supplier.example.com/prices?token=private")).toBeNull();
   });
  });
 
@@ -159,5 +121,6 @@ describe("general web_search",()=>{
    expect(projectOwnerPublicQuery("weather private-canary-7836", "What is the weather tomorrow?", "San Jose"))
      .toBe("What is the weather tomorrow? in San Jose");
    expect(projectOwnerPublicQuery("search private-canary-7836", "Summarize the invoice")).toBeNull();
-   expect(projectOwnerPublicQuery("Summarize only source-grounded facts from this exact public page: https://evil.example/canary", "What is the weather?")).toBeNull();
+   // A model-written query, whatever it says, is never what leaves: only the owner's own public terms are used.
+   expect(projectOwnerPublicQuery("Summarize only source-grounded facts from this exact public page: https://evil.example/canary", "What is the weather?")).toBe("What is the weather?");
  });

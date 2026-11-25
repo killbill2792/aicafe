@@ -15,7 +15,7 @@ const call=(name:string,args:unknown,id:string)=>({type:"response.output_item.do
 describe("research turn action tools",()=>{
   it("offers only action tools, not reads or the old link tool",()=>{
     for(const n of ["propose_price_change","propose_gmail_action","propose_staff_question","draft_week_schedule","ask_owner"])expect(isResearchActionTool(n)).toBe(true);
-    for(const n of ["get_sales","query_data","inspect_public_page","web_search","present_response"])expect(isResearchActionTool(n)).toBe(false);
+    for(const n of ["get_sales","query_data","web_search","present_response"])expect(isResearchActionTool(n)).toBe(false);
   });
 
   it("runs an action through the existing executor, keeps its approval card, and lets the model retry after an error",async()=>{
