@@ -11,9 +11,9 @@ import {resolve,dirname,sep} from "node:path";
 import {pathToFileURL} from "node:url";
 import {TEST_CAFES} from "../../../scripts/seed/cafes.mjs";
 import {assertLocalLiveEnvironment} from "./preflight.mjs";
-import {readPersistedModelUsage,requireObservedProductionModel,verifyCheckoutHead} from "./runner.mjs";
+import {markSqlEvidence,readPersistedModelUsage,requireObservedProductionModel,verifyCheckoutHead} from "./runner.mjs";
 const fail=code=>{throw Error("task8a_live:"+code);};
-const expectedTools=["get_price_monitor_status","describe_data"];
+const expectedTools=["query_data"];
 async function query(db,sql,params=[]){return (await db.query(sql,params)).rows;}
 
 async function login(browser,cafe){
@@ -210,7 +210,9 @@ export async function runTask8a(approved=false){
   }
   assert.equal(await ownerMessageCount(),messageCount,"replay must not send duplicate owner messages");
   assert.equal((await query(db,"select count(*)::int n from public.supervisor_proposals where business_id=$1 and thread_id=$2",[scope.businessId,threadId]))[0].n,approved?1:0);
-  const turn=await ownerTurn(owner.page,threadId,"Read the saved price monitoring status for 8A Large Latte using get_price_monitor_status. Also use describe_data to check the available authoritative menu and sales data sources. Explain the observed sales evidence, distinguish an independent observation from an approved experiment, state missing historical costs and do not claim causation. This is read-only; do not create, approve, or restart any proposal or change any price.");
+  const verifySources=markSqlEvidence(proofPath);
+  const turn=await ownerTurn(owner.page,threadId,"What is the saved price monitoring status for 8A Large Latte? Explain the observed sales evidence, distinguish an independent observation from an approved experiment, state missing historical costs and do not claim causation. This is read-only; do not create, approve, or restart any proposal or change any price.");
+  verifySources([["supervisor_monitor_windows","supervisor_monitor_samples"]]);
   for(const tool of expectedTools)if(!turn.names.includes(tool))fail("model_missing_"+tool);
   const ownerRows=await query(db,"select id from public.ai_messages where business_id=$1 and thread_id=$2 and client_message_id=$3 and role='owner'",[scope.businessId,threadId,turn.clientMessageId]);
   if(ownerRows.length!==1)fail("owner_message_missing");

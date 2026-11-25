@@ -214,8 +214,8 @@ describe("recorded Responses streaming fixtures", () => {
     const requests: Record<string, unknown>[] = [];
     const provider: AgentProvider = async function* (params) {
       requests.push(params);
-      if (requests.length === 1) {yield call("get_attention_items",'{"wrong":1}',"bad1");yield completed;}
-      else if (requests.length === 2) {yield call("get_attention_items",'{"wrong":1}',"bad2");yield completed;}
+      if (requests.length === 1) {yield call("calculate",'{"wrong":1}',"bad1");yield completed;}
+      else if (requests.length === 2) {yield call("calculate",'{"wrong":1}',"bad2");yield completed;}
       else {yield text("I could not check that menu yet.");yield completed;}
     };
     const result = await runAgentTurn({ownerText:"Menu?",context,provider});
@@ -312,7 +312,7 @@ describe("recorded Responses streaming fixtures", () => {
       const provider: AgentProvider = async function* (params) {
         requests.push(params);
         if (requests.length <= 2) {
-          yield call("get_attention_items",'{"wrong":1}',"bad-"+requests.length);
+          yield call("calculate",'{"wrong":1}',"bad-"+requests.length);
           yield completed;
         } else {
           yield text("Partial final answer.");

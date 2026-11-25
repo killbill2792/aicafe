@@ -613,7 +613,10 @@ export async function runU3Sql(ctx:U3SqlContext,raw:unknown){
    duration_ms:Math.max(0,Date.now()-startedAt),
    relation_count:committedPage.evidence.relation_names.length,
    page_complete:committedPage.page_complete,page_retrieval:committedPage.page_retrieval,
-   snapshot_id:committedPage.evidence.snapshot_id
+   snapshot_id:committedPage.evidence.snapshot_id,
+   // Catalog identifiers only, in the existing isolated live acceptance receipt.
+   ...(process.env.AI_CAFE_LIVE_ACCEPTANCE==="OWNER_APPROVED_LOCAL_ONLY"?{
+    relation_names:committedPage.evidence.relation_names.join(",")}: {})
   });
   return committedPage;
  }catch(e){

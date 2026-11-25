@@ -2,7 +2,7 @@
 /* Owner-authenticated real-model pilot on localhost; NEVER a fake provider. */
 import {randomUUID,createHash} from "node:crypto";
 import {execFileSync} from "node:child_process";
-import {readFileSync,writeFileSync,realpathSync} from "node:fs";
+import {readFileSync,writeFileSync,realpathSync,statSync} from "node:fs";
 import {resolve,dirname,isAbsolute,sep} from "node:path";
 import {pathToFileURL} from "node:url";
 import {TEST_CAFES} from "../../../scripts/seed/cafes.mjs";
@@ -13,17 +13,38 @@ const error=code=>{throw new Error("live_capture:"+code);};
 const slug=s=>String(s).toLowerCase().replace(/[^a-z0-9]+/g,"_").replace(/^_|_$/g,"");
 /** Count original SQL observations that ran and were completely read in this
  * isolated turn. A later encrypted snapshot page can finish the same result. */
-export function completedSqlReceiptCount(log){
- if(typeof log!=="string")return 0;
+function completedSqlReceipts(log){
+ if(typeof log!=="string")return [];
  const clean=log.replace(/\x1b\[[0-9;]*m/g,"");
  const id=String.raw`([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})`;
- const pattern=new RegExp(String.raw`^\s*u3_sql_research_receipt\s*\{\s*receipt_id:\s*['"]${id}['"],\s*duration_ms:\s*\d+,\s*relation_count:\s*[1-9]\d*,\s*page_complete:\s*(true|false)(?:,\s*page_retrieval:\s*['"](executed_query|retained_result)['"])?(?:,\s*snapshot_id:\s*['"]${id}['"])?\s*\}`,"gm");
- const executed=new Set(),completed=new Set();
- for(const [,receipt,complete,retrieval,snapshot] of clean.matchAll(pattern)){
-  if(retrieval!=="retained_result")executed.add(snapshot??receipt);
-  if(complete==="true")completed.add(snapshot??receipt);
+ const pattern=new RegExp(String.raw`^\s*u3_sql_research_receipt\s*\{\s*receipt_id:\s*['"]${id}['"],\s*duration_ms:\s*\d+,\s*relation_count:\s*([1-9]\d*),\s*page_complete:\s*(true|false)(?:,\s*page_retrieval:\s*['"](executed_query|retained_result)['"])?(?:,\s*snapshot_id:\s*['"]${id}['"])?(?:,\s*relation_names:\s*['"]([a-z_][a-z0-9_]*(?:,[a-z_][a-z0-9_]*)*)['"])?\s*\}`,"gm");
+ const executed=new Map(),completed=new Set();
+ for(const [,receipt,count,complete,retrieval,snapshot,names] of clean.matchAll(pattern)){
+  const key=snapshot??receipt;
+  const relations=names?.split(",")??[];
+  if(names&&(relations.length!==Number(count)||new Set(relations).size!==relations.length))continue;
+  if(retrieval!=="retained_result")executed.set(key,relations);
+  if(complete==="true")completed.add(key);
  }
- return [...completed].filter(snapshot=>executed.has(snapshot)).length;
+ return [...completed].filter(key=>executed.has(key)).map(key=>executed.get(key));
+}
+export function completedSqlReceiptCount(log){return completedSqlReceipts(log).length;}
+/** An acceptance objective may use any equivalent authorized relation, with
+ * no required SQL text, join, or sequence. Every required source family must
+ * have a successfully completed original observation during the isolated turn. */
+export function hasCompletedSqlSources(log,sourceFamilies){
+ const observed=new Set(completedSqlReceipts(log).flat());
+ return sourceFamilies.every(family=>family.some(relation=>observed.has(relation)));
+}
+export function markSqlEvidence(proofPath){
+ const log=resolve(dirname(proofPath),"next.log");
+ const offset=statSync(log).size;
+ return sourceFamilies=>{
+  const bytes=readFileSync(log);
+  if(bytes.length<offset)error("research_log_replaced");
+  if(!hasCompletedSqlSources(bytes.subarray(offset).toString("utf8"),sourceFamilies))
+   error("required_completed_sql_source_missing");
+ };
 }
 /** A logged fallback is not evidence of the production Luna model. */
 export function requireObservedProductionModel(observed,expected){

@@ -6,8 +6,7 @@
   "proof": "8a-price-observation-proof.json",
   "scope": "8a-price-observation-scope.json",
   "expectedTools": [
-    "get_price_monitor_status",
-    "describe_data"
+    "query_data"
   ],
   "assertions": [
     {

@@ -9,7 +9,7 @@ import {resolve,dirname,sep} from "node:path";
 import {pathToFileURL} from "node:url";
 import {TEST_CAFES} from "../../../scripts/seed/cafes.mjs";
 import {assertLocalLiveEnvironment} from "./preflight.mjs";
-import {readPersistedModelUsage,requireObservedProductionModel,verifyCheckoutHead} from "./runner.mjs";
+import {markSqlEvidence,readPersistedModelUsage,requireObservedProductionModel,verifyCheckoutHead} from "./runner.mjs";
 
 const fail=code=>{throw Error("task14d_live:"+code)};
 const query=async(db,sql,args=[]) => (await db.query(sql,args)).rows;
@@ -97,7 +97,7 @@ async function ownerTurn(page,thread,text,phase){
    calls:Number.isSafeInteger(calls)&&calls>=0?calls:null,
    providerFailures,
    tools:result.names.filter(n=>[
-    "get_supplier_purchase_orders","inspect_purchase_reconciliation","propose_purchase_receiving","propose_invoice_reconciliation"].includes(n))
+    "query_data","inspect_purchase_reconciliation","propose_purchase_receiving","propose_invoice_reconciliation"].includes(n))
   }));
   fail("real_supervisor_"+code);
  }
@@ -168,8 +168,10 @@ async function main(){
   const countExpenses=async()=>Number((await query(db,"select count(*) n from public.expenses where business_id=$1",[scope.businessId]))[0].n);
   const initialExpenseCount=await countExpenses();
   const verifiedTurn=async(text,phase,tool)=>{
+   const verifySources=markSqlEvidence(file);
    const turn=await ownerTurn(connection.page,thread,text,phase);
-   const required=["get_supplier_purchase_orders","inspect_purchase_reconciliation",tool];
+   verifySources([["purchase_orders","purchase_order_lines"]]);
+   const required=["query_data","inspect_purchase_reconciliation",tool];
    let at=-1;for(const name of required){at=turn.names.indexOf(name,at+1);if(at<0)fail("registered_tool_missing_"+name);}
    const msgs=await query(db,"select id from public.ai_messages where business_id=$1 and thread_id=$2 "+
     "and role='owner' and client_message_id=$3",[scope.businessId,thread,turn.clientMessageId]);

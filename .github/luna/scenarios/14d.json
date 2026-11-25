@@ -6,7 +6,7 @@
   "proof": "14d-proof.json",
   "scope": "14d-scope.json",
   "expectedTools": [
-    "get_supplier_purchase_orders",
+    "query_data",
     "inspect_purchase_reconciliation",
     "propose_invoice_reconciliation",
     "propose_purchase_receiving"

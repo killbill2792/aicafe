@@ -7,7 +7,7 @@ import {resolve,dirname,sep} from "node:path";
 import {pathToFileURL} from "node:url";
 import {TEST_CAFES} from "../../../scripts/seed/cafes.mjs";
 import {assertLocalLiveEnvironment} from "./preflight.mjs";
-import {readPersistedModelUsage,requireObservedProductionModel,verifyCheckoutHead} from "./runner.mjs";
+import {markSqlEvidence,readPersistedModelUsage,requireObservedProductionModel,verifyCheckoutHead} from "./runner.mjs";
 
 const fail=code=>{throw Error("task16c_live:"+code);};
 const local="http://127.0.0.1:3000";
@@ -114,14 +114,16 @@ async function measure(){
    "(account_id,generation,access_token_enc,refresh_token_enc,token_expires_at) "+
    "values($1,1,$2,$3,now()+interval '1 hour')",
    [gmailAccountId,"d".repeat(64),"e".repeat(64)]);
+  const verifySources=markSqlEvidence(files[0]);
   const good=await turn(first.page,thread,
    "Please read the attached supplier quote and separately check the saved café menu "+
    "and existing supplier purchase orders for oat milk. Use the canonical menu and "+
    "purchase-order records before answering. Do not send, approve or change anything.",
    [attachment]);
   if(good.error||good.done?.endReason!=="complete"||!uuid(good.done?.reply?.id)||
-    !["query_data","get_supplier_purchase_orders"].every(n=>good.names.includes(n)))
+    !good.names.includes("query_data"))
    fail("model_did_not_use_both_registered_readers");
+  verifySources([["menu_items"],["purchase_orders","purchase_order_lines"]]);
   const own=await db.query("select id::text from public.ai_messages where "+
    "business_id=$1 and thread_id=$2 and client_message_id=$3 and role='owner'",
    [cafe.businessId,thread,good.clientMessageId]);
