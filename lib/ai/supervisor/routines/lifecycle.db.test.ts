@@ -136,7 +136,7 @@ describe.skipIf(!sandbox)("background lifecycle on the migrated database",()=>{
         expect(await rpc(service,"supervisor_finish_investigation",[cafe,owner,thread,"alert",id,hex("e"),collect.lease_token,"collected",JSON.stringify(evidence),null,stamp(now,at+1)])).toBe(true);
         const claim=await rpc(service,"supervisor_claim_investigation",[stamp(now,at+1)]) as Record<string,unknown>;
         expect(claim.source_id).toBe(id);
-        expect(await rpc(service,"supervisor_finish_investigation",[cafe,owner,thread,"alert",id,hex("e"),claim.lease_token,"investigated",JSON.stringify(evidence),"Observed evidence.\\nOwner question: "+q,stamp(now,at+2)])).toBe(true);
+        expect(await rpc(service,"supervisor_finish_investigation",[cafe,owner,thread,"alert",id,hex("e"),claim.lease_token,"investigated",JSON.stringify(evidence),"Observed evidence.\nOwner question: "+q,stamp(now,at+2)])).toBe(true);
       };
       await complete(first,question,6000);
       await complete(second,"which supplier sent the delivery on monday?",6010);
