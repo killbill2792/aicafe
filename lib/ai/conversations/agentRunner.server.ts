@@ -433,6 +433,13 @@ export async function runOneTurn(p: TurnParams): Promise<{ replyId: string; repl
           const sources=routineGoalCandidates(older.items,owner,p.ownerText,false);
           return {sources,nextOffset:older.nextOffset};
         },
+        draft:(_schedule,goalSourceMessageId)=>{
+          if(process.env.SUPERVISOR_U4_ENABLED==="true"&&
+            needsExplicitGoalSource(goalSourceCandidates.length,page.nextOffset)&&
+            !goalSourceMessageId)
+            throw Error("Choose the verified original owner goal message ID before saving");
+          return {ownerMessageId:owner.id,goalSourceMessageId:goalSourceMessageId??owner.id};
+        },
         create:async(schedule,goalSourceMessageId)=>{
           // A missing choice in a multi-turn conversation is NOT evidence that
           // the newest scheduling-only sentence is the requested objective.

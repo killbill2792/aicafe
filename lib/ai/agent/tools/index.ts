@@ -112,6 +112,8 @@ export type AgentToolContext = {
   /** A verified thread/owner port; model input contains no café or user IDs. */
   routines?:{
     create(schedule:RoutineSchedule,goalSourceMessageId:string|null):Promise<RoutineRecord>;
+    /** Validates a new routine and returns it unsaved; the owner's Save tap on the card creates it. */
+    draft?(schedule:RoutineSchedule,goalSourceMessageId:string|null):{ownerMessageId:string;goalSourceMessageId:string};
     list():Promise<RoutineRecord[]>;
     /** On-demand paged verified owner-message previews; not authority to edit them. */
     goalSources(offset:number):Promise<{sources:Array<{id:string;text:string}>;nextOffset:number|null}>;

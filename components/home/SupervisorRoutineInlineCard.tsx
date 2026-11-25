@@ -2,7 +2,7 @@
 
 import {useEffect,useState} from "react";
 import {Clock3,Ellipsis} from "lucide-react";
-import {routineCardSchema} from "@/lib/ai/conversations/contracts";
+import {routineCardSchema,routineDraftSchema} from "@/lib/ai/conversations/contracts";
 import en from "@/messages/en.json";
 
 const copy=en.SupervisorRoutines;
@@ -10,7 +10,66 @@ type Card=ReturnType<typeof routineCardSchema.parse>;
 
 /** The only authority for actions is the authenticated POST route and its
  * revision-fenced database receipt. A historical chat card can be stale. */
-export default function SupervisorRoutineInlineCard({block,onEdit,disabled=false}:{
+export default function SupervisorRoutineInlineCard({block,onEdit,disabled=false,threadId}:{
+  block:unknown;onEdit?:(prompt:string)=>void;disabled?:boolean;threadId?:string;
+}){
+  if(block&&typeof block==="object"&&(block as {type?:unknown}).type==="routine_draft")
+    return <RoutineDraft block={block} threadId={threadId} disabled={disabled}/>;
+  return <SavedRoutine block={block} onEdit={onEdit} disabled={disabled}/>;
+}
+
+/** Approve first: this card only describes the routine. It is saved when the owner taps Save. */
+function RoutineDraft({block,threadId,disabled}:{block:unknown;threadId?:string;disabled:boolean}){
+  const parsed=routineDraftSchema.safeParse(block);
+  const [saved,setSaved]=useState<unknown>(null);
+  const [dismissed,setDismissed]=useState(false);
+  const [busy,setBusy]=useState(false);
+  const [error,setError]=useState("");
+  if(saved)return <SavedRoutine block={saved} disabled={disabled}/>;
+  if(!parsed.success)return null;
+  const d=parsed.data;
+  const when=d.cadence==="once"&&d.onceLocalDate?copy.onceOn.replace("{date}",d.onceLocalDate):
+    d.cadence==="weekly"?d.weekdays.map(day=>en.SupervisorExperience.weekdayNames[day-1]).filter(Boolean).join(", "):d.cadence;
+  async function save(){
+    if(busy||!threadId)return;
+    setBusy(true);setError("");
+    try{
+      const response=await fetch("/api/ai/supervisor/routines",{
+        method:"POST",credentials:"same-origin",cache:"no-store",
+        headers:{"Content-Type":"application/json"},
+        body:JSON.stringify({action:"create",threadId,ownerMessageId:d.ownerMessageId,
+          goalSourceMessageId:d.goalSourceMessageId,
+          schedule:{title:d.title,cadence:d.cadence,weekdays:d.weekdays,localTime:d.localTime,
+            ...(d.cadence==="once"?{onceLocalDate:d.onceLocalDate}:{})}}),
+      });
+      if(!response.ok)throw Error("save_failed");
+      const result=await response.json() as {routine?:Record<string,unknown>};
+      const r=result.routine;
+      const card=routineCardSchema.safeParse({type:"routine_card",routineId:r?.id,title:r?.title,
+        cadence:r?.cadence,weekdays:r?.weekdays,localTime:r?.localTime,
+        ...(r?.cadence==="once"?{onceLocalDate:r?.onceLocalDate}:{}),
+        timezone:r?.timezone,status:r?.status,revision:r?.revision});
+      if(!card.success)throw Error("receipt_not_verified");
+      setSaved(card.data);
+    }catch{setError(copy.saveFailed);}
+    finally{setBusy(false);}
+  }
+  if(dismissed)return <p role="status" className="text-[0.875rem] text-ink-muted">{copy.dismissed}</p>;
+  return <section data-routine-draft aria-label={d.title} className="glass min-w-0 max-w-lg rounded-3xl p-4">
+    <p className="flex items-center gap-2 text-[0.875rem] text-ink-muted"><Clock3 size={16} className="shrink-0" aria-hidden="true"/>{copy.draftTitle}</p>
+    <p className="mt-1 break-words text-[1.0625rem] font-medium text-ink">{d.title}</p>
+    <p className="text-[0.875rem] text-ink-muted">{when} · {d.localTime}</p>
+    <div className="mt-3 flex gap-2">
+      <button type="button" onClick={()=>void save()} disabled={busy||disabled||!threadId}
+        className="min-h-11 flex-1 rounded-full bg-accent px-4 text-[0.9375rem] font-medium text-on-accent disabled:opacity-50">{copy.save}</button>
+      <button type="button" onClick={()=>setDismissed(true)} disabled={busy}
+        className="min-h-11 rounded-full px-4 text-[0.9375rem] text-ink-muted hover:bg-surface2">{copy.notNow}</button>
+    </div>
+    {error&&<p role="alert" className="mt-2 text-[0.875rem] text-neg">{error}</p>}
+  </section>;
+}
+
+function SavedRoutine({block,onEdit,disabled=false}:{
   block:unknown;onEdit?:(prompt:string)=>void;disabled?:boolean;
 }){
   const parsed=routineCardSchema.safeParse(block);

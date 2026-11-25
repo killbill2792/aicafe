@@ -120,6 +120,7 @@ function ReplyBlock({ block, copy, locale, threadId, onEdit, disabled=false, unv
       copy={{en,es,ar}[locale].SupervisorExperiment} initialProposalId={block.proposalId}/></div>;
   if(block.type==="memory_card"&&typeof block.ruleId==="string")
     return <MemoryCard ruleId={block.ruleId} locale={locale}/>;
+  if(block.type==="routine_draft"&&threadId)return <SupervisorRoutineInlineCard block={block} threadId={threadId} onEdit={onEdit} disabled={disabled}/>;
   if(block.type==="routine_card")return <SupervisorRoutineInlineCard block={block} onEdit={onEdit} disabled={disabled}/>;
   if ((block.type === "text" || block.type === "warning") && typeof block.text === "string") {
     return block.type === "warning"
@@ -163,7 +164,7 @@ function SupervisorMessage({ message, copy, locale, cafeCurrency, storedFiles, o
   clarifyState:"hidden"|"active"|"chosen"|"skipped";clarifyChoice:string|null;
   onOwnerResponse:(message:ConversationMessage,value:string,isOption:boolean,dismiss?:boolean)=>void;
 }) {
-  if (message.role === "owner") return <article className="ms-auto w-fit max-w-[80%] rounded-2xl bg-surface2 px-4 py-3 text-[1.0625rem] leading-relaxed text-ink">
+  if (message.role === "owner") return <article className="glass ms-auto w-fit max-w-[80%] rounded-3xl px-4 py-3 text-[1.0625rem] leading-relaxed text-ink">
     <p className="whitespace-pre-wrap break-words">{message.text}</p>
   </article>;
   const originalBlocks=message.blocks??[];
@@ -1211,7 +1212,7 @@ export default function SupervisorChatComposer({
     chatDisabled={boardAskDisabled}/> : undefined;
 
   if(sessionDenied)return <section className="mx-auto max-w-lg space-y-4 rounded-xl bg-surface p-6" aria-label={copy.composerLabel}><p role="alert" className="text-[1.0625rem] text-ink">{en.SupervisorExperience.sessionDenied}</p><Link href="/login" className="inline-flex min-h-12 items-center rounded-lg bg-accent px-4 text-on-accent">{en.SupervisorExperience.signInAgain}</Link></section>;
-  return <section ref={shell} className="supervisor-shell relative flex min-h-[320px] min-w-0 flex-col overflow-hidden rounded-none bg-surface md:rounded-2xl"
+  return <section ref={shell} className="supervisor-shell relative flex min-h-[320px] min-w-0 flex-col overflow-hidden rounded-none bg-transparent md:rounded-3xl"
     aria-label={copy.composerLabel}>
     <header className="flex shrink-0 items-center gap-1 px-2 py-1.5 sm:px-4 sm:py-2">
       <button type="button" onClick={()=>setControlsTab("library")}
@@ -1248,7 +1249,7 @@ export default function SupervisorChatComposer({
     {startExpanded && <aside id="supervisor-chat-insights"
       aria-label={chatStartCopy?.keyNumbers??en.Home.keyNumbers}
       onKeyDown={event=>{if(event.key==="Escape"){setStartExpanded(false);}}}
-      className="absolute inset-x-2 top-14 z-30 max-h-[72dvh] overflow-y-auto overscroll-contain rounded-2xl border border-line bg-surface p-3 shadow-lg sm:inset-x-4">
+      className="glass absolute inset-x-2 top-14 z-30 max-h-[72dvh] overflow-y-auto overscroll-contain rounded-3xl p-3 sm:inset-x-4">
       {chatStartPromise?
         <Suspense key={boardPeriod} fallback={<p role="status" className="p-3 text-[0.9375rem] text-ink-muted">{copy.sending}</p>}>
           <DeferredChatStart promise={chatStartPromise} suggestions={copy.suggestions} failureText={copy.unverified}
@@ -1414,7 +1415,7 @@ export default function SupervisorChatComposer({
         <button type="button" disabled={offline} className="flex min-h-12 flex-1 items-center gap-2 rounded-lg px-3 text-start hover:bg-surface2 disabled:opacity-50" onClick={()=>pickAttachment(true)}><Camera size={18} aria-hidden="true"/>{en.SupervisorExperience.takePhoto}</button>
       </div>}
       <form onSubmit={(event) => { event.preventDefault(); void sendText(draft); }}
-        className="grid grid-cols-[48px_minmax(0,1fr)_48px_48px] items-end gap-1 rounded-[26px] border border-line bg-surface p-1 focus-within:border-accent">
+        className="glass grid grid-cols-[48px_minmax(0,1fr)_48px_48px] items-end gap-1 rounded-[26px] p-1 focus-within:border-accent">
         <input ref={filePicker} type="file" className="sr-only" tabIndex={-1} aria-hidden="true"
           accept=".txt,.csv,.xlsx,.pdf,.jpg,.jpeg,.png,.webp,text/plain,text/csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/pdf,image/jpeg,image/png,image/webp"
           onChange={(event) => void attach(event)} />
