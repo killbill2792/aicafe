@@ -1,4 +1,4 @@
-import type { DailyFacts, ExpenseCategoryCode } from "@/lib/calc";
+import type { CategoryMonthlyAmount, DailyFacts, ExpenseCategoryCode } from "@/lib/calc";
 import type {RunningCostEvidence,RunningCostLine} from "./types";
 import {isExpectedCostCategory} from "@/lib/expenses/expectedCosts";
 import {recurringCostMonthlyEquivalentCents} from "@/lib/expenses/recurringMonthlyTotal";
@@ -133,4 +133,17 @@ export function runningCostLinesForMonth(args:{
    isEstimate:actual.some(e=>e.status!=="actual")||remaining>0||ambiguous,
    isMissing:actual.length===0&&obligations.length===0&&isExpected,isExpected:isExpected||actual.length>0};
  });
+}
+
+/** Preserve dated expense evidence and the recurring-only forecast for every
+ * screen and historical consumer. Older fixtures may lack detailed evidence. */
+export function runningCostMonthlyAmount(line:RunningCostLine,monthKey:string,includeEvidence=true):CategoryMonthlyAmount{
+ return {categoryCode:line.categoryCode,monthKey,amountCents:line.amountCents,
+  isEstimate:line.isEstimate,isMissing:line.isMissing,
+  ...(includeEvidence&&line.expenseEvidence?{
+    recordedExpenses:line.expenseEvidence.flatMap(e=>e.kind==="expense"?[{date:e.date,amountCents:e.amountCents,status:e.status}]:[]),
+    recordedExpenseCents:line.recordedExpenseCents,
+    possibleAdditionalForecastCents:line.possibleAdditionalForecastCents,
+    recurringEstimateCents:line.recurringEstimateCents??0
+  }:{})};
 }

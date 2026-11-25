@@ -7,6 +7,7 @@ import {
   type DailyFacts,
 } from "@/lib/calc";
 import type { BusinessSnapshot, RunningCostLine } from "@/lib/data/types";
+import {runningCostMonthlyAmount} from "@/lib/data/runningCostCatalog";
 
 export type Period = "today" | "week" | "month";
 
@@ -64,16 +65,7 @@ function calendarDaySpan(start: string, end: string): number {
  */
 export function categoryMonthlyAmounts(snapshot: BusinessSnapshot): CategoryMonthlyAmount[] {
   const forMonth = (monthKey:string,lines:RunningCostLine[],includeEvidence:boolean) =>
-    lines.map(line=>({
-      categoryCode:line.categoryCode,monthKey,amountCents:line.amountCents,
-      isEstimate:line.isEstimate,isMissing:line.isMissing,
-      ...(includeEvidence&&line.expenseEvidence?{
-       recordedExpenses:line.expenseEvidence.flatMap(e=>e.kind==="expense"?[{date:e.date,amountCents:e.amountCents,status:e.status}]:[]),
-       recordedExpenseCents:line.recordedExpenseCents,
-       possibleAdditionalForecastCents:line.possibleAdditionalForecastCents,
-       recurringEstimateCents:line.recurringEstimateCents??0
-      }:{})
-    }));
+    lines.map(line=>runningCostMonthlyAmount(line,monthKey,includeEvidence));
   return [...forMonth(snapshot.monthKey,snapshot.runningCostLines,true),
     ...forMonth(previousMonthKey(snapshot.monthKey),snapshot.previousRunningCostLines??snapshot.runningCostLines,
       snapshot.previousRunningCostLines!==undefined)];

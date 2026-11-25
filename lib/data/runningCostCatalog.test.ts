@@ -1,5 +1,6 @@
 import {describe,it,expect} from "vitest";
-import {runningCostLinesForMonth} from "./runningCostCatalog";
+import {runningCostLinesForMonth,runningCostMonthlyAmount} from "./runningCostCatalog";
+import {runningCostsForPeriodCents} from "@/lib/calc";
 
 describe("obligation-level monthly cost evidence",()=>{
  const bills=[
@@ -62,4 +63,16 @@ describe("obligation-level monthly cost evidence",()=>{
   ]});
   expect(lines.find(r=>String(r.categoryCode)==="property_tax")).toMatchObject({amountCents:32000,recordedExpenseCents:32000});
  });
+});
+
+it("preserves dated expenses instead of spreading recorded payments across the calendar",()=>{
+ const lines=runningCostLinesForMonth({from:"2026-11-01",to:"2026-11-30",today:"2026-11-15",historical:false,
+   recurring:[{id:"annual",category_code:"other",amount_cents:120000,frequency:"yearly",is_estimate:false,active_from:"2026-01-01",active_to:null}],
+   expenses:[{id:"paid",category_code:"other",amount_cents:6000,status:"actual",spent_on:"2026-11-15",recurring_cost_id:"annual"}]});
+ const amount=runningCostMonthlyAmount(lines.find(r=>r.categoryCode==="other")!,"2026-11");
+ expect(amount).toMatchObject({amountCents:10000,recordedExpenseCents:6000,recurringEstimateCents:4000,
+   recordedExpenses:[{date:"2026-11-15",amountCents:6000,status:"actual"}],isEstimate:true});
+ expect(runningCostsForPeriodCents([amount],"2026-11-14","2026-11-14")).toBe(133);
+ expect(runningCostsForPeriodCents([amount],"2026-11-15","2026-11-15")).toBe(6133);
+ expect(runningCostsForPeriodCents([amount],"2026-11-01","2026-11-30")).toBe(10000);
 });

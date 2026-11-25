@@ -2,7 +2,7 @@ import "server-only";
 import {readDailyFactRows} from "./dailyFacts.server";
 import { formatInTimeZone, fromZonedTime } from "date-fns-tz";
 import { buildDayWindows, evaluateRecipeCost, resolveProductCost } from "@/lib/calc";
-import { runningCostLinesForMonth, rowToDailyFacts } from "./runningCostCatalog";
+import { runningCostLinesForMonth, runningCostMonthlyAmount, rowToDailyFacts } from "./runningCostCatalog";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { BusinessSnapshot, MenuItemSnapshot, RunningCostLine, StaffShift } from "./types";
 import { normalizeOpenHours } from "@/lib/business/openHours";
@@ -426,13 +426,8 @@ async function readHistoricalBusinessSnapshot(
       priorExpenses:allExpenses.filter(e=>e.spent_on<key+"-01")});
     linesByMonth.set(key,lines);
     for(const line of lines){
-      const {categoryCode,amountCents,isEstimate,isMissing}=line;
-      monthlyAmounts.push({monthKey:key,categoryCode,amountCents,isEstimate,isMissing,
-         recordedExpenseCents:line.recordedExpenseCents,
-         recurringEstimateCents:line.recurringEstimateCents,
-         possibleAdditionalForecastCents:line.possibleAdditionalForecastCents,
-         recordedExpenses:line.expenseEvidence?.flatMap(e=>e.kind==="expense"?
-           [{date:e.date,amountCents:e.amountCents,status:e.status}]:[])});
+      const {categoryCode,isEstimate,isMissing}=line;
+      monthlyAmounts.push(runningCostMonthlyAmount(line,key));
       if(isEstimate)estimatedExpenseCategories.push("expense:"+categoryCode+":"+key);
       if(isMissing||line.forecastOverlapUncertain)missingExpenseCategories.push("expense:"+categoryCode+":"+key);
     }

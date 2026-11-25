@@ -2,7 +2,7 @@ import "server-only";
 import { readDailyFactRows } from "./dailyFacts.server";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { CategoryMonthlyAmount, DailyFacts } from "@/lib/calc";
-import { runningCostLinesForMonth, rowToDailyFacts } from "./runningCostCatalog";
+import { runningCostLinesForMonth, runningCostMonthlyAmount, rowToDailyFacts } from "./runningCostCatalog";
 import {readCompletePaged} from "./completePages";
 import { normalizeOpenHours, type OpenHours } from "@/lib/business/openHours";
 
@@ -41,13 +41,16 @@ export async function getMonthCalendarFromDb(
   const daysInMonth = daysInMonthKey(monthKey);
   const monthStart = `${monthKey}-01`;
   const monthEnd = `${monthKey}-${String(daysInMonth).padStart(2, "0")}`;
+  const [year,month]=monthKey.split("-").map(Number);
+  const previous=new Date(year,month-2,1);
+  const previousStart=String(previous.getFullYear()).padStart(4,"0")+"-"+String(previous.getMonth()+1).padStart(2,"0")+"-01";
 
   const [rollupResult, expensesResult, recurringResult, locationResult] = await Promise.all([
     readDailyFactRows(supabase, businessId, monthStart, monthEnd)
       .then((data) => ({ data, error: null }), (error: Error) => ({ data: null, error })),
     readCompletePaged((start,end)=>supabase.from("expenses")
       .select("id,category_code,amount_cents,status,spent_on,recurring_cost_id,custom_label,vendor,source",{count:"exact"})
-      .eq("business_id",businessId).gte("spent_on",monthStart).lte("spent_on",monthEnd)
+      .eq("business_id",businessId).gte("spent_on",previousStart).lte("spent_on",monthEnd)
       .order("id",{ascending:true}).range(start,end),row=>row.id),
     readCompletePaged((start,end)=>supabase.from("recurring_costs")
       .select("id,category_code,amount_cents,frequency,is_estimate,active_from,active_to,label,due_day,source",{count:"exact"})
@@ -69,13 +72,8 @@ export async function getMonthCalendarFromDb(
 
   const categoryAmounts:CategoryMonthlyAmount[]=runningCostLinesForMonth({
     expenses:expensesResult,recurring:recurringResult,from:monthStart,to:monthEnd,
-    today:monthEnd,historical:!isCurrentMonth
-  }).map(line=>({categoryCode:line.categoryCode,monthKey,amountCents:line.amountCents,
-    isEstimate:line.isEstimate,isMissing:line.isMissing,
-    recordedExpenseCents:line.recordedExpenseCents,
-    possibleAdditionalForecastCents:line.possibleAdditionalForecastCents,
-    recordedExpenses:line.expenseEvidence?.flatMap(e=>e.kind==="expense"?[{date:e.date,amountCents:e.amountCents,status:e.status}]:[]),
-    recurringEstimateCents:line.recurringEstimateCents}));
+    today:monthEnd,historical:!isCurrentMonth,priorExpenses:expensesResult
+  }).map(line=>runningCostMonthlyAmount(line,monthKey));
 
   return { monthKey, daysInMonth, days, categoryAmounts, openHours: isCurrentMonth ? normalizeOpenHours(locationResult.data?.open_hours) : null };
 }
