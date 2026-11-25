@@ -20,7 +20,7 @@ const analytics={name:"query_data",result:{
   query_fingerprint:"a".repeat(64),catalog_version:"b".repeat(16),
   column_units:{net_sales_cents:"cents"}}
 }};
-const permitted=[...investigationReadTools,"get_events"];
+const permitted=[...investigationReadTools];
 const turn=(changes:Record<string,unknown>={}):AgentTurn=>({
  text:"Recorded net sales changed; the available evidence does not yet establish the cause. Review costs and recheck source freshness.",
  endReason:"complete",tools:[caseRead.name,analytics.name],unverified:[],
@@ -92,7 +92,7 @@ describe("U3 model-led autonomous investigation",()=>{
     missing:[],total:32,relations:[{name:"orders",fieldsTotal:12}]}};
   const hypothetical={name:"calculate",result:{source:"calculate",period:null,
     missing:[],result:12000,estimated:true}};
-  const failed={name:"get_sales",result:{source:"daily_rollups",period:null,
+  const failed={name:"query_data",result:{source:"u3_canonical_research",period:null,
     missing:["source_read_failed"],error:"source_read_failed",days:[{netSalesCents:0}]}};
   for(const read of [metadata,hypothetical,failed]){
    expect(verifyUniversalInvestigationTurn(turn({toolInvocations:[caseRead,read],

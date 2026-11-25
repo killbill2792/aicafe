@@ -1,3 +1,4 @@
+import {sqlObservation} from "@/lib/ai/supervisor/routines/investigationTestFixtures";
 import {describe,expect,it} from "vitest";
 import type {AgentTurn} from "@/lib/ai/agent/loop.server";
 import {universalInvestigationPrompt,maintenanceInvestigationTools,verifyUniversalInvestigationTurn,
@@ -15,14 +16,8 @@ const incident={name:"get_investigation_source",result:{
   maintenanceHistory:[{kind:"report",sourceKind:"owner_report",
     verifiedWorking:false,occurredAt:"2026-11-16T15:00:00Z"}],
 }};
-const sales={name:"get_sales",result:{
-  source:"daily_sales",period:null,missing:[],netSalesCents:19800,
-  days:[{date:"2026-11-16",netSalesCents:19800}],
-}};
-const schedule={name:"get_schedule",result:{
-  source:"dated_schedule",period:null,missing:[],scheduleSet:true,
-  shifts:[{id:"shift-a",date:"2026-11-16"}],
-}};
+const sales=sqlObservation("daily_rollups",{business_date:"2026-11-16",net_sales_cents:19800},{net_sales_cents:"cents"});
+const schedule=sqlObservation("scheduled_shifts",{id:"shift-a",local_date:"2026-11-16"});
 function turn(calls= [incident,sales,schedule],text="A machine failure was reported. I checked available sales and staffing records; I recommend preparing a vendor request for your explicit approval. No message has been sent. I will recheck the case."):AgentTurn{
   return {text,endReason:"complete",tools:calls.map(x=>x.name),unverified:[],
     results:calls.map(x=>x.result),toolInvocations:calls,
@@ -34,12 +29,13 @@ const verifyInvestigationTurn=(t:AgentTurn,e:typeof expected)=>verifyUniversalIn
 describe("Task15B agent-directed and independently checked maintenance investigation",()=>{
   it("uses the existing registered cross-domain evidence readers",()=>{
     const choices=maintenanceInvestigationTools;
-    expect(choices).toContain("get_sales");
-    expect(choices).toContain("get_schedule");
-    expect(choices).toContain("get_expenses");
+    expect(choices).toContain("describe_data");
+    expect(choices).toContain("query_data");
+    expect(choices).toContain("calculate");
+    expect(choices).not.toContain("get_sales");
     expect(choices).not.toContain("propose_gmail_action");
     expect(verifyInvestigationTurn(turn(),expected)).toMatchObject({
-      ok:true,tools:["get_investigation_source","get_sales","get_schedule"]});
+      ok:true,tools:["get_investigation_source","query_data"]});
   });
   it("allows relevant single-source research but rejects fabricated closure",()=>{
     expect(verifyInvestigationTurn(turn([incident,sales]),expected)).toMatchObject({ok:true});

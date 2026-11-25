@@ -1,11 +1,12 @@
+import {sqlObservation,failedSqlObservation} from "./investigationTestFixtures";
 import {describe,expect,it} from "vitest";
 import {precedingInvestigationReport} from "./investigation";
 import type {AgentTurn} from "@/lib/ai/agent/loop.server";
 import {checkNumbers} from "@/lib/ai/agent/checkNumbers";
-import {modelSelectedOwnerQuestion,universalInvestigationPrompt,investigationReadTools,customerInvestigationTools,verifyUniversalInvestigationTurn,
+import {modelSelectedOwnerQuestion,universalInvestigationPrompt,investigationReadTools,verifyUniversalInvestigationTurn,
   unsupportedExternalEffectClaim,type SourceSynopsis,type ExpectedInvestigation} from "./investigation";
 const verifyInvestigationTurn=(turn:AgentTurn,expected:ExpectedInvestigation)=>
- verifyUniversalInvestigationTurn(turn,expected,customerInvestigationTools);
+ verifyUniversalInvestigationTurn(turn,expected,investigationReadTools);
 const source:SourceSynopsis={
   kind:"labor_variance",status:"new",severity:"high",quality:"partial",
   relatedAlerts:["missing_bill"],relatedTasks:["staff_coverage"],
@@ -15,11 +16,8 @@ const sourceRead={name:"get_investigation_source",result:{
   source:"investigation_source",period:null,missing:[],
   sourceType:"alert",sourceId:"alert-1",incidentKind:"labor_variance",
 }};
-const sales={name:"get_sales",result:{source:"daily_rollups",period:null,missing:[],
-  netSalesCents:12000,days:[{date:"2026-11-16",netSalesCents:12000}]}};
-const labor={name:"get_labor",result:{source:"labor_and_attendance",period:null,
-  missing:["laborDaysIncomplete"],laborDays:[{date:"2026-11-16",wagesCents:2000,
-    staffTaxCents:null,loadedStaffCostCents:null,wageStatus:"missing"}]}};
+const sales=sqlObservation("daily_rollups",{business_date:"2026-11-16",net_sales_cents:12000},{net_sales_cents:"cents"});
+const labor=sqlObservation("daily_rollups",{business_date:"2026-11-16",staff_cost_cents:2000,staff_tax_cents:null},{staff_cost_cents:"cents"});
 const evidence=[sourceRead,sales,labor];
 const turn=(patch:Record<string,unknown>={}):AgentTurn=>({
   text:"The source-specific labor and sales evidence is incomplete. Check the timecard, then prepare an owner-approved staffing option; I will recheck.",
@@ -31,8 +29,10 @@ const turn=(patch:Record<string,unknown>={}):AgentTurn=>({
 describe("Task 15A genuine multi-step agentic acceptance",()=>{
   it("exposes a claim-bound source reader, but never effect or owner-impersonation tools",()=>{
     expect(investigationReadTools).toContain("get_investigation_source");
-    expect(investigationReadTools).toContain("get_sales");
-    expect(investigationReadTools).toContain("get_labor");
+    expect(investigationReadTools).toContain("query_data");
+    expect(investigationReadTools).toContain("calculate");
+    expect(investigationReadTools).not.toContain("get_sales");
+    expect(investigationReadTools).not.toContain("get_labor");
     for(const name of ["propose_staff_change","manage_commitment",
       "propose_gmail_action","ask_owner","propose_purchases"])
       expect(investigationReadTools).not.toContain(name);
@@ -51,14 +51,8 @@ describe("Task 15A genuine multi-step agentic acceptance",()=>{
       sourceType:staffTarget.sourceType,sourceId:staffTarget.sourceId,
       incidentKind:staffTarget.kind,
     }};
-    const message={name:"get_staff_messages",result:{
-      source:"staff_communication_messages",period:null,missing:[],
-      messages:[{id:"msg",employeeId:"crew",reply:"decline",text:"Can begin later"}],
-    }};
-    const roster={name:"get_week_schedule",result:{
-      source:"scheduled_shifts",period:null,missing:[],scheduleSet:true,
-      shifts:[{id:"shift",start:"07:00",end:"14:00"}],
-    }};
+    const message=sqlObservation("staff_communication_messages",{id:"msg",employee_id:"crew",response_code:"decline",body:"Can begin later",actor:"employee"});
+    const roster=sqlObservation("scheduled_shifts",{id:"shift",start_local:"07:00",end_local:"14:00"});
     const observed=[sourceResult,message,roster];
     const valid=turn({toolInvocations:observed,results:observed.map(x=>x.result),
       text:"Employee said they can start later; the dated shift still needs coverage. Please decide whether to request an approved schedule change. I'll recheck confirmed coverage."});
@@ -120,14 +114,14 @@ describe("Task 15A genuine multi-step agentic acceptance",()=>{
   });
   it("requires claim-bound evidence but not a particular number of reads",()=>{
     expect(verifyInvestigationTurn(turn(),expected)).toMatchObject({
-      ok:true,tools:["get_investigation_source","get_sales","get_labor"],
-      missing:["laborDaysIncomplete"],
+      ok:true,tools:["get_investigation_source","query_data"],
+      missing:[],
     });
     expect(verifyInvestigationTurn(turn({toolInvocations:[sales,labor]}),expected))
       .toEqual({ok:false,reason:"evidence_incomplete"});
     expect(verifyInvestigationTurn(turn({toolInvocations:[sourceRead,sales]}),expected)).toMatchObject({ok:true});
     expect(verifyInvestigationTurn(turn({toolInvocations:[sourceRead,sales,
-      {name:"get_sales",result:{source:"daily_rollups",period:null,missing:[]}}]}),expected)).toMatchObject({ok:true});
+      sqlObservation("daily_rollups",null)]}),expected)).toMatchObject({ok:true});
     expect(verifyInvestigationTurn(turn(),{...expected,sourceId:"other-alert"}))
       .toEqual({ok:false,reason:"evidence_incomplete"});
     expect(verifyInvestigationTurn(turn({toolInvocations:[
@@ -146,23 +140,15 @@ describe("Task 15A genuine multi-step agentic acceptance",()=>{
     const staff={sourceType:"operating_task" as const,sourceId:"staff-response:verified",kind:"staff_coverage"};
     const claimed={...sourceRead,result:{...sourceRead.result,sourceType:"operating_task",
       sourceId:staff.sourceId,incidentKind:staff.kind}};
-    const reply={name:"get_staff_messages",result:{
-      source:"staff_communication_messages+staff_communication_requests",
-      period:null,missing:[],messages:[{id:"reply-1",employeeId:"worker-1",
-        reply:"decline",text:"I can arrive at 8, not 7",
-        verifiedAs:"saved_employee_submission",coverageApplied:false}]}};
-    const schedule={name:"get_week_schedule",result:{
-      source:"scheduled_shifts",period:null,missing:[],
-      scheduleSet:true,shifts:[{id:"shift-1",employeeId:"worker-1",start:"07:00",end:"14:00"}]}};
-    expect(investigationReadTools).toContain("get_staff_messages");
+    const reply=sqlObservation("staff_communication_messages",{id:"reply-1",employee_id:"worker-1",actor:"employee",response_code:"decline",body:"I can arrive at 8, not 7"});
+    const schedule=sqlObservation("scheduled_shifts",{id:"shift-1",employee_id:"worker-1",start_local:"07:00",end_local:"14:00"});
+    expect(investigationReadTools).not.toContain("get_staff_messages");
     expect(verifyInvestigationTurn(turn({toolInvocations:[
       claimed,reply,schedule,
     ]}),staff)).toMatchObject({
-      ok:true,tools:["get_investigation_source","get_staff_messages","get_week_schedule"],
+      ok:true,tools:["get_investigation_source","query_data"],
     });
-    const unverified={name:"get_staff_messages",result:{
-      source:"staff_communication_messages",period:null,
-      missing:["staffReplyReaderUnavailable"],messages:[]}};
+    const unverified=failedSqlObservation("staffReplyReaderUnavailable");
     expect(verifyInvestigationTurn(turn({toolInvocations:[
       claimed,unverified,
     ]}),staff)).toEqual({ok:false,reason:"evidence_incomplete"});
@@ -171,15 +157,10 @@ describe("Task 15A genuine multi-step agentic acceptance",()=>{
   });
   it("does not require duplicate projections or independent domains",()=>{
     expect(verifyInvestigationTurn(turn({toolInvocations:[
-      sourceRead,sales,{name:"get_item_sales",result:{
-        source:"item_sales",period:null,missing:[],
-      }},
+      sourceRead,sales,sqlObservation("order_items",null),
     ]}),expected)).toMatchObject({ok:true});
     expect(verifyInvestigationTurn(turn({toolInvocations:[
-      sourceRead,sales,{name:"get_expenses",result:{
-        source:"expenses",period:null,missing:[],
-        recordedActualTotalCents:5000,
-      }},
+      sourceRead,sales,sqlObservation("expenses",{amount_cents:5000},{amount_cents:"cents"}),
     ]}),expected)).toMatchObject({ok:true});
   });
   it("rejects unavailable source-labeled reads instead of treating them as independent facts",()=>{
@@ -187,33 +168,25 @@ describe("Task 15A genuine multi-step agentic acceptance",()=>{
       sourceId:"coverage:2026-11-16",kind:"staff_coverage"};
     const claimed={...sourceRead,result:{...sourceRead.result,sourceType:"operating_task",
       sourceId:staff.sourceId,incidentKind:staff.kind}};
-    const failedLabor={name:"get_labor",result:{source:"labor_and_attendance",
-      period:null,missing:["laborReaderUnavailable"],laborDays:null,attendance:null}};
-    const failedWeek={name:"get_week_schedule",result:{source:"scheduled_shifts",
-      period:null,missing:["scheduleReadFailed"],shifts:null,gaps:[]}};
+    const failedLabor=failedSqlObservation("laborReaderUnavailable");
+    const failedWeek=failedSqlObservation("scheduleReadFailed");
     expect(verifyInvestigationTurn(turn({toolInvocations:[
       claimed,failedLabor,failedWeek,
     ]}),staff)).toEqual({ok:false,reason:"evidence_incomplete"});
     // A source label, explanatory note or failed-reader zero sentinel cannot
     // masquerade as data even with a different canonical domain.
-    const emptyLabor={name:"get_labor",result:{source:"labor_and_attendance",
-      period:null,missing:[],dataNotes:["no observed labor facts"]}};
-    const fakeZero={name:"get_week_schedule",result:{source:"scheduled_shifts",
-      period:null,missing:["scheduleReaderUnavailable"],paidMinutes:0,
-      scheduleSet:false,gaps:[]}};
+    const emptyLabor=sqlObservation("daily_rollups",null);
+    const fakeZero=failedSqlObservation("scheduleReaderUnavailable");
     expect(verifyInvestigationTurn(turn({toolInvocations:[
       claimed,emptyLabor,fakeZero,
     ]}),staff)).toEqual({ok:false,reason:"evidence_incomplete"});
     // A truly partial reader can still corroborate if it returned actual
     // shift rows. The second domain must independently return observed labor.
-    const partialWeek={name:"get_week_schedule",result:{source:"scheduled_shifts",
-      period:null,missing:["toastScheduleReadFailed"],scheduleSet:true,
-      shifts:[{id:"verified-shift",date:"2026-11-16",start:"07:00"}]}};
-    const partialLabor={name:"get_labor",result:{source:"labor_and_attendance",
-      period:null,missing:["laborWageUnknown:2026-11-16"],
-      laborDays:[{date:"2026-11-16",wagesCents:null,wageStatus:"missing"}]}};
+    const partialWeek=sqlObservation("scheduled_shifts",{id:"verified-shift",local_date:"2026-11-16",start_local:"07:00"});
+    const partialLabor=sqlObservation("daily_rollups",{business_date:"2026-11-16",staff_cost_cents:null},{staff_cost_cents:"cents"});
+    const gaps=[failedSqlObservation("laborWageUnknown:2026-11-16"),failedSqlObservation("toastScheduleReadFailed")];
     expect(verifyInvestigationTurn(turn({toolInvocations:[
-      claimed,partialLabor,partialWeek,
+      claimed,partialLabor,partialWeek,...gaps,
     ]}),staff)).toMatchObject({ok:true,
       missing:["laborWageUnknown:2026-11-16","toastScheduleReadFailed"]});
   });
@@ -275,7 +248,8 @@ it("customer investigations require an actual scoped aggregate and claim-specifi
   sourceType:"alert",sourceId:"customer-case",incidentKind:"business_anomaly",
   selectors:{family:"customer_trend",subject:"returning_visit_share",from:"2026-11-12",to:"2026-11-18",current:.25,previous:.5,unit:"observed_visit_ratio"},
   customerTrendProof:{key:"returning_visit_share",current:.25,previous:.5,unit:"observed_visit_ratio",active:true}}};
- const customer={name:"query_data",result:{source:"canonical_data",view:"cv_customer_visits",
+ const customer={name:"query_data",result:{...sqlObservation("customer_visits",null).result,source:"u3_canonical_research",view:"cv_customer_visits",
+  evidence:{...sqlObservation("customer_visits",null).result.evidence,column_units:{sum_returning_visit:"count",count_source_ref:"count"},column_dependencies:{sum_returning_visit:[{relation:"customer_visits",column:"returning_visit",binding:1}]}},
   aggregateOnly:true,customerEvidence:true,period:{from:"2026-11-12",to:"2026-11-18"},
   missing:[],rows:[{sum_returning_visit:20,count_source_ref:80}],empty:false,truncated:false,
   customerCoverage:{scope:"all_eligible_checks_in_period",eligibleChecks:90,linkedChecks:80,namedChecks:80,
@@ -296,20 +270,12 @@ it("customer investigations require an actual scoped aggregate and claim-specifi
  const historicalLabor={...labor,result:{...labor.result,period:{from:"2026-10-01",to:"2026-10-07"}}};
  expect(verify(customer,historicalLabor).ok).toBe(true);
  expect(verify(customer,{...labor,result:{...labor.result,period:{from:"2026-11-12",to:"2026-11-18"}}}).ok).toBe(true);
- const event={name:"get_events",result:{source:"cafe_events",period:{from:"2026-11-12",to:"2026-11-18"},missing:[],
-  events:[{name:"Fixture event",status:"found",startDate:"2026-11-14",endDate:"2026-11-15",lastVerifiedAt:"2026-11-13T08:00:00Z"}]}};
- expect(customerInvestigationTools).toContain("get_events");
+ const event=sqlObservation("cafe_events",{name:"Fixture event",status:"found",start_date:"2026-11-14",end_date:"2026-11-15",last_verified_at:"2026-11-13T08:00:00Z"});
  expect(investigationReadTools).not.toContain("get_events");
  expect(verify(customer,event).ok).toBe(true);
- for(const change of [{status:"cancelled"},{lastVerifiedAt:null},{verificationFailedAt:"2026-11-14T08:00:00Z"},
-  {startDate:"2026-10-01",endDate:"2026-10-02"}]){
-  expect(verify(customer,{...event,result:{...event.result,events:[{...event.result.events[0],...change}]}})).toMatchObject({ok:true,tools:["get_investigation_source","query_data"]});
- }
- expect(verify(customer,{...event,result:{...event.result,events:[],cityEventTotal:20}})).toMatchObject({ok:true,tools:["get_investigation_source","query_data"]});
- // An event in the incident window but outside the actual query window
- // cannot be counted as observed evidence from that query.
- expect(verify(customer,{...event,result:{...event.result,period:{from:"2026-11-16",to:"2026-11-18"}}})).toMatchObject({ok:true,tools:["get_investigation_source","query_data"]});
- expect(verify(customer,{...event,result:{...event.result,missing:["source_read_failed"]}})).toMatchObject({ok:true,tools:["get_investigation_source","query_data"]});
+ // A separate event query cannot substitute for the exact customer metric.
+ expect(verify(event,labor).ok).toBe(false);
+ expect(verify(customer,failedSqlObservation("source_read_failed"))).toMatchObject({ok:true,tools:["get_investigation_source","query_data"]});
  expect(verify({...customer,result:{...customer.result,period:{from:"2026-11-18",to:"2026-11-18"}}},labor).ok).toBe(false);
  expect(verify({...customer,result:{...customer.result,customerCoverage:{...customer.result.customerCoverage,complete:false}}},labor).ok).toBe(false);
  const gap={...src,result:{...src.result,selectors:{family:"data_gap",subject:"customer_identity_coverage",from:"",to:""}}};

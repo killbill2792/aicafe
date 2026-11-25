@@ -1,3 +1,4 @@
+import {sqlObservation} from "./investigationTestFixtures";
 import {describe,expect,it} from "vitest";
 import {verifyUniversalInvestigationTurn,universalInvestigationPrompt,investigationReadTools} from "./investigation";
 import type {AgentTurn} from "@/lib/ai/agent/loop.server";
@@ -7,9 +8,8 @@ const source={name:"get_investigation_source",result:{source:"investigation_sour
 const recon=(po="po")=>({name:"inspect_purchase_reconciliation",result:{source:"purchase_reconciliation",
  period:null,missing:[],reconciliation:{purchaseOrderId:po,lines:[{acceptedQuantity:60,orderedQuantity:100}],
  closureVerified:false}}});
-const stock={name:"get_inventory",result:{source:"inventory",period:null,missing:[],
- ingredients:[{ingredientId:"milk",quantity:60}]}};
-const expenses={name:"get_expenses",result:{source:"expenses",period:null,missing:[],totalCents:12000}};
+const stock=sqlObservation("inventory_counts",{ingredient_id:"milk",quantity:60});
+const expenses=sqlObservation("expenses",{amount_cents:12000},{amount_cents:"cents"});
 const expected={sourceType:"operating_task" as const,sourceId:"supplier-receiving:po",kind:"supplier_receiving"};
 const run=(calls:unknown[])=>verifyUniversalInvestigationTurn({endReason:"complete",unverified:[],
  text:"The receiving evidence is incomplete. Please verify what arrived before we record stock.",

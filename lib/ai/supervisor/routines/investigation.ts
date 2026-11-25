@@ -8,17 +8,11 @@ import {unreplacedResearchAttempts,completeResearchAttempts} from "@/lib/ai/agen
  * evidence reads. Only a verified owner's later turn can reach the registered
  * proposal and effect gateway. A scheduled investigation cannot authorize work. */
 export const investigationReadTools=[
-  "get_investigation_source","get_sales","get_profit","get_labor","get_expenses",
-  "get_bills","get_cashflow_evidence","get_cost_summary","get_item_sales","get_ingredient_costs",
-  "get_product_costs","get_menu_items","get_price_monitor_status",
-  "get_peak_hours","get_payroll_facts","get_staff_messages","get_staff_coordination_cases","get_schedule","get_week_schedule",
-  "get_coverage_gaps","get_inventory","get_usage_variance","inspect_purchase_reconciliation","calculate",
-  "describe_data","query_data",
+  "get_investigation_source","describe_data","query_data","calculate",
+  "get_coverage_gaps","inspect_purchase_reconciliation",
 ] as const satisfies readonly AgentToolName[];
 /** The only system-triggered write permitted here is an inert approval
  * draft. The existing owner-click gateway is still the only effect authority. */
-export const customerInvestigationTools=[...investigationReadTools,"get_events"] as const satisfies readonly AgentToolName[];
-export const supplierResearchInvestigationTools=[...investigationReadTools,"web_search"] as const satisfies readonly AgentToolName[];
 export const maintenanceInvestigationTools=[...investigationReadTools,
   "get_maintenance_staff_candidates","propose_maintenance_staff_assignment","record_maintenance_repair_claim",
   "search_maintenance_vendor","propose_maintenance_vendor_request"] as const satisfies readonly AgentToolName[];
