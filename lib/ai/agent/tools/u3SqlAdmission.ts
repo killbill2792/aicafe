@@ -74,7 +74,7 @@ for(const source of Object.values(toastOfficialFieldCatalog)){
 
 export const ownerOnlyResearchRelations:ReadonlySet<string>=new Set(["employees","timecards","scheduled_shifts","cafe_decisions","employee_pay_period_facts","timecard_breaks","current_owner_facts","staff_availability_rules","staff_availability_exceptions","staff_schedules","pos_scheduled_shifts","staff_scheduling_preferences","staff_qualifications","staff_custom_rules","recorded_timecards","supplier_quotes","goal_metrics","goal_observations","goal_checkins","financial_statement_documents","financial_statement_transactions","financial_invoice_claims","financial_bill_claims","financial_settlement_evidence","event_readiness_plans","event_readiness_links","event_readiness_actions","event_readiness_observations","toast_location_mappings","toast_employee_directory","staff_preference_windows","staff_scheduling_compensation","staff_communication_requests","staff_communication_messages","staff_coordination_cases","staff_coordination_evidence","maintenance_cases","maintenance_case_events","operating_tasks","alerts","supervisor_proposals","supplier_proposal_lines","supervisor_effect_attempts","supervisor_reports","supervisor_monitor_windows","purchase_order_dispatches","purchase_order_channel_reports","purchase_order_events","cafe_supplier_order_contacts","supplier_po_draft_replacements","pos_catalog_matches","pos_import_reviews","pos_connection_status","toast_connection_status","connector_account_status","supervisor_monitor_samples","toast_analytics_results","toast_open_labor_summaries","toast_order_observation_details","order_observations","cash_observations","kitchen_observations","dining_option_observations"]);
 
-export type U3TrustedUnit="cents"|"microcents"|"count"|"percent"|"ratio"|"basis_points";
+export type U3TrustedUnit="cents"|"microcents"|"count"|"percent"|"ratio"|"basis_points"|"seconds"|"minutes"|"hours";
 export type U3RelationUnits=Readonly<Record<string,Readonly<Record<string,U3TrustedUnit|null>>>>;
 export type U3ColumnOrigin={relation:string;column:string;binding:number};
 export type U3SqlAdmission={relations:string[];functions:string[];nodeCount:number;cteCount:number;
@@ -375,7 +375,7 @@ export async function admitU3Sql(sql:string,allowedRelations:readonly string[],
  }
  if(aggregateOnly&&!(offturnByRelation&&relationUnits&&unattendedDetailAllowed([...reads]))&&!reducedGrain(tree.stmts[0].stmt,new Map()))
   throw Error("unattended_aggregate_required");
- const recognized=(v:unknown):Unit=>v==="cents"||v==="microcents"||v==="count"||v==="percent"||v==="ratio"||v==="basis_points"?v:null;
+ const recognized=(v:unknown):Unit=>v==="cents"||v==="microcents"||v==="count"||v==="percent"||v==="ratio"||v==="basis_points"||v==="seconds"||v==="minutes"||v==="hours"?v:null;
  let bindingSequence=0;
  const baseColumns=(rel:string):Columns=>{
   const binding=++bindingSequence;
@@ -438,7 +438,7 @@ export async function admitU3Sql(sql:string,allowedRelations:readonly string[],
  };
  // A numeric scale is not a source of evidence on its own. Recognize only
  // exact unit conversions here; other constants remain untyped.
- const scalar=(node:unknown,value:1|100):boolean=>{
+ const scalar=(node:unknown,value:1|60|100|3600):boolean=>{
   const v=obj(obj(node)?.A_Const);
   if(!v)return false;
   const i=obj(v.ival),f=obj(v.fval);
@@ -491,6 +491,12 @@ export async function admitU3Sql(sql:string,allowedRelations:readonly string[],
    if(op==="*"&&right!==null&&scalar(expr.lexpr,1))return right;
    if(op==="*"&&((left==="ratio"&&scalar(expr.rexpr,100))||(right==="ratio"&&scalar(expr.lexpr,100))))return "percent";
    if(op==="/"&&left==="percent"&&scalar(expr.rexpr,100))return "ratio";
+   if(op==="/"&&left==="seconds"&&scalar(expr.rexpr,60))return "minutes";
+   if(op==="/"&&left==="seconds"&&scalar(expr.rexpr,3600))return "hours";
+   if(op==="/"&&left==="minutes"&&scalar(expr.rexpr,60))return "hours";
+   if(op==="*"&&((left==="hours"&&scalar(expr.rexpr,60))||(right==="hours"&&scalar(expr.lexpr,60))))return "minutes";
+   if(op==="*"&&((left==="hours"&&scalar(expr.rexpr,3600))||(right==="hours"&&scalar(expr.lexpr,3600))))return "seconds";
+   if(op==="*"&&((left==="minutes"&&scalar(expr.rexpr,60))||(right==="minutes"&&scalar(expr.lexpr,60))))return "seconds";
    return null;
   }
   const cast=obj(v.TypeCast);

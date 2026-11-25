@@ -77,6 +77,7 @@ const columnUnit=(field:string,type:string)=>{
  if(field.endsWith("_micros"))return "microcent";
  if(field.endsWith("_at"))return "timestamp_observed_or_effective";
  if(field==="business_date"||field.endsWith("_date"))return "cafe_business_date";
+ if(field.endsWith("_seconds"))return "seconds";
  if(field.endsWith("_minutes"))return "minutes";
  if(field.endsWith("_hours"))return "hours";
  if(/_(?:bps|bp)$/.test(field))return "basis_points";
@@ -447,6 +448,8 @@ export async function runU3Sql(ctx:U3SqlContext,raw:unknown){
     const unit:U3TrustedUnit|null=col.unit==="integer_cent"?"cents":
      col.unit==="microcent"?"microcents":
      col.unit==="basis_points"?"basis_points":
+     (col.unit==="seconds"||col.unit==="minutes"||col.unit==="hours")&&
+       ["int2","int4","int8","numeric","float4","float8"].includes(col.type)?col.unit:
      // Reviewed quantity fields representing sold item units, not mixed ingredient or inventory units.
      relation.name==="order_lines"&&col.name==="quantity"?"count":
      /(?:^|_)(?:count|orders|items|visits|rows)$/.test(col.name)&&
