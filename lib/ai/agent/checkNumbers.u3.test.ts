@@ -293,3 +293,33 @@ describe("SQL daily source-row date and metric evidence",()=>{
   expect(checkNumbers("Sales on 2026-11-15 were $123.45.","",[make("missing")],"en",saved)).not.toEqual([]);
  });
 });
+
+describe("SQL roster clock provenance",()=>{
+ const shift={id:"shift-a",employee_id:"worker-a",local_date:"2026-11-19",start_local:"07:00:00",end_local:"14:00:00",overnight:false,status:"sent",source:"owner",deleted_at:null};
+ const row={...shift,worker_id:"worker-a",worker_name:"Ada"};
+ const origins={...Object.fromEntries(Object.keys(shift).map(column=>[column,{relation:"scheduled_shifts",column,binding:1}])),
+  worker_id:{relation:"employees",column:"id",binding:2},
+  worker_name:{relation:"employees",column:"display_name",binding:2}};
+ const make=(changes:Record<string,unknown>={},additionalRows:Record<string,unknown>[]=[]):AgentToolResult=>({
+  ...receipt(),rows:[{...row,...changes},...additionalRows],
+  evidence:{...(receipt().evidence as object),column_units:{},column_origins:origins}
+ });
+ const claim="Ada's shift starts at 07:00 on 2026-11-19.";
+ it("accepts the exact dated joined roster clock, not another worker, day, or actual punch",()=>{
+  expect(checkNumbers(claim,"",[make()],"en")).toEqual([]);
+  for(const text of ["Bob's shift starts at 07:00 on 2026-11-19.","Ada's shift starts at 08:00 on 2026-11-19.","Ada's shift starts at 07:00 on 2026-11-20.","Ada clocked in at 07:00 on 2026-11-19."])
+   expect(checkNumbers(text,"",[make()],"en")).not.toEqual([]);
+  expect(checkNumbers(claim,"",[make({worker_id:"worker-b"})],"en")).not.toEqual([]);
+  expect(checkNumbers(claim,"",[make({worker_id:"worker-b"},[{...row,id:"shift-b",start_local:"10:00:00"}])],"en")).not.toEqual([]);
+ });
+ it("withdraws revised or removed shifts by identity without wiping independent shifts",()=>{
+  const prior=compactEvidence([make({},[{...row,id:"shift-b",start_local:"10:00:00"}])]);
+  for(const changes of [{start_local:"09:00:00"},{deleted_at:"2026-11-19T01:00:00Z"},{status:"draft",source:"olivia"}]){
+   expect(checkNumbers(claim,"",[make(changes)],"en",prior)).not.toEqual([]);
+   expect(checkNumbers("Ada's shift starts at 10:00 on 2026-11-19.","",[make(changes)],"en",prior)).toEqual([]);
+  }
+ });
+ it("uses the next local date for an overnight shift end",()=>{
+  expect(checkNumbers("Ada's shift ends at 02:00 on 2026-11-20.","",[make({start_local:"20:00:00",end_local:"02:00:00",overnight:true})],"en")).toEqual([]);
+ });
+});

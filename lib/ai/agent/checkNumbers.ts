@@ -10,7 +10,7 @@ export type TimeScope = {kind:"hours";days:string[]} | {kind:"schedule";from:str
 export type NumericEvidence = {tool:string;values:Array<{key:string;value:number;unit:"cents"|"bps"|"ratio"|"count"|"g"|"ml";
   provenance?:"estimate";detail?:"breakEvenSales"|"salesGap"|"dailyOverhead"|"pricing"}>;
   times?:VerifiedTime[];timeScope?:TimeScope;prices?:MenuPrice[];
-  invalidatedKeys?:string[];invalidatedPriceIds?:string[];
+  invalidatedKeys?:string[];invalidatedPriceIds?:string[];invalidatedShiftIds?:string[];
   priceUpdates?:Array<{id:string;priceCents:number}>};
 // Only business collections, not diagnostics or metadata, establish counts.
 // This same contract applies to current-turn and persisted numeric evidence.
@@ -146,26 +146,31 @@ export function hasVerifiedU3DirectObservation(r:AgentToolResult):boolean{
 /** Reconstruct only the direct columns of the SAME trusted SQL binding.
  * An output alias, CASE, constant or another self-join row cannot fabricate
  * employee, date, timestamp or menu-item identity. */
-function directU3Rows(r:AgentToolResult,relation:string):Array<Record<string,unknown>>{
+/** Preserve source binding and result-row boundaries for joins. A display
+ * name in another row or unrelated binding must not identify a shift. */
+function directU3RowBindings(r:AgentToolResult):Array<Map<string,Record<string,unknown>[]>>{
  const proof=completeU3Proof(r);
  const origins=proof?.column_origins;
  if(!origins||typeof origins!=="object"||Array.isArray(origins)||!Array.isArray(r.rows))return [];
- const out:Record<string,unknown>[]=[];
+ const out:Array<Map<string,Record<string,unknown>[]>>=[];
  for(const row of r.rows){
   if(!row||typeof row!=="object"||Array.isArray(row))continue;
-  const bindings=new Map<number,Record<string,unknown>>();
+  const bindings=new Map<string,Map<number,Record<string,unknown>>>();
   for(const [label,origin] of Object.entries(origins)){
-   if(!origin||typeof origin!=="object"||Array.isArray(origin)||origin.relation!==relation||
-    typeof origin.column!=="string"||!Number.isSafeInteger(origin.binding)||
-    !Object.hasOwn(row,label))continue;
-   const fields=bindings.get(origin.binding)??Object.create(null) as Record<string,unknown>;
+   if(!origin||typeof origin!=="object"||Array.isArray(origin)||typeof origin.relation!=="string"||
+    typeof origin.column!=="string"||!Number.isSafeInteger(origin.binding)||!Object.hasOwn(row,label))continue;
+   const relation=bindings.get(origin.relation)??new Map<number,Record<string,unknown>>();
+   const fields=relation.get(origin.binding)??Object.create(null) as Record<string,unknown>;
    if(Object.hasOwn(fields,origin.column))continue;
    fields[origin.column]=(row as Record<string,unknown>)[label];
-   bindings.set(origin.binding,fields);
+   relation.set(origin.binding,fields);bindings.set(origin.relation,relation);
   }
-  out.push(...bindings.values());
+  out.push(new Map([...bindings].map(([relation,fields])=>[relation,[...fields.values()]])));
  }
  return out;
+}
+function directU3Rows(r:AgentToolResult,relation:string):Array<Record<string,unknown>>{
+ return directU3RowBindings(r).flatMap(bindings=>bindings.get(relation)??[]);
 }
 const actualTimestamp=(v:unknown):string|null=>{
  const d=v instanceof Date?v:typeof v==="string"?new Date(v):null;
@@ -428,8 +433,9 @@ export function compactEvidence(results:readonly AgentToolResult[],limit=100):Nu
       const amount=u3ReceiptNumber(row.net_sales_cents,"cents");
       if(row.sales_data_status==="actual"&&amount)values.push({key,value:amount.value,unit:"cents"});
     }
+    const sqlShifts=sqlShiftEvidence(r);
     const observedTimes=[...observedHours([r]),...observedShifts([r]),
-      ...observedTimecardClocks([r])];
+      ...observedTimecardClocks([r]),...sqlShifts.times];
     // Current-turn verification has the full returned source evidence. Only
     // the compact cross-turn persistence representation is bounded here.
     const times=Number.isFinite(limit)?observedTimes.slice(0,r.source==="labor_and_attendance"?160:60):observedTimes;
@@ -495,7 +501,8 @@ export function compactEvidence(results:readonly AgentToolResult[],limit=100):Nu
       else if(r.currentPriceCents===null)invalidatedPriceIds.push(r.itemId);
     }
     return {tool:r.source,values,times,timeScope,prices:Number.isFinite(limit)?prices.slice(0,25):prices,
-      invalidatedKeys:[...new Set(invalidatedKeys)],invalidatedPriceIds,priceUpdates};
+      invalidatedKeys:[...new Set(invalidatedKeys)],invalidatedPriceIds,priceUpdates,
+      invalidatedShiftIds:sqlShifts.invalidatedShiftIds};
   });
   if(Number.isFinite(limit)){
     // Latest reads and item prices are the most valuable persisted evidence.
@@ -511,7 +518,7 @@ export function compactEvidence(results:readonly AgentToolResult[],limit=100):Nu
   return gathered.filter(e=>e.values.length>0||e.times.length>0||
     (e.timeScope?.kind==="hours"&&e.timeScope.days.length>0)||
     e.timeScope?.kind==="schedule"||e.timeScope?.kind==="timecards"||e.prices.length>0||
-    e.invalidatedKeys.length>0||e.invalidatedPriceIds.length>0||e.priceUpdates.length>0);
+    e.invalidatedKeys.length>0||e.invalidatedPriceIds.length>0||e.priceUpdates.length>0||e.invalidatedShiftIds.length>0);
 }
 /** Saved turns arrive oldest first. An updated value for the same
  * source/item/period key replaces its predecessor, never unions with it.
@@ -551,6 +558,9 @@ function reconcileSavedEvidence(entries:readonly NumericEvidence[]):NumericEvide
         });
       }
     }
+    const refreshedShifts=new Set(entry.invalidatedShiftIds??[]);
+    if(refreshedShifts.size)for(const prior of bySource.values())
+      prior.times=prior.times.filter(t=>!t.shiftId||!refreshedShifts.has(t.shiftId));
     const grouped=new Map<string,Value[]>();
     for(const v of entry.values){
       if(typeof v.key!=="string"||!Number.isFinite(v.value))continue;
@@ -624,9 +634,9 @@ function reconcileSavedEvidence(entries:readonly NumericEvidence[]):NumericEvide
       }
     }else if(times.length){
       // Older saved payloads without scope can still provide typed clocks.
-      const oldKeys=new Set(times.map(t=>[t.day,t.role,t.person,t.validFrom,t.validTo].join("/")));
+      const oldKeys=new Set(times.map(t=>[t.day,t.role,t.person,t.validFrom,t.validTo,t.shiftId].join("/")));
       slot.times=slot.times.filter(t=>
-        !oldKeys.has([t.day,t.role,t.person,t.validFrom,t.validTo].join("/")));
+        !oldKeys.has([t.day,t.role,t.person,t.validFrom,t.validTo,t.shiftId].join("/")));
       slot.times.push(...times);
     }
   }
@@ -832,7 +842,7 @@ const DAY_MENTIONS = [
 type TimeRole = "open"|"close"|"shiftStart"|"shiftEnd"|"clockIn"|"clockOut";
 type ClockSpan = RegExpMatchArray & {index:number};
 type VerifiedTime = {day:string;time:string;role:TimeRole;complete:boolean;person:string|null;
-  validFrom?:string;validTo?:string;dated?:boolean;timecardId?:string};
+  validFrom?:string;validTo?:string;dated?:boolean;timecardId?:string;shiftId?:string};
 const clockEnd = (clock:ClockSpan) => clock.index+clock[0].length;
 // The clock token includes the meridiem: dropping Arabic "مساءً" silently
 // turns a 5 PM closing claim into the wrong 05:00 morning assertion.
@@ -1136,6 +1146,58 @@ function observedTimecardClocks(results:readonly AgentToolResult[]):VerifiedTime
   }
  }
  return known;
+}
+
+/** SQL roster evidence is source-specific planned time, never an actual
+ * punch. Refresh only explicitly observed shift identities, including deleted
+ * rows; a filtered SELECT does not prove other shifts were removed. */
+function sqlShiftEvidence(r:AgentToolResult):{times:VerifiedTime[];invalidatedShiftIds:string[]}{
+ const times:VerifiedTime[]=[],invalidatedShiftIds:string[]=[];
+ const localClock=(v:unknown)=>typeof v==="string"&&/^(?:[01]\d|2[0-3]):[0-5]\d(?::[0-5]\d(?:\.\d+)?)?$/u.test(v)?v.slice(0,5):null;
+ const validDate=(v:unknown):v is string=>typeof v==="string"&&/^\d{4}-\d{2}-\d{2}$/u.test(v)&&Number.isFinite(Date.parse(v+"T12:00:00Z"))&&new Date(v+"T12:00:00Z").toISOString().slice(0,10)===v;
+ const uniqueName=(rows:Record<string,unknown>[],field:string):string|null=>{
+  const names=[...new Set(rows.map(row=>row[field]).filter((v):v is string=>typeof v==="string"&&!!v.trim()).map(v=>v.trim().toLocaleLowerCase()))];
+  return names.length===1?names[0]:null;
+ };
+ const add=(id:string,date:string,time:string|null,role:"shiftStart"|"shiftEnd",person:string|null)=>{
+  if(!time||!validDate(date))return;
+  const day=DAY_MENTIONS[new Date(date+"T12:00:00Z").getUTCDay()]?.key;
+  if(day)times.push({day,time,role,person,complete:false,validFrom:date,validTo:date,dated:true,shiftId:id});
+ };
+ for(const bindings of directU3RowBindings(r)){
+  const employees=bindings.get("employees")??[];
+  for(const row of bindings.get("scheduled_shifts")??[]){
+   if(typeof row.id!=="string"||!row.id||!Object.hasOwn(row,"deleted_at")||!Object.hasOwn(row,"status")||!Object.hasOwn(row,"source"))continue;
+   const id="app:"+row.id;
+   if(row.deleted_at!==null||row.status!=="sent"&&row.status!=="draft"||row.source==="olivia"&&row.status==="draft"){
+    invalidatedShiftIds.push(id);continue;
+   }
+   if(!["owner","copied","repeat","olivia"].includes(String(row.source))||!validDate(row.local_date)||
+      !Object.hasOwn(row,"start_local")||!Object.hasOwn(row,"end_local")||typeof row.overnight!=="boolean")continue;
+   invalidatedShiftIds.push(id);
+   const person=typeof row.employee_id==="string"?uniqueName(employees.filter(e=>e.id===row.employee_id),"display_name"):null;
+   add(id,row.local_date,localClock(row.start_local),"shiftStart",person);
+   add(id,row.overnight?offsetDate(row.local_date,1):row.local_date,localClock(row.end_local),"shiftEnd",person);
+  }
+  for(const row of bindings.get("pos_scheduled_shifts")??[]){
+   if(row.provider!=="toast"||typeof row.location_id!=="string"||typeof row.external_shift_id!=="string"||
+      typeof row.deleted!=="boolean")continue;
+   const id="toast:"+row.location_id+":"+row.external_shift_id;
+   if(row.deleted){invalidatedShiftIds.push(id);continue;}
+   const settings=bindings.get("cafe_settings")??[];
+   const timezones=[...new Set(settings.map(v=>v.timezone).filter((v):v is string=>typeof v==="string"))];
+   if(timezones.length!==1||!Object.hasOwn(row,"scheduled_start")||!Object.hasOwn(row,"scheduled_end"))continue;
+   const start=localPunch(actualTimestamp(row.scheduled_start),timezones[0]),end=localPunch(actualTimestamp(row.scheduled_end),timezones[0]);
+   if(!start||!end)continue;
+   invalidatedShiftIds.push(id);
+   const locations=(bindings.get("toast_location_mappings")??[]).filter(v=>v.location_id===row.location_id&&typeof v.restaurant_guid==="string");
+   const directory=(bindings.get("toast_employee_directory")??[]).filter(v=>typeof row.external_employee_id==="string"&&v.employee_guid===row.external_employee_id&&locations.some(l=>l.restaurant_guid===v.restaurant_guid));
+   const linked=directory.filter(v=>typeof v.linked_employee_id==="string");
+   const person=linked.length?uniqueName(employees.filter(e=>linked.some(v=>v.linked_employee_id===e.id)),"display_name"):uniqueName(directory,"display_name");
+   add(id,start.date,start.time,"shiftStart",person);add(id,end.date,end.time,"shiftEnd",person);
+  }
+ }
+ return {times,invalidatedShiftIds:[...new Set(invalidatedShiftIds)]};
 }
 
 function observedShifts(results:readonly AgentToolResult[]):VerifiedTime[] {
