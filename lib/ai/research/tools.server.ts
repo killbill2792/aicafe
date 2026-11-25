@@ -14,16 +14,36 @@ export type ResearchScope={db:SupabaseClient;businessId:string;ownerUserId:strin
   /** Café notes (what Supervisor has learned about this café), saved with the owner's own session. */
   notes?:{save:(topic:string,note:string,basis:string)=>Promise<void>;forget:(topic:string)=>Promise<boolean>}};
 
-/** Remember text values read from café data so they can never be sent to a public search. */
+/** Remember everything read from café data (text and numbers, at any depth) so none of it is sent to a public search. */
 function rememberPrivate(scope:ResearchScope,rows:unknown){
-  if(!scope.privateValues||!Array.isArray(rows))return;
-  for(const row of rows)if(row&&typeof row==="object")for(const v of Object.values(row)){
-    if(typeof v==="string"&&v.length>=4&&v.length<=80&&!/^[\d\s.,:/-]+$/u.test(v))scope.privateValues.add(v.toLowerCase());
-  }
+  if(!scope.privateValues)return;
+  const visit=(value:unknown,depth:number)=>{
+    if(depth>8||value===null||value===undefined)return;
+    if(typeof value==="string"){
+      const text=value.trim().toLowerCase();
+      if(text.length>=4&&text.length<=200&&!/^[\d\s.,:/-]+$/u.test(text))scope.privateValues!.add(text);
+      // A JSON value can be stored as text: read inside it too.
+      if(/^[[{]/u.test(text))try{visit(JSON.parse(value),depth+1);}catch{/* plain text */}
+      return;
+    }
+    if(typeof value==="number"){
+      // Public searches may name a year; any other figure from the café's data stays private.
+      if(Number.isFinite(value)&&Math.abs(value)>=100&&!(Number.isInteger(value)&&value>=1990&&value<=2100))
+        scope.privateValues!.add("#"+String(value));
+      return;
+    }
+    if(Array.isArray(value)){for(const item of value)visit(item,depth+1);return;}
+    if(typeof value==="object")for(const item of Object.values(value as Record<string,unknown>))visit(item,depth+1);
+  };
+  visit(rows,0);
 }
 function privateTextIn(scope:ResearchScope,query:string):string|null{
   const q=query.toLowerCase();
-  for(const v of scope.privateValues??[])if(q.includes(v))return v;
+  const figures=new Set((q.match(/\d[\d.,]*\d|\d/gu)??[]).map(t=>t.replace(/,/gu,"")));
+  for(const v of scope.privateValues??[]){
+    if(v.startsWith("#")){if(figures.has(v.slice(1)))return v.slice(1);continue;}
+    if(q.includes(v))return v;
+  }
   return null;
 }
 
@@ -80,8 +100,10 @@ export async function runSql(scope:ResearchScope,sql:string):Promise<Record<stri
 }
 
 const IDENT=/^[A-Za-z_][A-Za-z0-9_]{0,62}$/u;
+// Diagnostic snapshots are never café evidence (AGENTS.md operational-source rule); the database function also refuses them.
+const OPERATIONAL="c.relname !~ '^(toast_raw_samples|toast_raw_samples_latest|diag_|diagnostic_|test_|fixture_)'";
 const RELATIONS="from pg_class c join pg_namespace n on n.oid=c.relnamespace "+
-  "where n.nspname='public' and c.relkind in ('r','p','v','m') and has_table_privilege(c.oid,'select')";
+  "where n.nspname='public' and c.relkind in ('r','p','v','m') and has_table_privilege(c.oid,'select') and "+OPERATIONAL;
 export async function describeDatabase(scope:ResearchScope,tables:readonly string[]|null):Promise<Record<string,unknown>>{
   if(!tables||!tables.length){
     return callDatabase(scope,"select c.relname as name, case when c.relkind in ('v','m') then 'view' else 'table' end as kind, "+
@@ -95,7 +117,7 @@ export async function describeDatabase(scope:ResearchScope,tables:readonly strin
     callDatabase(scope,"select c.relname as table, a.attname as column, format_type(a.atttypid,a.atttypmod) as type, "+
       "not a.attnotnull as nullable, col_description(c.oid,a.attnum) as description "+
       "from pg_attribute a join pg_class c on c.oid=a.attrelid join pg_namespace n on n.oid=c.relnamespace "+
-      "where n.nspname='public' and c.relname = any("+list+") and has_table_privilege(c.oid,'select') "+
+      "where n.nspname='public' and c.relname = any("+list+") and has_table_privilege(c.oid,'select') and "+OPERATIONAL+" "+
       "and a.attnum>0 and not a.attisdropped order by c.relname, a.attnum"),
     callDatabase(scope,"select case k.contype when 'f' then 'foreign_key' else 'allowed_values' end as kind, "+
       "k.conrelid::regclass::text as table, nullif(k.confrelid,0)::regclass::text as references, pg_get_constraintdef(k.oid) as definition "+

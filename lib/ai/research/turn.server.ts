@@ -5,6 +5,7 @@ import {openAIProvider,type AgentProvider,type AgentTurn,type AgentAuditStep,typ
 import {executeAgentTool,isRepeatSafeOwnerTool,observeDurableToolEffect,type AgentToolContext,type AgentToolResult} from "@/lib/ai/agent/tools";
 import {safeToolError} from "@/lib/ai/agent/toolErrors";
 import type {OwnerRunCheckpoint} from "@/lib/ai/supervisor/runs/contracts";
+import {unsupportedNumbers} from "./verify";
 import {executeResearchTool,researchToolDefinitions,type ResearchScope} from "./tools.server";
 
 /** Server switch, default OFF. When ON, owner chat uses ONLY describe_database, run_sql and calculate. */
@@ -101,6 +102,8 @@ export async function runResearchTurn(args:{
   const usage:AgentTurn["usage"]={modelCalls:0,toolCalls:0,inputTokens:0,cachedTokens:0,outputTokens:0,latencyMs:0};
   const invocations:{name:string;result:AgentToolResult}[]=[];
   const privateValues=new Set<string>();
+  /** Everything retrieved or calculated this turn; the answer's figures are checked against it. */
+  const evidence:string[]=[];
   let text="",endReason:EndReason="complete";
 
   // Only an existing durable background run's own budget can end research early.
@@ -215,12 +218,14 @@ export async function runResearchTurn(args:{
         let failed:boolean,record:AgentToolResult;
         if(args.actions?.definitions.some(d=>d.name===fc.name)){
           record=await runAction(fc);
+          evidence.push(JSON.stringify(record));
           failed=Boolean(record.error);
           input.push({type:"function_call_output",call_id:fc.call_id,output:JSON.stringify(record)});
         }else{
           const result=await executeResearchTool({...args.scope,webSearch:args.webSearch??args.scope.webSearch,privateValues},fc.name,fc.arguments);
           input.push({type:"function_call_output",call_id:fc.call_id,output:JSON.stringify(result)});
           failed=result.ok===false;
+          if(!failed)evidence.push(JSON.stringify(result));
           record={source:"sql_research",period:null,missing:[],agentId:"alex",tool:fc.name,...(failed?{error:"research_tool_error"}:{})};
         }
         invocations.push({name:fc.name,result:record});
@@ -244,7 +249,9 @@ export async function runResearchTurn(args:{
   }
   usage.latencyMs=Math.max(0,now()-started);
   const tools=[...new Set(invocations.map(i=>i.name))];
-  return {text,endReason,status:{status:"complete",missing:[]},unverified:[],
+  return {text,endReason,status:{status:"complete",missing:[]},
+    // Same promise as the standard path: a figure with no source in this turn's evidence is shown as unverified.
+    unverified:text?unsupportedNumbers(text,[args.ownerText,args.cafeContext,...(args.history??[]).map(h=>h.content),...evidence]):[],
     results:invocations.map(i=>i.result),toolInvocations:invocations,tools,
     agentIds:tools.length?["alex"]:[],usage};
 }

@@ -20,4 +20,20 @@ describe("public web search privacy",()=>{
     const ok=await executeResearchTool(scope,"search_web",JSON.stringify({query:"California meal break premium pay rules"}));
     expect(ok.ok).toBe(true);
   });
+  it("also protects nested JSON values and figures from café data",async()=>{
+    const nested={rpc:async()=>({data:{ok:true,row_count:1,rows:[{payload:{employee:"Zainab Alharbi",wages:2500,
+      detail:'{"manager":"Rashid Karimi"}'}}]},error:null})} as unknown as SupabaseClient;
+    const seen:string[]=[];
+    const s2:ResearchScope={db:nested,businessId:"b",ownerUserId:"u",privateValues:new Set(),
+      webSearch:async q=>{seen.push(q);return {available:true,answer:"ok",sources:[]};}};
+    await executeResearchTool(s2,"run_sql",JSON.stringify({sql:"select payload from staff"}));
+    for(const query of ["overtime owed to Zainab Alharbi","is 2500 per month below the minimum wage","rules about Rashid Karimi"]){
+      const r=await executeResearchTool(s2,"search_web",JSON.stringify({query}));
+      expect(r.ok,query).toBe(false);
+    }
+    expect(seen).toEqual([]);
+    // Public questions, including a year, still go through.
+    const ok=await executeResearchTool(s2,"search_web",JSON.stringify({query:"2026 minimum wage Florida"}));
+    expect(ok.ok).toBe(true);
+  });
 });

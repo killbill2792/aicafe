@@ -92,6 +92,27 @@ describe.skipIf(!enabled)("direct SQL research on the migrated database",()=>{
   });
 
 
+  it("never returns diagnostic sources: hidden from discovery and refused by the SQL executor",async()=>{
+    const all=await executeResearchTool(scope(cafeA),"describe_database",JSON.stringify({tables:null}));
+    const names=(all.rows as {name:string}[]).map(r=>r.name);
+    expect(names).not.toContain("toast_raw_samples");
+    expect(names).not.toContain("toast_raw_samples_latest");
+    const detail=await executeResearchTool(scope(cafeA),"describe_database",JSON.stringify({tables:["toast_raw_samples"]}));
+    expect((detail.columns as {rows:unknown[]}).rows).toEqual([]);
+    for(const text of [
+      "select * from toast_raw_samples",
+      "select count(*) from toast_raw_samples_latest",
+      "with s as (select * from toast_raw_samples) select count(*) from s",
+      "select 1 where exists (select 1 from public.toast_raw_samples)",
+    ]){
+      const r=await sql(scope(cafeA),text);
+      expect(r.ok,text).toBe(false);
+      expect(String(r.error)).toContain("diagnostic");
+    }
+    // An operational read still works.
+    expect((await sql(scope(cafeA),"select count(*)::int as n from orders")).ok).toBe(true);
+  });
+
   it("is read-only and returns useful SQL errors",async()=>{
     const before=(await admin.query("select count(*)::int n from orders where business_id=$1",[cafeA])).rows[0].n;
     for(const text of [
