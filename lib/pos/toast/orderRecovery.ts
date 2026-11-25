@@ -7,12 +7,12 @@ import {prepareToastOrderRevision} from "./orderIngestion";
 import {orderEventRetryAt} from "./orderQueue";
 import {isCafeCurrentlyOpen} from "./poll";
 import {currentToastBusinessDay} from "./todaySoFar";
-import {addCalendarDays,localClock} from "./scheduleDates";
+import {localClock} from "./scheduleDates";
 import {normalizeOpenHours,OPEN_HOURS_DAY_KEYS} from "@/lib/business/openHours";
 
 const MINUTE=60000;
 export const orderRecoveryCadence=(open:boolean,_webhookSeen:boolean)=>
- (open?5:30)*MINUTE;
+ (open?5:15)*MINUTE;
 
 /** A committed modification-time cursor, independent of the order's business
  * date. Do not discard a gap after a long outage. Replay a short overlap; the
@@ -26,21 +26,23 @@ export function orderRecoveryWindow(cursor:string|null,bootstrap:Date,now:Date){
 }
 type Params={businessId:string;restaurantGuid:string;locationId:string};
 export async function pollToastOrderRevisions(db:SupabaseClient,p:Params,now=new Date(),deadlineAt=Date.now()+60000){
- const [{data:m,error:me},{data:l,error:le},{data:h,error:he}]=await Promise.all([
+ const [{data:m,error:me},{data:l,error:le},{data:h,error:he},{data:pending,error:pendingError}]=await Promise.all([
   db.from("toast_location_mappings").select("toast_time_zone,closeout_hour,verified_at")
    .eq("business_id",p.businessId).eq("restaurant_guid",p.restaurantGuid).eq("location_id",p.locationId).maybeSingle(),
   db.from("locations").select("open_hours").eq("business_id",p.businessId).eq("id",p.locationId).maybeSingle(),
   db.from("toast_sync_health").select("canonical_order_poll_at,canonical_live_day").eq("business_id",p.businessId)
-   .eq("restaurant_guid",p.restaurantGuid).maybeSingle()
+   .eq("restaurant_guid",p.restaurantGuid).maybeSingle(),
+  db.from("toast_order_poll_progress").select("next_page").eq("business_id",p.businessId)
+   .eq("restaurant_guid",p.restaurantGuid).eq("canonical",true).maybeSingle()
  ]);
- if(me||le||he)throw new ToastApiError("unavailable");
+ if(me||le||he||pendingError)throw new ToastApiError("unavailable");
  if(!m?.verified_at||!m.toast_time_zone||m.closeout_hour==null||!l)throw new ToastApiError("unauthorized_location");
  const scope={businessId:p.businessId,restaurantGuid:p.restaurantGuid,timezone:m.toast_time_zone,closeoutHour:m.closeout_hour};
  const cursor=h?.canonical_order_poll_at as string|null|undefined;
  const hours=normalizeOpenHours(l.open_hours);
  const open=!hours||!Object.prototype.hasOwnProperty.call(hours,OPEN_HOURS_DAY_KEYS[new Date(Date.parse(localClock(now,scope.timezone).today+"T12:00:00Z")).getUTCDay()])||isCafeCurrentlyOpen(hours,scope.timezone,now);
  const liveDay=currentToastBusinessDay(now,scope.timezone,scope.closeoutHour);
- if(h?.canonical_live_day===liveDay&&cursor&&now.getTime()-Date.parse(cursor)<orderRecoveryCadence(open,false))
+ if(!pending&&h?.canonical_live_day===liveDay&&cursor&&now.getTime()-Date.parse(cursor)<orderRecoveryCadence(open,false))
   return {skipped:"not_due",fetched:0};
  const {data:lease,error:claimError}=await db.rpc("toast_claim_poll",{p_business_id:p.businessId,
   p_restaurant_guid:p.restaurantGuid,p_kind:"orders"});

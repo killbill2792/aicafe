@@ -1,9 +1,10 @@
 import {beforeEach,describe,expect,it,vi} from "vitest";
 import type {SupabaseClient} from "@supabase/supabase-js";
 
-const m=vi.hoisted(()=>({importDay:vi.fn(),reconcile:vi.fn(),optional:vi.fn(),firstCatalog:vi.fn(),
+const m=vi.hoisted(()=>({live:vi.fn(),importDay:vi.fn(),reconcile:vi.fn(),optional:vi.fn(),firstCatalog:vi.fn(),
  refresh:vi.fn(),costs:vi.fn(),request:vi.fn(),paymentGaps:vi.fn(),operational:vi.fn(),operationalHealth:vi.fn()}));
 vi.mock("server-only",()=>({}));
+vi.mock("./orderRecovery",()=>({pollToastOrderRevisions:m.live}));
 vi.mock("./dayImport",()=>({importToastBusinessDay:m.importDay}));
 vi.mock("./reconcile",()=>({reconcileToastDays:m.reconcile}));
 vi.mock("./optionalSync",()=>({syncToastOptionalSources:m.optional,ensureToastFirstCatalog:m.firstCatalog}));
@@ -121,6 +122,7 @@ function makeDB(){
 beforeEach(()=>{
  vi.stubEnv("TOAST_AUTO_IMPORT_ENABLED","true");
  for(const fn of Object.values(m))fn.mockReset();
+ m.live.mockResolvedValue({skipped:"leased_or_not_verified",fetched:0});
  m.request.mockResolvedValue([]);
  m.optional.mockResolvedValue({menu:"skipped",labor:"skipped"});
  m.firstCatalog.mockResolvedValue(false);
@@ -394,4 +396,11 @@ it("reconciles owner-visible operational health after optional phases, even on a
  expect(sequence).toEqual(["optional","health"]);
  expect(result.errors).toBeGreaterThanOrEqual(1);
  expect(f.calls.at(-1)).toBe("toast_release_lease");
+});
+
+it("runs live recovery alone on the interleaved five-minute tick",async()=>{
+ const f=makeDB();m.live.mockResolvedValue({fetched:1,completedWindow:true});
+ await runToastSyncTick(f.db,new Date(now.getTime()+5*60000),Date.now()+60000);
+ expect(m.live).toHaveBeenCalledOnce();expect(f.calls).toContain("toast_refresh_canonical_live");
+ expect(f.calls).not.toContain("toast_acquire_lease");expect(m.importDay).not.toHaveBeenCalled();
 });

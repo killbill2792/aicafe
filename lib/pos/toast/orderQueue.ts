@@ -29,12 +29,12 @@ export async function runToastOrderQueue(db:SupabaseClient,deadlineAt?:number) {
  const {data:claimed,error:claimError}=await db.rpc("toast_claim_order_events",{p_limit:2});
  if(claimError)throw new ToastApiError("unavailable");
  const events=claimed as Claimed[]|null;
- let staged=0,failed=0,review=0;
+ let staged=0,failed=0;
  for(const event of events??[]){
    let failure:string|null=null,retryAt:string|null=null;
    try {
-     const state=await stageQueuedToastOrder(db,event,deadlineAt);
-     staged++;if(state==="repair_queued")review++;
+     await stageQueuedToastOrder(db,event,deadlineAt);
+     staged++;
    }catch(error){
      failed++;
      failure=error instanceof ToastApiError?error.category:"unavailable";
@@ -47,5 +47,5 @@ export async function runToastOrderQueue(db:SupabaseClient,deadlineAt?:number) {
    });
    if(finishError||!completed)throw new ToastApiError("unavailable");
  }
- return {claimed:events?.length??0,staged,failed,needsReview:review};
+ return {claimed:events?.length??0,staged,failed,needsReview:0};
 }

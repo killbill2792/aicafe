@@ -52,7 +52,9 @@ export function prepareToastOrderRevision(scope:OrderScope,raw:unknown){
   key:line.posItemId??"name:"+line.name,name:line.name,quantity:line.quantity,netSalesCents:line.netSalesCents}));
  const reading=summarizeToastToday({businessDate:day,readAt:"",timezone:scope.timezone,pages:[parsed],
   locationsRead:1,locationsFailed:0,truncated:false});
- const {topItems:_,hourlySales:__,readAt:___,...totals}=reading;
+ const totals={netSalesCents:reading.netSalesCents,grossSalesCents:reading.grossSalesCents,
+  discountsCents:reading.discountsCents,refundsCents:reading.refundsCents,tipCents:reading.tipCents,
+  orders:reading.orders,openChecks:reading.openChecks,unparsedOrders:reading.unparsedOrders};
  // Hour labels must use the reporting timezone, not the provider closeout
  // timezone; the database buckets the genuine observed timestamp.
  return {day,payload,projection:{...totals,items,observedAt:order?.hourObservedAt??null}};

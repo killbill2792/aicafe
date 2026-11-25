@@ -5,9 +5,7 @@ import type {TodaySoFarRead} from "@/lib/pos/toast/todaySoFar.server";
 import {currentToastBusinessDay,type TodaySoFar} from "@/lib/pos/toast/todaySoFar";
 import {cafeToday} from "@/lib/metrics/core/clock";
 
-/** The ONE path for "today so far": a live Toast reading saved every 15
- * minutes (cron) or when the chat needs a fresher one. Home and the chat both
- * read this saved reading, so they always show the same number. */
+/** The one shared provisional summary published by the Toast coordinator. */
 export const TODAY_LIVE_FRESH_MS=15*60_000;
 const readingSchema=z.object({provisional:z.literal(true),businessDate:z.iso.date(),readAt:z.string(),
  netSalesCents:z.number().int(),grossSalesCents:z.number().int(),discountsCents:z.number().int(),

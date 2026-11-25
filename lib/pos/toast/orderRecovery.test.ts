@@ -5,8 +5,8 @@ describe("webhook-primary incremental fallback",()=>{
  it("uses the same five-minute live recovery even with a configured webhook",()=>{
   expect(orderRecoveryCadence(true,false)).toBe(300000);
   expect(orderRecoveryCadence(true,true)).toBe(300000);
-  expect(orderRecoveryCadence(false,false)).toBe(1800000);
-  expect(orderRecoveryCadence(false,true)).toBe(1800000);
+  expect(orderRecoveryCadence(false,false)).toBe(900000);
+  expect(orderRecoveryCadence(false,true)).toBe(900000);
  });
  it("recovers a missed month without jumping to recent dates",()=>{
   const cursor="2026-10-01T08:00:00Z";

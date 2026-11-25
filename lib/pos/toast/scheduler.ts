@@ -166,7 +166,7 @@ export async function runToastSyncTick(db:SupabaseClient,now=new Date(),
  const globalDeadline=deadlineAt;
  let acquired=0,processed=0,errors=0;
  // Drain authenticated events through the existing order queue before polling.
- // The current full-day live job remains until stored-summary parity is proven.
+ // Durable webhook retries share the canonical archive and stored summary.
  if(process.env.TOAST_WEBHOOKS_ENABLED==="true"&&process.env.TOAST_JOBS_ENABLED==="true"){
   try{
    const {runToastOrderQueue}=await import("./orderQueue");
@@ -174,6 +174,37 @@ export async function runToastSyncTick(db:SupabaseClient,now=new Date(),
    errors+=events.failed;
   }catch{errors++;}
  }
+ // Reserve the first portion of each tick for live orders across locations.
+ // A slow historical lease may never delay another café's live poll.
+ const liveDeadline=Math.min(globalDeadline,Date.now()+Math.min(90000,Math.max(5000,(globalDeadline-Date.now())/2)));
+ const {pollToastOrderRevisions}=await import("./orderRecovery");
+ const liveBusinesses=new Set<string>();
+ for(const [index,m] of (mappings as Mapping[]).entries()){
+  if(Date.now()>=liveDeadline)break;
+  if(!m.toast_time_zone||m.closeout_hour==null)continue;
+  try{
+   const slice=Math.max(2000,(liveDeadline-Date.now())/Math.max(1,mappings.length-index));
+   const result=await pollToastOrderRevisions(db,{businessId:m.business_id,restaurantGuid:m.restaurant_guid,
+    locationId:m.location_id},now,Math.min(liveDeadline,Date.now()+slice));
+   if(!("skipped" in result)||result.skipped==="not_due")liveBusinesses.add(m.business_id);
+  }catch{errors++;}
+ }
+ // A successful or resumed order poll can publish one aggregate per café,
+ // not one full-day provider request per dashboard or per location.
+ for(const businessId of liveBusinesses){
+  if(Date.now()>=globalDeadline)break;
+  try{
+   const {error}=await db.rpc("toast_refresh_canonical_live",{p_business_id:businessId});
+   if(error)throw error;
+   if(process.env.EVENTS_LOOKAHEAD_ENABLED==="true"&&now.getUTCMinutes()%15===0){
+    const {watchLiveEvents}=await import("@/lib/events/eventLiveWatch.server");
+    const location=(mappings as Mapping[]).find(m=>m.business_id===businessId);
+    if(location)await watchLiveEvents(businessId,localClock(now,location.toast_time_zone).today);
+   }
+  }catch{errors++;}
+ }
+ // Only the fast path runs on the interleaved five-minute ticks.
+ if(Math.floor(now.getUTCMinutes()/5)%2===1)return {acquired,processed,errors};
  for(const [index,m] of (mappings as Mapping[]).entries()){
   if(Date.now()>=globalDeadline){
    for(const skipped of mappings.slice(index))console.info("toast_tick_skipped",{businessId:skipped.business_id,restaurantGuid:skipped.restaurant_guid});
@@ -229,18 +260,6 @@ export async function runToastSyncTick(db:SupabaseClient,now=new Date(),
    }
   };
   try {
-   await isolated("order_recovery",async()=>{
-    const {pollToastOrderRevisions}=await import("./orderRecovery");
-    await pollToastOrderRevisions(db,{businessId:m.business_id,restaurantGuid:m.restaurant_guid,
-     locationId:m.location_id},now,Math.min(deadlineAt,Date.now()+60000));
-    const {error}=await db.rpc("toast_refresh_canonical_live",{p_business_id:m.business_id});
-    if(error)throw new ToastApiError("unavailable");
-   });
-   await isolated("live_events",async()=>{
-    if(process.env.EVENTS_LOOKAHEAD_ENABLED!=="true"||now.getUTCMinutes()%15!==0)return;
-    const {watchLiveEvents}=await import("@/lib/events/eventLiveWatch.server");
-    await watchLiveEvents(m.business_id,localClock(now,m.toast_time_zone).today);
-   });
    await isolated("restaurant_info",async()=>{
    if(!m.info_refreshed_at||Date.parse(m.info_refreshed_at)<now.getTime()-DAY)
     await refreshToastRestaurantInfo(db,m.business_id,m.restaurant_guid,{deadlineAt});
