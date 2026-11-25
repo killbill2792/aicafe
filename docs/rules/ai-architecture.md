@@ -8,8 +8,10 @@ One conversational agent with ONE streaming tool-calling loop per owner turn (Op
   Research results use actual available context bytes with explicit complete traversal;
   no fixed token or row ceiling on business evidence. One tool per distinct business capability.
   One read-only data-query interface (`describe_data`/`query_data`) and one general
-  `calculate` tool remain authoritative. For legacy execution, use only reviewed
-  canonical views. The U3 approved target permits model-authored analytical SELECT
+  `calculate` tool remain authoritative. Model-facing stored-data acquisition uses
+  SQL only, plus receipt restoration and continuation; legacy internal canonical
+  readers remain for existing screen/effect consumers, not model report selection.
+  The U3 approved target permits model-authored analytical SELECT
   on a **private, catalog-admitted logical business surface only**, after a dedicated
   non-owner/non-BYPASSRLS research role, real PostgreSQL AST admission and independently
   tested database tenant/owner/lease enforcement are deployed. Do not send model SQL
@@ -77,10 +79,10 @@ remain useful inputs, never the intellectual decision-maker.
   and appropriate missing/error states. A complete answer requires exhausting
   relevant pages or asking PostgreSQL to perform the selected aggregate; a
   partial page, failure or snapshot change is never certified as a total.
-  A continuation either retrieves the same authorized immutable observation
-  or proves exact full-result equality in a fresh read-only transaction; it
-  is not a fabricated cross-page MVCC view. A bounded encrypted transport
-  cache is optional and may not impose a total result ceiling. Owner questions
+  A continuation retrieves the same authorized immutable observation. If that
+  observation is no longer available, return the explicit unavailable state;
+  do not silently rerun the original SQL or combine snapshots. Encrypted durable
+  retention and context transport may not impose a total business result ceiling. Owner questions
   permit authorized employee detail; unattended research permits reviewed
   nonpersonal detail while preserving private individual-level protection.
   Prompt packing, compact evidence and final synthesis must preserve
@@ -137,6 +139,6 @@ remain useful inputs, never the intellectual decision-maker.
 
 ### U2 execution policy (owner-approved implementation)
 - Model-led completion, not a preset investigation route. Exact Luna uses provider-native hosted tool search over the existing authorized registry; other models use eager declarations. All selected calls still pass local strict validation, scope and effect authorization.
-- Existing 60-second maximum execution slice and tighter worker/lease limits remain. Ordinary Luna permits up to 7 work requests plus one synthesis request, 24 tool calls and 32,768 aggregate output tokens per slice; up to 16,384 work tokens interactively, up to 8,192 per verified migrated worker request and up to 8,192 final reserve. Smaller admitted budgets take precedence. Unknown output reserves its whole admitted cap; final synthesis is tool-free. Durable work uses existing checkpoints and original identity.
+- Existing 60-second maximum execution slice and tighter worker/lease limits remain. Ordinary Luna work is adaptive within the actual time, context and admitted worker budget, without fixed ordinary model-call, tool-call or aggregate output ceilings. Bounded acceptance retains its approved 7 work requests plus one synthesis request, 24 tool calls and 32,768 aggregate output tokens per slice. Per-request limits are up to 16,384 work tokens interactively, up to 8,192 per verified migrated worker request and up to 8,192 final reserve. Smaller admitted budgets take precedence. Unknown output reserves its whole admitted cap; final synthesis is tool-free. Durable work uses existing checkpoints and original identity.
 - Pre-U2 databases retain the 1,200 worker request ceiling; only the exact migrated service-only capability read permits expansion. Existing fallback and legacy trusted paid-run bounds remain, including the $0.18/18-transport hard cap. No paid launch from a coding approval.
 - Existing usage ledgers record redacted request and tool measurements, actual observed model, cached/input/output/reasoning counts and costs when known; missing values are null. Never store prompts, raw reasoning, arguments, results or private business content in telemetry. Production migration and live model execution require separate authorization.
