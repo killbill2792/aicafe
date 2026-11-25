@@ -93,7 +93,7 @@ export async function runResearchTurn(args:{
   const call=async(final:boolean):Promise<{calls:FunctionCall[];answer:string}>=>{
     await args.beforeProviderRequest?.();
     const params:Record<string,unknown>={model,...(broker?{instructions:RESEARCH_INSTRUCTIONS}:
-        {include:["reasoning.encrypted_content"],prompt_cache_key:"supervisor-sql-research-v1"}),
+        {...(/^gpt-6/u.test(model)?{include:["reasoning.encrypted_content"]}:{}),prompt_cache_key:"supervisor-sql-research-v1"}),
       tools:researchToolDefinitions,tool_choice:final?"none":"auto",stream:true,store:false,
       ...(outputCap(final)?{max_output_tokens:outputCap(final)}:{}),input};
     const startedCall=now();
