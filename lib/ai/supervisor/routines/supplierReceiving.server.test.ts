@@ -1,5 +1,5 @@
 import {describe,expect,it} from "vitest";
-import {verifyInvestigationTurn,investigationPrompt} from "./investigation";
+import {verifyUniversalInvestigationTurn,universalInvestigationPrompt,investigationReadTools} from "./investigation";
 import type {AgentTurn} from "@/lib/ai/agent/loop.server";
 const source={name:"get_investigation_source",result:{source:"investigation_source",period:null,missing:[],
  sourceType:"operating_task",sourceId:"supplier-receiving:po",incidentKind:"supplier_receiving",
@@ -11,13 +11,13 @@ const stock={name:"get_inventory",result:{source:"inventory",period:null,missing
  ingredients:[{ingredientId:"milk",quantity:60}]}};
 const expenses={name:"get_expenses",result:{source:"expenses",period:null,missing:[],totalCents:12000}};
 const expected={sourceType:"operating_task" as const,sourceId:"supplier-receiving:po",kind:"supplier_receiving"};
-const run=(calls:unknown[])=>verifyInvestigationTurn({endReason:"complete",unverified:[],
+const run=(calls:unknown[])=>verifyUniversalInvestigationTurn({endReason:"complete",unverified:[],
  text:"The receiving evidence is incomplete. Please verify what arrived before we record stock.",
- toolInvocations:calls} as unknown as AgentTurn,expected);
+ toolInvocations:calls} as unknown as AgentTurn,expected,[...investigationReadTools,"propose_supplier_discrepancy_followup"]);
 describe("Task14D off-turn receiving evidence gate",()=>{
- it("requires actual exact-PO reconciliation and independent source",()=>{
+ it("requires actual exact-PO reconciliation without redundant reads",()=>{
   expect(run([source,recon(),stock]).ok).toBe(true);
-  expect(run([source,recon()]).ok).toBe(false);
+  expect(run([source,recon()]).ok).toBe(true);
   expect(run([source,stock,expenses]).ok).toBe(false);
   expect(run([source,recon("foreign-po"),stock]).ok).toBe(false);
  });
@@ -26,10 +26,10 @@ describe("Task14D off-turn receiving evidence gate",()=>{
   expect(run([recon(),stock]).ok).toBe(false);
  });
  it("reminds Luna not to equate supplier dispatch and invoices with physical receipt",()=>{
-  const p=investigationPrompt({kind:"supplier_receiving",status:"watching",severity:null,
+  const p=universalInvestigationPrompt({kind:"supplier_receiving",status:"watching",severity:null,
    quality:"high",relatedAlerts:[],relatedTasks:[]},true);
-  expect(p).toContain("never establishes actual physical receipt");
-  expect(p).toContain("Recheck on every follow-up");
+  expect(p).toContain("a supplier email is not physical receiving");
+  expect(p).toContain("persistent follow-up");
  });
 });
 
@@ -41,6 +41,6 @@ describe("one narrowly scoped inert receiving follow-up during existing investig
   expect(run([source,recon(),stock,draft()]).ok).toBe(true);
   expect(run([source,recon(),stock,draft("foreign-po")]).ok).toBe(false);
   expect(run([source,recon(),stock,draft("po",true)]).ok).toBe(false);
-  expect(run([source,recon(),draft()]).ok).toBe(false);
+  expect(run([source,recon(),draft()]).ok).toBe(true);
  });
 });

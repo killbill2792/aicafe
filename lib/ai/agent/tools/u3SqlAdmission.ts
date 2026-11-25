@@ -78,7 +78,7 @@ export type U3TrustedUnit="cents"|"microcents"|"count"|"percent"|"ratio";
 export type U3RelationUnits=Readonly<Record<string,Readonly<Record<string,U3TrustedUnit|null>>>>;
 export type U3ColumnOrigin={relation:string;column:string;binding:number};
 export type U3SqlAdmission={relations:string[];functions:string[];nodeCount:number;cteCount:number;
- outputUnits:Record<string,U3TrustedUnit>;outputOrigins:Record<string,U3ColumnOrigin>;hasTopLevelOrder:boolean};
+ outputUnits:Record<string,U3TrustedUnit>;outputOrigins:Record<string,U3ColumnOrigin>;outputDependencies:Record<string,U3ColumnOrigin[]>;hasTopLevelOrder:boolean};
 const stringNode=(input:unknown)=>{
  if(!input||typeof input!=="object"||!("String" in input))return null;
  const val=(input as {String?:{sval?:unknown}}).String?.sval;
@@ -331,7 +331,7 @@ export async function admitU3Sql(sql:string,allowedRelations:readonly string[],
  // operands justify it, but never inherit a direct source-row identity.
  type N=Record<string,unknown>;
  type Unit=U3TrustedUnit|null;
- type Field={unit:Unit;origin?:U3ColumnOrigin};
+ type Field={unit:Unit;origin?:U3ColumnOrigin;dependencies?:U3ColumnOrigin[]};
  type Columns=Map<string,Field>;
  type Binding={name:string;columns:Columns};
  const obj=(x:unknown):N|null=>x&&typeof x==="object"&&!Array.isArray(x)?x as N:null;
@@ -409,6 +409,23 @@ export async function admitU3Sql(sql:string,allowedRelations:readonly string[],
   const qualifier=parts.length>1?parts.at(-2):null;
   const candidates=bindings.filter(b=>(qualifier===null||b.name===qualifier)&&b.columns.has(col));
   return candidates.length===1?candidates[0].columns.get(col)??null:null;
+ };
+ // Capture source columns referenced by an expression, independently of its
+ // label and unit. Do not guess lineage for nested SELECT scopes.
+ const dependencies=(node:unknown,bindings:Binding[]):U3ColumnOrigin[]=>{
+  const out=new Map<string,U3ColumnOrigin>();
+  const visit=(n:unknown):void=>{
+   if(Array.isArray(n)){n.forEach(visit);return;}
+   const v=obj(n);if(!v||v.SelectStmt||v.SubLink)return;
+   if(v.ColumnRef){
+    const f=direct(n,bindings);
+    for(const o of f?.dependencies??(f?.origin?[f.origin]:[]))
+     out.set(o.relation+"."+o.column+"."+o.binding,o);
+    return;
+   }
+   Object.values(v).forEach(visit);
+  };
+  visit(node);return [...out.values()];
  };
  // The zero/null branch is dimension-neutral. Nonzero untyped literals
  // never establish a currency/count by a conveniently chosen output label.
@@ -537,7 +554,7 @@ export async function admitU3Sql(sql:string,allowedRelations:readonly string[],
    }
    const label=targetName(target);
    if(!label||!/^[a-zA-Z_][a-zA-Z0-9_]{0,99}$/.test(label))continue;
-   add(label,direct(target.val,bindings)??{unit:infer(target.val,bindings)});
+   add(label,direct(target.val,bindings)??{unit:infer(target.val,bindings),dependencies:dependencies(target.val,bindings)});
   }
   return result;
  }
@@ -660,8 +677,9 @@ export async function admitU3Sql(sql:string,allowedRelations:readonly string[],
   field.unit===null?[]:[[label,field.unit] as const]));
  const outputOrigins=Object.fromEntries([...projected].flatMap(([label,field])=>
   field.origin?[[label,field.origin] as const]:[]));
+ const outputDependencies=Object.fromEntries([...projected].map(([label,field])=>[label,field.dependencies??(field.origin?[field.origin]:[])]));
  return {relations:[...reads].sort(),functions:[...called].sort(),
-  nodeCount:nodes,cteCount:nCtes,outputUnits,outputOrigins,
+  nodeCount:nodes,cteCount:nCtes,outputUnits,outputOrigins,outputDependencies,
   hasTopLevelOrder:Array.isArray((tree.stmts[0].stmt.SelectStmt as {sortClause?:unknown}).sortClause)&&
    ((tree.stmts[0].stmt.SelectStmt as {sortClause?:unknown[]}).sortClause??[]).length>0};
 }

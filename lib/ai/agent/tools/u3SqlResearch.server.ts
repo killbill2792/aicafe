@@ -580,7 +580,7 @@ export async function runU3Sql(ctx:U3SqlContext,raw:unknown){
     evidence:{receipt_id:randomUUID(),snapshot_id:snapshot.id,
      snapshot_digest:snapshot.digest,as_of:snapshot.asOf,
      query_fingerprint:createHash("sha256").update(p.sql).digest("hex"),
-     column_units:plan.outputUnits,column_origins:plan.outputOrigins,
+     column_units:plan.outputUnits,column_origins:plan.outputOrigins,column_dependencies:plan.outputDependencies,
      catalog_version:createHash("sha256").update(JSON.stringify(list)).digest("hex").slice(0,16),
      relation_names:plan.relations,functions:plan.functions,
      authority:"approved_logical_source",scope:"verified_owner_cafe_lease"}

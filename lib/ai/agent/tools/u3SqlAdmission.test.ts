@@ -229,6 +229,7 @@ describe("U3 governed PostgreSQL AST admission",()=>{
   const computed=await query("SELECT SUM(COALESCE(net_sales_cents,0)) AS total, ROUND(AVG(net_sales_cents),0) AS average, SUM(CASE WHEN orders_count>0 THEN net_sales_cents ELSE 0 END) AS selected, SUM(COALESCE(net_sales_cents,12345)) AS untyped FROM orders");
   expect(computed.outputUnits).toEqual({total:"cents",average:"cents",selected:"cents"});
   expect(computed.outputOrigins).toEqual({});
+  expect(computed.outputDependencies.total).toEqual([expect.objectContaining({relation:"orders",column:"net_sales_cents"})]);
  });
  it("rejects positional column renames before they can bypass privacy or unit admission",async()=>{
   const rels={orders:{net_sales_cents:"cents" as const,orders_count:"count" as const}};
