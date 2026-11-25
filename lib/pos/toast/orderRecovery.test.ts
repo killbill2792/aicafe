@@ -1,6 +1,8 @@
 import {describe,it,expect,vi} from "vitest";
 vi.mock("server-only",()=>({}));
-import {orderRecoveryCadence,orderRecoveryWindow,toastShouldPollOrders,prepareIncrementalOrderPage} from "./orderRecovery";
+const provider=vi.hoisted(()=>vi.fn());
+vi.mock("./client",async original=>({...await original<typeof import("./client")>(),createToastClient:()=>({request:provider})}));
+import {orderRecoveryCadence,orderRecoveryWindow,toastShouldPollOrders,prepareIncrementalOrderPage,pollToastOrderRevisions} from "./orderRecovery";
 describe("webhook-primary incremental fallback",()=>{
  it("uses the same ten-minute live recovery even with a configured webhook",()=>{
   expect(orderRecoveryCadence(true,false)).toBe(600000);

@@ -270,6 +270,14 @@ BEGIN
   values(b,r,jsonb_build_object('final_payments',jsonb_build_object('completed_through',d)))
   on conflict(business_id,restaurant_guid) do update set operational_sources=excluded.operational_sources;
  perform pg_temp.assert_true(not public.toast_closeout_due(b,r,d,((d+1)::timestamp+interval '12 hours') at time zone 'America/Los_Angeles'),'successful day has no more closeout work');
+ update public.toast_optional_sync_state set operational_sources=jsonb_set(operational_sources,'{final_payments,pending_details}',
+  jsonb_build_array(jsonb_build_object('entry',jsonb_build_object('guid',ord,'adjustment',false),'day',d,'attempts',1,
+   'retry_at',((d+1)::timestamp+interval '12 hours 15 minutes') at time zone 'America/Los_Angeles')),true)
+  where business_id=b and restaurant_guid=r;
+ perform pg_temp.assert_true(not public.toast_closeout_due(b,r,d,((d+1)::timestamp+interval '12 hours') at time zone 'America/Los_Angeles'),'unfinished capture not polled before due');
+ perform pg_temp.assert_true(public.toast_closeout_due(b,r,d,((d+1)::timestamp+interval '12 hours 15 minutes') at time zone 'America/Los_Angeles'),'unfinished payment detail remains due after list completion');
+ update public.toast_optional_sync_state set operational_sources=operational_sources#-'{final_payments,pending_details}' where business_id=b and restaurant_guid=r;
+ perform pg_temp.assert_true(not public.toast_closeout_due(b,r,d,((d+1)::timestamp+interval '12 hours 15 minutes') at time zone 'America/Los_Angeles'),'verified detail completion stops closeout work');
 END $revision$;
 
 ROLLBACK;

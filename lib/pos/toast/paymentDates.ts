@@ -89,10 +89,15 @@ export async function finalizeToastPaymentWindow(db:SupabaseClient,p:FinalScope,
  const updateStatus=()=>{
   const pending=Boolean(progress.pending_details?.length),deferred=Boolean(progress.deferred?.length);
   progress.error=pending?"payment_detail_pending":deferred?"payment_order_pending":null;
-  if(!progress.day)progress.status=pending||deferred?"pending":"current";
+  if(!progress.day){
+   progress.status=pending||deferred?"pending":"current";
+   if(!pending&&!deferred)progress.last_success_at=now.toISOString();
+  }
  };
- const enqueueDetail=(entry:Entry,day:string,attempts:number)=>{
-  const pending={entry,day,attempts,retry_at:detailRetry(now,attempts)};
+ const enqueueDetail=(entry:Entry,day:string,attempts:number,error?:unknown)=>{
+  const backoff=detailRetry(now,attempts);
+  const retryAt=error instanceof ToastApiError&&error.retryAt&&Date.parse(error.retryAt)>Date.parse(backoff)?error.retryAt:backoff;
+  const pending:PendingDetail={entry,day,attempts,retry_at:retryAt};
   progress.pending_details=[...(progress.pending_details??[]).filter(x=>x.entry.guid!==entry.guid||x.day!==day),pending];
  };
  const reviewDetail=async(entry:Entry,day:string,first:boolean)=>{
@@ -101,7 +106,10 @@ export async function finalizeToastPaymentWindow(db:SupabaseClient,p:FinalScope,
   const status=String(payment.paymentStatus??"").toUpperCase();
   const type=String(payment.type??"").toUpperCase().replace(/[^A-Z]/g,"");
   const failed=["VOIDED","DENIED","CANCELLED","ERROR","ERROR_NETWORK"].includes(status);
-  if(!entry.adjustment&&failed)return true;
+  if(!entry.adjustment&&failed){
+   if(!first&&payment.orderGuid)await fetchAndIngestToastOrder(db,p,payment.orderGuid,deadlineAt);
+   return true;
+  }
   if(!entry.adjustment&&String(payment.paidBusinessDate)!==day.replaceAll("-",""))
    throw new ToastApiError("invalid_response");
   const orderGuid=payment.orderGuid;
@@ -114,7 +122,7 @@ export async function finalizeToastPaymentWindow(db:SupabaseClient,p:FinalScope,
    if(!applied)progress.deferred=[...(progress.deferred??[]).filter(e=>e.guid!==entry.guid),verified];
    return true;
   }
-  if(!failed&&type==="CREDIT"){
+  if(!failed&&(type==="CREDIT"||status==="AUTHORIZED"||!type)){
    // An authorized credit payment or captured payment with missing fee/amount
    // is still incomplete after the six-hour window. Fetch the order once;
    // later attempts request only the payment until final evidence arrives.
@@ -148,7 +156,7 @@ export async function finalizeToastPaymentWindow(db:SupabaseClient,p:FinalScope,
    if(progress.deferred?.length&&!progress.retry_at)progress.retry_at=detailRetry(now,1);
    updateStatus();await save();
   }catch(e){
-   enqueueDetail(pending.entry,pending.day,pending.attempts+1);
+   enqueueDetail(pending.entry,pending.day,pending.attempts+1,e);
    updateStatus();await save();throw e;
   }
  }
@@ -211,7 +219,7 @@ export async function finalizeToastPaymentWindow(db:SupabaseClient,p:FinalScope,
  if((progress.next??0)>=entries.length){
   const deferred=progress.deferred??[],pending_details=progress.pending_details??[];
   progress={completed_through:day,status:deferred.length||pending_details.length?"pending":"current",
-   last_success_at:new Date().toISOString(),error:null,
+   last_success_at:deferred.length||pending_details.length?progress.last_success_at:new Date().toISOString(),error:null,
    count:entries.length,deferred,pending_details,retry_at:deferred.length?(progress.retry_at??detailRetry(now,1)):undefined};
   updateStatus();
  }
