@@ -90,7 +90,7 @@ grant execute on function public.toast_archive_order(uuid,uuid,uuid,date,jsonb,t
 -- Existing owner/full-day recovery remains full-day and can supersede this mode.
 create or replace function public.toast_queue_order_revision(
  p_business_id uuid,p_restaurant_guid uuid,p_date date,p_payload jsonb,p_allow_local boolean)
-returns uuid language plpgsql security invoker set search_path=public as $
+returns uuid language plpgsql security invoker set search_path=public as $$
 declare job uuid; cur jsonb; rev jsonb; old jsonb; g text;
 begin
  if auth.role() is distinct from 'service_role' or jsonb_typeof(p_payload) is distinct from 'object'
@@ -120,7 +120,7 @@ begin
  if not p_allow_local then rev:=jsonb_set(rev,'{only}','false'::jsonb,true);end if;
  update public.toast_sync_runs set cursor=jsonb_set(coalesce(cur,'{}'::jsonb),'{revision}',rev,true) where id=job;
  return job;
-end $;
+end $$;
 revoke all on function public.toast_queue_order_revision(uuid,uuid,date,jsonb,boolean) from public,anon,authenticated;
 grant execute on function public.toast_queue_order_revision(uuid,uuid,date,jsonb,boolean) to service_role;
 
@@ -164,7 +164,7 @@ end $function$
 -- If another event arrived while pages were staged, resume from a clean source.
 create or replace function public.toast_begin_revision_import(
  p_business_id uuid,p_restaurant_guid uuid,p_date date,p_run_id uuid,p_force_full boolean default false)
-returns jsonb language plpgsql security invoker set search_path=public as $
+returns jsonb language plpgsql security invoker set search_path=public as $$
 declare cur jsonb; rev jsonb; token text;
 begin
  if auth.role() is distinct from 'service_role' then raise exception 'service role only';end if;
@@ -183,7 +183,7 @@ begin
  update public.toast_sync_runs set cursor=coalesce(cur,'{}'::jsonb)||
   jsonb_build_object('revision',rev,'revision_snapshot',token) where id=p_run_id;
  return jsonb_build_object('revision',rev,'token',token);
-end $;
+end $$;
 revoke all on function public.toast_begin_revision_import(uuid,uuid,date,uuid,boolean) from public,anon,authenticated;
 grant execute on function public.toast_begin_revision_import(uuid,uuid,date,uuid,boolean) to service_role;
 
@@ -243,7 +243,7 @@ end $function$
 create or replace function public.toast_commit_revision_day(
  p_business_id uuid,p_location_id uuid,p_restaurant_guid uuid,p_business_date date,
  p_orders jsonb,p_summary jsonb,p_run_id uuid,p_revision_token text,p_base_run_id uuid,p_local_pages jsonb)
-returns jsonb language plpgsql security invoker set search_path=public as $
+returns jsonb language plpgsql security invoker set search_path=public as $$
 declare cur jsonb; rev jsonb; token text; item record;
 begin
  if auth.role() is distinct from 'service_role' then raise exception 'service role only';end if;
@@ -277,9 +277,9 @@ begin
   update public.toast_sync_runs set state='running',started_at=coalesce(started_at,now()) where id=p_run_id;
  elsif rev->>'only'='true' then raise exception 'local source proof required';end if;
  return public.toast_import_day(p_business_id,p_location_id,p_restaurant_guid,p_business_date,p_orders,p_summary,p_run_id);
-end $;
-revoke all on function public.toast_commit_revision_day(uuid,uuid,date,jsonb,jsonb,uuid,text,uuid,jsonb) from public,anon,authenticated;
-grant execute on function public.toast_commit_revision_day(uuid,uuid,date,jsonb,jsonb,uuid,text,uuid,jsonb) to service_role;
+end $$;
+revoke all on function public.toast_commit_revision_day(uuid,uuid,uuid,date,jsonb,jsonb,uuid,text,uuid,jsonb) from public,anon,authenticated;
+grant execute on function public.toast_commit_revision_day(uuid,uuid,uuid,date,jsonb,jsonb,uuid,text,uuid,jsonb) to service_role;
 
 -- Common raw archive path for signed event-triggered GET and incremental pages.
 -- The guarded day writer owns finalized normalized data. A changed historical

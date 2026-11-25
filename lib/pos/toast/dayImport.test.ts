@@ -43,7 +43,8 @@ function fakeDatabase(daysTotal=1,initialImportedDays:string[]=[],postCommitHook
  const linkCalls:Array<Record<string,unknown>>=[];
  const phaseErrors:Array<Record<string,unknown>>=[];
  let failLink=false,failPhase=false;
- const run={state:"queued",daysDone:0,daysTotal,cursor:{} as Record<string,unknown>};
+ const run={state:"queued",daysDone:0,daysTotal,cursor:{} as Record<string,unknown>,kind:"daily"};
+ let revisionWork:Record<string,unknown>|null=null,archive:unknown[]=[],base:Record<string,unknown>|null=null;
  const db={
   from(table:string){
    const filters:Record<string,unknown>={};
@@ -54,12 +55,14 @@ function fakeDatabase(daysTotal=1,initialImportedDays:string[]=[],postCommitHook
      if(table!=="toast_sync_phase_errors")throw new Error("unexpected upsert");
      phaseErrors.push(value);return {error:failPhase?{code:"57014"}:null};
     },
+    or(){return q;},order(){return q;},async range(){return {data:archive.map(payload=>({payload})),error:null};},
     async maybeSingle(){
      if(table==="toast_location_mappings")return {data:{
       location_id:location,verified_at:verified?"2026-10-15":null,toast_time_zone:"America/Los_Angeles",
       closeout_hour:4},error:null};
      if(table==="toast_sync_runs")return {data:{state:run.state,business_id:business,restaurant_guid:restaurant,
-      cursor:run.cursor},error:null};
+      cursor:run.cursor,kind:run.kind},error:null};
+     if(table==="toast_day_status")return {data:base,error:null};
      if(table==="toast_day_pages")return {data:stored.has(filters.business_date+":"+filters.page)?
       {payload:stored.get(filters.business_date+":"+filters.page)}:null,error:null};
      if(table==="daily_rollups")return {data:{sales_data_status:"missing"},error:null};
@@ -72,6 +75,7 @@ function fakeDatabase(daysTotal=1,initialImportedDays:string[]=[],postCommitHook
   },
   async rpc(name:string,args:Record<string,unknown>){
    operations.push(name);
+   if(name==="toast_begin_revision_import")return {data:args.p_force_full?{revision:{only:false,orders:{}},token:"full"}:revisionWork,error:null};
    if(name==="toast_stage_day_page"){
     stored.set(args.p_business_date+":"+args.p_page,args.p_payload as unknown[]);
     run.state="running";
@@ -84,7 +88,7 @@ function fakeDatabase(daysTotal=1,initialImportedDays:string[]=[],postCommitHook
     if(args.p_run_fatal)run.state="failed";
     else if(args.p_skip){run.daysDone++;run.cursor={};
      run.state=run.daysDone>=run.daysTotal?"completed":"running";}
-   }else if(name==="toast_import_day"){
+   }else if(name==="toast_import_day"||name==="toast_commit_revision_day"){
     pendingCosts.set(String(args.p_business_date),"00000000-0000-4000-8000-000000000001");
     imports.push(args as unknown as ImportCall);
     dayStatuses.set(String(args.p_business_date),"imported");
@@ -103,6 +107,7 @@ function fakeDatabase(daysTotal=1,initialImportedDays:string[]=[],postCommitHook
   }
  };
  return {db:db as unknown as SupabaseClient,stored,pendingCosts,imports,operations,run,dayStatuses,linkCalls,phaseErrors,
+  setRevision:(work:Record<string,unknown>,rows:unknown[],status:Record<string,unknown>)=>{run.kind="repull_modified";revisionWork=work;archive=rows;base=status;},
   failLinks:()=>{failLink=true;failPhase=true;}};
 }
 beforeEach(()=>{mocked.request.mockReset();mocked.recompute.mockReset();mocked.refresh.mockReset();
@@ -471,4 +476,15 @@ describe("late order correction on proven archive",()=>{
   const older=record(1,scope.businessDate,1,"2026-10-17T08:00:00+0000");
   expect(buildRevisionPages(baseline,{[guid(1)]:older},checksum(),scope)).toEqual([{page:1,payload:baseline}]);
  });
+});
+
+it("commits a late historical order correction without any whole-day provider download",async()=>{
+ const f=fakeDatabase(),day="2026-10-16",baseline=[record(1,day),record(2,day,20)];
+ const hash=createHash("sha256").update(JSON.stringify(parseToastDayPage(baseline,restaurant,day,"America/Los_Angeles",4).orders.sort((a,b)=>a.guid.localeCompare(b.guid)))).digest("hex");
+ f.setRevision({revision:{only:true,orders:{[guid(1)]:record(1,day,15,"2026-10-17T10:00:00+0000")}},token:"revision"},baseline,
+  {import_state:"imported",coverage_complete:true,unparsed_count:0,last_import_run_id:guid(900),orders_snapshot_sha256:hash});
+ await importToastBusinessDay(f.db,params(day));
+ expect(mocked.request).not.toHaveBeenCalled();
+ expect(f.operations).toContain("toast_commit_revision_day");
+ expect(f.imports[0].p_summary.net_sales_cents).toBe(3500);
 });

@@ -199,4 +199,49 @@ BEGIN
  perform pg_temp.assert_true(refused,'invalid worker lease cannot advance cursor');
 END $canonical$;
 
+
+-- A late correction coalesces durable work. A newer revision cannot be lost
+-- while the worker is assembling a checksum-proven local repair.
+DO $revision$
+DECLARE
+ b uuid:='eeeeeeee-1111-4eee-8eee-eeeeeeeeee20';r uuid:='eeeeeeee-1111-4eee-8eee-eeeeeeeeee21';
+ loc uuid:='eeeeeeee-1111-4eee-8eee-eeeeeeeeee22';ord uuid:='eeeeeeee-1111-4eee-8eee-eeeeeeeeee23';
+ d date:=((now() at time zone 'America/Los_Angeles')-interval '4 hours')::date-2;
+ base_run uuid;repair uuid;second uuid;original jsonb;changed jsonb;newer jsonb;orders jsonb;summary jsonb;work jsonb;outcome jsonb;refused boolean;
+BEGIN
+ perform set_config('request.jwt.claim.role','service_role',true);
+ insert into public.businesses(id,name,is_demo,timezone) values(b,'Revision repair test',false,'America/Los_Angeles');
+ insert into public.locations(id,business_id,name) values(loc,b,'Revision repair location');
+ perform public.toast_save_configuration(b,'https://ws-api.toasttab.com','revision_client','synthetic_ciphertext',
+  jsonb_build_array(jsonb_build_object('location_id',loc,'restaurant_guid',r)));
+ update public.toast_location_mappings set verified_at=now(),toast_time_zone='America/Los_Angeles',closeout_hour=4 where business_id=b;
+ original:=jsonb_build_object('guid',ord,'businessDate',to_char(d,'YYYYMMDD')::integer,
+  'modifiedDate',now()-interval '2 days','checks','[]'::jsonb);
+ insert into public.toast_sync_runs(business_id,restaurant_guid,kind,state,requested_from,requested_to,days_total)
+  values(b,r,'daily','running',d,d,1) returning id into base_run;
+ perform public.toast_stage_day_page(b,r,base_run,d,1,jsonb_build_array(original));
+ summary:=jsonb_build_object('order_count',0,'net_sales_cents',0,'gross_sales_cents',0,'discounts_cents',0,'refunds_cents',0,
+  'tax_cents',0,'tip_cents',0,'open_check_count',0,'unparsed_count',0,'service_charges_cents',0,'gratuity_cents',0,
+  'warnings','{}'::jsonb,'snapshot_sha256','fixture','voids','[]'::jsonb,'refund_facts','[]'::jsonb,'parsed_order_guids',jsonb_build_array(ord),'unparsed','[]'::jsonb);
+ orders:='[]'::jsonb;
+ perform public.toast_import_day(b,loc,r,d,orders,summary,base_run);
+ changed:=jsonb_set(original,'{modifiedDate}',to_jsonb(now()-interval '2 hours'));
+ repair:=public.toast_queue_order_revision(b,r,d,changed,true);
+ work:=public.toast_begin_revision_import(b,r,d,repair,false);
+ perform pg_temp.assert_true(work->'revision'->>'only'='true','complete prior day selects local revision repair');
+ newer:=jsonb_set(changed,'{modifiedDate}',to_jsonb(now()-interval '1 hour'));
+ second:=public.toast_queue_order_revision(b,r,d,newer,true);
+ perform pg_temp.assert_true(second=repair,'two updates coalesce into one existing run');
+ refused:=false;
+ begin perform public.toast_commit_revision_day(b,loc,r,d,orders,summary,repair,work->>'token',base_run,jsonb_build_array(jsonb_build_array(changed)));
+ exception when serialization_failure then refused:=true;end;
+ perform pg_temp.assert_true(refused,'stale source generation cannot commit');
+ work:=public.toast_begin_revision_import(b,r,d,repair,false);
+ perform pg_temp.assert_true(work->'revision'->'orders'->(ord::text)=newer,'latest complete provider revision retained');
+ outcome:=public.toast_commit_revision_day(b,loc,r,d,orders,summary,repair,work->>'token',base_run,jsonb_build_array(jsonb_build_array(newer)));
+ perform pg_temp.assert_true((outcome->>'orders')::integer=0,'existing guarded day writer committed local revision');
+ perform pg_temp.assert_true((select state='completed' and api_calls=0 and cursor='{}'::jsonb from public.toast_sync_runs where id=repair),'no provider full-day request or retained payload after commit');
+ perform pg_temp.assert_true((select count(*)=1 and bool_and(payload=newer) from public.toast_raw_records where business_id=b and entity_guid=ord),'one canonical archive row with latest revision');
+END $revision$;
+
 ROLLBACK;
