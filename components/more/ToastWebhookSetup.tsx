@@ -17,7 +17,7 @@ export default function ToastWebhookSetup({businessId}:{businessId:string}){
   setRows(data.subscriptions);setReady(data.receiverGloballyEnabled);
   setSelected(old=>data.subscriptions.some(row=>row.id===old)?old:data.subscriptions[0]?.id??"");
  },[businessId]);
- useEffect(()=>{void load().catch(()=>setMessage(t("ownerError")));},[load,t]);
+ useEffect(()=>{let active=true;void Promise.resolve().then(()=>active?load():undefined).catch(()=>{if(active)setMessage(t("ownerError"));});return ()=>{active=false;};},[load,t]);
  const row=rows.find(x=>x.id===selected);
  async function action(name:string,extra:Record<string,string>={}){
   if(busy)return;setBusy(true);setMessage("");

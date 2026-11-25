@@ -2718,7 +2718,7 @@ test("@home verified Toast owner prepares and activates webhook without exposing
   await login(page,{name:"Webhook fixture",owner:{email,password}});
   await navigateLocal(page,"/en/more/toast");
   await page.getByText("Orders webhook",{exact:true}).click();
-  await expect(page.getByText(/every five minutes during opening hours/)).toBeVisible();
+  await expect(page.getByText(/every ten minutes during opening hours/)).toBeVisible();
   await page.getByRole("button",{name:"Prepare webhook URL"}).click();
   await expect(page.getByLabel("Copy this URL into Toast Web")).toHaveValue(/^https:\/\/example\.invalid\/api\/pos\/toast\/webhook\//);
   await expect(page.getByRole("button",{name:"Activate",exact:true})).toBeDisabled();

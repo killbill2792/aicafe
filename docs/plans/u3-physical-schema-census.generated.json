@@ -1,5 +1,5 @@
 {
- "generatedFrom": "Public pg_catalog non-authorizing metadata; PR557 U4 additive schema corroborated from disposable migrated CI 45002094348; no café/customer rows",
+ "generatedFrom": "Public pg_catalog non-authorizing metadata; additive POS fields corroborated by disposable migrated CI 45592052786; no café/customer rows",
  "notAuthorization": true,
  "classification": "all physical metadata denied to model until reviewed logical admission",
  "relations": [
@@ -15285,6 +15285,21 @@
      "lease_nonce",
      "uuid",
      false
+    ],
+    [
+     "event_kind",
+     "text",
+     true
+    ],
+    [
+     "event_version",
+     "text",
+     false
+    ],
+    [
+     "item_guid",
+     "uuid",
+     false
     ]
    ],
    "relation": "toast_order_events",
@@ -15337,6 +15352,16 @@
      "updated_at",
      "timestamp with time zone",
      true
+    ],
+    [
+     "canonical",
+     "boolean",
+     true
+    ],
+    [
+     "bootstrap_day",
+     "date",
+     false
     ]
    ],
    "relation": "toast_order_poll_progress",
@@ -16272,6 +16297,11 @@
      "seen_run_id",
      "uuid",
      false
+    ],
+    [
+     "live_projection",
+     "jsonb",
+     false
     ]
    ],
    "relation": "toast_raw_records",
@@ -16727,6 +16757,21 @@
     [
      "last_schedule_poll_at",
      "timestamp with time zone",
+     false
+    ],
+    [
+     "canonical_order_poll_at",
+     "timestamp with time zone",
+     false
+    ],
+    [
+     "canonical_order_poll_from",
+     "timestamp with time zone",
+     false
+    ],
+    [
+     "canonical_live_day",
+     "date",
      false
     ]
    ],
@@ -17391,6 +17436,11 @@
     [
      "created_at",
      "timestamp with time zone",
+     true
+    ],
+    [
+     "event_kind",
+     "text",
      true
     ]
    ],

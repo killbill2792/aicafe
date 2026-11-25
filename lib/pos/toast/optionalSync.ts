@@ -79,7 +79,9 @@ export async function syncToastOptionalSources(db:SupabaseClient,p:Location,
  let staffReady=Boolean(state?.roster_copied_at);
  const scope={businessId:p.business_id,restaurantGuid:p.restaurant_guid,deadlineAt,
   locationId:p.location_id,timezone:p.toast_time_zone};
- if(scopes.menus!==false&&Date.now()<deadlineAt){
+ if(state?.menu_copied_at&&state.menu_checked_local_day!==null)verifiedMenuVersion=state.menu_last_updated??null;
+ // Webhook forces metadata verification; otherwise one successful lightweight check per local day.
+ if(scopes.menus!==false&&Date.now()<deadlineAt&&(mode==="menu"||!state?.menu_copied_at||state.menu_checked_local_day!==local.today)){
   try{
    const meta=await createToastClient(db,p.business_id)
     .request("/menus/v2/metadata",p.restaurant_guid,dateSchema,{deadlineAt});

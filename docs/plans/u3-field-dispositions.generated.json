@@ -4,7 +4,7 @@
   "modelAuthorization": false,
   "productionRowsIncluded": false,
   "physicalTables": 223,
-  "physicalFields": 2513,
+  "physicalFields": 2523,
   "approvedSqlRelations": 123,
   "reviewedFields": 1323,
   "additionalLogicalViews": [
@@ -2035,10 +2035,10 @@
   "dispositionCounts": {
     "admitted_masked_personal_field": 14,
     "admitted_research_field": 373,
-    "internal_or_specialized_service": 1114,
+    "internal_or_specialized_service": 1122,
     "not_admitted_from_source": 83,
-    "protected_operational_archive": 57,
-    "restricted_secret_or_auth": 80,
+    "protected_operational_archive": 58,
+    "restricted_secret_or_auth": 81,
     "reviewed_logical_projection": 441,
     "scope_only": 74,
     "specialist_or_review_pending": 201,
@@ -17867,9 +17867,30 @@
           "reason": "Operational workflow/audit/state; source-family tool or owner-specific review required"
         },
         {
+          "field": "event_kind",
+          "type": "text",
+          "notNull": true,
+          "status": "internal_or_specialized_service",
+          "reason": "Operational workflow/audit/state; source-family tool or owner-specific review required"
+        },
+        {
           "field": "event_time",
           "type": "timestamp with time zone",
           "notNull": true,
+          "status": "internal_or_specialized_service",
+          "reason": "Operational workflow/audit/state; source-family tool or owner-specific review required"
+        },
+        {
+          "field": "event_version",
+          "type": "text",
+          "notNull": false,
+          "status": "internal_or_specialized_service",
+          "reason": "Operational workflow/audit/state; source-family tool or owner-specific review required"
+        },
+        {
+          "field": "item_guid",
+          "type": "uuid",
+          "notNull": false,
           "status": "internal_or_specialized_service",
           "reason": "Operational workflow/audit/state; source-family tool or owner-specific review required"
         },
@@ -17929,8 +17950,22 @@
       "sourceOwner": "POS and menu domain",
       "fields": [
         {
+          "field": "bootstrap_day",
+          "type": "date",
+          "notNull": false,
+          "status": "internal_or_specialized_service",
+          "reason": "Operational workflow/audit/state; source-family tool or owner-specific review required"
+        },
+        {
           "field": "business_id",
           "type": "uuid",
+          "notNull": true,
+          "status": "internal_or_specialized_service",
+          "reason": "Operational workflow/audit/state; source-family tool or owner-specific review required"
+        },
+        {
+          "field": "canonical",
+          "type": "boolean",
           "notNull": true,
           "status": "internal_or_specialized_service",
           "reason": "Operational workflow/audit/state; source-family tool or owner-specific review required"
@@ -18988,6 +19023,13 @@
           "reason": "Raw current/delta/staging store; only approved scoped logical projections may read it"
         },
         {
+          "field": "live_projection",
+          "type": "jsonb",
+          "notNull": false,
+          "status": "protected_operational_archive",
+          "reason": "Raw current/delta/staging store; only approved scoped logical projections may read it"
+        },
+        {
           "field": "payload",
           "type": "jsonb",
           "notNull": true,
@@ -19398,6 +19440,27 @@
           "field": "business_id",
           "type": "uuid",
           "notNull": true,
+          "status": "internal_or_specialized_service",
+          "reason": "Operational workflow/audit/state; source-family tool or owner-specific review required"
+        },
+        {
+          "field": "canonical_live_day",
+          "type": "date",
+          "notNull": false,
+          "status": "internal_or_specialized_service",
+          "reason": "Operational workflow/audit/state; source-family tool or owner-specific review required"
+        },
+        {
+          "field": "canonical_order_poll_at",
+          "type": "timestamp with time zone",
+          "notNull": false,
+          "status": "internal_or_specialized_service",
+          "reason": "Operational workflow/audit/state; source-family tool or owner-specific review required"
+        },
+        {
+          "field": "canonical_order_poll_from",
+          "type": "timestamp with time zone",
+          "notNull": false,
           "status": "internal_or_specialized_service",
           "reason": "Operational workflow/audit/state; source-family tool or owner-specific review required"
         },
@@ -20178,6 +20241,13 @@
         {
           "field": "enabled",
           "type": "boolean",
+          "notNull": true,
+          "status": "restricted_secret_or_auth",
+          "reason": "Credential, authorization or sensitive internal identifier; no universal research permission"
+        },
+        {
+          "field": "event_kind",
+          "type": "text",
           "notNull": true,
           "status": "restricted_secret_or_auth",
           "reason": "Credential, authorization or sensitive internal identifier; no universal research permission"
