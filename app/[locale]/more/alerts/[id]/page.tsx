@@ -47,7 +47,7 @@ export default async function AlertDetailPage({ params }: { params: Promise<{ id
           <PlainIcon code={content.icon as ExpenseIconCode} size={26} color="rgb(var(--c-warn-text))" />
         </span>
         {displayedImpact !== null && (
-          <><span className="text-sm font-bold text-warn">{t("potentialImpact")}</span><span className="font-headline text-[44px] font-bold leading-none text-warn">{formatCents(displayedImpact, locale)}</span></>
+          <><span className="text-sm font-bold text-warn">{t("potentialImpact")}</span><span className="font-headline text-[2.75rem] font-bold leading-none text-warn">{formatCents(displayedImpact, locale)}</span></>
         )}
         <p className="text-base leading-snug text-ink">{content.subtitle}</p>
       </section>
@@ -59,7 +59,7 @@ export default async function AlertDetailPage({ params }: { params: Promise<{ id
         <Detail label={t("clockIn")} value={formatShiftTime(alert.payload.clockIn, snapshot.business.timezone, locale)} />
         <Detail label={alert.payload.clockOut ? t("clockOut") : t("currentElapsed")} value={alert.payload.clockOut ? formatShiftTime(alert.payload.clockOut, snapshot.business.timezone, locale) : t("hoursElapsed", { hours: formatHours(alert.payload.shiftHours, locale) })} />
         <Detail label={t("recordedBreak")} value={qualifyingBreakText(alert.payload.breaks, t("noQualifyingBreak"), snapshot.business.timezone, locale)} />
-        <p className="mt-2 rounded-xl bg-warn-tint p-3 text-[15px] text-warn-text">{t("mealBreakExactReason")}</p>
+        <p className="mt-2 rounded-xl bg-warn-tint p-3 text-[0.9375rem] text-warn-text">{t("mealBreakExactReason")}</p>
         <p className="text-sm text-ink-muted">{t("mealBreakImpactBasis")}</p>
       </section>}
 
@@ -109,7 +109,7 @@ export default async function AlertDetailPage({ params }: { params: Promise<{ id
   );
 }
 
-function Detail({ label, value }: { label: string; value: string }) { return <div className="flex justify-between gap-3 text-[17px]"><span className="text-ink-muted">{label}</span><strong className="text-end">{value}</strong></div>; }
+function Detail({ label, value }: { label: string; value: string }) { return <div className="flex justify-between gap-3 text-[1.0625rem]"><span className="text-ink-muted">{label}</span><strong className="text-end">{value}</strong></div>; }
 function qualifyingBreakText(value: unknown, fallback: string, timezone: string, locale: string) { if (!Array.isArray(value)) return fallback; const found = value.find((entry) => entry && typeof entry === "object" && "start" in entry && "end" in entry && (new Date(String(entry.end)).getTime() - new Date(String(entry.start)).getTime()) >= 30 * 60_000); return found ? `${formatShiftTime(found.start, timezone, locale)}–${formatShiftTime(found.end, timezone, locale)}` : fallback; }
 
 function formatBusinessDate(value: unknown, locale: string): string {

@@ -27,7 +27,7 @@ export default function AlertCard({
         <PlainIcon code={icon as ExpenseIconCode} size={22} color="currentColor" />
       </span>
       <span className="flex min-w-0 flex-1 flex-col gap-0.5 text-start">
-        <span className="text-[17px] font-bold">{title}</span>
+        <span className="text-[1.0625rem] font-bold">{title}</span>
         <span className="text-sm text-ink-muted">{subtitle}</span>
         {reviewLabel && <span className="mt-1 text-base font-semibold text-accent-text">{reviewLabel}</span>}
       </span>

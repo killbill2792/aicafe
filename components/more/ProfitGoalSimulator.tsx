@@ -86,7 +86,7 @@ export default function ProfitGoalSimulator({
         <span className="mt-1 block">{labels.assumption}</span>
       </section>
 
-      {data.business.daysWithSalesInWindow>0&&<p role="note" className="text-[17px] text-ink-muted">{common("basedOnDays",{days:data.business.daysWithSalesInWindow})}{data.currentMarginQuality!=="actual"?" · "+common("lowConfidence"):""}</p>}
+      {data.business.daysWithSalesInWindow>0&&<p role="note" className="text-[1.0625rem] text-ink-muted">{common("basedOnDays",{days:data.business.daysWithSalesInWindow})}{data.currentMarginQuality!=="actual"?" · "+common("lowConfidence"):""}</p>}
       <section className="grid gap-3 sm:grid-cols-2">
         <div className="rounded-card-lg bg-card p-4">
           <span className="text-sm font-semibold text-ink-muted">{labels.currentMargin}</span>
@@ -125,9 +125,9 @@ export default function ProfitGoalSimulator({
       {error && <p className="rounded-xl bg-warn-tint p-3 text-sm font-semibold text-warn">{error}</p>}
       <div aria-live="polite">
       {blockers.map((blocker) => (
-        <div key={blocker.kind} className="rounded-xl bg-paper p-4 text-[17px] leading-snug text-ink-muted">
+        <div key={blocker.kind} className="rounded-xl bg-paper p-4 text-[1.0625rem] leading-snug text-ink-muted">
           <p>{blockerText[blocker.kind]}</p>
-          <Link href={blocker.href} className="mt-3 inline-flex min-h-12 items-center rounded-full bg-accent px-4 text-[17px] font-bold text-on-accent no-underline">
+          <Link href={blocker.href} className="mt-3 inline-flex min-h-12 items-center rounded-full bg-accent px-4 text-[1.0625rem] font-bold text-on-accent no-underline">
             {blockerActions[blocker.kind]}
           </Link>
         </div>

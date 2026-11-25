@@ -29,7 +29,7 @@ export default async function ConversationsPage({searchParams}:{searchParams:Pro
       <div className="flex flex-wrap justify-between gap-2 text-sm"><span className="font-semibold">{t.status.toUpperCase()} · {t.duration_ms} ms {t.owner_feedback?"· "+t.owner_feedback:""}</span><time>{t.started_at}</time></div>
       <p className="mt-2 line-clamp-2 break-words">{t.question}</p><p className="mt-1 text-xs text-slate-500">Cafe {t.business_id}</p>
     </Link>)}{!turns.length&&<p>No conversations match these filters.</p>}</div>
-    <nav className="mt-4 flex gap-4 text-[17px]" aria-label="Conversation pages">
+    <nav className="mt-4 flex gap-4 text-[1.0625rem]" aria-label="Conversation pages">
       {page>0&&<Link className="underline" href={pageUrl(page-1)}>Previous conversations</Link>}
       {(page+1)*pageSize<total&&<Link className="underline" href={pageUrl(page+1)}>Next conversations</Link>}
     </nav>

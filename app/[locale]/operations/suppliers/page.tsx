@@ -13,7 +13,7 @@ export default async function SupplierEvidencePage(){
  const note=await getTranslations("MetricsNotes");
  return <PageShell className="flex flex-col gap-4 px-4 pb-28 pt-6">
   <header>
-   <Link href="/operations" className="flex min-h-12 items-center text-[17px] font-bold text-ink underline">{t("back")}</Link>
+   <Link href="/operations" className="flex min-h-12 items-center text-[1.0625rem] font-bold text-ink underline">{t("back")}</Link>
    <h1 className="font-headline text-3xl font-bold text-ink">{t("title")}</h1>
   </header>
   <SupplierEvidenceManager today={identity.asOf} currency={identity.currency} copy={{

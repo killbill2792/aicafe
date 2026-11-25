@@ -123,7 +123,7 @@ function ReplyBlock({ block, copy, locale, threadId, onEdit, disabled=false, unv
   if(block.type==="routine_card")return <SupervisorRoutineInlineCard block={block} onEdit={onEdit} disabled={disabled}/>;
   if ((block.type === "text" || block.type === "warning") && typeof block.text === "string") {
     return block.type === "warning"
-      ? <p className="flex items-start gap-2 text-[17px] leading-relaxed text-ink-muted" role="note">
+      ? <p className="flex items-start gap-2 text-[1.0625rem] leading-relaxed text-ink-muted" role="note">
           <AlertCircle aria-hidden="true" size={18} className="mt-1 shrink-0" />{block.text}
         </p>
       : <ChatMarkdown text={block.text} locale={locale} unverified={unverified} labels={{owner:copy.provenanceOwner,estimate:copy.provenanceEstimate,unchecked:copy.provenanceUnchecked,breakEvenSales:copy.provenanceBreakEven,salesGap:copy.provenanceSalesGap,dailyOverhead:copy.provenanceOverhead}} showLegend={false} />;
@@ -137,7 +137,7 @@ function ReplyBlock({ block, copy, locale, threadId, onEdit, disabled=false, unv
     // screen retains the detailed task, evidence and available actions.
     return <Link href={block.href}
       aria-label={statusText+": "+block.title+". "+copy.taskOpen}
-      className="inline-flex min-h-12 max-w-full items-center gap-2 rounded-xl px-2 text-[15px] text-ink-muted no-underline hover:bg-surface2 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ink">
+      className="inline-flex min-h-12 max-w-full items-center gap-2 rounded-xl px-2 text-[0.9375rem] text-ink-muted no-underline hover:bg-surface2 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ink">
       <Clock3 size={16} className="shrink-0" aria-hidden="true"/>
       <span className="shrink-0 font-medium">{statusText}</span>
       <span className="min-w-0 truncate text-ink">{block.title}</span>
@@ -163,7 +163,7 @@ function SupervisorMessage({ message, copy, locale, cafeCurrency, storedFiles, o
   clarifyState:"hidden"|"active"|"chosen"|"skipped";clarifyChoice:string|null;
   onOwnerResponse:(message:ConversationMessage,value:string,isOption:boolean,dismiss?:boolean)=>void;
 }) {
-  if (message.role === "owner") return <article className="ms-auto w-fit max-w-[80%] rounded-2xl bg-surface2 px-4 py-3 text-[17px] leading-relaxed text-ink">
+  if (message.role === "owner") return <article className="ms-auto w-fit max-w-[80%] rounded-2xl bg-surface2 px-4 py-3 text-[1.0625rem] leading-relaxed text-ink">
     <p className="whitespace-pre-wrap break-words">{message.text}</p>
   </article>;
   const originalBlocks=message.blocks??[];
@@ -178,7 +178,7 @@ function SupervisorMessage({ message, copy, locale, cafeCurrency, storedFiles, o
     unchecked:copy.provenanceUnchecked,breakEvenSales:copy.provenanceBreakEven,
     salesGap:copy.provenanceSalesGap,dailyOverhead:copy.provenanceOverhead};
   return <article className="w-full space-y-3">
-    <div className="flex items-center gap-2 text-[15px] font-medium text-ink-muted">
+    <div className="flex items-center gap-2 text-[0.9375rem] font-medium text-ink-muted">
       <span className="flex h-8 w-8 items-center justify-center rounded-full bg-pos-soft text-good">
         <Sparkles size={17} aria-hidden="true" />
       </span>
@@ -233,20 +233,20 @@ function AnswerFeedback({message,copy}:{message:ConversationMessage;copy:Supervi
       setRating(value);
     }catch{setError(true);}finally{setSaving(false);}
   }
-  return <div className="ps-1 text-[17px] leading-relaxed text-ink-muted">
+  return <div className="ps-1 text-[1.0625rem] leading-relaxed text-ink-muted">
     <div className="flex flex-wrap items-center gap-2">
       <button type="button" onClick={()=>void send("up")} disabled={saving}
-        aria-pressed={rating==="up"} className={`inline-flex min-h-12 items-center gap-1.5 rounded-lg px-2 text-[17px] hover:text-ink focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ink ${rating==="up"?"bg-surface2 text-ink":""}`}>
+        aria-pressed={rating==="up"} className={`inline-flex min-h-12 items-center gap-1.5 rounded-lg px-2 text-[1.0625rem] hover:text-ink focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ink ${rating==="up"?"bg-surface2 text-ink":""}`}>
         <ThumbsUp size={18} aria-hidden="true"/><span>{copy.feedbackUp}</span>
       </button>
       <button type="button" onClick={()=>void send("down")} disabled={saving}
-        aria-pressed={rating==="down"} className={`inline-flex min-h-12 items-center gap-1.5 rounded-lg px-2 text-[17px] hover:text-ink focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ink ${rating==="down"?"bg-surface2 text-ink":""}`}>
+        aria-pressed={rating==="down"} className={`inline-flex min-h-12 items-center gap-1.5 rounded-lg px-2 text-[1.0625rem] hover:text-ink focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ink ${rating==="down"?"bg-surface2 text-ink":""}`}>
         <ThumbsDown size={18} aria-hidden="true"/><span>{copy.feedbackDown}</span>
       </button>
       {rating&&<span role="status">{copy.feedbackSaved}</span>}
     </div>
     {rating==="down"&&<textarea aria-label={copy.feedbackDown} value={comment} onChange={e=>setComment(e.target.value)}
-      maxLength={1000} rows={2} className="mt-2 min-h-12 w-full rounded-lg border border-line p-3 text-[17px]"/>}
+      maxLength={1000} rows={2} className="mt-2 min-h-12 w-full rounded-lg border border-line p-3 text-[1.0625rem]"/>}
     {rating==="down"&&<button className="min-h-12 underline" onClick={()=>void send("down")} disabled={saving} type="button">{copy.feedbackSaved}</button>}
     {error&&<p role="alert">{copy.feedbackError}</p>}
   </div>;
@@ -1210,7 +1210,7 @@ export default function SupervisorChatComposer({
       void chatAboutEventDay(date,title,eventId,existingThreadId,cityEventId,draftPrompt)}
     chatDisabled={boardAskDisabled}/> : undefined;
 
-  if(sessionDenied)return <section className="mx-auto max-w-lg space-y-4 rounded-xl bg-surface p-6" aria-label={copy.composerLabel}><p role="alert" className="text-[17px] text-ink">{en.SupervisorExperience.sessionDenied}</p><Link href="/login" className="inline-flex min-h-12 items-center rounded-lg bg-accent px-4 text-on-accent">{en.SupervisorExperience.signInAgain}</Link></section>;
+  if(sessionDenied)return <section className="mx-auto max-w-lg space-y-4 rounded-xl bg-surface p-6" aria-label={copy.composerLabel}><p role="alert" className="text-[1.0625rem] text-ink">{en.SupervisorExperience.sessionDenied}</p><Link href="/login" className="inline-flex min-h-12 items-center rounded-lg bg-accent px-4 text-on-accent">{en.SupervisorExperience.signInAgain}</Link></section>;
   return <section ref={shell} className="supervisor-shell relative flex min-h-[320px] min-w-0 flex-col overflow-hidden rounded-none bg-surface md:rounded-2xl"
     aria-label={copy.composerLabel}>
     <header className="flex shrink-0 items-center gap-1 px-2 py-1.5 sm:px-4 sm:py-2">
@@ -1234,7 +1234,7 @@ export default function SupervisorChatComposer({
         className="inline-flex min-h-12 min-w-12 items-center justify-center rounded-full text-ink-muted hover:bg-surface2 focus-visible:outline focus-visible:outline-2 focus-visible:outline-ink">
         <CalendarDays size={20} aria-hidden="true"/>
       </button>
-      <h2 className="min-w-0 flex-1 truncate text-center font-headline text-[17px] font-medium tracking-tight text-ink">
+      <h2 className="min-w-0 flex-1 truncate text-center font-headline text-[1.0625rem] font-medium tracking-tight text-ink">
         {threadTitle || copy.supervisor}
       </h2>
       <button type="button" onClick={() => selectThread(null)} disabled={!enabled || !canUseAi || sending || uploading || dictation==="recognizing" || dictation==="listening"}
@@ -1243,14 +1243,14 @@ export default function SupervisorChatComposer({
         <SquarePen size={21} aria-hidden="true" />
       </button>
     </header>
-    {threadUnavailable&&<p role="alert" className="shrink-0 border-b border-line px-4 py-2 text-[17px] text-ink">{en.SupervisorExperience.threadUnavailable}</p>}
-    {offline&&<p role="status" className="shrink-0 border-b border-line px-4 py-2 text-[15px] text-ink-muted">{en.SupervisorExperience.offline}</p>}
+    {threadUnavailable&&<p role="alert" className="shrink-0 border-b border-line px-4 py-2 text-[1.0625rem] text-ink">{en.SupervisorExperience.threadUnavailable}</p>}
+    {offline&&<p role="status" className="shrink-0 border-b border-line px-4 py-2 text-[0.9375rem] text-ink-muted">{en.SupervisorExperience.offline}</p>}
     {startExpanded && <aside id="supervisor-chat-insights"
       aria-label={chatStartCopy?.keyNumbers??en.Home.keyNumbers}
       onKeyDown={event=>{if(event.key==="Escape"){setStartExpanded(false);}}}
       className="absolute inset-x-2 top-14 z-30 max-h-[72dvh] overflow-y-auto overscroll-contain rounded-2xl border border-line bg-surface p-3 shadow-lg sm:inset-x-4">
       {chatStartPromise?
-        <Suspense key={boardPeriod} fallback={<p role="status" className="p-3 text-[15px] text-ink-muted">{copy.sending}</p>}>
+        <Suspense key={boardPeriod} fallback={<p role="status" className="p-3 text-[0.9375rem] text-ink-muted">{copy.sending}</p>}>
           <DeferredChatStart promise={chatStartPromise} suggestions={copy.suggestions} failureText={copy.unverified}
             hasMessages={hasChatMessages} expanded onToggle={()=>setStartExpanded(false)}
             onSuggestion={prompt=>{setStartExpanded(false);retryId.current=null;void sendText(prompt);}}
@@ -1265,16 +1265,16 @@ export default function SupervisorChatComposer({
             suggestionsDisabled={threadUnavailable||restoringFiles||offline||!enabled||!canUseAi||sending||uploading||dictation==="recognizing"||resumedRunning}
             unavailableMessage={!enabled ? copy.unavailable : undefined}
             comingUp={comingUpCard}/>
-          :<p role="status" className="p-3 text-[15px] text-ink-muted">{copy.unverified}</p>}
+          :<p role="status" className="p-3 text-[0.9375rem] text-ink-muted">{copy.unverified}</p>}
     </aside>}
     <div ref={transcript} className="min-h-0 flex-1 overflow-y-auto overscroll-contain [overflow-anchor:none] px-4 py-3 sm:px-6 md:py-5 focus-visible:outline focus-visible:outline-2 focus-visible:outline-inset focus-visible:outline-ink"
       onScroll={onTranscriptScroll} role="log" aria-live="off" aria-label={copy.threads} tabIndex={0}>
       <div ref={messageContent} className="mx-auto flex min-h-full w-full max-w-[46rem] min-w-0 flex-col items-stretch justify-start gap-5">
       {workNotice&&<p role="status" className="text-sm text-ink-muted">{workNotice}</p>}
       {!hasChatMessages&&startReady&&!threadUnavailable&&<SupervisorWelcome heading={copy.emptyHeading} intro={copy.emptyIntro}/>}
-      {!hasChatMessages&&!enabled&&<p role="status" className="text-[17px] text-ink-muted">{copy.unavailable}</p>}
+      {!hasChatMessages&&!enabled&&<p role="status" className="text-[1.0625rem] text-ink-muted">{copy.unavailable}</p>}
       {nextOffset !== null && <button type="button" onClick={() => void loadOlder()} disabled={loading||offline}
-        className="mx-auto flex min-h-12 items-center gap-2 rounded-xl px-4 text-[15px] font-semibold text-ink underline hover:bg-surface2">
+        className="mx-auto flex min-h-12 items-center gap-2 rounded-xl px-4 text-[0.9375rem] font-semibold text-ink underline hover:bg-surface2">
         <Clock3 size={18} aria-hidden="true" /> {copy.more}
       </button>}
       {displayedMessages.map((message,messageIndex) => {
@@ -1340,7 +1340,7 @@ export default function SupervisorChatComposer({
               question.data.input.options.find(o=>o.id===value)?.label[locale]??value:value);
           }}/>
         {message.role==="supervisor"&&<AnswerFeedback message={message} copy={copy}/>}
-        {pendingOwnerIds.has(message.id) && <div className="flex max-w-[94%] items-center gap-3 rounded-xl border border-line bg-warn-soft p-3 text-[15px] text-ink" role="alert">
+        {pendingOwnerIds.has(message.id) && <div className="flex max-w-[94%] items-center gap-3 rounded-xl border border-line bg-warn-soft p-3 text-[0.9375rem] text-ink" role="alert">
           <AlertCircle size={18} aria-hidden="true" />
           <span className="flex-1">{shownFailure ? failureLine(shownFailure, liveCopy) : copy.answerFailed}</span>
           <button type="button" onClick={() => void sendText(message.text ?? "", message.clientMessageId ?? undefined,undefined,undefined,message.ownerInputResponse)}
@@ -1348,17 +1348,17 @@ export default function SupervisorChatComposer({
         </div>}
       </div>;
       })}
-      {queuedOwner.map((item) => <article key={item.id} className="ms-auto w-fit max-w-[80%] rounded-2xl bg-surface2 px-4 py-3 text-[17px] leading-relaxed text-ink opacity-80">
+      {queuedOwner.map((item) => <article key={item.id} className="ms-auto w-fit max-w-[80%] rounded-2xl bg-surface2 px-4 py-3 text-[1.0625rem] leading-relaxed text-ink opacity-80">
         <p className="whitespace-pre-wrap break-words">{item.text}</p>
       </article>)}
       {(sending || resumedRunning) && <ChatJobProgress locale={locale} acknowledged
         steps={sending ? liveSteps : watcher.job?.progress ?? []}
         note={sending ? progressStatus?.stage==="answering"?progressStatusText(copy,progressStatus):liveNote??(!liveJobId?progressStatusText(copy,progressStatus)??copy.sending:null) : watcher.job?.progress.length?null:liveCopy.resumed} />}
-      {sending && streamedText && <article aria-hidden="true" aria-live="off" aria-busy="true" inert className="w-full space-y-3"><div className="flex items-center gap-2 text-[15px] font-bold text-ink-muted"><span className="flex h-8 w-8 items-center justify-center rounded-full bg-pos-soft text-good"><Sparkles size={17} aria-hidden="true"/></span>{copy.supervisor}</div><ReplyBlock block={{type:"text",text:streamedText}} copy={copy} locale={locale}/></article>}
+      {sending && streamedText && <article aria-hidden="true" aria-live="off" aria-busy="true" inert className="w-full space-y-3"><div className="flex items-center gap-2 text-[0.9375rem] font-bold text-ink-muted"><span className="flex h-8 w-8 items-center justify-center rounded-full bg-pos-soft text-good"><Sparkles size={17} aria-hidden="true"/></span>{copy.supervisor}</div><ReplyBlock block={{type:"text",text:streamedText}} copy={copy} locale={locale}/></article>}
       </div>
     </div>
-    {sending&&canDetach&&<button type="button" onClick={()=>void detachLiveStream()} className="mx-auto flex min-h-12 shrink-0 items-center gap-2 rounded-full border border-line px-4 text-[15px] text-ink hover:bg-surface2 focus-visible:outline focus-visible:outline-2 focus-visible:outline-ink"><Square size={16} aria-hidden="true"/>{en.SupervisorExperience.stopLiveView}</button>}
-    {streamNotice&&<p role="status" className="shrink-0 px-4 py-2 text-[15px] text-ink-muted">{streamNotice}</p>}
+    {sending&&canDetach&&<button type="button" onClick={()=>void detachLiveStream()} className="mx-auto flex min-h-12 shrink-0 items-center gap-2 rounded-full border border-line px-4 text-[0.9375rem] text-ink hover:bg-surface2 focus-visible:outline focus-visible:outline-2 focus-visible:outline-ink"><Square size={16} aria-hidden="true"/>{en.SupervisorExperience.stopLiveView}</button>}
+    {streamNotice&&<p role="status" className="shrink-0 px-4 py-2 text-[0.9375rem] text-ink-muted">{streamNotice}</p>}
     <div ref={replyAnnouncement} role="status" aria-live="polite" aria-atomic="true" data-testid="supervisor-reply-announcement" className="sr-only"/>
     {hasChatMessages&&!showNewMessage&&<button type="button" onClick={readLatestMessage} className="sr-only focus:not-sr-only focus:mx-auto focus:min-h-12 focus:rounded-lg focus:px-3 focus:outline focus:outline-2">{en.SupervisorExperience.readLatestMessage}</button>}
     {showNewMessage && <button type="button" onClick={readLatestMessage} className="mx-auto inline-flex min-h-12 max-w-full shrink-0 items-center gap-2 rounded-full border border-line bg-surface px-4 text-sm font-semibold text-accent-text focus-visible:outline focus-visible:outline-2 focus-visible:outline-ink"><ArrowDown size={16} aria-hidden="true" />{copy.newMessage}</button>}
@@ -1371,7 +1371,7 @@ export default function SupervisorChatComposer({
     <div className="mx-auto mt-auto w-full max-w-[49rem] shrink-0 bg-surface px-2 pb-[max(0.5rem,env(safe-area-inset-bottom))] pt-1 sm:px-4">
       {attachments.length > 0 && <div className="mb-2 flex flex-wrap gap-2" aria-label={copy.addAttachment}>
         {attachments.map(file=><div key={file.id}
-          className="inline-flex max-w-full min-h-10 items-center gap-1 rounded-xl bg-surface ps-3 text-[14px] font-semibold text-ink">
+          className="inline-flex max-w-full min-h-10 items-center gap-1 rounded-xl bg-surface ps-3 text-[0.875rem] font-semibold text-ink">
           <Paperclip size={17} aria-hidden="true"/>
           <a href={"/api/ai/threads/"+encodeURIComponent(threadId??"")+"/attachments/"+encodeURIComponent(file.id)}
             target="_blank" rel="noopener noreferrer" className="min-w-0 truncate underline">
@@ -1386,7 +1386,7 @@ export default function SupervisorChatComposer({
       </div>}
       {storedAttachments?.threadId===threadId && storedAttachments.items.length>0 &&
         <details className="mb-2">
-          <summary className="min-h-12 cursor-pointer py-3 text-[15px] font-medium text-ink-muted">{fileCopy.recent}</summary>
+          <summary className="min-h-12 cursor-pointer py-3 text-[0.9375rem] font-medium text-ink-muted">{fileCopy.recent}</summary>
           <div className="mt-2 flex flex-wrap gap-2">
             {storedAttachments.items.filter(file=>!attachments.some(a=>a.id===file.id)).slice(0,8).map(file=>
               <button key={file.id} type="button" disabled={sending}
@@ -1395,20 +1395,20 @@ export default function SupervisorChatComposer({
                   setAttachments(old=>old.some(a=>a.id===file.id)?old:[file,...old]);
                 }}
                 aria-label={fileCopy.reuse+" "+file.originalName}
-                className="inline-flex min-h-12 max-w-full items-center gap-2 rounded-xl border border-line bg-surface px-3 text-[15px] font-medium text-ink hover:bg-surface2">
+                className="inline-flex min-h-12 max-w-full items-center gap-2 rounded-xl border border-line bg-surface px-3 text-[0.9375rem] font-medium text-ink hover:bg-surface2">
                 <Paperclip size={16} aria-hidden="true"/><span className="truncate">{file.originalName}</span>
               </button>)}
           </div>
         </details>}
       {eventContext?.threadId===threadId&&
-        <div role="status" className="mb-2 flex min-h-10 items-center gap-2 rounded-xl bg-accent-soft px-3 py-2 text-[15px] font-semibold text-ink">
+        <div role="status" className="mb-2 flex min-h-10 items-center gap-2 rounded-xl bg-accent-soft px-3 py-2 text-[0.9375rem] font-semibold text-ink">
           <span className="min-w-0 flex-1 break-words">@event {eventContext.title} · {eventContext.date}</span>
           <button type="button" onClick={()=>{if(threadId)dismissedEventThreads.current.add(threadId);setEventContext(null);}} aria-label={copy.removeEventContext}
             className="flex h-12 w-12 shrink-0 items-center justify-center rounded-lg focus-visible:outline focus-visible:outline-2 focus-visible:outline-ink">
             <X size={18} aria-hidden="true"/>
           </button>
         </div>}
-      {restoringFiles&&<div role="status" className="flex items-center gap-2 text-[15px] text-ink-muted"><CafeActivity/>{en.SupervisorExperience.checkingFiles} <button type="button" onClick={()=>{pendingFileSelection.current=null;setRestoringFiles(false);}} className="min-h-12 underline">{en.SupervisorExperience.removeSelection}</button></div>}
+      {restoringFiles&&<div role="status" className="flex items-center gap-2 text-[0.9375rem] text-ink-muted"><CafeActivity/>{en.SupervisorExperience.checkingFiles} <button type="button" onClick={()=>{pendingFileSelection.current=null;setRestoringFiles(false);}} className="min-h-12 underline">{en.SupervisorExperience.removeSelection}</button></div>}
       {attachmentMenu&&<div id="supervisor-attachment-choices" role="group" aria-label={copy.addAttachment} className="mb-2 flex flex-wrap gap-2 rounded-xl border border-line p-2" onKeyDown={e=>{if(e.key==="Escape"){setAttachmentMenu(false);attachmentTrigger.current?.focus();}}}>
         <button ref={attachmentFirstChoice} type="button" disabled={offline} className="flex min-h-12 flex-1 items-center gap-2 rounded-lg px-3 text-start hover:bg-surface2 disabled:opacity-50" onClick={()=>pickAttachment(false)}><Paperclip size={18} aria-hidden="true"/>{en.SupervisorExperience.chooseFile}</button>
         <button type="button" disabled={offline} className="flex min-h-12 flex-1 items-center gap-2 rounded-lg px-3 text-start hover:bg-surface2 disabled:opacity-50" onClick={()=>pickAttachment(true)}><Camera size={18} aria-hidden="true"/>{en.SupervisorExperience.takePhoto}</button>
@@ -1442,7 +1442,7 @@ export default function SupervisorChatComposer({
           onChange={(event) => { if(!threadId&&event.target.value)explicitNewChat.current=true;setDraft(event.target.value); retryId.current = null; }}
           onKeyDown={composerKey} disabled={!enabled || !canUseAi || inputLocked}
           placeholder={eventContext?.threadId===threadId?"@event "+eventContext.title+" · "+copy.askAnything:copy.askAnything}
-          className="col-start-2 row-start-1 min-w-0 max-h-40 min-h-12 resize-none overflow-y-auto bg-transparent px-2 py-3 text-[17px] leading-6 text-ink outline-none placeholder:text-ink-muted disabled:opacity-50" />
+          className="col-start-2 row-start-1 min-w-0 max-h-40 min-h-12 resize-none overflow-y-auto bg-transparent px-2 py-3 text-[1.0625rem] leading-6 text-ink outline-none placeholder:text-ink-muted disabled:opacity-50" />
         <button type="submit" aria-label={copy.sendMessage}
           disabled={restoringFiles || offline || !enabled || !canUseAi || inputLocked || (!draft.trim()&&!attachments.length) || dictation === "listening" || dictation === "recognizing"}
           className="col-start-4 row-start-1 flex h-12 w-12 items-center justify-center rounded-full bg-accent text-on-accent transition-transform hover:brightness-95 active:scale-95 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ink disabled:opacity-40">
@@ -1455,7 +1455,7 @@ export default function SupervisorChatComposer({
       {dictation === "recognizing" && <p className="mt-1 flex items-center gap-2 text-sm text-ink-muted" role="status">
         <CafeActivity/>{copy.transcribing}
       </p>}
-      <div role="status" aria-live="polite" className="flex items-center gap-2 text-[14px] text-ink-muted">
+      <div role="status" aria-live="polite" className="flex items-center gap-2 text-[0.875rem] text-ink-muted">
         {uploading&&<CafeActivity/>}
         {failureCode && (!error || pendingOwnerIds.size === 0) ? failureLine(failureCode, liveCopy)
           : error && pendingOwnerIds.size === 0 ? copy.answerFailed : uploading ? copy.attachmentUpload
@@ -1471,11 +1471,11 @@ export default function SupervisorChatComposer({
         <nav aria-label={{en,es,ar}[locale].Nav.ariaLabel} className="grid grid-cols-3 gap-1 md:hidden">
           {NAV_TABS.map(({href,key,Icon})=><Link key={href} href={href} onClick={()=>setControlsTab(null)}
             aria-current={href==="/"? "page":undefined}
-            className="flex min-h-12 min-w-0 items-center gap-2 rounded-lg px-2 text-[14px] text-ink hover:bg-surface2">
+            className="flex min-h-12 min-w-0 items-center gap-2 rounded-lg px-2 text-[0.875rem] text-ink hover:bg-surface2">
             <Icon size={18} className="shrink-0" aria-hidden="true"/><span className="min-w-0 break-words">{{en,es,ar}[locale].Nav[key]}</span>
           </Link>)}
         </nav>
-        <Link href="/operations" className="hidden min-h-12 items-center gap-2 rounded-lg px-2 text-[17px] text-ink hover:bg-surface2 md:flex"><UsersRound size={20} aria-hidden="true"/>{copy.teamButton}</Link>
+        <Link href="/operations" className="hidden min-h-12 items-center gap-2 rounded-lg px-2 text-[1.0625rem] text-ink hover:bg-surface2 md:flex"><UsersRound size={20} aria-hidden="true"/>{copy.teamButton}</Link>
         {languageSwitch&&<div className="md:hidden">{languageSwitch}</div>}
       </div>} files={storedAttachments} reports={savedReports} onOpenReport={id=>{if(!threadId)return;setControlsTab(null);setWorkNotice("");setWorkTarget({threadId,messageId:id});}} threadsNextOffset={threadsNextOffset} onSelectThread={(id,thread)=>selectThread(id,thread?.title)}
       onEditRoutine={routine=>{

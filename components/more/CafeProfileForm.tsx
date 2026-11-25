@@ -257,19 +257,19 @@ export default function CafeProfileForm({ profile, labels, focusHours = false }:
       <section className="flex flex-col gap-3 rounded-card-lg bg-card p-4">
         <h2 className="text-lg font-bold text-ink">{labels.businessDetails}</h2>
         <Field label={labels.cafeName} error={fieldErrors.name}>
-          <input value={name} ref={(node) => { fieldRefs.current.name = node; }} aria-invalid={Boolean(fieldErrors.name)} onChange={(e) => { setName(e.target.value); clearFieldError("name"); }} maxLength={80} className={"min-h-12 rounded-xl border border-line px-3 text-[17px]" + invalidClass("name")} />
+          <input value={name} ref={(node) => { fieldRefs.current.name = node; }} aria-invalid={Boolean(fieldErrors.name)} onChange={(e) => { setName(e.target.value); clearFieldError("name"); }} maxLength={80} className={"min-h-12 rounded-xl border border-line px-3 text-[1.0625rem]" + invalidClass("name")} />
         </Field>
         <Field label={labels.locationName}>
-          <input value={locationName} onChange={(e) => setLocationName(e.target.value)} maxLength={80} className="min-h-12 rounded-xl border border-line px-3 text-[17px]" />
+          <input value={locationName} onChange={(e) => setLocationName(e.target.value)} maxLength={80} className="min-h-12 rounded-xl border border-line px-3 text-[1.0625rem]" />
         </Field>
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
           <Field label={labels.openedOn} error={fieldErrors.openedOn}>
-            <input type="date" value={openedOn} ref={(node) => { fieldRefs.current.openedOn = node; }} aria-invalid={Boolean(fieldErrors.openedOn)} onChange={(e) => { setOpenedOn(e.target.value); clearFieldError("openedOn"); }} className={"min-h-12 rounded-xl border border-line px-3 text-[17px]" + invalidClass("openedOn")} />
+            <input type="date" value={openedOn} ref={(node) => { fieldRefs.current.openedOn = node; }} aria-invalid={Boolean(fieldErrors.openedOn)} onChange={(e) => { setOpenedOn(e.target.value); clearFieldError("openedOn"); }} className={"min-h-12 rounded-xl border border-line px-3 text-[1.0625rem]" + invalidClass("openedOn")} />
           </Field>
           <Field label={labels.currency} error={fieldErrors.currency}>
             <select value={currency} ref={(node) => { fieldRefs.current.currency = node; }} aria-invalid={Boolean(fieldErrors.currency)}
               onChange={(e) => { setCurrency(e.target.value); clearFieldError("currency"); }}
-              className={"min-h-12 min-w-0 rounded-xl border border-line bg-card px-3 text-[17px]" + invalidClass("currency")}>
+              className={"min-h-12 min-w-0 rounded-xl border border-line bg-card px-3 text-[1.0625rem]" + invalidClass("currency")}>
               <option value="">{labels.chooseCurrency}</option>
               {currencies.map((item) => <option key={item.value} value={item.value}>{item.label}</option>)}
             </select>
@@ -305,16 +305,16 @@ export default function CafeProfileForm({ profile, labels, focusHours = false }:
                 }
                 if (e.key === "Enter" && timezoneExpanded && timezoneResults[timezoneActive]) { e.preventDefault(); chooseTimezone(timezoneResults[timezoneActive].value); }
               }}
-              className={"min-h-12 w-full rounded-xl border border-line bg-card px-3 text-[17px] text-start" + invalidClass("timezone")} />
+              className={"min-h-12 w-full rounded-xl border border-line bg-card px-3 text-[1.0625rem] text-start" + invalidClass("timezone")} />
             {timezoneExpanded && (
               <div id="cafe-timezone-options" role="listbox" ref={timezoneListRef} aria-label={labels.timezone} className="absolute inset-x-0 top-full z-30 mt-1 max-h-64 overflow-y-auto rounded-xl border border-line bg-card shadow-lg">
                 {timezoneResults.length ? timezoneResults.map((option, index) => (
                   <button id={"cafe-timezone-" + index} key={option.value} type="button" role="option" tabIndex={-1} aria-selected={selectedTimezone === option.value}
                     onPointerDown={(e) => e.preventDefault()} onClick={() => chooseTimezone(option.value)}
-                    className={"block min-h-12 w-full px-3 py-2 text-start text-[17px] hover:bg-paper " + (index === timezoneActive ? "bg-paper font-semibold" : "")}>
+                    className={"block min-h-12 w-full px-3 py-2 text-start text-[1.0625rem] hover:bg-paper " + (index === timezoneActive ? "bg-paper font-semibold" : "")}>
                     {option.label}
                   </button>
-                )) : <p className="p-3 text-[17px] text-ink-muted">{labels.timezoneEmpty}</p>}
+                )) : <p className="p-3 text-[1.0625rem] text-ink-muted">{labels.timezoneEmpty}</p>}
               </div>
             )}
           </div>
@@ -324,33 +324,33 @@ export default function CafeProfileForm({ profile, labels, focusHours = false }:
       <section className="flex flex-col gap-3 rounded-card-lg bg-card p-4">
         <h2 className="text-lg font-bold text-ink">{labels.address}</h2>
         <Field label={labels.addressLine1}>
-          <input value={addressLine1} onChange={(e) => setAddressLine1(e.target.value)} maxLength={120} className="min-h-12 rounded-xl border border-line px-3 text-[17px]" />
+          <input value={addressLine1} onChange={(e) => setAddressLine1(e.target.value)} maxLength={120} className="min-h-12 rounded-xl border border-line px-3 text-[1.0625rem]" />
         </Field>
         <Field label={labels.addressLine2}>
-          <input value={addressLine2} onChange={(e) => setAddressLine2(e.target.value)} maxLength={120} className="min-h-12 rounded-xl border border-line px-3 text-[17px]" />
+          <input value={addressLine2} onChange={(e) => setAddressLine2(e.target.value)} maxLength={120} className="min-h-12 rounded-xl border border-line px-3 text-[1.0625rem]" />
         </Field>
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
           <Field label={labels.city}>
-            <input value={city} onChange={(e) => setCity(e.target.value)} maxLength={80} className="min-h-12 rounded-xl border border-line px-3 text-[17px]" />
+            <input value={city} onChange={(e) => setCity(e.target.value)} maxLength={80} className="min-h-12 rounded-xl border border-line px-3 text-[1.0625rem]" />
           </Field>
           <Field label={labels.region}>
             {countryCode === "US" ? (
-              <select value={region} onChange={(e) => setRegion(e.target.value)} className="min-h-12 rounded-xl border border-line bg-card px-3 text-[17px]">
+              <select value={region} onChange={(e) => setRegion(e.target.value)} className="min-h-12 rounded-xl border border-line bg-card px-3 text-[1.0625rem]">
                 <option value="">{labels.chooseState}</option>
                 {region && !usStates.some((item) => region === item.value || region === item.legacyName) && <option value={region}>{region}</option>}
                 {usStates.map((item) => (
                   <option key={item.value} value={region === item.legacyName ? region : item.value}>{item.label}</option>
                 ))}
               </select>
-            ) : <input value={region} onChange={(e) => setRegion(e.target.value)} maxLength={80} className="min-h-12 rounded-xl border border-line px-3 text-[17px]" />}
+            ) : <input value={region} onChange={(e) => setRegion(e.target.value)} maxLength={80} className="min-h-12 rounded-xl border border-line px-3 text-[1.0625rem]" />}
           </Field>
           <Field label={labels.postalCode}>
-            <input value={postalCode} onChange={(e) => setPostalCode(e.target.value)} maxLength={24} className="min-h-12 rounded-xl border border-line px-3 text-[17px]" />
+            <input value={postalCode} onChange={(e) => setPostalCode(e.target.value)} maxLength={24} className="min-h-12 rounded-xl border border-line px-3 text-[1.0625rem]" />
           </Field>
           <Field label={labels.countryCode} error={fieldErrors.countryCode}>
             <select value={countryCode} ref={(node) => { fieldRefs.current.countryCode = node; }} aria-invalid={Boolean(fieldErrors.countryCode)}
               onChange={(e) => changeCountry(e.target.value)}
-              className={"min-h-12 min-w-0 rounded-xl border border-line bg-card px-3 text-[17px]" + invalidClass("countryCode")}>
+              className={"min-h-12 min-w-0 rounded-xl border border-line bg-card px-3 text-[1.0625rem]" + invalidClass("countryCode")}>
               <option value="">{labels.chooseCountry}</option>
               {countryCode && !countries.some((item) => item.value === countryCode) && <option value={countryCode}>{countryCode}</option>}
               {countries.map((item) => <option key={item.value} value={item.value}>{item.label}</option>)}
@@ -363,23 +363,23 @@ export default function CafeProfileForm({ profile, labels, focusHours = false }:
         <div className="flex items-start justify-between gap-3">
           <div>
             <h2 id="cafe-hours-heading" className="text-lg font-bold text-ink">{labels.regularHours}</h2>
-            <p className="mt-1 text-[17px] leading-snug text-ink-muted">{labels.regularHoursHint}</p>
+            <p className="mt-1 text-[1.0625rem] leading-snug text-ink-muted">{labels.regularHoursHint}</p>
           </div>
           {hoursNotSet && <span className="shrink-0 rounded-full bg-warn-tint px-2 py-1 text-sm font-bold text-warn">{labels.hoursBadge}</span>}
         </div>
         <button type="button" onClick={() => { editRevisionRef.current += 1; setStatus("idle"); setError(null); setHours((current) => copyMondayToWeekdays(current)); setFieldErrors((current) => Object.fromEntries(Object.entries(current).filter(([key]) => !["hours-tue", "hours-wed", "hours-thu", "hours-fri"].includes(key)))); }}
-          className="min-h-12 self-start rounded-full border border-line px-4 text-[17px] font-bold text-ink">{labels.copyWeekdays}</button>
+          className="min-h-12 self-start rounded-full border border-line px-4 text-[1.0625rem] font-bold text-ink">{labels.copyWeekdays}</button>
         <div className="flex flex-col gap-2">
           {DAY_ORDER.map((key) => {
             const day = hours[key];
             return (
               <div key={key} className="grid grid-cols-[4.5rem_1fr] gap-2 rounded-xl bg-paper p-3 sm:grid-cols-[5rem_8rem_1fr] sm:items-center">
-                <span className="text-[17px] font-bold text-ink">{dayLabels[key]}</span>
+                <span className="text-[1.0625rem] font-bold text-ink">{dayLabels[key]}</span>
                 <select
                   aria-label={dayLabels[key] + ": " + labels.regularHours}
                   value={day.mode}
                   onChange={(e) => { changeMode(key, e.target.value as "unset" | "open" | "closed"); clearFieldError("hours-" + key); }}
-                  className={"min-h-12 rounded-lg border border-line bg-card px-2 text-[17px]" + invalidClass("hours-" + key)}
+                  className={"min-h-12 rounded-lg border border-line bg-card px-2 text-[1.0625rem]" + invalidClass("hours-" + key)}
                 >
                   <option value="unset">{labels.notSet}</option>
                   <option value="open">{labels.open}</option>
@@ -391,28 +391,28 @@ export default function CafeProfileForm({ profile, labels, focusHours = false }:
                       <span className="sr-only">{labels.opens}</span>
                       <input type="time" value={day.open} aria-label={dayLabels[key] + ": " + labels.opens} ref={(node) => { fieldRefs.current["hours-" + key] = node; }} aria-invalid={Boolean(fieldErrors["hours-" + key])}
                         onChange={(e) => { changeTime(key, "open", e.target.value); clearFieldError("hours-" + key); }}
-                        className={"min-h-12 min-w-0 w-full rounded-lg border border-line bg-card px-2 text-[17px]" + invalidClass("hours-" + key)} />
+                        className={"min-h-12 min-w-0 w-full rounded-lg border border-line bg-card px-2 text-[1.0625rem]" + invalidClass("hours-" + key)} />
                     </label>
                     <span className="hidden text-ink-muted sm:inline">–</span>
                     <label className="flex min-w-0 flex-1 items-center gap-1 text-sm font-semibold text-ink-muted">
                       <span className="sr-only">{labels.closes}</span>
                       <input type="time" value={day.close} aria-label={dayLabels[key] + ": " + labels.closes} aria-invalid={Boolean(fieldErrors["hours-" + key])}
                         onChange={(e) => { changeTime(key, "close", e.target.value); clearFieldError("hours-" + key); }}
-                        className={"min-h-12 min-w-0 w-full rounded-lg border border-line bg-card px-2 text-[17px]" + invalidClass("hours-" + key)} />
+                        className={"min-h-12 min-w-0 w-full rounded-lg border border-line bg-card px-2 text-[1.0625rem]" + invalidClass("hours-" + key)} />
                     </label>
                   </div>
                 )}
-                {fieldErrors["hours-" + key] && <p role="alert" className="col-span-2 text-[17px] font-normal text-neg sm:col-span-3">{fieldErrors["hours-" + key]}</p>}
+                {fieldErrors["hours-" + key] && <p role="alert" className="col-span-2 text-[1.0625rem] font-normal text-neg sm:col-span-3">{fieldErrors["hours-" + key]}</p>}
               </div>
             );
           })}
         </div>
       </section>
 
-      {error && <p role="alert" className="rounded-xl bg-warn-tint p-3 text-[17px] font-semibold text-warn">{error}</p>}
-      {status === "saved" && <p className="rounded-xl bg-good-tint p-3 text-[17px] font-semibold text-good">{labels.saved}</p>}
+      {error && <p role="alert" className="rounded-xl bg-warn-tint p-3 text-[1.0625rem] font-semibold text-warn">{error}</p>}
+      {status === "saved" && <p className="rounded-xl bg-good-tint p-3 text-[1.0625rem] font-semibold text-good">{labels.saved}</p>}
       <div className="sticky bottom-20 z-20 -mx-4 border-t border-line bg-card/95 px-4 py-3 shadow-lg backdrop-blur md:static md:mx-0 md:border-0 md:bg-transparent md:px-0 md:py-0 md:shadow-none">
-        <button type="button" onClick={save} disabled={isPending} className="min-h-14 w-full rounded-full bg-accent px-5 text-[17px] font-bold text-on-accent disabled:opacity-40">
+        <button type="button" onClick={save} disabled={isPending} className="min-h-14 w-full rounded-full bg-accent px-5 text-[1.0625rem] font-bold text-on-accent disabled:opacity-40">
           {isPending ? labels.saving : labels.save}
         </button>
       </div>
@@ -426,9 +426,9 @@ function Field({ label, hint, error, children, asDiv = false }: { label: string;
       <span>{label}</span>
       {children}
       {hint && <span className="text-sm font-normal text-ink-muted">{hint}</span>}
-      {error && <span role="alert" className="text-[17px] font-normal text-neg">{error}</span>}
+      {error && <span role="alert" className="text-[1.0625rem] font-normal text-neg">{error}</span>}
     </>
   );
-  const className = "flex flex-col gap-1 text-[17px] font-semibold text-ink";
+  const className = "flex flex-col gap-1 text-[1.0625rem] font-semibold text-ink";
   return asDiv ? <div className={className}>{content}</div> : <label className={className}>{content}</label>;
 }

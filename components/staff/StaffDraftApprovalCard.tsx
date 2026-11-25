@@ -137,7 +137,7 @@ export default function StaffDraftApprovalCard({week,locale,data,onClose,onAppli
     // outdated effect while showing different draft rows.
     setEditing(null);void replaceDraft(changed);
   };
-  return <section className="rounded-2xl border border-line bg-surface p-4 text-[17px]" dir={locale==="ar"?"rtl":"ltr"} aria-label={t("draftHeading")}>
+  return <section className="rounded-2xl border border-line bg-surface p-4 text-[1.0625rem]" dir={locale==="ar"?"rtl":"ltr"} aria-label={t("draftHeading")}>
     <div className="flex items-center justify-between gap-2">
       <h2 className="text-xl font-bold">{t("draftHeading")}</h2>
       <button type="button" disabled={busy} className="min-h-12 px-3"

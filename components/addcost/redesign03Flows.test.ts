@@ -19,7 +19,7 @@ describe("Redesign 03 screen contracts", () => {
     const bills = source("components/bills/BillsManager.tsx");
     expect(bills).toContain('setError(labels.removeError)');
     expect(bills).toContain('setError(labels.saveError)');
-    expect(bills).toContain('role="alert" className="text-[17px] text-warn">{error}</p>');
+    expect(bills).toContain('role="alert" className="text-[1.0625rem] text-warn">{error}</p>');
   });
 
   it("preserves the actual/estimate classification when editing and reviewing bills", () => {
@@ -47,7 +47,7 @@ describe("Redesign 03 screen contracts", () => {
 
   it("makes the Bills Add cost link a full-size keyboard-accessible touch target", () => {
     const bills = source("components/bills/BillsManager.tsx");
-    expect(bills).toMatch(/<Link href="\/add-cost" className="[^"]*min-h-12[^"]*text-\[17px\][^"]*focus-visible:outline-2[^"]*">\{labels\.variableCostHint\}<\/Link>/);
+    expect(bills).toMatch(/<Link href="\/add-cost" className="[^"]*min-h-12[^"]*text-\[1.0625rem\][^"]*focus-visible:outline-2[^"]*">\{labels\.variableCostHint\}<\/Link>/);
   });
 
   it("does not expose unavailable AI entry methods", () => {
@@ -87,8 +87,8 @@ describe("Redesign 03 screen contracts", () => {
   it("keeps recovery fields at the minimum 48px touch and 17px text sizes", () => {
     const statement = source("components/addcost/StatementUploader.tsx");
     expect(statement).not.toContain('className="h-11 rounded-xl border border-line px-3"');
-    expect(statement).toContain('min-h-12 rounded-xl border border-line px-3 text-[17px]');
-    expect(statement).toContain('min-h-12 flex-1 rounded-full bg-accent px-4 text-[17px]');
+    expect(statement).toContain('min-h-12 rounded-xl border border-line px-3 text-[1.0625rem]');
+    expect(statement).toContain('min-h-12 flex-1 rounded-full bg-accent px-4 text-[1.0625rem]');
   });
 
   it("does not apply stale overlapping bank uploads and permits a retry", () => {

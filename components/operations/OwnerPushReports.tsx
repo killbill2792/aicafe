@@ -82,7 +82,7 @@ export default function OwnerPushReports({copy}:{copy:Copy}){
   }
   return <section className="rounded-2xl border border-line bg-card p-4">
     <h2 className="font-headline text-xl font-bold text-ink">{copy.title}</h2>
-    <p className="mt-2 text-[17px] text-ink-muted">{copy.description}</p>
+    <p className="mt-2 text-[1.0625rem] text-ink-muted">{copy.description}</p>
     {!state?<p className="mt-2 text-ink-muted">{copy.loading}</p>:
       !state.available||!supported?<p className="mt-2 text-ink-muted">{copy.unsupported}</p>:
       <button type="button" onClick={()=>void(state.subscribed?disable():enable())}

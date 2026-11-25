@@ -2531,6 +2531,8 @@
   "Ui": {
     "theme": "المظهر",
     "themeDescription": "اختر ألوان مقهاك.",
+    "textSize": "Text size",
+    "textSizes": { "small": "Small", "default": "Default", "large": "Large", "xlarge": "Extra large" },
     "chooseTheme": "ألوان المظهر",
     "appearance": "وضع العرض",
     "light": "فاتح",
@@ -2541,6 +2543,7 @@
     "unverified": "غير مؤكد",
     "themes": {
       "freshPour": "قهوة طازجة",
+      "glass": "Glass",
       "nightRoast": "تحميص ليلي",
       "marketGreen": "أخضر السوق",
       "berryMocha": "موكا التوت",

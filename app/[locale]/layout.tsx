@@ -9,6 +9,7 @@ import {redirect} from "next/navigation";
 import {getOptionalAuthenticatedUser} from "@/lib/auth/requireUser";
 import {isLinkedStaffUser} from "@/lib/staffCommunication/identity.server";
 import { parseModeCookie, parseThemeCookie } from "@/app/themes";
+import { parseTextSizeCookie } from "@/app/textSize";
 import { routing, getDirection } from "@/i18n/routing";
 import TabBar from "@/components/TabBar";
 import SideNav from "@/components/SideNav";
@@ -72,6 +73,7 @@ export default async function LocaleLayout({
   const cookieStore = await cookies();
   const theme = parseThemeCookie(cookieStore.get("cp_theme")?.value);
   const mode = parseModeCookie(cookieStore.get("cp_mode")?.value);
+  const textSize = parseTextSizeCookie(cookieStore.get("cp_text")?.value);
 
   return (
     <html
@@ -79,6 +81,7 @@ export default async function LocaleLayout({
       dir={dir}
       data-theme={theme}
       data-mode={mode}
+      data-text-size={textSize}
       className="h-full"
     >
       <body

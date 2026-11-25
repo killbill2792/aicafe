@@ -94,7 +94,7 @@ describe("modern Supervisor conversation shell", () => {
   });
   it("makes durable task notifications one line and keeps the existing Team details link",()=>{
     const source=readFileSync("components/home/SupervisorChatComposer.tsx","utf8");
-    expect(source).toContain('className="inline-flex min-h-12 max-w-full items-center gap-2 rounded-xl px-2 text-[15px] text-ink-muted');
+    expect(source).toContain('className="inline-flex min-h-12 max-w-full items-center gap-2 rounded-xl px-2 text-[0.9375rem] text-ink-muted');
     expect(source).toContain('aria-label={statusText+": "+block.title+". "+copy.taskOpen}');
     expect(source).toContain('href={block.href}');
     expect(source).not.toContain("shadow-sm transition-colors hover:bg-surface2");

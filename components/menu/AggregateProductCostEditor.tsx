@@ -98,7 +98,7 @@ export default function AggregateProductCostEditor({ items, labels }: { items: M
   return (
     <section className="rounded-card-lg border border-line/70 bg-card p-4">
       <h2 className="text-xl font-extrabold text-ink">{labels.title}</h2>
-      <p className="mt-1 text-[17px] leading-relaxed text-ink-muted">{labels.help}</p>
+      <p className="mt-1 text-[1.0625rem] leading-relaxed text-ink-muted">{labels.help}</p>
       <p className="mt-2 text-sm font-semibold text-ink-muted">{labels.perSize}</p>
       <div className="mt-4 divide-y divide-line">
         {items.map((item) => {
@@ -107,7 +107,7 @@ export default function AggregateProductCostEditor({ items, labels }: { items: M
             <div key={item.id} className="py-4 first:pt-0 last:pb-0">
               <div className="flex flex-wrap items-start justify-between gap-2">
                 <div>
-                  <h3 className="text-[17px] font-bold text-ink">{item.sizeLabel ?? item.name}</h3>
+                  <h3 className="text-[1.0625rem] font-bold text-ink">{item.sizeLabel ?? item.name}</h3>
                   <span className="mt-1 inline-flex rounded-full bg-paper px-2.5 py-1 text-xs font-bold text-ink-muted">{status(item)}</span>
                   {compare && <p className="mt-2 text-sm leading-snug text-ink-muted">{compare}</p>}
                 </div>
@@ -127,7 +127,7 @@ export default function AggregateProductCostEditor({ items, labels }: { items: M
                         const value = event.target.value;
                         setDrafts((current) => ({ ...current, [item.id]: { baseline: baseline(item), value } }));
                       }}
-                      className="min-w-0 flex-1 bg-transparent text-[17px] outline-none"
+                      className="min-w-0 flex-1 bg-transparent text-[1.0625rem] outline-none"
                     />
                   </span>
                 </label>

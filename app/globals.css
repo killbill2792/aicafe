@@ -10,7 +10,7 @@
   }
 
   body {
-    @apply h-full bg-paper text-ink font-body text-[17px] leading-[1.4] antialiased;
+    @apply h-full bg-paper text-ink font-body text-[1.0625rem] leading-[1.4] antialiased;
   }
 
   h1,
@@ -77,4 +77,28 @@
 .supervisor-shell[data-keyboard="open"] {
   height: max(180px, calc(var(--supervisor-keyboard-height) - 1.5rem));
   min-height: 0;
+}
+
+/* Owner text size (menu > Appearance). All font sizes are rem, so this one rule scales the app. */
+html[data-text-size="small"] { font-size: 93.75%; }
+html[data-text-size="large"] { font-size: 112.5%; }
+html[data-text-size="xlarge"] { font-size: 125%; }
+
+/* Glass surfaces: translucent, blurred, hairline border. Opaque fallback when blur is unavailable. */
+.glass {
+  background: rgb(var(--c-surface) / 0.92);
+  border: 1px solid rgb(var(--c-line) / 0.6);
+  box-shadow: 0 10px 30px rgb(0 0 0 / 0.18);
+}
+@supports ((-webkit-backdrop-filter: blur(1px)) or (backdrop-filter: blur(1px))) {
+  .glass {
+    background: rgb(var(--c-surface) / 0.68);
+    -webkit-backdrop-filter: blur(24px) saturate(1.4);
+    backdrop-filter: blur(24px) saturate(1.4);
+  }
+}
+/* A soft light behind the glass so the blur has something to show. */
+html[data-theme="glass"] body {
+  background-image: radial-gradient(120% 60% at 50% -10%, rgb(var(--c-accent) / 0.10), transparent 60%);
+  background-attachment: fixed;
 }

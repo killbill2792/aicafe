@@ -24,7 +24,7 @@ export default function ExperimentReportActions({ taskId, acknowledgeLabel, erro
 
   return <div className="mt-2">
     <button type="button" disabled={pending} onClick={acknowledge}
-      className="min-h-12 w-full rounded-full border border-ink px-4 text-[17px] font-bold text-ink disabled:opacity-50">
+      className="min-h-12 w-full rounded-full border border-ink px-4 text-[1.0625rem] font-bold text-ink disabled:opacity-50">
       {acknowledgeLabel}
     </button>
     {error && <p role="alert" className="mt-2 text-sm font-semibold text-warn">{errorLabel}</p>}

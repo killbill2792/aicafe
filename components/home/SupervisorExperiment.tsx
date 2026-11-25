@@ -56,18 +56,18 @@ export default function SupervisorExperiment({threadId,locale,copy,canUseAi=true
    value==="committed"||value==="manual_confirmed"?copy.statusMonitoring:
    value==="rejected"||value==="expired"?copy.statusRejected:copy.statusMonitoring;
  const valid=Number.isSafeInteger(delta)&&delta>0&&delta<=100000;
- const actionClass="min-h-12 rounded-full border border-ink px-4 text-[17px] font-semibold disabled:opacity-50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2";
+ const actionClass="min-h-12 rounded-full border border-ink px-4 text-[1.0625rem] font-semibold disabled:opacity-50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2";
  return <section className="border-t border-line bg-surface px-3 py-2">
   <button type="button" aria-expanded={open} onClick={()=>setOpen(x=>!x)}
     className={actionClass+" w-full text-start"}>{open?copy.close:copy.open}</button>
-  {open&&<div className="space-y-3 p-3 text-[17px] text-ink">
+  {open&&<div className="space-y-3 p-3 text-[1.0625rem] text-ink">
    {canUseAi&&!initialProposalId&&<label className="block">{copy.product}
-    <select className="mt-1 min-h-12 w-full rounded-xl border p-2 text-[17px]"
+    <select className="mt-1 min-h-12 w-full rounded-xl border p-2 text-[1.0625rem]"
       value={itemId} onChange={e=>{setItemId(e.target.value);setSimulation(null);}}>
       {items.map(item=><option key={item.id} value={item.id}>
         {item.name} · {formatCents(item.priceCents,locale)}</option>)}</select></label>}
    {canUseAi&&!initialProposalId&&<label className="block">{copy.increase}
-    <input type="number" className="mt-1 min-h-12 w-full rounded-xl border p-2 text-[17px]"
+    <input type="number" className="mt-1 min-h-12 w-full rounded-xl border p-2 text-[1.0625rem]"
       min={1} max={100000} step={1} value={cents}
       onChange={e=>{setCents(e.target.value);setSimulation(null);}}/></label>}
    {canUseAi&&!initialProposalId&&<button className={actionClass} disabled={busy||!itemId||!valid}
@@ -82,7 +82,7 @@ export default function SupervisorExperiment({threadId,locale,copy,canUseAi=true
    {!initialProposalId&&proposals.length>0&&<label className="block">{copy.selectProposal}
      <select value={p?.id??""} disabled={busy}
        onChange={e=>{setSelectedProposalId(e.target.value);setReport(null);}}
-       className="mt-1 min-h-12 w-full rounded-xl border p-2 text-[17px]">
+       className="mt-1 min-h-12 w-full rounded-xl border p-2 text-[1.0625rem]">
        {proposals.map(x=><option key={x.id} value={x.id}>
          {x.canonical_effect_payload.productName} — {formatCents(x.canonical_effect_payload.newPriceCents,locale)} · {status(x.status)}
        </option>)}

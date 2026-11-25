@@ -18,7 +18,7 @@ export default async function CafesPage({searchParams}:{searchParams:Promise<{pa
         <td className="p-3">{c.access.mode==="grandfathered"?"Full access":c.access.mode==="paused"?"Paused":c.access.active?"Free until "+c.access.accessEnd:"Expired"}</td>
       </tr>)}</tbody>
     </table></div>
-    <nav className="mt-4 flex gap-4 text-[17px]" aria-label="Café list pages">
+    <nav className="mt-4 flex gap-4 text-[1.0625rem]" aria-label="Café list pages">
       {page>0&&<Link className="underline" href={"/admin/cafes?page="+(page-1)}>Previous cafés</Link>}
       {(page+1)*pageSize<total&&<Link className="underline" href={"/admin/cafes?page="+(page+1)}>Next cafés</Link>}
     </nav>

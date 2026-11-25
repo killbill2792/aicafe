@@ -65,7 +65,7 @@ export default function PeriodSwitch({ current, defaultPeriod = "today" }: { cur
             aria-label={waiting ? `${t(period)}…` : t(period)}
             disabled={isNavigating}
             onClick={() => setPeriod(period)}
-            className={`min-h-12 flex-1 rounded-3xl text-[15px] font-semibold transition-colors ${
+            className={`min-h-12 flex-1 rounded-3xl text-[0.9375rem] font-semibold transition-colors ${
               waiting ? "bg-card text-ink ring-2 ring-accent-text" :
               active ? "bg-card font-bold text-ink shadow-sm" : "bg-transparent text-muted"
             }`}

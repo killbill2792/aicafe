@@ -111,7 +111,7 @@ export default function SupervisorRoutineInlineCard({block,onEdit,disabled=false
     current.revision===1?copy.created:copy.updated);
   return <section data-routine-card={current.routineId}
     aria-label={current.title} className="min-w-0 max-w-lg">
-    <div className="flex min-h-12 items-center gap-2 text-[17px] text-ink-muted">
+    <div className="flex min-h-12 items-center gap-2 text-[1.0625rem] text-ink-muted">
       <Clock3 size={16} className="shrink-0" aria-hidden="true"/>
       <span role="status" className="min-w-0 flex-1">{label}</span>
       {!isDeleted&&<details className="relative shrink-0">
@@ -120,23 +120,23 @@ export default function SupervisorRoutineInlineCard({block,onEdit,disabled=false
           <Ellipsis size={20} aria-hidden="true"/>
         </summary>
         <div role="group" aria-label={copy.actions} className="absolute end-0 top-full z-10 mt-1 flex min-w-44 flex-col gap-1 rounded-xl border border-line bg-surface p-2 shadow-lg">
-          <p className="max-w-64 break-words px-2 text-[14px] font-medium text-ink">{current.title}</p>
-          <p className="px-2 text-[13px] text-ink-muted">{localDay} · {current.localTime} · {current.timezone}</p>
+          <p className="max-w-64 break-words px-2 text-[0.875rem] font-medium text-ink">{current.title}</p>
+          <p className="px-2 text-[0.8125rem] text-ink-muted">{localDay} · {current.localTime} · {current.timezone}</p>
           <button type="button" disabled={busy||unavailable||!onEdit}
             onClick={()=>onEdit?.("Edit saved routine \""+current.title+"\" (routine ID "+current.routineId+", revision "+current.revision+"): ")}
-            className="min-h-12 rounded-lg px-3 text-start text-[14px] hover:bg-surface2 disabled:opacity-50">{copy.editInChat}</button>
+            className="min-h-12 rounded-lg px-3 text-start text-[0.875rem] hover:bg-surface2 disabled:opacity-50">{copy.editInChat}</button>
           <button type="button" disabled={disabled||busy||unavailable}
             onClick={()=>void change(current.status==="active"?"pause":"resume")}
-            className="min-h-12 rounded-lg px-3 text-start text-[14px] hover:bg-surface2 disabled:opacity-50">
+            className="min-h-12 rounded-lg px-3 text-start text-[0.875rem] hover:bg-surface2 disabled:opacity-50">
             {current.status==="active"?copy.pause:copy.resume}
           </button>
           <button type="button" disabled={disabled||busy||unavailable}
             onClick={()=>void change("delete")}
-            className="min-h-12 rounded-lg px-3 text-start text-[14px] text-neg hover:bg-surface2 disabled:opacity-50">{copy.delete}</button>
+            className="min-h-12 rounded-lg px-3 text-start text-[0.875rem] text-neg hover:bg-surface2 disabled:opacity-50">{copy.delete}</button>
         </div>
       </details>}
     </div>
-    {error&&<p role="alert" className="text-[14px] text-neg">{error}</p>}
-    {unavailable&&!error&&<p role="status" className="text-[14px] text-ink-muted">{copy.saveFailed}</p>}
+    {error&&<p role="alert" className="text-[0.875rem] text-neg">{error}</p>}
+    {unavailable&&!error&&<p role="status" className="text-[0.875rem] text-ink-muted">{copy.saveFailed}</p>}
   </section>;
 }

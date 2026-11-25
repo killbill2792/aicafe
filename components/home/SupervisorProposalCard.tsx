@@ -83,8 +83,8 @@ export function EventReadinessPreview({value,locale}:{value:ProposalView;locale:
   const t=dict[locale].EventsPanel;
   const rows=value.preview??[];
   return <section dir={locale==="ar"?"rtl":"ltr"} aria-label={t.savedInsight}
-    className="w-full min-w-0 max-w-2xl rounded-[22px] border border-line bg-surface p-4 text-ink shadow-sm">
-    <div className="flex items-center gap-2 text-[17px] font-bold text-accent-text">
+    className="w-full min-w-0 max-w-2xl rounded-3xl glass p-4 text-ink">
+    <div className="flex items-center gap-2 text-[1.0625rem] font-bold text-accent-text">
       <Lightbulb size={22} aria-hidden="true"/><span>{t.savedInsight}</span>
     </div>
     {value.productName&&<h3 className="mt-2 break-words text-xl font-semibold" dir="auto">{value.productName}</h3>}
@@ -194,7 +194,7 @@ export default function SupervisorProposalCard({threadId,proposalId,locale}:{
   const finance=dict.en.FinancialEvidenceApproval;
   if(value.capabilityId==="leo.financial_bill.v1"&&value.bill){
     const b=value.bill;
-    return <section aria-label={finance.billHeading} dir={locale==="ar"?"rtl":"ltr"} className="w-full min-w-0 max-w-2xl rounded-[22px] border border-line bg-surface p-5 text-ink shadow-sm">
+    return <section aria-label={finance.billHeading} dir={locale==="ar"?"rtl":"ltr"} className="w-full min-w-0 max-w-2xl rounded-3xl glass p-4 text-ink">
       <h3 className="text-xl font-bold">{finance.billHeading}</h3>
       <p role="status" className="mt-2 font-semibold">{value.state==="applied"?finance.billRecorded:value.state}</p>
       <dl className="mt-3 grid gap-2 rounded-xl bg-surface2 p-3">
@@ -207,10 +207,10 @@ export default function SupervisorProposalCard({threadId,proposalId,locale}:{
       </dl>
       <p className="mt-3 text-sm text-ink-muted">{finance.billNotice}</p>
       {value.state==="pending"&&<div className="mt-4 flex flex-wrap gap-3">
-        <button type="button" disabled={busy} onClick={()=>void invoke("approve")} className="min-h-12 rounded-xl bg-accent px-5 font-bold text-on-accent disabled:opacity-50">{finance.confirmBill}</button>
-        <button type="button" disabled={busy} onClick={()=>void invoke("cancel")} className="min-h-12 rounded-xl border border-line px-5 font-bold disabled:opacity-50">{finance.decline}</button>
+        <button type="button" disabled={busy} onClick={()=>void invoke("approve")} className="min-h-11 rounded-xl bg-accent px-5 font-bold text-on-accent disabled:opacity-50">{finance.confirmBill}</button>
+        <button type="button" disabled={busy} onClick={()=>void invoke("cancel")} className="min-h-11 rounded-xl border border-line px-5 font-bold disabled:opacity-50">{finance.decline}</button>
       </div>}
-      {value.state==="uncertain"&&<button type="button" disabled={busy} onClick={()=>void invoke("reconcile")} className="mt-4 min-h-12 rounded-xl border border-line px-5 font-bold disabled:opacity-50">{finance.checkBill}</button>}
+      {value.state==="uncertain"&&<button type="button" disabled={busy} onClick={()=>void invoke("reconcile")} className="mt-4 min-h-11 rounded-xl border border-line px-5 font-bold disabled:opacity-50">{finance.checkBill}</button>}
       {error&&<p role="alert" className="mt-3 text-neg">{finance.billError}</p>}
     </section>;
   }
@@ -218,7 +218,7 @@ export default function SupervisorProposalCard({threadId,proposalId,locale}:{
     const s=value.settlement,reversal=s.financialKind==="settlement_evidence_reversed";
     const amount=(n:number)=>new Intl.NumberFormat(locale,{style:"currency",currency:s.currency}).format(n/100);
     return <section aria-label={finance.heading} dir={locale==="ar"?"rtl":"ltr"}
-      className="w-full min-w-0 max-w-2xl rounded-[22px] border border-line bg-surface p-5 text-ink shadow-sm">
+      className="w-full min-w-0 max-w-2xl rounded-3xl glass p-4 text-ink">
       <h3 className="text-xl font-bold">{reversal?finance.reverse:finance.allocate}</h3>
       <p role="status" className="mt-2 font-semibold">{value.state==="applied"?finance.allocationRecorded:value.state}</p>
       <dl className="mt-3 grid gap-2 rounded-xl bg-surface2 p-3">
@@ -231,10 +231,10 @@ export default function SupervisorProposalCard({threadId,proposalId,locale}:{
       </dl>
       <p className="mt-3 text-sm text-ink-muted">{finance.allocationNotice}</p>
       {value.state==="pending"&&<div className="mt-4 flex flex-wrap gap-3">
-        <button type="button" disabled={busy} onClick={()=>void invoke("approve")} className="min-h-12 rounded-xl bg-accent px-5 font-bold text-on-accent disabled:opacity-50">{finance.confirmLink}</button>
-        <button type="button" disabled={busy} onClick={()=>void invoke("cancel")} className="min-h-12 rounded-xl border border-line px-5 font-bold disabled:opacity-50">{finance.decline}</button>
+        <button type="button" disabled={busy} onClick={()=>void invoke("approve")} className="min-h-11 rounded-xl bg-accent px-5 font-bold text-on-accent disabled:opacity-50">{finance.confirmLink}</button>
+        <button type="button" disabled={busy} onClick={()=>void invoke("cancel")} className="min-h-11 rounded-xl border border-line px-5 font-bold disabled:opacity-50">{finance.decline}</button>
       </div>}
-      {value.state==="uncertain"&&<button type="button" disabled={busy} onClick={()=>void invoke("reconcile")} className="mt-4 min-h-12 rounded-xl border border-line px-5 font-bold disabled:opacity-50">{finance.checkLink}</button>}
+      {value.state==="uncertain"&&<button type="button" disabled={busy} onClick={()=>void invoke("reconcile")} className="mt-4 min-h-11 rounded-xl border border-line px-5 font-bold disabled:opacity-50">{finance.checkLink}</button>}
       {error&&<p role="alert" className="mt-3 text-neg">{finance.linkError}</p>}
     </section>;
   }
@@ -242,7 +242,7 @@ export default function SupervisorProposalCard({threadId,proposalId,locale}:{
     const i=value.invoice;
     const amount=(n:number|null)=>n===null?"Unknown":new Intl.NumberFormat(locale,{style:"currency",currency:i.currency}).format(n/100);
     return <section aria-label="Supplier invoice confirmation" dir={locale==="ar"?"rtl":"ltr"}
-      className="w-full min-w-0 max-w-2xl rounded-[22px] border border-line bg-surface p-5 text-ink shadow-sm">
+      className="w-full min-w-0 max-w-2xl rounded-3xl glass p-4 text-ink">
       <h3 className="text-xl font-bold">Review invoice · {i.supplierName}</h3>
       <p role="status" className="mt-2 font-semibold">{value.state==="applied"?"Invoice evidence recorded":value.state}</p>
       <p className="break-all">{i.purchaseOrderId?"Purchase order: "+i.purchaseOrderId:"Standalone supplier invoice (no purchase order)"}</p>
@@ -267,13 +267,13 @@ export default function SupervisorProposalCard({threadId,proposalId,locale}:{
       {i.existingExpenseId&&<p className="break-all">Explicit existing expense match: {i.existingExpenseId}</p>}
       {value.state==="pending"&&<div className="mt-4 flex flex-wrap gap-3">
         <button type="button" disabled={busy} onClick={()=>void invoke("approve")}
-          className="min-h-12 rounded-xl bg-accent px-5 font-bold text-on-accent disabled:opacity-50">
+          className="min-h-11 rounded-xl bg-accent px-5 font-bold text-on-accent disabled:opacity-50">
           {i.expenseDate?"Confirm invoice and recognize expense":"Confirm invoice evidence"}</button>
         <button type="button" disabled={busy} onClick={()=>void invoke("cancel")}
-          className="min-h-12 rounded-xl border border-line px-5 font-bold disabled:opacity-50">Decline</button>
+          className="min-h-11 rounded-xl border border-line px-5 font-bold disabled:opacity-50">Decline</button>
       </div>}
       {value.state==="uncertain"&&<button type="button" disabled={busy} onClick={()=>void invoke("reconcile")}
-        className="mt-4 min-h-12 rounded-xl border border-line px-5 font-bold disabled:opacity-50">Check existing invoice record</button>}
+        className="mt-4 min-h-11 rounded-xl border border-line px-5 font-bold disabled:opacity-50">Check existing invoice record</button>}
       {error&&<p role="alert" className="mt-3 text-neg">Could not verify invoice. Do not record it again.</p>}
     </section>;
   }
@@ -281,7 +281,7 @@ export default function SupervisorProposalCard({threadId,proposalId,locale}:{
     const r=value.receiving;
     const q=(n:number)=>new Intl.NumberFormat(locale,{maximumFractionDigits:4}).format(n/10000);
     return <section aria-label="Physical delivery confirmation" dir={locale==="ar"?"rtl":"ltr"}
-      className="w-full min-w-0 max-w-2xl rounded-[22px] border border-line bg-surface p-5 text-ink shadow-sm">
+      className="w-full min-w-0 max-w-2xl rounded-3xl glass p-4 text-ink">
       <h3 className="text-xl font-bold">Confirm physical delivery · {r.supplierName}</h3>
       <p role="status" className="mt-2 font-semibold">{value.state==="applied"?"Receiving recorded":value.state}</p>
       <p className="mt-2 break-all">Purchase order: {r.purchaseOrderId}</p>
@@ -296,12 +296,12 @@ export default function SupervisorProposalCard({threadId,proposalId,locale}:{
       <p className="mt-3 text-sm text-ink-muted">Approve only if these goods physically arrived, the quantities and condition are correct, and this reference identifies the actual installment, not a duplicate. This records stock only; it does not pay or book an invoice.</p>
       {value.state==="pending"&&<div className="mt-4 flex flex-wrap gap-3">
         <button type="button" disabled={busy} onClick={()=>void invoke("approve")}
-          className="min-h-12 rounded-xl bg-accent px-5 font-bold text-on-accent disabled:opacity-50">Confirm receipt and record stock</button>
+          className="min-h-11 rounded-xl bg-accent px-5 font-bold text-on-accent disabled:opacity-50">Confirm receipt and record stock</button>
         <button type="button" disabled={busy} onClick={()=>void invoke("cancel")}
-          className="min-h-12 rounded-xl border border-line px-5 font-bold disabled:opacity-50">Decline</button>
+          className="min-h-11 rounded-xl border border-line px-5 font-bold disabled:opacity-50">Decline</button>
       </div>}
       {value.state==="uncertain"&&<button type="button" disabled={busy} onClick={()=>void invoke("reconcile")}
-        className="mt-4 min-h-12 rounded-xl border border-line px-5 font-bold disabled:opacity-50">Check existing receipt</button>}
+        className="mt-4 min-h-11 rounded-xl border border-line px-5 font-bold disabled:opacity-50">Check existing receipt</button>}
       {error&&<p role="alert" className="mt-3 text-neg">Could not verify receiving. Do not re-record this delivery.</p>}
     </section>;
   }
@@ -310,7 +310,7 @@ export default function SupervisorProposalCard({threadId,proposalId,locale}:{
     const poCopy=en.SupplierPurchaseOrderCard;
     const pending=value.state==="pending";
     return <section aria-label={poCopy.ariaLabel} dir={locale==="ar"?"rtl":"ltr"}
-      className="w-full min-w-0 max-w-2xl rounded-[22px] border border-line bg-surface p-5 text-ink shadow-sm">
+      className="w-full min-w-0 max-w-2xl rounded-3xl glass p-4 text-ink">
       <p className="text-sm font-semibold text-ink-muted">{poCopy.agentLabel}</p>
       <h3 className="mt-2 break-words text-xl font-bold">{poCopy.titlePrefix} {po.supplierName}</h3>
       <p role="status" className="mt-2 font-semibold">{value.state==="applied"?
@@ -334,23 +334,23 @@ export default function SupervisorProposalCard({threadId,proposalId,locale}:{
       <p className="mt-2 text-base text-ink-muted">{en.SupplierVendorCommunication.poOwnerNotice}</p>
       {pending&&<div className="mt-4 flex flex-wrap gap-3">
         <button type="button" disabled={busy} onClick={()=>void invoke("approve")}
-         className="min-h-12 rounded-xl bg-accent px-5 font-bold text-on-accent disabled:opacity-50">
+         className="min-h-11 rounded-xl bg-accent px-5 font-bold text-on-accent disabled:opacity-50">
          {poCopy.approve}</button>
         <button type="button" disabled={busy} onClick={()=>void invoke("cancel")}
-         className="min-h-12 rounded-xl border border-line px-5 font-bold disabled:opacity-50">
+         className="min-h-11 rounded-xl border border-line px-5 font-bold disabled:opacity-50">
          {poCopy.decline}</button>
       </div>}
       {value.state==="applying"&&<p className="mt-3" role="status">{poCopy.checkingReceipt}</p>}
       {value.state==="uncertain"&&<button type="button" disabled={busy}
         onClick={()=>void invoke("reconcile")}
-        className="mt-3 min-h-12 rounded-xl border border-line px-5 font-bold">
+        className="mt-3 min-h-11 rounded-xl border border-line px-5 font-bold">
         {poCopy.reconcile}</button>}
       {error&&<p role="alert" className="mt-3 text-neg">{poCopy.approvalError}</p>}
     </section>;
   }
   if(value.staffQuestion){
     const q=value.staffQuestion,c=en.StaffQuestionApproval;
-    return <section aria-label={c.title} className="w-full min-w-0 max-w-2xl rounded-[22px] border border-line bg-surface p-5 text-ink">
+    return <section aria-label={c.title} className="w-full min-w-0 max-w-2xl rounded-3xl glass p-4 text-ink">
       <h3 className="text-xl font-bold">{c.title}</h3>
       <p className="mt-2 font-semibold">{q.employeeName}</p>
       <p className="mt-2 whitespace-pre-wrap">{q.question}</p>
@@ -364,20 +364,20 @@ export default function SupervisorProposalCard({threadId,proposalId,locale}:{
       {value.state==="pending"&&<div className="mt-4 space-y-3">
         <div className="flex flex-wrap gap-2">
           <button type="button" disabled={busy} onClick={()=>void invoke("approve")}
-            className="min-h-12 rounded-xl bg-accent px-4 font-bold text-on-accent disabled:opacity-50">{c.askEmployee}</button>
+            className="min-h-11 rounded-xl bg-accent px-4 font-bold text-on-accent disabled:opacity-50">{c.askEmployee}</button>
           <button type="button" disabled={busy} onClick={()=>void invoke("cancel")}
-            className="min-h-12 rounded-xl border border-line px-4 font-bold disabled:opacity-50">{c.ignore}</button>
+            className="min-h-11 rounded-xl border border-line px-4 font-bold disabled:opacity-50">{c.ignore}</button>
         </div>
         <p className="text-sm text-ink-muted">{c.replyInChat}</p>
       </div>}
       {(value.state==="applying"||value.state==="uncertain")&&<button type="button" disabled={busy}
-        onClick={()=>void invoke("reconcile")} className="mt-3 min-h-12 rounded-xl border border-line px-4">{c.checkReceipt}</button>}
+        onClick={()=>void invoke("reconcile")} className="mt-3 min-h-11 rounded-xl border border-line px-4">{c.checkReceipt}</button>}
       {error&&<p role="alert" className="mt-2 text-neg">{c.error}</p>}
     </section>;
   }
   if(value.maintenanceAssignment){
     const a=value.maintenanceAssignment,m=en.Maintenance;
-    return <section aria-label={m.staffApproval} className="w-full min-w-0 max-w-2xl rounded-[22px] border border-line bg-surface p-5 text-ink shadow-sm">
+    return <section aria-label={m.staffApproval} className="w-full min-w-0 max-w-2xl rounded-3xl glass p-4 text-ink">
       <h3 className="text-xl font-bold">{a.purpose==="verify_working"?m.independentCheck:m.assignmentTitle}</h3>
       <p role="status" className="mt-2 font-semibold">{value.state==="applied"?m.assignedUnverified:value.state==="pending"?m.ownerApproval:value.state}</p>
       <dl className="mt-3 space-y-2">
@@ -388,10 +388,10 @@ export default function SupervisorProposalCard({threadId,proposalId,locale}:{
       </dl>
       <p className="mt-3 text-sm text-ink-muted">{m.approvalHelp}</p>
       {value.state==="pending"&&<div className="mt-4 flex flex-wrap gap-2">
-        <button type="button" disabled={busy} onClick={()=>void invoke("approve")} className="min-h-12 rounded-xl bg-accent px-4 font-bold text-on-accent disabled:opacity-50">{m.approveAssignment}</button>
-        <button type="button" disabled={busy} onClick={()=>void invoke("cancel")} className="min-h-12 rounded-xl border border-line px-4 font-bold disabled:opacity-50">{m.declineAssignment}</button>
+        <button type="button" disabled={busy} onClick={()=>void invoke("approve")} className="min-h-11 rounded-xl bg-accent px-4 font-bold text-on-accent disabled:opacity-50">{m.approveAssignment}</button>
+        <button type="button" disabled={busy} onClick={()=>void invoke("cancel")} className="min-h-11 rounded-xl border border-line px-4 font-bold disabled:opacity-50">{m.declineAssignment}</button>
       </div>}
-      {value.state==="uncertain"&&<button type="button" disabled={busy} onClick={()=>void invoke("reconcile")} className="mt-3 min-h-12 rounded-xl border border-line px-4 font-bold">{m.checkReceipt}</button>}
+      {value.state==="uncertain"&&<button type="button" disabled={busy} onClick={()=>void invoke("reconcile")} className="mt-3 min-h-11 rounded-xl border border-line px-4 font-bold">{m.checkReceipt}</button>}
       {error&&<p role="alert" className="mt-3 text-neg">{m.assignmentError}</p>}
     </section>;
   }
@@ -403,7 +403,7 @@ export default function SupervisorProposalCard({threadId,proposalId,locale}:{
     const status=value.state==="pending"?c.pending:value.state==="applied"?c.applied:
       value.state==="applying"?c.applying:value.state==="uncertain"?c.uncertain:
       value.state==="cancelled"?c.cancelled:c.error;
-    return <section aria-label={c.title} className="w-full min-w-0 max-w-2xl rounded-[22px] border border-line bg-surface p-5 text-ink shadow-sm">
+    return <section aria-label={c.title} className="w-full min-w-0 max-w-2xl rounded-3xl glass p-4 text-ink">
       <div className="flex items-center justify-between gap-3">
         <h3 className="font-headline text-xl font-bold">{c.title}</h3>
         <span role="status" className="rounded-full bg-surface2 px-3 py-1 text-sm font-semibold">{status}</span>
@@ -413,12 +413,12 @@ export default function SupervisorProposalCard({threadId,proposalId,locale}:{
       <p className="mt-4 text-sm text-ink-muted">{sending?c.sendNotice:c.changeNotice}</p>
       {value.state==="pending"&&<div className="mt-5 flex flex-wrap gap-3">
         <button type="button" disabled={busy} onClick={()=>void invoke("approve")}
-          className="min-h-12 rounded-xl bg-accent px-5 font-bold text-on-accent disabled:opacity-50">{action}</button>
+          className="min-h-11 rounded-xl bg-accent px-5 font-bold text-on-accent disabled:opacity-50">{action}</button>
         <button type="button" disabled={busy} onClick={()=>void invoke("cancel")}
-          className="min-h-12 rounded-xl border border-line px-5 font-bold disabled:opacity-50">{c.cancel}</button>
+          className="min-h-11 rounded-xl border border-line px-5 font-bold disabled:opacity-50">{c.cancel}</button>
       </div>}
       {value.state==="uncertain"&&<button type="button" disabled={busy} onClick={()=>void invoke("reconcile")}
-        className="mt-4 min-h-12 rounded-xl border border-line px-5 font-bold disabled:opacity-50">{c.checkReceipt}</button>}
+        className="mt-4 min-h-11 rounded-xl border border-line px-5 font-bold disabled:opacity-50">{c.checkReceipt}</button>}
       {error&&<p className="mt-3 text-sm text-warn" role="alert">{c.error}</p>}
     </section>;
   }
@@ -433,7 +433,7 @@ export default function SupervisorProposalCard({threadId,proposalId,locale}:{
     const label=value.state==="applied"?copy.applied:
       value.state==="cancelled"?copy.skipped:
       value.state==="failed"?copy.failed:value.state==="applying"?copy.applying:copy.pending;
-    const button="min-h-12 rounded-xl border border-line px-4 text-[17px] font-bold disabled:opacity-50";
+    const button="min-h-11 rounded-xl border border-line px-4 text-[1.0625rem] font-bold disabled:opacity-50";
     const selected=edit?.ingredientId??p.ingredientId;
     const submit=async(action:"approve"|"cancel"|"edit_purchase")=>{
       if(busy)return;
@@ -465,35 +465,35 @@ export default function SupervisorProposalCard({threadId,proposalId,locale}:{
     const amount=(new Intl.NumberFormat(locale,{maximumFractionDigits:4}).format(p.quantity)+" "+p.unit);
     return <section dir={locale==="ar"?"rtl":"ltr"} className="rounded-2xl border border-line bg-surface p-4 text-ink">
       <div className="flex flex-wrap justify-between gap-2"><h3 className="text-xl font-bold">{p.name}</h3>
-        <span className="rounded-full bg-surface2 px-3 py-1 text-[17px]">{label}</span></div>
-      {!p.ingredientId&&<p className="mt-2 text-[17px] text-neg">{copy.newItem}</p>}
-      <p className="mt-2 text-[17px]">{amount+" · "+p.date}</p>
-      {p.costCents!==null&&<p className="mt-2 text-[17px]">{money(p.costCents)}</p>}
-      {p.source==="receipt_chat"&&<p className="mt-2 text-[17px]">
+        <span className="rounded-full bg-surface2 px-3 py-1 text-[1.0625rem]">{label}</span></div>
+      {!p.ingredientId&&<p className="mt-2 text-[1.0625rem] text-neg">{copy.newItem}</p>}
+      <p className="mt-2 text-[1.0625rem]">{amount+" · "+p.date}</p>
+      {p.costCents!==null&&<p className="mt-2 text-[1.0625rem]">{money(p.costCents)}</p>}
+      {p.source==="receipt_chat"&&<p className="mt-2 text-[1.0625rem]">
         {copy.receiptVendor+": "+(p.receiptVendor??copy.receiptIncomplete)+" · "+
           copy.receiptTotal+": "+(p.receiptTotalCents?money(p.receiptTotalCents):copy.receiptIncomplete)}
       </p>}
-      {!receiptComplete&&<p role="alert" className="mt-2 text-[17px] text-neg">{copy.receiptIncomplete}</p>}
+      {!receiptComplete&&<p role="alert" className="mt-2 text-[1.0625rem] text-neg">{copy.receiptIncomplete}</p>}
       {purchaseDraft&&<form className="mt-3 space-y-2" onSubmit={e=>{e.preventDefault();void submit("edit_purchase");}}>
-        <label className="block text-[17px]">{copy.ingredient}<select className="mt-1 min-h-12 w-full rounded-xl border border-line bg-surface px-3"
+        <label className="block text-[1.0625rem]">{copy.ingredient}<select className="mt-1 min-h-11 w-full rounded-xl border border-line bg-surface px-3"
           value={purchaseDraft.ingredientId??""} onChange={e=>setPurchaseDraft(v=>v?{...v,ingredientId:e.target.value||null}:v)}>
           <option value="">{copy.newItem}</option>
           {(value.ingredientOptions??[]).map(i=><option key={i.id} value={i.id}>{i.name}</option>)}</select></label>
-        <label className="block text-[17px]">{copy.quantity}<input type="text" inputMode="decimal" className="mt-1 min-h-12 w-full rounded-xl border border-line bg-surface px-3"
+        <label className="block text-[1.0625rem]">{copy.quantity}<input type="text" inputMode="decimal" className="mt-1 min-h-11 w-full rounded-xl border border-line bg-surface px-3"
           value={purchaseDraft.quantity} onChange={e=>setPurchaseDraft(v=>v?{...v,quantity:e.target.value}:v)}/></label>
-        <label className="block text-[17px]">{copy.unit}<input className="mt-1 min-h-12 w-full rounded-xl border border-line bg-surface px-3"
+        <label className="block text-[1.0625rem]">{copy.unit}<input className="mt-1 min-h-11 w-full rounded-xl border border-line bg-surface px-3"
           value={purchaseDraft.unit} onChange={e=>setPurchaseDraft(v=>v?{...v,unit:e.target.value}:v)}/></label>
-        <label className="block text-[17px]">{copy.cost}<input type="text" inputMode="decimal" className="mt-1 min-h-12 w-full rounded-xl border border-line bg-surface px-3"
+        <label className="block text-[1.0625rem]">{copy.cost}<input type="text" inputMode="decimal" className="mt-1 min-h-11 w-full rounded-xl border border-line bg-surface px-3"
           value={purchaseDraft.cost} onChange={e=>setPurchaseDraft(v=>v?{...v,cost:e.target.value}:v)}/></label>
-        <label className="block text-[17px]">{copy.date}<input type="date" className="mt-1 min-h-12 w-full rounded-xl border border-line bg-surface px-3"
+        <label className="block text-[1.0625rem]">{copy.date}<input type="date" className="mt-1 min-h-11 w-full rounded-xl border border-line bg-surface px-3"
           value={purchaseDraft.date} onChange={e=>setPurchaseDraft(v=>v?{...v,date:e.target.value}:v)}/></label>
         {p.source==="receipt_chat"&&<>
-          <label className="block text-[17px]">{copy.receiptVendor}<input
-            className="mt-1 min-h-12 w-full rounded-xl border border-line bg-surface px-3"
+          <label className="block text-[1.0625rem]">{copy.receiptVendor}<input
+            className="mt-1 min-h-11 w-full rounded-xl border border-line bg-surface px-3"
             value={purchaseDraft.receiptVendor}
             onChange={e=>setPurchaseDraft(v=>v?{...v,receiptVendor:e.target.value}:v)}/></label>
-          <label className="block text-[17px]">{copy.receiptTotal}<input type="text" inputMode="decimal"
-            className="mt-1 min-h-12 w-full rounded-xl border border-line bg-surface px-3"
+          <label className="block text-[1.0625rem]">{copy.receiptTotal}<input type="text" inputMode="decimal"
+            className="mt-1 min-h-11 w-full rounded-xl border border-line bg-surface px-3"
             value={purchaseDraft.receiptTotal}
             onChange={e=>setPurchaseDraft(v=>v?{...v,receiptTotal:e.target.value}:v)}/></label>
         </>}
@@ -511,7 +511,7 @@ export default function SupervisorProposalCard({threadId,proposalId,locale}:{
         {pending&&<button type="button" disabled={busy} className={button}
           onClick={()=>void submit("cancel")}>{copy.skip}</button>}
       </div>}
-      {error&&<p role="alert" className="mt-3 text-[17px] text-neg">{copy.failed}</p>}
+      {error&&<p role="alert" className="mt-3 text-[1.0625rem] text-neg">{copy.failed}</p>}
     </section>;
   }
   if(staff){
@@ -520,9 +520,9 @@ export default function SupervisorProposalCard({threadId,proposalId,locale}:{
       failed:staffCopy.stale,conflict:staffCopy.stale};
     const pending=value.state==="pending"&&!busy;
     const retry=value.state==="conflict"&&!busy;
-    const button="min-h-12 min-w-12 rounded-xl px-4 text-[17px] font-bold focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ink disabled:opacity-50";
+    const button="min-h-11 min-w-12 rounded-xl px-4 text-[1.0625rem] font-bold focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ink disabled:opacity-50";
     return <section dir={locale==="ar"?"rtl":"ltr"} aria-label={staffCopy.title}
-      className="w-full min-w-0 max-w-2xl rounded-[22px] border border-line bg-surface p-4 text-ink shadow-sm">
+      className="w-full min-w-0 max-w-2xl rounded-3xl glass p-4 text-ink">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <h3 className="text-xl font-bold">{staffCopy.title}</h3>
         <span role="status" className="rounded-full bg-surface2 px-3 py-1 text-sm font-bold">
@@ -530,16 +530,16 @@ export default function SupervisorProposalCard({threadId,proposalId,locale}:{
         </span>
       </div>
       {value.subjectName&&<p className="mt-2 break-words text-lg font-bold">{value.subjectName}</p>}
-      <p className="mt-2 text-[17px] text-ink-muted">{staffCopy.reviewNotice}</p>
+      <p className="mt-2 text-[1.0625rem] text-ink-muted">{staffCopy.reviewNotice}</p>
       <BeforeAfterRows rows={value.preview??[]} locale={locale} currency={value.currency??"USD"}/>
       {value.capabilityId?.startsWith("olivia.staff_propose_send_schedule.v")===true&&
         !value.publishAndNotify&&value.state!=="applied"&&
-        <p className="mt-3 text-[17px]">{staffCopy.preparedOnly}</p>}
+        <p className="mt-3 text-[1.0625rem]">{staffCopy.preparedOnly}</p>}
       {value.publishAndNotify&&value.state==="applying"&&
-        <p role="status" className="mt-3 text-[17px]">{en.StaffApprovalCard.agenticPublishing}</p>}
+        <p role="status" className="mt-3 text-[1.0625rem]">{en.StaffApprovalCard.agenticPublishing}</p>}
       {value.publishAndNotify&&value.publication?.state==="published"&&
         <div role="status" aria-label="Schedule publication delivery results"
-          className="mt-3 rounded-xl border border-line bg-surface2 p-3 text-[16px]">
+          className="mt-3 rounded-xl border border-line bg-surface2 p-3 text-[1rem]">
           <p className="font-semibold">{en.StaffApprovalCard.agenticPublished
             .replace("{week}",value.publication.week??"")}</p>
           <dl className="mt-2 grid grid-cols-2 gap-2">
@@ -556,18 +556,18 @@ export default function SupervisorProposalCard({threadId,proposalId,locale}:{
             </div>)}
           </dl>
           <p className="mt-2 text-sm text-ink-muted">{en.StaffApprovalCard.agenticNext}</p>
-          <button type="button" className="mt-3 min-h-12 rounded-xl border border-line px-4 font-bold"
+          <button type="button" className="mt-3 min-h-11 rounded-xl border border-line px-4 font-bold"
             disabled={busy} onClick={()=>void invoke("cancel_publication")}>
             {en.StaffApprovalCard.agenticCancel}
           </button>
           <p className="mt-1 text-sm text-ink-muted">{en.StaffApprovalCard.agenticCancelWarning}</p>
         </div>}
       {value.publishAndNotify&&value.publication?.state==="cancelled"&&
-        <p role="status" className="mt-3 text-[17px]">{en.StaffApprovalCard.agenticCancelled}</p>}
+        <p role="status" className="mt-3 text-[1.0625rem]">{en.StaffApprovalCard.agenticCancelled}</p>}
       {value.state==="applied"&&!value.publishAndNotify&&(
         value.capabilityId?.startsWith("olivia.staff_propose_schedule.v")===true||
         value.capabilityId?.startsWith("olivia.staff_propose_send_schedule.v")===true)&&
-        <><p className="mt-3 text-[17px]">{scheduleApprovalReply(locale)}</p>
+        <><p className="mt-3 text-[1.0625rem]">{scheduleApprovalReply(locale)}</p>
           <OwnerScheduleSendPanel key={proposalId} proposalId={proposalId} locale={locale}/></>}
 
       {(pending||retry)&&<div className="mt-4 flex flex-wrap gap-2">
@@ -585,17 +585,17 @@ export default function SupervisorProposalCard({threadId,proposalId,locale}:{
   const pending=value.state==="pending"&&!busy;
   const statuses={...copy.states,...(experiment?{manual_pending:copy.manualPending}:{}),
     ...(goal?{tracking:dict[locale].Goals.cardTracking}:{})} as Record<string,string>;
-  const button="min-h-12 min-w-12 rounded-xl px-4 text-[17px] font-bold focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ink disabled:opacity-50";
+  const button="min-h-11 min-w-12 rounded-xl px-4 text-[1.0625rem] font-bold focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ink disabled:opacity-50";
   return <section dir={locale==="ar"?"rtl":"ltr"} aria-label={copy.title}
-    className="w-full min-w-0 max-w-2xl rounded-[22px] border border-line bg-surface p-4 text-ink shadow-sm">
+    className="w-full min-w-0 max-w-2xl rounded-3xl glass p-4 text-ink">
     <div className="flex flex-wrap items-center justify-between gap-2">
-      <p className="text-[15px] font-semibold text-ink-muted">{copy.proposedBy}</p>
+      <p className="text-[0.9375rem] font-semibold text-ink-muted">{copy.proposedBy}</p>
       <span role="status" className="rounded-full bg-surface2 px-3 py-1 text-sm font-bold">{statuses[value.state]??copy.states.failed}</span>
     </div>
     <h3 className="mt-2 break-words text-xl font-bold">{value.productName}</h3>
     <BeforeAfterRows rows={localizedRows} locale={locale} currency={value.currency??"USD"}/>
     {value.editedByOwner&&<p className="mt-2">{copy.editedByYou}</p>}
-    {experiment&&value.state==="manual_pending"&&<p className="mt-2 text-[17px]">{copy.manualInstructions}</p>}
+    {experiment&&value.state==="manual_pending"&&<p className="mt-2 text-[1.0625rem]">{copy.manualInstructions}</p>}
     {value.state==="stale"&&<p className="mt-2">{copy.stale} {value.currentPriceCents!=null?money(value.currentPriceCents):""}</p>}
     {["failed","conflict","stale"].includes(value.state)&&<p className="mt-2">{copy.stale}</p>}
     {pending&&<div className="mt-4 flex flex-wrap gap-2">
@@ -607,10 +607,10 @@ export default function SupervisorProposalCard({threadId,proposalId,locale}:{
         onClick={()=>void invoke("cancel")}>{copy.cancel}</button>
     </div>}
     {pending&&editing&&<form className="mt-3 flex flex-col gap-2" onSubmit={e=>{e.preventDefault();void invoke("edit");}}>
-      <label htmlFor={"proposal-price-"+proposalId} className="text-[17px] font-semibold">{copy.newPrice}</label>
+      <label htmlFor={"proposal-price-"+proposalId} className="text-[1.0625rem] font-semibold">{copy.newPrice}</label>
       <input id={"proposal-price-"+proposalId} type="number" inputMode="decimal" min="0.01" max="1000"
         step="0.01" value={price} disabled={busy} onChange={e=>setPrice(e.target.value)}
-        className="min-h-12 min-w-0 w-full rounded-xl border border-line p-3 text-[17px]"/>
+        className="min-h-11 min-w-0 w-full rounded-xl border border-line p-3 text-[1.0625rem]"/>
       <button type="submit" disabled={busy} className={button+" self-start bg-accent text-on-accent"}>{copy.save}</button>
     </form>}
     {error&&<p role="alert" className="mt-2 text-neg">{copy.error}</p>}

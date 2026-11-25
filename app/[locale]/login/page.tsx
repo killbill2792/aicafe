@@ -23,7 +23,7 @@ export default async function LoginPage({ searchParams }: { searchParams: Promis
             key={loc}
             href="/login"
             locale={loc}
-            className="rounded-full border border-line bg-card px-4 py-2 text-[15px] font-semibold text-ink"
+            className="rounded-full border border-line bg-card px-4 py-2 text-[0.9375rem] font-semibold text-ink"
           >
             {LANGUAGE_LABELS[loc]}
           </Link>
@@ -32,10 +32,10 @@ export default async function LoginPage({ searchParams }: { searchParams: Promis
 
       <div className="flex flex-col gap-2">
         <h1 className="font-headline text-4xl font-bold leading-tight text-ink">{t("headline")}</h1>
-        <p className="text-[18px] leading-snug text-ink-muted">{t("subhead")}</p>
+        <p className="text-[1.125rem] leading-snug text-ink-muted">{t("subhead")}</p>
       </div>
 
-      <div className="flex items-start gap-3 rounded-2xl bg-card p-4 text-[15px] leading-snug text-ink">
+      <div className="flex items-start gap-3 rounded-2xl bg-card p-4 text-[0.9375rem] leading-snug text-ink">
         <ShieldCheck aria-hidden="true" className="mt-0.5 shrink-0 text-good" size={22} />
         <span>{t("trustLine")}</span>
       </div>

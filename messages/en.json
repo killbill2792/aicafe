@@ -2805,6 +2805,8 @@
   "Ui": {
     "theme": "Theme",
     "themeDescription": "Choose how your café looks.",
+    "textSize": "Text size",
+    "textSizes": { "small": "Small", "default": "Default", "large": "Large", "xlarge": "Extra large" },
     "chooseTheme": "Theme colors",
     "appearance": "Appearance",
     "light": "Light",
@@ -2815,6 +2817,7 @@
     "unverified": "Unverified",
     "themes": {
       "freshPour": "Fresh Pour",
+      "glass": "Glass",
       "nightRoast": "Night Roast",
       "marketGreen": "Market Green",
       "berryMocha": "Berry Mocha",

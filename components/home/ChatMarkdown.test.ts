@@ -256,7 +256,7 @@ describe("readable provenance in both appearance modes",()=>{
     }));
     expect(html).toContain("bg-ink");
     expect(html).toContain("text-paper");
-    expect(html).toContain("text-[17px]");
+    expect(html).toContain("text-[1.0625rem]");
     expect(html).toContain("leading-relaxed");
     expect(html).toContain("max-h-[calc(100dvh-16px)]");
     expect(html).toContain("overflow-y-auto");
@@ -272,7 +272,7 @@ describe("readable provenance in both appearance modes",()=>{
       sources:["owner","estimate","unchecked"],
       labels:{owner:"You told me",estimate:"Estimate",unchecked:"Not checked against your records"},
     }));
-    expect(html).toContain("text-[14px]");
+    expect(html).toContain("text-[0.875rem]");
     expect(html).toContain("leading-relaxed");
     expect(html).not.toContain("text-xs");
   });

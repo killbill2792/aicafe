@@ -54,11 +54,11 @@ export default function SupervisorAccessPanel(){
    finally{setLoadingMore(false);}
  };
  return <div className="space-y-4">
-  {!state&&!error&&<p role="status" className="text-[17px]">{copy.loading}</p>}
+  {!state&&!error&&<p role="status" className="text-[1.0625rem]">{copy.loading}</p>}
   {error&&<div className="space-y-2" role="alert">
-    <p className="text-[15px] text-warn">{error}</p>
+    <p className="text-[0.9375rem] text-warn">{error}</p>
     <button type="button" onClick={()=>{setError("");void load().catch(()=>setError(copy.loadFailed));}}
-     className="min-h-12 rounded-xl border border-line px-4 text-[17px]">{copy.refresh}</button>
+     className="min-h-12 rounded-xl border border-line px-4 text-[1.0625rem]">{copy.refresh}</button>
   </div>}
   {state&&<>
    {([
@@ -69,12 +69,12 @@ export default function SupervisorAccessPanel(){
      <div className="flex items-start justify-between gap-3">
        <div className="min-w-0">
         <h2 className="font-headline text-xl font-bold">{label}</h2>
-        <p className="mt-2 text-[17px] text-ink-muted">{help}</p>
+        <p className="mt-2 text-[1.0625rem] text-ink-muted">{help}</p>
        </div>
        <button type="button" role="switch" aria-label={label}
         aria-checked={permission.allowed} disabled={busy}
         onClick={()=>void change(kind,!permission.allowed,permission.revision)}
-        className="min-h-12 min-w-20 shrink-0 rounded-xl border border-line px-3 text-[15px] font-semibold disabled:opacity-50">
+        className="min-h-12 min-w-20 shrink-0 rounded-xl border border-line px-3 text-[0.9375rem] font-semibold disabled:opacity-50">
         {busy?copy.changePending:permission.allowed?copy.on:copy.off}
        </button>
      </div>
@@ -82,27 +82,27 @@ export default function SupervisorAccessPanel(){
    )}
    <section className="rounded-card-lg border border-line bg-card p-5">
     <h2 className="font-headline text-xl font-bold">{copy.fileList}</h2>
-    <p className="mt-2 text-[17px] text-ink-muted">{copy.fileListHelp}</p>
-    {!state.files.length&&<p className="mt-4 text-[17px]">{copy.noFiles}</p>}
+    <p className="mt-2 text-[1.0625rem] text-ink-muted">{copy.fileListHelp}</p>
+    {!state.files.length&&<p className="mt-4 text-[1.0625rem]">{copy.noFiles}</p>}
     <div className="mt-3 space-y-3">
       {state.files.map(file=><div key={file.id} role="group" aria-label={file.name}
         className="min-w-0 rounded-xl border border-line p-3">
-       <p className="break-all text-[17px] font-semibold">{file.name}</p>
-       <p className="mt-1 text-[15px] text-ink-muted">{!file.allowed?copy.fileRevoked:
+       <p className="break-all text-[1.0625rem] font-semibold">{file.name}</p>
+       <p className="mt-1 text-[0.9375rem] text-ink-muted">{!file.allowed?copy.fileRevoked:
          !state.fileRead.allowed?copy.filePaused:copy.fileAllowed}</p>
        {file.allowed&&<button type="button" disabled={busy} onClick={()=>
          void change("attachment",false,file.revision,file.id)}
-         className="mt-2 min-h-12 rounded-xl border border-line px-3 text-[15px] font-semibold disabled:opacity-50">
+         className="mt-2 min-h-12 rounded-xl border border-line px-3 text-[0.9375rem] font-semibold disabled:opacity-50">
          {copy.revokeFile}</button>}
       </div>)}
     </div>
     {state.nextOffset!==null&&<button type="button" disabled={loadingMore||busy}
-      onClick={()=>void more()} className="mt-4 min-h-12 rounded-xl border border-line px-4 text-[17px]">
+      onClick={()=>void more()} className="mt-4 min-h-12 rounded-xl border border-line px-4 text-[1.0625rem]">
       {copy.loadMore}</button>}
    </section>
    <section className="rounded-card-lg border border-line bg-card p-5">
     <h2 className="font-headline text-xl font-bold">{copy.computer}</h2>
-    <p className="mt-2 text-[17px] text-ink-muted">{copy.computerUnavailable}</p>
+    <p className="mt-2 text-[1.0625rem] text-ink-muted">{copy.computerUnavailable}</p>
    </section>
   </>}
  </div>;
