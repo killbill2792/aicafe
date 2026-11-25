@@ -216,8 +216,24 @@ function verifiedU3Evidence(r:AgentToolResult,periodKey:string){
    const duration=units[column]==="hours"?"hour":units[column]==="minutes"?"minute":units[column]==="seconds"?"second":null;
    const accepted=u3ReceiptNumber(raw,duration?"count":units[column]);
    if(!accepted)continue;
+   // Preserve direct recorded-duration identity, using only the same binding.
+   let identity="";
+   const origins=proof.column_origins as Record<string,unknown>|undefined;
+   const origin=origins?.[column] as {relation?:unknown;binding?:unknown}|undefined;
+   if(duration&&origin?.relation==="recorded_timecards"&&Number.isSafeInteger(origin.binding)){
+     const fields:Record<string,unknown>=Object.create(null);
+     for(const [label,rawOrigin] of Object.entries(origins??{})){
+       const field=rawOrigin as {relation?:unknown;binding?:unknown;column?:unknown}|null;
+       if(field?.relation===origin.relation&&field.binding===origin.binding&&typeof field.column==="string"&&Object.hasOwn(row,label))
+         fields[field.column]=(row as Record<string,unknown>)[label];
+     }
+     const date=localPunch(actualTimestamp(fields.clock_in),fields.timezone)?.date;
+     const person=typeof fields.employee_name==="string"?normalizedEmployeeName(fields.employee_name):"";
+     identity="timecard:"+(typeof fields.timecard_id==="string"?fields.timecard_id:"unbound")+
+       "/day:"+(date??"")+"/person:"+encodeURIComponent(person)+"/";
+   }
    const key=periodKey+(duration?"u3VerifiedDuration/"+duration+"/":accepted.unit==="count"?"u3VerifiedCount/":"u3Receipt/")+
-    proof.receipt_id+"/row:"+rowIndex+"/"+column;
+    identity+proof.receipt_id+"/row:"+rowIndex+"/"+column;
    values.push({key,value:accepted.value,unit:accepted.unit});
   }
  }

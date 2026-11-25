@@ -258,6 +258,14 @@ describe("direct SQL source-row provenance",()=>{
  const row={card:"12345678-1234-4123-8123-123456789abc",worker:"Sam",tz:"America/Los_Angeles",start:"2026-11-15T17:00:00Z",finish:"2026-11-15T23:00:00Z",breaks:0};
  const make=(workerBinding=1,extra:Record<string,unknown>={})=>({...receipt(),rows:[{...row,...extra}],evidence:{...(receipt().evidence as object),column_units:{},
   column_origins:Object.fromEntries(Object.entries(fields).map(([label,column])=>[label,{relation:"recorded_timecards",column,binding:label==="worker"?workerBinding:1}]))}}) as AgentToolResult;
+ it("keeps direct SQL duration tied to the employee binding rather than its numeric alias",()=>{
+  const base=make();
+  const typed={...base,rows:[{...row,quantity:"7"}],evidence:{...(base.evidence as object),column_units:{quantity:"hours"},
+    column_origins:{...(base.evidence as {column_origins:object}).column_origins,quantity:{relation:"recorded_timecards",column:"provider_regular_hours",binding:1}}}};
+  expect(checkNumbers("Sam worked 7 hours.","",[typed],"en")).toEqual([]);
+  expect(checkNumbers("Maya worked 7 hours.","",[typed],"en")).not.toEqual([]);
+  expect(checkNumbers("There were 7 orders.","",[typed],"en")).not.toEqual([]);
+ });
  it("verifies real SQL clock observations and duration, not model-selected aliases or different rows",()=>{
   expect(checkNumbers("Sam clocked in at 9:00 AM on November 15, 2026. Sam worked 6 hours.","",[make()],"en")).toEqual([]);
   expect(checkNumbers("Sam clocked in at 9:00 AM on November 15, 2026.","",[make(2)],"en")).not.toEqual([]);
