@@ -44,7 +44,7 @@ function mockBadgeQueries() {
     const response = table === "recurring_costs"
       ? {data: [], error: null}
       : table === "alerts"
-        ? {data: null, count: 3, error: null}
+        ? {data: [{id:"1",kind:"meal_break",payload:{}},{id:"2",kind:"voids",payload:{}},{id:"3",kind:"meal_break",payload:{}},{id:"4",kind:"business_anomaly",payload:{family:"data_gap",subject:"sales_coverage"}}], count: 4, error: null}
         : {data: [], error: null};
     return {
       select() {return this;},

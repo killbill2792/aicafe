@@ -65,7 +65,7 @@ function db(params?:{routines?:Record<string,unknown>[];owners?:{user_id:string}
       // scanner. A no-op mock returned commitments and falsely failed CI.
       not(field:string,operator:string,value:string){
         if(table!=="operating_tasks"||field!=="kind"||operator!=="in"||
-          value!=="(priority_notice,commitment,event_plan,event_change,event_report,u4_report,u4_run_failure)")
+          value!=="(priority_notice,commitment,event_plan,event_change,event_report,u4_report,u4_run_failure,daily_brief)")
           throw new Error("Unexpected priority task exclusion");
         const forbidden=new Set(value.slice(1,-1).split(","));
         selected=selected.filter(row=>!forbidden.has(String((row as Record<string,unknown>)[field])));
