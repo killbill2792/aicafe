@@ -58,6 +58,8 @@ test("candidate cannot change trusted 13C entrypoint or host oracle",()=>{
 test("a single registered SQL read can satisfy a scenario with independent database readback",()=>{
   const m={...copy(good),expectedTools:["query_data"]};
   assert.deepEqual(validateScenario(m,"future-case").expectedTools,["query_data"]);
+  m.expectedTools=["get_investigation_source"];
+  assert.deepEqual(validateScenario(m,"future-case").expectedTools,["get_investigation_source"]);
   m.expectedTools=["query_data","query_data"];
   assert.throws(()=>validateScenario(m,"future-case"),/Real registered tool names required/);
 });
