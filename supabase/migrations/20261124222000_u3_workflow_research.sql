@@ -94,6 +94,16 @@ REVOKE ALL ON u3_research.maintenance_case_events FROM PUBLIC,anon,authenticated
 GRANT SELECT ON u3_research.maintenance_case_events TO aicafe_research;
 
 -- Owner-specific purchasing rows must honor the same owner as the existing reader.
+GRANT SELECT(proposal_id) ON public.purchase_orders TO aicafe_research_view_owner;
+CREATE OR REPLACE VIEW u3_research.purchase_orders WITH (security_barrier=true) AS
+ SELECT src.id,src.supplier_id,src.supplier_name_snapshot,src.status,src.revision,src.currency_code,src.needed_by,src.subtotal_cents,src.shipping_cents,src.tax_cents,src.total_cents,src.approved_at,src.created_at,src.proposal_id FROM public.purchase_orders src;
+GRANT SELECT(quote_id,ordinal) ON public.purchase_order_lines TO aicafe_research_view_owner;
+CREATE OR REPLACE VIEW u3_research.purchase_order_lines WITH (security_barrier=true) AS
+ SELECT src.id,src.purchase_order_id,src.ingredient_id,src.item_name_snapshot,src.needed_base_quantity,src.base_unit,src.packs,src.pack_quantity,src.pack_unit,src.unit_price_cents,src.subtotal_cents,src.quoted_on,src.delivery_on,src.quote_id,src.ordinal FROM public.purchase_order_lines src;
+GRANT SELECT(line_id) ON public.pantry_stock_purchases TO aicafe_research_view_owner;
+CREATE OR REPLACE VIEW u3_research.pantry_stock_purchases WITH (security_barrier=true) AS
+ SELECT src.id,src.ingredient_id,src.purchase_date,src.quantity_base,src.entered_quantity,src.entered_unit,src.cost_cents,src.source,src.source_ref,src.revision,src.voided_at,src.expense_line_id,src.line_id FROM public.pantry_stock_purchases src;
+
 GRANT SELECT(owner_user_id) ON public.purchase_orders,public.purchase_receipts,public.supplier_invoices TO aicafe_research_view_owner;
 ALTER POLICY u3_research_scoped_select ON public.purchase_orders USING
  (business_id=(SELECT u3_research_private.business_id()) AND owner_user_id=(SELECT s.owner_user_id FROM u3_research_private.scope() s));

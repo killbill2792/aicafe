@@ -9,6 +9,10 @@ const manifest=JSON.parse(migration.slice(begin+tag.length,end));
 if(!Array.isArray(manifest)||!manifest.length)
  throw Error("U3 source admission manifest empty");
 const expectedLogical=new Map(manifest.map(source=>[source.table,source.fields]));
+expectedLogical.set("purchase_orders",[...expectedLogical.get("purchase_orders"),"proposal_id"]);
+expectedLogical.set("purchase_order_lines",[...expectedLogical.get("purchase_order_lines"),"quote_id","ordinal"]);
+expectedLogical.set("pantry_stock_purchases",[...expectedLogical.get("pantry_stock_purchases"),"line_id"]);
+
 expectedLogical.set("employees",[...expectedLogical.get("employees"),"pos_team_member_id","min_weekly_minutes","max_weekly_minutes","available_days","pos_display_name","pos_last_role","pos_last_wage_cents","pos_last_active"]);
 expectedLogical.set("scheduled_shifts",[...expectedLogical.get("scheduled_shifts"),"break_source","repeat_schedule_id","proposal_id","created_at","updated_at"]);
 expectedLogical.set("toast_location_mappings",["location_id","restaurant_guid","verified_at","toast_time_zone","closeout_hour","info_refreshed_at","toast_start_date"]);
