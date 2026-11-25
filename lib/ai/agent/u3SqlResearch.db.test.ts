@@ -373,6 +373,7 @@ describe.skipIf(!active)("U3 migrated registered tool + private connection",()=>
     const local=await dataQueryTools.query_data.execute(input("SELECT s.id,s.employee_id,s.local_date,s.start_local,s.end_local,s.overnight,s.status,s.source,s.deleted_at,e.id AS worker_id,e.display_name FROM scheduled_shifts s JOIN employees e ON e.id=s.employee_id WHERE s.local_date='2025-01-02'"),scoped);
     expect(local.error).toBeUndefined();
     expect(local.rows).toHaveLength(1);
+    expect(local.rows).toMatchObject([{local_date:"2025-01-02",start_local:"07:00:00"}]);
     expect(checkNumbers("Ada's shift starts at 07:00 on 2025-01-02.","",[local as unknown as AgentToolResult],"en")).toEqual([]);
    }finally{
     await admin.query("DELETE FROM public.scheduled_shifts WHERE id=$1",[localShift]);

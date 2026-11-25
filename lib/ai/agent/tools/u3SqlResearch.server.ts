@@ -1,6 +1,6 @@
 import "server-only";
 import {createHash,randomUUID} from "node:crypto";
-import {Pool,type PoolClient} from "pg";
+import {Pool,types as pgTypes,type PoolClient} from "pg";
 import {z} from "zod";
 import type {SupabaseClient} from "@supabase/supabase-js";
 import {createAdminSupabaseClient} from "@/lib/supabase/admin";
@@ -174,6 +174,8 @@ async function withinScope<T>(ctx:U3SqlContext,callback:(client:PoolClient,obser
   // Static trusted SET statements share one transport, not model SQL.
   await client.query("SELECT set_config('statement_timeout',$1,true)",[String(remainingResearchTime(deadlineAt))]); // hardcode-ok: PostgreSQL bind parameter, not currency
   await client.query("SET LOCAL search_path = u3_research, pg_catalog");
+  // Calendar DATE values are not instants and must keep their ISO civil date.
+  await client.query("SET LOCAL DateStyle = 'ISO, YMD'");
   const role=(await client.query(
    "SELECT current_user AS name,(SELECT rolsuper OR rolbypassrls FROM pg_roles "+
    "WHERE rolname=current_user) AS privileged")).rows[0];
@@ -338,7 +340,12 @@ async function readResearchPage(client:PoolClient,sql:string,parameters:readonly
  while(true){
   const remaining=remainingResearchTime(deadlineAt);
   await client.query("SELECT set_config('statement_timeout',$1,true)",[String(remaining)]); // hardcode-ok: PostgreSQL bind placeholder
-  const result=await client.query("FETCH FORWARD "+FETCH_BATCH+" FROM u3_result");
+  // Keep PostgreSQL DATE output as the original civil date, not a Date
+  // constructed in the application process timezone. This is scoped to the
+  // research fetch, including computed DATE columns and retained pages.
+  const result=await client.query({text:"FETCH FORWARD "+FETCH_BATCH+" FROM u3_result",
+   types:{getTypeParser:(oid,format)=>oid===pgTypes.builtins.DATE&&format!=="binary"?
+    (value:string)=>value:pgTypes.getTypeParser(oid,format)}});
   const batch:unknown[]=result.rows;
   if(new Set(result.fields.map(field=>field.name)).size!==result.fields.length)
    throw Error("duplicate_result_columns");
