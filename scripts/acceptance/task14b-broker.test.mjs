@@ -319,7 +319,7 @@ test("v8: full-registry five-step stateless continuation stays bounded and paid 
  }
  assert.ok(paid.attempts<MAX_CALLS,"larger legitimate calls exhaust budget earlier");
  assert.ok(paid.reservedMicros<=MAX_RESERVATION_MICROS,
-  "unchanged hard $0.18 total remains authoritative");
+  "unchanged hard $0.50 total remains authoritative");
  assert.throws(()=>reservationForRequest(Buffer.alloc(MAX_BODY_BYTES+1)),
   /request_size/,"oversized body rejected prior to parse or transport");
 });
@@ -363,7 +363,7 @@ test("normalizes only self-contained function-tool history and strips provider i
  assert.equal(JSON.stringify(r.params).includes("fc_opaque"),false);
  assert.equal(JSON.stringify(r.params).includes("msg_opaque"),false);
 });
-test("pre-reserves exactly 18 paid attempts, including unknown/failing transports",()=>{
+test("pre-reserves exactly MAX_CALLS paid attempts, including unknown/failing transports",()=>{
  const b=new PaidReservation(head);
  for(let i=0;i<MAX_CALLS;i++)b.reserve(body);
  assert.equal(b.attempts,MAX_CALLS);
@@ -371,7 +371,7 @@ test("pre-reserves exactly 18 paid attempts, including unknown/failing transport
  assert.throws(()=>b.reserve(body),/approved_budget_exhausted/);
  assert.equal(b.receipts.length,MAX_CALLS);
 });
-test("cannot repeat a request after $0.18 cumulative pretransport reservation",()=>{
+test("cannot repeat a request after $0.50 cumulative pretransport reservation",()=>{
  const b=new PaidReservation(head);
  const large=Buffer.from(JSON.stringify({...params,input:[{role:"user",content:"x".repeat(118_000)}]}));
  for(let i=0;i<18;i++){
@@ -514,7 +514,7 @@ test("expanded tool-capable allowance charges every reserved and replayed token 
   try{b.reserve(large)}catch(e){assert.match(String(e),/approved_budget_exhausted/);break}
  }
  assert.ok(b.attempts<MAX_CALLS);
- assert.ok(b.reservedMicros<=180000);
+ assert.ok(b.reservedMicros<=MAX_RESERVATION_MICROS);
  assert.throws(()=>b.reserve(large),/approved_budget_exhausted/);
  // U2 adds native transport negatives to the same cumulative-budget invariant,\n // keeping the trusted split-checkout test census intact.
  const definition={...params.tools[0],strict:true,defer_loading:true};

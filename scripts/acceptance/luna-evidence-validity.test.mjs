@@ -94,7 +94,7 @@ test('wrong owner, workflow, attempt, candidate model, missing steps, mismatched
   v=>v.jobs[1].steps[2].conclusion='skipped',v=>v.artifact.expired=true,
   v=>v.artifact.workflow_run.id=124,v=>v.proof.scenario='14c',
   v=>v.proof.model='gpt-4.1-mini',v=>v.proof.acceptanceProof=false,
-  v=>v.proof.independentDatabaseReadbacks.pop(),v=>v.proof.reservedUpperUSD=0.3,
+  v=>v.proof.independentDatabaseReadbacks.pop(),v=>v.proof.reservedUpperUSD=0.51,
   v=>v.artifact.digest='sha256:'+'a'.repeat(64)
  ]){
   const v=verified();mutate(v);assert.equal((await assessLunaEvidence(v)).status,'MISSING_OR_UNVERIFIED');

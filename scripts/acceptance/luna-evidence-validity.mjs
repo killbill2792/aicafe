@@ -96,7 +96,7 @@ export function validateLunaReceipt({workflow,run,jobs,artifact,proof,runId,scen
   proof.acceptanceProof!==false&&proof.result!=='FAILED','Invalid model or candidate proof');
  const attempts=proof.attempts??proof.providerAttempts;
  const cost=proof.reservedUpperUSD??proof.upperCostReservationUSD;
- assert(positiveInt(attempts)&&attempts<=18&&typeof cost==='number'&&cost>0&&cost<=0.18,
+ assert(positiveInt(attempts)&&attempts<=60&&typeof cost==='number'&&cost>0&&cost<=0.50,
   'Invalid bounded provider proof');
  if(scenario==='13c'||scenario==='13d'){
   assert(proof.task===scenario.toUpperCase()&&proof.provider==='openai_responses'&&

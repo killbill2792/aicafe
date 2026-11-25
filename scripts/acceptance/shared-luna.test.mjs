@@ -172,7 +172,7 @@ test("trusted owner launch selects all exact-head manifests without any model ca
     const output=join(dir,"output.txt"),preload=join(dir,"mock-github.mjs");
     writeFileSync(output,"");
     const event={repository:{full_name:"killbill2792/aicafe"},sender:{login:"killbill2792"},
-      inputs:{head_sha:head,pr_number:"0",scenario:"all",max_budget_usd:"0.36"}};
+      inputs:{head_sha:head,pr_number:"0",scenario:"all",max_budget_usd:"1.00"}};
     writeFileSync(eventFile,JSON.stringify(event));
     const tree={truncated:false,tree:[
       {type:"blob",mode:"100644",path:".github/luna/scenarios/14b.json"},
@@ -198,10 +198,10 @@ test("trusted owner launch selects all exact-head manifests without any model ca
       .map(line=>{const i=line.indexOf("=");return [line.slice(0,i),line.slice(i+1)]}));
     assert.deepEqual(JSON.parse(attrs.matrix),["13c","14b"]);
     assert.equal(attrs.head,head);
-    assert.match(result.stdout,/cumulative worst-case reserved USD=0.36/);
+    assert.match(result.stdout,/cumulative worst-case reserved USD=1.00/);
     assert.ok(!attrs.matrix.includes("untrusted-link"));
     // The same request with the default $0.20 per-dispatch budget must
-    // fail before scheduling two scenarios whose combined reservation is $0.36.
+    // fail before scheduling two scenarios whose combined reservation is $1.00.
     writeFileSync(eventFile,JSON.stringify({...event,inputs:{
       ...event.inputs,max_budget_usd:"0.20"}}));
     writeFileSync(output,"");
@@ -247,7 +247,7 @@ test("owner comment uses read-only immutable first-run history and rejects dupli
   try{
     const head="a".repeat(40),main="b".repeat(40),commentId=456789,
       updatedAt="2026-11-18T06:00:00Z";
-    const body="/aicafe-luna pr "+head+" 13c 0.20";
+    const body="/aicafe-luna pr "+head+" 13c 0.50";
     const eventFile=join(dir,"event.json"),output=join(dir,"out.txt"),
       preload=join(dir,"mock-github.mjs"),stateFile=join(dir,"comment-state.json"),
       runsFile=join(dir,"runs.json");
@@ -553,7 +553,7 @@ test("shared failure projection comes from the real broker with only offline tra
     assert.equal(proof.result,"FAILED");assert.equal(proof.acceptanceProof,false);
     assert.equal(proof.auditStatus,"available");assert.equal(proof.attempts,2);
     assert.equal(proof.deniedCount,1);assert.deepEqual(proof.policyDenials,["provider_expanded_context_forbidden"]);
-    assert.ok(proof.reservedUpperMicros>0&&proof.reservedUpperMicros<=180000);
+    assert.ok(proof.reservedUpperMicros>0&&proof.reservedUpperMicros<=500000);
     assert.deepEqual(proof.receipts,[
       {ordinal:1,terminal:"provider_rejected",upstreamStatus:400,
         rejection:{type:"invalid_request_error",code:"invalid_function_parameters",param:"tools[0].parameters"}},
@@ -751,5 +751,5 @@ test("the complete reviewed research suite uses the same trusted native transpor
   assert.deepEqual([...nativeResearchScenarios].sort(),["13c","13d","14d-autonomous","14e-autonomous-followup","14e-cash-position","14e-payables","14e-settlement-boundary","15a-proactive-owner-answer","16c","8b-multiday-lifecycle","source553-hourly","u3-canonical-research","u4-autonomous-objectives"]);
   for(const id of nativeResearchScenarios)assert.equal(readScenario(join(import.meta.dirname,"../.."),id).id,id);
   assert.equal(nativeResearchScenarios.includes("future-case"),false);
-  assert.deepEqual([MAX_RESERVATION_MICROS,MAX_CALLS,MAX_BODY_BYTES,MAX_OUTPUT_TOKENS,MAX_FINAL_OUTPUT_TOKENS],[180000,18,192000,16384,1200]);
+  assert.deepEqual([MAX_RESERVATION_MICROS,MAX_CALLS,MAX_BODY_BYTES,MAX_OUTPUT_TOKENS,MAX_FINAL_OUTPUT_TOKENS],[500000,60,192000,16384,1200]);
 });

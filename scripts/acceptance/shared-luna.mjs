@@ -326,11 +326,11 @@ async function plan({revalidate=false}={}){
     // after checkout and before starting any paid broker.
     ensure(paths.has(manifestPath(id)),"Scenario manifest missing");
   }
-  const budget=String(inputs.max_budget_usd??"0.20");
+  const budget=String(inputs.max_budget_usd??"0.50");
   ensure(/^(?:0|[1-3])\.[0-9]{2}$/.test(budget),
     "Owner budget must be exact dollars/cents from $0.00 through $3.99");
   const authorizedCents=Number(budget.replace(".",""));
-  const reservedCents=selected.length*18;
+  const reservedCents=selected.length*50;
   ensure(reservedCents<=authorizedCents,
     "Requested scenarios exceed manual owner budget authorization; choose fewer or approve more explicitly");
   const maxUSD=(reservedCents/100).toFixed(2);
@@ -431,8 +431,8 @@ function attest(){
   const dir=process.env.RUNNER_TEMP,source=dir+"/luna-candidate-proof/";
   const audit=JSON.parse(readFileSync(dir+"/luna-host-audit.json","utf8"));
   const proof=JSON.parse(readFileSync(source+manifest.proof,"utf8"));
-  ensure(audit.head===process.env.HEAD_SHA&&audit.attempts>=1&&audit.attempts<=18&&
-    audit.reservedMicros>0&&audit.reservedMicros<=180000&&
+  ensure(audit.head===process.env.HEAD_SHA&&audit.attempts>=1&&audit.attempts<=60&&
+    audit.reservedMicros>0&&audit.reservedMicros<=500000&&
     audit.receipts?.length===audit.attempts&&
     audit.receipts.every(r=>r.terminal==="completed"&&r.model==="gpt-6-luna"&&
       Number.isSafeInteger(r.actualInputTokens)&&r.actualInputTokens>0&&

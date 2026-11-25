@@ -15,8 +15,8 @@ import {randomUUID,timingSafeEqual,createHash} from "node:crypto";
 // Trusted transport compatibility for the already-reviewed #562 acceptance suite.
 // This selects protocol only: it cannot select a paid run or alter its limits.
 export const nativeResearchScenarios=Object.freeze(["u3-canonical-research","source553-hourly","u4-autonomous-objectives","15a-proactive-owner-answer","13c","13d","14e-cash-position","14e-payables","14e-settlement-boundary","14e-autonomous-followup","14d-autonomous","8b-multiday-lifecycle","16c"]);
-export const MAX_RESERVATION_MICROS=180_000;
-export const MAX_CALLS=18;
+export const MAX_RESERVATION_MICROS=500_000;
+export const MAX_CALLS=60;
 // Real owner-only v7 reached five completed provider tool turns, then a sixth
 // stateless continuation exceeded the original 120KB request envelope. The
 // complete domain registry and encrypted inline history MUST NOT be truncated.
