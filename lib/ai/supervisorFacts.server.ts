@@ -123,7 +123,9 @@ export function supervisorFactReaders(client: SupabaseClient, authorizedBusiness
       for(const row of quantityRows){
        const units=Number(row.total_quantity);
        if(typeof row.menu_item_id!=="string"||!knownIds.has(row.menu_item_id)||
-          seenIds.has(row.menu_item_id)||!Number.isSafeInteger(units)||units<0)
+          seenIds.has(row.menu_item_id)||
+           (typeof row.total_quantity!=="number"&&(typeof row.total_quantity!=="string"||!row.total_quantity.trim()))||
+           !Number.isFinite(units)||units<0||units>Number.MAX_SAFE_INTEGER)
         return missing("productSalesMappingUnverified");
        seenIds.add(row.menu_item_id);
       }
