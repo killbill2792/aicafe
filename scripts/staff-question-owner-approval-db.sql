@@ -159,13 +159,29 @@ begin
  exception when sqlstate '40001' then null;end;
 end $$;
 update public.employees set staff_auth_user_id=:'staff_user' where business_id=:'biz' and id=:'employee';
+-- The owner's approval replaces the "on a published shift right now" rule, and the owner's own chat message is a
+-- valid source (no alert or task needed): a worker with no published shift can be asked, once, after a verified click.
 update public.scheduled_shifts set status='draft' where business_id=:'biz' and employee_id=:'employee';
+select gen_random_uuid() as chat_proposal,gen_random_uuid() as chat_message \gset
+insert into public.ai_messages(id,business_id,thread_id,owner_user_id,author_user_id,role,content_type,text_content,client_message_id)
+ values(:'chat_message',:'biz',:'thread_id',:'owner_id',:'owner_id','owner','text','Ask the worker if they can come in early tomorrow',gen_random_uuid());
+insert into public.supervisor_proposals(id,business_id,owner_user_id,thread_id,request_key,capability_id,capability_version,
+ canonical_effect_payload,effect_hash,baseline,monitor_spec,locale)
+ select :'chat_proposal',:'biz',:'owner_id',:'thread_id',gen_random_uuid(),'olivia.staff_question.v1',1,
+  jsonb_build_object('sourceKind','owner_chat','sourceTaskId',m.id,'employeeId',:'employee','question','Can you come in an hour early tomorrow?',
+   'reason','Owner asked in chat','evidence',jsonb_build_array(jsonb_build_object('source','owner_message','asOf','now')),
+   'followUpAfter',statement_timestamp()+interval '4 hours','sourceRevision',m.created_at,'employeeName','On-shift worker'),
+  repeat('d',64),'{}','{"durationDays":1,"metricScope":"staff_question_receipt"}','en'
+ from public.ai_messages m where m.id=:'chat_message';
+select public.supervisor_transition_proposal(:'biz',:'owner_id',:'chat_proposal',1,'approve',null);
+select public.supervisor_claim_effect(:'biz',:'owner_id',:'thread_id',:'chat_proposal',2,'click');
+select public.supervisor_commit_staff_question(:'biz',:'owner_id',:'thread_id',:'chat_proposal',repeat('d',64))->>'id' as chat_request_id \gset
 do $$
 begin
- begin
-  perform public.supervisor_commit_staff_question(current_setting('test.staffquestion.biz')::uuid,current_setting('test.staffquestion.owner')::uuid,current_setting('test.staffquestion.thread')::uuid,current_setting('test.staffquestion.stale_proposal')::uuid,repeat('d',64));
-  raise exception 'withdrawn published shift was accepted';
- exception when sqlstate '40001' then null;end;
+ if (select count(*) from public.staff_communication_requests where business_id=current_setting('test.staffquestion.biz')::uuid
+     and source_id=(select id::text from public.supervisor_proposals where capability_id='olivia.staff_question.v1'
+       and canonical_effect_payload->>'sourceKind'='owner_chat'))<>1
+ then raise exception 'owner-chat question to an off-shift worker was not sent exactly once';end if;
 end $$;
 update public.scheduled_shifts set status='sent' where business_id=:'biz' and employee_id=:'employee';
 update public.operating_tasks set updated_at=updated_at+interval '1 minute'

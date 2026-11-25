@@ -339,8 +339,10 @@ export async function runOneTurn(p: TurnParams): Promise<{ replyId: string; repl
         threadId:id,mode:p.durableFence?"durable" as const:"owner" as const,
         ...(p.durableFence?{runId:p.durableFence.runId,leaseToken:p.durableFence.claimToken}:{})
        }),
-      staffQuestionPropose:async input=>{
+      staffQuestionPropose:async raw=>{
         await assertTurnSources();
+        // The source of an owner-requested message is the owner's own saved chat message, never a model-supplied id.
+        const input=raw.sourceKind==="owner_chat"?{...raw,sourceTaskId:owner.id}:raw;
         const key=proposalRequestKey(id,JSON.stringify({ownerMessageId:owner.id,staffQuestion:input}));
         const proposal=await proposeLoop(proposalScope,supervisorLoopRegistry,
           new SupabaseLoopRepository(),staffQuestionCapabilityId,input,key);

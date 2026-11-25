@@ -5,7 +5,7 @@ import type {AgentToolContext,AgentToolResult} from "./index";
 export const staffQuestionTools={
  propose_staff_question:{
   agentId:"olivia" as const,schema:staffQuestionInput,
-  description:"After reading the actual café evidence, propose asking one active, linked employee a narrow factual question (the owner approves the card before anything is sent). Pass the exact alert or operating-task source type/ID, source/as-of evidence and a future follow-up time. The owner may approve staff contact, ignore, or reply naturally in the existing chat. This tool NEVER sends an employee message or updates stock/roster; unknown facts stay unknown.",
+  description:"Propose a message or question to one active, linked employee. When the owner asked you in chat to contact someone, use sourceKind owner_chat (the server binds the owner's message; sourceTaskId may be any text). Use alert or operating_task only when the message is about that record. The owner approves the card before anything is sent; this tool NEVER sends by itself. Provide source/as-of evidence (for owner_chat: the owner message) and a future follow-up time.",
   execute:async(raw:unknown,ctx:AgentToolContext):Promise<AgentToolResult>=>{
    const input=staffQuestionInput.parse(raw);
    try{

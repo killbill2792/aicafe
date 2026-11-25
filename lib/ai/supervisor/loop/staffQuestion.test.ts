@@ -25,6 +25,7 @@ function dbRows({staffActive=true,linked=true,onShift=true,taskStatus="needs_own
   alerts:[{id:input.sourceTaskId,status:"new",kind:"business_anomaly",created_at:sourceRevision}],
   employees:[{id:employee,display_name:"Priya",active:staffActive,staff_auth_user_id:linked?owner:null}],
   businesses:[{timezone:"America/Los_Angeles"}],
+  ai_messages:[{id:input.sourceTaskId,created_at:sourceRevision}],
   scheduled_shifts:onShift?[{local_date:"2026-11-21",start_local:"11:00:00",
    end_local:"14:00:00",overnight:false}]:[],
  };
@@ -83,6 +84,14 @@ describe("owner-click-only proactive worker question",()=>{
   await expect(staffQuestionCapability.simulate(scope,input)).rejects.toThrow();
   dbRows({onShift:false});
   await expect(staffQuestionCapability.simulate(scope,input)).resolves.toMatchObject({effect:{employeeId:employee}});
+ });
+ it("accepts the owner's own chat message as the source, with no alert, task or shift",async()=>{
+  const db=dbRows({onShift:false});
+  const draft=await staffQuestionCapability.simulate(scope,{...input,sourceKind:"owner_chat"});
+  expect(draft.effect).toMatchObject({sourceKind:"owner_chat",sourceRevision});
+  expect(db.from).toHaveBeenCalledWith("ai_messages");
+  expect(db.from).not.toHaveBeenCalledWith("alerts");
+  expect(db.from).not.toHaveBeenCalledWith("operating_tasks");
  });
  it("only the already-claimed effect commit invokes the verified SQL receipt",async()=>{
   const rpc=vi.fn(async()=>({data:{id:thread,replayed:false},error:null}));

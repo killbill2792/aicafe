@@ -23,7 +23,11 @@ export const staffQuestionCapability=registerLoopCapability({
  simulate:async(scope,input)=>{
   const {client}=await simulationOwnerReader(scope);
   const taskSource=input.sourceKind==="operating_task";
+  const chatSource=input.sourceKind==="owner_chat";
   const [task,person]=await Promise.all([
+   chatSource?client.from("ai_messages").select("id,created_at")
+    .eq("business_id",scope.businessId).eq("owner_user_id",scope.ownerUserId)
+    .eq("thread_id",scope.threadId).eq("role","owner").eq("id",input.sourceTaskId).maybeSingle():
    taskSource?client.from("operating_tasks").select("id,status,kind,updated_at")
     .eq("business_id",scope.businessId)
     .or("owner_user_id.is.null,owner_user_id.eq."+scope.ownerUserId)
@@ -33,14 +37,15 @@ export const staffQuestionCapability=registerLoopCapability({
    client.from("employees").select("id,display_name,active,staff_auth_user_id")
     .eq("business_id",scope.businessId).eq("id",input.employeeId).maybeSingle()
   ]);
+  // The owner's own chat message needs no alert or task; the owner's approval of the card decides.
   if(task.error||person.error||!task.data||!person.data?.active||
      !person.data.staff_auth_user_id||
-     !(taskSource?["needs_owner","needs_response","watching"]:["new","seen"]).includes(task.data.status))
+     (!chatSource&&!(taskSource?["needs_owner","needs_response","watching"]:["new","seen"]).includes((task.data as {status:string}).status)))
    throw new Error("staff_question_source_or_employee_unavailable");
   if(input.followUpAfter&&Date.parse(input.followUpAfter)<=Date.now())
    throw new Error("staff_follow_up_must_be_future");
   const sourceRow=task.data as {id:string;updated_at?:string;created_at?:string};
-  const sourceRevision=taskSource?sourceRow.updated_at:sourceRow.created_at;
+  const sourceRevision=taskSource&&!chatSource?sourceRow.updated_at:sourceRow.created_at;
   if(!sourceRevision)throw new Error("staff_question_source_revision_unavailable");
   const effect={...input,sourceRevision,employeeName:person.data.display_name};
   return {effect,baseline:{source:input.sourceKind,sourceTaskId:sourceRow.id,
