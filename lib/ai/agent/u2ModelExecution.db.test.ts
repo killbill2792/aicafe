@@ -114,7 +114,7 @@ describe("U2 durable owner execution",()=>{
   await rpc(service,"supervisor_record_durable_usage_increment",extended);
   await expect(rpc(service,"supervisor_record_durable_usage_increment",extended)).rejects.toThrow();
   const counted=await admin.query("select model_call_count,tool_call_count,reserved_model_call_count,execution_metrics from public.ai_usage_events where owner_message_id=$1",[messageId]);
-  expect(counted.rows[0]).toMatchObject({model_call_count:11,tool_call_count:27,reserved_model_call_count:11});
+  expect(counted.rows[0]).toMatchObject({model_call_count:11,tool_call_count:27,reserved_model_call_count:"11"});
   expect(counted.rows[0].execution_metrics[1].tools).toEqual(toolReceipts);
   const rows=await admin.query("select attempt_id,status,output_tokens,execution_metrics from public.supervisor_system_usage_events where business_id=$1",[businessId]);
   expect(rows.rows).toHaveLength(11);

@@ -2,6 +2,9 @@
 -- completed research is not an admission budget: never reject a valid long turn
 -- merely because its measured receipt exceeds the previous planning defaults.
 
+set lock_timeout = '5s';
+set statement_timeout = '60s';
+
 create or replace function public.record_supervisor_usage_increment(
   p_business_id uuid,p_owner_user_id uuid,p_thread_id uuid,p_owner_message_id uuid,
   p_model text,p_input_tokens integer,p_output_tokens integer,
