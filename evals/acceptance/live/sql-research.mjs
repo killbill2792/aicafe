@@ -14,7 +14,7 @@ import {readPersistedModelUsage,requireObservedProductionModel,verifyCheckoutHea
 
 const fail=reason=>{throw Error("sql_research_live:"+reason);};
 const rows=async(db,sql,args=[])=>(await db.query(sql,args)).rows;
-const SCENARIOS=new Set(["sql-research-data","sql-research-alerts"]);
+const SCENARIOS=new Set(["sql-research-data","sql-research-alerts","sql-research-profit","sql-research-strategy"]);
 
 /** Does the text state this amount (cents) in major units, with or without decimals? */
 export function mentionsAmount(text,cents){
@@ -118,6 +118,21 @@ function questionsFor(id,o,cafe,alerts){
       soft:t=>({topItemAmount:mentionsAmount(t,o.items[0].cents),allFiveNamed:o.items.every(i=>t.toLowerCase().includes(i.name.toLowerCase()))})},
     {q:"How much did I spend on staff wages in that period, and what is that as a share of my sales?",hard:()=>({}),soft:t=>({gaveAPercent:/\d\s?%/.test(t)})},
   ];
+  // Complex owner decisions: several sources, Luna chooses the investigation.
+  const deep=t=>({usedSqlMoreThanOnce:true,substantial:t.trim().length>=400});
+  if(id==="sql-research-profit")return [
+    {q:"Where am I losing money? Using my sales, recipe and ingredient costs, staff wages and bills from "+o.start+" to "+o.end+
+      ", estimate what I actually made in that period and tell me the three biggest things I could change, with the money each is worth.",
+      hard:deep,soft:t=>({netSalesStated:mentionsAmount(t,o.sales.cents)})},
+    {q:"Which hours and weekdays am I overstaffed or understaffed compared with how busy I am? Compare orders with staff hours from my timecards "+
+      "and recommend specific schedule changes.",hard:deep,soft:t=>({gaveHours:/\b\d{1,2}(:\d{2})?\s?(am|pm)\b|\b\d{1,2}:\d{2}\b/i.test(t)})},
+  ];
+  if(id==="sql-research-strategy")return [
+    {q:"Which menu items should I raise or lower prices on, and by how much? Consider each item's margin from its recipe cost, how well it sells, "+
+      "and estimate what the change would add per month.",hard:deep,soft:t=>({topItemConsidered:t.toLowerCase().includes(o.items[0].name.toLowerCase())})},
+    {q:"Prepare my end-of-day brief for "+o.end+": how the day went versus a typical same weekday, items that sold unusually well or badly, "+
+      "anything odd in voids or discounts, and what I should do tomorrow.",hard:deep,soft:t=>({dayNamed:mentionsDate(t,o.end)})},
+  ];
   return [
     {q:"Do I have any open alerts right now? Tell me what each one is about and how much money it could affect.",
       hard:t=>({missingBillImpact:mentionsAmount(t,alerts.missingBill),voidsImpact:mentionsAmount(t,alerts.voids),
@@ -182,6 +197,7 @@ async function main(){
       }
       const complete=!turn.error&&turn.done?.endReason==="complete"&&text.trim().length>0;
       const hard={completed:complete,...(complete?item.hard(text):{})};
+      if("usedSqlMoreThanOnce" in hard)hard.usedSqlMoreThanOnce=turn.names.filter(n=>n==="run_sql").length>=2;
       const soft=complete&&item.soft?item.soft(text):{};
       const passed=Object.values(hard).every(Boolean);
       if(!passed)hardFailures++;
