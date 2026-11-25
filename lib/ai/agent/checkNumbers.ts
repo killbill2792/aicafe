@@ -290,6 +290,15 @@ export function compactEvidence(results:readonly AgentToolResult[],limit=100):Nu
     if(r.source==="calculate"&&r.refused===undefined&&
        Array.isArray(r.numberEstimates)&&r.result&&typeof r.result==="object"){
       const value=r.result as Record<string,unknown>;
+      const duration=value.unit==="seconds"?"second":value.unit==="minutes"?"minute":value.unit==="hours"?"hour":null;
+      if(duration&&typeof value.valueDuration==="number"&&Number.isFinite(value.valueDuration)&&
+        Math.abs(value.valueDuration)<=Number.MAX_SAFE_INTEGER&&r.numberEstimates.some(entry=>
+          entry&&typeof entry==="object"&&"unit" in entry&&"value" in entry&&
+          entry.unit===value.unit&&entry.value===value.valueDuration)){
+        const key=periodKey+"u3VerifiedDuration/"+duration+"/calculate";
+        values.push({key,value:value.valueDuration,unit:"count"});
+        invalidatedKeys.push(key);
+      }
       const amount=typeof value.valueCents==="number"?{unit:"cents" as const,n:value.valueCents}:
         typeof value.valueBps==="number"?{unit:"bps" as const,n:value.valueBps}:
         typeof value.quantity==="number"?{unit:"count" as const,n:value.quantity}:null;

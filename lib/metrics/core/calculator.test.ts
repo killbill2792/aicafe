@@ -89,3 +89,16 @@ describe("calculator physical arithmetic limits, not business step counts",()=>{
   expect(run({rate:exactDecimal("0.1","ratio")!},steps)).toMatchObject({ok:false,code:"arithmeticResourceLimit"});
  });
 });
+
+describe("source-typed duration arithmetic",()=>{
+  it("adds compatible durations exactly and divides across duration units",()=>{
+    const a=exactDecimal("1.25","hours")!,b=exactDecimal("45","minutes")!;
+    const r=run({a,b},[{id:"total",op:"add",args:["a","b"]},{id:"ratio",op:"divide",args:["total","b"]}]);
+    expect(r.ok&&r.steps[0].shown).toEqual({unit:"hours",valueDuration:2});
+    expect(r.ok&&r.result.shown).toEqual({unit:"ratio",valueRatio:2.6667});
+  });
+  it("never combines unrelated counts with durations by addition",()=>{
+    expect(run({a:exactDecimal("7","hours")!,b:count(7)},[{id:"total",op:"add",args:["a","b"]}])).toMatchObject({ok:false,code:"unitsDiffer"});
+    expect(run({a:exactDecimal("7","hours")!,b:exactDecimal("2","minutes")!},[{id:"total",op:"multiply",args:["a","b"]}])).toMatchObject({ok:false,code:"unitsCannotMultiply"});
+  });
+ });

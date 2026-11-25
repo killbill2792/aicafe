@@ -725,10 +725,11 @@ export async function runAgentTurn(args: {
       let newAttempt=false;
       for (let index = 0; index < calls.length; index++) {
         const tool = calls[index];
-        if (usage.toolCalls >= maxToolCalls || now() >= workDeadline || budgetStop()) {
-          endReason = now() >= workDeadline || budgetStop() === "timeout" ? "timeout" : "budget";
+        const stopBeforeTool=budgetStop();
+        if (usage.toolCalls >= maxToolCalls || now() >= workDeadline || stopBeforeTool) {
+          endReason = now() >= workDeadline ? "timeout" : stopBeforeTool ?? "budget";
           for (const skipped of calls.slice(index)) {
-            const error = endReason === "timeout" ? "deadline_exceeded" : endReason === "tool_errors" ? "tool_errors" : "budget_exceeded";
+            const error = endReason === "timeout" ? "deadline_exceeded" : "budget_exceeded";
             input.push({ type: "function_call_output", call_id: skipped.call_id, output: JSON.stringify({ error }) });
             results.push({ callId: skipped.call_id, name: skipped.name, arguments: skipped.arguments,
               result: { source: skipped.name, period: null, missing: [error] } });
@@ -898,8 +899,9 @@ export async function runAgentTurn(args: {
           for(const skipped of calls.slice(index+1))input.push({type:"function_call_output",call_id:skipped.call_id,output:JSON.stringify({error:"ask_owner_ends_turn"})});
           break;
         }
-        if (now() >= workDeadline || budgetStop()) {
-          endReason = now() >= workDeadline || budgetStop() === "timeout" ? "timeout" : "budget";
+        const stopAfterTool=budgetStop();
+        if (now() >= workDeadline || stopAfterTool) {
+          endReason = now() >= workDeadline ? "timeout" : stopAfterTool ?? "budget";
           // Respond to all calls already returned in this response before the next request.
           for (const skipped of calls.slice(index + 1)) {
             input.push({ type: "function_call_output", call_id: skipped.call_id,

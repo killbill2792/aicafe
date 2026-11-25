@@ -232,6 +232,25 @@ describe("U3 receipt-bound exact research calculation",()=>{
   const latest=await calculateTools.calculate.execute(query(newer),ctx(row));
   expect(latest.result).toEqual({unit:"cents",valueCents:67890});
  });
+ it("preserves SQL-attested duration units through exact arithmetic without converting to item counts",async()=>{
+  const record={...sql(older,"90"),result:{...sql(older,"90").result,
+    rows:[{net_sales_cents:"90",elapsed:"0.5"}],
+    evidence:{receipt_id:older,scope:"verified_owner_cafe_lease",column_units:{net_sales_cents:"minutes",elapsed:"hours"}}}};
+  const actual=await calculateTools.calculate.execute({
+    ...query(older),inputs:[...query(older).inputs,{...input("elapsed","query_data","rows.0.elapsed"),receipt_id:older}],
+    steps:[{id:"total",label:"Duration",op:"add",args:["amount","elapsed"]}]
+  },ctx([record]));
+  expect(actual).toMatchObject({result:{unit:"minutes",valueDuration:120},numberEstimates:[{unit:"minutes",value:120}]});
+  expect(checkNumbers("The total duration is 120 minutes.","",[actual],"en")).toEqual([]);
+  expect(checkNumbers("There were 120 orders.","",[actual],"en")).not.toEqual([]);
+  expect(checkNumbers("The total duration is 120 hours.","",[actual],"en")).not.toEqual([]);
+  const receipt_id=(actual.evidence as {receipt_id:string}).receipt_id;
+  const next=await calculateTools.calculate.execute({
+   purpose:"Re-use exact duration",inputs:[{...input("duration","calculate","result"),receipt_id}],
+   steps:[{id:"total",label:"Duration",op:"sum",args:["duration"]}]
+  },ctx([{name:"calculate",result:actual}]));
+  expect(next.result).toEqual({unit:"minutes",valueDuration:120});
+ });
  it("never treats a forged SQL alias as authoritative money units",async()=>{
   const countAsCents={...sql(older,"7"),result:{...sql(older,"7").result,
    evidence:{receipt_id:older,scope:"verified_owner_cafe_lease",
