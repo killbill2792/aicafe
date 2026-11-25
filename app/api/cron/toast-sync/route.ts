@@ -20,8 +20,8 @@ export async function GET(request:Request){
  try {
   const db=createAdminSupabaseClient();
   const now=new Date(started);
-  const toast=toastEnabled?runToastSyncTick(db,now,started+TICK_MS):Promise.resolve({disabled:true});
-  if(!squareEnabled||Math.floor(now.getUTCMinutes()/5)%2===1)return reply(200,await toast);
+  const toast=toastEnabled?runToastSyncTick(db,now,started+TICK_MS,"operations"):Promise.resolve({disabled:true});
+  if(!squareEnabled)return reply(200,await toast);
   const {syncSquareTick}=await import("@/lib/pos/square/scheduler");
   const [toastResult,square]=await Promise.allSettled([toast,syncSquareTick(db,now)]);
   return reply(toastResult.status==="fulfilled"&&square.status==="fulfilled"?200:503,{

@@ -14,7 +14,7 @@
     },
     {
       "path": "/api/cron/toast-sync",
-      "schedule": "*/5 * * * *"
+      "schedule": "*/10 * * * *"
     },
     {
       "path": "/api/cron/refresh-derived",
@@ -22,7 +22,7 @@
     },
     {
       "path": "/api/cron/daily-brief",
-      "schedule": "*/5 * * * *"
+      "schedule": "*/15 * * * *"
     },
     {
       "path": "/api/cron/events-lookahead",

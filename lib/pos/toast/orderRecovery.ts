@@ -12,7 +12,7 @@ import {normalizeOpenHours,OPEN_HOURS_DAY_KEYS} from "@/lib/business/openHours";
 
 const MINUTE=60000;
 export const orderRecoveryCadence=(open:boolean,_webhookSeen:boolean)=>
- (open?5:15)*MINUTE;
+ (open?10:Infinity)*MINUTE;
 
 /** A committed modification-time cursor, independent of the order's business
  * date. Do not discard a gap after a long outage. Replay a short overlap; the
@@ -24,7 +24,7 @@ export function orderRecoveryWindow(cursor:string|null,bootstrap:Date,now:Date){
  if(previous>=end)return null;
  return {since:new Date(previous-2*MINUTE),until:new Date(Math.min(end,previous+60*MINUTE))};
 }
-type Params={businessId:string;restaurantGuid:string;locationId:string};
+type Params={businessId:string;restaurantGuid:string;locationId:string;force?:boolean};
 export async function pollToastOrderRevisions(db:SupabaseClient,p:Params,now=new Date(),deadlineAt=Date.now()+60000){
  const [{data:m,error:me},{data:l,error:le},{data:h,error:he},{data:pending,error:pendingError}]=await Promise.all([
   db.from("toast_location_mappings").select("toast_time_zone,closeout_hour,verified_at")
@@ -41,8 +41,9 @@ export async function pollToastOrderRevisions(db:SupabaseClient,p:Params,now=new
  const cursor=h?.canonical_order_poll_at as string|null|undefined;
  const hours=normalizeOpenHours(l.open_hours);
  const open=!hours||!Object.prototype.hasOwnProperty.call(hours,OPEN_HOURS_DAY_KEYS[new Date(Date.parse(localClock(now,scope.timezone).today+"T12:00:00Z")).getUTCDay()])||isCafeCurrentlyOpen(hours,scope.timezone,now);
+ if(!open&&!p.force&&!pending)return {skipped:"closed",fetched:0};
  const liveDay=currentToastBusinessDay(now,scope.timezone,scope.closeoutHour);
- if(!pending&&h?.canonical_live_day===liveDay&&cursor&&now.getTime()-Date.parse(cursor)<orderRecoveryCadence(open,false))
+ if(!p.force&&!pending&&h?.canonical_live_day===liveDay&&cursor&&now.getTime()-Date.parse(cursor)<orderRecoveryCadence(open,false))
   return {skipped:"not_due",fetched:0};
  const {data:lease,error:claimError}=await db.rpc("toast_claim_poll",{p_business_id:p.businessId,
   p_restaurant_guid:p.restaurantGuid,p_kind:"orders"});

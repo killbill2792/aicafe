@@ -404,9 +404,16 @@ it("reconciles owner-visible operational health after optional phases, even on a
  expect(f.calls.at(-1)).toBe("toast_release_lease");
 });
 
-it("runs live recovery alone on the interleaved five-minute tick",async()=>{
+it("runs live and operational sync without the daily closeout job",async()=>{
  const f=makeDB();m.live.mockResolvedValue({fetched:1,completedWindow:true});
- await runToastSyncTick(f.db,new Date(now.getTime()+5*60000),Date.now()+60000);
+ await runToastSyncTick(f.db,now,Date.now()+60000,"operations");
  expect(m.live).toHaveBeenCalledOnce();expect(f.calls).toContain("toast_refresh_canonical_live");
- expect(f.calls).not.toContain("toast_acquire_lease");expect(m.importDay).not.toHaveBeenCalled();
+ expect(f.calls).not.toContain("toast_queue_daily");expect(m.reconcile).not.toHaveBeenCalled();
+});
+
+it("runs closeout only on the fifteen-minute dispatcher without redoing live or optional sync",async()=>{
+ const f=makeDB();
+ await runToastSyncTick(f.db,now,Date.now()+60000,"closeout");
+ expect(f.calls).toContain("toast_queue_daily");expect(m.reconcile).toHaveBeenCalledOnce();
+ expect(m.live).not.toHaveBeenCalled();expect(m.optional).not.toHaveBeenCalled();
 });

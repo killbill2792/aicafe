@@ -475,7 +475,7 @@ async function internalDay(db:SupabaseClient,p:Location,day:string,status:Status
 }
 export function toastPaymentEvidenceReady(day:string,zone:string,closeoutHour:number,now:Date){
  const close=fromZonedTime(addCalendarDays(day,1)+"T"+String(closeoutHour).padStart(2,"0")+":00:00",zone);
- return now.getTime()>=close.getTime()+6*3600000;
+ return now.getTime()>=close.getTime();
 }
 export async function reconcileToastDays(db:SupabaseClient,p:Location,deadlineAt:number){
  let mode=await detectToastCheckMode(db,p.businessId,p.restaurantGuid,p.timeZone,deadlineAt);
@@ -484,7 +484,7 @@ export async function reconcileToastDays(db:SupabaseClient,p:Location,deadlineAt
   .eq("business_id",p.businessId).eq("restaurant_guid",p.restaurantGuid)
   .eq("import_state","imported").is("rechecking_reason",null)
   // Supabase .or() calls overwrite the same PostgREST "or" query key.
-  .or(`and(${mode==="official"?"or(recon_state.in.(pending,mismatch,analytics_timeout),and(recon_state.eq.checked_internal,analytics_state.eq.pending))":"recon_state.in.(pending,mismatch,analytics_timeout)"},or(last_recon_attempt_at.is.null,and(recon_state.eq.pending,last_recon_attempt_at.lt.${new Date(Date.now()-9*60000).toISOString()}),and(recon_state.neq.pending,last_recon_attempt_at.lt.${new Date(Date.now()-60*60000).toISOString()})))`)
+  .or(`and(${mode==="official"?"or(recon_state.in.(pending,mismatch,analytics_timeout),and(recon_state.eq.checked_internal,analytics_state.eq.pending))":"recon_state.in.(pending,mismatch,analytics_timeout)"},or(last_recon_attempt_at.is.null,and(recon_state.eq.pending,last_recon_attempt_at.lt.${new Date(Date.now()-15*60000).toISOString()}),and(recon_state.neq.pending,last_recon_attempt_at.lt.${new Date(Date.now()-15*60000).toISOString()})))`)
   .order("last_recon_attempt_at",{ascending:true,nullsFirst:true})
   .order("business_date",{ascending:false}).limit(60);
  if(de)throw new ToastApiError("unavailable");
@@ -495,13 +495,13 @@ export async function reconcileToastDays(db:SupabaseClient,p:Location,deadlineAt
   if(!toastPaymentEvidenceReady(day,p.timeZone,p.closeoutHour,new Date()))continue;
   const scoped={...p,expectedImportedAt:status.imported_at};
   if(status.last_recon_attempt_at&&
-   Date.now()-Date.parse(status.last_recon_attempt_at)<(status.recon_state==="pending"?9:60)*60000)
+   Date.now()-Date.parse(status.last_recon_attempt_at)<15*60000)
    continue;
   // Each check uses stored order evidence and the independent payment list. A day waiting for
   // another day's re-import is checked hourly, not every 9 minutes; a day
   // whose payment order Toast never gave us is checked once a day.
   const sinceAttempt=status.last_recon_attempt_at?Date.now()-Date.parse(status.last_recon_attempt_at):Infinity;
-  if(status.payment_repull_at&&sinceAttempt<60*60000)continue;
+  if(status.payment_repull_at&&sinceAttempt<15*60000)continue;
   if((status.last_error_category==="unverified_payment_order"||status.warnings?.payment_recovery_exhausted===1)&&sinceAttempt<24*3600000)continue;
   try {
    const {data:cred,error:credError}=await db.from("toast_analytics_credentials")

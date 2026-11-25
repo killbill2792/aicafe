@@ -819,7 +819,7 @@ describe("The day check uses the day saved at import",()=>{
  });
 });
 
-it("does not check payment evidence before six hours after the actual café closeout",()=>{
- expect(toastPaymentEvidenceReady("2026-10-22","America/Los_Angeles",4,new Date("2026-10-23T16:59:59Z"))).toBe(false);
- expect(toastPaymentEvidenceReady("2026-10-22","America/Los_Angeles",4,new Date("2026-10-23T17:00:00Z"))).toBe(true);
+it("does not check payment evidence before actual café closeout",()=>{
+ expect(toastPaymentEvidenceReady("2026-10-22","America/Los_Angeles",4,new Date("2026-10-23T10:59:59Z"))).toBe(false);
+ expect(toastPaymentEvidenceReady("2026-10-22","America/Los_Angeles",4,new Date("2026-10-23T11:00:00Z"))).toBe(true);
 });
