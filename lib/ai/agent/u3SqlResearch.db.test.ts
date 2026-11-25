@@ -170,7 +170,7 @@ describe.skipIf(!active)("U3 migrated registered tool + private connection",()=>
   if(!admin)throw Error("admin_missing");
   const a=randomUUID(),b=randomUUID();
   try{
-   await admin.query("INSERT INTO public.alerts(id,business_id,kind,impact_cents,payload,status) VALUES($1,$2,'data_quality',1200,'{}','open'),($3,$4,'data_quality',9900,'{}','open')",[a,ids.a,b,ids.b]);
+   await admin.query("INSERT INTO public.alerts(id,business_id,kind,impact_cents,payload,status) VALUES($1,$2,'meal_break',1200,'{}','new'),($3,$4,'meal_break',9900,'{}','new')",[a,ids.a,b,ids.b]);
    const result=await dataQueryTools.query_data.execute({...input("SELECT id,impact_cents FROM alerts WHERE id IN ($1,$2)"),parameters:[a,b]},scoped);
    expect(result.error).toBeUndefined();
    expect(result.rows).toEqual([{id:a,impact_cents:"1200"}]);

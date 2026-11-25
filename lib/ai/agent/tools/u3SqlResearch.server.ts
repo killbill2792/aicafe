@@ -98,11 +98,26 @@ function getPool():Pool{
  // The transaction below separately verifies current_user is a non-BYPASSRLS
  // aicafe_research role after connecting.
  validateResearchConnection(raw,process.env.NEXT_PUBLIC_SUPABASE_URL);
- pool=new Pool({connectionString:raw,max:2,connectionTimeoutMillis:4000,
-  idleTimeoutMillis:5000,allowExitOnIdle:true,
+ pool=new Pool({connectionString:raw,allowExitOnIdle:true,
   application_name:"aicafe-u3-research"});
  pool.on("error",()=>{/* node-pg discards failed idle connections. */});
  return pool;
+}
+/** Respect the actual enclosing execution deadline, including a busy pool.
+ * A late acquisition must be returned even after the caller has timed out. */
+async function acquireResearchClient(deadlineAt:number):Promise<PoolClient>{
+ const remaining=remainingResearchTime(deadlineAt);
+ let expired=false;
+ let timer:ReturnType<typeof setTimeout>|undefined;
+ const pending=getPool().connect().then(client=>{
+  if(expired){client.release();throw Error("query_timeout");}
+  return client;
+ });
+ try{
+  return await Promise.race([pending,new Promise<never>((_,reject)=>{
+   timer=setTimeout(()=>{expired=true;reject(Error("query_timeout"));},remaining);
+  })]);
+ }finally{if(timer!==undefined)clearTimeout(timer);}
 }
 function scope(ctx:U3SqlContext){
  const parsed=scopeSchema.safeParse({
@@ -144,8 +159,8 @@ async function withinScope<T>(ctx:U3SqlContext,callback:(client:PoolClient,obser
  // café, original thread and durable/off-turn lease. Never log or return it.
  const ticket=await signedCapability(ctx);
  let client:PoolClient;
- try{client=await getPool().connect();}
- catch(e){if(e instanceof Error&&e.message==="research_connection_untrusted")throw e;
+ try{client=await acquireResearchClient(deadlineAt);}
+ catch(e){if(e instanceof Error&&["research_connection_untrusted","query_timeout"].includes(e.message))throw e;
   throw Error("research_connection_failed");}
  let begun=false;
  try{
@@ -155,8 +170,7 @@ async function withinScope<T>(ctx:U3SqlContext,callback:(client:PoolClient,obser
   begun=true;
   // Static trusted SET statements share one transport, not model SQL.
   await client.query("SELECT set_config('statement_timeout',$1,true)",[String(remainingResearchTime(deadlineAt))]); // hardcode-ok: PostgreSQL bind parameter, not currency
-  await client.query("SET LOCAL lock_timeout = '300ms'; SET LOCAL work_mem = '4MB'; "+
-   "SET LOCAL search_path = u3_research, pg_catalog");
+  await client.query("SET LOCAL search_path = u3_research, pg_catalog");
   const role=(await client.query(
    "SELECT current_user AS name,(SELECT rolsuper OR rolbypassrls FROM pg_roles "+
    "WHERE rolname=current_user) AS privileged")).rows[0];
@@ -241,7 +255,7 @@ export function selectU3Catalog(all:readonly U3Relation[],p:{
    columnCount:r.columns.length,fieldsTotal:detail?fields.length:undefined};
  });
  const version=createHash("sha256").update(JSON.stringify(all)).digest("hex").slice(0,16);
- const budget=Math.max(0,Math.min(availableBytes,researchPageBudget()));
+ const budget=Math.max(0,availableBytes);
  let count=detail?(relations[0]?.columns.length??0):relations.length;
  const build=()=>{
   const next=offset+count<total?offset+count:null;
@@ -398,7 +412,7 @@ export async function runU3Sql(ctx:U3SqlContext,raw:unknown){
  if(!parsed.success)return {source:"u3_canonical_research",period:null,
   missing:["invalid_query"],rows:[],truncated:false};
  try{
-  const resultBudgetBytes=Math.min(researchPageBudget(),ctx.resultBudgetBytes??researchPageBudget());
+  const resultBudgetBytes=ctx.resultBudgetBytes??researchPageBudget();
   if(!Number.isSafeInteger(resultBudgetBytes)||resultBudgetBytes<2)throw Error("research_context_exhausted");
   stage.value="admission";
   if(Buffer.byteLength(JSON.stringify(parsed.data.parameters??[]),"utf8")>256*1024)throw new U3AdmissionError("parser_resource_bound");
@@ -476,10 +490,10 @@ export async function runU3Sql(ctx:U3SqlContext,raw:unknown){
    // PostgreSQL cost is a dimensionless estimate, not elapsed time or a
    // physical resource limit. Planning twice and rejecting by an arbitrary
    // cost number blocks legitimate indexed/aggregate work. The actual query
-   // is still bounded by the same server statement/lock timeout, work_mem,
-   // admitted AST, isolated role, pool limit and result transport.
+   // is bounded by the enclosing execution deadline and database deployment's
+   // resource settings, admitted AST, isolated role and result transport.
    // Do not retain customer, raw Toast or owner-private relation observations
-   // in a process cache. Their original independently scoped replay remains.
+   // in a process cache. Their encrypted retained observation remains.
    const retainable=!customerEvidence&&plan.relations.every(r=>
     !ownerOnlyResearchRelations.has(r)&&r!=="toast_records"&&r!=="toast_changes");
    // Cache access follows fresh signed capability issuance, exact query cursor
