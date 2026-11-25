@@ -3,7 +3,7 @@ import {ToastApiError} from "./client";
 import {addCalendarDays} from "./scheduleDates";
 
 /** Finds Toast days that are missing or incomplete and re-pulls only those
- * days, a few per hour, newest first. A day is missing when it has no import,
+ * days, a few per scheduled repair pass, newest first. A day is missing when it has no import,
  * a failed import, an incomplete import, or orders but no saved payments (so
  * no card fees). Re-tries wait longer each time instead of re-pulling every
  * hour: 1h after the first try in the last three days, then 2h, 4h, 8h,

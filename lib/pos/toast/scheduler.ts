@@ -391,7 +391,7 @@ export async function runToastSyncTick(db:SupabaseClient,now=new Date(),
     await scanModifiedDates(db,m,now,deadlineAt);
    });
    await isolated("payment_gaps",async()=>{
-   // Hourly: re-pull only the days that are missing, incomplete or without
+   // Once after the local closeout: re-pull only days missing, incomplete or without
    // saved payments (card fees), with growing waits between tries. Runs in
    // the repull phase below, with the shared pacing. Not gated on pending
    // backfills: a stuck one-day backfill must never stop other days' repair.

@@ -485,8 +485,8 @@ export async function reconcileToastDays(db:SupabaseClient,p:Location,deadlineAt
   .eq("import_state","imported").is("rechecking_reason",null)
   // Supabase .or() calls overwrite the same PostgREST "or" query key.
   .or(`and(${mode==="official"?"or(recon_state.in.(pending,mismatch,analytics_timeout),and(recon_state.eq.checked_internal,analytics_state.eq.pending))":"recon_state.in.(pending,mismatch,analytics_timeout)"},or(last_recon_attempt_at.is.null,and(recon_state.eq.pending,last_recon_attempt_at.lt.${new Date(Date.now()-15*60000).toISOString()}),and(recon_state.neq.pending,last_recon_attempt_at.lt.${new Date(Date.now()-15*60000).toISOString()})))`)
-  .order("last_recon_attempt_at",{ascending:true,nullsFirst:true})
-  .order("business_date",{ascending:false}).limit(60);
+  .order("business_date",{ascending:false})
+  .order("last_recon_attempt_at",{ascending:true,nullsFirst:true}).limit(60);
  if(de)throw new ToastApiError("unavailable");
  let attempted=0;
  for(const item of days??[]){
