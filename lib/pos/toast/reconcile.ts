@@ -288,7 +288,9 @@ async function internalDay(db:SupabaseClient,p:Location,day:string,status:Status
  deadlineAt:number){
  const cache=proofCache(db,p,day,status),cached=await cache.load();
  // Check the saved day; only Toast's payment list below is read from Toast.
- const stored=await savedDay(db,p,day,status.last_import_run_id);
+ const archived=await savedDay(db,p,day,status.last_import_run_id);
+ // An independently committed complete empty day needs no second full-day GET.
+ const stored=archived??(status.coverage_complete===true&&status.order_count===0&&status.unparsed_count===0&&status.last_import_run_id?[]:null);
  const rows=stored??await pullDay(db,p,day,deadlineAt,cache,cached);
  const proof=internalOrderProof(rows,p,day,status.orders_snapshot_sha256,status.unparsed_count);
  let comparison:ReturnType<typeof compareDayMoney>|null=null;
@@ -426,6 +428,13 @@ async function internalDay(db:SupabaseClient,p:Location,day:string,status:Status
   unknownOrder=true;otherDays.add(remoteDate);
  }
  if(unknownOrder){
+  // Payment transactions and fees may still arrive for six hours after Toast
+  // closeout. Early missing evidence is not a historical repair request.
+  if(!toastFinalPaymentWindowReady(day,p.timeZone,p.closeoutHour,new Date())){
+   await writeReconciliation(db,p,day,status,{type:"internal_missing",reasons:["unknown_payment_order"],paidOtherDay},evidence);
+   await cache.clear();
+   return null;
+  }
   const {data:otherStatus,error:oe}=await db.from("toast_day_status").select("business_date,imported_at")
    .eq("business_id",p.businessId).eq("restaurant_guid",p.restaurantGuid).in("business_date",[...otherDays]);
   if(oe)throw new ToastApiError("unavailable");
@@ -442,10 +451,17 @@ async function internalDay(db:SupabaseClient,p:Location,day:string,status:Status
   if(repulled){
    await writeReconciliation(db,p,day,status,{type:"payment_recovery_exhausted",
     reasons:["unknown_payment_order"],paidOtherDay});
+   await cache.clear();
    return null;
   }else {
    // An existing recovery is still waiting for its already-queued imports.
-   if(status.payment_repull_at)return null;
+   if(status.payment_repull_at){
+    // Advance the retry timestamp and discard old payment list evidence. A
+    // completed repair or a late payment must be observable on the next check.
+    await writeReconciliation(db,p,day,status,{type:"payment_recovery_queued"});
+    await cache.clear();
+    return null;
+   }
    // Queue only coalesced, targeted repairs for this discrepancy.
    const today=localClock(new Date(),p.timeZone).today;
    for(const date of new Set([...otherDays,day])){
@@ -454,7 +470,8 @@ async function internalDay(db:SupabaseClient,p:Location,day:string,status:Status
      p_restaurant_guid:p.restaurantGuid,p_date:date});
     if(error)throw new ToastApiError("unavailable");
    }
-   await writeReconciliation(db,p,day,status,{type:"payment_recovery_queued"});return null;
+   await writeReconciliation(db,p,day,status,{type:"payment_recovery_queued"});
+   await cache.clear();return null;
   }
  }
  // Only the shared day money comparison can produce an owner mismatch.
@@ -476,6 +493,11 @@ async function internalDay(db:SupabaseClient,p:Location,day:string,status:Status
 export function toastPaymentEvidenceReady(day:string,zone:string,closeoutHour:number,now:Date){
  const close=fromZonedTime(addCalendarDays(day,1)+"T"+String(closeoutHour).padStart(2,"0")+":00:00",zone);
  return now.getTime()>=close.getTime();
+}
+/** Toast recommends a separate final payment/fee read at least six hours after closeout. */
+export function toastFinalPaymentWindowReady(day:string,zone:string,closeoutHour:number,now:Date){
+ const close=fromZonedTime(addCalendarDays(day,1)+"T"+String(closeoutHour).padStart(2,"0")+":00:00",zone);
+ return now.getTime()>=close.getTime()+6*3600000;
 }
 export async function reconcileToastDays(db:SupabaseClient,p:Location,deadlineAt:number){
  let mode=await detectToastCheckMode(db,p.businessId,p.restaurantGuid,p.timeZone,deadlineAt);

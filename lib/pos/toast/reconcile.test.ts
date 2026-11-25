@@ -16,7 +16,7 @@ vi.mock("./dayParser",()=>({parseToastDayPage:()=>({orders:[{
  guid:"11111111-1111-4111-8111-111111111111",modifiedDate:"",
  normalized:{netSalesCents:10000,discountsCents:0,refundsCents:0,taxCents:0,tipCents:0}
 }],unparsed:[]})}));
-import {reconcileToastDays,internalOrderProof,toastPaymentEvidenceReady} from "./reconcile";
+import {reconcileToastDays,internalOrderProof,toastPaymentEvidenceReady,toastFinalPaymentWindowReady} from "./reconcile";
 const business="aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
 const restaurant="bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb";
 const location="cccccccc-cccc-4ccc-8ccc-cccccccccccc";
@@ -822,4 +822,11 @@ describe("The day check uses the day saved at import",()=>{
 it("does not check payment evidence before actual café closeout",()=>{
  expect(toastPaymentEvidenceReady("2026-10-22","America/Los_Angeles",4,new Date("2026-10-23T10:59:59Z"))).toBe(false);
  expect(toastPaymentEvidenceReady("2026-10-22","America/Los_Angeles",4,new Date("2026-10-23T11:00:00Z"))).toBe(true);
+});
+
+it("distinguishes the operational closeout from the provider's final payment window",()=>{
+ const before=new Date("2026-10-23T16:59:59Z"),after=new Date("2026-10-23T17:00:00Z");
+ expect(toastPaymentEvidenceReady("2026-10-22",p.timeZone,p.closeoutHour,before)).toBe(true);
+ expect(toastFinalPaymentWindowReady("2026-10-22",p.timeZone,p.closeoutHour,before)).toBe(false);
+ expect(toastFinalPaymentWindowReady("2026-10-22",p.timeZone,p.closeoutHour,after)).toBe(true);
 });

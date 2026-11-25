@@ -51,7 +51,7 @@ export async function pollToastOrderRevisions(db:SupabaseClient,p:Params,now=new
  const shouldPoll=toastShouldPollOrders(l.open_hours,scope.timezone,now,cursor??null);
  if(!shouldPoll&&!p.force&&!pending&&!p.closeoutDay)return {skipped:"closed",fetched:0};
  const liveDay=currentToastBusinessDay(now,scope.timezone,scope.closeoutHour);
- if(!p.force&&!p.closeoutDay&&!pending&&h?.canonical_live_day===liveDay&&cursor&&now.getTime()-Date.parse(cursor)<orderRecoveryCadence(open||shouldPoll,false))
+ if(!p.force&&!p.closeoutDay&&!pending&&h?.canonical_live_day===liveDay&&cursor&&now.getTime()-Date.parse(cursor)+MINUTE<orderRecoveryCadence(open||shouldPoll,false))
   return {skipped:"not_due",fetched:0};
  const {data:lease,error:claimError}=await db.rpc("toast_claim_poll",{p_business_id:p.businessId,
   p_restaurant_guid:p.restaurantGuid,p_kind:"orders"});

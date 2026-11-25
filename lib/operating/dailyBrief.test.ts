@@ -148,7 +148,8 @@ describe("sending the daily brief at each café's own time",()=>{
     // No WhatsApp set up: the in-app brief is still the full brief, plus costs and what needs the owner.
     const text=(writes[0].structured_content as Array<{text:string}>)[0].text;
     expect(text).toContain("Net sales: $2,400.00");
-    expect(text).toContain("Drinks sold: 9 items in total (drink split not ready yet)");
+    expect(text).toContain("Drinks sold: 9");
+    expect(text).not.toContain("drink split not ready yet");
     expect(text).toContain("Best seller: Latte, with 9 sold");
     expect(text).toContain("Today: No major events near you this week.");
     expect(text.endsWith("Known costs yesterday: $1,600.00. You kept $800.00. 2 things need you. Ask me about any of them.")).toBe(true);
