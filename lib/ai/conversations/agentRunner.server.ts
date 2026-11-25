@@ -43,7 +43,7 @@ import {staffQuestionCapabilityId,staffQuestionEffect} from "@/lib/ai/supervisor
 import {allowPendingStaffQuestionRead} from "./staffQuestionOwnerGate";
 import {gmailSearch,gmailListLabels,gmailRead,gmailReadThread,gmailReadAttachment} from "@/lib/connectors/gmail/provider.server";
 import {getConnectorAccount,allowsGmail,assertConnectorOwnerLive} from "@/lib/connectors/registry.server";
-import {gmailToolDefinitions} from "@/lib/ai/agent/tools";
+import {agentToolDefinitions,gmailToolDefinitions} from "@/lib/ai/agent/tools";
 import { createAuthenticatedCafeTools, readSupervisorCafeIdentity } from "@/lib/ai/cafeTools.server";
 import {ToolError} from "@/lib/ai/agent/toolErrors";
 import {readMenuPriceEvidence} from "@/lib/data/menuPriceEvidence.server";
@@ -61,7 +61,7 @@ import type { NumericEvidence } from "@/lib/ai/agent/checkNumbers";
 import {ownerRunStatement,type OwnerRunCheckpoint} from "@/lib/ai/supervisor/runs/contracts";
 import type {DurableReplyFence} from "./replyWriter.server";
 import { runAgentTurn, type OwnerFollowUp } from "@/lib/ai/agent/loop.server";
-import {runResearchTurn,sqlResearchEnabled} from "@/lib/ai/research/turn.server";
+import {isResearchActionTool,runResearchTurn,sqlResearchEnabled} from "@/lib/ai/research/turn.server";
 import {createOwnerCommitment,listOwnerCommitments,closeOwnerCommitment} from "@/lib/operating/commitments.server";
 import {createOwnerRoutine,listOwnerRoutines,changeOwnerRoutine} from "@/lib/ai/supervisor/routines/repository.server";
 import {routineReportCandidates,verifiedRoutineReportHistory} from "@/lib/ai/supervisor/routines/reportHistory.server";
@@ -905,6 +905,16 @@ export async function runOneTurn(p: TurnParams): Promise<{ replyId: string; repl
         if(value.available)sourceChecks.set("public_web",check);
         return value;
       }),
+      // The existing registered action tools (same executor, same approval cards); routine tool as in the legacy turn.
+      actions:{context,definitions:[...agentToolDefinitions.filter(t=>isResearchActionTool(t.name)),{
+        ...routineToolDefinition,
+        description:routineToolDefinition.description+" VERIFIED SAME-THREAD OWNER MESSAGES "+
+          "(choose the source ID for the complete investigation goal, not the answer to a scheduling question; "+
+          "the server will verify this original owner message independently): "+JSON.stringify(goalSourceCandidates)+
+          " For any older goal absent from these previews, call manage_routine action=list_goal_sources "+
+          "with source_page_offset=0 first; use next_offset to continue to older pages. "+
+          "NEXT_OLDER_GOAL_SOURCES_OFFSET="+JSON.stringify(page.nextOffset),
+      },...(gmailAvailable?gmailToolDefinitions:[]),...(memory?[memory.tool]:[])]},
       onThinking:text=>emit("thinking",{text}),
       onAuditStep: step => { if (auditSteps.length < 64) auditSteps.push(step); },
       beforeProviderRequest:assertTurnSources, beforeAcceptResult:assertTurnSources,

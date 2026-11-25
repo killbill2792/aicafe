@@ -2,7 +2,8 @@ import "server-only";
 import {configuredSupervisorModel} from "@/lib/ai/conversations/modelConfig";
 import {currentWorkerBudget,usageStopReason,reserveDurableProviderRequest,currentDurableProviderOutputCap} from "@/lib/ai/supervisor/runs/usage.server";
 import {openAIProvider,type AgentProvider,type AgentTurn,type AgentAuditStep,type EndReason} from "@/lib/ai/agent/loop.server";
-import type {AgentToolResult} from "@/lib/ai/agent/tools";
+import {executeAgentTool,isRepeatSafeOwnerTool,observeDurableToolEffect,type AgentToolContext,type AgentToolResult} from "@/lib/ai/agent/tools";
+import {safeToolError} from "@/lib/ai/agent/toolErrors";
 import type {OwnerRunCheckpoint} from "@/lib/ai/supervisor/runs/contracts";
 import {executeResearchTool,researchToolDefinitions,type ResearchScope} from "./tools.server";
 
@@ -26,7 +27,14 @@ export const RESEARCH_INSTRUCTIONS=
   "Base numbers on what you retrieved, say which data they come from, and say plainly when something is missing or uncertain. "+
   "For questions about rules or law, use the café's own location from its profile, look up the current rules for that place with search_web, "+
   "cite what you found, and say when it isn't legal advice. "+
-  "You cannot change anything in the café; if the owner asks for a change, say so.";
+  "To change something or contact someone, use the action tools (propose_*, Gmail, routines, staff questions): each only prepares an approval card for the owner, "+
+  "and nothing happens until the owner approves it, so never say it was done before then. "+
+  "If a tool returns an error or finds nothing, fix the input or search again by yourself before giving up.";
+
+/** Registered tools that prepare an owner-approval card, record an outcome or ask the owner; reads are covered by SQL. */
+export const isResearchActionTool=(name:string)=>/^propose_/u.test(name)||
+  ["draft_week_schedule","manage_commitment","record_checkin","record_staff_question_owner_answer","record_supplier_order_outcome",
+   "record_maintenance_repair_claim","ask_owner","get_supervisor_permissions"].includes(name);
 
 type Event={type:string;[key:string]:unknown};
 type FunctionCall={type:"function_call";name:string;call_id:string;arguments:string};
@@ -49,6 +57,8 @@ export async function runResearchTurn(args:{
   scope:ResearchScope;
   /** Public web lookups through the existing owner-permissioned search; omit to disable. */
   webSearch?:(query:string)=>Promise<unknown>;
+  /** The existing registered action tools (approval cards, Gmail, routines), run through the one existing executor. */
+  actions?:{definitions:readonly {name:string}[];context:AgentToolContext};
   /** Luna's own summary of its thinking, streamed as it works (the part so far). */
   onThinking?:(text:string)=>void;
   /** Authenticated café facts: name, currency, time zone, local date. */
@@ -101,7 +111,7 @@ export async function runResearchTurn(args:{
     await args.beforeProviderRequest?.();
     const params:Record<string,unknown>={model,...(broker?{instructions:RESEARCH_INSTRUCTIONS}:
         {...(/^gpt-6/u.test(model)?{include:["reasoning.encrypted_content"],reasoning:{summary:"auto"}}:{}),prompt_cache_key:"supervisor-sql-research-v1"}),
-      tools:args.webSearch?researchToolDefinitions:researchToolDefinitions.filter(t=>t.name!=="search_web"),tool_choice:final?"none":"auto",stream:true,store:false,
+      tools:[...(args.webSearch?researchToolDefinitions:researchToolDefinitions.filter(t=>t.name!=="search_web")),...(args.actions?.definitions??[])],tool_choice:final?"none":"auto",stream:true,store:false,
       ...(outputCap(final)?{max_output_tokens:outputCap(final)}:{}),input};
     const startedCall=now();
     const checkpoint=args.checkpoint;
@@ -161,6 +171,29 @@ export async function runResearchTurn(args:{
     return {calls,answer};
   };
 
+  /** Same durable checkpoint and effect observation as the legacy loop; errors come back to the model as data. */
+  const runAction=async(fc:FunctionCall):Promise<AgentToolResult>=>{
+    const context=args.actions!.context;
+    context.turnResults=()=>invocations.map(i=>({name:i.name,result:i.result}));
+    let observed:ReturnType<typeof observeDurableToolEffect>|undefined,opened=false;
+    try{
+      const parsed:unknown=JSON.parse(fc.arguments);
+      const safe=isRepeatSafeOwnerTool(fc.name,parsed);
+      const recovered=args.checkpoint?await args.checkpoint.beginTool(fc.name,parsed,safe):null;
+      opened=Boolean(args.checkpoint);
+      if(args.checkpoint&&!recovered&&!safe)observed=observeDurableToolEffect(fc.name,context,()=>args.checkpoint!.assertLive());
+      const result=recovered??await executeAgentTool(fc.name,parsed,observed?.context??context);
+      await args.beforeAcceptResult?.();
+      if(opened)await args.checkpoint!.endTool(result,observed?.noEffect()??false);
+      return result;
+    }catch(error){
+      if(error instanceof Error&&/durable|checkpoint|reservation/u.test(error.message))throw error;
+      const mapped=safeToolError(error,false,{source:fc.name,locale:context.locale});
+      if(opened)await args.checkpoint!.endTool({source:fc.name,period:null,missing:[mapped.code]},false).catch(()=>undefined);
+      return {source:fc.name,period:null,missing:[mapped.code],error:mapped.code,what:mapped.what,reason:mapped.reason};
+    }finally{observed?.settle();observed?.close();}
+  };
+
   try{
     for(;;){
       const reason=stop();
@@ -174,12 +207,18 @@ export async function runResearchTurn(args:{
       for(const fc of calls){
         args.onTool?.(fc.name,"alex");
         const toolStarted=now();
-        const result=await executeResearchTool({...args.scope,webSearch:args.webSearch??args.scope.webSearch,privateValues},fc.name,fc.arguments);
         usage.toolCalls++;
-        input.push({type:"function_call_output",call_id:fc.call_id,output:JSON.stringify(result)});
-        const failed=result.ok===false;
-        const record:AgentToolResult={source:"sql_research",period:null,missing:[],agentId:"alex",tool:fc.name,
-          ...(failed?{error:"research_tool_error"}:{})};
+        let failed:boolean,record:AgentToolResult;
+        if(args.actions?.definitions.some(d=>d.name===fc.name)){
+          record=await runAction(fc);
+          failed=Boolean(record.error);
+          input.push({type:"function_call_output",call_id:fc.call_id,output:JSON.stringify(record)});
+        }else{
+          const result=await executeResearchTool({...args.scope,webSearch:args.webSearch??args.scope.webSearch,privateValues},fc.name,fc.arguments);
+          input.push({type:"function_call_output",call_id:fc.call_id,output:JSON.stringify(result)});
+          failed=result.ok===false;
+          record={source:"sql_research",period:null,missing:[],agentId:"alex",tool:fc.name,...(failed?{error:"research_tool_error"}:{})};
+        }
         invocations.push({name:fc.name,result:record});
         audit({kind:"tool_call",toolName:fc.name,inputSummary:"Research tool",outputSummary:failed?"Error returned to model":"Completed",
           durationMs:Math.max(0,now()-toolStarted),...(failed?{error:"research_tool_error"}:{})});
