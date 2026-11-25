@@ -209,6 +209,15 @@ test("trusted owner launch selects all exact-head manifests without any model ca
     assert.notEqual(overBudget.status,0);
     assert.match(overBudget.stderr,/exceed manual owner budget authorization/);
     assert.equal(readFileSync(output,"utf8"),"");
+    // Eight scenarios at the raised $0.50 reservation need $4.00; the owner may authorize that explicitly,
+    // up to 20 scenarios ($10.00). Anything above $10.00 is still refused.
+    for(const [amount,accepted] of [["4.00",true],["10.00",true],["10.01",false],["12.00",false]]){
+      writeFileSync(eventFile,JSON.stringify({...event,inputs:{...event.inputs,max_budget_usd:amount}}));
+      writeFileSync(output,"");
+      const attempt=execute();
+      if(accepted)assert.equal(attempt.status,0,amount+": "+attempt.stderr);
+      else{assert.notEqual(attempt.status,0,amount);assert.match(attempt.stderr,/through \$10\.00/);}
+    }
   }finally{rmSync(dir,{recursive:true,force:true})}
 });
 

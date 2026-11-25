@@ -288,7 +288,7 @@ async function plan({revalidate=false}={}){
       Number.isSafeInteger(event.comment.id)&&event.comment.id>0,
       "Only newly created owner-authored PR comment may authorize provider work");
     const command=String(event.comment.body??"");
-    const match=/^\/aicafe-luna (pr|main) ([a-f0-9]{40}) ([a-z0-9][a-z0-9,-]{0,699}) ((?:0|[1-3])\.[0-9]{2})$/.exec(command);
+    const match=/^\/aicafe-luna (pr|main) ([a-f0-9]{40}) ([a-z0-9][a-z0-9,-]{0,699}) ((?:[0-9]|10)\.[0-9]{2})$/.exec(command);
     ensure(match,"Exact owner comment syntax required: /aicafe-luna pr|main HEAD_SHA SCENARIO MAX_USD");
     // A deleted/edited command is a withdrawn grant; never use a stale event
     // payload. Only read a comment, and never execute untrusted comment text.
@@ -327,8 +327,8 @@ async function plan({revalidate=false}={}){
     ensure(paths.has(manifestPath(id)),"Scenario manifest missing");
   }
   const budget=String(inputs.max_budget_usd??"0.50");
-  ensure(/^(?:0|[1-3])\.[0-9]{2}$/.test(budget),
-    "Owner budget must be exact dollars/cents from $0.00 through $3.99");
+  ensure(/^(?:[0-9]|10)\.[0-9]{2}$/.test(budget)&&Number(budget)<=10,
+    "Owner budget must be exact dollars/cents from $0.00 through $10.00 (20 scenarios at $0.50)");
   const authorizedCents=Number(budget.replace(".",""));
   const reservedCents=selected.length*50;
   ensure(reservedCents<=authorizedCents,
