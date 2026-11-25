@@ -2694,3 +2694,54 @@ test("@home U4 owner deliberately opts into generic device push, revokes, and si
     expect(await page.evaluate(()=>sessionStorage.getItem("__u4_push_active"))).toBeNull();
   }finally{await context.close();}
 });
+
+test("@home verified Toast owner prepares and activates webhook without exposing its secret",async({browser})=>{
+ test.setTimeout(100_000);
+ const admin=createClient(process.env.NEXT_PUBLIC_SUPABASE_URL,process.env.SUPABASE_SERVICE_ROLE_KEY,{auth:{persistSession:false,autoRefreshToken:false}});
+ const db=new pg.Client({host:"127.0.0.1",port:54322,database:"postgres",user:"postgres",password:"postgres"});
+ const ctx=await browser.newContext({baseURL:"http://127.0.0.1:3000",serviceWorkers:"block"});
+ let userId,businessId,connected=false;
+ try{
+  await db.connect();connected=true;
+  const email=randomUUID()+"@example.invalid",password=randomUUID()+"!Ab12";
+  const created=await admin.auth.admin.createUser({email,password,email_confirm:true,user_metadata:{cafe_name:"Webhook fixture"}});
+  if(created.error||!created.data.user)throw Error("fixture user failed");
+  userId=created.data.user.id;
+  const fixture=await admin.rpc("ensure_private_onboarding_cafe",{p_user_id:userId,p_name:"Webhook fixture",p_recovery_order:["rent","utilities_power","water","internet","insurance","loan","software","supplies","repairs","other"]});
+  if(fixture.error||typeof fixture.data!=="string")throw Error("fixture café failed");
+  businessId=fixture.data;
+  const location=randomUUID(),restaurant=randomUUID();
+  await db.query("insert into public.locations(id,business_id,name) values($1,$2,'Webhook fixture location')",[location,businessId]);
+  await db.query("insert into public.toast_api_credentials(business_id,api_origin,client_id,client_secret_enc,state,last_verified_at) values($1,'https://ws-api.toasttab.com','synthetic','not-a-provider-credential','verified',now())",[businessId]);
+  await db.query("insert into public.toast_location_mappings(business_id,location_id,restaurant_guid,verified_at,toast_time_zone,closeout_hour) values($1,$2,$3,now(),'America/Los_Angeles',4)",[businessId,location,restaurant]);
+  const page=await ctx.newPage();
+  await login(page,{name:"Webhook fixture",owner:{email,password}});
+  await navigateLocal(page,"/en/more/toast");
+  await page.getByText("Orders webhook",{exact:true}).click();
+  await expect(page.getByText(/every five minutes during opening hours/)).toBeVisible();
+  await page.getByRole("button",{name:"Prepare webhook URL"}).click();
+  await expect(page.getByLabel("Copy this URL into Toast Web")).toHaveValue(/^https:\/\/example\.invalid\/api\/pos\/toast\/webhook\//);
+  await expect(page.getByRole("button",{name:"Activate",exact:true})).toBeDisabled();
+  const secret=randomUUID()+randomUUID();
+  await page.getByLabel("Paste the Toast signing secret here only").fill(secret);
+  await page.getByRole("button",{name:"Store secret securely"}).click();
+  await expect(page.getByRole("button",{name:"Activate",exact:true})).toBeEnabled();
+  await page.getByRole("button",{name:"Activate",exact:true}).click();
+  await expect(page.getByRole("button",{name:"Deactivate",exact:true})).toBeVisible();
+  const stored=await db.query("select enabled,signing_secret_enc,event_kind from public.toast_webhook_subscriptions where business_id=$1",[businessId]);
+  expect(stored.rows).toHaveLength(1);
+  expect(stored.rows[0].enabled).toBe(true);
+  expect(stored.rows[0].event_kind).toBe("orders");
+  expect(stored.rows[0].signing_secret_enc).not.toContain(secret);
+  const state=await ctx.request.get("/api/pos/toast/webhook/subscriptions?businessId="+businessId);
+  expect(state.status()).toBe(200);
+  expect(await state.text()).not.toContain(secret);
+  expect((await ctx.request.get("/api/pos/toast/webhook/subscriptions?businessId="+seededCafe(0).businessId)).status()).toBe(403);
+  await page.getByRole("button",{name:"Deactivate",exact:true}).click();
+  await expect(page.getByRole("button",{name:"Activate",exact:true})).toBeVisible();
+ }finally{
+  await ctx.close();
+  if(connected){if(businessId)await db.query("delete from public.businesses where id=$1",[businessId]);await db.end();}
+  if(userId)await admin.auth.admin.deleteUser(userId);
+ }
+});
