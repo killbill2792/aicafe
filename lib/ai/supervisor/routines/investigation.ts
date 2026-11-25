@@ -341,7 +341,7 @@ export function verifyUniversalInvestigationTurn(
    Array.isArray(c.result.missing)&&c.result.missing.length===0);
  if(!source)return {ok:false,reason:"evidence_incomplete"};
  const selector=source.result.selectors as {family?:string;subject?:string;from?:string;to?:string;
-   current?:unknown;previous?:unknown;unit?:unknown;gapReason?:string}|undefined;
+   current?:unknown;previous?:unknown;unit?:unknown;gapReason?:string;entityType?:unknown;entityId?:unknown}|undefined;
  const customerIncident=expected.kind==="business_anomaly"&&(selector?.family==="customer_trend"||
   selector?.family==="data_gap"&&["customer_identity_coverage","reader_unavailable:customer_intelligence"].includes(selector.subject??""));
  const observed=calls.filter(c=>c!==source&&c.name!=="get_investigation_source"&&
@@ -356,7 +356,17 @@ export function verifyUniversalInvestigationTurn(
  const verifiedMissingInput=expected.sourceType==="alert"&&expected.kind==="business_anomaly"&&
   gap?.family==="data_gap"&&gap.gapReason==="missing_business_input";
  // Multiple projections of one source never establish independent causation.
- if(!observed.length&&!verifiedMissingInput)return {ok:false,reason:"evidence_incomplete"};
+ const staffClaim=expected.sourceType==="operating_task"&&expected.kind!=="maintenance_issue"&&
+  ["staff_message","staff_coordination_case"].includes(String(selector?.entityType));
+ if(staffClaim){
+  const linked=source.result.linkedStaffSource as {id?:unknown;relation?:unknown;actor?:unknown}|null|undefined;
+  const message=selector?.entityType==="staff_message";
+  if(!linked||linked.id!==selector?.entityId||linked.relation!==(message?"staff_communication_messages":"staff_coordination_cases")||
+   message&&linked.actor!=="employee")return {ok:false,reason:"evidence_incomplete"};
+ }
+ // A verified exact staff claim is itself an observation. Other reads are
+ // model-selected according to the question, not mandatory corroboration.
+ if(!observed.length&&!verifiedMissingInput&&!staffClaim)return {ok:false,reason:"evidence_incomplete"};
  if(expected.kind==="supplier_receiving"){
   const selectors=source.result.selectors as {entityId?:unknown}|undefined;
   const id=selectors?.entityId;

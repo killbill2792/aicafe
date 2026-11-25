@@ -16,7 +16,7 @@ vi.mock("@/lib/pos/processingFeeEstimate.server",()=>({
   getOwnerConfirmedProcessingFeePlans:spies.plans,
 }));
 import {getBusinessSnapshotFromDb} from "./snapshot.server";
-import {runningCostsForPeriodCents} from "@/lib/calc";
+import {runningCostsForPeriodCents,type CategoryMonthlyAmount} from "@/lib/calc";
 
 const cafeId="00000000-0000-4000-8000-000000000001";
 function readOnlyClient(expenseCount=0){
@@ -93,7 +93,8 @@ describe("historical snapshot is genuinely read-only",()=>{
     spies.plans.mockResolvedValue([]);
     const {client,tables}=readOnlyClient(1001);
     const snapshot=await getBusinessSnapshotFromDb(client,cafeId,{from:"2026-09-30",to:"2026-10-01"});
-    const rent=snapshot.historicalPeriod.monthlyAmounts.find(row=>row.monthKey==="2026-09"&&row.categoryCode==="rent")!;
+    const historical=(snapshot as typeof snapshot & {historicalPeriod:{monthlyAmounts:CategoryMonthlyAmount[]}}).historicalPeriod;
+    const rent=historical.monthlyAmounts.find(row=>row.monthKey==="2026-09"&&row.categoryCode==="rent")!;
     // 1,001 actual receipts must survive paging; the unpaid portion of the
     // obligation remains separate estimated evidence, not actual payment.
     expect(rent).toMatchObject({recordedExpenseCents:100100,recurringEstimateCents:199900,

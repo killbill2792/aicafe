@@ -134,6 +134,14 @@ describe("Task 15A genuine multi-step agentic acceptance",()=>{
       {...sourceRead,result:{...sourceRead.result,missing:["timecard_not_verified"]}},sales,labor,
     ]}),expected)).toEqual({ok:false,reason:"evidence_incomplete"});
   });
+  it("accepts the independently resolved exact staff claim without imposing another research call",()=>{
+    const staff={sourceType:"operating_task" as const,sourceId:"staff-response:exact",kind:"staff_coverage"};
+    const claimed={...sourceRead,result:{...sourceRead.result,sourceType:staff.sourceType,
+      sourceId:staff.sourceId,incidentKind:staff.kind,selectors:{entityType:"staff_message",entityId:"reply-1"},
+      linkedStaffSource:{relation:"staff_communication_messages",id:"reply-1",actor:"employee",response_code:"decline"}}};
+    expect(verifyInvestigationTurn(turn({toolInvocations:[claimed]}),staff)).toMatchObject({ok:true});
+    expect(verifyInvestigationTurn(turn({toolInvocations:[{...claimed,result:{...claimed.result,linkedStaffSource:{...claimed.result.linkedStaffSource,id:"another"}}},sales]}),staff)).toMatchObject({ok:false,reason:"evidence_incomplete"});
+  });
   it("uses real staff message evidence plus canonical schedule to investigate a shift decline",()=>{
     const staff={sourceType:"operating_task" as const,sourceId:"staff-response:verified",kind:"staff_coverage"};
     const claimed={...sourceRead,result:{...sourceRead.result,sourceType:"operating_task",

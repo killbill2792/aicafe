@@ -6,8 +6,7 @@
   "proof": "15c-proof.json",
   "scope": "15c-scope.json",
   "expectedTools": [
-    "get_investigation_source",
-    "get_staff_messages"
+    "get_investigation_source"
   ],
   "assertions": [
     {

@@ -323,7 +323,8 @@ const baseToolDefinitions = (Object.keys(schemas) as AgentToolName[]).map(name =
 // general-purpose SQL and calculate remain the research interface.
 export const retiredResearchTools:ReadonlySet<AgentToolName>=new Set([
   "get_profit","get_break_even","get_business_hours","get_employee_sales","get_expenses","get_bills","get_sales","get_peak_hours","get_labor","get_staff","get_cost_summary","get_ingredient_costs","get_payroll_facts","get_item_sales","get_product_costs","get_usage_variance","get_goal_status","get_labor_rules","get_nearby_events",
-  "get_menu_items","get_inventory","get_schedule","get_team","get_week_schedule","get_cashflow_evidence","get_events"
+  "get_menu_items","get_inventory","get_schedule","get_team","get_week_schedule","get_cashflow_evidence","get_events",
+  "get_staff_coordination_cases","get_staff_messages","get_maintenance_cases"
 ]);
 // Routine management remains a verified-owner-only additional function.
 export const agentToolDefinitions:Array<Omit<(typeof baseToolDefinitions)[number],"name">&{name:string}>=
