@@ -284,13 +284,13 @@ end $$;
 -- A dependency shares the answer, not the original row's unique reply authority.
 alter table public.supervisor_investigations add column shared_question_id uuid;
 create function public.supervisor_normalize_question(p_question text)
-returns text language sql immutable strict set search_path='' as $
+returns text language sql immutable strict set search_path='' as $$
   select btrim(regexp_replace(regexp_replace(lower(p_question),'[^[:alnum:][:space:]]',' ','g'),'[[:space:]]+',' ','g'))
-$;
+$$;
 revoke all on function public.supervisor_normalize_question(text) from public,anon,authenticated;
 
 create or replace function public.supervisor_reset_investigation_answer_scope()
-returns trigger language plpgsql set search_path=public as $
+returns trigger language plpgsql set search_path=public as $$
 begin
  if new.episode_id is distinct from old.episode_id then
   new.pending_question_id:=null;new.shared_question_id:=null;
@@ -299,13 +299,13 @@ begin
   new.pending_question_id:=null;new.shared_question_id:=null;
  end if;
  return new;
-end $;
+end $$;
 
 -- Only the authenticated answer RPC's recorded response can wake dependents.
 -- If the primary card becomes stale without an answer, release dependents to
 -- investigate again rather than leave them asleep with an unanswerable card.
 create function public.supervisor_settle_shared_investigation_question()
-returns trigger language plpgsql security definer set search_path=public as $
+returns trigger language plpgsql security definer set search_path=public as $$
 declare v_answer uuid;
 begin
  if new.episode_id=old.episode_id and new.last_owner_answer_id is distinct from old.last_owner_answer_id
@@ -334,7 +334,7 @@ begin
    and t.payload->>'intent'='priority_investigation'
    and t.payload->>'episodeId' in (select episode_id::text from affected);
  return new;
-end $;
+end $$;
 revoke all on function public.supervisor_settle_shared_investigation_question() from public,anon,authenticated;
 create trigger supervisor_settle_shared_investigation_question
  after update on public.supervisor_investigations for each row
@@ -346,7 +346,7 @@ create or replace function public.supervisor_finish_investigation(
   p_source_type text,p_source_id text,p_revision_hash text,
   p_lease_token uuid,p_outcome text,p_evidence jsonb,p_narrative text,
   p_now timestamptz
-) returns boolean language plpgsql security definer set search_path=public as $
+) returns boolean language plpgsql security definer set search_path=public as $$
 declare v public.supervisor_investigations;v_phase text;v_hash text;v_msg uuid;v_blocks jsonb;v_proposal public.supervisor_proposals;v_new_question boolean:=false;v_shared_question uuid;
 begin
   if coalesce(auth.role(),'')<>'service_role' then
@@ -560,7 +560,7 @@ begin
     on conflict(id) do nothing;
   end if;
   return true;
-end $;
+end $$;
 
 
 CREATE OR REPLACE FUNCTION public.supervisor_fail_investigation(p_business_id uuid, p_owner_user_id uuid, p_source_type text, p_source_id text, p_lease_token uuid, p_error text, p_now timestamp with time zone)
