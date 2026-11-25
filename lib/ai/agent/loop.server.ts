@@ -7,6 +7,7 @@ import {safeToolError} from "./toolErrors";
 import {createHash} from "node:crypto";
 import { configuredSupervisorModel, PRODUCTION_SUPERVISOR_OPENAI_MODEL } from "@/lib/ai/conversations/modelConfig";
 import { agentToolDefinitions, investigationToolDefinition, agentLabelsPrompt, agentForTool, executeAgentTool, isRepeatSafeOwnerTool, observeDurableToolEffect, type AgentToolContext, type AgentToolResult, type AgentToolName } from "./tools";
+import {modelResearchQueryAllowed} from "./tools/dataQuery";
 import { statusFromResults } from "./status";
 import { checkNumbers,numberProvenance,compactEvidence,type NumericEvidence } from "./checkNumbers";
 import {usageEvidenceRefresh} from "./usageEvidence";
@@ -735,10 +736,12 @@ export async function runAgentTurn(args: {
           const effectiveArgs=questionArgs===null?null:injectSavedOwnerInputs(questionArgs,args.ownerFacts??[],
             Boolean((agentToolDefinitions.find(d=>d.name===tool.name)?.parameters as {
               properties?:Record<string,unknown>}|undefined)?.properties?.ownerInputs));
-          const recovered=args.checkpoint&&effectiveArgs!==null
+          // Validate current model input before a durable cache hit can bypass dispatch.
+          const validResearch=tool.name!=="query_data"||modelResearchQueryAllowed(effectiveArgs);
+          const recovered=args.checkpoint&&effectiveArgs!==null&&validResearch
             ?await boundary(()=>args.checkpoint!.beginTool(tool.name,effectiveArgs,isRepeatSafeOwnerTool(tool.name,effectiveArgs)))
             :null;
-          checkpointOpened=Boolean(args.checkpoint&&effectiveArgs!==null);
+          checkpointOpened=Boolean(args.checkpoint&&effectiveArgs!==null&&validResearch);
           if(checkpointOpened&&!recovered&&effectiveArgs!==null&&!isRepeatSafeOwnerTool(tool.name,effectiveArgs))
             observedEffect=observeDurableToolEffect(tool.name,toolContext,()=>boundary(()=>args.checkpoint!.assertLive()));
           result = recovered??await Promise.race([effectiveArgs===null?

@@ -674,6 +674,26 @@ it("advertises actual result references on the native continuation and preserves
  expect(JSON.stringify(requests[2].input)).toContain("Visual selection only");
 });
 
+it("rejects a retired model selector even if a historical checkpoint could return it",async()=>{
+  const checkpoint={
+    assertLive:vi.fn(async()=>{}),beginProvider:vi.fn(async()=>{}),
+    endProvider:vi.fn(async(_completed:boolean)=>{}),
+    beginTool:vi.fn(async(_name:string,_raw:unknown,_repeatSafe:boolean)=>({
+      source:"canonical_data",period:null,missing:[],rows:[{obsolete:true}],
+    } as import("./tools").AgentToolResult)),
+    endTool:vi.fn(async(_result:import("./tools").AgentToolResult,_noEffect?:boolean)=>{}),
+    resumeContext:vi.fn(async()=>null),canYield:()=>false,yieldForRetry:async()=>false,
+  };
+  const {provider}=recording([
+    [call("query_data",JSON.stringify({view:"cv_orders"}),"retired-selector"),completed],
+    [text("The old selector is unavailable."),completed],
+  ]);
+  const result=await runAgentTurn({ownerText:"Read the orders.",context,provider,checkpoint});
+  expect(result.results).toContainEqual(expect.objectContaining({source:"u3_canonical_research",error:"invalid_query",rows:[]}));
+  expect(checkpoint.beginTool).not.toHaveBeenCalled();
+  expect(checkpoint.endTool).not.toHaveBeenCalled();
+});
+
 describe("U1 matched recorded incident — checkpoint and presentation variations",()=>{
   it.each([false,true])("returns the same honest answer with checkpoint=%s and optional presentation",async(useCheckpoint)=>{
     const period={from:"2026-10-20",to:"2026-10-20"};
