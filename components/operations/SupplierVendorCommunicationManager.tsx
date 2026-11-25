@@ -1,7 +1,7 @@
 "use client";
 import {useEffect,useState,type FormEvent} from "react";
 import en from "@/messages/en.json";
-const field="mt-1 min-h-12 w-full rounded-xl border border-line bg-surface p-3 text-[17px] text-ink";
+const field="mt-1 min-h-12 w-full rounded-xl border border-line bg-surface p-3 text-[1.0625rem] text-ink";
 type Contact={id:string;supplier_id:string;channel:string;email:string|null;
  details:string|null;verified_at:string;revoked_at:string|null};
 type Supplier={id:string;name:string;contact:Contact|null};
@@ -78,31 +78,31 @@ export default function SupplierVendorCommunicationManager(){
  };
  return <section className="rounded-2xl bg-card p-4">
   <h2 className="font-headline text-2xl font-bold text-ink">{copy.title}</h2>
-  <p className="mt-2 text-[17px] text-ink-muted">{copy.intro}</p>
+  <p className="mt-2 text-[1.0625rem] text-ink-muted">{copy.intro}</p>
   <button type="button" disabled={busy}
    className="mt-2 min-h-12 rounded-full border border-line px-5 text-ink disabled:opacity-50"
    onClick={()=>void load().then(()=>setMessage("")).catch(()=>setMessage(copy.error))}>
    {copy.refresh}
   </button>
   <form className="mt-4 grid gap-3" onSubmit={verify}>
-   <label className="text-[17px] font-semibold text-ink">{copy.supplier}
+   <label className="text-[1.0625rem] font-semibold text-ink">{copy.supplier}
     <select aria-label={copy.supplier} className={field} value={supplierId}
      onChange={event=>chooseSupplier(event.target.value)} required>
      {!loaded&&<option value="">...</option>}
      {data.suppliers.map(s=><option key={s.id} value={s.id}>{s.name}</option>)}
     </select>
    </label>
-   <label className="text-[17px] font-semibold text-ink">{copy.channel}
+   <label className="text-[1.0625rem] font-semibold text-ink">{copy.channel}
     <select aria-label={copy.channel} className={field} value={channel}
      onChange={event=>setChannel(event.target.value as typeof channel)}>
      {options.map(([value,key])=><option key={value} value={value}>{copy[key]}</option>)}
     </select>
    </label>
-   {channel==="gmail"&&<label className="text-[17px] font-semibold text-ink">{copy.email}
+   {channel==="gmail"&&<label className="text-[1.0625rem] font-semibold text-ink">{copy.email}
     <input className={field} type="email" required maxLength={320} value={email}
      onChange={event=>setEmail(event.target.value)}/>
    </label>}
-   <label className="text-[17px] font-semibold text-ink">{copy.details}
+   <label className="text-[1.0625rem] font-semibold text-ink">{copy.details}
     <textarea className={field} maxLength={600} value={details}
      onChange={event=>setDetails(event.target.value)}/>
    </label>
@@ -116,7 +116,7 @@ export default function SupplierVendorCommunicationManager(){
   </form>
   <h3 className="mt-6 text-lg font-bold text-ink">{copy.orders}</h3>
   <form className="mt-3 grid gap-3" onSubmit={report}>
-   <label className="text-[17px] font-semibold text-ink">{copy.order}
+   <label className="text-[1.0625rem] font-semibold text-ink">{copy.order}
     <select className={field} required value={orderId}
      onChange={event=>setOrderId(event.target.value)}>
      {!data.orders.length&&<option value="">{copy.pending}</option>}
@@ -124,13 +124,13 @@ export default function SupplierVendorCommunicationManager(){
       {order.supplierName} · {order.id.slice(0,8)} · {order.status}</option>)}
     </select>
    </label>
-   <label className="text-[17px] font-semibold text-ink">{copy.channel}
+   <label className="text-[1.0625rem] font-semibold text-ink">{copy.channel}
     <select aria-label={copy.channel} className={field} value={reportChannel}
      onChange={event=>setReportChannel(event.target.value)}>
      {options.map(([value,key])=><option key={value} value={value}>{copy[key]}</option>)}
     </select>
    </label>
-   <label className="text-[17px] font-semibold text-ink">{copy.outcome}
+   <label className="text-[1.0625rem] font-semibold text-ink">{copy.outcome}
     <select className={field} value={outcome} onChange={event=>setOutcome(event.target.value)}>
      <option value="unknown">{copy.unknown}</option>
      <option value="not_contacted">{copy.notContacted}</option>
@@ -140,14 +140,14 @@ export default function SupplierVendorCommunicationManager(){
      <option value="supplier_declined">{copy.declined}</option>
     </select>
    </label>
-   <label className="text-[17px] font-semibold text-ink">{copy.note}
+   <label className="text-[1.0625rem] font-semibold text-ink">{copy.note}
     <textarea className={field} required maxLength={1000} value={note}
      onChange={event=>setNote(event.target.value)}/>
    </label>
    <button className="min-h-12 rounded-full bg-ink px-5 text-paper disabled:opacity-50"
     disabled={busy||!orderId||!note.trim()}>{copy.saveOutcome}</button>
   </form>
-  <p className="mt-3 text-[17px] text-ink-muted">{copy.status}</p>
-  <p role="status" aria-live="polite" className="mt-3 text-[17px] text-ink">{message}</p>
+  <p className="mt-3 text-[1.0625rem] text-ink-muted">{copy.status}</p>
+  <p role="status" aria-live="polite" className="mt-3 text-[1.0625rem] text-ink">{message}</p>
  </section>;
 }

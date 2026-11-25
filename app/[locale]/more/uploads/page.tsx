@@ -28,7 +28,7 @@ export default async function UploadsPage() {
   const statusName = (status: UploadHistoryRow["status"]) => h(status === "done" ? "statusDone" : status === "failed" ? "statusFailed" : status === "processing" ? "statusProcessing" : "statusNeedsReview");
   return <PageShell className="flex flex-col gap-5 px-4 py-6">
     <BackHeader title={t("title")} backHref="/more" backLabel={common("back")} />
-    <p className="text-[15px] text-ink-muted">{t("intro")}</p>
+    <p className="text-[0.9375rem] text-ink-muted">{t("intro")}</p>
     <div className="flex flex-col rounded-card-lg bg-card px-2">
       {links.map(({href,kind,Icon,label,hint}) => <Link key={href} href={href} className="flex items-center gap-3 border-b border-line px-2.5 py-4 text-ink no-underline last:border-b-0">
         <Icon aria-hidden="true" size={20} className="shrink-0 text-ink-muted"/>

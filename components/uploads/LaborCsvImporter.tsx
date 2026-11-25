@@ -227,18 +227,18 @@ export default function LaborCsvImporter({
             </select>
           </label>
         ))}
-        {!mapping.hourlyWage && <p className="text-[17px] text-ink-muted">{labels.noWageColumnHint}</p>}
+        {!mapping.hourlyWage && <p className="text-[1.0625rem] text-ink-muted">{labels.noWageColumnHint}</p>}
       </section>
 
       {complete && stage === "idle" && (
         <section className="flex flex-col gap-1.5 rounded-card-lg bg-card p-4">
-          <p className="text-[17px] text-ink-muted">{labels.reviewRowsInFile.replace("{count}", String(rows.length))}</p>
-          <p className="text-[17px] text-ink-muted">{labels.preview.replace("{count}", String(parsed.valid.length))}</p>
+          <p className="text-[1.0625rem] text-ink-muted">{labels.reviewRowsInFile.replace("{count}", String(rows.length))}</p>
+          <p className="text-[1.0625rem] text-ink-muted">{labels.preview.replace("{count}", String(parsed.valid.length))}</p>
           {parsed.rejected.length > 0 && (
             <div className="mt-1 flex flex-col gap-1 rounded-xl bg-warn-tint p-3">
-              <span className="text-[17px] font-bold text-warn">{labels.rejectedTitle}</span>
+              <span className="text-[1.0625rem] font-bold text-warn">{labels.rejectedTitle}</span>
               {parsed.rejected.map((r) => (
-                <span key={r.reason} className="text-[17px] text-warn-text">
+                <span key={r.reason} className="text-[1.0625rem] text-warn-text">
                   {labels.rejectedReasons[r.reason]} ({r.count})
                 </span>
               ))}
@@ -271,21 +271,21 @@ export default function LaborCsvImporter({
         </section>
       )}
 
-      {stage === "working" && statusMessage && <p className="px-2 text-[17px] font-semibold text-ink-muted">{statusMessage}</p>}
+      {stage === "working" && statusMessage && <p className="px-2 text-[1.0625rem] font-semibold text-ink-muted">{statusMessage}</p>}
 
       {summary && (
         <section className="flex flex-col gap-2 rounded-card-lg bg-card p-4">
-          {summary.duplicate && <p className="text-[17px] font-semibold text-ink-muted">{labels.duplicateNotice}</p>}
-          <p className="text-[17px] font-semibold text-good">
+          {summary.duplicate && <p className="text-[1.0625rem] font-semibold text-ink-muted">{labels.duplicateNotice}</p>}
+          <p className="text-[1.0625rem] font-semibold text-good">
             {summary.dateFrom && summary.dateTo
               ? labels.resultSummary.replace("{imported}", String(summary.imported)).replace("{rowsInFile}", String(summary.rowsInFile)).replace("{dateFrom}", summary.dateFrom).replace("{dateTo}", summary.dateTo)
               : labels.resultSummaryNoDates.replace("{imported}", String(summary.imported)).replace("{rowsInFile}", String(summary.rowsInFile))}
           </p>
           {summary.rejectedRows.length > 0 && (
             <div className="flex flex-col gap-1 rounded-xl bg-warn-tint p-3">
-              <span className="text-[17px] font-bold text-warn">{labels.rejectedTitle}</span>
+              <span className="text-[1.0625rem] font-bold text-warn">{labels.rejectedTitle}</span>
               {summary.rejectedRows.map((r) => (
-                <span key={r.reason} className="text-[17px] text-warn-text">
+                <span key={r.reason} className="text-[1.0625rem] text-warn-text">
                   {labels.rejectedReasons[r.reason]} ({r.count})
                 </span>
               ))}
@@ -297,9 +297,9 @@ export default function LaborCsvImporter({
       {summary && summary.pendingWageReview.length > 0 && (
         <section className="flex flex-col gap-2.5 rounded-card-lg bg-card p-4">
           <h2 className="text-base font-bold text-warn">{labels.wageReviewTitle}</h2>
-          <p className="text-[17px] text-ink-muted">{labels.wageReviewHint}</p>
+          <p className="text-[1.0625rem] text-ink-muted">{labels.wageReviewHint}</p>
           {summary.pendingWageReview.map((row) => (
-            <div key={row.rowId} className="flex items-center justify-between gap-2 text-[17px] font-semibold">
+            <div key={row.rowId} className="flex items-center justify-between gap-2 text-[1.0625rem] font-semibold">
               <span className="min-w-0 flex-1 truncate">
                 {row.employee} — {row.clockInLabel}
               </span>
@@ -327,9 +327,9 @@ export default function LaborCsvImporter({
 
       {error && (
         <div className="flex flex-col gap-2 px-2">
-          <p className="text-[17px] text-warn">{error}</p>
+          <p className="text-[1.0625rem] text-warn">{error}</p>
           {stuckJobId && (
-            <button type="button" onClick={handleCancelStuck} disabled={isPending} className="inline-flex min-h-12 items-center self-start px-3 text-[17px] font-semibold text-ink underline">
+            <button type="button" onClick={handleCancelStuck} disabled={isPending} className="inline-flex min-h-12 items-center self-start px-3 text-[1.0625rem] font-semibold text-ink underline">
               {labels.cancelStuckImport}
             </button>
           )}

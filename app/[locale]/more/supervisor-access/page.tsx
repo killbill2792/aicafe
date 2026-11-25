@@ -18,16 +18,16 @@ export default async function SupervisorAccessPage({searchParams}:{searchParams:
  return <PageShell className="flex flex-col gap-5 px-4 py-6">
   <BackHeader titleAsHeading title={en.SupervisorAccess.title} subtitle={en.SupervisorAccess.subtitle}
    backHref={returnThread?"/?thread="+encodeURIComponent(returnThread):"/more"} backLabel={common("back")}/>
-  <p className="text-[17px] text-ink-muted">{en.SupervisorAccess.gmailIntro}</p>
+  <p className="text-[1.0625rem] text-ink-muted">{en.SupervisorAccess.gmailIntro}</p>
   <section className="rounded-card-lg border border-line bg-card p-5" aria-labelledby="supervisor-usage-heading">
    <h2 id="supervisor-usage-heading" className="font-headline text-xl font-bold">{usageCopy.title}</h2>
-   <p className="mt-2 text-[17px] font-semibold">{usageCopy.max}</p>
-   <p className="mt-1 text-[15px] text-ink-muted">{usageCopy.help}</p>
-   {usage?<><p className="mt-3 text-[15px] text-ink-muted">{usageCopy.month} · {usage.periodStart.slice(0,7)}</p>
+   <p className="mt-2 text-[1.0625rem] font-semibold">{usageCopy.max}</p>
+   <p className="mt-1 text-[0.9375rem] text-ink-muted">{usageCopy.help}</p>
+   {usage?<><p className="mt-3 text-[0.9375rem] text-ink-muted">{usageCopy.month} · {usage.periodStart.slice(0,7)}</p>
     <dl className="mt-3 grid grid-cols-2 gap-3">
      <div><dt>{usageCopy.requests}</dt><dd className="text-xl font-bold tabular-nums">{usage.ownerRequests.toLocaleString("en-US")}</dd></div>
      <div><dt>{usageCopy.proactive}</dt><dd className="text-xl font-bold tabular-nums">{usage.proactiveItems.toLocaleString("en-US")}</dd></div>
-    </dl></>:<p role="status" className="mt-3 text-[15px] text-ink-muted">{usageCopy.unavailable}</p>}
+    </dl></>:<p role="status" className="mt-3 text-[0.9375rem] text-ink-muted">{usageCopy.unavailable}</p>}
   </section>
   <GmailConnectionPanel/>
   <SupervisorAccessPanel/>

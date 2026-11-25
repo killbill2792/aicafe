@@ -4,6 +4,7 @@ import { getLocale, getTranslations } from "next-intl/server";
 import en from "@/messages/en.json";
 import { cookies } from "next/headers";
 import { parseThemeCookie, parseModeCookie } from "@/app/themes";
+import { parseTextSizeCookie } from "@/app/textSize";
 import { ThemePicker } from "@/components/ui/ThemePicker";
 import { requireUser } from "@/lib/auth/requireUser";
 import {isLinkedStaffUser} from "@/lib/staffCommunication/identity.server";
@@ -24,7 +25,7 @@ function MoreRow({ href, Icon, label, badge, warn = false }: {
   href: string; Icon: LucideIcon; label: string; badge?: FixBadge; warn?: boolean;
 }) {
   return <div className="flex min-h-14 items-center gap-2 border-b border-line px-2.5 last:border-b-0">
-    <Link href={href} className={`flex min-h-14 min-w-0 flex-1 items-center gap-3 py-2 text-[17px] no-underline ${warn ? "text-warn" : "text-ink"}`}>
+    <Link href={href} className={`flex min-h-14 min-w-0 flex-1 items-center gap-3 py-2 text-[1.0625rem] no-underline ${warn ? "text-warn" : "text-ink"}`}>
       <Icon aria-hidden="true" size={20} className={`shrink-0 ${warn ? "text-warn" : "text-ink-muted"}`} />
       <span className="min-w-0 flex-1 font-semibold">{label}</span>
       {!badge && <ChevronRight aria-hidden="true" size={18} className="shrink-0 text-ink-muted rtl:rotate-180" />}
@@ -93,7 +94,7 @@ export default async function MorePage() {
       <MoreRow href="/more/toast" Icon={CreditCard} label={t("toastConnect")} badge={toastBadge} />
       <MoreRow href="/more/gmail" Icon={Mail} label={en.More.gmailConnect} />
       <MoreRow href="/more/supervisor-access" Icon={Shield} label={en.SupervisorAccess.title} />
-      {evidence.toast?.checkMode&&<p className="px-4 text-[17px] text-muted">{toastCheck(evidence.toast.checkMode==="official"?"checkModeOfficial":"checkModeInternal")}</p>}
+      {evidence.toast?.checkMode&&<p className="px-4 text-[1.0625rem] text-muted">{toastCheck(evidence.toast.checkMode==="official"?"checkModeOfficial":"checkModeInternal")}</p>}
       <MoreRow href="/more/uploads" Icon={FileText} label={t("uploads")} badge={uploadBadge} />
       <MoreRow href="/more/processing-fees" Icon={Percent} label={t("processingFees")} badge={feesBadge} />
       <MoreRow href="/more/bills" Icon={Receipt} label={t("monthlyBills")} badge={billsBadge} />
@@ -107,7 +108,7 @@ export default async function MorePage() {
     </MoreGroup>
     <MoreGroup title={t("settings")}>
       <details className="border-b border-line px-2.5">
-        <summary className="flex min-h-14 cursor-pointer list-none items-center gap-3 py-2 text-[17px] font-semibold text-ink [&::-webkit-details-marker]:hidden">
+        <summary className="flex min-h-14 cursor-pointer list-none items-center gap-3 py-2 text-[1.0625rem] font-semibold text-ink [&::-webkit-details-marker]:hidden">
           <Languages aria-hidden="true" size={20} className="shrink-0 text-ink-muted" />
           <span className="min-w-0 flex-1">{t("language")}</span>
           <ChevronRight aria-hidden="true" size={18} className="text-ink-muted rtl:rotate-180" />
@@ -115,27 +116,28 @@ export default async function MorePage() {
         <div className="flex flex-wrap gap-2 pb-3 ps-8">
           {routing.locales.map((language) => <Link key={language} href="/more" locale={language}
             aria-current={locale === language ? "page" : undefined}
-            className={`inline-flex min-h-12 items-center rounded-full border px-4 text-[17px] font-semibold no-underline ${locale === language ? "border-accent-text bg-accent-soft text-accent-text" : "border-line text-ink"}`}>
+            className={`inline-flex min-h-12 items-center rounded-full border px-4 text-[1.0625rem] font-semibold no-underline ${locale === language ? "border-accent-text bg-accent-soft text-accent-text" : "border-line text-ink"}`}>
             {languageNames[language]}
           </Link>)}
         </div>
       </details>
       <details className="border-b border-line px-2.5">
-        <summary className="flex min-h-14 cursor-pointer list-none items-center gap-3 py-2 text-[17px] font-semibold text-ink [&::-webkit-details-marker]:hidden">
+        <summary className="flex min-h-14 cursor-pointer list-none items-center gap-3 py-2 text-[1.0625rem] font-semibold text-ink [&::-webkit-details-marker]:hidden">
           <SlidersHorizontal aria-hidden="true" size={20} className="shrink-0 text-ink-muted" />
           <span className="flex-1">{t("appearance")}</span>
           <ChevronRight aria-hidden="true" size={18} className="text-ink-muted rtl:rotate-180" />
         </summary>
         <div className="pb-3"><ThemePicker initialTheme={parseThemeCookie(cookieStore.get("cp_theme")?.value)}
-          initialMode={parseModeCookie(cookieStore.get("cp_mode")?.value)} /></div>
+          initialMode={parseModeCookie(cookieStore.get("cp_mode")?.value)}
+          initialTextSize={parseTextSizeCookie(cookieStore.get("cp_text")?.value)} /></div>
       </details>
       <MoreRow href="/more/access" Icon={CreditCard} label={t("pricingAccess")} />
       <div className="border-b border-line px-2.5 py-3">
-        <div className="flex items-center gap-3 text-[17px] font-semibold text-ink">
+        <div className="flex items-center gap-3 text-[1.0625rem] font-semibold text-ink">
           <UserRound aria-hidden="true" size={20} className="shrink-0 text-ink-muted" />
           <span>{t("account")}</span>
         </div>
-        {user?.email && <p className="mt-1 ps-8 text-[15px] text-ink-muted">
+        {user?.email && <p className="mt-1 ps-8 text-[0.9375rem] text-ink-muted">
           {t("signedInAs", { email: user.email })}
         </p>}
         {user && <div className="ps-8"><SignOutButton labels={{

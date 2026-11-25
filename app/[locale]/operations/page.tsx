@@ -159,7 +159,7 @@ export default async function OperationsPage({ searchParams }: { searchParams: P
           noThreads: t("whatsAppNoThreads"), phoneChanged: t("whatsAppPhoneChanged"),
         }}/>}
         <Link href="/operations/suppliers"
-          className="flex min-h-12 items-center justify-center self-start rounded-full border border-ink bg-card px-5 text-[17px] font-bold text-ink no-underline">
+          className="flex min-h-12 items-center justify-center self-start rounded-full border border-ink bg-card px-5 text-[1.0625rem] font-bold text-ink no-underline">
           {t("supplierSourcesLink")} →
         </Link>
       </>} />
@@ -209,8 +209,8 @@ function MetaLine({ t, meta, subjectDate, createdAt, status, expiredReason, keyN
     statusText,
   ].filter((part): part is string => Boolean(part));
   return <div className="mt-2 flex flex-col gap-1">
-    <p className="text-[17px] text-ink-muted" data-card-meta>{parts.join(" · ")}</p>
-    {keyNumber && <p className="text-[17px] font-bold text-ink" data-card-number>{keyNumber}</p>}
+    <p className="text-[1.0625rem] text-ink-muted" data-card-meta>{parts.join(" · ")}</p>
+    {keyNumber && <p className="text-[1.0625rem] font-bold text-ink" data-card-number>{keyNumber}</p>}
   </div>;
 }
 
@@ -301,10 +301,10 @@ function TaskCard({ row: task, names, t, tExperiment, tBrief, tGoals, category, 
     className={`scroll-mt-24 rounded-card-lg border-s-4 p-[18px] ${visual.border} ${visual.softSurface} ${selected?"ring-4 ring-ink shadow-lg":""}`}>
     <div className="flex items-center gap-2"><AgentAvatar agentId={task.agentId} size="task"/><p className={`font-bold ${visual.accent}`}>{names[task.agentId]} · AI</p>{task.payload.pricingIsEstimate === true && <span className="ms-auto"><EstimatePill label={t("estimate")} /></span>}</div>
     <h2 className="mt-3 text-lg font-bold text-ink" dir="auto">{copy.title}</h2>
-    {copy.detail && <p className="mt-1 whitespace-pre-wrap text-[17px] font-semibold text-ink" dir="auto">{copy.detail}</p>}
+    {copy.detail && <p className="mt-1 whitespace-pre-wrap text-[1.0625rem] font-semibold text-ink" dir="auto">{copy.detail}</p>}
     <MetaLine t={t} meta={meta} subjectDate={subjectDate} createdAt={task.createdAt} status={task.status}
       expiredReason={task.payload.expiredReason} keyNumber={experiment ? null : taskKeyNumber(task, t, meta)} />
-    {experiment&&<div className="mt-3 space-y-2 text-[17px]">
+    {experiment&&<div className="mt-3 space-y-2 text-[1.0625rem]">
       <p>{tExperiment("reportRevenue",{value:typeof task.payload.observedRevenueCents==="number"?
         formatCents(task.payload.observedRevenueCents):tExperiment("notAvailable")})}</p>
       <p>{tExperiment("reportDifference",{value:typeof task.payload.realizedRevenueDifferenceCents==="number"?

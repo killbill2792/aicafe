@@ -128,43 +128,43 @@ export default function InventoryPurchasePanel({items,month,rows,currency,locale
    }catch{setCsvStatus(t.csvFailed);}
   });
  };
- const input="mt-1 min-h-12 w-full min-w-0 rounded-xl border border-line bg-surface px-3 text-[17px]";
- const button="min-h-12 rounded-xl border border-line px-4 text-[17px] font-semibold disabled:opacity-50";
+ const input="mt-1 min-h-12 w-full min-w-0 rounded-xl border border-line bg-surface px-3 text-[1.0625rem]";
+ const button="min-h-12 rounded-xl border border-line px-4 text-[1.0625rem] font-semibold disabled:opacity-50";
  const fields=(d:Draft,onChange:(patch:Partial<Draft>)=>void,editingOld=false)=>{
   const choices=editingOld?items:activeItems;
   const selected=editingOld?items.find(i=>i.id===d.ingredientId)??null:selectedActiveIngredient(items,d.ingredientId);
   return <div className="grid gap-2 sm:grid-cols-5">
-  <label className="text-[17px]">{t.item}<select value={selected?.id??""} className={input}
+  <label className="text-[1.0625rem]">{t.item}<select value={selected?.id??""} className={input}
     onChange={e=>{const i=choices.find(x=>x.id===e.target.value);onChange({ingredientId:e.target.value,unit:i?.baseUnit??"each"});}}>
     <option value="" disabled>{t.item}</option>{choices.map(i=><option key={i.id} value={i.id}>{i.name}</option>)}</select></label>
-  <label className="text-[17px]">{t.quantity}<input className={input} type="text" inputMode="decimal" value={d.quantity}
+  <label className="text-[1.0625rem]">{t.quantity}<input className={input} type="text" inputMode="decimal" value={d.quantity}
     onChange={e=>onChange({quantity:e.target.value})}/></label>
-  <label className="text-[17px]">{t.unit}<select className={input} value={selected?d.unit:""}
+  <label className="text-[1.0625rem]">{t.unit}<select className={input} value={selected?d.unit:""}
     onChange={e=>onChange({unit:e.target.value})}>
     <option value="" disabled>{t.unit}</option>{(selected?[...new Set([...commonUnits[selected.baseUnit],d.unit])]:[]).map(u=><option key={u}>{u}</option>)}</select></label>
-  <label className="text-[17px]">{t.cost}<input className={input} type="text" inputMode="decimal"
+  <label className="text-[1.0625rem]">{t.cost}<input className={input} type="text" inputMode="decimal"
     placeholder={t.optional} value={d.cost}
     onChange={e=>onChange({cost:e.target.value})}/></label>
-  <label className="text-[17px]">{t.date}<input className={input} type="date" value={d.date}
+  <label className="text-[1.0625rem]">{t.date}<input className={input} type="date" value={d.date}
     onChange={e=>onChange({date:e.target.value})}/></label>
  </div>;
  };
  return <section dir={locale==="ar"?"rtl":"ltr"} className="mb-5 space-y-4 rounded-2xl border border-line bg-surface p-4 text-ink">
   <h2 className="text-xl font-bold">{t.heading}</h2>
   <div className="flex flex-wrap items-end gap-3">
-   <label className="text-[17px]">{t.month}<input type="month" value={month} className={input}
+   <label className="text-[1.0625rem]">{t.month}<input type="month" value={month} className={input}
      onChange={e=>router.push("/menu/pantry?month="+encodeURIComponent(e.target.value))}/></label>
    <Link href="/add-cost/receipt" className={button+" inline-flex items-center bg-accent text-on-accent"}>{t.photo}</Link>
   </div>
-  {unavailable&&<p role="alert" className="text-[17px] text-neg">{t.unavailable}</p>}
+  {unavailable&&<p role="alert" className="text-[1.0625rem] text-neg">{t.unavailable}</p>}
   {!unavailable&&<div className="space-y-2">
-   {rows.filter(r=>!r.voided).length===0&&<p className="text-[17px] text-muted">{t.empty}</p>}
+   {rows.filter(r=>!r.voided).length===0&&<p className="text-[1.0625rem] text-muted">{t.empty}</p>}
    {rows.filter(r=>!r.voided).map(r=><div key={r.lineId} className="rounded-xl border border-line p-3">
     <div className="flex flex-wrap items-center justify-between gap-2">
-     <div><p className="text-[17px] font-bold">{r.ingredientName}</p>
-      <p className="text-[17px] text-muted">{r.date} · {qty(r.quantity)+" "+r.unit+" · "+qty(r.baseQuantity)+" "+r.baseUnit}</p>
-      <span className="text-[17px] text-muted">{sourceLabel(r.source)}</span></div>
-     <p className="text-[17px] font-semibold">{money(r.costCents)}</p>
+     <div><p className="text-[1.0625rem] font-bold">{r.ingredientName}</p>
+      <p className="text-[1.0625rem] text-muted">{r.date} · {qty(r.quantity)+" "+r.unit+" · "+qty(r.baseQuantity)+" "+r.baseUnit}</p>
+      <span className="text-[1.0625rem] text-muted">{sourceLabel(r.source)}</span></div>
+     <p className="text-[1.0625rem] font-semibold">{money(r.costCents)}</p>
     </div>
     {editing===r.lineId&&editDraft?<div className="mt-3 space-y-2">
       {fields(editDraft,patch=>setEditDraft(v=>v?{...v,...patch}:v),true)}
@@ -174,11 +174,11 @@ export default function InventoryPurchasePanel({items,month,rows,currency,locale
       <button type="button" disabled={pending} className={button} onClick={()=>beginEdit(r)}>{t.edit}</button>
       <button type="button" disabled={pending} className={button} onClick={()=>voidLine(r.lineId)}>{t.void}</button>
      </div>}
-    {errors[r.lineId]&&<p role="alert" className="text-[17px] text-neg">{errors[r.lineId]==="invalid_cost"?t.invalidCost:errors[r.lineId]==="invalid_quantity"?t.invalidQuantity:t.failed}</p>}
+    {errors[r.lineId]&&<p role="alert" className="text-[1.0625rem] text-neg">{errors[r.lineId]==="invalid_cost"?t.invalidCost:errors[r.lineId]==="invalid_quantity"?t.invalidQuantity:t.failed}</p>}
    </div>)}
    {!!totals.length&&<div className="rounded-xl bg-surface2 p-3">
-    <h3 className="mb-2 text-[17px] font-bold">{t.totals}</h3>
-    {totals.map(v=><p key={v.name} className="flex flex-wrap justify-between gap-2 text-[17px]">
+    <h3 className="mb-2 text-[1.0625rem] font-bold">{t.totals}</h3>
+    {totals.map(v=><p key={v.name} className="flex flex-wrap justify-between gap-2 text-[1.0625rem]">
      <span>{v.name+" · "+qty(v.total)+" "+v.unit}</span><strong>{money(v.cost)}</strong></p>)}
    </div>}
   </div>}
@@ -186,7 +186,7 @@ export default function InventoryPurchasePanel({items,month,rows,currency,locale
    <h3 className="text-lg font-bold">{t.bulk}</h3>
    {drafts.map(d=><div key={d.lineId} className="rounded-xl border border-line p-3">
     {fields(d,patch=>update(d.lineId,patch))}
-    {errors[d.lineId]&&<p role="alert" className="text-[17px] text-neg">{errors[d.lineId]==="invalid_cost"?t.invalidCost:errors[d.lineId]==="invalid_quantity"?t.invalidQuantity:t.failed}</p>}
+    {errors[d.lineId]&&<p role="alert" className="text-[1.0625rem] text-neg">{errors[d.lineId]==="invalid_cost"?t.invalidCost:errors[d.lineId]==="invalid_quantity"?t.invalidQuantity:t.failed}</p>}
     <button type="button" className={button+" mt-2"} onClick={()=>setDrafts(v=>v.filter(x=>x.lineId!==d.lineId))}>{t.remove}</button>
    </div>)}
    <div className="flex flex-wrap gap-2">
@@ -197,15 +197,15 @@ export default function InventoryPurchasePanel({items,month,rows,currency,locale
   </div>
   <div className="space-y-3 border-t border-line pt-3">
    <h3 className="text-lg font-bold">{t.csv}</h3>
-   <label className="block text-[17px]">{t.chooseFile}<input type="file" accept={UPLOAD_FILE_ACCEPT}
-    className="mt-2 block min-h-12 w-full text-[17px]" onChange={e=>void chooseFile(e.target.files?.[0]??null)}/></label>
-   {fileText&&<div className="grid gap-2 sm:grid-cols-2">{columns.map(k=><label key={k} className="text-[17px]">{t[k]}
+   <label className="block text-[1.0625rem]">{t.chooseFile}<input type="file" accept={UPLOAD_FILE_ACCEPT}
+    className="mt-2 block min-h-12 w-full text-[1.0625rem]" onChange={e=>void chooseFile(e.target.files?.[0]??null)}/></label>
+   {fileText&&<div className="grid gap-2 sm:grid-cols-2">{columns.map(k=><label key={k} className="text-[1.0625rem]">{t[k]}
     <select className={input} value={mapping[k]??""} onChange={e=>setMapping(v=>({...v,[k]:e.target.value}))}>
      <option value="">{t.none}</option>{fileHeaders.map(h=><option key={h} value={h}>{h}</option>)}</select>
     </label>)}</div>}
    {fileText&&<button type="button" className={button+" bg-accent text-on-accent"} disabled={pending||
     !mapping.date||!mapping.item||!mapping.quantity||!mapping.unit} onClick={submitCsv}>{t.import}</button>}
-   {csvStatus&&<p role="status" className="text-[17px]">{csvStatus}</p>}
+   {csvStatus&&<p role="status" className="text-[1.0625rem]">{csvStatus}</p>}
   </div>
  </section>;
 }

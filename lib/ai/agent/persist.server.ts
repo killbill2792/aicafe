@@ -6,7 +6,7 @@ import { recordSupervisorUsage } from "@/lib/ai/conversations/usage.server";
 import type { ConversationMessage, ConversationScope, GroundedSupervisorReply } from "@/lib/ai/conversations/contracts";
 import type { AgentTurn } from "./loop.server";
 import {explainLineSchema} from "./explain";
-import {routineCardSchema} from "@/lib/ai/conversations/contracts";
+import {routineCardSchema,routineDraftSchema} from "@/lib/ai/conversations/contracts";
 
 export class AgentReplyTooLongError extends Error { constructor() { super("agent_reply_too_long"); } }
 export class AgentReplyStorageError extends Error { constructor() { super("agent_reply_storage_failed"); } }
@@ -108,21 +108,29 @@ export function agentReplyPayload(turn: AgentTurn) {
     });
     return parsed.success?[parsed.data]:[];
   })[0]??null;
+  // An unsaved routine is shown as an approve-first card built only from the tool's own draft receipt.
+  const routineDraft=[...turn.results].reverse().flatMap(result=>{
+    if(result.source!=="supervisor_routines"||result.draft!==true||result.saved!==false||
+      result.missing.length||result.error||!result.routineDraft||typeof result.routineDraft!=="object")return [];
+    const parsed=routineDraftSchema.safeParse({type:"routine_draft",...(result.routineDraft as Record<string,unknown>)});
+    return parsed.success?[parsed.data]:[];
+  })[0]??null;
   const explanation=(turn.explain??[]).flatMap(item=>{
     const parsed=explainLineSchema.safeParse(item);
     return parsed.success?[parsed.data]:[];
   }).slice(0,20);
   const reserved=Number(Boolean(clarify))+Number(explanation.length>0);
-  const cardCount=proposalIds.length+experimentIds.length+memoryRuleIds.length+Number(Boolean(clarify))+Number(Boolean(savedRoutine));
+  const cardCount=proposalIds.length+experimentIds.length+memoryRuleIds.length+Number(Boolean(clarify))+Number(Boolean(savedRoutine))+Number(Boolean(routineDraft));
   if(cardCount>30)throw new AgentReplyTooLongError();
   blocks=isOnlyQuestion?[]:splitAgentText(turn.text,turn.provenance??turn.unverified,30-cardCount);
-  const safeExplain=blocks.length+proposalIds.length+experimentIds.length+memoryRuleIds.length+Number(Boolean(savedRoutine))+reserved<=30?explanation:[];
+  const safeExplain=blocks.length+proposalIds.length+experimentIds.length+memoryRuleIds.length+Number(Boolean(savedRoutine))+Number(Boolean(routineDraft))+reserved<=30?explanation:[];
   const status = persistedAgentStatus(turn);
   const reply: GroundedSupervisorReply = { intent: "unknown", status, evidence: [], blocks:[...blocks,
     ...proposalIds.map(proposalId=>({type:"proposal_card" as const,proposalId})),
     ...experimentIds.map(proposalId=>({type:"experiment_card" as const,proposalId})),
     ...memoryRuleIds.map(ruleId=>({type:"memory_card" as const,ruleId})),
     ...(savedRoutine?[savedRoutine]:[]),
+    ...(routineDraft?[routineDraft]:[]),
     ...(clarify&&typeof clarify.question==="string"&&clarify.kind==="facts"&&
       typeof clarify.questionId==="string"&&Array.isArray(clarify.fields)?
      [{type:"clarify" as const,kind:"facts" as const,questionId:clarify.questionId,question:clarify.question,

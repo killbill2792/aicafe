@@ -45,7 +45,7 @@ export default function LoginForm({ callbackError = false }: { callbackError?: b
 
   if (status === "sent") {
     return (
-      <div className="rounded-3xl bg-good-tint p-5 text-[17px] leading-snug text-ink">
+      <div className="rounded-3xl bg-good-tint p-5 text-[1.0625rem] leading-snug text-ink">
         {t("checkEmail", { email })}
       </div>
     );
@@ -53,7 +53,7 @@ export default function LoginForm({ callbackError = false }: { callbackError?: b
 
   return (
     <form onSubmit={handleSubmit} className="flex flex-col gap-3">
-      <label htmlFor="email" className="text-[15px] font-semibold text-ink">
+      <label htmlFor="email" className="text-[0.9375rem] font-semibold text-ink">
         {t("emailLabel")}
       </label>
       <input
@@ -65,25 +65,25 @@ export default function LoginForm({ callbackError = false }: { callbackError?: b
         value={email}
         onChange={(event) => setEmail(event.target.value)}
         placeholder={t("emailPlaceholder")}
-        className="h-14 rounded-2xl border border-line bg-card px-4 text-[17px] text-ink placeholder:text-ink-muted focus:outline-none focus-visible:ring-2 focus-visible:ring-ink focus-visible:ring-offset-2"
+        className="h-14 rounded-2xl border border-line bg-card px-4 text-[1.0625rem] text-ink placeholder:text-ink-muted focus:outline-none focus-visible:ring-2 focus-visible:ring-ink focus-visible:ring-offset-2"
       />
       {mode === "password" && <>
-        <label htmlFor="login-password" className="text-[15px] font-semibold text-ink">{t("passwordLabel")}</label>
-        <input id="login-password" type="password" required autoComplete="current-password" value={password} onChange={event => setPassword(event.target.value)} className="h-14 rounded-2xl border border-line bg-card px-4 text-[17px] text-ink" />
+        <label htmlFor="login-password" className="text-[0.9375rem] font-semibold text-ink">{t("passwordLabel")}</label>
+        <input id="login-password" type="password" required autoComplete="current-password" value={password} onChange={event => setPassword(event.target.value)} className="h-14 rounded-2xl border border-line bg-card px-4 text-[1.0625rem] text-ink" />
         <Link href="/forgot-password" className="text-end text-sm font-semibold text-ink underline">{t("forgotPassword")}</Link>
       </>}
       <button
         type="submit"
         disabled={status === "sending"}
-        className="h-[60px] rounded-full bg-accent text-[18px] font-bold text-on-accent disabled:opacity-60"
+        className="h-[60px] rounded-full bg-accent text-[1.125rem] font-bold text-on-accent disabled:opacity-60"
       >
         {status === "sending" ? t("sending") : mode === "password" ? t("signIn") : t("sendLink")}
       </button>
       <button type="button" onClick={() => { setMode(mode === "password" ? "magic" : "password"); setStatus("idle"); }} className="text-sm font-semibold text-ink underline">{mode === "password" ? t("useMagicLink") : t("usePassword")}</button>
       <p className="text-center text-sm text-ink-muted">{t("noAccount")} <Link href="/signup" className="font-bold text-ink underline">{t("createAccount")}</Link></p>
-      {callbackError && <p role="alert" className="text-[15px] text-warn">{t("callbackError")}</p>}
-      {status === "error" && <p className="text-[15px] text-warn">{t("error")}</p>}
-      {status === "not_configured" && <p className="text-[15px] text-warn">{t("notConfigured")}</p>}
+      {callbackError && <p role="alert" className="text-[0.9375rem] text-warn">{t("callbackError")}</p>}
+      {status === "error" && <p className="text-[0.9375rem] text-warn">{t("error")}</p>}
+      {status === "not_configured" && <p className="text-[0.9375rem] text-warn">{t("notConfigured")}</p>}
     </form>
   );
 }

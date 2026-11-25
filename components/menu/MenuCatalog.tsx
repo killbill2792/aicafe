@@ -112,7 +112,7 @@ export default function MenuCatalog({ items, photosPromise }: {
       <label className="flex min-h-12 items-center gap-2 rounded-2xl bg-card px-3 text-ink-muted">
         <Search aria-hidden="true" size={20} />
         <span className="sr-only">{t("search")}</span>
-        <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder={t("search")} className="min-w-0 flex-1 bg-transparent text-[17px] text-ink outline-none" />
+        <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder={t("search")} className="min-w-0 flex-1 bg-transparent text-[1.0625rem] text-ink outline-none" />
       </label>
       <div className="-mx-1 flex gap-2 overflow-x-auto px-1 pb-1" role="group" aria-label={t("all")}>
         {tabs.map(([value, label]) => (
@@ -132,14 +132,14 @@ export default function MenuCatalog({ items, photosPromise }: {
               </div>
               <div className="min-w-0 flex-1 py-0.5">
                 <h2 className="text-xl font-extrabold leading-tight">{group.baseName}</h2>
-                {group.sizeLabels.length > 0 && <p className="mt-1 line-clamp-2 text-[15px] text-ink-muted">{group.sizeLabels.join(" · ")}</p>}
-                <p className="mt-2 font-headline text-[25px] font-bold leading-none">{renderPrice(group)}</p>
+                {group.sizeLabels.length > 0 && <p className="mt-1 line-clamp-2 text-[0.9375rem] text-ink-muted">{group.sizeLabels.join(" · ")}</p>}
+                <p className="mt-2 font-headline text-[1.5625rem] font-bold leading-none">{renderPrice(group)}</p>
               </div>
             </div>
             <div className="px-4 pb-4">{renderStatus(group)}</div>
           </Link>;
         })}
-        {groups.length === 0 && <p className="rounded-card-lg bg-card p-5 text-[17px] text-ink-muted md:col-span-full">{t("empty")}</p>}
+        {groups.length === 0 && <p className="rounded-card-lg bg-card p-5 text-[1.0625rem] text-ink-muted md:col-span-full">{t("empty")}</p>}
       </div>
     </>
   );

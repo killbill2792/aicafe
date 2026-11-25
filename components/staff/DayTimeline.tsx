@@ -24,12 +24,12 @@ export default function DayTimeline({date,shifts,gaps,openHours,people,onShiftCl
     const style=palettes[Math.abs(person?.colorIndex??people.findIndex(p=>p.id===block.employeeId))%palettes.length];
     return <button type="button" key={block.id} title={block.title.replace(/^Team /,t("team")+" ")} aria-label={block.title}
      onClick={()=>onShiftClick?.(block.id)} disabled={!onShiftClick}
-     className={`absolute flex h-12 min-w-12 items-center truncate rounded-lg border px-2 text-[17px] font-bold ${style} ${preview?.id===block.id?"outline outline-[3px] outline-offset-1 outline-accent-text":""}`}
+     className={`absolute flex h-12 min-w-12 items-center truncate rounded-lg border px-2 text-[1.0625rem] font-bold ${style} ${preview?.id===block.id?"outline outline-[3px] outline-offset-1 outline-accent-text":""}`}
      style={{top:block.top,left:block.left+"%",width:Math.max(block.width,4)+"%"}}>
      <span className="truncate">{block.title}</span></button>;
    })}
   </div>
-  <div className="relative mt-2 h-4 text-[11px] font-semibold text-muted">{rendered.ticks.map(t=>
+  <div className="relative mt-2 h-4 text-[0.6875rem] font-semibold text-muted">{rendered.ticks.map(t=>
     <span key={t.at} className="absolute -translate-x-1/2" style={{left:t.at+"%"}}>{t.label}</span>)}</div>
  </div>;
 }

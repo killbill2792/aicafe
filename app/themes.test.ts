@@ -6,9 +6,9 @@ const luminance = (hex: string) => { const [r,g,b] = hex.slice(1).match(/../g)!.
 const contrast = (a: string,b: string) => (Math.max(luminance(a),luminance(b))+.05)/(Math.min(luminance(a),luminance(b))+.05);
 const tokenNames=Object.keys(themes[0].light);
 describe("theme foundation",()=>{
-  it("defines every semantic token for all eight light/dark themes",()=>{
-    expect(themes).toHaveLength(8);
-    expect(new Set(themes.map(t=>t.id)).size).toBe(8);
+  it("defines every semantic token for all nine light/dark themes",()=>{
+    expect(themes).toHaveLength(9);
+    expect(new Set(themes.map(t=>t.id)).size).toBe(9);
     for(const theme of themes)for(const mode of ["light","dark"] as const){
       const t=theme[mode];expect(Object.keys(t).sort()).toEqual([...tokenNames].sort());
       for(const value of Object.values(t))expect(value).toMatch(/^#[0-9A-F]{6}$/);
@@ -28,8 +28,8 @@ describe("theme foundation",()=>{
   });
   it("checks committed CSS against the source",()=>{expect(()=>execFileSync(process.execPath,["scripts/build-themes.mjs","--check"])).not.toThrow()});
   it("uses safe cookie defaults",()=>{
-    expect(parseThemeCookie(undefined)).toBe("fresh-pour");
-    expect(parseThemeCookie("invalid")).toBe("fresh-pour");
+    expect(parseThemeCookie(undefined)).toBe("glass");
+    expect(parseThemeCookie("invalid")).toBe("glass");
     expect(parseThemeCookie("matcha")).toBe("matcha");
     expect(parseModeCookie(undefined)).toBe("system");
     expect(parseModeCookie("invalid")).toBe("system");

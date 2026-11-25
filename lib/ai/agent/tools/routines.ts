@@ -46,7 +46,11 @@ export const routineTools={
         return {...base,missing:[],sources:page.sources,next_offset:page.nextOffset};
       }
       if(input.action==="create"){
-        return {...base,missing:[],routine:await port.create(fullSchedule(input),input.goal_source_message_id)};
+        const schedule=fullSchedule(input);
+        // The owner approves first: nothing is saved until they tap Save on the card.
+        if(port.draft)return {...base,missing:[],draft:true,saved:false,
+          routineDraft:{...schedule,...port.draft(schedule,input.goal_source_message_id)}};
+        return {...base,missing:[],routine:await port.create(schedule,input.goal_source_message_id)};
       }
       if(!input.routine_id||!input.revision)
         throw new Error("A saved routine ID and revision are required");

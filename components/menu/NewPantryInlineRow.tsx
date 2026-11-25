@@ -45,22 +45,22 @@ export default function NewPantryInlineRow({onCancel,onCreated}:{onCancel:()=>vo
   <div className="grid gap-2 md:grid-cols-[1fr_1fr_140px]">
    <label className="min-w-0 font-semibold">{t("name")}
     <input autoFocus value={name} onChange={e=>setName(e.target.value)} placeholder={t("newIngredient")}
-     className="mt-1 min-h-12 w-full rounded-xl border border-line bg-card px-3 text-[17px]"/>
+     className="mt-1 min-h-12 w-full rounded-xl border border-line bg-card px-3 text-[1.0625rem]"/>
    </label>
    <label className="min-w-0 font-semibold">{t("packSize")}
     <input value={pack} onChange={e=>{setPack(e.target.value);setMeasure(null);}}
      placeholder={t("purchasePackExampleLiquid")}
-     className="mt-1 min-h-12 w-full rounded-xl border border-line bg-card px-3 text-[17px]"/>
+     className="mt-1 min-h-12 w-full rounded-xl border border-line bg-card px-3 text-[1.0625rem]"/>
    </label>
    <label className="min-w-0 font-semibold">{t("packPrice")}
     <input inputMode="decimal" value={price} onChange={e=>setPrice(e.target.value)}
-     placeholder={t("packPrice")} className="mt-1 min-h-12 w-full rounded-xl border border-line bg-card px-3 text-[17px]"/>
+     placeholder={t("packPrice")} className="mt-1 min-h-12 w-full rounded-xl border border-line bg-card px-3 text-[1.0625rem]"/>
    </label>
   </div>
   {/* Optional: the default stays Other, but milk must be classifiable for add-ons. */}
   <label className="mt-2 block font-semibold">{t("category")}
    <select value={category} onChange={e=>setCategory(e.target.value as PantryCategory)}
-    className="mt-1 min-h-12 w-full rounded-xl border border-line bg-card px-3 text-[17px]">
+    className="mt-1 min-h-12 w-full rounded-xl border border-line bg-card px-3 text-[1.0625rem]">
     {PANTRY_CATEGORY_CHOICES.map(choice=><option key={choice.value} value={choice.value}>{t(choice.labelKey)}</option>)}
    </select>
   </label>
@@ -69,9 +69,9 @@ export default function NewPantryInlineRow({onCancel,onCreated}:{onCancel:()=>vo
     <option value="">{t("measurementType")}</option>{(matches.length?matches:[{baseUnit:"ml" as const},{baseUnit:"g" as const},{baseUnit:"each" as const}]).map(x=><option key={x.baseUnit} value={x.baseUnit}>{x.baseUnit==="ml"?t("liquidMeasurement"):x.baseUnit==="g"?t("weightMeasurement"):t("pieceMeasurement")}</option>)}
    </select>
   </label>}
-  {!pack.trim()&&!price.trim()&&<p className="mt-2 text-[15px] text-ink-muted">{t("priceCanComeLater")}</p>}
-  {partial&&<p role="status" className="mt-2 text-[17px] text-warn">{t("createdWithoutPrice")}</p>}
-  {error&&<p role="alert" className="mt-2 text-[17px] text-warn">{error}</p>}
+  {!pack.trim()&&!price.trim()&&<p className="mt-2 text-[0.9375rem] text-ink-muted">{t("priceCanComeLater")}</p>}
+  {partial&&<p role="status" className="mt-2 text-[1.0625rem] text-warn">{t("createdWithoutPrice")}</p>}
+  {error&&<p role="alert" className="mt-2 text-[1.0625rem] text-warn">{error}</p>}
   <div className="mt-3 flex flex-wrap gap-2">
    <button type="button" disabled={pending||!name.trim()||partial} onClick={submit} className="min-h-12 rounded-xl bg-accent px-5 font-bold text-on-accent disabled:opacity-40">{t("create")}</button>
    <button type="button" onClick={onCancel} className="min-h-12 rounded-xl border border-line px-4">{t("cancel")}</button>

@@ -151,7 +151,7 @@ export default function StatementUploader({
     return (
       <label className="flex flex-col items-center gap-3 rounded-card-lg border-2 border-dashed border-line bg-card p-8 text-center">
         <span className="text-base font-semibold text-ink">{isPending ? labels.reading : labels.uploadPrompt}</span>
-        <span className="flex min-h-12 items-center rounded-full bg-accent px-5 py-2.5 text-[17px] font-bold text-on-accent">{labels.chooseFile}</span>
+        <span className="flex min-h-12 items-center rounded-full bg-accent px-5 py-2.5 text-[1.0625rem] font-bold text-on-accent">{labels.chooseFile}</span>
         <input
           type="file"
           accept={UPLOAD_FILE_ACCEPT}
@@ -168,8 +168,8 @@ export default function StatementUploader({
   if (!state.ok) {
     return (
       <div className="flex flex-col gap-3 rounded-card-lg bg-warn-tint p-4">
-        <p role="alert" className="text-[17px] text-warn">{state.error}</p>
-        <button type="button" onClick={() => setState(null)} className="min-h-12 rounded-full border border-line px-4 text-[17px] font-bold text-ink">{labels.tryAgain}</button>
+        <p role="alert" className="text-[1.0625rem] text-warn">{state.error}</p>
+        <button type="button" onClick={() => setState(null)} className="min-h-12 rounded-full border border-line px-4 text-[1.0625rem] font-bold text-ink">{labels.tryAgain}</button>
       </div>
     );
   }
@@ -177,33 +177,33 @@ export default function StatementUploader({
   return (
     <div className="flex flex-col gap-3.5">
       {state.balanceCheck && (
-        <div className={`rounded-2xl p-3.5 text-[17px] font-semibold ${state.balanceCheck.ok ? "bg-good-tint text-good" : "bg-warn-tint text-warn"}`}>
+        <div className={`rounded-2xl p-3.5 text-[1.0625rem] font-semibold ${state.balanceCheck.ok ? "bg-good-tint text-good" : "bg-warn-tint text-warn"}`}>
           {state.balanceCheck.ok ? labels.balanceOk : labels.balanceMismatch}
         </div>
       )}
       {state.balanceCheck && !state.balanceCheck.ok && (
-        <button type="button" onClick={() => { if (!saveLock.current && !isSavingOrSaved) setMissingLine(true); }} disabled={isSavingOrSaved} className="min-h-12 rounded-full border border-warn px-4 py-3 text-[17px] font-bold text-warn disabled:opacity-40">{labels.addMissingLine}</button>
+        <button type="button" onClick={() => { if (!saveLock.current && !isSavingOrSaved) setMissingLine(true); }} disabled={isSavingOrSaved} className="min-h-12 rounded-full border border-warn px-4 py-3 text-[1.0625rem] font-bold text-warn disabled:opacity-40">{labels.addMissingLine}</button>
       )}
       {missingLine && (
         <div className="flex flex-col gap-3 rounded-card-lg border border-warn bg-card p-4">
-          <p className="text-[17px] text-ink-muted">{labels.missingLineHint}</p>
-          <label className="flex flex-col gap-1 text-[17px] font-semibold">{labels.missingDescription}
-            <input type="text" value={missingDescription} onChange={(e) => setMissingDescription(e.target.value)} className="min-h-12 rounded-xl border border-line px-3 text-[17px]" />
+          <p className="text-[1.0625rem] text-ink-muted">{labels.missingLineHint}</p>
+          <label className="flex flex-col gap-1 text-[1.0625rem] font-semibold">{labels.missingDescription}
+            <input type="text" value={missingDescription} onChange={(e) => setMissingDescription(e.target.value)} className="min-h-12 rounded-xl border border-line px-3 text-[1.0625rem]" />
           </label>
-          <label className="flex flex-col gap-1 text-[17px] font-semibold">{labels.missingAmount}
-            <input type="number" min="0.01" step="0.01" value={missingAmount} onChange={(e) => setMissingAmount(e.target.value)} className="min-h-12 rounded-xl border border-line px-3 text-[17px]" />
+          <label className="flex flex-col gap-1 text-[1.0625rem] font-semibold">{labels.missingAmount}
+            <input type="number" min="0.01" step="0.01" value={missingAmount} onChange={(e) => setMissingAmount(e.target.value)} className="min-h-12 rounded-xl border border-line px-3 text-[1.0625rem]" />
           </label>
-          <label className="flex flex-col gap-1 text-[17px] font-semibold">{labels.missingDate}
-            <input type="date" value={missingDate} onChange={(e) => setMissingDate(e.target.value)} className="min-h-12 rounded-xl border border-line px-3 text-[17px]" />
+          <label className="flex flex-col gap-1 text-[1.0625rem] font-semibold">{labels.missingDate}
+            <input type="date" value={missingDate} onChange={(e) => setMissingDate(e.target.value)} className="min-h-12 rounded-xl border border-line px-3 text-[1.0625rem]" />
           </label>
-          <label className="flex flex-col gap-1 text-[17px] font-semibold">{labels.missingCategory}
-            <select value={missingCategory} onChange={(e) => setMissingCategory(e.target.value as ExpenseCategoryCode)} className="min-h-12 rounded-xl border border-line px-3 text-[17px]">
+          <label className="flex flex-col gap-1 text-[1.0625rem] font-semibold">{labels.missingCategory}
+            <select value={missingCategory} onChange={(e) => setMissingCategory(e.target.value as ExpenseCategoryCode)} className="min-h-12 rounded-xl border border-line px-3 text-[1.0625rem]">
               {EXPENSE_CATEGORY_CODES.map((code) => <option key={code} value={code}>{categoryLabels[code]}</option>)}
             </select>
           </label>
           <div className="flex flex-wrap gap-3">
-            <button type="button" onClick={addMissingLine} disabled={!missingCandidate || isSavingOrSaved} className="min-h-12 flex-1 rounded-full bg-accent px-4 text-[17px] font-bold text-on-accent disabled:opacity-40">{labels.missingConfirm}</button>
-            <button type="button" onClick={() => { if (!saveLock.current && !isSavingOrSaved) { setMissingLine(false); setMissingDescription(""); setMissingAmount(""); setMissingDate(""); } }} disabled={isSavingOrSaved} className="min-h-12 flex-1 rounded-full border border-line px-4 text-[17px] font-bold text-ink disabled:opacity-40">{labels.missingCancel}</button>
+            <button type="button" onClick={addMissingLine} disabled={!missingCandidate || isSavingOrSaved} className="min-h-12 flex-1 rounded-full bg-accent px-4 text-[1.0625rem] font-bold text-on-accent disabled:opacity-40">{labels.missingConfirm}</button>
+            <button type="button" onClick={() => { if (!saveLock.current && !isSavingOrSaved) { setMissingLine(false); setMissingDescription(""); setMissingAmount(""); setMissingDate(""); } }} disabled={isSavingOrSaved} className="min-h-12 flex-1 rounded-full border border-line px-4 text-[1.0625rem] font-bold text-ink disabled:opacity-40">{labels.missingCancel}</button>
           </div>
         </div>
       )}
@@ -215,11 +215,11 @@ export default function StatementUploader({
           return (
             <div key={line.i} role={needsReview ? "group" : undefined} aria-label={needsReview ? labels.lowConfidence : undefined} className={`flex flex-col gap-2 border-b p-2.5 last:border-b-0 ${needsReview ? "rounded-xl border-2 border-warn bg-warn-tint" : "border-line"}`}>
               <div className="flex items-center justify-between gap-2">
-                <span className="flex-1 text-[17px] font-semibold text-ink">{line.description}</span>
-                <span className="text-[17px] font-bold">{formatAmount(line.amountCents)}</span>
+                <span className="flex-1 text-[1.0625rem] font-semibold text-ink">{line.description}</span>
+                <span className="text-[1.0625rem] font-bold">{formatAmount(line.amountCents)}</span>
               </div>
               <div className="flex items-center justify-between gap-2">
-                <span className={`text-[13px] ${line.confidence < 0.7 ? "font-bold text-warn" : "text-ink-muted"}`}>
+                <span className={`text-[0.8125rem] ${line.confidence < 0.7 ? "font-bold text-warn" : "text-ink-muted"}`}>
                   {line.reason}
                   {line.confidence < 0.7 ? ` · ${labels.lowConfidence}` : ""}
                 </span>
@@ -227,7 +227,7 @@ export default function StatementUploader({
                   value={isExcluded ? "exclude" : category}
                   onChange={(e) => updateCategory(line.i, e.target.value as ExpenseCategoryCode | "exclude")}
                   disabled={isSavingOrSaved}
-                  className="min-h-12 rounded-full border border-line bg-card px-2.5 py-1 text-[17px] font-semibold disabled:opacity-40"
+                  className="min-h-12 rounded-full border border-line bg-card px-2.5 py-1 text-[1.0625rem] font-semibold disabled:opacity-40"
                 >
                   {EXPENSE_CATEGORY_CODES.map((c) => (
                     <option key={c} value={c}>
@@ -246,7 +246,7 @@ export default function StatementUploader({
         {confirmCash&&<><p className="text-ink-muted">{t("statementCashDated",{amount:formatAmount(state.cashEvidence.closingCents),date:state.cashEvidence.asOf})}</p><label className="flex flex-col gap-1">{t("statementCashNickname")}<input value={accountAlias} maxLength={60} disabled={isSavingOrSaved} onChange={e=>setAccountAlias(e.target.value)} className="min-h-12 rounded-xl border border-line px-3" /></label></>}
       </div>}
       {cashError&&<p role="alert" className="text-warn">{t("statementCashError")}</p>}
-      {saveStatus === "error" && <p role="alert" className="text-[17px] text-warn">{labels.saveError}</p>}
+      {saveStatus === "error" && <p role="alert" className="text-[1.0625rem] text-warn">{labels.saveError}</p>}
       <button
         type="button"
         onClick={handleSaveAll}

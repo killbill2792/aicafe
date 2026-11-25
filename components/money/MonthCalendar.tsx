@@ -156,7 +156,7 @@ export default function MonthCalendar({
           const milestoneCode = cell.milestoneBucketCodes[0];
           const isSelected = cell.date === selectedDate;
           const clickable = cell.state.kind !== "projected";
-          const base = "relative flex aspect-square min-h-12 flex-col items-center justify-center rounded-[10px] text-[13px] font-bold";
+          const base = "relative flex aspect-square min-h-12 flex-col items-center justify-center rounded-[10px] text-[0.8125rem] font-bold";
           const stateClass =
             cell.state.kind === "actual"
               ? `${profitToneBgClass(cell.state.tone)} ${cell.state.tone === "good" ? "text-on-pos" : cell.state.tone === "warn" ? "text-on-warn" : "text-bg"}`
@@ -185,7 +185,7 @@ export default function MonthCalendar({
         })}
       </div>
 
-      <div className="flex flex-wrap gap-3.5 px-4 text-[13px] font-semibold text-ink-muted">
+      <div className="flex flex-wrap gap-3.5 px-4 text-[0.8125rem] font-semibold text-ink-muted">
         <span className="flex items-center gap-1.5">
           <span className="h-3.5 w-3.5 rounded-[4px] bg-good" />
           {labels.legendGood}

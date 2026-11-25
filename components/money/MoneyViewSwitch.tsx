@@ -31,7 +31,7 @@ export default function MoneyViewSwitch({
           type="button"
           aria-pressed={current === view}
           onClick={() => setView(view)}
-          className={`h-11 flex-1 rounded-3xl text-[16px] font-semibold ${
+          className={`h-11 flex-1 rounded-3xl text-[1rem] font-semibold ${
             current === view ? "bg-card font-extrabold text-ink shadow-sm" : "bg-transparent text-muted"
           }`}
         >

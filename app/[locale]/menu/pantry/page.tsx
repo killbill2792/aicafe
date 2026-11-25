@@ -51,7 +51,7 @@ export default async function PantryPage({searchParams}:{searchParams:Promise<{f
     .map(key=>[key,t.raw(key as never) as string]));
 
   return <PageShell className="px-4 pb-24 pt-6" wide>
-    {selectedIds.length>0&&selected.length===0&&<p role="status" className="mb-4 text-[17px]">{inventoryLabels.proposalsUnavailable}</p>}
+    {selectedIds.length>0&&selected.length===0&&<p role="status" className="mb-4 text-[1.0625rem]">{inventoryLabels.proposalsUnavailable}</p>}
     {selectedIds.length>0&&selected.length>0&&<section className="mb-5 space-y-3">
       <h2 className="text-xl font-bold">{inventoryLabels.proposalsHeading}</h2>
       {selected.map(p=><SupervisorProposalCard key={p.id} threadId={p.threadId} proposalId={p.id} locale={locale as "en"|"es"|"ar"}/>)}
@@ -62,7 +62,7 @@ export default async function PantryPage({searchParams}:{searchParams:Promise<{f
         locale={locale as "en"|"es"|"ar"} t={inventoryLabels} today={businessToday} unavailable={!purchases}/>
     } variance={variance} items={items} starters={PANTRY_STARTERS.map(({key,name,category,baseUnit,packQuantity,packUnit})=>({key,name,category,baseUnit,packQuantity,packUnit}))}
       labels={{...Object.fromEntries(["title","search","all","coffee","milk","syrups","packaging","bakery","other",...PANTRY_CATEGORY_CHOICES.map(choice=>choice.labelKey),"reviewNow","confirmed","add","packSize","packPrice","purchasePackExampleLiquid","purchasePackExampleWeight","purchasePackExampleCount","category","baseUnit","measurementType","liquidMeasurement","weightMeasurement","pieceMeasurement","name","create","save","cancel","edit","estimate","confirm","usedIn","perUnit","priceUnknown","starterPack","chooseStarter","newIngredient","noItems","priceTitle","purchaseUnit","error","usageTitle","usagePeriod","usageExpected","usageActual","usageDifference","usageUnknown","usage_on_target","usage_watch","usage_over","usageMissing","usageRecord","usage_count","usage_purchase","usageIngredient","usageQuantity","usageUnit","usageDate","usageSaved","usageCountNote","usageShifts","usageExpectedOnly","usageStart","usageEnd","usageApply","usageStartCount","usageEndCount","usageCoverage","usageRecipeMissing","usageUnavailable","usageConnectToast","usageErrorInvalidQuantity","usageErrorInvalidUnit","usageErrorIngredientNotFound","usageErrorSaveFailed","archiveIngredient","restoreIngredient","archivedIngredient","archiveConfirm","activeIngredients","archivedIngredients","packUnitFlOz","packUnitOzWt","packUnitMl","packUnitG","packUnitKg","packUnitL","packUnitLb","packUnitGal","packUnitQt","packUnitEach","packUnitDozen"].map(key=>[key,key==="title"?inventoryLabels.title:t.raw(key as never) as string])),...stockLabels}} />
-    {pendingProposals===null?<p role="alert" className="text-[17px]">{inventoryLabels.proposalsUnavailable}</p>:
+    {pendingProposals===null?<p role="alert" className="text-[1.0625rem]">{inventoryLabels.proposalsUnavailable}</p>:
       selectedIds.length===0&&orderedProposals&&orderedProposals.length>0&&<section className="mb-5 space-y-3">
         <h2 className="text-xl font-bold">{inventoryLabels.proposalsHeading}</h2>
         {orderedProposals.map(p=><SupervisorProposalCard key={p.id}

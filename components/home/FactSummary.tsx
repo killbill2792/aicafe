@@ -21,15 +21,15 @@ export default function FactSummary({blocks,locale,sourceText,cafeCurrency=null}
     <div data-testid={many?"supervisor-fact-grid":"supervisor-fact-single"}
       className={many?"grid grid-cols-1 gap-x-6 gap-y-4 sm:grid-cols-2":"block"}>
       {blocks.map((block,i)=> <div key={i} className="min-w-0">
-        <p className="break-words text-[14px] font-semibold leading-snug text-ink-muted">{block.label}</p>
-        <p className="mt-1 break-words font-headline text-[28px] font-medium leading-tight tracking-tight tabular-nums text-ink">
+        <p className="break-words text-[0.875rem] font-semibold leading-snug text-ink-muted">{block.label}</p>
+        <p className="mt-1 break-words font-headline text-[1.75rem] font-medium leading-tight tracking-tight tabular-nums text-ink">
           {factValueText(block,locale,cafeCurrency)}
         </p>
 
       </div>)}
     </div>
-    {blocks.some(block=>block.type==="metric"&&formatCafeCurrency(block.valueCents,locale,cafeCurrency).currencyMissing)&&<p className="text-[17px] text-ink-muted">{en.SupervisorExperience.currencyUnavailable}</p>}
-    <p className="mt-3 border-t border-line pt-2 text-[13px] leading-relaxed text-ink-muted">
+    {blocks.some(block=>block.type==="metric"&&formatCafeCurrency(block.valueCents,locale,cafeCurrency).currencyMissing)&&<p className="text-[1.0625rem] text-ink-muted">{en.SupervisorExperience.currencyUnavailable}</p>}
+    <p className="mt-3 border-t border-line pt-2 text-[0.8125rem] leading-relaxed text-ink-muted">
       {sourceText}: {uniqueSources(blocks).map(s=>sourceLabel(s.source,locale)+" · "+s.asOf).join(" · ")}
     </p>
   </div>;

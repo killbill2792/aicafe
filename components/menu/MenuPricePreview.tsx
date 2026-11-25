@@ -87,11 +87,11 @@ export default function MenuPricePreview({item}:{item:MenuControlItem}){
   }
   const input=(field:keyof Fields,label:string,source:string,unit:"usd"|"count"|"percent")=>(
     <label className="block rounded-xl bg-card p-3">
-      <span className="block text-[17px] font-bold text-ink">{label}</span>
+      <span className="block text-[1.0625rem] font-bold text-ink">{label}</span>
       <span className="mt-1 block text-sm text-ink-muted">{source}</span>
       <span className="mt-2 flex min-h-12 items-center rounded-lg border border-line bg-paper px-3">
         {unit==="usd"&&<span className="me-1 font-bold" aria-hidden="true">$</span>}
-        <input className="w-full min-w-0 bg-transparent text-[17px] text-ink outline-none"
+        <input className="w-full min-w-0 bg-transparent text-[1.0625rem] text-ink outline-none"
           aria-label={label} inputMode={unit==="count"?"numeric":"decimal"}
           placeholder={t("priceBasisMissing")} value={draft[field]}
           onChange={e=>{setDraft(v=>({...v,[field]:e.target.value}));setError(false)}}/>
@@ -123,7 +123,7 @@ export default function MenuPricePreview({item}:{item:MenuControlItem}){
     from:basis.oldestDate,to:basis.latestDate,days:basis.coveredDays,
   }):t("priceBasisNoHistory");
   return <><section className="mt-3 rounded-2xl border border-line bg-card p-3">
-    <p className="text-[17px] font-bold text-ink">{t("priceBasisProfit")}</p>
+    <p className="text-[1.0625rem] font-bold text-ink">{t("priceBasisProfit")}</p>
     <p className="mt-1 font-headline text-3xl font-extrabold text-ink">
       {money(estimate.allocatedProfitCents)}
     </p>
@@ -136,13 +136,13 @@ export default function MenuPricePreview({item}:{item:MenuControlItem}){
     {estimate.status!=="missing"&&basis.targetMarginStatus==="default"&&
       <p className="mt-1 text-sm text-warn">{t("priceBasisTargetDefault",{margin:(basis.targetOperatingMarginBps/100).toFixed(1)})}</p>}
   </section><details open={expanded} onToggle={event=>setExpanded(event.currentTarget.open)} className="mt-2 rounded-2xl border border-line bg-paper p-3.5">
-    <summary className="min-h-12 cursor-pointer text-[17px] font-extrabold text-ink">
+    <summary className="min-h-12 cursor-pointer text-[1.0625rem] font-extrabold text-ink">
       {t("priceBasisTitle")}
     </summary>
-    <p className="mb-3 text-[17px] leading-snug text-ink-muted">{t("priceBasisHelp")}</p>
+    <p className="mb-3 text-[1.0625rem] leading-snug text-ink-muted">{t("priceBasisHelp")}</p>
     <div className="rounded-xl border border-line/60 bg-card p-3">
       <p className="text-sm font-bold text-ink-muted">{t("priceBasisHistoryTitle")}</p>
-      <p className="mt-1 text-[17px] text-ink">{period}</p>
+      <p className="mt-1 text-[1.0625rem] text-ink">{period}</p>
       {basis.payrollCoveredDays>0&&basis.payrollOldestDate&&basis.payrollLatestDate&&
         <p className="mt-1 text-sm text-ink-muted">{t("priceBasisPayrollWindow",{
           days:basis.payrollCoveredDays,from:basis.payrollOldestDate,
@@ -165,28 +165,28 @@ export default function MenuPricePreview({item}:{item:MenuControlItem}){
       {input("fee",t("priceBasisFees"),sourceLabel("fee",basis.feeStatus),"percent")}
     </div>
     {basis.missingRunningCategories.length>0&&values.monthlyRunningCents!==null&&
-      <p className="mt-3 rounded-lg bg-warn-soft p-3 text-[17px] text-warn">
+      <p className="mt-3 rounded-lg bg-warn-soft p-3 text-[1.0625rem] text-warn">
         {t("priceBasisSavedCostsIncomplete",{
           count:basis.missingRunningCategories.length,
         })}
       </p>}
     {basis.missingRunningCategories.length>0&&values.monthlyRunningCents===null&&
-      <p className="mt-3 rounded-lg bg-warn-soft p-3 text-[17px] text-warn">
+      <p className="mt-3 rounded-lg bg-warn-soft p-3 text-[1.0625rem] text-warn">
         {t("priceBasisMissingExpected",{
           count:basis.missingRunningCategories.length,
           subtotal:formatCents(basis.runningKnownCents),
         })}
       </p>}
     <p className="mt-3 text-sm text-ink-muted">{t("priceBasisAvoidDoubleCount")}</p>
-    {error&&<p role="alert" className="mt-2 text-[17px] text-warn">{t("priceBasisInvalid")}</p>}
+    {error&&<p role="alert" className="mt-2 text-[1.0625rem] text-warn">{t("priceBasisInvalid")}</p>}
     <button type="button" onClick={confirm}
-      className="mt-3 min-h-12 rounded-full bg-accent px-5 text-[17px] font-bold text-on-accent">
+      className="mt-3 min-h-12 rounded-full bg-accent px-5 text-[1.0625rem] font-bold text-on-accent">
       {t("priceBasisConfirm")}
     </button>
     <p className="mt-2 text-sm text-ink-muted">{confirmed?t("priceBasisPreviewConfirmed"):t("priceBasisPreviewOnly")}</p>
     <div className="mt-3 rounded-xl border border-line/70 bg-card p-3">
-      <p className="text-[17px] font-extrabold text-ink">{t("priceBasisResultTitle")}</p>
-      <dl className="mt-2 space-y-2 text-[17px]">
+      <p className="text-[1.0625rem] font-extrabold text-ink">{t("priceBasisResultTitle")}</p>
+      <dl className="mt-2 space-y-2 text-[1.0625rem]">
         <div className="flex justify-between gap-3"><dt>{t("sellingPrice")}</dt><dd className="font-bold">{formatCents(item.priceCents)}</dd></div>
         <div className="flex justify-between gap-3"><dt>{t("costToMake")}</dt><dd>{money(item.costStatus==="READY"?item.ingredientsCostCents:null)}</dd></div>
         <div className="flex justify-between gap-3"><dt>{t("priceBasisPayrollPerDrink")}</dt><dd>{money(estimate.laborPerDrinkCents)}</dd></div>
@@ -195,8 +195,8 @@ export default function MenuPricePreview({item}:{item:MenuControlItem}){
         <div className="flex justify-between gap-3 border-t border-line pt-2 font-extrabold"><dt>{t("priceBasisProfit")}</dt><dd>{money(estimate.allocatedProfitCents)}</dd></div>
       </dl>
       {estimate.status==="missing"
-        ?<p className="mt-3 text-[17px] text-warn">{t("priceBasisIncomplete")}</p>
-        :<><p className="mt-3 text-[17px] font-bold">{t("priceBasisTarget",{
+        ?<p className="mt-3 text-[1.0625rem] text-warn">{t("priceBasisIncomplete")}</p>
+        :<><p className="mt-3 text-[1.0625rem] font-bold">{t("priceBasisTarget",{
           margin:(basis.targetOperatingMarginBps/100).toFixed(1),
           price:money(estimate.targetPriceCents),
         })}</p>

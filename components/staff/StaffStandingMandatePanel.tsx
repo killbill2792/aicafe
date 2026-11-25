@@ -115,16 +115,16 @@ export default function StaffStandingMandatePanel({week,businessId}:{
  return <section className="mt-4 rounded-2xl border border-line bg-surface p-4"
   aria-label={copy.regionLabel}>
   <h3 className="text-lg font-semibold">{copy.title}</h3>
-  <p className="mt-2 text-[17px]">{copy.weekOf} {week}. {copy.scopeDescription}</p>
+  <p className="mt-2 text-[1.0625rem]">{copy.weekOf} {week}. {copy.scopeDescription}</p>
   <p className="mt-2 text-sm text-ink-muted" role="status">{message}</p>
   {mandate?<div className="mt-3">
-   <p className="text-[17px]">{copy.activeStart} {mandate.limit_value} {copy.activeEnd} {mandate.expires_at}</p>
+   <p className="text-[1.0625rem]">{copy.activeStart} {mandate.limit_value} {copy.activeEnd} {mandate.expires_at}</p>
    <button type="button" disabled={busy} onClick={()=>void revoke()}
     className="mt-2 min-h-12 rounded-xl border border-line px-4 font-semibold">
     {copy.revokeButton}
    </button>
   </div>:challenge?<div className="mt-3 flex flex-wrap items-end gap-3">
-   <label className="text-[17px]">{copy.phoneCode}
+   <label className="text-[1.0625rem]">{copy.phoneCode}
     <input type="text" autoComplete="one-time-code" inputMode="numeric"
      value={code} onChange={event=>setCode(event.target.value)}
      maxLength={32} className="mt-1 block min-h-12 rounded-xl border border-line bg-surface p-3"/>
@@ -134,7 +134,7 @@ export default function StaffStandingMandatePanel({week,businessId}:{
     {copy.verifyButton}
    </button>
   </div>:thread&&factor?<div className="mt-3 flex flex-wrap items-end gap-3">
-   <label className="text-[17px]">{copy.maxEmployees}
+   <label className="text-[1.0625rem]">{copy.maxEmployees}
     <select value={recipients} onChange={event=>setRecipients(Number(event.target.value))}
      className="mt-1 block min-h-12 rounded-xl border border-line bg-surface p-3">
      {capacityOptions.map(n=><option value={n} key={n}>{n}</option>)}

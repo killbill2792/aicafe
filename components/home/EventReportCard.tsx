@@ -71,7 +71,7 @@ export function EventReportCard({report,status,currency,locale,t,onChat}:{
   if(!parsed)return null;
   const count=(n:number|null)=>n===null?t("reportUnknown"):new Intl.NumberFormat(locale).format(n);
   const money=(n:number|null)=>formatEventMoney(n,currency,locale)??t("reportUnknown");
-  return <section className="space-y-3 rounded-2xl border border-line bg-surface2 p-3 text-[17px]"
+  return <section className="space-y-3 rounded-2xl border border-line bg-surface2 p-3 text-[1.0625rem]"
     aria-label={t("reportTitle")}>
     <h4 className="font-bold">{t("reportTitle")} · {status==="complete"?
       t("reportComplete"):t("reportIncomplete")}</h4>

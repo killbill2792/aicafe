@@ -41,7 +41,7 @@ export default function MilkSizePrices({items,fromMilkId,toMilkId,pantry}:{
   })),fromMilkId??"unknown",toMilkId,ml,costs,DEFAULT_TARGET_PRODUCT_COST_PERCENT);
   return <div className="mt-2 space-y-2" aria-label={note("modifierSizePrices")}>
     {prices.sizes.map(size=><section key={size.sizeId}
-      className="rounded-xl border border-line bg-paper p-2 text-[17px]"
+      className="rounded-xl border border-line bg-paper p-2 text-[1.0625rem]"
       data-size-label={size.sizeLabel}>
       <p className="font-bold">{t("costBasisForSize",{size:size.sizeLabel})}</p>
       {size.costDeltaCents===null?
@@ -54,6 +54,6 @@ export default function MilkSizePrices({items,fromMilkId,toMilkId,pantry}:{
           <p>{note("modifierMarginKept")}: {formatCents(size.marginKeptCents!)}</p>
         </>}
     </section>)}
-    <p className="text-[17px] text-ink-muted">{note("modifierDefaultTarget")}</p>
+    <p className="text-[1.0625rem] text-ink-muted">{note("modifierDefaultTarget")}</p>
   </div>;
 }
