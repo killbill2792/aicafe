@@ -70,7 +70,7 @@ jobs:
           node --input-type=module <<'NODE'
           import pg from 'pg';
           import { TEST_CAFES } from './scripts/seed/cafes.mjs';
-          import { readU3Oracle,seedU3HistoryOracle } from './evals/acceptance/live/u3-canonical-research.mjs';
+          import { readU3Oracle,seedU3HistoryOracle,seedU3FinancialOracle } from './evals/acceptance/live/u3-canonical-research.mjs';
           const db=new pg.Client({connectionString:'postgresql://postgres:postgres@127.0.0.1:54322/postgres'});
           await db.connect();
           try {
@@ -78,7 +78,8 @@ jobs:
             for (const cafe of TEST_CAFES) await readU3Oracle(db,cafe.businessId);
             await db.query('SET default_transaction_read_only=off');
             await seedU3HistoryOracle(db,TEST_CAFES[0],TEST_CAFES[1]);
-            console.log('Independent daily and historical cross-domain source oracles verified for disposable cafes.');
+            await seedU3FinancialOracle(db,TEST_CAFES.slice(0,2));
+            console.log('Independent daily, historical and distinct financial source oracles verified for disposable cafes.');
           } finally { await db.end(); }
           NODE
       - name: Destroy the disposable database

@@ -182,6 +182,129 @@
       },
       "minCount": 0,
       "maxCount": 0
+    },
+    {
+      "name": "finance-source",
+      "kind": "source",
+      "table": "public.expenses",
+      "where": {
+        "business_id": {
+          "scope": "businessId"
+        },
+        "id": {
+          "scope": "financialExpenseId"
+        },
+        "status": {
+          "eq": "actual"
+        }
+      },
+      "minCount": 1,
+      "maxCount": 1
+    },
+    {
+      "name": "finance-answer",
+      "kind": "owner",
+      "table": "public.ai_messages",
+      "where": {
+        "business_id": {
+          "scope": "businessId"
+        },
+        "thread_id": {
+          "scope": "financialThreadId"
+        },
+        "id": {
+          "scope": "financialReplyId"
+        },
+        "role": {
+          "eq": "supervisor"
+        }
+      },
+      "minCount": 1,
+      "maxCount": 1
+    },
+    {
+      "name": "finance-no-effect",
+      "kind": "source",
+      "table": "public.supervisor_proposals",
+      "where": {
+        "business_id": {
+          "scope": "businessId"
+        },
+        "thread_id": {
+          "scope": "financialThreadId"
+        }
+      },
+      "minCount": 0,
+      "maxCount": 0
+    },
+    {
+      "name": "other-finance-source",
+      "kind": "source",
+      "table": "public.expenses",
+      "where": {
+        "business_id": {
+          "scope": "otherCafeId"
+        },
+        "id": {
+          "scope": "otherFinancialExpenseId"
+        },
+        "status": {
+          "eq": "actual"
+        }
+      },
+      "minCount": 1,
+      "maxCount": 1
+    },
+    {
+      "name": "other-finance-answer",
+      "kind": "owner",
+      "table": "public.ai_messages",
+      "where": {
+        "business_id": {
+          "scope": "otherCafeId"
+        },
+        "thread_id": {
+          "scope": "otherFinancialThreadId"
+        },
+        "id": {
+          "scope": "otherFinancialReplyId"
+        },
+        "role": {
+          "eq": "supervisor"
+        }
+      },
+      "minCount": 1,
+      "maxCount": 1
+    },
+    {
+      "name": "other-finance-no-effect",
+      "kind": "source",
+      "table": "public.supervisor_proposals",
+      "where": {
+        "business_id": {
+          "scope": "otherCafeId"
+        },
+        "thread_id": {
+          "scope": "otherFinancialThreadId"
+        }
+      },
+      "minCount": 0,
+      "maxCount": 0
+    },
+    {
+      "name": "foreign-finance-expense",
+      "kind": "isolation",
+      "table": "public.expenses",
+      "where": {
+        "business_id": {
+          "scope": "otherCafeId"
+        },
+        "id": {
+          "scope": "financialExpenseId"
+        }
+      },
+      "minCount": 0,
+      "maxCount": 0
     }
   ]
 }
