@@ -8,7 +8,22 @@ import {CALC_OPS,exactDecimal,runCalculation,type CalcOp,type CalcUnit,type Calc
 
 export type ResearchScope={db:SupabaseClient;businessId:string;ownerUserId:string;
   /** The existing owner-permissioned public web search (one path); absent when unavailable. */
-  webSearch?:(query:string)=>Promise<unknown>};
+  webSearch?:(query:string)=>Promise<unknown>;
+  /** Text read from the café's private data this turn; a public query may not contain it. */
+  privateValues?:Set<string>};
+
+/** Remember text values read from café data so they can never be sent to a public search. */
+function rememberPrivate(scope:ResearchScope,rows:unknown){
+  if(!scope.privateValues||!Array.isArray(rows))return;
+  for(const row of rows)if(row&&typeof row==="object")for(const v of Object.values(row)){
+    if(typeof v==="string"&&v.length>=4&&v.length<=80&&!/^[\d\s.,:/-]+$/u.test(v))scope.privateValues.add(v.toLowerCase());
+  }
+}
+function privateTextIn(scope:ResearchScope,query:string):string|null{
+  const q=query.toLowerCase();
+  for(const v of scope.privateValues??[])if(q.includes(v))return v;
+  return null;
+}
 
 const UNITS=["cents","count","percent","ratio"] as const;
 export const researchToolDefinitions=[
@@ -114,9 +129,11 @@ export async function executeResearchTool(scope:ResearchScope,name:string,rawArg
     if(name==="describe_database")
       return await describeDatabase(scope,Array.isArray(args.tables)?args.tables.map(String):null);
     if(name==="run_sql")
-      return typeof args.sql==="string"&&args.sql.trim()?await runSql(scope,args.sql):{ok:false,error:"sql is required"};
+      return typeof args.sql==="string"&&args.sql.trim()?await runSql(scope,args.sql).then(r=>{rememberPrivate(scope,r.rows);return r;}):{ok:false,error:"sql is required"};
     if(name==="search_web"){
       if(!scope.webSearch||typeof args.query!=="string")return {ok:false,error:"web search is not available"};
+      const leaked=privateTextIn(scope,args.query);
+      if(leaked)return {ok:false,error:"The query contains text from your private café data (\""+leaked+"\"). Public searches must not include it; rewrite the query without it."};
       return {ok:true,result:await scope.webSearch(args.query)};
     }
     if(name==="calculate")

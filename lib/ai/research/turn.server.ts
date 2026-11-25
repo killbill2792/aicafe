@@ -49,6 +49,8 @@ export async function runResearchTurn(args:{
   scope:ResearchScope;
   /** Public web lookups through the existing owner-permissioned search; omit to disable. */
   webSearch?:(query:string)=>Promise<unknown>;
+  /** Luna's own summary of its thinking, streamed as it works (the part so far). */
+  onThinking?:(text:string)=>void;
   /** Authenticated café facts: name, currency, time zone, local date. */
   cafeContext:string;
   provider?:AgentProvider;
@@ -84,6 +86,7 @@ export async function runResearchTurn(args:{
   ];
   const usage:AgentTurn["usage"]={modelCalls:0,toolCalls:0,inputTokens:0,cachedTokens:0,outputTokens:0,latencyMs:0};
   const invocations:{name:string;result:AgentToolResult}[]=[];
+  const privateValues=new Set<string>();
   let text="",endReason:EndReason="complete";
 
   // Only an existing durable background run's own budget can end research early.
@@ -97,13 +100,13 @@ export async function runResearchTurn(args:{
   const call=async(final:boolean):Promise<{calls:FunctionCall[];answer:string}>=>{
     await args.beforeProviderRequest?.();
     const params:Record<string,unknown>={model,...(broker?{instructions:RESEARCH_INSTRUCTIONS}:
-        {...(/^gpt-6/u.test(model)?{include:["reasoning.encrypted_content"]}:{}),prompt_cache_key:"supervisor-sql-research-v1"}),
+        {...(/^gpt-6/u.test(model)?{include:["reasoning.encrypted_content"],reasoning:{summary:"auto"}}:{}),prompt_cache_key:"supervisor-sql-research-v1"}),
       tools:args.webSearch?researchToolDefinitions:researchToolDefinitions.filter(t=>t.name!=="search_web"),tool_choice:final?"none":"auto",stream:true,store:false,
       ...(outputCap(final)?{max_output_tokens:outputCap(final)}:{}),input};
     const startedCall=now();
     const checkpoint=args.checkpoint;
     if(checkpoint)await checkpoint.beginProvider();
-    let completed=false,answer="";
+    let completed=false,answer="",thinking="";
     const output:unknown[]=[],calls:FunctionCall[]=[];
     try{
       const reservation=await reserveDurableProviderRequest(params);
@@ -112,6 +115,11 @@ export async function runResearchTurn(args:{
       {
         for await(const event of provider(params,controller.signal) as AsyncIterable<Event>){
           if(event.type==="response.output_text.delta"&&typeof event.delta==="string")answer+=event.delta;
+          if(event.type==="response.reasoning_summary_part.added")thinking="";
+          if(event.type==="response.reasoning_summary_text.delta"&&typeof event.delta==="string"){
+            thinking+=event.delta;
+            try{args.onThinking?.(thinking.replace(/\*\*/gu,""));}catch{/* display only */}
+          }
           if(event.type==="response.output_item.done"&&event.item&&typeof event.item==="object"){
             const item=event.item as Record<string,unknown>;
             output.push(item);
@@ -166,7 +174,7 @@ export async function runResearchTurn(args:{
       for(const fc of calls){
         args.onTool?.(fc.name,"alex");
         const toolStarted=now();
-        const result=await executeResearchTool({...args.scope,webSearch:args.webSearch??args.scope.webSearch},fc.name,fc.arguments);
+        const result=await executeResearchTool({...args.scope,webSearch:args.webSearch??args.scope.webSearch,privateValues},fc.name,fc.arguments);
         usage.toolCalls++;
         input.push({type:"function_call_output",call_id:fc.call_id,output:JSON.stringify(result)});
         const failed=result.ok===false;

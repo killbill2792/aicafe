@@ -894,7 +894,18 @@ export async function runOneTurn(p: TurnParams): Promise<{ replyId: string; repl
       cafeContext:"Café (authenticated, not an owner message): "+JSON.stringify({name:identity.cafeName,
         currency:identity.currency,timezone:identity.timezone,localDate:identity.asOf,
         city:location?.city??null,region:location?.region??null,country:location?.countryCode??null}),
-      webSearch:context.webSearch?q=>context.webSearch!(q):undefined,
+      // Luna writes its own public queries. Only the owner's public-web permission applies, plus a check
+      // that no private café text is inside the query (tools.server.ts); no wording filter on the owner.
+      webSearch:q=>ownerPublicWebSearch(scope,async()=>{
+        const revision=await assertExternalAccess(scope,"public_web",WEB_RESOURCE);
+        await assertTurnSources();
+        const value=await searchWeb(q);
+        const check=async()=>{if(await assertExternalAccess(scope,"public_web",WEB_RESOURCE)!==revision)throw Error("public_web_evidence_access_changed");};
+        await check();
+        if(value.available)sourceChecks.set("public_web",check);
+        return value;
+      }),
+      onThinking:text=>emit("thinking",{text}),
       onAuditStep: step => { if (auditSteps.length < 64) auditSteps.push(step); },
       beforeProviderRequest:assertTurnSources, beforeAcceptResult:assertTurnSources,
       ...(p.checkpoint?{checkpoint:p.checkpoint}:{}),
