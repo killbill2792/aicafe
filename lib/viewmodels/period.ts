@@ -138,7 +138,7 @@ export function runningCostsForPeriod(snapshot: BusinessSnapshot, period: Period
  * the selected period instead of the full month — so a "Today" or "Week" view shows Rent at its
  * actual share of that period, not the full monthly amount, matching the already-prorated total
  * and owner-profit figures computed from `runningCostsForPeriod` above. `label`/`isEstimate`/
- * `isMissing` are carried over unchanged; only the amount is period-scoped.
+ * `isMissing` reflect the months actually overlapping the selected period.
  *
  * Money is integer cents everywhere (CLAUDE.md rule 1), and the displayed rows must sum to
  * exactly the same rounded total the rest of the screen shows — rounding each category
@@ -154,11 +154,30 @@ export function runningCostLinesForPeriod(snapshot: BusinessSnapshot, period: Pe
   // allocation entirely, not just zeroed out afterward, so they never receive a stray cent.
   const rawByCategory=new Map(byCategory);
   const allocatedByCategory = allocateIntegerCentsByCategory(rawByCategory, targetCents);
-  const lines=[...new Map([...(snapshot.previousRunningCostLines??[]),...snapshot.runningCostLines].map(line=>[line.categoryCode,line])).values()];
-  return lines.map((line) => ({
-    ...line,
-    amountCents: allocatedByCategory.get(line.categoryCode) ?? 0,
-  }));
+  const overlappingLines = [
+    ...(start.slice(0, 7) !== snapshot.monthKey ? snapshot.previousRunningCostLines ?? [] : []),
+    ...snapshot.runningCostLines,
+  ];
+  const byCode = new Map<string, RunningCostLine[]>();
+  for (const line of overlappingLines) {
+    const group = byCode.get(line.categoryCode) ?? [];
+    group.push(line);
+    byCode.set(line.categoryCode, group);
+  }
+  return [...byCode.values()].map(group => {
+    const line = group[group.length - 1];
+    const amountCents = allocatedByCategory.get(line.categoryCode) ?? 0;
+    // A missing month must not hide a known payment or estimate from another
+    // overlapping month. An unused category is not proof of a known cost.
+    const known = group.some(row => !row.isMissing && (row.isExpected !== false || row.amountCents !== 0));
+    return {
+      ...line,
+      amountCents,
+      isMissing: amountCents === 0 && !known && group.some(row => row.isMissing),
+      isEstimate: group.some(row => !row.isMissing && row.isEstimate),
+      isExpected: group.some(row => row.isExpected === true) ? true : line.isExpected,
+    };
+  });
 }
 
 /** Running costs for the comparison period one back (see `previousPeriodCalendarRange`). */
