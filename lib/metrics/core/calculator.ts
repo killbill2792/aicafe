@@ -2,7 +2,7 @@
  * Exact rational math with BigInt; rounding happens only when a value is shown.
  * It has no money definitions: screen numbers come from their own core functions. */
 
-export const DURATION_UNITS=["seconds","minutes","hours"] as const;
+export const DURATION_UNITS=["seconds","minutes","hours","days","weeks","months"] as const;
 export type DurationUnit=typeof DURATION_UNITS[number];
 export const QUANTITY_UNITS=["g","ml"] as const;
 export type QuantityUnit=typeof QUANTITY_UNITS[number];
@@ -10,7 +10,10 @@ export const isQuantityUnit=(unit:unknown):unit is QuantityUnit=>QUANTITY_UNITS.
 export type CalcUnit="cents"|"count"|"percent"|"ratio"|DurationUnit|QuantityUnit;
 export const isDurationUnit=(unit:unknown):unit is DurationUnit =>
   DURATION_UNITS.some(candidate=>candidate===unit);
-const durationSeconds:Record<DurationUnit,bigint>={seconds:BigInt(1),minutes:BigInt(60),hours:BigInt(3600)};
+// Calendar months have no fixed duration; calendar days/weeks are separate
+// from elapsed hours across timezone transitions.
+const durationScale:Record<DurationUnit,bigint>={seconds:BigInt(1),minutes:BigInt(60),hours:BigInt(3600),days:BigInt(1),weeks:BigInt(7),months:BigInt(1)};
+const durationFamily=(u:DurationUnit)=>u==="months"?"month":u==="days"||u==="weeks"?"calendar":"elapsed";
 export type CalcOp="add"|"subtract"|"multiply"|"divide"|"sum"|"percent_of";
 export const CALC_OPS:readonly CalcOp[]=["add","subtract","multiply","divide","sum","percent_of"];
 
@@ -92,7 +95,7 @@ function shown(v:CalcValue):CalcShown|null{
     case "count":{const q=pick(BigInt(100));return q===null?null:{unit:"count",quantity:q};}
     case "ratio":{const r=pick(BigInt(10000));return r===null?null:{unit:"ratio",valueRatio:r};}
     case "g":case "ml":{const valueQuantity=pick(BigInt(100));return valueQuantity===null?null:{unit:v.unit,valueQuantity};}
-    case "seconds":case "minutes":case "hours":{
+    case "seconds":case "minutes":case "hours":case "days":case "weeks":case "months":{
       const valueDuration=pick(BigInt(100));return valueDuration===null?null:{unit:v.unit,valueDuration};
     }
   }
@@ -123,7 +126,7 @@ function quotientUnit(a:CalcUnit,b:CalcUnit):CalcUnit|null{
     return isQuantityUnit(a)&&(isShare(b)||b==="count")?a:null;
   }
   if(isDurationUnit(a)||isDurationUnit(b)){
-    if(isDurationUnit(a)&&isDurationUnit(b))return "ratio";
+    if(isDurationUnit(a)&&isDurationUnit(b))return durationFamily(a)===durationFamily(b)?"ratio":null;
     return isDurationUnit(a)&&(isShare(b)||b==="count")?a:null;
   }
   if(a===b)return a==="cents"?"percent":a==="count"?"ratio":"ratio";
@@ -138,8 +141,8 @@ function apply(op:CalcOp,args:CalcValue[]):CalcValue|string{
     if(op!=="sum"&&args.length!==2)return "needsTwoArgs";
     if(!args.length)return "needsArgs";
     const unit=args[0].unit;
-    if(isDurationUnit(unit)&&args.every(a=>isDurationUnit(a.unit))){
-      args=args.map(a=>make(a.n*durationSeconds[a.unit as DurationUnit],a.d*durationSeconds[unit],unit));
+    if(isDurationUnit(unit)&&args.every(a=>isDurationUnit(a.unit)&&durationFamily(a.unit)===durationFamily(unit))){
+      args=args.map(a=>make(a.n*durationScale[a.unit as DurationUnit],a.d*durationScale[unit],unit));
     }
     if(args.some(a=>a.unit!==unit&&!(isShare(a.unit)&&isShare(unit))))return "unitsDiffer";
     if(op==="subtract")return make(args[0].n*args[1].d-args[1].n*args[0].d,args[0].d*args[1].d,unit);
@@ -158,8 +161,8 @@ function apply(op:CalcOp,args:CalcValue[]):CalcValue|string{
   }
   if(b.n===BigInt(0))return "divideByZero";
   const unit=quotientUnit(a.unit,b.unit);
-  if(isDurationUnit(a.unit)&&isDurationUnit(b.unit))
-    return make(a.n*b.d*durationSeconds[a.unit],a.d*b.n*durationSeconds[b.unit],"ratio");
+  if(isDurationUnit(a.unit)&&isDurationUnit(b.unit)&&unit==="ratio")
+    return make(a.n*b.d*durationScale[a.unit],a.d*b.n*durationScale[b.unit],"ratio");
   return unit?make(a.n*b.d,a.d*b.n,unit):"unitsCannotDivide";
 }
 

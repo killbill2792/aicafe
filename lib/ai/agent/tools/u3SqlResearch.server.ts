@@ -80,6 +80,7 @@ const columnUnit=(field:string,type:string)=>{
  if(field.endsWith("_seconds"))return "seconds";
  if(field.endsWith("_minutes"))return "minutes";
  if(field.endsWith("_hours"))return "hours";
+
  if(/_(?:bps|bp)$/.test(field))return "basis_points";
  if(field==="quantity"||field.endsWith("_quantity"))return "source_specific_unit";
  if(field.endsWith("_id")||field==="id")return "stable_relation_key_not_people_count";

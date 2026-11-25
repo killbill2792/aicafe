@@ -212,7 +212,8 @@ function verifiedU3Evidence(r:AgentToolResult,periodKey:string){
    const unit=researchNumericUnit(r,row as Record<string,unknown>,column);
    // Duration provenance is distinct from generic counts, even when the
    // model gives a count an hours/minutes alias. The unit comes from SQL lineage.
-   const duration=unit==="hours"?"hour":unit==="minutes"?"minute":unit==="seconds"?"second":null;
+   const duration=unit==="hours"?"hour":unit==="minutes"?"minute":unit==="seconds"?"second":
+    unit==="days"?"day":unit==="weeks"?"week":unit==="months"?"month":null;
    const measurement=unit==="g"?"gram":unit==="ml"?"milliliter":null;
    const accepted=u3ReceiptNumber(raw,duration||measurement?"count":unit);
    if(!accepted)continue;
@@ -322,7 +323,8 @@ export function compactEvidence(results:readonly AgentToolResult[],limit=100):Nu
     if(r.source==="calculate"&&r.refused===undefined&&
        Array.isArray(r.numberEstimates)&&r.result&&typeof r.result==="object"){
       const value=r.result as Record<string,unknown>;
-      const duration=value.unit==="seconds"?"second":value.unit==="minutes"?"minute":value.unit==="hours"?"hour":null;
+      const duration=value.unit==="seconds"?"second":value.unit==="minutes"?"minute":value.unit==="hours"?"hour":
+       value.unit==="days"?"day":value.unit==="weeks"?"week":value.unit==="months"?"month":null;
       if(duration&&typeof value.valueDuration==="number"&&Number.isFinite(value.valueDuration)&&
         Math.abs(value.valueDuration)<=Number.MAX_SAFE_INTEGER&&r.numberEstimates.some(entry=>
           entry&&typeof entry==="object"&&"unit" in entry&&"value" in entry&&
@@ -1492,6 +1494,16 @@ export function ownerStatedAmounts(ownerText:string,locale:AgentLocale,includeDu
       allowed.money.add(Math.round(v.value*100));
   }
   return allowed;
+}
+
+/** Owner-stated dimensions are verified independently of plain counts. */
+export function ownerStatedMeasures(text:string,locale:AgentLocale,unit:string):Set<number>{
+ const family=unit==="g"?"gram":unit==="ml"?"milliliter":
+  unit==="seconds"?"second":unit==="minutes"?"minute":unit==="hours"?"hour":
+  unit==="days"?"day":unit==="weeks"?"week":unit==="months"?"month":null;
+ if(!family)return new Set();
+ return new Set([...candidates(text,locale),...spokenOwnerValues(text,locale)]
+  .filter(v=>v.kind==="number"&&v.durationUnit===family).map(v=>v.value));
 }
 
 /** Report unsupported numbers at their original prose offsets; never change the owner's text. */

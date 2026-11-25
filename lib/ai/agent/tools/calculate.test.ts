@@ -17,7 +17,7 @@ function ctx(turn:Array<{name:string;result:AgentToolResult}>,facts:unknown[]=[]
 }
 const input=(name:string,tool:string|null,path:string|null,fact_key:string|null=null)=>
   ({name,label:name.replace(/_/g," "),tool,path,fact_key,owner_value:null,owner_unit:null});
-const said=(name:string,owner_value:number,owner_unit:"cents"|"percent"|"count")=>
+const said=(name:string,owner_value:number,owner_unit:"cents"|"percent"|"count"|"days"|"hours"|"g"|"ml")=>
   ({...input(name,null,null),owner_value,owner_unit});
 const withOwner=(c:AgentToolContext,ownerText:string,ownerMessages:string[]=[],locale:"en"|"es"|"ar"="en")=>
   ({...c,ownerText,ownerMessages,locale}) as AgentToolContext;
@@ -121,25 +121,33 @@ describe("calculate uses what the owner says",()=>{
       .toEqual({unit:"cents",valueCents:20000});
   });
   it.each([
-    ["I use 2 cartons per day, how many for 7 days?",7,7],
-    ["We work 6 hours each shift",6,6],
-    ["Uso 2 cajas por día durante 7 días",7,7],
-    ["أعمل 6 ساعات في كل وردية",6,6],
-  ] as const)("accepts an explicitly owner-stated duration: %s",async(text,duration,expected)=>{
+    ["I use 2 cartons per day, how many for 7 days?",7,"days"],
+    ["We work 6 hours each shift",6,"hours"],
+    ["Uso 2 cajas por día durante 7 días",7,"days"],
+    ["أعمل 6 ساعات في كل وردية",6,"hours"],
+  ] as const)("accepts an explicitly owner-stated duration: %s",async(text,duration,unit)=>{
     const locale=text.startsWith("Uso")?"es":text.startsWith("أعمل")?"ar":"en";
     const r=await calculateTools.calculate.execute({purpose:"Duration",
-      inputs:[said("duration",duration,"count")],
+      inputs:[said("duration",duration,unit)],
       steps:[{id:"duration_result",label:"Duration",op:"sum",args:["duration"]}]},
       withOwner(ctx(turn),text,[],locale));
     expect(r.refused).toBeUndefined();
-    expect(r).toMatchObject({result:{unit:"count",quantity:expected},ownerProvided:["duration"]});
+    expect(r).toMatchObject({result:{unit,valueDuration:duration},ownerProvided:["duration"]});
   });
   it("refuses an unstated duration even when another duration was provided",async()=>{
     const r=await calculateTools.calculate.execute({purpose:"Duration",
-      inputs:[said("days",8,"count")],
+      inputs:[said("days",8,"days")],
       steps:[{id:"duration_result",label:"Duration",op:"sum",args:["days"]}]},
       withOwner(ctx(turn),"I use 2 cartons per day for 7 days"));
     expect(r.refused).toBe("ownerDidNotSayThis");
+  });
+  it("does not reinterpret an owner-stated measure as a count or another dimension",async()=>{
+    const request=(unit:"count"|"g"|"ml")=>calculateTools.calculate.execute({purpose:"Measured amount",
+      inputs:[said("amount",20,unit)],steps:[{id:"r",label:"Amount",op:"sum",args:["amount"]}]},
+      withOwner(ctx(turn),"We recorded 20 ml"));
+    expect((await request("ml")).result).toEqual({unit:"ml",valueQuantity:20});
+    expect((await request("count")).refused).toBe("ownerDidNotSayThis");
+    expect((await request("g")).refused).toBe("ownerDidNotSayThis");
   });
   it("refuses a number the owner never said",async()=>{
     expect((await rentWhatIf(withOwner(ctx(rentTurn),"what if rent goes up?"))).refused).toBe("ownerDidNotSayThis");
