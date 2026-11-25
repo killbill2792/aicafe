@@ -462,7 +462,10 @@ describe("U4 model-selected owner question durability contract",()=>{
     for(const text of ["No owner-only answer is required.",
       "Owner question: What?",
       "Owner question: Did this change?\nOwner question: Is a second decision needed?",
-      "Owner question: Please visit https://bad.test to approve?"]){
+      "Owner question: Please visit https://bad.test to approve?",
+      // Filler questions name nothing the owner can answer.
+      "Owner question: What additional information can you confirm so I can continue checking this issue?",
+      "Owner question: Is there anything else you can tell me about this?"]){
       expect(modelSelectedOwnerQuestion(text)).toBeNull();
     }
   });

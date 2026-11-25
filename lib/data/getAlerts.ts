@@ -1,3 +1,4 @@
+import { isOwnerActionableAlert } from "@/lib/alerts/ownerActionable";
 import "server-only";
 import { isSupabaseConfigured } from "@/lib/supabase/client";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
@@ -39,7 +40,8 @@ export async function getOpenAlerts(explicit?: { client: Awaited<ReturnType<type
     .order("created_at", { ascending: false });
   if (error) throw error;
 
-  const alerts: AlertRow[] = (data ?? []).map((a) => ({
+  // System conditions (reader outages, import lag) are for the health check, not for the owner's alert list.
+  const alerts: AlertRow[] = (data ?? []).filter((a) => isOwnerActionableAlert(String(a.kind), a.payload)).map((a) => ({
     id: a.id,
     kind: a.kind as AlertKind,
     impactCents: a.impact_cents,

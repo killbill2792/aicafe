@@ -11556,6 +11556,11 @@
      "reported_owner_answer_id",
      "uuid",
      false
+    ],
+    [
+     "shared_question_id",
+     "uuid",
+     false
     ]
    ],
    "relation": "supervisor_investigations",

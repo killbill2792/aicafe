@@ -68,6 +68,7 @@ function db(claims:Record<string,unknown>[],options?:{
   sourceError?:boolean;sourceStatus?:string;sourceKind?:string;
   alertPayload?:Record<string,unknown>;timecard?:Record<string,unknown>|null;
   taskStatus?:string;relatedTasks?:Record<string,unknown>[];
+  openQuestions?:{id:string;question:string}[];
 }){
   const calls:Array<{name:string;args:Record<string,unknown>}>=[];
   const reads:Array<{table:string;column:string;value:unknown}>=[];
@@ -99,6 +100,8 @@ function db(claims:Record<string,unknown>[],options?:{
             entity_type:"menu_item",entity_id:"item-a",
           },error:null};},
         async limit(){
+          if(table==="supervisor_investigations")return {data:(options?.openQuestions??[]).map(q=>({pending_question_id:q.id})),error:null};
+          if(table==="ai_messages")return {data:(options?.openQuestions??[]).map(q=>({id:q.id,grounding:{durableQuestionId:q.id,intent:"priority_investigation"},structured_content:[{type:"clarify",question:q.question}]})),error:null};
           const rows=table==="alerts"?
             [{kind:"sales_anomaly",status:"new"}]:
             options?.relatedTasks??[{kind:"data_quality",status:"needs_owner",owner_user_id:"owner-a"}];
@@ -194,6 +197,19 @@ describe("Task 15A operational end-to-end orchestration (recorded source/model)"
     expect(mocks.model).not.toHaveBeenCalled();
     expect(d.calls.find(x=>x.name==="supervisor_fail_investigation")?.args)
       .toMatchObject({p_error:"storage_failed"});
+  });
+  it("gives the model outstanding questions before synthesis and retains its complete reply and answer dependency",async()=>{
+    const question="Which supplier sent the delivery on Monday?";
+    const narrative="Staffing remains uncertain until the delivery is identified.\nWaiting for your answer to earlier question A.";
+    mocks.model.mockResolvedValue(agentResult({text:narrative}));
+    const d=db([{...investigating}],{openQuestions:[{id:"question-a",question}]});
+    const status=await processNextInvestigation(d.client,now);
+    expect(status).toMatchObject({investigated:1,failed:0});
+    expect(mocks.model.mock.calls[0][0].ownerText).toContain(question);
+    expect(mocks.model.mock.calls[0][0].ownerText).toContain("do not repeat the question");
+    const saved=d.calls.find(x=>x.name==="supervisor_finish_investigation")?.args;
+    expect(saved?.p_narrative).toBe(narrative);
+    expect(saved?.p_evidence).toMatchObject({ownerQuestion:question});
   });
   it("resumes a stored investigation, reads two canonical domains and reports only a verified outcome",async()=>{
     const d=db([{...investigating}]);
