@@ -192,7 +192,8 @@ describe("decorative Supervisor landing", () => {
     expect(css).toContain("supervisor-landing-vapor 1.4s ease-in-out 3 both");
     expect(css).not.toMatch(/animation:\s*supervisor-landing-\w+[^;]*infinite/);
     expect(css).toMatch(/@media \(prefers-reduced-motion: reduce\)\s*\{\s*\.supervisor-shell:has\(\.supervisor-landing\)::before/);
-    expect(source).toContain("grid-cols-[3rem_minmax(0,1fr)_3rem_3rem]");
+    expect(source).toContain("grid-cols-[max(48px,3rem)_minmax(0,1fr)_max(48px,3rem)_max(48px,3rem)]");
+    expect(source.match(/h-\[max\(48px,3rem\)\] w-\[max\(48px,3rem\)\]/g)).toHaveLength(4);
   });
 });
 

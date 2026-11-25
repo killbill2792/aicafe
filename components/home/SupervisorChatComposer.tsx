@@ -1218,12 +1218,12 @@ export default function SupervisorChatComposer({
       <button type="button" onClick={()=>setControlsTab("library")}
         aria-expanded={controlsTab!==null&&controlsTab!=="work"}
         aria-label={en.SupervisorMandateCenter.open} title={en.SupervisorMandateCenter.open}
-        className="inline-flex min-h-12 min-w-12 items-center justify-center rounded-full text-ink hover:bg-surface2 focus-visible:outline focus-visible:outline-2 focus-visible:outline-ink">
+        className="inline-flex min-h-[max(48px,3rem)] min-w-[max(48px,3rem)] items-center justify-center rounded-full text-ink hover:bg-surface2 focus-visible:outline focus-visible:outline-2 focus-visible:outline-ink">
         <Menu size={22} aria-hidden="true"/>
       </button>
       <button type="button" onClick={() => setControlsTab("work")} disabled={!enabled}
         aria-expanded={controlsTab==="work"} aria-label={en.SupervisorWork.heading} title={en.SupervisorWork.heading} aria-description={supervisorWork.unavailable?en.SupervisorWork.stale:workAttentionCount?en.SupervisorChat.needsYou+": "+workAttentionCount:undefined}
-        className="inline-flex min-h-12 min-w-12 items-center justify-center rounded-full text-ink-muted hover:bg-surface2 focus-visible:outline focus-visible:outline-2 focus-visible:outline-ink disabled:opacity-50">
+        className="inline-flex min-h-[max(48px,3rem)] min-w-[max(48px,3rem)] items-center justify-center rounded-full text-ink-muted hover:bg-surface2 focus-visible:outline focus-visible:outline-2 focus-visible:outline-ink disabled:opacity-50">
         <ListChecks size={21} aria-hidden="true" />
         {workAttentionCount>0&&<span className="text-xs font-semibold text-ink" aria-hidden="true">{workAttentionCount}</span>}
         {supervisorWork.unavailable&&<AlertCircle size={16} aria-hidden="true"/>}
@@ -1232,7 +1232,7 @@ export default function SupervisorChatComposer({
         aria-expanded={startExpanded} aria-controls={startExpanded?"supervisor-chat-insights":undefined}
         aria-label={chatStartCopy?.keyNumbers??en.Home.keyNumbers}
         title={chatStartCopy?.keyNumbers??en.Home.keyNumbers}
-        className="inline-flex min-h-12 min-w-12 items-center justify-center rounded-full text-ink-muted hover:bg-surface2 focus-visible:outline focus-visible:outline-2 focus-visible:outline-ink">
+        className="inline-flex min-h-[max(48px,3rem)] min-w-[max(48px,3rem)] items-center justify-center rounded-full text-ink-muted hover:bg-surface2 focus-visible:outline focus-visible:outline-2 focus-visible:outline-ink">
         <CalendarDays size={20} aria-hidden="true"/>
       </button>
       <h2 className="min-w-0 flex-1 truncate text-center font-headline text-[1.0625rem] font-medium tracking-tight text-ink">
@@ -1240,7 +1240,7 @@ export default function SupervisorChatComposer({
       </h2>
       <button type="button" onClick={() => selectThread(null)} disabled={!enabled || !canUseAi || sending || uploading || dictation==="recognizing" || dictation==="listening"}
         aria-label={copy.startNewChat} title={copy.startNewChat}
-        className="inline-flex min-h-12 min-w-12 items-center justify-center rounded-full text-ink hover:bg-surface2 focus-visible:outline focus-visible:outline-2 focus-visible:outline-ink disabled:opacity-50">
+        className="inline-flex min-h-[max(48px,3rem)] min-w-[max(48px,3rem)] items-center justify-center rounded-full text-ink hover:bg-surface2 focus-visible:outline focus-visible:outline-2 focus-visible:outline-ink disabled:opacity-50">
         <SquarePen size={21} aria-hidden="true" />
       </button>
     </header>
@@ -1418,14 +1418,14 @@ export default function SupervisorChatComposer({
         <button type="button" disabled={offline} className="flex min-h-12 flex-1 items-center gap-2 rounded-lg px-3 text-start hover:bg-surface2 disabled:opacity-50" onClick={()=>pickAttachment(true)}><Camera size={18} aria-hidden="true"/>{en.SupervisorExperience.takePhoto}</button>
       </div>}
       <form onSubmit={(event) => { event.preventDefault(); void sendText(draft); }}
-        className="glass grid grid-cols-[3rem_minmax(0,1fr)_3rem_3rem] items-end gap-1 rounded-[26px] p-1 focus-within:border-accent">
+        className="glass grid grid-cols-[max(48px,3rem)_minmax(0,1fr)_max(48px,3rem)_max(48px,3rem)] items-end gap-1 rounded-[26px] p-1 focus-within:border-accent">
         <input ref={filePicker} type="file" className="sr-only" tabIndex={-1} aria-hidden="true"
           accept=".txt,.csv,.xlsx,.pdf,.jpg,.jpeg,.png,.webp,text/plain,text/csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/pdf,image/jpeg,image/png,image/webp"
           onChange={(event) => void attach(event)} />
         <button ref={attachmentTrigger} type="button" onClick={() => setAttachmentMenu(v=>!v)} aria-expanded={attachmentMenu} aria-controls={attachmentMenu?"supervisor-attachment-choices":undefined}
           aria-label={copy.addAttachment} title={copy.addAttachment}
           disabled={restoringFiles || threadUnavailable || offline || !enabled || !canUseAi || sending || uploading || dictation === "listening" || dictation === "recognizing"}
-          className="col-start-1 row-start-1 flex h-12 w-12 items-center justify-center rounded-full text-ink-muted hover:bg-surface2 disabled:opacity-50">
+          className="col-start-1 row-start-1 flex h-[max(48px,3rem)] w-[max(48px,3rem)] items-center justify-center rounded-full text-ink-muted hover:bg-surface2 disabled:opacity-50">
           <Plus size={22} aria-hidden="true" />
         </button>
         <button type="button" onClick={() => void listen()}
@@ -1434,8 +1434,8 @@ export default function SupervisorChatComposer({
           aria-pressed={dictation === "listening"}
           disabled={threadUnavailable || (offline&&dictation!=="listening") || !enabled || !canUseAi || sending || uploading || dictation === "recognizing"}
           className={dictation === "listening"
-            ? "col-start-3 row-start-1 flex h-12 w-12 items-center justify-center rounded-full bg-neg text-paper ring-2 ring-neg-soft animate-pulse motion-reduce:animate-none"
-            : "col-start-3 row-start-1 flex h-12 w-12 items-center justify-center rounded-full text-ink-muted hover:bg-surface2 disabled:opacity-40"}>
+            ? "col-start-3 row-start-1 flex h-[max(48px,3rem)] w-[max(48px,3rem)] items-center justify-center rounded-full bg-neg text-paper ring-2 ring-neg-soft animate-pulse motion-reduce:animate-none"
+            : "col-start-3 row-start-1 flex h-[max(48px,3rem)] w-[max(48px,3rem)] items-center justify-center rounded-full text-ink-muted hover:bg-surface2 disabled:opacity-40"}>
           {dictation === "listening" ? <Square size={20} fill="currentColor" aria-hidden="true" />
             : dictation === "recognizing" ? <LoaderCircle size={21} className="animate-spin motion-reduce:animate-none" aria-hidden="true" />
               : <Mic size={22} aria-hidden="true" />}
@@ -1446,10 +1446,10 @@ export default function SupervisorChatComposer({
           onChange={(event) => { if(!threadId&&event.target.value)explicitNewChat.current=true;setDraft(event.target.value); retryId.current = null; }}
           onKeyDown={composerKey} disabled={!enabled || !canUseAi || inputLocked}
           placeholder={eventContext?.threadId===threadId?"@event "+eventContext.title+" · "+copy.askAnything:copy.askAnything}
-          className="col-start-2 row-start-1 min-w-0 max-h-40 min-h-12 resize-none overflow-y-auto bg-transparent px-2 py-3 text-[1.0625rem] leading-6 text-ink outline-none placeholder:text-ink-muted disabled:opacity-50" />
+          className="col-start-2 row-start-1 min-w-0 max-h-40 min-h-[max(48px,3rem)] resize-none overflow-y-auto bg-transparent px-2 py-3 text-[1.0625rem] leading-6 text-ink outline-none placeholder:text-ink-muted disabled:opacity-50" />
         <button type="submit" aria-label={copy.sendMessage}
           disabled={restoringFiles || offline || !enabled || !canUseAi || inputLocked || (!draft.trim()&&!attachments.length) || dictation === "listening" || dictation === "recognizing"}
-          className="col-start-4 row-start-1 flex h-12 w-12 items-center justify-center rounded-full bg-accent text-on-accent transition-transform hover:brightness-95 active:scale-95 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ink disabled:opacity-40">
+          className="col-start-4 row-start-1 flex h-[max(48px,3rem)] w-[max(48px,3rem)] items-center justify-center rounded-full bg-accent text-on-accent transition-transform hover:brightness-95 active:scale-95 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ink disabled:opacity-40">
           <ArrowUp size={22} aria-hidden="true" />
         </button>
       </form>
