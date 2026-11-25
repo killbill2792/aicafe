@@ -230,10 +230,16 @@ export async function runToastSyncTick(db:SupabaseClient,now=new Date(),
   };
   try {
    await isolated("order_recovery",async()=>{
-    if(process.env.TOAST_POLLING_ENABLED!=="true")return;
     const {pollToastOrderRevisions}=await import("./orderRecovery");
     await pollToastOrderRevisions(db,{businessId:m.business_id,restaurantGuid:m.restaurant_guid,
      locationId:m.location_id},now,Math.min(deadlineAt,Date.now()+60000));
+    const {error}=await db.rpc("toast_refresh_canonical_live",{p_business_id:m.business_id});
+    if(error)throw new ToastApiError("unavailable");
+   });
+   await isolated("live_events",async()=>{
+    if(process.env.EVENTS_LOOKAHEAD_ENABLED!=="true"||now.getUTCMinutes()%15!==0)return;
+    const {watchLiveEvents}=await import("@/lib/events/eventLiveWatch.server");
+    await watchLiveEvents(m.business_id,localClock(now,m.toast_time_zone).today);
    });
    await isolated("restaurant_info",async()=>{
    if(!m.info_refreshed_at||Date.parse(m.info_refreshed_at)<now.getTime()-DAY)

@@ -2,6 +2,8 @@ import "server-only";
 import type {SupabaseClient} from "@supabase/supabase-js";
 import {z} from "zod";
 import {GUID,ToastApiError,createToastClient} from "./client";
+import {parseToastDayPage} from "./dayParser";
+import {summarizeToastToday} from "./todaySoFar";
 import {localClock,addCalendarDays} from "./scheduleDates";
 import {redactToastRaw} from "./redact";
 import {stableToastOrder} from "./stableOrder";
@@ -42,7 +44,18 @@ export function prepareToastOrderRevision(scope:OrderScope,raw:unknown){
  const day=sourceOrderDay(raw,scope);
  const payload=stableToastOrder(redactToastRaw(raw,0,"",undefined,"orders"));
  if(!rawSchema.safeParse(payload).success)throw new ToastApiError("invalid_response");
- return {day,payload};
+ const parsed=parseToastDayPage([payload],scope.restaurantGuid,day,scope.timezone,scope.closeoutHour);
+ // Use the existing parser for every financial definition. Keep compact,
+ // per-order contributions on the same archive row (no second order store).
+ const order=parsed.orders[0],o=order?.normalized;
+ const items=(o?.lines??[]).filter(line=>!line.voided).map(line=>({
+  key:line.posItemId??"name:"+line.name,name:line.name,quantity:line.quantity,netSalesCents:line.netSalesCents}));
+ const reading=summarizeToastToday({businessDate:day,readAt:"",timezone:scope.timezone,pages:[parsed],
+  locationsRead:1,locationsFailed:0,truncated:false});
+ const {topItems:_,hourlySales:__,readAt:___,...totals}=reading;
+ // Hour labels must use the reporting timezone, not the provider closeout
+ // timezone; the database buckets the genuine observed timestamp.
+ return {day,payload,projection:{...totals,items,observedAt:order?.hourObservedAt??null}};
 }
 export async function ingestToastOrderRevision(db:SupabaseClient,scope:OrderScope,raw:unknown){
  const {data,error}=await db.rpc("toast_ingest_order_revisions",{

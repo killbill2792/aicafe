@@ -1,5 +1,6 @@
 -- Canonical incremental progress is distinct from the old staging-only cursor.
 -- Reuse the existing health, progress, raw archive, and repair queue. No history deleted.
+alter table public.toast_raw_records add column if not exists live_projection jsonb;
 alter table public.toast_sync_health add column if not exists canonical_order_poll_at timestamptz;
 alter table public.toast_sync_health add column if not exists canonical_live_day date;
 alter table public.toast_order_poll_progress add column if not exists canonical boolean not null default false;
@@ -102,6 +103,7 @@ begin
  for item in select value from jsonb_array_elements(p_rows) loop
   d:=(item->>'day')::date; payload:=item->'payload'; g:=(payload->>'guid')::uuid;
   if d is null or g is null or jsonb_typeof(payload) is distinct from 'object'
+   or jsonb_typeof(item->'projection') is distinct from 'object'
    or public.toast_time_or_null(payload->>'modifiedDate') is null
    or (payload->>'businessDate' is not null and payload->>'businessDate'<>to_char(d,'YYYYMMDD'))
    then raise exception 'invalid order revision';end if;
@@ -109,14 +111,19 @@ begin
   select * into prior from public.toast_raw_records
    where business_id=p_business_id and restaurant_guid=p_restaurant_guid and business_date=d
     and entity='order' and entity_guid=g order by last_seen desc,id desc limit 1;
-  if found and (prior.payload_sha256=sha or
-   public.toast_time_or_null(prior.payload->>'modifiedDate')>public.toast_time_or_null(payload->>'modifiedDate')) then continue;end if;
+  if found and public.toast_time_or_null(prior.payload->>'modifiedDate')>public.toast_time_or_null(payload->>'modifiedDate') then continue;end if;
   if d>=current_day and not exists(select 1 from public.toast_day_status s
     where s.business_id=p_business_id and s.restaurant_guid=p_restaurant_guid and s.business_date=d and s.import_state='imported') then
    result:=public.toast_archive_order(p_business_id,p_restaurant_guid,g,d,payload,sha,null,null,null,
     'live:'||p_restaurant_guid::text||':'||d::text||':'||g::text,false);
-   if result in ('inserted','changed') then changed:=changed+1;end if;
-  else
+   if result in ('inserted','changed','same') then
+    update public.toast_raw_records set live_projection=item->'projection'
+     where business_id=p_business_id and restaurant_guid=p_restaurant_guid and business_date=d
+      and entity='order' and entity_guid=g and payload_sha256=sha
+      and live_projection is distinct from item->'projection';
+    if found then changed:=changed+1;end if;
+   end if;
+  elsif prior.id is null or prior.payload_sha256<>sha then
    perform public.toast_queue_owner_repull(p_business_id,p_restaurant_guid,d);
   end if;
  end loop;
@@ -168,3 +175,72 @@ begin
 end $$;
 revoke all on function public.toast_commit_canonical_order_page(uuid,uuid,uuid,timestamptz,timestamptz,integer,jsonb,boolean,date) from public,anon,authenticated;
 grant execute on function public.toast_commit_canonical_order_page(uuid,uuid,uuid,timestamptz,timestamptz,integer,jsonb,boolean,date) to service_role;
+
+-- Refresh the existing one-row-per-café live summary entirely within Postgres.
+-- No provider calls, raw payload transfer, new report or new order table.
+create or replace function public.toast_refresh_canonical_live(p_business_id uuid)
+returns jsonb language plpgsql security invoker set search_path=public as $$
+declare d date; zone text; source_at timestamptz; n integer; ready integer; result jsonb;
+begin
+ if auth.role() is distinct from 'service_role' then raise exception 'service role only';end if;
+ perform pg_advisory_xact_lock(hashtextextended('toast-live:'||p_business_id::text,0));
+ select b.timezone into zone from public.businesses b where b.id=p_business_id and not b.is_demo;
+ if zone is null then return null;end if;
+ select min(((now() at time zone m.toast_time_zone)-make_interval(hours=>m.closeout_hour))::date),
+  count(*) into d,n
+ from public.toast_location_mappings m where m.business_id=p_business_id and m.verified_at is not null
+  and m.toast_time_zone is not null and m.closeout_hour is not null;
+ if n=0 or d is null then return null;end if;
+ select count(*),min(h.canonical_order_poll_at) into ready,source_at
+ from public.toast_location_mappings m join public.toast_sync_health h using(business_id,restaurant_guid)
+ where m.business_id=p_business_id and m.verified_at is not null and h.canonical_live_day=d
+  and h.canonical_order_poll_at is not null
+  and ((now() at time zone m.toast_time_zone)-make_interval(hours=>m.closeout_hour))::date=d;
+ if ready<>n then return null;end if;
+ with revisions as materialized (
+  select r.live_projection p
+  from public.toast_raw_records r join public.toast_location_mappings m using(business_id,restaurant_guid)
+  where r.business_id=p_business_id and r.business_date=d and r.entity='order'
+   and m.verified_at is not null and r.live_projection is not null
+   and not exists(select 1 from public.toast_raw_records newer
+    where newer.business_id=r.business_id and newer.restaurant_guid=r.restaurant_guid
+     and newer.entity='order' and newer.entity_guid=r.entity_guid and newer.business_date<>r.business_date
+     and public.toast_time_or_null(newer.payload->>'modifiedDate')>public.toast_time_or_null(r.payload->>'modifiedDate'))
+ ), amounts as (
+  select coalesce(sum((p->>'netSalesCents')::bigint),0) net,
+   coalesce(sum((p->>'grossSalesCents')::bigint),0) gross,
+   coalesce(sum((p->>'discountsCents')::bigint),0) discounts,
+   coalesce(sum((p->>'refundsCents')::bigint),0) refunds,
+   coalesce(sum((p->>'tipCents')::bigint),0) tips,
+   coalesce(sum((p->>'orders')::integer),0) orders,
+   coalesce(sum((p->>'openChecks')::integer),0) open_checks,
+   coalesce(sum((p->>'unparsedOrders')::integer),0) unparsed,
+   coalesce(sum((p->>'orders')::integer) filter(where public.toast_time_or_null(p->>'observedAt') is null),0) unassigned
+  from revisions
+ ), hours as (
+  select extract(hour from public.toast_time_or_null(p->>'observedAt') at time zone zone)::integer h,
+   sum((p->>'netSalesCents')::bigint) net,sum((p->>'orders')::integer) orders
+  from revisions where (p->>'orders')::integer>0 and public.toast_time_or_null(p->>'observedAt') is not null group by 1
+ ), items as (
+  select min(x->>'name') name,sum((x->>'quantity')::numeric) quantity,sum((x->>'netSalesCents')::bigint) net
+  from revisions cross join lateral jsonb_array_elements(p->'items') x
+  group by x->>'key' order by quantity desc,net desc,min(x->>'name') limit 5
+ )
+ select jsonb_build_object('provisional',true,'businessDate',d,'readAt',source_at,
+  'netSalesCents',net,'grossSalesCents',gross,'discountsCents',discounts,'refundsCents',refunds,'tipCents',tips,
+  'orders',orders,'openChecks',open_checks,'unparsedOrders',unparsed,'locationsRead',ready,'locationsFailed',0,
+  'truncated',false,'hourlyUnassignedOrders',unassigned,
+  'hourlySales',coalesce((select jsonb_agg(jsonb_build_object('hourLocal',h,'netSalesCents',hours.net,'ordersCount',hours.orders) order by h) from hours),'[]'::jsonb),
+  'topItems',coalesce((select jsonb_agg(jsonb_build_object('name',name,'quantity',quantity,'netSalesCents',items.net) order by quantity desc,items.net desc,name) from items),'[]'::jsonb))
+ into result from amounts;
+ insert into public.toast_today_live(business_id,business_date,read_at,net_sales_cents,orders,reading)
+ values(p_business_id,d,source_at,(result->>'netSalesCents')::bigint,(result->>'orders')::integer,result)
+ on conflict(business_id) do update set business_date=excluded.business_date,read_at=excluded.read_at,
+  net_sales_cents=excluded.net_sales_cents,orders=excluded.orders,reading=excluded.reading,updated_at=now()
+ where (toast_today_live.business_date<excluded.business_date or
+   (toast_today_live.business_date=excluded.business_date and toast_today_live.read_at<=excluded.read_at))
+  and toast_today_live.reading is distinct from excluded.reading;
+ return result;
+end $$;
+revoke all on function public.toast_refresh_canonical_live(uuid) from public,anon,authenticated;
+grant execute on function public.toast_refresh_canonical_live(uuid) to service_role;

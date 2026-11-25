@@ -20,6 +20,9 @@ export async function stageQueuedToastOrder(db:SupabaseClient,event:Claimed,dead
   throw new ToastApiError("unauthorized_location");
  const result=await fetchAndIngestToastOrder(db,{businessId:event.business_id,restaurantGuid:event.restaurant_guid,
   timezone:mapping.toast_time_zone,closeoutHour:mapping.closeout_hour},event.order_guid,deadlineAt);
+ // Publish the shared summary immediately when the location has a complete seed.
+ const {error:summaryError}=await db.rpc("toast_refresh_canonical_live",{p_business_id:event.business_id});
+ if(summaryError)throw new ToastApiError("unavailable");
  return result;
 }
 export async function runToastOrderQueue(db:SupabaseClient,deadlineAt?:number) {
