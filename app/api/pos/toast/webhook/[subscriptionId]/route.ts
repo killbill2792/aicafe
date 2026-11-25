@@ -1,4 +1,5 @@
-import {NextResponse} from "next/server";
+import {NextResponse,after} from "next/server";
+import {runToastOrderQueue} from "@/lib/pos/toast/orderQueue";
 import {createAdminSupabaseClient} from "@/lib/supabase/admin";
 import {decryptToken} from "@/lib/security/tokenCrypto";
 import {GUID} from "@/lib/pos/toast/client";
@@ -46,5 +47,10 @@ export async function POST(request:Request,context:{params:Promise<{subscription
   });
   if(insertError?.code==="23505")return response(202,{accepted:true,duplicate:true});
   if(insertError)return response(503,{error:"queue_unavailable"});
+  // The durable receipt survives a terminated invocation. Start the existing
+  // worker immediately; the coordinator retries anything not completed.
+  if(process.env.TOAST_JOBS_ENABLED==="true")after(async()=>{
+    try{await runToastOrderQueue(db,Date.now()+20000);}catch{/* durable queue retry */}
+  });
   return response(202,{accepted:true});
 }

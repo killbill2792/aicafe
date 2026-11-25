@@ -2,11 +2,11 @@ import {describe,it,expect,vi} from "vitest";
 vi.mock("server-only",()=>({}));
 import {orderRecoveryCadence,orderRecoveryWindow} from "./orderRecovery";
 describe("webhook-primary incremental fallback",()=>{
- it("uses frequent polling without a working webhook and less frequent recovery with one",()=>{
-  expect(orderRecoveryCadence(true,false)).toBe(600000);
-  expect(orderRecoveryCadence(true,true)).toBe(3600000);
-  expect(orderRecoveryCadence(false,false)).toBe(3600000);
-  expect(orderRecoveryCadence(false,true)).toBe(3600000);
+ it("uses the same five-minute live recovery even with a configured webhook",()=>{
+  expect(orderRecoveryCadence(true,false)).toBe(300000);
+  expect(orderRecoveryCadence(true,true)).toBe(300000);
+  expect(orderRecoveryCadence(false,false)).toBe(1800000);
+  expect(orderRecoveryCadence(false,true)).toBe(1800000);
  });
  it("recovers a missed month without jumping to recent dates",()=>{
   const cursor="2026-10-01T08:00:00Z";

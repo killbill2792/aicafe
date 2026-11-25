@@ -14,7 +14,7 @@
     },
     {
       "path": "/api/cron/toast-sync",
-      "schedule": "*/10 * * * *"
+      "schedule": "*/5 * * * *"
     },
     {
       "path": "/api/cron/square-sync",

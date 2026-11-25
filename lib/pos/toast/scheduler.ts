@@ -229,6 +229,12 @@ export async function runToastSyncTick(db:SupabaseClient,now=new Date(),
    }
   };
   try {
+   await isolated("order_recovery",async()=>{
+    if(process.env.TOAST_POLLING_ENABLED!=="true")return;
+    const {pollToastOrderRevisions}=await import("./orderRecovery");
+    await pollToastOrderRevisions(db,{businessId:m.business_id,restaurantGuid:m.restaurant_guid,
+     locationId:m.location_id},now,Math.min(deadlineAt,Date.now()+60000));
+   });
    await isolated("restaurant_info",async()=>{
    if(!m.info_refreshed_at||Date.parse(m.info_refreshed_at)<now.getTime()-DAY)
     await refreshToastRestaurantInfo(db,m.business_id,m.restaurant_guid,{deadlineAt});
@@ -266,12 +272,6 @@ export async function runToastSyncTick(db:SupabaseClient,now=new Date(),
     if(daily&&shouldResume(daily as Run,Date.now()))
      processed+=await runDue(db,m,daily as Run,deadlineAt,5,paceHistorical);
    }
-   });
-   await isolated("order_recovery",async()=>{
-    if(process.env.TOAST_POLLING_ENABLED!=="true")return;
-    const {pollToastOrderRevisions}=await import("./orderRecovery");
-    await pollToastOrderRevisions(db,{businessId:m.business_id,restaurantGuid:m.restaurant_guid,
-     locationId:m.location_id},now,Math.min(deadlineAt,Date.now()+60000));
    });
    await isolated("operational",async()=>{
     if(Date.now()<deadlineAt)await syncToastOperationalSources(db,{

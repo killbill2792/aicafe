@@ -7,11 +7,12 @@ import {ingestToastOrderRevision} from "./orderIngestion";
 import {orderEventRetryAt} from "./orderQueue";
 import {isCafeCurrentlyOpen} from "./poll";
 import {currentToastBusinessDay} from "./todaySoFar";
-import {addCalendarDays} from "./scheduleDates";
+import {addCalendarDays,localClock} from "./scheduleDates";
+import {normalizeOpenHours,OPEN_HOURS_DAY_KEYS} from "@/lib/business/openHours";
 
 const MINUTE=60000;
-export const orderRecoveryCadence=(open:boolean,webhookSeen:boolean)=>
- (open&&!webhookSeen?10:60)*MINUTE;
+export const orderRecoveryCadence=(open:boolean,_webhookSeen:boolean)=>
+ (open?5:30)*MINUTE;
 
 /** A committed modification-time cursor, independent of the order's business
  * date. Do not discard a gap after a long outage. Replay a short overlap; the
@@ -36,18 +37,9 @@ export async function pollToastOrderRevisions(db:SupabaseClient,p:Params,now=new
  if(!m?.verified_at||!m.toast_time_zone||m.closeout_hour==null||!l)throw new ToastApiError("unauthorized_location");
  const scope={businessId:p.businessId,restaurantGuid:p.restaurantGuid,timezone:m.toast_time_zone,closeoutHour:m.closeout_hour};
  const cursor=h?.last_order_poll_at as string|null|undefined;
- let webhookSeen=false;
- if(process.env.TOAST_WEBHOOKS_ENABLED==="true"&&process.env.TOAST_JOBS_ENABLED==="true"){
-  const [subscription,event]=await Promise.all([
-   db.from("toast_webhook_subscriptions").select("id").eq("business_id",p.businessId).eq("enabled",true).limit(1),
-   db.from("toast_order_events").select("event_guid").eq("business_id",p.businessId)
-    .eq("restaurant_guid",p.restaurantGuid).eq("state","complete").limit(1)
-  ]);
-  if(subscription.error||event.error)throw new ToastApiError("unavailable");
-  webhookSeen=Boolean(subscription.data?.length&&event.data?.length);
- }
- const open=isCafeCurrentlyOpen(l.open_hours,scope.timezone,now);
- if(cursor&&now.getTime()-Date.parse(cursor)<orderRecoveryCadence(open,webhookSeen))
+ const hours=normalizeOpenHours(l.open_hours);
+ const open=!hours||!Object.prototype.hasOwnProperty.call(hours,OPEN_HOURS_DAY_KEYS[new Date(Date.parse(localClock(now,scope.timezone).today+"T12:00:00Z")).getUTCDay()])||isCafeCurrentlyOpen(hours,scope.timezone,now);
+ if(cursor&&now.getTime()-Date.parse(cursor)<orderRecoveryCadence(open,false))
   return {skipped:"not_due",fetched:0};
  const {data:lease,error:claimError}=await db.rpc("toast_claim_poll",{p_business_id:p.businessId,
   p_restaurant_guid:p.restaurantGuid,p_kind:"orders"});
