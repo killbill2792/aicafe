@@ -148,3 +148,22 @@ describe("proactive priority ranking and source revision",()=>{
       .not.toBe(choosePriorities([{...base,ownerUserId:"other"}],now)[0].stableKey);
   });
 });
+
+describe("owner notices exclude system conditions",()=>{
+  const now=new Date("2026-11-11T00:00:00Z");
+  const anomaly=(id:string,evidence:Record<string,unknown>):PrioritySource=>({...base,sourceId:id,kind:"business_anomaly",evidence});
+  it("never ranks a reader outage or import-lag gap, but keeps a gap only the owner can fill and real alerts",()=>{
+    const chosen=choosePriorities([
+      anomaly("outage",{family:"data_gap",subject:"reader_unavailable:expenses",quality:"missing"}),
+      anomaly("lag",{family:"data_gap",subject:"sales_coverage",quality:"missing"}),
+      anomaly("wages",{family:"data_gap",subject:"actual_wage_coverage",quality:"missing"}),
+      anomaly("decline",{family:"live_sales_decline",subject:"cafe",quality:"partial"}),
+      {...base,sourceId:"meal",kind:"meal_break",evidence:{dedupeKey:"t"}},
+    ],now,10);
+    expect(chosen.map(c=>c.source.sourceId).sort()).toEqual(["decline","meal","wages"]);
+  });
+  it("never ranks a daily brief as an incident",()=>{
+    const brief:PrioritySource={...base,sourceType:"operating_task",sourceId:"brief",kind:"daily_brief",status:"needs_owner"};
+    expect(choosePriorities([brief],now,10)).toEqual([]);
+  });
+});
