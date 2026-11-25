@@ -8,7 +8,7 @@ import {resolve,dirname} from "node:path";
 import {pathToFileURL} from "node:url";
 import {TEST_CAFES} from "../../../scripts/seed/cafes.mjs";
 import {assertLocalLiveEnvironment} from "./preflight.mjs";
-import {completedSqlReceiptCount,readPersistedModelUsage,requireObservedProductionModel,verifyCheckoutHead} from "./runner.mjs";
+import {completedSqlReceiptCount,hasCompletedSqlSources,readPersistedModelUsage,requireObservedProductionModel,verifyCheckoutHead} from "./runner.mjs";
 import {matchedMoney} from "./u2-model-execution.mjs";
 
 const fail=(reason)=>{throw Error("u3_canonical_research_live:"+reason);};
@@ -143,6 +143,88 @@ export function assertU3HistoryEvidence({model,tools,text,oracle,proposals,sqlRe
   fail("historical_independent_source_result_mismatch");
  if(proposals!==0)fail("unapproved_effect_created");
 }
+/** Two different café-specific cost structures. Independent SQL reads the
+ * inserted facts; neither the test's SQL nor expected results reach Luna.
+ * The variable commission is an explicitly stated hypothetical assumption,
+ * not fabricated saved data. */
+export async function seedU3FinancialOracle(db,cafes){
+ const connection=db.connectionParameters;
+ if(!connection||!["127.0.0.1","localhost"].includes(connection.host)||
+  Number(connection.port)!==54322||connection.database!=="postgres"||connection.user!=="postgres")
+  fail("non_disposable_financial_fixture");
+ const results=[];
+ await db.query("BEGIN");
+ try{
+  for(const [i,cafe] of cafes.entries()){
+   const id=cafe.businessId;
+   const [range]=await query(db,"SELECT (date_trunc('month',min(business_date))-interval '1 month')::date::text AS first,"+
+    "(date_trunc('month',min(business_date))-interval '1 day')::date::text AS last FROM public.daily_rollups WHERE business_id=$1",[id]);
+   if(!range?.first||!range?.last)fail("financial_fixture_date_missing");
+   const [existing]=await query(db,"SELECT (SELECT count(*) FROM public.expenses WHERE business_id=$1 AND spent_on BETWEEN $2 AND $3)+"+
+    "(SELECT count(*) FROM public.recurring_costs WHERE business_id=$1 AND active_from<=$3 AND (active_to IS NULL OR active_to>=$2)) AS n",
+    [id,range.first,range.last]);
+   if(Number(existing?.n)!==0)fail("financial_fixture_window_not_empty");
+   const monthlyId=randomUUID(),annualId=randomUUID(),expenseId=randomUUID();
+   const monthlyLabel=i?"Workshop equipment support":"Cold-storage retainer";
+   const annualLabel=i?"Independent signage licence":"Shared delivery access";
+   const oneTimeLabel=i?"Unexpected floor repair":"One-off insulation repair";
+   const extraPercent=i?7:5;
+   await db.query("INSERT INTO public.recurring_costs(id,business_id,category_code,label,amount_cents,frequency,is_estimate,active_from,active_to) "+
+    "VALUES($1,$2,'other',$3,$4,'monthly',false,$5,$6),($7,$2,'other',$8,$9,'yearly',false,$5,$6)",
+    [monthlyId,id,monthlyLabel,135000+i*51000,range.first,range.last,annualId,annualLabel,924000+i*192000]);
+   await db.query("INSERT INTO public.expenses(id,business_id,spent_on,amount_cents,category_code,source,status,recurring_cost_id,custom_label,dedupe_key) "+
+    "VALUES($1,$2,$3,$4,'other','manual','actual',$5,$6,$1::text),"+
+    "(gen_random_uuid(),$2,$3,$7,'other','manual','actual',NULL,$8,$9),"+
+    "(gen_random_uuid(),$2,$3,19000,'other','manual','estimated',$10,$11,$12)",
+    [expenseId,id,range.first,45000+i*23000,monthlyId,monthlyLabel,28000+i*17000,oneTimeLabel,
+     "u3-finance-"+randomUUID(),annualId,annualLabel,"u3-finance-"+randomUUID()]);
+   await db.query("INSERT INTO public.daily_rollups(business_id,business_date,net_sales_cents,orders_count,drinks_count,ingredients_cents,staff_wages_cents,staff_tax_cents,card_fees_cents,card_fees_status,voids_cents,sales_data_status,voids_status) "+
+    "SELECT $1,d::date,$4,100,80,$5,$6,$7,$8,'actual',0,'actual','complete' FROM generate_series($2::date,$3::date,interval '1 day') d",
+    [id,range.first,range.last,100000+i*50000,20000+i*25000,30000+i*10000,2000+i*2000,3000+i*1500]);
+   const [truth]=await query(db,"WITH actual AS (SELECT sum(amount_cents) AS cents FROM public.expenses WHERE business_id=$1 AND spent_on BETWEEN $2 AND $3 AND status='actual'),"+
+    "budget AS (SELECT sum(CASE frequency WHEN 'yearly' THEN amount_cents::numeric/12 WHEN 'monthly' THEN amount_cents::numeric ELSE NULL END) AS cents FROM public.recurring_costs WHERE business_id=$1 AND active_from<=$3 AND (active_to IS NULL OR active_to>=$2)),"+
+    "rollup AS (SELECT sum(net_sales_cents)::numeric sales,sum(ingredients_cents+card_fees_cents)::numeric variable,sum(staff_wages_cents+staff_tax_cents)::numeric labor FROM public.daily_rollups WHERE business_id=$1 AND business_date BETWEEN $2 AND $3) "+
+    "SELECT actual.cents::text AS actual,budget.cents::text AS budget,(sales-variable-labor-actual.cents)::text AS known_profit,"+
+    "round((budget.cents+labor)/(1-variable/sales-$4::numeric/100))::text AS break_even FROM actual,budget,rollup",
+    [id,range.first,range.last,extraPercent]);
+   const values=Object.fromEntries(Object.entries(truth??{}).map(([k,v])=>[k,Number(v)]));
+   if(Object.keys(values).length!==4||Object.values(values).some(v=>!Number.isSafeInteger(v)||v<=0))
+    fail("financial_independent_oracle_missing");
+   results.push({businessId:id,expenseId,monthlyId,annualId,from:range.first,to:range.last,monthlyLabel,annualLabel,oneTimeLabel,extraPercent,...values});
+  }
+  await db.query("COMMIT");
+ }catch(error){await db.query("ROLLBACK");throw error}
+ if(results.length!==2||results[0].break_even===results[1].break_even)fail("distinct_financial_oracles_required");
+ return results;
+}
+export function assertU3FinancialEvidence({model,tools,text,oracle,proposals,sqlLog,foreignOracle}){
+ requireObservedProductionModel(model,"gpt-6-luna");
+ if(!Array.isArray(tools)||!tools.includes("query_data")||
+  !hasCompletedSqlSources(sqlLog,[["expenses"],["recurring_costs"],["daily_rollups"]]))
+  fail("financial_source_receipts_missing");
+ // Labels make the oracle sensitive to which number answers which objective,
+ // not just whether four unrelated amounts happen to occur in the response.
+ for(const [label,expected] of [["recorded expense",oracle.actual],["recurring budget",oracle.budget],
+  ["known-cost profit",oracle.known_profit],["break-even",oracle.break_even]]){
+  const lines=text.split(/\n+/).filter(line=>line.toLowerCase().includes(label));
+  if(!lines.some(line=>matchedMoney(line,expected)))fail("financial_answer_mismatch_"+label);
+ }
+ for(const label of [oracle.monthlyLabel,oracle.annualLabel,oracle.oneTimeLabel])
+  if(!text.toLowerCase().includes(label.toLowerCase()))fail("financial_obligation_identity_missing");
+ if(foreignOracle&&[foreignOracle.monthlyLabel,foreignOracle.annualLabel,foreignOracle.oneTimeLabel].some(label=>text.toLowerCase().includes(label.toLowerCase())))
+  fail("foreign_financial_fact_visible");
+ if(!/hypothetic|scenario|assumption/i.test(text)||!/estimate|recorded|known.cost/i.test(text)||proposals!==0)
+  fail("financial_basis_or_effect_boundary");
+}
+async function observedObjectiveMetrics(db,businessId,usage,tools,sqlLog,elapsedMs){
+ const [row]=await query(db,"SELECT output_tokens,estimated_cost_micros,execution_metrics FROM public.ai_usage_events WHERE business_id=$1 AND id=$2",[businessId,usage.id]);
+ if(!row||!Number.isSafeInteger(row.output_tokens)||row.output_tokens<0||!Number.isSafeInteger(elapsedMs)||elapsedMs<0)
+  fail("objective_usage_missing");
+ const cost=row.estimated_cost_micros===null?null:Number(row.estimated_cost_micros);
+ if(cost!==null&&(!Number.isSafeInteger(cost)||cost<0))fail("objective_cost_invalid");
+ return {modelCalls:observedProviderCalls(usage),toolCalls:tools.length,completedSqlReceipts:completedSqlReceiptCount(sqlLog),
+  inputTokens:Number(usage.input_tokens),outputTokens:row.output_tokens,estimatedCostMicros:cost,elapsedMs};
+}
 async function login(browser,cafe){
  const context=await browser.newContext({baseURL:"http://127.0.0.1:3000",serviceWorkers:"block"});
  const page=await context.newPage();
@@ -230,12 +312,14 @@ async function main(){
   if(!/^[0-9a-f-]{36}$/i.test(thread??""))fail("thread_id_missing");
   const serverLog=resolve(dirname(out),"next.log");
   const logStart=statSync(serverLog).size;
+  const started=Date.now();
   const turn=await ownerTurn(owner.page,thread,
    "For "+date+", investigate this cafe's actual recorded order count, "+
    "order-line count and net sales, without multiplying the sales total "+
    "by joining to order lines. Use the available data sources, distinguish "+
    "recorded facts from missing coverage, and give "+cafe.currency+
    " with two decimals. This is research only: do not create or change anything.");
+  const elapsedMs=Date.now()-started;
   const ownerMessage=await query(db,"SELECT id FROM public.ai_messages "+
    "WHERE business_id=$1 AND thread_id=$2 AND role='owner' AND client_message_id=$3",
    [cafe.businessId,thread,turn.clientMessageId]);
@@ -286,6 +370,43 @@ async function main(){
    proposals:historicalProposals[0]?.n,sqlReceipts:historicalSqlReceipts});
   console.log("U3: historical cross-domain independent source comparison verified.");
   foreign=await login(browser,other);
+  const finance=await seedU3FinancialOracle(db,[cafe,other]);
+  const objectives=[
+   {id:"order-line-fanout",...await observedObjectiveMetrics(db,cafe.businessId,usage,turn.names,log.subarray(logStart).toString("utf8"),elapsedMs)},
+   {id:"historical-cross-domain",...await observedObjectiveMetrics(db,cafe.businessId,historicalUsage,historical.names,historicalLog.subarray(historicalLogStart).toString("utf8"),historicalElapsedMs)}
+  ];
+  const financialScopes=[];
+  for(const [i,identity] of [owner,foreign].entries()){
+   const target=[cafe,other][i],oracle=finance[i];
+   const response=await identity.context.request.post("/api/ai/threads",{
+    headers:{Origin:"http://127.0.0.1:3000"},data:{requestId:randomUUID(),title:"U3 café financial analysis"}});
+   if(response.status()!==201)fail("financial_thread_creation_failed");
+   const financeThread=(await response.json()).thread?.id;
+   if(!/^[0-9a-f-]{36}$/i.test(financeThread??""))fail("financial_thread_missing");
+   const mark=statSync(serverLog).size,start=Date.now();
+   const observed=await ownerTurn(identity.page,financeThread,
+    "For "+oracle.from+" through "+oracle.to+", independently inspect my saved costs and sales. "+
+    "List each recorded and recurring obligation by its own label, including actual versus estimated status. "+
+    "Give the actual recorded expense total and the monthly-equivalent recurring budget (not extra incurred expenses). "+
+    "Calculate known-cost profit from recorded net sales less recorded actual expenses, ingredients, processing fees, wages and payroll taxes. Do not certify completeness beyond the evidence. "+
+    "For a hypothetical break-even, use the monthly-equivalent recurring commitments plus recorded wages and payroll taxes as fixed costs, "+
+    "the recorded ingredient and processing-fee share of sales as variable costs, and an additional hypothetical "+oracle.extraPercent+"% of sales commission. "+
+    "Give each of these four results in "+target.currency+" with two decimals, clearly labelled on separate lines: Recorded expense, Recurring budget, Known-cost profit, Break-even. "+
+    "This is research and scenario analysis only; do not create or change anything.");
+   const took=Date.now()-start;
+   const [message]=await query(db,"SELECT id FROM public.ai_messages WHERE business_id=$1 AND thread_id=$2 AND role='owner' AND client_message_id=$3",[target.businessId,financeThread,observed.clientMessageId]);
+   if(!message)fail("financial_owner_message_missing");
+   const paid=await readPersistedModelUsage(db,target.businessId,message.id);
+   const [saved]=await query(db,"SELECT structured_content FROM public.ai_messages WHERE business_id=$1 AND thread_id=$2 AND role='supervisor' AND id=$3",[target.businessId,financeThread,observed.done.reply.id]);
+   if(!Array.isArray(saved?.structured_content)||saved.structured_content.some(b=>b.type==="proposal_card"||b.type==="experiment_card"))fail("financial_effect_card");
+   const [effects]=await query(db,"SELECT count(*)::int n FROM public.supervisor_proposals WHERE business_id=$1 AND thread_id=$2",[target.businessId,financeThread]);
+   const bytes=readFileSync(serverLog);if(bytes.length<mark)fail("financial_log_replaced");
+   const sqlLog=bytes.subarray(mark).toString("utf8");
+   assertU3FinancialEvidence({model:paid.model,tools:observed.names,text:saved.structured_content.filter(b=>b.type==="text").map(b=>b.text).join(""),
+    oracle,foreignOracle:finance[1-i],proposals:effects?.n,sqlLog});
+   objectives.push({id:"financial-cafe-"+(i+1),...await observedObjectiveMetrics(db,target.businessId,paid,observed.names,sqlLog,took)});
+   financialScopes.push({threadId:financeThread,replyId:observed.done.reply.id,expenseId:oracle.expenseId,monthlyId:oracle.monthlyId,annualId:oracle.annualId});
+  }
   const denied=await foreign.context.request.get("/api/ai/threads/"+thread);
   if(![401,403,404].includes(denied.status()))fail("cross_cafe_thread_visible");
   const scope={businessId:cafe.businessId,otherCafeId:other.businessId,
@@ -294,11 +415,14 @@ async function main(){
    orderCount:orders.n,lineCount:lines.n,netCents:String(orders.cents),
    historicalReplyId:historical.done.reply.id,historicalEmployeeId:history.employeeId,
    historicalOrderId:history.night.sample_id,historicalTimecardId:history.timecardId,historicalOpenTimecardId:history.openCardId,
-   expectedProviderCalls:observedProviderCalls(usage)+observedProviderCalls(historicalUsage)};
+   financialThreadId:financialScopes[0].threadId,financialReplyId:financialScopes[0].replyId,financialExpenseId:financialScopes[0].expenseId,
+   otherFinancialThreadId:financialScopes[1].threadId,otherFinancialReplyId:financialScopes[1].replyId,otherFinancialExpenseId:financialScopes[1].expenseId,
+   expectedProviderCalls:objectives.reduce((sum,objective)=>sum+objective.modelCalls,0)};
   writeFileSync(out,JSON.stringify({id:"u3-canonical-research",schema_version:1,
    head_sha:env.HEAD_SHA,status:"passed",observed_model:usage.model,
    checks:{sourceMatch:true,registeredResearch:true,committedSqlResearch:true,foreignDenied:true,noEffect:true},
-   completedSqlReceipts:sqlReceipts+historicalSqlReceipts,
+   completedSqlReceipts:objectives.reduce((sum,objective)=>sum+objective.completedSqlReceipts,0),
+   financialCrossCafe:true,objectives,
    historicalCrossDomain:true,historicalElapsedMs,
    nativeResearchHost:env.AICAFE_SHARED_LUNA_NATIVE_RESEARCH==="1",
    observedModelCalls:scope.expectedProviderCalls})+"\n",{mode:0o600,flag:"wx"});

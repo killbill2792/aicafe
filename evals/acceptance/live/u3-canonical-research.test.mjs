@@ -1,7 +1,7 @@
 import {completedSqlReceiptCount} from "./runner.mjs";
 import test from "node:test";
 import assert from "node:assert/strict";
-import {matchedCount,assertU3ObservedEvidence,resolveU3ProofPaths,observedProviderCalls,matchedLocalTime,assertU3HistoryEvidence,requireNativeResearchHost} from "./u3-canonical-research.mjs";
+import {matchedCount,assertU3ObservedEvidence,resolveU3ProofPaths,observedProviderCalls,matchedLocalTime,assertU3HistoryEvidence,requireNativeResearchHost,assertU3FinancialEvidence} from "./u3-canonical-research.mjs";
 
 test("U3 independent count check rejects substring, wrong count and absent source",()=>{
  assert.equal(matchedCount("17 orders and 61 order lines",17),true);
@@ -68,4 +68,17 @@ test("historical oracle requires exact local punches, night revenue, ranking and
  assert.equal(matchedLocalTime("122:15","22:15"),false);
  assert.equal(matchedLocalTime("2:45 AM","02:45"),true);
  assert.equal(matchedLocalTime("2:45 PM","02:45"),false);
+});
+
+test("financial oracle checks all four independently labelled values and source receipts",()=>{
+ const oracle={actual:12345,budget:23456,known_profit:34567,break_even:45678,monthlyLabel:"Cold-storage retainer",annualLabel:"Shared delivery access",oneTimeLabel:"Insulation repair"};
+ const log=(relation,i)=>"u3_sql_research_receipt {\n  receipt_id: '"+i+"1111111-1111-4111-8111-111111111111',\n  duration_ms: 37,\n  relation_count: 1,\n  page_complete: true,\n  relation_names: '"+relation+"'\n}";
+ const ok={model:"gpt-6-luna",tools:["query_data"],oracle,proposals:0,
+  sqlLog:[log("expenses",1),log("recurring_costs",2),log("daily_rollups",3)].join("\n"),
+  text:"Recorded expense: $123.45\nRecurring budget: $234.56\nKnown-cost profit: $345.67\nBreak-even: $456.78 (hypothetical scenario)\nCold-storage retainer, Shared delivery access, Insulation repair. Estimate distinguished."};
+ assert.doesNotThrow(()=>assertU3FinancialEvidence(ok));
+ assert.throws(()=>assertU3FinancialEvidence({...ok,text:ok.text.replace("123.45","234.56")}),/financial_answer_mismatch/);
+ assert.throws(()=>assertU3FinancialEvidence({...ok,sqlLog:log("expenses",1)}),/financial_source_receipts_missing/);
+ assert.throws(()=>assertU3FinancialEvidence({...ok,proposals:1}),/financial_basis_or_effect_boundary/);
+ assert.throws(()=>assertU3FinancialEvidence({...ok,foreignOracle:{monthlyLabel:"Cold-storage retainer",annualLabel:"Foreign annual",oneTimeLabel:"Foreign repair"}}),/foreign_financial_fact_visible/);
 });
