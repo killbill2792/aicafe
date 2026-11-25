@@ -823,7 +823,7 @@ export default function SupervisorChatComposer({
               }
             } else if (type === "thinking" && typeof event.text === "string") {
               // Luna's own running summary of what it is working out.
-              setLiveNote(event.text.trim().slice(-400));
+              setLiveNote(event.text);
             } else if (type === "followup") {
               setLiveNote(liveCopy.followUpRead);
             } else if (type === "delta" && typeof event.text === "string") {
