@@ -50,9 +50,9 @@ begin
   begin
     -- Operational sources only: the plan lists every table the statement reads, views included.
     execute format('explain (format json) select json_agg(q), count(*) from (%s) q', v_sql) into v_plan;
-    if v_plan ~ '"Relation Name": ?"(toast_raw_samples|toast_raw_samples_latest|diag_[^"]*|diagnostic_[^"]*|test_[^"]*|fixture_[^"]*)"' then
+    if v_plan ~ '"Relation Name": ?"(toast_raw_sample[a-z_]*|diag_[^"]*|diagnostic_[^"]*|test_[^"]*|fixture_[^"]*)"' then
       return json_build_object('ok', false, 'error',
-        'This statement reads a diagnostic or test source (for example toast_raw_samples). Those are never café evidence; use the operational tables listed by describe_database.');
+        'This statement reads a diagnostic or test source (for example the raw Toast sample tables). Those are never café evidence; use the operational tables listed by describe_database.');
     end if;
   exception when others then
     -- A statement that cannot be planned fails again below with PostgreSQL's own message.

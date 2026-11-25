@@ -100,8 +100,8 @@ export async function runSql(scope:ResearchScope,sql:string):Promise<Record<stri
 }
 
 const IDENT=/^[A-Za-z_][A-Za-z0-9_]{0,62}$/u;
-// Diagnostic snapshots are never café evidence (AGENTS.md operational-source rule); the database function also refuses them.
-const OPERATIONAL="c.relname !~ '^(toast_raw_samples|toast_raw_samples_latest|diag_|diagnostic_|test_|fixture_)'";
+// Raw diagnostic snapshots are never café evidence (AGENTS.md operational-source rule); the database function also refuses them.
+const OPERATIONAL="c.relname !~ '^(toast_raw_sample|diag_|diagnostic_|test_|fixture_)'";
 const RELATIONS="from pg_class c join pg_namespace n on n.oid=c.relnamespace "+
   "where n.nspname='public' and c.relkind in ('r','p','v','m') and has_table_privilege(c.oid,'select') and "+OPERATIONAL;
 export async function describeDatabase(scope:ResearchScope,tables:readonly string[]|null):Promise<Record<string,unknown>>{

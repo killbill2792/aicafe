@@ -36,7 +36,7 @@ export function unsupportedNumbers(answer:string,evidence:readonly string[]):Unv
     if(n.value<=10&&n.decimals===0&&!n.percent)continue;
     if(n.decimals===0&&n.value>=1990&&n.value<=2100)continue;
     const tolerance=0.5*Math.pow(10,-n.decimals)+1e-9;
-    // "$1.2 million" style roundings: allow rounding to the displayed precision only.
+    // Rounding is allowed only to the precision the answer shows.
     if(allowed.some(a=>Math.abs(a-n.value)<=tolerance))continue;
     flagged.push({text:n.text,start:n.start,end:n.end,kind:n.percent?"percent":"number"});
   }
