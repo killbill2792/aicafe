@@ -420,3 +420,19 @@ it("runs closeout only on the fifteen-minute dispatcher without redoing live or 
  await runToastSyncTick(f.db,now,Date.now()+60000,"closeout");
  expect(m.live).not.toHaveBeenCalled();expect(m.importDay).not.toHaveBeenCalled();
 });
+
+
+it("does not claim a closeout lease or read Toast after the daily work is complete",async()=>{
+ const f=makeDB();
+ const rpc=f.db.rpc.bind(f.db);
+ vi.spyOn(f.db,"rpc").mockImplementation((...args:Parameters<typeof rpc>)=>{
+  if(args[0]==="toast_closeout_due")return Promise.resolve({data:false,error:null}) as unknown as ReturnType<typeof rpc>;
+  return rpc(...args);
+ });
+ await runToastSyncTick(f.db,now,Date.now()+60000,"closeout");
+ expect(f.db.rpc).toHaveBeenCalledWith("toast_closeout_due",{p_business_id:b,p_restaurant_guid:g,p_day:d,p_now:now.toISOString()});
+ expect(f.calls).not.toContain("toast_acquire_lease");
+ expect(m.reconcile).not.toHaveBeenCalled();
+ expect(m.live).not.toHaveBeenCalled();
+ expect(m.importDay).not.toHaveBeenCalled();
+});

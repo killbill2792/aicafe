@@ -213,7 +213,14 @@ export async function runToastSyncTick(db:SupabaseClient,now=new Date(),
    Math.max(6000,(globalDeadline-Date.now())/Math.max(1,Math.min(40,mappings.length-index)))));
 
   if(!m.toast_time_zone||m.closeout_hour==null)continue;
-  if(mode==="closeout"&&!eligibleClosedDay(now,m.toast_time_zone,m.closeout_hour))continue;
+  if(mode==="closeout"){
+   const day=eligibleClosedDay(now,m.toast_time_zone,m.closeout_hour);
+   if(!day)continue;
+   const {data:due,error}=await db.rpc("toast_closeout_due",{p_business_id:m.business_id,
+    p_restaurant_guid:m.restaurant_guid,p_day:day,p_now:now.toISOString()});
+   if(error){errors++;continue;}
+   if(due!==true)continue;
+  }
   const {data:nonce,error:leaseError}=await db.rpc("toast_acquire_lease",{
    p_business_id:m.business_id,p_restaurant_guid:m.restaurant_guid,p_seconds:290});
   if(leaseError){errors++;continue;}

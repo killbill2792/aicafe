@@ -297,7 +297,15 @@ begin
  if not found or m.toast_time_zone is null or m.closeout_hour is null then raise exception 'unverified Toast location'; end if;
  current_day:=((now() at time zone m.toast_time_zone)-make_interval(hours=>m.closeout_hour))::date;
  -- Acquire date locks in stable order, matching the finalized importer.
- for d in select distinct (x->>'day')::date from jsonb_array_elements(p_rows) x order by 1 loop
+ for d in
+  select day from (
+   select (x->>'day')::date as day from jsonb_array_elements(p_rows) x
+   union
+   select o.business_date from public.orders o join jsonb_array_elements(p_rows) x
+    on o.pos_order_id='toast:'||p_restaurant_guid::text||':'||(x->'payload'->>'guid')
+    where o.business_id=p_business_id and not o.toast_excluded
+  ) affected where day is not null order by day
+ loop
   perform pg_advisory_xact_lock(hashtextextended('toast-day:'||p_business_id::text||':'||d::text,0));
  end loop;
  for item in select value from jsonb_array_elements(p_rows) loop
@@ -484,7 +492,14 @@ begin
   where r.business_id=p_business_id and r.restaurant_guid=p_restaurant_guid and r.entity='order'
    and r.business_date=(x->>'day')::date and r.entity_guid=(x->'payload'->>'guid')::uuid
    and (r.payload_sha256=encode(sha256(convert_to((x->'payload')::text,'UTF8')),'hex')
-    or public.toast_time_or_null(r.payload->>'modifiedDate')>public.toast_time_or_null(x->'payload'->>'modifiedDate')));
+    or public.toast_time_or_null(r.payload->>'modifiedDate')>public.toast_time_or_null(x->'payload'->>'modifiedDate')))
+ and not exists(select 1 from public.toast_sync_runs s
+   where s.business_id=p_business_id and s.restaurant_guid=p_restaurant_guid
+     and s.kind='repull_modified' and s.requested_from=(x->>'day')::date
+     and s.requested_to=s.requested_from and s.state in ('queued','running','paused_rate_limited')
+     and (s.cursor->'revision'->'orders'->(x->'payload'->>'guid')=x->'payload'
+       or public.toast_time_or_null(s.cursor->'revision'->'orders'->(x->'payload'->>'guid')->>'modifiedDate')
+          >public.toast_time_or_null(x->'payload'->>'modifiedDate')));
  return result;
 end $$;
 revoke all on function public.toast_changed_order_days(uuid,uuid,jsonb) from public,anon,authenticated;
@@ -661,3 +676,31 @@ begin
 end $$;
 revoke all on function public.toast_constrained_stock_guids(uuid,uuid) from public,anon,authenticated;
 grant execute on function public.toast_constrained_stock_guids(uuid,uuid) to service_role;
+
+
+-- Cheap closeout eligibility: completed days do not acquire a location lease
+-- or run another provider reconciliation. Unfinished historical work keeps its
+-- existing retry cadence and remains visible rather than being discarded.
+create or replace function public.toast_closeout_due(
+ p_business_id uuid,p_restaurant_guid uuid,p_day date,p_now timestamptz)
+returns boolean language sql stable security invoker set search_path=public as $$
+ select auth.role()='service_role' and exists(
+ select 1 from public.toast_location_mappings m
+ where m.business_id=p_business_id and m.restaurant_guid=p_restaurant_guid
+   and m.verified_at is not null
+   and (not exists(select 1 from public.toast_day_status d where d.business_id=m.business_id
+     and d.restaurant_guid=m.restaurant_guid and d.business_date=p_day and d.import_state='imported')
+   or exists(select 1 from public.toast_day_status d where d.business_id=m.business_id
+     and d.restaurant_guid=m.restaurant_guid and d.business_date<=p_day
+     and d.import_state='imported' and d.rechecking_reason is null
+     and (d.recon_state in ('pending','mismatch','analytics_timeout') or
+        (d.recon_state='checked_internal' and d.analytics_state='pending' and exists(
+         select 1 from public.toast_api_credentials c where c.business_id=m.business_id and c.toast_check_mode='official')))
+     and (d.last_recon_attempt_at is null or d.last_recon_attempt_at<=p_now-
+       case when d.last_error_category='unverified_payment_order' or d.warnings->>'payment_recovery_exhausted'='1'
+           then interval '24 hours'
+         when d.payment_repull_at is not null and d.business_date<p_day then interval '1 hour'
+         else interval '15 minutes' end))))
+$$;
+revoke all on function public.toast_closeout_due(uuid,uuid,date,timestamptz) from public,anon,authenticated;
+grant execute on function public.toast_closeout_due(uuid,uuid,date,timestamptz) to service_role;
