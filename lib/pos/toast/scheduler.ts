@@ -165,6 +165,15 @@ export async function runToastSyncTick(db:SupabaseClient,now=new Date(),
   .order("business_id").order("restaurant_guid").range(start,end));
  const globalDeadline=deadlineAt;
  let acquired=0,processed=0,errors=0;
+ // Drain authenticated events through the existing order queue before polling.
+ // The current full-day live job remains until stored-summary parity is proven.
+ if(process.env.TOAST_WEBHOOKS_ENABLED==="true"&&process.env.TOAST_JOBS_ENABLED==="true"){
+  try{
+   const {runToastOrderQueue}=await import("./orderQueue");
+   const events=await runToastOrderQueue(db,Math.min(globalDeadline,Date.now()+15000));
+   errors+=events.failed;
+  }catch{errors++;}
+ }
  for(const [index,m] of (mappings as Mapping[]).entries()){
   if(Date.now()>=globalDeadline){
    for(const skipped of mappings.slice(index))console.info("toast_tick_skipped",{businessId:skipped.business_id,restaurantGuid:skipped.restaurant_guid});
