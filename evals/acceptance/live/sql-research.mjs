@@ -1,9 +1,6 @@
 #!/usr/bin/env node
-/** Owner-authorized real Luna acceptance for the direct SQL research pathway
- * (SUPERVISOR_SQL_RESEARCH). Real chat route, real model, disposable seeded
- * Supabase. Each owner question is checked against independent SQL truth.
- * Questions and answers are printed to the run log (synthetic data only).
- * Never run outside the shared owner-gated Luna runner. */
+/** Owner-authorized real Luna acceptance of the SQL research pathway: real chat route and model on the
+ * disposable seeded stack, each answer checked against independent SQL; Q&A printed (synthetic data). */
 import {randomUUID} from "node:crypto";
 import {existsSync,realpathSync,writeFileSync} from "node:fs";
 import {resolve,dirname} from "node:path";
@@ -11,6 +8,7 @@ import {pathToFileURL} from "node:url";
 import {TEST_CAFES} from "../../../scripts/seed/cafes.mjs";
 import {assertLocalLiveEnvironment} from "./preflight.mjs";
 import {readPersistedModelUsage,requireObservedProductionModel,verifyCheckoutHead} from "./runner.mjs";
+import {login,ownerTurn as completedTurn} from "./u3-canonical-research.mjs";
 
 const fail=reason=>{throw Error("sql_research_live:"+reason);};
 const rows=async(db,sql,args=[])=>(await db.query(sql,args)).rows;
@@ -28,11 +26,9 @@ export function mentionsCount(text,n){
   return typeof text==="string"&&new RegExp("(^|[^0-9.])"+n+"([^0-9]|$)").test(text.replace(/(\d),(?=\d{3}\b)/g,"$1"));
 }
 function mentionsDate(text,iso){
-  const d=new Date(iso+"T12:00:00Z");
-  const long=d.toLocaleDateString("en-US",{month:"long",day:"numeric",timeZone:"UTC"});
-  const short=d.toLocaleDateString("en-US",{month:"short",day:"numeric",timeZone:"UTC"});
-  const dm=d.getUTCDate()+" "+d.toLocaleDateString("en-US",{month:"long",timeZone:"UTC"});
-  return [iso,long,short,dm].some(v=>text.toLowerCase().includes(v.toLowerCase()));
+  const d=new Date(iso+"T12:00:00Z"),f=o=>d.toLocaleDateString("en-US",{...o,timeZone:"UTC"});
+  return [iso,f({month:"long",day:"numeric"}),f({month:"short",day:"numeric"}),d.getUTCDate()+" "+f({month:"long"})]
+    .some(v=>text.toLowerCase().includes(v.toLowerCase()));
 }
 export function resolveProofPaths(args,env,id){
   if(env.AICAFE_SHARED_LUNA_CANDIDATE!=="1"||env.AICAFE_SHARED_LUNA_PROOF_DIR!=="/proof"||
@@ -42,50 +38,6 @@ export function resolveProofPaths(args,env,id){
   for(const p of [out,scopeOut])if(realpathSync(dirname(p))!=="/proof"||existsSync(p))fail("fresh_local_evidence_path_required");
   return {out,scopeOut};
 }
-
-async function login(browser,cafe){
-  const context=await browser.newContext({baseURL:"http://127.0.0.1:3000",serviceWorkers:"block"});
-  const page=await context.newPage();
-  await page.goto("/en/login");
-  await page.locator("#email").fill(cafe.owner.email);
-  await page.locator("#login-password").fill(cafe.owner.password);
-  await page.locator("form button[type=submit]").click();
-  await page.getByText(cafe.name,{exact:true}).first().waitFor({timeout:30000});
-  return {context,page};
-}
-async function ownerTurn(page,thread,text){
-  const clientMessageId=randomUUID();
-  const result=await page.evaluate(async({thread,text,clientMessageId})=>{
-    const ac=new AbortController(),timer=setTimeout(()=>ac.abort(),180000);
-    const names=[];let pending="",done=null,error=null;
-    try{
-      const response=await fetch("/api/ai/threads/"+thread+"/agent",{method:"POST",credentials:"same-origin",signal:ac.signal,
-        headers:{"content-type":"application/json"},body:JSON.stringify({text,locale:"en",attachmentIds:[],clientMessageId})});
-      if(!response.ok||!response.body)return {names,done,error:"agent_http_"+response.status};
-      const reader=response.body.getReader(),decoder=new TextDecoder();
-      while(!done&&!error){
-        const frame=await reader.read();
-        if(frame.done)break;
-        pending+=decoder.decode(frame.value,{stream:true});
-        let index;
-        while((index=pending.indexOf("\n\n"))>=0){
-          const lines=pending.slice(0,index).split("\n");pending=pending.slice(index+2);
-          const event=lines.find(l=>l.startsWith("event: "))?.slice(7);
-          const payload=lines.find(l=>l.startsWith("data: "))?.slice(6);
-          let data=null;try{data=JSON.parse(payload??"null")}catch{}
-          if(event==="tool"&&typeof data?.name==="string")names.push(data.name);
-          if(event==="done"){done=data;break;}
-          if(event==="error"){error=data?.code??"agent_error";break;}
-        }
-      }
-      await reader.cancel().catch(()=>{});
-      return {names,done,error:error??(done?null:"missing_complete_turn")};
-    }catch{return {names,done,error:"transport_failed"}}
-    finally{clearTimeout(timer)}
-  },{thread,text,clientMessageId});
-  return {...result,clientMessageId};
-}
-
 /** Independent truth, read directly from the disposable database. */
 async function oracle(db,cafe,other){
   const [{end}]=await rows(db,"select max(business_date)::text as end from public.orders where business_id=$1",[cafe.businessId]);
@@ -107,7 +59,6 @@ async function snapshot(db){
     "(select count(*) from public.supervisor_proposals)::int proposals");
   return s;
 }
-
 function questionsFor(id,o,cafe,alerts){
   if(id==="sql-research-data")return [
     {q:"What were my total net sales and how many orders did I have from "+o.start+" to "+o.end+"?",
@@ -145,9 +96,8 @@ function questionsFor(id,o,cafe,alerts){
 }
 
 async function main(){
-  const env=process.env;
+  const env=process.env,id=env.AICAFE_SHARED_LUNA_SCENARIO;
   assertLocalLiveEnvironment(env);verifyCheckoutHead(env.HEAD_SHA);
-  const id=env.AICAFE_SHARED_LUNA_SCENARIO;
   if(env.AICAFE_SHARED_LUNA!=="1"||env.AICAFE_SHARED_LUNA_CANDIDATE!=="1"||!SCENARIOS.has(id))
     fail("explicit_shared_luna_authorization_required");
   const {out,scopeOut}=resolveProofPaths(process.argv.slice(2),env,id);
@@ -155,38 +105,32 @@ async function main(){
   const [{default:pg},{chromium}]=await Promise.all([import("pg"),import("@playwright/test")]);
   const db=new pg.Client({connectionString:env.ACCEPTANCE_DATABASE_URL});
   const browser=await chromium.launch({headless:true});
-  let owner=null,foreign=null;
-  await db.connect();
+  let owner=null,foreign=null;await db.connect();
   try{
     const o=await oracle(db,cafe,other);
     // Synthetic alerts in the disposable DB: two open, one resolved, one for the other café.
     const alerts={missingBill:32000,voids:4500,resolved:9900,otherCafe:77700};
     if(id==="sql-research-alerts"){
-      await db.query("insert into public.alerts(business_id,kind,impact_cents,payload,status,resolved_at) values "+
-        "($1,'missing_bill',$3,'{\"note\":\"Supplier bill for dairy not entered this month\"}','new',null),"+
-        "($1,'voids',$4,'{\"note\":\"Unusual number of voided lines on one shift\"}','seen',null),"+
-        "($1,'underpriced',$5,'{\"note\":\"Old price check, already handled\"}','resolved',now()),"+
-        "($2,'overstaffed',$6,'{\"note\":\"Other cafe only\"}','new',null)",
-        [cafe.businessId,other.businessId,alerts.missingBill,alerts.voids,alerts.resolved,alerts.otherCafe]);
+      for(const [cafeId,kind,cents,note,status] of [[cafe.businessId,"missing_bill",alerts.missingBill,"Dairy supplier bill not entered this month","new"],
+        [cafe.businessId,"voids",alerts.voids,"Unusual number of voided lines on one shift","seen"],[cafe.businessId,"underpriced",alerts.resolved,"Old price check, handled","resolved"],
+        [other.businessId,"overstaffed",alerts.otherCafe,"Other cafe only","new"]])await db.query("insert into public.alerts(business_id,kind,impact_cents,payload,status,resolved_at) "+
+        "values ($1,$2,$3,jsonb_build_object('note',$4::text),$5,case when $5='resolved' then now() end)",[cafeId,kind,cents,note,status]);
     }
     const before=await snapshot(db);
     owner=await login(browser,cafe);
-    const created=await owner.context.request.post("/api/ai/threads",{headers:{Origin:"http://127.0.0.1:3000"},
-      data:{requestId:randomUUID(),title:"SQL research acceptance"}});
+    const created=await owner.context.request.post("/api/ai/threads",{headers:{Origin:"http://127.0.0.1:3000"},data:{requestId:randomUUID(),title:"SQL research acceptance"}});
     if(created.status()!==201)fail("thread_creation_failed");
-    const thread=(await created.json()).thread?.id;
-    if(!/^[0-9a-f-]{36}$/i.test(thread??""))fail("thread_id_missing");
-
+    const thread=(await created.json()).thread?.id;if(!/^[0-9a-f-]{36}$/i.test(thread??""))fail("thread_id_missing");
     const results=[];let calls=0,model=null,lastReply=null,hardFailures=0;
     console.log("\n==== "+id+" | café "+cafe.name+" ("+cafe.currency+") | window "+o.start+".."+o.end+" ====");
     console.log("Independent truth: net "+o.sales.cents+" cents over "+o.sales.n+" orders; top items "+
       o.items.map(i=>i.name+"="+i.cents).join(", ")+"; weakest day "+o.weakest.day+"="+o.weakest.cents+"; other café net "+o.otherSales.cents);
     for(const [i,item] of questionsFor(id,o,cafe,alerts).entries()){
-      const turn=await ownerTurn(owner.page,thread,item.q);
+      // The shared u3 helper throws on an incomplete turn; record that as a failed question.
+      const turn=await completedTurn(owner.page,thread,item.q).catch(e=>({names:[],done:null,error:String(e?.message??e)}));
       const [ownerMessage]=await rows(db,"select id from public.ai_messages where business_id=$1 and thread_id=$2 and role='owner' and client_message_id=$3",
         [cafe.businessId,thread,turn.clientMessageId]);
-      let usage=null;
-      if(ownerMessage)usage=await readPersistedModelUsage(db,cafe.businessId,ownerMessage.id).catch(()=>null);
+      const usage=ownerMessage?await readPersistedModelUsage(db,cafe.businessId,ownerMessage.id).catch(()=>null):null;
       if(usage){calls+=Number(usage.model_call_count);model=usage.model;}
       let text="";
       if(turn.done?.reply?.id){
@@ -199,33 +143,25 @@ async function main(){
       const hard={completed:complete,...(complete?item.hard(text):{})};
       if("usedSqlMoreThanOnce" in hard)hard.usedSqlMoreThanOnce=turn.names.filter(n=>n==="run_sql").length>=2;
       const soft=complete&&item.soft?item.soft(text):{};
-      const passed=Object.values(hard).every(Boolean);
-      if(!passed)hardFailures++;
+      const passed=Object.values(hard).every(Boolean);hardFailures+=passed?0:1;
       results.push({question:i+1,passed,hard,soft,tools:turn.names,modelCalls:usage?Number(usage.model_call_count):null});
       console.log("\n--- Q"+(i+1)+": "+item.q+"\nTools: "+(turn.names.join(" → ")||"none")+" | model calls: "+(usage?.model_call_count??"?")+
         (turn.error?" | error: "+turn.error:"")+"\nAnswer:\n"+text+"\nChecks (must pass): "+JSON.stringify(hard)+"\nChecks (observed): "+JSON.stringify(soft));
     }
-    const after=await snapshot(db);
-    const unchanged=JSON.stringify(before)===JSON.stringify(after);
+    const unchanged=JSON.stringify(before)===JSON.stringify(await snapshot(db));
     foreign=await login(browser,other);
-    const denied=await foreign.context.request.get("/api/ai/threads/"+thread);
-    const foreignDenied=[401,403,404].includes(denied.status());
+    const foreignDenied=[401,403,404].includes((await foreign.context.request.get("/api/ai/threads/"+thread)).status());
     console.log("\nData unchanged by Supervisor: "+unchanged+" | other café cannot open this thread: "+foreignDenied+
       " | total model calls: "+calls+" | model: "+model);
-    if(!model)fail("no_model_usage_recorded");
     requireObservedProductionModel(model,"gpt-6-luna");
-    if(!unchanged)fail("supervisor_changed_data");
-    if(!foreignDenied)fail("cross_cafe_thread_visible");
+    if(!unchanged)fail("supervisor_changed_data");if(!foreignDenied)fail("cross_cafe_thread_visible");
     if(hardFailures)fail(hardFailures+"_question_checks_failed");
     writeFileSync(out,JSON.stringify({id,schema_version:1,head_sha:env.HEAD_SHA,status:"passed",observed_model:model,
       questions:results,dataUnchanged:unchanged,foreignDenied,observedModelCalls:calls})+"\n",{mode:0o600,flag:"wx"});
     writeFileSync(scopeOut,JSON.stringify({businessId:cafe.businessId,otherCafeId:other.businessId,threadId:thread,
       replyId:lastReply,endDate:o.end,expectedProviderCalls:calls})+"\n",{mode:0o600,flag:"wx"});
   }finally{
-    await foreign?.context.close().catch(()=>{});
-    await owner?.context.close().catch(()=>{});
-    await browser.close().catch(()=>{});
-    await db.end().catch(()=>{});
+    for(const close of [()=>foreign?.context.close(),()=>owner?.context.close(),()=>browser.close(),()=>db.end()])await Promise.resolve().then(close).catch(()=>{});
   }
 }
 if(process.argv[1]&&import.meta.url===pathToFileURL(resolve(process.argv[1])).href)

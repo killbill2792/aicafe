@@ -3,16 +3,11 @@ import {PgParser} from "@supabase/pg-parser";
 import type {SupabaseClient} from "@supabase/supabase-js";
 import {CALC_OPS,exactDecimal,runCalculation,type CalcOp,type CalcUnit,type CalcValue} from "@/lib/metrics/core/calculator";
 
-/** Supervisor SQL research: three tools and nothing else.
- * - describe_database: what the owner's role can read (tables, views, columns, links).
- * - run_sql: one read-only SELECT written by the model, run by the database
- *   function `supervisor_research_sql` as the verified owner under RLS,
- *   narrowed to this café. Errors come back as the real PostgreSQL message.
- * - calculate: the existing exact calculator (lib/metrics/core/calculator).
- * Security is enforced by the database function; this file adds no business logic. */
+/** Supervisor SQL research tools: describe_database, run_sql (one read-only SELECT run by the database
+ * function `supervisor_research_sql` as the verified owner under RLS, one café) and calculate (existing
+ * exact calculator). Security is enforced in the database; no business logic here. */
 
 export type ResearchScope={db:SupabaseClient;businessId:string;ownerUserId:string};
-export type ResearchToolName="describe_database"|"run_sql"|"calculate";
 
 const UNITS=["cents","count","percent","ratio"] as const;
 export const researchToolDefinitions=[
@@ -47,8 +42,7 @@ async function callDatabase(scope:ResearchScope,sql:string):Promise<Record<strin
   return data&&typeof data==="object"?data as Record<string,unknown>:{ok:false,error:"empty_database_response"};
 }
 
-/** One statement, and it must be a SELECT. The database enforces read-only
- * regardless; this only gives the model a clear message early. */
+/** One SELECT only; the database enforces read-only anyway, this just gives an early clear message. */
 export async function checkSelect(sql:string):Promise<string|null>{
   const parsed=await parser.parse(sql);
   if(parsed.error)return null; // let PostgreSQL report the real syntax error

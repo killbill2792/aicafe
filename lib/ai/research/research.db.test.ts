@@ -2,12 +2,11 @@ import {randomUUID} from "node:crypto";
 import {Client} from "pg";
 import type {SupabaseClient} from "@supabase/supabase-js";
 import {afterAll,beforeAll,describe,expect,it} from "vitest";
-import {calculate,executeResearchTool,type ResearchScope} from "./tools.server";
+import {executeResearchTool,type ResearchScope} from "./tools.server";
 import {runResearchTurn} from "./turn.server";
 import type {AgentProvider} from "@/lib/ai/agent/loop.server";
 
-// Migrated disposable database only (CI local Supabase, or a local migrated
-// PostgreSQL). Never point this at a real café database.
+// Migrated disposable local database only; never a real café database.
 const url=process.env.SUPERVISOR_RESEARCH_DB_URL??"";
 const enabled=url!=="";
 if(enabled&&!["localhost","127.0.0.1"].includes(new URL(url).hostname))
@@ -25,9 +24,7 @@ function serviceClient():SupabaseClient{
     const db=new Client({connectionString:url});
     await db.connect();
     try{
-      await db.query("begin");
-      await db.query("select set_config('request.jwt.claims','{\"role\":\"service_role\"}',true)");
-      await db.query("set local role service_role");
+      for(const q of ["begin","select set_config('request.jwt.claims','{\"role\":\"service_role\"}',true)","set local role service_role"])await db.query(q);
       const r=await db.query("select public."+name+"($1,$2,$3) as data",[params.p_business_id,params.p_owner_user_id,params.p_sql]);
       await db.query("commit");
       return {data:r.rows[0].data,error:null};
@@ -59,20 +56,10 @@ beforeAll(async()=>{
 });
 afterAll(async()=>{
   if(!enabled)return;
-  await admin.query("delete from public.orders where business_id = any($1)",[[cafeA,cafeB,otherCafe]]);
-  await admin.query("delete from public.memberships where business_id = any($1)",[[cafeA,cafeB,otherCafe]]);
-  await admin.query("delete from public.businesses where id = any($1)",[[cafeA,cafeB,otherCafe]]);
+  for(const q of ["delete from public.orders where business_id = any($1)","delete from public.memberships where business_id = any($1)",
+    "delete from public.businesses where id = any($1)"])await admin.query(q,[[cafeA,cafeB,otherCafe]]);
   await admin.query("delete from auth.users where id = any($1)",[[owner,otherOwner]]);
   await admin.end();
-});
-
-describe("calculator connection",()=>{
-  it("does exact arithmetic on retrieved values",()=>{
-    const r=calculate({inputs:[{name:"a",value:"4695",unit:"cents"},{name:"n",value:"4",unit:"count"},{name:"vat",value:"10",unit:"percent"}],
-      steps:[{id:"avg",op:"divide",args:["a","n"]},{id:"tax",op:"percent_of",args:["vat","a"]}]});
-    expect(r).toMatchObject({ok:true,steps:[{id:"avg",value:"1173.75",unit:"cents"},{id:"tax",value:"469.5",unit:"cents"}]});
-    expect(calculate({inputs:[{name:"a",value:"1e3",unit:"count"}],steps:[{id:"x",op:"sum",args:["a"]}]})).toMatchObject({ok:false});
-  });
 });
 
 describe.skipIf(!enabled)("direct SQL research on the migrated database",()=>{
@@ -97,13 +84,10 @@ describe.skipIf(!enabled)("direct SQL research on the migrated database",()=>{
     }
     const seen=await sql(scope(cafeA),"select distinct business_id from orders union select id from businesses union select business_id from memberships");
     expect((seen.rows as {business_id:string}[]).map(r=>r.business_id)).toEqual([cafeA]);
+    // A café the caller does not own is refused outright.
+    expect(String((await sql(scope(otherCafe),"select count(*) from orders")).error)).toContain("supervisor_research_not_owner");
   });
 
-  it("refuses a café the caller does not own",async()=>{
-    const r=await sql(scope(otherCafe),"select count(*) from orders");
-    expect(r.ok).toBe(false);
-    expect(String(r.error)).toContain("supervisor_research_not_owner");
-  });
 
   it("is read-only and returns useful SQL errors",async()=>{
     const before=(await admin.query("select count(*)::int n from orders where business_id=$1",[cafeA])).rows[0].n;

@@ -1,21 +1,6 @@
--- Supervisor direct SQL research (owner request, Nov 25 2026).
---
--- One function lets the server run a model-written, read-only SELECT against
--- the café's own data. Security comes from the database, not from the model:
---   * Only the server (service_role) may call it. Browsers cannot.
---   * It runs as the `authenticated` role (SECURITY DEFINER owned by
---     `authenticated`), with auth.uid() set to the verified café owner, so the
---     existing row level security decides every row it can see.
---   * The transaction is switched to READ ONLY before the query runs.
---     PostgreSQL never lets a transaction go back to read-write after its
---     first query, so no write, DDL or grant can happen.
---   * app.supervisor_research_business_id narrows every membership check to
---     the one café of this chat, so an owner of two cafés gets one café.
---   * Text that could change the session identity (set_config, SQL-in-a-string
---     helpers, unicode-escaped identifiers) is refused. The server also parses
---     the statement and refuses anything but one SELECT before calling this.
--- Errors are returned as data (message, detail, hint, position) so the model
--- can correct its SQL. The platform's existing statement timeout still applies.
+-- Supervisor direct SQL research: the server runs one model-written SELECT as
+-- the verified owner under RLS, read-only, narrowed to the chat's café.
+-- Errors come back as data so the model can fix its SQL.
 
 set lock_timeout = '5s';
 set statement_timeout = '60s';
@@ -42,9 +27,7 @@ language sql
 stable security definer
 set search_path to 'public'
 as $$
-  -- The shared demo café has a fixed identity seeded by the existing
-  -- demo-access migration. Its mutable businesses.is_demo flag is not an
-  -- authorization root: a demo member can change it to false.
+  -- Unchanged except the last condition (fixed demo café id as before).
   select p_business_id is distinct from '11111111-1111-1111-1111-111111111111'::uuid
     and exists (select 1 from public.memberships
       where business_id=p_business_id and user_id=auth.uid() and role='owner')

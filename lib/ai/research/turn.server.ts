@@ -6,21 +6,17 @@ import type {AgentToolResult} from "@/lib/ai/agent/tools";
 import type {OwnerRunCheckpoint} from "@/lib/ai/supervisor/runs/contracts";
 import {executeResearchTool,researchToolDefinitions,type ResearchScope} from "./tools.server";
 
-/** Server switch for the direct SQL research pathway. Default OFF.
- * When ON, owner chat turns use ONLY describe_database, run_sql and calculate;
- * no legacy reporting tool is offered alongside them. */
+/** Server switch, default OFF. When ON, owner chat uses ONLY describe_database, run_sql and calculate. */
 export function sqlResearchEnabled():boolean{
   if(process.env.SUPERVISOR_SQL_RESEARCH==="on")return true;
-  // Owner-approved shared Luna runs of the sql-research scenarios only: the
-  // trusted runner sets these on a disposable localhost stack, never hosted.
+  // Owner-approved shared Luna sql-research scenarios on the disposable localhost stack only.
   return process.env.AI_CAFE_LIVE_ACCEPTANCE==="OWNER_APPROVED_LOCAL_ONLY"&&
     process.env.NEXT_PUBLIC_SUPABASE_URL==="http://127.0.0.1:54321"&&
     !process.env.VERCEL_ENV&&
     /^sql-research-[a-z0-9-]+$/u.test(process.env.AICAFE_SHARED_LUNA_SCENARIO??"");
 }
 
-/** Intentionally short: what Supervisor is and what it can reach. How to
- * investigate is the model's own decision. */
+/** What Supervisor is and can reach; how to investigate is the model's own decision. */
 export const RESEARCH_INSTRUCTIONS=
   "You are Supervisor, the AI operator of this café, answering its owner in chat. "+
   "You can read the café's own database: describe_database shows what exists, run_sql runs read-only PostgreSQL on it "+
@@ -33,16 +29,14 @@ export const RESEARCH_INSTRUCTIONS=
 type Event={type:string;[key:string]:unknown};
 type FunctionCall={type:"function_call";name:string;call_id:string;arguments:string};
 
-/** Time the owner's request may keep researching before a final answer is
- * forced. Platform limit (route maxDuration), not a business rule. */
-/** Per-request output ceiling (includes reasoning). A forced final answer
- * uses the existing 1200-token final ceiling. Resource limits only. */
+/** Per-request output ceiling incl. reasoning; a forced final answer keeps the existing 1200 ceiling. */
 function outputCap(final:boolean):number{
   const configured=Number(process.env.SUPERVISOR_RESEARCH_MAX_OUTPUT_TOKENS);
   const step=Number.isSafeInteger(configured)&&configured>0?configured:4096;
   const durable=currentDurableProviderOutputCap();
   return Math.min(step,durable??Infinity,final?1200:Infinity);
 }
+/** Research time before a final answer is forced (route maxDuration), not a business rule. */
 function elapsedLimitMs():number{
   const configured=Number(process.env.SUPERVISOR_RESEARCH_MAX_MS);
   return Number.isSafeInteger(configured)&&configured>0?configured:120_000;
