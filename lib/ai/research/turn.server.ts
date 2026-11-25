@@ -234,7 +234,7 @@ export async function runResearchTurn(args:{
   };
 
   try{
-    for(;;){
+    research:for(;;){
       const reason=stop();
       if(reason==="timeout"){endReason=reason;break;}
       const {calls,answer,delivered}=await call(reason!==null);
@@ -245,6 +245,7 @@ export async function runResearchTurn(args:{
         break;
       }
       for(const fc of calls){
+        if(stop()==="timeout"){endReason="timeout";break research;}
         args.onTool?.(fc.name,"alex");
         const toolStarted=now();
         usage.toolCalls++;

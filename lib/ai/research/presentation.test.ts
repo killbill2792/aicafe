@@ -18,7 +18,7 @@ describe("SQL research presentation",()=>{
  it("keeps plain Markdown and valid siblings when a visual is malformed",()=>{
   const text="**Total**\n\n- Detail";
   expect(splitResearchPresentation(text,new Map(),ctx)).toEqual({text});
-  const result=splitResearchPresentation(text+fence({panels:[{...chart,ref:"wrong"},chart,{ref:"q1",kind:"table",columns:["category","amount_cents"]}]}),queries,ctx);
+  const result=splitResearchPresentation(text+fence({calculator:{ref:7},panels:[{...chart,ref:"wrong"},chart,{ref:"q1",kind:"table",columns:["category","amount_cents"]}]}),queries,ctx);
   expect(result.text).toBe(text);
   expect(result.presentation?.panels).toHaveLength(1);
   expect(result.presentation?.tables?.[0].rows).toEqual([["Wages",1200],["Supplies",0]]);

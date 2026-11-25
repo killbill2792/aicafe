@@ -13,8 +13,8 @@ const selection=z.object({
  ref:z.string(),kind:z.enum(["metric","bar","line","donut","ranked_table","table"]),
  x:z.string().optional(),y:z.string().optional(),columns:z.array(z.string()).optional(),title:z.string().optional(),
 });
-const envelope=z.object({layout:z.enum(["stack","grid"]).optional(),panels:z.array(z.unknown()).optional(),
- report:z.boolean().optional(),files:z.boolean().optional(),calculator:z.object({ref:z.string(),editable:z.array(z.string())}).optional()});
+const envelope=z.object({layout:z.unknown().optional(),panels:z.unknown().optional(),report:z.unknown().optional(),files:z.unknown().optional(),calculator:z.unknown().optional()});
+const calcSelection=z.object({ref:z.string(),editable:z.array(z.string())});
 type Selection=z.infer<typeof selection>;
 type Context={asOf:string;currency?:string|null;presentationAttachments?:readonly string[]};
 type Row=Record<string,unknown>;
@@ -89,9 +89,10 @@ export function splitResearchPresentation(raw:string,queries:ReadonlyMap<string,
    const body=block.replace(/^[ \t]*\x60{3}cafe-ui[ \t]*\r?\n/u,"").replace(/\r?\n[ \t]*\x60{3}[ \t]*$/u,"");
    const parsed=envelope.safeParse(JSON.parse(body));
    if(!parsed.success||!ctx)return "";
-   layout=parsed.data.layout??layout;report=report||parsed.data.report===true;files=files||parsed.data.files===true;
-   if(parsed.data.calculator){const q=queries.get(parsed.data.calculator.ref);if(q)calc=calculator(q,parsed.data.calculator.editable,ctx)??calc;}
-   for(const value of parsed.data.panels??[]){
+   layout=parsed.data.layout==="grid"||parsed.data.layout==="stack"?parsed.data.layout:layout;report=report||parsed.data.report===true;files=files||parsed.data.files===true;
+   const c=calcSelection.safeParse(parsed.data.calculator);
+   if(c.success){const q=queries.get(c.data.ref);if(q)calc=calculator(q,c.data.editable,ctx)??calc;}
+   for(const value of Array.isArray(parsed.data.panels)?parsed.data.panels:[]){
     const s=selection.safeParse(value);if(!s.success)continue;
     const q=queries.get(s.data.ref);
     if(q?.ok!==true||!Array.isArray(q.rows)||!q.rows.length||!q.rows.every(obj))continue;
