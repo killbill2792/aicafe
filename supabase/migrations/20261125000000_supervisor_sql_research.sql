@@ -49,6 +49,7 @@ $$;
 
 -- Policies that check memberships directly (not through a helper) read it
 -- under RLS, so one restrictive policy narrows them too.
+drop policy if exists "supervisor research cafe scope" on public.memberships;
 create policy "supervisor research cafe scope" on public.memberships
   as restrictive for select
   using (coalesce(nullif(current_setting('app.supervisor_research_business_id', true), ''),
