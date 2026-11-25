@@ -6,7 +6,7 @@ describe("webhook-primary incremental fallback",()=>{
   expect(orderRecoveryCadence(true,false)).toBe(600000);
   expect(orderRecoveryCadence(true,true)).toBe(3600000);
   expect(orderRecoveryCadence(false,false)).toBe(3600000);
-  expect(orderRecoveryCadence(false,true)).toBe(7200000);
+  expect(orderRecoveryCadence(false,true)).toBe(3600000);
  });
  it("recovers a missed month without jumping to recent dates",()=>{
   const cursor="2026-10-01T08:00:00Z";

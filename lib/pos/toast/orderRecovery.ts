@@ -11,7 +11,7 @@ import {addCalendarDays} from "./scheduleDates";
 
 const MINUTE=60000;
 export const orderRecoveryCadence=(open:boolean,webhookSeen:boolean)=>
- (open?(webhookSeen?60:10):(webhookSeen?120:60))*MINUTE;
+ (open&&!webhookSeen?10:60)*MINUTE;
 
 /** A committed modification-time cursor, independent of the order's business
  * date. Do not discard a gap after a long outage. Replay a short overlap; the
