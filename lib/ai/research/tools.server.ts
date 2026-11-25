@@ -1,5 +1,4 @@
 import "server-only";
-import {PgParser} from "@supabase/pg-parser";
 import type {SupabaseClient} from "@supabase/supabase-js";
 import {CALC_OPS,exactDecimal,runCalculation,type CalcOp,type CalcUnit,type CalcValue} from "@/lib/metrics/core/calculator";
 
@@ -33,8 +32,6 @@ export const researchToolDefinitions=[
         id:{type:"string"},op:{type:"string",enum:[...CALC_OPS]},args:{type:"array",items:{type:"string"}}}}}}}},
 ] as const;
 
-const parser=new PgParser({version:17});
-
 async function callDatabase(scope:ResearchScope,sql:string):Promise<Record<string,unknown>>{
   const {data,error}=await scope.db.rpc("supervisor_research_sql",{
     p_business_id:scope.businessId,p_owner_user_id:scope.ownerUserId,p_sql:sql});
@@ -42,20 +39,8 @@ async function callDatabase(scope:ResearchScope,sql:string):Promise<Record<strin
   return data&&typeof data==="object"?data as Record<string,unknown>:{ok:false,error:"empty_database_response"};
 }
 
-/** One SELECT only; the database enforces read-only anyway, this just gives an early clear message. */
-export async function checkSelect(sql:string):Promise<string|null>{
-  const parsed=await parser.parse(sql);
-  if(parsed.error)return null; // let PostgreSQL report the real syntax error
-  const stmts=parsed.tree.stmts??[];
-  if(stmts.length!==1)return "Send exactly one statement.";
-  const stmt=stmts[0]?.stmt as Record<string,unknown>|undefined;
-  if(!stmt||!("SelectStmt" in stmt))return "Only SELECT statements are allowed (read-only research).";
-  return null;
-}
-
+/** The database function enforces one read-only SELECT and returns PostgreSQL's own errors. */
 export async function runSql(scope:ResearchScope,sql:string):Promise<Record<string,unknown>>{
-  const refused=await checkSelect(sql);
-  if(refused)return {ok:false,error:refused};
   return callDatabase(scope,sql);
 }
 

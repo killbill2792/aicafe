@@ -50,7 +50,8 @@ async function oracle(db,cafe,other){
     "where o.business_id=$1 and not l.voided and o."+window+" group by 1 order by 2 desc limit 5",[cafe.businessId,start,end]);
   const [weakest]=await rows(db,"select business_date::text as day, sum(net_sales_cents)::bigint cents from public.orders where business_id=$1 and "+window+
     " group by 1 order by 2 asc limit 1",[cafe.businessId,start,end]);
-  return {start,end,sales,otherSales,items,weakest};
+  const [endDay]=await rows(db,"select sum(net_sales_cents)::bigint cents from public.orders where business_id=$1 and business_date=$2::date",[cafe.businessId,end]);
+  return {start,end,sales,otherSales,items,weakest,endDay};
 }
 async function snapshot(db){
   const [s]=await rows(db,"select (select count(*) from public.orders)::int orders,(select count(*) from public.order_lines)::int lines,"+
@@ -67,22 +68,22 @@ function questionsFor(id,o,cafe,alerts){
     {q:"Which 5 items brought in the most revenue over that same period, and how much did each make?",
       hard:t=>({topItemNamed:t.toLowerCase().includes(o.items[0].name.toLowerCase())}),
       soft:t=>({topItemAmount:mentionsAmount(t,o.items[0].cents),allFiveNamed:o.items.every(i=>t.toLowerCase().includes(i.name.toLowerCase()))})},
-    {q:"How much did I spend on staff wages in that period, and what is that as a share of my sales?",hard:()=>({}),soft:t=>({gaveAPercent:/\d\s?%/.test(t)})},
+    {q:"How much did I spend on staff wages in that period, and what is that as a share of my sales?",hard:t=>({gaveAPercent:/\d\s?%/.test(t)})},
   ];
   // Complex owner decisions: several sources, Luna chooses the investigation.
   const deep=t=>({usedSqlMoreThanOnce:true,substantial:t.trim().length>=400});
   if(id==="sql-research-profit")return [
     {q:"Where am I losing money? Using my sales, recipe and ingredient costs, staff wages and bills from "+o.start+" to "+o.end+
       ", estimate what I actually made in that period and tell me the three biggest things I could change, with the money each is worth.",
-      hard:deep,soft:t=>({netSalesStated:mentionsAmount(t,o.sales.cents)})},
+      hard:t=>({...deep(t),netSalesStated:mentionsAmount(t,o.sales.cents)})},
     {q:"Which hours and weekdays am I overstaffed or understaffed compared with how busy I am? Compare orders with staff hours from my timecards "+
-      "and recommend specific schedule changes.",hard:deep,soft:t=>({gaveHours:/\b\d{1,2}(:\d{2})?\s?(am|pm)\b|\b\d{1,2}:\d{2}\b/i.test(t)})},
+      "and recommend specific schedule changes.",hard:t=>({...deep(t),gaveHours:/\b\d{1,2}(:\d{2})?\s?(am|pm)\b|\b\d{1,2}:\d{2}\b/i.test(t)})},
   ];
   if(id==="sql-research-strategy")return [
     {q:"Which menu items should I raise or lower prices on, and by how much? Consider each item's margin from its recipe cost, how well it sells, "+
-      "and estimate what the change would add per month.",hard:deep,soft:t=>({topItemConsidered:t.toLowerCase().includes(o.items[0].name.toLowerCase())})},
+      "and estimate what the change would add per month.",hard:t=>({...deep(t),topItemConsidered:t.toLowerCase().includes(o.items[0].name.toLowerCase())})},
     {q:"Prepare my end-of-day brief for "+o.end+": how the day went versus a typical same weekday, items that sold unusually well or badly, "+
-      "anything odd in voids or discounts, and what I should do tomorrow.",hard:deep,soft:t=>({dayNamed:mentionsDate(t,o.end)})},
+      "anything odd in voids or discounts, and what I should do tomorrow.",hard:t=>({...deep(t),daySalesStated:mentionsAmount(t,o.endDay.cents)}),soft:t=>({dayNamed:mentionsDate(t,o.end)})},
   ];
   return [
     {q:"Do I have any open alerts right now? Tell me what each one is about and how much money it could affect.",
@@ -90,7 +91,7 @@ function questionsFor(id,o,cafe,alerts){
         noOtherCafeAlert:!mentionsAmount(t,alerts.otherCafe)}),
       soft:t=>({resolvedNotListedAsOpen:!mentionsAmount(t,alerts.resolved)})},
     {q:"Investigate my weakest sales day between "+o.start+" and "+o.end+": why was it lower than the other days, and what should I look at?",
-      hard:()=>({}),soft:t=>({weakestDayNamed:mentionsDate(t,o.weakest.day)})},
+      hard:t=>({weakestDayNamed:mentionsDate(t,o.weakest.day)})},
     {q:"Please change the price of "+o.items[0].name+" to 6.00 "+cafe.currency+" right now.",hard:()=>({}),soft:()=>({})},
   ];
 }
@@ -130,7 +131,7 @@ async function main(){
       const turn=await completedTurn(owner.page,thread,item.q).catch(e=>({names:[],done:null,error:String(e?.message??e)}));
       const [ownerMessage]=await rows(db,"select id from public.ai_messages where business_id=$1 and thread_id=$2 and role='owner' and client_message_id=$3",
         [cafe.businessId,thread,turn.clientMessageId]);
-      const usage=ownerMessage?await readPersistedModelUsage(db,cafe.businessId,ownerMessage.id).catch(()=>null):null;
+      const usage=ownerMessage?await readPersistedModelUsage(db,cafe.businessId,ownerMessage.id,{attempts:240}).catch(()=>null):null;
       if(usage){calls+=Number(usage.model_call_count);model=usage.model;}
       let text="";
       if(turn.done?.reply?.id){
@@ -140,7 +141,9 @@ async function main(){
         text=(reply?.structured_content??[]).filter(b=>b.type==="text").map(b=>b.text).join("");
       }
       const complete=!turn.error&&turn.done?.endReason==="complete"&&text.trim().length>0;
-      const hard={completed:complete,...(complete?item.hard(text):{})};
+      // An honest "the query failed" answer is a failure of the pathway, never a pass.
+      const hard={completed:complete,noDataFailure:!/query (?:is )?(?:failing|returning an error)|couldn[’']t retrieve|can[’']t (?:retrieve|verify)|not a function/i.test(text),
+        ...(complete?item.hard(text):{})};
       if("usedSqlMoreThanOnce" in hard)hard.usedSqlMoreThanOnce=turn.names.filter(n=>n==="run_sql").length>=2;
       const soft=complete&&item.soft?item.soft(text):{};
       const passed=Object.values(hard).every(Boolean);hardFailures+=passed?0:1;
