@@ -15362,6 +15362,11 @@
      "bootstrap_day",
      "date",
      false
+    ],
+    [
+     "unparsed_pages",
+     "jsonb",
+     true
     ]
    ],
    "relation": "toast_order_poll_progress",

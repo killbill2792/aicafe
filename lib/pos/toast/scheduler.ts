@@ -187,7 +187,7 @@ export async function runToastSyncTick(db:SupabaseClient,now=new Date(),
    const result=await pollToastOrderRevisions(db,{businessId:m.business_id,restaurantGuid:m.restaurant_guid,
     locationId:m.location_id},now,Math.min(liveDeadline,Date.now()+slice));
    if(!("skipped" in result))liveBusinesses.add(m.business_id);
-  }catch{errors++;}
+  }catch{errors++;liveBusinesses.add(m.business_id);}
  }
  // A successful or resumed order poll can publish one aggregate per café,
  // not one full-day provider request per dashboard or per location.

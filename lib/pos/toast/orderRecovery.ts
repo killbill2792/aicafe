@@ -2,7 +2,10 @@ import "server-only";
 import type {SupabaseClient} from "@supabase/supabase-js";
 import {z} from "zod";
 import {fromZonedTime} from "date-fns-tz";
-import {createToastClient,ToastApiError,toToastTimestamp} from "./client";
+import {createToastClient,GUID,ToastApiError,toToastTimestamp} from "./client";
+import {createHash} from "node:crypto";
+import {redactToastRaw} from "./redact";
+import type {OrderScope} from "./orderIngestion";
 import {prepareToastOrderRevision} from "./orderIngestion";
 import {orderEventRetryAt} from "./orderQueue";
 import {isCafeCurrentlyOpen} from "./poll";
@@ -31,6 +34,25 @@ export function toastOpenOrUnknown(raw:OpenHours|null,zone:string,now:Date){
 export function toastShouldPollOrders(raw:OpenHours|null,zone:string,now:Date,cursor:string|null){
  // One catch-up after closing, if the last successful cursor was during operations.
  return toastOpenOrUnknown(raw,zone,now)||Boolean(cursor&&toastOpenOrUnknown(raw,zone,new Date(cursor)));
+}
+/** Keep valid page-mates; record only safe identity, position and fingerprint
+ * for malformed source rows. No raw malformed payment/customer payload in logs. */
+export function prepareIncrementalOrderPage(scope:OrderScope,rows:unknown[],bootstrapDay:string|null){
+ const prepared:ReturnType<typeof prepareToastOrderRevision>[]=[],unparsed:{order_guid:string|null;source_index:number;raw_sha256:string;error_path:string}[]=[];
+ for(const [index,row] of rows.entries()){
+  try{
+   const record=prepareToastOrderRevision(scope,row);
+   if(bootstrapDay&&record.day!==bootstrapDay)throw new ToastApiError("invalid_response");
+   prepared.push(record);
+  }catch(e){
+   if(!(e instanceof ToastApiError)||e.category!=="invalid_response")throw e;
+   const guid=typeof row==="object"&&row!==null&&"guid" in row?GUID.safeParse(row.guid):null;
+   unparsed.push({order_guid:guid?.success?guid.data:null,source_index:index+1,
+    raw_sha256:createHash("sha256").update(JSON.stringify(redactToastRaw(row))??"null").digest("hex"),
+    error_path:"order_identity_or_business_date"});
+  }
+ }
+ return {prepared,unparsed};
 }
 type Params={businessId:string;restaurantGuid:string;locationId:string;force?:boolean;closeoutDay?:string};
 export async function pollToastOrderRevisions(db:SupabaseClient,p:Params,now=new Date(),deadlineAt=Date.now()+60000){
@@ -85,14 +107,16 @@ export async function pollToastOrderRevisions(db:SupabaseClient,p:Params,now=new
    const rows=await client.request("/orders/v2/ordersBulk?"+query+"&pageSize=100&page="+page,
     p.restaurantGuid,z.array(z.unknown()),{deadlineAt:budget});
    if(rows.length>100)throw new ToastApiError("invalid_response");
-   const prepared=rows.map(row=>prepareToastOrderRevision(scope,row));
-   if(bootDay&&prepared.some(row=>row.day!==bootDay))throw new ToastApiError("invalid_response");
+   const {prepared,unparsed}=prepareIncrementalOrderPage(scope,rows,bootDay);
    const {data:receipt,error:writeError}=await db.rpc("toast_commit_canonical_order_page",{
     p_business_id:p.businessId,p_restaurant_guid:p.restaurantGuid,p_nonce:lease,
     p_since:window.since.toISOString(),p_until:window.until.toISOString(),p_page:page,
-    p_rows:prepared,p_has_more:rows.length===100,p_bootstrap_day:bootDay});
+    p_rows:prepared,p_has_more:rows.length===100,p_bootstrap_day:bootDay,p_unparsed:unparsed});
    if(writeError||typeof receipt?.changed!=="number"||typeof receipt?.complete!=="boolean")throw new ToastApiError("unavailable");
    fetched+=rows.length;
+   // Valid pages committed, but the terminal window is not certified. The
+   // persisted checkpoint restarts the same window after the existing backoff.
+   if(receipt.incomplete===true)throw new ToastApiError("invalid_response");
    if(receipt.complete&&!bootDay)until=window.until.toISOString();
    if(receipt.complete&&!bootDay&&window.until.getTime()>=now.getTime()-2*MINUTE)break;
   }

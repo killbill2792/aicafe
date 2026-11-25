@@ -8,6 +8,7 @@ alter table public.toast_sync_health add column if not exists canonical_order_po
 alter table public.toast_sync_health add column if not exists canonical_live_day date;
 alter table public.toast_order_poll_progress add column if not exists canonical boolean not null default false;
 alter table public.toast_order_poll_progress add column if not exists bootstrap_day date;
+alter table public.toast_order_poll_progress add column if not exists unparsed_pages jsonb not null default '{}'::jsonb;
 
 create or replace function public.toast_archive_order(
  p_business_id uuid,p_restaurant_guid uuid,p_entity_guid uuid,p_business_date date,
@@ -364,14 +365,24 @@ grant execute on function public.toast_ingest_order_revisions(uuid,uuid,jsonb) t
 create or replace function public.toast_commit_canonical_order_page(
  p_business_id uuid,p_restaurant_guid uuid,p_nonce uuid,
  p_since timestamptz,p_until timestamptz,p_page integer,p_rows jsonb,p_has_more boolean,
- p_bootstrap_day date)
+ p_bootstrap_day date,p_unparsed jsonb default '[]'::jsonb)
 returns jsonb language plpgsql security invoker set search_path=public as $$
 declare progress public.toast_order_poll_progress%rowtype; changed integer; prior_cursor timestamptz; legacy_cursor timestamptz;
+ gaps jsonb; incomplete boolean;
 begin
  if auth.role() is distinct from 'service_role' or p_since is null or p_until is null
   or p_since>=p_until or p_until>now() or p_until-p_since>interval '30 days'
   or p_page<1 or p_page>1000 or p_has_more is null or jsonb_typeof(p_rows) is distinct from 'array'
-  or jsonb_array_length(p_rows)>100 or (p_has_more and (p_page=1000 or jsonb_array_length(p_rows)<>100))
+  or jsonb_typeof(p_unparsed) is distinct from 'array'
+  or jsonb_array_length(p_rows)+jsonb_array_length(p_unparsed)>100
+  or (p_has_more and (p_page=1000 or jsonb_array_length(p_rows)+jsonb_array_length(p_unparsed)<>100))
+  or exists(select 1 from jsonb_array_elements(p_unparsed) x
+   where jsonb_typeof(x) is distinct from 'object' or x->>'raw_sha256' is null
+    or x->>'raw_sha256' !~ '^[0-9a-f]{64}$' or coalesce(x->>'source_index','') !~ '^[0-9]{1,3}$'
+    or (x->>'source_index')::integer not between 1 and 100
+    or x->>'error_path' is distinct from 'order_identity_or_business_date'
+    or (x->>'order_guid' is not null and public.toast_uuid_or_null(x->>'order_guid') is null)
+    or (x-'raw_sha256'-'source_index'-'error_path'-'order_guid')<>'{}'::jsonb)
   then raise exception 'invalid canonical order page'; end if;
  perform 1 from public.toast_poll_leases where business_id=p_business_id and restaurant_guid=p_restaurant_guid
   and kind='orders' and lease_nonce=p_nonce and lease_until>clock_timestamp() for update;
@@ -385,12 +396,21 @@ begin
  select canonical_order_poll_at into prior_cursor from public.toast_sync_health where business_id=p_business_id and restaurant_guid=p_restaurant_guid;
  if p_bootstrap_day is null and prior_cursor is not null and p_since>prior_cursor then raise exception 'canonical order coverage gap';end if;
  changed:=public.toast_ingest_order_revisions(p_business_id,p_restaurant_guid,p_rows);
- if p_has_more then
-  insert into public.toast_order_poll_progress(business_id,restaurant_guid,window_since,window_until,next_page,is_recovery,canonical,bootstrap_day)
-   values(p_business_id,p_restaurant_guid,p_since,p_until,p_page+1,false,true,p_bootstrap_day)
+ gaps:=case when progress.canonical then progress.unparsed_pages else '{}'::jsonb end;
+ gaps:=gaps-p_page::text;
+ if jsonb_array_length(p_unparsed)>0 then gaps:=gaps||jsonb_build_object(p_page::text,p_unparsed);end if;
+ if not p_has_more then
+  -- A full replay replaces prior page evidence, including a shortened result.
+  select coalesce(jsonb_object_agg(k,v),'{}'::jsonb) into gaps from jsonb_each(gaps) e(k,v)
+   where k::integer<=p_page;
+ end if;
+ incomplete:=not p_has_more and gaps<>'{}'::jsonb;
+ if p_has_more or incomplete then
+  insert into public.toast_order_poll_progress(business_id,restaurant_guid,window_since,window_until,next_page,is_recovery,canonical,bootstrap_day,unparsed_pages)
+   values(p_business_id,p_restaurant_guid,p_since,p_until,case when incomplete then 1 else p_page+1 end,incomplete,true,p_bootstrap_day,gaps)
    on conflict(business_id,restaurant_guid) do update set window_since=excluded.window_since,
-    window_until=excluded.window_until,next_page=excluded.next_page,is_recovery=false,canonical=true,
-    bootstrap_day=excluded.bootstrap_day,updated_at=now();
+    window_until=excluded.window_until,next_page=excluded.next_page,is_recovery=excluded.is_recovery,canonical=true,
+    bootstrap_day=excluded.bootstrap_day,unparsed_pages=excluded.unparsed_pages,updated_at=now();
  else
   delete from public.toast_order_poll_progress where business_id=p_business_id and restaurant_guid=p_restaurant_guid and canonical;
   select last_window_end into legacy_cursor from public.toast_repull_scan_state where business_id=p_business_id and restaurant_guid=p_restaurant_guid;
@@ -404,16 +424,16 @@ begin
      else toast_sync_health.canonical_order_poll_from end,
     canonical_live_day=coalesce(p_bootstrap_day,toast_sync_health.canonical_live_day);
  end if;
- return jsonb_build_object('changed',changed,'complete',not p_has_more);
+ return jsonb_build_object('changed',changed,'complete',not p_has_more and not incomplete,'incomplete',incomplete);
 end $$;
-revoke all on function public.toast_commit_canonical_order_page(uuid,uuid,uuid,timestamptz,timestamptz,integer,jsonb,boolean,date) from public,anon,authenticated;
-grant execute on function public.toast_commit_canonical_order_page(uuid,uuid,uuid,timestamptz,timestamptz,integer,jsonb,boolean,date) to service_role;
+revoke all on function public.toast_commit_canonical_order_page(uuid,uuid,uuid,timestamptz,timestamptz,integer,jsonb,boolean,date,jsonb) from public,anon,authenticated;
+grant execute on function public.toast_commit_canonical_order_page(uuid,uuid,uuid,timestamptz,timestamptz,integer,jsonb,boolean,date,jsonb) to service_role;
 
 -- Refresh the existing one-row-per-café live summary entirely within Postgres.
 -- No provider calls, raw payload transfer, new report or new order table.
 create or replace function public.toast_refresh_canonical_live(p_business_id uuid)
 returns jsonb language plpgsql security invoker set search_path=public as $$
-declare d date; zone text; source_at timestamptz; n integer; ready integer; result jsonb;
+declare d date; zone text; source_at timestamptz; n integer; ready integer; observed integer; gap_count integer; result jsonb;
 begin
  if auth.role() is distinct from 'service_role' then raise exception 'service role only';end if;
  perform pg_advisory_xact_lock(hashtextextended('toast-live:'||p_business_id::text,0));
@@ -424,12 +444,17 @@ begin
  from public.toast_location_mappings m where m.business_id=p_business_id and m.verified_at is not null
   and m.toast_time_zone is not null and m.closeout_hour is not null;
  if n=0 or d is null or n<>(select count(*) from public.toast_location_mappings m where m.business_id=p_business_id and m.verified_at is not null) then return null;end if;
- select count(*),min(h.canonical_order_poll_at) into ready,source_at
- from public.toast_location_mappings m join public.toast_sync_health h using(business_id,restaurant_guid)
- where m.business_id=p_business_id and m.verified_at is not null and h.canonical_live_day=d
-  and h.canonical_order_poll_at is not null
+ select count(*) filter(where h.canonical_live_day=d and h.canonical_order_poll_at is not null),
+  count(*) filter(where (h.canonical_live_day=d and h.canonical_order_poll_at is not null)
+    or (q.bootstrap_day=d and q.unparsed_pages<>'{}'::jsonb)),
+  min(case when h.canonical_live_day=d then h.canonical_order_poll_at else q.window_since end),
+  coalesce(sum((select coalesce(sum(jsonb_array_length(e.value)),0) from jsonb_each(q.unparsed_pages) e)),0)
+ into ready,observed,source_at,gap_count
+ from public.toast_location_mappings m left join public.toast_sync_health h using(business_id,restaurant_guid)
+ left join public.toast_order_poll_progress q on q.business_id=m.business_id and q.restaurant_guid=m.restaurant_guid and q.canonical
+ where m.business_id=p_business_id and m.verified_at is not null
   and ((now() at time zone m.toast_time_zone)-make_interval(hours=>m.closeout_hour))::date=d;
- if ready<>n then return null;end if;
+ if observed<>n or source_at is null then return null;end if;
  with revisions as materialized (
   select r.live_projection p
   from public.toast_raw_records r join public.toast_location_mappings m using(business_id,restaurant_guid)
@@ -461,8 +486,8 @@ begin
  )
  select jsonb_build_object('provisional',true,'businessDate',d,'readAt',source_at,
   'netSalesCents',net,'grossSalesCents',gross,'discountsCents',discounts,'refundsCents',refunds,'tipCents',tips,
-  'orders',orders,'openChecks',open_checks,'unparsedOrders',unparsed,'locationsRead',ready,'locationsFailed',0,
-  'truncated',false,'hourlyUnassignedOrders',unassigned,
+  'orders',orders,'openChecks',open_checks,'unparsedOrders',unparsed+gap_count,'locationsRead',ready,'locationsFailed',n-ready,
+  'truncated',gap_count>0 or ready<>n,'hourlyUnassignedOrders',unassigned,
   'hourlySales',coalesce((select jsonb_agg(jsonb_build_object('hourLocal',h,'netSalesCents',hours.net,'ordersCount',hours.orders) order by h) from hours),'[]'::jsonb),
   'topItems',coalesce((select jsonb_agg(jsonb_build_object('name',name,'quantity',quantity,'netSalesCents',items.net) order by quantity desc,items.net desc,name) from items),'[]'::jsonb))
  into result from amounts;

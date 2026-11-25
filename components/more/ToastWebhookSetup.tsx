@@ -1,6 +1,7 @@
 "use client";
 import {useCallback,useEffect,useState} from "react";
 import {useTranslations} from "next-intl";
+import english from "@/messages/en.json";
 
 type Subscription={id:string;enabled:boolean;webhookUrl:string|null;secretStored:boolean;eventKind:string};
 const endpoint="/api/pos/toast/webhook/subscriptions";
@@ -32,21 +33,21 @@ export default function ToastWebhookSetup({businessId}:{businessId:string}){
   finally{setBusy(false);}
  }
  return <details className="rounded-xl border border-line p-3">
-  <summary className="min-h-12 cursor-pointer font-semibold">{t("webhookSetup")}</summary>
+  <summary className="min-h-12 cursor-pointer font-semibold">{english.ToastConnect.webhookSetup}</summary>
   <div className="flex flex-col gap-3">
-   <p className="text-sm text-ink-muted">{t("webhookFallback")}</p>
-   <select aria-label={t("webhookSetup")} value={kind} onChange={e=>setKind(e.target.value)} className="min-h-12 rounded-xl border border-line bg-surface px-3">
+   <p className="text-sm text-ink-muted">{english.ToastConnect.webhookFallback}</p>
+   <select aria-label={english.ToastConnect.webhookSetup} value={kind} onChange={e=>setKind(e.target.value)} className="min-h-12 rounded-xl border border-line bg-surface px-3">
     {["orders","menus","stock","availability","ordering"].map(k=><option key={k} value={k}>{k}</option>)}
    </select>
    <button type="button" disabled={busy} onClick={()=>void action("prepare",{eventKind:kind})} className="min-h-12 rounded-full border border-line px-4">{t("createWebhook")}</button>
-   {rows.length>0&&<select aria-label={t("webhookSetup")} value={selected} onChange={e=>{setSelected(e.target.value);setSecret("");}} className="min-h-12 rounded-xl border border-line bg-surface px-3">
-    {rows.map(s=><option key={s.id} value={s.id}>{s.eventKind} — {s.id} — {t(s.enabled?"webhookEnabled":"webhookInactive")}</option>)}
+   {rows.length>0&&<select aria-label={english.ToastConnect.webhookSetup} value={selected} onChange={e=>{setSelected(e.target.value);setSecret("");}} className="min-h-12 rounded-xl border border-line bg-surface px-3">
+    {rows.map(s=><option key={s.id} value={s.id}>{s.eventKind} — {s.id} — {(s.enabled?english.ToastConnect.webhookEnabled:english.ToastConnect.webhookInactive)}</option>)}
    </select>}
    {row&&<>
     {row.webhookUrl&&<label className="flex flex-col gap-1 text-sm">{t("webhookUrl")}<input readOnly value={row.webhookUrl} onFocus={e=>e.currentTarget.select()} className="min-h-12 rounded-xl border border-line px-3"/></label>}
     {!row.enabled&&<><label className="flex flex-col gap-1 text-sm">{t("webhookSecret")}<input type="password" autoComplete="new-password" value={secret} onChange={e=>setSecret(e.target.value)} className="min-h-12 rounded-xl border border-line px-3"/></label>
      <button type="button" disabled={busy||secret.length<32} onClick={()=>void action("register_secret",{subscriptionId:row.id,signingSecret:secret})} className="min-h-12 rounded-full border border-line px-4 disabled:opacity-40">{t("saveWebhookSecret")}</button></>}
-    <button type="button" disabled={busy||(!row.enabled&&(!ready||!row.secretStored))} onClick={()=>void action(row.enabled?"deactivate":"activate",{subscriptionId:row.id})} className="min-h-12 rounded-full bg-accent px-4 text-on-accent disabled:opacity-40">{t(row.enabled?"webhookDeactivate":"webhookActivate")}</button>
+    <button type="button" disabled={busy||(!row.enabled&&(!ready||!row.secretStored))} onClick={()=>void action(row.enabled?"deactivate":"activate",{subscriptionId:row.id})} className="min-h-12 rounded-full bg-accent px-4 text-on-accent disabled:opacity-40">{(row.enabled?english.ToastConnect.webhookDeactivate:english.ToastConnect.webhookActivate)}</button>
    </>}
    {message&&<p role="status" className="text-sm">{message}</p>}
   </div>

@@ -206,6 +206,18 @@ BEGIN
  begin perform public.toast_commit_canonical_order_page(b,r,gen_random_uuid(),s,e,1,'[]'::jsonb,false,null);
  exception when others then refused:=true;end;
  perform pg_temp.assert_true(refused,'invalid worker lease cannot advance cursor');
+ -- A malformed row must not discard valid page-mates or certify the window.
+ corrected:=jsonb_set(jsonb_set(corrected,'{payload,modifiedDate}',to_jsonb(e+interval '90 seconds')),'{projection,netSalesCents}','1700'::jsonb);
+ receipt:=public.toast_commit_canonical_order_page(b,r,n,e-interval '2 minutes',e+interval '1 minute',1,jsonb_build_array(corrected),false,null,
+  jsonb_build_array(jsonb_build_object('order_guid',null,'source_index',2,'raw_sha256',repeat('a',64),'error_path','order_identity_or_business_date')));
+ perform pg_temp.assert_true((receipt->>'incomplete')::boolean and not (receipt->>'complete')::boolean,'malformed window not certified');
+ perform pg_temp.assert_true((select next_page=1 and jsonb_array_length(unparsed_pages->'1')=1 from public.toast_order_poll_progress where business_id=b and restaurant_guid=r),'durable exception and replay checkpoint');
+ perform pg_temp.assert_true((select canonical_order_poll_at=e from public.toast_sync_health where business_id=b and restaurant_guid=r),'coverage stays at last verified window');
+ snapshot:=public.toast_refresh_canonical_live(b);
+ perform pg_temp.assert_true((snapshot->>'netSalesCents')::integer=1700 and (snapshot->>'truncated')::boolean and (snapshot->>'unparsedOrders')::integer=1,'valid revision remains visible with explicit incomplete evidence');
+ receipt:=public.toast_commit_canonical_order_page(b,r,n,e-interval '2 minutes',e+interval '1 minute',1,jsonb_build_array(corrected),false,null);
+ perform pg_temp.assert_true((receipt->>'complete')::boolean and not exists(select 1 from public.toast_order_poll_progress where business_id=b and restaurant_guid=r),'corrected replay clears exception');
+ perform pg_temp.assert_true((select canonical_order_poll_at=e+interval '1 minute' from public.toast_sync_health where business_id=b and restaurant_guid=r),'only corrected full replay advances coverage');
 END $canonical$;
 
 

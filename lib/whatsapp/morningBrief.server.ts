@@ -20,7 +20,8 @@ async function toastCloseoutReady(db:SupabaseClient,id:string,day:string){
   const mappings=await readAllPages((start,end)=>db.from("toast_location_mappings")
     .select("restaurant_guid").eq("business_id",id).not("verified_at","is",null)
     .order("restaurant_guid").range(start,end));
-  if(!mappings.length)return false;
+  // Square/manual-import actual rollups do not require a Toast closeout.
+  if(!mappings.length)return true;
   const states=await readAllPages((start,end)=>db.from("toast_day_status")
     .select("restaurant_guid,import_state,recon_state,coverage_complete,rechecking_reason")
     .eq("business_id",id).eq("business_date",day)

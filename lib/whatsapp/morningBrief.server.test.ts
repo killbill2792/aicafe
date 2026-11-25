@@ -11,17 +11,17 @@ vi.mock("@/lib/data/cafeEvents.server",()=>({readCafeEvents:reads.events,readCit
 vi.mock("@/lib/data/menuCategoryLabels.server",()=>({readMenuCategoryLabels:reads.labels}));
 import {readBriefEvidence} from "./morningBrief.server";
 
-let reconState="matched";
+let reconState="matched",hasToast=true;
 const db={from:(table:string)=>{
  const q={select:()=>q,eq:()=>q,not:()=>q,order:()=>q,range:async()=>({error:null,data:table==="toast_location_mappings"?
-  [{restaurant_guid:"location-a"}]:[{restaurant_guid:"location-a",import_state:"imported",recon_state:reconState,
+  (hasToast?[{restaurant_guid:"location-a"}]:[]):[{restaurant_guid:"location-a",import_state:"imported",recon_state:reconState,
    coverage_complete:true,rechecking_reason:null}]})};
  return q;
 }} as unknown as SupabaseClient,now=new Date("2026-11-03T13:50:00Z");
 const cafe={businessId:"cafe-a",businessName:"Shop A",currency:"USD"};
 const day={today:"2026-11-03",yesterday:"2026-11-02"};
 beforeEach(()=>{
-  vi.clearAllMocks();reconState="matched";
+  vi.clearAllMocks();reconState="matched";hasToast=true;
   reads.daily.mockResolvedValue([{business_date:"2026-11-02",net_sales_cents:10900,sales_data_status:"actual"}]);
   reads.sold.mockResolvedValue({available:true,linked:[{id:"latte",units:3},{id:"cookie",units:9}],unlinked:[]});
   reads.menu.mockResolvedValue([{id:"latte",name:"Latte",base_name:"Latte",category:"ESPRESSO_DRINK"},
@@ -60,6 +60,12 @@ describe("morning brief evidence",()=>{
     expect(pending.content.netSales.known).toBe(false);
     reconState="matched";
     expect((await readBriefEvidence(db,cafe,day,now)).posComplete).toBe(true);
+  });
+  it.each(["Square","manual-import"])("keeps actual %s sales ready without Toast mappings",async()=>{
+    hasToast=false;reconState="pending";
+    const r=await readBriefEvidence(db,cafe,day,now);
+    expect(r.posComplete).toBe(true);
+    expect(r.evidence.netSalesCents).toBe(10900);
   });
   it("POS is complete only with certified sales AND covered items",async()=>{
     reads.sold.mockResolvedValueOnce({available:false,linked:[],unlinked:[]});
