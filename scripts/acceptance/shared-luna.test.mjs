@@ -4,7 +4,8 @@ import {mkdtempSync,mkdirSync,writeFileSync,readFileSync,chmodSync,rmSync,symlin
 import {tmpdir} from "node:os";
 import {join} from "node:path";
 import {spawnSync} from "node:child_process";
-import {validateScenario,readScenario,selectLunaScenarios} from "./shared-luna.mjs";
+import {validateScenario,readScenario,selectLunaScenarios,nativeResearchScenarios} from "./shared-luna.mjs";
+import {nativeResearchScenarios as brokerNativeResearch,MAX_RESERVATION_MICROS,MAX_CALLS,MAX_BODY_BYTES,MAX_OUTPUT_TOKENS,MAX_FINAL_OUTPUT_TOKENS} from "./task14b-broker.mjs";
 import {TEST_CAFES} from "../seed/cafes.mjs";
 import {buildSeedSql,latestClosedDate} from "../seed/seedSql.mjs";
 const good={
@@ -54,6 +55,15 @@ test("candidate cannot change trusted 13C entrypoint or host oracle",()=>{
     proof:"13c-live-proof.json",scope:"13c-live-scope.json"};
   assert.throws(()=>validateScenario(m,"13c"),/Legacy oracle/);
 });
+test("a single registered SQL read can satisfy a scenario with independent database readback",()=>{
+  const m={...copy(good),expectedTools:["query_data"]};
+  assert.deepEqual(validateScenario(m,"future-case").expectedTools,["query_data"]);
+  m.expectedTools=["get_investigation_source"];
+  assert.deepEqual(validateScenario(m,"future-case").expectedTools,["get_investigation_source"]);
+  m.expectedTools=["query_data","query_data"];
+  assert.throws(()=>validateScenario(m,"future-case"),/Real registered tool names required/);
+});
+
 test("a generic scenario without actual tool selection and source/owner/isolation proof fails closed",()=>{
   for(const mutate of [
     m=>{m.expectedTools=["get_schedule"]},
@@ -733,4 +743,13 @@ test("large registered catalog retains the strict selected-run limit",()=>{
  assert.throws(()=>selectLunaScenarios(found,found.slice(0,21).join(",")),/Requested scenario/);
  const grouped=Array.from({length:21},(_,i)=>"17-case-"+i);
  assert.throws(()=>selectLunaScenarios(grouped,"group-17"),/Requested scenario/);
+});
+
+
+test("the complete reviewed research suite uses the same trusted native transport without changing the paid envelope",()=>{
+  assert.deepEqual(nativeResearchScenarios,brokerNativeResearch);
+  assert.deepEqual([...nativeResearchScenarios].sort(),["13c","13d","14d-autonomous","14e-autonomous-followup","14e-cash-position","14e-payables","14e-settlement-boundary","15a-proactive-owner-answer","16c","8b-multiday-lifecycle","source553-hourly","u3-canonical-research","u4-autonomous-objectives"]);
+  for(const id of nativeResearchScenarios)assert.equal(readScenario(join(import.meta.dirname,"../.."),id).id,id);
+  assert.equal(nativeResearchScenarios.includes("future-case"),false);
+  assert.deepEqual([MAX_RESERVATION_MICROS,MAX_CALLS,MAX_BODY_BYTES,MAX_OUTPUT_TOKENS,MAX_FINAL_OUTPUT_TOKENS],[180000,18,192000,16384,1200]);
 });

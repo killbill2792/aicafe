@@ -12,6 +12,9 @@ import {createServer} from "node:http";
 import {readFileSync,writeFileSync,renameSync} from "node:fs";
 import {randomUUID,timingSafeEqual,createHash} from "node:crypto";
 
+// Trusted transport compatibility for the already-reviewed #562 acceptance suite.
+// This selects protocol only: it cannot select a paid run or alter its limits.
+export const nativeResearchScenarios=Object.freeze(["u3-canonical-research","source553-hourly","u4-autonomous-objectives","15a-proactive-owner-answer","13c","13d","14e-cash-position","14e-payables","14e-settlement-boundary","14e-autonomous-followup","14d-autonomous","8b-multiday-lifecycle","16c"]);
 export const MAX_RESERVATION_MICROS=180_000;
 export const MAX_CALLS=18;
 // Real owner-only v7 reached five completed provider tool turns, then a sixth
@@ -157,7 +160,8 @@ export function reservationForRequest(body,reasoningRegistry=new Map(),allowNati
    if(tool.type==="tool_search"){
      if(!onlyKeys(tool,["type"]))fail("provider_built_in_tools_forbidden");
    }else{
-     if(tool.type!=="function"||tool.defer_loading!==true||tool.strict!==true||
+     const eagerResearch=["describe_data","query_data","calculate"].includes(tool.name)&&tool.defer_loading===undefined;
+     if(tool.type!=="function"||(!eagerResearch&&tool.defer_loading!==true)||tool.strict!==true||
        !inlineName(tool.name)||registry.has(tool.name)||
        !onlyKeys(tool,["type","name","description","strict","parameters","defer_loading"]))fail("provider_built_in_tools_forbidden");
      registry.set(tool.name,tool);
@@ -350,7 +354,7 @@ export function startTrustedBroker({
   fail("provider_key_missing");
  if(typeof token!=="string"||token.length<40)fail("broker_token_missing");
  if(typeof auditFile!=="string"||!auditFile.startsWith("/"))fail("audit_path_missing");
- const reserved=new PaidReservation(head,process.env.SCENARIO==="u2-model-execution");
+ const reserved=new PaidReservation(head,process.env.SCENARIO==="u2-model-execution"||nativeResearchScenarios.includes(process.env.SCENARIO));
  // Provenance belongs only to this broker run; never persists ciphertext.
  const trustedReasoning=new Map();
  saveAudit(auditFile,reserved);

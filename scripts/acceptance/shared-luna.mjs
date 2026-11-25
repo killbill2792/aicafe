@@ -8,6 +8,9 @@ import {readFileSync,writeFileSync,appendFileSync,copyFileSync,mkdirSync,existsS
 import {join,resolve} from "node:path";
 import {createHash} from "node:crypto";
 import {spawn,spawnSync} from "node:child_process";
+// Trusted transport compatibility for the already-reviewed #562 acceptance suite.
+// This selects protocol only: it cannot select a paid run or alter its limits.
+export const nativeResearchScenarios=Object.freeze(["u3-canonical-research","source553-hourly","u4-autonomous-objectives","15a-proactive-owner-answer","13c","13d","14e-cash-position","14e-payables","14e-settlement-boundary","14e-autonomous-followup","14d-autonomous","8b-multiday-lifecycle","16c"]);
 const REPO="killbill2792/aicafe", OWNER="killbill2792";
 const shaRe=/^[0-9a-f]{40}$/, idRe=/^[a-z0-9][a-z0-9-]{0,31}$/;
 // Catalog validation is no-spend discovery. The separate selected-run limit
@@ -36,7 +39,9 @@ export function validateScenario(m,id){
       /^evals\/acceptance\/live\/[a-zA-Z0-9_-]+\.mjs$/.test(m.entrypoint))),
     "Invalid generic test entrypoint");
   ensure(m.proof===id+"-proof.json"&&m.scope===id+"-scope.json","Invalid proof filenames");
-  ensure(Array.isArray(m.expectedTools)&&m.expectedTools.length>=2&&m.expectedTools.length<=20&&
+  ensure(Array.isArray(m.expectedTools)&&m.expectedTools.length<=20&&
+    (m.expectedTools.length>=2||m.expectedTools.length===1&&["query_data","get_investigation_source"].includes(m.expectedTools[0]))&&
+    new Set(m.expectedTools).size===m.expectedTools.length&&
     m.expectedTools.every(t=>typeof t==="string"&&/^[a-z][a-z0-9_]{1,79}$/.test(t)),"Real registered tool names required");
   ensure(Array.isArray(m.assertions)&&m.assertions.length>=3&&m.assertions.length<=20,"Independent DB assertions required");
   const kinds=new Set();
@@ -358,6 +363,9 @@ async function candidate(){
     AICAFE_SHARED_LUNA:"1",
     AICAFE_SHARED_LUNA_HEAD:process.env.HEAD_SHA,
     AICAFE_SHARED_LUNA_SCENARIO:id,
+    // Trusted host and broker advance together; never infer the new protocol
+    // from a candidate manifest or widen the authorized spend envelope.
+    AICAFE_SHARED_LUNA_NATIVE_RESEARCH:nativeResearchScenarios.includes(id)?"1":"0",
     AICAFE_SHARED_LUNA_PROOF_DIR:dir,
     AI_CAFE_LIVE_ACCEPTANCE:"OWNER_APPROVED_LOCAL_ONLY",
     SUPERVISOR_OPENAI_MODEL:"gpt-6-luna",

@@ -179,7 +179,6 @@ jobs:
         working-directory: candidate
         run: bash ../coordinator/scripts/acceptance/shared-luna-db.sh
       - name: Provision and verify disposable restricted U3 research login
-        if: matrix.scenario == 'u3-canonical-research'
         run: bash coordinator/scripts/acceptance/shared-luna-u3.sh
       - name: Export masked disposable keys and a random capped proxy token
         run: |
