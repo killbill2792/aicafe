@@ -50,7 +50,7 @@ export async function ensureToastFirstCatalog(db:SupabaseClient,p:Location,
 }
 
 export async function syncToastOptionalSources(db:SupabaseClient,p:Location,
- now:Date,deadlineAt:number){
+ now:Date,deadlineAt:number,mode?:"menu"){
  if(Date.now()>=deadlineAt)return {menu:"deferred",labor:"deferred"};
  const {data:credentials,error:ce}=await db.from("toast_api_credentials")
   .select("scopes_available").eq("business_id",p.business_id).maybeSingle();
@@ -104,7 +104,7 @@ export async function syncToastOptionalSources(db:SupabaseClient,p:Location,
 
   }catch(e){recordFailure(e);}
  }
- if(scopes.labor!==false&&Date.now()<deadlineAt){
+ if(mode!=="menu"&&scopes.labor!==false&&Date.now()<deadlineAt){
   if(!state?.roster_copied_at||state?.roster_local_day!==local.today){
    try{await copyToastStaff(db,scope);await update({roster_local_day:local.today,
     roster_copied_at:new Date().toISOString()});staffReady=true;}
@@ -177,6 +177,10 @@ export async function syncToastOptionalSources(db:SupabaseClient,p:Location,
    await update({operational_sources:sourceStates});
    recordFailure(new ToastApiError("unavailable"));
   }
+ }
+ if(mode==="menu"){
+  if(phaseFailures.length)throw new ToastApiError(phaseFailures[0]);
+  return {menu,labor:"deferred",version:verifiedMenuVersion};
  }
  const lastModified=sourceStates.labor_modified??{};
  const saveModified=async(patch:Record<string,unknown>)=>{

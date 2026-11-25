@@ -237,7 +237,8 @@ function operationalPlan(now:Date,timeZone:string,closeoutHour:number):Operation
  ];
 }
 export async function syncToastOperationalSources(db:SupabaseClient,
- p:ToastCopyScope & {closeoutHour:number},now:Date,deadlineAt:number){
+ p:ToastCopyScope & {closeoutHour:number},now:Date,deadlineAt:number,
+ event?:{family:"availability"|"ordering";at:string}){
  const {data:credentials,error:ce}=await db.from("toast_api_credentials").select("scopes_available")
   .eq("business_id",p.businessId).maybeSingle();
  if(ce)throw new ToastApiError("unavailable");
@@ -259,8 +260,10 @@ export async function syncToastOperationalSources(db:SupabaseClient,
  const attempts:string[]=[];
  for(const op of operationalPlan(now,p.timezone,p.closeoutHour)){
   if(Date.now()>=deadlineAt)break;
+  if(event&&op.family!==event.family)continue;
   const previous=states[op.key]??{};
-  if(previous.next_at&&Date.parse(previous.next_at)>now.getTime())continue;
+  if(event&&previous.last_success_at&&Date.parse(previous.last_success_at)>=Date.parse(event.at))continue;
+  if(previous.next_at&&Date.parse(previous.next_at)>now.getTime()&&(!event||previous.error))continue;
   const checked=now.toISOString();
   attempts.push(op.key);
   const allowed=scopes[op.family]!==false;
@@ -335,4 +338,33 @@ export async function syncToastOperationalSources(db:SupabaseClient,
  }
  await reconcileToastOperationalHealth(db,p,states);
  return {attempted:attempts,states};
+}
+
+/** Event-triggered reads use the same canonical operational writer. Inventory
+ * search is read-only despite Toast requiring POST; no provider writes. */
+export async function refreshToastOperationalEvent(db:SupabaseClient,p:ToastCopyScope & {closeoutHour:number},
+ kind:"stock"|"availability"|"ordering",itemGuid:string|null,eventAt:string,deadlineAt:number){
+ const now=new Date();
+ if(kind!=="stock"){
+  const result=await syncToastOperationalSources(db,p,now,deadlineAt,{family:kind,at:eventAt});
+  const key=kind==="availability"?"online_availability":"ordering_schedule";
+  if(!result.states[key]?.last_success_at||Date.parse(result.states[key].last_success_at!)<Date.parse(eventAt))
+   throw new ToastApiError("unavailable");
+  return;
+ }
+ if(!GUID.safeParse(itemGuid).success)throw new ToastApiError("invalid_response");
+ const rows=await createToastClient(db,p.businessId).request("/stock/v1/inventory/search",p.restaurantGuid,
+  z.array(operationalStock),{deadlineAt,stockSearchGuids:[itemGuid!]});
+ if(rows.length!==1||rows[0].guid.toLowerCase()!==itemGuid!.toLowerCase()||rows[0].itemGuidValidity==="INVALID")
+  throw new ToastApiError("invalid_response");
+ const local=localClock(now,p.timezone);
+ const day=local.minutes<p.closeoutHour*60?addCalendarDays(local.today,-1):local.today;
+ const checked=now.toISOString();
+ const payload={...redactToastRaw(rows[0]) as Record<string,unknown>,
+  business_id:p.businessId,restaurant_guid:p.restaurantGuid,endpoint:"stock/v1/inventory",
+  provider_key:rows[0].guid.toLowerCase(),source_key_kind:"provider_guid",business_date:day,
+  source_business_date_kind:"observed_cafe_day",fetched_at:checked,lastSuccessAt:checked};
+ const {data,error}=await db.rpc("toast_stage_operational_batch",{p_business_id:p.businessId,
+  p_restaurant_guid:p.restaurantGuid,p_endpoint:"stock/v1/inventory",p_business_date:day,p_objects:[payload]});
+ if(error||data!==1)throw new ToastApiError("unavailable");
 }
