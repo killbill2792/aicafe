@@ -82,6 +82,7 @@ function makeDB(){
   },
   async rpc(name:string,args:Record<string,unknown>={}){
    calls.push(name);
+   if(name==="toast_use_canonical_order_coverage")return {data:false,error:null};
    if(name==="toast_acquire_lease")return {data:claim?"lease-1":null,error:null};
    if(name==="toast_queue_daily"){
     if(!runs.some(r=>r.kind==="daily"&&r.requested_from===args.p_date))

@@ -2,6 +2,7 @@
 -- Reuse the existing health, progress, raw archive, and repair queue. No history deleted.
 alter table public.toast_raw_records add column if not exists live_projection jsonb;
 alter table public.toast_sync_health add column if not exists canonical_order_poll_at timestamptz;
+alter table public.toast_sync_health add column if not exists canonical_order_poll_from timestamptz;
 alter table public.toast_sync_health add column if not exists canonical_live_day date;
 alter table public.toast_order_poll_progress add column if not exists canonical boolean not null default false;
 alter table public.toast_order_poll_progress add column if not exists bootstrap_day date;
@@ -125,6 +126,12 @@ begin
    end if;
   elsif prior.id is null or prior.payload_sha256<>sha then
    perform public.toast_queue_owner_repull(p_business_id,p_restaurant_guid,d);
+   update public.toast_day_status set recon_state='pending',last_recon_attempt_at=null
+    where business_id=p_business_id and restaurant_guid=p_restaurant_guid and business_date=d
+     and import_state='imported' and recon_state<>'pending';
+   update public.daily_rollups set voids_status='unknown',voids_source=null
+    where business_id=p_business_id and voids_status is distinct from 'unknown' and (business_date=d or business_date in (
+     select f.void_business_date from public.toast_void_facts f where f.business_id=p_business_id and f.order_business_date=d));
   end if;
  end loop;
  return changed;
@@ -139,7 +146,7 @@ create or replace function public.toast_commit_canonical_order_page(
  p_since timestamptz,p_until timestamptz,p_page integer,p_rows jsonb,p_has_more boolean,
  p_bootstrap_day date)
 returns jsonb language plpgsql security invoker set search_path=public as $$
-declare progress public.toast_order_poll_progress%rowtype; changed integer;
+declare progress public.toast_order_poll_progress%rowtype; changed integer; prior_cursor timestamptz; legacy_cursor timestamptz;
 begin
  if auth.role() is distinct from 'service_role' or p_since is null or p_until is null
   or p_since>=p_until or p_until>now() or p_until-p_since>interval '30 days'
@@ -155,6 +162,8 @@ begin
   if progress.window_since<>p_since or progress.window_until<>p_until or progress.next_page<>p_page
    or progress.bootstrap_day is distinct from p_bootstrap_day then raise exception 'canonical order checkpoint mismatch';end if;
  elsif p_page<>1 then raise exception 'canonical order first page required';end if;
+ select canonical_order_poll_at into prior_cursor from public.toast_sync_health where business_id=p_business_id and restaurant_guid=p_restaurant_guid;
+ if p_bootstrap_day is null and prior_cursor is not null and p_since>prior_cursor then raise exception 'canonical order coverage gap';end if;
  changed:=public.toast_ingest_order_revisions(p_business_id,p_restaurant_guid,p_rows);
  if p_has_more then
   insert into public.toast_order_poll_progress(business_id,restaurant_guid,window_since,window_until,next_page,is_recovery,canonical,bootstrap_day)
@@ -164,11 +173,15 @@ begin
     bootstrap_day=excluded.bootstrap_day,updated_at=now();
  else
   delete from public.toast_order_poll_progress where business_id=p_business_id and restaurant_guid=p_restaurant_guid and canonical;
-  insert into public.toast_sync_health(business_id,restaurant_guid,canonical_order_poll_at,canonical_live_day)
-   values(p_business_id,p_restaurant_guid,case when p_bootstrap_day is null then p_until else p_since end,p_bootstrap_day)
+  select last_window_end into legacy_cursor from public.toast_repull_scan_state where business_id=p_business_id and restaurant_guid=p_restaurant_guid;
+  insert into public.toast_sync_health(business_id,restaurant_guid,canonical_order_poll_at,canonical_order_poll_from,canonical_live_day)
+   values(p_business_id,p_restaurant_guid,case when p_bootstrap_day is null then p_until else least(p_since,coalesce(legacy_cursor,p_since)) end,
+    case when p_bootstrap_day is null then p_since end,p_bootstrap_day)
    on conflict(business_id,restaurant_guid) do update set
     canonical_order_poll_at=case when p_bootstrap_day is null then greatest(toast_sync_health.canonical_order_poll_at,p_until)
-     else coalesce(toast_sync_health.canonical_order_poll_at,p_since) end,
+     else coalesce(toast_sync_health.canonical_order_poll_at,excluded.canonical_order_poll_at) end,
+    canonical_order_poll_from=case when p_bootstrap_day is null then least(coalesce(toast_sync_health.canonical_order_poll_from,p_since),p_since)
+     else toast_sync_health.canonical_order_poll_from end,
     canonical_live_day=coalesce(p_bootstrap_day,toast_sync_health.canonical_live_day);
  end if;
  return jsonb_build_object('changed',changed,'complete',not p_has_more);
@@ -264,3 +277,34 @@ begin
 end $$;
 revoke all on function public.toast_changed_order_days(uuid,uuid,jsonb) from public,anon,authenticated;
 grant execute on function public.toast_changed_order_days(uuid,uuid,jsonb) to service_role;
+
+-- Reuse continuous incremental coverage for the daily void completeness
+-- check. Only an uncovered day needs the legacy historical scan.
+create or replace function public.toast_use_canonical_order_coverage(p_business_id uuid,p_restaurant_guid uuid,p_local_day date)
+returns boolean language plpgsql security invoker set search_path=public as $$
+declare m record; h record; s record; start_at timestamptz; end_at timestamptz;
+begin
+ if auth.role() is distinct from 'service_role' then raise exception 'service role only';end if;
+ select toast_time_zone,closeout_hour into m from public.toast_location_mappings
+  where business_id=p_business_id and restaurant_guid=p_restaurant_guid and verified_at is not null;
+ if not found or m.toast_time_zone is null or m.closeout_hour is null then return false;end if;
+ select last_local_day,scan_local_day into s from public.toast_repull_scan_state where business_id=p_business_id and restaurant_guid=p_restaurant_guid;
+ if s.scan_local_day is not null then return false;end if;
+ if s.last_local_day>=p_local_day then return true;end if;
+ select canonical_order_poll_from,canonical_order_poll_at into h from public.toast_sync_health
+  where business_id=p_business_id and restaurant_guid=p_restaurant_guid;
+ if not found or h.canonical_order_poll_from is null or h.canonical_order_poll_at is null then return false;end if;
+ start_at:=((p_local_day-1)::timestamp+make_interval(hours=>m.closeout_hour)) at time zone m.toast_time_zone;
+ end_at:=(p_local_day::timestamp+make_interval(hours=>m.closeout_hour)) at time zone m.toast_time_zone;
+ if (start_at-interval '1 hour') at time zone m.toast_time_zone=((p_local_day-1)::timestamp+make_interval(hours=>m.closeout_hour)) then start_at:=start_at-interval '1 hour';end if;
+ if (end_at-interval '1 hour') at time zone m.toast_time_zone=(p_local_day::timestamp+make_interval(hours=>m.closeout_hour)) then end_at:=end_at-interval '1 hour';end if;
+ if h.canonical_order_poll_from>start_at or h.canonical_order_poll_at<end_at then return false;end if;
+ -- A late order repair must finish before the daily completeness certificate.
+ if exists(select 1 from public.toast_sync_runs where business_id=p_business_id and restaurant_guid=p_restaurant_guid
+  and kind='repull_modified' and state in ('queued','running','paused_rate_limited')) then return true;end if;
+ perform public.toast_commit_repull_scan_window(p_business_id,p_restaurant_guid,p_local_day,'[]'::jsonb,start_at,h.canonical_order_poll_at);
+ perform public.toast_certify_day_voids(p_business_id,p_local_day-1);
+ return true;
+end $$;
+revoke all on function public.toast_use_canonical_order_coverage(uuid,uuid,date) from public,anon,authenticated;
+grant execute on function public.toast_use_canonical_order_coverage(uuid,uuid,date) to service_role;

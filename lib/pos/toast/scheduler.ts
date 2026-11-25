@@ -97,6 +97,11 @@ async function scanModifiedDates(db:SupabaseClient,m:Mapping,now:Date,deadlineAt
  // usual scan hour. Its end timestamp stays fixed across scheduler slices.
  if(!last?.scan_local_day&&clock.minutes<(m.closeout_hour+6)*60)return;
  if(!last?.scan_local_day&&last?.last_local_day===clock.today)return;
+ if(!last?.scan_local_day){
+  const {data:covered,error:coverageError}=await db.rpc("toast_use_canonical_order_coverage",{p_business_id:m.business_id,p_restaurant_guid:m.restaurant_guid,p_local_day:clock.today});
+  if(coverageError)throw new ToastApiError("unavailable");
+  if(covered===true)return;
+ }
  const configured=Number(process.env.TOAST_REPULL_DAYS??7);
  const days=Number.isInteger(configured)?Math.min(30,Math.max(1,configured)):7;
  const scanDay=last?.scan_local_day??clock.today;
