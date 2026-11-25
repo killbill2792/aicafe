@@ -10,10 +10,12 @@ export function dayContributionCents(day: DailyFacts): number | null {
 }
 
 export function recoveryBuckets(snapshot: BusinessSnapshot): RecoveryBucket[] {
-  return snapshot.recoveryOrder
-    .map((code) => snapshot.runningCostLines.find((l) => l.categoryCode === code))
-    .filter((line): line is BusinessSnapshot["runningCostLines"][number] => Boolean(line) && line!.amountCents > 0)
-    .map((line) => ({ code: line.categoryCode, amountCents: line.amountCents, isEstimate: line.isEstimate }));
+  // The configured recovery order sequences the evidence, never filters out
+  // valid costs. Use the same rule as the historical calendar.
+  return recoveryBucketsFromAmounts(snapshot.runningCostLines.map(line=>({
+    categoryCode:line.categoryCode,monthKey:snapshot.monthKey,amountCents:line.amountCents,
+    isEstimate:line.isEstimate,isMissing:line.isMissing,
+  })),snapshot.recoveryOrder);
 }
 
 /** Same bucket-building rule as `recoveryBuckets`, but from an arbitrary month's `categoryAmounts`
