@@ -84,14 +84,211 @@ grant execute on function public.toast_archive_order(uuid,uuid,uuid,date,jsonb,t
  to service_role;
 
 
+
+-- A late order correction uses the existing durable repull run. Preserve the
+-- complete redacted provider revision until a guarded import commits it.
+-- Existing owner/full-day recovery remains full-day and can supersede this mode.
+create or replace function public.toast_queue_order_revision(
+ p_business_id uuid,p_restaurant_guid uuid,p_date date,p_payload jsonb,p_allow_local boolean)
+returns uuid language plpgsql security invoker set search_path=public as $
+declare job uuid; cur jsonb; rev jsonb; old jsonb; g text;
+begin
+ if auth.role() is distinct from 'service_role' or jsonb_typeof(p_payload) is distinct from 'object'
+  or public.toast_uuid_or_null(p_payload->>'guid') is null
+  or public.toast_time_or_null(p_payload->>'modifiedDate') is null
+  or p_allow_local is null then raise exception 'invalid source revision';end if;
+ if not exists(select 1 from public.toast_location_mappings where business_id=p_business_id
+  and restaurant_guid=p_restaurant_guid and verified_at is not null) then raise exception 'unverified Toast location';end if;
+ perform pg_advisory_xact_lock(hashtextextended('toast-day:'||p_business_id::text||':'||p_date::text,0));
+ g:=p_payload->>'guid';
+ insert into public.toast_sync_runs(business_id,restaurant_guid,kind,requested_from,requested_to,days_total,cursor)
+ values(p_business_id,p_restaurant_guid,'repull_modified',p_date,p_date,1,
+  jsonb_build_object('revision',jsonb_build_object('only',p_allow_local,'orders',jsonb_build_object(g,p_payload))))
+ on conflict(business_id,restaurant_guid,requested_from,requested_to)
+ where kind='repull_modified' and state in ('queued','running','paused_rate_limited')
+ do nothing returning id into job;
+ if job is not null then return job;end if;
+ select id,cursor into job,cur from public.toast_sync_runs where business_id=p_business_id and restaurant_guid=p_restaurant_guid
+  and requested_from=p_date and requested_to=p_date and kind='repull_modified'
+  and state in ('queued','running','paused_rate_limited') for update;
+ if job is null then raise exception 'revision repair unavailable';end if;
+ rev:=coalesce(cur->'revision','{"only":false,"orders":{}}'::jsonb);
+ old:=rev->'orders'->g;
+ if old is not null and (old=p_payload or
+  public.toast_time_or_null(old->>'modifiedDate')>public.toast_time_or_null(p_payload->>'modifiedDate')) then return job;end if;
+ rev:=jsonb_set(rev,'{orders}',coalesce(rev->'orders','{}'::jsonb)||jsonb_build_object(g,p_payload),true);
+ if not p_allow_local then rev:=jsonb_set(rev,'{only}','false'::jsonb,true);end if;
+ update public.toast_sync_runs set cursor=jsonb_set(coalesce(cur,'{}'::jsonb),'{revision}',rev,true) where id=job;
+ return job;
+end $;
+revoke all on function public.toast_queue_order_revision(uuid,uuid,date,jsonb,boolean) from public,anon,authenticated;
+grant execute on function public.toast_queue_order_revision(uuid,uuid,date,jsonb,boolean) to service_role;
+
+-- Existing full-day repair/manual requests must never be narrowed to a local patch.
+CREATE OR REPLACE FUNCTION public.toast_queue_owner_repull(p_business_id uuid, p_restaurant_guid uuid, p_date date)
+ RETURNS uuid
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'public'
+AS $function$
+declare v_id uuid;v_zone text;
+begin
+ if auth.role()<>'service_role' then raise exception 'service role only';end if;
+ select toast_time_zone into v_zone from public.toast_location_mappings
+  where business_id=p_business_id and restaurant_guid=p_restaurant_guid
+  and verified_at is not null for share;
+ if v_zone is null or p_date<'2015-12-02'::date or
+  p_date >= (now() at time zone v_zone)::date
+ then raise exception 'invalid repull day';end if;
+ insert into public.toast_sync_runs(business_id,restaurant_guid,kind,
+  requested_from,requested_to,days_total,cursor)
+ values(p_business_id,p_restaurant_guid,'repull_modified',p_date,p_date,1,'{}'::jsonb)
+ on conflict(business_id,restaurant_guid,requested_from,requested_to)
+ where kind='repull_modified' and state in ('queued','running','paused_rate_limited')
+ do nothing returning id into v_id;
+ if v_id is null then
+  select id into v_id from public.toast_sync_runs
+   where business_id=p_business_id and restaurant_guid=p_restaurant_guid
+    and kind='repull_modified' and requested_from=p_date and requested_to=p_date
+    and state in ('queued','running','paused_rate_limited')
+   order by id limit 1;
+ end if;
+ if v_id is null then raise exception 'unable to queue repull';end if;
+ update public.toast_sync_runs set cursor=jsonb_set(cursor,'{revision,only}','false'::jsonb,true)
+  where id=v_id and cursor->'revision'->>'only'='true';
+ return v_id;
+end $function$
+;
+
+-- Capture the exact revision generation before reading the old complete archive.
+-- If another event arrived while pages were staged, resume from a clean source.
+create or replace function public.toast_begin_revision_import(
+ p_business_id uuid,p_restaurant_guid uuid,p_date date,p_run_id uuid,p_force_full boolean default false)
+returns jsonb language plpgsql security invoker set search_path=public as $
+declare cur jsonb; rev jsonb; token text;
+begin
+ if auth.role() is distinct from 'service_role' then raise exception 'service role only';end if;
+ perform pg_advisory_xact_lock(hashtextextended('toast-day:'||p_business_id::text||':'||p_date::text,0));
+ select cursor into cur from public.toast_sync_runs where id=p_run_id and business_id=p_business_id
+  and restaurant_guid=p_restaurant_guid and requested_from=p_date and requested_to=p_date
+  and kind='repull_modified' and state in ('queued','running','paused_rate_limited') for update;
+ if not found then raise exception 'invalid revision run';end if;
+ rev:=coalesce(cur->'revision','{"only":false,"orders":{}}'::jsonb);
+ if p_force_full then rev:=jsonb_set(rev,'{only}','false'::jsonb,true);end if;
+ token:=encode(sha256(convert_to(rev::text,'UTF8')),'hex');
+ if (cur->>'revision_snapshot') is distinct from token and
+    (cur ? 'revision_snapshot' or cur ? 'revision' or p_force_full) then
+  delete from public.toast_day_pages where run_id=p_run_id and business_date=p_date;
+ end if;
+ update public.toast_sync_runs set cursor=coalesce(cur,'{}'::jsonb)||
+  jsonb_build_object('revision',rev,'revision_snapshot',token) where id=p_run_id;
+ return jsonb_build_object('revision',rev,'token',token);
+end $;
+revoke all on function public.toast_begin_revision_import(uuid,uuid,date,uuid,boolean) from public,anon,authenticated;
+grant execute on function public.toast_begin_revision_import(uuid,uuid,date,uuid,boolean) to service_role;
+
+-- Preserve revision work through the existing page and retry checkpoints.
+CREATE OR REPLACE FUNCTION public.toast_stage_day_page(p_business_id uuid, p_restaurant_guid uuid, p_run_id uuid, p_business_date date, p_page integer, p_payload jsonb)
+ RETURNS void
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'public'
+AS $function$
+begin
+ if auth.role()<>'service_role' or p_page not between 1 and 300
+  or jsonb_typeof(p_payload)<>'array' or jsonb_array_length(p_payload)>100
+  or not exists(select 1 from public.toast_sync_runs r where r.id=p_run_id
+   and r.business_id=p_business_id and r.restaurant_guid=p_restaurant_guid
+   and r.state in ('queued','running','paused_rate_limited'))
+ then raise exception 'invalid Toast page';end if;
+ insert into public.toast_day_pages(run_id,business_date,page,payload)
+ values(p_run_id,p_business_date,p_page,p_payload)
+ on conflict do nothing;
+ update public.toast_sync_runs set cursor=coalesce(cursor,'{}'::jsonb)||jsonb_build_object('business_date',p_business_date,'page',p_page+1),
+  api_calls=api_calls+1,orders_seen=orders_seen+jsonb_array_length(p_payload),state='running',
+  started_at=coalesce(started_at,now()) where id=p_run_id;
+end $function$
+;
+CREATE OR REPLACE FUNCTION public.toast_checkpoint_day(p_run_id uuid, p_business_id uuid, p_restaurant_guid uuid, p_business_date date, p_page integer, p_category text, p_retry_at timestamp with time zone DEFAULT NULL::timestamp with time zone)
+ RETURNS void
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'public'
+AS $function$
+begin
+ if auth.role()<>'service_role' or p_page not between 1 and 300
+ then raise exception 'invalid Toast checkpoint';end if;
+ update public.toast_sync_runs set state='paused_rate_limited',
+ last_error_category=p_category,
+ resume_at=case when p_category='timeout' then now()
+  when p_category='rate_limited' then greatest(now(),coalesce(p_retry_at,now()+interval '1 minute'))
+  else now()+make_interval(mins=>case coalesce((cursor->>'backoff_attempt')::integer,0)
+   when 0 then 1 when 1 then 5 when 2 then 15 else 60 end) end,
+ cursor=coalesce(cursor,'{}'::jsonb)||jsonb_build_object('business_date',p_business_date,'page',p_page,
+  'backoff_attempt',case when p_category='timeout' then 0
+   else least(coalesce((cursor->>'backoff_attempt')::integer,0)+1,4) end),
+ rate_limited_count=rate_limited_count+case when p_category='rate_limited' then 1 else 0 end
+ where id=p_run_id and business_id=p_business_id and restaurant_guid=p_restaurant_guid
+ and state in ('queued','running','paused_rate_limited');
+ if not found then raise exception 'invalid Toast run';end if;
+ update public.toast_day_status set last_error_category=p_category
+ where business_id=p_business_id and restaurant_guid=p_restaurant_guid
+  and business_date=p_business_date;
+end $function$
+;
+
+-- Use exactly the established financial day writer. For a verified local patch,
+-- stage the reconstructed pages and commit in ONE transaction, so no mixed
+-- source generation or transient uncommitted archive can be accepted.
+create or replace function public.toast_commit_revision_day(
+ p_business_id uuid,p_location_id uuid,p_restaurant_guid uuid,p_business_date date,
+ p_orders jsonb,p_summary jsonb,p_run_id uuid,p_revision_token text,p_base_run_id uuid,p_local_pages jsonb)
+returns jsonb language plpgsql security invoker set search_path=public as $
+declare cur jsonb; rev jsonb; token text; item record;
+begin
+ if auth.role() is distinct from 'service_role' then raise exception 'service role only';end if;
+ perform pg_advisory_xact_lock(hashtextextended('toast-day:'||p_business_id::text||':'||p_business_date::text,0));
+ select cursor into cur from public.toast_sync_runs where id=p_run_id and business_id=p_business_id
+  and restaurant_guid=p_restaurant_guid and requested_from=p_business_date and requested_to=p_business_date
+  and kind='repull_modified' and state in ('queued','running','paused_rate_limited') for update;
+ if not found then raise exception 'invalid revision run';end if;
+ rev:=coalesce(cur->'revision','{"only":false,"orders":{}}'::jsonb);
+ token:=encode(sha256(convert_to(rev::text,'UTF8')),'hex');
+ if p_revision_token is distinct from token or cur->>'revision_snapshot' is distinct from token then
+  raise exception 'new source revision arrived during repair' using errcode='40001';end if;
+ if p_local_pages is not null then
+  if rev->>'only' is distinct from 'true' or p_base_run_id is null
+   or not exists(select 1 from public.toast_day_status where business_id=p_business_id
+    and restaurant_guid=p_restaurant_guid and business_date=p_business_date and import_state='imported'
+    and coverage_complete and unparsed_count=0 and last_import_run_id=p_base_run_id)
+   or jsonb_typeof(p_local_pages) is distinct from 'array'
+   or jsonb_array_length(p_local_pages) not between 1 and 300
+   then raise exception 'local revision base no longer valid' using errcode='40001';end if;
+  if exists(select 1 from jsonb_array_elements(p_local_pages) with ordinality x(payload,idx)
+   where jsonb_typeof(x.payload) is distinct from 'array' or jsonb_array_length(x.payload)>100
+    or (x.idx<jsonb_array_length(p_local_pages) and jsonb_array_length(x.payload)<>100)
+    or (x.idx=jsonb_array_length(p_local_pages) and jsonb_array_length(x.payload)=100))
+   then raise exception 'incomplete local revision pages';end if;
+  delete from public.toast_day_pages where run_id=p_run_id and business_date=p_business_date;
+  for item in select payload,idx from jsonb_array_elements(p_local_pages) with ordinality x(payload,idx) loop
+   insert into public.toast_day_pages(run_id,business_date,page,payload)
+    values(p_run_id,p_business_date,item.idx::integer,item.payload);
+  end loop;
+  update public.toast_sync_runs set state='running',started_at=coalesce(started_at,now()) where id=p_run_id;
+ elsif rev->>'only'='true' then raise exception 'local source proof required';end if;
+ return public.toast_import_day(p_business_id,p_location_id,p_restaurant_guid,p_business_date,p_orders,p_summary,p_run_id);
+end $;
+revoke all on function public.toast_commit_revision_day(uuid,uuid,date,jsonb,jsonb,uuid,text,uuid,jsonb) from public,anon,authenticated;
+grant execute on function public.toast_commit_revision_day(uuid,uuid,date,jsonb,jsonb,uuid,text,uuid,jsonb) to service_role;
+
 -- Common raw archive path for signed event-triggered GET and incremental pages.
--- The whole-day writer still owns finalized normalized data. A changed historical
--- object enqueues one coalesced repair, never a recurring backfill.
+-- The guarded day writer owns finalized normalized data. A changed historical
+-- object patches a proven local snapshot; incomplete/moved orders use source repair.
 create or replace function public.toast_ingest_order_revisions(
  p_business_id uuid,p_restaurant_guid uuid,p_rows jsonb)
 returns integer language plpgsql security invoker set search_path=public as $$
 declare m record; item jsonb; payload jsonb; d date; current_day date;
- g uuid; prior public.toast_raw_records%rowtype; sha text; result text; changed integer:=0;
+ g uuid; prior public.toast_raw_records%rowtype; sha text; result text; changed integer:=0; old_day date; moved boolean;
 begin
  if auth.role() is distinct from 'service_role' or jsonb_typeof(p_rows) is distinct from 'array'
   or jsonb_array_length(p_rows)>100 then raise exception 'invalid order revision batch'; end if;
@@ -115,6 +312,16 @@ begin
    where business_id=p_business_id and restaurant_guid=p_restaurant_guid and business_date=d
     and entity='order' and entity_guid=g order by last_seen desc,id desc limit 1;
   if found and public.toast_time_or_null(prior.payload->>'modifiedDate')>public.toast_time_or_null(payload->>'modifiedDate') then continue;end if;
+  -- An order can change provider business date. Preserve independent proof for
+  -- both affected days instead of pretending the old archived day is complete.
+  moved:=false;
+  for old_day in select distinct o.business_date from public.orders o where o.business_id=p_business_id
+   and o.pos_order_id='toast:'||p_restaurant_guid::text||':'||g::text
+   and o.business_date<>d and not o.toast_excluded
+  loop
+   moved:=true;
+   if old_day<current_day then perform public.toast_queue_owner_repull(p_business_id,p_restaurant_guid,old_day);end if;
+  end loop;
   if d>=current_day-1 and not exists(select 1 from public.toast_day_status s
     where s.business_id=p_business_id and s.restaurant_guid=p_restaurant_guid and s.business_date=d and s.import_state='imported') then
    result:=public.toast_archive_order(p_business_id,p_restaurant_guid,g,d,payload,sha,null,null,null,
@@ -127,7 +334,10 @@ begin
     if found then changed:=changed+1;end if;
    end if;
   elsif prior.id is null or prior.payload_sha256<>sha then
-   perform public.toast_queue_owner_repull(p_business_id,p_restaurant_guid,d);
+   perform public.toast_queue_order_revision(p_business_id,p_restaurant_guid,d,payload,
+    not moved and exists(select 1 from public.toast_day_status s
+     where s.business_id=p_business_id and s.restaurant_guid=p_restaurant_guid and s.business_date=d
+      and s.import_state='imported' and s.coverage_complete and s.unparsed_count=0 and s.last_import_run_id is not null));
    update public.toast_day_status set recon_state='pending',last_recon_attempt_at=null,internal_state=null
     where business_id=p_business_id and restaurant_guid=p_restaurant_guid and business_date=d
      and import_state='imported' and recon_state<>'pending';

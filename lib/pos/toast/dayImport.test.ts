@@ -13,7 +13,9 @@ vi.mock("./client",async()=>{
 vi.mock("../rollup",()=>({recomputeDailyRollup:mocked.recompute}));
 vi.mock("./afterImport",()=>({afterToastImport:mocked.refresh}));
 import {ToastApiError} from "./client";
-import {importToastBusinessDay} from "./dayImport";
+import {importToastBusinessDay,buildRevisionPages} from "./dayImport";
+import {parseToastDayPage} from "./dayParser";
+import {createHash} from "node:crypto";
 import {deriveNextRunDay} from "./scheduleDates";
 
 const business="aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
@@ -449,4 +451,24 @@ it("does not record the committed day as failed even if relink and its error rec
   expect(f.phaseErrors).toEqual([expect.objectContaining({business_id:business,restaurant_guid:restaurant,phase:"sales_link",last_error_category:"unavailable"})]);
   expect(warn).toHaveBeenCalledWith("toast_sales_link_failure_not_persisted");
  }finally{warn.mockRestore();}
+});
+
+describe("late order correction on proven archive",()=>{
+ const scope={restaurantGuid:restaurant,businessDate:"2026-10-16",timezone:"America/Los_Angeles",closeoutHour:4};
+ const baseline=[record(1,scope.businessDate),record(2,scope.businessDate,20)];
+ const checksum=()=>createHash("sha256").update(JSON.stringify(
+  parseToastDayPage(baseline,restaurant,scope.businessDate,scope.timezone,4).orders.sort((a,b)=>a.guid.localeCompare(b.guid)))).digest("hex");
+ it("reuses the unchanged order and applies the one newer provider revision",()=>{
+  const changed=record(1,scope.businessDate,15,"2026-10-17T10:00:00+0000");
+  const pages=buildRevisionPages(baseline,{[guid(1)]:changed},checksum(),scope);
+  expect(pages).toEqual([{page:1,payload:[changed,baseline[1]]}]);
+ });
+ it("never certifies a partial or malformed prior archive as a complete day",()=>{
+  expect(buildRevisionPages(baseline.slice(0,1),{},checksum(),scope)).toBeNull();
+  expect(buildRevisionPages(baseline,{[guid(1)]:{guid:guid(2)}},checksum(),scope)).toBeNull();
+ });
+ it("ignores an older modification and preserves the terminal-page rule",()=>{
+  const older=record(1,scope.businessDate,1,"2026-10-17T08:00:00+0000");
+  expect(buildRevisionPages(baseline,{[guid(1)]:older},checksum(),scope)).toEqual([{page:1,payload:baseline}]);
+ });
 });
