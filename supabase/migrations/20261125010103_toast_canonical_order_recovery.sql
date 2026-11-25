@@ -190,7 +190,7 @@ begin
   count(*) into d,n
  from public.toast_location_mappings m where m.business_id=p_business_id and m.verified_at is not null
   and m.toast_time_zone is not null and m.closeout_hour is not null;
- if n=0 or d is null then return null;end if;
+ if n=0 or d is null or n<>(select count(*) from public.toast_location_mappings m where m.business_id=p_business_id and m.verified_at is not null) then return null;end if;
  select count(*),min(h.canonical_order_poll_at) into ready,source_at
  from public.toast_location_mappings m join public.toast_sync_health h using(business_id,restaurant_guid)
  where m.business_id=p_business_id and m.verified_at is not null and h.canonical_live_day=d

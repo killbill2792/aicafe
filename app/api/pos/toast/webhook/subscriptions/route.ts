@@ -28,13 +28,13 @@ export async function GET(request:Request){
  const db=await authorizeToastOwner(id);
  if(!db)return reply(403,{error:"not_authorized"});
  const {data,error}=await db.from("toast_webhook_subscriptions")
-  .select("id,enabled,created_at").eq("business_id",id).order("created_at",{ascending:false}).limit(5);
+  .select("id,enabled,created_at,signing_secret_enc").eq("business_id",id).order("created_at",{ascending:false}).limit(5);
  if(error)return reply(503,{error:"unavailable"});
  let origin:string|null=null;
  try{origin=publicToastWebhookOrigin();}catch{}
  return reply(200,{subscriptions:(data??[]).map(s=>({
-  ...s,webhookUrl:origin?origin+"/api/pos/toast/webhook/"+s.id:null
- })),receiverGloballyEnabled:process.env.TOAST_WEBHOOKS_ENABLED==="true",
+  id:s.id,enabled:s.enabled,created_at:s.created_at,secretStored:Boolean(s.signing_secret_enc),webhookUrl:origin?origin+"/api/pos/toast/webhook/"+s.id:null
+ })),receiverGloballyEnabled:process.env.TOAST_WEBHOOKS_ENABLED==="true"&&process.env.TOAST_JOBS_ENABLED==="true",
  signingSecretsExposed:false});
 }
 export async function POST(request:Request){

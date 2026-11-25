@@ -1,4 +1,5 @@
 "use client";
+import ToastWebhookSetup from "./ToastWebhookSetup";
 import {useEffect,useState} from "react";
 import {useLocale,useTranslations} from "next-intl";
 import {Link} from "@/i18n/navigation";
@@ -178,6 +179,7 @@ export default function ToastConnectionForm({businessId,locations,enabled,approv
     </div>
    </details>
   </>}
+  {enabled&&status==="connected"&&<ToastWebhookSetup businessId={businessId}/>}
   {message&&<p role="status" className="rounded-xl bg-paper p-3 text-sm text-ink">{message}</p>}
  </section>;
 }
