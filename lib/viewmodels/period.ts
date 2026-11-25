@@ -62,16 +62,19 @@ function calendarDaySpan(start: string, end: string): number {
  * actual bills in the snapshot, so this approximates them as unchanged from this month; only
  * `runningCostLines`-driven proration for dates outside the current month uses this fallback.
  */
-function categoryMonthlyAmounts(snapshot: BusinessSnapshot): CategoryMonthlyAmount[] {
-  const forMonth = (monthKey: string) =>
-    snapshot.runningCostLines.map((line) => ({
-      categoryCode: line.categoryCode,
-      monthKey,
-      amountCents: line.amountCents,
-      isEstimate: line.isEstimate,
-      isMissing: line.isMissing,
+export function categoryMonthlyAmounts(snapshot: BusinessSnapshot): CategoryMonthlyAmount[] {
+  const forMonth = (monthKey:string,lines:RunningCostLine[],includeEvidence:boolean) =>
+    lines.map(line=>({
+      categoryCode:line.categoryCode,monthKey,amountCents:line.amountCents,
+      isEstimate:line.isEstimate,isMissing:line.isMissing,
+      ...(includeEvidence&&line.expenseEvidence?{
+       recordedExpenses:line.expenseEvidence.flatMap(e=>e.kind==="expense"?[{date:e.date,amountCents:e.amountCents}]:[]),
+       recurringEstimateCents:line.recurringEstimateCents??0
+      }:{})
     }));
-  return [...forMonth(snapshot.monthKey), ...forMonth(previousMonthKey(snapshot.monthKey))];
+  return [...forMonth(snapshot.monthKey,snapshot.runningCostLines,true),
+    ...forMonth(previousMonthKey(snapshot.monthKey),snapshot.previousRunningCostLines??snapshot.runningCostLines,
+      snapshot.previousRunningCostLines!==undefined)];
 }
 
 /**
@@ -155,13 +158,12 @@ export function runningCostLinesForPeriod(snapshot: BusinessSnapshot, period: Pe
   const targetCents = roundHalfUpToCent(runningCostsForPeriod(snapshot, period));
   // Missing categories have no raw amount to round and must display as $0 — excluded from
   // allocation entirely, not just zeroed out afterward, so they never receive a stray cent.
-  const rawByCategory = new Map(
-    snapshot.runningCostLines.filter((line) => !line.isMissing).map((line) => [line.categoryCode, byCategory.get(line.categoryCode) ?? 0]),
-  );
+  const rawByCategory=new Map(byCategory);
   const allocatedByCategory = allocateIntegerCentsByCategory(rawByCategory, targetCents);
-  return snapshot.runningCostLines.map((line) => ({
+  const lines=[...new Map([...(snapshot.previousRunningCostLines??[]),...snapshot.runningCostLines].map(line=>[line.categoryCode,line])).values()];
+  return lines.map((line) => ({
     ...line,
-    amountCents: line.isMissing ? 0 : allocatedByCategory.get(line.categoryCode) ?? 0,
+    amountCents: allocatedByCategory.get(line.categoryCode) ?? 0,
   }));
 }
 

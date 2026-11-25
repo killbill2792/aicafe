@@ -20,7 +20,7 @@ export function recoveryBuckets(snapshot: BusinessSnapshot): RecoveryBucket[] {
  * (see `getMonthCalendar`) instead of the live snapshot — so a past month's calendar sequences its
  * own bills, not whichever bills happen to be active today. */
 export function recoveryBucketsFromAmounts(categoryAmounts: CategoryMonthlyAmount[], recoveryOrder: string[]): RecoveryBucket[] {
-  return recoveryOrder
+  return [...new Set([...recoveryOrder,...categoryAmounts.map(c=>c.categoryCode)])]
     .map((code) => categoryAmounts.find((c) => c.categoryCode === code))
     .filter((c): c is CategoryMonthlyAmount => Boolean(c) && c!.amountCents > 0)
     .map((c) => ({ code: c.categoryCode, amountCents: c.amountCents, isEstimate: c.isEstimate }));

@@ -77,18 +77,18 @@ export async function getBusinessSnapshotFromDb(
         .then(data=>({data,error:null}),(error:Error)=>({data:null,error})),
       timeReader("Snapshot","recurringCosts",()=>snapshotPaged("recurring_costs",
         (start,end)=>supabase.from("recurring_costs")
-         .select("id,category_code,amount_cents,frequency,is_estimate,active_from,active_to",{count:"exact"})
+         .select("id,category_code,amount_cents,frequency,is_estimate,active_from,active_to,label,due_day,source",{count:"exact"})
          .eq("business_id",businessId).order("id",{ascending:true}).range(start,end),
         row=>row.id)),
       timeReader("Snapshot","expenses",()=>snapshotPaged("expenses",
         (start,end)=>supabase.from("expenses")
-         .select("id,category_code,amount_cents,status,spent_on,recurring_cost_id",{count:"exact"})
+         .select("id,category_code,amount_cents,status,spent_on,recurring_cost_id,custom_label,vendor,source",{count:"exact"})
          .eq("business_id",businessId).gte("spent_on",monthStart).lte("spent_on",todayDateStr)
          .order("id",{ascending:true}).range(start,end),
         row=>row.id)),
       timeReader("Snapshot","priorExpenses",()=>snapshotPaged("prior_expenses",
         (start,end)=>supabase.from("expenses")
-         .select("id,category_code",{count:"exact"})
+         .select("id,category_code,amount_cents,status,spent_on,recurring_cost_id,custom_label,vendor,source",{count:"exact"})
          .eq("business_id",businessId).gte("spent_on",prevMonthStart).lte("spent_on",prevMonthEnd)
          .order("id",{ascending:true}).range(start,end),
         row=>row.id)),
@@ -120,9 +120,11 @@ export async function getBusinessSnapshotFromDb(
 
   const recoveryOrder = (recoveryOrderResult.data ?? []).map((r) => r.bucket_code);
   const runningCostLines=runningCostLinesForMonth({expenses:expensesResult.data,recurring:recurringResult.data,
-    priorExpenses:priorExpenseResult.data,from:monthStart,to:todayDateStr,today:todayDateStr,
+    priorExpenses:priorExpenseResult.data,from:monthStart,to:monthKey+"-"+String(daysInMonth).padStart(2,"0"),today:todayDateStr,
     historical:false,order:recoveryOrder});
-  const orderedCodes=runningCostLines.map(line=>line.categoryCode);
+  const previousRunningCostLines=runningCostLinesForMonth({expenses:priorExpenseResult.data,recurring:recurringResult.data,
+    from:prevMonthStart,to:prevMonthEnd,today:prevMonthEnd,historical:true,order:recoveryOrder});
+  const orderedCodes=[...new Set([...runningCostLines,...previousRunningCostLines].map(line=>line.categoryCode))];
 
   // Requested period, not last28Days, remains the item-cost evidence boundary.
   if(alertsRead.error)throw alertsRead.error;
@@ -160,6 +162,7 @@ export async function getBusinessSnapshotFromDb(
     previousMonthDays,
     previousMonthRecordedDays,
     runningCostLines,
+    previousRunningCostLines,
     recoveryOrder: orderedCodes,
     menuItems,
     allCostProducts:allMenuItemSnapshots,
@@ -381,11 +384,11 @@ async function readHistoricalBusinessSnapshot(
     readDailyFactRows(supabase,businessId,period.from,period.to)
       .then(data=>({data,error:null}),(error:Error)=>({data:null,error})),
     snapshotPaged("historical_recurring_costs",(start,end)=>supabase.from("recurring_costs")
-      .select("id,category_code,amount_cents,frequency,is_estimate,active_from,active_to",{count:"exact"})
-      .eq("business_id",businessId).lte("active_from",period.to)
+      .select("id,category_code,amount_cents,frequency,is_estimate,active_from,active_to,label,due_day,source",{count:"exact"})
+      .eq("business_id",businessId).lte("active_from",monthEnd)
       .order("id",{ascending:true}).range(start,end),row=>row.id),
     snapshotPaged("historical_expenses",(start,end)=>supabase.from("expenses")
-      .select("id,category_code,amount_cents,status,spent_on,recurring_cost_id",{count:"exact"})
+      .select("id,category_code,amount_cents,status,spent_on,recurring_cost_id,custom_label,vendor,source",{count:"exact"})
       .eq("business_id",businessId).gte("spent_on",first).lte("spent_on",monthEnd)
       .order("id",{ascending:true}).range(start,end),row=>row.id),
     supabase.from("locations").select("open_hours")

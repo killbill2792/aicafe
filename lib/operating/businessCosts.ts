@@ -5,7 +5,7 @@ import {
   totalCostsCentsForPeriod,runningCostsForPeriodCents,roundHalfUpToCent,
 } from "@/lib/calc";
 import type {BusinessCostSummary,CafeStatePeriod} from "./types";
-import {previousMonthKey,runningCostsForPeriod} from "@/lib/viewmodels/period";
+import {previousMonthKey,categoryMonthlyAmounts} from "@/lib/viewmodels/period";
 
 /** Shared business-cost observation for Money and Supervisor.
  * This is NOT a verified profit figure; absent amounts stay absent.
@@ -84,19 +84,13 @@ export function businessCostSummaryFromSnapshot(snapshot:BusinessSnapshot,period
       proofByDay.get(d.date)===d.ingredientsCents&&
       Number.isInteger(d.ingredientsCents)&&d.ingredientsCents>=0));
 
-  const missingExpenses=snapshot.runningCostLines.filter(line=>line.isExpected&&line.isMissing);
-  const estimatedExpenses=snapshot.runningCostLines.filter(line=>!line.isMissing&&line.isEstimate);
+  const periodCostLines=[...(crossesToPreviousMonth?(snapshot.previousRunningCostLines??[]):[]),...snapshot.runningCostLines];
+  const missingExpenses=periodCostLines.filter(line=>line.isExpected&&(line.isMissing||line.forecastOverlapUncertain));
+  const estimatedExpenses=periodCostLines.filter(line=>!line.isMissing&&line.isEstimate);
   const feeDays=salesDays.filter(day=>day.netSalesCents>0&&day.cardFeesStatus==="missing");
   const estimatedFees=salesDays.filter(day=>day.cardFeesStatus==="estimated");
   const estimatedTax=recordedDays.filter(day=>day.staffTaxStatus==="estimated");
-  const monthly=snapshot.runningCostLines.map(line=>({
-    categoryCode:line.categoryCode,monthKey:snapshot.monthKey,
-    amountCents:line.isMissing?0:line.amountCents,
-    isMissing:line.isMissing,isEstimate:line.isEstimate,
-  }));
-  const running=crossesToPreviousMonth
-    ? runningCostsForPeriod(snapshot,"week")
-    : runningCostsForPeriodCents(monthly,period.from,period.to);
+  const running=runningCostsForPeriodCents(categoryMonthlyAmounts(snapshot),period.from,period.to);
   // Sales and staff can be recorded independently. Use sales-covered rows ONLY for
   // ingredients/fees and recorded rows ONLY for labor, never adding labor twice.
   const ingredient=ingredientsCentsForPeriod(salesDays);
@@ -125,7 +119,7 @@ export function businessCostSummaryFromSnapshot(snapshot:BusinessSnapshot,period
     // Money's supported cross-month Week prorates prior-month bills using
     // THIS month's rates. Preserve its subtotal, but do not call assumed
     // historical operating costs a complete verified total.
-    ...(crossesToPreviousMonth&&snapshot.runningCostLines.some(line=>
+    ...(crossesToPreviousMonth&&snapshot.previousRunningCostLines===undefined&&snapshot.runningCostLines.some(line=>
       !line.isMissing&&line.amountCents!==0)?["priorMonthRunningCostCoverage"]:[]),
     ...(!itemSalesCovered?["itemSalesCoverage"]:[]),
     ...(itemSalesCovered&&!historicalIngredientCostsProven?["historicalIngredientCostCoverage"]:[]),
@@ -134,7 +128,7 @@ export function businessCostSummaryFromSnapshot(snapshot:BusinessSnapshot,period
   ];
   const estimatedInputs=[
     ...estimatedExpenses.map(x=>"expense:"+x.categoryCode),
-    ...(crossesToPreviousMonth?["priorMonthRunningCostEstimate"]:[]),
+    ...(crossesToPreviousMonth&&snapshot.previousRunningCostLines===undefined?["priorMonthRunningCostEstimate"]:[]),
     ...estimatedProducts.map(x=>"productCost:"+x.id),
     ...estimatedFees.map(x=>"cardFees:"+x.date),
     ...estimatedTax.map(x=>"staffTax:"+x.date),

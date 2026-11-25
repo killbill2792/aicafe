@@ -97,7 +97,7 @@ export function breakEvenSnapshotInputs(snapshot:BusinessSnapshot,options:BreakE
     .map(day=>day.date));
   const missingLaborDates=elapsedOpenDates.filter(date=>!completeLaborDates.has(date));
   const missingBills=snapshot.runningCostLines.some(line=>
-    line.isMissing&&line.isExpected&&
+    (line.isMissing||line.forecastOverlapUncertain)&&line.isExpected&&
     !(line.categoryCode==="rent"&&options.monthlyRentCentsOverride!==undefined)&&
     !(line.categoryCode!=="rent"&&options.monthlyOtherOverheadCentsOverride!==undefined));
   const estimatedBills=snapshot.runningCostLines.some(line=>line.isEstimate&&line.amountCents>0);
@@ -135,10 +135,12 @@ export function breakEvenSnapshotInputs(snapshot:BusinessSnapshot,options:BreakE
     (options.monthlyRentCentsOverride??0)+(options.monthlyOtherOverheadCentsOverride??0);
   const mtdBillsCents=incurredBillsMtd+
     Math.round(recurringBillsMtd*mtdCalendarDays/snapshot.daysInMonth);
+  const todayRecordedBills=unoverriddenLines.reduce((n,line)=>n+(line.expenseEvidence?
+    line.expenseEvidence.reduce((sum,e)=>sum+(e.kind==="expense"&&e.date===asOf?e.amountCents:0),0):0),0);
+  const hasDatedCostEvidence=unoverriddenLines.some(line=>line.expenseEvidence!==undefined);
   const periodBillsCents=mode==="month_forecast"?monthlyBillsCents:
     mode==="month_to_date"?mtdBillsCents:
-      // Today accrues one calendar day's bills; the monthly average target
-      // separately divides across planned OPEN days.
+      hasDatedCostEvidence?todayRecordedBills+Math.round(recurringBillsMtd/snapshot.daysInMonth):
       Math.round(monthlyBillsCents/snapshot.daysInMonth);
   const periodLaborCents=options.periodLaborCentsOverride!==undefined?
     options.periodLaborCentsOverride:options.monthlyLaborCentsOverride!==undefined?

@@ -19,6 +19,15 @@ export type BusinessSettings = {
   openHours?: OpenHours | null;
 };
 
+/** Individual original source facts, not a category-based classification of cost behaviour. */
+export type RunningCostEvidence =
+ | {kind:"expense";id:string;label:string;amountCents:number;date:string;source:string|null;
+    status:string;recurringCostId:string|null;costBehaviour:"unknown"}
+ | {kind:"recurring";id:string;label:string;amountCents:number;frequency:string;source:string|null;
+    dueDay:number|null;activeFrom:string;activeTo:string|null;isEstimate:boolean;
+    monthlyEquivalentCents:number;linkedRecordedCents:number;remainingForecastCents:number;
+    costBehaviour:"unknown"};
+
 export type RunningCostLine = {
   categoryCode: ExpenseCategoryCode;
   label: string;
@@ -27,6 +36,10 @@ export type RunningCostLine = {
   amountSource?: "recorded_expense" | "recurring" | "mixed" | "missing";
   /** Separate observed receipts from uncovered configured monthly commitments. */
   recordedExpenseCents?:number;
+  expenseEvidence?:RunningCostEvidence[];
+  /** Known recorded + remaining obligations, before resolving ambiguous unlinked overlap. */
+  possibleAdditionalForecastCents?:number;
+  forecastOverlapUncertain?:boolean;
   recurringEstimateCents?:number;
   isEstimate: boolean;
   isMissing: boolean;
@@ -113,6 +126,7 @@ export type BusinessSnapshot = {
   previousMonthRecordedDays?: DailyFacts[];
   /** This month's running-cost categories, in recovery_order, including $0/missing ones. */
   runningCostLines: RunningCostLine[];
+  previousRunningCostLines?:RunningCostLine[];
   recoveryOrder: string[];
   menuItems: MenuItemSnapshot[];
   /** Catalog cost records including archived/inactive items (not shown in active menu). */

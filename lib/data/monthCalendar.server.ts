@@ -46,11 +46,11 @@ export async function getMonthCalendarFromDb(
     readDailyFactRows(supabase, businessId, monthStart, monthEnd)
       .then((data) => ({ data, error: null }), (error: Error) => ({ data: null, error })),
     readCompletePaged((start,end)=>supabase.from("expenses")
-      .select("id,category_code,amount_cents,status,spent_on,recurring_cost_id",{count:"exact"})
+      .select("id,category_code,amount_cents,status,spent_on,recurring_cost_id,custom_label,vendor,source",{count:"exact"})
       .eq("business_id",businessId).gte("spent_on",monthStart).lte("spent_on",monthEnd)
       .order("id",{ascending:true}).range(start,end),row=>row.id),
     readCompletePaged((start,end)=>supabase.from("recurring_costs")
-      .select("id,category_code,amount_cents,frequency,is_estimate,active_from,active_to",{count:"exact"})
+      .select("id,category_code,amount_cents,frequency,is_estimate,active_from,active_to,label,due_day,source",{count:"exact"})
       .eq("business_id",businessId).lte("active_from",monthEnd)
       .or(`active_to.is.null,active_to.gte.${monthStart}`).order("id",{ascending:true}).range(start,end),row=>row.id),
     supabase
@@ -71,7 +71,9 @@ export async function getMonthCalendarFromDb(
     expenses:expensesResult,recurring:recurringResult,from:monthStart,to:monthEnd,
     today:monthEnd,historical:!isCurrentMonth
   }).map(line=>({categoryCode:line.categoryCode,monthKey,amountCents:line.amountCents,
-    isEstimate:line.isEstimate,isMissing:line.amountSource==="missing"}));
+    isEstimate:line.isEstimate,isMissing:line.isMissing,
+    recordedExpenses:line.expenseEvidence?.flatMap(e=>e.kind==="expense"?[{date:e.date,amountCents:e.amountCents}]:[]),
+    recurringEstimateCents:line.recurringEstimateCents}));
 
   return { monthKey, daysInMonth, days, categoryAmounts, openHours: isCurrentMonth ? normalizeOpenHours(locationResult.data?.open_hours) : null };
 }

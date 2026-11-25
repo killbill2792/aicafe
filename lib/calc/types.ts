@@ -47,6 +47,9 @@ export type CategoryMonthlyAmount = {
   categoryCode: string;
   monthKey: string; // YYYY-MM
   amountCents: number;
+  /** Original dated receipts plus recurring-only allocation (absent in legacy fixtures). */
+  recordedExpenses?:Array<{date:string;amountCents:number}>;
+  recurringEstimateCents?:number;
   isEstimate: boolean;
   /** true when the category has neither an actual entry nor a recurring estimate this month. */
   isMissing: boolean;
