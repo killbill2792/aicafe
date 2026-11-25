@@ -1,3 +1,5 @@
+set lock_timeout = '5s';
+set statement_timeout = '60s';
 -- Extend the existing durable event queue, not a second queue.
 alter table public.toast_webhook_subscriptions add column event_kind text not null default 'orders'
  check(event_kind in ('orders','menus','stock','availability','ordering'));

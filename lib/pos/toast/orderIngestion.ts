@@ -11,7 +11,7 @@ import {stableToastOrder} from "./stableOrder";
 export type OrderScope={businessId:string;restaurantGuid:string;timezone:string;closeoutHour:number};
 const rawSchema=z.object({guid:GUID,modifiedDate:z.string().min(1),
  businessDate:z.number().int().nullish(),openedDate:z.string().nullish()}).passthrough();
-const epoch=(value:string)=>Date.parse(value.replace(/([+-]\d{2})(\d{2})$/,"$1:$2"));
+const epoch=(value:string)=>Date.parse(value.replace(/([+-]\d{2})(\d{2})$/,(_,hours:string,minutes:string)=>hours+":"+minutes));
 export function sourceOrderDay(raw:unknown,scope:OrderScope):string{
  const o=rawSchema.safeParse(raw);
  if(!o.success||!Number.isFinite(epoch(o.data.modifiedDate)))throw new ToastApiError("invalid_response");

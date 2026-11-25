@@ -1,3 +1,5 @@
+set lock_timeout = '5s';
+set statement_timeout = '60s';
 -- Canonical incremental progress is distinct from the old staging-only cursor.
 -- Reuse the existing health, progress, raw archive, and repair queue. No history deleted.
 alter table public.toast_raw_records add column if not exists live_projection jsonb;
