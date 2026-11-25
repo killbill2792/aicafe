@@ -350,8 +350,14 @@ export async function runAgentTurn(args: {
   const failedRequestKey=(name:string,wire:string)=>{
     try{
       const canonical=(value:unknown):unknown=>Array.isArray(value)?value.map(canonical):
-       value&&typeof value==="object"?Object.fromEntries(Object.entries(value).filter(([key])=>key!=="retry_of").sort(([a],[b])=>a.localeCompare(b)).map(([k,v])=>[k,canonical(v)])):value;
-      return JSON.stringify([name,canonical(JSON.parse(wire))]);
+       value&&typeof value==="object"?Object.fromEntries(Object.entries(value).sort(([a],[b])=>a.localeCompare(b)).map(([k,v])=>[k,canonical(v)])):value;
+      const parsed=JSON.parse(wire) as unknown;
+       if(name==="query_data"&&parsed&&typeof parsed==="object"&&!Array.isArray(parsed)){
+         const {retry_of:ignored,...request}=parsed as Record<string,unknown>;
+         void ignored;
+         return JSON.stringify([name,canonical(request)]);
+       }
+       return JSON.stringify([name,canonical(parsed)]);
     }catch{return JSON.stringify([name,wire]);}
   };
   let askedQuestion:string|null=null;
@@ -859,7 +865,7 @@ export async function runAgentTurn(args: {
         usage.toolMetrics.push({name:eligibleNames.has(tool.name)?tool.name:"unavailable_tool",
           durationMs:Math.max(0,now()-toolStart),resultBytes:Buffer.byteLength(wire,"utf8"),
           returnedRows:Array.isArray(result.rows)?result.rows.length:null,
-          outcome:toolError?"failed":result.missing.length?"partial":"complete"});
+          outcome:toolError||typeof result.error==="string"?"failed":result.missing.length?"partial":"complete"});
         // The old pricing-only choice card sent amounts as chat text and lost
         // them in later threads. Use the universal structured fact card instead.
         if(tool.name==="suggest_new_item_price"&&result.askOwnerRequired===true&&
