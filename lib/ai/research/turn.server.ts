@@ -29,17 +29,13 @@ export const RESEARCH_INSTRUCTIONS=
 type Event={type:string;[key:string]:unknown};
 type FunctionCall={type:"function_call";name:string;call_id:string;arguments:string};
 
-/** Per-request output ceiling incl. reasoning; a forced final answer keeps the existing 1200 ceiling. */
-function outputCap(final:boolean):number{
-  const configured=Number(process.env.SUPERVISOR_RESEARCH_MAX_OUTPUT_TOKENS);
-  const step=Number.isSafeInteger(configured)&&configured>0?configured:4096;
+/** No output ceiling of our own. Only two existing transports require one:
+ * the durable paid-run ledger (its own cap) and the owner-approved local
+ * acceptance broker (its maximum). Ordinary chat sends none. */
+function outputCap(final:boolean):number|undefined{
   const durable=currentDurableProviderOutputCap();
-  return Math.min(step,durable??Infinity,final?1200:Infinity);
-}
-/** Research time before a final answer is forced (route maxDuration), not a business rule. */
-function elapsedLimitMs():number{
-  const configured=Number(process.env.SUPERVISOR_RESEARCH_MAX_MS);
-  return Number.isSafeInteger(configured)&&configured>0?configured:120_000;
+  if(durable)return durable;
+  return process.env.AI_CAFE_LIVE_ACCEPTANCE==="OWNER_APPROVED_LOCAL_ONLY"&&process.env.AICAFE_SHARED_LUNA_CANDIDATE==="1"?(final?1200:16_384):undefined;
 }
 
 export async function runResearchTurn(args:{
@@ -63,7 +59,6 @@ export async function runResearchTurn(args:{
   const now=args.now??Date.now,started=now();
   const model=configuredSupervisorModel();
   const provider=args.provider??openAIProvider;
-  const deadline=started+elapsedLimitMs();
   const audit=(step:AgentAuditStep)=>{try{args.onAuditStep?.(step);}catch{/* audit is non-critical */}};
   const continuation=await args.checkpoint?.resumeContext();
   const hasFiles=Boolean(args.ownerImages?.length||args.ownerPdfs?.length||args.ownerEvidence?.length);
@@ -82,8 +77,8 @@ export async function runResearchTurn(args:{
   const invocations:{name:string;result:AgentToolResult}[]=[];
   let text="",endReason:EndReason="complete";
 
+  // Only an existing durable background run's own budget can end research early.
   const stop=()=>{
-    if(now()>=deadline)return "timeout" as const;
     const budget=currentWorkerBudget();
     return budget?usageStopReason({elapsedMs:Math.max(0,now()-started),modelCalls:usage.modelCalls,
       toolCalls:usage.toolCalls,inputTokens:usage.inputTokens,outputTokens:usage.outputTokens},budget):null;
@@ -94,7 +89,7 @@ export async function runResearchTurn(args:{
     await args.beforeProviderRequest?.();
     const params:Record<string,unknown>={model,instructions:RESEARCH_INSTRUCTIONS,
       tools:researchToolDefinitions,tool_choice:final?"none":"auto",stream:true,store:false,
-      max_output_tokens:outputCap(final),input};
+      ...(outputCap(final)?{max_output_tokens:outputCap(final)}:{}),input};
     const startedCall=now();
     const checkpoint=args.checkpoint;
     if(checkpoint)await checkpoint.beginProvider();
@@ -104,8 +99,7 @@ export async function runResearchTurn(args:{
       const reservation=await reserveDurableProviderRequest(params);
       reservation?.launched();usage.modelCalls++;
       const controller=new AbortController();
-      const timer=setTimeout(()=>controller.abort(),Math.max(1,deadline+30_000-now()));
-      try{
+      {
         for await(const event of provider(params,controller.signal) as AsyncIterable<Event>){
           if(event.type==="response.output_text.delta"&&typeof event.delta==="string")answer+=event.delta;
           if(event.type==="response.output_item.done"&&event.item&&typeof event.item==="object"){
@@ -127,7 +121,7 @@ export async function runResearchTurn(args:{
           if(event.type==="response.failed"||event.type==="response.incomplete"||event.type==="error")
             throw new Error("provider_error");
         }
-      }finally{clearTimeout(timer);}
+      }
       if(!completed)throw new Error("provider_error");
       if(checkpoint)await checkpoint.endProvider(true);
     }catch(error){
@@ -174,6 +168,15 @@ export async function runResearchTurn(args:{
   }catch(error){
     if(error instanceof Error&&/durable|checkpoint|reservation/u.test(error.message))throw error;
     endReason="provider_error";
+    // Never leave the owner with nothing after real research: answer from the evidence gathered so far.
+    if(invocations.length&&!text){
+      try{
+        input.push({role:"developer",content:"A research step failed. Answer the owner now with what you found, and say what is still unknown."});
+        const {answer}=await call(true);
+        await args.beforeAcceptResult?.();
+        if(answer.trim()){text=answer;args.onDelta?.(text);}
+      }catch{/* the owner gets the existing retryable error */}
+    }
   }
   usage.latencyMs=Math.max(0,now()-started);
   const tools=[...new Set(invocations.map(i=>i.name))];

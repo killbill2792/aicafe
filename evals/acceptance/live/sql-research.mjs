@@ -9,10 +9,11 @@ import {TEST_CAFES} from "../../../scripts/seed/cafes.mjs";
 import {assertLocalLiveEnvironment} from "./preflight.mjs";
 import {readPersistedModelUsage,requireObservedProductionModel,verifyCheckoutHead} from "./runner.mjs";
 import {login,ownerTurn as completedTurn} from "./u3-canonical-research.mjs";
+const CUSTOMERS={loyal:"cust-ana-ruiz",lapsed:"cust-ben-carter"};
 
 const fail=reason=>{throw Error("sql_research_live:"+reason);};
 const rows=async(db,sql,args=[])=>(await db.query(sql,args)).rows;
-const SCENARIOS=new Set(["sql-research-data","sql-research-alerts","sql-research-profit","sql-research-strategy"]);
+const SCENARIOS=new Set(["business","profit","staffing","attention","pricing","brief","customers"].map(x=>"sql-research-"+x));
 
 /** Does the text state this amount (cents) in major units, with or without decimals? */
 export function mentionsAmount(text,cents){
@@ -53,6 +54,17 @@ async function oracle(db,cafe,other){
   const [endDay]=await rows(db,"select sum(net_sales_cents)::bigint cents from public.orders where business_id=$1 and business_date=$2::date",[cafe.businessId,end]);
   return {start,end,sales,otherSales,items,weakest,endDay};
 }
+/** Synthetic customer IDs on this café's orders (disposable DB): one loyal regular, one regular who
+ * stopped coming 8 days before the end of the window, and occasional guests. */
+async function seedCustomers(db,cafe,end){
+  await db.query("update public.orders o set customer_ref=case when r.rn%25=0 then $3 "+
+    "when r.rn%40=7 and r.business_date<=$2::date-8 then $4 when r.rn%6=1 then 'cust-guest-'||(r.rn%50) end "+
+    "from (select id,business_date,row_number() over (order by closed_at,id) rn from public.orders where business_id=$1) r where o.id=r.id",
+    [cafe.businessId,end,CUSTOMERS.loyal,CUSTOMERS.lapsed]);
+  const [top]=await rows(db,"select customer_ref ref from public.orders where business_id=$1 and customer_ref is not null "+
+    "group by 1 order by sum(net_sales_cents) desc limit 1",[cafe.businessId]);
+  if(top?.ref!==CUSTOMERS.loyal)fail("customer_seed_unexpected");
+}
 async function snapshot(db){
   const [s]=await rows(db,"select (select count(*) from public.orders)::int orders,(select count(*) from public.order_lines)::int lines,"+
     "(select md5(string_agg(id::text||':'||price_cents::text,',' order by id)) from public.menu_items) prices,"+
@@ -60,40 +72,29 @@ async function snapshot(db){
     "(select count(*) from public.supervisor_proposals)::int proposals");
   return s;
 }
-function questionsFor(id,o,cafe,alerts){
-  if(id==="sql-research-data")return [
-    {q:"What were my total net sales and how many orders did I have from "+o.start+" to "+o.end+"?",
-      hard:t=>({netSales:mentionsAmount(t,o.sales.cents),orderCount:mentionsCount(t,o.sales.n),
-        noOtherCafe:!mentionsAmount(t,o.otherSales.cents)})},
-    {q:"Which 5 items brought in the most revenue over that same period, and how much did each make?",
-      hard:t=>({topItemNamed:t.toLowerCase().includes(o.items[0].name.toLowerCase())}),
-      soft:t=>({topItemAmount:mentionsAmount(t,o.items[0].cents),allFiveNamed:o.items.every(i=>t.toLowerCase().includes(i.name.toLowerCase()))})},
-    {q:"How much did I spend on staff wages in that period, and what is that as a share of my sales?",hard:t=>({gaveAPercent:/\d\s?%/.test(t)})},
-  ];
-  // Complex owner decisions: several sources, Luna chooses the investigation.
+function questionsFor(id,o,alerts){
+  // Chief-of-staff questions: Luna chooses its own investigation; checks need facts from independent SQL.
   const deep=t=>({usedSqlMoreThanOnce:true,substantial:t.trim().length>=400});
-  if(id==="sql-research-profit")return [
-    {q:"Where am I losing money? Using my sales, recipe and ingredient costs, staff wages and bills from "+o.start+" to "+o.end+
-      ", estimate what I actually made in that period and tell me the three biggest things I could change, with the money each is worth.",
+  const said=(t,name)=>t.toLowerCase().replace(/[\s_]+/g,"-").includes(name.replace("cust-",""));
+  const period=o.start+" to "+o.end;
+  const q={
+    "sql-research-business":{q:"How is my business doing over the last two weeks ("+period+"), and what should I focus on this week?",
+      hard:t=>({...deep(t),netSalesStated:mentionsAmount(t,o.sales.cents),noOtherCafe:!mentionsAmount(t,o.otherSales.cents)})},
+    "sql-research-profit":{q:"Am I making money? From "+period+", where is my money going, and which 3 changes are worth the most?",
       hard:t=>({...deep(t),netSalesStated:mentionsAmount(t,o.sales.cents)})},
-    {q:"Which hours and weekdays am I overstaffed or understaffed compared with how busy I am? Compare orders with staff hours from my timecards "+
-      "and recommend specific schedule changes.",hard:t=>({...deep(t),gaveHours:/\b\d{1,2}(:\d{2})?\s?(am|pm)\b|\b\d{1,2}:\d{2}\b/i.test(t)})},
-  ];
-  if(id==="sql-research-strategy")return [
-    {q:"Which menu items should I raise or lower prices on, and by how much? Consider each item's margin from its recipe cost, how well it sells, "+
-      "and estimate what the change would add per month.",hard:t=>({...deep(t),topItemConsidered:t.toLowerCase().includes(o.items[0].name.toLowerCase())})},
-    {q:"Prepare my end-of-day brief for "+o.end+": how the day went versus a typical same weekday, items that sold unusually well or badly, "+
-      "anything odd in voids or discounts, and what I should do tomorrow.",hard:t=>({...deep(t),daySalesStated:mentionsAmount(t,o.endDay.cents)}),soft:t=>({dayNamed:mentionsDate(t,o.end)})},
-  ];
-  return [
-    {q:"Do I have any open alerts right now? Tell me what each one is about and how much money it could affect.",
+    "sql-research-staffing":{q:"Plan next week's staffing for me from customer demand and labor cost, with specific shifts by day and hour.",
+      hard:t=>({...deep(t),gaveHours:/\b\d{1,2}(:\d{2})?\s?(am|pm)\b|\b\d{1,2}:\d{2}\b/i.test(t)})},
+    "sql-research-attention":{q:"What needs my attention today (alerts, missing bills, voids, discounts), and what do you recommend I do?",
       hard:t=>({missingBillImpact:mentionsAmount(t,alerts.missingBill),voidsImpact:mentionsAmount(t,alerts.voids),
-        noOtherCafeAlert:!mentionsAmount(t,alerts.otherCafe)}),
-      soft:t=>({resolvedNotListedAsOpen:!mentionsAmount(t,alerts.resolved)})},
-    {q:"Investigate my weakest sales day between "+o.start+" and "+o.end+": why was it lower than the other days, and what should I look at?",
-      hard:t=>({weakestDayNamed:mentionsDate(t,o.weakest.day)})},
-    {q:"Please change the price of "+o.items[0].name+" to 6.00 "+cafe.currency+" right now.",hard:()=>({}),soft:()=>({})},
-  ];
+        noOtherCafeAlert:!mentionsAmount(t,alerts.otherCafe)}),soft:t=>({resolvedNotListedAsOpen:!mentionsAmount(t,alerts.resolved)})},
+    "sql-research-pricing":{q:"Should I change any prices? Which items, by how much, and what impact should I expect?",
+      hard:t=>({...deep(t),topItemConsidered:t.toLowerCase().includes(o.items[0].name.toLowerCase())})},
+    "sql-research-brief":{q:"Give me the end-of-day brief for "+o.end+" and my plan for tomorrow.",
+      hard:t=>({...deep(t),daySalesStated:mentionsAmount(t,o.endDay.cents)}),soft:t=>({dayNamed:mentionsDate(t,o.end)})},
+    "sql-research-customers":{q:"Who are my best and most loyal customers, who has stopped coming, and how should I win them back?",
+      hard:t=>({...deep(t),loyalNamed:said(t,CUSTOMERS.loyal),lapsedNamed:said(t,CUSTOMERS.lapsed)})},
+  };
+  return [q[id]];
 }
 
 async function main(){
@@ -111,7 +112,8 @@ async function main(){
     const o=await oracle(db,cafe,other);
     // Synthetic alerts in the disposable DB: two open, one resolved, one for the other café.
     const alerts={missingBill:32000,voids:4500,resolved:9900,otherCafe:77700};
-    if(id==="sql-research-alerts"){
+    if(id==="sql-research-customers")await seedCustomers(db,cafe,o.end);
+    if(id==="sql-research-attention"){
       for(const [cafeId,kind,cents,note,status] of [[cafe.businessId,"missing_bill",alerts.missingBill,"Dairy supplier bill not entered this month","new"],
         [cafe.businessId,"voids",alerts.voids,"Unusual number of voided lines on one shift","seen"],[cafe.businessId,"underpriced",alerts.resolved,"Old price check, handled","resolved"],
         [other.businessId,"overstaffed",alerts.otherCafe,"Other cafe only","new"]])await db.query("insert into public.alerts(business_id,kind,impact_cents,payload,status,resolved_at) "+
@@ -126,20 +128,17 @@ async function main(){
     console.log("\n==== "+id+" | café "+cafe.name+" ("+cafe.currency+") | window "+o.start+".."+o.end+" ====");
     console.log("Independent truth: net "+o.sales.cents+" cents over "+o.sales.n+" orders; top items "+
       o.items.map(i=>i.name+"="+i.cents).join(", ")+"; weakest day "+o.weakest.day+"="+o.weakest.cents+"; other café net "+o.otherSales.cents);
-    for(const [i,item] of questionsFor(id,o,cafe,alerts).entries()){
-      // The shared u3 helper throws on an incomplete turn; record that as a failed question.
+    for(const [i,item] of questionsFor(id,o,alerts).entries()){
+      // The shared u3 helper throws on an incomplete turn; still read what was saved and what it cost.
       const turn=await completedTurn(owner.page,thread,item.q).catch(e=>({names:[],done:null,error:String(e?.message??e)}));
-      const [ownerMessage]=await rows(db,"select id from public.ai_messages where business_id=$1 and thread_id=$2 and role='owner' and client_message_id=$3",
-        [cafe.businessId,thread,turn.clientMessageId]);
+      const [ownerMessage]=await rows(db,"select id,created_at from public.ai_messages where business_id=$1 and thread_id=$2 and role='owner' "+
+        "order by created_at desc limit 1",[cafe.businessId,thread]);
       const usage=ownerMessage?await readPersistedModelUsage(db,cafe.businessId,ownerMessage.id,{attempts:240}).catch(()=>null):null;
       if(usage){calls+=Number(usage.model_call_count);model=usage.model;}
-      let text="";
-      if(turn.done?.reply?.id){
-        lastReply=turn.done.reply.id;
-        const [reply]=await rows(db,"select structured_content from public.ai_messages where business_id=$1 and thread_id=$2 and role='supervisor' and id=$3",
-          [cafe.businessId,thread,turn.done.reply.id]);
-        text=(reply?.structured_content??[]).filter(b=>b.type==="text").map(b=>b.text).join("");
-      }
+      const [reply]=ownerMessage?await rows(db,"select id,structured_content from public.ai_messages where business_id=$1 and thread_id=$2 "+
+        "and role='supervisor' and created_at>=$3 order by created_at desc limit 1",[cafe.businessId,thread,ownerMessage.created_at]):[];
+      if(reply)lastReply=reply.id;
+      const text=(reply?.structured_content??[]).filter(b=>b.type==="text").map(b=>b.text).join("");
       const complete=!turn.error&&turn.done?.endReason==="complete"&&text.trim().length>0;
       // An honest "the query failed" answer is a failure of the pathway, never a pass.
       const hard={completed:complete,noDataFailure:!/query (?:is )?(?:failing|returning an error)|couldn[’']t retrieve|can[’']t (?:retrieve|verify)|not a function/i.test(text),

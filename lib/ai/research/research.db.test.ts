@@ -73,7 +73,10 @@ describe.skipIf(!enabled)("direct SQL research on the migrated database",()=>{
     const detail=await executeResearchTool(scope(cafeA),"describe_database",JSON.stringify({tables:["orders"]}));
     const columns=(detail.columns as {rows:{column:string}[]}).rows.map(r=>r.column);
     expect(columns).toEqual(expect.arrayContaining(["business_id","net_sales_cents","business_date"]));
-    expect(JSON.stringify(detail.foreign_keys)).toContain("businesses");
+    expect(JSON.stringify(detail.constraints)).toContain("businesses");
+    // Allowed values come back too (alerts.status check constraint).
+    const alerts=await executeResearchTool(scope(cafeA),"describe_database",JSON.stringify({tables:["alerts"]}));
+    expect(JSON.stringify(alerts.constraints)).toMatch(/allowed_values.*seen/);
   });
 
   it("answers with this café's rows only, matching an independent admin query",async()=>{

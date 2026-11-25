@@ -12,12 +12,12 @@ const UNITS=["cents","count","percent","ratio"] as const;
 export const researchToolDefinitions=[
   {type:"function",name:"describe_database",strict:true,
     description:"Discover the café database you can read. With tables=null: every readable table and view with its description and columns. "+
-      "With table names: each column's type, nullability and description, plus foreign keys to and from those tables.",
+      "With table names: each column's type, nullability and description, allowed values (check constraints), and foreign keys to and from those tables.",
     parameters:{type:"object",additionalProperties:false,required:["tables"],properties:{
       tables:{type:["array","null"],items:{type:"string"},description:"Table or view names, or null for the full list."}}}},
   {type:"function",name:"run_sql",strict:true,
     description:"Run one read-only PostgreSQL SELECT (WITH, joins, window functions, aggregates and subqueries are fine) on this café's data. "+
-      "Rows are already limited to this café by the database. Returns up to 2000 rows; truncated=true means there are more, so aggregate in SQL. "+
+      "Rows are already limited to this café by the database. Returns every row the query produces. "+
       "On an error you get PostgreSQL's message; fix the SQL and try again.",
     parameters:{type:"object",additionalProperties:false,required:["sql"],properties:{
       sql:{type:"string",description:"A single SELECT statement."}}}},
@@ -62,11 +62,12 @@ export async function describeDatabase(scope:ResearchScope,tables:readonly strin
       "from pg_attribute a join pg_class c on c.oid=a.attrelid join pg_namespace n on n.oid=c.relnamespace "+
       "where n.nspname='public' and c.relname = any("+list+") and has_table_privilege(c.oid,'select') "+
       "and a.attnum>0 and not a.attisdropped order by c.relname, a.attnum"),
-    callDatabase(scope,"select k.conrelid::regclass::text as from_table, k.confrelid::regclass::text as to_table, "+
-      "pg_get_constraintdef(k.oid) as definition from pg_constraint k where k.contype='f' and "+
-      "(k.conrelid::regclass::text = any("+list+") or k.confrelid::regclass::text = any("+list+")) order by 1,2"),
+    callDatabase(scope,"select case k.contype when 'f' then 'foreign_key' else 'allowed_values' end as kind, "+
+      "k.conrelid::regclass::text as table, nullif(k.confrelid,0)::regclass::text as references, pg_get_constraintdef(k.oid) as definition "+
+      "from pg_constraint k where (k.contype='c' and k.conrelid::regclass::text = any("+list+")) or (k.contype='f' and "+
+      "(k.conrelid::regclass::text = any("+list+") or k.confrelid::regclass::text = any("+list+"))) order by 1,2"),
   ]);
-  return {columns,foreign_keys:links,...(ignored.length?{ignored_names:ignored}:{})};
+  return {columns,constraints:links,...(ignored.length?{ignored_names:ignored}:{})};
 }
 
 /** Exact decimal text of n/d, rounded half away from zero. */
