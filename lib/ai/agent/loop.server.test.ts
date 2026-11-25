@@ -3,6 +3,28 @@ import { runAgentTurn, type AgentProvider } from "./loop.server";
 import type { AgentToolContext,AgentToolResult } from "./tools";
 import type {OwnerRunCheckpoint} from "@/lib/ai/supervisor/runs/contracts";
 
+import {runU3Sql} from "./tools/u3SqlResearch.server";
+vi.mock("./tools/u3SqlResearch.server",async importOriginal=>{
+ const actual=await importOriginal<typeof import("./tools/u3SqlResearch.server")>();
+ return {...actual,u3SqlConfigured:()=>true,runU3Sql:vi.fn(async()=>({
+  source:"u3_canonical_research",period:null,missing:[],rows:[{"name":"Latte","price_cents":450}],
+  empty:false,truncated:false,page_complete:true,
+  evidence:{receipt_id:"11111111-1111-4111-8111-111111111111",scope:"verified_owner_cafe_lease",
+   query_fingerprint:"a".repeat(64),catalog_version:"a".repeat(16),column_units:{price_cents:"cents"},
+   column_origins:{name:{relation:"menu_items",column:"name",binding:1},price_cents:{relation:"menu_items",column:"price_cents",binding:1}},
+   relation_names:["menu_items"]}}))};
+});
+const salesSql="SELECT net_sales_cents FROM daily_rollups WHERE business_date BETWEEN $1 AND $2 ORDER BY business_date";
+const hoursSql="SELECT hour_local,net_sales_cents,orders_count FROM hourly_sales_rollup WHERE business_date BETWEEN $1 AND $2 ORDER BY business_date,hour_local";
+const costsSql="SELECT amount_cents FROM expenses WHERE spent_on BETWEEN $1 AND $2";
+const sqlArgs=(sql:string,period:{from:string;to:string})=>JSON.stringify({sql,parameters:[period.from,period.to],date_from:period.from,date_to:period.to,limit:null});
+const sqlFixture=(raw:unknown,rows:unknown[],missing:string[]=[])=>{
+ const args=raw as {date_from?:string;date_to?:string;sql:string};
+ const relation=args.sql.includes("hourly_sales_rollup")?"hourly_sales_rollup":args.sql.includes("expenses")?"expenses":"daily_rollups";
+ return {source:"u3_canonical_research",period:args.date_from&&args.date_to?{from:args.date_from,to:args.date_to}:null,rows,missing,
+  truncated:false,page_complete:true,evidence:{scope:"verified_owner_cafe_lease",authority:"approved_logical_source",
+  receipt_id:"11111111-1111-4111-8111-111111111111",query_fingerprint:"a".repeat(64),catalog_version:"a".repeat(16),column_units:{net_sales_cents:"cents",amount_cents:"cents",orders_count:"count"},relation_names:[relation]}};
+};
 const context: AgentToolContext = {
   locale: "en", asOf: "2026-10-21", timezone: "America/Los_Angeles",
   canonicalData:async()=>({businessId:"aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",db:{} as never}),
@@ -48,17 +70,16 @@ describe("recorded Responses streaming fixtures", () => {
     expect(turn.text).toContain("$125.00");
   });
   it("keeps the exact model menu answer when profit read fails",async()=>{
-    const failing:AgentToolContext={...context,tools:{...context.tools,
-      getProfitability:async()=>{throw new Error("private SQL connection details");}
-    }};
-    const turn=await runAgentTurn({ownerText:"Show latte pricing and last month's profit",
-      context:failing,provider:fixture([
-        [call("query_data",'{"view":null,"sql":"SELECT name,price_cents FROM menu_items ORDER BY id","parameters":null,"columns":null,"filters":null,"group_by":null,"metrics":null,"date_from":null,"date_to":null,"order_by":null,"limit":null}',"menu-ok"),
-         call("query_data",'{"official_metric":{"id":"profit","period_mode":null,"profit_period":"last_month"}}',"profit-fail"),completed],
-        [text("The menu lists Latte at $4.50."),completed]
-      ])});
+    const mock=vi.mocked(runU3Sql);
+    const menu=await mock({} as never,{});
+    mock.mockResolvedValueOnce(menu).mockResolvedValueOnce({...sqlFixture({sql:costsSql},[],["query_execution_error"]),error_stage:"query"} as unknown as Awaited<ReturnType<typeof runU3Sql>>);
+    const turn=await runAgentTurn({ownerText:"Show latte pricing and last month's profit",context,provider:fixture([
+      [call("query_data",JSON.stringify({sql:"SELECT name,price_cents FROM menu_items ORDER BY id",parameters:null,date_from:null,date_to:null,limit:null}),"menu-ok"),
+       call("query_data",sqlArgs(costsSql,{from:"2026-09-01",to:"2026-09-30"}),"profit-fail"),completed],
+      [text("The menu lists Latte at $4.50."),completed]
+    ])});
     expect(turn.results.some(x=>x.source==="u3_canonical_research"&&x.missing.length===0)).toBe(true);
-    expect(turn.results.some(x=>x.source==="query_data"&&x.error==="internal")).toBe(true);
+    expect(turn.results.some(x=>x.source==="u3_canonical_research"&&x.error==="query_execution_error")).toBe(true);
     expect(turn.text).toBe("The menu lists Latte at $4.50.");
     expect(turn.text).not.toContain("private SQL");
   });
@@ -444,146 +465,103 @@ describe("admin audit does not change the chat result", () => {
 
 // Mock only the database transport in recorded provider tests. The actual
 // general research declaration, dispatch, grounding and loop remain active.
-vi.mock("./tools/u3SqlResearch.server",async importOriginal=>{
- const actual=await importOriginal<typeof import("./tools/u3SqlResearch.server")>();
- return {...actual,u3SqlConfigured:()=>true,runU3Sql:async()=>({
-  source:"u3_canonical_research",period:null,missing:[],rows:[{"name":"Latte","price_cents":450}],
-  empty:false,truncated:false,page_complete:true,
-  evidence:{receipt_id:"11111111-1111-4111-8111-111111111111",scope:"verified_owner_cafe_lease",
-   query_fingerprint:"a".repeat(64),catalog_version:"a".repeat(16),column_units:{price_cents:"cents"},
-   column_origins:{name:{relation:"menu_items",column:"name",binding:1},price_cents:{relation:"menu_items",column:"price_cents",binding:1}},
-   relation_names:["menu_items"]}})};
-});
+
 
 describe("U1 incident regression: exact requested dates and useful synthesis",()=>{
   it("does not ask for an unrequested year of sales after today's closed day is missing",async()=>{
-    const sales=vi.fn<AgentToolContext["tools"]["getSalesTrend"]>()
-      .mockResolvedValue({available:false,value:null,quality:{level:"low",
-        missingInputs:["noCoveredSalesRows"],estimatedInputs:[],staleInputs:[]}});
-    const ctx:AgentToolContext={...context,tools:{...context.tools,getSalesTrend:sales}};
-    const result=await runAgentTurn({ownerText:"What are today's sales?",context:ctx,
-      provider:fixture([
-        [call("query_data",'{"official_metric":{"id":"sales","period_mode":null,"period":"today"}}',"u1-today-sales"),completed],
-        [text("Today's closing sales are not available; I cannot verify a total."),completed],
-      ])});
+    const period={from:context.asOf,to:context.asOf};
+    const mock=vi.mocked(runU3Sql);mock.mockClear();
+    mock.mockImplementationOnce(async(_ctx,raw)=>sqlFixture(raw,[],["noCoveredSalesRows"]) as unknown as Awaited<ReturnType<typeof runU3Sql>>);
+    const result=await runAgentTurn({ownerText:"What are today's sales?",context,provider:fixture([
+      [call("query_data",sqlArgs(salesSql,period),"u1-today-sales"),completed],
+      [text("Today's closing sales are not available; I cannot verify a total."),completed]
+    ])});
     expect(result.text).toBe("Today's closing sales are not available; I cannot verify a total.");
-    expect(result.results[0]).toMatchObject({source:"daily_rollups",period:{from:ctx.asOf,to:ctx.asOf},
-      missing:expect.arrayContaining(["noCoveredSalesRows"])});
-    expect(sales).toHaveBeenCalled();
-    expect(sales.mock.calls.every(([period])=>period.from===ctx.asOf&&period.to===ctx.asOf)).toBe(true);
+    expect(result.results[0]).toMatchObject({source:"u3_canonical_research",period,missing:["noCoveredSalesRows"]});
+    expect(mock).toHaveBeenCalledTimes(1);
+    expect(mock.mock.calls[0][1]).toMatchObject({sql:salesSql,parameters:[context.asOf,context.asOf]});
   });
   it("preserves an explicitly requested long historical interval instead of limiting research to today",async()=>{
     const period={from:"2025-10-22",to:"2026-10-20"};
-    const sales=vi.fn<AgentToolContext["tools"]["getSalesTrend"]>()
-      .mockResolvedValue({available:false,value:null,quality:{level:"low",
-        missingInputs:["noCoveredSalesRows"],estimatedInputs:[],staleInputs:[]}});
-    const result=await runAgentTurn({ownerText:"Research sales from 2025-10-22 through 2026-10-20",
-      context:{...context,tools:{...context.tools,getSalesTrend:sales}},
-      provider:fixture([[call("query_data",JSON.stringify({official_metric:{id:"sales",period_mode:null,period}}),"u1-owner-year"),completed],
-        [text("No recorded sales totals are available for that requested interval."),completed]])});
-    expect(sales.mock.calls).toEqual([[period]]);
+    const mock=vi.mocked(runU3Sql);mock.mockClear();
+    mock.mockImplementationOnce(async(_ctx,raw)=>sqlFixture(raw,[],["noCoveredSalesRows"]) as unknown as Awaited<ReturnType<typeof runU3Sql>>);
+    const result=await runAgentTurn({ownerText:"Research sales from 2025-10-22 through 2026-10-20",context,provider:fixture([
+      [call("query_data",sqlArgs(salesSql,period),"u1-owner-year"),completed],
+      [text("No recorded sales totals are available for that requested interval."),completed]
+    ])});
+    expect(mock).toHaveBeenCalledTimes(1);
+    expect(mock.mock.calls[0][1]).toMatchObject({sql:salesSql,parameters:[period.from,period.to]});
     expect(result.results[0]).toMatchObject({period,missing:["noCoveredSalesRows"]});
     expect(result.text).toBe("No recorded sales totals are available for that requested interval.");
   });
   it("keeps source-specific missing-state evidence when profit fails and provides one useful answer",async()=>{
     const period={from:"2026-10-20",to:"2026-10-20"};
-    const missingSales=vi.fn<AgentToolContext["tools"]["getSalesTrend"]>()
-      .mockResolvedValue({available:false,value:null,quality:{level:"low",
-        missingInputs:["noCoveredSalesRows"],estimatedInputs:[],staleInputs:[]}});
-    const peak=vi.fn<NonNullable<AgentToolContext["tools"]["getPeakHours"]>>()
-      .mockResolvedValue({available:false,value:null,quality:{level:"low",
-        missingInputs:["hourlyCoverageMissing"],estimatedInputs:[],staleInputs:[]}});
-    const profit=vi.fn<AgentToolContext["tools"]["getProfitability"]>()
-      .mockRejectedValue(new Error("private connection detail"));
+    const mock=vi.mocked(runU3Sql);mock.mockClear();
+    for(const reason of ["noCoveredSalesRows","hourlyCoverageMissing","query_execution_error"])
+      mock.mockImplementationOnce(async(_ctx,raw)=>sqlFixture(raw,[],[reason]) as unknown as Awaited<ReturnType<typeof runU3Sql>>);
     const requests:Record<string,unknown>[]=[];
     const answer="Sales and hourly data are missing for the requested date. Profit could not be verified.";
     const provider:AgentProvider=async function*(params){
       requests.push(params);
       if(requests.length===1){
-        yield call("query_data",JSON.stringify({official_metric:{id:"sales",period_mode:null,period}}),"u1-mixed-sales");
-        yield call("query_data",JSON.stringify({official_metric:{id:"hourly_sales",period_mode:null,period}}),"u1-mixed-peak");
-        yield call("query_data",JSON.stringify({official_metric:{id:"profit",period_mode:null,profit_period:period}}),"u1-mixed-profit");
+        yield call("query_data",sqlArgs(salesSql,period),"u1-mixed-sales");
+        yield call("query_data",sqlArgs(hoursSql,period),"u1-mixed-peak");
+        yield call("query_data",sqlArgs(costsSql,period),"u1-mixed-profit");
       }else yield text(answer);
       yield completed;
     };
-    const result=await runAgentTurn({ownerText:"For October 20, 2026, report sales, peak hours and profit.",
-      context:{...context,tools:{...context.tools,getSalesTrend:missingSales,getPeakHours:peak,getProfitability:profit}},provider});
-    expect(missingSales.mock.calls).toEqual([[period]]);
-    expect(peak.mock.calls).toEqual([[period]]);
-    expect(profit.mock.calls).toEqual([[period]]);
+    const result=await runAgentTurn({ownerText:"For October 20, 2026, report sales, peak hours and profit.",context,provider});
+    expect(mock.mock.calls.map(c=>c[1])).toEqual([salesSql,hoursSql,costsSql].map(sql=>expect.objectContaining({sql,parameters:[period.from,period.to]})));
     expect(result.results).toEqual(expect.arrayContaining([
-      expect.objectContaining({source:"daily_rollups",period,missing:["noCoveredSalesRows"]}),
-      expect.objectContaining({source:"get_peak_hours",period,missing:["hourlyCoverageMissing"]}),
-      expect.objectContaining({source:"query_data",error:"internal"}),
+      expect.objectContaining({source:"u3_canonical_research",period,missing:["noCoveredSalesRows"]}),
+      expect.objectContaining({source:"u3_canonical_research",period,missing:["hourlyCoverageMissing"]}),
+      expect.objectContaining({source:"u3_canonical_research",error:"query_execution_error"}),
     ]));
-    const outputs=(requests[1].input as Array<Record<string,unknown>>)
-      .filter(x=>x.type==="function_call_output");
+    const outputs=(requests[1].input as Array<Record<string,unknown>>).filter(x=>x.type==="function_call_output");
     expect(outputs.map(x=>x.call_id)).toEqual(["u1-mixed-sales","u1-mixed-peak","u1-mixed-profit"]);
     expect(JSON.stringify(outputs)).not.toContain("private connection detail");
-    expect(result.text).toBe(answer);
-    expect(requests).toHaveLength(2);
+    expect(result.text).toBe(answer);expect(requests).toHaveLength(2);
   });
 });
-
 describe("U1 controlled incident timing fixture (no provider)",()=>{
   it("preserves verified sales and hourly facts through a stalled profit read and a late completed final answer",async()=>{
-    vi.useFakeTimers();
-    vi.setSystemTime(new Date("2026-10-21T12:00:00Z"));
+    vi.useFakeTimers();vi.setSystemTime(new Date("2026-10-21T12:00:00Z"));
     try{
       const period={from:"2026-10-20",to:"2026-10-20"};
-      const quality={level:"high" as const,missingInputs:[],estimatedInputs:[],staleInputs:[]};
-      const sales=vi.fn<AgentToolContext["tools"]["getSalesTrend"]>().mockImplementation(async()=>{
+      const mock=vi.mocked(runU3Sql);mock.mockClear();
+      mock.mockImplementationOnce(async(_ctx,raw)=>{
         await new Promise<void>(resolve=>setTimeout(resolve,20776));
-        return {available:true,quality,value:[{
-          date:period.from,netSalesCents:4820,ordersCount:12,drinksCount:8,
-          ingredientsCents:0,wagesCents:null,staffTaxCents:null,
-          laborWageStatus:"missing",salesDataStatus:"actual",cardFeesCents:0,voidsCents:0,
-        }]};
-      });
-      const peak=vi.fn<NonNullable<AgentToolContext["tools"]["getPeakHours"]>>().mockImplementation(async()=>{
+        return sqlFixture(raw,[{net_sales_cents:4820,orders_count:12}]) as unknown as Awaited<ReturnType<typeof runU3Sql>>;
+      }).mockImplementationOnce(async(_ctx,raw)=>{
         await new Promise<void>(resolve=>setTimeout(resolve,483));
-        return {available:true,quality,value:{hours:[
-          {date:period.from,hourLocal:10,locationId:null,netSalesCents:3000,ordersCount:8},
-          {date:period.from,hourLocal:14,locationId:null,netSalesCents:1820,ordersCount:4},
-        ]}};
-      });
-      const profit=vi.fn<AgentToolContext["tools"]["getProfitability"]>().mockImplementation(
-        ()=>new Promise<Awaited<ReturnType<AgentToolContext["tools"]["getProfitability"]>>>(()=>{}));
-      const ctx:AgentToolContext={...context,currency:"USD",tools:{...context.tools,
-        getSalesTrend:sales,getPeakHours:peak,getProfitability:profit}};
+        return sqlFixture(raw,[{hour_local:10,net_sales_cents:3000,orders_count:8},{hour_local:14,net_sales_cents:1820,orders_count:4}]) as unknown as Awaited<ReturnType<typeof runU3Sql>>;
+      }).mockImplementationOnce(()=>new Promise(()=>{}));
       const requests:Record<string,unknown>[]=[];
       const answer="Recorded sales were $48.20. Hourly activity is available, but I could not verify profit.";
       const provider:AgentProvider=async function*(params){
         requests.push(params);
         if(requests.length===1){
-          yield call("query_data",JSON.stringify({official_metric:{id:"sales",period_mode:null,period}}),"u1-delayed-sales");
-          yield call("query_data",JSON.stringify({official_metric:{id:"hourly_sales",period_mode:null,period}}),"u1-delayed-peak");
-          yield call("query_data",JSON.stringify({official_metric:{id:"profit",period_mode:null,profit_period:period}}),"u1-delayed-profit");
+          yield call("query_data",sqlArgs(salesSql,period),"u1-delayed-sales");
+          yield call("query_data",sqlArgs(hoursSql,period),"u1-delayed-peak");
+          yield call("query_data",sqlArgs(costsSql,period),"u1-delayed-profit");
         }else{
-          // Reproduce a late but completed final synthesis, not a real network wait.
-          await new Promise<void>(resolve=>setTimeout(resolve,11684));
-          yield text(answer);
+          await new Promise<void>(resolve=>setTimeout(resolve,11684));yield text(answer);
         }
         yield completed;
       };
-      const pending=runAgentTurn({ownerText:"For October 20, 2026, report sales, peak hours and profit.",context:ctx,provider});
-      await vi.advanceTimersByTimeAsync(0);
-      await vi.advanceTimersByTimeAsync(60000);
+      const pending=runAgentTurn({ownerText:"For October 20, 2026, report sales, peak hours and profit.",context:{...context,currency:"USD"},provider});
+      await vi.advanceTimersByTimeAsync(0);await vi.advanceTimersByTimeAsync(60000);
       const result=await pending;
-      expect(result.text).toBe(answer);
-      expect(result.endReason).toBe("timeout");
-      expect(result.usage.modelCalls).toBe(2);
-      expect(result.usage.toolCalls).toBe(3);
+      expect(result.text).toBe(answer);expect(result.endReason).toBe("timeout");
+      expect(result.usage.modelCalls).toBe(2);expect(result.usage.toolCalls).toBe(3);
       expect(result.usage.latencyMs).toBe(59684);
       expect(result.results).toEqual(expect.arrayContaining([
-        expect.objectContaining({source:"daily_rollups",period,netSalesCents:4820}),
-        expect.objectContaining({source:"get_peak_hours",period,totalNetSalesCents:4820,
-          totalOrdersCount:12,topHours:[{hourLocal:10,netSalesCents:3000,ordersCount:8},{hourLocal:14,netSalesCents:1820,ordersCount:4}]}),
+        expect.objectContaining({source:"u3_canonical_research",period,rows:[{net_sales_cents:4820,orders_count:12}]}),
+        expect.objectContaining({source:"u3_canonical_research",period,rows:[{hour_local:10,net_sales_cents:3000,orders_count:8},{hour_local:14,net_sales_cents:1820,orders_count:4}]}),
         expect.objectContaining({source:"query_data",period,missing:["deadline_exceeded"]}),
       ]));
       expect(requests[1].tool_choice).toBe("none");
-      expect((requests[1].input as Array<Record<string,unknown>>).filter(x=>x.type==="function_call_output")
-        .map(x=>x.call_id)).toEqual(["u1-delayed-sales","u1-delayed-peak","u1-delayed-profit"]);
+      expect((requests[1].input as Array<Record<string,unknown>>).filter(x=>x.type==="function_call_output").map(x=>x.call_id)).toEqual(["u1-delayed-sales","u1-delayed-peak","u1-delayed-profit"]);
     }finally{vi.useRealTimers();}
   });
 });

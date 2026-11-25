@@ -135,15 +135,14 @@ describe("Task16E interactive calculator selection",()=>{
   inputs:[{name:"price",label:"Unit cost",unit:"cents",valueCents:250,from:"tool",ref:"get_product_costs:item.ingredientsCentsToday"},
           {name:"qty",label:"Quantity",unit:"count",quantity:10,from:"owner_said",ref:"owner"}],
   steps:[{id:"total",op:"multiply",args:["price","qty"],unit:"cents",valueCents:2500}],result:{unit:"cents",valueCents:2500}};
- const c=(result=r,screen_number="none")=>({...ctx(),turnResults:()=>[],presentationResults:()=>[{name:"calculate",arguments:JSON.stringify({screen_number,inputs:[{name:"price",tool:"get_product_costs",path:"item.ingredientsCentsToday"},{name:"qty",owner_value:10,owner_unit:"count"}]}),result}]});
+ const c=(result=r)=>({...ctx(),turnResults:()=>[],presentationResults:()=>[{name:"calculate",arguments:JSON.stringify({inputs:[{name:"price",tool:"get_product_costs",path:"item.ingredientsCentsToday"},{name:"qty",owner_value:10,owner_unit:"count"}]}),result}]});
  const q={layout:"stack",panels:[],suggestions:[],calculator:true};
  it("uses the previously calculated result, only owner-supplied assumption editable",()=>{
   expect(presentResponse(q,c())).toMatchObject({accepted:true,presentation:{calculator:{inputs:[
    {id:"price",editable:false,value:{valueCents:250}},{id:"qty",editable:true,value:{quantity:10}}],
    original:{unit:"cents",valueCents:2500}}}});
  });
- it("rejects changing a screen number, partial source, rounded mismatch or no owner assumption",()=>{
-  expect(presentResponse(q,c(r,"profit")).accepted).toBe(false);
+ it("rejects partial source, rounded mismatch or no owner assumption",()=>{
   expect(presentResponse(q,c({...r,basedOnPartialData:["get_product_costs"]})).accepted).toBe(false);
   expect(presentResponse(q,c({...r,result:{unit:"cents",valueCents:2501}})).accepted).toBe(false);
   const rounded={...r,inputs:[{name:"price",label:"Unit cost",unit:"count",quantity:2.5,from:"tool"},{name:"qty",label:"Quantity",unit:"count",quantity:10,from:"owner_said"}],result:{unit:"count",quantity:25}};

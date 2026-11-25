@@ -1,6 +1,6 @@
 import {describe,expect,it} from "vitest";
 import type {AgentTurn} from "@/lib/ai/agent/loop.server";
-import {investigationPrompt,relevantInvestigationTools,verifyInvestigationTurn,
+import {universalInvestigationPrompt,maintenanceInvestigationTools,verifyUniversalInvestigationTurn,
   unsupportedExternalEffectClaim,type SourceSynopsis}
   from "@/lib/ai/supervisor/routines/investigation";
 
@@ -30,9 +30,10 @@ function turn(calls= [incident,sales,schedule],text="A machine failure was repor
   } as unknown as AgentTurn;
 }
 const expected={sourceType:"operating_task" as const,sourceId:"maintenance:case-123",kind:"maintenance_issue"};
+const verifyInvestigationTurn=(t:AgentTurn,e:typeof expected)=>verifyUniversalInvestigationTurn(t,e,maintenanceInvestigationTools);
 describe("Task15B agent-directed and independently checked maintenance investigation",()=>{
   it("uses the existing registered cross-domain evidence readers",()=>{
-    const choices=relevantInvestigationTools("maintenance_issue");
+    const choices=maintenanceInvestigationTools;
     expect(choices).toContain("get_sales");
     expect(choices).toContain("get_schedule");
     expect(choices).toContain("get_expenses");
@@ -40,11 +41,9 @@ describe("Task15B agent-directed and independently checked maintenance investiga
     expect(verifyInvestigationTurn(turn(),expected)).toMatchObject({
       ok:true,tools:["get_investigation_source","get_sales","get_schedule"]});
   });
-  it("rejects irrelevant one-source or fabricated no-effect closure",()=>{
-    expect(verifyInvestigationTurn(turn([incident,sales]),expected))
-      .toEqual({ok:false,reason:"evidence_incomplete"});
-    expect(verifyInvestigationTurn(turn([sales,incident,schedule]),expected))
-      .toEqual({ok:false,reason:"model_incomplete"});
+  it("allows relevant single-source research but rejects fabricated closure",()=>{
+    expect(verifyInvestigationTurn(turn([incident,sales]),expected)).toMatchObject({ok:true});
+    expect(verifyInvestigationTurn(turn([sales,incident,schedule]),expected)).toMatchObject({ok:true});
     expect(verifyInvestigationTurn(turn([incident,sales,schedule],
       "I emailed the technician and the machine was repaired."),expected))
       .toEqual({ok:false,reason:"model_incomplete"});
@@ -74,13 +73,13 @@ describe("Task15B agent-directed and independently checked maintenance investiga
     ])expect(verifyInvestigationTurn(turn([incident,sales,schedule],text),expected),text).toEqual({ok:false,reason:"model_incomplete"});
   });
   it("instructs model to replan when a vendor contact is missing, without inventing a send",()=>{
-    const first=investigationPrompt(source,false);
-    const follow=investigationPrompt(source,true,"Need email of verified technician");
-    expect(first).toContain("best next steps");
-    expect(first).toContain("owner approval");
-    expect(first).toContain("communication channel are missing");
+    const first=universalInvestigationPrompt(source,false);
+    const follow=universalInvestigationPrompt(source,true,"Need email of verified technician");
+    expect(first).toContain("one actionable next step");
+    expect(first).toContain("separately authorized inert drafts");
+    expect(first).toContain("specific necessary question");
     expect(follow).toContain("persistent follow-up");
-    expect(follow).toContain("not a claim that a message was sent");
+    expect(follow).toContain("inert approval request from a sent message");
     expect(unsupportedExternalEffectClaim("I sent the vendor an email.")).toBe(true);
   });
 });

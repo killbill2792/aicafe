@@ -11,17 +11,30 @@ import type { AgentToolContext } from "./tools";
 
 // Mock only the database transport in recorded provider tests. The actual
 // general research declaration, dispatch, grounding and loop remain active.
+
+
+import {runU3Sql} from "./tools/u3SqlResearch.server";
 vi.mock("./tools/u3SqlResearch.server",async importOriginal=>{
  const actual=await importOriginal<typeof import("./tools/u3SqlResearch.server")>();
- return {...actual,u3SqlConfigured:()=>true,runU3Sql:async()=>({
+ return {...actual,u3SqlConfigured:()=>true,runU3Sql:vi.fn(async()=>({
   source:"u3_canonical_research",period:null,missing:[],rows:[{"name":"Latte","price_cents":450}],
   empty:false,truncated:false,page_complete:true,
   evidence:{receipt_id:"11111111-1111-4111-8111-111111111111",scope:"verified_owner_cafe_lease",
    query_fingerprint:"a".repeat(64),catalog_version:"a".repeat(16),column_units:{price_cents:"cents"},
    column_origins:{name:{relation:"menu_items",column:"name",binding:1},price_cents:{relation:"menu_items",column:"price_cents",binding:1}},
-   relation_names:["menu_items"]}})};
+   relation_names:["menu_items"]}}))};
 });
-
+const salesSql="SELECT net_sales_cents FROM daily_rollups WHERE business_date BETWEEN $1 AND $2 ORDER BY business_date";
+const hoursSql="SELECT hour_local,net_sales_cents,orders_count FROM hourly_sales_rollup WHERE business_date BETWEEN $1 AND $2 ORDER BY business_date,hour_local";
+const costsSql="SELECT amount_cents FROM expenses WHERE spent_on BETWEEN $1 AND $2";
+const sqlArgs=(sql:string,period:{from:string;to:string})=>JSON.stringify({sql,parameters:[period.from,period.to],date_from:period.from,date_to:period.to,limit:null});
+const sqlFixture=(raw:unknown,rows:unknown[],missing:string[]=[])=>{
+ const args=raw as {date_from?:string;date_to?:string;sql:string};
+ const relation=args.sql.includes("hourly_sales_rollup")?"hourly_sales_rollup":args.sql.includes("expenses")?"expenses":"daily_rollups";
+ return {source:"u3_canonical_research",period:args.date_from&&args.date_to?{from:args.date_from,to:args.date_to}:null,rows,missing,
+  truncated:false,page_complete:true,evidence:{scope:"verified_owner_cafe_lease",authority:"approved_logical_source",
+  receipt_id:"11111111-1111-4111-8111-111111111111",query_fingerprint:"a".repeat(64),catalog_version:"a".repeat(16),column_units:{net_sales_cents:"cents",amount_cents:"cents",orders_count:"count"},relation_names:[relation]}};
+};
 const context: AgentToolContext = {
   locale: "en", asOf: "2026-10-21", timezone: "America/Los_Angeles",
   canonicalData:async()=>({businessId:"aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",db:{} as never}),
@@ -427,23 +440,23 @@ describe("incomplete provider response diagnostics and fail-closed tool recovery
   });
 });
 
-describe("Luna tool reasoning stays within the owner-approved aggregate output allowance",()=>{
+describe("Luna honors actual worker and provider budgets without a fixed interactive aggregate ceiling",()=>{
   const doneWith=(n:number)=>({type:"response.completed",response:{model:"gpt-6-luna",
     usage:{input_tokens:40,output_tokens:n}}});
   const menu=(id:string)=>call("query_data",'{"view":null,"sql":"SELECT name,price_cents FROM menu_items ORDER BY id","parameters":null,"columns":null,"filters":null,"group_by":null,"metrics":null,"date_from":null,"date_to":null,"order_by":null,"limit":null}',id);
   const limits=(requests:Record<string,unknown>[])=>requests.map(r=>[r.tool_choice,r.max_output_tokens]);
-  it("allows 16384 then only the remaining work allocation, retaining final 8192",async()=>{
+  it("continues an interactive turn beyond the former work-output allowance",async()=>{
     vi.stubEnv("SUPERVISOR_OPENAI_MODEL","gpt-6-luna");
     try{
       const {requests,provider}=recording([[menu("a"),doneWith(16384)],[menu("b"),doneWith(8192)],[text("Summary."),doneWith(8192)]]);
       const r=await runAgentTurn({ownerText:"Read my menu.",context:{...context},provider});
-      expect(limits(requests)).toEqual([["auto",16384],["auto",8192],["none",8192]]);
+      expect(limits(requests)).toEqual([["auto",16384],["auto",16384],["auto",16384]]);
       expect(r.usage.outputTokens).toBe(32768);
       expect(r.usage.toolCalls).toBe(2);
-      expect(r.endReason).toBe("budget");
+      expect(r.endReason).toBe("complete");
     }finally{vi.unstubAllEnvs()}
   });
-  it("supplier reads retain the same 32768 aggregate limit",async()=>{
+  it("supplier research follows the same interactive policy",async()=>{
     vi.stubEnv("SUPERVISOR_OPENAI_MODEL","gpt-6-luna");
     try{
       const {requests,provider}=recording([[call("get_supplier_purchase_orders","{}","po"),doneWith(16384)],
@@ -454,8 +467,25 @@ describe("Luna tool reasoning stays within the owner-approved aggregate output a
       }} as AgentToolContext;
       const r=await runAgentTurn({ownerText:"Read my supplier orders.",context:ctx,provider});
       expect(r.tools).toContain("get_supplier_purchase_orders");
-      expect(limits(requests)).toEqual([["auto",16384],["auto",8192],["none",8192]]);
+      expect(limits(requests)).toEqual([["auto",16384],["auto",16384],["auto",16384]]);
       expect(r.usage.outputTokens).toBe(32768);
+    }finally{vi.unstubAllEnvs()}
+  });
+  it("completes productive research beyond seven model calls and twenty-four tool calls",async()=>{
+    vi.stubEnv("SUPERVISOR_OPENAI_MODEL","gpt-6-luna");
+    try{
+      const rounds=Array.from({length:9},(_,round)=>[
+        ...Array.from({length:3},(_,i)=>call("query_data",JSON.stringify({
+          sql:"SELECT net_sales_cents FROM daily_rollups WHERE business_date = $1",
+          parameters:["2026-10-"+String(round*3+i+1).padStart(2,"0")],limit:null,
+          date_from:null,date_to:null}),"research-"+round+"-"+i)),
+        doneWith(100)
+      ]);
+      const {provider}=recording([...rounds,[text("Research complete."),doneWith(50)]]);
+      const result=await runAgentTurn({ownerText:"Research sales for each requested date.",context:{...context},provider});
+      expect(result.endReason).toBe("complete");
+      expect(result.usage.modelCalls).toBe(10);
+      expect(result.usage.toolCalls).toBe(27);
     }finally{vi.unstubAllEnvs()}
   });
   it("never exceeds a durable worker's remaining output",async()=>{
@@ -527,7 +557,7 @@ describe("Luna tool reasoning stays within the owner-approved aggregate output a
       const {requests,provider}=recording([[menu("a"),{type:"response.completed",response:{model:"gpt-6-luna"}}],
         [menu("b"),doneWith(8192)],[text("Summary."),doneWith(8192)]]);
       const r=await runAgentTurn({ownerText:"Read the menu.",context:{...context},provider});
-      expect(limits(requests)).toEqual([["auto",16384],["auto",8192],["none",8192]]);
+      expect(limits(requests)).toEqual([["auto",16384],["auto",16384],["auto",16384]]);
       expect(r.usage.outputTokens).toBe(16384);
     }finally{vi.unstubAllEnvs()}
   });
@@ -645,30 +675,26 @@ describe("U1 matched recorded incident — checkpoint and presentation variation
       resumeContext:vi.fn(async()=>null),canYield:()=>false,yieldForRetry:async()=>false,
     };
     const answer="Sales, hourly activity and profit are unavailable for that date.";
-    const missing={available:false as const,value:null,quality:{level:"low" as const,
-      missingInputs:["testSourceUnavailable"],estimatedInputs:[],staleInputs:[]}};
     for(const withPresentation of [false,true]){
       const {requests,provider}=recording([
-        [call("query_data",JSON.stringify({official_metric:{id:"sales",period_mode:null,period}}),"u1-sales"),completed],
-        [call("query_data",JSON.stringify({official_metric:{id:"hourly_sales",period_mode:null,period}}),"u1-peak"),completed],
-        [call("query_data",JSON.stringify({official_metric:{id:"profit",period_mode:null,profit_period:period}}),"u1-profit"),completed],
+        [call("query_data",sqlArgs(salesSql,period),"u1-sales"),completed],
+        [call("query_data",sqlArgs(hoursSql,period),"u1-peak"),completed],
+        [call("query_data",sqlArgs(costsSql,period),"u1-profit"),completed],
         ...(withPresentation?[[call("present_response",JSON.stringify({layout:"stack",panels:[],suggestions:[]}),"u1-visual"),completed]]:[]),
         [text(answer),completed],
       ]);
-      const sales=vi.fn(async()=>missing),peak=vi.fn(async()=>missing),profit=vi.fn(async()=>missing);
-      const ctx:AgentToolContext={...context,tools:{...context.tools,getSalesTrend:sales,getPeakHours:peak,getProfitability:profit}};
-      vi.clearAllMocks();
+      const mock=vi.mocked(runU3Sql);vi.clearAllMocks();
+      for(let i=0;i<3;i++)mock.mockImplementationOnce(async(_ctx,raw)=>sqlFixture(raw,[],["testSourceUnavailable"]) as unknown as Awaited<ReturnType<typeof runU3Sql>>);
+      const ctx=context;
       const result=await runAgentTurn({ownerText:"For October 20, 2026, report sales, peak hours and profit.",context:ctx,provider,
         ...(useCheckpoint?{checkpoint}:{}),});
       expect(result.text).toBe(answer);
       expect(result.endReason).toBe("complete");
-      expect(sales).toHaveBeenCalledExactlyOnceWith(period);
-      expect(peak).toHaveBeenCalledExactlyOnceWith(period);
-      expect(profit).toHaveBeenCalledExactlyOnceWith(period);
+      expect(mock.mock.calls.map(c=>c[1])).toEqual([salesSql,hoursSql,costsSql].map(sql=>expect.objectContaining({sql,parameters:[period.from,period.to]})));
       expect(result.results.filter(r=>r.source!=="response_presentation").map(r=>({source:r.source,period:r.period,missing:r.missing}))).toEqual([
-        {source:"daily_rollups",period,missing:["testSourceUnavailable"]},
-        {source:"get_peak_hours",period,missing:["testSourceUnavailable"]},
-        {source:"profitability",period,missing:["testSourceUnavailable"]},
+        {source:"u3_canonical_research",period,missing:["testSourceUnavailable"]},
+        {source:"u3_canonical_research",period,missing:["testSourceUnavailable"]},
+        {source:"u3_canonical_research",period,missing:["testSourceUnavailable"]},
       ]);
       expect(requests).toHaveLength(withPresentation?5:4);
       if(useCheckpoint){

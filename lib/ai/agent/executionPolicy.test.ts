@@ -2,7 +2,7 @@ import {describe,it,expect} from "vitest";
 import {executionPolicy,requestOutputCap,providerUsageReceipt,requestComposition,researchPageBudget,providerTextAccounting} from "./executionPolicy";
 describe("technical execution budgets, not business intent routing",()=>{
  it("reserves synthesis tokens for complex work and retains old provider constraints",()=>{
-   const p=executionPolicy("gpt-6-luna",undefined,false);
+   const p=executionPolicy("gpt-6-luna",undefined,false,true);
    expect(requestOutputCap(p,0,false)).toBe(16384);
    expect(requestOutputCap(p,16384,false)).toBe(8192);
    expect(requestOutputCap(p,24576,false)).toBe(0);
@@ -10,6 +10,17 @@ describe("technical execution budgets, not business intent routing",()=>{
    expect(requestOutputCap(p,32768,true)).toBe(0);
    expect(executionPolicy("gpt-6-luna",undefined,true).finalReserve).toBe(1200);
    expect(executionPolicy("gpt-4.1-mini",undefined,false).maxWorkOutput).toBe(1200);
+ });
+ it("does not terminate productive owner research after an arbitrary number of calls or cumulative tokens",()=>{
+   const p=executionPolicy("gpt-6-luna",undefined,false);
+   expect(p.maxWorkCalls).toBe(Infinity);
+   expect(p.maxToolCalls).toBe(Infinity);
+   expect(requestOutputCap(p,32768,false)).toBe(16384);
+   expect(requestOutputCap(p,100000,true)).toBe(8192);
+   const worker=executionPolicy("gpt-6-luna",{maxElapsedMs:55000,maxModelCalls:15,maxToolCalls:60,maxInputTokens:200000,maxOutputTokens:60000},false);
+   expect(worker.maxWorkCalls).toBe(14);
+   expect(worker.maxToolCalls).toBe(60);
+   expect(worker.maxTurnOutput).toBe(60000);
  });
  it("honours a smaller authenticated claim and legacy SQL cap",()=>{
    const p=executionPolicy("gpt-6-luna",{maxElapsedMs:55000,maxModelCalls:3,maxToolCalls:7,maxInputTokens:72000,maxOutputTokens:1700},false);

@@ -193,6 +193,13 @@ describe("U3 governed PostgreSQL AST admission",()=>{
    admitted,0,false,[],units);
   expect(derived.outputUnits).toEqual({net_sales_cents:"count"});
  });
+ it("attests decimal promotion and percent scaling without treating arbitrary literal amounts as money",async()=>{
+  const units={net_sales_cents:"cents" as const,cost_cents:"cents" as const};
+  const result=await admitU3Sql("SELECT sum(cost_cents)*1.0/sum(net_sales_cents) AS share,100*sum(cost_cents)::numeric/sum(net_sales_cents) AS alternate,(sum(cost_cents)::numeric/sum(net_sales_cents))*100 AS pct FROM orders",admitted,0,false,[],units);
+  expect(result.outputUnits).toEqual({share:"ratio",pct:"percent"});
+  const literal=await admitU3Sql("SELECT 100*1234 AS sales FROM orders",admitted,0,false,[],units);
+  expect(literal.outputUnits).toEqual({});
+ });
  it("retains the microcent source scale without treating raw ingredient prices as whole cents",async()=>{
   const relations={ingredient_prices:{ingredient_id:null,cost_per_base_unit_micros:"microcents" as const}};
   const r=await admitU3Sql("SELECT cost_per_base_unit_micros AS rate,MAX(cost_per_base_unit_micros) OVER() AS high,COUNT(*) OVER() AS n FROM ingredient_prices",["ingredient_prices"],0,false,[],{},relations);
@@ -222,6 +229,7 @@ describe("U3 governed PostgreSQL AST admission",()=>{
   const computed=await query("SELECT SUM(COALESCE(net_sales_cents,0)) AS total, ROUND(AVG(net_sales_cents),0) AS average, SUM(CASE WHEN orders_count>0 THEN net_sales_cents ELSE 0 END) AS selected, SUM(COALESCE(net_sales_cents,12345)) AS untyped FROM orders");
   expect(computed.outputUnits).toEqual({total:"cents",average:"cents",selected:"cents"});
   expect(computed.outputOrigins).toEqual({});
+  expect(computed.outputDependencies.total).toEqual([expect.objectContaining({relation:"orders",column:"net_sales_cents"})]);
  });
  it("rejects positional column renames before they can bypass privacy or unit admission",async()=>{
   const rels={orders:{net_sales_cents:"cents" as const,orders_count:"count" as const}};

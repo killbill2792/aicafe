@@ -9,7 +9,7 @@ import {researchPageBudget} from "../executionPolicy";
 import {validateResearchConnection} from "./u3ResearchConnection";
 import {researchNextCursor,researchPage,type ResearchSnapshot} from "./u3SqlCursor";
 import {ResearchPageCollector,researchPageCache} from "./u3SqlPageCache";
-import {DurableResearchSpool,readDurableResearchPage} from "./u3SqlSnapshotStore.server";
+import {DurableResearchSpool,readDurableResearchPage,writeSnapshotMetadata,readSnapshotMetadata} from "./u3SqlSnapshotStore.server";
 
 /** One research executor for the existing query_data tool.
  * No service-role client receives model-authored SQL. Scope is a server-only
@@ -19,11 +19,18 @@ export type U3SqlContext={
  mode?:"owner"|"investigation"|"durable"|"routine";aggregateOnly?:boolean;
  sourceType?:string;sourceId?:string;runId?:string;leaseToken?:string;
  resultBudgetBytes?:number;
+ /** Server-owned absolute work deadline; never taken from SQL arguments. */
+ deadlineAt?:number;
 };
 // Transport/context page bounds, NEVER total query, date or evidence ceilings.
 // The fetch batch bounds in-flight database rows, not the result size or model calls.
 const FETCH_BATCH=32;
-const QUERY_TIME_MS=8000;
+const DIRECT_RESEARCH_SLICE_MS=60000;
+function remainingResearchTime(deadlineAt:number){
+ const remaining=Math.floor(deadlineAt-Date.now());
+ if(!Number.isSafeInteger(remaining)||remaining<=0)throw Error("query_timeout");
+ return remaining;
+}
 const CURSOR_PREFIX="DECLARE u3_result NO SCROLL CURSOR FOR SELECT * FROM (";
 const scopeSchema=z.strictObject({
  businessId:z.uuid(),ownerUserId:z.uuid(),threadId:z.uuid(),
@@ -131,6 +138,7 @@ async function signedCapability(ctx:U3SqlContext):Promise<string>{
 }
 async function withinScope<T>(ctx:U3SqlContext,callback:(client:PoolClient,observedAt:unknown)=>Promise<T>,
  requestedWindow?:{date_from:string|null;date_to:string|null}):Promise<T>{
+ const deadlineAt=ctx.deadlineAt??Date.now()+DIRECT_RESEARCH_SLICE_MS;
  if(!u3SqlConfigured())throw Error("research_not_configured");
  // The server mints the capability only after authenticating the real owner,
  // café, original thread and durable/off-turn lease. Never log or return it.
@@ -146,8 +154,8 @@ async function withinScope<T>(ctx:U3SqlContext,callback:(client:PoolClient,obser
   await client.query("BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY");
   begun=true;
   // Static trusted SET statements share one transport, not model SQL.
-  await client.query("SET LOCAL statement_timeout = '8000ms'; "+
-   "SET LOCAL lock_timeout = '300ms'; SET LOCAL work_mem = '4MB'; "+
+  await client.query("SELECT set_config('statement_timeout',$1,true)",[String(remainingResearchTime(deadlineAt))]); // hardcode-ok: PostgreSQL bind parameter, not currency
+  await client.query("SET LOCAL lock_timeout = '300ms'; SET LOCAL work_mem = '4MB'; "+
    "SET LOCAL search_path = u3_research, pg_catalog");
   const role=(await client.query(
    "SELECT current_user AS name,(SELECT rolsuper OR rolbypassrls FROM pg_roles "+
@@ -299,8 +307,8 @@ export function unsafeStructuredToastResult(rows:readonly unknown[]):boolean{
  * The real wall-clock/statement resource budget applies to the full scan. */
 async function readResearchPage(client:PoolClient,sql:string,parameters:readonly unknown[],
  offset:number,limit:number|null,resultBudgetBytes:number,validate:(rows:unknown[])=>void,
- collector:ResearchPageCollector|null,spool:DurableResearchSpool|null){
- const started=Date.now();
+ collector:ResearchPageCollector|null,spool:DurableResearchSpool|null,deadlineAt:number){
+ await client.query("SELECT set_config('statement_timeout',$1,true)",[String(remainingResearchTime(deadlineAt))]); // hardcode-ok: PostgreSQL bind parameter, not currency
  await client.query({text:CURSOR_PREFIX+sql+") AS u3_bounded",values:[...parameters]});
  const rows:unknown[]=[];let bytes=2,totalRows=0,pageFull=false;
  // A complete response needs no second serialized copy of the result.
@@ -311,8 +319,7 @@ async function readResearchPage(client:PoolClient,sql:string,parameters:readonly
  };
  const digest=createHash("sha256");
  while(true){
-  const remaining=QUERY_TIME_MS-(Date.now()-started);
-  if(remaining<=0)throw Error("query_timeout");
+  const remaining=remainingResearchTime(deadlineAt);
   await client.query("SELECT set_config('statement_timeout',$1,true)",[String(remaining)]); // hardcode-ok: PostgreSQL bind placeholder
   const result=await client.query("FETCH FORWARD "+FETCH_BATCH+" FROM u3_result");
   const batch:unknown[]=result.rows;
@@ -341,7 +348,7 @@ async function readResearchPage(client:PoolClient,sql:string,parameters:readonly
   if(batch.length<FETCH_BATCH)break;
   await spool?.flush();
  }
- if(Date.now()-started>QUERY_TIME_MS)throw Error("query_timeout");
+ remainingResearchTime(deadlineAt);
  return {rows,totalRows,digest:digest.digest("hex"),truncated:offset+rows.length<totalRows};
 }
 // Only fixed error categories and SQLSTATE values are returned to the model.
@@ -377,7 +384,7 @@ export function safeU3SqlErrorCode(e:unknown){
  return ["invalid_query","unattended_aggregate_required","research_invalid_scope",
   "research_not_configured","research_scope_denied",
   "research_connection_untrusted","research_connection_failed","query_timeout",
-  "row_exceeds_page_budget","duplicate_result_columns","research_context_exhausted","stable_order_required","research_snapshot_changed",
+  "row_exceeds_page_budget","duplicate_result_columns","research_context_exhausted","stable_order_required","research_snapshot_changed","research_snapshot_unavailable",
   "query_syntax_error","query_execution_error"].includes(s)?s:"source_read_failed";
 }
 /** Model SQL can use joins, windows, CTEs and nested analytics, but only on
@@ -385,6 +392,7 @@ export function safeU3SqlErrorCode(e:unknown){
  * arguments, DB errors or owner IDs are ever returned as tool evidence. */
 export async function runU3Sql(ctx:U3SqlContext,raw:unknown){
  const startedAt=Date.now();
+ const deadlineAt=ctx.deadlineAt??startedAt+DIRECT_RESEARCH_SLICE_MS;
  const stage:{value:"scope"|"catalog"|"admission"|"query"|"result"}={value:"scope"};
  const parsed=u3SqlSchema.safeParse(raw);
  if(!parsed.success)return {source:"u3_canonical_research",period:null,
@@ -394,7 +402,7 @@ export async function runU3Sql(ctx:U3SqlContext,raw:unknown){
   if(!Number.isSafeInteger(resultBudgetBytes)||resultBudgetBytes<2)throw Error("research_context_exhausted");
   stage.value="admission";
   if(Buffer.byteLength(JSON.stringify(parsed.data.parameters??[]),"utf8")>256*1024)throw new U3AdmissionError("parser_resource_bound");
-  const committed=await withinScope(ctx,async (client,asOf)=>{
+  const committed=await withinScope({...ctx,deadlineAt},async (client,asOf)=>{
    stage.value="catalog";
    const list=await sources(client);
    if(!list.length)throw Error("research_not_configured");
@@ -478,17 +486,21 @@ export async function runU3Sql(ctx:U3SqlContext,raw:unknown){
    // verification and current admission. The scoped settings view also forces
    // SQL-side membership/lease validation, even on a transport cache hit.
    const snapshotId=prior?.id??randomUUID();
-   // Private reviewed operational views also support encrypted durable storage;
-   // raw retained provider rows and customer coverage retain exact replay.
-   const durableEligible=!customerEvidence&&!plan.relations.some(r=>r==="toast_records"||r==="toast_changes");
+   // Persist only the actual already-admitted projection, encrypted under the existing signed scope.
+   // Private source results never enter the shared process cache.
    const retained=prior?(retainable?researchPageCache.read(prior,offset,count,resultBudgetBytes):null)??
-    (durableEligible?await readDurableResearchPage(ctx,prior,offset,count,resultBudgetBytes):null):null;
+    await readDurableResearchPage(ctx,prior,offset,count,resultBudgetBytes):null;
+   if(prior&&!retained)throw Error("research_snapshot_unavailable");
+   const retainedMetadata=prior&&customerEvidence?await readSnapshotMetadata(ctx,prior):null;
+   if(prior&&customerEvidence&&(!retainedMetadata||typeof retainedMetadata!=="object"||
+     !("rowDigest" in retainedMetadata)||typeof retainedMetadata.rowDigest!=="string"||
+     !("coverage" in retainedMetadata)))throw Error("research_snapshot_unavailable");
    if(retained){
     const active=await client.query("SELECT 1 FROM u3_research.cafe_settings LIMIT 1");
     if(active.rows.length!==1)throw Error("research_scope_denied");
    }
    const collector=retainable&&!retained?new ResearchPageCollector():null;
-   const spool=durableEligible&&!prior&&!retained?new DurableResearchSpool(ctx,snapshotId):null;
+   const spool=!prior&&!retained?new DurableResearchSpool(ctx,snapshotId):null;
    const fit=retained??await readResearchPage(client,bounded,parameters,offset,count,resultBudgetBytes,rows=>{
     if(plan.relations.includes("toast_records")&&unsafeStructuredToastResult(rows))
      throw Error("invalid_query");
@@ -502,10 +514,10 @@ export async function runU3Sql(ctx:U3SqlContext,raw:unknown){
        (typeof value==="number"&&Number.isFinite(value)||
         typeof value==="string"&&/^[+-]?\d+(?:\.\d+)?$/u.test(value))))))
      throw Error("unattended_aggregate_required");
-   },collector,spool);
+   },collector,spool,deadlineAt);
    stage.value="result";
    // Independent unfiltered denominator from the same scoped DB snapshot.
-   const rawCoverage=customerEvidence?(await client.query(
+   const rawCoverage=customerEvidence&&!prior?(await client.query(
     "SELECT eligible_check_count,linked_check_count,named_check_count,known_money_check_count,"+
     "linked_known_money_check_count,recorded_net_cents,linked_recorded_net_cents,"+
     "expected_location_days,complete_location_days,complete FROM u3_research.customer_coverage"
@@ -530,7 +542,7 @@ export async function runU3Sql(ctx:U3SqlContext,raw:unknown){
    // Invalid counts are unavailable, never invented zeroes.
    const natural=(n:number|null):n is number=>n!==null&&n>=0;
    const c=candidateCoverage;
-   const customerCoverage=c&&natural(c.eligibleChecks)&&natural(c.linkedChecks)&&
+   const freshCoverage=c&&natural(c.eligibleChecks)&&natural(c.linkedChecks)&&
     natural(c.namedChecks)&&natural(c.knownMoneyChecks)&&natural(c.linkedKnownMoneyChecks)&&
     natural(c.expectedLocationDays)&&natural(c.completeLocationDays)&&
     c.linkedChecks<=c.eligibleChecks&&c.namedChecks<=c.eligibleChecks&&
@@ -539,7 +551,10 @@ export async function runU3Sql(ctx:U3SqlContext,raw:unknown){
     {...c,eligibleChecks:c.eligibleChecks,linkedChecks:c.linkedChecks,namedChecks:c.namedChecks,
      knownMoneyChecks:c.knownMoneyChecks,linkedKnownMoneyChecks:c.linkedKnownMoneyChecks,
      expectedLocationDays:c.expectedLocationDays,completeLocationDays:c.completeLocationDays}:undefined;
-   const digest=customerEvidence?createHash("sha256").update(fit.digest)
+   const metadata=retainedMetadata as {rowDigest:string;coverage:typeof freshCoverage|null}|null;
+   const customerCoverage=prior&&customerEvidence?metadata?.coverage??undefined:freshCoverage;
+   const rowDigest=prior&&customerEvidence?metadata!.rowDigest:fit.digest;
+   const digest=customerEvidence?createHash("sha256").update(rowDigest)
     .update(JSON.stringify(customerCoverage??null)).digest("hex"):fit.digest;
    if(prior&&(prior.digest!==digest||prior.totalRows!==fit.totalRows))
     throw Error("research_snapshot_changed");
@@ -565,14 +580,16 @@ export async function runU3Sql(ctx:U3SqlContext,raw:unknown){
     evidence:{receipt_id:randomUUID(),snapshot_id:snapshot.id,
      snapshot_digest:snapshot.digest,as_of:snapshot.asOf,
      query_fingerprint:createHash("sha256").update(p.sql).digest("hex"),
-     column_units:plan.outputUnits,column_origins:plan.outputOrigins,
+     column_units:plan.outputUnits,column_origins:plan.outputOrigins,column_dependencies:plan.outputDependencies,
      catalog_version:createHash("sha256").update(JSON.stringify(list)).digest("hex").slice(0,16),
      relation_names:plan.relations,functions:plan.functions,
      authority:"approved_logical_source",scope:"verified_owner_cafe_lease"}
    };
-   return {page,snapshot,records:truncated?collector?.finish()??null:null,spool:truncated?spool:null};
+   return {page,snapshot,records:truncated?collector?.finish()??null:null,spool:truncated?spool:null,metadata:customerEvidence&&!prior?{rowDigest,coverage:customerCoverage??null}:null};
   },{date_from:parsed.data.date_from,date_to:parsed.data.date_to});
   await committed.spool?.flush(true);
+  if(committed.spool&&!committed.spool.isAvailable())throw Error("research_snapshot_unavailable");
+  if(committed.spool&&committed.metadata)await writeSnapshotMetadata(ctx,committed.snapshot,committed.metadata);
   const committedPage=committed.page;
   researchPageCache.remember(committed.snapshot,committed.records);
   // Record only a committed, validated result (never raw café/owner/SQL

@@ -38,7 +38,7 @@ describe("model-driven milk swap in the real chat loop",()=>{
   const turn=await runAgentTurn({
    ownerText:"What was profit last week and what should oat milk cost?",
    ownerFacts:saved("oat"),context:{...context},provider:fixture([
-    [call("query_data",{official_metric:{id:"profit",period_mode:null,profit_period:"last_week"}},"p"),
+    [call("query_data",{sql:"SELECT SUM(net_sales_cents) FROM daily_rollups",parameters:null,date_from:"2026-11-09",date_to:"2026-11-15",columns:null,filters:null,group_by:null,metrics:null,order_by:null,limit:null},"p"),
      call("milk_swap_price",args("oat milk"),"m"),completed],
     [say("Last week's profit is not yet verified; oat milk 16 oz needs a €1.70 upcharge (estimate)."),completed]
    ])});

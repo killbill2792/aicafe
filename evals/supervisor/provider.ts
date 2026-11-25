@@ -3,6 +3,10 @@
  * anonymized café readers. Never copy the system prompt into eval code.
  */
 import { readFileSync } from "node:fs";
+import {DatabaseSync} from "node:sqlite";
+import {createHash,randomUUID} from "node:crypto";
+import {admitU3Sql,type U3RelationUnits} from "../../lib/ai/agent/tools/u3SqlAdmission";
+import {u3SqlSchema,type runU3Sql} from "../../lib/ai/agent/tools/u3SqlResearch.server";
 import { runAgentTurn, type AgentProvider } from "../../lib/ai/agent/loop.server";
 import type { AgentToolContext, AgentToolName } from "../../lib/ai/agent/tools";
 
@@ -17,78 +21,54 @@ type ReplayCall = {name:AgentToolName;args:unknown};
 type ReplayCase = {question:string;tools:ReplayCall[];followUpTools?:ReplayCall[];answer:string};
 const replays = JSON.parse(readFileSync(new URL("./replays.json",import.meta.url),"utf8")) as
   {cases:Record<string,ReplayCase>};
-const quality = (missingInputs:string[]=[]) => ({
-  level:missingInputs.length?"low":"high",
-  missingInputs,estimatedInputs:[],staleInputs:[],
-});
-const present = (value:unknown,missingInputs:string[]=[])=>({
-  available:true,value,quality:quality(missingInputs)
-});
-const absent = (reason:string)=>({available:false,value:null,quality:quality([reason])});
-const within = (date:string,period:{from:string;to:string})=>
-  date>=period.from&&date<=period.to;
-const tools = {
-  getMenuCatalog:async()=>present(seed.menu.map(item=>({
-    ...item,baseName:item.name,sizeLabel:null,description:null,
-    menuGroup:item.category,visibility:"POS",pricingStrategy:null,modifierGroups:[],
-  }))),
-  getProfitability:async()=>absent("profitabilityNotSeeded"),
-  getSalesCoverageBounds:async(period:{from:string;to:string})=>{
-    const dates=seed.days.filter(d=>within(d.date,period)).map(d=>d.date).sort();
-    return dates.length?{from:dates[0],to:dates[dates.length-1]}:null;
-  },
-  getSalesTrend:async(period:{from:string;to:string})=>{
-    const rows=seed.days.filter(d=>within(d.date,period)).map(d=>({
-      date:d.date,netSalesCents:d.netSalesCents,ordersCount:d.ordersCount,
-    }));
-    return rows.length?present(rows):absent("noCoveredSalesRows");
-  },
-  getLaborMetrics:async(period:{from:string;to:string})=>{
-    const rows=seed.days.filter(d=>within(d.date,period));
-    return rows.length?present(rows,rows.filter(d=>d.wageStatus==="missing")
-      .map(d=>"laborWageUnknown:"+d.date)):absent("laborNotSeeded");
-  },
-  getProductSales:async(period:{from:string;to:string})=>
-    within(seed.days[0].date,period)?present(seed.menu.map(item=>({
-      id:item.id,name:item.name,units:item.unitsOct19,
-    }))):absent("itemSalesNotSeeded"),
-  getProductEconomics:async(itemId:string)=>{
-    const item=seed.menu.find(row=>row.id===itemId);
-    return item?present({
-      id:item.id,name:item.name,priceCents:item.priceCents,costStatus:"READY",
-      costSource:"recipe",ingredientsCentsToday:item.recipeCostCents,
-      recipeCostCents:item.recipeCostCents,ownerTotalCostCents:null,
-      costQuality:"recorded",
-    }):absent("itemNotSeeded");
-  },
-  getStaffAttendance:async()=>absent("attendanceNotSeeded"),
-  getOwnerMonthlyPayrollExtras:async()=>absent("ownerPayrollExtrasNotSet"),
-  getToastScopeCoverage:async()=>present({labor:true,menus:true}),
-  getPosImportReviews:async()=>present([]),
+// SQL is executed against the same synthetic rows as before, independently of
+// the golden oracle. PostgreSQL grammar/admission and numeric lineage use the
+// production parser; SQLite is only the isolated deterministic data transport.
+// No provider or production database is contacted.
+const relations:U3RelationUnits={
+ daily_rollups:{business_date:null,net_sales_cents:"cents",staff_wages_cents:"cents",staff_tax_cents:"cents",labor_wage_status:null},
+ menu_items:{id:null,name:null,is_active:null,price_cents:"cents"},
+ recipe_lines:{menu_item_id:null,ingredient_id:null,quantity:"count"},
+ ingredient_prices:{ingredient_id:null,cost_per_base_unit_micros:"microcents"},
+ orders:{id:null,business_date:null},
+ order_lines:{order_id:null,menu_item_id:null,quantity:"count",voided:null},
+ inventory_observations:{quantity:"count",evidence_state:null},
 };
-const allowedTools:AgentToolName[]=[
-  "describe_data","query_data","calculate",
-];
-const context = ():AgentToolContext=>({
-  tools:tools as unknown as AgentToolContext["tools"],
-  locale:"en",asOf:seed.profile.asOf,timezone:seed.profile.timezone,
-  currency:seed.profile.currency,
-  canonicalData:async()=>({
-    businessId:"aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
-    db:{rpc:async(name:string,args:{p_view?:string;p_filters?:Array<{column:string;op:string;value:unknown}>;p_limit?:number|null})=>{
-      if(name!=="ai_query_view"||!["cv_inventory","cv_menu"].includes(args.p_view??""))
-        throw Error("unseeded canonical read");
-      const observed=args.p_view==="cv_menu"?seed.menu.map(item=>({data:{
-        id:item.id,name:item.name,price_cents:item.priceCents,is_active:item.active,category:item.category,
-      }})).filter(row=>(args.p_filters??[]).every(filter=>{
-        if(filter.op!=="="||!filter.column.startsWith("data."))throw Error("unseeded filter");
-        return (row.data as Record<string,unknown>)[filter.column.slice(5)]===filter.value;
-      })):[];
-      const rows=observed.slice(0,args.p_limit??undefined);
-      return {data:{rows,rowCount:rows.length,sourceCount:rows.length,truncated:rows.length<observed.length,
-        sourceMix:rows.length?{app:rows.length}:{},hasIncomplete:false,currentDayIncomplete:false},error:null};
-    }} as never,
-  }),
+const readSql:typeof runU3Sql=async(_scope,raw)=>{
+ const p=u3SqlSchema.parse(raw);
+ const plan=await admitU3Sql(p.sql,Object.keys(relations),p.parameters?.length??0,false,[],{},relations);
+ const db=new DatabaseSync(":memory:");
+ try{
+  db.exec("CREATE TABLE daily_rollups(business_date TEXT PRIMARY KEY,net_sales_cents INTEGER,staff_wages_cents INTEGER,staff_tax_cents INTEGER,labor_wage_status TEXT);"+
+   "CREATE TABLE menu_items(id TEXT PRIMARY KEY,name TEXT,is_active INTEGER,price_cents INTEGER);"+
+   "CREATE TABLE recipe_lines(menu_item_id TEXT,ingredient_id TEXT,quantity INTEGER);"+
+   "CREATE TABLE ingredient_prices(ingredient_id TEXT,cost_per_base_unit_micros INTEGER);"+
+   "CREATE TABLE orders(id TEXT PRIMARY KEY,business_date TEXT);"+
+   "CREATE TABLE order_lines(order_id TEXT,menu_item_id TEXT,quantity INTEGER,voided INTEGER);"+
+   "CREATE TABLE inventory_observations(quantity INTEGER,evidence_state TEXT)");
+  for(const d of seed.days)db.prepare("INSERT INTO daily_rollups VALUES(?,?,?,?,?)").run(d.date,d.netSalesCents,d.wagesCents,d.staffTaxCents,d.wageStatus);
+  db.prepare("INSERT INTO orders VALUES(?,?)").run("fixture-order",seed.days[0].date);
+  for(const item of seed.menu){
+   db.prepare("INSERT INTO menu_items VALUES(?,?,?,?)").run(item.id,item.name,item.active?1:0,item.priceCents);
+   db.prepare("INSERT INTO recipe_lines VALUES(?,?,?)").run(item.id,item.id,1);
+   db.prepare("INSERT INTO ingredient_prices VALUES(?,?)").run(item.id,item.recipeCostCents*1000000);
+   db.prepare("INSERT INTO order_lines VALUES(?,?,?,?)").run("fixture-order",item.id,item.unitsOct19,0);
+  }
+  // SQLite accepts PostgreSQL-style $n as named parameters.
+  const statement=db.prepare(p.sql);
+  const binds=Object.fromEntries((p.parameters??[]).map((x,i)=>["$"+(i+1),typeof x==="boolean"?Number(x):x]));
+  const rows=Object.keys(binds).length?statement.all(binds):statement.all();
+  return {source:"u3_canonical_research",period:p.date_from&&p.date_to?{from:p.date_from,to:p.date_to}:null,
+   missing:[],rows,truncated:false,page_complete:true,rowCount:rows.length,
+   evidence:{scope:"verified_owner_cafe_lease",authority:"approved_logical_source",receipt_id:randomUUID(),
+    query_fingerprint:createHash("sha256").update(p.sql).digest("hex"),catalog_version:"a".repeat(16),
+    relation_names:plan.relations,column_units:plan.outputUnits,column_origins:plan.outputOrigins}} as unknown as Awaited<ReturnType<typeof runU3Sql>>;
+ }finally{db.close();}
+};
+const allowedTools:AgentToolName[]=["describe_data","query_data","calculate"];
+const context=():AgentToolContext=>({
+ tools:{} as AgentToolContext["tools"],locale:"en",asOf:seed.profile.asOf,timezone:seed.profile.timezone,
+ currency:seed.profile.currency,canonicalData:async()=>({businessId:"aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",db:{} as never,testSqlTransport:readSql}),
 });
 /**
  * Recorded Responses *model* events drive the real tool loop. Every tool
@@ -116,11 +96,24 @@ function recordedProvider(replay:ReplayCase):AgentProvider {
           !!tool&&typeof tool==="object"&&
           (tool as {name?:string}).name===call.name);
         if(!offered)throw new Error("production tool missing: "+call.name);
+        let callArgs=call.args;
+        if(call.name==="calculate"){
+          const previous=input.filter((x):x is {type:string;call_id:string;output:string}=>!!x&&typeof x==="object"&&(x as {type?:string}).type==="function_call_output");
+          const observed=previous.flatMap(x=>{try{return [JSON.parse(x.output)];}catch{return [];}});
+          const calc=call.args as {inputs:{tool?:string;path?:string;receipt_id?:string}[]};
+          callArgs={...calc,inputs:calc.inputs.map(v=>{
+            if(v.tool!=="query_data"||v.receipt_id)return v;
+            const column=v.path?.split(".").at(-1);
+            const source=observed.findLast(x=>x.source==="u3_canonical_research"&&column&&x.evidence?.column_units?.[column]);
+            if(!source?.evidence?.receipt_id)throw Error("Recorded calculation needs observed SQL receipt");
+            return {...v,receipt_id:source.evidence.receipt_id};
+          })};
+        }
         const id="eval-read-"+round+"-"+i;
         allIds.push(id);
         yield {type:"response.output_item.done",item:{
           type:"function_call",name:call.name,
-          arguments:JSON.stringify(call.args),call_id:id,
+          arguments:JSON.stringify(callArgs),call_id:id,
         }};
       }
     }else if(round===rounds.length+1){

@@ -166,6 +166,37 @@ describe.skipIf(!active)("U3 migrated registered tool + private connection",()=>
   if(priorCursorSecret===undefined)delete process.env.SUPABASE_SERVICE_ROLE_KEY;
   else process.env.SUPABASE_SERVICE_ROLE_KEY=priorCursorSecret;
  });
+ it("queries original workflow facts and retains strict owner-private access",async()=>{
+  if(!admin)throw Error("admin_missing");
+  const a=randomUUID(),b=randomUUID();
+  try{
+   await admin.query("INSERT INTO public.alerts(id,business_id,kind,impact_cents,payload,status) VALUES($1,$2,'data_quality',1200,'{}','open'),($3,$4,'data_quality',9900,'{}','open')",[a,ids.a,b,ids.b]);
+   const result=await dataQueryTools.query_data.execute({...input("SELECT id,impact_cents FROM alerts WHERE id IN ($1,$2)"),parameters:[a,b]},scoped);
+   expect(result.error).toBeUndefined();
+   expect(result.rows).toEqual([{id:a,impact_cents:"1200"}]);
+   for(const relation of ["operating_tasks","alerts","supervisor_proposals","supplier_proposal_lines","supervisor_effect_attempts","supervisor_reports","supervisor_monitor_windows","purchase_order_dispatches","purchase_order_channel_reports","purchase_order_events","cafe_supplier_order_contacts","supplier_po_draft_replacements"]){
+    const result=await dataQueryTools.query_data.execute(input("SELECT count(*) FROM "+relation),scoped);
+    expect(result.error).toBeUndefined();
+    const denied=await dataQueryTools.query_data.execute(input("SELECT count(*) FROM "+relation),{...scoped,aggregateOnly:true});
+    expect(denied.error).toBeDefined();
+   }
+  }finally{await admin.query("DELETE FROM public.alerts WHERE id IN ($1,$2)",[a,b]);}
+ });
+ it("reads saved staffing cases across their full history without crossing café scope",async()=>{
+  if(!admin)throw Error("admin_missing");
+  const a=randomUUID(),b=randomUUID();
+  try{
+   await admin.query("INSERT INTO public.staff_coordination_cases(id,business_id,source_kind,source_key,case_kind,role_needed) VALUES($1,$2,'owner_record',$1::uuid::text,'recruitment','Local role'),($3,$4,'owner_record',$3::uuid::text,'recruitment','Foreign role')",[a,ids.a,b,ids.b]);
+   await admin.query("INSERT INTO public.staff_coordination_evidence(business_id,case_id,evidence_key,source_kind,source_id,source_revision) VALUES($1,$2,'decision','owner_decision','local','1'),($3,$4,'decision','owner_decision','foreign','1')",[ids.a,a,ids.b,b]);
+   const result=await dataQueryTools.query_data.execute(input("SELECT c.role_needed,e.source_id FROM staff_coordination_cases c JOIN staff_coordination_evidence e ON e.case_id=c.id"),scoped);
+   expect(result.error).toBeUndefined();
+   expect(result.rows).toEqual([{role_needed:"Local role",source_id:"local"}]);
+   for(const relation of ["staff_communication_requests","staff_communication_messages","staff_coordination_cases","staff_coordination_evidence","maintenance_cases","maintenance_case_events"]){
+    const result=await dataQueryTools.query_data.execute(input("SELECT count(*) FROM "+relation),{...scoped,aggregateOnly:true});
+    expect(result.error).toBeDefined();
+   }
+  }finally{await admin.query("DELETE FROM public.staff_coordination_cases WHERE id IN ($1,$2)",[a,b]);}
+ });
  it("reads all saved normalized statement transactions through general SQL without crossing owner scope",async()=>{
   if(!admin)throw Error("admin_missing");
   const day="2026-01-01";
@@ -508,6 +539,22 @@ describe.skipIf(!active)("U3 migrated registered tool + private connection",()=>
    expect(result.rows).toEqual(oracle.rows);
    const denominator=(await admin.query("SELECT public.customer_query_coverage($1,$2,$2) AS coverage",[ids.a,date])).rows[0].coverage;
    expect(result).toMatchObject({customerEvidence:true,customerCoverage:denominator,period:{from:date,to:date}});
+   // Customer rows and their independent denominator must survive a changed source and cache miss.
+   const detail={...input("SELECT business_date,net_sales_cents,1 AS n FROM customer_visits UNION ALL SELECT business_date,net_sales_cents,2 AS n FROM customer_visits UNION ALL SELECT business_date,net_sales_cents,3 AS n FROM customer_visits ORDER BY business_date,n"),...range,limit:1};
+   const first=await dataQueryTools.query_data.execute(detail,scoped);
+   expect(first).toMatchObject({page_complete:false,page_retrieval:"executed_query",customerCoverage:denominator});
+   const token=(first as {next_cursor:string}).next_cursor;
+   expect(token).toEqual(expect.any(String));
+   const worker=vi.spyOn(researchPageCache,"read").mockReturnValue(null);
+   try{
+    await admin.query("INSERT INTO public.toast_raw_records(business_id,restaurant_guid,entity,business_date,payload,payload_sha256,capture_key) VALUES ($1,$2,'order',$3,$4,$5,$6)",
+     [ids.a,restA,date,JSON.stringify(payload(95)),randomBytes(32).toString("hex"),"live:u3-customer-new"]);
+    const next=await dataQueryTools.query_data.execute({...detail,cursor:token},scoped);
+    expect(next).toMatchObject({page_retrieval:"retained_result",customerCoverage:denominator,rows:[{business_date:expect.anything(),net_sales_cents:expect.anything(),n:2}]});
+   }finally{
+    worker.mockRestore();
+    await admin.query("DELETE FROM public.toast_raw_records WHERE business_id=$1 AND capture_key='live:u3-customer-new'",[ids.a]);
+   }
    const filtered=await dataQueryTools.query_data.execute({...input("SELECT COUNT(*) AS n FROM customer_visits WHERE net_sales_cents=0"),...range},scoped);
    expect(filtered.rows).toEqual([{n:"0"}]);
    expect(filtered).toMatchObject({customerCoverage:denominator});

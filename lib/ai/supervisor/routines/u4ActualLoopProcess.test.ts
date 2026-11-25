@@ -3,15 +3,20 @@
  * suite opts in and SIGKILLs the child after a real registered model/tool
  * execution committed a fenced tool_complete checkpoint.
  *
- * The provider is recorded (zero paid calls), but runAgentTurn, get_sales,
+ * The provider is recorded (zero paid calls), but runAgentTurn, query_data,
  * the persisted source row, model-call reservations, and the original U4
  * checkpoint/report RPCs execute. Genuine provider restart remains a
  * separately owner-authorized Task17C acceptance requirement.
  */
 import {writeFileSync} from "node:fs";
 import {Client} from "pg";
+import {randomUUID} from "node:crypto";
+import {runU3Sql} from "@/lib/ai/agent/tools/u3SqlResearch.server";
 import {expect,it,vi} from "vitest";
 vi.mock("server-only",()=>({}));
+vi.mock("@/lib/ai/agent/tools/u3SqlResearch.server",async importOriginal=>({
+ ...await importOriginal<typeof import("@/lib/ai/agent/tools/u3SqlResearch.server")>(),u3SqlConfigured:()=>true,runU3Sql:vi.fn(),
+}));
 import {runAgentTurn,type AgentProvider} from "@/lib/ai/agent/loop.server";
 import type {AgentToolContext} from "@/lib/ai/agent/tools";
 import {withWorkerBudget} from "@/lib/ai/supervisor/runs/usage.server";
@@ -71,7 +76,7 @@ run("survives actual recorded model and registered source tool across SIGKILL",a
           "select to_jsonb(public."+name+"("+names+")) as data",
           entries.map(([,value])=>value));
         const data=observed.rows[0]?.data;
-        // This marker is emitted only AFTER an actual get_sales tool result
+        // This marker is emitted only AFTER an actual query_data tool result
         // reached the production checkpoint and the DB acknowledged commit.
         if(name==="u4_store_research_read"&&
            data===true&&mode==="crash"){
@@ -127,25 +132,24 @@ run("survives actual recorded model and registered source tool across SIGKILL",a
       expect(resumed).toContain("tool_complete");
       expect(resumed).not.toContain("4875");
     }
-    const originalSourceRead=async(period:{from:string;to:string})=>{
+    // This process-boundary test mocks only SQL transport, reading the
+    // real disposable row after verifying the original live lease. The U3
+    // migrated security suite independently exercises actual SQL admission.
+    const statement="SELECT net_sales_cents,orders_count FROM daily_rollups WHERE business_date=$1";
+    vi.mocked(runU3Sql).mockImplementation(async(_ctx,raw)=>{
       if(mode==="resume")throw Error("restored_receipt_must_not_repeat_source_read");
       await assertLease();
-      const rows=await db.query("select business_date::text as day,"+
-        "net_sales_cents,orders_count from public.daily_rollups "+
-        "where business_id=$1 and business_date between $2::date and $3::date "+
-        "order by business_date",[businessId,period.from,period.to]);
-      return {available:true as const,
-        value:rows.rows.map(x=>({date:x.day,
-          netSalesCents:Number(x.net_sales_cents),
-          ordersCount:Number(x.orders_count)})),
-        quality:{missingInputs:[],estimatedInputs:[],notes:[]},
-      };
-    };
+      expect(raw).toMatchObject({sql:statement,parameters:["2026-11-20"]});
+      const rows=await db.query("SELECT net_sales_cents,orders_count FROM public.daily_rollups WHERE business_id=$1 AND business_date=$2",[businessId,"2026-11-20"]);
+      return {source:"u3_canonical_research",period:{from:"2026-11-20",to:"2026-11-20"},missing:[],rows:rows.rows,
+        truncated:false,page_complete:true,evidence:{scope:"verified_owner_cafe_lease",authority:"approved_logical_source",
+          receipt_id:randomUUID(),query_fingerprint:"a".repeat(64),catalog_version:"a".repeat(16),relation_names:["daily_rollups"],column_units:{net_sales_cents:"cents",orders_count:"count"}}} as unknown as Awaited<ReturnType<typeof runU3Sql>>;
+    });
     const context={
       locale:"en",timezone:"America/Los_Angeles",currency:"USD",
       asOf:"2026-11-21",canonicalData:async()=>({businessId,db:{} as never,aggregateOnly:true}),
       tools:{
-        getSalesTrend:originalSourceRead,
+        getSalesTrend:async()=>{throw Error("retired_report_called");},
         getProfitability:async()=>({available:false}),
         getMenuCatalog:async()=>({available:false}),
       },
@@ -159,7 +163,7 @@ run("survives actual recorded model and registered source tool across SIGKILL",a
       if(requests++===0&&mode==="crash"){
         yield {type:"response.output_item.done",item:{
           type:"function_call",name:"query_data",call_id:"u4-durable-sales",
-          arguments:JSON.stringify({official_metric:{id:"sales",period_mode:null,period:{from:"2026-11-20",to:"2026-11-20"}}}),
+          arguments:JSON.stringify({sql:statement,parameters:["2026-11-20"],date_from:"2026-11-20",date_to:"2026-11-20",limit:null}),
         }} as never;
       }else{
         yield {type:"response.output_text.delta",
@@ -181,7 +185,8 @@ run("survives actual recorded model and registered source tool across SIGKILL",a
     }));
     expect(metered.problem()).toBeNull();
     const observed=turn.toolInvocations?.find(x=>x.name==="query_data");
-    expect(observed?.result.netSalesCents).toBe(4875);
+    expect(Number((observed?.result.rows as Array<{net_sales_cents:unknown}>|undefined)?.[0]?.net_sales_cents)).toBe(4875);
+    expect(runU3Sql).not.toHaveBeenCalled();
     expect(turn.usage.toolCalls).toBe(0);
     const verified=verifyObjectiveTurn(turn,routine as never);
     expect(verified.sourceDomains).toContain("recorded_sales");

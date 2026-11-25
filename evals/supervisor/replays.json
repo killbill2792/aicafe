@@ -7,14 +7,14 @@
         {
           "name": "query_data",
           "args": {
-            "official_metric": {
-              "id": "labor",
-              "period_mode": null,
-              "period": {
-                "from": "2026-10-19",
-                "to": "2026-10-19"
-              }
-            }
+            "sql": "SELECT CASE WHEN count(staff_wages_cents)=count(*) AND count(staff_tax_cents)=count(*) THEN sum(staff_wages_cents+staff_tax_cents) ELSE NULL END AS loaded_staff_cents, CASE WHEN count(staff_wages_cents)=count(*) AND count(staff_tax_cents)=count(*) THEN sum(staff_wages_cents+staff_tax_cents)*1.0/sum(net_sales_cents) ELSE NULL END AS labor_ratio, count(*)-count(staff_wages_cents) AS missing_wages FROM daily_rollups WHERE business_date BETWEEN $1 AND $2",
+            "parameters": [
+              "2026-10-19",
+              "2026-10-19"
+            ],
+            "date_from": "2026-10-19",
+            "date_to": "2026-10-19",
+            "limit": null
           }
         }
       ],
@@ -26,14 +26,14 @@
         {
           "name": "query_data",
           "args": {
-            "official_metric": {
-              "id": "labor",
-              "period_mode": null,
-              "period": {
-                "from": "2026-10-19",
-                "to": "2026-10-19"
-              }
-            }
+            "sql": "SELECT CASE WHEN count(staff_wages_cents)=count(*) AND count(staff_tax_cents)=count(*) THEN sum(staff_wages_cents+staff_tax_cents) ELSE NULL END AS loaded_staff_cents, CASE WHEN count(staff_wages_cents)=count(*) AND count(staff_tax_cents)=count(*) THEN sum(staff_wages_cents+staff_tax_cents)*1.0/sum(net_sales_cents) ELSE NULL END AS labor_ratio, count(*)-count(staff_wages_cents) AS missing_wages FROM daily_rollups WHERE business_date BETWEEN $1 AND $2",
+            "parameters": [
+              "2026-10-19",
+              "2026-10-19"
+            ],
+            "date_from": "2026-10-19",
+            "date_to": "2026-10-19",
+            "limit": null
           }
         }
       ],
@@ -45,14 +45,14 @@
         {
           "name": "query_data",
           "args": {
-            "official_metric": {
-              "id": "labor",
-              "period_mode": null,
-              "period": {
-                "from": "2026-10-20",
-                "to": "2026-10-20"
-              }
-            }
+            "sql": "SELECT CASE WHEN count(staff_wages_cents)=count(*) AND count(staff_tax_cents)=count(*) THEN sum(staff_wages_cents+staff_tax_cents) ELSE NULL END AS loaded_staff_cents, CASE WHEN count(staff_wages_cents)=count(*) AND count(staff_tax_cents)=count(*) THEN sum(staff_wages_cents+staff_tax_cents)*1.0/sum(net_sales_cents) ELSE NULL END AS labor_ratio, count(*)-count(staff_wages_cents) AS missing_wages FROM daily_rollups WHERE business_date BETWEEN $1 AND $2",
+            "parameters": [
+              "2026-10-20",
+              "2026-10-20"
+            ],
+            "date_from": "2026-10-20",
+            "date_to": "2026-10-20",
+            "limit": null
           }
         }
       ],
@@ -64,14 +64,14 @@
         {
           "name": "query_data",
           "args": {
-            "official_metric": {
-              "id": "labor",
-              "period_mode": null,
-              "period": {
-                "from": "2026-10-19",
-                "to": "2026-10-20"
-              }
-            }
+            "sql": "SELECT CASE WHEN count(staff_wages_cents)=count(*) AND count(staff_tax_cents)=count(*) THEN sum(staff_wages_cents+staff_tax_cents) ELSE NULL END AS loaded_staff_cents, CASE WHEN count(staff_wages_cents)=count(*) AND count(staff_tax_cents)=count(*) THEN sum(staff_wages_cents+staff_tax_cents)*1.0/sum(net_sales_cents) ELSE NULL END AS labor_ratio, count(*)-count(staff_wages_cents) AS missing_wages FROM daily_rollups WHERE business_date BETWEEN $1 AND $2",
+            "parameters": [
+              "2026-10-19",
+              "2026-10-20"
+            ],
+            "date_from": "2026-10-19",
+            "date_to": "2026-10-20",
+            "limit": null
           }
         }
       ],
@@ -83,14 +83,14 @@
         {
           "name": "query_data",
           "args": {
-            "official_metric": {
-              "id": "labor",
-              "period_mode": null,
-              "period": {
-                "from": "2026-10-21",
-                "to": "2026-10-21"
-              }
-            }
+            "sql": "SELECT CASE WHEN count(staff_wages_cents)=count(*) AND count(staff_tax_cents)=count(*) THEN sum(staff_wages_cents+staff_tax_cents) ELSE NULL END AS loaded_staff_cents, CASE WHEN count(staff_wages_cents)=count(*) AND count(staff_tax_cents)=count(*) THEN sum(staff_wages_cents+staff_tax_cents)*1.0/sum(net_sales_cents) ELSE NULL END AS labor_ratio, count(*)-count(staff_wages_cents) AS missing_wages FROM daily_rollups WHERE business_date BETWEEN $1 AND $2",
+            "parameters": [
+              "2026-10-21",
+              "2026-10-21"
+            ],
+            "date_from": "2026-10-21",
+            "date_to": "2026-10-21",
+            "limit": null
           }
         }
       ],
@@ -102,30 +102,13 @@
         {
           "name": "query_data",
           "args": {
-            "sql": null,
-            "parameters": null,
-            "group_by": null,
-            "metrics": null,
-            "date_from": "2026-10-21",
-            "date_to": "2026-10-21",
-            "order_by": null,
-            "limit": null,
-            "view": "cv_menu",
-            "columns": [
-              "data"
+            "sql": "SELECT id,name,price_cents FROM menu_items WHERE is_active AND name=$1",
+            "parameters": [
+              "House Latte"
             ],
-            "filters": [
-              {
-                "column": "data.is_active",
-                "op": "=",
-                "value": true
-              },
-              {
-                "column": "data.name",
-                "op": "=",
-                "value": "House Latte"
-              }
-            ]
+            "date_from": null,
+            "date_to": null,
+            "limit": null
           }
         }
       ],
@@ -137,30 +120,13 @@
         {
           "name": "query_data",
           "args": {
-            "sql": null,
-            "parameters": null,
-            "group_by": null,
-            "metrics": null,
-            "date_from": "2026-10-21",
-            "date_to": "2026-10-21",
-            "order_by": null,
-            "limit": null,
-            "view": "cv_menu",
-            "columns": [
-              "data"
+            "sql": "SELECT id,name,price_cents FROM menu_items WHERE is_active AND name=$1",
+            "parameters": [
+              "Spiced Tea"
             ],
-            "filters": [
-              {
-                "column": "data.is_active",
-                "op": "=",
-                "value": true
-              },
-              {
-                "column": "data.name",
-                "op": "=",
-                "value": "Spiced Tea"
-              }
-            ]
+            "date_from": null,
+            "date_to": null,
+            "limit": null
           }
         }
       ],
@@ -172,11 +138,13 @@
         {
           "name": "query_data",
           "args": {
-            "official_metric": {
-              "id": "product_cost",
-              "entity_id": "33333333-3333-4333-8333-333333333333",
-              "period_mode": null
-            }
+            "sql": "SELECT m.id,m.name,m.price_cents,r.quantity,i.cost_per_base_unit_micros FROM menu_items m JOIN recipe_lines r ON r.menu_item_id=m.id JOIN ingredient_prices i ON i.ingredient_id=r.ingredient_id WHERE m.id=$1",
+            "parameters": [
+              "33333333-3333-4333-8333-333333333333"
+            ],
+            "date_from": null,
+            "date_to": null,
+            "limit": null
           }
         }
       ],
@@ -188,25 +156,11 @@
         {
           "name": "query_data",
           "args": {
-            "sql": null,
+            "sql": "SELECT id,name,price_cents FROM menu_items WHERE is_active ORDER BY id",
             "parameters": null,
-            "group_by": null,
-            "metrics": null,
-            "date_from": "2026-10-21",
-            "date_to": "2026-10-21",
-            "order_by": null,
-            "limit": null,
-            "view": "cv_menu",
-            "columns": [
-              "data"
-            ],
-            "filters": [
-              {
-                "column": "data.is_active",
-                "op": "=",
-                "value": true
-              }
-            ]
+            "date_from": null,
+            "date_to": null,
+            "limit": null
           }
         }
       ],
@@ -218,25 +172,11 @@
         {
           "name": "query_data",
           "args": {
-            "sql": null,
+            "sql": "SELECT id,name,price_cents FROM menu_items WHERE is_active ORDER BY id",
             "parameters": null,
-            "group_by": null,
-            "metrics": null,
-            "date_from": "2026-10-21",
-            "date_to": "2026-10-21",
-            "order_by": null,
-            "limit": null,
-            "view": "cv_menu",
-            "columns": [
-              "data"
-            ],
-            "filters": [
-              {
-                "column": "data.is_active",
-                "op": "=",
-                "value": true
-              }
-            ]
+            "date_from": null,
+            "date_to": null,
+            "limit": null
           }
         }
       ],
@@ -248,15 +188,15 @@
         {
           "name": "query_data",
           "args": {
-            "official_metric": {
-              "id": "item_sales",
-              "period": {
-                "from": "2026-10-19",
-                "to": "2026-10-19"
-              },
-              "entity_name": "House Latte",
-              "period_mode": null
-            }
+            "sql": "SELECT sum(l.quantity) AS units FROM order_lines l JOIN orders o ON l.order_id=o.id JOIN menu_items m ON l.menu_item_id=m.id WHERE m.name=$1 AND o.business_date BETWEEN $2 AND $3 AND NOT l.voided",
+            "parameters": [
+              "House Latte",
+              "2026-10-19",
+              "2026-10-19"
+            ],
+            "date_from": "2026-10-19",
+            "date_to": "2026-10-19",
+            "limit": null
           }
         }
       ],
@@ -268,41 +208,49 @@
         {
           "name": "query_data",
           "args": {
-            "official_metric": {
-              "id": "product_cost",
-              "entity_id": "11111111-1111-4111-8111-111111111111",
-              "period_mode": null
-            }
+            "sql": "SELECT m.id,m.name,m.price_cents,r.quantity,i.cost_per_base_unit_micros FROM menu_items m JOIN recipe_lines r ON r.menu_item_id=m.id JOIN ingredient_prices i ON i.ingredient_id=r.ingredient_id WHERE m.id=$1",
+            "parameters": [
+              "11111111-1111-4111-8111-111111111111"
+            ],
+            "date_from": null,
+            "date_to": null,
+            "limit": null
           }
         },
         {
           "name": "query_data",
           "args": {
-            "official_metric": {
-              "id": "product_cost",
-              "entity_id": "22222222-2222-4222-8222-222222222222",
-              "period_mode": null
-            }
+            "sql": "SELECT m.id,m.name,m.price_cents,r.quantity,i.cost_per_base_unit_micros FROM menu_items m JOIN recipe_lines r ON r.menu_item_id=m.id JOIN ingredient_prices i ON i.ingredient_id=r.ingredient_id WHERE m.id=$1",
+            "parameters": [
+              "22222222-2222-4222-8222-222222222222"
+            ],
+            "date_from": null,
+            "date_to": null,
+            "limit": null
           }
         },
         {
           "name": "query_data",
           "args": {
-            "official_metric": {
-              "id": "product_cost",
-              "entity_id": "44444444-4444-4444-8444-444444444444",
-              "period_mode": null
-            }
+            "sql": "SELECT m.id,m.name,m.price_cents,r.quantity,i.cost_per_base_unit_micros FROM menu_items m JOIN recipe_lines r ON r.menu_item_id=m.id JOIN ingredient_prices i ON i.ingredient_id=r.ingredient_id WHERE m.id=$1",
+            "parameters": [
+              "44444444-4444-4444-8444-444444444444"
+            ],
+            "date_from": null,
+            "date_to": null,
+            "limit": null
           }
         },
         {
           "name": "query_data",
           "args": {
-            "official_metric": {
-              "id": "product_cost",
-              "entity_id": "33333333-3333-4333-8333-333333333333",
-              "period_mode": null
-            }
+            "sql": "SELECT m.id,m.name,m.price_cents,r.quantity,i.cost_per_base_unit_micros FROM menu_items m JOIN recipe_lines r ON r.menu_item_id=m.id JOIN ingredient_prices i ON i.ingredient_id=r.ingredient_id WHERE m.id=$1",
+            "parameters": [
+              "33333333-3333-4333-8333-333333333333"
+            ],
+            "date_from": null,
+            "date_to": null,
+            "limit": null
           }
         }
       ],
@@ -312,13 +260,12 @@
           "name": "calculate",
           "args": {
             "purpose": "Recorded unit margin for Cocoa",
-            "screen_number": "none",
             "inputs": [
               {
                 "name": "price",
                 "label": "Current price",
                 "tool": "query_data",
-                "path": "item.priceCents",
+                "path": "rows.0.price_cents",
                 "fact_key": null,
                 "owner_value": null,
                 "owner_unit": null
@@ -327,7 +274,7 @@
                 "name": "cost",
                 "label": "Recorded recipe cost",
                 "tool": "query_data",
-                "path": "item.recipeCostCents",
+                "path": "rows.0.cost_per_base_unit_micros",
                 "fact_key": null,
                 "owner_value": null,
                 "owner_unit": null
@@ -354,21 +301,11 @@
         {
           "name": "query_data",
           "args": {
-            "sql": null,
+            "sql": "SELECT quantity,evidence_state FROM inventory_observations",
             "parameters": null,
-            "group_by": null,
-            "metrics": null,
-            "date_from": "2026-10-21",
-            "date_to": "2026-10-21",
-            "order_by": null,
-            "limit": null,
-            "view": "cv_inventory",
-            "columns": [
-              "source",
-              "quantity",
-              "data"
-            ],
-            "filters": null
+            "date_from": null,
+            "date_to": null,
+            "limit": null
           }
         }
       ],

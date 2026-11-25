@@ -22,7 +22,7 @@ const said=(name:string,owner_value:number,owner_unit:"cents"|"percent"|"count")
 const withOwner=(c:AgentToolContext,ownerText:string,ownerMessages:string[]=[],locale:"en"|"es"|"ar"="en")=>
   ({...c,ownerText,ownerMessages,locale}) as AgentToolContext;
 const turn=[{name:"query_data",result:sales},{name:"get_cost_summary",result:costs}];
-const knownWithEstimate={purpose:"Known costs with 20% ingredients",screen_number:"none",
+const knownWithEstimate={purpose:"Known costs with 20% ingredients",
   inputs:[input("sales","query_data","rows.0.net_sales_cents"),input("known","get_cost_summary","knownTotalCents"),
     input("recorded_ing","get_cost_summary","components.ingredientsCents"),input("share",null,null,"ingredient_cost_percent")],
   steps:[{id:"est_ing",label:"Ingredients at 20%",op:"percent_of",args:["share","sales"]},
@@ -42,7 +42,7 @@ describe("calculate tool",()=>{
     for(const line of r.explain as unknown[])expect(explainLineSchema.safeParse(line).success).toBe(true);
   });
   it("labels a result with only recorded inputs as a calculation and keeps their shared period",async()=>{
-    const r=await calculateTools.calculate.execute({purpose:"Average order",screen_number:"none",
+    const r=await calculateTools.calculate.execute({purpose:"Average order",
       inputs:[input("sales","query_data","rows.0.net_sales_cents"),input("orders","query_data","rows.0.orders")],
       steps:[{id:"avg",label:"Average order",op:"divide",args:["sales","orders"]}]},ctx(turn));
     expect(r).toMatchObject({kind:"calculation",period,result:{unit:"cents",valueCents:2000}});
@@ -52,7 +52,7 @@ describe("calculate tool",()=>{
     expect(checkNumbers("Known costs with your 20% estimate: $660.00.","ingredients are 20%",[...turn.map(t=>t.result),r],"en")).toEqual([]);
   });
   it("refuses numbers it cannot read, never treating unknown as zero",async()=>{
-    const base={purpose:"x",screen_number:"none",steps:[{id:"y",label:"y",op:"sum",args:["a"]}]};
+    const base={purpose:"x",steps:[{id:"y",label:"y",op:"sum",args:["a"]}]};
     const run=(inputs:unknown[])=>calculateTools.calculate.execute({...base,inputs},ctx(turn));
     expect((await run([input("a","get_sales","totalCents")])).refused).toBe("toolNotCalledThisTurn");
     expect((await run([input("a","get_cost_summary","components.loadedStaffCents")])).refused).toBe("inputIsUnknown");
@@ -62,7 +62,7 @@ describe("calculate tool",()=>{
     await expect(calculateTools.calculate.execute({...base,inputs:[{...input("a",null,null),value:5}]},ctx(turn))).rejects.toThrow();
   });
   it("a refusal never becomes an owner question",async()=>{
-    const r=await calculateTools.calculate.execute({purpose:"x",screen_number:"none",
+    const r=await calculateTools.calculate.execute({purpose:"x",
       inputs:[input("a","get_sales","totalCents")],steps:[{id:"y",label:"y",op:"sum",args:["a"]}]},ctx(turn));
     expect(r).toMatchObject({source:"calculate",missing:[],refused:"toolNotCalledThisTurn"});
     expect(questionFromReasons([], [r], "", "en", [])).toBeNull();
@@ -76,7 +76,7 @@ describe("source-attested ingredient-rate arithmetic",()=>{
     evidence:{scope:"verified_owner_cafe_lease",receipt_id:"11111111-1111-4111-8111-111111111111",
      query_fingerprint:"a".repeat(64),catalog_version:"b".repeat(16),
      column_units:{rate:"microcents",quantity:"count"}}};
-  const args={purpose:"Ingredient use",screen_number:"none",
+  const args={purpose:"Ingredient use",
    inputs:[{...input("rate","query_data","rows.0.rate"),receipt_id:"11111111-1111-4111-8111-111111111111"},{...input("quantity","query_data","rows.0.quantity"),receipt_id:"11111111-1111-4111-8111-111111111111"}],
    steps:[{id:"cost",label:"Ingredient cost",op:"multiply",args:["rate","quantity"]}]};
   const r=await calculateTools.calculate.execute(args,ctx([{name:"query_data",result:research}]));
@@ -89,7 +89,7 @@ describe("source-attested ingredient-rate arithmetic",()=>{
 
 describe("calculate uses what the owner says",()=>{
   const rentTurn=[...turn,{name:"get_bills",result:{source:"recurring_bills",period:null,missing:[],monthlyEquivalentCents:300000} as AgentToolResult}];
-  const rentWhatIf=(c:AgentToolContext)=>calculateTools.calculate.execute({purpose:"Monthly bills if rent goes up",screen_number:"none",
+  const rentWhatIf=(c:AgentToolContext)=>calculateTools.calculate.execute({purpose:"Monthly bills if rent goes up",
     inputs:[input("bills","get_bills","monthlyEquivalentCents"),said("rent_increase",50000,"cents")],
     steps:[{id:"new_bills",label:"Bills after the increase",op:"add",args:["bills","rent_increase"]}]},c);
   it("uses a number the owner typed this turn, labeled as theirs",async()=>{
@@ -102,7 +102,7 @@ describe("calculate uses what the owner says",()=>{
     expect(r.result).toEqual({unit:"cents",valueCents:350000});
   });
   it("uses a percent the owner said, and a typed question-card answer",async()=>{
-    const pct=(c:AgentToolContext)=>calculateTools.calculate.execute({purpose:"Ingredients",screen_number:"none",
+    const pct=(c:AgentToolContext)=>calculateTools.calculate.execute({purpose:"Ingredients",
       inputs:[input("sales","query_data","rows.0.net_sales_cents"),said("share",20,"percent")],
       steps:[{id:"ing",label:"Ingredients",op:"percent_of",args:["share","sales"]}]},c);
     expect((await pct(withOwner(ctx(turn),"20% of price for all"))).result).toEqual({unit:"cents",valueCents:20000});
@@ -117,7 +117,7 @@ describe("calculate uses what the owner says",()=>{
   ] as const)("accepts an explicitly owner-stated duration: %s",async(text,duration,expected)=>{
     const locale=text.startsWith("Uso")?"es":text.startsWith("أعمل")?"ar":"en";
     const r=await calculateTools.calculate.execute({purpose:"Duration",
-      screen_number:"none",inputs:[said("duration",duration,"count")],
+      inputs:[said("duration",duration,"count")],
       steps:[{id:"duration_result",label:"Duration",op:"sum",args:["duration"]}]},
       withOwner(ctx(turn),text,[],locale));
     expect(r.refused).toBeUndefined();
@@ -125,7 +125,7 @@ describe("calculate uses what the owner says",()=>{
   });
   it("refuses an unstated duration even when another duration was provided",async()=>{
     const r=await calculateTools.calculate.execute({purpose:"Duration",
-      screen_number:"none",inputs:[said("days",8,"count")],
+      inputs:[said("days",8,"count")],
       steps:[{id:"duration_result",label:"Duration",op:"sum",args:["days"]}]},
       withOwner(ctx(turn),"I use 2 cartons per day for 7 days"));
     expect(r.refused).toBe("ownerDidNotSayThis");
@@ -136,28 +136,28 @@ describe("calculate uses what the owner says",()=>{
   });
 });
 
-describe("metric identity is independent of tool name",()=>{
+describe("general calculation is independent of reporting topics",()=>{
   it("keeps official metric topics without assigning exclusive tool authority",()=>{
     expect([...SCREEN_NUMBER_IDS].sort()).toEqual(["break_even","card_fees","item_cost","labor_cost","profit"]);
   });
-  it.each(SCREEN_NUMBER_IDS)("allows independent %s arithmetic without asserting official screen parity",async id=>{
-    const actual=await calculateTools.calculate.execute({purpose:"Independent calculation",screen_number:id,
+  it.each(SCREEN_NUMBER_IDS)("allows independent %s arithmetic without asserting official screen parity",async topic=>{
+    const actual=await calculateTools.calculate.execute({purpose:"Independent "+topic+" calculation",
       inputs:[input("a","query_data","rows.0.net_sales_cents"),input("b","query_data","rows.0.cost_cents")],
       steps:[{id:"r",label:"r",op:"subtract",args:["a","b"]}]},ctx(turn));
-    expect(actual).toMatchObject({metric_topic:id,metric_basis:"independent_calculation",result:{unit:"cents",valueCents:70000}});
+    expect(actual).toMatchObject({result:{unit:"cents",valueCents:70000}});
     expect(actual.refused).toBeUndefined();
   });
   it("marks explicit hypothetical inputs as estimates, never owner facts",async()=>{
-    const actual=await calculateTools.calculate.execute({purpose:"Alternative cost scenario",screen_number:"profit",
+    const actual=await calculateTools.calculate.execute({purpose:"Alternative cost scenario",
       inputs:[input("a","query_data","rows.0.net_sales_cents"),
         {...input("b",null,null),assumption:{value:25000,unit:"cents",basis:"Hypothetical equipment lease"}}],
       steps:[{id:"r",label:"r",op:"subtract",args:["a","b"]}]},ctx(turn));
-    expect(actual).toMatchObject({kind:"estimate",metric_basis:"independent_calculation",result:{unit:"cents",valueCents:75000},
+    expect(actual).toMatchObject({kind:"estimate",result:{unit:"cents",valueCents:75000},
       assumptions:[{name:"b",basis:"Hypothetical equipment lease"}]});
     expect(actual.ownerProvided).toBeUndefined();
   });
   it("does not turn incomplete input into an actual complete calculation",async()=>{
-    const actual=await calculateTools.calculate.execute({purpose:"Recorded partial costs",screen_number:"profit",
+    const actual=await calculateTools.calculate.execute({purpose:"Recorded partial costs",
       inputs:[input("a","query_data","rows.0.net_sales_cents"),input("b","get_cost_summary","knownTotalCents")],
       steps:[{id:"r",label:"r",op:"subtract",args:["a","b"]}]},
       ctx([turn[0],{...turn[1],result:{...costs,missing:["coverage_missing"]}}]));
@@ -193,7 +193,7 @@ describe("U3 receipt-bound exact research calculation",()=>{
  }) as {name:string;result:AgentToolResult};
  const row=[sql(older,"12345"),sql(newer,"67890")];
  const query=(receipt_id:string|null,tool="query_data",path="rows.0.net_sales_cents")=>({
-  purpose:"Exact prior daily amount",screen_number:"none",
+  purpose:"Exact prior daily amount",
   inputs:[{name:"amount",label:"Verified amount",tool,path,receipt_id,
    fact_key:null,owner_value:null,owner_unit:null}],
   steps:[{id:"result",label:"Amount",op:"sum",args:["amount"]}]
@@ -254,13 +254,13 @@ describe("U3 receipt-bound exact research calculation",()=>{
 
 describe("exact calculator continuation",()=>{
  it("reuses earlier unrounded results and refuses fabricated or out-of-turn receipts",async()=>{
-  const first=await calculateTools.calculate.execute({purpose:"Split money",screen_number:"none",
+  const first=await calculateTools.calculate.execute({purpose:"Split money",
    inputs:[input("a","query_data","rows.0.net_sales_cents"),said("b",3,"count")],
    steps:[{id:"split",label:"Split",op:"divide",args:["a","b"]}]},
    withOwner(ctx(turn),"Split between 3 people"));
   expect(first.result).toEqual({unit:"cents",valueCents:33333});
   const id=(first.evidence as {receipt_id:string}).receipt_id;
-  const next={purpose:"Recover original total",screen_number:"none",
+  const next={purpose:"Recover original total",
    inputs:[{...input("a","calculate","result"),receipt_id:id},said("b",3,"count")],
    steps:[{id:"whole",label:"Whole",op:"multiply",args:["a","b"]}]};
   const second=await calculateTools.calculate.execute(next,
@@ -271,7 +271,7 @@ describe("exact calculator continuation",()=>{
  });
  it("accepts a complete cost structure with more than twelve inputs without splitting the model call",async()=>{
   const inputs=Array.from({length:20},(_,i)=>({...input("cost"+i,null,null),assumption:{value:i+1,unit:"cents",basis:"Hypothetical scenario line "+i}}));
-  const result=await calculateTools.calculate.execute({purpose:"Alternative cost structure",screen_number:"profit",inputs,
+  const result=await calculateTools.calculate.execute({purpose:"Alternative cost structure",inputs,
    steps:[{id:"total",label:"Total",op:"sum",args:inputs.map(x=>x.name)}]},ctx([]));
   expect(result).toMatchObject({kind:"estimate",result:{unit:"cents",valueCents:210}});
   for(const line of result.explain as unknown[])expect(explainLineSchema.safeParse(line).success).toBe(true);

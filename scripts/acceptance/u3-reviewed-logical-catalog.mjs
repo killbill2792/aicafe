@@ -9,6 +9,10 @@ const manifest=JSON.parse(migration.slice(begin+tag.length,end));
 if(!Array.isArray(manifest)||!manifest.length)
  throw Error("U3 source admission manifest empty");
 const expectedLogical=new Map(manifest.map(source=>[source.table,source.fields]));
+expectedLogical.set("purchase_orders",[...expectedLogical.get("purchase_orders"),"proposal_id"]);
+expectedLogical.set("purchase_order_lines",[...expectedLogical.get("purchase_order_lines"),"quote_id","ordinal"]);
+expectedLogical.set("pantry_stock_purchases",[...expectedLogical.get("pantry_stock_purchases"),"line_id"]);
+
 expectedLogical.set("employees",[...expectedLogical.get("employees"),"pos_team_member_id","min_weekly_minutes","max_weekly_minutes","available_days","pos_display_name","pos_last_role","pos_last_wage_cents","pos_last_active"]);
 expectedLogical.set("scheduled_shifts",[...expectedLogical.get("scheduled_shifts"),"break_source","repeat_schedule_id","proposal_id","created_at","updated_at"]);
 expectedLogical.set("toast_location_mappings",["location_id","restaurant_guid","verified_at","toast_time_zone","closeout_hour","info_refreshed_at","toast_start_date"]);
@@ -83,5 +87,25 @@ expectedLogical.set("event_readiness_plans",["plan_id","status","start_date","en
 expectedLogical.set("event_readiness_links",["plan_id","event_id"]);
 expectedLogical.set("event_readiness_actions",["plan_id","action_index","area","action_text","reason","checklist_state","checklist_updated_at"]);
 expectedLogical.set("event_readiness_observations",["plan_id","business_date","coverage","event_activity","actual_cents","typical_cents","change_percent","baseline_days","hourly_coverage","evidence_source","recorded_at"]);
+
+expectedLogical.set("staff_communication_requests",["id","employee_id","kind","source_type","source_id","source_revision","title","prompt","status","due_at","created_at","updated_at"]);
+expectedLogical.set("staff_communication_messages",["id","employee_id","request_id","actor","response_code","body","channel","received_at"]);
+expectedLogical.set("staff_coordination_cases",["id","source_kind","case_kind","employee_id","location_id","role_needed","from_date","to_date","state","decision","revision","next_check_at","created_at","updated_at"]);
+expectedLogical.set("staff_coordination_evidence",["id","case_id","source_kind","source_id","source_revision","observed_at"]);
+expectedLogical.set("maintenance_cases",["id","status","equipment_label","reported_symptom","severity","maintenance_stage","repair_verified","external_sent","reported_at","due_at","created_at","updated_at"]);
+expectedLogical.set("maintenance_case_events",["id","task_id","kind","actor_kind","source_kind","working_confirmed","occurred_at","created_at"]);
+
+expectedLogical.set("operating_tasks",["id","agent_id","kind","entity_type","entity_id","status","confidence","origin","due_local_date","due_local_time","due_timezone","due_at","created_at","resolved_at","updated_at","title","subject_date"]);
+expectedLogical.set("alerts",["id","kind","impact_cents","status","created_at","resolved_at","subject_date"]);
+expectedLogical.set("supervisor_proposals",["id","thread_id","capability_id","capability_version","revision","status","created_at","updated_at","approved_at","committed_at","manual_confirmed_at","monitoring_start_date","monitor_checked_at","product_name","old_price_cents","new_price_cents","duration_days","supplier_name","currency_code","needed_by","subtotal_cents"]);
+expectedLogical.set("supplier_proposal_lines",["proposal_id","line_index","quote_id","ingredient_id","item_name","needed_base_quantity","base_unit","packs","pack_quantity","pack_unit","price_cents","line_subtotal_cents","quoted_on","delivery_on"]);
+expectedLogical.set("supervisor_effect_attempts",["id","proposal_id","authorization_kind","business_date","state","has_receipt","created_at","verified_at","supplier_po_recovery_checked_at"]);
+expectedLogical.set("supervisor_reports",["id","proposal_id","status","generated_at","recommendation","covered_days","observed_revenue_cents","realized_revenue_difference_cents","source"]);
+expectedLogical.set("supervisor_monitor_windows",["id","monitor_kind","source_id","window_index","start_at","end_at","actual_final_close_at","coverage_status","units","revenue_cents","unknown_time_lines","evaluation_status","report_revision","created_at","updated_at","product_name","old_price_cents","new_price_cents","publication_version","interrupted_at","final_due"]);
+expectedLogical.set("purchase_order_dispatches",["id","purchase_order_id","proposal_id","po_revision","state","reserved_at","provider_accepted_at","has_provider_receipt","created_at"]);
+expectedLogical.set("purchase_order_channel_reports",["id","purchase_order_id","channel","outcome","note","reported_at"]);
+expectedLogical.set("purchase_order_events",["id","purchase_order_id","event_sequence","event_kind","proposal_id","occurred_at"]);
+expectedLogical.set("cafe_supplier_order_contacts",["id","supplier_id","channel","verified_at","revoked_at","created_at","updated_at"]);
+expectedLogical.set("supplier_po_draft_replacements",["previous_id","replacement_id","created_at"]);
 
 export {manifest,expectedLogical};

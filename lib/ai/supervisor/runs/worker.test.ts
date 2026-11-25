@@ -389,8 +389,7 @@ it("stores only reviewed canonical read selectors; never arbitrary source conten
  expect(recoverableReadSelector("get_profit",{period:"today",ownerInputs:{netSalesCents:123}}, {from:"2026-11-19",to:"2026-11-19"})).toBeNull();
     const period={from:"2026-11-19",to:"2026-11-19"};
     expect(recoverableReadSelector("query_data",{official_metric:{id:"profit",period_mode:null,
-      profit_period:"today"}},period)).toEqual({official_metric:{id:"profit",period_mode:null},
-      date_from:period.from,date_to:period.to});
+      profit_period:"today"}},period)).toBeNull();
     expect(recoverableReadSelector("query_data",{sql:"SELECT * FROM orders"},period)).toBeNull();
     expect(recoverableReadSelector("query_data",{official_metric:{id:"profit",period_mode:null,
       profit_owner_inputs:{netSalesCents:123}}},period)).toBeNull();
@@ -401,29 +400,28 @@ it("stores only reviewed canonical read selectors; never arbitrary source conten
 
 it("refreshes a prior scoped read before the next model request and charges the slice tool budget",async()=>{
  const trace:string[]=[];
- const getCurrentStaff=vi.fn(async()=>({available:true,value:{count:2,people:[],asOf:"2026-11-19T00:00:00Z"},quality:{missingInputs:[]}}));
- const getStaffAttendance=vi.fn(async()=>({available:true,value:{attendanceTracked:true,onClockCount:2},quality:{missingInputs:[]}}));
- const context={timezone:"UTC",asOf:"2026-11-19",locale:"en",tools:{getCurrentStaff,getStaffAttendance},canonicalData:async()=>({businessId:"aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",db:{} as never})} as unknown as AgentToolContext;
+ const readPermissions=vi.fn(async()=>[]);
+ const context={timezone:"UTC",asOf:"2026-11-19",locale:"en",tools:{},readPermissions,canonicalData:async()=>({businessId:"aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",db:{} as never})} as unknown as AgentToolContext;
  const checkpoint:import("./contracts").OwnerRunCheckpoint={
    assertLive:async()=>{trace.push("fenced");},beginProvider:async()=>{trace.push("reserve");},
    endProvider:async()=>{},beginTool:async()=>null,endTool:async()=>{},
-   resumeContext:async()=>null,readReferences:()=>[{name:"get_staff",selector:{}}],
+   resumeContext:async()=>null,readReferences:()=>[{name:"get_staff",selector:{}},{name:"query_data",selector:{official_metric:{id:"profit"}}},{name:"get_supervisor_permissions",selector:{}}],
    canYield:()=>true,yieldForRetry:async()=>true,
  };
  const provider:AgentProvider=async function*(params){
    trace.push("transport");
    const items=params.input as Array<Record<string,unknown>>;
-   const call=items.find(x=>x.type==="function_call"&&x.name==="query_data");
+   const call=items.find(x=>x.type==="function_call"&&x.name==="get_supervisor_permissions");
    const output=items.find(x=>x.type==="function_call_output"&&x.call_id===call?.call_id);
-   expect(JSON.parse(String(output?.output))).toMatchObject({source:"current_staff",count:2,missing:[]});
-   yield {type:"response.output_text.delta",delta:"Two people are working."};
+   expect(JSON.parse(String(output?.output))).toMatchObject({source:"supervisor_mandates",permissions:[],missing:[]});
+   yield {type:"response.output_text.delta",delta:"No standing permissions."};
    yield {type:"response.completed",response:{usage:{input_tokens:30,output_tokens:4,input_tokens_details:{cached_tokens:0}}}};
  };
- const result=await runAgentTurn({ownerText:"Continue the staffing report",context,provider,checkpoint});
- expect(getCurrentStaff).toHaveBeenCalledOnce();expect(getStaffAttendance).toHaveBeenCalledOnce();
+ const result=await runAgentTurn({ownerText:"Continue checking permissions",context,provider,checkpoint});
+ expect(readPermissions).toHaveBeenCalledOnce();
  expect(trace.slice(0,4)).toEqual(["fenced","fenced","reserve","transport"]);
  expect(result.usage.toolCalls).toBe(1);
- expect(result.results).toContainEqual(expect.objectContaining({source:"current_staff",count:2}));
+ expect(result.results).toContainEqual(expect.objectContaining({source:"supervisor_mandates",permissions:[]}));
 });
 
 describe("Codex P1: real loop pre-dispatch rejection and matched owner authorization",()=>{

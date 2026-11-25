@@ -10,7 +10,6 @@ import {completeResearchAttempts} from "../researchRecovery";
 const name=z.string().regex(/^[a-z][a-z0-9_]{0,39}$/u);
 const calculateInput=z.strictObject({
   purpose:z.string().trim().min(1).max(120),
-  screen_number:z.string().trim().min(1).nullable().optional(),
   inputs:z.array(z.strictObject({
     name,label:z.string().trim().min(1).max(50),
     tool:z.string().max(64).nullable(),
@@ -139,9 +138,9 @@ export const calculateTools={
   calculate:{
     agentId:"leo" as const,schema:calculateInput,
     description:"Perform exact traceable arithmetic (+ − × ÷, sum, percent_of) over verified authorized inputs. SQL may already have performed the needed arithmetic; do not repeat it unnecessarily. "+
-      "screen_number describes the metric topic, not permission or proof of official screen parity. Use the actual café-specific inputs and shared metric definition for official comparisons; label independently chosen assumptions and alternative definitions distinctly. "+
+      "Independently chosen assumptions and alternative definitions are not official screen values; label their basis accurately. "+
       "Each input reads ONE number: either tool + path (dot path into the exact tool result, e.g. rows.0.net_sales_cents), "+
-      "For SQL rows use the exact evidence.receipt_id and typed numeric column, e.g. rows.0.amount. For an official shared definition returned by query_data, its evidence.receipt_id selects that particular observation even when later queries use the same field name. For an earlier calculator result use tool calculate, its exact evidence.receipt_id and path result or steps.<zero-based index>; this preserves the unrounded value. Otherwise set receipt_id to null. "+
+      "For SQL rows use the exact evidence.receipt_id and typed numeric column, e.g. rows.0.amount. For an earlier calculator result use tool calculate, its exact evidence.receipt_id and path result or steps.<zero-based index>; this preserves the unrounded value. Otherwise set receipt_id to null. "+
       "or fact_key (a saved owner fact, including a question-card answer), "+
       "or owner_value + owner_unit for a number the owner said in chat (cents for money, 20 for 20%, plain count). "+
       "For hypothetical scenarios only, provide assumption {value,unit,basis}; disclose that it is hypothetical, not observed or owner-provided. Set unused fields to null. Never invent a recorded value. Say You told me for owner numbers. "+
@@ -153,7 +152,10 @@ export const calculateTools={
       const provided=Array.isArray(untrusted.inputs)?untrusted.inputs.map(item=>
         item&&typeof item==="object"&&!Array.isArray(item)?
         {receipt_id:null,assumption:null,...item}:item):untrusted.inputs;
-      const p=calculateInput.parse({...untrusted,inputs:provided});
+      // Historical recorded calls may contain the retired topic label; ignore it.
+      const {screen_number:_retiredTopic,...general}=untrusted;
+      void _retiredTopic;
+      const p=calculateInput.parse({...general,inputs:provided});
       const scoped=ctx as CalcContext;
       const turn=completeResearchAttempts((scoped.turnResults?.()??[]).filter(r=>r.name!=="ask_owner"));
       const facts=scoped.savedOwnerFacts??[];
@@ -285,7 +287,6 @@ export const calculateTools={
           [{value:resultShown.quantity,unit:"count" as const}]:[];
       const result:AgentToolResult={source:"calculate",period,agentId:"leo",missing:partial?["incompleteCalculationInputs"]:[],numberEstimates,
         evidence:{receipt_id:randomUUID(),authority:"exact_arithmetic_from_verified_inputs"},
-        metric_topic:p.screen_number??"none",metric_basis:"independent_calculation",
         ...(inputs.some(i=>i.from==="assumption")?{assumptions:inputs.filter(i=>i.from==="assumption").map(i=>({name:i.name,basis:i.ref}))}:{}),
         kind:estimate?"estimate":"calculation",purpose:p.purpose,formula:expr.get(run.result.id),
         inputs:inputs.map(i=>({name:i.name,label:i.label,from:i.from,ref:i.ref,unit:unitName[i.value.unit],...shownOf.get(i.name)})),
