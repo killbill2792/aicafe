@@ -61,9 +61,9 @@ function RoutineDraft({block,threadId,disabled}:{block:unknown;threadId?:string;
     <p className="text-[0.875rem] text-ink-muted">{when} · {d.localTime}</p>
     <div className="mt-3 flex flex-wrap gap-2">
       <button type="button" onClick={()=>void save()} disabled={busy||disabled||!threadId}
-        className="min-h-11 max-w-full rounded-full bg-accent px-4 text-[0.9375rem] font-medium text-on-accent disabled:opacity-50">{copy.save}</button>
+        className="min-h-[max(56px,3.5rem)] max-w-full rounded-full bg-accent px-4 text-[0.9375rem] font-medium text-on-accent disabled:opacity-50">{copy.save}</button>
       <button type="button" onClick={()=>setDismissed(true)} disabled={busy}
-        className="min-h-11 rounded-full px-4 text-[0.9375rem] text-ink-muted hover:bg-surface2">{copy.notNow}</button>
+        className="min-h-[max(48px,3rem)] rounded-full px-4 text-[0.9375rem] text-ink-muted hover:bg-surface2">{copy.notNow}</button>
     </div>
     {error&&<p role="alert" className="mt-2 text-[0.875rem] text-neg">{error}</p>}
   </section>;

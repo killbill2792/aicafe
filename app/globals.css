@@ -116,7 +116,7 @@ html[data-theme="glass"] body {
   background: radial-gradient(ellipse at 55% 100%, rgb(var(--c-accent2) / .34), transparent 62%),
               radial-gradient(ellipse at 8% 105%, rgb(var(--c-accent) / .16), transparent 55%);
   background-size: 130% 115%;
-  animation: supervisor-landing-glow 14s ease-in-out infinite alternate;
+  animation: supervisor-landing-glow 4s ease-in-out 1 both;
 }
 @keyframes supervisor-landing-glow {
   from { background-position: 0% 100%; opacity: .65; }
@@ -148,14 +148,14 @@ html[data-theme="glass"] body {
 .supervisor-landing-cup svg path:nth-child(3) {
   transform-box: fill-box;
   transform-origin: center;
-  animation: supervisor-landing-vapor 3.6s ease-in-out infinite;
+  animation: supervisor-landing-vapor 1.4s ease-in-out 3 both;
 }
 .supervisor-landing-cup svg path:nth-child(3) {
-  animation-delay: -.9s;
+  animation-delay: .18s;
 }
 @keyframes supervisor-landing-vapor {
-  0%, 100% { transform: translate(0, 1px); opacity: .55; }
-  50% { transform: translate(1px, -3px); opacity: 1; }
+  0%, 100% { transform: translate(0, 0); opacity: .85; }
+  50% { transform: translate(1px, -3px); opacity: .55; }
 }
 @media (prefers-reduced-motion: reduce) {
   .supervisor-shell:has(.supervisor-landing)::before,

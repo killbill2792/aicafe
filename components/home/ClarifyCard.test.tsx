@@ -54,11 +54,12 @@ describe("clarify choice card",()=>{
    expect(pricingOtherResponse("8,360",[{value:"bills-monthly"}],c)).toBe(c.pricingBillsPrefix+": 8,360");
   }
  });
- it("renders 44px full-width options and RTL in Arabic",()=>{
+ it("renders at least 48px full-width options and RTL in Arabic",()=>{
   const markup=renderToStaticMarkup(createElement(ClarifyCard,{block,locale:"ar",copy,
    state:"active",choice:null,disabled:false,onSend:vi.fn()}));
   expect(markup).toContain('dir="rtl"');
-  expect(markup).toContain("min-h-11");
+  expect(markup).toContain("min-h-[max(48px,3rem)]");
+  expect(markup).not.toContain("min-h-11");
   expect(markup).toContain("w-full");
   expect(markup).toContain("Latte — Iced");
  });

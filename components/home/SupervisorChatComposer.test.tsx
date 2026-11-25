@@ -188,7 +188,21 @@ describe("decorative Supervisor landing", () => {
     expect(source).toContain('<CafeActivity brewing={false}/>');
     expect(css).toContain(".supervisor-shell:has(.supervisor-landing)::before");
     expect(css).toContain("pointer-events: none");
+    expect(css).toContain("supervisor-landing-glow 4s ease-in-out 1 both");
+    expect(css).toContain("supervisor-landing-vapor 1.4s ease-in-out 3 both");
+    expect(css).not.toMatch(/animation:\s*supervisor-landing-\w+[^;]*infinite/);
     expect(css).toMatch(/@media \(prefers-reduced-motion: reduce\)\s*\{\s*\.supervisor-shell:has\(\.supervisor-landing\)::before/);
     expect(source).toContain("grid-cols-[3rem_minmax(0,1fr)_3rem_3rem]");
+  });
+});
+
+describe("consequential control target sizes", () => {
+  it("keeps approval and clarification targets at least 48 CSS pixels even at small text size", () => {
+    for (const file of ["ClarifyCard.tsx", "SupervisorProposalCard.tsx", "SupervisorRoutineInlineCard.tsx"]) {
+      const source = readFileSync("components/home/" + file, "utf8");
+      expect(source).not.toContain("min-h-11");
+      expect(source).toContain("min-h-[max(48px,3rem)]");
+      expect(source).toContain("min-h-[max(56px,3.5rem)]");
+    }
   });
 });
