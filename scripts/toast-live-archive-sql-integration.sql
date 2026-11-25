@@ -159,4 +159,44 @@ BEGIN
   'a staged, not yet imported order is not shown as live data');
 END $staged$;
 
+
+-- Canonical writer: one open order, repeat, corrected amount, stale delivery,
+-- terminal-page checkpoint and shared current summary. Synthetic, rolled back.
+DO $canonical$
+DECLARE
+ b uuid:='eeeeeeee-1111-4eee-8eee-eeeeeeeeee10';r uuid:='eeeeeeee-1111-4eee-8eee-eeeeeeeeee11';
+ loc uuid:='eeeeeeee-1111-4eee-8eee-eeeeeeeeee12';ord uuid:='eeeeeeee-1111-4eee-8eee-eeeeeeeeee13';
+ d date:=((now() at time zone 'America/Los_Angeles')-interval '4 hours')::date;
+ n uuid; p jsonb; projection jsonb; revision jsonb; corrected jsonb; receipt jsonb; snapshot jsonb;
+ s timestamptz:=now()-interval '7 minutes';e timestamptz:=now()-interval '2 minutes';
+ refused boolean;
+BEGIN
+ perform set_config('request.jwt.claim.role','service_role',true);
+ insert into public.businesses(id,name,is_demo,timezone) values(b,'Canonical live test',false,'America/Los_Angeles');
+ insert into public.locations(id,business_id,name) values(loc,b,'Test location');
+ perform public.toast_save_configuration(b,'https://ws-api.toasttab.com','canonical_client','synthetic_ciphertext',
+  jsonb_build_array(jsonb_build_object('location_id',loc,'restaurant_guid',r)));
+ update public.toast_location_mappings set verified_at=now(),toast_time_zone='America/Los_Angeles',closeout_hour=4 where business_id=b;
+ p:=jsonb_build_object('guid',ord,'businessDate',to_char(d,'YYYYMMDD')::integer,'modifiedDate',e,'checks','[]'::jsonb);
+ projection:='{"netSalesCents":1000,"grossSalesCents":1000,"discountsCents":0,"refundsCents":0,"tipCents":0,"orders":1,"openChecks":1,"unparsedOrders":0,"items":[],"observedAt":null}'::jsonb;
+ revision:=jsonb_build_object('day',d,'payload',p,'projection',projection);
+ perform pg_temp.assert_true(public.toast_ingest_order_revisions(b,r,jsonb_build_array(revision))=1,'first canonical order saved');
+ perform pg_temp.assert_true(public.toast_ingest_order_revisions(b,r,jsonb_build_array(revision))=0,'identical canonical order ignored');
+ perform pg_temp.assert_true(public.toast_changed_order_days(b,r,jsonb_build_array(revision))='[]'::jsonb,'unchanged evidence cannot create another repair');
+ corrected:=jsonb_set(jsonb_set(revision,'{payload,modifiedDate}',to_jsonb(e+interval '1 minute')),'{projection,netSalesCents}','1500'::jsonb);
+ perform pg_temp.assert_true(public.toast_ingest_order_revisions(b,r,jsonb_build_array(corrected))=1,'new order revision applied');
+ perform pg_temp.assert_true(public.toast_ingest_order_revisions(b,r,jsonb_build_array(revision))=0,'older source version ignored');
+ n:=public.toast_claim_poll(b,r,'orders');
+ receipt:=public.toast_commit_canonical_order_page(b,r,n,s,e,1,'[]'::jsonb,false,d);
+ perform pg_temp.assert_true((receipt->>'complete')::boolean,'bootstrap completes');
+ receipt:=public.toast_commit_canonical_order_page(b,r,n,s,e,1,'[]'::jsonb,false,null);
+ perform pg_temp.assert_true((select canonical_order_poll_at=e and canonical_order_poll_from=s from public.toast_sync_health where business_id=b and restaurant_guid=r),'canonical coverage committed');
+ snapshot:=public.toast_refresh_canonical_live(b);
+ perform pg_temp.assert_true((snapshot->>'netSalesCents')::integer=1500 and (snapshot->>'openChecks')::integer=1,'shared provisional summary includes revised open order');
+ refused:=false;
+ begin perform public.toast_commit_canonical_order_page(b,r,gen_random_uuid(),s,e,1,'[]'::jsonb,false,null);
+ exception when others then refused:=true;end;
+ perform pg_temp.assert_true(refused,'invalid worker lease cannot advance cursor');
+END $canonical$;
+
 ROLLBACK;
