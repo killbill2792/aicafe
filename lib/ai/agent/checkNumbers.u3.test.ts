@@ -80,6 +80,9 @@ describe("U3 SQL source receipts in numeric claim verification",()=>{
   const misleadingAlias={...duration,rows:[{quantity:"7"}],evidence:{...(duration.evidence as object),column_units:{quantity:"hours"}}};
   expect(checkNumbers("There were 7 orders.","",[misleadingAlias],"en")).not.toEqual([]);
   expect(checkNumbers("The recorded duration was 7 minutes.","",[duration],"en")).not.toEqual([]);
+  const seconds={...duration,evidence:{...(duration.evidence as object),column_units:{elapsed:"seconds"}}};
+  expect(checkNumbers("The recorded duration was 7 seconds.","",[seconds],"en")).toEqual([]);
+  expect(checkNumbers("The recorded duration was 7 seconds.","",[count],"en")).not.toEqual([]);
  });
  it("verifies a stored basis-point rate in percentage units",()=>{
   const base=receipt();
