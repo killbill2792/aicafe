@@ -1,14 +1,11 @@
 import "server-only";
 import type {SupabaseClient} from "@supabase/supabase-js";
 import {z} from "zod";
-import {readToastTodaySoFar,type TodaySoFarRead} from "@/lib/pos/toast/todaySoFar.server";
-import {archiveLiveToastOrders} from "@/lib/pos/toast/liveArchive.server";
+import type {TodaySoFarRead} from "@/lib/pos/toast/todaySoFar.server";
 import {currentToastBusinessDay,type TodaySoFar} from "@/lib/pos/toast/todaySoFar";
 import {cafeToday} from "@/lib/metrics/core/clock";
 
-/** The ONE path for "today so far": a live Toast reading saved every 15
- * minutes (cron) or when the chat needs a fresher one. Home and the chat both
- * read this saved reading, so they always show the same number. */
+/** The one shared provisional summary published by the Toast coordinator. */
 export const TODAY_LIVE_FRESH_MS=15*60_000;
 const readingSchema=z.object({provisional:z.literal(true),businessDate:z.iso.date(),readAt:z.string(),
  netSalesCents:z.number().int(),grossSalesCents:z.number().int(),discountsCents:z.number().int(),
@@ -49,36 +46,17 @@ export async function currentTodayBusinessDay(db:SupabaseClient,businessId:strin
  const cafe=await db.from("businesses").select("timezone").eq("id",businessId).maybeSingle();
  return !cafe.error&&cafe.data?.timezone?cafeToday(String(cafe.data.timezone),now):null;
 }
-/** A fresh saved reading for the CURRENT business day, else a new live read from
- * Toast (saved for everyone). A reading from before closeout is never reused.
- * keepOrders (the 15-minute job only): always download fresh, whatever Home or the
- * chat read recently, and file today's finished orders from that same download
- * into the one-record-per-order archive, provisional until the 5 AM import. A saved
- * summary has no orders in it, so reusing one would leave today's orders unsaved.
- * Home and the chat leave it off so they stay fast. */
+/** Home and Luna read the one shared provisional snapshot. Never initiate a
+ * full-day Toast retrieval from a user question. If stale, preserve its true
+ * as-of and let the coordinator perform incremental recovery. */
 export async function todaySoFarForBusiness(admin:SupabaseClient,businessId:string,
  opts:{now?:Date;maxAgeMs?:number;keepOrders?:boolean}={}):Promise<TodaySoFarRead>{
  const now=opts.now??new Date();
  const [saved,businessDay]=await Promise.all([readSavedTodayLive(admin,businessId,now).catch(()=>null),
   currentTodayBusinessDay(admin,businessId,now).catch(()=>null)]);
- if(!opts.keepOrders&&saved&&businessDay&&saved.value.businessDate===businessDay&&
-  saved.ageMs<(opts.maxAgeMs??TODAY_LIVE_FRESH_MS))
-  return {available:true,value:saved.value};
- const read=await readToastTodaySoFar(admin,businessId,now,undefined,opts.keepOrders
-  ?async(restaurantGuid,businessDate,pages)=>{
-   await archiveLiveToastOrders(admin,businessId,restaurantGuid,businessDate,pages);
-  }:undefined);
- // Only a complete reading replaces the saved one.
- if(read.available&&!read.value.locationsFailed&&!read.value.truncated)
-  await saveTodayLive(admin,businessId,read.value).catch(()=>{});
- // Toast can't be read right now (or the café has no Toast connection of its own):
- // an older reading for the same business day is still today's best number. Its
- // readAt says how old it is.
- if(!read.available&&saved&&businessDay&&saved.value.businessDate===businessDay)
-  return {available:true,value:saved.value};
- return read;
+ if(saved&&businessDay&&saved.value.businessDate===businessDay)return {available:true,value:saved.value};
+ return {available:false,missing:["todayLiveReadFailed"]};
 }
-
 /** Home's bounded attempt when no current-day saved reading exists.
  * Delegates to the ONE live reader; never introduces another Toast query. */
 export async function readHomeTodayLiveFallback(admin:SupabaseClient,businessId:string,timeoutMs=4_000):

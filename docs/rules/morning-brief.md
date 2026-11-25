@@ -9,8 +9,7 @@ A brief that never sends is worse than a brief with one line missing.
   whatever `lastOwnerMessageAt` is. A later free-text follow-up goes on WhatsApp only inside the window
   (`whatsappFreeTextAllowed` / `withinWhatsAppServiceWindow` in `lib/whatsapp/supervisor.ts`, the only
   implementation); outside it, skip WhatsApp or use a template.
-- **Menu labeling is its own job** (`/api/cron/menu-labels`), independent of the brief and of WhatsApp.
-  A labeling failure is logged and retried next run; it never blocks anything.
+- **Menu labeling follows a successfully verified published menu version**, independent of the brief and WhatsApp. The existing classifier requests only unlabeled categories; a failed label attempt retries against the same version without a full catalog re-download.
 - **Never block on a missing extra.** Net sales, items sold, best seller and one event line are always
   filled; a missing fact says plainly that it is not in yet, never a zero. Drink-only counts only when every
   sold category is labeled, otherwise all items. Events: today's (any source; verification only softens the

@@ -90,6 +90,9 @@ export function scenariosForPath(path) {
       path.startsWith("lib/auth/") ||
       path.startsWith("lib/supabase/") ||
       path === "messages/en.json" || GLASS_RESTYLE.has(path)) return ALL;
+  // Keep the existing Glass ALL classification for ToastConnectionForm.
+  if (path === "components/more/ToastWebhookSetup.tsx" ||
+      path === "app/[locale]/more/toast/page.tsx") return ["home"];
   // The owner More page contains Gmail controls and is a restricted owner
   // navigation destination for workers. Require BOTH real browser journeys.
   if (path === "app/[locale]/more/page.tsx") return ["staff","gmail"];

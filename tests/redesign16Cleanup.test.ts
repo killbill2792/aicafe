@@ -280,8 +280,16 @@ describe("redesign 16 cleanup integration", () => {
         "pushBlocked","pushUnsupported","pushEnabled","pushError",
         "pushLoading"].map(key=>"Operations."+key),
     ]);
+    // Only the four new Toast controls are English-only, per AGENTS.md.
+    const toastWebhookEnglishOnly=new Set(["webhookEnabled","webhookActivate","webhookDeactivate","webhookFallback"].map(key=>"ToastConnect."+key));
     const english=localeMessages("en"),spanish=localeMessages("es"),
       arabic=localeMessages("ar");
+    for(const key of toastWebhookEnglishOnly){
+      const [namespace,field]=key.split(".");
+      expect(english[namespace]?.[field],key).toEqual(expect.any(String));
+      expect(spanish[namespace]?.[field],key).toBeUndefined();
+      expect(arabic[namespace]?.[field],key).toBeUndefined();
+    }
     for(const key of u4EnglishOnly){
       const [namespace,field]=key.split(".");
       expect(english[namespace]?.[field],key).toEqual(expect.any(String));
@@ -293,7 +301,7 @@ describe("redesign 16 cleanup integration", () => {
       return Object.entries(messages)
         .flatMap(([namespace, values]) => Object.keys(values).map(key => `${namespace}.${key}`))
         .filter(key => !englishOnly.test(key) && !approvedTask14bSet.has(key)
-          && !approvedTask14cSet.has(key) && !approvedTask15bSet.has(key) && !approvedTask16aSet.has(key) && !approvedU4RoutineSet.has(key) && !approvedTask16cSet.has(key) && !approvedTask14eSet.has(key) && !approvedCrewSelfServiceSet.has(key) && !staffChannelEnglishOnlySet.has(key) && !staffQuestionEnglishSet.has(key) && !task16e.has(key) && !u4EnglishOnly.has(key) && key!=="Ui.textSizes"
+          && !approvedTask14cSet.has(key) && !approvedTask15bSet.has(key) && !approvedTask16aSet.has(key) && !approvedU4RoutineSet.has(key) && !approvedTask16cSet.has(key) && !approvedTask14eSet.has(key) && !approvedCrewSelfServiceSet.has(key) && !staffChannelEnglishOnlySet.has(key) && !staffQuestionEnglishSet.has(key) && !task16e.has(key) && !u4EnglishOnly.has(key) && !toastWebhookEnglishOnly.has(key) && key!=="Ui.textSizes"
           && !["runAwaitingOwner","runAwaitingOwnerNext","runCancelled","runRetrying","cancelAction","cancelPending","cancelUncertain","cancelCompleted","cancelFailed"].some(name=>key==="SupervisorDurableWork."+name)
           && !/^SupervisorUsage\.(?:help|max|month|proactive|requests|title|unavailable)$/.test(key))
         .sort();

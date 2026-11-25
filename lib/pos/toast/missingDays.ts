@@ -3,7 +3,7 @@ import {ToastApiError} from "./client";
 import {addCalendarDays} from "./scheduleDates";
 
 /** Finds Toast days that are missing or incomplete and re-pulls only those
- * days, a few per hour, newest first. A day is missing when it has no import,
+ * days, a few per scheduled repair pass, newest first. A day is missing when it has no import,
  * a failed import, an incomplete import, or orders but no saved payments (so
  * no card fees). Re-tries wait longer each time instead of re-pulling every
  * hour: 1h after the first try in the last three days, then 2h, 4h, 8h,
@@ -12,6 +12,7 @@ export const MISSING_DAY_LOOKBACK_DAYS=84;
 export const MISSING_DAYS_PER_RUN=5;
 const RETRY_WINDOW_MS=72*3600_000;
 const MAX_WAIT_MS=24*3600_000;
+const MAX_AUTOMATIC_REPAIR_ATTEMPTS=5;
 const ACTIVE=new Set(["queued","running","paused_rate_limited"]);
 
 export type MissingReason="not_imported"|"incomplete"|"no_fees";
@@ -48,6 +49,9 @@ export function mayRetryDay(date:string,runs:RunRow[],now:number){
  const covering=runs.filter(r=>r.requested_from!==null&&r.requested_from<=date&&
   (r.requested_to??r.requested_from)>=date);
  if(covering.some(r=>ACTIVE.has(r.state)))return false;
+ // Do not forget a permanently unrepairable day when the backoff window ages out.
+ // A genuine revision or explicit owner request still uses the separate repair path.
+ if(covering.filter(r=>r.requested_from===date&&r.requested_to===date&&r.started_at).length>=MAX_AUTOMATIC_REPAIR_ATTEMPTS)return false;
  const tries=covering.map(r=>r.started_at?Date.parse(r.started_at):NaN)
   .filter(t=>Number.isFinite(t)&&now-t<RETRY_WINDOW_MS);
  if(!tries.length)return true;

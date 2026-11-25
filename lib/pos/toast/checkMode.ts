@@ -32,7 +32,13 @@ export async function detectToastCheckMode(db:SupabaseClient,businessId:string,
  // Capture BEFORE the asynchronous probe; a re-verified credential has a
  // different generation and must survive this provider request's failure.
  const usedVerification=cred?.verified_at??null;
- if(!cred){await setToastCheckMode(db,businessId,"internal","no_analytics_credentials");return "internal";}
+ if(!cred){
+  const {data:existing,error:stateError}=await db.from("toast_api_credentials").select("toast_check_mode,mode_reason").eq("business_id",businessId).single();
+  if(stateError)throw new ToastApiError("unavailable");
+  if(existing?.toast_check_mode!=="internal"||existing?.mode_reason!=="no_analytics_credentials")
+   await setToastCheckMode(db,businessId,"internal","no_analytics_credentials");
+  return "internal";
+ }
  const {data:mode,error:me}=await db.from("toast_api_credentials")
   .select("toast_check_mode,mode_checked_at").eq("business_id",businessId).single();
  if(me)throw new ToastApiError("unavailable");

@@ -7,7 +7,7 @@ export function localClock(now:Date,zone:string){
 }
 export function eligibleClosedDay(now:Date,zone:string,closeoutHour:number){
  const c=localClock(now,zone);
- return c.minutes>=(closeoutHour+1)*60?addCalendarDays(c.today,-1):null;
+ return c.minutes>=closeoutHour*60?addCalendarDays(c.today,-1):null;
 }
 export function deriveNextRunDay(run:{requested_from:string|null;requested_to:string|null;days_done:number}){
  if(!run.requested_from)return null;

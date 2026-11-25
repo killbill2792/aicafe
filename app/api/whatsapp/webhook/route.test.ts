@@ -48,7 +48,7 @@ describe("WhatsApp route",()=>{
     expect((await POST(request(event("wamid.other","bad-phone")))).status).toBe(403);
     expect(mocks.ingest).not.toHaveBeenCalled();
   });
-  it("commits every signed message and status before returning 200",async()=>{
+  it("ignores retired owner messages but commits every signed status before returning 200",async()=>{
     const fixture=event();
     const value=fixture.entry[0].changes[0].value as Record<string,unknown>;
     value.statuses=[{id:"wamid.sent1",status:"sent"},{id:"wamid.sent2",status:"delivered"}];
@@ -58,8 +58,7 @@ describe("WhatsApp route",()=>{
     }];
     const result=await POST(request(fixture));
     expect(result.status).toBe(200);
-    expect(mocks.ingest).toHaveBeenCalledTimes(2);
-    expect(mocks.ingest.mock.calls[1][0]).toMatchObject({wamid:"wamid.second",payload:"peak_today"});
+    expect(mocks.ingest).not.toHaveBeenCalled();
     expect(mocks.status).toHaveBeenCalledTimes(2);
   });
   it("accepts signed callbacks from an independent employee sender but never routes them as owner chat",async()=>{
@@ -141,8 +140,7 @@ describe("WhatsApp route",()=>{
       entry:[{changes:[...staff.entry[0].changes,...owner.entry[0].changes]}],
     };
     expect((await POST(request(combined))).status).toBe(200);
-    expect(mocks.ingest).toHaveBeenCalledOnce();
-    expect(mocks.ingest.mock.calls[0][0]).toMatchObject({wamid:"wamid.owner-message"});
+    expect(mocks.ingest).not.toHaveBeenCalled();
     expect(mocks.staffStatus).toHaveBeenCalledOnce();
     expect(mocks.status).toHaveBeenCalledOnce();
     expect(mocks.staffInbound).not.toHaveBeenCalled();
@@ -171,19 +169,23 @@ describe("WhatsApp route",()=>{
     });
     expect((await POST(request(event()))).status).toBe(200);
     expect((await POST(request(event()))).status).toBe(200);
-    expect(ids.size).toBe(1);
+    expect(ids.size).toBe(0);
   });
   it("unknown/revoked owner causes no AI dispatch or provider send",async()=>{
     mocks.ingest.mockResolvedValue("unauthorized");
     expect((await POST(request(event()))).status).toBe(200);
-    expect(mocks.ingest).toHaveBeenCalledOnce();
+    expect(mocks.ingest).not.toHaveBeenCalled();
     expect(mocks.status).not.toHaveBeenCalled();
   });
   it("returns 503 on persistence failure, allowing Meta replay",async()=>{
-    mocks.ingest.mockRejectedValueOnce(new Error("DB offline"));
-    expect((await POST(request(event()))).status).toBe(503);
-    expect((await POST(request(event()))).status).toBe(200);
-    expect(mocks.ingest).toHaveBeenCalledTimes(2);
+    mocks.status.mockRejectedValueOnce(new Error("DB offline"));
+    const fixture=event();
+    const value=fixture.entry[0].changes[0].value as Record<string,unknown>;
+    value.statuses=[{id:"wamid.sent",status:"delivered"}];
+    expect((await POST(request(fixture))).status).toBe(503);
+    expect((await POST(request(fixture))).status).toBe(200);
+    expect(mocks.status).toHaveBeenCalledTimes(2);
+    expect(mocks.ingest).not.toHaveBeenCalled();
   });
   it("rejects payloads exceeding maximum raw bytes",async()=>{
     const body=" ".repeat(128*1024+1);

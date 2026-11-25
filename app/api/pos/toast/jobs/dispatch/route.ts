@@ -2,6 +2,7 @@ import {verifyBearer} from "@/lib/security/bearer";
 import {NextResponse} from "next/server";
 import {createAdminSupabaseClient} from "@/lib/supabase/admin";
 import {pollToastLocation} from "@/lib/pos/toast/poll";
+import {pollToastOrderRevisions} from "@/lib/pos/toast/orderRecovery";
 import {stageToastCatalog,stageToastRoster} from "@/lib/pos/toast/operationalStaging";
 import {runToastOrderQueue} from "@/lib/pos/toast/orderQueue";
 import {ToastApiError} from "@/lib/pos/toast/client";
@@ -30,7 +31,7 @@ export async function POST(request:Request){
   else {
    if(item.kind==="orders"&&process.env.TOAST_JOBS_ENABLED==="true")
     await runToastOrderQueue(db);
-   result=await pollToastLocation(db,{...p,kind:item.kind});
+   result=item.kind==="orders"?await pollToastOrderRevisions(db,p):await pollToastLocation(db,{...p,kind:item.kind});
   }
  }catch(e){failure=e instanceof ToastApiError?e.category:"unavailable";}
  const {data:finished,error:finishError}=await db.rpc("toast_finish_due_sync",{

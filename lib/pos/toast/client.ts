@@ -152,8 +152,11 @@ export function createToastClient(db:SupabaseClient,businessId:string) {
     if(!response&&data)throw new ToastApiError("rate_limited",429,String(data));
   }
   async function request<T>(path:string,restaurantGuid:string,schema:z.ZodType<T>,
-     opts:{allowUnverified?:boolean;deadlineAt?:number;onResponse?:(meta:{status:number;nextPageToken:string|null})=>void}={}):Promise<T> {
+     opts:{allowUnverified?:boolean;deadlineAt?:number;stockSearchGuids?:string[];onResponse?:(meta:{status:number;nextPageToken:string|null})=>void}={}):Promise<T> {
     const guid=GUID.safeParse(restaurantGuid);
+    const search=opts.stockSearchGuids;
+    if(search&&(path!=="/stock/v1/inventory/search"||search.length===0||search.length>100||search.some(id=>!GUID.safeParse(id).success)))
+      throw new ToastApiError("invalid_response");
     if(!guid.success||!path.startsWith("/")||path.startsWith("//")||path.includes("..")||path.includes("://")||
       path.includes("#")||path.includes("\\"))
       throw new ToastApiError("unauthorized_location");
@@ -174,9 +177,9 @@ export function createToastClient(db:SupabaseClient,businessId:string) {
       await budget(credentials.client_id);
       let res:Response;
       try {
-        res=await fetch(origin+path,{method:"GET",redirect:"error",signal:AbortSignal.timeout(Math.max(1,Math.min(path.startsWith("/orders/v2/ordersBulk")?30000:12000,(opts.deadlineAt??Infinity)-Date.now()))),
+        res=await fetch(origin+path,{method:search?"POST":"GET",...(search?{body:JSON.stringify({guids:search})}:{}),redirect:"error",signal:AbortSignal.timeout(Math.max(1,Math.min(path.startsWith("/orders/v2/ordersBulk")?30000:12000,(opts.deadlineAt??Infinity)-Date.now()))),
           headers:{"Authorization":"Bearer "+bearer,"Toast-Restaurant-External-ID":guid.data,
-            "Accept":"application/json"}});
+            "Accept":"application/json",...(search?{"Content-Type":"application/json"}:{})}});
       }catch {if(attempt<4){await wait(500*2**attempt+Math.random()*200);continue;}throw new ToastApiError("unavailable");}
       if(res.status===429||res.headers.has("x-toast-ratelimit-remaining")&&Number(res.headers.get("x-toast-ratelimit-remaining"))<3)await budget(credentials.client_id,res);
       if(res.status===401&&!authRetry){

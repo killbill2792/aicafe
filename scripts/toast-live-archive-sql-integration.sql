@@ -30,7 +30,7 @@ BEGIN
     'appliedDiscounts',jsonb_build_array(jsonb_build_object('guid','eeeeeeee-1111-4eee-8eee-eeeeeeee0013',
      'name','Dental Students & Faculty','discountAmount',0.85)))),
    'payments',jsonb_build_array(jsonb_build_object('guid','eeeeeeee-1111-4eee-8eee-eeeeeeee0014',
-    'type','CREDIT','amount',7.65,'tipAmount',1)))));
+    'type','CREDIT','paymentStatus','CAPTURED','amount',7.65,'tipAmount',1)))));
  o1_tip:=jsonb_set(jsonb_set(o1,'{checks,0,payments,0,tipAmount}','2'::jsonb),
   '{modifiedDate}','"2026-11-03T22:00:00.000+0000"'::jsonb);
  o1_old:=jsonb_set(o1,'{modifiedDate}','"2026-11-03T20:00:00.000+0000"'::jsonb);
@@ -117,7 +117,16 @@ BEGIN
  perform pg_temp.assert_true((select count(*)=1 and bool_and(status='actual')
   from public.toast_records_for(b,d,d) where record_type='item_discount'),'after the import the AI reads it as actual');
 
- -- 9. An imported day is final: the live job does not write to it.
+ -- Capture endpoint evidence can supply a fee missing from the order payload.
+ perform set_config('request.jwt.claim.role','service_role',true);
+ perform pg_temp.assert_true(not public.toast_apply_verified_payment_fee(b,r,ord2,'eeeeeeee-1111-4eee-8eee-eeeeeeee0014',765,23),'wrong order cannot authorize the fee');
+ perform pg_temp.assert_true(public.toast_apply_verified_payment_fee(b,r,ord,'eeeeeeee-1111-4eee-8eee-eeeeeeee0014',765,23),'matching independently captured fee is applied');
+ perform pg_temp.assert_true(public.toast_apply_verified_payment_fee(b,r,ord,'eeeeeeee-1111-4eee-8eee-eeeeeeee0014',765,23),'replayed capture evidence is idempotent');
+ update public.toast_day_status set imported_at=now()+interval '1 second' where business_id=b and restaurant_guid=r and business_date=d;
+ perform pg_temp.assert_true((select original_processing_fee_cents=23 and fee_status='actual' and fee_basis='toast'
+  from public.toast_payment_facts where business_id=b and restaurant_guid=r and business_date=d
+   and payment_ref='eeeeeeee-1111-4eee-8eee-eeeeeeee0014'),'same captured payment retains provider fee when order copy omits it');
+  -- 9. An imported day is final: the live job does not write to it.
  n:=public.toast_archive_live_orders(b,r,d,jsonb_build_array(
   jsonb_set(o1_tip,'{modifiedDate}','"2026-11-05T00:00:00.000+0000"'::jsonb)));
  perform pg_temp.assert_true(n=0 and (select run_id=run_i and payload->>'modifiedDate'='2026-11-03T22:00:00.000+0000'
@@ -158,5 +167,120 @@ BEGIN
  perform pg_temp.assert_true(not exists(select 1 from public.toast_records_for(b,d,d) where order_ref=ord::text),
   'a staged, not yet imported order is not shown as live data');
 END $staged$;
+
+
+-- Canonical writer: one open order, repeat, corrected amount, stale delivery,
+-- terminal-page checkpoint and shared current summary. Synthetic, rolled back.
+DO $canonical$
+DECLARE
+ b uuid:='eeeeeeee-1111-4eee-8eee-eeeeeeeeee10';r uuid:='eeeeeeee-1111-4eee-8eee-eeeeeeeeee11';
+ loc uuid:='eeeeeeee-1111-4eee-8eee-eeeeeeeeee12';ord uuid:='eeeeeeee-1111-4eee-8eee-eeeeeeeeee13';
+ d date:=((now() at time zone 'America/Los_Angeles')-interval '4 hours')::date;
+ n uuid; p jsonb; projection jsonb; revision jsonb; corrected jsonb; receipt jsonb; snapshot jsonb;
+ s timestamptz:=now()-interval '7 minutes';e timestamptz:=now()-interval '2 minutes';
+ refused boolean;
+BEGIN
+ perform set_config('request.jwt.claim.role','service_role',true);
+ insert into public.businesses(id,name,is_demo,timezone) values(b,'Canonical live test',false,'America/Los_Angeles');
+ insert into public.locations(id,business_id,name) values(loc,b,'Test location');
+ perform public.toast_save_configuration(b,'https://ws-api.toasttab.com','canonical_client','synthetic_ciphertext',
+  jsonb_build_array(jsonb_build_object('location_id',loc,'restaurant_guid',r)));
+ update public.toast_location_mappings set verified_at=now(),toast_time_zone='America/Los_Angeles',closeout_hour=4 where business_id=b;
+ p:=jsonb_build_object('guid',ord,'businessDate',to_char(d,'YYYYMMDD')::integer,'modifiedDate',e,'checks','[]'::jsonb);
+ projection:='{"netSalesCents":1000,"grossSalesCents":1000,"discountsCents":0,"refundsCents":0,"tipCents":0,"orders":1,"openChecks":1,"unparsedOrders":0,"items":[],"observedAt":null}'::jsonb;
+ revision:=jsonb_build_object('day',d,'payload',p,'projection',projection);
+ perform pg_temp.assert_true(public.toast_ingest_order_revisions(b,r,jsonb_build_array(revision))=1,'first canonical order saved');
+ perform pg_temp.assert_true(public.toast_ingest_order_revisions(b,r,jsonb_build_array(revision))=0,'identical canonical order ignored');
+ perform pg_temp.assert_true(public.toast_changed_order_days(b,r,jsonb_build_array(revision))='[]'::jsonb,'unchanged evidence cannot create another repair');
+ corrected:=jsonb_set(jsonb_set(revision,'{payload,modifiedDate}',to_jsonb(e+interval '1 minute')),'{projection,netSalesCents}','1500'::jsonb);
+ perform pg_temp.assert_true(public.toast_ingest_order_revisions(b,r,jsonb_build_array(corrected))=1,'new order revision applied');
+ perform pg_temp.assert_true(public.toast_ingest_order_revisions(b,r,jsonb_build_array(revision))=0,'older source version ignored');
+ n:=public.toast_claim_poll(b,r,'orders');
+ receipt:=public.toast_commit_canonical_order_page(b,r,n,s,e,1,'[]'::jsonb,false,d);
+ perform pg_temp.assert_true((receipt->>'complete')::boolean,'bootstrap completes');
+ receipt:=public.toast_commit_canonical_order_page(b,r,n,s,e,1,'[]'::jsonb,false,null);
+ perform pg_temp.assert_true((select canonical_order_poll_at=e and canonical_order_poll_from=s from public.toast_sync_health where business_id=b and restaurant_guid=r),'canonical coverage committed');
+ snapshot:=public.toast_refresh_canonical_live(b);
+ perform pg_temp.assert_true((snapshot->>'netSalesCents')::integer=1500 and (snapshot->>'openChecks')::integer=1,'shared provisional summary includes revised open order');
+ refused:=false;
+ begin perform public.toast_commit_canonical_order_page(b,r,gen_random_uuid(),s,e,1,'[]'::jsonb,false,null);
+ exception when others then refused:=true;end;
+ perform pg_temp.assert_true(refused,'invalid worker lease cannot advance cursor');
+ -- A malformed row must not discard valid page-mates or certify the window.
+ corrected:=jsonb_set(jsonb_set(corrected,'{payload,modifiedDate}',to_jsonb(e+interval '90 seconds')),'{projection,netSalesCents}','1700'::jsonb);
+ receipt:=public.toast_commit_canonical_order_page(b,r,n,e-interval '2 minutes',e+interval '1 minute',1,jsonb_build_array(corrected),false,null,
+  jsonb_build_array(jsonb_build_object('order_guid',null,'source_index',2,'raw_sha256',repeat('a',64),'error_path','order_identity_or_business_date')));
+ perform pg_temp.assert_true((receipt->>'incomplete')::boolean and not (receipt->>'complete')::boolean,'malformed window not certified');
+ perform pg_temp.assert_true((select next_page=1 and jsonb_array_length(unparsed_pages->'1')=1 from public.toast_order_poll_progress where business_id=b and restaurant_guid=r),'durable exception and replay checkpoint');
+ perform pg_temp.assert_true((select canonical_order_poll_at=e from public.toast_sync_health where business_id=b and restaurant_guid=r),'coverage stays at last verified window');
+ snapshot:=public.toast_refresh_canonical_live(b);
+ perform pg_temp.assert_true((snapshot->>'netSalesCents')::integer=1700 and (snapshot->>'truncated')::boolean and (snapshot->>'unparsedOrders')::integer=1,'valid revision remains visible with explicit incomplete evidence');
+ receipt:=public.toast_commit_canonical_order_page(b,r,n,e-interval '2 minutes',e+interval '1 minute',1,jsonb_build_array(corrected),false,null);
+ perform pg_temp.assert_true((receipt->>'complete')::boolean and not exists(select 1 from public.toast_order_poll_progress where business_id=b and restaurant_guid=r),'corrected replay clears exception');
+ perform pg_temp.assert_true((select canonical_order_poll_at=e+interval '1 minute' from public.toast_sync_health where business_id=b and restaurant_guid=r),'only corrected full replay advances coverage');
+END $canonical$;
+
+
+-- A late correction coalesces durable work. A newer revision cannot be lost
+-- while the worker is assembling a checksum-proven local repair.
+DO $revision$
+DECLARE
+ b uuid:='eeeeeeee-1111-4eee-8eee-eeeeeeeeee20';r uuid:='eeeeeeee-1111-4eee-8eee-eeeeeeeeee21';
+ loc uuid:='eeeeeeee-1111-4eee-8eee-eeeeeeeeee22';ord uuid:='eeeeeeee-1111-4eee-8eee-eeeeeeeeee23';
+ d date:=((now() at time zone 'America/Los_Angeles')-interval '4 hours')::date-2;
+ base_run uuid;repair uuid;second uuid;original jsonb;changed jsonb;newer jsonb;orders jsonb;summary jsonb;work jsonb;outcome jsonb;refused boolean;
+BEGIN
+ perform set_config('request.jwt.claim.role','service_role',true);
+ insert into public.businesses(id,name,is_demo,timezone) values(b,'Revision repair test',false,'America/Los_Angeles');
+ insert into public.locations(id,business_id,name) values(loc,b,'Revision repair location');
+ perform public.toast_save_configuration(b,'https://ws-api.toasttab.com','revision_client','synthetic_ciphertext',
+  jsonb_build_array(jsonb_build_object('location_id',loc,'restaurant_guid',r)));
+ update public.toast_location_mappings set verified_at=now(),toast_time_zone='America/Los_Angeles',closeout_hour=4 where business_id=b;
+ original:=jsonb_build_object('guid',ord,'businessDate',to_char(d,'YYYYMMDD')::integer,
+  'modifiedDate',now()-interval '2 days','checks','[]'::jsonb);
+ insert into public.toast_sync_runs(business_id,restaurant_guid,kind,state,requested_from,requested_to,days_total)
+  values(b,r,'daily','running',d,d,1) returning id into base_run;
+ perform public.toast_stage_day_page(b,r,base_run,d,1,jsonb_build_array(original));
+ summary:=jsonb_build_object('order_count',0,'net_sales_cents',0,'gross_sales_cents',0,'discounts_cents',0,'refunds_cents',0,
+  'tax_cents',0,'tip_cents',0,'open_check_count',0,'unparsed_count',0,'service_charges_cents',0,'gratuity_cents',0,
+  'warnings','{}'::jsonb,'snapshot_sha256','fixture','voids','[]'::jsonb,'refund_facts','[]'::jsonb,'parsed_order_guids',jsonb_build_array(ord),'unparsed','[]'::jsonb);
+ orders:='[]'::jsonb;
+ perform public.toast_import_day(b,loc,r,d,orders,summary,base_run);
+ changed:=jsonb_set(original,'{modifiedDate}',to_jsonb(now()-interval '2 hours'));
+ repair:=public.toast_queue_order_revision(b,r,d,changed,true);
+ work:=public.toast_begin_revision_import(b,r,d,repair,false);
+ perform pg_temp.assert_true(work->'revision'->>'only'='true','complete prior day selects local revision repair');
+ newer:=jsonb_set(changed,'{modifiedDate}',to_jsonb(now()-interval '1 hour'));
+ second:=public.toast_queue_order_revision(b,r,d,newer,true);
+ perform pg_temp.assert_true(second=repair,'two updates coalesce into one existing run');
+ refused:=false;
+ begin perform public.toast_commit_revision_day(b,loc,r,d,orders,summary,repair,work->>'token',base_run,jsonb_build_array(jsonb_build_array(changed)));
+ exception when serialization_failure then refused:=true;end;
+ perform pg_temp.assert_true(refused,'stale source generation cannot commit');
+ work:=public.toast_begin_revision_import(b,r,d,repair,false);
+ perform pg_temp.assert_true(work->'revision'->'orders'->(ord::text)=newer,'latest complete provider revision retained');
+ outcome:=public.toast_commit_revision_day(b,loc,r,d,orders,summary,repair,work->>'token',base_run,jsonb_build_array(jsonb_build_array(newer)));
+ perform pg_temp.assert_true((outcome->>'orders')::integer=0,'existing guarded day writer committed local revision');
+ perform pg_temp.assert_true((select state='completed' and api_calls=0 and cursor='{}'::jsonb from public.toast_sync_runs where id=repair),'no provider full-day request or retained payload after commit');
+ perform pg_temp.assert_true((select count(*)=1 and bool_and(payload=newer) from public.toast_raw_records where business_id=b and entity_guid=ord),'one canonical archive row with latest revision');
+ update public.toast_day_status set recon_state='checked_internal',analytics_state='missing'
+  where business_id=b and restaurant_guid=r and business_date=d;
+ perform pg_temp.assert_true(public.toast_closeout_due(b,r,d,((d+1)::timestamp+interval '12 hours') at time zone 'America/Los_Angeles'),'final payment window remains due after early sales reconciliation');
+ insert into public.toast_optional_sync_state(business_id,restaurant_guid,operational_sources)
+  values(b,r,jsonb_build_object('final_payments',jsonb_build_object('completed_through',d)))
+  on conflict(business_id,restaurant_guid) do update set operational_sources=excluded.operational_sources;
+ perform pg_temp.assert_true(not public.toast_closeout_due(b,r,d,((d+1)::timestamp+interval '12 hours') at time zone 'America/Los_Angeles'),'successful day has no more closeout work');
+ update public.toast_optional_sync_state set operational_sources=jsonb_set(operational_sources,'{final_payments,pending_details}',
+  jsonb_build_array(jsonb_build_object('entry',jsonb_build_object('guid',ord,'adjustment',false),'day',d,'attempts',1,
+   'retry_at',((d+1)::timestamp+interval '12 hours 15 minutes') at time zone 'America/Los_Angeles')),true)
+  where business_id=b and restaurant_guid=r;
+ perform pg_temp.assert_true(not public.toast_closeout_due(b,r,d,((d+1)::timestamp+interval '12 hours') at time zone 'America/Los_Angeles'),'unfinished capture not polled before due');
+ perform pg_temp.assert_true(public.toast_closeout_due(b,r,d,((d+1)::timestamp+interval '12 hours 15 minutes') at time zone 'America/Los_Angeles'),'unfinished payment detail remains due after list completion');
+ update public.toast_optional_sync_state set operational_sources=jsonb_set(operational_sources,'{final_payments,pending_details,0,retry_at}','null'::jsonb)
+  where business_id=b and restaurant_guid=r;
+ perform pg_temp.assert_true(not public.toast_closeout_due(b,r,d,((d+1)::timestamp+interval '1 day') at time zone 'America/Los_Angeles'),'exhausted capture evidence remains stored without scheduling another attempt');
+ update public.toast_optional_sync_state set operational_sources=operational_sources#-'{final_payments,pending_details}' where business_id=b and restaurant_guid=r;
+ perform pg_temp.assert_true(not public.toast_closeout_due(b,r,d,((d+1)::timestamp+interval '12 hours 15 minutes') at time zone 'America/Los_Angeles'),'verified detail completion stops closeout work');
+END $revision$;
 
 ROLLBACK;
