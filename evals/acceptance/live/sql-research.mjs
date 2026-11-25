@@ -48,7 +48,7 @@ async function oracle(db,cafe,other){
   const [otherSales]=await rows(db,"select sum(net_sales_cents)::bigint cents from public.orders where business_id=$1 and "+window,[other.businessId,start,end]);
   const items=await rows(db,"select l.name, sum(l.net_sales_cents)::bigint cents from public.order_lines l join public.orders o on o.id=l.order_id "+
     "where o.business_id=$1 and not l.voided and o."+window+" group by 1 order by 2 desc limit 5",[cafe.businessId,start,end]);
-  const [weakest]=await rows(db,"select business_date::text day, sum(net_sales_cents)::bigint cents from public.orders where business_id=$1 and "+window+
+  const [weakest]=await rows(db,"select business_date::text as day, sum(net_sales_cents)::bigint cents from public.orders where business_id=$1 and "+window+
     " group by 1 order by 2 asc limit 1",[cafe.businessId,start,end]);
   return {start,end,sales,otherSales,items,weakest};
 }
