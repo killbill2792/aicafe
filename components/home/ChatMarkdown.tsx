@@ -54,7 +54,7 @@ export function ProvenanceTooltip({label,position,tooltipRef,onPointerEnter,onPo
   return <span ref={tooltipRef} role="tooltip" dir="auto" tabIndex={-1}
     onMouseEnter={onPointerEnter} onMouseLeave={onPointerLeave}
     onFocus={onTooltipFocus} onBlur={onTooltipBlur} onKeyDown={onTooltipKeyDown}
-    className="pointer-events-auto fixed z-[100] max-h-[calc(100dvh-16px)] overflow-y-auto rounded bg-ink px-3 py-2 text-[17px] leading-relaxed text-paper shadow"
+    className="pointer-events-auto fixed z-[100] max-h-[calc(100dvh-16px)] overflow-y-auto rounded bg-ink px-3 py-2 text-[1.0625rem] leading-relaxed text-paper shadow"
     style={{left:position?.left??0,top:position?.top??0,width:position?.width??320,
       transform:"translateX(-50%)",visibility:position?"visible":"hidden"}}>{label}</span>;
 }
@@ -264,7 +264,7 @@ export function SourceLegend({sources,labels,legendLabel="Number sources"}:{
  sources:readonly ("owner"|"estimate"|"unchecked")[];labels:ProvenanceLabels;legendLabel?:string;
 }){
  const used=(["owner","estimate","unchecked"] as const).filter(source=>sources.includes(source));
- return used.length>0?<p className="flex flex-wrap gap-x-3 gap-y-1 text-[14px] leading-relaxed text-ink-muted" aria-label={legendLabel}>
+ return used.length>0?<p className="flex flex-wrap gap-x-3 gap-y-1 text-[0.875rem] leading-relaxed text-ink-muted" aria-label={legendLabel}>
   {used.map(source=><span key={source} className="inline-flex items-center gap-1">
    <span aria-hidden="true" className={`h-1.5 w-1.5 rounded-full ${tones[source]}`}/>{labels[source]}
   </span>)}
@@ -322,10 +322,10 @@ export function ChatMarkdown({text,unverified=[],label,labels,locale="en",showLe
       const children=inlineMarkdown(heading.content,heading.start,spans,copy,badged,locale);
       const cls="mt-4 mb-1 font-semibold leading-snug text-balance break-words text-ink";
       if(heading.level===2)blocks.push(<h2 key={index} className={cls+" text-xl"}>{children}</h2>);
-      else if(heading.level===3)blocks.push(<h3 key={index} className={cls+" text-[19px]"}>{children}</h3>);
-      else if(heading.level===4)blocks.push(<h4 key={index} className={cls+" text-[17px]"}>{children}</h4>);
-      else if(heading.level===5)blocks.push(<h5 key={index} className={cls+" text-[17px]"}>{children}</h5>);
-      else blocks.push(<h6 key={index} className={cls+" text-[17px]"}>{children}</h6>);
+      else if(heading.level===3)blocks.push(<h3 key={index} className={cls+" text-[1.1875rem]"}>{children}</h3>);
+      else if(heading.level===4)blocks.push(<h4 key={index} className={cls+" text-[1.0625rem]"}>{children}</h4>);
+      else if(heading.level===5)blocks.push(<h5 key={index} className={cls+" text-[1.0625rem]"}>{children}</h5>);
+      else blocks.push(<h6 key={index} className={cls+" text-[1.0625rem]"}>{children}</h6>);
       index++;
       continue;
     }
@@ -343,7 +343,7 @@ export function ChatMarkdown({text,unverified=[],label,labels,locale="en",showLe
       const alignment=(i:number)=>table.align[i]==="center"?"text-center":table.align[i]==="end"?"text-end":"text-start";
       blocks.push(<div key={firstLine} role="region" aria-label="Response table" tabIndex={0}
         className="max-w-full overflow-x-auto rounded-lg border border-line focus-visible:outline focus-visible:outline-2 focus-visible:outline-ink">
-        <table dir={locale==="ar"?"rtl":"auto"} className="w-full min-w-max border-collapse text-[17px]">
+        <table dir={locale==="ar"?"rtl":"auto"} className="w-full min-w-max border-collapse text-[1.0625rem]">
          <caption className="sr-only">Response table</caption>
          <thead><tr>{table.head.map((cell,i)=><th key={i} scope="col" className={`border-b border-line bg-surface2 px-3 py-2 font-semibold ${alignment(i)}`}>{inlineMarkdown(cell.text,cell.start,spans,copy,badged,locale)}</th>)}</tr></thead>
          <tbody>{rows.map((cells,j)=><tr key={j}>{cells.map((cell,i)=><td key={i} className={`border-b border-line px-3 py-2 ${alignment(i)}`}>{inlineMarkdown(cell.text,cell.start,spans,copy,badged,locale)}</td>)}</tr>)}</tbody>
@@ -393,7 +393,7 @@ export function ChatMarkdown({text,unverified=[],label,labels,locale="en",showLe
     else blocks.push(<p key={start} className="whitespace-pre-line">{rows}</p>);
   }
   const sources=spans.map(s=>s.source??"unchecked");
-  return <div data-testid="supervisor-answer-prose" className="space-y-2 break-words text-[17px] leading-relaxed text-ink">
+  return <div data-testid="supervisor-answer-prose" className="space-y-2 break-words text-[1.0625rem] leading-relaxed text-ink">
     {blocks}
     {showLegend&&<SourceLegend sources={sources} labels={copy} legendLabel={legendLabel}/>}
 

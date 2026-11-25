@@ -94,7 +94,7 @@ describe("modern Supervisor conversation shell", () => {
   });
   it("makes durable task notifications one line and keeps the existing Team details link",()=>{
     const source=readFileSync("components/home/SupervisorChatComposer.tsx","utf8");
-    expect(source).toContain('className="inline-flex min-h-12 max-w-full items-center gap-2 rounded-xl px-2 text-[15px] text-ink-muted');
+    expect(source).toContain('className="inline-flex min-h-12 max-w-full items-center gap-2 rounded-xl px-2 text-[0.9375rem] text-ink-muted');
     expect(source).toContain('aria-label={statusText+": "+block.title+". "+copy.taskOpen}');
     expect(source).toContain('href={block.href}');
     expect(source).not.toContain("shadow-sm transition-colors hover:bg-surface2");
@@ -177,5 +177,33 @@ describe("modern Supervisor conversation shell", () => {
     expect(chat).toContain("md:hidden");
     expect(chat).toContain("{languageSwitch}");
     expect(home).not.toContain('<header className="flex items-center justify-between gap-3 px-1">');
+  });
+});
+
+describe("decorative Supervisor landing", () => {
+  it("reuses the existing cup without claiming work and confines the glow to the empty transcript", () => {
+    const source = readFileSync("components/home/SupervisorChatComposer.tsx", "utf8");
+    const css = readFileSync("app/globals.css", "utf8");
+    expect(source).toContain('!hasChatMessages&&startReady&&!threadUnavailable&&<div className="supervisor-landing"');
+    expect(source).toContain('<CafeActivity brewing={false}/>');
+    expect(css).toContain(".supervisor-shell:has(.supervisor-landing)::before");
+    expect(css).toContain("pointer-events: none");
+    expect(css).toContain("supervisor-landing-glow 4s ease-in-out 1 both");
+    expect(css).toContain("supervisor-landing-vapor 1.4s ease-in-out 3 both");
+    expect(css).not.toMatch(/animation:\s*supervisor-landing-\w+[^;]*infinite/);
+    expect(css).toMatch(/@media \(prefers-reduced-motion: reduce\)\s*\{\s*\.supervisor-shell:has\(\.supervisor-landing\)::before/);
+    expect(source).toContain("grid-cols-[max(48px,3rem)_minmax(0,1fr)_max(48px,3rem)_max(48px,3rem)]");
+    expect(source.match(/h-\[max\(48px,3rem\)\] w-\[max\(48px,3rem\)\]/g)).toHaveLength(4);
+  });
+});
+
+describe("consequential control target sizes", () => {
+  it("keeps approval and clarification targets at least 48 CSS pixels even at small text size", () => {
+    for (const file of ["ClarifyCard.tsx", "SupervisorProposalCard.tsx", "SupervisorRoutineInlineCard.tsx"]) {
+      const source = readFileSync("components/home/" + file, "utf8");
+      expect(source).not.toContain("min-h-11");
+      expect(source).toContain("min-h-[max(48px,3rem)]");
+      expect(source).toContain("min-h-[max(56px,3.5rem)]");
+    }
   });
 });

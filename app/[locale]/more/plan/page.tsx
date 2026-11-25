@@ -48,48 +48,48 @@ export default async function PlanPage({ searchParams }: { searchParams: Promise
   const numberFormat = new Intl.NumberFormat(locale, { maximumFractionDigits: 0 });
 
   return <PageShell className="flex flex-col gap-4 px-4 pb-8 pt-6">
-    {days.length>0 && days.length<7 && <p role="note" className="text-[17px] text-ink-muted">{common("basedOnDays",{days:days.length})}</p>}
+    {days.length>0 && days.length<7 && <p role="note" className="text-[1.0625rem] text-ink-muted">{common("basedOnDays",{days:days.length})}</p>}
     <BackHeader title={t("planTitle")} subtitle={t("planSubtitle")} backHref="/more" backLabel={common("back")} />
     <nav aria-label={t("planTitle")} className="grid grid-cols-3 gap-1 rounded-2xl bg-surface p-1">
       {TABS.map(id => <Link key={id} href={`/more/plan?tab=${id}`} aria-current={tab === id ? "page" : undefined}
-        className={`flex min-h-12 items-center justify-center rounded-xl px-2 text-center text-[15px] font-bold no-underline ${tab === id ? "bg-card text-ink shadow-sm" : "text-ink-muted"}`}>
+        className={`flex min-h-12 items-center justify-center rounded-xl px-2 text-center text-[0.9375rem] font-bold no-underline ${tab === id ? "bg-card text-ink shadow-sm" : "text-ink-muted"}`}>
         {id === "break-even" ? t("planBreakEven") : id === "profit-goal" ? t("planProfitGoal") : t("planWhatIf")}
       </Link>)}
     </nav>
-    {!currency && <p role="note" className="text-[15px] text-ink-muted">{notes("cafeCurrencyMissing")}</p>}
+    {!currency && <p role="note" className="text-[0.9375rem] text-ink-muted">{notes("cafeCurrencyMissing")}</p>}
     {tab === "break-even" && snapshot && recovery && drinks && hourly && <>
       <section className="rounded-card-lg bg-card p-5">
-        <h2 className="text-[17px] font-bold">{money("monthlyBreakEven")}</h2>
-        <div className="mt-2 font-headline text-[36px] font-bold">{recovery.breakEven.kind === "ready" ? formattedMoney(recovery.breakEven.breakEvenSalesCents) : "—"}</div>
-        {recovery.breakEvenUsesEstimates && recovery.breakEven.kind === "ready" && <p className="text-[15px] text-ink-muted">{money("estimateLower")}</p>}
-        <p className="mt-2 text-[17px] text-ink-muted">{money("breakEvenSalesNeeded")}</p>
-        {drinks.noteKeys.includes("breakEvenLaborMissing") && <p className="mt-2 text-[17px] text-ink-muted">{notes("breakEvenLaborMissing")}</p>}
-        {drinks.noteKeys.includes("laborCoveragePartial") && <p className="mt-2 text-[17px] text-ink-muted">{notes("laborCoveragePartial")}</p>}
+        <h2 className="text-[1.0625rem] font-bold">{money("monthlyBreakEven")}</h2>
+        <div className="mt-2 font-headline text-[2.25rem] font-bold">{recovery.breakEven.kind === "ready" ? formattedMoney(recovery.breakEven.breakEvenSalesCents) : "—"}</div>
+        {recovery.breakEvenUsesEstimates && recovery.breakEven.kind === "ready" && <p className="text-[0.9375rem] text-ink-muted">{money("estimateLower")}</p>}
+        <p className="mt-2 text-[1.0625rem] text-ink-muted">{money("breakEvenSalesNeeded")}</p>
+        {drinks.noteKeys.includes("breakEvenLaborMissing") && <p className="mt-2 text-[1.0625rem] text-ink-muted">{notes("breakEvenLaborMissing")}</p>}
+        {drinks.noteKeys.includes("laborCoveragePartial") && <p className="mt-2 text-[1.0625rem] text-ink-muted">{notes("laborCoveragePartial")}</p>}
       </section>
       {recovery.breakEven.kind === "ready" && !drinks.unavailableReason && <section className="rounded-card-lg bg-card p-5">
-        <p className="text-[17px] font-semibold">{t("subtitle")}</p>
-        {!hourly.closed && <div className="mt-2 font-headline text-[40px] font-bold text-staff">{numberFormat.format(drinks.drinksNeededPerDay)}</div>}
-        {!hourly.closed && <p className="text-[17px] font-semibold">{t("drinksToCover")}</p>}
-        <p className="mt-2 text-[17px] text-ink-muted">{hourly.closed ? t("closedToday") : t("aboutPerHour", { count: numberFormat.format(hourly.perHour ?? 0) })}</p>
-        {drinks.noteKeys.includes("breakEvenLaborMissing") && <p className="mt-2 text-[17px] text-ink-muted">{notes("breakEvenLaborMissing")}</p>}
-        {hourly.fallback && <Link href="/more/cafe-profile?focus=hours" className="mt-3 inline-flex min-h-12 items-center text-[17px] font-bold text-staff underline">{t("setCafeHours")}</Link>}
+        <p className="text-[1.0625rem] font-semibold">{t("subtitle")}</p>
+        {!hourly.closed && <div className="mt-2 font-headline text-[2.5rem] font-bold text-staff">{numberFormat.format(drinks.drinksNeededPerDay)}</div>}
+        {!hourly.closed && <p className="text-[1.0625rem] font-semibold">{t("drinksToCover")}</p>}
+        <p className="mt-2 text-[1.0625rem] text-ink-muted">{hourly.closed ? t("closedToday") : t("aboutPerHour", { count: numberFormat.format(hourly.perHour ?? 0) })}</p>
+        {drinks.noteKeys.includes("breakEvenLaborMissing") && <p className="mt-2 text-[1.0625rem] text-ink-muted">{notes("breakEvenLaborMissing")}</p>}
+        {hourly.fallback && <Link href="/more/cafe-profile?focus=hours" className="mt-3 inline-flex min-h-12 items-center text-[1.0625rem] font-bold text-staff underline">{t("setCafeHours")}</Link>}
       </section>}
       {missing.length > 0 && <section className="rounded-card-lg bg-card p-5">
-        <h2 className="text-[17px] font-bold">{t("missingPieces")}</h2>
+        <h2 className="text-[1.0625rem] font-bold">{t("missingPieces")}</h2>
         <div className="mt-3 flex flex-col gap-3">{missing.map(row => <div key={row.key} className="flex flex-wrap items-center justify-between gap-3 rounded-2xl bg-surface p-3">
-          <span className="min-w-0 flex-1 text-[17px]">{row.text}</span>
-          <Link href={row.href} className="inline-flex min-h-12 items-center rounded-full bg-accent px-4 text-[17px] font-bold text-on-accent no-underline">{row.action}</Link>
+          <span className="min-w-0 flex-1 text-[1.0625rem]">{row.text}</span>
+          <Link href={row.href} className="inline-flex min-h-12 items-center rounded-full bg-accent px-4 text-[1.0625rem] font-bold text-on-accent no-underline">{row.action}</Link>
         </div>)}</div>
       </section>}
-      {recovery.breakEven.kind === "unavailable" && missing.length === 0 && <p className="rounded-card-lg bg-card p-5 text-[17px]">{money("breakEvenUnavailable")}</p>}
+      {recovery.breakEven.kind === "unavailable" && missing.length === 0 && <p className="rounded-card-lg bg-card p-5 text-[1.0625rem]">{money("breakEvenUnavailable")}</p>}
       {recovery.breakEven.kind === "ready" && !drinks.unavailableReason && <section className="rounded-card-lg bg-card p-5">
-        <h2 className="mb-3 text-[17px] font-bold">{t("whereFrom")}</h2>
+        <h2 className="mb-3 text-[1.0625rem] font-bold">{t("whereFrom")}</h2>
         {[
           { label: t("rentBillsRow"), amount: recovery.breakEven.monthlyBillsCents, href: "/more/bills", Icon: Coins, tone: "bg-running text-on-chart-running" },
           { label: t("plannedStaffRow"), amount: recovery.breakEven.monthlyStaffCents, href: "/staff", Icon: Users, tone: "bg-staff text-on-chart-staff" },
           { label: money("ingredientsAtBreakEven"), amount: recovery.breakEven.ingredientCostsAtBreakEvenCents, href: "/menu", Icon: Milk, tone: "bg-surface text-ink" },
           { label: money("processingFeesAtBreakEven"), amount: recovery.breakEven.processingFeesAtBreakEvenCents, href: "/more/processing-fees", Icon: CreditCard, tone: "bg-surface text-ink" },
-        ].map(({ label, amount, href, Icon, tone }) => <Link key={href} href={href} className="flex min-h-12 items-center gap-2 border-b border-line py-3 text-[17px] text-ink no-underline last:border-0">
+        ].map(({ label, amount, href, Icon, tone }) => <Link key={href} href={href} className="flex min-h-12 items-center gap-2 border-b border-line py-3 text-[1.0625rem] text-ink no-underline last:border-0">
           <span className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-xl ${tone}`}><Icon aria-hidden="true" size={20} /></span>
           <span className="min-w-0 flex-1">{label}</span><span className="font-bold">{formattedMoney(amount)}</span>
           <ArrowRight aria-hidden="true" size={18} className="shrink-0 rtl:rotate-180" />
@@ -114,7 +114,7 @@ export default async function PlanPage({ searchParams }: { searchParams: Promise
     }} />}
     {tab === "what-if" && snapshot && <section className="rounded-card-lg bg-card p-5">
       {!hasCompletePlanHours(snapshot.business.openHours) && <Link href="/more/cafe-profile?focus=hours"
-        className="mb-3 inline-flex min-h-12 items-center text-[17px] font-bold text-staff underline">
+        className="mb-3 inline-flex min-h-12 items-center text-[1.0625rem] font-bold text-staff underline">
         {t("setCafeHours")}
       </Link>}
       <TryScenario currency={currency} hoursComplete={hasCompletePlanHours(snapshot.business.openHours)}
@@ -134,7 +134,7 @@ export default async function PlanPage({ searchParams }: { searchParams: Promise
         monthKey: snapshot.monthKey, openHours: snapshot.business.openHours,
         payrollTaxRate: snapshot.business.payrollTaxRate,
       } : null} />
-      <p className="text-[17px] leading-snug text-ink-muted">{t("simulationOnly")}</p>
+      <p className="text-[1.0625rem] leading-snug text-ink-muted">{t("simulationOnly")}</p>
     </section>}
   </PageShell>;
 }

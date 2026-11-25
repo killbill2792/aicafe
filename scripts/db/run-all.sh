@@ -191,6 +191,8 @@ supabase_lane() {
   group "Concurrent sessions"
   check supabase "U1 historical replay evaluator fail-closed checks" node --test scripts/acceptance/u1-incident-replay.test.mjs
   check supabase "U1 four-ref matched recorded incident replay" node scripts/acceptance/u1-incident-replay.mjs
+  check supabase "Supervisor direct SQL research: discovery, read-only SQL, café isolation, calculator, chat turn" env \
+    SUPERVISOR_RESEARCH_DB_URL="$supabase_url" npx vitest run lib/ai/research/research.db.test.ts lib/ai/research/notes.db.test.ts --reporter=verbose
   check supabase "U1 shared runtime: concurrent admission, recovery, scope and workload" env U1_RELIABILITY_DB_SANDBOX_ONLY=1 \
     U1_RELIABILITY_DB_URL="$supabase_url" npx vitest run lib/ai/agent/u1Reliability.db.test.ts --reporter=verbose
   check supabase "U2 actual-Luna acceptance oracle fail-closed fixtures" node --test evals/acceptance/live/u2-model-execution.test.mjs

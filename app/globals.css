@@ -10,7 +10,7 @@
   }
 
   body {
-    @apply h-full bg-paper text-ink font-body text-[17px] leading-[1.4] antialiased;
+    @apply h-full bg-paper text-ink font-body text-[1.0625rem] leading-[1.4] antialiased;
   }
 
   h1,
@@ -34,7 +34,6 @@
   }
 }
 
-html[lang="ar"] h1, html[lang="ar"] h2, html[lang="ar"] h3 { font-family: var(--font-ibm-plex-arabic), sans-serif; }
 
 /* Theme swatches follow System appearance, including changes while the picker is open. */
 .theme-preview-dark { display: none; }
@@ -78,4 +77,90 @@ html[lang="ar"] h1, html[lang="ar"] h2, html[lang="ar"] h3 { font-family: var(--
 .supervisor-shell[data-keyboard="open"] {
   height: max(180px, calc(var(--supervisor-keyboard-height) - 1.5rem));
   min-height: 0;
+}
+
+/* Owner text size (menu > Appearance). All font sizes are rem, so this one rule scales the app. */
+html[data-text-size="small"] { font-size: 93.75%; }
+html[data-text-size="large"] { font-size: 112.5%; }
+html[data-text-size="xlarge"] { font-size: 125%; }
+
+/* Glass surfaces: translucent, blurred, hairline border. Opaque fallback when blur is unavailable. */
+.glass {
+  background: rgb(var(--c-surface) / 0.92);
+  border: 1px solid rgb(var(--c-line) / 0.6);
+  box-shadow: 0 10px 30px rgb(0 0 0 / 0.18);
+}
+@supports ((-webkit-backdrop-filter: blur(1px)) or (backdrop-filter: blur(1px))) {
+  .glass {
+    background: rgb(var(--c-surface) / 0.68);
+    -webkit-backdrop-filter: blur(24px) saturate(1.4);
+    backdrop-filter: blur(24px) saturate(1.4);
+  }
+}
+/* A soft light behind the glass so the blur has something to show. */
+html[data-theme="glass"] body {
+  background-image: radial-gradient(120% 60% at 50% -10%, rgb(var(--c-accent) / 0.10), transparent 60%);
+  background-attachment: fixed;
+}
+
+/* Decorative welcome only; the cup here does not indicate pending work. */
+.supervisor-shell:has(.supervisor-landing) {
+  isolation: isolate;
+}
+.supervisor-shell:has(.supervisor-landing)::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  background: radial-gradient(ellipse at 55% 100%, rgb(var(--c-accent2) / .34), transparent 62%),
+              radial-gradient(ellipse at 8% 105%, rgb(var(--c-accent) / .16), transparent 55%);
+  background-size: 130% 115%;
+  animation: supervisor-landing-glow 4s ease-in-out 1 both;
+}
+@keyframes supervisor-landing-glow {
+  from { background-position: 0% 100%; opacity: .65; }
+  to { background-position: 100% 100%; opacity: 1; }
+}
+.supervisor-shell:has(.supervisor-landing) .supervisor-composer-tray {
+  background: transparent;
+}
+.supervisor-landing {
+  margin-block: auto;
+  text-align: center;
+  padding-block: 1rem;
+}
+.supervisor-landing .supervisor-welcome-motion {
+  padding-block: .75rem 0;
+}
+.supervisor-landing .supervisor-welcome-motion p {
+  margin-inline: auto;
+}
+.supervisor-landing-cup {
+  display: flex;
+  justify-content: center;
+}
+.supervisor-landing-cup svg {
+  width: 4.75rem;
+  height: 4.75rem;
+}
+.supervisor-landing-cup svg path:nth-child(2),
+.supervisor-landing-cup svg path:nth-child(3) {
+  transform-box: fill-box;
+  transform-origin: center;
+  animation: supervisor-landing-vapor 1.4s ease-in-out 3 both;
+}
+.supervisor-landing-cup svg path:nth-child(3) {
+  animation-delay: .18s;
+}
+@keyframes supervisor-landing-vapor {
+  0%, 100% { transform: translate(0, 0); opacity: .85; }
+  50% { transform: translate(1px, -3px); opacity: .55; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .supervisor-shell:has(.supervisor-landing)::before,
+  .supervisor-landing-cup svg path:nth-child(2),
+  .supervisor-landing-cup svg path:nth-child(3) {
+    animation: none !important;
+  }
 }

@@ -1,8 +1,9 @@
 import {authenticatedConversationContext} from "@/lib/ai/conversations/auth.server";
 import {conversationError,conversationJson,parseInput,readBoundedJson,requireSameOrigin} from "@/lib/ai/conversations/http.server";
 import {createServerSupabaseClient} from "@/lib/supabase/server";
-import {listOwnerRoutinesAcrossThreads,changeOwnerRoutine} from "@/lib/ai/supervisor/routines/repository.server";
+import {listOwnerRoutinesAcrossThreads,changeOwnerRoutine,createOwnerRoutine} from "@/lib/ai/supervisor/routines/repository.server";
 import {z} from "zod";
+import {routineScheduleSchema} from "@/lib/ai/supervisor/routines/contracts";
 
 export const runtime="nodejs";
 export const dynamic="force-dynamic";
@@ -25,15 +26,32 @@ const mutation=z.strictObject({
   revision:z.number().int().positive(),
 });
 
+/** The owner's Save tap on an approve-first routine card. The same revalidating creation path as chat
+ * saves it; the database re-checks the thread, the owner message and the goal source. */
+const create=z.strictObject({
+  action:z.literal("create"),threadId:z.uuid(),
+  ownerMessageId:z.uuid(),goalSourceMessageId:z.uuid(),
+  schedule:routineScheduleSchema,
+});
+
 /** Compact routine controls are real owner-scoped mutations, not optimistic
  * front-end status labels. The source thread comes from the verified DB row,
  * not the browser; SQL CAS rejects a stale revision or revoked owner. */
 export async function POST(request:Request){
   try{
     requireSameOrigin(request);
-    const input=parseInput(mutation,await readBoundedJson(request));
+    const body=await readBoundedJson(request);
     const {scope}=await authenticatedConversationContext();
     const client=await createServerSupabaseClient();
+    if(body&&typeof body==="object"&&(body as {action?:unknown}).action==="create"){
+      const draft=parseInput(create,body);
+      const saved=await createOwnerRoutine(draft.schedule,{
+        scope,threadId:draft.threadId,ownerMessageId:draft.ownerMessageId,
+        goalSourceMessageId:draft.goalSourceMessageId,client,
+      });
+      return conversationJson({routine:saved});
+    }
+    const input=parseInput(mutation,body);
     const read=await client.from("supervisor_routines")
       .select("*")
       .eq("business_id",scope.businessId).eq("owner_user_id",scope.ownerUserId)

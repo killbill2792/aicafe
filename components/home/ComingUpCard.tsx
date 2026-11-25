@@ -45,16 +45,16 @@ export function ComingUpView({ state, locale, t, onAsk, onChatAboutDay, disabled
   { state: ComingUpState; locale: Locale; t: Translate; onAsk: (prompt: string) => void;
     onChatAboutDay:(date:string,title:string,prompt:string)=>void;disabled:boolean }) {
   if (state.status === "error") return null; // never block Home; the chat can still answer
-  const button = "inline-flex min-h-12 items-center text-[15px] font-semibold text-accent-text underline disabled:opacity-50";
+  const button = "inline-flex min-h-12 items-center text-[0.9375rem] font-semibold text-accent-text underline disabled:opacity-50";
   return <section className="min-w-0 rounded-2xl border border-line bg-card p-3" aria-label={t("title")} data-testid="coming-up">
-    <h3 className="flex items-center gap-1.5 text-[15px] font-semibold text-ink-muted">
+    <h3 className="flex items-center gap-1.5 text-[0.9375rem] font-semibold text-ink-muted">
       <CalendarDays size={18} aria-hidden="true" />{t("title")}
     </h3>
-    {state.status === "loading" ? <p className="mt-2 text-[15px] text-ink-muted" role="status">{t("loading")}</p> : (() => {
+    {state.status === "loading" ? <p className="mt-2 text-[0.9375rem] text-ink-muted" role="status">{t("loading")}</p> : (() => {
       const { outlook } = state;
       const rows = outlook.days.filter(d => d.holidays.length > 0 || d.eventIds.length > 0).slice(0, COMING_UP_ROWS);
       return <>
-        {rows.length === 0 ? <p className="mt-2 text-[17px] text-ink">{t("nothingSpecial")}</p> :
+        {rows.length === 0 ? <p className="mt-2 text-[1.0625rem] text-ink">{t("nothingSpecial")}</p> :
           <ul className="mt-2 space-y-2">
             {rows.map(day => {
               const when = whenLabel(day, locale, t), what = whatLabel(day, outlook, t);
@@ -64,22 +64,22 @@ export function ComingUpView({ state, locale, t, onAsk, onChatAboutDay, disabled
                   t("chatDayPrompt",{date:day.date,context:eventDayChatContext(day,outlook)}))}
                   className="flex min-h-12 w-full min-w-0 items-start gap-2 rounded-xl bg-surface2 p-2.5 text-start focus-visible:outline focus-visible:outline-2 focus-visible:outline-ink disabled:opacity-60">
                   <span className="min-w-0 flex-1">
-                    <span className="block break-words text-[15px] font-semibold leading-snug text-ink" dir="auto">{when} · {what}</span>
-                    {basis && <span className="mt-0.5 block break-words text-[13px] leading-snug text-ink-muted" dir="auto">{basis}</span>}
-                    <span className="mt-1 block text-[15px] font-semibold text-accent-text">{t("chatAboutThis")}</span>
+                    <span className="block break-words text-[0.9375rem] font-semibold leading-snug text-ink" dir="auto">{when} · {what}</span>
+                    {basis && <span className="mt-0.5 block break-words text-[0.8125rem] leading-snug text-ink-muted" dir="auto">{basis}</span>}
+                    <span className="mt-1 block text-[0.9375rem] font-semibold text-accent-text">{t("chatAboutThis")}</span>
                   </span>
                 </button>
               </li>;
             })}
           </ul>}
-        {outlook.addressMissing && <p className="mt-2 text-[15px] text-ink-muted">{t("addAddress")}{" "}
+        {outlook.addressMissing && <p className="mt-2 text-[0.9375rem] text-ink-muted">{t("addAddress")}{" "}
           <button type="button" disabled={disabled} className={button} onClick={() => onAsk(t("addressPrompt"))}>{t("addAddressButton")}</button>
         </p>}
-        {outlook.notCovered.includes("localEventsSearchPartial") && <p className="mt-2 text-[13px] text-ink-muted" role="status">
+        {outlook.notCovered.includes("localEventsSearchPartial") && <p className="mt-2 text-[0.8125rem] text-ink-muted" role="status">
           {t("searchPartial", {missed:outlook.localEventsSearchGaps?.map(g=>g.kind==="general"?
             t("searchGeneral"):g.name+" ("+g.date+")").join(", ")||t("searchOther")})}
         </p>}
-        {outlook.notCovered.includes("localEventsSearchFailed") && <p className="mt-2 text-[13px] text-ink-muted">{t("searchDown")}</p>}
+        {outlook.notCovered.includes("localEventsSearchFailed") && <p className="mt-2 text-[0.8125rem] text-ink-muted">{t("searchDown")}</p>}
         {!outlook.addressMissing && <button type="button" disabled={disabled} className={button} onClick={() => onAsk(t("weekPrompt"))}>
           {t("askWeek")}
         </button>}

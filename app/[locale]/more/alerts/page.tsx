@@ -29,13 +29,13 @@ export default async function AlertsPage() {
       <div className="grid grid-cols-2 gap-2.5">
         <div className="flex flex-col gap-1.5 rounded-[22px] bg-card p-4">
           <span className="text-sm font-bold text-warn">{t("potentialImpact")}</span>
-          <span className="font-headline text-[36px] font-bold leading-none text-warn">{alerts.length === 0 ? formatCents(0, locale) : knownImpacts.length ? formatCents(leakingCents, locale) : "—"}</span>
-          <span className="text-[13px] text-ink-muted">{knownImpacts.length < alerts.length ? t("impactPartialHint") : t("impactHint")}</span>
+          <span className="font-headline text-[2.25rem] font-bold leading-none text-warn">{alerts.length === 0 ? formatCents(0, locale) : knownImpacts.length ? formatCents(leakingCents, locale) : "—"}</span>
+          <span className="text-[0.8125rem] text-ink-muted">{knownImpacts.length < alerts.length ? t("impactPartialHint") : t("impactHint")}</span>
         </div>
         <div className="flex flex-col gap-1.5 rounded-[22px] bg-card p-4">
           <span className="text-sm font-bold text-good">{t("allClear")}</span>
-          <span className="font-headline text-[36px] font-bold leading-none text-good">{alerts.length === 0 ? "✓" : new Intl.NumberFormat(locale).format(alerts.length)}</span>
-          <span className="text-[13px] text-ink-muted">{alerts.length === 0 ? t("nothingOpen") : t("openCount")}</span>
+          <span className="font-headline text-[2.25rem] font-bold leading-none text-good">{alerts.length === 0 ? "✓" : new Intl.NumberFormat(locale).format(alerts.length)}</span>
+          <span className="text-[0.8125rem] text-ink-muted">{alerts.length === 0 ? t("nothingOpen") : t("openCount")}</span>
         </div>
       </div>
 

@@ -64,36 +64,36 @@ function PantryTableRow({item,t}:{item:PantryItem;t:Record<string,string>}){
  }
  return <div className="grid gap-2 border-b border-line px-3 py-3 last:border-b-0 md:grid-cols-[minmax(160px,1.3fr)_minmax(160px,1fr)_minmax(120px,.7fr)_auto] md:items-end">
   <div className="min-w-0 space-y-2">
-  <label className="block min-w-0 text-[13px] font-semibold text-ink-muted md:font-normal">
+  <label className="block min-w-0 text-[0.8125rem] font-semibold text-ink-muted md:font-normal">
    <span className="md:sr-only">{t.name}</span>
    <input disabled={Boolean(item.archivedAt)} value={name} onChange={e=>{setName(e.target.value);setSaved(false);}}
     aria-label={t.name+": "+item.name}
-    className="mt-1 min-h-12 w-full rounded-xl border border-line bg-card px-3 text-[17px] font-semibold text-ink md:mt-0"/>
+    className="mt-1 min-h-12 w-full rounded-xl border border-line bg-card px-3 text-[1.0625rem] font-semibold text-ink md:mt-0"/>
   </label>
-  <label className="block text-[13px] font-semibold text-ink-muted">{t.category}
+  <label className="block text-[0.8125rem] font-semibold text-ink-muted">{t.category}
    <select disabled={Boolean(item.archivedAt)} value={category}
     onChange={e=>{setCategory(e.target.value as PantryCategory);setSaved(false);}}
     aria-label={t.category+": "+item.name}
-    className="mt-1 min-h-12 w-full rounded-xl border border-line bg-card px-3 text-[17px] text-ink">
+    className="mt-1 min-h-12 w-full rounded-xl border border-line bg-card px-3 text-[1.0625rem] text-ink">
     {PANTRY_CATEGORY_CHOICES.map(choice=><option key={choice.value} value={choice.value}>{t[choice.labelKey]}</option>)}
    </select>
   </label>
   </div>
-  <label className="min-w-0 text-[13px] font-semibold text-ink-muted">
+  <label className="min-w-0 text-[0.8125rem] font-semibold text-ink-muted">
    <span className="md:sr-only">{t.packSize}</span>
    <input disabled={Boolean(item.archivedAt)} value={pack} onChange={e=>{setPack(e.target.value);setSaved(false);}}
     placeholder={item.baseUnit==="ml"?t.purchasePackExampleLiquid:item.baseUnit==="g"?t.purchasePackExampleWeight:t.purchasePackExampleCount}
     aria-label={t.packSize+": "+item.name}
-    className="mt-1 min-h-12 w-full rounded-xl border border-line bg-card px-3 text-[17px] text-ink md:mt-0"/>
+    className="mt-1 min-h-12 w-full rounded-xl border border-line bg-card px-3 text-[1.0625rem] text-ink md:mt-0"/>
   </label>
-  <label className="min-w-0 text-[13px] font-semibold text-ink-muted">
+  <label className="min-w-0 text-[0.8125rem] font-semibold text-ink-muted">
    <span className="md:sr-only">{t.packPrice}</span>
    <input disabled={Boolean(item.archivedAt)} inputMode="decimal" value={price} onChange={e=>{setPrice(e.target.value);setSaved(false);}}
     placeholder={t.packPrice} aria-label={t.packPrice+": "+item.name}
-    className="mt-1 min-h-12 w-full rounded-xl border border-line bg-card px-3 text-[17px] text-ink md:mt-0"/>
+    className="mt-1 min-h-12 w-full rounded-xl border border-line bg-card px-3 text-[1.0625rem] text-ink md:mt-0"/>
   </label>
   <div className="flex min-h-12 items-center justify-between gap-2 md:justify-end">
-   <span className="text-[13px] text-ink-muted md:sr-only">{item.packCostCents===null?t.priceUnknown:formatCents(item.packCostCents)}</span>
+   <span className="text-[0.8125rem] text-ink-muted md:sr-only">{item.packCostCents===null?t.priceUnknown:formatCents(item.packCostCents)}</span>
    <button type="button" onClick={save} disabled={Boolean(item.archivedAt)||pending||(!nameChanged&&!categoryChanged&&!priceChanged)}
     className="min-h-12 min-w-20 rounded-xl bg-accent px-3 font-bold text-on-accent disabled:opacity-40">{t.save}</button>
   </div>
@@ -104,8 +104,8 @@ function PantryTableRow({item,t}:{item:PantryItem;t:Record<string,string>}){
     <button type="button" disabled={pending} onClick={()=>item.archivedAt?changeArchive():setConfirmArchive(true)} className="min-h-12 rounded-xl border border-line px-3 text-sm font-bold">{item.archivedAt?t.restoreIngredient:t.archiveIngredient}</button>}
    {item.archivedAt&&<span className="text-sm text-ink-muted">{t.archivedIngredient}</span>}
   </div>
-  {error&&<p role="alert" className="text-[17px] text-warn md:col-span-4">{t.error}</p>}
-  {saved&&<p role="status" className="text-[15px] text-good md:col-span-4">{t.save} ✓</p>}
+  {error&&<p role="alert" className="text-[1.0625rem] text-warn md:col-span-4">{t.error}</p>}
+  {saved&&<p role="status" className="text-[0.9375rem] text-good md:col-span-4">{t.save} ✓</p>}
  </div>;
 }
 
@@ -114,7 +114,7 @@ export default function InlinePantryTable({items,t}:{items:PantryItem[];t:Record
  return <section className="overflow-hidden rounded-2xl border border-line bg-card">
   <div className="flex items-center justify-between gap-3 border-b border-line bg-paper px-3 py-3"><span className="font-bold">{t.title}</span><button type="button" onClick={()=>setNewRow(true)} className="flex min-h-12 items-center gap-2 rounded-xl bg-accent px-3 font-bold text-on-accent"><Plus size={18} aria-hidden="true"/>{t.newIngredient}</button></div>
   {newRow&&<div className="p-3"><NewPantryInlineRow onCancel={()=>setNewRow(false)}/></div>}
-  <div className="hidden grid-cols-[minmax(160px,1.3fr)_minmax(160px,1fr)_minmax(120px,.7fr)_auto] gap-2 border-b border-line bg-paper px-3 py-3 text-[15px] font-bold text-ink md:grid">
+  <div className="hidden grid-cols-[minmax(160px,1.3fr)_minmax(160px,1fr)_minmax(120px,.7fr)_auto] gap-2 border-b border-line bg-paper px-3 py-3 text-[0.9375rem] font-bold text-ink md:grid">
    <span>{t.name}</span><span>{t.packSize}</span><span>{t.packPrice}</span><span>{t.edit}</span>
   </div>
   {items.map(item=><PantryTableRow key={[item.id,item.name,item.packQuantity,item.packUnit,item.packCostCents,item.category,item.archivedAt].join(":")} item={item} t={t}/>)}

@@ -18,7 +18,7 @@ export default function DeferredChatStart({
 }) {
   const result = use(promise);
   if (!result) {
-    return <p role="status" className="rounded-xl border border-line bg-surface2 p-3 text-[17px] text-ink-muted">
+    return <p role="status" className="rounded-xl border border-line bg-surface2 p-3 text-[1.0625rem] text-ink-muted">
       {failureText}
     </p>;
   }

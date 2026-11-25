@@ -282,7 +282,7 @@ export default function AllSizesRecipe({items,ingredients,conversions,draftSizes
   const current=replacements[k(item.id,id)]??id;
   return <select autoFocus value={current} aria-label={t("changeRecipeIngredient",{name:line.ingredientName})}
     onChange={e=>chooseReplacement(id,e.target.value)}
-    className="mt-2 min-h-12 w-full rounded-xl border border-line bg-card px-2 text-[17px]">
+    className="mt-2 min-h-12 w-full rounded-xl border border-line bg-card px-2 text-[1.0625rem]">
     <option value={id}>{line.ingredientName}</option>
     {ingredients.filter(i=>i.baseUnit===line.baseUnit&&!item.recipe.some(l=>l.ingredientId===i.id)&&(!needsIngredientConversion((drafts[k(item.id,id)]?.unit??line.displayUnit??line.baseUnit) as RecipeDisplayUnit)||(conversions[i.id]??[]).some(c=>c.unit===(drafts[k(item.id,id)]?.unit??line.displayUnit??line.baseUnit)))).map(i=><option key={i.id} value={i.id}>{i.name}</option>)}
    </select>;
@@ -302,27 +302,27 @@ export default function AllSizesRecipe({items,ingredients,conversions,draftSizes
  }
  function beginAddRow(after:string){if(hasUnsavedChanges||invalidQuantity){setError(t("saveBeforeAddingIngredient"));return;}setAdd("");setAddAfter(after);setNewRowAmount("1");setNewRowCalibration(undefined);setSearchIngredient("");setError("");}
  function addPicker(){return <div className="flex flex-wrap items-center gap-2 rounded-xl border border-accent/40 bg-accent-soft p-3">
-  <label className="min-w-[160px] flex-1 text-[13px] font-bold">{t("addRecipeRow")}
-   <input autoFocus value={searchIngredient} onChange={e=>{setSearchIngredient(e.target.value);setAdd("");setNewRowCalibration(undefined);}} placeholder={t("search")} aria-label={t("search")} className="mt-1 min-h-12 w-full rounded-xl border border-line bg-card px-3 text-[17px]"/>
-   <select className="mt-1 min-h-12 w-full rounded-xl border border-line bg-card px-3 text-[17px]" aria-label={t("addToRecipe")} value={add??""} onChange={e=>{setAdd(e.target.value);setNewRowUnit(ingredients.find(ingredient=>ingredient.id===e.target.value)?.baseUnit??"ml");setNewRowDensity("");setNewRowCalibration(undefined);}}>
+  <label className="min-w-[160px] flex-1 text-[0.8125rem] font-bold">{t("addRecipeRow")}
+   <input autoFocus value={searchIngredient} onChange={e=>{setSearchIngredient(e.target.value);setAdd("");setNewRowCalibration(undefined);}} placeholder={t("search")} aria-label={t("search")} className="mt-1 min-h-12 w-full rounded-xl border border-line bg-card px-3 text-[1.0625rem]"/>
+   <select className="mt-1 min-h-12 w-full rounded-xl border border-line bg-card px-3 text-[1.0625rem]" aria-label={t("addToRecipe")} value={add??""} onChange={e=>{setAdd(e.target.value);setNewRowUnit(ingredients.find(ingredient=>ingredient.id===e.target.value)?.baseUnit??"ml");setNewRowDensity("");setNewRowCalibration(undefined);}}>
    <option value="">{t("addToRecipe")}</option>{ingredients.filter(i=>selectedItems.some(item=>!item.recipe.some(line=>line.ingredientId===i.id))&&i.name.toLocaleLowerCase().includes(searchIngredient.toLocaleLowerCase())).map(i=><option key={i.id} value={i.id}>{i.name}</option>)}
   </select></label>
-  <label className="w-24 text-[13px] font-bold">{t("quantity")}<input type="number" min="0.0001" step="any" inputMode="decimal" value={newRowAmount} onChange={e=>setNewRowAmount(e.target.value)} className="mt-1 min-h-12 w-full rounded-xl border border-line bg-card px-2 text-[17px]"/></label>
-  <label className="min-w-[105px] text-[13px] font-bold">{t("unit")}<select value={newRowUnit} onChange={e=>{const unit=e.target.value as RecipeDisplayUnit;setNewRowUnit(unit);setNewRowCalibration(undefined);const entry=ingredients.find(i=>i.id===add);if(entry&&requiresDensity(entry.baseUnit,unit))setNewRowDensity(String(suggestedIngredientDensity(entry.name)??""));}} className="mt-1 min-h-12 w-full rounded-xl border border-line bg-card px-2 text-[17px]">{(add?(()=>{
+  <label className="w-24 text-[0.8125rem] font-bold">{t("quantity")}<input type="number" min="0.0001" step="any" inputMode="decimal" value={newRowAmount} onChange={e=>setNewRowAmount(e.target.value)} className="mt-1 min-h-12 w-full rounded-xl border border-line bg-card px-2 text-[1.0625rem]"/></label>
+  <label className="min-w-[105px] text-[0.8125rem] font-bold">{t("unit")}<select value={newRowUnit} onChange={e=>{const unit=e.target.value as RecipeDisplayUnit;setNewRowUnit(unit);setNewRowCalibration(undefined);const entry=ingredients.find(i=>i.id===add);if(entry&&requiresDensity(entry.baseUnit,unit))setNewRowDensity(String(suggestedIngredientDensity(entry.name)??""));}} className="mt-1 min-h-12 w-full rounded-xl border border-line bg-card px-2 text-[1.0625rem]">{(add?(()=>{
    const base=ingredients.find(ingredient=>ingredient.id===add)?.baseUnit??"ml";
    return base==="each"?["each"] as RecipeDisplayUnit[]:[...new Set([...recipeDisplayUnitsFor(base,conversions[add]??[]),"g","ml","fl_oz","shot","pump"])] as RecipeDisplayUnit[];
   })():[]).map(unit=><option key={unit} value={unit}>{unitLabel(unit)}</option>)}</select></label>
   {add&&requiresDensity(ingredients.find(i=>i.id===add)?.baseUnit??"ml",newRowUnit)&&
-   <label className="w-32 text-[13px] font-bold">{t("densityShort")}
+   <label className="w-32 text-[0.8125rem] font-bold">{t("densityShort")}
     <input type="number" min=".000001" max="5" step="any" inputMode="decimal" value={newRowDensity}
-      onChange={e=>setNewRowDensity(e.target.value)} className="mt-1 min-h-12 w-full rounded-xl border border-line bg-card px-2 text-[17px]"/>
+      onChange={e=>setNewRowDensity(e.target.value)} className="mt-1 min-h-12 w-full rounded-xl border border-line bg-card px-2 text-[1.0625rem]"/>
    </label>}
   {add&&needsIngredientConversion(newRowUnit)&&!(conversions[add]??[]).some(c=>c.unit===newRowUnit)&&
-   <label className="w-36 text-[13px] font-bold">{t("measureShort",{unit:unitLabel(newRowUnit)})}
+   <label className="w-36 text-[0.8125rem] font-bold">{t("measureShort",{unit:unitLabel(newRowUnit)})}
     <input type="number" min=".000001" step="any" inputMode="decimal"
       value={newRowCalibration??String(measureDefault(add,ingredients.find(i=>i.id===add)?.name??"",ingredients.find(i=>i.id===add)?.baseUnit??"ml",newRowUnit)??"")}
       onChange={e=>setNewRowCalibration(e.target.value)}
-      className="mt-1 min-h-12 w-full rounded-xl border border-line bg-card px-2 text-[17px]"/>
+      className="mt-1 min-h-12 w-full rounded-xl border border-line bg-card px-2 text-[1.0625rem]"/>
    </label>}
   <button type="button" disabled={pending||!add||invalidQuantity||!(Number(newRowAmount)>0)} onClick={append} className="min-h-12 rounded-xl bg-accent px-4 font-bold text-on-accent disabled:opacity-50">{t("add")}</button>
   <button type="button" onClick={()=>{setAdd(null);setNewRowCalibration(undefined);}} className="min-h-12 px-3">{t("cancel")}</button></div>;}
@@ -345,7 +345,7 @@ export default function AllSizesRecipe({items,ingredients,conversions,draftSizes
    value={quantityInputs[key]??String(actual.quantity)} onChange={e=>{
    const text=e.target.value;setQuantityInputs(prev=>({...prev,[key]:text}));const value=Number(text);
    if(text!==""&&Number.isFinite(value)&&value>0){setDrafts(prev=>({...prev,[key]:{quantity:value,unit:actual.unit,removed:false}}));setSaved(false);}
-  }} className="min-h-12 min-w-0 w-full rounded-lg border border-line bg-card px-2 text-center text-[17px] font-bold"/>
+  }} className="min-h-12 min-w-0 w-full rounded-lg border border-line bg-card px-2 text-center text-[1.0625rem] font-bold"/>
   <select aria-label={t("unit")} value={actual.unit} onChange={e=>{
    const unit=e.target.value as RecipeDisplayUnit;
    const existing=conversionFor(effective.id);
@@ -367,25 +367,25 @@ export default function AllSizesRecipe({items,ingredients,conversions,draftSizes
    if(requiresDensity(line.baseUnit,unit)&&densityInputs[key]===undefined&&density!==undefined)
     setDensityInputs(prev=>({...prev,[key]:String(density)}));
    if(translated===null)setError(t("measureNeeded"));else setError("");
-  }} className="min-h-12 w-[95px] shrink-0 rounded-lg border border-line bg-card px-1 text-[15px]">{availableUnits(line).map(u=><option key={u} value={u}>{unitLabel(u)}</option>)}</select>
+  }} className="min-h-12 w-[95px] shrink-0 rounded-lg border border-line bg-card px-1 text-[0.9375rem]">{availableUnits(line).map(u=><option key={u} value={u}>{unitLabel(u)}</option>)}</select>
  </div>
-  {requiresDensity(line.baseUnit,actual.unit)&&<label className="mt-1 flex flex-wrap items-center gap-1 text-[13px] text-ink-muted">
+  {requiresDensity(line.baseUnit,actual.unit)&&<label className="mt-1 flex flex-wrap items-center gap-1 text-[0.8125rem] text-ink-muted">
    <span>{t("densityConversionLabel")}</span><input type="number" step="any" inputMode="decimal" min=".000001" max="5"
      aria-label={t("densityValue",{ingredient:line.ingredientName})}
      value={densityInputs[key]??String(densityFor(item,line,actual.unit)??"")}
      onChange={e=>setDensityInputs(prev=>({...prev,[key]:e.target.value}))}
-     className="min-h-12 w-24 rounded-lg border border-line bg-card px-2 text-[17px]"/>
+     className="min-h-12 w-24 rounded-lg border border-line bg-card px-2 text-[1.0625rem]"/>
    <span>{t("densityConversionSuffix")} · {t("measureSuggested")}</span>
   </label>}
-  {needsIngredientConversion(actual.unit)&&pendingMeasure(effective.id,actual.unit)&&<label className="mt-1 flex flex-wrap items-center gap-1 text-[13px] text-ink-muted">
+  {needsIngredientConversion(actual.unit)&&pendingMeasure(effective.id,actual.unit)&&<label className="mt-1 flex flex-wrap items-center gap-1 text-[0.8125rem] text-ink-muted">
    <span>{t("measurePerUnit",{unit:unitLabel(actual.unit)})}</span>
    <input type="number" inputMode="decimal" min=".000001" step="any" aria-label={t("measureValue",{unit:unitLabel(actual.unit),ingredient:line.ingredientName})}
     value={calibration[effective.id+":"+actual.unit]??String(measureDefault(effective.id,effective.name,line.baseUnit,actual.unit)??"")}
     onChange={e=>setCalibration(prev=>({...prev,[effective.id+":"+actual.unit]:e.target.value}))}
-    className="min-h-12 w-24 rounded-lg border border-line bg-card px-2 text-[17px]"/>
+    className="min-h-12 w-24 rounded-lg border border-line bg-card px-2 text-[1.0625rem]"/>
    <span>{line.baseUnit==="g"?units("recipeUnitG"):line.baseUnit==="ml"?units("recipeUnitMl"):units("recipeUnitEach")} · {t("measureSuggested")}</span>
   </label>}
-  <p className="mt-1 text-center text-[13px] text-ink-muted">{cost===null?"—":formatCents(cost)}</p></div>;
+  <p className="mt-1 text-center text-[0.8125rem] text-ink-muted">{cost===null?"—":formatCents(cost)}</p></div>;
  })}</div>;}
  return <div className="relative pb-24 text-ink">
  <div className="mb-3 flex flex-wrap items-center gap-2">
@@ -394,7 +394,7 @@ export default function AllSizesRecipe({items,ingredients,conversions,draftSizes
   {draftSizes.map(draft=><button key={draft.id} type="button" onClick={()=>{setPriceDraft(draft.id);setDraftPrice("");}} className="min-h-12 rounded-full border border-dashed border-warn px-4">{draft.sizeLabel??draft.name}</button>)}
   <button type="button" onClick={()=>setSizeDialog(true)} className="min-h-12 rounded-full border border-dashed border-accent px-4 text-accent-text">{t("addSize")}</button>
  </div>
- <button type="button" disabled={pending||!selectedItems[0]} onClick={()=>selectedItems[0]&&toggleSize(selectedItems[0])} className="mb-3 min-h-12 rounded-xl border border-line px-4 text-[17px]">{active.includes(focusedSize)?menu("noLongerServing"):menu("serveAgain")}</button>
+ <button type="button" disabled={pending||!selectedItems[0]} onClick={()=>selectedItems[0]&&toggleSize(selectedItems[0])} className="mb-3 min-h-12 rounded-xl border border-line px-4 text-[1.0625rem]">{active.includes(focusedSize)?menu("noLongerServing"):menu("serveAgain")}</button>
  <div className="mb-3 flex flex-wrap gap-2"><button type="button" onClick={()=>beginAddRow("top")} className="min-h-12 rounded-xl border border-line bg-card px-4 font-bold text-accent-text"><Plus className="me-1 inline size-4"/>{t("addRecipeRow")}</button><button type="button" onClick={()=>{if(hasUnsavedChanges||invalidQuantity){setError(t("saveBeforeAddingIngredient"));return;}setNewPantry(v=>!v);}} className="min-h-12 rounded-xl bg-accent px-4 font-bold text-on-accent"><Plus className="me-1 inline size-4"/>{t("addPantryItem")}</button></div>
  {newPantry&&<div className="mb-3"><NewPantryInlineRow onCancel={()=>setNewPantry(false)} onCreated={async created=>{
   if(!selectedItems[0]){router.refresh();return;}
@@ -404,10 +404,10 @@ export default function AllSizesRecipe({items,ingredients,conversions,draftSizes
  }}/></div>}
  {add!==null&&addAfter==="top"&&addPicker()}
  <div className="mb-2 grid gap-1.5 lg:hidden" style={mobileColumns}>{selectedItems.map(item=><div key={item.id} className="rounded-xl bg-paper p-2 text-center font-bold">{item.sizeLabel??item.name}</div>)}</div>
- <div className="space-y-2 lg:hidden">{ingredientRows.map(([id,name])=><div key={id} className="rounded-2xl border border-line bg-card p-3"><div className="mb-2 flex min-h-12 items-center gap-2"><strong className="min-w-0 flex-1 break-words">{recipeRowDisplayName(focusedSize,id,name,replacements,ingredients)}</strong><button type="button" onClick={()=>beginAddRow(id)} aria-label={t("addRecipeRowAfter",{name})} className="flex min-h-12 min-w-12 items-center justify-center rounded-xl bg-accent-soft text-accent-text"><Plus size={18}/></button><button type="button" aria-label={t("moveIngredientUp",{name})} onClick={()=>moveRow(id,-1)} className="min-h-12 min-w-10 rounded-xl bg-paper"><ArrowUp size={17} className="mx-auto"/></button><button type="button" aria-label={t("moveIngredientDown",{name})} onClick={()=>moveRow(id,1)} className="min-h-12 min-w-10 rounded-xl bg-paper"><ArrowDown size={17} className="mx-auto"/></button><button type="button" onClick={()=>openSwap(id)} className="min-h-12 rounded-xl bg-paper px-2 text-[13px] font-bold text-accent-text"><ArrowLeftRight size={15} className="me-1 inline"/>{t("swap")}</button><button type="button" aria-label={t("remove")} onClick={()=>removeRow(id)} className="flex min-h-12 min-w-12 items-center justify-center rounded-full bg-paper"><X size={17}/></button></div>{editingIngredient===id&&replacementPicker(id)}{cells(id)}{add!==null&&addAfter===id&&<div className="mt-3">{addPicker()}</div>}</div>)}</div>
+ <div className="space-y-2 lg:hidden">{ingredientRows.map(([id,name])=><div key={id} className="rounded-2xl border border-line bg-card p-3"><div className="mb-2 flex min-h-12 items-center gap-2"><strong className="min-w-0 flex-1 break-words">{recipeRowDisplayName(focusedSize,id,name,replacements,ingredients)}</strong><button type="button" onClick={()=>beginAddRow(id)} aria-label={t("addRecipeRowAfter",{name})} className="flex min-h-12 min-w-12 items-center justify-center rounded-xl bg-accent-soft text-accent-text"><Plus size={18}/></button><button type="button" aria-label={t("moveIngredientUp",{name})} onClick={()=>moveRow(id,-1)} className="min-h-12 min-w-10 rounded-xl bg-paper"><ArrowUp size={17} className="mx-auto"/></button><button type="button" aria-label={t("moveIngredientDown",{name})} onClick={()=>moveRow(id,1)} className="min-h-12 min-w-10 rounded-xl bg-paper"><ArrowDown size={17} className="mx-auto"/></button><button type="button" onClick={()=>openSwap(id)} className="min-h-12 rounded-xl bg-paper px-2 text-[0.8125rem] font-bold text-accent-text"><ArrowLeftRight size={15} className="me-1 inline"/>{t("swap")}</button><button type="button" aria-label={t("remove")} onClick={()=>removeRow(id)} className="flex min-h-12 min-w-12 items-center justify-center rounded-full bg-paper"><X size={17}/></button></div>{editingIngredient===id&&replacementPicker(id)}{cells(id)}{add!==null&&addAfter===id&&<div className="mt-3">{addPicker()}</div>}</div>)}</div>
  <div className="hidden overflow-x-auto rounded-2xl border border-line bg-card lg:block"><table className="w-full table-fixed"><thead><tr className="border-b border-line bg-paper"><th className="w-[28%] p-3 text-start">{t("name")}</th>{selectedItems.map(item=><th key={item.id} className="p-3">{item.sizeLabel??item.name}</th>)}</tr></thead><tbody>{ingredientRows.map(([id,name])=><Fragment key={id}><tr className="border-b border-line"><th className="p-3 text-start"><div className="flex items-center gap-2"><span className="min-w-0 flex-1">{recipeRowDisplayName(focusedSize,id,name,replacements,ingredients)}</span><button type="button" onClick={()=>beginAddRow(id)} aria-label={t("addRecipeRowAfter",{name})} className="flex min-h-12 min-w-12 items-center justify-center rounded-xl bg-accent-soft text-accent-text"><Plus size={18}/></button><button type="button" onClick={()=>moveRow(id,-1)} aria-label={t("moveIngredientUp",{name})} className="min-h-12 min-w-10 rounded-xl bg-paper"><ArrowUp size={16} className="mx-auto"/></button><button type="button" onClick={()=>moveRow(id,1)} aria-label={t("moveIngredientDown",{name})} className="min-h-12 min-w-10 rounded-xl bg-paper"><ArrowDown size={16} className="mx-auto"/></button></div>{editingIngredient===id&&replacementPicker(id)}<div><button type="button" className="min-h-12 text-sm text-accent-text" onClick={()=>openSwap(id)}>{t("swap")}</button><button type="button" className="ms-2 min-h-12 text-sm text-warn" onClick={()=>removeRow(id)}>{t("remove")}</button></div></th>{selectedItems.map(item=><td key={item.id} className="p-2">{cells(id,item)}</td>)}</tr>{add!==null&&addAfter===id&&<tr><td colSpan={selectedItems.length+1} className="p-2">{addPicker()}</td></tr>}</Fragment>)}</tbody></table></div>
  {error&&<p role="alert" className="mt-2 text-warn">{error}</p>}{saved&&<p role="status" className="mt-2 text-good">{t("saved")}</p>}
- <div className="sticky bottom-24 z-20 mt-6 rounded-2xl border border-line bg-card p-3 shadow-xl"><h2 className="mb-3 font-headline text-xl font-extrabold">{t("whatYouKeep")}</h2><div className="grid grid-cols-2 gap-1.5 sm:grid-cols-3 lg:flex lg:flex-col">{selectedItems.map(item=>{const p=prices[item.id];return <div key={item.id} className="min-w-0 rounded-xl bg-paper p-2 text-center text-[13px]"><p className="font-bold">{item.sizeLabel??item.name}</p><p>{t("cost")} {p?.cost===null?"—":formatCents(p.cost)}</p><p>{t("price")} {formatCents(item.priceCents)}</p><p className="font-extrabold text-good">{p?.summary.keepCents===null?"—":t("keep",{amount:formatCents(p.summary.keepCents),percent:p.summary.keepPercent ?? 0})}</p>{p?.estimated&&<p className="text-warn">{t("estimate")}</p>}</div>})}</div><button type="button" onClick={save} disabled={pending||invalidQuantity||invalidDensity||selectedItems.length===0||add!==null||newPantry} className="mt-3 min-h-14 w-full rounded-xl bg-accent font-bold text-on-accent disabled:opacity-50">{t("saveItem",{name:items[0]?.baseName??""})}</button></div>
+ <div className="sticky bottom-24 z-20 mt-6 rounded-2xl border border-line bg-card p-3 shadow-xl"><h2 className="mb-3 font-headline text-xl font-extrabold">{t("whatYouKeep")}</h2><div className="grid grid-cols-2 gap-1.5 sm:grid-cols-3 lg:flex lg:flex-col">{selectedItems.map(item=>{const p=prices[item.id];return <div key={item.id} className="min-w-0 rounded-xl bg-paper p-2 text-center text-[0.8125rem]"><p className="font-bold">{item.sizeLabel??item.name}</p><p>{t("cost")} {p?.cost===null?"—":formatCents(p.cost)}</p><p>{t("price")} {formatCents(item.priceCents)}</p><p className="font-extrabold text-good">{p?.summary.keepCents===null?"—":t("keep",{amount:formatCents(p.summary.keepCents),percent:p.summary.keepPercent ?? 0})}</p>{p?.estimated&&<p className="text-warn">{t("estimate")}</p>}</div>})}</div><button type="button" onClick={save} disabled={pending||invalidQuantity||invalidDensity||selectedItems.length===0||add!==null||newPantry} className="mt-3 min-h-14 w-full rounded-xl bg-accent font-bold text-on-accent disabled:opacity-50">{t("saveItem",{name:items[0]?.baseName??""})}</button></div>
  {toast&&<div role="status" className="fixed bottom-40 start-4 z-30 flex items-center gap-2 rounded-2xl bg-ink px-4 py-3 text-card">{t("removed",{name:toast})} · <button type="button" onClick={undo} className="min-h-10 font-bold underline">{t("undo")}</button></div>}
  {priceDraft&&<div role="dialog" aria-modal="true" className="fixed inset-0 z-50 flex items-end justify-center bg-black/50"><div className="w-full max-w-sm rounded-t-2xl bg-card p-5 text-ink sm:rounded-2xl"><h2 className="mb-3 font-headline text-xl font-bold">{t("setPrice")}</h2><label className="block font-bold">{t("itemPrice")}<input autoFocus type="number" min=".01" step=".01" value={draftPrice} onChange={e=>setDraftPrice(e.target.value)} className="mt-2 min-h-12 w-full rounded-xl border border-line bg-card px-3"/></label><div className="mt-4 flex gap-2"><button type="button" className="min-h-12 flex-1 rounded-xl border border-line" onClick={()=>setPriceDraft(null)}>{t("cancel")}</button><button type="button" disabled={pending||!(Number(draftPrice)>0)} className="min-h-12 flex-1 rounded-xl bg-accent text-on-accent" onClick={saveDraftSizePrice}>{t("save")}</button></div></div></div>}
  {sizeDialog&&items[0]&&<AddSizeDialog baseName={items[0].baseName} category={items[0].category} menuGroup={items[0].menuGroup} siblingSizes={items.map(item=>({id:item.id,name:item.name,sizeLabel:item.sizeLabel,priceCents:item.priceCents}))} onDone={()=>{setSizeDialog(false);router.refresh();}} onClose={()=>setSizeDialog(false)}/>}

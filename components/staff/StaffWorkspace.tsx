@@ -355,7 +355,7 @@ export default function StaffWorkspace({initial,tab="schedule",locale="en",initi
      {data.team.map(p=><div key={p.id} className="flex min-h-16 items-center gap-3 border-t border-line py-3">
       <span className="grid size-12 place-items-center rounded-full bg-accent-soft font-bold">{p.name[0]}</span>
       <div className="min-w-0 flex-1"><b>{p.name}</b><span className="ms-2 text-sm text-muted">{p.role?roleLabel(p.role):t("team")}</span>
-        <div className="text-[17px] text-muted">{p.wageCents==null?(p.wagePeriod!=="hour"?t("salaryManagedBadge"):<button type="button" disabled={data.readOnly} onClick={()=>{openPerson(p);setTimeout(()=>document.getElementById("staff-hourly-wage")?.focus(),0);}} className="min-h-12 text-start underline text-accent-text">{t("noWageAction")}</button>):t("wagePerHour",{amount:fmt(p.wageCents,data.currency,locale)})}</div><div className="text-[17px] text-muted">{teamSummary(p)}</div></div>
+        <div className="text-[1.0625rem] text-muted">{p.wageCents==null?(p.wagePeriod!=="hour"?t("salaryManagedBadge"):<button type="button" disabled={data.readOnly} onClick={()=>{openPerson(p);setTimeout(()=>document.getElementById("staff-hourly-wage")?.focus(),0);}} className="min-h-12 text-start underline text-accent-text">{t("noWageAction")}</button>):t("wagePerHour",{amount:fmt(p.wageCents,data.currency,locale)})}</div><div className="text-[1.0625rem] text-muted">{teamSummary(p)}</div></div>
       <div className="text-end">{projected.toastAffectedEmployeeIds.has(p.id)?"—":t("teamHoursShort",{hours:new Intl.NumberFormat(locale,{maximumFractionDigits:1}).format(hours(personTotals(p.id,costedShifts).paidMinutes))})}</div>
       <button disabled={data.readOnly} onClick={()=>openPerson(p)} className="min-h-12 px-2">{t("edit")}</button>
      </div>)}
@@ -384,7 +384,7 @@ export default function StaffWorkspace({initial,tab="schedule",locale="en",initi
       </div>}
       <div className="mt-4"><h3 className="font-bold">{t("usuallyAvailable")}</h3>
        <p className="text-sm text-muted">{t("availabilityHelp")}</p>
-        {complexAvailability&&<p role="status" className="mt-2 text-[17px] text-warn-text">{t("multipleAvailabilityHelp")}</p>}
+        {complexAvailability&&<p role="status" className="mt-2 text-[1.0625rem] text-warn-text">{t("multipleAvailabilityHelp")}</p>}
        {[0,1,2,3,4,5,6].map(day=>{const label=new Intl.DateTimeFormat(locale,{weekday:"short",timeZone:"UTC"}).format(new Date(Date.UTC(2026,9,25+day)));
         const row=availability.find(d=>d.day===day);
         return <div key={day} className="border-b border-line py-2">
@@ -396,7 +396,7 @@ export default function StaffWorkspace({initial,tab="schedule",locale="en",initi
          {row&&<div className="mt-2 flex flex-wrap gap-2">{(["morning","afternoon","allDay"] as const).map(chip=><button type="button" key={chip}
           disabled={complexAvailability} onClick={()=>mutateAvailability(day,chip==="allDay"?{start:null,end:null}:chip==="morning"?{start:"06:00",end:"12:00"}:{start:"12:00",end:"18:00"})}
           aria-pressed={chip==="allDay"?row.start===null&&row.end===null:chip==="morning"?row.start==="06:00"&&row.end==="12:00":row.start==="12:00"&&row.end==="18:00"}
-           className="min-h-12 rounded-full border border-line px-3 text-[17px]">{t(chip)}</button>)}</div>}
+           className="min-h-12 rounded-full border border-line px-3 text-[1.0625rem]">{t(chip)}</button>)}</div>}
          {row&&<div className="mt-2 grid grid-cols-2 gap-2">{(["start","end"] as const).map(field=><label key={field} className="text-sm">
           {field==="start"?t("from"):t("until")}
           <input type="time" step={60} disabled={complexAvailability} value={row[field]??""} onChange={e=>mutateAvailability(day,{...row,[field]:e.target.value||null})}
@@ -407,7 +407,7 @@ export default function StaffWorkspace({initial,tab="schedule",locale="en",initi
         </div>;
        })}
       </div>
-      {invalidAvailability&&<p id="staff-availability-error" role="alert" className="mt-2 text-[17px] text-neg">{t("invalidAvailability")}</p>}
+      {invalidAvailability&&<p id="staff-availability-error" role="alert" className="mt-2 text-[1.0625rem] text-neg">{t("invalidAvailability")}</p>}
       {([[t("minimumWeek"),minHoursInput,setMinHoursInput,invalidMin],[t("maximumWeek"),maxHoursInput,setMaxHoursInput,invalidMax||invalidRange]] as const).map(([label,value,set,invalid])=>
        <div key={label} className="mt-3"><label className="font-semibold">{label} ({t("optionalShort")})
         <input inputMode="decimal" dir="ltr" value={value} onChange={e=>set(e.target.value)} aria-invalid={invalid}
@@ -417,9 +417,9 @@ export default function StaffWorkspace({initial,tab="schedule",locale="en",initi
         <input id="staff-person-phone" type="tel" value={phone} onChange={e=>setPhone(e.target.value)} placeholder="+14155551234"
          className="mt-1 min-h-12 w-full rounded-xl border border-line bg-surface px-3" dir="ltr"/>
       </label>
-      {phone.trim()&&<p role="status" className="mt-1 text-[17px]">{normalizedPhone?t("phoneWillSave",{phone:formatStaffPhonePreview(normalizedPhone)}):t("invalidPhone")}</p>}
+      {phone.trim()&&<p role="status" className="mt-1 text-[1.0625rem]">{normalizedPhone?t("phoneWillSave",{phone:formatStaffPhonePreview(normalizedPhone)}):t("invalidPhone")}</p>}
       <label className="mt-3 block font-semibold">{t("messageLanguage")}
-       <select className="mt-1 min-h-12 w-full rounded-xl border border-line bg-surface px-3 text-[17px]" value={language} onChange={event=>setLanguage(event.target.value as "en"|"es"|"ar"|"")}>
+       <select className="mt-1 min-h-12 w-full rounded-xl border border-line bg-surface px-3 text-[1.0625rem]" value={language} onChange={event=>setLanguage(event.target.value as "en"|"es"|"ar"|"")}>
         <option value="">{t("sameAsApp")}</option><option value="en">English</option><option value="es">Español</option><option value="ar">العربية</option>
        </select>
       </label>
@@ -428,7 +428,7 @@ export default function StaffWorkspace({initial,tab="schedule",locale="en",initi
           disabled={savingConsent||busy||data.readOnly}
           onChange={event=>void saveConsent(event.target.checked)}
           className="size-6 shrink-0 accent-accent"/>
-        <span className="text-[17px]">{t("deliveryConsent")}</span>
+        <span className="text-[1.0625rem]">{t("deliveryConsent")}</span>
        </label>:<p className="mt-3 text-sm text-muted">{t("deliveryConsentAfterCreate")}</p>}
        {personEditing&&consentError&&<p role="alert" className="mt-2 text-neg">{t("deliveryConsentError")}</p>}
        <button disabled={busy||savingConsent||!name.trim()||personInvalid} onClick={()=>run(()=>{

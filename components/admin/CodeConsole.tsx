@@ -60,7 +60,7 @@ export default function CodeConsole({codes,redemptions,access,cafes,page,perPage
     <td className="p-3">{c.redeemed_cafes}</td><td className="p-3">{c.note??"—"}</td>
     <td className="p-3"><button disabled={busy} className="underline" onClick={()=>void action({action:"toggle",id:c.id,active:!c.active})}>{c.active?"Deactivate":"Activate"}</button></td></tr>)}</tbody>
   </table></div>
-  <nav className="flex gap-4 text-[17px]" aria-label="Code pages">
+  <nav className="flex gap-4 text-[1.0625rem]" aria-label="Code pages">
    {page>0&&<Link className="underline" href={pageUrl(page-1,cafePage)}>Previous codes</Link>}
    {(page+1)*perPage<codeTotal&&<Link className="underline" href={pageUrl(page+1,cafePage)}>Next codes</Link>}
   </nav>
@@ -74,7 +74,7 @@ export default function CodeConsole({codes,redemptions,access,cafes,page,perPage
     <td className="p-3">{accessLabel(r.business_id)}</td></tr>)}</tbody>
   </table></div>
   <h2 className="text-xl font-bold">Café access control</h2>
-  <p className="text-[17px]">{cafeTotal} cafés · page {cafePage+1} of {Math.max(1,Math.ceil(cafeTotal/cafePerPage))}</p>
+  <p className="text-[1.0625rem]">{cafeTotal} cafés · page {cafePage+1} of {Math.max(1,Math.ceil(cafeTotal/cafePerPage))}</p>
   <div className="space-y-2">{cafes.map(c=>{const state=access.find(a=>a.business_id===c.id);return <div key={c.id} className="flex flex-wrap items-center gap-3 rounded border bg-white p-3 text-sm">
    <strong>{c.name}</strong><span>{state?.mode??"grandfathered"} {state?.access_end??""}</span>
    <form className="flex items-center gap-2" onSubmit={e=>{e.preventDefault();const form=new FormData(e.currentTarget);void action({action:"extend",businessId:c.id,accessEnd:form.get("end")});}}>
@@ -84,7 +84,7 @@ export default function CodeConsole({codes,redemptions,access,cafes,page,perPage
    <button disabled={busy} className="underline" onClick={()=>void action({action:"setMode",businessId:c.id,mode:"grandfathered"})}>Full access</button>
    <button disabled={busy} className="underline" onClick={()=>void action({action:"setMode",businessId:c.id,mode:"paused"})}>Pause AI</button>
   </div>})}</div>
-  <nav className="flex gap-4 text-[17px]" aria-label="Café access pages">
+  <nav className="flex gap-4 text-[1.0625rem]" aria-label="Café access pages">
    {cafePage>0&&<Link className="underline" href={pageUrl(page,cafePage-1)}>Previous cafés</Link>}
    {(cafePage+1)*cafePerPage<cafeTotal&&<Link className="underline" href={pageUrl(page,cafePage+1)}>Next cafés</Link>}
   </nav>

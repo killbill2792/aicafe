@@ -8,7 +8,7 @@ export default function ToastOnboardingChecklist({status}:{businessId:string;sta
  const connected=status?.connection==="connected";
  const completed=[connected,connected,status?.connection!==undefined&&status.connection!=="not_connected",connected,connected,
   Boolean(status?.startDate),status?.firstImportCheck==="answered",status?.analytics.verified];
- return <details open className="rounded-card-lg bg-card p-5 text-[17px]" dir={locale==="ar"?"rtl":"ltr"}>
+ return <details open className="rounded-card-lg bg-card p-5 text-[1.0625rem]" dir={locale==="ar"?"rtl":"ltr"}>
   <summary className="min-h-12 cursor-pointer py-3 text-xl font-bold">{t("checklistTitle")}</summary>
   <ol className="flex flex-col gap-3">{completed.map((done,i)=><li key={i} className="flex gap-3">
    <span aria-hidden="true">{status==null?"…":done?"✓":"○"}</span><p><span className="sr-only">{status==null?t("pending"):t(done?"checklistDone":"checklistPending")}</span>{t("checklist"+(i+1))}</p>

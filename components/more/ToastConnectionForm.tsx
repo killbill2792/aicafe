@@ -1,4 +1,5 @@
 "use client";
+import ToastWebhookSetup from "./ToastWebhookSetup";
 import {useEffect,useState} from "react";
 import {useLocale,useTranslations} from "next-intl";
 import {Link} from "@/i18n/navigation";
@@ -103,7 +104,7 @@ export default function ToastConnectionForm({businessId,locations,enabled,approv
   }catch{setMessage(labels.errorUnavailable);}
   finally{setPending(false);}
  }
- return <section className="flex flex-col gap-4 rounded-card-lg bg-card p-4 text-[17px]">
+ return <section className="flex flex-col gap-4 rounded-card-lg bg-card p-4 text-[1.0625rem]">
   <p className="text-base text-ink-muted">{labels.instructions}</p>
   <div className="flex flex-wrap items-center justify-between gap-3">
    <p role="status" className="text-base font-semibold text-ink">
@@ -130,7 +131,7 @@ export default function ToastConnectionForm({businessId,locations,enabled,approv
       value={secret} onChange={e=>setSecret(e.target.value)} autoComplete="new-password"/>
     </label>
    </div>
-   <Link href="/privacy" className="inline-flex min-h-12 items-center text-[17px] text-accent-text underline">{privacy("toastLink")}</Link>
+   <Link href="/privacy" className="inline-flex min-h-12 items-center text-[1.0625rem] text-accent-text underline">{privacy("toastLink")}</Link>
    <div className="flex flex-wrap gap-3">
     <button disabled={pending||!secret||!approvedOrigins.includes(apiUrl)||!clientId||
       !Object.values(mapping).some(Boolean)}
@@ -178,6 +179,7 @@ export default function ToastConnectionForm({businessId,locations,enabled,approv
     </div>
    </details>
   </>}
+  {enabled&&status==="connected"&&<ToastWebhookSetup businessId={businessId}/>}
   {message&&<p role="status" className="rounded-xl bg-paper p-3 text-sm text-ink">{message}</p>}
  </section>;
 }

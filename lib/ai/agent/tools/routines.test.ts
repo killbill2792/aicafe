@@ -2,6 +2,20 @@ import {describe,it,expect,vi} from "vitest";
 import {routineTools} from "./routines";
 const ctx=(port:unknown)=>({routines:port}) as never;
 const blank={routine_id:null,revision:null,title:null,cadence:null,weekdays:null,local_time:null,goal_source_message_id:null,source_page_offset:null};
+describe("approve-first routine draft",()=>{
+  it("saves nothing and returns a draft the owner must approve",async()=>{
+    const create=vi.fn();
+    const ids={ownerMessageId:"11111111-1111-4111-8111-111111111111",goalSourceMessageId:"22222222-2222-4222-8222-222222222222"};
+    const draft=vi.fn(()=>ids);
+    const res=await routineTools.manage_routine.execute({
+      ...blank,action:"create",title:"Meal break check",cadence:"daily",weekdays:[],local_time:"13:00",
+    },ctx({create,draft,list:vi.fn(),change:vi.fn()}));
+    expect(create).not.toHaveBeenCalled();
+    expect(res).toMatchObject({draft:true,saved:false,missing:[],
+      routineDraft:{title:"Meal break check",cadence:"daily",weekdays:[],localTime:"13:00",...ids}});
+    expect(res.routine).toBeUndefined();
+  });
+});
 describe("verified owner routine chat tool",()=>{
   it("saves only through server verified port",async()=>{
     const create=vi.fn(async(input)=>({id:"saved",...input}));

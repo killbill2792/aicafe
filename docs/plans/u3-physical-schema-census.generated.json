@@ -1729,6 +1729,68 @@
      true
     ],
     [
+     "topic",
+     "text",
+     true
+    ],
+    [
+     "note",
+     "text",
+     true
+    ],
+    [
+     "basis",
+     "text",
+     true
+    ],
+    [
+     "created_at",
+     "timestamp with time zone",
+     true
+    ],
+    [
+     "confirmed_at",
+     "timestamp with time zone",
+     true
+    ],
+    [
+     "retired_at",
+     "timestamp with time zone",
+     false
+    ],
+    [
+     "retired_by",
+     "uuid",
+     false
+    ]
+   ],
+   "relation": "cafe_notes",
+   "foreign_keys": [
+    {
+     "target": "businesses",
+     "constraint": "cafe_notes_business_id_fkey"
+    },
+    {
+     "target": "users",
+     "constraint": "cafe_notes_retired_by_fkey"
+    }
+   ]
+  },
+  {
+   "rls": true,
+   "kind": "table",
+   "columns": [
+    [
+     "id",
+     "uuid",
+     true
+    ],
+    [
+     "business_id",
+     "uuid",
+     true
+    ],
+    [
      "supplier_id",
      "uuid",
      true
@@ -4495,44 +4557,44 @@
      true
     ],
     [
-     "gross_cents",
-     "bigint",
-     true
-    ],
-    [
-     "net_cents",
-     "bigint",
-     true
-    ],
-    [
      "regular_cents",
      "bigint",
-     true
+     false
     ],
     [
      "overtime_cents",
      "bigint",
-     true
+     false
     ],
     [
      "double_overtime_cents",
      "bigint",
-     true
+     false
+    ],
+    [
+     "gross_cents",
+     "bigint",
+     false
     ],
     [
      "employee_tax_cents",
      "bigint",
-     true
+     false
     ],
     [
      "employer_tax_cents",
      "bigint",
-     true
+     false
+    ],
+    [
+     "net_cents",
+     "bigint",
+     false
     ],
     [
      "source",
      "text",
-     true
+     false
     ]
    ],
    "relation": "employee_pay_period_facts",
@@ -4557,13 +4619,13 @@
      true
     ],
     [
-     "business_date",
-     "date",
+     "employee_id",
+     "uuid",
      true
     ],
     [
-     "employee_id",
-     "uuid",
+     "business_date",
+     "date",
      true
     ],
     [
@@ -5059,14 +5121,14 @@
      true
     ],
     [
-     "business_date",
-     "date",
-     true
-    ],
-    [
      "location_id",
      "uuid",
      false
+    ],
+    [
+     "business_date",
+     "date",
+     true
     ],
     [
      "hour_local",
@@ -15285,6 +15347,21 @@
      "lease_nonce",
      "uuid",
      false
+    ],
+    [
+     "event_kind",
+     "text",
+     true
+    ],
+    [
+     "event_version",
+     "text",
+     false
+    ],
+    [
+     "item_guid",
+     "uuid",
+     false
     ]
    ],
    "relation": "toast_order_events",
@@ -15336,6 +15413,21 @@
     [
      "updated_at",
      "timestamp with time zone",
+     true
+    ],
+    [
+     "canonical",
+     "boolean",
+     true
+    ],
+    [
+     "bootstrap_day",
+     "date",
+     false
+    ],
+    [
+     "unparsed_pages",
+     "jsonb",
      true
     ]
    ],
@@ -16272,6 +16364,11 @@
      "seen_run_id",
      "uuid",
      false
+    ],
+    [
+     "live_projection",
+     "jsonb",
+     false
     ]
    ],
    "relation": "toast_raw_records",
@@ -16727,6 +16824,21 @@
     [
      "last_schedule_poll_at",
      "timestamp with time zone",
+     false
+    ],
+    [
+     "canonical_order_poll_at",
+     "timestamp with time zone",
+     false
+    ],
+    [
+     "canonical_order_poll_from",
+     "timestamp with time zone",
+     false
+    ],
+    [
+     "canonical_live_day",
+     "date",
      false
     ]
    ],
@@ -17392,6 +17504,11 @@
      "created_at",
      "timestamp with time zone",
      true
+    ],
+    [
+     "event_kind",
+     "text",
+     true
     ]
    ],
    "relation": "toast_webhook_subscriptions",
@@ -17403,9 +17520,8 @@
    ]
   },
   {
-   "relation": "u4_push_receipts",
-   "kind": "table",
    "rls": true,
+   "kind": "table",
    "columns": [
     [
      "business_id",
@@ -17468,6 +17584,7 @@
      true
     ]
    ],
+   "relation": "u4_push_receipts",
    "foreign_keys": [
     {
      "target": "u4_push_subscriptions",
@@ -17476,9 +17593,8 @@
    ]
   },
   {
-   "relation": "u4_push_subscriptions",
-   "kind": "table",
    "rls": true,
+   "kind": "table",
    "columns": [
     [
      "business_id",
@@ -17516,6 +17632,7 @@
      true
     ]
    ],
+   "relation": "u4_push_subscriptions",
    "foreign_keys": [
     {
      "target": "businesses",

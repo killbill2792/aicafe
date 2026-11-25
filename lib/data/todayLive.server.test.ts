@@ -25,8 +25,8 @@ describe("today so far: one saved reading for Home and chat",()=>{
   const {db}=fakeDb({reading:value("2026-10-29T10:55:00Z",{businessDate:"2026-10-28"}),read_at:"2026-10-29T10:55:00Z"});
   live.read.mockResolvedValue({available:true,value:value("2026-10-29T11:05:00Z",{netSalesCents:0,orders:0})});
   const r=await todaySoFarForBusiness(db,"cafe",{now:new Date("2026-10-29T11:05:00Z")});
-  expect(live.read).toHaveBeenCalled();
-  expect(r).toMatchObject({available:true,value:{netSalesCents:0}});
+  expect(live.read).not.toHaveBeenCalled();
+  expect(r).toMatchObject({available:false});
  });
  it("uses a reading saved in the last 15 minutes without calling Toast",async()=>{
   const {db}=fakeDb({reading:value("2026-10-29T17:10:00Z"),read_at:"2026-10-29T17:10:00Z"});
@@ -34,12 +34,12 @@ describe("today so far: one saved reading for Home and chat",()=>{
   expect(r).toMatchObject({available:true,value:{netSalesCents:84_250}});
   expect(live.read).not.toHaveBeenCalled();
  });
- it("reads Toast again when the reading is old, and saves the new one",async()=>{
+ it("keeps the actual old as-of without another provider fetch or fabricated freshness",async()=>{
   const {db,upsert}=fakeDb({reading:value("2026-10-29T16:50:00Z"),read_at:"2026-10-29T16:50:00Z"});
   live.read.mockResolvedValue({available:true,value:value("2026-10-29T17:20:00Z",{netSalesCents:90_000})});
   const r=await todaySoFarForBusiness(db,"cafe",{now});
-  expect(r).toMatchObject({available:true,value:{netSalesCents:90_000}});
-  expect(upsert).toHaveBeenCalledWith(expect.objectContaining({business_id:"cafe",net_sales_cents:90_000,orders:61}),{onConflict:"business_id"});
+  expect(r).toMatchObject({available:true,value:{netSalesCents:84_250,readAt:"2026-10-29T16:50:00Z"}});
+  expect(live.read).not.toHaveBeenCalled();expect(upsert).not.toHaveBeenCalled();
  });
  it("never saves a partial reading over the saved one",async()=>{
   const {db,upsert}=fakeDb(null);

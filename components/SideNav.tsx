@@ -33,7 +33,7 @@ export default function SideNav({ cafeName, languageSwitch }: { cafeName: string
                 href={href}
                 aria-current={isActive ? "page" : undefined}
                 aria-label={t(key)} title={compact?t(key):undefined}
-                className={`flex min-h-12 items-center gap-3 rounded-full px-3 text-[15px] font-semibold ${isActive ? "bg-accent-soft text-accent-text" : "text-muted hover:bg-surface2"}`}
+                className={`flex min-h-12 items-center gap-3 rounded-full px-3 text-[0.9375rem] font-semibold ${isActive ? "bg-accent-soft text-accent-text" : "text-muted hover:bg-surface2"}`}
               >
                 <Icon aria-hidden="true" size={20} />
                 <span className={compact?"sr-only":undefined}>{t(key)}</span>

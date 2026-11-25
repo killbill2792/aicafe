@@ -37,12 +37,12 @@ export default async function ExperimentsPage() {
   };
   return <PageShell className="flex flex-col gap-4 px-4 pb-28 pt-6">
     <header>
-      <Link href="/operations" className="flex min-h-12 items-center text-[17px] font-semibold text-accent-text underline">← {t("back")}</Link>
+      <Link href="/operations" className="flex min-h-12 items-center text-[1.0625rem] font-semibold text-accent-text underline">← {t("back")}</Link>
       <h1 className="font-headline text-3xl font-bold text-ink">{t("title")}</h1>
-      <p className="mt-1 text-[17px] text-ink-muted">{t("intro")}</p>
+      <p className="mt-1 text-[1.0625rem] text-ink-muted">{t("intro")}</p>
     </header>
     {list === null
-      ? <p role="alert" className="rounded-card-lg bg-card p-[18px] text-[17px] text-ink">{t("unavailable")}</p>
+      ? <p role="alert" className="rounded-card-lg bg-card p-[18px] text-[1.0625rem] text-ink">{t("unavailable")}</p>
       : <>
         <Section title={t("running")} empty={t("emptyRunning")} entries={list.running} t={t} fmt={fmt} />
         <Section title={t("past")} empty={t("emptyPast")} entries={list.past} t={t} fmt={fmt} />
@@ -54,7 +54,7 @@ function Section({ title, empty, entries, t, fmt }: { title: string; empty: stri
   return <section className="flex flex-col gap-3" aria-label={title}>
     <h2 className="font-headline text-2xl font-bold text-ink">{title} {entries.length}</h2>
     {entries.length === 0
-      ? <p className="rounded-card-lg bg-card p-[18px] text-[17px] text-ink-muted">{empty}</p>
+      ? <p className="rounded-card-lg bg-card p-[18px] text-[1.0625rem] text-ink-muted">{empty}</p>
       : entries.map((entry) => <ExperimentCard key={entry.proposalId} entry={entry} t={t} fmt={fmt} />)}
   </section>;
 }
@@ -76,8 +76,8 @@ function ExperimentCard({ entry: e, t, fmt }: { entry: ExperimentEntry; t: T; fm
     <h3 className="text-lg font-bold text-ink" dir="auto">{price
       ? t("priceTitle", { item: e.title, old: fmt.money(e.oldPriceCents!), new: fmt.money(e.newPriceCents!) })
       : t("goalTitle", { title: e.title })}</h3>
-    <p className="mt-1 text-[17px] font-semibold text-ink">{stageText(e, t, fmt)}</p>
-    <dl className="mt-3 grid gap-2 text-[17px]">
+    <p className="mt-1 text-[1.0625rem] font-semibold text-ink">{stageText(e, t, fmt)}</p>
+    <dl className="mt-3 grid gap-2 text-[1.0625rem]">
       <div><dt className="font-semibold text-ink-muted">{t("goalLabel")}</dt>
         <dd dir="auto">{price ? t("priceGoal", { item: e.title, new: fmt.money(e.newPriceCents!) }) : e.title}</dd></div>
       {price && <div><dt className="font-semibold text-ink-muted">{t("beforeAfter")}</dt>
@@ -89,11 +89,11 @@ function ExperimentCard({ entry: e, t, fmt }: { entry: ExperimentEntry; t: T; fm
             {t("baselineEstimate", { amount: fmt.money(e.estimatedRevenueCents) })}<EstimatePill label={t("estimate")} /></span>}
         </dd></div>}
     </dl>
-    {e.overlapsWith.length > 0 && <p role="note" className="mt-3 rounded-xl border border-amber-300 p-3 text-[17px] font-semibold text-ink">{t("overlap")}</p>}
+    {e.overlapsWith.length > 0 && <p role="note" className="mt-3 rounded-xl border border-amber-300 p-3 text-[1.0625rem] font-semibold text-ink">{t("overlap")}</p>}
     <h4 className="mt-4 font-bold text-ink">{t("daily")}</h4>
     {e.samples.length === 0
-      ? <p className="mt-1 text-[17px] text-ink-muted">{t("noSamples")}</p>
-      : <table className="mt-1 w-full text-start text-[17px]">
+      ? <p className="mt-1 text-[1.0625rem] text-ink-muted">{t("noSamples")}</p>
+      : <table className="mt-1 w-full text-start text-[1.0625rem]">
         <thead><tr className="text-ink-muted"><th className="text-start font-semibold">{t("colDay")}</th>
           <th className="text-start font-semibold">{t("colSold")}</th><th className="text-start font-semibold">{t("colSales")}</th></tr></thead>
         <tbody>{e.samples.map((s) => <tr key={s.date} data-sample-date={s.date}>
@@ -102,13 +102,13 @@ function ExperimentCard({ entry: e, t, fmt }: { entry: ExperimentEntry; t: T; fm
           <td>{s.netSalesCents === null ? t("notIn") : fmt.money(s.netSalesCents)}{s.coverage !== "actual" && <span className="ms-1 text-ink-muted">({t(s.coverage === "provisional" ? "provisional" : "partial")})</span>}</td>
         </tr>)}</tbody>
       </table>}
-    {v && <div className="mt-4 rounded-xl bg-paper p-3 text-[17px]" data-verdict={v.recommendation ?? v.status}>
+    {v && <div className="mt-4 rounded-xl bg-paper p-3 text-[1.0625rem]" data-verdict={v.recommendation ?? v.status}>
       <p className="font-bold text-ink">{v.status === "insufficient_evidence" ? t("verdictInsufficient")
         : e.kind === "goal" ? t(v.goalMet === true ? "verdictGoalMet" : v.goalMet === false ? "verdictGoalMissed" : "verdictInsufficient")
         : t(v.recommendation === "keep" ? "verdictKeep" : v.recommendation === "revert" ? "verdictRevert" : "verdictAdjust")}</p>
       {v.revenueDifferenceCents !== null && <p>{t("verdictDifference", { amount: fmt.money(v.revenueDifferenceCents) })}</p>}
       {v.coveredDays !== null && e.days && <p className="text-ink-muted">{t("verdictCoverage", { covered: fmt.n(v.coveredDays), days: fmt.n(e.days) })}</p>}
     </div>}
-    <Link href={boardHref(e)} className="mt-3 flex min-h-12 items-center text-[17px] font-semibold text-accent-text underline">{t("openThread")}</Link>
+    <Link href={boardHref(e)} className="mt-3 flex min-h-12 items-center text-[1.0625rem] font-semibold text-accent-text underline">{t("openThread")}</Link>
   </article>;
 }

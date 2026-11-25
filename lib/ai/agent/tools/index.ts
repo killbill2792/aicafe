@@ -112,6 +112,8 @@ export type AgentToolContext = {
   /** A verified thread/owner port; model input contains no café or user IDs. */
   routines?:{
     create(schedule:RoutineSchedule,goalSourceMessageId:string|null):Promise<RoutineRecord>;
+    /** Validates a new routine and returns it unsaved; the owner's Save tap on the card creates it. */
+    draft?(schedule:RoutineSchedule,goalSourceMessageId:string|null):{ownerMessageId:string;goalSourceMessageId:string};
     list():Promise<RoutineRecord[]>;
     /** On-demand paged verified owner-message previews; not authority to edit them. */
     goalSources(offset:number):Promise<{sources:Array<{id:string;text:string}>;nextOffset:number|null}>;
@@ -244,7 +246,6 @@ export const resolverExemptions:Partial<Record<AgentToolName,readonly string[]>>
   // Exact case-linked employee IDs are resolved by the scoped maintenance candidate reader.
   propose_maintenance_staff_assignment:["employeeId"],
   propose_staff_question:["employeeId"],
-  inspect_public_page:["url"],
   propose_event_plan:["summary","actions","expectedBusyHours"],
   manage_commitment:["title","due_date","due_time","origin","commitment_id"],
   manage_routine:["title","routine_id"]
@@ -484,7 +485,6 @@ export async function executeAgentTool(name: string, raw: unknown, ctx: AgentToo
   if(name==="get_today_so_far")return todayTools.get_today_so_far.execute(raw,ctx);
   if(name==="get_nearby_events")return eventsTools.get_nearby_events.execute(raw,ctx);
   if(name==="get_events")return savedEventsTools.get_events.execute(raw,ctx);
-  if(name==="inspect_public_page")return webSearchTools.inspect_public_page.execute(raw,ctx);
   if(name==="web_search")return webSearchTools.web_search.execute(raw,ctx);
   if(name==="get_price_recommendation")return salesTools.get_price_recommendation.execute(raw,ctx);
   if (name === "get_menu_items") {
@@ -653,7 +653,7 @@ const repeatSafeOwnerTools:ReadonlySet<string>=new Set([
  "suggest_new_item_price","milk_swap_price","simulate_scenario","calculate","ask_owner",
  "get_item_sales","get_price_recommendation","get_today_so_far","get_events","get_nearby_events",
  "search_gmail","list_gmail_labels","read_gmail","read_gmail_thread","read_gmail_attachment",
- "web_search","inspect_public_page","search_maintenance_vendor",
+ "web_search","search_maintenance_vendor",
 ]);
 export function isRepeatSafeOwnerTool(name:string,input:unknown):boolean{
  if(name==="present_response"||repeatSafeOwnerTools.has(name))return true;

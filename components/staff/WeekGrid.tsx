@@ -24,7 +24,7 @@ export default function WeekGrid({dates,people,shifts,costShifts=shifts,toastDat
  };
  const stamp=(date:string)=>new Intl.DateTimeFormat(undefined,{weekday:"short",day:"numeric",timeZone:"UTC"}).format(new Date(date+"T12:00:00Z"));
  return <div className="hidden overflow-x-auto rounded-[20px] border border-line bg-surface lg:block">
-  <table className="w-full min-w-[960px] border-collapse text-start text-[15px]">
+  <table className="w-full min-w-[960px] border-collapse text-start text-[0.9375rem]">
    <thead><tr className="border-b border-line"><th scope="col" className="min-w-48 p-3 text-start">{t("person")}</th>
     {dates.map(date=>{
      const [y,m,d]=date.split("-").map(Number);
@@ -45,10 +45,10 @@ export default function WeekGrid({dates,people,shifts,costShifts=shifts,toastDat
        <div className="text-sm font-normal text-muted">{person? <>{person.role??t("team")} · {person.wageCents==null?t("noWage"):fmt(person.wageCents,currency)+"/h"}</> : t("toastPlannedLabel")}</div></div></div></th>
      {dates.map(date=><td key={date} className="p-1.5 align-middle">
       {shifts.filter(s=>s.employeeId===person?.id&&s.date===date).map(s=><button key={s.id}
-       disabled={readOnly} onClick={()=>onEdit(date,s.id)} className={`min-h-12 w-full rounded-xl border px-2 py-1 text-start text-[13px] font-bold ${index%2?"border-pos/20 bg-pos-soft text-pos":"border-accent-text/20 bg-accent-soft text-accent-text"}`}>
+       disabled={readOnly} onClick={()=>onEdit(date,s.id)} className={`min-h-12 w-full rounded-xl border px-2 py-1 text-start text-[0.8125rem] font-bold ${index%2?"border-pos/20 bg-pos-soft text-pos":"border-accent-text/20 bg-accent-soft text-accent-text"}`}>
        <span className="block">{s.start}–{s.end}</span><span className="block">{h(s.paidMinutes)} {t("paid")}{s.estimated?" · "+t("estimated"):""}</span></button>)}
       {calendarEntries.filter(e=>calendarRowKey(e,knownIds)===key&&e.date===date).map(e=><div key={e.id}
-       className={`mb-1 rounded-lg border px-2 py-1 text-[13px] ${e.source==="ai_draft"?"border-dashed border-accent bg-accent-soft":e.source==="toast_actual"?"border-pos bg-pos-soft":"border-line bg-surface2"}`}>
+       className={`mb-1 rounded-lg border px-2 py-1 text-[0.8125rem] ${e.source==="ai_draft"?"border-dashed border-accent bg-accent-soft":e.source==="toast_actual"?"border-pos bg-pos-soft":"border-line bg-surface2"}`}>
        <span className="block font-semibold">{e.start}–{e.end}</span>
        <span className="block">{e.source==="toast_actual"?t("toastActualLabel"):e.source==="toast_planned"?t("toastPlannedLabel"):t("aiDraftLabel")}</span>
       </div>)}

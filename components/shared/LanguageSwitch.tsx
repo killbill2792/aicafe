@@ -15,7 +15,7 @@ export default async function LanguageSwitch({ href, compact = false }: { href: 
     <Link
       href={href}
       locale={next}
-      className={compact ? "flex min-h-12 min-w-12 shrink-0 items-center justify-center gap-1 rounded-full border border-line bg-card px-2 text-[13px] font-bold text-ink" : "flex h-11 shrink-0 items-center whitespace-nowrap rounded-full border border-line bg-card px-3.5 text-[15px] font-semibold text-ink"}
+      className={compact ? "flex min-h-12 min-w-12 shrink-0 items-center justify-center gap-1 rounded-full border border-line bg-card px-2 text-[0.8125rem] font-bold text-ink" : "flex h-11 shrink-0 items-center whitespace-nowrap rounded-full border border-line bg-card px-3.5 text-[0.9375rem] font-semibold text-ink"}
       title={`${SHORT_LABEL[locale]} → ${SHORT_LABEL[next]}`}
     >
       {compact ? <><Languages size={17} aria-hidden="true" /> {SHORT_LABEL[locale]}</> : <>{SHORT_LABEL[locale]} / {SHORT_LABEL[next]}</>}

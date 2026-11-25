@@ -89,7 +89,7 @@ test("unknown browser UI cannot silently skip required proof", () => {
   const unexercised = classifyPaths([
     "app/[locale]/staff/rules/page.tsx",
     "app/[locale]/menu/new/page.tsx",
-    "components/money/ProfitCostsView.tsx",
+    "components/money/NeverRestyledWidget.tsx",
     "app/[locale]/onboarding/new-flow/page.tsx",
   ]);
   assert.equal(unexercised.required, true);
@@ -156,4 +156,12 @@ test("Task14B supplier UI and approval card require actual purchasing browser pr
  assert.deepEqual(classifyPaths(["components/home/SupervisorProposalCard.tsx"]).scenarios,
   ["gmail","purchasing"]);
  assert.equal(summarizeReport(report([["home","passed"]]),["purchasing"]).status,"failed");
+});
+
+test("Toast webhook setup requires real authenticated owner browser proof",()=>{
+  const form=classifyPaths(["components/more/ToastConnectionForm.tsx"]);
+  assert.equal(form.required,true);
+  assert.deepEqual(form.unmapped,[]);
+  assert.ok(form.scenarios.includes("home"));
+  for(const path of ["components/more/ToastWebhookSetup.tsx","app/[locale]/more/toast/page.tsx"]) assert.deepEqual(classifyPaths([path]),{scenarios:["home"],unmapped:[],required:true});
 });

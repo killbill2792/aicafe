@@ -64,6 +64,7 @@ function operationalDb(scopes:Record<string,boolean>={}){
  const log:Array<{name:string;args:Record<string,unknown>}>=[];
  let sources:Record<string,unknown>={};
  let healthCategory:string|null=null;
+ let constrained:string[]=[];
  const healthWrites:Record<string,unknown>[]=[];
  const db={
   from(table:string){
@@ -85,13 +86,14 @@ function operationalDb(scopes:Record<string,boolean>={}){
   },
   async rpc(name:string,args:Record<string,unknown>){
    log.push({name,args});
+   if(name==="toast_constrained_stock_guids")return {error:null,data:constrained};
    return {error:null,data:(args.p_objects as unknown[]).length};
   }
  };
  return {db:db as unknown as SupabaseClient,log,healthWrites,
   state:()=>sources as Record<string,{status:string;error?:string|null;last_success_at?:string;next_at:string}>,
   health:()=>healthCategory,setHealth:(v:string|null)=>{healthCategory=v;},
-  setStates:(v:Record<string,unknown>)=>{sources=v;}};
+  setStates:(v:Record<string,unknown>)=>{sources=v;},setConstrained:(ids:string[])=>{constrained=ids;}};
 }
 beforeEach(()=>{
  calls.request.mockReset();
@@ -249,4 +251,17 @@ describe("POS0c owner-facing operational health",()=>{
   await reconcileToastOperationalHealth(f.db,s);
   expect(f.health()).toBe("operational:ordering_schedule:invalid_response");
  });
+});
+
+it("recovers a restock omitted from the constrained-stock list without a webhook",async()=>{
+ const f=operationalDb({cash:false,kitchen:false,availability:false,ordering:false});
+ f.setConstrained([guid1]);
+ calls.request.mockImplementation(async(path:string)=>{
+  if(path==="/stock/v1/inventory")return [];
+  if(path==="/stock/v1/inventory/search")return [{guid:guid1,status:"IN_STOCK",quantity:null}];
+  return [];
+ });
+ await syncToastOperationalSources(f.db,opScope,observed,Date.now()+300000);
+ const row=f.log.find(x=>x.name==="toast_stage_operational_batch"&&x.args.p_endpoint==="stock/v1/inventory");
+ expect(row?.args.p_objects).toEqual([expect.objectContaining({guid:guid1,status:"IN_STOCK"})]);
 });

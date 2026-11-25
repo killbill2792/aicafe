@@ -77,6 +77,8 @@ export type SupervisorReplyBlock =
   | { type: "memory_card"; ruleId: string }
   | {type:"routine_card";routineId:string;title:string;cadence:"once"|"daily"|"weekly";
       onceLocalDate?:string|null;weekdays:number[];localTime:string;timezone:string;status:"active"|"paused"|"revoked";revision:number}
+  | {type:"routine_draft";title:string;cadence:"once"|"daily"|"weekly";onceLocalDate?:string|null;
+      weekdays:number[];localTime:string;ownerMessageId:string;goalSourceMessageId:string}
   | { type: "text"; text: string }
   | { type: "warning"; code: string; text: string }
   | { type: "metric"; label: string; valueCents: number; source: EvidenceReference }
@@ -150,6 +152,15 @@ export const routineCardSchema=z.strictObject({
   if(row.cadence!=="once"&&row.onceLocalDate)
     ctx.addIssue({code:"custom",path:["onceLocalDate"],message:"Recurring due date invalid"});
 });
+/** A routine the owner has not saved yet. Nothing exists until the owner taps Save on this card. */
+export const routineDraftSchema=z.strictObject({
+  type:z.literal("routine_draft"),
+  title:z.string().min(1).max(240),cadence:z.enum(["once","daily","weekly"]),
+  onceLocalDate:z.iso.date().nullable().optional(),
+  weekdays:z.array(z.number().int().min(1).max(7)).max(7),
+  localTime:z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/u),
+  ownerMessageId:z.uuid(),goalSourceMessageId:z.uuid(),
+});
 const warningBlockSchema = z.strictObject({
   type: z.literal("warning"), code: z.string().min(1).max(80),
   text: z.string().trim().min(1).max(1200),
@@ -192,5 +203,5 @@ export const groundedReplySchema = z.strictObject({
   evidence: z.array(evidenceReferenceSchema).max(30),
   blocks: z.array(z.union(
     [textBlockSchema, warningBlockSchema, metricBlockSchema, countBlockSchema, percentBlockSchema,
-      taskBlockSchema, taskCardBlockSchema,ownerQuestionSchema,proposalCardSchema,experimentCardSchema,memoryCardSchema,routineCardSchema,clarifyBlockSchema,howBlockSchema,richPresentationSchema])).min(1).max(30),
+      taskBlockSchema, taskCardBlockSchema,ownerQuestionSchema,proposalCardSchema,experimentCardSchema,memoryCardSchema,routineCardSchema,routineDraftSchema,clarifyBlockSchema,howBlockSchema,richPresentationSchema])).min(1).max(30),
 });

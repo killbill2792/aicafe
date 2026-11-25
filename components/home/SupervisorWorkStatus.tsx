@@ -43,29 +43,29 @@ export default function SupervisorWorkStatus({ items, unavailable, loading=false
   if (!display.length && !unavailable && !showEmpty) return null;
   return <section aria-label={en.SupervisorWork.heading}
     className="min-w-0 w-full space-y-3 rounded-xl border border-line bg-surface p-3 sm:p-4">
-    <h3 className="text-[15px] font-semibold text-ink">{en.SupervisorWork.heading}</h3>
+    <h3 className="text-[0.9375rem] font-semibold text-ink">{en.SupervisorWork.heading}</h3>
     {loading && <p role="status">{en.SupervisorWork.copy.runChecking}</p>}
     {showEmpty && !loading && !unavailable && !display.length &&
       <p className="text-sm text-ink-muted">{en.SupervisorWork.heading}: 0</p>}
-    {unavailable && <p role="status" className="text-[14px] text-ink-muted">
+    {unavailable && <p role="status" className="text-[0.875rem] text-ink-muted">
       {en.SupervisorWork.stale}
     </p>}
     <div className="space-y-2" aria-live="polite" aria-relevant="additions text">
       {groups.map(group=><section key={group.key} aria-label={group.label} className="space-y-2">
-      <h4 className="text-[13px] font-medium text-ink-muted">{group.label}</h4>
+      <h4 className="text-[0.8125rem] font-medium text-ink-muted">{group.label}</h4>
       {group.items.map(item => <article key={item.id}
         className="min-w-0 space-y-1 rounded-xl border border-line p-3"
         data-work-status={item.status} data-work-kind={item.kind} data-work-id={item.id}>
         <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1">
           {statusIcon(item.status)}
-          <strong className="text-[14px] text-ink">{statusCopy[item.status]}</strong>
-          <span className="text-[13px] text-ink-muted">{item.title}</span>
+          <strong className="text-[0.875rem] text-ink">{statusCopy[item.status]}</strong>
+          <span className="text-[0.8125rem] text-ink-muted">{item.title}</span>
         </div>
-        {item.threadTitle && <p className="break-words text-[15px] font-semibold text-ink">{item.threadTitle}</p>}
-        <p className="break-words text-[17px] leading-relaxed text-ink">{item.detail}</p>
-        <p className="break-words text-[15px] leading-relaxed text-ink-muted">{item.nextStep}</p>
-        {Number.isFinite(Date.parse(item.updatedAt))&&<p className="text-[13px] text-ink-muted">{en.SupervisorExperience.savedUpdate} <time dateTime={item.updatedAt}>{new Date(item.updatedAt).toLocaleString()}</time></p>}
-        {item.proof && <p className="break-all text-[13px] text-ink-muted">
+        {item.threadTitle && <p className="break-words text-[0.9375rem] font-semibold text-ink">{item.threadTitle}</p>}
+        <p className="break-words text-[1.0625rem] leading-relaxed text-ink">{item.detail}</p>
+        <p className="break-words text-[0.9375rem] leading-relaxed text-ink-muted">{item.nextStep}</p>
+        {Number.isFinite(Date.parse(item.updatedAt))&&<p className="text-[0.8125rem] text-ink-muted">{en.SupervisorExperience.savedUpdate} <time dateTime={item.updatedAt}>{new Date(item.updatedAt).toLocaleString()}</time></p>}
+        {item.proof && <p className="break-all text-[0.8125rem] text-ink-muted">
           {item.proof.kind === "verified_effect"
             ? en.SupervisorWork.effectReceipt : en.SupervisorWork.replyReceipt}
           {" "}{item.proof.ref}
@@ -86,9 +86,9 @@ export default function SupervisorWorkStatus({ items, unavailable, loading=false
       </section>)}
     </div>
     {active.length > shown && <button type="button" onClick={() => setShown(n => n + 5)}
-      className="min-h-12 rounded-lg border border-line px-3 py-2 text-[14px] font-medium text-ink focus-visible:outline focus-visible:outline-2 focus-visible:outline-ink">
+      className="min-h-12 rounded-lg border border-line px-3 py-2 text-[0.875rem] font-medium text-ink focus-visible:outline focus-visible:outline-2 focus-visible:outline-ink">
       {en.SupervisorWork.more}
     </button>}
-    {recent.length>shownRecent&&<button type="button" onClick={()=>setShownRecent(n=>n+5)} className="min-h-12 rounded-lg border border-line px-3 text-[15px] text-ink">{en.SupervisorExperience.moreRecent}</button>}
+    {recent.length>shownRecent&&<button type="button" onClick={()=>setShownRecent(n=>n+5)} className="min-h-12 rounded-lg border border-line px-3 text-[0.9375rem] text-ink">{en.SupervisorExperience.moreRecent}</button>}
   </section>;
 }

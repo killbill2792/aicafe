@@ -268,6 +268,12 @@ jobs:
       # test rejects both real credentials and a missing sentinel.
       OPENAI_API_KEY: 'aicafe-disposable-e2e-no-provider'
       VERCEL_URL: ''
+      TOAST_SETUP_ENABLED: 'true'
+      TOAST_WEBHOOKS_ENABLED: 'true'
+      TOAST_JOBS_ENABLED: 'true'
+      TOAST_ALLOWED_API_HOSTS: 'ws-api.toasttab.com'
+      TOAST_DEFAULT_API_ORIGIN: 'https://ws-api.toasttab.com'
+      TOAST_PUBLIC_WEBHOOK_ORIGIN: 'https://example.invalid'
       BROWSER_SCENARIOS: ${{ github.event_name == 'workflow_dispatch' && 'home,staff,menu,money,gmail,purchasing' || needs.changes.outputs.browser_scenarios }}
       HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
     steps:
@@ -309,6 +315,7 @@ jobs:
             "NEXT_PUBLIC_SUPABASE_ANON_KEY=" + anon + "\n" +
             "SUPABASE_SERVICE_ROLE_KEY=" + service + "\n" +
             "CRON_SECRET=" + localCronSecret + "\n" +
+            "TOKEN_ENCRYPTION_KEY=" + randomBytes(32).toString("base64") + "\n" +
             "ADMIN_EMAILS=" + TEST_CAFES[0].owner.email + "\n");
           NODE
       # Authenticated E2 cannot rely on a hot-reloading dev server after ~20

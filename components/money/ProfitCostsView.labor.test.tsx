@@ -28,7 +28,7 @@ describe("ProfitCostsView incomplete POS wages",()=>{
       snapshot,period:"today",salesSources:["toast"]}));
     expect(html).toContain("ownerProfitWaiting");
     expect(html).toContain("staff:");
-    expect(html).not.toContain("STAFF</span><span class=\"text-[13px] font-bold text-ink-muted\">0%");
+    expect(html).not.toContain("STAFF</span><span class=\"text-[0.8125rem] font-bold text-ink-muted\">0%");
     // Partial results (#211): the known staff cost is shown, and the screen says
     // which wage is missing instead of presenting it as complete.
     expect(html).toContain("profitLaborMissing");

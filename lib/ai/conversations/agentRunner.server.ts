@@ -43,7 +43,7 @@ import {staffQuestionCapabilityId,staffQuestionEffect} from "@/lib/ai/supervisor
 import {allowPendingStaffQuestionRead} from "./staffQuestionOwnerGate";
 import {gmailSearch,gmailListLabels,gmailRead,gmailReadThread,gmailReadAttachment} from "@/lib/connectors/gmail/provider.server";
 import {getConnectorAccount,allowsGmail,assertConnectorOwnerLive} from "@/lib/connectors/registry.server";
-import {gmailToolDefinitions} from "@/lib/ai/agent/tools";
+import {agentToolDefinitions,gmailToolDefinitions} from "@/lib/ai/agent/tools";
 import { createAuthenticatedCafeTools, readSupervisorCafeIdentity } from "@/lib/ai/cafeTools.server";
 import {ToolError} from "@/lib/ai/agent/toolErrors";
 import {readMenuPriceEvidence} from "@/lib/data/menuPriceEvidence.server";
@@ -61,6 +61,8 @@ import type { NumericEvidence } from "@/lib/ai/agent/checkNumbers";
 import {ownerRunStatement,type OwnerRunCheckpoint} from "@/lib/ai/supervisor/runs/contracts";
 import type {DurableReplyFence} from "./replyWriter.server";
 import { runAgentTurn, type OwnerFollowUp } from "@/lib/ai/agent/loop.server";
+import {cafeNotesContext,cafeNotesPort} from "@/lib/ai/research/notes.server";
+import {isResearchActionTool,runResearchTurn,sqlResearchEnabled} from "@/lib/ai/research/turn.server";
 import {createOwnerCommitment,listOwnerCommitments,closeOwnerCommitment} from "@/lib/operating/commitments.server";
 import {createOwnerRoutine,listOwnerRoutines,changeOwnerRoutine} from "@/lib/ai/supervisor/routines/repository.server";
 import {routineReportCandidates,verifiedRoutineReportHistory} from "@/lib/ai/supervisor/routines/reportHistory.server";
@@ -337,8 +339,10 @@ export async function runOneTurn(p: TurnParams): Promise<{ replyId: string; repl
         threadId:id,mode:p.durableFence?"durable" as const:"owner" as const,
         ...(p.durableFence?{runId:p.durableFence.runId,leaseToken:p.durableFence.claimToken}:{})
        }),
-      staffQuestionPropose:async input=>{
+      staffQuestionPropose:async raw=>{
         await assertTurnSources();
+        // The source of an owner-requested message is the owner's own saved chat message, never a model-supplied id.
+        const input=raw.sourceKind==="owner_chat"?{...raw,sourceTaskId:owner.id}:raw;
         const key=proposalRequestKey(id,JSON.stringify({ownerMessageId:owner.id,staffQuestion:input}));
         const proposal=await proposeLoop(proposalScope,supervisorLoopRegistry,
           new SupabaseLoopRepository(),staffQuestionCapabilityId,input,key);
@@ -428,6 +432,13 @@ export async function runOneTurn(p: TurnParams): Promise<{ replyId: string; repl
           const older=await p.service.listMessages(id,offset);
           const sources=routineGoalCandidates(older.items,owner,p.ownerText,false);
           return {sources,nextOffset:older.nextOffset};
+        },
+        draft:(_schedule,goalSourceMessageId)=>{
+          if(process.env.SUPERVISOR_U4_ENABLED==="true"&&
+            needsExplicitGoalSource(goalSourceCandidates.length,page.nextOffset)&&
+            !goalSourceMessageId)
+            throw Error("Choose the verified original owner goal message ID before saving");
+          return {ownerMessageId:owner.id,goalSourceMessageId:goalSourceMessageId??owner.id};
         },
         create:async(schedule,goalSourceMessageId)=>{
           // A missing choice in a multi-turn conversation is NOT evidence that
@@ -884,7 +895,50 @@ export async function runOneTurn(p: TurnParams): Promise<{ replyId: string; repl
     // authenticated attachment route, never a signed URL or object path.
     context.presentationAttachments=[...selectedIds];
     failureStage = "model";
-    const result = await runAgentTurn({ ownerText: p.ownerText, ownerImages:selected.images,
+    // SUPERVISOR_SQL_RESEARCH=on: database discovery, SQL and calculate only.
+    // The owner/café scope above is already verified; the database function
+    // re-verifies ownership and applies RLS for this one café.
+    const researchOn=sqlResearchEnabled();
+    const notesClient=researchOn?await getDb():null;
+    const result = researchOn ? await runResearchTurn({ ownerText: p.ownerText,
+      ownerImages:selected.images, ownerPdfs:selected.pdfs, ownerEvidence:selected.evidence, history,
+      scope:{db:createAdminSupabaseClient(),businessId:scope.businessId,ownerUserId:scope.ownerUserId,
+        notes:cafeNotesPort(notesClient!,scope.businessId)},
+      cafeContext:"Café (authenticated, not an owner message): "+JSON.stringify({name:identity.cafeName,
+        currency:identity.currency,timezone:identity.timezone,localDate:identity.asOf,
+        city:location?.city??null,region:location?.region??null,country:location?.countryCode??null})+
+        "\n"+await cafeNotesContext(notesClient!,scope.businessId,ownerFactRead.facts,identity.asOf),
+      // Luna writes its own public queries. Only the owner's public-web permission applies, plus a check
+      // that no private café text is inside the query (tools.server.ts); no wording filter on the owner.
+      webSearch:q=>ownerPublicWebSearch(scope,async()=>{
+        const revision=await assertExternalAccess(scope,"public_web",WEB_RESOURCE);
+        await assertTurnSources();
+        const value=await searchWeb(q);
+        const check=async()=>{if(await assertExternalAccess(scope,"public_web",WEB_RESOURCE)!==revision)throw Error("public_web_evidence_access_changed");};
+        await check();
+        if(value.available)sourceChecks.set("public_web",check);
+        return value;
+      }),
+      // The existing registered action tools (same executor, same approval cards); routine tool as in the legacy turn.
+      actions:{context,definitions:[...agentToolDefinitions.filter(t=>isResearchActionTool(t.name)),{
+        ...routineToolDefinition,
+        description:routineToolDefinition.description+" VERIFIED SAME-THREAD OWNER MESSAGES "+
+          "(choose the source ID for the complete investigation goal, not the answer to a scheduling question; "+
+          "the server will verify this original owner message independently): "+JSON.stringify(goalSourceCandidates)+
+          " For any older goal absent from these previews, call manage_routine action=list_goal_sources "+
+          "with source_page_offset=0 first; use next_offset to continue to older pages. "+
+          "NEXT_OLDER_GOAL_SOURCES_OFFSET="+JSON.stringify(page.nextOffset),
+      },...(gmailAvailable?gmailToolDefinitions:[]),...(memory?[memory.tool]:[])]},
+      onThinking:text=>emit("thinking",{text}),
+      onAuditStep: step => { if (auditSteps.length < 64) auditSteps.push(step); },
+      beforeProviderRequest:assertTurnSources, beforeAcceptResult:assertTurnSources,
+      ...(p.checkpoint?{checkpoint:p.checkpoint}:{}),
+      onTool:(name,agentId)=>{
+        emit("tool",{name,agentId});
+        if (job && jobs && isJobStepAgent(agentId)) steps = steps.then(() => p.recordDurableStep
+          ?p.recordDurableStep({tool:name,agent:agentId}):jobs.recordAgentJobStep(job.id, { tool: name, agent: agentId }));
+      },
+      onDelta: delta => emit("delta", { text: delta }) }) : await runAgentTurn({ ownerText: p.ownerText, ownerImages:selected.images,
        ownerPdfs:selected.pdfs,ownerEvidence:selected.evidence,
        history:[...history,...(pendingStaffQuestionReadUnavailable?[{role:"assistant" as const,
          content:"The pending employee-question status is temporarily unavailable. Do not claim an owner reply was recorded or that a staff question was resolved; explain the uncertainty and ask the owner to retry."}]:[]),

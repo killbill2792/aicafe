@@ -26,11 +26,11 @@ function StepBar({ label, cents, widthPct, color, tone }: { label: string; cents
   const labelColor = tone ? textColor : "text-ink-muted";
   return (
     <div className="flex items-center gap-2.5">
-      <span className={`w-[78px] shrink-0 text-[13px] font-semibold ${labelColor}`}>{label}</span>
+      <span className={`w-[78px] shrink-0 text-[0.8125rem] font-semibold ${labelColor}`}>{label}</span>
       <div className="h-[26px] flex-1">
         <div className={`h-[26px] rounded-md ${barColor}`} style={{ width: `${Math.max(0, Math.min(100, widthPct))}%` }} />
       </div>
-      <span className={`w-16 shrink-0 text-end text-[13px] font-bold ${textColor}`}>
+      <span className={`w-16 shrink-0 text-end text-[0.8125rem] font-bold ${textColor}`}>
         <Money cents={cents} />
       </span>
     </div>
@@ -40,7 +40,7 @@ function StepBar({ label, cents, widthPct, color, tone }: { label: string; cents
 function HealthRow({ label, pct, band, note, bandLabel }: { label: string; pct: number; band: HealthBand; note: string; bandLabel: string }) {
   return (
     <div className="flex flex-col gap-1.5">
-      <div className="flex justify-between text-[15px]">
+      <div className="flex justify-between text-[0.9375rem]">
         <span className="font-semibold">{label}</span>
         <span className={`font-bold ${BAND_COLOR[band]}`}>
           {Math.round(pct)}% · {bandLabel}
@@ -131,7 +131,7 @@ export default async function ProfitCostsView({ snapshot, period, salesSources }
       <section className="flex flex-col rounded-card-lg bg-card px-[18px] py-1.5">
         <div className="flex items-center justify-between border-b-2 border-ink py-3.5">
           <div className="flex flex-col gap-0.5">
-            <span className="text-[17px] font-extrabold">{t("sales")}</span>
+            <span className="text-[1.0625rem] font-extrabold">{t("sales")}</span>
             <span className="text-xs text-ink-muted">{sourceLabel}</span>
           </div>
           <span className="text-xl font-extrabold">
@@ -182,14 +182,14 @@ export default async function ProfitCostsView({ snapshot, period, salesSources }
           {vm.financialNotes.map(key=>tMetrics(key)).join(" · ")}
         </p>}
         <div className={`mx-[-6px] mb-1.5 flex items-center justify-between rounded-2xl px-3.5 py-3 ${tone === "good" ? "bg-good-tint" : tone === "warn" ? "bg-warn-tint" : "bg-surface"}`}>
-          <span className={`flex items-center gap-1.5 text-[17px] font-extrabold ${tone === "good" ? "text-fg" : profitToneTextClass(tone)}`}>
+          <span className={`flex items-center gap-1.5 text-[1.0625rem] font-extrabold ${tone === "good" ? "text-fg" : profitToneTextClass(tone)}`}>
             {t("youKeep")}
             {vm.ownerProfitDisplay.kind === "partial" && <EstimatePill label={t("partialPill")} />}
           </span>
           {vm.ownerProfitDisplay.kind === "unavailable" ? (
             <span className="text-base font-bold text-ink-muted">{t("ownerProfitWaiting")}</span>
           ) : (
-            <span className={`font-headline text-[28px] font-bold ${profitToneTextClass(tone)}`}>
+            <span className={`font-headline text-[1.75rem] font-bold ${profitToneTextClass(tone)}`}>
               <Money cents={vm.ownerProfitDisplay.ownerProfitCents} />
             </span>
           )}
@@ -203,8 +203,8 @@ export default async function ProfitCostsView({ snapshot, period, salesSources }
 
       <section className="flex flex-col gap-3.5 rounded-card-lg bg-card p-[18px]">
         <div className="flex flex-col gap-0.5">
-          <span className="text-[17px] font-bold">{t("healthCheck")}</span>
-          <span className="text-[13px] text-ink-muted">{t("healthCheckSubtitle")}</span>
+          <span className="text-[1.0625rem] font-bold">{t("healthCheck")}</span>
+          <span className="text-[0.8125rem] text-ink-muted">{t("healthCheckSubtitle")}</span>
         </div>
         <HealthRow label={t("ingredients")} pct={vm.ingredientsRatio * 100} band={vm.ingredientsBand} note={t("healthyRange")} bandLabel={bandLabel[vm.ingredientsBand]} />
         {vm.staffRatio!==null&&vm.staffBand!==null?
@@ -216,14 +216,14 @@ export default async function ProfitCostsView({ snapshot, period, salesSources }
       </section>
 
       <section className="flex flex-col gap-3 rounded-card-lg bg-card p-[18px]">
-        <h2 className="text-[17px] font-bold">{t("vsLastPeriod")}</h2>
+        <h2 className="text-[1.0625rem] font-bold">{t("vsLastPeriod")}</h2>
         {vm.changes.length === 0 && <p className="m-0 text-sm text-ink-muted">{t("notEnoughDataToCompare")}</p>}
         {vm.changes.length > 0 && vm.comparisonState.kind === "available" && vm.comparisonState.partialPeriod &&
-          <p role="note" className="m-0 text-[17px] text-ink-muted">{tCommon("partialPeriod")}</p>}
+          <p role="note" className="m-0 text-[1.0625rem] text-ink-muted">{tCommon("partialPeriod")}</p>}
         {vm.changes.map((change) => {
           const good = change.lowerIsBetter ? change.deltaCents <= 0 : change.deltaCents >= 0;
           return (
-            <div key={change.key} className="flex items-center gap-2.5 text-[15px]">
+            <div key={change.key} className="flex items-center gap-2.5 text-[0.9375rem]">
               <span className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-2xl ${good ? "bg-good-tint text-good" : "bg-warn-tint text-warn"}`}>
                 {change.deltaCents >= 0 ? <TrendingUp size={16} aria-hidden="true" /> : <TrendingDown size={16} aria-hidden="true" />}
               </span>
@@ -245,8 +245,8 @@ function RowGroup({ label, pct, color, children }: { label: string; pct: number|
     <div className="flex flex-col">
       <div className="flex items-center gap-2 py-3.5 pb-1.5">
         <span className={`h-3 w-3 rounded-[3px] ${color}`} />
-        <span className="flex-1 text-[13px] font-extrabold tracking-wide text-ink-muted">{label.toUpperCase()}</span>
-        <span className="text-[13px] font-bold text-ink-muted">{pct===null?"—":`${pct}%`}</span>
+        <span className="flex-1 text-[0.8125rem] font-extrabold tracking-wide text-ink-muted">{label.toUpperCase()}</span>
+        <span className="text-[0.8125rem] font-bold text-ink-muted">{pct===null?"—":`${pct}%`}</span>
       </div>
       {children}
     </div>
@@ -272,10 +272,10 @@ function Row({
 }) {
   return (
     <div className={`flex items-center gap-2 py-2 ${last ? "border-b border-line pb-3" : ""}`}>
-      <span className={`flex-1 text-[15px] ${cents === null ? "font-semibold text-warn" : ""}`}>{name}</span>
+      <span className={`flex-1 text-[0.9375rem] ${cents === null ? "font-semibold text-warn" : ""}`}>{name}</span>
       {estimate && <EstimatePill label={estimateLabel ?? "Estimate"} />}
       {cents === null ? (
-        <Link href={href ?? "/add-cost"} className="flex min-h-12 items-center rounded-2xl bg-warn-text px-3 text-[13px] font-bold text-on-warn">
+        <Link href={href ?? "/add-cost"} className="flex min-h-12 items-center rounded-2xl bg-warn-text px-3 text-[0.8125rem] font-bold text-on-warn">
           {addLabel ?? "Add"}
         </Link>
       ) : (

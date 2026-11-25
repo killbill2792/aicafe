@@ -29,3 +29,24 @@ describe("verified minimal routine acknowledgements",()=>{
     expect(view({...receipt,routineId:"untrusted"})).toBe("");
   });
 });
+
+describe("approve-first routine draft card",()=>{
+  const draft={type:"routine_draft" as const,title:"Meal break check",cadence:"weekly" as const,weekdays:[1,3],
+    localTime:"13:00",ownerMessageId:"11111111-1111-4111-8111-111111111111",
+    goalSourceMessageId:"22222222-2222-4222-8222-222222222222"};
+  const draftView=(block:unknown,threadId:string|undefined="33333333-3333-4333-8333-333333333333")=>
+    renderToStaticMarkup(createElement(SupervisorRoutineInlineCard,{block,threadId}));
+  it("shows a compact glass card with Save and Not now, and no saved state",()=>{
+    const html=draftView(draft);
+    expect(html).toContain("Save this routine?");
+    expect(html).toContain("Save routine");
+    expect(html).toContain("Not now");
+    expect(html).toContain("glass");
+    expect(html).toContain("13:00");
+    expect(html).not.toContain("Routine created");
+  });
+  it("cannot be saved without a verified thread and never renders an invalid draft",()=>{
+    expect(draftView(draft,undefined)).toContain("disabled");
+    expect(draftView({...draft,goalSourceMessageId:"x"})).toBe("");
+  });
+});

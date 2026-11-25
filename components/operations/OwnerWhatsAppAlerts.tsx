@@ -95,53 +95,53 @@ export default function OwnerWhatsAppAlerts({copy}:{copy:Copy}){
 
   return <section className="rounded-2xl border border-line bg-card p-4">
     <h2 className="font-headline text-2xl font-bold text-ink">{copy.title}</h2>
-    <p className="mt-2 text-[17px] leading-relaxed text-ink-muted">{copy.description}</p>
-    {loading?<p className="mt-3 text-[17px] text-ink-muted">{copy.loading}</p>
+    <p className="mt-2 text-[1.0625rem] leading-relaxed text-ink-muted">{copy.description}</p>
+    {loading?<p className="mt-3 text-[1.0625rem] text-ink-muted">{copy.loading}</p>
       :setup?.binding?<>
-        <p className="mt-3 text-[17px] font-semibold text-ink">{setup.binding.phoneMatches&&setup.verifiedPhone
+        <p className="mt-3 text-[1.0625rem] font-semibold text-ink">{setup.binding.phoneMatches&&setup.verifiedPhone
           ?copy.connected+": "+setup.verifiedPhone:copy.phoneChanged}</p>
         <button type="button" onClick={()=>void disconnect()} disabled={saving}
-          className="mt-3 min-h-12 rounded-full border border-line px-5 text-[17px] font-bold text-ink disabled:opacity-50">
+          className="mt-3 min-h-12 rounded-full border border-line px-5 text-[1.0625rem] font-bold text-ink disabled:opacity-50">
           {saving?copy.loading:copy.disconnect}
         </button>
       </>:setup?.verifiedPhone?<>
-        <p className="mt-3 text-[17px] text-ink">{copy.verifiedPhone}: {setup.verifiedPhone}</p>
+        <p className="mt-3 text-[1.0625rem] text-ink">{copy.verifiedPhone}: {setup.verifiedPhone}</p>
         {setup.threads.length?<>
-          <label className="mt-3 block text-[17px] font-semibold text-ink" htmlFor="whatsapp-thread">{copy.threadLabel}</label>
+          <label className="mt-3 block text-[1.0625rem] font-semibold text-ink" htmlFor="whatsapp-thread">{copy.threadLabel}</label>
           <select id="whatsapp-thread" value={threadId} onChange={e=>setThreadId(e.target.value)}
-            className="mt-2 min-h-12 w-full rounded-xl border border-line bg-card px-3 text-[17px] text-ink">
+            className="mt-2 min-h-12 w-full rounded-xl border border-line bg-card px-3 text-[1.0625rem] text-ink">
             <option value="">—</option>
             {setup.threads.map(t=><option key={t.id} value={t.id}>{t.title||t.id.slice(0,8)}</option>)}
           </select>
-          <label className="mt-3 flex items-start gap-3 text-[17px] text-ink">
+          <label className="mt-3 flex items-start gap-3 text-[1.0625rem] text-ink">
             <input type="checkbox" checked={consent} onChange={e=>setConsent(e.target.checked)}
               className="mt-1 h-6 w-6 shrink-0" />
             <span>{copy.consent}</span>
           </label>
           <button type="button" onClick={()=>void connect()} disabled={!threadId||!consent||saving}
-            className="mt-3 min-h-12 rounded-full bg-accent px-5 text-[17px] font-bold text-on-accent disabled:opacity-40">
+            className="mt-3 min-h-12 rounded-full bg-accent px-5 text-[1.0625rem] font-bold text-on-accent disabled:opacity-40">
             {saving?copy.loading:copy.connect}
           </button>
-        </>:<p className="mt-3 text-[17px] text-ink-muted">{copy.noThreads}</p>}
+        </>:<p className="mt-3 text-[1.0625rem] text-ink-muted">{copy.noThreads}</p>}
       </>:!codeRequested?<>
-        <label className="mt-3 block text-[17px] font-semibold text-ink" htmlFor="whatsapp-phone">{copy.phoneLabel}</label>
+        <label className="mt-3 block text-[1.0625rem] font-semibold text-ink" htmlFor="whatsapp-phone">{copy.phoneLabel}</label>
         <input id="whatsapp-phone" inputMode="tel" autoComplete="tel" type="tel" value={phone}
           onChange={e=>setPhone(e.target.value)} placeholder="+1 555 123 4567"
-          className="mt-2 min-h-12 w-full rounded-xl border border-line bg-card px-3 text-[17px] text-ink"/>
+          className="mt-2 min-h-12 w-full rounded-xl border border-line bg-card px-3 text-[1.0625rem] text-ink"/>
         <button type="button" onClick={()=>void requestCode()} disabled={saving}
-          className="mt-3 min-h-12 rounded-full bg-accent px-5 text-[17px] font-bold text-on-accent disabled:opacity-40">
+          className="mt-3 min-h-12 rounded-full bg-accent px-5 text-[1.0625rem] font-bold text-on-accent disabled:opacity-40">
           {saving?copy.loading:copy.sendCode}
         </button>
       </>:<>
-        <label className="mt-3 block text-[17px] font-semibold text-ink" htmlFor="whatsapp-code">{copy.codeLabel}</label>
+        <label className="mt-3 block text-[1.0625rem] font-semibold text-ink" htmlFor="whatsapp-code">{copy.codeLabel}</label>
         <input id="whatsapp-code" inputMode="numeric" autoComplete="one-time-code" value={code}
           onChange={e=>setCode(e.target.value)} maxLength={8}
-          className="mt-2 min-h-12 w-full rounded-xl border border-line bg-card px-3 text-[17px] text-ink"/>
+          className="mt-2 min-h-12 w-full rounded-xl border border-line bg-card px-3 text-[1.0625rem] text-ink"/>
         <button type="button" onClick={()=>void confirmCode()} disabled={saving}
-          className="mt-3 min-h-12 rounded-full bg-accent px-5 text-[17px] font-bold text-on-accent disabled:opacity-40">
+          className="mt-3 min-h-12 rounded-full bg-accent px-5 text-[1.0625rem] font-bold text-on-accent disabled:opacity-40">
           {saving?copy.loading:copy.confirmCode}
         </button>
       </>}
-    {notice&&<p role="status" aria-live="polite" className="mt-3 text-[17px] text-ink-muted">{notice}</p>}
+    {notice&&<p role="status" aria-live="polite" className="mt-3 text-[1.0625rem] text-ink-muted">{notice}</p>}
   </section>;
 }

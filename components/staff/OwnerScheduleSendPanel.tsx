@@ -81,7 +81,7 @@ export default function OwnerScheduleSendPanel({week,proposalId,locale}:Props){
  }
  const method=(person:Recipient,channel:OwnerChannel)=>{
   const status=eligibleForChannel(person.phone,person.optedIn,channel);
-  if(status!=="ready")return <Link className="inline-flex min-h-12 items-center rounded-xl border border-line px-4 text-[17px] underline" href={staffContactFixHref(locale,person.id,status==="no_phone"?"phone":"consent")}>{status==="no_phone"?t.addPhone:t.recordConsent}</Link>;
+  if(status!=="ready")return <Link className="inline-flex min-h-12 items-center rounded-xl border border-line px-4 text-[1.0625rem] underline" href={staffContactFixHref(locale,person.id,status==="no_phone"?"phone":"consent")}>{status==="no_phone"?t.addPhone:t.recordConsent}</Link>;
   // One receipt per staff member and approved source. The other channel cannot
   // be opened after a receipt exists without misrepresenting its audit trail.
   if(person.ledgerStatus==="sent_by_owner"&&person.lastChannel&&person.lastChannel!==channel)
@@ -89,10 +89,10 @@ export default function OwnerScheduleSendPanel({week,proposalId,locale}:Props){
   // Render a deterministic href on the server; choose the iOS SMS separator
   // only in the actual click, avoiding an SSR hydration mismatch.
   const href=composeScheduleLink(person.phone!,person.message,channel);
-  if(href.length>2000)return <span className="text-[17px]">{t.linkTooLong}</span>;
+  if(href.length>2000)return <span className="text-[1.0625rem]">{t.linkTooLong}</span>;
   return <a href={href} target={channel==="whatsapp"?"_blank":undefined} rel="noopener noreferrer"
     aria-disabled={busy!==null}
-    className="inline-flex min-h-12 items-center justify-center rounded-xl border border-accent px-4 text-[17px] font-semibold text-accent-text"
+    className="inline-flex min-h-12 items-center justify-center rounded-xl border border-accent px-4 text-[1.0625rem] font-semibold text-accent-text"
     onClick={async event=>{
       // External navigation must follow the authoritative database check.
       // Pre-open on the gesture; some browsers block windows opened after await.
@@ -121,7 +121,7 @@ export default function OwnerScheduleSendPanel({week,proposalId,locale}:Props){
  return <section dir={locale==="ar"?"rtl":"ltr"} aria-label={t.heading}
    className="mt-4 space-y-3 rounded-2xl border border-line bg-surface p-4">
   <h3 className="text-xl font-bold">{t.heading}</h3>
-  <p className="text-[17px] text-ink-muted">{t.manualNotice}</p>
+  <p className="text-[1.0625rem] text-ink-muted">{t.manualNotice}</p>
   {loading&&<p role="status">{t.loading}</p>}
   {notApproved&&<p role="status">{t.notApproved}</p>}
   {error&&<p role="alert" className="text-neg">{error==="ledger"?t.ledgerError:error==="save"?t.preferenceError:error==="clipboard"?t.copyError:error==="open"?t.openError:t.loadError}</p>}
@@ -129,12 +129,12 @@ export default function OwnerScheduleSendPanel({week,proposalId,locale}:Props){
    <p className="text-sm font-semibold">{t.week}: {data.week}</p>
    {data.recipients.length===0&&<p>{t.noShifts}</p>}
    <div className="flex flex-wrap gap-3">
-    <button type="button" onClick={()=>void copyMessage(buildScheduleCopyAll(data.recipients))} className="min-h-12 rounded-xl border border-line px-4 text-[17px]">{t.copyAll}</button>
+    <button type="button" onClick={()=>void copyMessage(buildScheduleCopyAll(data.recipients))} className="min-h-12 rounded-xl border border-line px-4 text-[1.0625rem]">{t.copyAll}</button>
     {eligible.length>0&&<button type="button" onClick={()=>{setBatch(eligible.map(p=>p.id));setPosition(0);}}
       className="min-h-12 rounded-xl bg-accent px-4 font-semibold text-on-accent">{t.sendAll}</button>}
    </div>
-   {copied&&<p role="status" className="text-[17px]">{t.copied}</p>}
-   {fallbackText!==null&&<textarea autoFocus readOnly value={fallbackText} aria-label={t.copyMessage} ref={el=>el?.select()} onFocus={e=>e.currentTarget.select()} className="min-h-28 w-full rounded-xl border border-line bg-surface p-3 text-[17px]"/>}
+   {copied&&<p role="status" className="text-[1.0625rem]">{t.copied}</p>}
+   {fallbackText!==null&&<textarea autoFocus readOnly value={fallbackText} aria-label={t.copyMessage} ref={el=>el?.select()} onFocus={e=>e.currentTarget.select()} className="min-h-28 w-full rounded-xl border border-line bg-surface p-3 text-[1.0625rem]"/>}
    {batch.length>0&&<div className="rounded-xl border border-accent p-3" role="status">
     {next?<><p className="font-semibold">{t.next}: {next.name} ({position+1}/{batch.length})</p>
       <div className="mt-2 flex flex-wrap gap-2">
@@ -145,7 +145,7 @@ export default function OwnerScheduleSendPanel({week,proposalId,locale}:Props){
    </div>}
    {data.recipients.map(person=><article key={person.id} className="rounded-xl border border-line p-3">
     <div className="flex flex-wrap items-start justify-between gap-2">
-     <h4 className="font-bold text-[17px]">{person.name}</h4>
+     <h4 className="font-bold text-[1.0625rem]">{person.name}</h4>
      <label className="text-sm font-semibold">{t.preferred}
       <select aria-label={t.preferred+" "+person.name} value={person.preferredChannel}
        onChange={event=>void preference(person,event.target.value as OwnerChannel)}
@@ -153,14 +153,14 @@ export default function OwnerScheduleSendPanel({week,proposalId,locale}:Props){
        <option value="whatsapp">{t.whatsApp}</option><option value="sms">{t.sms}</option>
       </select></label>
     </div>
-    <p className="my-2 whitespace-pre-wrap break-words text-[17px]">{person.message}</p>
+    <p className="my-2 whitespace-pre-wrap break-words text-[1.0625rem]">{person.message}</p>
     {person.ledgerStatus==="sent_by_owner"&&<p className="mb-2 text-sm text-ink-muted" role="status">
        {t.opened} · {person.lastChannel==="sms"?t.sms:t.whatsApp}{person.sentAt?" · "+person.sentAt:""}
      </p>}
     <div className="flex flex-wrap items-center gap-2">
      {method(person,person.preferredChannel)}
      {method(person,person.preferredChannel==="sms"?"whatsapp":"sms")}
-     <button className="min-h-12 rounded-xl border border-line px-4 text-[17px]" onClick={()=>void copyMessage(person.message)}>{t.copyMessage}</button>
+     <button className="min-h-12 rounded-xl border border-line px-4 text-[1.0625rem]" onClick={()=>void copyMessage(person.message)}>{t.copyMessage}</button>
     </div>
    </article>)}
   </>}
