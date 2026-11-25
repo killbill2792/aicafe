@@ -40,7 +40,8 @@ export async function stageToastPaymentDateReview(db:SupabaseClient,
 const entrySchema=z.object({guid:GUID,adjustment:z.boolean(),
  fee:z.object({orderGuid:GUID,amountCents:z.number().int(),feeCents:z.number().int().nonnegative()}).optional()});
 const progressSchema=z.object({completed_through:z.iso.date().optional(),day:z.iso.date().optional(),
- entries:z.array(entrySchema).optional(),next:z.number().int().nonnegative().optional()}).passthrough();
+ entries:z.array(entrySchema).optional(),next:z.number().int().nonnegative().optional(),
+ deferred:z.array(entrySchema).optional(),retry_at:z.string().optional()}).passthrough();
 type Entry=z.infer<typeof entrySchema>;
 type KnownPayment={payment_ref:string;payment_type:string|null;payment_status:string|null;
  original_processing_fee_cents:number|null;status:string};
@@ -73,6 +74,24 @@ export async function finalizeToastPaymentWindow(db:SupabaseClient,p:FinalScope,
   business_id:p.businessId,restaurant_guid:p.restaurantGuid,
   operational_sources:{...sources,final_payments:progress}
  },{onConflict:"business_id,restaurant_guid"});if(error)throw new ToastApiError("unavailable");};
+ const apply=async(entry:Entry)=>{const fee=entry.fee!;
+  const {data,error}=await db.rpc("toast_apply_verified_payment_fee",{p_business_id:p.businessId,
+   p_restaurant_guid:p.restaurantGuid,p_order_guid:fee.orderGuid,p_payment_guid:entry.guid,
+   p_amount_cents:fee.amountCents,p_fee_cents:fee.feeCents});
+  if(error)throw new ToastApiError("unavailable");return data===true;};
+ // An unresolved fee must not hold up the rest of the day or a later day.
+ // Retrying a saved receipt is local only; it never refetches Toast.
+ if(progress.deferred?.length&&(!progress.retry_at||Date.parse(progress.retry_at)<=now.getTime())){
+  const remaining:Entry[]=[];
+  for(const entry of progress.deferred){
+   if(Date.now()>=deadlineAt||!await apply(entry))remaining.push(entry);
+  }
+  progress.deferred=remaining;
+  progress.retry_at=remaining.length?new Date(now.getTime()+15*60000).toISOString():undefined;
+  progress.error=remaining.length?"payment_order_pending":null;
+  if(!progress.day)progress.status=remaining.length?"pending":"current";
+  await save();
+ }
  if(progress.completed_through&&progress.completed_through>=latest&&!progress.day)return;
  const day=progress.day??(progress.completed_through?addCalendarDays(progress.completed_through,1):latest);
  if(day>latest||!ready(day)||Date.now()>=deadlineAt)return;
@@ -91,15 +110,19 @@ export async function finalizeToastPaymentWindow(db:SupabaseClient,p:FinalScope,
    if(kind!=="paid")events.push({kind,guids});
   }
   for(const e of events){
-   const {error}=await db.rpc("toast_stage_payment_day_events",{p_business_id:p.businessId,
-    p_restaurant_guid:p.restaurantGuid,p_date:day,p_kind:e.kind,p_guids:e.guids});
-   if(error)throw new ToastApiError("unavailable");
+   for(let offset=0;offset<Math.max(e.guids.length,1);offset+=2000){
+    const {error}=await db.rpc("toast_stage_payment_day_events",{p_business_id:p.businessId,
+     p_restaurant_guid:p.restaurantGuid,p_date:day,p_kind:e.kind,p_guids:e.guids.slice(offset,offset+2000)});
+    if(error)throw new ToastApiError("unavailable");
+   }
   }
-  progress={completed_through:progress.completed_through,day,
+  progress={completed_through:progress.completed_through,day,deferred:progress.deferred,retry_at:progress.retry_at,
    entries:[...ids].map(([guid,adjustment])=>({guid,adjustment})),next:0,status:"pending",error:null};
   await save();
  }
- const entries=progress.entries!,end=Math.min(entries.length,(progress.next??0)+50);
+ const entries=progress.entries!;
+ while((progress.next??0)<entries.length&&Date.now()<deadlineAt){
+ const start=progress.next??0,end=Math.min(entries.length,start+50);
  const remaining=entries.slice(progress.next??0,end).map(e=>e.guid);
  if(remaining.length){
   const {data:known,error:ke}=await db.from("toast_payment_facts")
@@ -108,11 +131,6 @@ export async function finalizeToastPaymentWindow(db:SupabaseClient,p:FinalScope,
   if(ke)throw new ToastApiError("unavailable");
   const byGuid=new Map<string,KnownPayment[]>();
   for(const row of (known??[]) as KnownPayment[]){const k=row.payment_ref.toLowerCase();byGuid.set(k,[...(byGuid.get(k)??[]),row]);}
-  const apply=async(entry:Entry)=>{const fee=entry.fee!;
-   const {data,error}=await db.rpc("toast_apply_verified_payment_fee",{p_business_id:p.businessId,
-    p_restaurant_guid:p.restaurantGuid,p_order_guid:fee.orderGuid,p_payment_guid:entry.guid,
-    p_amount_cents:fee.amountCents,p_fee_cents:fee.feeCents});
-   if(error)throw new ToastApiError("unavailable");return data===true;};
   try{
    for(; (progress.next??0)<end&&Date.now()<deadlineAt;){
     const index=progress.next??0,entry=entries[index];
@@ -120,7 +138,7 @@ export async function finalizeToastPaymentWindow(db:SupabaseClient,p:FinalScope,
     if(entry.fee){
      // The order refresh was already durably queued. Do not call Toast again
      // while its canonical order is waiting to be committed.
-     if(!await apply(entry))break;
+     if(!await apply(entry))progress.deferred=[...(progress.deferred??[]),entry];
      progress.next=index+1;continue;
     }
     const payment=await client.request("/orders/v2/payments/"+entry.guid,p.restaurantGuid,paymentDetailSchema,{deadlineAt});
@@ -135,17 +153,22 @@ export async function finalizeToastPaymentWindow(db:SupabaseClient,p:FinalScope,
      const applied=await apply(verified);
      if(entry.adjustment||!applied)await fetchAndIngestToastOrder(db,p,payment.orderGuid,deadlineAt);
      if(!applied){
-      entry.fee=verified.fee;
+      progress.deferred=[...(progress.deferred??[]),verified];
       // Save only the verified numeric receipt, never the payment response.
-      break;
      }
     }else await fetchAndIngestToastOrder(db,p,payment.orderGuid,deadlineAt);
     progress.next=index+1;
    }
   }catch(e){await save();throw e;}
  }
+ await save();
+ if((progress.next??0)===start)break;
+ }
  if((progress.next??0)>=entries.length){
-  progress={completed_through:day,status:"current",last_success_at:new Date().toISOString(),error:null,count:entries.length};
+  const deferred=progress.deferred??[];
+  progress={completed_through:day,status:deferred.length?"pending":"current",
+   last_success_at:new Date().toISOString(),error:deferred.length?"payment_order_pending":null,
+   count:entries.length,deferred,retry_at:deferred.length?new Date(now.getTime()+15*60000).toISOString():undefined};
  }
  await save();
 }

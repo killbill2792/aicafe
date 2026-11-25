@@ -30,7 +30,7 @@ BEGIN
     'appliedDiscounts',jsonb_build_array(jsonb_build_object('guid','eeeeeeee-1111-4eee-8eee-eeeeeeee0013',
      'name','Dental Students & Faculty','discountAmount',0.85)))),
    'payments',jsonb_build_array(jsonb_build_object('guid','eeeeeeee-1111-4eee-8eee-eeeeeeee0014',
-    'type','CREDIT','amount',7.65,'tipAmount',1)))));
+    'type','CREDIT','paymentStatus','CAPTURED','amount',7.65,'tipAmount',1)))));
  o1_tip:=jsonb_set(jsonb_set(o1,'{checks,0,payments,0,tipAmount}','2'::jsonb),
   '{modifiedDate}','"2026-11-03T22:00:00.000+0000"'::jsonb);
  o1_old:=jsonb_set(o1,'{modifiedDate}','"2026-11-03T20:00:00.000+0000"'::jsonb);
@@ -117,7 +117,16 @@ BEGIN
  perform pg_temp.assert_true((select count(*)=1 and bool_and(status='actual')
   from public.toast_records_for(b,d,d) where record_type='item_discount'),'after the import the AI reads it as actual');
 
- -- 9. An imported day is final: the live job does not write to it.
+ -- Capture endpoint evidence can supply a fee missing from the order payload.
+ perform set_config('request.jwt.claim.role','service_role',true);
+ perform pg_temp.assert_true(not public.toast_apply_verified_payment_fee(b,r,ord2,'eeeeeeee-1111-4eee-8eee-eeeeeeee0014',765,23),'wrong order cannot authorize the fee');
+ perform pg_temp.assert_true(public.toast_apply_verified_payment_fee(b,r,ord,'eeeeeeee-1111-4eee-8eee-eeeeeeee0014',765,23),'matching independently captured fee is applied');
+ perform pg_temp.assert_true(public.toast_apply_verified_payment_fee(b,r,ord,'eeeeeeee-1111-4eee-8eee-eeeeeeee0014',765,23),'replayed capture evidence is idempotent');
+ update public.toast_day_status set imported_at=now()+interval '1 second' where business_id=b and restaurant_guid=r and business_date=d;
+ perform pg_temp.assert_true((select original_processing_fee_cents=23 and fee_status='actual' and fee_basis='toast'
+  from public.toast_payment_facts where business_id=b and restaurant_guid=r and business_date=d
+   and payment_ref='eeeeeeee-1111-4eee-8eee-eeeeeeee0014'),'same captured payment retains provider fee when order copy omits it');
+  -- 9. An imported day is final: the live job does not write to it.
  n:=public.toast_archive_live_orders(b,r,d,jsonb_build_array(
   jsonb_set(o1_tip,'{modifiedDate}','"2026-11-05T00:00:00.000+0000"'::jsonb)));
  perform pg_temp.assert_true(n=0 and (select run_id=run_i and payload->>'modifiedDate'='2026-11-03T22:00:00.000+0000'
@@ -242,6 +251,13 @@ BEGIN
  perform pg_temp.assert_true((outcome->>'orders')::integer=0,'existing guarded day writer committed local revision');
  perform pg_temp.assert_true((select state='completed' and api_calls=0 and cursor='{}'::jsonb from public.toast_sync_runs where id=repair),'no provider full-day request or retained payload after commit');
  perform pg_temp.assert_true((select count(*)=1 and bool_and(payload=newer) from public.toast_raw_records where business_id=b and entity_guid=ord),'one canonical archive row with latest revision');
+ update public.toast_day_status set recon_state='checked_internal',analytics_state='missing'
+  where business_id=b and restaurant_guid=r and business_date=d;
+ perform pg_temp.assert_true(public.toast_closeout_due(b,r,d,((d+1)::timestamp+interval '12 hours') at time zone 'America/Los_Angeles'),'final payment window remains due after early sales reconciliation');
+ insert into public.toast_optional_sync_state(business_id,restaurant_guid,operational_sources)
+  values(b,r,jsonb_build_object('final_payments',jsonb_build_object('completed_through',d)))
+  on conflict(business_id,restaurant_guid) do update set operational_sources=excluded.operational_sources;
+ perform pg_temp.assert_true(not public.toast_closeout_due(b,r,d,((d+1)::timestamp+interval '12 hours') at time zone 'America/Los_Angeles'),'successful day has no more closeout work');
 END $revision$;
 
 ROLLBACK;

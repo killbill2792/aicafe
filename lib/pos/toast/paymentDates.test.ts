@@ -5,7 +5,7 @@ vi.mock("./client",async original=>({
  ...(await original<typeof import("./client")>()),
  createToastClient:()=>({request:h.get})
 }));
-import {stageToastPaymentDateReview,needsFinalPaymentDetail} from "./paymentDates";
+import {stageToastPaymentDateReview,needsFinalPaymentDetail,finalizeToastPaymentWindow} from "./paymentDates";
 import type {SupabaseClient} from "@supabase/supabase-js";
 const request={businessId:"aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
  restaurantGuid:"bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",businessDate:"2026-10-01"};
@@ -47,4 +47,26 @@ it("only requests final payment details for adjustments, missing fees or unfinis
  expect(needsFinalPaymentDetail({guid,adjustment:false},[{...base,payment_status:"AUTHORIZED"}])).toBe(true);
  expect(needsFinalPaymentDetail({guid,adjustment:false},[{...base,payment_type:"CASH",original_processing_fee_cents:null}])).toBe(false);
  expect(needsFinalPaymentDetail({guid,adjustment:false},[])).toBe(true);
+});
+
+
+it("reads the final payment-date lists once, skips already known captures and stops after the receipt",async()=>{
+ const guid="cccccccc-cccc-4ccc-8ccc-cccccccccccc";
+ let sources:Record<string,unknown>={};
+ const rpc=vi.fn().mockResolvedValue({error:null});
+ const db={rpc,from:(table:string)=>{
+  const q={select:()=>q,eq:()=>q,in:async()=>({data:[{payment_ref:guid,payment_type:"CREDIT",
+   payment_status:"CAPTURED",original_processing_fee_cents:23,status:"actual"}],error:null}),
+   maybeSingle:async()=>({data:table==="toast_optional_sync_state"?{operational_sources:sources}:{import_state:"imported"},error:null}),
+   upsert:async(value:{operational_sources:Record<string,unknown>})=>{sources=value.operational_sources;return {error:null};}};
+  return q;
+ }} as unknown as SupabaseClient;
+ h.get.mockReset().mockResolvedValueOnce([guid]).mockResolvedValueOnce([]).mockResolvedValueOnce([]);
+ const scope={businessId:request.businessId,restaurantGuid:request.restaurantGuid,timezone:"America/Los_Angeles",closeoutHour:4};
+ const now=new Date("2026-10-02T12:00:00-07:00");
+ await finalizeToastPaymentWindow(db,scope,request.businessDate,now,Date.now()+60000);
+ expect(h.get).toHaveBeenCalledTimes(3);
+ expect(sources.final_payments).toMatchObject({completed_through:request.businessDate,status:"current",count:1});
+ await finalizeToastPaymentWindow(db,scope,request.businessDate,now,Date.now()+60000);
+ expect(h.get).toHaveBeenCalledTimes(3);
 });
