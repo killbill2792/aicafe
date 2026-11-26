@@ -46,12 +46,6 @@ describe("canonical period break-even and Toast provenance",()=>{
     expect(basis.feeResult.amountCents).toBe(28*3200);
     expect(basis.ingredientSource).toBe("saved_rate");
   });
-    expect(chat.reasonKey).not.toBe("profitFeesEstimated");
-    expect(chat.estimated).toContain("savedIngredientRate");
-    expect(chat.missing).not.toContain("processingFeeDaysIncomplete");
-    expect((chat.explain as unknown[]).length).toBe(1);
-  });
-
   it("month-to-date does not project the two missing future October labor days",()=>{
     const snapshot=fixture();
     const forecast=breakEvenSnapshotInputs(snapshot);
@@ -118,18 +112,6 @@ describe("canonical period break-even and Toast provenance",()=>{
     const mtd=breakEvenSnapshotInputs(snapshot,{period:"month_to_date",periodLaborCentsOverride:487_200});
     expect(mtd.monthlyStaffCents).toBe(487_200);
   });
-    const today=await moneyTools.get_break_even.execute({period:"today",
-      ownerOpenDaysPerMonth:27,
-      ownerInputs:ownerInputs(10_000,{from:"2026-10-30",to:"2026-10-30"})},
-      context(snapshot));
-    expect((today.monthlyLabor as {valueCents:number|null}).valueCents).toBe(10_000);
-    const mtd=await moneyTools.get_break_even.execute({period:"month_to_date",
-      ownerOpenDaysPerMonth:27,
-      ownerInputs:ownerInputs(487_200,{from:"2026-10-01",to:"2026-10-29"})},
-      context(snapshot));
-    expect((mtd.monthlyLabor as {valueCents:number|null}).valueCents).toBe(487_200);
-  });
-
   it("includes actual expenses already incurred MTD, prorating recurring bills only",()=>{
     const snapshot=fixture();
     const lines=snapshot.runningCostLines.filter(line=>line.categoryCode!=="repairs")

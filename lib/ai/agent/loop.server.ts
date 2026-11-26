@@ -348,9 +348,7 @@ export async function runAgentTurn(args: {
   // Do not derive owner intent from text patterns. Ordinary Luna has one
   // objective-neutral resource policy. Retain the older supplier-specific
   // allowance only for legacy compatibility and the unchanged paid envelope.
-  const supplierWorkObserved=()=>startedTools.some(name=>
-    name==="get_events");
-  const maxModelToolCalls=()=>adaptive?policy.maxWorkCalls:supplierWorkObserved()?6:5;
+  const maxModelToolCalls=()=>policy.maxWorkCalls;
   const maxToolCalls=adaptive?policy.maxToolCalls:8;
   let expandedLuna=model===PRODUCTION_SUPERVISOR_OPENAI_MODEL;
   const finalOutputReserve=1200, lunaToolOutputCap=16_384, lunaTurnOutputCap=25_000;

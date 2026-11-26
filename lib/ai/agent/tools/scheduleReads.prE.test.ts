@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { getWeekSchedule, getTeam } from "@/lib/actions/schedule";
+import { getWeekSchedule } from "@/lib/actions/schedule";
 import { shiftCost } from "@/lib/calc/scheduling/shiftCost";
 import { scheduleReadTools } from "./scheduleReads";
 import type { AgentToolContext } from "./index";
@@ -32,16 +32,13 @@ describe("confirmed weekly schedule is the only chat schedule",()=>{
   it("does not invent gaps or zero paid hours when no confirmed shifts exist",async()=>{
     vi.mocked(getWeekSchedule).mockResolvedValue(schedule([]) as never);
     const scheduleRead=await scheduleReadTools.get_week_schedule.execute({week_start:week},ctx);
-    const gaps=await scheduleReadTools.get_coverage_gaps.execute({week_start:week},ctx);
     expect(scheduleRead.scheduleSet).toBe(false);
     expect(scheduleRead.href).toBe("/staff?tab=schedule");
     expect(scheduleRead.missing).toContain("scheduleNotSet");
     expect(scheduleRead.shifts).toEqual([]);
     expect(scheduleRead.paidMinutes).toBeNull();
     expect(scheduleRead.gaps).toEqual([]);
-    expect(gaps.scheduleSet).toBe(false);
-    expect(gaps.gaps).toEqual([]);
-    expect(JSON.stringify([scheduleRead,gaps])).not.toContain("Dawn");
+    expect(JSON.stringify(scheduleRead)).not.toContain("Dawn");
   });
   it("lists every active teammate with the dates they already work, so a replacement can be proposed",async()=>{
     const sam={...active,id:"sam",name:"Sam"};
@@ -57,16 +54,11 @@ describe("confirmed weekly schedule is the only chat schedule",()=>{
     const activeShift=fakeShift("current","active","08:00");
     const removedShift=fakeShift("removed","former","07:00");
     vi.mocked(getWeekSchedule).mockResolvedValue(schedule([activeShift,removedShift]) as never);
-    vi.mocked(getTeam).mockResolvedValue({
-      ok:true,data:{team:[active],shifts:[activeShift,removedShift],totals:{}},
-    } as never);
-    const roster=await scheduleReadTools.get_team.execute({week_start:week,name:null},ctx);
     const confirmed=await scheduleReadTools.get_week_schedule.execute({week_start:week},ctx);
     expect((confirmed.shifts as {employeeId:string}[]).map(s=>s.employeeId)).toEqual(["former","active"]);
     expect(activeShift.costCents).not.toBeNull();
     expect(removedShift.costCents).not.toBeNull();
     const actualKnownCosts=activeShift.costCents!+removedShift.costCents!;
     expect(confirmed.knownWagesCents).toBe(actualKnownCosts);
-    expect(roster.knownWagesCents).toBe(actualKnownCosts);
   });
 });

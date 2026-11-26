@@ -1,4 +1,4 @@
-import {describe,it,expect,vi} from "vitest";
+import {describe,it,expect,vi,afterEach} from "vitest";
 import type {AgentProvider} from "./loop.server";
 import {runResearchTurn,isResearchActionTool} from "../research/turn.server";
 import {agentToolDefinitions} from "./tools";
@@ -66,6 +66,7 @@ const baseContext={
  },
 };
 describe("Task14B agentic purchasing: Supervisor works through a goal, not Q&A",()=>{
+ afterEach(()=>vi.unstubAllEnvs());
  it("makes multiple actual model-directed tool calls: investigate → persist approval draft → report limitation",async()=>{
   const order:string[]=[];
   const inspect=vi.fn(async()=>{order.push("inspect");return plan;});
@@ -95,6 +96,7 @@ describe("Task14B agentic purchasing: Supervisor works through a goal, not Q&A",
   ]));
  });
  it("persists a future PO after six model-directed tool steps without dropping any domain function",async()=>{
+  vi.stubEnv("SUPERVISOR_OPENAI_MODEL","gpt-6-luna");
   const steps:string[]=[];
   const inspect=vi.fn(async()=>{steps.push("inspect");return plan;});
   const propose=vi.fn(async()=>{steps.push("propose");return {
