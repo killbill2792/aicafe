@@ -30,8 +30,17 @@ export async function readDailyFacts(db:SupabaseClient,businessId:string,from:st
 }
 /** Days whose sales are complete and can be reported. */
 export async function readCoveredSalesDates(db:SupabaseClient,businessId:string,from:string,to:string):Promise<string[]>{
- return (await readDailyFactRows(db,businessId,from,to))
-  .filter(row=>row.sales_data_status==="actual").map(row=>row.business_date);
+ const dates:string[]=[];
+ for(let offset=0;;offset+=PAGE){
+  const {data,error}=await db.from("cv_sales_days").select("business_date")
+   .eq("business_id",businessId).eq("data->>sales_data_status","actual")
+   .gte("business_date",from).lte("business_date",to)
+   .order("business_date",{ascending:true}).range(offset,offset+PAGE-1);
+  if(error)throw error;
+  const page=(data??[]) as {business_date:string}[];
+  dates.push(...page.map(row=>row.business_date));
+  if(page.length<PAGE)return dates;
+ }
 }
 
 /** Date-only bounds of stored actual sales, not proof of financial completeness.
@@ -39,8 +48,8 @@ export async function readCoveredSalesDates(db:SupabaseClient,businessId:string,
 export async function readSalesCoverageBounds(db:SupabaseClient,businessId:string,from:string,to:string):Promise<{from:string;to:string}|null>{
  if(!businessId||from>to)throw new Error("Invalid sales coverage scope");
  const read=async(ascending:boolean)=>{
-  const {data,error}=await db.from("daily_rollups").select("business_date")
-   .eq("business_id",businessId).eq("sales_data_status","actual")
+  const {data,error}=await db.from("cv_sales_days").select("business_date")
+   .eq("business_id",businessId).eq("data->>sales_data_status","actual")
    .gte("business_date",from).lte("business_date",to)
    .order("business_date",{ascending}).range(0,0);
   if(error||!Array.isArray(data)||data.length>1)throw new Error("Sales coverage unavailable");
