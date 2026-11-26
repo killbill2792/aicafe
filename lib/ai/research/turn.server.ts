@@ -146,7 +146,7 @@ export async function runResearchTurn(args:{
   // Use the existing shared bounded execution policy, reserving a final
   // synthesis request and enough time to persist the reply.
   const worker=currentWorkerBudget(),policy=executionPolicy(model,worker,broker);
-  const deadline=started+policy.elapsedMs,workDeadline=deadline-policy.finalTimeReserve;
+  const deadline=started+policy.elapsedMs,workDeadline=deadline-Math.max(policy.finalTimeReserve,Math.min(20000,Math.floor(policy.elapsedMs/3)));
   let unknownOutput=0,finalAttempted=false;
   const spent=()=>usage.outputTokens+unknownOutput;
   const cap=(final:boolean)=>requestOutputCap(policy,spent(),final,outputCap(final)??Infinity);
