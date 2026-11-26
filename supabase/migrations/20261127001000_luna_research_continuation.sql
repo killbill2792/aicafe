@@ -508,7 +508,7 @@ END, false)) AND (client_message_id IS NOT NULL)) OR ((role = 'supervisor'::text
 CASE
     WHEN (jsonb_typeof(structured_content) = 'array'::text) THEN ((jsonb_array_length(structured_content) >= 1))
     ELSE false
-END AND (jsonb_typeof(grounding) = 'object'::text) AND (COALESCE((grounding ->> 'status'::text), ''::text) = ANY (ARRAY['verified'::text, 'estimated'::text, 'partial'::text, 'unavailable'::text, 'insufficient_evidence'::text, 'requires_owner_input'::text])) AND ((COALESCE((grounding ->> 'status'::text), ''::text) <> 'requires_owner_input'::text) OR (jsonb_typeof((grounding -> 'ownerInput'::text)) = 'object'::text))))) not valid;
+END AND (jsonb_typeof(grounding) = 'object'::text) AND (COALESCE((grounding ->> 'status'::text), ''::text) = ANY (ARRAY['answered'::text, 'interrupted'::text, 'verified'::text, 'estimated'::text, 'partial'::text, 'unavailable'::text, 'insufficient_evidence'::text, 'requires_owner_input'::text])) AND ((COALESCE((grounding ->> 'status'::text), ''::text) <> 'requires_owner_input'::text) OR (jsonb_typeof((grounding -> 'ownerInput'::text)) = 'object'::text))))) not valid;
 
 CREATE OR REPLACE FUNCTION public.supervisor_publish_owner_question_v2(p_business_id uuid, p_owner_user_id uuid, p_thread_id uuid, p_run_id uuid, p_claim_token uuid, p_job_id uuid, p_reply_id uuid, p_blocks jsonb, p_grounding jsonb)
  RETURNS jsonb
@@ -562,7 +562,7 @@ begin
  if coalesce(auth.role(),'')<>'service_role' or p_reply_id is null
    or jsonb_typeof(p_blocks) is distinct from 'array' or jsonb_array_length(p_blocks)<1
    or jsonb_typeof(p_grounding) is distinct from 'object'
-   or coalesce(p_grounding->>'status','') not in ('verified','partial','unavailable','insufficient_evidence','estimated')
+   or coalesce(p_grounding->>'status','') not in ('answered','verified','partial','unavailable','insufficient_evidence','estimated')
    or p_grounding#>>'{agentMetadata,endReason}' is distinct from 'complete'
    then raise exception 'durable_reply_invalid' using errcode='22023'; end if;
  select * into r from public.supervisor_runs where id=p_run_id and business_id=p_business_id
@@ -725,7 +725,7 @@ begin
    or jsonb_typeof(p_proof->'sourceCount')<>'number'
    or coalesce((p_proof->>'sourceCount')::integer,0)<1
    or p_proof->>'externalEffects'<>'not_attempted'
-   or p_proof->>'quality' not in ('verified','partial') then
+   or p_proof->>'quality' not in ('answered','verified','partial') then
    raise exception 'u4_report_invalid' using errcode='22023'; end if;
  select * into r from public.supervisor_routines
    where business_id=p_business_id and id=p_routine_id for update;
@@ -833,7 +833,7 @@ begin
      not exists(select 1 from public.ai_messages m where m.id::text=p_result_ref
        and m.business_id=p_business_id and m.owner_user_id=p_owner_user_id and m.thread_id=p_thread_id
        and m.role='supervisor' and m.grounding->>'ownerMessageId'=r.request_key::text
-       and m.grounding->>'status' in ('verified','estimated','partial','unavailable','insufficient_evidence') and m.grounding#>>'{agentMetadata,endReason}'='complete'))
+       and m.grounding->>'status' in ('answered','verified','estimated','partial','unavailable','insufficient_evidence') and m.grounding#>>'{agentMetadata,endReason}'='complete'))
     then raise exception 'owner_turn_receipt_not_verified'; end if;
   if s.status = 'completed' then
     if s.result_ref <> p_result_ref then raise exception 'step_result_conflict'; end if;
@@ -876,11 +876,205 @@ begin
     or not exists(select 1 from public.ai_messages m where m.id::text=p_verified_result_ref
       and m.business_id=p_business_id and m.owner_user_id=p_owner_user_id and m.thread_id=p_thread_id
       and m.role='supervisor' and m.grounding->>'ownerMessageId'=r.request_key::text
-      and m.grounding->>'status' in ('verified','estimated','partial','unavailable','insufficient_evidence') and m.grounding#>>'{agentMetadata,endReason}'='complete'))
+      and m.grounding->>'status' in ('answered','verified','estimated','partial','unavailable','insufficient_evidence') and m.grounding#>>'{agentMetadata,endReason}'='complete'))
     then raise exception 'owner_turn_receipt_not_verified'; end if;
   update public.supervisor_run_steps set status = 'completed', result_ref = p_verified_result_ref,
     completed_at = now(), error_code = null, updated_at = now()
     where id = s.id returning * into s;
   update public.supervisor_runs set status = 'running', updated_at = now() where id = r.id;
   return to_jsonb(s);
+end $function$;
+
+-- Preserve the existing scoped incident transaction and action receipts.
+-- Publish analytical reports without assigning an evidence confidence grade.
+CREATE OR REPLACE FUNCTION public.supervisor_finish_investigation(p_business_id uuid, p_owner_user_id uuid, p_thread_id uuid, p_source_type text, p_source_id text, p_revision_hash text, p_lease_token uuid, p_outcome text, p_evidence jsonb, p_narrative text, p_now timestamp with time zone)
+ RETURNS boolean
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'public'
+AS $function$
+declare v public.supervisor_investigations;v_phase text;v_hash text;v_msg uuid;v_blocks jsonb;v_proposal public.supervisor_proposals;v_new_question boolean:=false;v_shared_question uuid;
+begin
+  if coalesce(auth.role(),'')<>'service_role' then
+    raise exception 'Service role required' using errcode='42501'; end if;
+  perform pg_advisory_xact_lock(hashtextextended('ai_agent_job:'||p_thread_id::text,0));
+  if p_source_type='alert' then
+    perform 1 from public.alerts a
+      where a.business_id=p_business_id and a.id::text=p_source_id
+        and a.status in ('new','seen') for share;
+  elsif p_source_type='operating_task' then
+    perform 1 from public.operating_tasks t
+      where t.business_id=p_business_id and t.id=p_source_id
+        and t.kind not in ('priority_notice','commitment','event_plan',
+          'event_change','event_report')
+        and t.status in ('needs_owner','needs_response','watching')
+        and (t.owner_user_id is null or t.owner_user_id=p_owner_user_id)
+      for share;
+  else
+    return false;
+  end if;
+  if not found then return false; end if;
+  select * into v from public.supervisor_investigations
+    where business_id=p_business_id and owner_user_id=p_owner_user_id
+      and source_type=p_source_type and source_id=p_source_id for update;
+  if not found or v.thread_id<>p_thread_id or v.revision_hash<>p_revision_hash
+    or v.lease_token is distinct from p_lease_token or v.lease_until<=p_now
+    or not public.supervisor_routine_owner_authorized(p_business_id,p_owner_user_id,p_thread_id)
+  then return false; end if;
+  if p_outcome='collected' and v.phase='collect' then v_phase:='investigate';
+  elsif p_outcome='investigated' and v.phase='investigate' then v_phase:='awaiting_owner';
+  elsif p_outcome='followed_up' and v.phase='awaiting_owner' then v_phase:='awaiting_owner';
+  elsif p_outcome='rechecked' and v.phase='awaiting_owner' then v_phase:='awaiting_owner';
+  else raise exception 'Invalid investigation transition' using errcode='23514'; end if;
+  if p_evidence is null or jsonb_typeof(p_evidence)<>'object'
+    or octet_length(p_evidence::text)>8192 then
+    raise exception 'Invalid investigation evidence' using errcode='22023'; end if;
+  if p_outcome not in ('collected','rechecked') and
+    (p_narrative is null or length(btrim(p_narrative))<1) then
+    raise exception 'Investigation needs a grounded next step' using errcode='22023'; end if;
+  v_shared_question:=v.shared_question_id;
+  if p_outcome in ('investigated','followed_up') then
+    if v.pending_question_id is null and v_shared_question is null
+      and p_evidence->>'ownerQuestion' is not null
+      and length(btrim(p_evidence->>'ownerQuestion')) between 1 and 200 then
+      select i.pending_question_id into v_shared_question
+      from public.supervisor_investigations i
+      join public.ai_messages m on m.id=i.pending_question_id
+        and m.business_id=i.business_id and m.owner_user_id=i.owner_user_id
+        and m.thread_id=i.thread_id and m.role='supervisor'
+      where i.business_id=p_business_id and i.owner_user_id=p_owner_user_id
+        and i.thread_id=p_thread_id and i.phase='awaiting_owner'
+        and (i.source_type,i.source_id)<>(p_source_type,p_source_id)
+        and m.grounding->>'durableQuestionId'=m.id::text
+        and m.grounding->>'intent'='priority_investigation'
+        and m.grounding->>'investigationEpisodeId'=i.episode_id::text
+        and exists(select 1 from jsonb_array_elements(
+          case when jsonb_typeof(m.structured_content)='array' then m.structured_content else '[]'::jsonb end
+        ) b where b->>'type'='clarify' and
+          public.supervisor_normalize_question(b->>'question')=
+          public.supervisor_normalize_question(p_evidence->>'ownerQuestion'))
+      order by m.created_at,m.id limit 1 for share of i;
+    end if;
+  end if;
+  update public.supervisor_investigations set phase=v_phase,evidence=p_evidence,
+    narrative=case when p_outcome in ('collected','rechecked') then narrative else btrim(p_narrative) end,
+    step_version=step_version+1,failure_count=0,lease_token=null,lease_until=null,
+    next_retry_at=case when p_outcome='collected' then p_now
+      else p_now+interval '6 hours' end,
+    last_error=null,updated_at=p_now
+    where business_id=p_business_id and owner_user_id=p_owner_user_id
+      and source_type=p_source_type and source_id=p_source_id;
+  if p_outcome in ('investigated','followed_up') then
+    insert into public.operating_tasks
+      (business_id,id,owner_user_id,agent_id,kind,status,payload,confidence,
+       evidence,entity_type,dedupe_key)
+    values (
+      p_business_id,
+      'investigation:'||v.stable_key||':'||v.episode_id::text||':'||(v.step_version+1)::text,
+      p_owner_user_id,'leo','priority_notice','needs_owner',
+      jsonb_build_object('title',left(btrim(p_narrative),180),
+        'threadId',p_thread_id::text,'sourceType',p_source_type,
+        'sourceId',p_source_id,'revisionHash',p_revision_hash,
+        'episodeId',v.episode_id::text,'stepVersion',v.step_version+1,
+        'ownerNoticeDate',(p_now at time zone
+          (select timezone from public.businesses where id=p_business_id))::date::text,
+        'asOf',p_now::text,'intent','priority_investigation',
+        'externalEffects','not_attempted'),
+      case when p_evidence->'source'->>'quality' in ('partial','missing','stale')
+        or (p_evidence ? 'missing' and p_evidence->'missing'<>'[]'::jsonb)
+        then 'low' else 'high' end,
+      jsonb_build_array(jsonb_build_object('source',p_source_type,
+        'facts',jsonb_build_object('sourceId',p_source_id,
+          'revisionHash',p_revision_hash,'episodeId',v.episode_id::text,
+          'asOf',p_now::text))),
+      'priority_source',
+      'investigation:'||v.stable_key||':'||v.episode_id::text||':'||(v.step_version+1)::text
+    ) on conflict do nothing;
+    v_hash:=md5('investigation:'||p_business_id::text||':'||p_owner_user_id::text||
+      ':'||p_source_type||':'||p_source_id||':'||p_revision_hash||':'||
+      v.episode_id::text||':'||(v.step_version+1)::text);
+    v_msg:=(substr(v_hash,1,8)||'-'||substr(v_hash,9,4)||'-4'||
+      substr(v_hash,14,3)||'-a'||substr(v_hash,18,3)||'-'||substr(v_hash,21,12))::uuid;
+    v_blocks:=jsonb_build_array(jsonb_build_object('type','text','text',btrim(p_narrative)));
+    if p_source_type='alert' and jsonb_typeof(p_evidence->'stockProcurementStatus')='string'
+      and length(btrim(p_evidence->>'stockProcurementStatus')) between 1 and 1100
+      and exists(select 1 from public.alerts a where a.business_id=p_business_id
+        and a.id::text=p_source_id and a.kind='business_anomaly'
+        and a.payload->>'family' in ('stockout_risk','stock_shortage')) then
+      v_blocks:=v_blocks||jsonb_build_array(jsonb_build_object('type','warning',
+        'code','stock_procurement_status','text','Procurement status: '||btrim(p_evidence->>'stockProcurementStatus')));
+    end if;
+    if v.pending_question_id is null and v_shared_question is null and p_evidence->>'ownerQuestion' is not null
+      and length(btrim(p_evidence->>'ownerQuestion')) between 1 and 200 then
+      v_new_question:=true;
+      v_blocks:=v_blocks||jsonb_build_array(jsonb_build_object('type','clarify','kind','choice',
+        'question',p_evidence->>'ownerQuestion','allowOther',true,'options',
+        jsonb_build_array(jsonb_build_object('label','I do not have that information yet','value','unknown'),
+          jsonb_build_object('label','I will check the source records','value','checking'))));
+    end if;
+    update public.supervisor_investigations set
+      pending_question_id=case when v_new_question then v_msg else v.pending_question_id end,
+      shared_question_id=v_shared_question,
+      reported_owner_answer_id=v.last_owner_answer_id
+      where business_id=p_business_id and owner_user_id=p_owner_user_id
+      and source_type=p_source_type and source_id=p_source_id;
+    if p_evidence ? 'receivingFollowupProposalId' and p_source_type='operating_task'
+      and p_source_id like 'supplier-receiving:%' then
+      select * into v_proposal from public.supervisor_proposals where business_id=p_business_id
+        and owner_user_id=p_owner_user_id and thread_id=p_thread_id
+        and id=(p_evidence->>'receivingFollowupProposalId')::uuid
+        and status='draft' and capability_id='alex.gmail_effect.v1'
+        and 'supplier-receiving:'||(canonical_effect_payload->'supplierFollowup'->>'purchaseOrderId')=p_source_id;
+      if v_proposal.id is not null then
+        v_blocks:=v_blocks||jsonb_build_array(jsonb_build_object('type','proposal_card','proposalId',v_proposal.id::text));
+      end if;
+    end if;
+    if p_source_type='alert' and p_evidence ? 'stockEmailProposalId' then
+      select p.* into v_proposal from public.supervisor_proposals p
+      join public.purchase_order_dispatches d on d.business_id=p.business_id and d.proposal_id=p.id and d.owner_user_id=p.owner_user_id
+      join public.purchase_orders o on o.business_id=d.business_id and o.id=d.purchase_order_id and o.owner_user_id=d.owner_user_id
+      join public.purchase_order_lines l on l.business_id=o.business_id and l.purchase_order_id=o.id
+      join public.alerts a on a.business_id=p.business_id and a.id::text=p_source_id
+      where p.business_id=p_business_id and p.owner_user_id=p_owner_user_id and p.thread_id=p_thread_id
+       and p.id::text=p_evidence->>'stockEmailProposalId' and p.status='draft' and p.capability_id='alex.gmail_effect.v1'
+       and d.state='prepared' and o.status='approved_for_ordering' and d.po_revision=o.revision and d.po_effect_hash=o.effect_hash
+       and a.kind='business_anomaly' and a.payload->>'family' in ('stockout_risk','stock_shortage')
+       and l.ingredient_id::text=a.payload->>'subject' limit 1;
+      if found and not exists(select 1 from public.ai_messages m where m.business_id=p_business_id and m.owner_user_id=p_owner_user_id
+       and m.thread_id=p_thread_id and m.structured_content @> jsonb_build_array(jsonb_build_object('type','proposal_card','proposalId',v_proposal.id::text))) then
+        v_blocks:=v_blocks||jsonb_build_array(jsonb_build_object('type','proposal_card','proposalId',v_proposal.id::text));
+      end if;
+    end if;
+    if p_source_type='alert' and p_evidence ? 'stockPurchaseProposalId' then
+      select p.* into v_proposal from public.supervisor_proposals p
+      join public.alerts a on a.business_id=p.business_id and a.id::text=p_source_id
+      where p.business_id=p_business_id and p.owner_user_id=p_owner_user_id
+        and p.thread_id=p_thread_id and p.id::text=p_evidence->>'stockPurchaseProposalId'
+        and p.status='draft' and p.capability_id='maya.supplier_purchase_order.v1'
+        and a.kind='business_anomaly' and a.payload->>'family' in ('stockout_risk','stock_shortage')
+        and jsonb_array_length(p.canonical_effect_payload->'lines')=1
+        and p.canonical_effect_payload #>> '{lines,0,ingredientId}'=a.payload->>'subject';
+      if found and not exists(select 1 from public.ai_messages m
+        where m.business_id=p_business_id and m.owner_user_id=p_owner_user_id and m.thread_id=p_thread_id
+        and m.structured_content @> jsonb_build_array(jsonb_build_object('type','proposal_card','proposalId',v_proposal.id::text))) then
+        v_blocks:=v_blocks||jsonb_build_array(jsonb_build_object('type','proposal_card','proposalId',v_proposal.id::text));
+      end if;
+    end if;
+    insert into public.ai_messages(id,business_id,thread_id,owner_user_id,role,
+      content_type,structured_content,grounding)
+    values(v_msg,p_business_id,p_thread_id,p_owner_user_id,'supervisor','blocks',
+      v_blocks,
+      jsonb_build_object('status','answered',
+        'intent','priority_investigation',
+        'evidence',jsonb_build_array(jsonb_build_object('source',p_source_type,
+          'identifier',p_source_id,'revisionHash',p_revision_hash,
+          'asOf',p_now::text)),
+        'agentMetadata',jsonb_build_object('phase',v_phase,'stepVersion',v.step_version+1,
+          'externalEffects','not_attempted','effectReceipt',null))
+        ||case when v_new_question then jsonb_build_object('durableQuestionId',v_msg::text,'investigationEpisodeId',v.episode_id::text) else '{}'::jsonb end
+        ||case when v.last_owner_answer_id is not null and v.reported_owner_answer_id is distinct from v.last_owner_answer_id
+          then jsonb_build_object('ownerMessageId',v.last_owner_answer_id::text) else '{}'::jsonb end)
+    on conflict(id) do nothing;
+  end if;
+  return true;
 end $function$;
