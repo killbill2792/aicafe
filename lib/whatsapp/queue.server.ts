@@ -68,7 +68,11 @@ export type DispatchInbound=(message:{
 export async function consumeInboundOnce(dispatcher?:DispatchInbound):Promise<"disabled"|"empty"|"done"|"retry"|"revoked">{
   if(process.env.WHATSAPP_INBOUND_DISPATCH_ENABLED!=="true"||!dispatcher)return "disabled";
   const {data,error}=await db().rpc("whatsapp_claim_inbound");
-  if(error)throw new Error("inbound_claim_failed");
+  if(error){
+    // Log the database's own code and message so a failed claim is diagnosable (no message content is in an RPC error).
+    console.error("whatsapp_inbound_claim_failed",{code:error.code??null,message:String(error.message??"").slice(0,200)});
+    throw new Error("inbound_claim_failed");
+  }
   if(!data)return "empty";
   const lease=data as InboundLease;
   const bound=await activeBinding(lease.binding_id);

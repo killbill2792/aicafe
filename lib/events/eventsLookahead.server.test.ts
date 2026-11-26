@@ -1,7 +1,7 @@
 import {describe,expect,it} from "vitest";
 import {effectHash} from "@/lib/ai/supervisor/loop/engine";
 import {eventPlanFacts} from "@/lib/ai/supervisor/loop/eventReadiness.server";
-import {pendingEventDays,matchingEventPreparation} from "./eventsLookahead.server";
+import {pendingEventDays,matchingEventPreparation,lookaheadBudgetSpent,LOOKAHEAD_RUN_BUDGET_MS} from "./eventsLookahead.server";
 import type {CafeEvent} from "@/lib/data/cafeEvents.server";
 
 const event=(values:Partial<CafeEvent>={}):CafeEvent=>({
@@ -77,5 +77,13 @@ describe("saved event readiness plan-once selection",()=>{
    });
    expect(pendingEventDays([first,other],[],"2026-11-03","2026-11-03")[0]
       .events).toHaveLength(2);
+ });
+});
+
+describe("one lookahead run ends before the platform time limit",()=>{
+ it("stops once the run budget is spent and not before",()=>{
+   expect(lookaheadBudgetSpent(1_000,1_000+LOOKAHEAD_RUN_BUDGET_MS-1)).toBe(false);
+   expect(lookaheadBudgetSpent(1_000,1_000+LOOKAHEAD_RUN_BUDGET_MS)).toBe(true);
+   expect(LOOKAHEAD_RUN_BUDGET_MS).toBeLessThan(300_000);
  });
 });
