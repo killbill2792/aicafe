@@ -497,3 +497,123 @@ begin
    and e.thread_id=p_thread_id and e.source_type='durable_run' and e.source_id=p_run_id::text
    and e.owner_message_id=p_owner_message_id;
 end $$;
+
+-- Preserve message shape and owner authorization; remove arbitrary answer size ceilings.
+alter table public.ai_messages drop constraint ai_messages_supervisor_content_check;
+alter table public.ai_messages add constraint ai_messages_supervisor_content_check CHECK ((((role = 'owner'::text) AND (author_user_id IS NOT NULL) AND (author_user_id = owner_user_id) AND (content_type = 'text'::text) AND (text_content IS NOT NULL) AND ((char_length(btrim(text_content)) >= 1) AND (char_length(btrim(text_content)) <= 4000)) AND (structured_content IS NULL) AND ((grounding IS NULL) OR COALESCE(
+CASE
+    WHEN ((jsonb_typeof(grounding) = 'object'::text) AND (jsonb_typeof((grounding -> 'attachmentIds'::text)) = 'array'::text) AND (jsonb_typeof((grounding -> 'receivedAt'::text)) = 'string'::text)) THEN (((grounding ->> 'sourceChannel'::text) = 'whatsapp'::text) AND ((char_length((grounding ->> 'receivedAt'::text)) >= 20) AND (char_length((grounding ->> 'receivedAt'::text)) <= 40)) AND (jsonb_array_length((grounding -> 'attachmentIds'::text)) <= 3) AND ((((grounding - 'sourceChannel'::text) - 'receivedAt'::text) - 'attachmentIds'::text) = '{}'::jsonb))
+    ELSE false
+END, false)) AND (client_message_id IS NOT NULL)) OR ((role = 'supervisor'::text) AND (author_user_id IS NULL) AND (content_type = 'blocks'::text) AND (text_content IS NULL) AND (structured_content IS NOT NULL) AND (grounding IS NOT NULL) AND
+CASE
+    WHEN (jsonb_typeof(structured_content) = 'array'::text) THEN ((jsonb_array_length(structured_content) >= 1))
+    ELSE false
+END AND (jsonb_typeof(grounding) = 'object'::text) AND (COALESCE((grounding ->> 'status'::text), ''::text) = ANY (ARRAY['verified'::text, 'estimated'::text, 'partial'::text, 'unavailable'::text, 'insufficient_evidence'::text, 'requires_owner_input'::text])) AND ((COALESCE((grounding ->> 'status'::text), ''::text) <> 'requires_owner_input'::text) OR (jsonb_typeof((grounding -> 'ownerInput'::text)) = 'object'::text))))) not valid;
+
+CREATE OR REPLACE FUNCTION public.supervisor_publish_owner_question_v2(p_business_id uuid, p_owner_user_id uuid, p_thread_id uuid, p_run_id uuid, p_claim_token uuid, p_job_id uuid, p_reply_id uuid, p_blocks jsonb, p_grounding jsonb)
+ RETURNS jsonb
+ LANGUAGE plpgsql
+ SET search_path TO 'public'
+AS $function$
+declare r public.supervisor_runs;s public.supervisor_run_steps;j public.ai_agent_jobs;m public.ai_messages;
+begin
+ if coalesce(auth.role(),'')<>'service_role' or p_reply_id is null
+   or jsonb_typeof(p_blocks) is distinct from 'array' or jsonb_array_length(p_blocks)<1
+   or p_grounding->>'status' is distinct from 'requires_owner_input'
+   or p_grounding->>'durableQuestionId' is distinct from p_reply_id::text
+   or not exists(select 1 from jsonb_array_elements(p_blocks) b where b->>'type'='clarify')
+   then raise exception 'durable_question_invalid' using errcode='22023'; end if;
+ select * into r from public.supervisor_runs where id=p_run_id and business_id=p_business_id
+   and owner_user_id=p_owner_user_id and thread_id=p_thread_id for update;
+ if not found or r.execution_version<>2 or r.status<>'running'
+   or p_grounding->>'ownerMessageId' is distinct from r.request_key::text
+   or p_grounding->>'durableRunId' is distinct from r.id::text
+   or not public.supervisor_routine_owner_authorized(p_business_id,p_owner_user_id,p_thread_id)
+   then raise exception 'durable_reply_scope_mismatch' using errcode='42501'; end if;
+ if r.input_attachment_version_hash is distinct from public.supervisor_owner_attachment_fingerprint_v2(r.business_id,r.owner_user_id,r.thread_id,r.input_attachment_ids) then raise exception 'owner_run_attachment_changed' using errcode='42501'; end if;
+ select * into s from public.supervisor_run_steps where business_id=r.business_id and run_id=r.id
+   and step_key='owner_turn' for update;
+ if not found or s.status<>'leased' or s.claim_token is distinct from p_claim_token
+   or s.lease_until<=clock_timestamp() or s.checkpoint_phase<>'ready'
+   then raise exception 'durable_job_lease_lost' using errcode='40001'; end if;
+ select * into j from public.ai_agent_jobs where id=p_job_id and durable_run_id=r.id
+   and durable_claim_token=p_claim_token and business_id=r.business_id and owner_user_id=r.owner_user_id
+   and thread_id=r.thread_id and owner_message_id=r.request_key and status='running' for update;
+ if not found then raise exception 'durable_job_lease_lost' using errcode='40001'; end if;
+ insert into public.ai_messages(id,business_id,owner_user_id,thread_id,role,content_type,structured_content,grounding)
+ values(p_reply_id,r.business_id,r.owner_user_id,r.thread_id,'supervisor','blocks',p_blocks,p_grounding)
+ returning * into m;
+ update public.ai_agent_jobs set status='failed',error_code='awaiting_owner',finished_at=clock_timestamp(),
+   updated_at=clock_timestamp(),heartbeat_at=clock_timestamp() where id=j.id;
+ update public.supervisor_run_steps set status='blocked',error_code='awaiting_owner',
+   claim_token=null,worker_id=null,lease_until=null,updated_at=clock_timestamp() where id=s.id;
+ update public.supervisor_runs set status='blocked',awaiting_question_id=p_reply_id,updated_at=clock_timestamp()
+   where id=r.id;
+ return to_jsonb(m);
+end $function$;
+
+CREATE OR REPLACE FUNCTION public.supervisor_publish_owner_reply_v2(p_business_id uuid, p_owner_user_id uuid, p_thread_id uuid, p_run_id uuid, p_claim_token uuid, p_job_id uuid, p_reply_id uuid, p_blocks jsonb, p_grounding jsonb)
+ RETURNS jsonb
+ LANGUAGE plpgsql
+ SET search_path TO 'public'
+AS $function$
+declare r public.supervisor_runs;s public.supervisor_run_steps;j public.ai_agent_jobs;m public.ai_messages;
+begin
+ if coalesce(auth.role(),'')<>'service_role' or p_reply_id is null
+   or jsonb_typeof(p_blocks) is distinct from 'array' or jsonb_array_length(p_blocks)<1
+   or jsonb_typeof(p_grounding) is distinct from 'object'
+   or coalesce(p_grounding->>'status','') not in ('verified','partial','unavailable','insufficient_evidence','estimated')
+   or p_grounding#>>'{agentMetadata,endReason}' is distinct from 'complete'
+   then raise exception 'durable_reply_invalid' using errcode='22023'; end if;
+ select * into r from public.supervisor_runs where id=p_run_id and business_id=p_business_id
+   and owner_user_id=p_owner_user_id and thread_id=p_thread_id for update;
+ if not found or r.execution_version<>2 or r.status<>'running'
+   or p_grounding->>'ownerMessageId' is distinct from r.request_key::text
+   or p_grounding->>'durableRunId' is distinct from r.id::text
+   or not public.supervisor_routine_owner_authorized(p_business_id,p_owner_user_id,p_thread_id)
+   then raise exception 'durable_reply_scope_mismatch' using errcode='42501'; end if;
+ if r.input_attachment_version_hash is distinct from public.supervisor_owner_attachment_fingerprint_v2(r.business_id,r.owner_user_id,r.thread_id,r.input_attachment_ids) then raise exception 'owner_run_attachment_changed' using errcode='42501'; end if;
+ select * into s from public.supervisor_run_steps where business_id=r.business_id and run_id=r.id
+   and step_key='owner_turn' for update;
+ if not found or s.status<>'leased' or s.claim_token is distinct from p_claim_token
+   or s.lease_until<=clock_timestamp() or s.checkpoint_phase<>'ready'
+   then raise exception 'durable_job_lease_lost' using errcode='40001'; end if;
+ select * into j from public.ai_agent_jobs where id=p_job_id and durable_run_id=r.id
+   and durable_claim_token=p_claim_token and business_id=r.business_id and owner_user_id=r.owner_user_id
+   and thread_id=r.thread_id and owner_message_id=r.request_key for update;
+ if not found then raise exception 'durable_job_lease_lost' using errcode='40001'; end if;
+ if j.status='done' and j.reply_message_id is distinct from p_reply_id then
+   raise exception 'durable_reply_conflict'; end if;
+ if j.status not in ('running','done') then raise exception 'durable_job_lease_lost'; end if;
+ insert into public.ai_messages(id,business_id,owner_user_id,thread_id,role,content_type,
+   structured_content,grounding)
+ values(p_reply_id,r.business_id,r.owner_user_id,r.thread_id,'supervisor','blocks',p_blocks,p_grounding)
+ on conflict(id) do nothing;
+ select * into m from public.ai_messages where id=p_reply_id and business_id=r.business_id
+   and owner_user_id=r.owner_user_id and thread_id=r.thread_id and role='supervisor'
+   and grounding->>'ownerMessageId'=r.request_key::text
+   and grounding->>'durableRunId'=r.id::text and grounding->>'status'=p_grounding->>'status'
+   and grounding#>>'{agentMetadata,endReason}'='complete';
+ if not found then raise exception 'durable_reply_conflict'; end if;
+ update public.ai_agent_jobs set status='done',reply_message_id=m.id,error_code=null,
+   finished_at=coalesce(finished_at,clock_timestamp()),updated_at=clock_timestamp(),heartbeat_at=clock_timestamp()
+   where id=j.id;
+ -- A completed attempt may have honestly reported missing evidence. Save
+ -- that report, but do not acknowledge successful completion or re-spend
+ -- tokens indefinitely seeking data which does not exist.
+ if m.grounding->>'status'<>'verified' then
+   update public.supervisor_run_steps set status='blocked',error_code='report_incomplete',
+     claim_token=null,worker_id=null,lease_until=null,updated_at=clock_timestamp() where id=s.id;
+   update public.supervisor_runs set status='blocked',updated_at=clock_timestamp() where id=r.id;
+ end if;
+ return to_jsonb(m);
+end $function$;
+
+-- Dedicated direct research login may be granted this role by the deployment operator.
+do $$ begin
+  if not exists (select 1 from pg_roles where rolname='supervisor_research_transport') then
+    create role supervisor_research_transport nologin;
+  end if;
+end $$;
+grant usage on schema public to supervisor_research_transport;
+grant execute on function public.supervisor_research_sql(uuid,uuid,text) to supervisor_research_transport;
