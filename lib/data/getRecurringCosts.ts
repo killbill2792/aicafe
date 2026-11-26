@@ -24,8 +24,8 @@ export async function getRecurringCosts(): Promise<RecurringCostRow[]> {
   const businessId = await getActiveBusinessId(user.id);
 
   const { data } = await supabase
-    .from("recurring_costs")
-    .select("id, category_code, label, amount_cents, frequency, due_day, is_estimate")
+    .from("cv_bills")
+    .select("id,category_code,label,amount_cents,frequency,due_day,is_estimate")
     .eq("business_id", businessId)
     .is("active_to", null)
     .order("due_day", { ascending: true });

@@ -26,10 +26,10 @@ function database(pages:number,shortLastPage:boolean){
   }});
   return chain;
  };
- // menu tables resolve when awaited. Keep order_lines chainable through range().
+ // menu tables resolve when awaited. Keep cv_item_sales_daily chainable through range().
  const from=(table:string)=>{
-  if(table==="order_lines")return makeQuery(table);
-  const data=table==="menu_price_history"?[]:table==="menu_items"?[{id:"latte",catalog_source:"csv"}]:[];
+  if(table==="cv_item_sales_daily")return makeQuery(table);
+  const data=table==="menu_price_history"?[]:table==="cv_menu"?[{id:"latte",catalog_source:"csv"}]:[];
   const q:Record<string,unknown>={};
   const proxy=new Proxy(q,{get(_target,method:string){
     if(method==="then")return (resolve:(result:unknown)=>unknown)=>resolve({data,error:null});
@@ -45,24 +45,22 @@ function database(pages:number,shortLastPage:boolean){
 }
 beforeEach(()=>{vi.clearAllMocks();});
 describe("realized menu price query contract",()=>{
- it("constrains every paged order-line read to active orders for the selected cafe",async()=>{
+ it("constrains every paged item/day read to actual sales for the selected cafe",async()=>{
   const db=database(1,true);mocks.createServerSupabaseClient.mockResolvedValue(db);
   const result=await readMenuPriceEvidence("cafe-one",[{id:"latte",priceCents:500}],"2026-10-24");
-  const order=db.calls.filter(call=>call.table==="order_lines");
+  const order=db.calls.filter(call=>call.table==="cv_item_sales_daily");
   expect(order).toEqual(expect.arrayContaining([
-   expect.objectContaining({method:"eq",args:["orders.business_id","cafe-one"]}),
-   expect.objectContaining({method:"eq",args:["orders.toast_excluded",false]}),
-   expect.objectContaining({method:"is",args:["orders.superseded_by",null]}),
-   expect.objectContaining({method:"eq",args:["voided",false]}),
-   expect.objectContaining({method:"gte",args:["orders.business_date","2026-09-25"]}),
-   expect.objectContaining({method:"lte",args:["orders.business_date","2026-10-24"]}),
+   expect.objectContaining({method:"eq",args:["business_id","cafe-one"]}),
+   expect.objectContaining({method:"eq",args:["status","actual"]}),
+   expect.objectContaining({method:"gte",args:["business_date","2026-09-25"]}),
+   expect.objectContaining({method:"lte",args:["business_date","2026-10-24"]}),
   ]));
   expect(result.latte).toMatchObject({priceEvidenceStatus:"actual",priceCheck:"ok",realizedAvgCents:500});
  });
  it("does not treat MAX_PAGES of full results as a complete observed average",async()=>{
   const db=database(10,false);mocks.createServerSupabaseClient.mockResolvedValue(db);
   const result=await readMenuPriceEvidence("cafe-one",[{id:"latte",priceCents:500}],"2026-10-24");
-  const ranges=db.calls.filter(call=>call.table==="order_lines"&&call.method==="range");
+  const ranges=db.calls.filter(call=>call.table==="cv_item_sales_daily"&&call.method==="range");
   expect(ranges).toHaveLength(10);
   expect(ranges[0].args).toEqual([0,999]);
   expect(ranges[9].args).toEqual([9000,9999]);

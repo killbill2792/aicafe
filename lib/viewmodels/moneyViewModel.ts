@@ -74,7 +74,9 @@ export function buildCostRecoveryViewModel(snapshot: BusinessSnapshot) {
 
 export function buildProfitAndCostsViewModel(snapshot: BusinessSnapshot, period: Period) {
   const days = daysForPeriod(snapshot, period);
-  const runningCosts = runningCostsForPeriod(snapshot, period);
+  const canonical=snapshot.financialPeriods?.[period];
+  const prior=snapshot.financialPeriods?.[`previous_${period}`];
+  const runningCosts = canonical?.billsCents??runningCostsForPeriod(snapshot, period);
   const calendar=periodCalendarRange(snapshot,period);
   const businessCosts=businessCostSummaryFromSnapshot(snapshot,{from:calendar.start,to:calendar.end});
   // Use the same canonical observed labor rows as BusinessCostSummary. A staff-only
@@ -85,15 +87,15 @@ export function buildProfitAndCostsViewModel(snapshot: BusinessSnapshot, period:
         ? (snapshot.previousMonthRecordedDays??snapshot.previousMonthDays):[]),
       ...(snapshot.monthRecordedDays??snapshot.monthActualDays),
     ].filter(day=>day.date>=calendar.start&&day.date<=calendar.end);
-  const salesCents = sumCents(days, (d) => d.netSalesCents);
-  const ingredientsCents = sumCents(days, (d) => d.ingredientsCents);
+  const salesCents = canonical?.netSalesCents??sumCents(days, (d) => d.netSalesCents);
+  const ingredientsCents = canonical?.ingredientsCents??sumCents(days, (d) => d.ingredientsCents);
   const wageUnknown=recordedLaborDays.some(d=>!laborKnown(d));
   // Retain observed cents even when other wage rows are unknown; never show unknown as verified zero.
-  const wagesCents=sumCents(recordedLaborDays,d=>d.wagesCents??0);
-  const staffTaxCents=sumCents(recordedLaborDays,d=>d.staffTaxCents??0);
+  const wagesCents=canonical?.wagesCents??sumCents(recordedLaborDays,d=>d.wagesCents??0);
+  const staffTaxCents=canonical?.staffTaxCents??sumCents(recordedLaborDays,d=>d.staffTaxCents??0);
   const feePlans=(snapshot as BusinessSnapshot&{ownerFeePlans?:OwnerFeePlan[]}).ownerFeePlans;
   const feeResult=cardFeesForDays(days,feePlans??null);
-  const cardFeesCents=feeResult.amountCents;
+  const cardFeesCents=canonical?.feesCents??feeResult.amountCents;
   // This is the same known-cost contract consumed by Supervisor; Money still
   // separately gates any owner-profit claim on the existing strict coverage.
   const coverage=periodCoverage(snapshot,period);
@@ -109,7 +111,8 @@ export function buildProfitAndCostsViewModel(snapshot: BusinessSnapshot, period:
     })),recordedLaborDays,null,ownerExtras==null?null:{
       monthlyCents:ownerExtras,from:calendar.start,to:calendar.end,
     });
-  const ownerPayrollExtrasCents=laborResult.knownLaborCents-baseLaborResult.knownLaborCents;
+  const ownerPayrollExtrasCents=canonical?.ownerPayrollExtrasCents??(laborResult.knownLaborCents-baseLaborResult.knownLaborCents);
+  const knownLaborCents=canonical?.knownLaborCents??laborResult.knownLaborCents;
   const feeMissing=days.some(d=>d.netSalesCents>0&&d.cardFeesStatus==="missing");
   const costMissing=businessCosts.missingInputs.filter(k=>k.startsWith("productCost:")||
     k==="itemSalesCoverage"||k==="historicalIngredientCostCoverage");
@@ -119,15 +122,16 @@ export function buildProfitAndCostsViewModel(snapshot: BusinessSnapshot, period:
       missing:businessCosts.missingInputs.filter(k=>k.startsWith("expense:")||
         k==="priorMonthRunningCostCoverage"),estimated:businessCosts.estimatedInputs.some(k=>k.startsWith("expense:"))},
     {amountCents:cardFeesCents,missing:feeMissing?["cardFeesMissing"]:[],estimated:feeResult.basis!=="actual"},
-    {amountCents:laborResult.knownLaborCents,
+    {amountCents:knownLaborCents,
       missing:laborResult.coveredDays===coverage.expectedDays?[]:["laborCoveragePartial"],
       estimated:laborResult.basis!=="recorded"},
     {amountCents:ingredientsCents,missing:costMissing,
       estimated:businessCosts.estimatedInputs.some(k=>k.startsWith("productCost:"))},
+    canonical,
   );
   const ownerProfitCents=knownProfit.profitCents;
   const totalCostsCents=knownProfit.profitCents===null?null:
-    Math.round(Object.values(knownProfit.partsUsed).reduce((a,b)=>a+b,0));
+    canonical?.totalCostsCents??Math.round(Object.values(knownProfit.partsUsed).reduce((a,b)=>a+b,0));
   const baselineProfitDisplay=ownerProfitCents===null?{kind:"unavailable" as const}:
     ownerProfitDisplayState(ownerProfitCents,coverage);
   const ownerProfitDisplay=baselineProfitDisplay.kind==="complete"&&
@@ -137,11 +141,11 @@ export function buildProfitAndCostsViewModel(snapshot: BusinessSnapshot, period:
   const comparisonState = periodComparisonState(coverage, previousPeriodCoverage(snapshot, period));
 
   const ingredientsRatio = ratio(ingredientsCents, salesCents);
-  const staffRatio=wageUnknown?null:ratio(laborResult.knownLaborCents,salesCents);
-  const combinedRatio=wageUnknown?null:ratio(ingredientsCents+laborResult.knownLaborCents,salesCents);
+  const staffRatio=wageUnknown?null:ratio(knownLaborCents,salesCents);
+  const combinedRatio=wageUnknown?null:ratio(ingredientsCents+knownLaborCents,salesCents);
 
   const prevDays = previousPeriodDays(snapshot, period);
-  const prevRunningCosts = previousRunningCostsForPeriod(snapshot, period);
+  const prevRunningCosts = prior?.billsCents??previousRunningCostsForPeriod(snapshot, period);
   const prevCalendar = previousPeriodCalendarRange(snapshot, period);
   // Sales coverage is not cost coverage. The prior period MUST independently
   // pass the same canonical BusinessCostSummary contract as the current one;
@@ -198,23 +202,23 @@ export function buildProfitAndCostsViewModel(snapshot: BusinessSnapshot, period:
     {amountCents:Math.round(prevRunningCosts),
       missing:previousBusinessCosts?.missingInputs.filter(k=>k.startsWith("expense:"))??["previousBillsMissing"],
       estimated:previousBusinessCosts?.estimatedInputs.some(k=>k.startsWith("expense:"))??true},
-    {amountCents:previousFees.amountCents,estimated:previousFees.basis!=="actual"},
-    {amountCents:previousLabor.costCents===null?null:previousLabor.costCents+previousExtrasCents,
+    {amountCents:prior?.feesCents??previousFees.amountCents,estimated:previousFees.basis!=="actual"},
+    {amountCents:prior?.knownLaborCents??(previousLabor.costCents===null?null:previousLabor.costCents+previousExtrasCents),
       missing:previousLabor.covered?[]:["previousLaborMissing"],
       estimated:previousExtrasCents>0},
-    {amountCents:sumCents(prevDays,d=>d.ingredientsCents),
+    {amountCents:prior?.ingredientsCents??sumCents(prevDays,d=>d.ingredientsCents),
       missing:previousBusinessCosts?.missingInputs.filter(k=>k.startsWith("productCost:")||k==="historicalIngredientCostCoverage")??["previousIngredientsMissing"],
-      estimated:previousBusinessCosts?.estimatedInputs.some(k=>k.startsWith("productCost:"))??true});
+      estimated:previousBusinessCosts?.estimatedInputs.some(k=>k.startsWith("productCost:"))??true},prior);
 
   // Each row has its own evidence gate. Verified sales comparisons survive
   // missing ingredient/operating costs; profit never leaks from calendar coverage.
   const changes = comparisonState.kind === "available"
     ? [
         { key: "sales", label: "Sales",
-          deltaCents: salesCents - sumCents(prevDays, d => d.netSalesCents) },
+          deltaCents: salesCents - (prior?.netSalesCents??sumCents(prevDays, d => d.netSalesCents)) },
         ...(ingredientsComparisonReady ? [{
           key: "ingredients", label: "Ingredients",
-          deltaCents: ingredientsCents - sumCents(prevDays, d => d.ingredientsCents),
+          deltaCents: ingredientsCents - (prior?.ingredientsCents??sumCents(prevDays, d => d.ingredientsCents)),
           lowerIsBetter: true,
         }] : []),
         ...(currentLabor.covered && previousLabor.covered && currentLabor.costCents!==null && previousLabor.costCents!==null ? [{

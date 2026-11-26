@@ -1,5 +1,6 @@
 import {describe,it,expect} from "vitest";
-import {runningCostLinesForMonth,runningCostMonthlyAmount} from "./runningCostCatalog";
+import {runningCostMonthlyAmount} from "./runningCostCatalog";
+import {runningCostLinesForMonth} from "./runningCostCatalog.fixture";
 import {runningCostsForPeriodCents} from "@/lib/calc";
 
 describe("obligation-level monthly cost evidence",()=>{

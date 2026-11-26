@@ -5,6 +5,9 @@ import { regularHoursStateForDate } from "@/lib/business/openHours";
 
 /** Per_cup mode day contribution: net sales − ingredients − card fees − loaded staff cost. */
 export function dayContributionCents(day: DailyFacts): number | null {
+  // Persisted days carry the canonical SQL value (including an explicit unknown).
+  if(day.recordedContributionCents!==undefined)return day.recordedContributionCents;
+  // Pure scenario/demo inputs have no database row; retain their local arithmetic.
   return !laborKnown(day)?null:
     day.netSalesCents-day.ingredientsCents-day.cardFeesCents-(day.wagesCents+day.staffTaxCents);
 }

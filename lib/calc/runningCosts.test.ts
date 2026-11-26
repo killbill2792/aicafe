@@ -28,6 +28,12 @@ describe("monthlyAmountForCategory", () => {
 });
 
 describe("runningCostsForPeriodCents", () => {
+  it("uses canonical per-day allocations rather than recomputing from monthly amounts",()=>{
+    const c={categoryCode:"rent",monthKey:"2026-09",amountCents:300000,isEstimate:true,isMissing:false,
+      dailyAllocatedCents:[{date:"2026-09-01",amountCents:123.4},{date:"2026-09-02",amountCents:456.7}]};
+    expect(runningCostsForPeriodCents([c],"2026-09-01","2026-09-01")).toBe(123.4);
+    expect(runningCostsForPeriodCents([c],"2026-09-01","2026-09-02")).toBeCloseTo(580.1);
+  });
   it("prorates a full 30-day September at $9,600/mo to $320.00/day", () => {
     const cents = runningCostsForPeriodCents(
       [{ categoryCode: "all", monthKey: "2026-09", amountCents: 960_000, isEstimate: false, isMissing: false }],

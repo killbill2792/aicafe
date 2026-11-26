@@ -4,12 +4,14 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 vi.mock("server-only", () => ({}));
 const deps = vi.hoisted(() => ({
   readDays: vi.fn(),
-  readCombos: vi.fn(),
+  runningCosts: vi.fn(),
+  readCosts: vi.fn(),
   feePlans: vi.fn(),
   timed: vi.fn(async (_page: string, _stage: string, read: () => Promise<unknown>) => read()),
 }));
+vi.mock("./runningCostLines.server", () => ({ readRunningCostLines: deps.runningCosts }));
 vi.mock("./dailyFacts.server", () => ({ readDailyFacts: deps.readDays }));
-vi.mock("./comboCosts.server", () => ({ readMenuComboCostComponents: deps.readCombos }));
+vi.mock("./productCosts.server", () => ({ readProductCosts: deps.readCosts }));
 vi.mock("@/lib/pos/processingFeeEstimate.server", () => ({
   getOwnerConfirmedProcessingFeePlans: deps.feePlans,
 }));
@@ -19,18 +21,19 @@ import { getPricingInputs } from "./getPricingInputs";
 function dbWithOrders(spy: string[], orderError = false) {
   const values: Record<string, unknown> = {
     businesses: { timezone: "America/Los_Angeles", currency: "EUR" },
-    menu_items: [{ id: "latte", name: "Latte", category: "drink", price_cents: 350, prep_seconds: 60 }],
-    orders: [{ business_date: "2026-10-30", pos_order_id: "real-1", net_sales_cents: 1000, processing_fee_provider: "toast" }],
-    expenses: [], recurring_costs: [], recipe_lines: [], menu_item_cost_fallbacks: [],
+    cv_menu: [{ id: "latte", name: "Latte", category: "drink", price_cents: 350, prep_seconds: 60 }],
+    cv_orders:[{ business_date: "2026-10-30", pos_order_id: "real-1", net_sales_cents: 1000, processing_fee_provider: "toast" }],
+    cv_expenses: [], cv_bills: [], recipe_lines: [], menu_item_cost_fallbacks: [],
   };
   const from = (table: string) => {
-    if (table === "orders") spy.push("orders");
+    if (table === "cv_orders") spy.push("cv_orders");
     const response = () => ({
       data: values[table] ?? [],
-      error: table === "orders" && orderError ? { message: "order history unavailable" } : null,
+      error: table === "cv_orders" && orderError ? { message: "order history unavailable" } : null,
     });
     const builder = {
-      select: () => builder, eq: () => builder, gte: () => builder,
+      select: () => builder,
+      like: () => builder, eq: () => builder, gte: () => builder,
       lte: () => builder, lt: () => builder, is: () => builder,
       in: () => builder, order: () => builder,
       single: async () => response(),
@@ -55,8 +58,19 @@ function salesDays(count: number) {
 describe("getPricingInputs Home projection", () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    deps.readCombos.mockResolvedValue([]);
+    deps.runningCosts.mockResolvedValue([]);
+    deps.readCosts.mockResolvedValue(new Map([["latte",{costCents:123,status:"READY",source:"recipe",estimated:false,recipe:[]}]]));
     deps.feePlans.mockResolvedValue([]);
+  });
+
+  it("uses the canonical monthly operating-cost result without reading bills and receipts separately", async () => {
+    deps.readDays.mockResolvedValue(salesDays(45));
+    deps.runningCosts.mockResolvedValue([{categoryCode:"rent",amountCents:12345,isMissing:false,isEstimate:true,amountSource:"mixed"}]);
+    const result=await getPricingInputs(dbWithOrders([]),"cafe-a");
+    expect(result.business.monthlyOperatingCostCents).toBe(12345);
+    expect(result.items[0]).toMatchObject({productCostCents:123,productCostStatus:"READY",productCostSource:"recipe"});
+    expect(result.menuPriceBasis.runningStatus).toBe("estimated");
+    expect(deps.runningCosts).toHaveBeenCalledOnce();
   });
 
   it("skips irrelevant order rows on Home but retains identical Menu/chat pricing fields", async () => {
@@ -68,7 +82,7 @@ describe("getPricingInputs Home projection", () => {
     expect(home.business.totalOrdersInWindow).toBe(0);
     const fullCalls: string[] = [];
     await expect(getPricingInputs(dbWithOrders(fullCalls, true), "cafe-a")).rejects.toMatchObject({ message: "order history unavailable" });
-    expect(fullCalls).toEqual(["orders"]);
+    expect(fullCalls).toEqual(["cv_orders"]);
   });
 
   it("does not skip failed order evidence when sales coverage could support business pricing", async () => {
@@ -76,7 +90,7 @@ describe("getPricingInputs Home projection", () => {
     const calls: string[] = [];
     await expect(getPricingInputs(dbWithOrders(calls, true), "cafe-a", { attentionOnly: true }))
       .rejects.toMatchObject({ message: "order history unavailable" });
-    expect(calls).toEqual(["orders"]);
+    expect(calls).toEqual(["cv_orders"]);
   });
 
   it("preserves full reader results in both modes when trusted order evidence is needed", async () => {

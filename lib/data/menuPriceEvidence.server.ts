@@ -16,9 +16,9 @@ export async function readMenuPriceEvidence(businessId:string,
  const [history,catalog,coverage]=await Promise.all([
   db.from("menu_price_history").select("menu_item_id,source_type,changed_at")
     .eq("business_id",businessId).in("menu_item_id",ids).order("changed_at",{ascending:false}),
-  db.from("menu_items").select("id,catalog_source").eq("business_id",businessId).in("id",ids),
-  db.from("daily_rollups").select("business_date").eq("business_id",businessId)
-    .eq("sales_data_status","actual").lte("business_date",asOf)
+  db.from("cv_menu").select("id,catalog_source").like("source_ref","item:%").eq("business_id",businessId).in("id",ids),
+  db.from("cv_sales_days").select("business_date").eq("business_id",businessId)
+    .eq("data->>sales_data_status","actual").lte("business_date",asOf)
     .order("business_date",{ascending:false}).limit(1).maybeSingle(),
  ]);
  if(history.error||catalog.error||coverage.error)throw new Error("Menu price evidence unavailable");
@@ -32,12 +32,11 @@ export async function readMenuPriceEvidence(businessId:string,
  if(period){
   const PAGE=1000,MAX_PAGES=10;
   for(let page=0;page<MAX_PAGES;page++){
-   const response=await db.from("order_lines")
-     .select("id,menu_item_id,quantity,net_sales_cents,orders!inner(business_id,business_date)")
-     .in("menu_item_id",ids).eq("orders.business_id",businessId)
-     .eq("orders.toast_excluded",false).is("orders.superseded_by",null)
-     .gte("orders.business_date",period.from).lte("orders.business_date",period.to)
-     .eq("voided",false).order("id",{ascending:true})
+   const response=await db.from("cv_item_sales_daily")
+     .select("menu_item_id,quantity,net_sales_cents")
+     .in("menu_item_id",ids).eq("business_id",businessId).eq("status","actual")
+     .gte("business_date",period.from).lte("business_date",period.to)
+     .order("source_ref",{ascending:true})
      .range(page*PAGE,(page+1)*PAGE-1);
    if(response.error)throw new Error("Menu realized sales read unavailable");
    for(const row of response.data??[])rows.push({menu_item_id:row.menu_item_id,

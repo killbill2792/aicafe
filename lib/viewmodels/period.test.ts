@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { roundHalfUpToCent, zeroDailyFacts } from "@/lib/calc";
 import { previousPeriodCoverage, previousPeriodDays, runningCostLinesForPeriod, runningCostsForPeriod } from "./period";
 import type { BusinessSnapshot } from "@/lib/data/types";
-import { runningCostLinesForMonth } from "@/lib/data/runningCostCatalog";
+import { runningCostLinesForMonth } from "@/lib/data/runningCostCatalog.fixture";
 
 /** A minimal, otherwise-empty snapshot — these functions only read `runningCostLines`, `monthKey`,
  * and `todayDateStr`, so everything else just needs to be structurally valid. October has 31 days,

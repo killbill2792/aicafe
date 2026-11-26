@@ -35,7 +35,7 @@ export async function readSupervisorEconomics(db:SupabaseClient,businessId:strin
  const [pricing,locations,recurring,rollups,employees,feePlans,resolvedItems]=await Promise.all([
   getPricingInputs(db,businessId),
   db.from("locations").select("open_hours").eq("business_id",businessId).limit(1),
-  db.from("recurring_costs").select("amount_cents,frequency,is_estimate,active_from,active_to")
+  db.from("cv_bills").select("amount_cents,frequency,is_estimate,active_from,active_to")
    .eq("business_id",businessId).lte("active_from",asOf),
   readDailyFacts(db,businessId,salesSince,asOf).then(data=>({data,error:null}),(error:Error)=>({data:null,error})),
   db.from("employees").select("id,display_name,role,default_hourly_wage_cents").eq("business_id",businessId).eq("active",true).limit(500),

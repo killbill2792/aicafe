@@ -1,16 +1,16 @@
 import "server-only";
 import { readDailyFacts } from "./dailyFacts.server";
+import { readRunningCostLines } from "./runningCostLines.server";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { formatInTimeZone } from "date-fns-tz";
 import { subDays } from "date-fns";
-import { evaluateRecipeCost, resolveProductCost, type DailyFacts, type ProductCostSource, type RecipeCostStatus } from "@/lib/calc";
+import { type DailyFacts, type ProductCostSource, type RecipeCostStatus } from "@/lib/calc";
 import type { MenuItemCategoryCode } from "@/lib/constants";
 import { trustedOrderCountForProcessingFeeEstimate } from "@/lib/pos/processingFeeEstimate";
 import {getOwnerConfirmedProcessingFeePlans} from "@/lib/pos/processingFeeEstimate.server";
 import {cardFeesForDays} from "@/lib/metrics/core/fees";
 import { menuPriceSourceBasis, type MenuPriceSourceBasis } from "@/lib/calc/menuPriceSourceBasis";
-import {readMenuComboCostComponents} from "./comboCosts.server";
-import {resolveComboCosts} from "@/lib/calc/comboCostResolution";
+import {readProductCosts} from "./productCosts.server";
 import { timeReader } from "@/lib/perf/timeReader.server";
 import { ordersMayAffectPricing } from "./pricingOrderGate";
 
@@ -52,18 +52,15 @@ export async function getPricingInputs(supabase: SupabaseClient, businessId: str
   const today = new Date();
   const todayDateStr = formatInTimeZone(today, timezone, "yyyy-MM-dd");
   const firstOfMonth = todayDateStr.slice(0,7)+"-01";
-  const [year,month]=todayDateStr.slice(0,7).split("-").map(Number);
-  const previousMonthStart=new Date(Date.UTC(year,month-2,1))
-    .toISOString().slice(0,10);
   const windowDays = 90;
   const fromDateStr = formatInTimeZone(subDays(today, windowDays - 1), timezone, "yyyy-MM-dd");
   // Begin independent work together. Only the Home attention projection may
   // omit the trusted-order query, and only when even unlimited trusted orders
   // cannot change the canonical engine's BENCHMARK decision.
   const daysPromise = measure("dailyFacts", () => readDailyFacts(supabase, businessId, fromDateStr, todayDateStr));
-  const readOrders = () => measure("trustedOrders", async () => await supabase.from("orders")
-    .select("business_date, pos_order_id, net_sales_cents, processing_fee_provider")
-    .eq("business_id", businessId).eq("toast_excluded", false).is("superseded_by", null)
+  const readOrders = () => measure("trustedOrders", async () => await supabase.from("cv_orders")
+    .select("business_date,pos_order_id:data->>pos_order_id,net_sales_cents,processing_fee_provider:data->>processing_fee_provider")
+    .eq("business_id", businessId).eq("status","actual")
     .gte("business_date", fromDateStr).lte("business_date", todayDateStr));
   const ordersPromise = (async () => {
     if (options.attentionOnly) {
@@ -74,75 +71,35 @@ export async function getPricingInputs(supabase: SupabaseClient, businessId: str
     }
     return readOrders();
   })();
-  const [itemsResult, days, recurringResult, ordersResult, expenseResult, priorExpenseResult, ownerFeePlans] = await Promise.all([
-    supabase.from("menu_items").select("id, name, price_cents, category, prep_seconds").eq("business_id", businessId).eq("is_active", true),
+  const [itemsResult, days, runningCosts, ordersResult, ownerFeePlans] = await Promise.all([
+    supabase.from("cv_menu").select("id,name,price_cents,category,prep_seconds").like("source_ref","item:%").eq("business_id", businessId).eq("data->>is_active", "true"),
     daysPromise,
-    supabase.from("recurring_costs").select("amount_cents, category_code, frequency, active_from, active_to, is_estimate").eq("business_id", businessId).lte("active_from", todayDateStr),
+    measure("runningCosts", () => readRunningCostLines(supabase,businessId,firstOfMonth,todayDateStr)),
     ordersPromise,
-    supabase.from("expenses").select("category_code, amount_cents, status")
-      .eq("business_id",businessId).gte("spent_on",firstOfMonth).lte("spent_on",todayDateStr),
-    supabase.from("expenses").select("category_code")
-      .eq("business_id",businessId).eq("status","actual")
-      .gte("spent_on",previousMonthStart).lt("spent_on",firstOfMonth),
     measure("feePlans", () => getOwnerConfirmedProcessingFeePlans(supabase, businessId)),
   ]);
   if (itemsResult.error) throw itemsResult.error;
-  if (recurringResult.error) throw recurringResult.error;
   if (ordersResult.error) throw ordersResult.error;
-  if (expenseResult.error) throw expenseResult.error;
-  if (priorExpenseResult.error) throw priorExpenseResult.error;
   const rawItems = itemsResult.data ?? [];
   const itemIds = rawItems.map((item) => item.id);
-  const comboRows=await measure("comboCosts", () => readMenuComboCostComponents(supabase,businessId,itemIds));
-  // Pricing only loads active products by default, but components of a saved
-  // combo may since have been deactivated: still cost the ingredients honestly.
-  const componentIds=[...new Set(comboRows.map(x=>x.componentItemId))].filter(id=>!itemIds.includes(id));
-  const componentResult=componentIds.length?await supabase.from("menu_items")
-    .select("id,name,price_cents,category,prep_seconds").eq("business_id",businessId).in("id",componentIds):
-    {data:[],error:null};
-  if(componentResult.error)throw componentResult.error;
-  const costRows=[...rawItems,...(componentResult.data??[])];
-  const costIds=[...new Set(costRows.map(item=>item.id))];
-  const [recipesResult, quantitiesResult, fallbackResult] = itemIds.length ? await measure("recipeAndUnits", () => Promise.all([
-    supabase.from("recipe_lines").select("menu_item_id, ingredient_id, quantity").in("menu_item_id", costIds),
-    supabase.rpc("menu_item_quantities_sold", { p_business_id: businessId, p_from: fromDateStr, p_to: todayDateStr }),
-    supabase.from("menu_item_cost_fallbacks").select("menu_item_id, cost_cents, status").eq("business_id", businessId).in("menu_item_id", costIds),
-  ])) : [{ data: [], error: null }, { data: [], error: null }, { data: [], error: null }];
-  if (recipesResult.error) throw recipesResult.error;
-  if (quantitiesResult.error) throw quantitiesResult.error;
-  if (fallbackResult.error) throw fallbackResult.error;
-  const ingredientIds = [...new Set((recipesResult.data ?? []).map((line) => line.ingredient_id))];
-  const priceResult = ingredientIds.length ? await measure("ingredientPrices", async () => await supabase.from("ingredient_prices").select("ingredient_id, cost_per_base_unit_micros, effective_from").in("ingredient_id", ingredientIds).lte("effective_from", todayDateStr).order("effective_from", { ascending: true }).order("recorded_at", { ascending: true }).order("id", { ascending: true })) : { data: [], error: null };
-  if (priceResult.error) throw priceResult.error;
-  const prices: Record<string, number> = {};
-  for (const row of priceResult.data ?? []) prices[row.ingredient_id] = row.cost_per_base_unit_micros;
-  const units = new Map<string, number>((quantitiesResult.data ?? []).map((row: { menu_item_id: string; total_quantity: number | string }) => [row.menu_item_id, Number(row.total_quantity)]));
-  const fallbackByItem = new Map((fallbackResult.data ?? []).map((row) => [row.menu_item_id, row]));
-  const costed=new Map(costRows.map(item=>{
-    const lines=(recipesResult.data??[]).filter(line=>line.menu_item_id===item.id)
-      .map(line=>({ingredientId:line.ingredient_id,quantity:Number(line.quantity)}));
-    const fallback=fallbackByItem.get(item.id);
-    const resolved=resolveProductCost(evaluateRecipeCost(lines,prices),fallback?Number(fallback.cost_cents):null);
-    return [item.id,{costCents:resolved.costCents,status:resolved.status,
-      estimated:resolved.source==="owner_total"&&fallback?.status==="estimated"}] as const;
-  }));
-  const comboCosts=resolveComboCosts(comboRows,costed);
-  const items = rawItems.map((item) => {
-    const lines = (recipesResult.data ?? []).filter((line) => line.menu_item_id === item.id).map((line) => ({ ingredientId: line.ingredient_id, quantity: Number(line.quantity) }));
-    const recipeCost = evaluateRecipeCost(lines, prices);
-    const fallback = fallbackByItem.get(item.id);
-    const cost = resolveProductCost(recipeCost, fallback ? Number(fallback.cost_cents) : null);
-    const combo=comboCosts.get(item.id);
+  const [costs,quantitiesResult]=await measure("recipeAndUnits",()=>Promise.all([
+    readProductCosts(supabase,businessId,itemIds),
+    itemIds.length?supabase.rpc("menu_item_quantities_sold",{p_business_id:businessId,p_from:fromDateStr,p_to:todayDateStr}):Promise.resolve({data:[],error:null}),
+  ]));
+  if(quantitiesResult.error)throw quantitiesResult.error;
+  const units=new Map<string,number>((quantitiesResult.data??[]).map((row:{menu_item_id:string;total_quantity:number|string})=>[row.menu_item_id,Number(row.total_quantity)]));
+  const items=rawItems.map(item=>{
+    const cost=costs.get(item.id)!;
     const category = item.category === "food" ? "FOOD" : item.category === "drink" ? "ESPRESSO_DRINK" : item.category as MenuItemCategoryCode;
     return {
       id: item.id,
       name: item.name,
       category,
       currentPriceCents: item.price_cents ?? 0,
-      productCostCents: (combo?combo.costCents:cost.costCents) ?? 0,
-      productCostStatus: combo?.status??cost.status,
-      productCostSource: combo?"combo" as const:cost.source,
-      productCostQuality: (combo?combo.estimated:cost.source==="owner_total"&&fallback?.status==="estimated") ? "estimated" as const : "actual" as const,
+      productCostCents: cost.costCents ?? 0,
+      productCostStatus: cost.status,
+      productCostSource: cost.source,
+      productCostQuality: cost.estimated ? "estimated" as const : "actual" as const,
       unitsSoldInWindow: units.get(item.id) ?? 0,
     };
   });
@@ -175,14 +132,7 @@ export async function getPricingInputs(supabase: SupabaseClient, businessId: str
     );
     return sum + (count ?? 0);
   }, 0);
-  const activeOperatingCosts = (recurringResult.data ?? []).filter(
-    (row) => row.category_code !== "ingredients" && (!row.active_to || row.active_to >= todayDateStr),
-  );
-  // Actual expenses for the current month replace recurring estimates
-  // category by category. No double count across receipts and bill schedule.
-  // This also powers the owner-visible Menu price evidence panel.
-  // Payroll is projected from its own independently evidenced dates; it must
-  // not be diluted by dates that contain only POS sales evidence.
+  // Use the same SQL-backed monthly obligation/receipt evidence as Money.
   const totalItemPrepSecondsInWindow = 0; // period-aligned item mix unavailable
   const menuPriceBasis = menuPriceSourceBasis({
     days:days.map(day=>({
@@ -197,19 +147,7 @@ export async function getPricingInputs(supabase: SupabaseClient, businessId: str
       cardFeesCents:day.cardFeesCents??0,
       cardFeesStatus:day.cardFeesStatus??null,
     })),
-    recurring:activeOperatingCosts.map(row=>({
-      categoryCode:row.category_code,
-      amountCents:Number(row.amount_cents),
-      frequency:row.frequency as "monthly"|"weekly"|"quarterly"|"yearly",
-      estimated:row.is_estimate,
-    })),
-    expenses:(expenseResult.data??[]).map(row=>({
-      categoryCode:row.category_code,
-      amountCents:Number(row.amount_cents),
-      status:row.status as "actual"|"estimated",
-    })),
-    previousMonthExpenseCategories:(priorExpenseResult.data??[])
-      .map(row=>row.category_code),
+    runningCosts,
     totalItemPrepSecondsInWindow,
     asOfBusinessDate:todayDateStr,
     // The current rollup does not persist an independent complete labor

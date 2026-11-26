@@ -9,9 +9,9 @@ export type ProfitResult={
   basis:"complete"|"partial"|"estimated"|"unavailable";
 };
 export function profitForPeriod(days:readonly ProfitSalesDay[],bills:ProfitPart,fees:ProfitPart,
-  labor:ProfitPart,productCosts:ProfitPart):ProfitResult{
+  labor:ProfitPart,productCosts:ProfitPart,canonical?:{netSalesCents:number;profitCents:number|null;coveredSalesDays:number}):ProfitResult{
   const observed=days.filter(hasCoveredSales);
-  const netSalesCents=observed.reduce((sum,d)=>sum+d.netSalesCents,0);
+  const netSalesCents=canonical?.netSalesCents??observed.reduce((sum,d)=>sum+d.netSalesCents,0);
   const partsUsed={
     billsCents:bills.amountCents??0,feesCents:fees.amountCents??0,
     laborCents:labor.amountCents??0,productCostsCents:productCosts.amountCents??0,
@@ -23,12 +23,12 @@ export function profitForPeriod(days:readonly ProfitSalesDay[],bills:ProfitPart,
     if(part.amountCents===null||(part.missing?.length??0)>0)notes.push("profit"+name+"Missing");
     if(part.estimated)notes.push("profit"+name+"Estimated");
   }
-  const available=observed.length>0;
+  const available=canonical?canonical.coveredSalesDays>0:observed.length>0;
   const incomplete=notes.some(n=>n.endsWith("Missing"));
   const basis=!available?"unavailable":incomplete?"partial":
     notes.some(n=>n.endsWith("Estimated"))?"estimated":"complete";
-  return {profitCents:available?Math.round(netSalesCents-Object.values(partsUsed).reduce((a,b)=>a+b,0)):null,
-    netSalesCents,partsUsed,coveredSalesDays:new Set(observed.map(d=>d.date)).size,
+  return {profitCents:canonical?canonical.profitCents:available?Math.round(netSalesCents-Object.values(partsUsed).reduce((a,b)=>a+b,0)):null,
+    netSalesCents,partsUsed,coveredSalesDays:canonical?.coveredSalesDays??new Set(observed.map(d=>d.date)).size,
     expectedSalesDays:new Set(days.map(d=>d.date)).size,notes,basis};
 }
 

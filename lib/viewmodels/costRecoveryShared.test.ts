@@ -27,6 +27,11 @@ describe("projectedDayContributions operating hours", () => {
 
 
 describe("known-only labor cost recovery", () => {
+  it("consumes the recorded SQL contribution including an explicit null",()=>{
+    const day=getFixtureSnapshot().monthActualDays[0];
+    expect(dayContributionCents({...day,recordedContributionCents:1234})).toBe(1234);
+    expect(dayContributionCents({...day,recordedContributionCents:null})).toBeNull();
+  });
   it("does not count a missing day as a covered contribution or project from it", () => {
     const snapshot=getFixtureSnapshot();
     const partial={...snapshot.monthActualDays[0],wagesCents:1200,

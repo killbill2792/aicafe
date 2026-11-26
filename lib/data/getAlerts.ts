@@ -114,8 +114,8 @@ async function readVoidsReview(
   const endDate = monthKey === currentMonth ? today :
     new Date(Date.parse(`${nextMonthStart}T00:00:00Z`) - 86400000).toISOString().slice(0, 10);
 
-  const { data, error } = await db.from("daily_rollups")
-    .select("business_date, voids_cents, sales_data_status, voids_status")
+  const { data, error } = await db.from("cv_sales_days")
+    .select("business_date, voids_cents:data->voids_cents, sales_data_status:data->>sales_data_status, voids_status:data->>voids_status")
     .eq("business_id", businessId)
     .gte("business_date", priorStart)
     .lte("business_date", endDate)

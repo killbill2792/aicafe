@@ -34,10 +34,20 @@ describe("On shift now: current roster only", () => {
   it("does not discard historic timecards at the snapshot boundary", () => {
     const source = readFileSync(join(process.cwd(), "lib/data/snapshot.server.ts"), "utf8");
     const reader = source.split("async function getStaffShiftsToday(")[1]?.split("async function getMenuItemSnapshots(")[0];
-    expect(reader).toContain('from("timecards")');
+    expect(reader).toContain('from("cv_staff_clock_entries")');
     expect(reader).toContain("return (data ?? []).map(");
     expect(reader).not.toContain('eq("active",true)');
     expect(reader).not.toContain("activeIds.has(");
+  });
+  it("consumes SQL cost values instead of recalculating canonical clock records",()=>{
+    const clock={...shift("ana","Ana","2026-10-23T17:00:00Z"),canonicalLoadedCostCents:123,
+      canonicalLoadedHourlyCents:456};
+    const base=snapshot("2026-10-23T18:00:00Z",[clock]);
+    const vm=buildStaffViewModel({...base,staffCostTodayCents:789},staff);
+    expect(vm.costTodayCents).toBe(789);
+    expect(vm.costPerHourCents).toBe(456);
+    expect(vm.onShift[0].todayCostCents).toBe(123);
+    expect(buildStaffViewModel({...base,staffCostTodayCents:null},staff).costTodayCents).toBeNull();
   });
   it("excludes removed staff even if their timecard remains open", () => {
     const vm = buildStaffViewModel(snapshot("2026-10-23T18:00:00Z", [

@@ -1,5 +1,7 @@
 import {describe,it,expect,vi} from "vitest";
 import type {SupabaseClient} from "@supabase/supabase-js";
+import {fixtureCostRows} from "./runningCostCatalog.fixture";
+import {fixtureFinancialPeriodRows} from "./financialPeriods.fixture";
 vi.mock("server-only",()=>({}));
 const hooks=vi.hoisted(()=>({
   materialize:vi.fn(),generate:vi.fn(),period:vi.fn(async()=>({
@@ -22,17 +24,18 @@ function mockDb(options:{sold?:Array<{menu_item_id:string;total_quantity:number|
       target_operating_margin:.15,target_operating_margin_status:"default",
       owner_monthly_payroll_extras_cents:null}],
     locations:[{open_hours:null}],
-    daily_rollups:[],recurring_costs:[],expenses:[],recovery_order:[],
-    menu_items:[],timecards:[],alerts:[],
+    cv_sales_days:[],cv_bills:[],cv_expenses:[],recovery_order:[],
+    cv_menu:[],cv_staff_clock_entries:[],alerts:[],cv_financial_periods:fixtureFinancialPeriodRows(),
   };
   const db={from(table:string){
     reads.push(table);
-    const records=data[table]??[];
+    let records=table==="cv_menu_product_costs"?(data.cv_menu??[]).map(item=>({menu_item_id:item.id,data:{costCents:null,status:"NO_RECIPE",source:null,estimated:false,recipe:[],recipeStatus:"NO_RECIPE",recipeCostCents:null,ownerTotalCostCents:null,differenceCents:null}})):data[table]??[];
+    let monthStart="",asOf="";
     const payload={data:records,error:null,count:records.length};
     let range:{start:number;end:number}|null=null;
     const builder={
-      select(){return builder},eq(){return builder},gte(){return builder},lte(){return builder},
-      in(){return builder},order(){return builder},limit(){return builder},
+      select(){return builder},eq(field:string,value:unknown){if(field==="business_date")monthStart=String(value);if(field==="as_of_date")asOf=String(value);return builder},gte(){return builder},lte(){return builder},
+      in(){return builder},like(){return builder},order(){return builder},limit(){return builder},
       range(start:number,end:number){range={start,end};return builder},
       single:async()=>({...payload,data:payload.data[0]??null}),
       maybeSingle:async()=>({...payload,data:payload.data[0]??null}),
@@ -40,7 +43,7 @@ function mockDb(options:{sold?:Array<{menu_item_id:string;total_quantity:number|
       update(){writes.push("update");throw Error("Write in page load")},
       upsert(){writes.push("upsert");throw Error("Write in page load")},
       delete(){writes.push("delete");throw Error("Write in page load")},
-      then(onSuccess:(value:typeof payload)=>unknown){return Promise.resolve({...payload,
+      then(onSuccess:(value:typeof payload)=>unknown){if(table==="cv_running_cost_months")records=fixtureCostRows(data,monthStart,asOf);return Promise.resolve({...payload,
         data:range?records.slice(range.start,range.end+1):records}).then(onSuccess)},
     };
     return builder;
@@ -71,7 +74,7 @@ describe("getSnapshot read-only current snapshot and Home database budget",()=>{
     // bounded number of read invocations, not a second full snapshot query set.
     expect(reads).toHaveLength(10);
     expect(reads.filter(table=>table==="alerts")).toHaveLength(1);
-    expect(reads.filter(table=>table==="daily_rollups")).toHaveLength(1);
+    expect(reads.filter(table=>table==="cv_sales_days")).toHaveLength(1);
   });
   it("keeps all 1001 menu records and their sold quantities across full source pages",async()=>{
     const menu=Array.from({length:1001},(_,i)=>({
@@ -80,25 +83,25 @@ describe("getSnapshot read-only current snapshot and Home database budget",()=>{
     }));
     const sold=menu.map((item,i)=>({menu_item_id:item.id,total_quantity:i===999?1.5:i===1000?"2.25":2}));
     const {db,seed,reads,writes}=mockDb({sold});
-    seed.menu_items=menu;
+    seed.cv_menu=menu;
     seed.recipe_lines=[];seed.menu_item_cost_fallbacks=[];
     seed.menu_combo_components=[];seed.ingredient_prices=[];
     const result=await getBusinessSnapshotFromDb(db,"c1","today");
     expect(result.menuItems).toHaveLength(1001);
     expect(result.menuItems[999]).toMatchObject({id:"menu-000999",quantitySoldLast28Days:1.5});
     expect(result.menuItems[1000]).toMatchObject({id:"menu-001000",quantitySoldLast28Days:2.25});
-    expect(reads.filter(table=>table==="menu_items")).toHaveLength(2);
+    expect(reads.filter(table=>table==="cv_menu")).toHaveLength(2);
     expect(writes).toEqual([]);
   });
   it.each([-1, Infinity, NaN, Number.MAX_SAFE_INTEGER+1, ""])("rejects invalid sold quantities %s",async(total_quantity)=>{
     const {db,seed}=mockDb({sold:[{menu_item_id:"menu-1",total_quantity}]});
-    seed.menu_items=[{id:"menu-1",name:"Product",price_cents:750,prep_seconds:15,category:"food",is_active:true}];
+    seed.cv_menu=[{id:"menu-1",name:"Product",price_cents:750,prep_seconds:15,category:"food",is_active:true}];
     await expect(getBusinessSnapshotFromDb(db,"c1","today")).rejects.toThrow("snapshot_product_sales_mapping_unverified");
   });
   it("never silently drops actual receipts after the 1000-row PostgREST page boundary",async()=>{
     const {db,seed,reads}=mockDb();
     const today=formatInTimeZone(new Date(),"America/Los_Angeles","yyyy-MM-dd");
-    seed.expenses=Array.from({length:1001},(_,i)=>({
+    seed.cv_expenses=Array.from({length:1001},(_,i)=>({
       id:"receipt-"+String(i).padStart(5,"0"),category_code:"rent",
       amount_cents:100,status:"actual",spent_on:today
     }));
@@ -106,20 +109,21 @@ describe("getSnapshot read-only current snapshot and Home database budget",()=>{
     expect(result.runningCostLines.find(line=>line.categoryCode==="rent"))
       .toMatchObject({amountCents:100100,actualTodayCents:100100,
         amountSource:"recorded_expense",isEstimate:false});
-    expect(reads.filter(table=>table==="expenses").length).toBeGreaterThan(2);
+    expect(reads.filter(table=>table==="cv_running_cost_months")).toHaveLength(2);
+    expect(result.runningCostLines.find(line=>line.categoryCode==="rent")?.expenseEvidence).toHaveLength(1001);
   });
   it("rejects duplicated financial identities instead of manufacturing a complete source",async()=>{
     const {db,seed}=mockDb();
     const today=formatInTimeZone(new Date(),"America/Los_Angeles","yyyy-MM-dd");
-    seed.expenses=[{id:"same",category_code:"rent",amount_cents:100,status:"actual",spent_on:today},
+    seed.cv_expenses=[{id:"same",category_code:"rent",amount_cents:100,status:"actual",spent_on:today},
       {id:"same",category_code:"rent",amount_cents:200,status:"actual",spent_on:today}];
     await expect(getBusinessSnapshotFromDb(db,"c1","today"))
-      .rejects.toThrow("snapshot_source_incomplete:expenses");
+      .rejects.toThrow("running_cost_source_incomplete");
   });
   it("never labels estimated expense rows as actual cash spent today",async()=>{
     const {db,seed}=mockDb();
     const today=formatInTimeZone(new Date(),"America/Los_Angeles","yyyy-MM-dd");
-    seed.expenses=[
+    seed.cv_expenses=[
       {id:"rent-actual",category_code:"rent",amount_cents:1500,status:"actual",spent_on:today},
       {id:"rent-estimate",category_code:"rent",amount_cents:5000,status:"estimated",spent_on:today}
     ];

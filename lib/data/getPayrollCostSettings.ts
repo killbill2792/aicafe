@@ -42,10 +42,10 @@ export async function getPayrollCostSettings(): Promise<PayrollCostSettings> {
   const fromDate = formatInTimeZone(subDays(new Date(`${today}T12:00:00Z`), 89), "UTC", "yyyy-MM-dd");
 
   const { data: actualRows, error: actualError } = await supabase
-    .from("daily_rollups")
-    .select("staff_tax_source")
+    .from("cv_sales_days")
+    .select("staff_tax_source:data->>staff_tax_source")
     .eq("business_id", businessId)
-    .eq("staff_tax_status", "actual")
+    .eq("data->>staff_tax_status", "actual")
     .gte("business_date", fromDate)
     .lte("business_date", today);
   if (actualError) throw actualError;

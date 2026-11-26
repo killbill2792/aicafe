@@ -33,8 +33,8 @@ function db(connections:Connection[],quantities:unknown[]=[],failure=false,unlin
     data:quantities,error:failure?{message:"unavailable"}:null,
   }));
   const client=({from:(table:string)=>{
-      expect(["pos_connections","daily_rollups","order_lines"]).toContain(table);
-      if(table==="daily_rollups")return rollups;
+      expect(["pos_connections","cv_sales_days","cv_item_sales"]).toContain(table);
+      if(table==="cv_sales_days")return rollups;
       return table==="pos_connections"?chain:unlinked;
     },rpc} as unknown as SupabaseClient);
   return {client,rpc,eqs};

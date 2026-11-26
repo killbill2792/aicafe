@@ -31,6 +31,10 @@ export type DailyFacts = {
   cardFeesCents: number;
   cardFeesStatus?: "actual" | "estimated" | "missing";
   voidsCents: number;
+  /** SQL-computed recorded contribution, before bills; null when payroll is missing. Omitted by synthetic scenarios. */
+  recordedContributionCents?: number | null;
+  /** Canonical fee calculation for the saved day; absent from hypothetical inputs. */
+  effectiveFee?: {amountCents:number;basis:"actual"|"owner_plan"|"estimated"|"default_estimate";notes:string[]};
 };
 
 export type ExpenseForCategory = {
@@ -54,6 +58,8 @@ export type CategoryMonthlyAmount = {
   /** Upper-bound additional forecast when an unlinked expense may overlap. */
   possibleAdditionalForecastCents?:number;
   recurringEstimateCents?:number;
+  /** Canonical SQL calendar allocation; absent only from pure scenarios/legacy fixtures. */
+  dailyAllocatedCents?:Array<{date:string;amountCents:number}>;
   /** Each recurring obligation's active dates and share of the forecast, so elapsed-period allocation skips days it was not active. */
   recurringWindows?:Array<{from:string;to:string|null;weightCents:number}>;
   isEstimate: boolean;

@@ -60,6 +60,13 @@ function buildOctoberFirstSnapshot(): BusinessSnapshot {
 }
 
 describe("buildProfitAndCostsViewModel — running cost rows match the selected period", () => {
+  it("uses the SQL period subtotal and keeps the existing completeness gate",()=>{
+    const base=buildOctoberFirstSnapshot();
+    const canonical={netSalesCents:100000,ingredientsCents:20000,wagesCents:15000,staffTaxCents:1500,feesCents:2500,billsCents:10000,ownerPayrollExtrasCents:0,knownLaborCents:16500,totalCostsCents:49000,profitCents:51000,coveredSalesDays:1,coveredLaborDays:1,expectedDays:1,unknownLabor:false,estimatedLabor:false};
+    const vm=buildProfitAndCostsViewModel({...base,financialPeriods:{today:canonical,week:canonical,month:canonical,previous_today:canonical,previous_week:canonical,previous_month:canonical}},"today");
+    expect(vm).toMatchObject({salesCents:100000,totalCostsCents:49000,ownerProfitCents:51000});
+    expect(vm.ownerProfitDisplay.kind).toBe("partial");
+  });
   const snapshot = buildOctoberFirstSnapshot();
 
   it("Today (Oct 1) shows October's own per-day rent share, not the full month", () => {

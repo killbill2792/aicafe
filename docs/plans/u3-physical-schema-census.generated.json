@@ -3059,6 +3059,51 @@
      "data",
      "jsonb",
      false
+    ],
+    [
+     "id",
+     "uuid",
+     false
+    ],
+    [
+     "category_code",
+     "text",
+     false
+    ],
+    [
+     "label",
+     "text",
+     false
+    ],
+    [
+     "amount_cents",
+     "bigint",
+     false
+    ],
+    [
+     "frequency",
+     "text",
+     false
+    ],
+    [
+     "is_estimate",
+     "boolean",
+     false
+    ],
+    [
+     "active_from",
+     "date",
+     false
+    ],
+    [
+     "active_to",
+     "date",
+     false
+    ],
+    [
+     "due_day",
+     "integer",
+     false
     ]
    ],
    "relation": "cv_bills",
@@ -3593,6 +3638,132 @@
    "foreign_keys": []
   },
   {
+   "relation": "cv_expenses",
+   "kind": "view",
+   "rls": false,
+   "columns": [
+    [
+     "business_id",
+     "uuid",
+     false
+    ],
+    [
+     "source",
+     "text",
+     false
+    ],
+    [
+     "source_ref",
+     "text",
+     false
+    ],
+    [
+     "status",
+     "text",
+     false
+    ],
+    [
+     "business_date",
+     "date",
+     false
+    ],
+    [
+     "id",
+     "uuid",
+     false
+    ],
+    [
+     "spent_on",
+     "date",
+     false
+    ],
+    [
+     "amount_cents",
+     "bigint",
+     false
+    ],
+    [
+     "category_code",
+     "text",
+     false
+    ],
+    [
+     "recurring_cost_id",
+     "uuid",
+     false
+    ],
+    [
+     "custom_label",
+     "text",
+     false
+    ],
+    [
+     "vendor",
+     "text",
+     false
+    ]
+   ],
+   "foreign_keys": []
+  },
+  {
+   "relation": "cv_financial_periods",
+   "kind": "view",
+   "rls": false,
+   "columns": [
+    [
+     "business_id",
+     "uuid",
+     false
+    ],
+    [
+     "source",
+     "text",
+     false
+    ],
+    [
+     "source_ref",
+     "text",
+     false
+    ],
+    [
+     "status",
+     "text",
+     false
+    ],
+    [
+     "business_date",
+     "date",
+     false
+    ],
+    [
+     "period_key",
+     "text",
+     false
+    ],
+    [
+     "start_date",
+     "date",
+     false
+    ],
+    [
+     "end_date",
+     "date",
+     false
+    ],
+    [
+     "known_profit_cents",
+     "bigint",
+     false
+    ],
+    [
+     "data",
+     "jsonb",
+     false
+    ]
+   ],
+   "foreign_keys": []
+  },
+  {
    "rls": false,
    "kind": "view",
    "columns": [
@@ -3706,6 +3877,49 @@
     ]
    ],
    "relation": "cv_item_sales",
+   "foreign_keys": []
+  },
+  {
+   "relation": "cv_item_sales_daily",
+   "kind": "view",
+   "rls": false,
+   "columns": [
+    [
+     "business_id",
+     "uuid",
+     false
+    ],
+    [
+     "source_ref",
+     "text",
+     false
+    ],
+    [
+     "status",
+     "text",
+     false
+    ],
+    [
+     "business_date",
+     "date",
+     false
+    ],
+    [
+     "menu_item_id",
+     "uuid",
+     false
+    ],
+    [
+     "quantity",
+     "numeric",
+     false
+    ],
+    [
+     "net_sales_cents",
+     "numeric",
+     false
+    ]
+   ],
    "foreign_keys": []
   },
   {
@@ -3862,9 +4076,132 @@
      "data",
      "jsonb",
      false
+    ],
+    [
+     "id",
+     "uuid",
+     false
+    ],
+    [
+     "name",
+     "text",
+     false
+    ],
+    [
+     "base_name",
+     "text",
+     false
+    ],
+    [
+     "size_label",
+     "text",
+     false
+    ],
+    [
+     "price_cents",
+     "bigint",
+     false
+    ],
+    [
+     "prep_seconds",
+     "integer",
+     false
+    ],
+    [
+     "category",
+     "text",
+     false
+    ],
+    [
+     "menu_group",
+     "text",
+     false
+    ],
+    [
+     "is_active",
+     "boolean",
+     false
+    ],
+    [
+     "pos_item_id",
+     "text",
+     false
+    ],
+    [
+     "catalog_source",
+     "text",
+     false
+    ],
+    [
+     "catalog_last_synced_at",
+     "timestamp with time zone",
+     false
+    ],
+    [
+     "description",
+     "text",
+     false
+    ],
+    [
+     "pos_visibility",
+     "text",
+     false
+    ],
+    [
+     "pos_pricing_strategy",
+     "text",
+     false
     ]
    ],
    "relation": "cv_menu",
+   "foreign_keys": []
+  },
+  {
+   "relation": "cv_menu_product_costs",
+   "kind": "view",
+   "rls": false,
+   "columns": [
+    [
+     "business_id",
+     "uuid",
+     false
+    ],
+    [
+     "source",
+     "text",
+     false
+    ],
+    [
+     "source_ref",
+     "text",
+     false
+    ],
+    [
+     "status",
+     "text",
+     false
+    ],
+    [
+     "business_date",
+     "date",
+     false
+    ],
+    [
+     "menu_item_id",
+     "uuid",
+     false
+    ],
+    [
+     "cost_cents",
+     "numeric",
+     false
+    ],
+    [
+     "data",
+     "jsonb",
+     false
+    ]
+   ],
    "foreign_keys": []
   },
   {
@@ -4047,6 +4384,107 @@
    "foreign_keys": []
   },
   {
+   "relation": "cv_running_cost_days",
+   "kind": "view",
+   "rls": false,
+   "columns": [
+    [
+     "business_id",
+     "uuid",
+     false
+    ],
+    [
+     "source",
+     "text",
+     false
+    ],
+    [
+     "source_ref",
+     "text",
+     false
+    ],
+    [
+     "status",
+     "text",
+     false
+    ],
+    [
+     "business_date",
+     "date",
+     false
+    ],
+    [
+     "category_code",
+     "text",
+     false
+    ],
+    [
+     "amount_cents",
+     "numeric",
+     false
+    ],
+    [
+     "as_of_date",
+     "date",
+     false
+    ]
+   ],
+   "foreign_keys": []
+  },
+  {
+   "relation": "cv_running_cost_months",
+   "kind": "view",
+   "rls": false,
+   "columns": [
+    [
+     "business_id",
+     "uuid",
+     false
+    ],
+    [
+     "source",
+     "text",
+     false
+    ],
+    [
+     "source_ref",
+     "text",
+     false
+    ],
+    [
+     "status",
+     "text",
+     false
+    ],
+    [
+     "business_date",
+     "date",
+     false
+    ],
+    [
+     "category_code",
+     "text",
+     false
+    ],
+    [
+     "amount_cents",
+     "bigint",
+     false
+    ],
+    [
+     "as_of_date",
+     "date",
+     false
+    ],
+    [
+     "data",
+     "jsonb",
+     false
+    ]
+   ],
+   "foreign_keys": []
+  },
+  {
    "rls": false,
    "kind": "view",
    "columns": [
@@ -4143,6 +4581,59 @@
    "foreign_keys": []
   },
   {
+   "relation": "cv_sales_live",
+   "kind": "view",
+   "rls": false,
+   "columns": [
+    [
+     "business_id",
+     "uuid",
+     false
+    ],
+    [
+     "source",
+     "text",
+     false
+    ],
+    [
+     "source_ref",
+     "text",
+     false
+    ],
+    [
+     "status",
+     "text",
+     false
+    ],
+    [
+     "business_date",
+     "date",
+     false
+    ],
+    [
+     "net_sales_cents",
+     "bigint",
+     false
+    ],
+    [
+     "orders_count",
+     "integer",
+     false
+    ],
+    [
+     "read_at",
+     "timestamp with time zone",
+     false
+    ],
+    [
+     "reading",
+     "jsonb",
+     false
+    ]
+   ],
+   "foreign_keys": []
+  },
+  {
    "rls": false,
    "kind": "view",
    "columns": [
@@ -4216,6 +4707,129 @@
     ]
    ],
    "relation": "cv_staff",
+   "foreign_keys": []
+  },
+  {
+   "relation": "cv_staff_clock_entries",
+   "kind": "view",
+   "rls": false,
+   "columns": [
+    [
+     "business_id",
+     "uuid",
+     false
+    ],
+    [
+     "source",
+     "text",
+     false
+    ],
+    [
+     "source_ref",
+     "text",
+     false
+    ],
+    [
+     "status",
+     "text",
+     false
+    ],
+    [
+     "business_date",
+     "date",
+     false
+    ],
+    [
+     "id",
+     "uuid",
+     false
+    ],
+    [
+     "employee_id",
+     "uuid",
+     false
+    ],
+    [
+     "schedule_id",
+     "uuid",
+     false
+    ],
+    [
+     "source_type",
+     "text",
+     false
+    ],
+    [
+     "source_provider",
+     "text",
+     false
+    ],
+    [
+     "clock_in",
+     "timestamp with time zone",
+     false
+    ],
+    [
+     "clock_out",
+     "timestamp with time zone",
+     false
+    ],
+    [
+     "hourly_wage_cents",
+     "bigint",
+     false
+    ],
+    [
+     "breaks",
+     "jsonb",
+     false
+    ],
+    [
+     "provider_regular_hours",
+     "numeric",
+     false
+    ],
+    [
+     "provider_overtime_hours",
+     "numeric",
+     false
+    ],
+    [
+     "employee_name",
+     "text",
+     false
+    ],
+    [
+     "employee_role",
+     "text",
+     false
+    ],
+    [
+     "as_of",
+     "timestamp with time zone",
+     false
+    ],
+    [
+     "wages_cents",
+     "numeric",
+     false
+    ],
+    [
+     "loaded_cost_cents",
+     "numeric",
+     false
+    ],
+    [
+     "loaded_hourly_cents",
+     "numeric",
+     false
+    ],
+    [
+     "day_loaded_cost_cents",
+     "numeric",
+     false
+    ]
+   ],
    "foreign_keys": []
   },
   {

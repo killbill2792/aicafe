@@ -41,7 +41,7 @@ const cafe = {business_id: "cafe-a", role: "staff", businesses: {
 function mockBadgeQueries() {
   state.from.mockImplementation((table: string) => {
     if (table === "memberships") throw new Error("Redundant membership query");
-    const response = table === "recurring_costs"
+    const response = table === "cv_bills"
       ? {data: [], error: null}
       : table === "alerts"
         ? {data: [{id:"1",kind:"meal_break",payload:{}},{id:"2",kind:"voids",payload:{}},{id:"3",kind:"meal_break",payload:{}},{id:"4",kind:"business_anomaly",payload:{family:"data_gap",subject:"sales_coverage"}}], count: 4, error: null}
@@ -115,6 +115,10 @@ describe("PR 10: More and café profile share authenticated identity reads", () 
     expect(state.active).toHaveBeenCalledWith("owner-1");
     expect(state.memberships).toHaveBeenCalledWith("owner-1");
     expect(state.from).not.toHaveBeenCalledWith("memberships");
+    expect(state.from).toHaveBeenCalledWith("cv_sales_days");
+    expect(state.from).toHaveBeenCalledWith("cv_card_fees");
+    expect(state.from).not.toHaveBeenCalledWith("daily_rollups");
+    expect(state.from).not.toHaveBeenCalledWith("processing_fee_daily_facts");
   });
 
   it("keeps the More page badge reader empty and usable before any real café exists", async () => {

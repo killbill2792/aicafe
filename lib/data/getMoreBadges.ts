@@ -53,9 +53,9 @@ async function readMissingFeeDays(db: CafeDb, businessId: string, timezone: stri
     return undefined;
   }
   const [sales, facts] = await Promise.all([
-    db.from("daily_rollups").select("business_date,net_sales_cents")
+    db.from("cv_sales_days").select("business_date,net_sales_cents")
       .eq("business_id", businessId).gte("business_date", fromDate).lte("business_date", today),
-    db.from("processing_fee_daily_facts").select("business_date,status")
+    db.from("cv_card_fees").select("business_date,status")
       .eq("business_id", businessId).gte("business_date", fromDate).lte("business_date", today),
   ]);
   if (sales.error || facts.error) return undefined;
@@ -91,7 +91,7 @@ export async function getMoreBadgeInputs(userId: string | undefined): Promise<Mo
       .order("name").limit(1).maybeSingle(),
     getUploadHistory(),
     readMissingFeeDays(db, businessId, business.timezone),
-    db.from("recurring_costs")
+    db.from("cv_bills")
       .select("id,category_code,label,amount_cents,frequency,due_day,is_estimate")
       .eq("business_id", businessId).is("active_to", null),
     db.from("alerts").select("id,kind,payload")
