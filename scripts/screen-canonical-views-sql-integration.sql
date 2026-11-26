@@ -60,7 +60,7 @@ SELECT (
  AND (SELECT count(*) FROM public.cv_sales_days WHERE business_id=:'b')=0
  AND (SELECT net_sales_cents FROM public.cv_sales_live WHERE business_id=:'a')=700
  AND (SELECT count(*) FROM public.cv_sales_live WHERE business_id=:'b')=0
- AND (SELECT amount_cents FROM public.cv_expenses WHERE business_id=:'a')=30000
+ AND (SELECT amount_cents FROM public.cv_expenses WHERE business_id=:'a' AND category_code='rent')=30000
  AND (SELECT count(*) FROM public.cv_expenses WHERE business_id=:'b')=0
  AND (SELECT (data->>'amount_cents')::bigint FROM public.cv_bills WHERE business_id=:'a')=30000
  AND (SELECT (data->>'price_cents')::bigint FROM public.cv_menu WHERE business_id=:'a' AND source_ref='item:'||:'item')=600
