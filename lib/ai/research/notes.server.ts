@@ -7,10 +7,17 @@ const day=(iso:string)=>iso.slice(0,10);
 
 /** What Supervisor knows about the café outside the database tables: its own notes and the owner's saved facts,
  * each with where it came from and how old it is, so a stale one gets rechecked. Read with the owner's session (RLS). */
-export async function cafeNotesContext(client:SupabaseClient,businessId:string,facts:readonly SavedFact[],today:string):Promise<string>{
+export type CafeNote={topic:string;note:string;basis:string;created_at:string;confirmed_at:string};
+
+/** The one reader of active café notes (oldest first, all of them); chat and the notes screen both use it. */
+export async function readCafeNotes(client:SupabaseClient,businessId:string):Promise<{notes:CafeNote[];error:boolean}>{
   const {data,error}=await client.from("cafe_notes").select("topic,note,basis,created_at,confirmed_at")
     .eq("business_id",businessId).is("retired_at",null).order("created_at",{ascending:true});
-  const notes=error||!data?[]:data as {topic:string;note:string;basis:string;created_at:string;confirmed_at:string}[];
+  return {notes:error||!data?[]:data as CafeNote[],error:Boolean(error)};
+}
+
+export async function cafeNotesContext(client:SupabaseClient,businessId:string,facts:readonly SavedFact[],today:string):Promise<string>{
+  const {notes,error}=await readCafeNotes(client,businessId);
   const lines=[
     ...notes.map(n=>"- note "+n.topic+": "+n.note+" (learned from: "+n.basis+"; last confirmed "+day(n.confirmed_at)+")"),
     ...facts.map(f=>"- owner fact "+f.fact_key+": "+JSON.stringify(f.value_json)+(f.unit?" "+f.unit:"")+" (the owner saved this on "+day(f.created_at)+")"),

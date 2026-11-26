@@ -43,6 +43,16 @@ describe("confirmed weekly schedule is the only chat schedule",()=>{
     expect(gaps.gaps).toEqual([]);
     expect(JSON.stringify([scheduleRead,gaps])).not.toContain("Dawn");
   });
+  it("lists every active teammate with the dates they already work, so a replacement can be proposed",async()=>{
+    const sam={...active,id:"sam",name:"Sam"};
+    vi.mocked(getWeekSchedule).mockResolvedValue(schedule([fakeShift("a","active","08:00")],[active,sam]) as never);
+    const read=await scheduleReadTools.get_week_schedule.execute({week_start:week},ctx);
+    const mates=read.teammates as {employeeId:string;shiftDates:string[];scheduledMinutes:number|null}[];
+    expect(mates.map(m=>m.employeeId)).toEqual(["active","sam"]);
+    expect(mates[0].shiftDates).toEqual([week]);
+    expect(mates[1]).toMatchObject({shiftDates:[],scheduledMinutes:0});
+    expect(read.availabilityChecked).toBe(false);
+  });
   it("retains former staff historical shifts and matches Team screen wage totals",async()=>{
     const activeShift=fakeShift("current","active","08:00");
     const removedShift=fakeShift("removed","former","07:00");

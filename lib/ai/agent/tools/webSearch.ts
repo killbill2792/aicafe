@@ -21,6 +21,17 @@ export function ownerPublicSearchTerms(ownerText:string,city?:string|null):strin
 export function projectOwnerPublicQuery(_modelQuery:string,ownerText:string,city?:string|null):string|null{
  return ownerPublicSearchTerms(ownerText,city);
 }
+/** Scouting routines: the model proposes the lookup, but only words the owner wrote in the saved goal (plus the café's
+ * city and a few joining words) may leave the private context. The same character and private-topic rules apply. */
+export function scoutingSearchTerms(modelQuery:string,objectiveText:string,city?:string|null):string|null{
+ const query=modelQuery.normalize("NFKC").trim();
+ if(query.length<2||query.length>250||/[\r\n<>{}\[\]@%$€£"\\]/u.test(query)||/https?:|\.\./iu.test(query)||
+    /\b(?:password|secret|token|payroll|invoice|bank|sales|customer|employee|private|confidential|revenue|profit|wages|receipt|account number)\b/iu.test(query)||
+    !/^[\p{L}\p{N}\p{M} ,.'?()&/-]+$/u.test(query))return null;
+ const words=(text:string)=>text.normalize("NFKC").toLowerCase().match(/[\p{L}\p{N}\p{M}']+/gu)??[];
+ const allowed=new Set([...words(objectiveText),...words(city??""),"in","near","the","a","an","of","and","for","to","at","on"]);
+ return words(query).every(word=>allowed.has(word))?query:null;
+}
 export const webSearchInput=z.strictObject({query:z.string().trim().min(2).max(250)});
 
 export const webSearchTools={
