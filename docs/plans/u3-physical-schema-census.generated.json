@@ -1,5 +1,5 @@
 {
- "generatedFrom": "Public pg_catalog non-authorizing metadata; PR557 U4 additive schema corroborated from disposable migrated CI 45002094348; no café/customer rows",
+ "generatedFrom": "fully migrated local Supabase pg_catalog; no business rows",
  "notAuthorization": true,
  "classification": "all physical metadata denied to model until reviewed logical admission",
  "relations": [
@@ -3638,9 +3638,8 @@
    "foreign_keys": []
   },
   {
-   "relation": "cv_expenses",
-   "kind": "view",
    "rls": false,
+   "kind": "view",
    "columns": [
     [
      "business_id",
@@ -3703,12 +3702,12 @@
      false
     ]
    ],
+   "relation": "cv_expenses",
    "foreign_keys": []
   },
   {
-   "relation": "cv_financial_periods",
-   "kind": "view",
    "rls": false,
+   "kind": "view",
    "columns": [
     [
      "business_id",
@@ -3761,6 +3760,7 @@
      false
     ]
    ],
+   "relation": "cv_financial_periods",
    "foreign_keys": []
   },
   {
@@ -3880,9 +3880,8 @@
    "foreign_keys": []
   },
   {
-   "relation": "cv_item_sales_daily",
-   "kind": "view",
    "rls": false,
+   "kind": "view",
    "columns": [
     [
      "business_id",
@@ -3920,6 +3919,7 @@
      false
     ]
    ],
+   "relation": "cv_item_sales_daily",
    "foreign_keys": []
   },
   {
@@ -4157,9 +4157,8 @@
    "foreign_keys": []
   },
   {
-   "relation": "cv_menu_product_costs",
-   "kind": "view",
    "rls": false,
+   "kind": "view",
    "columns": [
     [
      "business_id",
@@ -4202,6 +4201,7 @@
      false
     ]
    ],
+   "relation": "cv_menu_product_costs",
    "foreign_keys": []
   },
   {
@@ -4384,9 +4384,8 @@
    "foreign_keys": []
   },
   {
-   "relation": "cv_running_cost_days",
-   "kind": "view",
    "rls": false,
+   "kind": "view",
    "columns": [
     [
      "business_id",
@@ -4429,12 +4428,12 @@
      false
     ]
    ],
+   "relation": "cv_running_cost_days",
    "foreign_keys": []
   },
   {
-   "relation": "cv_running_cost_months",
-   "kind": "view",
    "rls": false,
+   "kind": "view",
    "columns": [
     [
      "business_id",
@@ -4482,6 +4481,7 @@
      false
     ]
    ],
+   "relation": "cv_running_cost_months",
    "foreign_keys": []
   },
   {
@@ -4581,9 +4581,8 @@
    "foreign_keys": []
   },
   {
-   "relation": "cv_sales_live",
-   "kind": "view",
    "rls": false,
+   "kind": "view",
    "columns": [
     [
      "business_id",
@@ -4631,6 +4630,7 @@
      false
     ]
    ],
+   "relation": "cv_sales_live",
    "foreign_keys": []
   },
   {
@@ -4710,9 +4710,8 @@
    "foreign_keys": []
   },
   {
-   "relation": "cv_staff_clock_entries",
-   "kind": "view",
    "rls": false,
+   "kind": "view",
    "columns": [
     [
      "business_id",
@@ -4830,6 +4829,7 @@
      false
     ]
    ],
+   "relation": "cv_staff_clock_entries",
    "foreign_keys": []
   },
   {
