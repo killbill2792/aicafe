@@ -180,7 +180,7 @@ export async function runResearchTurn(args:{
     if(!statePort)return;
     await args.beforeAcceptResult?.();
     const snapshot:ResearchSnapshot={version:1,objective:originalObjective,model,transcript:input.slice(prefixLength),pending,text,
-      presentations,invocations,evidence,queries:[...queries].filter(([ref])=>/^q\\d+$/u.test(ref)),privateValues:[...privateValues],nextResultRef,
+      presentations,invocations,evidence,queries:[...queries].filter(([ref])=>/^q\d+$/u.test(ref)),privateValues:[...privateValues],nextResultRef,
       diagnostics:presentationDiagnostics,sourceVersions:args.captureSourceVersions?.()??{},finished};
     await statePort.save(snapshot);
   };
@@ -347,7 +347,7 @@ export async function runResearchTurn(args:{
       if(!pending.length){
         try{pending=(await call()).calls;}
         catch(error){
-          if(error instanceof Error&&/durable|checkpoint|reservation|access_revoked|access_changed|permission/u.test(error.message))throw error;
+          if(error instanceof Error&&/durable|checkpoint|reservation|access_revoked|access_changed|authorization_revoked|permission/u.test(error.message))throw error;
           if(timeToYield()||statePort||recoveredTransport)throw error;
           // One immediate transport recovery in non-durable callers. The same
           // model still decides whether to research further or answer.
@@ -408,7 +408,7 @@ export async function runResearchTurn(args:{
       }
     }
   }catch(error){
-    if(error instanceof Error&&/durable|checkpoint|reservation|access_revoked|access_changed|permission/u.test(error.message))throw error;
+    if(error instanceof Error&&/durable|checkpoint|reservation|access_revoked|access_changed|authorization_revoked|permission/u.test(error.message))throw error;
     endReason=timeToYield()?"timeout":"provider_error";
   }
   usage.latencyMs=Math.max(0,now()-started);
