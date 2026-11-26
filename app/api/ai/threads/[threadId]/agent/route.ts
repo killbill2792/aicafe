@@ -118,7 +118,7 @@ export async function POST(request: Request, context: RouteContext) {
         const work=(async()=>{
           try{
             let sentReply=false;
-            const state=await worker.processDurableRun(run.id,(type,data)=>{if(type==="done")sentReply=true;sink.emit(type,data);});
+            const state=await worker.processDurableRun(run.id,(type,data)=>{if(type==="done")sentReply=true;sink.emit(type,data);},executionDeadline);
             if(state==="busy"&&!sentReply)sink.emit("queued",{runId:run.id});
             else if(state==="blocked")sink.emit("error",{code:"agent_turn_failed",retryable:false,runId:run.id});
             else if(!sentReply) {
