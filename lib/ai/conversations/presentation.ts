@@ -45,8 +45,8 @@ export const recordTableSchema=z.strictObject({
  title:label,view:z.string().regex(/^(?:cv|tool)_[a-z_]+$/).max(80),from:date,to:date,asOf:date,
  currency:z.string().regex(/^[A-Z]{3}$/).nullable(),
  coverage:z.enum(["stored","partial"]),scope:z.string().max(300),
- columns:z.array(z.strictObject({label,unit:tableUnit})).min(1).max(8),
- rows:z.array(z.array(cell).min(1).max(8)).min(1),
+ columns:z.array(z.strictObject({label,unit:tableUnit})).min(1),
+ rows:z.array(z.array(cell).min(1)).min(1),
 }).superRefine((t,ctx)=>{
  if(t.from>t.to||t.rows.some(r=>r.length!==t.columns.length||r.some((v,i)=>{
   if(v===null)return false;
@@ -102,12 +102,12 @@ export function evaluatePresentationCalc(c:InteractiveCalc,changes:Readonly<Reco
  * Quantitative claims belong in the bound data leaves or provenance-checked
  * prose. Use the same policy on legacy persisted labels at render time. */
 export function descriptiveGroupTitle(value:string|null|undefined):string|undefined{
- if(!value?.trim()||/[\p{N}\p{Sc}%٪‰‱]/u.test(value.normalize("NFKC")))return undefined;
+ if(!value?.trim())return undefined;
  return value;
 }
 // Flat reference graph supports recursive layouts without accepting recursive
 // model-authored JSON, executable props, repeated leaves or unbounded trees.
-export const presentationGroupSchema=z.strictObject({id:z.string().regex(/^g(?:[0-9]|1[01])$/).optional(),layout:z.enum(["stack","grid","compare","details"]),title:label.optional(),items:z.array(z.string().regex(/^(?:panel[0-7]|table[0-7]|agenda|scenario|calculator|files|report|suggestions|g(?:[0-9]|1[01]))$/)).min(1).max(12)});
+export const presentationGroupSchema=z.strictObject({id:z.string().regex(/^g\d+$/).optional(),layout:z.enum(["stack","grid","compare","details"]),title:label.optional(),items:z.array(z.string().regex(/^(?:panel\d+|table\d+|agenda|scenario|calculator|files|report|suggestions|g\d+)$/)).min(1)});
 type PresentationGroup=z.infer<typeof presentationGroupSchema>;
 export function presentationGroupRoots(groups:readonly PresentationGroup[]):number[]{
  const children=new Set(groups.flatMap(g=>g.items));
@@ -135,11 +135,11 @@ export function validPresentationGroups(groups:readonly PresentationGroup[],leav
 const richPresentationBaseSchema=z.strictObject({
   type:z.literal("rich_presentation"),version:z.literal(1),
   layout:z.enum(["stack","grid"]),
-  panels:z.array(presentationPanelSchema).max(8),
-  groups:z.array(presentationGroupSchema).min(1).max(12).optional(),
+  panels:z.array(presentationPanelSchema),
+  groups:z.array(presentationGroupSchema).min(1).optional(),
   report:z.literal(true).optional(),
   files:z.array(z.uuid()).min(1).max(3).refine(ids=>new Set(ids).size===ids.length).optional(),
-  tables:z.array(recordTableSchema).max(8).optional(),
+  tables:z.array(recordTableSchema).optional(),
   calculator:interactiveCalcSchema.optional(),
   agenda:agendaSchema.optional(),
   scenario:scenarioComparisonSchema.optional(),
@@ -161,7 +161,7 @@ export function allPresentationLeaves(p:RichPresentation):string[]{
  return [...presentationLeaves(p),...(p.files?.length?["files"]:[]),...(p.report?["report"]:[]),...(p.suggestions.length?["suggestions"]:[])];
 }
 export function compatibleComparison(items:string[],panels:PresentationPanel[]):boolean{
- if(items.length<2||items.some(k=>!/^panel[0-7]$/.test(k)))return false;
+ if(items.length<2||items.some(k=>!/^panel\d+$/.test(k)))return false;
  const series=items.map(k=>panels[Number(k.slice(5))]);
  if(series.some(p=>!p||p.kind==="donut"))return false;
  const first=series[0];
