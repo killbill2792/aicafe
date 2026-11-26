@@ -2249,7 +2249,10 @@ test("@home Task16E adaptive answer survives reload, preserves prose and opens a
       const updated=new Intl.NumberFormat("en-US",{style:"currency",currency:owner.currency}).format(12000);
       await expect(widget.getByText(initial,{exact:true})).toBeVisible();
       await expect(widget.getByText("Owner changed the assumption")).toHaveCount(0);
-      await widget.getByRole("slider").focus();await page.keyboard.press("ArrowRight");
+      const slider=widget.getByRole("slider",{name:"Growth multiplier"});
+      await expect(slider).toHaveAttribute("aria-valuenow","1.1");
+      await slider.press("ArrowRight");
+      await expect(slider).toHaveAttribute("aria-valuenow","1.2");
       await expect(widget.getByText(updated,{exact:true})).toBeVisible();
       await widget.getByRole("button",{name:"Use 20% growth"}).click();
       await expect(widget.getByText("Owner changed the assumption")).toBeVisible();

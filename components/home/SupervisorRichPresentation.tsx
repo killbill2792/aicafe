@@ -224,8 +224,23 @@ function ControlView({kind}:{kind:unknown}){
 const nativeCatalog=defineCatalog(schema,{components:{...upstreamComponents,LunaChart:nativeChartDefinition,LunaSnapshot:{props:z.object({snapshotJSON:z.string()}),slots:[],description:"Resolved authenticated data view"}},actions:{}});
 /** The installed registry is used wholesale. Wrap resolved props for the one
  * browser trust boundary, not a second manually curated widget library. */
-function NativeWidget({spec,locale,onSuggest,disabled,message,attachments}:{spec:Spec;locale:string;onSuggest:(text:string)=>void;disabled:boolean;message?:Parameters<typeof presentationReport>[1]&{threadId:string};attachments?:{threadId:string;items:StoredAttachment[]}|null}){
- const store=useMemo(()=>createLocalWidgetStore(spec.state),[spec]);
+function NativeSnapshot({value,locale}:{value:unknown;locale:string}){
+ const context=useContext(PresentationControls);
+ if(!context)return null;
+ return <SupervisorRichPresentation block={readNativeSnapshot(value)} locale={locale} onSuggest={context.onSuggest} disabled={context.disabled} message={context.message} attachments={context.attachments}/>;
+}
+function NamedNativeControl({label,role,children}:{label:string;role:string;children:React.ReactNode}){
+ return <div className="contents" ref={node=>{
+  // Upstream's visible label is not associated with these Radix controls.
+  // Keep the upstream implementation and attach its existing label.
+  const control=node?.querySelector('[role="'+role+'"]');
+  if(control&&!control.hasAttribute("aria-labelledby"))control.setAttribute("aria-label",label);
+ }}>{children}</div>;
+}
+function NativeWidget({spec,locale}:{spec:Spec;locale:string}){
+ // A polling parent may reconstruct an equal message object. The keyed
+ // widget survives that refresh without resetting edits or keyboard focus.
+ const [store]=useState(()=>createLocalWidgetStore(spec.state));
  const registry=useMemo(()=>{
   const {registry}=defineRegistry(nativeCatalog,{components:{...shadcnComponents,
    LunaChart:({props})=>{
@@ -237,18 +252,22 @@ function NativeWidget({spec,locale,onSuggest,disabled,message,attachments}:{spec
     const table=recordTableSchema.safeParse({title:values.title,view:"tool_response_evidence",from:asOf,to:asOf,asOf,currency:values.currency,coverage:"authored",scope:description??"",columns:[{label:"Category",unit:"label"},{label:measurement??values.unit,unit:values.unit}],rows:values.points.map(p=>[p.label,p.value])});
     return table.success?<RecordTableView table={table.data} locale={locale}/>:<p role="status">Chart values are not available.</p>;
    },
-   LunaSnapshot:({props})=><SupervisorRichPresentation block={readNativeSnapshot(props.snapshotJSON)} locale={locale} onSuggest={onSuggest} disabled={disabled} message={message} attachments={attachments}/>,
+   LunaSnapshot:({props})=><NativeSnapshot value={props.snapshotJSON} locale={locale}/>,
   }});
   for(const name of Object.keys(registry)){
    if(!Object.hasOwn(upstreamComponents,name))continue;
    const Component=registry[name];
    registry[name]=input=>{
     const parsed=parseUpstreamProps(name,input.element.props);
-    return parsed?.success?<Component {...input} element={{...input.element,props:parsed.data}}/>:<div className="min-w-0">{input.children}</div>;
+    if(!parsed?.success)return <div className="min-w-0">{input.children}</div>;
+    const component=<Component {...input} element={{...input.element,props:parsed.data}}/>;
+    const role=name==="Slider"?"slider":name==="Select"?"combobox":name==="Radio"?"radiogroup":null;
+    const label="label" in parsed.data&&typeof parsed.data.label==="string"?parsed.data.label:name;
+    return role?<NamedNativeControl role={role} label={label}>{component}</NamedNativeControl>:component;
    };
   }
   return registry;
- },[locale,onSuggest,disabled,message,attachments]);
+ },[locale]);
  return <div className="min-w-0 max-w-full" data-testid="luna-native-widget"><JSONUIProvider registry={registry} store={store} functions={nativeFunctions}><Renderer spec={spec} registry={registry} fallback={({children})=><div className="min-w-0">{children}</div>}/></JSONUIProvider></div>;
 }
 export default function SupervisorRichPresentation({block,locale,onSuggest=()=>{},disabled,message,attachments}:{block:unknown;locale:string;onSuggest?:(text:string)=>void;disabled:boolean;message?:Parameters<typeof presentationReport>[1]&{threadId:string};attachments?:{threadId:string;items:StoredAttachment[]}|null}){
@@ -273,7 +292,7 @@ export default function SupervisorRichPresentation({block,locale,onSuggest=()=>{
  if(!data)return <p role="status" className="text-ink-muted">This visual could not be displayed.</p>;
  const composed=Boolean(data.groups?.some(g=>g.id));
  return <PresentationControls.Provider value={{data,message,attachments,onSuggest,disabled}}><section className="min-w-0 space-y-3" data-testid="supervisor-rich-presentation">
-  {data.nativeSpec&&<PresentationBoundary fallback={<p role="status">This interactive view could not be displayed.</p>}><NativeWidget spec={data.nativeSpec} locale={locale} onSuggest={onSuggest} disabled={disabled} message={message} attachments={attachments}/></PresentationBoundary>}
+  {data.nativeSpec&&<PresentationBoundary fallback={<p role="status">This interactive view could not be displayed.</p>}><NativeWidget key={JSON.stringify(data.nativeSpec)} spec={data.nativeSpec} locale={locale}/></PresentationBoundary>}
   {(presentationLeaves(data).length>0||composed)&&<PresentationBoundary fallback={<div className="space-y-3">{data.panels.map((p,i)=><Panel key={i} panel={{...p,kind:"table"}} locale={locale}/>)}{data.tables?.map((t,i)=><RecordTableView key={i} table={t} locale={locale}/>)}{data.calculator&&<CalculatorView calculator={data.calculator} locale={locale}/>}<p role="status">Visual layout unavailable; available values are shown above.</p></div>}><JSONUIProvider registry={registry}><Renderer spec={presentationSpec(data)} registry={registry}/></JSONUIProvider></PresentationBoundary>}
   {!composed&&<><ControlView kind="files"/><ControlView kind="report"/><ControlView kind="suggestions"/></>}
  </section></PresentationControls.Provider>;
