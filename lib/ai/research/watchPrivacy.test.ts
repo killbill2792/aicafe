@@ -39,10 +39,11 @@ it("never authorizes an unreproduced customer trend using an unrelated SQL read"
  const receipt={source:"sql_research",period:null,missing:[],tool:"run_sql"};
  const turn={text:"Customer visits changed.",endReason:"complete",unverified:[],toolInvocations:[{name:"run_sql",result:receipt}],results:[receipt]} as unknown as AgentTurn;
  const expected={sourceType:"alert" as const,sourceId:"alert",kind:"business_anomaly" as const};
+ const claim={sourceType:expected.sourceType,sourceId:expected.sourceId,incidentKind:expected.kind,missing:[]};
  const selectors={family:"customer_trend",subject:"returning_visit_share",unit:"ratio",current:0.3,previous:0.4};
  const proof={key:selectors.subject,unit:selectors.unit,current:0.3,previous:0.4,active:true};
  for(const customerTrendProof of [null,{...proof,active:false},{...proof,current:0.2},{...proof,key:"other"}]){
- expect(verifyResearchInvestigationTurn(turn,expected,[],{selectors,customerTrendProof})).toEqual({ok:false,reason:"evidence_incomplete"});
+ expect(verifyResearchInvestigationTurn(turn,expected,[],{...claim,selectors,customerTrendProof})).toEqual({ok:false,reason:"evidence_incomplete"});
  }
- expect(verifyResearchInvestigationTurn(turn,expected,[],{selectors,customerTrendProof:proof}).ok).toBe(true);
+ expect(verifyResearchInvestigationTurn(turn,expected,[],{...claim,selectors,customerTrendProof:proof}).ok).toBe(true);
 });
