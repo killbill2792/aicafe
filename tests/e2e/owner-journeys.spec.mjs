@@ -2467,6 +2467,13 @@ test("@home Task16E stops an acknowledged live view without invoking a cancel or
     expect(await region.evaluate(el=>({scroll:el.scrollWidth,width:el.clientWidth}))).toMatchObject({scroll:expect.any(Number),width:expect.any(Number)});
     expect(await region.evaluate(el=>el.scrollWidth<=el.clientWidth+1)).toBe(true);
     await expect(region).toContainText("Incomplete; last five days only");
+    await page.evaluate(()=>window.__task16eStream.emit("delta",{text:"| Month | Sales | Wages | Fees | Rent | Remainder |\n| --- | ---: | ---: | ---: | ---: | ---: |\n| Recent | $123.45 | $45.00 | $6.00 | $15.00 | $57.45 |\n\n"}));
+    const wideTable=page.locator('[aria-label="Response table"]').last();
+    await expect(wideTable).toBeVisible();
+    expect(await wideTable.evaluate(el=>el.scrollWidth<=el.clientWidth+1)).toBe(true);
+    await expect(wideTable.getByText("$57.45",{exact:true})).toBeVisible();
+    await expect(wideTable.getByText("Remainder",{exact:true}).last()).toBeVisible();
+
     await expect(eventChip).toHaveCount(0);
     await assertAccessibleControls(page);
     await stop.focus();await page.keyboard.press("Enter");

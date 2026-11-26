@@ -136,7 +136,7 @@ function textToken(text:string,quote:string,ctx:Context):{value:number;unit:Pres
   try{symbol=new Intl.NumberFormat("en",{style:"currency",currency:ctx.currency}).formatToParts(0).find(x=>x.type==="currency")?.value;}catch{return;}
   if(money!==ctx.currency&&money!==symbol)return;
   const amount=exactDecimal(raw,"cents");if(!amount)return;
-  const cents=amount.n*100n;if(cents%amount.d!==0n)return;
+  const cents=amount.n*BigInt(100);if(cents%amount.d!==BigInt(0))return;
   const value=Number(cents/amount.d);
   return Number.isSafeInteger(value)?{value,unit:"cents"}:undefined;
  }

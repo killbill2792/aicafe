@@ -417,3 +417,13 @@ it("maps decoded repeated amounts to their individual source labels",()=>{
  expect(html).toContain('aria-label="$123 — Estimate"');
  expect(html).not.toContain("Not checked against your records");
 });
+
+it("retains every column in wide tables and derives the mobile row labels from the actual headers",()=>{
+ const text="| Period | Sales | Wages | Fees | Rent | Remainder |\n| --- | ---: | ---: | ---: | ---: | ---: |\n| Recent | $123.45 | $45.00 | $6.00 | $15.00 | $57.45 |";
+ const html=renderToStaticMarkup(createElement(ChatMarkdown,{text}));
+ expect(html).toContain("max-sm:block");
+ expect(html).toContain("max-sm:grid-cols-");
+ expect(html).toContain("$57.45");
+ expect(html).not.toContain("min-width:");
+ expect(html).toContain("aria-hidden=\"true\"");
+});
