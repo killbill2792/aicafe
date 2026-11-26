@@ -57,6 +57,13 @@ describe("Installed native Luna catalog",()=>{
   expect(parseUpstreamProps("Slider",{label:"Growth",value:1.2,min:0,max:2,step:0.1})?.success).toBe(true);
   expect(parseUpstreamProps("Slider",{label:"Growth",value:"wrong"})?.success).toBe(false);
  });
+ it("preserves native accounting table cells instead of dropping numeric or unknown values",()=>{
+  const parsed=parseUpstreamProps("Table",{columns:["Account","Amount","Recorded"],rows:[["Sales",120.25,true],["Refund",-12.5,false],["Zero",0,null],["Missing"]],caption:"Ledger"});
+  expect(parsed?.success).toBe(true);
+  if(!parsed?.success)throw Error("table must render");
+  expect(parsed.data).toMatchObject({columns:["Account","Amount","Recorded"],rows:[["Sales","120.25","true"],["Refund","-12.5","false"],["Zero","0","Not recorded"],["Missing","Not recorded","Not recorded"]]});
+  expect(parseUpstreamProps("Table",{columns:["Account"],rows:[[{unrenderable:true}]]})?.success).toBe(false);
+ });
  it("recalculates exact arbitrary formulas from bound local inputs without SQL evidence",()=>{
   const expression={text:{$computed:"calculate",args:{inputs:[{name:"sales",unit:"cents",value:{$state:"/sales"}},{name:"factor",unit:"ratio",value:{$state:"/factor"}}],steps:[{id:"forecast",op:"multiply",args:["sales","factor"]}]}}};
   expect(resolveElementProps(expression,{stateModel:{sales:4328006,factor:1.2},functions:nativeFunctions}).text).toBe(5193607);

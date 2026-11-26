@@ -9,3 +9,7 @@ Goal: one native JSON Render catalog and renderer, not a copied set of selected 
 - Tailwind 4 is required by the installed upstream shadcn package; use the existing theme tokens and compatibility config. Browser coverage of existing screens and native interactions is required before merging.
 - Dependabot proposes grouped updates for all `@json-render/*` packages weekly. Lockfile is checked in, versions must remain aligned, and catalog/registry parity tests discover every installed component automatically. Compatible additions need no manually authored component entry. Breaking changes, security review, browser compatibility and removal of old component types still require review; never auto-deploy unreviewed npm releases.
 - No real Luna acceptance run or production deployment is required for deterministic tests; use the normal seeded browser and database suites.
+
+## Accounting presentation delivery
+
+The official Table renders display strings. Numeric, boolean, null and state-bound scalar cells are normalized to readable strings without changing their numeric meaning; null is explicitly unknown. No manually copied widget implementation. If an incompatible resolved prop cannot be rendered, show an explicit technical notice rather than a blank component; preserve valid sibling content. Browser and unit regressions cover the mixed accounting ledger. This does not alter evidence confidence or permit new effects.

@@ -227,7 +227,9 @@ const nativeCatalog=defineCatalog(schema,{components:{...upstreamComponents,Luna
 function NativeSnapshot({value,locale}:{value:unknown;locale:string}){
  const context=useContext(PresentationControls);
  if(!context)return null;
- return <SupervisorRichPresentation block={readNativeSnapshot(value)} locale={locale} onSuggest={context.onSuggest} disabled={context.disabled} message={context.message} attachments={context.attachments}/>;
+ const snapshot=recoverRichPresentation(readNativeSnapshot(value));
+ if(!snapshot)return <p role="status">This part of the answer could not be displayed.</p>;
+ return <SupervisorRichPresentation block={snapshot} locale={locale} onSuggest={context.onSuggest} disabled={context.disabled} message={context.message} attachments={context.attachments}/>;
 }
 function NamedNativeControl({label,role,children}:{label:string;role:string;children:React.ReactNode}){
  return <div className="contents" ref={node=>{
@@ -259,7 +261,7 @@ function NativeWidget({spec,locale}:{spec:Spec;locale:string}){
    const Component=registry[name];
    registry[name]=input=>{
     const parsed=parseUpstreamProps(name,input.element.props);
-    if(!parsed?.success)return <div className="min-w-0">{input.children}</div>;
+    if(!parsed?.success)return <div className="min-w-0"><p role="status">This part of the answer could not be displayed.</p>{input.children}</div>;
     const component=<Component {...input} element={{...input.element,props:parsed.data}}/>;
     const role=name==="Slider"?"slider":name==="Select"?"combobox":name==="Radio"?"radiogroup":null;
     const label="label" in parsed.data&&typeof parsed.data.label==="string"?parsed.data.label:name;
@@ -268,7 +270,7 @@ function NativeWidget({spec,locale}:{spec:Spec;locale:string}){
   }
   return registry;
  },[locale]);
- return <div className="min-w-0 max-w-full" data-testid="luna-native-widget"><JSONUIProvider registry={registry} store={store} functions={nativeFunctions}><Renderer spec={spec} registry={registry} fallback={({children})=><div className="min-w-0">{children}</div>}/></JSONUIProvider></div>;
+ return <div className="min-w-0 max-w-full" data-testid="luna-native-widget"><JSONUIProvider registry={registry} store={store} functions={nativeFunctions}><Renderer spec={spec} registry={registry} fallback={({children})=><div className="min-w-0"><p role="status">This part of the answer could not be displayed.</p>{children}</div>}/></JSONUIProvider></div>;
 }
 export default function SupervisorRichPresentation({block,locale,onSuggest=()=>{},disabled,message,attachments}:{block:unknown;locale:string;onSuggest?:(text:string)=>void;disabled:boolean;message?:Parameters<typeof presentationReport>[1]&{threadId:string};attachments?:{threadId:string;items:StoredAttachment[]}|null}){
  const data=useMemo(()=>recoverRichPresentation(block),[block]);

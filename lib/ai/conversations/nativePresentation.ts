@@ -145,6 +145,19 @@ export function parseUpstreamProps(name:string,props:Record<string,unknown>){
  if(!Object.hasOwn(upstreamComponents,name))return;
  const definition=upstreamComponents[name as keyof typeof upstreamComponents];
  const values=nativeRenderProps(props);
+ // Upstream Table expects display strings. Preserve actual scalar cells,
+ // including state-bound numbers, zero, negatives, booleans and unknowns.
+ // This is data formatting for the official component, not a widget copy.
+ if(name==="Table"&&Array.isArray(values.columns)&&Array.isArray(values.rows)){
+  const display=(value:unknown)=>value===null?"Not recorded":typeof value==="string"||typeof value==="boolean"||typeof value==="number"&&Number.isFinite(value)?String(value):undefined;
+  const columns=values.columns.map(display);
+  const rows=values.rows.map(row=>Array.isArray(row)?row.map(display):undefined);
+  if(columns.every(c=>c!==undefined)&&rows.every(row=>row!==undefined&&row.every(cell=>cell!==undefined))){
+   const width=rows.reduce((n,row)=>Math.max(n,row?.length??0),columns.length);
+   values.columns=Array.from({length:width},(_,i)=>columns[i]??"Value "+(i+1));
+   values.rows=rows.map(row=>Array.from({length:width},(_,i)=>row?.[i]??"Not recorded"));
+  }
+ }
  const shape=definition.props.shape as Record<string,z.ZodType>;
  for(const [key,field] of Object.entries(shape))if(!Object.hasOwn(values,key)&&field.safeParse(null).success)values[key]=null;
  return definition.props.safeParse(values);
