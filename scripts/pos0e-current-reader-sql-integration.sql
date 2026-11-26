@@ -182,7 +182,7 @@ BEGIN
     AND data#>'{extra,nested,0,lateOptional}' IS NULL)
    FROM public.toast_records_for(a,d,d) WHERE record_type='cashmgmt/v1/entries'),
   'SQL preserves the exact later array element');
- 
+
  PERFORM pg_temp.pos0e_assert(
   public.ai_query_path('data.customer.email')=ARRAY['customer','email']::text[]
    and public.ai_query_path('data.cardNumber') is null
@@ -228,7 +228,7 @@ BEGIN
    AND NOT (data#>'{payments,0}' ? 'NETWORK_ID'))
    FROM public.toast_records_for(a,d,d) WHERE record_type='cashmgmt/v1/entries'),
   'full-object SQL preserves permitted values but excludes all credential keys');
- 
+
  FOR n IN 1..36 LOOP
   INSERT INTO public.toast_raw_records(business_id,restaurant_guid,entity,business_date,
    payload,payload_sha256,capture_key)
@@ -353,7 +353,7 @@ BEGIN
    WHERE record_type='check' AND jsonb_typeof(data#>'{aiCafeCustomer,identityRef}')='string')
   AND not has_function_privilege('authenticated','public.ai_customer_check_evidence(uuid,uuid,text,jsonb,boolean)','EXECUTE'),
   'identity is accessible through safe records, internal helper is not exposed');
- 
+
  -- Visit projection deduplicates checks within one observed account/order.
  PERFORM pg_temp.pos0e_assert(
   (select count(*)=3 and count(distinct identity_ref)=2
@@ -512,7 +512,7 @@ BEGIN
    PERFORM pg_temp.pos0e_assert(coalesce(cardinality(cols),0)>20,'customer canonical columns exist: '||view_name);
   END LOOP;
  END;
- 
+
  -- Real browser-equivalent authenticated role, not a postgres/service-only
  -- approximation. Protected mapping and credential tables stay inaccessible.
  DECLARE owner_a uuid:=gen_random_uuid(); own_n bigint; foreign_n bigint; own_cov jsonb; foreign_cov jsonb; own_raw_n bigint; foreign_raw_n bigint;

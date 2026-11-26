@@ -337,7 +337,7 @@ BEGIN
       FROM public.cv_dining_options WHERE business_id=a AND dining_option_ref='dining-current-a')
     AND (SELECT sum(amount_cents) IS NULL FROM public.cv_cash WHERE business_id=b),
     'SQL reads matching screen cash, unknown stock, undated dining and no foreign cash');
- 
+
   -- Real PostgreSQL JWT/role isolation: the existence of source rows must
   -- not give an unrelated authenticated account access to either the archive
   -- or the registered reader. An owner may query A only, not B.

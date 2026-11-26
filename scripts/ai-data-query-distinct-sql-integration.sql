@@ -107,7 +107,7 @@ BEGIN
  from public.toast_records_for(b,d,d)
  where counts_in_sales AND record_type IN ('item_discount','check_discount') AND data->>'name' ilike '%student%';
  perform pg_temp.assert_true(uses=2,'two named discount groups exist');
- 
+
  -- PR2: the Toast fixture's two business dates prove exact decimal cents.
  with priced as (
   select business_date,sum(round((data->>'price')::numeric*100)::bigint) cents
@@ -122,7 +122,7 @@ BEGIN
   GROUP BY business_date) q;
  perform pg_temp.assert_true(by_name=baseline AND (select count(*) from jsonb_object_keys(by_name))=2,
   'Toast item price cents equal direct JSON decimal cents on both dates');
- 
+
  with discounts as (
   select business_date,sum(round((data->>'discountAmount')::numeric*100)::bigint) cents
   from public.toast_records_for(b,prior,d)
@@ -156,6 +156,6 @@ BEGIN
   AND (select sum(orders_count) from public.cv_sales_days where business_id=b and business_date=prior)
    = (select sum(orders_count) from public.daily_rollups where business_id=b and business_date=prior),
   'screen and canonical SQL day sales cents and order counts match');
- 
+
 END $discounts$;
 ROLLBACK;

@@ -937,7 +937,7 @@ BEGIN
   (select sum(net_sales_cents)=450 from public.cv_orders
    where business_id=b AND business_date='2026-10-26' AND source_channel='IN_STORE'),
   'canonical SQL groups current channel sales without excluded rows');
- 
+
  -- POS0e operational fixtures come from the existing retained-current archive.
  insert into public.toast_raw_records(business_id,restaurant_guid,entity,business_date,
   payload,payload_sha256,capture_key)

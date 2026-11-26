@@ -123,7 +123,7 @@ BEGIN
  PERFORM pg_temp.assert_true(
   (SELECT count(*)>=1 FROM public.cv_inventory WHERE business_id=b AND business_date='2026-11-09'),
   'canonical SQL sees current dated inventory');
- 
+
  BEGIN
   PERFORM public.toast_stage_operational_batch(b,r,'stock/v1/inventory',null,
    jsonb_build_array(inv||jsonb_build_object('restaurant_guid',r2)));
