@@ -3,8 +3,8 @@
   "generatedFrom": "migrated pg_catalog physical schema + reviewed U3 SQL manifest",
   "modelAuthorization": false,
   "productionRowsIncluded": false,
-  "physicalTables": 224,
-  "physicalFields": 2534,
+  "physicalTables": 226,
+  "physicalFields": 2544,
   "approvedSqlRelations": 41,
   "reviewedFields": 387,
   "additionalLogicalViews": [
@@ -15,7 +15,7 @@
   "dispositionCounts": {
     "admitted_masked_personal_field": 14,
     "admitted_research_field": 373,
-    "internal_or_specialized_service": 1311,
+    "internal_or_specialized_service": 1321,
     "not_admitted_from_source": 106,
     "protected_operational_archive": 58,
     "restricted_secret_or_auth": 81,
@@ -11082,6 +11082,61 @@
       ]
     },
     {
+      "relation": "supervisor_background_research_continuations",
+      "sourceOwner": "Supervisor/data-platform source owner",
+      "fields": [
+        {
+          "field": "business_id",
+          "type": "uuid",
+          "notNull": true,
+          "status": "internal_or_specialized_service",
+          "reason": "Operational workflow/audit/state; source-family tool or owner-specific review required"
+        },
+        {
+          "field": "owner_user_id",
+          "type": "uuid",
+          "notNull": true,
+          "status": "internal_or_specialized_service",
+          "reason": "Operational workflow/audit/state; source-family tool or owner-specific review required"
+        },
+        {
+          "field": "revision",
+          "type": "text",
+          "notNull": true,
+          "status": "internal_or_specialized_service",
+          "reason": "Operational workflow/audit/state; source-family tool or owner-specific review required"
+        },
+        {
+          "field": "source_id",
+          "type": "text",
+          "notNull": true,
+          "status": "internal_or_specialized_service",
+          "reason": "Operational workflow/audit/state; source-family tool or owner-specific review required"
+        },
+        {
+          "field": "source_type",
+          "type": "text",
+          "notNull": true,
+          "status": "internal_or_specialized_service",
+          "reason": "Operational workflow/audit/state; source-family tool or owner-specific review required"
+        },
+        {
+          "field": "state",
+          "type": "jsonb",
+          "notNull": true,
+          "status": "internal_or_specialized_service",
+          "reason": "Operational workflow/audit/state; source-family tool or owner-specific review required"
+        },
+        {
+          "field": "updated_at",
+          "type": "timestamp with time zone",
+          "notNull": true,
+          "status": "internal_or_specialized_service",
+          "reason": "Operational workflow/audit/state; source-family tool or owner-specific review required"
+        }
+      ]
+    },
+    {
       "relation": "supervisor_derived_refresh_state",
       "sourceOwner": "Supervisor/data-platform source owner",
       "fields": [
@@ -12489,6 +12544,33 @@
       ]
     },
     {
+      "relation": "supervisor_research_continuations",
+      "sourceOwner": "Supervisor/data-platform source owner",
+      "fields": [
+        {
+          "field": "run_id",
+          "type": "uuid",
+          "notNull": true,
+          "status": "internal_or_specialized_service",
+          "reason": "Operational workflow/audit/state; source-family tool or owner-specific review required"
+        },
+        {
+          "field": "state",
+          "type": "jsonb",
+          "notNull": true,
+          "status": "internal_or_specialized_service",
+          "reason": "Operational workflow/audit/state; source-family tool or owner-specific review required"
+        },
+        {
+          "field": "updated_at",
+          "type": "timestamp with time zone",
+          "notNull": true,
+          "status": "internal_or_specialized_service",
+          "reason": "Operational workflow/audit/state; source-family tool or owner-specific review required"
+        }
+      ]
+    },
+    {
       "relation": "supervisor_routine_occurrences",
       "sourceOwner": "Supervisor/data-platform source owner",
       "fields": [
@@ -13205,7 +13287,7 @@
         {
           "field": "reserved_output_cap",
           "type": "bigint",
-          "notNull": true,
+          "notNull": false,
           "status": "internal_or_specialized_service",
           "reason": "Operational workflow/audit/state; source-family tool or owner-specific review required"
         },
