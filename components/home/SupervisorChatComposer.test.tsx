@@ -97,7 +97,7 @@ describe("modern Supervisor conversation shell", () => {
     expect(source).toContain('className="inline-flex min-h-12 max-w-full items-center gap-2 rounded-xl px-2 text-[0.9375rem] text-ink-muted');
     expect(source).toContain('aria-label={statusText+": "+block.title+". "+copy.taskOpen}');
     expect(source).toContain('href={block.href}');
-    expect(source).not.toContain("shadow-sm transition-colors hover:bg-surface2");
+    expect(source).not.toContain("shadow-xs transition-colors hover:bg-surface2");
   });
   it("uses decorative short café motion with a static fallback and reduced motion",()=>{
     const animated=renderToStaticMarkup(createElement(CafeActivity));
@@ -146,9 +146,9 @@ describe("modern Supervisor conversation shell", () => {
   it("keeps the chat-start summary outside the independently scrolling transcript",()=>{
     const source=readFileSync("components/home/SupervisorChatComposer.tsx","utf8");
     expect(readFileSync("app/globals.css","utf8")).toContain("100dvh");
-    expect(source).toContain("max-w-[46rem] min-w-0 flex-col items-stretch justify-start");
+    expect(source).toContain("max-w-184 min-w-0 flex-col items-stretch justify-start");
     expect(source).toContain("overflow-y-auto overscroll-contain");
-    expect(source).toContain("mt-auto w-full max-w-[49rem] shrink-0");
+    expect(source).toContain("mt-auto w-full max-w-196 shrink-0");
     expect(source).toContain("window.visualViewport");
     expect(source).toContain("transcriptScrollTarget({");
     expect(source).toContain("prependAnchor.current");

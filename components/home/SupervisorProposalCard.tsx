@@ -66,8 +66,8 @@ export function GmailApprovalDetails({effect,locale="en"}:{
           <div><dt className="text-sm text-ink-muted">{c.to}</dt><dd className="break-all" dir="auto">{g.to.join(", ")||c.none}</dd></div>
           {g.cc.length>0&&<div><dt className="text-sm text-ink-muted">{c.cc}</dt><dd className="break-all" dir="auto">{g.cc.join(", ")}</dd></div>}
           {g.bcc.length>0&&<div><dt className="text-sm text-ink-muted">{c.bcc}</dt><dd className="break-all" dir="auto">{g.bcc.join(", ")}</dd></div>}
-          <div><dt className="text-sm text-ink-muted">{c.subject}</dt><dd className="whitespace-pre-wrap break-words" dir="auto">{g.subject}</dd></div>
-          <div><dt className="text-sm text-ink-muted">{c.message}</dt><dd className="max-h-80 overflow-auto whitespace-pre-wrap break-words rounded-xl bg-card p-3" dir="auto">{g.body}</dd></div>
+          <div><dt className="text-sm text-ink-muted">{c.subject}</dt><dd className="whitespace-pre-wrap wrap-break-word" dir="auto">{g.subject}</dd></div>
+          <div><dt className="text-sm text-ink-muted">{c.message}</dt><dd className="max-h-80 overflow-auto whitespace-pre-wrap wrap-break-word rounded-xl bg-card p-3" dir="auto">{g.body}</dd></div>
         </>}
         {g.messageId&&<div><dt className="text-sm text-ink-muted">{c.messageId}</dt><dd className="break-all font-mono text-xs">{g.messageId}</dd></div>}
         {g.labelName&&<div><dt className="text-sm text-ink-muted">{c.label}</dt><dd>{g.labelName}</dd></div>}
@@ -87,7 +87,7 @@ export function EventReadinessPreview({value,locale}:{value:ProposalView;locale:
     <div className="flex items-center gap-2 text-[1.0625rem] font-bold text-accent-text">
       <Lightbulb size={22} aria-hidden="true"/><span>{t.savedInsight}</span>
     </div>
-    {value.productName&&<h3 className="mt-2 break-words text-xl font-semibold" dir="auto">{value.productName}</h3>}
+    {value.productName&&<h3 className="mt-2 wrap-break-word text-xl font-semibold" dir="auto">{value.productName}</h3>}
     {rows.length>0&&<div className="mt-3">
       <h4 className="mb-2 font-semibold">{t.recommendations}</h4>
       <ul className="space-y-3">
@@ -100,7 +100,7 @@ export function EventReadinessPreview({value,locale}:{value:ProposalView;locale:
             <Lightbulb size={20} aria-hidden="true" className="mt-0.5 shrink-0 text-accent-text"/>
             <div className="min-w-0">
               <p className="font-semibold" dir="auto">{eventActionAreaLabel(row.label,locale)}</p>
-              {detail&&<p className="mt-1 whitespace-pre-wrap break-words text-ink-muted" dir="auto">{detail}</p>}
+              {detail&&<p className="mt-1 whitespace-pre-wrap wrap-break-word text-ink-muted" dir="auto">{detail}</p>}
             </div>
           </li>;
         })}
@@ -198,8 +198,8 @@ export default function SupervisorProposalCard({threadId,proposalId,locale}:{
       <h3 className="text-xl font-bold">{finance.billHeading}</h3>
       <p role="status" className="mt-2 font-semibold">{value.state==="applied"?finance.billRecorded:value.state}</p>
       <dl className="mt-3 grid gap-2 rounded-xl bg-surface2 p-3">
-        <div><dt>{finance.payee}</dt><dd className="break-words">{b.payee}</dd></div>
-        <div><dt>{finance.reference}</dt><dd className="break-words">{b.reference}</dd></div>
+        <div><dt>{finance.payee}</dt><dd className="wrap-break-word">{b.payee}</dd></div>
+        <div><dt>{finance.reference}</dt><dd className="wrap-break-word">{b.reference}</dd></div>
         <div><dt>{finance.issued}</dt><dd>{b.issuedOn}</dd></div>
         <div><dt>{finance.due}</dt><dd>{b.dueOn??finance.unknown}</dd></div>
         <div><dt>{finance.amount}</dt><dd>{new Intl.NumberFormat(locale,{style:"currency",currency:b.currency}).format(b.amountCents/100)}</dd></div>
@@ -222,7 +222,7 @@ export default function SupervisorProposalCard({threadId,proposalId,locale}:{
       <h3 className="text-xl font-bold">{reversal?finance.reverse:finance.allocate}</h3>
       <p role="status" className="mt-2 font-semibold">{value.state==="applied"?finance.allocationRecorded:value.state}</p>
       <dl className="mt-3 grid gap-2 rounded-xl bg-surface2 p-3">
-        <div><dt className="text-ink-muted">{finance.supplierInvoice}</dt><dd className="break-words">{s.supplierName} · {s.invoiceReference} · {finance.revision} {s.invoiceRevision}</dd></div>
+        <div><dt className="text-ink-muted">{finance.supplierInvoice}</dt><dd className="wrap-break-word">{s.supplierName} · {s.invoiceReference} · {finance.revision} {s.invoiceRevision}</dd></div>
         <div><dt className="text-ink-muted">{finance.invoiceClaim}</dt><dd>{amount(s.invoiceTotalCents)}</dd></div>
         <div><dt className="text-ink-muted">{finance.transaction}</dt><dd>{s.transactionDate} · {amount(s.transactionAmountCents)} · {finance.closingBalance} {amount(s.transactionBalanceCents)}</dd></div>
         <div><dt className="text-ink-muted">{finance.statementRow}</dt><dd className="break-all">{s.uploadId} · {finance.originalRow} {s.rowIndex+2}</dd></div>
@@ -246,7 +246,7 @@ export default function SupervisorProposalCard({threadId,proposalId,locale}:{
       <h3 className="text-xl font-bold">Review invoice · {i.supplierName}</h3>
       <p role="status" className="mt-2 font-semibold">{value.state==="applied"?"Invoice evidence recorded":value.state}</p>
       <p className="break-all">{i.purchaseOrderId?"Purchase order: "+i.purchaseOrderId:"Standalone supplier invoice (no purchase order)"}</p>
-      <p className="break-words">Invoice {i.invoiceReference} · Issued {i.issuedOn} · Due {i.dueOn??"Unknown"}</p>
+      <p className="wrap-break-word">Invoice {i.invoiceReference} · Issued {i.issuedOn} · Due {i.dueOn??"Unknown"}</p>
       <p>Source: {i.sourceKind.replaceAll("_"," ")}</p>
       {i.expectedInvoiceRevision>0&&<p>Corrects invoice revision {i.expectedInvoiceRevision}.</p>}
       <ul className="mt-3 space-y-2">{i.lines.map((line,index)=><li key={index} className="rounded-xl border border-line p-3">
@@ -285,7 +285,7 @@ export default function SupervisorProposalCard({threadId,proposalId,locale}:{
       <h3 className="text-xl font-bold">Confirm physical delivery · {r.supplierName}</h3>
       <p role="status" className="mt-2 font-semibold">{value.state==="applied"?"Receiving recorded":value.state}</p>
       <p className="mt-2 break-all">Purchase order: {r.purchaseOrderId}</p>
-      <p className="break-words">Delivery reference: {r.receivingReference} · {r.receivedOn}</p>
+      <p className="wrap-break-word">Delivery reference: {r.receivingReference} · {r.receivedOn}</p>
       {r.expectedReceiptRevision>0&&<p>Correction of receiving revision {r.expectedReceiptRevision}; replaces prior recorded quantities.</p>}
       <ul className="mt-3 space-y-2">{r.lines.map(line=><li key={line.orderLineId} className="rounded-xl border border-line p-3">
         <strong>{line.itemName}</strong>
@@ -312,7 +312,7 @@ export default function SupervisorProposalCard({threadId,proposalId,locale}:{
     return <section aria-label={poCopy.ariaLabel} dir={locale==="ar"?"rtl":"ltr"}
       className="w-full min-w-0 max-w-2xl rounded-3xl glass p-4 text-ink">
       <p className="text-sm font-semibold text-ink-muted">{poCopy.agentLabel}</p>
-      <h3 className="mt-2 break-words text-xl font-bold">{poCopy.titlePrefix} {po.supplierName}</h3>
+      <h3 className="mt-2 wrap-break-word text-xl font-bold">{poCopy.titlePrefix} {po.supplierName}</h3>
       <p role="status" className="mt-2 font-semibold">{value.state==="applied"?
         value.vendorDispatch?.state==="provider_accepted"&&value.vendorDispatch.providerVerified?
           en.SupplierVendorCommunication.poSent:
@@ -383,7 +383,7 @@ export default function SupervisorProposalCard({threadId,proposalId,locale}:{
       <dl className="mt-3 space-y-2">
         <div><dt className="text-sm text-ink-muted">{m.approvalEquipment}</dt><dd>{a.equipmentLabel}</dd></div>
         <div><dt className="text-sm text-ink-muted">{m.employee}</dt><dd>{a.employeeName}</dd></div>
-        <div><dt className="text-sm text-ink-muted">{m.exactInstructions}</dt><dd className="whitespace-pre-wrap break-words">{a.prompt}</dd></div>
+        <div><dt className="text-sm text-ink-muted">{m.exactInstructions}</dt><dd className="whitespace-pre-wrap wrap-break-word">{a.prompt}</dd></div>
         <div><dt className="text-sm text-ink-muted">{m.followUpDue}</dt><dd>{a.dueAt??m.noDeadline}</dd></div>
       </dl>
       <p className="mt-3 text-sm text-ink-muted">{m.approvalHelp}</p>
@@ -520,7 +520,7 @@ export default function SupervisorProposalCard({threadId,proposalId,locale}:{
       failed:staffCopy.stale,conflict:staffCopy.stale};
     const pending=value.state==="pending"&&!busy;
     const retry=value.state==="conflict"&&!busy;
-    const button="min-h-[max(48px,3rem)] min-w-12 rounded-xl px-4 text-[1.0625rem] font-bold focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ink disabled:opacity-50";
+    const button="min-h-[max(48px,3rem)] min-w-12 rounded-xl px-4 text-[1.0625rem] font-bold focus-visible:outline-solid focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ink disabled:opacity-50";
     return <section dir={locale==="ar"?"rtl":"ltr"} aria-label={staffCopy.title}
       className="w-full min-w-0 max-w-2xl rounded-3xl glass p-4 text-ink">
       <div className="flex flex-wrap items-center justify-between gap-2">
@@ -529,7 +529,7 @@ export default function SupervisorProposalCard({threadId,proposalId,locale}:{
           {statuses[value.state]??staffCopy.failed}
         </span>
       </div>
-      {value.subjectName&&<p className="mt-2 break-words text-lg font-bold">{value.subjectName}</p>}
+      {value.subjectName&&<p className="mt-2 wrap-break-word text-lg font-bold">{value.subjectName}</p>}
       <p className="mt-2 text-[1.0625rem] text-ink-muted">{staffCopy.reviewNotice}</p>
       <BeforeAfterRows rows={value.preview??[]} locale={locale} currency={value.currency??"USD"}/>
       {value.capabilityId?.startsWith("olivia.staff_propose_send_schedule.v")===true&&
@@ -585,14 +585,14 @@ export default function SupervisorProposalCard({threadId,proposalId,locale}:{
   const pending=value.state==="pending"&&!busy;
   const statuses={...copy.states,...(experiment?{manual_pending:copy.manualPending}:{}),
     ...(goal?{tracking:dict[locale].Goals.cardTracking}:{})} as Record<string,string>;
-  const button="min-h-[max(48px,3rem)] min-w-12 rounded-xl px-4 text-[1.0625rem] font-bold focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ink disabled:opacity-50";
+  const button="min-h-[max(48px,3rem)] min-w-12 rounded-xl px-4 text-[1.0625rem] font-bold focus-visible:outline-solid focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ink disabled:opacity-50";
   return <section dir={locale==="ar"?"rtl":"ltr"} aria-label={copy.title}
     className="w-full min-w-0 max-w-2xl rounded-3xl glass p-4 text-ink">
     <div className="flex flex-wrap items-center justify-between gap-2">
       <p className="text-[0.9375rem] font-semibold text-ink-muted">{copy.proposedBy}</p>
       <span role="status" className="rounded-full bg-surface2 px-3 py-1 text-sm font-bold">{statuses[value.state]??copy.states.failed}</span>
     </div>
-    <h3 className="mt-2 break-words text-xl font-bold">{value.productName}</h3>
+    <h3 className="mt-2 wrap-break-word text-xl font-bold">{value.productName}</h3>
     <BeforeAfterRows rows={localizedRows} locale={locale} currency={value.currency??"USD"}/>
     {value.editedByOwner&&<p className="mt-2">{copy.editedByYou}</p>}
     {experiment&&value.state==="manual_pending"&&<p className="mt-2 text-[1.0625rem]">{copy.manualInstructions}</p>}

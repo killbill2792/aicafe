@@ -50,14 +50,14 @@ export default function MemoryCard({ ruleId, locale }: { ruleId: string; locale:
   const agents = copy.agents as Record<string, string>;
   const status = rule.status === "active" ? copy.saved : rule.status === "rejected" ? copy.notSaved
     : rule.status === "paused" ? copy.paused : null;
-  const button = "min-h-12 min-w-12 rounded-xl px-4 text-[1.0625rem] font-bold focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ink disabled:opacity-50";
+  const button = "min-h-12 min-w-12 rounded-xl px-4 text-[1.0625rem] font-bold focus-visible:outline-solid focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ink disabled:opacity-50";
   return <section dir={locale === "ar" ? "rtl" : "ltr"} aria-label={copy.title}
-    className="w-full min-w-0 max-w-2xl rounded-[22px] border border-line bg-surface p-4 text-ink shadow-sm">
+    className="w-full min-w-0 max-w-2xl rounded-[22px] border border-line bg-surface p-4 text-ink shadow-xs">
     <div className="flex flex-wrap items-center justify-between gap-2">
       <p className="text-[0.9375rem] font-semibold text-ink-muted">{copy.title}</p>
       {status && <span role="status" className="rounded-full bg-surface2 px-3 py-1 text-sm font-bold">{status}</span>}
     </div>
-    <p className="mt-2 break-words text-[1.0625rem] font-semibold">{rule.instruction}</p>
+    <p className="mt-2 wrap-break-word text-[1.0625rem] font-semibold">{rule.instruction}</p>
     <p className="mt-1 text-[0.875rem] text-ink-muted">{agents[rule.agentId] ?? agents.supervisor}</p>
     {rule.status === "draft" && <div className="mt-4 flex flex-wrap gap-2">
       <button type="button" disabled={busy} className={button + " bg-accent text-on-accent"}

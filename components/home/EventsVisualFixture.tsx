@@ -15,7 +15,7 @@ export default function EventsVisualFixture({locale}:{locale:"en"|"es"|"ar"}){
     <SavedEventsCard locale={locale} chatDisabled={false}
       onChatAboutDay={(date,title,eventId,existingThreadId,cityEventId,draftPrompt)=>
         setHandoff({date,title,eventId,existingThreadId,cityEventId,draftPrompt})}/>
-    {handoff&&<output data-testid="events-visual-handoff" className="block break-words rounded-xl bg-surface2 p-4">
+    {handoff&&<output data-testid="events-visual-handoff" className="block wrap-break-word rounded-xl bg-surface2 p-4">
       {JSON.stringify(handoff)}
     </output>}
   </section>;
