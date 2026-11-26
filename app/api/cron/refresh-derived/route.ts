@@ -80,7 +80,7 @@ export async function GET(request:Request){
   const ownerWorker=ownerRunsEnabled
     ? await import("@/lib/ai/supervisor/runs/worker.server").catch(()=>null) : null;
   const ownerRuns=ownerWorker ? (async()=>{
-    try{return {...await ownerWorker.processOldestDurableRun(),failed:0};}
+    try{return {...await ownerWorker.processOldestDurableRun(now.getTime()+180_000),failed:0};}
     catch{return {processed:0,state:null,failed:1};}
   })() : Promise.resolve({processed:0,state:null,failed:ownerRunsEnabled?1:0});
   // Do not run a large refresh concurrently with an admitted owner run.
