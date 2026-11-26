@@ -566,7 +566,7 @@ export async function processNextInvestigation(db:SupabaseClient,now:Date,
     const staffQuestionProposalId=staffQuestionCall?.result.proposalId as string|undefined;
     const next:InvestigationCheckpoint={
       source:synopsis,collectedAt:checkpoint.collectedAt,sourceRevision:c.revision_hash,
-      reportBlocks:[...splitAgentText(turn.text),...backgroundReportPresentations(turn)],
+      reportBlocks:[...(turn.text.trim()?splitAgentText(turn.text):[]),...backgroundReportPresentations(turn)],
       modelTools:report.tools,missing:report.missing,
       modelCalls:turn.usage.modelCalls,toolCalls:turn.usage.toolCalls,
       lastOwnerUpdate:new Date().toISOString(),unchangedChecks:0,

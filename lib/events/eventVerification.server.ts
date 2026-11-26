@@ -3,6 +3,7 @@ import {ownerPublicWebFetch,ownerPublicWebAllowed,withOwnerPublicWebScope,Public
 import type {SupabaseClient} from "@supabase/supabase-js";
 import {configuredSupervisorModel} from "@/lib/ai/conversations/modelConfig";
 import {responseOutputText} from "./nearbyEvents";
+import {backgroundReportText} from "@/lib/ai/conversations/presentation";
 import {runEventResearch} from "./eventResearch.server";
 import {agentReplyPayload} from "@/lib/ai/agent/persist.server";
 import {stableMessageId} from "@/lib/ai/supervisor/loop/supabase.server";
@@ -200,7 +201,8 @@ async function deliverChange(db:Db,businessId:string,ownerId:string,timezone:str
           getSalesTrend:async()=>{throw Error("unavailable");},
           getMenuCatalog:async()=>{throw Error("unavailable");}}},
     });
-    if(!turn.text.trim())throw new Error("event_change_narrative_unavailable");
+    const narrative=backgroundReportText(turn);
+    if(!narrative)throw new Error("event_change_narrative_unavailable");
     const {reply,metadata}=agentReplyPayload(turn);
     const message=await db.from("ai_messages").insert({
       id:messageId,business_id:businessId,thread_id:plan.threadId,owner_user_id:ownerId,
@@ -215,7 +217,7 @@ async function deliverChange(db:Db,businessId:string,ownerId:string,timezone:str
       payload:{businessDate:event.startDate,eventName:event.name,
         status:change.status,changeType:change.verdict,verifiedAt:change.verifiedAt,
         sourceUrl:change.sourceUrl,threadId:plan.threadId,messageId,ownerNoticeDate:today,
-        summary:turn.text,needsApproval:false},
+        summary:narrative,needsApproval:false},
       evidence:[{source:change.sourceUrl,facts:{verifiedAt:change.verifiedAt,
         previousStatus:change.previousStatus,status:change.status}}],
     },{onConflict:"business_id,id",ignoreDuplicates:true});

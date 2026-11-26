@@ -6,6 +6,7 @@ import type {NumericEvidence,NumberProvenance} from "@/lib/ai/agent/checkNumbers
 import en from "@/messages/en.json";
 import es from "@/messages/es.json";
 import ar from "@/messages/ar.json";
+import {backgroundReportPresentations,backgroundReportText,recoverRichPresentation,type RichPresentation} from "@/lib/ai/conversations/presentation";
 import {formatEventMoney} from "./eventReportMoney";
 
 type EventResult={
@@ -79,7 +80,7 @@ export function eventReportNumericEvidence(result:EventResult):NumericEvidence[]
   return [{tool:"event_readiness",values}];
 }
 export type EventNarrative={text:string;hash:string;provenance:NumberProvenance[];
-  evidence:NumericEvidence[]};
+  evidence:NumericEvidence[];presentations?:RichPresentation[]};
 /** Uses the existing ONE Supervisor agent. Stored text is reused for identical
  * certified evidence so frequent cron retries do not spend another AI call. */
 export async function eventFinalNarrative(scope:OwnerLoopScope,proposalId:string,
@@ -101,7 +102,7 @@ export async function eventFinalNarrative(scope:OwnerLoopScope,proposalId:string
   const hash=eventReportFactsHash(result,outcomeStatus,planSummary,eventNames,currency);
   const evidenceValues=eventReportNumericEvidence(result);
   const previous=old.data?.report as {reportFactsHash?:unknown;reportText?:unknown;
-    reportTextOrigin?:unknown;reportProvenance?:unknown}|null;
+    reportTextOrigin?:unknown;reportProvenance?:unknown;reportPresentations?:unknown}|null;
   if(previous?.reportFactsHash===hash&&typeof previous.reportText==="string"&&
     previous.reportText.trim()){
     // A previously delivered facts-only report is final for this evidence.
@@ -112,7 +113,8 @@ export async function eventFinalNarrative(scope:OwnerLoopScope,proposalId:string
       typeof v==="object"&&"start" in v&&"end" in v&&
       typeof v.start==="number"&&typeof v.end==="number"&&
       "source" in v&&(v.source==="owner"||v.source==="estimate"||v.source==="unchecked"));
-    return {text:previous.reportText,hash,provenance,evidence:evidenceValues};
+    const presentations=Array.isArray(previous.reportPresentations)?previous.reportPresentations.flatMap(raw=>{const block=recoverRichPresentation(raw);return block?[block]:[];}):[];
+    return {text:previous.reportText,hash,provenance,evidence:evidenceValues,...(presentations.length?{presentations}:{})};
   }
 
   // A cron has no browser session. Re-check both the current owner and AI
@@ -184,10 +186,11 @@ export async function eventFinalNarrative(scope:OwnerLoopScope,proposalId:string
         }},
     });
     // Never rewrite or truncate generated model text.
-    if(!turn.text.trim()||turn.endReason!=="complete")return null;
-    const provenance: NumberProvenance[]=turn.provenance??(turn.unverified??[])
-      .map(v=>({...v,source:"unchecked" as const}));
-    return {text:turn.text,hash,provenance,evidence:evidenceValues};
+    if(turn.endReason!=="complete")return null;
+    const presentations=backgroundReportPresentations(turn);
+    const text=turn.text.trim()?turn.text:backgroundReportText(turn);
+    if(!text.trim()&&!presentations.length)return null;
+    return {text,hash,provenance:[],evidence:evidenceValues,...(presentations.length?{presentations}:{})};
   }catch{
     // Evidence remains reportable even when the model is unavailable.
     // A later cron retries the AI summary without losing certified facts.

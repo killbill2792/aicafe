@@ -25,6 +25,7 @@ import {effectHash,proposeLoop,monitorLoop,type LoopProposal,type OwnerLoopScope
 import {supervisorLoopRegistry} from "@/lib/ai/supervisor/loop/priceExperiment.server";
 import {authorizedScheduledEventScope,eventPlanFacts,selectedEventPlanFacts,eventReadinessCapabilityId,eventReadinessEffect,selectEventObservations,observedEventProposalDates,withEventObservationClaim,readOnlyEventObservation,eventObservationFacts,eventDayActivity}
   from "@/lib/ai/supervisor/loop/eventReadiness.server";
+import {backgroundReportText} from "@/lib/ai/conversations/presentation";
 import {runEventResearch} from "./eventResearch.server";
 import {searchWeb} from "@/lib/ai/agent/webSearch.server";
 import {agentReplyPayload} from "@/lib/ai/agent/persist.server";
@@ -413,20 +414,21 @@ export async function draftDay(db:Db,b:Business,ownerId:string,locale:"en"|"es"|
       "no_action","Existing preparation decision remains applicable.",today,day.batchKey,evidenceHash);
     complete();return false;
   }
+  const narrative=backgroundReportText(turn);
   const proposal=turn.results.find(r=>r.source==="event_plan_proposal"&&
     r.missing.length===0&&r.draft===true&&typeof r.proposalId==="string");
   if(!proposal){
     // Budget exhaustion/provider errors are NOT a completed no-action review.
-    if(turn.endReason==="complete"&&turn.text.trim()&&!proposalAttempted&&
+    if(turn.endReason==="complete"&&narrative&&!proposalAttempted&&
       !turn.results.some(r=>r.source==="event_plan_proposal"||
         r.source==="propose_event_plan")){
       await saveEventAssessment(db,b.id,day.date,day.hash,sourceHash,
-        "no_action",turn.text,today,day.batchKey,evidenceHash);
+        "no_action",narrative,today,day.batchKey,evidenceHash);
       complete();
     }
     return false;
   }
-  const {reply,metadata}=turn.text.trim()?agentReplyPayload(turn):
+  const {reply,metadata}=narrative?agentReplyPayload(turn):
     {reply:{blocks:[{type:"proposal_card",proposalId:proposal.proposalId}]},metadata:{}};
   if(!selectedFactsHash)throw new Error("event_selected_facts_missing");
   const messageId=planMessageId(b.id,ownerId,day.date,

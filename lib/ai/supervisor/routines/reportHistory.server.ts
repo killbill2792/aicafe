@@ -44,11 +44,11 @@ export function routineReportCandidates(messages:readonly ConversationMessage[],
         m.blocks[1].agent==="leo"&&m.blocks[1].status==="watching"&&
         m.blocks[1].href==="/operations?agent=leo&status=watching&task=u4:"+meta.runId;
       const legacy=m.blocks.length>0&&m.blocks.every(b=>object(b)&&b.type==="text"&&
-        typeof b.text==="string"&&b.text.length>=1&&b.text.length<=1200);
+        typeof b.text==="string"&&b.text.length>=1);
       if(!pointer&&!legacy)return [];
       const text=m.blocks.filter(b=>object(b)&&b.type==="text")
         .map(b=>(b as {text:string}).text).join("");
-      if(!text.trim()||text.length>2600)return [];
+      if(!text.trim())return [];
       return [{messageId:m.id,runId:meta.runId,routineId:meta.routineId,
         revision:Number(meta.revision),quality:m.grounding.status as "answered"|"verified"|"partial",
         text,pointerOnly:pointer}];
