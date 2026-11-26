@@ -59,7 +59,7 @@ function Panel({panel,locale}:{panel:PresentationPanel;locale:string}){
   {panel.kind==="metric"&&panel.points.length===1?<p className="break-words font-headline text-[1.875rem] font-medium leading-tight tracking-tight tabular-nums text-ink">{format(panel.points[0].value)}</p>:
    (panel.kind==="table"||panel.kind==="ranked_table"||panel.kind==="metric"||new Set(panel.points.map(p=>p.label)).size!==panel.points.length)?table:<><PresentationBoundary fallback={table}><Chart panel={panel.kind==="donut"&&(panel.points.some(p=>p.value<0)||panel.points.every(p=>p.value===0))?{...panel,kind:"bar"}:panel} format={format}/></PresentationBoundary>
     <details className="text-ink"><summary aria-label={detailsLabel+": "+panel.title} className="flex min-h-12 cursor-pointer items-center text-[0.9375rem] text-accent-text underline underline-offset-4 focus-visible:outline focus-visible:outline-2 focus-visible:outline-ink">{detailsLabel}</summary>{table}</details></>}
-  {panel.source==="response_evidence"?<p id={evidenceId} className="break-words text-[0.8125rem] text-ink-muted">{panel.sourceDetail}</p>:<p id={evidenceId} className="break-words text-[0.8125rem] leading-relaxed text-ink-muted">{panel.source!=="sql_research"&&panel.source!=="response_evidence"&&<>{panel.from} – {panel.to} · </>}{panel.sourceDetail??(panel.source==="response_evidence"?"":panel.source==="sql_research"?"":panel.source==="daily_rollups"?"Sales records":panel.source==="item_sales"?"Item sales":panel.source==="canonical_data"?panel.sourceDetail??"Canonical records":panel.source==="expenses"?"Recorded expenses":panel.source==="business_costs"?"Business costs":panel.source==="product_costs"?"Product economics":panel.source==="supplier_purchase_plan"?"Supplier quotes":panel.source==="purchase_orders"?"Purchase orders":panel.source==="inventory"?"Inventory":panel.source==="menu_items"?"Menu":"")} · {copy.snapshot} {panel.asOf}</p>}
+  {panel.source==="response_evidence"?<p id={evidenceId} className="break-words text-[0.8125rem] text-ink-muted">{panel.sourceDetail}</p>:<p id={evidenceId} className="break-words text-[0.8125rem] leading-relaxed text-ink-muted">{panel.source!=="sql_research"&&<>{panel.from} – {panel.to} · </>}{panel.sourceDetail??(panel.source==="sql_research"?"":panel.source==="daily_rollups"?"Sales records":panel.source==="item_sales"?"Item sales":panel.source==="canonical_data"?panel.sourceDetail??"Canonical records":panel.source==="expenses"?"Recorded expenses":panel.source==="business_costs"?"Business costs":panel.source==="product_costs"?"Product economics":panel.source==="supplier_purchase_plan"?"Supplier quotes":panel.source==="purchase_orders"?"Purchase orders":panel.source==="inventory"?"Inventory":panel.source==="menu_items"?"Menu":"")} · {copy.snapshot} {panel.asOf}</p>}
  </figure>;
 }
 function ComparisonView({panels,locale}:{panels:PresentationPanel[];locale:string}){
@@ -78,7 +78,7 @@ function ComparisonView({panels,locale}:{panels:PresentationPanel[];locale:strin
    <table aria-describedby={evidenceId} className="w-full text-[0.9375rem] tabular-nums"><caption className="sr-only">{copy.comparisonValues}</caption><thead><tr><th scope="col" className="py-2 text-start">{first.currency??first.measurement??first.unit}</th>{series.map(s=><th key={s.id} scope="col" className="px-2 text-end">{s.label}</th>)}</tr></thead>
     <tbody>{labels.map(label=><tr key={label}><th scope="row" className="py-2 text-start">{label}</th>{series.map(s=>{const v=s.points.find(p=>p.label===label);return <td key={s.id} className="px-2 text-end">{v?format(v.value):copy.notRecorded}</td>})}</tr>)}</tbody></table>
   </div>
-  <div id={evidenceId}>{panels.map((p,i)=><p key={i} className="break-words text-[0.8125rem] text-ink-muted">{series[i].label} · {p.sourceDetail??p.source} · {copy.snapshot} {p.asOf}{p.coverage?" · "+(confidence(p.coverage)):""}</p>)}</div>
+  <div id={evidenceId}>{panels.map((p,i)=><p key={i} className="break-words text-[0.8125rem] text-ink-muted">{series[i].label}{p.source==="response_evidence"?(p.sourceDetail?" · "+p.sourceDetail:""):" · "+(p.sourceDetail??p.source)+" · "+copy.snapshot+" "+p.asOf+(p.coverage?" · "+confidence(p.coverage):"")}</p>)}</div>
  </figure>;
 }
 function AgendaView({agenda,locale}:{agenda:Agenda;locale:string}){
@@ -230,7 +230,8 @@ function NativeWidget({spec,locale,onSuggest,disabled,message,attachments}:{spec
   const {registry}=defineRegistry(nativeCatalog,{components:{...shadcnComponents,
    LunaChart:({props})=>{
     const p=nativeChartProps.safeParse(props);if(!p.success)return <p role="status">Chart values are not available.</p>;
-    const {description,measurement,...values}=p.data,asOf=new Date().toISOString().slice(0,10);
+    const {description,measurement,asOf,...values}=p.data;
+    if(!asOf)return <p role="status">Chart date is not available.</p>;
     const panel=presentationPanelSchema.safeParse({...values,source:"response_evidence",from:asOf,to:asOf,asOf,...(description?{sourceDetail:description}:{}),...(measurement?{measurement}:{})});
     if(panel.success)return <Panel panel={panel.data} locale={locale}/>;
     const table=recordTableSchema.safeParse({title:values.title,view:"tool_response_evidence",from:asOf,to:asOf,asOf,currency:values.currency,coverage:"authored",scope:description??"",columns:[{label:"Category",unit:"label"},{label:measurement??values.unit,unit:values.unit}],rows:values.points.map(p=>[p.label,p.value])});

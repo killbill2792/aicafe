@@ -202,7 +202,7 @@ it("uses the installed catalog and native state syntax without fabricated demo d
  expect(INLINE_PRESENTATION_HINT).toContain("Slider:");
  expect(INLINE_PRESENTATION_HINT).toContain("$bindState");
  expect(INLINE_PRESENTATION_HINT).not.toContain("Include realistic sample data");
- expect(INLINE_PRESENTATION_HINT).not.toContain("You MUST include state patches");
+ expect(INLINE_PRESENTATION_HINT).toContain("only needed when using state-dependent");
 });
 it("distinguishes absent output, rejected view selection, and persisted visual receipts",async()=>{
  const provider:AgentProvider=async function*(){
