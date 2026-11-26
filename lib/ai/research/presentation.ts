@@ -11,7 +11,7 @@ const fieldPath=z.array(z.union([z.string().min(1),z.number().int().nonnegative(
 const reference=z.object({ref:z.string(),path:fieldPath.optional(),quote:z.string().min(1).optional()}).refine(v=>Boolean(v.path)!==Boolean(v.quote));
 const scalar=z.union([z.number().finite(),z.string(),z.boolean(),z.null()]);
 const pointSelection=z.object({label:z.string().min(1),value:z.union([reference,scalar]),labelField:reference.optional(),unit:z.string().optional(),basis:z.string().optional()});
-const pointPanel=z.object({kind:z.enum(["metric","bar","line","donut","ranked_table"]),title:z.string().optional(),points:z.array(pointSelection).min(1)});
+const pointPanel=z.object({kind:z.enum(["metric","bar","line","donut","ranked_table"]),title:z.string().optional(),basis:z.string().optional(),explanation:z.string().optional(),points:z.array(pointSelection).min(1)});
 
 // Direct model-authored analysis is not a claim of stored business evidence.
 const analysisPanel=z.object({kind:z.string().optional(),title:z.string().optional(),
@@ -202,8 +202,7 @@ function pointView(s:z.infer<typeof pointPanel>,evidence:PresentationEvidenceMap
  }
  const first=values[0];
  if(values.some(v=>v.unit!==first.unit||v.measurement!==first.measurement))return null;
- const coverage=values.some(v=>v.source.coverage==="partial")?"partial":values.some(v=>v.source.coverage==="estimate")?"estimate":undefined;
- const sourceDetail=[...new Set(values.map(v=>v.source.source))].join("; ");
+ const sourceDetail=[s.basis,s.explanation,...new Set(values.map(v=>v.source.source))].filter(Boolean).join("; ");
  const result=presentationPanelSchema.safeParse({kind:s.kind,title:descriptiveGroupTitle(s.title)??"Comparison",
   unit:first.unit,currency:first.unit==="cents"?ctx.currency??null:null,from:ctx.asOf,to:ctx.asOf,asOf:ctx.asOf,
   source:"response_evidence",sourceDetail,...(first.measurement?{measurement:first.measurement}:{}),
@@ -267,7 +266,7 @@ export function resolveResearchView(raw:unknown,queries:PresentationEvidenceMap,
      return [label??"Value",direct.success?direct.data:bound?.value??(cell.success?cell.data:null),direct.success?item.unit??null:bound?bound.measurement??bound.unit:null];
     });
     const t=recordTableSchema.safeParse({title:selectedPoints.data.title??"Comparison",view:"tool_response_evidence",from:ctx.asOf,to:ctx.asOf,asOf:ctx.asOf,currency:ctx.currency??null,
-     coverage:"authored",scope:"Selected and authored values; unresolved references are displayed as unknown.",
+     coverage:"authored",scope:[selectedPoints.data.basis,selectedPoints.data.explanation,"Unresolved references are displayed as unknown."].filter(Boolean).join("; "),
      columns:[{label:"Category",unit:"label"},{label:"Value",unit:"stored"},{label:"Unit",unit:"stored"}],rows});
     if(t.success)tables.push(t.data);
    }

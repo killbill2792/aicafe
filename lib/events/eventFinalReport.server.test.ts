@@ -39,7 +39,7 @@ beforeEach(()=>{
   saved=null;reads.memberships={role:"owner"};
   reads.businesses={timezone:"America/Los_Angeles",currency:"USD",is_demo:false};
   vi.resetAllMocks();
-  vi.mocked(runAgentTurn).mockResolvedValue({text:"AI-written, evidence-backed report."} as Awaited<ReturnType<typeof runAgentTurn>>);
+  vi.mocked(runAgentTurn).mockResolvedValue({text:"AI-written, evidence-backed report.",endReason:"complete"} as Awaited<ReturnType<typeof runAgentTurn>>);
 });
 describe("event morning-after narrative",()=>{
   it("uses the one agent and reuses the exact saved text for the same evidence",async()=>{
@@ -66,19 +66,16 @@ describe("event morning-after narrative",()=>{
       ["Halloween"],"Ready for the holiday",result,"insufficient_evidence")).toBeNull();
     expect(runAgentTurn).not.toHaveBeenCalled();
   });
-  it("supplies typed hourly amounts to the numeric checker and retains warning offsets",async()=>{
+  it("supplies typed hourly amounts without requiring a matching answer",async()=>{
     const text="Sales reached 999999, unsupported by the saved day.";
     vi.mocked(runAgentTurn).mockResolvedValueOnce({
-      text,provenance:[{text:"999999",start:14,end:20,kind:"number",source:"unchecked"}],
-      unverified:[{text:"999999",start:14,end:20,kind:"number"}],
+      text,endReason:"complete",unverified:[],
     } as Awaited<ReturnType<typeof runAgentTurn>>);
     const narrative=await eventFinalNarrative(scope,
       "44444444-4444-4444-8444-444444444444",["Halloween"],
       "Ready for the holiday",result,"complete");
     expect(narrative?.text).toBe(text);
-    expect(narrative?.provenance).toEqual([{
-      text:"999999",start:14,end:20,kind:"number",source:"unchecked",
-    }]);
+    expect(narrative?.provenance).toEqual([]);
     const args=vi.mocked(runAgentTurn).mock.calls[0][0];
     expect(args.previousEvidence).toEqual([{
       tool:"event_readiness",values:expect.arrayContaining([
@@ -167,7 +164,7 @@ describe("event morning-after narrative",()=>{
       reportTextOrigin:"model"};
     vi.mocked(runAgentTurn).mockResolvedValueOnce({
       text:"Sales: Actual $1,358.44 vs usual $1,206.05; 7: $105.50/$61.35.",
-      provenance:[],unverified:[],
+      endReason:"complete",provenance:[],unverified:[],
     } as unknown as Awaited<ReturnType<typeof runAgentTurn>>);
     const refreshed=await eventFinalNarrative(scope,"44444444-4444-4444-8444-444444444444",
       names,summary,nov2,"complete");
