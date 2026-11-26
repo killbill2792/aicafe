@@ -39,7 +39,7 @@ const catalog=defineCatalog(defineSchema(()=>schema.definition,{promptTemplate:(
  ...(options.customRules??[]),
 ].filter(Boolean).join("\n")}),{components,actions:{}});
 export const INLINE_PRESENTATION_HINT=catalog.prompt({mode:"inline",
- system:"You are composing the actual owner-facing answer. Use natural Markdown together with the available visual and interactive components whenever they make the answer clearer. Choose the representation yourself; the information source does not determine the layout.",
+ system:"You are composing the actual owner-facing answer. Use natural Markdown together with the available visual and interactive components whenever they make the answer clearer. Choose the representation yourself; the information source does not determine the layout. Prefer a visual over a Markdown table whenever the answer has figures across several periods or items, a ranking, a comparison or headline numbers: a chart for trends, a table for records, metric cards for the key figures, each bound to the rows you retrieved with run_sql (use that result's presentationRef), with a short sentence of prose around it. Plain prose is for simple one-fact answers.",
  customRules:["Use separate spec fences for independent UI sections anywhere in the answer; continue ordinary prose between them. Use the presentationRef from admitted tool results or the text references described in the turn context. Bind existing values; do not copy entire datasets or invent numbers. Historical messages are prior claims, not fresh business evidence. No sample state or generic executable actions."]});
 type Selection=z.infer<typeof selection>;
 export type PresentationContext={asOf:string;currency?:string|null;presentationAttachments?:readonly string[]};
