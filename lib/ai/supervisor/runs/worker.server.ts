@@ -53,7 +53,7 @@ export async function startDurableOwnerRun(ownerMessageId: string): Promise<Dura
 async function verifiedReply(run: WorkerRun): Promise<VerifiedReply | null> {
   const owner = await readOwnerMessage(run.scope, run.scope.threadId, run.requestKey);
   const reply = await getExistingSupervisorReply(run.scope, owner);
-  const meta = reply?.grounding?.agentMetadata; if (!reply || !["verified","estimated","partial","unavailable","insufficient_evidence"].includes(String(reply.grounding?.status)) ||
+  const meta = reply?.grounding?.agentMetadata; if (!reply || !["answered","verified","estimated","partial","unavailable","insufficient_evidence"].includes(String(reply.grounding?.status)) ||
     !meta || typeof meta !== "object") return null;
   const { endReason, usage } = meta as { endReason?: unknown; usage?: unknown };
   if (endReason !== "complete" || !usage || typeof usage !== "object") return null;

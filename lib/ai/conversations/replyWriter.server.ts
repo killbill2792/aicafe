@@ -65,7 +65,7 @@ export async function persistGroundedSupervisorReply(
     intent: safe.intent,
     evidence: safe.evidence,
     ownerMessageId: ownerMessage.id,
-    responder: "bounded-grounded-responses-supervisor-v2",
+    responder: "luna-responses-supervisor-v3",
     ...(safe.investigationMemory?{investigationMemory:safe.investigationMemory}:{}),
     ...(safe.ownerInput?{ownerInput:safe.ownerInput}:{}),
     ...(agentMetadata ? { agentMetadata } : {}),

@@ -15,14 +15,8 @@ type GroundingStatus = GroundedSupervisorReply["status"];
 export function persistedAgentStatus(turn: AgentTurn): GroundingStatus {
   if(turn.results.some(r=>r.source==="ask_owner"&&r.missing.length===0))
     return "requires_owner_input";
-  // A completed greeting/clarification does not require a business read.
-  if (turn.endReason === "complete" && (turn.usage.toolCalls === 0 ||
-    (turn.results.length===turn.usage.toolCalls&&turn.results.every(r=>r.source==="response_presentation")))) return "verified";
-  const hasSuccessfulRead = turn.results.some(result =>
-    result.source!=="ask_owner"&&result.source!=="response_presentation"&&result.missing.length===0&&typeof result.error!=="string");
-  if (!hasSuccessfulRead) return "unavailable";
-  if (turn.endReason !== "complete") return "partial";
-  return turn.status.status === "complete" ? "verified" : "partial";
+  // Execution state only. Luna owns the assessment of its answer.
+  return turn.endReason === "complete" ? "answered" : "interrupted";
 }
 type Span = { start: number; end: number };
 // Protect recorded claims and even *verified* currency tokens from block boundaries.
