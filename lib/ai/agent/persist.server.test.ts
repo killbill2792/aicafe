@@ -210,8 +210,9 @@ describe("database-safe agent persistence payload", () => {
     expect(blocks[0].length).toBe(1198);
     expect(blocks[1].startsWith("123.45")).toBe(true);
   });
-  it("rejects answers beyond the 30-block storage capacity instead of truncating silently", () => {
-    expect(() => agentReplyPayload(turn("x".repeat(36001)))).toThrow("agent_reply_too_long");
+  it("preserves answers beyond the former 30-block storage capacity", () => {
+    const text="x".repeat(36001);
+    expect(agentReplyPayload(turn(text)).reply.blocks.filter(b=>b.type==="text").map(b=>b.text).join("")).toBe(text);
   });
   it("keeps a rejected day count and its unit in one persisted block",()=>{
     const prefix="a ".repeat(595);
@@ -273,10 +274,10 @@ describe("Task16E reply persistence",()=>{
    expect(agentReplyPayload(t).reply.blocks).toEqual([{type:"text",text:t.text},block]);
    const ask={source:"ask_owner",period:null,missing:[],question:"Which date?",
      options:[{label:"Today",value:"today"},{label:"Yesterday",value:"yesterday"}],allowOther:true};
-   expect(agentReplyPayload({...t,results:[ui,ask]}).reply.blocks.map(b=>b.type)).toEqual(["text","clarify"]);
+   expect(agentReplyPayload({...t,results:[ui,ask]}).reply.blocks.map(b=>b.type)).toEqual(["text","clarify","rich_presentation"]);
  });
- it("does not persist a UI block on interrupted turns",()=>{
-   expect(agentReplyPayload({...turn("Partial answer."),results:[ui],endReason:"budget"}).reply.blocks.map(b=>b.type)).toEqual(["text"]);
+ it("retains already accepted views in an interrupted non-durable answer",()=>{
+   expect(agentReplyPayload({...turn("Partial answer."),results:[ui],endReason:"budget"}).reply.blocks.map(b=>b.type)).toEqual(["text","rich_presentation"]);
  });
 });
 
@@ -304,5 +305,5 @@ it("retains a real approval card alongside a substantial answer without clipping
  const payload=agentReplyPayload({...turn(prose),unverified:[],results:[{source:"price_change_proposal",period:null,missing:[],draft:true,saved:false,proposalId:id}]});
  expect(payload.reply.blocks).toContainEqual({type:"proposal_card",proposalId:id});
  expect(payload.reply.blocks.filter(b=>b.type==="text").map(b=>b.text).join("")).toBe(prose.trim());
- expect(payload.reply.blocks.length).toBeLessThanOrEqual(30);
+ expect(groundedReplySchema.safeParse(payload.reply).success).toBe(true);
 });
