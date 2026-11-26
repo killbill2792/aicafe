@@ -1,5 +1,5 @@
 import type { ConversationMessage, ConversationPage } from "@/lib/ai/conversations/contracts";
-import {richPresentationSchema} from "@/lib/ai/conversations/presentation";
+import {recoverRichPresentation} from "@/lib/ai/conversations/presentation";
 
 export type OptimisticOwner = { id: string; text: string; clientMessageId: string };
 
@@ -127,7 +127,7 @@ export function loadedSavedReports(messages:readonly ConversationMessage[],threa
   return messages.flatMap(message=>{
     if(message.threadId!==threadId||message.role!=="supervisor")return [];
     const presentations=(message.blocks??[]).flatMap(block=>{
-      const parsed=richPresentationSchema.safeParse(block);
+      const parsed=recoverRichPresentation(block);
       return parsed.success&&parsed.data.report?[parsed.data]:[];
     });
     if(!presentations.length)return [];
