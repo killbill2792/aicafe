@@ -149,6 +149,10 @@ export function agentReplyPayload(turn: AgentTurn) {
     if(result.source!=="response_presentation"||result.accepted!==true)return;
     const presentation=richPresentationSchema.safeParse(result.presentation);
     if(!presentation.success)return;
+    // Inline receipts have already bound each value to independently admitted
+    // evidence. An unrelated failed read must not erase owner-supplied or other
+    // valid evidence; the source and coverage labels remain authoritative.
+    if(typeof result.presentationOffset==="number")return presentation.data;
     const {agenda,scenario,tables,calculator,groups,...rest}=presentation.data;
     const partialTables=tables?.filter(t=>t.coverage==="partial");
     const safe=status==="unavailable"?{...rest,panels:rest.panels.filter(p=>p.coverage==="partial"),...(agenda?.coverage==="partial"?{agenda}:{}),...(partialTables?.length?{tables:partialTables}:{})}:

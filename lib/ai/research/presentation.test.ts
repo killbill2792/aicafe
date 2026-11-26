@@ -209,3 +209,19 @@ it("distinguishes absent output, rejected view selection, and persisted visual r
  expect(agentReplyPayload(result).metadata.presentationDiagnostics?.persistedViews).toBe(0);
  expect(result.text).toContain("No value was supplied.");
 });
+
+it("preserves a valid owner-sourced visual when an unrelated tool fails",async()=>{
+ let calls=0;
+ const provider:AgentProvider=async function*(){
+  calls++;
+  if(calls===1){yield {type:"response.output_item.done",item:{type:"function_call",name:"run_sql",call_id:"failed",arguments:JSON.stringify({sql:"select 1"})}};}
+  else yield {type:"response.output_text.delta",delta:"From your own information.\n\n"+fence({panels:[{kind:"metric",points:[{label:"Rent",value:{ref:"owner",quote:"$1250"}}]}]})+"The business records could not be retrieved."};
+  yield {type:"response.completed",response:{usage:{input_tokens:1,output_tokens:1}}};
+ };
+ const rpc=vi.fn().mockResolvedValue({data:{ok:false,error:"unavailable"},error:null});
+ const result=await runResearchTurn({ownerText:"Rent $1250",cafeContext:"Cafe",provider,scope:{db:{rpc} as never,businessId:"business",ownerUserId:"owner"},presentationContext:ctx});
+ const payload=agentReplyPayload(result);
+ expect(payload.reply.status).toBe("unavailable");
+ expect(payload.reply.blocks.map(b=>b.type)).toEqual(["text","rich_presentation","text"]);
+ expect(payload.metadata.presentationDiagnostics?.persistedViews).toBe(1);
+});
