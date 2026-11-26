@@ -1,4 +1,4 @@
-import {chromium} from "@playwright/test";
+import {chromium,expect} from "@playwright/test";
 import {mkdirSync,writeFileSync} from "node:fs";
 import {assertDisposableEnvironment,seededCafe,login,openOwnedPage,navigateLocal} from "./seeded-auth.mjs";
 assertDisposableEnvironment();
@@ -16,7 +16,10 @@ async function capture(route,width,mode){
  // reset a manually changed DOM attribute or capture the loading shell.
  await context.addCookies([{name:"cp_theme",value:"glass",url:"http://127.0.0.1:3000"},{name:"cp_mode",value:mode,url:"http://127.0.0.1:3000"}]);
  if(route==="login")await navigateLocal(page,"/en/login");else await openOwnedPage(page,owner,route);
- await page.waitForLoadState("networkidle",{timeout:30000});
+ // The app declares real route readiness; background requests can stay active
+ // after the screen has rendered, so networkidle is not a readiness signal.
+ await expect(page.locator('main[data-perf-ready="true"]')).toBeVisible({timeout:30000});
+ await expect(page.locator('main[data-perf-loading="true"]')).toHaveCount(0);
  await page.evaluate(async()=>{await document.fonts.ready;await new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve)));});
  const name=(route||"home").replace(/[^a-z0-9-]+/gi,"-")+"-"+width+"-"+mode;
  const data=await page.evaluate(({variant,route})=>{
