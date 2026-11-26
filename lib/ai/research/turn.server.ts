@@ -7,6 +7,7 @@ import {safeToolError} from "@/lib/ai/agent/toolErrors";
 import {newResolveState,observeToolResult} from "@/lib/ai/agent/resolve";
 import {withoutSavedFactFields} from "@/lib/ownerFacts/askGuard";
 import type {OwnerRunCheckpoint,MatchedOwnerAnswer} from "@/lib/ai/supervisor/runs/contracts";
+import {partialAnswerFromEvidence} from "./partialAnswer";
 import {executionPolicy,requestOutputCap} from "@/lib/ai/agent/executionPolicy";
 import {unsupportedNumbers} from "./verify";
 import {resolveResearchSpec,INLINE_PRESENTATION_HINT,type PresentationEvidence,type PresentationContext} from "./presentation";
@@ -354,6 +355,7 @@ export async function runResearchTurn(args:{
     }
     if(!text.trim()&&presentations.length)appendText("Here are the results from the retrieved information.",true);
     if(!text.trim()&&endReason==="complete")throw Error("provider_empty_answer");
+    if(!text.trim())appendText(partialAnswerFromEvidence(evidence),true);
   }catch(error){
     if(error instanceof Error&&/durable|checkpoint|reservation/u.test(error.message))throw error;
     endReason=stop()==="timeout"?"timeout":"provider_error";
@@ -364,6 +366,8 @@ export async function runResearchTurn(args:{
         await call(true);
       }catch{/* the owner gets the existing retryable error */}
     }
+    // Final guarantee: time or budget ran out with no model text. Show the retrieved evidence instead of an empty failure.
+    if(!text.trim())appendText(partialAnswerFromEvidence(evidence),true);
   }
   usage.latencyMs=Math.max(0,now()-started);
   const tools=[...new Set(invocations.map(i=>i.name))];
