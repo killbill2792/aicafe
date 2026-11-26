@@ -1,4 +1,4 @@
-import { richPresentationSchema,type RichPresentation } from "@/lib/ai/conversations/presentation";
+import { recoverRichPresentation,type RichPresentation } from "@/lib/ai/conversations/presentation";
 import "server-only";
 import { ZodError } from "zod";
 import { persistGroundedSupervisorReply, type DurableReplyFence } from "@/lib/ai/conversations/replyWriter.server";
@@ -58,7 +58,7 @@ export function splitAgentText(text: string, unverified: readonly Span[] = [],ma
         // A >1200-character token may be hard-split, but never through a
         // currency/number claim, even when the adjacent word is oversized.
         while (end > start && !safe(end)) end--;
-        if (end === start) throw new AgentReplyTooLongError();
+        if (end === start) end=limit;
       }
     }
     blocks.push({ type: "text", text: value.slice(start, end) });
@@ -68,7 +68,7 @@ export function splitAgentText(text: string, unverified: readonly Span[] = [],ma
 }
 const UUID=/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 export function agentReplyPayload(turn: AgentTurn) {
-  if (!turn.text.trim()&&!turn.results.some(r=>r.source==="response_presentation"&&r.accepted===true&&richPresentationSchema.safeParse(r.presentation).success)) throw new AgentEmptyReplyError();
+  if (!turn.text.trim()&&!turn.results.some(r=>r.source==="response_presentation"&&r.accepted===true&&recoverRichPresentation(r.presentation)!==undefined)) throw new AgentEmptyReplyError();
   const clarify=turn.results.find(r=>r.source==="ask_owner"&&r.missing.length===0);
   const isOnlyQuestion=clarify&&typeof clarify.question==="string"&&
     turn.text.trim()===clarify.question.trim();
@@ -144,18 +144,9 @@ export function agentReplyPayload(turn: AgentTurn) {
     ...(safeExplain.length?[{type:"how" as const,lines:safeExplain}]:[])] };
   const validatePresentation=(result:AgentTurn["results"][number]):RichPresentation|undefined=>{
     if(result.source!=="response_presentation"||result.accepted!==true)return;
-    const presentation=richPresentationSchema.safeParse(result.presentation);
-    if(!presentation.success)return;
-    // Inline receipts have already bound each value to independently admitted
-    // evidence. An unrelated failed read must not erase owner-supplied or other
-    // valid evidence; the source and coverage labels remain authoritative.
-    if(typeof result.presentationOffset==="number")return presentation.data;
-    const {agenda,scenario,tables,calculator,groups,...rest}=presentation.data;
-    const partialTables=tables?.filter(t=>t.coverage==="partial");
-    const safe=status==="unavailable"?{...rest,panels:rest.panels.filter(p=>p.coverage==="partial"),...(agenda?.coverage==="partial"?{agenda}:{}),...(partialTables?.length?{tables:partialTables}:{})}:
-      {...rest,...(agenda?{agenda}:{}),...(scenario?{scenario}:{}),...(tables?{tables}:{}),...(calculator?{calculator}:{}),...(groups?{groups}:{})};
-    const validated=richPresentationSchema.safeParse(safe);
-    return validated.success?validated.data:undefined;
+    // The answer's evidence status describes confidence, never which parts of
+    // the model-authored UI the owner is allowed to see.
+    return recoverRichPresentation(result.presentation);
   };
   // SQL inline views carry their exact position in the concatenated prose.
   // The existing persisted text blocks remain the source for numeric annotations.
@@ -182,10 +173,11 @@ export function agentReplyPayload(turn: AgentTurn) {
       blocks=prose;reply.blocks=[...ordered,...tail];
     }catch(error){if(!(error instanceof AgentReplyTooLongError))throw error;}
   }
-  if(!inline.length&&turn.endReason==="complete"&&!clarify){
+  if(turn.endReason==="complete"&&!clarify){
     // Historical/legacy present_response receipts have no inline position.
     // Preserve every accepted receipt that fits the existing reply contract.
     for(const result of turn.results){
+      if(typeof result.presentationOffset==="number"&&inline.length)continue;
       const block=validatePresentation(result);
       if(block)reply.blocks.push(block);
     }
