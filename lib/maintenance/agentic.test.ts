@@ -43,12 +43,12 @@ describe("Task15B agent-directed and independently checked maintenance investiga
     expect(verify(turn([sales,schedule]),{...incident.result,sourceId:"other"}))
       .toEqual({ok:false,reason:"evidence_incomplete"});
     expect(verify(turn([sales,schedule],
-      "I emailed the technician and the machine was repaired.")))
+      "I emailed the technician and the machine was repaired."))))
       .toEqual({ok:false,reason:"model_incomplete"});
   });
   it("rejects a physical repair assertion without independent closure evidence",()=>{
     expect(verify(turn([sales,schedule],
-      "The equipment is now repaired. No vendor message was sent.")))
+      "The equipment is now repaired. No vendor message was sent."))))
       .toEqual({ok:false,reason:"model_incomplete"});
     expect(verify(turn([sales,schedule],
       "The equipment is not verified working. Ask staff for an independent check." )).ok).toBe(true);
