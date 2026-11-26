@@ -16,10 +16,12 @@ create or replace view public.cv_sales_days
    'labor_wage_status',d.labor_wage_status,'staff_tax_status',d.staff_tax_status,
    'staff_tax_source',d.staff_tax_source,'sales_data_status',d.sales_data_status,
    'card_fees_cents',d.card_fees_cents,'card_fees_status',d.card_fees_status,
-   'voids_cents',d.voids_cents,'voids_status',d.voids_status,'voids_source',d.voids_source)
+   'voids_cents',d.voids_cents,'voids_status',d.voids_status,'voids_source',d.voids_source,
+   'recorded_contribution_cents',case when d.labor_wage_status='missing' or d.staff_wages_cents is null or d.staff_tax_cents is null then null
+    else d.net_sales_cents-d.ingredients_cents-d.card_fees_cents-d.staff_wages_cents-d.staff_tax_cents end)
  from public.daily_rollups d;
 comment on view public.cv_sales_days is 'One saved day per café and business date. Screen and Supervisor daily sales, ingredient cost, wages, payroll tax, fees and voids; data includes independent sales_data_status, labor_wage_status, staff_tax_status/source and card_fees_status. Not provisional intraday sales.';
-comment on column public.cv_sales_days.data is 'Saved daily fact amounts in integer cents and counts, with independent source and completeness statuses. Unknown wages and taxes remain null.';
+comment on column public.cv_sales_days.data is 'Saved daily fact amounts in integer cents and counts, with independent source and completeness statuses. Unknown wages and taxes remain null. recorded_contribution_cents is recorded sales minus ingredients, saved fees and loaded wages, before operating bills; null when labor is incomplete.';
 
 -- Existing recurring commitments; retain every existing key and expose the active dates and due day.
 create or replace view public.cv_bills

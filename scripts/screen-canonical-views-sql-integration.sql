@@ -17,6 +17,7 @@ VALUES(:'a',:'oa','owner'),(:'b',:'ob','owner');
 INSERT INTO public.daily_rollups(business_id,business_date,net_sales_cents,orders_count,drinks_count,ingredients_cents,
  staff_wages_cents,staff_tax_cents,card_fees_cents,voids_cents,sales_data_status,card_fees_status,labor_wage_status)
 VALUES(:'a',current_date-1,1200,2,3,250,NULL,NULL,30,0,'actual','actual','missing'),
+ (:'a',current_date-2,2000,3,5,500,300,20,90,0,'actual','actual','actual'),
  (:'b',current_date-1,9900,8,9,500,300,20,90,0,'actual','actual','actual');
 INSERT INTO public.recurring_costs(id,business_id,category_code,label,amount_cents,frequency,active_from)
 VALUES(:'bill',:'a','rent','Rent',30000,'monthly',current_date-10);
@@ -52,17 +53,19 @@ SELECT set_config('request.jwt.claim.sub',:'oa',true),
  set_config('request.jwt.claim.role','authenticated',true),
  set_config('request.jwt.claims',json_build_object('sub',:'oa','role','authenticated')::text,true);
 SELECT (
- (SELECT count(*) FROM public.cv_sales_days WHERE business_id=:'a')=1
- AND (SELECT net_sales_cents FROM public.cv_sales_days WHERE business_id=:'a')=1200
- AND (SELECT (data->>'ingredients_cents')::bigint FROM public.cv_sales_days WHERE business_id=:'a')=250
+ (SELECT count(*) FROM public.cv_sales_days WHERE business_id=:'a')=2
+ AND (SELECT net_sales_cents FROM public.cv_sales_days WHERE business_id=:'a' AND business_date=current_date-1)=1200
+ AND (SELECT (data->>'ingredients_cents')::bigint FROM public.cv_sales_days WHERE business_id=:'a' AND business_date=current_date-1)=250
  AND (SELECT data->>'staff_wages_cents' IS NULL AND data->>'labor_wage_status'='missing'
- FROM public.cv_sales_days WHERE business_id=:'a')
+ FROM public.cv_sales_days WHERE business_id=:'a' AND business_date=current_date-1)
+ AND (SELECT data->>'recorded_contribution_cents' IS NULL FROM public.cv_sales_days WHERE business_id=:'a' AND business_date=current_date-1)
+ AND (SELECT (data->>'recorded_contribution_cents')::bigint FROM public.cv_sales_days WHERE business_id=:'a' AND business_date=current_date-2)=1090
  AND (SELECT count(*) FROM public.cv_sales_days WHERE business_id=:'b')=0
  AND (SELECT net_sales_cents FROM public.cv_sales_live WHERE business_id=:'a')=700
  AND (SELECT count(*) FROM public.cv_sales_live WHERE business_id=:'b')=0
  AND (SELECT amount_cents FROM public.cv_expenses WHERE business_id=:'a' AND category_code='rent')=30000
  AND (SELECT count(*) FROM public.cv_expenses WHERE business_id=:'b')=0
- AND (SELECT (data->>'amount_cents')::bigint FROM public.cv_bills WHERE business_id=:'a')=30000
+ AND (SELECT (data->>'amount_cents')::bigint FROM public.cv_bills WHERE business_id=:'a' AND category_code='rent')=30000
  AND (SELECT (data->>'price_cents')::bigint FROM public.cv_menu WHERE business_id=:'a' AND source_ref='item:'||:'item')=600
  AND (SELECT total_quantity FROM public.menu_item_quantities_sold(:'a',current_date-1,current_date-1) WHERE menu_item_id=:'item')=2
  AND (SELECT quantity=2 AND net_sales_cents=1200 FROM public.cv_item_sales_daily WHERE business_id=:'a' AND menu_item_id=:'item')

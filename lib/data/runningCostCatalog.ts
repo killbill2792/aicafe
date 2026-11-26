@@ -43,6 +43,7 @@ export function rowToDailyFacts(row: {
   card_fees_cents: number;
   card_fees_status?: "actual" | "estimated" | "missing";
   voids_cents: number;
+  recorded_contribution_cents?: number | null;
 }): DailyFacts {
   return {
     date: row.business_date,
@@ -59,6 +60,7 @@ export function rowToDailyFacts(row: {
     cardFeesCents: row.card_fees_cents,
     cardFeesStatus: row.card_fees_status,
     voidsCents: row.voids_cents,
+    ...(row.recorded_contribution_cents!==undefined?{recordedContributionCents:row.recorded_contribution_cents}:{}),
   };
 }
 

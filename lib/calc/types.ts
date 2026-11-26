@@ -31,6 +31,8 @@ export type DailyFacts = {
   cardFeesCents: number;
   cardFeesStatus?: "actual" | "estimated" | "missing";
   voidsCents: number;
+  /** SQL-computed recorded contribution, before bills; null when payroll is missing. Omitted by synthetic scenarios. */
+  recordedContributionCents?: number | null;
 };
 
 export type ExpenseForCategory = {
