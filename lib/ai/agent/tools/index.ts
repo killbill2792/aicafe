@@ -112,7 +112,7 @@ export type AgentToolContext = {
   financialSettlementPropose?:(input:import("@/lib/ai/supervisor/loop/supplierReceiving.server").FinancialSettlementInput)=>Promise<{proposalId:string;revision:number}>;
   financialBillPropose?:(input:import("@/lib/ai/supervisor/loop/supplierReceiving.server").FinancialBillInput)=>Promise<{proposalId:string;revision:number}>;
   purchasing?:{
-    list():Promise<{orders:SupplierOrderStatus[];truncated:boolean;
+    list?():Promise<{orders:SupplierOrderStatus[];truncated:boolean;
       drafts:Array<{id:string;revision:number;supplierName:string;itemNames:string[];
         subtotalCents:number;currency:string}>;draftsTruncated:boolean;
       unresolvedApprovals:Array<{id:string;revision:number;supplierName:string;
