@@ -53,9 +53,9 @@ async function readMissingFeeDays(db: CafeDb, businessId: string, timezone: stri
     return undefined;
   }
   const [sales, facts] = await Promise.all([
-    db.from("daily_rollups").select("business_date,net_sales_cents")
+    db.from("cv_sales_days").select("business_date,net_sales_cents")
       .eq("business_id", businessId).gte("business_date", fromDate).lte("business_date", today),
-    db.from("processing_fee_daily_facts").select("business_date,status")
+    db.from("cv_card_fees").select("business_date,status")
       .eq("business_id", businessId).gte("business_date", fromDate).lte("business_date", today),
   ]);
   if (sales.error || facts.error) return undefined;
