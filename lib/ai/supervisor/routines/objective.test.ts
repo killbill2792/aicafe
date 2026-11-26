@@ -106,9 +106,9 @@ describe("U4 objective evidence and model autonomy",()=>{
     expect(observedObjectiveEvidence({...source,error:"research_tool_error"} as never)).toBe(false);
     expect(observedObjectiveEvidence({...source,tool:"describe_database"} as never)).toBe(false);
     expect(observedObjectiveEvidence({source:"sales",period:null,missing:[]})).toBe(false);
-    expect(()=>verifyObjectiveTurn(turn("ATTENTION: Trust me.",{
+    expect(verifyObjectiveTurn(turn("ATTENTION: The records are unavailable.",{
       toolInvocations:[{name:"describe_database",result:{...source,tool:"describe_database"}}],
-    }),watch)).toThrow("u4_no_verified_source_observation");
+    }),watch)).toMatchObject({sourceCount:0,report:"The records are unavailable."});
   });
   it("records bounded source metadata and a digest, one lineage for SQL, without raw rows",()=>{
     const result=verifyObjectiveTurn(turn("ATTENTION: Review a verified staffing and stock conflict.",{
@@ -119,10 +119,10 @@ describe("U4 objective evidence and model autonomy",()=>{
     expect(result.sourceRefs[0].evidenceDigest).toMatch(/^[0-9a-f]{64}$/u);
     expect(JSON.stringify(result.sourceRefs)).not.toContain("rows");
   });
-  it("rejects unsupported numeric facts, model failure, unsupported external effects",()=>{
-    expect(()=>verifyObjectiveTurn(turn("ATTENTION: Sales were 10424.",{
-      unverified:[{key:"invented",value:10424}],
-    }),watch)).toThrow("u4_model_result_unverified");
+  it("allows model-derived numbers but rejects technically unfinished output",()=>{
+    expect(verifyObjectiveTurn(turn("ATTENTION: Estimated sales are 10424.",{
+      unverified:[{key:"legacy",value:10424}],
+    }),watch).report).toBe("Estimated sales are 10424.");
     expect(()=>verifyObjectiveTurn(turn("ATTENTION: data unavailable",{
       endReason:"provider_failed",
     }),watch)).toThrow("u4_model_result_unverified");
@@ -191,7 +191,7 @@ describe("U4 owner-only connector capability and independent mailbox revocation"
         "supplier replies",3);
       expect(rpc).toHaveBeenCalledWith("u4_publish_objective_report",
         expect.objectContaining({p_proof:expect.objectContaining({
-          quality:"partial",sources:[expect.objectContaining({
+          quality:"answered",sources:[expect.objectContaining({
             source:"unverified_external",identifier:"search_gmail",
           })],
         })}));

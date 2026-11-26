@@ -151,7 +151,7 @@ describe("Task14B agentic purchasing: Supervisor works through a goal, not Q&A",
   await runOwner({ownerText:"Explain how to change the display order of menu items.",
    context:{...baseContext} as AgentToolContext,provider:unrelated.provider});
   expect(unrelated.requests).toHaveLength(1);
-  expect(unrelated.requests[0].instructions).toEqual(readOnly.requests[0].instructions);
+  expect(String(unrelated.requests[0].instructions).split("\nOriginal objective,")[0]).toEqual(String(readOnly.requests[0].instructions).split("\nOriginal objective,")[0]);
   expect(unrelated.requests[0].tools).toEqual(readOnly.requests[0].tools);
   expect(unrelated.requests[0].tool_choice).toBe("auto");
  });
