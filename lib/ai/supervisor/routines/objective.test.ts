@@ -1,4 +1,5 @@
 import {describe,expect,it,vi} from "vitest";
+vi.mock("@/lib/ai/research/backgroundContinuation.server",()=>({backgroundResearchContinuation:async()=>({executionDeadline:Date.now()+110000,load:async()=>null,save:async()=>undefined,yield:async()=>undefined})}));
 vi.mock("server-only",()=>({}));
 vi.mock("@/lib/access/access.server",()=>({assertCafeAiAccess:vi.fn()}));
 vi.mock("@/lib/ai/cafeTools.server",()=>({
