@@ -1,5 +1,5 @@
 import {z} from "zod";
-import {defineCatalog,createSpecStreamCompiler,type SpecStreamLine} from "@json-render/core";
+import {defineCatalog,defineSchema,createSpecStreamCompiler,type SpecStreamLine} from "@json-render/core";
 import {schema} from "@json-render/react/schema";
 import {presentationPanelSchema,recordTableSchema,richPresentationSchema,descriptiveGroupTitle,interactiveCalcSchema,evaluatePresentationCalc,type InteractiveCalc,type PresentationPanel,type RecordTable,type RichPresentation} from "@/lib/ai/conversations/presentation";
 
@@ -12,7 +12,8 @@ const selection=z.object({
 const calcSelection=z.object({ref:z.string(),editable:z.array(z.string())});
 const envelope=z.object({layout:z.enum(["stack","grid"]).optional(),panels:z.array(selection).optional(),
  report:z.boolean().optional(),files:z.boolean().optional(),calculator:calcSelection.optional()});
-const catalog=defineCatalog(schema,{components:{
+// Reuse the native React grammar without the demo catalog's sample-data instructions.
+const catalog=defineCatalog(defineSchema(()=>schema.definition),{components:{
  Stack:{props:z.object({}),slots:["default"],description:"Group views in their displayed order.",example:{}},
  DataView:{props:envelope,slots:[],description:"Show metrics, charts, tables, calculator or report from successful same-turn tool results. Use presentationRef and exact SQL column aliases. A calculate result can supply a calculator with named editable inputs. Can select multiple results in one view.",example:{layout:"grid",panels:[{ref:"q1",kind:"bar",x:"category",y:"amount_cents"}]}},
 },actions:{}});

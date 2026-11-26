@@ -389,6 +389,6 @@ it("wraps two-column financial tables and preserves nested checklist formatting"
 });
 
 it("fits the accounting three-column table and wraps descriptions",()=>{
- const html=renderToStaticMarkup(createElement(ChatMarkdown,{text:"| Accounting item | Amount | Data quality |\n| --- | ---: | --- |\n| Staff wages | $12,441.28 | Actual |\n| Ingredient costs | $50.38 | Incomplete; last five days only |"}));
+ const html=renderToStaticMarkup(createElement(ChatMarkdown,{text:"| Accounting item | Amount | Data quality |\n| --- | ---: | --- |\n| Staff wages | $9,321.45 | Actual |\n| Ingredient costs | $78.90 | Incomplete; last five days only |"}));
  expect(html).toContain("table-fixed");expect(html).not.toContain("min-w-max");expect(html).toContain("<colgroup>");expect(html).toContain("overflow-wrap:anywhere");expect(html).toContain("Incomplete; last five days only");
 });

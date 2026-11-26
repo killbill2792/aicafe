@@ -2461,7 +2461,7 @@ test("@home Task16E stops an acknowledged live view without invoking a cancel or
     await expect(progress).not.toContainText("Inspecting data requirements");
     await expect(progress.locator("svg[data-cafe-motion]")).toHaveCount(1);
     await page.setViewportSize({width:390,height:844});
-    await page.evaluate(()=>window.__task16eStream.emit("delta",{text:"| Accounting item | Amount | Data quality |\n| --- | ---: | --- |\n| Staff wages | $9,321.45 | Actual |\n| Ingredient costs | $50.38 | Incomplete; last five days only |\n\n"}));
+    await page.evaluate(()=>window.__task16eStream.emit("delta",{text:"| Accounting item | Amount | Data quality |\n| --- | ---: | --- |\n| Staff wages | $9,321.45 | Actual |\n| Ingredient costs | $78.90 | Incomplete; last five days only |\n\n"}));
     const region=page.locator('[aria-label="Response table"]').last();
     await expect(region).toBeVisible();
     expect(await region.evaluate(el=>({scroll:el.scrollWidth,width:el.clientWidth}))).toMatchObject({scroll:expect.any(Number),width:expect.any(Number)});

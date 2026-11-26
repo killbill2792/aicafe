@@ -146,6 +146,24 @@ async function main(){
       const hard={completed:complete,noDataFailure:!/query (?:is )?(?:failing|returning an error)|couldn[’']t retrieve|can[’']t (?:retrieve|verify)|not a function/i.test(text),
         ...(complete?item.hard(text):{})};
       if(id==="sql-research-presentation")hard.exactVisual=(reply?.structured_content??[]).some(b=>b.type==="rich_presentation"&&b.panels?.some(p=>p.source==="sql_research"&&["line","bar"].includes(p.kind)&&p.unit==="cents"&&p.currency===cafe.currency&&p.points.length===o.daily.length&&o.daily.every(d=>p.points.some(v=>v.label===d.day&&v.value===Number(d.cents)))));
+      if(id==="sql-research-presentation"&&reply){
+        // Exercise the real, persisted model answer in the authenticated owner UI.
+        // Do not send a second model request or install a synthetic transport.
+        await owner.page.setViewportSize({width:390,height:844});
+        await owner.page.goto("/en?thread="+encodeURIComponent(thread));
+        const views=owner.page.getByTestId("supervisor-rich-presentation");
+        await views.first().waitFor({state:"visible",timeout:30000}).catch(()=>{});
+        hard.ownerVisualRendered=await views.count()>0;
+        if(hard.ownerVisualRendered){
+          hard.mobileVisualFits=await views.evaluateAll(nodes=>nodes.every(n=>{
+            const rect=n.getBoundingClientRect();
+            return rect.width>0&&rect.left>=-1&&rect.right<=window.innerWidth+1;
+          }));
+        }
+        await owner.page.reload();
+        await views.first().waitFor({state:"visible",timeout:30000}).catch(()=>{});
+        hard.restoredVisual=await views.count()>0;
+      }
       if("usedSqlMoreThanOnce" in hard)hard.usedSqlMoreThanOnce=turn.names.filter(n=>n==="run_sql").length>=2;
       const soft=complete&&item.soft?item.soft(text):{};
       const passed=Object.values(hard).every(Boolean);hardFailures+=passed?0:1;
