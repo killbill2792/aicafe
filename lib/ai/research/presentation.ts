@@ -3,20 +3,20 @@ import {defineCatalog,defineSchema,createSpecStreamCompiler,type SpecStreamLine}
 import {schema} from "@json-render/react/schema";
 import {exactDecimal,CALC_OPS,type CalcOp} from "@/lib/metrics/core/calculator";
 import {calculate} from "./tools.server";
-import {presentationPanelSchema,recordTableSchema,richPresentationSchema,descriptiveGroupTitle,interactiveCalcSchema,evaluatePresentationCalc,type InteractiveCalc,type PresentationPanel,type RecordTable,type RichPresentation} from "@/lib/ai/conversations/presentation";
+import {presentationPanelSchema,recordTableSchema,recoverRichPresentation,descriptiveGroupTitle,interactiveCalcSchema,evaluatePresentationCalc,type InteractiveCalc,type PresentationPanel,type RecordTable,type RichPresentation} from "@/lib/ai/conversations/presentation";
 
 /** Native inline GenUI vocabulary. All data values bind to the evidence already
  * admitted to this owner turn, irrespective of its retrieval mechanism. */
 const fieldPath=z.array(z.union([z.string().min(1).max(140),z.number().int().nonnegative()])).min(1).max(12);
 const reference=z.object({ref:z.string(),path:fieldPath.optional(),quote:z.string().min(1).max(100).optional()}).refine(v=>Boolean(v.path)!==Boolean(v.quote));
-const pointSelection=z.object({label:z.string().min(1).max(140),value:reference,labelField:reference.optional()});
+const pointSelection=z.object({label:z.string().min(1),value:reference,labelField:reference.optional()});
 const pointPanel=z.object({kind:z.enum(["metric","bar","line","donut","ranked_table"]),title:z.string().optional(),points:z.array(pointSelection).min(1)});
 
 // Direct model-authored analysis is not a claim of stored business evidence.
 const analysisPanel=z.object({kind:z.enum(["metric","bar","line","donut","ranked_table"]),title:z.string().optional(),
  unit:z.enum(["cents","count","items","units","seconds","minutes","hours","days","ratio","ratio squared","indicator","cents/hour"]),
- measurement:z.string().optional(),basis:z.enum(["calculated","estimate","scenario"]),
- explanation:z.string().trim().min(1),points:z.array(z.object({label:z.string(),value:z.number().finite()})).min(1)});
+ measurement:z.string().optional(),basis:z.enum(["calculated","estimate","scenario","actual","unverified"]).optional(),
+ explanation:z.string().optional(),points:z.array(z.object({label:z.string(),value:z.union([z.number().finite(),z.string(),z.null()])})).min(1)});
 
 const selection=z.object({
  ref:z.string(),kind:z.enum(["metric","bar","line","donut","ranked_table","table"]),
@@ -24,11 +24,12 @@ const selection=z.object({
 });
 const calcSelection=z.object({ref:z.string(),editable:z.array(z.string())});
 const directCalc=z.object({title:z.string().optional(),inputs:z.array(z.object({name:z.string(),value:z.string(),unit:z.enum(["cents","count","percent","ratio"])})).min(1),steps:z.array(z.object({id:z.string(),op:z.enum(CALC_OPS as [CalcOp,...CalcOp[]]),args:z.array(z.string())})).min(1),editable:z.array(z.string())});
+const authoredTable=z.object({title:z.string().optional(),basis:z.enum(["calculated","estimate","scenario","actual","unverified"]).optional(),explanation:z.string().optional(),columns:z.array(z.string().min(1)).min(1),rows:z.array(z.array(z.union([z.string(),z.number().finite(),z.boolean(),z.null()]))).min(1)});
 const envelope=z.object({layout:z.enum(["stack","grid"]).optional(),panels:z.array(z.union([selection,pointPanel,analysisPanel])).optional(),
- report:z.boolean().optional(),files:z.boolean().optional(),calculator:z.union([calcSelection,directCalc]).optional()});
+ tables:z.array(authoredTable).optional(),report:z.boolean().optional(),files:z.boolean().optional(),calculator:z.union([calcSelection,directCalc]).optional()});
 const components={
  Stack:{props:z.object({}),slots:["default"],description:"Group views in their displayed order.",example:{}},
- DataView:{props:envelope,slots:[],description:"Metrics, charts, tables, calculators, report and authenticated attachments. For rows use ref, x, y or columns. For individual values, including across sources, use points with label and value:{ref,path:[exact field names and array indices]}; for text use value:{ref,quote:exact numeric token including currency symbol if present}. For dated or numeric category labels use labelField:{ref,path}. A calculate result can supply an editable calculator, or author calculator inputs, steps and editable input names directly with a title; direct inputs are hypothetical unless explained otherwise. You can also author a panel directly with kind, title, unit, basis (calculated, estimate or scenario), explanation and points [{label,value}]. Use cents for money in minor units; explain the calculation or assumptions in prose. Direct values are labeled as model analysis, not stored records.",example:{layout:"grid",panels:[{ref:"q1",kind:"bar",x:"category",y:"amount_cents"}]}},
+ DataView:{props:envelope,slots:[],description:"Metrics, charts, tables, calculators, report and authenticated attachments. For rows use ref, x, y or columns. For individual values, including across sources, use points with label and value:{ref,path:[exact field names and array indices]}; for text use value:{ref,quote:exact numeric token including currency symbol if present}. For dated or numeric category labels use labelField:{ref,path}. A calculate result can supply an editable calculator, or author calculator inputs, steps and editable input names directly with a title; direct inputs are hypothetical unless explained otherwise. You can also author a panel directly with kind, title, unit, basis (calculated, estimate or scenario), explanation and points [{label,value}]. Use cents for money in minor units; null means unknown, not zero. You can also author tables directly using tables:[{title,basis,explanation,columns:[label],rows:[[value]]}]. Direct values are labeled by their basis; a claimed actual without an evidence binding is labeled unverified, not discarded.",example:{layout:"grid",panels:[{ref:"q1",kind:"bar",x:"category",y:"amount_cents"}]}},
 };
 // The upstream default template advertises Card, demo data, repeat, /state
 // and mutable actions. Our data-bound registry does not execute those. Use
@@ -48,7 +49,7 @@ const catalog=defineCatalog(defineSchema(()=>schema.definition,{promptTemplate:(
 ].filter(Boolean).join("\n")}),{components,actions:{}});
 export const INLINE_PRESENTATION_HINT=catalog.prompt({mode:"inline",
  system:"You are composing the actual owner-facing answer. Use natural Markdown together with the available visual and interactive components whenever they make the answer clearer. Choose the representation yourself; the information source does not determine the layout. Prefer a visual over a Markdown table whenever the answer has figures across several periods or items, a ranking, a comparison or headline numbers: a chart for trends, a table for records, metric cards for the key figures, with a short sentence of prose around it. Use direct model-authored panels for calculations, forecasts and scenarios when helpful; distinguish actual records from assumptions and estimates. Choose prose or visuals independently of the retrieval method.",
- customRules:["Use separate spec fences for independent UI sections anywhere in the answer; continue ordinary prose between them. Use the presentationRef from admitted tool results or the text references described in the turn context. Bind existing values when presenting retrieved records, or use a model-authored analysis panel for derived values, estimates and hypothetical inputs. Explain the basis and do not represent assumptions as actual business records. Historical messages are prior claims, not fresh business evidence. No generic executable actions."]});
+ customRules:["Use separate spec fences for independent UI sections anywhere in the answer; continue ordinary prose between them. Use the presentationRef from admitted tool results or the text references described in the turn context. Bind existing values when convenient, or author panels and tables directly for any answer. Source confidence is a label, not a condition for display. Explain the basis and do not represent assumptions as actual business records. Historical messages are prior claims, not fresh business evidence. No generic executable actions."]});
 type Selection=z.infer<typeof selection>;
 export type PresentationContext={asOf:string;currency?:string|null;presentationAttachments?:readonly string[]};
 type Context=PresentationContext;
@@ -64,12 +65,12 @@ const title=(s:Selection,fallback:string)=>descriptiveGroupTitle(s.title)?.slice
 
 function table(s:Selection,rows:Row[],ctx:Context,e:PresentationEvidence):RecordTable|null{
  const keys=s.columns??[s.x,s.y].filter((v):v is string=>typeof v==="string");
- if(!keys.length||keys.some(k=>!visible(k)||!rows.every(r=>Object.hasOwn(r,k)&&rawCell(r[k]))))return null;
- const columns=keys.map(k=>({label:name(k),unit:unit(k)==="cents"&&ctx.currency?"cents":unit(k)==="count"&&rows.every(r=>r[k]===null||Number.isSafeInteger(r[k]))?"count":"stored"}));
+ if(!keys.length||keys.some(k=>!visible(k)))return null;
+ const columns=keys.map(k=>({label:name(k),unit:unit(k)==="cents"&&rows.every(r=>r[k]==null||typeof r[k]==="number")?"cents":unit(k)==="count"&&rows.every(r=>r[k]==null||typeof r[k]==="number")?"count":"stored"}));
  const result=recordTableSchema.safeParse({title:title(s,"Query results"),view:e.kind==="sql"?"tool_sql_research":"tool_response_evidence",from:ctx.asOf,to:ctx.asOf,asOf:ctx.asOf,
   currency:ctx.currency??null,coverage:e.coverage?"partial":"stored",
   scope:(e.source+"; see the answer for period and coverage").slice(0,300),
-  columns,rows:rows.map(r=>keys.map(k=>r[k]))});
+  columns,rows:rows.map(r=>keys.map(k=>rawCell(r[k])?r[k]:null))});
  return result.success?result.data:null;
 }
 function panel(s:Selection,rows:Row[],ctx:Context,e:PresentationEvidence):PresentationPanel|null{
@@ -78,15 +79,15 @@ function panel(s:Selection,rows:Row[],ctx:Context,e:PresentationEvidence):Presen
  if(!x&&rows.length!==1)return null;
  const u=unit(y),currency=u==="cents"?ctx.currency??null:null;
  const chartUnit=u==="cents"?"cents":u==="count"?"count":"units";
- if(u==="cents"&&!currency)return null;
+ 
  const points=rows.map(r=>({label:safeLabel(x?r[x]:name(y)),value:r[y]}));
  if(points.some(p=>(typeof p.label!=="string"&&typeof p.label!=="number")||typeof p.value!=="number"||!Number.isFinite(p.value)))return null;
  const typed=points.map(p=>({label:String(p.label),value:p.value as number}));
- if(new Set(typed.map(p=>p.label)).size!==typed.length)return null;
+ 
  if(s.kind==="ranked_table")typed.sort((a,b)=>b.value-a.value);
  // The chart is a view of the query, not a claim of complete underlying
  // records. Do not infer missing time buckets or manufacture a denominator.
- if(s.kind==="donut"&&(typed.some(p=>p.value<0)||typed.every(p=>p.value===0)))return null;
+ 
  const p=presentationPanelSchema.safeParse({kind:s.kind,title:title(s,name(y)),unit:chartUnit,currency,
   from:ctx.asOf,to:ctx.asOf,asOf:ctx.asOf,source:e.kind==="sql"?"sql_research":"response_evidence",sourceDetail:e.source.slice(0,500),coverage:e.coverage,
   ...(chartUnit==="units"?{measurement:name(y).slice(0,80)}:{}),points:typed});
@@ -171,15 +172,14 @@ function bindValue(e:PresentationEvidence,r:z.infer<typeof reference>,ctx:Contex
   if(parent.unit==="percent")return {value:v,unit:"units",measurement:"%"};
   return {value:v,unit:parent.unit==="ratio"?"ratio":Number.isSafeInteger(v)?"count":"units"};
  }
- if(typeof raw!=="number"||!Number.isFinite(raw)||Math.abs(raw)>Number.MAX_SAFE_INTEGER)return;
+ if(typeof raw!=="number"||!Number.isFinite(raw))return;
  const u=unit(key);
- return (u==="cents"||u==="count")&&!Number.isSafeInteger(raw)?undefined:
-  {value:raw,unit:u==="stored"?"units":u};
+ return {value:raw,unit:u==="stored"?"units":u};
 }
 function safeLabel(v:unknown):string|undefined{
  if(typeof v!=="string"&&typeof v!=="number")return;
  const s=String(v).trim();
- return s.length>0&&s.length<=140&&!/[\w.-]+@[\w.-]+\.[a-z]{2,}|\b[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\b/iu.test(s)?s:undefined;
+ return s.length>0&&!/[\w.-]+@[\w.-]+\.[a-z]{2,}|\b[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\b/iu.test(s)?s:undefined;
 }
 /** A series may combine exact values from independently admitted sources.
  * Do not combine different units, promote a historic claim, or silently
@@ -221,13 +221,20 @@ export function resolveResearchView(raw:unknown,queries:PresentationEvidenceMap,
   const direct=analysisPanel.safeParse(value);
   if(direct.success){
    const a=direct.data;
-   const points=a.points.map(p=>({label:safeLabel(p.label),value:p.value}));
-   if(points.every(p=>p.label!==undefined)&&new Set(points.map(p=>p.label)).size===points.length){
-    const modelPanel=presentationPanelSchema.safeParse({kind:a.kind,title:safeLabel(a.title??"Luna analysis")??"Luna analysis",unit:a.unit,
-     currency:["cents","cents/hour"].includes(a.unit)?ctx.currency??null:null,from:ctx.asOf,to:ctx.asOf,asOf:ctx.asOf,
-     source:"response_evidence",sourceDetail:("Luna "+(a.basis==="calculated"?"calculation (model-derived)":a.basis==="scenario"?"hypothetical scenario":"estimate")+": "+a.explanation).slice(0,500),
-     ...(a.basis!=="calculated"?{coverage:"estimate"}:{}),...(a.measurement?{measurement:a.measurement}:{}),points});
-    if(modelPanel.success)panels.push(modelPanel.data);
+   const heading=safeLabel(a.title??"Luna analysis")??"Luna analysis";
+   const coverage=a.basis==="estimate"||a.basis==="scenario"?"estimate":a.basis==="calculated"?undefined:"unverified";
+   const detail="Luna "+(a.basis==="calculated"?"calculation (model-derived)":a.basis==="scenario"?"hypothetical scenario":a.basis==="estimate"?"estimate":"unverified statement")+(a.explanation?": "+a.explanation:"");
+   const points=a.points.map(p=>({label:safeLabel(p.label)??"Value",value:p.value}));
+   const currency=["cents","cents/hour"].includes(a.unit)?ctx.currency??null:null;
+   const modelPanel=presentationPanelSchema.safeParse({kind:a.kind,title:heading,unit:a.unit,currency,from:ctx.asOf,to:ctx.asOf,asOf:ctx.asOf,
+     source:"response_evidence",sourceDetail:detail,coverage,...(a.measurement?{measurement:a.measurement}:{}),points});
+   if(modelPanel.success)panels.push(modelPanel.data);
+   else{
+    const numeric=points.every(p=>p.value===null||typeof p.value==="number");
+    const fallback=recordTableSchema.safeParse({title:heading,view:"tool_response_evidence",from:ctx.asOf,to:ctx.asOf,asOf:ctx.asOf,currency,
+     coverage:coverage??"unverified",scope:detail,columns:[{label:"Category",unit:"label"},{label:a.measurement??a.unit,unit:numeric?a.unit:"stored"}],
+     rows:points.map(p=>[p.label,p.value])});
+    if(fallback.success)tables.push(fallback.data);
    }
    continue;
   }
@@ -244,10 +251,19 @@ export function resolveResearchView(raw:unknown,queries:PresentationEvidenceMap,
    else {const t=table(s.data,q.rows,ctx,e);if(t)tables.push(t);}
   }
  }
+ for(const rawTable of Array.isArray(raw.tables)?raw.tables:[]){
+  const t=authoredTable.safeParse(rawTable);if(!t.success)continue;
+  const a=t.data, width=Math.max(a.columns.length,...a.rows.map(r=>r.length));
+  const columns=Array.from({length:width},(_,i)=>({label:a.columns[i]??"Value "+(i+1),unit:"stored"}));
+  const result=recordTableSchema.safeParse({title:a.title??"Luna analysis",view:"tool_response_evidence",from:ctx.asOf,to:ctx.asOf,asOf:ctx.asOf,currency:ctx.currency??null,
+   coverage:a.basis==="estimate"||a.basis==="scenario"?"estimate":"unverified",scope:"Luna "+(a.basis??"unverified")+(a.explanation?": "+a.explanation:""),
+   columns,rows:a.rows.map(row=>Array.from({length:width},(_,i)=>row[i]??null))});
+  if(result.success)tables.push(result.data);
+ }
  const attachments=raw.files===true?[...new Set(ctx.presentationAttachments??[])].slice(0,3):[];
- const block=richPresentationSchema.safeParse({type:"rich_presentation",version:1,layout,panels,suggestions:[],
+ const block=recoverRichPresentation({type:"rich_presentation",version:1,layout,panels,suggestions:[],
   ...(tables.length?{tables}:{}),...(calc?{calculator:calc}:{}),...(raw.report===true?{report:true}:{}),...(attachments.length?{files:attachments}:{})});
- return block.success?block.data:undefined;
+ return block;
 }
 
 /** Apply only data-only element tree patches, using the installed library's
