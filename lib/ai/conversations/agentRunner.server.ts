@@ -879,7 +879,7 @@ export async function runOneTurn(p: TurnParams): Promise<{ replyId: string; repl
     // The owner/café scope above is already verified; the database function
     // re-verifies ownership and applies RLS for this one café.
     const notesClient=await getDb();
-    const result = await runResearchTurn({ ownerText: p.ownerText,
+    const result = await runResearchTurn({ ownerText: p.ownerText,matchedOwnerAnswers:p.matchedAnswers,
       ownerImages:selected.images, ownerPdfs:selected.pdfs, ownerEvidence:selected.evidence, history,
       scope:{db:createAdminSupabaseClient(),businessId:scope.businessId,ownerUserId:scope.ownerUserId,
         notes:cafeNotesPort(notesClient,scope.businessId)},

@@ -156,3 +156,31 @@ it("rolls back already streamed visuals from a failed call but preserves earlier
  expect(resets[0][1]).toBe(1);expect(client).toBe("Recovered.\n\nDone.");expect(live).toBe(1);
  expect(result.results.filter(r=>r.source==="response_presentation")).toHaveLength(1);
 });
+
+it("supplies verified matched answers to the resumed research turn",async()=>{
+ const provider:AgentProvider=async function*(params){
+  expect(params.input).toEqual(expect.arrayContaining([{role:"assistant",content:"What is the rent?"},{role:"user",content:"Rent is 1250."}]));
+  yield {type:"response.output_text.delta",delta:"Rent is 1250."};
+  yield {type:"response.completed",response:{usage:{input_tokens:1,output_tokens:1}}};
+ };
+ const result=await runResearchTurn({ownerText:"Review rent",matchedOwnerAnswers:[{questionId:"question",answerId:"answer",question:"What is the rent?",answer:"Rent is 1250."}],cafeContext:"Cafe",provider,scope:{db:{} as never,businessId:"business",ownerUserId:"owner"}});
+ expect(result.unverified).toEqual([]);
+});
+it("reserves a bounded synthesis request when ordinary research reaches the work deadline",async()=>{
+ let elapsed=0,calls=0;
+ const rpc=vi.fn().mockResolvedValue({data:{ok:true,rows},error:null});
+ const provider:AgentProvider=async function*(params){
+  calls++;
+  expect(params.max_output_tokens).toBeGreaterThan(0);
+  if(calls===1){
+   yield {type:"response.output_item.done",item:{type:"function_call",name:"run_sql",call_id:"q",arguments:JSON.stringify({sql:"select 1"})}};
+   yield {type:"response.completed",response:{usage:{input_tokens:1,output_tokens:1}}};
+   elapsed=49000;return;
+  }
+  expect(params.tool_choice).toBe("none");
+  yield {type:"response.output_text.delta",delta:"The research window ended."};
+  yield {type:"response.completed",response:{usage:{input_tokens:1,output_tokens:1}}};
+ };
+ const result=await runResearchTurn({ownerText:"Research",cafeContext:"Cafe",provider,now:()=>elapsed,scope:{db:{rpc} as never,businessId:"business",ownerUserId:"owner"}});
+ expect(calls).toBe(2);expect(rpc).not.toHaveBeenCalled();expect(result.endReason).toBe("timeout");expect(result.text).toBe("The research window ended.");
+});
