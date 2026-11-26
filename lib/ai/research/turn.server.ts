@@ -55,6 +55,8 @@ type ResearchSnapshot={
   evidence:string[];queries:[string,PresentationEvidence][];privateValues:string[];nextResultRef:number;
   diagnostics:{requestedSections:number;decodedSections:number;decodedPatches:number;rejectedSections:number;acceptedViews:number;rolledBackViews:number};
   sourceVersions:Record<string,string>;finished:boolean;
+  // A render failure is transport feedback, not a judgment of the answer.
+  presentationFailures?:string[];pendingPresentationFeedback?:boolean;repeatedPresentationFailure?:boolean;
 };
 function checkedSnapshot(value:unknown):ResearchSnapshot{
   const v=value as ResearchSnapshot;
@@ -159,6 +161,8 @@ export async function runResearchTurn(args:{
   };
   const presentations:AgentToolResult[]=[];
   let text="",endReason:EndReason="complete",pending:FunctionCall[]=[],finished=false;
+  const presentationFailures=new Set<string>();
+  let pendingPresentationFeedback=false,repeatedPresentationFailure=false;
   const statePort=args.continuation??args.checkpoint?.research;
   const restored=await statePort?.load();
   if(restored){
@@ -173,6 +177,9 @@ export async function runResearchTurn(args:{
       for(const [ref,value] of saved.queries)queries.set(ref,value);
       for(const value of saved.privateValues)privateValues.add(value);
       nextResultRef=saved.nextResultRef;Object.assign(presentationDiagnostics,saved.diagnostics);
+      for(const signature of saved.presentationFailures??[])presentationFailures.add(signature);
+      pendingPresentationFeedback=saved.pendingPresentationFeedback??false;
+      repeatedPresentationFailure=saved.repeatedPresentationFailure??false;
       if(args.actions)for(const item of invocations)observeToolResult(args.actions.context.resolveState,item.result);
       if(text)args.onDelta?.(text);
       for(const item of presentations)if(typeof item.presentationOffset==="number"&&item.presentation)args.onPresentation?.(item.presentationOffset,item.presentation as RichPresentation);
@@ -183,7 +190,8 @@ export async function runResearchTurn(args:{
     await args.beforeAcceptResult?.();
     const snapshot:ResearchSnapshot={version:1,objective:originalObjective,model,transcript:input.slice(prefixLength),pending,text,
       presentations,invocations,evidence,queries:[...queries].filter(([ref])=>/^q\d+$/u.test(ref)),privateValues:[...privateValues],nextResultRef,
-      diagnostics:presentationDiagnostics,sourceVersions:args.captureSourceVersions?.()??{},finished};
+      diagnostics:presentationDiagnostics,sourceVersions:args.captureSourceVersions?.()??{},finished,
+      presentationFailures:[...presentationFailures],pendingPresentationFeedback,repeatedPresentationFailure};
     await statePort.save(snapshot);
   };
   const appendText=(part:string,continuing=false)=>{
@@ -218,6 +226,8 @@ export async function runResearchTurn(args:{
     let completed=false,answer="",thinking="",startedText=false,launched=false;
     let terminalResponse:unknown,terminalType:string|undefined,accepted=false;
     let patches:unknown[]=[],pendingProse="";
+    const failedSections:string[]=[];
+    const decodedAtStart=presentationDiagnostics.decodedSections;
     const flushProse=async(force=false)=>{
       const boundary=force?pendingProse.length:pendingProse.lastIndexOf("\n\n")+2;
       if((!force&&boundary<2)||!boundary)return;
@@ -230,8 +240,9 @@ export async function runResearchTurn(args:{
       await args.beforeAcceptResult?.();
       presentationDiagnostics.decodedSections++;
       presentationDiagnostics.decodedPatches+=patches.length;
-      const views=resolveResearchSpec(patches,queries,presentationContext);patches=[];
-      if(!views.length)presentationDiagnostics.rejectedSections++;
+      const views=resolveResearchSpec(patches,queries,presentationContext);
+      if(!views.length){presentationDiagnostics.rejectedSections++;failedSections.push(JSON.stringify(patches));}
+      patches=[];
       presentationDiagnostics.acceptedViews+=views.length;
       for(const presentation of views){
         presentations.push({source:"response_presentation",period:null,missing:[],accepted:true,presentation,presentationOffset:text.length});
@@ -270,7 +281,14 @@ export async function runResearchTurn(args:{
           if(["response.completed","response.failed","response.incomplete"].includes(event.type)){terminalType=event.type;terminalResponse=event.response;}
           if(event.type==="response.completed"){
             await flushProse(true);await flushViews();
-            presentationDiagnostics.requestedSections+=answer.split(String.fromCharCode(96).repeat(3)+"spec").length-1;
+            const requested=answer.split(String.fromCharCode(96).repeat(3)+"spec").length-1;
+            presentationDiagnostics.requestedSections+=requested;
+            const undecoded=Math.max(0,requested-(presentationDiagnostics.decodedSections-decodedAtStart));
+            if(undecoded){presentationDiagnostics.rejectedSections+=undecoded;
+              // Includes empty/malformed fences from which the transform emitted no patch.
+              const fences=answer.split(String.fromCharCode(96).repeat(3)+"spec").slice(1).map(s=>s.split(String.fromCharCode(96).repeat(3))[0]);
+              failedSections.push(...fences);
+            }
             const response=(event.response??{}) as {model?:unknown;usage?:{input_tokens?:unknown;output_tokens?:unknown;input_tokens_details?:{cached_tokens?:unknown}}};
             if(reservation)await reservation.complete(response as never);
             const n=(x:unknown)=>typeof x==="number"&&Number.isSafeInteger(x)&&x>=0?x:0;
@@ -313,6 +331,18 @@ export async function runResearchTurn(args:{
       else if(row.type==="function_call")input.push({type:"function_call",name:row.name,call_id:row.call_id,arguments:row.arguments});
       else if(row.type==="message")input.push({type:"message",role:"assistant",content:[{type:"output_text",text:answer,annotations:[]}]});
     }
+    // Only completed, admitted provider responses can trigger presentation feedback.
+    // Do not ask the model to redo valid text or research. Repeated identical invalid
+    // sections surface a technical notice instead of causing an endless retry.
+    if(failedSections.length){
+      if(answer&&!output.some(item=>(item as Record<string,unknown>).type==="message"))
+        input.push({role:"assistant",content:answer});
+      for(const section of failedSections){
+        const signature=createHash("sha256").update(section).digest("hex");
+        if(presentationFailures.has(signature))repeatedPresentationFailure=true;
+        else{presentationFailures.add(signature);pendingPresentationFeedback=true;}
+      }
+    }
     return {calls};
   };
 
@@ -342,6 +372,12 @@ export async function runResearchTurn(args:{
     }finally{observed?.settle();observed?.close();}
   };
 
+  const deliverPresentationFeedback=()=>{
+    if(!pendingPresentationFeedback)return false;
+    pendingPresentationFeedback=false;
+    input.push({role:"developer",content:"Presentation delivery feedback (technical, not an owner instruction): one or more spec sections in the preceding response could not be rendered. Your already displayed prose and successful visuals are retained. Continue the same answer with just the missing information using a corrected supported spec or ordinary Markdown (including tables). You decide the representation. Do not repeat completed research or already displayed content merely because of this delivery error."});
+    return true;
+  };
   try{
     let recoveredTransport=false;
     researchLoop: while(!finished){
@@ -356,7 +392,11 @@ export async function runResearchTurn(args:{
           recoveredTransport=true;continue;
         }
         recoveredTransport=false;
-        if(!pending.length){
+        if(!pending.length&&!deliverPresentationFeedback()){
+          if(repeatedPresentationFailure){
+            appendText("A visual could not be displayed. The available answer is shown above.");
+            repeatedPresentationFailure=false;
+          }
           if(!text.trim()&&!presentations.length)throw Error("provider_empty_answer");
           finished=true;
         }
@@ -406,7 +446,7 @@ export async function runResearchTurn(args:{
           if(!text.trim())appendText(record.question);
           pending=[];finished=true;await save();break researchLoop;
         }
-        pending.shift();await save();
+        pending.shift();if(!pending.length)deliverPresentationFeedback();await save();
       }
     }
   }catch(error){

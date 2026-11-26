@@ -17,3 +17,9 @@ Read-only production comparison over three dates: 110 original and 110 revised a
 ## Events scope separation
 
 Owner decision (2026-11-26): Events is a separate redesign, tracked in draft #587. The existing three event research callers use the shared research engine but do not persist an interrupted event transcript. Durable event-specific continuation is deferred to that redesign, not claimed as implemented here. Owner explicitly approved `big-ok` for #585 and #586 and delegated merge after verification. No production migration or deployment is authorized by this decision.
+
+## Owner-reported accounting answer and signup regression (November 26)
+
+Read-only production message metadata showed a recent accounting reply timed out after a rejected visual section (two decoded patches, zero accepted/persisted views). The exact rejected patch payload is not available in this evidence. In the shared research loop, return actual render delivery failures to Luna for repair or Markdown fallback while retaining admitted prose, valid views and SQL results. Persist repair state with existing continuation; a repeated identical rejected section surfaces a technical notice instead of an unbounded identical retry. This is technical delivery feedback, not confidence scoring or a new research budget. Deterministic regression exercises the accounting-shaped failure and repaired ledger/Markdown; live model behavior remains unverified.
+
+A recurrent private-signup E2 failure exposed the existing non-atomic check-then-create. Replace that existing writer with one service-role-only, security-invoker SQL function using a per-authenticated-owner transaction lock and atomic business/membership/recovery-order writes. No cleanup of existing businesses, changes to signup policy or production DB execution. Add concurrent disposable PostgreSQL regression and retain the existing Playwright assertion.

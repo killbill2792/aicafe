@@ -354,3 +354,43 @@ it("interrupts a non-durable provider at its physical request deadline, preservi
  expect(result.text).toBe("These are the available records.");
  expect(agentReplyPayload(result).reply.blocks).toContainEqual({type:"text",text:result.text});
 });
+
+
+it("returns a rejected accounting spec to Luna for repair without erasing the earlier answer or repeating SQL",async()=>{
+ let calls=0;
+ const rpc=vi.fn().mockResolvedValue({data:{ok:true,rows},error:null});
+ const provider:AgentProvider=async function*(params){
+  calls++;
+  if(calls===1)yield {type:"response.output_item.done",item:{type:"function_call",name:"run_sql",call_id:"accounting",arguments:JSON.stringify({sql:"select category, amount_cents from expenses"})}};
+  else if(calls===2)yield {type:"response.output_text.delta",delta:"The accounting breakdown is below.\n\n"+fence({panels:[{kind:"metric",points:[{label:"Wages",value:{bogus:true}}]}]})};
+  else{
+   expect(JSON.stringify(params.input)).toContain("Presentation delivery feedback");
+   expect(JSON.stringify(params.input)).toContain("accounting breakdown");
+   yield {type:"response.output_text.delta",delta:fence({tables:[{title:"Expense ledger",columns:["Expense","Amount"],rows:[["Wages","$12.00"],["Supplies","$0.00"],["Unknown",null]]}]})};
+  }
+  yield {type:"response.completed",response:{usage:{input_tokens:1,output_tokens:1}}};
+ };
+ const result=await runResearchTurn({ownerText:"Prepare the accounting",cafeContext:"Cafe",provider,scope:{db:{rpc} as never,businessId:"business",ownerUserId:"owner"},presentationContext:ctx});
+ expect(calls).toBe(3);expect(rpc).toHaveBeenCalledTimes(1);
+ expect(result.endReason).toBe("complete");expect(result.text).toContain("The accounting breakdown is below.");
+ expect(result.presentationDiagnostics).toMatchObject({rejectedSections:1,acceptedViews:1});
+ const payload=agentReplyPayload(result);
+ expect(payload.reply.blocks).toEqual(expect.arrayContaining([expect.objectContaining({type:"rich_presentation",tables:[expect.objectContaining({rows:[["Wages","$12.00"],["Supplies","$0.00"],["Unknown",null]]})]})]));
+ expect(groundedReplySchema.safeParse(payload.reply).success).toBe(true);
+});
+
+it("lets Luna use Markdown when the spec is rejected and discloses repeated identical rendering failures",async()=>{
+ const bad=fence({panels:[{kind:"metric",points:[{label:"Wages",value:{bogus:true}}]}]});
+ for(const repeat of [false,true]){
+  let calls=0;
+  const provider:AgentProvider=async function*(params){
+   calls++;
+   if(calls===2)expect(JSON.stringify(params.input)).toContain("Presentation delivery feedback");
+   yield {type:"response.output_text.delta",delta:calls===1?bad:repeat?bad:"| Expense | Amount |\n| --- | --- |\n| Wages | $12.00 |"};
+   yield {type:"response.completed",response:{usage:{input_tokens:1,output_tokens:1}}};
+  };
+  const result=await runResearchTurn({ownerText:"Accounting",cafeContext:"Cafe",provider,scope:{db:{} as never,businessId:"business",ownerUserId:"owner"},presentationContext:ctx});
+  expect(calls).toBe(2);expect(result.endReason).toBe("complete");
+  expect(result.text).toContain(repeat?"A visual could not be displayed.":"| Wages | $12.00 |");
+ }
+});
