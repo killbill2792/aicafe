@@ -46,8 +46,8 @@ function BucketRow({
       <FillIcon code={bucket.code as ExpenseIconCode} pctCovered={bucket.pctCovered} covered={covered} size={52} />
       <div className="flex min-w-0 flex-1 flex-col gap-1.5">
         <div className="flex flex-wrap items-center justify-between gap-x-2">
-          <span className="break-words text-[1.0625rem] font-bold text-ink">{label}</span>
-          <span className="break-words text-[1.0625rem] font-bold text-ink">
+          <span className="wrap-break-word text-[1.0625rem] font-bold text-ink">{label}</span>
+          <span className="wrap-break-word text-[1.0625rem] font-bold text-ink">
             <Money cents={bucket.amountCents} />
           </span>
         </div>

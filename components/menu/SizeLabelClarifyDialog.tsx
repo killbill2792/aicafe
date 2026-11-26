@@ -22,7 +22,7 @@ export default function SizeLabelClarifyDialog({
   const trimmed = value.trim();
 
   return (
-    <div className="fixed inset-0 z-[60] flex items-end justify-center bg-black/40 p-4 sm:items-center" role="dialog" aria-modal="true">
+    <div className="fixed inset-0 z-60 flex items-end justify-center bg-black/40 p-4 sm:items-center" role="dialog" aria-modal="true">
       <div className="flex w-full max-w-sm flex-col gap-3 rounded-card-lg bg-card p-5">
         <h2 className="text-lg font-bold">{t("sizeClarifyTitle", { value: trimmed })}</h2>
         <div className="grid grid-cols-2 gap-2">

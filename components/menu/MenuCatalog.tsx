@@ -112,7 +112,7 @@ export default function MenuCatalog({ items, photosPromise }: {
       <label className="flex min-h-12 items-center gap-2 rounded-2xl bg-card px-3 text-ink-muted">
         <Search aria-hidden="true" size={20} />
         <span className="sr-only">{t("search")}</span>
-        <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder={t("search")} className="min-w-0 flex-1 bg-transparent text-[1.0625rem] text-ink outline-none" />
+        <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder={t("search")} className="min-w-0 flex-1 bg-transparent text-[1.0625rem] text-ink outline-hidden" />
       </label>
       <div className="-mx-1 flex gap-2 overflow-x-auto px-1 pb-1" role="group" aria-label={t("all")}>
         {tabs.map(([value, label]) => (
@@ -123,7 +123,7 @@ export default function MenuCatalog({ items, photosPromise }: {
       </div>
       <div className="flex flex-col gap-3 md:grid md:grid-cols-2 lg:grid-cols-3">
         {groups.map((group) => {
-          return <Link key={group.key} href={`/menu/${group.representativeItem.id}`} className="group overflow-hidden rounded-card-lg border border-line/70 bg-card text-ink no-underline shadow-sm transition-shadow hover:shadow-md focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ink">
+          return <Link key={group.key} href={`/menu/${group.representativeItem.id}`} className="group overflow-hidden rounded-card-lg border border-line/70 bg-card text-ink no-underline shadow-xs transition-shadow hover:shadow-md focus-visible:outline-solid focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ink">
             <div className="flex gap-4 p-4">
               <div className="relative flex h-28 w-28 shrink-0 items-center justify-center overflow-hidden rounded-2xl bg-surface2 text-warn-text">
                 <Suspense fallback={<Coffee size={42} strokeWidth={1.8} aria-hidden="true" />}>

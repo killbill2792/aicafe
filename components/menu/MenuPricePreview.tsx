@@ -91,7 +91,7 @@ export default function MenuPricePreview({item}:{item:MenuControlItem}){
       <span className="mt-1 block text-sm text-ink-muted">{source}</span>
       <span className="mt-2 flex min-h-12 items-center rounded-lg border border-line bg-paper px-3">
         {unit==="usd"&&<span className="me-1 font-bold" aria-hidden="true">$</span>}
-        <input className="w-full min-w-0 bg-transparent text-[1.0625rem] text-ink outline-none"
+        <input className="w-full min-w-0 bg-transparent text-[1.0625rem] text-ink outline-hidden"
           aria-label={label} inputMode={unit==="count"?"numeric":"decimal"}
           placeholder={t("priceBasisMissing")} value={draft[field]}
           onChange={e=>{setDraft(v=>({...v,[field]:e.target.value}));setError(false)}}/>

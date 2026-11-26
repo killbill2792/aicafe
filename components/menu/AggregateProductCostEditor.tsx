@@ -127,7 +127,7 @@ export default function AggregateProductCostEditor({ items, labels }: { items: M
                         const value = event.target.value;
                         setDrafts((current) => ({ ...current, [item.id]: { baseline: baseline(item), value } }));
                       }}
-                      className="min-w-0 flex-1 bg-transparent text-[1.0625rem] outline-none"
+                      className="min-w-0 flex-1 bg-transparent text-[1.0625rem] outline-hidden"
                     />
                   </span>
                 </label>
