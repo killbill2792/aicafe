@@ -35,7 +35,7 @@ describe("two-latte owner clarification",()=>{
   const {provider,requests}=providerFrom([
    [call("run_sql",{sql:"select data from cv_menu"},"menu-1"),completed],
    [call("propose_price_change",{product_id:hot,new_price_cents:550},"write-2"),completed],
-   [call("ask_owner",{kind:"choice",fields:null,question:"Which Latte should cost $5.50?",options:[
+   [call("ask_owner",{kind:"choice",fields:[],changeSaved:null,question:"Which Latte should cost $5.50?",options:[
     {label:"Latte — drink · 4.50",value:hot},
     {label:"Latte — drink · 5.00",value:iced}],allowOther:true},"ask-3"),completed],
   ]);

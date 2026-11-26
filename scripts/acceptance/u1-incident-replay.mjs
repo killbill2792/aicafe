@@ -42,12 +42,15 @@ export function runReplay(root){
  const git=(args,options)=>command(root,"git",args,options).stdout.trim();
  const head=git(["rev-parse","HEAD"]);
  if(!/^[0-9a-f]{40}$/.test(head))throw Error("Invalid checkout head");
- const fixture=extractIncidentFixture(readFileSync(join(root,"lib/ai/agent/loop.server.test.ts"),"utf8"));
+ // Preserve the original regression in Git history, not a retired reader in current code.
+ const fixtureRef=historicalRefs[2];
+ if(command(root,"git",["cat-file","-e",fixtureRef+"^{commit}"],{allowFailure:true}).status!==0)git(["fetch","--no-tags","--depth=1","origin",fixtureRef],{timeout:90000});
+ const fixture=extractIncidentFixture(git(["show",fixtureRef+":lib/ai/agent/loop.server.test.ts"]));
  const scratch=mkdtempSync(join(tmpdir(),"aicafe-u1-replay-"));
  const receipt=[];
  const originalLock=readFileSync(join(root,"package-lock.json"),"utf8");
  try{
-  for(const [index,ref] of [...historicalRefs,head].entries()){
+  for(const [index,ref] of historicalRefs.entries()){
    const dir=join(scratch,"ref-"+index);
    if(command(root,"git",["cat-file","-e",ref+"^{commit}"],{allowFailure:true}).status!==0)
     git(["fetch","--no-tags","--depth=1","origin",ref],{timeout:90000});

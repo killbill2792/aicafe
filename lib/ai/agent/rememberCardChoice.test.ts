@@ -93,7 +93,9 @@ describe("the owner's card pick holds for the rest of that topic",()=>{
   const history=conversation(menu).map((m,i)=>i===2?{...m,content:"never mind, what were sales today?"}:m);
   expect([...newResolveState("draft price change approval",history).recentChoiceIds??[]]).toEqual([]);
  });
- it("does not carry a prior latte choice into a cappuccino request",()=>{
-  expect([...newResolveState("what is the cappuccino price?",conversation(menus.sameName)).recentChoiceIds??[]]).toEqual([]);
+ it("a new explicitly named cappuccino is not displaced by a previous latte card",async()=>{
+  const {ctx,proposePriceChange}=context(menus.sameName,"draft cappuccino price change to $5.35",conversation(menus.sameName));
+  await proposalTools.propose_price_change.execute({product_id:cappuccino,new_price_cents:535},ctx);
+  expect(proposePriceChange).toHaveBeenCalledWith({productId:cappuccino,newPriceCents:535});
  });
 });
