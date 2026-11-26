@@ -87,7 +87,7 @@ export const checkpointRowSchema=z.object({
   checkpoint_receipts:z.array(z.object({
     operation:z.uuid(),phase:z.enum(["provider_pending","read_pending","effect_pending"]),
     tool:z.string().nullable(),receipt:z.string().max(400),
-  })).max(256),
+  })),
 });
 export type CheckpointRow=z.infer<typeof checkpointRowSchema>;
 
@@ -108,7 +108,14 @@ export function recoverableReadSelector(name:string,raw:unknown,_resultPeriod?:u
   return null;
 }
 export type OwnerReadReference={name:string;selector:Record<string,unknown>};
+export type ResearchContinuationPort = {
+  load:()=>Promise<unknown|null>;
+  save:(state:unknown)=>Promise<void>;
+};
 export type OwnerRunCheckpoint = {
+  research?:ResearchContinuationPort;
+  /** Platform execution window only; reaching it yields, never concludes the research. */
+  executionDeadline?:number;
   assertLive:()=>Promise<void>;
   beginProvider:()=>Promise<void>;
   endProvider:(completed:boolean)=>Promise<void>;
