@@ -565,6 +565,8 @@ describe("Task 6/15C exact matched owner clarification and final reply",()=>{
     await due();
    }
    expect(await call(a,"supervisor_run_claim",[...scope,long.id,randomUUID(),30])).toMatchObject({kind:"claimed"});
+    // The seventh slice remains resumable; explicitly cancel this fixture before admitting the next owner turn.
+    expect(await call(a,"supervisor_cancel_owner_run_v2",[...scope,long.id])).toBe("cancelled");
    expect((await admin.query("select count(*)::int n,count(distinct durable_claim_token)::int slices,count(*) filter(where status='attempted')::int unknown from public.supervisor_system_usage_events where attempt_id=any($1::uuid[])",[spentIds])).rows).toEqual([{n:2,slices:2,unknown:2}]);
    const partialId=randomUUID();await insert(partialId,"Find missing data");
    const partial=await call(a,"supervisor_admit_owner_run_v2",[...scope,partialId,"f".repeat(64),"en",[]]);

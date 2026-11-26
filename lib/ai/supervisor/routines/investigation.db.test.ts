@@ -113,7 +113,7 @@ describe("Task 15A migrated, agentic investigation SQL integration",()=>{
       // never a forged owner request, and enters bounded follow-up monitoring.
       const messages=await admin.query("select role,grounding->>'intent' intent,grounding->>'status' status from public.ai_messages where business_id=$1 and thread_id=$2 and grounding->>'intent'='priority_investigation'",
         [cafes[0],threads[0]]);
-      expect(messages.rows).toEqual([{role:"supervisor",intent:"priority_investigation",status:"partial"}]);
+      expect(messages.rows).toEqual([{role:"supervisor",intent:"priority_investigation",status:"answered"}]);
       // Bound SQL may attach structured metadata, but NEVER modify, prefix
       // or append prose to the numerically verified model answer.
       const body=await admin.query("select structured_content from public.ai_messages where business_id=$1 and thread_id=$2 and grounding->>'intent'='priority_investigation'",
