@@ -2,12 +2,12 @@
   "id": "pos0ef-customer-detail",
   "mode": "generic",
   "engine": "vitest",
-  "entrypoint": "lib/ai/agent/tools/customerIdentity.live.test.ts",
+  "entrypoint": "lib/ai/research/customerIdentity.live.test.ts",
   "proof": "pos0ef-customer-detail-proof.json",
   "scope": "pos0ef-customer-detail-scope.json",
   "expectedTools": [
-    "query_data",
-    "describe_data"
+    "run_sql",
+    "describe_database"
   ],
   "assertions": [
     {

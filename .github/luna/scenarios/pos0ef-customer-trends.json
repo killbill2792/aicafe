@@ -2,13 +2,12 @@
   "id": "pos0ef-customer-trends",
   "mode": "generic",
   "engine": "vitest",
-  "entrypoint": "lib/ai/agent/tools/customerIdentity.live.test.ts",
+  "entrypoint": "lib/ai/research/customerIdentity.live.test.ts",
   "proof": "pos0ef-customer-trends-proof.json",
   "scope": "pos0ef-customer-trends-scope.json",
   "expectedTools": [
-    "query_data",
-    "get_investigation_source",
-    "describe_data"
+    "run_sql",
+    "describe_database"
   ],
   "assertions": [
     {
