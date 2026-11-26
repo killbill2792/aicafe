@@ -7,7 +7,7 @@ import {safeToolError} from "@/lib/ai/agent/toolErrors";
 import {newResolveState,observeToolResult} from "@/lib/ai/agent/resolve";
 import {withoutSavedFactFields} from "@/lib/ownerFacts/askGuard";
 import type {OwnerRunCheckpoint,MatchedOwnerAnswer} from "@/lib/ai/supervisor/runs/contracts";
-import {executionPolicy,requestOutputCap} from "@/lib/ai/agent/executionPolicy";
+import {executionPolicy,requestOutputCap,providerUsageReceipt,requestComposition} from "@/lib/ai/agent/executionPolicy";
 import {unsupportedNumbers} from "./verify";
 import {resolveResearchSpec,INLINE_PRESENTATION_HINT,type PresentationEvidence,type PresentationContext} from "./presentation";
 import {researchInlineEvents} from "./inlineStream";
@@ -126,7 +126,7 @@ export async function runResearchTurn(args:{
     ]:args.ownerText},
   ];
   for(const pair of args.matchedOwnerAnswers??[]){input.push({role:"assistant",content:pair.question},{role:"user",content:pair.answer});}
-  const usage:AgentTurn["usage"]={modelCalls:0,toolCalls:0,inputTokens:0,cachedTokens:0,outputTokens:0,latencyMs:0};
+  const usage:AgentTurn["usage"]={modelCalls:0,toolCalls:0,inputTokens:0,cachedTokens:0,outputTokens:0,latencyMs:0,requests:[],toolMetrics:[]};
   const invocations:{name:string;result:AgentToolResult}[]=[];
   const privateValues=new Set<string>();
   /** Everything retrieved or calculated this turn; the answer's figures are checked against it. */
@@ -170,11 +170,12 @@ export async function runResearchTurn(args:{
         {...(/^gpt-6/u.test(model)?{include:["reasoning.encrypted_content"],reasoning:{summary:"auto"}}:{}),prompt_cache_key:"supervisor-sql-research-v1"}),
       tools:[...researchToolDefinitions.filter(t=>(t.name!=="search_web"||args.webSearch)&&(!/_cafe_note$/u.test(t.name)||args.scope.notes)),...(args.actions?.definitions??[])],tool_choice:final?"none":"auto",stream:true,store:false,
       max_output_tokens:limit,input};
-    const startedCall=now();
+    const startedCall=now(),composition=requestComposition(params);
     const checkpoint=args.checkpoint;
     if(checkpoint)await checkpoint.beginProvider();
     const callTextStart=text.length,callPresentationStart=presentations.length;
     let completed=false,answer="",thinking="",startedText=false,reportedOutput=false,launched=false;
+    let terminalResponse:unknown,terminalType:string|undefined,accepted=false;
     let patches:unknown[]=[],pendingProse="";
     const flushProse=async(force=false)=>{
       const boundary=force?pendingProse.length:pendingProse.lastIndexOf("\n\n")+2;
@@ -227,6 +228,7 @@ export async function runResearchTurn(args:{
             if(item.type==="function_call"&&typeof item.name==="string"&&typeof item.call_id==="string"&&typeof item.arguments==="string")
               calls.push({type:"function_call",name:item.name,call_id:item.call_id,arguments:item.arguments});
           }
+          if(["response.completed","response.failed","response.incomplete"].includes(event.type)){terminalType=event.type;terminalResponse=event.response;}
           if(event.type==="response.completed"){
             await flushProse(true);await flushViews();
             presentationDiagnostics.requestedSections+=answer.split(String.fromCharCode(96).repeat(3)+"spec").length-1;
@@ -247,6 +249,7 @@ export async function runResearchTurn(args:{
       if(!completed)throw new Error("provider_error");
       await args.beforeAcceptResult?.();
       if(checkpoint)await checkpoint.endProvider(true);
+      accepted=true;
     }catch(error){
       // Only this failed response is incomplete. Preserve earlier successful
       // paragraphs and remove the exact streamed suffix (including its separator).
@@ -260,6 +263,7 @@ export async function runResearchTurn(args:{
       throw error;
     }finally{
       if(launched&&!reportedOutput)unknownOutput+=limit;
+      if(launched)usage.requests!.push(providerUsageReceipt({requestedModel:model,kind:"responses",outcome:accepted?"completed":terminalType==="response.incomplete"?"incomplete":"failed",final,nativeSearch:false,outputCap:limit,durationMs:Math.max(0,now()-startedCall),response:terminalResponse,composition}));
       audit({kind:"model_call",inputSummary:final?"Final answer":"Research step",outputSummary:completed?"Completed":"Incomplete",
         durationMs:Math.max(0,now()-startedCall)});
     }
@@ -319,12 +323,13 @@ export async function runResearchTurn(args:{
         args.onTool?.(fc.name,"alex");
         const toolStarted=now();
         usage.toolCalls++;
-        let failed:boolean,record:AgentToolResult;
+        let failed:boolean,record:AgentToolResult,resultBytes=0,returnedRows:number|null=null;
         if(args.actions?.definitions.some(d=>d.name===fc.name)){
           record=await runAction(fc);
           observeToolResult(args.actions.context.resolveState,record);
           evidence.push(JSON.stringify(record));
           failed=Boolean(record.error);
+          resultBytes=Buffer.byteLength(JSON.stringify(record),"utf8");
           const ref=!failed?admit("Registered tool result: "+fc.name+"; not independent proof of an effect",record,record.missing.length?"partial":undefined):null;
           input.push({type:"function_call_output",call_id:fc.call_id,output:JSON.stringify(ref?{...record,presentationRef:ref}:record)});
         }else{
@@ -337,11 +342,14 @@ export async function runResearchTurn(args:{
             fc.name==="run_sql"?undefined:"partial",fc.name==="run_sql"?"sql":fc.name==="calculate"?"calculator":undefined):null;
           input.push({type:"function_call_output",call_id:fc.call_id,output:JSON.stringify(ref?{...result,presentationRef:ref}:result)});
           failed=result.ok===false;
+          resultBytes=Buffer.byteLength(JSON.stringify(result),"utf8");
+          returnedRows=Array.isArray(result.rows)?result.rows.length:null;
           if(!failed)evidence.push(JSON.stringify(result));
           record={source:"sql_research",period:null,missing:[],agentId:"alex",tool:fc.name,...(failed?{error:"research_tool_error"}:{})};
           if(readOnly&&args.checkpoint)await args.checkpoint.endTool({...record,result});
         }
         invocations.push({name:fc.name,result:record});
+        usage.toolMetrics!.push({name:researchToolDefinitions.some(t=>t.name===fc.name)||args.actions?.definitions.some(t=>t.name===fc.name)?fc.name:"unavailable_tool",durationMs:Math.max(0,now()-toolStarted),resultBytes,returnedRows,outcome:failed?"failed":record.missing.length?"partial":"complete"});
         audit({kind:"tool_call",toolName:fc.name,inputSummary:"Research tool",outputSummary:failed?"Error returned to model":"Completed",
           durationMs:Math.max(0,now()-toolStarted),...(failed?{error:"research_tool_error"}:{})});
         // The card is the end of this owner turn. Do not execute a second
