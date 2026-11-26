@@ -245,7 +245,7 @@ export function agentUsageIncrements(turn: AgentTurn) {
   }));
 }
 export async function recordAgentTurnUsage(scope: ConversationScope, owner: ConversationMessage, turn: AgentTurn) {
-  if (turn.usage.modelCalls < 1) return;
+  if (turn.usage.modelCalls < 1 && turn.usage.toolCalls < 1) return;
   for (const usage of agentUsageIncrements(turn)) {
     await recordSupervisorUsage({ scope, threadId: owner.threadId, ownerMessageId: owner.id, usage });
   }
