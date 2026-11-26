@@ -1,7 +1,8 @@
 import {z} from "zod";
 import {defineCatalog,defineSchema,createSpecStreamCompiler,type SpecStreamLine} from "@json-render/core";
 import {schema} from "@json-render/react/schema";
-import {exactDecimal} from "@/lib/metrics/core/calculator";
+import {exactDecimal,CALC_OPS,type CalcOp} from "@/lib/metrics/core/calculator";
+import {calculate} from "./tools.server";
 import {presentationPanelSchema,recordTableSchema,richPresentationSchema,descriptiveGroupTitle,interactiveCalcSchema,evaluatePresentationCalc,type InteractiveCalc,type PresentationPanel,type RecordTable,type RichPresentation} from "@/lib/ai/conversations/presentation";
 
 /** Native inline GenUI vocabulary. All data values bind to the evidence already
@@ -22,11 +23,12 @@ const selection=z.object({
  x:z.string().optional(),y:z.string().optional(),columns:z.array(z.string()).optional(),title:z.string().optional(),
 });
 const calcSelection=z.object({ref:z.string(),editable:z.array(z.string())});
+const directCalc=z.object({title:z.string().optional(),inputs:z.array(z.object({name:z.string(),value:z.string(),unit:z.enum(["cents","count","percent","ratio"])})).min(1),steps:z.array(z.object({id:z.string(),op:z.enum(CALC_OPS as [CalcOp,...CalcOp[]]),args:z.array(z.string())})).min(1),editable:z.array(z.string())});
 const envelope=z.object({layout:z.enum(["stack","grid"]).optional(),panels:z.array(z.union([selection,pointPanel,analysisPanel])).optional(),
- report:z.boolean().optional(),files:z.boolean().optional(),calculator:calcSelection.optional()});
+ report:z.boolean().optional(),files:z.boolean().optional(),calculator:z.union([calcSelection,directCalc]).optional()});
 const components={
  Stack:{props:z.object({}),slots:["default"],description:"Group views in their displayed order.",example:{}},
- DataView:{props:envelope,slots:[],description:"Metrics, charts, tables, calculators, report and authenticated attachments. For rows use ref, x, y or columns. For individual values, including across sources, use points with label and value:{ref,path:[exact field names and array indices]}; for text use value:{ref,quote:exact numeric token including currency symbol if present}. For dated or numeric category labels use labelField:{ref,path}. A calculate result can supply an editable calculator. You can also author a panel directly with kind, title, unit, basis (calculated, estimate or scenario), explanation and points [{label,value}]. Use cents for money in minor units; explain the calculation or assumptions in prose. Direct values are labeled as model analysis, not stored records.",example:{layout:"grid",panels:[{ref:"q1",kind:"bar",x:"category",y:"amount_cents"}]}},
+ DataView:{props:envelope,slots:[],description:"Metrics, charts, tables, calculators, report and authenticated attachments. For rows use ref, x, y or columns. For individual values, including across sources, use points with label and value:{ref,path:[exact field names and array indices]}; for text use value:{ref,quote:exact numeric token including currency symbol if present}. For dated or numeric category labels use labelField:{ref,path}. A calculate result can supply an editable calculator, or author calculator inputs, steps and editable input names directly with a title; direct inputs are hypothetical unless explained otherwise. You can also author a panel directly with kind, title, unit, basis (calculated, estimate or scenario), explanation and points [{label,value}]. Use cents for money in minor units; explain the calculation or assumptions in prose. Direct values are labeled as model analysis, not stored records.",example:{layout:"grid",panels:[{ref:"q1",kind:"bar",x:"category",y:"amount_cents"}]}},
 };
 // The upstream default template advertises Card, demo data, repeat, /state
 // and mutable actions. Our data-bound registry does not execute those. Use
@@ -212,7 +214,9 @@ export function resolveResearchView(raw:unknown,queries:PresentationEvidenceMap,
  const panels:PresentationPanel[]=[],tables:RecordTable[]=[];
  const layout=raw.layout==="grid"?"grid":"stack";
  const c=calcSelection.safeParse(raw.calculator);
- const calc=c.success?calculator(queries.get(c.data.ref)?.data??{},c.data.editable,ctx):null;
+ const authored=directCalc.safeParse(raw.calculator);
+ const calculated=authored.success?calculator({...calculate(authored.data),calculationInput:authored.data},authored.data.editable,ctx):null;
+ const calc=c.success?calculator(queries.get(c.data.ref)?.data??{},c.data.editable,ctx):calculated&&{...calculated,title:safeLabel(authored.success?authored.data.title??"What-if calculation":"What-if calculation")??"What-if calculation"};
  for(const value of Array.isArray(raw.panels)?raw.panels:[]){
   const direct=analysisPanel.safeParse(value);
   if(direct.success){
@@ -223,21 +227,21 @@ export function resolveResearchView(raw:unknown,queries:PresentationEvidenceMap,
      currency:["cents","cents/hour"].includes(a.unit)?ctx.currency??null:null,from:ctx.asOf,to:ctx.asOf,asOf:ctx.asOf,
      source:"response_evidence",sourceDetail:("Luna "+(a.basis==="calculated"?"calculation (model-derived)":a.basis==="scenario"?"hypothetical scenario":"estimate")+": "+a.explanation).slice(0,500),
      ...(a.basis!=="calculated"?{coverage:"estimate"}:{}),...(a.measurement?{measurement:a.measurement}:{}),points});
-    if(modelPanel.success&&panels.length<8)panels.push(modelPanel.data);
+    if(modelPanel.success)panels.push(modelPanel.data);
    }
    continue;
   }
   const selectedPoints=pointPanel.safeParse(value);
-  if(selectedPoints.success){const p=pointView(selectedPoints.data,queries,ctx);if(p&&panels.length<8)panels.push(p);continue;}
+  if(selectedPoints.success){const p=pointView(selectedPoints.data,queries,ctx);if(p)panels.push(p);continue;}
   const s=selection.safeParse(value);if(!s.success)continue;
   const e=queries.get(s.data.ref),q=e?.data;
   if(!e||!q||q.ok===false||q.error||!Array.isArray(q.rows)||!q.rows.length||!q.rows.every(obj))continue;
   if(s.data.kind==="table"){
-   const t=table(s.data,q.rows,ctx,e);if(t&&tables.length<8)tables.push(t);
+   const t=table(s.data,q.rows,ctx,e);if(t)tables.push(t);
   }else{
    const p=panel(s.data,q.rows,ctx,e);
-   if(p&&panels.length<8)panels.push(p);
-   else if(tables.length<8){const t=table(s.data,q.rows,ctx,e);if(t)tables.push(t);}
+   if(p)panels.push(p);
+   else {const t=table(s.data,q.rows,ctx,e);if(t)tables.push(t);}
   }
  }
  const attachments=raw.files===true?[...new Set(ctx.presentationAttachments??[])].slice(0,3):[];
