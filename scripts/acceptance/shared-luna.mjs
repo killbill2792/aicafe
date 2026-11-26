@@ -40,7 +40,7 @@ export function validateScenario(m,id){
     "Invalid generic test entrypoint");
   ensure(m.proof===id+"-proof.json"&&m.scope===id+"-scope.json","Invalid proof filenames");
   ensure(Array.isArray(m.expectedTools)&&m.expectedTools.length<=20&&
-    (m.expectedTools.length>=2||m.expectedTools.length===1&&["query_data","get_investigation_source"].includes(m.expectedTools[0]))&&
+    (m.expectedTools.length>=2||m.expectedTools.length===1&&["run_sql","get_investigation_source"].includes(m.expectedTools[0]))&&
     new Set(m.expectedTools).size===m.expectedTools.length&&
     m.expectedTools.every(t=>typeof t==="string"&&/^[a-z][a-z0-9_]{1,79}$/.test(t)),"Real registered tool names required");
   ensure(Array.isArray(m.assertions)&&m.assertions.length>=3&&m.assertions.length<=20,"Independent DB assertions required");

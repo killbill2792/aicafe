@@ -13,7 +13,7 @@ import {matchedMoney} from "./u2-model-execution.mjs";
 const fail=reason=>{throw Error("source553_hourly_live:"+reason)};
 export function assertSource553Hourly({model,tools,text,cents,otherCents,foreignDenied,proposals}){
  requireObservedProductionModel(model,"gpt-6-luna");
- if(!Array.isArray(tools)||!["get_peak_hours","query_data"].every(t=>tools.includes(t)))
+ if(!Array.isArray(tools)||!["describe_database","run_sql"].every(t=>tools.includes(t)))
   fail("registered_hourly_reader_not_used");
  if(!matchedMoney(text,cents)||matchedMoney(text,otherCents))
   fail("canonical_money_or_tenant_mismatch");
@@ -126,10 +126,10 @@ async function main(){
   // Separate real owner turns make both canonical query and registered
   // specialized reader independently observable, never hand-fed model facts.
   const prompts=[
-    "For this café on "+date+", use get_peak_hours to report the recorded "+
+    "For this café on "+date+", use describe_database and run_sql to report the recorded "+
       "net sales at local 09:00. State when it is provisional, not final. "+
       "Show "+cafe.currency+" with two decimals. Do not modify anything.",
-    "Cross-check the same "+date+" local 09:00 net sales using query_data "+
+    "Cross-check the same "+date+" local 09:00 net sales using run_sql "+
       "on cv_sales_hours for this café, and distinguish provisional live "+
       "records from a finalized closeout. A tab name never proves a "+
       "returning human. No proposals, changes or other effects.",
