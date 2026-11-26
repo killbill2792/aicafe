@@ -110,7 +110,7 @@ function calculator(raw:Row,editable:string[],ctx:Context):InteractiveCalc|null{
   return null;
  };
  const parsed=interactiveCalcSchema.safeParse({title:"What-if calculation",asOf:ctx.asOf,currency:ctx.currency??null,
-  inputs:inputs.map(i=>obj(i)?{id:i.name,label:name(String(i.name)),value:shown(i.value,i.unit),editable:editable.includes(String(i.name))&&i.unit!=="ratio"}:null),
+  inputs:inputs.map(i=>obj(i)?{id:i.name,label:name(String(i.name)),value:shown(i.value,i.unit),editable:editable.includes(String(i.name))}:null),
   steps,original:shown(raw.result.value,raw.result.unit)});
  if(!parsed.success)return null;
  const reproduced=evaluatePresentationCalc(parsed.data);
@@ -262,7 +262,9 @@ export function resolveResearchView(raw:unknown,queries:PresentationEvidenceMap,
      const labelEvidence=item.labelField?queries.get(item.labelField.ref):undefined;
      const label=item.labelField?.path&&labelEvidence?safeLabel(field(labelEvidence.data,item.labelField.path)):descriptiveGroupTitle(item.label);
      const direct=scalar.safeParse(item.value);
-     return [label??"Value",direct.success?direct.data:bound?.value??null,direct.success?item.unit??null:bound?bound.measurement??bound.unit:null];
+     const raw=selected.success&&selected.data.path&&e?field(e.data,selected.data.path):undefined;
+     const cell=scalar.safeParse(raw);
+     return [label??"Value",direct.success?direct.data:bound?.value??(cell.success?cell.data:null),direct.success?item.unit??null:bound?bound.measurement??bound.unit:null];
     });
     const t=recordTableSchema.safeParse({title:selectedPoints.data.title??"Comparison",view:"tool_response_evidence",from:ctx.asOf,to:ctx.asOf,asOf:ctx.asOf,currency:ctx.currency??null,
      coverage:"partial",scope:"Available selected values and model-provided figures; unbound figures are not verified records. Missing or incompatible values are shown separately, not converted to zero.",
@@ -291,7 +293,7 @@ export function resolveResearchView(raw:unknown,queries:PresentationEvidenceMap,
   const t=authoredTable.safeParse(rawTable);if(!t.success)continue;
   const a=t.data, width=a.rows.reduce((n,r)=>Math.max(n,r.length),a.columns.length);
   const columns=Array.from({length:width},(_,i)=>({label:a.columns[i]??"Value "+(i+1),unit:"stored"}));
-  const result=recordTableSchema.safeParse({title:a.title??"Luna analysis",view:"tool_response_evidence",from:ctx.asOf,to:ctx.asOf,asOf:ctx.asOf,currency:ctx.currency??null,
+  const result=recordTableSchema.safeParse({title:descriptiveGroupTitle(a.title)??"Luna analysis",view:"tool_response_evidence",from:ctx.asOf,to:ctx.asOf,asOf:ctx.asOf,currency:ctx.currency??null,
    coverage:a.basis==="estimate"||a.basis==="scenario"?"estimate":"unverified",scope:"Luna "+(a.basis??"unverified")+(a.explanation?": "+a.explanation:""),
    columns,rows:a.rows.map(row=>Array.from({length:width},(_,i)=>row[i]??null))});
   if(result.success)tables.push(result.data);
