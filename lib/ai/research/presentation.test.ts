@@ -253,3 +253,21 @@ it("reserves a bounded synthesis request when ordinary research reaches the work
  const result=await runResearchTurn({ownerText:"Research",cafeContext:"Cafe",provider,now:()=>elapsed,scope:{db:{rpc} as never,businessId:"business",ownerUserId:"owner"}});
  expect(calls).toBe(2);expect(rpc).not.toHaveBeenCalled();expect(result.endReason).toBe("timeout");expect(result.text).toBe("The research window ended.");
 });
+
+
+describe("model-authored analytical presentation",()=>{
+ it("renders derived break-even results even when not present verbatim in SQL evidence",()=>{
+  const result=resolveResearchView({panels:[{kind:"metric",title:"Monthly break-even",unit:"cents",basis:"calculated",explanation:"Fixed costs divided by contribution margin",points:[{label:"Break-even sales",value:375000}]}]},new Map(),ctx);
+  expect(result?.panels[0]).toMatchObject({source:"response_evidence",unit:"cents",currency:"USD",points:[{label:"Break-even sales",value:375000}]});
+  expect(result?.panels[0].sourceDetail).toContain("model-derived");
+ });
+ it("marks hypothetical and estimated results without requiring source bindings",()=>{
+  const result=resolveResearchView({panels:[{kind:"line",title:"Sales forecast",unit:"cents",basis:"estimate",explanation:"Assumes steady growth",points:[{label:"December",value:120000},{label:"January",value:132000}]}]},new Map(),ctx);
+  expect(result?.panels[0]).toMatchObject({coverage:"estimate",points:[{label:"December",value:120000},{label:"January",value:132000}]});
+ });
+ it("keeps direct model values distinct from actual records and rejects malformed numbers",()=>{
+  const panel={kind:"metric",title:"Break-even",unit:"cents",basis:"calculated",explanation:"Derived",points:[{label:"Value",value:1.5}]};
+  expect(resolveResearchView({panels:[panel]},new Map(),ctx)).toBeUndefined();
+  expect(resolveResearchView({panels:[{...panel,basis:"actual",points:[{label:"Value",value:100}]}]},new Map(),ctx)).toBeUndefined();
+ });
+});
