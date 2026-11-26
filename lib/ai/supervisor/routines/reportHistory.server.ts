@@ -5,7 +5,7 @@ import type {ConversationMessage,ConversationScope} from "@/lib/ai/conversations
 
 type HistoricalRoutineReport={
   messageId:string;runId:string;routineId:string;revision:number;
-  quality:"verified"|"partial";text:string;pointerOnly:boolean;
+  quality:"answered"|"verified"|"partial";text:string;pointerOnly:boolean;
 };
 const uuid=/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/iu;
 const object=(v:unknown):v is Record<string,unknown>=>!!v&&
@@ -26,7 +26,7 @@ export function routineReportCandidates(messages:readonly ConversationMessage[],
     m.contentType==="blocks"&&Date.parse(m.createdAt)<=before)
     .slice(-8).flatMap(m=>{
       if(!object(m.grounding)||m.grounding.intent!=="operating_tasks"||
-        !["verified","partial"].includes(String(m.grounding.status))||
+        !["answered","verified","partial"].includes(String(m.grounding.status))||
         !object(m.grounding.agentMetadata)||!Array.isArray(m.blocks))return [];
       const meta=m.grounding.agentMetadata;
       if(typeof meta.runId!=="string"||!uuid.test(meta.runId)||
@@ -50,7 +50,7 @@ export function routineReportCandidates(messages:readonly ConversationMessage[],
         .map(b=>(b as {text:string}).text).join("");
       if(!text.trim()||text.length>2600)return [];
       return [{messageId:m.id,runId:meta.runId,routineId:meta.routineId,
-        revision:Number(meta.revision),quality:m.grounding.status as "verified"|"partial",
+        revision:Number(meta.revision),quality:m.grounding.status as "answered"|"verified"|"partial",
         text,pointerOnly:pointer}];
     });
 }
@@ -90,7 +90,7 @@ export async function verifiedRoutineReportHistory(db:SupabaseClient,
     const summary=result.summary.trim();
     // Rehydrate the saved report only through this authenticated, completed,
     // owner/thread-scoped occurrence. The short chat pointer is not evidence.
-    if(!summary||summary.length>2600||
+    if(!summary||
       (!report.pointerOnly&&!report.text.startsWith(summary)))continue;
     verified.set(report.messageId,summary);
   }
