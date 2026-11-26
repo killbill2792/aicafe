@@ -334,14 +334,14 @@ export async function executeClaimedObjective(db:SupabaseClient,params:{
       readSavedEventTimeline(db,scope,from,to,options),
     // Scouting: only an owner-created goal may search the public web, with the same owner-public query
     // projection, connector access check and metered budget as interactive search. Unrequested Watch never does.
-    ...(routine.executionMode==="objective"?{webSearch:(query:string,budget?:import("@/lib/ai/agent/webSearch.server").WebSearchBudget)=>
+    ...(routine.executionMode==="objective"?{webSearch:(query:string,budget?:import("@/lib/ai/agent/webSearch.server").WebSearchBudget,signal?:AbortSignal)=>
       ownerPublicWebSearch(scope,async()=>{
         const revision=await assertExternalAccess(scope,"public_web",WEB_RESOURCE);
         const place=await readCafeLocation(db,scope.businessId,[]);
         const publicTerms=scoutingSearchTerms(query,String(routine.objectiveText??""),place?.city);
         if(!publicTerms)return {available:false as const,reason:"unsafeQuery" as const};
         const research=createWebSearch({reserveTransport:params=>metered.reserve(params,"hosted_web")});
-        const value=await research(publicTerms,budget);
+        const value=await research(publicTerms,budget,signal);
         if(await assertExternalAccess(scope,"public_web",WEB_RESOURCE)!==revision)
           throw Error("public_web_evidence_access_changed");
         webRevision=String(revision);
@@ -369,7 +369,7 @@ export async function executeClaimedObjective(db:SupabaseClient,params:{
     scope:{db,businessId:routine.businessId,ownerUserId:routine.ownerUserId},
     cafeContext:"Café (authenticated, not an owner message): "+JSON.stringify({name:identity.cafeName,
       currency:identity.currency,timezone:identity.timezone,localDate:identity.asOf}),
-    ...(context.webSearch?{webSearch:(query:string)=>context.webSearch!(query)}:{}),
+    ...(context.webSearch?{webSearch:(query:string,signal?:AbortSignal)=>context.webSearch!(query,undefined,signal)}:{}),
     // SQL, calculate and public search are the research turn's own tools; only the others are registered here.
     actions:{context,definitions:[...new Map([...agentToolDefinitions,...gmailToolDefinitions].map(t=>[t.name,t])).values()].filter(t=>
       !["run_sql","describe_database","calculate","search_web"].includes(t.name)&&
