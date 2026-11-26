@@ -148,8 +148,8 @@ function operationKey(runId:string,name:string,raw:unknown):string{
 }
 
 /** v2 operation journal: stores only scoped receipt IDs and hashes. Never
- * persist model reasoning, provider output, tool arguments or private source
- * documents here. On a restart source reads are refreshed via canonical tools.
+ * store model output in the operation receipt journal. The separate private
+ * continuation snapshot is fenced to the same lease and reauthorized on resume.
  * An unclassified effect is not replayed as if it were a read. */
 export async function openOwnerRunCheckpoint(scope:RunScope,runId:string,token:string,jobId:string):Promise<OwnerRunCheckpoint>{
   const {scope:s,runId:id}=parseIdentity(scope,runId);
@@ -372,6 +372,10 @@ export async function openOwnerRunCheckpoint(scope:RunScope,runId:string,token:s
   // Snapshot before replay adds to the journal; the next slice sees the new refs.
   const previousReads=readReferences();
   return {
+    research:{
+      load:async()=>{await assertLive();return callRpc("supervisor_research_checkpoint_v2",{...identity,p_expected_seq:current.checkpoint_seq,p_write:false,p_state:null},v=>v??null);},
+      save:async(state)=>{await assertLive();await callRpc("supervisor_research_checkpoint_v2",{...identity,p_expected_seq:current.checkpoint_seq,p_write:true,p_state:state},v=>z.literal(true).parse(v));},
+    },
     readReferences:()=>previousReads,
     assertLive,
     beginProvider:async()=>{
