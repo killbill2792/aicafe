@@ -80,3 +80,8 @@ describe("chat experience helpers", () => {
     expect(readSseFrames(rest + 'ly":1}\n\n').frames).toEqual([{ type: "done", data: { reply: 1 } }]);
   });
 });
+
+it("renders the current reasoning section as Markdown without a previous section",()=>{
+ const html=renderToStaticMarkup(createElement(ChatJobProgress,{locale:"en",acknowledged:true,steps:[],note:"**Gathering accounting details**\n\nChecking supplier invoices."}));
+ expect(html).toContain("<strong");expect(html).toContain("Gathering accounting details");expect(html).toContain("Checking supplier invoices.");expect(html).not.toContain("**");expect(html).not.toContain("Inspecting data requirements");
+});

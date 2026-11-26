@@ -50,7 +50,7 @@ describe("SQL research presentation",()=>{
   expect(calls).toBe(3);expect(rpc).toHaveBeenCalledTimes(2);
   expect(result.text).toBe("Expenses are recorded.\n\nHere is the breakdown.");
   expect(streamed.join("")).toBe(result.text);
-  expect(thinking.at(-1)).toBe("Checking costs.\n\nPreparing results.");
+  expect(thinking).toEqual(["Checking costs.","Preparing results."]);
   expect(result.results.at(-1)).toMatchObject({source:"response_presentation",accepted:true,presentation:{panels:[{points:[{value:1200},{value:0}]}]}});
   expect(result.usage.toolCalls).toBe(2);
   expect(result.toolInvocations).toHaveLength(2);

@@ -1,4 +1,5 @@
 "use client";
+import {ChatMarkdown} from "./ChatMarkdown";
 import type { AgentJobStep } from "@/lib/ai/agent/jobState";
 import { chatExperienceCopy, progressLines, type ChatLocale } from "./chatExperience";
 
@@ -24,6 +25,6 @@ export default function ChatJobProgress({ locale, acknowledged, steps, note }: {
   return <div className="flex w-full items-start gap-2 text-[0.9375rem] leading-snug text-ink-muted"
     role="status" aria-live="polite" aria-atomic="true" data-testid="supervisor-live-progress"
     dir={locale === "ar" ? "rtl" : "ltr"}>
-    <CafeActivity/><span className="min-w-0 flex-1 whitespace-pre-wrap break-words [overflow-wrap:anywhere]">{line}</span>
+    <CafeActivity/><div className="min-w-0 flex-1 whitespace-pre-wrap break-words [overflow-wrap:anywhere]"><ChatMarkdown text={line} locale={locale} showLegend={false} compact/></div>
   </div>;
 }

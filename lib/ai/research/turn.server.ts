@@ -108,7 +108,6 @@ export async function runResearchTurn(args:{
   /** Everything retrieved or calculated this turn; the answer's figures are checked against it. */
   const evidence:string[]=[];
   const queries=new Map<string,Record<string,unknown>>();
-  let summary="";
   const presentations:AgentToolResult[]=[];
   let text="",endReason:EndReason="complete";
   const appendText=(part:string,continuing=false)=>{
@@ -165,10 +164,10 @@ export async function runResearchTurn(args:{
               appendText(prefix.slice(delivered.length),Boolean(delivered));delivered=prefix;
             }
           }
-          if(event.type==="response.reasoning_summary_part.added"){if(thinking)summary+=(summary?"\n\n":"")+thinking;thinking="";}
+          if(event.type==="response.reasoning_summary_part.added"){thinking="";}
           if(event.type==="response.reasoning_summary_text.delta"&&typeof event.delta==="string"){
             thinking+=event.delta;
-            try{args.onThinking?.([summary,thinking].filter(Boolean).join("\n\n"));}catch{/* display only */}
+            try{args.onThinking?.(thinking);}catch{/* display only */}
           }
           if(event.type==="response.output_item.done"&&event.item&&typeof event.item==="object"){
             const item=event.item as Record<string,unknown>;
@@ -193,7 +192,6 @@ export async function runResearchTurn(args:{
       if(!completed)throw new Error("provider_error");
       await args.beforeAcceptResult?.();
       if(checkpoint)await checkpoint.endProvider(true);
-      if(thinking)summary+=(summary?"\n\n":"")+thinking;
     }catch(error){
       // Only this failed response is incomplete. Preserve earlier successful
       // paragraphs and remove the exact streamed suffix (including its separator).

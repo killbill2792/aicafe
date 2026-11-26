@@ -271,9 +271,9 @@ export function SourceLegend({sources,labels,legendLabel="Number sources"}:{
   </span>)}
  </p>:null;
 }
-export function ChatMarkdown({text,unverified=[],label,labels,locale="en",showLegend=true,legendLabel}:{
+export function ChatMarkdown({text,unverified=[],label,labels,locale="en",showLegend=true,legendLabel,compact=false}:{
  text:string;unverified?:readonly Verification[];label?:string;labels?:ProvenanceLabels;locale?:"en"|"es"|"ar";
- showLegend?:boolean;legendLabel?:string;
+ showLegend?:boolean;legendLabel?:string;compact?:boolean;
 }) {
  const copy=labels??{owner:"You told me",estimate:"Estimate",unchecked:label??"Not checked against your records"};
   const spans = [...unverified].filter(s =>
@@ -344,10 +344,11 @@ export function ChatMarkdown({text,unverified=[],label,labels,locale="en",showLe
       const alignment=(i:number)=>table.align[i]==="center"?"text-center":table.align[i]==="end"?"text-end":"text-start";
       blocks.push(<div key={firstLine} role="region" aria-label="Response table" tabIndex={0}
         className="max-w-full overflow-x-auto rounded-lg border border-line focus-visible:outline focus-visible:outline-2 focus-visible:outline-ink">
-        <table dir={locale==="ar"?"rtl":"auto"} className={`w-full border-collapse text-[1.0625rem] ${table.head.length<=2?"table-fixed":"min-w-max"}`}>
+        <table dir={locale==="ar"?"rtl":"auto"} className="w-full table-fixed border-collapse text-[0.9375rem] sm:text-[1.0625rem]" style={table.head.length>4?{minWidth:table.head.length*90}:undefined}>
          <caption className="sr-only">Response table</caption>
-         <thead><tr>{table.head.map((cell,i)=><th key={i} scope="col" className={`border-b border-line bg-surface2 px-3 py-2 font-semibold align-top whitespace-normal [overflow-wrap:anywhere] ${alignment(i)}`}>{inlineMarkdown(cell.text,cell.start,spans,copy,badged,locale)}</th>)}</tr></thead>
-         <tbody>{rows.map((cells,j)=><tr key={j}>{cells.map((cell,i)=><td key={i} className={`border-b border-line px-3 py-2 align-top whitespace-normal [overflow-wrap:anywhere] ${alignment(i)}`}>{inlineMarkdown(cell.text,cell.start,spans,copy,badged,locale)}</td>)}</tr>)}</tbody>
+         <colgroup>{table.head.map((_,i)=><col key={i} style={table.align[i]==="end"?{width:`${Math.min(45,Math.max(26,100/table.head.length))}%`}:undefined}/>)}</colgroup>
+         <thead><tr>{table.head.map((cell,i)=><th key={i} scope="col" className={`border-b border-line bg-surface2 px-1.5 sm:px-3 py-2 font-semibold align-top whitespace-normal [overflow-wrap:anywhere] ${alignment(i)}`}>{inlineMarkdown(cell.text,cell.start,spans,copy,badged,locale)}</th>)}</tr></thead>
+         <tbody>{rows.map((cells,j)=><tr key={j}>{cells.map((cell,i)=><td key={i} className={`border-b border-line px-1.5 sm:px-3 py-2 align-top whitespace-normal [overflow-wrap:anywhere] ${alignment(i)}`}>{inlineMarkdown(cell.text,cell.start,spans,copy,badged,locale)}</td>)}</tr>)}</tbody>
         </table>
       </div>);
       continue;
@@ -400,7 +401,7 @@ export function ChatMarkdown({text,unverified=[],label,labels,locale="en",showLe
     else blocks.push(<p key={start} className="whitespace-pre-line">{rows}</p>);
   }
   const sources=spans.map(s=>s.source??"unchecked");
-  return <div data-testid="supervisor-answer-prose" className="space-y-2 break-words text-[1.0625rem] leading-relaxed text-ink">
+  return <div data-testid="supervisor-answer-prose" className={compact?"space-y-1 break-words text-[0.9375rem] leading-snug text-ink-muted":"space-y-2 break-words text-[1.0625rem] leading-relaxed text-ink"}>
     {blocks}
     {showLegend&&<SourceLegend sources={sources} labels={copy} legendLabel={legendLabel}/>}
 
