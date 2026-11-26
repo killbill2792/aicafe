@@ -13,7 +13,7 @@ import type { ConversationMessage, ConversationPage, ConversationThread } from "
 import { activeOwnerQuestionMessageId, clarifyCardState, beginOptimisticOwner, sendKey, visibleConversationMessages,
   hasInsertedHistoryPage, isTranscriptNearBottom, transcriptScrollTarget, isDuplicateLinkedExperimentCard, mergeLatestConversationPage, prependConversationPage, loadedSavedReports, conversationLocation } from "./supervisorChatBehavior";
 import { ChatMarkdown, SourceLegend } from "./ChatMarkdown";
-import {richPresentationSchema,type RichPresentation} from "@/lib/ai/conversations/presentation";
+import {recoverRichPresentation,type RichPresentation} from "@/lib/ai/conversations/presentation";
 import dynamic from "next/dynamic";
 import PresentationBoundary from "./PresentationBoundary";
 const SupervisorRichPresentation=dynamic(()=>import("./SupervisorRichPresentation"));
@@ -833,8 +833,8 @@ export default function SupervisorChatComposer({
               setStreamedText(current => current + event.text);
               setProgressStatus({ agent: "supervisor", stage: "answering" });
             } else if(type==="presentation"&&typeof event.offset==="number"&&Number.isSafeInteger(event.offset)&&event.offset>=0){
-              const parsed=richPresentationSchema.safeParse(event.block);
-              if(parsed.success)setStreamedPresentations(current=>[...current,{offset:event.offset!,block:parsed.data}]);
+              const parsed=recoverRichPresentation(event.block);
+              if(parsed)setStreamedPresentations(current=>[...current,{offset:event.offset!,block:parsed}]);
             } else if (type === "reset" && Number.isSafeInteger(event.discardChars) &&
               event.discardChars !== undefined && event.discardChars >= 0) {
               setStreamedText(current => current.slice(0, Math.max(0, current.length - event.discardChars!)));
