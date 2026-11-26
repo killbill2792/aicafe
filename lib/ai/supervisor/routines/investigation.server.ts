@@ -265,9 +265,10 @@ function previousCheckpoint(c:Claimed):InvestigationCheckpoint|null{
  * leased at the database. There is never a synthetic owner instruction, and
  * system-initiated model calls have ONLY registered read-only tools. */
 export async function processNextInvestigation(db:SupabaseClient,now:Date,
-  provider?:AgentProvider,onModelProof?:(summary:InvestigationModelProofSummary)=>void):
+  provider?:AgentProvider,onModelProof?:(summary:InvestigationModelProofSummary)=>void,executionDeadline?:number):
   Promise<InvestigationTick>{
   if(!Number.isFinite(now.getTime()))throw new Error("Invalid investigation clock");
+  if(executionDeadline!==undefined&&Date.now()>=executionDeadline)return empty();
   const {data,error}=await db.rpc("supervisor_claim_investigation",{p_now:now.toISOString()});
   if(error)throw new Error("investigation_queue_unavailable");
   if(!data)return empty();
@@ -479,7 +480,7 @@ export async function processNextInvestigation(db:SupabaseClient,now:Date,
         JSON.stringify(existingQuestions.map((question,i)=>({letter:String.fromCharCode(65+i),question}))):"";
     const prompt=researchInvestigationPrompt(synopsis,c.phase==="awaiting_owner",
       synopsis.kind==="maintenance_issue"?null:c.narrative??null,JSON.stringify(claim).slice(0,6000));
-    const continuation=await backgroundResearchContinuation(db,{...scope,threadId:c.thread_id,sourceType:c.source_type,sourceId:c.source_id,revision:c.episode_id+":"+c.revision_hash+":"+c.step_version,leaseToken:c.lease_token});
+    const continuation=await backgroundResearchContinuation(db,{...scope,threadId:c.thread_id,sourceType:c.source_type,sourceId:c.source_id,revision:c.episode_id+":"+c.revision_hash+":"+c.step_version,leaseToken:c.lease_token,parentDeadline:executionDeadline});
     const turn=await runResearchTurn({
       continuation,executionDeadline:continuation.executionDeadline,
       captureSourceVersions:()=>({...webRevision!==undefined?{web:webRevision}:{},...mailbox?{gmail:JSON.stringify({id:mailbox.id,generation:mailbox.generation,subject:mailbox.provider_subject})}:{}}),
@@ -631,7 +632,7 @@ export async function processNextInvestigation(db:SupabaseClient,now:Date,
   return result;
 }
 export async function processDueInvestigations(db:SupabaseClient,now:Date,maxSteps=2,
-  provider?:AgentProvider,onModelProof?:(summary:InvestigationModelProofSummary)=>void):
+  provider?:AgentProvider,onModelProof?:(summary:InvestigationModelProofSummary)=>void,executionDeadline?:number):
   Promise<InvestigationTick>{
   if(!Number.isSafeInteger(maxSteps)||maxSteps<0||maxSteps>4)
     throw new Error("Invalid investigation budget");
@@ -642,7 +643,7 @@ export async function processDueInvestigations(db:SupabaseClient,now:Date,maxSte
     // reusing the initial tick timestamp otherwise stalls every two-step
     // investigation until the next 15-minute cron invocation.
     const stepNow=i===0?now:new Date(Math.max(now.getTime()+i,Date.now()));
-    const step=await processNextInvestigation(db,stepNow,provider,onModelProof);
+    const step=await processNextInvestigation(db,stepNow,provider,onModelProof,executionDeadline);
     if(!step.processed)break;
     for(const key of ["processed","collected","investigated","followUps","rechecked","failed"] as const)
       sum[key]+=step[key];
