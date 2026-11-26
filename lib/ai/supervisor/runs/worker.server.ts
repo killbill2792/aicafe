@@ -29,7 +29,8 @@ import { withWorkerBudget, usageStopReason, currentWorkerUsage, workerBudgetExha
 export type WorkerRun = { id: string; scope: RunScope; requestKey: string };
 export type VerifiedReply = { ref: string; endReason: string; usage: WorkerUsage };
 export type WorkerOutcome = "completed" | "busy" | "blocked";
-export const durableChatEnabled=()=>process.env.SUPERVISOR_RUN_WORKER_ENABLED==="true"&&process.env.SUPERVISOR_DURABLE_CHAT_ENABLED==="true";
+export const durableChatEnabled=()=>process.env.SUPERVISOR_RUN_WORKER_ENABLED!=="false"&&process.env.SUPERVISOR_DURABLE_CHAT_ENABLED!=="false"&&
+  (process.env.NODE_ENV==="production"||(process.env.SUPERVISOR_RUN_WORKER_ENABLED==="true"&&process.env.SUPERVISOR_DURABLE_CHAT_ENABLED==="true"));
 export async function admitDurableChat(scope:RunScope,owner:ConversationMessage,input:OwnerRunInput):Promise<DurableRun>{
   if(!durableChatEnabled()||owner.role!=="owner"||owner.threadId!==scope.threadId||!owner.clientMessageId)
     throw new Error("durable_admission_denied");
@@ -104,7 +105,7 @@ export async function executeDurableRun(
     if (exceeded) await stop(exceeded === "timeout" ? "time_exceeded" : "budget_exceeded", token, key); };
   await check(); const { supervisorReplyIdFor } = await import("@/lib/ai/conversations/replyValidation");
   const finalRef = supervisorReplyIdFor(run.requestKey);
-  return resumeSupervisorRun(deps.repository, run.scope, run.id, randomUUID(), 90,
+  return resumeSupervisorRun(deps.repository, run.scope, run.id, randomUUID(), deps.version2?120:90,
     finalRef, async (claim, renew) => { if (!(await renew())) throw new Error("supervisor_worker_lease_lost");
       await check(claim.claimToken, claim.key);
       if (claim.key === "authorize_owner") return "owner:" + run.requestKey; if (claim.key === "owner_turn") {
@@ -113,7 +114,7 @@ export async function executeDurableRun(
             // deadline. All continuation turns share what is left.
             const remaining = { ...budget,
               maxElapsedMs: Math.max(0, budget.maxElapsedMs - Math.max(0, now() - started)) };
-            const outcome=await withWorkerBudget(remaining, async () => {
+            const outcome=deps.version2?await deps.executeTurn(claim.claimToken,budget):await withWorkerBudget(remaining, async () => {
               const outcome=await deps.executeTurn(claim.claimToken,budget);
               const spent = currentWorkerUsage(); if (spent&&!deps.version2) {
                 const aggregate = { ...spent, elapsedMs: Math.max(spent.elapsedMs, now() - started) };
@@ -244,6 +245,7 @@ export function decodeMatchedOwnerAnswer(run:WorkerRun,questionId:string,answerI
  return matchedOwnerAnswerSchema.parse({questionId,answerId,question:prompt,answer:answer.text_content});
 }
 export async function processDurableRun(runId: string,emit:(type:string,data:unknown)=>void=()=>{}): Promise<WorkerOutcome> {
+  const executionDeadline=Date.now()+110_000; // 120s worker platform window; leave time for durable writes and lease acknowledgement
   const id = uuid.parse(runId), db = createAdminSupabaseClient();
   const { data, error } = await db.from("supervisor_runs")
     .select("id,business_id,owner_user_id,thread_id,request_key,status,execution_version,input_locale,input_attachment_ids,owner_answer_ids,awaiting_question_id")
@@ -280,8 +282,9 @@ export async function processDurableRun(runId: string,emit:(type:string,data:unk
     if (blocked.length !== 1 || blocked[0].step_key !== "owner_turn" ||
       !(await reconcileVerifiedOwnerStep(run, repository, blocked[0].error_code,
         authorize, () => verifiedReply(run)))) return "blocked"; }
-  const providerOutputCap=version2?await loadModelExecutionCap(db):1200;
-  return executeDurableRun(run, configuredBudget(providerOutputCap>1200), { repository, authorize,version2,providerOutputCap,
+  const localAcceptance=process.env.AI_CAFE_LIVE_ACCEPTANCE==="OWNER_APPROVED_LOCAL_ONLY"||Boolean(process.env.AICAFE_TASK14B_BUDGET_LEDGER);
+  const providerOutputCap=version2&&localAcceptance?await loadModelExecutionCap(db):1200;
+  return executeDurableRun(run, version2?{maxElapsedMs:0,maxModelCalls:0,maxToolCalls:0,maxInputTokens:0,maxOutputTokens:0}:configuredBudget(providerOutputCap>1200), { repository, authorize,version2,providerOutputCap,
     verified: () => verifiedReply(run), cancelled: async () => {
       const check = await db.from("supervisor_runs").select("status")
         .eq("id", run.id).eq("business_id", run.scope.businessId).maybeSingle();
@@ -335,11 +338,11 @@ export async function processDurableRun(runId: string,emit:(type:string,data:unk
         }));
         const outcome=await withDurableProviderTurn({
           db:client,...scope,runId:run.id,ownerMessageId:owner.id,jobId:job.id,claimToken,budget,
-          ownerDailyCap:ownerModelCallsLimit(),authorize:async()=>{
+          unrestrictedResearch:!localAcceptance,ownerDailyCap:ownerModelCallsLimit(),authorize:async()=>{
             await checkpoint.assertLive();await assertPaidAllowed();
           },
         },()=>runOneTurn({scope,threadId:scope.threadId,owner,ownerText:owner.text??"",locale:selected.locale,
-          attachmentIds:selected.attachmentIds,service,emit,job,jobs,externalClient:client,checkpoint,matchedAnswers,
+          attachmentIds:selected.attachmentIds,service,emit,job,jobs,externalClient:client,checkpoint,matchedAnswers,executionDeadline,
           durableFence:{runId:run.id,jobId:job.id,claimToken},
           recordDurableStep:step=>jobs.updateDurableAgentJob(identity,job.id,"progress",step).catch(()=>undefined),
         }));
@@ -349,7 +352,7 @@ export async function processDurableRun(runId: string,emit:(type:string,data:unk
         const retryable=["durable_retry_pending","agent_turn_failed","reply_storage_failed","attachment_unavailable",
           "usage_unavailable","supervisor_permission_status_unavailable"].includes(outcome.errorCode);
         if(retryable&&checkpoint.canYield()){
-          const delay=Math.min(900,30*2**Math.max(0,job.attempt-1));
+          const delay=outcome.technicalYield?15:Math.min(900,30*2**Math.max(0,job.attempt-1));
           if(await checkpoint.yieldForRetry(delay,outcome.technicalYield?"technical":"retry"))return "yielded";
         }
         await jobs.updateDurableAgentJob(identity,job.id,"failed",outcome.errorCode).catch(()=>undefined);
