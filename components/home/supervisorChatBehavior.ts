@@ -128,7 +128,7 @@ export function loadedSavedReports(messages:readonly ConversationMessage[],threa
     if(message.threadId!==threadId||message.role!=="supervisor")return [];
     const presentations=(message.blocks??[]).flatMap(block=>{
       const parsed=recoverRichPresentation(block);
-      return parsed.success&&parsed.data.report?[parsed.data]:[];
+      return parsed?.report?[parsed]:[];
     });
     if(!presentations.length)return [];
     const first=presentations[0];
