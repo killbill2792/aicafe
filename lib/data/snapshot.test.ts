@@ -22,7 +22,7 @@ function mockDb(options:{sold?:Array<{menu_item_id:string;total_quantity:number|
       target_operating_margin:.15,target_operating_margin_status:"default",
       owner_monthly_payroll_extras_cents:null}],
     locations:[{open_hours:null}],
-    daily_rollups:[],recurring_costs:[],expenses:[],recovery_order:[],
+    cv_sales_days:[],recurring_costs:[],expenses:[],recovery_order:[],
     menu_items:[],timecards:[],alerts:[],
   };
   const db={from(table:string){
@@ -71,7 +71,7 @@ describe("getSnapshot read-only current snapshot and Home database budget",()=>{
     // bounded number of read invocations, not a second full snapshot query set.
     expect(reads).toHaveLength(10);
     expect(reads.filter(table=>table==="alerts")).toHaveLength(1);
-    expect(reads.filter(table=>table==="daily_rollups")).toHaveLength(1);
+    expect(reads.filter(table=>table==="cv_sales_days")).toHaveLength(1);
   });
   it("keeps all 1001 menu records and their sold quantities across full source pages",async()=>{
     const menu=Array.from({length:1001},(_,i)=>({

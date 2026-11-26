@@ -6,9 +6,8 @@ import {rowToDailyFacts} from "./runningCostCatalog";
  * fees, voids). Every screen and every chat tool reads days through here, so
  * the same day can never show two different numbers. Writers live in
  * lib/pos/rollup.ts and the Toast import. */
-export const DAILY_FACT_COLUMNS="business_date,net_sales_cents,orders_count,drinks_count,ingredients_cents,"+
- "staff_wages_cents,staff_tax_cents,labor_wage_status,staff_tax_status,staff_tax_source,sales_data_status,"+
- "card_fees_cents,card_fees_status,voids_cents";
+export const DAILY_FACT_COLUMNS="business_date,net_sales_cents,orders_count,"+
+ "drinks_count:data->drinks_count,ingredients_cents:data->ingredients_cents,staff_wages_cents:data->staff_wages_cents,staff_tax_cents:data->staff_tax_cents,labor_wage_status:data->labor_wage_status,staff_tax_status:data->staff_tax_status,staff_tax_source:data->staff_tax_source,sales_data_status:data->sales_data_status,card_fees_cents:data->card_fees_cents,card_fees_status:data->card_fees_status,voids_cents:data->voids_cents";
 export type DailyFactRow=Parameters<typeof rowToDailyFacts>[0];
 const PAGE=1000;
 
@@ -16,7 +15,7 @@ const PAGE=1000;
 export async function readDailyFactRows(db:SupabaseClient,businessId:string,from:string,to:string):Promise<DailyFactRow[]>{
  const rows:DailyFactRow[]=[];
  for(let offset=0;;offset+=PAGE){
-  const {data,error}=await db.from("daily_rollups").select(DAILY_FACT_COLUMNS)
+  const {data,error}=await db.from("cv_sales_days").select(DAILY_FACT_COLUMNS)
    .eq("business_id",businessId).gte("business_date",from).lte("business_date",to)
    .order("business_date",{ascending:true}).range(offset,offset+PAGE-1);
   if(error)throw error;

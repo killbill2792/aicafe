@@ -14,10 +14,11 @@ const rows=Array.from({length:1205},(_,i)=>({business_date:day(i),net_sales_cent
 function fakeDb(){
  const pages:number[][]=[];
  const from=(table:string)=>{
-  const q:Record<string,unknown>={select:()=>q,eq:()=>q,gte:()=>q,lte:()=>q,order:()=>q,in:()=>q,like:()=>q,
+  let actualOnly=false;
+  const q:Record<string,unknown>={select:()=>q,eq:(key:string,value:string)=>{if(key==="data->>sales_data_status"&&value==="actual")actualOnly=true;return q;},gte:()=>q,lte:()=>q,order:()=>q,in:()=>q,like:()=>q,
    range:async(a:number,b:number)=>{
-    if(!["daily_rollups","cv_sales_days"].includes(table))return {data:null,error:{message:"not in this fixture"}};
-    pages.push([a,b]);return {data:(table==="cv_sales_days"?rows.filter(r=>r.sales_data_status==="actual"):rows).slice(a,b+1),error:null};},
+    if(table!=="cv_sales_days")return {data:null,error:{message:"not in this fixture"}};
+    pages.push([a,b]);return {data:(actualOnly?rows.filter(r=>r.sales_data_status==="actual"):rows).slice(a,b+1),error:null};},
    limit:async()=>({data:null,error:{message:"not in this fixture"}})};
   return q;
  };

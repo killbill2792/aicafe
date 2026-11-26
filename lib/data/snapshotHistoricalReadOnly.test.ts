@@ -28,7 +28,7 @@ function readOnlyClient(expenseCount=0){
       target_operating_margin:.15,target_operating_margin_status:"default",
       owner_monthly_payroll_extras_cents:0}],
     locations:[{open_hours:null}],
-    daily_rollups:["2026-09-30","2026-10-01"].map(business_date=>({
+    cv_sales_days:["2026-09-30","2026-10-01"].map(business_date=>({
       business_date,net_sales_cents:10000,orders_count:5,drinks_count:10,
       ingredients_cents:2000,staff_wages_cents:1000,staff_tax_cents:120,
       labor_wage_status:"actual",staff_tax_status:"actual",
@@ -84,7 +84,7 @@ describe("historical snapshot is genuinely read-only",()=>{
       .toEqual(new Set(["2026-09","2026-10"]));
     expect(spies.materialize).not.toHaveBeenCalled();
     expect(spies.alerts).not.toHaveBeenCalled();
-    expect(tables).toEqual(["businesses","daily_rollups","recurring_costs","expenses","locations"]);
+    expect(tables).toEqual(["businesses","cv_sales_days","recurring_costs","expenses","locations"]);
     for(const table of tables.filter(name=>name!=="businesses"))
       expect(filters).toContainEqual({table,field:"business_id",value:cafeId});
   });
