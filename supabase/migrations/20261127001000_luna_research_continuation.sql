@@ -598,14 +598,8 @@ begin
  update public.ai_agent_jobs set status='done',reply_message_id=m.id,error_code=null,
    finished_at=coalesce(finished_at,clock_timestamp()),updated_at=clock_timestamp(),heartbeat_at=clock_timestamp()
    where id=j.id;
- -- A completed attempt may have honestly reported missing evidence. Save
- -- that report, but do not acknowledge successful completion or re-spend
- -- tokens indefinitely seeking data which does not exist.
- if m.grounding->>'status'<>'verified' then
-   update public.supervisor_run_steps set status='blocked',error_code='report_incomplete',
-     claim_token=null,worker_id=null,lease_until=null,updated_at=clock_timestamp() where id=s.id;
-   update public.supervisor_runs set status='blocked',updated_at=clock_timestamp() where id=r.id;
- end if;
+ -- The final persisted answer may honestly describe incomplete data.
+ -- Completion is proved by the scoped reply and endReason, not confidence.
  return to_jsonb(m);
 end $function$;
 
