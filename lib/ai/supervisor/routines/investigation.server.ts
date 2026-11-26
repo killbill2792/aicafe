@@ -1,9 +1,10 @@
+import {researchStaffReadTools} from "@/lib/ai/research/integrationReads";
 import "server-only";
 import type {SupabaseClient} from "@supabase/supabase-js";
 import {assertCafeAiAccess} from "@/lib/access/access.server";
 import {createOwnerScopedCafeTools,readSupervisorCafeIdentity} from "@/lib/ai/cafeTools.server";
 import {openAIProvider,type AgentProvider} from "@/lib/ai/agent/loop.server";
-import {researchStaffReadTools,runResearchTurn} from "@/lib/ai/research/turn.server";
+import {runResearchTurn} from "@/lib/ai/research/turn.server";
 import {agentToolDefinitions} from "@/lib/ai/agent/tools";
 import {assertDurablePaidTurnAllowed} from "@/lib/ai/supervisor/runs/worker.server";
 import {createWebSearch,type WebSearchBudget} from "@/lib/ai/agent/webSearch.server";

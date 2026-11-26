@@ -1,3 +1,4 @@
+import {isResearchIntegrationReadTool} from "./integrationReads";
 import {describe,expect,it,vi} from "vitest";
 import type {AgentProvider} from "@/lib/ai/agent/loop.server";
 
@@ -7,7 +8,7 @@ vi.mock("@/lib/ai/agent/tools",async importOriginal=>({
   ...(await importOriginal<typeof import("@/lib/ai/agent/tools")>()),
   executeAgentTool:(...a:unknown[])=>execute(...a),
 }));
-const {runResearchTurn,isResearchActionTool,isResearchIntegrationReadTool}=await import("./turn.server");
+const {runResearchTurn,isResearchActionTool}=await import("./turn.server");
 
 const done={type:"response.completed",response:{model:"m",usage:{input_tokens:1,output_tokens:1}}};
 const call=(name:string,args:unknown,id:string)=>({type:"response.output_item.done",item:{type:"function_call",name,call_id:id,arguments:JSON.stringify(args)}});

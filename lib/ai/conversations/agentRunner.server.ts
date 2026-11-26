@@ -1,3 +1,4 @@
+import {isResearchIntegrationReadTool} from "@/lib/ai/research/integrationReads";
 import "server-only";
 import type {SupabaseClient} from "@supabase/supabase-js";
 import {createHash} from "node:crypto";
@@ -60,7 +61,7 @@ import {metricCatalog} from "@/lib/calc/metrics/catalog";
 import {ownerRunStatement,type OwnerRunCheckpoint} from "@/lib/ai/supervisor/runs/contracts";
 import type {DurableReplyFence} from "./replyWriter.server";
 import {cafeNotesContext,cafeNotesPort} from "@/lib/ai/research/notes.server";
-import {isResearchActionTool,isResearchIntegrationReadTool,runResearchTurn} from "@/lib/ai/research/turn.server";
+import {isResearchActionTool,runResearchTurn} from "@/lib/ai/research/turn.server";
 import {createOwnerCommitment,listOwnerCommitments,closeOwnerCommitment} from "@/lib/operating/commitments.server";
 import {createOwnerRoutine,listOwnerRoutines,changeOwnerRoutine} from "@/lib/ai/supervisor/routines/repository.server";
 import {routineReportCandidates,verifiedRoutineReportHistory} from "@/lib/ai/supervisor/routines/reportHistory.server";

@@ -36,9 +36,7 @@ export const isResearchActionTool=(name:string)=>/^propose_/u.test(name)||
    "record_maintenance_repair_claim","ask_owner","get_supervisor_permissions"].includes(name);
 
 /** These integrations retain their existing scoped readers; no café metric reader belongs here. */
-export const researchStaffReadTools=["get_schedule","get_week_schedule","get_staff_messages"] as const;
-export const isResearchIntegrationReadTool=(name:string)=>
-  name==="get_events"||(researchStaffReadTools as readonly string[]).includes(name);
+
 
 type Event={type:string;[key:string]:unknown};
 type FunctionCall={type:"function_call";name:string;call_id:string;arguments:string};
