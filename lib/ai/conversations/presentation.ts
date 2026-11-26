@@ -1,6 +1,6 @@
 import {scenarioEditorSchema,evaluateScenarioEditor} from "./scenarioPresentation";
 import { z } from "zod";
-import {exactNumber,runCalculation,CALC_OPS,type CalcOp,type CalcShown} from "@/lib/metrics/core/calculator";
+import {exactDecimal,exactNumber,runCalculation,CALC_OPS,type CalcOp,type CalcShown} from "@/lib/metrics/core/calculator";
 
 /** Versioned, renderer-independent, serializable UI. No client code or action bindings. */
 const label=z.string().min(1);
@@ -45,14 +45,7 @@ export const recordTableSchema=z.strictObject({
  columns:z.array(z.strictObject({label,unit:tableUnit})).min(1),
  rows:z.array(z.array(cell).min(1)).min(1),
 }).superRefine((t,ctx)=>{
- if(t.from>t.to||t.rows.some(r=>r.length!==t.columns.length||r.some((v,i)=>{
-  if(v===null)return false;
-  const u=t.columns[i].unit;
-  return u==="cents"||u==="cents/hour"||u==="microcents"?typeof v!=="number":
-   u==="count"?typeof v!=="number":
-   ["items","units","quantity","seconds","hours","minutes","days","ratio","ratio squared","indicator","hour 0 to 23","weekday"].includes(u)?typeof v!=="number":
-   u==="label"||u==="timestamp text"?typeof v!=="string":u==="local date"?typeof v!=="string"||!date.safeParse(v).success:u==="boolean"?typeof v!=="boolean":false;
- })))ctx.addIssue({code:"custom",message:"Invalid table cells"});
+ if(t.from>t.to||t.rows.some(r=>r.length!==t.columns.length))ctx.addIssue({code:"custom",message:"Invalid table shape"});
 });
 const calcName=z.string().regex(/^[a-z][a-z0-9_]{0,39}$/u);
 const calcShown=z.discriminatedUnion("unit",[
@@ -63,12 +56,10 @@ const calcShown=z.discriminatedUnion("unit",[
 ]);
 export const interactiveCalcSchema=z.strictObject({
  title:label,asOf:date,currency:z.string().regex(/^[A-Z]{3}$/).nullable(),
- inputs:z.array(z.strictObject({id:calcName,label,value:calcShown,editable:z.boolean()})).min(1).max(12),
- steps:z.array(z.strictObject({id:calcName,op:z.enum(CALC_OPS as [CalcOp,...CalcOp[]]),args:z.array(calcName).min(1).max(8)})).min(1).max(12),
+ inputs:z.array(z.strictObject({id:calcName,label,value:calcShown,editable:z.boolean()})).min(1),
+ steps:z.array(z.strictObject({id:calcName,op:z.enum(CALC_OPS as [CalcOp,...CalcOp[]]),args:z.array(calcName).min(1)})).min(1),
  original:calcShown,
-}).refine(c=>c.inputs.some(i=>i.editable)&&c.inputs.every(i=>!i.editable||i.value.unit!=="ratio")&&
- new Set(c.inputs.map(i=>i.id)).size===c.inputs.length&&
- (c.currency!==null||![...c.inputs.map(i=>i.value),c.original].some(v=>v.unit==="cents")));
+}).refine(c=>new Set(c.inputs.map(i=>i.id)).size===c.inputs.length);
 export type RecordTable=z.infer<typeof recordTableSchema>;
 export type InteractiveCalc=z.infer<typeof interactiveCalcSchema>;
 /** Reuse the one exact arithmetic engine. Local values are hypothetical, never
@@ -77,14 +68,14 @@ export function evaluatePresentationCalc(c:InteractiveCalc,changes:Readonly<Reco
  const entries=new Map<string,NonNullable<ReturnType<typeof exactNumber>>>();
  for(const input of c.inputs){
   const v=input.value;
-  let n=v.unit==="cents"?v.valueCents:v.unit==="percent"?v.valueBps:v.unit==="count"?v.quantity:v.valueRatio;
+  const n=v.unit==="cents"?v.valueCents:v.unit==="percent"?v.valueBps:v.unit==="count"?v.quantity:v.valueRatio;
   if(input.editable&&Object.hasOwn(changes,input.id)){
-   const raw=changes[input.id];
-   if(!/^-?\d{1,9}(?:\.\d{1,2})?$/.test(raw))return null;
-   const entered=Number(raw);
-   // Minor values/percentage basis points are integers. Limit editable
-   // hypothetical inputs to nine whole digits and two decimal places.
-   n=v.unit==="cents"||v.unit==="percent"?Math.round(entered*100):entered;
+   const raw=changes[input.id].trim();
+   const entered=exactDecimal(raw,v.unit,v.unit==="percent"?100:1);
+   if(!entered)return null;
+   // Currency inputs are displayed in major units; arithmetic uses minor units.
+   entries.set(input.id,v.unit==="cents"?{...entered,n:entered.n*BigInt(100)}:entered);
+   continue;
   }
   const value=exactNumber(n,v.unit,v.unit==="percent"?10000:1);
   if(!value)return null;
@@ -95,9 +86,7 @@ export function evaluatePresentationCalc(c:InteractiveCalc,changes:Readonly<Reco
 }
 /** A bounded semantic grouping grammar, independent of the renderer. Leaf
  * references identify only already validated snapshot components. */
-/** Group headings are descriptive labels, not a second unannotated answer.
- * Quantitative claims belong in the bound data leaves or provenance-checked
- * prose. Use the same policy on legacy persisted labels at render time. */
+/** Preserve authored headings, including numeric or estimated claims. */
 export function descriptiveGroupTitle(value:string|null|undefined):string|undefined{
  if(!value?.trim())return undefined;
  return value;
