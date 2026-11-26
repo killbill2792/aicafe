@@ -2430,7 +2430,8 @@ test("@home Task16E stops an acknowledged live view without invoking a cancel or
         const stream=new ReadableStream({
           start(controller){
             state.opened=true;state.body=JSON.parse(init.body);
-            state.ack=()=>controller.enqueue(new TextEncoder().encode("event: ack\ndata: "+JSON.stringify({runId:"synthetic-run",mode:"queued"})+"\n\n"));
+            state.emit=(type,data)=>controller.enqueue(new TextEncoder().encode("event: "+type+"\ndata: "+JSON.stringify(data)+"\n\n"));
+            state.ack=()=>state.emit("ack",{runId:"synthetic-run",mode:"queued"});
           },
           cancel(){state.detached++;}
         });
@@ -2451,7 +2452,21 @@ test("@home Task16E stops an acknowledged live view without invoking a cancel or
     await expect(stop).toHaveCount(0);
     await page.evaluate(()=>window.__task16eStream.ack());
     await expect(stop).toBeVisible();
-    await expect(page.getByTestId("supervisor-live-progress")).toHaveCount(1);
+    const progress=page.getByTestId("supervisor-live-progress");
+    await expect(progress).toHaveCount(1);
+    await page.evaluate(()=>window.__task16eStream.emit("thinking",{text:"**Inspecting data requirements**\n\nReading sales."}));
+    await expect(progress.locator("strong")).toHaveText("Inspecting data requirements");
+    await page.evaluate(()=>window.__task16eStream.emit("thinking",{text:"**Gathering accounting details**\n\nChecking supplier invoices."}));
+    await expect(progress.locator("strong")).toHaveText("Gathering accounting details");
+    await expect(progress).not.toContainText("Inspecting data requirements");
+    await expect(progress.locator("svg[data-cafe-motion]")).toHaveCount(1);
+    await page.setViewportSize({width:390,height:844});
+    await page.evaluate(()=>window.__task16eStream.emit("delta",{text:"| Accounting item | Amount | Data quality |\n| --- | ---: | --- |\n| Staff wages | $12,441.28 | Actual |\n| Ingredient costs | $50.38 | Incomplete; last five days only |\n\n"}));
+    const region=page.locator('[aria-label="Response table"]').last();
+    await expect(region).toBeVisible();
+    expect(await region.evaluate(el=>({scroll:el.scrollWidth,width:el.clientWidth}))).toMatchObject({scroll:expect.any(Number),width:expect.any(Number)});
+    expect(await region.evaluate(el=>el.scrollWidth<=el.clientWidth+1)).toBe(true);
+    await expect(region).toContainText("Incomplete; last five days only");
     await expect(eventChip).toHaveCount(0);
     await assertAccessibleControls(page);
     await stop.focus();await page.keyboard.press("Enter");
