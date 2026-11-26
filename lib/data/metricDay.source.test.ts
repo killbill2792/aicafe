@@ -28,7 +28,7 @@ vi.mock("@/lib/supabase/admin",()=>({
       let head=false;
       let queryKind:"all"|"csv"|"missing"="all";
       const get=()=>{
-        if(table==="daily_rollups")return [{
+        if(table==="cv_sales_days")return [{
           business_date:"2026-10-05",net_sales_cents:1200,orders_count:1,
           drinks_count:1200,ingredients_cents:0,staff_wages_cents:0,
           staff_tax_cents:0,staff_tax_status:"estimated",labor_wage_status:state.rollupWageStatus,

@@ -224,9 +224,9 @@ async function getMenuItemSnapshots(
   todayDateStr: string,
 ): Promise<MenuItemSnapshot[]> {
   const {data:items}=await snapshotPaged("menu_items",
-    (start,end)=>supabase.from("menu_items")
-     .select("id,name,price_cents,prep_seconds,category,is_active",{count:"exact"})
-     .eq("business_id",businessId).order("id",{ascending:true}).range(start,end),
+    (start,end)=>supabase.from("cv_menu")
+     .select("id:data->id,name:data->name,price_cents:data->price_cents,prep_seconds:data->prep_seconds,category:data->category,is_active:data->is_active",{count:"exact"})
+     .eq("business_id",businessId).like("source_ref","item:%").order("source_ref",{ascending:true}).range(start,end),
      row=>row.id);
   if (!items || items.length === 0) return [];
 

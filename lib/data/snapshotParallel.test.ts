@@ -22,7 +22,7 @@ function mockDb(){
     locations:[{open_hours:null}],
     cv_bills:[{id:"rent-bill",frequency:"monthly",category_code:"rent",amount_cents:60000,is_estimate:false,
       active_from:"2026-01-01",active_to:null}],
-    cv_expenses:[],recovery_order:[],menu_items:[],timecards:[],
+    cv_expenses:[],recovery_order:[],cv_menu:[],timecards:[],
     alerts:[{id:"alert-1",impact_cents:240}],
   };
   const client={
@@ -35,7 +35,7 @@ function mockDb(){
           if(field==="business_id")scope.push({table,businessId:String(value)});
           return q;
         },
-        gte(){return q;},lte(){return q;},in(){return q;},
+        gte(){return q;},lte(){return q;},in(){return q;},like(){return q;},
         order(){return q;},limit(){return q;},range(){return q;},
         single:async()=>({...payload,data:payload.data[0]??null}),
         maybeSingle:async()=>({...payload,data:payload.data[0]??null}),
@@ -68,7 +68,7 @@ describe("canonical snapshot independent read phases",()=>{
       expect(mocks.days).toHaveBeenCalledOnce();
       expect(mocks.plans).toHaveBeenCalledOnce();
       expect(mocks.period).toHaveBeenCalledOnce();
-      expect(reads).toContain("menu_items");
+      expect(reads).toContain("cv_menu");
       expect(reads).toContain("timecards");
       expect(reads).toContain("alerts");
     });
@@ -91,7 +91,7 @@ describe("canonical snapshot independent read phases",()=>{
     });
     expect(snapshot.alerts).toEqual({count:1,leakingCents:240});
     expect(snapshot).toMatchObject({ownerFeePlans:[]});
-    expect(reads.filter(table=>table==="menu_items")).toHaveLength(1);
+    expect(reads.filter(table=>table==="cv_menu")).toHaveLength(1);
     expect(reads.filter(table=>table==="alerts")).toHaveLength(1);
     expect(scope.every(row=>row.businessId==="cafe1")).toBe(true);
   });

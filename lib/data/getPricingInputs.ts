@@ -75,7 +75,7 @@ export async function getPricingInputs(supabase: SupabaseClient, businessId: str
     return readOrders();
   })();
   const [itemsResult, days, recurringResult, ordersResult, expenseResult, priorExpenseResult, ownerFeePlans] = await Promise.all([
-    supabase.from("menu_items").select("id, name, price_cents, category, prep_seconds").eq("business_id", businessId).eq("is_active", true),
+    supabase.from("cv_menu").select("id:data->id,name:data->name,price_cents:data->price_cents,category:data->category,prep_seconds:data->prep_seconds").like("source_ref","item:%").eq("business_id", businessId).eq("data->>is_active", "true"),
     daysPromise,
     supabase.from("cv_bills").select("amount_cents:data->amount_cents,category_code:data->category_code,frequency:data->frequency,active_from:data->active_from,active_to:data->active_to,is_estimate:data->is_estimate").eq("business_id", businessId).lte("data->>active_from", todayDateStr),
     ordersPromise,
@@ -97,8 +97,8 @@ export async function getPricingInputs(supabase: SupabaseClient, businessId: str
   // Pricing only loads active products by default, but components of a saved
   // combo may since have been deactivated: still cost the ingredients honestly.
   const componentIds=[...new Set(comboRows.map(x=>x.componentItemId))].filter(id=>!itemIds.includes(id));
-  const componentResult=componentIds.length?await supabase.from("menu_items")
-    .select("id,name,price_cents,category,prep_seconds").eq("business_id",businessId).in("id",componentIds):
+  const componentResult=componentIds.length?await supabase.from("cv_menu")
+    .select("id:data->id,name:data->name,price_cents:data->price_cents,category:data->category,prep_seconds:data->prep_seconds").like("source_ref","item:%").eq("business_id",businessId).in("data->>id",componentIds):
     {data:[],error:null};
   if(componentResult.error)throw componentResult.error;
   const costRows=[...rawItems,...(componentResult.data??[])];

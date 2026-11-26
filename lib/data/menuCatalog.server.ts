@@ -32,16 +32,16 @@ export async function readMenuCatalogRows(
   if (!businessId) throw new Error("Café access scope mismatch");
   try {
     return await readAllPosRows<MenuCatalogRow>(
-      (first, last) => client.from("menu_items")
-        .select("id, name, base_name, size_label, price_cents, prep_seconds, category, menu_group, is_active, pos_item_id, catalog_source, catalog_last_synced_at, description, pos_visibility, pos_pricing_strategy")
-        .eq("business_id", businessId)
-        .order("name").order("id")
+      (first, last) => client.from("cv_menu")
+        .select("id:data->id,name:data->name,base_name:data->base_name,size_label:data->size_label,price_cents:data->price_cents,prep_seconds:data->prep_seconds,category:data->category,menu_group:data->menu_group,is_active:data->is_active,pos_item_id:data->pos_item_id,catalog_source:data->catalog_source,catalog_last_synced_at:data->catalog_last_synced_at,description:data->description,pos_visibility:data->pos_visibility,pos_pricing_strategy:data->pos_pricing_strategy")
+        .eq("business_id", businessId).like("source_ref","item:%")
+        .order("data->>name").order("source_ref")
         .range(first, last),
       "café menu items",
     );
   } catch {
     // Report only an error category, never row data or DB payloads.
-    logQueryError("readMenuCatalogRows:menu_items", { message: "read_failed" });
+    logQueryError("readMenuCatalogRows:cv_menu", { message: "read_failed" });
     throw new Error(MENU_LOAD_FAILURE_MESSAGE);
   }
 }

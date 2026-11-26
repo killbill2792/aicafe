@@ -19,7 +19,7 @@ import { getPricingInputs } from "./getPricingInputs";
 function dbWithOrders(spy: string[], orderError = false) {
   const values: Record<string, unknown> = {
     businesses: { timezone: "America/Los_Angeles", currency: "EUR" },
-    menu_items: [{ id: "latte", name: "Latte", category: "drink", price_cents: 350, prep_seconds: 60 }],
+    cv_menu: [{ id: "latte", name: "Latte", category: "drink", price_cents: 350, prep_seconds: 60 }],
     cv_orders:[{ business_date: "2026-10-30", pos_order_id: "real-1", net_sales_cents: 1000, processing_fee_provider: "toast" }],
     cv_expenses: [], cv_bills: [], recipe_lines: [], menu_item_cost_fallbacks: [],
   };
@@ -30,7 +30,8 @@ function dbWithOrders(spy: string[], orderError = false) {
       error: table === "cv_orders" && orderError ? { message: "order history unavailable" } : null,
     });
     const builder = {
-      select: () => builder, eq: () => builder, gte: () => builder,
+      select: () => builder,
+      like: () => builder, eq: () => builder, gte: () => builder,
       lte: () => builder, lt: () => builder, is: () => builder,
       in: () => builder, order: () => builder,
       single: async () => response(),

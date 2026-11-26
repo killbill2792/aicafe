@@ -23,7 +23,7 @@ function mockDb(options:{sold?:Array<{menu_item_id:string;total_quantity:number|
       owner_monthly_payroll_extras_cents:null}],
     locations:[{open_hours:null}],
     cv_sales_days:[],cv_bills:[],cv_expenses:[],recovery_order:[],
-    menu_items:[],timecards:[],alerts:[],
+    cv_menu:[],timecards:[],alerts:[],
   };
   const db={from(table:string){
     reads.push(table);
@@ -32,7 +32,7 @@ function mockDb(options:{sold?:Array<{menu_item_id:string;total_quantity:number|
     let range:{start:number;end:number}|null=null;
     const builder={
       select(){return builder},eq(){return builder},gte(){return builder},lte(){return builder},
-      in(){return builder},order(){return builder},limit(){return builder},
+      in(){return builder},like(){return builder},order(){return builder},limit(){return builder},
       range(start:number,end:number){range={start,end};return builder},
       single:async()=>({...payload,data:payload.data[0]??null}),
       maybeSingle:async()=>({...payload,data:payload.data[0]??null}),
@@ -80,19 +80,19 @@ describe("getSnapshot read-only current snapshot and Home database budget",()=>{
     }));
     const sold=menu.map((item,i)=>({menu_item_id:item.id,total_quantity:i===999?1.5:i===1000?"2.25":2}));
     const {db,seed,reads,writes}=mockDb({sold});
-    seed.menu_items=menu;
+    seed.cv_menu=menu;
     seed.recipe_lines=[];seed.menu_item_cost_fallbacks=[];
     seed.menu_combo_components=[];seed.ingredient_prices=[];
     const result=await getBusinessSnapshotFromDb(db,"c1","today");
     expect(result.menuItems).toHaveLength(1001);
     expect(result.menuItems[999]).toMatchObject({id:"menu-000999",quantitySoldLast28Days:1.5});
     expect(result.menuItems[1000]).toMatchObject({id:"menu-001000",quantitySoldLast28Days:2.25});
-    expect(reads.filter(table=>table==="menu_items")).toHaveLength(2);
+    expect(reads.filter(table=>table==="cv_menu")).toHaveLength(2);
     expect(writes).toEqual([]);
   });
   it.each([-1, Infinity, NaN, Number.MAX_SAFE_INTEGER+1, ""])("rejects invalid sold quantities %s",async(total_quantity)=>{
     const {db,seed}=mockDb({sold:[{menu_item_id:"menu-1",total_quantity}]});
-    seed.menu_items=[{id:"menu-1",name:"Product",price_cents:750,prep_seconds:15,category:"food",is_active:true}];
+    seed.cv_menu=[{id:"menu-1",name:"Product",price_cents:750,prep_seconds:15,category:"food",is_active:true}];
     await expect(getBusinessSnapshotFromDb(db,"c1","today")).rejects.toThrow("snapshot_product_sales_mapping_unverified");
   });
   it("never silently drops actual receipts after the 1000-row PostgREST page boundary",async()=>{

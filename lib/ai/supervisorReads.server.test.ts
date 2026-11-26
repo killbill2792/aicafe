@@ -173,7 +173,7 @@ describe("U1 shared daily reader scope and date bounds",()=>{
     for(const key of ["select","eq","gte","lte","order"] as const)daily[key].mockReturnValue(daily);
     daily.range.mockResolvedValue({data:[row("actual",4820,12,day)],error:null});
     const unavailable={select:()=>{throw new Error("status unavailable");}};
-    const from=vi.fn((table:string)=>table==="daily_rollups"?daily:unavailable);
+    const from=vi.fn((table:string)=>table==="cv_sales_days"?daily:unavailable);
     const db={from,rpc:vi.fn().mockRejectedValue(new Error("coverage unavailable"))} as unknown as SupabaseClient;
     vi.stubEnv("TOAST_AUTO_IMPORT_ENABLED","false");
     const result=await supervisorHistoricalReaders(db,"my-cafe").salesTrend("my-cafe",{from:day,to:day});

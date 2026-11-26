@@ -1,3 +1,6 @@
+set lock_timeout = '5s';
+set statement_timeout = '60s';
+
 -- Complete the existing saved-day projection without changing its grain, grants or source.
 -- No data is copied or rewritten; all owner-visible provenance stays intact.
 create or replace view public.cv_sales_days
@@ -64,3 +67,38 @@ create or replace view public.cv_orders
  'processing_fee_provider',o.processing_fee_provider),
  case when o.toast_excluded is true or o.superseded_by is not null then null::bigint else o.net_sales_cents end
  from public.orders o;
+
+-- Item identity and quantity use the same operational canonical lines as SQL chat.
+create or replace function public.menu_item_quantities_sold(p_business_id uuid,p_from date,p_to date)
+ returns table(menu_item_id uuid,total_quantity numeric)
+ language sql stable security invoker set search_path=public as $$
+ select (v.data->>'menu_item_id')::uuid,sum(v.quantity)
+ from public.cv_item_sales v
+ where v.business_id=p_business_id and v.business_date between p_from and p_to
+ and v.status='actual' and v.data->>'menu_item_id' is not null
+ group by (v.data->>'menu_item_id')::uuid
+ $$;
+
+-- Preserve the existing item/review/version union and expose menu display fields.
+create or replace view public.cv_menu
+ (business_id,source,source_ref,status,business_date,data) with (security_invoker=true) as
+ select m.business_id,case when m.catalog_source='toast' then 'toast' else 'app' end::text,
+ 'item:'||m.id::text,'actual'::text,null::date,
+ jsonb_build_object('id',m.id,'name',m.name,'price_cents',m.price_cents,
+ 'category',m.category,'menu_group',m.menu_group,'is_active',m.is_active,'pos_item_id',m.pos_item_id,
+ 'base_name',m.base_name,'size_label',m.size_label,'prep_seconds',m.prep_seconds,
+ 'catalog_source',m.catalog_source,'catalog_last_synced_at',m.catalog_last_synced_at,
+ 'description',m.description,'pos_visibility',m.pos_visibility,'pos_pricing_strategy',m.pos_pricing_strategy)
+ from public.menu_items m
+ union all
+ select r.business_id,'toast'::text,'review:'||r.review_type||':'||r.source_key,
+ 'needs_match'::text,null::date,jsonb_build_object('review_type',r.review_type,'source_key',r.source_key,'detail',r.detail)
+ from public.pos_import_reviews r where r.provider='toast' and r.review_type in ('catalog_item','menu_identity','item_identity')
+ and r.status='needs_owner'
+ union all
+ select v.business_id,'toast'::text,
+ 'price-version:'||v.restaurant_guid::text||':'||v.kind||':'||v.provider_guid::text||':'||v.price_fingerprint,
+ 'actual'::text,null::date,jsonb_build_object('kind','price_version','provider_guid',v.provider_guid,
+ 'entity_kind',v.kind,'name',v.name,'category',v.category,'price_cents',v.price_cents,'observed_at',v.observed_at)
+ from public.toast_catalog_price_versions v;
+comment on view public.cv_menu is 'Current and archived catalog rows have source_ref item:; price-version and needs_match review rows are separate, not additional sellable products. Null open prices remain unknown.';

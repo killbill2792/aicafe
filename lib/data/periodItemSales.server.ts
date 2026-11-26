@@ -29,13 +29,10 @@ export async function readPeriodItemSales(
   // non-voided order line would silently disappear even when other item rows
   // were present. Use a bounded EXISTS-style exact count through the parent
   // order's business/date scope. If this cannot be proven, remain partial.
-  const {count,error:unlinkedError}=await supabase.from("order_lines")
-    .select("id, orders!inner(business_id,business_date)",{count:"exact",head:true})
-    .is("menu_item_id",null).eq("voided",false)
-    .eq("orders.business_id",businessId)
-    .eq("orders.toast_excluded",false).is("orders.superseded_by",null)
-    .gte("orders.business_date",period.from)
-    .lte("orders.business_date",period.to);
+  const {count,error:unlinkedError}=await supabase.from("cv_item_sales")
+    .select("source_ref",{count:"exact",head:true})
+    .eq("business_id",businessId).eq("status","actual").is("data->>menu_item_id",null)
+    .gte("business_date",period.from).lte("business_date",period.to);
   if(unlinkedError||count===null||count===undefined||count>0)return unknown();
   // A capped RPC response cannot prove that every distinct sold item is present.
   const items:Array<{id:string;units:number}>=[];
@@ -90,15 +87,13 @@ export async function readPeriodSoldLines(
       if(typeof id!=="string"||!id||!Number.isFinite(units)||units<0)return unknown();
       if(units>0)linked.push({id,units});
     }
-    // Same order filters as the RPC (migration 093), for lines with no menu item.
+    // Same canonical actual item rows as the quantities RPC, for unlinked lines.
     const rows=await readAllPosRows<{name:string;category:string|null;quantity:number|string;id:string}>(
-      (first,last)=>supabase.from("order_lines")
-        .select("id,name,category,quantity,orders!inner(business_id,business_date)")
-        .is("menu_item_id",null).eq("voided",false)
-        .eq("orders.business_id",businessId)
-        .eq("orders.toast_excluded",false).is("orders.superseded_by",null)
-        .gte("orders.business_date",period.from).lte("orders.business_date",period.to)
-        .order("id").range(first,last),
+      (first,last)=>supabase.from("cv_item_sales")
+        .select("id:source_ref,name:data->>name,category:data->>category,quantity")
+        .eq("business_id",businessId).eq("status","actual").is("data->>menu_item_id",null)
+        .gte("business_date",period.from).lte("business_date",period.to)
+        .order("source_ref").range(first,last),
       "unlinked order lines");
     const byName=new Map<string,{name:string;category:string|null;units:number}>();
     for(const row of rows){
