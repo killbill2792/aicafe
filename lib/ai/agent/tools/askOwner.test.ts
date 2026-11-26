@@ -176,12 +176,12 @@ describe("ask_owner tool",()=>{
    fields:[{key:"generic_count",label:"Count",inputType:"number",units:[],defaultUnit:""}]};
   const rejected=await askOwnerTools.ask_owner.execute(request,ctx);
   expect(rejected).toMatchObject({source:"ask_owner",error:"numericOwnerInputUnverified",
-   missing:["numericOwnerInputUnverified"],nextTool:"query_data"});
+   missing:["numericOwnerInputUnverified"],nextTool:"run_sql"});
   expect(rejected.question).toBeUndefined();
   expect(ctx.resolveState!.asked).toBe(false);
   // A model-authored changeSaved flag cannot turn a POS fact into owner input.
   const forged=await askOwnerTools.ask_owner.execute({...request,changeSaved:true},ctx);
-  expect(forged).toMatchObject({error:"numericOwnerInputUnverified",nextTool:"query_data"});
+  expect(forged).toMatchObject({error:"numericOwnerInputUnverified",nextTool:"run_sql"});
   expect(ctx.resolveState!.asked).toBe(false);
   // A rejected owner card must not use the sole clarification slot.
   const ownerOnly=await askOwnerTools.ask_owner.execute({kind:"facts",
@@ -245,7 +245,7 @@ describe("ask_owner tool",()=>{
    question:"Owner-only seat count?",options:[],allowOther:false,changeSaved:true,
    fields:[{key,label:"Owner-only number",inputType:"number",
     units:[],defaultUnit:"",remember:"lasting"}]},ctx);
-  expect(card).toMatchObject({error:"numericOwnerInputUnverified",nextTool:"query_data"});
+  expect(card).toMatchObject({error:"numericOwnerInputUnverified",nextTool:"run_sql"});
   expect(ctx.resolveState!.asked).toBe(false);
  });
  it("does not allow model-invented POS intent to override a non-POS owner question",async()=>{
@@ -303,7 +303,7 @@ describe("ask_owner tool",()=>{
   expect(turn.endReason).toBe("complete");
   expect(turn.tools).toEqual(expect.arrayContaining(["ask_owner","query_data"]));
   expect(turn.results.find(x=>x.source==="ask_owner")).toMatchObject({
-   error:"numericOwnerInputUnverified",missing:["numericOwnerInputUnverified"],nextTool:"query_data"});
+   error:"numericOwnerInputUnverified",missing:["numericOwnerInputUnverified"],nextTool:"run_sql"});
   expect(turn.results.find(x=>x.source==="canonical_data")).toMatchObject({
    aggregate:{metric:"count_source_ref",value:2}});
   expect(turn.results.some(x=>x.source==="ask_owner"&&x.missing.length===0)).toBe(false);
