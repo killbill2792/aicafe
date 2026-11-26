@@ -87,6 +87,9 @@ describe("U4 objective evidence and model autonomy",()=>{
     expect(objectiveReadTools).toContain("get_sales");
     expect(objectiveReadTools).toContain("get_inventory");
     expect(objectiveReadTools).toContain("get_events");
+    // Scouting: an owner-created goal may search the public web; unrequested Watch never does.
+    expect(objectiveReadTools).toContain("web_search");
+    expect(watchReadTools).not.toContain("web_search");
     expect(objectiveReadTools).toContain("get_staff_messages");
     expect(watchReadTools).not.toContain("get_staff_messages");
     expect(watchReadTools).not.toContain("get_labor");
