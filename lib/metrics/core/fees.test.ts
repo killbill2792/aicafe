@@ -5,6 +5,10 @@ const days=[{date:"2026-10-01",netSalesCents:10000,ordersCount:10,
  {date:"2026-10-02",netSalesCents:10000,ordersCount:10,
   cardFeesCents:300,cardFeesStatus:"estimated" as const}];
 describe("fee priority",()=>{
+  it("sums the canonical SQL unrounded fee amounts before period rounding",()=>{
+    const rows=days.map((day,i)=>({...day,effectiveFee:{amountCents:123.4,basis:i===0?"actual" as const:"owner_plan" as const,notes:i===0?[]:["feeNetSalesProxy"]}}));
+    expect(cardFeesForDays(rows,{percentageBps:9999})).toMatchObject({amountCents:247,basis:"estimated",actualDays:1,estimatedDays:1,notes:["feeNetSalesProxy"]});
+  });
   it("actual Toast fees win over owner plan over default (fixture f)",()=>{
     const day={date:"2026-10-05",netSalesCents:10000,ordersCount:5,
       cardFeesStatus:"actual" as const,cardFeesCents:179};

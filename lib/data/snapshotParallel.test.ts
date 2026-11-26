@@ -1,5 +1,7 @@
 import {describe,it,expect,vi} from "vitest";
 import type {SupabaseClient} from "@supabase/supabase-js";
+import {fixtureCostRows} from "./runningCostCatalog.fixture";
+import {fixtureFinancialPeriodRows} from "./financialPeriods.fixture";
 vi.mock("server-only",()=>({}));
 const mocks=vi.hoisted(()=>({
   days:vi.fn(),period:vi.fn(),plans:vi.fn(),
@@ -20,9 +22,9 @@ function mockDb(){
       target_operating_margin:.15,target_operating_margin_status:"default",
       owner_monthly_payroll_extras_cents:1200}],
     locations:[{open_hours:null}],
-    recurring_costs:[{id:"rent-bill",frequency:"monthly",category_code:"rent",amount_cents:60000,is_estimate:false,
+    cv_bills:[{id:"rent-bill",frequency:"monthly",category_code:"rent",amount_cents:60000,is_estimate:false,
       active_from:"2026-01-01",active_to:null}],
-    expenses:[],recovery_order:[],menu_items:[],timecards:[],
+    cv_expenses:[],recovery_order:[],cv_menu:[],cv_staff_clock_entries:[],
     alerts:[{id:"alert-1",impact_cents:240}],
   };
   const client={
@@ -35,7 +37,7 @@ function mockDb(){
           if(field==="business_id")scope.push({table,businessId:String(value)});
           return q;
         },
-        gte(){return q;},lte(){return q;},in(){return q;},
+        gte(){return q;},lte(){return q;},in(){return q;},like(){return q;},
         order(){return q;},limit(){return q;},range(){return q;},
         single:async()=>({...payload,data:payload.data[0]??null}),
         maybeSingle:async()=>({...payload,data:payload.data[0]??null}),
@@ -45,7 +47,14 @@ function mockDb(){
       };
       return q;
     },
-    rpc(){throw Error("Empty menu must not request recipe quantities");},
+    rpc(name:string,args:{p_business_id:string;p_month_start:string;p_as_of:string}){
+      if(name==="financial_periods_as_of")return Promise.resolve({data:fixtureFinancialPeriodRows(),error:null});
+      if(name==="running_cost_lines_for_month"){
+        if(args.p_business_id!=="cafe1")throw Error("wrong scope");
+        return Promise.resolve({data:fixtureCostRows(values,args.p_month_start,args.p_as_of),error:null});
+      }
+      throw Error("Empty menu must not request recipe quantities");
+    },
   };
   return {db:client as unknown as SupabaseClient,reads,scope};
 }
@@ -68,8 +77,8 @@ describe("canonical snapshot independent read phases",()=>{
       expect(mocks.days).toHaveBeenCalledOnce();
       expect(mocks.plans).toHaveBeenCalledOnce();
       expect(mocks.period).toHaveBeenCalledOnce();
-      expect(reads).toContain("menu_items");
-      expect(reads).toContain("timecards");
+      expect(reads).toContain("cv_menu");
+      expect(reads).toContain("cv_staff_clock_entries");
       expect(reads).toContain("alerts");
     });
     releaseDays([{
@@ -91,7 +100,7 @@ describe("canonical snapshot independent read phases",()=>{
     });
     expect(snapshot.alerts).toEqual({count:1,leakingCents:240});
     expect(snapshot).toMatchObject({ownerFeePlans:[]});
-    expect(reads.filter(table=>table==="menu_items")).toHaveLength(1);
+    expect(reads.filter(table=>table==="cv_menu")).toHaveLength(1);
     expect(reads.filter(table=>table==="alerts")).toHaveLength(1);
     expect(scope.every(row=>row.businessId==="cafe1")).toBe(true);
   });

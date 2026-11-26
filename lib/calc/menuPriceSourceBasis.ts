@@ -1,6 +1,4 @@
-import { recurringCostMonthlyEquivalentCents } from "@/lib/expenses/recurringMonthlyTotal";
-import { RUNNING_COST_CODES } from "@/lib/constants";
-import { isExpectedCostCategory } from "@/lib/expenses/expectedCosts";
+import type { RunningCostLine } from "@/lib/data/types";
 
 /** Monthly Menu planning basis only. Do not present projections as observed profit. */
 export type MenuPriceSourceDay = {
@@ -49,18 +47,10 @@ export type MenuPriceSourceBasis = {
   payrollLatestDate: string | null;
 };
 const finiteNonnegative = (n:number|null)=>n!==null&&Number.isSafeInteger(n)&&n>=0;
-const runningCodes = new Set<string>(RUNNING_COST_CODES);
-/**
- * The canonical "actual expense by category, otherwise recurring estimate"
- * precedence applies here too. An owner receipt replaces a schedule amount,
- * never adds on top of it. All expenses are caller-filtered to the same
- * current calendar month and business.
- */
+/** Consume canonical monthly cost evidence; only planning projections are computed here. */
 export function menuPriceSourceBasis(input:{
   days: MenuPriceSourceDay[];
-  recurring: MenuPriceRecurringCost[];
-  expenses: MenuPriceActualExpense[];
-  previousMonthExpenseCategories: string[];
+  runningCosts: Pick<RunningCostLine,"categoryCode"|"amountCents"|"isMissing"|"isExpected"|"isEstimate"|"amountSource"|"forecastOverlapUncertain">[];
   totalItemPrepSecondsInWindow: number;
   /** Trusted café-local current date; recent menu volume and fees use the last 28 days. */
   asOfBusinessDate: string;
@@ -68,45 +58,12 @@ export function menuPriceSourceBasis(input:{
    * Never infer this from positive wages, sales data, or payroll-tax estimate status. */
   laborCoveredDates?: string[];
 }):MenuPriceSourceBasis{
-  // Canonical monthlyAmountForCategory: ALL recorded expense rows win over
-  // recurring schedules, including estimated rows. Preserve estimate quality.
-  const expenseByCategory = new Map<string,{cents:number,estimated:boolean}>();
-  for(const row of input.expenses){
-    if(!runningCodes.has(row.categoryCode)||!finiteNonnegative(row.amountCents))continue;
-    const prior=expenseByCategory.get(row.categoryCode)??{cents:0,estimated:false};
-    expenseByCategory.set(row.categoryCode,{
-      cents:prior.cents+row.amountCents,
-      estimated:prior.estimated||row.status==="estimated",
-    });
-  }
-  const recurringByCategory = new Map<string,{cents:number,estimated:boolean}>();
-  for(const row of input.recurring){
-    if(!runningCodes.has(row.categoryCode)||!finiteNonnegative(row.amountCents))continue;
-    const amount=recurringCostMonthlyEquivalentCents({amountCents:row.amountCents,
-      frequency:row.frequency});
-    const prior=recurringByCategory.get(row.categoryCode)??{cents:0,estimated:false};
-    recurringByCategory.set(row.categoryCode,{cents:prior.cents+amount,
-      estimated:prior.estimated||row.estimated});
-  }
-  const allCategories = new Set([...expenseByCategory.keys(),...recurringByCategory.keys()]);
-  const runningKnownCents=[...allCategories].reduce((sum,category)=>
-    sum+(expenseByCategory.get(category)?.cents??recurringByCategory.get(category)!.cents),0);
-  // Same expected-cost contract as the canonical Money snapshot: a regular
-  // category with an expense in the prior month is not silently $0 because
-  // the current month has no evidence or recurring fallback yet.
-  const missingRunningCategories=RUNNING_COST_CODES.filter(category=>
-    !allCategories.has(category)&&isExpectedCostCategory(category,{
-      hasActiveRecurring:false,
-      hadActualPreviousMonth:input.previousMonthExpenseCategories.includes(category),
-    }));
-  const monthlyRunningCents=allCategories.size===0||missingRunningCategories.length>0?
-    null:runningKnownCents;
-  const runningStatus:MenuPriceSourceBasis["runningStatus"]=
-    monthlyRunningCents===null?"missing":
-    [...allCategories].every(category=>{
-      const expense=expenseByCategory.get(category);
-      return expense!==undefined&&!expense.estimated;
-    })?"recorded":"estimated";
+  const known=input.runningCosts.filter(row=>!row.isMissing&&row.amountSource!=="missing");
+  const runningKnownCents=known.reduce((sum,row)=>sum+row.amountCents,0);
+  const missingRunningCategories=input.runningCosts.filter(row=>row.isMissing||row.forecastOverlapUncertain).map(row=>row.categoryCode);
+  const monthlyRunningCents=known.length===0||missingRunningCategories.length>0?null:runningKnownCents;
+  const runningStatus:MenuPriceSourceBasis["runningStatus"]=monthlyRunningCents===null?"missing":
+    known.every(row=>!row.isEstimate&&row.amountSource==="recorded_expense")?"recorded":"estimated";
 
   // Split sales coverage from labor coverage. A staff-only rollup is valid
   // payroll evidence but is never a covered sales day. Conversely, a sales

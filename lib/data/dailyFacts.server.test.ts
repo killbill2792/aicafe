@@ -14,10 +14,11 @@ const rows=Array.from({length:1205},(_,i)=>({business_date:day(i),net_sales_cent
 function fakeDb(){
  const pages:number[][]=[];
  const from=(table:string)=>{
-  const q:Record<string,unknown>={select:()=>q,eq:()=>q,gte:()=>q,lte:()=>q,order:()=>q,in:()=>q,like:()=>q,
+  let actualOnly=false;
+  const q:Record<string,unknown>={select:()=>q,eq:(key:string,value:string)=>{if(key==="data->>sales_data_status"&&value==="actual")actualOnly=true;return q;},gte:()=>q,lte:()=>q,order:()=>q,in:()=>q,like:()=>q,
    range:async(a:number,b:number)=>{
-    if(table!=="daily_rollups")return {data:null,error:{message:"not in this fixture"}};
-    pages.push([a,b]);return {data:rows.slice(a,b+1),error:null};},
+    if(table!=="cv_sales_days")return {data:null,error:{message:"not in this fixture"}};
+    pages.push([a,b]);return {data:(actualOnly?rows.filter(r=>r.sales_data_status==="actual"):rows).slice(a,b+1),error:null};},
    limit:async()=>({data:null,error:{message:"not in this fixture"}})};
   return q;
  };
@@ -51,7 +52,7 @@ describe("bounded actual sales date metadata",()=>{
  function metadataDb(fail=false){
   const queries:Array<{columns:string;filters:Record<string,string>;ascending:boolean;range:number[]}>=[];
   const from=vi.fn((table:string)=>{
-   if(table!=="daily_rollups")throw Error("Unexpected source");
+   if(table!=="cv_sales_days")throw Error("Unexpected source");
    let columns="",ascending=true;const filters:Record<string,string>={};
    const q={
     select:(value:string)=>{columns=value;return q;},
@@ -62,7 +63,7 @@ describe("bounded actual sales date metadata",()=>{
     range:async(a:number,b:number)=>{
      queries.push({columns,filters,ascending,range:[a,b]});
      if(fail&&!ascending)return {data:null,error:{message:"offline"}};
-     const found=rows.filter(r=>r.sales_data_status===filters.sales_data_status&&
+     const found=rows.filter(r=>r.sales_data_status===filters["data->>sales_data_status"]&&
       r.business_date>=filters["gte:business_date"]&&r.business_date<=filters["lte:business_date"]);
      if(!ascending)found.reverse();
      return {data:found.slice(a,b+1).map(r=>({business_date:r.business_date})),error:null};
@@ -76,7 +77,7 @@ describe("bounded actual sales date metadata",()=>{
   const f=metadataDb();
   expect(await readSalesCoverageBounds(f.db,"cafe",day(0),day(1200))).toEqual({from:day(1),to:day(1199)});
   expect(f.queries).toEqual([true,false].map(ascending=>({columns:"business_date",ascending,range:[0,0],
-   filters:{business_id:"cafe",sales_data_status:"actual","gte:business_date":day(0),"lte:business_date":day(1200)}})));
+   filters:{business_id:"cafe","data->>sales_data_status":"actual","gte:business_date":day(0),"lte:business_date":day(1200)}})));
  });
  it("distinguishes absent actual sales from a failed metadata query",async()=>{
   expect(await readSalesCoverageBounds(metadataDb().db,"cafe",day(0),day(0))).toBeNull();

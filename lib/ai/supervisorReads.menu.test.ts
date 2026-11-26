@@ -14,12 +14,12 @@ function fakeDb(){
   const q={
    select:()=>q,
    eq:(key:string,value:string)=>{if(key==="business_id")businessFilter=value;return q;},
-   in:()=>q,order:()=>q,
+   in:()=>q,like:()=>q,order:()=>q,
    limit:()=>q.range(0,10000),
    range:async(_from:number=0,_to:number=10000)=>{
     reads.push(table);
     if(businessFilter!==business)throw new Error("Unscoped menu reader");
-    if(table==="menu_items")return {error:null,data:[
+    if(table==="cv_menu")return {error:null,data:[
      {id:"open",name:"Custom Drink",base_name:"Custom Drink",size_label:null,
       category:"drink",is_active:true,price_cents:null,description:"Made to order",
       menu_group:"Drinks / Custom",pos_visibility:"POS",pos_pricing_strategy:"OPEN_PRICE"},
@@ -59,7 +59,7 @@ describe("Supervisor published POS menu evidence",()=>{
    ]}]});
   expect(result.value.find(x=>x.id==="priced")).toMatchObject({
    priceCents:500,sizeLabel:"Large",modifierGroups:[{name:"Milk"}]});
-  expect(reads).toEqual(["menu_items","menu_item_modifier_groups","modifier_recipes"]);
+  expect(reads).toEqual(["cv_menu","menu_item_modifier_groups","modifier_recipes"]);
  });
  it("matches the Menu screen's priced item IDs and exact cents, retaining open prices",async()=>{
   const {client}=fakeDb();
@@ -85,10 +85,10 @@ describe("Supervisor published POS menu evidence",()=>{
     const q={
       select:()=>q,
       eq:(key:string,value:unknown)=>{if(key==="business_id")expect(value).toBe(business);return q;},
-      in:()=>q,order:()=>q,
+      in:()=>q,like:()=>q,order:()=>q,
       range:async(first:number,last:number)=>{
         calls.push(table);
-        return {data:table==="menu_items"?rows.slice(first,last+1):[],error:null};
+        return {data:table==="cv_menu"?rows.slice(first,last+1):[],error:null};
       },
       limit:async()=>({data:[],error:null})
     };
@@ -103,7 +103,7 @@ describe("Supervisor published POS menu evidence",()=>{
     .toEqual(screen.map(row=>[row.id,row.price_cents]));
   expect(chat.value).toHaveLength(501);
   expect(chat.value[500].priceCents).toBe(1000);
-  expect(calls.filter(table=>table==="menu_items")).toHaveLength(4);
+  expect(calls.filter(table=>table==="cv_menu")).toHaveLength(4);
  });
  it("rejects cross-business readers before touching database",async()=>{
   const {client,reads}=fakeDb();

@@ -1,5 +1,7 @@
 import { describe, it, expect } from "vitest";
-import { menuPriceSourceBasis, type MenuPriceSourceDay } from "./menuPriceSourceBasis";
+import { menuPriceSourceBasis, type MenuPriceSourceDay, type MenuPriceRecurringCost, type MenuPriceActualExpense } from "./menuPriceSourceBasis";
+
+import { runningCostLinesForMonth } from "@/lib/data/runningCostCatalog.fixture";
 
 const day=(n:number):MenuPriceSourceDay=>({
   businessDate:`2026-08-${String(n).padStart(2,"0")}`,
@@ -7,9 +9,19 @@ const day=(n:number):MenuPriceSourceDay=>({
   wagesCents:5000,payrollTaxCents:600,payrollTaxStatus:"estimated",
   cardFeesCents:300,cardFeesStatus:"actual",
 });
-const basis=(days:MenuPriceSourceDay[],opts:Partial<Parameters<typeof menuPriceSourceBasis>[0]>={})=>
-  menuPriceSourceBasis({days,recurring:[],expenses:[],previousMonthExpenseCategories:[],
-    totalItemPrepSecondsInWindow:0,asOfBusinessDate:"2026-09-17",...opts});
+type FixtureOptions=Partial<Omit<Parameters<typeof menuPriceSourceBasis>[0],"runningCosts">> & {recurring?:MenuPriceRecurringCost[];expenses?:MenuPriceActualExpense[];previousMonthExpenseCategories?:string[]};
+const basis=(days:MenuPriceSourceDay[],opts:FixtureOptions={})=>{
+  const {recurring=[],expenses=[],previousMonthExpenseCategories=[],asOfBusinessDate="2026-09-17",...rest}=opts;
+  const from=asOfBusinessDate.slice(0,7)+"-01";
+  const to=new Date(Date.UTC(Number(from.slice(0,4)),Number(from.slice(5,7)),0)).toISOString().slice(0,10);
+  const runningCosts=runningCostLinesForMonth({
+    from,to,today:asOfBusinessDate,historical:false,
+    expenses:expenses.map((e,i)=>({id:"expense-"+i,category_code:e.categoryCode,amount_cents:e.amountCents,status:e.status,spent_on:from})),
+    recurring:recurring.map((r,i)=>({id:"bill-"+i,category_code:r.categoryCode,amount_cents:r.amountCents,frequency:r.frequency,is_estimate:r.estimated,active_from:from,active_to:null})),
+    priorExpenses:previousMonthExpenseCategories.map(category_code=>({category_code}))
+  });
+  return menuPriceSourceBasis({days,runningCosts,totalItemPrepSecondsInWindow:0,asOfBusinessDate,...rest});
+};
 
 describe("Menu pricing source basis",()=>{
   it("uses 14 actual historical import days even when none are in the current month",()=>{
@@ -131,7 +143,7 @@ describe("Menu pricing source basis",()=>{
     expect(p.monthlyRunningCents).toBe(0);
     expect(p.runningStatus).toBe("estimated");
   });
-  it("uses current-month actuals instead of double counting scheduled bills",()=>{
+  it("keeps unlinked receipt overlap uncertain rather than treating a category as payment",()=>{
     const p=basis([],{recurring:[
       {categoryCode:"rent",amountCents:120000,frequency:"monthly",estimated:false},
       {categoryCode:"utilities_power",amountCents:12000,frequency:"monthly",estimated:false}],
@@ -139,8 +151,10 @@ describe("Menu pricing source basis",()=>{
         {categoryCode:"rent",amountCents:70000,status:"actual"},
         {categoryCode:"rent",amountCents:30000,status:"actual"},
         {categoryCode:"ingredients",amountCents:90000,status:"actual"}]});
-    expect(p.monthlyRunningCents).toBe(112000);
-    expect(p.runningStatus).toBe("estimated");
+    expect(p.monthlyRunningCents).toBeNull();
+    expect(p.runningKnownCents).toBe(132000);
+    expect(p.missingRunningCategories).toContain("rent");
+    expect(p.runningStatus).toBe("missing");
   });
   it("counts estimated expense rows and marks combined costs estimated",()=>{
     const p=basis([],{recurring:[
@@ -150,10 +164,10 @@ describe("Menu pricing source basis",()=>{
         {categoryCode:"rent",amountCents:75000,status:"actual"},
         {categoryCode:"rent",amountCents:5000,status:"estimated"},
         {categoryCode:"repairs",amountCents:18000,status:"estimated"}]});
-    // Rent expenses (80,000) replace scheduled rent (120,000).
-    // Estimated repairs remain included; water still uses its schedule.
-    expect(p.monthlyRunningCents).toBe(108000);
-    expect(p.runningStatus).toBe("estimated");
+    // Unlinked rent receipts are not proof that the scheduled rent was paid.
+    expect(p.monthlyRunningCents).toBeNull();
+    expect(p.runningKnownCents).toBe(148000);
+    expect(p.runningStatus).toBe("missing");
   });
   it("does not discard an estimated expense when no recurring cost exists",()=>{
     const p=basis([],{expenses:[

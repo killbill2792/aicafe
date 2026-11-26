@@ -25,9 +25,8 @@ describe("brief sold lines: unlinked lines counted by POS name",()=>{
       {id:"2",name:"Jubani Coffee",category:"Traditional",quantity:1},{id:"3",name:"Water",category:null,quantity:0}]);
     expect(await readPeriodSoldLines(d.client,"cafe-a",period)).toEqual({period,available:true,
       linked:[{id:"latte",units:4}],unlinked:[{name:"Jubani Coffee",category:"Traditional",units:3}]});
-    expect(d.filters).toEqual(expect.arrayContaining([["is","menu_item_id",null],["eq","voided",false],
-      ["eq","orders.business_id","cafe-a"],["eq","orders.toast_excluded",false],["is","orders.superseded_by",null],
-      ["gte","orders.business_date","2026-11-02"],["lte","orders.business_date","2026-11-02"]]));
+    expect(d.filters).toEqual(expect.arrayContaining([["is","data->>menu_item_id",null],["eq","status","actual"],
+      ["eq","business_id","cafe-a"],["gte","business_date","2026-11-02"],["lte","business_date","2026-11-02"]]));
   });
   it("an uncovered day or malformed line is 'not available', never a guess",async()=>{
     expect((await readPeriodSoldLines(db([{id:"1",name:"",category:null,quantity:1}]).client,"cafe-a",period)).available).toBe(false);

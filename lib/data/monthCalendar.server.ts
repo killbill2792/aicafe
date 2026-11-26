@@ -2,8 +2,8 @@ import "server-only";
 import { readDailyFactRows } from "./dailyFacts.server";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { CategoryMonthlyAmount, DailyFacts } from "@/lib/calc";
-import { runningCostLinesForMonth, runningCostMonthlyAmount, rowToDailyFacts } from "./runningCostCatalog";
-import {readCompletePaged} from "./completePages";
+import { runningCostMonthlyAmount, rowToDailyFacts } from "./runningCostCatalog";
+import {readRunningCostLines} from "./runningCostLines.server";
 import { normalizeOpenHours, type OpenHours } from "@/lib/business/openHours";
 
 export type MonthCalendarData = {
@@ -41,21 +41,11 @@ export async function getMonthCalendarFromDb(
   const daysInMonth = daysInMonthKey(monthKey);
   const monthStart = `${monthKey}-01`;
   const monthEnd = `${monthKey}-${String(daysInMonth).padStart(2, "0")}`;
-  const [year,month]=monthKey.split("-").map(Number);
-  const previous=new Date(year,month-2,1);
-  const previousStart=String(previous.getFullYear()).padStart(4,"0")+"-"+String(previous.getMonth()+1).padStart(2,"0")+"-01";
 
-  const [rollupResult, expensesResult, recurringResult, locationResult] = await Promise.all([
+  const [rollupResult, runningCosts, locationResult] = await Promise.all([
     readDailyFactRows(supabase, businessId, monthStart, monthEnd)
       .then((data) => ({ data, error: null }), (error: Error) => ({ data: null, error })),
-    readCompletePaged((start,end)=>supabase.from("expenses")
-      .select("id,category_code,amount_cents,status,spent_on,recurring_cost_id,custom_label,vendor,source",{count:"exact"})
-      .eq("business_id",businessId).gte("spent_on",previousStart).lte("spent_on",monthEnd)
-      .order("id",{ascending:true}).range(start,end),row=>row.id),
-    readCompletePaged((start,end)=>supabase.from("recurring_costs")
-      .select("id,category_code,amount_cents,frequency,is_estimate,active_from,active_to,label,due_day,source",{count:"exact"})
-      .eq("business_id",businessId).lte("active_from",monthEnd)
-      .or(`active_to.is.null,active_to.gte.${monthStart}`).order("id",{ascending:true}).range(start,end),row=>row.id),
+    readRunningCostLines(supabase,businessId,monthStart,monthEnd),
     supabase
       .from("locations")
       .select("open_hours")
@@ -65,15 +55,11 @@ export async function getMonthCalendarFromDb(
       .maybeSingle(),
   ]);
   if (rollupResult.error) throw rollupResult.error;
-  if(expensesResult===null||recurringResult===null)throw Error("calendar_cost_source_incomplete");
   if (locationResult.error) throw locationResult.error;
 
   const days = (rollupResult.data ?? []).map(rowToDailyFacts);
 
-  const categoryAmounts:CategoryMonthlyAmount[]=runningCostLinesForMonth({
-    expenses:expensesResult,recurring:recurringResult,from:monthStart,to:monthEnd,
-    today:monthEnd,historical:!isCurrentMonth,priorExpenses:expensesResult
-  }).map(line=>runningCostMonthlyAmount(line,monthKey));
+  const categoryAmounts:CategoryMonthlyAmount[]=runningCosts.map(line=>runningCostMonthlyAmount(line,monthKey));
 
   return { monthKey, daysInMonth, days, categoryAmounts, openHours: isCurrentMonth ? normalizeOpenHours(locationResult.data?.open_hours) : null };
 }

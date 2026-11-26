@@ -15,7 +15,7 @@ function fakeDb(saved:{reading:TodaySoFar;read_at:string}|null,error:{code:strin
  const m={select:()=>m,eq:()=>m,not:()=>m,limit:()=>m,
   maybeSingle:async()=>({data:toastConnected?{toast_time_zone:"America/Los_Angeles",closeout_hour:4}:null,error:null})};
  const b={select:()=>b,eq:()=>b,maybeSingle:async()=>({data:{timezone:"America/Los_Angeles"},error:null})};
- return {db:{from:(t:string)=>t==="toast_location_mappings"?m:t==="businesses"?b:q} as never,upsert};
+ return {db:{from:(t:string)=>{if(t==="toast_location_mappings")return m;if(t==="businesses")return b;if(t==="cv_sales_live")return q;throw Error("Unexpected live read: "+t);}} as never,upsert};
 }
 const now=new Date("2026-10-29T17:20:00Z");
 beforeEach(()=>live.read.mockReset());

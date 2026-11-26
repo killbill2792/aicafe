@@ -20,7 +20,7 @@ const missingTable=(code:unknown)=>["42P01","PGRST205"].includes(String(code??""
 /** The latest saved reading and its age, or null (none yet, or table not installed). */
 export async function readSavedTodayLive(db:SupabaseClient,businessId:string,now=new Date()):
  Promise<{value:TodaySoFar;ageMs:number}|null>{
- const {data,error}=await db.from("toast_today_live").select("reading,read_at")
+ const {data,error}=await db.from("cv_sales_live").select("reading,read_at")
   .eq("business_id",businessId).maybeSingle();
  if(error){if(missingTable(error.code))return null;throw error;}
  if(!data)return null;

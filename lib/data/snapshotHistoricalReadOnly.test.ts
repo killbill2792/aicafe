@@ -1,5 +1,6 @@
 import {describe,it,expect,vi} from "vitest";
 import type {SupabaseClient} from "@supabase/supabase-js";
+import {fixtureCostRows} from "./runningCostCatalog.fixture";
 
 vi.mock("server-only",()=>({}));
 const spies=vi.hoisted(()=>({
@@ -28,32 +29,33 @@ function readOnlyClient(expenseCount=0){
       target_operating_margin:.15,target_operating_margin_status:"default",
       owner_monthly_payroll_extras_cents:0}],
     locations:[{open_hours:null}],
-    daily_rollups:["2026-09-30","2026-10-01"].map(business_date=>({
+    cv_sales_days:["2026-09-30","2026-10-01"].map(business_date=>({
       business_date,net_sales_cents:10000,orders_count:5,drinks_count:10,
       ingredients_cents:2000,staff_wages_cents:1000,staff_tax_cents:120,
       labor_wage_status:"actual",staff_tax_status:"actual",
       staff_tax_source:"recorded",sales_data_status:"actual",
       card_fees_cents:300,card_fees_status:"actual",voids_cents:0,
     })),
-    recurring_costs:[{id:"rent-bill",frequency:"monthly",category_code:"rent",amount_cents:300000,is_estimate:false,
+    cv_bills:[{id:"rent-bill",frequency:"monthly",category_code:"rent",amount_cents:300000,is_estimate:false,
       active_from:"2026-01-01",active_to:null}],
-    expenses:Array.from({length:expenseCount},(_,i)=>({id:"expense-"+i,category_code:"rent",
+    cv_expenses:Array.from({length:expenseCount},(_,i)=>({id:"expense-"+i,category_code:"rent",
       amount_cents:100,status:"actual",spent_on:"2026-09-30",recurring_cost_id:"rent-bill"})),
   };
   const client={
     from(table:string){
       tables.push(table);
       const result={data:values[table]??[],error:null,count:(values[table]??[]).length};
+      let monthStart="",asOf="";
       let first=0,last=Number.MAX_SAFE_INTEGER;
       const q={
         select(){return q;},
-        eq(field:string,value:unknown){filters.push({table,field,value});return q;},
+        eq(field:string,value:unknown){filters.push({table,field,value});if(field==="business_date")monthStart=String(value);if(field==="as_of_date")asOf=String(value);return q;},
         gte(){return q;},lte(){return q;},or(){return q;},order(){return q;},
         limit(){return q;},range(start:number,end:number){first=start;last=end;return q;},
         single(){return Promise.resolve({...result,data:result.data[0]??null});},
         maybeSingle(){return Promise.resolve({...result,data:result.data[0]??null});},
         then(ok:(value:typeof result)=>unknown,fail?:((err:unknown)=>unknown)){
-          return Promise.resolve({...result,data:result.data.slice(first,last+1)}).then(ok,fail);
+          return Promise.resolve({...result,data:table==="cv_running_cost_months"?fixtureCostRows(values,monthStart,asOf):result.data.slice(first,last+1)}).then(ok,fail);
         },
         insert(){throw Error("Historical reader tried to write");},
         update(){throw Error("Historical reader tried to write");},
@@ -84,7 +86,7 @@ describe("historical snapshot is genuinely read-only",()=>{
       .toEqual(new Set(["2026-09","2026-10"]));
     expect(spies.materialize).not.toHaveBeenCalled();
     expect(spies.alerts).not.toHaveBeenCalled();
-    expect(tables).toEqual(["businesses","daily_rollups","recurring_costs","expenses","locations"]);
+    expect(tables).toEqual(["businesses","cv_sales_days","locations","cv_running_cost_months","cv_running_cost_months"]);
     for(const table of tables.filter(name=>name!=="businesses"))
       expect(filters).toContainEqual({table,field:"business_id",value:cafeId});
   });
@@ -104,6 +106,6 @@ describe("historical snapshot is genuinely read-only",()=>{
     expect(rent.recordedExpenses?.reduce((n,row)=>n+row.amountCents,0)).toBe(100100);
     expect(runningCostsForPeriodCents([rent],"2026-09-30","2026-09-30")).toBeCloseTo(100100+199900/30);
     expect(runningCostsForPeriodCents([rent],"2026-09-01","2026-09-01")).toBeCloseTo(199900/30);
-    expect(tables.filter(name=>name==="expenses")).toHaveLength(2);
+    expect(tables.filter(name=>name==="cv_running_cost_months")).toHaveLength(2);
   });
 });
