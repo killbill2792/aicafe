@@ -50,6 +50,8 @@ describe("Installed native Luna catalog",()=>{
   const store=createLocalWidgetStore({factor:1.1});store.set("/factor",1.2);expect(store.get("/factor")).toBe(1.2);
   store.set("/constructor/prototype/polluted",true);store.update({"/__proto__/polluted":true});
   expect(({} as {polluted?:boolean}).polluted).toBeUndefined();expect(store.get("/constructor")).toBeUndefined();
+  const arrays=createLocalWidgetStore({items:[1,2]});arrays.set("/items/00",99);expect(arrays.get("/items/0")).toBe(1);
+  expect(validNativeSpec(make({root:{...node("Text",{text:"x"}),watch:{"/items/0":{action:"setState",params:{statePath:"/items/00",value:{$state:"/items"}}}}}},{items:[1]}))).toBe(false);
   expect(nativeRenderProps({href:"javascript:alert(1)",src:"https://example.com/private",className:"fixed bg-[url(https://example.com)] text-sm"})).toEqual({href:"#",src:null,className:"text-sm"});
   expect(nativeRenderProps({href:"https://example.com"}).href).toBe("https://example.com/");
   expect(parseUpstreamProps("Slider",{label:"Growth",value:1.2,min:0,max:2,step:0.1})?.success).toBe(true);
@@ -64,6 +66,19 @@ describe("Installed native Luna catalog",()=>{
   const s=make({root:node("Text",{text:"My estimate is $47,608.07"})});
   const blocks=resolveResearchSpec(patches(s),new Map(),ctx);expect(blocks[0].nativeSpec).toBeDefined();
   expect(presentationDataLines(blocks[0])).toContain("My estimate is $47,608.07");
+ });
+ it("exports only visible branches and expands repeat item and nested scopes",()=>{
+  const s=make({
+   root:node("Stack",{},["actual","forecast","list"]),
+   actual:{...node("Text",{text:"Actual 10"}),visible:{$state:"/actual",eq:true}},
+   forecast:{...node("Text",{text:"Forecast 20"}),visible:{$state:"/actual",eq:false}},
+   list:{...node("Stack",{},["row","nested"]),repeat:{statePath:"/items"},visible:{$item:"show",eq:true}},
+   row:node("Text",{text:{$template:"${name}: ${amount}"}}),
+   nested:{...node("Stack",{},["child"]),repeat:{statePath:{$item:"children"}}},
+   child:node("Text",{text:{$item:"label"}}),
+  },{actual:true,items:[{name:"August",amount:10,show:true,children:[{label:"First"}]},{name:"September",amount:20,show:true,children:[{label:"Second"}]},{name:"Hidden",amount:30,show:false,children:[]}]});
+  const lines=presentationDataLines(resolveResearchSpec(patches(s),new Map(),ctx)[0]);
+  expect(lines).toEqual(["Actual 10","August: 10","First","September: 20","Second"]);
  });
  it("does not accept a model-supplied internal snapshot node",()=>{
   const s=make({root:node("LunaSnapshot",{snapshotJSON:JSON.stringify({type:"rich_presentation",version:1,layout:"stack",panels:[],suggestions:[]})})});

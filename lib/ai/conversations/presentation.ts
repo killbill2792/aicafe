@@ -1,7 +1,7 @@
 import {scenarioEditorSchema,evaluateScenarioEditor} from "./scenarioPresentation";
 import { z } from "zod";
 import {nativeSpecSchema,nativeFunctions,readNativeSnapshot} from "./nativePresentation";
-import {resolveElementProps} from "@json-render/core";
+import {resolveElementProps,splitRepeatVisibility,evaluateVisibility,getByPath,resolveRepeatStatePath,resolveRepeatItemStatePath,type PropResolutionContext} from "@json-render/core";
 import {exactDecimal,exactNumber,runCalculation,CALC_OPS,type CalcOp,type CalcShown} from "@/lib/metrics/core/calculator";
 
 /** Versioned, renderer-independent, serializable UI. No client code or action bindings. */
@@ -221,16 +221,29 @@ export function recoverRichPresentation(raw:unknown):RichPresentation|undefined{
 export function presentationDataLines(block:RichPresentation):string[]{
  const lines:string[]=[];
  if(block.nativeSpec){
-  const spec=block.nativeSpec,pending=[spec.root],seen=new Set<string>();
-  while(pending.length){const key=pending.pop()!;if(seen.has(key))continue;seen.add(key);const e=spec.elements[key];if(!e)continue;
+  const spec=block.nativeSpec,stateModel=spec.state??{};
+  const pending:{key:string;ctx:PropResolutionContext}[]=[{key:spec.root,ctx:{stateModel,functions:nativeFunctions}}];
+  while(pending.length){
+   const {key,ctx}=pending.pop()!,e=spec.elements[key];if(!e)continue;
+   const visibility=e.repeat&&ctx.repeatBasePath===undefined?splitRepeatVisibility(e.visible):{container:e.visible,itemFilter:undefined};
+   if(visibility.container!==undefined&&!evaluateVisibility(visibility.container,ctx))continue;
    if(e.type==="LunaSnapshot"){const snapshot=recoverRichPresentation(readNativeSnapshot(e.props.snapshotJSON));if(snapshot&&!snapshot.nativeSpec)lines.push(...presentationDataLines(snapshot));}
    else{
-    const props=resolveElementProps(e.props,{stateModel:spec.state??{},functions:nativeFunctions});
+    const props=resolveElementProps(e.props,ctx);
     for(const name of ["title","text","label","description","message","caption"]){if(typeof props[name]==="string"&&props[name])lines.push(props[name]);}
     if(Array.isArray(props.rows))for(const row of props.rows)if(Array.isArray(row))lines.push(row.map(v=>v==null?"Not recorded":String(v)).join(" | "));
     if(Array.isArray(props.points))for(const point of props.points)if(point&&typeof point==="object"&&"label" in point&&"value" in point)lines.push(String(point.label)+": "+String(point.value));
    }
-   pending.push(...[...(e.children??[]),...Object.values(e.slots??{}).flat()].reverse());
+   const children:{key:string;ctx:PropResolutionContext}[]=[];
+   if(e.repeat){
+    const path=resolveRepeatStatePath(e.repeat.statePath,ctx.repeatBasePath),items=path===undefined?undefined:getByPath(stateModel,path);
+    if(path!==undefined&&Array.isArray(items))for(const [index,item] of items.entries()){
+     const scope={...ctx,repeatItem:item,repeatIndex:index,repeatBasePath:resolveRepeatItemStatePath(path,index)};
+     if(visibility.itemFilter===undefined||evaluateVisibility(visibility.itemFilter,scope))for(const key of e.children??[])children.push({key,ctx:scope});
+    }
+   }else for(const key of e.children??[])children.push({key,ctx});
+   for(const slot of Object.values(e.slots??{}))for(const key of slot)children.push({key,ctx});
+   pending.push(...children.reverse());
   }
   if(!lines.length)lines.push("Interactive view available in the conversation.");
  }

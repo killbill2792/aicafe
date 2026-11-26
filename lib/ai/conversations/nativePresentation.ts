@@ -21,7 +21,8 @@ export const localActionNames=new Set((schema.builtInActions??[]).map(a=>a.name)
 const obj=(v:unknown):v is Record<string,unknown>=>Boolean(v)&&typeof v==="object"&&!Array.isArray(v);
 const forbidden=new Set(["__proto__","prototype","constructor"]);
 export const safeKey=(s:string)=>s.length>0&&!forbidden.has(s);
-export const safeStatePath=(path:unknown):path is string=>typeof path==="string"&&path.split("/").every(p=>!forbidden.has(p.replace(/~1/g,"/").replace(/~0/g,"~")));
+const decodeSegment=(s:string)=>s.replace(/~1/g,"/").replace(/~0/g,"~");
+export const safeStatePath=(path:unknown):path is string=>typeof path==="string"&&path.split("/").every(p=>{const key=decodeSegment(p);return !forbidden.has(key)&&!/^0[0-9]+$/.test(key);});
 /** Only JSON data crosses the boundary, not functions, browser objects or
  * prototype-mutating keys. Iterative traversal has no arbitrary layout depth. */
 export function safeNativeJSON(value:unknown):boolean{
@@ -63,12 +64,13 @@ function watchTargets(raw:unknown):string[]|null{
   const target=p.statePath??(a.action==="validateForm"?"/formValidation":undefined);
   if(!safeStatePath(target)||!target.startsWith("/")||target==="/")return null;
   targets.push(target);
-  if(p.clearStatePath!==undefined){if(!safeStatePath(p.clearStatePath))return null;targets.push(p.clearStatePath);}
-  for(const k of ["onSuccess","onError"]){const after=a[k];if(obj(after)){if(obj(after.set))targets.push(...Object.keys(after.set));if(after.action)pending.push(after);}}
+  if(p.clearStatePath!==undefined){if(!safeStatePath(p.clearStatePath)||!p.clearStatePath.startsWith("/")||p.clearStatePath==="/")return null;targets.push(p.clearStatePath);}
+  for(const k of ["onSuccess","onError"]){const after=a[k];if(obj(after)){if(obj(after.set)){const keys=Object.keys(after.set);if(keys.some(k=>!safeStatePath(k)||!k.startsWith("/")||k==="/"))return null;targets.push(...keys);}if(after.action)pending.push(after);}}
  }
  return targets;
 }
-const overlap=(a:string,b:string)=>a===b||a.startsWith(b+"/")||b.startsWith(a+"/");
+const canonicalPath=(path:string)=>path.split("/").slice(1).map(decodeSegment).map(s=>s.replace(/~/g,"~0").replace(/\//g,"~1")).join("/");
+const overlap=(a:string,b:string)=>{const x=canonicalPath(a),y=canonicalPath(b);return x===y||x.startsWith(y+"/")||y.startsWith(x+"/");};
 /** An interactive spec may have arbitrary acyclic layout depth. State is local
  * to a single message; only upstream local state actions may run. Watch
  * dependencies must be acyclic so an automatic effect cannot spin forever. */
