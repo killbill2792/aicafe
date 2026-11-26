@@ -1,4 +1,4 @@
-# Runs lib/ai/agent/loop.server.ts through the file provider. No prompt copy.
+# Runs lib/ai/research/turn.server.ts through the file provider. No prompt copy.
 description: Supervisor deterministic real-loop replays on synthetic café evidence
 prompts:
   - "{{question}}"
@@ -13,7 +13,7 @@ tests:
     vars:
       caseId: labor-day-19
       question: "For October 19, 2026, what percent of sales went to staff labor?"
-      check: {truth: day19LaborRate, source: labor_and_attendance, field: laborCostPercent, unit: percent, tolerance: 0.0001}
+      check: {truth: day19LaborRate, source: sql_research, field: rows.0.value, unit: percent, tolerance: 0.0001}
     assert:
       - type: javascript
         value: file://assertions.cjs:metric
@@ -21,7 +21,7 @@ tests:
     vars:
       caseId: labor-loaded-19
       question: "What was the known staff labor cost on October 19, 2026?"
-      check: {truth: day19LaborCents, source: labor_and_attendance, field: laborDays.0.loadedStaffCostCents, unit: cents, tolerance: 1}
+      check: {truth: day19LaborCents, source: sql_research, field: rows.0.value, unit: cents, tolerance: 1}
     assert:
       - type: javascript
         value: file://assertions.cjs:metric
@@ -29,7 +29,7 @@ tests:
     vars:
       caseId: labor-day-20
       question: "What was the labor percentage on October 20, 2026?"
-      check: {truth: day20LaborRate, source: labor_and_attendance, field: laborCostPercent, unit: percent, tolerance: 0.0001}
+      check: {truth: day20LaborRate, source: sql_research, field: rows.0.value, unit: percent, tolerance: 0.0001}
     assert:
       - type: javascript
         value: file://assertions.cjs:metric
@@ -37,7 +37,7 @@ tests:
     vars:
       caseId: labor-two-days
       question: "For October 19 through October 20, 2026, what percentage of sales did labor cost?"
-      check: {truth: twoDayLaborRate, source: labor_and_attendance, field: laborCostPercent, unit: percent, tolerance: 0.0001}
+      check: {truth: twoDayLaborRate, source: sql_research, field: rows.0.value, unit: percent, tolerance: 0.0001}
     assert:
       - type: javascript
         value: file://assertions.cjs:metric
@@ -52,7 +52,7 @@ tests:
     vars:
       caseId: latte-price
       question: "What is the menu price of House Latte?"
-      check: {truth: lattePriceCents, source: menu_items, field: items.0.priceCents, unit: cents, tolerance: 1}
+      check: {truth: lattePriceCents, source: sql_research, field: rows.0.value, unit: cents, tolerance: 1}
     assert:
       - type: javascript
         value: file://assertions.cjs:metric
@@ -60,15 +60,15 @@ tests:
     vars:
       caseId: tea-price
       question: "What is the current menu price for Spiced Tea?"
-      check: {truth: teaPriceCents, source: menu_items, field: items.0.priceCents, unit: cents, tolerance: 1}
+      check: {truth: teaPriceCents, source: sql_research, field: rows.0.value, unit: cents, tolerance: 1}
     assert:
       - type: javascript
         value: file://assertions.cjs:metric
-  - description: Recipe cost comes from the product economics tool
+  - description: Recipe cost comes from the SQL recipe and ingredient-price rows
     vars:
       caseId: cocoa-cost
       question: "How much does Cocoa cost us in its known recipe cost per item?"
-      check: {truth: cocoaCostCents, source: product_costs, field: item.recipeCostCents, unit: cents, tolerance: 1}
+      check: {truth: cocoaCostCents, source: sql_research, field: rows.0.recipe_cost_cents, unit: cents, tolerance: 1}
     assert:
       - type: javascript
         value: file://assertions.cjs:metric
@@ -76,7 +76,7 @@ tests:
     vars:
       caseId: lowest-price
       question: "Which item on the active menu has the lowest current price?"
-      check: {truth: lowestPriceName, source: menu_items}
+      check: {truth: lowestPriceName, source: sql_research}
     assert:
       - type: javascript
         value: file://assertions.cjs:name
@@ -84,7 +84,7 @@ tests:
     vars:
       caseId: highest-price
       question: "Which active menu item has the highest current price?"
-      check: {truth: highestPriceName, source: menu_items}
+      check: {truth: highestPriceName, source: sql_research}
     assert:
       - type: javascript
         value: file://assertions.cjs:name
@@ -92,11 +92,11 @@ tests:
     vars:
       caseId: latte-units
       question: "How many units of House Latte were sold on October 19, 2026?"
-      check: {truth: latteUnits, source: item_sales, field: items.0.units, unit: count, tolerance: 0}
+      check: {truth: latteUnits, source: sql_research, field: rows.0.value, unit: count, tolerance: 0}
     assert:
       - type: javascript
         value: file://assertions.cjs:metric
-  - description: Best known unit margin checks every product economics row
+  - description: Best known unit margin checks every SQL recipe-cost row
     vars:
       caseId: best-margin
       question: >-

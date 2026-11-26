@@ -66,11 +66,9 @@ function numbersIn(answer,unit){
 function assertDates(reply,context){
   const replay=replays[String(context?.vars?.caseId??"")];
   assert.ok(replay,"unknown recorded case");
-  const expected=replay.tools.map(c=>c.args?.period)
-    .find(p=>p&&typeof p.from==="string"&&typeof p.to==="string");
+  const expected=replay.period;
   if(!expected)return;
-  assert.ok(reply.results.some(r=>r.period?.from===expected.from&&
-    r.period?.to===expected.to),"tool read a different business date");
+  assert.ok(reply.results.some(r=>r.rows?.some(row=>row.from_day===expected.from&&row.to_day===expected.to)),"SQL read a different business date");
   const months=["January","February","March","April","May","June",
     "July","August","September","October","November","December"];
   const pattern=/\b(January|February|March|April|May|June|July|August|September|October|November|December)\s+(\d{1,2})(?:\s*[–-]\s*(\d{1,2}))?,?\s+(\d{4})\b/gi;
@@ -111,15 +109,14 @@ module.exports.name=(output,context)=>check(()=>{
   const reply=decoded(output),cfg=context.vars.check;
   const wanted=seed.sqlTruth[cfg.truth];
   assert.equal(typeof wanted,"string","missing SQL identity truth");
-  assert.ok(reply.results.some(r=>r.source===cfg.source),"expected read missing");
+  assert.ok(reply.results.some(r=>r.source===cfg.source&&r.rows?.some(row=>row.name===wanted)),"expected identity read missing");
   assert.ok(reply.answer.toLowerCase().includes(wanted.toLowerCase()),
     "Supervisor failed to identify "+wanted);
   assert.deepEqual(reply.unverified,[],"answer contains unsupported numbers");
 });
 module.exports.margin=(output)=>check(()=>{
   const reply=decoded(output);
-  const rows=reply.results.filter(r=>r.source==="product_costs"&&r.item)
-    .map(r=>r.item);
+  const rows=reply.results.filter(r=>r.tool==="run_sql").flatMap(r=>r.rows??[]).map(r=>({...r,recipeCostCents:r.recipe_cost_cents,priceCents:r.price_cents}));
   const menu=seed.menu;
   assert.ok(rows.length>=menu.length,"margin comparison skipped item cost reads");
   for(const item of menu){
@@ -135,7 +132,7 @@ module.exports.margin=(output)=>check(()=>{
   assert.ok(reply.answer.includes(winner.name),"winner absent from answer");
   const calc=reply.results.find(r=>r.source==="calculate");
   assert.ok(reply.usedTools.includes("calculate"),"derived margin bypassed canonical calculator");
-  assert.equal(calc?.result?.valueCents,seed.sqlTruth.highestUnitMarginCents,
+  assert.equal(Number(calc?.result?.value),seed.sqlTruth.highestUnitMarginCents,
     "calculator margin differs from SQL truth");
   assert.ok(numbersIn(reply.answer,"cents").includes(seed.sqlTruth.highestUnitMarginCents),
     "Supervisor did not state the calculated margin");
@@ -143,10 +140,10 @@ module.exports.margin=(output)=>check(()=>{
 });
 module.exports.missing=(output)=>check(()=>{
   const reply=decoded(output);
-  const labor=reply.results.find(r=>r.source==="labor_and_attendance");
+  const labor=reply.results.find(r=>r.tool==="run_sql");
   assert.ok(labor,"labor reader wasn't used");
-  assert.equal(labor.laborCostPercent,seed.sqlTruth.day21LaborRate);
-  assert.ok(labor.missing.some(s=>s.startsWith("laborWageUnknown:")),
+  assert.equal(labor.rows?.[0]?.value,seed.sqlTruth.day21LaborRate);
+  assert.ok(labor.rows?.[0]?.unknown_days>0,
     "missing wage was hidden");
   assert.match(reply.answer,/missing|unknown|not recorded|not available|incomplete|cannot verify|don't have/i,
     "owner was not told what is unknown");
@@ -154,7 +151,6 @@ module.exports.missing=(output)=>check(()=>{
 });
 module.exports.inventory=(output)=>check(()=>{
   const reply=decoded(output);
-  assert.ok(reply.results.some(r=>r.source==="inventory"&&
-    r.missing.includes("inventoryNotTracked")),"inventory status not read");
+  assert.ok(reply.results.some(r=>r.tool==="run_sql"&&Array.isArray(r.rows)&&r.rows.length===0),"inventory status not read");
   assert.match(reply.answer,/not tracked|don't track|not recorded|unknown|unavailable/i);
 });
