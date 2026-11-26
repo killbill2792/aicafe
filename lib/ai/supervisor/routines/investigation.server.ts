@@ -405,14 +405,14 @@ export async function processNextInvestigation(db:SupabaseClient,now:Date,
       asOf:identity.asOf,timezone:identity.timezone,currency:identity.currency,
       sqlResearch:true,
       ...((customerIncident||universalResearch)?{savedEvents:(from:string,to:string,options?:{cityEventId?:string})=>readSavedEventTimeline(db,scope,from,to,options)}:{}),
-      ...(supplierResearch?{webSearch:async(_modelQuery:string,budget?:WebSearchBudget)=>{
+      ...(supplierResearch?{webSearch:async(_modelQuery:string,budget?:WebSearchBudget,signal?:AbortSignal)=>{
         const fresh=await readIncidentEvidence(db,c),selector=object(fresh.selectors);
         if(fresh.missing.length||selector?.subject!==claimSelector?.subject||selector?.family!==claimSelector?.family)return {available:false as const,reason:"unsafeQuery" as const};
         const [item,place]=await Promise.all([db.from("ingredients").select("name").eq("business_id",c.business_id).eq("id",String(selector?.subject).split(":")[0]).is("archived_at",null).maybeSingle(),readPrimaryLocation(db,c.business_id)]);
         const query=item.error?null:publicSupplierLeadQuery(item.data?.name,place?.city);
         if(!query)return {available:false as const,reason:"unsafeQuery" as const};
         const research=createWebSearch({reserveTransport:params=>metered.reserve(params,"hosted_web")});
-        return ownerPublicWebSearch(scope,async()=>{const revision=String(await assertExternalAccess(scope,"public_web",WEB_RESOURCE));const found=await research(query,budget);if(String(await assertExternalAccess(scope,"public_web",WEB_RESOURCE))!==revision)throw Error("authorization_revoked");webRevision=revision;return found;});
+        return ownerPublicWebSearch(scope,async()=>{const revision=String(await assertExternalAccess(scope,"public_web",WEB_RESOURCE));const found=await research(query,budget,signal);if(String(await assertExternalAccess(scope,"public_web",WEB_RESOURCE))!==revision)throw Error("authorization_revoked");webRevision=revision;return found;});
       }}:{}),
       ...(synopsis.kind==="maintenance_issue"?{maintenance:{...maintenance,search:async(...args:Parameters<typeof maintenance.search>)=>{
         await checkMailbox();
@@ -491,7 +491,7 @@ export async function processNextInvestigation(db:SupabaseClient,now:Date,
       scope:{db,businessId:c.business_id,ownerUserId:c.owner_user_id},
       cafeContext:"Café (authenticated, not an owner message): "+JSON.stringify({name:identity.cafeName,
         currency:identity.currency,timezone:identity.timezone,localDate:identity.asOf}),
-      ...(context.webSearch?{webSearch:(query:string)=>context.webSearch!(query)}:{}),
+      ...(context.webSearch?{webSearch:(query:string,signal?:AbortSignal)=>context.webSearch!(query,undefined,signal)}:{}),
       actions:{context,definitions:agentToolDefinitions.filter(t=>(permitted as string[]).includes(t.name))},
       provider:metered.provider,
       beforeProviderRequest:checkMailbox,beforeAcceptResult:checkMailbox,
