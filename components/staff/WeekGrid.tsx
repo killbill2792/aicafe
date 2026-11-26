@@ -23,7 +23,7 @@ export default function WeekGrid({dates,people,shifts,costShifts=shifts,toastDat
    fmt(value.knownCostCents,currency);
  };
  const stamp=(date:string)=>new Intl.DateTimeFormat(undefined,{weekday:"short",day:"numeric",timeZone:"UTC"}).format(new Date(date+"T12:00:00Z"));
- return <div className="hidden overflow-x-auto rounded-[20px] border border-line bg-surface lg:block">
+ return <div className="hidden overflow-x-auto rounded-card border border-line bg-surface lg:block">
   <table className="w-full min-w-[960px] border-collapse text-start text-[0.9375rem]">
    <thead><tr className="border-b border-line"><th scope="col" className="min-w-48 p-3 text-start">{t("person")}</th>
     {dates.map(date=>{

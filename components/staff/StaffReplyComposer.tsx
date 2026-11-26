@@ -58,7 +58,7 @@ export default function StaffReplyComposer({people,ownerUserId,businessId}:{
   <p className="text-sm text-ink-muted">Your Send click saves a private inbox message. It does not send WhatsApp or confirm staff attendance.</p>
   {message.pending&&<div role="status" className="space-y-2 rounded-xl border border-line p-3">
    <p className="text-sm font-semibold">Message awaiting a verified receipt for {worker(message.pending.employeeId)}</p>
-   <p className="whitespace-pre-wrap break-words text-sm">{message.pending.type==="message"?message.pending.body:""}</p>
+   <p className="whitespace-pre-wrap wrap-break-word text-sm">{message.pending.type==="message"?message.pending.body:""}</p>
    <p className="text-sm">The original text and request identity are preserved through reloads. Do not create another message to replace it.</p>
    <button type="button" disabled={message.busy} onClick={()=>void message.retry()}
     className="min-h-12 rounded-full border border-line px-4 py-2 text-sm font-semibold disabled:opacity-50">
@@ -68,7 +68,7 @@ export default function StaffReplyComposer({people,ownerUserId,businessId}:{
   {message.rejectedDraft?.type==="message"&&<div className="space-y-2 rounded-xl border border-line p-3">
    <p className="font-semibold">Unsent owner message saved as a draft</p>
    <p className="text-sm">The original employee lost access before a new message could be saved. Choose an active employee before reusing the wording.</p>
-   <p className="whitespace-pre-wrap break-words">{message.rejectedDraft.body}</p>
+   <p className="whitespace-pre-wrap wrap-break-word">{message.rejectedDraft.body}</p>
    <div className="flex flex-wrap gap-2">
     <button type="button" disabled={locked} onClick={()=>{if(message.rejectedDraft?.type==="message")setBody(message.rejectedDraft.body);}}
      className="min-h-12 rounded-full border border-line px-4 py-2 disabled:opacity-50">Use wording in a new draft (not sent)</button>
@@ -100,7 +100,7 @@ export default function StaffReplyComposer({people,ownerUserId,businessId}:{
     <p className="text-sm font-semibold">Assignment awaiting a verified receipt for {worker(assignment.pending.employeeId)}</p>
     {assignment.pending.type==="assignment"&&<>
      <p className="font-medium">{assignment.pending.title}</p>
-     <p className="whitespace-pre-wrap break-words text-sm">{assignment.pending.prompt}</p>
+     <p className="whitespace-pre-wrap wrap-break-word text-sm">{assignment.pending.prompt}</p>
     </>}
     <p className="text-sm">The original assignment and request identity are preserved through reloads.</p>
     <button type="button" disabled={assignment.busy} onClick={()=>void assignment.retry()}
@@ -112,7 +112,7 @@ export default function StaffReplyComposer({people,ownerUserId,businessId}:{
     <p className="font-semibold">Unsent owner assignment saved as a draft</p>
     <p className="text-sm">The original employee lost access before new work could be assigned. Choose an active employee before reviewing a new assignment.</p>
     <p className="font-medium">{assignment.rejectedDraft.title}</p>
-    <p className="whitespace-pre-wrap break-words">{assignment.rejectedDraft.prompt}</p>
+    <p className="whitespace-pre-wrap wrap-break-word">{assignment.rejectedDraft.prompt}</p>
     <div className="flex flex-wrap gap-2">
      <button type="button" disabled={locked} onClick={()=>{
       if(assignment.rejectedDraft?.type==="assignment"){

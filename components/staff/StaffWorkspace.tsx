@@ -239,7 +239,7 @@ export default function StaffWorkspace({initial,tab="schedule",locale="en",initi
   </header>
   {data.readOnly&&<p className="rounded-xl bg-surface2 p-3 text-muted">{t("readOnly")}</p>}
   <div className="grid grid-cols-2 rounded-2xl bg-surface2 p-1">{["schedule","team"].map(k=><button key={k} onClick={()=>setScreen(k)} aria-pressed={screen===k}
-    className={`min-h-12 rounded-xl font-bold ${screen===k?"bg-surface shadow":"text-muted"}`}>{k==="schedule"?t("schedule"):t("team")}</button>)}</div>
+    className={`min-h-12 rounded-xl font-bold ${screen===k?"bg-surface shadow-sm":"text-muted"}`}>{k==="schedule"?t("schedule"):t("team")}</button>)}</div>
   {screen==="schedule"?<>
    {alertError&&<p role="alert" className="rounded-xl bg-warn-soft p-3 text-warn-text">{t("ruleAlertError",{error:alertError})}</p>}
    {focusRule&&!deepShift&&<p role="status" className="rounded-xl bg-warn-soft p-3 text-warn-text">{t("manualRuleReview")} {t("noMatchingShift")}</p>}
@@ -290,7 +290,7 @@ export default function StaffWorkspace({initial,tab="schedule",locale="en",initi
     const totals=dailyTotals(d);
     const weekday=new Date(d+"T12:00:00Z").getUTCDay();
     const opening=data.openHours?.[OPEN_HOURS_DAY_KEYS[weekday]];
-    return <section key={d} id={"day-"+d} className="rounded-[20px] border border-line bg-surface p-3">
+    return <section key={d} id={"day-"+d} className="rounded-card border border-line bg-surface p-3">
      <div className="flex flex-wrap items-baseline gap-2">
       <h2 className="text-lg font-bold">{dayLabel(d)}</h2>
       <span className="text-sm text-muted">{opening===undefined?t("hoursNotSet"):opening.length?t("open")+" "+opening.map(a=>a.join("–")).join(", "):t("closed")}</span>
@@ -336,7 +336,7 @@ export default function StaffWorkspace({initial,tab="schedule",locale="en",initi
     <button disabled={busy||data.readOnly} className="min-h-14 flex-1 rounded-xl bg-accent text-on-accent" onClick={prepareMessages}>{t("prepareScheduleMessages")}</button>
    </div>
   </>:<>
-   <section className="rounded-[20px] border border-line bg-surface p-4"><h2 className="text-lg font-bold">{t("addSomeone")}</h2>
+   <section className="rounded-card border border-line bg-surface p-4"><h2 className="text-lg font-bold">{t("addSomeone")}</h2>
      <div className="mt-3 flex gap-2"><input autoComplete="off" placeholder={t("name")} aria-label={t("newPersonName")}
        value={inlineName} onChange={e=>setInlineName(e.target.value)} disabled={data.readOnly}
        className="min-h-12 min-w-0 flex-1 rounded-xl border border-line bg-surface p-3"/>
@@ -351,7 +351,7 @@ export default function StaffWorkspace({initial,tab="schedule",locale="en",initi
       className={`min-h-12 rounded-full border border-line px-3 text-sm ${inlineRole===role?"bg-accent-soft text-accent-text":""}`}>{roleLabel(role)}</button>)}</div>
      <button disabled={data.readOnly} onClick={()=>openPerson()} className="mt-3 min-h-12 w-full rounded-xl border-2 border-dashed border-accent text-accent-text">{t("moreDetails")}</button>
    </section>
-   <section className="rounded-[20px] border border-line bg-surface p-4"><h2 className="mb-3 font-bold">{t("yourTeam",{count:data.team.length})}</h2>
+   <section className="rounded-card border border-line bg-surface p-4"><h2 className="mb-3 font-bold">{t("yourTeam",{count:data.team.length})}</h2>
      {data.team.map(p=><div key={p.id} className="flex min-h-16 items-center gap-3 border-t border-line py-3">
       <span className="grid size-12 place-items-center rounded-full bg-accent-soft font-bold">{p.name[0]}</span>
       <div className="min-w-0 flex-1"><b>{p.name}</b><span className="ms-2 text-sm text-muted">{p.role?roleLabel(p.role):t("team")}</span>
@@ -361,14 +361,14 @@ export default function StaffWorkspace({initial,tab="schedule",locale="en",initi
      </div>)}
      <div className="border-t border-line pt-3 font-bold">{t("total")} {wageSummary(weeklyTotals)} {weeklyTotals.estimated?" · "+t("estimate"):""}</div>
    </section>
-   <Link href={`/${locale}/staff/rules`} className="block rounded-[20px] border border-line bg-surface p-4">{t("rulesCard")} <span className="block text-muted">{t("defaultNote")}</span></Link>
+   <Link href={`/${locale}/staff/rules`} className="block rounded-card border border-line bg-surface p-4">{t("rulesCard")} <span className="block text-muted">{t("defaultNote")}</span></Link>
    {teamExtras}
   </>}
   {undo&&<div role="status" className="fixed inset-x-4 bottom-36 z-30 flex items-center justify-between rounded-xl bg-fg p-4 text-bg shadow-lg"><span>{undo.message}</span><button onClick={undoRemove} className="min-h-12 px-3 font-bold">{t("undo")}</button></div>}
   {error&&<p role="alert" className="rounded-xl bg-neg-soft p-3 text-neg">{error}</p>}
   {notice&&<StaffDialog headingId="staff-copy-heading" layout="center" onClose={()=>setNotice("")}><h2 id="staff-copy-heading">{t("readyCopy")}</h2><p role="status" className="mt-2 text-muted">{t("scheduleNotSent")}</p><pre className="whitespace-pre-wrap">{notice}</pre><button onClick={()=>navigator.clipboard.writeText(notice)} className="my-3 min-h-12 rounded-xl bg-accent px-4 text-on-accent">{t("copy")}</button><button onClick={()=>setNotice("")} className="ms-3 min-h-12">{t("close")}</button></StaffDialog>}
   {sheet&&<StaffDialog headingId="staff-sheet-heading" onClose={()=>setSheet(null)}>
-    <div className="mx-auto mb-3 h-1 w-12 rounded bg-line"/>{fillsGap&&sheet==="shift"&&<p className="text-sm font-bold text-pos">{t("fillsGap")}</p>}<h2 id="staff-sheet-heading" className="font-headline text-xl font-bold">{sheet==="person"?(personEditing?t("editPerson"):t("addPerson")):(editing?t("editShift"):t("addShiftDate",{date:dayLabel(date)}))}</h2>
+    <div className="mx-auto mb-3 h-1 w-12 rounded-sm bg-line"/>{fillsGap&&sheet==="shift"&&<p className="text-sm font-bold text-pos">{t("fillsGap")}</p>}<h2 id="staff-sheet-heading" className="font-headline text-xl font-bold">{sheet==="person"?(personEditing?t("editPerson"):t("addPerson")):(editing?t("editShift"):t("addShiftDate",{date:dayLabel(date)}))}</h2>
     {sheet==="person"?<>
       <label className="mt-3 block font-semibold">{t("name")}<input autoFocus={sheet==="person"&&!focusWage} value={name} onChange={e=>setName(e.target.value)} className="mt-1 min-h-12 w-full rounded-xl border border-line bg-surface px-3"/></label>
       <div className="mt-3 flex flex-wrap gap-2">{["Barista","Manager","Baker","Cashier"].map(r=><button type="button" key={r} aria-pressed={role===r} onClick={()=>setRole(r)} className="min-h-12 rounded-full border border-line px-3">{roleLabel(r)}</button>)}<button type="button" aria-pressed={!["Barista","Manager","Baker","Cashier"].includes(role)} onClick={()=>setRole("")} className="min-h-12 rounded-full border border-line px-3">{t("roleOther")}</button></div>
