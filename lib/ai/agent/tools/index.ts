@@ -2,7 +2,6 @@ import { presentationTools,presentResponse } from "./presentation";
 import { laborKnown } from "@/lib/calc";
 import { z } from "zod";
 import {askOwnerTools} from "./askOwner";
-import {dataQueryTools,type DataQueryContext} from "./dataQuery";
 import {gmailTools} from "./gmail";
 import {maintenanceTools} from "./maintenance";
 import {staffQuestionTools} from "./staffQuestion";
@@ -73,8 +72,8 @@ export type AgentToolContext = {
   timezone:string;
   /** Authenticated ISO 4217 currency; absent only in legacy test contexts. */
   currency?:string|null;
-  /** Authenticated owner-scoped reader. Never populated from model arguments. */
-  canonicalData?:()=>Promise<DataQueryContext>;
+  /** True for authenticated SQL research turns; guards owner-number questions. */
+  sqlResearch?:boolean;
   /** Owner-verified staff communication evidence for off-turn investigations,
    * not a worker chat or model-supplied employee selector. */
   staffMessages?:{read:()=>ReturnType<
@@ -214,7 +213,7 @@ const posReadTools={
   get_employee_sales:{schema:posPeriodSchema,description:"Read recorded employee-attributed sales for a date range."},
   get_payroll_facts:{schema:posPeriodSchema,description:"Read imported pay-period facts without inferring missing wages or taxes."}
 };
-export const schemas = { ...presentationTools, ...askOwnerTools, ...dataQueryTools, ...posReadTools, ...attentionTools, ...incidentEvidenceTools, get_profit: periodSchema, get_sales: periodSchema, get_menu_items: menuSchema,
+export const schemas = { ...presentationTools, ...askOwnerTools, ...posReadTools, ...attentionTools, ...incidentEvidenceTools, get_profit: periodSchema, get_sales: periodSchema, get_menu_items: menuSchema,
   ...staffTools,...staffCoordinationTools, ...scheduleReadTools, ...hoursTools, ...moneyTools, ...suppliesTools, ...salesTools,...todayTools,...draftScheduleTools,...newItemPriceTools,...milkSwapTools,...scenarioTools,...calculateTools,...proposalTools,...priceExperimentTools,...priceMonitorTools,...goalTools,...staffProposalTools,...purchasesTools,...supplierPurchasingTools,...eventsTools,...savedEventsTools,...eventPlanTools,...webSearchTools,...commitmentTools,...routineTools,...permissionTools,...gmailTools,...maintenanceTools,...staffQuestionTools } as const;
 export type AgentToolName = keyof typeof schemas;
 /** Input fields backed by the shared entity/period resolver. A new tool whose
@@ -359,7 +358,6 @@ export async function executeAgentTool(name: string, raw: unknown, ctx: AgentToo
   if(name==="read_gmail_thread")return gmailTools.read_gmail_thread.execute(raw,ctx);
   if(name==="read_gmail_attachment")return gmailTools.read_gmail_attachment.execute(raw,ctx);
   if(name==="propose_gmail_action")return gmailTools.propose_gmail_action.execute(raw,ctx);
-  if(name==="get_maintenance_cases")return maintenanceTools.get_maintenance_cases.execute(raw,ctx);
   if(name==="get_maintenance_staff_candidates")return maintenanceTools.get_maintenance_staff_candidates.execute(raw,ctx);
   if(name==="propose_maintenance_staff_assignment")return maintenanceTools.propose_maintenance_staff_assignment.execute(raw,ctx);
   if(name==="propose_staff_question")return staffQuestionTools.propose_staff_question.execute(raw,ctx);
@@ -367,18 +365,6 @@ export async function executeAgentTool(name: string, raw: unknown, ctx: AgentToo
   if(name==="record_maintenance_repair_claim")return maintenanceTools.record_maintenance_repair_claim.execute(raw,ctx);
   if(name==="search_maintenance_vendor")return maintenanceTools.search_maintenance_vendor.execute(raw,ctx);
   if(name==="propose_maintenance_vendor_request")return maintenanceTools.propose_maintenance_vendor_request.execute(raw,ctx);
-  if(name==="describe_data"){
-    // Field names for one Toast record type need the café-scoped reader.
-    const scoped=raw&&typeof raw==="object"&&typeof (raw as {record_type?:unknown}).record_type==="string";
-    if(!scoped||!ctx.canonicalData)return dataQueryTools.describe_data.execute(raw);
-    try{return dataQueryTools.describe_data.execute(raw,await ctx.canonicalData());}
-    catch{return {source:"toast_fields",period:null,missing:["source_read_failed"]};}
-  }
-  if(name==="query_data"){
-    if(!ctx.canonicalData)return {source:"canonical_data",period:null,missing:["canonical_reader_unavailable"],rows:[],empty:true};
-    try{return dataQueryTools.query_data.execute(raw,await ctx.canonicalData());}
-    catch{return {source:"canonical_data",period:null,missing:["source_read_failed"],rows:[],empty:true};}
-  }
   if(name==="draft_week_schedule")return draftScheduleTools.draft_week_schedule.execute(raw,ctx);
   if(name==="simulate_staff_absence")return draftScheduleTools.simulate_staff_absence.execute(raw,ctx);
   if(name==="suggest_new_item_price")return newItemPriceTools.suggest_new_item_price.execute(raw,ctx);
@@ -429,7 +415,6 @@ export async function executeAgentTool(name: string, raw: unknown, ctx: AgentToo
   if(name==="get_product_costs")return suppliesTools.get_product_costs.execute(raw,ctx);
   if(name==="get_ingredient_costs")return suppliesTools.get_ingredient_costs.execute(raw,ctx);
   if(name==="get_usage_variance")return suppliesTools.get_usage_variance.execute(raw,ctx);
-  if(name==="get_inventory")return suppliesTools.get_inventory.execute(raw,ctx);
   if(name==="get_peak_hours"||name==="get_employee_sales"||name==="get_payroll_facts"){
     const input=posPeriodSchema.parse(raw);
     const checked=resolveOwnerPeriod(input,{asOf:ctx.asOf,timezone:ctx.timezone},ctx.resolveState);
@@ -641,15 +626,15 @@ export async function executeAgentTool(name: string, raw: unknown, ctx: AgentToo
  * handlers, never a tool-name prefix or owner/model wording. Unknown or
  * mixed read/write capabilities default to an effect boundary. */
 const repeatSafeOwnerTools:ReadonlySet<string>=new Set([
- "describe_data","query_data","get_profit","get_sales","get_menu_items",
+ "get_profit","get_sales","get_menu_items",
  "get_peak_hours","get_employee_sales","get_payroll_facts","get_attention_items",
  "get_investigation_source","get_staff","get_schedule","get_labor","get_staff_messages",
  "get_team","get_week_schedule","get_labor_rules","get_coverage_gaps","get_shift_cost",
  "get_business_hours","get_expenses","get_bills","get_cashflow_evidence","get_break_even",
- "get_cost_summary","get_product_costs","get_ingredient_costs","get_usage_variance","get_inventory",
+ "get_cost_summary","get_product_costs","get_ingredient_costs","get_usage_variance",
  "get_staff_coordination_cases","get_supervisor_permissions","get_goal_status","get_price_monitor_status",
  "get_supplier_purchase_orders","inspect_purchase_reconciliation","inspect_supplier_purchase",
- "get_maintenance_cases","get_maintenance_staff_candidates","simulate_staff_absence",
+ "get_maintenance_staff_candidates","simulate_staff_absence",
  "suggest_new_item_price","milk_swap_price","simulate_scenario","calculate","ask_owner",
  "get_item_sales","get_price_recommendation","get_today_so_far","get_events","get_nearby_events",
  "search_gmail","list_gmail_labels","read_gmail","read_gmail_thread","read_gmail_attachment",

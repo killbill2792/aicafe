@@ -51,7 +51,7 @@ test("rename carries both old and new domain; duplicate test files execute once"
  assert.deepEqual(domainsForPaths(paths),["supervisor","gmail"]);
  const files=selectedFiles(["supervisor","pos"]);
  assert.equal(new Set(files).size,files.length);
- assert.equal(files.filter(f=>f.endsWith("dataQuery.registered.test.ts")).length,1);
+ assert.equal(files.filter(f=>f.endsWith("actions.test.ts")).length,1);
  assert.throws(()=>selectedFiles(["supervisor","supervisor"]),/invalid_domains/);
  assert.throws(()=>selectedFiles(["unknown"]),/invalid_domains/);
 });

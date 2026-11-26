@@ -68,7 +68,7 @@ export const askOwnerTools={ask_owner:{
   // The missing list is derived from trusted results/saved facts; a model
   // cannot assert provenance with a field label, question, or changeSaved.
   // Non-numeric clarifications (e.g. which date was the pop-up?) remain valid.
-  if(input.kind==="facts"&&ctx.canonicalData&&input.fields?.some(field=>
+  if(input.kind==="facts"&&ctx.sqlResearch&&input.fields?.some(field=>
      field.inputType==="number"&&!verifiedOwnerNumber(field.key,ctx))){
     return {source:"ask_owner",period:null,missing:["numericOwnerInputUnverified"],
      error:"numericOwnerInputUnverified",nextTool:"run_sql",

@@ -33,7 +33,7 @@ export const RESEARCH_INSTRUCTIONS=
 /** Registered tools that prepare an owner-approval card, record an outcome or ask the owner; reads are covered by SQL. */
 export const isResearchActionTool=(name:string)=>/^propose_/u.test(name)||
   ["draft_week_schedule","manage_commitment","record_checkin","record_staff_question_owner_answer","record_supplier_order_outcome",
-   "record_maintenance_repair_claim","ask_owner","get_supervisor_permissions"].includes(name);
+   "record_maintenance_repair_claim","ask_owner"].includes(name);
 
 /** These integrations retain their existing scoped readers; no café metric reader belongs here. */
 

@@ -1,5 +1,5 @@
 import type {AgentTurn} from "@/lib/ai/agent/loop.server";
-import type {AgentToolName,AgentToolResult} from "@/lib/ai/agent/tools";
+import type {AgentToolResult} from "@/lib/ai/agent/tools";
 import {CUSTOMER_MONITOR_POLICY,customerTrendEvidenceFields} from "@/lib/metrics/core/customers";
 import {hasVerifiedU3NumericObservation} from "@/lib/ai/agent/checkNumbers";
 
@@ -13,17 +13,17 @@ export const investigationReadTools=[
   "get_peak_hours","get_payroll_facts","get_staff_messages","get_staff_coordination_cases","get_schedule","get_week_schedule",
   "get_coverage_gaps","get_inventory","get_usage_variance","inspect_purchase_reconciliation","calculate",
   "describe_data","query_data",
-] as const satisfies readonly AgentToolName[];
+] as const satisfies readonly string[];
 /** The only system-triggered write permitted here is an inert approval
  * draft. The existing owner-click gateway is still the only effect authority. */
-export const customerInvestigationTools=[...investigationReadTools,"get_events"] as const satisfies readonly AgentToolName[];
-export const supplierResearchInvestigationTools=[...investigationReadTools,"web_search"] as const satisfies readonly AgentToolName[];
+export const customerInvestigationTools=[...investigationReadTools,"get_events"] as const satisfies readonly string[];
+export const supplierResearchInvestigationTools=[...investigationReadTools,"web_search"] as const satisfies readonly string[];
 export const maintenanceInvestigationTools=[...investigationReadTools,
   "get_maintenance_staff_candidates","propose_maintenance_staff_assignment","record_maintenance_repair_claim",
-  "search_maintenance_vendor","propose_maintenance_vendor_request"] as const satisfies readonly AgentToolName[];
+  "search_maintenance_vendor","propose_maintenance_vendor_request"] as const satisfies readonly string[];
 /** Requiring kind-specific independent corroboration keeps an agent from
  * reading two irrelevant sales/expense totals for an employee incident. */
-const relevantByKind:Record<string,readonly AgentToolName[]>={
+const relevantByKind:Record<string,readonly string[]>={
   business_anomaly:["describe_data","query_data","get_sales","get_peak_hours","get_profit","get_labor","get_expenses","get_bills","get_ingredient_costs","get_product_costs","get_inventory","get_usage_variance","get_item_sales","get_menu_items","get_schedule","get_week_schedule"],
   meal_break:["get_labor","get_payroll_facts","get_schedule","get_week_schedule"],
   staff_coverage:["get_staff_messages","get_staff_coordination_cases","get_labor","get_schedule","get_coverage_gaps","get_week_schedule","get_inventory","get_sales"],
@@ -50,7 +50,7 @@ const relevantByKind:Record<string,readonly AgentToolName[]>={
  *
  * The groups are intentionally conservative. A derived aggregate never
  * invents an independent source where the underlying evidence overlaps. */
-export const canonicalEvidenceDomain:Partial<Record<AgentToolName,string>>={
+export const canonicalEvidenceDomain:Partial<Record<string,string>>={
   query_data:"recorded_sales",get_sales:"recorded_sales",get_item_sales:"recorded_sales",
   get_peak_hours:"recorded_sales",
   get_labor:"attendance_and_labor",get_payroll_facts:"attendance_and_labor",
@@ -201,7 +201,7 @@ export function hasObservedEvidence(result:AgentToolResult):boolean{
     return observedValue(value);
   });
 }
-export function relevantInvestigationTools(kind:string):readonly AgentToolName[]{
+export function relevantInvestigationTools(kind:string):readonly string[]{
   return relevantByKind[kind]??investigationReadTools.filter(
     name=>name!=="get_investigation_source"&&name!=="calculate");
 }
@@ -603,9 +603,9 @@ export function verifyInvestigationTurn(turn:AgentTurn,expected:ExpectedInvestig
     if(!p||p.key!==selectors.subject||p.unit!==selectors.unit||p.active!==true||!equal(p.current,selectors.current)||!equal(p.previous,selectors.previous))return {ok:false,reason:"evidence_incomplete"};
   }
   if(!customerIncident&&calls.some(call=>call.name==="get_events"))return {ok:false,reason:"model_incomplete"};
-  const customerTools:readonly AgentToolName[]=["get_events","query_data","get_labor","get_schedule","get_week_schedule",
+  const customerTools:readonly string[]=["get_events","query_data","get_labor","get_schedule","get_week_schedule",
     "get_inventory","get_usage_variance","get_menu_items","get_price_monitor_status","get_ingredient_costs","get_expenses","get_bills"];
-  const familyTools:Record<string,readonly AgentToolName[]>={sales_decline:["get_sales","get_profit","get_labor","get_item_sales"],sales_growth:["get_sales","get_profit","get_labor","get_item_sales"],labor_cost:["get_labor","get_sales","get_profit"],recorded_expense_rise:["get_expenses","get_bills","get_profit"],recorded_refund_rise:["get_sales","get_profit","get_item_sales"],order_refund_rise:["get_sales","get_profit","get_item_sales"],ingredient_cost:["get_ingredient_costs","get_product_costs","get_menu_items"],product_cost:["get_product_costs","get_ingredient_costs","get_menu_items"],product_contribution:["get_product_costs","get_ingredient_costs","get_item_sales"],high_contribution:["get_product_costs","get_item_sales"],operating_margin:["get_profit","get_sales","get_expenses","get_labor"],cost_recovery_lag:["get_profit","get_bills","get_expenses","get_sales"],cost_recovery_ahead:["get_profit","get_bills","get_expenses","get_sales"],stock_shortage:["get_inventory","get_usage_variance","get_ingredient_costs"],stockout_risk:["get_inventory","get_usage_variance","get_ingredient_costs"],consumption_variance:["get_usage_variance","get_ingredient_costs","get_item_sales"],overstaffed_hour:["get_labor","get_peak_hours","get_sales","get_schedule","get_week_schedule"],early_clock_in:["get_labor","get_schedule","get_week_schedule"],missed_clock_evidence:["get_labor","get_schedule","get_week_schedule"],supplier_quote:["get_ingredient_costs","get_product_costs","get_inventory"]};
+  const familyTools:Record<string,readonly string[]>={sales_decline:["get_sales","get_profit","get_labor","get_item_sales"],sales_growth:["get_sales","get_profit","get_labor","get_item_sales"],labor_cost:["get_labor","get_sales","get_profit"],recorded_expense_rise:["get_expenses","get_bills","get_profit"],recorded_refund_rise:["get_sales","get_profit","get_item_sales"],order_refund_rise:["get_sales","get_profit","get_item_sales"],ingredient_cost:["get_ingredient_costs","get_product_costs","get_menu_items"],product_cost:["get_product_costs","get_ingredient_costs","get_menu_items"],product_contribution:["get_product_costs","get_ingredient_costs","get_item_sales"],high_contribution:["get_product_costs","get_item_sales"],operating_margin:["get_profit","get_sales","get_expenses","get_labor"],cost_recovery_lag:["get_profit","get_bills","get_expenses","get_sales"],cost_recovery_ahead:["get_profit","get_bills","get_expenses","get_sales"],stock_shortage:["get_inventory","get_usage_variance","get_ingredient_costs"],stockout_risk:["get_inventory","get_usage_variance","get_ingredient_costs"],consumption_variance:["get_usage_variance","get_ingredient_costs","get_item_sales"],overstaffed_hour:["get_labor","get_peak_hours","get_sales","get_schedule","get_week_schedule"],early_clock_in:["get_labor","get_schedule","get_week_schedule"],missed_clock_evidence:["get_labor","get_schedule","get_week_schedule"],supplier_quote:["get_ingredient_costs","get_product_costs","get_inventory"]};
   const allowed=new Set<string>(customerIncident?customerTools:expected.kind==="business_anomaly"&&selectors?.family&&familyTools[selectors.family]?familyTools[selectors.family]:relevantInvestigationTools(expected.kind));
   // Date-bearing independent facts must relate to the actual incident window.
   // Undated catalog/configuration facts may still describe the present setup.
@@ -642,7 +642,7 @@ export function verifyInvestigationTurn(turn:AgentTurn,expected:ExpectedInvestig
   // Count underlying evidence families rather than spelling differences.
   const domains=new Set(corroborated.map(c=>c.name==="query_data"?
     canonicalQuerySourceFamily(c.result.view):
-    canonicalEvidenceDomain[c.name as AgentToolName]).filter(
+    canonicalEvidenceDomain[c.name as string]).filter(
       (domain):domain is string=>typeof domain==="string"&&domain.length>0));
   if(names.length<2||domains.size<2)return {ok:false,reason:"evidence_incomplete"};
   if(expected.kind==="money_update"&&expected.sourceId.startsWith("financial-review:")&&!names.includes("get_cashflow_evidence"))return {ok:false,reason:"evidence_incomplete"};

@@ -1,13 +1,10 @@
 import { z } from "zod";
 import {projectUsageTool} from "@/lib/calc/usageToolProjection";
-import {projectInventoryEvidence} from "@/lib/calc/inventoryEvidence";
 import type { AgentToolContext, AgentToolResult } from "./index";
 import {resolveEntity,choicePayload,ownerNamedTarget} from "../resolve";
-import {dataQueryTools} from "./dataQuery";
 
 const item=z.strictObject({itemId:z.uuid()});
 const ingredients=z.strictObject({query:z.string().max(80).nullable(),limit:z.number().int().min(1).max(20).nullable()});
-const empty=z.strictObject({});
 const usage=z.strictObject({from:z.string(),to:z.string(),ingredient:z.string().nullable(),group_by:z.enum(["shift","day","staff"]).nullable()});
 export const suppliesTools={
  get_usage_variance:{
@@ -82,45 +79,5 @@ export const suppliesTools={
         missing:s.quality.missingInputs,items};
     },
   },
-  get_inventory:{
-    agentId:"maya",schema:empty,description:"Read café-scoped dated inventory counts and Toast menu-item stock through the existing canonical reader. Never infer that an omitted Toast item has zero stock, or that a stale count is current.",
-    execute:async(raw:unknown,ctx?:AgentToolContext):Promise<AgentToolResult>=>{
-      empty.parse(raw);
-      if(!ctx?.canonicalData||!ctx.timezone)
-        return {source:"inventory",period:null,agentId:"maya",
-          missing:["inventoryNotTracked"],inventory:null};
-      try{
-        // The signed-in café's timezone, never a UTC day or model-supplied date.
-        const date=ctx.asOf.includes("T")?
-          new Intl.DateTimeFormat("en-CA",{timeZone:ctx.timezone,year:"numeric",
-            month:"2-digit",day:"2-digit"}).format(new Date(ctx.asOf)):
-          ctx.asOf.slice(0,10);
-        if(!/^\d{4}-\d{2}-\d{2}$/.test(date))throw new Error("invalid date");
-        const scoped=await ctx.canonicalData();
-        const result=await dataQueryTools.query_data.execute({
-          view:"cv_inventory",columns:["source","source_ref","status","business_date",
-            "menu_item_ref","stock_status","quantity","data"],
-          filters:null,group_by:null,metrics:null,date_from:date,date_to:date,
-          order_by:null,limit:50},{
-          ...scoped,
-          // This registered no-argument reader executes ONE fixed, bounded
-          // inventory view query, not model-authored SQL. It strips raw rows
-          // through projectInventoryEvidence below. Generic unattended
-          // query_data stays aggregate-only, so Luna cannot choose arbitrary
-          // individual records or personal fields via this allowance.
-          aggregateOnly:false,
-        });
-        const evidence=projectInventoryEvidence(result.rows);
-        const missing=[...new Set([...(result.missing??[]),...evidence.missing])];
-        return {source:"inventory",period:{from:date,to:date},agentId:"maya",
-          missing,inventory:result.empty?null:evidence.rows,
-          sourceMix:result.sourceMix,truncated:result.truncated||evidence.truncated,
-          // No implied complete inventory: Toast GET excludes IN_STOCK items.
-          scope:"observed_inventory_only",quantitySemantics:"no_unobserved_zero"};
-      }catch{
-        return {source:"inventory",period:null,agentId:"maya",
-          missing:["inventoryReaderUnavailable"],inventory:null};
-      }
-    },
-  },
+
 } as const;

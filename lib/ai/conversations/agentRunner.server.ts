@@ -322,11 +322,7 @@ export async function runOneTurn(p: TurnParams): Promise<{ replyId: string; repl
       ownerText:currentOwnerStatement,
       externalEvidencePresent:()=>sourceChecks.size>0,
       readPermissions:()=>new SupervisorEffectGateway().listMandates({businessId:scope.businessId,ownerUserId:scope.ownerUserId}),
-      canonicalData:async()=>({
-        db:await getDb(),businessId:scope.businessId,ownerUserId:scope.ownerUserId,
-        threadId:id,mode:p.durableFence?"durable" as const:"owner" as const,
-        ...(p.durableFence?{runId:p.durableFence.runId,leaseToken:p.durableFence.claimToken}:{})
-       }),
+      sqlResearch:true,
       staffQuestionPropose:async raw=>{
         await assertTurnSources();
         // The source of an owner-requested message is the owner's own saved chat message, never a model-supplied id.

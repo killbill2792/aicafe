@@ -6,24 +6,10 @@ import {newResolveState} from "./resolve";
 
 const base = { source: "profitability", period: null, missing: [],
   ownerProfitCents: 12345, operatingMargin: 0.125, coveredSalesDays: 4 };
-describe("registered inventory dispatch", () => {
-  it("passes authenticated café context through the universal tool registry", async () => {
-    let wasCalled=false;
-    const ctx:AgentToolContext={timezone:"America/Los_Angeles",asOf:"2026-11-13",locale:"en",
-      tools:{
-        getSalesTrend:async()=>({available:false,value:null,quality:{level:"low",missingInputs:[],estimatedInputs:[],staleInputs:[]}}),
-        getProfitability:async()=>({available:false,value:null,quality:{level:"low",missingInputs:[],estimatedInputs:[],staleInputs:[]}}),
-        getMenuCatalog:async()=>({available:true,value:[],quality:{level:"high",missingInputs:[],estimatedInputs:[],staleInputs:[]}}),
-      },canonicalData:async()=>{wasCalled=true;throw new Error("synthetic scoped reader outage");}};
-    const response=await executeAgentTool("get_inventory",{},ctx);
-    expect(wasCalled).toBe(true);
-    expect(response).toMatchObject({source:"inventory",missing:["inventoryReaderUnavailable"]});
-  });
-});
 describe("Task 11/12/13A/14A integrated Supervisor registry",()=>{
   it("keeps inventory, stock actions, staff planning and absence previews in one strict tool registry",()=>{
     const publicNames=agentToolDefinitions.map(x=>x.name);
-    for(const name of ["get_inventory","get_usage_variance","get_staff","get_labor",
+    for(const name of ["get_usage_variance","get_staff","get_labor",
       "draft_week_schedule","simulate_staff_absence","propose_purchases",
       "get_supplier_purchase_orders","inspect_purchase_reconciliation","propose_purchase_receiving","propose_invoice_reconciliation","propose_supplier_discrepancy_followup","inspect_supplier_purchase","propose_supplier_purchase_order"]){
       expect(publicNames).toContain(name);
@@ -168,13 +154,13 @@ describe("numbers, statuses, and strict tool contracts", () => {
       status:"partial",missing:["sales"] });
   });
   it("publishes exactly the registered strict functions", () => {
-    expect(agentToolDefinitions.map(t=>t.name)).toEqual(["present_response","ask_owner","describe_data","query_data","get_peak_hours","get_employee_sales","get_payroll_facts","get_attention_items","get_profit","get_sales","get_menu_items",
+    expect(agentToolDefinitions.map(t=>t.name)).toEqual(["present_response","ask_owner","get_peak_hours","get_employee_sales","get_payroll_facts","get_attention_items","get_profit","get_sales","get_menu_items",
       "get_staff","get_schedule","get_labor","get_staff_coordination_cases","get_staff_messages","get_team","get_week_schedule","get_labor_rules",
       "get_coverage_gaps","get_shift_cost","get_business_hours","get_expenses","get_bills",
-      "get_cashflow_evidence","propose_financial_settlement","propose_financial_bill","get_break_even","get_cost_summary","get_usage_variance","get_product_costs","get_ingredient_costs","get_inventory",
+      "get_cashflow_evidence","propose_financial_settlement","propose_financial_bill","get_break_even","get_cost_summary","get_usage_variance","get_product_costs","get_ingredient_costs",
       "get_item_sales","get_price_recommendation","get_today_so_far","draft_week_schedule","simulate_staff_absence","suggest_new_item_price","milk_swap_price","simulate_scenario","calculate","propose_price_change","propose_price_experiment","get_price_monitor_status","propose_goal","record_checkin","get_goal_status",
       "propose_schedule","propose_shift_change","propose_add_staff","propose_staff_change",
-      "propose_availability_change","propose_rule_change","propose_send_schedule","propose_purchases","get_supplier_purchase_orders","inspect_purchase_reconciliation","propose_purchase_receiving","propose_invoice_reconciliation","propose_supplier_discrepancy_followup","inspect_supplier_purchase","propose_supplier_purchase_order","record_supplier_order_outcome","propose_supplier_vendor_email","get_nearby_events","get_events","propose_event_plan","web_search","manage_commitment","get_supervisor_permissions","get_maintenance_staff_candidates","propose_maintenance_staff_assignment","record_maintenance_repair_claim","search_maintenance_vendor","propose_maintenance_vendor_request","get_maintenance_cases","propose_staff_question","record_staff_question_owner_answer"]);
+      "propose_availability_change","propose_rule_change","propose_send_schedule","propose_purchases","get_supplier_purchase_orders","inspect_purchase_reconciliation","propose_purchase_receiving","propose_invoice_reconciliation","propose_supplier_discrepancy_followup","inspect_supplier_purchase","propose_supplier_purchase_order","record_supplier_order_outcome","propose_supplier_vendor_email","get_nearby_events","get_events","propose_event_plan","web_search","manage_commitment","get_supervisor_permissions","get_maintenance_staff_candidates","propose_maintenance_staff_assignment","record_maintenance_repair_claim","search_maintenance_vendor","propose_maintenance_vendor_request","propose_staff_question","record_staff_question_owner_answer"]);
     expect(agentToolDefinitions.every(t=>t.strict)).toBe(true);
     for (const tool of agentToolDefinitions) {
       expect(Object.hasOwn(tool.parameters,"$schema")).toBe(false);
