@@ -825,7 +825,7 @@ export async function runOneTurn(p: TurnParams): Promise<{ replyId: string; repl
       onThinking:text=>emit("thinking",{text}),
       onAuditStep: step => { if (auditSteps.length < 64) auditSteps.push(step); },
       beforeProviderRequest:assertTurnSources, beforeAcceptResult:assertTurnSources,
-       captureSourceVersions:()=>Object.fromEntries(sourceVersions),restoreSourceVersions,executionDeadline:p.executionDeadline,
+       captureSourceVersions:()=>Object.fromEntries(sourceVersions),restoreSourceVersions,executionDeadline:p.executionDeadline??p.checkpoint?.executionDeadline??(p.durableFence?undefined:startedAt+110_000),
       ...(p.checkpoint?{checkpoint:p.checkpoint}:{}),
       onTool:(name,agentId)=>{
         emit("tool",{name,agentId});
