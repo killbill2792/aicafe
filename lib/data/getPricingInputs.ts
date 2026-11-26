@@ -4,14 +4,13 @@ import { readRunningCostLines } from "./runningCostLines.server";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { formatInTimeZone } from "date-fns-tz";
 import { subDays } from "date-fns";
-import { evaluateRecipeCost, resolveProductCost, type DailyFacts, type ProductCostSource, type RecipeCostStatus } from "@/lib/calc";
+import { type DailyFacts, type ProductCostSource, type RecipeCostStatus } from "@/lib/calc";
 import type { MenuItemCategoryCode } from "@/lib/constants";
 import { trustedOrderCountForProcessingFeeEstimate } from "@/lib/pos/processingFeeEstimate";
 import {getOwnerConfirmedProcessingFeePlans} from "@/lib/pos/processingFeeEstimate.server";
 import {cardFeesForDays} from "@/lib/metrics/core/fees";
 import { menuPriceSourceBasis, type MenuPriceSourceBasis } from "@/lib/calc/menuPriceSourceBasis";
-import {readMenuComboCostComponents} from "./comboCosts.server";
-import {resolveComboCosts} from "@/lib/calc/comboCostResolution";
+import {readProductCosts} from "./productCosts.server";
 import { timeReader } from "@/lib/perf/timeReader.server";
 import { ordersMayAffectPricing } from "./pricingOrderGate";
 
@@ -83,56 +82,24 @@ export async function getPricingInputs(supabase: SupabaseClient, businessId: str
   if (ordersResult.error) throw ordersResult.error;
   const rawItems = itemsResult.data ?? [];
   const itemIds = rawItems.map((item) => item.id);
-  const comboRows=await measure("comboCosts", () => readMenuComboCostComponents(supabase,businessId,itemIds));
-  // Pricing only loads active products by default, but components of a saved
-  // combo may since have been deactivated: still cost the ingredients honestly.
-  const componentIds=[...new Set(comboRows.map(x=>x.componentItemId))].filter(id=>!itemIds.includes(id));
-  const componentResult=componentIds.length?await supabase.from("cv_menu")
-    .select("id,name,price_cents,category,prep_seconds").like("source_ref","item:%").eq("business_id",businessId).in("id",componentIds):
-    {data:[],error:null};
-  if(componentResult.error)throw componentResult.error;
-  const costRows=[...rawItems,...(componentResult.data??[])];
-  const costIds=[...new Set(costRows.map(item=>item.id))];
-  const [recipesResult, quantitiesResult, fallbackResult] = itemIds.length ? await measure("recipeAndUnits", () => Promise.all([
-    supabase.from("recipe_lines").select("menu_item_id, ingredient_id, quantity").in("menu_item_id", costIds),
-    supabase.rpc("menu_item_quantities_sold", { p_business_id: businessId, p_from: fromDateStr, p_to: todayDateStr }),
-    supabase.from("menu_item_cost_fallbacks").select("menu_item_id, cost_cents, status").eq("business_id", businessId).in("menu_item_id", costIds),
-  ])) : [{ data: [], error: null }, { data: [], error: null }, { data: [], error: null }];
-  if (recipesResult.error) throw recipesResult.error;
-  if (quantitiesResult.error) throw quantitiesResult.error;
-  if (fallbackResult.error) throw fallbackResult.error;
-  const ingredientIds = [...new Set((recipesResult.data ?? []).map((line) => line.ingredient_id))];
-  const priceResult = ingredientIds.length ? await measure("ingredientPrices", async () => await supabase.from("ingredient_prices").select("ingredient_id, cost_per_base_unit_micros, effective_from").in("ingredient_id", ingredientIds).lte("effective_from", todayDateStr).order("effective_from", { ascending: true }).order("recorded_at", { ascending: true }).order("id", { ascending: true })) : { data: [], error: null };
-  if (priceResult.error) throw priceResult.error;
-  const prices: Record<string, number> = {};
-  for (const row of priceResult.data ?? []) prices[row.ingredient_id] = row.cost_per_base_unit_micros;
-  const units = new Map<string, number>((quantitiesResult.data ?? []).map((row: { menu_item_id: string; total_quantity: number | string }) => [row.menu_item_id, Number(row.total_quantity)]));
-  const fallbackByItem = new Map((fallbackResult.data ?? []).map((row) => [row.menu_item_id, row]));
-  const costed=new Map(costRows.map(item=>{
-    const lines=(recipesResult.data??[]).filter(line=>line.menu_item_id===item.id)
-      .map(line=>({ingredientId:line.ingredient_id,quantity:Number(line.quantity)}));
-    const fallback=fallbackByItem.get(item.id);
-    const resolved=resolveProductCost(evaluateRecipeCost(lines,prices),fallback?Number(fallback.cost_cents):null);
-    return [item.id,{costCents:resolved.costCents,status:resolved.status,
-      estimated:resolved.source==="owner_total"&&fallback?.status==="estimated"}] as const;
-  }));
-  const comboCosts=resolveComboCosts(comboRows,costed);
-  const items = rawItems.map((item) => {
-    const lines = (recipesResult.data ?? []).filter((line) => line.menu_item_id === item.id).map((line) => ({ ingredientId: line.ingredient_id, quantity: Number(line.quantity) }));
-    const recipeCost = evaluateRecipeCost(lines, prices);
-    const fallback = fallbackByItem.get(item.id);
-    const cost = resolveProductCost(recipeCost, fallback ? Number(fallback.cost_cents) : null);
-    const combo=comboCosts.get(item.id);
+  const [costs,quantitiesResult]=await measure("recipeAndUnits",()=>Promise.all([
+    readProductCosts(supabase,businessId,itemIds),
+    itemIds.length?supabase.rpc("menu_item_quantities_sold",{p_business_id:businessId,p_from:fromDateStr,p_to:todayDateStr}):Promise.resolve({data:[],error:null}),
+  ]));
+  if(quantitiesResult.error)throw quantitiesResult.error;
+  const units=new Map<string,number>((quantitiesResult.data??[]).map((row:{menu_item_id:string;total_quantity:number|string})=>[row.menu_item_id,Number(row.total_quantity)]));
+  const items=rawItems.map(item=>{
+    const cost=costs.get(item.id)!;
     const category = item.category === "food" ? "FOOD" : item.category === "drink" ? "ESPRESSO_DRINK" : item.category as MenuItemCategoryCode;
     return {
       id: item.id,
       name: item.name,
       category,
       currentPriceCents: item.price_cents ?? 0,
-      productCostCents: (combo?combo.costCents:cost.costCents) ?? 0,
-      productCostStatus: combo?.status??cost.status,
-      productCostSource: combo?"combo" as const:cost.source,
-      productCostQuality: (combo?combo.estimated:cost.source==="owner_total"&&fallback?.status==="estimated") ? "estimated" as const : "actual" as const,
+      productCostCents: cost.costCents ?? 0,
+      productCostStatus: cost.status,
+      productCostSource: cost.source,
+      productCostQuality: cost.estimated ? "estimated" as const : "actual" as const,
       unitsSoldInWindow: units.get(item.id) ?? 0,
     };
   });

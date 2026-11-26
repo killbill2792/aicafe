@@ -1470,3 +1470,79 @@ create view public.cv_running_cost_days with (security_invoker=true) as
 revoke all on public.cv_running_cost_days from public,anon,authenticated;
 grant select on public.cv_running_cost_days to authenticated,service_role;
 comment on view public.cv_running_cost_days is 'Canonical period allocation of recorded receipts on their dates plus unpaid forecast only on active commitment days. Amounts may be fractional cents; sum then round. as_of_date is the receipt evidence cutoff, future day allocations are forecasts. Not additive with cv_running_cost_months.';
+
+-- One current recipe/product calculation per café/item. As-of refers to
+-- ingredient price effective dates, not a reconstructed historical recipe.
+create function public.product_costs_as_of(p_business_id uuid,p_as_of date)
+returns table(menu_item_id uuid,data jsonb)
+language sql stable security invoker set search_path=public as $$
+with items as materialized (
+ select id from public.menu_items where business_id=p_business_id
+), lines as (
+ select l.menu_item_id,l.ingredient_id,l.quantity,l.display_unit,l.display_quantity,l.sort_order,
+ i.name,i.base_unit,i.starter_key,p.source as price_source,
+ l.quantity*p.cost_per_base_unit_micros::numeric/1000000 as cost_cents
+ from items m join public.recipe_lines l on l.menu_item_id=m.id
+ left join public.ingredients i on i.id=l.ingredient_id and i.business_id=p_business_id
+ left join lateral (
+  select p.cost_per_base_unit_micros,p.source from public.ingredient_prices p
+  where p.ingredient_id=i.id and p.effective_from<=p_as_of
+  order by p.effective_from desc,p.recorded_at desc,p.id desc limit 1
+ ) p on true
+), recipes as (
+ select l.menu_item_id,case when count(*) filter(where l.cost_cents is null)>0
+  then 'MISSING_INGREDIENT_COST' else 'READY' end as recipe_status,
+ case when count(*) filter(where l.cost_cents is null)=0 then sum(l.cost_cents) end as recipe_cost,
+ jsonb_agg(jsonb_build_object('ingredientId',l.ingredient_id,'ingredientName',l.name,
+ 'baseUnit',l.base_unit,'starterKey',l.starter_key,'quantity',l.quantity,'displayUnit',l.display_unit,
+ 'displayQuantity',l.display_quantity,'sortOrder',l.sort_order,'costCents',l.cost_cents,'priceSource',l.price_source)
+ order by l.sort_order nulls last,l.ingredient_id) as recipe
+ from lines l group by l.menu_item_id
+), base as materialized (
+ select m.id,coalesce(r.recipe_status,'NO_RECIPE') as recipe_status,r.recipe_cost,
+ coalesce(r.recipe,'[]'::jsonb) as recipe,f.cost_cents as owner_cost,f.status as owner_status,
+ f.source_type as owner_source,
+ case when r.recipe_cost>0 then r.recipe_cost when f.cost_cents>0 then f.cost_cents else r.recipe_cost end as cost,
+ case when r.recipe_cost>0 or f.cost_cents>0 then 'READY' else coalesce(r.recipe_status,'NO_RECIPE') end as cost_status,
+ case when r.recipe_cost>0 then 'recipe' when f.cost_cents>0 then 'owner_total' end as cost_source
+ from items m left join recipes r on r.menu_item_id=m.id
+ left join public.menu_item_cost_fallbacks f on f.business_id=p_business_id and f.menu_item_id=m.id
+), parts as materialized (
+ select c.* from public.menu_combo_components c where c.business_id=p_business_id
+), combos as (
+ select p.combo_item_id,
+ bool_or(p.component_item_id=p.combo_item_id or exists(select 1 from parts q where q.combo_item_id=p.component_item_id)
+  or p.quantity not between 1 and 100 or
+  coalesce(p.buy_in_cost_cents,case when b.cost_status='READY' then b.cost end) is null
+  or coalesce(p.buy_in_cost_cents,case when b.cost_status='READY' then b.cost end)<0) as unknown,
+ sum(p.quantity*coalesce(p.buy_in_cost_cents,case when b.cost_status='READY' then b.cost end)) as cost,
+ bool_or(p.buy_in_cost_cents is null and b.cost_source='owner_total' and b.owner_status='estimated') as estimated
+ from parts p left join base b on b.id=p.component_item_id group by p.combo_item_id
+)
+select b.id,jsonb_build_object(
+ 'costCents',case when c.combo_item_id is not null then case when not c.unknown then c.cost end else b.cost end,
+ 'status',case when c.combo_item_id is not null then case when c.unknown then 'MISSING_INGREDIENT_COST' else 'READY' end else b.cost_status end,
+ 'source',case when c.combo_item_id is not null then 'combo' else b.cost_source end,
+ 'estimated',case when c.combo_item_id is not null then not c.unknown and coalesce(c.estimated,false)
+ else coalesce(b.cost_source='owner_total' and b.owner_status='estimated',false) end,
+ 'recipe',b.recipe,'recipeStatus',case when c.combo_item_id is not null then case when c.unknown then 'MISSING_INGREDIENT_COST' else 'READY' end else b.recipe_status end,
+ 'recipeCostCents',case when c.combo_item_id is null then b.recipe_cost end,
+ 'ownerTotalCostCents',b.owner_cost,'ownerTotalCostStatus',b.owner_status,'ownerTotalCostSource',b.owner_source,
+ 'differenceCents',case when b.owner_cost>0 then b.recipe_cost-b.owner_cost end
+)
+from base b left join combos c on c.combo_item_id=b.id
+$$;
+revoke all on function public.product_costs_as_of(uuid,date) from public,anon;
+grant execute on function public.product_costs_as_of(uuid,date) to authenticated,service_role;
+comment on function public.product_costs_as_of(uuid,date) is 'Current recipe composition and owner fallback valued at the requested ingredient price date. Not historical recipe composition proof. Combo components override stale standalone costs; missing component costs propagate.';
+
+create view public.cv_menu_product_costs with (security_invoker=true) as
+ select b.id as business_id,'app'::text as source,'product-cost:'||p.menu_item_id as source_ref,
+ case when p.data->>'status'<>'READY' then 'open'
+ when (p.data->>'estimated')::boolean then 'estimated' else 'actual' end::text as status,
+ (now() at time zone b.timezone)::date as business_date,p.menu_item_id,
+ (p.data->>'costCents')::numeric as cost_cents,p.data
+ from public.businesses b cross join lateral public.product_costs_as_of(b.id,(now() at time zone b.timezone)::date) p;
+revoke all on public.cv_menu_product_costs from public,anon,authenticated;
+grant select on public.cv_menu_product_costs to authenticated,service_role;
+comment on view public.cv_menu_product_costs is 'Current menu recipe and resolved product costs per item, including archived components, ingredient-price effective date and explicit missing/estimated status. Fractional cents retained until display. Not historical sold-line cost proof.';

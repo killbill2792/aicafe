@@ -1,6 +1,5 @@
 import "server-only";
 import type {SupabaseClient} from "@supabase/supabase-js";
-import { formatInTimeZone } from "date-fns-tz";
 import { getTranslations } from "next-intl/server";
 import { displayPantryStarterName } from "@/lib/menu/pantryStarter";
 import { visiblePricedMenuItems } from "@/lib/menu/pricedMenuVisibility";
@@ -8,11 +7,10 @@ import { readMenuCatalogRows } from "./menuCatalog.server";
 import { isSupabaseConfigured } from "@/lib/supabase/client";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
 import { getActiveBusinessId } from "./getActiveBusinessId";
-import { evaluateRecipeCost, resolveProductCost, type ProductCostSource, type RecipeCostStatus } from "@/lib/calc";
+import { type ProductCostSource, type RecipeCostStatus } from "@/lib/calc";
 import type { MenuItemCategoryCode } from "@/lib/constants";
 import { logQueryError, MENU_LOAD_FAILURE_MESSAGE } from "./queryError";
-import {readMenuComboCostComponents} from "./comboCosts.server";
-import {resolveComboCosts} from "@/lib/calc/comboCostResolution";
+import {readProductCosts} from "./productCosts.server";
 
 export type RecipeLineForEdit = {
   ingredientId: string;
@@ -29,7 +27,6 @@ export type RecipeLineForEdit = {
   costCents: number | null;
   priceSource: "manual" | "receipt" | "statement" | "invoice" | null;
 };
-type RawRecipeLine = Omit<RecipeLineForEdit, "costCents" | "priceSource">;
 
 export type MenuItemForEdit = {
   id: string;
@@ -74,41 +71,17 @@ export async function getMenuItemsForEdit(explicit?:{client:SupabaseClient;busin
   if (!explicit && !user) return { items: [], ingredients: [] };
   const businessId = explicit?.businessId ?? await getActiveBusinessId(user!.id);
 
-  const [catalogRows, ingredientsResult, businessResult] = await Promise.all([
+  const [catalogRows, ingredientsResult] = await Promise.all([
     readMenuCatalogRows(supabase, businessId),
     supabase.from("ingredients").select("id, name, base_unit, starter_key").eq("business_id", businessId).is("archived_at",null).order("name"),
-    supabase.from("businesses").select("timezone").eq("id", businessId).single(),
   ]);
   if (ingredientsResult.error) {
     logQueryError("getMenuItemsForEdit:ingredients", ingredientsResult.error);
     throw new Error(MENU_LOAD_FAILURE_MESSAGE);
   }
-  // The business's timezone has a safe, documented fallback below, so a failure here degrades
-  // gracefully rather than blocking the whole menu — still logged, never silently unnoticed.
-  if (businessResult.error) logQueryError("getMenuItemsForEdit:businesses", businessResult.error);
-  const items = visiblePricedMenuItems(catalogRows);
-  const ingredients = ingredientsResult.data;
-  const business = businessResult.data;
-  const todayDateStr = formatInTimeZone(new Date(), business?.timezone ?? "America/Los_Angeles", "yyyy-MM-dd");
-
-  const itemIds = (items ?? []).map((i) => i.id);
-  const [recipeLinesResult, aggregateCostsResult] =
-    itemIds.length > 0
-      ? await Promise.all([
-          supabase.from("recipe_lines").select("menu_item_id, ingredient_id, quantity, display_unit, display_quantity, sort_order, ingredients(name, base_unit, starter_key)").in("menu_item_id", itemIds),
-          supabase.from("menu_item_cost_fallbacks").select("menu_item_id, cost_cents, source_type, status").eq("business_id", businessId).in("menu_item_id", itemIds),
-        ])
-      : [{ data: [] as never[], error: null }, { data: [] as never[], error: null }];
-  if (recipeLinesResult.error) {
-    logQueryError("getMenuItemsForEdit:recipe_lines", recipeLinesResult.error);
-    throw new Error(MENU_LOAD_FAILURE_MESSAGE);
-  }
-  if (aggregateCostsResult.error) {
-    logQueryError("getMenuItemsForEdit:aggregate_costs", aggregateCostsResult.error);
-    throw new Error(MENU_LOAD_FAILURE_MESSAGE);
-  }
-  const recipeLines = recipeLinesResult.data;
-  const aggregateCostByItem = new Map((aggregateCostsResult.data ?? []).map((row) => [row.menu_item_id, row]));
+  const items=visiblePricedMenuItems(catalogRows);
+  const ingredients=ingredientsResult.data;
+  const costs=await readProductCosts(supabase,businessId,items.map(i=>i.id));
 
   const translate = explicit ? null : await getTranslations("Pantry.starters");
   const localized = (name: string, key: string | null | undefined) =>
@@ -119,66 +92,15 @@ export async function getMenuItemsForEdit(explicit?:{client:SupabaseClient;busin
     baseUnit: i.base_unit as "g" | "ml" | "each",
   }));
 
-  const recipeByItem = new Map<string, RawRecipeLine[]>();
-  for (const row of recipeLines ?? []) {
-    const ing = row.ingredients as unknown as { name: string; base_unit: string; starter_key: string | null } | { name: string; base_unit: string; starter_key: string | null }[] | null;
-    const ingRow = Array.isArray(ing) ? ing[0] : ing;
-    if (!ingRow) continue;
-    const list = recipeByItem.get(row.menu_item_id) ?? [];
-    list.push({
-      ingredientId: row.ingredient_id,
-      ingredientName: localized(ingRow.name, ingRow.starter_key),
-      baseUnit: ingRow.base_unit as "g" | "ml" | "each",
-      quantity: Number(row.quantity),
-      displayUnit: row.display_unit ?? null,
-      displayQuantity: row.display_quantity === null ? null : Number(row.display_quantity),
-      sortOrder: row.sort_order === null ? null : Number(row.sort_order),
-    });
-    recipeByItem.set(row.menu_item_id, list);
-  }
-
-  // Latest priced-as-of-today cost per ingredient — same "ascending order, last write wins"
-  // pattern getMenuItemSnapshots (lib/data/snapshot.server.ts) already uses for the read-only
-  // Menu screen, reused here so the editor's "suggested price" is grounded in the same number.
-  const recipeIngredientIds = [...new Set((recipeLines ?? []).map((r) => r.ingredient_id))];
-  const priceRowsResult =
-    recipeIngredientIds.length > 0
-      ? await supabase
-          .from("ingredient_prices")
-          .select("ingredient_id, effective_from, cost_per_base_unit_micros, source")
-          .in("ingredient_id", recipeIngredientIds)
-          .lte("effective_from", todayDateStr)
-          .order("effective_from", { ascending: true }).order("recorded_at", { ascending: true }).order("id", { ascending: true })
-      : { data: [] as never[], error: null };
-  if (priceRowsResult.error) {
-    logQueryError("getMenuItemsForEdit:ingredient_prices", priceRowsResult.error);
-    throw new Error(MENU_LOAD_FAILURE_MESSAGE);
-  }
-  const priceRows = priceRowsResult.data;
-  const latestPriceMicros: Record<string, number> = {};
-  const latestPriceSource: Record<string, RecipeLineForEdit["priceSource"]> = {};
-  for (const row of priceRows ?? []) {
-    latestPriceMicros[row.ingredient_id] = row.cost_per_base_unit_micros;
-    latestPriceSource[row.ingredient_id] = row.source as RecipeLineForEdit["priceSource"];
-  }
-
-  const menuItems: MenuItemForEdit[] = (items ?? []).map((item) => {
-    const recipe = (recipeByItem.get(item.id) ?? []).sort((a, b) =>
-      (a.sortOrder ?? Number.MAX_SAFE_INTEGER) - (b.sortOrder ?? Number.MAX_SAFE_INTEGER)
-      || a.ingredientId.localeCompare(b.ingredientId, "en"));
-    const recipeCost = evaluateRecipeCost(
-      recipe.map((r) => ({ ingredientId: r.ingredientId, quantity: r.quantity })),
-      latestPriceMicros,
-    );
-    const aggregate = aggregateCostByItem.get(item.id);
-    const cost = resolveProductCost(recipeCost, aggregate ? Number(aggregate.cost_cents) : null);
-    const recipeWithCosts = recipe.map((line) => ({
-      ...line,
-      costCents: latestPriceMicros[line.ingredientId] === undefined
-        ? null
-        : (line.quantity * latestPriceMicros[line.ingredientId]) / 1_000_000,
-      priceSource: latestPriceSource[line.ingredientId] ?? null,
-    }));
+  const menuItems:MenuItemForEdit[]=items.map(item=>{
+    const cost=costs.get(item.id)!;
+    const recipeWithCosts:RecipeLineForEdit[]=cost.recipe.flatMap(line=>
+      line.ingredientName&&line.baseUnit?[{
+        ingredientId:line.ingredientId,ingredientName:localized(line.ingredientName,line.starterKey),
+        baseUnit:line.baseUnit,quantity:line.quantity,displayUnit:line.displayUnit,
+        displayQuantity:line.displayQuantity,sortOrder:line.sortOrder,costCents:line.costCents,
+        priceSource:line.priceSource,
+      }]:[]);
     return {
       id: item.id,
       name: item.name,
@@ -196,30 +118,17 @@ export async function getMenuItemsForEdit(explicit?:{client:SupabaseClient;busin
       ingredientsCostCents: cost.costCents,
       costStatus: cost.status,
       costSource: cost.source,
-      recipeCostCents: recipeCost.costCents,
-      recipeCostStatus: recipeCost.status,
-      ownerTotalCostCents: aggregate ? Number(aggregate.cost_cents) : null,
-      ownerTotalCostStatus: aggregate ? aggregate.status as "confirmed" | "estimated" : null,
-      ownerTotalCostSource: aggregate ? aggregate.source_type as "owner_manual" | "imported" : null,
+      recipeCostCents: cost.recipeCostCents,
+      recipeCostStatus: cost.recipeStatus,
+      ownerTotalCostCents: cost.ownerTotalCostCents,
+      ownerTotalCostStatus: cost.ownerTotalCostStatus,
+      ownerTotalCostSource: cost.ownerTotalCostSource,
       costDifferenceCents: cost.differenceCents,
-      missingCostIngredientNames: recipe.filter((line) => recipeCost.missingIngredientIds.includes(line.ingredientId)).map((line) => line.ingredientName),
+      comboCostEstimated:cost.source==="combo"?cost.estimated:undefined,
+      missingCostIngredientNames: recipeWithCosts.filter(line=>line.costCents===null).map(line=>line.ingredientName),
     };
   });
 
 
-  const comboParts=await readMenuComboCostComponents(supabase,businessId,menuItems.map(item=>item.id));
-  const baseCostById=new Map(menuItems.map(item=>[item.id,{
-    costCents:item.ingredientsCostCents,status:item.costStatus,
-    estimated:item.costSource==="owner_total"&&item.ownerTotalCostStatus==="estimated",
-  }]));
-  const combos=resolveComboCosts(comboParts,baseCostById);
-  // Membership is authoritative for a combo: never blend its cost with a stale
-  // aggregate fallback or present component costs as a recipe ingredient cost.
-  const withComboCosts=menuItems.map(item=>{
-    const combo=combos.get(item.id);
-    return combo?{...item,ingredientsCostCents:combo.costCents,costStatus:combo.status,
-      costSource:"combo" as const,comboCostEstimated:combo.estimated,
-      recipeCostCents:null,recipeCostStatus:combo.status}:item;
-  });
-  return { items: withComboCosts, ingredients: ingredientOptions };
+  return {items:menuItems,ingredients:ingredientOptions};
 }

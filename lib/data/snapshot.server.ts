@@ -1,14 +1,13 @@
 import "server-only";
 import {readDailyFactRows} from "./dailyFacts.server";
 import { formatInTimeZone } from "date-fns-tz";
-import { buildDayWindows, evaluateRecipeCost, resolveProductCost } from "@/lib/calc";
+import { buildDayWindows } from "@/lib/calc";
 import { runningCostMonthlyAmount, rowToDailyFacts } from "./runningCostCatalog";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { BusinessSnapshot, MenuItemSnapshot, RunningCostLine, StaffShift } from "./types";
 import { normalizeOpenHours } from "@/lib/business/openHours";
 import { readPeriodItemSales } from "./periodItemSales.server";
-import {readMenuComboCostComponents} from "./comboCosts.server";
-import {resolveComboCosts} from "@/lib/calc/comboCostResolution";
+import {readProductCosts} from "./productCosts.server";
 import {getOwnerConfirmedProcessingFeePlans} from "@/lib/pos/processingFeeEstimate.server";
 import type {OwnerFeePlan} from "@/lib/metrics/core/fees";
 import {shiftCafeDate} from "@/lib/metrics/core/clock";
@@ -80,7 +79,7 @@ export async function getBusinessSnapshotFromDb(
       timeReader("Snapshot","priorRunningCosts",()=>readRunningCostLines(supabase,businessId,prevMonthStart,prevMonthEnd,Boolean(asOfDate))),
       timeReader("Snapshot","recoveryOrder",async()=>supabase.from("recovery_order")
         .select("bucket_code, position").eq("business_id",businessId).order("position",{ascending:true})),
-      timeReader("Snapshot","menuCosts",()=>getMenuItemSnapshots(supabase,businessId,todayDateStr)),
+      timeReader("Snapshot","menuCosts",()=>getMenuItemSnapshots(supabase,businessId,todayDateStr,asOfDate)),
       timeReader("Snapshot","periodItemSales",()=>readPeriodItemSales(supabase,businessId,{from:periodFrom,to:todayDateStr})),
       timeReader("Snapshot","staffShifts",()=>getStaffShiftsToday(supabase,businessId,todayDateStr)),
       timeReader("Snapshot","alerts",()=>snapshotPaged("alerts",
@@ -206,6 +205,7 @@ async function getMenuItemSnapshots(
   supabase: SupabaseClient,
   businessId: string,
   todayDateStr: string,
+  asOfDate?:string,
 ): Promise<MenuItemSnapshot[]> {
   const {data:items}=await snapshotPaged("menu_items",
     (start,end)=>supabase.from("cv_menu")
@@ -219,8 +219,6 @@ async function getMenuItemSnapshots(
   // Source IDs remain scoped to this café and batch sizes bound URL length.
   // Page each batch by immutable source identity; any incomplete source fails
   // closed, never as a fabricated zero quantity or missing recipe ingredient.
-  const recipeLines:Array<{menu_item_id:string;ingredient_id:string;quantity:number}>=[];
-  const aggregateCosts:Array<{menu_item_id:string;cost_cents:number|null;status:string}>=[];
   const {data:quantitySoldRows}=await snapshotPaged<{
     menu_item_id:string;total_quantity:number|string
   }>("menu_item_quantities_sold",async(start,end)=>{
@@ -237,106 +235,22 @@ async function getMenuItemSnapshots(
     !Number.isFinite(Number(row.total_quantity))||Number(row.total_quantity)<0||
     Number(row.total_quantity)>Number.MAX_SAFE_INTEGER))
     throw new Error("snapshot_product_sales_mapping_unverified");
-  for(let i=0;i<itemIds.length;i+=100){
-    const batch=itemIds.slice(i,i+100);
-    const [recipes,costs]=await Promise.all([
-      snapshotPaged("recipe_lines",(start,end)=>supabase.from("recipe_lines")
-        .select("menu_item_id,ingredient_id,quantity",{count:"exact"})
-        .in("menu_item_id",batch).order("menu_item_id",{ascending:true})
-        .order("ingredient_id",{ascending:true}).range(start,end),
-        row=>row.menu_item_id+":"+row.ingredient_id),
-      snapshotPaged("menu_item_cost_fallbacks",(start,end)=>supabase.from("menu_item_cost_fallbacks")
-        .select("menu_item_id,cost_cents,status",{count:"exact"})
-        .eq("business_id",businessId).in("menu_item_id",batch)
-        .order("menu_item_id",{ascending:true}).range(start,end),
-        row=>row.menu_item_id),
-    ]);
-    recipeLines.push(...recipes.data);
-    aggregateCosts.push(...costs.data);
-  }
-
-  const ingredientIds=[...new Set(recipeLines.map(row=>row.ingredient_id))];
-  const priceRows:Array<{id:string;ingredient_id:string;effective_from:string;
-    recorded_at:string;cost_per_base_unit_micros:number}>=[];
-  for(let i=0;i<ingredientIds.length;i+=100){
-    const batch=ingredientIds.slice(i,i+100);
-    const page=await snapshotPaged("ingredient_prices",(start,end)=>
-      supabase.from("ingredient_prices")
-       .select("id,ingredient_id,effective_from,recorded_at,cost_per_base_unit_micros",
-         {count:"exact"})
-       .in("ingredient_id",batch).lte("effective_from",todayDateStr)
-       .order("id",{ascending:true}).range(start,end),row=>row.id);
-    priceRows.push(...page.data);
-  }
-  // Preserve prior canonical effective-date, recording-date and ID precedence
-  // across pages from disjoint ingredient batches.
-  priceRows.sort((a,b)=>a.effective_from.localeCompare(b.effective_from)||
-    a.recorded_at.localeCompare(b.recorded_at)||a.id.localeCompare(b.id));
-
-  const latestPriceMicros: Record<string, number> = {};
-  for (const row of priceRows ?? []) {
-    latestPriceMicros[row.ingredient_id] = row.cost_per_base_unit_micros; // ascending order -> last write wins
-  }
-
-  const quantityByItem: Record<string, number> = {};
-  for (const row of quantitySoldRows ?? []) {
-    quantityByItem[row.menu_item_id] = Number(row.total_quantity);
-  }
-  const aggregateByItem = new Map((aggregateCosts ?? []).map((row) => [row.menu_item_id, row]));
-
-
-  const baseCosts=new Map(items.map(item=>{
-    const lines=(recipeLines??[]).filter(r=>r.menu_item_id===item.id)
-      .map(r=>({ingredientId:r.ingredient_id,quantity:Number(r.quantity)}));
-    const aggregate=aggregateByItem.get(item.id);
-    const resolved=resolveProductCost(evaluateRecipeCost(lines,latestPriceMicros),aggregate?Number(aggregate.cost_cents):null);
-    return[item.id,{
-      costCents:resolved.costCents,status:resolved.status,
-      estimated:resolved.source==="owner_total"&&aggregate?.status==="estimated",
-    }] as const;
-  }));
-  const comboRows=await readMenuComboCostComponents(supabase,businessId,itemIds);
-  const comboCosts=resolveComboCosts(comboRows,baseCosts);
-
-  return items.map((item) => {
-    const lines = (recipeLines ?? [])
-      .filter((r) => r.menu_item_id === item.id)
-      .map((r) => ({ ingredientId: r.ingredient_id, quantity: Number(r.quantity) }));
-    const recipeCost = evaluateRecipeCost(lines, latestPriceMicros);
-    const aggregate = aggregateByItem.get(item.id);
-    const resolvedCost = resolveProductCost(recipeCost, aggregate ? Number(aggregate.cost_cents) : null);
-    const combo=comboCosts.get(item.id);
-    const currentStatus=combo?.status??resolvedCost.status;
-    const ingredientsCentsToday = (combo?combo.costCents:resolvedCost.costCents) ?? 0;
-    const costQuality =
-      currentStatus !== "READY"
-        ? null
-        : combo?.estimated || (!combo && resolvedCost.source === "owner_total" && aggregate?.status === "estimated")
-          ? "estimated" as const
-          : "actual" as const;
+  const costs=await readProductCosts(supabase,businessId,itemIds,asOfDate);
+  const quantityByItem=new Map(quantitySoldRows.map(r=>[r.menu_item_id,Number(r.total_quantity)]));
+  return items.map(item=>{
+    const cost=costs.get(item.id)!;
     return {
-      id: item.id,
-      name: item.name,
-      priceCents: item.price_cents ?? 0,
-      prepSeconds: item.prep_seconds,
-      category: (item.category === "food" ? "food" : "drink") as "drink" | "food",
-      active: item.is_active,
-      ingredientsCentsToday,
-      // Lines with no priced ingredient cost 0 by default, not because the drink is actually
-      // free to make — flag it as incomplete so the UI doesn't show a false 100% margin.
-      hasRecipe: lines.length > 0 || Boolean(combo),
-      costStatus: currentStatus,
-      costSource: combo ? "combo" : resolvedCost.source,
-      recipeCostCents: combo ? null : recipeCost.costCents,
-      recipeCostStatus: combo?.status ?? recipeCost.status,
-      ownerTotalCostCents: resolvedCost.ownerTotalCostCents,
-      costDifferenceCents: resolvedCost.differenceCents,
-      costQuality,
-      quantitySoldLast28Days: quantityByItem[item.id] ?? 0,
+      id:item.id,name:item.name,priceCents:item.price_cents??0,prepSeconds:item.prep_seconds,
+      category:(item.category==="food"?"food":"drink") as "drink"|"food",active:item.is_active,
+      ingredientsCentsToday:cost.costCents??0,hasRecipe:cost.recipe.length>0||cost.source==="combo",
+      costStatus:cost.status,costSource:cost.source,recipeCostCents:cost.recipeCostCents,
+      recipeCostStatus:cost.recipeStatus,ownerTotalCostCents:cost.ownerTotalCostCents,
+      costDifferenceCents:cost.differenceCents,
+      costQuality:cost.status!=="READY"?null:cost.estimated?"estimated":"actual",
+      quantitySoldLast28Days:quantityByItem.get(item.id)??0,
     };
   });
 }
-
 
 /** Read-only historical snapshot for a café-scoped arbitrary range. Never call
  * materializeScheduledShifts, generateAlerts, or any snapshot write path here.

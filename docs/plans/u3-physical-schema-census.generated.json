@@ -4099,6 +4099,54 @@
    "foreign_keys": []
   },
   {
+   "relation": "cv_menu_product_costs",
+   "kind": "view",
+   "rls": false,
+   "columns": [
+    [
+     "business_id",
+     "uuid",
+     false
+    ],
+    [
+     "source",
+     "text",
+     false
+    ],
+    [
+     "source_ref",
+     "text",
+     false
+    ],
+    [
+     "status",
+     "text",
+     false
+    ],
+    [
+     "business_date",
+     "date",
+     false
+    ],
+    [
+     "menu_item_id",
+     "uuid",
+     false
+    ],
+    [
+     "cost_cents",
+     "numeric",
+     false
+    ],
+    [
+     "data",
+     "jsonb",
+     false
+    ]
+   ],
+   "foreign_keys": []
+  },
+  {
    "rls": false,
    "kind": "view",
    "columns": [

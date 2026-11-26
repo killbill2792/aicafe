@@ -5,13 +5,13 @@ vi.mock("server-only", () => ({}));
 const deps = vi.hoisted(() => ({
   readDays: vi.fn(),
   runningCosts: vi.fn(),
-  readCombos: vi.fn(),
+  readCosts: vi.fn(),
   feePlans: vi.fn(),
   timed: vi.fn(async (_page: string, _stage: string, read: () => Promise<unknown>) => read()),
 }));
 vi.mock("./runningCostLines.server", () => ({ readRunningCostLines: deps.runningCosts }));
 vi.mock("./dailyFacts.server", () => ({ readDailyFacts: deps.readDays }));
-vi.mock("./comboCosts.server", () => ({ readMenuComboCostComponents: deps.readCombos }));
+vi.mock("./productCosts.server", () => ({ readProductCosts: deps.readCosts }));
 vi.mock("@/lib/pos/processingFeeEstimate.server", () => ({
   getOwnerConfirmedProcessingFeePlans: deps.feePlans,
 }));
@@ -59,7 +59,7 @@ describe("getPricingInputs Home projection", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     deps.runningCosts.mockResolvedValue([]);
-    deps.readCombos.mockResolvedValue([]);
+    deps.readCosts.mockResolvedValue(new Map([["latte",{costCents:123,status:"READY",source:"recipe",estimated:false,recipe:[]}]]));
     deps.feePlans.mockResolvedValue([]);
   });
 
@@ -68,6 +68,7 @@ describe("getPricingInputs Home projection", () => {
     deps.runningCosts.mockResolvedValue([{categoryCode:"rent",amountCents:12345,isMissing:false,isEstimate:true,amountSource:"mixed"}]);
     const result=await getPricingInputs(dbWithOrders([]),"cafe-a");
     expect(result.business.monthlyOperatingCostCents).toBe(12345);
+    expect(result.items[0]).toMatchObject({productCostCents:123,productCostStatus:"READY",productCostSource:"recipe"});
     expect(result.menuPriceBasis.runningStatus).toBe("estimated");
     expect(deps.runningCosts).toHaveBeenCalledOnce();
   });

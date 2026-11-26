@@ -28,7 +28,7 @@ function mockDb(options:{sold?:Array<{menu_item_id:string;total_quantity:number|
   };
   const db={from(table:string){
     reads.push(table);
-    let records=data[table]??[];
+    let records=table==="cv_menu_product_costs"?(data.cv_menu??[]).map(item=>({menu_item_id:item.id,data:{costCents:null,status:"NO_RECIPE",source:null,estimated:false,recipe:[],recipeStatus:"NO_RECIPE",recipeCostCents:null,ownerTotalCostCents:null,differenceCents:null}})):data[table]??[];
     let monthStart="",asOf="";
     const payload={data:records,error:null,count:records.length};
     let range:{start:number;end:number}|null=null;

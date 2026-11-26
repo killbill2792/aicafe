@@ -58,6 +58,13 @@ VALUES(:'a',current_date-1+time '08:00',current_date-1+time '11:00',1000,'connec
 INSERT INTO public.processing_fee_rate_plans(business_id,effective_from,effective_to,processor_label,processed_sales_share_bps,processed_transaction_share_bps,rules)
 VALUES(:'a',current_date-1,current_date,'Synthetic plan',10000,10000,'[{"percentageBps":200,"fixedFeeCents":10,"salesMixBps":10000,"transactionMixBps":10000}]');
 UPDATE public.daily_rollups SET card_fees_status='missing',card_fees_cents=0 WHERE business_id=:'a' AND business_date=current_date-1;
+-- Current recipe cost wins over the owner aggregate; future ingredient prices do not.
+INSERT INTO public.ingredients(id,business_id,name,base_unit) VALUES(gen_random_uuid(),:'a','Test milk','ml') RETURNING id AS ingredient \gset
+INSERT INTO public.recipe_lines(menu_item_id,ingredient_id,quantity) VALUES(:'item',:'ingredient',100);
+INSERT INTO public.ingredient_prices(ingredient_id,effective_from,cost_per_base_unit_micros,source)
+VALUES(:'ingredient',current_date-1,250000,'manual'),(:'ingredient',current_date+1,9999999,'manual');
+INSERT INTO public.menu_item_cost_fallbacks(business_id,menu_item_id,cost_cents,source_type,status)
+VALUES(:'a',:'item',123,'owner_manual','confirmed');
 SET LOCAL ROLE authenticated;
 SELECT set_config('request.jwt.claim.sub',:'oa',true),
  set_config('request.jwt.claim.role','authenticated',true),
@@ -83,6 +90,11 @@ SELECT (
  AND (SELECT (data->>'price_cents')::bigint FROM public.cv_menu WHERE business_id=:'a' AND source_ref='item:'||:'item')=600
  AND (SELECT total_quantity FROM public.menu_item_quantities_sold(:'a',current_date-1,current_date-1) WHERE menu_item_id=:'item')=2
  AND (SELECT quantity=2 AND net_sales_cents=1200 FROM public.cv_item_sales_daily WHERE business_id=:'a' AND menu_item_id=:'item')
+ AND (SELECT cost_cents=25 AND data->>'source'='recipe' AND (data->>'ownerTotalCostCents')::numeric=123
+ FROM public.cv_menu_product_costs WHERE business_id=:'a' AND menu_item_id=:'item')
+ AND (SELECT (data->>'costCents')::numeric=123 AND data->>'source'='owner_total'
+ FROM public.product_costs_as_of(:'a',current_date-2) WHERE menu_item_id=:'item')
+ AND (SELECT count(*) FROM public.cv_menu_product_costs WHERE business_id=:'b')=0
  AND (SELECT count(*) FROM public.cv_item_sales_daily WHERE business_id=:'b')=0
  AND (SELECT count(*) FROM public.cv_item_sales WHERE business_id=:'b')=0
  AND (SELECT count(*) FROM public.cv_orders WHERE business_id=:'b')=0
