@@ -7,6 +7,7 @@ const hooks = vi.hoisted(() => ({
   configured: false,
   realtimeChanged: null as null | (() => void),
   realtimeStatus: null as null | ((status: string) => void),
+  realtimeToken: null as null | string,
 }));
 vi.mock("react", () => ({
   useEffect: (effect: () => void | (() => void)) => {
@@ -30,6 +31,8 @@ vi.mock("@/lib/supabase/client", () => {
   return {
     isSupabaseConfigured: () => hooks.configured,
     createBrowserSupabaseClient: () => ({
+      auth: { getSession: async () => ({ data: { session: { access_token: "owner-token" } } }) },
+      realtime: { setAuth: (token: string) => { hooks.realtimeToken = token; } },
       channel: () => channel,
       removeChannel: async () => undefined,
     }),
@@ -58,6 +61,7 @@ beforeEach(() => {
   hooks.configured = false;
   hooks.realtimeChanged = null;
   hooks.realtimeStatus = null;
+  hooks.realtimeToken = null;
 });
 afterEach(() => {
   for (const cleanup of hooks.cleanups) cleanup();
@@ -113,6 +117,8 @@ describe("useAgentJobWatcher resume and recovery", () => {
     const onSettled = settle();
     useAgentJobWatcher(thread, true, onSettled);
     await vi.advanceTimersByTimeAsync(0);
+    // The signed-in token is attached before the subscription is made, so Realtime does not join as anon.
+    expect(hooks.realtimeToken).toBe("owner-token");
     hooks.realtimeStatus?.("SUBSCRIBED");
     await vi.advanceTimersByTimeAsync(0);
     const beforeStale = calls;

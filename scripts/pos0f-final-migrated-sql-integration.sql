@@ -319,6 +319,24 @@ BEGIN
     AND NOT EXISTS (SELECT 1 FROM public.toast_records_for(a,null,null)
       WHERE data->>'guid' LIKE '%diagnostic-poison'),
     'Shared reader returns current A records once and refuses foreign/diagnostic-only rows');
+  -- Record-family pushdown returns exactly the rows the unfiltered reader returns for those families, nothing else.
+  PERFORM pg_temp.pos0f_assert(
+    (SELECT count(*) FROM public.toast_records_for(a,null,null,ARRAY['check']))
+      =(SELECT count(*) FROM public.toast_records_for(a,null,null) WHERE record_type='check'),
+    'pushdown check count');
+  PERFORM pg_temp.pos0f_assert(
+    (SELECT count(*) FROM public.toast_records_for(a,null,null,ARRAY['payment','item']))
+      =(SELECT count(*) FROM public.toast_records_for(a,null,null) WHERE record_type IN ('payment','item')),
+    'pushdown payment/item count');
+  PERFORM pg_temp.pos0f_assert(
+    (SELECT count(*) FROM public.toast_records_for(a,null,null,ARRAY['stock/v1/inventory']))
+      =(SELECT count(*) FROM public.toast_records_for(a,null,null) WHERE record_type='stock/v1/inventory'),
+    'pushdown nonorder count');
+  PERFORM pg_temp.pos0f_assert(
+    NOT EXISTS (SELECT 1 FROM public.toast_records_for(a,null,null,ARRAY['check']) WHERE record_type<>'check')
+    AND (SELECT count(*) FROM public.toast_records_for(a,null,null,ARRAY['order']))
+      =(SELECT count(*) FROM public.toast_records_for(a,null,null) WHERE record_type='order'),
+    'pushdown exclusivity and order family');
 
   result := public.ai_query_view(a,'cv_cash',null::text[],'[]'::jsonb,
     null::text[],'[{"fn":"sum","column":"amount_cents"}]'::jsonb,
