@@ -14,6 +14,15 @@ const done={type:"response.completed",response:{model:"m",usage:{input_tokens:1,
 const call=(name:string,args:unknown,id:string)=>({type:"response.output_item.done",item:{type:"function_call",name,call_id:id,arguments:JSON.stringify(args)}});
 
 describe("research turn action tools",()=>{
+  it("does not expose or dispatch any retired data-reading tool",async()=>{
+    const registry=await vi.importActual<typeof import("@/lib/ai/agent/tools")>("@/lib/ai/agent/tools");
+    const retained=new Set(["get_events","get_nearby_events","get_schedule","get_week_schedule","get_staff_messages"]);
+    expect(registry.agentToolDefinitions.filter(t=>t.name.startsWith("get_")).every(t=>retained.has(t.name))).toBe(true);
+    for(const name of ["query_data","describe_data","get_sales","get_inventory","get_attention_items","get_price_monitor_status","get_staff_coordination_cases","get_supervisor_permissions","milk_swap_price","simulate_scenario","get_business_hours"]){
+      expect(registry.agentToolDefinitions.map(t=>t.name)).not.toContain(name);
+      await expect(registry.executeAgentTool(name,{},{} as never)).rejects.toMatchObject({code:"not_supported"});
+    }
+  });
   it("offers only action tools, not reads or the old link tool",()=>{
     for(const n of ["propose_price_change","propose_gmail_action","propose_staff_question","draft_week_schedule","ask_owner"])expect(isResearchActionTool(n)).toBe(true);
     for(const n of ["get_sales","query_data","web_search","present_response","get_supervisor_permissions"])expect(isResearchActionTool(n)).toBe(false);

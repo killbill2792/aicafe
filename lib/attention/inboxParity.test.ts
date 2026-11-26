@@ -66,7 +66,6 @@ vi.mock("@/lib/supabase/admin", () => ({ createAdminSupabaseClient: () => ({
 }) }));
 
 import { getAttentionItems, readCafeNeedsYou, readInbox } from "./getAttentionItems.server";
-import { attentionTools } from "@/lib/ai/agent/tools/attention";
 import { GET as teamAlerts } from "@/app/api/cron/team-alerts/route";
 import { createOwnerScopedCafeTools } from "@/lib/ai/cafeTools.server";
 
@@ -80,17 +79,15 @@ beforeEach(() => {
 
 afterEach(() => vi.useRealTimers());
 describe("one Needs-you count for the same café on every surface", () => {
-  it("Inbox, Home, chat tool, morning brief and WhatsApp alert all agree", async () => {
+  it("Inbox, Home, morning brief and WhatsApp alert all agree", async () => {
     const scope = { client: {} as never, businessId: "cafe" };
     const inbox = await readInbox({ locale: "en" });
     const home = await getAttentionItems({ locale: "en" });
-    const chat = await attentionTools.get_attention_items.execute({}, { locale: "en", asOf: TODAY } as never);
     const cron = await readCafeNeedsYou(scope); // what the morning brief and the WhatsApp alert read
     const ids = inbox.items.map((item) => item.id).sort();
     // The resurfaced and the computed review count; the past-day plan does not.
     expect(ids).toEqual(["money:1", "price:latte:500:560", "price:mocha:450:520"]);
     expect(home.map((item) => item.id).sort()).toEqual(ids);
-    expect(chat.total).toBe(3);
     expect(cron.count).toBe(3);
     // The crons read through the verified café scope, never a browser session.
     expect(fixture.readCalls.at(-1)).toEqual(["cafe", scope]);
