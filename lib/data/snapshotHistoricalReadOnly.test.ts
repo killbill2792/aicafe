@@ -16,6 +16,7 @@ vi.mock("@/lib/pos/processingFeeEstimate.server",()=>({
   getOwnerConfirmedProcessingFeePlans:spies.plans,
 }));
 import {getBusinessSnapshotFromDb} from "./snapshot.server";
+import {runningCostsForPeriodCents,type CategoryMonthlyAmount} from "@/lib/calc";
 
 const cafeId="00000000-0000-4000-8000-000000000001";
 function readOnlyClient(expenseCount=0){
@@ -34,15 +35,15 @@ function readOnlyClient(expenseCount=0){
       staff_tax_source:"recorded",sales_data_status:"actual",
       card_fees_cents:300,card_fees_status:"actual",voids_cents:0,
     })),
-    recurring_costs:[{category_code:"rent",amount_cents:300000,is_estimate:false,
+    recurring_costs:[{id:"rent-bill",frequency:"monthly",category_code:"rent",amount_cents:300000,is_estimate:false,
       active_from:"2026-01-01",active_to:null}],
     expenses:Array.from({length:expenseCount},(_,i)=>({id:"expense-"+i,category_code:"rent",
-      amount_cents:100,status:"actual",spent_on:"2026-09-30"})),
+      amount_cents:100,status:"actual",spent_on:"2026-09-30",recurring_cost_id:"rent-bill"})),
   };
   const client={
     from(table:string){
       tables.push(table);
-      const result={data:values[table]??[],error:null};
+      const result={data:values[table]??[],error:null,count:(values[table]??[]).length};
       let first=0,last=Number.MAX_SAFE_INTEGER;
       const q={
         select(){return q;},
@@ -92,10 +93,17 @@ describe("historical snapshot is genuinely read-only",()=>{
     spies.plans.mockResolvedValue([]);
     const {client,tables}=readOnlyClient(1001);
     const snapshot=await getBusinessSnapshotFromDb(client,cafeId,{from:"2026-09-30",to:"2026-10-01"});
-    const history=(snapshot as typeof snapshot&{historicalPeriod:{monthlyAmounts:Array<{
-      monthKey:string;categoryCode:string;amountCents:number}>}}).historicalPeriod;
-    expect(history.monthlyAmounts.find(row=>row.monthKey==="2026-09"&&row.categoryCode==="rent")?.amountCents)
-      .toBe(100100);
+    const historical=(snapshot as typeof snapshot & {historicalPeriod:{monthlyAmounts:CategoryMonthlyAmount[]}}).historicalPeriod;
+    const rent=historical.monthlyAmounts.find(row=>row.monthKey==="2026-09"&&row.categoryCode==="rent")!;
+    // 1,001 actual receipts must survive paging; the unpaid portion of the
+    // obligation remains separate estimated evidence, not actual payment.
+    expect(rent).toMatchObject({recordedExpenseCents:100100,recurringEstimateCents:199900,
+      amountCents:300000,isEstimate:true,possibleAdditionalForecastCents:0});
+    expect(rent.recordedExpenses).toHaveLength(1001);
+    expect(rent.recordedExpenses?.every(row=>row.status==="actual")).toBe(true);
+    expect(rent.recordedExpenses?.reduce((n,row)=>n+row.amountCents,0)).toBe(100100);
+    expect(runningCostsForPeriodCents([rent],"2026-09-30","2026-09-30")).toBeCloseTo(100100+199900/30);
+    expect(runningCostsForPeriodCents([rent],"2026-09-01","2026-09-01")).toBeCloseTo(199900/30);
     expect(tables.filter(name=>name==="expenses")).toHaveLength(2);
   });
 });

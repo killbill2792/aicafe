@@ -225,6 +225,19 @@ BEGIN
   null,null,d,d,null,100);
  perform pg_temp.assert_true(octet_length((response->'rows')::text)<=6000,
   'database output byte cap');
+ -- #564: one-pass retained source keeps full denominator, not just page rows.
+ response:=public.ai_query_view(b,'cv_toast_records',array['source_ref'],
+  '[{"column":"record_type","op":"=","value":"item"}]'::jsonb,
+  null,null,prior,d,null,1);
+ perform pg_temp.assert_true(
+  (response->>'sourceCount')::bigint=(
+   select count(*) from public.toast_records_for(b,prior,d)
+   where record_type='item' and business_date between prior and d)
+  and (response->'sourceMix'->>'toast')::bigint=(
+   select count(*) from public.toast_records_for(b,prior,d)
+   where record_type='item' and business_date between prior and d)
+  and response->>'truncated'='true',
+  'one-pass retained reader keeps complete scoped denominator behind a one-row page');
 
  -- PR2: the Toast fixture's two business dates prove exact decimal cents.
  with priced as (

@@ -10,17 +10,19 @@ export function dayContributionCents(day: DailyFacts): number | null {
 }
 
 export function recoveryBuckets(snapshot: BusinessSnapshot): RecoveryBucket[] {
-  return snapshot.recoveryOrder
-    .map((code) => snapshot.runningCostLines.find((l) => l.categoryCode === code))
-    .filter((line): line is BusinessSnapshot["runningCostLines"][number] => Boolean(line) && line!.amountCents > 0)
-    .map((line) => ({ code: line.categoryCode, amountCents: line.amountCents, isEstimate: line.isEstimate }));
+  // The configured recovery order sequences the evidence, never filters out
+  // valid costs. Use the same rule as the historical calendar.
+  return recoveryBucketsFromAmounts(snapshot.runningCostLines.map(line=>({
+    categoryCode:line.categoryCode,monthKey:snapshot.monthKey,amountCents:line.amountCents,
+    isEstimate:line.isEstimate,isMissing:line.isMissing,
+  })),snapshot.recoveryOrder);
 }
 
 /** Same bucket-building rule as `recoveryBuckets`, but from an arbitrary month's `categoryAmounts`
  * (see `getMonthCalendar`) instead of the live snapshot — so a past month's calendar sequences its
  * own bills, not whichever bills happen to be active today. */
 export function recoveryBucketsFromAmounts(categoryAmounts: CategoryMonthlyAmount[], recoveryOrder: string[]): RecoveryBucket[] {
-  return recoveryOrder
+  return [...new Set([...recoveryOrder,...categoryAmounts.map(c=>c.categoryCode)])]
     .map((code) => categoryAmounts.find((c) => c.categoryCode === code))
     .filter((c): c is CategoryMonthlyAmount => Boolean(c) && c!.amountCents > 0)
     .map((c) => ({ code: c.categoryCode, amountCents: c.amountCents, isEstimate: c.isEstimate }));

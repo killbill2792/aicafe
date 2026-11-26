@@ -93,3 +93,20 @@ describe("allocateIntegerCentsByCategory", () => {
     expect(allocated.get("water")).toBe(500);
   });
 });
+
+describe("recurring obligations respect their active dates in elapsed periods", () => {
+  const base = { categoryCode: "rent", monthKey: "2026-11", amountCents: 300_000, isEstimate: true, isMissing: false,
+    recordedExpenses: [] as Array<{date:string;amountCents:number}>, recordedExpenseCents: 0, possibleAdditionalForecastCents: 0, recurringEstimateCents: 300_000 };
+  it("charges nothing before a bill starts, and its daily share once it has started", () => {
+    const c = { ...base, recurringWindows: [{ from: "2026-11-20", to: null, weightCents: 300_000 }] };
+    expect(runningCostsForPeriodCents([c], "2026-11-15", "2026-11-15")).toBe(0);
+    expect(runningCostsForPeriodCents([c], "2026-11-01", "2026-11-15")).toBe(0);
+    expect(runningCostsForPeriodCents([c], "2026-11-20", "2026-11-21")).toBe(20_000);
+  });
+  it("stops after a bill ends and keeps a whole-month bill unchanged", () => {
+    const ended = { ...base, recurringWindows: [{ from: "2026-01-01", to: "2026-11-10", weightCents: 300_000 }] };
+    expect(runningCostsForPeriodCents([ended], "2026-11-10", "2026-11-12")).toBe(10_000);
+    const whole = { ...base, recurringWindows: [{ from: "2026-01-01", to: null, weightCents: 300_000 }] };
+    expect(runningCostsForPeriodCents([whole], "2026-11-01", "2026-11-30")).toBe(300_000);
+  });
+});

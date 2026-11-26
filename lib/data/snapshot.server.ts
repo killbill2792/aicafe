@@ -1,12 +1,10 @@
 import "server-only";
 import {readDailyFactRows} from "./dailyFacts.server";
 import { formatInTimeZone, fromZonedTime } from "date-fns-tz";
-import { buildDayWindows, evaluateRecipeCost, resolveProductCost, type ExpenseCategoryCode } from "@/lib/calc";
-import { RUNNING_COST_CODES, RUNNING_COST_LABELS, rowToDailyFacts } from "./runningCostCatalog";
+import { buildDayWindows, evaluateRecipeCost, resolveProductCost } from "@/lib/calc";
+import { runningCostLinesForMonth, runningCostMonthlyAmount, rowToDailyFacts } from "./runningCostCatalog";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { BusinessSnapshot, MenuItemSnapshot, RunningCostLine, StaffShift } from "./types";
-import { isExpectedCostCategory } from "@/lib/expenses/expectedCosts";
-import {recurringCostMonthlyEquivalentCents} from "@/lib/expenses/recurringMonthlyTotal";
 import { normalizeOpenHours } from "@/lib/business/openHours";
 import { readPeriodItemSales } from "./periodItemSales.server";
 import {readMenuComboCostComponents} from "./comboCosts.server";
@@ -16,6 +14,21 @@ import type {OwnerFeePlan} from "@/lib/metrics/core/fees";
 import {shiftCafeDate} from "@/lib/metrics/core/clock";
 import {hasSalesCoverage} from "@/lib/calc/dayWindows";
 import {timeReader} from "@/lib/perf/timeReader.server";
+import {readCompletePaged} from "./completePages";
+
+/** Same authorized PostgREST read as the Home/Money screens, but through all
+ * pages, not the default 1,000-row partial slice. Callers supply stable ordering
+ * and business/date scope; any ambiguous page fails closed, never as zero cost. */
+async function snapshotPaged<T>(
+ label:string,
+ fetch:(start:number,end:number)=>PromiseLike<{data:T[]|null;error:unknown;count?:number|null}>,
+ identity:(row:T)=>unknown
+):Promise<{data:T[];error:null;count:number}>{
+ const data=await readCompletePaged(fetch,identity);
+ if(data===null)throw new Error("snapshot_source_incomplete:"+label);
+ return {data,error:null,count:data.length};
+}
+
 
 /** Real Supabase-backed snapshot. Untested against a live project (see PROGRESS.md "Needs connecting"). */
 export async function getBusinessSnapshotFromDb(
@@ -62,19 +75,33 @@ export async function getBusinessSnapshotFromDb(
     await Promise.all([
       timeReader("Snapshot","dailyFacts",()=>readDailyFactRows(supabase,businessId,prevMonthStart,todayDateStr))
         .then(data=>({data,error:null}),(error:Error)=>({data:null,error})),
-      timeReader("Snapshot","recurringCosts",async()=>supabase.from("recurring_costs")
-        .select("category_code, amount_cents, frequency, is_estimate, active_from, active_to").eq("business_id",businessId)),
-      timeReader("Snapshot","expenses",async()=>supabase.from("expenses").select("category_code, amount_cents, status, spent_on")
-        .eq("business_id",businessId).gte("spent_on",monthStart).lte("spent_on",todayDateStr)),
-      timeReader("Snapshot","priorExpenses",async()=>supabase.from("expenses").select("category_code")
-        .eq("business_id",businessId).gte("spent_on",prevMonthStart).lte("spent_on",prevMonthEnd)),
+      timeReader("Snapshot","recurringCosts",()=>snapshotPaged("recurring_costs",
+        (start,end)=>supabase.from("recurring_costs")
+         .select("id,category_code,amount_cents,frequency,is_estimate,active_from,active_to,label,due_day,source",{count:"exact"})
+         .eq("business_id",businessId).order("id",{ascending:true}).range(start,end),
+        row=>row.id)),
+      timeReader("Snapshot","expenses",()=>snapshotPaged("expenses",
+        (start,end)=>supabase.from("expenses")
+         .select("id,category_code,amount_cents,status,spent_on,recurring_cost_id,custom_label,vendor,source",{count:"exact"})
+         .eq("business_id",businessId).gte("spent_on",monthStart).lte("spent_on",todayDateStr)
+         .order("id",{ascending:true}).range(start,end),
+        row=>row.id)),
+      timeReader("Snapshot","priorExpenses",()=>snapshotPaged("prior_expenses",
+        (start,end)=>supabase.from("expenses")
+         .select("id,category_code,amount_cents,status,spent_on,recurring_cost_id,custom_label,vendor,source",{count:"exact"})
+         .eq("business_id",businessId).gte("spent_on",prevMonthStart).lte("spent_on",prevMonthEnd)
+         .order("id",{ascending:true}).range(start,end),
+        row=>row.id)),
       timeReader("Snapshot","recoveryOrder",async()=>supabase.from("recovery_order")
         .select("bucket_code, position").eq("business_id",businessId).order("position",{ascending:true})),
       timeReader("Snapshot","menuCosts",()=>getMenuItemSnapshots(supabase,businessId,todayDateStr)),
       timeReader("Snapshot","periodItemSales",()=>readPeriodItemSales(supabase,businessId,{from:periodFrom,to:todayDateStr})),
       timeReader("Snapshot","staffShifts",()=>getStaffShiftsToday(supabase,businessId,timezone,todayDateStr)),
-      timeReader("Snapshot","alerts",async()=>supabase.from("alerts").select("impact_cents",{count:"exact"})
-        .eq("business_id",businessId).in("status",["new","seen"])),
+      timeReader("Snapshot","alerts",()=>snapshotPaged("alerts",
+        (start,end)=>supabase.from("alerts").select("id,impact_cents",{count:"exact"})
+         .eq("business_id",businessId).in("status",["new","seen"])
+         .order("id",{ascending:true}).range(start,end),
+        row=>row.id)),
       timeReader("Snapshot","feePlans",()=>getOwnerConfirmedProcessingFeePlans(supabase,businessId)),
     ]);
   const {data:rollupRows,error:rollupError}=rollupResult;
@@ -92,51 +119,12 @@ export async function getBusinessSnapshotFromDb(
   if (recoveryOrderResult.error) throw recoveryOrderResult.error;
 
   const recoveryOrder = (recoveryOrderResult.data ?? []).map((r) => r.bucket_code);
-  const orderedCodes = recoveryOrder.length > 0 ? recoveryOrder : RUNNING_COST_CODES;
-
-  const runningCostLines: RunningCostLine[] = orderedCodes
-    .filter((code): code is ExpenseCategoryCode => RUNNING_COST_CODES.includes(code as ExpenseCategoryCode))
-    .map((code) => {
-      // A category (most often "other") can have more than one active recurring-cost row — e.g.
-      // several distinct labeled bills that don't fit a fixed category — so every active row
-      // must be summed, not just the first one found.
-      const activeRecurring = (recurringResult.data ?? []).filter(
-        (r) => r.category_code === code && r.active_from <= todayDateStr && (!r.active_to || r.active_to >= todayDateStr),
-      );
-      const expensesThisMonth = (expensesResult.data ?? []).filter((e) => e.category_code === code);
-      const isExpected = isExpectedCostCategory(code, {
-        hasActiveRecurring: activeRecurring.length > 0,
-        hadActualPreviousMonth: (priorExpenseResult.data ?? []).some((expense) => expense.category_code === code),
-      });
-
-      if (expensesThisMonth.length > 0) {
-        return {
-          categoryCode: code,
-          label: RUNNING_COST_LABELS[code] ?? code,
-          amountCents: expensesThisMonth.reduce((sum, e) => sum + e.amount_cents, 0),
-          amountSource: "recorded_expense" as const,
-          actualTodayCents:expensesThisMonth.filter(e=>e.spent_on===todayDateStr)
-            .reduce((sum,e)=>sum+e.amount_cents,0),
-          isEstimate: expensesThisMonth.some((e) => e.status === "estimated"),
-          isMissing: false,
-          isExpected: true,
-        };
-      }
-      if (activeRecurring.length > 0) {
-        return {
-          categoryCode: code,
-          label: RUNNING_COST_LABELS[code] ?? code,
-          amountCents: activeRecurring.reduce((sum,r)=>sum+recurringCostMonthlyEquivalentCents({
-             amountCents:Number(r.amount_cents),
-             frequency:r.frequency as "monthly"|"weekly"|"quarterly"|"yearly"}),0),
-          amountSource: "recurring" as const,
-          isEstimate: activeRecurring.some((r) => r.is_estimate),
-          isMissing: false,
-          isExpected: true,
-        };
-      }
-      return { categoryCode: code, label: RUNNING_COST_LABELS[code] ?? code, amountCents: 0, isEstimate: false, isMissing: isExpected, isExpected };
-    });
+  const runningCostLines=runningCostLinesForMonth({expenses:expensesResult.data,recurring:recurringResult.data,
+    priorExpenses:priorExpenseResult.data,from:monthStart,to:monthKey+"-"+String(daysInMonth).padStart(2,"0"),today:todayDateStr,
+    historical:false,order:recoveryOrder});
+  const previousRunningCostLines=runningCostLinesForMonth({expenses:priorExpenseResult.data,recurring:recurringResult.data,
+    from:prevMonthStart,to:prevMonthEnd,today:prevMonthEnd,historical:true,order:recoveryOrder});
+  const orderedCodes=[...new Set([...runningCostLines,...previousRunningCostLines].map(line=>line.categoryCode))];
 
   // Requested period, not last28Days, remains the item-cost evidence boundary.
   if(alertsRead.error)throw alertsRead.error;
@@ -174,6 +162,7 @@ export async function getBusinessSnapshotFromDb(
     previousMonthDays,
     previousMonthRecordedDays,
     runningCostLines,
+    previousRunningCostLines,
     recoveryOrder: orderedCodes,
     menuItems,
     allCostProducts:allMenuItemSnapshots,
@@ -198,14 +187,12 @@ async function getStaffShiftsToday(
   const dayStartUtc = fromZonedTime(`${todayDateStr}T00:00:00`, timezone).toISOString();
   const dayEndUtc = fromZonedTime(`${todayDateStr}T23:59:59.999`, timezone).toISOString();
 
-  const { data, error } = await supabase
-    .from("timecards")
-    .select("id, employee_id, schedule_id, source_type, source_provider, clock_in, clock_out, hourly_wage_cents, breaks, provider_regular_hours, provider_overtime_hours, employees(display_name, role)")
-    .eq("business_id", businessId)
-    .gte("clock_in", dayStartUtc)
-    .lte("clock_in", dayEndUtc)
-    .order("clock_in", { ascending: true });
-  if (error) throw error;
+  const {data}=await snapshotPaged("timecards",
+    (start,end)=>supabase.from("timecards")
+     .select("id,employee_id,schedule_id,source_type,source_provider,clock_in,clock_out,hourly_wage_cents,breaks,provider_regular_hours,provider_overtime_hours,employees(display_name,role)",{count:"exact"})
+     .eq("business_id",businessId).gte("clock_in",dayStartUtc).lte("clock_in",dayEndUtc)
+     .order("clock_in",{ascending:true}).order("id",{ascending:true})
+     .range(start,end),row=>row.id);
   // Preserve every recorded timecard for earned wages, including staff who were
   // deactivated later today and imports not yet linked to a roster member.
   // Current-roster filtering belongs ONLY in buildStaffViewModel.onShift.
@@ -236,39 +223,71 @@ async function getMenuItemSnapshots(
   businessId: string,
   todayDateStr: string,
 ): Promise<MenuItemSnapshot[]> {
-  const { data: items, error: itemsError } = await supabase
-    .from("menu_items")
-    .select("id, name, price_cents, prep_seconds, category, is_active")
-    .eq("business_id", businessId);
-  if (itemsError) throw itemsError;
+  const {data:items}=await snapshotPaged("menu_items",
+    (start,end)=>supabase.from("menu_items")
+     .select("id,name,price_cents,prep_seconds,category,is_active",{count:"exact"})
+     .eq("business_id",businessId).order("id",{ascending:true}).range(start,end),
+     row=>row.id);
   if (!items || items.length === 0) return [];
 
   const itemIds = items.map((i) => i.id);
 
-  const [{ data: recipeLines, error: recipeError }, { data: quantitySoldRows, error: quantityError }, { data: aggregateCosts, error: aggregateCostError }] = await Promise.all([
-    supabase.from("recipe_lines").select("menu_item_id, ingredient_id, quantity").in("menu_item_id", itemIds),
-    supabase.rpc("menu_item_quantities_sold", {
-      p_business_id: businessId,
-      p_from: shiftCafeDate(todayDateStr,-28),
-      p_to: shiftCafeDate(todayDateStr,-1),
-    }),
-    supabase.from("menu_item_cost_fallbacks").select("menu_item_id, cost_cents, status").eq("business_id", businessId).in("menu_item_id", itemIds),
-  ]);
-  if (quantityError) throw quantityError;
-  if (recipeError) throw recipeError;
-  if (aggregateCostError) throw aggregateCostError;
+  // Source IDs remain scoped to this café and batch sizes bound URL length.
+  // Page each batch by immutable source identity; any incomplete source fails
+  // closed, never as a fabricated zero quantity or missing recipe ingredient.
+  const recipeLines:Array<{menu_item_id:string;ingredient_id:string;quantity:number}>=[];
+  const aggregateCosts:Array<{menu_item_id:string;cost_cents:number|null;status:string}>=[];
+  const {data:quantitySoldRows}=await snapshotPaged<{
+    menu_item_id:string;total_quantity:number|string
+  }>("menu_item_quantities_sold",async(start,end)=>{
+     const page=await supabase.rpc("menu_item_quantities_sold",{
+       p_business_id:businessId,
+       p_from:shiftCafeDate(todayDateStr,-28),p_to:shiftCafeDate(todayDateStr,-1)
+     },{count:"exact"}).order("menu_item_id",{ascending:true}).range(start,end);
+     return {...page,data:page.data as
+       Array<{menu_item_id:string;total_quantity:number|string}>|null};
+  },row=>row.menu_item_id);
+  const knownItems=new Set(itemIds);
+  if(quantitySoldRows.some(row=>!knownItems.has(row.menu_item_id)||
+    (typeof row.total_quantity!=="number"&&(typeof row.total_quantity!=="string"||!row.total_quantity.trim()))||
+    !Number.isFinite(Number(row.total_quantity))||Number(row.total_quantity)<0||
+    Number(row.total_quantity)>Number.MAX_SAFE_INTEGER))
+    throw new Error("snapshot_product_sales_mapping_unverified");
+  for(let i=0;i<itemIds.length;i+=100){
+    const batch=itemIds.slice(i,i+100);
+    const [recipes,costs]=await Promise.all([
+      snapshotPaged("recipe_lines",(start,end)=>supabase.from("recipe_lines")
+        .select("menu_item_id,ingredient_id,quantity",{count:"exact"})
+        .in("menu_item_id",batch).order("menu_item_id",{ascending:true})
+        .order("ingredient_id",{ascending:true}).range(start,end),
+        row=>row.menu_item_id+":"+row.ingredient_id),
+      snapshotPaged("menu_item_cost_fallbacks",(start,end)=>supabase.from("menu_item_cost_fallbacks")
+        .select("menu_item_id,cost_cents,status",{count:"exact"})
+        .eq("business_id",businessId).in("menu_item_id",batch)
+        .order("menu_item_id",{ascending:true}).range(start,end),
+        row=>row.menu_item_id),
+    ]);
+    recipeLines.push(...recipes.data);
+    aggregateCosts.push(...costs.data);
+  }
 
-  const ingredientIds = [...new Set((recipeLines ?? []).map((r) => r.ingredient_id))];
-  const { data: priceRows, error: priceError } =
-    ingredientIds.length > 0
-      ? await supabase
-          .from("ingredient_prices")
-          .select("ingredient_id, effective_from, cost_per_base_unit_micros")
-          .in("ingredient_id", ingredientIds)
-          .lte("effective_from", todayDateStr)
-          .order("effective_from", { ascending: true }).order("recorded_at", { ascending: true }).order("id", { ascending: true })
-      : { data: [], error: null };
-  if (priceError) throw priceError;
+  const ingredientIds=[...new Set(recipeLines.map(row=>row.ingredient_id))];
+  const priceRows:Array<{id:string;ingredient_id:string;effective_from:string;
+    recorded_at:string;cost_per_base_unit_micros:number}>=[];
+  for(let i=0;i<ingredientIds.length;i+=100){
+    const batch=ingredientIds.slice(i,i+100);
+    const page=await snapshotPaged("ingredient_prices",(start,end)=>
+      supabase.from("ingredient_prices")
+       .select("id,ingredient_id,effective_from,recorded_at,cost_per_base_unit_micros",
+         {count:"exact"})
+       .in("ingredient_id",batch).lte("effective_from",todayDateStr)
+       .order("id",{ascending:true}).range(start,end),row=>row.id);
+    priceRows.push(...page.data);
+  }
+  // Preserve prior canonical effective-date, recording-date and ID precedence
+  // across pages from disjoint ingredient batches.
+  priceRows.sort((a,b)=>a.effective_from.localeCompare(b.effective_from)||
+    a.recorded_at.localeCompare(b.recorded_at)||a.id.localeCompare(b.id));
 
   const latestPriceMicros: Record<string, number> = {};
   for (const row of priceRows ?? []) {
@@ -360,45 +379,33 @@ async function readHistoricalBusinessSnapshot(
   if(period.from>today)throw new Error("Historical period has no completed dates");
   period={...period,to:period.to>today?today:period.to};
   const first=period.from.slice(0,7)+"-01";
+  const [firstYear,firstMonth]=first.slice(0,7).split("-").map(Number);
+  const precedingMonthStart=(firstMonth===1?String(firstYear-1).padStart(4,"0")+"-12":String(firstYear).padStart(4,"0")+"-"+String(firstMonth-1).padStart(2,"0"))+"-01";
   const last=period.to.slice(0,7);
   const [year,month]=last.split("-").map(Number);
   const monthEnd=last+"-"+String(new Date(year,month,0).getDate()).padStart(2,"0");
   const [rollups,recurring,expenses,locations,itemSales]=await Promise.all([
     readDailyFactRows(supabase,businessId,period.from,period.to)
       .then(data=>({data,error:null}),(error:Error)=>({data:null,error})),
-    supabase.from("recurring_costs")
-      .select("id,category_code,amount_cents,frequency,is_estimate,active_from,active_to")
-      .eq("business_id",businessId).lte("active_from",period.to).order("id",{ascending:true}).range(0,999),
-    supabase.from("expenses").select("id,category_code,amount_cents,status,spent_on")
-      .eq("business_id",businessId).gte("spent_on",first).lte("spent_on",monthEnd).order("spent_on",{ascending:true}).order("category_code",{ascending:true}).order("id",{ascending:true}).range(0,999),
+    snapshotPaged("historical_recurring_costs",(start,end)=>supabase.from("recurring_costs")
+      .select("id,category_code,amount_cents,frequency,is_estimate,active_from,active_to,label,due_day,source",{count:"exact"})
+      .eq("business_id",businessId).lte("active_from",monthEnd)
+      .order("id",{ascending:true}).range(start,end),row=>row.id),
+    snapshotPaged("historical_expenses",(start,end)=>supabase.from("expenses")
+      .select("id,category_code,amount_cents,status,spent_on,recurring_cost_id,custom_label,vendor,source",{count:"exact"})
+      .eq("business_id",businessId).gte("spent_on",precedingMonthStart).lte("spent_on",monthEnd)
+      .order("id",{ascending:true}).range(start,end),row=>row.id),
     supabase.from("locations").select("open_hours")
       .eq("business_id",businessId).order("name",{ascending:true}).limit(1),
     readPeriodItemSales(supabase,businessId,period),
   ]);
   for(const result of [rollups,recurring,expenses,locations])
     if(result.error)throw result.error;
-  // Page every historical record. PostgREST commonly caps queries at 1,000 rows.
-  // The shared daily reader already reads every page.
+  // The same stable, exact full-row read as Home/Money, with historical date
+  // scope. Never splice a differently sorted second page into a financial total.
   const allRollups=[...(rollups.data??[])];
-  const allExpenses=[...(expenses.data??[])];
-  for(let offset=1000;offset<=allExpenses.length;offset+=1000){
-    const page=await supabase.from("expenses").select("id,category_code,amount_cents,status,spent_on")
-      .eq("business_id",businessId).gte("spent_on",first).lte("spent_on",monthEnd)
-      .order("spent_on",{ascending:true}).order("category_code",{ascending:true}).range(offset,offset+999);
-    if(page.error)throw page.error;
-    allExpenses.push(...(page.data??[]));
-    if((page.data??[]).length<1000)break;
-  }
-  const allRecurring=[...(recurring.data??[])];
-  for(let offset=1000;offset<=allRecurring.length;offset+=1000){
-    const page=await supabase.from("recurring_costs")
-      .select("id,category_code,amount_cents,frequency,is_estimate,active_from,active_to")
-      .eq("business_id",businessId).lte("active_from",period.to)
-      .order("id",{ascending:true}).range(offset,offset+999);
-    if(page.error)throw page.error;
-    allRecurring.push(...(page.data??[]));
-    if((page.data??[]).length<1000)break;
-  }
+  const allExpenses=expenses.data;
+  const allRecurring=recurring.data;
   const recorded=allRollups.map(rowToDailyFacts);
   const sales=recorded.filter(d=>d.salesDataStatus!=="missing");
   const months:string[]=[];
@@ -406,46 +413,29 @@ async function readHistoricalBusinessSnapshot(
   while(cursor<=last+"-01"){
     months.push(cursor.slice(0,7));
     const [y,m]=cursor.split("-").map(Number);
-    const next=new Date(Date.UTC(y,m,1)).toISOString().slice(0,7);
-    cursor=next+"-01";
-    if(months.length>2400)throw new Error("Historical period exceeds supported calendar bounds");
+    if(cursor.slice(0,7)===last)break;
+    const nextYear=m===12?y+1:y,nextMonth=m===12?1:m+1;
+    cursor=String(nextYear).padStart(4,"0")+"-"+String(nextMonth).padStart(2,"0")+"-01";
   }
   const monthlyAmounts:import("@/lib/calc").CategoryMonthlyAmount[]=[];
   const missingExpenseCategories:string[]=[];
   const estimatedExpenseCategories:string[]=[];
-  const relevantCodes=RUNNING_COST_CODES;
+  const linesByMonth=new Map<string,RunningCostLine[]>();
   for(const key of months){
-    const finalDay=key+"-"+String(new Date(Number(key.slice(0,4)),Number(key.slice(5,7)),0)
-      .getDate()).padStart(2,"0");
-    for(const categoryCode of relevantCodes){
-      const actual=allExpenses.filter(r=>r.category_code===categoryCode&&
-        r.spent_on>=key+"-01"&&r.spent_on<=finalDay);
-      const configured=allRecurring.filter(r=>r.category_code===categoryCode&&
-        r.active_from<=finalDay&&(!r.active_to||r.active_to>=key+"-01"));
-      const rows=actual.length?actual:configured;
-      const amountCents=actual.length?
-         actual.reduce((sum,r)=>sum+Number(r.amount_cents),0):
-         configured.reduce((sum,r)=>sum+recurringCostMonthlyEquivalentCents({
-           amountCents:Number(r.amount_cents),
-           frequency:r.frequency as "monthly"|"weekly"|"quarterly"|"yearly"}),0);
-      const isEstimate=actual.length?actual.some(r=>r.status==="estimated"):
-        configured.some(r=>r.is_estimate);
-      const isMissing=rows.length===0;
-      monthlyAmounts.push({monthKey:key,categoryCode,amountCents,isEstimate,isMissing});
+    const finalDay=key+"-"+String(new Date(Number(key.slice(0,4)),Number(key.slice(5,7)),0).getDate()).padStart(2,"0");
+    const lines=runningCostLinesForMonth({expenses:allExpenses,recurring:allRecurring,from:key+"-01",
+      to:finalDay,today,historical:key<today.slice(0,7),
+      priorExpenses:allExpenses.filter(e=>e.spent_on<key+"-01")});
+    linesByMonth.set(key,lines);
+    for(const line of lines){
+      const {categoryCode,isEstimate,isMissing}=line;
+      monthlyAmounts.push(runningCostMonthlyAmount(line,key));
       if(isEstimate)estimatedExpenseCategories.push("expense:"+categoryCode+":"+key);
-      if(isMissing&&(allRecurring.some(r=>r.category_code===categoryCode)||
-        allExpenses.some(r=>r.category_code===categoryCode)))
-        missingExpenseCategories.push("expense:"+categoryCode+":"+key);
+      if(isMissing||line.forecastOverlapUncertain)missingExpenseCategories.push("expense:"+categoryCode+":"+key);
     }
   }
   const monthKey=last;
-  const lastAmounts=monthlyAmounts.filter(r=>r.monthKey===monthKey);
-  const runningCostLines:RunningCostLine[]=lastAmounts.map(line=>({
-    categoryCode:line.categoryCode as ExpenseCategoryCode,
-    label:RUNNING_COST_LABELS[line.categoryCode as ExpenseCategoryCode]??line.categoryCode,
-    amountCents:line.amountCents,isEstimate:line.isEstimate,
-    isMissing:line.isMissing,isExpected:missingExpenseCategories.some(x=>x.startsWith("expense:"+line.categoryCode+":")),
-  }));
+  const runningCostLines=linesByMonth.get(monthKey)??[];
   const ownerFeePlans=await getOwnerConfirmedProcessingFeePlans(supabase,businessId);
   return {
     business:{id:business.id,name:business.name,timezone:business.timezone,
@@ -470,7 +460,7 @@ async function readHistoricalBusinessSnapshot(
     todayHasData:recorded.some(d=>d.date===today&&d.salesDataStatus!=="missing"),
     previousMonthDays:sales.filter(d=>d.date.slice(0,7)!==monthKey),
     previousMonthRecordedDays:recorded.filter(d=>d.date.slice(0,7)!==monthKey),
-    runningCostLines,recoveryOrder:RUNNING_COST_CODES,
+    runningCostLines,recoveryOrder:runningCostLines.map(line=>line.categoryCode),
     menuItems:[],allCostProducts:[],periodItemSales:itemSales,breakEvenProductCosts:[],
     alerts:{count:0,leakingCents:0},staffShiftsToday:[],staffNowIso:new Date().toISOString(),
     historicalPeriod:{days:sales,recorded,monthlyAmounts,
