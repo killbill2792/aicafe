@@ -97,6 +97,7 @@ type TurnParams = {
   emit: Emit; job: AgentJob | null; jobs: JobsModule | null;
   attachmentIds?:string[];
   checkpoint?:OwnerRunCheckpoint;
+  executionDeadline?:number;
   matchedAnswers?:import("@/lib/ai/supervisor/runs/contracts").MatchedOwnerAnswer[];
   durableFence?:DurableReplyFence;
   recordDurableStep?:(step:import("@/lib/ai/agent/jobState").AgentJobStep)=>Promise<void>;
@@ -239,6 +240,22 @@ export async function runOneTurn(p: TurnParams): Promise<{ replyId: string; repl
     let selectedContentSha256:string|null=null;
     // Per-turn checks bind admitted evidence to server-owned scope and revision.
     const sourceChecks=new Map<string,()=>Promise<void>>();
+    const sourceVersions=new Map<string,string>();
+    const restoreSourceVersions=async(versions:Record<string,string>)=>{
+      for(const [key,version] of Object.entries(versions)){
+        if(key==="gmail"){
+          const check=async()=>{
+            const account=await getConnectorAccount(scope);
+            if(!account||!allowsGmail(account,"read")||JSON.stringify([account.id,account.provider_subject,account.generation])!==version)throw Error("gmail_evidence_access_changed");
+          };
+          await check();sourceChecks.set(key,check);
+        }else if(key==="public_web"){
+          const check=async()=>{if(String(await assertExternalAccess(scope,"public_web",WEB_RESOURCE))!==version)throw Error("public_web_evidence_access_changed");};
+          await check();sourceChecks.set(key,check);
+        }else if(sourceVersions.get(key)!==version){throw Error("attachment_access_revoked");}
+        sourceVersions.set(key,version);
+      }
+    };
     const assertTurnSources=async()=>{
       await p.checkpoint?.assertLive();
       if(external){
@@ -279,7 +296,7 @@ export async function runOneTurn(p: TurnParams): Promise<{ replyId: string; repl
       await assertTurnSources();
       const value=await read();
       await check();
-      sourceChecks.set("gmail",check);
+      sourceChecks.set("gmail",check);sourceVersions.set("gmail",JSON.stringify([account.id,account.provider_subject,account.generation]));
       return value;
     };
     const durableRead=p.durableFence&&p.externalClient?{...scope,threadId:id,...p.durableFence,client:p.externalClient}:null;
@@ -354,7 +371,7 @@ export async function runOneTurn(p: TurnParams): Promise<{ replyId: string; repl
          await assertTurnSources();
          const value=await searchWeb(publicTerms,budget);
          await check();
-         if(value.available)sourceChecks.set("public_web",check);
+         if(value.available){sourceChecks.set("public_web",check);sourceVersions.set("public_web",String(revision));}
          return value;
        }),
       savedEvents:async(from,to,options)=>readSavedEventTimeline(await getDb(),
@@ -751,7 +768,8 @@ export async function runOneTurn(p: TurnParams): Promise<{ replyId: string; repl
     for(const attachmentId of selectedIds){
       const fileRevision=await assertExternalAccess(scope,"file_read",FILE_RESOURCE);
       const selectedRevision=await assertExternalAccess(scope,"attachment",attachmentId);
-      sourceChecks.set("attachment:"+attachmentId,async()=>{
+      sourceVersions.set("attachment:"+attachmentId,JSON.stringify([fileRevision,selectedRevision]));
+       sourceChecks.set("attachment:"+attachmentId,async()=>{
         if(await assertExternalAccess(scope,"file_read",FILE_RESOURCE)!==fileRevision||
            await assertExternalAccess(scope,"attachment",attachmentId)!==selectedRevision)
           throw Error("attachment_access_revoked");
@@ -791,7 +809,7 @@ export async function runOneTurn(p: TurnParams): Promise<{ replyId: string; repl
         const value=await searchWeb(q);
         const check=async()=>{if(await assertExternalAccess(scope,"public_web",WEB_RESOURCE)!==revision)throw Error("public_web_evidence_access_changed");};
         await check();
-        if(value.available)sourceChecks.set("public_web",check);
+        if(value.available){sourceChecks.set("public_web",check);sourceVersions.set("public_web",String(revision));}
         return value;
       }),
       // The existing registered action tools (same executor, same approval cards); routine tool as in the legacy turn.
@@ -807,6 +825,7 @@ export async function runOneTurn(p: TurnParams): Promise<{ replyId: string; repl
       onThinking:text=>emit("thinking",{text}),
       onAuditStep: step => { if (auditSteps.length < 64) auditSteps.push(step); },
       beforeProviderRequest:assertTurnSources, beforeAcceptResult:assertTurnSources,
+       captureSourceVersions:()=>Object.fromEntries(sourceVersions),restoreSourceVersions,executionDeadline:p.executionDeadline,
       ...(p.checkpoint?{checkpoint:p.checkpoint}:{}),
       onTool:(name,agentId)=>{
         emit("tool",{name,agentId});
@@ -822,12 +841,12 @@ export async function runOneTurn(p: TurnParams): Promise<{ replyId: string; repl
     failureStage = "persist";
     let reply: Awaited<ReturnType<typeof persistAgentReply>>;
     try {
-      if (!result.text.trim()) throw new AgentEmptyReplyError();
       await assertTurnSources();
-      // Keep transient or budget-limited slices nonterminal. Their real
-      // provider usage is recorded by the existing finally block below.
+      // A physical worker interruption is not a failed owner question, even
+      // if Luna has not authored any visible prose yet.
       if(p.durableFence&&!result.results.some(r=>r.source==="ask_owner"&&r.missing.length===0)&&result.endReason!=="complete")
         throw new Error("durable_retry_pending");
+      if (!result.text.trim()&&!result.results.some(r=>r.source==="response_presentation"&&r.accepted===true)) throw new AgentEmptyReplyError();
       reply = p.durableFence?await persistAgentReply(scope, owner, result,p.durableFence):await persistAgentReply(scope, owner, result);
     } finally {
       // Billable usage must be counted even for blank, oversized or failed writes.
@@ -875,7 +894,7 @@ export async function runOneTurn(p: TurnParams): Promise<{ replyId: string; repl
     if(code!=="durable_retry_pending")emit("error", { code, ...localDiagnostic,
       ...(error instanceof AgentEmptyReplyError ? { retryable: true } : {}),
       ...(job ? { jobId: job.id } : {}) });
-    return { errorCode: code, ...(p.durableFence&&code==="durable_retry_pending"&&completedTurn?.endReason==="budget"?{technicalYield:true}:{}) };
+    return { errorCode: code, ...(p.durableFence&&code==="durable_retry_pending"&&completedTurn?.endReason==="timeout"?{technicalYield:true}:{}) };
   } finally { await steps.catch(() => undefined); }
 }
 
