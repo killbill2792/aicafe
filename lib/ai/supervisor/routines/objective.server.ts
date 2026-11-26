@@ -235,7 +235,7 @@ export function verifyObjectiveTurn(turn:AgentTurn,routine:RoutineRecord):Object
  * database-reserved billable calls. Never invent an ai_messages.owner turn. */
 export async function executeClaimedObjective(db:SupabaseClient,params:{
   routine:RoutineRecord;lease:ClaimedRoutine;localDate:string;
-  provider?:AgentProvider;
+  provider?:AgentProvider;executionDeadline?:number;
 }):Promise<ObjectiveOutcome>{
   const {routine,lease,localDate}=params;
   if((routine.executionMode!=="objective"&&routine.executionMode!=="watch")||
@@ -360,7 +360,7 @@ export async function executeClaimedObjective(db:SupabaseClient,params:{
       propose:async()=>{throw Error("u4_unattended_gmail_effect_denied");},
     }}:{}),
   };
-  const continuation=await backgroundResearchContinuation(db,{...scope,threadId:routine.threadId,sourceType:"routine",sourceId:lease.runId,revision:String(lease.revision),leaseToken:lease.leaseToken});
+  const continuation=await backgroundResearchContinuation(db,{...scope,threadId:routine.threadId,sourceType:"routine",sourceId:lease.runId,revision:String(lease.revision),leaseToken:lease.leaseToken,parentDeadline:params.executionDeadline});
   const turn=await runResearchTurn({
     continuation,executionDeadline:continuation.executionDeadline,
     captureSourceVersions:()=>({...webRevision!==undefined?{web:webRevision}:{},...usedGmailIdentity?{gmail:JSON.stringify(usedGmailIdentity)}:{}}),
