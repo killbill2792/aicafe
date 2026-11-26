@@ -66,6 +66,9 @@ function checkedSnapshot(value:unknown):ResearchSnapshot{
     !Array.isArray(v.invocations)||!Array.isArray(v.evidence)||!Array.isArray(v.queries)||!Array.isArray(v.privateValues)||
     !v.diagnostics||!v.sourceVersions||typeof v.sourceVersions!=="object")
     throw Error("checkpoint_research_invalid");
+  if(v.presentationFailures!==undefined&&(!Array.isArray(v.presentationFailures)||v.presentationFailures.some(signature=>typeof signature!=="string"))||
+    v.pendingPresentationFeedback!==undefined&&typeof v.pendingPresentationFeedback!=="boolean"||
+    v.repeatedPresentationFailure!==undefined&&typeof v.repeatedPresentationFailure!=="boolean")throw Error("checkpoint_research_invalid");
   if(v.pending.some(c=>c.type!=="function_call"||typeof c.name!=="string"||typeof c.call_id!=="string"||typeof c.arguments!=="string"))
     throw Error("checkpoint_research_invalid");
   return v;
@@ -240,8 +243,9 @@ export async function runResearchTurn(args:{
       await args.beforeAcceptResult?.();
       presentationDiagnostics.decodedSections++;
       presentationDiagnostics.decodedPatches+=patches.length;
-      const views=resolveResearchSpec(patches,queries,presentationContext);
-      if(!views.length){presentationDiagnostics.rejectedSections++;failedSections.push(JSON.stringify(patches));}
+      let deliveryLoss=false;
+      const views=resolveResearchSpec(patches,queries,presentationContext,()=>{deliveryLoss=true;});
+      if(!views.length||deliveryLoss){presentationDiagnostics.rejectedSections++;failedSections.push(JSON.stringify(patches));}
       patches=[];
       presentationDiagnostics.acceptedViews+=views.length;
       for(const presentation of views){
@@ -334,10 +338,11 @@ export async function runResearchTurn(args:{
     // Only completed, admitted provider responses can trigger presentation feedback.
     // Do not ask the model to redo valid text or research. Repeated identical invalid
     // sections surface a technical notice instead of causing an endless retry.
+    if(!failedSections.length&&answer.trim())repeatedPresentationFailure=false;
     if(failedSections.length){
       if(answer&&!output.some(item=>(item as Record<string,unknown>).type==="message"))
         input.push({role:"assistant",content:answer});
-      for(const section of failedSections){
+      for(const section of new Set(failedSections)){
         const signature=createHash("sha256").update(section).digest("hex");
         if(presentationFailures.has(signature))repeatedPresentationFailure=true;
         else{presentationFailures.add(signature);pendingPresentationFeedback=true;}

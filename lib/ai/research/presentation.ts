@@ -211,8 +211,8 @@ function pointView(s:z.infer<typeof pointPanel>,evidence:PresentationEvidenceMap
 }
 
 /** Bind a selected component to the existing validated presentation blocks. */
-export function resolveResearchView(raw:unknown,queries:PresentationEvidenceMap,ctx?:Context):RichPresentation|undefined{
- if(!obj(raw)||!ctx)return;
+export function resolveResearchView(raw:unknown,queries:PresentationEvidenceMap,ctx?:Context,onDeliveryLoss?:()=>void):RichPresentation|undefined{
+ if(!obj(raw)||!ctx){onDeliveryLoss?.();return;}
  const panels:PresentationPanel[]=[],tables:RecordTable[]=[];
  const layout=raw.layout==="grid"?"grid":"stack";
  const c=calcSelection.safeParse(raw.calculator);
@@ -300,13 +300,20 @@ export function resolveResearchView(raw:unknown,queries:PresentationEvidenceMap,
  const attachments=raw.files===true?[...new Set(ctx.presentationAttachments??[])].slice(0,3):[];
  const block=recoverRichPresentation({type:"rich_presentation",version:1,layout,panels,suggestions:[],
   ...(tables.length?{tables}:{}),...(calc?{calculator:calc}:{}),...(raw.report===true?{report:true}:{}),...(attachments.length?{files:attachments}:{})});
+ // Each requested data leaf has exactly one display path (including chart
+ // or calculator fallbacks). Report only a technical delivery loss, never
+ // an estimate, unknown value or confidence assessment.
+ const requested=(value:unknown)=>Array.isArray(value)?value.length:value==null?0:1;
+ const requestedLeaves=requested(raw.panels)+requested(raw.tables)+Number(raw.calculator!=null);
+ const deliveredLeaves=(block?.panels.length??0)+(block?.tables?.length??0)+Number(Boolean(block?.calculator));
+ if(!block||deliveredLeaves<requestedLeaves)onDeliveryLoss?.();
  return block;
 }
 
 /** Apply only data-only element tree patches, using the installed library's
  * compiler. Never execute model-supplied actions, state bindings or unsafe paths.
  * Resolve each view independently so a malformed sibling cannot erase prose. */
-export function resolveResearchSpec(patches:readonly unknown[],queries:PresentationEvidenceMap,ctx?:Context):RichPresentation[]{
+export function resolveResearchSpec(patches:readonly unknown[],queries:PresentationEvidenceMap,ctx?:Context,onDeliveryLoss?:()=>void):RichPresentation[]{
  const compiler=createSpecStreamCompiler();
  const safeKey=(s:string)=>/^[a-zA-Z0-9_-]+$/u.test(s)&&!["__proto__","constructor","prototype"].includes(s);
  const safeValue=(v:unknown):boolean=>Array.isArray(v)?v.every(safeValue):!obj(v)||Object.entries(v).every(([k,x])=>!["__proto__","constructor","prototype"].includes(k)&&safeValue(x));
@@ -326,10 +333,10 @@ export function resolveResearchSpec(patches:readonly unknown[],queries:Presentat
   const element=Object.hasOwn(spec.elements as Row,key)?(spec.elements as Row)[key]:null;
   if(!obj(element))return;
   if(element.type==="DataView"){
-   const view=resolveResearchView(element.props,queries,ctx);if(view)result.push(view);
+   const view=resolveResearchView(element.props,queries,ctx,onDeliveryLoss);if(view)result.push(view);
   }else if(element.type==="Stack"&&Array.isArray(element.children)){
    for(const child of element.children)if(typeof child==="string")walk(child);
-  }
+  }else onDeliveryLoss?.();
  };
  if(typeof spec.root==="string")walk(spec.root);
  // Recover authored data leaves even if a layout parent or root is malformed.

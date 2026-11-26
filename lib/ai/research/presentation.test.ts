@@ -394,3 +394,21 @@ it("lets Luna use Markdown when the spec is rejected and discloses repeated iden
   expect(result.text).toContain(repeat?"A visual could not be displayed.":"| Wages | $12.00 |");
  }
 });
+
+it("retains the valid chart and repairs only an omitted accounting table in the same section",async()=>{
+ let calls=0;
+ const invalidTable={title:"Ledger",columns:["Account","Amount"],rows:[["Wages",{wrong:true}]]};
+ const provider:AgentProvider=async function*(params){
+  calls++;
+  if(calls===1)yield {type:"response.output_text.delta",delta:fence({panels:[{kind:"metric",title:"Sales",unit:"count",points:[{label:"Orders",value:7}]}],tables:[invalidTable]})};
+  else{
+   expect(JSON.stringify(params.input)).toContain("Presentation delivery feedback");
+   yield {type:"response.output_text.delta",delta:fence({tables:[{title:"Ledger",columns:["Account","Amount"],rows:[["Wages",12]]}]})};
+  }
+  yield {type:"response.completed",response:{usage:{input_tokens:1,output_tokens:1}}};
+ };
+ const result=await runResearchTurn({ownerText:"Accounting",cafeContext:"Cafe",provider,scope:{db:{} as never,businessId:"business",ownerUserId:"owner"},presentationContext:ctx});
+ expect(calls).toBe(2);expect(result.presentationDiagnostics).toMatchObject({rejectedSections:1,acceptedViews:2});
+ const views=agentReplyPayload(result).reply.blocks.filter(b=>b.type==="rich_presentation");
+ expect(views).toHaveLength(2);expect(views[0].panels[0].points[0].value).toBe(7);expect(views[1].tables?.[0].rows).toEqual([["Wages",12]]);
+});
