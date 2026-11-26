@@ -176,6 +176,16 @@ export const scheduleReadTools={
      appOnlyPaidMinutes:toastPlans&&hasCostedShifts?totals.paidMinutes:null,
      appOnlyKnownWagesCents:toastPlans&&hasCostedShifts?totals.knownCostCents:null,
      shifts:combined.slice(0,40),
+     // Who could cover: every active teammate with the dates they already work this week.
+     // Personal availability and labor-rule limits are NOT checked here; the owner decides.
+     teammates:data.team.slice(0,40).map(person=>{
+      const own=combined.filter(shift=>shift.employeeId===person.id);
+      const minutes=own.map(shift=>shift.paidMinutes);
+      return {employeeId:person.id,name:person.name,
+       shiftDates:[...new Set(own.map(shift=>shift.date))].sort(),
+       scheduledMinutes:minutes.every(m=>typeof m==="number")?minutes.reduce((sum:number,m)=>sum+(m as number),0):null};
+     }),
+     availabilityChecked:false,
      gaps:gaps.slice(0,15)};
   }
  },

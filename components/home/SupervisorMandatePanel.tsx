@@ -1,5 +1,6 @@
 "use client";
 
+import CafeNotesList from "./CafeNotesList";
 import {useEffect,useRef,useState,type ReactNode} from "react";
 import {BookOpen,Clock3,ListChecks,RefreshCcw,ShieldCheck,X,Search,Paperclip,Ellipsis} from "lucide-react";
 import {Link} from "@/i18n/navigation";
@@ -298,6 +299,7 @@ export default function SupervisorMandatePanel({threadId,threads,approvals,onSel
             <h3 className="text-[0.9375rem] font-medium text-ink-muted">{en.SupervisorExperience.conversationFiles}</h3>
             {filteredFiles.map(file=><a key={file.id} href={"/api/ai/threads/"+encodeURIComponent(files.threadId)+"/attachments/"+encodeURIComponent(file.id)} target="_blank" rel="noopener noreferrer" className="flex min-h-12 min-w-0 items-center gap-2 rounded-lg px-2 text-[1.0625rem] text-ink underline hover:bg-surface2"><Paperclip size={18} className="shrink-0" aria-hidden="true"/><span className="min-w-0 break-all">{file.originalName}</span></a>)}
           </section>}
+          <CafeNotesList disabled={disabled}/>
         </section>}
         {tab==="routines"&&<section aria-label={copy.routineTitle} className="space-y-3">
           <div className="flex items-center justify-between gap-2">

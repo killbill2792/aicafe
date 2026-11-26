@@ -4616,6 +4616,10 @@
     }
   },
   "SupervisorExperience": {
+    "cafeNotes": "What I know about your café",
+    "cafeNotesEmpty": "Nothing saved yet. I add notes as I learn how your café works.",
+    "cafeNotesForget": "Forget this",
+    "cafeNotesUnavailable": "Café notes could not be loaded.",
     "offline": "Offline. Saved information may be out of date. Your draft is kept; reconnect to send.",
     "sessionDenied": "Your owner session needs to be verified again. Sign in to reopen your café conversations.",
     "signInAgain": "Sign in again",
