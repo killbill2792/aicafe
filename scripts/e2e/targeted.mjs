@@ -9,9 +9,7 @@ const ALL = SCENARIOS;
 // Screens restyled by the glass/rem text-size design change (look only, no behaviour change). The
 // global theme files already require every journey; these exact paths run the same full set.
 // Other unknown UI still fails closed.
-// Official Tailwind v4 class-only migration touches these existing surfaces.
-// All six real owner journeys remain required; unknown future UI fails closed.
-const GLASS_RESTYLE = new Set([
+const TAILWIND_RESTYLE = new Set([
   "app/[locale]/staff/page.tsx",
   "app/admin/briefs/page.tsx",
   "app/admin/cafes/[cafeId]/page.tsx",
@@ -56,6 +54,8 @@ const GLASS_RESTYLE = new Set([
   "components/staff/StaffCommunicationHistory.tsx",
   "components/staff/StaffReplyComposer.tsx",
   "components/staff/StaffWorkspace.tsx",
+]);
+const GLASS_RESTYLE = new Set([
   "app/[locale]/menu/import-review/page.tsx",
   "app/[locale]/more/alerts/[id]/page.tsx",
   "app/[locale]/more/alerts/page.tsx",
@@ -122,7 +122,7 @@ export function scenariosForPath(path) {
   if (path === ".github/workflows/ai-cafe-pr-baseline.yml" ||
       path === "playwright.config.mjs" || path.startsWith("scripts/e2e/") ||
       path.startsWith("tests/e2e/") ||
-      path === "app/globals.css" || path.startsWith("app/fonts/") ||
+      path === "app/globals.css" || path === "tailwind.config.ts" || path === "postcss.config.mjs" || path.startsWith("app/fonts/") ||
       path.startsWith("app/themes") || path.startsWith("public/") ||
       path === "proxy.ts" ||
       path === "app/[locale]/layout.tsx" ||
@@ -210,6 +210,8 @@ export function scenariosForPath(path) {
       path === "components/money/MoneyViewSwitch.tsx" ||
       path.startsWith("lib/viewmodels/money")) return ["money"];
   if (path.startsWith("app/api/")) return [];
+  // Preserve specific journey mappings above; cover remaining migrated UI paths.
+  if (TAILWIND_RESTYLE.has(path)) return ALL;
   if (/^app\/\[locale\]\//.test(path) ||
       path.startsWith("components/") ||
       (path.startsWith("app/") && !path.endsWith(".test.ts") &&

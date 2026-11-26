@@ -380,7 +380,7 @@ it("wraps two-column financial tables and preserves nested checklist formatting"
  const html=renderToStaticMarkup(createElement(ChatMarkdown,{text:"| Expense | Amount |\n| --- | ---: |\n| Estimated ingredient and recurring costs | $123.45 |\n\n- [x] Verified\n  - [ ] Confirm payroll\n    Supporting detail\n- Finish"}));
  expect(html).toContain("table-fixed");
  expect(html).not.toContain("min-w-max");
- expect(html).toContain("overflow-wrap:anywhere");
+ expect(html).toContain("wrap-anywhere");
  expect(html.match(/<ul/g)).toHaveLength(2);
  expect(html.match(/type=\"checkbox\"/g)).toHaveLength(2);
  expect(html).toContain("Supporting detail");
@@ -390,7 +390,7 @@ it("wraps two-column financial tables and preserves nested checklist formatting"
 
 it("fits the accounting three-column table and wraps descriptions",()=>{
  const html=renderToStaticMarkup(createElement(ChatMarkdown,{text:"| Accounting item | Amount | Data quality |\n| --- | ---: | --- |\n| Staff wages | $9,321.45 | Actual |\n| Ingredient costs | $78.90 | Incomplete; last five days only |"}));
- expect(html).toContain("table-fixed");expect(html).not.toContain("min-w-max");expect(html).toContain("<colgroup>");expect(html).toContain("overflow-wrap:anywhere");expect(html).toContain("Incomplete; last five days only");
+ expect(html).toContain("table-fixed");expect(html).not.toContain("min-w-max");expect(html).toContain("<colgroup>");expect(html).toContain("wrap-anywhere");expect(html).toContain("Incomplete; last five days only");
 });
 
 it("keeps provenance offsets after a repaired adjacent table and leaves fenced code literal",()=>{

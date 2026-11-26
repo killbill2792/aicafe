@@ -10,7 +10,7 @@ on:
 permissions:
   contents: read
 concurrency:
-  group: tailwind-visual-${{ github.event.pull_request.number }}
+  group: tailwind-visual-${{ github.event.pull_request.number }}-${{ github.event.pull_request.head.sha }}
   cancel-in-progress: true
 jobs:
   capture:

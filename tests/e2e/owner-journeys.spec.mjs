@@ -2271,6 +2271,7 @@ test("@home Task16E adaptive answer survives reload, preserves prose and opens a
       expect(ax).toContain('table "Response table"');
       expect(ax).toContain('table "Daily net sales"');
       await expect(answer.getByRole("table",{name:"Response table"}).getByRole("columnheader",{name:"Recorded status"})).toBeVisible();
+      await expect(answer.getByRole("table",{name:"Response table"}).getByRole("cell",{name:"Complete",exact:true}).first()).toHaveCSS("overflow-wrap","anywhere");
       await expect(rich.getByRole("table",{name:"Daily net sales"})).toHaveAccessibleDescription(/Sales records.*Saved snapshot/);
       await expect(rich.getByRole("table",{name:"Comparison values"})).toHaveAccessibleDescription(/Recorded sales.*Recorded costs/);
       expect(ax).toContain('table "Comparison values"');
