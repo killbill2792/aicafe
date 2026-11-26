@@ -7,6 +7,7 @@ import {CALC_OPS,exactDecimal,runCalculation,type CalcOp,type CalcUnit,type Calc
  * exact calculator). Security is enforced in the database; no business logic here. */
 
 export type ResearchScope={db:SupabaseClient;businessId:string;ownerUserId:string;
+  signal?:AbortSignal;
   /** The existing owner-permissioned public web search (one path); absent when unavailable. */
   webSearch?:(query:string)=>Promise<unknown>;
   /** Text read from the café's private data this turn; a public query may not contain it. */
@@ -88,9 +89,10 @@ export const researchToolDefinitions=[
 ] as const;
 
 async function callDatabase(scope:ResearchScope,sql:string):Promise<Record<string,unknown>>{
-  const {data,error}=await scope.db.rpc("supervisor_research_sql",{
+  const request=scope.db.rpc("supervisor_research_sql",{
     p_business_id:scope.businessId,p_owner_user_id:scope.ownerUserId,p_sql:sql});
-  if(error)return {ok:false,error:error.message};
+  const {data,error}=await (scope.signal&&typeof request.abortSignal==="function"?request.abortSignal(scope.signal):request);
+  if(error)return {ok:false,error:error.message,sqlstate:error.code};
   return data&&typeof data==="object"?data as Record<string,unknown>:{ok:false,error:"empty_database_response"};
 }
 
