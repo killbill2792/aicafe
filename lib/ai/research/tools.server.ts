@@ -1,5 +1,6 @@
 import "server-only";
 import type {SupabaseClient} from "@supabase/supabase-js";
+import {Client} from "pg";
 import {CALC_OPS,exactDecimal,runCalculation,type CalcOp,type CalcUnit,type CalcValue} from "@/lib/metrics/core/calculator";
 
 /** Supervisor SQL research tools: describe_database, run_sql (one read-only SELECT run by the database
@@ -67,7 +68,7 @@ export const researchToolDefinitions=[
     parameters:{type:"object",additionalProperties:false,required:["query"],properties:{
       query:{type:"string",description:"A public question, including the café's city and state or country when location matters."}}}},
   {type:"function",name:"calculate",strict:true,
-    description:"Exact arithmetic on numbers you retrieved. Inputs are decimal strings with a unit: cents (money in minor units), count, "+
+    description:"Exact arithmetic on retrieved values, your derived values, or clearly labeled hypothetical assumptions. Inputs are decimal strings with a unit: cents (money in minor units), count, "+
       "percent (\"12.5\" means 12.5%) or ratio. Steps run in order; each step's args name inputs or earlier steps. "+
       "Ops: add, subtract (2 args), multiply, divide (2 args), sum (any number), percent_of (percent × value).",
     parameters:{type:"object",additionalProperties:false,required:["inputs","steps"],properties:{
@@ -89,6 +90,25 @@ export const researchToolDefinitions=[
 ] as const;
 
 async function callDatabase(scope:ResearchScope,sql:string):Promise<Record<string,unknown>>{
+  // PostgREST has an independent hosting request deadline. A dedicated
+  // restricted direct/session connection uses the same RLS SQL executor,
+  // with no statement or client query timeout and no arbitrary role change.
+  const connectionString=process.env.SUPERVISOR_RESEARCH_DATABASE_URL;
+  if(connectionString){
+    if(scope.signal?.aborted)return {ok:false,error:"research_execution_interrupted"};
+    const client=new Client({connectionString,statement_timeout:0,query_timeout:0});
+    const abort=()=>{void client.end().catch(()=>undefined);};
+    scope.signal?.addEventListener("abort",abort,{once:true});
+    try{
+      await client.connect();
+      if(scope.signal?.aborted)return {ok:false,error:"research_execution_interrupted"};
+      const result=await client.query("select public.supervisor_research_sql($1::uuid,$2::uuid,$3::text) as result",[scope.businessId,scope.ownerUserId,sql]);
+      const value=result.rows[0]?.result;
+      return value&&typeof value==="object"?value as Record<string,unknown>:{ok:false,error:"empty_database_response"};
+    }catch(error){
+      return {ok:false,error:scope.signal?.aborted?"research_execution_interrupted":"research_database_transport_failed",...(typeof (error as {code?:unknown})?.code==="string"?{sqlstate:(error as {code:string}).code}:{})};
+    }finally{scope.signal?.removeEventListener("abort",abort);await client.end().catch(()=>undefined);}
+  }
   const request=scope.db.rpc("supervisor_research_sql",{
     p_business_id:scope.businessId,p_owner_user_id:scope.ownerUserId,p_sql:sql});
   const {data,error}=await (scope.signal&&typeof request.abortSignal==="function"?request.abortSignal(scope.signal):request);
