@@ -92,7 +92,8 @@ export async function POST(request: Request, context: RouteContext) {
     // Admission is durable before any acknowledgement or execution. The
     // foreground path below and the existing scheduled worker race for the
     // SAME scoped lease, never for independent agent turns.
-    if(process.env.SUPERVISOR_RUN_WORKER_ENABLED==="true"&&process.env.SUPERVISOR_DURABLE_CHAT_ENABLED==="true"){
+    if(process.env.SUPERVISOR_RUN_WORKER_ENABLED!=="false"&&process.env.SUPERVISOR_DURABLE_CHAT_ENABLED!=="false"&&
+      (process.env.NODE_ENV==="production"||(process.env.SUPERVISOR_RUN_WORKER_ENABLED==="true"&&process.env.SUPERVISOR_DURABLE_CHAT_ENABLED==="true"))){
       const worker=await import("@/lib/ai/supervisor/runs/worker.server");
       let run:Awaited<ReturnType<typeof worker.admitDurableChat>>;
       try{
