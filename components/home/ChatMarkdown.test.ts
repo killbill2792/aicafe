@@ -392,3 +392,12 @@ it("fits the accounting three-column table and wraps descriptions",()=>{
  const html=renderToStaticMarkup(createElement(ChatMarkdown,{text:"| Accounting item | Amount | Data quality |\n| --- | ---: | --- |\n| Staff wages | $9,321.45 | Actual |\n| Ingredient costs | $78.90 | Incomplete; last five days only |"}));
  expect(html).toContain("table-fixed");expect(html).not.toContain("min-w-max");expect(html).toContain("<colgroup>");expect(html).toContain("overflow-wrap:anywhere");expect(html).toContain("Incomplete; last five days only");
 });
+
+it("keeps provenance offsets after a repaired adjacent table and leaves fenced code literal",()=>{
+ const text="A | B\n--- | ---\nOne | Two\nCost | Value\n--- | ---\nItem | $125.00\n\n\x60\x60\x60text\nA | B\n--- | ---\n\x60a|b\x60\n\x60\x60\x60";
+ const start=text.indexOf("$125.00");
+ const html=renderToStaticMarkup(createElement(ChatMarkdown,{text,unverified:[{start,end:start+7,source:"owner"}]}));
+ expect(html.match(/<table/g)).toHaveLength(2);
+ expect(html).toContain('aria-label="$125.00 — You told me"');
+ expect(html).toContain("a|b");
+});

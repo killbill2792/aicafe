@@ -253,11 +253,50 @@ const components:Components={
 // native remark escape plugin preserves unsupported HTML as literal text.
 const safeRehype=[defaultRehypePlugins.sanitize,defaultRehypePlugins.harden];
 const safeUrl=(url:string,key:string)=>key==="href"&&/^https?:\/\//iu.test(url)?url:undefined;
+/** Adapt historical model tables to GFM without changing stored prose. Insert
+ * only missing table separators/pipe escapes; translate provenance offsets. */
+function normalizeTableMarkdown(text:string,spans:readonly Verification[]){
+ const lines=text.split("\n"),insertions:{at:number;value:string}[]=[];
+ const delimiter=(line:string)=>/^\s*\|?\s*:?-{3,}:?\s*(?:\|\s*:?-{3,}:?\s*)*\|?\s*$/u.test(line)&&line.includes("|");
+ let offset=0,inTable=false,fence:{char:string;length:number}|null=null;
+ for(let i=0;i<lines.length;i++){
+  const line=lines[i],opening=/^ {0,3}(\x60{3,}|~{3,})/u.exec(line);
+  if(opening){
+   const token=opening[1];
+   if(!fence)fence={char:token[0],length:token.length};
+   else if(token[0]===fence.char&&token.length>=fence.length&&line.slice(opening[0].length).trim()==="")fence=null;
+   inTable=false;
+  }else if(!fence){
+   const header=line.includes("|")&&delimiter(lines[i+1]??"");
+   if(header){if(inTable)insertions.push({at:offset,value:"\n"});inTable=true;}
+   else if(!line.trim()||/^ {0,3}(?:#{1,6}\s|>|[-+*]\s|\d+[.)]\s)/u.test(line))inTable=false;
+   // GFM requires pipe escaping even inside inline code in a table cell.
+   if(inTable){
+    for(const match of line.matchAll(/(?<!\x60)(\x60+)(?!\x60)([^\r\n]*?)\1(?!\x60)/gu)){
+     const start=match.index+match[1].length;
+     for(let j=0;j<match[2].length;j++)if(match[2][j]==="|"){
+      let backslashes=0;
+      for(let k=j-1;k>=0&&match[2][k]==="\\";k--)backslashes++;
+      if(backslashes%2===0)insertions.push({at:offset+start+j,value:"\\"});
+     }
+    }
+   }
+  }
+  offset+=line.length+1;
+ }
+ if(!insertions.length)return {text,spans};
+ let normalized="",cursor=0;
+ for(const item of insertions){normalized+=text.slice(cursor,item.at)+item.value;cursor=item.at;}
+ normalized+=text.slice(cursor);
+ const shift=(at:number,inclusive:boolean)=>at+insertions.reduce((n,item)=>n+(item.at<at||inclusive&&item.at===at?item.value.length:0),0);
+ return {text:normalized,spans:spans.map(span=>({...span,start:shift(span.start,true),end:shift(span.end,false)}))};
+}
 function MarkdownSegment({text,options,streaming}:{text:string;options:MarkOptions;streaming:boolean}){
- const rehypePlugins=[...safeRehype,[sourceAnnotationPlugin,options] as [typeof sourceAnnotationPlugin,MarkOptions]];
+ const normalized=normalizeTableMarkdown(text,options.spans);
+ const rehypePlugins=[...safeRehype,[sourceAnnotationPlugin,{...options,spans:normalized.spans}] as [typeof sourceAnnotationPlugin,MarkOptions]];
  return <Streamdown mode={streaming?"streaming":"static"} isAnimating={streaming}
    dir={options.locale==="ar"?"rtl":"auto"} controls={false} components={components}
-   rehypePlugins={rehypePlugins} urlTransform={safeUrl} className="space-y-2 min-w-0 break-words">{text}</Streamdown>;
+   rehypePlugins={rehypePlugins} urlTransform={safeUrl} className="space-y-2 min-w-0 break-words">{normalized.text}</Streamdown>;
 }
 export function SourceLegend({sources,labels,legendLabel="Number sources"}:{
  sources:readonly ("owner"|"estimate"|"unchecked")[];labels:ProvenanceLabels;legendLabel?:string;
