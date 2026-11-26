@@ -362,7 +362,7 @@ export async function executeClaimedObjective(db:SupabaseClient,params:{
   };
   const continuation=await backgroundResearchContinuation(db,{...scope,threadId:routine.threadId,sourceType:"routine",sourceId:lease.runId,revision:String(lease.revision),leaseToken:lease.leaseToken,parentDeadline:params.executionDeadline});
   const turn=await runResearchTurn({
-    continuation,executionDeadline:continuation.executionDeadline,
+    continuation,continuationIdentity:"routine:"+lease.runId+":"+lease.revision,executionDeadline:continuation.executionDeadline,
     captureSourceVersions:()=>({...webRevision!==undefined?{web:webRevision}:{},...usedGmailIdentity?{gmail:JSON.stringify(usedGmailIdentity)}:{}}),
     restoreSourceVersions:async versions=>{webRevision=versions.web;usedGmailIdentity=versions.gmail?JSON.parse(versions.gmail):null;await recheckGmail();},
     ownerText:prompt,
