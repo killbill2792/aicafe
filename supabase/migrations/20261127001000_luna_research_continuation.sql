@@ -617,3 +617,97 @@ do $$ begin
 end $$;
 grant usage on schema public to supervisor_research_transport;
 grant execute on function public.supervisor_research_sql(uuid,uuid,text) to supervisor_research_transport;
+
+-- Autonomous research uses the same resumable transcript contract, but its
+-- authority comes from the existing routine/incident lease, not a chat run.
+create table public.supervisor_background_research_continuations (
+  business_id uuid not null references public.businesses(id) on delete cascade,
+  owner_user_id uuid not null,
+  source_type text not null check (source_type in ('routine','alert','operating_task')),
+  source_id text not null,
+  revision text not null,
+  state jsonb not null,
+  updated_at timestamptz not null default clock_timestamp(),
+  primary key (business_id,owner_user_id,source_type,source_id)
+);
+alter table public.supervisor_background_research_continuations enable row level security;
+revoke all on public.supervisor_background_research_continuations from public,anon,authenticated;
+grant select,insert,update,delete on public.supervisor_background_research_continuations to service_role;
+
+create function public.supervisor_background_research_checkpoint(
+  p_business_id uuid,p_owner_user_id uuid,p_thread_id uuid,p_source_type text,
+  p_source_id text,p_revision text,p_lease_token uuid,p_operation text,p_state jsonb default null
+) returns jsonb language plpgsql security definer set search_path to '' as $$
+declare expiry timestamptz; saved jsonb;
+begin
+  if coalesce(auth.role(),'')<>'service_role' or p_operation not in ('load','save','yield') or
+    not public.supervisor_routine_owner_authorized(p_business_id,p_owner_user_id,p_thread_id)
+  then raise exception 'background_research_unauthorized' using errcode='42501'; end if;
+  if p_source_type='routine' then
+    perform 1 from public.supervisor_routines r join public.supervisor_routine_occurrences o
+      on o.business_id=r.business_id and o.routine_id=r.id
+      where r.business_id=p_business_id and r.owner_user_id=p_owner_user_id and r.thread_id=p_thread_id
+        and o.run_id::text=p_source_id and r.status='active' and r.revision=o.revision
+        and r.execution_mode in ('objective','watch') for update of r;
+    if not found then raise exception 'background_research_lease_lost' using errcode='40001'; end if;
+    select o.lease_until into expiry from public.supervisor_routine_occurrences o
+      where o.business_id=p_business_id and o.run_id::text=p_source_id and o.revision::text=p_revision
+        and o.state='running' and o.lease_token=p_lease_token for update;
+  else
+    select i.lease_until into expiry from public.supervisor_investigations i
+      where i.business_id=p_business_id and i.owner_user_id=p_owner_user_id and i.thread_id=p_thread_id
+        and i.source_type=p_source_type and i.source_id=p_source_id and i.lease_token=p_lease_token
+        and i.phase in ('investigate','awaiting_owner')
+        and i.episode_id::text||':'||i.revision_hash||':'||i.step_version::text=p_revision for update;
+  end if;
+  if expiry is null or expiry<=clock_timestamp() then
+    raise exception 'background_research_lease_lost' using errcode='40001'; end if;
+  if p_operation='load' then
+    select c.state into saved from public.supervisor_background_research_continuations c
+      where c.business_id=p_business_id and c.owner_user_id=p_owner_user_id
+        and c.source_type=p_source_type and c.source_id=p_source_id and c.revision=p_revision;
+    return jsonb_build_object('state',saved,'lease_until',expiry);
+  elsif p_operation='save' then
+    if jsonb_typeof(p_state) is distinct from 'object' then raise exception 'invalid_research_state'; end if;
+    insert into public.supervisor_background_research_continuations
+      (business_id,owner_user_id,source_type,source_id,revision,state)
+    values(p_business_id,p_owner_user_id,p_source_type,p_source_id,p_revision,p_state)
+    on conflict(business_id,owner_user_id,source_type,source_id) do update set
+      state=excluded.state,revision=excluded.revision,updated_at=clock_timestamp();
+  elsif p_source_type='routine' then
+    update public.supervisor_routine_occurrences set state='pending',lease_token=null,lease_until=null,
+      attempts=greatest(0,attempts-1),next_retry_at=clock_timestamp(),updated_at=clock_timestamp()
+      where business_id=p_business_id and run_id::text=p_source_id and lease_token=p_lease_token;
+  else
+    update public.supervisor_investigations set lease_token=null,lease_until=null,
+      next_retry_at=clock_timestamp(),updated_at=clock_timestamp()
+      where business_id=p_business_id and owner_user_id=p_owner_user_id and source_type=p_source_type
+        and source_id=p_source_id and lease_token=p_lease_token;
+  end if;
+  return jsonb_build_object('ok',true);
+end $$;
+revoke all on function public.supervisor_background_research_checkpoint(uuid,uuid,uuid,text,text,text,uuid,text,jsonb) from public,anon,authenticated;
+grant execute on function public.supervisor_background_research_checkpoint(uuid,uuid,uuid,text,text,text,uuid,text,jsonb) to service_role;
+
+create function public.supervisor_clear_background_research() returns trigger
+language plpgsql security definer set search_path to '' as $$
+begin
+  if tg_table_name='supervisor_routine_occurrences' then
+    if new.state in ('completed','failed') or new.revision is distinct from old.revision then
+      delete from public.supervisor_background_research_continuations where business_id=new.business_id
+        and source_type='routine' and source_id=new.run_id::text;
+    end if;
+  else
+    if new.phase in ('resolved','blocked') or new.step_version is distinct from old.step_version
+      or new.episode_id is distinct from old.episode_id or new.revision_hash is distinct from old.revision_hash then
+      delete from public.supervisor_background_research_continuations where business_id=new.business_id
+        and owner_user_id=new.owner_user_id and source_type=new.source_type and source_id=new.source_id;
+    end if;
+  end if;
+  return new;
+end $$;
+revoke all on function public.supervisor_clear_background_research() from public,anon,authenticated;
+create trigger clear_routine_research after update on public.supervisor_routine_occurrences
+for each row execute function public.supervisor_clear_background_research();
+create trigger clear_incident_research after update on public.supervisor_investigations
+for each row execute function public.supervisor_clear_background_research();
