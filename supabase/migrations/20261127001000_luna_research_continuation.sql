@@ -72,14 +72,17 @@ create trigger supervisor_clear_research_continuation after update of status on 
  for each row when (old.status is distinct from new.status) execute function public.supervisor_clear_research_continuation();
 
 -- Remove artificial cumulative receipt caps; receipts still validate their shape.
+-- Reason: Replace the cumulative receipt count limit with a JSON array shape constraint.
 -- squawk-ignore ban-drop-constraint
 alter table public.supervisor_run_steps drop constraint supervisor_run_steps_checkpoint_receipts_check;
 alter table public.supervisor_run_steps add constraint supervisor_research_receipts_array check(jsonb_typeof(checkpoint_receipts)='array') not valid;
 
 -- NULL output reservation means the provider chooses the output. Old explicit
 -- bounded acceptance reservations remain compatible.
+-- Reason: Unspecified output reservation represents provider-selected output; existing explicit reservations remain valid.
 -- squawk-ignore ban-drop-not-null
 alter table public.supervisor_system_usage_events alter column reserved_output_cap drop not null;
+-- Reason: Replace the arbitrary input maximum with the positive-value invariant.
 -- squawk-ignore ban-drop-constraint
 alter table public.supervisor_system_usage_events drop constraint supervisor_system_usage_events_reserved_input_upper_check;
 alter table public.supervisor_system_usage_events add constraint supervisor_system_input_positive check(reserved_input_upper>=1) not valid;
