@@ -1,4 +1,5 @@
 import {beforeEach,afterEach,describe,expect,it,vi} from "vitest";
+vi.mock("@/lib/ai/research/backgroundContinuation.server",()=>({backgroundResearchContinuation:async()=>({executionDeadline:Date.now()+110000,load:async()=>null,save:async()=>undefined,yield:async()=>undefined})}));
 vi.mock("server-only",()=>({}));
 const mocks=vi.hoisted(()=>({
   model:vi.fn(),access:vi.fn(),tools:vi.fn(),identity:vi.fn(),
