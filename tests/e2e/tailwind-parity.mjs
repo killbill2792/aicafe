@@ -35,6 +35,18 @@ async function capture(route,width,mode){
   await expect(page.locator("main details ol li > span[aria-hidden=true]").filter({hasText:"○"})).toHaveCount(8,{timeout:30000});
   await expect(page.getByRole("status").filter({hasText:"Working…"})).toHaveCount(0,{timeout:30000});
  }
+ // Next/Image loads independently of PageShell. Verify visible image pixels,
+ // not just an existing img element or its layout box. Do not compare unloaded
+ // avatars to decoded ones; off-screen lazy images need not load.
+ if(route==="operations"){
+  await expect.poll(()=>page.locator("main img").evaluateAll(images=>{
+   const visible=images.filter(img=>{const r=img.getBoundingClientRect();return r.width>0&&r.height>0&&r.right>0&&r.left<innerWidth&&r.bottom>0&&r.top<innerHeight;});
+   return visible.length>0&&visible.every(img=>img.complete&&img.naturalWidth>0);
+  }),{timeout:30000}).toBe(true);
+  await page.locator("main img").evaluateAll(async images=>{
+   await Promise.all(images.filter(img=>{const r=img.getBoundingClientRect();return r.width>0&&r.height>0&&r.right>0&&r.left<innerWidth&&r.bottom>0&&r.top<innerHeight;}).map(img=>img.decode()));
+  });
+ }
  await page.evaluate(async()=>{await document.fonts.ready;await new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve)));});
  const name=(route||"home").replace(/[^a-z0-9-]+/gi,"-")+"-"+width+"-"+mode;
  const data=await page.evaluate(({variant,route})=>{
