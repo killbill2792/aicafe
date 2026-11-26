@@ -415,7 +415,7 @@ export async function runResearchTurn(args:{
   }
   usage.latencyMs=Math.max(0,now()-started);
   const tools=[...new Set(invocations.map(i=>i.name))];
-  return {text,endReason,status:{status:"complete",missing:[]},
+  return {text,endReason,status:{status:endReason==="complete"?"complete":"partial",missing:[]},
     // Do not use verbatim-number matching as an answer or presentation gate.
     unverified:[],
     results:[...(await args.checkpoint?.restoredResults?.()??[]),...invocations.map(i=>i.result),...presentations],toolInvocations:invocations,tools,

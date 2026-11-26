@@ -205,7 +205,7 @@ async function deliverChange(db:Db,businessId:string,ownerId:string,timezone:str
     const message=await db.from("ai_messages").insert({
       id:messageId,business_id:businessId,thread_id:plan.threadId,owner_user_id:ownerId,
       author_user_id:null,role:"supervisor",content_type:"blocks",text_content:null,
-      structured_content:reply.blocks,grounding:{status:"verified",intent:"cafe_overview",
+      structured_content:reply.blocks,grounding:{status:reply.status,intent:"cafe_overview",
         agentMetadata:metadata,evidence:[{source:"cafe_events",
           identifier:event.id,asOf:change.verifiedAt}]}});
     if(message.error&&message.error.code!=="23505")throw message.error;

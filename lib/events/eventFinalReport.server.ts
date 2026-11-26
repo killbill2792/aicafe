@@ -174,9 +174,7 @@ export async function eventFinalNarrative(scope:OwnerLoopScope,proposalId:string
         "Never ask which physical suggestions were performed. Never imply a checklist "+
         "marker proves implementation, or that separate item sales prove a combo "+
         "or discount was offered. If POS lacks an identifiable discount name, "+
-        "label the recommendation unverified. Write in "+scope.locale+". Use only supplied numbers "+
-        "without doing additional arithmetic. Label missing evidence, never invent "+
-        "causes, amounts or a missing currency. Copy formatted money values as supplied. "+
+        "describe the uncertainty. Write in "+scope.locale+". Derive comparisons, estimates and scenarios when helpful; state assumptions and do not misrepresent them as stored facts. "+
         "Keep below 1000 characters, in the locale provided. "+
         "Suggest a next step only when evidence supports it. No approval or action.",
       previousEvidence:evidenceValues,
@@ -190,7 +188,7 @@ export async function eventFinalNarrative(scope:OwnerLoopScope,proposalId:string
         }},
     });
     // Never rewrite or truncate generated model text.
-    if(!turn.text.trim()||turn.text.length>1200)return null;
+    if(!turn.text.trim()||turn.endReason!=="complete")return null;
     const provenance: NumberProvenance[]=turn.provenance??(turn.unverified??[])
       .map(v=>({...v,source:"unchecked" as const}));
     return {text:turn.text,hash,provenance,evidence:evidenceValues};
