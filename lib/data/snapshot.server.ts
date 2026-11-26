@@ -77,7 +77,7 @@ export async function getBusinessSnapshotFromDb(
         .then(data=>({data,error:null}),(error:Error)=>({data:null,error})),
       timeReader("Snapshot","recurringCosts",()=>snapshotPaged("recurring_costs",
         (start,end)=>supabase.from("cv_bills")
-         .select("id:data->id,category_code:data->category_code,amount_cents:data->amount_cents,frequency:data->frequency,is_estimate:data->is_estimate,active_from:data->active_from,active_to:data->active_to,label:data->label,due_day:data->due_day,source",{count:"exact"})
+         .select("id,category_code,amount_cents,frequency,is_estimate,active_from,active_to,label,due_day,source",{count:"exact"})
          .eq("business_id",businessId).order("source_ref",{ascending:true}).range(start,end),
         row=>row.id)),
       timeReader("Snapshot","expenses",()=>snapshotPaged("expenses",
@@ -225,7 +225,7 @@ async function getMenuItemSnapshots(
 ): Promise<MenuItemSnapshot[]> {
   const {data:items}=await snapshotPaged("menu_items",
     (start,end)=>supabase.from("cv_menu")
-     .select("id:data->id,name:data->name,price_cents:data->price_cents,prep_seconds:data->prep_seconds,category:data->category,is_active:data->is_active",{count:"exact"})
+     .select("id,name,price_cents,prep_seconds,category,is_active",{count:"exact"})
      .eq("business_id",businessId).like("source_ref","item:%").order("source_ref",{ascending:true}).range(start,end),
      row=>row.id);
   if (!items || items.length === 0) return [];
@@ -388,8 +388,8 @@ async function readHistoricalBusinessSnapshot(
     readDailyFactRows(supabase,businessId,period.from,period.to)
       .then(data=>({data,error:null}),(error:Error)=>({data:null,error})),
     snapshotPaged("historical_recurring_costs",(start,end)=>supabase.from("cv_bills")
-      .select("id:data->id,category_code:data->category_code,amount_cents:data->amount_cents,frequency:data->frequency,is_estimate:data->is_estimate,active_from:data->active_from,active_to:data->active_to,label:data->label,due_day:data->due_day,source",{count:"exact"})
-      .eq("business_id",businessId).lte("data->>active_from",monthEnd)
+      .select("id,category_code,amount_cents,frequency,is_estimate,active_from,active_to,label,due_day,source",{count:"exact"})
+      .eq("business_id",businessId).lte("active_from",monthEnd)
       .order("source_ref",{ascending:true}).range(start,end),row=>row.id),
     snapshotPaged("historical_expenses",(start,end)=>supabase.from("cv_expenses")
       .select("id,category_code,amount_cents,status,spent_on,recurring_cost_id,custom_label,vendor,source",{count:"exact"})

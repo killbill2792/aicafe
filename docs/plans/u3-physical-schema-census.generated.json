@@ -3059,6 +3059,51 @@
      "data",
      "jsonb",
      false
+    ],
+    [
+     "id",
+     "uuid",
+     false
+    ],
+    [
+     "category_code",
+     "text",
+     false
+    ],
+    [
+     "label",
+     "text",
+     false
+    ],
+    [
+     "amount_cents",
+     "bigint",
+     false
+    ],
+    [
+     "frequency",
+     "text",
+     false
+    ],
+    [
+     "is_estimate",
+     "boolean",
+     false
+    ],
+    [
+     "active_from",
+     "date",
+     false
+    ],
+    [
+     "active_to",
+     "date",
+     false
+    ],
+    [
+     "due_day",
+     "integer",
+     false
     ]
    ],
    "relation": "cv_bills",
@@ -3972,6 +4017,81 @@
     [
      "data",
      "jsonb",
+     false
+    ],
+    [
+     "id",
+     "uuid",
+     false
+    ],
+    [
+     "name",
+     "text",
+     false
+    ],
+    [
+     "base_name",
+     "text",
+     false
+    ],
+    [
+     "size_label",
+     "text",
+     false
+    ],
+    [
+     "price_cents",
+     "bigint",
+     false
+    ],
+    [
+     "prep_seconds",
+     "integer",
+     false
+    ],
+    [
+     "category",
+     "text",
+     false
+    ],
+    [
+     "menu_group",
+     "text",
+     false
+    ],
+    [
+     "is_active",
+     "boolean",
+     false
+    ],
+    [
+     "pos_item_id",
+     "text",
+     false
+    ],
+    [
+     "catalog_source",
+     "text",
+     false
+    ],
+    [
+     "catalog_last_synced_at",
+     "timestamp with time zone",
+     false
+    ],
+    [
+     "description",
+     "text",
+     false
+    ],
+    [
+     "pos_visibility",
+     "text",
+     false
+    ],
+    [
+     "pos_pricing_strategy",
+     "text",
      false
     ]
    ],

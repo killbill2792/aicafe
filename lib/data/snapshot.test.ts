@@ -114,7 +114,7 @@ describe("getSnapshot read-only current snapshot and Home database budget",()=>{
     seed.cv_expenses=[{id:"same",category_code:"rent",amount_cents:100,status:"actual",spent_on:today},
       {id:"same",category_code:"rent",amount_cents:200,status:"actual",spent_on:today}];
     await expect(getBusinessSnapshotFromDb(db,"c1","today"))
-      .rejects.toThrow("snapshot_source_incomplete:cv_expenses");
+      .rejects.toThrow("snapshot_source_incomplete:expenses");
   });
   it("never labels estimated expense rows as actual cash spent today",async()=>{
     const {db,seed}=mockDb();

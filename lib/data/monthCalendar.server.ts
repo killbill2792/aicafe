@@ -53,9 +53,9 @@ export async function getMonthCalendarFromDb(
       .eq("business_id",businessId).gte("spent_on",previousStart).lte("spent_on",monthEnd)
       .order("id",{ascending:true}).range(start,end),row=>row.id),
     readCompletePaged((start,end)=>supabase.from("cv_bills")
-      .select("id:data->id,category_code:data->category_code,amount_cents:data->amount_cents,frequency:data->frequency,is_estimate:data->is_estimate,active_from:data->active_from,active_to:data->active_to,label:data->label,due_day:data->due_day,source",{count:"exact"})
-      .eq("business_id",businessId).lte("data->>active_from",monthEnd)
-      .or(`data->>active_to.is.null,data->>active_to.gte.${monthStart}`).order("source_ref",{ascending:true}).range(start,end),row=>row.id),
+      .select("id,category_code,amount_cents,frequency,is_estimate,active_from,active_to,label,due_day,source",{count:"exact"})
+      .eq("business_id",businessId).lte("active_from",monthEnd)
+      .or(`active_to.is.null,active_to.gte.${monthStart}`).order("source_ref",{ascending:true}).range(start,end),row=>row.id),
     supabase
       .from("locations")
       .select("open_hours")

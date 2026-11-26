@@ -23,13 +23,14 @@ comment on column public.cv_sales_days.data is 'Saved daily fact amounts in inte
 
 -- Existing recurring commitments; retain every existing key and expose the active dates and due day.
 create or replace view public.cv_bills
- (business_id,source,source_ref,status,business_date,data) with (security_invoker=true) as
+ (business_id,source,source_ref,status,business_date,data,id,category_code,label,amount_cents,frequency,is_estimate,active_from,active_to,due_day) with (security_invoker=true) as
  select c.business_id,coalesce(nullif(c.source,''),'app')::text,
  'bill:'||c.id::text,case when c.is_estimate then 'estimated' else 'actual' end::text,
  null::date,jsonb_build_object('id',c.id,'amount_cents',c.amount_cents,
  'frequency',c.frequency,'category',c.category_code,'name',c.label,'is_estimate',c.is_estimate,
  'category_code',c.category_code,'label',c.label,'active_from',c.active_from,
- 'active_to',c.active_to,'due_day',c.due_day)
+ 'active_to',c.active_to,'due_day',c.due_day),
+ c.id,c.category_code,c.label,c.amount_cents,c.frequency,c.is_estimate,c.active_from,c.active_to,c.due_day
  from public.recurring_costs c;
 comment on view public.cv_bills is 'Recurring obligations, one row per saved commitment, with active dates, amount, frequency and estimate status. Actual expense receipts are in cv_expenses.';
 
@@ -93,24 +94,27 @@ create or replace function public.menu_item_quantities_sold(p_business_id uuid,p
 
 -- Preserve the existing item/review/version union and expose menu display fields.
 create or replace view public.cv_menu
- (business_id,source,source_ref,status,business_date,data) with (security_invoker=true) as
+ (business_id,source,source_ref,status,business_date,data,id,name,base_name,size_label,price_cents,prep_seconds,category,menu_group,is_active,pos_item_id,catalog_source,catalog_last_synced_at,description,pos_visibility,pos_pricing_strategy) with (security_invoker=true) as
  select m.business_id,case when m.catalog_source='toast' then 'toast' else 'app' end::text,
  'item:'||m.id::text,'actual'::text,null::date,
  jsonb_build_object('id',m.id,'name',m.name,'price_cents',m.price_cents,
  'category',m.category,'menu_group',m.menu_group,'is_active',m.is_active,'pos_item_id',m.pos_item_id,
  'base_name',m.base_name,'size_label',m.size_label,'prep_seconds',m.prep_seconds,
  'catalog_source',m.catalog_source,'catalog_last_synced_at',m.catalog_last_synced_at,
- 'description',m.description,'pos_visibility',m.pos_visibility,'pos_pricing_strategy',m.pos_pricing_strategy)
+ 'description',m.description,'pos_visibility',m.pos_visibility,'pos_pricing_strategy',m.pos_pricing_strategy),
+ m.id,m.name,m.base_name,m.size_label,m.price_cents,m.prep_seconds,m.category,m.menu_group,m.is_active,m.pos_item_id,m.catalog_source,m.catalog_last_synced_at,m.description,m.pos_visibility,m.pos_pricing_strategy
  from public.menu_items m
  union all
  select r.business_id,'toast'::text,'review:'||r.review_type||':'||r.source_key,
- 'needs_match'::text,null::date,jsonb_build_object('review_type',r.review_type,'source_key',r.source_key,'detail',r.detail)
+ 'needs_match'::text,null::date,jsonb_build_object('review_type',r.review_type,'source_key',r.source_key,'detail',r.detail),
+ null::uuid,null::text,null::text,null::text,null::bigint,null::integer,null::text,null::text,null::boolean,null::text,null::text,null::timestamp with time zone,null::text,null::text,null::text
  from public.pos_import_reviews r where r.provider='toast' and r.review_type in ('catalog_item','menu_identity','item_identity')
  and r.status='needs_owner'
  union all
  select v.business_id,'toast'::text,
  'price-version:'||v.restaurant_guid::text||':'||v.kind||':'||v.provider_guid::text||':'||v.price_fingerprint,
  'actual'::text,null::date,jsonb_build_object('kind','price_version','provider_guid',v.provider_guid,
- 'entity_kind',v.kind,'name',v.name,'category',v.category,'price_cents',v.price_cents,'observed_at',v.observed_at)
+ 'entity_kind',v.kind,'name',v.name,'category',v.category,'price_cents',v.price_cents,'observed_at',v.observed_at),
+ null::uuid,null::text,null::text,null::text,null::bigint,null::integer,null::text,null::text,null::boolean,null::text,null::text,null::timestamp with time zone,null::text,null::text,null::text
  from public.toast_catalog_price_versions v;
 comment on view public.cv_menu is 'Current and archived catalog rows have source_ref item:; price-version and needs_match review rows are separate, not additional sellable products. Null open prices remain unknown.';
