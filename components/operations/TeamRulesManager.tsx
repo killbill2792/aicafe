@@ -23,8 +23,8 @@ async function readResponse<T>(response: Response): Promise<T> {
 }
 
 const surface = "rounded-2xl border border-line bg-card p-4 md:p-5";
-const field = "min-h-12 w-full rounded-xl border border-line bg-surface px-3 text-[1.0625rem] text-ink focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ink";
-const button = "min-h-12 rounded-full px-4 text-[1.0625rem] font-bold focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ink disabled:cursor-not-allowed disabled:opacity-50";
+const field = "min-h-12 w-full rounded-xl border border-line bg-surface px-3 text-[1.0625rem] text-ink focus-visible:outline-solid focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ink";
+const button = "min-h-12 rounded-full px-4 text-[1.0625rem] font-bold focus-visible:outline-solid focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ink disabled:cursor-not-allowed disabled:opacity-50";
 
 /** A selected-agent change remounts the editor rather than using a synchronous
  * effect to reset its local draft. The async policy readers stay owner-scoped. */
@@ -157,7 +157,7 @@ function TeamRulesManagerBody({ copy, selectedAgent }: { copy: TeamRulesCopy; se
                 <strong className="text-[1.0625rem] text-ink">{agentName(rule.agentId)}</strong>
                 <span className="rounded-full bg-surface px-3 py-1 text-[0.9375rem] font-semibold text-ink">{statusLabel(rule)}</span>
               </div>
-              <p className="mt-2 whitespace-pre-wrap break-words text-[1.0625rem] leading-relaxed text-ink">{rule.instruction}</p>
+              <p className="mt-2 whitespace-pre-wrap wrap-break-word text-[1.0625rem] leading-relaxed text-ink">{rule.instruction}</p>
               <p className="mt-2 text-sm text-ink-muted">{copy.created}: {rule.createdAt.slice(0, 10)}</p>
               <div className="mt-3 flex flex-wrap gap-2">
                 {(rule.status==="active"||rule.status==="paused")&&<button type="button" disabled={busy}
@@ -204,7 +204,7 @@ function TeamRulesManagerBody({ copy, selectedAgent }: { copy: TeamRulesCopy; se
       <ol className="mt-3 flex flex-col gap-3">
         {visibleEvents.map((event) => <li key={event.id} className="rounded-xl border border-line p-3">
           <strong className="text-[1.0625rem] text-ink">{agentName(event.agentId)} · {copy[event.newStatus]}</strong>
-          <p className="mt-1 break-words text-[1.0625rem] text-ink">{event.instruction}</p>
+          <p className="mt-1 wrap-break-word text-[1.0625rem] text-ink">{event.instruction}</p>
           <p className="mt-1 text-sm text-ink-muted">
             {event.previousStatus ? copy[event.previousStatus] + " → " : ""}
             {copy[event.newStatus]} · {event.createdAt.slice(0, 10)} · {copy.by} {event.actorUserId.slice(0, 8)}

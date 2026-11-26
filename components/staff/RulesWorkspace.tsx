@@ -73,7 +73,7 @@ export default function RulesWorkspace({initial,week,readOnly=false,payroll}:{in
    <h1 className="font-headline text-2xl font-extrabold">{t("rulesAndCosts")}</h1>
    <p className="rounded-2xl bg-accent-soft p-4">{t("ruleInfo")}</p>
    {readOnly&&<p className="rounded-xl bg-surface2 p-3 text-muted">{t("readOnly")}</p>}
-   {durationRules.map(group=><section key={group.title} className="rounded-[20px] border border-line bg-surface p-4">
+   {durationRules.map(group=><section key={group.title} className="rounded-card border border-line bg-surface p-4">
     <h2 className="mb-2 text-xl font-bold">{t(group.title)}</h2>
     {group.rows.map(([enabled,first,second,label,sentence])=><div key={enabled} className="border-t border-line py-3">
       <div className="flex flex-wrap items-center gap-3">
@@ -97,19 +97,19 @@ export default function RulesWorkspace({initial,week,readOnly=false,payroll}:{in
      {multiplierError&&<span role="alert" className="text-neg">{t("invalidMultiplier")}</span>}
     </div>}
    </section>)}
-   <section className="rounded-[20px] border border-line bg-surface p-4">
+   <section className="rounded-card border border-line bg-surface p-4">
     <h2 className="text-xl font-bold">{t("coverage")}</h2>
     <label className="flex min-h-12 items-center gap-2"><input className="size-5" type="checkbox" disabled={pending||readOnly} checked={Boolean(values.coverage_enabled)} onChange={e=>change("coverage_enabled",e.target.checked)}/>{t("minimumCoverage")}</label>
     <div className="flex flex-wrap items-center gap-2">{t("atLeast")}<NumberField key={"coverage"+String(values.min_headcount)} value={Number(values.min_headcount)} min={1} max={30} label={t("peopleWhileOpen")} disabled={pending||readOnly} locale={locale} onCommit={v=>change("min_headcount",v)}/>{t("whileOpen")}</div>
    </section>
-   <section className="rounded-[20px] border border-line bg-surface p-4">
+   <section className="rounded-card border border-line bg-surface p-4">
     <h2 className="text-xl font-bold">{t("prepTiming")}</h2>
     {(["prep_minutes_before_open","prep_minutes_after_close"] as const).map(key=><div key={key} className="flex flex-wrap items-center gap-2 py-2">{t(key==="prep_minutes_before_open"?"prepBeforeOpen":"prepAfterClose")}<NumberField key={key+String(values[key])} value={Number(values[key])} min={0} max={240} label={t(key==="prep_minutes_before_open"?"prepBeforeOpen":"prepAfterClose")} disabled={pending||readOnly} locale={locale} onCommit={v=>change(key,v)} twoParts/></div>)}
    </section>
    <PayrollCostCard settings={payroll} readOnly={readOnly} labels={{
 title:staffT("payrollCostsTitle"),body:staffT("payrollCostsBody"),field:staffT("payrollCostsField"),hint:staffT("payrollCostsHint"),source:staffT("payrollSource"),ownerSource:staffT("payrollSourceOwner"),estimateSource:staffT("payrollSourceEstimate"),quickbooksSource:staffT("payrollSourceQuickBooks"),importedSource:staffT("payrollSourceImported"),connectedSource:staffT("payrollSourceConnected"),actualUsing:staffT("payrollActualUsing"),fallbackNote:staffT("payrollFallbackNote"),save:staffT("payrollSave"),saving:staffT("payrollSaving"),saved:staffT("payrollSaved"),invalid:staffT("payrollInvalid"),saveFailed:staffT("payrollSaveFailed")
 }}/>
-   <section className="rounded-[20px] border border-line bg-surface p-4">
+   <section className="rounded-card border border-line bg-surface p-4">
     <h2 className="text-xl font-bold">{t("yourRules")}</h2>
     <p className="my-2 text-muted">{t("writeYourRules")}</p>
     {values.custom.map(rule=><div key={rule.id} className="flex items-center justify-between gap-3 border-t border-line py-2">

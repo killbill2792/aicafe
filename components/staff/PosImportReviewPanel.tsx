@@ -29,7 +29,7 @@ export default async function PosImportReviewPanel({people}:{people:Person[]}){
     return <li key={review.reviewType+":"+review.sourceKey}
      className="rounded-xl border border-line p-3">
      <p className="font-semibold">{title[review.reviewType]}</p>
-     <p className="break-words text-sm text-ink-muted">
+     <p className="wrap-break-word text-sm text-ink-muted">
       {String(review.detail.displayName??review.detail.employeeGuid??
         review.detail.employeeId??review.sourceKey).slice(0,160)}
      </p>

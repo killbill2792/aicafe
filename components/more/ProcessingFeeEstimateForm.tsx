@@ -165,7 +165,7 @@ export default function ProcessingFeeEstimateForm({
     : new Intl.NumberFormat(locale, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
   const inputRefs = useRef<Record<string, HTMLInputElement | HTMLSelectElement | null>>({});
   const [fieldErrors, setFieldErrors] = useState<Record<string,string>>({});
-  const borderError = (key: string) => fieldErrors[key] ? " !border-red-600 ring-1 ring-red-600" : "";
+  const borderError = (key: string) => fieldErrors[key] ? " border-red-600! ring-1 ring-red-600" : "";
   const errorText = (key: string) => fieldErrors[key] ? <span role="alert" className="text-xs font-normal text-red-700">{fieldErrors[key]}</span> : null;
   const [isPending, startTransition] = useTransition();
   const [processorLabel, setProcessorLabel] = useState(plan?.processorLabel ?? providerLabel(sourceSummary.connectedProvider));

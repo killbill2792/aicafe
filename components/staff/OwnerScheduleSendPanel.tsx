@@ -153,7 +153,7 @@ export default function OwnerScheduleSendPanel({week,proposalId,locale}:Props){
        <option value="whatsapp">{t.whatsApp}</option><option value="sms">{t.sms}</option>
       </select></label>
     </div>
-    <p className="my-2 whitespace-pre-wrap break-words text-[1.0625rem]">{person.message}</p>
+    <p className="my-2 whitespace-pre-wrap wrap-break-word text-[1.0625rem]">{person.message}</p>
     {person.ledgerStatus==="sent_by_owner"&&<p className="mb-2 text-sm text-ink-muted" role="status">
        {t.opened} · {person.lastChannel==="sms"?t.sms:t.whatsApp}{person.sentAt?" · "+person.sentAt:""}
      </p>}

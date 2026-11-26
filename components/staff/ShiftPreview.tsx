@@ -28,7 +28,7 @@ export default function ShiftPreview({personId,date,start,end,breakMinutes,editi
   [result.availability==="free",t("availableForShift"),t("availabilityStatus",{status:t(result.availability==="off"?"off":result.availability==="on_shift"?"onShift":"unavailable")})],
   [!result.aboveMaximum,t("weeklyMaxOk"),t("weeklyMaxExceeded")]
  ] as const;
- return <section className="mt-4 rounded-[20px] bg-surface2 p-4">
+ return <section className="mt-4 rounded-card bg-surface2 p-4">
   <div className="flex justify-between gap-2"><h3 className="font-bold">{t("shiftCost")}</h3><strong className="text-2xl">{money(result.next.costCents)}</strong></div>
   <p className="my-2 text-sm text-muted">{t("costBreakdown",{hours:(result.next.minutes/60).toFixed(1),break:breakMinutes,paid:(result.next.paidMinutes/60).toFixed(1)})}
     {result.next.wageCents!=null?" × "+fmt(result.next.wageCents,currency)+"/h":""}
