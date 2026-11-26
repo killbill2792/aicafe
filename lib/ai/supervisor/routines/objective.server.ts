@@ -6,11 +6,12 @@ import {assertCafeAiAccess} from "@/lib/access/access.server";
 import {createOwnerScopedCafeTools,readSupervisorCafeIdentity} from "@/lib/ai/cafeTools.server";
 import {openAIProvider,type AgentProvider,type AgentTurn} from "@/lib/ai/agent/loop.server";
 import {runResearchTurn} from "@/lib/ai/research/turn.server";
+import {backgroundResearchContinuation} from "@/lib/ai/research/backgroundContinuation.server";
 import {agentToolDefinitions,gmailToolDefinitions} from "@/lib/ai/agent/tools";
 import type {AgentToolName,AgentToolResult} from "@/lib/ai/agent/tools";
 import {assertDurablePaidTurnAllowed} from "@/lib/ai/supervisor/runs/worker.server";
 import type {OwnerRunCheckpoint} from "@/lib/ai/supervisor/runs/contracts";
-import {loadModelExecutionCap,withWorkerBudget} from "@/lib/ai/supervisor/runs/usage.server";
+import {loadModelExecutionCap} from "@/lib/ai/supervisor/runs/usage.server";
 import {readSavedEventTimeline} from "@/lib/data/cafeEvents.server";
 import {getWeekSchedule as readScopedWeekSchedule} from "@/lib/data/staffSchedule.server";
 import {readStaffMessagesForVerifiedOwner} from "@/lib/staffCommunication/channel.server";
@@ -220,7 +221,6 @@ export function verifyObjectiveTurn(turn:AgentTurn,routine:RoutineRecord):Object
     report=report.replace((quiet??important)![0],"").trim();
     if(!report)throw Error("u4_empty_watch_reason");
   }
-  if(report.length>2600)throw Error("u4_report_too_long");
   return {
     attention,report,
     observedToolNames:[...new Set(reads.map(call=>call.name))].slice(0,12),
@@ -266,6 +266,7 @@ export async function executeClaimedObjective(db:SupabaseClient,params:{
   // Only an authenticated owner-created objective may use an already
   // OAuth-authorized read-only Gmail connector. Default unsolicited Watch
   // never receives these tools or a mailbox context.
+  let webRevision:string|undefined;
   let usedGmailIdentity:{id:string;generation:number;subject:string|null}|null=null;
   const checkedGmail=async<T>(read:()=>Promise<T>):Promise<T>=>{
     await assertLease();
@@ -285,6 +286,7 @@ export async function executeClaimedObjective(db:SupabaseClient,params:{
   };
   const recheckGmail=async()=>{
     await assertLease();
+    if(webRevision!==undefined&&String(await assertExternalAccess(scope,"public_web",WEB_RESOURCE))!==webRevision)throw Error("public_web_evidence_access_changed");
     if(!usedGmailIdentity)return;
     const current=await getConnectorAccount(scope);
     if(!current||!allowsGmail(current,"read")||
@@ -342,6 +344,7 @@ export async function executeClaimedObjective(db:SupabaseClient,params:{
         const value=await research(publicTerms,budget);
         if(await assertExternalAccess(scope,"public_web",WEB_RESOURCE)!==revision)
           throw Error("public_web_evidence_access_changed");
+        webRevision=String(revision);
         return value;
       })}:{}),
     ...(routine.executionMode==="objective"?{
@@ -357,12 +360,11 @@ export async function executeClaimedObjective(db:SupabaseClient,params:{
       propose:async()=>{throw Error("u4_unattended_gmail_effect_denied");},
     }}:{}),
   };
-  const turn=await withWorkerBudget({
-    maxElapsedMs:50_000,maxModelCalls:cap>1200?8:5,
-    maxToolCalls:cap>1200?22:7,
-    maxInputTokens:cap>1200?200_000:72_000,
-    maxOutputTokens:cap>1200?32768:4800,
-  },()=>runResearchTurn({
+  const continuation=await backgroundResearchContinuation(db,{...scope,threadId:routine.threadId,sourceType:"routine",sourceId:lease.runId,revision:String(lease.revision),leaseToken:lease.leaseToken});
+  const turn=await runResearchTurn({
+    continuation,executionDeadline:continuation.executionDeadline,
+    captureSourceVersions:()=>({...webRevision!==undefined?{web:webRevision}:{},...usedGmailIdentity?{gmail:JSON.stringify(usedGmailIdentity)}:{}}),
+    restoreSourceVersions:async versions=>{webRevision=versions.web;usedGmailIdentity=versions.gmail?JSON.parse(versions.gmail):null;await recheckGmail();},
     ownerText:prompt,
     scope:{db,businessId:routine.businessId,ownerUserId:routine.ownerUserId},
     cafeContext:"Café (authenticated, not an owner message): "+JSON.stringify({name:identity.cafeName,
@@ -373,7 +375,8 @@ export async function executeClaimedObjective(db:SupabaseClient,params:{
       !["run_sql","describe_database","calculate","search_web"].includes(t.name)&&
       (routine.executionMode==="watch"?watchReadTools:objectiveReadTools).includes(t.name))},
     provider:metered.provider,checkpoint,beforeProviderRequest:recheckGmail,beforeAcceptResult:recheckGmail,
-  }),cap);
+  });
+  if(turn.endReason==="timeout"){await continuation.yield();throw Error("research_execution_yield");}
   if(metered.problem())throw Error(metered.problem()!);
   const verified=verifyObjectiveTurn(turn,routine);
   await recheckGmail();
