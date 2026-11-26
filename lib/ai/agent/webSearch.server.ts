@@ -73,7 +73,8 @@ export function extractWebSearchAnswer(body:unknown):{answer:string;sources:Arra
 
 export function createWebSearch(deps:{fetch?:Fetch;apiKey?:string;model?:string;now?:()=>number;reserveTransport?:(params:Record<string,unknown>)=>Promise<(response:unknown)=>Promise<void>>}={}){
   const doFetch=deps.fetch??ownerPublicWebFetch,now=deps.now??Date.now;
-  return async(query:string,budget?:WebSearchBudget):Promise<WebSearchResult>=>{
+  return async(query:string,budget?:WebSearchBudget,signal?:AbortSignal):Promise<WebSearchResult>=>{
+    if(signal?.aborted)return {available:false,reason:"timeout"};
     const key=deps.apiKey??process.env.OPENAI_API_KEY;
     if(!key)return {available:false,reason:"notConfigured"};
     // Reserve one paid Responses call inside the same six-model-call turn budget.
@@ -88,9 +89,12 @@ export function createWebSearch(deps:{fetch?:Fetch;apiKey?:string;model?:string;
           input:"Search for current, public information on this question. Summarize only what sources support and cite their URLs. Question: "+query,
         };
       budget?.onRequestComposition?.(requestComposition(params));
+      const requestSignal=signal?AbortSignal.any([signal,AbortSignal.timeout(WEB_SEARCH_TIMEOUT_MS)]):AbortSignal.timeout(WEB_SEARCH_TIMEOUT_MS);
+      requestSignal.throwIfAborted();
       const finish=await deps.reserveTransport?.(params);
+      requestSignal.throwIfAborted();
       const response=await doFetch("https://api.openai.com/v1/responses",{
-        method:"POST",signal:AbortSignal.timeout(WEB_SEARCH_TIMEOUT_MS),
+        method:"POST",signal:requestSignal,
         headers:{"content-type":"application/json",Authorization:"Bearer "+key},body:JSON.stringify(params),
       });
       const durationMs=now()-started;
@@ -111,7 +115,7 @@ export function createWebSearch(deps:{fetch?:Fetch;apiKey?:string;model?:string;
       return {available:true,...parsed};
     }catch(error){
       if(error instanceof PublicWebPermissionError)return {available:false,reason:error.reason};
-      const timedOut=error instanceof Error&&(error.name==="TimeoutError"||error.name==="AbortError");
+      const timedOut=signal?.aborted||error instanceof Error&&(error.name==="TimeoutError"||error.name==="AbortError");
       console.error("agent_web_search_failed",{category:timedOut?"timeout":"network",durationMs:now()-started});
       return {available:false,reason:timedOut?"timeout":"providerFailed"};
     }
