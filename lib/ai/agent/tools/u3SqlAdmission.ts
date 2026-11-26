@@ -96,7 +96,8 @@ const castName=(n:Record<string,unknown>)=>{
  * use a dedicated no-BYPASSRLS scope-bound role and approved research views. */
 export async function admitU3Sql(sql:string,allowedRelations:readonly string[],
  parameterCount=0,aggregateOnly=false,offturnColumns:readonly string[]=[],
- knownColumnUnits:Readonly<Record<string,U3TrustedUnit|null>>={}):Promise<U3SqlAdmission>{
+ knownColumnUnits:Readonly<Record<string,U3TrustedUnit|null>>={},
+ options?:{physicalSchema:"public";forbidCtes:true}):Promise<U3SqlAdmission>{
  if(typeof sql!=="string"||sql.length>MAX_SQL||!sql.trim()||
   parameterCount<0||parameterCount>48)throw Error("invalid_query");
  const parsed=await parser.parse(sql);
@@ -126,7 +127,7 @@ export async function admitU3Sql(sql:string,allowedRelations:readonly string[],
   }
  }
  collect(tree);
- if(nCtes>MAX_CTES)throw Error("invalid_query");
+ if(nCtes>MAX_CTES||(options?.forbidCtes&&nCtes>0))throw Error("invalid_query");
  const reads=new Set<string>(),called=new Set<string>();
  let nodes=0,rangeCount=0,unitAmbiguousDerivedSource=false;
  // PostgreSQL resolves a single, bare table/CTE alias as a whole composite
@@ -228,7 +229,7 @@ export async function admitU3Sql(sql:string,allowedRelations:readonly string[],
    if(kind==="RangeVar"){
     const r=raw as {relname?:unknown;schemaname?:unknown;catalogname?:unknown};
     const rel=typeof r.relname==="string"?r.relname:"";
-    if(r.catalogname||r.schemaname&&r.schemaname!=="u3_research"||
+    if(r.catalogname||r.schemaname&&r.schemaname!==(options?.physicalSchema??"u3_research")||
       !rel||!catalog.has(rel)&&!ctes.has(rel))throw Error("invalid_query");
     if(catalog.has(rel)){
      reads.add(rel);rangeCount++;

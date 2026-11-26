@@ -8,8 +8,8 @@ vi.mock("@/lib/access/access.server",()=>({assertCafeAiAccess:mocks.access}));
 vi.mock("@/lib/ai/cafeTools.server",()=>({
   createOwnerScopedCafeTools:mocks.tools,readSupervisorCafeIdentity:mocks.identity,
 }));
-vi.mock("@/lib/ai/agent/loop.server",()=>({runAgentTurn:mocks.model,
-  openAIProvider:vi.fn()}));
+vi.mock("@/lib/ai/agent/loop.server",()=>({openAIProvider:vi.fn()}));
+vi.mock("@/lib/ai/research/turn.server",()=>({runResearchTurn:mocks.model}));
 vi.mock("@/lib/ai/supervisor/runs/worker.server",()=>({
   assertDurablePaidTurnAllowed:mocks.paidGate,
 }));
@@ -45,21 +45,10 @@ const following={...base,phase:"awaiting_owner",step_version:2,
   evidence:{source:synopsis,collectedAt:now.toISOString()}};
 const agentResult=(patch:Record<string,unknown>={})=>({
   text:"I checked sales and labor coverage. Staffing remains uncertain. Review the owner approval card before any change; I will check again.",
-  endReason:"complete",tools:["get_investigation_source","get_sales","get_labor"],unverified:[],
-  results:[{source:"investigation_source",period:null,missing:[],
-      sourceType:"alert",sourceId:"alert-a",incidentKind:"sales_anomaly"},
-    {source:"sales",period:null,missing:[],netSalesCents:12000,
-      days:[{date:"2026-11-14",netSalesCents:12000}]},
-    {source:"labor",period:null,missing:["unverifiedWages"],
-      laborDays:[{date:"2026-11-14",wagesCents:2000,wageStatus:"missing"}]}],
+  endReason:"complete",tools:["run_sql"],unverified:[],
+  results:[{source:"sql_research",period:null,missing:[],agentId:"alex",tool:"run_sql"}],
   toolInvocations:[
-    {name:"get_investigation_source",result:{source:"investigation_source",
-      period:null,missing:[],sourceType:"alert",sourceId:"alert-a",
-      incidentKind:"sales_anomaly"}},
-    {name:"get_sales",result:{source:"sales",period:null,missing:[],
-      netSalesCents:12000,days:[{date:"2026-11-14",netSalesCents:12000}]}},
-    {name:"get_labor",result:{source:"labor",period:null,missing:["unverifiedWages"],
-      laborDays:[{date:"2026-11-14",wagesCents:2000,wageStatus:"missing"}]}},
+    {name:"run_sql",result:{source:"sql_research",period:null,missing:[],agentId:"alex",tool:"run_sql"}},
   ],
   usage:{modelCalls:2,toolCalls:2,inputTokens:100,outputTokens:100,cachedTokens:0,latencyMs:200},
   ...patch,
@@ -232,13 +221,15 @@ describe("Task 15A operational end-to-end orchestration (recorded source/model)"
     expect(modelInput.ownerText).toContain("SYSTEM-INITIATED");
     expect(modelInput.ownerText).toContain("as many or as few useful available tools");
     expect(modelInput.ownerText).not.toContain("at least TWO");
-    expect(modelInput.toolNames).toContain("get_investigation_source");
-    expect(modelInput.toolNames).toContain("get_sales");
-    expect(modelInput.toolNames).toContain("get_labor");
-    expect(modelInput.toolNames).not.toContain("propose_staff_change");
-    expect(modelInput.toolNames).not.toContain("propose_gmail_action");
+    // Café data is read with SQL; only inert approval drafts and what SQL cannot do are offered besides.
+    const offered=modelInput.actions.definitions.map((t:{name:string})=>t.name);
+    expect(offered).toContain("propose_staff_question");
+    for(const old of ["get_sales","get_labor","query_data","describe_data","propose_staff_change","propose_gmail_action"])
+      expect(offered).not.toContain(old);
+    expect(modelInput.ownerText).toContain("describe_database and run_sql");
+    expect(modelInput.scope).toMatchObject({businessId:"cafe-a",ownerUserId:"owner-a"});
     // The model may only inspect the SQL-claimed café/owner/source.
-    const exact=await modelInput.context.investigation.read();
+    const exact=await modelInput.actions.context.investigation.read();
     expect(exact).toMatchObject({
       source:"investigation_source",sourceType:"alert",sourceId:"alert-a",
       incidentKind:"sales_anomaly",sourceStatus:"new",
@@ -248,8 +239,8 @@ describe("Task 15A operational end-to-end orchestration (recorded source/model)"
     const saved=d.calls.find(x=>x.name==="supervisor_finish_investigation")?.args;
     expect(saved?.p_outcome).toBe("investigated");
     expect(saved?.p_narrative).toBe(agentResult().text);
-    expect(saved?.p_evidence).toMatchObject({modelTools:["get_investigation_source","get_sales","get_labor"],
-      missing:["unverifiedWages"]});
+    expect(saved?.p_evidence).toMatchObject({modelTools:["get_investigation_source","run_sql"],
+      missing:[]});
   });
   it("retains prior findings across a worker restart without paying for unanswered owner work",async()=>{
     const d=db([{...investigating},{...following}]);
@@ -324,9 +315,9 @@ describe("Task 15A operational end-to-end orchestration (recorded source/model)"
       expect.objectContaining({businessId:"cafe-a",ownerUserId:"owner-a",threadId:"thread-a"}),
       {threadId:"thread-a",customerInvestigationContext:{episodeId:base.episode_id,sourceId:base.source_id},limit:21});
     expect(mocks.attempt).toHaveBeenLastCalledWith(expect.objectContaining({businessId:"cafe-a",ownerUserId:"owner-a",threadId:"thread-a"}),"proposal-a");
-    const actual=await mocks.model.mock.calls[0][0].context.investigation.read();
+    const actual=await mocks.model.mock.calls[0][0].actions.context.investigation.read();
     expect(actual.customerLinkedActions).toEqual([{capabilityId:"alex.price",status:"committed",attemptState:"verified"}]);
-    expect(mocks.model.mock.calls[0][0].toolNames).not.toContain("propose_price_change");
+    expect(mocks.model.mock.calls[0][0].actions.definitions.map((t:{name:string})=>t.name)).not.toContain("propose_price_change");
     expect(changed.calls.every(x=>!x.name.includes("commit_effect")&&!x.name.includes("approve"))).toBe(true);
   });
   it("never treats its own saved priority notices as new café evidence six hours later",async()=>{
@@ -368,7 +359,7 @@ describe("Task 15A operational end-to-end orchestration (recorded source/model)"
       evidence:{source:meal,collectedAt:now.toISOString()}};
     const d=db([claim],{sourceKind:"meal_break",alertPayload:payload,timecard});
     mocks.model.mockImplementation(async(args:Record<string,unknown>)=>{
-      const context=(args.context as Record<string,unknown>).investigation as
+      const context=((args.actions as {context:Record<string,unknown>}).context).investigation as
         {read:()=>Promise<Record<string,unknown>>};
       const exact=await context.read();
       expect(exact).toMatchObject({source:"investigation_source",
@@ -382,16 +373,7 @@ describe("Task 15A operational end-to-end orchestration (recorded source/model)"
         {table:"timecards",column:"business_id",value:"cafe-a"},
         {table:"timecards",column:"id",value:timecardId},
       ]));
-      return agentResult({toolInvocations:[
-        {name:"get_investigation_source",result:exact},
-        {name:"get_labor",result:{source:"labor_and_attendance",period:null,
-          missing:["wagesIncomplete"],laborDays:[{date:"2026-11-14",wagesCents:null,
-            wageStatus:"missing"}]}},
-        // Dated shift schedule is independent of attendance/labor. Payroll
-        // is a second labor projection and cannot corroborate itself.
-        {name:"get_week_schedule",result:{source:"scheduled_shifts",period:null,
-          missing:[],scheduleSet:true,shifts:[{date:"2026-11-14",id:"shift-a"}]}},
-      ]});
+      return agentResult();
     });
     expect(await processNextInvestigation(d.client,now))
       .toMatchObject({investigated:1,failed:0});
@@ -407,7 +389,7 @@ describe("Task 15A operational end-to-end orchestration (recorded source/model)"
       {sourceKind:"meal_break",alertPayload:{timecardId,employeeId},
         timecard:{id:timecardId,employee_id:"other-employee",clock_in:"",clock_out:"",breaks:[]}});
     mocks.model.mockImplementation(async(args:Record<string,unknown>)=>{
-      const exact=await ((args.context as Record<string,unknown>).investigation as
+      const exact=await (((args.actions as {context:Record<string,unknown>}).context).investigation as
         {read:()=>Promise<Record<string,unknown>>}).read();
       expect(exact).toMatchObject({missing:["timecard_not_verified"],linkedTimecard:null});
       return agentResult({toolInvocations:[
@@ -420,50 +402,27 @@ describe("Task 15A operational end-to-end orchestration (recorded source/model)"
       .toMatchObject({investigated:0,failed:1});
     expect(mocks.notify).not.toHaveBeenCalled();
   });
-  it("retries rather than reporting when two claimed domains only returned read failures",async()=>{
-    mocks.model.mockResolvedValue(agentResult({toolInvocations:[
-      {name:"get_investigation_source",result:{source:"investigation_source",
-        period:null,missing:[],sourceType:"alert",sourceId:"alert-a",
-        incidentKind:"sales_anomaly"}},
-      {name:"get_labor",result:{source:"labor_and_attendance",
-        period:null,missing:["laborReaderUnavailable"],laborDays:null}},
-      {name:"get_week_schedule",result:{source:"scheduled_shifts",
-        period:null,missing:["scheduleReadFailed"],shifts:null}},
-    ]}));
+  it("retries rather than reporting when the model never read café data with SQL",async()=>{
+    mocks.model.mockResolvedValue(agentResult({toolInvocations:[]}));
     const d=db([{...investigating}]);
-    expect(await processNextInvestigation(d.client,now))
-      .toMatchObject({processed:1,failed:1,investigated:0});
+    expect(await processNextInvestigation(d.client,now)).toMatchObject({processed:1,failed:1,investigated:0});
     expect(mocks.notify).not.toHaveBeenCalled();
-    expect(d.calls.find(x=>x.name==="supervisor_fail_investigation")?.args)
-      .toMatchObject({p_error:"evidence_incomplete"});
+    expect(d.calls.find(x=>x.name==="supervisor_fail_investigation")?.args).toMatchObject({p_error:"evidence_incomplete"});
     expect(d.calls.some(x=>x.name==="supervisor_finish_investigation")).toBe(false);
   });
-  it("does not silently publish a one-tool answer as a multi-step investigation",async()=>{
+  it("retries rather than reporting when every SQL read failed",async()=>{
     mocks.model.mockResolvedValue(agentResult({toolInvocations:[
-      {name:"get_sales",result:{source:"sales",period:null,missing:[]}},
+      {name:"run_sql",result:{source:"sql_research",period:null,missing:[],tool:"run_sql",error:"research_tool_error"}},
     ]}));
     const d=db([{...investigating}]);
     expect(await processNextInvestigation(d.client,now)).toMatchObject({failed:1,investigated:0});
-    expect(mocks.notify).not.toHaveBeenCalled();
-    expect(d.calls.find(x=>x.name==="supervisor_fail_investigation")?.args.p_error)
-      .toBe("evidence_incomplete");
-    expect(d.calls.some(x=>x.name==="supervisor_finish_investigation")).toBe(false);
+    expect(d.calls.find(x=>x.name==="supervisor_fail_investigation")?.args.p_error).toBe("evidence_incomplete");
   });
-  it("does not accept a plausible model answer about a different incident",async()=>{
-    mocks.model.mockResolvedValue(agentResult({toolInvocations:[
-      {name:"get_investigation_source",result:{source:"investigation_source",
-        period:null,missing:[],sourceType:"alert",sourceId:"other-alert",
-        incidentKind:"sales_anomaly"}},
-      {name:"get_sales",result:{source:"sales",period:null,missing:[]}},
-      {name:"get_labor",result:{source:"labor",period:null,missing:[]}},
-    ]}));
+  it("does not publish an answer with figures that no retrieved data supports",async()=>{
+    mocks.model.mockResolvedValue(agentResult({unverified:["$9,999"]}));
     const d=db([{...investigating}]);
-    expect(await processNextInvestigation(d.client,now)).toMatchObject({
-      processed:1,investigated:0,failed:1,
-    });
+    expect(await processNextInvestigation(d.client,now)).toMatchObject({failed:1,investigated:0});
     expect(mocks.notify).not.toHaveBeenCalled();
-    expect(d.calls.find(x=>x.name==="supervisor_fail_investigation")?.args.p_error)
-      .toBe("evidence_incomplete");
   });
   it.each([
     {name:"new draft",draft:{state:"draft",proposalId:"draft-a"},status:"A supplier order draft is available",expected:{stockPurchaseProposalId:"draft-a"}},
@@ -475,12 +434,7 @@ describe("Task 15A operational end-to-end orchestration (recorded source/model)"
     expect(text.length).toBeGreaterThan(1300);
     expect(text.length).toBeLessThanOrEqual(1800);
     const selectors={family:"stockout_risk",subject:"ingredient-a"};
-    const exact={source:"investigation_source",period:null,missing:[],sourceType:"alert",sourceId:"alert-a",incidentKind:"business_anomaly",selectors};
-    const inventory={source:"inventory",period:null,missing:[],rows:[{id:"ingredient-a",quantity:2}]};
-    const costs={source:"ingredient_costs",period:null,missing:[],rows:[{id:"ingredient-a",unitCostCents:10}]};
-    mocks.model.mockResolvedValue(agentResult({text,results:[exact,inventory,costs],toolInvocations:[
-      {name:"get_investigation_source",result:exact},{name:"get_inventory",result:inventory},{name:"get_ingredient_costs",result:costs},
-    ]}));
+    mocks.model.mockResolvedValue(agentResult({text}));
     if(draft)mocks.stockDraft.mockResolvedValue(draft);
     else mocks.stockDraft.mockRejectedValue(Error("draft not verified"));
     const d=db([{...investigating}],{sourceKind:"business_anomaly",alertPayload:{...selectors,quality:"verified"}});
