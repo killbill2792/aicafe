@@ -52,6 +52,8 @@ SELECT (
  AND (SELECT (data->>'amount_cents')::bigint FROM public.cv_bills WHERE business_id=:'a')=30000
  AND (SELECT (data->>'price_cents')::bigint FROM public.cv_menu WHERE business_id=:'a' AND source_ref='item:'||:'item')=600
  AND (SELECT total_quantity FROM public.menu_item_quantities_sold(:'a',current_date-1,current_date-1) WHERE menu_item_id=:'item')=2
+ AND (SELECT quantity=2 AND net_sales_cents=1200 FROM public.cv_item_sales_daily WHERE business_id=:'a' AND menu_item_id=:'item')
+ AND (SELECT count(*) FROM public.cv_item_sales_daily WHERE business_id=:'b')=0
  AND (SELECT count(*) FROM public.cv_item_sales WHERE business_id=:'b')=0
  AND (SELECT count(*) FROM public.cv_orders WHERE business_id=:'b')=0
 ) IS TRUE AS passed \gset

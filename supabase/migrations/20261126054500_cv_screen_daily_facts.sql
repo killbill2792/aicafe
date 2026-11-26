@@ -68,15 +68,27 @@ create or replace view public.cv_orders
  case when o.toast_excluded is true or o.superseded_by is not null then null::bigint else o.net_sales_cents end
  from public.orders o;
 
+-- One item/day total from the canonical sold lines. UI and SQL share the same
+-- actual-only grouping; no application-side per-line aggregation.
+create view public.cv_item_sales_daily with (security_invoker=true) as
+ select business_id,'item-day:'||business_date::text||':'||(data->>'menu_item_id') as source_ref,
+ 'actual'::text as status,business_date,(data->>'menu_item_id')::uuid as menu_item_id,
+ sum(quantity) as quantity,sum(net_sales_cents) as net_sales_cents
+ from public.cv_item_sales
+ where status='actual' and data->>'menu_item_id' is not null
+ group by business_id,business_date,(data->>'menu_item_id');
+revoke all on public.cv_item_sales_daily from public,anon,authenticated;
+grant select on public.cv_item_sales_daily to authenticated,service_role;
+comment on view public.cv_item_sales_daily is 'Actual sold quantity and net sales in integer cents, grouped once per cafe, item and business date from cv_item_sales. No voided or review-only lines. Missing days are not zero.';
+
 -- Item identity and quantity use the same operational canonical lines as SQL chat.
 create or replace function public.menu_item_quantities_sold(p_business_id uuid,p_from date,p_to date)
  returns table(menu_item_id uuid,total_quantity numeric)
  language sql stable security invoker set search_path=public as $$
- select (v.data->>'menu_item_id')::uuid,sum(v.quantity)
- from public.cv_item_sales v
+ select v.menu_item_id,sum(v.quantity)
+ from public.cv_item_sales_daily v
  where v.business_id=p_business_id and v.business_date between p_from and p_to
- and v.status='actual' and v.data->>'menu_item_id' is not null
- group by (v.data->>'menu_item_id')::uuid
+ group by v.menu_item_id
  $$;
 
 -- Preserve the existing item/review/version union and expose menu display fields.

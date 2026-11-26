@@ -3777,6 +3777,49 @@
    "foreign_keys": []
   },
   {
+   "relation": "cv_item_sales_daily",
+   "kind": "view",
+   "rls": false,
+   "columns": [
+    [
+     "business_id",
+     "uuid",
+     false
+    ],
+    [
+     "source_ref",
+     "text",
+     false
+    ],
+    [
+     "status",
+     "text",
+     false
+    ],
+    [
+     "business_date",
+     "date",
+     false
+    ],
+    [
+     "menu_item_id",
+     "uuid",
+     false
+    ],
+    [
+     "quantity",
+     "numeric",
+     false
+    ],
+    [
+     "net_sales_cents",
+     "numeric",
+     false
+    ]
+   ],
+   "foreign_keys": []
+  },
+  {
    "rls": false,
    "kind": "view",
    "columns": [

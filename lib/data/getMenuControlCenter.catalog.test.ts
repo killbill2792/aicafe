@@ -23,7 +23,7 @@ import { getMenuControlCenter } from "./getMenuControlCenter";
 function clientWithEvidenceReads(reads: string[], failOrders = false) {
   const values: Record<string, unknown> = {
     businesses: { timezone: "America/Los_Angeles" },
-    cv_item_sales: [],
+    cv_item_sales_daily: [],
     menu_price_history: [],
     menu_market_price_observations: [],
     pos_connections: [],
@@ -32,7 +32,7 @@ function clientWithEvidenceReads(reads: string[], failOrders = false) {
     reads.push(table);
     const response = () => ({
       data: values[table] ?? [],
-      error: table === "cv_item_sales" && failOrders ? { message: "unavailable" } : null,
+      error: table === "cv_item_sales_daily" && failOrders ? { message: "unavailable" } : null,
     });
     const query = {
       select: () => query, eq: () => query, in: () => query, is: () => query,
@@ -82,7 +82,7 @@ describe("one canonical menu reader: catalog versus full item evidence", () => {
     );
 
     const full = await getMenuControlCenter();
-    expect(reads).toContain("cv_item_sales");
+    expect(reads).toContain("cv_item_sales_daily");
     expect(reads).not.toContain("order_lines");
     expect(reads).toContain("menu_price_history");
     expect(reads).toContain("menu_market_price_observations");

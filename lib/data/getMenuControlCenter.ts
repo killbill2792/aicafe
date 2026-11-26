@@ -63,15 +63,15 @@ const EMPTY_EVIDENCE: MenuPricingEvidence = {
 
 type ItemSalesRow = { menu_item_id: string; business_date: string; net_sales_cents: number; quantity: number };
 
-/** Read all actual canonical item rows, excluding review-only staging entries. */
+/** Read database-grouped actual item/day totals, not individual order lines. */
 async function readItemSalesEvidence(db: SupabaseClient, businessId: string, itemIds: string[], from: string, to: string) {
   const rows: ItemSalesRow[] = [];
   const pageSize = 1000;
   for (let offset = 0;; offset += pageSize) {
-    const { data, error } = await db.from("cv_item_sales")
-      .select("menu_item_id:data->>menu_item_id,business_date,net_sales_cents,quantity")
+    const { data, error } = await db.from("cv_item_sales_daily")
+      .select("menu_item_id,business_date,net_sales_cents,quantity")
       .eq("business_id", businessId).eq("status", "actual")
-      .in("data->>menu_item_id", itemIds)
+      .in("menu_item_id", itemIds)
       .gte("business_date", from).lte("business_date", to)
       .order("source_ref", { ascending: true }).range(offset, offset + pageSize - 1);
     if (error) return { data: null, error };
@@ -187,7 +187,7 @@ export async function getMenuControlCenter(options: { includeSalesEvidence?: boo
   ]);
 
   if (salesResult.error) {
-    logQueryError("getMenuControlCenter:cv_item_sales", salesResult.error);
+    logQueryError("getMenuControlCenter:cv_item_sales_daily", salesResult.error);
     throw new Error(MENU_LOAD_FAILURE_MESSAGE);
   }
   if (rollupsResult.error) {
@@ -222,11 +222,7 @@ export async function getMenuControlCenter(options: { includeSalesEvidence?: boo
     }
 
     const byDate = itemDaily.get(row.menu_item_id) ?? new Map<string, { units: number; revenueCents: number }>();
-    const prior = byDate.get(row.business_date) ?? { units: 0, revenueCents: 0 };
-    byDate.set(row.business_date, {
-      units: prior.units + quantity,
-      revenueCents: prior.revenueCents + revenueCents,
-    });
+    byDate.set(row.business_date, { units: quantity, revenueCents });
     itemDaily.set(row.menu_item_id, byDate);
   }
 
