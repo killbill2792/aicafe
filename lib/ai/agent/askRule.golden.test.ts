@@ -15,11 +15,7 @@ const missing=(key:string)=>({available:false as const,value:null,
 function context():AgentToolContext{
  return {locale:"en",timezone:"America/Los_Angeles",asOf:"2026-11-03",currency:"USD",
   tools:{getMenuCatalog:async()=>({available:true,value:[],quality:{level:"high",missingInputs:[],estimatedInputs:[],staleInputs:[]}}),
-   getSalesTrend:async()=>missing("salesNotAvailable"),getProfitability:async()=>missing("payroll")},
-  readTodaySoFar:async()=>({available:true,value:{provisional:true,businessDate:"2026-11-03",
-   readAt:"2026-11-04T03:15:00.000Z",netSalesCents:131846,grossSalesCents:132250,discountsCents:404,
-   refundsCents:0,tipCents:0,orders:130,openChecks:0,unparsedOrders:0,
-   topItems:[{name:"Latte",quantity:18,netSalesCents:10350}],locationsRead:1,locationsFailed:0,truncated:false}})};
+   getSalesTrend:async()=>missing("salesNotAvailable"),getProfitability:async()=>missing("payroll")}};
 }
 const goldenAskQuestions=[
  {id:"owner-only-fact-missing",ownerText:"What's my profit this month?",mustAsk:true},

@@ -7,10 +7,8 @@ import {recordedWhatsAppImageIds} from "@/lib/ai/conversations/authorizedTurn.se
 import {fileEvidence} from "@/lib/ai/conversations/fileEvidence.server";
 import {possiblePriorReceipt} from "@/lib/ai/conversations/receiptDuplicate";
 import {verifySignature,MAX_UPLOAD_BYTES} from "@/lib/ai/conversations/attachments";
-import {getWeekSchedule as scopedWeekSchedule,getShiftCost as scopedShiftCost} from "@/lib/data/staffSchedule.server";
-import {getTeamRules as scopedTeamRules} from "@/lib/data/staffRules.server";
+import {getWeekSchedule as scopedWeekSchedule} from "@/lib/data/staffSchedule.server";
 import {readStaffMessagesForVerifiedOwner} from "@/lib/staffCommunication/channel.server";
-import {readClaimedStaffCoordination} from "@/lib/staffCoordination/cases.server";
 import {withDurableOliviaReadScope} from "@/lib/scheduling/oliviaReadScope.server";
 import {TeamRulesService} from "@/lib/ai/policies/service";
 import {SupabaseTeamRulesRepository} from "@/lib/ai/policies/repository.server";
@@ -29,8 +27,6 @@ import {purchaseCapabilityId} from "@/lib/ai/supervisor/loop/purchases.server";
 import {supplierReceivingCapabilityId,supplierInvoiceCapabilityId,financialSettlementCapabilityId,financialBillCapabilityId,prepareSupplierDiscrepancyFollowup,type InvoiceSource} from "@/lib/ai/supervisor/loop/supplierReceiving.server";
 import {supplierPurchaseOrderCapabilityId,supplierPurchaseOrderEffectSchema,investigateSupplierPurchase} from "@/lib/ai/supervisor/loop/purchaseOrders.server";
 import {readSupplierPurchaseOrders,readSupplierOrderCommunications} from "@/lib/data/supplierPurchasing.server";
-import {readFinancialEvidence} from "@/lib/data/financialEvidence.server";
-import {readSupplierReconciliation} from "@/lib/data/supplierReceiving.server";
 import {proposeApprovedSupplierEmail} from "@/lib/ai/supervisor/loop/vendorDispatch.server";
 import {recordOwnerSupplierOutcome,authenticatedSupplierOwnerTurn,explicitSingleOwnerPurchaseOrder} from "@/lib/purchasing/ownerSupplierOutcome.server";
 import {simulationOwnerReader} from "@/lib/ai/supervisor/loop/simulationOwner.server";
@@ -47,16 +43,11 @@ import {getConnectorAccount,allowsGmail,assertConnectorOwnerLive} from "@/lib/co
 import {agentToolDefinitions,gmailToolDefinitions} from "@/lib/ai/agent/tools";
 import { createAuthenticatedCafeTools, readSupervisorCafeIdentity } from "@/lib/ai/cafeTools.server";
 import {ToolError} from "@/lib/ai/agent/toolErrors";
-import {readMenuPriceEvidence} from "@/lib/data/menuPriceEvidence.server";
-import {readSupervisorEconomics} from "@/lib/data/supervisorEconomics.server";
-import {todaySoFarForBusiness,TODAY_LIVE_FRESH_MS} from "@/lib/data/todayLive.server";
 import {goalCapabilityId} from "@/lib/ai/supervisor/loop/goal.server";
 import {listOwnerGoals,readGoalStatus,roundForUnit} from "@/lib/ai/supervisor/loop/goalReads.server";
 import {recordGoalCheckin} from "@/lib/ai/supervisor/loop/goalCheckins.server";
-import {readOwnerProposals,readOwnerPriceMonitorReports,readOwnerPriceMonitorProposals,readOwnerVerifiedPriceWindows,readOwnerToastObservations} from "@/lib/ai/supervisor/loop/reads.server";
-import {mapPriceMonitorRows} from "@/lib/ai/agent/tools/priceMonitor";
+import {readOwnerProposals} from "@/lib/ai/supervisor/loop/reads.server";
 import {requirePositivePriceIncrease} from "@/lib/ai/agent/tools/priceExperiment";
-import {BOARD_PROPOSAL_STATUSES,BOARD_REPORT_STATUSES} from "@/lib/operating/board";
 import {metricCatalog} from "@/lib/calc/metrics/catalog";
 import {ownerRunStatement,type OwnerRunCheckpoint} from "@/lib/ai/supervisor/runs/contracts";
 import type {DurableReplyFence} from "./replyWriter.server";
@@ -321,7 +312,6 @@ export async function runOneTurn(p: TurnParams): Promise<{ replyId: string; repl
     const context: AgentToolContext = { tools, asOf: identity.asOf, locale: p.locale,timezone:identity.timezone,currency:identity.currency,
       ownerText:currentOwnerStatement,
       externalEvidencePresent:()=>sourceChecks.size>0,
-      readPermissions:()=>new SupervisorEffectGateway().listMandates({businessId:scope.businessId,ownerUserId:scope.ownerUserId}),
       sqlResearch:true,
       staffQuestionPropose:async raw=>{
         await assertTurnSources();
@@ -351,21 +341,6 @@ export async function runOneTurn(p: TurnParams): Promise<{ replyId: string; repl
         search:async(caseId,query)=>withGmailEvidence(async()=>maintenanceContext(await getDb(),proposalScope,{ownerMessage:{id:owner.id,text:currentOwnerStatement}}).search(caseId,query)),
         propose:async input=>maintenanceContext(await getDb(),proposalScope,{ownerMessage:{id:owner.id,text:currentOwnerStatement}}).propose(input),
       },
-      menuPriceEvidence:items=>readMenuPriceEvidence(scope.businessId,items,identity.asOf,p.externalClient),
-      readEconomics:async()=>readSupervisorEconomics(await getDb(),scope.businessId,identity.asOf),
-      readPriceMonitors:async()=>{
-        const db=await getDb();
-        const ownerScope={businessId:scope.businessId,ownerUserId:scope.ownerUserId};
-        const priceRows=await readOwnerPriceMonitorProposals(db,ownerScope,
-          [priceExperimentCapabilityId,menuPriceChangeCapabilityId],BOARD_PROPOSAL_STATUSES);
-        const reports=await readOwnerPriceMonitorReports(db,ownerScope,priceRows.map(r=>r.id),BOARD_REPORT_STATUSES);
-        const starts=await readOwnerVerifiedPriceWindows(db,ownerScope,priceRows.map(r=>r.id));
-        return [...mapPriceMonitorRows(priceRows,reports,identity.asOf,identity.timezone,new Map(starts.map(s=>[s.source_id,s.start_at])),new Date().toISOString()),
-          ...await readOwnerToastObservations(db,ownerScope)];
-      },
-      // Toast credentials are service-role only; the café comes from the authenticated scope.
-      readTodaySoFar:()=>todaySoFarForBusiness(createAdminSupabaseClient(),scope.businessId,
-         {maxAgeMs:TODAY_LIVE_FRESH_MS}),
       // Location comes from the café profile or the owner's saved answer, never from the model.
       cafeLocation:async()=>readCafeLocation(await getDb(),scope.businessId,ownerFactRead.facts),
       // Saved event answers never initiate the paid nearby-event discovery job.
@@ -391,9 +366,6 @@ export async function runOneTurn(p: TurnParams): Promise<{ replyId: string; repl
         getWeekSchedule({weekStart}),
       staffMessages:{read:async()=>readStaffMessagesForVerifiedOwner(await getDb(),scope.businessId,scope.ownerUserId)},
       ...(durableRead?{
-        readShiftCost:raw=>scopedShiftCost(raw,durableRead),
-        readLaborRules:()=>scopedTeamRules(durableRead),
-        staffCoordinationRead:()=>readClaimedStaffCoordination(durableRead.client,scope),
         oliviaPreview:{
           week:raw=>withDurableOliviaReadScope(durableRead,async()=> (await import("@/lib/actions/oliviaPlanning")).previewOliviaWeek(raw)),
           absence:raw=>withDurableOliviaReadScope(durableRead,async()=> (await import("@/lib/actions/oliviaPlanning")).previewOliviaAbsenceWhatIf(raw)),
@@ -504,11 +476,6 @@ export async function runOneTurn(p: TurnParams): Promise<{ replyId: string; repl
           financialBillCapabilityId,candidate,key);
         if(draft.status!=="draft")throw new ToolError("validation","Bill proposal no longer editable.");
         return {proposalId:draft.id,revision:draft.revision};
-      },
-      financialEvidenceRead:selection=>readFinancialEvidence(proposalScope,identity.asOf,selection),
-      receivingRead:async purchaseOrderId=>{
-        const {client}=await simulationOwnerReader(proposalScope);
-        return readSupplierReconciliation(client,scope.businessId,scope.ownerUserId,purchaseOrderId);
       },
       purchasing:{
         list:async()=>{

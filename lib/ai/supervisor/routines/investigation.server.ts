@@ -22,8 +22,6 @@ import type {AgentToolResult} from "@/lib/ai/agent/tools";
 import {withWorkerBudget,loadModelExecutionCap} from "@/lib/ai/supervisor/runs/usage.server";
 import {notifyOwner} from "@/lib/operating/notifyOwner.server";
 import {readActionablePriorities} from "./dispatch.server";
-import {readClaimedStaffCoordination} from "@/lib/staffCoordination/cases.server";
-import {readFinancialEvidence} from "@/lib/data/financialEvidence.server";
 import {readSupplierReconciliation} from "@/lib/data/supplierReceiving.server";
 import {prepareSupplierDiscrepancyFollowup} from "@/lib/ai/supervisor/loop/supplierReceiving.server";
 import {readStaffMessagesForVerifiedOwner} from "@/lib/staffCommunication/channel.server";
@@ -414,22 +412,13 @@ export async function processNextInvestigation(db:SupabaseClient,now:Date,
         const research=createWebSearch({reserveTransport:params=>metered.reserve(params,"hosted_web")});
         return ownerPublicWebSearch(scope,()=>research(query,budget));
       }}:{}),
-      ...(["money_update","missing_bill"].includes(synopsis.kind)?{financialEvidenceRead:(selection?:import("@/lib/data/financialEvidence.server").FinanceSelection)=>readFinancialEvidence({...scope,verifiedReadClient:db},identity.asOf,selection)}:{}),
       ...(synopsis.kind==="maintenance_issue"?{maintenance:{...maintenance,search:async(...args:Parameters<typeof maintenance.search>)=>{
         await checkMailbox();
         const account=await getConnectorAccount(scope);
         if(!account||!allowsGmail(account,"read"))throw Error("authorization_revoked");
         const found=await maintenance.search(...args);mailbox??=account;await checkMailbox();return found;
       }}}:{}),
-      ...(synopsis.kind==="supplier_receiving"?{receivingRead:async(purchaseOrderId:string)=>{
-        // Never let an unattended model use a different PO from its SQL claim.
-        const source=await readIncidentEvidence(db,c);
-        const selectors=object(source.selectors);
-        if(source.incidentKind!=="supplier_receiving"||source.missing.length||
-          selectors?.entityType!=="purchase_order"||selectors.entityId!==purchaseOrderId)
-          return {missing:["receiving_claim_scope_mismatch"],reconciliation:null};
-        return readSupplierReconciliation(db,c.business_id,c.owner_user_id,purchaseOrderId);
-      },receivingFollowup:async(purchaseOrderId:string)=>{
+      ...(synopsis.kind==="supplier_receiving"?{receivingFollowup:async(purchaseOrderId:string)=>{
         const source=await readIncidentEvidence(db,c);
         const selectors=object(source.selectors);
         if(source.incidentKind!=="supplier_receiving"||source.missing.length||
@@ -437,7 +426,6 @@ export async function processNextInvestigation(db:SupabaseClient,now:Date,
           throw new Error("receiving_claim_scope_mismatch");
         return prepareSupplierDiscrepancyFollowup({...scope,threadId:c.thread_id,locale:"en",verifiedReadClient:db},purchaseOrderId);
       }}:{}),
-      staffCoordinationRead:()=>readClaimedStaffCoordination(db,scope),
       staffQuestionPropose:async(input:import("@/lib/ai/supervisor/loop/staffQuestion.server").StaffQuestionInput)=>{
         if(input.sourceKind!==c.source_type||input.sourceTaskId!==c.source_id)
           throw new Error("staff_question_claim_scope_mismatch");

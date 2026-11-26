@@ -17,7 +17,6 @@ import type {SupplierPurchaseInput,SupplierPurchaseProposalInput} from "@/lib/ai
 import type {PurchasePlan} from "@/lib/purchasing/planOrder";
 import type {SupplierOrderStatus} from "@/lib/data/supplierPurchasing.server";
 import {priceExperimentTools} from "./priceExperiment";
-import type {OwnerToastObservation} from "@/lib/ai/supervisor/loop/reads.server";
 import {staffProposalTools} from "./staffProposals";
 import {memoryTools,type CafeMemoryPort} from "./memory";
 import {eventsTools} from "./events";
@@ -27,7 +26,6 @@ import {webSearchTools} from "./webSearch";
 import {commitmentTools} from "./commitments";
 import {routineTools} from "./routines";
 import type {RoutineRecord,RoutineSchedule} from "@/lib/ai/supervisor/routines/contracts";
-import type {SupervisorEconomicsRead} from "@/lib/data/supervisorEconomics.server";
 import {ToolError} from "../toolErrors";
 import {requestedPeriod as calcRequestedPeriod} from "@/lib/calc/periods";
 import type { BusinessScopedCafeTools } from "@/lib/ai/tools";
@@ -63,8 +61,6 @@ export type AgentToolContext = {
     weekSchedule:(weekStart:string)=>ReturnType<
       typeof import("@/lib/data/staffSchedule.server").getWeekSchedule>;
   };
-  /** SQL-claimed owner/cafe evidence reader. Never use a model-provided scope. */
-  staffCoordinationRead?:()=>Promise<import("@/lib/staffCoordination/cases.server").StaffCoordinationCase[]>;
   /** Prior owner utterances for verifying explicit pricing percentages. */
   ownerMessages?:readonly string[];
   ownerText?:string;
@@ -115,8 +111,6 @@ export type AgentToolContext = {
   receivingFollowup?:(purchaseOrderId:string)=>Promise<{proposalId:string;revision:number;purchaseOrderId:string;recipient:string}>;
   financialSettlementPropose?:(input:import("@/lib/ai/supervisor/loop/supplierReceiving.server").FinancialSettlementInput)=>Promise<{proposalId:string;revision:number}>;
   financialBillPropose?:(input:import("@/lib/ai/supervisor/loop/supplierReceiving.server").FinancialBillInput)=>Promise<{proposalId:string;revision:number}>;
-  financialEvidenceRead?:(selection?:import("@/lib/data/financialEvidence.server").FinanceSelection)=>ReturnType<typeof import("@/lib/data/financialEvidence.server").readFinancialEvidence>;
-  receivingRead?:(purchaseOrderId:string)=>ReturnType<typeof import("@/lib/data/supplierReceiving.server").readSupplierReconciliation>;
   purchasing?:{
     list():Promise<{orders:SupplierOrderStatus[];truncated:boolean;
       drafts:Array<{id:string;revision:number;supplierName:string;itemNames:string[];
@@ -147,16 +141,10 @@ export type AgentToolContext = {
   };
   /** CHAT_MEMORY only: drafts a café fact for owner approval (RLS, owner-scoped). */
   memory?: CafeMemoryPort;
-  /** The live Task10 grant ledger, resolved by the server from authenticated owner/café scope. */
-  readPermissions?:()=>Promise<import("@/lib/ai/supervisor/loop/effectGateway.server").SupervisorMandate[]>;
-  /** Authenticated canonical screen read, bound to session membership rather than model args. */
-  readEconomics?:()=>Promise<SupervisorEconomicsRead>;
-  /** Live, provisional read of today's POS orders for the session's café. */
   /** Goals in the Supervisor loop, bound to the authenticated owner. */
   goals?:GoalPort;
   /** Existing event-readiness proposal loop, owner scoped (or verified system cron). */
   eventPlans?:EventPlanPort;
-  readTodaySoFar?:()=>Promise<import("@/lib/pos/toast/todaySoFar.server").TodaySoFarRead>;
   /** The session café's saved location (profile, else the owner's typed address). Never from model args. */
   cafeLocation?:()=>Promise<import("@/lib/data/cafeLocation.server").CafeLocation|null>;
   /** Read-only web search for public events near a location. */
@@ -167,16 +155,12 @@ export type AgentToolContext = {
   webSearch?:(query:string,budget?:import("../webSearch.server").WebSearchBudget)=>Promise<import("../webSearch.server").WebSearchResult>;
   /** Same canonical café readers used by Staff and saved owner questions. */
   readWeekSchedule?:(weekStart:string)=>ReturnType<typeof import("@/lib/actions/schedule").getWeekSchedule>;
-  readLaborRules?:()=>ReturnType<typeof import("@/lib/data/staffRules.server").getTeamRules>;
-  readShiftCost?:(raw:unknown)=>ReturnType<typeof import("@/lib/data/staffSchedule.server").getShiftCost>;
   oliviaPreview?:{
     week:typeof import("@/lib/actions/oliviaPlanning").previewOliviaWeek;
     absence:typeof import("@/lib/actions/oliviaPlanning").previewOliviaAbsenceWhatIf;
     ownerSavings:typeof import("@/lib/actions/oliviaPlanning").previewOliviaOwnerSavings;
   };
   ownerFacts?:readonly import("@/lib/ownerFacts/inject").SavedFact[];
-  menuPriceEvidence?:(items:ReadonlyArray<{id:string;priceCents:number}>)=>Promise<Record<string,import("@/lib/data/menuPriceEvidence.server").MenuPriceEvidence>>;
-  readPriceMonitors?:()=>Promise<Array<OwnerToastObservation|{proposalId:string;threadId:string;productName:string;status:string;startDate:string|null;durationDays:number|null;day:number|null;oldPriceCents:number|null;newPriceCents:number|null;reportStatus:string|null}>>;
   proposals?: {proposePriceChange(input:{productId:string;newPriceCents:number}):Promise<{proposalId:string;revision:number;productName:string;oldPriceCents:number;newPriceCents:number}>;
     proposePriceExperiment?(input:{productId:string;newPriceCents:number|null;increaseCents:number|null;days:number}):Promise<{proposalId:string;revision:number;productName:string;oldPriceCents:number;newPriceCents:number}>;
     proposeStaff?(input:{name:import("./staffProposals").StaffProposalName;input:unknown}):Promise<{proposalId:string;revision:number;capabilityId:string}>;
