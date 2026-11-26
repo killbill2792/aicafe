@@ -29,7 +29,7 @@ type Span = { start: number; end: number };
 const moneyToken = /(?:(?:[$€£]|USD|EUR|GBP|ر\.س|د\.إ|دولار)\s*)?[-+−]?[٠-٩۰-۹\d]+(?:[.,٬٫\u00a0\u202f][٠-٩۰-۹\d]+)*(?:[ \u00a0\u202f]*(?:[$€£]|USD|EUR|GBP|ر\.س|د\.إ|دولار|[%٪]))?/gu;
 
 /** Preserve every character, preferring paragraphs, lines then whitespace. */
-export function splitAgentText(text: string, unverified: readonly Span[] = [],maxBlocks=30) {
+export function splitAgentText(text: string, unverified: readonly Span[] = [],maxBlocks=Infinity) {
   const value = text || " ";
   const protectedSpans: Span[] = [...unverified];
   for (const match of value.matchAll(moneyToken))
@@ -68,7 +68,7 @@ export function splitAgentText(text: string, unverified: readonly Span[] = [],ma
 }
 const UUID=/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 export function agentReplyPayload(turn: AgentTurn) {
-  if (!turn.text.trim()) throw new AgentEmptyReplyError();
+  if (!turn.text.trim()&&!turn.results.some(r=>r.source==="response_presentation"&&r.accepted===true&&richPresentationSchema.safeParse(r.presentation).success)) throw new AgentEmptyReplyError();
   const clarify=turn.results.find(r=>r.source==="ask_owner"&&r.missing.length===0);
   const isOnlyQuestion=clarify&&typeof clarify.question==="string"&&
     turn.text.trim()===clarify.question.trim();
@@ -119,11 +119,8 @@ export function agentReplyPayload(turn: AgentTurn) {
     const parsed=explainLineSchema.safeParse(item);
     return parsed.success?[parsed.data]:[];
   }).slice(0,20);
-  const reserved=Number(Boolean(clarify))+Number(explanation.length>0);
-  const cardCount=proposalIds.length+experimentIds.length+memoryRuleIds.length+Number(Boolean(clarify))+Number(Boolean(savedRoutine))+Number(Boolean(routineDraft));
-  if(cardCount>30)throw new AgentReplyTooLongError();
-  blocks=isOnlyQuestion?[]:splitAgentText(turn.text,turn.provenance??turn.unverified,30-cardCount);
-  const safeExplain=blocks.length+proposalIds.length+experimentIds.length+memoryRuleIds.length+Number(Boolean(savedRoutine))+Number(Boolean(routineDraft))+reserved<=30?explanation:[];
+  blocks=isOnlyQuestion||!turn.text.trim()?[]:splitAgentText(turn.text,turn.provenance??turn.unverified);
+  const safeExplain=explanation;
   const status = persistedAgentStatus(turn);
   const reply: GroundedSupervisorReply = { intent: "unknown", status, evidence: [], blocks:[...blocks,
     ...proposalIds.map(proposalId=>({type:"proposal_card" as const,proposalId})),
@@ -182,17 +179,15 @@ export function agentReplyPayload(turn: AgentTurn) {
       for(const item of inline){addText(item.at);ordered.push(item.block);}
       addText(turn.text.length);
       const tail=reply.blocks.slice(blocks.length);
-      if(ordered.length+tail.length<=30){blocks=prose;reply.blocks=[...ordered,...tail];}
-      // The existing storage contract is unchanged. If the ordered form cannot
-      // fit, keep all of the plain answer rather than fail the owner turn.
+      blocks=prose;reply.blocks=[...ordered,...tail];
     }catch(error){if(!(error instanceof AgentReplyTooLongError))throw error;}
   }
-  if(!inline.length&&turn.endReason==="complete"&&!clarify&&reply.blocks.length<30){
+  if(!inline.length&&turn.endReason==="complete"&&!clarify){
     // Historical/legacy present_response receipts have no inline position.
     // Preserve every accepted receipt that fits the existing reply contract.
     for(const result of turn.results){
       const block=validatePresentation(result);
-      if(block&&reply.blocks.length<30)reply.blocks.push(block);
+      if(block)reply.blocks.push(block);
     }
   }
   const annotations=turn.provenance??turn.unverified.map(item=>({...item,source:"unchecked" as const}));
