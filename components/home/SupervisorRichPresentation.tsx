@@ -12,8 +12,9 @@ import {evaluateScenarioEditor,scenarioEditFields} from "@/lib/ai/conversations/
 import en from "@/messages/en.json";
 import es from "@/messages/es.json";
 import ar from "@/messages/ar.json";
-import {richPresentationSchema,presentationPanelSchema,agendaSchema,scenarioComparisonSchema,presentationReport,recordTableSchema,interactiveCalcSchema,evaluatePresentationCalc,presentationLeaves,presentationGroupRoots,allPresentationLeaves,compatibleComparison,descriptiveGroupTitle,calendarPage,type RecordTable,type InteractiveCalc,type Agenda,type ScenarioComparison,type RichPresentation,type PresentationPanel} from "@/lib/ai/conversations/presentation";
+import {recoverRichPresentation,presentationPanelSchema,agendaSchema,scenarioComparisonSchema,presentationReport,recordTableSchema,interactiveCalcSchema,evaluatePresentationCalc,presentationLeaves,presentationGroupRoots,allPresentationLeaves,compatibleComparison,descriptiveGroupTitle,calendarPage,type RecordTable,type InteractiveCalc,type Agenda,type ScenarioComparison,type RichPresentation,type PresentationPanel} from "@/lib/ai/conversations/presentation";
 const copy=en.SupervisorPresentation;
+const confidence=(coverage:string)=>coverage==="partial"?copy.partial:coverage==="estimate"?copy.estimate:coverage==="unverified"?"Unverified · model-provided":coverage;
 const Chart=dynamic(()=>import("./SupervisorRichChart"),{ssr:false});
 const ComparisonChart=dynamic(()=>import("./SupervisorRichChart").then(m=>m.ComparisonChart),{ssr:false});
 export function presentationSpec(p:RichPresentation):Spec{
@@ -41,7 +42,7 @@ function Panel({panel,locale}:{panel:PresentationPanel;locale:string}){
  const evidenceId=useId(),coverageId=useId();
  const formatter=new Intl.NumberFormat(locale,["cents","cents/hour"].includes(panel.unit)&&panel.currency?
   {style:"currency",currency:panel.currency,minimumFractionDigits:2,maximumFractionDigits:2}:{maximumFractionDigits:20});
- const format=(v:number)=>formatter.format(["cents","cents/hour"].includes(panel.unit)?v/100:v)+(panel.unit==="cents/hour"?" / h":["seconds","minutes","hours","days","units","items","ratio","ratio squared","indicator"].includes(panel.unit)?" "+(panel.measurement??panel.unit):"");
+ const format=(v:number)=>formatter.format(["cents","cents/hour"].includes(panel.unit)?v/100:v)+(["cents","cents/hour"].includes(panel.unit)&&!panel.currency?" (currency not set)":"")+(panel.unit==="cents/hour"?" / h":["seconds","minutes","hours","days","units","items","ratio","ratio squared","indicator"].includes(panel.unit)?" "+(panel.measurement??panel.unit):"");
  const detailsLabel=({en,es,ar}[locale as "en"|"es"|"ar"]??en).Home.chatStartDetails;
  const table=<div role="region" aria-label={panel.title} tabIndex={0} className="overflow-x-auto overscroll-x-contain focus-visible:outline focus-visible:outline-2 focus-visible:outline-ink"><table aria-describedby={panel.coverage?coverageId+" "+evidenceId:evidenceId} className="w-full text-[1.0625rem] tabular-nums"><caption className="sr-only">{panel.title}</caption>
     <thead><tr><th scope="col" className="py-2 text-start">{copy.categoryLabel}</th><th scope="col" className="py-2 text-end">{copy.valueLabel}{panel.currency?" ("+panel.currency+")":panel.measurement?" ("+panel.measurement+")":""}</th></tr></thead>
@@ -49,9 +50,9 @@ function Panel({panel,locale}:{panel:PresentationPanel;locale:string}){
    </table></div>;
  return <figure className="min-w-0 space-y-2 py-2">
   <figcaption className="text-[1.0625rem] font-medium leading-snug text-ink">{panel.title}</figcaption>
-  {panel.coverage&&<p id={coverageId} className="text-[0.8125rem] text-ink-muted">{panel.coverage==="partial"?copy.partial:copy.estimate}</p>}
-  {panel.kind==="metric"?<p className="break-words font-headline text-[1.875rem] font-medium leading-tight tracking-tight tabular-nums text-ink">{format(panel.points[0].value)}</p>:
-   (panel.kind==="table"||panel.kind==="ranked_table")?table:<><PresentationBoundary fallback={table}><Chart panel={panel} format={format}/></PresentationBoundary>
+  {panel.coverage&&<p id={coverageId} className="text-[0.8125rem] text-ink-muted">{confidence(panel.coverage)}</p>}
+  {panel.kind==="metric"&&panel.points.length===1?<p className="break-words font-headline text-[1.875rem] font-medium leading-tight tracking-tight tabular-nums text-ink">{format(panel.points[0].value)}</p>:
+   (panel.kind==="table"||panel.kind==="ranked_table"||panel.kind==="metric"||new Set(panel.points.map(p=>p.label)).size!==panel.points.length)?table:<><PresentationBoundary fallback={table}><Chart panel={panel.kind==="donut"&&(panel.points.some(p=>p.value<0)||panel.points.every(p=>p.value===0))?{...panel,kind:"bar"}:panel} format={format}/></PresentationBoundary>
     <details className="text-ink"><summary aria-label={detailsLabel+": "+panel.title} className="flex min-h-12 cursor-pointer items-center text-[0.9375rem] text-accent-text underline underline-offset-4 focus-visible:outline focus-visible:outline-2 focus-visible:outline-ink">{detailsLabel}</summary>{table}</details></>}
   <p id={evidenceId} className="break-words text-[0.8125rem] leading-relaxed text-ink-muted">{panel.source!=="sql_research"&&panel.source!=="response_evidence"&&<>{panel.from} – {panel.to} · </>}{panel.sourceDetail??(panel.source==="daily_rollups"?"Sales records":panel.source==="item_sales"?"Item sales":panel.source==="canonical_data"?panel.sourceDetail??"Canonical records":panel.source==="expenses"?"Recorded expenses":panel.source==="business_costs"?"Business costs":panel.source==="product_costs"?"Product economics":panel.source==="supplier_purchase_plan"?"Supplier quotes":panel.source==="purchase_orders"?"Purchase orders":panel.source==="inventory"?"Inventory":panel.source==="menu_items"?"Menu":"Profitability")} · {copy.snapshot} {panel.asOf}</p>
  </figure>;
@@ -72,7 +73,7 @@ function ComparisonView({panels,locale}:{panels:PresentationPanel[];locale:strin
    <table aria-describedby={evidenceId} className="w-full text-[0.9375rem] tabular-nums"><caption className="sr-only">{copy.comparisonValues}</caption><thead><tr><th scope="col" className="py-2 text-start">{first.currency??first.measurement??first.unit}</th>{series.map(s=><th key={s.id} scope="col" className="px-2 text-end">{s.label}</th>)}</tr></thead>
     <tbody>{labels.map(label=><tr key={label}><th scope="row" className="py-2 text-start">{label}</th>{series.map(s=>{const v=s.points.find(p=>p.label===label);return <td key={s.id} className="px-2 text-end">{v?format(v.value):copy.notRecorded}</td>})}</tr>)}</tbody></table>
   </div>
-  <div id={evidenceId}>{panels.map((p,i)=><p key={i} className="break-words text-[0.8125rem] text-ink-muted">{series[i].label} · {p.sourceDetail??p.source} · {copy.snapshot} {p.asOf}{p.coverage?" · "+(p.coverage==="partial"?copy.partial:copy.estimate):""}</p>)}</div>
+  <div id={evidenceId}>{panels.map((p,i)=><p key={i} className="break-words text-[0.8125rem] text-ink-muted">{series[i].label} · {p.sourceDetail??p.source} · {copy.snapshot} {p.asOf}{p.coverage?" · "+(confidence(p.coverage)):""}</p>)}</div>
  </figure>;
 }
 function AgendaView({agenda,locale}:{agenda:Agenda;locale:string}){
@@ -122,13 +123,13 @@ function RecordTableView({table,locale}:{table:RecordTable;locale:string}){
  const fmt=(value:RecordTable["rows"][number][number],u:RecordTable["columns"][number]["unit"])=>{
   if(value===null)return copy.notRecorded;
   if(typeof value!=="number")return String(value);
-  if((u==="cents"||u==="cents/hour")&&table.currency)
-   return new Intl.NumberFormat(locale,{style:"currency",currency:table.currency,minimumFractionDigits:2,maximumFractionDigits:2}).format(value/100)+(u==="cents/hour"?" / h":"");
+  if(u==="cents"||u==="cents/hour")
+   return (table.currency?new Intl.NumberFormat(locale,{style:"currency",currency:table.currency,minimumFractionDigits:2,maximumFractionDigits:2}).format(value/100):new Intl.NumberFormat(locale,{maximumFractionDigits:20}).format(value/100)+" (currency not set)")+(u==="cents/hour"?" / h":"");
   return new Intl.NumberFormat(locale,{maximumFractionDigits:20}).format(value);
  };
  return <figure data-testid="supervisor-record-table" className="min-w-0 space-y-2 py-2">
   <figcaption className="font-medium text-ink">{table.title}</figcaption>
-  <p id={evidenceId} className="break-words text-[0.8125rem] text-ink-muted">{table.view==="tool_sql_research"?"SQL query":table.view==="tool_response_evidence"?"Evidence":table.view} · {table.view!=="tool_sql_research"&&table.view!=="tool_response_evidence"&&<>{table.from} – {table.to} · </>}{copy.snapshot} {table.asOf}{table.coverage==="partial"?" · "+copy.partial:""}</p>
+  <p id={evidenceId} className="break-words text-[0.8125rem] text-ink-muted">{table.view==="tool_sql_research"?"SQL query":table.view==="tool_response_evidence"?"Evidence":table.view} · {table.view!=="tool_sql_research"&&table.view!=="tool_response_evidence"&&<>{table.from} – {table.to} · </>}{copy.snapshot} {table.asOf}{table.coverage!=="stored"?" · "+confidence(table.coverage):""}</p>
   <p id={scopeId} className="break-words text-[0.8125rem] text-ink-muted">{table.scope}</p>
   <div role="region" tabIndex={0} aria-label={table.title} className="max-w-full overflow-x-auto overscroll-x-contain focus-visible:outline focus-visible:outline-2 focus-visible:outline-ink">
    <table role="table" aria-describedby={evidenceId+" "+scopeId} className={"w-full table-fixed text-[0.9375rem] tabular-nums "+(wide?wideResponseTableClass:"")}><caption className="sr-only">{table.title}</caption>
@@ -216,7 +217,7 @@ function ControlView({kind}:{kind:unknown}){
  </>;
 }
 export default function SupervisorRichPresentation({block,locale,onSuggest,disabled,message,attachments}:{block:unknown;locale:string;onSuggest:(text:string)=>void;disabled:boolean;message?:Parameters<typeof presentationReport>[1]&{threadId:string};attachments?:{threadId:string;items:StoredAttachment[]}|null}){
- const parsed=useMemo(()=>richPresentationSchema.safeParse(block),[block]);
+ const data=useMemo(()=>recoverRichPresentation(block),[block]);
  const registry=useMemo<ComponentRegistry>(()=>({
   Layout:({element,children})=>{
    const title=typeof element.props.title==="string"?element.props.title:null;
@@ -234,10 +235,10 @@ export default function SupervisorRichPresentation({block,locale,onSuggest,disab
   Control:({element})=><ControlView kind={element.props.kind}/>,
   Calculator:({element})=>{const c=interactiveCalcSchema.safeParse(element.props.calculator);return c.success?<CalculatorView calculator={c.data} locale={locale}/>:null;},
  }),[locale]);
- if(!parsed.success)return null;
- const data=parsed.data,composed=Boolean(data.groups?.some(g=>g.id));
+ if(!data)return <p role="status" className="text-ink-muted">This visual could not be displayed.</p>;
+ const composed=Boolean(data.groups?.some(g=>g.id));
  return <PresentationControls.Provider value={{data,message,attachments,onSuggest,disabled}}><section className="min-w-0 space-y-3" data-testid="supervisor-rich-presentation">
-  {(presentationLeaves(data).length>0||composed)&&<PresentationBoundary><JSONUIProvider registry={registry}><Renderer spec={presentationSpec(data)} registry={registry}/></JSONUIProvider></PresentationBoundary>}
+  {(presentationLeaves(data).length>0||composed)&&<PresentationBoundary fallback={<div className="space-y-3">{data.panels.map((p,i)=><Panel key={i} panel={{...p,kind:"table"}} locale={locale}/>)}{data.tables?.map((t,i)=><RecordTableView key={i} table={t} locale={locale}/>)}{data.calculator&&<CalculatorView calculator={data.calculator} locale={locale}/>}<p role="status">Visual layout unavailable; available values are shown above.</p></div>}><JSONUIProvider registry={registry}><Renderer spec={presentationSpec(data)} registry={registry}/></JSONUIProvider></PresentationBoundary>}
   {!composed&&<><ControlView kind="files"/><ControlView kind="report"/><ControlView kind="suggestions"/></>}
  </section></PresentationControls.Provider>;
 }
