@@ -19,10 +19,11 @@ describe("SQL research presentation",()=>{
   expect(result).toMatchObject([{type:"rich_presentation",panels:[{source:"sql_research",currency:"USD",points:[{label:"Wages",value:1200},{label:"Supplies",value:0}]}]}]);
  });
  it("keeps valid siblings when a visual is malformed and rejects unsafe patches",()=>{
-  expect(resolveResearchSpec(spec({panels:[chart]}),new Map(),ctx)).toEqual([]);
+  expect(resolveResearchSpec(spec({panels:[chart]}),new Map(),ctx)[0].tables?.[0].rows).toEqual([[null]]);
   const result=resolveResearchView({calculator:{ref:7},panels:[{...chart,ref:"wrong"},chart,{ref:"q1",kind:"table",columns:["category","amount_cents"]}]},queries,ctx);
   expect(result?.panels).toHaveLength(1);
-  expect(result?.tables?.[0].rows).toEqual([["Wages",1200],["Supplies",0]]);
+  expect(result?.tables?.[0].rows).toEqual([[null]]);
+  expect(result?.tables?.[1].rows).toEqual([["Wages",1200],["Supplies",0]]);
   const blocks=resolveResearchSpec([...spec({panels:[chart]}),{op:"add",path:"/elements/__proto__/polluted",value:true}],queries,ctx);
   expect(blocks).toHaveLength(1);
   expect(({} as {polluted?:boolean}).polluted).toBeUndefined();
@@ -173,14 +174,14 @@ describe("source-independent inline presentation",()=>{
   const evidence=new Map([["owner",{data:{},text:"Rent $1,250.25 and utilities $450.",source:"Owner supplied"}],["history1",{data:{},text:"Earlier amount $800.",source:"Historical message",coverage:"partial" as const}]]);
   const view=resolveResearchView({panels:[{kind:"bar",points:[{label:"Rent",value:{ref:"owner",quote:"$1,250.25"}},{label:"Earlier amount",value:{ref:"history1",quote:"$800"}}]}]},evidence,ctx);
   expect(view?.panels[0]).toMatchObject({coverage:"partial",points:[{label:"Rent",value:125025},{label:"Earlier amount",value:80000}]});
-  expect(resolveResearchView({panels:[{kind:"metric",points:[{label:"Rent",value:{ref:"owner",quote:"$250.25"}}]}]},evidence,ctx)).toBeUndefined();
+  expect(resolveResearchView({panels:[{kind:"metric",points:[{label:"Rent",value:{ref:"owner",quote:"$250.25"}}]}]},evidence,ctx)?.tables?.[0].rows).toEqual([["Rent",null,null]]);
  });
  it("does not coerce unknown values to zero, combine incompatible units, or expose hidden paths",()=>{
   const evidence=new Map([["q1",source({secret:42,amount_cents:1200,orders:3,missing:null},"Tool output")]]);
   for(const path of [["secret"],["__proto__","x"],["missing"],["absent"]]){
-   expect(resolveResearchView({panels:[{kind:"metric",points:[{label:"Value",value:{ref:"q1",path}}]}]},evidence,ctx)).toBeUndefined();
+   expect(resolveResearchView({panels:[{kind:"metric",points:[{label:"Value",value:{ref:"q1",path}}]}]},evidence,ctx)?.tables?.[0].rows).toEqual([["Value",null,null]]);
   }
-  expect(resolveResearchView({panels:[{kind:"bar",points:[{label:"Money",value:{ref:"q1",path:["amount_cents"]}},{label:"Orders",value:{ref:"q1",path:["orders"]}}]}]},evidence,ctx)).toBeUndefined();
+  expect(resolveResearchView({panels:[{kind:"bar",points:[{label:"Money",value:{ref:"q1",path:["amount_cents"]}},{label:"Orders",value:{ref:"q1",path:["orders"]}}]}]},evidence,ctx)?.tables?.[0].rows).toEqual([["Money",1200,"cents"],["Orders",3,"count"]]);
  });
  it("can compose a visual without any data retrieval or extra model request",async()=>{
   const provider:AgentProvider=async function*(params){
@@ -207,8 +208,8 @@ it("distinguishes absent output, rejected view selection, and persisted visual r
   yield {type:"response.completed",response:{usage:{input_tokens:1,output_tokens:1}}};
  };
  const result=await runResearchTurn({ownerText:"Compare",cafeContext:"Cafe",provider,scope:{db:{} as never,businessId:"business",ownerUserId:"owner"},presentationContext:ctx});
- expect(result.presentationDiagnostics).toMatchObject({requestedSections:1,decodedSections:1,rejectedSections:1,acceptedViews:0});
- expect(agentReplyPayload(result).metadata.presentationDiagnostics?.persistedViews).toBe(0);
+ expect(result.presentationDiagnostics).toMatchObject({requestedSections:1,decodedSections:1,rejectedSections:0,acceptedViews:1});
+ expect(agentReplyPayload(result).metadata.presentationDiagnostics?.persistedViews).toBe(1);
  expect(result.text).toContain("No value was supplied.");
 });
 
@@ -284,10 +285,10 @@ describe("model-authored analytical presentation",()=>{
   const result=resolveResearchView({panels:[{kind:"line",title:"Sales forecast",unit:"cents",basis:"estimate",explanation:"Assumes steady growth",points:[{label:"December",value:120000},{label:"January",value:132000}]}]},new Map(),ctx);
   expect(result?.panels[0]).toMatchObject({coverage:"estimate",points:[{label:"December",value:120000},{label:"January",value:132000}]});
  });
- it("keeps direct model values distinct from actual records and rejects malformed numbers",()=>{
+ it("keeps direct model values distinct from actual records and preserves fractional amounts",()=>{
   const panel={kind:"metric",title:"Break-even",unit:"cents",basis:"calculated",explanation:"Derived",points:[{label:"Value",value:1.5}]};
-  expect(resolveResearchView({panels:[panel]},new Map(),ctx)).toBeUndefined();
-  expect(resolveResearchView({panels:[{...panel,basis:"actual",points:[{label:"Value",value:100}]}]},new Map(),ctx)).toBeUndefined();
+  expect(resolveResearchView({panels:[panel]},new Map(),ctx)?.panels[0].points[0].value).toBe(1.5);
+  expect(resolveResearchView({panels:[{...panel,basis:"actual",points:[{label:"Value",value:100}]}]},new Map(),ctx)?.panels[0]).toMatchObject({coverage:"unverified",points:[{value:100}]});
  });
 });
 
@@ -298,4 +299,30 @@ it("does not discard or truncate series just because there are more than thirty 
  expect(view?.panels[0].points).toHaveLength(40);
  expect(view?.tables?.[0].rows).toHaveLength(40);
  expect(view?.tables?.[0].coverage).toBe("stored");
+});
+
+it("keeps direct values, unknown cells, custom units and long labels without any database evidence",()=>{
+ const result=resolveResearchView({panels:[
+  {kind:"metric",title:"Margin 2027",unit:"%",basis:"estimate",points:[{label:"Expected",value:13.375}]},
+  {kind:"bar",title:"Costs",unit:"cents",basis:"scenario",points:[{label:"Known",value:0},{label:"Unknown",value:null},{label:"Credit",value:-1200.25}]},
+  {kind:"metric",unit:"cents",points:[{label:"No currency set",value:9876.5}]},
+ ],tables:[{title:"Assumptions",basis:"scenario",columns:["Item","Amount"],rows:[["Rent",1200],["Other",null],["Note","x".repeat(1000)]]}]},new Map(),{asOf:ctx.asOf,currency:null});
+ expect(result?.panels[0]).toMatchObject({coverage:"estimate",unit:"units",measurement:"%",points:[{value:13.375}]});
+ expect(result?.panels[1]).toMatchObject({currency:null,coverage:"unverified",points:[{value:9876.5}]});
+ expect(result?.tables?.[0].rows).toEqual([["Known",0],["Unknown",null],["Credit",-1200.25]]);
+ expect(result?.tables?.[1].rows[2][1]).toHaveLength(1000);
+});
+it("persists a visual-only model answer after an unavailable SQL read",async()=>{
+ const rpc=vi.fn().mockResolvedValue({data:{ok:false,error:"no records"},error:null});
+ let calls=0;
+ const provider:AgentProvider=async function*(){
+  if(++calls===1)yield {type:"response.output_item.done",item:{type:"function_call",name:"run_sql",call_id:"q",arguments:JSON.stringify({sql:"select 1"})}};
+  else yield {type:"response.output_text.delta",delta:fence({panels:[{kind:"metric",unit:"cents",basis:"estimate",points:[{label:"Projected cost",value:125000}]}],tables:[{columns:["Cost","Value"],rows:[["Unknown",null]]}]})};
+  yield {type:"response.completed",response:{usage:{input_tokens:1,output_tokens:1}}};
+ };
+ const result=await runResearchTurn({ownerText:"Give me an estimate",cafeContext:"Cafe",provider,scope:{db:{rpc} as never,businessId:"business",ownerUserId:"owner"},presentationContext:ctx});
+ const payload=agentReplyPayload(result);
+ expect(result.endReason).toBe("complete");
+ expect(payload.reply.blocks).toMatchObject([{type:"rich_presentation",panels:[{coverage:"estimate",points:[{value:125000}]}],tables:[{rows:[["Unknown",null]]}]}]);
+ expect(groundedReplySchema.safeParse(payload.reply).success).toBe(true);
 });
