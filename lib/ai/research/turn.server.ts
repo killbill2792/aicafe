@@ -77,7 +77,7 @@ export async function runResearchTurn(args:{
   history?:ReadonlyArray<{role:"user"|"assistant";content:string}>;
   scope:ResearchScope;
   /** Public web lookups through the existing owner-permissioned search; omit to disable. */
-  webSearch?:(query:string)=>Promise<unknown>;
+  webSearch?:(query:string,signal?:AbortSignal)=>Promise<unknown>;
   /** The existing registered action tools (approval cards, Gmail, routines), run through the one existing executor. */
   actions?:{definitions:readonly {name:string}[];context:AgentToolContext};
   /** Presentation identity is independent of what data/action tools are enabled. */
