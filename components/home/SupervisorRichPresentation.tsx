@@ -41,7 +41,7 @@ export function presentationSpec(p:RichPresentation):Spec{
 function Panel({panel,locale}:{panel:PresentationPanel;locale:string}){
  const evidenceId=useId(),coverageId=useId();
  const formatter=new Intl.NumberFormat(locale,["cents","cents/hour"].includes(panel.unit)&&panel.currency?
-  {style:"currency",currency:panel.currency,minimumFractionDigits:2,maximumFractionDigits:2}:{maximumFractionDigits:20});
+  {style:"currency",currency:panel.currency,minimumFractionDigits:2,maximumFractionDigits:20}:{maximumFractionDigits:20});
  const format=(v:number)=>formatter.format(["cents","cents/hour"].includes(panel.unit)?v/100:v)+(["cents","cents/hour"].includes(panel.unit)&&!panel.currency?" (currency not set)":"")+(panel.unit==="cents/hour"?" / h":["seconds","minutes","hours","days","units","items","ratio","ratio squared","indicator"].includes(panel.unit)?" "+(panel.measurement??panel.unit):"");
  const detailsLabel=({en,es,ar}[locale as "en"|"es"|"ar"]??en).Home.chatStartDetails;
  const table=<div role="region" aria-label={panel.title} tabIndex={0} className="overflow-x-auto overscroll-x-contain focus-visible:outline focus-visible:outline-2 focus-visible:outline-ink"><table aria-describedby={panel.coverage?coverageId+" "+evidenceId:evidenceId} className="w-full text-[1.0625rem] tabular-nums"><caption className="sr-only">{panel.title}</caption>
@@ -64,7 +64,7 @@ function ComparisonView({panels,locale}:{panels:PresentationPanel[];locale:strin
  const labels=[...new Set(series.flatMap(s=>s.points.map(v=>v.label)))];
  const line=panels.every(p=>p.kind==="line");
  if(line)labels.sort();
- const fmt=new Intl.NumberFormat(locale,["cents","cents/hour"].includes(first.unit)&&first.currency?{style:"currency",currency:first.currency,minimumFractionDigits:2,maximumFractionDigits:2}:{maximumFractionDigits:20});
+ const fmt=new Intl.NumberFormat(locale,["cents","cents/hour"].includes(first.unit)&&first.currency?{style:"currency",currency:first.currency,minimumFractionDigits:2,maximumFractionDigits:20}:{maximumFractionDigits:20});
  const format=(v:number)=>fmt.format(["cents","cents/hour"].includes(first.unit)?v/100:v);
  return <figure data-testid="supervisor-comparison" className="min-w-0 space-y-2 py-2">
   <PresentationBoundary><ComparisonChart series={series} labels={labels} line={line} format={format}/></PresentationBoundary>
@@ -124,7 +124,7 @@ function RecordTableView({table,locale}:{table:RecordTable;locale:string}){
   if(value===null)return copy.notRecorded;
   if(typeof value!=="number")return String(value);
   if(u==="cents"||u==="cents/hour")
-   return (table.currency?new Intl.NumberFormat(locale,{style:"currency",currency:table.currency,minimumFractionDigits:2,maximumFractionDigits:2}).format(value/100):new Intl.NumberFormat(locale,{maximumFractionDigits:20}).format(value/100)+" (currency not set)")+(u==="cents/hour"?" / h":"");
+   return (table.currency?new Intl.NumberFormat(locale,{style:"currency",currency:table.currency,minimumFractionDigits:2,maximumFractionDigits:20}).format(value/100):new Intl.NumberFormat(locale,{maximumFractionDigits:20}).format(value/100)+" (currency not set)")+(u==="cents/hour"?" / h":"");
   return new Intl.NumberFormat(locale,{maximumFractionDigits:20}).format(value);
  };
  return <figure data-testid="supervisor-record-table" className="min-w-0 space-y-2 py-2">
@@ -151,7 +151,7 @@ function CalculatorView({calculator,locale}:{calculator:InteractiveCalc;locale:s
  const outcome=evaluatePresentationCalc(calculator,changes);
  const number=(v:InteractiveCalc["original"])=>v.unit==="cents"?v.valueCents/100:v.unit==="percent"?v.valueBps/100:v.unit==="count"?v.quantity:v.valueRatio;
  const fmt=(v:InteractiveCalc["original"])=>v.unit==="cents"&&calculator.currency?
-  new Intl.NumberFormat(locale,{style:"currency",currency:calculator.currency,minimumFractionDigits:2,maximumFractionDigits:2}).format(number(v)):
+  new Intl.NumberFormat(locale,{style:"currency",currency:calculator.currency,minimumFractionDigits:2,maximumFractionDigits:20}).format(number(v)):
   new Intl.NumberFormat(locale,{maximumFractionDigits:4}).format(number(v))+(v.unit==="percent"?"%":"");
  return <section data-testid="supervisor-calculator" className="min-w-0 space-y-3 py-2">
   <h3 className="font-medium text-ink">{calculator.title}</h3>
@@ -170,7 +170,7 @@ function ScenarioView({scenario,locale}:{scenario:ScenarioComparison;locale:stri
  const selected=scenario.cases[index]??scenario.cases[0];
  const [changes,setChanges]=useState<Record<string,string>>({});
  const edited=selected.editor?evaluateScenarioEditor(selected.editor,changes):null;
- const fmt=(v:number)=>new Intl.NumberFormat(locale,{style:"currency",currency:scenario.currency,minimumFractionDigits:2,maximumFractionDigits:2}).format(v/100);
+ const fmt=(v:number)=>new Intl.NumberFormat(locale,{style:"currency",currency:scenario.currency,minimumFractionDigits:2,maximumFractionDigits:20}).format(v/100);
  return <section data-testid="supervisor-scenario" className="min-w-0 space-y-3 py-2">
   <h3 className="font-medium text-ink">{scenario.title}</h3>
   <p className="text-[0.8125rem] text-ink-muted">{copy.estimate} · {copy.snapshot} {scenario.asOf}. {copy.noChange}</p>
