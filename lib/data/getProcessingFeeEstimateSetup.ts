@@ -100,9 +100,9 @@ export async function getProcessingFeeEstimateSetup(): Promise<ProcessingFeeEsti
       .gte("business_date", fromDate)
       .lte("business_date", today),
     supabase
-      .from("orders")
-      .select("business_date, pos_order_id, net_sales_cents, processing_fee_provider")
-      .eq("business_id", businessId).eq("toast_excluded",false).is("superseded_by",null)
+      .from("cv_orders")
+      .select("business_date,pos_order_id:data->>pos_order_id,net_sales_cents,processing_fee_provider:data->>processing_fee_provider")
+      .eq("business_id", businessId).eq("status","actual")
       .gte("business_date", fromDate)
       .lte("business_date", today),
   ]);

@@ -35,9 +35,9 @@ function readOnlyClient(expenseCount=0){
       staff_tax_source:"recorded",sales_data_status:"actual",
       card_fees_cents:300,card_fees_status:"actual",voids_cents:0,
     })),
-    recurring_costs:[{id:"rent-bill",frequency:"monthly",category_code:"rent",amount_cents:300000,is_estimate:false,
+    cv_bills:[{id:"rent-bill",frequency:"monthly",category_code:"rent",amount_cents:300000,is_estimate:false,
       active_from:"2026-01-01",active_to:null}],
-    expenses:Array.from({length:expenseCount},(_,i)=>({id:"expense-"+i,category_code:"rent",
+    cv_expenses:Array.from({length:expenseCount},(_,i)=>({id:"expense-"+i,category_code:"rent",
       amount_cents:100,status:"actual",spent_on:"2026-09-30",recurring_cost_id:"rent-bill"})),
   };
   const client={
@@ -84,7 +84,7 @@ describe("historical snapshot is genuinely read-only",()=>{
       .toEqual(new Set(["2026-09","2026-10"]));
     expect(spies.materialize).not.toHaveBeenCalled();
     expect(spies.alerts).not.toHaveBeenCalled();
-    expect(tables).toEqual(["businesses","cv_sales_days","recurring_costs","expenses","locations"]);
+    expect(tables).toEqual(["businesses","cv_sales_days","cv_bills","cv_expenses","locations"]);
     for(const table of tables.filter(name=>name!=="businesses"))
       expect(filters).toContainEqual({table,field:"business_id",value:cafeId});
   });
@@ -104,6 +104,6 @@ describe("historical snapshot is genuinely read-only",()=>{
     expect(rent.recordedExpenses?.reduce((n,row)=>n+row.amountCents,0)).toBe(100100);
     expect(runningCostsForPeriodCents([rent],"2026-09-30","2026-09-30")).toBeCloseTo(100100+199900/30);
     expect(runningCostsForPeriodCents([rent],"2026-09-01","2026-09-01")).toBeCloseTo(199900/30);
-    expect(tables.filter(name=>name==="expenses")).toHaveLength(2);
+    expect(tables.filter(name=>name==="cv_expenses")).toHaveLength(2);
   });
 });

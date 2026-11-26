@@ -61,9 +61,9 @@ export async function getPricingInputs(supabase: SupabaseClient, businessId: str
   // omit the trusted-order query, and only when even unlimited trusted orders
   // cannot change the canonical engine's BENCHMARK decision.
   const daysPromise = measure("dailyFacts", () => readDailyFacts(supabase, businessId, fromDateStr, todayDateStr));
-  const readOrders = () => measure("trustedOrders", async () => await supabase.from("orders")
-    .select("business_date, pos_order_id, net_sales_cents, processing_fee_provider")
-    .eq("business_id", businessId).eq("toast_excluded", false).is("superseded_by", null)
+  const readOrders = () => measure("trustedOrders", async () => await supabase.from("cv_orders")
+    .select("business_date,pos_order_id:data->>pos_order_id,net_sales_cents,processing_fee_provider:data->>processing_fee_provider")
+    .eq("business_id", businessId).eq("status","actual")
     .gte("business_date", fromDateStr).lte("business_date", todayDateStr));
   const ordersPromise = (async () => {
     if (options.attentionOnly) {
@@ -77,11 +77,11 @@ export async function getPricingInputs(supabase: SupabaseClient, businessId: str
   const [itemsResult, days, recurringResult, ordersResult, expenseResult, priorExpenseResult, ownerFeePlans] = await Promise.all([
     supabase.from("menu_items").select("id, name, price_cents, category, prep_seconds").eq("business_id", businessId).eq("is_active", true),
     daysPromise,
-    supabase.from("recurring_costs").select("amount_cents, category_code, frequency, active_from, active_to, is_estimate").eq("business_id", businessId).lte("active_from", todayDateStr),
+    supabase.from("cv_bills").select("amount_cents:data->amount_cents,category_code:data->category_code,frequency:data->frequency,active_from:data->active_from,active_to:data->active_to,is_estimate:data->is_estimate").eq("business_id", businessId).lte("data->>active_from", todayDateStr),
     ordersPromise,
-    supabase.from("expenses").select("category_code, amount_cents, status")
+    supabase.from("cv_expenses").select("category_code, amount_cents, status")
       .eq("business_id",businessId).gte("spent_on",firstOfMonth).lte("spent_on",todayDateStr),
-    supabase.from("expenses").select("category_code")
+    supabase.from("cv_expenses").select("category_code")
       .eq("business_id",businessId).eq("status","actual")
       .gte("spent_on",previousMonthStart).lt("spent_on",firstOfMonth),
     measure("feePlans", () => getOwnerConfirmedProcessingFeePlans(supabase, businessId)),

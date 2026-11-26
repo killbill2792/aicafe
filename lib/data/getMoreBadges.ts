@@ -91,9 +91,9 @@ export async function getMoreBadgeInputs(userId: string | undefined): Promise<Mo
       .order("name").limit(1).maybeSingle(),
     getUploadHistory(),
     readMissingFeeDays(db, businessId, business.timezone),
-    db.from("recurring_costs")
-      .select("id,category_code,label,amount_cents,frequency,due_day,is_estimate")
-      .eq("business_id", businessId).is("active_to", null),
+    db.from("cv_bills")
+      .select("id:data->id,category_code:data->category_code,label:data->label,amount_cents:data->amount_cents,frequency:data->frequency,due_day:data->due_day,is_estimate:data->is_estimate")
+      .eq("business_id", businessId).is("data->>active_to", null),
     db.from("alerts").select("id,kind,payload")
       .eq("business_id", businessId).in("status", ["new", "seen"]),
     membership.role === "owner" ? readToastState(businessId) : Promise.resolve(undefined),

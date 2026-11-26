@@ -41,7 +41,7 @@ const cafe = {business_id: "cafe-a", role: "staff", businesses: {
 function mockBadgeQueries() {
   state.from.mockImplementation((table: string) => {
     if (table === "memberships") throw new Error("Redundant membership query");
-    const response = table === "recurring_costs"
+    const response = table === "cv_bills"
       ? {data: [], error: null}
       : table === "alerts"
         ? {data: [{id:"1",kind:"meal_break",payload:{}},{id:"2",kind:"voids",payload:{}},{id:"3",kind:"meal_break",payload:{}},{id:"4",kind:"business_anomaly",payload:{family:"data_gap",subject:"sales_coverage"}}], count: 4, error: null}

@@ -21,7 +21,7 @@ describe("Processing fees canonical screen inputs",()=>{
       {business_date:dates[1],amount_cents:250,status:"estimated",source_type:"owner_confirmed_estimate",provider:"Toast"},
     ],
     pos_connections:[{provider:"Toast",status:"active"}],
-    orders:[{business_date:dates[1],pos_order_id:"toast:order",net_sales_cents:10000,processing_fee_provider:"Toast"}],
+    cv_orders:[{business_date:dates[1],pos_order_id:"toast:order",net_sales_cents:10000,processing_fee_provider:"Toast"}],
   };
   const filters:Array<[string,string,unknown]>=[];
   const columns:Record<string,string>={};
@@ -50,7 +50,7 @@ describe("Processing fees canonical screen inputs",()=>{
       processorCount:1,currency:"EUR",trustedOrderDays:1,untrustedFeeDates:[dates[2]]});
     expect(columns.cv_card_fees).toContain("source_type:data->>sourceType");
     expect(columns.cv_card_fees).toContain("provider:data->>provider");
-    for(const table of ["cv_sales_days","cv_card_fees","orders","pos_connections"])
+    for(const table of ["cv_sales_days","cv_card_fees","cv_orders","pos_connections"])
       expect(filters).toContainEqual([table,"business_id",cafe]);
     expect(state.from).not.toHaveBeenCalledWith("daily_rollups");
     expect(state.from).not.toHaveBeenCalledWith("processing_fee_daily_facts");

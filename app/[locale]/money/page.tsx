@@ -62,10 +62,10 @@ export default async function MoneyPage({
       view === "profit"
         ? timeReader("Money","readAllPosRows.salesSources",()=>{
           const range = periodCalendarRange(snapshot, period);
-          return readAllPosRows<SalesOrderEvidence>((first, last) => db.from("orders")
-            .select("pos_order_id, processing_fee_provider")
-            .eq("business_id", businessId).eq("toast_excluded",false).is("superseded_by",null).gte("business_date", range.start)
-            .lte("business_date", range.end).order("id").range(first, last), "money sales sources");
+          return readAllPosRows<SalesOrderEvidence>((first, last) => db.from("cv_orders")
+            .select("pos_order_id:data->>pos_order_id,processing_fee_provider:data->>processing_fee_provider")
+            .eq("business_id", businessId).eq("status","actual").gte("business_date", range.start)
+            .lte("business_date", range.end).order("source_ref").range(first, last), "money sales sources");
         })
         : Promise.resolve(null),
       // Same saved, business-day-checked reading as Home. Never replace a finalized

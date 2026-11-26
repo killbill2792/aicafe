@@ -22,7 +22,7 @@ function mockDb(options:{sold?:Array<{menu_item_id:string;total_quantity:number|
       target_operating_margin:.15,target_operating_margin_status:"default",
       owner_monthly_payroll_extras_cents:null}],
     locations:[{open_hours:null}],
-    cv_sales_days:[],recurring_costs:[],expenses:[],recovery_order:[],
+    cv_sales_days:[],cv_bills:[],cv_expenses:[],recovery_order:[],
     menu_items:[],timecards:[],alerts:[],
   };
   const db={from(table:string){
@@ -98,7 +98,7 @@ describe("getSnapshot read-only current snapshot and Home database budget",()=>{
   it("never silently drops actual receipts after the 1000-row PostgREST page boundary",async()=>{
     const {db,seed,reads}=mockDb();
     const today=formatInTimeZone(new Date(),"America/Los_Angeles","yyyy-MM-dd");
-    seed.expenses=Array.from({length:1001},(_,i)=>({
+    seed.cv_expenses=Array.from({length:1001},(_,i)=>({
       id:"receipt-"+String(i).padStart(5,"0"),category_code:"rent",
       amount_cents:100,status:"actual",spent_on:today
     }));
@@ -106,20 +106,20 @@ describe("getSnapshot read-only current snapshot and Home database budget",()=>{
     expect(result.runningCostLines.find(line=>line.categoryCode==="rent"))
       .toMatchObject({amountCents:100100,actualTodayCents:100100,
         amountSource:"recorded_expense",isEstimate:false});
-    expect(reads.filter(table=>table==="expenses").length).toBeGreaterThan(2);
+    expect(reads.filter(table=>table==="cv_expenses").length).toBeGreaterThan(2);
   });
   it("rejects duplicated financial identities instead of manufacturing a complete source",async()=>{
     const {db,seed}=mockDb();
     const today=formatInTimeZone(new Date(),"America/Los_Angeles","yyyy-MM-dd");
-    seed.expenses=[{id:"same",category_code:"rent",amount_cents:100,status:"actual",spent_on:today},
+    seed.cv_expenses=[{id:"same",category_code:"rent",amount_cents:100,status:"actual",spent_on:today},
       {id:"same",category_code:"rent",amount_cents:200,status:"actual",spent_on:today}];
     await expect(getBusinessSnapshotFromDb(db,"c1","today"))
-      .rejects.toThrow("snapshot_source_incomplete:expenses");
+      .rejects.toThrow("snapshot_source_incomplete:cv_expenses");
   });
   it("never labels estimated expense rows as actual cash spent today",async()=>{
     const {db,seed}=mockDb();
     const today=formatInTimeZone(new Date(),"America/Los_Angeles","yyyy-MM-dd");
-    seed.expenses=[
+    seed.cv_expenses=[
       {id:"rent-actual",category_code:"rent",amount_cents:1500,status:"actual",spent_on:today},
       {id:"rent-estimate",category_code:"rent",amount_cents:5000,status:"estimated",spent_on:today}
     ];

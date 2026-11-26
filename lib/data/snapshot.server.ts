@@ -76,18 +76,18 @@ export async function getBusinessSnapshotFromDb(
       timeReader("Snapshot","dailyFacts",()=>readDailyFactRows(supabase,businessId,prevMonthStart,todayDateStr))
         .then(data=>({data,error:null}),(error:Error)=>({data:null,error})),
       timeReader("Snapshot","recurringCosts",()=>snapshotPaged("recurring_costs",
-        (start,end)=>supabase.from("recurring_costs")
-         .select("id,category_code,amount_cents,frequency,is_estimate,active_from,active_to,label,due_day,source",{count:"exact"})
-         .eq("business_id",businessId).order("id",{ascending:true}).range(start,end),
+        (start,end)=>supabase.from("cv_bills")
+         .select("id:data->id,category_code:data->category_code,amount_cents:data->amount_cents,frequency:data->frequency,is_estimate:data->is_estimate,active_from:data->active_from,active_to:data->active_to,label:data->label,due_day:data->due_day,source",{count:"exact"})
+         .eq("business_id",businessId).order("source_ref",{ascending:true}).range(start,end),
         row=>row.id)),
       timeReader("Snapshot","expenses",()=>snapshotPaged("expenses",
-        (start,end)=>supabase.from("expenses")
+        (start,end)=>supabase.from("cv_expenses")
          .select("id,category_code,amount_cents,status,spent_on,recurring_cost_id,custom_label,vendor,source",{count:"exact"})
          .eq("business_id",businessId).gte("spent_on",monthStart).lte("spent_on",todayDateStr)
          .order("id",{ascending:true}).range(start,end),
         row=>row.id)),
       timeReader("Snapshot","priorExpenses",()=>snapshotPaged("prior_expenses",
-        (start,end)=>supabase.from("expenses")
+        (start,end)=>supabase.from("cv_expenses")
          .select("id,category_code,amount_cents,status,spent_on,recurring_cost_id,custom_label,vendor,source",{count:"exact"})
          .eq("business_id",businessId).gte("spent_on",prevMonthStart).lte("spent_on",prevMonthEnd)
          .order("id",{ascending:true}).range(start,end),
@@ -387,11 +387,11 @@ async function readHistoricalBusinessSnapshot(
   const [rollups,recurring,expenses,locations,itemSales]=await Promise.all([
     readDailyFactRows(supabase,businessId,period.from,period.to)
       .then(data=>({data,error:null}),(error:Error)=>({data:null,error})),
-    snapshotPaged("historical_recurring_costs",(start,end)=>supabase.from("recurring_costs")
-      .select("id,category_code,amount_cents,frequency,is_estimate,active_from,active_to,label,due_day,source",{count:"exact"})
-      .eq("business_id",businessId).lte("active_from",monthEnd)
-      .order("id",{ascending:true}).range(start,end),row=>row.id),
-    snapshotPaged("historical_expenses",(start,end)=>supabase.from("expenses")
+    snapshotPaged("historical_recurring_costs",(start,end)=>supabase.from("cv_bills")
+      .select("id:data->id,category_code:data->category_code,amount_cents:data->amount_cents,frequency:data->frequency,is_estimate:data->is_estimate,active_from:data->active_from,active_to:data->active_to,label:data->label,due_day:data->due_day,source",{count:"exact"})
+      .eq("business_id",businessId).lte("data->>active_from",monthEnd)
+      .order("source_ref",{ascending:true}).range(start,end),row=>row.id),
+    snapshotPaged("historical_expenses",(start,end)=>supabase.from("cv_expenses")
       .select("id,category_code,amount_cents,status,spent_on,recurring_cost_id,custom_label,vendor,source",{count:"exact"})
       .eq("business_id",businessId).gte("spent_on",precedingMonthStart).lte("spent_on",monthEnd)
       .order("id",{ascending:true}).range(start,end),row=>row.id),
