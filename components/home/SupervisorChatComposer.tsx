@@ -113,7 +113,7 @@ function progressStatusText(copy: SupervisorChatCopy, status: SupervisorProgress
 const record = (value: unknown): value is Record<string, unknown> =>
   Boolean(value) && typeof value === "object" && !Array.isArray(value);
 
-function ReplyBlock({ block, copy, locale, threadId, onEdit, disabled=false, unverified = [] }: { block: unknown; copy: SupervisorChatCopy; locale: Locale; threadId?:string; onEdit?:(text:string)=>void;disabled?:boolean; unverified?: {start:number;end:number;source?:'owner'|'estimate'|'unchecked';detail?:string}[] }) {
+function ReplyBlock({ block, copy, locale, threadId, onEdit, disabled=false, unverified = [], streaming=false }: { block: unknown; copy: SupervisorChatCopy; locale: Locale; threadId?:string; onEdit?:(text:string)=>void;disabled?:boolean;streaming?:boolean; unverified?: {start:number;end:number;source?:'owner'|'estimate'|'unchecked';detail?:string}[] }) {
   if (!record(block)) return null;
   if(block.type==="proposal_card"&&typeof block.proposalId==="string"&&threadId)
     return <div data-work-proposal={block.proposalId} tabIndex={-1}><SupervisorProposalCard threadId={threadId} proposalId={block.proposalId} locale={locale}/></div>;
@@ -129,7 +129,7 @@ function ReplyBlock({ block, copy, locale, threadId, onEdit, disabled=false, unv
       ? <p className="flex items-start gap-2 text-[1.0625rem] leading-relaxed text-ink-muted" role="note">
           <AlertCircle aria-hidden="true" size={18} className="mt-1 shrink-0" />{block.text}
         </p>
-      : <ChatMarkdown text={block.text} locale={locale} unverified={unverified} labels={{owner:copy.provenanceOwner,estimate:copy.provenanceEstimate,unchecked:copy.provenanceUnchecked,breakEvenSales:copy.provenanceBreakEven,salesGap:copy.provenanceSalesGap,dailyOverhead:copy.provenanceOverhead}} showLegend={false} />;
+      : <ChatMarkdown text={block.text} locale={locale} streaming={streaming} unverified={unverified} labels={{owner:copy.provenanceOwner,estimate:copy.provenanceEstimate,unchecked:copy.provenanceUnchecked,breakEvenSales:copy.provenanceBreakEven,salesGap:copy.provenanceSalesGap,dailyOverhead:copy.provenanceOverhead}} showLegend={false} />;
   }
   if (block.type === "task_card" && typeof block.title === "string" && typeof block.agent === "string" &&
     typeof block.status === "string" && typeof block.href === "string" &&
@@ -1368,8 +1368,8 @@ export default function SupervisorChatComposer({
         note={sending ? progressStatus?.stage==="answering"?progressStatusText(copy,progressStatus):liveNote??(!liveJobId?progressStatusText(copy,progressStatus)??copy.sending:null) : watcher.job?.progress.length?null:liveCopy.resumed} />}
       {sending && (streamedText||streamedPresentations.length>0) && <article aria-hidden="true" aria-live="off" aria-busy="true" inert className="w-full space-y-3"><div className="flex items-center gap-2 text-[0.9375rem] font-bold text-ink-muted"><span className="flex h-8 w-8 items-center justify-center rounded-full bg-pos-soft text-good"><Sparkles size={17} aria-hidden="true"/></span>{copy.supervisor}</div>{streamedPresentations.map((item,i)=>{
         const start=i===0?0:streamedPresentations[i-1].offset;
-        return <div key={i} className="min-w-0 space-y-3">{item.offset>start&&<ReplyBlock block={{type:"text",text:streamedText.slice(start,item.offset)}} copy={copy} locale={locale}/>}<PresentationBoundary><SupervisorRichPresentation block={item.block} locale={locale} onSuggest={()=>undefined} disabled/></PresentationBoundary></div>;
-      })}{streamedText.length>(streamedPresentations.at(-1)?.offset??0)&&<ReplyBlock block={{type:"text",text:streamedText.slice(streamedPresentations.at(-1)?.offset??0)}} copy={copy} locale={locale}/>}</article>}
+        return <div key={i} className="min-w-0 space-y-3">{item.offset>start&&<ReplyBlock block={{type:"text",text:streamedText.slice(start,item.offset)}} copy={copy} locale={locale} streaming/>}<PresentationBoundary><SupervisorRichPresentation block={item.block} locale={locale} onSuggest={()=>undefined} disabled/></PresentationBoundary></div>;
+      })}{streamedText.length>(streamedPresentations.at(-1)?.offset??0)&&<ReplyBlock block={{type:"text",text:streamedText.slice(streamedPresentations.at(-1)?.offset??0)}} copy={copy} locale={locale} streaming/>}</article>}
       </div>
     </div>
     {sending&&canDetach&&<button type="button" onClick={()=>void detachLiveStream()} className="mx-auto flex min-h-12 shrink-0 items-center gap-2 rounded-full border border-line px-4 text-[0.9375rem] text-ink hover:bg-surface2 focus-visible:outline focus-visible:outline-2 focus-visible:outline-ink"><Square size={16} aria-hidden="true"/>{en.SupervisorExperience.stopLiveView}</button>}

@@ -3,6 +3,8 @@ import en from "@/messages/en.json";
 import es from "@/messages/es.json";
 import ar from "@/messages/ar.json";
 import { useEffect, useReducer, useRef, useState, type ReactNode, type Ref } from "react";
+import {Streamdown,defaultRehypePlugins,type Components,type ExtraProps} from "streamdown";
+import type {Root,Element,Text} from "hast";
 import { createPortal } from "react-dom";
 
 type Verification = { start:number;end:number;source?:"owner"|"estimate"|"unchecked";detail?:string };
@@ -134,133 +136,129 @@ function SourceUnderline({tone,label,children}:{tone:keyof typeof tones;label:st
       document.body)}
   </>;
 }
-type SourceLine = { text: string; start: number };
-type ListMarker = { ordered: boolean; number: number; content: string; contentStart: number; indent:number; checked?:boolean };
 
-function sourceLines(source: string): SourceLine[] {
-  let offset = 0;
-  return source.split("\n").map(raw => {
-    const text = raw.endsWith("\r") ? raw.slice(0, -1) : raw;
-    const line = { text, start: offset };
-    offset += raw.length + 1;
-    return line;
-  });
+type Locale="en"|"es"|"ar";
+type MarkOptions={spans:readonly Verification[];labels:ProvenanceLabels;locale:Locale};
+type NumberMark={start:number;end:number;source:keyof typeof tones;label:string};
+/** This is a source-annotation plugin, not a Markdown parser. The renderer
+ * supplies parsed AST text and original UTF-16 offsets. */
+function sourceMarks(text:string,absoluteStart:number,{spans,labels,locale}:MarkOptions):NumberMark[]{
+ const clockRanges=[...text.matchAll(/\b\d{1,2}\s*[–-]\s*\d{1,2}:\d{2}(?:\s*[ap]\.?m\.?)?/giu)]
+   .map(m=>({start:m.index,end:m.index+m[0].length}));
+ return tokenizeNumbers(text,locale).flatMap(token=>{
+  if(clockRanges.some(r=>token.start<r.end&&token.end>r.start))return [];
+  const from=absoluteStart+token.start,to=absoluteStart+token.end;
+  const matching=spans.filter(s=>s.start<to&&s.end>from);
+  const unchecked=matching.some(s=>(s.source??"unchecked")==="unchecked");
+  if(!matching.length||(["clock","clockRange","date","dateRange","duration","ordinal","phone/id"].includes(token.kind)&&!unchecked))return [];
+  const span=matching.find(s=>(s.source??"unchecked")==="unchecked")??matching[0];
+  const source=span.source??"unchecked";
+  const detail=span.detail==="breakEvenSales"?labels.breakEvenSales:span.detail==="salesGap"?labels.salesGap:span.detail==="dailyOverhead"?labels.dailyOverhead:span.detail;
+  return [{start:token.start,end:token.end,source,label:detail?labels[source]+": "+detail:labels[source]}];
+ });
 }
-
-function listMarker(line: SourceLine): ListMarker | null {
-  const indent=line.text.match(/^[ \t]*/u)?.[0].replaceAll("\t","    ").length??0;
-  const number = /^[ \t]*(\d+)[.)] +(.+)$/.exec(line.text);
-  if (number) return {
-    ordered: true, indent, number: Number(number[1]), content: number[2],
-    contentStart: line.start + number[0].length - number[2].length,
+function sourceAnnotationPlugin(options:MarkOptions){
+ return (tree:Root,file:{value:unknown})=>{
+  const source=String(file.value),badged=new Set<number>();
+  const offset=(node:Text,parent:Root|Element)=>{
+   const position=node.position??parent.position;
+   const start=position?.start.offset,end=position?.end.offset;
+   if(start===undefined||end===undefined)return undefined;
+   const raw=source.slice(start,end);
+   if(raw===node.value)return start;
+   const at=raw.indexOf(node.value);
+   return at>=0&&raw.lastIndexOf(node.value)===at?start+at:undefined;
   };
-  const bullet = /^[ \t]*[-*+] +(.+)$/.exec(line.text);
-  if (bullet){
-    const task=/^\[([ xX])\] +(.+)$/u.exec(bullet[1]);
-    const content=task?task[2]:bullet[1];
-    return {ordered:false,indent,number:0,content,contentStart:line.start+bullet[0].length-content.length,
-      ...(task?{checked:task[1]!==" "}:{})};
-  }
-  return null;
-}
-
-/** Render verification labels at original UTF-16 offsets, after Markdown
- * delimiters have been interpreted. Both verified and regular text share the
- * same block parser; labels cannot switch lists back to raw source text. */
-function annotatedText(
-  text: string, absoluteStart: number, spans: readonly Verification[], labels: ProvenanceLabels, badged: Set<number>, locale: "en"|"es"|"ar" = "en",
-): ReactNode[] {
-  const end=absoluteStart+text.length, out:ReactNode[]=[];
-  let cursor=absoluteStart;
-  const tokens=tokenizeNumbers(text,locale);
-  // A range such as “4–8:45 p.m.” is clock text, not a sourced quantity.
-  // Rendering only: the underlying number-checking evidence is untouched.
-  const clockRanges=[...text.matchAll(/\b\d{1,2}\s*[–-]\s*\d{1,2}:\d{2}(?:\s*[ap]\.?m\.?)?/giu)]
-    .map(m=>({start:m.index,end:m.index+m[0].length}));
-  for(const token of tokens){
-    const from=absoluteStart+token.start,to=absoluteStart+token.end;
-    if(clockRanges.some(range=>token.start<range.end&&token.end>range.start))continue;
-    const matching=spans.filter(span=>span.start<to&&span.end>from);
-    // Calendar/time-shaped tokens stay undecorated only when the checker has
-    // NOT explicitly rejected them. Grounding always overrides cosmetics.
-    const unchecked=matching.some(span=>(span.source??"unchecked")==="unchecked");
-    const cosmeticOnly=["clock","clockRange","date","dateRange","duration","ordinal","phone/id"].includes(token.kind);
-    if(!matching.length||badged.has(from)||(cosmeticOnly&&!unchecked))continue;
-    if(from>cursor)out.push(text.slice(cursor-absoluteStart,from-absoluteStart).replace(/\\\|/g,"|"));
-    if(from<cursor)continue;
-    const span=matching.find(v=>v.source==="unchecked")??matching[0];
-    const source=span.source??"unchecked";
-    const detail=span.detail==="breakEvenSales"?labels.breakEvenSales:span.detail==="salesGap"?labels.salesGap:span.detail==="dailyOverhead"?labels.dailyOverhead:span.detail;
-    const explanation=detail?labels[source]+": "+detail:labels[source];
-    out.push(<span key={from} className="whitespace-nowrap"><SourceUnderline tone={source} label={explanation}>{text.slice(token.start,token.end)}</SourceUnderline></span>);
-    badged.add(from);cursor=to;
-  }
-  if(cursor<end)out.push(text.slice(cursor-absoluteStart).replace(/\\\|/g,"|"));
-  return out;
-}
-
-function inlineMarkdown(
-  text: string, absoluteStart: number, spans: readonly Verification[], labels: ProvenanceLabels, badged: Set<number>, locale:"en"|"es"|"ar"="en",
-): ReactNode[] {
-  const nodes: ReactNode[] = [];
-  // No model-authored HTML or links: React escapes literal source text. Inline
-  // code is rendered as text and is never reparsed as emphasis.
-  const pattern = /(\[([^\]\n]+)\]\((https?:\/\/[^\s)]+)\)|\*\*([^*\n]+)\*\*|__([^_\n]+)__|\*([^*\n]+)\*|_([^_\n]+)_|`([^`\n]+)`)/g;
-  let cursor = 0;
-  let match: RegExpExecArray | null;
-  while ((match = pattern.exec(text))) {
-    if (match.index > cursor) {
-      nodes.push(...annotatedText(text.slice(cursor, match.index), absoluteStart + cursor, spans, labels, badged,locale));
+  const walk=(parent:Root|Element,ordered=false)=>{
+   for(let i=0;i<parent.children.length;i++){
+    const node=parent.children[i];
+    if(node.type==="element"){
+     // Preserve explicit numbering for numbered owner instructions, including
+     // a non-one start, using the parser's list-item source position.
+     if(ordered&&node.tagName==="li"){
+      const at=node.position?.start.offset;
+      if(at!==undefined){
+       const value=/^\s*(\d+)[.)]\s/u.exec(source.slice(at,node.position?.end.offset));
+       if(value)node.properties.value=Number(value[1]);
+      }
+     }
+     walk(node,node.tagName==="ol");continue;
     }
-    const delimiter = match[4] !== undefined || match[5] !== undefined ? 2 : match[2]!==undefined ? 1 : 1;
-    const content = match[2] ?? match[4] ?? match[5] ?? match[6] ?? match[7] ?? match[8];
-    const inner = annotatedText(content, absoluteStart + match.index + delimiter, spans, labels, badged,locale);
-    const key = absoluteStart + match.index;
-    nodes.push(match[2] !== undefined
-      ? <a key={key} href={match[3]} target="_blank" rel="noopener noreferrer" className="underline text-accent-text">{inner}</a>
-      : match[4] !== undefined || match[5] !== undefined
-      ? <strong key={key} className="font-bold">{inner}</strong>
-      : match[8] !== undefined
-        ? <code key={key} className="rounded bg-surface2 px-1">{inner}</code>
-        : <em key={key}>{inner}</em>);
-    cursor = match.index + match[0].length;
-  }
-  if (cursor < text.length) nodes.push(...annotatedText(text.slice(cursor), absoluteStart + cursor, spans, labels, badged,locale));
-  return nodes;
+    if(node.type!=="text")continue;
+    const at=offset(node,parent);
+    if(at===undefined)continue;
+    const marks=sourceMarks(node.value,at,options).filter(m=>!badged.has(at+m.start));
+    if(!marks.length)continue;
+    const nodes:(Text|Element)[]=[];let cursor=0;
+    for(const mark of marks){
+     if(mark.start<cursor)continue;
+     if(mark.start>cursor)nodes.push({type:"text",value:node.value.slice(cursor,mark.start)});
+     nodes.push({type:"element",tagName:"span",properties:{dataCafeSource:mark.source,dataCafeLabel:mark.label},
+      children:[{type:"text",value:node.value.slice(mark.start,mark.end)}]});
+     badged.add(at+mark.start);cursor=mark.end;
+    }
+    if(cursor<node.value.length)nodes.push({type:"text",value:node.value.slice(cursor)});
+    parent.children.splice(i,1,...nodes);i+=nodes.length-1;
+   }
+  };
+  walk(tree);
+ };
 }
-
-
-/** ATX headings are presentation only: retain original UTF-16 offsets. */
-function headingMarker(line:SourceLine){
- const match=/^([ ]{0,3}#{1,6})[ \t]+(\S.*)$/u.exec(line.text);
- if(!match)return null;
- const content=match[2].replace(/[ \t]+#+[ \t]*$/u,"").trimEnd();
- if(!content)return null;
- return {level:Math.min(6,match[1].trim().length+1),content,start:line.start+match[0].length-match[2].length};
+const headingClass="mt-4 mb-1 font-semibold leading-snug text-balance break-words text-ink";
+const cellClass="border-b border-line px-1.5 sm:px-3 py-2 align-top whitespace-normal [overflow-wrap:anywhere]";
+const alignment=(value:unknown)=>value==="right"||value==="end"?"text-end":value==="center"?"text-center":"text-start";
+function ResponseTable({children,node}:React.ComponentProps<"table">&ExtraProps){
+ const head=node?.children.find((child):child is Element=>child.type==="element"&&child.tagName==="thead");
+ const row=head?.children.find((child):child is Element=>child.type==="element"&&child.tagName==="tr");
+ const columns=row?.children.filter((child):child is Element=>child.type==="element"&&child.tagName==="th")??[];
+ const wide=columns.length>4;
+ return <div role="region" aria-label="Response table" tabIndex={0} className="min-w-0 max-w-full overflow-x-auto rounded-lg border border-line focus-visible:outline focus-visible:outline-2 focus-visible:outline-ink">
+  <table className="w-full table-fixed border-collapse text-[0.9375rem] sm:text-[1.0625rem]" style={wide?{minWidth:columns.length*90}:undefined}>
+   <caption className="sr-only">Response table</caption>
+   <colgroup>{columns.map((c,i)=><col key={i} style={columns.length<=3&&c.properties.align==="right"?{width:"35%"}:undefined}/>)}</colgroup>
+   {children}
+  </table>
+ </div>;
 }
-type TableCell={text:string;start:number};
-function tableCells(line:SourceLine):TableCell[]{
- const text=line.text;const found:TableCell[]=[];let from=0,code=false,escape=false;
- for(let i=0;i<text.length;i++){
-   if(escape){escape=false;continue;}
-   if(text[i]==="\\"){escape=true;continue;}
-   if(text[i]==="`"){code=!code;continue;}
-   if(text[i]==="|"&&!code){found.push({text:text.slice(from,i),start:line.start+from});from=i+1;}
- }
- found.push({text:text.slice(from),start:line.start+from});
- if(text.trimStart().startsWith("|"))found.shift();
- if(text.trimEnd().endsWith("|"))found.pop();
- return found.map(c=>({text:c.text.trim(),start:c.start+c.text.length-c.text.trimStart().length}));
+const components:Components={
+ table:ResponseTable,
+ th:({children,align,style,node})=><th scope="col" className={cellClass+" bg-surface2 font-semibold "+alignment(align??node?.properties.align??style?.textAlign)}>{children}</th>,
+ td:({children,align,style,node})=><td className={cellClass+" "+alignment(align??node?.properties.align??style?.textAlign)}>{children}</td>,
+ h1:({children})=><h2 className={headingClass+" text-xl"}>{children}</h2>,
+ h2:({children})=><h3 className={headingClass+" text-[1.1875rem]"}>{children}</h3>,
+ h3:({children})=><h4 className={headingClass+" text-[1.0625rem]"}>{children}</h4>,
+ h4:({children})=><h5 className={headingClass+" text-[1.0625rem]"}>{children}</h5>,
+ h5:({children})=><h6 className={headingClass+" text-[1.0625rem]"}>{children}</h6>,
+ h6:({children})=><h6 className={headingClass+" text-[1.0625rem]"}>{children}</h6>,
+ p:({children})=><p className="whitespace-pre-line break-words">{children}</p>,
+ strong:({children})=><strong className="font-bold">{children}</strong>,
+ ul:({children})=><ul className="list-disc space-y-1 ps-6">{children}</ul>,
+ ol:({children,start})=><ol start={start} className="list-decimal space-y-1 ps-6">{children}</ol>,
+ li:({children,value,className,node})=><li value={value??(typeof node?.properties.value==="number"?node.properties.value:undefined)} className={className?.includes("task-list-item")?"list-none ps-1":"ps-1"}>{children}</li>,
+ input:({checked})=><input type="checkbox" checked={checked===true} disabled className="me-2 align-middle accent-current"/>,
+ a:({href,children})=>href&&/^https?:\/\//iu.test(href)?<a href={href} target="_blank" rel="noopener noreferrer" className="underline text-accent-text">{children}</a>:<span>{children}</span>,
+ img:({alt})=><span>{alt}</span>,
+ pre:({children})=><pre className="max-w-full overflow-x-auto rounded-lg bg-surface2 p-3 text-sm">{children}</pre>,
+ code:({children})=><code className="rounded bg-surface2 px-1">{children}</code>,
+ inlineCode:({children})=><code className="rounded bg-surface2 px-1">{children}</code>,
+ blockquote:({children})=><blockquote className="border-s-2 border-line ps-3 text-ink-muted">{children}</blockquote>,
+ hr:()=> <hr className="border-line"/>,
+ span:({children,node})=>{
+  const source=node?.properties.dataCafeSource,label=node?.properties.dataCafeLabel;
+  return (source==="owner"||source==="estimate"||source==="unchecked")&&typeof label==="string"?
+   <span className="whitespace-nowrap"><SourceUnderline tone={source} label={label}>{children}</SourceUnderline></span>:<span>{children}</span>;
+ },
+};
+// Keep library sanitation, but do not parse model-authored raw HTML. Its
+// native remark escape plugin preserves unsupported HTML as literal text.
+const safeRehype=[defaultRehypePlugins.sanitize,defaultRehypePlugins.harden];
+const safeUrl=(url:string,key:string)=>key==="href"&&/^https?:\/\//iu.test(url)?url:undefined;
+function MarkdownSegment({text,options,streaming}:{text:string;options:MarkOptions;streaming:boolean}){
+ const rehypePlugins=options.spans.length?[...safeRehype,[sourceAnnotationPlugin,options] as [typeof sourceAnnotationPlugin,MarkOptions]]:safeRehype;
+ return <Streamdown mode={streaming?"streaming":"static"} isAnimating={streaming}
+   dir={options.locale==="ar"?"rtl":"auto"} controls={false} components={components}
+   rehypePlugins={rehypePlugins} urlTransform={safeUrl} className="space-y-2 min-w-0 break-words">{text}</Streamdown>;
 }
-function tableHeader(lines:SourceLine[],index:number){
- if(index+1>=lines.length)return null;
- const head=tableCells(lines[index]),sep=tableCells(lines[index+1]);
- if(!head.length||head.every(c=>!c.text)||head.length!==sep.length||
-   !sep.every(c=>/^:?-{3,}:?$/.test(c.text)))return null;
- const align=sep.map(c=>c.text.startsWith(":")&&c.text.endsWith(":")?"center":c.text.endsWith(":")?"end":"start");
- return {head,align};
-}
-
 export function SourceLegend({sources,labels,legendLabel="Number sources"}:{
  sources:readonly ("owner"|"estimate"|"unchecked")[];labels:ProvenanceLabels;legendLabel?:string;
 }){
@@ -271,139 +269,45 @@ export function SourceLegend({sources,labels,legendLabel="Number sources"}:{
   </span>)}
  </p>:null;
 }
-export function ChatMarkdown({text,unverified=[],label,labels,locale="en",showLegend=true,legendLabel,compact=false}:{
- text:string;unverified?:readonly Verification[];label?:string;labels?:ProvenanceLabels;locale?:"en"|"es"|"ar";
- showLegend?:boolean;legendLabel?:string;compact?:boolean;
-}) {
- const copy=labels??{owner:"You told me",estimate:"Estimate",unchecked:label??"Not checked against your records"};
-  const spans = [...unverified].filter(s =>
-    Number.isSafeInteger(s.start) && Number.isSafeInteger(s.end) &&
-    s.start >= 0 && s.end > s.start && s.end <= text.length,
-  ).sort((a,b) => a.start - b.start)
-    .filter((s, i, all) => i === 0 || s.start >= all[i - 1].end);
 
-  const badged = new Set<number>();
-  const lines = sourceLines(text);
-  const blocks: ReactNode[] = [];
-  let index = 0;
-  while (index < lines.length) {
-    if (!lines[index].text.trim()) { index++; continue; }
-
-    // Older model replies may contain literal HTML-like disclosure markers.
-    // Recognize only this exact "How I got this" shape, never arbitrary HTML.
-    if(lines[index].text.trim()==="<details>"&&
-      /^<summary>How I got this<\/summary>$/.test(lines[index+1]?.text.trim()??"")){
-      const opened=index;
-      let closing=index+2;
-      while(closing<lines.length&&lines[closing].text.trim()!=="</details>"&&closing-index<40)closing++;
-      if(closing<lines.length&&lines[closing].text.trim()==="</details>"){
-        const inside=lines.slice(index+2,closing).filter(line=>line.text.trim());
-        if(inside.length===0){
-          // Model sometimes closes the details tag *before* its explanation.
-          // Treat the next contiguous explanation as the body of the control.
-          let next=closing+1;
-          while(next<lines.length&&!lines[next].text.trim())next++;
-          while(next<lines.length&&lines[next].text.trim()&&next-closing<12)inside.push(lines[next++]);
-          closing=next-1;
-        }
-        blocks.push(<details key={opened} className="rounded-xl border border-line bg-surface2 text-ink">
-          <summary className="min-h-12 cursor-pointer rounded-xl px-4 py-3 font-semibold focus-visible:outline focus-visible:outline-2 focus-visible:outline-ink">
-            {({en,es,ar}[locale]).SupervisorChat.howIGotThis}
-          </summary>
-          <div className="space-y-2 border-t border-line px-4 py-3">{inside.map((line,j)=>
-            <p key={j} className="whitespace-pre-line">{inlineMarkdown(line.text,line.start,spans,copy,badged,locale)}</p>)}</div>
-        </details>);
-        index=closing+1;
-        continue;
-      }
-    }
-
-    const heading=headingMarker(lines[index]);
-    if(heading){
-      const children=inlineMarkdown(heading.content,heading.start,spans,copy,badged,locale);
-      const cls="mt-4 mb-1 font-semibold leading-snug text-balance break-words text-ink";
-      if(heading.level===2)blocks.push(<h2 key={index} className={cls+" text-xl"}>{children}</h2>);
-      else if(heading.level===3)blocks.push(<h3 key={index} className={cls+" text-[1.1875rem]"}>{children}</h3>);
-      else if(heading.level===4)blocks.push(<h4 key={index} className={cls+" text-[1.0625rem]"}>{children}</h4>);
-      else if(heading.level===5)blocks.push(<h5 key={index} className={cls+" text-[1.0625rem]"}>{children}</h5>);
-      else blocks.push(<h6 key={index} className={cls+" text-[1.0625rem]"}>{children}</h6>);
-      index++;
-      continue;
-    }
-
-    const table=tableHeader(lines,index);
-    if(table){
-      const firstLine=index; index+=2;
-      const rows:TableCell[][]=[];
-      while(index<lines.length&&lines[index].text.trim()&&!headingMarker(lines[index])&&!listMarker(lines[index])&&!tableHeader(lines,index)){
-        if(!lines[index].text.includes("|")&&table.head.length>1)break;
-        const cells=tableCells(lines[index]);
-        rows.push(Array.from({length:table.head.length},(_,i)=>cells[i]??{text:"",start:lines[index].start+lines[index].text.length}));
-        index++;
-      }
-      const alignment=(i:number)=>table.align[i]==="center"?"text-center":table.align[i]==="end"?"text-end":"text-start";
-      blocks.push(<div key={firstLine} role="region" aria-label="Response table" tabIndex={0}
-        className="max-w-full overflow-x-auto rounded-lg border border-line focus-visible:outline focus-visible:outline-2 focus-visible:outline-ink">
-        <table dir={locale==="ar"?"rtl":"auto"} className="w-full table-fixed border-collapse text-[0.9375rem] sm:text-[1.0625rem]" style={table.head.length>4?{minWidth:table.head.length*90}:undefined}>
-         <caption className="sr-only">Response table</caption>
-         <colgroup>{table.head.map((_,i)=><col key={i} style={table.align[i]==="end"?{width:`${Math.min(45,Math.max(26,100/table.head.length))}%`}:undefined}/>)}</colgroup>
-         <thead><tr>{table.head.map((cell,i)=><th key={i} scope="col" className={`border-b border-line bg-surface2 px-1.5 sm:px-3 py-2 font-semibold align-top whitespace-normal [overflow-wrap:anywhere] ${alignment(i)}`}>{inlineMarkdown(cell.text,cell.start,spans,copy,badged,locale)}</th>)}</tr></thead>
-         <tbody>{rows.map((cells,j)=><tr key={j}>{cells.map((cell,i)=><td key={i} className={`border-b border-line px-1.5 sm:px-3 py-2 align-top whitespace-normal [overflow-wrap:anywhere] ${alignment(i)}`}>{inlineMarkdown(cell.text,cell.start,spans,copy,badged,locale)}</td>)}</tr>)}</tbody>
-        </table>
-      </div>);
-      continue;
-    }
-    const first = listMarker(lines[index]);
-    if (first) {
-      const readList=(start:number):{node:ReactNode;next:number}=>{
-        const initial=listMarker(lines[start])!;
-        const entries:ReactNode[]=[];
-        let cursor=start;
-        while(cursor<lines.length){
-          const marker=listMarker(lines[cursor]);
-          if(!marker||marker.indent!==initial.indent||marker.ordered!==initial.ordered)break;
-          const key=cursor++;
-          const item=inlineMarkdown(marker.content,marker.contentStart,spans,copy,badged,locale);
-          const children:ReactNode[]=[];
-          while(cursor<lines.length){
-            let next=cursor;
-            while(next<lines.length&&!lines[next].text.trim())next++;
-            if(next>=lines.length)break;
-            const sub=listMarker(lines[next]);
-            if(sub&&sub.indent>initial.indent){
-              const nested=readList(next);children.push(nested.node);cursor=nested.next;continue;
-            }
-            if(!sub&&next===cursor&&/^[ \t]+\S/u.test(lines[next].text)&&
-                (lines[next].text.match(/^[ \t]*/u)?.[0].length??0)>initial.indent&&!headingMarker(lines[next])){
-              const line=lines[next],part=line.text.trimStart();
-              children.push(<p key={next} className="whitespace-pre-wrap">{inlineMarkdown(part,line.start+line.text.length-part.length,spans,copy,badged,locale)}</p>);
-              cursor=next+1;continue;
-            }
-            if(sub&&sub.indent===initial.indent&&sub.ordered===initial.ordered)cursor=next;
-            break;
-          }
-          const checkbox=marker.checked===undefined?null:<input type="checkbox" checked={marker.checked} disabled aria-label={marker.content} className="me-2 align-middle accent-current"/>;
-          entries.push(<li key={key} value={marker.ordered?marker.number:undefined} className={marker.checked===undefined?"ps-1":"list-none ps-1"}>{checkbox}{item}{children}</li>);
-        }
-        return {node:initial.ordered?<ol key={start} start={initial.number} className="list-decimal space-y-1 ps-6">{entries}</ol>:<ul key={start} className="list-disc space-y-1 ps-6">{entries}</ul>,next:cursor};
-      };
-      const list=readList(index);blocks.push(list.node);index=list.next;continue;
-    }
-    const start = index;
-    const rows: ReactNode[] = [];
-    while (index < lines.length && lines[index].text.trim() && !headingMarker(lines[index]) && !listMarker(lines[index]) && !tableHeader(lines,index)) {
-      if (rows.length) rows.push("\n");
-      const line = lines[index];
-      rows.push(...inlineMarkdown(line.text, line.start, spans, copy, badged,locale));
-      index++;
-    }
-    if (index === start) index++;
-    else blocks.push(<p key={start} className="whitespace-pre-line">{rows}</p>);
+/** Historical replies used one exact disclosure marker. Preserve those saved
+ * messages; all actual Markdown is rendered by Streamdown. */
+function legacySections(text:string){
+ const sections:{start:number;end:number;details:boolean}[]=[];
+ const pattern=/^<details>\r?\n<summary>How I got this<\/summary>\r?\n([\s\S]*?)^<\/details>[ \t]*(?:\r?\n|$)/gmu;
+ let cursor=0;
+ for(const match of text.matchAll(pattern)){
+  if(match.index<cursor)continue;
+  if(match.index>cursor)sections.push({start:cursor,end:match.index,details:false});
+  let start=match.index+match[0].indexOf("\n",match[0].indexOf("</summary>"))+1;
+  let end=start+match[1].length;
+  cursor=match.index+match[0].length;
+  if(!text.slice(start,end).trim()){
+   const next=text.slice(cursor).match(/^\s*([^\r\n]+(?:\r?\n[^\r\n]+)*)/u);
+   if(next){start=cursor+next[0].indexOf(next[1]);end=start+next[1].length;cursor=end;}
   }
-  const sources=spans.map(s=>s.source??"unchecked");
-  return <div data-testid="supervisor-answer-prose" className={compact?"space-y-1 break-words text-[0.9375rem] leading-snug text-ink-muted":"space-y-2 break-words text-[1.0625rem] leading-relaxed text-ink"}>
-    {blocks}
-    {showLegend&&<SourceLegend sources={sources} labels={copy} legendLabel={legendLabel}/>}
-
-  </div>;
+  if(end>start)sections.push({start,end,details:true});
+ }
+ if(cursor<text.length)sections.push({start:cursor,end:text.length,details:false});
+ return sections;
+}
+export function ChatMarkdown({text,unverified=[],label,labels,locale="en",showLegend=true,legendLabel,compact=false,streaming=false}:{
+ text:string;unverified?:readonly Verification[];label?:string;labels?:ProvenanceLabels;locale?:Locale;
+ showLegend?:boolean;legendLabel?:string;compact?:boolean;streaming?:boolean;
+}){
+ const copy=labels??{owner:"You told me",estimate:"Estimate",unchecked:label??"Not checked against your records"};
+ const spans=[...unverified].filter(s=>Number.isSafeInteger(s.start)&&Number.isSafeInteger(s.end)&&s.start>=0&&s.end>s.start&&s.end<=text.length)
+  .sort((a,b)=>a.start-b.start).filter((s,i,all)=>i===0||s.start>=all[i-1].end);
+ return <div data-testid="supervisor-answer-prose" className={compact?"space-y-1 min-w-0 break-words text-[0.9375rem] leading-snug text-ink-muted":"space-y-2 min-w-0 break-words text-[1.0625rem] leading-relaxed text-ink"}>
+  {legacySections(text).map(section=>{
+   const options:MarkOptions={locale,labels:copy,spans:spans.filter(s=>s.start<section.end&&s.end>section.start)
+    .map(s=>({...s,start:s.start-section.start,end:s.end-section.start}))};
+   const body=<MarkdownSegment text={text.slice(section.start,section.end)} options={options} streaming={streaming&&!spans.length}/>;
+   return section.details?<details key={section.start} className="rounded-xl border border-line bg-surface2 text-ink">
+    <summary className="min-h-12 cursor-pointer rounded-xl px-4 py-3 font-semibold focus-visible:outline focus-visible:outline-2 focus-visible:outline-ink">{({en,es,ar}[locale]).SupervisorChat.howIGotThis}</summary>
+    <div className="space-y-2 border-t border-line px-4 py-3">{body}</div>
+   </details>:<div key={section.start} className="min-w-0">{body}</div>;
+  })}
+  {showLegend&&<SourceLegend sources={spans.map(s=>s.source??"unchecked")} labels={copy} legendLabel={legendLabel}/>}
+ </div>;
 }
