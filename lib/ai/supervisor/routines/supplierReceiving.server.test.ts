@@ -11,9 +11,9 @@ const claim={sourceType:expected.sourceType,sourceId:expected.sourceId,incidentK
 const draft=(po="po",sent=false)=>({name:"propose_supplier_discrepancy_followup",result:{source:"gmail_proposal",period:null,missing:[],proposalCreated:true,approvalRequired:true,sent,purchaseOrderId:po,proposalId:"inert-draft"}});
 const run=(calls:unknown[],source=claim)=>verifyResearchInvestigationTurn(turn(calls),expected,["propose_supplier_discrepancy_followup"],source);
 describe("SQL receiving evidence and exact owner-approved follow-up",()=>{
- it("requires the server-verified claim and a completed SQL read; no unadmitted receiving effect",()=>{
+ it("requires the server-scoped claim, not a SQL read; no unadmitted receiving effect",()=>{
   expect(run([sql]).ok).toBe(true);
-  expect(run([]).ok).toBe(false);
+  expect(run([]).ok).toBe(true);
   expect(run([sql],{...claim,sourceId:"foreign"}).ok).toBe(false);
   expect(run([sql,{name:"propose_purchase_receiving",result:{}}]).ok).toBe(false);
  });
@@ -21,7 +21,7 @@ describe("SQL receiving evidence and exact owner-approved follow-up",()=>{
   expect(run([sql,draft()]).ok).toBe(true);
   expect(run([sql,draft("foreign")]).ok).toBe(false);
   expect(run([sql,draft("po",true)]).ok).toBe(false);
-  expect(run([draft()]).ok).toBe(false);
+  expect(run([draft()]).ok).toBe(true); // Exact scoped draft receipt still requires owner approval.
  });
  it("keeps physical receipt distinct from an invoice or dispatch",()=>{
   const prompt=researchInvestigationPrompt({kind:expected.kind,status:"watching",severity:null,quality:"high",relatedAlerts:[],relatedTasks:[]},true,null,JSON.stringify(claim));

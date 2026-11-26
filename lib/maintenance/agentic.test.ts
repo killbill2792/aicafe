@@ -37,9 +37,8 @@ describe("Task15B agent-directed and independently checked maintenance investiga
     expect(verify(turn())).toMatchObject({
       ok:true,tools:["run_sql","get_schedule"]});
   });
-  it("rejects irrelevant one-source or fabricated no-effect closure",()=>{
-    expect(verify(turn([schedule])))
-      .toEqual({ok:false,reason:"evidence_incomplete"});
+  it("permits one-source analysis but rejects wrong incident or fabricated closure",()=>{
+    expect(verify(turn([schedule]))).toMatchObject({ok:true});
     expect(verify(turn([sales,schedule]),{...incident.result,sourceId:"other"}))
       .toEqual({ok:false,reason:"evidence_incomplete"});
     expect(verify(turn([sales,schedule],

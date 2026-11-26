@@ -70,7 +70,7 @@ describe("event morning-after narrative",()=>{
     const text="Sales reached 999999, unsupported by the saved day.";
     vi.mocked(runAgentTurn).mockResolvedValueOnce({
       text,endReason:"complete",unverified:[],
-    } as Awaited<ReturnType<typeof runAgentTurn>>);
+    } as unknown as Awaited<ReturnType<typeof runAgentTurn>>);
     const narrative=await eventFinalNarrative(scope,
       "44444444-4444-4444-8444-444444444444",["Halloween"],
       "Ready for the holiday",result,"complete");
