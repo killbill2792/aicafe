@@ -510,7 +510,7 @@ export async function processNextInvestigation(db:SupabaseClient,now:Date,
     }),providerOutputCap);
     if(metered.problem())throw new Error(metered.problem()!);
     const expected={sourceType:c.source_type as "alert"|"operating_task",sourceId:c.source_id,kind:synopsis.kind};
-    const verified=verifyResearchInvestigationTurn(turn,expected,permitted);
+    const verified=verifyResearchInvestigationTurn(turn,expected,permitted,claim);
     // Callback exists only for the trusted, opt-in live acceptance runner.
     // A model's fabricated action claim or numeric value is never logged.
     try{onModelProof?.({

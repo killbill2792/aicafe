@@ -686,12 +686,18 @@ export function researchInvestigationPrompt(source:SourceSynopsis,followUp:boole
 }
 
 /** A background answer is publishable when the model finished, nothing in it is unsupported, and it actually read café data. */
-export function verifyResearchInvestigationTurn(turn:AgentTurn,expected:ExpectedInvestigation,permittedTools:readonly string[]):
+export function verifyResearchInvestigationTurn(turn:AgentTurn,expected:ExpectedInvestigation,permittedTools:readonly string[],claim?:{selectors?:unknown;customerTrendProof?:unknown}):
   {ok:true;text:string;tools:string[];missing:string[]}|{ok:false;reason:"model_incomplete"|"evidence_incomplete"}{
  const text=turn.text.trim();
  if(turn.endReason!=="complete"||!text||text.length>1800||turn.unverified.length>0||unsupportedExternalEffectClaim(text)||
    expected.kind==="maintenance_issue"&&unsupportedMaintenanceRepairClaim(text))
   return {ok:false,reason:"model_incomplete"};
+ const selector=claim?.selectors as {family?:unknown;subject?:unknown;current?:unknown;previous?:unknown;unit?:unknown}|undefined;
+ if(expected.kind==="business_anomaly"&&selector?.family==="customer_trend"){
+  const proof=claim?.customerTrendProof as {key?:unknown;current?:unknown;previous?:unknown;unit?:unknown;active?:unknown}|null|undefined;
+  const equal=(x:unknown,y:unknown)=>typeof x==="number"&&typeof y==="number"&&Number.isFinite(x)&&Number.isFinite(y)&&Math.abs(x-y)<=1e-9*Math.max(1,Math.abs(x),Math.abs(y));
+  if(!proof||proof.active!==true||proof.key!==selector.subject||proof.unit!==selector.unit||!equal(proof.current,selector.current)||!equal(proof.previous,selector.previous))return {ok:false,reason:"evidence_incomplete"};
+ }
  const calls=turn.toolInvocations??[];
  const permitted=new Set(["run_sql","describe_database","calculate","search_web",...permittedTools]);
  if(calls.some(c=>!permitted.has(c.name)))return {ok:false,reason:"model_incomplete"};

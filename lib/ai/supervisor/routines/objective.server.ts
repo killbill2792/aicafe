@@ -33,7 +33,7 @@ export const objectiveReadTools:readonly string[]=[
   "search_gmail","list_gmail_labels","read_gmail","read_gmail_thread",
   "read_gmail_attachment",
 ];
-/** Unrequested Watch never searches the web or reads mail. Its prompt also forbids employee-level payroll and staff messages. */
+/** Unrequested Watch never searches the web or reads mail. The server-owned SQL scope admits aggregate operational fields only. */
 export const watchReadTools:readonly string[]=objectiveReadTools.filter(name=>
   !["search_web","search_gmail","list_gmail_labels","read_gmail","read_gmail_thread","read_gmail_attachment"].includes(name));
 
@@ -358,7 +358,7 @@ export async function executeClaimedObjective(db:SupabaseClient,params:{
     maxOutputTokens:cap>1200?32768:4800,
   },()=>runResearchTurn({
     ownerText:prompt,
-    scope:{db,businessId:routine.businessId,ownerUserId:routine.ownerUserId},
+    scope:{db,businessId:routine.businessId,ownerUserId:routine.ownerUserId,...(routine.executionMode==="watch"?{watch:true as const}:{})},
     cafeContext:"Café (authenticated, not an owner message): "+JSON.stringify({name:identity.cafeName,
       currency:identity.currency,timezone:identity.timezone,localDate:identity.asOf}),
     ...(context.webSearch?{webSearch:(query:string)=>context.webSearch!(query)}:{}),

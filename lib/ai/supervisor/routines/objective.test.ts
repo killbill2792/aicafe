@@ -319,6 +319,7 @@ describe("U4 scheduled model execution persists only verified outcomes",()=>{
     const offered=watchTurn?.actions?.definitions.map((d:{name:string})=>d.name)??[];
     expect(offered).toEqual(["get_events"]);
     expect(watchTurn?.webSearch).toBeUndefined();
+    expect(watchTurn?.scope.watch).toBe(true);
     expect(watchTurn?.ownerText).toContain("never read employee-level wages, payroll or staff messages");
     expect(notifyOwner).not.toHaveBeenCalled();
     expect(rpc).toHaveBeenCalledWith("u4_publish_objective_report",
