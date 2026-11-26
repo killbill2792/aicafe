@@ -8,7 +8,7 @@ const source:SourceSynopsis={
   kind:"maintenance_issue",status:"needs_owner",severity:"high",quality:"low",
   relatedAlerts:[],relatedTasks:["maintenance_issue"],
 };
-const incident={name:"get_investigation_source",result:{
+const incident={result:{
   source:"investigation_source",period:null,sourceType:"operating_task",
   sourceId:"maintenance:case-123",incidentKind:"maintenance_issue",missing:[],
   selectors:{maintenanceStage:"reported",equipmentLabel:"Main espresso machine"},
@@ -47,10 +47,10 @@ describe("Task15B agent-directed and independently checked maintenance investiga
       .toEqual({ok:false,reason:"model_incomplete"});
   });
   it("rejects a physical repair assertion without independent closure evidence",()=>{
-    expect(verifyInvestigationTurn(turn([incident,sales,schedule],
+    expect(verify(turn([sales,schedule],
       "The equipment is now repaired. No vendor message was sent."))
       .toEqual({ok:false,reason:"model_incomplete"});
-    expect(verifyInvestigationTurn(turn([incident,sales,schedule],
+    expect(verify(turn([sales,schedule],
       "The equipment is not verified working. Ask staff for an independent check." )).ok).toBe(true);
   });
   it("allows attributed or explicitly uncertain repair claims, but not an independent affirmative assertion",()=>{
@@ -61,14 +61,14 @@ describe("Task15B agent-directed and independently checked maintenance investiga
       "Check whether the boiler is repaired before resuming service.",
       "We cannot yet confirm the machine is fixed.",
       "The technician reports that the machine at the counter is repaired.",
-    ])expect(verifyInvestigationTurn(turn([incident,sales,schedule],text )).ok,text).toBe(true);
+    ])expect(verify(turn([sales,schedule],text )).ok,text).toBe(true);
     for(const text of [
       "The technician says the machine is repaired, but the equipment is now verified working.",
       "We cannot confirm the machine is fixed. The case is closed.",
       "The machine itself was successfully repaired.",
       "The machine at the counter is fixed.",
       "The technician says the machine is repaired, and the boiler in the kitchen is now fixed.",
-    ])expect(verifyInvestigationTurn(turn([incident,sales,schedule],text)),text).toEqual({ok:false,reason:"model_incomplete"});
+    ])expect(verify(turn([sales,schedule],text)),text).toEqual({ok:false,reason:"model_incomplete"});
   });
   it("instructs model to replan when a vendor contact is missing, without inventing a send",()=>{
     const first=researchInvestigationPrompt(source,false,null,JSON.stringify(incident.result));

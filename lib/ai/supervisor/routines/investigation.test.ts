@@ -8,7 +8,7 @@ function turn(calls:unknown[]=[sql],patch:Record<string,unknown>={}):AgentTurn{
 
 const source:SourceSynopsis={kind:"business_anomaly",status:"new",severity:"high",quality:"partial",relatedAlerts:[],relatedTasks:[]};
 const expected={sourceType:"alert" as const,sourceId:"alert-a",kind:source.kind};
-const claim={sourceType:expected.sourceType,sourceId:expected.sourceId,incidentKind:expected.kind,missing:[]};
+const claim={sourceType:expected.sourceType,sourceId:expected.sourceId,incidentKind:expected.kind,missing:[] as string[]};
 const verify=(result:AgentTurn,receipt=claim)=>verifyResearchInvestigationTurn(result,expected,investigationReadTools,receipt);
 describe("one SQL investigation gate",()=>{
  it("uses SQL and scoped integrations, not the retired model readers",()=>{
