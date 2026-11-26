@@ -1,33 +1,43 @@
 import {describe,it,expect,vi} from "vitest";
 import type {AgentProvider} from "@/lib/ai/agent/loop.server";
 import type {AgentToolContext} from "@/lib/ai/agent/tools";
-import {splitResearchPresentation} from "./presentation";
+import {resolveResearchSpec,resolveResearchView} from "./presentation";
+import {agentReplyPayload} from "@/lib/ai/agent/persist.server";
+import {groundedReplySchema} from "@/lib/ai/conversations/contracts";
+import {researchInlineEvents} from "./inlineStream";
 import {runResearchTurn} from "./turn.server";
 vi.mock("server-only",()=>({}));
-const fence=(value:unknown)=>"\n\n"+String.fromCharCode(96).repeat(3)+"cafe-ui\n"+JSON.stringify(value)+"\n"+String.fromCharCode(96).repeat(3);
+const spec=(value:unknown)=>[{op:"add",path:"/root",value:"view"},{op:"add",path:"/elements/view",value:{type:"DataView",props:value,children:[]}}];
+const fence=(value:unknown)=>String.fromCharCode(96).repeat(3)+"spec\n"+spec(value).map(p=>JSON.stringify(p)).join("\n")+"\n"+String.fromCharCode(96).repeat(3)+"\n";
 const ctx={asOf:"2026-11-25",currency:"USD"};
 const rows=[{category:"Wages",amount_cents:1200},{category:"Supplies",amount_cents:0}];
 const queries=new Map([["q1",{ok:true,rows}]]);
 const chart={ref:"q1",kind:"bar",x:"category",y:"amount_cents"};
 describe("SQL research presentation",()=>{
  it("renders exact SQL values in existing panels without another query, including zero",()=>{
-  const result=splitResearchPresentation("Here is the breakdown."+fence({layout:"grid",panels:[chart]}),queries,ctx);
-  expect(result.text).toBe("Here is the breakdown.");
-  expect(result.presentation).toMatchObject({type:"rich_presentation",panels:[{source:"sql_research",currency:"USD",points:[{label:"Wages",value:1200},{label:"Supplies",value:0}]}]});
+  const result=resolveResearchSpec(spec({layout:"grid",panels:[chart]}),queries,ctx);
+  expect(result).toMatchObject([{type:"rich_presentation",panels:[{source:"sql_research",currency:"USD",points:[{label:"Wages",value:1200},{label:"Supplies",value:0}]}]}]);
  });
- it("keeps plain Markdown and valid siblings when a visual is malformed",()=>{
-  const text="**Total**\n\n- Detail";
-  expect(splitResearchPresentation(text,new Map(),ctx)).toEqual({text});
-  const result=splitResearchPresentation(text+fence({calculator:{ref:7},panels:[{...chart,ref:"wrong"},chart,{ref:"q1",kind:"table",columns:["category","amount_cents"]}]}),queries,ctx);
-  expect(result.text).toBe(text);
-  expect(result.presentation?.panels).toHaveLength(1);
-  expect(result.presentation?.tables?.[0].rows).toEqual([["Wages",1200],["Supplies",0]]);
-  const malformed=text+"\n\n"+String.fromCharCode(96).repeat(3)+"cafe-ui\n{broken";
-  expect(splitResearchPresentation(malformed,queries,ctx)).toEqual({text});
+ it("keeps valid siblings when a visual is malformed and rejects unsafe patches",()=>{
+  expect(resolveResearchSpec(spec({panels:[chart]}),new Map(),ctx)).toEqual([]);
+  const result=resolveResearchView({calculator:{ref:7},panels:[{...chart,ref:"wrong"},chart,{ref:"q1",kind:"table",columns:["category","amount_cents"]}]},queries,ctx);
+  expect(result?.panels).toHaveLength(1);
+  expect(result?.tables?.[0].rows).toEqual([["Wages",1200],["Supplies",0]]);
+  const blocks=resolveResearchSpec([...spec({panels:[chart]}),{op:"add",path:"/elements/__proto__/polluted",value:true}],queries,ctx);
+  expect(blocks).toHaveLength(1);
+  expect(({} as {polluted?:boolean}).polluted).toBeUndefined();
+ });
+ it("native transform preserves blank lines and emits separate text and UI sections across split chunks",async()=>{
+  const raw="**Total**\n\n"+fence({panels:[chart]})+"Next paragraph.\n\n"+fence({panels:[{...chart,kind:"table"}]})+"Done.";
+  async function* source(){for(let i=0;i<raw.length;i+=7)yield {type:"response.output_text.delta",delta:raw.slice(i,i+7)};yield {type:"response.completed"};}
+  const out=[];for await(const event of researchInlineEvents(source()))out.push(event);
+  expect(out.filter(e=>e.type==="inline-text").map(e=>e.delta).join("")).toBe("**Total**\n\nNext paragraph.\n\nDone.");
+  expect(out.filter(e=>e.type==="inline-patch")).toHaveLength(4);
  });
  it("continues a failed SQL query and streams complete paragraphs and multiline summaries without a presentation-only call",async()=>{
   let calls=0;
   const streamed:string[]=[],thinking:string[]=[];
+  const order:string[]=[];
   const rpc=vi.fn().mockResolvedValueOnce({data:{ok:false,error:"unknown column"},error:null}).mockResolvedValueOnce({data:{ok:true,rows},error:null});
   const done={type:"response.completed",response:{usage:{input_tokens:1,output_tokens:1}}};
   const query=(id:string)=>({type:"response.output_item.done",item:{type:"function_call",name:"run_sql",call_id:id,arguments:JSON.stringify({sql:"select category, amount_cents from expenses"})}});
@@ -40,18 +50,22 @@ describe("SQL research presentation",()=>{
    yield {type:"response.reasoning_summary_part.added"};
    yield {type:"response.reasoning_summary_text.delta",delta:"Preparing results."};
    yield {type:"response.output_text.delta",delta:"Expenses are recorded.\n\n"};
-   expect(streamed.join("")).toBe("Expenses are recorded.");
-   yield {type:"response.output_text.delta",delta:"Here is the breakdown."+fence({panels:[chart]})};
+   yield {type:"response.output_text.delta",delta:fence({panels:[chart]})+"Here is the breakdown.\n\n"+fence({panels:[{...chart,kind:"table",columns:["category","amount_cents"]}]})+"Review the costs."};
    yield done;
   };
   const result=await runResearchTurn({ownerText:"Break down my expenses",cafeContext:"Cafe",provider,
    scope:{db:{rpc} as never,businessId:"business",ownerUserId:"owner"},actions:{context:ctx as AgentToolContext,definitions:[]},
-   onDelta:v=>streamed.push(v),onThinking:v=>thinking.push(v)});
+   onDelta:v=>{streamed.push(v);order.push("text:"+v);},onThinking:v=>thinking.push(v),onPresentation:(_at,block)=>order.push(block.tables?.length?"table":"chart")});
   expect(calls).toBe(3);expect(rpc).toHaveBeenCalledTimes(2);
-  expect(result.text).toBe("Expenses are recorded.\n\nHere is the breakdown.");
+  expect(result.text).toBe("Expenses are recorded.\n\nHere is the breakdown.\n\nReview the costs.");
+  expect(order).toEqual(["text:Expenses are recorded.\n\n","chart","text:Here is the breakdown.\n\n","table","text:Review the costs."]);
   expect(streamed.join("")).toBe(result.text);
-  expect(thinking.at(-1)).toBe("Checking costs.\n\nPreparing results.");
-  expect(result.results.at(-1)).toMatchObject({source:"response_presentation",accepted:true,presentation:{panels:[{points:[{value:1200},{value:0}]}]}});
+  expect(thinking).toEqual(["Checking costs.","Preparing results."]);
+  expect(result.results.filter(r=>r.source==="response_presentation")).toHaveLength(2);
+  expect(result.results.at(-2)).toMatchObject({source:"response_presentation",accepted:true,presentation:{panels:[{points:[{value:1200},{value:0}]}]}});
+  const payload=agentReplyPayload(result);
+  expect(payload.reply.blocks.map(b=>b.type)).toEqual(["text","rich_presentation","text","rich_presentation","text"]);
+  expect(groundedReplySchema.safeParse(payload.reply).success).toBe(true);
   expect(result.usage.toolCalls).toBe(2);
   expect(result.toolInvocations).toHaveLength(2);
  });
@@ -73,24 +87,23 @@ describe("failed SQL research provider streams",()=>{
    if(calls===1){yield say(earlier+"\n\n");yield query;yield done;return;}
    if(calls===2){
     yield say(wrong+"\n\n");
-    expect(client).toBe(earlier+"\n\n"+wrong);
     yield say("Unfinished second paragraph");
     if(failure==="throw")throw Error("connection lost");
     if(failure!=="disconnect")yield {type:failure};
     return;
    }
    expect(calls).toBe(3);
-   expect(client).toBe(earlier);
+   expect(client).toBe(earlier+"\n\n");
    expect(params.tool_choice).toBe("none");
    expect(JSON.stringify(params.input)).not.toContain(wrong);
-   yield say(corrected+fence({panels:[chart]}));yield done;
+   yield say(corrected+"\n\n"+fence({panels:[chart]}));yield done;
   };
   const turn=await runResearchTurn({ownerText:"Check expenses",cafeContext:"Cafe",provider,
    scope:{db:{rpc} as never,businessId:"business",ownerUserId:"owner"},actions:{context:ctx as AgentToolContext,definitions:[]},
    onDelta:delta=>{client+=delta;},onReset:count=>{resets.push(count);client=client.slice(0,client.length-count);}});
   expect(calls).toBe(3);expect(rpc).toHaveBeenCalledTimes(1);
-  expect(resets).toEqual([("\n\n"+wrong).length]);
-  expect(turn.text).toBe(earlier+"\n\n"+corrected);
+  expect(resets).toEqual([(wrong+"\n\n").length]);
+  expect(turn.text).toBe(earlier+"\n\n"+corrected+"\n\n");
   expect(client).toBe(turn.text);
   expect(turn.results.at(-1)).toMatchObject({source:"response_presentation",accepted:true});
  });
@@ -109,7 +122,7 @@ describe("failed SQL research provider streams",()=>{
    scope:{db:{rpc} as never,businessId:"business",ownerUserId:"owner"},
    onDelta:delta=>{client+=delta;},onReset:count=>{resets.push(count);client=client.slice(0,client.length-count);}});
   expect(calls).toBe(3);
-  expect(resets).toEqual([("\n\n"+wrong).length,("\n\n"+recovery).length]);
+  expect(resets).toEqual([("\n\n"+wrong+"\n\n").length,("\n\n"+recovery+"\n\n").length]);
   expect(turn.text).toBe(earlier);
   expect(client).toBe(earlier);
   expect(turn.endReason).toBe("provider_error");
@@ -124,4 +137,22 @@ describe("failed SQL research provider streams",()=>{
   expect(client).toBe("");
   expect(turn.endReason).toBe("provider_error");
  });
+});
+
+it("rolls back already streamed visuals from a failed call but preserves earlier successful components",async()=>{
+ let calls=0,client="",live=0;const resets:number[][]=[];
+ const done={type:"response.completed",response:{usage:{input_tokens:1,output_tokens:1}}};
+ const say=(delta:string)=>({type:"response.output_text.delta",delta});
+ const rpc=vi.fn().mockResolvedValue({data:{ok:true,rows},error:null});
+ const provider:AgentProvider=async function*(){
+  calls++;
+  if(calls===1){yield {type:"response.output_item.done",item:{type:"function_call",name:"run_sql",call_id:"one",arguments:JSON.stringify({sql:"select category, amount_cents from expenses"})}};yield done;return;}
+  if(calls===2){yield say("Confirmed.\n\n"+fence({panels:[chart]})+"Discard this.\n\n");yield {type:"response.failed"};return;}
+  expect(client).toBe("");expect(live).toBe(0);
+  yield say("Recovered.\n\n"+fence({panels:[chart]})+"Done.");yield done;
+ };
+ const result=await runResearchTurn({ownerText:"Expenses",cafeContext:"Cafe",provider,scope:{db:{rpc} as never,businessId:"business",ownerUserId:"owner"},actions:{context:ctx as AgentToolContext,definitions:[]},
+  onDelta:delta=>{client+=delta;},onPresentation:()=>{live++;},onReset:(chars,views)=>{client=client.slice(0,client.length-chars);live-=views??0;resets.push([chars,views??0]);}});
+ expect(resets[0][1]).toBe(1);expect(client).toBe("Recovered.\n\nDone.");expect(live).toBe(1);
+ expect(result.results.filter(r=>r.source==="response_presentation")).toHaveLength(1);
 });
