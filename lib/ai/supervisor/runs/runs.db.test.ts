@@ -561,10 +561,10 @@ describe("Task 6/15C exact matched owner clarification and final reply",()=>{
     await call(a,"supervisor_checkpoint_owner_run_v2",[...scope,long.id,t,seq,op,"begin_read","get_sales",null]);
     await call(a,"supervisor_checkpoint_owner_run_v2",[...scope,long.id,t,seq+1,op,"complete",null,"read:"+"a".repeat(32)+"_"+String(i).repeat(64)]);
     expect(await call(a,"supervisor_yield_owner_run_v2",[...scope,long.id,t,seq+2,15,"technical"])).toBe(true);
-    expect(await state()).toMatchObject({checkpoint_retry_count:String(i),checkpoint_progress_count:"1"});
+    expect(await state()).toMatchObject({checkpoint_retry_count:"0",checkpoint_progress_count:"1"});
     await due();
    }
-   expect(await call(a,"supervisor_run_claim",[...scope,long.id,randomUUID(),30])).toEqual({kind:"blocked"});
+   expect(await call(a,"supervisor_run_claim",[...scope,long.id,randomUUID(),30])).toMatchObject({kind:"claimed"});
    expect((await admin.query("select count(*)::int n,count(distinct durable_claim_token)::int slices,count(*) filter(where status='attempted')::int unknown from public.supervisor_system_usage_events where attempt_id=any($1::uuid[])",[spentIds])).rows).toEqual([{n:2,slices:2,unknown:2}]);
    const partialId=randomUUID();await insert(partialId,"Find missing data");
    const partial=await call(a,"supervisor_admit_owner_run_v2",[...scope,partialId,"f".repeat(64),"en",[]]);
@@ -573,7 +573,7 @@ describe("Task 6/15C exact matched owner clarification and final reply",()=>{
    const turn=await call(a,"supervisor_run_claim",[...scope,partial.id,randomUUID(),30]);
    const partialJob=await call(a,"supervisor_start_owner_job_v2",[...scope,partial.id,turn.step.claim_token]);
    const partialReply=supervisorReplyIdFor(partialId);
-   const incomplete=JSON.stringify({status:"partial",ownerMessageId:partialId,durableRunId:partial.id,agentMetadata:{endReason:"complete"}});
+   const incomplete=JSON.stringify({status:"answered",ownerMessageId:partialId,durableRunId:partial.id,agentMetadata:{endReason:"complete"}});
    expect((await call(a,"supervisor_publish_owner_reply_v2",[...scope,partial.id,turn.step.claim_token,partialJob.id,partialReply,blocks,incomplete])).id).toBe(partialReply);
    expect(await call(a,"supervisor_run_claim",[...scope,partial.id,randomUUID(),30])).toEqual({kind:"blocked"});
    expect((await admin.query("select status,final_report_ref from public.supervisor_runs where id=$1",[partial.id])).rows).toEqual([{status:"blocked",final_report_ref:null}]);

@@ -187,7 +187,8 @@ async function readIncidentEvidence(db:SupabaseClient,c:Claimed):
         .select("id,employee_id,clock_in,clock_out,breaks")
         .eq("business_id",c.business_id).eq("id",timecardId).maybeSingle();
       if(linked.error)throw new Error("source_unavailable");
-      if(!linked.data||linked.data.employee_id!==selected.employeeId){
+      if(linked.data&&linked.data.employee_id!==selected.employeeId)throw Error("authorization_revoked");
+      if(!linked.data){
         missing.push("timecard_not_verified");
       }else{
         linkedTimecard={id:linked.data.id,employeeId:linked.data.employee_id,
