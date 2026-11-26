@@ -1,6 +1,7 @@
 import {z} from "zod";
 import {defineCatalog,defineSchema,createSpecStreamCompiler,type SpecStreamLine} from "@json-render/core";
 import {schema} from "@json-render/react/schema";
+import {upstreamComponents,nativeChartDefinition,validNativeSpec,safeNativeJSON,safeStatePath,safeKey} from "@/lib/ai/conversations/nativePresentation";
 import {exactDecimal,CALC_OPS,type CalcOp} from "@/lib/metrics/core/calculator";
 import {calculate} from "./tools.server";
 import {presentationPanelSchema,recordTableSchema,recoverRichPresentation,descriptiveGroupTitle,interactiveCalcSchema,evaluatePresentationCalc,type InteractiveCalc,type PresentationPanel,type RecordTable,type RichPresentation} from "@/lib/ai/conversations/presentation";
@@ -29,7 +30,8 @@ const authoredTable=z.object({title:z.string().optional(),basis:z.string().optio
 const envelope=z.object({layout:z.enum(["stack","grid"]).optional(),panels:z.array(z.union([selection,pointPanel,analysisPanel])).optional(),
  tables:z.array(authoredTable).optional(),report:z.boolean().optional(),files:z.boolean().optional(),calculator:z.union([calcSelection,directCalc]).optional()});
 const components={
- Stack:{props:z.object({}),slots:["default"],description:"Group views in their displayed order.",example:{}},
+ ...upstreamComponents,
+ LunaChart:nativeChartDefinition,
  DataView:{props:envelope,slots:[],description:"Metrics, charts, tables, calculators, report and authenticated attachments. For rows use ref, x, y or columns. For individual values, including across sources, use points with label and value:{ref,path:[exact field names and array indices]}; for text use value:{ref,quote:exact numeric token including currency symbol if present}. For dated or numeric category labels use labelField:{ref,path}. A calculate result can supply an editable calculator, or author calculator inputs, steps and editable input names directly with a title; direct inputs are hypothetical unless explained otherwise. You can also author a panel directly with kind, title, unit, basis (calculated, estimate or scenario), explanation and points [{label,value}]. Use cents for money in minor units; null means unknown, not zero. You can also author tables directly using tables:[{title,basis,explanation,columns:[label],rows:[[value]]}]. Basis and explanation are optional descriptions authored by Luna. The renderer does not judge the answer.",example:{layout:"grid",panels:[{ref:"q1",kind:"bar",x:"category",y:"amount_cents"}]}},
 };
 // The upstream default template advertises Card, demo data, repeat, /state
@@ -44,8 +46,11 @@ const catalog=defineCatalog(defineSchema(()=>schema.definition,{promptTemplate:(
  JSON.stringify({op:"add",path:"/root",value:"view"}),
  JSON.stringify({op:"add",path:"/elements/view",value:{type:"DataView",props:components.DataView.example,children:[]}}),
  String.fromCharCode(96).repeat(3),
- "Each independent view starts its own spec fence. Only /root and /elements are supported. Stack can contain DataView children; DataView is a leaf. No repeat, executable actions or arbitrary client code. Model-authored calculations, forecasts and explicitly labeled hypothetical scenarios are supported.",
- ...Object.entries(components).map(([name,c])=>name+": "+formatZodType(c.props)+" — "+c.description),
+ "Each independent view starts its own spec fence. Use /root, /elements and /state. Any registered container can compose children or named slots. DataView is a leaf for SQL/financial snapshots; LunaChart accepts state-bound points. Use native local state, repeat, visible, bindings, templates, computed values, events and acyclic watchers. No arbitrary executable code or business effects.",
+ ...Object.entries(components).map(([name,c])=>name+": "+formatZodType(c.props)+" — "+c.description+("slots" in c&&c.slots?.length?" | slots: "+c.slots.join(", "):"")+("events" in c&&c.events?.length?" | events: "+c.events.join(", "):"")),
+ "Native state: add /state with your own answer data; use {$state:\"/path\"} to read and {$bindState:\"/path\"} for editable inputs. Repeat: element.repeat={statePath:\"/items\",key:\"id\"}; use $item, $index, $bindItem in children. Visibility uses element.visible with $state/$item and comparison operators. Use $cond/$then/$else, $template and $computed in props. Elements may have slots, on and watch fields.",
+ ...(schema.builtInActions??[]).map(a=>a.name+" — "+a.description),
+ "Example on.press: {action:\"setState\",params:{statePath:\"/open\",value:true}}. Local state only. For dynamic calculation use {$computed:\"calculate\",args:{inputs:[{name:\"sales\",unit:\"cents\",value:{$state:\"/sales\"}},{name:\"growth\",unit:\"ratio\",value:{$state:\"/factor\"}}],steps:[{id:\"result\",op:\"multiply\",args:[\"sales\",\"growth\"]}],format:\"currency\",currency:\"USD\"}}. Omit format for numeric result; format can be number, currency or percent. $computed format accepts {value,currency?}. No arbitrary API, browser navigation or script. Use actual data or clearly stated assumptions; never fill missing records with sample data. Image and Avatar may show safe embedded images; use authenticated attachment controls for private files. Links must be HTTPS and user-initiated.",
  ...(options.customRules??[]),
 ].filter(Boolean).join("\n")}),{components,actions:{}});
 export const INLINE_PRESENTATION_HINT=catalog.prompt({mode:"inline",
@@ -308,17 +313,30 @@ export function resolveResearchView(raw:unknown,queries:PresentationEvidenceMap,
  * Resolve each view independently so a malformed sibling cannot erase prose. */
 export function resolveResearchSpec(patches:readonly unknown[],queries:PresentationEvidenceMap,ctx?:Context):RichPresentation[]{
  const compiler=createSpecStreamCompiler();
- const safeKey=(s:string)=>/^[a-zA-Z0-9_-]+$/u.test(s)&&!["__proto__","constructor","prototype"].includes(s);
- const safeValue=(v:unknown):boolean=>Array.isArray(v)?v.every(safeValue):!obj(v)||Object.entries(v).every(([k,x])=>!["__proto__","constructor","prototype"].includes(k)&&safeValue(x));
+ 
  for(const value of patches){
-  if(!obj(value)||typeof value.path!=="string"||!["add","replace","remove"].includes(String(value.op))||!safeValue(value.value))continue;
+  if(!obj(value)||typeof value.path!=="string"||!["add","replace","remove"].includes(String(value.op))||(value.op!=="remove"&&!safeNativeJSON(value.value)))continue;
   const parts=value.path.split("/").slice(1);
-  if(value.path!=="/root"&&(parts[0]!=="elements"||parts.slice(1).some(k=>!safeKey(k))))continue;
+  if(value.path!=="/root"&&(!["elements","state"].includes(parts[0])||!safeStatePath(value.path)||parts.slice(1).some(k=>!safeKey(k))))continue;
   try{compiler.push(JSON.stringify(value as unknown as SpecStreamLine)+"\n");}catch{/* Invalid patch is display-only. */}
  }
  let spec:ReturnType<typeof compiler.getResult>;
  try{spec=compiler.getResult();}catch{return [];}
  if(!obj(spec.elements))return [];
+ // Native widgets and DataView snapshots share a single persisted element tree.
+ // Old DataView-only fences retain their established wire representation.
+ const native=Boolean(spec.state)||Object.values(spec.elements).some(e=>obj(e)&&(e.type!=="DataView"&&e.type!=="Stack"||e.type==="Stack"&&obj(e.props)&&Object.keys(e.props).length>0||e.on||e.watch||e.visible||e.repeat||e.slots));
+ if(native&&ctx&&typeof spec.root==="string"){
+  const elements=Object.fromEntries(Object.entries(spec.elements).map(([key,e])=>{
+   if(!obj(e)||e.type!=="DataView")return [key,e];
+   const snapshot=resolveResearchView(e.props,queries,ctx);
+   return [key,{type:"LunaSnapshot",props:{snapshot:snapshot??{type:"rich_presentation",version:1,layout:"stack",panels:[],suggestions:[]}},children:[],...(e.visible!==undefined?{visible:e.visible}:{}),...(e.repeat!==undefined?{repeat:e.repeat}:{})}];
+  }));
+  const candidate={root:spec.root,elements,...(spec.state?{state:spec.state}:{})};
+  if(validNativeSpec(candidate)){
+   const view=recoverRichPresentation({type:"rich_presentation",version:1,layout:"stack",panels:[],suggestions:[],nativeSpec:candidate});if(view)return [view];
+  }
+ }
  const visited=new Set<string>(),result:RichPresentation[]=[];
  const walk=(key:string)=>{
   if(visited.has(key)||!safeKey(key))return;

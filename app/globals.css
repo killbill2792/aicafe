@@ -1,8 +1,32 @@
 @import "./themes.generated.css";
 
-@tailwind base;
-@tailwind components;
-@tailwind utilities;
+@import "tailwindcss";
+@config "../tailwind.config.ts";
+@source "../node_modules/@json-render/shadcn/dist";
+
+/* Map upstream semantic tokens to the existing owner-selected café theme.
+   Includes Radix portals, which may mount outside the message element. */
+@theme inline {
+  --color-background: rgb(var(--c-bg));
+  --color-foreground: rgb(var(--c-text));
+  --color-card-foreground: rgb(var(--c-text));
+  --color-popover: rgb(var(--c-surface));
+  --color-popover-foreground: rgb(var(--c-text));
+  --color-primary: rgb(var(--c-accent));
+  --color-primary-foreground: rgb(var(--c-on-accent));
+  --color-secondary: rgb(var(--c-surface2));
+  --color-secondary-foreground: rgb(var(--c-text));
+  --color-muted-foreground: rgb(var(--c-muted));
+  --color-accent-foreground: rgb(var(--c-on-accent));
+  --color-destructive: rgb(var(--c-neg));
+  --color-border: rgb(var(--c-line));
+  --color-input: rgb(var(--c-line));
+  --color-ring: rgb(var(--c-focus));
+}
+/* Preserve Tailwind 3 default border/ring conventions for existing screens. */
+@layer base {
+  *, ::before, ::after, ::backdrop, ::file-selector-button { border-color: rgb(var(--c-line)); }
+}
 
 @layer base {
   html {

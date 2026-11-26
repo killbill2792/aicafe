@@ -1,5 +1,8 @@
 import {scenarioEditorSchema,evaluateScenarioEditor} from "./scenarioPresentation";
 import { z } from "zod";
+import {nativeSpecSchema} from "./nativePresentation";
+import {resolveElementProps} from "@json-render/core";
+import {nativeFunctions} from "./nativePresentation";
 import {exactDecimal,exactNumber,runCalculation,CALC_OPS,type CalcOp,type CalcShown} from "@/lib/metrics/core/calculator";
 
 /** Versioned, renderer-independent, serializable UI. No client code or action bindings. */
@@ -104,24 +107,20 @@ export function presentationGroupRoots(groups:readonly PresentationGroup[]):numb
 export function validPresentationGroups(groups:readonly PresentationGroup[],leaves:readonly string[],panels:PresentationPanel[]):boolean{
  const ids=new Map<string,number>();
  for(let i=0;i<groups.length;i++){const id=groups[i].id;if(id){if(ids.has(id))return false;ids.set(id,i);}}
- const seenGroups=new Set<number>(),seenLeaves=new Set<string>();
- const visit=(i:number,depth:number):boolean=>{
-  if(depth>6||seenGroups.has(i))return false;
+ const seenGroups=new Set<number>(),seenLeaves=new Set<string>(),pending=presentationGroupRoots(groups);
+ while(pending.length){
+  const i=pending.pop()!;if(seenGroups.has(i))return false;
   seenGroups.add(i);const g=groups[i];
   if(g.layout==="details"&&!g.title||g.layout==="compare"&&!compatibleComparison(g.items,panels))return false;
-  for(const key of g.items){
-   const child=ids.get(key);
-   if(child!==undefined){if(!visit(child,depth+1))return false;}
-   else{if(!leaves.includes(key)||seenLeaves.has(key))return false;seenLeaves.add(key);}
-  }
-  return true;
- };
- return presentationGroupRoots(groups).every(i=>visit(i,1))&&seenGroups.size===groups.length&&seenLeaves.size===leaves.length;
+  for(const key of g.items){const child=ids.get(key);if(child!==undefined)pending.push(child);else{if(!leaves.includes(key)||seenLeaves.has(key))return false;seenLeaves.add(key);}}
+ }
+ return seenGroups.size===groups.length&&seenLeaves.size===leaves.length;
 }
 const richPresentationBaseSchema=z.strictObject({
   type:z.literal("rich_presentation"),version:z.literal(1),
   layout:z.enum(["stack","grid"]),
   panels:z.array(presentationPanelSchema),
+  nativeSpec:nativeSpecSchema.optional(),
   groups:z.array(presentationGroupSchema).min(1).optional(),
   report:z.literal(true).optional(),
   files:z.array(z.uuid()).min(1).max(3).refine(ids=>new Set(ids).size===ids.length).optional(),
@@ -134,7 +133,7 @@ const richPresentationBaseSchema=z.strictObject({
 // Infer the snapshot type from the structural fields before applying graph
 // refinements, which themselves consume that type. Avoid circular inference.
 export type RichPresentation=z.infer<typeof richPresentationBaseSchema>;
-export const richPresentationSchema=richPresentationBaseSchema.refine(p=>p.panels.length+p.suggestions.length+Number(Boolean(p.agenda))+Number(Boolean(p.scenario))+Number(Boolean(p.report))+Number(Boolean(p.calculator))+(p.tables?.length??0)+(p.files?.length??0)>0).refine(p=>{
+export const richPresentationSchema=richPresentationBaseSchema.refine(p=>Number(Boolean(p.nativeSpec))+p.panels.length+p.suggestions.length+Number(Boolean(p.agenda))+Number(Boolean(p.scenario))+Number(Boolean(p.report))+Number(Boolean(p.calculator))+(p.tables?.length??0)+(p.files?.length??0)>0).refine(p=>{
  if(!p.groups)return true;
  return validPresentationGroups(p.groups,p.groups.some(g=>g.id)?allPresentationLeaves(p):presentationLeaves(p),p.panels);
 });
@@ -212,6 +211,7 @@ export function recoverRichPresentation(raw:unknown):RichPresentation|undefined{
   panels:list(presentationPanelSchema,r.panels),tables:list(recordTableSchema,r.tables),
   suggestions:list(z.string().trim().min(1),r.suggestions),
   ...(r.report===true?{report:true}:{}),
+  ...(valid(nativeSpecSchema,r.nativeSpec)?{nativeSpec:r.nativeSpec}:{}),
   ...(valid(richPresentationBaseSchema.shape.files,r.files)?{files:r.files}:{}),
   ...(valid(agendaSchema,r.agenda)?{agenda:r.agenda}:{}),
   ...(valid(scenarioComparisonSchema,r.scenario)?{scenario:r.scenario}:{}),
@@ -222,6 +222,20 @@ export function recoverRichPresentation(raw:unknown):RichPresentation|undefined{
 /** Preserve authored visual data on the existing text-only background report surfaces. */
 export function presentationDataLines(block:RichPresentation):string[]{
  const lines:string[]=[];
+ if(block.nativeSpec){
+  const spec=block.nativeSpec,pending=[spec.root],seen=new Set<string>();
+  while(pending.length){const key=pending.pop()!;if(seen.has(key))continue;seen.add(key);const e=spec.elements[key];if(!e)continue;
+   if(e.type==="LunaSnapshot"){const snapshot=recoverRichPresentation(e.props.snapshot);if(snapshot&&!snapshot.nativeSpec)lines.push(...presentationDataLines(snapshot));}
+   else{
+    const props=resolveElementProps(e.props,{stateModel:spec.state??{},functions:nativeFunctions});
+    for(const name of ["title","text","label","description","message","caption"]){if(typeof props[name]==="string"&&props[name])lines.push(props[name]);}
+    if(Array.isArray(props.rows))for(const row of props.rows)if(Array.isArray(row))lines.push(row.map(v=>v==null?"Not recorded":String(v)).join(" | "));
+    if(Array.isArray(props.points))for(const point of props.points)if(point&&typeof point==="object"&&"label" in point&&"value" in point)lines.push(String(point.label)+": "+String(point.value));
+   }
+   pending.push(...[...(e.children??[]),...Object.values(e.slots??{}).flat()].reverse());
+  }
+  if(!lines.length)lines.push("Interactive view available in the conversation.");
+ }
  for(const p of block.panels){
   lines.push("",p.title,p.sourceDetail??p.source,...(p.coverage?["Coverage: "+p.coverage]:[]),"Period: "+p.from+" – "+p.to+"; snapshot: "+p.asOf,
     ...p.points.map(point=>point.label+": "+point.value+" "+(p.measurement??p.unit)+(p.currency?" ("+p.currency+")":"")));

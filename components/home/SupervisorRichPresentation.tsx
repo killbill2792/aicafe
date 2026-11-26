@@ -3,7 +3,12 @@ import {createContext,useContext,useId,useMemo,useState} from "react";
 import dynamic from "next/dynamic";
 import PresentationBoundary from "./PresentationBoundary";
 import {wideResponseTableClass,wideResponseCellClass,wideResponseLabelClass} from "./responseTableLayout";
-import {JSONUIProvider,Renderer,type ComponentRegistry} from "@json-render/react";
+import {JSONUIProvider,Renderer,defineRegistry,type ComponentRegistry} from "@json-render/react";
+import {defineCatalog} from "@json-render/core";
+import {schema} from "@json-render/react/schema";
+import {shadcnComponents} from "@json-render/shadcn";
+import {upstreamComponents,nativeChartDefinition,nativeChartProps,nativeFunctions,createLocalWidgetStore,nativeRenderProps} from "@/lib/ai/conversations/nativePresentation";
+import {z} from "zod";
 import {Paperclip} from "lucide-react";
 import type {StoredAttachment} from "@/lib/ai/conversations/attachments";
 import type {Spec} from "@json-render/core";
@@ -54,7 +59,7 @@ function Panel({panel,locale}:{panel:PresentationPanel;locale:string}){
   {panel.kind==="metric"&&panel.points.length===1?<p className="break-words font-headline text-[1.875rem] font-medium leading-tight tracking-tight tabular-nums text-ink">{format(panel.points[0].value)}</p>:
    (panel.kind==="table"||panel.kind==="ranked_table"||panel.kind==="metric"||new Set(panel.points.map(p=>p.label)).size!==panel.points.length)?table:<><PresentationBoundary fallback={table}><Chart panel={panel.kind==="donut"&&(panel.points.some(p=>p.value<0)||panel.points.every(p=>p.value===0))?{...panel,kind:"bar"}:panel} format={format}/></PresentationBoundary>
     <details className="text-ink"><summary aria-label={detailsLabel+": "+panel.title} className="flex min-h-12 cursor-pointer items-center text-[0.9375rem] text-accent-text underline underline-offset-4 focus-visible:outline focus-visible:outline-2 focus-visible:outline-ink">{detailsLabel}</summary>{table}</details></>}
-  <p id={evidenceId} className="break-words text-[0.8125rem] leading-relaxed text-ink-muted">{panel.source!=="sql_research"&&panel.source!=="response_evidence"&&<>{panel.from} – {panel.to} · </>}{panel.sourceDetail??(panel.source==="daily_rollups"?"Sales records":panel.source==="item_sales"?"Item sales":panel.source==="canonical_data"?panel.sourceDetail??"Canonical records":panel.source==="expenses"?"Recorded expenses":panel.source==="business_costs"?"Business costs":panel.source==="product_costs"?"Product economics":panel.source==="supplier_purchase_plan"?"Supplier quotes":panel.source==="purchase_orders"?"Purchase orders":panel.source==="inventory"?"Inventory":panel.source==="menu_items"?"Menu":"Profitability")} · {copy.snapshot} {panel.asOf}</p>
+  <p id={evidenceId} className="break-words text-[0.8125rem] leading-relaxed text-ink-muted">{panel.source!=="sql_research"&&panel.source!=="response_evidence"&&<>{panel.from} – {panel.to} · </>}{panel.sourceDetail??(panel.source==="response_evidence"?"":panel.source==="sql_research"?"":panel.source==="daily_rollups"?"Sales records":panel.source==="item_sales"?"Item sales":panel.source==="canonical_data"?panel.sourceDetail??"Canonical records":panel.source==="expenses"?"Recorded expenses":panel.source==="business_costs"?"Business costs":panel.source==="product_costs"?"Product economics":panel.source==="supplier_purchase_plan"?"Supplier quotes":panel.source==="purchase_orders"?"Purchase orders":panel.source==="inventory"?"Inventory":panel.source==="menu_items"?"Menu":"")} · {copy.snapshot} {panel.asOf}</p>
  </figure>;
 }
 function ComparisonView({panels,locale}:{panels:PresentationPanel[];locale:string}){
@@ -129,7 +134,7 @@ function RecordTableView({table,locale}:{table:RecordTable;locale:string}){
  };
  return <figure data-testid="supervisor-record-table" className="min-w-0 space-y-2 py-2">
   <figcaption className="font-medium text-ink">{table.title}</figcaption>
-  <p id={evidenceId} className="break-words text-[0.8125rem] text-ink-muted">{table.view==="tool_sql_research"?"SQL query":table.view==="tool_response_evidence"?"Evidence":table.view} · {table.view!=="tool_sql_research"&&table.view!=="tool_response_evidence"&&<>{table.from} – {table.to} · </>}{copy.snapshot} {table.asOf}{table.coverage!=="stored"&&table.coverage!=="authored"?" · "+confidence(table.coverage):""}</p>
+  <p id={evidenceId} className="break-words text-[0.8125rem] text-ink-muted">{table.view==="tool_sql_research"?"SQL query":table.view==="tool_response_evidence"?"":table.view} · {table.view!=="tool_sql_research"&&table.view!=="tool_response_evidence"&&<>{table.from} – {table.to} · </>}{copy.snapshot} {table.asOf}{table.coverage!=="stored"&&table.coverage!=="authored"?" · "+confidence(table.coverage):""}</p>
   <p id={scopeId} className="break-words text-[0.8125rem] text-ink-muted">{table.scope}</p>
   <div role="region" tabIndex={0} aria-label={table.title} className="max-w-full overflow-x-auto overscroll-x-contain focus-visible:outline focus-visible:outline-2 focus-visible:outline-ink">
    <table role="table" aria-describedby={evidenceId+" "+scopeId} className={"w-full table-fixed text-[0.9375rem] tabular-nums "+(wide?wideResponseTableClass:"")}><caption className="sr-only">{table.title}</caption>
@@ -216,6 +221,30 @@ function ControlView({kind}:{kind:unknown}){
   {kind==="suggestions"&&data.suggestions.length>0&&<div className="flex flex-wrap gap-2">{data.suggestions.map(prompt=><button key={prompt} type="button" disabled={disabled} onClick={()=>onSuggest(prompt)} className="min-h-12 max-w-full rounded-full border border-line px-4 py-2 text-start text-[0.9375rem] leading-snug text-ink hover:bg-surface2 focus-visible:outline focus-visible:outline-2 focus-visible:outline-ink disabled:opacity-50">{prompt}</button>)}</div>}
  </>;
 }
+const nativeCatalog=defineCatalog(schema,{components:{...upstreamComponents,LunaChart:nativeChartDefinition,LunaSnapshot:{props:z.object({snapshot:z.unknown()}),slots:[],description:"Resolved authenticated data view"}},actions:{}});
+/** The installed registry is used wholesale. Wrap resolved props for the one
+ * browser trust boundary, not a second manually curated widget library. */
+function NativeWidget({spec,locale,onSuggest,disabled,message,attachments}:{spec:Spec;locale:string;onSuggest:(text:string)=>void;disabled:boolean;message?:Parameters<typeof presentationReport>[1]&{threadId:string};attachments?:{threadId:string;items:StoredAttachment[]}|null}){
+ const store=useMemo(()=>createLocalWidgetStore(spec.state),[spec]);
+ const registry=useMemo(()=>{
+  const {registry}=defineRegistry(nativeCatalog,{components:{...shadcnComponents,
+   LunaChart:({props})=>{
+    const p=nativeChartProps.safeParse(props);if(!p.success)return <p role="status">Chart values are not available.</p>;
+    const {description,measurement,...values}=p.data,asOf=new Date().toISOString().slice(0,10);
+    const panel=presentationPanelSchema.safeParse({...values,source:"response_evidence",from:asOf,to:asOf,asOf,...(description?{sourceDetail:description}:{}),...(measurement?{measurement}:{})});
+    return panel.success?<Panel panel={panel.data} locale={locale}/>:<p role="status">Chart values are not available.</p>;
+   },
+   LunaSnapshot:({props})=><SupervisorRichPresentation block={props.snapshot} locale={locale} onSuggest={onSuggest} disabled={disabled} message={message} attachments={attachments}/>,
+  }});
+  for(const name of Object.keys(registry)){
+   if(!Object.hasOwn(upstreamComponents,name))continue;
+   const Component=registry[name];
+   registry[name]=input=><Component {...input} element={{...input.element,props:nativeRenderProps(input.element.props)}}/>;
+  }
+  return registry;
+ },[locale,onSuggest,disabled,message,attachments]);
+ return <div className="min-w-0 max-w-full" data-testid="luna-native-widget"><JSONUIProvider registry={registry} store={store} functions={nativeFunctions}><Renderer spec={spec} registry={registry} fallback={({children})=><div className="min-w-0">{children}</div>}/></JSONUIProvider></div>;
+}
 export default function SupervisorRichPresentation({block,locale,onSuggest=()=>{},disabled,message,attachments}:{block:unknown;locale:string;onSuggest?:(text:string)=>void;disabled:boolean;message?:Parameters<typeof presentationReport>[1]&{threadId:string};attachments?:{threadId:string;items:StoredAttachment[]}|null}){
  const data=useMemo(()=>recoverRichPresentation(block),[block]);
  const registry=useMemo<ComponentRegistry>(()=>({
@@ -238,6 +267,7 @@ export default function SupervisorRichPresentation({block,locale,onSuggest=()=>{
  if(!data)return <p role="status" className="text-ink-muted">This visual could not be displayed.</p>;
  const composed=Boolean(data.groups?.some(g=>g.id));
  return <PresentationControls.Provider value={{data,message,attachments,onSuggest,disabled}}><section className="min-w-0 space-y-3" data-testid="supervisor-rich-presentation">
+  {data.nativeSpec&&<PresentationBoundary fallback={<p role="status">This interactive view could not be displayed.</p>}><NativeWidget spec={data.nativeSpec} locale={locale} onSuggest={onSuggest} disabled={disabled} message={message} attachments={attachments}/></PresentationBoundary>}
   {(presentationLeaves(data).length>0||composed)&&<PresentationBoundary fallback={<div className="space-y-3">{data.panels.map((p,i)=><Panel key={i} panel={{...p,kind:"table"}} locale={locale}/>)}{data.tables?.map((t,i)=><RecordTableView key={i} table={t} locale={locale}/>)}{data.calculator&&<CalculatorView calculator={data.calculator} locale={locale}/>}<p role="status">Visual layout unavailable; available values are shown above.</p></div>}><JSONUIProvider registry={registry}><Renderer spec={presentationSpec(data)} registry={registry}/></JSONUIProvider></PresentationBoundary>}
   {!composed&&<><ControlView kind="files"/><ControlView kind="report"/><ControlView kind="suggestions"/></>}
  </section></PresentationControls.Provider>;
