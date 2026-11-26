@@ -13,8 +13,8 @@ const pointSelection=z.object({label:z.string().min(1),value:reference,labelFiel
 const pointPanel=z.object({kind:z.enum(["metric","bar","line","donut","ranked_table"]),title:z.string().optional(),points:z.array(pointSelection).min(1)});
 
 // Direct model-authored analysis is not a claim of stored business evidence.
-const analysisPanel=z.object({kind:z.enum(["metric","bar","line","donut","ranked_table"]),title:z.string().optional(),
- unit:z.enum(["cents","count","items","units","seconds","minutes","hours","days","ratio","ratio squared","indicator","cents/hour"]),
+const analysisPanel=z.object({kind:z.enum(["metric","bar","line","donut","ranked_table","table"]),title:z.string().optional(),
+ unit:z.string().optional(),
  measurement:z.string().optional(),basis:z.enum(["calculated","estimate","scenario","actual","unverified"]).optional(),
  explanation:z.string().optional(),points:z.array(z.object({label:z.string(),value:z.union([z.number().finite(),z.string(),z.null()])})).min(1)});
 
@@ -217,6 +217,13 @@ export function resolveResearchView(raw:unknown,queries:PresentationEvidenceMap,
  const authored=directCalc.safeParse(raw.calculator);
  const calculated=authored.success?calculator({...calculate(authored.data),calculationInput:authored.data},authored.data.editable,ctx):null;
  const calc=c.success?calculator(queries.get(c.data.ref)?.data??{},c.data.editable,ctx):calculated&&{...calculated,title:safeLabel(authored.success?authored.data.title??"What-if calculation":"What-if calculation")??"What-if calculation"};
+ if(!calc&&authored.success){
+  const a=authored.data;
+  const result=recordTableSchema.safeParse({title:a.title??"What-if calculation",view:"tool_response_evidence",from:ctx.asOf,to:ctx.asOf,asOf:ctx.asOf,currency:ctx.currency??null,coverage:"estimate",
+   scope:"Luna's hypothetical inputs. The interactive calculation could not be evaluated; these inputs are retained.",
+   columns:[{label:"Input",unit:"label"},{label:"Value",unit:"stored"},{label:"Unit",unit:"stored"}],rows:a.inputs.map(i=>[i.name,i.value,i.unit])});
+  if(result.success)tables.push(result.data);
+ }
  for(const value of Array.isArray(raw.panels)?raw.panels:[]){
   const direct=analysisPanel.safeParse(value);
   if(direct.success){
@@ -225,14 +232,17 @@ export function resolveResearchView(raw:unknown,queries:PresentationEvidenceMap,
    const coverage=a.basis==="estimate"||a.basis==="scenario"?"estimate":a.basis==="calculated"?undefined:"unverified";
    const detail="Luna "+(a.basis==="calculated"?"calculation (model-derived)":a.basis==="scenario"?"hypothetical scenario":a.basis==="estimate"?"estimate":"unverified statement")+(a.explanation?": "+a.explanation:"");
    const points=a.points.map(p=>({label:safeLabel(p.label)??"Value",value:p.value}));
-   const currency=["cents","cents/hour"].includes(a.unit)?ctx.currency??null:null;
-   const modelPanel=presentationPanelSchema.safeParse({kind:a.kind,title:heading,unit:a.unit,currency,from:ctx.asOf,to:ctx.asOf,asOf:ctx.asOf,
-     source:"response_evidence",sourceDetail:detail,coverage,...(a.measurement?{measurement:a.measurement}:{}),points});
+   const supported=presentationPanelSchema.shape.unit.safeParse(a.unit);
+   const displayUnit=supported.success?supported.data:"units";
+   const measurement=a.measurement??(supported.success?undefined:a.unit);
+   const currency=["cents","cents/hour"].includes(displayUnit)?ctx.currency??null:null;
+   const modelPanel=presentationPanelSchema.safeParse({kind:a.kind,title:heading,unit:displayUnit,currency,from:ctx.asOf,to:ctx.asOf,asOf:ctx.asOf,
+     source:"response_evidence",sourceDetail:detail,coverage,...(measurement?{measurement}:{}),points});
    if(modelPanel.success)panels.push(modelPanel.data);
    else{
     const numeric=points.every(p=>p.value===null||typeof p.value==="number");
     const fallback=recordTableSchema.safeParse({title:heading,view:"tool_response_evidence",from:ctx.asOf,to:ctx.asOf,asOf:ctx.asOf,currency,
-     coverage:coverage??"unverified",scope:detail,columns:[{label:"Category",unit:"label"},{label:a.measurement??a.unit,unit:numeric?a.unit:"stored"}],
+     coverage:coverage??"unverified",scope:detail,columns:[{label:"Category",unit:"label"},{label:measurement??displayUnit,unit:numeric?displayUnit:"stored"}],
      rows:points.map(p=>[p.label,p.value])});
     if(fallback.success)tables.push(fallback.data);
    }
@@ -302,7 +312,7 @@ export function resolveResearchSpec(patches:readonly unknown[],queries:Presentat
  }
  let spec:ReturnType<typeof compiler.getResult>;
  try{spec=compiler.getResult();}catch{return [];}
- if(typeof spec.root!=="string"||!obj(spec.elements))return [];
+ if(!obj(spec.elements))return [];
  const visited=new Set<string>(),result:RichPresentation[]=[];
  const walk=(key:string)=>{
   if(visited.has(key)||!safeKey(key))return;
@@ -315,6 +325,8 @@ export function resolveResearchSpec(patches:readonly unknown[],queries:Presentat
    for(const child of element.children)if(typeof child==="string")walk(child);
   }
  };
- walk(spec.root);
+ if(typeof spec.root==="string")walk(spec.root);
+ // Recover authored data leaves even if a layout parent or root is malformed.
+ for(const key of Object.keys(spec.elements))if(!visited.has(key))walk(key);
  return result;
 }
