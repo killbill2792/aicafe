@@ -317,9 +317,9 @@ describe("U4 scheduled model execution persists only verified outcomes",()=>{
     expect(result.attention).toBe("none");
     const watchTurn=vi.mocked(runAgentTurn).mock.calls.at(-1)?.[0];
     const offered=watchTurn?.actions?.definitions.map((d:{name:string})=>d.name)??[];
-    expect(offered).toEqual(["get_events"]);
+    expect(offered).toEqual(expect.arrayContaining(["get_events","get_schedule","get_week_schedule","get_staff_messages"]));
+    expect(offered).not.toContain("search_gmail");
     expect(watchTurn?.webSearch).toBeUndefined();
-    expect(watchTurn?.scope.watch).toBe(true);
     expect(watchTurn?.ownerText).toContain("never read employee-level wages, payroll or staff messages");
     expect(notifyOwner).not.toHaveBeenCalled();
     expect(rpc).toHaveBeenCalledWith("u4_publish_objective_report",

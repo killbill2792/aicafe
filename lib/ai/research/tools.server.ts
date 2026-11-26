@@ -1,6 +1,5 @@
 import "server-only";
 import type {SupabaseClient} from "@supabase/supabase-js";
-import {admitU3Sql} from "@/lib/ai/agent/tools/u3SqlAdmission";
 import {CALC_OPS,exactDecimal,runCalculation,type CalcOp,type CalcUnit,type CalcValue} from "@/lib/metrics/core/calculator";
 
 /** Supervisor SQL research tools: describe_database, run_sql (one read-only SELECT run by the database
@@ -8,7 +7,6 @@ import {CALC_OPS,exactDecimal,runCalculation,type CalcOp,type CalcUnit,type Calc
  * exact calculator). Security is enforced in the database; no business logic here. */
 
 export type ResearchScope={db:SupabaseClient;businessId:string;ownerUserId:string;
-  watch?:true; // Server-owned permission mode, never a model argument.
   /** The existing owner-permissioned public web search (one path); absent when unavailable. */
   webSearch?:(query:string)=>Promise<unknown>;
   /** Text read from the café's private data this turn; a public query may not contain it. */
@@ -97,26 +95,7 @@ async function callDatabase(scope:ResearchScope,sql:string):Promise<Record<strin
 }
 
 /** The database function enforces one read-only SELECT and returns PostgreSQL's own errors. */
-// Watch admits aggregate operational fields, not personal data or arbitrary JSON.
- const WATCH_COLUMNS={
-  daily_rollups:["business_date","net_sales_cents","orders_count","drinks_count","ingredients_cents","staff_wages_cents","staff_tax_cents","card_fees_cents","voids_cents"],
-  cv_sales_days:["business_date","net_sales_cents","orders_count","status"],
-  cv_sales_hours:["business_date","net_sales_cents","orders_count","status"],
-  cv_item_sales:["business_date","net_sales_cents","quantity","status"],
-  cv_payments:["business_date","amount_cents","tip_cents","status"],
-  cv_discounts:["business_date","amount_cents","status"],
-  cv_voids_refunds:["business_date","amount_cents","status"],
-  cv_card_fees:["business_date","amount_cents","status"],
-  cv_inventory:["business_date","quantity","stock_status","status"],
- } as const;
- const watchRelations=Object.keys(WATCH_COLUMNS);
- const watchColumns=[...new Set(Object.values(WATCH_COLUMNS).flatMap(cols=>[...cols]))];
- export async function runSql(scope:ResearchScope,sql:string):Promise<Record<string,unknown>>{
-  if(scope.watch){
-    // AST admission denies CTE shadowing of private real relations; joins and subqueries remain available.
-    try{await admitU3Sql(sql,watchRelations,0,true,watchColumns,{}, {physicalSchema:"public",forbidCtes:true});}
-    catch{return {ok:false,error:"Watch may only aggregate the approved relations and fields listed by describe_database. Use a SELECT with explicit fields; subqueries and joins are available."};}
-  }
+export async function runSql(scope:ResearchScope,sql:string):Promise<Record<string,unknown>>{
   return callDatabase(scope,sql);
 }
 
@@ -126,10 +105,6 @@ const OPERATIONAL="c.relname !~ '^(toast_raw_sample|diag_|diagnostic_|test_|fixt
 const RELATIONS="from pg_class c join pg_namespace n on n.oid=c.relnamespace "+
   "where n.nspname='public' and c.relkind in ('r','p','v','m') and has_table_privilege(c.oid,'select') and "+OPERATIONAL;
 export async function describeDatabase(scope:ResearchScope,tables:readonly string[]|null):Promise<Record<string,unknown>>{
-  if(scope.watch){
-    const requested=tables?.length?new Set(tables):null;
-    return {ok:true,rows:Object.entries(WATCH_COLUMNS).filter(([name])=>!requested||requested.has(name)).map(([name,columns])=>({name,columns:[...columns]})),scope:"Aggregate-only Watch; no individual payroll, private messages, raw JSON or identifiers."};
-  }
   if(!tables||!tables.length){
     return callDatabase(scope,"select c.relname as name, case when c.relkind in ('v','m') then 'view' else 'table' end as kind, "+
       "obj_description(c.oid,'pg_class') as description, (select string_agg(a.attname||' '||format_type(a.atttypid,a.atttypmod), ', ' order by a.attnum) "+

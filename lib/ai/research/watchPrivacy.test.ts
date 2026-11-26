@@ -3,37 +3,14 @@ import type {AgentTurn} from "@/lib/ai/agent/loop.server";
 import {describeDatabase,runSql} from "./tools.server";
 import {verifyResearchInvestigationTurn} from "@/lib/ai/supervisor/routines/investigation";
 vi.mock("server-only",()=>({}));
-const watchScope=(rpc:ReturnType<typeof vi.fn>)=>({db:{rpc} as never,businessId:"cafe",ownerUserId:"owner",watch:true as const});
-it("exposes only aggregate operational fields in Watch discovery",async()=>{
- const rpc=vi.fn();
- const scope=watchScope(rpc);
- const discovery=JSON.stringify(await describeDatabase(scope,null));
- expect(discovery).toContain("daily_rollups");
- expect(discovery).not.toContain("employee_pay_period_facts");
- expect((await describeDatabase(scope,["staff_messages"])).rows).toEqual([]);
- expect(rpc).not.toHaveBeenCalled();
-});
-it("denies sensitive relations, aliases, nested raw payloads and whole rows before executing",async()=>{
- const rpc=vi.fn().mockResolvedValue({data:{ok:true,rows:[{total:900}]},error:null});
- const scope=watchScope(rpc);
- for(const sql of [
-  "select sum(wage_cents) from employees",
-  "select count(*) from public.staff_messages",
-  "select count(*) from toast_raw_records",
-  "select min(data::text) from cv_sales_days",
-  "select min(source_ref) from cv_sales_days",
-  "select min(d::text) from daily_rollups d",
-  "with staff_messages as (select count(*) from daily_rollups) select count(*) from public.staff_messages",
-  "select count(*) from cv_sales_days where exists(select 1 from employees)",
- ])expect((await runSql(scope,sql)).ok).toBe(false);
- expect(rpc).not.toHaveBeenCalled();
- expect((await runSql(scope,"select sum(net_sales_cents) as total from public.daily_rollups")).ok).toBe(true);
- expect(rpc).toHaveBeenCalledTimes(1);
-});
-it("does not change the authenticated owner SQL path",async()=>{
+it("does not restrict Luna's SQL in any mode",async()=>{
  const rpc=vi.fn().mockResolvedValue({data:{ok:true,rows:[]},error:null});
- await runSql({db:{rpc} as never,businessId:"cafe",ownerUserId:"owner"},"select count(*) from employees");
- expect(rpc).toHaveBeenCalledOnce();
+ const scope={db:{rpc} as never,businessId:"cafe",ownerUserId:"owner"};
+ await runSql(scope,"select count(*) from employees");
+ await runSql(scope,"with x as (select 1) select * from x");
+ expect(rpc).toHaveBeenCalledTimes(2);
+ expect(rpc).toHaveBeenCalledWith("supervisor_research_sql",expect.objectContaining({p_sql:"select count(*) from employees"}));
+ void describeDatabase;
 });
 it("never authorizes an unreproduced customer trend using an unrelated SQL read",()=>{
  const receipt={source:"sql_research",period:null,missing:[],tool:"run_sql"};

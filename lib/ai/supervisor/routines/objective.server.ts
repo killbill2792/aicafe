@@ -36,9 +36,9 @@ export const objectiveReadTools:readonly string[]=[
   "search_gmail","list_gmail_labels","read_gmail","read_gmail_thread",
   "read_gmail_attachment",
 ];
-// Watch privacy is enforced by its SQL scope.
+// Unrequested Watch is kept off employee-level wages, payroll and staff messages by its instructions, not by a SQL limit.
 export const watchReadTools:readonly string[]=objectiveReadTools.filter(name=>
-  !["search_web","search_gmail","list_gmail_labels","read_gmail","read_gmail_thread","read_gmail_attachment",...researchStaffReadTools].includes(name));
+  !["search_web","search_gmail","list_gmail_labels","read_gmail","read_gmail_thread","read_gmail_attachment"].includes(name));
 
 /** A tool name, catalog, row-count sentinel or paid provider text is never
  * evidence on its own. Reuse the stricter existing incident fact gate for
@@ -364,7 +364,7 @@ export async function executeClaimedObjective(db:SupabaseClient,params:{
     maxOutputTokens:cap>1200?32768:4800,
   },()=>runResearchTurn({
     ownerText:prompt,
-    scope:{db,businessId:routine.businessId,ownerUserId:routine.ownerUserId,...(routine.executionMode==="watch"?{watch:true as const}:{})},
+    scope:{db,businessId:routine.businessId,ownerUserId:routine.ownerUserId},
     cafeContext:"Café (authenticated, not an owner message): "+JSON.stringify({name:identity.cafeName,
       currency:identity.currency,timezone:identity.timezone,localDate:identity.asOf}),
     ...(context.webSearch?{webSearch:(query:string)=>context.webSearch!(query)}:{}),
