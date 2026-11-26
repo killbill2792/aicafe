@@ -1,4 +1,4 @@
-import { richPresentationSchema } from "@/lib/ai/conversations/presentation";
+import { richPresentationSchema,type RichPresentation } from "@/lib/ai/conversations/presentation";
 import "server-only";
 import { ZodError } from "zod";
 import { persistGroundedSupervisorReply, type DurableReplyFence } from "@/lib/ai/conversations/replyWriter.server";
@@ -145,17 +145,50 @@ export function agentReplyPayload(turn: AgentTurn) {
        [{type:"clarify" as const,question:clarify.question,
          options:clarify.options as {label:string;value:string}[],allowOther:clarify.allowOther===true}]:[]),
     ...(safeExplain.length?[{type:"how" as const,lines:safeExplain}]:[])] };
-  if(turn.endReason==="complete"&&!clarify&&reply.blocks.length<30){
-    const result=[...turn.results].reverse().find(r=>r.source==="response_presentation"&&r.accepted===true);
-    const presentation=richPresentationSchema.safeParse(result?.presentation);
-    if(presentation.success) {
-      // A presentation never makes unavailable business evidence verified.
-      const {agenda,scenario,tables,calculator,groups,...rest}=presentation.data;
-      const partialTables=tables?.filter(t=>t.coverage==="partial");
-      const safe=status==="unavailable"?{...rest,panels:rest.panels.filter(p=>p.coverage==="partial"),...(agenda?.coverage==="partial"?{agenda}:{}),...(partialTables?.length?{tables:partialTables}:{})}:
-       {...rest,...(agenda?{agenda}:{}),...(scenario?{scenario}:{}),...(tables?{tables}:{}),...(calculator?{calculator}:{}),...(groups?{groups}:{})};
-      const validated=richPresentationSchema.safeParse(safe);
-      if(validated.success)reply.blocks.push(validated.data);
+  const validatePresentation=(result:AgentTurn["results"][number]):RichPresentation|undefined=>{
+    if(result.source!=="response_presentation"||result.accepted!==true)return;
+    const presentation=richPresentationSchema.safeParse(result.presentation);
+    if(!presentation.success)return;
+    const {agenda,scenario,tables,calculator,groups,...rest}=presentation.data;
+    const partialTables=tables?.filter(t=>t.coverage==="partial");
+    const safe=status==="unavailable"?{...rest,panels:rest.panels.filter(p=>p.coverage==="partial"),...(agenda?.coverage==="partial"?{agenda}:{}),...(partialTables?.length?{tables:partialTables}:{})}:
+      {...rest,...(agenda?{agenda}:{}),...(scenario?{scenario}:{}),...(tables?{tables}:{}),...(calculator?{calculator}:{}),...(groups?{groups}:{})};
+    const validated=richPresentationSchema.safeParse(safe);
+    return validated.success?validated.data:undefined;
+  };
+  // SQL inline views carry their exact position in the concatenated prose.
+  // The existing persisted text blocks remain the source for numeric annotations.
+  const inline=turn.results.flatMap(result=>{
+    const at=result.presentationOffset;
+    if(typeof at!=="number"||!Number.isSafeInteger(at)||at<0||at>turn.text.length)return [];
+    const block=validatePresentation(result);
+    return block?[{at,block}]:[];
+  }).sort((a,b)=>a.at-b.at);
+  if(inline.length&&!isOnlyQuestion){
+    const ordered:GroundedSupervisorReply["blocks"]=[];
+    const prose:typeof blocks=[];
+    const spans=turn.provenance??turn.unverified;
+    let at=0;
+    const addText=(end:number)=>{
+      if(end===at)return;
+      const parts=splitAgentText(turn.text.slice(at,end),spans.filter(s=>s.start<end&&s.end>at).map(s=>({start:s.start-at,end:s.end-at})));
+      ordered.push(...parts);prose.push(...parts);at=end;
+    };
+    try{
+      for(const item of inline){addText(item.at);ordered.push(item.block);}
+      addText(turn.text.length);
+      const tail=reply.blocks.slice(blocks.length);
+      if(ordered.length+tail.length<=30){blocks=prose;reply.blocks=[...ordered,...tail];}
+      // The existing storage contract is unchanged. If the ordered form cannot
+      // fit, keep all of the plain answer rather than fail the owner turn.
+    }catch(error){if(!(error instanceof AgentReplyTooLongError))throw error;}
+  }
+  if(!inline.length&&turn.endReason==="complete"&&!clarify&&reply.blocks.length<30){
+    // Historical/legacy present_response receipts have no inline position.
+    // Preserve every accepted receipt that fits the existing reply contract.
+    for(const result of turn.results){
+      const block=validatePresentation(result);
+      if(block&&reply.blocks.length<30)reply.blocks.push(block);
     }
   }
   const annotations=turn.provenance??turn.unverified.map(item=>({...item,source:"unchecked" as const}));
@@ -167,7 +200,7 @@ export function agentReplyPayload(turn: AgentTurn) {
       const end = Math.min(item.end, offset + blocks[i].text.length);
       if (end > start) rows.push({
         ...item, start: start - offset, end: end - offset,
-        text: blocks[i].text.slice(start - offset, end - offset), blockIndex: i,
+        text: blocks[i].text.slice(start - offset, end - offset), blockIndex: reply.blocks.indexOf(blocks[i]),
       });
       offset += blocks[i].text.length;
     }

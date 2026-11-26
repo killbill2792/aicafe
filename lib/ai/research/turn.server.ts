@@ -138,7 +138,14 @@ export async function runResearchTurn(args:{
     if(checkpoint)await checkpoint.beginProvider();
     const callTextStart=text.length,callPresentationStart=presentations.length;
     let completed=false,answer="",thinking="",startedText=false;
-    let patches:unknown[]=[];
+    let patches:unknown[]=[],pendingProse="";
+    const flushProse=async(force=false)=>{
+      const boundary=force?pendingProse.length:pendingProse.lastIndexOf("\n\n")+2;
+      if((!force&&boundary<2)||!boundary)return;
+      await args.beforeAcceptResult?.();
+      appendText(pendingProse.slice(0,boundary),startedText);startedText=true;
+      pendingProse=pendingProse.slice(boundary);
+    };
     const flushViews=async()=>{
       if(!patches.length)return;
       await args.beforeAcceptResult?.();
@@ -158,11 +165,9 @@ export async function runResearchTurn(args:{
       try{
         for await(const event of researchInlineEvents(provider(params,controller.signal) as AsyncIterable<Event>)){
           if(event.type==="raw-delta"&&typeof event.delta==="string")answer+=event.delta;
-          if(event.type==="inline-patch"){patches.push(event.patch);continue;}
+          if(event.type==="inline-patch"){await flushProse(true);patches.push(event.patch);continue;}
           if(event.type==="inline-text"&&typeof event.delta==="string"){
-            await flushViews();
-            await args.beforeAcceptResult?.();
-            appendText(event.delta,startedText);startedText=true;
+            await flushViews();pendingProse+=event.delta;await flushProse();
           }
           if(event.type==="response.reasoning_summary_part.added"){thinking="";}
           if(event.type==="response.reasoning_summary_text.delta"&&typeof event.delta==="string"){
@@ -176,7 +181,7 @@ export async function runResearchTurn(args:{
               calls.push({type:"function_call",name:item.name,call_id:item.call_id,arguments:item.arguments});
           }
           if(event.type==="response.completed"){
-            await flushViews();
+            await flushProse(true);await flushViews();
             const response=(event.response??{}) as {model?:unknown;usage?:{input_tokens?:unknown;output_tokens?:unknown;input_tokens_details?:{cached_tokens?:unknown}}};
             if(reservation)await reservation.complete(response as never);
             const n=(x:unknown)=>typeof x==="number"&&Number.isSafeInteger(x)&&x>=0?x:0;

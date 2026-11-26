@@ -13,6 +13,7 @@ import type { ConversationMessage, ConversationPage, ConversationThread } from "
 import { activeOwnerQuestionMessageId, clarifyCardState, beginOptimisticOwner, sendKey, visibleConversationMessages,
   hasInsertedHistoryPage, isTranscriptNearBottom, transcriptScrollTarget, isDuplicateLinkedExperimentCard, mergeLatestConversationPage, prependConversationPage, loadedSavedReports, conversationLocation } from "./supervisorChatBehavior";
 import { ChatMarkdown, SourceLegend } from "./ChatMarkdown";
+import {richPresentationSchema,type RichPresentation} from "@/lib/ai/conversations/presentation";
 import dynamic from "next/dynamic";
 import PresentationBoundary from "./PresentationBoundary";
 const SupervisorRichPresentation=dynamic(()=>import("./SupervisorRichPresentation"));
@@ -297,6 +298,7 @@ export default function SupervisorChatComposer({
   const [sending, setSending] = useState(false);
   const [progressStatus, setProgressStatus] = useState<SupervisorProgress>(null);
   const [streamedText, setStreamedText] = useState("");
+  const [streamedPresentations,setStreamedPresentations]=useState<{offset:number;block:RichPresentation}[]>([]);
   const currentStreamReader=useRef<ReadableStreamDefaultReader<Uint8Array>|null>(null);
   const [canDetach,setCanDetach]=useState(false);
   const [streamNotice,setStreamNotice]=useState("");
@@ -648,7 +650,7 @@ export default function SupervisorChatComposer({
       pinned.current = true;
       setShowNewMessage(false);
     }
-  }, [messages, optimisticOwner, sending, streamedText, progressStatus, threadId, prependVersion]);
+  }, [messages, optimisticOwner, sending, streamedText, streamedPresentations, progressStatus, threadId, prependVersion]);
 
   useEffect(() => {
     const node = transcript.current;
@@ -771,7 +773,7 @@ export default function SupervisorChatComposer({
       setDraft("");
     }
     setStartExpanded(false);
-    setSending(true);setCanDetach(false);setStreamNotice(""); setError(false); setFailureCode(null); setProgressStatus(null); setStreamedText("");
+    setSending(true);setCanDetach(false);setStreamNotice(""); setError(false); setFailureCode(null); setProgressStatus(null); setStreamedText(""); setStreamedPresentations([]);
     let attemptedThreadId: string | null = null;
     // Set once the server confirms a background job; from then on a dropped
     // connection is not a failure because the answer keeps being written.
@@ -796,7 +798,7 @@ export default function SupervisorChatComposer({
           const read = readSseFrames(buffer + decoder.decode(value, { stream: true }));
           buffer = read.rest;
           for (const { type, data } of read.frames) {
-            const event = data as { text?: string; code?: string; discardChars?: number; agentId?: string;
+            const event = data as { text?: string; code?: string; discardChars?: number; discardPresentations?:number; offset?:number; block?:unknown; agentId?: string;
               name?: string; jobId?: string; mode?: string; runId?:string;investigationId?:string;ownerMessageId?:string };
             if(type==="ack"&&(typeof event.runId==="string"||typeof event.investigationId==="string")){
               durableConfirmed=true;jobConfirmed=true;finished=true;setCanDetach(true);
@@ -830,9 +832,14 @@ export default function SupervisorChatComposer({
             } else if (type === "delta" && typeof event.text === "string") {
               setStreamedText(current => current + event.text);
               setProgressStatus({ agent: "supervisor", stage: "answering" });
+            } else if(type==="presentation"&&typeof event.offset==="number"&&Number.isSafeInteger(event.offset)&&event.offset>=0){
+              const parsed=richPresentationSchema.safeParse(event.block);
+              if(parsed.success)setStreamedPresentations(current=>[...current,{offset:event.offset!,block:parsed.data}]);
             } else if (type === "reset" && Number.isSafeInteger(event.discardChars) &&
               event.discardChars !== undefined && event.discardChars >= 0) {
               setStreamedText(current => current.slice(0, Math.max(0, current.length - event.discardChars!)));
+              if(Number.isSafeInteger(event.discardPresentations)&&event.discardPresentations!>0)
+                setStreamedPresentations(current=>current.slice(0,Math.max(0,current.length-event.discardPresentations!)));
             } else if (type === "error") {
               if(durableConfirmed){finished=true;continue;}
               serverError = true;
@@ -843,7 +850,7 @@ export default function SupervisorChatComposer({
                 // A continuation may follow on this same stream; show this answer now.
                 const page = await loadMessages(id);
                 applyLatestPage(page);
-                setOptimisticOwner(null); setStreamedText(""); setLiveNote(null);
+                setOptimisticOwner(null); setStreamedText(""); setStreamedPresentations([]); setLiveNote(null);
                 setLiveJobId(null);
               }
             }
@@ -856,7 +863,7 @@ export default function SupervisorChatComposer({
       setOptimisticOwner(null);
       await refreshThreads();
       originalRetryText.current.delete(clientMessageId);
-      retryId.current = null; retryResponse.current=null;setStreamedText("");
+      retryId.current = null; retryResponse.current=null;setStreamedText(""); setStreamedPresentations([]);
       dispatchDictation({ type: "reset" }); setMediaNotice(""); setAttachments([]);
     } catch (failure) {
       if (existingKey&&!matchedResponse) retryId.current = null;
@@ -881,7 +888,7 @@ export default function SupervisorChatComposer({
       }
     } finally {
       sendOnce.current=false;
-      setCanDetach(false);setSending(false); setProgressStatus(null); setStreamedText("");
+      setCanDetach(false);setSending(false); setProgressStatus(null); setStreamedText(""); setStreamedPresentations([]);
       setLiveJobId(null); setLiveSteps([]); setLiveNote(null);
     }
   }
@@ -1359,7 +1366,10 @@ export default function SupervisorChatComposer({
       {(sending || resumedRunning) && <ChatJobProgress locale={locale} acknowledged
         steps={sending ? liveSteps : watcher.job?.progress ?? []}
         note={sending ? progressStatus?.stage==="answering"?progressStatusText(copy,progressStatus):liveNote??(!liveJobId?progressStatusText(copy,progressStatus)??copy.sending:null) : watcher.job?.progress.length?null:liveCopy.resumed} />}
-      {sending && streamedText && <article aria-hidden="true" aria-live="off" aria-busy="true" inert className="w-full space-y-3"><div className="flex items-center gap-2 text-[0.9375rem] font-bold text-ink-muted"><span className="flex h-8 w-8 items-center justify-center rounded-full bg-pos-soft text-good"><Sparkles size={17} aria-hidden="true"/></span>{copy.supervisor}</div><ReplyBlock block={{type:"text",text:streamedText}} copy={copy} locale={locale}/></article>}
+      {sending && (streamedText||streamedPresentations.length>0) && <article aria-hidden="true" aria-live="off" aria-busy="true" inert className="w-full space-y-3"><div className="flex items-center gap-2 text-[0.9375rem] font-bold text-ink-muted"><span className="flex h-8 w-8 items-center justify-center rounded-full bg-pos-soft text-good"><Sparkles size={17} aria-hidden="true"/></span>{copy.supervisor}</div>{streamedPresentations.map((item,i)=>{
+        const start=i===0?0:streamedPresentations[i-1].offset;
+        return <div key={i} className="min-w-0 space-y-3">{item.offset>start&&<ReplyBlock block={{type:"text",text:streamedText.slice(start,item.offset)}} copy={copy} locale={locale}/>}<PresentationBoundary><SupervisorRichPresentation block={item.block} locale={locale} onSuggest={()=>undefined} disabled/></PresentationBoundary></div>;
+      })}{streamedText.length>(streamedPresentations.at(-1)?.offset??0)&&<ReplyBlock block={{type:"text",text:streamedText.slice(streamedPresentations.at(-1)?.offset??0)}} copy={copy} locale={locale}/>}</article>}
       </div>
     </div>
     {sending&&canDetach&&<button type="button" onClick={()=>void detachLiveStream()} className="mx-auto flex min-h-12 shrink-0 items-center gap-2 rounded-full border border-line px-4 text-[0.9375rem] text-ink hover:bg-surface2 focus-visible:outline focus-visible:outline-2 focus-visible:outline-ink"><Square size={16} aria-hidden="true"/>{en.SupervisorExperience.stopLiveView}</button>}
