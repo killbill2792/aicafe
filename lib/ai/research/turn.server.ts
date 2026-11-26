@@ -97,6 +97,8 @@ export async function runResearchTurn(args:{
   beforeAcceptResult?:()=>Promise<void>;
   checkpoint?:OwnerRunCheckpoint;
   continuation?:ResearchContinuationPort;
+  /** Stable source identity, only for authenticated autonomous continuations. */
+  continuationIdentity?:string;
   executionDeadline?:number;
   captureSourceVersions?:()=>Record<string,string>;
   restoreSourceVersions?:(versions:Record<string,string>)=>Promise<void>;
@@ -121,7 +123,7 @@ export async function runResearchTurn(args:{
   // Provider-native context management can drop older context; the durable snapshot retains admitted evidence.
   const broker=process.env.AI_CAFE_LIVE_ACCEPTANCE==="OWNER_APPROVED_LOCAL_ONLY"&&process.env.AICAFE_SHARED_LUNA_CANDIDATE==="1";
   const instructions=RESEARCH_INSTRUCTIONS+" "+INLINE_PRESENTATION_HINT;
-  const originalObjective=createHash("sha256").update(JSON.stringify([args.ownerText,args.matchedOwnerAnswers??[]])).digest("hex");
+  const originalObjective=createHash("sha256").update(JSON.stringify([args.continuationIdentity??args.ownerText,args.matchedOwnerAnswers??[]])).digest("hex");
   const presentationContext=args.presentationContext??args.actions?.context;
   const presentationDiagnostics={requestedSections:0,decodedSections:0,decodedPatches:0,rejectedSections:0,acceptedViews:0,rolledBackViews:0};
   // References are ephemeral and point only to the evidence already admitted to this turn.
