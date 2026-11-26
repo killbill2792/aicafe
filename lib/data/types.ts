@@ -19,12 +19,32 @@ export type BusinessSettings = {
   openHours?: OpenHours | null;
 };
 
+/** Individual original source facts, not a category-based classification of cost behaviour. */
+export type RunningCostEvidence =
+ | {kind:"expense";id:string;label:string;amountCents:number;date:string;source:string|null;
+    status:string;recurringCostId:string|null;costBehaviour:"unknown"}
+ | {kind:"recurring";id:string;label:string;amountCents:number;frequency:string;source:string|null;
+    dueDay:number|null;activeFrom:string;activeTo:string|null;isEstimate:boolean;
+    monthlyEquivalentCents:number;linkedRecordedCents:number;linkedActualCents:number;linkedEstimatedCents:number;remainingForecastCents:number;
+    costBehaviour:"unknown"};
+
 export type RunningCostLine = {
   categoryCode: ExpenseCategoryCode;
   label: string;
   amountCents: number;
   /** Actual expenses already recorded this month must not be prorated as recurring bills. */
-  amountSource?: "recorded_expense" | "recurring" | "missing";
+  amountSource?: "recorded_expense" | "recurring" | "mixed" | "missing";
+  /** Separate observed receipts from uncovered configured monthly commitments. */
+  recordedExpenseCents?:number;
+  recordedActualCents?:number;
+  recordedEstimatedCents?:number;
+  expenseEvidence?:RunningCostEvidence[];
+  /** Difference between the lower and upper forecast when overlap is unknown. */
+  possibleAdditionalForecastCents?:number;
+  /** Full recorded entries plus all outstanding obligations, not a certified total. */
+  forecastUpperCents?:number;
+  forecastOverlapUncertain?:boolean;
+  recurringEstimateCents?:number;
   isEstimate: boolean;
   isMissing: boolean;
   /** Of the actual month-to-date expenses, the amount specifically spent today. */
@@ -110,6 +130,7 @@ export type BusinessSnapshot = {
   previousMonthRecordedDays?: DailyFacts[];
   /** This month's running-cost categories, in recovery_order, including $0/missing ones. */
   runningCostLines: RunningCostLine[];
+  previousRunningCostLines?:RunningCostLine[];
   recoveryOrder: string[];
   menuItems: MenuItemSnapshot[];
   /** Catalog cost records including archived/inactive items (not shown in active menu). */

@@ -19,7 +19,7 @@ const periodViews=new Set<CanonicalView>([
 const statusFilter=z.enum(["open","actual","estimated","needs_match"]);
 export async function readCanonicalView(db:SupabaseClient,businessId:string,
  view:CanonicalView,range:CanonicalRange,requestedLimit=200,
- filter:{status?:z.infer<typeof statusFilter>}={}):Promise<CanonicalRead>{
+ filter:{status?:z.infer<typeof statusFilter>;offset?:number}={}):Promise<CanonicalRead>{
  if(!z.uuid().safeParse(businessId).success||
    !canonicalViewNames.includes(view))
   return {rows:[],notes:["invalid_scope"],empty:true,truncated:false,rowCount:0,error:"invalid_scope"};
@@ -27,6 +27,9 @@ export async function readCanonicalView(db:SupabaseClient,businessId:string,
  if(!parsed.success||range.dateFrom>range.dateTo)
   return {rows:[],notes:["invalid_date_range"],empty:true,truncated:false,rowCount:0,error:"invalid_range"};
  const limit=Math.min(1000,Math.max(1,Math.floor(requestedLimit)));
+ const offset=filter.offset??0;
+ if(!Number.isSafeInteger(offset)||offset<0)
+  return {rows:[],notes:["invalid_scope"],empty:true,truncated:false,rowCount:0,error:"invalid_scope"};
  // Customer timeline/cohort values are computed at the requested cutoff,
  // never at today's date then filtered back into a historical range.
  let query=view==="cv_customer_visits"||view==="cv_customer_products"
@@ -39,7 +42,10 @@ export async function readCanonicalView(db:SupabaseClient,businessId:string,
    return {rows:[],notes:["invalid_scope"],empty:true,truncated:false,rowCount:0,error:"invalid_scope"};
   query=query.eq("status",filter.status);
  }
- const {data,error}=await query.order("source_ref").limit(limit+1);
+ // Cursor-stable offset pages reuse exactly this authorized canonical reader.
+ // Unpaged screens retain their existing bounded behavior.
+ const ordered=view==="cv_inventory"?query.order("source_ref").order("business_date"):query.order("source_ref");
+ const {data,error}=await (filter.offset===undefined?ordered.limit(limit+1):ordered.range(offset,offset+limit));
  if(error)return {rows:[],notes:["source_read_failed"],empty:true,truncated:false,
   rowCount:0,error:"source_read_failed"};
  const rows=(data??[]) as CanonicalRow[],truncated=rows.length>limit;

@@ -52,6 +52,11 @@ function daysInMonthKey(monthKey: string): number {
 function proratedAmountCents(c: CategoryMonthlyAmount, periodStart: string, periodEnd: string): number {
   const days = overlapDays(periodStart, periodEnd, c.monthKey);
   if (days === 0) return 0;
+  if(c.recordedExpenses&&c.recurringEstimateCents!==undefined){
+    const recorded=c.recordedExpenses.filter(e=>e.date>=periodStart&&e.date<=periodEnd)
+      .reduce((n,e)=>n+e.amountCents,0);
+    return recorded+(c.recurringEstimateCents/daysInMonthKey(c.monthKey))*days;
+  }
   return (c.amountCents / daysInMonthKey(c.monthKey)) * days;
 }
 
