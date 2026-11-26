@@ -482,7 +482,7 @@ export async function processNextInvestigation(db:SupabaseClient,now:Date,
       synopsis.kind==="maintenance_issue"?null:c.narrative??null,JSON.stringify(claim).slice(0,6000));
     const continuation=await backgroundResearchContinuation(db,{...scope,threadId:c.thread_id,sourceType:c.source_type,sourceId:c.source_id,revision:c.episode_id+":"+c.revision_hash+":"+c.step_version,leaseToken:c.lease_token,parentDeadline:executionDeadline});
     const turn=await runResearchTurn({
-      continuation,executionDeadline:continuation.executionDeadline,
+      continuation,continuationIdentity:c.source_type+":"+c.source_id+":"+c.episode_id+":"+c.revision_hash+":"+c.step_version,executionDeadline:continuation.executionDeadline,
       captureSourceVersions:()=>({...webRevision!==undefined?{web:webRevision}:{},...mailbox?{gmail:JSON.stringify({id:mailbox.id,generation:mailbox.generation,subject:mailbox.provider_subject})}:{}}),
       restoreSourceVersions:async versions=>{webRevision=versions.web;if(versions.gmail){const saved=JSON.parse(versions.gmail);const account=await getConnectorAccount(scope);if(!account||!allowsGmail(account,"read")||account.id!==saved.id||account.generation!==saved.generation||account.provider_subject!==saved.subject)throw Error("authorization_revoked");mailbox=account;}await checkMailbox();},
       ownerText:prompt+existingQuestionContext+
