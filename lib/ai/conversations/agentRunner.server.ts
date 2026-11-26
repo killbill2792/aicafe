@@ -901,6 +901,7 @@ export async function runOneTurn(p: TurnParams): Promise<{ replyId: string; repl
     const researchOn=sqlResearchEnabled();
     const notesClient=researchOn?await getDb():null;
     const result = researchOn ? await runResearchTurn({ ownerText: p.ownerText,
+      presentationContext:{asOf:identity.asOf,currency:identity.currency,presentationAttachments:[...selectedIds]},
       ownerImages:selected.images, ownerPdfs:selected.pdfs, ownerEvidence:selected.evidence, history,
       scope:{db:createAdminSupabaseClient(),businessId:scope.businessId,ownerUserId:scope.ownerUserId,
         notes:cafeNotesPort(notesClient!,scope.businessId)},

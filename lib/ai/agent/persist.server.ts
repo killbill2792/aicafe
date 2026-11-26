@@ -210,6 +210,7 @@ export function agentReplyPayload(turn: AgentTurn) {
     unverified, endReason: turn.endReason, evidence:turn.evidence??[],explain:safeExplain,agentIds:turn.agentIds??[],
     sources: turn.results.map(r => ({ source:r.source, period:r.period, missing:r.missing })),
     ...(typeof turn.externalEvidence==="boolean"?{externalEvidence:turn.externalEvidence}:{}),
+    ...(turn.presentationDiagnostics?{presentationDiagnostics:{...turn.presentationDiagnostics,persistedViews:reply.blocks.filter(b=>b.type==="rich_presentation").length}}:{}),
     usage: { modelCalls:turn.usage.modelCalls,toolCalls:turn.usage.toolCalls,inputTokens:turn.usage.inputTokens,cachedTokens:turn.usage.cachedTokens,outputTokens:turn.usage.outputTokens,latencyMs:turn.usage.latencyMs,model:turn.usage.model },
     // Owner messages answered inside this reply (mid-run follow-ups).
     ...(turn.absorbedOwnerMessageIds?.length?{absorbedOwnerMessageIds:[...turn.absorbedOwnerMessageIds]}:{}),

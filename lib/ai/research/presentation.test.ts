@@ -1,7 +1,7 @@
 import {describe,it,expect,vi} from "vitest";
 import type {AgentProvider} from "@/lib/ai/agent/loop.server";
 import type {AgentToolContext} from "@/lib/ai/agent/tools";
-import {resolveResearchSpec,resolveResearchView} from "./presentation";
+import {resolveResearchSpec,resolveResearchView,INLINE_PRESENTATION_HINT} from "./presentation";
 import {agentReplyPayload} from "@/lib/ai/agent/persist.server";
 import {groundedReplySchema} from "@/lib/ai/conversations/contracts";
 import {researchInlineEvents} from "./inlineStream";
@@ -11,7 +11,7 @@ const spec=(value:unknown)=>[{op:"add",path:"/root",value:"view"},{op:"add",path
 const fence=(value:unknown)=>String.fromCharCode(96).repeat(3)+"spec\n"+spec(value).map(p=>JSON.stringify(p)).join("\n")+"\n"+String.fromCharCode(96).repeat(3)+"\n";
 const ctx={asOf:"2026-11-25",currency:"USD"};
 const rows=[{category:"Wages",amount_cents:1200},{category:"Supplies",amount_cents:0}];
-const queries=new Map([["q1",{data:{ok:true,rows},source:"Returned SQL evidence"}]]);
+const queries=new Map([["q1",{data:{ok:true,rows},source:"Returned SQL evidence",kind:"sql" as const}]]);
 const chart={ref:"q1",kind:"bar",x:"category",y:"amount_cents"};
 describe("SQL research presentation",()=>{
  it("renders exact SQL values in existing panels without another query, including zero",()=>{
@@ -186,8 +186,26 @@ describe("source-independent inline presentation",()=>{
    yield {type:"response.output_text.delta",delta:"Your provided figures.\n\n"+fence({panels:[{kind:"bar",title:"Rent and bills",points:[{label:"Rent",value:{ref:"owner",quote:"$1250"}},{label:"Bills",value:{ref:"owner",quote:"$450"}}]}]})+"These are your figures."};
    yield {type:"response.completed",response:{usage:{input_tokens:1,output_tokens:1}}};
   };
-  const result=await runResearchTurn({ownerText:"Rent $1250 and bills $450",cafeContext:"Cafe",provider,scope:{db:{} as never,businessId:"business",ownerUserId:"owner"},actions:{context:ctx as AgentToolContext,definitions:[]}});
+  const result=await runResearchTurn({ownerText:"Rent $1250 and bills $450",cafeContext:"Cafe",provider,scope:{db:{} as never,businessId:"business",ownerUserId:"owner"},presentationContext:ctx});
   expect(result.usage.modelCalls).toBe(1);expect(result.usage.toolCalls).toBe(0);
   expect(agentReplyPayload(result).reply.blocks.map(b=>b.type)).toEqual(["text","rich_presentation","text"]);
  });
+});
+
+it("uses the library's schema-derived native syntax without unsupported demo widgets or state requirements",()=>{
+ expect(INLINE_PRESENTATION_HINT).toContain('"type":"DataView"');
+ expect(INLINE_PRESENTATION_HINT).toContain("points");
+ expect(INLINE_PRESENTATION_HINT).not.toContain('"type":"Card"');
+ expect(INLINE_PRESENTATION_HINT).not.toContain("Include realistic sample data");
+ expect(INLINE_PRESENTATION_HINT).not.toContain("You MUST include state patches");
+});
+it("distinguishes absent output, rejected view selection, and persisted visual receipts",async()=>{
+ const provider:AgentProvider=async function*(){
+  yield {type:"response.output_text.delta",delta:"Evidence unavailable.\n\n"+fence({panels:[{kind:"metric",points:[{label:"Unbound",value:{ref:"unknown",path:["total_cents"]}}]}]})+"No value was supplied."};
+  yield {type:"response.completed",response:{usage:{input_tokens:1,output_tokens:1}}};
+ };
+ const result=await runResearchTurn({ownerText:"Compare",cafeContext:"Cafe",provider,scope:{db:{} as never,businessId:"business",ownerUserId:"owner"},presentationContext:ctx});
+ expect(result.presentationDiagnostics).toMatchObject({requestedSections:1,decodedSections:1,rejectedSections:1,acceptedViews:0});
+ expect(agentReplyPayload(result).metadata.presentationDiagnostics?.persistedViews).toBe(0);
+ expect(result.text).toContain("No value was supplied.");
 });

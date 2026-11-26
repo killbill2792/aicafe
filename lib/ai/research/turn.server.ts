@@ -6,7 +6,7 @@ import {executeAgentTool,isRepeatSafeOwnerTool,observeDurableToolEffect,type Age
 import {safeToolError} from "@/lib/ai/agent/toolErrors";
 import type {OwnerRunCheckpoint} from "@/lib/ai/supervisor/runs/contracts";
 import {unsupportedNumbers} from "./verify";
-import {resolveResearchSpec,INLINE_PRESENTATION_HINT,type PresentationEvidence} from "./presentation";
+import {resolveResearchSpec,INLINE_PRESENTATION_HINT,type PresentationEvidence,type PresentationContext} from "./presentation";
 import {researchInlineEvents} from "./inlineStream";
 import type {RichPresentation} from "@/lib/ai/conversations/presentation";
 import {executeResearchTool,researchToolDefinitions,type ResearchScope} from "./tools.server";
@@ -67,6 +67,8 @@ export async function runResearchTurn(args:{
   webSearch?:(query:string)=>Promise<unknown>;
   /** The existing registered action tools (approval cards, Gmail, routines), run through the one existing executor. */
   actions?:{definitions:readonly {name:string}[];context:AgentToolContext};
+  /** Presentation identity is independent of what data/action tools are enabled. */
+  presentationContext?:PresentationContext;
   /** Luna's own summary of its thinking, streamed as it works (the part so far). */
   onThinking?:(text:string)=>void;
   /** Authenticated café facts: name, currency, time zone, local date. */
@@ -93,6 +95,8 @@ export async function runResearchTurn(args:{
   // The owner-approved local acceptance broker only accepts top-level instructions and no reasoning replay.
   const broker=process.env.AI_CAFE_LIVE_ACCEPTANCE==="OWNER_APPROVED_LOCAL_ONLY"&&process.env.AICAFE_SHARED_LUNA_CANDIDATE==="1";
   const instructions=RESEARCH_INSTRUCTIONS+" "+INLINE_PRESENTATION_HINT;
+  const presentationContext=args.presentationContext??args.actions?.context;
+  const presentationDiagnostics={requestedSections:0,decodedSections:0,decodedPatches:0,rejectedSections:0,acceptedViews:0,rolledBackViews:0};
   // References are ephemeral and point only to the evidence already admitted to this turn.
   // They are not database identifiers, and the text itself is not duplicated on the wire.
   const queries=new Map<string,PresentationEvidence>();
@@ -120,8 +124,8 @@ export async function runResearchTurn(args:{
   /** Everything retrieved or calculated this turn; the answer's figures are checked against it. */
   const evidence:string[]=[];
   let nextResultRef=0;
-  const admit=(source:string,data:Record<string,unknown>,coverage?:"partial"|"estimate")=>{
-    const ref="q"+(++nextResultRef);queries.set(ref,{source,data,coverage});return ref;
+  const admit=(source:string,data:Record<string,unknown>,coverage?:"partial"|"estimate",kind?:PresentationEvidence["kind"])=>{
+    const ref="q"+(++nextResultRef);queries.set(ref,{source,data,coverage,kind});return ref;
   };
   const presentations:AgentToolResult[]=[];
   let text="",endReason:EndReason="complete";
@@ -161,7 +165,11 @@ export async function runResearchTurn(args:{
     const flushViews=async()=>{
       if(!patches.length)return;
       await args.beforeAcceptResult?.();
-      const views=resolveResearchSpec(patches,queries,args.actions?.context);patches=[];
+      presentationDiagnostics.decodedSections++;
+      presentationDiagnostics.decodedPatches+=patches.length;
+      const views=resolveResearchSpec(patches,queries,presentationContext);patches=[];
+      if(!views.length)presentationDiagnostics.rejectedSections++;
+      presentationDiagnostics.acceptedViews+=views.length;
       for(const presentation of views){
         presentations.push({source:"response_presentation",period:null,missing:[],accepted:true,presentation,presentationOffset:text.length});
         args.onPresentation?.(text.length,presentation);
@@ -199,6 +207,7 @@ export async function runResearchTurn(args:{
           }
           if(event.type==="response.completed"){
             await flushProse(true);await flushViews();
+            presentationDiagnostics.requestedSections+=answer.split(String.fromCharCode(96).repeat(3)+"spec").length-1;
             const response=(event.response??{}) as {model?:unknown;usage?:{input_tokens?:unknown;output_tokens?:unknown;input_tokens_details?:{cached_tokens?:unknown}}};
             if(reservation)await reservation.complete(response as never);
             const n=(x:unknown)=>typeof x==="number"&&Number.isSafeInteger(x)&&x>=0?x:0;
@@ -221,6 +230,7 @@ export async function runResearchTurn(args:{
       const discardChars=text.length-callTextStart,discardPresentations=presentations.length-callPresentationStart;
       if(discardChars>0||discardPresentations>0){
         text=text.slice(0,callTextStart);presentations.length=callPresentationStart;
+        presentationDiagnostics.rolledBackViews+=discardPresentations;
         args.onReset?.(discardChars,discardPresentations);
       }
       if(checkpoint)await checkpoint.endProvider(false).catch(()=>undefined);
@@ -292,7 +302,7 @@ export async function runResearchTurn(args:{
           await args.beforeAcceptResult?.();
           const ref=result.ok===true?admit(fc.name==="run_sql"?"Returned SQL evidence; see answer for coverage":fc.name==="calculate"?"Exact calculator result; depends on supplied inputs":"Tool result: "+fc.name,
             fc.name==="calculate"?{...result,calculationInput:JSON.parse(fc.arguments)}:result,
-            fc.name==="run_sql"?undefined:"partial"):null;
+            fc.name==="run_sql"?undefined:"partial",fc.name==="run_sql"?"sql":fc.name==="calculate"?"calculator":undefined):null;
           input.push({type:"function_call_output",call_id:fc.call_id,output:JSON.stringify(ref?{...result,presentationRef:ref}:result)});
           failed=result.ok===false;
           if(!failed)evidence.push(JSON.stringify(result));
@@ -323,5 +333,5 @@ export async function runResearchTurn(args:{
     // Same promise as the standard path: a figure with no source in this turn's evidence is shown as unverified.
     unverified:text?unsupportedNumbers(text,[args.ownerText,args.cafeContext,...(args.history??[]).map(h=>h.content),...evidence]):[],
     results:[...(await args.checkpoint?.restoredResults?.()??[]),...invocations.map(i=>i.result),...presentations],toolInvocations:invocations,tools,
-    agentIds:tools.length?["alex"]:[],usage};
+    agentIds:tools.length?["alex"]:[],usage,presentationDiagnostics};
 }

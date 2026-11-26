@@ -127,7 +127,7 @@ function RecordTableView({table,locale}:{table:RecordTable;locale:string}){
  };
  return <figure data-testid="supervisor-record-table" className="min-w-0 space-y-2 py-2">
   <figcaption className="font-medium text-ink">{table.title}</figcaption>
-  <p id={evidenceId} className="break-words text-[0.8125rem] text-ink-muted">{table.view==="tool_sql_research"?"SQL query":table.view} · {table.view!=="tool_sql_research"&&<>{table.from} – {table.to} · </>}{copy.snapshot} {table.asOf}{table.coverage==="partial"?" · "+copy.partial:""}</p>
+  <p id={evidenceId} className="break-words text-[0.8125rem] text-ink-muted">{table.view==="tool_sql_research"?"SQL query":table.view==="tool_response_evidence"?"Evidence":table.view} · {table.view!=="tool_sql_research"&&table.view!=="tool_response_evidence"&&<>{table.from} – {table.to} · </>}{copy.snapshot} {table.asOf}{table.coverage==="partial"?" · "+copy.partial:""}</p>
   <p id={scopeId} className="break-words text-[0.8125rem] text-ink-muted">{table.scope}</p>
   <div role="region" tabIndex={0} aria-label={table.title} className="max-w-full overflow-x-auto overscroll-x-contain focus-visible:outline focus-visible:outline-2 focus-visible:outline-ink">
    <table aria-describedby={evidenceId+" "+scopeId} className="w-full table-fixed text-[0.9375rem] tabular-nums" style={table.columns.length>4?{minWidth:table.columns.length*90}:undefined}><caption className="sr-only">{table.title}</caption>

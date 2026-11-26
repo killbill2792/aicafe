@@ -112,7 +112,8 @@ export type AgentTurn = { text: string; endReason: EndReason; status: ReturnType
   /** Fixed categories for the isolated local acceptance boundary only. */
   providerFailureCodes?: ProviderFailureCode[];
   /** Server-origin classification; undefined legacy history is not fresh evidence. */
-  externalEvidence?:boolean };
+  externalEvidence?:boolean;
+  presentationDiagnostics?:{requestedSections:number;decodedSections:number;decodedPatches:number;rejectedSections:number;acceptedViews:number;rolledBackViews:number} };
 /** A message the owner sent while the turn was running. */
 export type OwnerFollowUp = { id: string; text: string };
 /** Stable instruction prefix. Style rules are appended (not per-turn data), so the
