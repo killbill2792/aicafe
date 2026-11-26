@@ -113,7 +113,7 @@ jobs:
           changed=[]
           for name in old:
               x,y=old[name],new[name]
-              keys=['body','samples']
+              keys=['body','samples','actualControls']
               differences=[key for key in keys if x[key]!=y[key]]
               if y['overflow']>x['overflow']+1: differences.append('overflow')
               im1=Image.open(b/(name+'.png')).convert('RGB')

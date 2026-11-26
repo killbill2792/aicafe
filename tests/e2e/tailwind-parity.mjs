@@ -19,7 +19,7 @@ async function capture(route,width,mode){
  await page.waitForLoadState("networkidle",{timeout:30000});
  await page.evaluate(async()=>{await document.fonts.ready;await new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve)));});
  const name=(route||"home").replace(/[^a-z0-9-]+/gi,"-")+"-"+width+"-"+mode;
- const data=await page.evaluate(({variant})=>{
+ const data=await page.evaluate(({variant,route})=>{
   const root=document.documentElement,body=getComputedStyle(document.body);
   const color=value=>{const canvas=document.createElement("canvas");canvas.width=canvas.height=1;const c=canvas.getContext("2d");c.fillStyle=value;c.fillRect(0,0,1,1);return Array.from(c.getImageData(0,0,1,1).data);};
   const sample=(classes,props)=>{
@@ -34,7 +34,9 @@ async function capture(route,width,mode){
    el.remove();return out;
   };
   const rootWidth=root.clientWidth,scrollWidth=root.scrollWidth;
-  return {overflow:Math.max(0,scrollWidth-rootWidth),theme:root.getAttribute("data-theme"),mode:root.getAttribute("data-mode"),
+  // Verify actual affected controls as well as the generic utility samples.
+  const actualControls=route==="more/cafe-profile"||route==="operations/suppliers"||route==="menu/pantry"?Array.from(document.querySelectorAll("main input, main select")).filter(el=>{const r=el.getBoundingClientRect();return r.width>0&&r.height>0&&r.top<innerHeight&&r.bottom>0;}).map(el=>{const r=el.getBoundingClientRect(),style=getComputedStyle(el);return {type:el.getAttribute("type")??el.tagName,top:Math.round(r.top*10)/10,height:Math.round(r.height*10)/10,background:color(style.backgroundColor)};}):[];
+  return {actualControls,overflow:Math.max(0,scrollWidth-rootWidth),theme:root.getAttribute("data-theme"),mode:root.getAttribute("data-mode"),
    body:{background:color(body.backgroundColor),foreground:color(body.color),font:body.fontFamily,size:body.fontSize,lineHeight:body.lineHeight},
    samples:{
     card:sample("bg-card text-ink border border-line rounded-card shadow-card",["backgroundColor","color","borderTopColor","borderTopWidth","borderTopLeftRadius","boxShadow"]),
@@ -46,7 +48,7 @@ async function capture(route,width,mode){
     shadow:sample(variant==="before"?"shadow-sm":"shadow-xs",["boxShadow"]),
     outline:sample(variant==="before"?"outline outline-2":"outline-solid outline-2",["outlineWidth","outlineStyle"]),
    }};
- },{variant});
+ },{variant,route});
  if(data.mode!==mode||data.theme!=="glass")throw Error("Theme was not applied: "+name);
  await page.screenshot({path:output+"/"+name+".png",animations:"disabled"});
  results.push({name,...data});console.log("STYLE_CAPTURE "+JSON.stringify({name,overflow:data.overflow}));
