@@ -284,7 +284,7 @@ export async function processDurableRun(runId: string,emit:(type:string,data:unk
         authorize, () => verifiedReply(run)))) return "blocked"; }
   const localAcceptance=process.env.AI_CAFE_LIVE_ACCEPTANCE==="OWNER_APPROVED_LOCAL_ONLY"||Boolean(process.env.AICAFE_TASK14B_BUDGET_LEDGER);
   const providerOutputCap=version2&&localAcceptance?await loadModelExecutionCap(db):1200;
-  return executeDurableRun(run, version2?{maxElapsedMs:0,maxModelCalls:0,maxToolCalls:0,maxInputTokens:0,maxOutputTokens:0}:configuredBudget(providerOutputCap>1200), { repository, authorize,version2,providerOutputCap,
+  return executeDurableRun(run, version2&&!localAcceptance?{maxElapsedMs:0,maxModelCalls:0,maxToolCalls:0,maxInputTokens:0,maxOutputTokens:0}:configuredBudget(providerOutputCap>1200), { repository, authorize,version2,providerOutputCap,
     verified: () => verifiedReply(run), cancelled: async () => {
       const check = await db.from("supervisor_runs").select("status")
         .eq("id", run.id).eq("business_id", run.scope.businessId).maybeSingle();
@@ -356,6 +356,7 @@ export async function processDurableRun(runId: string,emit:(type:string,data:unk
           if(await checkpoint.yieldForRetry(delay,outcome.technicalYield?"technical":"retry"))return "yielded";
         }
         await jobs.updateDurableAgentJob(identity,job.id,"failed",outcome.errorCode).catch(()=>undefined);
+        await blockRun(run,checkpoint.canYield()?outcome.errorCode:"effect_uncertain",claimToken,"owner_turn");
         throw new Error("supervisor_agent_turn_failed");
       }
       const started = await jobs.startAgentJob(scope, scope.threadId, owner.id);
