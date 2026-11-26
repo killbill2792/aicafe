@@ -1,20 +1,24 @@
 import {z} from "zod";
+import {defineCatalog,createSpecStreamCompiler,type SpecStreamLine} from "@json-render/core";
+import {schema} from "@json-render/react/schema";
 import {presentationPanelSchema,recordTableSchema,richPresentationSchema,descriptiveGroupTitle,interactiveCalcSchema,evaluatePresentationCalc,type InteractiveCalc,type PresentationPanel,type RecordTable,type RichPresentation} from "@/lib/ai/conversations/presentation";
 
-/** Optional selections inside ordinary model output. Use the same renderer and
- * stored block as every other Supervisor answer. No query, model call or effect
- * is executed here; values come only from successful same-turn SQL results. */
-export const SQL_PRESENTATION_HINT=
- "Answer naturally in Markdown. When useful, you can append a cafe-ui fenced JSON block to the same answer: "+
- '{"layout":"grid","panels":[{"ref":"q1","kind":"bar","x":"category","y":"amount_cents"}],"report":true}. '+
- "Use presentationRef from successful run_sql results and their exact column aliases. Kinds: metric, bar, line, donut, ranked_table, table (columns array for a multi-column table). "+
- "Use descriptive titles if needed. You can select multiple panels, a downloadable report or selected files, or a local what-if calculator with calculator:{ref,editable:[input names]} from calculate. This is optional; no need to repeat values in the JSON.";
+/** Native inline GenUI vocabulary. All actual business values are resolved from
+ * the current authenticated tool results, never from model-generated samples. */
 const selection=z.object({
  ref:z.string(),kind:z.enum(["metric","bar","line","donut","ranked_table","table"]),
  x:z.string().optional(),y:z.string().optional(),columns:z.array(z.string()).optional(),title:z.string().optional(),
 });
-const envelope=z.object({layout:z.unknown().optional(),panels:z.unknown().optional(),report:z.unknown().optional(),files:z.unknown().optional(),calculator:z.unknown().optional()});
 const calcSelection=z.object({ref:z.string(),editable:z.array(z.string())});
+const envelope=z.object({layout:z.enum(["stack","grid"]).optional(),panels:z.array(selection).optional(),
+ report:z.boolean().optional(),files:z.boolean().optional(),calculator:calcSelection.optional()});
+const catalog=defineCatalog(schema,{components:{
+ Stack:{props:z.object({}),slots:["default"],description:"Group views in their displayed order.",example:{}},
+ DataView:{props:envelope,slots:[],description:"Show metrics, charts, tables, calculator or report from successful same-turn tool results. Use presentationRef and exact SQL column aliases. A calculate result can supply a calculator with named editable inputs. Can select multiple results in one view.",example:{layout:"grid",panels:[{ref:"q1",kind:"bar",x:"category",y:"amount_cents"}]}},
+},actions:{}});
+export const SQL_PRESENTATION_HINT=catalog.prompt({mode:"inline",
+ system:"Respond naturally in the owner's language, composing Markdown and the available interactive views in the same answer.",
+ customRules:["Use separate spec fences for independent UI sections anywhere in the answer; continue normal prose between them. Use only the successful same-turn presentationRef and returned field names. No sample state, invented data, generic actions or repeated dataset values."]});
 type Selection=z.infer<typeof selection>;
 type Context={asOf:string;currency?:string|null;presentationAttachments?:readonly string[]};
 type Row=Record<string,unknown>;
@@ -78,37 +82,58 @@ function calculator(raw:Row,editable:string[],ctx:Context):InteractiveCalc|null{
  return reproduced&&JSON.stringify(reproduced)===JSON.stringify(parsed.data.original)?parsed.data:null;
 }
 
-/** Parse only the optional fenced UI selection, not the answer itself. Bad
- * selections cannot discard valid siblings or any ordinary Markdown. */
-export function splitResearchPresentation(raw:string,queries:ReadonlyMap<string,Row>,ctx?:Context):{text:string;presentation?:RichPresentation}{
+/** Bind a selected component to the existing validated presentation blocks. */
+export function resolveResearchView(raw:unknown,queries:ReadonlyMap<string,Row>,ctx?:Context):RichPresentation|undefined{
+ if(!obj(raw)||!ctx)return;
  const panels:PresentationPanel[]=[],tables:RecordTable[]=[];
- let layout:"stack"|"grid"="stack",report=false,files=false;
- let calc:InteractiveCalc|null=null;
- const text=raw.replace(/^[ \t]*\x60{3}cafe-ui[ \t]*\r?\n[\s\S]*?(?:^[ \t]*\x60{3}[ \t]*(?=\r?$)|$(?![\s\S]))/gmu,block=>{
-  try{
-   const body=block.replace(/^[ \t]*\x60{3}cafe-ui[ \t]*\r?\n/u,"").replace(/\r?\n[ \t]*\x60{3}[ \t]*$/u,"");
-   const parsed=envelope.safeParse(JSON.parse(body));
-   if(!parsed.success||!ctx)return "";
-   layout=parsed.data.layout==="grid"||parsed.data.layout==="stack"?parsed.data.layout:layout;report=report||parsed.data.report===true;files=files||parsed.data.files===true;
-   const c=calcSelection.safeParse(parsed.data.calculator);
-   if(c.success){const q=queries.get(c.data.ref);if(q)calc=calculator(q,c.data.editable,ctx)??calc;}
-   for(const value of Array.isArray(parsed.data.panels)?parsed.data.panels:[]){
-    const s=selection.safeParse(value);if(!s.success)continue;
-    const q=queries.get(s.data.ref);
-    if(q?.ok!==true||!Array.isArray(q.rows)||!q.rows.length||!q.rows.every(obj))continue;
-    if(s.data.kind==="table"){
-     const t=table(s.data,q.rows,ctx);if(t&&tables.length<8)tables.push(t);
-    }else{
-     const p=panel(s.data,q.rows,ctx);
-     if(p&&panels.length<8)panels.push(p);
-     else if(tables.length<8){const t=table(s.data,q.rows,ctx);if(t)tables.push(t);}
-    }
-   }
-  }catch{/* Optional presentation has no bearing on the natural answer. */}
-  return "";
- });
- const attachments=files?[...new Set(ctx?.presentationAttachments??[])].slice(0,3):[];
+ const layout=raw.layout==="grid"?"grid":"stack";
+ const c=calcSelection.safeParse(raw.calculator);
+ const calc=c.success?calculator(queries.get(c.data.ref)??{},c.data.editable,ctx):null;
+ for(const value of Array.isArray(raw.panels)?raw.panels:[]){
+  const s=selection.safeParse(value);if(!s.success)continue;
+  const q=queries.get(s.data.ref);
+  if(q?.ok!==true||!Array.isArray(q.rows)||!q.rows.length||!q.rows.every(obj))continue;
+  if(s.data.kind==="table"){
+   const t=table(s.data,q.rows,ctx);if(t&&tables.length<8)tables.push(t);
+  }else{
+   const p=panel(s.data,q.rows,ctx);
+   if(p&&panels.length<8)panels.push(p);
+   else if(tables.length<8){const t=table(s.data,q.rows,ctx);if(t)tables.push(t);}
+  }
+ }
+ const attachments=raw.files===true?[...new Set(ctx.presentationAttachments??[])].slice(0,3):[];
  const block=richPresentationSchema.safeParse({type:"rich_presentation",version:1,layout,panels,suggestions:[],
-  ...(tables.length?{tables}:{}),...(calc?{calculator:calc}:{}),...(report?{report:true}:{}),...(attachments.length?{files:attachments}:{})});
- return {text:text.trim(),...(block.success?{presentation:block.data}:{})};
+  ...(tables.length?{tables}:{}),...(calc?{calculator:calc}:{}),...(raw.report===true?{report:true}:{}),...(attachments.length?{files:attachments}:{})});
+ return block.success?block.data:undefined;
+}
+
+/** Apply only data-only element tree patches, using the installed library's
+ * compiler. Never execute model-supplied actions, state bindings or unsafe paths.
+ * Resolve each view independently so a malformed sibling cannot erase prose. */
+export function resolveResearchSpec(patches:readonly unknown[],queries:ReadonlyMap<string,Row>,ctx?:Context):RichPresentation[]{
+ const compiler=createSpecStreamCompiler();
+ const safeKey=(s:string)=>/^[a-zA-Z0-9_-]+$/u.test(s)&&!["__proto__","constructor","prototype"].includes(s);
+ const safeValue=(v:unknown):boolean=>Array.isArray(v)?v.every(safeValue):!obj(v)||Object.entries(v).every(([k,x])=>!["__proto__","constructor","prototype"].includes(k)&&safeValue(x));
+ for(const value of patches){
+  if(!obj(value)||typeof value.path!=="string"||!["add","replace","remove"].includes(String(value.op))||!safeValue(value.value))continue;
+  const parts=value.path.split("/").slice(1);
+  if(value.path!=="/root"&&(parts[0]!=="elements"||parts.slice(1).some(k=>!safeKey(k))))continue;
+  try{compiler.push(JSON.stringify(value as unknown as SpecStreamLine)+"\n");}catch{/* Invalid patch is display-only. */}
+ }
+ const spec=compiler.getResult();
+ if(typeof spec.root!=="string"||!obj(spec.elements))return [];
+ const visited=new Set<string>(),result:RichPresentation[]=[];
+ const walk=(key:string)=>{
+  if(visited.has(key)||!safeKey(key))return;
+  visited.add(key);
+  const element=Object.hasOwn(spec.elements as Row,key)?(spec.elements as Row)[key]:null;
+  if(!obj(element))return;
+  if(element.type==="DataView"){
+   const view=resolveResearchView(element.props,queries,ctx);if(view)result.push(view);
+  }else if(element.type==="Stack"&&Array.isArray(element.children)){
+   for(const child of element.children)if(typeof child==="string")walk(child);
+  }
+ };
+ walk(spec.root);
+ return result;
 }
