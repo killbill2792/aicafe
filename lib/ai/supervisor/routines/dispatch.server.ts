@@ -454,7 +454,8 @@ export async function dispatchRoutinesForBusiness(db:SupabaseClient,businessId:s
         result.runs++;
         result.notices+=done.posted;
         result.evidenceChecks+=done.checked;
-      }catch{
+      }catch(error){
+        if(error instanceof Error&&error.message==="research_execution_yield")continue;
         result.failed++;
         if(lease){
           try{
@@ -517,7 +518,8 @@ export async function dispatchDueObjectivesAcrossCafes(
         routine,lease,localDate:row.localDate,...(provider?{provider}:{}),
       });
       return "completed" as const;
-    }catch{
+    }catch(error){
+      if(error instanceof Error&&error.message==="research_execution_yield")return "deferred" as const;
       if(lease){
         try{
           await finishRoutineOccurrence(db,{
