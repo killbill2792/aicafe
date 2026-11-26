@@ -217,8 +217,8 @@ function pointView(s:z.infer<typeof pointPanel>,evidence:PresentationEvidenceMap
 }
 
 /** Bind a selected component to the existing validated presentation blocks. */
-export function resolveResearchView(raw:unknown,queries:PresentationEvidenceMap,ctx?:Context):RichPresentation|undefined{
- if(!obj(raw)||!ctx)return;
+export function resolveResearchView(raw:unknown,queries:PresentationEvidenceMap,ctx?:Context,onDeliveryLoss?:()=>void):RichPresentation|undefined{
+ if(!obj(raw)||!ctx){onDeliveryLoss?.();return;}
  const panels:PresentationPanel[]=[],tables:RecordTable[]=[];
  const layout=raw.layout==="grid"?"grid":"stack";
  const c=calcSelection.safeParse(raw.calculator);
@@ -306,13 +306,20 @@ export function resolveResearchView(raw:unknown,queries:PresentationEvidenceMap,
  const attachments=raw.files===true?[...new Set(ctx.presentationAttachments??[])].slice(0,3):[];
  const block=recoverRichPresentation({type:"rich_presentation",version:1,layout,panels,suggestions:[],
   ...(tables.length?{tables}:{}),...(calc?{calculator:calc}:{}),...(raw.report===true?{report:true}:{}),...(attachments.length?{files:attachments}:{})});
+ // Each requested data leaf has exactly one display path (including chart
+ // or calculator fallbacks). Report only a technical delivery loss, never
+ // an estimate, unknown value or confidence assessment.
+ const requested=(value:unknown)=>Array.isArray(value)?value.length:value==null?0:1;
+ const requestedLeaves=requested(raw.panels)+requested(raw.tables)+Number(raw.calculator!=null);
+ const deliveredLeaves=(block?.panels.length??0)+(block?.tables?.length??0)+Number(Boolean(block?.calculator));
+ if(!block||deliveredLeaves<requestedLeaves)onDeliveryLoss?.();
  return block;
 }
 
 /** Apply only data-only element tree patches, using the installed library's
  * compiler. Native interactions are isolated to local widget state.
  * Resolve each view independently so a malformed sibling cannot erase prose. */
-export function resolveResearchSpec(patches:readonly unknown[],queries:PresentationEvidenceMap,ctx?:Context):RichPresentation[]{
+export function resolveResearchSpec(patches:readonly unknown[],queries:PresentationEvidenceMap,ctx?:Context,onDeliveryLoss?:()=>void):RichPresentation[]{
  const compiler=createSpecStreamCompiler();
  for(const value of patches){
   if(!obj(value)||typeof value.path!=="string"||!["add","replace","remove"].includes(String(value.op))||(value.op!=="remove"&&!safeNativeJSON(value.value)))continue;
@@ -331,7 +338,7 @@ export function resolveResearchSpec(patches:readonly unknown[],queries:Presentat
    if(!obj(e))return [key,e];
    if(e.type==="LunaChart"&&obj(e.props))return [key,{...e,props:{...e.props,asOf:ctx.asOf}}];
    if(e.type!=="DataView")return [key,e];
-   const snapshot=resolveResearchView(e.props,queries,ctx);
+   const snapshot=resolveResearchView(e.props,queries,ctx,onDeliveryLoss);
    return [key,{type:"LunaSnapshot",props:{snapshotJSON:JSON.stringify(snapshot??{type:"rich_presentation",version:1,layout:"stack",panels:[],suggestions:[]})},children:[],...(e.visible!==undefined?{visible:e.visible}:{}),...(e.repeat!==undefined?{repeat:e.repeat}:{})}];
   }));
   const candidate:unknown=JSON.parse(JSON.stringify({root:spec.root,elements,...(spec.state?{state:spec.state}:{})}));
@@ -339,6 +346,7 @@ export function resolveResearchSpec(patches:readonly unknown[],queries:Presentat
    const view=recoverRichPresentation({type:"rich_presentation",version:1,layout:"stack",panels:[],suggestions:[],nativeSpec:candidate});if(view)return [view];
   }
  }
+ if(native)onDeliveryLoss?.();
  const visited=new Set<string>(),result:RichPresentation[]=[];
  const walk=(root:string)=>{
   const pending=[root];
@@ -347,7 +355,7 @@ export function resolveResearchSpec(patches:readonly unknown[],queries:Presentat
    if(visited.has(key)||!safeKey(key))continue;visited.add(key);
    const element=Object.hasOwn(spec.elements as Row,key)?(spec.elements as Row)[key]:null;
    if(!obj(element))continue;
-   if(element.type==="DataView"){const view=resolveResearchView(element.props,queries,ctx);if(view)result.push(view);}
+   if(element.type==="DataView"){const view=resolveResearchView(element.props,queries,ctx,onDeliveryLoss);if(view)result.push(view);}
    else if(Array.isArray(element.children))pending.push(...element.children.filter((v):v is string=>typeof v==="string").reverse());
   }
  };

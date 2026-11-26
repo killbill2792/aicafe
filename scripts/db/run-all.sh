@@ -207,6 +207,8 @@ supabase_lane() {
   check supabase "CSV import: concurrent job start, re-finalize" bash scripts/csv-import-concurrency.sh
   check supabase "P1 source revisions: MVCC, rollback, RLS" env P1_DISPOSABLE_DB=1 node scripts/test-p1-source-epochs.mjs
   check supabase "P1 owner-confirmed ingredient price CAS" env P1_DISPOSABLE_DB=1 node scripts/test-supervisor-owner-input-cas.mjs
+  check supabase "Concurrent private café onboarding: atomic membership and recovery order" env SUPERVISOR_RUN_DB_SANDBOX_ONLY=1 \
+    SUPERVISOR_RUN_DB_URL="$supabase_url" npx vitest run lib/actions/onboarding.db.test.ts --reporter=verbose
   check supabase "Supervisor durable runs across workers (Vitest)" env SUPERVISOR_RUN_DB_SANDBOX_ONLY=1 \
     SUPERVISOR_RUN_DB_URL="$supabase_url" npx vitest run lib/ai/supervisor/runs/runs.db.test.ts --reporter=verbose
   check supabase "Task 7 routines: owner isolation, due-once lease, concurrent notice settlement" env SUPERVISOR_ROUTINES_DB_SANDBOX_ONLY=1 \

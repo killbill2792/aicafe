@@ -26,6 +26,8 @@ create table public.supervisor_research_continuations (
  state jsonb not null check(jsonb_typeof(state)='object'),
  updated_at timestamptz not null default clock_timestamp()
 );
+-- Reason: New private checkpoint table has no existing clients; enable RLS before any service-role access.
+-- squawk-ignore ban-alter-row-level-security
 alter table public.supervisor_research_continuations enable row level security;
 revoke all on public.supervisor_research_continuations from public,anon,authenticated;
 grant select,insert,update,delete on public.supervisor_research_continuations to service_role;
@@ -502,6 +504,8 @@ begin
 end $$;
 
 -- Preserve message shape and owner authorization; remove arbitrary answer size ceilings.
+-- Reason: Replace the same named constraint immediately in this transactional migration, retaining owner message shape and authorization while removing only supervisor answer ceilings.
+-- squawk-ignore ban-drop-constraint
 alter table public.ai_messages drop constraint ai_messages_supervisor_content_check;
 alter table public.ai_messages add constraint ai_messages_supervisor_content_check CHECK ((((role = 'owner'::text) AND (author_user_id IS NOT NULL) AND (author_user_id = owner_user_id) AND (content_type = 'text'::text) AND (text_content IS NOT NULL) AND ((char_length(btrim(text_content)) >= 1) AND (char_length(btrim(text_content)) <= 4000)) AND (structured_content IS NULL) AND ((grounding IS NULL) OR COALESCE(
 CASE
@@ -627,6 +631,8 @@ create table public.supervisor_background_research_continuations (
   updated_at timestamptz not null default clock_timestamp(),
   primary key (business_id,owner_user_id,source_type,source_id)
 );
+-- Reason: New private background checkpoint table has no existing clients; enable RLS before any service-role access.
+-- squawk-ignore ban-alter-row-level-security
 alter table public.supervisor_background_research_continuations enable row level security;
 revoke all on public.supervisor_background_research_continuations from public,anon,authenticated;
 grant select,insert,update,delete on public.supervisor_background_research_continuations to service_role;
