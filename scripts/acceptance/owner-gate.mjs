@@ -8,7 +8,7 @@ import {pathToFileURL} from "node:url";
 import {parseNameStatus} from "../e2e/targeted.mjs";
 
 export const SUITES=Object.freeze({
- supervisor:["lib/ai/agent/loop.server.test.ts","lib/ai/agent/tools/dataQuery.registered.test.ts",
+ supervisor:["lib/ai/agent/loop.server.test.ts","lib/ai/research/actions.test.ts",
    "lib/ai/agent/task15dSecurity.test.ts"],
  inventory:["lib/ai/agent/tools/purchases.test.ts","lib/inventory/recordPurchases.server.test.ts"],
  purchasing:["lib/purchasing/planOrder.test.ts","lib/ai/agent/tools/supplierPurchasing.test.ts",
@@ -35,7 +35,7 @@ export const SUITES=Object.freeze({
   "lib/ai/supervisor/routines/investigation.test.ts",
   "lib/ai/supervisor/routines/investigation.server.test.ts"],
  memory:["lib/ai/agent/memory.test.ts","lib/ai/agent/persist.memory.test.ts"],
- pos:["lib/ai/agent/tools/dataQuery.pos0e.test.ts","lib/ai/agent/tools/dataQuery.registered.test.ts"],
+ pos:["lib/ai/research/verify.test.ts","lib/ai/research/actions.test.ts"],
  acceptance:["scripts/acceptance/owner-gate.test.mjs"]
 });
 export const DOMAINS=Object.freeze(Object.keys(SUITES));

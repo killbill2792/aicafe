@@ -1,29 +1,15 @@
 import { presentationTools,presentResponse } from "./presentation";
-import { laborKnown } from "@/lib/calc";
 import { z } from "zod";
 import {askOwnerTools} from "./askOwner";
-import {dataQueryTools,type DataQueryContext} from "./dataQuery";
 import {gmailTools} from "./gmail";
 import {maintenanceTools} from "./maintenance";
 import {staffQuestionTools} from "./staffQuestion";
-import {resolveEntity,resolveChosenEntity,ownerNamedTarget,choicePayload,ownerChoiceGuard,periodChoicePayload,resolveOwnerPeriod,rememberedCandidate} from "../resolve";
 
-import {money,count} from "../explain";
 import { staffTools } from "./staff";
-import {staffCoordinationTools} from "./staffCoordination";
-import {localizeQualityNotes} from "./qualityNotes";
-import { attentionTools } from "./attention";
-import {incidentEvidenceTools} from "./incidentEvidence";
 import {scheduleReadTools} from "./scheduleReads";
-import { hoursTools } from "./hours";
 import { moneyTools } from "./money";
-import { suppliesTools } from "./supplies";
-import { salesTools } from "./sales";
-import {todayTools} from "./today";
 import {goalTools,type GoalPort} from "./goals";
 import {draftScheduleTools} from "./draftSchedule";
-import {newItemPriceTools} from "./newItemPrice";
-import {milkSwapTools} from "./milkSwap";
 import {proposalTools} from "./proposals";
 import {purchasesTools,purchaseToolInput} from "./purchases";
 import {supplierPurchasingTools} from "./supplierPurchasing";
@@ -31,28 +17,17 @@ import type {SupplierPurchaseInput,SupplierPurchaseProposalInput} from "@/lib/ai
 import type {PurchasePlan} from "@/lib/purchasing/planOrder";
 import type {SupplierOrderStatus} from "@/lib/data/supplierPurchasing.server";
 import {priceExperimentTools} from "./priceExperiment";
-import {priceMonitorTools} from "./priceMonitor";
-import type {OwnerToastObservation} from "@/lib/ai/supervisor/loop/reads.server";
-import {ownerInputsSchema,ownerAmountForPeriod,ownerConflict} from "./ownerInputs";
-import {moneyChoiceCandidates,chosenMoneySource,replayedMoneyChoice} from "../resolveMoney";
 import {staffProposalTools} from "./staffProposals";
 import {memoryTools,type CafeMemoryPort} from "./memory";
-import {scenarioTools} from "./scenarios";
-import {calculateTools} from "./calculate";
 import {eventsTools} from "./events";
 import {savedEventsTools} from "./getEvents";
 import {eventPlanTools,type EventPlanPort} from "./eventPlan";
 import {webSearchTools} from "./webSearch";
 import {commitmentTools} from "./commitments";
 import {routineTools} from "./routines";
-import {permissionTools} from "./permissions";
 import type {RoutineRecord,RoutineSchedule} from "@/lib/ai/supervisor/routines/contracts";
-import type {SupervisorEconomicsRead} from "@/lib/data/supervisorEconomics.server";
-import { netSalesCentsForPeriod } from "@/lib/calc/profit";
 import {ToolError} from "../toolErrors";
 import {requestedPeriod as calcRequestedPeriod} from "@/lib/calc/periods";
-import {resolveCoveredSalesWindow,type CoveredSalesWindow} from "./coverage";
-import {summarizePeakHours,summarizeEmployeeSales,summarizePayrollFacts} from "@/lib/calc/posFactSummaries";
 import type { BusinessScopedCafeTools } from "@/lib/ai/tools";
 import type { CafeStatePeriod } from "@/lib/operating/types";
 import en from "@/messages/en.json";
@@ -73,8 +48,8 @@ export type AgentToolContext = {
   timezone:string;
   /** Authenticated ISO 4217 currency; absent only in legacy test contexts. */
   currency?:string|null;
-  /** Authenticated owner-scoped reader. Never populated from model arguments. */
-  canonicalData?:()=>Promise<DataQueryContext>;
+  /** True for authenticated SQL research turns; guards owner-number questions. */
+  sqlResearch?:boolean;
   /** Owner-verified staff communication evidence for off-turn investigations,
    * not a worker chat or model-supplied employee selector. */
   staffMessages?:{read:()=>ReturnType<
@@ -86,8 +61,6 @@ export type AgentToolContext = {
     weekSchedule:(weekStart:string)=>ReturnType<
       typeof import("@/lib/data/staffSchedule.server").getWeekSchedule>;
   };
-  /** SQL-claimed owner/cafe evidence reader. Never use a model-provided scope. */
-  staffCoordinationRead?:()=>Promise<import("@/lib/staffCoordination/cases.server").StaffCoordinationCase[]>;
   /** Prior owner utterances for verifying explicit pricing percentages. */
   ownerMessages?:readonly string[];
   ownerText?:string;
@@ -106,7 +79,7 @@ export type AgentToolContext = {
   /** Bound by a verified owner turn, not model arguments or browser cookies. */
   commitments?:{
     create(input:{title:string;dueDate:string;dueTime:string|null;origin:"owner_chat"|"supervisor_followup"}):Promise<import("@/lib/operating/commitments.server").CommitmentView>;
-    list():Promise<import("@/lib/operating/commitments.server").CommitmentView[]>;
+    list?():Promise<import("@/lib/operating/commitments.server").CommitmentView[]>;
     close(id:string):Promise<boolean>;
   };
   /** A verified thread/owner port; model input contains no café or user IDs. */
@@ -138,10 +111,8 @@ export type AgentToolContext = {
   receivingFollowup?:(purchaseOrderId:string)=>Promise<{proposalId:string;revision:number;purchaseOrderId:string;recipient:string}>;
   financialSettlementPropose?:(input:import("@/lib/ai/supervisor/loop/supplierReceiving.server").FinancialSettlementInput)=>Promise<{proposalId:string;revision:number}>;
   financialBillPropose?:(input:import("@/lib/ai/supervisor/loop/supplierReceiving.server").FinancialBillInput)=>Promise<{proposalId:string;revision:number}>;
-  financialEvidenceRead?:(selection?:import("@/lib/data/financialEvidence.server").FinanceSelection)=>ReturnType<typeof import("@/lib/data/financialEvidence.server").readFinancialEvidence>;
-  receivingRead?:(purchaseOrderId:string)=>ReturnType<typeof import("@/lib/data/supplierReceiving.server").readSupplierReconciliation>;
   purchasing?:{
-    list():Promise<{orders:SupplierOrderStatus[];truncated:boolean;
+    list?():Promise<{orders:SupplierOrderStatus[];truncated:boolean;
       drafts:Array<{id:string;revision:number;supplierName:string;itemNames:string[];
         subtotalCents:number;currency:string}>;draftsTruncated:boolean;
       unresolvedApprovals:Array<{id:string;revision:number;supplierName:string;
@@ -153,7 +124,7 @@ export type AgentToolContext = {
         recipient:string|null;contactVerified:boolean;ownerReportedOutcome:string|null;
         providerVerified:boolean;ownerQuestion:string|null}>;
       gmailConnection?:{status:string;connected:boolean;canSend:boolean;canRead:boolean}}>;
-    inspect(input:SupplierPurchaseInput):Promise<PurchasePlan>;
+    inspect?(input:SupplierPurchaseInput):Promise<PurchasePlan>;
     /** Verified, latest-owner-message source report. Never an external Gmail receipt. */
     recordOwnerOutcome?(input:{
       purchaseOrderId:string;channel:"gmail"|"phone"|"portal"|"in_person"|"other";
@@ -170,16 +141,10 @@ export type AgentToolContext = {
   };
   /** CHAT_MEMORY only: drafts a café fact for owner approval (RLS, owner-scoped). */
   memory?: CafeMemoryPort;
-  /** The live Task10 grant ledger, resolved by the server from authenticated owner/café scope. */
-  readPermissions?:()=>Promise<import("@/lib/ai/supervisor/loop/effectGateway.server").SupervisorMandate[]>;
-  /** Authenticated canonical screen read, bound to session membership rather than model args. */
-  readEconomics?:()=>Promise<SupervisorEconomicsRead>;
-  /** Live, provisional read of today's POS orders for the session's café. */
   /** Goals in the Supervisor loop, bound to the authenticated owner. */
   goals?:GoalPort;
   /** Existing event-readiness proposal loop, owner scoped (or verified system cron). */
   eventPlans?:EventPlanPort;
-  readTodaySoFar?:()=>Promise<import("@/lib/pos/toast/todaySoFar.server").TodaySoFarRead>;
   /** The session café's saved location (profile, else the owner's typed address). Never from model args. */
   cafeLocation?:()=>Promise<import("@/lib/data/cafeLocation.server").CafeLocation|null>;
   /** Read-only web search for public events near a location. */
@@ -190,73 +155,66 @@ export type AgentToolContext = {
   webSearch?:(query:string,budget?:import("../webSearch.server").WebSearchBudget)=>Promise<import("../webSearch.server").WebSearchResult>;
   /** Same canonical café readers used by Staff and saved owner questions. */
   readWeekSchedule?:(weekStart:string)=>ReturnType<typeof import("@/lib/actions/schedule").getWeekSchedule>;
-  readLaborRules?:()=>ReturnType<typeof import("@/lib/data/staffRules.server").getTeamRules>;
-  readShiftCost?:(raw:unknown)=>ReturnType<typeof import("@/lib/data/staffSchedule.server").getShiftCost>;
   oliviaPreview?:{
     week:typeof import("@/lib/actions/oliviaPlanning").previewOliviaWeek;
     absence:typeof import("@/lib/actions/oliviaPlanning").previewOliviaAbsenceWhatIf;
     ownerSavings:typeof import("@/lib/actions/oliviaPlanning").previewOliviaOwnerSavings;
   };
   ownerFacts?:readonly import("@/lib/ownerFacts/inject").SavedFact[];
-  menuPriceEvidence?:(items:ReadonlyArray<{id:string;priceCents:number}>)=>Promise<Record<string,import("@/lib/data/menuPriceEvidence.server").MenuPriceEvidence>>;
-  readPriceMonitors?:()=>Promise<Array<OwnerToastObservation|{proposalId:string;threadId:string;productName:string;status:string;startDate:string|null;durationDays:number|null;day:number|null;oldPriceCents:number|null;newPriceCents:number|null;reportStatus:string|null}>>;
   proposals?: {proposePriceChange(input:{productId:string;newPriceCents:number}):Promise<{proposalId:string;revision:number;productName:string;oldPriceCents:number;newPriceCents:number}>;
     proposePriceExperiment?(input:{productId:string;newPriceCents:number|null;increaseCents:number|null;days:number}):Promise<{proposalId:string;revision:number;productName:string;oldPriceCents:number;newPriceCents:number}>;
     proposeStaff?(input:{name:import("./staffProposals").StaffProposalName;input:unknown}):Promise<{proposalId:string;revision:number;capabilityId:string}>;
     proposePurchases?(input:z.infer<typeof purchaseToolInput>):Promise<Array<{proposalId?:string;revision?:number;name:string;saved?:boolean;error?:string}>>;};
 };
-const periodSchema = z.strictObject({ period: z.union([z.string().min(1).max(32),z.strictObject({preset:z.enum(["today","week","month","last_week","last_month","ytd"])}),z.strictObject({from:z.iso.date(),to:z.iso.date()})]),ownerInputs:ownerInputsSchema.nullable().optional() });
-// Nullable values are semantically optional while retaining the all-required OpenAI strict schema.
-const menuSchema = z.strictObject({ query: z.string().max(120).nullable(), limit: z.number().int().min(1).max(25).nullable() });
-const posPeriodSchema=z.strictObject({from:z.iso.date(),to:z.iso.date()});
-const posReadTools={
-  get_peak_hours:{schema:posPeriodSchema,description:"Read actual closed-day and provisional live hourly net revenue and order counts from the same café-scoped canonical source, with incomplete/stale coverage warnings."},
-  get_employee_sales:{schema:posPeriodSchema,description:"Read recorded employee-attributed sales for a date range."},
-  get_payroll_facts:{schema:posPeriodSchema,description:"Read imported pay-period facts without inferring missing wages or taxes."}
-};
-export const schemas = { ...presentationTools, ...askOwnerTools, ...dataQueryTools, ...posReadTools, ...attentionTools, ...incidentEvidenceTools, get_profit: periodSchema, get_sales: periodSchema, get_menu_items: menuSchema,
-  ...staffTools,...staffCoordinationTools, ...scheduleReadTools, ...hoursTools, ...moneyTools, ...suppliesTools, ...salesTools,...todayTools,...draftScheduleTools,...newItemPriceTools,...milkSwapTools,...scenarioTools,...calculateTools,...proposalTools,...priceExperimentTools,...priceMonitorTools,...goalTools,...staffProposalTools,...purchasesTools,...supplierPurchasingTools,...eventsTools,...savedEventsTools,...eventPlanTools,...webSearchTools,...commitmentTools,...routineTools,...permissionTools,...gmailTools,...maintenanceTools,...staffQuestionTools } as const;
+// The model's café data reads are exclusively describe_database/run_sql.
+export const schemas = {
+  ...presentationTools, ...askOwnerTools,
+  get_schedule:staffTools.get_schedule,
+  get_week_schedule:scheduleReadTools.get_week_schedule,
+  get_staff_messages:scheduleReadTools.get_staff_messages,
+  propose_financial_settlement:moneyTools.propose_financial_settlement,
+  propose_financial_bill:moneyTools.propose_financial_bill,
+  draft_week_schedule:draftScheduleTools.draft_week_schedule,
+  ...proposalTools,...priceExperimentTools,
+  propose_goal:goalTools.propose_goal,record_checkin:goalTools.record_checkin,
+  ...staffProposalTools,...purchasesTools,
+  propose_purchase_receiving:supplierPurchasingTools.propose_purchase_receiving,
+  propose_supplier_discrepancy_followup:supplierPurchasingTools.propose_supplier_discrepancy_followup,
+  propose_invoice_reconciliation:supplierPurchasingTools.propose_invoice_reconciliation,
+  propose_supplier_purchase_order:supplierPurchasingTools.propose_supplier_purchase_order,
+  record_supplier_order_outcome:supplierPurchasingTools.record_supplier_order_outcome,
+  propose_supplier_vendor_email:supplierPurchasingTools.propose_supplier_vendor_email,
+  ...eventsTools,...savedEventsTools,...eventPlanTools,...webSearchTools,...commitmentTools,...routineTools,
+  ...gmailTools,...maintenanceTools,...staffQuestionTools,
+} as const;
 export type AgentToolName = keyof typeof schemas;
 /** Input fields backed by the shared entity/period resolver. A new tool whose
  * strict schema accepts a target must declare the corresponding field here;
  * creation inputs have explicit exemptions below. */
 export const resolverCoverage:Partial<Record<AgentToolName,readonly string[]>>={
-  get_profit:["period"],get_sales:["period"],get_break_even:["period"],get_menu_items:["query"],
-  get_labor:["period"],get_team:["name"],get_shift_cost:["employee_id"],
-  get_expenses:["period","category"],get_cost_summary:["period"],
-  get_item_sales:["period","query"],get_price_recommendation:["itemId"],
-  get_ingredient_costs:["query"],get_product_costs:["itemId"],
+
   propose_price_change:["product_id"],propose_price_experiment:["product_id"],propose_staff_change:["employee_id"],
   propose_schedule:["shifts.employee_id"],propose_shift_change:["shift.employee_id"],
-  get_peak_hours:["from","to"],get_employee_sales:["from","to"],
-  get_payroll_facts:["from","to"],
-  simulate_scenario:["itemId","staffId"],
+
   propose_availability_change:["instruction"]
 };
 export const resolverExemptions:Partial<Record<AgentToolName,readonly string[]>>={
   // These fields describe NEW values, not names or IDs of existing records.
   propose_add_staff:["name"],propose_staff_change:["name"],
-  suggest_new_item_price:["category"],
-  inspect_supplier_purchase:["items.itemName","preferredSupplier"],
+
   propose_supplier_purchase_order:["items.itemName","preferredSupplier"],
   // A public web search phrase is not a café catalog identifier.
   web_search:["query"],
   // Free-form Gmail search is owner text, not an internal catalogue identity.
   search_gmail:["query"],search_maintenance_vendor:["query"],
-  // Exact case-linked employee IDs are resolved by the scoped maintenance candidate reader.
+  // Exact case-linked employee IDs are revalidated by the scoped approval handler.
   propose_maintenance_staff_assignment:["employeeId"],
   propose_staff_question:["employeeId"],
   propose_event_plan:["summary","actions","expectedBusyHours"],
   manage_commitment:["title","due_date","due_time","origin","commitment_id"],
   manage_routine:["title","routine_id"]
 };
-
-export function agentForTool(name:string):"alex"|"olivia"|"maya"|"leo"{return name==="get_payroll_facts"||name in staffTools||name in staffCoordinationTools||name in scheduleReadTools||name in hoursTools||name in draftScheduleTools||name in staffProposalTools||name in staffQuestionTools?"olivia":name in moneyTools||name in goalTools||name in commitmentTools||name in routineTools||name in maintenanceTools||name in permissionTools||name==="get_profit"?"leo":name in suppliesTools||name in purchasesTools||name in supplierPurchasingTools?"maya":"alex";}
-const descriptions: Record<string, string> = {
-  get_profit: "Read profit for today, trailing seven days or the calendar month. Report missing inputs.",
-  get_sales: "Read covered daily sales in a current calendar period. Closed days only; for today, a todaySoFar provisional reading is attached when today is not imported. If stale, say last updated HH:MM rather than so far today.",
-  get_menu_items: "Search active menu items by optional query, with optional limit up to 25. Send null when omitted.",
-};
+export function agentForTool(name:string):"alex"|"olivia"|"maya"|"leo"{return name in staffTools||name in scheduleReadTools||name in staffProposalTools||name in staffQuestionTools||name==="draft_week_schedule"?"olivia":name in moneyTools||name in goalTools||name in commitmentTools||name in routineTools||name in maintenanceTools?"leo":name in purchasesTools||name in supplierPurchasingTools?"maya":"alex";}
 /** OpenAI strict mode needs every property listed in `required` at every nesting level;
  * one gap rejects the whole request (HTTP 400), so the chat fails on every question.
  * Optional fields must therefore also be nullable in Zod so the model can send null. */
@@ -301,33 +259,28 @@ function requireEveryProperty(node:unknown):unknown{
   return out;
 }
 const baseToolDefinitions = (Object.keys(schemas) as AgentToolName[]).map(name => {
-  const { $schema: _schema, ...parameters } = z.toJSONSchema("schema" in schemas[name] ? schemas[name].schema as z.ZodType : schemas[name], { target: "draft-07" });
+  const { $schema: _schema, ...parameters } = z.toJSONSchema(schemas[name].schema as z.ZodType, { target: "draft-07" });
   void _schema;
   // Empty strict Zod objects omit required in JSON Schema; OpenAI needs it explicitly.
   const properties=parameters.properties;
   const required=properties && typeof properties==="object" ? Object.keys(properties) : [];
   return { type: "function" as const, name,
-    description: "description" in schemas[name] ? schemas[name].description : descriptions[name],
+    description: schemas[name].description,
     strict: true as const, parameters:{...requireEveryProperty(parameters) as typeof parameters,required} };
 });
 /** Function names stay plain strings: memory and capability gating add or filter by name. */
 // Routine management is a verified-owner-only additional function, rather
 // than a global public tool. Keep the existing baseline tool contract stable.
 export const agentToolDefinitions:Array<Omit<(typeof baseToolDefinitions)[number],"name">&{name:string}>=
-  baseToolDefinitions.filter(tool=>tool.name!=="get_investigation_source"&&tool.name!=="manage_routine"&&!["search_gmail","list_gmail_labels","read_gmail","read_gmail_thread","read_gmail_attachment","propose_gmail_action"].includes(tool.name));
+  baseToolDefinitions.filter(tool=>tool.name!=="manage_routine"&&!["search_gmail","list_gmail_labels","read_gmail","read_gmail_thread","read_gmail_attachment","propose_gmail_action"].includes(tool.name));
 /** Offered only for a verified connected owner. Default cafés keep their existing tools. */
 /** Offered only when a server-claimed autonomous run explicitly requests it. */
-export const investigationToolDefinition=baseToolDefinitions.find(t=>t.name==="get_investigation_source")!;
-export const gmailToolDefinitions=baseToolDefinitions.filter(tool=>["search_gmail","read_gmail","read_gmail_thread","read_gmail_attachment","propose_gmail_action"].includes(tool.name));
+export const gmailToolDefinitions=baseToolDefinitions.filter(tool=>["search_gmail","list_gmail_labels","read_gmail","read_gmail_thread","read_gmail_attachment","propose_gmail_action"].includes(tool.name));
 export const agentLabelsPrompt = "Field labels by language (use matching language, not translated numeric units): " +
   JSON.stringify({ en: en.AgentFields, es: es.AgentFields, ar: ar.AgentFields });
 
 export const requestedPeriod=calcRequestedPeriod;
 
-function absent(source: string, period: CafeStatePeriod | null, missing: string[]): AgentToolResult {
-  return { source, period, agentId:source==="profitability"?"leo":"alex",
-    missing: missing.length ? missing : ["sourceUnavailable"] };
-}
 /**
  * This is a conservative deny boundary for mixed-trust turns, not a second
  * authorization system. Existing gateway approval/receipt rules remain mandatory.
@@ -359,301 +312,46 @@ export async function executeAgentTool(name: string, raw: unknown, ctx: AgentToo
   if(name==="read_gmail_thread")return gmailTools.read_gmail_thread.execute(raw,ctx);
   if(name==="read_gmail_attachment")return gmailTools.read_gmail_attachment.execute(raw,ctx);
   if(name==="propose_gmail_action")return gmailTools.propose_gmail_action.execute(raw,ctx);
-  if(name==="get_maintenance_cases")return maintenanceTools.get_maintenance_cases.execute(raw,ctx);
-  if(name==="get_maintenance_staff_candidates")return maintenanceTools.get_maintenance_staff_candidates.execute(raw,ctx);
   if(name==="propose_maintenance_staff_assignment")return maintenanceTools.propose_maintenance_staff_assignment.execute(raw,ctx);
   if(name==="propose_staff_question")return staffQuestionTools.propose_staff_question.execute(raw,ctx);
   if(name==="record_staff_question_owner_answer")return staffQuestionTools.record_staff_question_owner_answer.execute(raw,ctx);
   if(name==="record_maintenance_repair_claim")return maintenanceTools.record_maintenance_repair_claim.execute(raw,ctx);
   if(name==="search_maintenance_vendor")return maintenanceTools.search_maintenance_vendor.execute(raw,ctx);
   if(name==="propose_maintenance_vendor_request")return maintenanceTools.propose_maintenance_vendor_request.execute(raw,ctx);
-  if(name==="describe_data"){
-    // Field names for one Toast record type need the café-scoped reader.
-    const scoped=raw&&typeof raw==="object"&&typeof (raw as {record_type?:unknown}).record_type==="string";
-    if(!scoped||!ctx.canonicalData)return dataQueryTools.describe_data.execute(raw);
-    try{return dataQueryTools.describe_data.execute(raw,await ctx.canonicalData());}
-    catch{return {source:"toast_fields",period:null,missing:["source_read_failed"]};}
-  }
-  if(name==="query_data"){
-    if(!ctx.canonicalData)return {source:"canonical_data",period:null,missing:["canonical_reader_unavailable"],rows:[],empty:true};
-    try{return dataQueryTools.query_data.execute(raw,await ctx.canonicalData());}
-    catch{return {source:"canonical_data",period:null,missing:["source_read_failed"],rows:[],empty:true};}
-  }
   if(name==="draft_week_schedule")return draftScheduleTools.draft_week_schedule.execute(raw,ctx);
-  if(name==="simulate_staff_absence")return draftScheduleTools.simulate_staff_absence.execute(raw,ctx);
-  if(name==="suggest_new_item_price")return newItemPriceTools.suggest_new_item_price.execute(raw,ctx);
-  if(name==="milk_swap_price")return milkSwapTools.milk_swap_price.execute(raw,ctx);
-  if(name==="simulate_scenario")return scenarioTools.simulate_scenario.execute(raw,ctx);
-  if(name==="calculate")return calculateTools.calculate.execute(raw,ctx);
   if(name==="propose_price_change")return proposalTools.propose_price_change.execute(raw,ctx);
    if(name==="propose_purchases")return purchasesTools.propose_purchases.execute(raw,ctx);
-  if(name==="get_supplier_purchase_orders")return supplierPurchasingTools.get_supplier_purchase_orders.execute(raw,ctx);
-  if(name==="inspect_purchase_reconciliation")return supplierPurchasingTools.inspect_purchase_reconciliation.execute(raw,ctx);
   if(name==="propose_purchase_receiving")return supplierPurchasingTools.propose_purchase_receiving.execute(raw,ctx);
   if(name==="propose_supplier_discrepancy_followup")return supplierPurchasingTools.propose_supplier_discrepancy_followup.execute(raw,ctx);
   if(name==="propose_invoice_reconciliation")return supplierPurchasingTools.propose_invoice_reconciliation.execute(raw,ctx);
-  if(name==="inspect_supplier_purchase")return supplierPurchasingTools.inspect_supplier_purchase.execute(raw,ctx);
   if(name==="propose_supplier_purchase_order")return supplierPurchasingTools.propose_supplier_purchase_order.execute(raw,ctx);
   if(name==="record_supplier_order_outcome")return supplierPurchasingTools.record_supplier_order_outcome.execute(raw,ctx);
   if(name==="propose_supplier_vendor_email")return supplierPurchasingTools.propose_supplier_vendor_email.execute(raw,ctx);
   if(name==="propose_price_experiment")return priceExperimentTools.propose_price_experiment.execute(raw,ctx);
-  if(name==="get_price_monitor_status")return priceMonitorTools.get_price_monitor_status.execute(raw,ctx);
   if(name==="propose_goal")return goalTools.propose_goal.execute(raw,ctx);
   if(name==="propose_event_plan")return eventPlanTools.propose_event_plan.execute(raw,ctx);
-  if(name==="get_goal_status")return goalTools.get_goal_status.execute(raw,ctx);
   if(name==="record_checkin")return goalTools.record_checkin.execute(raw,ctx);
   if(Object.hasOwn(staffProposalTools,name))return staffProposalTools[name as keyof typeof staffProposalTools].execute(raw,ctx);
-  if(name==="get_attention_items")return attentionTools.get_attention_items.execute(raw,ctx);
-  if(name==="get_investigation_source")return incidentEvidenceTools.get_investigation_source.execute(raw,ctx);
   if(name==="manage_commitment")return commitmentTools.manage_commitment.execute(raw,ctx);
   if(name==="manage_routine")return routineTools.manage_routine.execute(raw,ctx);
-  if(name==="get_staff_coordination_cases")return staffCoordinationTools.get_staff_coordination_cases.execute(raw,ctx);
-  if(name==="get_supervisor_permissions")return permissionTools.get_supervisor_permissions.execute(raw,ctx);
-  if(name==="get_staff")return staffTools.get_staff.execute(raw,ctx);
   if(name==="get_schedule")return staffTools.get_schedule.execute(raw,ctx);
-  if(name==="get_labor")return staffTools.get_labor.execute(raw,ctx);
   if(name==="get_staff_messages")return scheduleReadTools.get_staff_messages.execute(raw,ctx);
-  if(name==="get_team")return scheduleReadTools.get_team.execute(raw,ctx);
   if(name==="get_week_schedule")return scheduleReadTools.get_week_schedule.execute(raw,ctx);
-  if(name==="get_labor_rules")return scheduleReadTools.get_labor_rules.execute(raw,ctx);
-  if(name==="get_coverage_gaps")return scheduleReadTools.get_coverage_gaps.execute(raw,ctx);
-  if(name==="get_shift_cost")return scheduleReadTools.get_shift_cost.execute(raw,ctx);
-  if(name==="get_business_hours")return hoursTools.get_business_hours.execute(raw,ctx);
-  if(name==="get_expenses")return moneyTools.get_expenses.execute(raw,ctx);
-  if(name==="get_bills")return moneyTools.get_bills.execute(raw,ctx);
-  if(name==="get_cashflow_evidence")return moneyTools.get_cashflow_evidence.execute(raw,ctx);
   if(name==="propose_financial_settlement")return moneyTools.propose_financial_settlement.execute(raw,ctx);
   if(name==="propose_financial_bill")return moneyTools.propose_financial_bill.execute(raw,ctx);
-  if(name==="get_break_even")return moneyTools.get_break_even.execute(raw,ctx);
-  if(name==="get_cost_summary")return moneyTools.get_cost_summary.execute(raw,ctx);
-  if(name==="get_product_costs")return suppliesTools.get_product_costs.execute(raw,ctx);
-  if(name==="get_ingredient_costs")return suppliesTools.get_ingredient_costs.execute(raw,ctx);
-  if(name==="get_usage_variance")return suppliesTools.get_usage_variance.execute(raw,ctx);
-  if(name==="get_inventory")return suppliesTools.get_inventory.execute(raw,ctx);
-  if(name==="get_peak_hours"||name==="get_employee_sales"||name==="get_payroll_facts"){
-    const input=posPeriodSchema.parse(raw);
-    const checked=resolveOwnerPeriod(input,{asOf:ctx.asOf,timezone:ctx.timezone},ctx.resolveState);
-    if(checked.status!=="resolved")return periodChoicePayload(name,checked);
-    const period={from:checked.value.from,to:checked.value.to};
-    if(name==="get_peak_hours"){
-      const slice=await ctx.tools.getPeakHours?.(period);
-      if(!slice?.available)return {source:name,period,agentId:"alex",missing:slice?.quality.missingInputs??["posFactsReaderUnavailable"],dataNotes:localizeQualityNotes([...(slice?.quality.missingInputs??[]),...(slice?.quality.notes??[])],ctx.locale)};
-      return {source:name,period,agentId:"alex",missing:slice.quality.missingInputs,dataNotes:localizeQualityNotes([...slice.quality.missingInputs,...(slice.quality.notes??[])],ctx.locale),...summarizePeakHours(slice.value)};
-    }
-    if(name==="get_employee_sales"){
-      const slice=await ctx.tools.getEmployeeSales?.(period);
-      if(!slice?.available)return {source:name,period,agentId:"alex",missing:slice?.quality.missingInputs??["posFactsReaderUnavailable"],dataNotes:localizeQualityNotes([...(slice?.quality.missingInputs??[]),...(slice?.quality.notes??[])],ctx.locale)};
-      return {source:name,period,agentId:"alex",missing:slice.quality.missingInputs,dataNotes:localizeQualityNotes([...slice.quality.missingInputs,...(slice.quality.notes??[])],ctx.locale),...summarizeEmployeeSales(slice.value)};
-    }
-    const [slice,ownerCosts,labor,toastScopes]=await Promise.all([
-      ctx.tools.getPayrollFacts?.(period),
-      ctx.tools.getOwnerMonthlyPayrollExtras?.(),
-      ctx.tools.getLaborMetrics?.(period),
-      ctx.tools.getToastScopeCoverage?.(),
-    ]);
-    const ownerMonthlyPayrollExtrasCents=ownerCosts?.available?
-      ownerCosts.value.monthlyCents:null;
-    const unknownWageDates=labor?.available?
-      labor.value.filter(day=>!laborKnown({wagesCents:day.wagesCents,staffTaxCents:day.staffTaxCents,
-        laborWageStatus:day.wageStatus})).map(day=>day.date):[];
-    const observedLaborWagesCents=labor?.available&&labor.value.length>0&&unknownWageDates.length===0&&
-      labor.value.every(day=>laborKnown({wagesCents:day.wagesCents,staffTaxCents:day.staffTaxCents,
-        laborWageStatus:day.wageStatus}))?
-      labor.value.reduce((total,day)=>total+day.wagesCents!,0):null;
-    const costEvidence={
-      toastLaborScopeAvailable:toastScopes?.available?toastScopes.value.labor:null,
-      ownerMonthlyPayrollExtrasCents,ownerMonthlyPayrollSource:ownerMonthlyPayrollExtrasCents===null?
-        null:"You told me" as const,
-      ownerMonthlyPayrollStatus:ownerMonthlyPayrollExtrasCents===null?"missing":"estimate",
-      observedLaborWagesCents,
-      observedWageStatus:!labor?.available?"unavailable":unknownWageDates.length||labor.value.length===0?"unknown":"recorded",
-    };
-    if(!slice?.available)return {source:name,period,agentId:"olivia",
-      missing:[...(slice?.quality.missingInputs??["toastPayrollRunsNotAvailable"]),
-        ...(ownerMonthlyPayrollExtrasCents===null?["ownerMonthlyPayrollExtrasNotSet"]:[]),
-        ...unknownWageDates.map(day=>"laborWageUnknown:"+day),
-        ...(toastScopes?.available&&toastScopes.value.labor===false?["toastLaborScopeMissing"]:[])],
-      ...costEvidence};
-    return {source:name,period,agentId:"olivia",
-      missing:[...slice.quality.missingInputs,
-        ...(ownerMonthlyPayrollExtrasCents===null?["ownerMonthlyPayrollExtrasNotSet"]:[]),
-        ...unknownWageDates.map(day=>"laborWageUnknown:"+day),
-        ...(toastScopes?.available&&toastScopes.value.labor===false?["toastLaborScopeMissing"]:[])],
-      ...costEvidence,...summarizePayrollFacts(slice.value)};
-  }
-  if(name==="get_item_sales")return salesTools.get_item_sales.execute(raw,ctx);
-  if(name==="get_today_so_far")return todayTools.get_today_so_far.execute(raw,ctx);
   if(name==="get_nearby_events")return eventsTools.get_nearby_events.execute(raw,ctx);
   if(name==="get_events")return savedEventsTools.get_events.execute(raw,ctx);
   if(name==="web_search")return webSearchTools.web_search.execute(raw,ctx);
-  if(name==="get_price_recommendation")return salesTools.get_price_recommendation.execute(raw,ctx);
-  if (name === "get_menu_items") {
-    const input = menuSchema.parse(raw);
-    const [slice,toastScopes] = await Promise.all([
-      ctx.tools.getMenuCatalog(),ctx.tools.getToastScopeCoverage?.(),
-    ]);
-    if (!slice.available) return absent("menu_items", null, [
-      ...slice.quality.missingInputs,
-      ...(toastScopes?.available&&toastScopes.value.menus===false?["toastMenuScopeMissing"]:[])
-    ]);
-    const active=slice.value.filter(item=>item.active);
-    let filtered=active;
-    if(input.query){
-      const chosen=resolveChosenEntity(ctx.resolveState,active,i=>i.id);
-      if(chosen)filtered=[chosen];
-      else{
-        const resolved=resolveEntity("product",input.query,active,{nameOf:i=>i.name,idOf:i=>i.id,
-          describe:i=>i.category+" · "+(i.priceCents===null?"open price":(i.priceCents/100).toFixed(2))});
-        const remembered=resolved.status==="ambiguous"?rememberedCandidate(ctx.resolveState,resolved.candidates):null;
-        const rememberedRow=remembered?active.find(i=>i.id===remembered):undefined;
-        if(rememberedRow)filtered=[rememberedRow];
-        else if(resolved.status!=="resolved")return {...choicePayload(resolved,"menu_items",null),agentId:"alex"};
-        else filtered=[resolved.value];
-      }
-    }
-    if(input.query&&filtered.length===1&&!ownerNamedTarget(ctx.resolveState,filtered[0].id,filtered[0].name))
-      return {source:"menu_items",period:null,agentId:"alex",missing:["targetNotConfirmed"]};
-    const limit = input.limit ?? 8;
-    const visible=filtered.slice(0,limit);
-    let facts:Record<string,import("@/lib/data/menuPriceEvidence.server").MenuPriceEvidence>={};
-    let evidenceUnavailable=false;
-    try {if(ctx.menuPriceEvidence)facts=await ctx.menuPriceEvidence(visible.filter(
-      (item):item is typeof item & {priceCents:number}=>item.priceCents!==null));}
-    catch {evidenceUnavailable=true;}
-    return { source: "menu_items", period: null, agentId:"alex",
-      missing: [...slice.quality.missingInputs, ...(filtered.length > limit ? ["moreMenuItems"] : []),
-        ...(evidenceUnavailable?["menuPriceEvidenceUnavailable"]:[]),
-        ...(toastScopes?.available&&toastScopes.value.menus===false?["toastMenuScopeMissing"]:[])],
-      toastMenuScopeAvailable:toastScopes?.available?toastScopes.value.menus:null,
-      items: visible.map(item => ({
-        id: item.id, name: item.name, category: item.category, priceCents: item.priceCents,unit:"cents",
-        baseName:item.baseName,sizeLabel:item.sizeLabel,description:item.description,
-        menuGroup:item.menuGroup,visibility:item.visibility,pricingStrategy:item.pricingStrategy,
-        priceStatus:item.priceCents===null?"open_or_unknown":"fixed",
-        modifierGroups:item.modifierGroups,
-        priceSource:item.priceCents===null?"unknown":evidenceUnavailable?"unknown":facts[item.id]?.priceSource??"initial",
-        realizedAvgCents:facts[item.id]?.realizedAvgCents??null,
-        priceCheck:facts[item.id]?.priceCheck??"unknown",pricePeriod:facts[item.id]?.pricePeriod??null,
-        priceEvidenceStatus:facts[item.id]?.priceEvidenceStatus??"unknown",
-      })) };
-  }
-  const {period:choice,ownerInputs}=periodSchema.parse(raw);
-  const resolved=resolveOwnerPeriod(choice,{asOf:ctx.asOf,timezone:ctx.timezone},ctx.resolveState);
-  if(resolved.status!=="resolved")return periodChoicePayload(name,resolved);
-  const requested={from:resolved.value.from,to:resolved.value.to};
-  // An explicitly requested historical period must never be silently replaced.
-  const selection:CoveredSalesWindow=requested.from===ctx.asOf&&requested.to===ctx.asOf?
-    await resolveCoveredSalesWindow(ctx,requested):
-    {period:requested,label:null,coverageFallback:null};
-  const period=selection.period;
-  if(name==="get_profit"){
-    const slice=await ctx.tools.getProfitability(period);
-    const identity=period.from+"/"+period.to;
-    const recordedSales=slice.available?slice.value.netSalesCents:null;
-    const replay=recordedSales!==null?
-      replayedMoneyChoice(ctx.resolveState,"sales",identity,recordedSales):null;
-    const hasPriorSalesChoice=[...(ctx.resolveState?.chosenIds??[])].some(id=>
-      id.startsWith("sales:"+identity.toLowerCase()+":"));
-    if(slice.available&&hasPriorSalesChoice&&!replay)
-      return {source:"profitability",period,agentId:"leo",
-        missing:["sourceChoiceExpired"],needsOwnerChoice:false,
-        coverageLabel:selection.label,coverageFallback:selection.coverageFallback,todayImported:selection.todayImported,lastFullDay:selection.lastFullDay,lastFullDayTotals:selection.lastFullDayTotals,dataNote:selection.dataNote,todaySoFar:selection.todaySoFar};
-    const suppliedSales=ownerInputs?.netSalesCents!=null?
-      ownerAmountForPeriod(ownerInputs.netSalesCents,ownerInputs.salesPeriod,period,ctx.asOf):null;
-    const ownerSales=suppliedSales??(ownerInputs?.netSalesCents==null?replay?.ownerCents??null:null);
-    if(!slice.available)return {source:"profitability",period,agentId:"leo",
-      coverageLabel:selection.label,coverageFallback:selection.coverageFallback,todayImported:selection.todayImported,lastFullDay:selection.lastFullDay,lastFullDayTotals:selection.lastFullDayTotals,dataNote:selection.dataNote,todaySoFar:selection.todaySoFar,unit:"cents",ownerInputs:ownerInputs??null,
-      ownerReportedSalesCents:ownerInputs?.netSalesCents??null,
-      ownerReportedSalesPeriod:ownerInputs?.salesPeriod??null,
-      netSalesCents:suppliedSales,netSalesProvenance:suppliedSales!==null?"ownerProvided":null,
-      totalCostsCents:null,ownerProfitCents:null,operatingMargin:null,
-      missing:[...slice.quality.missingInputs,...(ownerInputs?.netSalesCents!=null?["costsUnverified"]:[]),
-        ...(ownerInputs?.netSalesCents!=null&&suppliedSales===null?["ownerSalesPeriodMismatch"]:[])]};
-    const conflict=ownerConflict(recordedSales,ownerSales);
-    const candidates=conflict&&recordedSales!==null&&ownerSales!==null?
-      moneyChoiceCandidates("sales",identity,recordedSales,ownerSales,ctx.locale):null;
-    const selected=candidates?
-      chosenMoneySource(ctx.resolveState,candidates)??(replay?.ownerCents===ownerSales?replay.source:null):null;
-    if(conflict&&selected===null)return {source:"profitability",period,coverageLabel:selection.label,coverageFallback:selection.coverageFallback,todayImported:selection.todayImported,lastFullDay:selection.lastFullDay,lastFullDayTotals:selection.lastFullDayTotals,dataNote:selection.dataNote,todaySoFar:selection.todaySoFar,
-      agentId:"leo",unit:"cents",ownerInputs:ownerInputs??null,
-      ownerSalesConflict:{recordedCents:recordedSales,ownerCents:ownerSales},
-      recordedNetSalesCents:recordedSales,ownerReportedSalesCents:ownerSales,
-      netSalesCents:null,totalCostsCents:null,ownerProfitCents:null,operatingMargin:null,
-      needsOwnerChoice:true,candidates,missing:[...slice.quality.missingInputs,"ownerChoiceRequired"],
-      estimated:slice.quality.estimatedInputs,explain:[]};
-    if(conflict&&selected==="owner")return {source:"profitability",period,coverageLabel:selection.label,coverageFallback:selection.coverageFallback,todayImported:selection.todayImported,lastFullDay:selection.lastFullDay,lastFullDayTotals:selection.lastFullDayTotals,dataNote:selection.dataNote,todaySoFar:selection.todaySoFar,
-      agentId:"leo",unit:"cents",ownerInputs:ownerInputs??null,
-      selectedMoneySource:"ownerProvided",ownerReportedSalesCents:ownerSales,
-      recordedNetSalesCents:recordedSales,netSalesCents:ownerSales,netSalesProvenance:"ownerProvided",
-      totalCostsCents:null,ownerProfitCents:null,operatingMargin:null,
-      needsOwnerChoice:false,missing:[...slice.quality.missingInputs,"recordedProfitNotApplicable"],
-      estimated:slice.quality.estimatedInputs,explain:[]};
-    return {source:"profitability",period,coverageLabel:selection.label,coverageFallback:selection.coverageFallback,todayImported:selection.todayImported,lastFullDay:selection.lastFullDay,lastFullDayTotals:selection.lastFullDayTotals,dataNote:selection.dataNote,todaySoFar:selection.todaySoFar,agentId:"leo",unit:"cents",
-      missing:[...slice.quality.missingInputs,
-        ...(ownerInputs?.netSalesCents!=null&&suppliedSales===null?["ownerSalesPeriodMismatch"]:[])],
-      ownerReportedSalesCents:ownerInputs?.netSalesCents??replay?.ownerCents??null,
-      ownerReportedSalesPeriod:ownerInputs?.salesPeriod??null,
-      ownerSalesConflict:conflict?{recordedCents:recordedSales,ownerCents:ownerSales}:null,
-      selectedMoneySource:conflict?"recorded":null,
-      needsOwnerChoice:false,estimated:slice.quality.estimatedInputs,
-      netSalesCents:slice.value.netSalesCents,totalCostsCents:slice.value.totalCostsCents,
-      ownerProfitCents:slice.value.ownerProfitCents,operatingMargin:slice.value.operatingMargin,
-      ownerInputs:ownerInputs??null,
-      explain:[{label:"Owner profit",inputs:[
-        {name:"netSales",value:money(slice.value.netSalesCents)},
-        {name:"cost",value:money(slice.value.totalCostsCents)}],
-        formula:"subtract",result:money(slice.value.ownerProfitCents),period,source:"get_profit",
-        provenance:slice.quality.estimatedInputs.length?"estimate":"recorded"}],
-      coveredSalesDays:slice.value.coveredSalesDays,expectedSalesDays:slice.value.expectedSalesDays};
-  }
-  if(name!=="get_sales")throw new ToolError("not_supported");
-  const slice=await ctx.tools.getSalesTrend(period);
-  const salesNotes=localizeQualityNotes([...slice.quality.missingInputs,...(slice.quality.notes??[])],ctx.locale);
-  const liveToday=selection.todaySoFar?.available===true&&
-    period.from===ctx.asOf&&period.to===ctx.asOf&&
-    selection.todaySoFar.businessDate===period.from&&!selection.todayImported?
-    selection.todaySoFar:null;
-  if(!slice.available&&liveToday)return {source:"today_live",period,agentId:"alex",unit:"cents",
-    coverageLabel:selection.label,coverageFallback:selection.coverageFallback,
-    todayImported:selection.todayImported,lastFullDay:selection.lastFullDay,
-    lastFullDayTotals:selection.lastFullDayTotals,dataNote:selection.dataNote,
-    provisional:true,readAt:liveToday.readAt,stale:liveToday.stale,
-    lastUpdated:liveToday.lastUpdated,freshnessLabel:liveToday.freshnessLabel,
-    missing:liveToday.missing,
-    netSalesCents:liveToday.netSalesCents,
-    days:[{date:liveToday.businessDate,netSalesCents:liveToday.netSalesCents,provisional:true}],
-    todaySoFar:liveToday};
-  if(!slice.available)return {...absent("daily_rollups",period,slice.quality.missingInputs),dataNotes:salesNotes,coverageLabel:selection.label,coverageFallback:selection.coverageFallback,todayImported:selection.todayImported,lastFullDay:selection.lastFullDay,lastFullDayTotals:selection.lastFullDayTotals,dataNote:selection.dataNote,todaySoFar:selection.todaySoFar};
-  if(liveToday)return {source:"today_live",period,agentId:"alex",unit:"cents",
-    coverageLabel:selection.label,coverageFallback:selection.coverageFallback,
-    todayImported:selection.todayImported,lastFullDay:selection.lastFullDay,
-    lastFullDayTotals:selection.lastFullDayTotals,dataNote:selection.dataNote,
-    provisional:true,readAt:liveToday.readAt,missing:liveToday.missing,
-    netSalesCents:liveToday.netSalesCents,
-    days:[{date:liveToday.businessDate,netSalesCents:liveToday.netSalesCents,provisional:true}],
-    todaySoFar:liveToday};
-  return {source:"daily_rollups",period,coverageLabel:selection.label,coverageFallback:selection.coverageFallback,todayImported:selection.todayImported,lastFullDay:selection.lastFullDay,lastFullDayTotals:selection.lastFullDayTotals,dataNote:selection.dataNote,todaySoFar:selection.todaySoFar,agentId:"alex",unit:"cents",
-    missing:slice.quality.missingInputs,dataNotes:salesNotes,netSalesCents:netSalesCentsForPeriod(slice.value),
-    days:slice.value.slice(-7).map(day=>({date:day.date,netSalesCents:day.netSalesCents}))};
+  throw new ToolError("not_supported");
 }
 
 /** Durable recovery safety classification. Membership is based on reviewed
  * handlers, never a tool-name prefix or owner/model wording. Unknown or
  * mixed read/write capabilities default to an effect boundary. */
 const repeatSafeOwnerTools:ReadonlySet<string>=new Set([
- "describe_data","query_data","get_profit","get_sales","get_menu_items",
- "get_peak_hours","get_employee_sales","get_payroll_facts","get_attention_items",
- "get_investigation_source","get_staff","get_schedule","get_labor","get_staff_messages",
- "get_team","get_week_schedule","get_labor_rules","get_coverage_gaps","get_shift_cost",
- "get_business_hours","get_expenses","get_bills","get_cashflow_evidence","get_break_even",
- "get_cost_summary","get_product_costs","get_ingredient_costs","get_usage_variance","get_inventory",
- "get_staff_coordination_cases","get_supervisor_permissions","get_goal_status","get_price_monitor_status",
- "get_supplier_purchase_orders","inspect_purchase_reconciliation","inspect_supplier_purchase",
- "get_maintenance_cases","get_maintenance_staff_candidates","simulate_staff_absence",
- "suggest_new_item_price","milk_swap_price","simulate_scenario","calculate","ask_owner",
- "get_item_sales","get_price_recommendation","get_today_so_far","get_events","get_nearby_events",
+ "get_schedule","get_week_schedule","get_staff_messages","get_events","get_nearby_events",
  "search_gmail","list_gmail_labels","read_gmail","read_gmail_thread","read_gmail_attachment",
- "web_search","search_maintenance_vendor",
+ "web_search","search_maintenance_vendor","ask_owner","describe_database","run_sql","calculate","search_web",
 ]);
 export function isRepeatSafeOwnerTool(name:string,input:unknown):boolean{
  if(name==="present_response"||repeatSafeOwnerTools.has(name))return true;

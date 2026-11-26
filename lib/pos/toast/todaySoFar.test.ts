@@ -3,7 +3,6 @@ import type {SupabaseClient} from "@supabase/supabase-js";
 vi.mock("server-only",()=>({}));
 import {currentToastBusinessDay,summarizeToastToday} from "./todaySoFar";
 import {readToastTodaySoFar,clearTodaySoFarCache} from "./todaySoFar.server";
-import {executeAgentTool,schemas,type AgentToolContext} from "@/lib/ai/agent/tools";
 
 const business="aaaaaaaa-0000-4000-8000-000000000001";
 const r1="aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
@@ -129,42 +128,5 @@ describe("today so far (live, provisional, never stored)",()=>{
     expect(request).toHaveBeenCalledTimes(1);
     await readToastTodaySoFar(db([mapping(r1)]),business,new Date(now.getTime()+4*60_000),request);
     expect(request).toHaveBeenCalledTimes(2);
-  });
-});
-
-describe("get_today_so_far chat tool",()=>{
-  const ctx=(readTodaySoFar?:AgentToolContext["readTodaySoFar"])=>({asOf:"2026-10-29",timezone:zone,locale:"en",
-    tools:{},readTodaySoFar} as unknown as AgentToolContext);
-
-  it("is offered to the model with an empty strict schema",()=>{
-    expect(Object.hasOwn(schemas,"get_today_so_far")).toBe(true);
-  });
-
-  it("labels the answer provisional and names gaps",async()=>{
-    const result=await executeAgentTool("get_today_so_far",{},ctx(async()=>({available:true,value:{
-      provisional:true,businessDate:"2026-10-29",readAt:now.toISOString(),netSalesCents:12_345,
-      grossSalesCents:12_345,discountsCents:0,refundsCents:0,tipCents:0,orders:20,openChecks:2,
-      unparsedOrders:1,topItems:[],locationsRead:1,locationsFailed:1,truncated:true}})));
-    expect(result).toMatchObject({source:"today_live",provisional:true,netSalesCents:12_345,
-      period:{from:"2026-10-29",to:"2026-10-29"},
-      missing:["todayLiveLocationsFailed:1","todayLiveTruncated","todayLiveUnparsedOrders:1",
-        "todayHourlyNotCaptured"]});
-  });
-
-  it("returns registered live hourly cents without fabricated identities",async()=>{
-    const t=await executeAgentTool("get_today_so_far",{},ctx(async()=>({available:true,value:{
-      provisional:true,businessDate:"2026-10-29",readAt:now.toISOString(),netSalesCents:900,
-      grossSalesCents:900,discountsCents:0,refundsCents:0,tipCents:0,orders:2,openChecks:0,
-      unparsedOrders:0,topItems:[],locationsRead:1,locationsFailed:0,truncated:false,
-      hourlySales:[{hourLocal:9,netSalesCents:900,ordersCount:2}],hourlyUnassignedOrders:0,
-    }})));
-    expect(t.hourlySales).toEqual([{hourLocal:9,netSalesCents:900,ordersCount:2}]);
-    expect(t.hourlySalesStatus).toBe("provisional");
-    expect(t.hourlySalesUnit).toBe("cents");
-  });
-  it("says why when there is no live reader or the read fails",async()=>{
-    expect((await executeAgentTool("get_today_so_far",{},ctx())).missing).toEqual(["todayLiveReaderUnavailable"]);
-    expect((await executeAgentTool("get_today_so_far",{},ctx(async()=>{throw new Error("x");}))).missing)
-      .toEqual(["todayLiveReadFailed"]);
   });
 });

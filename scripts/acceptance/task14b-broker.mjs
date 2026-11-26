@@ -160,7 +160,7 @@ export function reservationForRequest(body,reasoningRegistry=new Map(),allowNati
    if(tool.type==="tool_search"){
      if(!onlyKeys(tool,["type"]))fail("provider_built_in_tools_forbidden");
    }else{
-     const eagerResearch=["describe_data","query_data","calculate"].includes(tool.name)&&tool.defer_loading===undefined;
+     const eagerResearch=["describe_database","run_sql","calculate"].includes(tool.name)&&tool.defer_loading===undefined;
      if(tool.type!=="function"||(!eagerResearch&&tool.defer_loading!==true)||tool.strict!==true||
        !inlineName(tool.name)||registry.has(tool.name)||
        !onlyKeys(tool,["type","name","description","strict","parameters","defer_loading"]))fail("provider_built_in_tools_forbidden");

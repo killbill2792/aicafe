@@ -1,3 +1,4 @@
+import {isResearchIntegrationReadTool} from "./integrationReads";
 import {describe,expect,it,vi} from "vitest";
 import type {AgentProvider} from "@/lib/ai/agent/loop.server";
 
@@ -13,9 +14,23 @@ const done={type:"response.completed",response:{model:"m",usage:{input_tokens:1,
 const call=(name:string,args:unknown,id:string)=>({type:"response.output_item.done",item:{type:"function_call",name,call_id:id,arguments:JSON.stringify(args)}});
 
 describe("research turn action tools",()=>{
+  it("does not expose or dispatch any retired data-reading tool",async()=>{
+    const registry=await vi.importActual<typeof import("@/lib/ai/agent/tools")>("@/lib/ai/agent/tools");
+    const retained=new Set(["get_events","get_nearby_events","get_schedule","get_week_schedule","get_staff_messages"]);
+    expect(registry.agentToolDefinitions.filter(t=>t.name.startsWith("get_")).every(t=>retained.has(t.name))).toBe(true);
+    for(const name of ["query_data","describe_data","get_sales","get_inventory","get_attention_items","get_price_monitor_status","get_staff_coordination_cases","get_supervisor_permissions","milk_swap_price","simulate_scenario","get_business_hours"]){
+      expect(registry.agentToolDefinitions.map(t=>t.name)).not.toContain(name);
+      await expect(registry.executeAgentTool(name,{},{} as never)).rejects.toMatchObject({code:"not_supported"});
+    }
+  });
   it("offers only action tools, not reads or the old link tool",()=>{
     for(const n of ["propose_price_change","propose_gmail_action","propose_staff_question","draft_week_schedule","ask_owner"])expect(isResearchActionTool(n)).toBe(true);
-    for(const n of ["get_sales","query_data","web_search","present_response"])expect(isResearchActionTool(n)).toBe(false);
+    for(const n of ["get_sales","query_data","web_search","present_response","get_supervisor_permissions"])expect(isResearchActionTool(n)).toBe(false);
+  });
+
+  it("keeps scoped schedule, staff messages and saved events without restoring legacy metric readers",()=>{
+    for(const name of ["get_events","get_schedule","get_week_schedule","get_staff_messages"])expect(isResearchIntegrationReadTool(name)).toBe(true);
+    for(const name of ["get_sales","get_labor","get_profit","get_inventory","query_data","describe_data"])expect(isResearchIntegrationReadTool(name)).toBe(false);
   });
 
   it("runs an action through the existing executor, keeps its approval card, and lets the model retry after an error",async()=>{
@@ -38,6 +53,7 @@ describe("research turn action tools",()=>{
       scope:{db:{} as never,businessId:"b",ownerUserId:"o"},
       actions:{context,definitions:[{name:"propose_staff_question"}]}});
     expect(turn.endReason).toBe("complete");
+    expect(context).toMatchObject({sqlResearch:true,resolveState:{ownerText:"ask Sam about the missed break"}});
     expect(execute).toHaveBeenCalledTimes(2);
     expect(JSON.parse(outputs[0]).error).toBeTruthy();           // the failure reached the model as data
     expect(turn.results.at(-1)).toMatchObject({draft:true,saved:false,proposalId:"p1"}); // card data survives for persistence

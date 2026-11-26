@@ -6,11 +6,12 @@ import {emptyInvestigationLiveLedger,reserveInvestigationLiveCall}
   from "@/lib/ai/supervisor/routines/investigation.liveBudget";
 import {it,expect,vi} from "vitest";
 vi.mock("server-only",()=>({}));
-import {runAgentTurn,openAIProvider,type AgentProvider} from "@/lib/ai/agent/loop.server";
+import {openAIProvider,type AgentProvider} from "@/lib/ai/agent/loop.server";
+import {runResearchTurn} from "./turn.server";
 import {configuredSupervisorModel} from "@/lib/ai/conversations/modelConfig";
 import {processDueInvestigations,
   type InvestigationModelProofSummary} from "@/lib/ai/supervisor/routines/investigation.server";
-import {executeAgentTool,type AgentToolContext} from "./index";
+import {executeAgentTool,type AgentToolContext} from "@/lib/ai/agent/tools";
 import {readSavedEventTimeline} from "@/lib/data/cafeEvents.server";
 const scenario=process.env.AICAFE_SHARED_LUNA_SCENARIO==="pos0ef-customer-detail"?"pos0ef-customer-detail":
  process.env.AICAFE_SHARED_LUNA_SCENARIO==="pos0ef-customer-trends"?"pos0ef-customer-trends":"pos0ef-customer-identity";
@@ -41,7 +42,14 @@ live("retained customer identity or observed trend, real model investigation, is
  let ledger=emptyInvestigationLiveLedger(),providerCompletions=0;
  const proofs:InvestigationModelProofSummary[]=[];
  const capture=(p:InvestigationModelProofSummary)=>proofs.push(p);
+ const observedSql=new Map<string,{sql:string;result:Record<string,unknown>}>();
  const provider:AgentProvider=async function*(params,signal){
+  const input=Array.isArray(params.input)?params.input as Array<{type?:string;name?:string;call_id?:string;arguments?:string;output?:string}>:[];
+  for(const item of input){
+   if(item.type!=="function_call"||item.name!=="run_sql"||!item.call_id||!item.arguments)continue;
+   const output=input.find(row=>row.type==="function_call_output"&&row.call_id===item.call_id)?.output;
+   if(output)observedSql.set(item.call_id,{sql:JSON.parse(item.arguments).sql,result:JSON.parse(output)});
+  }
   if(params.model!=="gpt-6-luna"||typeof params.max_output_tokens!=="number")throw Error("15a_live_model");
   const bounded={...params,max_output_tokens:Math.min(params.max_output_tokens,1200)};
   ledger=reserveInvestigationLiveCall(ledger,Buffer.byteLength(JSON.stringify(bounded),"utf8"),bounded.max_output_tokens,params.model);
@@ -128,7 +136,7 @@ live("retained customer identity or observed trend, real model investigation, is
     await admin.query("insert into public.cafe_events(id,business_id,name,kind,start_date,end_date,source_url,status,last_verified_at) values($1,$2,$3,'community',$4,$4,'https://example.invalid/fixture-event','found',$5)",[id,cafe,name,date(-3),now.toISOString()]);
    }
    const context={asOf:today,timezone:"UTC",currency:"USD",locale:"en",tools:{} as AgentToolContext["tools"],
-    canonicalData:async()=>({db:ownerDb,businessId}),
+    sqlResearch:true,
     savedEvents:(from:string,to:string,options?:{cityEventId?:string})=>
      readSavedEventTimeline(ownerDb,{businessId,ownerUserId:queryOwnerId},from,to,options)} as AgentToolContext;
    // Deterministic preflight through the actual registered tool and reader;
@@ -144,6 +152,7 @@ live("retained customer identity or observed trend, real model investigation, is
    expect((await admin.query("select count(*)::int n from public.customer_visits_for($1,$2,$3)",[foreignBusinessId,date(-14),date(-1)])).rows[0].n).toBe(1);
    const scoped=await ownerDb.rpc("customer_visits_for",{p_business_id:foreignBusinessId,p_from:date(-14),p_to:date(-1)});
    expect(scoped.error).toBeNull();expect(scoped.data).toEqual([]);
+   const runOwner=(ownerText:string)=>runResearchTurn({ownerText,provider,cafeContext:JSON.stringify({localDate:today,currency:"USD",timezone:"UTC"}),scope:{db,businessId,ownerUserId:queryOwnerId}});
    if(scenario==="pos0ef-customer-detail"){
     // Independent receipt oracle, including two distinct guests with the
     // same display name. No values are supplied in the owner question.
@@ -157,15 +166,13 @@ live("retained customer identity or observed trend, real model investigation, is
     const readback=await admin.query("select count(observed_return_7d)::int matured,coalesce(sum(observed_return_7d),0)::int returned from public.customer_visits_for($1,$2,$3)",[businessId,date(-14),date(-1)]);
     expect(readback.rows[0]).toEqual({matured:oracle.matured,returned:oracle.returned});
     const window="From "+date(-14)+" through "+date(-1)+": ";
-    const detail=await runAgentTurn({context,provider,toolNames:["describe_data","query_data"],
-     ownerText:window+"Discover the available retained customer identity and product fields. Find the observed account reference for Rowan Detail using the stored customer name and stable reference, not a name-only join. Using registry queries, give the exact linked order visits, recorded net in integer cents, returning visits, favorite recorded menu item and its item units for that reference. Use labels Visits, Net cents, Returning, Favorite units; explain what the reference does and does not establish."});
-    const ambiguity=await runAgentTurn({context,provider,toolNames:["describe_data","query_data"],
-     ownerText:window+"How many distinct linked account references are stored under the customer name Alex Fixture? Do not combine them into one person or assume identical names establish identity. Also calculate the number of matured seven-day first-observed visit cohorts and the number that returned within seven days, using observed_return_7d with the nonnull denominator. Answer with exact labels Alex references, Cohort matured, Cohort returned, and briefly explain the limitations."});
+    const detail=await runOwner(window+"Discover the available retained customer identity and product fields. Find the observed account reference for Rowan Detail using the stored customer name and stable reference, not a name-only join. Using SQL, give the exact linked order visits, recorded net in integer cents, returning visits, favorite recorded menu item and its item units for that reference. Use labels Visits, Net cents, Returning, Favorite units; explain what the reference does and does not establish.");
+    const ambiguity=await runOwner(window+"How many distinct linked account references are stored under the customer name Alex Fixture? Do not combine them into one person or assume identical names establish identity. Also calculate the number of matured seven-day first-observed visit cohorts and the number that returned within seven days, using observed_return_7d with the nonnull denominator. Answer with exact labels Alex references, Cohort matured, Cohort returned, and briefly explain the limitations.");
     for(const answer of [detail,ambiguity]){
      expect(answer.endReason).toBe("complete");expect(answer.unverified).toEqual([]);
-     expect(answer.tools??[]).toContain("query_data");
-     expect(answer.toolInvocations?.some(call=>call.name==="query_data"&&call.result.customerEvidence===true&&
-      call.result.truncated!==true&&Array.isArray(call.result.rows)&&call.result.rows.length>0)).toBe(true);
+     expect(answer.tools??[]).toContain("run_sql");
+     expect(answer.toolInvocations?.some(call=>call.name==="run_sql"&&
+      !call.result.error)).toBe(true);
     }
     const requireNumber=(answer:string,label:string,value:number)=>{
      const match=answer.match(new RegExp(label+"[\\s*]*[:=][\\s*]*([0-9,]+)","i"));
@@ -174,12 +181,12 @@ live("retained customer identity or observed trend, real model investigation, is
     for(const [label,value] of [["Visits",oracle.visits],["Net cents",oracle.net],["Returning",oracle.returning],["Favorite units",oracle.units]] as const)
      requireNumber(detail.text,label,value);
     expect(detail.text).toMatch(/fixture latte/i);
-    expect(detail.toolInvocations?.some(call=>call.name==="query_data"&&call.result.view==="cv_customer_products")).toBe(true);
+    expect([...observedSql.values()].some(call=>call.result.ok===true&&/customer_products|toast_records/i.test(call.sql))).toBe(true);
     for(const [label,value] of [["Alex references",oracle.alex],["Cohort matured",oracle.matured],["Cohort returned",oracle.returned]] as const)
      requireNumber(ambiguity.text,label,value);
     expect(ambiguity.text).toMatch(/distinct|separate|different|ambiguous/i);
     const toolNames=[...new Set([...(detail.tools??[]),...(ambiguity.tools??[])])];
-    expect(toolNames).toContain("describe_data");
+    expect(toolNames).toContain("describe_database");
     expect((await admin.query("select count(*)::int n from public.supervisor_effect_attempts where business_id=$1",[businessId])).rows[0].n).toBe(0);
     expect(providerCompletions).toBe(ledger.calls);expect(ledger.calls).toBeGreaterThanOrEqual(2);
     const proof={schema_version:1,task:scenario,head_sha:head,status:"passed",observed_model:"gpt-6-luna",provider:"openai_responses",provider_calls:ledger.calls,provider_completions:providerCompletions,tool_names:toolNames,authenticated_scope:true,independent_oracle:true,distinct_same_name_references:true,matured_cohort_oracle:true,no_unapproved_effect:true,feature_proven:false,integrated_proven:false,released_proven:false};
@@ -188,10 +195,9 @@ live("retained customer identity or observed trend, real model investigation, is
     writeFileSync("test-results/acceptance/"+scenario+"-scope.json",JSON.stringify({...scope,foreignBusinessId,queryOwnerId,restaurant,expectedProviderCalls:ledger.calls})+"\n",{mode:0o600,flag:"wx"});
     return;
    }
-   const turn=await runAgentTurn({context,provider,toolNames:["query_data","describe_data"],
-    ownerText:"From "+date(-14)+" through "+date(-1)+", using the retained customer evidence, how many distinct observed account references, linked order visits, returning linked visits, and net sales in integer cents were recorded? Return exact labeled integers: References, Visits, Returning, Net cents. Explain whether these are unique people and the identity coverage."});
+   const turn=await runOwner("From "+date(-14)+" through "+date(-1)+", using the retained customer evidence, how many distinct observed account references, linked order visits, returning linked visits, and net sales in integer cents were recorded? Return exact labeled integers: References, Visits, Returning, Net cents. Explain whether these are unique people and the identity coverage.");
    const turnTools=turn.tools??[];
-   expect(turn.endReason).toBe("complete");expect(turnTools).toContain("query_data");
+   expect(turn.endReason).toBe("complete");expect(turnTools).toContain("run_sql");
    for(const [label,value] of [["References",expected.references],["Visits",expected.visits],["Returning",expected.returning],["Net cents",expected.net]] as const){
     const match=turn.text.match(new RegExp(label+"[\\s*]*[:=][\\s*]*([0-9,]+)","i"));
     expect(match?.[1]&&Number(match[1].replace(/,/g,""))).toBe(value);
@@ -199,21 +205,16 @@ live("retained customer identity or observed trend, real model investigation, is
    expect(turn.text).toMatch(/observed|linked|reference/i);
    // No canonical field for this optional retained property exists. Exercise
    // discovery and actual registered query, not an answer from the first turn.
-   const fallback=await runAgentTurn({context,provider,toolNames:["describe_data","query_data"],
-    ownerText:"From "+date(-14)+" through "+date(-1)+", discover whether the retained check customer object has a nested visitPreference field, then count eligible checks where its favoriteDrink value is fixture-latte. Use the raw retained named data path if no dedicated canonical view has this property. Answer with exact integer label Preference checks, and explain that this is an observed check subtotal, not a customer count."});
+   const fallback=await runOwner("From "+date(-14)+" through "+date(-1)+", discover whether the retained check customer object has a nested visitPreference field, then count eligible checks where its favoriteDrink value is fixture-latte. Use the raw retained named data path if no dedicated canonical view has this property. Answer with exact integer label Preference checks, and explain that this is an observed check subtotal, not a customer count.");
    expect(fallback.endReason).toBe("complete");
-   expect(fallback.tools??[]).toContain("describe_data");
-   expect(fallback.tools??[]).toContain("query_data");
+   expect(fallback.tools??[]).toContain("describe_database");
+   expect(fallback.tools??[]).toContain("run_sql");
    const fallbackMatch=fallback.text.match(/Preference checks[\s*]*[:=][\s*]*([0-9,]+)/i);
    expect(fallbackMatch?.[1]&&Number(fallbackMatch[1].replace(/,/g,""))).toBe(expected.preference);
-   expect(fallback.toolInvocations?.some(call=>call.name==="describe_data"&&
-    Array.isArray(call.result.fields)&&call.result.fields.some(field=>field?.field==="data.customer.visitPreference.favoriteDrink"))).toBe(true);
-   expect(fallback.toolInvocations?.some(call=>{
-    if(call.name!=="query_data"||call.result.customerEvidence!==true||call.result.view!=="cv_toast_records"||
-     !Array.isArray(call.result.rows)||call.result.truncated===true)return false;
-    return call.result.rows.some(row=>row&&typeof row==="object"&&
-     Object.entries(row).some(([key,value])=>key.startsWith("count_")&&Number(value)===expected.preference));
-   })).toBe(true);
+   expect([...observedSql.values()].some(call=>call.result.ok===true&&
+    /visitPreference/i.test(call.sql)&&Array.isArray(call.result.rows)&&
+    call.result.rows.some(row=>row&&typeof row==="object"&&
+     Object.values(row).some(value=>Number(value)===expected.preference)))).toBe(true);
    const refresh=async()=>{await refreshBusinessAnomalies(db,businessId,today,"UTC",now).catch(error=>{
     if(!(error instanceof Error)||error.message!=="business_anomaly_refresh_incomplete")throw error;
    });};
@@ -235,10 +236,10 @@ live("retained customer identity or observed trend, real model investigation, is
    expect(messages.length).toBeGreaterThan(0);
    const replyId=messages[0].id;
    const workerTools=[...new Set(proofs.flatMap(p=>p.toolNames))];
-   expect(workerTools).toContain("get_investigation_source");expect(workerTools).toContain("query_data");
-   expect(workerTools.some(t=>["get_labor","get_schedule","get_week_schedule","get_inventory","get_usage_variance","get_menu_items","get_price_monitor_status","get_ingredient_costs","get_expenses","get_bills","get_events"].includes(t))).toBe(true);
+   expect(workerTools).toContain("run_sql");
+   expect(proofs.some(p=>p.verified&&p.toolNames.includes("run_sql"))).toBe(true);
    // A persisted deterministic fallback is not proof of a verified positive trend.
-   expect(proofs.some(p=>p.verified&&p.toolNames.includes("query_data"))).toBe(true);
+   expect(proofs.some(p=>p.verified&&p.toolNames.includes("run_sql"))).toBe(true);
    expect(proofs.every(p=>!p.externalEffectClaim&&p.unverifiedCount===0)).toBe(true);
    // Loss of source coverage must not clear the open incident.
    await admin.query("update public.toast_day_status set coverage_complete=false where business_id=$1 and business_date=$2",[businessId,date(-3)]);
@@ -302,7 +303,7 @@ live("retained customer identity or observed trend, real model investigation, is
   expect((await admin.query("select status from public.alerts where id=$1",[sourceId])).rows[0].status).toBe("new");
   expect((await admin.query("select count(*)::int n from public.supervisor_effect_attempts where business_id=$1",[businessId])).rows[0].n).toBe(0);
   const toolNames=[...new Set(proofs.flatMap(p=>p.toolNames))];
-  expect(toolNames).toContain("get_investigation_source");expect(toolNames).toContain("query_data");
+  expect(toolNames).toContain("run_sql");
   expect(proofs.every(p=>!p.externalEffectClaim&&p.unverifiedCount===0)).toBe(true);
   expect(providerCompletions).toBe(ledger.calls);expect(ledger.calls).toBeGreaterThanOrEqual(2);
   const proof={schema_version:1,task:scenario,head_sha:head,status:"passed",observed_model:"gpt-6-luna",provider:"openai_responses",provider_calls:ledger.calls,provider_completions:providerCompletions,tool_names:toolNames,actual_source_detector:true,authenticated_scope:true,no_unapproved_effect:true,feature_proven:false,integrated_proven:false,released_proven:false};

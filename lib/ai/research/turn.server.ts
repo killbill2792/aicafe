@@ -4,6 +4,8 @@ import {currentWorkerBudget,usageStopReason,reserveDurableProviderRequest,curren
 import {openAIProvider,type AgentProvider,type AgentTurn,type AgentAuditStep,type EndReason} from "@/lib/ai/agent/loop.server";
 import {executeAgentTool,isRepeatSafeOwnerTool,observeDurableToolEffect,type AgentToolContext,type AgentToolResult} from "@/lib/ai/agent/tools";
 import {safeToolError} from "@/lib/ai/agent/toolErrors";
+import {newResolveState,observeToolResult} from "@/lib/ai/agent/resolve";
+import {withoutSavedFactFields} from "@/lib/ownerFacts/askGuard";
 import type {OwnerRunCheckpoint,MatchedOwnerAnswer} from "@/lib/ai/supervisor/runs/contracts";
 import {executionPolicy,requestOutputCap} from "@/lib/ai/agent/executionPolicy";
 import {unsupportedNumbers} from "./verify";
@@ -17,7 +19,7 @@ export const RESEARCH_INSTRUCTIONS=
   "You are Supervisor, the AI operator of this café, answering its owner in chat. "+
   "You can read the café's own database: describe_database shows what exists, run_sql runs read-only PostgreSQL on it "+
   "(rows are already limited to this café), and calculate does exact arithmetic on numbers you retrieved. "+
-  "Use them whenever the answer depends on café data, as much as the question needs. "+
+  "Use them whenever the answer depends on café data, as much as the question needs. Saved events, staff schedules, staff messages and Gmail have their own readers, which you can use when relevant. "+
   "Answer directly in the owner's language, concise for simple questions and thorough for hard ones. "+
   "Base numbers on what you retrieved, say which data they come from, and say plainly when something is missing or uncertain. "+
   "For questions about rules or law, use the café's own location from its profile, look up the current rules for that place with search_web, "+
@@ -28,12 +30,15 @@ export const RESEARCH_INSTRUCTIONS=
   "The café context lists notes: what you or the owner learned about this café, each with where it came from and when it was last confirmed. "+
   "They are hints, not facts: live data wins, an old note or one the data contradicts should be rechecked with the owner, then updated or forgotten. "+
   "When you learn something lasting about the café, save it with remember_cafe_note. "+
-  "When something you need is missing from the café's data (for example no published schedule for today), say so plainly and ask the owner for it with ask_owner instead of guessing.";
+  "When a stored fact is missing, say so plainly. Use ask_owner only for facts or decisions that only the owner can supply; never ask the owner for a number that the POS records. For an approval target, use SQL to find the exact identity and let the approval handler revalidate it. If the handler returns verified ambiguity candidates, ask_owner can present those choices.";
 
 /** Registered tools that prepare an owner-approval card, record an outcome or ask the owner; reads are covered by SQL. */
 export const isResearchActionTool=(name:string)=>/^propose_/u.test(name)||
   ["draft_week_schedule","manage_commitment","record_checkin","record_staff_question_owner_answer","record_supplier_order_outcome",
-   "record_maintenance_repair_claim","ask_owner","get_supervisor_permissions"].includes(name);
+   "record_maintenance_repair_claim","ask_owner"].includes(name);
+
+/** These integrations retain their existing scoped readers; no café metric reader belongs here. */
+
 
 type Event={type:string;[key:string]:unknown};
 type FunctionCall={type:"function_call";name:string;call_id:string;arguments:string};
@@ -81,6 +86,16 @@ export async function runResearchTurn(args:{
   const provider=args.provider??openAIProvider;
   const audit=(step:AgentAuditStep)=>{try{args.onAuditStep?.(step);}catch{/* audit is non-critical */}};
   const continuation=await args.checkpoint?.resumeContext();
+  // Reuse the verified owner-choice state for the existing approval/card executor.
+  // Model-selected IDs never become owner consent just because SQL returned them.
+  if(args.actions){
+    const matched=args.matchedOwnerAnswers??[];
+    const matchedHistory=matched.flatMap(pair=>[{role:"assistant" as const,content:pair.question},{role:"user" as const,content:pair.answer}]);
+    args.actions.context.resolveState=matched.length
+      ?newResolveState(matched[matched.length-1].answer,[...(args.history??[]),{role:"user",content:args.ownerText},...matchedHistory.slice(0,-1)])
+      :newResolveState(args.ownerText,args.history);
+    args.actions.context.sqlResearch=true;
+  }
   const hasFiles=Boolean(args.ownerImages?.length||args.ownerPdfs?.length||args.ownerEvidence?.length);
   // Append-only context (OpenAI "keep the prefix unchanged"): fixed instructions first, then café
   // context, then history and the question; every later item is appended, never edited or shortened.
@@ -266,12 +281,15 @@ export async function runResearchTurn(args:{
     context.turnResults=()=>invocations.map(i=>({name:i.name,result:i.result}));
     let observed:ReturnType<typeof observeDurableToolEffect>|undefined,opened=false;
     try{
-      const parsed:unknown=JSON.parse(fc.arguments);
+      const raw:unknown=JSON.parse(fc.arguments);
+      const parsed=fc.name==="ask_owner"?withoutSavedFactFields(raw,context.ownerFacts??[]):raw;
+      if(parsed===null)return {source:"ask_owner",period:null,missing:["alreadySaved"],error:"ownerFactAlreadySaved"};
       const safe=isRepeatSafeOwnerTool(fc.name,parsed);
       const recovered=args.checkpoint?await args.checkpoint.beginTool(fc.name,parsed,safe):null;
       opened=Boolean(args.checkpoint);
       if(args.checkpoint&&!recovered&&!safe)observed=observeDurableToolEffect(fc.name,context,()=>args.checkpoint!.assertLive());
       const result=recovered??await executeAgentTool(fc.name,parsed,observed?.context??context);
+      observed?.settle();
       await args.beforeAcceptResult?.();
       if(opened)await args.checkpoint!.endTool(result,observed?.noEffect()??false);
       return result;
@@ -284,7 +302,7 @@ export async function runResearchTurn(args:{
   };
 
   try{
-    for(;;){
+    researchLoop: for(;;){
       const reason=stop();
       if(reason){
         endReason=reason;
@@ -304,6 +322,7 @@ export async function runResearchTurn(args:{
         let failed:boolean,record:AgentToolResult;
         if(args.actions?.definitions.some(d=>d.name===fc.name)){
           record=await runAction(fc);
+          observeToolResult(args.actions.context.resolveState,record);
           evidence.push(JSON.stringify(record));
           failed=Boolean(record.error);
           const ref=!failed?admit("Registered tool result: "+fc.name+"; not independent proof of an effect",record,record.missing.length?"partial":undefined):null;
@@ -325,6 +344,12 @@ export async function runResearchTurn(args:{
         invocations.push({name:fc.name,result:record});
         audit({kind:"tool_call",toolName:fc.name,inputSummary:"Research tool",outputSummary:failed?"Error returned to model":"Completed",
           durationMs:Math.max(0,now()-toolStarted),...(failed?{error:"research_tool_error"}:{})});
+        // The card is the end of this owner turn. Do not execute a second
+        // action from the same provider batch after asking for owner input.
+        if(fc.name==="ask_owner"&&!record.missing.length&&typeof record.question==="string"){
+          if(!text.trim())appendText(record.question);
+          break researchLoop;
+        }
       }
     }
     if(!text.trim()&&presentations.length)appendText("Here are the results from the retrieved information.",true);

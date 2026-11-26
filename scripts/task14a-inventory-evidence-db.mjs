@@ -98,26 +98,20 @@ try{
  let row=await view();
  check(Number(row?.quantity)===7&&row?.evidence_state==="observed_current",
   "latest successful row has reported quantity");
- // Prove the existing registered model's REAL SQL aggregation grammar with
- // a state and one exact identity, not just a mocked tool-call assertion.
+ // Direct SQL aggregates one exact stock identity and evidence state.
  const verifiedAggregate=async(state,identityColumn,identityValue)=>{
-  const filters=JSON.stringify([
-   {column:"data.evidence_state",op:"=",value:state},
-   {column:identityColumn,op:"=",value:identityValue}
-  ]);
-  const metrics=JSON.stringify([{fn:"sum",column:"quantity"}]);
-  const result=await one(`select public.ai_query_view($1,'cv_inventory',
-   ARRAY[]::text[],$2::jsonb,ARRAY[]::text[],$3::jsonb,
-   $4::date,$4::date,null,20) as evidence`,
-   [ids.cafe,filters,metrics,date]);
-  return result?.evidence;
+  const identity=identityColumn==="menu_item_ref"?"menu_item_ref":"data->>'ingredient_id'";
+  return one(`select count(*)::int as n,sum(quantity) as sum_quantity
+   from public.cv_inventory where business_id=$1 AND business_date=$2::date
+    AND data->>'evidence_state'=$3 AND ${identity}=$4`,
+   [ids.cafe,date,state,identityValue]);
  };
  const toastSum=await verifiedAggregate("observed_current","menu_item_ref",ids.stock);
- check(toastSum?.sourceCount===1&&Number(toastSum?.rows?.[0]?.sum_quantity)===7,
-  "registered SQL sums one verified Toast stock object without mixing sources");
+ check(toastSum?.n===1&&Number(toastSum?.sum_quantity)===7,
+  "SQL sums one verified Toast stock object without mixing sources");
  const ownerSum=await verifiedAggregate("dated_owner_count","data.ingredient_id",ids.ingredient);
- check(ownerSum?.sourceCount===1&&Number(ownerSum?.rows?.[0]?.sum_quantity)===0,
-  "registered SQL retains a measured zero for one named owner ingredient");
+ check(ownerSum?.n===1&&Number(ownerSum?.sum_quantity)===0,
+  "SQL retains a measured zero for one named owner ingredient");
  // A new complete empty GET must invalidate the retained item even if the
  // source repeats the previous observation instant at millisecond precision.
  await receipt(first,first,"empty",0);

@@ -1,9 +1,9 @@
 import {describe,it,expect} from "vitest";
 import {readFileSync} from "node:fs";
 import {execFileSync} from "node:child_process";
-import {runAgentTurn,type AgentProvider} from "@/lib/ai/agent/loop.server";
-import type {AgentToolContext} from "@/lib/ai/agent/tools";
-import type {SavedFact} from "./inject";
+import type {AgentProvider} from "@/lib/ai/agent/loop.server";
+import {runResearchTurn} from "@/lib/ai/research/turn.server";
+import {formatSavedOwnerFacts,type SavedFact} from "./inject";
 
 /** Runs the real migration on an isolated local PostgreSQL database.
  * Never connect this fixture to production or any non-loopback host. */
@@ -17,31 +17,6 @@ const local=(()=>{
  }catch{return false;}
 })();
 const databaseTest=url?it:it.skip;
-const context:AgentToolContext={
- asOf:"2026-10-28",timezone:"Etc/UTC",locale:"en",
- tools:{
-  getMenuCatalog:async()=>({available:true,value:[],
-    quality:{level:"high",missingInputs:[],estimatedInputs:[],staleInputs:[]}}),
-  getSalesTrend:async()=>({available:false,value:null,
-    quality:{level:"low",missingInputs:[],estimatedInputs:[],staleInputs:[]}}),
-  getProfitability:async()=>({available:false,value:null,
-    quality:{level:"low",missingInputs:[],estimatedInputs:[],staleInputs:[]}})
- }
-};
-const completed={type:"response.completed",response:{usage:{input_tokens:1,output_tokens:1}}};
-let turnNumber=0;
-const provider:AgentProvider=async function*(){
- if(turnNumber++===0){
-  yield {type:"response.output_item.done",item:{type:"function_call",
-   name:"milk_swap_price",call_id:"milk-db",arguments:JSON.stringify({
-    targetMilk:"almond milk",baseMilk:null,sizes:["16 oz"]
-   })}};
- }else{
-  yield {type:"response.output_text.delta",
-   delta:"Almond milk 16 oz: suggested upcharge $1.70 (estimate)."};
- }
- yield completed;
-};
 describe("migration 110 disposable PostgreSQL integration",()=>{
  databaseTest("save, supersede, write-through, another cafe RLS, NEW-thread owner-fact reuse",async()=>{
   expect(local,"OWNER_FACTS_DB_URL must target local /ownerfacts_test only").toBe(true);
@@ -62,15 +37,23 @@ describe("migration 110 disposable PostgreSQL integration",()=>{
   expect(facts.some(f=>f.fact_key==="milk_almond_serving_cost_cents:16oz")).toBe(true);
   // Different thread, no history: the deterministic chat adapter must reuse
   // the database's actual owner facts and must not ask another question.
-  const turn=await runAgentTurn({
-   ownerText:"Switch 16 oz latte to almond milk; what upcharge?",
-   history:[],context,ownerFacts:facts,provider
-  });
-  expect(turn.results.filter(r=>r.source==="ask_owner")).toHaveLength(0);
-  const milk=turn.results.find(r=>r.source==="milk_swap");
-  expect(milk).toMatchObject({missing:[],targetMilk:"almond milk",
-   rows:[expect.objectContaining({sizeId:"16oz",inputBasis:"owner_provided",
-    suggestedUpchargeCents:expect.any(Number)})]});
+  const fact=facts.find(f=>f.fact_key==="milk_almond_serving_cost_cents:16oz")!;
+  const savedContext=formatSavedOwnerFacts(facts);
+  let calls=0;
+  const provider:AgentProvider=async function*(params){
+   expect(JSON.stringify(params.input)).toContain(fact.fact_key);
+   expect(JSON.stringify(params.input)).toContain(String(fact.value_json));
+   calls++;
+   yield {type:"response.output_text.delta",delta:"You told me almond milk costs "+String(fact.value_json)+" cents per 16 oz serving."};
+   yield {type:"response.output_item.done",item:{type:"message",role:"assistant",content:[]}};
+   yield {type:"response.completed",response:{usage:{input_tokens:1,output_tokens:1}}};
+  };
+  const turn=await runResearchTurn({ownerText:"What did I tell you almond milk costs per 16 oz serving?",
+   history:[],cafeContext:savedContext,scope:{db:{} as never,businessId:"fixture",ownerUserId:"fixture"},provider});
+  expect(turn.endReason).toBe("complete");
+  expect(calls).toBe(1);
+  expect(turn.tools).not.toContain("ask_owner");
+  expect(turn.text).toContain(String(fact.value_json));
   expect(turn.text.toLowerCase()).toContain("almond milk");
  });
 });

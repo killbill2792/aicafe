@@ -1,42 +1,18 @@
 import { describe, expect, it } from "vitest";
 import { checkNumbers, compactEvidence, numberProvenance } from "./checkNumbers";
 import { statusFromResults } from "./status";
-import { executeAgentTool, agentToolDefinitions, gmailToolDefinitions, agentForTool, type AgentToolContext, requestedPeriod } from "./tools";
-import {newResolveState} from "./resolve";
+import { agentToolDefinitions, gmailToolDefinitions, agentForTool, requestedPeriod } from "./tools";
 
 const base = { source: "profitability", period: null, missing: [],
   ownerProfitCents: 12345, operatingMargin: 0.125, coveredSalesDays: 4 };
-describe("registered inventory dispatch", () => {
-  it("passes authenticated café context through the universal tool registry", async () => {
-    let wasCalled=false;
-    const ctx:AgentToolContext={timezone:"America/Los_Angeles",asOf:"2026-11-13",locale:"en",
-      tools:{
-        getSalesTrend:async()=>({available:false,value:null,quality:{level:"low",missingInputs:[],estimatedInputs:[],staleInputs:[]}}),
-        getProfitability:async()=>({available:false,value:null,quality:{level:"low",missingInputs:[],estimatedInputs:[],staleInputs:[]}}),
-        getMenuCatalog:async()=>({available:true,value:[],quality:{level:"high",missingInputs:[],estimatedInputs:[],staleInputs:[]}}),
-      },canonicalData:async()=>{wasCalled=true;throw new Error("synthetic scoped reader outage");}};
-    const response=await executeAgentTool("get_inventory",{},ctx);
-    expect(wasCalled).toBe(true);
-    expect(response).toMatchObject({source:"inventory",missing:["inventoryReaderUnavailable"]});
-  });
-});
 describe("Task 11/12/13A/14A integrated Supervisor registry",()=>{
-  it("keeps inventory, stock actions, staff planning and absence previews in one strict tool registry",()=>{
-    const publicNames=agentToolDefinitions.map(x=>x.name);
-    for(const name of ["get_inventory","get_usage_variance","get_staff","get_labor",
-      "draft_week_schedule","simulate_staff_absence","propose_purchases",
-      "get_supplier_purchase_orders","inspect_purchase_reconciliation","propose_purchase_receiving","propose_invoice_reconciliation","propose_supplier_discrepancy_followup","inspect_supplier_purchase","propose_supplier_purchase_order"]){
-      expect(publicNames).toContain(name);
-      expect(agentToolDefinitions.find(x=>x.name===name)?.strict).toBe(true);
+  it("keeps approval actions and non-SQL integrations in the strict registry",()=>{
+    for(const name of ["draft_week_schedule","propose_purchases","propose_purchase_receiving","propose_invoice_reconciliation","propose_supplier_discrepancy_followup","propose_supplier_purchase_order","get_schedule","get_staff_messages","get_events"]){
+      expect(agentToolDefinitions.find(t=>t.name===name)?.strict).toBe(true);
     }
-    expect(agentForTool("get_staff_coordination_cases")).toBe("olivia");
-    expect(agentToolDefinitions.find(t=>t.name==="get_staff_coordination_cases")?.strict).toBe(true);
     expect(agentForTool("draft_week_schedule")).toBe("olivia");
-    expect(agentForTool("simulate_staff_absence")).toBe("olivia");
     expect(agentForTool("propose_purchases")).toBe("maya");
     expect(agentForTool("propose_supplier_purchase_order")).toBe("maya");
-    expect(agentForTool("inspect_supplier_purchase")).toBe("maya");
-    expect(agentForTool("get_supplier_purchase_orders")).toBe("maya");
   });
   it("does not silently make Gmail or standing routines public to unconnected owners",()=>{
     const visible=new Set(agentToolDefinitions.map(x=>x.name));
@@ -62,32 +38,7 @@ describe("numbers, statuses, and strict tool contracts", () => {
     expect(JSON.stringify(p?.properties?.temporary_absence)).toContain("null");
   });
 
-  it("keeps an owner's stated sales when recorded profitability is unavailable without inventing profit",async()=>{
-    const ctx:AgentToolContext={timezone:"America/Los_Angeles",asOf:"2026-10-24",locale:"en",tools:{
-      getSalesTrend:async()=>({available:false,value:null,quality:{level:"low",missingInputs:["noCoveredSalesRows"],estimatedInputs:[],staleInputs:[]}}),
-      getProfitability:async()=>({available:false,value:null,quality:{level:"low",missingInputs:["noProfitFacts"],estimatedInputs:[],staleInputs:[]}}),
-      getMenuCatalog:async()=>({available:true,value:[],quality:{level:"high",missingInputs:[],estimatedInputs:[],staleInputs:[]}}),
-    }};
-    const ownerInputs={netSalesCents:1100000,salesPeriod:{from:"2026-10-01",to:"2026-10-22"},
-      laborCents:1500000,laborPeriod:{days:31},rentCents:null,otherOverheadCents:null,
-      overheadPeriod:null,unitCostCents:null,itemsSoldPerDay:null};
-    const result=await executeAgentTool("get_profit",{period:"month",ownerInputs},ctx);
-    expect(result).toMatchObject({netSalesProvenance:null,
-      netSalesCents:null,ownerReportedSalesCents:1100000,ownerProfitCents:null,totalCostsCents:null});
-    expect(result.missing).toContain("costsUnverified");
-    expect(result.missing).toContain("ownerSalesPeriodMismatch");
-  });
 
-  it("keeps menu results when price evidence fails, without claiming an initial source",async()=>{
-    const ctx:AgentToolContext={timezone:"America/Los_Angeles",asOf:"2026-10-24",locale:"en",tools:{
-      getSalesTrend:async()=>({available:false,value:null,quality:{level:"low",missingInputs:[],estimatedInputs:[],staleInputs:[]}}),
-      getProfitability:async()=>({available:false,value:null,quality:{level:"low",missingInputs:[],estimatedInputs:[],staleInputs:[]}}),
-      getMenuCatalog:async()=>({available:true,value:[{id:"a",name:"Latte",category:"drink",active:true,priceCents:500}],quality:{level:"high",missingInputs:[],estimatedInputs:[],staleInputs:[]}}),
-    },menuPriceEvidence:async()=>{throw new Error("database offline")}};
-    const result=await executeAgentTool("get_menu_items",{query:null,limit:null},ctx);
-    expect(result.missing).toContain("menuPriceEvidenceUnavailable");
-    expect(result.items).toMatchObject([{name:"Latte",priceSource:"unknown",priceEvidenceStatus:"unknown",priceCheck:"unknown"}]);
-  });
   it("verifies cents, percentages and plain numbers without erasing text", () => {
     expect(checkNumbers("Profit $123.45, 12.5% margin, 4 days", "", [base], "en")).toEqual([]);
     expect(checkNumbers("Profit $999.00", "", [base], "en")).toHaveLength(1);
@@ -168,13 +119,7 @@ describe("numbers, statuses, and strict tool contracts", () => {
       status:"partial",missing:["sales"] });
   });
   it("publishes exactly the registered strict functions", () => {
-    expect(agentToolDefinitions.map(t=>t.name)).toEqual(["present_response","ask_owner","describe_data","query_data","get_peak_hours","get_employee_sales","get_payroll_facts","get_attention_items","get_profit","get_sales","get_menu_items",
-      "get_staff","get_schedule","get_labor","get_staff_coordination_cases","get_staff_messages","get_team","get_week_schedule","get_labor_rules",
-      "get_coverage_gaps","get_shift_cost","get_business_hours","get_expenses","get_bills",
-      "get_cashflow_evidence","propose_financial_settlement","propose_financial_bill","get_break_even","get_cost_summary","get_usage_variance","get_product_costs","get_ingredient_costs","get_inventory",
-      "get_item_sales","get_price_recommendation","get_today_so_far","draft_week_schedule","simulate_staff_absence","suggest_new_item_price","milk_swap_price","simulate_scenario","calculate","propose_price_change","propose_price_experiment","get_price_monitor_status","propose_goal","record_checkin","get_goal_status",
-      "propose_schedule","propose_shift_change","propose_add_staff","propose_staff_change",
-      "propose_availability_change","propose_rule_change","propose_send_schedule","propose_purchases","get_supplier_purchase_orders","inspect_purchase_reconciliation","propose_purchase_receiving","propose_invoice_reconciliation","propose_supplier_discrepancy_followup","inspect_supplier_purchase","propose_supplier_purchase_order","record_supplier_order_outcome","propose_supplier_vendor_email","get_nearby_events","get_events","propose_event_plan","web_search","manage_commitment","get_supervisor_permissions","get_maintenance_staff_candidates","propose_maintenance_staff_assignment","record_maintenance_repair_claim","search_maintenance_vendor","propose_maintenance_vendor_request","get_maintenance_cases","propose_staff_question","record_staff_question_owner_answer"]);
+    expect(agentToolDefinitions.map(t=>t.name).sort()).toEqual(["ask_owner","draft_week_schedule","get_events","get_nearby_events","get_schedule","get_staff_messages","get_week_schedule","manage_commitment","present_response","propose_add_staff","propose_availability_change","propose_event_plan","propose_financial_bill","propose_financial_settlement","propose_goal","propose_invoice_reconciliation","propose_maintenance_staff_assignment","propose_maintenance_vendor_request","propose_price_change","propose_price_experiment","propose_purchase_receiving","propose_purchases","propose_rule_change","propose_schedule","propose_send_schedule","propose_shift_change","propose_staff_change","propose_staff_question","propose_supplier_discrepancy_followup","propose_supplier_purchase_order","propose_supplier_vendor_email","record_checkin","record_maintenance_repair_claim","record_staff_question_owner_answer","record_supplier_order_outcome","search_maintenance_vendor","web_search"]);
     expect(agentToolDefinitions.every(t=>t.strict)).toBe(true);
     for (const tool of agentToolDefinitions) {
       expect(Object.hasOwn(tool.parameters,"$schema")).toBe(false);
@@ -210,32 +155,6 @@ describe("numbers, statuses, and strict tool contracts", () => {
     };
     for(const tool of agentToolDefinitions)walk(tool.parameters,tool.name);
     expect(gaps).toEqual([]);
-  });
-  it("reads menu without a user-provided business id", async () => {
-    const context: AgentToolContext = {
-      timezone:"America/Los_Angeles",asOf: "2026-10-21", locale: "en",
-      tools: {
-        getMenuCatalog: async () => ({available:true, value:[
-          {id:"a",name:"Latte",category:"drink",active:true,priceCents:450},
-          {id:"b",name:"Cappuccino",category:"drink",active:true,priceCents:550},
-        ],quality:{level:"high",missingInputs:[],estimatedInputs:[],staleInputs:[]}}),
-        getProfitability: async () => ({available:false,value:null,quality:{
-          level:"low",missingInputs:["profit"],estimatedInputs:[],staleInputs:[]}}),
-        getSalesTrend: async () => ({available:false,value:null,quality:{
-          level:"low",missingInputs:["sales"],estimatedInputs:[],staleInputs:[]}}),
-      },
-    };
-    const result = await executeAgentTool("get_menu_items",{query:"latte",limit:25},context);
-    expect(result.items).toMatchObject([{id:"a",name:"Latte",category:"drink",priceCents:450,
-      unit:"cents",priceSource:"initial",realizedAvgCents:null,priceCheck:"unknown",pricePeriod:null,priceEvidenceStatus:"unknown"}]);
-    context.resolveState=newResolveState("What is the price of Espresso?");
-    const wrong=await executeAgentTool("get_menu_items",{query:"Latte",limit:25},context);
-    expect(wrong.missing).toContain("targetNotConfirmed");
-    expect(wrong.items).toBeUndefined();
-    context.resolveState=undefined;
-    expect(result.agentId).toBe("alex");
-    await expect(executeAgentTool("get_menu_items",{businessId:"other"},context)).rejects.toThrow();
-    await expect(executeAgentTool("get_menu_items",{query:null,limit:26},context)).rejects.toThrow();
   });
 });
 
@@ -1755,15 +1674,11 @@ describe("Codex adversarial provenance matrix: identity, history and amounts",()
 
 
 describe("compact strict provider schema",()=>{
- it("preserves custom time patterns and standard date formats while runtime Zod rejects invalid dates",async()=>{
+ it("preserves standard date formats while runtime Zod rejects invalid dates",async()=>{
   const tool=agentToolDefinitions.find(t=>t.name==="get_events");
   const p=tool?.parameters as {properties?:Record<string,Record<string,unknown>>};
   expect(p.properties?.from?.format).toBe("date");
   expect(p.properties?.to?.format).toBe("date");
-  const shift=agentToolDefinitions.find(t=>t.name==="get_shift_cost");
-  const s=shift?.parameters as {properties?:Record<string,Record<string,unknown>>};
-  expect(s.properties?.start?.pattern).toBeTruthy();
-  expect(s.properties?.end?.pattern).toBeTruthy();
   const {getEventsInput}=await import("./tools/getEvents");
   expect(getEventsInput.safeParse({from:"2026-02-30",to:"2026-03-01"}).success).toBe(false);
  });

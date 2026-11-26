@@ -49,10 +49,10 @@ const uuid=/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/iu;
 function verifiedOwnerNumber(key:string,ctx:AgentToolContext):boolean{
  const entry=catalogForMissing(key);
  if(entry.labelKey!=="generic"&&entry.type==="number")return true;
- const saved=(ctx as AgentToolContext&{savedOwnerFacts?:readonly SavedFact[]}).savedOwnerFacts??[];
+ const saved=ctx.ownerFacts??(ctx as AgentToolContext&{savedOwnerFacts?:readonly SavedFact[]}).savedOwnerFacts??[];
  if(saved.some(f=>f.fact_key===entry.factKey))return true;
  return (ctx.turnResults?.()??[]).some(({result})=>
-  result.source!=="canonical_data"&&result.source!=="ask_owner"&&
+  result.source!=="canonical_data"&&result.source!=="sql_research"&&result.source!=="ask_owner"&&
   result.missing?.includes(entry.factKey));
 }
 export const askOwnerTools={ask_owner:{
@@ -68,18 +68,18 @@ export const askOwnerTools={ask_owner:{
   // The missing list is derived from trusted results/saved facts; a model
   // cannot assert provenance with a field label, question, or changeSaved.
   // Non-numeric clarifications (e.g. which date was the pop-up?) remain valid.
-  if(input.kind==="facts"&&ctx.canonicalData&&input.fields?.some(field=>
+  if(input.kind==="facts"&&ctx.sqlResearch&&input.fields?.some(field=>
      field.inputType==="number"&&!verifiedOwnerNumber(field.key,ctx))){
     return {source:"ask_owner",period:null,missing:["numericOwnerInputUnverified"],
-     error:"numericOwnerInputUnverified",nextTool:"query_data",
-     note:"No trusted owner-input evidence supports this numeric card. For recorded POS numbers call query_data. If an owner-only date, place, event, or other context is needed, ask for that specific date/text/choice instead. Do not invent a number or create a numeric owner fact."};
+     error:"numericOwnerInputUnverified",nextTool:"run_sql",
+     note:"No trusted owner-input evidence supports this numeric card. For recorded POS numbers call run_sql. If an owner-only date, place, event, or other context is needed, ask for that specific date/text/choice instead. Do not invent a number or create a numeric owner fact."};
   }
   if(input.kind==="facts"){
     if(!input.fields?.length||input.options.length||input.allowOther||input.fields.length>6||
       new Set(input.fields.map(f=>f.key)).size!==input.fields.length||
       input.fields.some(f=>f.inputType==="choice"&&(!f.choices||f.choices.length<2)))
       return {source:"ask_owner",period:null,missing:["invalidFields"],error:"invalidFactFields"};
-    const saved=(ctx as AgentToolContext&{savedOwnerFacts?:readonly SavedFact[]}).savedOwnerFacts??[];
+    const saved=ctx.ownerFacts??(ctx as AgentToolContext&{savedOwnerFacts?:readonly SavedFact[]}).savedOwnerFacts??[];
     const fields=input.fields.map(field=>{
       const entry=catalogForMissing(field.key);
       const current=input.changeSaved===true?savedFactCurrent(saved,entry.factKey,field.inputType):null;

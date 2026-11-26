@@ -19,7 +19,7 @@ export function matchedCount(text,n){
 }
 export function assertU3ObservedEvidence({model,tools,text,orders,lines,cents,proposals}){
  requireObservedProductionModel(model,"gpt-6-luna");
- if(!Array.isArray(tools)||!tools.includes("query_data"))fail("registered_research_tool_not_used");
+ if(!Array.isArray(tools)||!tools.includes("run_sql"))fail("registered_research_tool_not_used");
  if(!matchedMoney(text,cents)||!matchedCount(text,orders)||!matchedCount(text,lines))
   fail("independent_source_result_mismatch");
  if(proposals!==0)fail("unapproved_effect_created");

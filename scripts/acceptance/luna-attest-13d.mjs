@@ -75,7 +75,7 @@ if(facts.caseState!=="completed"||facts.ownerDecision!=="approve"||
 const tools=audit.receipts.flatMap(r=>
   Array.isArray(r.toolNames)?r.toolNames:[]);
 const staffing=tools.includes("get_staff_coordination_cases");
-const roster=["query_data","get_coverage_gaps","get_week_schedule","get_schedule"]
+const roster=["run_sql","get_coverage_gaps","get_week_schedule","get_schedule"]
   .some(t=>tools.includes(t));
 if(!staffing||!roster||!tools.includes("get_investigation_source"))
   throw Error("Trusted provider did not select required staff/roster source tools");

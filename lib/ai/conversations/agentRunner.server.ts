@@ -1,3 +1,4 @@
+import {isResearchIntegrationReadTool} from "@/lib/ai/research/integrationReads";
 import "server-only";
 import type {SupabaseClient} from "@supabase/supabase-js";
 import {createHash} from "node:crypto";
@@ -6,10 +7,8 @@ import {recordedWhatsAppImageIds} from "@/lib/ai/conversations/authorizedTurn.se
 import {fileEvidence} from "@/lib/ai/conversations/fileEvidence.server";
 import {possiblePriorReceipt} from "@/lib/ai/conversations/receiptDuplicate";
 import {verifySignature,MAX_UPLOAD_BYTES} from "@/lib/ai/conversations/attachments";
-import {getWeekSchedule as scopedWeekSchedule,getShiftCost as scopedShiftCost} from "@/lib/data/staffSchedule.server";
-import {getTeamRules as scopedTeamRules} from "@/lib/data/staffRules.server";
+import {getWeekSchedule as scopedWeekSchedule} from "@/lib/data/staffSchedule.server";
 import {readStaffMessagesForVerifiedOwner} from "@/lib/staffCommunication/channel.server";
-import {readClaimedStaffCoordination} from "@/lib/staffCoordination/cases.server";
 import {withDurableOliviaReadScope} from "@/lib/scheduling/oliviaReadScope.server";
 import {TeamRulesService} from "@/lib/ai/policies/service";
 import {SupabaseTeamRulesRepository} from "@/lib/ai/policies/repository.server";
@@ -26,17 +25,14 @@ import {menuPriceChangeCapabilityId} from "@/lib/ai/supervisor/loop/menuPriceCha
 import {staffCapabilityId} from "@/lib/ai/supervisor/loop/staffProposals.server";
 import {purchaseCapabilityId} from "@/lib/ai/supervisor/loop/purchases.server";
 import {supplierReceivingCapabilityId,supplierInvoiceCapabilityId,financialSettlementCapabilityId,financialBillCapabilityId,prepareSupplierDiscrepancyFollowup,type InvoiceSource} from "@/lib/ai/supervisor/loop/supplierReceiving.server";
-import {supplierPurchaseOrderCapabilityId,supplierPurchaseOrderEffectSchema,investigateSupplierPurchase} from "@/lib/ai/supervisor/loop/purchaseOrders.server";
-import {readSupplierPurchaseOrders,readSupplierOrderCommunications} from "@/lib/data/supplierPurchasing.server";
-import {readFinancialEvidence} from "@/lib/data/financialEvidence.server";
-import {readSupplierReconciliation} from "@/lib/data/supplierReceiving.server";
+import {supplierPurchaseOrderCapabilityId} from "@/lib/ai/supervisor/loop/purchaseOrders.server";
+import {readSupplierPurchaseOrders} from "@/lib/data/supplierPurchasing.server";
 import {proposeApprovedSupplierEmail} from "@/lib/ai/supervisor/loop/vendorDispatch.server";
 import {recordOwnerSupplierOutcome,authenticatedSupplierOwnerTurn,explicitSingleOwnerPurchaseOrder} from "@/lib/purchasing/ownerSupplierOutcome.server";
 import {simulationOwnerReader} from "@/lib/ai/supervisor/loop/simulationOwner.server";
 import type {SupplierPurchaseOrderEffect} from "@/lib/ai/supervisor/loop/purchaseOrders.server";
 import {SupabaseLoopRepository} from "@/lib/ai/supervisor/loop/supabase.server";
 import {precedingInvestigationReport,type CustomerInvestigationOrigin} from "@/lib/ai/supervisor/routines/investigation";
-import {SupervisorEffectGateway} from "@/lib/ai/supervisor/loop/effectGateway.server";
 import {gmailCapabilityId,type GmailProposalInput} from "@/lib/ai/supervisor/loop/gmail.server";
 import {maintenanceContext} from "@/lib/ai/supervisor/loop/maintenance.server";
 import {staffQuestionCapabilityId,staffQuestionEffect} from "@/lib/ai/supervisor/loop/staffQuestion.server";
@@ -46,17 +42,10 @@ import {getConnectorAccount,allowsGmail,assertConnectorOwnerLive} from "@/lib/co
 import {agentToolDefinitions,gmailToolDefinitions} from "@/lib/ai/agent/tools";
 import { createAuthenticatedCafeTools, readSupervisorCafeIdentity } from "@/lib/ai/cafeTools.server";
 import {ToolError} from "@/lib/ai/agent/toolErrors";
-import {readMenuPriceEvidence} from "@/lib/data/menuPriceEvidence.server";
-import {readSupervisorEconomics} from "@/lib/data/supervisorEconomics.server";
-import {todaySoFarForBusiness,TODAY_LIVE_FRESH_MS} from "@/lib/data/todayLive.server";
 import {goalCapabilityId} from "@/lib/ai/supervisor/loop/goal.server";
-import {listOwnerGoals,readGoalStatus,roundForUnit} from "@/lib/ai/supervisor/loop/goalReads.server";
 import {recordGoalCheckin} from "@/lib/ai/supervisor/loop/goalCheckins.server";
-import {readOwnerProposals,readOwnerPriceMonitorReports,readOwnerPriceMonitorProposals,readOwnerVerifiedPriceWindows,readOwnerToastObservations} from "@/lib/ai/supervisor/loop/reads.server";
-import {mapPriceMonitorRows} from "@/lib/ai/agent/tools/priceMonitor";
+import {readOwnerProposals} from "@/lib/ai/supervisor/loop/reads.server";
 import {requirePositivePriceIncrease} from "@/lib/ai/agent/tools/priceExperiment";
-import {BOARD_PROPOSAL_STATUSES,BOARD_REPORT_STATUSES} from "@/lib/operating/board";
-import {metricCatalog} from "@/lib/calc/metrics/catalog";
 import {ownerRunStatement,type OwnerRunCheckpoint} from "@/lib/ai/supervisor/runs/contracts";
 import type {DurableReplyFence} from "./replyWriter.server";
 import {cafeNotesContext,cafeNotesPort} from "@/lib/ai/research/notes.server";
@@ -208,7 +197,9 @@ export async function runOneTurn(p: TurnParams): Promise<{ replyId: string; repl
       if(!episode.error&&!alert.error&&episode.data&&alert.data?.kind==="business_anomaly"&&
         ["new","seen"].includes(alert.data.status)&&alert.data.payload?.family==="customer_trend"&&
         evidence?.sourceRevision===preceding.sourceRevision&&Array.isArray(evidence.modelTools)&&
-        evidence.modelTools.includes("get_investigation_source")&&evidence.modelTools.includes("query_data")&&
+        (evidence.modelTools.includes("run_sql")||
+          // Historical reports remain readable; current reports attest the server-collected claim.
+          (evidence.modelTools.includes("get_investigation_source")&&evidence.modelTools.includes("query_data")))&&
         Array.isArray(evidence.missing)&&evidence.missing.length===0){
         customerOrigin={sourceId:preceding.sourceId,sourceRevision:preceding.sourceRevision,
           episodeId:episode.data.episode_id,reportMessageId:preceding.report.id,ownerMessageId:owner.id};
@@ -319,12 +310,7 @@ export async function runOneTurn(p: TurnParams): Promise<{ replyId: string; repl
     const context: AgentToolContext = { tools, asOf: identity.asOf, locale: p.locale,timezone:identity.timezone,currency:identity.currency,
       ownerText:currentOwnerStatement,
       externalEvidencePresent:()=>sourceChecks.size>0,
-      readPermissions:()=>new SupervisorEffectGateway().listMandates({businessId:scope.businessId,ownerUserId:scope.ownerUserId}),
-      canonicalData:async()=>({
-        db:await getDb(),businessId:scope.businessId,ownerUserId:scope.ownerUserId,
-        threadId:id,mode:p.durableFence?"durable" as const:"owner" as const,
-        ...(p.durableFence?{runId:p.durableFence.runId,leaseToken:p.durableFence.claimToken}:{})
-       }),
+      sqlResearch:true,
       staffQuestionPropose:async raw=>{
         await assertTurnSources();
         // The source of an owner-requested message is the owner's own saved chat message, never a model-supplied id.
@@ -353,21 +339,6 @@ export async function runOneTurn(p: TurnParams): Promise<{ replyId: string; repl
         search:async(caseId,query)=>withGmailEvidence(async()=>maintenanceContext(await getDb(),proposalScope,{ownerMessage:{id:owner.id,text:currentOwnerStatement}}).search(caseId,query)),
         propose:async input=>maintenanceContext(await getDb(),proposalScope,{ownerMessage:{id:owner.id,text:currentOwnerStatement}}).propose(input),
       },
-      menuPriceEvidence:items=>readMenuPriceEvidence(scope.businessId,items,identity.asOf,p.externalClient),
-      readEconomics:async()=>readSupervisorEconomics(await getDb(),scope.businessId,identity.asOf),
-      readPriceMonitors:async()=>{
-        const db=await getDb();
-        const ownerScope={businessId:scope.businessId,ownerUserId:scope.ownerUserId};
-        const priceRows=await readOwnerPriceMonitorProposals(db,ownerScope,
-          [priceExperimentCapabilityId,menuPriceChangeCapabilityId],BOARD_PROPOSAL_STATUSES);
-        const reports=await readOwnerPriceMonitorReports(db,ownerScope,priceRows.map(r=>r.id),BOARD_REPORT_STATUSES);
-        const starts=await readOwnerVerifiedPriceWindows(db,ownerScope,priceRows.map(r=>r.id));
-        return [...mapPriceMonitorRows(priceRows,reports,identity.asOf,identity.timezone,new Map(starts.map(s=>[s.source_id,s.start_at])),new Date().toISOString()),
-          ...await readOwnerToastObservations(db,ownerScope)];
-      },
-      // Toast credentials are service-role only; the café comes from the authenticated scope.
-      readTodaySoFar:()=>todaySoFarForBusiness(createAdminSupabaseClient(),scope.businessId,
-         {maxAgeMs:TODAY_LIVE_FRESH_MS}),
       // Location comes from the café profile or the owner's saved answer, never from the model.
       cafeLocation:async()=>readCafeLocation(await getDb(),scope.businessId,ownerFactRead.facts),
       // Saved event answers never initiate the paid nearby-event discovery job.
@@ -391,11 +362,8 @@ export async function runOneTurn(p: TurnParams): Promise<{ replyId: string; repl
       readWeekSchedule:weekStart=>external?
         getDb().then(client=>scopedWeekSchedule({weekStart},{client,businessId:scope.businessId,ownerUserId:scope.ownerUserId})):
         getWeekSchedule({weekStart}),
+      staffMessages:{read:async()=>readStaffMessagesForVerifiedOwner(await getDb(),scope.businessId,scope.ownerUserId)},
       ...(durableRead?{
-        readShiftCost:raw=>scopedShiftCost(raw,durableRead),
-        readLaborRules:()=>scopedTeamRules(durableRead),
-        staffMessages:{read:()=>readStaffMessagesForVerifiedOwner(durableRead.client,scope.businessId,scope.ownerUserId)},
-        staffCoordinationRead:()=>readClaimedStaffCoordination(durableRead.client,scope),
         oliviaPreview:{
           week:raw=>withDurableOliviaReadScope(durableRead,async()=> (await import("@/lib/actions/oliviaPlanning")).previewOliviaWeek(raw)),
           absence:raw=>withDurableOliviaReadScope(durableRead,async()=> (await import("@/lib/actions/oliviaPlanning")).previewOliviaAbsenceWhatIf(raw)),
@@ -507,62 +475,7 @@ export async function runOneTurn(p: TurnParams): Promise<{ replyId: string; repl
         if(draft.status!=="draft")throw new ToolError("validation","Bill proposal no longer editable.");
         return {proposalId:draft.id,revision:draft.revision};
       },
-      financialEvidenceRead:selection=>readFinancialEvidence(proposalScope,identity.asOf,selection),
-      receivingRead:async purchaseOrderId=>{
-        const {client}=await simulationOwnerReader(proposalScope);
-        return readSupplierReconciliation(client,scope.businessId,scope.ownerUserId,purchaseOrderId);
-      },
       purchasing:{
-        list:async()=>{
-          const {client}=await simulationOwnerReader(proposalScope);
-          // Independently read editable drafts and interrupted approvals; a long
-          // draft history cannot mask a pending or uncertain effect.
-          const ownerScope={businessId:scope.businessId,ownerUserId:scope.ownerUserId};
-          const [orders,draftRows,unresolvedRows]=await Promise.all([
-            readSupplierPurchaseOrders(client,scope.businessId,scope.ownerUserId),
-            readOwnerProposals(client,ownerScope,
-              {threadId:id,capabilityId:supplierPurchaseOrderCapabilityId,
-               statuses:["draft"],limit:21}),
-            readOwnerProposals(client,ownerScope,
-              {threadId:id,capabilityId:supplierPurchaseOrderCapabilityId,
-               statuses:["approved","executing"],limit:21}),
-          ]);
-          const identity=(row:(typeof draftRows)[number])=>{
-            const effect=supplierPurchaseOrderEffectSchema.parse(row.canonical_effect_payload);
-            return {id:row.id,revision:row.revision,supplierName:effect.supplierName,
-              itemNames:effect.lines.map(line=>line.itemName),
-              subtotalCents:effect.subtotalCents,currency:effect.currency};
-          };
-          // A proposal in approved/executing is NOT an editable draft, and
-          // no missing PO receipt authorizes a new order or a blind effect retry.
-          const drafts=draftRows.slice(0,20).map(identity);
-          const gateway=new SupervisorEffectGateway();
-          const unresolvedApprovals=await Promise.all(unresolvedRows.slice(0,20).map(async row=>{
-            // Reuse the canonical effect ledger reader: it reauthorizes this
-            // exact café/owner/thread before returning any effect attempt.
-            const attempt=await gateway.readAttempt(proposalScope,row.id);
-            return {...identity(row),status:row.status as "approved"|"executing",
-              attemptState:attempt?.state??null,
-              recovery:row.status==="approved"&&!attempt
-                ?"owner_retry_or_cancel" as const:"receipt_only" as const};
-          }));
-          const [communications,mailbox]=await Promise.all([
-            readSupplierOrderCommunications(client,scope.businessId,scope.ownerUserId,
-              orders.orders.map(o=>o.id)),
-            getConnectorAccount({businessId:scope.businessId,ownerUserId:scope.ownerUserId})
-              .then(account=>({account,unavailable:false as const}))
-              .catch(()=>({account:null,unavailable:true as const}))
-          ]);
-          return {...orders,drafts,draftsTruncated:draftRows.length>20,
-            unresolvedApprovals,unresolvedApprovalsTruncated:unresolvedRows.length>20,
-            vendorCommunications:communications,
-            gmailConnection:{status:mailbox.unavailable?"status_unavailable":
-                mailbox.account?.status??"not_connected",
-              connected:mailbox.account?.status==="active",
-              canSend:allowsGmail(mailbox.account,"send"),
-              canRead:allowsGmail(mailbox.account,"read")}};
-        },
-        inspect:input=>investigateSupplierPurchase(proposalScope,input),
         recordOwnerOutcome:async input=>{
           // Normal browser and WhatsApp owner turns run INSIDE a durable
           // AgentJob. Bind it to the actual persisted owner message, rather
@@ -694,24 +607,6 @@ export async function runOneTurn(p: TurnParams): Promise<{ replyId: string; repl
           await assertTurnSources();
           const saved=await recordGoalCheckin(createAdminSupabaseClient(),owner,goalId,{date,answer,note});
           return saved?{saved:true,checkin:saved}:{missing:["noOpenCheckin"]};
-        },
-        status:async(goalId)=>{
-          const owner={businessId:scope.businessId,ownerUserId:scope.ownerUserId};
-          if(!goalId)return {goals:await listOwnerGoals(await getDb(),owner)};
-          const read=await readGoalStatus(await getDb(),{...owner,locale:p.locale},goalId,identity.asOf);
-          if(!read)return {missing:["goalNotFound"]};
-          const primary=read.effect.metrics.find(m=>m.role==="primary")!;
-          const r=read.outcome.evaluation.results[primary.id];
-          return {goal:{id:read.proposal.id,title:read.effect.title,status:read.proposal.status,
-              startsOn:read.window.start,endsOn:read.window.end},
-            evaluation:{status:read.outcome.evaluation.status,recommendation:read.outcome.recommendation,asOf:read.outcome.asOf},
-            summary:read.text,sampledDays:read.sampledDays,
-            metricDetail:{id:primary.id,metricKey:primary.metricKey,source:"computed",
-              params:primary.itemId?{itemId:primary.itemId}:{},unit:metricCatalog[primary.metricKey].unit,
-              comparator:primary.comparator,targetKind:primary.targetKind,target:primary.target},
-            metricEvaluation:r?{current:roundForUnit(read.effect,primary.id,r.current),
-              baseline:roundForUnit(read.effect,primary.id,r.baseline),
-              target:roundForUnit(read.effect,primary.id,r.target),coverage:r.coverage}:null};
         },
       },
       proposals:{proposePriceChange:async({productId,newPriceCents})=>{
@@ -900,7 +795,7 @@ export async function runOneTurn(p: TurnParams): Promise<{ replyId: string; repl
         return value;
       }),
       // The existing registered action tools (same executor, same approval cards); routine tool as in the legacy turn.
-      actions:{context,definitions:[...agentToolDefinitions.filter(t=>isResearchActionTool(t.name)),{
+      actions:{context,definitions:[...agentToolDefinitions.filter(t=>isResearchActionTool(t.name)||isResearchIntegrationReadTool(t.name)),{
         ...routineToolDefinition,
         description:routineToolDefinition.description+" VERIFIED SAME-THREAD OWNER MESSAGES "+
           "(choose the source ID for the complete investigation goal, not the answer to a scheduling question; "+

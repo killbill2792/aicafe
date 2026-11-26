@@ -21,6 +21,8 @@ export const commitmentTools={
       const service=ctx.commitments;
       if(!service)return {source:"operating_tasks",period:null,agentId:"leo",missing:["not_supported"]};
       if(input.action==="list"){
+        // Saved commitments are rows in operating_tasks; Luna reads them with SQL, so no list port is provided.
+        if(!service.list)return {source:"operating_tasks",period:null,agentId:"leo",missing:["use_sql_for_list"]};
         const commitments=await service.list();
         return {source:"operating_tasks",period:null,agentId:"leo",missing:[],commitments};
       }

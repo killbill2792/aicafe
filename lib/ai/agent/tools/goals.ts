@@ -17,7 +17,6 @@ export const proposeGoalSchema=z.strictObject({
 });
 export const recordCheckinSchema=z.strictObject({goal_id:z.uuid(),date:z.iso.date().nullable(),
   answer:z.enum(CHECKIN_ANSWERS),note:z.string().trim().max(500).nullable()});
-export const goalStatusSchema=z.strictObject({goal_id:z.uuid().nullable()});
 
 export type GoalPort={
   propose(input:{metric:z.infer<typeof metric>;itemId:string|null;direction:"up"|"down";
@@ -25,8 +24,6 @@ export type GoalPort={
     guardrails:Array<{metric:z.infer<typeof metric>;itemId:string|null;direction:"not_below"|"not_above";percent:number}>;
     checkin:GoalCheckin|null}):
     Promise<{proposalId:string;revision:number;title:string}>;
-  /** goalId null lists the owner's goals; an id returns that goal's live score. */
-  status(goalId:string|null):Promise<Record<string,unknown>>;
   /** Saves the owner's answer to the goal's open (or dated) check-in. */
   recordCheckin(goalId:string,date:string|null,answer:CheckinAnswer,note:string|null):Promise<Record<string,unknown>>;
 };
@@ -34,7 +31,7 @@ export type GoalPort={
 export const goalTools={
   propose_goal:{
     agentId:"leo",schema:proposeGoalSchema,
-    description:"Draft a goal for the owner to confirm, e.g. 'average ticket up 5% for 30 days'. Metrics: net_sales, orders, avg_ticket (whole café) or item_units, item_revenue (one menu item: find its UUID with get_menu_items). Suggest one guardrail when a change could hurt another number (e.g. orders not_below 10). A goal tracks numbers; it changes nothing.",
+    description:"Draft a goal for the owner to confirm, e.g. 'average ticket up 5% for 30 days'. Metrics: net_sales, orders, avg_ticket (whole café) or item_units, item_revenue (one menu item: find its UUID with run_sql against cv_menu). Suggest one guardrail when a change could hurt another number (e.g. orders not_below 10). A goal tracks numbers; it changes nothing.",
     execute:async(raw:unknown,ctx:AgentToolContext):Promise<AgentToolResult>=>{
       const v=proposeGoalSchema.parse(raw);
       if(!ctx.goals)return {source:"goal_proposal",period:null,missing:["not_supported"]};
@@ -47,20 +44,11 @@ export const goalTools={
   },
   record_checkin:{
     agentId:"leo",schema:recordCheckinSchema,
-    description:"Save the owner's answer (yes, somewhat or no, plus an optional note) to a goal check-in question they were asked in chat. Use the goal_id from get_goal_status; date null means the latest open check-in.",
+    description:"Save the owner's answer (yes, somewhat or no, plus an optional note) to a goal check-in question they were asked in chat. Use the goal_id from a scoped run_sql read; date null means the latest open check-in.",
     execute:async(raw:unknown,ctx:AgentToolContext):Promise<AgentToolResult>=>{
       const v=recordCheckinSchema.parse(raw);
       if(!ctx.goals)return {source:"goal_checkin",period:null,missing:["not_supported"]};
       return {source:"goal_checkin",period:null,agentId:"leo",missing:[],...await ctx.goals.recordCheckin(v.goal_id,v.date,v.answer,v.note)};
-    },
-  },
-  get_goal_status:{
-    agentId:"leo",schema:goalStatusSchema,
-    description:"List the owner's goals (goal_id null), or read one goal's progress so far. Report the summary text; numbers are daily averages.",
-    execute:async(raw:unknown,ctx:AgentToolContext):Promise<AgentToolResult>=>{
-      const v=goalStatusSchema.parse(raw);
-      if(!ctx.goals)return {source:"goals",period:null,missing:["not_supported"]};
-      return {source:"goals",period:null,agentId:"leo",missing:[],...await ctx.goals.status(v.goal_id)};
     },
   },
 } as const;

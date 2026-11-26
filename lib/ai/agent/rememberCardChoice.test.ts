@@ -1,5 +1,5 @@
 import {describe,expect,it,vi} from "vitest";
-import {executeAgentTool,type AgentToolContext} from "./tools/index";
+import {type AgentToolContext} from "./tools/index";
 import {proposalTools} from "./tools/proposals";
 import {newResolveState,resolveEntity} from "./resolve";
 
@@ -46,9 +46,6 @@ function context(menu:Menu,ownerText:string,history:{role:"user"|"assistant";con
 describe("the owner's card pick holds for the rest of that topic",()=>{
  for(const [name,menu] of Object.entries(menus))it(name+": 'draft price change approval' drafts the latte already picked",async()=>{
   const {ctx,proposePriceChange}=context(menu,"draft price change approval",conversation(menu));
-  const read=await executeAgentTool("get_menu_items",{query:"latte",limit:null},ctx);
-  expect(read.needsOwnerChoice).toBeUndefined();
-  expect((read.items as {id:string}[]).map(i=>i.id)).toEqual([hot]);
   const draft=await proposalTools.propose_price_change.execute({product_id:hot,new_price_cents:785},ctx);
   expect(draft).toMatchObject({missing:[],draft:true,saved:false});
   expect(proposePriceChange).toHaveBeenCalledWith({productId:hot,newPriceCents:785});
@@ -68,8 +65,6 @@ describe("the owner's card pick holds for the rest of that topic",()=>{
  it("is dropped when the owner switches to another option of that card",async()=>{
   const menu=menus.icedName;
   const {ctx,proposePriceChange}=context(menu,"actually do the iced one",conversation(menu));
-  const read=await executeAgentTool("get_menu_items",{query:"latte",limit:null},ctx);
-  expect(read.needsOwnerChoice).toBe(true);
   const draft=await proposalTools.propose_price_change.execute({product_id:hot,new_price_cents:785},ctx);
   expect(draft.missing.length).toBeGreaterThan(0);
   expect(proposePriceChange).not.toHaveBeenCalled();
@@ -78,8 +73,6 @@ describe("the owner's card pick holds for the rest of that topic",()=>{
   const menu=menus.icedName;
   expect(card(menu).labels[1]).toBe("Iced Latte");
   const {ctx,proposePriceChange}=context(menu,"actually the regular latte, not the iced one",conversation(menu,[],1));
-  const read=await executeAgentTool("get_menu_items",{query:"latte",limit:null},ctx);
-  expect(read.needsOwnerChoice).toBe(true);
   const draft=await proposalTools.propose_price_change.execute({product_id:iced,new_price_cents:535},ctx);
   expect(draft.missing.length).toBeGreaterThan(0);
   expect(proposePriceChange).not.toHaveBeenCalled();
@@ -100,10 +93,9 @@ describe("the owner's card pick holds for the rest of that topic",()=>{
   const history=conversation(menu).map((m,i)=>i===2?{...m,content:"never mind, what were sales today?"}:m);
   expect([...newResolveState("draft price change approval",history).recentChoiceIds??[]]).toEqual([]);
  });
- it("does not answer a different item's question",async()=>{
-  const menu=menus.sameName;
-  const {ctx}=context(menu,"what is the cappuccino price?",conversation(menu));
-  const read=await executeAgentTool("get_menu_items",{query:"cappuccino",limit:null},ctx);
-  expect((read.items as {id:string}[]).map(i=>i.id)).toEqual([cappuccino]);
+ it("a new explicitly named cappuccino is not displaced by a previous latte card",async()=>{
+  const {ctx,proposePriceChange}=context(menus.sameName,"draft cappuccino price change to $5.35",conversation(menus.sameName));
+  await proposalTools.propose_price_change.execute({product_id:cappuccino,new_price_cents:535},ctx);
+  expect(proposePriceChange).toHaveBeenCalledWith({productId:cappuccino,newPriceCents:535});
  });
 });

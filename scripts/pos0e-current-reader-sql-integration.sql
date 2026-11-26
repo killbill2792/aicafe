@@ -21,8 +21,6 @@ BEGIN
  (a,'POS0e synthetic A',false),(b,'POS0e synthetic B',false);
  PERFORM pg_temp.pos0e_assert(
   pg_get_functiondef('public.toast_records_for(uuid,date,date)'::regprocedure)
-   NOT ILIKE '%toast_raw_sam%' AND
-  pg_get_functiondef('public.ai_toast_fields(uuid,text)'::regprocedure)
    NOT ILIKE '%toast_raw_sam%',
   'active operational reader functions must exclude diagnostic snapshots');
  FOR p IN SELECT viewname FROM pg_views WHERE schemaname='public' AND left(viewname,3)='cv_'
@@ -130,16 +128,9 @@ BEGIN
     WHERE record_type='job' and data->>'name'='Shift leader'),
    'genuine retained job remains readable after failed verification');
   PERFORM pg_temp.pos0e_assert(
-   public.ai_toast_fields(a,'job') @>
-    '[{"field":"data.name","type":"string"}]'::jsonb,
-   'retained staged job is still discoverable');
-  response:=public.ai_query_view(a,'cv_toast_records',array['data.name']::text[],
-   '[{"column":"record_type","op":"=","value":"job"}]'::jsonb,
-   null::text[],null::jsonb,d,d,null,10);
-  PERFORM pg_temp.pos0e_assert(
-   response->'rows'->0->>'data.name'='Shift leader' and
-    jsonb_array_length(response->'rows')=1,
-   'registered query retains the authenticated job after reset');
+   (SELECT count(*)=1 AND bool_and(jsonb_typeof(data->'name')='string')
+    FROM public.toast_records_for(a,d,d) WHERE record_type='job' AND data->>'name'='Shift leader'),
+   'retained staged job remains discoverable and readable after reset');
   PERFORM pg_temp.pos0e_assert(
    (SELECT count(*)=0 FROM public.toast_records_for(b,d,d)
     WHERE record_type='job'),
@@ -159,24 +150,12 @@ BEGIN
   (SELECT count(*)=1 FROM public.cv_dining_options WHERE business_id=a AND dining_option_ref='dine-A')
   AND NOT EXISTS(SELECT 1 FROM public.cv_dining_options WHERE business_id=a AND dining_option_ref='dine-poison'),
   'dining options must never consume diagnostic-only names');
- -- Undated current configuration is a timeless reference fact. Query a
- -- different day to prove the registered reader does not fabricate dates.
- response:=public.ai_query_view(a,'cv_dining_options',
-  ARRAY['dining_option_ref','dining_option_name','business_date']::text[],
-  '[{"column":"dining_option_ref","op":"=","value":"dine-A"}]'::jsonb,
-  null::text[],null::jsonb,d-90,d-80,null,10);
+ -- Undated configuration is a timeless reference fact.
  PERFORM pg_temp.pos0e_assert(
-  jsonb_array_length(response->'rows')=1 AND
-  response->'rows'->0->>'dining_option_ref'='dine-A' AND
-  response->'rows'->0->>'dining_option_name'='Patio' AND
-  response->'rows'->0->>'business_date' IS NULL,
-  'query_data must retrieve undated dining options without invented dates');
- response:=public.ai_query_view(b,'cv_dining_options',
-  ARRAY['dining_option_ref']::text[],'[]'::jsonb,
-  null::text[],null::jsonb,d-90,d-80,null,10);
- PERFORM pg_temp.pos0e_assert(
-  jsonb_array_length(response->'rows')=0,
-  'undated configuration retrieval must remain café-scoped');
+  (SELECT count(*)=1 AND bool_and(dining_option_name='Patio' AND business_date IS NULL)
+   FROM public.cv_dining_options WHERE business_id=a AND dining_option_ref='dine-A')
+  AND NOT EXISTS (SELECT 1 FROM public.cv_dining_options WHERE business_id=b),
+  'undated configuration remains café-scoped, without fabricated dates');
  PERFORM pg_temp.pos0e_assert(
   (SELECT count(*)=1 FROM public.toast_records_for(a,d,d) r
    WHERE record_type='cashmgmt/v1/entries' AND data->>'guid'='cash-current-A'),
@@ -189,50 +168,20 @@ BEGIN
   (SELECT count(*)=0 FROM public.toast_records_for(a,d,d) r
    WHERE data->>'guid' IN ('cash-current-B','cash-poison','dine-poison')),
   'neither another café nor diagnostics may appear through A reader');
- response:=public.ai_query_view(a,'cv_toast_records',null::text[],
-  '[{"column":"record_type","op":"=","value":"cashmgmt/v1/entries"}]'::jsonb,
-  null::text[],'[{"fn":"count","column":"source_ref"}]'::jsonb,d,d,null,100);
  PERFORM pg_temp.pos0e_assert(
-  response->'rows'->0->>'count_source_ref'='1' AND response->>'truncated'='false',
-  'bounded query_data must count one retained current event');
- -- Test the same registered query_data SQL function for real cash amounts,
- -- independently of Luna model decisions or direct cv_cash SELECTs.
- response:=public.ai_query_view(a,'cv_cash',null::text[],
-  '[]'::jsonb,null::text[],
-  '[{"fn":"sum","column":"amount_cents"}]'::jsonb,d,d,null,100);
+  (SELECT count(source_ref)=1 FROM public.toast_records_for(a,d,d)
+   WHERE record_type='cashmgmt/v1/entries')
+  AND (SELECT sum(amount_cents)=1250 FROM public.cv_cash WHERE business_id=a AND business_date=d),
+  'current cash counts and exact cents are available in SQL');
  PERFORM pg_temp.pos0e_assert(
-  (response->'rows'->0->>'sum_amount_cents')::numeric=1250
-  AND (response->>'truncated')::boolean=false,
-  'current Toast cash cents must be accessible through canonical query_data RPC');
- -- Exercise the exact GUID-filtered named JSON field that Luna needs:
- -- current employee uses record_type=employee, NOT labor/v1/employees.
- response:=public.ai_query_view(a,'cv_toast_records',ARRAY['data.display_name']::text[],
-  jsonb_build_array(
-   jsonb_build_object('column','record_type','op','=','value','employee'),
-   jsonb_build_object('column','record_ref','op','=','value',employee_a::text)),
-  null::text[],null::jsonb,d,d,null,10);
+  (SELECT count(*)=1 AND bool_and(data->>'display_name'='Nadia Rao')
+   FROM public.toast_records_for(a,d,d) WHERE record_type='employee' AND record_ref=employee_a::text),
+  'SQL returns current employee by GUID and permitted field');
  PERFORM pg_temp.pos0e_assert(
-  response->'rows'->0->>'data.display_name'='Nadia Rao'
-  AND jsonb_array_length(response->'rows')=1,
-  'registered canonical query_data must return current employee by GUID and permitted named field');
-
-
- PERFORM pg_temp.pos0e_assert(
-  public.ai_toast_fields(a,'cashmgmt/v1/entries') @>
-   '[{"field":"data.extra.nested.1.lateOptional","type":"string"}]'::jsonb,
-  'describe_data must preserve later array indices');
-  PERFORM pg_temp.pos0e_assert(
-   NOT (public.ai_toast_fields(a,'cashmgmt/v1/entries') @>
-    '[{"field":"data.extra.nested.0.lateOptional"}]'::jsonb),
-   'later array-only path must not be mislabelled index zero');
-  response:=public.ai_query_view(a,'cv_toast_records',
-   array['data.extra.nested.1.lateOptional']::text[],
-   '[{"column":"record_type","op":"=","value":"cashmgmt/v1/entries"}]'::jsonb,
-   null::text[],null::jsonb,d,d,null,10);
-  PERFORM pg_temp.pos0e_assert(
-   response->'rows'->0->>'data.extra.nested.1.lateOptional'='present-in-second-element'
-    and jsonb_array_length(response->'rows')=1,
-   'registered query retrieves the exact advertised array element');
+  (SELECT count(*)=1 AND bool_and(data#>>'{extra,nested,1,lateOptional}'='present-in-second-element'
+    AND data#>'{extra,nested,0,lateOptional}' IS NULL)
+   FROM public.toast_records_for(a,d,d) WHERE record_type='cashmgmt/v1/entries'),
+  'SQL preserves the exact later array element');
 
  PERFORM pg_temp.pos0e_assert(
   public.ai_query_path('data.customer.email')=ARRAY['customer','email']::text[]
@@ -260,66 +209,25 @@ BEGIN
    and public.ai_query_path('data.customer.first_name') is not null
    and public.ai_query_path('data.customer.loyalty_guid') is not null,
   'old retained token keys denied in SQL, normal customer/loyalty keys retained');
+ -- The entire retained JSON object must be sanitized, even when queried directly.
  PERFORM pg_temp.pos0e_assert(
-  not (public.ai_toast_fields(a,'cashmgmt/v1/entries') @>
-    '[{"field":"data.cardNumber"}]'::jsonb)
-   and not (public.ai_toast_fields(a,'cashmgmt/v1/entries') @>
-    '[{"field":"data.access_token"}]'::jsonb),
-  'legacy credential must not be described even when it exists in retained data');
-
-  -- The entire data object is a selectable physical column: redact inside
-  -- it too, or historic credential keys escape the named-field guard.
-  response:=public.ai_query_view(a,'cv_toast_records',ARRAY['data']::text[],
-   '[{"column":"record_type","op":"=","value":"cashmgmt/v1/entries"}]'::jsonb,
-   null::text[],null::jsonb,d,d,null,10);
-  PERFORM pg_temp.pos0e_assert(
-   jsonb_array_length(response->'rows')=1
-   and response->'rows'->0->'data'->>'guid'='cash-current-A'
-   and response->'rows'->0->'data'->'customer'->>'email'='synthetic@example.invalid'
-   and response->'rows'->0->'data'->'customer'->>'phone'='5550100'
-   and response->'rows'->0->'data'->'customer'->'loyalty'->>'guid'='loyalty-A'
-   and response->'rows'->0->'data'->'payments'->0->>'amount'='5'
-   and not (response->'rows'->0->'data' ? 'cardNumber')
-   and not (response->'rows'->0->'data' ? 'access_token')
-   and not (response->'rows'->0->'data'->'customer' ? 'access_token')
-   and not (response->'rows'->0->'data'->'customer' ? 'refreshToken')
-   and not (response->'rows'->0->'data'->'customer' ? 'API_KEY')
-   and not (response->'rows'->0->'data'->'payments'->0 ? 'payment_token')
-   and not (response->'rows'->0->'data'->'payments'->0 ? 'last4')
-   and not (response->'rows'->0->'data'->'payments'->0 ? 'expiration_month')
-   and not (response->'rows'->0->'data'->'payments'->0 ? 'NETWORK_ID'),
-   'full-object queries preserve permitted values but omit all credential keys');
-  PERFORM pg_temp.pos0e_assert(
-   (select bool_and(not (r.data ? 'access_token')
-    and not (r.data->'customer' ? 'refreshToken')
-    and not (r.data->'payments'->0 ? 'payment_token'))
-    from public.toast_records_for(a,d,d) r
-    where r.record_type='cashmgmt/v1/entries'),
-   'direct source-shaped reader must not return old retained credentials');
-  PERFORM pg_temp.pos0e_assert(
-   public.ai_toast_fields(a,'cashmgmt/v1/entries') @>
-    '[{"field":"data.customer.email","type":"string"}]'::jsonb
-   and not (public.ai_toast_fields(a,'cashmgmt/v1/entries') @>
-    '[{"field":"data.customer.access_token"}]'::jsonb)
-   and not (public.ai_toast_fields(a,'cashmgmt/v1/entries') @>
-    '[{"field":"data.payments.0.payment_token"}]'::jsonb),
-   'field discovery retains email but excludes old nested credentials');
-  response:=public.ai_query_view(a,'cv_toast_records',
-   ARRAY['data.customer.email','data.employee.guid']::text[],
-   '[{"column":"record_type","op":"=","value":"cashmgmt/v1/entries"}]'::jsonb,
-   null::text[],null::jsonb,d,d,null,10);
-  PERFORM pg_temp.pos0e_assert(
-   response->'rows'->0->>'data.customer.email'='synthetic@example.invalid'
-   and response->'rows'->0->>'data.employee.guid'='employee-A',
-   'customer email and employee GUID still work through named query');
-  BEGIN
-   PERFORM public.ai_query_view(a,'cv_toast_records',
-    ARRAY['data.customer.access_token']::text[],'[]'::jsonb,
-    null::text[],null::jsonb,d,d,null,10);
-   RAISE EXCEPTION 'POS0e FAIL: forbidden named column returned';
-  EXCEPTION WHEN others THEN
-   IF SQLERRM<>'invalid column' THEN RAISE; END IF;
-  END;
+  (SELECT count(*)=1 AND bool_and(
+   data->>'guid'='cash-current-A'
+   AND data#>>'{customer,email}'='synthetic@example.invalid'
+   AND data#>>'{customer,phone}'='5550100'
+   AND data#>>'{customer,loyalty,guid}'='loyalty-A'
+   AND data#>>'{payments,0,amount}'='5'
+   AND data#>>'{employee,guid}'='employee-A'
+   AND NOT (data ? 'cardNumber') AND NOT (data ? 'access_token')
+   AND NOT (data->'customer' ? 'access_token')
+   AND NOT (data->'customer' ? 'refreshToken')
+   AND NOT (data->'customer' ? 'API_KEY')
+   AND NOT (data#>'{payments,0}' ? 'payment_token')
+   AND NOT (data#>'{payments,0}' ? 'last4')
+   AND NOT (data#>'{payments,0}' ? 'expiration_month')
+   AND NOT (data#>'{payments,0}' ? 'NETWORK_ID'))
+   FROM public.toast_records_for(a,d,d) WHERE record_type='cashmgmt/v1/entries'),
+  'full-object SQL preserves permitted values but excludes all credential keys');
 
  FOR n IN 1..36 LOOP
   INSERT INTO public.toast_raw_records(business_id,restaurant_guid,entity,business_date,
@@ -330,9 +238,9 @@ BEGIN
    repeat('f',64),'pos0e:time:'||n);
  END LOOP;
  PERFORM pg_temp.pos0e_assert(
-  public.ai_toast_fields(a,'labor/v1/timeEntries') @>
-    '[{"field":"data.lateOnly","type":"string"}]'::jsonb,
-  'field discovery must see later retained rows');
+  EXISTS(SELECT 1 FROM public.toast_records_for(a,d,d)
+   WHERE record_type='labor/v1/timeEntries' AND data->>'lateOnly'='visible'),
+  'SQL reads optional fields in later retained rows');
 
  PERFORM pg_temp.pos0e_assert(
   public.ai_customer_discount_participation('{"appliedDiscounts":[],"selections":[{"appliedDiscounts":[{"processingState":"VOID"}]}]}'::jsonb)=0
@@ -415,16 +323,14 @@ BEGIN
    and bool_and(data#>>'{aiCafeCustomer,businessWeekday}'='1')
    from public.toast_records_for(a,d,d) where record_type='item' and counts_in_sales),
   'item source supports stable product, recorded ordering mode, café-local hour and weekday');
- response:=public.ai_query_view(a,'cv_toast_records',null::text[],
-  '[{"column":"record_type","op":"=","value":"item"},{"column":"counts_in_sales","op":"=","value":true},{"column":"data.aiCafeCustomer.identityRef","op":"is_not_null","value":null}]',
-  array['data.item.guid','data.aiCafeCustomer.orderChannel'],
-  '[{"fn":"sum","column":"data.quantity"},{"fn":"count_distinct","column":"data.aiCafeCustomer.visitRef"}]',d,d,null,100);
  PERFORM pg_temp.pos0e_assert(
-  response->'rows'->0->>'data.item.guid'='71111111-1111-4111-8111-111111111111'
-   and response->'rows'->0->>'data.aiCafeCustomer.orderChannel'='online'
-   and response->'rows'->0->>'sum_data.quantity'='2'
-   and response->'rows'->0->>'count_distinct_data.aiCafeCustomer.visitRef'='1',
-  'dynamic product + channel + linked-visit aggregation uses registered reader');
+  (SELECT count(DISTINCT data#>>'{aiCafeCustomer,visitRef}')=1
+    AND sum((data->>'quantity')::numeric)=2
+    AND bool_and(data#>>'{item,guid}'='71111111-1111-4111-8111-111111111111')
+    AND bool_and(data#>>'{aiCafeCustomer,orderChannel}'='online')
+   FROM public.toast_records_for(a,d,d) WHERE record_type='item'
+    AND counts_in_sales AND data#>>'{aiCafeCustomer,identityRef}' IS NOT NULL),
+  'product, channel and linked-visit aggregation use SQL');
  PERFORM pg_temp.pos0e_assert(
   not exists(select 1 from public.toast_records_for(a,d,d) r
     where r.record_type in ('check','payment') and r.data::text like '%4111111111111111%')
@@ -436,21 +342,17 @@ BEGIN
   (SELECT data#>>'{aiCafeCustomer,identityRef}' FROM public.toast_records_for(a,d,d)
    WHERE record_type='check' AND record_ref='21111111-1111-4111-8111-111111111111'),
   'same GUID never links across cafes');
- response:=public.ai_query_view(a,'cv_toast_records',null::text[],
-  '[{"column":"record_type","op":"=","value":"check"},{"column":"counts_in_sales","op":"=","value":true}]'::jsonb,
-  null::text[],'[{"fn":"count","column":"source_ref"},{"fn":"count","column":"data.aiCafeCustomer.identityRef"},
-    {"fn":"count_distinct","column":"data.aiCafeCustomer.visitRef"},
-    {"fn":"sum","column":"data.aiCafeCustomer.netSalesCents"}]'::jsonb,d,d,null,100);
  PERFORM pg_temp.pos0e_assert(
-  response->'rows'->0->>'count_source_ref'='5'
-   and response->'rows'->0->>'count_data.aiCafeCustomer.identityRef'='4'
-   and response->'rows'->0->>'count_distinct_data.aiCafeCustomer.visitRef'='3'
-   and response->'rows'->0->>'sum_data.aiCafeCustomer.netSalesCents'='3900',
-  'registered reader aggregates derived customer evidence in SQL');
+  (SELECT count(source_ref)=5 AND count(data#>>'{aiCafeCustomer,identityRef}')=4
+   AND count(DISTINCT data#>>'{aiCafeCustomer,visitRef}')=3
+   AND sum((data#>>'{aiCafeCustomer,netSalesCents}')::numeric)=3900
+   FROM public.toast_records_for(a,d,d) WHERE record_type='check' AND counts_in_sales),
+  'SQL aggregates derived customer evidence');
  PERFORM pg_temp.pos0e_assert(
-  public.ai_toast_fields(a,'check') @> '[{"field":"data.aiCafeCustomer.identityRef","type":"string"}]'::jsonb
-  and not has_function_privilege('authenticated','public.ai_customer_check_evidence(uuid,uuid,text,jsonb,boolean)','EXECUTE'),
-  'existing field discovery; internal helper not an exposed client endpoint');
+  EXISTS(SELECT 1 FROM public.toast_records_for(a,d,d)
+   WHERE record_type='check' AND jsonb_typeof(data#>'{aiCafeCustomer,identityRef}')='string')
+  AND not has_function_privilege('authenticated','public.ai_customer_check_evidence(uuid,uuid,text,jsonb,boolean)','EXECUTE'),
+  'identity is accessible through safe records, internal helper is not exposed');
 
  -- Visit projection deduplicates checks within one observed account/order.
  PERFORM pg_temp.pos0e_assert(
@@ -462,22 +364,12 @@ BEGIN
  PERFORM pg_temp.pos0e_assert(
   (select count(*)=1 and sum(net_sales_cents)=700 from public.customer_visits_for(b,d,d)),
   'visit source remains cafe-scoped');
- response:=public.ai_query_view(a,'cv_customer_visits',null::text[],'[]'::jsonb,
-  null::text[],'[{"fn":"sum","column":"net_sales_cents"},{"fn":"sum","column":"returning_visit"},
-   {"fn":"count_distinct","column":"identity_ref"},{"fn":"count","column":"observed_return_7d"}]'::jsonb,d,d,null,100);
+ response:=public.customer_query_coverage(a,d,d);
  PERFORM pg_temp.pos0e_assert(
-  response->'rows'->0->>'sum_net_sales_cents'='3300'
-  and response->'rows'->0->>'sum_returning_visit'='1'
-  and response->'rows'->0->>'count_distinct_identity_ref'='2'
-  and response->'rows'->0->>'count_observed_return_7d'='0',
-  'existing registered RPC executes visit/cohort aggregation');
- PERFORM pg_temp.pos0e_assert(
-  response->'customerCoverage'->>'eligibleChecks'='5'
-   and response->'customerCoverage'->>'linkedChecks'='4'
-   and response->'customerCoverage'->>'recordedNetCents'='3900'
-   and response->'customerCoverage'->>'linkedRecordedNetCents'='3300'
-   and response->'customerCoverage'->>'complete'='false',
-  'visit results carry full selected-period denominator and provisional warning');
+  response->>'eligibleChecks'='5' AND response->>'linkedChecks'='4'
+   AND response->>'recordedNetCents'='3900' AND response->>'linkedRecordedNetCents'='3300'
+   AND response->>'complete'='false',
+  'full selected-period denominator and provisional warning remain available');
  PERFORM pg_temp.pos0e_assert(
   not has_table_privilege('anon','public.cv_customer_visits','SELECT')
   and not has_function_privilege('anon','public.customer_visits_for(uuid,date,date)','EXECUTE'),
@@ -494,12 +386,6 @@ BEGIN
    and count(observed_lapse_gap_ratio)=0
    from public.customer_visits_for(a,d,d)),
   'account spend and concentration are once per selected account, never per visit');
- response:=public.ai_query_view(a,'cv_customer_visits',null::text[],'[]'::jsonb,null::text[],
-  '[{"fn":"sum","column":"period_account_net_sales_cents"},{"fn":"count","column":"period_account_net_sales_cents"}]'::jsonb,d,d,null,100);
- PERFORM pg_temp.pos0e_assert(
-  response->'rows'->0->>'sum_period_account_net_sales_cents'='3300'
-   and response->'rows'->0->>'count_period_account_net_sales_cents'='2',
-  'account period metrics are registered in the same guarded query reader');
 
  -- Imported, elapsed 7-day cohort using actual current-run membership.
  INSERT INTO public.toast_sync_runs(id,business_id,restaurant_guid,kind,state)
@@ -603,53 +489,33 @@ BEGIN
    from public.customer_products_for(a,d-43,d-42) where fact_kind='modifier'
     and modifier_ref='fb711111-1111-4111-8111-111111111111'),
  'modifier quantity uses recorded selection and stable parent product');
- response:=public.ai_query_view(a,'cv_customer_products',null::text[],
-  '[{"column":"fact_kind","op":"=","value":"item"},{"column":"product_ref","op":"=","value":"fb511111-1111-4111-8111-111111111111"}]'::jsonb,
-  array['visit_class'],'[{"fn":"sum","column":"quantity"}]'::jsonb,d-43,d-42,null,100);
  PERFORM pg_temp.pos0e_assert(
-  response->'rows' @> '[{"visit_class":"observed_first","sum_quantity":2},
-  {"visit_class":"observed_returning","sum_quantity":1},{"visit_class":"unresolved","sum_quantity":1}]'::jsonb,
- 'registered returning-product mix separates first and unresolved units');
-
- -- A rare historical optional field is still discoverable and queryable
- -- without a specific customer view. It is not an identity or visit.
+  (SELECT jsonb_object_agg(visit_class,units) FROM (
+   SELECT visit_class,sum(quantity) units FROM public.customer_products_for(a,d-43,d-42)
+   WHERE fact_kind='item' AND product_ref='fb511111-1111-4111-8111-111111111111'
+   GROUP BY visit_class) q) @> '{"observed_first":2,"observed_returning":1,"unresolved":1}'::jsonb,
+  'SQL returning-product mix separates first and unresolved units');
  PERFORM pg_temp.pos0e_assert(
-  public.ai_toast_fields(a,'check') @>
-   '[{"field":"data.customer.visitPreference.favoriteDrink","type":"string"}]'::jsonb
-  and not(public.ai_toast_fields(b,'check') @>
-   '[{"field":"data.customer.visitPreference.favoriteDrink"}]'::jsonb),
-  'old raw-only customer field discovery is tenant-specific');
- response:=public.ai_query_view(a,'cv_toast_records',null::text[],
-  '[{"column":"record_type","op":"=","value":"check"},{"column":"counts_in_sales","op":"=","value":true},{"column":"data.customer.visitPreference.favoriteDrink","op":"=","value":"fixture-latte"}]'::jsonb,
-  null::text[],'[{"fn":"count","column":"source_ref"}]'::jsonb,d-45,d-38,null,1);
- PERFORM pg_temp.pos0e_assert(
-  response->'rows'->0->>'count_source_ref'='1'
-  and response?'customerCoverage' and (response->'customerCoverage'->>'eligibleChecks')::int>1,
-  'rare raw-only field query returns independent check count and full period denominator');
-
- -- Exercise every physical customer canonical column through the actual
- -- migrated SQL RPC in bounded batches, not just the TypeScript dictionary.
- -- Existing independent fixture assertions above prove metric semantics.
- DECLARE view_name text; cols text[]; chunk text[]; offset_col integer; matrix jsonb; start_day date; end_day date;
+  (SELECT count(source_ref)=1 FROM public.toast_records_for(a,d-45,d-38)
+   WHERE record_type='check' AND counts_in_sales
+    AND data#>>'{customer,visitPreference,favoriteDrink}'='fixture-latte')
+  AND NOT EXISTS(SELECT 1 FROM public.toast_records_for(b,null,null)
+   WHERE record_type='check' AND data#>'{customer,visitPreference,favoriteDrink}' IS NOT NULL)
+  AND (public.customer_query_coverage(a,d-45,d-38)->>'eligibleChecks')::int>1,
+  'rare historical fields and full coverage remain separately SQL-queryable and tenant-specific');
+ -- Every public customer view column is retained.
+ DECLARE view_name text; cols text[];
  BEGIN
   FOREACH view_name IN ARRAY ARRAY['cv_customer_visits','cv_customer_products'] LOOP
    SELECT array_agg(column_name::text ORDER BY ordinal_position) INTO cols
    FROM information_schema.columns WHERE table_schema='public' AND table_name=view_name;
    PERFORM pg_temp.pos0e_assert(coalesce(cardinality(cols),0)>20,'customer canonical columns exist: '||view_name);
-   start_day:=case when view_name='cv_customer_visits' then d else d-43 end;
-   end_day:=case when view_name='cv_customer_visits' then d else d-42 end;
-   FOR offset_col IN 1..cardinality(cols) BY 20 LOOP
-    chunk:=cols[offset_col:offset_col+19];
-    matrix:=public.ai_query_view(a,view_name,chunk,'[]'::jsonb,null::text[],null::jsonb,start_day,end_day,null,1);
-    PERFORM pg_temp.pos0e_assert((matrix->>'sourceCount')::int>0
-     and (matrix->'rows'->0 ?& chunk),'all requested canonical columns survive actual SQL projection: '||view_name||':'||offset_col);
-   END LOOP;
   END LOOP;
  END;
 
  -- Real browser-equivalent authenticated role, not a postgres/service-only
  -- approximation. Protected mapping and credential tables stay inaccessible.
- DECLARE owner_a uuid:=gen_random_uuid(); own_response jsonb; foreign_response jsonb; own_cov jsonb; foreign_cov jsonb; raw_response jsonb; foreign_raw jsonb;
+ DECLARE owner_a uuid:=gen_random_uuid(); own_n bigint; foreign_n bigint; own_cov jsonb; foreign_cov jsonb; own_raw_n bigint; foreign_raw_n bigint;
  BEGIN
   insert into auth.users(id,instance_id,aud,role,email,encrypted_password,created_at,updated_at)
    values(owner_a,'00000000-0000-0000-0000-000000000000','authenticated','authenticated',owner_a||'@example.invalid','',now(),now());
@@ -658,28 +524,17 @@ BEGIN
   perform set_config('request.jwt.claim.role','authenticated',true);
   perform set_config('request.jwt.claims',jsonb_build_object('sub',owner_a,'role','authenticated')::text,true);
   execute 'set local role authenticated';
-  own_response:=public.ai_query_view(a,'cv_customer_visits',null::text[],'[]'::jsonb,null::text[],
-   '[{"fn":"count","column":"source_ref"}]'::jsonb,d,d,null,100);
-  foreign_response:=public.ai_query_view(b,'cv_customer_visits',null::text[],'[]'::jsonb,null::text[],
-   '[{"fn":"count","column":"source_ref"}]'::jsonb,d,d,null,100);
-  raw_response:=public.ai_query_view(a,'cv_toast_records',null::text[],
-   '[{"column":"record_type","op":"=","value":"check"}]'::jsonb,null::text[],
-   '[{"fn":"count","column":"data.customer.guid"}]'::jsonb,d,d,null,100);
-  foreign_raw:=public.ai_query_view(b,'cv_toast_records',null::text[],
-   '[{"column":"record_type","op":"=","value":"check"}]'::jsonb,null::text[],
-   '[{"fn":"count","column":"data.customer.guid"}]'::jsonb,d,d,null,100);
+  select count(*) into own_n from public.customer_visits_for(a,d,d);
+  select count(*) into foreign_n from public.customer_visits_for(b,d,d);
+  select count(*) into own_raw_n from public.toast_records_for(a,d,d) where record_type='check';
+  select count(*) into foreign_raw_n from public.toast_records_for(b,d,d) where record_type='check';
   own_cov:=public.customer_query_coverage(a,d,d);
   foreign_cov:=public.customer_query_coverage(b,d,d);
   execute 'reset role';
-  perform pg_temp.pos0e_assert(own_response->'rows'->0->>'count_source_ref'='3'
-   and own_cov->>'eligibleChecks'='5' and own_response->'customerCoverage'=own_cov,
-   'authenticated owner can query same scoped visit counts and full coverage');
-  perform pg_temp.pos0e_assert(raw_response->'customerCoverage'=own_cov,
-   'ordinary retained customer named-path query includes the full coverage denominator without a specialized view');
-  perform pg_temp.pos0e_assert((foreign_raw->>'sourceCount')::int=0 and not(foreign_raw?'customerCoverage'),
-   'foreign raw-only query cannot reveal coverage or retained counts');
-  perform pg_temp.pos0e_assert((foreign_response->>'sourceCount')::int=0 and not(foreign_response?'customerCoverage') and foreign_cov is null,
-   'foreign owner scope cannot read visit or coverage facts');
+  perform pg_temp.pos0e_assert(own_n=3 and own_raw_n>0 AND own_cov->>'eligibleChecks'='5',
+   'authenticated owner can read scoped visit counts, raw records and coverage');
+  perform pg_temp.pos0e_assert(foreign_n=0 and foreign_raw_n=0 and foreign_cov is null,
+   'foreign owner scope cannot read visit, raw or coverage facts');
   perform pg_temp.pos0e_assert(not has_table_privilege('authenticated','public.toast_location_mappings','SELECT')
    and not has_table_privilege('authenticated','public.toast_api_credentials','SELECT')
    and not has_function_privilege('anon','public.customer_query_coverage(uuid,date,date)','EXECUTE'),

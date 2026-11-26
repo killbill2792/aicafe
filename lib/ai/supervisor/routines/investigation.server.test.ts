@@ -239,7 +239,7 @@ describe("Task 15A operational end-to-end orchestration (recorded source/model)"
     const saved=d.calls.find(x=>x.name==="supervisor_finish_investigation")?.args;
     expect(saved?.p_outcome).toBe("investigated");
     expect(saved?.p_narrative).toBe(agentResult().text);
-    expect(saved?.p_evidence).toMatchObject({modelTools:["get_investigation_source","run_sql"],
+    expect(saved?.p_evidence).toMatchObject({modelTools:["run_sql"],
       missing:[]});
   });
   it("retains prior findings across a worker restart without paying for unanswered owner work",async()=>{
@@ -388,16 +388,7 @@ describe("Task 15A operational end-to-end orchestration (recorded source/model)"
       evidence:{source:meal,collectedAt:now.toISOString()}}],
       {sourceKind:"meal_break",alertPayload:{timecardId,employeeId},
         timecard:{id:timecardId,employee_id:"other-employee",clock_in:"",clock_out:"",breaks:[]}});
-    mocks.model.mockImplementation(async(args:Record<string,unknown>)=>{
-      const exact=await (((args.actions as {context:Record<string,unknown>}).context).investigation as
-        {read:()=>Promise<Record<string,unknown>>}).read();
-      expect(exact).toMatchObject({missing:["timecard_not_verified"],linkedTimecard:null});
-      return agentResult({toolInvocations:[
-        {name:"get_investigation_source",result:exact},
-        {name:"get_labor",result:{source:"labor_and_attendance",period:null,missing:[]}},
-        {name:"get_payroll_facts",result:{source:"payroll_facts",period:null,missing:[]}},
-      ]});
-    });
+    mocks.model.mockClear();
     expect(await processNextInvestigation(d.client,now))
       .toMatchObject({investigated:0,failed:1});
     expect(mocks.notify).not.toHaveBeenCalled();
