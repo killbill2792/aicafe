@@ -20,6 +20,12 @@ async function capture(route,width,mode){
  // after the screen has rendered, so networkidle is not a readiness signal.
  await expect(page.locator('main[data-perf-ready="true"]')).toBeVisible({timeout:30000});
  await expect(page.locator('main[data-perf-loading="true"]')).toHaveCount(0);
+ // The desktop navigation has its own Suspense boundary, independent of main.
+ // The seeded identity must be visible in that actual nav, not merely elsewhere
+ // on the page (the profile form can contain the same café name).
+ if(route!=="login"&&width>=768){
+  await expect(page.locator("nav").getByText(owner.name,{exact:true})).toBeVisible({timeout:30000});
+ }
  await page.evaluate(async()=>{await document.fonts.ready;await new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve)));});
  const name=(route||"home").replace(/[^a-z0-9-]+/gi,"-")+"-"+width+"-"+mode;
  const data=await page.evaluate(({variant,route})=>{
