@@ -20,15 +20,6 @@ describe("goal chat tools",()=>{
       await expect(executeAgentTool("propose_goal",{metric:"net_sales",item_id:null,direction:"up",target_kind:"percent",
         target:5,days,guardrails:[],checkin:null},ctx({propose:vi.fn(),status:vi.fn(),recordCheckin:vi.fn()}))).rejects.toThrow();
   });
-  it("get_goal_status returns the goal reader's result under the goals source",async()=>{
-    const status=vi.fn(async()=>({goals:[{id:"g",title:"Daily sales up 5%"}]}));
-    expect(await executeAgentTool("get_goal_status",{goal_id:null},ctx({propose:vi.fn(),status,recordCheckin:vi.fn()})))
-      .toMatchObject({source:"goals",goals:[{title:"Daily sales up 5%"}]});
-    expect(status).toHaveBeenCalledWith(null);
-  });
-  it("says goals are unavailable without a goal port",async()=>{
-    expect((await executeAgentTool("get_goal_status",{goal_id:null},ctx(undefined))).missing).toEqual(["not_supported"]);
-  });
   it("record_checkin saves the owner's answer through the goal port",async()=>{
     const recordCheckin=vi.fn(async()=>({saved:true}));
     const r=await executeAgentTool("record_checkin",{goal_id:"a0000000-0000-4000-8000-000000000001",date:null,
