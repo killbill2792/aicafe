@@ -15,7 +15,7 @@ vi.mock("./getActiveBusinessId", () => ({ getActiveBusinessId: async () => "cafe
 vi.mock("./getMenuItemsForEdit", () => ({ getMenuItemsForEdit: deps.catalog }));
 vi.mock("./getPricingInputs", () => ({ getPricingInputs: deps.pricing }));
 vi.mock("@/lib/viewmodels/pricingViewModel", () => ({ buildPricingViewModel: deps.viewModel }));
-vi.mock("./dailyFacts.server", () => ({ readDailyFactRows: deps.dailyFacts }));
+vi.mock("./dailyFacts.server", () => ({ readCoveredSalesDates: deps.dailyFacts }));
 vi.mock("@/lib/perf/timeReader.server", () => ({ timeReader: deps.timed }));
 
 import { getMenuControlCenter } from "./getMenuControlCenter";
@@ -23,7 +23,7 @@ import { getMenuControlCenter } from "./getMenuControlCenter";
 function clientWithEvidenceReads(reads: string[], failOrders = false) {
   const values: Record<string, unknown> = {
     businesses: { timezone: "America/Los_Angeles" },
-    order_lines: [],
+    cv_item_sales: [],
     menu_price_history: [],
     menu_market_price_observations: [],
     pos_connections: [],
@@ -32,11 +32,11 @@ function clientWithEvidenceReads(reads: string[], failOrders = false) {
     reads.push(table);
     const response = () => ({
       data: values[table] ?? [],
-      error: table === "order_lines" && failOrders ? { message: "unavailable" } : null,
+      error: table === "cv_item_sales" && failOrders ? { message: "unavailable" } : null,
     });
     const query = {
       select: () => query, eq: () => query, in: () => query, is: () => query,
-      gte: () => query, lte: () => query, order: () => query,
+      gte: () => query, lte: () => query, order: () => query, range: () => query,
       single: async () => response(),
       then: (resolve: (value: ReturnType<typeof response>) => unknown) =>
         Promise.resolve(response()).then(resolve),
@@ -82,7 +82,8 @@ describe("one canonical menu reader: catalog versus full item evidence", () => {
     );
 
     const full = await getMenuControlCenter();
-    expect(reads).toContain("order_lines");
+    expect(reads).toContain("cv_item_sales");
+    expect(reads).not.toContain("order_lines");
     expect(reads).toContain("menu_price_history");
     expect(reads).toContain("menu_market_price_observations");
     expect(reads).toContain("pos_connections");
