@@ -216,7 +216,7 @@ function ControlView({kind}:{kind:unknown}){
   {kind==="suggestions"&&data.suggestions.length>0&&<div className="flex flex-wrap gap-2">{data.suggestions.map(prompt=><button key={prompt} type="button" disabled={disabled} onClick={()=>onSuggest(prompt)} className="min-h-12 max-w-full rounded-full border border-line px-4 py-2 text-start text-[0.9375rem] leading-snug text-ink hover:bg-surface2 focus-visible:outline focus-visible:outline-2 focus-visible:outline-ink disabled:opacity-50">{prompt}</button>)}</div>}
  </>;
 }
-export default function SupervisorRichPresentation({block,locale,onSuggest,disabled,message,attachments}:{block:unknown;locale:string;onSuggest:(text:string)=>void;disabled:boolean;message?:Parameters<typeof presentationReport>[1]&{threadId:string};attachments?:{threadId:string;items:StoredAttachment[]}|null}){
+export default function SupervisorRichPresentation({block,locale,onSuggest=()=>{},disabled,message,attachments}:{block:unknown;locale:string;onSuggest?:(text:string)=>void;disabled:boolean;message?:Parameters<typeof presentationReport>[1]&{threadId:string};attachments?:{threadId:string;items:StoredAttachment[]}|null}){
  const data=useMemo(()=>recoverRichPresentation(block),[block]);
  const registry=useMemo<ComponentRegistry>(()=>({
   Layout:({element,children})=>{

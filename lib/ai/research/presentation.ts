@@ -80,15 +80,15 @@ function panel(s:Selection,rows:Row[],ctx:Context,e:PresentationEvidence):Presen
  if(!x&&rows.length!==1)return null;
  const u=unit(y),currency=u==="cents"?ctx.currency??null:null;
  const chartUnit=u==="cents"?"cents":u==="count"?"count":"units";
- 
+
  const points=rows.map(r=>({label:safeLabel(x?r[x]:name(y)),value:r[y]}));
  if(points.some(p=>(typeof p.label!=="string"&&typeof p.label!=="number")||typeof p.value!=="number"||!Number.isFinite(p.value)))return null;
  const typed=points.map(p=>({label:String(p.label),value:p.value as number}));
- 
+
  if(s.kind==="ranked_table")typed.sort((a,b)=>b.value-a.value);
  // The chart is a view of the query, not a claim of complete underlying
  // records. Do not infer missing time buckets or manufacture a denominator.
- 
+
  const p=presentationPanelSchema.safeParse({kind:s.kind,title:title(s,name(y)),unit:chartUnit,currency,
   from:ctx.asOf,to:ctx.asOf,asOf:ctx.asOf,source:e.kind==="sql"?"sql_research":"response_evidence",sourceDetail:e.source,
   ...(chartUnit==="units"?{measurement:name(y)}:{}),points:typed});

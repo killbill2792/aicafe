@@ -4,6 +4,8 @@ import type {SupabaseClient} from "@supabase/supabase-js";
 import {assertCafeAiAccess} from "@/lib/access/access.server";
 import {createOwnerScopedCafeTools,readSupervisorCafeIdentity} from "@/lib/ai/cafeTools.server";
 import {openAIProvider,type AgentProvider} from "@/lib/ai/agent/loop.server";
+import {backgroundReportPresentations} from "@/lib/ai/conversations/presentation";
+import {splitAgentText} from "@/lib/ai/agent/persist.server";
 import {runResearchTurn} from "@/lib/ai/research/turn.server";
 import {agentToolDefinitions} from "@/lib/ai/agent/tools";
 import {assertDurablePaidTurnAllowed} from "@/lib/ai/supervisor/runs/worker.server";
@@ -564,6 +566,7 @@ export async function processNextInvestigation(db:SupabaseClient,now:Date,
     const staffQuestionProposalId=staffQuestionCall?.result.proposalId as string|undefined;
     const next:InvestigationCheckpoint={
       source:synopsis,collectedAt:checkpoint.collectedAt,sourceRevision:c.revision_hash,
+      reportBlocks:[...splitAgentText(turn.text),...backgroundReportPresentations(turn)],
       modelTools:report.tools,missing:report.missing,
       modelCalls:turn.usage.modelCalls,toolCalls:turn.usage.toolCalls,
       lastOwnerUpdate:new Date().toISOString(),unchangedChecks:0,

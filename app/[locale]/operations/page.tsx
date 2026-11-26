@@ -1,3 +1,6 @@
+import SupervisorRichPresentation from "@/components/home/SupervisorRichPresentation";
+import {recoverRichPresentation,type RichPresentation} from "@/lib/ai/conversations/presentation";
+type SavedU4Report={text:string;presentations:RichPresentation[]};
 import { getLocale, getTranslations } from "next-intl/server";
 import { Link } from "@/i18n/navigation";
 import PageShell from "@/components/shared/PageShell";
@@ -68,12 +71,12 @@ export default async function OperationsPage({ searchParams }: { searchParams: P
   // The report body lives only on the RLS-protected U4 occurrence. A task
   // carries a pointer, never a duplicate report or a client-chosen café scope.
   const u4Reports = await authenticatedConversationContext().then(async({scope})=>{
-    if(scope.businessId!==snapshot.business.id)return new Map<string,string>();
+    if(scope.businessId!==snapshot.business.id)return new Map<string,SavedU4Report>();
     const saved=[...team.watching,...team.handled].filter(row=>row.kind==="u4_report" &&
       row.ownerUserId===scope.ownerUserId &&
       typeof row.payload.runId==="string" &&
       /^[0-9a-f]{8}-(?:[0-9a-f]{4}-){3}[0-9a-f]{12}$/iu.test(row.payload.runId));
-    if(!saved.length)return new Map<string,string>();
+    if(!saved.length)return new Map<string,SavedU4Report>();
     const db=await createServerSupabaseClient();
     const {data,error}=await db.from("supervisor_routine_occurrences")
       .select("business_id,routine_id,run_id,u4_result")
@@ -83,15 +86,17 @@ export default async function OperationsPage({ searchParams }: { searchParams: P
     const byRun=new Map((data??[]).flatMap(record=>{
       const result=record.u4_result;
       if(!result||typeof result!=="object"||Array.isArray(result)||
-        typeof result.summary!=="string"||result.summary.length>2600)return [];
-      return [[record.run_id,{routineId:record.routine_id,text:result.summary}]] as const;
+        typeof result.summary!=="string")return [];
+      const proof=result.proof;
+      const presentations:RichPresentation[]=Array.isArray(proof?.presentations)?proof.presentations.flatMap((raw:unknown)=>{const block=recoverRichPresentation(raw);return block?[block]:[];}):[];
+      return [[record.run_id,{routineId:record.routine_id,report:{text:presentations.length&&typeof proof?.narrative==="string"?proof.narrative:result.summary,presentations}}]] as const;
     }));
     return new Map(saved.flatMap(row=>{
       const found=byRun.get(String(row.payload.runId));
       return found&&found.routineId===row.payload.routineId?
-        [[row.id,found.text] as const]:[];
+        [[row.id,found.report] as const]:[];
     }));
-  }).catch(()=>new Map<string,string>());
+  }).catch(()=>new Map<string,SavedU4Report>());
   const meta: CardMeta = { today: snapshot.todayDateStr, locale, currency: snapshot.business.currency ?? null, maintenanceStaff,vendorApprovals };
   const tops = topChatStartItems(inbox.items);
   const names: Record<AgentId, string> = { alex: "Alex", olivia: "Olivia", maya: "Maya", leo: "Leo" };
@@ -231,7 +236,7 @@ function firstLine(text: unknown): string {
   return typeof text === "string" ? (text.split("\n").map((line) => line.replace(/\*\*/g, "").trim()).find(Boolean) ?? "") : "";
 }
 
-function TaskCard({ row: task, names, t, tExperiment, tBrief, tGoals, category, selectedTaskId, meta, maintenanceCopy, u4Report }: { row: OperatingTask | NeedsYouItem | ExpiredNeed; names: Record<AgentId, string>; t: OperationsT; tExperiment: Awaited<ReturnType<typeof getTranslations<"SupervisorExperiment">>>; tBrief: Awaited<ReturnType<typeof getTranslations<"DailyBrief">>>; tGoals: Awaited<ReturnType<typeof getTranslations<"Goals">>>; category: (code: string) => string; selectedTaskId: string|null; meta: CardMeta; maintenanceCopy: typeof enMessages.Maintenance; u4Report?:string }) {
+function TaskCard({ row: task, names, t, tExperiment, tBrief, tGoals, category, selectedTaskId, meta, maintenanceCopy, u4Report }: { row: OperatingTask | NeedsYouItem | ExpiredNeed; names: Record<AgentId, string>; t: OperationsT; tExperiment: Awaited<ReturnType<typeof getTranslations<"SupervisorExperiment">>>; tBrief: Awaited<ReturnType<typeof getTranslations<"DailyBrief">>>; tGoals: Awaited<ReturnType<typeof getTranslations<"Goals">>>; category: (code: string) => string; selectedTaskId: string|null; meta: CardMeta; maintenanceCopy: typeof enMessages.Maintenance; u4Report?:SavedU4Report }) {
   const visual = agentVisuals[task.agentId];
   if (isNeed(task)) return <NeedCard item={task} name={names[task.agentId]} selected={task.id === selectedTaskId} t={t} meta={meta} />;
   const price = task.kind === "price_review";
@@ -278,7 +283,7 @@ function TaskCard({ row: task, names, t, tExperiment, tBrief, tGoals, category, 
       };
       case "commitment": return { title: String(task.payload.title ?? ""), detail: "", action: t("openEventThread") };
       case "u4_report": return { title: String(task.payload.title ?? t("u4ReportTitle")),
-        detail: u4Report ?? t("u4ReportUnavailable"), action: t("u4ReportOriginal") };
+        detail: u4Report?.text ?? t("u4ReportUnavailable"), action: t("u4ReportOriginal") };
       case "u4_run_failure": return { title: t("u4FailureTitle",{
           title:String(task.payload.title??t("u4ReportTitle"))}),
         detail:t("u4FailureDetail"), action:t("u4ReportOriginal") };

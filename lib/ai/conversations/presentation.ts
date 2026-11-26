@@ -244,11 +244,13 @@ export function presentationDataLines(block:RichPresentation):string[]{
  if(block.files?.length)lines.push("","Source attachments are available through the original authenticated conversation.");
  return lines;
 }
-export function backgroundReportText(turn:{text:string;results:readonly {source:string;accepted?:unknown;presentation?:unknown}[]}):string{
- const sections=turn.results.flatMap(result=>{
+export function backgroundReportPresentations(turn:{results:readonly {source:string;accepted?:unknown;presentation?:unknown}[]}):RichPresentation[]{
+ return turn.results.flatMap(result=>{
   if(result.source!=="response_presentation"||result.accepted!==true)return [];
   const block=recoverRichPresentation(result.presentation);
-  return block?[presentationDataLines(block).join("\n").trim()]:[];
+  return block?[block]:[];
  });
- return [turn.text.trim(),...sections].filter(Boolean).join("\n\n");
+}
+export function backgroundReportText(turn:{text:string;results:readonly {source:string;accepted?:unknown;presentation?:unknown}[]}):string{
+ return [turn.text.trim(),...backgroundReportPresentations(turn).map(block=>presentationDataLines(block).join("\n").trim())].filter(Boolean).join("\n\n");
 }

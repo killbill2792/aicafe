@@ -926,7 +926,7 @@ begin
   elsif p_outcome='rechecked' and v.phase='awaiting_owner' then v_phase:='awaiting_owner';
   else raise exception 'Invalid investigation transition' using errcode='23514'; end if;
   if p_evidence is null or jsonb_typeof(p_evidence)<>'object'
-    or octet_length(p_evidence::text)>8192 then
+    or octet_length((p_evidence-'reportBlocks')::text)>8192 then
     raise exception 'Invalid investigation evidence' using errcode='22023'; end if;
   if p_outcome not in ('collected','rechecked') and
     (p_narrative is null or length(btrim(p_narrative))<1) then
@@ -955,7 +955,7 @@ begin
       order by m.created_at,m.id limit 1 for share of i;
     end if;
   end if;
-  update public.supervisor_investigations set phase=v_phase,evidence=p_evidence,
+  update public.supervisor_investigations set phase=v_phase,evidence=p_evidence-'reportBlocks',
     narrative=case when p_outcome in ('collected','rechecked') then narrative else btrim(p_narrative) end,
     step_version=step_version+1,failure_count=0,lease_token=null,lease_until=null,
     next_retry_at=case when p_outcome='collected' then p_now
@@ -992,7 +992,16 @@ begin
       v.episode_id::text||':'||(v.step_version+1)::text);
     v_msg:=(substr(v_hash,1,8)||'-'||substr(v_hash,9,4)||'-4'||
       substr(v_hash,14,3)||'-a'||substr(v_hash,18,3)||'-'||substr(v_hash,21,12))::uuid;
-    v_blocks:=jsonb_build_array(jsonb_build_object('type','text','text',btrim(p_narrative)));
+    -- Only validated data-only blocks from the existing server research runner.
+    -- Action and clarification cards still come from scoped receipt checks below.
+    if jsonb_typeof(p_evidence->'reportBlocks')='array' and jsonb_array_length(p_evidence->'reportBlocks')>0 then
+      if exists(select 1 from jsonb_array_elements(p_evidence->'reportBlocks') b
+        where coalesce(b->>'type','') not in ('text','rich_presentation')) then
+        raise exception 'Invalid investigation report block' using errcode='22023'; end if;
+      v_blocks:=p_evidence->'reportBlocks';
+    else
+      v_blocks:=jsonb_build_array(jsonb_build_object('type','text','text',btrim(p_narrative)));
+    end if;
     if p_source_type='alert' and jsonb_typeof(p_evidence->'stockProcurementStatus')='string'
       and length(btrim(p_evidence->>'stockProcurementStatus')) between 1 and 1100
       and exists(select 1 from public.alerts a where a.business_id=p_business_id

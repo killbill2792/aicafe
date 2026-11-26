@@ -577,9 +577,13 @@ describe("Task 6/15C exact matched owner clarification and final reply",()=>{
    const partialReply=supervisorReplyIdFor(partialId);
    const incomplete=JSON.stringify({status:"answered",ownerMessageId:partialId,durableRunId:partial.id,agentMetadata:{endReason:"complete"}});
    expect((await call(a,"supervisor_publish_owner_reply_v2",[...scope,partial.id,turn.step.claim_token,partialJob.id,partialReply,blocks,incomplete])).id).toBe(partialReply);
-   expect(await call(a,"supervisor_run_claim",[...scope,partial.id,randomUUID(),30])).toEqual({kind:"blocked"});
-   expect((await admin.query("select status,final_report_ref from public.supervisor_runs where id=$1",[partial.id])).rows).toEqual([{status:"blocked",final_report_ref:null}]);
-   expect(await call(a,"supervisor_cancel_owner_run_v2",[...scope,partial.id])).toBe("blocked");
+   await call(a,"supervisor_run_complete_step",[...scope,partial.id,"owner_turn",turn.step.claim_token,partialReply]);
+   const verifyPartial=await call(a,"supervisor_run_claim",[...scope,partial.id,randomUUID(),30]);
+   expect(verifyPartial.kind).toBe("claimed");
+   await call(a,"supervisor_run_complete_step",[...scope,partial.id,"verify_report",verifyPartial.step.claim_token,partialReply]);
+   expect((await call(a,"supervisor_run_finish",[...scope,partial.id,partialReply])).status).toBe("completed");
+   expect((await admin.query("select status,final_report_ref from public.supervisor_runs where id=$1",[partial.id])).rows).toEqual([{status:"completed",final_report_ref:partialReply}]);
+   expect(await call(a,"supervisor_cancel_owner_run_v2",[...scope,partial.id])).toBe("completed");
 
 
   }finally{

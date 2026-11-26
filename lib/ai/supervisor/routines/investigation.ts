@@ -107,6 +107,8 @@ export function modelSelectedOwnerQuestion(report:string):string|null{
 }
 
 export type InvestigationCheckpoint={
+  /** Owner-visible data-only blocks; separate from action/incident receipts. */
+  reportBlocks?:Array<{type:"text";text:string}|import("@/lib/ai/conversations/presentation").RichPresentation>;
   source:SourceSynopsis;
   collectedAt:string;
   modelTools?:string[];

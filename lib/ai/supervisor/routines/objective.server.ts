@@ -1,4 +1,4 @@
-import {backgroundReportText} from "@/lib/ai/conversations/presentation";
+import {backgroundReportText,backgroundReportPresentations} from "@/lib/ai/conversations/presentation";
 import {researchStaffReadTools} from "@/lib/ai/research/integrationReads";
 import "server-only";
 import {createHash} from "node:crypto";
@@ -389,7 +389,9 @@ export async function executeClaimedObjective(db:SupabaseClient,params:{
     asOf:identity.asOf,
   })),sourceCount:verified.sourceCount,sourceDomains:verified.sourceDomains,
     quality:"answered" as const,
-    missing:verified.missing,externalEffects:"not_attempted"};
+    missing:verified.missing,externalEffects:"not_attempted",
+    narrative:turn.text.replace(/^(?:NO_ACTION_REQUIRED|ATTENTION):\s*/iu,"").trim(),
+    presentations:backgroundReportPresentations(turn)};
   const publish=async()=>{
     await recheckGmail();
     const {data,error}=await db.rpc("u4_publish_objective_report",{
