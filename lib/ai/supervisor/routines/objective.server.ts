@@ -33,7 +33,7 @@ export const objectiveReadTools:readonly string[]=[
   "search_gmail","list_gmail_labels","read_gmail","read_gmail_thread",
   "read_gmail_attachment",
 ];
-/** Unrequested Watch never searches the web or reads mail. The server-owned SQL scope admits aggregate operational fields only. */
+// Watch privacy is enforced by its SQL scope.
 export const watchReadTools:readonly string[]=objectiveReadTools.filter(name=>
   !["search_web","search_gmail","list_gmail_labels","read_gmail","read_gmail_thread","read_gmail_attachment"].includes(name));
 

@@ -8,8 +8,7 @@ import {CALC_OPS,exactDecimal,runCalculation,type CalcOp,type CalcUnit,type Calc
  * exact calculator). Security is enforced in the database; no business logic here. */
 
 export type ResearchScope={db:SupabaseClient;businessId:string;ownerUserId:string;
-  /** Server-owned permission mode; never a model argument. */
-  watch?:true;
+  watch?:true; // Server-owned permission mode, never a model argument.
   /** The existing owner-permissioned public web search (one path); absent when unavailable. */
   webSearch?:(query:string)=>Promise<unknown>;
   /** Text read from the café's private data this turn; a public query may not contain it. */
@@ -98,10 +97,7 @@ async function callDatabase(scope:ResearchScope,sql:string):Promise<Record<strin
 }
 
 /** The database function enforces one read-only SELECT and returns PostgreSQL's own errors. */
-// Unrequested Watch retains the existing aggregate-only privacy boundary.
- // Approved operational rollups and typed canonical projections only. The
- // raw archive, employee/payroll rows, free text, IDs and JSON are excluded.
- // This catalog describes field permissions, not what Luna should investigate.
+// Watch admits aggregate operational fields, not personal data or arbitrary JSON.
  const WATCH_COLUMNS={
   daily_rollups:["business_date","net_sales_cents","orders_count","drinks_count","ingredients_cents","staff_wages_cents","staff_tax_cents","card_fees_cents","voids_cents"],
   cv_sales_days:["business_date","net_sales_cents","orders_count","status"],
@@ -117,10 +113,7 @@ async function callDatabase(scope:ResearchScope,sql:string):Promise<Record<strin
  const watchColumns=[...new Set(Object.values(WATCH_COLUMNS).flatMap(cols=>[...cols]))];
  export async function runSql(scope:ResearchScope,sql:string):Promise<Record<string,unknown>>{
   if(scope.watch){
-    // Reuse the real PostgreSQL AST admission, not string filtering. CTEs
-    // are not admitted in this physical-schema scope: an out-of-scope CTE
-    // alias must never resolve to a private real relation. Subqueries and
-    // joins remain available. Fail closed before the database RPC.
+    // AST admission denies CTE shadowing of private real relations; joins and subqueries remain available.
     try{await admitU3Sql(sql,watchRelations,0,true,watchColumns,{}, {physicalSchema:"public",forbidCtes:true});}
     catch{return {ok:false,error:"Watch may only aggregate the approved relations and fields listed by describe_database. Use a SELECT with explicit fields; subqueries and joins are available."};}
   }

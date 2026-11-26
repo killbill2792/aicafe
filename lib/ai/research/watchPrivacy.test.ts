@@ -3,19 +3,20 @@ import type {AgentTurn} from "@/lib/ai/agent/loop.server";
 import {describeDatabase,runSql} from "./tools.server";
 import {verifyResearchInvestigationTurn} from "@/lib/ai/supervisor/routines/investigation";
 vi.mock("server-only",()=>({}));
+const watchScope=(rpc:ReturnType<typeof vi.fn>)=>({db:{rpc} as never,businessId:"cafe",ownerUserId:"owner",watch:true as const});
 describe("unattended SQL permission boundary",()=>{
  it("exposes only aggregate operational fields in Watch discovery",async()=>{
   const rpc=vi.fn();
-  const scope={db:{rpc} as never,businessId:"cafe",ownerUserId:"owner",watch:true as const};
-  const result=await describeDatabase(scope,null);
-  expect(JSON.stringify(result)).toContain("daily_rollups");
-  expect(JSON.stringify(result)).not.toContain("employee_pay_period_facts");
+  const scope=watchScope(rpc);
+  const discovery=JSON.stringify(await describeDatabase(scope,null));
+  expect(discovery).toContain("daily_rollups");
+  expect(discovery).not.toContain("employee_pay_period_facts");
   expect((await describeDatabase(scope,["staff_messages"])).rows).toEqual([]);
   expect(rpc).not.toHaveBeenCalled();
  });
  it("denies sensitive relations, aliases, nested raw payloads and whole rows before executing",async()=>{
   const rpc=vi.fn().mockResolvedValue({data:{ok:true,rows:[{total:900}]},error:null});
-  const scope={db:{rpc} as never,businessId:"cafe",ownerUserId:"owner",watch:true as const};
+  const scope=watchScope(rpc);
   for(const sql of [
    "select sum(wage_cents) from employees",
    "select count(*) from public.staff_messages",
