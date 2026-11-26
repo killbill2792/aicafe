@@ -56,6 +56,10 @@ SELECT (
  AND (SELECT count(*) FROM public.cv_item_sales_daily WHERE business_id=:'b')=0
  AND (SELECT count(*) FROM public.cv_item_sales WHERE business_id=:'b')=0
  AND (SELECT count(*) FROM public.cv_orders WHERE business_id=:'b')=0
+ AND (SELECT count(*) FROM public.cv_running_cost_months WHERE business_id=:'b')=0
+ AND (SELECT amount_cents=30000 AND (data->>'recordedExpenseCents')::bigint=30000
+ FROM public.cv_running_cost_months WHERE business_id=:'a' AND category_code='rent'
+ AND business_date=date_trunc('month',current_date-1)::date)
 ) IS TRUE AS passed \gset
 \if :passed
 \echo Canonical screen amounts, missingness, provisional separation, void exclusion and tenant isolation passed.

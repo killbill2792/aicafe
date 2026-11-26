@@ -1,5 +1,6 @@
 import {describe,it,expect,vi} from "vitest";
 import type {SupabaseClient} from "@supabase/supabase-js";
+import {fixtureCostRows} from "./runningCostCatalog.fixture";
 
 vi.mock("server-only",()=>({}));
 const spies=vi.hoisted(()=>({
@@ -44,16 +45,17 @@ function readOnlyClient(expenseCount=0){
     from(table:string){
       tables.push(table);
       const result={data:values[table]??[],error:null,count:(values[table]??[]).length};
+      let monthStart="",asOf="";
       let first=0,last=Number.MAX_SAFE_INTEGER;
       const q={
         select(){return q;},
-        eq(field:string,value:unknown){filters.push({table,field,value});return q;},
+        eq(field:string,value:unknown){filters.push({table,field,value});if(field==="business_date")monthStart=String(value);if(field==="as_of_date")asOf=String(value);return q;},
         gte(){return q;},lte(){return q;},or(){return q;},order(){return q;},
         limit(){return q;},range(start:number,end:number){first=start;last=end;return q;},
         single(){return Promise.resolve({...result,data:result.data[0]??null});},
         maybeSingle(){return Promise.resolve({...result,data:result.data[0]??null});},
         then(ok:(value:typeof result)=>unknown,fail?:((err:unknown)=>unknown)){
-          return Promise.resolve({...result,data:result.data.slice(first,last+1)}).then(ok,fail);
+          return Promise.resolve({...result,data:table==="cv_running_cost_months"?fixtureCostRows(values,monthStart,asOf):result.data.slice(first,last+1)}).then(ok,fail);
         },
         insert(){throw Error("Historical reader tried to write");},
         update(){throw Error("Historical reader tried to write");},
@@ -84,7 +86,7 @@ describe("historical snapshot is genuinely read-only",()=>{
       .toEqual(new Set(["2026-09","2026-10"]));
     expect(spies.materialize).not.toHaveBeenCalled();
     expect(spies.alerts).not.toHaveBeenCalled();
-    expect(tables).toEqual(["businesses","cv_sales_days","cv_bills","cv_expenses","locations"]);
+    expect(tables).toEqual(["businesses","cv_sales_days","locations","cv_running_cost_months","cv_running_cost_months"]);
     for(const table of tables.filter(name=>name!=="businesses"))
       expect(filters).toContainEqual({table,field:"business_id",value:cafeId});
   });
@@ -104,6 +106,6 @@ describe("historical snapshot is genuinely read-only",()=>{
     expect(rent.recordedExpenses?.reduce((n,row)=>n+row.amountCents,0)).toBe(100100);
     expect(runningCostsForPeriodCents([rent],"2026-09-30","2026-09-30")).toBeCloseTo(100100+199900/30);
     expect(runningCostsForPeriodCents([rent],"2026-09-01","2026-09-01")).toBeCloseTo(199900/30);
-    expect(tables.filter(name=>name==="cv_expenses")).toHaveLength(2);
+    expect(tables.filter(name=>name==="cv_running_cost_months")).toHaveLength(2);
   });
 });

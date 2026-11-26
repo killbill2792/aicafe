@@ -1,5 +1,6 @@
 import {describe,it,expect,vi} from "vitest";
 import type {SupabaseClient} from "@supabase/supabase-js";
+import {fixtureCostRows} from "./runningCostCatalog.fixture";
 vi.mock("server-only",()=>({}));
 const hooks=vi.hoisted(()=>({
   materialize:vi.fn(),generate:vi.fn(),period:vi.fn(async()=>({
@@ -27,11 +28,12 @@ function mockDb(options:{sold?:Array<{menu_item_id:string;total_quantity:number|
   };
   const db={from(table:string){
     reads.push(table);
-    const records=data[table]??[];
+    let records=data[table]??[];
+    let monthStart="",asOf="";
     const payload={data:records,error:null,count:records.length};
     let range:{start:number;end:number}|null=null;
     const builder={
-      select(){return builder},eq(){return builder},gte(){return builder},lte(){return builder},
+      select(){return builder},eq(field:string,value:unknown){if(field==="business_date")monthStart=String(value);if(field==="as_of_date")asOf=String(value);return builder},gte(){return builder},lte(){return builder},
       in(){return builder},like(){return builder},order(){return builder},limit(){return builder},
       range(start:number,end:number){range={start,end};return builder},
       single:async()=>({...payload,data:payload.data[0]??null}),
@@ -40,7 +42,7 @@ function mockDb(options:{sold?:Array<{menu_item_id:string;total_quantity:number|
       update(){writes.push("update");throw Error("Write in page load")},
       upsert(){writes.push("upsert");throw Error("Write in page load")},
       delete(){writes.push("delete");throw Error("Write in page load")},
-      then(onSuccess:(value:typeof payload)=>unknown){return Promise.resolve({...payload,
+      then(onSuccess:(value:typeof payload)=>unknown){if(table==="cv_running_cost_months")records=fixtureCostRows(data,monthStart,asOf);return Promise.resolve({...payload,
         data:range?records.slice(range.start,range.end+1):records}).then(onSuccess)},
     };
     return builder;
@@ -69,7 +71,7 @@ describe("getSnapshot read-only current snapshot and Home database budget",()=>{
     expect(hooks.generate).not.toHaveBeenCalled();
     // One snapshot loader (passed to Home and its attention section) has a
     // bounded number of read invocations, not a second full snapshot query set.
-    expect(reads).toHaveLength(10);
+    expect(reads).toHaveLength(9);
     expect(reads.filter(table=>table==="alerts")).toHaveLength(1);
     expect(reads.filter(table=>table==="cv_sales_days")).toHaveLength(1);
   });
@@ -106,7 +108,8 @@ describe("getSnapshot read-only current snapshot and Home database budget",()=>{
     expect(result.runningCostLines.find(line=>line.categoryCode==="rent"))
       .toMatchObject({amountCents:100100,actualTodayCents:100100,
         amountSource:"recorded_expense",isEstimate:false});
-    expect(reads.filter(table=>table==="cv_expenses").length).toBeGreaterThan(2);
+    expect(reads.filter(table=>table==="cv_running_cost_months")).toHaveLength(2);
+    expect(result.runningCostLines.find(line=>line.categoryCode==="rent")?.expenseEvidence).toHaveLength(1001);
   });
   it("rejects duplicated financial identities instead of manufacturing a complete source",async()=>{
     const {db,seed}=mockDb();
@@ -114,7 +117,7 @@ describe("getSnapshot read-only current snapshot and Home database budget",()=>{
     seed.cv_expenses=[{id:"same",category_code:"rent",amount_cents:100,status:"actual",spent_on:today},
       {id:"same",category_code:"rent",amount_cents:200,status:"actual",spent_on:today}];
     await expect(getBusinessSnapshotFromDb(db,"c1","today"))
-      .rejects.toThrow("snapshot_source_incomplete:expenses");
+      .rejects.toThrow("running_cost_source_incomplete");
   });
   it("never labels estimated expense rows as actual cash spent today",async()=>{
     const {db,seed}=mockDb();

@@ -2,7 +2,7 @@ import "server-only";
 import {readDailyFactRows} from "./dailyFacts.server";
 import { formatInTimeZone, fromZonedTime } from "date-fns-tz";
 import { buildDayWindows, evaluateRecipeCost, resolveProductCost } from "@/lib/calc";
-import { runningCostLinesForMonth, runningCostMonthlyAmount, rowToDailyFacts } from "./runningCostCatalog";
+import { runningCostMonthlyAmount, rowToDailyFacts } from "./runningCostCatalog";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { BusinessSnapshot, MenuItemSnapshot, RunningCostLine, StaffShift } from "./types";
 import { normalizeOpenHours } from "@/lib/business/openHours";
@@ -15,6 +15,7 @@ import {shiftCafeDate} from "@/lib/metrics/core/clock";
 import {hasSalesCoverage} from "@/lib/calc/dayWindows";
 import {timeReader} from "@/lib/perf/timeReader.server";
 import {readCompletePaged} from "./completePages";
+import {readRunningCostLines} from "./runningCostLines.server";
 
 /** Same authorized PostgREST read as the Home/Money screens, but through all
  * pages, not the default 1,000-row partial slice. Callers supply stable ordering
@@ -70,28 +71,13 @@ export async function getBusinessSnapshotFromDb(
   // instead of serializing two database waves. Every read remains RLS-scoped.
   const minusSix=new Date(Date.parse(todayDateStr+"T12:00:00Z")-6*86_400_000).toISOString().slice(0,10);
   const periodFrom=costPeriod==="today"?todayDateStr:costPeriod==="week"?minusSix:monthStart;
-  const [rollupResult,recurringResult,expensesResult,priorExpenseResult,recoveryOrderResult,
+  const [rollupResult,currentCostLines,priorCostLines,recoveryOrderResult,
     allMenuItemSnapshots,periodItemSales,staffShiftsToday,alertsRead,ownerFeePlans]=
     await Promise.all([
       timeReader("Snapshot","dailyFacts",()=>readDailyFactRows(supabase,businessId,prevMonthStart,todayDateStr))
         .then(data=>({data,error:null}),(error:Error)=>({data:null,error})),
-      timeReader("Snapshot","recurringCosts",()=>snapshotPaged("recurring_costs",
-        (start,end)=>supabase.from("cv_bills")
-         .select("id,category_code,amount_cents,frequency,is_estimate,active_from,active_to,label,due_day,source",{count:"exact"})
-         .eq("business_id",businessId).order("source_ref",{ascending:true}).range(start,end),
-        row=>row.id)),
-      timeReader("Snapshot","expenses",()=>snapshotPaged("expenses",
-        (start,end)=>supabase.from("cv_expenses")
-         .select("id,category_code,amount_cents,status,spent_on,recurring_cost_id,custom_label,vendor,source",{count:"exact"})
-         .eq("business_id",businessId).gte("spent_on",monthStart).lte("spent_on",todayDateStr)
-         .order("id",{ascending:true}).range(start,end),
-        row=>row.id)),
-      timeReader("Snapshot","priorExpenses",()=>snapshotPaged("prior_expenses",
-        (start,end)=>supabase.from("cv_expenses")
-         .select("id,category_code,amount_cents,status,spent_on,recurring_cost_id,custom_label,vendor,source",{count:"exact"})
-         .eq("business_id",businessId).gte("spent_on",prevMonthStart).lte("spent_on",prevMonthEnd)
-         .order("id",{ascending:true}).range(start,end),
-        row=>row.id)),
+      timeReader("Snapshot","runningCosts",()=>readRunningCostLines(supabase,businessId,monthStart,todayDateStr,Boolean(asOfDate))),
+      timeReader("Snapshot","priorRunningCosts",()=>readRunningCostLines(supabase,businessId,prevMonthStart,prevMonthEnd,Boolean(asOfDate))),
       timeReader("Snapshot","recoveryOrder",async()=>supabase.from("recovery_order")
         .select("bucket_code, position").eq("business_id",businessId).order("position",{ascending:true})),
       timeReader("Snapshot","menuCosts",()=>getMenuItemSnapshots(supabase,businessId,todayDateStr)),
@@ -113,17 +99,15 @@ export async function getBusinessSnapshotFromDb(
     d.date<todayDateStr&&hasSalesCoverage(d));
   const previousMonthRecordedDays=allDays.filter(d=>d.date>=prevMonthStart&&d.date<=prevMonthEnd);
   const previousMonthDays=previousMonthRecordedDays.filter(d=>d.salesDataStatus!=="missing");
-  if (recurringResult.error) throw recurringResult.error;
-  if (expensesResult.error) throw expensesResult.error;
-  if (priorExpenseResult.error) throw priorExpenseResult.error;
   if (recoveryOrderResult.error) throw recoveryOrderResult.error;
-
-  const recoveryOrder = (recoveryOrderResult.data ?? []).map((r) => r.bucket_code);
-  const runningCostLines=runningCostLinesForMonth({expenses:expensesResult.data,recurring:recurringResult.data,
-    priorExpenses:priorExpenseResult.data,from:monthStart,to:monthKey+"-"+String(daysInMonth).padStart(2,"0"),today:todayDateStr,
-    historical:false,order:recoveryOrder});
-  const previousRunningCostLines=runningCostLinesForMonth({expenses:priorExpenseResult.data,recurring:recurringResult.data,
-    from:prevMonthStart,to:prevMonthEnd,today:prevMonthEnd,historical:true,order:recoveryOrder});
+  const recoveryOrder=(recoveryOrderResult.data??[]).map(r=>r.bucket_code);
+  // Order is presentation only; SQL owns the amounts and evidence.
+  const ordered=(rows:RunningCostLine[])=>[...rows].sort((a,b)=>{
+    const rank=(code:string)=>recoveryOrder.includes(code)?recoveryOrder.indexOf(code):recoveryOrder.length;
+    return rank(a.categoryCode)-rank(b.categoryCode);
+  });
+  const runningCostLines=ordered(currentCostLines);
+  const previousRunningCostLines=ordered(priorCostLines);
   const orderedCodes=[...new Set([...runningCostLines,...previousRunningCostLines].map(line=>line.categoryCode))];
 
   // Requested period, not last28Days, remains the item-cost evidence boundary.
@@ -379,33 +363,20 @@ async function readHistoricalBusinessSnapshot(
   if(period.from>today)throw new Error("Historical period has no completed dates");
   period={...period,to:period.to>today?today:period.to};
   const first=period.from.slice(0,7)+"-01";
-  const [firstYear,firstMonth]=first.slice(0,7).split("-").map(Number);
-  const precedingMonthStart=(firstMonth===1?String(firstYear-1).padStart(4,"0")+"-12":String(firstYear).padStart(4,"0")+"-"+String(firstMonth-1).padStart(2,"0"))+"-01";
   const last=period.to.slice(0,7);
   const [year,month]=last.split("-").map(Number);
-  const monthEnd=last+"-"+String(new Date(year,month,0).getDate()).padStart(2,"0");
-  const [rollups,recurring,expenses,locations,itemSales]=await Promise.all([
+  const [rollups,locations,itemSales]=await Promise.all([
     readDailyFactRows(supabase,businessId,period.from,period.to)
       .then(data=>({data,error:null}),(error:Error)=>({data:null,error})),
-    snapshotPaged("historical_recurring_costs",(start,end)=>supabase.from("cv_bills")
-      .select("id,category_code,amount_cents,frequency,is_estimate,active_from,active_to,label,due_day,source",{count:"exact"})
-      .eq("business_id",businessId).lte("active_from",monthEnd)
-      .order("source_ref",{ascending:true}).range(start,end),row=>row.id),
-    snapshotPaged("historical_expenses",(start,end)=>supabase.from("cv_expenses")
-      .select("id,category_code,amount_cents,status,spent_on,recurring_cost_id,custom_label,vendor,source",{count:"exact"})
-      .eq("business_id",businessId).gte("spent_on",precedingMonthStart).lte("spent_on",monthEnd)
-      .order("id",{ascending:true}).range(start,end),row=>row.id),
     supabase.from("locations").select("open_hours")
       .eq("business_id",businessId).order("name",{ascending:true}).limit(1),
     readPeriodItemSales(supabase,businessId,period),
   ]);
-  for(const result of [rollups,recurring,expenses,locations])
+  for(const result of [rollups,locations])
     if(result.error)throw result.error;
   // The same stable, exact full-row read as Home/Money, with historical date
   // scope. Never splice a differently sorted second page into a financial total.
   const allRollups=[...(rollups.data??[])];
-  const allExpenses=expenses.data;
-  const allRecurring=recurring.data;
   const recorded=allRollups.map(rowToDailyFacts);
   const sales=recorded.filter(d=>d.salesDataStatus!=="missing");
   const months:string[]=[];
@@ -423,9 +394,7 @@ async function readHistoricalBusinessSnapshot(
   const linesByMonth=new Map<string,RunningCostLine[]>();
   for(const key of months){
     const finalDay=key+"-"+String(new Date(Number(key.slice(0,4)),Number(key.slice(5,7)),0).getDate()).padStart(2,"0");
-    const lines=runningCostLinesForMonth({expenses:allExpenses,recurring:allRecurring,from:key+"-01",
-      to:finalDay,today,historical:key<today.slice(0,7),
-      priorExpenses:allExpenses.filter(e=>e.spent_on<key+"-01")});
+    const lines=await readRunningCostLines(supabase,businessId,key+"-01",today<finalDay?today:finalDay);
     linesByMonth.set(key,lines);
     for(const line of lines){
       const {categoryCode,isEstimate,isMissing}=line;

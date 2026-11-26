@@ -118,3 +118,125 @@ create or replace view public.cv_menu
  null::uuid,null::text,null::text,null::text,null::bigint,null::integer,null::text,null::text,null::boolean,null::text,null::text,null::timestamp with time zone,null::text,null::text,null::text
  from public.toast_catalog_price_versions v;
 comment on view public.cv_menu is 'Current and archived catalog rows have source_ref item:; price-version and needs_match review rows are separate, not additional sellable products. Null open prices remain unknown.';
+
+-- One calculation of monthly running costs. Expense receipts remain dated evidence;
+-- linked receipts reduce ONLY their obligation, and unlinked overlap is uncertain.
+create function public.running_cost_lines_for_month(p_business_id uuid,p_month_start date,p_as_of date)
+returns table(category_code text,data jsonb)
+language sql stable security invoker set search_path=public as $$
+with bounds as (
+ select p_month_start as start_date,(p_month_start+interval '1 month - 1 day')::date as end_date
+ where p_month_start=date_trunc('month',p_month_start)::date
+ and p_as_of>=p_month_start and exists(select 1 from public.businesses where id=p_business_id)
+), expenses as materialized (
+ select e.* from public.cv_expenses e,bounds b
+ where e.business_id=p_business_id and e.spent_on between b.start_date and least(b.end_date,p_as_of)
+), prior as (
+ select distinct e.category_code from public.cv_expenses e,bounds b
+ where e.business_id=p_business_id and e.spent_on>=b.start_date-interval '1 month'
+ and e.spent_on<b.start_date and e.status='actual'
+), obligations as (
+ select r.*,floor(case r.frequency when 'weekly' then r.amount_cents::numeric*52/12
+   when 'quarterly' then r.amount_cents::numeric/3 when 'yearly' then r.amount_cents::numeric/12
+   else r.amount_cents::numeric end+0.5)::bigint as monthly_equivalent,
+ coalesce(l.recorded,0) as linked_recorded,coalesce(l.actual,0) as linked_actual
+ from public.cv_bills r cross join bounds b
+ left join lateral (select sum(e.amount_cents) as recorded,
+ sum(e.amount_cents) filter(where e.status='actual') as actual
+ from expenses e where e.recurring_cost_id=r.id) l on true
+ where r.business_id=p_business_id and r.active_from<=b.end_date
+ and (r.active_to is null or r.active_to>=b.start_date)
+), bill_totals as (
+ select r.category_code,count(*) as n,
+ sum(greatest(0,r.monthly_equivalent-r.linked_recorded)) as remaining,
+ jsonb_agg(jsonb_build_object('kind','recurring','id',r.id,'label',r.label,
+ 'amountCents',r.amount_cents,'frequency',r.frequency,'source',r.source,'dueDay',r.due_day,
+ 'activeFrom',r.active_from,'activeTo',r.active_to,'isEstimate',r.is_estimate,
+ 'monthlyEquivalentCents',r.monthly_equivalent,'linkedRecordedCents',r.linked_recorded,
+ 'linkedActualCents',r.linked_actual,'linkedEstimatedCents',r.linked_recorded-r.linked_actual,
+ 'remainingForecastCents',greatest(0,r.monthly_equivalent-r.linked_recorded),
+ 'costBehaviour','unknown') order by r.id) as evidence
+ from obligations r group by r.category_code
+), expense_totals as (
+ select e.category_code,count(*) as n,sum(e.amount_cents) as recorded,
+ coalesce(sum(e.amount_cents) filter(where e.status='actual'),0) as actual,
+ coalesce(sum(greatest(0,e.amount_cents)) filter(where e.recurring_cost_id is null),0) as unlinked,
+ coalesce(sum(e.amount_cents) filter(where e.status='actual' and e.spent_on=p_as_of),0) as actual_today,
+ bool_or(e.status<>'actual') as estimated,
+ jsonb_agg(jsonb_build_object('kind','expense','id',e.id,
+ 'label',coalesce(e.custom_label,e.vendor,e.category_code),'amountCents',e.amount_cents,
+ 'date',e.spent_on,'status',e.status,'source',e.source,'recurringCostId',e.recurring_cost_id,
+ 'costBehaviour','unknown') order by e.id) as evidence
+ from expenses e group by e.category_code
+), defaults(code,label,position,regular) as (
+ values ('rent','Rent',1,true),('utilities_power','Electricity & gas',2,true),
+ ('water','Water',3,true),('internet','Internet & phone',4,true),('insurance','Insurance',5,true),
+ ('loan','Loan payment',6,true),('software','Software',7,true),('supplies','Store runs & supplies',8,true),
+ ('repairs','Repairs',9,false),('other','Other',10,false)
+), codes as (
+ select code from defaults union select p.category_code from prior p
+ union select e.category_code from expenses e union select r.category_code from obligations r
+ union select o.bucket_code from public.recovery_order o where o.business_id=p_business_id
+), facts as (
+ select c.code,coalesce(d.label,c.code) as label,coalesce(e.n,0) as receipts,
+ coalesce(r.n,0) as commitments,coalesce(e.recorded,0) as recorded,
+ coalesce(e.actual,0) as actual,coalesce(r.remaining,0) as remaining,
+ least(coalesce(r.remaining,0),coalesce(e.unlinked,0)) as overlap,
+ coalesce(e.actual_today,0) as actual_today,coalesce(e.estimated,false) as receipt_estimate,
+ coalesce(e.evidence,'[]'::jsonb)||coalesce(r.evidence,'[]'::jsonb) as evidence,
+ (coalesce(r.n,0)>0 or (coalesce(d.regular,false) and p.category_code is not null)) as expected,
+ o.position as owner_position,d.position as default_position
+ from codes c cross join bounds b left join defaults d on d.code=c.code
+ left join expense_totals e on e.category_code=c.code left join bill_totals r on r.category_code=c.code
+ left join prior p on p.category_code=c.code
+ left join public.recovery_order o on o.business_id=p_business_id and o.bucket_code=c.code
+ where c.code<>'ingredients'
+)
+select f.code,jsonb_build_object('categoryCode',f.code,'label',f.label,
+ 'amountCents',f.recorded+f.remaining-f.overlap,'recordedExpenseCents',f.recorded,
+ 'recordedActualCents',f.actual,'recordedEstimatedCents',f.recorded-f.actual,
+ 'recurringEstimateCents',f.remaining-f.overlap,'expenseEvidence',f.evidence,
+ 'possibleAdditionalForecastCents',f.overlap,'forecastUpperCents',f.recorded+f.remaining,
+ 'forecastOverlapUncertain',f.overlap>0,'amountSource',case when f.receipts>0 then
+  case when f.remaining>0 then 'mixed' else 'recorded_expense' end
+  when f.commitments>0 then 'recurring' else 'missing' end,
+ 'actualTodayCents',f.actual_today,'isEstimate',f.receipt_estimate or f.remaining>0,
+ 'isMissing',f.receipts=0 and f.commitments=0 and f.expected,
+ 'isExpected',f.expected or f.receipts>0)
+from facts f order by f.owner_position nulls last,f.default_position nulls last,f.code
+$$;
+revoke all on function public.running_cost_lines_for_month(uuid,date,date) from public,anon;
+grant execute on function public.running_cost_lines_for_month(uuid,date,date) to authenticated,service_role;
+comment on function public.running_cost_lines_for_month(uuid,date,date) is 'Canonical monthly running costs, recorded expense evidence and conservative obligation forecasts, using the requested café calendar month and as-of date. Never treats a category match as settlement.';
+
+-- Discoverable SQL view for all observed months and months covered by commitments.
+-- Explicit as-of-date reads use the very same function, not a second calculation.
+create view public.cv_running_cost_months with (security_invoker=true) as
+with cafes as (
+ select b.id as business_id,(now() at time zone b.timezone)::date as today
+ from public.businesses b
+), months as (
+ select c.business_id,c.today,date_trunc('month',c.today)::date as business_date from cafes c
+ union select c.business_id,c.today,(date_trunc('month',c.today)-interval '1 month')::date from cafes c
+ union select c.business_id,c.today,date_trunc('month',e.spent_on)::date
+ from cafes c join public.cv_expenses e using(business_id) where e.spent_on<=c.today
+ union select c.business_id,c.today,(date_trunc('month',e.spent_on)+interval '1 month')::date
+ from cafes c join public.cv_expenses e using(business_id)
+ where e.status='actual' and e.spent_on<date_trunc('month',c.today)::date
+ union select c.business_id,c.today,date_trunc('month',d.business_date)::date
+ from cafes c join public.cv_sales_days d using(business_id) where d.business_date<=c.today
+ union select c.business_id,c.today,g.month::date from cafes c
+ join public.cv_bills r using(business_id)
+ cross join lateral generate_series(date_trunc('month',r.active_from),
+  date_trunc('month',least(coalesce(r.active_to,c.today),c.today)),interval '1 month') g(month)
+)
+select m.business_id,'app'::text as source,'running-cost:'||m.business_date||':'||r.category_code as source_ref,
+ case when (r.data->>'isMissing')::boolean then 'open' when (r.data->>'isEstimate')::boolean then 'estimated'
+ when (r.data->>'isExpected')::boolean then 'actual' else 'open' end::text as status,
+ m.business_date, r.category_code,(r.data->>'amountCents')::bigint as amount_cents,
+ least(m.today,(m.business_date+interval '1 month - 1 day')::date) as as_of_date,r.data
+from months m cross join lateral public.running_cost_lines_for_month(m.business_id,m.business_date,
+ least(m.today,(m.business_date+interval '1 month - 1 day')::date)) r;
+revoke all on public.cv_running_cost_months from public,anon,authenticated;
+grant select on public.cv_running_cost_months to authenticated,service_role;
+comment on view public.cv_running_cost_months is 'One café/month/category, with amount in cents including separately labeled unpaid forecast and dated receipt evidence; as_of_date identifies the cutoff. Do not treat estimated forecasts as paid bills.';

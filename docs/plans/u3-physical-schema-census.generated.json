@@ -4278,6 +4278,59 @@
    "foreign_keys": []
   },
   {
+   "relation": "cv_running_cost_months",
+   "kind": "view",
+   "rls": false,
+   "columns": [
+    [
+     "business_id",
+     "uuid",
+     false
+    ],
+    [
+     "source",
+     "text",
+     false
+    ],
+    [
+     "source_ref",
+     "text",
+     false
+    ],
+    [
+     "status",
+     "text",
+     false
+    ],
+    [
+     "business_date",
+     "date",
+     false
+    ],
+    [
+     "category_code",
+     "text",
+     false
+    ],
+    [
+     "amount_cents",
+     "bigint",
+     false
+    ],
+    [
+     "as_of_date",
+     "date",
+     false
+    ],
+    [
+     "data",
+     "jsonb",
+     false
+    ]
+   ],
+   "foreign_keys": []
+  },
+  {
    "rls": false,
    "kind": "view",
    "columns": [

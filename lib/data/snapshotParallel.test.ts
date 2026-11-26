@@ -1,5 +1,6 @@
 import {describe,it,expect,vi} from "vitest";
 import type {SupabaseClient} from "@supabase/supabase-js";
+import {fixtureCostRows} from "./runningCostCatalog.fixture";
 vi.mock("server-only",()=>({}));
 const mocks=vi.hoisted(()=>({
   days:vi.fn(),period:vi.fn(),plans:vi.fn(),
@@ -45,7 +46,13 @@ function mockDb(){
       };
       return q;
     },
-    rpc(){throw Error("Empty menu must not request recipe quantities");},
+    rpc(name:string,args:{p_business_id:string;p_month_start:string;p_as_of:string}){
+      if(name==="running_cost_lines_for_month"){
+        if(args.p_business_id!=="cafe1")throw Error("wrong scope");
+        return Promise.resolve({data:fixtureCostRows(values,args.p_month_start,args.p_as_of),error:null});
+      }
+      throw Error("Empty menu must not request recipe quantities");
+    },
   };
   return {db:client as unknown as SupabaseClient,reads,scope};
 }
