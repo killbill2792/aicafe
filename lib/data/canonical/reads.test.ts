@@ -11,7 +11,8 @@ function db(rows:Record<string,unknown>[]=[],err:unknown=null){
   gte(k:string,v:string){calls.push([">="+k,v]);return query;},
   lte(k:string,v:string){calls.push(["<="+k,v]);return query;},
   order(){return query;},
-  limit(n:number){calls.push(["limit",n]);return Promise.resolve({data:rows,error:err});}
+  limit(n:number){calls.push(["limit",n]);return Promise.resolve({data:rows,error:err});},
+  range(start:number,end:number){calls.push(["range",[start,end]]);return Promise.resolve({data:rows.slice(start,end+1),error:err});}
  };
  return {client:{from(t:string){table=t;return query;}} as never,calls,get table(){return table;}};
 }
@@ -54,6 +55,20 @@ describe("canonical authenticated read path",()=>{
   expect(fail.error).toBe("source_read_failed");
   expect(fail.notes).toEqual(["source_read_failed"]);
  });
+});
+
+it("paginates canonical inventory without a silent 100-row limit",async()=>{
+ const rows=Array.from({length:201},(_,i)=>({source_ref:"stock:"+String(i).padStart(4,"0"),business_date:"2026-10-01"}));
+ const x=db(rows);
+ const first=await readCanonicalView(x.client,business,"cv_inventory",range,100,{offset:0});
+ const middle=await readCanonicalView(x.client,business,"cv_inventory",range,100,{offset:100});
+ const last=await readCanonicalView(x.client,business,"cv_inventory",range,100,{offset:200});
+ expect([first.rows.length,middle.rows.length,last.rows.length]).toEqual([100,100,1]);
+ expect([first.truncated,middle.truncated,last.truncated]).toEqual([true,true,false]);
+ expect(x.calls).toContainEqual(["range",[100,200]]);
+ expect(x.calls).toContainEqual(["business_id",business]);
+ const bad=await readCanonicalView(x.client,business,"cv_inventory",range,100,{offset:-1});
+ expect(bad.error).toBe("invalid_scope");
 });
 
 it("filters dated labor, shifts and inventory by café-local business dates",async()=>{

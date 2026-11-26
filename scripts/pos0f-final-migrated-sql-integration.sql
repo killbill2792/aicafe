@@ -43,6 +43,10 @@ DECLARE
   p record;
   result jsonb;
   bad_count integer;
+  latency_started timestamptz;
+  stock_p95 numeric;
+  discovery_p95 numeric;
+  sample_count integer;
 BEGIN
   -- Behavioral negative regression: PostgreSQL must THROW for definitions
   -- actually containing a diagnostic table, including inside a function body.
@@ -73,7 +77,7 @@ BEGIN
     SELECT oid, proname
       FROM pg_proc
      WHERE pronamespace = 'public'::regnamespace
-       AND proname IN ('toast_records_for','ai_toast_fields','ai_query_view')
+       AND proname IN ('toast_records_for','toast_current_nonorders_for','ai_toast_fields','ai_query_view')
   LOOP
     PERFORM pg_temp.pos0f_reject_diagnostic_definition(
       pg_get_functiondef(p.oid),
@@ -81,6 +85,7 @@ BEGIN
   END LOOP;
   PERFORM pg_temp.pos0f_assert(
     to_regprocedure('public.toast_records_for(uuid,date,date)') IS NOT NULL
+    AND to_regprocedure('public.toast_current_nonorders_for(uuid,date,date,text)') IS NOT NULL
     AND to_regprocedure('public.ai_toast_fields(uuid,text)') IS NOT NULL
     AND to_regprocedure('public.ai_query_view(uuid,text,text[],jsonb,text[],jsonb,date,date,jsonb,integer)') IS NOT NULL,
     'The one existing registered SQL reader and field/query functions must exist');
@@ -257,6 +262,37 @@ BEGIN
      '[{"guid":"foreign-diagnostic-poison","amount":22222.00}]'::jsonb,
      ARRAY['guid','amount'],gen_random_uuid(),null);
 
+  -- #564: same operational current-object projection for the stock view,
+  -- retained field discovery and the original Toast source reader. A proof
+  -- with null provider quantity stays null and no diagnostic record may enter.
+  PERFORM pg_temp.pos0f_assert(
+    (SELECT count(*)=1 FROM public.toast_current_nonorders_for(
+      a,null,null,'stock/v1/inventory'))
+    AND (SELECT count(*)=0 FROM public.toast_current_nonorders_for(
+      b,null,null,'stock/v1/inventory'))
+    AND NOT EXISTS (
+      (SELECT r.source_ref,r.status,r.record_ref,r.business_date,r.data
+       FROM public.toast_records_for(a,null,null) r
+       WHERE r.record_type='stock/v1/inventory'
+       EXCEPT
+       SELECT c.source_ref,c.status,c.record_ref,c.business_date,c.data
+       FROM public.toast_current_nonorders_for(
+        a,null,null,'stock/v1/inventory') c)
+      UNION ALL
+      (SELECT c.source_ref,c.status,c.record_ref,c.business_date,c.data
+       FROM public.toast_current_nonorders_for(
+        a,null,null,'stock/v1/inventory') c
+       EXCEPT
+       SELECT r.source_ref,r.status,r.record_ref,r.business_date,r.data
+       FROM public.toast_records_for(a,null,null) r
+       WHERE r.record_type='stock/v1/inventory')),
+    'stock-only shared current projection matches every operational Toast field without diagnostic or foreign data');
+  PERFORM pg_temp.pos0f_assert(
+    public.ai_toast_fields(a,'stock/v1/inventory') @>
+      '[{"field":"data.status","type":"string"},{"field":"data.guid","type":"string"}]'::jsonb
+    AND NOT (public.ai_toast_fields(a,'stock/v1/inventory') @>
+      '[{"field":"data.quantity","type":"number"}]'::jsonb),
+    'current stock discoverability preserves string fields and does not invent numeric evidence from NULL');
   PERFORM pg_temp.pos0f_assert(
     (SELECT count(*)=1 AND sum(amount_cents)=1250
       FROM public.cv_cash WHERE business_id=a),
@@ -283,6 +319,24 @@ BEGIN
     AND NOT EXISTS (SELECT 1 FROM public.toast_records_for(a,null,null)
       WHERE data->>'guid' LIKE '%diagnostic-poison'),
     'Shared reader returns current A records once and refuses foreign/diagnostic-only rows');
+  -- Record-family pushdown returns exactly the rows the unfiltered reader returns for those families, nothing else.
+  PERFORM pg_temp.pos0f_assert(
+    (SELECT count(*) FROM public.toast_records_for(a,null,null,ARRAY['check']))
+      =(SELECT count(*) FROM public.toast_records_for(a,null,null) WHERE record_type='check'),
+    'pushdown check count');
+  PERFORM pg_temp.pos0f_assert(
+    (SELECT count(*) FROM public.toast_records_for(a,null,null,ARRAY['payment','item']))
+      =(SELECT count(*) FROM public.toast_records_for(a,null,null) WHERE record_type IN ('payment','item')),
+    'pushdown payment/item count');
+  PERFORM pg_temp.pos0f_assert(
+    (SELECT count(*) FROM public.toast_records_for(a,null,null,ARRAY['stock/v1/inventory']))
+      =(SELECT count(*) FROM public.toast_records_for(a,null,null) WHERE record_type='stock/v1/inventory'),
+    'pushdown nonorder count');
+  PERFORM pg_temp.pos0f_assert(
+    NOT EXISTS (SELECT 1 FROM public.toast_records_for(a,null,null,ARRAY['check']) WHERE record_type<>'check')
+    AND (SELECT count(*) FROM public.toast_records_for(a,null,null,ARRAY['order']))
+      =(SELECT count(*) FROM public.toast_records_for(a,null,null) WHERE record_type='order'),
+    'pushdown exclusivity and order family');
 
   result := public.ai_query_view(a,'cv_cash',null::text[],'[]'::jsonb,
     null::text[],'[{"fn":"sum","column":"amount_cents"}]'::jsonb,
@@ -337,6 +391,7 @@ BEGIN
   EXECUTE 'set local role authenticated';
   PERFORM pg_temp.pos0f_assert(
     (SELECT count(*)=0 FROM public.toast_records_for(a,null,null))
+    AND (SELECT count(*)=0 FROM public.toast_current_nonorders_for(a,null,null,'stock/v1/inventory'))
     AND NOT has_table_privilege('public.toast_raw_records','SELECT'),
     'Nonmember cannot read A via the shared reader or direct current archive');
   result := public.ai_query_view(a,'cv_cash',null::text[],'[]'::jsonb,
@@ -353,7 +408,9 @@ BEGIN
   EXECUTE 'set local role authenticated';
   PERFORM pg_temp.pos0f_assert(
     (SELECT count(*)=5 FROM public.toast_records_for(a,null,null))
-    AND (SELECT count(*)=0 FROM public.toast_records_for(b,null,null)),
+    AND (SELECT count(*)=0 FROM public.toast_records_for(b,null,null))
+    AND (SELECT count(*)=1 FROM public.toast_current_nonorders_for(a,null,null,'stock/v1/inventory'))
+    AND (SELECT count(*)=0 FROM public.toast_current_nonorders_for(b,null,null,'stock/v1/inventory')),
     'Member reads exact A current facts, never another café');
   result := public.ai_query_view(a,'cv_cash',null::text[],'[]'::jsonb,
     null::text[],'[{"fn":"sum","column":"amount_cents"}]'::jsonb,
@@ -362,5 +419,49 @@ BEGIN
     (result->'rows'->0->>'sum_amount_cents')::integer=1250,
     'Authorized owner receives same 1250 screen/query cash cents');
   EXECUTE 'reset role';
+
+  -- #564 production-size data shape, in this ROLLED BACK disposable DB only.
+  -- Real café stock query timed out with 12,480 unrelated operational orders.
+  -- Keep all 12,500 fixture orders: no history/date or field cutoff permitted.
+  INSERT INTO public.toast_raw_records
+   (business_id,restaurant_guid,entity,entity_guid,business_date,
+    payload,payload_sha256,capture_key)
+  SELECT a,restaurant_a,'order',gen_random_uuid(),'2026-10-25'::date,
+   jsonb_build_object('guid',gen_random_uuid()::text,'checks',
+    jsonb_build_array(
+     jsonb_build_object('guid',gen_random_uuid()::text,'selections',
+      jsonb_build_array(jsonb_build_object('guid',gen_random_uuid()::text,
+       'item',jsonb_build_object('name','Unrelated order'),
+       'price',9.99,'tax',0.67,'modifiers',jsonb_build_array(
+        jsonb_build_object('guid',gen_random_uuid()::text,'name','Extra'))))))),
+   md5(g.n::text)||md5(g.n::text),'live:stock-discovery-load:'||g.n::text
+  FROM generate_series(1,12500) g(n);
+  PERFORM pg_temp.pos0f_assert(
+   (SELECT count(*)=12500 FROM public.toast_raw_records
+    WHERE business_id=a AND entity='order'
+      AND capture_key LIKE 'live:stock-discovery-load:%'),
+   'stock field-discovery latency fixture includes 12,500 unrelated operational orders');
+  CREATE TEMP TABLE pg_temp.pos0f_source_latency(kind text,ms numeric) ON COMMIT DROP;
+  FOR sample_count IN 1..12 LOOP
+    latency_started:=clock_timestamp();
+    PERFORM count(*) FROM public.cv_inventory
+     WHERE business_id=a AND source='toast';
+    INSERT INTO pg_temp.pos0f_source_latency VALUES
+     ('inventory',1000*extract(epoch from clock_timestamp()-latency_started));
+    latency_started:=clock_timestamp();
+    PERFORM public.ai_toast_fields(a,'stock/v1/inventory');
+    INSERT INTO pg_temp.pos0f_source_latency VALUES
+     ('fields',1000*extract(epoch from clock_timestamp()-latency_started));
+  END LOOP;
+  SELECT percentile_cont(0.95) WITHIN GROUP(ORDER BY ms)::numeric
+   INTO stock_p95 FROM pg_temp.pos0f_source_latency WHERE kind='inventory';
+  SELECT percentile_cont(0.95) WITHIN GROUP(ORDER BY ms)::numeric
+   INTO discovery_p95 FROM pg_temp.pos0f_source_latency WHERE kind='fields';
+  PERFORM pg_temp.pos0f_assert(
+   stock_p95<2000 AND discovery_p95<2000,
+   '12,500 unrelated orders must not make inventory/discovery timeout: stock p95='
+     ||stock_p95||'ms, fields p95='||discovery_p95||'ms');
+  RAISE NOTICE 'POS0f #564: 12,500-order scoped stock p95=% ms; stock field p95=% ms (12 reads each)',
+    round(stock_p95,1),round(discovery_p95,1);
 END $pos0f$;
 ROLLBACK;

@@ -31,7 +31,11 @@ import {agentReplyPayload} from "@/lib/ai/agent/persist.server";
 
 type Db=SupabaseClient;
 type Business={id:string;timezone:string|null;is_demo:boolean};
-export type LookaheadRun={checked:number;scanned:number;planned:number;skipped:number;failed:number};
+export type LookaheadRun={checked:number;scanned:number;planned:number;skipped:number;failed:number;stoppedEarly?:boolean};
+/** One run ends before the platform's own time limit (the cron route's maxDuration is 300 s), so a slow search never
+ * gets the whole run killed. Cafés not reached are rotated first on the next day's run. */
+export const LOOKAHEAD_RUN_BUDGET_MS=240_000;
+export const lookaheadBudgetSpent=(startedAtMs:number,nowMs:number,budgetMs=LOOKAHEAD_RUN_BUDGET_MS)=>nowMs-startedAtMs>=budgetMs;
 const maxPlansPerDay=3;
 const planMessageId=(businessId:string,ownerId:string,date:string,hash:string,proposalId:string)=>
   stableMessageId("event-plan-message:"+businessId+":"+ownerId+":"+date+":"+hash+":"+proposalId);
@@ -621,6 +625,7 @@ export async function reportSavedEventDays(db:Db,businessId:string,ownerId:strin
 export async function runEventsLookahead(db:Db=createAdminSupabaseClient(),
   now=new Date()):Promise<LookaheadRun>{
   const result:LookaheadRun={checked:0,scanned:0,planned:0,skipped:0,failed:0};
+  const startedAt=Date.now();
   // Every café gets its own bounded research budget. A shared counter starves
   // later cafés and prevents their first 14-day city scan from completing.
   // Stable date rotation still prevents a fixed ordering bias.
@@ -633,6 +638,7 @@ export async function runEventsLookahead(db:Db=createAdminSupabaseClient(),
     if((page.data??[]).length<100)break;
   }
   for(const b of dailyCafeScanOrder(businesses,now)){
+      if(lookaheadBudgetSpent(startedAt,Date.now())){result.stoppedEarly=true;break;}
       if(!b.timezone||b.is_demo)continue;
       result.checked++;
       try{
@@ -687,6 +693,7 @@ export async function runEventsLookahead(db:Db=createAdminSupabaseClient(),
           ?localeRow.data.locale:"en";
         const ownerFacts=await loadOwnerFacts(b.id,db);
         for(const day of [...candidates.filter(d=>!d.priorEvidenceHash),...candidates.filter(d=>d.priorEvidenceHash)].slice(0,remaining)){
+          if(lookaheadBudgetSpent(startedAt,Date.now())){result.stoppedEarly=true;break;}
           try{
             if(await draftDay(db,b,owner.data.user_id,locale,today,day,
               ownerFacts,timeline,sourceHash))result.planned++;

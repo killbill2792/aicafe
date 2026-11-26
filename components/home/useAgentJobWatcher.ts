@@ -118,14 +118,22 @@ export function useAgentJobWatcher(threadId: string | null, active: boolean, onS
       if (latest?.status !== "running") return;
       if (isSupabaseConfigured()) {
         try {
-          supabase = createBrowserSupabaseClient();
-          channel = supabase.channel("agent-job:" + threadId)
-            .on("postgres_changes", { event: "*", schema: "public", table: "ai_agent_jobs",
-              filter: "thread_id=eq." + threadId }, () => { void read(); })
-            .subscribe((status) => {
-              if (status === "SUBSCRIBED") { subscribed = true; void read(); }
-              else if (status === "CHANNEL_ERROR" || status === "TIMED_OUT" || status === "CLOSED") startPolling();
-            });
+          const client = createBrowserSupabaseClient();
+          supabase = client;
+          // Subscribe with the signed-in session. Without the token Realtime joins as anon, which cannot read
+          // ai_agent_jobs.thread_id and rejects the filter ("invalid column for filter").
+          void client.auth.getSession().then(({ data }) => {
+            if (finished) return;
+            const token = data.session?.access_token;
+            if (token) client.realtime.setAuth(token);
+            channel = client.channel("agent-job:" + threadId)
+              .on("postgres_changes", { event: "*", schema: "public", table: "ai_agent_jobs",
+                filter: "thread_id=eq." + threadId }, () => { void read(); })
+              .subscribe((status) => {
+                if (status === "SUBSCRIBED") { subscribed = true; void read(); }
+                else if (status === "CHANNEL_ERROR" || status === "TIMED_OUT" || status === "CLOSED") startPolling();
+              });
+          }).catch(() => startPolling());
         } catch { startPolling(); }
       }
       grace = setTimeout(() => { if (!subscribed) startPolling(); }, JOB_REALTIME_GRACE_MS);

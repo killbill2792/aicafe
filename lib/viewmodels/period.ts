@@ -7,6 +7,7 @@ import {
   type DailyFacts,
 } from "@/lib/calc";
 import type { BusinessSnapshot, RunningCostLine } from "@/lib/data/types";
+import {runningCostMonthlyAmount} from "@/lib/data/runningCostCatalog";
 
 export type Period = "today" | "week" | "month";
 
@@ -62,16 +63,12 @@ function calendarDaySpan(start: string, end: string): number {
  * actual bills in the snapshot, so this approximates them as unchanged from this month; only
  * `runningCostLines`-driven proration for dates outside the current month uses this fallback.
  */
-function categoryMonthlyAmounts(snapshot: BusinessSnapshot): CategoryMonthlyAmount[] {
-  const forMonth = (monthKey: string) =>
-    snapshot.runningCostLines.map((line) => ({
-      categoryCode: line.categoryCode,
-      monthKey,
-      amountCents: line.amountCents,
-      isEstimate: line.isEstimate,
-      isMissing: line.isMissing,
-    }));
-  return [...forMonth(snapshot.monthKey), ...forMonth(previousMonthKey(snapshot.monthKey))];
+export function categoryMonthlyAmounts(snapshot: BusinessSnapshot): CategoryMonthlyAmount[] {
+  const forMonth = (monthKey:string,lines:RunningCostLine[],includeEvidence:boolean) =>
+    lines.map(line=>runningCostMonthlyAmount(line,monthKey,includeEvidence));
+  return [...forMonth(snapshot.monthKey,snapshot.runningCostLines,true),
+    ...forMonth(previousMonthKey(snapshot.monthKey),snapshot.previousRunningCostLines??snapshot.runningCostLines,
+      snapshot.previousRunningCostLines!==undefined)];
 }
 
 /**
@@ -141,7 +138,7 @@ export function runningCostsForPeriod(snapshot: BusinessSnapshot, period: Period
  * the selected period instead of the full month — so a "Today" or "Week" view shows Rent at its
  * actual share of that period, not the full monthly amount, matching the already-prorated total
  * and owner-profit figures computed from `runningCostsForPeriod` above. `label`/`isEstimate`/
- * `isMissing` are carried over unchanged; only the amount is period-scoped.
+ * `isMissing` reflect evidence contributing to the selected calendar dates.
  *
  * Money is integer cents everywhere (CLAUDE.md rule 1), and the displayed rows must sum to
  * exactly the same rounded total the rest of the screen shows — rounding each category
@@ -155,14 +152,47 @@ export function runningCostLinesForPeriod(snapshot: BusinessSnapshot, period: Pe
   const targetCents = roundHalfUpToCent(runningCostsForPeriod(snapshot, period));
   // Missing categories have no raw amount to round and must display as $0 — excluded from
   // allocation entirely, not just zeroed out afterward, so they never receive a stray cent.
-  const rawByCategory = new Map(
-    snapshot.runningCostLines.filter((line) => !line.isMissing).map((line) => [line.categoryCode, byCategory.get(line.categoryCode) ?? 0]),
-  );
+  const rawByCategory=new Map(byCategory);
   const allocatedByCategory = allocateIntegerCentsByCategory(rawByCategory, targetCents);
-  return snapshot.runningCostLines.map((line) => ({
-    ...line,
-    amountCents: line.isMissing ? 0 : allocatedByCategory.get(line.categoryCode) ?? 0,
-  }));
+  const overlappingLines = [
+    ...(start.slice(0, 7) !== snapshot.monthKey ? snapshot.previousRunningCostLines ?? [] : []),
+    ...snapshot.runningCostLines,
+  ];
+  const byCode = new Map<string, RunningCostLine[]>();
+  for (const line of overlappingLines) {
+    const group = byCode.get(line.categoryCode) ?? [];
+    group.push(line);
+    byCode.set(line.categoryCode, group);
+  }
+  return [...byCode.values()].map(group => {
+    const line = group[group.length - 1];
+    const amountCents = allocatedByCategory.get(line.categoryCode) ?? 0;
+    // Only dated receipts within this period or an allocated recurring
+    // forecast prove a cost here. A receipt elsewhere in an overlapping
+    // month cannot turn a missing month into a confirmed zero.
+    const known = group.some(row => {
+      if (row.isMissing) return false;
+      if (row.expenseEvidence === undefined) {
+        // Legacy monthly amounts are prorated over the overlapping dates.
+        return row.isExpected !== false || row.amountCents !== 0;
+      }
+      return row.expenseEvidence.some(e => e.kind === "expense" && e.date >= start && e.date <= end)
+        || (row.recurringEstimateCents ?? 0) > 0;
+    });
+    const estimated = group.some(row => !row.isMissing && row.isEstimate && (
+      row.expenseEvidence === undefined ||
+      row.expenseEvidence.some(e => e.kind === "expense" && e.date >= start && e.date <= end && e.status !== "actual") ||
+      (row.recurringEstimateCents ?? 0) > 0 ||
+      (row.possibleAdditionalForecastCents ?? 0) > 0
+    ));
+    return {
+      ...line,
+      amountCents,
+      isMissing: amountCents === 0 && !known && group.some(row => row.isMissing),
+      isEstimate: estimated,
+      isExpected: group.some(row => row.isExpected === true) ? true : line.isExpected,
+    };
+  });
 }
 
 /** Running costs for the comparison period one back (see `previousPeriodCalendarRange`). */

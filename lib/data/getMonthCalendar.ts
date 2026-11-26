@@ -2,7 +2,7 @@ import "server-only";
 import { isSupabaseConfigured } from "@/lib/supabase/client";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
 import { getMonthCalendarFromDb, type MonthCalendarData } from "./monthCalendar.server";
-import { RUNNING_COST_CODES } from "./runningCostCatalog";
+import { RUNNING_COST_CODES, runningCostMonthlyAmount } from "./runningCostCatalog";
 import type { BusinessSnapshot } from "./types";
 
 function daysInMonthKey(monthKey: string): number {
@@ -34,13 +34,7 @@ export async function getMonthCalendar(monthKey: string, snapshot: BusinessSnaps
       monthKey,
       daysInMonth: snapshot.daysInMonth,
       days: snapshot.monthActualDays,
-      categoryAmounts: snapshot.runningCostLines.map((l) => ({
-        categoryCode: l.categoryCode,
-        monthKey,
-        amountCents: l.amountCents,
-        isEstimate: l.isEstimate,
-        isMissing: l.isMissing,
-      })),
+      categoryAmounts: snapshot.runningCostLines.map(line=>runningCostMonthlyAmount(line,monthKey)),
       openHours: snapshot.business.openHours,
     };
   }
