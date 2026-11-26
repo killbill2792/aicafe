@@ -12,8 +12,12 @@ const context=await browser.newContext({baseURL:"http://127.0.0.1:3000",serviceW
 const page=await context.newPage();
 const results=[];
 async function capture(route,width,mode){
- await page.evaluate(mode=>{document.documentElement.setAttribute("data-theme","glass");document.documentElement.setAttribute("data-mode",mode);},mode);
- await page.evaluate(()=>document.fonts.ready);
+ // Use the app's real theme cookies BEFORE navigation so hydration cannot
+ // reset a manually changed DOM attribute or capture the loading shell.
+ await context.addCookies([{name:"cp_theme",value:"glass",url:"http://127.0.0.1:3000"},{name:"cp_mode",value:mode,url:"http://127.0.0.1:3000"}]);
+ if(route==="login")await navigateLocal(page,"/en/login");else await openOwnedPage(page,owner,route);
+ await page.waitForLoadState("networkidle",{timeout:30000});
+ await page.evaluate(async()=>{await document.fonts.ready;await new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve)));});
  const name=(route||"home").replace(/[^a-z0-9-]+/gi,"-")+"-"+width+"-"+mode;
  const data=await page.evaluate(({variant})=>{
   const root=document.documentElement,body=getComputedStyle(document.body);
@@ -21,7 +25,12 @@ async function capture(route,width,mode){
   const sample=(classes,props)=>{
    const el=document.createElement("div");el.className=classes;document.body.appendChild(el);
    const style=getComputedStyle(el),out={};
-   for(const p of props)out[p]=p.toLowerCase().includes("color")?color(style[p]):style[p];
+   for(const p of props){
+    // v3 and v4 have different numbers of invisible ring-shadow layers.
+    // Remove only fully transparent rgba layers, retain every visible shadow.
+    const val=style[p];
+    out[p]=p.toLowerCase().includes("color")?color(val):p==="boxShadow"?(val.split(/,\s*(?![^()]*\))/).filter(layer=>!/^rgba\(0, 0, 0, 0\)(?:\s|$)/.test(layer)).join(", ")||"none"):val;
+   }
    el.remove();return out;
   };
   const rootWidth=root.clientWidth,scrollWidth=root.scrollWidth;
@@ -30,7 +39,8 @@ async function capture(route,width,mode){
    samples:{
     card:sample("bg-card text-ink border border-line rounded-card shadow-card",["backgroundColor","color","borderTopColor","borderTopWidth","borderTopLeftRadius","boxShadow"]),
     nav:sample("w-sidenav",["width"]),
-    money:sample("text-money-md",["fontSize","lineHeight"]),
+    typography:sample("text-base font-semibold",["fontSize","lineHeight","fontWeight"]),
+    wrapAnywhere:sample(variant==="before"?"[overflow-wrap:anywhere]":"wrap-anywhere",["overflowWrap"]),
     wrap:sample(variant==="before"?"break-words":"wrap-break-word",["overflowWrap"]),
     radius:sample(variant==="before"?"rounded":"rounded-sm",["borderTopLeftRadius"]),
     shadow:sample(variant==="before"?"shadow-sm":"shadow-xs",["boxShadow"]),
@@ -45,12 +55,10 @@ try{
  for(const width of [390,1440]){
   await page.setViewportSize({width,height:900});
   if(width===390){
-   await navigateLocal(page,"/en/login");
    for(const mode of ["light","dark"])await capture("login",width,mode);
    await login(page,owner);
   }
   for(const route of routes){
-   await openOwnedPage(page,owner,route);
    for(const mode of ["light","dark"])await capture(route,width,mode);
   }
  }

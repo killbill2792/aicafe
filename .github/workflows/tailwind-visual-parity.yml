@@ -122,7 +122,7 @@ jobs:
               hist=ImageChops.difference(im1,im2).convert('L').histogram()
               percent=round(100*(sum(hist[9:])/sum(hist)),2)
               print('VISUAL_COMPARE '+json.dumps({'screen':name,'pixel_change_percent':percent,'style_differences':differences,'before':{k:x[k] for k in differences if k in x},'after':{k:y[k] for k in differences if k in y}}))
-              if differences: changed.append(name)
-          print('Visual comparisons:',len(old),'computed style differences:',len(changed))
-          if changed: raise SystemExit('Review computed style regressions: '+', '.join(changed))
+              if differences or percent>1: changed.append(name)
+          print('Visual comparisons:',len(old),'computed style or screenshot differences over 1%:',len(changed))
+          if changed: raise SystemExit('Review style or screenshot differences: '+', '.join(changed))
           PY
