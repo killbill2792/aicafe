@@ -25,6 +25,12 @@ describe("research web cancellation",()=>{
     controller.abort();
     expect(await pending).toEqual({available:false,reason:"timeout"});
   });
+  it("passes the slice signal through the research tool",async()=>{
+    const controller=new AbortController();
+    const webSearch=vi.fn(async()=>({available:false,reason:"timeout"}));
+    await executeResearchTool({db:{} as never,businessId:"cafe",ownerUserId:"owner",webSearch,signal:controller.signal},"search_web",JSON.stringify({query:"public question"}));
+    expect(webSearch).toHaveBeenCalledWith("public question",controller.signal);
+  });
   it("does not reserve or launch a request after cancellation",async()=>{
     const controller=new AbortController();
     controller.abort();
