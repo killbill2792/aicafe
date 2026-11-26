@@ -3,7 +3,7 @@ import type {SupabaseClient} from "@supabase/supabase-js";
 import {assertCafeAiAccess} from "@/lib/access/access.server";
 import {createOwnerScopedCafeTools,readSupervisorCafeIdentity} from "@/lib/ai/cafeTools.server";
 import {openAIProvider,type AgentProvider} from "@/lib/ai/agent/loop.server";
-import {runResearchTurn} from "@/lib/ai/research/turn.server";
+import {researchStaffReadTools,runResearchTurn} from "@/lib/ai/research/turn.server";
 import {agentToolDefinitions} from "@/lib/ai/agent/tools";
 import {assertDurablePaidTurnAllowed} from "@/lib/ai/supervisor/runs/worker.server";
 import {createWebSearch,type WebSearchBudget} from "@/lib/ai/agent/webSearch.server";
@@ -479,6 +479,7 @@ export async function processNextInvestigation(db:SupabaseClient,now:Date,
     // Only what SQL cannot do stays: saved events, inert approval drafts and maintenance steps. All café data is read with SQL.
     const permitted=[...new Set([
       ...(context.savedEvents?["get_events"]:[]),
+      ...researchStaffReadTools,
       "propose_staff_question",
       ...(context.receivingFollowup?["propose_supplier_discrepancy_followup"]:[]),
       ...(synopsis.kind==="maintenance_issue"?["get_maintenance_staff_candidates","propose_maintenance_staff_assignment",

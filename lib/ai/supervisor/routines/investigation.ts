@@ -674,7 +674,7 @@ export function researchInvestigationPrompt(source:SourceSynopsis,followUp:boole
  const staffNote=source.kind==="staff_coverage"?
   " The source is a message from an employee. Work out from their own words what happened and what is needed (late, cannot come, "+
   "sick, equipment, supplies, safety, a customer issue) and say it plainly as THEIR report, not as a roster change. If a shift needs "+
-  "cover, read the schedule with SQL, name up to three teammates who do not already work that date, fewest scheduled hours first, say "+
+  "cover, read the current schedule using the available scoped schedule reader, name up to three teammates who do not already work that date, fewest scheduled hours first, say "+
   "their personal availability was not checked, and tell the owner they can ask you to message one. ":"";
  return universalInvestigationPrompt(source,followUp,previousPlan)
   .replace("The claim-bound get_investigation_source reader supplies the original incident identity, status and source receipts. ",

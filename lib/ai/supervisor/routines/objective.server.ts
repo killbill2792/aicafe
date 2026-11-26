@@ -4,13 +4,15 @@ import type {SupabaseClient} from "@supabase/supabase-js";
 import {assertCafeAiAccess} from "@/lib/access/access.server";
 import {createOwnerScopedCafeTools,readSupervisorCafeIdentity} from "@/lib/ai/cafeTools.server";
 import {openAIProvider,type AgentProvider,type AgentTurn} from "@/lib/ai/agent/loop.server";
-import {runResearchTurn} from "@/lib/ai/research/turn.server";
+import {researchStaffReadTools,runResearchTurn} from "@/lib/ai/research/turn.server";
 import {agentToolDefinitions,gmailToolDefinitions} from "@/lib/ai/agent/tools";
 import type {AgentToolName,AgentToolResult} from "@/lib/ai/agent/tools";
 import {assertDurablePaidTurnAllowed} from "@/lib/ai/supervisor/runs/worker.server";
 import type {OwnerRunCheckpoint} from "@/lib/ai/supervisor/runs/contracts";
 import {loadModelExecutionCap,withWorkerBudget} from "@/lib/ai/supervisor/runs/usage.server";
 import {readSavedEventTimeline} from "@/lib/data/cafeEvents.server";
+import {getWeekSchedule as readScopedWeekSchedule} from "@/lib/data/staffSchedule.server";
+import {readStaffMessagesForVerifiedOwner} from "@/lib/staffCommunication/channel.server";
 import {notifyOwner} from "@/lib/operating/notifyOwner.server";
 import {getConnectorAccount,allowsGmail} from "@/lib/connectors/registry.server";
 import {gmailSearch,gmailListLabels,gmailRead,gmailReadThread,gmailReadAttachment} from "@/lib/connectors/gmail/provider.server";
@@ -29,13 +31,13 @@ import type {ClaimedRoutine} from "./repository.server";
  * Luna decides which of these admitted, existing source readers it needs. */
 export const objectiveReadTools:readonly string[]=[
   // Café data is read with SQL, exactly as in owner chat. Public web is the scouting search.
-  "run_sql","describe_database","calculate","search_web","get_events",
+  "run_sql","describe_database","calculate","search_web","get_events",...researchStaffReadTools,
   "search_gmail","list_gmail_labels","read_gmail","read_gmail_thread",
   "read_gmail_attachment",
 ];
 // Watch privacy is enforced by its SQL scope.
 export const watchReadTools:readonly string[]=objectiveReadTools.filter(name=>
-  !["search_web","search_gmail","list_gmail_labels","read_gmail","read_gmail_thread","read_gmail_attachment"].includes(name));
+  !["search_web","search_gmail","list_gmail_labels","read_gmail","read_gmail_thread","read_gmail_attachment",...researchStaffReadTools].includes(name));
 
 /** A tool name, catalog, row-count sentinel or paid provider text is never
  * evidence on its own. Reuse the stricter existing incident fact gate for
@@ -341,7 +343,10 @@ export async function executeClaimedObjective(db:SupabaseClient,params:{
           throw Error("public_web_evidence_access_changed");
         return value;
       })}:{}),
-    ...(routine.executionMode==="objective"?{gmail:{
+    ...(routine.executionMode==="objective"?{
+      readWeekSchedule:(weekStart:string)=>readScopedWeekSchedule({weekStart},{client:db,...scope}),
+      staffMessages:{read:()=>readStaffMessagesForVerifiedOwner(db,scope.businessId,scope.ownerUserId)},
+      gmail:{
       labels:()=>checkedGmail(()=>gmailListLabels(scope)),
       search:(query:string,limit:number)=>checkedGmail(()=>gmailSearch(scope,query,limit)),
       read:(messageId:string)=>checkedGmail(()=>gmailRead(scope,messageId)),

@@ -17,7 +17,7 @@ export const RESEARCH_INSTRUCTIONS=
   "You are Supervisor, the AI operator of this café, answering its owner in chat. "+
   "You can read the café's own database: describe_database shows what exists, run_sql runs read-only PostgreSQL on it "+
   "(rows are already limited to this café), and calculate does exact arithmetic on numbers you retrieved. "+
-  "Use them whenever the answer depends on café data, as much as the question needs. "+
+  "Use them whenever the answer depends on café data, as much as the question needs. Use the available registered readers for saved events, staff schedules, staff messages and Gmail when relevant. "+
   "Answer directly in the owner's language, concise for simple questions and thorough for hard ones. "+
   "Base numbers on what you retrieved, say which data they come from, and say plainly when something is missing or uncertain. "+
   "For questions about rules or law, use the café's own location from its profile, look up the current rules for that place with search_web, "+
@@ -34,6 +34,11 @@ export const RESEARCH_INSTRUCTIONS=
 export const isResearchActionTool=(name:string)=>/^propose_/u.test(name)||
   ["draft_week_schedule","manage_commitment","record_checkin","record_staff_question_owner_answer","record_supplier_order_outcome",
    "record_maintenance_repair_claim","ask_owner","get_supervisor_permissions"].includes(name);
+
+/** These integrations retain their existing scoped readers; no café metric reader belongs here. */
+export const researchStaffReadTools=["get_schedule","get_week_schedule","get_staff_messages"] as const;
+export const isResearchIntegrationReadTool=(name:string)=>
+  name==="get_events"||(researchStaffReadTools as readonly string[]).includes(name);
 
 type Event={type:string;[key:string]:unknown};
 type FunctionCall={type:"function_call";name:string;call_id:string;arguments:string};

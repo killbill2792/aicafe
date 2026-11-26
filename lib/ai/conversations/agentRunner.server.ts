@@ -60,7 +60,7 @@ import {metricCatalog} from "@/lib/calc/metrics/catalog";
 import {ownerRunStatement,type OwnerRunCheckpoint} from "@/lib/ai/supervisor/runs/contracts";
 import type {DurableReplyFence} from "./replyWriter.server";
 import {cafeNotesContext,cafeNotesPort} from "@/lib/ai/research/notes.server";
-import {isResearchActionTool,runResearchTurn} from "@/lib/ai/research/turn.server";
+import {isResearchActionTool,isResearchIntegrationReadTool,runResearchTurn} from "@/lib/ai/research/turn.server";
 import {createOwnerCommitment,listOwnerCommitments,closeOwnerCommitment} from "@/lib/operating/commitments.server";
 import {createOwnerRoutine,listOwnerRoutines,changeOwnerRoutine} from "@/lib/ai/supervisor/routines/repository.server";
 import {routineReportCandidates,verifiedRoutineReportHistory} from "@/lib/ai/supervisor/routines/reportHistory.server";
@@ -208,7 +208,8 @@ export async function runOneTurn(p: TurnParams): Promise<{ replyId: string; repl
       if(!episode.error&&!alert.error&&episode.data&&alert.data?.kind==="business_anomaly"&&
         ["new","seen"].includes(alert.data.status)&&alert.data.payload?.family==="customer_trend"&&
         evidence?.sourceRevision===preceding.sourceRevision&&Array.isArray(evidence.modelTools)&&
-        evidence.modelTools.includes("get_investigation_source")&&evidence.modelTools.includes("query_data")&&
+        evidence.modelTools.includes("get_investigation_source")&&
+        (evidence.modelTools.includes("run_sql")||evidence.modelTools.includes("query_data"))&&
         Array.isArray(evidence.missing)&&evidence.missing.length===0){
         customerOrigin={sourceId:preceding.sourceId,sourceRevision:preceding.sourceRevision,
           episodeId:episode.data.episode_id,reportMessageId:preceding.report.id,ownerMessageId:owner.id};
@@ -391,10 +392,10 @@ export async function runOneTurn(p: TurnParams): Promise<{ replyId: string; repl
       readWeekSchedule:weekStart=>external?
         getDb().then(client=>scopedWeekSchedule({weekStart},{client,businessId:scope.businessId,ownerUserId:scope.ownerUserId})):
         getWeekSchedule({weekStart}),
+      staffMessages:{read:async()=>readStaffMessagesForVerifiedOwner(await getDb(),scope.businessId,scope.ownerUserId)},
       ...(durableRead?{
         readShiftCost:raw=>scopedShiftCost(raw,durableRead),
         readLaborRules:()=>scopedTeamRules(durableRead),
-        staffMessages:{read:()=>readStaffMessagesForVerifiedOwner(durableRead.client,scope.businessId,scope.ownerUserId)},
         staffCoordinationRead:()=>readClaimedStaffCoordination(durableRead.client,scope),
         oliviaPreview:{
           week:raw=>withDurableOliviaReadScope(durableRead,async()=> (await import("@/lib/actions/oliviaPlanning")).previewOliviaWeek(raw)),
@@ -900,7 +901,7 @@ export async function runOneTurn(p: TurnParams): Promise<{ replyId: string; repl
         return value;
       }),
       // The existing registered action tools (same executor, same approval cards); routine tool as in the legacy turn.
-      actions:{context,definitions:[...agentToolDefinitions.filter(t=>isResearchActionTool(t.name)),{
+      actions:{context,definitions:[...agentToolDefinitions.filter(t=>isResearchActionTool(t.name)||isResearchIntegrationReadTool(t.name)),{
         ...routineToolDefinition,
         description:routineToolDefinition.description+" VERIFIED SAME-THREAD OWNER MESSAGES "+
           "(choose the source ID for the complete investigation goal, not the answer to a scheduling question; "+
