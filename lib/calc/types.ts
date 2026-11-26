@@ -33,6 +33,8 @@ export type DailyFacts = {
   voidsCents: number;
   /** SQL-computed recorded contribution, before bills; null when payroll is missing. Omitted by synthetic scenarios. */
   recordedContributionCents?: number | null;
+  /** Canonical fee calculation for the saved day; absent from hypothetical inputs. */
+  effectiveFee?: {amountCents:number;basis:"actual"|"owner_plan"|"estimated"|"default_estimate";notes:string[]};
 };
 
 export type ExpenseForCategory = {

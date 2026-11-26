@@ -54,6 +54,10 @@ INSERT INTO public.timecards(business_id,clock_in,clock_out,hourly_wage_cents,so
 VALUES(:'a',current_date-1+time '08:00',current_date-1+time '11:00',1000,'connected_pos',2,1),
  (:'b',current_date-1+time '08:00',current_date-1+time '11:00',9999,'connected_pos',3,0),
  (:'a',current_date-2+time '08:00',current_date-2+time '11:00',null,'connected_pos',3,0);
+-- Effective fees use actual zero, then date-scoped owner rate/fixed plan, then saved or default.
+INSERT INTO public.processing_fee_rate_plans(business_id,effective_from,effective_to,processor_label,processed_sales_share_bps,processed_transaction_share_bps,rules)
+VALUES(:'a',current_date-1,current_date,'Synthetic plan',10000,10000,'[{"percentageBps":200,"fixedFeeCents":10,"salesMixBps":10000,"transactionMixBps":10000}]');
+UPDATE public.daily_rollups SET card_fees_status='missing',card_fees_cents=0 WHERE business_id=:'a' AND business_date=current_date-1;
 SET LOCAL ROLE authenticated;
 SELECT set_config('request.jwt.claim.sub',:'oa',true),
  set_config('request.jwt.claim.role','authenticated',true),
@@ -66,6 +70,10 @@ SELECT (
  FROM public.cv_sales_days WHERE business_id=:'a' AND business_date=current_date-1)
  AND (SELECT data->>'recorded_contribution_cents' IS NULL FROM public.cv_sales_days WHERE business_id=:'a' AND business_date=current_date-1)
  AND (SELECT (data->>'recorded_contribution_cents')::bigint FROM public.cv_sales_days WHERE business_id=:'a' AND business_date=current_date-2)=1090
+ AND (SELECT (data->'effective_fee'->>'amountCents')::numeric=44 AND data->'effective_fee'->>'basis'='owner_plan'
+ FROM public.cv_sales_days WHERE business_id=:'a' AND business_date=current_date-1)
+ AND (SELECT (data->'effective_fee'->>'amountCents')::numeric=90 AND data->'effective_fee'->>'basis'='actual'
+ FROM public.cv_sales_days WHERE business_id=:'a' AND business_date=current_date-2)
  AND (SELECT count(*) FROM public.cv_sales_days WHERE business_id=:'b')=0
  AND (SELECT net_sales_cents FROM public.cv_sales_live WHERE business_id=:'a')=700
  AND (SELECT count(*) FROM public.cv_sales_live WHERE business_id=:'b')=0

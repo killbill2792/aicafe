@@ -7,7 +7,7 @@ import {rowToDailyFacts} from "./runningCostCatalog";
  * the same day can never show two different numbers. Writers live in
  * lib/pos/rollup.ts and the Toast import. */
 export const DAILY_FACT_COLUMNS="business_date,net_sales_cents,orders_count,"+
- "drinks_count:data->drinks_count,ingredients_cents:data->ingredients_cents,staff_wages_cents:data->staff_wages_cents,staff_tax_cents:data->staff_tax_cents,labor_wage_status:data->labor_wage_status,staff_tax_status:data->staff_tax_status,staff_tax_source:data->staff_tax_source,sales_data_status:data->sales_data_status,card_fees_cents:data->card_fees_cents,card_fees_status:data->card_fees_status,voids_cents:data->voids_cents,recorded_contribution_cents:data->recorded_contribution_cents";
+ "drinks_count:data->drinks_count,ingredients_cents:data->ingredients_cents,staff_wages_cents:data->staff_wages_cents,staff_tax_cents:data->staff_tax_cents,labor_wage_status:data->labor_wage_status,staff_tax_status:data->staff_tax_status,staff_tax_source:data->staff_tax_source,sales_data_status:data->sales_data_status,card_fees_cents:data->card_fees_cents,card_fees_status:data->card_fees_status,voids_cents:data->voids_cents,recorded_contribution_cents:data->recorded_contribution_cents,effective_fee:data->effective_fee";
 export type DailyFactRow=Parameters<typeof rowToDailyFacts>[0];
 const PAGE=1000;
 

@@ -11,6 +11,7 @@ export type FeeDay={
   ordersCount?:number|null;cardFeesCents?:number|null;
   cardFeesStatus?:"actual"|"estimated"|"missing";
   salesDataStatus?:"actual"|"missing";
+  effectiveFee?:{amountCents:number;basis:FeeBasis;notes:readonly string[]};
 };
 export type OwnerFeePlan={
   effectiveFrom?:string;effectiveTo?:string|null;
@@ -81,6 +82,18 @@ export function cardFeesForDays(
   const notes:string[]=[];
   let sum=0,actualDays=0,estimatedDays=0,defaultDays=0,planDays=0;
   for(const day of covered){
+    // Stored days use the SQL-computed amount and provenance; only scenario inputs
+    // without canonical evidence (or a different explicit card-sales denominator) use local math.
+    if(day.effectiveFee&&day.cardSalesCents==null){
+      const f=day.effectiveFee;
+      if(!Number.isFinite(f.amountCents)||f.amountCents<0)throw new RangeError("Invalid canonical fee inputs");
+      sum+=f.amountCents;notes.push(...f.notes);
+      if(f.basis==="actual")actualDays++;
+      else if(f.basis==="owner_plan"){planDays++;estimatedDays++;}
+      else if(f.basis==="estimated")estimatedDays++;
+      else defaultDays++;
+      continue;
+    }
     // Verified fee facts from the payment provider (including actual zero
     // processing fees) have precedence over every owner estimate or plan.
     if(day.cardFeesStatus==="actual"&&day.cardFeesCents!=null&&valid(day.cardFeesCents)){
