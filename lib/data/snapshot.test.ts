@@ -1,6 +1,7 @@
 import {describe,it,expect,vi} from "vitest";
 import type {SupabaseClient} from "@supabase/supabase-js";
 import {fixtureCostRows} from "./runningCostCatalog.fixture";
+import {fixtureFinancialPeriodRows} from "./financialPeriods.fixture";
 vi.mock("server-only",()=>({}));
 const hooks=vi.hoisted(()=>({
   materialize:vi.fn(),generate:vi.fn(),period:vi.fn(async()=>({
@@ -24,7 +25,7 @@ function mockDb(options:{sold?:Array<{menu_item_id:string;total_quantity:number|
       owner_monthly_payroll_extras_cents:null}],
     locations:[{open_hours:null}],
     cv_sales_days:[],cv_bills:[],cv_expenses:[],recovery_order:[],
-    cv_menu:[],cv_staff_clock_entries:[],alerts:[],
+    cv_menu:[],cv_staff_clock_entries:[],alerts:[],cv_financial_periods:fixtureFinancialPeriodRows(),
   };
   const db={from(table:string){
     reads.push(table);
@@ -71,7 +72,7 @@ describe("getSnapshot read-only current snapshot and Home database budget",()=>{
     expect(hooks.generate).not.toHaveBeenCalled();
     // One snapshot loader (passed to Home and its attention section) has a
     // bounded number of read invocations, not a second full snapshot query set.
-    expect(reads).toHaveLength(9);
+    expect(reads).toHaveLength(10);
     expect(reads.filter(table=>table==="alerts")).toHaveLength(1);
     expect(reads.filter(table=>table==="cv_sales_days")).toHaveLength(1);
   });

@@ -1546,3 +1546,90 @@ create view public.cv_menu_product_costs with (security_invoker=true) as
 revoke all on public.cv_menu_product_costs from public,anon,authenticated;
 grant select on public.cv_menu_product_costs to authenticated,service_role;
 comment on view public.cv_menu_product_costs is 'Current menu recipe and resolved product costs per item, including archived components, ingredient-price effective date and explicit missing/estimated status. Fractional cents retained until display. Not historical sold-line cost proof.';
+
+-- Canonical financial periods. Known subtotals deliberately retain incomplete
+-- wages and explicitly estimated fees; neither these nor unknown recipe coverage
+-- are certified profit. The screen keeps its source-completeness display gates.
+create function public.financial_periods_as_of(p_business_id uuid,p_as_of date,p_from date default null,p_to date default null)
+returns table(period_key text,start_date date,end_date date,data jsonb)
+language sql stable security invoker set search_path=public as $$
+with settings as (
+ select id,owner_monthly_payroll_extras_cents as extras,
+ date_trunc('month',p_as_of)::date as first_day,
+ (date_trunc('month',p_as_of)-interval '1 month')::date as prev_first,
+ (date_trunc('month',p_as_of)-interval '1 day')::date as prev_last
+ from public.businesses where id=p_business_id and p_as_of is not null
+), windows as (
+ select w.key,w.first_day,w.last_day from settings s
+ cross join lateral (values
+  ('today',p_as_of,p_as_of),('week',p_as_of-6,p_as_of),('month',s.first_day,p_as_of),
+  ('previous_today',p_as_of-1,p_as_of-1),('previous_week',p_as_of-13,p_as_of-7),
+  ('previous_month',s.prev_first,least(s.prev_first+extract(day from p_as_of)::integer-1,s.prev_last))
+ ) w(key,first_day,last_day) where p_from is null and p_to is null
+ union all select 'custom',p_from,p_to from settings
+ where p_from<=p_to and p_to<=p_as_of and p_to-p_from<=3660
+), span as (
+ select min(first_day) as start_date,max(last_day) as end_date from windows
+), months as (
+ select g.month::date as first_day,(g.month+interval '1 month - 1 day')::date as last_day
+ from span s cross join lateral generate_series(date_trunc('month',s.start_date),
+ date_trunc('month',s.end_date),interval '1 month') g(month)
+), monthly as materialized (
+ select m.first_day,m.last_day,c.category_code,c.data from months m
+ cross join lateral public.running_cost_lines_for_month(p_business_id,m.first_day,least(m.last_day,p_as_of)) c
+), bills as materialized (
+ select (a->>'date')::date as day,sum((a->>'amountCents')::numeric) as amount
+ from monthly m cross join lateral jsonb_array_elements(m.data->'dailyAllocatedCents') a group by 1
+), facts as materialized (
+ select d.business_date,d.net_sales_cents,d.orders_count,d.data,
+ (d.data->>'sales_data_status' is distinct from 'missing' or d.net_sales_cents<>0 or d.orders_count>0 or (d.data->>'drinks_count')::numeric>0) as sales_covered,
+ (d.data->>'staff_wages_cents')::bigint as wages,(d.data->>'staff_tax_cents')::bigint as tax,
+ (d.data->>'ingredients_cents')::bigint as ingredients,
+ (d.data->'effective_fee'->>'amountCents')::numeric as fee
+ from public.cv_sales_days d cross join span s
+ where d.business_id=p_business_id and d.business_date between s.start_date and s.end_date
+), totals as (
+ select w.*,s.extras,coalesce(f.sales,0) as sales,coalesce(f.ingredients,0) as ingredients,
+ coalesce(f.wages,0) as wages,coalesce(f.tax,0) as tax,
+ floor(coalesce(f.fees,0)+0.5)::bigint as fees,
+ f.covered_sales,f.covered_labor,
+ coalesce(f.unknown_labor,false) as unknown_labor,
+ coalesce(f.estimated_labor,false) as estimated_labor,
+ floor(coalesce((select sum(b.amount) from bills b where b.day between w.first_day and w.last_day),0)+0.5)::bigint as bills,
+ floor(coalesce((select sum(coalesce(s.extras,0)::numeric*
+   greatest(0,least(w.last_day,m.last_day)-greatest(w.first_day,m.first_day)+1)/(m.last_day-m.first_day+1))
+   from months m),0)+0.5)::bigint as extras_allocated
+ from windows w cross join settings s
+ cross join lateral (
+  select sum(f.net_sales_cents) filter(where f.sales_covered) as sales,
+  sum(f.ingredients) filter(where f.sales_covered) as ingredients,
+  sum(f.wages) as wages,sum(f.tax) as tax,sum(f.fee) filter(where f.sales_covered) as fees,
+  count(*) filter(where f.sales_covered) as covered_sales,
+  count(*) filter(where f.wages is not null and f.tax is not null and f.data->>'labor_wage_status' is distinct from 'missing') as covered_labor,
+  bool_or(f.wages is null or f.tax is null or f.data->>'labor_wage_status'='missing') as unknown_labor,
+  bool_or(f.data->>'labor_wage_status'='estimate' or f.data->>'staff_tax_status'='estimated') as estimated_labor
+  from facts f where f.business_date between w.first_day and w.last_day
+ ) f
+)
+select t.key,t.first_day,t.last_day,jsonb_build_object(
+ 'netSalesCents',t.sales,'ingredientsCents',t.ingredients,'wagesCents',t.wages,'staffTaxCents',t.tax,
+ 'feesCents',t.fees,'billsCents',t.bills,'ownerPayrollExtrasCents',t.extras_allocated,
+ 'knownLaborCents',t.wages+t.tax+t.extras_allocated,'coveredSalesDays',t.covered_sales,
+ 'coveredLaborDays',t.covered_labor,'expectedDays',t.last_day-t.first_day+1,
+ 'unknownLabor',t.unknown_labor,'estimatedLabor',t.estimated_labor,
+ 'totalCostsCents',t.ingredients+t.wages+t.tax+t.extras_allocated+t.fees+t.bills,
+ 'profitCents',case when t.covered_sales>0 then t.sales-t.ingredients-t.wages-t.tax-t.extras_allocated-t.fees-t.bills end
+)
+from totals t
+$$;
+revoke all on function public.financial_periods_as_of(uuid,date,date,date) from public,anon;
+grant execute on function public.financial_periods_as_of(uuid,date,date,date) to authenticated,service_role;
+comment on function public.financial_periods_as_of(uuid,date,date,date) is 'Canonical known financial subtotals for six screen windows at the given café-local as-of date, or a bounded custom historical range. Includes staff-only dates and calendar payroll extras. Profit is null without covered sales, otherwise a known-component subtotal, not a certification of complete costs.';
+create view public.cv_financial_periods with (security_invoker=true) as
+select b.id as business_id,'app'::text as source,'financial-period:'||p.period_key as source_ref,
+ 'estimated'::text as status,(now() at time zone b.timezone)::date as business_date,
+ p.period_key,p.start_date,p.end_date,(p.data->>'profitCents')::bigint as known_profit_cents,p.data
+from public.businesses b cross join lateral public.financial_periods_as_of(b.id,(now() at time zone b.timezone)::date) p;
+revoke all on public.cv_financial_periods from public,anon,authenticated;
+grant select on public.cv_financial_periods to authenticated,service_role;
+comment on view public.cv_financial_periods is 'Today, trailing week, month-to-date and matching previous periods. Known profit subtotal uses saved sales, ingredient cost, effective fees, known payroll plus extras and allocated bills; not a certified full profit. Rows overlap: select period_key, never sum them. All amounts integer cents.';

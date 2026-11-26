@@ -94,6 +94,13 @@ SELECT (
  FROM public.cv_menu_product_costs WHERE business_id=:'a' AND menu_item_id=:'item')
  AND (SELECT (data->>'costCents')::numeric=123 AND data->>'source'='owner_total'
  FROM public.product_costs_as_of(:'a',current_date-2) WHERE menu_item_id=:'item')
+ AND (SELECT count(*) FROM public.cv_financial_periods WHERE business_id=:'b')=0
+ AND (SELECT count(*) FROM public.cv_financial_periods WHERE business_id=:'a')=6
+ AND (SELECT (data->>'netSalesCents')::bigint=3200 AND (data->>'ingredientsCents')::bigint=750
+ AND (data->>'knownLaborCents')::bigint=320 AND (data->>'feesCents')::bigint=134
+ AND (data->>'coveredLaborDays')::integer=1 AND (data->>'coveredSalesDays')::integer=2
+ AND (data->>'profitCents')::bigint=3200-(data->>'totalCostsCents')::bigint
+ FROM public.financial_periods_as_of(:'a',current_date,current_date-2,current_date-1))
  AND (SELECT count(*) FROM public.cv_menu_product_costs WHERE business_id=:'b')=0
  AND (SELECT count(*) FROM public.cv_item_sales_daily WHERE business_id=:'b')=0
  AND (SELECT count(*) FROM public.cv_item_sales WHERE business_id=:'b')=0

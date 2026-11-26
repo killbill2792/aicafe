@@ -3706,6 +3706,64 @@
    "foreign_keys": []
   },
   {
+   "relation": "cv_financial_periods",
+   "kind": "view",
+   "rls": false,
+   "columns": [
+    [
+     "business_id",
+     "uuid",
+     false
+    ],
+    [
+     "source",
+     "text",
+     false
+    ],
+    [
+     "source_ref",
+     "text",
+     false
+    ],
+    [
+     "status",
+     "text",
+     false
+    ],
+    [
+     "business_date",
+     "date",
+     false
+    ],
+    [
+     "period_key",
+     "text",
+     false
+    ],
+    [
+     "start_date",
+     "date",
+     false
+    ],
+    [
+     "end_date",
+     "date",
+     false
+    ],
+    [
+     "known_profit_cents",
+     "bigint",
+     false
+    ],
+    [
+     "data",
+     "jsonb",
+     false
+    ]
+   ],
+   "foreign_keys": []
+  },
+  {
    "rls": false,
    "kind": "view",
    "columns": [

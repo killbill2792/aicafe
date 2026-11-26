@@ -109,7 +109,16 @@ export type PeriodItemSalesEvidence = {
     days:Array<{date:string;ingredientsCents:number}>;
   };
 };
+export type CanonicalFinancialPeriod={
+  netSalesCents:number;ingredientsCents:number;wagesCents:number;staffTaxCents:number;
+  feesCents:number;billsCents:number;ownerPayrollExtrasCents:number;knownLaborCents:number;
+  coveredSalesDays:number;coveredLaborDays:number;expectedDays:number;unknownLabor:boolean;estimatedLabor:boolean;
+  totalCostsCents:number;profitCents:number|null;
+};
+export type FinancialPeriodKey="today"|"week"|"month"|"previous_today"|"previous_week"|"previous_month";
 export type BusinessSnapshot = {
+  /** Six SQL-computed screen periods; omitted only for synthetic/demo inputs. */
+  financialPeriods?:Record<FinancialPeriodKey,CanonicalFinancialPeriod>;
   business: BusinessSettings;
   todayDateStr: string; // YYYY-MM-DD, business timezone
   monthKey: string; // YYYY-MM, current month

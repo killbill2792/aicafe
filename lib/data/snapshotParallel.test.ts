@@ -1,6 +1,7 @@
 import {describe,it,expect,vi} from "vitest";
 import type {SupabaseClient} from "@supabase/supabase-js";
 import {fixtureCostRows} from "./runningCostCatalog.fixture";
+import {fixtureFinancialPeriodRows} from "./financialPeriods.fixture";
 vi.mock("server-only",()=>({}));
 const mocks=vi.hoisted(()=>({
   days:vi.fn(),period:vi.fn(),plans:vi.fn(),
@@ -47,6 +48,7 @@ function mockDb(){
       return q;
     },
     rpc(name:string,args:{p_business_id:string;p_month_start:string;p_as_of:string}){
+      if(name==="financial_periods_as_of")return Promise.resolve({data:fixtureFinancialPeriodRows(),error:null});
       if(name==="running_cost_lines_for_month"){
         if(args.p_business_id!=="cafe1")throw Error("wrong scope");
         return Promise.resolve({data:fixtureCostRows(values,args.p_month_start,args.p_as_of),error:null});

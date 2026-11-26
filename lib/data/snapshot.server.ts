@@ -8,6 +8,7 @@ import type { BusinessSnapshot, MenuItemSnapshot, RunningCostLine, StaffShift } 
 import { normalizeOpenHours } from "@/lib/business/openHours";
 import { readPeriodItemSales } from "./periodItemSales.server";
 import {readProductCosts} from "./productCosts.server";
+import {readFinancialPeriods} from "./financialPeriods.server";
 import {getOwnerConfirmedProcessingFeePlans} from "@/lib/pos/processingFeeEstimate.server";
 import type {OwnerFeePlan} from "@/lib/metrics/core/fees";
 import {shiftCafeDate} from "@/lib/metrics/core/clock";
@@ -71,7 +72,7 @@ export async function getBusinessSnapshotFromDb(
   const minusSix=new Date(Date.parse(todayDateStr+"T12:00:00Z")-6*86_400_000).toISOString().slice(0,10);
   const periodFrom=costPeriod==="today"?todayDateStr:costPeriod==="week"?minusSix:monthStart;
   const [rollupResult,currentCostLines,priorCostLines,recoveryOrderResult,
-    allMenuItemSnapshots,periodItemSales,staffShiftsToday,alertsRead,ownerFeePlans]=
+    allMenuItemSnapshots,periodItemSales,staffShiftsToday,alertsRead,ownerFeePlans,financialPeriods]=
     await Promise.all([
       timeReader("Snapshot","dailyFacts",()=>readDailyFactRows(supabase,businessId,prevMonthStart,todayDateStr))
         .then(data=>({data,error:null}),(error:Error)=>({data:null,error})),
@@ -88,6 +89,7 @@ export async function getBusinessSnapshotFromDb(
          .order("id",{ascending:true}).range(start,end),
         row=>row.id)),
       timeReader("Snapshot","feePlans",()=>getOwnerConfirmedProcessingFeePlans(supabase,businessId)),
+      timeReader("Snapshot","financialPeriods",()=>readFinancialPeriods(supabase,businessId,asOfDate)),
     ]);
   const {data:rollupRows,error:rollupError}=rollupResult;
   if(rollupError)throw rollupError;
@@ -133,6 +135,7 @@ export async function getBusinessSnapshotFromDb(
       openHours: normalizeOpenHours(locationRow?.open_hours),
     },
     todayDateStr,
+    financialPeriods,
     monthKey,
     daysInMonth,
     monthRecordedDays,
