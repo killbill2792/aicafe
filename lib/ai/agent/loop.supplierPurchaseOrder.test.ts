@@ -30,7 +30,7 @@ async function runOwner({ownerText,context,provider}:{ownerText:string;context:A
  const db={rpc:async(name:string,{p_sql}:{p_sql:string})=>{
   if(name!=="supervisor_research_sql")throw Error("unexpected RPC");
   if(p_sql==="select * from purchase_orders"){
-   const data=await purchasing?.list();
+   const data=await purchasing?.list?.();
    return {data:{ok:true,rows:data?[data]:[]},error:null};
   }
   if(p_sql.startsWith("select * from ai_supplier_quotes")){
@@ -38,7 +38,7 @@ async function runOwner({ownerText,context,provider}:{ownerText:string;context:A
    const input=JSON.parse(args(ownerText.includes("seven")?7:5));
    input.items[0].ingredientId=id;
    if(id!==ingredientId){input.items[0].itemName="Flour";input.items[0].quantity=10;input.items[0].unit="kg";}
-   const data=await purchasing?.inspect(input);
+   const data=await purchasing?.inspect?.(input);
    return {data:{ok:true,rows:data?[data]:[]},error:null};
   }
   throw Error("unexpected fixture SQL");

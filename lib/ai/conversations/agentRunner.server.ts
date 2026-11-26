@@ -25,15 +25,14 @@ import {menuPriceChangeCapabilityId} from "@/lib/ai/supervisor/loop/menuPriceCha
 import {staffCapabilityId} from "@/lib/ai/supervisor/loop/staffProposals.server";
 import {purchaseCapabilityId} from "@/lib/ai/supervisor/loop/purchases.server";
 import {supplierReceivingCapabilityId,supplierInvoiceCapabilityId,financialSettlementCapabilityId,financialBillCapabilityId,prepareSupplierDiscrepancyFollowup,type InvoiceSource} from "@/lib/ai/supervisor/loop/supplierReceiving.server";
-import {supplierPurchaseOrderCapabilityId,supplierPurchaseOrderEffectSchema,investigateSupplierPurchase} from "@/lib/ai/supervisor/loop/purchaseOrders.server";
-import {readSupplierPurchaseOrders,readSupplierOrderCommunications} from "@/lib/data/supplierPurchasing.server";
+import {supplierPurchaseOrderCapabilityId} from "@/lib/ai/supervisor/loop/purchaseOrders.server";
+import {readSupplierPurchaseOrders} from "@/lib/data/supplierPurchasing.server";
 import {proposeApprovedSupplierEmail} from "@/lib/ai/supervisor/loop/vendorDispatch.server";
 import {recordOwnerSupplierOutcome,authenticatedSupplierOwnerTurn,explicitSingleOwnerPurchaseOrder} from "@/lib/purchasing/ownerSupplierOutcome.server";
 import {simulationOwnerReader} from "@/lib/ai/supervisor/loop/simulationOwner.server";
 import type {SupplierPurchaseOrderEffect} from "@/lib/ai/supervisor/loop/purchaseOrders.server";
 import {SupabaseLoopRepository} from "@/lib/ai/supervisor/loop/supabase.server";
 import {precedingInvestigationReport,type CustomerInvestigationOrigin} from "@/lib/ai/supervisor/routines/investigation";
-import {SupervisorEffectGateway} from "@/lib/ai/supervisor/loop/effectGateway.server";
 import {gmailCapabilityId,type GmailProposalInput} from "@/lib/ai/supervisor/loop/gmail.server";
 import {maintenanceContext} from "@/lib/ai/supervisor/loop/maintenance.server";
 import {staffQuestionCapabilityId,staffQuestionEffect} from "@/lib/ai/supervisor/loop/staffQuestion.server";
@@ -44,11 +43,9 @@ import {agentToolDefinitions,gmailToolDefinitions} from "@/lib/ai/agent/tools";
 import { createAuthenticatedCafeTools, readSupervisorCafeIdentity } from "@/lib/ai/cafeTools.server";
 import {ToolError} from "@/lib/ai/agent/toolErrors";
 import {goalCapabilityId} from "@/lib/ai/supervisor/loop/goal.server";
-import {listOwnerGoals,readGoalStatus,roundForUnit} from "@/lib/ai/supervisor/loop/goalReads.server";
 import {recordGoalCheckin} from "@/lib/ai/supervisor/loop/goalCheckins.server";
 import {readOwnerProposals} from "@/lib/ai/supervisor/loop/reads.server";
 import {requirePositivePriceIncrease} from "@/lib/ai/agent/tools/priceExperiment";
-import {metricCatalog} from "@/lib/calc/metrics/catalog";
 import {ownerRunStatement,type OwnerRunCheckpoint} from "@/lib/ai/supervisor/runs/contracts";
 import type {DurableReplyFence} from "./replyWriter.server";
 import {cafeNotesContext,cafeNotesPort} from "@/lib/ai/research/notes.server";
@@ -200,8 +197,9 @@ export async function runOneTurn(p: TurnParams): Promise<{ replyId: string; repl
       if(!episode.error&&!alert.error&&episode.data&&alert.data?.kind==="business_anomaly"&&
         ["new","seen"].includes(alert.data.status)&&alert.data.payload?.family==="customer_trend"&&
         evidence?.sourceRevision===preceding.sourceRevision&&Array.isArray(evidence.modelTools)&&
-        evidence.modelTools.includes("get_investigation_source")&&
-        (evidence.modelTools.includes("run_sql")||evidence.modelTools.includes("query_data"))&&
+        (evidence.modelTools.includes("run_sql")||
+          // Historical reports remain readable; current reports attest the server-collected claim.
+          (evidence.modelTools.includes("get_investigation_source")&&evidence.modelTools.includes("query_data")))&&
         Array.isArray(evidence.missing)&&evidence.missing.length===0){
         customerOrigin={sourceId:preceding.sourceId,sourceRevision:preceding.sourceRevision,
           episodeId:episode.data.episode_id,reportMessageId:preceding.report.id,ownerMessageId:owner.id};
@@ -478,56 +476,6 @@ export async function runOneTurn(p: TurnParams): Promise<{ replyId: string; repl
         return {proposalId:draft.id,revision:draft.revision};
       },
       purchasing:{
-        list:async()=>{
-          const {client}=await simulationOwnerReader(proposalScope);
-          // Independently read editable drafts and interrupted approvals; a long
-          // draft history cannot mask a pending or uncertain effect.
-          const ownerScope={businessId:scope.businessId,ownerUserId:scope.ownerUserId};
-          const [orders,draftRows,unresolvedRows]=await Promise.all([
-            readSupplierPurchaseOrders(client,scope.businessId,scope.ownerUserId),
-            readOwnerProposals(client,ownerScope,
-              {threadId:id,capabilityId:supplierPurchaseOrderCapabilityId,
-               statuses:["draft"],limit:21}),
-            readOwnerProposals(client,ownerScope,
-              {threadId:id,capabilityId:supplierPurchaseOrderCapabilityId,
-               statuses:["approved","executing"],limit:21}),
-          ]);
-          const identity=(row:(typeof draftRows)[number])=>{
-            const effect=supplierPurchaseOrderEffectSchema.parse(row.canonical_effect_payload);
-            return {id:row.id,revision:row.revision,supplierName:effect.supplierName,
-              itemNames:effect.lines.map(line=>line.itemName),
-              subtotalCents:effect.subtotalCents,currency:effect.currency};
-          };
-          // A proposal in approved/executing is NOT an editable draft, and
-          // no missing PO receipt authorizes a new order or a blind effect retry.
-          const drafts=draftRows.slice(0,20).map(identity);
-          const gateway=new SupervisorEffectGateway();
-          const unresolvedApprovals=await Promise.all(unresolvedRows.slice(0,20).map(async row=>{
-            // Reuse the canonical effect ledger reader: it reauthorizes this
-            // exact café/owner/thread before returning any effect attempt.
-            const attempt=await gateway.readAttempt(proposalScope,row.id);
-            return {...identity(row),status:row.status as "approved"|"executing",
-              attemptState:attempt?.state??null,
-              recovery:row.status==="approved"&&!attempt
-                ?"owner_retry_or_cancel" as const:"receipt_only" as const};
-          }));
-          const [communications,mailbox]=await Promise.all([
-            readSupplierOrderCommunications(client,scope.businessId,scope.ownerUserId,
-              orders.orders.map(o=>o.id)),
-            getConnectorAccount({businessId:scope.businessId,ownerUserId:scope.ownerUserId})
-              .then(account=>({account,unavailable:false as const}))
-              .catch(()=>({account:null,unavailable:true as const}))
-          ]);
-          return {...orders,drafts,draftsTruncated:draftRows.length>20,
-            unresolvedApprovals,unresolvedApprovalsTruncated:unresolvedRows.length>20,
-            vendorCommunications:communications,
-            gmailConnection:{status:mailbox.unavailable?"status_unavailable":
-                mailbox.account?.status??"not_connected",
-              connected:mailbox.account?.status==="active",
-              canSend:allowsGmail(mailbox.account,"send"),
-              canRead:allowsGmail(mailbox.account,"read")}};
-        },
-        inspect:input=>investigateSupplierPurchase(proposalScope,input),
         recordOwnerOutcome:async input=>{
           // Normal browser and WhatsApp owner turns run INSIDE a durable
           // AgentJob. Bind it to the actual persisted owner message, rather
@@ -659,24 +607,6 @@ export async function runOneTurn(p: TurnParams): Promise<{ replyId: string; repl
           await assertTurnSources();
           const saved=await recordGoalCheckin(createAdminSupabaseClient(),owner,goalId,{date,answer,note});
           return saved?{saved:true,checkin:saved}:{missing:["noOpenCheckin"]};
-        },
-        status:async(goalId)=>{
-          const owner={businessId:scope.businessId,ownerUserId:scope.ownerUserId};
-          if(!goalId)return {goals:await listOwnerGoals(await getDb(),owner)};
-          const read=await readGoalStatus(await getDb(),{...owner,locale:p.locale},goalId,identity.asOf);
-          if(!read)return {missing:["goalNotFound"]};
-          const primary=read.effect.metrics.find(m=>m.role==="primary")!;
-          const r=read.outcome.evaluation.results[primary.id];
-          return {goal:{id:read.proposal.id,title:read.effect.title,status:read.proposal.status,
-              startsOn:read.window.start,endsOn:read.window.end},
-            evaluation:{status:read.outcome.evaluation.status,recommendation:read.outcome.recommendation,asOf:read.outcome.asOf},
-            summary:read.text,sampledDays:read.sampledDays,
-            metricDetail:{id:primary.id,metricKey:primary.metricKey,source:"computed",
-              params:primary.itemId?{itemId:primary.itemId}:{},unit:metricCatalog[primary.metricKey].unit,
-              comparator:primary.comparator,targetKind:primary.targetKind,target:primary.target},
-            metricEvaluation:r?{current:roundForUnit(read.effect,primary.id,r.current),
-              baseline:roundForUnit(read.effect,primary.id,r.baseline),
-              target:roundForUnit(read.effect,primary.id,r.target),coverage:r.coverage}:null};
         },
       },
       proposals:{proposePriceChange:async({productId,newPriceCents})=>{

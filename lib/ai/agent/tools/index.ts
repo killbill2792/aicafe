@@ -79,7 +79,7 @@ export type AgentToolContext = {
   /** Bound by a verified owner turn, not model arguments or browser cookies. */
   commitments?:{
     create(input:{title:string;dueDate:string;dueTime:string|null;origin:"owner_chat"|"supervisor_followup"}):Promise<import("@/lib/operating/commitments.server").CommitmentView>;
-    list():Promise<import("@/lib/operating/commitments.server").CommitmentView[]>;
+    list?():Promise<import("@/lib/operating/commitments.server").CommitmentView[]>;
     close(id:string):Promise<boolean>;
   };
   /** A verified thread/owner port; model input contains no café or user IDs. */
@@ -124,7 +124,7 @@ export type AgentToolContext = {
         recipient:string|null;contactVerified:boolean;ownerReportedOutcome:string|null;
         providerVerified:boolean;ownerQuestion:string|null}>;
       gmailConnection?:{status:string;connected:boolean;canSend:boolean;canRead:boolean}}>;
-    inspect(input:SupplierPurchaseInput):Promise<PurchasePlan>;
+    inspect?(input:SupplierPurchaseInput):Promise<PurchasePlan>;
     /** Verified, latest-owner-message source report. Never an external Gmail receipt. */
     recordOwnerOutcome?(input:{
       purchaseOrderId:string;channel:"gmail"|"phone"|"portal"|"in_person"|"other";

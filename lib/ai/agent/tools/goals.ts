@@ -24,8 +24,6 @@ export type GoalPort={
     guardrails:Array<{metric:z.infer<typeof metric>;itemId:string|null;direction:"not_below"|"not_above";percent:number}>;
     checkin:GoalCheckin|null}):
     Promise<{proposalId:string;revision:number;title:string}>;
-  /** goalId null lists the owner's goals; an id returns that goal's live score. */
-  status(goalId:string|null):Promise<Record<string,unknown>>;
   /** Saves the owner's answer to the goal's open (or dated) check-in. */
   recordCheckin(goalId:string,date:string|null,answer:CheckinAnswer,note:string|null):Promise<Record<string,unknown>>;
 };
