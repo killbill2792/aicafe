@@ -118,7 +118,7 @@ export function agentReplyPayload(turn: AgentTurn) {
   const explanation=(turn.explain??[]).flatMap(item=>{
     const parsed=explainLineSchema.safeParse(item);
     return parsed.success?[parsed.data]:[];
-  }).slice(0,20);
+  });
   blocks=isOnlyQuestion||!turn.text.trim()?[]:splitAgentText(turn.text,turn.provenance??turn.unverified);
   const safeExplain=explanation;
   const status = persistedAgentStatus(turn);
@@ -173,11 +173,11 @@ export function agentReplyPayload(turn: AgentTurn) {
       blocks=prose;reply.blocks=[...ordered,...tail];
     }catch(error){if(!(error instanceof AgentReplyTooLongError))throw error;}
   }
-  if(turn.endReason==="complete"&&!clarify){
+  {
     // Historical/legacy present_response receipts have no inline position.
     // Preserve every accepted receipt that fits the existing reply contract.
     for(const result of turn.results){
-      if(typeof result.presentationOffset==="number"&&inline.length)continue;
+      if(!isOnlyQuestion&&inline.some(item=>item.block===result.presentation||item.at===result.presentationOffset&&JSON.stringify(item.block)===JSON.stringify(result.presentation)))continue;
       const block=validatePresentation(result);
       if(block)reply.blocks.push(block);
     }
