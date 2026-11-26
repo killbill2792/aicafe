@@ -1,0 +1,5 @@
+-- Luna now reads through supervisor_research_sql. Keep all cv_* source views
+-- and their helper functions, including ai_query_path (used by the JSON sanitizer).
+-- RESTRICT prevents silently removing a still-dependent view or function.
+drop function if exists public.ai_query_view(uuid,text,text[],jsonb,text[],jsonb,date,date,jsonb,integer) restrict;
+drop function if exists public.ai_toast_fields(uuid,text) restrict;

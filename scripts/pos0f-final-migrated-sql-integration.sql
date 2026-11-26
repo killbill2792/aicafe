@@ -77,7 +77,7 @@ BEGIN
     SELECT oid, proname
       FROM pg_proc
      WHERE pronamespace = 'public'::regnamespace
-       AND proname IN ('toast_records_for','toast_current_nonorders_for','ai_toast_fields','ai_query_view')
+       AND proname IN ('toast_records_for','toast_current_nonorders_for','supervisor_research_sql')
   LOOP
     PERFORM pg_temp.pos0f_reject_diagnostic_definition(
       pg_get_functiondef(p.oid),
@@ -86,9 +86,9 @@ BEGIN
   PERFORM pg_temp.pos0f_assert(
     to_regprocedure('public.toast_records_for(uuid,date,date)') IS NOT NULL
     AND to_regprocedure('public.toast_current_nonorders_for(uuid,date,date,text)') IS NOT NULL
-    AND to_regprocedure('public.ai_toast_fields(uuid,text)') IS NOT NULL
-    AND to_regprocedure('public.ai_query_view(uuid,text,text[],jsonb,text[],jsonb,date,date,jsonb,integer)') IS NOT NULL,
-    'The one existing registered SQL reader and field/query functions must exist');
+    AND to_regprocedure('public.supervisor_research_sql(uuid,uuid,text)') IS NOT NULL
+    AND to_regprocedure('public.ai_query_view(uuid,text,text[],jsonb,text[],jsonb,date,date,jsonb,integer)') IS NULL,
+    'The single SQL research reader exists; the old RPC is retired');
 
   -- Inspect the final CREATE OR REPLACE definitions for every cv_* view.
   FOR p IN
@@ -197,18 +197,10 @@ BEGIN
             AND d->>'after'='Nadia Updated')),
     'Changed roster name is current once, with one exact before/after audit');
   PERFORM pg_temp.pos0f_assert(
-    public.ai_toast_fields(a,'employee') @>
-      '[{"field":"data.display_name","type":"string"}]'::jsonb,
-    'Existing describe_data SQL field discovery exposes actual written staff name');
-  result := public.ai_query_view(a,'cv_toast_records',ARRAY['data.display_name']::text[],
-    jsonb_build_array(
-      jsonb_build_object('column','record_type','op','=','value','employee'),
-      jsonb_build_object('column','record_ref','op','=','value',employee_a::text)),
-    null::text[],null::jsonb,'2026-10-26','2026-10-26',null,10);
-  PERFORM pg_temp.pos0f_assert(
-    jsonb_array_length(result->'rows')=1
-      AND result->'rows'->0->>'data.display_name'='Nadia Updated',
-    'Registered existing query_data SQL must return real roster writer name by GUID');
+    (SELECT count(*)=1 AND bool_and(data->>'display_name'='Nadia Updated')
+     FROM public.toast_records_for(a,null,null)
+     WHERE record_type='employee' AND record_ref=employee_a::text),
+    'SQL returns real roster writer name by GUID');
   BEGIN
     PERFORM public.toast_stage_employee_roster(b,restaurant_b,jsonb_build_array(
       jsonb_build_object('employee_guid',employee_a,'display_name','Foreign unverified',
@@ -220,8 +212,7 @@ BEGIN
     'Unverified café must reject a forged source-roster staging attempt');
   PERFORM pg_temp.pos0f_assert(
     NOT EXISTS (SELECT 1 FROM public.toast_records_for(b,null,null)
-       WHERE record_type='employee')
-    AND public.ai_toast_fields(b,'employee')='[]'::jsonb,
+       WHERE record_type='employee'),
     'Other café has no provider-verified staff discovery or data');
 
   -- Same restaurant-scoped current writer/storage shape as POS0e. A deliberately
@@ -288,11 +279,11 @@ BEGIN
        WHERE r.record_type='stock/v1/inventory')),
     'stock-only shared current projection matches every operational Toast field without diagnostic or foreign data');
   PERFORM pg_temp.pos0f_assert(
-    public.ai_toast_fields(a,'stock/v1/inventory') @>
-      '[{"field":"data.status","type":"string"},{"field":"data.guid","type":"string"}]'::jsonb
-    AND NOT (public.ai_toast_fields(a,'stock/v1/inventory') @>
-      '[{"field":"data.quantity","type":"number"}]'::jsonb),
-    'current stock discoverability preserves string fields and does not invent numeric evidence from NULL');
+    (SELECT count(*)>0 AND bool_and(jsonb_typeof(data->'status')='string'
+       AND jsonb_typeof(data->'guid')='string'
+       AND jsonb_typeof(data->'quantity') IS DISTINCT FROM 'number')
+     FROM public.toast_records_for(a,null,null,ARRAY['stock/v1/inventory'])),
+    'current stock SQL preserves string fields and never invents numeric evidence');
   PERFORM pg_temp.pos0f_assert(
     (SELECT count(*)=1 AND sum(amount_cents)=1250
       FROM public.cv_cash WHERE business_id=a),
@@ -338,41 +329,15 @@ BEGIN
       =(SELECT count(*) FROM public.toast_records_for(a,null,null) WHERE record_type='order'),
     'pushdown exclusivity and order family');
 
-  result := public.ai_query_view(a,'cv_cash',null::text[],'[]'::jsonb,
-    null::text[],'[{"fn":"sum","column":"amount_cents"}]'::jsonb,
-    '2026-10-26','2026-10-26',null,20);
   PERFORM pg_temp.pos0f_assert(
-    (result->'rows'->0->>'sum_amount_cents')::integer=1250
-    AND (result->>'truncated')::boolean=false,
-    'Existing query_data RPC must retrieve exactly the current cash screen cents');
-  -- Match another relevant screen (stock) and an undated configuration
-  -- through the *same* registered query function, preserving NULL as unknown.
-  result := public.ai_query_view(a,'cv_inventory',ARRAY['quantity','stock_status']::text[],
-    '[{"column":"source","op":"=","value":"toast"}]'::jsonb,
-    null::text[],null::jsonb,'2026-10-26','2026-10-26',null,10);
-  PERFORM pg_temp.pos0f_assert(
-    jsonb_array_length(result->'rows')=1
-    AND result->'rows'->0->>'quantity' IS NULL
-    AND result->'rows'->0->>'stock_status'='QUANTITY',
-    'query_data and stock screen must agree quantity is unknown, not zero');
-  result := public.ai_query_view(a,'cv_dining_options',
-    ARRAY['dining_option_name','business_date']::text[],
-    '[{"column":"dining_option_ref","op":"=","value":"dining-current-a"}]'::jsonb,
-    null::text[],null::jsonb,'2026-10-26','2026-10-26',null,10);
-  PERFORM pg_temp.pos0f_assert(
-    jsonb_array_length(result->'rows')=1
-    AND result->'rows'->0->>'dining_option_name'='Patio'
-    AND result->'rows'->0->>'business_date' IS NULL,
-    'Published undated dining option remains queryable without invented date');
-
-  result := public.ai_query_view(b,'cv_cash',null::text[],'[]'::jsonb,
-    null::text[],'[{"fn":"sum","column":"amount_cents"}]'::jsonb,
-    '2026-10-26','2026-10-26',null,20);
-  PERFORM pg_temp.pos0f_assert(
-    jsonb_array_length(result->'rows')=0
-      OR (result->'rows'->0->>'sum_amount_cents') IS NULL,
-    'Foreign/diagnostic-only café has no current cash sum');
-
+    (SELECT sum(amount_cents)=1250 FROM public.cv_cash WHERE business_id=a AND business_date='2026-10-26')
+    AND (SELECT count(*)=1 AND bool_and(quantity IS NULL AND stock_status='QUANTITY')
+      FROM public.cv_inventory WHERE business_id=a AND source='toast' AND business_date='2026-10-26')
+    AND (SELECT count(*)=1 AND bool_and(dining_option_name='Patio' AND business_date IS NULL)
+      FROM public.cv_dining_options WHERE business_id=a AND dining_option_ref='dining-current-a')
+    AND (SELECT sum(amount_cents) IS NULL FROM public.cv_cash WHERE business_id=b),
+    'SQL reads matching screen cash, unknown stock, undated dining and no foreign cash');
+ 
   -- Real PostgreSQL JWT/role isolation: the existence of source rows must
   -- not give an unrelated authenticated account access to either the archive
   -- or the registered reader. An owner may query A only, not B.
@@ -394,13 +359,9 @@ BEGIN
     AND (SELECT count(*)=0 FROM public.toast_current_nonorders_for(a,null,null,'stock/v1/inventory'))
     AND NOT has_table_privilege('public.toast_raw_records','SELECT'),
     'Nonmember cannot read A via the shared reader or direct current archive');
-  result := public.ai_query_view(a,'cv_cash',null::text[],'[]'::jsonb,
-    null::text[],'[{"fn":"sum","column":"amount_cents"}]'::jsonb,
-    '2026-10-26','2026-10-26',null,20);
   PERFORM pg_temp.pos0f_assert(
-    jsonb_array_length(result->'rows')=0 OR
-    result->'rows'->0->>'sum_amount_cents' IS NULL,
-    'Authenticated nonmember must not obtain A cash through registered query_data');
+    NOT EXISTS (SELECT 1 FROM public.cv_cash WHERE business_id=a),
+    'Authenticated nonmember cannot obtain A cash');
   EXECUTE 'reset role';
   PERFORM set_config('request.jwt.claim.sub',owner_a::text,true);
   PERFORM set_config('request.jwt.claims',
@@ -412,12 +373,9 @@ BEGIN
     AND (SELECT count(*)=1 FROM public.toast_current_nonorders_for(a,null,null,'stock/v1/inventory'))
     AND (SELECT count(*)=0 FROM public.toast_current_nonorders_for(b,null,null,'stock/v1/inventory')),
     'Member reads exact A current facts, never another café');
-  result := public.ai_query_view(a,'cv_cash',null::text[],'[]'::jsonb,
-    null::text[],'[{"fn":"sum","column":"amount_cents"}]'::jsonb,
-    '2026-10-26','2026-10-26',null,20);
   PERFORM pg_temp.pos0f_assert(
-    (result->'rows'->0->>'sum_amount_cents')::integer=1250,
-    'Authorized owner receives same 1250 screen/query cash cents');
+    (SELECT sum(amount_cents)=1250 FROM public.cv_cash WHERE business_id=a AND business_date='2026-10-26'),
+    'Authorized owner receives same 1250 screen cash cents');
   EXECUTE 'reset role';
 
   -- #564 production-size data shape, in this ROLLED BACK disposable DB only.
@@ -449,7 +407,7 @@ BEGIN
     INSERT INTO pg_temp.pos0f_source_latency VALUES
      ('inventory',1000*extract(epoch from clock_timestamp()-latency_started));
     latency_started:=clock_timestamp();
-    PERFORM public.ai_toast_fields(a,'stock/v1/inventory');
+    PERFORM data FROM public.toast_records_for(a,null,null,ARRAY['stock/v1/inventory']);
     INSERT INTO pg_temp.pos0f_source_latency VALUES
      ('fields',1000*extract(epoch from clock_timestamp()-latency_started));
   END LOOP;

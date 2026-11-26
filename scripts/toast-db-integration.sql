@@ -933,14 +933,11 @@ BEGIN
   where business_id=b and source='toast' and source_channel='IN_STORE'
   and net_sales_cents=450 and status='actual'),
   'channel query reads a single stored current order amount');
- perform pg_temp.assert_true((
-  public.ai_query_view(b,'cv_orders',array[]::text[],
-  '[{"column":"source_channel","op":"=","value":"IN_STORE"}]'::jsonb,
-  array['source_channel'],
-  '[{"fn":"sum","column":"net_sales_cents"}]'::jsonb,
-  '2026-10-26','2026-10-26',null,100)->'rows'->0->>'sum_net_sales_cents'
- )::bigint=450,'real café-scoped RPC groups current channel sales without excluded rows');
-
+ perform pg_temp.assert_true(
+  (select sum(net_sales_cents)=450 from public.cv_orders
+   where business_id=b AND business_date='2026-10-26' AND source_channel='IN_STORE'),
+  'canonical SQL groups current channel sales without excluded rows');
+ 
  -- POS0e operational fixtures come from the existing retained-current archive.
  insert into public.toast_raw_records(business_id,restaurant_guid,entity,business_date,
   payload,payload_sha256,capture_key)

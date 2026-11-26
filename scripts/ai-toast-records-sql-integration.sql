@@ -1,5 +1,4 @@
--- Migration 130: the AI reaches every Toast field through cv_toast_records and
--- named fields in ai_query_view ("data.server.guid").
+-- The AI reaches Toast fields through scoped canonical SQL, including nested JSON.
 -- Run ONLY against a disposable local Supabase after all migrations. Synthetic data, rolled back.
 \set ON_ERROR_STOP on
 BEGIN;
@@ -11,7 +10,6 @@ DECLARE
  b uuid:='cccccccc-cccc-4ccc-8ccc-cccccccccc00'; r uuid:='cccccccc-cccc-4ccc-8ccc-cccccccccc01';
  loc uuid:='cccccccc-cccc-4ccc-8ccc-cccccccccc02'; d date:='2026-10-19';
  run_a uuid; run_b uuid; page jsonb; changed jsonb; res jsonb; failed boolean;
- q text:='select public.ai_query_view($1,''cv_toast_records'',$2,$3,$4,$5,$6,$6,null,100)';
 BEGIN
  if to_regclass('public.toast_location_mappings') is not null then
   execute 'insert into public.businesses(id,name,is_demo) values($1,$2,false)' using b,'AI fields café';
@@ -113,27 +111,26 @@ BEGIN
  perform pg_temp.assert_true(not exists(select 1 from public.cv_toast_records
   where business_id=b and record_ref='DIAGNOSTIC-ONLY'),
   'historical diagnostic capture cannot enter the operational reader');
- -- Named fields: sales of counted items, grouped by item name.
- execute q into res using b,null::text[],
-  '[{"column":"record_type","op":"=","value":"item"},{"column":"counts_in_sales","op":"=","value":true}]'::jsonb,
-  array['data.displayName'],'[{"fn":"sum","column":"data.price"}]'::jsonb,d;
- perform pg_temp.assert_true(res->'rows' @> '[{"data.displayName":"Latte","sum_data.price":5.5}]'
-  and jsonb_array_length(res->'rows')=2,'sums a field inside data, grouped by another');
- execute q into res using b,null::text[],
-  '[{"column":"record_type","op":"=","value":"order"},{"column":"counts_in_sales","op":"=","value":true}]'::jsonb,
-  array['data.server.guid','data.table.name'],'[{"fn":"sum","column":"data.numberOfGuests"}]'::jsonb,d;
- perform pg_temp.assert_true(res->'rows'->0->>'data.server.guid'='server-1'
-  and res->'rows'->0->>'data.table.name'='Patio 4','groups by nested fields');
- execute q into res using b,array['data.displayName'],
-  '[{"column":"record_type","op":"=","value":"item"},{"column":"counts_in_sales","op":"=","value":true},{"column":"data.price","op":">","value":3.5}]'::jsonb,
-  null::text[],null::jsonb,d;
- perform pg_temp.assert_true(jsonb_array_length(res->'rows')=2,'compares numbers inside data as numbers');
- execute q into res using b,array['data.name'],
-  '[{"column":"record_type","op":"=","value":"config/v2/tables"}]'::jsonb,null::text[],null::jsonb,d;
- perform pg_temp.assert_true(jsonb_array_length(res->'rows')=2,'setup lists are read for any date');
- perform pg_temp.assert_true(public.ai_toast_fields(b,'item') @> '[{"field":"data.price","type":"number"}]'
-  and not (public.ai_toast_fields(b,'order') @> '[{"field":"data.checks.0.amount"}]'),
-  'lists the field names of a record type');
+ -- Native SQL can group and filter nested provider fields directly.
+ select jsonb_agg(to_jsonb(q)) into res from (
+  select data->>'displayName' as name,sum((data->>'price')::numeric) as price
+  from public.toast_records_for(b,d,d) where record_type='item' AND counts_in_sales group by 1
+ ) q;
+ perform pg_temp.assert_true(res @> '[{"name":"Latte","price":5.5}]'
+   and jsonb_array_length(res)=2,'sums nested prices by item name');
+ perform pg_temp.assert_true(
+  (select count(*)>0 from public.toast_records_for(b,d,d)
+   where record_type='order' AND counts_in_sales
+   AND data#>>'{server,guid}'='server-1' AND data#>>'{table,name}'='Patio 4'),
+  'nested server and table fields are available');
+ perform pg_temp.assert_true(
+  (select count(*)=2 from public.toast_records_for(b,d,d)
+   where record_type='item' AND counts_in_sales AND (data->>'price')::numeric>3.5),
+  'SQL compares numeric JSON fields as numbers');
+ perform pg_temp.assert_true(
+  (select count(*)=2 FROM public.toast_records_for(b,d,d)
+   where record_type='config/v2/tables' AND business_date IS NULL),
+  'setup lists are undated and readable');
  -- A signed-in user who does not own this café reads nothing, and the archive table stays closed.
  perform set_config('request.jwt.claim.sub','cccccccc-cccc-4ccc-8ccc-ccccccccccff',true);
  perform set_config('request.jwt.claims','{"sub":"cccccccc-cccc-4ccc-8ccc-ccccccccccff","role":"authenticated"}',true);
@@ -154,12 +151,6 @@ BEGIN
  perform pg_temp.assert_true((select count(*)>0 from public.toast_records_for(b,null,null)),
   'the owner reads their café''s Toast records');
  execute 'reset role';
- begin
-  execute q into res using b,array['data.price) from x; --'],null::jsonb,null::text[],null::jsonb,d;
-  failed:=false;
- exception when others then failed:=true;
- end;
- perform pg_temp.assert_true(failed,'only plain field names are accepted');
 END $ai_records$;
 
 ROLLBACK;

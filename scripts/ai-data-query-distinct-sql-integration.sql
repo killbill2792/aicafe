@@ -5,25 +5,6 @@
 BEGIN;
 CREATE FUNCTION pg_temp.assert_true(v boolean, note text) RETURNS void
 LANGUAGE plpgsql AS $$ BEGIN IF v IS DISTINCT FROM true THEN RAISE EXCEPTION 'TEST FAILURE: %', note; END IF; END $$;
--- Each answer must equal an independent direct aggregate, regardless of row order.
-CREATE FUNCTION pg_temp.assert_parity(
- p_business uuid,p_from date,p_to date,p_filters jsonb,p_groups text[],p_metrics jsonb,
- p_direct_sql text,p_question text
-) RETURNS void LANGUAGE plpgsql AS $parity$
-DECLARE expected jsonb;actual jsonb;reply jsonb;
-BEGIN
- execute p_direct_sql into expected using p_business,p_from,p_to;
- reply:=public.ai_query_view(p_business,'cv_toast_records',null,p_filters,p_groups,
-   p_metrics,p_from,p_to,null,100);
- select coalesce(jsonb_agg(e.value order by e.value::text),'[]'::jsonb) into expected
- from jsonb_array_elements(coalesce(expected,'[]'::jsonb)) as e(value);
- select coalesce(jsonb_agg(e.value order by e.value::text),'[]'::jsonb) into actual
- from jsonb_array_elements(reply->'rows') as e(value);
- IF actual IS DISTINCT FROM expected OR reply->>'truncated'<>'false' THEN
-  RAISE EXCEPTION 'PARITY FAILED %: expected %, got % (truncated %)',
-   p_question,expected,actual,reply->>'truncated';
- END IF;
-END $parity$;
 DO $discounts$
 DECLARE
  b uuid:='eeeeeeee-3333-4eee-8eee-eeeeeeeeee00';
@@ -121,124 +102,12 @@ BEGIN
  perform pg_temp.assert_true((select count(*)=1 from public.toast_records_for(b,d,d)
   where record_type='item_discount' and data->>'processingState'='VOID'
    and counts_in_sales=false),'removed discount is retained but not counted');
- response:=public.ai_query_view(b,'cv_toast_records',null,
-  '[{"column":"record_type","op":"in","value":["item_discount","check_discount"]},
-    {"column":"counts_in_sales","op":"=","value":true},
-    {"column":"data.name","op":"ilike","value":"%student%"}]'::jsonb,
-  null,'[{"fn":"count","column":"source_ref"},{"fn":"count_distinct","column":"order_ref"},
-   {"fn":"count_distinct","column":"check_ref"}]'::jsonb,d,d,null,20);
- perform pg_temp.assert_true(
-  (response->'rows'->0->>'count_source_ref')::bigint=uses
-  and (response->'rows'->0->>'count_distinct_order_ref')::bigint=orders
-  and (response->'rows'->0->>'count_distinct_check_ref')::bigint=checks,
-  'AI query exactly matches direct database aggregate');
- perform pg_temp.assert_true(response->>'hasIncomplete'='true'
-   and response->>'currentDayIncomplete'='true',
-   'partial current day is explicitly marked provisional and incomplete');
- with valid as (
-  select data->>'name' name,order_ref,check_ref from public.toast_records_for(b,d,d)
-  where counts_in_sales=true and record_type in ('item_discount','check_discount')
-   and data->>'name' ilike '%student%'
- ), per_name as (
-  select name,count(*) use_n,count(distinct order_ref) order_n,count(distinct check_ref) check_n
-  from valid group by name
- )
- select jsonb_object_agg(name,jsonb_build_object('uses',use_n,'orders',order_n,'checks',check_n))
- into baseline from per_name;
- response:=public.ai_query_view(b,'cv_toast_records',null,
-  '[{"column":"record_type","op":"in","value":["item_discount","check_discount"]},
-    {"column":"counts_in_sales","op":"=","value":true},
-    {"column":"data.name","op":"ilike","value":"%student%"}]'::jsonb,
-  array['data.name'],'[{"fn":"count","column":"source_ref"},
-   {"fn":"count_distinct","column":"order_ref"},{"fn":"count_distinct","column":"check_ref"}]'::jsonb,
-  d,d,null,20);
- select coalesce(jsonb_object_agg(row->>'data.name',
-  jsonb_build_object('uses',(row->>'count_source_ref')::bigint,
-    'orders',(row->>'count_distinct_order_ref')::bigint,
-    'checks',(row->>'count_distinct_check_ref')::bigint)),'{}'::jsonb)
- into by_name from jsonb_array_elements(response->'rows') row;
- perform pg_temp.assert_true(by_name=baseline and (select count(*) from jsonb_object_keys(by_name))=2,
-  'named discount groups exactly match direct SQL');
- -- New owner acceptance gate: questions not hand-picked for student discounts.
- perform pg_temp.assert_parity(b,prior,d,
-  '[{"column":"record_type","op":"in","value":["check_discount","item_discount"]}, {"column":"counts_in_sales","op":"=","value":true}]',
-  null,
-  '[{"fn":"count","column":"source_ref"}, {"fn":"count_distinct","column":"data.name"}]',
-  $sql$select jsonb_agg(to_jsonb(q)) from (select count(source_ref) count_source_ref,count(distinct data->>'name') "count_distinct_data.name" from public.toast_records_for($1,$2,$3) where record_type in ('check_discount','item_discount') and counts_in_sales=true) q$sql$,
-  'Unplanned: how many different discount names vs total uses?');
- perform pg_temp.assert_parity(b,prior,d,
-  '[{"column":"record_type","op":"in","value":["check_discount","item_discount"]}, {"column":"counts_in_sales","op":"=","value":true}]',
-  array['business_date','data.name'],
-  '[{"fn":"count","column":"source_ref"},{"fn":"count_distinct","column":"order_ref"}]',
-  $sql$select jsonb_agg(to_jsonb(q)) from (select business_date,data->>'name' "data.name", count(source_ref) count_source_ref,count(distinct order_ref) count_distinct_order_ref from public.toast_records_for($1,$2,$3) where record_type in ('check_discount','item_discount') and counts_in_sales=true group by business_date,data->>'name') q$sql$,
-  'Unplanned: which discounts were applied on each day?');
- perform pg_temp.assert_parity(b,prior,d,
-  '[{"column":"record_type","op":"=","value":"item_discount"}, {"column":"counts_in_sales","op":"=","value":true}, {"column":"data.name","op":"ilike","value":"%student%"}]',
-  array['data.item_ref','data.name'],
-  '[{"fn":"count","column":"source_ref"},{"fn":"count_distinct","column":"check_ref"}]',
-  $sql$select jsonb_agg(to_jsonb(q)) from (select data->>'item_ref' "data.item_ref",data->>'name' "data.name", count(source_ref) count_source_ref,count(distinct check_ref) count_distinct_check_ref from public.toast_records_for($1,$2,$3) where record_type='item_discount' and counts_in_sales=true and data->>'name' ilike '%student%' group by data->>'item_ref',data->>'name') q$sql$,
-  'Unplanned: which exact items received a student discount, by type?');
- perform pg_temp.assert_parity(b,prior,d,
-  '[{"column":"record_type","op":"=","value":"item"}, {"column":"counts_in_sales","op":"=","value":true}]',
-  array['business_date'],
-  '[{"fn":"count_distinct","column":"record_ref"},{"fn":"sum","column":"data.quantity"}]',
-  $sql$select jsonb_agg(to_jsonb(q)) from (select business_date,count(distinct record_ref) count_distinct_record_ref, sum((data->>'quantity')::numeric) "sum_data.quantity" from public.toast_records_for($1,$2,$3) where record_type='item' and counts_in_sales=true group by business_date) q$sql$,
-  'Unplanned: how many selections versus how many units by day?');
- perform pg_temp.assert_parity(b,prior,d,
-  '[{"column":"record_type","op":"=","value":"item"}, {"column":"counts_in_sales","op":"=","value":true}, {"column":"data.quantity","op":">=","value":2}]',
-  array['data.displayName'],
-  '[{"fn":"sum","column":"data.quantity"},{"fn":"count","column":"source_ref"}]',
-  $sql$select jsonb_agg(to_jsonb(q)) from (select data->>'displayName' "data.displayName", sum((data->>'quantity')::numeric) "sum_data.quantity",count(source_ref) count_source_ref from public.toast_records_for($1,$2,$3) where record_type='item' and counts_in_sales=true and (data->>'quantity')::numeric>=2 group by data->>'displayName') q$sql$,
-  'Unplanned: which items were ordered in quantities of at least two?');
- perform pg_temp.assert_parity(b,prior,d,
-  '[{"column":"record_type","op":"=","value":"order"}, {"column":"counts_in_sales","op":"=","value":true}, {"column":"data.source","op":"in","value":["Online","In Store"]}]',
-  array['business_date','data.source'],
-  '[{"fn":"count_distinct","column":"record_ref"}]',
-  $sql$select jsonb_agg(to_jsonb(q)) from (select business_date,data->>'source' "data.source", count(distinct record_ref) count_distinct_record_ref from public.toast_records_for($1,$2,$3) where record_type='order' and counts_in_sales=true and data->>'source' in ('Online','In Store') group by business_date,data->>'source') q$sql$,
-  'Unplanned: how did Online and In Store order counts differ by day?');
- perform pg_temp.assert_parity(b,prior,d,
-  '[{"column":"record_type","op":"=","value":"order"}, {"column":"counts_in_sales","op":"=","value":true}]',
-  array['business_date'],
-  '[{"fn":"sum","column":"data.numberOfGuests"},{"fn":"count","column":"source_ref"}]',
-  $sql$select jsonb_agg(to_jsonb(q)) from (select business_date,sum((data->>'numberOfGuests')::numeric) "sum_data.numberOfGuests", count(source_ref) count_source_ref from public.toast_records_for($1,$2,$3) where record_type='order' and counts_in_sales=true group by business_date) q$sql$,
-  'Unplanned: how many recorded guests, compared with orders, each day?');
- perform pg_temp.assert_parity(b,prior,d,
-  '[{"column":"record_type","op":"=","value":"item"}, {"column":"counts_in_sales","op":"=","value":true}, {"column":"data.displayName","op":"is_null","value":null}]',
-  array['business_date'],
-  '[{"fn":"count","column":"source_ref"}]',
-  $sql$select jsonb_agg(to_jsonb(q)) from (select business_date,count(source_ref) count_source_ref from public.toast_records_for($1,$2,$3) where record_type='item' and counts_in_sales=true and data->>'displayName' is null group by business_date) q$sql$,
-  'Unplanned: how many selections have no recorded item name?');
- perform pg_temp.assert_parity(b,prior,d,
-  '[{"column":"record_type","op":"=","value":"item"}, {"column":"counts_in_sales","op":"=","value":true}, {"column":"data.displayName","op":"is_not_null","value":null}]',
-  array['data.displayName'],
-  '[{"fn":"avg","column":"data.quantity"},{"fn":"min","column":"data.quantity"}, {"fn":"max","column":"data.quantity"}]',
-  $sql$select jsonb_agg(to_jsonb(q)) from (select data->>'displayName' "data.displayName", avg((data->>'quantity')::numeric) "avg_data.quantity", min((data->>'quantity')::numeric) "min_data.quantity", max((data->>'quantity')::numeric) "max_data.quantity" from public.toast_records_for($1,$2,$3) where record_type='item' and counts_in_sales=true and data->>'displayName' is not null group by data->>'displayName') q$sql$,
-  'Unplanned: what are the average, smallest and largest selection quantities?');
- perform pg_temp.assert_parity(b,prior,d,
-  '[{"column":"record_type","op":"in","value":["check_discount","item_discount"]}, {"column":"counts_in_sales","op":"=","value":true}, {"column":"data.name","op":"ilike","value":"%student%"}]',
-  array['business_date'],
-  '[{"fn":"count","column":"source_ref"},{"fn":"count_distinct","column":"order_ref"}]',
-  $sql$select jsonb_agg(to_jsonb(q)) from (select business_date,count(source_ref) count_source_ref, count(distinct order_ref) count_distinct_order_ref from public.toast_records_for($1,$2,$3) where record_type in ('check_discount','item_discount') and counts_in_sales=true and data->>'name' ilike '%student%' group by business_date) q$sql$,
-  'Unplanned: did more orders receive student discounts on either day?');
- response:=public.ai_query_view(b,'cv_toast_records',array['data'],
-  '[{"column":"record_type","op":"=","value":"item_discount"}]'::jsonb,
-  null,null,d,d,null,100);
- perform pg_temp.assert_true(octet_length((response->'rows')::text)<=6000,
-  'database output byte cap');
- -- #564: one-pass retained source keeps full denominator, not just page rows.
- response:=public.ai_query_view(b,'cv_toast_records',array['source_ref'],
-  '[{"column":"record_type","op":"=","value":"item"}]'::jsonb,
-  null,null,prior,d,null,1);
- perform pg_temp.assert_true(
-  (response->>'sourceCount')::bigint=(
-   select count(*) from public.toast_records_for(b,prior,d)
-   where record_type='item' and business_date between prior and d)
-  and (response->'sourceMix'->>'toast')::bigint=(
-   select count(*) from public.toast_records_for(b,prior,d)
-   where record_type='item' and business_date between prior and d)
-  and response->>'truncated'='true',
-  'one-pass retained reader keeps complete scoped denominator behind a one-row page');
-
+ -- Check named groups independently, retaining the expected two types.
+ select count(distinct data->>'name') into uses
+ from public.toast_records_for(b,d,d)
+ where counts_in_sales AND record_type IN ('item_discount','check_discount') AND data->>'name' ilike '%student%';
+ perform pg_temp.assert_true(uses=2,'two named discount groups exist');
+ 
  -- PR2: the Toast fixture's two business dates prove exact decimal cents.
  with priced as (
   select business_date,sum(round((data->>'price')::numeric*100)::bigint) cents
@@ -247,33 +116,25 @@ BEGIN
    and jsonb_typeof(data->'price')='number'
   group by business_date
  ) select jsonb_object_agg(business_date::text,cents) into baseline from priced;
- response:=public.ai_query_view(b,'cv_toast_records',null,
-  '[{"column":"record_type","op":"=","value":"item"},
-    {"column":"counts_in_sales","op":"=","value":true}]'::jsonb,
-  array['business_date'],'[{"fn":"sum","column":"price_cents"}]'::jsonb,prior,d,null,100);
- select jsonb_object_agg(row->>'business_date',(row->>'sum_price_cents')::bigint)
- into by_name from jsonb_array_elements(response->'rows') row;
- perform pg_temp.assert_true(by_name=baseline
-  and (select count(*) from jsonb_object_keys(by_name))=2
-  and response->'sourceMix'->>'toast' is not null,
-  'Toast item price cents equal direct JSON DECIMAL cents on both dates');
-
+ select jsonb_object_agg(business_date::text,cents) into by_name from (
+  select business_date,sum(price_cents) cents FROM public.cv_toast_records
+  WHERE business_id=b AND business_date BETWEEN prior AND d AND record_type='item' AND counts_in_sales
+  GROUP BY business_date) q;
+ perform pg_temp.assert_true(by_name=baseline AND (select count(*) from jsonb_object_keys(by_name))=2,
+  'Toast item price cents equal direct JSON decimal cents on both dates');
+ 
  with discounts as (
   select business_date,sum(round((data->>'discountAmount')::numeric*100)::bigint) cents
   from public.toast_records_for(b,prior,d)
   where record_type in ('item_discount','check_discount') and counts_in_sales=true
    and jsonb_typeof(data->'discountAmount')='number' group by business_date
  ) select jsonb_object_agg(business_date::text,cents) into baseline from discounts;
- response:=public.ai_query_view(b,'cv_toast_records',null,
-  '[{"column":"record_type","op":"in","value":["item_discount","check_discount"]},
-    {"column":"counts_in_sales","op":"=","value":true}]'::jsonb,
-  array['business_date'],'[{"fn":"sum","column":"discount_amount_cents"}]'::jsonb,prior,d,null,100);
- select jsonb_object_agg(row->>'business_date',(row->>'sum_discount_amount_cents')::bigint)
- into by_name from jsonb_array_elements(response->'rows') row;
- perform pg_temp.assert_true(by_name=baseline
-  and (select count(*) from jsonb_object_keys(by_name))=2
-  and response->>'hasIncomplete'='true' and response->>'currentDayIncomplete'='true',
-  'discount cents exclude removed VOID uses and keep provisional day label');
+ select jsonb_object_agg(business_date::text,cents) into by_name from (
+  select business_date,sum(discount_amount_cents) cents FROM public.cv_toast_records
+  WHERE business_id=b AND business_date BETWEEN prior AND d AND record_type IN ('item_discount','check_discount') AND counts_in_sales
+  GROUP BY business_date) q;
+ perform pg_temp.assert_true(by_name=baseline AND (select count(*) from jsonb_object_keys(by_name))=2,
+  'discount cents exclude removed VOID uses');
  perform pg_temp.assert_true(
   (select bool_and(price_cents is null) from public.cv_toast_records
    where business_id=b and business_date=d and record_type='item_discount'),
@@ -289,22 +150,12 @@ BEGIN
   0,0,0,0,0,0,'actual'
  from public.cv_toast_records
  where business_id=b and business_date=prior and counts_in_sales=true;
- response:=public.ai_query_view(b,'cv_sales_days',null,null,array['business_date'],
-  '[{"fn":"sum","column":"net_sales_cents"},{"fn":"sum","column":"orders_count"}]'::jsonb,
-  prior,prior,null,100);
  perform pg_temp.assert_true(
-  (response->'rows'->0->>'sum_net_sales_cents')::bigint =
-   (select sum(net_sales_cents) from public.daily_rollups where business_id=b and business_date=prior)
-  and (response->'rows'->0->>'sum_net_sales_cents')::bigint =
-   (select sum(net_sales_cents) from public.cv_sales_days where business_id=b and business_date=prior)
-  and (response->'rows'->0->>'sum_orders_count')::integer =
-   (select sum(orders_count) from public.daily_rollups where business_id=b and business_date=prior)
-  and response->'sourceMix'='{"app":1}'::jsonb,
-  'chat/screen/database day sales cents and order counts match with app source label');
- response:=public.ai_query_view(b,'cv_sales_days',null,null,array['business_date'],
-  '[{"fn":"sum","column":"net_sales_cents"}]'::jsonb,prior,d,null,100);
- perform pg_temp.assert_true(response->>'currentDayIncomplete'='true',
-  'including today is still incomplete even with only historical rollup rows');
-
+  (select sum(net_sales_cents) from public.cv_sales_days where business_id=b and business_date=prior)
+   = (select sum(net_sales_cents) from public.daily_rollups where business_id=b and business_date=prior)
+  AND (select sum(orders_count) from public.cv_sales_days where business_id=b and business_date=prior)
+   = (select sum(orders_count) from public.daily_rollups where business_id=b and business_date=prior),
+  'screen and canonical SQL day sales cents and order counts match');
+ 
 END $discounts$;
 ROLLBACK;
