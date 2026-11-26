@@ -326,3 +326,31 @@ it("persists a visual-only model answer after an unavailable SQL read",async()=>
  expect(payload.reply.blocks).toMatchObject([{type:"rich_presentation",panels:[{coverage:"estimate",points:[{value:125000}]}],tables:[{rows:[["Unknown",null]]}]}]);
  expect(groundedReplySchema.safeParse(payload.reply).success).toBe(true);
 });
+
+it("keeps a numerical title and mixed model-authored and bound values after a failed reference",()=>{
+ const heading="Estimated profit $8,500 — "+"Long heading ".repeat(20);
+ const result=resolveResearchView({panels:[{kind:"bar",title:heading,points:[
+  {label:"Recorded",value:{ref:"q1",path:["rows",0,"amount_cents"]}},
+  {label:"Estimate",value:850000,unit:"cents",basis:"estimate"},
+  {label:"Unknown",value:{ref:"absent",path:["value"]}}
+ ]}]},queries,ctx);
+ expect(result?.tables?.[0]).toMatchObject({title:heading,rows:[["Recorded",1200,"cents"],["Estimate",850000,"cents"],["Unknown",null,null]]});
+});
+it("interrupts a non-durable provider at its physical request deadline, preserving earlier completed paragraphs",async()=>{
+ let elapsed=0,calls=0;
+ const rpc=vi.fn().mockResolvedValue({data:{ok:true,rows},error:null});
+ const provider:AgentProvider=async function*(){
+  if(++calls===1){
+   yield {type:"response.output_text.delta",delta:"These are the available records."};
+   yield {type:"response.output_item.done",item:{type:"function_call",name:"run_sql",call_id:"q",arguments:JSON.stringify({sql:"select 1"})}};
+   yield {type:"response.completed",response:{usage:{input_tokens:1,output_tokens:1}}};
+  }else{
+   elapsed=2000;
+   yield {type:"response.output_text.delta",delta:"Incomplete output"};
+  }
+ };
+ const result=await runResearchTurn({ownerText:"Check sales",cafeContext:"Cafe",provider,scope:{db:{rpc} as never,businessId:"business",ownerUserId:"owner"},presentationContext:ctx,now:()=>elapsed,executionDeadline:1000});
+ expect(result.endReason).toBe("timeout");
+ expect(result.text).toBe("These are the available records.");
+ expect(agentReplyPayload(result).reply.blocks).toContainEqual({type:"text",text:result.text});
+});
