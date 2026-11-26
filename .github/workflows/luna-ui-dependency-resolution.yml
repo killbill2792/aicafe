@@ -1,12 +1,13 @@
 name: Luna UI dependency resolution (draft only)
 on:
-  push:
-    branches: [claude/luna-upstream-ui]
+  pull_request:
+    branches: [claude/finish-answers]
     paths: [package.json, .github/workflows/luna-ui-dependency-resolution.yml]
 permissions:
   contents: read
 jobs:
   resolve:
+    if: github.head_ref == 'claude/luna-upstream-ui'
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
