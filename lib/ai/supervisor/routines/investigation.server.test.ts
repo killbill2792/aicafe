@@ -206,14 +206,8 @@ describe("Task 15A operational end-to-end orchestration (recorded source/model)"
     const status=await processNextInvestigation(d.client,now);
     expect(status).toMatchObject({processed:1,investigated:1,failed:0});
     expect(mocks.access).toHaveBeenCalledWith("cafe-a");
-    // Real provider run #43672525338 reached a real incident plus three
-    // separate evidence domains, yet hit the old worker meter before a final
-    // verified owner report. Reserve six model calls (including the final
-    // no-tool response); retain read-only tools and the 55-second timeout.
-    expect(mocks.budget).toHaveBeenCalledWith({
-      maxElapsedMs:55_000,maxModelCalls:6,maxToolCalls:7,
-      maxInputTokens:72_000,maxOutputTokens:4800,
-    },expect.any(Function),1200);
+    // The physical worker deadline is passed to the continuation, not a model/tool budget.
+    expect(mocks.budget).not.toHaveBeenCalled();
 
     expect(mocks.tools).toHaveBeenCalledWith(
       {businessId:"cafe-a",ownerUserId:"owner-a"},d.client);
