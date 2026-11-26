@@ -12,7 +12,7 @@ export const nativeChartProps=z.object({
  kind:z.enum(["metric","bar","line","donut","ranked_table","table"]),
  title:z.string(),unit:z.enum(["cents","count","items","units","seconds","minutes","hours","days","ratio","ratio squared","indicator","cents/hour"]),
  currency:z.string().nullable(),measurement:z.string().optional(),description:z.string().optional(),
- points:z.array(z.object({label:z.string(),value:z.number().finite()})).min(1),
+ points:z.array(z.object({label:z.string(),value:z.number().finite().nullable()})).min(1),
 });
 export const nativeChartDefinition={props:nativeChartProps,slots:[],description:"Luna financial charts and metrics. Use local state bindings or calculated values in points; monetary values are in minor units."};
 export const localActionNames=new Set((schema.builtInActions??[]).map(a=>a.name));
@@ -77,7 +77,10 @@ export function validNativeSpec(raw:unknown):raw is Spec{
   const key=pending.pop()!;if(seen.has(key)||!Object.hasOwn(elements,key))return false;seen.add(key);
   const e=elements[key];if(!obj(e)||typeof e.type!=="string"||!safeKey(e.type)||!obj(e.props))return false;
   if(!Object.hasOwn(upstreamComponents,e.type)&&e.type!=="LunaChart"&&e.type!=="LunaSnapshot")return false;
-  if(e.type==="LunaSnapshot"&&(!obj(e.props.snapshot)||Object.hasOwn(e.props.snapshot,"nativeSpec")))return false;
+  if(e.type==="LunaSnapshot"){
+   if(typeof e.props.snapshotJSON!=="string")return false;
+   try{const snapshot:unknown=JSON.parse(e.props.snapshotJSON);if(!obj(snapshot)||snapshot.type!=="rich_presentation"||snapshot.version!==1||Object.hasOwn(snapshot,"nativeSpec")||!safeNativeJSON(snapshot))return false;}catch{return false;}
+  }
   const children=e.children??[];if(!Array.isArray(children)||children.some(k=>typeof k!=="string"||!safeKey(k)))return false;
   pending.push(...children);
   if(e.slots!==undefined){
@@ -89,7 +92,7 @@ export function validNativeSpec(raw:unknown):raw is Spec{
   if(e.watch!==undefined){
    if(!obj(e.watch))return false;
    for(const [path,binding] of Object.entries(e.watch)){
-    if(!safeStatePath(path)||!path.startsWith("/")||!allowedBinding(binding))return false;
+    if(!safeStatePath(path)||!path.startsWith("/")||path==="/"||!allowedBinding(binding))return false;
     const targets=watchTargets(binding);if(!targets)return false;watches.push({path,targets});
    }
   }
@@ -102,11 +105,13 @@ export function validNativeSpec(raw:unknown):raw is Spec{
  return checked===watches.length;
 }
 export const nativeSpecSchema=z.custom<Spec>(validNativeSpec);
+/** Opaque snapshots cannot be interpreted as state expressions. */
+export function readNativeSnapshot(value:unknown):unknown{try{return typeof value==="string"?JSON.parse(value):undefined;}catch{return undefined;}}
 /** Wrap the library store, not the components. Dynamic bindings and actions
  * cannot write into app state, navigate, call APIs or mutate a prototype. */
 export function createLocalWidgetStore(state:Record<string,unknown>={}):StateStore{
  const base=createStateStore(safeNativeJSON(state)?state:{});
- const safeWrite=(path:string,value:unknown)=>safeStatePath(path)&&path.startsWith("/")&&path!=="/"&&safeNativeJSON(value);
+ const safeWrite=(path:string,value:unknown)=>safeStatePath(path)&&path.startsWith("/")&&path!=="/"&&(value===undefined||safeNativeJSON(value));
  return {...base,get:path=>safeStatePath(path)?base.get(path):undefined,
   set:(path,value)=>{if(safeWrite(path,value))base.set(path,value);},
   update:updates=>base.update(Object.fromEntries(Object.entries(updates).filter(([path,value])=>safeWrite(path,value))))};
@@ -130,6 +135,16 @@ export function nativeRenderProps(props:Record<string,unknown>):Record<string,un
  }
  return cleaned;
 }
+/** Validate resolved values against the installed prop schema, including
+ * upstream's nullable default convention. */
+export function parseUpstreamProps(name:string,props:Record<string,unknown>){
+ if(!Object.hasOwn(upstreamComponents,name))return;
+ const definition=upstreamComponents[name as keyof typeof upstreamComponents];
+ const values=nativeRenderProps(props);
+ const shape=definition.props.shape as Record<string,z.ZodType>;
+ for(const [key,field] of Object.entries(shape))if(!Object.hasOwn(values,key)&&field.safeParse(null).success)values[key]=null;
+ return definition.props.safeParse(values);
+}
 const calcInput=z.object({name:z.string(),unit:z.enum(["cents","count","percent","ratio"]),value:z.union([z.string(),z.number().finite()])});
 const calcArgs=z.object({inputs:z.array(calcInput),steps:z.array(z.object({id:z.string(),op:z.enum(CALC_OPS),args:z.array(z.string())})),format:z.enum(["number","currency","percent"]).optional(),currency:z.string().optional()});
 /** One exact existing arithmetic engine is available to any native prop;
@@ -143,7 +158,7 @@ export const nativeFunctions={
   const result=runCalculation(entries,steps);if(!result.ok)return null;
   const v=result.result.shown;
   const n=v.unit==="cents"?v.valueCents:v.unit==="percent"?v.valueBps/100:v.unit==="count"?v.quantity:v.valueRatio;
-  if(format==="currency")try{return new Intl.NumberFormat(undefined,{style:"currency",currency:currency??"USD"}).format(n/100);}catch{return null;}
+  if(format==="currency")try{return new Intl.NumberFormat(undefined,{style:"currency",currency:currency??""}).format(n/100);}catch{return null;}
   return format==="percent"?n+"%":n;
  },
  format:(args:Record<string,unknown>):unknown=>{

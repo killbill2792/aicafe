@@ -34,14 +34,11 @@ const components={
  LunaChart:nativeChartDefinition,
  DataView:{props:envelope,slots:[],description:"Metrics, charts, tables, calculators, report and authenticated attachments. For rows use ref, x, y or columns. For individual values, including across sources, use points with label and value:{ref,path:[exact field names and array indices]}; for text use value:{ref,quote:exact numeric token including currency symbol if present}. For dated or numeric category labels use labelField:{ref,path}. A calculate result can supply an editable calculator, or author calculator inputs, steps and editable input names directly with a title; direct inputs are hypothetical unless explained otherwise. You can also author a panel directly with kind, title, unit, basis (calculated, estimate or scenario), explanation and points [{label,value}]. Use cents for money in minor units; null means unknown, not zero. You can also author tables directly using tables:[{title,basis,explanation,columns:[label],rows:[[value]]}]. Basis and explanation are optional descriptions authored by Luna. The renderer does not judge the answer.",example:{layout:"grid",panels:[{ref:"q1",kind:"bar",x:"category",y:"amount_cents"}]}},
 };
-// The upstream default template advertises Card, demo data, repeat, /state
-// and mutable actions. Our data-bound registry does not execute those. Use
-// JSON Render's documented promptTemplate hook and its own schema formatter
-// so Luna receives exactly the available components and valid native syntax.
+// Generate the vocabulary from the installed catalog, without demo-data instructions.
 const catalog=defineCatalog(defineSchema(()=>schema.definition,{promptTemplate:({options,formatZodType})=>[
  options.system,
  "Write normal Markdown. To insert a visual at the current position, emit a spec fenced block containing native RFC 6902 JSONL patches; then continue the answer. A text-only answer is appropriate when no visual improves it.",
- "Example of native syntax (references and field names must come from your actual evidence):",
+ "Example of native syntax (use actual tool references or model-authored values):",
  String.fromCharCode(96).repeat(3)+"spec",
  JSON.stringify({op:"add",path:"/root",value:"view"}),
  JSON.stringify({op:"add",path:"/elements/view",value:{type:"DataView",props:components.DataView.example,children:[]}}),
@@ -75,7 +72,7 @@ function table(s:Selection,rows:Row[],ctx:Context,e:PresentationEvidence):Record
  const columns=keys.map(k=>({label:name(k),unit:unit(k)==="cents"&&rows.every(r=>r[k]==null||typeof r[k]==="number")?"cents":unit(k)==="count"&&rows.every(r=>r[k]==null||typeof r[k]==="number")?"count":"stored"}));
  const result=recordTableSchema.safeParse({title:title(s,"Query results"),view:e.kind==="sql"?"tool_sql_research":"tool_response_evidence",from:ctx.asOf,to:ctx.asOf,asOf:ctx.asOf,
   currency:ctx.currency??null,coverage:"stored",
-  scope:e.source+"; see the answer for period and coverage",
+  scope:e.source,
   columns,rows:rows.map(r=>keys.map(k=>rawCell(r[k])?r[k]:null))});
  return result.success?result.data:null;
 }
@@ -237,14 +234,14 @@ export function resolveResearchView(raw:unknown,queries:PresentationEvidenceMap,
    const a=direct.data;
    const heading=descriptiveGroupTitle(a.title)??"Luna analysis";
    const coverage=a.basis==="estimate"?"estimate":a.basis==="partial"?"partial":a.basis==="unverified"?"unverified":undefined;
-   const detail=[a.basis,a.explanation].filter(Boolean).join(": ")||"Luna analysis";
+   const detail=[a.basis,a.explanation].filter(Boolean).join(": ");
    const points=a.points.map(p=>({label:descriptiveGroupTitle(p.label)??"Value",value:p.value}));
    const supported=presentationPanelSchema.shape.unit.safeParse(a.unit);
    const displayUnit=supported.success?supported.data:"units";
    const measurement=a.measurement??(supported.success?undefined:a.unit);
    const currency=["cents","cents/hour"].includes(displayUnit)?ctx.currency??null:null;
    const modelPanel=presentationPanelSchema.safeParse({kind:presentationPanelSchema.shape.kind.safeParse(a.kind).success?a.kind:"table",title:heading,unit:displayUnit,currency,from:ctx.asOf,to:ctx.asOf,asOf:ctx.asOf,
-     source:"response_evidence",sourceDetail:detail,coverage,...(measurement?{measurement}:{}),points});
+     source:"response_evidence",...(detail?{sourceDetail:detail}:{}),coverage,...(measurement?{measurement}:{}),points});
    if(modelPanel.success)panels.push(modelPanel.data);
    else{
     const numeric=points.every(p=>p.value===null||typeof p.value==="number");
@@ -298,7 +295,7 @@ export function resolveResearchView(raw:unknown,queries:PresentationEvidenceMap,
   const a=t.data, width=a.rows.reduce((n,r)=>Math.max(n,r.length),a.columns.length);
   const columns=Array.from({length:width},(_,i)=>({label:a.columns[i]??"Value "+(i+1),unit:"stored"}));
   const result=recordTableSchema.safeParse({title:descriptiveGroupTitle(a.title)??"Luna analysis",view:"tool_response_evidence",from:ctx.asOf,to:ctx.asOf,asOf:ctx.asOf,currency:ctx.currency??null,
-   coverage:a.basis==="estimate"?"estimate":a.basis==="partial"?"partial":a.basis==="unverified"?"unverified":"authored",scope:[a.basis,a.explanation].filter(Boolean).join(": ")||"Luna analysis",
+   coverage:a.basis==="estimate"?"estimate":a.basis==="partial"?"partial":a.basis==="unverified"?"unverified":"authored",scope:[a.basis,a.explanation].filter(Boolean).join(": "),
    columns,rows:a.rows.map(row=>Array.from({length:width},(_,i)=>row[i]??null))});
   if(result.success)tables.push(result.data);
  }
@@ -309,11 +306,10 @@ export function resolveResearchView(raw:unknown,queries:PresentationEvidenceMap,
 }
 
 /** Apply only data-only element tree patches, using the installed library's
- * compiler. Never execute model-supplied actions, state bindings or unsafe paths.
+ * compiler. Native interactions are isolated to local widget state.
  * Resolve each view independently so a malformed sibling cannot erase prose. */
 export function resolveResearchSpec(patches:readonly unknown[],queries:PresentationEvidenceMap,ctx?:Context):RichPresentation[]{
  const compiler=createSpecStreamCompiler();
- 
  for(const value of patches){
   if(!obj(value)||typeof value.path!=="string"||!["add","replace","remove"].includes(String(value.op))||(value.op!=="remove"&&!safeNativeJSON(value.value)))continue;
   const parts=value.path.split("/").slice(1);
@@ -326,13 +322,13 @@ export function resolveResearchSpec(patches:readonly unknown[],queries:Presentat
  // Native widgets and DataView snapshots share a single persisted element tree.
  // Old DataView-only fences retain their established wire representation.
  const native=Boolean(spec.state)||Object.values(spec.elements).some(e=>obj(e)&&(e.type!=="DataView"&&e.type!=="Stack"||e.type==="Stack"&&obj(e.props)&&Object.keys(e.props).length>0||e.on||e.watch||e.visible||e.repeat||e.slots));
- if(native&&ctx&&typeof spec.root==="string"){
+ if(native&&ctx&&typeof spec.root==="string"&&!Object.values(spec.elements).some(e=>obj(e)&&e.type==="LunaSnapshot")){
   const elements=Object.fromEntries(Object.entries(spec.elements).map(([key,e])=>{
    if(!obj(e)||e.type!=="DataView")return [key,e];
    const snapshot=resolveResearchView(e.props,queries,ctx);
-   return [key,{type:"LunaSnapshot",props:{snapshot:snapshot??{type:"rich_presentation",version:1,layout:"stack",panels:[],suggestions:[]}},children:[],...(e.visible!==undefined?{visible:e.visible}:{}),...(e.repeat!==undefined?{repeat:e.repeat}:{})}];
+   return [key,{type:"LunaSnapshot",props:{snapshotJSON:JSON.stringify(snapshot??{type:"rich_presentation",version:1,layout:"stack",panels:[],suggestions:[]})},children:[],...(e.visible!==undefined?{visible:e.visible}:{}),...(e.repeat!==undefined?{repeat:e.repeat}:{})}];
   }));
-  const candidate={root:spec.root,elements,...(spec.state?{state:spec.state}:{})};
+  const candidate:unknown=JSON.parse(JSON.stringify({root:spec.root,elements,...(spec.state?{state:spec.state}:{})}));
   if(validNativeSpec(candidate)){
    const view=recoverRichPresentation({type:"rich_presentation",version:1,layout:"stack",panels:[],suggestions:[],nativeSpec:candidate});if(view)return [view];
   }

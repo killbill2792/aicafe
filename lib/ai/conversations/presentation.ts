@@ -1,8 +1,7 @@
 import {scenarioEditorSchema,evaluateScenarioEditor} from "./scenarioPresentation";
 import { z } from "zod";
-import {nativeSpecSchema} from "./nativePresentation";
+import {nativeSpecSchema,nativeFunctions,readNativeSnapshot} from "./nativePresentation";
 import {resolveElementProps} from "@json-render/core";
-import {nativeFunctions} from "./nativePresentation";
 import {exactDecimal,exactNumber,runCalculation,CALC_OPS,type CalcOp,type CalcShown} from "@/lib/metrics/core/calculator";
 
 /** Versioned, renderer-independent, serializable UI. No client code or action bindings. */
@@ -102,8 +101,7 @@ export function presentationGroupRoots(groups:readonly PresentationGroup[]):numb
  const children=new Set(groups.flatMap(g=>g.items));
  return groups.flatMap((g,i)=>!g.id||!children.has(g.id)?[i]:[]);
 }
-/** Validate topology before recursive rendering. At most six group levels,
- * twelve groups, and each owned data leaf exactly once. */
+/** Validate topology before rendering: each owned data leaf exactly once; acyclic nesting has no fixed depth. */
 export function validPresentationGroups(groups:readonly PresentationGroup[],leaves:readonly string[],panels:PresentationPanel[]):boolean{
  const ids=new Map<string,number>();
  for(let i=0;i<groups.length;i++){const id=groups[i].id;if(id){if(ids.has(id))return false;ids.set(id,i);}}
@@ -182,7 +180,7 @@ export function presentationReport(block:RichPresentation,message:{
   "",texts.filter((t):t is string=>t!==null).join(""),
   ...(notes.length?["","Source cautions",...notes]:[])];
  lines.push(...presentationDataLines(block));
- lines.push("","Export only. Refer to the original conversation for approvals, work status and current evidence.");
+ lines.push("","Export only. Refer to the original conversation for approvals, work status and current information.");
  return lines.join("\n");
 }
 
@@ -225,7 +223,7 @@ export function presentationDataLines(block:RichPresentation):string[]{
  if(block.nativeSpec){
   const spec=block.nativeSpec,pending=[spec.root],seen=new Set<string>();
   while(pending.length){const key=pending.pop()!;if(seen.has(key))continue;seen.add(key);const e=spec.elements[key];if(!e)continue;
-   if(e.type==="LunaSnapshot"){const snapshot=recoverRichPresentation(e.props.snapshot);if(snapshot&&!snapshot.nativeSpec)lines.push(...presentationDataLines(snapshot));}
+   if(e.type==="LunaSnapshot"){const snapshot=recoverRichPresentation(readNativeSnapshot(e.props.snapshotJSON));if(snapshot&&!snapshot.nativeSpec)lines.push(...presentationDataLines(snapshot));}
    else{
     const props=resolveElementProps(e.props,{stateModel:spec.state??{},functions:nativeFunctions});
     for(const name of ["title","text","label","description","message","caption"]){if(typeof props[name]==="string"&&props[name])lines.push(props[name]);}
@@ -237,11 +235,11 @@ export function presentationDataLines(block:RichPresentation):string[]{
   if(!lines.length)lines.push("Interactive view available in the conversation.");
  }
  for(const p of block.panels){
-  lines.push("",p.title,p.sourceDetail??p.source,...(p.coverage?["Coverage: "+p.coverage]:[]),"Period: "+p.from+" – "+p.to+"; snapshot: "+p.asOf,
+  lines.push("",p.title,p.sourceDetail??(p.source==="response_evidence"?"":p.source==="sql_research"?"SQL query":p.source),...(p.coverage&&p.source!=="response_evidence"?["Coverage: "+p.coverage]:[]),"Period: "+p.from+" – "+p.to+"; snapshot: "+p.asOf,
     ...p.points.map(point=>point.label+": "+point.value+" "+(p.measurement??p.unit)+(p.currency?" ("+p.currency+")":"")));
  }
  if(block.tables)for(const t of block.tables){
-  lines.push("",t.title,t.view+(t.coverage==="authored"?"":" · "+t.coverage)+" · "+t.scope,"Period: "+t.from+" – "+t.to+"; snapshot: "+t.asOf,
+  lines.push("",t.title,[t.view==="tool_response_evidence"?"":t.view==="tool_sql_research"?"SQL query":t.view,t.coverage==="authored"||t.view==="tool_response_evidence"?"":t.coverage,t.scope].filter(Boolean).join(" · "),"Period: "+t.from+" – "+t.to+"; snapshot: "+t.asOf,
    t.columns.map(c=>c.label+" ("+c.unit+")").join(" | "),...t.rows.map(row=>row.map(v=>v===null?"Not recorded":String(v)).join(" | ")));
  }
  if(block.calculator){
