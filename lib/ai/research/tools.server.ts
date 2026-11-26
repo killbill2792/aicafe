@@ -10,7 +10,7 @@ import {CALC_OPS,exactDecimal,runCalculation,type CalcOp,type CalcUnit,type Calc
 export type ResearchScope={db:SupabaseClient;businessId:string;ownerUserId:string;
   signal?:AbortSignal;
   /** The existing owner-permissioned public web search (one path); absent when unavailable. */
-  webSearch?:(query:string)=>Promise<unknown>;
+  webSearch?:(query:string,signal?:AbortSignal)=>Promise<unknown>;
   /** Text read from the café's private data this turn; a public query may not contain it. */
   privateValues?:Set<string>;
   /** Café notes (what Supervisor has learned about this café), saved with the owner's own session. */
@@ -191,7 +191,7 @@ export async function executeResearchTool(scope:ResearchScope,name:string,rawArg
       if(!scope.webSearch||typeof args.query!=="string")return {ok:false,error:"web search is not available"};
       const leaked=privateTextIn(scope,args.query);
       if(leaked)return {ok:false,error:"The query contains text from your private café data (\""+leaked+"\"). Public searches must not include it; rewrite the query without it."};
-      return {ok:true,result:await scope.webSearch(args.query)};
+      return {ok:true,result:await scope.webSearch(args.query,scope.signal)};
     }
     if(name==="remember_cafe_note"||name==="forget_cafe_note"){
       if(!scope.notes)return {ok:false,error:"café notes are not available"};
