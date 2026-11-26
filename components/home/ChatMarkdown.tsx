@@ -6,6 +6,7 @@ import { useEffect, useReducer, useRef, useState, type ReactNode, type Ref } fro
 import {Streamdown,defaultRehypePlugins,type Components,type ExtraProps} from "streamdown";
 import type {Root,Element,Text} from "hast";
 import {decodeString} from "micromark-util-decode-string";
+import {wideResponseTableClass,wideResponseCellClass,wideResponseLabelClass} from "./responseTableLayout";
 import { createPortal } from "react-dom";
 
 type Verification = { start:number;end:number;source?:"owner"|"estimate"|"unchecked";detail?:string };
@@ -191,10 +192,23 @@ function sourceAnnotationPlugin(options:MarkOptions){
    // source range and downgrade ambiguous provenance to unchecked.
    return {range:()=>({start,end}),uncertain:true};
   };
+  // The established Markdown AST already contains the actual cells and
+  // header text. Attach display labels to those nodes, not a second table.
+  const elements=(n:Element,tag:string)=>n.children.filter((c):c is Element=>c.type==="element"&&c.tagName===tag);
+  const plain=(n:Element):string=>n.children.map(c=>c.type==="text"?c.value:c.type==="element"?plain(c):"").join("");
+  const labelWideTable=(table:Element)=>{
+   const head=elements(table,"thead")[0],row=head&&elements(head,"tr")[0];
+   const labels=row?elements(row,"th").map(plain):[];
+   if(labels.length<=4)return;
+   for(const body of elements(table,"tbody"))for(const tr of elements(body,"tr")){
+    elements(tr,"td").forEach((td,i)=>{td.properties.dataCafeColumn=labels[i]??"";});
+   }
+  };
   const walk=(parent:Root|Element,ordered=false)=>{
    for(let i=0;i<parent.children.length;i++){
     const node=parent.children[i];
     if(node.type==="element"){
+     if(node.tagName==="table")labelWideTable(node);
      // Preserve explicit numbering for numbered owner instructions, including
      // a non-one start, using the parser's list-item source position.
      if(ordered&&node.tagName==="li"){
@@ -236,7 +250,7 @@ function ResponseTable({children,node}:React.ComponentProps<"table">&ExtraProps)
  const columns=row?.children.filter((child):child is Element=>child.type==="element"&&child.tagName==="th")??[];
  const wide=columns.length>4;
  return <div role="region" aria-label="Response table" tabIndex={0} className="min-w-0 max-w-full overflow-x-auto rounded-lg border border-line focus-visible:outline focus-visible:outline-2 focus-visible:outline-ink">
-  <table className="w-full table-fixed border-collapse text-[0.9375rem] sm:text-[1.0625rem]" style={wide?{minWidth:columns.length*90}:undefined}>
+  <table role="table" className={"w-full table-fixed border-collapse text-[0.9375rem] sm:text-[1.0625rem] "+(wide?wideResponseTableClass:"")}>
    <caption className="sr-only">Response table</caption>
    <colgroup>{columns.map((c,i)=><col key={i} style={columns.length<=3&&c.properties.align==="right"?{width:"35%"}:undefined}/>)}</colgroup>
    {children}
@@ -246,7 +260,13 @@ function ResponseTable({children,node}:React.ComponentProps<"table">&ExtraProps)
 const components:Components={
  table:ResponseTable,
  th:({children,align,style,node})=><th scope="col" className={cellClass+" bg-surface2 font-semibold "+alignment(align??node?.properties.align??style?.textAlign)}>{children}</th>,
- td:({children,align,style,node})=><td className={cellClass+" "+alignment(align??node?.properties.align??style?.textAlign)}>{children}</td>,
+ td:({children,align,style,node})=>{
+  const label=node?.properties.dataCafeColumn;
+  const wide=typeof label==="string";
+  return <td role="cell" className={cellClass+" "+alignment(align??node?.properties.align??style?.textAlign)+(wide?" "+wideResponseCellClass:"")}>
+   {wide&&<span aria-hidden="true" className={wideResponseLabelClass}>{label}</span>}{wide?<div className="min-w-0 [overflow-wrap:anywhere]">{children}</div>:children}
+  </td>;
+ },
  h1:({children})=><h2 className={headingClass+" text-xl"}>{children}</h2>,
  h2:({children})=><h3 className={headingClass+" text-[1.1875rem]"}>{children}</h3>,
  h3:({children})=><h4 className={headingClass+" text-[1.0625rem]"}>{children}</h4>,

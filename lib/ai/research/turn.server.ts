@@ -4,22 +4,13 @@ import {currentWorkerBudget,usageStopReason,reserveDurableProviderRequest,curren
 import {openAIProvider,type AgentProvider,type AgentTurn,type AgentAuditStep,type EndReason} from "@/lib/ai/agent/loop.server";
 import {executeAgentTool,isRepeatSafeOwnerTool,observeDurableToolEffect,type AgentToolContext,type AgentToolResult} from "@/lib/ai/agent/tools";
 import {safeToolError} from "@/lib/ai/agent/toolErrors";
-import type {OwnerRunCheckpoint} from "@/lib/ai/supervisor/runs/contracts";
+import type {OwnerRunCheckpoint,MatchedOwnerAnswer} from "@/lib/ai/supervisor/runs/contracts";
+import {executionPolicy,requestOutputCap} from "@/lib/ai/agent/executionPolicy";
 import {unsupportedNumbers} from "./verify";
-import {resolveResearchSpec,SQL_PRESENTATION_HINT} from "./presentation";
+import {resolveResearchSpec,INLINE_PRESENTATION_HINT,type PresentationEvidence,type PresentationContext} from "./presentation";
 import {researchInlineEvents} from "./inlineStream";
 import type {RichPresentation} from "@/lib/ai/conversations/presentation";
 import {executeResearchTool,researchToolDefinitions,type ResearchScope} from "./tools.server";
-
-/** Server switch, default OFF. When ON, owner chat uses ONLY describe_database, run_sql and calculate. */
-export function sqlResearchEnabled():boolean{
-  if(process.env.SUPERVISOR_SQL_RESEARCH==="on")return true;
-  // Owner-approved shared Luna sql-research scenarios on the disposable localhost stack only.
-  return process.env.AI_CAFE_LIVE_ACCEPTANCE==="OWNER_APPROVED_LOCAL_ONLY"&&
-    process.env.NEXT_PUBLIC_SUPABASE_URL==="http://127.0.0.1:54321"&&
-    !process.env.VERCEL_ENV&&
-    /^sql-research-[a-z0-9-]+$/u.test(process.env.AICAFE_SHARED_LUNA_SCENARIO??"");
-}
 
 /** What Supervisor is and can reach; how to investigate is the model's own decision. */
 export const RESEARCH_INSTRUCTIONS=
@@ -58,6 +49,7 @@ function outputCap(final:boolean):number|undefined{
 
 export async function runResearchTurn(args:{
   ownerText:string;
+  matchedOwnerAnswers?:readonly MatchedOwnerAnswer[];
   ownerImages?:readonly {mimeType:string;base64:string}[];
   ownerPdfs?:readonly {filename:string;base64:string}[];
   ownerEvidence?:readonly string[];
@@ -67,6 +59,8 @@ export async function runResearchTurn(args:{
   webSearch?:(query:string)=>Promise<unknown>;
   /** The existing registered action tools (approval cards, Gmail, routines), run through the one existing executor. */
   actions?:{definitions:readonly {name:string}[];context:AgentToolContext};
+  /** Presentation identity is independent of what data/action tools are enabled. */
+  presentationContext?:PresentationContext;
   /** Luna's own summary of its thinking, streamed as it works (the part so far). */
   onThinking?:(text:string)=>void;
   /** Authenticated café facts: name, currency, time zone, local date. */
@@ -92,10 +86,21 @@ export async function runResearchTurn(args:{
   // context, then history and the question; every later item is appended, never edited or shortened.
   // The owner-approved local acceptance broker only accepts top-level instructions and no reasoning replay.
   const broker=process.env.AI_CAFE_LIVE_ACCEPTANCE==="OWNER_APPROVED_LOCAL_ONLY"&&process.env.AICAFE_SHARED_LUNA_CANDIDATE==="1";
-  const instructions=RESEARCH_INSTRUCTIONS+(args.actions?" "+SQL_PRESENTATION_HINT:"");
+  const instructions=RESEARCH_INSTRUCTIONS+" "+INLINE_PRESENTATION_HINT;
+  const presentationContext=args.presentationContext??args.actions?.context;
+  const presentationDiagnostics={requestedSections:0,decodedSections:0,decodedPatches:0,rejectedSections:0,acceptedViews:0,rolledBackViews:0};
+  // References are ephemeral and point only to the evidence already admitted to this turn.
+  // They are not database identifiers, and the text itself is not duplicated on the wire.
+  const queries=new Map<string,PresentationEvidence>();
+  const addText=(ref:string,text:string,source:string,coverage?:"partial")=>queries.set(ref,{data:{},text,source,coverage});
+  addText("owner",[args.ownerText,...(args.matchedOwnerAnswers??[]).map(a=>a.answer)].join("\n"),"Owner supplied; not verified against business records");
+  addText("context",args.cafeContext,"Café context; verify current business facts","partial");
+  (args.history??[]).forEach((h,i)=>addText("history"+(i+1),h.content,h.role==="user"?"Earlier owner message; historical context":"Earlier Supervisor message; not independently verified current evidence","partial"));
+  (args.ownerEvidence??[]).forEach((e,i)=>addText("attachment"+(i+1),e,"Owner-provided attachment evidence","partial"));
+  const textRefs="Presentation text references: owner=current owner message and verified matched owner answers; context=admitted café context; historyN=Nth chronological message in the history below (starting at 1); attachmentN=Nth text evidence attachment below. These references do not imply current business verification.";
   const input:unknown[]=[
     ...(broker?[]:[{role:"developer",content:instructions}]),
-    {role:"developer",content:args.cafeContext},
+    {role:"developer",content:args.cafeContext+"\n"+textRefs},
     ...(continuation?[{role:"developer",content:continuation}]:[]),
     ...(args.history??[]),
     {role:"user",content:hasFiles?[
@@ -105,12 +110,16 @@ export async function runResearchTurn(args:{
       ...(args.ownerPdfs??[]).map(pdf=>({type:"input_file",filename:pdf.filename,file_data:"data:application/pdf;base64,"+pdf.base64})),
     ]:args.ownerText},
   ];
+  for(const pair of args.matchedOwnerAnswers??[]){input.push({role:"assistant",content:pair.question},{role:"user",content:pair.answer});}
   const usage:AgentTurn["usage"]={modelCalls:0,toolCalls:0,inputTokens:0,cachedTokens:0,outputTokens:0,latencyMs:0};
   const invocations:{name:string;result:AgentToolResult}[]=[];
   const privateValues=new Set<string>();
   /** Everything retrieved or calculated this turn; the answer's figures are checked against it. */
   const evidence:string[]=[];
-  const queries=new Map<string,Record<string,unknown>>();
+  let nextResultRef=0;
+  const admit=(source:string,data:Record<string,unknown>,coverage?:"partial"|"estimate",kind?:PresentationEvidence["kind"])=>{
+    const ref="q"+(++nextResultRef);queries.set(ref,{source,data,coverage,kind});return ref;
+  };
   const presentations:AgentToolResult[]=[];
   let text="",endReason:EndReason="complete";
   const appendText=(part:string,continuing=false)=>{
@@ -119,25 +128,38 @@ export async function runResearchTurn(args:{
     const delta=separator+part;
     text+=delta;args.onDelta?.(delta);
   };
-  // Only an existing durable background run's own budget can end research early.
-  const stop=()=>{
-    const budget=currentWorkerBudget();
-    return budget?usageStopReason({elapsedMs:0,modelCalls:usage.modelCalls,
-      toolCalls:usage.toolCalls,inputTokens:usage.inputTokens,outputTokens:usage.outputTokens},budget):null;
+  // Use the existing shared bounded execution policy, reserving a final
+  // synthesis request and enough time to persist the reply.
+  const worker=currentWorkerBudget(),policy=executionPolicy(model,worker,broker);
+  const deadline=started+policy.elapsedMs,workDeadline=deadline-policy.finalTimeReserve;
+  let unknownOutput=0,finalAttempted=false;
+  const spent=()=>usage.outputTokens+unknownOutput;
+  const cap=(final:boolean)=>requestOutputCap(policy,spent(),final,outputCap(final)??Infinity);
+  const stop=(final=false):"timeout"|"budget"|null=>{
+    if(now()>=(final?deadline:workDeadline))return "timeout";
+    const remaining=currentWorkerBudget();
+    if(remaining&&usageStopReason({elapsedMs:0,modelCalls:usage.modelCalls,
+      toolCalls:final?0:usage.toolCalls,inputTokens:usage.inputTokens,outputTokens:spent()},remaining))return "budget";
+    if(!final&&(usage.modelCalls>=policy.maxWorkCalls||usage.toolCalls>=policy.maxToolCalls))return "budget";
+    if(final&&finalAttempted)return "budget";
+    return cap(final)<=0?"budget":null;
   };
 
   /** One Responses request through the same transport and paid-usage ledger as the legacy loop. */
   const call=async(final:boolean):Promise<{calls:FunctionCall[]}>=>{
     await args.beforeProviderRequest?.();
+    const limit=cap(final);
+    if(stop(final))throw Error("research_budget");
+    if(final)finalAttempted=true;
     const params:Record<string,unknown>={model,...(broker?{instructions}:
         {...(/^gpt-6/u.test(model)?{include:["reasoning.encrypted_content"],reasoning:{summary:"auto"}}:{}),prompt_cache_key:"supervisor-sql-research-v1"}),
       tools:[...researchToolDefinitions.filter(t=>(t.name!=="search_web"||args.webSearch)&&(!/_cafe_note$/u.test(t.name)||args.scope.notes)),...(args.actions?.definitions??[])],tool_choice:final?"none":"auto",stream:true,store:false,
-      ...(outputCap(final)?{max_output_tokens:outputCap(final)}:{}),input};
+      max_output_tokens:limit,input};
     const startedCall=now();
     const checkpoint=args.checkpoint;
     if(checkpoint)await checkpoint.beginProvider();
     const callTextStart=text.length,callPresentationStart=presentations.length;
-    let completed=false,answer="",thinking="",startedText=false;
+    let completed=false,answer="",thinking="",startedText=false,reportedOutput=false,launched=false;
     let patches:unknown[]=[],pendingProse="";
     const flushProse=async(force=false)=>{
       const boundary=force?pendingProse.length:pendingProse.lastIndexOf("\n\n")+2;
@@ -149,7 +171,11 @@ export async function runResearchTurn(args:{
     const flushViews=async()=>{
       if(!patches.length)return;
       await args.beforeAcceptResult?.();
-      const views=resolveResearchSpec(patches,queries,args.actions?.context);patches=[];
+      presentationDiagnostics.decodedSections++;
+      presentationDiagnostics.decodedPatches+=patches.length;
+      const views=resolveResearchSpec(patches,queries,presentationContext);patches=[];
+      if(!views.length)presentationDiagnostics.rejectedSections++;
+      presentationDiagnostics.acceptedViews+=views.length;
       for(const presentation of views){
         presentations.push({source:"response_presentation",period:null,missing:[],accepted:true,presentation,presentationOffset:text.length});
         args.onPresentation?.(text.length,presentation);
@@ -158,12 +184,13 @@ export async function runResearchTurn(args:{
     const output:unknown[]=[],calls:FunctionCall[]=[];
     try{
       const reservation=await reserveDurableProviderRequest(params);
-      reservation?.launched();usage.modelCalls++;
+      reservation?.launched();usage.modelCalls++;launched=true;
       const controller=new AbortController();
-      const remaining=currentWorkerBudget()?.maxElapsedMs;
-      const timer=remaining===undefined?undefined:setTimeout(()=>controller.abort(),remaining);
+      const remaining=Math.max(0,Math.min((final?deadline:workDeadline)-now(),currentWorkerBudget()?.maxElapsedMs??Infinity));
+      const timer=setTimeout(()=>controller.abort(),remaining);
       try{
         for await(const event of researchInlineEvents(provider(params,controller.signal) as AsyncIterable<Event>)){
+          if(controller.signal.aborted||now()>=(final?deadline:workDeadline))throw Error("research_timeout");
           if(event.type==="raw-delta"&&typeof event.delta==="string")answer+=event.delta;
           if(event.type==="inline-patch"){
             await flushProse(true);
@@ -187,10 +214,12 @@ export async function runResearchTurn(args:{
           }
           if(event.type==="response.completed"){
             await flushProse(true);await flushViews();
+            presentationDiagnostics.requestedSections+=answer.split(String.fromCharCode(96).repeat(3)+"spec").length-1;
             const response=(event.response??{}) as {model?:unknown;usage?:{input_tokens?:unknown;output_tokens?:unknown;input_tokens_details?:{cached_tokens?:unknown}}};
             if(reservation)await reservation.complete(response as never);
             const n=(x:unknown)=>typeof x==="number"&&Number.isSafeInteger(x)&&x>=0?x:0;
             usage.inputTokens+=n(response.usage?.input_tokens);
+            reportedOutput=typeof response.usage?.output_tokens==="number"&&Number.isSafeInteger(response.usage.output_tokens)&&response.usage.output_tokens>=0;
             usage.outputTokens+=n(response.usage?.output_tokens);
             usage.cachedTokens+=n(response.usage?.input_tokens_details?.cached_tokens);
             if(typeof response.model==="string")usage.model=response.model;
@@ -199,7 +228,7 @@ export async function runResearchTurn(args:{
           if(event.type==="response.failed"||event.type==="response.incomplete"||event.type==="error")
             throw new Error("provider_error");
         }
-      }finally{if(timer!==undefined)clearTimeout(timer);}
+      }finally{clearTimeout(timer);}
       if(!completed)throw new Error("provider_error");
       await args.beforeAcceptResult?.();
       if(checkpoint)await checkpoint.endProvider(true);
@@ -209,11 +238,13 @@ export async function runResearchTurn(args:{
       const discardChars=text.length-callTextStart,discardPresentations=presentations.length-callPresentationStart;
       if(discardChars>0||discardPresentations>0){
         text=text.slice(0,callTextStart);presentations.length=callPresentationStart;
+        presentationDiagnostics.rolledBackViews+=discardPresentations;
         args.onReset?.(discardChars,discardPresentations);
       }
       if(checkpoint)await checkpoint.endProvider(false).catch(()=>undefined);
       throw error;
     }finally{
+      if(launched&&!reportedOutput)unknownOutput+=limit;
       audit({kind:"model_call",inputSummary:final?"Final answer":"Research step",outputSummary:completed?"Completed":"Incomplete",
         durationMs:Math.max(0,now()-startedCall)});
     }
@@ -253,16 +284,20 @@ export async function runResearchTurn(args:{
   };
 
   try{
-    research:for(;;){
+    for(;;){
       const reason=stop();
-      if(reason==="timeout"){endReason=reason;break;}
-      const {calls}=await call(reason!==null);
-      if(!calls.length||reason!==null){
-        if(reason)endReason=reason;
+      if(reason){
+        endReason=reason;
+        if(!stop(true))await call(true);
         break;
       }
+      const {calls}=await call(false);
+      if(!calls.length)break;
       for(const fc of calls){
-        if(stop()==="timeout"){endReason="timeout";break research;}
+        if(stop()){
+          input.push({type:"function_call_output",call_id:fc.call_id,output:JSON.stringify({ok:false,error:"research budget; synthesize from available evidence"})});
+          continue;
+        }
         args.onTool?.(fc.name,"alex");
         const toolStarted=now();
         usage.toolCalls++;
@@ -271,14 +306,16 @@ export async function runResearchTurn(args:{
           record=await runAction(fc);
           evidence.push(JSON.stringify(record));
           failed=Boolean(record.error);
-          input.push({type:"function_call_output",call_id:fc.call_id,output:JSON.stringify(record)});
+          const ref=!failed?admit("Registered tool result: "+fc.name+"; not independent proof of an effect",record,record.missing.length?"partial":undefined):null;
+          input.push({type:"function_call_output",call_id:fc.call_id,output:JSON.stringify(ref?{...record,presentationRef:ref}:record)});
         }else{
           const readOnly=["run_sql","describe_database","calculate","search_web"].includes(fc.name);
           if(readOnly&&args.checkpoint)await args.checkpoint.beginTool(fc.name,fc.arguments,true);
           const result=await executeResearchTool({...args.scope,webSearch:args.webSearch??args.scope.webSearch,privateValues},fc.name,fc.arguments);
           await args.beforeAcceptResult?.();
-          const ref=["run_sql","calculate"].includes(fc.name)&&result.ok===true?"q"+(queries.size+1):null;
-          if(ref)queries.set(ref,fc.name==="calculate"?{...result,calculationInput:JSON.parse(fc.arguments)}:result);
+          const ref=result.ok===true?admit(fc.name==="run_sql"?"Returned SQL evidence; see answer for coverage":fc.name==="calculate"?"Exact calculator result; depends on supplied inputs":"Tool result: "+fc.name,
+            fc.name==="calculate"?{...result,calculationInput:JSON.parse(fc.arguments)}:result,
+            fc.name==="run_sql"?undefined:"partial",fc.name==="run_sql"?"sql":fc.name==="calculate"?"calculator":undefined):null;
           input.push({type:"function_call_output",call_id:fc.call_id,output:JSON.stringify(ref?{...result,presentationRef:ref}:result)});
           failed=result.ok===false;
           if(!failed)evidence.push(JSON.stringify(result));
@@ -296,7 +333,7 @@ export async function runResearchTurn(args:{
     if(error instanceof Error&&/durable|checkpoint|reservation/u.test(error.message))throw error;
     endReason=stop()==="timeout"?"timeout":"provider_error";
     // Never leave the owner with nothing after real research: answer from the evidence gathered so far.
-    if(invocations.length&&!args.checkpoint){
+    if((invocations.length||endReason==="timeout")&&!args.checkpoint&&!stop(true)){
       try{
         input.push({role:"developer",content:"A research step failed. Answer the owner now with what you found, and say what is still unknown."});
         await call(true);
@@ -307,7 +344,7 @@ export async function runResearchTurn(args:{
   const tools=[...new Set(invocations.map(i=>i.name))];
   return {text,endReason,status:{status:"complete",missing:[]},
     // Same promise as the standard path: a figure with no source in this turn's evidence is shown as unverified.
-    unverified:text?unsupportedNumbers(text,[args.ownerText,args.cafeContext,...(args.history??[]).map(h=>h.content),...evidence]):[],
+    unverified:text?unsupportedNumbers(text,[args.ownerText,...(args.matchedOwnerAnswers??[]).map(a=>a.answer),args.cafeContext,...(args.history??[]).map(h=>h.content),...evidence]):[],
     results:[...(await args.checkpoint?.restoredResults?.()??[]),...invocations.map(i=>i.result),...presentations],toolInvocations:invocations,tools,
-    agentIds:tools.length?["alex"]:[],usage};
+    agentIds:tools.length?["alex"]:[],usage,presentationDiagnostics};
 }

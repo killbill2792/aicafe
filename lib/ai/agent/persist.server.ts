@@ -149,6 +149,10 @@ export function agentReplyPayload(turn: AgentTurn) {
     if(result.source!=="response_presentation"||result.accepted!==true)return;
     const presentation=richPresentationSchema.safeParse(result.presentation);
     if(!presentation.success)return;
+    // Inline receipts have already bound each value to independently admitted
+    // evidence. An unrelated failed read must not erase owner-supplied or other
+    // valid evidence; the source and coverage labels remain authoritative.
+    if(typeof result.presentationOffset==="number")return presentation.data;
     const {agenda,scenario,tables,calculator,groups,...rest}=presentation.data;
     const partialTables=tables?.filter(t=>t.coverage==="partial");
     const safe=status==="unavailable"?{...rest,panels:rest.panels.filter(p=>p.coverage==="partial"),...(agenda?.coverage==="partial"?{agenda}:{}),...(partialTables?.length?{tables:partialTables}:{})}:
@@ -210,6 +214,7 @@ export function agentReplyPayload(turn: AgentTurn) {
     unverified, endReason: turn.endReason, evidence:turn.evidence??[],explain:safeExplain,agentIds:turn.agentIds??[],
     sources: turn.results.map(r => ({ source:r.source, period:r.period, missing:r.missing })),
     ...(typeof turn.externalEvidence==="boolean"?{externalEvidence:turn.externalEvidence}:{}),
+    ...(turn.presentationDiagnostics?{presentationDiagnostics:{...turn.presentationDiagnostics,persistedViews:reply.blocks.filter(b=>b.type==="rich_presentation").length}}:{}),
     usage: { modelCalls:turn.usage.modelCalls,toolCalls:turn.usage.toolCalls,inputTokens:turn.usage.inputTokens,cachedTokens:turn.usage.cachedTokens,outputTokens:turn.usage.outputTokens,latencyMs:turn.usage.latencyMs,model:turn.usage.model },
     // Owner messages answered inside this reply (mid-run follow-ups).
     ...(turn.absorbedOwnerMessageIds?.length?{absorbedOwnerMessageIds:[...turn.absorbedOwnerMessageIds]}:{}),

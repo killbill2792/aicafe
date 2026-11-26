@@ -70,6 +70,18 @@ vi.mock("@/lib/ai/agent/loop.server", () => ({
       usage:{modelCalls:1,toolCalls:1,inputTokens:12,cachedTokens:4,outputTokens:8,latencyMs:15} };
   },
 }));
+// Owner chat now runs the SQL research turn; these route tests exercise the same fake model loop through it.
+vi.mock("@/lib/ai/research/turn.server", async () => {
+  const { runAgentTurn } = await import("@/lib/ai/agent/loop.server");
+  return { runResearchTurn: runAgentTurn, isResearchActionTool: () => false };
+});
+vi.mock("@/lib/supabase/admin", () => ({ createAdminSupabaseClient: () => ({}) }));
+vi.mock("@/lib/supabase/server", () => ({ createServerSupabaseClient: async () => ({}) }));
+vi.mock("@/lib/ai/research/notes.server", () => ({
+  cafeNotesContext: async () => "Café notes and saved facts: none yet.",
+  cafeNotesPort: () => ({ save: async () => undefined, forget: async () => false }),
+  readCafeNotes: async () => ({ notes: [], error: false }),
+}));
 vi.mock("@/lib/ai/agent/persist.server", () => {
   class AgentReplyStorageError extends Error {}
   return {
