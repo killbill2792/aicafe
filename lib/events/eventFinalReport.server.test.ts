@@ -209,3 +209,14 @@ describe("event morning-after narrative",()=>{
   });
 
 });
+
+ it("preserves a visual-only estimate and reloads the same saved view",async()=>{
+  const visual={type:"rich_presentation",version:1,layout:"stack",suggestions:[],panels:[{kind:"bar",title:"Estimated sales $125",unit:"cents",currency:"USD",source:"response_evidence",from:"2026-11-25",to:"2026-11-25",asOf:"2026-11-25",coverage:"estimate",points:[{label:"Forecast",value:12500}]}]};
+  vi.mocked(runEventResearch).mockResolvedValueOnce({text:"",endReason:"complete",results:[{source:"response_presentation",accepted:true,presentation:visual}]} as unknown as Awaited<ReturnType<typeof runEventResearch>>);
+  const first=await eventFinalNarrative(scope,"44444444-4444-4444-8444-444444444444",["Halloween"],"Ready for the holiday",result,"insufficient_evidence");
+  expect(first?.presentations).toEqual([visual]);
+  expect(first?.text).toContain("Estimated sales $125");
+  saved={reportFactsHash:first!.hash,reportText:first!.text,reportTextOrigin:"model",reportPresentations:first!.presentations};
+  expect(await eventFinalNarrative(scope,"44444444-4444-4444-8444-444444444444",["Halloween"],"Ready for the holiday",result,"insufficient_evidence")).toEqual(first);
+  expect(runEventResearch).toHaveBeenCalledTimes(1);
+ });

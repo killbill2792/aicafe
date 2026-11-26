@@ -171,6 +171,18 @@ describe("cached Events final report formatting and delivery retry",()=>{
     expect(state.messages.size).toBe(1);
     expect(state.writes.filter(x=>x.table==="ai_messages")).toHaveLength(1);
   });
+  it("delivers long model prose and rich data through the original owner thread",async()=>{
+    const text="This is an estimated amount. ".repeat(100);
+    const visual={type:"rich_presentation",version:1,layout:"stack",suggestions:[],panels:[{kind:"bar",title:"Estimated sales $125",unit:"cents",currency:"USD",source:"response_evidence",from:"2026-11-25",to:"2026-11-25",asOf:"2026-11-25",coverage:"estimate",points:[{label:"Forecast",value:12500}]}]} as NonNullable<LoopReport["delivery"]>["threadPresentations"] extends readonly (infer T)[] ? T : never;
+    const next=report({...result(),reportText:text});
+    next.delivery={...next.delivery!,modelAuthored:true,threadPresentations:[visual]};
+    await new SupabaseLoopRepository().saveReport(scope,proposal,next);
+    const message=[...state.messages.values()][0];
+    const blocks=message.structured_content as Array<{type:string;text?:string}>;
+    expect(blocks.filter(b=>b.type==="text").map(b=>b.text).join("")).toBe(text);
+    expect(blocks.at(-1)).toEqual(visual);
+    expect(message.grounding).toMatchObject({status:"answered"});
+  });
   it("retries a failed chat insert after a successful inbox write without duplicates",async()=>{
     previous();state.failOnce="message";
     await expect(save()).rejects.toThrow("Supervisor thread report unavailable");

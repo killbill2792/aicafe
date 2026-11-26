@@ -242,6 +242,8 @@ export function presentationDataLines(block:RichPresentation):string[]{
    ...s.cases.map(c=>c.assumption+": "+c.beforeCents+" → "+c.afterCents+" cents ("+s.currency+")"));
  }
  if(block.files?.length)lines.push("","Source attachments are available through the original authenticated conversation.");
+ if(block.suggestions.length)lines.push("",...block.suggestions);
+ if(block.report&&!lines.length)lines.push("Report available in the original conversation.");
  return lines;
 }
 export function backgroundReportPresentations(turn:{results?:readonly {source:string;accepted?:unknown;presentation?:unknown}[]}):RichPresentation[]{

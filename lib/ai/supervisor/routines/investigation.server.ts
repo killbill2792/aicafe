@@ -5,7 +5,7 @@ import {assertCafeAiAccess} from "@/lib/access/access.server";
 import {createOwnerScopedCafeTools,readSupervisorCafeIdentity} from "@/lib/ai/cafeTools.server";
 import {openAIProvider,type AgentProvider} from "@/lib/ai/agent/loop.server";
 import {backgroundReportPresentations} from "@/lib/ai/conversations/presentation";
-import {splitAgentText} from "@/lib/ai/agent/persist.server";
+import {splitAgentText} from "@/lib/ai/agent/splitText";
 import {runResearchTurn} from "@/lib/ai/research/turn.server";
 import {agentToolDefinitions} from "@/lib/ai/agent/tools";
 import {assertDurablePaidTurnAllowed} from "@/lib/ai/supervisor/runs/worker.server";

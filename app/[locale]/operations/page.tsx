@@ -307,6 +307,7 @@ function TaskCard({ row: task, names, t, tExperiment, tBrief, tGoals, category, 
     <div className="flex items-center gap-2"><AgentAvatar agentId={task.agentId} size="task"/><p className={`font-bold ${visual.accent}`}>{names[task.agentId]} · AI</p>{task.payload.pricingIsEstimate === true && <span className="ms-auto"><EstimatePill label={t("estimate")} /></span>}</div>
     <h2 className="mt-3 text-lg font-bold text-ink" dir="auto">{copy.title}</h2>
     {copy.detail && <p className="mt-1 whitespace-pre-wrap text-[1.0625rem] font-semibold text-ink" dir="auto">{copy.detail}</p>}
+    {task.kind==="u4_report"&&u4Report?.presentations.map((block,index)=><SupervisorRichPresentation key={index} block={block} locale={meta.locale} disabled />)}
     <MetaLine t={t} meta={meta} subjectDate={subjectDate} createdAt={task.createdAt} status={task.status}
       expiredReason={task.payload.expiredReason} keyNumber={experiment ? null : taskKeyNumber(task, t, meta)} />
     {experiment&&<div className="mt-3 space-y-2 text-[1.0625rem]">

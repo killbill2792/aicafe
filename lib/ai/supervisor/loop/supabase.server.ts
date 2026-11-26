@@ -2,7 +2,7 @@ import {createHash} from "node:crypto";
 import "server-only";
 import {cafeToday} from "@/lib/metrics/core/clock";
 import {createAdminSupabaseClient} from "@/lib/supabase/admin";
-import {splitAgentText} from "@/lib/ai/agent/persist.server";
+import {splitAgentText} from "@/lib/ai/agent/splitText";
 import {recoverRichPresentation} from "@/lib/ai/conversations/presentation";
 import {notifyOwner} from "@/lib/operating/notifyOwner.server";
 import {z} from "zod";
