@@ -92,6 +92,19 @@ describe.skipIf(!enabled)("direct SQL research on the migrated database",()=>{
   });
 
 
+  it("reads the same canonical running cost rows as the screen, with same-owner cafe isolation",async()=>{
+    for(const [cafe,cents] of [[cafeA,1500],[cafeB,4200]] as const)
+      await admin.query("insert into public.recurring_costs(business_id,category_code,label,amount_cents,frequency,active_from) values($1,'rent','Parity rent',$2,'monthly',current_date-30)",[cafe,cents]);
+    try{
+      const screen=await admin.query("select business_id,amount_cents::int as amount from public.cv_running_cost_months where business_id=$1 and category_code='rent' and business_date=date_trunc('month',now() at time zone 'Europe/Madrid')::date",[cafeA]);
+      const result=await sql(scope(cafeA),"select business_id,amount_cents::int as amount from cv_running_cost_months where category_code='rent' and business_date=date_trunc('month',now() at time zone 'Europe/Madrid')::date");
+      expect(screen.rows).toEqual([{business_id:cafeA,amount:1500}]);
+      expect(result).toMatchObject({ok:true,rows:screen.rows});
+    }finally{
+      await admin.query("delete from public.recurring_costs where business_id=any($1)",[[cafeA,cafeB]]);
+    }
+  });
+
   it("never returns diagnostic sources: hidden from discovery and refused by the SQL executor",async()=>{
     const all=await executeResearchTool(scope(cafeA),"describe_database",JSON.stringify({tables:null}));
     const names=(all.rows as {name:string}[]).map(r=>r.name);

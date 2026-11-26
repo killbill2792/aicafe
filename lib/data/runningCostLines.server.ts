@@ -26,5 +26,8 @@ export async function readRunningCostLines(db:SupabaseClient,businessId:string,m
   ids.add(row.categoryCode);
  }
  if(RUNNING_COST_CODES.some(code=>!ids.has(code)))throw Error("running_cost_source_incomplete");
- return rows;
+ return rows.sort((a,b)=>{
+  const rank=(code:string)=>RUNNING_COST_CODES.includes(code as RunningCostLine["categoryCode"])?RUNNING_COST_CODES.indexOf(code as RunningCostLine["categoryCode"]):RUNNING_COST_CODES.length;
+  return rank(a.categoryCode)-rank(b.categoryCode)||a.categoryCode.localeCompare(b.categoryCode);
+ });
 }
