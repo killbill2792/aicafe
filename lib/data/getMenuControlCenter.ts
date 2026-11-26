@@ -1,6 +1,6 @@
 import "server-only";
 import type {SupabaseClient} from "@supabase/supabase-js";
-import { readDailyFactRows } from "./dailyFacts.server";
+import { readCoveredSalesDates } from "./dailyFacts.server";
 import { isSupabaseConfigured } from "@/lib/supabase/client";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
 import { getActiveBusinessId } from "./getActiveBusinessId";
@@ -60,6 +60,26 @@ const EMPTY_EVIDENCE: MenuPricingEvidence = {
   salesResponse: { status: "no_change_history" },
   nearbyMarket: { status: "unavailable", verifiedNearbyCount: 0, minimumCompetitors: 3 },
 };
+
+type ItemSalesRow = { menu_item_id: string; business_date: string; net_sales_cents: number; quantity: number };
+
+/** Read all actual canonical item rows, excluding review-only staging entries. */
+async function readItemSalesEvidence(db: SupabaseClient, businessId: string, itemIds: string[], from: string, to: string) {
+  const rows: ItemSalesRow[] = [];
+  const pageSize = 1000;
+  for (let offset = 0;; offset += pageSize) {
+    const { data, error } = await db.from("cv_item_sales")
+      .select("menu_item_id:data->>menu_item_id,business_date,net_sales_cents,quantity")
+      .eq("business_id", businessId).eq("status", "actual")
+      .in("data->>menu_item_id", itemIds)
+      .gte("business_date", from).lte("business_date", to)
+      .order("source_ref", { ascending: true }).range(offset, offset + pageSize - 1);
+    if (error) return { data: null, error };
+    const page = (data ?? []) as unknown as ItemSalesRow[];
+    rows.push(...page);
+    if (page.length < pageSize) return { data: rows, error: null };
+  }
+}
 
 /** One canonical read model for both the menu catalog and product detail. */
 export async function getMenuControlCenter(options: { includeSalesEvidence?: boolean; catalogOnly?: boolean } = {}, explicit?:{client:SupabaseClient;businessId:string}): Promise<MenuControlItem[]> {
@@ -143,16 +163,8 @@ export async function getMenuControlCenter(options: { includeSalesEvidence?: boo
   const start90 = formatInTimeZone(subDays(new Date(`${today}T12:00:00Z`), 89), "UTC", "yyyy-MM-dd");
 
   const [salesResult, rollupsResult, historyResult, marketResult, connectionsResult] = await Promise.all([
-    supabase
-      .from("order_lines")
-      .select("menu_item_id, net_sales_cents, quantity, orders!inner(business_date, business_id)")
-      .in("menu_item_id", itemIds)
-      .eq("orders.business_id", businessId)
-      .eq("orders.toast_excluded", false).is("orders.superseded_by", null)
-      .gte("orders.business_date", start90)
-      .lte("orders.business_date", today)
-      .eq("voided", false),
-    readDailyFactRows(supabase, businessId, start90, today)
+    readItemSalesEvidence(supabase, businessId, itemIds, start90, today),
+    readCoveredSalesDates(supabase, businessId, start90, today)
       .then((data) => ({ data, error: null }), (error: { message: string }) => ({ data: null, error })),
     supabase
       .from("menu_price_history")
@@ -175,11 +187,11 @@ export async function getMenuControlCenter(options: { includeSalesEvidence?: boo
   ]);
 
   if (salesResult.error) {
-    logQueryError("getMenuControlCenter:order_lines", salesResult.error);
+    logQueryError("getMenuControlCenter:cv_item_sales", salesResult.error);
     throw new Error(MENU_LOAD_FAILURE_MESSAGE);
   }
   if (rollupsResult.error) {
-    logQueryError("getMenuControlCenter:daily_rollups", rollupsResult.error);
+    logQueryError("getMenuControlCenter:cv_sales_days", rollupsResult.error);
     throw new Error(MENU_LOAD_FAILURE_MESSAGE);
   }
   if (historyResult.error) {
@@ -201,29 +213,24 @@ export async function getMenuControlCenter(options: { includeSalesEvidence?: boo
 
   for (const row of salesResult.data ?? []) {
     if (!row.menu_item_id) continue;
-    const order = Array.isArray(row.orders) ? row.orders[0] : row.orders;
-    if (!order) continue;
     const quantity = Number(row.quantity);
     const revenueCents = Number(row.net_sales_cents);
-    datedQuantities.push({ menuItemId: row.menu_item_id, businessDate: order.business_date, quantity });
+    datedQuantities.push({ menuItemId: row.menu_item_id, businessDate: row.business_date, quantity });
 
-    if (order.business_date >= start30) {
+    if (row.business_date >= start30) {
       revenueById.set(row.menu_item_id, (revenueById.get(row.menu_item_id) ?? 0) + revenueCents);
     }
 
     const byDate = itemDaily.get(row.menu_item_id) ?? new Map<string, { units: number; revenueCents: number }>();
-    const prior = byDate.get(order.business_date) ?? { units: 0, revenueCents: 0 };
-    byDate.set(order.business_date, {
+    const prior = byDate.get(row.business_date) ?? { units: 0, revenueCents: 0 };
+    byDate.set(row.business_date, {
       units: prior.units + quantity,
       revenueCents: prior.revenueCents + revenueCents,
     });
     itemDaily.set(row.menu_item_id, byDate);
   }
 
-  const coveredSalesDates = (rollupsResult.data ?? [])
-    .filter((row) => row.sales_data_status === "actual")
-    .map((row) => row.business_date)
-    .sort();
+  const coveredSalesDates = (rollupsResult.data ?? []).sort();
 
   type RecordedPriceChange = {
     changedOn: string;
