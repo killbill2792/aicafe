@@ -7,7 +7,7 @@ import {JSONUIProvider,Renderer,defineRegistry,type ComponentRegistry} from "@js
 import {defineCatalog} from "@json-render/core";
 import {schema} from "@json-render/react/schema";
 import {shadcnComponents} from "@json-render/shadcn";
-import {upstreamComponents,nativeChartDefinition,nativeChartProps,nativeFunctions,createLocalWidgetStore,nativeRenderProps} from "@/lib/ai/conversations/nativePresentation";
+import {upstreamComponents,nativeChartDefinition,nativeChartProps,nativeFunctions,createLocalWidgetStore,parseUpstreamProps,readNativeSnapshot} from "@/lib/ai/conversations/nativePresentation";
 import {z} from "zod";
 import {Paperclip} from "lucide-react";
 import type {StoredAttachment} from "@/lib/ai/conversations/attachments";
@@ -49,17 +49,17 @@ function Panel({panel,locale}:{panel:PresentationPanel;locale:string}){
   {style:"currency",currency:panel.currency,minimumFractionDigits:2,maximumFractionDigits:20}:{maximumFractionDigits:20});
  const format=(v:number)=>formatter.format(["cents","cents/hour"].includes(panel.unit)?v/100:v)+(["cents","cents/hour"].includes(panel.unit)&&!panel.currency?" (currency not set)":"")+(panel.unit==="cents/hour"?" / h":["seconds","minutes","hours","days","units","items","ratio","ratio squared","indicator"].includes(panel.unit)?" "+(panel.measurement??panel.unit):"");
  const detailsLabel=({en,es,ar}[locale as "en"|"es"|"ar"]??en).Home.chatStartDetails;
- const table=<div role="region" aria-label={panel.title} tabIndex={0} className="overflow-x-auto overscroll-x-contain focus-visible:outline focus-visible:outline-2 focus-visible:outline-ink"><table aria-describedby={panel.coverage?coverageId+" "+evidenceId:evidenceId} className="w-full text-[1.0625rem] tabular-nums"><caption className="sr-only">{panel.title}</caption>
+ const table=<div role="region" aria-label={panel.title} tabIndex={0} className="overflow-x-auto overscroll-x-contain focus-visible:outline focus-visible:outline-2 focus-visible:outline-ink"><table aria-describedby={panel.coverage&&panel.source!=="response_evidence"?coverageId+" "+evidenceId:evidenceId} className="w-full text-[1.0625rem] tabular-nums"><caption className="sr-only">{panel.title}</caption>
     <thead><tr><th scope="col" className="py-2 text-start">{copy.categoryLabel}</th><th scope="col" className="py-2 text-end">{copy.valueLabel}{panel.currency?" ("+panel.currency+")":panel.measurement?" ("+panel.measurement+")":""}</th></tr></thead>
     <tbody>{panel.points.map((p,i)=><tr key={i} className="border-b border-line"><th scope="row" className="break-words py-2 pe-3 text-start font-normal">{p.label}</th><td className="py-2 text-end">{format(p.value)}</td></tr>)}</tbody>
    </table></div>;
  return <figure className="min-w-0 space-y-2 py-2">
   <figcaption className="text-[1.0625rem] font-medium leading-snug text-ink">{panel.title}</figcaption>
-  {panel.coverage&&<p id={coverageId} className="text-[0.8125rem] text-ink-muted">{confidence(panel.coverage)}</p>}
+  {panel.coverage&&panel.source!=="response_evidence"&&<p id={coverageId} className="text-[0.8125rem] text-ink-muted">{confidence(panel.coverage)}</p>}
   {panel.kind==="metric"&&panel.points.length===1?<p className="break-words font-headline text-[1.875rem] font-medium leading-tight tracking-tight tabular-nums text-ink">{format(panel.points[0].value)}</p>:
    (panel.kind==="table"||panel.kind==="ranked_table"||panel.kind==="metric"||new Set(panel.points.map(p=>p.label)).size!==panel.points.length)?table:<><PresentationBoundary fallback={table}><Chart panel={panel.kind==="donut"&&(panel.points.some(p=>p.value<0)||panel.points.every(p=>p.value===0))?{...panel,kind:"bar"}:panel} format={format}/></PresentationBoundary>
     <details className="text-ink"><summary aria-label={detailsLabel+": "+panel.title} className="flex min-h-12 cursor-pointer items-center text-[0.9375rem] text-accent-text underline underline-offset-4 focus-visible:outline focus-visible:outline-2 focus-visible:outline-ink">{detailsLabel}</summary>{table}</details></>}
-  <p id={evidenceId} className="break-words text-[0.8125rem] leading-relaxed text-ink-muted">{panel.source!=="sql_research"&&panel.source!=="response_evidence"&&<>{panel.from} – {panel.to} · </>}{panel.sourceDetail??(panel.source==="response_evidence"?"":panel.source==="sql_research"?"":panel.source==="daily_rollups"?"Sales records":panel.source==="item_sales"?"Item sales":panel.source==="canonical_data"?panel.sourceDetail??"Canonical records":panel.source==="expenses"?"Recorded expenses":panel.source==="business_costs"?"Business costs":panel.source==="product_costs"?"Product economics":panel.source==="supplier_purchase_plan"?"Supplier quotes":panel.source==="purchase_orders"?"Purchase orders":panel.source==="inventory"?"Inventory":panel.source==="menu_items"?"Menu":"")} · {copy.snapshot} {panel.asOf}</p>
+  {panel.source==="response_evidence"?<p id={evidenceId} className="break-words text-[0.8125rem] text-ink-muted">{panel.sourceDetail}</p>:<p id={evidenceId} className="break-words text-[0.8125rem] leading-relaxed text-ink-muted">{panel.source!=="sql_research"&&panel.source!=="response_evidence"&&<>{panel.from} – {panel.to} · </>}{panel.sourceDetail??(panel.source==="response_evidence"?"":panel.source==="sql_research"?"":panel.source==="daily_rollups"?"Sales records":panel.source==="item_sales"?"Item sales":panel.source==="canonical_data"?panel.sourceDetail??"Canonical records":panel.source==="expenses"?"Recorded expenses":panel.source==="business_costs"?"Business costs":panel.source==="product_costs"?"Product economics":panel.source==="supplier_purchase_plan"?"Supplier quotes":panel.source==="purchase_orders"?"Purchase orders":panel.source==="inventory"?"Inventory":panel.source==="menu_items"?"Menu":"")} · {copy.snapshot} {panel.asOf}</p>}
  </figure>;
 }
 function ComparisonView({panels,locale}:{panels:PresentationPanel[];locale:string}){
@@ -134,10 +134,10 @@ function RecordTableView({table,locale}:{table:RecordTable;locale:string}){
  };
  return <figure data-testid="supervisor-record-table" className="min-w-0 space-y-2 py-2">
   <figcaption className="font-medium text-ink">{table.title}</figcaption>
-  <p id={evidenceId} className="break-words text-[0.8125rem] text-ink-muted">{table.view==="tool_sql_research"?"SQL query":table.view==="tool_response_evidence"?"":table.view} · {table.view!=="tool_sql_research"&&table.view!=="tool_response_evidence"&&<>{table.from} – {table.to} · </>}{copy.snapshot} {table.asOf}{table.coverage!=="stored"&&table.coverage!=="authored"?" · "+confidence(table.coverage):""}</p>
+  {table.view!=="tool_response_evidence"&&<p id={evidenceId} className="break-words text-[0.8125rem] text-ink-muted">{table.view==="tool_sql_research"?"SQL query":table.view} · {table.view!=="tool_sql_research"&&<>{table.from} – {table.to} · </>}{copy.snapshot} {table.asOf}{table.coverage!=="stored"&&table.coverage!=="authored"?" · "+confidence(table.coverage):""}</p>}
   <p id={scopeId} className="break-words text-[0.8125rem] text-ink-muted">{table.scope}</p>
   <div role="region" tabIndex={0} aria-label={table.title} className="max-w-full overflow-x-auto overscroll-x-contain focus-visible:outline focus-visible:outline-2 focus-visible:outline-ink">
-   <table role="table" aria-describedby={evidenceId+" "+scopeId} className={"w-full table-fixed text-[0.9375rem] tabular-nums "+(wide?wideResponseTableClass:"")}><caption className="sr-only">{table.title}</caption>
+   <table role="table" aria-describedby={table.view==="tool_response_evidence"?scopeId:evidenceId+" "+scopeId} className={"w-full table-fixed text-[0.9375rem] tabular-nums "+(wide?wideResponseTableClass:"")}><caption className="sr-only">{table.title}</caption>
     <thead><tr>{table.columns.map((c,i)=><th key={i} scope="col" className="border-b border-line px-1.5 sm:px-2 py-2 text-start align-bottom font-medium [overflow-wrap:anywhere]">{c.label}<span className="block text-[0.8125rem] text-ink-muted">{c.unit==="stored"?copy.unitUnknown:c.unit==="microcents"?table.currency+" microcents":c.unit==="cents"?table.currency:c.unit==="cents/hour"?table.currency+" / h":c.unit}</span></th>)}</tr></thead>
     <tbody role="rowgroup">{table.rows.map((row,i)=><tr role="row" key={i}>{row.map((v,j)=>{
      const rowHeader=j===0&&["label","local date"].includes(table.columns[j].unit);
@@ -221,7 +221,7 @@ function ControlView({kind}:{kind:unknown}){
   {kind==="suggestions"&&data.suggestions.length>0&&<div className="flex flex-wrap gap-2">{data.suggestions.map(prompt=><button key={prompt} type="button" disabled={disabled} onClick={()=>onSuggest(prompt)} className="min-h-12 max-w-full rounded-full border border-line px-4 py-2 text-start text-[0.9375rem] leading-snug text-ink hover:bg-surface2 focus-visible:outline focus-visible:outline-2 focus-visible:outline-ink disabled:opacity-50">{prompt}</button>)}</div>}
  </>;
 }
-const nativeCatalog=defineCatalog(schema,{components:{...upstreamComponents,LunaChart:nativeChartDefinition,LunaSnapshot:{props:z.object({snapshot:z.unknown()}),slots:[],description:"Resolved authenticated data view"}},actions:{}});
+const nativeCatalog=defineCatalog(schema,{components:{...upstreamComponents,LunaChart:nativeChartDefinition,LunaSnapshot:{props:z.object({snapshotJSON:z.string()}),slots:[],description:"Resolved authenticated data view"}},actions:{}});
 /** The installed registry is used wholesale. Wrap resolved props for the one
  * browser trust boundary, not a second manually curated widget library. */
 function NativeWidget({spec,locale,onSuggest,disabled,message,attachments}:{spec:Spec;locale:string;onSuggest:(text:string)=>void;disabled:boolean;message?:Parameters<typeof presentationReport>[1]&{threadId:string};attachments?:{threadId:string;items:StoredAttachment[]}|null}){
@@ -232,14 +232,19 @@ function NativeWidget({spec,locale,onSuggest,disabled,message,attachments}:{spec
     const p=nativeChartProps.safeParse(props);if(!p.success)return <p role="status">Chart values are not available.</p>;
     const {description,measurement,...values}=p.data,asOf=new Date().toISOString().slice(0,10);
     const panel=presentationPanelSchema.safeParse({...values,source:"response_evidence",from:asOf,to:asOf,asOf,...(description?{sourceDetail:description}:{}),...(measurement?{measurement}:{})});
-    return panel.success?<Panel panel={panel.data} locale={locale}/>:<p role="status">Chart values are not available.</p>;
+    if(panel.success)return <Panel panel={panel.data} locale={locale}/>;
+    const table=recordTableSchema.safeParse({title:values.title,view:"tool_response_evidence",from:asOf,to:asOf,asOf,currency:values.currency,coverage:"authored",scope:description??"",columns:[{label:"Category",unit:"label"},{label:measurement??values.unit,unit:values.unit}],rows:values.points.map(p=>[p.label,p.value])});
+    return table.success?<RecordTableView table={table.data} locale={locale}/>:<p role="status">Chart values are not available.</p>;
    },
-   LunaSnapshot:({props})=><SupervisorRichPresentation block={props.snapshot} locale={locale} onSuggest={onSuggest} disabled={disabled} message={message} attachments={attachments}/>,
+   LunaSnapshot:({props})=><SupervisorRichPresentation block={readNativeSnapshot(props.snapshotJSON)} locale={locale} onSuggest={onSuggest} disabled={disabled} message={message} attachments={attachments}/>,
   }});
   for(const name of Object.keys(registry)){
    if(!Object.hasOwn(upstreamComponents,name))continue;
    const Component=registry[name];
-   registry[name]=input=><Component {...input} element={{...input.element,props:nativeRenderProps(input.element.props)}}/>;
+   registry[name]=input=>{
+    const parsed=parseUpstreamProps(name,input.element.props);
+    return parsed?.success?<Component {...input} element={{...input.element,props:parsed.data}}/>:<div className="min-w-0">{input.children}</div>;
+   };
   }
   return registry;
  },[locale,onSuggest,disabled,message,attachments]);
