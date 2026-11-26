@@ -203,5 +203,5 @@ export const groundedReplySchema = z.strictObject({
   evidence: z.array(evidenceReferenceSchema).max(30),
   blocks: z.array(z.union(
     [textBlockSchema, warningBlockSchema, metricBlockSchema, countBlockSchema, percentBlockSchema,
-      taskBlockSchema, taskCardBlockSchema,ownerQuestionSchema,proposalCardSchema,experimentCardSchema,memoryCardSchema,routineCardSchema,routineDraftSchema,clarifyBlockSchema,howBlockSchema,richPresentationSchema])).min(1).max(30),
+      taskBlockSchema, taskCardBlockSchema,ownerQuestionSchema,proposalCardSchema,experimentCardSchema,memoryCardSchema,routineCardSchema,routineDraftSchema,clarifyBlockSchema,howBlockSchema,richPresentationSchema])).min(1),
 });
