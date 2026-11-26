@@ -41,7 +41,26 @@ create or replace view public.cv_sales_days
    sum(percent*sales_mix/100000000) as rate,
    sum(fixed*txn_mix/10000) as fixed_fee
    from (
-     select case when v->>'percentageBps' ~ '^[0-9]+(\.[0-9]+)? is 'One saved day per café and business date. Screen and Supervisor daily sales, ingredient cost, wages, payroll tax, fees and voids; data includes independent sales_data_status, labor_wage_status, staff_tax_status/source and card_fees_status. Not provisional intraday sales.';
+     select case when v->>'percentageBps' ~ '^[0-9]+(\.[0-9]+)?$' then (v->>'percentageBps')::numeric end as percent,
+       case when v->>'fixedFeeCents' ~ '^[0-9]+(\.[0-9]+)?$' then (v->>'fixedFeeCents')::numeric end as fixed,
+       case when v->>'salesMixBps' ~ '^[0-9]+(\.[0-9]+)?$' then (v->>'salesMixBps')::numeric end as sales_mix,
+       case when v->>'transactionMixBps' ~ '^[0-9]+(\.[0-9]+)?$' then (v->>'transactionMixBps')::numeric end as txn_mix
+     from jsonb_array_elements(p.rules) v
+   ) rules
+ ) r on true
+ cross join lateral (
+   select case when d.card_fees_status='actual' and d.card_fees_cents>=0 then 'actual'
+     when p.id is not null and r.valid then 'owner_plan'
+     when d.card_fees_cents>0 and (d.card_fees_status='estimated' or d.card_fees_status is null) then 'estimated'
+     else 'default_estimate' end as basis,
+   case when d.card_fees_status='actual' and d.card_fees_cents>=0 then d.card_fees_cents::numeric
+     when p.id is not null and r.valid then
+       d.net_sales_cents::numeric*p.processed_sales_share_bps*r.rate/10000+
+       d.orders_count::numeric*p.processed_transaction_share_bps*r.fixed_fee/10000
+     when d.card_fees_cents>0 and (d.card_fees_status='estimated' or d.card_fees_status is null) then d.card_fees_cents::numeric
+     else d.net_sales_cents::numeric*290/10000 end as amount
+ ) fee;
+comment on view public.cv_sales_days is 'One saved day per café and business date. Screen and Supervisor daily sales, ingredient cost, wages, payroll tax, fees and voids; data includes independent sales_data_status, labor_wage_status, staff_tax_status/source and card_fees_status. Not provisional intraday sales.';
 comment on column public.cv_sales_days.data is 'Saved daily fact amounts in integer cents and counts, with independent source and completeness statuses. Unknown wages and taxes remain null. recorded_contribution_cents is recorded sales minus ingredients, saved fees and loaded wages, before operating bills; null when labor is incomplete. effective_fee is the screen fee calculation: actual fee, applicable owner plan, saved estimate, then labeled 2.9 percent default. Sum unrounded amountCents before rounding; raw saved fee/status remains separate.';
 
 -- Existing recurring commitments; retain every existing key and expose the active dates and due day.
