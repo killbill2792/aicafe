@@ -879,9 +879,9 @@ BEGIN
  perform pg_temp.assert_true(exists(select 1 from public.cv_payments
   where business_id=b and amount_cents=1200 and tip_cents=200),
   'canonical payment view uses sanitized row');
- perform pg_temp.assert_true((select count(*)=22 from information_schema.views
+ perform pg_temp.assert_true((select array_agg(table_name::text order by table_name)=array['cv_analytics','cv_bills','cv_card_fees','cv_cash','cv_customer_products','cv_customer_visits','cv_dining_options','cv_discounts','cv_expenses','cv_inventory','cv_item_sales','cv_item_sales_daily','cv_kitchen','cv_labor_entries','cv_menu','cv_orders','cv_owner_facts','cv_payments','cv_sales_days','cv_sales_hours','cv_sales_live','cv_shifts','cv_staff','cv_toast_records','cv_voids_refunds' ]::text[] from information_schema.views
   where table_schema='public' and table_name like 'cv_%'),
-  'all 22 canonical views exist including customer visits and product activity');
+  'all 25 canonical views exist including sales, expenses and product activity');
  perform pg_temp.assert_true(to_regclass('public.cv_customer_visits') IS NOT NULL AND to_regclass('public.cv_customer_products') IS NOT NULL,
   'canonical customer visit view exists');
  perform pg_temp.assert_true(not has_table_privilege('authenticated',

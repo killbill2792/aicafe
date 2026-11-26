@@ -18,7 +18,7 @@ function fixtureDb(rows:Record<string,unknown>[], options?:{employees?:Record<st
  const collections:Record<string,unknown[]>={
   businesses:[{timezone:"America/New_York",payroll_tax_rate:.12,
    target_ingredient_cost_rate:null,owner_monthly_payroll_extras_cents:null}],
-  cv_sales_days:rows,locations:[{open_hours:null}],recurring_costs:[],
+  cv_sales_days:rows,locations:[{open_hours:null}],cv_bills:[],
   employees:options?.employees??[],timecards:options?.timecards??[],
  };
  return {from(table:string){
