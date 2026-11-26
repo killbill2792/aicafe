@@ -204,7 +204,19 @@ select f.code,jsonb_build_object('categoryCode',f.code,'label',f.label,
   when f.commitments>0 then 'recurring' else 'missing' end,
  'actualTodayCents',f.actual_today,'isEstimate',f.receipt_estimate or f.remaining>0,
  'isMissing',f.receipts=0 and f.commitments=0 and f.expected,
- 'isExpected',f.expected or f.receipts>0)
+ 'isExpected',f.expected or f.receipts>0,
+ 'dailyAllocatedCents',(
+   select jsonb_agg(jsonb_build_object('date',p.day::date,'amountCents',
+     coalesce((select sum(e.amount_cents) from expenses e
+       where e.category_code=f.code and e.spent_on=p.day::date),0)
+     + case when f.remaining>0 then
+       (f.remaining-f.overlap)/f.remaining/(b.end_date-b.start_date+1)
+       * coalesce((select sum(greatest(0,r.monthly_equivalent-r.linked_recorded))
+          from obligations r where r.category_code=f.code and r.active_from<=p.day::date
+          and (r.active_to is null or r.active_to>=p.day::date)),0)
+       else 0 end) order by p.day)
+   from bounds b cross join lateral generate_series(b.start_date::timestamp,b.end_date::timestamp,interval '1 day') p(day)
+ ))
 from facts f order by f.owner_position nulls last,f.default_position nulls last,f.code
 $$;
 revoke all on function public.running_cost_lines_for_month(uuid,date,date) from public,anon;
@@ -279,3 +291,14 @@ from entries;
 revoke all on public.cv_staff_clock_entries from public,anon,authenticated;
 grant select on public.cv_staff_clock_entries to authenticated,service_role;
 comment on view public.cv_staff_clock_entries is 'Stored Staff-screen clock records, including explicitly estimated owner schedules. Wage amounts use saved provider hours when available, else elapsed time minus unpaid breaks at as_of; loaded amounts include business payroll tax rate. day_loaded_cost_cents repeats the whole café/day total per entry; never sum it across entries. Unknown wage in any entry makes the day total null. Not additive with cv_labor_entries.';
+
+-- Fractional-cent day allocation is the source for arbitrary period totals.
+-- Sum before rounding, and do not treat projected days as payments.
+create view public.cv_running_cost_days with (security_invoker=true) as
+ select m.business_id,m.source,'running-cost-day:'||(d.value->>'date')||':'||m.category_code as source_ref,
+ m.status,(d.value->>'date')::date as business_date,m.category_code,
+ (d.value->>'amountCents')::numeric as amount_cents,m.as_of_date
+ from public.cv_running_cost_months m cross join lateral jsonb_array_elements(m.data->'dailyAllocatedCents') d;
+revoke all on public.cv_running_cost_days from public,anon,authenticated;
+grant select on public.cv_running_cost_days to authenticated,service_role;
+comment on view public.cv_running_cost_days is 'Canonical period allocation of recorded receipts on their dates plus unpaid forecast only on active commitment days. Amounts may be fractional cents; sum then round. as_of_date is the receipt evidence cutoff, future day allocations are forecasts. Not additive with cv_running_cost_months.';

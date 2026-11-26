@@ -18,10 +18,13 @@ export async function readRunningCostLines(db:SupabaseClient,businessId:string,m
  if(!Array.isArray(data)||data.length>=1000)throw Error("running_cost_source_incomplete");
  const rows=data.map(row=>row.data as RunningCostLine);
  const ids=new Set<string>();
+ const daysInMonth=new Date(Date.UTC(Number(monthStart.slice(0,4)),Number(monthStart.slice(5,7)),0)).getUTCDate();
  for(const row of rows){
   if(!row||typeof row.categoryCode!=="string"||ids.has(row.categoryCode)||
      !Number.isSafeInteger(row.amountCents)||typeof row.isMissing!=="boolean"||
-     typeof row.isEstimate!=="boolean"||!Array.isArray(row.expenseEvidence))
+     typeof row.isEstimate!=="boolean"||!Array.isArray(row.expenseEvidence)||
+     !Array.isArray(row.dailyAllocatedCents)||row.dailyAllocatedCents.length!==daysInMonth||
+     row.dailyAllocatedCents.some((day,i)=>day.date!==monthStart.slice(0,7)+"-"+String(i+1).padStart(2,"0")||!Number.isFinite(day.amountCents)))
     throw Error("running_cost_source_incomplete");
   ids.add(row.categoryCode);
  }

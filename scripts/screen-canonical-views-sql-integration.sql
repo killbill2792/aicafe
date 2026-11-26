@@ -83,6 +83,10 @@ SELECT (
  FROM public.cv_staff_clock_entries WHERE business_id=:'a' AND business_date=current_date-1)
  AND (SELECT wages_cents IS NULL AND day_loaded_cost_cents IS NULL
  FROM public.cv_staff_clock_entries WHERE business_id=:'a' AND business_date=current_date-2)
+ AND (SELECT count(*) FROM public.cv_running_cost_days WHERE business_id=:'b')=0
+ AND (SELECT abs(sum(amount_cents)-70000)<0.00001 FROM public.cv_running_cost_days
+ WHERE business_id=:'a' AND category_code='other' AND business_date>=date_trunc('month',current_date)::date
+ AND business_date<(date_trunc('month',current_date)+interval '1 month')::date)
  AND (SELECT count(*) FROM public.cv_running_cost_months WHERE business_id=:'b')=0
  AND (SELECT amount_cents=30000 AND (data->>'recordedExpenseCents')::bigint=30000
  FROM public.cv_running_cost_months WHERE business_id=:'a' AND category_code='rent'

@@ -1,7 +1,8 @@
 // Test-only legacy reference for deterministic fixture parity. Production reads SQL.
 import type {ExpenseCategoryCode} from "@/lib/calc";
 import type {RunningCostEvidence,RunningCostLine} from "./types";
-import {RUNNING_COST_CODES,RUNNING_COST_LABELS} from "./runningCostCatalog";
+import {runningCostsForPeriodCents} from "@/lib/calc/runningCosts";
+import {runningCostMonthlyAmount,RUNNING_COST_CODES,RUNNING_COST_LABELS} from "./runningCostCatalog";
 import {isExpectedCostCategory} from "@/lib/expenses/expectedCosts";
 import {recurringCostMonthlyEquivalentCents} from "@/lib/expenses/recurringMonthlyTotal";
 type ExpenseRow={id:string;category_code:string;amount_cents:number;status:string;spent_on:string;recurring_cost_id?:string|null;custom_label?:string|null;vendor?:string|null;source?:string|null};
@@ -81,5 +82,12 @@ export function fixtureCostRows(seed:Record<string,unknown[]>,monthStart:string,
  if(new Set(expenses.map(e=>e.id)).size!==expenses.length)throw Error("running_cost_source_incomplete");
  const to=new Date(Date.UTC(Number(monthStart.slice(0,4)),Number(monthStart.slice(5,7)),0)).toISOString().slice(0,10);
  return runningCostLinesForMonth({expenses,recurring,priorExpenses:expenses,from:monthStart,to,today:asOf,historical:false})
-  .map(data=>({category_code:data.categoryCode,data}));
+  .map(data=>{
+    const monthly=runningCostMonthlyAmount(data,monthStart.slice(0,7));
+    const dailyAllocatedCents=Array.from({length:Number(to.slice(-2))},(_,i)=>{
+      const date=monthStart.slice(0,7)+"-"+String(i+1).padStart(2,"0");
+      return {date,amountCents:runningCostsForPeriodCents([monthly],date,date)};
+    });
+    return {category_code:data.categoryCode,data:{...data,dailyAllocatedCents}};
+  });
 }

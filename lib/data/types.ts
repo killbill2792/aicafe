@@ -45,6 +45,8 @@ export type RunningCostLine = {
   forecastUpperCents?:number;
   forecastOverlapUncertain?:boolean;
   recurringEstimateCents?:number;
+  /** SQL-calculated fractional-cent allocation of actual receipts and active forecast by calendar date. */
+  dailyAllocatedCents?:Array<{date:string;amountCents:number}>;
   isEstimate: boolean;
   isMissing: boolean;
   /** Of the actual month-to-date expenses, the amount specifically spent today. */

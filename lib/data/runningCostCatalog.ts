@@ -70,6 +70,7 @@ export function runningCostMonthlyAmount(line:RunningCostLine,monthKey:string,in
  return {categoryCode:line.categoryCode,monthKey,amountCents:line.amountCents,
   isEstimate:line.isEstimate,isMissing:line.isMissing,
   ...(includeEvidence&&line.expenseEvidence?{
+    dailyAllocatedCents:line.dailyAllocatedCents,
     recordedExpenses:line.expenseEvidence.flatMap(e=>e.kind==="expense"?[{date:e.date,amountCents:e.amountCents,status:e.status}]:[]),
     recordedExpenseCents:line.recordedExpenseCents,
     possibleAdditionalForecastCents:line.possibleAdditionalForecastCents,

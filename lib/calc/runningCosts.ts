@@ -52,6 +52,8 @@ function daysInMonthKey(monthKey: string): number {
 function proratedAmountCents(c: CategoryMonthlyAmount, periodStart: string, periodEnd: string): number {
   const days = overlapDays(periodStart, periodEnd, c.monthKey);
   if (days === 0) return 0;
+  if(c.dailyAllocatedCents)return c.dailyAllocatedCents.filter(d=>d.date>=periodStart&&d.date<=periodEnd).reduce((sum,d)=>sum+d.amountCents,0);
+  // Pure scenario inputs do not have persisted SQL allocations.
   if(c.recordedExpenses&&c.recurringEstimateCents!==undefined){
     const recorded=c.recordedExpenses.filter(e=>e.date>=periodStart&&e.date<=periodEnd)
       .reduce((n,e)=>n+e.amountCents,0);
