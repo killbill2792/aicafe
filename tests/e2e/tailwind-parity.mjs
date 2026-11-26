@@ -26,6 +26,15 @@ async function capture(route,width,mode){
  if(route!=="login"&&width>=768){
   await expect(page.locator("nav").getByText(owner.name,{exact:true})).toBeVisible({timeout:30000});
  }
+ // Connector screens have independent client-side status requests. The seeded
+ // cafe has no connected Gmail/Toast account; capture the resolved states.
+ if(route==="more/gmail"){
+  await expect(page.getByText("Not connected",{exact:true})).toBeVisible({timeout:30000});
+ }
+ if(route==="more/toast"){
+  await expect(page.locator("main details ol li > span[aria-hidden=true]").filter({hasText:"○"})).toHaveCount(8,{timeout:30000});
+  await expect(page.getByRole("status").filter({hasText:"Working…"})).toHaveCount(0,{timeout:30000});
+ }
  await page.evaluate(async()=>{await document.fonts.ready;await new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve)));});
  const name=(route||"home").replace(/[^a-z0-9-]+/gi,"-")+"-"+width+"-"+mode;
  const data=await page.evaluate(({variant,route})=>{
