@@ -1,7 +1,5 @@
 import { z } from "zod";
 import type { AgentToolContext, AgentToolResult } from "./index";
-import {resolveOwnerPeriod,periodChoicePayload} from "../resolve";
-import {money} from "../explain";
 import {localizedToastScheduleReadError} from "./scheduleReads";
 import {projectVisibleStaffWeek} from "@/lib/calc/scheduling/schedulePresentation";
 import {dateOffset} from "@/lib/calc/periods";
@@ -9,56 +7,13 @@ import en from "@/messages/en.json";
 import es from "@/messages/es.json";
 import ar from "@/messages/ar.json";
 import { getWeekSchedule } from "@/lib/actions/schedule";
-import {laborForPeriod,laborPercentForPeriod} from "@/lib/metrics/core/labor";
-import {netSalesCentsForPeriod} from "@/lib/calc/profit";
-import {localizeQualityNotes} from "./qualityNotes";
 
-const failedSlice=(reason:string)=>({available:false as const,value:null,
- quality:{level:"low" as const,missingInputs:[reason],estimatedInputs:[] as string[],staleInputs:[] as string[]}});
-const empty = z.strictObject({});
 const range = z.strictObject({ from: z.iso.date(), to: z.iso.date() });
-const period = z.strictObject({ period: z.union([z.string().min(1).max(32),z.strictObject({preset:z.enum(["today","week","month","last_week","last_month","ytd"])}),z.strictObject({from:z.iso.date(),to:z.iso.date()})]) });
 const missing = (source: string, period: {from:string;to:string}|null, reasons: string[]): AgentToolResult => ({
   source, period, agentId:"olivia", missing: reasons.length ? reasons : ["sourceUnavailable"],
 });
 const days = (a: string,b:string) => (Date.parse(b+"T12:00:00Z")-Date.parse(a+"T12:00:00Z"))/86400000;
-const requested = (choice:"today"|"week"|"month",asOf:string) => ({
-  from:choice==="today"?asOf:choice==="month"?asOf.slice(0,7)+"-01":
-    new Date(Date.parse(asOf+"T12:00:00Z")-6*86400000).toISOString().slice(0,10),to:asOf,
-});
 export const staffTools = {
-  get_staff: {
-    agentId:"olivia",schema:empty,description:"Read only active employees with recorded current shifts; repeating schedule predictions are not clock-ins.",
-    execute:async(raw:unknown,ctx:AgentToolContext):Promise<AgentToolResult>=>{
-      empty.parse(raw);
-      const [s,attendance]=await Promise.all([
-        ctx.tools.getCurrentStaff?
-          ctx.tools.getCurrentStaff().catch(()=>failedSlice("staffReadFailed")):
-          Promise.resolve(failedSlice("staffReaderUnavailable")),
-        ctx.tools.getStaffAttendance?
-          ctx.tools.getStaffAttendance({from:ctx.asOf,to:ctx.asOf},ctx.timezone)
-            .catch(()=>failedSlice("staffAttendanceReadFailed")):
-          Promise.resolve(failedSlice("attendanceReaderUnavailable")),
-      ]);
-      if(!s.available&&!attendance.available)
-        return missing("current_staff",null,[...s.quality.missingInputs,...attendance.quality.missingInputs]);
-      const tracked=attendance.available?attendance.value.attendanceTracked:null;
-      const onClockCount=attendance.available?attendance.value.onClockCount:null;
-      return {source:"current_staff",period:null,agentId:"olivia",
-        dataNotes:[
-          ...(!s.available?[{en,es,ar}[ctx.locale].DataNotes.staffReadFailed]:[]),
-          ...(attendance.quality.missingInputs.includes("staffAttendanceReadFailed")?
-            [{en,es,ar}[ctx.locale].DataNotes.staffAttendanceReadFailed]:[])],
-        missing:[...s.quality.missingInputs,...attendance.quality.missingInputs],
-        attendanceTracked:tracked,onClockCount,
-        // A failed current-shift projection must not hide independently
-        // recorded on-clock staff or invent a zero when attendance is unknown.
-        count:s.available?(tracked||s.value.count>0?s.value.count:null):
-          tracked?onClockCount:null,
-        asOf:s.available?s.value.asOf:null,
-        people:s.available?s.value.people.slice(0,15):null};
-    },
-  },
   get_schedule: {
     agentId:"olivia",schema:range,
     description:"Read confirmed dated shifts for a business-local week. Old recurring patterns are not confirmed attendance or shifts.",
@@ -106,105 +61,6 @@ export const staffTools = {
         estimated:null,estimatedShiftCount:null,gaps:[],
         missing:[...missingInputs,"requestRangeTotalsNotAvailable"],
         dataNotes:[...new Set(notes)]};
-    },
-  },
-  get_labor: {
-    agentId:"olivia",schema:period,description:"Labor-day costs and individual actual clock-in/clock-out evidence (up to 80 recent timecards in the selected period). attendance.recordedTimecards lists employee, local date, clock times, gross elapsed hours, and documented break evidence; none_recorded means no break punch, NOT proof no break occurred. This is the correct reader for owner questions about who worked, missing lunch punches, or unclosed shifts. missingWageShifts lists the only finished shifts with no hourly wage (date, person, hours); every other laborDays entry is recorded. When wages are missing, give the known labor total, name those shifts, and ask only for those people's hourly wage — never ask the owner for a labor total over a range.",
-    execute:async(raw:unknown,ctx:AgentToolContext):Promise<AgentToolResult>=>{
-      const resolved=resolveOwnerPeriod(period.parse(raw).period,{asOf:ctx.asOf,timezone:ctx.timezone},ctx.resolveState);
-      if(resolved.status!=="resolved")return periodChoicePayload("labor_and_attendance",resolved);
-      const p={from:resolved.value.from,to:resolved.value.to};
-      const [labor,attendance,ownerPayroll,toastScopes,reviews,sales]=await Promise.all([
-        ctx.tools.getLaborMetrics?
-          ctx.tools.getLaborMetrics(p).catch(()=>failedSlice("laborReadFailed")):
-          Promise.resolve(failedSlice("laborReaderUnavailable")),
-        ctx.tools.getStaffAttendance?
-          ctx.tools.getStaffAttendance(p,ctx.timezone).catch(()=>failedSlice("staffAttendanceReadFailed")):
-          Promise.resolve(failedSlice("attendanceReaderUnavailable")),
-        ctx.tools.getOwnerMonthlyPayrollExtras?.().catch(()=>failedSlice("payrollExtrasReadFailed")),
-        ctx.tools.getToastScopeCoverage?.().catch(()=>failedSlice("toastScopeReadFailed")),
-        ctx.tools.getPosImportReviews?.().catch(()=>failedSlice("posStaffReviewsReadFailed")),
-        ctx.tools.getSalesTrend?.(p).catch(()=>failedSlice("salesReadFailed"))??
-          Promise.resolve(failedSlice("salesReaderUnavailable")),
-      ]);
-      const salesWarnings=sales.quality.missingInputs;
-      const issues=[...labor.quality.missingInputs,...attendance.quality.missingInputs,
-        ...(labor.available?labor.value.filter(d=>d.wageStatus==="missing"||d.wagesCents===null||d.staffTaxCents===null)
-         .map(d=>"laborWageUnknown:"+d.date):[])];
-      const explain=labor.available?labor.value.slice(-12).filter(d=>d.wageStatus!=="missing"&&d.loadedStaffCostCents!==null&&d.wagesCents!==null&&d.staffTaxCents!==null&&Number.isSafeInteger(d.loadedStaffCostCents)&&
-        Number.isSafeInteger(d.wagesCents)&&Number.isSafeInteger(d.staffTaxCents)).map(d=>({
-          label:"Labor "+d.date,inputs:[{name:"wages",value:money(d.wagesCents!)},
-            {name:"staffTax",value:money(d.staffTaxCents!)}],formula:"sum" as const,
-          result:money(d.loadedStaffCostCents!),period:{from:d.date,to:d.date},
-          source:"get_labor",provenance:labor.quality.estimatedInputs.length?"estimate" as const:"recorded" as const
-        })): [];
-      const ownerMonthlyPayrollExtrasCents=ownerPayroll?.available?
-        ownerPayroll.value.monthlyCents:null;
-      const payrollReadFailed=ownerPayroll?.quality.missingInputs.includes("payrollExtrasReadFailed")===true;
-      const readFailures=[...labor.quality.missingInputs,...attendance.quality.missingInputs,
-        ...salesWarnings,
-        ...(ownerPayroll?.quality.missingInputs??[]),
-        ...(toastScopes?.quality.missingInputs??[]),
-        ...(reviews?.quality.missingInputs??[])];
-      const failedReaders=["laborReadFailed","laborReaderUnavailable","staffAttendanceReadFailed","attendanceReaderUnavailable",
-        "payrollExtrasReadFailed","toastScopeReadFailed","posStaffReviewsReadFailed"];
-      const salesNotes=sales.available?localizeQualityNotes(salesWarnings,ctx.locale):[];
-      const dataNotes=[
-        ...(readFailures.some(key=>failedReaders.includes(key))?
-          [{en,es,ar}[ctx.locale].DataNotes.staffReadFailed]:[]),
-        ...salesNotes,
-        ...(sales.available&&salesWarnings.length&&!salesNotes.length?
-          [{en,es,ar}[ctx.locale].DataNotes.toastDayStatusUnavailable]:[]),
-      ];
-      // Core is the only labor percentage formula. Use matching recorded sales
-      // days, and never turn missing wages or days into a complete percentage.
-      // Match Money's exact calendar-day and saved-payroll inputs to the one
-      // core labor calculation, including partial/unclosed dates.
-      const calendarDays=Array.from({length:Math.floor(days(p.from,p.to))+1},(_,i)=>({
-        date:dateOffset(p.from,i),
-      }));
-      const payrollExtras=ownerMonthlyPayrollExtrasCents===null?null:{
-        monthlyCents:ownerMonthlyPayrollExtrasCents,from:p.from,to:p.to,
-      };
-      const laborBasis=labor.available&&sales.available?
-        laborForPeriod(calendarDays,labor.value.map(d=>({
-          date:d.date,wagesCents:d.wagesCents,staffTaxCents:d.staffTaxCents,
-          laborWageStatus:d.wageStatus==="missing"?"missing":d.wageStatus==="estimate"?"estimate":"actual",
-        })),null,payrollExtras):null;
-      const salesCents=sales.available?netSalesCentsForPeriod(sales.value):null;
-      const laborCostPercent=laborBasis&&salesCents!==null&&laborBasis.coveredDays>0?
-        laborPercentForPeriod(laborBasis.knownLaborCents,salesCents):null;
-      return {source:"labor_and_attendance",period:p,agentId:"olivia",dataNotes,
-        laborCostPercent,
-        laborCostPercentDisplay:laborCostPercent===null?null:
-          new Intl.NumberFormat(ctx.locale,{style:"percent",maximumFractionDigits:1}).format(laborCostPercent),
-        laborCostPercentBasis:laborBasis?.basis??null,
-        laborCostPercentKnownLaborCents:laborBasis?.knownLaborCents??null,
-        laborCostPercentSalesCents:salesCents,
-        laborCostPercentCoveredDays:laborBasis?.coveredDays??null,
-        laborCostPercentSalesDays:sales.available?sales.value.length:null,
-        laborCostPercentPartial:!sales.available||salesWarnings.length>0||!laborBasis||
-          sales.value.length<calendarDays.length||
-          laborBasis.coveredDays<calendarDays.length,
-        ownerMonthlyPayrollExtrasCents,
-        toastLaborScopeAvailable:toastScopes?.available?toastScopes.value.labor:null,
-        pendingPosStaffReviews:reviews?.available?reviews.value:null,
-        posReviewHref:"/staff",
-        posReviewMissing:reviews?.quality.missingInputs??["toastReviewsUnavailable"],
-        ownerMonthlyPayrollStatus:payrollReadFailed?"unavailable":ownerMonthlyPayrollExtrasCents===null?"missing":"Estimate",
-        ownerMonthlyPayrollSource:ownerMonthlyPayrollExtrasCents===null?null:"You told me",
-        missing:[...issues,...salesWarnings,...readFailures.filter(key=>failedReaders.includes(key)),
-          ...(toastScopes?.available&&toastScopes.value.labor===false?["toastLaborScopeMissing"]:[]),
-          ...(ownerMonthlyPayrollExtrasCents===null&&!payrollReadFailed?
-           ["ownerMonthlyPayrollExtrasNotSet"]:[])],explain,estimated:[...labor.quality.estimatedInputs,...attendance.quality.estimatedInputs,
-          ...(labor.available?labor.value.filter(d=>d.wageStatus==="estimate")
-           .map(d=>"laborWageEstimate:"+d.date):[])],
-        laborDays:labor.available?labor.value.slice(-31).map(d=>({
-          date:d.date,wagesCents:d.wagesCents,staffTaxCents:d.staffTaxCents,
-          loadedStaffCostCents:d.loadedStaffCostCents,wageStatus:d.wageStatus})):null,
-        attendanceTracked:attendance.available?attendance.value.attendanceTracked:null,
-        missingWageShifts:attendance.available?attendance.value.missingWageShifts??null:null,
-        attendance:attendance.available?attendance.value:null};
     },
   },
 } as const;

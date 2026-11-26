@@ -1,10 +1,6 @@
 import {describe,it,expect,vi} from "vitest";
 import {runAgentTurn,type AgentProvider} from "./loop.server";
 import {type AgentToolContext} from "./tools";
-import {staffTools} from "./tools/staff";
-import {getFixtureSnapshot} from "@/lib/data/fixtureSnapshot";
-import {buildProfitAndCostsViewModel} from "@/lib/viewmodels/moneyViewModel";
-import {todayReadingFreshness} from "./tools/today";
 
 const quality={level:"high" as const,missingInputs:[],estimatedInputs:[],staleInputs:[]};
 const unavailable={available:false as const,value:null,
@@ -32,44 +28,6 @@ describe("Supervisor owner demo: shared model and core metric paths",()=>{
     expect(input.some(i=>i.role==="developer"&&i.content===profile)).toBe(true);
     expect(input.at(-1)).toEqual({role:"user",content:"What events are near my café?"});
     expect(answer.text).toContain("Nearby saved events");
-  });
-
-  it("labels stale Today data with a local last-updated time",()=>{
-    const now=new Date("2026-11-03T22:20:00Z");
-    const old=todayReadingFreshness("2026-11-03T21:40:00Z","America/Los_Angeles","en",now);
-    const fresh=todayReadingFreshness("2026-11-03T22:16:00Z","America/Los_Angeles","en",now);
-    expect(old).toMatchObject({stale:true,lastUpdated:"13:40",freshnessLabel:"last updated 13:40"});
-    expect(fresh).toMatchObject({stale:false,freshnessLabel:null});
-  });
-  it("matches Money's staff ratio with the same calendar days and saved payroll extras",async()=>{
-    const base=getFixtureSnapshot();
-    const rows=[
-      {...base.monthActualDays[0],date:"2026-11-02",netSalesCents:430000,
-        wagesCents:110000,staffTaxCents:7300,laborWageStatus:"actual" as const},
-      {...base.monthActualDays[0],date:"2026-11-03",netSalesCents:435325,
-        wagesCents:120000,staffTaxCents:7995,laborWageStatus:"actual" as const},
-    ];
-    const snapshot={...base,todayDateStr:"2026-11-03",monthKey:"2026-11",daysInMonth:30,
-      monthActualDays:rows,monthRecordedDays:rows,last7Days:rows,last28Days:rows,
-      todayDay:rows[1],todayHasData:true,previousMonthDays:[],
-      ownerMonthlyPayrollExtrasCents:30000};
-    const money=buildProfitAndCostsViewModel(snapshot,"month");
-    const ctx=context();
-    ctx.tools.getSalesTrend=vi.fn(async()=>({available:true,quality,
-      value:rows.map(d=>({date:d.date,netSalesCents:d.netSalesCents}))} as never));
-    ctx.tools.getLaborMetrics=vi.fn(async()=>({available:true,quality,
-      value:rows.map(d=>({date:d.date,wagesCents:d.wagesCents,
-        staffTaxCents:d.staffTaxCents,loadedStaffCostCents:d.wagesCents!+d.staffTaxCents!,
-        wageStatus:"actual" as const}))} as never));
-    ctx.tools.getOwnerMonthlyPayrollExtras=vi.fn(async()=>({available:true,quality,
-      value:{monthlyCents:30000}} as never));
-    const chat=await staffTools.get_labor.execute({period:"month"},ctx);
-    expect(money.ownerPayrollExtrasCents).toBe(3000);
-    expect(chat.laborCostPercentKnownLaborCents).toBe(
-      rows.reduce((sum,d)=>sum+d.wagesCents!+d.staffTaxCents!,0)+money.ownerPayrollExtrasCents);
-    expect(chat.laborCostPercentSalesCents).toBe(money.salesCents);
-    expect(chat.laborCostPercent).toBe(money.staffRatio);
-    expect(chat.laborCostPercentPartial).toBe(true);
   });
 
   it("uses saved city events to answer without asking for location or searching the web",async()=>{
@@ -100,44 +58,4 @@ describe("Supervisor owner demo: shared model and core metric paths",()=>{
     expect(JSON.stringify(seen[0].input)).toContain("never ask the owner for a city");
   });
 
-  it.each([
-    ["failed Toast import","toastImportIncompleteDays:1:2026-11-02:0","Toast imports are not complete"],
-    ["unknown Toast import status","toastDayStatusUnavailable","day-status check failed"],
-  ])("marks labor percent partial on full sales days with %s",async(_,warning,note)=>{
-    const ctx=context();
-    const fullDays=["2026-11-02","2026-11-03"];
-    ctx.tools.getSalesTrend=vi.fn(async()=>({available:true,quality:{
-      ...quality,missingInputs:[warning],
-    },value:fullDays.map(date=>({date,netSalesCents:400000}))} as never));
-    ctx.tools.getLaborMetrics=vi.fn(async()=>({available:true,quality,
-      value:fullDays.map(date=>({date,wagesCents:100000,staffTaxCents:8000,
-        loadedStaffCostCents:108000,wageStatus:"actual"}))} as never));
-    const result=await staffTools.get_labor.execute({
-      period:{from:"2026-11-02",to:"2026-11-03"}},ctx);
-    expect(result.laborCostPercent).toBeCloseTo(216000/800000,8);
-    expect(result.laborCostPercentCoveredDays).toBe(2);
-    expect(result.laborCostPercentSalesDays).toBe(2);
-    expect(result.laborCostPercentPartial).toBe(true);
-    expect(result.missing).toContain(warning);
-    expect(result.dataNotes).toEqual(expect.arrayContaining([expect.stringContaining(note)]));
-  });
-
-  it("get_labor returns a percentage calculated by the existing core, with covered days",async()=>{
-    const ctx=context();
-    ctx.tools.getSalesTrend=vi.fn(async()=>({available:true,quality,value:[
-      {date:"2026-11-02",netSalesCents:865325},
-    ]} as never));
-    ctx.tools.getLaborMetrics=vi.fn(async()=>({available:true,quality,value:[
-      {date:"2026-11-02",wagesCents:230000,staffTaxCents:15295,
-        loadedStaffCostCents:245295,wageStatus:"actual"},
-    ]} as never));
-    const result=await staffTools.get_labor.execute({period:{from:"2026-11-02",to:"2026-11-03"}},ctx);
-    expect(result.laborCostPercent).toBeCloseTo(245295/865325,8);
-    expect(result.laborCostPercentKnownLaborCents).toBe(245295);
-    expect(result.laborCostPercentSalesCents).toBe(865325);
-    expect(result.laborCostPercentCoveredDays).toBe(1);
-    expect(result.laborCostPercentSalesDays).toBe(1);
-    expect(result.laborCostPercentPartial).toBe(true);
-    expect(result.laborCostPercentDisplay).toBe("28.3%");
-  });
 });

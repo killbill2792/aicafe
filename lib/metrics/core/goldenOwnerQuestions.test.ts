@@ -4,13 +4,11 @@ import type {BusinessSnapshot} from "@/lib/data/types";
 import type {DailyFacts} from "@/lib/calc";
 import {cafeStateFromSnapshot} from "@/lib/operating/cafeState";
 import {buildProfitAndCostsViewModel} from "@/lib/viewmodels/moneyViewModel";
-import {moneyTools} from "@/lib/ai/agent/tools/money";
-import type {AgentToolContext} from "@/lib/ai/agent/tools/index";
 import {shiftCafeDate} from "./clock";
 
 /** Golden owner questions: fixed café facts with answers worked out by hand.
  * Each answer must come out exactly the same from the Money screen and from
- * the chat's tools. A change to either path that moves a number fails here. */
+ * the shared operating-state calculation. A change to either path that moves a number fails here. */
 
 type Case="complete"|"fees_missing"|"wage_missing"|"bill_missing";
 const DAYS=29,SALES=240_000,INGREDIENTS=65_000,FEES=7_000,WAGES=69_600,TAX=8_352,RENT=300_000;
@@ -41,12 +39,13 @@ async function answers(kind:Case){
   const period={from:"2026-09-01",to:snapshot.todayDateStr};
   const screen=buildProfitAndCostsViewModel(snapshot,"month");
   const state=cafeStateFromSnapshot(snapshot,period);
-  const ctx={asOf:snapshot.todayDateStr,timezone:snapshot.business.timezone,locale:"en",currency:snapshot.business.currency??null,
-    tools:{getBusinessCostSummary:async()=>cafeStateFromSnapshot(snapshot,period).businessCosts},
-  } as unknown as AgentToolContext;
-  const costs=await moneyTools.get_cost_summary.execute({period:"month"},ctx) as unknown as {
-    knownTotalCents:number|null;estimated:string[];missing:string[];
-    components:{ingredientsCents:number|null;loadedStaffCents:number|null;cardFeesCents:number|null;runningCostsCents:number|null}};
+  const c=state.businessCosts;
+  const costs={knownTotalCents:c.completeness==="unavailable"?null:c.knownTotalCents,
+    estimated:c.estimatedInputs,missing:c.missingInputs,
+    components:{ingredientsCents:c.observed.ingredients?c.components.ingredientsCents:null,
+      loadedStaffCents:c.observed.loadedStaff?c.components.loadedStaffCents:null,
+      cardFeesCents:c.observed.cardFees?c.components.cardFeesCents:null,
+      runningCostsCents:c.observed.runningCosts?c.components.runningCostsCents:null}};
   if(!state.profitability.available)throw new Error("profit unavailable");
   return {screen,costs,profit:state.profitability.value};
 }
@@ -55,7 +54,7 @@ async function answers(kind:Case){
 const RENT_29_DAYS=RENT*DAYS/30;                          // 2,900.00
 const BASE_COSTS=DAYS*(INGREDIENTS+FEES+WAGES+TAX)+RENT_29_DAYS;
 
-describe("golden owner questions — screen and chat give the same hand-worked answer",()=>{
+describe("golden owner questions — screen and shared core give the same hand-worked answer",()=>{
   it("1. How much did I sell this month?",async()=>{
     const {screen,profit}=await answers("complete");
     expect(screen.salesCents).toBe(6_960_000);

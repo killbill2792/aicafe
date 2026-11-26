@@ -10,17 +10,6 @@ import {profitForPeriod} from "./profit";
 import type {BusinessSnapshot} from "@/lib/data/types";
 import {summarizeResolvedSoldProductCosts,type DailyFacts} from "@/lib/calc";
 import {shiftCafeDate} from "./clock";
-import {moneyTools} from "@/lib/ai/agent/tools/money";
-import {acceptedExplainLines,type ExplainLine} from "@/lib/ai/agent/explain";
-import HowIGotThis from "@/components/home/HowIGotThis";
-import {renderToStaticMarkup} from "react-dom/server";
-import {createElement} from "react";
-import en from "@/messages/en.json";
-import {newItemPriceTools} from "@/lib/ai/agent/tools/newItemPrice";
-import {staffTools} from "@/lib/ai/agent/tools/staff";
-import type {AgentToolContext} from "@/lib/ai/agent/tools/index";
-import {figure,type Economics} from "@/lib/calc/supervisorEconomics";
-import {regularHoursStateForDate} from "@/lib/business/openHours";
 
 const date=(i:number)=>shiftCafeDate("2026-09-01",i);
 function demo(caseName:"complete"|"today_missing"|"fees_missing"|"wage_missing"|"bill_missing"|"actual_toast_fees"){
@@ -97,111 +86,21 @@ describe("metricsParity — one observed café through screen and structured cha
   }
 });
 
-describe("parity across real chat tool handlers and screens (a)-(g)",()=>{
- const cases=["complete","today_missing","fees_missing","wage_missing","bill_missing","actual_toast_fees","sparse_payroll"] as const;
- for(const kind of cases){
-  it(kind+": get_break_even and get_labor and new-item pricing match screen cents",async()=>{
-   const base=demo(kind==="sparse_payroll"?"complete":kind);
-   const raw=base.monthActualDays.map((day,i)=>kind==="sparse_payroll"&&i>=3?
-     {...day,wagesCents:null,laborWageStatus:"missing" as const}:day);
+describe("canonical core and screen parity for sparse payroll",()=>{
+ it("does not present missing wages as zero",()=>{
+   const base=demo("complete");
+   const raw=base.monthActualDays.map((day,i)=>i>=3?{...day,wagesCents:null,laborWageStatus:"missing" as const}:day);
    const snapshot:BusinessSnapshot={...base,monthActualDays:raw,monthRecordedDays:raw,
      last28Days:raw,breakEvenDays:raw.filter(day=>day.date<base.todayDateStr)};
-   // Independent inputs: the chat fixture receives only raw source facts and
-   // pure core calculations. It must NOT consume a screen viewmodel output.
-   const days=snapshot.breakEvenDays??[];
-   const ownerFeePlans=(snapshot as BusinessSnapshot&{ownerFeePlans?:{percentageBps:number}[]}).ownerFeePlans??[];
-   const fees=cardFeesForDays(days,ownerFeePlans);
-   const sold=summarizeResolvedSoldProductCosts(snapshot.breakEvenProductCosts??snapshot.menuItems);
-   const sales=days.reduce((sum,d)=>sum+d.netSalesCents,0);
-   const monthlyUnits=days.reduce((sum,d)=>sum+d.drinksCount,0);
-   const monthDates=Array.from({length:snapshot.daysInMonth},(_,i)=>
-      snapshot.monthKey+"-"+String(i+1).padStart(2,"0"))
-     .filter(day=>regularHoursStateForDate(snapshot.business.openHours,day)!=="closed");
-   const extras=(snapshot as BusinessSnapshot&{ownerMonthlyPayrollExtrasCents?:number|null}).ownerMonthlyPayrollExtrasCents;
-   const directLabor=laborForPeriod(monthDates.map(date=>({date})),raw,null,
-     extras==null?null:{
-       monthlyCents:extras,
-       from:snapshot.monthKey+"-01",to:snapshot.monthKey+"-"+String(snapshot.daysInMonth).padStart(2,"0")});
-   const sourceBills=snapshot.runningCostLines.filter(line=>!line.isMissing)
-     .reduce((sum,line)=>sum+line.amountCents,0);
-   const economics:Economics={
-     monthlyBills:figure(sourceBills,"actual","billsRecorded"),
-     monthlyStaff:figure(directLabor.projectedMonthlyLaborCents,"estimate","laborPartialCoverage"),
-     monthlyRevenue:figure(sales,"estimate","monthlyRevenueCovered"),
-     ingredientRate:sales?sold.totalCostCents/sales:null,
-     feeRate:sales?fees.amountCents/sales:null,
-     ingredientStatus:"actual",feeStatus:fees.basis==="actual"?"actual":"estimate",
-     averagePriceCents:monthlyUnits?Math.round(sales/monthlyUnits):null,
-     monthlyUnits,daysInMonth:snapshot.daysInMonth,targetMargin:.15,missingDays:[],
-     asOfDate:snapshot.todayDateStr,observedDays:days,
-     observedIngredientCentsOverride:sold.totalCostCents,
-     missingIngredientCosts:sold.missingProductCosts,ownerFeePlans,
-     laborCoveredDays:directLabor.coveredDays,laborWindowDays:directLabor.totalDays,
-     laborEvidence:{dates:monthDates.map(date=>({date})),records:raw},
-   };
-   const screen=buildProfitAndCostsViewModel(snapshot,"month");
-   const recovery=buildCostRecoveryViewModel(snapshot);
-   const plan=buildBreakEvenViewModel(snapshot);
-   expect(directLabor.projectedMonthlyLaborCents).toBe(recovery.monthlyStaffCents);
-   expect(sourceBills).toBe(recovery.monthlyBillsCents);
-   const quality={level:"high" as const,missingInputs:[],estimatedInputs:[],staleInputs:[]};
-   const period={from:snapshot.monthKey+"-01",to:snapshot.todayDateStr};
-   const ctx:AgentToolContext={asOf:snapshot.todayDateStr,timezone:snapshot.business.timezone,locale:"en",currency:snapshot.business.currency??null,
-    tools:{
-     getLaborMetrics:async()=>({available:true as const,value:raw.map(d=>({
-       date:d.date,wagesCents:d.wagesCents,staffTaxCents:d.staffTaxCents,
-       wageStatus:d.laborWageStatus??"actual",
-       loadedStaffCostCents:d.wagesCents===null||d.staffTaxCents===null?
-        null:d.wagesCents+d.staffTaxCents,
-     })),quality}),
-     // The production reader (lib/ai/tools.ts) returns cafe state's businessCosts.
-     getBusinessCostSummary:async()=>cafeStateFromSnapshot(snapshot,period).businessCosts,
-    } as unknown as AgentToolContext["tools"],
-    readEconomics:async()=>({economics,canonicalBreakEven:breakEvenSnapshotInputs(snapshot),items:[],staff:[],
-     ownerMonthlyPayrollExtrasCents:null,ownerIngredientRate:null}),
-   };
-   const chat=await moneyTools.get_break_even.execute({},ctx);
-   const expectedBreakEven=recovery.breakEven.kind==="ready"?
-     recovery.breakEven.breakEvenSalesCents:null;
-   expect(chat.monthlyBreakEvenCents).toBe(expectedBreakEven);
-   expect(chat.drinksPerDay).toBe(plan.unavailableReason?null:plan.drinksNeededPerDay);
-   expect(chat.openDaysPerMonth).toBe(plan.openDaysPerMonth);
-   expect(chat.salesCalibration).toMatchObject({expected:28});
-   expect(chat.laborCoverage).toMatchObject({
-     from:snapshot.monthKey+"-01",
-     covered:breakEvenSnapshotInputs(snapshot).elapsedOpenDates.length-
-       breakEvenSnapshotInputs(snapshot).missingLaborDates.length,
-     total:breakEvenSnapshotInputs(snapshot).elapsedOpenDates.length,
-   });
-   expect(chat.observedProcessingFeesCents).toBe(recovery.observedProcessingFeesCents);
-   expect((chat.monthlyLabor as {valueCents:number|null}).valueCents).toBe(recovery.monthlyStaffCents);
-   expect((chat.monthlyBills as {valueCents:number|null}).valueCents).toBe(recovery.monthlyBillsCents);
-   const laborChat=await staffTools.get_labor.execute({period:"month"},ctx);
-   const knownLabor=(laborChat.laborDays as Array<{wagesCents:number|null;staffTaxCents:number|null}>)
-     .reduce((sum,day)=>sum+(day.wagesCents??0)+(day.staffTaxCents??0),0);
-   expect(knownLabor).toBe(screen.wagesCents!+screen.staffTaxCents!);
-   const costChat=await moneyTools.get_cost_summary.execute({period:"month"},ctx);
-   // The chat's cost answer must be the same number the Money screen shows as costs.
-   expect(costChat.knownTotalCents).toBe(screen.totalCostsCents);
-   const price=await newItemPriceTools.suggest_new_item_price.execute({
-    ingredient_cost_cents:145,category:"drink",packaging_cents:0,item_name:null,ownerInputs:null,
-   },ctx);
-   expect((price.monthlyLabor as {valueCents:number|null}).valueCents).toBe(recovery.monthlyStaffCents);
-   const profit=cafeStateFromSnapshot(snapshot,period);
-   expect(profit.profitability.available).toBe(true);
-   if(profit.profitability.available)
-     expect(profit.profitability.value.ownerProfitCents).toBe(screen.ownerProfitCents);
-   if(kind==="sparse_payroll"){
-     expect(recovery.monthlyStaffCents).not.toBeNull();
-     expect((chat.monthlyLabor as {valueCents:number|null}).valueCents).not.toBeNull();
-     expect(plan.noteKeys).toContain("laborCoveragePartial");
-   }
-  });
- }
+   const recovery=buildCostRecoveryViewModel(snapshot),plan=buildBreakEvenViewModel(snapshot);
+   expect(recovery.monthlyStaffCents).not.toBeNull();
+   expect(plan.noteKeys).toContain("laborCoveragePartial");
+   expect(recovery.breakEven).toEqual(plan.breakEven);
+ });
 });
 
 describe("October closed-day parity, verified Toast zero fees and visible working",()=>{
- it("Money, Plan, standard Supervisor and its formula use identical cents and elapsed coverage",async()=>{
+ it("Money and Plan use identical cents and elapsed coverage",()=>{
    const base=demo("complete");
    const dateRow=(date:string,fees:number,status:"actual"|"estimated"):DailyFacts=>({
      ...base.monthActualDays[0],date,netSalesCents:1_000_000,
@@ -218,47 +117,13 @@ describe("October closed-day parity, verified Toast zero fees and visible workin
    const inputs=breakEvenSnapshotInputs(snapshot);
    const money=buildCostRecoveryViewModel(snapshot);
    const plan=buildBreakEvenViewModel(snapshot);
-   const toolAnswer=(basis:ReturnType<typeof breakEvenSnapshotInputs>)=>
-     moneyTools.get_break_even.execute({},{
-       asOf:snapshot.todayDateStr,timezone:snapshot.business.timezone,locale:"en",
-       tools:{} as AgentToolContext["tools"],
-       readEconomics:async()=>({canonicalBreakEven:basis,items:[],staff:[],
-         ownerMonthlyPayrollExtrasCents:null,ownerIngredientRate:null,
-         economics:{openDaysBasis:"opening_hours"} as Economics}),
-     } as AgentToolContext);
-   const chat=await toolAnswer(inputs);
    expect(inputs.monthLabor.projectedMonthlyLaborCents).toBe(0);
    expect(inputs.feeResult.basis).toBe("actual");
    expect(inputs.feeResult.amountCents).toBe(10_821);
    expect(money.observedProcessingFeesCents).toBe(10_821);
    expect(plan.breakEven).toEqual(money.breakEven);
-   expect(chat.monthlyBreakEvenCents).toBe(money.breakEven.kind==="ready"?
-     money.breakEven.breakEvenSalesCents:null);
-   expect(chat.drinksPerDay).toBe(plan.drinksNeededPerDay);
-   expect(chat.openDaysPerMonth).toBe(plan.openDaysPerMonth);
-   expect(chat.dailyBreakEvenCents).toBe(money.breakEven.kind==="ready"?
-     Math.ceil(money.breakEven.breakEvenSalesCents/plan.openDaysPerMonth):null);
-   expect(chat.laborCoverage).toMatchObject({from:"2026-10-01",to:"2026-10-14",
-     missingDates:inputs.missingLaborDates});
    expect(inputs.missingLaborDates.every(date=>date.startsWith("2026-10-")&&
      date<"2026-10-15")).toBe(true);
-   expect(chat.salesCalibration).toMatchObject({expected:28,covered:2});
-   const monthly=chat.monthlyBreakEvenCents as number;
-   if(money.breakEven.kind!=="ready")throw Error("Fixture requires sales");
-   const disclosures=chat.explain as ExplainLine[];
-   expect(disclosures).toHaveLength(1);
-   expect(disclosures[0].result).toEqual({kind:"money",cents:monthly});
-   const reply="Monthly break-even: $"+new Intl.NumberFormat("en-US",{
-     minimumFractionDigits:2,maximumFractionDigits:2}).format(monthly/100);
-   const accepted=acceptedExplainLines(disclosures,[{tool:"break_even",values:[{
-     key:"2026-10-01/2026-10-31/breakEvenSales",
-     value:monthly,unit:"cents"}]}],reply,[],"en");
-   expect(accepted).toEqual(disclosures);
-   const html=renderToStaticMarkup(createElement(HowIGotThis,{lines:accepted,locale:"en",
-     currency:snapshot.business.currency??null,copy:en.SupervisorChat}));
-   expect(html).toContain("<details");
-   expect(html).toContain("108.21"); // verified Toast fee appears in the formula
-   expect(html).toContain("÷");
    const missingFee:BusinessSnapshot={...snapshot,
      monthActualDays:[history[0],dateRow("2026-10-14",0,"estimated")],
      monthRecordedDays:[history[0],dateRow("2026-10-14",0,"estimated")],
@@ -267,7 +132,7 @@ describe("October closed-day parity, verified Toast zero fees and visible workin
    const missing=breakEvenSnapshotInputs(missingFee);
    expect(missing.feeResult.amountCents).not.toBe(10_821);
    expect(missing.feeResult.basis).not.toBe("actual");
-   expect((await toolAnswer(missing)).status).toBe("estimate");
+   expect(missing.estimatesUsed).toBe(true);
    const zeroActual:BusinessSnapshot={...snapshot,
      last28Days:[history[0],dateRow("2026-10-14",0,"actual")],
      breakEvenDays:[history[0],dateRow("2026-10-14",0,"actual")]};

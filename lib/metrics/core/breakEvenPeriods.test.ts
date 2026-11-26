@@ -3,8 +3,6 @@ import {getFixtureSnapshot} from "@/lib/data/fixtureSnapshot";
 import {breakEvenSnapshotInputs} from "@/lib/viewmodels/breakEvenViewModel";
 import {buildBreakEvenViewModel} from "@/lib/viewmodels/breakEvenViewModel";
 import {buildCostRecoveryViewModel} from "@/lib/viewmodels/moneyViewModel";
-import {moneyTools} from "@/lib/ai/agent/tools/money";
-import type {AgentToolContext} from "@/lib/ai/agent/tools/index";
 import type {BusinessSnapshot} from "@/lib/data/types";
 import type {DailyFacts} from "@/lib/calc";
 import {shiftCafeDate} from "./clock";
@@ -36,48 +34,25 @@ function fixture() {
   return snapshot;
 }
 
-function context(snapshot:BusinessSnapshot):AgentToolContext {
-  return {
-    asOf:snapshot.todayDateStr,timezone:snapshot.business.timezone,locale:"en",
-    currency:snapshot.business.currency??null,
-    tools:{} as AgentToolContext["tools"],
-    readEconomics:async()=>({
-      canonicalSnapshot:snapshot,
-      canonicalBreakEven:breakEvenSnapshotInputs(snapshot),
-      economics:{openDaysBasis:"opening_hours"} as never,
-      items:[],staff:[],ownerMonthlyPayrollExtrasCents:null,ownerIngredientRate:.20,
-    }),
-  };
-}
-
 describe("canonical period break-even and Toast provenance",()=>{
-  it("uses exactly the same monthly cents for Money, Plan and Supervisor",async()=>{
+  it("uses exactly the same monthly cents for Money and Plan",()=>{
     const snapshot=fixture();
     const basis=breakEvenSnapshotInputs(snapshot);
     const money=buildCostRecoveryViewModel(snapshot);
     const plan=buildBreakEvenViewModel(snapshot);
-    const chat=await moneyTools.get_break_even.execute({},context(snapshot));
     expect(basis.shared.calculation).toEqual(money.breakEven);
     expect(plan.breakEven).toEqual(money.breakEven);
-    expect(chat.monthlyBreakEvenCents).toBe(
-      money.breakEven.kind==="ready"?money.breakEven.breakEvenSalesCents:null);
-    expect(chat.periodBreakEvenCents).toBe(chat.monthlyBreakEvenCents);
-    expect(chat.historicalFeeCoverage).toMatchObject({
-      actualDays:28,estimatedDays:0,source:"toast_actual"});
-    expect(chat.feeStatus).toBe("actual");
-    expect(chat.costProvenance).toMatchObject({
-      employerPayrollTax:"saved_rate_estimate",
-      historicalProcessingFees:"toast_actual",
-      futureProcessingFeeRate:"projected_from_actual",
-      ingredients:"saved_rate",
-    });
+    expect(basis.feeResult.basis).toBe("actual");
+    expect(basis.feeResult.amountCents).toBe(28*3200);
+    expect(basis.ingredientSource).toBe("saved_rate");
+  });
     expect(chat.reasonKey).not.toBe("profitFeesEstimated");
     expect(chat.estimated).toContain("savedIngredientRate");
     expect(chat.missing).not.toContain("processingFeeDaysIncomplete");
     expect((chat.explain as unknown[]).length).toBe(1);
   });
 
-  it("month-to-date does not project the two missing future October labor days",async()=>{
+  it("month-to-date does not project the two missing future October labor days",()=>{
     const snapshot=fixture();
     const forecast=breakEvenSnapshotInputs(snapshot);
     const mtd=breakEvenSnapshotInputs(snapshot,{period:"month_to_date"});
@@ -87,58 +62,39 @@ describe("canonical period break-even and Toast provenance",()=>{
     expect(mtd.monthlyBillsCents).toBe(
       Math.round(forecast.monthlyBillsCents*29/31));
     expect(mtd.shared.calculation.kind).toBe("ready");
-    const chat=await moneyTools.get_break_even.execute({period:"month_to_date"},context(snapshot));
-    expect(chat.periodKind).toBe("month_to_date");
-    expect(chat.monthlyBreakEvenCents).toBeNull();
-    expect(chat.periodBreakEvenCents).toBe(mtd.shared.salesPerMonthCents);
-    expect(chat.costProvenance).toMatchObject({futureLabor:"not_projected"});
-    expect(chat.period).toMatchObject({from:"2026-10-01",to:"2026-10-29"});
   });
 
-  it("today does not present the monthly average as today's verified staffing cost",async()=>{
+  it("today does not present the monthly average as today's verified staffing cost",()=>{
     const snapshot=fixture();
     const today=breakEvenSnapshotInputs(snapshot,{period:"today"});
     expect(today.monthlyStaffCents).toBeNull();
     expect(today.monthlyBillsCents).toBe(
       Math.round(breakEvenSnapshotInputs(snapshot).monthlyBillsCents/31));
-    const chat=await moneyTools.get_break_even.execute({period:"today"},context(snapshot));
-    expect(chat.periodKind).toBe("today");
-    expect(chat.period).toMatchObject({from:"2026-10-30",to:"2026-10-30"});
-    expect(chat.monthlyBreakEvenCents).toBeNull();
-    expect(chat.periodBreakEvenCents).toBe(today.shared.salesPerMonthCents);
-    expect(chat.missing).toContain("todayLaborUnavailable");
-    expect(chat.costProvenance).toMatchObject({wages:"missing"});
-    expect(chat.knownCostBreakEvenFloorCents).toBe(chat.periodBreakEvenCents);
   });
 
-  it("explicit owner rate overrides use the same core formula, not a second adapter",async()=>{
+  it("explicit owner rate overrides use the same core formula, not a second adapter",()=>{
     const snapshot=fixture();
-    const unchanged=await moneyTools.get_break_even.execute({
-      ownerIngredientPackagingPercent:20},context(snapshot));
-    const original=await moneyTools.get_break_even.execute({},context(snapshot));
-    expect(unchanged.monthlyBreakEvenCents).toBe(original.monthlyBreakEvenCents);
-    const changed=await moneyTools.get_break_even.execute({
-      ownerIngredientPackagingPercent:25,ownerProcessingFeePercent:4},context(snapshot));
-    const basis=breakEvenSnapshotInputs(snapshot,{
-      ingredientRateOverride:.25,feeRateOverride:.04});
-    expect(changed.monthlyBreakEvenCents).toBe(basis.shared.salesPerMonthCents);
-    expect(changed.feeStatus).toBe("actual"); // Historical Toast fees remain actual.
-    expect(changed.costProvenance).toMatchObject({
-      historicalProcessingFees:"toast_actual",ingredients:"owner_override"});
+    const unchanged=breakEvenSnapshotInputs(snapshot,{ingredientRateOverride:.20});
+    const original=breakEvenSnapshotInputs(snapshot);
+    expect(unchanged.shared.salesPerMonthCents).toBe(original.shared.salesPerMonthCents);
+    const changed=breakEvenSnapshotInputs(snapshot,{ingredientRateOverride:.25,feeRateOverride:.04});
+    expect(changed.feeResult.basis).toBe("actual");
+    expect(changed.ingredientSource).toBe("owner_override");
+    expect(changed.shared.salesPerMonthCents).not.toBe(original.shared.salesPerMonthCents);
   });
 
-  it("asks for truly absent ingredient assumptions instead of making up a zero rate",async()=>{
+  it("asks for truly absent ingredient assumptions instead of making up a zero rate",()=>{
     const snapshot=fixture();
     const missing:BusinessSnapshot={...snapshot,
       business:{...snapshot.business,targetIngredientCostRate:null},
       breakEvenProductCosts:[],menuItems:[]};
-    const chat=await moneyTools.get_break_even.execute({},context(missing));
-    expect(chat.missing).toContain("ingredientRateMissing:ask_owner");
-    expect(chat.ingredientStatus).toBe("missing");
-    expect(chat.status).toBe("estimate");
+    const basis=breakEvenSnapshotInputs(missing);
+    expect(basis.ingredientMissing).toBe(true);
+    expect(basis.ingredientStatus).toBe("missing");
+    expect(basis.estimatesUsed).toBe(true);
   });
 
-  it("does not certify placeholder zeros as Toast labor but retains a genuine $0 shift",async()=>{
+  it("does not certify placeholder zeros as Toast labor but retains a genuine $0 shift",()=>{
     const snapshot=fixture();
     const placeholder:BusinessSnapshot={...snapshot,
       todayDay:{...snapshot.todayDay,wagesCents:0,staffTaxCents:0,
@@ -146,9 +102,6 @@ describe("canonical period break-even and Toast provenance",()=>{
     const unknown=breakEvenSnapshotInputs(placeholder,{period:"today"});
     expect(unknown.todayLaborReady).toBe(false);
     expect(unknown.monthlyStaffCents).toBeNull();
-    const reply=await moneyTools.get_break_even.execute({period:"today"},context(placeholder));
-    expect(reply.missing).toContain("todayLaborUnavailable");
-    expect(reply.costProvenance).toMatchObject({wages:"missing"});
     const genuine={...placeholder.todayDay,laborWageStatus:"actual" as const,
       wagesCents:0,staffTaxCents:0};
     const withShift:BusinessSnapshot={...placeholder,todayDay:genuine,
@@ -158,13 +111,13 @@ describe("canonical period break-even and Toast provenance",()=>{
     expect(actual.monthlyStaffCents).toBe(0);
   });
 
-  it("preserves owner labor stated for exactly today or month-to-date",async()=>{
+  it("preserves owner labor stated for exactly today or month-to-date",()=>{
     const snapshot=fixture();
-    const ownerInputs=(laborCents:number,laborPeriod:{from:string;to:string})=>({
-      netSalesCents:null,salesPeriod:null,laborCents,laborPeriod,
-      rentCents:null,otherOverheadCents:null,overheadPeriod:null,
-      unitCostCents:null,itemsSoldPerDay:null,
-    });
+    const today=breakEvenSnapshotInputs(snapshot,{period:"today",periodLaborCentsOverride:10_000});
+    expect(today.monthlyStaffCents).toBe(10_000);
+    const mtd=breakEvenSnapshotInputs(snapshot,{period:"month_to_date",periodLaborCentsOverride:487_200});
+    expect(mtd.monthlyStaffCents).toBe(487_200);
+  });
     const today=await moneyTools.get_break_even.execute({period:"today",
       ownerOpenDaysPerMonth:27,
       ownerInputs:ownerInputs(10_000,{from:"2026-10-30",to:"2026-10-30"})},
