@@ -872,7 +872,7 @@ export async function runOneTurn(p: TurnParams): Promise<{ replyId: string; repl
       unverified: result.unverified, usage: {modelCalls:result.usage.modelCalls,toolCalls:result.usage.toolCalls,inputTokens:result.usage.inputTokens,cachedTokens:result.usage.cachedTokens,outputTokens:result.usage.outputTokens,latencyMs:result.usage.latencyMs,model:result.usage.model},
       ...(result.providerFailureCodes?{diagnosticProviderFailures:result.providerFailureCodes}:{}),
       ...(job ? { jobId: job.id, absorbedOwnerMessageIds: result.absorbedOwnerMessageIds ?? [] } : {}) });
-    return { replyId: reply.id, replyText:result.text, absorbedOwnerMessageIds: result.absorbedOwnerMessageIds ?? [], ...(p.durableFence&&reply.grounding?.status==="requires_owner_input"?{awaitingOwner:true}:p.durableFence&&reply.grounding?.status!=="verified"?{incompleteReport:true}:{}) };
+    return { replyId: reply.id, replyText:result.text, absorbedOwnerMessageIds: result.absorbedOwnerMessageIds ?? [], ...(p.durableFence&&reply.grounding?.status==="requires_owner_input"?{awaitingOwner:true}:{}) };
   } catch (error) {
     if(!logged)console.info("agent_turn",{turn:"agent",endReason:"error",status:"unavailable",
       modelCalls:0,toolCalls:0,tools:[],latencyMs:Date.now()-startedAt,unverifiedCount:0});
