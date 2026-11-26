@@ -82,8 +82,8 @@ export async function getProcessingFeeEstimateSetup(): Promise<ProcessingFeeEsti
   const [plans, rollupsResult, connectionsResult, factsResult, ordersResult] = await Promise.all([
     getOwnerConfirmedProcessingFeePlans(supabase, businessId),
     supabase
-      .from("daily_rollups")
-      .select("business_date, net_sales_cents, card_fees_status")
+      .from("cv_sales_days")
+      .select("business_date, net_sales_cents")
       .eq("business_id", businessId)
       .gte("business_date", fromDate)
       .lte("business_date", today),
@@ -94,8 +94,8 @@ export async function getProcessingFeeEstimateSetup(): Promise<ProcessingFeeEsti
       .eq("status", "active")
       .order("created_at", { ascending: false }),
     supabase
-      .from("processing_fee_daily_facts")
-      .select("business_date, amount_cents, status, source_type, provider")
+      .from("cv_card_fees")
+      .select("business_date, amount_cents, status, source_type:data->>sourceType, provider:data->>provider")
       .eq("business_id", businessId)
       .gte("business_date", fromDate)
       .lte("business_date", today),
