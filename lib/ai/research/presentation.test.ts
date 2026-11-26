@@ -96,7 +96,7 @@ describe("failed SQL research provider streams",()=>{
    }
    expect(calls).toBe(3);
    expect(client).toBe(earlier+"\n\n");
-   expect(params.tool_choice).toBe("none");
+   expect(params.tool_choice).toBe("auto");
    expect(JSON.stringify(params.input)).not.toContain(wrong);
    yield say(corrected+"\n\n"+fence({panels:[chart]}));yield done;
   };
@@ -237,23 +237,40 @@ it("supplies verified matched answers to the resumed research turn",async()=>{
  const result=await runResearchTurn({ownerText:"Review rent",matchedOwnerAnswers:[{questionId:"question",answerId:"answer",question:"What is the rent?",answer:"Rent is 1250."}],cafeContext:"Cafe",provider,scope:{db:{} as never,businessId:"business",ownerUserId:"owner"}});
  expect(result.unverified).toEqual([]);
 });
-it("reserves a bounded synthesis request when ordinary research reaches the work deadline",async()=>{
+it("lets the model finish after more than forty tool calls and five minutes",async()=>{
  let elapsed=0,calls=0;
  const rpc=vi.fn().mockResolvedValue({data:{ok:true,rows},error:null});
  const provider:AgentProvider=async function*(params){
-  calls++;
-  expect(params.max_output_tokens).toBeGreaterThan(0);
-  if(calls===1){
-   yield {type:"response.output_item.done",item:{type:"function_call",name:"run_sql",call_id:"q",arguments:JSON.stringify({sql:"select 1"})}};
-   yield {type:"response.completed",response:{usage:{input_tokens:1,output_tokens:1}}};
-   elapsed=49000;return;
-  }
-  expect(params.tool_choice).toBe("none");
-  yield {type:"response.output_text.delta",delta:"The research window ended."};
-  yield {type:"response.completed",response:{usage:{input_tokens:1,output_tokens:1}}};
+  calls++;expect(params.max_output_tokens).toBeUndefined();expect(params.tool_choice).toBe("auto");
+  if(calls<=42){
+   yield {type:"response.output_item.done",item:{type:"function_call",name:"run_sql",call_id:"q"+calls,arguments:JSON.stringify({sql:"select 1"})}};
+  }else yield {type:"response.output_text.delta",delta:"Research complete."};
+  yield {type:"response.completed",response:{usage:{input_tokens:10000,output_tokens:2000}}};
+  elapsed+=10000;
  };
  const result=await runResearchTurn({ownerText:"Research",cafeContext:"Cafe",provider,now:()=>elapsed,scope:{db:{rpc} as never,businessId:"business",ownerUserId:"owner"}});
- expect(calls).toBe(2);expect(rpc).not.toHaveBeenCalled();expect(result.endReason).toBe("timeout");expect(result.text).toBe("The research window ended.");
+ expect(calls).toBe(43);expect(rpc).toHaveBeenCalledTimes(42);expect(result.endReason).toBe("complete");expect(result.text).toBe("Research complete.");
+});
+it("resumes a physical worker slice without repeating completed SQL or losing presentation evidence",async()=>{
+ let elapsed=0,saved:unknown=null;
+ const rpc=vi.fn(async()=>{elapsed=110;return {data:{ok:true,rows},error:null};});
+ const continuation={load:async()=>saved,save:async(state:unknown)=>{saved=structuredClone(state);}};
+ const first:AgentProvider=async function*(){
+  yield {type:"response.output_item.done",item:{type:"function_call",name:"run_sql",call_id:"q",arguments:JSON.stringify({sql:"select category, amount_cents from expenses"})}};
+  yield {type:"response.completed",response:{usage:{input_tokens:1,output_tokens:1}}};
+ };
+ const scope={db:{rpc} as never,businessId:"business",ownerUserId:"owner"};
+ const base={ownerText:"Research",cafeContext:"Cafe",scope,continuation,presentationContext:ctx,now:()=>elapsed};
+ const interrupted=await runResearchTurn({...base,provider:first,executionDeadline:100});
+ expect(interrupted.endReason).toBe("timeout");expect(rpc).toHaveBeenCalledTimes(1);
+ const second:AgentProvider=async function*(params){
+  expect(JSON.stringify(params.input)).toContain("amount_cents");
+  yield {type:"response.output_text.delta",delta:"Completed.\n\n"+fence({panels:[chart]})};
+  yield {type:"response.completed",response:{usage:{input_tokens:1,output_tokens:1}}};
+ };
+ const resumed=await runResearchTurn({...base,provider:second,executionDeadline:1000});
+ expect(resumed.endReason).toBe("complete");expect(rpc).toHaveBeenCalledTimes(1);
+ expect(resumed.results.some(r=>r.source==="response_presentation")).toBe(true);
 });
 
 
