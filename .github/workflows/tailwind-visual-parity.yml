@@ -1,16 +1,19 @@
 name: Tailwind before-after browser comparison
 on:
   pull_request:
-    branches: [claude/finish-answers]
+    branches: [claude/finish-answers, main]
     paths:
       - app/globals.css
       - package.json
+      - package-lock.json
+      - components/**
+      - app/**
       - tests/e2e/tailwind-parity.mjs
       - .github/workflows/tailwind-visual-parity.yml
 permissions:
   contents: read
 concurrency:
-  group: tailwind-visual-${{ github.event.pull_request.number }}-${{ github.event.pull_request.head.sha }}
+  group: tailwind-visual-${{ github.event.pull_request.number }}
   cancel-in-progress: true
 jobs:
   capture:

@@ -102,7 +102,7 @@ async function callDatabase(scope:ResearchScope,sql:string):Promise<Record<strin
     try{
       await client.connect();
       if(scope.signal?.aborted)return {ok:false,error:"research_execution_interrupted"};
-      const result=await client.query("select public.supervisor_research_sql($1::uuid,$2::uuid,$3::text) as result",[scope.businessId,scope.ownerUserId,sql]);
+      const result=await client.query("select public.supervisor_research_sql($1::uuid,$2::uuid,$3::text) as result",[scope.businessId,scope.ownerUserId,sql]); // hardcode-ok: PostgreSQL positional bind parameters, not monetary literals
       const value=result.rows[0]?.result;
       return value&&typeof value==="object"?value as Record<string,unknown>:{ok:false,error:"empty_database_response"};
     }catch(error){
