@@ -401,3 +401,19 @@ it("keeps provenance offsets after a repaired adjacent table and leaves fenced c
  expect(html).toContain('aria-label="$125.00 — You told me"');
  expect(html).toContain("a|b");
 });
+
+it.each(["Total \\$123","Total &dollar;123","Total &#36;123","Total &amp; fees $123"])("preserves unsupported financial annotations through decoded Markdown: %s",text=>{
+ const start=text.lastIndexOf("123");
+ const html=renderToStaticMarkup(createElement(ChatMarkdown,{text,showLegend:false,unverified:[{start,end:start+3,source:"unchecked"}]}));
+ expect(html).toContain('aria-label="$123 — Not checked against your records"');
+ expect(html).toContain(">$123</button>");
+});
+it("maps decoded repeated amounts to their individual source labels",()=>{
+ const text="Actual \\$123; estimate &dollar;123";
+ const first=text.indexOf("123"),second=text.lastIndexOf("123");
+ const html=renderToStaticMarkup(createElement(ChatMarkdown,{text,showLegend:false,unverified:[
+  {start:first,end:first+3,source:"owner"},{start:second,end:second+3,source:"estimate"}]}));
+ expect(html).toContain('aria-label="$123 — You told me"');
+ expect(html).toContain('aria-label="$123 — Estimate"');
+ expect(html).not.toContain("Not checked against your records");
+});

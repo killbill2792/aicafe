@@ -5,6 +5,7 @@ import ar from "@/messages/ar.json";
 import { useEffect, useReducer, useRef, useState, type ReactNode, type Ref } from "react";
 import {Streamdown,defaultRehypePlugins,type Components,type ExtraProps} from "streamdown";
 import type {Root,Element,Text} from "hast";
+import {decodeString} from "micromark-util-decode-string";
 import { createPortal } from "react-dom";
 
 type Verification = { start:number;end:number;source?:"owner"|"estimate"|"unchecked";detail?:string };
@@ -142,13 +143,13 @@ type MarkOptions={spans:readonly Verification[];labels:ProvenanceLabels;locale:L
 type NumberMark={start:number;end:number;source:keyof typeof tones;label:string};
 /** This is a source-annotation plugin, not a Markdown parser. The renderer
  * supplies parsed AST text and original UTF-16 offsets. */
-function sourceMarks(text:string,absoluteStart:number,{spans,labels,locale}:MarkOptions):NumberMark[]{
+function sourceMarks(text:string,sourceRange:(start:number,end:number)=>{start:number;end:number}, {spans,labels,locale}:MarkOptions,uncertain=false):NumberMark[]{
  const clockRanges=[...text.matchAll(/\b\d{1,2}\s*[–-]\s*\d{1,2}:\d{2}(?:\s*[ap]\.?m\.?)?/giu)]
    .map(m=>({start:m.index,end:m.index+m[0].length}));
  return tokenizeNumbers(text,locale).flatMap(token=>{
   if(clockRanges.some(r=>token.start<r.end&&token.end>r.start))return [];
-  const from=absoluteStart+token.start,to=absoluteStart+token.end;
-  const matching=spans.filter(s=>s.start<to&&s.end>from);
+  const range=sourceRange(token.start,token.end);
+  const matching=spans.filter(s=>s.start<range.end&&s.end>range.start).map(s=>uncertain?{...s,source:"unchecked" as const,detail:undefined}:s);
   const unchecked=matching.some(s=>(s.source??"unchecked")==="unchecked");
   if(!matching.length||(["clock","clockRange","date","dateRange","duration","ordinal","phone/id"].includes(token.kind)&&!unchecked))return [];
   const span=matching.find(s=>(s.source??"unchecked")==="unchecked")??matching[0];
@@ -160,14 +161,35 @@ function sourceMarks(text:string,absoluteStart:number,{spans,labels,locale}:Mark
 function sourceAnnotationPlugin(options:MarkOptions){
  return (tree:Root,file:{value:unknown})=>{
   const source=String(file.value),badged=new Set<number>();
-  const offset=(node:Text,parent:Root|Element)=>{
+  const mapping=(node:Text,parent:Root|Element)=>{
    const position=node.position??parent.position;
    const start=position?.start.offset,end=position?.end.offset;
    if(start===undefined||end===undefined)return undefined;
    const raw=source.slice(start,end);
-   if(raw===node.value)return start;
-   const at=raw.indexOf(node.value);
-   return at>=0&&raw.lastIndexOf(node.value)===at?start+at:undefined;
+   const literal=raw.indexOf(node.value);
+   if(literal>=0&&raw.lastIndexOf(node.value)===literal)
+    return {range:(a:number,b:number)=>({start:start+literal+a,end:start+literal+b}),uncertain:false};
+   // Use the same CommonMark decoder as the parser, mapping every decoded
+   // UTF-16 unit to the full source escape/reference that produced it.
+   const units:{start:number;end:number}[]=[];let decoded="";
+   const append=(value:string,a:number,b:number)=>{
+    decoded+=value;for(let i=0;i<value.length;i++)units.push({start:start+a,end:start+b});
+   };
+   let cursor=0;
+   for(const match of raw.matchAll(/\\[!-/:-@\[-\x60{-~]|&(?:#[xX][\da-fA-F]{1,6}|#\d{1,7}|[a-zA-Z][a-zA-Z0-9]{1,31});|\r\n?/gu)){
+    while(cursor<match.index){append(raw[cursor],cursor,cursor+1);cursor++;}
+    const value=match[0][0]==="\r"?"\n":decodeString(match[0]);
+    if(value===match[0]){for(const ch of value){append(ch,cursor,cursor+ch.length);cursor+=ch.length;}}
+    else{append(value,cursor,cursor+match[0].length);cursor+=match[0].length;}
+   }
+   while(cursor<raw.length){append(raw[cursor],cursor,cursor+1);cursor++;}
+   const at=decoded.indexOf(node.value);
+   if(at>=0&&decoded.lastIndexOf(node.value)===at)
+    return {range:(a:number,b:number)=>({start:units[at+a]?.start??start,end:units[at+b-1]?.end??end}),uncertain:false};
+   // If the parser changed more than escapes, never silently turn a
+   // potentially unsupported number into a verified one. Use the enclosing
+   // source range and downgrade ambiguous provenance to unchecked.
+   return {range:()=>({start,end}),uncertain:true};
   };
   const walk=(parent:Root|Element,ordered=false)=>{
    for(let i=0;i<parent.children.length;i++){
@@ -185,9 +207,10 @@ function sourceAnnotationPlugin(options:MarkOptions){
      walk(node,node.tagName==="ol");continue;
     }
     if(node.type!=="text")continue;
-    const at=offset(node,parent);
-    if(at===undefined)continue;
-    const marks=sourceMarks(node.value,at,options).filter(m=>!badged.has(at+m.start));
+    const mapped=mapping(node,parent);
+    if(!mapped)continue;
+    const key=(m:NumberMark)=>mapped.range(m.start,m.end).start;
+    const marks=sourceMarks(node.value,mapped.range,options,mapped.uncertain).filter(m=>mapped.uncertain||!badged.has(key(m)));
     if(!marks.length)continue;
     const nodes:(Text|Element)[]=[];let cursor=0;
     for(const mark of marks){
@@ -195,7 +218,7 @@ function sourceAnnotationPlugin(options:MarkOptions){
      if(mark.start>cursor)nodes.push({type:"text",value:node.value.slice(cursor,mark.start)});
      nodes.push({type:"element",tagName:"span",properties:{dataCafeSource:mark.source,dataCafeLabel:mark.label},
       children:[{type:"text",value:node.value.slice(mark.start,mark.end)}]});
-     badged.add(at+mark.start);cursor=mark.end;
+     if(!mapped.uncertain)badged.add(key(mark));cursor=mark.end;
     }
     if(cursor<node.value.length)nodes.push({type:"text",value:node.value.slice(cursor)});
     parent.children.splice(i,1,...nodes);i+=nodes.length-1;
