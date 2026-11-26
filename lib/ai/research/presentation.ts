@@ -9,7 +9,7 @@ import {presentationPanelSchema,recordTableSchema,richPresentationSchema,descrip
 const fieldPath=z.array(z.union([z.string().min(1).max(140),z.number().int().nonnegative()])).min(1).max(12);
 const reference=z.object({ref:z.string(),path:fieldPath.optional(),quote:z.string().min(1).max(100).optional()}).refine(v=>Boolean(v.path)!==Boolean(v.quote));
 const pointSelection=z.object({label:z.string().min(1).max(140),value:reference,labelField:reference.optional()});
-const pointPanel=z.object({kind:z.enum(["metric","bar","line","donut","ranked_table"]),title:z.string().optional(),points:z.array(pointSelection).min(1).max(30)});
+const pointPanel=z.object({kind:z.enum(["metric","bar","line","donut","ranked_table"]),title:z.string().optional(),points:z.array(pointSelection).min(1)});
 
 // Direct model-authored analysis is not a claim of stored business evidence.
 const analysisPanel=z.object({kind:z.enum(["metric","bar","line","donut","ranked_table"]),title:z.string().optional(),
@@ -65,13 +65,13 @@ function table(s:Selection,rows:Row[],ctx:Context,e:PresentationEvidence):Record
  if(!keys.length||keys.some(k=>!visible(k)||!rows.every(r=>Object.hasOwn(r,k)&&rawCell(r[k]))))return null;
  const columns=keys.map(k=>({label:name(k),unit:unit(k)==="cents"&&ctx.currency?"cents":unit(k)==="count"&&rows.every(r=>r[k]===null||Number.isSafeInteger(r[k]))?"count":"stored"}));
  const result=recordTableSchema.safeParse({title:title(s,"Query results"),view:e.kind==="sql"?"tool_sql_research":"tool_response_evidence",from:ctx.asOf,to:ctx.asOf,asOf:ctx.asOf,
-  currency:ctx.currency??null,coverage:rows.length>30||e.coverage?"partial":"stored",
-  scope:(e.source+(rows.length>30?"; first 30 returned rows":"; see the answer for period and coverage")).slice(0,300),
-  columns,rows:rows.slice(0,30).map(r=>keys.map(k=>r[k]))});
+  currency:ctx.currency??null,coverage:e.coverage?"partial":"stored",
+  scope:(e.source+"; see the answer for period and coverage").slice(0,300),
+  columns,rows:rows.map(r=>keys.map(k=>r[k]))});
  return result.success?result.data:null;
 }
 function panel(s:Selection,rows:Row[],ctx:Context,e:PresentationEvidence):PresentationPanel|null{
- if(!s.y||!visible(s.y)||s.x&&!visible(s.x)||rows.length>30)return null;
+ if(!s.y||!visible(s.y)||s.x&&!visible(s.x))return null;
  const y=s.y,x=s.x;
  if(!x&&rows.length!==1)return null;
  const u=unit(y),currency=u==="cents"?ctx.currency??null:null;
