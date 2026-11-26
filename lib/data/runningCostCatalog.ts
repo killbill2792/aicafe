@@ -144,6 +144,7 @@ export function runningCostMonthlyAmount(line:RunningCostLine,monthKey:string,in
     recordedExpenses:line.expenseEvidence.flatMap(e=>e.kind==="expense"?[{date:e.date,amountCents:e.amountCents,status:e.status}]:[]),
     recordedExpenseCents:line.recordedExpenseCents,
     possibleAdditionalForecastCents:line.possibleAdditionalForecastCents,
-    recurringEstimateCents:line.recurringEstimateCents??0
+    recurringEstimateCents:line.recurringEstimateCents??0,
+    recurringWindows:line.expenseEvidence.flatMap(e=>e.kind==="recurring"?[{from:e.activeFrom,to:e.activeTo??null,weightCents:e.remainingForecastCents}]:[])
   }:{})};
 }

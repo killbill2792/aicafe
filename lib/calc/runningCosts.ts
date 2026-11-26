@@ -55,6 +55,17 @@ function proratedAmountCents(c: CategoryMonthlyAmount, periodStart: string, peri
   if(c.recordedExpenses&&c.recurringEstimateCents!==undefined){
     const recorded=c.recordedExpenses.filter(e=>e.date>=periodStart&&e.date<=periodEnd)
       .reduce((n,e)=>n+e.amountCents,0);
+    const total=(c.recurringWindows??[]).reduce((n,w)=>n+w.weightCents,0);
+    if(c.recurringWindows?.length&&total>0){
+      // Only the days each obligation was active count toward an elapsed period; the monthly forecast is unchanged.
+      const dim=daysInMonthKey(c.monthKey),estimate=c.recurringEstimateCents;
+      const recurring=c.recurringWindows.reduce((n,w)=>{
+        const from=w.from>periodStart?w.from:periodStart,to=w.to&&w.to<periodEnd?w.to:periodEnd;
+        const active=from>to?0:overlapDays(from,to,c.monthKey);
+        return n+(estimate*(w.weightCents/total)/dim)*active;
+      },0);
+      return recorded+recurring;
+    }
     return recorded+(c.recurringEstimateCents/daysInMonthKey(c.monthKey))*days;
   }
   return (c.amountCents / daysInMonthKey(c.monthKey)) * days;

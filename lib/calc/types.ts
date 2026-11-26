@@ -54,6 +54,8 @@ export type CategoryMonthlyAmount = {
   /** Upper-bound additional forecast when an unlinked expense may overlap. */
   possibleAdditionalForecastCents?:number;
   recurringEstimateCents?:number;
+  /** Each recurring obligation's active dates and share of the forecast, so elapsed-period allocation skips days it was not active. */
+  recurringWindows?:Array<{from:string;to:string|null;weightCents:number}>;
   isEstimate: boolean;
   /** true when the category has neither an actual entry nor a recurring estimate this month. */
   isMissing: boolean;
