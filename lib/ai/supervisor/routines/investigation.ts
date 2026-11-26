@@ -1,3 +1,4 @@
+import {backgroundReportText} from "@/lib/ai/conversations/presentation";
 import type {AgentTurn} from "@/lib/ai/agent/loop.server";
 import type {AgentToolResult} from "@/lib/ai/agent/tools";
 
@@ -216,7 +217,7 @@ export type ExpectedInvestigation={
 };
 export function verifyResearchInvestigationTurn(turn:AgentTurn,expected:ExpectedInvestigation,permittedTools:readonly string[],claim?:{sourceType?:unknown;sourceId?:unknown;incidentKind?:unknown;missing?:unknown;selectors?:unknown;customerTrendProof?:unknown}):
   {ok:true;text:string;tools:string[];missing:string[]}|{ok:false;reason:"model_incomplete"|"evidence_incomplete"}{
- const text=turn.text.trim();
+ const text=backgroundReportText(turn);
  if(turn.endReason!=="complete"||!text||unsupportedExternalEffectClaim(text)||
    expected.kind==="maintenance_issue"&&unsupportedMaintenanceRepairClaim(text))
   return {ok:false,reason:"model_incomplete"};

@@ -182,26 +182,7 @@ export function presentationReport(block:RichPresentation,message:{
   "Answer status: "+(typeof message.grounding?.status==="string"?message.grounding.status:"Not recorded"),
   "",texts.filter((t):t is string=>t!==null).join(""),
   ...(notes.length?["","Source cautions",...notes]:[])];
- for(const p of block.panels){
-  lines.push("",p.title,p.sourceDetail??p.source,...(p.coverage?["Coverage: "+p.coverage]:[]),"Period: "+p.from+" – "+p.to+"; snapshot: "+p.asOf,
-    ...p.points.map(point=>point.label+": "+point.value+" "+(p.measurement??p.unit)+(p.currency?" ("+p.currency+")":"")));
- }
- if(block.tables)for(const t of block.tables){
-  lines.push("",t.title,t.view+(t.coverage==="authored"?"":" · "+t.coverage)+" · "+t.scope,"Period: "+t.from+" – "+t.to+"; snapshot: "+t.asOf,
-   t.columns.map(c=>c.label+" ("+c.unit+")").join(" | "),...t.rows.map(row=>row.map(v=>v===null?"Not recorded":String(v)).join(" | ")));
- }
- if(block.calculator){
-  const c=block.calculator;lines.push("",c.title+" — saved starting calculation (hypothetical edits are not saved)",JSON.stringify(c.original));
- }
- if(block.agenda){
-  const a=block.agenda;lines.push("",a.title,"Saved schedule/listing snapshot: "+a.asOf+"; coverage: "+a.coverage,
-   ...a.entries.map(e=>[e.date,e.endDate,e.label,e.start??"Time not recorded",e.end??"",e.status,e.endUnknown?"End date unknown":"",e.checkedAt??""].join(" | ")));
- }
- if(block.scenario){
-  const s=block.scenario;lines.push("",s.title+" — estimates only; no change made","Snapshot: "+s.asOf,
-   ...s.cases.map(c=>c.assumption+": "+c.beforeCents+" → "+c.afterCents+" cents ("+s.currency+")"));
- }
- if(block.files?.length)lines.push("","Source attachments are available through the original authenticated conversation.");
+ lines.push(...presentationDataLines(block));
  lines.push("","Export only. Refer to the original conversation for approvals, work status and current evidence.");
  return lines.join("\n");
 }
@@ -236,4 +217,38 @@ export function recoverRichPresentation(raw:unknown):RichPresentation|undefined{
   ...(valid(scenarioComparisonSchema,r.scenario)?{scenario:r.scenario}:{}),
   ...(valid(interactiveCalcSchema,r.calculator)?{calculator:r.calculator}:{})});
  return repaired.success?repaired.data:undefined;
+}
+
+/** Preserve authored visual data on the existing text-only background report surfaces. */
+export function presentationDataLines(block:RichPresentation):string[]{
+ const lines:string[]=[];
+ for(const p of block.panels){
+  lines.push("",p.title,p.sourceDetail??p.source,...(p.coverage?["Coverage: "+p.coverage]:[]),"Period: "+p.from+" – "+p.to+"; snapshot: "+p.asOf,
+    ...p.points.map(point=>point.label+": "+point.value+" "+(p.measurement??p.unit)+(p.currency?" ("+p.currency+")":"")));
+ }
+ if(block.tables)for(const t of block.tables){
+  lines.push("",t.title,t.view+(t.coverage==="authored"?"":" · "+t.coverage)+" · "+t.scope,"Period: "+t.from+" – "+t.to+"; snapshot: "+t.asOf,
+   t.columns.map(c=>c.label+" ("+c.unit+")").join(" | "),...t.rows.map(row=>row.map(v=>v===null?"Not recorded":String(v)).join(" | ")));
+ }
+ if(block.calculator){
+  const c=block.calculator;lines.push("",c.title+" — saved starting calculation (hypothetical edits are not saved)",JSON.stringify(c.original));
+ }
+ if(block.agenda){
+  const a=block.agenda;lines.push("",a.title,"Saved schedule/listing snapshot: "+a.asOf+"; coverage: "+a.coverage,
+   ...a.entries.map(e=>[e.date,e.endDate,e.label,e.start??"Time not recorded",e.end??"",e.status,e.endUnknown?"End date unknown":"",e.checkedAt??""].join(" | ")));
+ }
+ if(block.scenario){
+  const s=block.scenario;lines.push("",s.title+" — estimates only; no change made","Snapshot: "+s.asOf,
+   ...s.cases.map(c=>c.assumption+": "+c.beforeCents+" → "+c.afterCents+" cents ("+s.currency+")"));
+ }
+ if(block.files?.length)lines.push("","Source attachments are available through the original authenticated conversation.");
+ return lines;
+}
+export function backgroundReportText(turn:{text:string;results:readonly {source:string;accepted?:unknown;presentation?:unknown}[]}):string{
+ const sections=turn.results.flatMap(result=>{
+  if(result.source!=="response_presentation"||result.accepted!==true)return [];
+  const block=recoverRichPresentation(result.presentation);
+  return block?[presentationDataLines(block).join("\n").trim()]:[];
+ });
+ return [turn.text.trim(),...sections].filter(Boolean).join("\n\n");
 }

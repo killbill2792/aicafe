@@ -173,7 +173,7 @@ run("survives actual recorded model and registered source tool across SIGKILL",a
         evidenceDigest:x.evidenceDigest,asOf:"2026-11-21",
       })),
       sourceCount:verified.sourceCount,sourceDomains:verified.sourceDomains,
-      quality:"verified",missing:verified.missing,
+      quality:"answered",missing:verified.missing,
       externalEffects:"not_attempted",
     };
     await assertLease();

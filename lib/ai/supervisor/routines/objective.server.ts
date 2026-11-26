@@ -1,3 +1,4 @@
+import {backgroundReportText} from "@/lib/ai/conversations/presentation";
 import {researchStaffReadTools} from "@/lib/ai/research/integrationReads";
 import "server-only";
 import {createHash} from "node:crypto";
@@ -152,9 +153,10 @@ export type ObjectiveOutcome={
 /** Check technical completion, authorized tool use and action claims.
  * Sources are optional audit metadata, not a condition of publishing. */
 export function verifyObjectiveTurn(turn:AgentTurn,routine:RoutineRecord):ObjectiveOutcome{
+  const reportText=backgroundReportText(turn);
   if(turn.endReason!=="complete"||
-    unsupportedExternalEffectClaim(turn.text)||
-    !turn.text.trim())throw Error("u4_model_result_unverified");
+    unsupportedExternalEffectClaim(reportText)||
+    !reportText)throw Error("u4_model_result_unverified");
   const admitted=routine.executionMode==="watch"?watchReadTools:objectiveReadTools;
   // This server-side gate is independent of the planner's toolNames.
   // An unexpected effect, mailbox read in Watch, or forged tool receipt
@@ -210,7 +212,7 @@ export function verifyObjectiveTurn(turn:AgentTurn,routine:RoutineRecord):Object
       relations:relationNames,period:dates,evidenceDigest:digest(call.result),
     };
   });
-  let report=turn.text.trim();
+  let report=reportText;
   let attention:"attention"|"none"="attention";
   if(routine.executionMode==="watch"){
     const quiet=/^NO_ACTION_REQUIRED:\s*/iu.exec(report);

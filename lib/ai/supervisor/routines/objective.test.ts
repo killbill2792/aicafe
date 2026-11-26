@@ -119,6 +119,12 @@ describe("U4 objective evidence and model autonomy",()=>{
     expect(result.sourceRefs[0].evidenceDigest).toMatch(/^[0-9a-f]{64}$/u);
     expect(JSON.stringify(result.sourceRefs)).not.toContain("rows");
   });
+  it("preserves visual-only analysis on the text-only routine report surface",()=>{
+    const result=verifyObjectiveTurn(turn("",{toolInvocations:[],results:[{source:"response_presentation",accepted:true,presentation:{type:"rich_presentation",version:1,layout:"stack",panels:[{kind:"metric",title:"Estimated $103",unit:"cents",currency:"USD",from:"2026-11-20",to:"2026-11-20",asOf:"2026-11-20",source:"response_evidence",points:[{label:"Estimate",value:10300}]}]}}]}),objective);
+    expect(result.report).toContain("Estimated $103");
+    expect(result.report).toContain("10300 cents");
+    expect(result.sourceCount).toBe(0);
+  });
   it("allows model-derived numbers but rejects technically unfinished output",()=>{
     expect(verifyObjectiveTurn(turn("ATTENTION: Estimated sales are 10424.",{
       unverified:[{key:"legacy",value:10424}],
