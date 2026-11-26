@@ -22,7 +22,6 @@ type JobsModule = typeof import("@/lib/ai/agent/jobs.server");
 
 const SSE_HEADERS = { "Content-Type": "text/event-stream; charset=utf-8",
   "Cache-Control": "private, no-store", "X-Accel-Buffering": "no" };
-const CONTINUATION_BUDGET_MS = 75_000; // start a continuation only if it can finish before maxDuration
 
 /** Fan-out for one running turn. The SSE response is only a viewer: when the owner
  * disconnects, emits are dropped but the turn continues (no throwing enqueue). */
@@ -53,6 +52,7 @@ function sseStream(run: (emit: Emit, close: () => void, onCancel: (fn: () => voi
   }), { headers: SSE_HEADERS });
 }
 export async function POST(request: Request, context: RouteContext) {
+  const executionDeadline=Date.now()+130_000; // Hosting window only; reserve persistence time.
   try {
     requireSameOrigin(request);
     if (!isSupervisorChatConfigured()) throw new ConversationApiError(503, "supervisor_not_enabled");
@@ -85,7 +85,7 @@ export async function POST(request: Request, context: RouteContext) {
       });
     }
     const base = { scope, threadId: id, owner, ownerText: input.text, locale: input.locale, service,
-      attachmentIds:input.attachmentIds??[] };
+      attachmentIds:input.attachmentIds??[],executionDeadline };
 
     if (prior&&!prior.grounding?.durableRunId) return sseStream((emit, close) => { emit("done", { reply: prior, replayed: true }); close(); });
 
@@ -165,7 +165,6 @@ export async function POST(request: Request, context: RouteContext) {
     }
 
     const sink = createTurnSink();
-    const invokedAt = Date.now();
     const work = (async () => {
       let job: AgentJob | null = started.job, owner = base.owner, ownerText = base.ownerText;
       try {
@@ -188,7 +187,7 @@ export async function POST(request: Request, context: RouteContext) {
           job = null;
           if (!next) break;
           // Owner messages that arrived too late to be read get one continuation turn.
-          if (Date.now() - invokedAt > CONTINUATION_BUDGET_MS) {
+          if (Date.now() >= executionDeadline) {
             await jobs.finishAgentJob(next.id, { status: "failed", errorCode: "timeout" }).catch(() => undefined);
             sink.emit("error", { code: "timeout", retryable: true, jobId: next.id });
             break;
