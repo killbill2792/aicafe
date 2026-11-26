@@ -242,3 +242,40 @@ from months m cross join lateral public.running_cost_lines_for_month(m.business_
 revoke all on public.cv_running_cost_months from public,anon,authenticated;
 grant select on public.cv_running_cost_months to authenticated,service_role;
 comment on view public.cv_running_cost_months is 'One café/month/category, with amount in cents including separately labeled unpaid forecast and dated receipt evidence; as_of_date identifies the cutoff. Do not treat estimated forecasts as paid bills.';
+
+-- Staff screen's persisted clock records deliberately include schedule predictions;
+-- cv_labor_entries remains actual provider labor (do not add these two views).
+-- A single database statement fixes the clock for all per-entry and day totals.
+create view public.cv_staff_clock_entries with (security_invoker=true) as
+with entries as (
+ select t.business_id,coalesce(t.source_provider,'app')::text as source,'staff-clock:'||t.id as source_ref,
+ case when t.source_type='owner_schedule' then 'estimated'
+      when t.clock_out is null or t.clock_out>now() then 'provisional'
+      when t.hourly_wage_cents is null then 'open' else 'actual' end::text as status,
+ (t.clock_in at time zone b.timezone)::date as business_date,
+ t.id,t.employee_id,t.schedule_id,t.source_type,t.source_provider,t.clock_in,t.clock_out,
+ t.hourly_wage_cents,t.breaks,t.provider_regular_hours,t.provider_overtime_hours,
+ e.display_name as employee_name,e.role as employee_role,now() as as_of,
+ b.payroll_tax_rate,
+ case when t.hourly_wage_cents is null then null
+ when t.clock_out is not null and (t.provider_regular_hours is not null or t.provider_overtime_hours is not null)
+  and coalesce(t.provider_regular_hours,0)>=0 and coalesce(t.provider_overtime_hours,0)>=0
+ then (coalesce(t.provider_regular_hours,0)+coalesce(t.provider_overtime_hours,0)*1.5)*t.hourly_wage_cents
+ else greatest(0,extract(epoch from least(coalesce(t.clock_out,now()),now())-t.clock_in)
+   - coalesce((select sum(greatest(0,extract(epoch from
+      (br->>'end')::timestamptz-(br->>'start')::timestamptz)))
+     from jsonb_array_elements(t.breaks) br where not coalesce((br->>'paid')::boolean,false)),0))
+   /3600*t.hourly_wage_cents end::numeric as wages_cents
+ from public.timecards t join public.businesses b on b.id=t.business_id
+ left join public.employees e on e.id=t.employee_id and e.business_id=t.business_id
+)
+select business_id,source,source_ref,status,business_date,id,employee_id,schedule_id,source_type,source_provider,
+ clock_in,clock_out,hourly_wage_cents,breaks,provider_regular_hours,provider_overtime_hours,
+ employee_name,employee_role,as_of,wages_cents,wages_cents*(1+payroll_tax_rate) as loaded_cost_cents,
+ hourly_wage_cents*(1+payroll_tax_rate) as loaded_hourly_cents,
+ case when count(*) filter(where wages_cents is null) over(partition by business_id,business_date)>0 then null
+ else sum(wages_cents*(1+payroll_tax_rate)) over(partition by business_id,business_date) end as day_loaded_cost_cents
+from entries;
+revoke all on public.cv_staff_clock_entries from public,anon,authenticated;
+grant select on public.cv_staff_clock_entries to authenticated,service_role;
+comment on view public.cv_staff_clock_entries is 'Stored Staff-screen clock records, including explicitly estimated owner schedules. Wage amounts use saved provider hours when available, else elapsed time minus unpaid breaks at as_of; loaded amounts include business payroll tax rate. day_loaded_cost_cents repeats the whole café/day total per entry; never sum it across entries. Unknown wage in any entry makes the day total null. Not additive with cv_labor_entries.';

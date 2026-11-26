@@ -24,7 +24,7 @@ function mockDb(options:{sold?:Array<{menu_item_id:string;total_quantity:number|
       owner_monthly_payroll_extras_cents:null}],
     locations:[{open_hours:null}],
     cv_sales_days:[],cv_bills:[],cv_expenses:[],recovery_order:[],
-    cv_menu:[],timecards:[],alerts:[],
+    cv_menu:[],cv_staff_clock_entries:[],alerts:[],
   };
   const db={from(table:string){
     reads.push(table);

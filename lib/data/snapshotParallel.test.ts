@@ -23,7 +23,7 @@ function mockDb(){
     locations:[{open_hours:null}],
     cv_bills:[{id:"rent-bill",frequency:"monthly",category_code:"rent",amount_cents:60000,is_estimate:false,
       active_from:"2026-01-01",active_to:null}],
-    cv_expenses:[],recovery_order:[],cv_menu:[],timecards:[],
+    cv_expenses:[],recovery_order:[],cv_menu:[],cv_staff_clock_entries:[],
     alerts:[{id:"alert-1",impact_cents:240}],
   };
   const client={
@@ -76,7 +76,7 @@ describe("canonical snapshot independent read phases",()=>{
       expect(mocks.plans).toHaveBeenCalledOnce();
       expect(mocks.period).toHaveBeenCalledOnce();
       expect(reads).toContain("cv_menu");
-      expect(reads).toContain("timecards");
+      expect(reads).toContain("cv_staff_clock_entries");
       expect(reads).toContain("alerts");
     });
     releaseDays([{

@@ -48,6 +48,12 @@ SELECT :'a',current_date,1,'other','manual','actual','test-many-'||i FROM genera
 INSERT INTO public.expenses(business_id,spent_on,amount_cents,category_code,source,status,dedupe_key)
 VALUES(:'a',(date_trunc('month',current_date)-interval '1 day')::date,1000,'internet','manual','actual','test-prior'),
  (:'a',current_date+1,999999,'other','manual','estimated','test-future');
+-- Closed provider pay and scheduled/unknown clocks retain separate quality.
+UPDATE public.businesses SET payroll_tax_rate=.12 WHERE id=:'a';
+INSERT INTO public.timecards(business_id,clock_in,clock_out,hourly_wage_cents,source_type,provider_regular_hours,provider_overtime_hours)
+VALUES(:'a',current_date-1+time '08:00',current_date-1+time '11:00',1000,'connected_pos',2,1),
+ (:'b',current_date-1+time '08:00',current_date-1+time '11:00',9999,'connected_pos',3,0),
+ (:'a',current_date-2+time '08:00',current_date-2+time '11:00',null,'connected_pos',3,0);
 SET LOCAL ROLE authenticated;
 SELECT set_config('request.jwt.claim.sub',:'oa',true),
  set_config('request.jwt.claim.role','authenticated',true),
@@ -72,6 +78,11 @@ SELECT (
  AND (SELECT count(*) FROM public.cv_item_sales_daily WHERE business_id=:'b')=0
  AND (SELECT count(*) FROM public.cv_item_sales WHERE business_id=:'b')=0
  AND (SELECT count(*) FROM public.cv_orders WHERE business_id=:'b')=0
+ AND (SELECT count(*) FROM public.cv_staff_clock_entries WHERE business_id=:'b')=0
+ AND (SELECT wages_cents=3500 AND loaded_cost_cents=3920 AND day_loaded_cost_cents=3920
+ FROM public.cv_staff_clock_entries WHERE business_id=:'a' AND business_date=current_date-1)
+ AND (SELECT wages_cents IS NULL AND day_loaded_cost_cents IS NULL
+ FROM public.cv_staff_clock_entries WHERE business_id=:'a' AND business_date=current_date-2)
  AND (SELECT count(*) FROM public.cv_running_cost_months WHERE business_id=:'b')=0
  AND (SELECT amount_cents=30000 AND (data->>'recordedExpenseCents')::bigint=30000
  FROM public.cv_running_cost_months WHERE business_id=:'a' AND category_code='rent'

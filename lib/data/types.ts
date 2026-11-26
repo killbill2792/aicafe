@@ -82,6 +82,11 @@ export type StaffShift = {
   name: string;
   role: string | null;
   timecard: Timecard;
+  /** SQL calculated amounts; absent for synthetic/demo shifts. */
+  canonicalLoadedCostCents?:number|null;
+  canonicalLoadedHourlyCents?:number|null;
+  canonicalDayLoadedCostCents?:number|null;
+  canonicalCostAsOf?:string;
 };
 
 /**
@@ -146,6 +151,8 @@ export type BusinessSnapshot = {
   alerts: { count: number; leakingCents: number };
   /** All of today's timecard rows (open and already-clocked-out), for the Staff screen. */
   staffShiftsToday: StaffShift[];
+  /** SQL day total including archived/unlinked clock records. */
+  staffCostTodayCents?:number|null;
   /** The instant "on shift now" / "today so far" are computed as of — real current time in the
    * live snapshot, a pinned mid-morning time in the fixture snapshot (see fixtureSnapshot.ts). */
   staffNowIso: string;

@@ -1,6 +1,6 @@
 import "server-only";
 import {readDailyFactRows} from "./dailyFacts.server";
-import { formatInTimeZone, fromZonedTime } from "date-fns-tz";
+import { formatInTimeZone } from "date-fns-tz";
 import { buildDayWindows, evaluateRecipeCost, resolveProductCost } from "@/lib/calc";
 import { runningCostMonthlyAmount, rowToDailyFacts } from "./runningCostCatalog";
 import type { SupabaseClient } from "@supabase/supabase-js";
@@ -82,7 +82,7 @@ export async function getBusinessSnapshotFromDb(
         .select("bucket_code, position").eq("business_id",businessId).order("position",{ascending:true})),
       timeReader("Snapshot","menuCosts",()=>getMenuItemSnapshots(supabase,businessId,todayDateStr)),
       timeReader("Snapshot","periodItemSales",()=>readPeriodItemSales(supabase,businessId,{from:periodFrom,to:todayDateStr})),
-      timeReader("Snapshot","staffShifts",()=>getStaffShiftsToday(supabase,businessId,timezone,todayDateStr)),
+      timeReader("Snapshot","staffShifts",()=>getStaffShiftsToday(supabase,businessId,todayDateStr)),
       timeReader("Snapshot","alerts",()=>snapshotPaged("alerts",
         (start,end)=>supabase.from("alerts").select("id,impact_cents",{count:"exact"})
          .eq("business_id",businessId).in("status",["new","seen"])
@@ -154,7 +154,8 @@ export async function getBusinessSnapshotFromDb(
     breakEvenProductCosts,
     alerts: { count: alertsCount ?? 0, leakingCents },
     staffShiftsToday,
-    staffNowIso: new Date().toISOString(),
+    staffNowIso: staffShiftsToday[0]?.canonicalCostAsOf ?? new Date().toISOString(),
+    staffCostTodayCents:staffShiftsToday.length===0?0:staffShiftsToday[0].canonicalDayLoadedCostCents,
     ownerFeePlans,
     ownerMonthlyPayrollExtrasCents:businessRow.owner_monthly_payroll_extras_cents===null?
       null:Number(businessRow.owner_monthly_payroll_extras_cents),
@@ -165,28 +166,27 @@ export async function getBusinessSnapshotFromDb(
 async function getStaffShiftsToday(
   supabase: SupabaseClient,
   businessId: string,
-  timezone: string,
   todayDateStr: string,
 ): Promise<StaffShift[]> {
-  const dayStartUtc = fromZonedTime(`${todayDateStr}T00:00:00`, timezone).toISOString();
-  const dayEndUtc = fromZonedTime(`${todayDateStr}T23:59:59.999`, timezone).toISOString();
 
-  const {data}=await snapshotPaged("timecards",
-    (start,end)=>supabase.from("timecards")
-     .select("id,employee_id,schedule_id,source_type,source_provider,clock_in,clock_out,hourly_wage_cents,breaks,provider_regular_hours,provider_overtime_hours,employees(display_name,role)",{count:"exact"})
-     .eq("business_id",businessId).gte("clock_in",dayStartUtc).lte("clock_in",dayEndUtc)
+  const {data}=await snapshotPaged("cv_staff_clock_entries",
+    (start,end)=>supabase.from("cv_staff_clock_entries")
+     .select("id,employee_id,schedule_id,source_type,source_provider,clock_in,clock_out,hourly_wage_cents,breaks,provider_regular_hours,provider_overtime_hours,employee_name,employee_role,as_of,loaded_cost_cents,loaded_hourly_cents,day_loaded_cost_cents",{count:"exact"})
+     .eq("business_id",businessId).eq("business_date",todayDateStr)
      .order("clock_in",{ascending:true}).order("id",{ascending:true})
      .range(start,end),row=>row.id);
   // Preserve every recorded timecard for earned wages, including staff who were
   // deactivated later today and imports not yet linked to a roster member.
   // Current-roster filtering belongs ONLY in buildStaffViewModel.onShift.
   return (data ?? []).map((row) => {
-    const employee = row.employees as unknown as { display_name: string; role: string | null } | { display_name: string; role: string | null }[] | null;
-    const emp = Array.isArray(employee) ? employee[0] : employee;
     return {
       employeeId: row.employee_id ?? row.id,
-      name: emp?.display_name ?? "Staff",
-      role: emp?.role ?? null,
+      name: row.employee_name ?? "Staff",
+      role: row.employee_role ?? null,
+      canonicalLoadedCostCents:row.loaded_cost_cents==null?null:Number(row.loaded_cost_cents),
+      canonicalLoadedHourlyCents:row.loaded_hourly_cents==null?null:Number(row.loaded_hourly_cents),
+      canonicalDayLoadedCostCents:row.day_loaded_cost_cents==null?null:Number(row.day_loaded_cost_cents),
+      canonicalCostAsOf:row.as_of,
       timecard: {
         clockIn: row.clock_in,
         clockOut: row.clock_out,

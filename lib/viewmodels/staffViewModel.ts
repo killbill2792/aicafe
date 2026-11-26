@@ -115,20 +115,25 @@ export function buildStaffViewModel(
     (a, b) => new Date(a.shift.timecard.clockIn).getTime() - new Date(b.shift.timecard.clockIn).getTime(),
   );
 
-  const unknownCurrent=onShiftShifts.some(({shift})=>shift.timecard.hourlyWageCents===null);
-  const currentHourlyWageCents=unknownCurrent?null:onShiftShifts.reduce((sum,{shift})=>sum+(shift.timecard.hourlyWageCents??0),0);
-  const currentHourlyLoadedCents=currentHourlyWageCents===null?null:staffCostLoadedCents(currentHourlyWageCents,payrollTaxCents(currentHourlyWageCents,payrollTaxRate));
-
-  const wagesTodayCents = wagesCentsForTimecards(
-    snapshot.staffShiftsToday.map((s) => s.timecard),
-    now,
-  );
-  const costTodayCents=wagesTodayCents===null?null:staffCostLoadedCents(wagesTodayCents,payrollTaxCents(wagesTodayCents,payrollTaxRate));
+  const loadedHourly=onShiftShifts.map(({shift})=>{
+    if(shift.canonicalLoadedHourlyCents!==undefined)return shift.canonicalLoadedHourlyCents;
+    const wage=shift.timecard.hourlyWageCents;
+    return wage===null?null:staffCostLoadedCents(wage,payrollTaxCents(wage,payrollTaxRate));
+  });
+  const currentHourlyLoadedCents=loadedHourly.some(c=>c===null)?null:
+    loadedHourly.reduce<number>((sum,c)=>sum+(c??0),0);
+  // Only synthetic/demo shifts lack SQL costs.
+  const costTodayCents=snapshot.staffCostTodayCents!==undefined?snapshot.staffCostTodayCents:(()=>{
+    const wages=wagesCentsForTimecards(snapshot.staffShiftsToday.map(s=>s.timecard),now);
+    return wages===null?null:staffCostLoadedCents(wages,payrollTaxCents(wages,payrollTaxRate));
+  })();
 
   const onShift: StaffShiftVM[] = onShiftShifts
     .map(({ shift: s, member }) => {
-      const wages = wagesCentsForTimecard(s.timecard, now);
-      const todayCostCents=wages===null?null:staffCostLoadedCents(wages,payrollTaxCents(wages,payrollTaxRate));
+      const todayCostCents=s.canonicalLoadedCostCents!==undefined?s.canonicalLoadedCostCents:(()=>{
+        const wages=wagesCentsForTimecard(s.timecard,now);
+        return wages===null?null:staffCostLoadedCents(wages,payrollTaxCents(wages,payrollTaxRate));
+      })();
       const mbs = mealBreakStatus(s.timecard, now);
       const breakFlag: StaffShiftVM["breakFlag"] = mbs.missed ? "missed" : mbs.warn ? "due_soon" : "ok";
       const breakDueIso = breakFlag === "ok" ? null : new Date(new Date(s.timecard.clockIn).getTime() + 5 * 3_600_000).toISOString();
