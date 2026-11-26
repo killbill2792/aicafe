@@ -6,7 +6,7 @@ import {redactToolFailure,redactedErrorStack} from "./redactToolError";
 import {safeToolError} from "./toolErrors";
 import {createHash} from "node:crypto";
 import { configuredSupervisorModel, PRODUCTION_SUPERVISOR_OPENAI_MODEL } from "@/lib/ai/conversations/modelConfig";
-import { agentToolDefinitions, investigationToolDefinition, agentLabelsPrompt, agentForTool, executeAgentTool, isRepeatSafeOwnerTool, observeDurableToolEffect, type AgentToolContext, type AgentToolResult, type AgentToolName } from "./tools";
+import { agentToolDefinitions, agentLabelsPrompt, agentForTool, executeAgentTool, isRepeatSafeOwnerTool, observeDurableToolEffect, type AgentToolContext, type AgentToolResult, type AgentToolName } from "./tools";
 import { statusFromResults } from "./status";
 import { checkNumbers,numberProvenance,compactEvidence,type NumericEvidence } from "./checkNumbers";
 import {usageEvidenceRefresh} from "./usageEvidence";
@@ -438,7 +438,6 @@ export async function runAgentTurn(args: {
   }:args.context;
   const allowedDefinitions=[...agentToolDefinitions.filter(t=>(!args.toolNames||args.toolNames.includes(t.name as AgentToolName))&&
       (!args.checkpoint||t.name!=="record_maintenance_repair_claim")&&(t.name!=="present_response"||presentationAllowed)),
-      ...(args.toolNames?.includes("get_investigation_source")&&args.context.investigation?[investigationToolDefinition]:[]),
       ...(args.toolNames?[]:args.extraTools??[])];
   const eligibleNames=allowedFunctionNames(allowedDefinitions);
   const seenCallIds=new Set<string>();

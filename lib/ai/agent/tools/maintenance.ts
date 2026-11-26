@@ -3,15 +3,6 @@ import type {AgentToolContext,AgentToolResult} from "./index";
 const caseId=z.string().regex(/^maintenance:[0-9a-f-]{36}$/i);
 
 export const maintenanceTools={
-  get_maintenance_staff_candidates:{agentId:"leo",schema:z.strictObject({caseId}),
-    description:"Read linked active staff for the exact open case; read the roster separately for timing.",
-    execute:async(raw:unknown,ctx:AgentToolContext):Promise<AgentToolResult>=>{
-      const input=maintenanceTools.get_maintenance_staff_candidates.schema.parse(raw);
-      try{
-        if(!ctx.maintenance)throw new Error("unavailable");
-        return {source:"maintenance_staff_candidates",period:null,agentId:"leo",missing:[],...await ctx.maintenance.staff(input.caseId)};
-      }catch{return {source:"maintenance_staff_candidates",period:null,agentId:"leo",missing:["maintenance_staff_unavailable"]};}
-    }},
   propose_maintenance_staff_assignment:{agentId:"leo",schema:z.strictObject({
     maintenanceCaseId:caseId,employeeId:z.uuid(),prompt:z.string().trim().min(1).max(1200),
     purpose:z.enum(["task","verify_working"]),dueAt:z.iso.datetime({offset:true}).nullable()
