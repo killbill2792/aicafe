@@ -3,24 +3,21 @@ import { z } from "zod";
 import {exactNumber,runCalculation,CALC_OPS,type CalcOp,type CalcShown} from "@/lib/metrics/core/calculator";
 
 /** Versioned, renderer-independent, serializable UI. No client code or action bindings. */
-const label=z.string().min(1).max(140);
+const label=z.string().min(1);
 const date=z.iso.date();
 /** One source enumeration for the stored contract, model selection and wire references. */
 export const presentationSourceNames=["daily_rollups","item_sales","profitability","canonical_data","expenses","business_costs","product_costs","supplier_purchase_plan","purchase_orders","inventory","menu_items","labor_and_attendance","get_peak_hours","get_employee_sales","get_payroll_facts","today_live","usage_variance","ingredient_prices","recurring_bills","break_even","pricing_engine","new_item_price","milk_swap","cashflow_evidence","current_staff","goals","locations.open_hours","scheduled_shifts+locations.open_hours","employees+shiftCost","olivia_schedule","olivia_owner_what_if","olivia_hypothetical_absence"] as const;
-const point=z.strictObject({label,value:z.number().finite().min(-Number.MAX_SAFE_INTEGER).max(Number.MAX_SAFE_INTEGER)});
+const point=z.strictObject({label,value:z.number().finite()});
 export const presentationPanelSchema=z.strictObject({
   kind:z.enum(["metric","table","ranked_table","bar","line","donut"]),
   title:label,unit:z.enum(["cents","count","items","units","seconds","minutes","hours","days","ratio","ratio squared","indicator","cents/hour"]),currency:z.string().regex(/^[A-Z]{3}$/).nullable(),
   from:date,to:date,asOf:date,source:z.enum([...presentationSourceNames,"sql_research","response_evidence"] as const),
-  sourceDetail:z.string().max(500).optional(),measurement:z.string().trim().min(1).max(80).optional(),
-  coverage:z.enum(["partial","estimate"]).optional(),
+  sourceDetail:z.string().optional(),measurement:z.string().trim().min(1).optional(),
+  coverage:z.enum(["partial","estimate","unverified"]).optional(),
   points:z.array(point).min(1),
 }).superRefine((p,ctx)=>{
-  if((["cents","cents/hour"].includes(p.unit))!==(p.currency!==null)||p.from>p.to||p.to>p.asOf||
-     ((p.unit==="cents"||p.unit==="cents/hour"||p.unit==="count")&&p.points.some(x=>!Number.isSafeInteger(x.value)))||
-     (p.measurement!==undefined&&p.unit!=="units")||(p.kind==="metric"&&p.points.length!==1)||
-     (p.kind==="donut"&&(p.coverage==="partial"||p.points.some(x=>x.value<0)||p.points.every(x=>x.value===0))))
-    ctx.addIssue({code:"custom",message:"Invalid presentation data"});
+  if(p.from>p.to)
+    ctx.addIssue({code:"custom",message:"Invalid presentation period"});
 });
 const clock=z.string().regex(/^(?:[01]\d|2[0-3]):[0-5]\d$/);
 export const agendaSchema=z.strictObject({
@@ -28,7 +25,7 @@ export const agendaSchema=z.strictObject({
  title:label,from:date,to:date,asOf:date,coverage:z.enum(["saved","partial"]),
  entries:z.array(z.strictObject({label,date,endDate:date,start:clock.nullable(),end:clock.nullable(),
    status:z.enum(["found","cancelled","moved","unverified","app","toast","ai_draft"]),
-   checkedAt:z.iso.datetime({offset:true}).nullable(),endUnknown:z.literal(true).optional()})).min(1).max(40),
+   checkedAt:z.iso.datetime({offset:true}).nullable(),endUnknown:z.literal(true).optional()})).min(1),
 }).refine(a=>a.from<=a.to&&a.entries.every(e=>e.date<=e.endDate&&e.date<=a.to&&e.endDate>=a.from&&(!e.endUnknown||(e.date===e.endDate&&e.end===null))));
 export const scenarioComparisonSchema=z.strictObject({
  title:label,currency:z.string().regex(/^[A-Z]{3}$/),asOf:date,
@@ -37,22 +34,22 @@ export const scenarioComparisonSchema=z.strictObject({
    if(!c.editor)return true;
    const original=evaluateScenarioEditor(c.editor);
    return original?.beforeCents===c.beforeCents&&original.afterCents===c.afterCents;
- })).min(1).max(8)
+ })).min(1)
 });
 const tableUnit=z.enum(["label","local date","microcents","cents","count","items","units","quantity","seconds","minutes","hours","days","ratio","ratio squared","indicator","cents/hour","boolean","hour 0 to 23","weekday","timestamp text","stored"]);
-const cell=z.union([z.string().max(240),z.number().finite().min(-Number.MAX_SAFE_INTEGER).max(Number.MAX_SAFE_INTEGER),z.boolean(),z.null()]);
+const cell=z.union([z.string(),z.number().finite(),z.boolean(),z.null()]);
 export const recordTableSchema=z.strictObject({
  title:label,view:z.string().regex(/^(?:cv|tool)_[a-z_]+$/).max(80),from:date,to:date,asOf:date,
  currency:z.string().regex(/^[A-Z]{3}$/).nullable(),
- coverage:z.enum(["stored","partial"]),scope:z.string().max(300),
+ coverage:z.enum(["stored","partial","estimate","unverified"]),scope:z.string(),
  columns:z.array(z.strictObject({label,unit:tableUnit})).min(1),
  rows:z.array(z.array(cell).min(1)).min(1),
 }).superRefine((t,ctx)=>{
  if(t.from>t.to||t.rows.some(r=>r.length!==t.columns.length||r.some((v,i)=>{
   if(v===null)return false;
   const u=t.columns[i].unit;
-  return u==="cents"||u==="cents/hour"||u==="microcents"?(!t.currency||typeof v!=="number"||!Number.isSafeInteger(v)):
-   u==="count"?typeof v!=="number"||!Number.isSafeInteger(v):
+  return u==="cents"||u==="cents/hour"||u==="microcents"?typeof v!=="number":
+   u==="count"?typeof v!=="number":
    ["items","units","quantity","seconds","hours","minutes","days","ratio","ratio squared","indicator","hour 0 to 23","weekday"].includes(u)?typeof v!=="number":
    u==="label"||u==="timestamp text"?typeof v!=="string":u==="local date"?typeof v!=="string"||!date.safeParse(v).success:u==="boolean"?typeof v!=="boolean":false;
  })))ctx.addIssue({code:"custom",message:"Invalid table cells"});
@@ -143,7 +140,7 @@ const richPresentationBaseSchema=z.strictObject({
   calculator:interactiveCalcSchema.optional(),
   agenda:agendaSchema.optional(),
   scenario:scenarioComparisonSchema.optional(),
-  suggestions:z.array(z.string().trim().min(1).max(160)).max(3),
+  suggestions:z.array(z.string().trim().min(1)),
 });
 // Infer the snapshot type from the structural fields before applying graph
 // refinements, which themselves consume that type. Avoid circular inference.
@@ -230,4 +227,24 @@ export function calendarPage(agenda:Agenda,offset:number){
   const date=new Date(from+(page*28+i)*day).toISOString().slice(0,10);
   return {date,weekday:new Date(date).getUTCDay(),entries:agenda.entries.filter(e=>e.date<=date&&e.endDate>=date)};
  })};
+}
+
+/** Repair presentation layout, not business facts. Invalid siblings or layout
+ * graphs must not hide independently renderable, data-only components. */
+export function recoverRichPresentation(raw:unknown):RichPresentation|undefined{
+ const exact=richPresentationSchema.safeParse(raw);if(exact.success)return exact.data;
+ if(!raw||typeof raw!=="object"||Array.isArray(raw))return;
+ const r=raw as Record<string,unknown>;
+ if(r.type!=="rich_presentation"||r.version!==1)return;
+ const valid=<T>(schema:z.ZodType<T>,value:unknown):T|undefined=>{const v=schema.safeParse(value);return v.success?v.data:undefined;};
+ const list=<T>(schema:z.ZodType<T>,value:unknown):T[]=>Array.isArray(value)?value.flatMap(v=>{const p=valid(schema,v);return p===undefined?[]:[p];}):[];
+ const repaired=richPresentationSchema.safeParse({type:"rich_presentation",version:1,layout:r.layout==="grid"?"grid":"stack",
+  panels:list(presentationPanelSchema,r.panels),tables:list(recordTableSchema,r.tables),
+  suggestions:list(z.string().trim().min(1),r.suggestions),
+  ...(r.report===true?{report:true}:{}),
+  ...(valid(richPresentationBaseSchema.shape.files,r.files)?{files:r.files}:{}),
+  ...(valid(agendaSchema,r.agenda)?{agenda:r.agenda}:{}),
+  ...(valid(scenarioComparisonSchema,r.scenario)?{scenario:r.scenario}:{}),
+  ...(valid(interactiveCalcSchema,r.calculator)?{calculator:r.calculator}:{})});
+ return repaired.success?repaired.data:undefined;
 }
