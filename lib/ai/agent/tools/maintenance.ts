@@ -15,7 +15,7 @@ export const maintenanceTools={
   propose_maintenance_staff_assignment:{agentId:"leo",schema:z.strictObject({
     maintenanceCaseId:caseId,employeeId:z.uuid(),prompt:z.string().trim().min(1).max(1200),
     purpose:z.enum(["task","verify_working"]),dueAt:z.iso.datetime({offset:true}).nullable()
-  }),description:"Read get_maintenance_staff_candidates first. Draft an exact owner-click staff assignment. For a repair claim, purpose=verify_working requires an independent physical check; never close on a vendor claim. No dispatch before approval.",
+  }),description:"Read the current staff, schedule and exact case with SQL first; the server revalidates staff eligibility. Draft an exact owner-click staff assignment. For a repair claim, purpose=verify_working requires an independent physical check; never close on a vendor claim. No dispatch before approval.",
     execute:async(raw:unknown,ctx:AgentToolContext):Promise<AgentToolResult>=>{
       const input=maintenanceTools.propose_maintenance_staff_assignment.schema.parse(raw);
       try{

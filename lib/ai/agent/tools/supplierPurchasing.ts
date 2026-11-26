@@ -96,7 +96,7 @@ export const supplierPurchasingTools={
  },
  propose_supplier_purchase_order:{
   agentId:"maya",schema:supplierPurchaseProposalToolInputSchema,
-  description:"After quote inspection SAVE future PO draft, not received-stock propose_purchases. Server recomputes ingredient, availability, currency, quote, pack, freight/tax uncertainty; no model prices/authority. New/separate order replaceProposalId=null. Explicit correction: read get_supplier_purchase_orders, match exact draft UUID; clarify ambiguity, never infer replacement from increase/change. Server checks owner/café/thread/revision. Exact owner click readies order; no send/stock/expense.",
+  description:"After reading the relevant saved quotes using SQL SAVE future PO draft, not received-stock propose_purchases. Server recomputes ingredient, availability, currency, quote, pack, freight/tax uncertainty; no model prices/authority. New/separate order replaceProposalId=null. Explicit correction: read the saved purchase order with SQL, match exact draft UUID; clarify ambiguity, never infer replacement from increase/change. Server checks owner/café/thread/revision. Exact owner click readies order; no send/stock/expense.",
   execute:async(raw:unknown,ctx:AgentToolContext):Promise<AgentToolResult>=>{
    const input=supplierPurchaseProposalToolInputSchema.parse(raw);
    if(!ctx.purchasing)return {source:"supplier_purchase_proposal",period:null,agentId:"maya",missing:["purchasing_unavailable"],draft:false,saved:false};
@@ -107,7 +107,7 @@ export const supplierPurchasingTools={
  },
  record_supplier_order_outcome:{
   agentId:"maya",schema:ownerSupplierOutcomeToolInput,
-  description:"Record explicit CURRENT authenticated owner outcome for ONE saved PO after get_supplier_purchase_orders. Only exact PO/channel/outcome; server attaches verbatim owner message. Owner-reported canonical outcome closes matching terminal notice, not independent acceptance/delivery/stock/expense proof. Never infer from Gmail SENT, history, ambiguous yes or other café. Clarify target/outcome; no model note/claims.",
+  description:"Record explicit CURRENT authenticated owner outcome for ONE saved PO after reading the saved purchase order with SQL. Only exact PO/channel/outcome; server attaches verbatim owner message. Owner-reported canonical outcome closes matching terminal notice, not independent acceptance/delivery/stock/expense proof. Never infer from Gmail SENT, history, ambiguous yes or other café. Clarify target/outcome; no model note/claims.",
   execute:async(raw:unknown,ctx:AgentToolContext):Promise<AgentToolResult>=>{
    const input=ownerSupplierOutcomeToolInput.parse(raw);
    const text=ctx.ownerText?.trim();
@@ -126,7 +126,7 @@ export const supplierPurchasingTools={
  },
  propose_supplier_vendor_email:{
   agentId:"maya",schema:vendorOrderSendInputSchema,
-  description:"Draft separate inert Gmail SEND approval for approved saved PO after get_supplier_purchase_orders, inspect vendorCommunications/Gmail permission. Server uses PO and owner-verified recipient; never auto-send. No history ≠ unreachable. Missing verified contact/permission or phone/portal: explain gaps, ask_owner channel/prior negotiation/outcome. No invented addresses, acceptance or retries.",
+  description:"Draft separate inert Gmail SEND approval for approved saved PO after reading the saved purchase order with SQL, inspect vendorCommunications/Gmail permission. Server uses PO and owner-verified recipient; never auto-send. No history ≠ unreachable. Missing verified contact/permission or phone/portal: explain gaps, ask_owner channel/prior negotiation/outcome. No invented addresses, acceptance or retries.",
   execute:async(raw:unknown,ctx:AgentToolContext):Promise<AgentToolResult>=>{
    const input=vendorOrderSendInputSchema.parse(raw);
    if(!ctx.purchasing?.proposeVendorSend)return {source:"supplier_vendor_dispatch",period:null,agentId:"maya",

@@ -1,6 +1,6 @@
 import { describe,expect,it } from "vitest";
 import { suppliesTools } from "./supplies";
-import { type AgentToolContext } from "./index";
+import { executeAgentTool, type AgentToolContext } from "./index";
 const unavailable={available:false as const,value:null,quality:{level:"low" as const,missingInputs:["missing"],estimatedInputs:[],staleInputs:[]}};
 function ctx(extra:Partial<AgentToolContext["tools"]>):AgentToolContext{
   return {timezone:"America/Los_Angeles",asOf:"2026-10-22",locale:"en",tools:{

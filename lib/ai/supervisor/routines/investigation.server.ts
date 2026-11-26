@@ -478,7 +478,7 @@ export async function processNextInvestigation(db:SupabaseClient,now:Date,
       ...researchStaffReadTools,
       "propose_staff_question",
       ...(context.receivingFollowup?["propose_supplier_discrepancy_followup"]:[]),
-      ...(synopsis.kind==="maintenance_issue"?["get_maintenance_staff_candidates","propose_maintenance_staff_assignment",
+      ...(synopsis.kind==="maintenance_issue"?["propose_maintenance_staff_assignment",
         "record_maintenance_repair_claim","search_maintenance_vendor","propose_maintenance_vendor_request"]:[]),
     ])];
     // The server reads and checks the claimed incident itself, then hands it to the model as data.
