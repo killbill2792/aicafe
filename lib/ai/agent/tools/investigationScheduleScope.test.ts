@@ -46,15 +46,4 @@ describe("Task 15A Codex P1 — staff evidence without a browser cookie",()=>{
     expect(res).toMatchObject({source:"scheduled_shifts",
       missing:["scoped_reader_marker"]});
   });
-  it("uses the scoped reader for staffing coverage gaps, never a browser session",async()=>{
-    const ctx=scope();
-    action.week.mockClear();
-    const res=await scheduleReadTools.get_coverage_gaps.execute({
-      week_start:"2026-11-09",
-    },ctx);
-    expect(ctx.investigation?.weekSchedule).toHaveBeenCalledWith("2026-11-09");
-    expect(action.week).not.toHaveBeenCalled();
-    expect(res).toMatchObject({source:"coverage_gaps",
-      missing:["scoped_reader_marker"]});
-  });
 });

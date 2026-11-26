@@ -3,7 +3,7 @@ import {oliviaProposalShifts} from "@/lib/calc/scheduling/oliviaProposalShifts";
 import type {AgentToolContext,AgentToolResult} from "./index";
 import {scheduleCardKey} from "./staffProposals";
 import {nextMonday} from "@/lib/scheduling/staffScheduleLinks";
-import {previewOliviaWeek,previewOliviaOwnerSavings,previewOliviaAbsenceWhatIf} from "@/lib/actions/oliviaPlanning";
+import {previewOliviaWeek,previewOliviaOwnerSavings} from "@/lib/actions/oliviaPlanning";
 
 const monday=z.iso.date().refine(v=>new Date(v+"T12:00:00Z").getUTCDay()===1,"Must be a Monday");
 const schema=z.strictObject({week_start:monday.nullable(),purpose:z.enum([
@@ -13,9 +13,6 @@ const schema=z.strictObject({week_start:monday.nullable(),purpose:z.enum([
  employee_name:z.string().trim().min(1).max(80),
  weekday:z.number().int().min(0).max(6),
 }).nullable().optional()});
-const absenceSchema=z.strictObject({week_start:monday.nullable(),
- employee_name:z.string().trim().min(1).max(80),
- weekday:z.number().int().min(0).max(6)});
 const selectedObjectiveLabel=(objective:"cash"|"owner_time"|"balanced"|null)=>objective??"default";
 /** Choice cards require unique labels, even for identically named staff.
  * Use sourced employee UUID suffixes only to disambiguate, not to create IDs. */
@@ -154,34 +151,4 @@ export const draftScheduleTools={draft_week_schedule:{
    approvalTool:approval?"existing_card_created":"not_created",weekStart:start};
  }
  },
- simulate_staff_absence:{
-  agentId:"olivia",schema:absenceSchema,
-  description:"Answer a read-only hypothetical like 'What if Sarah cannot work Tuesday next week?' using the same verified Olivia scheduling solver, without saving anything or creating a proposal card. week_start=null means next business-local week. employee_name is the owner's actual name or unique first name; weekday is Sunday=0 through Saturday=6. Ambiguous/missing employees are reported rather than guessed. If the owner explicitly asks to SAVE an absence, use existing propose_availability_change instead.",
-  execute:async(raw:unknown,ctx:AgentToolContext):Promise<AgentToolResult>=>{
-   const {week_start,employee_name,weekday}=absenceSchema.parse(raw);
-   const week=week_start??nextMonday(ctx.asOf);
-   const selectedEmployeeIds=[...(ctx.resolveState?.chosenIds??[])]
-     .filter(id=>z.uuid().safeParse(id).success).slice(0,10);
-   const result=await (ctx.oliviaPreview?.absence??previewOliviaAbsenceWhatIf)({
-     week,employeeName:employee_name,weekday,selectedEmployeeIds});
-   if(!result.ok)return {source:"olivia_hypothetical_absence",
-    agentId:"olivia",period:null,draft:false,saved:false,
-    missing:[...(result.error==="employee_ambiguous"?["ownerChoiceRequired"]:[]),result.error],
-    ...(result.error==="employee_ambiguous"?{
-     needsOwnerChoice:true,candidates:employeeChoiceCandidates(result.candidates??[]),
-    }:{})};
-   return {source:"olivia_hypothetical_absence",agentId:"olivia",
-    period:result.period,draft:false,saved:false,missing:[],
-    hypothetical:true,employeeName:result.employeeName,
-    absentDate:result.absentDate,
-    baseline:result.baseline,alternative:result.alternative,
-    changeInModeledCashWagesCents:result.changeInModeledCashWagesCents,
-    rosterChanges:result.rosterChanges,
-    laborCostDifferenceKnown:result.laborCostDifferenceKnown,
-    comparisonCompleteCoverage:result.comparisonCompleteCoverage,
-    assumptions:result.assumptions,warnings:result.warnings,
-    note:"Read-only owner hypothetical; employee availability and published rosters are unchanged",
-   };
-  },
- }
 } as const;

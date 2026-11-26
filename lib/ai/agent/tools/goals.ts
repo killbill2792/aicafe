@@ -17,7 +17,6 @@ export const proposeGoalSchema=z.strictObject({
 });
 export const recordCheckinSchema=z.strictObject({goal_id:z.uuid(),date:z.iso.date().nullable(),
   answer:z.enum(CHECKIN_ANSWERS),note:z.string().trim().max(500).nullable()});
-export const goalStatusSchema=z.strictObject({goal_id:z.uuid().nullable()});
 
 export type GoalPort={
   propose(input:{metric:z.infer<typeof metric>;itemId:string|null;direction:"up"|"down";
@@ -52,15 +51,6 @@ export const goalTools={
       const v=recordCheckinSchema.parse(raw);
       if(!ctx.goals)return {source:"goal_checkin",period:null,missing:["not_supported"]};
       return {source:"goal_checkin",period:null,agentId:"leo",missing:[],...await ctx.goals.recordCheckin(v.goal_id,v.date,v.answer,v.note)};
-    },
-  },
-  get_goal_status:{
-    agentId:"leo",schema:goalStatusSchema,
-    description:"List the owner's goals (goal_id null), or read one goal's progress so far. Report the summary text; numbers are daily averages.",
-    execute:async(raw:unknown,ctx:AgentToolContext):Promise<AgentToolResult>=>{
-      const v=goalStatusSchema.parse(raw);
-      if(!ctx.goals)return {source:"goals",period:null,missing:["not_supported"]};
-      return {source:"goals",period:null,agentId:"leo",missing:[],...await ctx.goals.status(v.goal_id)};
     },
   },
 } as const;

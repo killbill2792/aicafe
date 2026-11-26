@@ -1,7 +1,7 @@
 import {z} from "zod";
 import {receivingInputSchema,invoiceToolInputSchema} from "@/lib/ai/supervisor/loop/supplierReceiving.server";
 import type {AgentToolContext,AgentToolResult} from "./index";
-import {supplierPurchaseInputSchema,supplierPurchaseProposalToolInputSchema} from "@/lib/ai/supervisor/loop/purchaseOrders.server";
+import {supplierPurchaseProposalToolInputSchema} from "@/lib/ai/supervisor/loop/purchaseOrders.server";
 import {vendorOrderSendInputSchema,VendorOrderOwnerInputRequired} from "@/lib/ai/supervisor/loop/vendorDispatch.server";
 import {ownerSupplierOutcomeToolInput,explicitOwnerSupplierOutcome,explicitOwnerSupplierChannel} from "@/lib/purchasing/ownerSupplierOutcome.server";
 
@@ -9,41 +9,6 @@ import {ownerSupplierOutcomeToolInput,explicitOwnerSupplierOutcome,explicitOwner
  * approval proposal using the SAME server-bound Supervisor planner. A model
  * cannot smuggle in a café ID, quote price, or authorization kind. */
 export const supplierPurchasingTools={
- get_supplier_purchase_orders:{
-  agentId:"maya",schema:z.strictObject({}),
-  description:"Read scoped editable drafts, approvals/attempts and saved POs: quantities, dates, dispatch, receiving. Unresolved approval without receipt is not absent; report status/attempt. Explicit retry/cancel only approved with no attempt; executing/uncertain: receipt-only recovery. Replace drafts only. Ordered/sent/received/paid differ; dates never prove arrival; missing receipt=unknown.",
-  execute:async(raw:unknown,ctx:AgentToolContext):Promise<AgentToolResult>=>{
-   z.strictObject({}).parse(raw);
-   if(!ctx.purchasing)return {source:"purchase_orders",period:null,agentId:"maya",
-    missing:["purchasing_unavailable"],orders:[],drafts:[],draftsTruncated:false,
-    unresolvedApprovals:[],unresolvedApprovalsTruncated:false,
-    vendorCommunications:[],gmailConnection:{status:"unavailable",connected:false,canSend:false,canRead:false}};
-   const result=await ctx.purchasing.list();
-   return {source:"purchase_orders",period:null,agentId:"maya",
-    missing:[...(result.gmailConnection?.status==="status_unavailable"?["gmail_status_unavailable"]:[]),
-      ...(result.truncated?["purchase_order_history_truncated"]:[]),
-      ...(result.draftsTruncated?["supplier_po_draft_history_truncated"]:[]),
-      ...(result.unresolvedApprovalsTruncated?["supplier_po_unresolved_history_truncated"]:[]),
-      ...(result.unresolvedApprovals.length?["supplier_po_approval_unresolved"]:[])],
-    orders:result.orders,truncated:result.truncated,
-    drafts:result.drafts,draftsTruncated:result.draftsTruncated,
-    unresolvedApprovals:result.unresolvedApprovals,
-    unresolvedApprovalsTruncated:result.unresolvedApprovalsTruncated,
-    vendorCommunications:result.vendorCommunications??[],
-    gmailConnection:result.gmailConnection??{status:"unavailable",connected:false,canSend:false,canRead:false}};
-  }
- },
- inspect_purchase_reconciliation:{
-  agentId:"maya",schema:z.strictObject({purchaseOrderId:z.uuid()}),
-  description:"Read exact saved PO UUID; reconcile ordered/received/accepted/damaged/invoiced/outstanding quantities, prices and totals. Missing receipt=unknown. Read-only; clarify unknown identity.",
-  execute:async(raw:unknown,ctx:AgentToolContext):Promise<AgentToolResult>=>{
-   const {purchaseOrderId}=z.strictObject({purchaseOrderId:z.uuid()}).parse(raw);
-   if(!ctx.receivingRead)return {source:"purchase_reconciliation",period:null,agentId:"maya",
-    missing:["receiving_read_unavailable"],reconciliation:null};
-   const result=await ctx.receivingRead(purchaseOrderId);
-   return {source:"purchase_reconciliation",period:null,agentId:"maya",...result};
-  }
- },
  propose_purchase_receiving:{
   agentId:"maya",schema:receivingInputSchema,
   description:"Draft physical PO receipt after reconciliation; stable reference, prior correction revision, received/accepted/damaged base quantities ×10000 via calculate. Owner/receiving evidence, never invoice/dispatch alone or guesses. Stock only after owner click; no generic purchase bypass.",
@@ -80,18 +45,6 @@ export const supplierPurchasingTools={
      operation:"send",sent:false,...result};
    }catch{return {source:"supplier_vendor_dispatch",period:null,agentId:"maya",
     missing:["supplier_followup_requires_verified_contact_or_open_evidence"],proposalCreated:false,sent:false};}
-  }
- },
- inspect_supplier_purchase:{
-  agentId:"maya",schema:supplierPurchaseInputSchema,
-  description:"Inspect future order using canonical ingredients/saved quotes, required quantity/unit, needed-by (null if unspecified). Returns café-currency carts, integer-cent subtotals and gaps. Subtotal excludes unknown shipping/tax; public snippets aren't firm offers. No invented prices. Read-only before proposal.",
-  execute:async(raw:unknown,ctx:AgentToolContext):Promise<AgentToolResult>=>{
-   const input=supplierPurchaseInputSchema.parse(raw);
-   if(!ctx.purchasing)return {source:"supplier_purchase_plan",period:null,agentId:"maya",missing:["purchasing_unavailable"],offers:[]};
-   const plan=await ctx.purchasing.inspect(input);
-   return {source:"supplier_purchase_plan",period:null,agentId:"maya",
-    missing:plan.missing,offers:plan.offers,comparison:plan.comparison,
-    complete:plan.offers.length>0,sourceTrust:"owner_reported"};
   }
  },
  propose_supplier_purchase_order:{

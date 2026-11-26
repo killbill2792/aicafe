@@ -221,38 +221,6 @@ describe("Supervisor delegates to one Olivia scheduler",()=>{
   ]));
  });
 
- it("answers a named day-off hypothetical without creating any proposal or real staff change",async()=>{
-  const proposeStaff=vi.fn();
-  mocks.absence.mockResolvedValue({
-   ok:true,period:{from:"2026-11-09",to:"2026-11-15"},
-   employeeName:"Sarah Jones",absentDate:"2026-11-10",
-   baseline:{status:"feasible",completeCoverage:true,cost:{cashWagesCents:24000},gaps:[],shiftCount:12},
-   alternative:{status:"unproven",completeCoverage:false,cost:{cashWagesCents:null},
-    gaps:[{startAt:"2026-11-10T16:00:00Z",reason:"no_confirmed_availability"}],shiftCount:10},
-   changeInModeledCashWagesCents:null,laborCostDifferenceKnown:false,
-   assumptions:["Scenario only; no records modified"],warnings:[],
-  });
-  const r=await draftScheduleTools.simulate_staff_absence.execute(
-    {week_start:null,employee_name:"Sarah",weekday:2},
-    {...ctx,proposals:{proposePriceChange:vi.fn(),proposeStaff}});
-  expect(mocks.absence).toHaveBeenCalledExactlyOnceWith({
-   week:"2026-11-09",employeeName:"Sarah",weekday:2,selectedEmployeeIds:[]});
-  expect(r).toMatchObject({
-   hypothetical:true,saved:false,absentDate:"2026-11-10",
-   changeInModeledCashWagesCents:null,
-   alternative:{completeCoverage:false},missing:[],
-  });
-  expect(proposeStaff).not.toHaveBeenCalled();
- });
- it("does not guess which same-named worker is absent",async()=>{
-  mocks.absence.mockResolvedValue({ok:false,error:"employee_ambiguous",
-   candidates:[{id:"11111111-1111-4111-8111-111111111111",name:"Sam Lee"},
-    {id:"22222222-2222-4222-8222-222222222222",name:"Sam Lee"}]});
-  const r=await draftScheduleTools.simulate_staff_absence.execute(
-    {week_start:null,employee_name:"Sam Lee",weekday:2},ctx);
-  expect(r).toMatchObject({missing:["ownerChoiceRequired","employee_ambiguous"],needsOwnerChoice:true});
-  expect(r.candidates).toHaveLength(2);
- });
  it("comparison-only request never creates a needless approval card",async()=>{
   const shift={employeeId:"11111111-1111-4111-8111-111111111111",
    locationId:"main",startAt:"2026-11-09T16:00:00Z",
@@ -399,38 +367,5 @@ describe("Supervisor delegates to one Olivia scheduler",()=>{
    temporaryConstraint:{saved:false,absentDate:"2026-11-10"},
    proposedShifts:[expect.objectContaining({employee_id:replacementId})]});
   expect(proposeStaff).toHaveBeenCalledTimes(1);
- });
- it("registers hypothetical ambiguity as a real owner choice instead of rejecting ask_owner",async()=>{
-  const a="11111111-1111-4111-8111-111111111111";
-  const b="22222222-2222-4222-8222-222222222222";
-  mocks.absence.mockResolvedValueOnce({ok:false,error:"employee_ambiguous",
-   candidates:[{id:a,name:"Sam Lee"},{id:b,name:"Sam Lee"}]})
-   .mockResolvedValueOnce({ok:true,period:{from:"2026-11-09",to:"2026-11-15"},
-    employeeName:"Sam Lee",absentDate:"2026-11-10",
-    baseline:{completeCoverage:true},alternative:{completeCoverage:false},
-    assumptions:[],warnings:[],changeInModeledCashWagesCents:null,
-    laborCostDifferenceKnown:false,rosterChanges:{removed:[],added:[]}});
-  const state=newResolveState("What if Sam is off Tuesday?");
-  const context={...ctx,resolveState:state};
-  const first=await draftScheduleTools.simulate_staff_absence.execute({
-    week_start:"2026-11-09",employee_name:"Sam",weekday:2},context);
-  expect(first).toMatchObject({missing:["ownerChoiceRequired","employee_ambiguous"],
-   needsOwnerChoice:true});
-  observeToolResult(state,first);
-  const opts=(first.candidates as Array<{id:string;label:string}>)
-   .map(v=>({label:v.label,value:v.id}));
-  const card=await askOwnerTools.ask_owner.execute({
-   question:"Which Sam?",kind:"choice",options:opts,allowOther:false,
-   fields:[],changeSaved:null},context);
-  expect(card).toMatchObject({kind:"choice",missing:[]});
-  const secondState=newResolveState(opts[1].label,[{role:"assistant",
-   content:"Asked: Which Sam? Options: "+opts.map(o=>o.label+" ("+o.value+")").join("; ")}]);
-  const result=await draftScheduleTools.simulate_staff_absence.execute({
-   week_start:"2026-11-09",employee_name:"Sam",weekday:2},
-   {...ctx,resolveState:secondState});
-  expect(mocks.absence).toHaveBeenLastCalledWith({
-   week:"2026-11-09",employeeName:"Sam",weekday:2,selectedEmployeeIds:[b]});
-  expect(result).toMatchObject({hypothetical:true,saved:false,
-   employeeName:"Sam Lee",absentDate:"2026-11-10"});
  });
 });
