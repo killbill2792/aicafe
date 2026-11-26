@@ -7,8 +7,8 @@ import {presentationPanelSchema,recordTableSchema,recoverRichPresentation,descri
 
 /** Native inline GenUI vocabulary. All data values bind to the evidence already
  * admitted to this owner turn, irrespective of its retrieval mechanism. */
-const fieldPath=z.array(z.union([z.string().min(1).max(140),z.number().int().nonnegative()])).min(1).max(12);
-const reference=z.object({ref:z.string(),path:fieldPath.optional(),quote:z.string().min(1).max(100).optional()}).refine(v=>Boolean(v.path)!==Boolean(v.quote));
+const fieldPath=z.array(z.union([z.string().min(1),z.number().int().nonnegative()])).min(1);
+const reference=z.object({ref:z.string(),path:fieldPath.optional(),quote:z.string().min(1).optional()}).refine(v=>Boolean(v.path)!==Boolean(v.quote));
 const scalar=z.union([z.number().finite(),z.string(),z.boolean(),z.null()]);
 const pointSelection=z.object({label:z.string().min(1),value:z.union([reference,scalar]),labelField:reference.optional(),unit:z.string().optional(),basis:z.string().optional()});
 const pointPanel=z.object({kind:z.enum(["metric","bar","line","donut","ranked_table"]),title:z.string().optional(),points:z.array(pointSelection).min(1)});
@@ -25,7 +25,7 @@ const selection=z.object({
 });
 const calcSelection=z.object({ref:z.string(),editable:z.array(z.string())});
 const directCalc=z.object({title:z.string().optional(),inputs:z.array(z.object({name:z.string(),value:z.string(),unit:z.enum(["cents","count","percent","ratio"])})).min(1),steps:z.array(z.object({id:z.string(),op:z.enum(CALC_OPS as [CalcOp,...CalcOp[]]),args:z.array(z.string())})).min(1),editable:z.array(z.string())});
-const authoredTable=z.object({title:z.string().optional(),basis:z.enum(["calculated","estimate","scenario","actual","unverified"]).optional(),explanation:z.string().optional(),columns:z.array(z.string().min(1)).min(1),rows:z.array(z.array(z.union([z.string(),z.number().finite(),z.boolean(),z.null()]))).min(1)});
+const authoredTable=z.object({title:z.string().optional(),basis:z.string().optional(),explanation:z.string().optional(),columns:z.array(z.string().min(1)).min(1),rows:z.array(z.array(z.union([z.string(),z.number().finite(),z.boolean(),z.null()]))).min(1)});
 const envelope=z.object({layout:z.enum(["stack","grid"]).optional(),panels:z.array(z.union([selection,pointPanel,analysisPanel])).optional(),
  tables:z.array(authoredTable).optional(),report:z.boolean().optional(),files:z.boolean().optional(),calculator:z.union([calcSelection,directCalc]).optional()});
 const components={
@@ -58,19 +58,19 @@ type Row=Record<string,unknown>;
 export type PresentationEvidence={data:Row;source:string;kind?:"sql"|"calculator";coverage?:"partial"|"estimate";text?:string};
 export type PresentationEvidenceMap=ReadonlyMap<string,PresentationEvidence>;
 const obj=(v:unknown):v is Row=>!!v&&typeof v==="object"&&!Array.isArray(v);
-const name=(key:string)=>key.replaceAll("_"," ").trim().slice(0,140);
+const name=(key:string)=>key.replaceAll("_"," ").trim();
 const visible=(key:string)=>!/(?:^|[._])(?:id|ref|email|phone|password|secret|credential|token|authorization|cookie)(?:$|[._])/iu.test(key)&&!/(?:Id|Ref|Token|Secret|Password|Credential|Email|Phone|Cookie)$/u.test(key)&&!["__proto__","prototype","constructor"].includes(key);
 const unit=(key:string)=>/(?:^|_)cents$|Cents$/u.test(key)?"cents":/(?:^|_)(?:count|orders|quantity)$|(?:Count|Orders|Quantity)$/u.test(key)?"count":"stored";
 const rawCell=(v:unknown)=>v===null||["string","boolean","number"].includes(typeof v);
-const title=(s:Selection,fallback:string)=>descriptiveGroupTitle(s.title)?.slice(0,140)||fallback||"Query results";
+const title=(s:Selection,fallback:string)=>descriptiveGroupTitle(s.title)||fallback||"Query results";
 
 function table(s:Selection,rows:Row[],ctx:Context,e:PresentationEvidence):RecordTable|null{
  const keys=s.columns??[s.x,s.y].filter((v):v is string=>typeof v==="string");
  if(!keys.length||keys.some(k=>!visible(k)))return null;
  const columns=keys.map(k=>({label:name(k),unit:unit(k)==="cents"&&rows.every(r=>r[k]==null||typeof r[k]==="number")?"cents":unit(k)==="count"&&rows.every(r=>r[k]==null||typeof r[k]==="number")?"count":"stored"}));
  const result=recordTableSchema.safeParse({title:title(s,"Query results"),view:e.kind==="sql"?"tool_sql_research":"tool_response_evidence",from:ctx.asOf,to:ctx.asOf,asOf:ctx.asOf,
-  currency:ctx.currency??null,coverage:e.coverage?"partial":"stored",
-  scope:(e.source+"; see the answer for period and coverage").slice(0,300),
+  currency:ctx.currency??null,coverage:e.coverage??"stored",
+  scope:e.source+"; see the answer for period and coverage",
   columns,rows:rows.map(r=>keys.map(k=>rawCell(r[k])?r[k]:null))});
  return result.success?result.data:null;
 }
@@ -90,8 +90,8 @@ function panel(s:Selection,rows:Row[],ctx:Context,e:PresentationEvidence):Presen
  // records. Do not infer missing time buckets or manufacture a denominator.
  
  const p=presentationPanelSchema.safeParse({kind:s.kind,title:title(s,name(y)),unit:chartUnit,currency,
-  from:ctx.asOf,to:ctx.asOf,asOf:ctx.asOf,source:e.kind==="sql"?"sql_research":"response_evidence",sourceDetail:e.source.slice(0,500),coverage:e.coverage,
-  ...(chartUnit==="units"?{measurement:name(y).slice(0,80)}:{}),points:typed});
+  from:ctx.asOf,to:ctx.asOf,asOf:ctx.asOf,source:e.kind==="sql"?"sql_research":"response_evidence",sourceDetail:e.source,coverage:e.coverage,
+  ...(chartUnit==="units"?{measurement:name(y)}:{}),points:typed});
  return p.success?p.data:null;
 }
 
@@ -203,7 +203,7 @@ function pointView(s:z.infer<typeof pointPanel>,evidence:PresentationEvidenceMap
  const first=values[0];
  if(values.some(v=>v.unit!==first.unit||v.measurement!==first.measurement))return null;
  const coverage=values.some(v=>v.source.coverage==="partial")?"partial":values.some(v=>v.source.coverage==="estimate")?"estimate":undefined;
- const sourceDetail=[...new Set(values.map(v=>v.source.source))].join("; ").slice(0,500);
+ const sourceDetail=[...new Set(values.map(v=>v.source.source))].join("; ");
  const result=presentationPanelSchema.safeParse({kind:s.kind,title:descriptiveGroupTitle(s.title)??"Comparison",
   unit:first.unit,currency:first.unit==="cents"?ctx.currency??null:null,from:ctx.asOf,to:ctx.asOf,asOf:ctx.asOf,
   source:"response_evidence",sourceDetail,coverage,...(first.measurement?{measurement:first.measurement}:{}),
@@ -219,7 +219,7 @@ export function resolveResearchView(raw:unknown,queries:PresentationEvidenceMap,
  const c=calcSelection.safeParse(raw.calculator);
  const authored=directCalc.safeParse(raw.calculator);
  const calculated=authored.success?calculator({...calculate(authored.data),calculationInput:authored.data},authored.data.editable,ctx):null;
- const calc=c.success?calculator(queries.get(c.data.ref)?.data??{},c.data.editable,ctx):calculated&&{...calculated,title:safeLabel(authored.success?authored.data.title??"What-if calculation":"What-if calculation")??"What-if calculation"};
+ const calc=c.success?calculator(queries.get(c.data.ref)?.data??{},c.data.editable,ctx):calculated&&{...calculated,title:descriptiveGroupTitle(authored.success?authored.data.title:undefined)??"What-if calculation"};
  if(!calc&&authored.success){
   const a=authored.data;
   const result=recordTableSchema.safeParse({title:a.title??"What-if calculation",view:"tool_response_evidence",from:ctx.asOf,to:ctx.asOf,asOf:ctx.asOf,currency:ctx.currency??null,coverage:"estimate",
@@ -231,10 +231,10 @@ export function resolveResearchView(raw:unknown,queries:PresentationEvidenceMap,
   const direct=analysisPanel.safeParse(value);
   if(direct.success){
    const a=direct.data;
-   const heading=safeLabel(a.title??"Luna analysis")??"Luna analysis";
+   const heading=descriptiveGroupTitle(a.title)??"Luna analysis";
    const coverage=a.basis==="estimate"||a.basis==="scenario"?"estimate":a.basis==="calculated"?undefined:"unverified";
    const detail="Luna "+(a.basis==="calculated"?"calculation (model-derived)":a.basis==="scenario"?"hypothetical scenario":a.basis==="estimate"?"estimate":"unverified statement")+(a.explanation?": "+a.explanation:"");
-   const points=a.points.map(p=>({label:safeLabel(p.label)??"Value",value:p.value}));
+   const points=a.points.map(p=>({label:descriptiveGroupTitle(p.label)??"Value",value:p.value}));
    const supported=presentationPanelSchema.shape.unit.safeParse(a.unit);
    const displayUnit=supported.success?supported.data:"units";
    const measurement=a.measurement??(supported.success?undefined:a.unit);
@@ -260,7 +260,7 @@ export function resolveResearchView(raw:unknown,queries:PresentationEvidenceMap,
      const selected=reference.safeParse(item.value);
      const e=selected.success?queries.get(selected.data.ref):undefined,bound=e&&selected.success?bindValue(e,selected.data,ctx):undefined;
      const labelEvidence=item.labelField?queries.get(item.labelField.ref):undefined;
-     const label=item.labelField?.path&&labelEvidence?safeLabel(field(labelEvidence.data,item.labelField.path)):safeLabel(item.label);
+     const label=item.labelField?.path&&labelEvidence?safeLabel(field(labelEvidence.data,item.labelField.path)):descriptiveGroupTitle(item.label);
      const direct=scalar.safeParse(item.value);
      return [label??"Value",direct.success?direct.data:bound?.value??null,direct.success?item.unit??null:bound?bound.measurement??bound.unit:null];
     });
