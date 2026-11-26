@@ -14,12 +14,12 @@ export const presentationPanelSchema=z.strictObject({
   from:date,to:date,asOf:date,source:z.enum([...presentationSourceNames,"sql_research","response_evidence"] as const),
   sourceDetail:z.string().max(500).optional(),measurement:z.string().trim().min(1).max(80).optional(),
   coverage:z.enum(["partial","estimate"]).optional(),
-  points:z.array(point).min(1).max(30),
+  points:z.array(point).min(1),
 }).superRefine((p,ctx)=>{
   if((["cents","cents/hour"].includes(p.unit))!==(p.currency!==null)||p.from>p.to||p.to>p.asOf||
      ((p.unit==="cents"||p.unit==="cents/hour"||p.unit==="count")&&p.points.some(x=>!Number.isSafeInteger(x.value)))||
      (p.measurement!==undefined&&p.unit!=="units")||(p.kind==="metric"&&p.points.length!==1)||
-     (p.kind==="donut"&&(p.coverage||p.points.some(x=>x.value<0)||p.points.every(x=>x.value===0))))
+     (p.kind==="donut"&&(p.coverage==="partial"||p.points.some(x=>x.value<0)||p.points.every(x=>x.value===0))))
     ctx.addIssue({code:"custom",message:"Invalid presentation data"});
 });
 const clock=z.string().regex(/^(?:[01]\d|2[0-3]):[0-5]\d$/);
@@ -46,7 +46,7 @@ export const recordTableSchema=z.strictObject({
  currency:z.string().regex(/^[A-Z]{3}$/).nullable(),
  coverage:z.enum(["stored","partial"]),scope:z.string().max(300),
  columns:z.array(z.strictObject({label,unit:tableUnit})).min(1).max(8),
- rows:z.array(z.array(cell).min(1).max(8)).min(1).max(30),
+ rows:z.array(z.array(cell).min(1).max(8)).min(1),
 }).superRefine((t,ctx)=>{
  if(t.from>t.to||t.rows.some(r=>r.length!==t.columns.length||r.some((v,i)=>{
   if(v===null)return false;
