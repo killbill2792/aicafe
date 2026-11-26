@@ -3,7 +3,7 @@
  * suite opts in and SIGKILLs the child after a real registered model/tool
  * execution committed a fenced tool_complete checkpoint.
  *
- * The provider is recorded (zero paid calls), but runAgentTurn, get_sales,
+ * The provider is recorded (zero paid calls), but the research turn, run_sql,
  * the persisted source row, model-call reservations, and the original U4
  * checkpoint/report RPCs execute. Genuine provider restart remains a
  * separately owner-authorized Task17C acceptance requirement.
@@ -12,8 +12,8 @@ import {writeFileSync} from "node:fs";
 import {Client} from "pg";
 import {expect,it,vi} from "vitest";
 vi.mock("server-only",()=>({}));
-import {runAgentTurn,type AgentProvider} from "@/lib/ai/agent/loop.server";
-import type {AgentToolContext} from "@/lib/ai/agent/tools";
+import type {AgentProvider} from "@/lib/ai/agent/loop.server";
+import {runResearchTurn} from "@/lib/ai/research/turn.server";
 import {withWorkerBudget} from "@/lib/ai/supervisor/runs/usage.server";
 import {meteredInvestigationProvider} from "./investigationUsage.server";
 import {routineObjectiveCheckpoint,verifyObjectiveTurn} from "./objective.server";
@@ -23,7 +23,7 @@ const allowedRpc=new Set([
   "u4_routine_lease_active","u4_checkpoint_model_step",
   "supervisor_reserve_investigation_model_call",
   "supervisor_complete_investigation_model_call",
-  "u4_publish_objective_report",
+  "u4_publish_objective_report","supervisor_research_sql",
 ]);
 const uuid=/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/iu;
 run("survives actual recorded model and registered source tool across SIGKILL",async()=>{
@@ -57,6 +57,7 @@ run("survives actual recorded model and registered source tool across SIGKILL",a
     const lease={runId,leaseToken,revision:3};
     // PostgREST-equivalent adapter around ACTUAL persisted PostgreSQL functions.
     // The only permitted RPC names are those in the existing U4 work path.
+    let sqlResult:unknown=null;
     const rpc=async(name:string,args:Record<string,unknown>)=>{
       try{
         if(!allowedRpc.has(name))throw Error("u4_child_unexpected_rpc:"+name);
@@ -69,7 +70,8 @@ run("survives actual recorded model and registered source tool across SIGKILL",a
           "select to_jsonb(public."+name+"("+names+")) as data",
           entries.map(([,value])=>value));
         const data=observed.rows[0]?.data;
-        // This marker is emitted only AFTER an actual get_sales tool result
+        if(name==="supervisor_research_sql")sqlResult=data;
+        // This marker is emitted only AFTER an actual run_sql tool result
         // reached the production checkpoint and the DB acknowledged commit.
         if(name==="u4_checkpoint_model_step"&&args.p_stage==="tool_complete"&&
            data===true&&mode==="crash"){
@@ -125,28 +127,6 @@ run("survives actual recorded model and registered source tool across SIGKILL",a
       expect(resumed).toContain("tool_complete");
       expect(resumed).not.toContain("4875");
     }
-    const originalSourceRead=async(period:{from:string;to:string})=>{
-      await assertLease();
-      const rows=await db.query("select business_date::text as day,"+
-        "net_sales_cents,orders_count from public.daily_rollups "+
-        "where business_id=$1 and business_date between $2::date and $3::date "+
-        "order by business_date",[businessId,period.from,period.to]);
-      return {available:true as const,
-        value:rows.rows.map(x=>({date:x.day,
-          netSalesCents:Number(x.net_sales_cents),
-          ordersCount:Number(x.orders_count)})),
-        quality:{missingInputs:[],estimatedInputs:[],notes:[]},
-      };
-    };
-    const context={
-      locale:"en",timezone:"America/Los_Angeles",currency:"USD",
-      asOf:"2026-11-21",
-      tools:{
-        getSalesTrend:originalSourceRead,
-        getProfitability:async()=>({available:false}),
-        getMenuCatalog:async()=>({available:false}),
-      },
-    } as unknown as AgentToolContext;
     let requests=0;
     const completed={type:"response.completed",response:{
       model:"gpt-6-luna",status:"completed",
@@ -155,9 +135,9 @@ run("survives actual recorded model and registered source tool across SIGKILL",a
     const recorded:AgentProvider=async function*(){
       if(requests++===0){
         yield {type:"response.output_item.done",item:{
-          type:"function_call",name:"get_sales",call_id:"u4-durable-sales",
-          arguments:JSON.stringify({period:{from:"2026-11-20",to:"2026-11-20"},
-            ownerInputs:null}),
+          type:"function_call",name:"run_sql",call_id:"u4-durable-sales",
+          arguments:JSON.stringify({sql:"select business_date::text as day, net_sales_cents, orders_count "+
+            "from public.daily_rollups where business_date between '2026-11-20' and '2026-11-20' order by business_date"}),
         }} as never;
       }else{
         yield {type:"response.output_text.delta",
@@ -172,17 +152,19 @@ run("survives actual recorded model and registered source tool across SIGKILL",a
     const turn=await withWorkerBudget({
       maxElapsedMs:45_000,maxModelCalls:4,maxToolCalls:3,
       maxInputTokens:72_000,maxOutputTokens:2400,
-    },()=>runAgentTurn({
+    },()=>runResearchTurn({
       ownerText:"Re-read the actual café sales on this original routine run.",
-      serviceOrigin:true,toolNames:["get_sales"],
-      context,provider:metered.provider,checkpoint,
+      scope:{db:port as never,businessId,ownerUserId},
+      cafeContext:"Café (authenticated, not an owner message): "+JSON.stringify({localDate:"2026-11-21"}),
+      provider:metered.provider,checkpoint,
     }));
     expect(metered.problem()).toBeNull();
-    const observed=turn.toolInvocations?.find(x=>x.name==="get_sales");
-    expect(observed?.result.netSalesCents).toBe(4875);
+    const observed=turn.toolInvocations?.find(x=>x.name==="run_sql");
+    expect(observed?.result.error).toBeUndefined();
+    expect(JSON.stringify(sqlResult)).toContain("4875");
     expect(turn.usage.toolCalls).toBe(1);
     const verified=verifyObjectiveTurn(turn,routine as never);
-    expect(verified.sourceDomains).toContain("recorded_sales");
+    expect(verified.sourceDomains).toContain("other:sql_research");
     if(mode!=="resume")throw Error("u4_crash_process_should_have_been_killed");
     const proof={
       sources:verified.sourceRefs.map(x=>({
