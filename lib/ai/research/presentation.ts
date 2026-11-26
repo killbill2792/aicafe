@@ -198,7 +198,7 @@ function pointView(s:z.infer<typeof pointPanel>,evidence:PresentationEvidenceMap
   values.push({...bound,label,source});
  }
  const first=values[0];
- if(values.some(v=>v.unit!==first.unit||v.measurement!==first.measurement)||new Set(values.map(v=>v.label)).size!==values.length)return null;
+ if(values.some(v=>v.unit!==first.unit||v.measurement!==first.measurement))return null;
  const coverage=values.some(v=>v.source.coverage==="partial")?"partial":values.some(v=>v.source.coverage==="estimate")?"estimate":undefined;
  const sourceDetail=[...new Set(values.map(v=>v.source.source))].join("; ").slice(0,500);
  const result=presentationPanelSchema.safeParse({kind:s.kind,title:descriptiveGroupTitle(s.title)??"Comparison",
@@ -239,10 +239,31 @@ export function resolveResearchView(raw:unknown,queries:PresentationEvidenceMap,
    continue;
   }
   const selectedPoints=pointPanel.safeParse(value);
-  if(selectedPoints.success){const p=pointView(selectedPoints.data,queries,ctx);if(p)panels.push(p);continue;}
+  if(selectedPoints.success){
+   const p=pointView(selectedPoints.data,queries,ctx);
+   if(p)panels.push(p);
+   else{
+    const rows=selectedPoints.data.points.map(item=>{
+     const e=queries.get(item.value.ref),bound=e?bindValue(e,item.value,ctx):undefined;
+     const labelEvidence=item.labelField?queries.get(item.labelField.ref):undefined;
+     const label=item.labelField?.path&&labelEvidence?safeLabel(field(labelEvidence.data,item.labelField.path)):safeLabel(item.label);
+     return [label??"Value",bound?.value??null,bound?bound.measurement??bound.unit:null];
+    });
+    const t=recordTableSchema.safeParse({title:selectedPoints.data.title??"Comparison",view:"tool_response_evidence",from:ctx.asOf,to:ctx.asOf,asOf:ctx.asOf,currency:ctx.currency??null,
+     coverage:"partial",scope:"Available selected values; missing or incompatible values are shown separately, not converted to zero.",
+     columns:[{label:"Category",unit:"label"},{label:"Value",unit:"stored"},{label:"Unit",unit:"stored"}],rows});
+    if(t.success)tables.push(t.data);
+   }
+   continue;
+  }
   const s=selection.safeParse(value);if(!s.success)continue;
   const e=queries.get(s.data.ref),q=e?.data;
-  if(!e||!q||q.ok===false||q.error||!Array.isArray(q.rows)||!q.rows.length||!q.rows.every(obj))continue;
+  if(!e||!q||q.ok===false||q.error||!Array.isArray(q.rows)||!q.rows.length||!q.rows.every(obj)){
+   const t=recordTableSchema.safeParse({title:s.data.title??"Selected results",view:"tool_response_evidence",from:ctx.asOf,to:ctx.asOf,asOf:ctx.asOf,currency:ctx.currency??null,
+    coverage:"partial",scope:"Values were not available from the selected result.",columns:[{label:"Value",unit:"stored"}],rows:[[null]]});
+   if(t.success)tables.push(t.data);
+   continue;
+  }
   if(s.data.kind==="table"){
    const t=table(s.data,q.rows,ctx,e);if(t)tables.push(t);
   }else{
@@ -253,7 +274,7 @@ export function resolveResearchView(raw:unknown,queries:PresentationEvidenceMap,
  }
  for(const rawTable of Array.isArray(raw.tables)?raw.tables:[]){
   const t=authoredTable.safeParse(rawTable);if(!t.success)continue;
-  const a=t.data, width=Math.max(a.columns.length,...a.rows.map(r=>r.length));
+  const a=t.data, width=a.rows.reduce((n,r)=>Math.max(n,r.length),a.columns.length);
   const columns=Array.from({length:width},(_,i)=>({label:a.columns[i]??"Value "+(i+1),unit:"stored"}));
   const result=recordTableSchema.safeParse({title:a.title??"Luna analysis",view:"tool_response_evidence",from:ctx.asOf,to:ctx.asOf,asOf:ctx.asOf,currency:ctx.currency??null,
    coverage:a.basis==="estimate"||a.basis==="scenario"?"estimate":"unverified",scope:"Luna "+(a.basis??"unverified")+(a.explanation?": "+a.explanation:""),
