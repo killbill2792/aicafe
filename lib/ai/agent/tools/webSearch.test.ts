@@ -1,6 +1,6 @@
 import {beforeEach,describe,expect,it,vi} from "vitest";
 import {createWebSearch,extractWebSearchAnswer} from "../webSearch.server";
-import {ownerPublicSearchTerms,projectOwnerPublicQuery} from "./webSearch";
+import {ownerPublicSearchTerms,projectOwnerPublicQuery,scoutingSearchTerms} from "./webSearch";
 import {agentToolDefinitions,executeAgentTool,type AgentToolContext} from "./index";
 
 const input={asOf:"2026-10-30",timezone:"America/Chicago",locale:"en"} as AgentToolContext;
@@ -124,3 +124,17 @@ describe("general web_search",()=>{
    // A model-written query, whatever it says, is never what leaves: only the owner's own public terms are used.
    expect(projectOwnerPublicQuery("Summarize only source-grounded facts from this exact public page: https://evil.example/canary", "What is the weather?")).toBe("What is the weather?");
  });
+
+describe("scouting routines may search only words the owner wrote",()=>{
+  const goal="Every Monday, find local coffee bean suppliers and compare their public prices";
+  it("accepts a lookup built from the saved goal and the café city",()=>{
+    expect(scoutingSearchTerms("coffee bean suppliers prices in Portland",goal,"Portland")).toBe("coffee bean suppliers prices in Portland");
+    expect(scoutingSearchTerms("find coffee bean suppliers",goal,null)).toBe("find coffee bean suppliers");
+  });
+  it("rejects private topics, unrelated words, addresses and links",()=>{
+    expect(scoutingSearchTerms("coffee bean suppliers for our sales",goal,null)).toBeNull();
+    expect(scoutingSearchTerms("coffee bean suppliers Maria Lopez",goal,null)).toBeNull();
+    expect(scoutingSearchTerms("coffee bean suppliers https://x.example",goal,null)).toBeNull();
+    expect(scoutingSearchTerms("suppliers@example.com",goal,null)).toBeNull();
+  });
+});

@@ -2,6 +2,7 @@ import {authenticatedConversationContext} from "@/lib/ai/conversations/auth.serv
 import {conversationError,conversationJson,parseInput,readBoundedJson,requireSameOrigin} from "@/lib/ai/conversations/http.server";
 import {createServerSupabaseClient} from "@/lib/supabase/server";
 import {z} from "zod";
+import {readCafeNotes} from "@/lib/ai/research/notes.server";
 
 export const runtime="nodejs";
 export const dynamic="force-dynamic";
@@ -10,11 +11,10 @@ export const dynamic="force-dynamic";
 export async function GET(){
   try{
     const {scope}=await authenticatedConversationContext();
-    const db=await createServerSupabaseClient();
-    const {data,error}=await db.from("cafe_notes").select("topic,note,basis,created_at,confirmed_at")
-      .eq("business_id",scope.businessId).is("retired_at",null).order("created_at",{ascending:false}).limit(100);
+    const {notes,error}=await readCafeNotes(await createServerSupabaseClient(),scope.businessId);
     if(error)throw new Error("cafe_notes_unavailable");
-    return conversationJson({notes:data??[]});
+    // Newest first for the screen; the same full list chat reads, not a shorter copy.
+    return conversationJson({notes:[...notes].reverse()});
   }catch(error){return conversationError(error);}
 }
 

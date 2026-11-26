@@ -22,7 +22,7 @@ import {createWebSearch} from "@/lib/ai/agent/webSearch.server";
 import {ownerPublicWebSearch} from "@/lib/connectors/publicWeb.server";
 import {assertExternalAccess,WEB_RESOURCE} from "@/lib/connectors/access.server";
 import {readCafeLocation} from "@/lib/data/cafeLocation.server";
-import {projectOwnerPublicQuery} from "@/lib/ai/agent/tools/webSearch";
+import {scoutingSearchTerms} from "@/lib/ai/agent/tools/webSearch";
 import type {RoutineRecord} from "./contracts";
 import type {ClaimedRoutine} from "./repository.server";
 
@@ -373,7 +373,7 @@ export async function executeClaimedObjective(db:SupabaseClient,params:{
         ownerPublicWebSearch(scope,async()=>{
           const revision=await assertExternalAccess(scope,"public_web",WEB_RESOURCE);
           const place=await readCafeLocation(db,scope.businessId,[]);
-          const publicTerms=projectOwnerPublicQuery(query,String(routine.objectiveText??""),place?.city);
+          const publicTerms=scoutingSearchTerms(query,String(routine.objectiveText??""),place?.city);
           if(!publicTerms)return {available:false as const,reason:"unsafeQuery" as const};
           const research=createWebSearch({reserveTransport:params=>metered.reserve(params,"hosted_web")});
           const value=await research(publicTerms,budget);
