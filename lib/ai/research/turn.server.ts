@@ -18,7 +18,7 @@ import {executeResearchTool,researchToolDefinitions,type ResearchScope} from "./
 export const RESEARCH_INSTRUCTIONS=
   "You are Supervisor, the AI operator of this café, answering its owner in chat. "+
   "You can read the café's own database: describe_database shows what exists, run_sql runs read-only PostgreSQL on it "+
-  "(rows are already limited to this café), and calculate does exact arithmetic on numbers you retrieved. "+
+  "(rows are already limited to this café), and calculate does exact arithmetic on retrieved or derived numbers and hypothetical inputs. "+
   "Use them whenever the answer depends on café data, as much as the question needs. Saved events, staff schedules, staff messages and Gmail have their own readers, which you can use when relevant. "+
   "Answer directly in the owner's language, concise for simple questions and thorough for hard ones. "+
   "Distinguish recorded facts from your calculations, assumptions, forecasts and estimates. Explain the basis and uncertainty in the answer. Choose the authorized database tables or views yourself; screen-specific views are optional, not the research interface. "+
@@ -149,7 +149,7 @@ export async function runResearchTurn(args:{
   const usage:AgentTurn["usage"]={model,modelCalls:0,toolCalls:0,inputTokens:0,cachedTokens:0,outputTokens:0,latencyMs:0,requests:[],toolMetrics:[]};
   const invocations:{name:string;result:AgentToolResult}[]=[];
   const privateValues=new Set<string>();
-  /** Everything retrieved or calculated this turn; the answer's figures are checked against it. */
+  /** Admitted evidence is retained across worker replacement for model context. */
   const evidence:string[]=[];
   let nextResultRef=0;
   const admit=(source:string,data:Record<string,unknown>,coverage?:"partial"|"estimate",kind?:PresentationEvidence["kind"])=>{
@@ -414,7 +414,7 @@ export async function runResearchTurn(args:{
   usage.latencyMs=Math.max(0,now()-started);
   const tools=[...new Set(invocations.map(i=>i.name))];
   return {text,endReason,status:{status:"complete",missing:[]},
-    // Numeric comparison is diagnostic only; independently derived numbers are valid.
+    // Do not use verbatim-number matching as an answer or presentation gate.
     unverified:[],
     results:[...(await args.checkpoint?.restoredResults?.()??[]),...invocations.map(i=>i.result),...presentations],toolInvocations:invocations,tools,
     agentIds:tools.length?["alex"]:[],usage,presentationDiagnostics};
