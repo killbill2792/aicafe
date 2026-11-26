@@ -387,3 +387,33 @@ it("wraps two-column financial tables and preserves nested checklist formatting"
  expect(html).toContain("$123.45");
  expect(html).not.toContain("[x]");
 });
+
+it("fits the accounting three-column table and wraps descriptions",()=>{
+ const html=renderToStaticMarkup(createElement(ChatMarkdown,{text:"| Accounting item | Amount | Data quality |\n| --- | ---: | --- |\n| Staff wages | $9,321.45 | Actual |\n| Ingredient costs | $78.90 | Incomplete; last five days only |"}));
+ expect(html).toContain("table-fixed");expect(html).not.toContain("min-w-max");expect(html).toContain("<colgroup>");expect(html).toContain("overflow-wrap:anywhere");expect(html).toContain("Incomplete; last five days only");
+});
+
+it("keeps provenance offsets after a repaired adjacent table and leaves fenced code literal",()=>{
+ const text="A | B\n--- | ---\nOne | Two\nCost | Value\n--- | ---\nItem | $125.00\n\n\x60\x60\x60text\nA | B\n--- | ---\n\x60a|b\x60\n\x60\x60\x60";
+ const start=text.indexOf("$125.00");
+ const html=renderToStaticMarkup(createElement(ChatMarkdown,{text,unverified:[{start,end:start+7,source:"owner"}]}));
+ expect(html.match(/<table/g)).toHaveLength(2);
+ expect(html).toContain('aria-label="$125.00 — You told me"');
+ expect(html).toContain("a|b");
+});
+
+it.each(["Total \\$123","Total &dollar;123","Total &#36;123","Total &amp; fees $123"])("preserves unsupported financial annotations through decoded Markdown: %s",text=>{
+ const start=text.lastIndexOf("123");
+ const html=renderToStaticMarkup(createElement(ChatMarkdown,{text,showLegend:false,unverified:[{start,end:start+3,source:"unchecked"}]}));
+ expect(html).toContain('aria-label="$123 — Not checked against your records"');
+ expect(html).toContain(">$123</button>");
+});
+it("maps decoded repeated amounts to their individual source labels",()=>{
+ const text="Actual \\$123; estimate &dollar;123";
+ const first=text.indexOf("123"),second=text.lastIndexOf("123");
+ const html=renderToStaticMarkup(createElement(ChatMarkdown,{text,showLegend:false,unverified:[
+  {start:first,end:first+3,source:"owner"},{start:second,end:second+3,source:"estimate"}]}));
+ expect(html).toContain('aria-label="$123 — You told me"');
+ expect(html).toContain('aria-label="$123 — Estimate"');
+ expect(html).not.toContain("Not checked against your records");
+});

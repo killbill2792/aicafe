@@ -918,7 +918,8 @@ export async function runOneTurn(p: TurnParams): Promise<{ replyId: string; repl
           ?p.recordDurableStep({tool:name,agent:agentId}):jobs.recordAgentJobStep(job.id, { tool: name, agent: agentId }));
       },
       onDelta: delta => emit("delta", { text: delta }),
-      onReset: discardChars => emit("reset", { discardChars }) });
+      onPresentation:(offset,block)=>emit("presentation",{offset,block}),
+      onReset: (discardChars,discardPresentations) => emit("reset", { discardChars,discardPresentations }) });
     if(p.matchedAnswers?.length)result.absorbedOwnerMessageIds=[...new Set([...(result.absorbedOwnerMessageIds??[]),...p.matchedAnswers.map(a=>a.answerId)])];
     result.externalEvidence=sourceChecks.size>0;
     completedTurn = result;

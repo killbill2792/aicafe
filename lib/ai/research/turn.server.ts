@@ -6,7 +6,9 @@ import {executeAgentTool,isRepeatSafeOwnerTool,observeDurableToolEffect,type Age
 import {safeToolError} from "@/lib/ai/agent/toolErrors";
 import type {OwnerRunCheckpoint} from "@/lib/ai/supervisor/runs/contracts";
 import {unsupportedNumbers} from "./verify";
-import {splitResearchPresentation,SQL_PRESENTATION_HINT} from "./presentation";
+import {resolveResearchSpec,SQL_PRESENTATION_HINT} from "./presentation";
+import {researchInlineEvents} from "./inlineStream";
+import type {RichPresentation} from "@/lib/ai/conversations/presentation";
 import {executeResearchTool,researchToolDefinitions,type ResearchScope} from "./tools.server";
 
 /** What Supervisor is and can reach; how to investigate is the model's own decision. */
@@ -62,7 +64,8 @@ export async function runResearchTurn(args:{
   provider?:AgentProvider;
   now?:()=>number;
   onDelta?:(delta:string)=>void;
-  onReset?:(discardChars:number)=>void;
+  onReset?:(discardChars:number,discardPresentations?:number)=>void;
+  onPresentation?:(offset:number,block:RichPresentation)=>void;
   onTool?:(name:string,agentId:string)=>void;
   onAuditStep?:(step:AgentAuditStep)=>void;
   beforeProviderRequest?:()=>Promise<void>;
@@ -98,22 +101,14 @@ export async function runResearchTurn(args:{
   /** Everything retrieved or calculated this turn; the answer's figures are checked against it. */
   const evidence:string[]=[];
   const queries=new Map<string,Record<string,unknown>>();
-  let summary="";
   const presentations:AgentToolResult[]=[];
   let text="",endReason:EndReason="complete";
   const appendText=(part:string,continuing=false)=>{
     if(!part)return;
-    const delta=(!continuing&&text?"\n\n":"")+part;
+    const separator=!continuing&&text&&!text.endsWith("\n\n")?(text.endsWith("\n")?"\n":"\n\n"):"";
+    const delta=separator+part;
     text+=delta;args.onDelta?.(delta);
   };
-  const appendAnswer=(answer:string,delivered:string)=>{
-    const parsed=splitResearchPresentation(answer,queries,args.actions?.context);
-    if(parsed.text.startsWith(delivered))appendText(parsed.text.slice(delivered.length),Boolean(delivered));
-    else if(parsed.text)appendText(parsed.text);
-    if(!text&&parsed.presentation)appendText("Here are the results from the retrieved information.");
-    if(parsed.presentation)presentations.push({source:"response_presentation",period:null,missing:[],accepted:true,presentation:parsed.presentation});
-  };
-
   // Only an existing durable background run's own budget can end research early.
   const stop=()=>{
     const budget=currentWorkerBudget();
@@ -122,7 +117,7 @@ export async function runResearchTurn(args:{
   };
 
   /** One Responses request through the same transport and paid-usage ledger as the legacy loop. */
-  const call=async(final:boolean):Promise<{calls:FunctionCall[];answer:string;delivered:string}>=>{
+  const call=async(final:boolean):Promise<{calls:FunctionCall[]}>=>{
     await args.beforeProviderRequest?.();
     const params:Record<string,unknown>={model,...(broker?{instructions}:
         {...(/^gpt-6/u.test(model)?{include:["reasoning.encrypted_content"],reasoning:{summary:"auto"}}:{}),prompt_cache_key:"supervisor-sql-research-v1"}),
@@ -131,8 +126,25 @@ export async function runResearchTurn(args:{
     const startedCall=now();
     const checkpoint=args.checkpoint;
     if(checkpoint)await checkpoint.beginProvider();
-    const callTextStart=text.length;
-    let completed=false,answer="",thinking="",delivered="";
+    const callTextStart=text.length,callPresentationStart=presentations.length;
+    let completed=false,answer="",thinking="",startedText=false;
+    let patches:unknown[]=[],pendingProse="";
+    const flushProse=async(force=false)=>{
+      const boundary=force?pendingProse.length:pendingProse.lastIndexOf("\n\n")+2;
+      if((!force&&boundary<2)||!boundary)return;
+      await args.beforeAcceptResult?.();
+      appendText(pendingProse.slice(0,boundary),startedText);startedText=true;
+      pendingProse=pendingProse.slice(boundary);
+    };
+    const flushViews=async()=>{
+      if(!patches.length)return;
+      await args.beforeAcceptResult?.();
+      const views=resolveResearchSpec(patches,queries,args.actions?.context);patches=[];
+      for(const presentation of views){
+        presentations.push({source:"response_presentation",period:null,missing:[],accepted:true,presentation,presentationOffset:text.length});
+        args.onPresentation?.(text.length,presentation);
+      }
+    };
     const output:unknown[]=[],calls:FunctionCall[]=[];
     try{
       const reservation=await reserveDurableProviderRequest(params);
@@ -141,24 +153,21 @@ export async function runResearchTurn(args:{
       const remaining=currentWorkerBudget()?.maxElapsedMs;
       const timer=remaining===undefined?undefined:setTimeout(()=>controller.abort(),remaining);
       try{
-        for await(const event of provider(params,controller.signal) as AsyncIterable<Event>){
-          if(event.type==="response.output_text.delta"&&typeof event.delta==="string"){
-            answer+=event.delta;
-            // Deliver completed natural paragraphs without exposing an unfinished
-            // presentation selection. Recheck the existing scoped evidence first.
-            const fence=answer.search(/^[ \t]*\x60{3}cafe-ui(?:[ \t]|\r?$)/mu);
-            const prose=fence<0?answer:answer.slice(0,fence);
-            const boundary=prose.lastIndexOf("\n\n");
-            const prefix=boundary<0?"":prose.slice(0,boundary).trim();
-            if(prefix.length>delivered.length&&prefix.startsWith(delivered)){
-              await args.beforeAcceptResult?.();
-              appendText(prefix.slice(delivered.length),Boolean(delivered));delivered=prefix;
-            }
+        for await(const event of researchInlineEvents(provider(params,controller.signal) as AsyncIterable<Event>)){
+          if(event.type==="raw-delta"&&typeof event.delta==="string")answer+=event.delta;
+          if(event.type==="inline-patch"){
+            await flushProse(true);
+            const patch=event.patch as {op?:unknown;path?:unknown}|undefined;
+            if(patch?.op==="add"&&patch.path==="/root"&&patches.some(p=>p!==null&&typeof p==="object"&&(p as {path?:unknown}).path==="/root"))await flushViews();
+            patches.push(event.patch);continue;
           }
-          if(event.type==="response.reasoning_summary_part.added"){if(thinking)summary+=(summary?"\n\n":"")+thinking;thinking="";}
+          if(event.type==="inline-text"&&typeof event.delta==="string"){
+            await flushViews();pendingProse+=event.delta;await flushProse();
+          }
+          if(event.type==="response.reasoning_summary_part.added"){thinking="";}
           if(event.type==="response.reasoning_summary_text.delta"&&typeof event.delta==="string"){
             thinking+=event.delta;
-            try{args.onThinking?.([summary,thinking].filter(Boolean).join("\n\n"));}catch{/* display only */}
+            try{args.onThinking?.(thinking);}catch{/* display only */}
           }
           if(event.type==="response.output_item.done"&&event.item&&typeof event.item==="object"){
             const item=event.item as Record<string,unknown>;
@@ -167,6 +176,7 @@ export async function runResearchTurn(args:{
               calls.push({type:"function_call",name:item.name,call_id:item.call_id,arguments:item.arguments});
           }
           if(event.type==="response.completed"){
+            await flushProse(true);await flushViews();
             const response=(event.response??{}) as {model?:unknown;usage?:{input_tokens?:unknown;output_tokens?:unknown;input_tokens_details?:{cached_tokens?:unknown}}};
             if(reservation)await reservation.complete(response as never);
             const n=(x:unknown)=>typeof x==="number"&&Number.isSafeInteger(x)&&x>=0?x:0;
@@ -183,14 +193,13 @@ export async function runResearchTurn(args:{
       if(!completed)throw new Error("provider_error");
       await args.beforeAcceptResult?.();
       if(checkpoint)await checkpoint.endProvider(true);
-      if(thinking)summary+=(summary?"\n\n":"")+thinking;
     }catch(error){
       // Only this failed response is incomplete. Preserve earlier successful
       // paragraphs and remove the exact streamed suffix (including its separator).
-      const discardChars=text.length-callTextStart;
-      if(discardChars>0){
-        text=text.slice(0,callTextStart);
-        args.onReset?.(discardChars);
+      const discardChars=text.length-callTextStart,discardPresentations=presentations.length-callPresentationStart;
+      if(discardChars>0||discardPresentations>0){
+        text=text.slice(0,callTextStart);presentations.length=callPresentationStart;
+        args.onReset?.(discardChars,discardPresentations);
       }
       if(checkpoint)await checkpoint.endProvider(false).catch(()=>undefined);
       throw error;
@@ -207,7 +216,7 @@ export async function runResearchTurn(args:{
       else if(row.type==="function_call")input.push({type:"function_call",name:row.name,call_id:row.call_id,arguments:row.arguments});
       else if(row.type==="message")input.push({type:"message",role:"assistant",content:[{type:"output_text",text:answer,annotations:[]}]});
     }
-    return {calls,answer,delivered};
+    return {calls};
   };
 
   /** Same durable checkpoint and effect observation as the legacy loop; errors come back to the model as data. */
@@ -237,8 +246,7 @@ export async function runResearchTurn(args:{
     research:for(;;){
       const reason=stop();
       if(reason==="timeout"){endReason=reason;break;}
-      const {calls,answer,delivered}=await call(reason!==null);
-      if(answer.trim())appendAnswer(answer,delivered);
+      const {calls}=await call(reason!==null);
       if(!calls.length||reason!==null){
         if(reason)endReason=reason;
         break;
@@ -272,7 +280,8 @@ export async function runResearchTurn(args:{
           durationMs:Math.max(0,now()-toolStarted),...(failed?{error:"research_tool_error"}:{})});
       }
     }
-    if(!text&&endReason==="complete")throw Error("provider_empty_answer");
+    if(!text.trim()&&presentations.length)appendText("Here are the results from the retrieved information.",true);
+    if(!text.trim()&&endReason==="complete")throw Error("provider_empty_answer");
   }catch(error){
     if(error instanceof Error&&/durable|checkpoint|reservation/u.test(error.message))throw error;
     endReason=stop()==="timeout"?"timeout":"provider_error";
@@ -280,8 +289,7 @@ export async function runResearchTurn(args:{
     if(invocations.length&&!args.checkpoint){
       try{
         input.push({role:"developer",content:"A research step failed. Answer the owner now with what you found, and say what is still unknown."});
-        const {answer,delivered}=await call(true);
-        if(answer.trim())appendAnswer(answer,delivered);
+        await call(true);
       }catch{/* the owner gets the existing retryable error */}
     }
   }
