@@ -22,7 +22,7 @@ import {getBusinessSnapshotFromDb} from "@/lib/data/snapshot.server";
 import {cafeStateFromSnapshot} from "@/lib/operating/cafeState";
 import {verifiedPeriodDays,verifiedRecoveryRatio,comparableRecoveryPeriods} from "./costRecoveryComparison";
 import type {BusinessSignal} from "./businessSignals";
-import {dataQueryTools} from "@/lib/ai/agent/tools/dataQuery";
+import {readCustomerMonitorSql} from "./customerMonitorSql.server";
 import {compareCustomerPeriods,compareCustomerCohorts,compareCustomerDistributions,compareCustomerCadence,compareAnonymousCustomerPeriods,customerCoverageReady,identityCoverage,CUSTOMER_MONITOR_POLICY,
  type CustomerPeriod,type CustomerCohort,type CustomerDistribution,type CustomerCadenceSample,type AnonymousCustomerPeriod} from "@/lib/metrics/core/customers";
 type CustomerRange={from:string;to:string};
@@ -38,8 +38,8 @@ const queryNumber=(row:Record<string,unknown>,key:string)=>{
 async function customerAggregate(db:SupabaseClient,businessId:string,view:"cv_toast_records"|"cv_customer_visits"|"cv_customer_products",
  period:CustomerRange,metrics:Array<ReturnType<typeof customerMetrics>>,
  filters:Array<{column:string;op:string;value:unknown}>){
- const result=await dataQueryTools.query_data.execute({view,columns:null,group_by:null,metrics,filters,
-  date_from:period.from,date_to:period.to,order_by:null,limit:1},{db,businessId,aggregateOnly:true});
+ const result=await readCustomerMonitorSql({view,group_by:null,metrics,filters,
+  date_from:period.from,date_to:period.to,limit:1},{db,businessId});
  if(result.error||result.truncated)return {row:null,complete:false,error:result.error??"truncated"};
  const row=result.rows[0] as Record<string,unknown>|undefined;
  return {row:row??null,complete:result.customerCoverage?.complete===true&&result.missing.every(x=>x==="empty")&&(!("notes" in result)||!result.notes?.length),error:null,coverage:result.customerCoverage};
@@ -161,9 +161,9 @@ async function customerDistribution(db:SupabaseClient,businessId:string,window:C
  const metrics=units?[customerMetrics("sum","quantity"),customerMetrics("count","quantity"),customerMetrics("count","source_ref")]:
   basket?[customerMetrics("sum","pair_occurrence"),customerMetrics("count","pair_occurrence"),customerMetrics("count","source_ref")]:
   [customerMetrics("count_distinct","visit_ref")];
- const result=await dataQueryTools.query_data.execute({view:"cv_customer_products",columns:null,group_by:groups,metrics,
+ const result=await readCustomerMonitorSql({view:"cv_customer_products",group_by:groups,metrics,
   filters:[{column:"fact_kind",op:"=",value:basket?"basket_pair":dimension==="modifier"?"modifier":"item"},{column:"visit_class",op:"=",value:"observed_returning"}],
-  date_from:window.from,date_to:window.to,order_by:null,limit:100},{db,businessId,aggregateOnly:true});
+  date_from:window.from,date_to:window.to,limit:100},{db,businessId});
  if(result.error)throw Error("customer_distribution_read_failed");
  if(result.truncated||result.customerCoverage?.complete!==true||result.missing.length||("notes" in result&&result.notes?.length)||!result.rows.length)return null;
  const buckets:Record<string,number>={};

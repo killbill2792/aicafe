@@ -4,7 +4,7 @@ vi.mock("@/lib/data/timecardsForInterval.server",()=>({readTimecardsForInterval:
 vi.mock("@/lib/data/posFactReaders.server",()=>({posFactReaders:()=>({peakHours:async()=>({available:false,value:null,quality:{missingInputs:["hours"],estimatedInputs:[],staleInputs:[]}})})}));
 vi.mock("@/lib/data/todayLive.server",()=>({readSavedTodayLive:async()=>null,TODAY_LIVE_FRESH_MS:900000}));
 const inputs=vi.hoisted(()=>({customer:vi.fn(async(_raw:unknown)=>({rows:[{count_source_ref:0,"count_data.aiCafeCustomer.identityRef":0,"count_data.aiCafeCustomer.displayName":0}],missing:[] as string[],truncated:false,error:undefined})),sales:vi.fn(),wages:vi.fn(),expenses:vi.fn(),costs:vi.fn(),products:vi.fn(),stock:vi.fn(),usage:vi.fn(),quotes:vi.fn(),snapshot:vi.fn(),menu:vi.fn()}));
-vi.mock("@/lib/ai/agent/tools/dataQuery",()=>({dataQueryTools:{query_data:{execute:inputs.customer}}}));
+vi.mock("./customerMonitorSql.server",()=>({readCustomerMonitorSql:inputs.customer}));
 vi.mock("@/lib/ai/supervisorReads.server",()=>({supervisorHistoricalReaders:()=>({salesTrend:inputs.sales})}));
 vi.mock("@/lib/ai/supervisorFacts.server",()=>({supervisorFactReaders:()=>({recordedExpenses:inputs.expenses,productSales:inputs.products})}));
 vi.mock("@/lib/data/agentReadSources.server",()=>({agentSourceReaders:()=>({ingredientCosts:inputs.costs})}));
