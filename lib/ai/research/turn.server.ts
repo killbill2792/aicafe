@@ -9,16 +9,6 @@ import {unsupportedNumbers} from "./verify";
 import {splitResearchPresentation,SQL_PRESENTATION_HINT} from "./presentation";
 import {executeResearchTool,researchToolDefinitions,type ResearchScope} from "./tools.server";
 
-/** Server switch, default OFF. When ON, owner chat uses ONLY describe_database, run_sql and calculate. */
-export function sqlResearchEnabled():boolean{
-  if(process.env.SUPERVISOR_SQL_RESEARCH==="on")return true;
-  // Owner-approved shared Luna sql-research scenarios on the disposable localhost stack only.
-  return process.env.AI_CAFE_LIVE_ACCEPTANCE==="OWNER_APPROVED_LOCAL_ONLY"&&
-    process.env.NEXT_PUBLIC_SUPABASE_URL==="http://127.0.0.1:54321"&&
-    !process.env.VERCEL_ENV&&
-    /^sql-research-[a-z0-9-]+$/u.test(process.env.AICAFE_SHARED_LUNA_SCENARIO??"");
-}
-
 /** What Supervisor is and can reach; how to investigate is the model's own decision. */
 export const RESEARCH_INSTRUCTIONS=
   "You are Supervisor, the AI operator of this café, answering its owner in chat. "+
