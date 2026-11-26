@@ -9,14 +9,15 @@ import {presentationPanelSchema,recordTableSchema,recoverRichPresentation,descri
  * admitted to this owner turn, irrespective of its retrieval mechanism. */
 const fieldPath=z.array(z.union([z.string().min(1).max(140),z.number().int().nonnegative()])).min(1).max(12);
 const reference=z.object({ref:z.string(),path:fieldPath.optional(),quote:z.string().min(1).max(100).optional()}).refine(v=>Boolean(v.path)!==Boolean(v.quote));
-const pointSelection=z.object({label:z.string().min(1),value:reference,labelField:reference.optional()});
+const scalar=z.union([z.number().finite(),z.string(),z.boolean(),z.null()]);
+const pointSelection=z.object({label:z.string().min(1),value:z.union([reference,scalar]),labelField:reference.optional(),unit:z.string().optional(),basis:z.string().optional()});
 const pointPanel=z.object({kind:z.enum(["metric","bar","line","donut","ranked_table"]),title:z.string().optional(),points:z.array(pointSelection).min(1)});
 
 // Direct model-authored analysis is not a claim of stored business evidence.
-const analysisPanel=z.object({kind:z.enum(["metric","bar","line","donut","ranked_table","table"]),title:z.string().optional(),
+const analysisPanel=z.object({kind:z.string().optional(),title:z.string().optional(),
  unit:z.string().optional(),
- measurement:z.string().optional(),basis:z.enum(["calculated","estimate","scenario","actual","unverified"]).optional(),
- explanation:z.string().optional(),points:z.array(z.object({label:z.string(),value:z.union([z.number().finite(),z.string(),z.null()])})).min(1)});
+ measurement:z.string().optional(),basis:z.string().optional(),
+ explanation:z.string().optional(),points:z.array(z.object({label:z.string(),value:scalar})).min(1)});
 
 const selection=z.object({
  ref:z.string(),kind:z.enum(["metric","bar","line","donut","ranked_table","table"]),
@@ -187,9 +188,11 @@ function safeLabel(v:unknown):string|undefined{
 function pointView(s:z.infer<typeof pointPanel>,evidence:PresentationEvidenceMap,ctx:Context):PresentationPanel|null{
  const values:(BoundValue&{label:string;source:PresentationEvidence})[]=[];
  for(const item of s.points){
-  const source=evidence.get(item.value.ref);
+  const selected=reference.safeParse(item.value);
+  if(!selected.success)return null;
+  const source=evidence.get(selected.data.ref);
   if(!source)return null;
-  const bound=bindValue(source,item.value,ctx);
+  const bound=bindValue(source,selected.data,ctx);
   if(!bound)return null;
   const labelSource=item.labelField?evidence.get(item.labelField.ref):undefined;
   const label=item.labelField?(labelSource&&item.labelField.path?safeLabel(field(labelSource.data,item.labelField.path)):undefined):
@@ -236,7 +239,7 @@ export function resolveResearchView(raw:unknown,queries:PresentationEvidenceMap,
    const displayUnit=supported.success?supported.data:"units";
    const measurement=a.measurement??(supported.success?undefined:a.unit);
    const currency=["cents","cents/hour"].includes(displayUnit)?ctx.currency??null:null;
-   const modelPanel=presentationPanelSchema.safeParse({kind:a.kind,title:heading,unit:displayUnit,currency,from:ctx.asOf,to:ctx.asOf,asOf:ctx.asOf,
+   const modelPanel=presentationPanelSchema.safeParse({kind:presentationPanelSchema.shape.kind.safeParse(a.kind).success?a.kind:"table",title:heading,unit:displayUnit,currency,from:ctx.asOf,to:ctx.asOf,asOf:ctx.asOf,
      source:"response_evidence",sourceDetail:detail,coverage,...(measurement?{measurement}:{}),points});
    if(modelPanel.success)panels.push(modelPanel.data);
    else{
@@ -254,13 +257,15 @@ export function resolveResearchView(raw:unknown,queries:PresentationEvidenceMap,
    if(p)panels.push(p);
    else{
     const rows=selectedPoints.data.points.map(item=>{
-     const e=queries.get(item.value.ref),bound=e?bindValue(e,item.value,ctx):undefined;
+     const selected=reference.safeParse(item.value);
+     const e=selected.success?queries.get(selected.data.ref):undefined,bound=e&&selected.success?bindValue(e,selected.data,ctx):undefined;
      const labelEvidence=item.labelField?queries.get(item.labelField.ref):undefined;
      const label=item.labelField?.path&&labelEvidence?safeLabel(field(labelEvidence.data,item.labelField.path)):safeLabel(item.label);
-     return [label??"Value",bound?.value??null,bound?bound.measurement??bound.unit:null];
+     const direct=scalar.safeParse(item.value);
+     return [label??"Value",direct.success?direct.data:bound?.value??null,direct.success?item.unit??null:bound?bound.measurement??bound.unit:null];
     });
     const t=recordTableSchema.safeParse({title:selectedPoints.data.title??"Comparison",view:"tool_response_evidence",from:ctx.asOf,to:ctx.asOf,asOf:ctx.asOf,currency:ctx.currency??null,
-     coverage:"partial",scope:"Available selected values; missing or incompatible values are shown separately, not converted to zero.",
+     coverage:"partial",scope:"Available selected values and model-provided figures; unbound figures are not verified records. Missing or incompatible values are shown separately, not converted to zero.",
      columns:[{label:"Category",unit:"label"},{label:"Value",unit:"stored"},{label:"Unit",unit:"stored"}],rows});
     if(t.success)tables.push(t.data);
    }
