@@ -3593,6 +3593,74 @@
    "foreign_keys": []
   },
   {
+   "relation": "cv_expenses",
+   "kind": "view",
+   "rls": false,
+   "columns": [
+    [
+     "business_id",
+     "uuid",
+     false
+    ],
+    [
+     "source",
+     "text",
+     false
+    ],
+    [
+     "source_ref",
+     "text",
+     false
+    ],
+    [
+     "status",
+     "text",
+     false
+    ],
+    [
+     "business_date",
+     "date",
+     false
+    ],
+    [
+     "id",
+     "uuid",
+     false
+    ],
+    [
+     "spent_on",
+     "date",
+     false
+    ],
+    [
+     "amount_cents",
+     "bigint",
+     false
+    ],
+    [
+     "category_code",
+     "text",
+     false
+    ],
+    [
+     "recurring_cost_id",
+     "uuid",
+     false
+    ],
+    [
+     "custom_label",
+     "text",
+     false
+    ],
+    [
+     "vendor",
+     "text",
+     false
+    ]
+   ],
+   "foreign_keys": []
+  },
+  {
    "rls": false,
    "kind": "view",
    "columns": [
@@ -4140,6 +4208,59 @@
     ]
    ],
    "relation": "cv_sales_hours",
+   "foreign_keys": []
+  },
+  {
+   "relation": "cv_sales_live",
+   "kind": "view",
+   "rls": false,
+   "columns": [
+    [
+     "business_id",
+     "uuid",
+     false
+    ],
+    [
+     "source",
+     "text",
+     false
+    ],
+    [
+     "source_ref",
+     "text",
+     false
+    ],
+    [
+     "status",
+     "text",
+     false
+    ],
+    [
+     "business_date",
+     "date",
+     false
+    ],
+    [
+     "net_sales_cents",
+     "bigint",
+     false
+    ],
+    [
+     "orders_count",
+     "integer",
+     false
+    ],
+    [
+     "read_at",
+     "timestamp with time zone",
+     false
+    ],
+    [
+     "reading",
+     "jsonb",
+     false
+    ]
+   ],
    "foreign_keys": []
   },
   {

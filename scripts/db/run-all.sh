@@ -163,6 +163,7 @@ supabase_lane() {
   group "App and security checks"
   sql_step rls-all-public-tables.sql "Every public table has row level security"
   sql_step u3-research-security-db.sql "U3 governed SQL: two-café RLS, signed scope, tamper and revocation"
+  sql_step screen-canonical-views-sql-integration.sql "Canonical screen amounts and two-café isolation"
   check supabase "U3 registered SQL tool: actual private-role connection, scope and cross-café query" env U3_SQL_DB_SANDBOX_ONLY=1 U3_SQL_DB_URL="$supabase_url" npx vitest run lib/ai/agent/u3SqlResearch.db.test.ts --reporter=verbose
   sql_step admin-access-migration-smoke.sql "Admin access codes: functions, trigger, privileges"
   sql_step olivia-pr1a-rls.sql "Olivia 1A scheduling: RLS, composite keys, audit"
