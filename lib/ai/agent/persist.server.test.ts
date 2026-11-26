@@ -15,7 +15,7 @@ function turn(text: string): AgentTurn {
   };
 }
 describe("database-safe agent persistence payload", () => {
-  it("maps a greeting to verified, failed tools to unavailable and missing data to partial", () => {
+  it("records answer execution independently of data availability", () => {
     const greeting = { ...turn("Hi there"), results: [], usage: { ...turn("").usage, toolCalls: 0 } };
     const failed = { ...turn("Unavailable"), results: [{
       source:"get_sales",period:null,missing:["tool_unavailable"],error:"tool_unavailable",
@@ -24,12 +24,12 @@ describe("database-safe agent persistence payload", () => {
       results:[{source:"menu_items",period:null,missing:[]},
         {source:"daily_rollups",period:null,missing:["sales"]}],
       usage:{...turn("").usage,toolCalls:2} };
-    expect(persistedAgentStatus(greeting)).toBe("verified");
-    expect(persistedAgentStatus(failed)).toBe("unavailable");
-    expect(persistedAgentStatus(partial)).toBe("partial");
-    expect(persistedAgentStatus({ ...greeting, endReason:"provider_error" })).toBe("unavailable");
-    expect(persistedAgentStatus({ ...turn("Interrupted"), endReason:"provider_error" })).toBe("partial");
-    expect(persistedAgentStatus({ ...turn("Budget"), endReason:"budget" })).toBe("partial");
+    expect(persistedAgentStatus(greeting)).toBe("answered");
+    expect(persistedAgentStatus(failed)).toBe("answered");
+    expect(persistedAgentStatus(partial)).toBe("answered");
+    expect(persistedAgentStatus({ ...greeting, endReason:"provider_error" })).toBe("interrupted");
+    expect(persistedAgentStatus({ ...turn("Interrupted"), endReason:"provider_error" })).toBe("interrupted");
+    expect(persistedAgentStatus({ ...turn("Budget"), endReason:"budget" })).toBe("interrupted");
   });
   it("splits eight tool calls across bounded usage writes without duplicate model tokens", () => {
     const full = { ...turn("Hello"), usage: { ...turn("Hello").usage, modelCalls: 6,
@@ -263,14 +263,14 @@ describe("Task16E reply persistence",()=>{
  const ui={source:"response_presentation",period:null,missing:[],accepted:true,presentation:block};
  it("preserves the model's prose and treats a UI-only turn as ordinary conversation",()=>{
    const t={...turn("Here is a useful next step."),unverified:[],results:[ui]};
-   expect(persistedAgentStatus(t)).toBe("verified");
+   expect(persistedAgentStatus(t)).toBe("answered");
    expect(agentReplyPayload(t).reply.blocks).toEqual([{type:"text",text:t.text},block]);
  });
  it("does not replace failed business evidence or an existing clarification",()=>{
    const t={...turn("Sales are unavailable."),unverified:[],results:[
      {source:"daily_rollups",period:null,missing:["sales"]},ui],
      usage:{...turn("").usage,toolCalls:2}};
-   expect(persistedAgentStatus(t)).toBe("unavailable");
+   expect(persistedAgentStatus(t)).toBe("answered");
    expect(agentReplyPayload(t).reply.blocks).toEqual([{type:"text",text:t.text},block]);
    const ask={source:"ask_owner",period:null,missing:[],question:"Which date?",
      options:[{label:"Today",value:"today"},{label:"Yesterday",value:"yesterday"}],allowOther:true};
@@ -287,7 +287,7 @@ it("keeps explicitly partial saved agendas without upgrading unavailable groundi
  const r=agentReplyPayload({...turn("Some saved shifts are drafts."),results:[
   {source:"scheduled_shifts",period:null,missing:["coverage"]},
   {source:"response_presentation",period:null,missing:[],accepted:true,presentation:{type:"rich_presentation",version:1,layout:"stack",panels:[],suggestions:[],agenda}}]});
- expect(r.reply.status).toBe("unavailable");
+ expect(r.reply.status).toBe("answered");
  expect(r.reply.blocks).toContainEqual(expect.objectContaining({type:"rich_presentation",agenda}));
 });
 
@@ -296,7 +296,7 @@ it("preserves partial canonical rows when the overall answer lacks complete evid
  const r=agentReplyPayload({...turn("Only these saved rows are available."),results:[
   {source:"canonical_data",period:null,missing:["incompleteEvidence"]},
   {source:"response_presentation",period:null,missing:[],accepted:true,presentation:{type:"rich_presentation",version:1,layout:"stack",panels:[],suggestions:[],tables}}]});
- expect(r.reply.status).toBe("unavailable");expect(r.reply.blocks).toContainEqual(expect.objectContaining({type:"rich_presentation",tables}));
+ expect(r.reply.status).toBe("answered");expect(r.reply.blocks).toContainEqual(expect.objectContaining({type:"rich_presentation",tables}));
 });
 
 it("retains a real approval card alongside a substantial answer without clipping its words",()=>{

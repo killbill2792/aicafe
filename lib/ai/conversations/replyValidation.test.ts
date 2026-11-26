@@ -22,14 +22,14 @@ describe("shared reply writer shape and storage limits", () => {
     };
     expect(validateGroundedReply(reply)).toEqual(reply);
   });
-  it("continues enforcing integer cents, strict fields and block caps", () => {
+  it("continues enforcing integer cents and strict block shape without a total block cap", () => {
     expect(validateGroundedReply(valid)).toEqual(valid);
     expect(() => validateGroundedReply({...valid,blocks:[
       {type:"metric",label:"Invalid cents",valueCents:1.99,source}]})).toThrow();
     expect(() => validateGroundedReply({...valid,blocks:[
       {type:"text",text:"X".repeat(1201)}]})).toThrow();
     expect(() => validateGroundedReply({...valid,blocks: Array.from({length:31}, () =>
-      ({type:"text" as const,text:"Valid individual block"}))})).toThrow();
+      ({type:"text" as const,text:"Valid individual block"}))})).not.toThrow();
     expect(() => validateGroundedReply({...valid,blocks:[]})).toThrow();
     expect(() => validateGroundedReply(Object.assign({},valid,{role:"owner"}))).toThrow();
   });

@@ -69,7 +69,7 @@ describe("Phase 4 audited privileged reply writer", () => {
     });
     expect(db?.grounding).toMatchObject({
       ownerMessageId: msg.id, status: "verified",
-      responder: "bounded-grounded-responses-supervisor-v2",
+      responder: "luna-responses-supervisor-v3",
     });
     expect(await getExistingSupervisorReply(scope, msg)).toEqual(first);
   });

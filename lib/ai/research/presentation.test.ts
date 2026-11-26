@@ -173,7 +173,7 @@ describe("source-independent inline presentation",()=>{
  it("binds owner and historical text without treating it as fresh actuals",()=>{
   const evidence=new Map([["owner",{data:{},text:"Rent $1,250.25 and utilities $450.",source:"Owner supplied"}],["history1",{data:{},text:"Earlier amount $800.",source:"Historical message",coverage:"partial" as const}]]);
   const view=resolveResearchView({panels:[{kind:"bar",points:[{label:"Rent",value:{ref:"owner",quote:"$1,250.25"}},{label:"Earlier amount",value:{ref:"history1",quote:"$800"}}]}]},evidence,ctx);
-  expect(view?.panels[0]).toMatchObject({coverage:"partial",points:[{label:"Rent",value:125025},{label:"Earlier amount",value:80000}]});
+  expect(view?.panels[0]).toMatchObject({points:[{label:"Rent",value:125025},{label:"Earlier amount",value:80000}]});
   expect(resolveResearchView({panels:[{kind:"metric",points:[{label:"Rent",value:{ref:"owner",quote:"$250.25"}}]}]},evidence,ctx)?.tables?.[0].rows).toEqual([["Rent",null,null]]);
  });
  it("does not coerce unknown values to zero, combine incompatible units, or expose hidden paths",()=>{
@@ -224,7 +224,7 @@ it("preserves a valid owner-sourced visual when an unrelated tool fails",async()
  const rpc=vi.fn().mockResolvedValue({data:{ok:false,error:"unavailable"},error:null});
  const result=await runResearchTurn({ownerText:"Rent $1250",cafeContext:"Cafe",provider,scope:{db:{rpc} as never,businessId:"business",ownerUserId:"owner"},presentationContext:ctx});
  const payload=agentReplyPayload(result);
- expect(payload.reply.status).toBe("unavailable");
+ expect(payload.reply.status).toBe("answered");
  expect(payload.reply.blocks.map(b=>b.type)).toEqual(["text","rich_presentation","text"]);
  expect(payload.metadata.presentationDiagnostics?.persistedViews).toBe(1);
 });
@@ -279,16 +279,16 @@ describe("model-authored analytical presentation",()=>{
  it("renders derived break-even results even when not present verbatim in SQL evidence",()=>{
   const result=resolveResearchView({panels:[{kind:"metric",title:"Monthly break-even",unit:"cents",basis:"calculated",explanation:"Fixed costs divided by contribution margin",points:[{label:"Break-even sales",value:375000}]}]},new Map(),ctx);
   expect(result?.panels[0]).toMatchObject({source:"response_evidence",unit:"cents",currency:"USD",points:[{label:"Break-even sales",value:375000}]});
-  expect(result?.panels[0].sourceDetail).toContain("model-derived");
+  expect(result?.panels[0].sourceDetail).toContain("calculated");
  });
- it("marks hypothetical and estimated results without requiring source bindings",()=>{
+ it("preserves Luna-authored estimate descriptions without requiring source bindings",()=>{
   const result=resolveResearchView({panels:[{kind:"line",title:"Sales forecast",unit:"cents",basis:"estimate",explanation:"Assumes steady growth",points:[{label:"December",value:120000},{label:"January",value:132000}]}]},new Map(),ctx);
   expect(result?.panels[0]).toMatchObject({coverage:"estimate",points:[{label:"December",value:120000},{label:"January",value:132000}]});
  });
- it("keeps direct model values distinct from actual records and preserves fractional amounts",()=>{
+ it("keeps direct model values and preserves fractional amounts without grading confidence",()=>{
   const panel={kind:"metric",title:"Break-even",unit:"cents",basis:"calculated",explanation:"Derived",points:[{label:"Value",value:1.5}]};
   expect(resolveResearchView({panels:[panel]},new Map(),ctx)?.panels[0].points[0].value).toBe(1.5);
-  expect(resolveResearchView({panels:[{...panel,basis:"actual",points:[{label:"Value",value:100}]}]},new Map(),ctx)?.panels[0]).toMatchObject({coverage:"unverified",points:[{value:100}]});
+  expect(resolveResearchView({panels:[{...panel,basis:"actual",points:[{label:"Value",value:100}]}]},new Map(),ctx)?.panels[0]).toMatchObject({points:[{value:100}]});
  });
 });
 
@@ -308,7 +308,7 @@ it("keeps direct values, unknown cells, custom units and long labels without any
   {kind:"metric",unit:"cents",points:[{label:"No currency set",value:9876.5}]},
  ],tables:[{title:"Assumptions",basis:"scenario",columns:["Item","Amount"],rows:[["Rent",1200],["Other",null],["Note","x".repeat(1000)]]}]},new Map(),{asOf:ctx.asOf,currency:null});
  expect(result?.panels[0]).toMatchObject({coverage:"estimate",unit:"units",measurement:"%",points:[{value:13.375}]});
- expect(result?.panels[1]).toMatchObject({currency:null,coverage:"unverified",points:[{value:9876.5}]});
+ expect(result?.panels[1]).toMatchObject({currency:null,points:[{value:9876.5}]});
  expect(result?.tables?.[0].rows).toEqual([["Known",0],["Unknown",null],["Credit",-1200.25]]);
  expect(result?.tables?.[1].rows[2][1]).toHaveLength(1000);
 });

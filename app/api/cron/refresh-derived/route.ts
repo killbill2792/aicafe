@@ -106,7 +106,7 @@ export async function GET(request:Request){
   // cannot lose its source-change detection or owner priority notices.
   // A global fair, bounded slice across all cafés, not paid model calls per
   // business. The existing cron remains the only schedule for this capability.
-  await investigateOne();
+  await investigateOne(now.getTime()+275_000);
   return respond(failed||commitments.failed||routines.failed||investigations.failed||
     dueObjectives.failed||pushDelivery.failed||ownerResult.failed||admissionDeferred?207:200,
     {checked,refreshed,failed,deferred,dueObjectives,pushDelivery,heavyRefresh:true,commitments,routines,investigations,
