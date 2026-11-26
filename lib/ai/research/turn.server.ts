@@ -309,7 +309,7 @@ export async function runResearchTurn(args:{
     if(error instanceof Error&&/durable|checkpoint|reservation/u.test(error.message))throw error;
     endReason=stop()==="timeout"?"timeout":"provider_error";
     // Never leave the owner with nothing after real research: answer from the evidence gathered so far.
-    if(invocations.length&&!args.checkpoint&&!stop(true)){
+    if((invocations.length||endReason==="timeout")&&!args.checkpoint&&!stop(true)){
       try{
         input.push({role:"developer",content:"A research step failed. Answer the owner now with what you found, and say what is still unknown."});
         await call(true);
