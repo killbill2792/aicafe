@@ -157,8 +157,8 @@ function CalculatorView({calculator,locale}:{calculator:InteractiveCalc;locale:s
   <h3 className="font-medium text-ink">{calculator.title}</h3>
   <p className="text-[0.8125rem] text-ink-muted">{copy.calculatorNotice} · {copy.snapshot} {calculator.asOf}</p>
   {calculator.inputs.map(i=>i.editable?<label key={i.id} className="block text-[0.9375rem]">
-   {i.label}{i.value.unit==="cents"?" ("+calculator.currency+")":i.value.unit==="percent"?" (%)":""}
-   <input aria-describedby={outcome?undefined:resultId} type="text" inputMode="decimal" maxLength={13} value={changes[i.id]??String(number(i.value))} onChange={e=>setChanges(prev=>({...prev,[i.id]:e.target.value}))} className="mt-1 block min-h-12 w-full rounded-xl border border-line bg-surface px-3 tabular-nums"/>
+   {i.label}{i.value.unit==="cents"?" ("+(calculator.currency??"currency not set")+")":i.value.unit==="percent"?" (%)":""}
+   <input aria-describedby={outcome?undefined:resultId} type="text" inputMode="decimal" value={changes[i.id]??String(number(i.value))} onChange={e=>setChanges(prev=>({...prev,[i.id]:e.target.value}))} className="mt-1 block min-h-12 w-full rounded-xl border border-line bg-surface px-3 tabular-nums"/>
   </label>:<p key={i.id} className="break-words text-[0.9375rem]">{i.label}: {fmt(i.value)}</p>)}
   <p role="status" aria-label={copy.calculationResult} aria-atomic="true" className="break-words text-xl font-medium tabular-nums"><span id={resultId}>{outcome?fmt(outcome):copy.invalidCalculation}</span></p>
   <button type="button" className="min-h-12 text-[0.9375rem] underline" onClick={()=>setChanges({})}>{copy.resetAssumptions}</button>
