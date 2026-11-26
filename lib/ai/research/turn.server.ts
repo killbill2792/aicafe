@@ -4,6 +4,7 @@ import {currentWorkerBudget,usageStopReason,reserveDurableProviderRequest,curren
 import {openAIProvider,type AgentProvider,type AgentTurn,type AgentAuditStep,type EndReason} from "@/lib/ai/agent/loop.server";
 import {executeAgentTool,isRepeatSafeOwnerTool,observeDurableToolEffect,type AgentToolContext,type AgentToolResult} from "@/lib/ai/agent/tools";
 import {safeToolError} from "@/lib/ai/agent/toolErrors";
+import {newResolveState,observeToolResult} from "@/lib/ai/agent/resolve";
 import type {OwnerRunCheckpoint,MatchedOwnerAnswer} from "@/lib/ai/supervisor/runs/contracts";
 import {executionPolicy,requestOutputCap} from "@/lib/ai/agent/executionPolicy";
 import {unsupportedNumbers} from "./verify";
@@ -28,7 +29,7 @@ export const RESEARCH_INSTRUCTIONS=
   "The café context lists notes: what you or the owner learned about this café, each with where it came from and when it was last confirmed. "+
   "They are hints, not facts: live data wins, an old note or one the data contradicts should be rechecked with the owner, then updated or forgotten. "+
   "When you learn something lasting about the café, save it with remember_cafe_note. "+
-  "When something you need is missing from the café's data (for example no published schedule for today), say so plainly and ask the owner for it with ask_owner instead of guessing.";
+  "When a stored fact is missing, say so plainly. Use ask_owner only for facts or decisions that only the owner can supply; never ask the owner for a number that the POS records. For an approval target, use SQL to find the exact identity and let the approval handler revalidate it. If the handler returns verified ambiguity candidates, ask_owner can present those choices.";
 
 /** Registered tools that prepare an owner-approval card, record an outcome or ask the owner; reads are covered by SQL. */
 export const isResearchActionTool=(name:string)=>/^propose_/u.test(name)||
@@ -84,6 +85,16 @@ export async function runResearchTurn(args:{
   const provider=args.provider??openAIProvider;
   const audit=(step:AgentAuditStep)=>{try{args.onAuditStep?.(step);}catch{/* audit is non-critical */}};
   const continuation=await args.checkpoint?.resumeContext();
+  // Reuse the verified owner-choice state for the existing approval/card executor.
+  // Model-selected IDs never become owner consent just because SQL returned them.
+  if(args.actions){
+    const matched=args.matchedOwnerAnswers??[];
+    const matchedHistory=matched.flatMap(pair=>[{role:"assistant" as const,content:pair.question},{role:"user" as const,content:pair.answer}]);
+    args.actions.context.resolveState=matched.length
+      ?newResolveState(matched[matched.length-1].answer,[...(args.history??[]),{role:"user",content:args.ownerText},...matchedHistory.slice(0,-1)])
+      :newResolveState(args.ownerText,args.history);
+    args.actions.context.sqlResearch=true;
+  }
   const hasFiles=Boolean(args.ownerImages?.length||args.ownerPdfs?.length||args.ownerEvidence?.length);
   // Append-only context (OpenAI "keep the prefix unchanged"): fixed instructions first, then café
   // context, then history and the question; every later item is appended, never edited or shortened.
@@ -307,6 +318,7 @@ export async function runResearchTurn(args:{
         let failed:boolean,record:AgentToolResult;
         if(args.actions?.definitions.some(d=>d.name===fc.name)){
           record=await runAction(fc);
+          observeToolResult(args.actions.context.resolveState,record);
           evidence.push(JSON.stringify(record));
           failed=Boolean(record.error);
           const ref=!failed?admit("Registered tool result: "+fc.name+"; not independent proof of an effect",record,record.missing.length?"partial":undefined):null;

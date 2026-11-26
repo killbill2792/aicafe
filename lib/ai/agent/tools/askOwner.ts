@@ -49,7 +49,7 @@ const uuid=/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/iu;
 function verifiedOwnerNumber(key:string,ctx:AgentToolContext):boolean{
  const entry=catalogForMissing(key);
  if(entry.labelKey!=="generic"&&entry.type==="number")return true;
- const saved=(ctx as AgentToolContext&{savedOwnerFacts?:readonly SavedFact[]}).savedOwnerFacts??[];
+ const saved=ctx.ownerFacts??(ctx as AgentToolContext&{savedOwnerFacts?:readonly SavedFact[]}).savedOwnerFacts??[];
  if(saved.some(f=>f.fact_key===entry.factKey))return true;
  return (ctx.turnResults?.()??[]).some(({result})=>
   result.source!=="canonical_data"&&result.source!=="sql_research"&&result.source!=="ask_owner"&&
@@ -79,7 +79,7 @@ export const askOwnerTools={ask_owner:{
       new Set(input.fields.map(f=>f.key)).size!==input.fields.length||
       input.fields.some(f=>f.inputType==="choice"&&(!f.choices||f.choices.length<2)))
       return {source:"ask_owner",period:null,missing:["invalidFields"],error:"invalidFactFields"};
-    const saved=(ctx as AgentToolContext&{savedOwnerFacts?:readonly SavedFact[]}).savedOwnerFacts??[];
+    const saved=ctx.ownerFacts??(ctx as AgentToolContext&{savedOwnerFacts?:readonly SavedFact[]}).savedOwnerFacts??[];
     const fields=input.fields.map(field=>{
       const entry=catalogForMissing(field.key);
       const current=input.changeSaved===true?savedFactCurrent(saved,entry.factKey,field.inputType):null;

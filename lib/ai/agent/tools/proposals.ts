@@ -9,7 +9,7 @@ export const priceChangeProposalSchema=z.strictObject({
 });
 export const proposalTools={propose_price_change:{
   agentId:"alex",schema:priceChangeProposalSchema,
-  description:"Only when the owner requests or agrees to a specific price. Call get_menu_items first to obtain the active product UUID. Creates an inert approval card; NEVER say the price changed.",
+  description:"Only when the owner requests or agrees to a specific price. Read cv_menu with run_sql first to obtain the active product UUID. Creates an inert approval card; NEVER say the price changed.",
   execute:async(raw:unknown,ctx:AgentToolContext):Promise<AgentToolResult>=>{
     const input=priceChangeProposalSchema.parse(raw);
     const menu=await ctx.tools.getMenuCatalog();

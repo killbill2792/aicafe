@@ -16,14 +16,14 @@ describe("entity and period resolver registry",()=>{
   }
  });
  it("declares existing product and nested employee identifiers explicitly",()=>{
-  expect(resolverCoverage.get_product_costs).toContain("itemId");
-  expect(resolverCoverage.get_price_recommendation).toContain("itemId");
+  expect(resolverCoverage.propose_price_change).toContain("product_id");
+  expect(resolverCoverage.propose_price_experiment).toContain("product_id");
   expect(resolverCoverage.propose_schedule).toContain("shifts.employee_id");
   expect(resolverCoverage.propose_shift_change).toContain("shift.employee_id");
   expect(resolverCoverage.propose_staff_change).toContain("employee_id");
  });
  it("does not confuse new staff and new-item values with existing-record selection",()=>{
   expect(resolverExemptions.propose_add_staff).toContain("name");
-  expect(resolverExemptions.suggest_new_item_price).toContain("category");
+  expect(resolverExemptions.propose_staff_change).toContain("name");
  });
 });

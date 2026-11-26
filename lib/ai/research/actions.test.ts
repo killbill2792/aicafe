@@ -44,6 +44,7 @@ describe("research turn action tools",()=>{
       scope:{db:{} as never,businessId:"b",ownerUserId:"o"},
       actions:{context,definitions:[{name:"propose_staff_question"}]}});
     expect(turn.endReason).toBe("complete");
+    expect(context).toMatchObject({sqlResearch:true,resolveState:{ownerText:"ask Sam about the missed break"}});
     expect(execute).toHaveBeenCalledTimes(2);
     expect(JSON.parse(outputs[0]).error).toBeTruthy();           // the failure reached the model as data
     expect(turn.results.at(-1)).toMatchObject({draft:true,saved:false,proposalId:"p1"}); // card data survives for persistence
