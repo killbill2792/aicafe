@@ -14,7 +14,7 @@ import es from "@/messages/es.json";
 import ar from "@/messages/ar.json";
 import {recoverRichPresentation,presentationPanelSchema,agendaSchema,scenarioComparisonSchema,presentationReport,recordTableSchema,interactiveCalcSchema,evaluatePresentationCalc,presentationLeaves,presentationGroupRoots,allPresentationLeaves,compatibleComparison,descriptiveGroupTitle,calendarPage,type RecordTable,type InteractiveCalc,type Agenda,type ScenarioComparison,type RichPresentation,type PresentationPanel} from "@/lib/ai/conversations/presentation";
 const copy=en.SupervisorPresentation;
-const confidence=(coverage:string)=>coverage==="partial"?copy.partial:coverage==="estimate"?copy.estimate:coverage==="unverified"?"Unverified · model-provided":coverage;
+const confidence=(coverage:string)=>coverage==="partial"?copy.partial:coverage==="estimate"?copy.estimate:coverage==="unverified"?"Unverified":coverage;
 const Chart=dynamic(()=>import("./SupervisorRichChart"),{ssr:false});
 const ComparisonChart=dynamic(()=>import("./SupervisorRichChart").then(m=>m.ComparisonChart),{ssr:false});
 export function presentationSpec(p:RichPresentation):Spec{
@@ -129,7 +129,7 @@ function RecordTableView({table,locale}:{table:RecordTable;locale:string}){
  };
  return <figure data-testid="supervisor-record-table" className="min-w-0 space-y-2 py-2">
   <figcaption className="font-medium text-ink">{table.title}</figcaption>
-  <p id={evidenceId} className="break-words text-[0.8125rem] text-ink-muted">{table.view==="tool_sql_research"?"SQL query":table.view==="tool_response_evidence"?"Evidence":table.view} · {table.view!=="tool_sql_research"&&table.view!=="tool_response_evidence"&&<>{table.from} – {table.to} · </>}{copy.snapshot} {table.asOf}{table.coverage!=="stored"?" · "+confidence(table.coverage):""}</p>
+  <p id={evidenceId} className="break-words text-[0.8125rem] text-ink-muted">{table.view==="tool_sql_research"?"SQL query":table.view==="tool_response_evidence"?"Evidence":table.view} · {table.view!=="tool_sql_research"&&table.view!=="tool_response_evidence"&&<>{table.from} – {table.to} · </>}{copy.snapshot} {table.asOf}{table.coverage!=="stored"&&table.coverage!=="authored"?" · "+confidence(table.coverage):""}</p>
   <p id={scopeId} className="break-words text-[0.8125rem] text-ink-muted">{table.scope}</p>
   <div role="region" tabIndex={0} aria-label={table.title} className="max-w-full overflow-x-auto overscroll-x-contain focus-visible:outline focus-visible:outline-2 focus-visible:outline-ink">
    <table role="table" aria-describedby={evidenceId+" "+scopeId} className={"w-full table-fixed text-[0.9375rem] tabular-nums "+(wide?wideResponseTableClass:"")}><caption className="sr-only">{table.title}</caption>

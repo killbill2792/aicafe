@@ -129,11 +129,11 @@ export async function runResearchTurn(args:{
   // References are ephemeral and point only to the evidence already admitted to this turn.
   // They are not database identifiers, and the text itself is not duplicated on the wire.
   const queries=new Map<string,PresentationEvidence>();
-  const addText=(ref:string,text:string,source:string,coverage?:"partial")=>queries.set(ref,{data:{},text,source,coverage});
-  addText("owner",[args.ownerText,...(args.matchedOwnerAnswers??[]).map(a=>a.answer)].join("\n"),"Owner supplied; not verified against business records");
-  addText("context",args.cafeContext,"Café context; verify current business facts","partial");
-  (args.history??[]).forEach((h,i)=>addText("history"+(i+1),h.content,h.role==="user"?"Earlier owner message; historical context":"Earlier Supervisor message; not independently verified current evidence","partial"));
-  (args.ownerEvidence??[]).forEach((e,i)=>addText("attachment"+(i+1),e,"Owner-provided attachment evidence","partial"));
+  const addText=(ref:string,text:string,source:string)=>queries.set(ref,{data:{},text,source});
+  addText("owner",[args.ownerText,...(args.matchedOwnerAnswers??[]).map(a=>a.answer)].join("\n"),"Owner supplied");
+  addText("context",args.cafeContext,"Café context");
+  (args.history??[]).forEach((h,i)=>addText("history"+(i+1),h.content,h.role==="user"?"Earlier owner message; historical context":"Earlier Supervisor message"));
+  (args.ownerEvidence??[]).forEach((e,i)=>addText("attachment"+(i+1),e,"Owner-provided attachment"));
   const textRefs="Presentation text references: owner=current owner message and verified matched owner answers; context=admitted café context; historyN=Nth chronological message in the history below (starting at 1); attachmentN=Nth text evidence attachment below. These references do not imply current business verification.";
   const input:unknown[]=[
     {role:"developer",content:args.cafeContext+"\n"+textRefs},
@@ -154,8 +154,8 @@ export async function runResearchTurn(args:{
   /** Admitted evidence is retained across worker replacement for model context. */
   const evidence:string[]=[];
   let nextResultRef=0;
-  const admit=(source:string,data:Record<string,unknown>,coverage?:"partial"|"estimate",kind?:PresentationEvidence["kind"])=>{
-    const ref="q"+(++nextResultRef);queries.set(ref,{source,data,coverage,kind});return ref;
+  const admit=(source:string,data:Record<string,unknown>,kind?:PresentationEvidence["kind"])=>{
+    const ref="q"+(++nextResultRef);queries.set(ref,{source,data,kind});return ref;
   };
   const presentations:AgentToolResult[]=[];
   let text="",endReason:EndReason="complete",pending:FunctionCall[]=[],finished=false;
@@ -376,7 +376,7 @@ export async function runResearchTurn(args:{
           evidence.push(JSON.stringify(record));
           failed=Boolean(record.error);
           resultBytes=Buffer.byteLength(JSON.stringify(record),"utf8");
-          const ref=!failed?admit("Registered tool result: "+fc.name+"; not independent proof of an effect",record,record.missing.length?"partial":undefined):null;
+          const ref=!failed?admit("Registered tool result: "+fc.name+"; not independent proof of an effect",record):null;
           input.push({type:"function_call_output",call_id:fc.call_id,output:JSON.stringify(ref?{...record,presentationRef:ref}:record)});
         }else{
           const readOnly=["run_sql","describe_database","calculate","search_web"].includes(fc.name);
@@ -387,7 +387,7 @@ export async function runResearchTurn(args:{
           await args.beforeAcceptResult?.();
           const ref=result.ok===true?admit(fc.name==="run_sql"?"Returned SQL evidence; see answer for coverage":fc.name==="calculate"?"Exact calculator result; depends on supplied inputs":"Tool result: "+fc.name,
             fc.name==="calculate"?{...result,calculationInput:JSON.parse(fc.arguments)}:result,
-            fc.name==="run_sql"?undefined:"partial",fc.name==="run_sql"?"sql":fc.name==="calculate"?"calculator":undefined):null;
+            fc.name==="run_sql"?"sql":fc.name==="calculate"?"calculator":undefined):null;
           input.push({type:"function_call_output",call_id:fc.call_id,output:JSON.stringify(ref?{...result,presentationRef:ref}:result)});
           failed=result.ok===false;
           resultBytes=Buffer.byteLength(JSON.stringify(result),"utf8");

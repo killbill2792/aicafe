@@ -41,7 +41,7 @@ const cell=z.union([z.string(),z.number().finite(),z.boolean(),z.null()]);
 export const recordTableSchema=z.strictObject({
  title:label,view:z.string().regex(/^(?:cv|tool)_[a-z_]+$/).max(80),from:date,to:date,asOf:date,
  currency:z.string().regex(/^[A-Z]{3}$/).nullable(),
- coverage:z.enum(["stored","partial","estimate","unverified"]),scope:z.string(),
+ coverage:z.enum(["stored","partial","estimate","unverified","authored"]),scope:z.string(),
  columns:z.array(z.strictObject({label,unit:tableUnit})).min(1),
  rows:z.array(z.array(cell).min(1)).min(1),
 }).superRefine((t,ctx)=>{
@@ -187,7 +187,7 @@ export function presentationReport(block:RichPresentation,message:{
     ...p.points.map(point=>point.label+": "+point.value+" "+(p.measurement??p.unit)+(p.currency?" ("+p.currency+")":"")));
  }
  if(block.tables)for(const t of block.tables){
-  lines.push("",t.title,t.view+" · "+t.coverage+" · "+t.scope,"Period: "+t.from+" – "+t.to+"; snapshot: "+t.asOf,
+  lines.push("",t.title,t.view+(t.coverage==="authored"?"":" · "+t.coverage)+" · "+t.scope,"Period: "+t.from+" – "+t.to+"; snapshot: "+t.asOf,
    t.columns.map(c=>c.label+" ("+c.unit+")").join(" | "),...t.rows.map(row=>row.map(v=>v===null?"Not recorded":String(v)).join(" | ")));
  }
  if(block.calculator){

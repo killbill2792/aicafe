@@ -30,7 +30,7 @@ const envelope=z.object({layout:z.enum(["stack","grid"]).optional(),panels:z.arr
  tables:z.array(authoredTable).optional(),report:z.boolean().optional(),files:z.boolean().optional(),calculator:z.union([calcSelection,directCalc]).optional()});
 const components={
  Stack:{props:z.object({}),slots:["default"],description:"Group views in their displayed order.",example:{}},
- DataView:{props:envelope,slots:[],description:"Metrics, charts, tables, calculators, report and authenticated attachments. For rows use ref, x, y or columns. For individual values, including across sources, use points with label and value:{ref,path:[exact field names and array indices]}; for text use value:{ref,quote:exact numeric token including currency symbol if present}. For dated or numeric category labels use labelField:{ref,path}. A calculate result can supply an editable calculator, or author calculator inputs, steps and editable input names directly with a title; direct inputs are hypothetical unless explained otherwise. You can also author a panel directly with kind, title, unit, basis (calculated, estimate or scenario), explanation and points [{label,value}]. Use cents for money in minor units; null means unknown, not zero. You can also author tables directly using tables:[{title,basis,explanation,columns:[label],rows:[[value]]}]. Direct values are labeled by their basis; a claimed actual without an evidence binding is labeled unverified, not discarded.",example:{layout:"grid",panels:[{ref:"q1",kind:"bar",x:"category",y:"amount_cents"}]}},
+ DataView:{props:envelope,slots:[],description:"Metrics, charts, tables, calculators, report and authenticated attachments. For rows use ref, x, y or columns. For individual values, including across sources, use points with label and value:{ref,path:[exact field names and array indices]}; for text use value:{ref,quote:exact numeric token including currency symbol if present}. For dated or numeric category labels use labelField:{ref,path}. A calculate result can supply an editable calculator, or author calculator inputs, steps and editable input names directly with a title; direct inputs are hypothetical unless explained otherwise. You can also author a panel directly with kind, title, unit, basis (calculated, estimate or scenario), explanation and points [{label,value}]. Use cents for money in minor units; null means unknown, not zero. You can also author tables directly using tables:[{title,basis,explanation,columns:[label],rows:[[value]]}]. Basis and explanation are optional descriptions authored by Luna. The renderer does not judge the answer.",example:{layout:"grid",panels:[{ref:"q1",kind:"bar",x:"category",y:"amount_cents"}]}},
 };
 // The upstream default template advertises Card, demo data, repeat, /state
 // and mutable actions. Our data-bound registry does not execute those. Use
@@ -50,7 +50,7 @@ const catalog=defineCatalog(defineSchema(()=>schema.definition,{promptTemplate:(
 ].filter(Boolean).join("\n")}),{components,actions:{}});
 export const INLINE_PRESENTATION_HINT=catalog.prompt({mode:"inline",
  system:"You are composing the actual owner-facing answer. Use natural Markdown together with the available visual and interactive components whenever they make the answer clearer. Choose the representation yourself; the information source does not determine the layout. Prefer a visual over a Markdown table whenever the answer has figures across several periods or items, a ranking, a comparison or headline numbers: a chart for trends, a table for records, metric cards for the key figures, with a short sentence of prose around it. Use direct model-authored panels for calculations, forecasts and scenarios when helpful; distinguish actual records from assumptions and estimates. Choose prose or visuals independently of the retrieval method.",
- customRules:["Use separate spec fences for independent UI sections anywhere in the answer; continue ordinary prose between them. Use the presentationRef from admitted tool results or the text references described in the turn context. Bind existing values when convenient, or author panels and tables directly for any answer. Source confidence is a label, not a condition for display. Explain the basis and do not represent assumptions as actual business records. Historical messages are prior claims, not fresh business evidence. No generic executable actions."]});
+ customRules:["Use separate spec fences for independent UI sections anywhere in the answer; continue ordinary prose between them. Use the presentationRef from admitted tool results or the text references described in the turn context. Bind existing values when convenient, or author panels and tables directly for any answer. Use any relevant numbers, including derived, hypothetical and estimated figures. The application does not assign confidence or require matching database values. Explain the basis and do not represent assumptions as actual business records. Historical messages are prior claims, not fresh business evidence. No generic executable actions."]});
 type Selection=z.infer<typeof selection>;
 export type PresentationContext={asOf:string;currency?:string|null;presentationAttachments?:readonly string[]};
 type Context=PresentationContext;
@@ -69,7 +69,7 @@ function table(s:Selection,rows:Row[],ctx:Context,e:PresentationEvidence):Record
  if(!keys.length||keys.some(k=>!visible(k)))return null;
  const columns=keys.map(k=>({label:name(k),unit:unit(k)==="cents"&&rows.every(r=>r[k]==null||typeof r[k]==="number")?"cents":unit(k)==="count"&&rows.every(r=>r[k]==null||typeof r[k]==="number")?"count":"stored"}));
  const result=recordTableSchema.safeParse({title:title(s,"Query results"),view:e.kind==="sql"?"tool_sql_research":"tool_response_evidence",from:ctx.asOf,to:ctx.asOf,asOf:ctx.asOf,
-  currency:ctx.currency??null,coverage:e.coverage??"stored",
+  currency:ctx.currency??null,coverage:"stored",
   scope:e.source+"; see the answer for period and coverage",
   columns,rows:rows.map(r=>keys.map(k=>rawCell(r[k])?r[k]:null))});
  return result.success?result.data:null;
@@ -90,7 +90,7 @@ function panel(s:Selection,rows:Row[],ctx:Context,e:PresentationEvidence):Presen
  // records. Do not infer missing time buckets or manufacture a denominator.
  
  const p=presentationPanelSchema.safeParse({kind:s.kind,title:title(s,name(y)),unit:chartUnit,currency,
-  from:ctx.asOf,to:ctx.asOf,asOf:ctx.asOf,source:e.kind==="sql"?"sql_research":"response_evidence",sourceDetail:e.source,coverage:e.coverage,
+  from:ctx.asOf,to:ctx.asOf,asOf:ctx.asOf,source:e.kind==="sql"?"sql_research":"response_evidence",sourceDetail:e.source,
   ...(chartUnit==="units"?{measurement:name(y)}:{}),points:typed});
  return p.success?p.data:null;
 }
@@ -206,7 +206,7 @@ function pointView(s:z.infer<typeof pointPanel>,evidence:PresentationEvidenceMap
  const sourceDetail=[...new Set(values.map(v=>v.source.source))].join("; ");
  const result=presentationPanelSchema.safeParse({kind:s.kind,title:descriptiveGroupTitle(s.title)??"Comparison",
   unit:first.unit,currency:first.unit==="cents"?ctx.currency??null:null,from:ctx.asOf,to:ctx.asOf,asOf:ctx.asOf,
-  source:"response_evidence",sourceDetail,coverage,...(first.measurement?{measurement:first.measurement}:{}),
+  source:"response_evidence",sourceDetail,...(first.measurement?{measurement:first.measurement}:{}),
   points:values.map(({label,value})=>({label,value}))});
  return result.success?result.data:null;
 }
@@ -222,7 +222,7 @@ export function resolveResearchView(raw:unknown,queries:PresentationEvidenceMap,
  const calc=c.success?calculator(queries.get(c.data.ref)?.data??{},c.data.editable,ctx):calculated&&{...calculated,title:descriptiveGroupTitle(authored.success?authored.data.title:undefined)??"What-if calculation"};
  if(!calc&&authored.success){
   const a=authored.data;
-  const result=recordTableSchema.safeParse({title:a.title??"What-if calculation",view:"tool_response_evidence",from:ctx.asOf,to:ctx.asOf,asOf:ctx.asOf,currency:ctx.currency??null,coverage:"estimate",
+  const result=recordTableSchema.safeParse({title:a.title??"What-if calculation",view:"tool_response_evidence",from:ctx.asOf,to:ctx.asOf,asOf:ctx.asOf,currency:ctx.currency??null,coverage:"authored",
    scope:"Luna's hypothetical inputs. The interactive calculation could not be evaluated; these inputs are retained.",
    columns:[{label:"Input",unit:"label"},{label:"Value",unit:"stored"},{label:"Unit",unit:"stored"}],rows:a.inputs.map(i=>[i.name,i.value,i.unit])});
   if(result.success)tables.push(result.data);
@@ -232,8 +232,8 @@ export function resolveResearchView(raw:unknown,queries:PresentationEvidenceMap,
   if(direct.success){
    const a=direct.data;
    const heading=descriptiveGroupTitle(a.title)??"Luna analysis";
-   const coverage=a.basis==="estimate"||a.basis==="scenario"?"estimate":a.basis==="calculated"?undefined:"unverified";
-   const detail="Luna "+(a.basis==="calculated"?"calculation (model-derived)":a.basis==="scenario"?"hypothetical scenario":a.basis==="estimate"?"estimate":"unverified statement")+(a.explanation?": "+a.explanation:"");
+   const coverage=a.basis==="estimate"?"estimate":a.basis==="partial"?"partial":a.basis==="unverified"?"unverified":undefined;
+   const detail=[a.basis,a.explanation].filter(Boolean).join(": ")||"Luna analysis";
    const points=a.points.map(p=>({label:descriptiveGroupTitle(p.label)??"Value",value:p.value}));
    const supported=presentationPanelSchema.shape.unit.safeParse(a.unit);
    const displayUnit=supported.success?supported.data:"units";
@@ -245,7 +245,7 @@ export function resolveResearchView(raw:unknown,queries:PresentationEvidenceMap,
    else{
     const numeric=points.every(p=>p.value===null||typeof p.value==="number");
     const fallback=recordTableSchema.safeParse({title:heading,view:"tool_response_evidence",from:ctx.asOf,to:ctx.asOf,asOf:ctx.asOf,currency,
-     coverage:coverage??"unverified",scope:detail,columns:[{label:"Category",unit:"label"},{label:measurement??displayUnit,unit:numeric?displayUnit:"stored"}],
+     coverage:coverage??"authored",scope:detail,columns:[{label:"Category",unit:"label"},{label:measurement??displayUnit,unit:numeric?displayUnit:"stored"}],
      rows:points.map(p=>[p.label,p.value])});
     if(fallback.success)tables.push(fallback.data);
    }
@@ -267,7 +267,7 @@ export function resolveResearchView(raw:unknown,queries:PresentationEvidenceMap,
      return [label??"Value",direct.success?direct.data:bound?.value??(cell.success?cell.data:null),direct.success?item.unit??null:bound?bound.measurement??bound.unit:null];
     });
     const t=recordTableSchema.safeParse({title:selectedPoints.data.title??"Comparison",view:"tool_response_evidence",from:ctx.asOf,to:ctx.asOf,asOf:ctx.asOf,currency:ctx.currency??null,
-     coverage:"partial",scope:"Available selected values and model-provided figures; unbound figures are not verified records. Missing or incompatible values are shown separately, not converted to zero.",
+     coverage:"authored",scope:"Selected and authored values; unresolved references are displayed as unknown.",
      columns:[{label:"Category",unit:"label"},{label:"Value",unit:"stored"},{label:"Unit",unit:"stored"}],rows});
     if(t.success)tables.push(t.data);
    }
@@ -277,7 +277,7 @@ export function resolveResearchView(raw:unknown,queries:PresentationEvidenceMap,
   const e=queries.get(s.data.ref),q=e?.data;
   if(!e||!q||q.ok===false||q.error||!Array.isArray(q.rows)||!q.rows.length||!q.rows.every(obj)){
    const t=recordTableSchema.safeParse({title:s.data.title??"Selected results",view:"tool_response_evidence",from:ctx.asOf,to:ctx.asOf,asOf:ctx.asOf,currency:ctx.currency??null,
-    coverage:"partial",scope:"Values were not available from the selected result.",columns:[{label:"Value",unit:"stored"}],rows:[[null]]});
+    coverage:"authored",scope:"The selected reference did not return rows.",columns:[{label:"Value",unit:"stored"}],rows:[[null]]});
    if(t.success)tables.push(t.data);
    continue;
   }
@@ -294,7 +294,7 @@ export function resolveResearchView(raw:unknown,queries:PresentationEvidenceMap,
   const a=t.data, width=a.rows.reduce((n,r)=>Math.max(n,r.length),a.columns.length);
   const columns=Array.from({length:width},(_,i)=>({label:a.columns[i]??"Value "+(i+1),unit:"stored"}));
   const result=recordTableSchema.safeParse({title:descriptiveGroupTitle(a.title)??"Luna analysis",view:"tool_response_evidence",from:ctx.asOf,to:ctx.asOf,asOf:ctx.asOf,currency:ctx.currency??null,
-   coverage:a.basis==="estimate"||a.basis==="scenario"?"estimate":"unverified",scope:"Luna "+(a.basis??"unverified")+(a.explanation?": "+a.explanation:""),
+   coverage:a.basis==="estimate"?"estimate":a.basis==="partial"?"partial":a.basis==="unverified"?"unverified":"authored",scope:[a.basis,a.explanation].filter(Boolean).join(": ")||"Luna analysis",
    columns,rows:a.rows.map(row=>Array.from({length:width},(_,i)=>row[i]??null))});
   if(result.success)tables.push(result.data);
  }
