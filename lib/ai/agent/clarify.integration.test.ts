@@ -1,5 +1,7 @@
 import {describe,it,expect,vi} from "vitest";
-import {runAgentTurn,type AgentProvider} from "./loop.server";
+import type {AgentProvider} from "./loop.server";
+import {runResearchTurn} from "../research/turn.server";
+import {agentToolDefinitions} from "./tools";
 import {agentReplyPayload} from "./persist.server";
 import {newResolveState} from "./resolve";
 import {proposalTools} from "./tools/proposals";
@@ -31,17 +33,19 @@ describe("two-latte owner clarification",()=>{
   const make=vi.fn();
   const ctx=context(make);
   const {provider,requests}=providerFrom([
-   [call("get_menu_items",{query:"Latte",limit:8},"menu-1"),completed],
+   [call("run_sql",{sql:"select data from cv_menu"},"menu-1"),completed],
    [call("propose_price_change",{product_id:hot,new_price_cents:550},"write-2"),completed],
-   [call("ask_owner",{question:"Which Latte should cost $5.50?",options:[
+   [call("ask_owner",{kind:"choice",fields:null,question:"Which Latte should cost $5.50?",options:[
     {label:"Latte — drink · 4.50",value:hot},
     {label:"Latte — drink · 5.00",value:iced}],allowOther:true},"ask-3"),completed],
   ]);
-  const turn=await runAgentTurn({ownerText:"raise latte price to $5.50",context:ctx,provider});
+  const turn=await runResearchTurn({ownerText:"raise latte price to $5.50",cafeContext:"Fixture cafe",provider,
+   scope:{db:{rpc:async()=>({data:{ok:true,rows:catalog},error:null})} as never,businessId:"b",ownerUserId:"o"},
+   actions:{context:ctx,definitions:agentToolDefinitions.filter(t=>["propose_price_change","ask_owner"].includes(t.name))}});
   expect(requests).toHaveLength(3);
   expect(turn.endReason).toBe("complete");
   expect(make).not.toHaveBeenCalled();
-  expect(turn.results[0]).toMatchObject({source:"menu_items",needsOwnerChoice:true});
+  expect(turn.results[0]).toMatchObject({source:"sql_research",tool:"run_sql"});
   expect(turn.results[1]).toMatchObject({source:"price_change_proposal",missing:["ownerChoiceRequired"]});
   expect(turn.results[2]).toMatchObject({source:"ask_owner",missing:[]});
   const persisted=agentReplyPayload(turn);

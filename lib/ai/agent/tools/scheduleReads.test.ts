@@ -331,7 +331,7 @@ describe("shared staff communication evidence on the single Supervisor",()=>{
 });
 
 describe("system-initiated schedule reads without a browser session",()=>{
- it("dispatches null-week staff/roster/coverage tools through the real bound port with no cookie access",async()=>{
+ it("dispatches null-week roster through the real bound port with no cookie access",async()=>{
   const cookieScope=vi.mocked(staffReadScope);
   cookieScope.mockImplementation(()=>{throw new Error("cookies was called outside a request scope");});
   const date="2026-10-24", monday="2026-10-19";
@@ -350,19 +350,13 @@ describe("system-initiated schedule reads without a browser session",()=>{
   try{
    const before=vi.mocked(getWeekSchedule).mock.calls.length;
    const schedule=await executeAgentTool("get_week_schedule",{week_start:null},ctx);
-   const gaps=await executeAgentTool("get_coverage_gaps",{week_start:null},ctx);
-   const team=await executeAgentTool("get_team",{week_start:null,name:null},ctx);
    expect(vi.mocked(mondayOfLocalDate)).toHaveBeenCalledWith(date);
-   expect(weekSchedule).toHaveBeenCalledTimes(3);
-   expect(weekSchedule.mock.calls).toEqual([[monday],[monday],[monday]]);
+   expect(weekSchedule).toHaveBeenCalledTimes(1);
+   expect(weekSchedule.mock.calls).toEqual([[monday]]);
    expect(cookieScope).not.toHaveBeenCalled();
    expect(vi.mocked(getWeekSchedule).mock.calls.length).toBe(before);
    expect(schedule).toMatchObject({source:"scheduled_shifts",scheduleSet:true,
     shifts:[{id:"shift-1",employeeName:"Ava",start:"07:00",source:"app"}]});
-   expect(gaps).toMatchObject({source:"scheduled_shifts+locations.open_hours",
-    missing:expect.arrayContaining(["coverageDisabled"])});
-   expect(team).toMatchObject({source:"employees+scheduled_shifts",
-    people:[{name:"Ava"}],shifts:[{id:"shift-1"}]});
   }finally{cookieScope.mockReset();}
  });
  it("fails closed on a revoked investigation-bound owner/café read, without falling back to cookies",async()=>{

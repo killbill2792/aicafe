@@ -13,7 +13,7 @@ describe("staff approval gate",()=>{
   expect(gated.filter(name=>defined.has(name))).toEqual(gated);
  });
  it("keeps registered scheduling tools read-only",()=>{
-  for(const name of ["get_team","get_week_schedule","get_labor_rules","get_coverage_gaps","get_shift_cost"]){
+  for(const name of ["get_schedule","get_week_schedule","get_staff_messages"]){
    expect(agentToolDefinitions.some(d=>d.name===name)).toBe(true);
    expect(agentForTool(name)).toBe("olivia");
   }

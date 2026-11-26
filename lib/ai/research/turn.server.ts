@@ -5,6 +5,7 @@ import {openAIProvider,type AgentProvider,type AgentTurn,type AgentAuditStep,typ
 import {executeAgentTool,isRepeatSafeOwnerTool,observeDurableToolEffect,type AgentToolContext,type AgentToolResult} from "@/lib/ai/agent/tools";
 import {safeToolError} from "@/lib/ai/agent/toolErrors";
 import {newResolveState,observeToolResult} from "@/lib/ai/agent/resolve";
+import {withoutSavedFactFields} from "@/lib/ownerFacts/askGuard";
 import type {OwnerRunCheckpoint,MatchedOwnerAnswer} from "@/lib/ai/supervisor/runs/contracts";
 import {executionPolicy,requestOutputCap} from "@/lib/ai/agent/executionPolicy";
 import {unsupportedNumbers} from "./verify";
@@ -280,12 +281,15 @@ export async function runResearchTurn(args:{
     context.turnResults=()=>invocations.map(i=>({name:i.name,result:i.result}));
     let observed:ReturnType<typeof observeDurableToolEffect>|undefined,opened=false;
     try{
-      const parsed:unknown=JSON.parse(fc.arguments);
+      const raw:unknown=JSON.parse(fc.arguments);
+      const parsed=fc.name==="ask_owner"?withoutSavedFactFields(raw,context.ownerFacts??[]):raw;
+      if(parsed===null)return {source:"ask_owner",period:null,missing:["alreadySaved"],error:"ownerFactAlreadySaved"};
       const safe=isRepeatSafeOwnerTool(fc.name,parsed);
       const recovered=args.checkpoint?await args.checkpoint.beginTool(fc.name,parsed,safe):null;
       opened=Boolean(args.checkpoint);
       if(args.checkpoint&&!recovered&&!safe)observed=observeDurableToolEffect(fc.name,context,()=>args.checkpoint!.assertLive());
       const result=recovered??await executeAgentTool(fc.name,parsed,observed?.context??context);
+      observed?.settle();
       await args.beforeAcceptResult?.();
       if(opened)await args.checkpoint!.endTool(result,observed?.noEffect()??false);
       return result;
@@ -298,7 +302,7 @@ export async function runResearchTurn(args:{
   };
 
   try{
-    for(;;){
+    researchLoop: for(;;){
       const reason=stop();
       if(reason){
         endReason=reason;
@@ -340,6 +344,12 @@ export async function runResearchTurn(args:{
         invocations.push({name:fc.name,result:record});
         audit({kind:"tool_call",toolName:fc.name,inputSummary:"Research tool",outputSummary:failed?"Error returned to model":"Completed",
           durationMs:Math.max(0,now()-toolStarted),...(failed?{error:"research_tool_error"}:{})});
+        // The card is the end of this owner turn. Do not execute a second
+        // action from the same provider batch after asking for owner input.
+        if(fc.name==="ask_owner"&&!record.missing.length&&typeof record.question==="string"){
+          if(!text.trim())appendText(record.question);
+          break researchLoop;
+        }
       }
     }
     if(!text.trim()&&presentations.length)appendText("Here are the results from the retrieved information.",true);
