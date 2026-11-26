@@ -165,7 +165,12 @@ export async function runResearchTurn(args:{
       try{
         for await(const event of researchInlineEvents(provider(params,controller.signal) as AsyncIterable<Event>)){
           if(event.type==="raw-delta"&&typeof event.delta==="string")answer+=event.delta;
-          if(event.type==="inline-patch"){await flushProse(true);patches.push(event.patch);continue;}
+          if(event.type==="inline-patch"){
+            await flushProse(true);
+            const patch=event.patch as {op?:unknown;path?:unknown}|undefined;
+            if(patch?.op==="add"&&patch.path==="/root"&&patches.some(p=>p!==null&&typeof p==="object"&&(p as {path?:unknown}).path==="/root"))await flushViews();
+            patches.push(event.patch);continue;
+          }
           if(event.type==="inline-text"&&typeof event.delta==="string"){
             await flushViews();pendingProse+=event.delta;await flushProse();
           }

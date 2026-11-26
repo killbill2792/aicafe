@@ -254,7 +254,7 @@ const components:Components={
 const safeRehype=[defaultRehypePlugins.sanitize,defaultRehypePlugins.harden];
 const safeUrl=(url:string,key:string)=>key==="href"&&/^https?:\/\//iu.test(url)?url:undefined;
 function MarkdownSegment({text,options,streaming}:{text:string;options:MarkOptions;streaming:boolean}){
- const rehypePlugins=options.spans.length?[...safeRehype,[sourceAnnotationPlugin,options] as [typeof sourceAnnotationPlugin,MarkOptions]]:safeRehype;
+ const rehypePlugins=[...safeRehype,[sourceAnnotationPlugin,options] as [typeof sourceAnnotationPlugin,MarkOptions]];
  return <Streamdown mode={streaming?"streaming":"static"} isAnimating={streaming}
    dir={options.locale==="ar"?"rtl":"auto"} controls={false} components={components}
    rehypePlugins={rehypePlugins} urlTransform={safeUrl} className="space-y-2 min-w-0 break-words">{text}</Streamdown>;
