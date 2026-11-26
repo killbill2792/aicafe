@@ -67,6 +67,8 @@ describe("SQL research presentation",()=>{
   expect(payload.reply.blocks.map(b=>b.type)).toEqual(["text","rich_presentation","text","rich_presentation","text"]);
   expect(groundedReplySchema.safeParse(payload.reply).success).toBe(true);
   expect(result.usage.toolCalls).toBe(2);
+  expect(result.usage.requests).toHaveLength(3);
+  expect(result.usage.toolMetrics).toMatchObject([{name:"run_sql",outcome:"failed"},{name:"run_sql",outcome:"complete",returnedRows:2}]);
   expect(result.toolInvocations).toHaveLength(2);
  });
 });
@@ -270,4 +272,13 @@ describe("model-authored analytical presentation",()=>{
   expect(resolveResearchView({panels:[panel]},new Map(),ctx)).toBeUndefined();
   expect(resolveResearchView({panels:[{...panel,basis:"actual",points:[{label:"Value",value:100}]}]},new Map(),ctx)).toBeUndefined();
  });
+});
+
+it("does not discard or truncate series just because there are more than thirty records",()=>{
+ const longRows=Array.from({length:40},(_,i)=>({category:"Day "+(i+1),amount_cents:i+1}));
+ const sources=new Map([["q1",{data:{ok:true,rows:longRows},source:"Returned SQL evidence",kind:"sql" as const}]]);
+ const view=resolveResearchView({panels:[chart,{ref:"q1",kind:"table",columns:["category","amount_cents"]}]},sources,ctx);
+ expect(view?.panels[0].points).toHaveLength(40);
+ expect(view?.tables?.[0].rows).toHaveLength(40);
+ expect(view?.tables?.[0].coverage).toBe("stored");
 });
