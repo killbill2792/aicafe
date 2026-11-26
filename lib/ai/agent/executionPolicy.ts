@@ -60,7 +60,7 @@ export function requestComposition(params:Record<string,unknown>):RequestComposi
 }
 export type ProviderUsageReceipt={
  kind:"responses"|"hosted_web";model:string|null;requestedModel:string;outcome:"completed"|"incomplete"|"failed";
- final:boolean;nativeSearch:boolean;outputCap:number;durationMs:number;
+ final:boolean;nativeSearch:boolean;outputCap:number|null;durationMs:number;
  inputTokens:number|null;cachedTokens:number|null;outputTokens:number|null;reasoningTokens:number|null;
  nonReasoningTokens:number|null;estimatedCostMicros:number|null;discoveryCalls:number|null;
  composition?:RequestComposition|null;
@@ -71,7 +71,7 @@ const record=(value:unknown):Record<string,unknown>=>value&&typeof value==="obje
 const count=(value:unknown):number|null=>typeof value==="number"&&Number.isSafeInteger(value)&&value>=0&&value<=10_000_000?value:null;
 const modelId=(value:unknown):string|null=>typeof value==="string"&&/^[A-Za-z0-9._:-]{1,80}$/.test(value)?value:null;
 export function providerUsageReceipt(p:{requestedModel:string;kind:ProviderUsageReceipt["kind"];outcome:ProviderUsageReceipt["outcome"];final:boolean;
- nativeSearch:boolean;outputCap:number;durationMs:number;response?:unknown;composition?:RequestComposition|null}):ProviderUsageReceipt{
+ nativeSearch:boolean;outputCap:number|null;durationMs:number;response?:unknown;composition?:RequestComposition|null}):ProviderUsageReceipt{
  const response=record(p.response),usage=record(response.usage);
  const input=count(usage.input_tokens),output=count(usage.output_tokens);
  const cachedRaw=count(record(usage.input_tokens_details).cached_tokens);
