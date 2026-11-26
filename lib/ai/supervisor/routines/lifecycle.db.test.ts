@@ -87,13 +87,15 @@ describe.skipIf(!sandbox)("background lifecycle on the migrated database",()=>{
       const mealBreak=await alert("meal_break",{dedupeKey:randomUUID()});
       expect(await notice(wages,"a")).toBe(true);
       expect(await notice(mealBreak,"a")).toBe(true);
-      expect(await count("select count(*) n from public.ai_messages where business_id=$1")).toBe(2);
+      // A notice is an inbox item only: nothing is posted to chat, and its title says what the alert is.
+      expect(await count("select count(*) n from public.ai_messages where business_id=$1")).toBe(0);
+      expect(await count("select count(*) n from public.operating_tasks where business_id=$1 and kind='priority_notice' and payload->>'title' not like 'Actionable%' and payload->>'title' not like 'Owner task%'",[cafe])).toBe(2);
 
       // 3. Waiting for the owner: new evidence does not announce the same item again.
       expect(await notice(mealBreak,"b")).toBe(false);
       expect(await notice(mealBreak,"c")).toBe(false);
       expect(await count("select count(*) n from public.operating_tasks where business_id=$1 and kind='priority_notice' and payload->>'sourceId'=$2",[cafe,mealBreak])).toBe(1);
-      expect(await count("select count(*) n from public.ai_messages where business_id=$1")).toBe(2);
+      expect(await count("select count(*) n from public.ai_messages where business_id=$1")).toBe(0);
       // Once the owner has handled it, a later change may notify again.
       await admin.query("update public.operating_tasks set status='handled' where business_id=$1 and kind='priority_notice' and payload->>'sourceId'=$2",[cafe,mealBreak]);
       expect(await notice(mealBreak,"d")).toBe(true);
