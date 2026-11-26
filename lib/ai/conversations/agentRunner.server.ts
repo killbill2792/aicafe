@@ -57,12 +57,10 @@ import {mapPriceMonitorRows} from "@/lib/ai/agent/tools/priceMonitor";
 import {requirePositivePriceIncrease} from "@/lib/ai/agent/tools/priceExperiment";
 import {BOARD_PROPOSAL_STATUSES,BOARD_REPORT_STATUSES} from "@/lib/operating/board";
 import {metricCatalog} from "@/lib/calc/metrics/catalog";
-import type { NumericEvidence } from "@/lib/ai/agent/checkNumbers";
 import {ownerRunStatement,type OwnerRunCheckpoint} from "@/lib/ai/supervisor/runs/contracts";
 import type {DurableReplyFence} from "./replyWriter.server";
-import { runAgentTurn, type OwnerFollowUp } from "@/lib/ai/agent/loop.server";
 import {cafeNotesContext,cafeNotesPort} from "@/lib/ai/research/notes.server";
-import {isResearchActionTool,runResearchTurn,sqlResearchEnabled} from "@/lib/ai/research/turn.server";
+import {isResearchActionTool,runResearchTurn} from "@/lib/ai/research/turn.server";
 import {createOwnerCommitment,listOwnerCommitments,closeOwnerCommitment} from "@/lib/operating/commitments.server";
 import {createOwnerRoutine,listOwnerRoutines,changeOwnerRoutine} from "@/lib/ai/supervisor/routines/repository.server";
 import {routineReportCandidates,verifiedRoutineReportHistory} from "@/lib/ai/supervisor/routines/reportHistory.server";
@@ -233,16 +231,6 @@ export async function runOneTurn(p: TurnParams): Promise<{ replyId: string; repl
     // Keep default prompts small; Luna can page any older authenticated
     // owner message on demand, including candidates hidden from this preview.
     const goalSourceCandidates=allPageGoalSources.slice(-8);
-    const priorAssistant=page.items.filter(m=>m.role==="supervisor"&&m.id!==owner.id&&reusable(m)&&
-      (!p.durableFence||Date.parse(m.createdAt)<=ownerAt)).slice(-8);
-    const previousEvidence:NumericEvidence[]=priorAssistant.flatMap(m=>{
-      const candidate=m.grounding?.agentMetadata;
-      if(!candidate||typeof candidate!=="object"||!Object.hasOwn(candidate,"evidence"))return [];
-      const entries=(candidate as {evidence?:unknown}).evidence;
-      if(!Array.isArray(entries))return [];
-      return entries.filter((x):x is NumericEvidence=>x&&typeof x==="object"&&
-        typeof x.tool==="string"&&Array.isArray(x.values)).slice(0,8);
-    });
     // Previous assistant prose is conversation context, never source evidence.
     // Retain only typed evidence from successful tool reads. Messages queued for a
     // running job (sent after this one) are excluded: they arrive as follow-ups.
@@ -307,7 +295,6 @@ export async function runOneTurn(p: TurnParams): Promise<{ replyId: string; repl
     // Saved drafts are context only; NEVER approval or license to contact staff.
     // Use the current authenticated owner message as the sole answer source.
     const pendingStaffQuestions:Array<{proposalId:string;revision:number;question:string;employeeName:string}>=[];
-    let pendingStaffQuestionReadUnavailable=false;
     if(allowPendingStaffQuestionRead({
       external,ownerRole:owner.role,ownerContentType:owner.contentType,
       ownerInputResponse:Boolean(owner.ownerInputResponse),ownerText:p.ownerText,
@@ -321,14 +308,13 @@ export async function runOneTurn(p: TurnParams): Promise<{ replyId: string; repl
           .eq("business_id",scope.businessId).eq("owner_user_id",scope.ownerUserId)
           .eq("thread_id",id).eq("capability_id",staffQuestionCapabilityId)
           .eq("status","draft").lte("created_at",owner.createdAt).order("created_at",{ascending:false}).limit(8);
-        if(pending.error)pendingStaffQuestionReadUnavailable=true;
-        else for(const row of pending.data??[]){
+        for(const row of pending.data??[]){
           const checked=staffQuestionEffect.safeParse(row.canonical_effect_payload);
           if(checked.success)pendingStaffQuestions.push({
             proposalId:row.id,revision:row.revision,
             question:checked.data.question,employeeName:checked.data.employeeName});
         }
-      }catch{pendingStaffQuestionReadUnavailable=true;}
+      }catch{/* the pending-question list is optional context */}
     }
     const context: AgentToolContext = { tools, asOf: identity.asOf, locale: p.locale,timezone:identity.timezone,currency:identity.currency,
       ownerText:currentOwnerStatement,
@@ -864,12 +850,6 @@ export async function runOneTurn(p: TurnParams): Promise<{ replyId: string; repl
     const gmailAccount=await getConnectorAccount(scope).catch(()=>null);
     const gmailAvailable=allowsGmail(gmailAccount,"read");
     const location=await context.cafeLocation?.().catch(()=>null);
-    const cafeProfile="Café profile (authenticated, not owner message): "+JSON.stringify({
-      name:identity.cafeName,city:location?.city??null,region:location?.region??null,
-      country:location?.countryCode??null,currency:identity.currency,timezone:identity.timezone})+
-      ". For events, use the saved get_events/get_nearby_events information for this city and café; "+
-      "never ask the owner for their city when it is in this authenticated profile. "+
-      "If saved research is incomplete, say so; any web_search must include this café city.";
     const recordedIds=process.env.WHATSAPP_SUPERVISOR_ENABLED==="true"
       ?await recordedWhatsAppImageIds(scope,id,owner.id):null;
     const selectedIds=recordedIds??p.attachmentIds??[];
@@ -895,20 +875,19 @@ export async function runOneTurn(p: TurnParams): Promise<{ replyId: string; repl
     // authenticated attachment route, never a signed URL or object path.
     context.presentationAttachments=[...selectedIds];
     failureStage = "model";
-    // SUPERVISOR_SQL_RESEARCH=on: database discovery, SQL and calculate only.
+    // Owner chat: database discovery, SQL and calculate only (plus the registered action tools).
     // The owner/café scope above is already verified; the database function
     // re-verifies ownership and applies RLS for this one café.
-    const researchOn=sqlResearchEnabled();
-    const notesClient=researchOn?await getDb():null;
-    const result = researchOn ? await runResearchTurn({ ownerText: p.ownerText,
+    const notesClient=await getDb();
+    const result = await runResearchTurn({ ownerText: p.ownerText,matchedOwnerAnswers:p.matchedAnswers,
       presentationContext:{asOf:identity.asOf,currency:identity.currency,presentationAttachments:[...selectedIds]},
       ownerImages:selected.images, ownerPdfs:selected.pdfs, ownerEvidence:selected.evidence, history,
       scope:{db:createAdminSupabaseClient(),businessId:scope.businessId,ownerUserId:scope.ownerUserId,
-        notes:cafeNotesPort(notesClient!,scope.businessId)},
+        notes:cafeNotesPort(notesClient,scope.businessId)},
       cafeContext:"Café (authenticated, not an owner message): "+JSON.stringify({name:identity.cafeName,
         currency:identity.currency,timezone:identity.timezone,localDate:identity.asOf,
         city:location?.city??null,region:location?.region??null,country:location?.countryCode??null})+
-        "\n"+await cafeNotesContext(notesClient!,scope.businessId,ownerFactRead.facts,identity.asOf),
+        "\n"+await cafeNotesContext(notesClient,scope.businessId,ownerFactRead.facts,identity.asOf),
       // Luna writes its own public queries. Only the owner's public-web permission applies, plus a check
       // that no private café text is inside the query (tools.server.ts); no wording filter on the owner.
       webSearch:q=>ownerPublicWebSearch(scope,async()=>{
@@ -941,52 +920,7 @@ export async function runOneTurn(p: TurnParams): Promise<{ replyId: string; repl
       },
       onDelta: delta => emit("delta", { text: delta }),
       onPresentation:(offset,block)=>emit("presentation",{offset,block}),
-      onReset: (discardChars,discardPresentations) => emit("reset", { discardChars,discardPresentations }) }) : await runAgentTurn({ ownerText: p.ownerText, ownerImages:selected.images,
-       ownerPdfs:selected.pdfs,ownerEvidence:selected.evidence,
-       history:[...history,...(pendingStaffQuestionReadUnavailable?[{role:"assistant" as const,
-         content:"The pending employee-question status is temporarily unavailable. Do not claim an owner reply was recorded or that a staff question was resolved; explain the uncertainty and ask the owner to retry."}]:[]),
-         ...(pendingStaffQuestions.length?[{role:"assistant" as const,
-         content:"Current pending owner-approval staff questions (NOT authority to send): "+
-         JSON.stringify(pendingStaffQuestions)+
-         ". If THIS owner message directly supplies a factual answer to one identified question, record the exact saved owner message with record_staff_question_owner_answer. Never treat a question, an unrelated message, uncertainty, or a staff-contact request as an answer; clarify instead."}]:[])],
-       matchedOwnerAnswers:p.matchedAnswers,context,cafeProfile,businessId:scope.businessId,requestId:owner.id,
-       onAuditStep: step => { if (auditSteps.length < 64) auditSteps.push(step); },
-       beforeProviderRequest:assertTurnSources,
-       ...(p.checkpoint?{checkpoint:p.checkpoint}:{}),
-       beforeAcceptResult:assertTurnSources,
-       deferSensitiveOutput:()=>true,
-      previousEvidence, ownerFacts:ownerFactRead.facts, ownerFactsReadFailed:ownerFactRead.failed,
-      onTool:(name,agentId)=>{
-        emit("tool",{name,agentId});
-        // Ordered, best-effort persistence so a reloaded page can show the same steps.
-        if (job && jobs && isJobStepAgent(agentId)) steps = steps.then(() => p.recordDurableStep
-          ?p.recordDurableStep({tool:name,agent:agentId}):jobs.recordAgentJobStep(job.id, { tool: name, agent: agentId }));
-      },
-      onDelta: delta => emit("delta", { text: delta }),
-      onReset: discardChars => emit("reset", { discardChars }),
-      ...(memory ? { memoryFacts: memory.facts } : {}),
-      // Both the routine tool and optional café memory are offered only after
-      // the authenticated owner/thread context has been established.
-      extraTools:[{
-        ...routineToolDefinition,
-        description:routineToolDefinition.description+" VERIFIED SAME-THREAD OWNER MESSAGES "+
-          "(choose the source ID for the complete investigation goal, not the answer to a scheduling question; "+
-          "the server will verify this original owner message independently): "+
-          JSON.stringify(goalSourceCandidates)+
-          " For any older goal absent from these previews, call manage_routine action=list_goal_sources "+
-          "with source_page_offset=0 first; use next_offset to continue to older pages. "+
-          "NEXT_OLDER_GOAL_SOURCES_OFFSET="+JSON.stringify(page.nextOffset),
-      },...(gmailAvailable?gmailToolDefinitions:[]),...(memory?[memory.tool]:[])],
-      ...(job && jobs ? {
-        takeFollowUps: async(max: number):Promise<OwnerFollowUp[]> => {
-           // A second question always receives its own serialized turn, on
-           // web as well as WhatsApp. Absorbing it into the first response
-           // interleaves independent owner questions and their answers.
-           void max;
-           return [];
-         },
-        onFollowUp: (count: number) => emit("followup", { count }),
-      } : {}) });
+      onReset: (discardChars,discardPresentations) => emit("reset", { discardChars,discardPresentations }) });
     if(p.matchedAnswers?.length)result.absorbedOwnerMessageIds=[...new Set([...(result.absorbedOwnerMessageIds??[]),...p.matchedAnswers.map(a=>a.answerId)])];
     result.externalEvidence=sourceChecks.size>0;
     completedTurn = result;

@@ -68,6 +68,17 @@ vi.mock("@/lib/ai/agent/loop.server", () => ({
       ...(absorbed.length ? { absorbedOwnerMessageIds: absorbed.map(m => m.id) } : {}) };
   },
 }));
+// Owner chat now runs the SQL research turn; these route tests exercise the same fake model loop through it.
+vi.mock("@/lib/ai/research/turn.server", async () => {
+  const { runAgentTurn } = await import("@/lib/ai/agent/loop.server");
+  return { runResearchTurn: runAgentTurn, isResearchActionTool: () => false };
+});
+vi.mock("@/lib/supabase/server", () => ({ createServerSupabaseClient: async () => ({}) }));
+vi.mock("@/lib/ai/research/notes.server", () => ({
+  cafeNotesContext: async () => "Café notes and saved facts: none yet.",
+  cafeNotesPort: () => ({ save: async () => undefined, forget: async () => false }),
+  readCafeNotes: async () => ({ notes: [], error: false }),
+}));
 vi.mock("@/lib/ai/agent/persist.server", () => ({
   AgentReplyTooLongError: class extends Error {}, AgentReplyStorageError: class extends Error {},
   AgentEmptyReplyError: class extends Error {},
@@ -111,7 +122,6 @@ describe("agent route with background jobs enabled", () => {
     expect(fake.steps).toEqual([{ tool: "get_sales", agent: "alex" }]);
     expect(fake.finished).toEqual([{ id: JOB, status: "done", replyMessageId: "reply-msg-1" }]);
     expect(fake.loopArgs[0]).toHaveProperty("ownerText");
-    expect(typeof fake.loopArgs[0].takeFollowUps).toBe("function");
   });
   it("keeps a mid-run owner question separate from the first answer", async () => {
     fake.followUps = [{ id: "77777777-7777-4777-8777-777777777777", text: "and oat milk?" }];
