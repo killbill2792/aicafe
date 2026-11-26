@@ -1,6 +1,10 @@
 {
   "crons": [
     {
+      "path": "/api/cron/supervisor-run-worker",
+      "schedule": "* * * * *"
+    },
+    {
       "path": "/api/cron/team-alerts",
       "schedule": "0 16 * * *"
     },
