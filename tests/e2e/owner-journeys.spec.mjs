@@ -2210,7 +2210,16 @@ test("@home Task16E adaptive answer survives reload, preserves prose and opens a
     const attachment=(await uploaded.json()).attachment;
     const text="## Sales overview\nRevenue increased from the first day to the next. The chart is optional.\n\n| Day | Recorded status |\n| --- | --- |\n| First day | Complete |\n| Next day | Complete |";
     const suggestion="Compare another period";
-    const blocks=[{type:"text",text},{type:"rich_presentation",version:1,layout:"stack",panels:[
+    const nativeNode=(type,props,children=[])=>({type,props,children});
+    const forecastExpr={$computed:"calculate",args:{inputs:[{name:"sales",unit:"cents",value:1000000},{name:"factor",unit:"ratio",value:{$state:"/factor"}}],steps:[{id:"forecast",op:"multiply",args:["sales","factor"]}],format:"currency",currency:owner.currency}};
+    const nativeSpec={root:"card",state:{factor:1.1,show:false},elements:{
+      card:nativeNode("Card",{title:"Interactive growth forecast"},["slider","value","button","details"]),
+      slider:nativeNode("Slider",{label:"Growth multiplier",value:{$bindState:"/factor"},min:0.5,max:2,step:0.1}),
+      value:nativeNode("Text",{text:forecastExpr}),
+      button:{...nativeNode("Button",{label:"Use 20% growth"}),on:{press:[{action:"setState",params:{statePath:"/factor",value:1.2}},{action:"setState",params:{statePath:"/show",value:true}}]}},
+      details:{...nativeNode("Text",{text:"Owner changed the assumption"}),visible:{$state:"/show",eq:true}},
+    }};
+    const blocks=[{type:"text",text},{type:"rich_presentation",version:1,layout:"stack",nativeSpec,panels:[
       {kind:"line",title:"Daily net sales",unit:"cents",currency:owner.currency,source:"daily_rollups",from:"2026-01-01",to:"2026-01-02",asOf:"2026-01-03",
         points:[{label:"2026-01-01",value:1200},{label:"2026-01-02",value:2400}]},
       {kind:"metric",title:"Recorded sales",unit:"cents",currency:owner.currency,source:"profitability",from:"2026-01-01",to:"2026-01-02",asOf:"2026-01-03",points:[{label:"Sales",value:3600}]},
@@ -2234,6 +2243,18 @@ test("@home Task16E adaptive answer survives reload, preserves prose and opens a
       await expect(answer.getByRole("heading",{name:"Sales overview"})).toBeVisible();
       await expect(answer.getByText("Revenue increased from the first day to the next. The chart is optional.")).toBeVisible();
       const rich=answer.getByTestId("supervisor-rich-presentation");
+      const widget=rich.getByTestId("luna-native-widget");
+      await expect(widget.getByText("Interactive growth forecast")).toBeVisible();
+      const initial=new Intl.NumberFormat("en-US",{style:"currency",currency:owner.currency}).format(11000);
+      const updated=new Intl.NumberFormat("en-US",{style:"currency",currency:owner.currency}).format(12000);
+      await expect(widget.getByText(initial,{exact:true})).toBeVisible();
+      await expect(widget.getByText("Owner changed the assumption")).toHaveCount(0);
+      await widget.getByRole("slider").focus();await page.keyboard.press("ArrowRight");
+      await expect(widget.getByText(updated,{exact:true})).toBeVisible();
+      await widget.getByRole("button",{name:"Use 20% growth"}).click();
+      await expect(widget.getByText("Owner changed the assumption")).toBeVisible();
+      await expect(widget.getByText(updated,{exact:true})).toBeVisible();
+      expect(await widget.evaluate(el=>el.getBoundingClientRect().right<=window.innerWidth+1)).toBe(true);
       await expect(rich.locator('[data-supervisor-layout="stack"] [data-supervisor-layout="stack"] [data-supervisor-layout="grid"]')).toHaveCount(1);
       const chartDetail=rich.locator("figure details summary");
       await expect(chartDetail).toHaveAccessibleName(/Daily net sales/);
