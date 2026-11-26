@@ -18,6 +18,11 @@ import {getConnectorAccount,allowsGmail} from "@/lib/connectors/registry.server"
 import {gmailSearch,gmailListLabels,gmailRead,gmailReadThread,gmailReadAttachment} from "@/lib/connectors/gmail/provider.server";
 import {canonicalEvidenceDomain,canonicalQuerySourceFamily,hasObservedEvidence,investigationReadTools,unsupportedExternalEffectClaim} from "./investigation";
 import {meteredInvestigationProvider} from "./investigationUsage.server";
+import {createWebSearch} from "@/lib/ai/agent/webSearch.server";
+import {ownerPublicWebSearch} from "@/lib/connectors/publicWeb.server";
+import {assertExternalAccess,WEB_RESOURCE} from "@/lib/connectors/access.server";
+import {readCafeLocation} from "@/lib/data/cafeLocation.server";
+import {projectOwnerPublicQuery} from "@/lib/ai/agent/tools/webSearch";
 import type {RoutineRecord} from "./contracts";
 import type {ClaimedRoutine} from "./repository.server";
 
@@ -28,6 +33,8 @@ export const objectiveReadTools:readonly AgentToolName[]=[
   ...investigationReadTools.filter(name=>
     !["get_investigation_source"].includes(name)),
   "get_events",
+  // Scouting: an owner-created routine may check the public web (suppliers, competitors, local events).
+  "web_search",
   "search_gmail","list_gmail_labels","read_gmail","read_gmail_thread",
   "read_gmail_attachment",
 ];
@@ -35,7 +42,7 @@ export const objectiveReadTools:readonly AgentToolName[]=[
  * detail, while preserving broad sales, cost, labor, inventory, schedules and
  * events investigation. This is a privacy boundary, not a research script. */
 export const watchReadTools:readonly AgentToolName[]=objectiveReadTools.filter(name=>
-  !["get_labor","get_payroll_facts","get_staff_messages","get_staff_coordination_cases","get_schedule",
+  !["web_search","get_labor","get_payroll_facts","get_staff_messages","get_staff_coordination_cases","get_schedule",
     "get_week_schedule","search_gmail","list_gmail_labels","read_gmail",
     "read_gmail_thread","read_gmail_attachment"].includes(name));
 
@@ -360,6 +367,20 @@ export async function executeClaimedObjective(db:SupabaseClient,params:{
           db,routine.businessId,routine.ownerUserId,40)},
         staffCoordinationRead:()=>readClaimedStaffCoordination(db,scope),
       }:{}),
+      // Scouting: only an owner-created goal may search the public web, with the same owner-public query
+      // projection, connector access check and metered budget as interactive search. Unrequested Watch never does.
+      ...(routine.executionMode==="objective"?{webSearch:(query:string,budget?:import("@/lib/ai/agent/webSearch.server").WebSearchBudget)=>
+        ownerPublicWebSearch(scope,async()=>{
+          const revision=await assertExternalAccess(scope,"public_web",WEB_RESOURCE);
+          const place=await readCafeLocation(db,scope.businessId,[]);
+          const publicTerms=projectOwnerPublicQuery(query,String(routine.objectiveText??""),place?.city);
+          if(!publicTerms)return {available:false as const,reason:"unsafeQuery" as const};
+          const research=createWebSearch({reserveTransport:params=>metered.reserve(params,"hosted_web")});
+          const value=await research(publicTerms,budget);
+          if(await assertExternalAccess(scope,"public_web",WEB_RESOURCE)!==revision)
+            throw Error("public_web_evidence_access_changed");
+          return value;
+        })}:{}),
       ...(routine.executionMode==="objective"?{gmail:{
         labels:()=>checkedGmail(()=>gmailListLabels(scope)),
         search:(query:string,limit:number)=>checkedGmail(()=>gmailSearch(scope,query,limit)),
