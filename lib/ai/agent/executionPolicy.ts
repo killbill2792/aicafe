@@ -16,7 +16,7 @@ export function executionPolicy(model:string,worker:ExecutionBudget|undefined,le
  return {elapsedMs,maxWorkCalls:Math.max(0,Math.min(adaptive?7:5,(worker?.maxModelCalls??Infinity)-1)),
   maxToolCalls:Math.min(adaptive?24:8,worker?.maxToolCalls??Infinity),
   maxTurnOutput,maxWorkOutput:luna&&!worker?16384:adaptive?8192:1200,finalReserve,
-  finalTimeReserve:Math.min(20000,Math.floor(elapsedMs/3))};
+  finalTimeReserve:Math.min(12000,Math.floor(elapsedMs/5))};
 }
 export function remainingOutput(policy:ExecutionPolicy,spent:number,final:boolean):number{
  return Math.max(0,policy.maxTurnOutput-spent-(final?0:Math.min(policy.finalReserve,policy.maxTurnOutput)));
