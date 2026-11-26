@@ -11,7 +11,7 @@ const spec=(value:unknown)=>[{op:"add",path:"/root",value:"view"},{op:"add",path
 const fence=(value:unknown)=>String.fromCharCode(96).repeat(3)+"spec\n"+spec(value).map(p=>JSON.stringify(p)).join("\n")+"\n"+String.fromCharCode(96).repeat(3)+"\n";
 const ctx={asOf:"2026-11-25",currency:"USD"};
 const rows=[{category:"Wages",amount_cents:1200},{category:"Supplies",amount_cents:0}];
-const queries=new Map([["q1",{ok:true,rows}]]);
+const queries=new Map([["q1",{data:{ok:true,rows},source:"Returned SQL evidence"}]]);
 const chart={ref:"q1",kind:"bar",x:"category",y:"amount_cents"};
 describe("SQL research presentation",()=>{
  it("renders exact SQL values in existing panels without another query, including zero",()=>{
@@ -155,4 +155,39 @@ it("rolls back already streamed visuals from a failed call but preserves earlier
   onDelta:delta=>{client+=delta;},onPresentation:()=>{live++;},onReset:(chars,views)=>{client=client.slice(0,client.length-chars);live-=views??0;resets.push([chars,views??0]);}});
  expect(resets[0][1]).toBe(1);expect(client).toBe("Recovered.\n\nDone.");expect(live).toBe(1);
  expect(result.results.filter(r=>r.source==="response_presentation")).toHaveLength(1);
+});
+
+describe("source-independent inline presentation",()=>{
+ const source=(data:Record<string,unknown>,source:string)=>({data,source});
+ it("combines independently admitted values from arbitrary nested tool responses and SQL rows",()=>{
+  const evidence=new Map([["q1",source({ok:true,rows:[{total_cents:930000}]},"Sales evidence")],["q2",source({result:{laborCents:210000}},"Labor evidence")]]);
+  const view=resolveResearchView({panels:[{kind:"bar",title:"Costs and sales",points:[
+   {label:"Sales",value:{ref:"q1",path:["rows",0,"total_cents"]}},
+   {label:"Labor",value:{ref:"q2",path:["result","laborCents"]}},
+  ]}]},evidence,ctx);
+  expect(view?.panels[0]).toMatchObject({source:"response_evidence",unit:"cents",points:[{label:"Sales",value:930000},{label:"Labor",value:210000}],sourceDetail:"Sales evidence; Labor evidence"});
+ });
+ it("binds owner and historical text without treating it as fresh actuals",()=>{
+  const evidence=new Map([["owner",{data:{},text:"Rent $1,250.25 and utilities $450.",source:"Owner supplied"}],["history1",{data:{},text:"Earlier amount $800.",source:"Historical message",coverage:"partial" as const}]]);
+  const view=resolveResearchView({panels:[{kind:"bar",points:[{label:"Rent",value:{ref:"owner",quote:"$1,250.25"}},{label:"Earlier amount",value:{ref:"history1",quote:"$800"}}]}]},evidence,ctx);
+  expect(view?.panels[0]).toMatchObject({coverage:"partial",points:[{label:"Rent",value:125025},{label:"Earlier amount",value:80000}]});
+  expect(resolveResearchView({panels:[{kind:"metric",points:[{label:"Rent",value:{ref:"owner",quote:"$250.25"}}]}]},evidence,ctx)).toBeUndefined();
+ });
+ it("does not coerce unknown values to zero, combine incompatible units, or expose hidden paths",()=>{
+  const evidence=new Map([["q1",source({secret:42,amount_cents:1200,orders:3,missing:null},"Tool output")]]);
+  for(const path of [["secret"],["__proto__","x"],["missing"],["absent"]]){
+   expect(resolveResearchView({panels:[{kind:"metric",points:[{label:"Value",value:{ref:"q1",path}}]}]},evidence,ctx)).toBeUndefined();
+  }
+  expect(resolveResearchView({panels:[{kind:"bar",points:[{label:"Money",value:{ref:"q1",path:["amount_cents"]}},{label:"Orders",value:{ref:"q1",path:["orders"]}}]}]},evidence,ctx)).toBeUndefined();
+ });
+ it("can compose a visual without any data retrieval or extra model request",async()=>{
+  const provider:AgentProvider=async function*(params){
+   expect(JSON.stringify(params.input)).toContain("Presentation text references");
+   yield {type:"response.output_text.delta",delta:"Your provided figures.\n\n"+fence({panels:[{kind:"bar",title:"Rent and bills",points:[{label:"Rent",value:{ref:"owner",quote:"$1250"}},{label:"Bills",value:{ref:"owner",quote:"$450"}}]}]})+"These are your figures."};
+   yield {type:"response.completed",response:{usage:{input_tokens:1,output_tokens:1}}};
+  };
+  const result=await runResearchTurn({ownerText:"Rent $1250 and bills $450",cafeContext:"Cafe",provider,scope:{db:{} as never,businessId:"business",ownerUserId:"owner"},actions:{context:ctx as AgentToolContext,definitions:[]}});
+  expect(result.usage.modelCalls).toBe(1);expect(result.usage.toolCalls).toBe(0);
+  expect(agentReplyPayload(result).reply.blocks.map(b=>b.type)).toEqual(["text","rich_presentation","text"]);
+ });
 });
