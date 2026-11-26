@@ -152,7 +152,7 @@ export default function CrewInbox({name,requests,messages,self,authUserId}:{
   {feedback&&<p role="status" className="rounded-xl border border-line bg-card p-3">{feedback}</p>}
   {rejectedDraft&&<div className="rounded-xl border border-line bg-card p-3">
    <p className="font-semibold">Unsent explanation from a changed work request</p>
-   <p className="mt-2 whitespace-pre-wrap break-words">{rejectedDraft}</p>
+   <p className="mt-2 whitespace-pre-wrap wrap-break-word">{rejectedDraft}</p>
    <div className="mt-3 flex flex-wrap gap-2">
     <button type="button" disabled={pending||report.length+(report?1:0)+rejectedDraft.length>2000} onClick={()=>{
      setReport(text=>(text?text+"\n":"")+rejectedDraft);
@@ -270,7 +270,7 @@ export default function CrewInbox({name,requests,messages,self,authUserId}:{
    {shownMessages.length===0?<p className="text-ink-muted">You have not sent a message yet.</p>:
     <ul className="space-y-2">{shownMessages.map(m=><li key={m.id} className="rounded-xl border border-line bg-card p-4">
      <p className="text-sm font-semibold capitalize">{m.actor==="owner"?"Message from café owner":m.response_code.replace("_"," ")}</p>
-     {m.body&&<p className="mt-1 whitespace-pre-wrap break-words">{m.body}</p>}
+     {m.body&&<p className="mt-1 whitespace-pre-wrap wrap-break-word">{m.body}</p>}
      <time className="mt-1 block text-xs text-ink-muted" dateTime={m.received_at}>{new Date(m.received_at).toLocaleString()}</time>
     </li>)}</ul>}
   </section>

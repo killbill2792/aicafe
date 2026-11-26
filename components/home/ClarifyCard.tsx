@@ -154,7 +154,7 @@ export default function ClarifyCard({block,locale,copy,state,choice,disabled,onS
  return <section dir={locale==="ar"?"rtl":"ltr"} className="space-y-2 rounded-3xl glass p-4">
    <h3 className="text-[1.0625rem] font-semibold leading-snug text-ink">{block.question}</h3>
    <div className="space-y-1.5">{block.options.map((o,i)=><button key={o.value} type="button" disabled={disabled}
-     onClick={()=>onSend(o.label)} className="flex min-h-[max(48px,3rem)] w-full items-center gap-3 rounded-2xl bg-surface2/60 px-2.5 text-start text-[1.0625rem] text-ink transition-colors hover:bg-surface2 focus-visible:outline focus-visible:outline-2 focus-visible:outline-ink disabled:opacity-50">
+     onClick={()=>onSend(o.label)} className="flex min-h-[max(48px,3rem)] w-full items-center gap-3 rounded-2xl bg-surface2/60 px-2.5 text-start text-[1.0625rem] text-ink transition-colors hover:bg-surface2 focus-visible:outline-solid focus-visible:outline-2 focus-visible:outline-ink disabled:opacity-50">
      <span aria-hidden="true" className="flex size-7 shrink-0 items-center justify-center rounded-lg border border-line/70 text-sm text-ink-muted">{String.fromCharCode(65+i)}</span><span>{o.label}</span>
    </button>)}</div>
    {block.allowOther&&(other?<form className="space-y-2" onSubmit={e=>{e.preventDefault();if(typed.trim()&&!disabled){
@@ -163,6 +163,6 @@ export default function ClarifyCard({block,locale,copy,state,choice,disabled,onS
      <input maxLength={200} value={typed} onChange={e=>setTyped(e.target.value)} aria-label={copy.clarifyOtherPlaceholder}
        placeholder={copy.clarifyOtherPlaceholder} className="min-h-[max(48px,3rem)] w-full rounded-xl border border-line bg-surface px-3 text-[1.0625rem] text-ink"/>
      <button type="submit" disabled={disabled||!typed.trim()} className="min-h-[max(56px,3.5rem)] w-full rounded-xl bg-accent px-4 text-[1.0625rem] font-bold text-on-accent disabled:opacity-50">{copy.clarifySend}</button>
-   </form>:<button type="button" disabled={disabled} onClick={()=>setOther(true)} className="min-h-[max(48px,3rem)] w-full text-start text-[1.0625rem] font-semibold text-good focus-visible:outline focus-visible:outline-2 focus-visible:outline-ink">{copy.clarifyOther}</button>)}
+   </form>:<button type="button" disabled={disabled} onClick={()=>setOther(true)} className="min-h-[max(48px,3rem)] w-full text-start text-[1.0625rem] font-semibold text-good focus-visible:outline-solid focus-visible:outline-2 focus-visible:outline-ink">{copy.clarifyOther}</button>)}
  </section>;
 }

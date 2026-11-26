@@ -19,13 +19,13 @@ export default function BeforeAfterRows({rows,locale,currency="USD"}:{
    const after=isTyped(r)?render(r.after):r.after;
    const label=isTyped(r)?formatCardField(r.field,r.label,locale):r.label;
    return <div key={isTyped(r)?r.field:i} className="min-w-0 rounded-xl border border-line p-3">
-    <p className="break-words text-[1.0625rem] font-bold">{label}</p>
+    <p className="wrap-break-word text-[1.0625rem] font-bold">{label}</p>
     <div className="mt-2 flex flex-wrap items-start gap-3 text-[1.0625rem]">
-     {before!==null&&before!==undefined&&<div className="min-w-0 flex-1 whitespace-pre-wrap break-words">
+     {before!==null&&before!==undefined&&<div className="min-w-0 flex-1 whitespace-pre-wrap wrap-break-word">
       <p className="text-[1.0625rem] text-ink-muted">{copy.before}</p><p>{before}</p></div>}
      {before!==null&&before!==undefined&&after!==null&&after!==undefined&&
       <span aria-hidden="true" className="self-center text-ink-muted">{locale==="ar"?"←":"→"}</span>}
-     {after!==null&&after!==undefined&&<div className="min-w-0 flex-1 whitespace-pre-wrap break-words">
+     {after!==null&&after!==undefined&&<div className="min-w-0 flex-1 whitespace-pre-wrap wrap-break-word">
       <p className="text-[1.0625rem] text-ink-muted">{copy.after}</p><p>{after}</p></div>}
     </div>
    </div>;

@@ -58,7 +58,7 @@ export function ProvenanceTooltip({label,position,tooltipRef,onPointerEnter,onPo
   return <span ref={tooltipRef} role="tooltip" dir="auto" tabIndex={-1}
     onMouseEnter={onPointerEnter} onMouseLeave={onPointerLeave}
     onFocus={onTooltipFocus} onBlur={onTooltipBlur} onKeyDown={onTooltipKeyDown}
-    className="pointer-events-auto fixed z-[100] max-h-[calc(100dvh-16px)] overflow-y-auto rounded bg-ink px-3 py-2 text-[1.0625rem] leading-relaxed text-paper shadow"
+    className="pointer-events-auto fixed z-100 max-h-[calc(100dvh-16px)] overflow-y-auto rounded-sm bg-ink px-3 py-2 text-[1.0625rem] leading-relaxed text-paper shadow-sm"
     style={{left:position?.left??0,top:position?.top??0,width:position?.width??320,
       transform:"translateX(-50%)",visibility:position?"visible":"hidden"}}>{label}</span>;
 }
@@ -124,7 +124,7 @@ function SourceUnderline({tone,label,children}:{tone:keyof typeof tones;label:st
         else if(command==="end")surface.scrollTop=surface.scrollHeight;
         else surface.scrollTop+=command;
       }}
-      className={`relative inline cursor-help border-0 bg-transparent p-0 align-baseline text-inherit underline decoration-dotted decoration-2 underline-offset-[3px] before:absolute before:inset-x-0 before:top-1/2 before:h-12 before:-translate-y-1/2 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ink ${underlineTones[tone]}`}
+      className={`relative inline cursor-help border-0 bg-transparent p-0 align-baseline text-inherit underline decoration-dotted decoration-2 underline-offset-[3px] before:absolute before:inset-x-0 before:top-1/2 before:h-12 before:-translate-y-1/2 focus-visible:outline-solid focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ink ${underlineTones[tone]}`}
       style={{font:"inherit"}}>{children}
     </button>
     {open&&typeof document!=="undefined"&&createPortal(
@@ -241,15 +241,15 @@ function sourceAnnotationPlugin(options:MarkOptions){
   walk(tree);
  };
 }
-const headingClass="mt-4 mb-1 font-semibold leading-snug text-balance break-words text-ink";
-const cellClass="border-b border-line px-1.5 sm:px-3 py-2 align-top whitespace-normal [overflow-wrap:anywhere]";
+const headingClass="mt-4 mb-1 font-semibold leading-snug text-balance wrap-break-word text-ink";
+const cellClass="border-b border-line px-1.5 sm:px-3 py-2 align-top whitespace-normal wrap-anywhere";
 const alignment=(value:unknown)=>value==="right"||value==="end"?"text-end":value==="center"?"text-center":"text-start";
 function ResponseTable({children,node}:React.ComponentProps<"table">&ExtraProps){
  const head=node?.children.find((child):child is Element=>child.type==="element"&&child.tagName==="thead");
  const row=head?.children.find((child):child is Element=>child.type==="element"&&child.tagName==="tr");
  const columns=row?.children.filter((child):child is Element=>child.type==="element"&&child.tagName==="th")??[];
  const wide=columns.length>4;
- return <div role="region" aria-label="Response table" tabIndex={0} className="min-w-0 max-w-full overflow-x-auto rounded-lg border border-line focus-visible:outline focus-visible:outline-2 focus-visible:outline-ink">
+ return <div role="region" aria-label="Response table" tabIndex={0} className="min-w-0 max-w-full overflow-x-auto rounded-lg border border-line focus-visible:outline-solid focus-visible:outline-2 focus-visible:outline-ink">
   <table role="table" className={"w-full table-fixed border-collapse text-[0.9375rem] sm:text-[1.0625rem] "+(wide?wideResponseTableClass:"")}>
    <caption className="sr-only">Response table</caption>
    <colgroup>{columns.map((c,i)=><col key={i} style={columns.length<=3&&c.properties.align==="right"?{width:"35%"}:undefined}/>)}</colgroup>
@@ -264,7 +264,7 @@ const components:Components={
   const label=node?.properties.dataCafeColumn;
   const wide=typeof label==="string";
   return <td role="cell" className={cellClass+" "+alignment(align??node?.properties.align??style?.textAlign)+(wide?" "+wideResponseCellClass:"")}>
-   {wide&&<span aria-hidden="true" className={wideResponseLabelClass}>{label}</span>}{wide?<div className="min-w-0 [overflow-wrap:anywhere]">{children}</div>:children}
+   {wide&&<span aria-hidden="true" className={wideResponseLabelClass}>{label}</span>}{wide?<div className="min-w-0 wrap-anywhere">{children}</div>:children}
   </td>;
  },
  h1:({children})=><h2 className={headingClass+" text-xl"}>{children}</h2>,
@@ -273,7 +273,7 @@ const components:Components={
  h4:({children})=><h5 className={headingClass+" text-[1.0625rem]"}>{children}</h5>,
  h5:({children})=><h6 className={headingClass+" text-[1.0625rem]"}>{children}</h6>,
  h6:({children})=><h6 className={headingClass+" text-[1.0625rem]"}>{children}</h6>,
- p:({children})=><p className="whitespace-pre-line break-words">{children}</p>,
+ p:({children})=><p className="whitespace-pre-line wrap-break-word">{children}</p>,
  strong:({children})=><strong className="font-bold">{children}</strong>,
  ul:({children})=><ul className="list-disc space-y-1 ps-6">{children}</ul>,
  ol:({children,start})=><ol start={start} className="list-decimal space-y-1 ps-6">{children}</ol>,
@@ -282,8 +282,8 @@ const components:Components={
  a:({href,children})=>href&&/^https?:\/\//iu.test(href)?<a href={href} target="_blank" rel="noopener noreferrer" className="underline text-accent-text">{children}</a>:<span>{children}</span>,
  img:({alt})=><span>{alt}</span>,
  pre:({children})=><pre className="max-w-full overflow-x-auto rounded-lg bg-surface2 p-3 text-sm">{children}</pre>,
- code:({children})=><code className="rounded bg-surface2 px-1">{children}</code>,
- inlineCode:({children})=><code className="rounded bg-surface2 px-1">{children}</code>,
+ code:({children})=><code className="rounded-sm bg-surface2 px-1">{children}</code>,
+ inlineCode:({children})=><code className="rounded-sm bg-surface2 px-1">{children}</code>,
  blockquote:({children})=><blockquote className="border-s-2 border-line ps-3 text-ink-muted">{children}</blockquote>,
  hr:()=> <hr className="border-line"/>,
  span:({children,node})=>{
@@ -339,7 +339,7 @@ function MarkdownSegment({text,options,streaming}:{text:string;options:MarkOptio
  const rehypePlugins=[...safeRehype,[sourceAnnotationPlugin,{...options,spans:normalized.spans}] as [typeof sourceAnnotationPlugin,MarkOptions]];
  return <Streamdown mode={streaming?"streaming":"static"} isAnimating={streaming}
    dir={options.locale==="ar"?"rtl":"auto"} controls={false} components={components}
-   rehypePlugins={rehypePlugins} urlTransform={safeUrl} className="space-y-2 min-w-0 break-words">{normalized.text}</Streamdown>;
+   rehypePlugins={rehypePlugins} urlTransform={safeUrl} className="space-y-2 min-w-0 wrap-break-word">{normalized.text}</Streamdown>;
 }
 export function SourceLegend({sources,labels,legendLabel="Number sources"}:{
  sources:readonly ("owner"|"estimate"|"unchecked")[];labels:ProvenanceLabels;legendLabel?:string;
@@ -380,13 +380,13 @@ export function ChatMarkdown({text,unverified=[],label,labels,locale="en",showLe
  const copy=labels??{owner:"You told me",estimate:"Estimate",unchecked:label??"Not checked against your records"};
  const spans=[...unverified].filter(s=>Number.isSafeInteger(s.start)&&Number.isSafeInteger(s.end)&&s.start>=0&&s.end>s.start&&s.end<=text.length)
   .sort((a,b)=>a.start-b.start).filter((s,i,all)=>i===0||s.start>=all[i-1].end);
- return <div data-testid="supervisor-answer-prose" className={compact?"space-y-1 min-w-0 break-words text-[0.9375rem] leading-snug text-ink-muted":"space-y-2 min-w-0 break-words text-[1.0625rem] leading-relaxed text-ink"}>
+ return <div data-testid="supervisor-answer-prose" className={compact?"space-y-1 min-w-0 wrap-break-word text-[0.9375rem] leading-snug text-ink-muted":"space-y-2 min-w-0 wrap-break-word text-[1.0625rem] leading-relaxed text-ink"}>
   {legacySections(text).map(section=>{
    const options:MarkOptions={locale,labels:copy,spans:spans.filter(s=>s.start<section.end&&s.end>section.start)
     .map(s=>({...s,start:s.start-section.start,end:s.end-section.start}))};
    const body=<MarkdownSegment text={text.slice(section.start,section.end)} options={options} streaming={streaming&&!spans.length}/>;
    return section.details?<details key={section.start} className="rounded-xl border border-line bg-surface2 text-ink">
-    <summary className="min-h-12 cursor-pointer rounded-xl px-4 py-3 font-semibold focus-visible:outline focus-visible:outline-2 focus-visible:outline-ink">{({en,es,ar}[locale]).SupervisorChat.howIGotThis}</summary>
+    <summary className="min-h-12 cursor-pointer rounded-xl px-4 py-3 font-semibold focus-visible:outline-solid focus-visible:outline-2 focus-visible:outline-ink">{({en,es,ar}[locale]).SupervisorChat.howIGotThis}</summary>
     <div className="space-y-2 border-t border-line px-4 py-3">{body}</div>
    </details>:<div key={section.start} className="min-w-0">{body}</div>;
   })}
