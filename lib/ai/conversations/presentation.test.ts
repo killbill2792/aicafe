@@ -87,7 +87,7 @@ it("permits a titled nested disclosure and rejects an unlabeled interactive grou
  expect(richPresentationSchema.safeParse({...b,groups:[groups[0],{...groups[1],title:undefined}]}).success).toBe(false);
 });
 
-it("does not render old ungrounded numerical group labels as trusted headings",()=>{
- for(const title of ["Profit $9,999","Margin 50٪","Revenue ９９９","Staff ②"])expect(descriptiveGroupTitle(title)).toBeUndefined();
+it("preserves model-authored numerical group labels",()=>{
+ for(const title of ["Profit $9,999","Margin 50٪","Revenue ９９９","Staff ②"])expect(descriptiveGroupTitle(title)).toBe(title);
  expect(descriptiveGroupTitle("Cost breakdown")).toBe("Cost breakdown");
 });
