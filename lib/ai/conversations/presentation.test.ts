@@ -1,5 +1,5 @@
 import {describe,it,expect} from "vitest";
-import {descriptiveGroupTitle,richPresentationSchema,presentationReport,interactiveCalcSchema,evaluatePresentationCalc,agendaSchema,calendarPage} from "./presentation";
+import {descriptiveGroupTitle,richPresentationSchema,recoverRichPresentation,presentationReport,interactiveCalcSchema,evaluatePresentationCalc,agendaSchema,calendarPage} from "./presentation";
 describe("Task16E presentation snapshot and safe report",()=>{
  it("preserves the source-marked answer and exact minor unit values, not executable content",()=>{
   const p=richPresentationSchema.parse({type:"rich_presentation",version:1,layout:"stack",report:true,suggestions:[],panels:[
@@ -90,4 +90,11 @@ it("permits a titled nested disclosure and rejects an unlabeled interactive grou
 it("preserves model-authored numerical group labels",()=>{
  for(const title of ["Profit $9,999","Margin 50٪","Revenue ９９９","Staff ②"])expect(descriptiveGroupTitle(title)).toBe(title);
  expect(descriptiveGroupTitle("Cost breakdown")).toBe("Cost breakdown");
+});
+
+it("keeps all safe leaves when a group layout is invalid, rather than rejecting the full answer",()=>{
+ const p={kind:"donut",title:"Profit change",unit:"cents",currency:null,from:"2026-01-01",to:"2027-01-01",asOf:"2026-01-02",source:"response_evidence",coverage:"partial",points:[{label:"Known",value:-0.125},{label:"Zero",value:0}]};
+ const b={type:"rich_presentation",version:1,layout:"stack",panels:[p,{kind:"unsafe",code:"not executable"}],suggestions:[],groups:[{id:"g0",layout:"compare",items:["panel0","panel9"]}]};
+ expect(recoverRichPresentation(b)).toMatchObject({panels:[p]});
+ expect(recoverRichPresentation(b)?.groups).toBeUndefined();
 });
