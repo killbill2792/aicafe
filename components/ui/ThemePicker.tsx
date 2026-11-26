@@ -20,7 +20,7 @@ export function ThemePicker({initialTheme, initialMode, initialTextSize = DEFAUL
   const pickTextSize = (id: TextSize) => { document.documentElement.setAttribute("data-text-size", id); setTextSize(id); persist("cp_text",id); };
   return <section aria-labelledby="theme-heading" className="rounded-card-lg border border-line bg-surface p-4">
     <h2 id="theme-heading" className="font-headline text-xl font-bold text-fg">{t("theme")}</h2>
-    <p className="mt-1 text-[1.0625rem] leading-[1.4] text-muted">{t("themeDescription")}</p>
+    <p className="mt-1 text-[1.0625rem] leading-[1.4] text-ink-muted">{t("themeDescription")}</p>
     <div role="radiogroup" aria-label={t("chooseTheme")} className="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-4">
       {themes.map((item) => {
         const selected=theme===item.id;

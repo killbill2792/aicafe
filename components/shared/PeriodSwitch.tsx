@@ -67,7 +67,7 @@ export default function PeriodSwitch({ current, defaultPeriod = "today" }: { cur
             onClick={() => setPeriod(period)}
             className={`min-h-12 min-w-0 flex-1 wrap-break-word rounded-3xl px-1 text-[0.9375rem] font-semibold transition-colors ${
               waiting ? "bg-card text-ink ring-2 ring-accent-text" :
-              active ? "bg-card font-bold text-ink shadow-xs" : "bg-transparent text-muted"
+              active ? "bg-card font-bold text-ink shadow-xs" : "bg-transparent text-ink-muted"
             }`}
           >
             {t(period)}

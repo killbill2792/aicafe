@@ -31,7 +31,7 @@ export default function WeekGrid({dates,people,shifts,costShifts=shifts,toastDat
      const weekday=new Date(Date.UTC(y,m-1,d)).getUTCDay();
      const windows=openHours?.[OPEN_HOURS_DAY_KEYS[weekday]];
      return <th key={date} scope="col" className={`min-w-28 p-2 text-center ${gaps.some(g=>g.date===date)?"text-neg":""}`}>
-      <span className="block">{stamp(date)}</span><span className="text-sm font-medium text-muted">
+      <span className="block">{stamp(date)}</span><span className="text-sm font-medium text-ink-muted">
        {windows===undefined?t("hoursNotSet"):windows.length?windows.map(w=>w.join("–")).join(", "):t("closed")}</span></th>;
     })}<th scope="col" className="p-3 text-end">{t("week")}</th></tr></thead>
    <tbody>{displayRows.map(({key,person,name},index)=>{
@@ -41,8 +41,8 @@ export default function WeekGrid({dates,people,shifts,costShifts=shifts,toastDat
     return <tr key={key} className="border-b border-line"><th scope="row" className="p-3 text-start">
      <div className="flex items-center gap-2"><span className="grid size-10 place-items-center rounded-full bg-accent-soft font-bold text-accent-text">{name[0]}</span>
      <div><strong>{name}</strong>{person?.active===false&&
-       <span className="ms-2 text-sm font-normal text-muted">({t("inactivePerson")})</span>}
-       <div className="text-sm font-normal text-muted">{person? <>{person.role??t("team")} · {person.wageCents==null?t("noWage"):fmt(person.wageCents,currency)+"/h"}</> : t("toastPlannedLabel")}</div></div></div></th>
+       <span className="ms-2 text-sm font-normal text-ink-muted">({t("inactivePerson")})</span>}
+       <div className="text-sm font-normal text-ink-muted">{person? <>{person.role??t("team")} · {person.wageCents==null?t("noWage"):fmt(person.wageCents,currency)+"/h"}</> : t("toastPlannedLabel")}</div></div></div></th>
      {dates.map(date=><td key={date} className="p-1.5 align-middle">
       {shifts.filter(s=>s.employeeId===person?.id&&s.date===date).map(s=><button key={s.id}
        disabled={readOnly} onClick={()=>onEdit(date,s.id)} className={`min-h-12 w-full rounded-xl border px-2 py-1 text-start text-[0.8125rem] font-bold ${index%2?"border-pos/20 bg-pos-soft text-pos":"border-accent-text/20 bg-accent-soft text-accent-text"}`}>
@@ -53,20 +53,20 @@ export default function WeekGrid({dates,people,shifts,costShifts=shifts,toastDat
        <span className="block">{e.source==="toast_actual"?t("toastActualLabel"):e.source==="toast_planned"?t("toastPlannedLabel"):t("aiDraftLabel")}</span>
       </div>)}
       <button disabled={readOnly||!person||person.active===false} aria-label={t("addPersonShift",{name,date})} onClick={()=>{if(person)onAdd(date,person.id);}}
-       className="min-h-12 w-full text-muted hover:text-accent-text">+</button>
+       className="min-h-12 w-full text-ink-muted hover:text-accent-text">+</button>
      </td>)}
-     <td className="p-2 text-end font-bold">{week&&!unknownPerson?h(week.paidMinutes):"—"}<span className="block text-sm text-muted">{week?wageSummary({...week,unknownCount:week.unknownCount+(unknownPerson?1:0)}):"—"}{week?.estimated?" "+t("estimated"):""}</span></td>
+     <td className="p-2 text-end font-bold">{week&&!unknownPerson?h(week.paidMinutes):"—"}<span className="block text-sm text-ink-muted">{week?wageSummary({...week,unknownCount:week.unknownCount+(unknownPerson?1:0)}):"—"}{week?.estimated?" "+t("estimated"):""}</span></td>
     </tr>;
    })}</tbody>
    <tfoot className="font-semibold"><tr className="bg-surface2"><th className="p-3 text-start">{t("dayTotal")}</th>
-    {dates.map(date=>{const day=dayTotals(date,costShifts),hasToast=toastDates.has(date);return <td key={date} className="p-2 text-center">{hasToast?"—":h(day.paidMinutes)}<span className="block text-sm text-muted">{wageSummary({...day,unknownCount:day.unknownCount+(hasToast?1:0)})}{day.estimated?" "+t("estimated"):""}</span></td>})}<td/></tr>
+    {dates.map(date=>{const day=dayTotals(date,costShifts),hasToast=toastDates.has(date);return <td key={date} className="p-2 text-center">{hasToast?"—":h(day.paidMinutes)}<span className="block text-sm text-ink-muted">{wageSummary({...day,unknownCount:day.unknownCount+(hasToast?1:0)})}{day.estimated?" "+t("estimated"):""}</span></td>})}<td/></tr>
     <tr><th className="p-3 text-start">{t("coverage")}</th>{dates.map(date=>{
      const gap=gaps.find(g=>g.date===date),state=coverageVerification(date,openHours,coverageEnabled);
      const checked=state==="checked";
      const message=state==="disabled"?t("coverageDisabled"):state==="unknown"?t("coverageNotChecked"):
       state==="closed"?t("closed"):gap?
        "⚠ "+t("coverageDetail",{start:gap.start,end:gap.end,count:gap.headcount}):"✓ "+t("allDayCoverage");
-     return <td key={date} className={`p-2 text-center text-sm ${checked?(gap?"text-neg":"text-pos"):"text-muted"}`}>{message}</td>
+     return <td key={date} className={`p-2 text-center text-sm ${checked?(gap?"text-neg":"text-pos"):"text-ink-muted"}`}>{message}</td>
     })}<td/></tr></tfoot>
   </table></div>;
 }

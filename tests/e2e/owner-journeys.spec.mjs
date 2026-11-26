@@ -2212,8 +2212,14 @@ test("@home Task16E adaptive answer survives reload, preserves prose and opens a
     const suggestion="Compare another period";
     const nativeNode=(type,props,children=[])=>({type,props,children});
     const forecastExpr={$computed:"calculate",args:{inputs:[{name:"sales",unit:"cents",value:1000000},{name:"factor",unit:"ratio",value:{$state:"/factor"}}],steps:[{id:"forecast",op:"multiply",args:["sales","factor"]}],format:"currency",currency:owner.currency}};
-    const nativeSpec={root:"card",state:{factor:1.1,show:false},elements:{
-      card:nativeNode("Card",{title:"Interactive growth forecast"},["slider","value","button","details"]),
+    const nativeSpec={root:"card",state:{factor:1.1,show:false,dialog:false},elements:{
+      card:nativeNode("Card",{title:"Interactive growth forecast"},["slider","value","button","details","grid","code","openDialog","dialog"]),
+      grid:nativeNode("Grid",{columns:4,gap:"sm"},["a","b","c","d"]),
+      a:nativeNode("Text",{text:"A"}),b:nativeNode("Text",{text:"B"}),c:nativeNode("Text",{text:"C"}),d:nativeNode("Text",{text:"D"}),
+      code:nativeNode("Text",{text:"Native muted surface",variant:"code"}),
+      openDialog:{...nativeNode("Button",{label:"Open forecast details"}),on:{press:{action:"setState",params:{statePath:"/dialog",value:true}}}},
+      dialog:nativeNode("Dialog",{title:"Forecast assumptions",description:"Local model assumptions",openPath:"/dialog"},["dialogText"]),
+      dialogText:nativeNode("Text",{text:"No business data is changed"}),
       slider:nativeNode("Slider",{label:"Growth multiplier",value:{$bindState:"/factor"},min:0.5,max:2,step:0.1}),
       value:nativeNode("Text",{text:forecastExpr}),
       button:{...nativeNode("Button",{label:"Use 20% growth"}),on:{press:[{action:"setState",params:{statePath:"/factor",value:1.2}},{action:"setState",params:{statePath:"/show",value:true}}]}},
@@ -2245,6 +2251,18 @@ test("@home Task16E adaptive answer survives reload, preserves prose and opens a
       const rich=answer.getByTestId("supervisor-rich-presentation");
       const widget=rich.getByTestId("luna-native-widget");
       await expect(widget.getByText("Interactive growth forecast")).toBeVisible();
+      const grid=widget.locator(".grid-cols-4");
+      await expect(grid).toBeVisible();
+      expect(await grid.evaluate(el=>getComputedStyle(el).gridTemplateColumns.split(" ").length)).toBe(4);
+      const code=widget.getByText("Native muted surface",{exact:true});
+      await expect(code).toBeVisible();
+      expect(await code.evaluate(el=>{const sample=document.createElement("span");sample.className="bg-surface2";document.body.appendChild(sample);const matched=getComputedStyle(el).backgroundColor===getComputedStyle(sample).backgroundColor;sample.remove();return matched;})).toBe(true);
+      await widget.getByRole("button",{name:"Open forecast details"}).click();
+      const nativeDialog=page.getByRole("dialog",{name:"Forecast assumptions"});
+      await expect(nativeDialog).toBeVisible();
+      expect(await nativeDialog.evaluate(el=>getComputedStyle(el).animationName)).not.toBe("none");
+      await nativeDialog.getByRole("button",{name:"Close",exact:true}).click();
+      await expect(nativeDialog).toHaveCount(0);
       const initial=new Intl.NumberFormat("en-US",{style:"currency",currency:owner.currency}).format(11000);
       const updated=new Intl.NumberFormat("en-US",{style:"currency",currency:owner.currency}).format(12000);
       await expect(widget.getByText(initial,{exact:true})).toBeVisible();

@@ -30,10 +30,10 @@ export default function ShiftPreview({personId,date,start,end,breakMinutes,editi
  ] as const;
  return <section className="mt-4 rounded-card bg-surface2 p-4">
   <div className="flex justify-between gap-2"><h3 className="font-bold">{t("shiftCost")}</h3><strong className="text-2xl">{money(result.next.costCents)}</strong></div>
-  <p className="my-2 text-sm text-muted">{t("costBreakdown",{hours:(result.next.minutes/60).toFixed(1),break:breakMinutes,paid:(result.next.paidMinutes/60).toFixed(1)})}
+  <p className="my-2 text-sm text-ink-muted">{t("costBreakdown",{hours:(result.next.minutes/60).toFixed(1),break:breakMinutes,paid:(result.next.paidMinutes/60).toFixed(1)})}
     {result.next.wageCents!=null?" × "+fmt(result.next.wageCents,currency)+"/h":""}
     {result.next.estimated?" · "+t("estimate"):""}</p>
-  {!coverageChecked&&<p className="mt-1 text-muted">{t("coverageNotChecked")}</p>}
+  {!coverageChecked&&<p className="mt-1 text-ink-muted">{t("coverageNotChecked")}</p>}
   {checks.map(([okay,good,bad],i)=><p key={i} className={`mt-1 text-sm font-semibold ${okay?"text-pos":"text-neg"}`}>{okay?"✓ ":"⚠ "}{okay?good:bad}</p>)}
   <p className="mt-3 text-sm">{t("weekLabor",{before:weeklyCost(result.before,result.beforeUnknownCount),after:weeklyCost(result.after,result.afterUnknownCount)})}{result.estimated?" · "+t("estimated"):""}</p>
  </section>;

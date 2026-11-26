@@ -59,6 +59,7 @@ async function capture(route,width,mode){
    samples:{
     card:sample("bg-card text-ink border border-line rounded-card shadow-card",["backgroundColor","color","borderTopColor","borderTopWidth","borderTopLeftRadius","boxShadow"]),
     nav:sample("w-sidenav",["width"]),
+      mutedText:sample(variant==="before"?"text-muted":"text-ink-muted",["color"]),
     typography:sample("text-base font-semibold",["fontSize","lineHeight","fontWeight"]),
     wrapAnywhere:sample(variant==="before"?"[overflow-wrap:anywhere]":"wrap-anywhere",["overflowWrap"]),
     wrap:sample(variant==="before"?"break-words":"wrap-break-word",["overflowWrap"]),

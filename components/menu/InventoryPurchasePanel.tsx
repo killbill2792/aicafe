@@ -158,12 +158,12 @@ export default function InventoryPurchasePanel({items,month,rows,currency,locale
   </div>
   {unavailable&&<p role="alert" className="text-[1.0625rem] text-neg">{t.unavailable}</p>}
   {!unavailable&&<div className="space-y-2">
-   {rows.filter(r=>!r.voided).length===0&&<p className="text-[1.0625rem] text-muted">{t.empty}</p>}
+   {rows.filter(r=>!r.voided).length===0&&<p className="text-[1.0625rem] text-ink-muted">{t.empty}</p>}
    {rows.filter(r=>!r.voided).map(r=><div key={r.lineId} className="rounded-xl border border-line p-3">
     <div className="flex flex-wrap items-center justify-between gap-2">
      <div><p className="text-[1.0625rem] font-bold">{r.ingredientName}</p>
-      <p className="text-[1.0625rem] text-muted">{r.date} · {qty(r.quantity)+" "+r.unit+" · "+qty(r.baseQuantity)+" "+r.baseUnit}</p>
-      <span className="text-[1.0625rem] text-muted">{sourceLabel(r.source)}</span></div>
+      <p className="text-[1.0625rem] text-ink-muted">{r.date} · {qty(r.quantity)+" "+r.unit+" · "+qty(r.baseQuantity)+" "+r.baseUnit}</p>
+      <span className="text-[1.0625rem] text-ink-muted">{sourceLabel(r.source)}</span></div>
      <p className="text-[1.0625rem] font-semibold">{money(r.costCents)}</p>
     </div>
     {editing===r.lineId&&editDraft?<div className="mt-3 space-y-2">

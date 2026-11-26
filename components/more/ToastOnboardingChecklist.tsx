@@ -13,6 +13,6 @@ export default function ToastOnboardingChecklist({status}:{businessId:string;sta
   <ol className="flex flex-col gap-3">{completed.map((done,i)=><li key={i} className="flex gap-3">
    <span aria-hidden="true">{status==null?"…":done?"✓":"○"}</span><p><span className="sr-only">{status==null?t("pending"):t(done?"checklistDone":"checklistPending")}</span>{t("checklist"+(i+1))}</p>
   </li>)}</ol>
-  <p className="mt-3 text-muted">{t("checklistScopes")}</p>
+  <p className="mt-3 text-ink-muted">{t("checklistScopes")}</p>
  </details>;
 }

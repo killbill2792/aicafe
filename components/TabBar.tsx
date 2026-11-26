@@ -26,7 +26,7 @@ export default function TabBar() {
                 href={href}
                 aria-current={isActive ? "page" : undefined}
                 className={`flex min-h-[48px] flex-col items-center justify-center gap-1 py-2 text-[0.8125rem] ${
-                  isActive ? "rounded-chip bg-accent-soft text-accent-text" : "text-muted"
+                  isActive ? "rounded-chip bg-accent-soft text-accent-text" : "text-ink-muted"
                 }`}
               >
                 <Icon aria-hidden="true" size={22} />

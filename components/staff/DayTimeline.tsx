@@ -29,7 +29,7 @@ export default function DayTimeline({date,shifts,gaps,openHours,people,onShiftCl
      <span className="truncate">{block.title}</span></button>;
    })}
   </div>
-  <div className="relative mt-2 h-4 text-[0.6875rem] font-semibold text-muted">{rendered.ticks.map(t=>
+  <div className="relative mt-2 h-4 text-[0.6875rem] font-semibold text-ink-muted">{rendered.ticks.map(t=>
     <span key={t.at} className="absolute -translate-x-1/2" style={{left:t.at+"%"}}>{t.label}</span>)}</div>
  </div>;
 }

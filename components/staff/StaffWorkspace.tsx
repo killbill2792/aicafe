@@ -237,9 +237,9 @@ export default function StaffWorkspace({initial,tab="schedule",locale="en",initi
   <header className="flex items-center justify-between gap-3"><h1 className="font-headline text-2xl font-extrabold">{t("schedule")}</h1>
    <div className="flex gap-2"><Link className="flex min-h-12 items-center rounded-full border border-line px-4" href={`/${locale}/staff/rules`}>{t("rules")}</Link><button disabled={data.readOnly} aria-label={t("addShift")} onClick={()=>openShift(date)} className="min-h-12 min-w-12 rounded-full bg-accent text-on-accent">+</button></div>
   </header>
-  {data.readOnly&&<p className="rounded-xl bg-surface2 p-3 text-muted">{t("readOnly")}</p>}
+  {data.readOnly&&<p className="rounded-xl bg-surface2 p-3 text-ink-muted">{t("readOnly")}</p>}
   <div className="grid grid-cols-2 rounded-2xl bg-surface2 p-1">{["schedule","team"].map(k=><button key={k} onClick={()=>setScreen(k)} aria-pressed={screen===k}
-    className={`min-h-12 rounded-xl font-bold ${screen===k?"bg-surface shadow-sm":"text-muted"}`}>{k==="schedule"?t("schedule"):t("team")}</button>)}</div>
+    className={`min-h-12 rounded-xl font-bold ${screen===k?"bg-surface shadow-sm":"text-ink-muted"}`}>{k==="schedule"?t("schedule"):t("team")}</button>)}</div>
   {screen==="schedule"?<>
    {alertError&&<p role="alert" className="rounded-xl bg-warn-soft p-3 text-warn-text">{t("ruleAlertError",{error:alertError})}</p>}
    {focusRule&&!deepShift&&<p role="status" className="rounded-xl bg-warn-soft p-3 text-warn-text">{t("manualRuleReview")} {t("noMatchingShift")}</p>}
@@ -261,17 +261,17 @@ export default function StaffWorkspace({initial,tab="schedule",locale="en",initi
    </section>}
    <div className="flex items-center justify-between gap-4 rounded-2xl border border-line bg-surface p-3">
     <Link href={`?week=${new Date(Date.parse(data.weekStart+"T12:00:00Z")-7*86400000).toISOString().slice(0,10)}`} className="p-3"><span className="inline-block rtl:rotate-180">‹</span></Link>
-    <div className="text-center font-semibold">{dayLabel(data.dates[0])} – {dayLabel(data.dates[6])}<div className="text-sm text-muted">{status}</div></div>
+    <div className="text-center font-semibold">{dayLabel(data.dates[0])} – {dayLabel(data.dates[6])}<div className="text-sm text-ink-muted">{status}</div></div>
     <Link href={`?week=${new Date(Date.parse(data.weekStart+"T12:00:00Z")+7*86400000).toISOString().slice(0,10)}`} className="p-3"><span className="inline-block rtl:rotate-180">›</span></Link>
    </div>
-   {(data.calendarWarnings??[]).length>0&&<p role="status" className="rounded-lg border border-line p-3 text-sm text-muted">{t("calendarPartial")}</p>}
+   {(data.calendarWarnings??[]).length>0&&<p role="status" className="rounded-lg border border-line p-3 text-sm text-ink-muted">{t("calendarPartial")}</p>}
    <div className="grid grid-cols-3 gap-2 lg:grid-cols-4">{[
     [t("paidHours"),projected.hoursComplete?localized(hours(weeklyTotals.paidMinutes)):"—"],
     [t("wages"),wageSummary(weeklyTotals)],
     [t("gaps"),!data.rules.coverage_enabled?t("coverageDisabled"):uncheckedDays.length?
    t("coverageNotChecked"):localized(data.gaps.length)],
     [t("overtime"),projected.hoursComplete?localized(totalOvertimeMinutes(data.team,costedShifts,data.rules.weekly_ot_after_minutes,data.rules.weekly_ot_enabled)/60)+" h":"—"]
-   ].map(([label,value])=><div key={label} className={`rounded-2xl border border-line bg-surface p-3 ${label===t("overtime")?"hidden lg:block":""} ${label===t("gaps")&&data.gaps.length?"border-neg bg-neg-soft":""}`}><strong className="block text-xl">{value}</strong><span className="text-sm text-muted">{label}</span></div>)}</div>
+   ].map(([label,value])=><div key={label} className={`rounded-2xl border border-line bg-surface p-3 ${label===t("overtime")?"hidden lg:block":""} ${label===t("gaps")&&data.gaps.length?"border-neg bg-neg-soft":""}`}><strong className="block text-xl">{value}</strong><span className="text-sm text-ink-muted">{label}</span></div>)}</div>
    {weeklyTotals.estimated&&<div className="flex flex-wrap items-center justify-between gap-2 rounded-xl bg-warn-soft p-3 text-warn-text">
     <p>{t("estimateNote",{count:weeklyTotals.estimateCount,unknown:weeklyTotals.unknownCount})}</p>
     {firstWithoutWage&&!data.readOnly&&<button type="button" className="min-h-12 rounded-xl border border-current px-3 underline" onClick={()=>{
@@ -293,7 +293,7 @@ export default function StaffWorkspace({initial,tab="schedule",locale="en",initi
     return <section key={d} id={"day-"+d} className="rounded-card border border-line bg-surface p-3">
      <div className="flex flex-wrap items-baseline gap-2">
       <h2 className="text-lg font-bold">{dayLabel(d)}</h2>
-      <span className="text-sm text-muted">{opening===undefined?t("hoursNotSet"):opening.length?t("open")+" "+opening.map(a=>a.join("–")).join(", "):t("closed")}</span>
+      <span className="text-sm text-ink-muted">{opening===undefined?t("hoursNotSet"):opening.length?t("open")+" "+opening.map(a=>a.join("–")).join(", "):t("closed")}</span>
        {opening===undefined&&<Link className="min-h-12 content-center underline text-accent-text"
         href={`/${locale}/more/cafe-profile?focus=hours`}>{t("setCafeHours")}</Link>}
       <strong className="ms-auto text-sm">{projected.toastDates.has(d)?"—":localized(totals.paidMinutes/60)+" h"} · {wageSummary(totals)}{totals.estimated?" "+t("estimated"):""}</strong>
@@ -321,7 +321,7 @@ export default function StaffWorkspace({initial,tab="schedule",locale="en",initi
       onClick={()=>{setScreen("team");openPerson(data.team[0]);}}>{t("whatsAppSetup")}</button>
     </section>
     {data.shifts.length===0&&<section className="rounded-2xl border border-line bg-surface p-5">
-    <h2 className="font-headline text-xl font-bold">{t("noShifts")}</h2><p className="my-2 text-muted">{t("emptyHelp")}</p>
+    <h2 className="font-headline text-xl font-bold">{t("noShifts")}</h2><p className="my-2 text-ink-muted">{t("emptyHelp")}</p>
     <div className="grid gap-2 sm:grid-cols-3">
      <button disabled={data.readOnly||busy} className="min-h-12 rounded-xl border border-accent px-3 text-accent-text"
       onClick={()=>run(()=>copyWeek({fromWeekStart:new Date(Date.parse(data.weekStart+"T12:00:00Z")-7*86400000).toISOString().slice(0,10),toWeekStart:data.weekStart}))}>{t("copyLastWeek")}</button>
@@ -354,27 +354,27 @@ export default function StaffWorkspace({initial,tab="schedule",locale="en",initi
    <section className="rounded-card border border-line bg-surface p-4"><h2 className="mb-3 font-bold">{t("yourTeam",{count:data.team.length})}</h2>
      {data.team.map(p=><div key={p.id} className="flex min-h-16 items-center gap-3 border-t border-line py-3">
       <span className="grid size-12 place-items-center rounded-full bg-accent-soft font-bold">{p.name[0]}</span>
-      <div className="min-w-0 flex-1"><b>{p.name}</b><span className="ms-2 text-sm text-muted">{p.role?roleLabel(p.role):t("team")}</span>
-        <div className="text-[1.0625rem] text-muted">{p.wageCents==null?(p.wagePeriod!=="hour"?t("salaryManagedBadge"):<button type="button" disabled={data.readOnly} onClick={()=>{openPerson(p);setTimeout(()=>document.getElementById("staff-hourly-wage")?.focus(),0);}} className="min-h-12 text-start underline text-accent-text">{t("noWageAction")}</button>):t("wagePerHour",{amount:fmt(p.wageCents,data.currency,locale)})}</div><div className="text-[1.0625rem] text-muted">{teamSummary(p)}</div></div>
+      <div className="min-w-0 flex-1"><b>{p.name}</b><span className="ms-2 text-sm text-ink-muted">{p.role?roleLabel(p.role):t("team")}</span>
+        <div className="text-[1.0625rem] text-ink-muted">{p.wageCents==null?(p.wagePeriod!=="hour"?t("salaryManagedBadge"):<button type="button" disabled={data.readOnly} onClick={()=>{openPerson(p);setTimeout(()=>document.getElementById("staff-hourly-wage")?.focus(),0);}} className="min-h-12 text-start underline text-accent-text">{t("noWageAction")}</button>):t("wagePerHour",{amount:fmt(p.wageCents,data.currency,locale)})}</div><div className="text-[1.0625rem] text-ink-muted">{teamSummary(p)}</div></div>
       <div className="text-end">{projected.toastAffectedEmployeeIds.has(p.id)?"—":t("teamHoursShort",{hours:new Intl.NumberFormat(locale,{maximumFractionDigits:1}).format(hours(personTotals(p.id,costedShifts).paidMinutes))})}</div>
       <button disabled={data.readOnly} onClick={()=>openPerson(p)} className="min-h-12 px-2">{t("edit")}</button>
      </div>)}
      <div className="border-t border-line pt-3 font-bold">{t("total")} {wageSummary(weeklyTotals)} {weeklyTotals.estimated?" · "+t("estimate"):""}</div>
    </section>
-   <Link href={`/${locale}/staff/rules`} className="block rounded-card border border-line bg-surface p-4">{t("rulesCard")} <span className="block text-muted">{t("defaultNote")}</span></Link>
+   <Link href={`/${locale}/staff/rules`} className="block rounded-card border border-line bg-surface p-4">{t("rulesCard")} <span className="block text-ink-muted">{t("defaultNote")}</span></Link>
    {teamExtras}
   </>}
   {undo&&<div role="status" className="fixed inset-x-4 bottom-36 z-30 flex items-center justify-between rounded-xl bg-fg p-4 text-bg shadow-lg"><span>{undo.message}</span><button onClick={undoRemove} className="min-h-12 px-3 font-bold">{t("undo")}</button></div>}
   {error&&<p role="alert" className="rounded-xl bg-neg-soft p-3 text-neg">{error}</p>}
-  {notice&&<StaffDialog headingId="staff-copy-heading" layout="center" onClose={()=>setNotice("")}><h2 id="staff-copy-heading">{t("readyCopy")}</h2><p role="status" className="mt-2 text-muted">{t("scheduleNotSent")}</p><pre className="whitespace-pre-wrap">{notice}</pre><button onClick={()=>navigator.clipboard.writeText(notice)} className="my-3 min-h-12 rounded-xl bg-accent px-4 text-on-accent">{t("copy")}</button><button onClick={()=>setNotice("")} className="ms-3 min-h-12">{t("close")}</button></StaffDialog>}
+  {notice&&<StaffDialog headingId="staff-copy-heading" layout="center" onClose={()=>setNotice("")}><h2 id="staff-copy-heading">{t("readyCopy")}</h2><p role="status" className="mt-2 text-ink-muted">{t("scheduleNotSent")}</p><pre className="whitespace-pre-wrap">{notice}</pre><button onClick={()=>navigator.clipboard.writeText(notice)} className="my-3 min-h-12 rounded-xl bg-accent px-4 text-on-accent">{t("copy")}</button><button onClick={()=>setNotice("")} className="ms-3 min-h-12">{t("close")}</button></StaffDialog>}
   {sheet&&<StaffDialog headingId="staff-sheet-heading" onClose={()=>setSheet(null)}>
     <div className="mx-auto mb-3 h-1 w-12 rounded-sm bg-line"/>{fillsGap&&sheet==="shift"&&<p className="text-sm font-bold text-pos">{t("fillsGap")}</p>}<h2 id="staff-sheet-heading" className="font-headline text-xl font-bold">{sheet==="person"?(personEditing?t("editPerson"):t("addPerson")):(editing?t("editShift"):t("addShiftDate",{date:dayLabel(date)}))}</h2>
     {sheet==="person"?<>
       <label className="mt-3 block font-semibold">{t("name")}<input autoFocus={sheet==="person"&&!focusWage} value={name} onChange={e=>setName(e.target.value)} className="mt-1 min-h-12 w-full rounded-xl border border-line bg-surface px-3"/></label>
       <div className="mt-3 flex flex-wrap gap-2">{["Barista","Manager","Baker","Cashier"].map(r=><button type="button" key={r} aria-pressed={role===r} onClick={()=>setRole(r)} className="min-h-12 rounded-full border border-line px-3">{roleLabel(r)}</button>)}<button type="button" aria-pressed={!["Barista","Manager","Baker","Cashier"].includes(role)} onClick={()=>setRole("")} className="min-h-12 rounded-full border border-line px-3">{t("roleOther")}</button></div>
       {!["Barista","Manager","Baker","Cashier"].includes(role)&&<label className="mt-2 block">{t("roleOther")}<input maxLength={60} value={role} onChange={e=>setRole(e.target.value)} aria-invalid={!role.trim()} className={`mt-1 min-h-12 w-full rounded-xl border bg-surface px-3 ${!role.trim()?"border-neg":"border-line"}`}/>{!role.trim()&&<span role="alert" className="block text-neg">{t("roleRequired")}</span>}</label>}
-      <p className="mt-4 text-muted">{t("optional")}</p>
-      {salaryPeriod?<p className="mt-3 rounded-xl bg-surface2 p-3 text-muted">{t("salaryManaged")}</p>:
+      <p className="mt-4 text-ink-muted">{t("optional")}</p>
+      {salaryPeriod?<p className="mt-3 rounded-xl bg-surface2 p-3 text-ink-muted">{t("salaryManaged")}</p>:
       <div className="mt-3"><label htmlFor="staff-hourly-wage" className="font-semibold">{t("hourlyWage")}</label>
        <div className="mt-2 flex items-center gap-2"><input id="staff-hourly-wage" autoFocus={focusWage} inputMode="decimal" dir="ltr" value={wageInput} onChange={e=>setWageInput(e.target.value)}
         aria-invalid={invalidWage} aria-describedby={invalidWage?"staff-wage-error":undefined}
@@ -383,14 +383,14 @@ export default function StaffWorkspace({initial,tab="schedule",locale="en",initi
        {invalidWage&&<p id="staff-wage-error" role="alert" className="mt-1 text-sm text-neg">{t("invalidWage")}</p>}
       </div>}
       <div className="mt-4"><h3 className="font-bold">{t("usuallyAvailable")}</h3>
-       <p className="text-sm text-muted">{t("availabilityHelp")}</p>
+       <p className="text-sm text-ink-muted">{t("availabilityHelp")}</p>
         {complexAvailability&&<p role="status" className="mt-2 text-[1.0625rem] text-warn-text">{t("multipleAvailabilityHelp")}</p>}
        {[0,1,2,3,4,5,6].map(day=>{const label=new Intl.DateTimeFormat(locale,{weekday:"short",timeZone:"UTC"}).format(new Date(Date.UTC(2026,9,25+day)));
         const row=availability.find(d=>d.day===day);
         return <div key={day} className="border-b border-line py-2">
          <div className="flex min-h-12 items-center gap-2">
           <button type="button" disabled={complexAvailability} aria-pressed={Boolean(row)} onClick={()=>mutateAvailability(day,row?null:{start:null,end:null})}
-           className={`min-h-12 min-w-14 rounded-xl px-3 ${row?"bg-accent text-on-accent":"bg-surface2 text-muted"}`}>{label}</button>
+           className={`min-h-12 min-w-14 rounded-xl px-3 ${row?"bg-accent text-on-accent":"bg-surface2 text-ink-muted"}`}>{label}</button>
           <span className="flex-1 text-sm">{row?(row.start&&row.end?formatTeamClock(row.start,locale)+" – "+formatTeamClock(row.end,locale):t("anyTime")):t("off")}</span>
          </div>
          {row&&<div className="mt-2 flex flex-wrap gap-2">{(["morning","afternoon","allDay"] as const).map(chip=><button type="button" key={chip}
@@ -429,7 +429,7 @@ export default function StaffWorkspace({initial,tab="schedule",locale="en",initi
           onChange={event=>void saveConsent(event.target.checked)}
           className="size-6 shrink-0 accent-accent"/>
         <span className="text-[1.0625rem]">{t("deliveryConsent")}</span>
-       </label>:<p className="mt-3 text-sm text-muted">{t("deliveryConsentAfterCreate")}</p>}
+       </label>:<p className="mt-3 text-sm text-ink-muted">{t("deliveryConsentAfterCreate")}</p>}
        {personEditing&&consentError&&<p role="alert" className="mt-2 text-neg">{t("deliveryConsentError")}</p>}
        <button disabled={busy||savingConsent||!name.trim()||personInvalid} onClick={()=>run(()=>{
        const fields={name,role:role||null,wageCents:salaryPeriod?null:wage??null,availability:personEditing&&!availabilityDirty?null:availability,
@@ -447,7 +447,7 @@ export default function StaffWorkspace({initial,tab="schedule",locale="en",initi
        return <button key={p.id} type="button" disabled={data.readOnly||ruleReview} aria-pressed={chosen===p.id} onClick={()=>setChosen(p.id)}
         className={`flex min-h-12 items-center gap-2 rounded-full border px-2 py-1 font-bold ${chosen===p.id?"border-accent-text bg-accent-soft text-accent-text":"border-line bg-surface"}`}>
         <span className="grid size-9 place-items-center rounded-full bg-surface2">{p.name[0]}</span>
-        {p.name}{status!==null&&<span className={`text-sm font-normal ${status==="free"?"text-pos":"text-muted"}`}>{t(status==="free"?"free":status==="off"?"off":status==="on_shift"?"onShift":"unavailable")}</span>}</button>;
+        {p.name}{status!==null&&<span className={`text-sm font-normal ${status==="free"?"text-pos":"text-ink-muted"}`}>{t(status==="free"?"free":status==="off"?"off":status==="on_shift"?"onShift":"unavailable")}</span>}</button>;
       })}</div></div>
       {([[t("start"),start,setStart],[t("end"),end,setEnd]] as const).map(([label,time,set])=><div key={label} className="mt-3">
        <label className="block font-semibold">{label}
@@ -467,7 +467,7 @@ export default function StaffWorkspace({initial,tab="schedule",locale="en",initi
        people={data.team} preview={previewBlock}/>}
       <div className="mt-4 rounded-2xl border border-line p-3">
        <div className="flex min-h-14 items-center gap-2"><span aria-hidden="true">☕</span>
-        <div className="flex-1"><strong>{t("unpaidBreak",{minutes:appliedBreak})}</strong><p className="text-sm text-muted">{breakOverridden?t("breakManual"):data.rules.meal_break_enabled?
+        <div className="flex-1"><strong>{t("unpaidBreak",{minutes:appliedBreak})}</strong><p className="text-sm text-ink-muted">{breakOverridden?t("breakManual"):data.rules.meal_break_enabled?
    t("autoBreak",{hours:data.rules.meal_break_after_minutes/60}):t("breakDisabled")}</p></div>
         <label className="flex items-center gap-2 text-start">{t("breakMinutesLabel")}
           <input type="text" inputMode="numeric" disabled={data.readOnly}
