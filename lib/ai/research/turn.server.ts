@@ -7,7 +7,7 @@ import {safeToolError} from "@/lib/ai/agent/toolErrors";
 import type {OwnerRunCheckpoint,MatchedOwnerAnswer} from "@/lib/ai/supervisor/runs/contracts";
 import {executionPolicy,requestOutputCap} from "@/lib/ai/agent/executionPolicy";
 import {unsupportedNumbers} from "./verify";
-import {resolveResearchSpec,SQL_PRESENTATION_HINT} from "./presentation";
+import {resolveResearchSpec,INLINE_PRESENTATION_HINT,type PresentationEvidence,type PresentationContext} from "./presentation";
 import {researchInlineEvents} from "./inlineStream";
 import type {RichPresentation} from "@/lib/ai/conversations/presentation";
 import {executeResearchTool,researchToolDefinitions,type ResearchScope} from "./tools.server";
@@ -59,6 +59,8 @@ export async function runResearchTurn(args:{
   webSearch?:(query:string)=>Promise<unknown>;
   /** The existing registered action tools (approval cards, Gmail, routines), run through the one existing executor. */
   actions?:{definitions:readonly {name:string}[];context:AgentToolContext};
+  /** Presentation identity is independent of what data/action tools are enabled. */
+  presentationContext?:PresentationContext;
   /** Luna's own summary of its thinking, streamed as it works (the part so far). */
   onThinking?:(text:string)=>void;
   /** Authenticated café facts: name, currency, time zone, local date. */
@@ -84,10 +86,21 @@ export async function runResearchTurn(args:{
   // context, then history and the question; every later item is appended, never edited or shortened.
   // The owner-approved local acceptance broker only accepts top-level instructions and no reasoning replay.
   const broker=process.env.AI_CAFE_LIVE_ACCEPTANCE==="OWNER_APPROVED_LOCAL_ONLY"&&process.env.AICAFE_SHARED_LUNA_CANDIDATE==="1";
-  const instructions=RESEARCH_INSTRUCTIONS+(args.actions?" "+SQL_PRESENTATION_HINT:"");
+  const instructions=RESEARCH_INSTRUCTIONS+" "+INLINE_PRESENTATION_HINT;
+  const presentationContext=args.presentationContext??args.actions?.context;
+  const presentationDiagnostics={requestedSections:0,decodedSections:0,decodedPatches:0,rejectedSections:0,acceptedViews:0,rolledBackViews:0};
+  // References are ephemeral and point only to the evidence already admitted to this turn.
+  // They are not database identifiers, and the text itself is not duplicated on the wire.
+  const queries=new Map<string,PresentationEvidence>();
+  const addText=(ref:string,text:string,source:string,coverage?:"partial")=>queries.set(ref,{data:{},text,source,coverage});
+  addText("owner",[args.ownerText,...(args.matchedOwnerAnswers??[]).map(a=>a.answer)].join("\n"),"Owner supplied; not verified against business records");
+  addText("context",args.cafeContext,"Café context; verify current business facts","partial");
+  (args.history??[]).forEach((h,i)=>addText("history"+(i+1),h.content,h.role==="user"?"Earlier owner message; historical context":"Earlier Supervisor message; not independently verified current evidence","partial"));
+  (args.ownerEvidence??[]).forEach((e,i)=>addText("attachment"+(i+1),e,"Owner-provided attachment evidence","partial"));
+  const textRefs="Presentation text references: owner=current owner message and verified matched owner answers; context=admitted café context; historyN=Nth chronological message in the history below (starting at 1); attachmentN=Nth text evidence attachment below. These references do not imply current business verification.";
   const input:unknown[]=[
     ...(broker?[]:[{role:"developer",content:instructions}]),
-    {role:"developer",content:args.cafeContext},
+    {role:"developer",content:args.cafeContext+"\n"+textRefs},
     ...(continuation?[{role:"developer",content:continuation}]:[]),
     ...(args.history??[]),
     {role:"user",content:hasFiles?[
@@ -103,7 +116,10 @@ export async function runResearchTurn(args:{
   const privateValues=new Set<string>();
   /** Everything retrieved or calculated this turn; the answer's figures are checked against it. */
   const evidence:string[]=[];
-  const queries=new Map<string,Record<string,unknown>>();
+  let nextResultRef=0;
+  const admit=(source:string,data:Record<string,unknown>,coverage?:"partial"|"estimate",kind?:PresentationEvidence["kind"])=>{
+    const ref="q"+(++nextResultRef);queries.set(ref,{source,data,coverage,kind});return ref;
+  };
   const presentations:AgentToolResult[]=[];
   let text="",endReason:EndReason="complete";
   const appendText=(part:string,continuing=false)=>{
@@ -155,7 +171,11 @@ export async function runResearchTurn(args:{
     const flushViews=async()=>{
       if(!patches.length)return;
       await args.beforeAcceptResult?.();
-      const views=resolveResearchSpec(patches,queries,args.actions?.context);patches=[];
+      presentationDiagnostics.decodedSections++;
+      presentationDiagnostics.decodedPatches+=patches.length;
+      const views=resolveResearchSpec(patches,queries,presentationContext);patches=[];
+      if(!views.length)presentationDiagnostics.rejectedSections++;
+      presentationDiagnostics.acceptedViews+=views.length;
       for(const presentation of views){
         presentations.push({source:"response_presentation",period:null,missing:[],accepted:true,presentation,presentationOffset:text.length});
         args.onPresentation?.(text.length,presentation);
@@ -194,6 +214,7 @@ export async function runResearchTurn(args:{
           }
           if(event.type==="response.completed"){
             await flushProse(true);await flushViews();
+            presentationDiagnostics.requestedSections+=answer.split(String.fromCharCode(96).repeat(3)+"spec").length-1;
             const response=(event.response??{}) as {model?:unknown;usage?:{input_tokens?:unknown;output_tokens?:unknown;input_tokens_details?:{cached_tokens?:unknown}}};
             if(reservation)await reservation.complete(response as never);
             const n=(x:unknown)=>typeof x==="number"&&Number.isSafeInteger(x)&&x>=0?x:0;
@@ -217,6 +238,7 @@ export async function runResearchTurn(args:{
       const discardChars=text.length-callTextStart,discardPresentations=presentations.length-callPresentationStart;
       if(discardChars>0||discardPresentations>0){
         text=text.slice(0,callTextStart);presentations.length=callPresentationStart;
+        presentationDiagnostics.rolledBackViews+=discardPresentations;
         args.onReset?.(discardChars,discardPresentations);
       }
       if(checkpoint)await checkpoint.endProvider(false).catch(()=>undefined);
@@ -284,14 +306,16 @@ export async function runResearchTurn(args:{
           record=await runAction(fc);
           evidence.push(JSON.stringify(record));
           failed=Boolean(record.error);
-          input.push({type:"function_call_output",call_id:fc.call_id,output:JSON.stringify(record)});
+          const ref=!failed?admit("Registered tool result: "+fc.name+"; not independent proof of an effect",record,record.missing.length?"partial":undefined):null;
+          input.push({type:"function_call_output",call_id:fc.call_id,output:JSON.stringify(ref?{...record,presentationRef:ref}:record)});
         }else{
           const readOnly=["run_sql","describe_database","calculate","search_web"].includes(fc.name);
           if(readOnly&&args.checkpoint)await args.checkpoint.beginTool(fc.name,fc.arguments,true);
           const result=await executeResearchTool({...args.scope,webSearch:args.webSearch??args.scope.webSearch,privateValues},fc.name,fc.arguments);
           await args.beforeAcceptResult?.();
-          const ref=["run_sql","calculate"].includes(fc.name)&&result.ok===true?"q"+(queries.size+1):null;
-          if(ref)queries.set(ref,fc.name==="calculate"?{...result,calculationInput:JSON.parse(fc.arguments)}:result);
+          const ref=result.ok===true?admit(fc.name==="run_sql"?"Returned SQL evidence; see answer for coverage":fc.name==="calculate"?"Exact calculator result; depends on supplied inputs":"Tool result: "+fc.name,
+            fc.name==="calculate"?{...result,calculationInput:JSON.parse(fc.arguments)}:result,
+            fc.name==="run_sql"?undefined:"partial",fc.name==="run_sql"?"sql":fc.name==="calculate"?"calculator":undefined):null;
           input.push({type:"function_call_output",call_id:fc.call_id,output:JSON.stringify(ref?{...result,presentationRef:ref}:result)});
           failed=result.ok===false;
           if(!failed)evidence.push(JSON.stringify(result));
@@ -322,5 +346,5 @@ export async function runResearchTurn(args:{
     // Same promise as the standard path: a figure with no source in this turn's evidence is shown as unverified.
     unverified:text?unsupportedNumbers(text,[args.ownerText,...(args.matchedOwnerAnswers??[]).map(a=>a.answer),args.cafeContext,...(args.history??[]).map(h=>h.content),...evidence]):[],
     results:[...(await args.checkpoint?.restoredResults?.()??[]),...invocations.map(i=>i.result),...presentations],toolInvocations:invocations,tools,
-    agentIds:tools.length?["alex"]:[],usage};
+    agentIds:tools.length?["alex"]:[],usage,presentationDiagnostics};
 }

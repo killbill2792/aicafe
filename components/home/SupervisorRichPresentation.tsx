@@ -2,6 +2,7 @@
 import {createContext,useContext,useId,useMemo,useState} from "react";
 import dynamic from "next/dynamic";
 import PresentationBoundary from "./PresentationBoundary";
+import {wideResponseTableClass,wideResponseCellClass,wideResponseLabelClass} from "./responseTableLayout";
 import {JSONUIProvider,Renderer,type ComponentRegistry} from "@json-render/react";
 import {Paperclip} from "lucide-react";
 import type {StoredAttachment} from "@/lib/ai/conversations/attachments";
@@ -52,7 +53,7 @@ function Panel({panel,locale}:{panel:PresentationPanel;locale:string}){
   {panel.kind==="metric"?<p className="break-words font-headline text-[1.875rem] font-medium leading-tight tracking-tight tabular-nums text-ink">{format(panel.points[0].value)}</p>:
    (panel.kind==="table"||panel.kind==="ranked_table")?table:<><PresentationBoundary fallback={table}><Chart panel={panel} format={format}/></PresentationBoundary>
     <details className="text-ink"><summary aria-label={detailsLabel+": "+panel.title} className="flex min-h-12 cursor-pointer items-center text-[0.9375rem] text-accent-text underline underline-offset-4 focus-visible:outline focus-visible:outline-2 focus-visible:outline-ink">{detailsLabel}</summary>{table}</details></>}
-  <p id={evidenceId} className="break-words text-[0.8125rem] leading-relaxed text-ink-muted">{panel.source!=="sql_research"&&<>{panel.from} – {panel.to} · </>}{panel.sourceDetail??(panel.source==="daily_rollups"?"Sales records":panel.source==="item_sales"?"Item sales":panel.source==="canonical_data"?panel.sourceDetail??"Canonical records":panel.source==="expenses"?"Recorded expenses":panel.source==="business_costs"?"Business costs":panel.source==="product_costs"?"Product economics":panel.source==="supplier_purchase_plan"?"Supplier quotes":panel.source==="purchase_orders"?"Purchase orders":panel.source==="inventory"?"Inventory":panel.source==="menu_items"?"Menu":"Profitability")} · {copy.snapshot} {panel.asOf}</p>
+  <p id={evidenceId} className="break-words text-[0.8125rem] leading-relaxed text-ink-muted">{panel.source!=="sql_research"&&panel.source!=="response_evidence"&&<>{panel.from} – {panel.to} · </>}{panel.sourceDetail??(panel.source==="daily_rollups"?"Sales records":panel.source==="item_sales"?"Item sales":panel.source==="canonical_data"?panel.sourceDetail??"Canonical records":panel.source==="expenses"?"Recorded expenses":panel.source==="business_costs"?"Business costs":panel.source==="product_costs"?"Product economics":panel.source==="supplier_purchase_plan"?"Supplier quotes":panel.source==="purchase_orders"?"Purchase orders":panel.source==="inventory"?"Inventory":panel.source==="menu_items"?"Menu":"Profitability")} · {copy.snapshot} {panel.asOf}</p>
  </figure>;
 }
 function ComparisonView({panels,locale}:{panels:PresentationPanel[];locale:string}){
@@ -117,7 +118,7 @@ function AgendaView({agenda,locale}:{agenda:Agenda;locale:string}){
  </section>;
 }
 function RecordTableView({table,locale}:{table:RecordTable;locale:string}){
- const evidenceId=useId(),scopeId=useId();
+ const evidenceId=useId(),scopeId=useId(),wide=table.columns.length>4;
  const fmt=(value:RecordTable["rows"][number][number],u:RecordTable["columns"][number]["unit"])=>{
   if(value===null)return copy.notRecorded;
   if(typeof value!=="number")return String(value);
@@ -127,12 +128,18 @@ function RecordTableView({table,locale}:{table:RecordTable;locale:string}){
  };
  return <figure data-testid="supervisor-record-table" className="min-w-0 space-y-2 py-2">
   <figcaption className="font-medium text-ink">{table.title}</figcaption>
-  <p id={evidenceId} className="break-words text-[0.8125rem] text-ink-muted">{table.view==="tool_sql_research"?"SQL query":table.view} · {table.view!=="tool_sql_research"&&<>{table.from} – {table.to} · </>}{copy.snapshot} {table.asOf}{table.coverage==="partial"?" · "+copy.partial:""}</p>
+  <p id={evidenceId} className="break-words text-[0.8125rem] text-ink-muted">{table.view==="tool_sql_research"?"SQL query":table.view==="tool_response_evidence"?"Evidence":table.view} · {table.view!=="tool_sql_research"&&table.view!=="tool_response_evidence"&&<>{table.from} – {table.to} · </>}{copy.snapshot} {table.asOf}{table.coverage==="partial"?" · "+copy.partial:""}</p>
   <p id={scopeId} className="break-words text-[0.8125rem] text-ink-muted">{table.scope}</p>
   <div role="region" tabIndex={0} aria-label={table.title} className="max-w-full overflow-x-auto overscroll-x-contain focus-visible:outline focus-visible:outline-2 focus-visible:outline-ink">
-   <table aria-describedby={evidenceId+" "+scopeId} className="w-full table-fixed text-[0.9375rem] tabular-nums" style={table.columns.length>4?{minWidth:table.columns.length*90}:undefined}><caption className="sr-only">{table.title}</caption>
+   <table role="table" aria-describedby={evidenceId+" "+scopeId} className={"w-full table-fixed text-[0.9375rem] tabular-nums "+(wide?wideResponseTableClass:"")}><caption className="sr-only">{table.title}</caption>
     <thead><tr>{table.columns.map((c,i)=><th key={i} scope="col" className="border-b border-line px-1.5 sm:px-2 py-2 text-start align-bottom font-medium [overflow-wrap:anywhere]">{c.label}<span className="block text-[0.8125rem] text-ink-muted">{c.unit==="stored"?copy.unitUnknown:c.unit==="microcents"?table.currency+" microcents":c.unit==="cents"?table.currency:c.unit==="cents/hour"?table.currency+" / h":c.unit}</span></th>)}</tr></thead>
-    <tbody>{table.rows.map((row,i)=><tr key={i}>{row.map((v,j)=>j===0&&["label","local date"].includes(table.columns[j].unit)?<th key={j} scope="row" className="border-b border-line px-1.5 sm:px-2 py-2 text-start align-top break-words [overflow-wrap:anywhere] font-normal">{fmt(v,table.columns[j].unit)}</th>:<td key={j} className="border-b border-line px-1.5 sm:px-2 py-2 text-start align-top break-words [overflow-wrap:anywhere]">{fmt(v,table.columns[j].unit)}</td>)}</tr>)}</tbody>
+    <tbody role="rowgroup">{table.rows.map((row,i)=><tr role="row" key={i}>{row.map((v,j)=>{
+     const rowHeader=j===0&&["label","local date"].includes(table.columns[j].unit);
+     const Tag=rowHeader?"th":"td";
+     const cls="border-b border-line px-1.5 sm:px-2 py-2 text-start align-top break-words [overflow-wrap:anywhere]"+(rowHeader?" font-normal":"")+(wide?" "+wideResponseCellClass:"");
+     const value=fmt(v,table.columns[j].unit);
+     return <Tag key={j} role={rowHeader?"rowheader":"cell"} scope={rowHeader?"row":undefined} className={cls}>{wide?<><span aria-hidden="true" className={wideResponseLabelClass}>{table.columns[j].label}</span><span className="min-w-0 [overflow-wrap:anywhere]">{value}</span></>:value}</Tag>;
+    })}</tr>)}</tbody>
    </table>
   </div>
  </figure>;

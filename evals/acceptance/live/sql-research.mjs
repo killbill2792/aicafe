@@ -73,13 +73,30 @@ async function snapshot(db){
     "(select count(*) from public.supervisor_proposals)::int proposals");
   return s;
 }
-function questionsFor(id,o,alerts){
+function questionsFor(id,o,alerts,currency){
   // Chief-of-staff questions: Luna chooses its own investigation; checks need facts from independent SQL.
   const deep=t=>({usedSqlMoreThanOnce:true,substantial:t.trim().length>=400});
   const said=(t,name)=>t.toLowerCase().replace(/[\s_]+/g,"-").includes(name.replace("cust-",""));
   const period=o.start+" to "+o.end;
+  // Compare genuinely different sources using fixture-derived owner inputs.
+  // These are hypothetical statements for the disposable café, not stored bills.
+  const rent=Math.max(1,Math.floor(Number(o.sales.cents)/8)),bills=Math.max(1,Math.floor(Number(o.sales.cents)/20));
+  const amount=cents=>new Intl.NumberFormat("en",{style:"currency",currency,minimumFractionDigits:2,maximumFractionDigits:2}).format(cents/100);
+  const values=blocks=>blocks.filter(b=>b.type==="rich_presentation").flatMap(b=>b.panels??[]);
+  const expectedCounts=[1,2,3,4].map(i=>Math.max(1,Math.floor(o.sales.n/(i+5)))+i);
+  if(id==="sql-research-presentation")return [
+    {q:"Show me the pattern of daily net sales from "+period+" and the total.",
+     hard:t=>({total:mentionsAmount(t,o.sales.cents)}),
+     visual:blocks=>values(blocks).some(p=>["sql_research","response_evidence"].includes(p.source)&&["line","bar"].includes(p.kind)&&p.unit==="cents"&&p.currency===currency&&p.points.length===o.daily.length&&o.daily.every(d=>p.points.some(v=>v.label===d.day&&v.value===Number(d.cents))))},
+    {q:"For that same period ("+period+") I paid "+amount(rent)+" in rent and "+amount(bills)+" in other bills. How do these two costs compare with recorded sales?",
+     hard:t=>({total:mentionsAmount(t,o.sales.cents),ownerRent:mentionsAmount(t,rent),ownerBills:mentionsAmount(t,bills)}),
+     visual:blocks=>values(blocks).some(p=>p.source==="response_evidence"&&p.currency===currency&&p.unit==="cents"&&p.points.length>=3&&[Number(o.sales.cents),rent,bills].every(n=>p.points.some(v=>v.value===n))&&/owner|historical/i.test(p.sourceDetail??""))},
+    {q:"I'm planning a hypothetical four-day tasting event. My expected attendance is "+["Thursday","Friday","Saturday","Sunday"].map((day,i)=>day+" "+expectedCounts[i]).join(", ")+". What pattern do you see?",
+     hard:t=>({ownerEstimatesStated:expectedCounts.every(n=>mentionsCount(t,n))}),
+     noBusinessRead:true,
+     visual:blocks=>values(blocks).some(p=>p.source==="response_evidence"&&p.unit==="count"&&p.points.length===expectedCounts.length&&expectedCounts.every(n=>p.points.some(v=>v.value===n))&&/owner/i.test(p.sourceDetail??""))},
+  ];
   const q={
-    "sql-research-presentation":{q:"Show me the pattern of daily net sales from "+period+" and the total.",hard:t=>({total:mentionsAmount(t,o.sales.cents)})},
     "sql-research-business":{q:"How is my business doing over the last two weeks ("+period+"), and what should I focus on this week?",
       hard:t=>({...deep(t),netSalesStated:mentionsAmount(t,o.sales.cents),noOtherCafe:!mentionsAmount(t,o.otherSales.cents)})},
     "sql-research-profit":{q:"Am I making money? From "+period+", where is my money going, and which 3 changes are worth the most?",
@@ -130,14 +147,14 @@ async function main(){
     console.log("\n==== "+id+" | café "+cafe.name+" ("+cafe.currency+") | window "+o.start+".."+o.end+" ====");
     console.log("Independent truth: net "+o.sales.cents+" cents over "+o.sales.n+" orders; top items "+
       o.items.map(i=>i.name+"="+i.cents).join(", ")+"; weakest day "+o.weakest.day+"="+o.weakest.cents+"; other café net "+o.otherSales.cents);
-    for(const [i,item] of questionsFor(id,o,alerts).entries()){
+    for(const [i,item] of questionsFor(id,o,alerts,cafe.currency).entries()){
       // The shared u3 helper throws on an incomplete turn; still read what was saved and what it cost.
       const turn=await completedTurn(owner.page,thread,item.q).catch(e=>({names:[],done:null,error:String(e?.message??e)}));
       const [ownerMessage]=await rows(db,"select id,created_at from public.ai_messages where business_id=$1 and thread_id=$2 and role='owner' "+
         "order by created_at desc limit 1",[cafe.businessId,thread]);
       const usage=ownerMessage?await readPersistedModelUsage(db,cafe.businessId,ownerMessage.id,{attempts:240}).catch(()=>null):null;
       if(usage){calls+=Number(usage.model_call_count);model=usage.model;}
-      const [reply]=ownerMessage?await rows(db,"select id,structured_content from public.ai_messages where business_id=$1 and thread_id=$2 "+
+      const [reply]=ownerMessage?await rows(db,"select id,structured_content,grounding from public.ai_messages where business_id=$1 and thread_id=$2 "+
         "and role='supervisor' and created_at>=$3 order by created_at desc limit 1",[cafe.businessId,thread,ownerMessage.created_at]):[];
       if(reply)lastReply=reply.id;
       const text=(reply?.structured_content??[]).filter(b=>b.type==="text").map(b=>b.text).join("");
@@ -145,29 +162,42 @@ async function main(){
       // An honest "the query failed" answer is a failure of the pathway, never a pass.
       const hard={completed:complete,noDataFailure:!/query (?:is )?(?:failing|returning an error)|couldn[’']t retrieve|can[’']t (?:retrieve|verify)|not a function/i.test(text),
         ...(complete?item.hard(text):{})};
-      if(id==="sql-research-presentation")hard.exactVisual=(reply?.structured_content??[]).some(b=>b.type==="rich_presentation"&&b.panels?.some(p=>p.source==="sql_research"&&["line","bar"].includes(p.kind)&&p.unit==="cents"&&p.currency===cafe.currency&&p.points.length===o.daily.length&&o.daily.every(d=>p.points.some(v=>v.label===d.day&&v.value===Number(d.cents)))));
-      if(id==="sql-research-presentation"&&reply){
-        // Exercise the real, persisted model answer in the authenticated owner UI.
-        // Do not send a second model request or install a synthetic transport.
-        await owner.page.setViewportSize({width:390,height:844});
-        await owner.page.goto("/en?thread="+encodeURIComponent(thread));
-        const views=owner.page.getByTestId("supervisor-rich-presentation");
-        await views.first().waitFor({state:"visible",timeout:30000}).catch(()=>{});
-        hard.ownerVisualRendered=await views.count()>0;
-        if(hard.ownerVisualRendered){
-          hard.mobileVisualFits=await views.evaluateAll(nodes=>nodes.every(n=>{
-            const rect=n.getBoundingClientRect();
-            return rect.width>0&&rect.left>=-1&&rect.right<=window.innerWidth+1;
-          }));
+      if(item.noBusinessRead)hard.noUnnecessaryRead=!turn.names.some(n=>["run_sql","describe_database"].includes(n));
+      if(item.visual){
+        const blocks=reply?.structured_content??[];
+        const diagnostics=reply?.grounding?.agentMetadata?.presentationDiagnostics;
+        hard.exactVisual=item.visual(blocks);
+        hard.modelSelectedVisual=diagnostics?.requestedSections>0&&diagnostics?.acceptedViews>0&&diagnostics?.persistedViews>0;
+        hard.ownerVisualRendered=false;hard.mobileVisualFits=false;hard.restoredVisual=false;
+        if(reply){
+          await owner.page.setViewportSize({width:390,height:844});
+          await owner.page.goto("/en?thread="+encodeURIComponent(thread));
+          // Scope to THIS reply, not a chart from a previous turn.
+          const message=owner.page.locator('[data-work-message="'+reply.id+'"]');
+          const views=message.getByTestId("supervisor-rich-presentation");
+          await views.first().waitFor({state:"visible",timeout:30000}).catch(()=>{});
+          hard.ownerVisualRendered=await views.count()>0&&await views.first().isVisible();
+          if(hard.ownerVisualRendered){
+            hard.mobileVisualFits=await views.evaluateAll(nodes=>nodes.every(n=>{
+              const rect=n.getBoundingClientRect();
+              return rect.width>0&&rect.left>=-1&&rect.right<=window.innerWidth+1;
+            }));
+          }
+          // A chart must actually draw its SVG, not simply have a data block.
+          if(blocks.some(b=>b.type==="rich_presentation"&&b.panels?.some(p=>["bar","line","donut"].includes(p.kind)))){
+            const chart=message.getByTestId("supervisor-rich-chart").first();
+            await chart.locator("svg").first().waitFor({state:"visible",timeout:30000}).catch(()=>{});
+            hard.chartDrawn=await chart.locator("svg").count()>0&&await chart.locator("svg").first().isVisible();
+          }
+          await owner.page.reload();
+          await views.first().waitFor({state:"visible",timeout:30000}).catch(()=>{});
+          hard.restoredVisual=await views.count()>0&&await views.first().isVisible();
         }
-        await owner.page.reload();
-        await views.first().waitFor({state:"visible",timeout:30000}).catch(()=>{});
-        hard.restoredVisual=await views.count()>0;
       }
       if("usedSqlMoreThanOnce" in hard)hard.usedSqlMoreThanOnce=turn.names.filter(n=>n==="run_sql").length>=2;
       const soft=complete&&item.soft?item.soft(text):{};
       const passed=Object.values(hard).every(Boolean);hardFailures+=passed?0:1;
-      results.push({question:i+1,passed,hard,soft,tools:turn.names,modelCalls:usage?Number(usage.model_call_count):null});
+      results.push({question:i+1,passed,hard,soft,tools:turn.names,modelCalls:usage?Number(usage.model_call_count):null,...(item.visual?{presentationDiagnostics:reply?.grounding?.agentMetadata?.presentationDiagnostics??null}:{})});
       console.log("\n--- Q"+(i+1)+": "+item.q+"\nTools: "+(turn.names.join(" → ")||"none")+" | model calls: "+(usage?.model_call_count??"?")+
         (turn.error?" | error: "+turn.error:"")+"\nAnswer:\n"+text+"\nChecks (must pass): "+JSON.stringify(hard)+"\nChecks (observed): "+JSON.stringify(soft));
     }

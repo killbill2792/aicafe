@@ -18,19 +18,24 @@ One conversational agent with ONE streaming tool-calling loop per owner turn (Op
   The owner's answer is the next message. No server-side pending-question state.
 - **Actions:** `propose_*` tools create an inert proposal and an approval card. Only the approval
   endpoint, called by the owner's click, commits.
-- **Rich blocks:** existing display hints remain supported. The optional read-only
-  `present_response` tool selects versioned compositions from same-turn authorized evidence;
-  the server binds exact values, units, currency, date coverage and saved/estimate status.
-  No model-supplied executable UI, links, hidden identifiers or new numerical facts.
-  The existing message blocks persist the result and the existing chat renderer owns it.
-  Full plain-language text is required independently of visuals. Follow-ups edit the
-  ordinary composer; existing work, file access and approval paths stay authoritative.
-  Report export is a local snapshot of the loaded answer with provenance, not a new saved
-  file or independent report pipeline. Scenario alternatives use existing calculator results;
-  changing an assumption requests a normal turn, never a business write.
-  Optional presentations consume existing model/tool/time allowance. No forced extra round;
-  a rejected visual never invalidates the plain answer. The provider schema may omit exact
-  duplicate Zod default regexes when the standard format remains; runtime validation is unchanged.
+- **Presentation is part of the answer, independent of retrieval.** Luna composes ordinary
+  streaming Markdown and native inline JSON Render components in one response. The component
+  catalog is available for every owner turn, including questions requiring no tool calls.
+  Choose the presentation appropriate to the question; never force a chart or a domain-specific
+  layout, and never call a second model to format the answer. Use the same renderer, response
+  stream, and ordered persisted message blocks. Reasoning summaries replace the active section;
+  completed answer parts accumulate.
+  Data views bind to exact fields of admitted evidence regardless of how it was retrieved,
+  including multiple successful results and exact owner-provided information. Conversation
+  history can be displayed as historical context, not automatically promoted to current
+  business evidence. For numeric displays retain units, source, coverage, currency and
+  uncertainty; never invent values, expose hidden identifiers, or use arbitrary UI code/actions.
+  Use the existing calculator for arithmetic and the existing authenticated file and approval
+  paths for effects. An invalid visual must not invalidate the plain answer. Report export is
+  a local snapshot of the loaded reply. The old `present_response` selection path remains only
+  for existing legacy consumers until their approved retirement; do not reintroduce GET tools
+  to support presentation. Verify genuine model-selected output and real mobile rendering,
+  persistence and interruption recovery before claiming feature acceptance.
 - **When the loop must stop** (budget, timeout, provider error): one final call with `tool_choice:"none"`
   so the model answers from what it has and says what is missing.
 - **Model text:** never rewrite, replace, shorten or append to the model's reply.
