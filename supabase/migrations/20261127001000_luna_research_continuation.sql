@@ -721,9 +721,8 @@ begin
    or length(btrim(coalesce(p_report,'')))<1
    or p_proof is null or jsonb_typeof(p_proof)<>'object'
    or jsonb_typeof(p_proof->'sources')<>'array'
-   or jsonb_array_length(p_proof->'sources')<1
    or jsonb_typeof(p_proof->'sourceCount')<>'number'
-   or coalesce((p_proof->>'sourceCount')::integer,0)<1
+   or coalesce((p_proof->>'sourceCount')::integer,-1)<0
    or p_proof->>'externalEffects'<>'not_attempted'
    or p_proof->>'quality' not in ('answered','verified','partial') then
    raise exception 'u4_report_invalid' using errcode='22023'; end if;
@@ -746,7 +745,7 @@ begin
      evidence,entity_type,entity_id,dedupe_key,created_at)
    values(r.business_id,'u4:'||p_run_id::text,r.owner_user_id,
      'leo','u4_report','watching',
-     case when p_proof->>'quality'='verified' then 'high' else 'medium' end,
+     'medium', -- required legacy task priority; not a grade of Luna's answer
      jsonb_build_object('title',r.title,'threadId',r.thread_id::text,
        'routineId',r.id::text,'runId',p_run_id::text,
        'localDate',o.local_date::text,'asOf',p_now::text),
@@ -980,9 +979,7 @@ begin
           (select timezone from public.businesses where id=p_business_id))::date::text,
         'asOf',p_now::text,'intent','priority_investigation',
         'externalEffects','not_attempted'),
-      case when p_evidence->'source'->>'quality' in ('partial','missing','stale')
-        or (p_evidence ? 'missing' and p_evidence->'missing'<>'[]'::jsonb)
-        then 'low' else 'high' end,
+      'medium', -- required legacy task priority; independent of evidence coverage
       jsonb_build_array(jsonb_build_object('source',p_source_type,
         'facts',jsonb_build_object('sourceId',p_source_id,
           'revisionHash',p_revision_hash,'episodeId',v.episode_id::text,

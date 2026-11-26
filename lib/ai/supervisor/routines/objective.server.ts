@@ -149,9 +149,8 @@ export type ObjectiveOutcome={
   sourceDomains:string[];
   sourceRefs:Array<{tool:string;source:string;domain:string;view:string|null;relations:string[];period:{from:string;to:string}|null;evidenceDigest:string}>;
 };
-/** A verified outcome is NOT the model saying it was successful. Validate
- * registered tool results, unsupported effects and the ordinary numeric
- * provenance checker. More than one valid research strategy may pass. */
+/** Check technical completion, authorized tool use and action claims.
+ * Sources are optional audit metadata, not a condition of publishing. */
 export function verifyObjectiveTurn(turn:AgentTurn,routine:RoutineRecord):ObjectiveOutcome{
   if(turn.endReason!=="complete"||
     unsupportedExternalEffectClaim(turn.text)||
@@ -166,7 +165,7 @@ export function verifyObjectiveTurn(turn:AgentTurn,routine:RoutineRecord):Object
   const reads=(turn.toolInvocations??[]).filter(call=>
     admitted.includes(call.name)&&
     // Catalogs and mailbox labels describe capabilities, not observed
-    // business facts. A model cannot pass acceptance using discovery alone.
+    // business facts. This distinction is recorded only for diagnostics.
     !["calculate","describe_database","list_gmail_labels"].includes(call.name)&&
     observedObjectiveEvidence(call.result));
   // Source observations are diagnostic; zero observations is a valid answer.

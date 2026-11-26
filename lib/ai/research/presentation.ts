@@ -5,8 +5,8 @@ import {exactDecimal,CALC_OPS,type CalcOp} from "@/lib/metrics/core/calculator";
 import {calculate} from "./tools.server";
 import {presentationPanelSchema,recordTableSchema,recoverRichPresentation,descriptiveGroupTitle,interactiveCalcSchema,evaluatePresentationCalc,type InteractiveCalc,type PresentationPanel,type RecordTable,type RichPresentation} from "@/lib/ai/conversations/presentation";
 
-/** Native inline GenUI vocabulary. All data values bind to the evidence already
- * admitted to this owner turn, irrespective of its retrieval mechanism. */
+/** Native inline GenUI vocabulary. Luna may author values directly or refer
+ * to data already returned within this authenticated owner turn. */
 const fieldPath=z.array(z.union([z.string().min(1),z.number().int().nonnegative()])).min(1);
 const reference=z.object({ref:z.string(),path:fieldPath.optional(),quote:z.string().min(1).optional()}).refine(v=>Boolean(v.path)!==Boolean(v.quote));
 const scalar=z.union([z.number().finite(),z.string(),z.boolean(),z.null()]);

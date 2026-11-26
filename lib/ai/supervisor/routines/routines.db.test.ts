@@ -452,7 +452,7 @@ describe("U4 migrated model-objective and autonomous Watch SQL contract",()=>{
         "from public.supervisor_routine_occurrences "+
         "where business_id=$1 and run_id=$2",[business,first.run_id]))
         .rows[0]?.proof;
-      expect(originalProof).toMatchObject({sourceCount:1,quality:"verified"});
+      expect(originalProof).toMatchObject({sourceCount:1,quality:"answered"});
       expect(await call(worker,"u4_publish_objective_report",[
         business,routineId,first.run_id,first.lease_token,
         "A duplicate report.","attention",originalProof,new Date().toISOString(),
@@ -471,7 +471,7 @@ describe("U4 migrated model-objective and autonomous Watch SQL contract",()=>{
       expect(audited.rows[0].state).toBe("completed");
       expect(audited.rows[0].receipt_ref).toBe("u4-verified:"+first.run_id);
       expect(audited.rows[0].u4_result).toMatchObject({
-        attention:"attention",proof:{sourceCount:1,quality:"verified",
+        attention:"attention",proof:{sourceCount:1,quality:"answered",
           externalEffects:"not_attempted"},
       });
       const ownerReports=await admin.query("select grounding,structured_content from public.ai_messages where business_id=$1 and owner_user_id=$2 and role='supervisor' and grounding->'agentMetadata'->>'u4Kind'='routine'",[business,ownerId]);
@@ -632,9 +632,8 @@ describe("U4 once: actual disposable cross-café admission, restart and private 
           "sealed_disposable_keys_not_provider_data".repeat(2),
           cafes[0],owners[0],hashes[2],
         ]);
-      const proof={sources:[{source:"cafe_state",identifier:"fixture_source",
-          view:"bounded source read",asOf:after}],sourceCount:1,
-        sourceDomains:["cafe_state"],quality:"partial",
+      const proof={sources:[],sourceCount:0,
+        sourceDomains:[],quality:"answered",
         missing:["Real provider execution not performed in this DB-only test."],
         externalEffects:"not_attempted"};
       expect(await call(workerB,"u4_publish_objective_report",[
