@@ -4,10 +4,12 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 vi.mock("server-only", () => ({}));
 const deps = vi.hoisted(() => ({
   readDays: vi.fn(),
+  runningCosts: vi.fn(),
   readCombos: vi.fn(),
   feePlans: vi.fn(),
   timed: vi.fn(async (_page: string, _stage: string, read: () => Promise<unknown>) => read()),
 }));
+vi.mock("./runningCostLines.server", () => ({ readRunningCostLines: deps.runningCosts }));
 vi.mock("./dailyFacts.server", () => ({ readDailyFacts: deps.readDays }));
 vi.mock("./comboCosts.server", () => ({ readMenuComboCostComponents: deps.readCombos }));
 vi.mock("@/lib/pos/processingFeeEstimate.server", () => ({
@@ -56,8 +58,18 @@ function salesDays(count: number) {
 describe("getPricingInputs Home projection", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    deps.runningCosts.mockResolvedValue([]);
     deps.readCombos.mockResolvedValue([]);
     deps.feePlans.mockResolvedValue([]);
+  });
+
+  it("uses the canonical monthly operating-cost result without reading bills and receipts separately", async () => {
+    deps.readDays.mockResolvedValue(salesDays(45));
+    deps.runningCosts.mockResolvedValue([{categoryCode:"rent",amountCents:12345,isMissing:false,isEstimate:true,amountSource:"mixed"}]);
+    const result=await getPricingInputs(dbWithOrders([]),"cafe-a");
+    expect(result.business.monthlyOperatingCostCents).toBe(12345);
+    expect(result.menuPriceBasis.runningStatus).toBe("estimated");
+    expect(deps.runningCosts).toHaveBeenCalledOnce();
   });
 
   it("skips irrelevant order rows on Home but retains identical Menu/chat pricing fields", async () => {

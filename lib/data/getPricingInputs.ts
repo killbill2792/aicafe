@@ -1,5 +1,6 @@
 import "server-only";
 import { readDailyFacts } from "./dailyFacts.server";
+import { readRunningCostLines } from "./runningCostLines.server";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { formatInTimeZone } from "date-fns-tz";
 import { subDays } from "date-fns";
@@ -52,9 +53,6 @@ export async function getPricingInputs(supabase: SupabaseClient, businessId: str
   const today = new Date();
   const todayDateStr = formatInTimeZone(today, timezone, "yyyy-MM-dd");
   const firstOfMonth = todayDateStr.slice(0,7)+"-01";
-  const [year,month]=todayDateStr.slice(0,7).split("-").map(Number);
-  const previousMonthStart=new Date(Date.UTC(year,month-2,1))
-    .toISOString().slice(0,10);
   const windowDays = 90;
   const fromDateStr = formatInTimeZone(subDays(today, windowDays - 1), timezone, "yyyy-MM-dd");
   // Begin independent work together. Only the Home attention projection may
@@ -74,23 +72,15 @@ export async function getPricingInputs(supabase: SupabaseClient, businessId: str
     }
     return readOrders();
   })();
-  const [itemsResult, days, recurringResult, ordersResult, expenseResult, priorExpenseResult, ownerFeePlans] = await Promise.all([
+  const [itemsResult, days, runningCosts, ordersResult, ownerFeePlans] = await Promise.all([
     supabase.from("cv_menu").select("id,name,price_cents,category,prep_seconds").like("source_ref","item:%").eq("business_id", businessId).eq("data->>is_active", "true"),
     daysPromise,
-    supabase.from("cv_bills").select("amount_cents,category_code,frequency,active_from,active_to,is_estimate").eq("business_id", businessId).lte("active_from", todayDateStr),
+    measure("runningCosts", () => readRunningCostLines(supabase,businessId,firstOfMonth,todayDateStr)),
     ordersPromise,
-    supabase.from("cv_expenses").select("category_code, amount_cents, status")
-      .eq("business_id",businessId).gte("spent_on",firstOfMonth).lte("spent_on",todayDateStr),
-    supabase.from("cv_expenses").select("category_code")
-      .eq("business_id",businessId).eq("status","actual")
-      .gte("spent_on",previousMonthStart).lt("spent_on",firstOfMonth),
     measure("feePlans", () => getOwnerConfirmedProcessingFeePlans(supabase, businessId)),
   ]);
   if (itemsResult.error) throw itemsResult.error;
-  if (recurringResult.error) throw recurringResult.error;
   if (ordersResult.error) throw ordersResult.error;
-  if (expenseResult.error) throw expenseResult.error;
-  if (priorExpenseResult.error) throw priorExpenseResult.error;
   const rawItems = itemsResult.data ?? [];
   const itemIds = rawItems.map((item) => item.id);
   const comboRows=await measure("comboCosts", () => readMenuComboCostComponents(supabase,businessId,itemIds));
@@ -175,14 +165,7 @@ export async function getPricingInputs(supabase: SupabaseClient, businessId: str
     );
     return sum + (count ?? 0);
   }, 0);
-  const activeOperatingCosts = (recurringResult.data ?? []).filter(
-    (row) => row.category_code !== "ingredients" && (!row.active_to || row.active_to >= todayDateStr),
-  );
-  // Actual expenses for the current month replace recurring estimates
-  // category by category. No double count across receipts and bill schedule.
-  // This also powers the owner-visible Menu price evidence panel.
-  // Payroll is projected from its own independently evidenced dates; it must
-  // not be diluted by dates that contain only POS sales evidence.
+  // Use the same SQL-backed monthly obligation/receipt evidence as Money.
   const totalItemPrepSecondsInWindow = 0; // period-aligned item mix unavailable
   const menuPriceBasis = menuPriceSourceBasis({
     days:days.map(day=>({
@@ -197,19 +180,7 @@ export async function getPricingInputs(supabase: SupabaseClient, businessId: str
       cardFeesCents:day.cardFeesCents??0,
       cardFeesStatus:day.cardFeesStatus??null,
     })),
-    recurring:activeOperatingCosts.map(row=>({
-      categoryCode:row.category_code,
-      amountCents:Number(row.amount_cents),
-      frequency:row.frequency as "monthly"|"weekly"|"quarterly"|"yearly",
-      estimated:row.is_estimate,
-    })),
-    expenses:(expenseResult.data??[]).map(row=>({
-      categoryCode:row.category_code,
-      amountCents:Number(row.amount_cents),
-      status:row.status as "actual"|"estimated",
-    })),
-    previousMonthExpenseCategories:(priorExpenseResult.data??[])
-      .map(row=>row.category_code),
+    runningCosts,
     totalItemPrepSecondsInWindow,
     asOfBusinessDate:todayDateStr,
     // The current rollup does not persist an independent complete labor
