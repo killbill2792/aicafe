@@ -49,14 +49,14 @@ export async function startDurableOwnerRun(ownerMessageId: string): Promise<Dura
   await readOwnerMessage(scope, scope.threadId, id);
   return new SupabaseDurableRunRepository().start(scope, id, plan); }
 /** The canonical grounded reply is the only valid final outcome receipt.
- * Partial, failed or timeout responses are never treated as finished work. */
+ * Confidence is independent of completion; only incomplete execution is rejected. */
 async function verifiedReply(run: WorkerRun): Promise<VerifiedReply | null> {
   const owner = await readOwnerMessage(run.scope, run.scope.threadId, run.requestKey);
   const reply = await getExistingSupervisorReply(run.scope, owner);
-  const meta = reply?.grounding?.agentMetadata; if (!reply || reply.grounding?.status !== "verified" ||
+  const meta = reply?.grounding?.agentMetadata; if (!reply || !["verified","estimated","partial","unavailable","insufficient_evidence"].includes(String(reply.grounding?.status)) ||
     !meta || typeof meta !== "object") return null;
   const { endReason, usage } = meta as { endReason?: unknown; usage?: unknown };
-  if (typeof endReason !== "string" || !usage || typeof usage !== "object") return null;
+  if (endReason !== "complete" || !usage || typeof usage !== "object") return null;
   const u = usage as Record<string, unknown>;
   if (!["modelCalls","toolCalls","inputTokens","outputTokens","latencyMs"]
     .every(k => typeof u[k] === "number" && Number.isSafeInteger(u[k]) && (u[k] as number) >= 0)) return null;
@@ -244,8 +244,8 @@ export function decodeMatchedOwnerAnswer(run:WorkerRun,questionId:string,answerI
  const prompt=historyContent({text:null,blocks:[(question.structured_content as unknown[])[clarify]]});
  return matchedOwnerAnswerSchema.parse({questionId,answerId,question:prompt,answer:answer.text_content});
 }
-export async function processDurableRun(runId: string,emit:(type:string,data:unknown)=>void=()=>{}): Promise<WorkerOutcome> {
-  const executionDeadline=Date.now()+110_000; // 120s worker platform window; leave time for durable writes and lease acknowledgement
+export async function processDurableRun(runId: string,emit:(type:string,data:unknown)=>void=()=>{},parentDeadline?:number): Promise<WorkerOutcome> {
+  const executionDeadline=Math.min(parentDeadline??Infinity,Date.now()+110_000); // 120s worker platform window; leave time for durable writes and lease acknowledgement
   const id = uuid.parse(runId), db = createAdminSupabaseClient();
   const { data, error } = await db.from("supervisor_runs")
     .select("id,business_id,owner_user_id,thread_id,request_key,status,execution_version,input_locale,input_attachment_ids,owner_answer_ids,awaiting_question_id")
@@ -346,7 +346,7 @@ export async function processDurableRun(runId: string,emit:(type:string,data:unk
           durableFence:{runId:run.id,jobId:job.id,claimToken},
           recordDurableStep:step=>jobs.updateDurableAgentJob(identity,job.id,"progress",step).catch(()=>undefined),
         }));
-        if("replyId" in outcome)return outcome.awaitingOwner||outcome.incompleteReport?"yielded":undefined;
+        if("replyId" in outcome)return outcome.awaitingOwner?"yielded":undefined;
         // No automatic retry after an uncertain effect, cancellation, or
         // revoked authority. Retry only a safe boundary, using the SAME run.
         const retryable=["durable_retry_pending","agent_turn_failed","reply_storage_failed","attachment_unavailable",
@@ -371,12 +371,13 @@ export async function processDurableRun(runId: string,emit:(type:string,data:unk
           },
         },()=>runOneTurn({ scope, threadId: scope.threadId, owner: nextOwner,
           ownerText: nextOwner.text ?? "", locale: "en", service,
-          emit: () => {}, job, jobs, externalClient: client, })), }); }, }); }
-export async function processOldestDurableRun(): Promise<{ processed: number; state: WorkerOutcome | null }> {
+          emit: () => {}, job, jobs, externalClient: client,executionDeadline, })), }); }, }); }
+export async function processOldestDurableRun(parentDeadline?:number): Promise<{ processed: number; state: WorkerOutcome | null }> {
+  if(parentDeadline!==undefined&&Date.now()>=parentDeadline)return {processed:0,state:null};
   const candidate = await selectNextDurableRun();
   if (!candidate) return { processed: 0, state: null };
   // Selection is already durably rotated before executing. A crash or
   // thrown error cannot keep a poison candidate at the head of the fleet.
-  const state = await processDurableRun(candidate.runId);
+  const state = await processDurableRun(candidate.runId,undefined,parentDeadline);
   return { processed: 1, state };
 }
