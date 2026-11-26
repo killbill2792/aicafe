@@ -11,16 +11,22 @@ const reference=z.object({ref:z.string(),path:fieldPath.optional(),quote:z.strin
 const pointSelection=z.object({label:z.string().min(1).max(140),value:reference,labelField:reference.optional()});
 const pointPanel=z.object({kind:z.enum(["metric","bar","line","donut","ranked_table"]),title:z.string().optional(),points:z.array(pointSelection).min(1).max(30)});
 
+// Direct model-authored analysis is not a claim of stored business evidence.
+const analysisPanel=z.object({kind:z.enum(["metric","bar","line","donut","ranked_table"]),title:z.string().optional(),
+ unit:z.enum(["cents","count","items","units","seconds","minutes","hours","days","ratio","ratio squared","indicator","cents/hour"]),
+ measurement:z.string().optional(),basis:z.enum(["calculated","estimate","scenario"]),
+ explanation:z.string().trim().min(1),points:z.array(z.object({label:z.string(),value:z.number().finite()})).min(1)});
+
 const selection=z.object({
  ref:z.string(),kind:z.enum(["metric","bar","line","donut","ranked_table","table"]),
  x:z.string().optional(),y:z.string().optional(),columns:z.array(z.string()).optional(),title:z.string().optional(),
 });
 const calcSelection=z.object({ref:z.string(),editable:z.array(z.string())});
-const envelope=z.object({layout:z.enum(["stack","grid"]).optional(),panels:z.array(z.union([selection,pointPanel])).optional(),
+const envelope=z.object({layout:z.enum(["stack","grid"]).optional(),panels:z.array(z.union([selection,pointPanel,analysisPanel])).optional(),
  report:z.boolean().optional(),files:z.boolean().optional(),calculator:calcSelection.optional()});
 const components={
  Stack:{props:z.object({}),slots:["default"],description:"Group views in their displayed order.",example:{}},
- DataView:{props:envelope,slots:[],description:"Metrics, charts, tables, calculators, report and authenticated attachments. For rows use ref, x, y or columns. For individual values, including across sources, use points with label and value:{ref,path:[exact field names and array indices]}; for text use value:{ref,quote:exact numeric token including currency symbol if present}. For dated or numeric category labels use labelField:{ref,path}. A calculate result can supply an editable calculator.",example:{layout:"grid",panels:[{ref:"q1",kind:"bar",x:"category",y:"amount_cents"}]}},
+ DataView:{props:envelope,slots:[],description:"Metrics, charts, tables, calculators, report and authenticated attachments. For rows use ref, x, y or columns. For individual values, including across sources, use points with label and value:{ref,path:[exact field names and array indices]}; for text use value:{ref,quote:exact numeric token including currency symbol if present}. For dated or numeric category labels use labelField:{ref,path}. A calculate result can supply an editable calculator. You can also author a panel directly with kind, title, unit, basis (calculated, estimate or scenario), explanation and points [{label,value}]. Use cents for money in minor units; explain the calculation or assumptions in prose. Direct values are labeled as model analysis, not stored records.",example:{layout:"grid",panels:[{ref:"q1",kind:"bar",x:"category",y:"amount_cents"}]}},
 };
 // The upstream default template advertises Card, demo data, repeat, /state
 // and mutable actions. Our data-bound registry does not execute those. Use
@@ -34,13 +40,13 @@ const catalog=defineCatalog(defineSchema(()=>schema.definition,{promptTemplate:(
  JSON.stringify({op:"add",path:"/root",value:"view"}),
  JSON.stringify({op:"add",path:"/elements/view",value:{type:"DataView",props:components.DataView.example,children:[]}}),
  String.fromCharCode(96).repeat(3),
- "Each independent view starts its own spec fence. Only /root and /elements are supported. Stack can contain DataView children; DataView is a leaf. No repeat, dynamic state bindings, invented demo data or executable actions.",
+ "Each independent view starts its own spec fence. Only /root and /elements are supported. Stack can contain DataView children; DataView is a leaf. No repeat, executable actions or arbitrary client code. Model-authored calculations, forecasts and explicitly labeled hypothetical scenarios are supported.",
  ...Object.entries(components).map(([name,c])=>name+": "+formatZodType(c.props)+" — "+c.description),
  ...(options.customRules??[]),
 ].filter(Boolean).join("\n")}),{components,actions:{}});
 export const INLINE_PRESENTATION_HINT=catalog.prompt({mode:"inline",
- system:"You are composing the actual owner-facing answer. Use natural Markdown together with the available visual and interactive components whenever they make the answer clearer. Choose the representation yourself; the information source does not determine the layout. Prefer a visual over a Markdown table whenever the answer has figures across several periods or items, a ranking, a comparison or headline numbers: a chart for trends, a table for records, metric cards for the key figures, each bound to the rows you retrieved with run_sql (use that result's presentationRef), with a short sentence of prose around it. Plain prose is for simple one-fact answers.",
- customRules:["Use separate spec fences for independent UI sections anywhere in the answer; continue ordinary prose between them. Use the presentationRef from admitted tool results or the text references described in the turn context. Bind existing values; do not copy entire datasets or invent numbers. Historical messages are prior claims, not fresh business evidence. No sample state or generic executable actions."]});
+ system:"You are composing the actual owner-facing answer. Use natural Markdown together with the available visual and interactive components whenever they make the answer clearer. Choose the representation yourself; the information source does not determine the layout. Prefer a visual over a Markdown table whenever the answer has figures across several periods or items, a ranking, a comparison or headline numbers: a chart for trends, a table for records, metric cards for the key figures, with a short sentence of prose around it. Use direct model-authored panels for calculations, forecasts and scenarios when helpful; distinguish actual records from assumptions and estimates. Choose prose or visuals independently of the retrieval method.",
+ customRules:["Use separate spec fences for independent UI sections anywhere in the answer; continue ordinary prose between them. Use the presentationRef from admitted tool results or the text references described in the turn context. Bind existing values when presenting retrieved records, or use a model-authored analysis panel for derived values, estimates and hypothetical inputs. Explain the basis and do not represent assumptions as actual business records. Historical messages are prior claims, not fresh business evidence. No generic executable actions."]});
 type Selection=z.infer<typeof selection>;
 export type PresentationContext={asOf:string;currency?:string|null;presentationAttachments?:readonly string[]};
 type Context=PresentationContext;
@@ -208,6 +214,19 @@ export function resolveResearchView(raw:unknown,queries:PresentationEvidenceMap,
  const c=calcSelection.safeParse(raw.calculator);
  const calc=c.success?calculator(queries.get(c.data.ref)?.data??{},c.data.editable,ctx):null;
  for(const value of Array.isArray(raw.panels)?raw.panels:[]){
+  const direct=analysisPanel.safeParse(value);
+  if(direct.success){
+   const a=direct.data;
+   const points=a.points.map(p=>({label:safeLabel(p.label),value:p.value}));
+   if(points.every(p=>p.label!==undefined)&&new Set(points.map(p=>p.label)).size===points.length){
+    const modelPanel=presentationPanelSchema.safeParse({kind:a.kind,title:safeLabel(a.title??"Luna analysis")??"Luna analysis",unit:a.unit,
+     currency:["cents","cents/hour"].includes(a.unit)?ctx.currency??null:null,from:ctx.asOf,to:ctx.asOf,asOf:ctx.asOf,
+     source:"response_evidence",sourceDetail:("Luna "+(a.basis==="calculated"?"calculation (model-derived)":a.basis==="scenario"?"hypothetical scenario":"estimate")+": "+a.explanation).slice(0,500),
+     ...(a.basis!=="calculated"?{coverage:"estimate"}:{}),...(a.measurement?{measurement:a.measurement}:{}),points});
+    if(modelPanel.success&&panels.length<8)panels.push(modelPanel.data);
+   }
+   continue;
+  }
   const selectedPoints=pointPanel.safeParse(value);
   if(selectedPoints.success){const p=pointView(selectedPoints.data,queries,ctx);if(p&&panels.length<8)panels.push(p);continue;}
   const s=selection.safeParse(value);if(!s.success)continue;
