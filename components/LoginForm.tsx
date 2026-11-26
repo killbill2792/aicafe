@@ -65,7 +65,7 @@ export default function LoginForm({ callbackError = false }: { callbackError?: b
         value={email}
         onChange={(event) => setEmail(event.target.value)}
         placeholder={t("emailPlaceholder")}
-        className="h-14 rounded-2xl border border-line bg-card px-4 text-[1.0625rem] text-ink placeholder:text-ink-muted focus:outline-none focus-visible:ring-2 focus-visible:ring-ink focus-visible:ring-offset-2"
+        className="h-14 rounded-2xl border border-line bg-card px-4 text-[1.0625rem] text-ink placeholder:text-ink-muted focus:outline-hidden focus-visible:ring-2 focus-visible:ring-ink focus-visible:ring-offset-2"
       />
       {mode === "password" && <>
         <label htmlFor="login-password" className="text-[0.9375rem] font-semibold text-ink">{t("passwordLabel")}</label>

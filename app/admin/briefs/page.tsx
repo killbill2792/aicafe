@@ -38,7 +38,7 @@ export default async function AdminBriefs(){
           <td className="p-1">{r.localDate}</td><td className="p-1">{names.get(r.businessId)??r.businessId}</td>
           <td className="p-1">{r.ownerKey==="cafe"?"café":"owner "+r.ownerKey.slice(0,8)}</td><td className="p-1">{r.channel}</td>
           <td className="p-1">{r.runKind}</td><td className="p-1 font-semibold">{r.outcome}</td><td className="p-1">{r.step}</td>
-          <td className="p-1 break-words">{r.reason}</td><td className="p-1">{r.updatedAt.slice(11,16)} UTC</td></tr>)}</tbody>
+          <td className="p-1 wrap-break-word">{r.reason}</td><td className="p-1">{r.updatedAt.slice(11,16)} UTC</td></tr>)}</tbody>
       </table></div>}</section>
     <section className="rounded-xl border bg-white p-5"><h2 className="font-semibold">WhatsApp outbox</h2>
       {outbox.error&&<p className="text-sm text-red-700">Outbox unavailable.</p>}

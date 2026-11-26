@@ -21,8 +21,8 @@ export default function SideNav({ cafeName, languageSwitch }: { cafeName: string
   return (
     <nav aria-label={t("ariaLabel")} className={`sticky top-0 hidden h-screen shrink-0 flex-col gap-1 border-e border-line bg-nav px-3 py-6 md:flex ${compact?"w-[76px]":"w-sidenav"}`}>
       <div className={`flex items-center gap-1 pb-6 ${compact?"justify-center":"justify-between"}`}>
-        <div className={`${compact?"sr-only":"min-w-0 break-words px-2 font-headline text-xl font-bold text-ink"}`}>{cafeName}</div>
-        {pathname==="/"&&<button type="button" aria-label={t("ariaLabel")} aria-expanded={!compact} title={t("ariaLabel")} onClick={()=>setCollapsed(v=>!v)} className="flex size-12 shrink-0 items-center justify-center rounded-full text-muted hover:bg-surface2 focus-visible:outline focus-visible:outline-2 focus-visible:outline-ink">{compact?<PanelLeftOpen size={20} aria-hidden="true"/>:<PanelLeftClose size={20} aria-hidden="true"/>}</button>}
+        <div className={`${compact?"sr-only":"min-w-0 wrap-break-word px-2 font-headline text-xl font-bold text-ink"}`}>{cafeName}</div>
+        {pathname==="/"&&<button type="button" aria-label={t("ariaLabel")} aria-expanded={!compact} title={t("ariaLabel")} onClick={()=>setCollapsed(v=>!v)} className="flex size-12 shrink-0 items-center justify-center rounded-full text-muted hover:bg-surface2 focus-visible:outline-solid focus-visible:outline-2 focus-visible:outline-ink">{compact?<PanelLeftOpen size={20} aria-hidden="true"/>:<PanelLeftClose size={20} aria-hidden="true"/>}</button>}
       </div>
       <ul className="flex flex-col gap-1">
         {NAV_TABS.map(({ href, key, Icon }) => {

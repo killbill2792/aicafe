@@ -34,7 +34,7 @@ export default async function StaffPage({params,searchParams}:{params:Promise<{l
     timeReader("Staff","getWeekSchedule",()=>getWeekSchedule({weekStart:selected})),
     timeReader("Staff","syncStaffRuleAlerts",()=>syncStaffRuleAlerts()),
    ]);
- return <PageShell className="!max-w-full">{result.ok?<>
+ return <PageShell className="max-w-full!">{result.ok?<>
   <PosImportReviewPanel people={result.data.team.map(person=>({id:person.id,name:person.name}))}/>
   <StaffWorkspace key={`${selected}:${date??""}:${employee??""}:${tab??""}:${fix??""}:${clock??""}`} initial={result.data} tab={tab} locale={locale}
    focusDate={validScheduleDate(date)?date:undefined} focusEmployee={employee}
