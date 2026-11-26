@@ -115,6 +115,10 @@ describe("PR 10: More and café profile share authenticated identity reads", () 
     expect(state.active).toHaveBeenCalledWith("owner-1");
     expect(state.memberships).toHaveBeenCalledWith("owner-1");
     expect(state.from).not.toHaveBeenCalledWith("memberships");
+    expect(state.from).toHaveBeenCalledWith("cv_sales_days");
+    expect(state.from).toHaveBeenCalledWith("cv_card_fees");
+    expect(state.from).not.toHaveBeenCalledWith("daily_rollups");
+    expect(state.from).not.toHaveBeenCalledWith("processing_fee_daily_facts");
   });
 
   it("keeps the More page badge reader empty and usable before any real café exists", async () => {
