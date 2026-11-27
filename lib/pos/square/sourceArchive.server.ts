@@ -1,49 +1,62 @@
 import "server-only";
 import type {SupabaseClient} from "@supabase/supabase-js";
-import {discoverSourceResources,noteAvailability,openSourceStream,type SourceIdentifier} from "@/lib/externalData/archive.server";
-import {SquareRequestError} from "./client";
+import {synchronizeSource,type SourceIdentifier} from "@/lib/externalData/archive.server";
+import {SquareRequestError,type SquarePageReader} from "./client";
 
 /** Remote IDs belong to the merchant, even when the API filters by location.
  * Keep independent location cursors while sharing one record per merchant ID. */
 export function squareArchive(db: SupabaseClient, businessId: string, merchant: string, location: string) {
   if (!merchant || !location) throw new Error("Missing Square source identity");
   const source={businessId,provider:"square",account:merchant};
-  return async (resource: string, permission: string) => {
-    await discoverSourceResources(db,source,[{resource,permission}],new Date().toISOString());
-    const stream = await openSourceStream(db,source,resource,location);
-    const save = async (rows: readonly unknown[], next: string | null) => {
-      const records = rows.map(row => {
-        if (!row || typeof row !== "object" || !("id" in row) || typeof row.id !== "string" || !row.id) {
-          throw new Error("Missing Square object ID");
+  async function authorize() {
+    const {data,error}=await db.from("pos_connections").select("merchant_id")
+      .eq("business_id",businessId).eq("provider","square").eq("merchant_id",merchant)
+      .eq("status","active").maybeSingle();
+    if(error)throw error;
+    if(!data)throw new SquareRequestError(401);
+  }
+  return (resource: string, permission: string): SquarePageReader => async (query, fetchPage) => {
+    const recordsFrom = (rows: readonly unknown[]) => rows.map(row => {
+      if (!row || typeof row !== "object" || !("id" in row) || typeof row.id !== "string" || !row.id) {
+        throw new Error("Missing Square object ID");
+      }
+      if ("location_id" in row && row.location_id != null && row.location_id !== location) {
+        throw new Error("Square returned an object outside the requested location");
+      }
+      const identifiers: SourceIdentifier[]=[{namespace:resource,value:row.id,selector:{path:[]}}];
+      if (resource === "payments" && "order_id" in row && typeof row.order_id === "string" && row.order_id) {
+        identifiers.push({namespace:"orders",value:row.order_id,relationship:"payment_for",selector:{path:[]}});
+      }
+      if (resource === "catalog" && "item_data" in row && row.item_data && typeof row.item_data === "object") {
+        const data=row.item_data;
+        let variants: SourceIdentifier[]=[];
+        if ("variations" in data && Array.isArray(data.variations)) {
+          variants=data.variations.flatMap(v => typeof v?.id === "string"
+            ? [{namespace:"pos_item_id",value:v.id,selector:{path:["item_data"],variation:v.id}}] : []);
         }
-        if ("location_id" in row && row.location_id != null && row.location_id !== location) {
-          throw new Error("Square returned an object outside the requested location");
+        identifiers.push(...(variants.length ? variants :
+          [{namespace:"pos_item_id",value:row.id,selector:{path:["item_data"]}}]));
+      }
+      return {key: row.id, payload: row, identifiers,
+        updatedAt: "updated_at" in row && typeof row.updated_at === "string" ? row.updated_at : null};
+    });
+    const records = await synchronizeSource(db,source,{
+      capability:{resource,permission},stream:location,scope:{location,query:JSON.stringify(query)},
+      authorize,readCompleted:true,
+      observe:async (cursor,scope)=>{
+        const savedQuery:unknown=JSON.parse(scope.query);
+        if(scope.location!==location||!savedQuery||typeof savedQuery!=="object"||Array.isArray(savedQuery)){
+          throw new Error("Invalid Square observation scope");
         }
-        const identifiers: SourceIdentifier[]=[{namespace:resource,value:row.id,selector:{path:[]}}];
-        if (resource === "payments" && "order_id" in row && typeof row.order_id === "string" && row.order_id) {
-          identifiers.push({namespace:"orders",value:row.order_id,relationship:"payment_for",selector:{path:[]}});
-        }
-        if (resource === "catalog" && "item_data" in row && row.item_data && typeof row.item_data === "object") {
-          const data=row.item_data;
-          let variants: SourceIdentifier[]=[];
-          if ("variations" in data && Array.isArray(data.variations)) {
-            variants=data.variations.flatMap(v => typeof v?.id === "string"
-              ? [{namespace:"pos_item_id",value:v.id,selector:{path:["item_data"],variation:v.id}}] : []);
-          }
-          identifiers.push(...(variants.length ? variants :
-            [{namespace:"pos_item_id",value:row.id,selector:{path:["item_data"]}}]));
-        }
-        return {key: row.id, payload: row, identifiers,
-          updatedAt: "updated_at" in row && typeof row.updated_at === "string" ? row.updated_at : null};
-      });
-      await stream.commit(records, next, next === null);
-    };
-    return Object.assign(save,{
-      failed: (error: unknown) => noteAvailability(db,source,resource,
-        error instanceof SquareRequestError
+        const page=await fetchPage(savedQuery as Record<string,unknown>,cursor);
+        return {records:recordsFrom(page.items),next:page.next};
+      },
+      failure:error=>({status:error instanceof SquareRequestError
           ? error.status === 401 || error.status === 403 ? "permission_required" : "unavailable"
           : "incomplete",
-        new Date().toISOString(),error instanceof SquareRequestError ? error.retryAt : undefined),
+        retryAt:error instanceof SquareRequestError ? error.retryAt : undefined,
+        resetCursor:error instanceof SquareRequestError && error.status===400}),
     });
+    return records as Awaited<ReturnType<typeof fetchPage>>["items"];
   };
 }

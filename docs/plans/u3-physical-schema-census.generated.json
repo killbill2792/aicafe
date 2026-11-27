@@ -5782,6 +5782,47 @@
    "kind": "table",
    "columns": [
     [
+     "business_id",
+     "uuid",
+     true
+    ],
+    [
+     "provider",
+     "text",
+     true
+    ],
+    [
+     "observation_id",
+     "uuid",
+     true
+    ],
+    [
+     "record_id",
+     "uuid",
+     true
+    ]
+   ],
+   "relation": "external_observation_members",
+   "foreign_keys": [
+    {
+     "target": "toast_raw_records",
+     "constraint": "external_observation_members_business_id_provider_record__fkey1"
+    },
+    {
+     "target": "external_records_other",
+     "constraint": "external_observation_members_business_id_provider_record__fkey2"
+    },
+    {
+     "target": "external_records",
+     "constraint": "external_observation_members_business_id_provider_record_i_fkey"
+    }
+   ]
+  },
+  {
+   "rls": true,
+   "kind": "table",
+   "columns": [
+    [
      "id",
      "bigint",
      true
@@ -6392,6 +6433,16 @@
     [
      "cursor_state",
      "jsonb",
+     false
+    ],
+    [
+     "active_observation_id",
+     "uuid",
+     false
+    ],
+    [
+     "last_complete_observation_id",
+     "uuid",
      false
     ]
    ],

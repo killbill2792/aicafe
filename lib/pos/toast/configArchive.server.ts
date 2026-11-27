@@ -1,8 +1,7 @@
 import "server-only";
 import type {SupabaseClient} from "@supabase/supabase-js";
 import {z} from "zod";
-import {noteAvailability,openSourceStream,type Source} from "@/lib/externalData/archive.server";
-import {readProviderPages} from "@/lib/externalData/pages";
+import {synchronizeSource,type Source} from "@/lib/externalData/archive.server";
 import {createToastClient,GUID,ToastApiError} from "./client";
 import {TOAST_READ_ENDPOINTS} from "./readOperations";
 
@@ -28,37 +27,39 @@ export async function refreshToastConfiguration(db:SupabaseClient,source:Source,
   const client=createToastClient(db,source.businessId);
   for(const op of due){
     if(Date.now()>=deadlineAt)break;
-    const stream=await openSourceStream(db,source,op.endpoint,"current");
-    const resume=typeof stream.cursor==="string" ? stream.cursor : null;
     try{
-      await readProviderPages(async cursor=>{
-        let next:string|null=null;
-        const path=cursor ? op.path+"?pageToken="+encodeURIComponent(cursor) : op.path;
-        const raw=await client.request(path,source.account,response,{
-          deadlineAt,onResponse:meta=>{next=meta.nextPageToken;},
-        });
-        const list=Array.isArray(raw);
-        const records=(list ? raw : [raw]).map(payload=>{
-          const guid=GUID.safeParse(payload.guid);
-          if(list&&!guid.success)throw new ToastApiError("invalid_response");
-          if(typeof payload.restaurantGuid==="string"&&payload.restaurantGuid.toLowerCase()!==source.account.toLowerCase())
-            throw new ToastApiError("unauthorized_location");
-          return {key:guid.success ? guid.data : "singleton",payload};
-        });
-        return {items:[],next,commit:()=>stream.commit(records,next,next===null)};
-      },undefined,resume);
+      await synchronizeSource(db,source,{
+        capability:{resource:op.endpoint,permission:"config"},stream:"current",scope:{},
+        authorize:()=>client.assertLocationAccess(source.account),
+        observe:async cursor=>{
+          let next:string|null=null;
+          const path=cursor ? op.path+"?pageToken="+encodeURIComponent(cursor) : op.path;
+          const raw=await client.request(path,source.account,response,{
+            deadlineAt,onResponse:meta=>{next=meta.nextPageToken;},
+          });
+          const list=Array.isArray(raw);
+          const records=(list ? raw : [raw]).map(payload=>{
+            const guid=GUID.safeParse(payload.guid);
+            if(list&&!guid.success)throw new ToastApiError("invalid_response");
+            if(typeof payload.restaurantGuid==="string"&&payload.restaurantGuid.toLowerCase()!==source.account.toLowerCase())
+              throw new ToastApiError("unauthorized_location");
+            return {key:guid.success ? guid.data : "singleton",payload};
+          });
+          return {records,next};
+        },
+        failure:error=>{
+          const failure=error instanceof ToastApiError ? error : null;
+          const status=failure?.status===403||failure?.category==="unauthorized_location"?"permission_required":
+            failure?.status===204?"unsupported":
+            failure?.category==="invalid_response"||failure?.status===400?"incomplete":"unavailable";
+          return {status,resetCursor:failure?.status===400,
+            retryAt:failure?.retryAt??new Date(Date.now()+
+              (status==="permission_required"||status==="unsupported" ? dayMs : 900_000)).toISOString()};
+        },
+      });
     }catch(error){
       const failure=error instanceof ToastApiError ? error : null;
-      if(resume&&failure?.status===400){
-        // Expired provider cursors restart from page one on the next run.
-        await stream.commit([],null,false);
-      }
-      const status=failure?.status===403?"permission_required":failure?.status===204?"unsupported":
-        failure?.category==="invalid_response"||failure?.status===400?"incomplete":"unavailable";
-      const retryAt=failure?.retryAt??new Date(Date.now()+
-        (status==="permission_required"||status==="unsupported" ? dayMs : 900_000)).toISOString();
-      await noteAvailability(db,source,op.endpoint,status,new Date().toISOString(),retryAt);
-      if(failure?.status===429||failure?.status===401)throw error;
+      if(!failure||failure.status===429||failure.status===401)throw error;
     }
   }
 }

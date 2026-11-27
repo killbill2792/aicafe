@@ -40,6 +40,24 @@ begin
    where business_id=cafe and provider='fixture-provider' and stream='one';
   if before_rev<>2 or exists(select 1 from public.external_records where business_id=cafe and source_key='a') then
     raise exception 'Partial page committed'; end if;
+  perform public.external_commit_page(cafe,'fixture-provider','merchant:4','public_documents','city',0,
+    '{"cursor":"opaque","scope":{"edition":"first"}}',false,
+    '[{"key":"notice-1","payload":{"appendix":{"unfamiliar title":[null,2]}}}]');
+  begin
+    perform public.external_read_observation(cafe,'fixture-provider','merchant:4','public_documents','city',1,null);
+    raise exception 'Unfinished observation reported as complete';
+  exception when serialization_failure then null; end;
+  perform public.external_commit_page(cafe,'fixture-provider','merchant:4','public_documents','city',1,
+    '{"cursor":null,"scope":{"edition":"first"}}',true,
+    '[{"key":"notice-2","payload":{"appendix":{"unfamiliar title":[3,null]}}}]');
+  if (select count(*) from public.external_read_observation(cafe,'fixture-provider','merchant:4','public_documents','city',2,null))<>2
+     or not exists(select from public.external_resources e where e.business_id=cafe
+       and e.resource='public_documents' and e.last_complete_scope->>'edition'='first') then
+    raise exception 'Completed observation lost a page or its scope'; end if;
+  perform public.external_commit_page(cafe,'fixture-provider','merchant:4','public_documents','another city',0,
+    null,true,'[{"key":"notice-1","payload":{"appendix":{"unfamiliar title":[null,2]}}}]');
+  if (select count(*) from public.external_read_observation(cafe,'fixture-provider','merchant:4','public_documents','city',2,null))<>2 then
+    raise exception 'Overlapping observation overwrote prior membership'; end if;
   perform public.external_commit_page(other,'fixture-provider','merchant:4','activity','one',0,null,true,
     '[{"key":"not-a-guid","payload":{"private":true}}]');
   perform public.external_commit_page(cafe,'fixture-provider','merchant:4','annotations','one',0,null,true,
@@ -110,7 +128,7 @@ begin
   perform set_config('request.jwt.claim.sub',owner_id::text,true);
   perform set_config('app.supervisor_research_business_id',cafe::text,true);
   set local role authenticated;
-  if (select count(*) from public.external_records where provider='fixture-provider')<>3 or
+  if (select count(*) from public.external_records where provider='fixture-provider')<>5 or
      exists(select 1 from public.external_records where payload ? 'private') then
     raise exception 'Owner isolation failed'; end if;
   if not exists(select from public.external_records where

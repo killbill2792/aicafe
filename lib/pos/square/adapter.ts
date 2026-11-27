@@ -1,6 +1,6 @@
-import {readProviderPages,type PageSink} from "@/lib/externalData/pages";
+import {readProviderPages} from "@/lib/externalData/pages";
 import "server-only";
-import { squarePaginated, squareRequest } from "./client";
+import { squarePaginated, squareRequest, type SquarePageReader } from "./client";
 import type { PosAdapter, PosCatalogItem, PosEmployee, PosOrder, PosTimecard, PosScheduledShift } from "../types";
 
 type SquareMoney = { amount?: number; currency?: string };
@@ -72,7 +72,7 @@ function classifySquarePaymentFee(payment: SquarePayment): { applicable: boolean
  * Labor reports before trusting a real sync.
  */
 export function createSquareAdapter(params: { accessToken: string; locationId: string;
-  archive?: (resource: string, permission: string) => Promise<PageSink<unknown>>
+  archive?: (resource: string, permission: string) => SquarePageReader
 }): PosAdapter {
   const { accessToken, locationId } = params;
 
@@ -94,7 +94,7 @@ export function createSquareAdapter(params: { accessToken: string; locationId: s
           },
           limit: 500,
         },
-        "orders", await params.archive?.("orders","ORDERS_READ"),
+        "orders", params.archive?.("orders","ORDERS_READ"),
       );
 
       // Processing fees live on Payments, matched back to their order. Failed/canceled attempts
@@ -103,7 +103,7 @@ export function createSquareAdapter(params: { accessToken: string; locationId: s
         accessToken,
         "/v2/payments",
         { location_id: locationId, begin_time: since.toISOString(), end_time: until.toISOString() },
-        "payments", await params.archive?.("payments","PAYMENTS_READ"), "GET",
+        "payments", params.archive?.("payments","PAYMENTS_READ"), "GET",
       );
       const feeByOrder = new Map<string, { amountCents: number; complete: boolean; applicableCount: number }>();
       for (const payment of payments) {
@@ -175,14 +175,15 @@ export function createSquareAdapter(params: { accessToken: string; locationId: s
           location_overrides?:Array<{location_id?:string;price_money?:SquareMoney;price_overrides?:boolean}>}}>;
           modifier_list_info?:Array<{modifier_list_id?:string;min_selected_modifiers?:number;max_selected_modifiers?:number}>};
       };
-      const savePage = await params.archive?.("catalog","ITEMS_READ");
-      const all = await readProviderPages<CatalogObject>(async cursor => {
+      const read = params.archive?.("catalog","ITEMS_READ");
+      const fetchPage = async (_query: Record<string,unknown>, cursor: string | null) => {
         const search = new URLSearchParams();
         if (cursor) search.set("cursor",cursor);
         const page = await squareRequest<{objects?:CatalogObject[];cursor?:string}>(
           accessToken,"/v2/catalog/list"+(search.size ? "?"+search : ""));
         return {items:page.objects ?? [], next:page.cursor ?? null};
-      }, savePage);
+      };
+      const all = await (read ? read({},fetchPage) : readProviderPages(cursor=>fetchPage({},cursor)));
       const byId=new Map(all.map(row=>[row.id,row]));
       const categories=new Map(all.filter(row=>row.type==="CATEGORY")
         .map(row=>[row.id,row.category_data?.name??"Uncategorized"]));
@@ -230,7 +231,7 @@ export function createSquareAdapter(params: { accessToken: string; locationId: s
     async fetchEmployees(): Promise<PosEmployee[]> {
       type TeamMember = { id: string; given_name?: string; family_name?: string; status?: string };
       const members = await squarePaginated<TeamMember>(accessToken, "/v2/team-members/search",
-        {query: {filter: {location_ids: [locationId]}}}, "team_members", await params.archive?.("team_members","EMPLOYEES_READ"));
+        {query: {filter: {location_ids: [locationId]}}}, "team_members", params.archive?.("team_members","EMPLOYEES_READ"));
       return members.map((m) => ({
         posTeamMemberId: m.id,
         displayName: [m.given_name, m.family_name].filter(Boolean).join(" ") || "Team member",
@@ -241,20 +242,22 @@ export function createSquareAdapter(params: { accessToken: string; locationId: s
     async fetchPosScheduledShifts({since,until}):Promise<PosScheduledShift[]> {
       type Raw={id?:string;published_shift_details?:{location_id?:string;team_member_id?:string;
         job_id?:string;start_at?:string;end_at?:string;is_deleted?:boolean}};
-      const savePage = await params.archive?.("scheduled_shifts","TIMECARDS_READ");
-      const list = await readProviderPages<Raw>(async cursor => {
+      const read = params.archive?.("scheduled_shifts","TIMECARDS_READ");
+      const query = {query:{filter:{
+        location_ids:[locationId],
+        start:{end_at:until.toISOString()},
+        end:{start_at:since.toISOString()},
+        scheduled_shift_statuses:["PUBLISHED"]
+      }},limit:50};
+      const fetchPage = async (body: Record<string,unknown>, cursor: string | null) => {
         const result=await squareRequest<{scheduled_shifts?:Raw[];cursor?:string}>(
           accessToken,"/v2/labor/scheduled-shifts/search",{
-            method:"POST",body:{query:{filter:{
-              location_ids:[locationId],
-              start:{end_at:until.toISOString()},
-              end:{start_at:since.toISOString()},
-              scheduled_shift_statuses:["PUBLISHED"]
-            }},limit:50,...(cursor?{cursor}:{})}
+            method:"POST",body:cursor?{...body,cursor}:body
           });
         const items=(result.scheduled_shifts ?? []).filter(s=>s.published_shift_details?.location_id===locationId);
         return {items,next:result.cursor ?? null};
-      }, savePage);
+      };
+      const list = await (read ? read(query,fetchPage) : readProviderPages(cursor=>fetchPage(query,cursor)));
       return list.flatMap(shift=>{
         const d=shift.published_shift_details;
         if(!shift.id||!d||d.location_id!==locationId||!d.team_member_id||
@@ -278,7 +281,7 @@ export function createSquareAdapter(params: { accessToken: string; locationId: s
         accessToken,
         "/v2/labor/timecards/search",
         { query: { filter: { location_ids: [locationId], start: { start_at: since.toISOString(), end_at: until.toISOString() } } } },
-        "timecards", await params.archive?.("timecards","TIMECARDS_READ"),
+        "timecards", params.archive?.("timecards","TIMECARDS_READ"),
       );
       return timecards
         .filter((tc) => tc.start_at)

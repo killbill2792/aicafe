@@ -1,4 +1,4 @@
-import {readProviderPages,type PageSink} from "@/lib/externalData/pages";
+import {readProviderPages} from "@/lib/externalData/pages";
 import "server-only";
 import { squareApiBaseUrl } from "./oauth";
 
@@ -9,6 +9,10 @@ export class SquareRequestError extends Error {
     super(`Square API error ${status}`);
   }
 }
+
+export type SquarePageReader = <T>(query: Record<string, unknown>,
+  fetchPage: (query: Record<string, unknown>, cursor: string | null) => Promise<{items: T[]; next: string | null}>,
+) => Promise<T[]>;
 
 /** Idempotent-safe GET/POST wrapper with exponential backoff on 429/5xx (docs/06-integrations.md). */
 export async function squareRequest<T>(
@@ -56,12 +60,12 @@ export async function squarePaginated<T>(
   path: string,
   body: Record<string, unknown>,
   itemsKey: string,
-  onPage?: PageSink<T>,
+  read?: SquarePageReader,
   method: "GET" | "POST" = "POST",
 ): Promise<T[]> {
-  return readProviderPages(async cursor => {
-    const params = cursor ? {...body, cursor} : body;
-    const url = method === "GET" ? path + "?" + new URLSearchParams(
+  const fetchPage = async (query: Record<string, unknown>, cursor: string | null) => {
+    const params = cursor ? {...query, cursor} : query;
+    const url = method === "GET" && Object.keys(params).length ? path + "?" + new URLSearchParams(
       Object.entries(params).map(([key, value]) => [key, String(value)]),
     ) : path;
     const page = await squareRequest<Record<string, unknown>>(accessToken, url,
@@ -70,5 +74,6 @@ export async function squarePaginated<T>(
       throw new Error("Incomplete Square response");
     }
     return {items: (page[itemsKey] ?? []) as T[], next: (page.cursor ?? null) as string | null};
-  }, onPage);
+  };
+  return read ? read(body,fetchPage) : readProviderPages(cursor=>fetchPage(body,cursor));
 }
