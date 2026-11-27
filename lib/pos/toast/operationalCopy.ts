@@ -1,5 +1,5 @@
 import {readProviderPages} from "@/lib/externalData/pages";
-import {noteAvailability,openSourceStream} from "@/lib/externalData/archive.server";
+import {discoverSourceResources,noteAvailability,openSourceStream} from "@/lib/externalData/archive.server";
 import "server-only";
 import {createHash,randomUUID} from "node:crypto";
 import {z} from "zod";
@@ -252,6 +252,11 @@ export async function syncToastOperationalSources(db:SupabaseClient,
   .eq("business_id",p.businessId).maybeSingle();
  if(ce)throw new ToastApiError("unavailable");
  const scopes=(credentials?.scopes_available??{}) as Record<string,boolean>;
+ const source={businessId:p.businessId,provider:"toast",account:p.restaurantGuid};
+ const plan=operationalPlan(now,p.timezone,p.closeoutHour);
+ await discoverSourceResources(db,source,plan.map(op=>({
+  resource:op.endpoint,permission:op.family,granted:scopes[op.family]??null,
+ })),now.toISOString());
  const {data:saved,error:se}=await db.from("toast_optional_sync_state")
   .select("operational_sources").eq("business_id",p.businessId)
   .eq("restaurant_guid",p.restaurantGuid).maybeSingle();
@@ -274,7 +279,7 @@ export async function syncToastOperationalSources(db:SupabaseClient,
   open=toastOpenOrUnknown(loc?.open_hours??null,p.timezone,now);
  }
  const attempts:string[]=[];
- for(const op of operationalPlan(now,p.timezone,p.closeoutHour)){
+ for(const op of plan){
   if(Date.now()>=deadlineAt)break;
   if(event&&op.family!==event.family)continue;
   const previous=states[op.key]??{};
@@ -362,7 +367,7 @@ export async function syncToastOperationalSources(db:SupabaseClient,
    const header=e instanceof ToastApiError&&e.retryAt?Date.parse(e.retryAt):NaN;
    const nextAt=Math.max(now.getTime()+retry,
     Number.isFinite(header)?header:0);
-   await noteAvailability(db,{businessId:p.businessId,provider:"toast",account:p.restaurantGuid},
+   await noteAvailability(db,source,
      op.endpoint,reason==="missing_permissions"||reason==="missing_scope_or_location"?"permission_required":
        reason==="invalid_response"?"incomplete":e instanceof ToastApiError&&e.status===204?"unsupported":"unavailable",
      checked,new Date(nextAt).toISOString());

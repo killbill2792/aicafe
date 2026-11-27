@@ -3,7 +3,11 @@ import type {SupabaseClient} from "@supabase/supabase-js";
 import {retainProviderPayload} from "./retainPayload";
 
 export type Source = {businessId: string; provider: string; account: string};
-export type SourceRecord = {key: string; payload: unknown; updatedAt?: string | null; identifiers?: {namespace: string; value: string; selector: object}[]};
+export type SourceIdentifier = {
+  namespace: string; value: string; selector: object;
+  relationship?: string; shared?: boolean;
+};
+export type SourceRecord = {key: string; payload: unknown; updatedAt?: string | null; identifiers?: SourceIdentifier[]};
 
 /** A stream identifies one connector's independent query window or location.
  * A concurrent worker cannot move a checkpoint read by another worker. */
@@ -29,6 +33,18 @@ export async function openSourceStream(db: SupabaseClient, source: Source, resou
 }
 
 export type Availability = "pending" | "permission_required" | "incomplete" | "unavailable" | "unsupported";
+
+export type ResourceCapability = {resource: string; permission?: string; granted?: boolean | null};
+
+export async function discoverSourceResources(db: SupabaseClient, source: Source,
+  capabilities: readonly ResourceCapability[], observedAt: string) {
+  const resources = [...new Map(capabilities.map(capability => [capability.resource, capability])).values()];
+  const {error} = await db.rpc("external_discover_resources", {
+    p_business: source.businessId, p_provider: source.provider, p_account: source.account,
+    p_observed_at: observedAt, p_resources: resources,
+  });
+  if (error) throw error;
+}
 
 export async function noteAvailability(db: SupabaseClient, source: Source, resource: string,
   status: Availability, attempt: string, retryAt?: string) {

@@ -110,7 +110,7 @@ describe("Square catalog and published shifts",()=>{
    {posItemId:"LG",name:"Latte",baseName:"Latte",sizeLabel:"Large",priceCents:575,
     category:"Espresso"}
   ]);
-  expect(vi.mocked(squareRequest).mock.calls[0][1]).toContain("types=ITEM");
+   expect(vi.mocked(squareRequest).mock.calls[0][1]).toBe("/v2/catalog/list");
  });
  it("uses API-published status and café-location scope for scheduled shifts",async()=>{
   const q={id:"S1",published_shift_details:{location_id:"location",team_member_id:"T1",
