@@ -47,6 +47,13 @@ jobs:
           BASE_SHA: ${{ github.event.pull_request.base.sha }}
           HEAD_SHA: ${{ github.event.pull_request.head.sha }}
         run: node scripts/acceptance/owner-gate.mjs classify
+      - name: Verify the database job is selected for architecture changes
+        if: steps.filter.outputs.code != 'true'
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          git diff --quiet --no-renames "$BASE_SHA...$HEAD_SHA" -- . ':(exclude)docs/**' ':(exclude)*.md' ':(exclude).github/ISSUE_TEMPLATE/**'
       - name: Select real browser journeys from the PR diff (fail closed)
         id: browser_select
         env:
@@ -205,15 +212,66 @@ jobs:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
       - uses: actions/setup-node@v4
         with:
           node-version: 22
           cache: npm
+      # Run reviewed code against Git objects before installing any candidate dependencies.
+      - name: Verify Luna architecture using the approved main policy
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          set -euo pipefail
+          policy=scripts/guards/luna-boundary.mjs
+          approved=$(git rev-parse refs/remotes/origin/main^{commit})
+          export BASE_SHA="${BASE_SHA:-$approved}"
+          echo "LUNA_DIFF_BASE=$BASE_SHA" >> "$GITHUB_ENV"
+          echo "LUNA_POLICY_BASE=$approved" >> "$GITHUB_ENV"
+          listing=$(git ls-tree "$approved" -- "$policy")
+          if [[ -z "$listing" ]]; then
+            echo "Base predates the Luna guard. The candidate guard and independent bootstrap review apply."
+            exit 0
+          fi
+          trusted=$(mktemp -d "$RUNNER_TEMP/luna-policy.XXXXXX")
+          lockfile=package-lock.json
+          if git cat-file -e "$approved:npm-shrinkwrap.json" 2>/dev/null; then lockfile=npm-shrinkwrap.json; fi
+          git archive "$approved" -- package.json "$lockfile" "$policy" \
+            scripts/guards/lib/luna-boundary-proof.mjs scripts/acceptance/owner-gate.mjs \
+            scripts/e2e/targeted.mjs | tar -x -C "$trusted"
+          (cd "$trusted" && npm ci --ignore-scripts --no-audit --no-fund)
+          echo "LUNA_TRUSTED_POLICY_DIR=$trusted" >> "$GITHUB_ENV"
+          LUNA_POLICY_BASE="$approved" node "$trusted/$policy" --list-regressions > "$RUNNER_TEMP/luna-regressions"
+          # A standalone maintenance PR must still satisfy the reviewed behavior.
+          if ! git diff --quiet "$approved" "$HEAD_SHA" -- "$policy" scripts/guards/luna-boundary.test.ts scripts/guards/lib/luna-boundary-proof.mjs scripts/db/luna-engine-race.mjs; then
+            git show "$approved:scripts/guards/luna-boundary.test.ts" > "$RUNNER_TEMP/luna-reviewed-tests"
+          fi
       - name: Install locked dependencies
-        run: npm ci
+        run: npm ci --ignore-scripts
+      - name: Run reviewed guard cases and pinned legacy regressions
+        env:
+          HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          set -euo pipefail
+          if [[ -z "${LUNA_TRUSTED_POLICY_DIR:-}" ]]; then exit 0; fi
+          verifier="$LUNA_TRUSTED_POLICY_DIR/scripts/guards/lib/luna-boundary-proof.mjs"
+          if [[ -f "$RUNNER_TEMP/luna-reviewed-tests" ]]; then
+            suite=$(mktemp scripts/guards/luna-reviewed-XXXXXX.test.ts)
+            trap 'rm -f "$suite"' EXIT
+            cp "$RUNNER_TEMP/luna-reviewed-tests" "$suite"
+            node "$verifier" "$suite"
+          fi
+          if [[ -s "$RUNNER_TEMP/luna-regressions" ]]; then
+            while IFS= read -r -d '' proof; do
+              git diff --quiet "$HEAD_SHA" -- "$proof"
+              node "$verifier" "$proof"
+            done < "$RUNNER_TEMP/luna-regressions"
+          fi
       - name: Run every repository guard
         env:
-          BASE_SHA: ${{ github.event.pull_request.base.sha || github.sha }}
+          BASE_SHA: ${{ env.LUNA_DIFF_BASE }}
           HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
           PR_LABELS: ${{ join(github.event.pull_request.labels.*.name, ',') }}
         run: node scripts/guards/run-all.mjs
@@ -228,6 +286,9 @@ jobs:
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
       - uses: actions/setup-node@v4
         with:
           node-version: 22
@@ -246,7 +307,27 @@ jobs:
           wait "$npm_ci" || npm_ci_status=$?
           cat "$RUNNER_TEMP/npm-ci.log"
           exit "$npm_ci_status"
+      - name: Verify Luna database oracle independently of the suite launcher
+        env:
+          SUPERVISOR_RUN_DB_URL: postgresql://postgres:postgres@127.0.0.1:54322/postgres
+        run: |
+          set -euo pipefail
+          approved=$(git rev-parse refs/remotes/origin/main^{commit})
+          oracle=scripts/db/luna-engine-race.mjs
+          if git cat-file -e "$approved:$oracle" 2>/dev/null; then
+            trusted=$(mktemp -d "$RUNNER_TEMP/luna-db.XXXXXX")
+            lockfile=package-lock.json
+            if git cat-file -e "$approved:npm-shrinkwrap.json" 2>/dev/null; then lockfile=npm-shrinkwrap.json; fi
+            git archive "$approved" -- package.json "$lockfile" "$oracle" \
+              scripts/guards/luna-boundary.mjs | tar -x -C "$trusted"
+            (cd "$trusted" && npm ci --ignore-scripts --no-audit --no-fund)
+            node "$trusted/$oracle"
+            if git diff --quiet "$approved" HEAD -- "$oracle"; then exit 0; fi
+          fi
+          node "$oracle"
       - name: Run every SQL and database test
+        env:
+          LUNA_DB_ORACLE_VERIFIED: "true"
         run: bash scripts/db/run-all.sh
       - name: Stop local Supabase
         if: always()
