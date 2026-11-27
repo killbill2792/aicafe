@@ -3,7 +3,7 @@ vi.mock("server-only",()=>({}));
 const request=vi.hoisted(()=>vi.fn());
 vi.mock("./client",async(importOriginal)=>{
  const original=await importOriginal<typeof import("./client")>();
- return {...original,createToastClient:()=>({request,assertLocationAccess:async()=>"verified"})};
+ return {...original,createToastClient:()=>({request,assertSourceAccess:async()=>"verified"})};
 });
 import {createToastAdapter,normalizeToastOrder,toastMoneyCents} from "./adapter";
 import {ToastApiError} from "./client";
@@ -156,6 +156,12 @@ describe("Toast permitted labor source-field handoff",()=>{
    expect(previous.get("startDate")).toBe("2026-10-09T00:00:00.000+0000");
    expect(requested.get("startDate")).toBe("2026-10-10T00:00:00.000+0000");
    expect(requested.get("pageToken")).toBeNull();
+   expect(rpc).toHaveBeenCalledWith("external_commit_page",expect.objectContaining({p_records:[
+     expect.objectContaining({identifiers:[
+       {namespace:"labor/v1/shifts",value:shift,selector:{path:[]}},
+       {namespace:"labor/v1/employees",value:employee,relationship:"employee",selector:{path:["employeeReference"]}},
+     ]}),
+   ]}));
    expect(current).toMatchObject([{payload:{"new vendor field":{unknown:[true,null]}}}]);
    expect(JSON.stringify(current)).not.toContain("remove-me");
  });

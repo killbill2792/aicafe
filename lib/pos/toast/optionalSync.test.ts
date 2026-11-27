@@ -6,7 +6,7 @@ vi.mock("@/lib/menu/drinkLabels.server",()=>({labelNewMenuCategories:m.labels}))
 vi.mock("./client",async()=>{
  const {z}=await import("zod");
  class ToastApiError extends Error{constructor(public category:string, public status?:number, public retryAt?:string){super(category);}}
- return {ToastApiError,GUID:z.uuid(),createToastClient:()=>({request:m.request,assertLocationAccess:async()=>{}})};
+ return {ToastApiError,GUID:z.uuid(),createToastClient:()=>({request:m.request,assertSourceAccess:async()=>{}})};
 });
 vi.mock("./operationalCopy",()=>({
  copyToastPublishedMenu:m.catalog,copyToastStaff:m.roster,copyToastAttendance:m.attendance,

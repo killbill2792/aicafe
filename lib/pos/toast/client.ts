@@ -157,6 +157,17 @@ export function createToastClient(db:SupabaseClient,businessId:string) {
     if(error||!mapping||(!allowUnverified&&!mapping.verified_at))throw new ToastApiError("unauthorized_location");
     return typeof mapping.verified_at==="string"?mapping.verified_at:undefined;
   }
+  async function assertSourceAccess(restaurantGuid:string,permission:string) {
+    const [verification,credentials]=await Promise.all([
+      assertLocationAccess(restaurantGuid),
+      db.from("toast_api_credentials").select("configuration_version,scopes_available")
+        .eq("business_id",businessId).neq("state","disconnected").maybeSingle(),
+    ]);
+    if(credentials.error)throw new ToastApiError("unavailable");
+    if(!credentials.data)throw new ToastApiError("not_configured",401);
+    if(credentials.data.scopes_available?.[permission]===false)throw new ToastApiError("missing_permissions",403);
+    return JSON.stringify([verification,credentials.data.configuration_version]);
+  }
   async function request<T>(path:string,restaurantGuid:string,schema:z.ZodType<T>,
      opts:{allowUnverified?:boolean;deadlineAt?:number;stockSearchGuids?:string[];onResponse?:(meta:{status:number;nextPageToken:string|null})=>void}={}):Promise<T> {
     const guid=GUID.safeParse(restaurantGuid);
@@ -244,5 +255,5 @@ export function createToastClient(db:SupabaseClient,businessId:string) {
       closeoutHour:z.number().int().min(0).max(12),
       name:z.string().nullish()})}),{allowUnverified,deadlineAt});
   }
-  return {request,fetchRestaurantInfo,assertLocationAccess};
+  return {request,fetchRestaurantInfo,assertSourceAccess};
 }

@@ -1,7 +1,7 @@
 import "server-only";
 import {z} from "zod";
 import type {SupabaseClient} from "@supabase/supabase-js";
-import {synchronizeSource} from "@/lib/externalData/archive.server";
+import {synchronizeSource,type SourceIdentifier} from "@/lib/externalData/archive.server";
 import type {PosAdapter,PosOrder,PosCatalogItem,PosEmployee,PosTimecard} from "../types";
 import {PosNotConnectedError} from "../types";
 import {createToastClient,GUID,ToastApiError,toToastTimestamp} from "./client";
@@ -269,7 +269,7 @@ export function createToastAdapter(params?:{db:SupabaseClient;businessId:string;
     const source={businessId,provider:"toast",account:restaurantGuid};
     const records=await synchronizeSource(db,source,{
       capability:{resource,permission:"labor"},stream:streamKey,scope:{query},readCompleted:true,
-      authorize:()=>client.assertLocationAccess(restaurantGuid),
+      authorize:()=>client.assertSourceAccess(restaurantGuid,"labor"),
       observe:async (cursor,scope)=>{
         const requested=new URLSearchParams(scope.query);
         if(cursor)requested.set("pageToken",cursor);
@@ -283,7 +283,16 @@ export function createToastAdapter(params?:{db:SupabaseClient;businessId:string;
           if(!key.success)throw new ToastApiError("invalid_response");
           if(row.restaurantGuid!=null && String(row.restaurantGuid).toLowerCase()!==restaurantGuid.toLowerCase())
             throw new ToastApiError("unauthorized_location");
-          return {key:key.data,payload:row,updatedAt:typeof row.modifiedDate==="string"?timestamp(row.modifiedDate):null};
+          const identifiers:SourceIdentifier[]=[{namespace:resource,value:key.data,selector:{path:[]}}];
+          for(const [field,namespace,relationship] of [
+            ["employeeReference","labor/v1/employees","employee"],
+            ["jobReference","labor/v1/jobs","job"],
+            ["shiftReference","labor/v1/shifts","scheduled_shift"],
+          ]){
+            const reference=laborRefSchema.safeParse(row[field]);
+            if(reference.success)identifiers.push({namespace,value:reference.data.guid,relationship,selector:{path:[field]}});
+          }
+          return {key:key.data,payload:row,identifiers,updatedAt:typeof row.modifiedDate==="string"?timestamp(row.modifiedDate):null};
         });
         return {records,next};
       },

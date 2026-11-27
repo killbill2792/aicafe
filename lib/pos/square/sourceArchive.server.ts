@@ -29,6 +29,17 @@ export function squareArchive(db: SupabaseClient, businessId: string, merchant: 
       if (resource === "payments" && "order_id" in row && typeof row.order_id === "string" && row.order_id) {
         identifiers.push({namespace:"orders",value:row.order_id,relationship:"payment_for",selector:{path:[]}});
       }
+      if(resource==="timecards"&&"team_member_id" in row&&typeof row.team_member_id==="string"&&row.team_member_id){
+        identifiers.push({namespace:"team_members",value:row.team_member_id,relationship:"employee",selector:{path:["team_member_id"]}});
+      }
+      if(resource==="scheduled_shifts"&&"published_shift_details" in row&&
+        row.published_shift_details&&typeof row.published_shift_details==="object"){
+        const published=row.published_shift_details;
+        if("team_member_id" in published&&typeof published.team_member_id==="string"&&published.team_member_id){
+          identifiers.push({namespace:"team_members",value:published.team_member_id,relationship:"employee",
+            selector:{path:["published_shift_details","team_member_id"]}});
+        }
+      }
       if (resource === "catalog" && "item_data" in row && row.item_data && typeof row.item_data === "object") {
         const data=row.item_data;
         let variants: SourceIdentifier[]=[];

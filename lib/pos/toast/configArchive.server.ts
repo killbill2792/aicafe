@@ -30,7 +30,7 @@ export async function refreshToastConfiguration(db:SupabaseClient,source:Source,
     try{
       await synchronizeSource(db,source,{
         capability:{resource:op.endpoint,permission:"config"},stream:"current",scope:{},
-        authorize:()=>client.assertLocationAccess(source.account),
+        authorize:()=>client.assertSourceAccess(source.account,"config"),
         observe:async cursor=>{
           let next:string|null=null;
           const path=cursor ? op.path+"?pageToken="+encodeURIComponent(cursor) : op.path;
