@@ -407,7 +407,10 @@ export default function SupervisorChatComposer({
     setReloadVersion((v) => v + 1);
     if (job.status === "failed") { setFailureCode(job.errorCode ?? "agent_turn_failed"); setError(true); }
   }, Boolean(activeDurable));
-  const resumedRunning = !sending && (Boolean(activeDurable) || (!watcher.job?.durableRunId && shouldShowRunningJob(watcher.job,messages)));
+  const resumedRunning = !sending && (Boolean(activeDurable) || ((!watcher.job?.durableRunId||supervisorWork.loading) && shouldShowRunningJob(watcher.job,messages)));
+  const resumedView=resumedRunning&&watcher.job?.status==='running'?watcher.job.liveView:undefined;
+  const visibleText=sending?streamedText:resumedView?.text??'';
+  const visiblePresentations=sending?streamedPresentations:(resumedView?.presentations??[]).flatMap(item=>{const block=recoverRichPresentation(item.block);return block?[{offset:item.offset,block}]:[];});
 
   const applyLatestPage=useCallback((fresh:ConversationPage<ConversationMessage>)=>{
     const previous=messagePage.current;
@@ -420,6 +423,8 @@ export default function SupervisorChatComposer({
   },[]);
   const clearDeniedSession=useCallback(()=>{
     // A failed owner authorization must not leave previously read chat/files visible.
+    viewEpoch.current++;void currentStreamReader.current?.cancel().catch(()=>undefined);currentStreamReader.current=null;
+    sendOnce.current=false;setSending(false);setCanDetach(false);setLiveViewDetached(false);setStreamedText('');setStreamedPresentations([]);setLiveSteps([]);setLiveNote(null);setLiveJobId(null);setAcceptedDurableIds([]);
     dismissedEventThreads.current.clear();originalRetryText.current.clear();
     threadDrafts.current.clear();readingPositions.current.clear();pendingFileSelection.current=null;setRestoringFiles(false);retryId.current=null;retryResponse.current=null;
     messagePage.current={items:[],nextOffset:null};paginationRequest.current++;historyLoading.current=false;selectedThreadId.current=null;
@@ -750,10 +755,11 @@ export default function SupervisorChatComposer({
     // hook detaches a viewer; the existing durable worker/receipt stays authoritative.
     const reader=currentStreamReader.current;
     if(!reader||!canDetach)return;
+    const epoch=viewEpoch.current;
     setLiveViewDetached(true);setCanDetach(false);
     try{
       await reader.cancel();
-      setStreamNotice(en.SupervisorExperience.streamDetached);
+      if(epoch===viewEpoch.current)setStreamNotice(en.SupervisorExperience.streamDetached);
     }catch{
       if(currentStreamReader.current===reader){setCanDetach(true);setLiveViewDetached(false);}
     }
@@ -1397,11 +1403,11 @@ export default function SupervisorChatComposer({
       </article>)}
       {!liveViewDetached&&(sending || resumedRunning) && <ChatJobProgress locale={locale} acknowledged
         steps={sending ? liveSteps : watcher.job?.progress ?? []}
-        note={sending ? progressStatus?.stage==="answering"?progressStatusText(copy,progressStatus):liveNote??(!liveJobId?progressStatusText(copy,progressStatus)??copy.sending:null) : watcher.job?.progress.length?null:activeDurable?.detail??liveCopy.resumed} /> }
-      {!liveViewDetached&&sending && (streamedText||streamedPresentations.length>0) && <article aria-hidden="true" aria-live="off" aria-busy="true" inert className="w-full space-y-3"><div className="flex items-center gap-2 text-[0.9375rem] font-bold text-ink-muted"><span className="flex h-8 w-8 items-center justify-center rounded-full bg-pos-soft text-good"><Sparkles size={17} aria-hidden="true"/></span>{copy.supervisor}</div>{streamedPresentations.map((item,i)=>{
-        const start=i===0?0:streamedPresentations[i-1].offset;
-        return <div key={i} className="min-w-0 space-y-3">{item.offset>start&&<ReplyBlock block={{type:"text",text:streamedText.slice(start,item.offset)}} copy={copy} locale={locale} streaming/>}<PresentationBoundary fallback={<PresentationTextFallback block={item.block}/>}><SupervisorRichPresentation block={item.block} locale={locale} onSuggest={()=>undefined} disabled/></PresentationBoundary></div>;
-      })}{streamedText.length>(streamedPresentations.at(-1)?.offset??0)&&<ReplyBlock block={{type:"text",text:streamedText.slice(streamedPresentations.at(-1)?.offset??0)}} copy={copy} locale={locale} streaming/>}</article>}
+        note={sending ? progressStatus?.stage==="answering"?progressStatusText(copy,progressStatus):liveNote??(!liveJobId?progressStatusText(copy,progressStatus)??copy.sending:null) : watcher.job?.thinkingSummary??(watcher.job?.progress.length?null:activeDurable?.detail??liveCopy.resumed)} /> }
+      {!liveViewDetached&&(sending||resumedRunning) && (visibleText||visiblePresentations.length>0) && <article aria-hidden="true" aria-live="off" aria-busy="true" inert className="w-full space-y-3"><div className="flex items-center gap-2 text-[0.9375rem] font-bold text-ink-muted"><span className="flex h-8 w-8 items-center justify-center rounded-full bg-pos-soft text-good"><Sparkles size={17} aria-hidden="true"/></span>{copy.supervisor}</div>{visiblePresentations.map((item,i)=>{
+        const start=i===0?0:visiblePresentations[i-1].offset;
+        return <div key={i} className="min-w-0 space-y-3">{item.offset>start&&<ReplyBlock block={{type:"text",text:visibleText.slice(start,item.offset)}} copy={copy} locale={locale} streaming/>}<PresentationBoundary fallback={<PresentationTextFallback block={item.block}/>}><SupervisorRichPresentation block={item.block} locale={locale} onSuggest={()=>undefined} disabled/></PresentationBoundary></div>;
+      })}{visibleText.length>(visiblePresentations.at(-1)?.offset??0)&&<ReplyBlock block={{type:"text",text:visibleText.slice(visiblePresentations.at(-1)?.offset??0)}} copy={copy} locale={locale} streaming/>}</article>}
       </div>
     </div>
     {!liveViewDetached&&(sending&&canDetach||resumedRunning)&&<button type="button" onClick={()=>{if(sending)void detachLiveStream();else{setLiveViewDetached(true);setStreamNotice(en.SupervisorExperience.streamDetached);}}} className="mx-auto flex min-h-12 shrink-0 items-center gap-2 rounded-full border border-line px-4 text-[0.9375rem] text-ink hover:bg-surface2 focus-visible:outline-solid focus-visible:outline-2 focus-visible:outline-ink"><Square size={16} aria-hidden="true"/>{en.SupervisorExperience.stopLiveView}</button>}
