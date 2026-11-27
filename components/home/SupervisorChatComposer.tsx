@@ -731,7 +731,7 @@ export default function SupervisorChatComposer({
           buffer = read.rest;
           for (const frame of read.frames) {
             if (frame.type === "error") throw new Error(typeof frame.data.code === "string" ? frame.data.code : "agent_turn_failed");
-            if (frame.type === "ack" && viewEpoch.current===epoch) setLiveNote(frame.data.mode === "attached" || frame.data.mode === "absorbed" ? liveCopy.followUpQueued : liveCopy.ack);
+            if (frame.type === "ack" && viewEpoch.current===epoch) {setLiveViewDetached(false);setLiveNote(frame.data.mode === "attached" || frame.data.mode === "absorbed" ? liveCopy.followUpQueued : liveCopy.ack);}
           }
         }
       } finally { reader.releaseLock(); }
@@ -836,7 +836,7 @@ export default function SupervisorChatComposer({
               }
             } else if (type === "tool" && (event.agentId === "alex" || event.agentId === "olivia" ||
               event.agentId === "maya" || event.agentId === "leo")) {
-              setProgressStatus({agent:event.agentId,stage:"reading"});
+              setProgressStatus({agent:event.agentId,stage:"reading"});setLiveNote(null);
               const stepTool = event.name, stepAgent = event.agentId;
               if (typeof stepTool === "string" && isJobStepAgent(stepAgent)) {
                 const step: AgentJobStep = { tool: stepTool, agent: stepAgent };
@@ -1196,8 +1196,8 @@ export default function SupervisorChatComposer({
   const startReady=!threadId||loadedThreadId===threadId||hasChatMessages;
   const answeredOwnerIds = useMemo(()=>answeredOwnerMessageIds(messages),[messages]);
   const inFlightOwnerIds = inFlightOwnerMessageIds(watcher.job);
-  for(const item of durableWork){if(item.ownerMessageId)inFlightOwnerIds.add(item.ownerMessageId);for(const id of item.relatedOwnerMessageIds??[])inFlightOwnerIds.add(id);}
-  for(const id of acceptedDurableIds)inFlightOwnerIds.add(id);
+  for(const item of durableWork.filter(item=>["queued","running","retrying","approval_required"].includes(item.status))){if(item.ownerMessageId)inFlightOwnerIds.add(item.ownerMessageId);for(const id of item.relatedOwnerMessageIds??[])inFlightOwnerIds.add(id);}
+  for(const id of acceptedDurableIds)if(!durableWork.some(item=>item.ownerMessageId===id||(item.relatedOwnerMessageIds??[]).includes(id)))inFlightOwnerIds.add(id);
   const pendingOwnerIds = new Set(!sending && !supervisorWork.loading ? messages
     .filter((message) => message.role === "owner" && Boolean(message.clientMessageId) &&
       !answeredOwnerIds.has(message.id) && !inFlightOwnerIds.has(message.id))
