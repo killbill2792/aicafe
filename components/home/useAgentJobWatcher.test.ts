@@ -10,6 +10,7 @@ const hooks = vi.hoisted(() => ({
   realtimeToken: null as null | string,
 }));
 vi.mock("react", () => ({
+  useCallback: <T,>(callback: T) => callback,
   useEffect: (effect: () => void | (() => void)) => {
     const cleanup = effect();
     if (typeof cleanup === "function") hooks.cleanups.push(cleanup);
@@ -167,4 +168,17 @@ describe("useAgentJobWatcher resume and recovery", () => {
     expect(lastSeenJob()).toMatchObject({ status: "failed", errorCode: "timeout" });
     expect(onSettled).toHaveBeenCalledTimes(1);
   });
+});
+
+it("keeps a durable viewer active through a long retry and a later job admission",async()=>{
+  const running={...baseJob(),durableRunId:"77777777-7777-4777-8777-777777777777"};
+  let current:AgentJob|null=null;
+  vi.stubGlobal("fetch",vi.fn(async()=>Response.json({job:current})));
+  const onSettled=settle();
+  useAgentJobWatcher(thread,true,onSettled,true);
+  await vi.advanceTimersByTimeAsync(JOB_WATCH_MAX_MS+JOB_POLL_MS);
+  current=running;
+  await vi.advanceTimersByTimeAsync(JOB_POLL_MS);
+  expect(lastSeenJob()).toMatchObject({status:"running",durableRunId:running.durableRunId});
+  expect(onSettled).not.toHaveBeenCalled();
 });
