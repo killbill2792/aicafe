@@ -408,3 +408,14 @@ it("preserves a native PDF document as a report alongside ordinary answer blocks
  expect(blocks[0]).toMatchObject({report:true,pdfSpec:pdf});
  expect(INLINE_PRESENTATION_HINT).toContain("PDF documents:");
 });
+
+it("preserves explicit point-level monetary units and never collapses unlike units",()=>{
+ const local={...ctx,currency:"GBP"};
+ const money=resolveResearchView({panels:[{kind:"metric",points:[{label:"Net sales",value:12345,unit:"cents"}]}]},new Map(),local);
+ expect(money?.panels[0]).toMatchObject({unit:"cents",currency:"GBP",points:[{label:"Net sales",value:12345}]});
+ const inherited=resolveResearchView({panels:[{kind:"bar",unit:"cents",points:[{label:"Sales",value:12345},{label:"Refund",value:-500,unit:"cents"},{label:"Zero",value:0}]}]},new Map(),local);
+ expect(inherited?.panels[0]).toMatchObject({unit:"cents",currency:"GBP",points:[{value:12345},{value:-500},{value:0}]});
+ const mixed=resolveResearchView({panels:[{kind:"bar",unit:"cents",points:[{label:"Sales",value:12345},{label:"Orders",value:3,unit:"count"},{label:"Missing",value:null,unit:"hours"},{label:"Margin",value:0,unit:"%"}]}]},new Map(),local);
+ expect(mixed?.panels).toEqual([]);
+ expect(mixed?.tables?.[0]).toMatchObject({currency:"GBP",rows:[["Sales",12345,"cents"],["Orders",3,"count"],["Missing",null,"hours"],["Margin",0,"%"]]});
+});

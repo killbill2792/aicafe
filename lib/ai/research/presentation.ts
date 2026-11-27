@@ -20,7 +20,7 @@ const pointPanel=z.object({kind:z.enum(["metric","bar","line","donut","ranked_ta
 const analysisPanel=z.object({kind:z.string().optional(),title:z.string().optional(),
  unit:z.string().optional(),
  measurement:z.string().optional(),basis:z.string().optional(),
- explanation:z.string().optional(),points:z.array(z.object({label:z.string(),value:scalar})).min(1)});
+ explanation:z.string().optional(),points:z.array(z.object({label:z.string(),value:scalar,unit:z.string().optional(),basis:z.string().optional(),labelField:reference.optional()})).min(1)});
 
 const selection=z.object({
  ref:z.string(),kind:z.enum(["metric","bar","line","donut","ranked_table","table"]),
@@ -246,11 +246,29 @@ export function resolveResearchView(raw:unknown,queries:PresentationEvidenceMap,
    const a=direct.data;
    const heading=descriptiveGroupTitle(a.title)??"Luna analysis";
    const coverage=a.basis==="estimate"?"estimate":a.basis==="partial"?"partial":a.basis==="unverified"?"unverified":undefined;
-   const detail=[a.basis,a.explanation].filter(Boolean).join(": ");
-   const points=a.points.map(p=>({label:descriptiveGroupTitle(p.label)??"Value",value:p.value}));
-   const supported=presentationPanelSchema.shape.unit.safeParse(a.unit);
-   const displayUnit=supported.success?supported.data:"units";
-   const measurement=a.measurement??(supported.success?undefined:a.unit);
+   const detail=[a.basis,a.explanation,...a.points.flatMap(p=>p.basis?[p.label+": "+p.basis]:[])].filter(Boolean).join(": ");
+   const authoredPoints=a.points.map(p=>{
+    const rawUnit=p.unit??a.unit;
+    const supported=presentationPanelSchema.shape.unit.safeParse(rawUnit);
+    const evidence=p.labelField?queries.get(p.labelField.ref):undefined;
+    const label=evidence&&p.labelField?.path?safeLabel(field(evidence.data,p.labelField.path)):undefined;
+    return {label:label??descriptiveGroupTitle(p.label)??"Value",value:p.value,
+     unit:supported.success?supported.data:"units" as const,
+     measurement:p.unit===undefined?a.measurement??(supported.success?undefined:rawUnit):supported.success?undefined:rawUnit};
+   });
+   const first=authoredPoints[0];
+   const mixed=authoredPoints.some(p=>p.unit!==first.unit||p.measurement!==first.measurement);
+   if(mixed){
+    // A shared axis cannot express unlike measures. Preserve every raw number
+    // and its own explicit unit rather than assigning a misleading common one.
+    const t=recordTableSchema.safeParse({title:heading,view:"tool_response_evidence",from:ctx.asOf,to:ctx.asOf,asOf:ctx.asOf,currency:ctx.currency??null,
+     coverage:coverage??"authored",scope:detail,columns:[{label:"Category",unit:"label"},{label:"Value",unit:"stored"},{label:"Unit",unit:"stored"}],
+     rows:authoredPoints.map(p=>[p.label,p.value,p.measurement??p.unit])});
+    if(t.success)tables.push(t.data);
+    continue;
+   }
+   const points=authoredPoints.map(({label,value})=>({label,value}));
+   const displayUnit=first.unit,measurement=first.measurement;
    const currency=["cents","cents/hour"].includes(displayUnit)?ctx.currency??null:null;
    const modelPanel=presentationPanelSchema.safeParse({kind:presentationPanelSchema.shape.kind.safeParse(a.kind).success?a.kind:"table",title:heading,unit:displayUnit,currency,from:ctx.asOf,to:ctx.asOf,asOf:ctx.asOf,
      source:"response_evidence",...(detail?{sourceDetail:detail}:{}),coverage,...(measurement?{measurement}:{}),points});
