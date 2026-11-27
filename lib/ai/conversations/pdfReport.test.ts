@@ -1,6 +1,7 @@
 import {describe,it,expect,vi} from "vitest";
 import {executablePdfSpec,pdfRenderProps,renderPdfDocument,renderSavedAnswerPdf,savedAnswerPdfSpec} from "./pdfReport.server";
 import type {RichPresentation} from "./presentation";
+import {PDFParse} from "pdf-parse";
 vi.mock("server-only",()=>({}));
 const pdfSpec={root:"doc",elements:{doc:{type:"Document",props:{title:"Income statement"},children:["page"]},page:{type:"Page",props:{size:"LETTER"},children:["table"]},table:{type:"Table",props:{columns:[{header:"Account"},{header:"Amount"}],rows:[["Sales",1234],["Refund",-25],["Unknown",null]]},children:[]}}};
 const block:RichPresentation={type:"rich_presentation",version:1,layout:"stack",panels:[],suggestions:[],report:true,pdfSpec};
@@ -16,6 +17,8 @@ describe("official PDF renderer",()=>{
  it("renders an actual native PDF and falls back to a PDF for an invalid graph",async()=>{
   const native=executablePdfSpec(pdfSpec)!;expect(native).toBeDefined();
   const direct=await renderPdfDocument(native);expect(Buffer.from(direct).subarray(0,5).toString()).toBe("%PDF-");
+  const parser=new PDFParse({data:Uint8Array.from(direct)});
+  try{const info=await parser.getInfo(),content=await parser.getText();expect(info.info.Title).toBe("Income statement");expect(content.text).toContain("1234");expect(content.text).toContain("-25");expect(content.text).toContain("Not recorded");}finally{await parser.destroy();}
   for(const value of [block,{...block,pdfSpec:{...pdfSpec,root:"missing"}}]){
    const bytes=await renderSavedAnswerPdf(message,value);
    expect(Buffer.from(bytes).subarray(0,5).toString()).toBe("%PDF-");expect(bytes.length).toBeGreaterThan(1000);
