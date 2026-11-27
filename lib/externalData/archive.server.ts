@@ -68,7 +68,6 @@ type SourceSync = {
 };
 
 function pendingObservation(value: unknown): CursorState | null {
-  if (typeof value === "string" && value) return {cursor: value, scope: {}};
   if (!value || typeof value !== "object" || !("cursor" in value) || value.cursor === null) return null;
   if (typeof value.cursor !== "string" || !value.cursor || !("scope" in value) ||
     !value.scope || typeof value.scope !== "object" || Array.isArray(value.scope) ||
@@ -101,13 +100,17 @@ export async function synchronizeSource(db: SupabaseClient, source: Source, plan
     }, cursor);
   };
   try {
+    // Older checkpoints stored a token without its query. Restart the traversal
+    // because the token cannot prove coverage for this run's requested scope.
+    if (typeof stream.cursor === "string" && stream.cursor) {
+      await plan.authorize();
+      await stream.commit([], null, false);
+    }
     if (pending) await observe(pending.scope);
     if (!pending || JSON.stringify(Object.entries(pending.scope).sort()) !==
         JSON.stringify(Object.entries(plan.scope).sort())) await observe(plan.scope);
     if (!plan.readCompleted) return [];
-    const results = await stream.completedRecords();
-    await plan.authorize();
-    return results;
+    return await readWithSourceAccess(plan.authorize,()=>stream.completedRecords());
   } catch (error) {
     // A concurrent successful worker owns the new revision and availability.
     if (error && typeof error === "object" && "code" in error && error.code === "40001") throw error;

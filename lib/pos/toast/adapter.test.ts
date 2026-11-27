@@ -3,7 +3,7 @@ vi.mock("server-only",()=>({}));
 const request=vi.hoisted(()=>vi.fn());
 vi.mock("./client",async(importOriginal)=>{
  const original=await importOriginal<typeof import("./client")>();
- return {...original,createToastClient:()=>({request})};
+ return {...original,createToastClient:()=>({request,assertLocationAccess:async()=>"verified"})};
 });
 import {createToastAdapter,normalizeToastOrder,toastMoneyCents} from "./adapter";
 import {ToastApiError} from "./client";
@@ -129,5 +129,34 @@ describe("Toast permitted labor source-field handoff",()=>{
        scheduleConfig:{guid:breakGuid,minBeforeClockIn:10,minAfterClockOut:15}}});
    expect(JSON.stringify(shifts)).not.toContain("should-not-leak");
    expect(shifts[0].sourceFields).not.toHaveProperty("createdDate");
+ });
+ it("completes a saved labor window before reading a new window and keeps unfamiliar fields",async()=>{
+   const archivedShift={guid:shift,employeeReference:{guid:employee},
+     inDate:"2026-10-10T09:00:00Z",outDate:"2026-10-10T17:00:00Z",
+     "new vendor field":{unknown:[true,null]},accessToken:"remove-me"};
+   const previousQuery="startDate=2026-10-09T00%3A00%3A00.000%2B0000"+
+     "&endDate=2026-10-10T00%3A00%3A00.000%2B0000";
+   const query={select:()=>query,eq:()=>query,maybeSingle:async()=>({data:{revision:1,
+     cursor_state:{cursor:"opaque/+ token",scope:{query:previousQuery}}},error:null})};
+   let current:unknown[]=[];
+   const rpc=vi.fn(async(name:string,args:{p_revision:number;p_records:{payload:unknown}[]})=>{
+     if(name==="external_commit_page"){
+       current=args.p_records.map(row=>({payload:row.payload}));
+       return {error:null,data:args.p_revision+1};
+     }
+     return {error:null,data:name==="external_read_observation"?current:null};
+   });
+   request.mockResolvedValueOnce([]).mockResolvedValueOnce([archivedShift]);
+   const db={from:()=>query,rpc} as unknown as SupabaseClient;
+   const capture=createToastAdapter({db,businessId:restaurant,restaurantGuid:restaurant,captureSources:true});
+   const result=await capture.fetchScheduledShifts(range);
+   expect(result.map(row=>row.externalShiftId)).toEqual([shift]);
+   const [previous,requested]=request.mock.calls.map(([path])=>new URL(path,"https://fixture.invalid").searchParams);
+   expect(previous.get("pageToken")).toBe("opaque/+ token");
+   expect(previous.get("startDate")).toBe("2026-10-09T00:00:00.000+0000");
+   expect(requested.get("startDate")).toBe("2026-10-10T00:00:00.000+0000");
+   expect(requested.get("pageToken")).toBeNull();
+   expect(current).toMatchObject([{payload:{"new vendor field":{unknown:[true,null]}}}]);
+   expect(JSON.stringify(current)).not.toContain("remove-me");
  });
 });

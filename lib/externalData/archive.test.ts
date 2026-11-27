@@ -9,9 +9,9 @@ const capability={resource:"local finding aids",permission:"read public catalogu
 const first={key:"accession-7",payload:{"Shelf notes":[null,{"décor / condition":"intact"}]}};
 const second={key:"accession-8",payload:{"Additional leaf":[{"minutes":32},false]}};
 
-function database(retryAt?:string) {
+function database(retryAt?:string,legacyCursor?:string) {
   let revision=0;
-  let cursor_state: unknown = null;
+  let cursor_state: unknown = legacyCursor??null;
   let members: Array<{record_id:string;payload:unknown}> = [];
   const checkpoint={select:()=>checkpoint,eq:()=>checkpoint,maybeSingle:async()=>({data:{revision,cursor_state,retry_at:retryAt}})};
   const rpc=vi.fn(async(name:string,args:Record<string,unknown>)=>{
@@ -33,6 +33,15 @@ const defaults={capability,stream:"latest",authorize:async()=>{},readCompleted:t
   failure:()=>({status:"unavailable" as const,retryAt:"2026-11-27T10:00:00Z"})};
 
 describe("shared external observation",()=>{
+  it("restarts unscoped legacy cursors without querying the wrong window",async()=>{
+    const {db,rpc}=database(undefined,"unscoped provider token");
+    const observe=vi.fn().mockResolvedValueOnce({records:[first],next:null});
+    await synchronizeSource(db,source,{...defaults,observe,scope:{edition:"new"}});
+    expect(observe.mock.calls).toEqual([[null,{edition:"new"}]]);
+    expect(rpc).toHaveBeenCalledWith("external_commit_page",expect.objectContaining({
+      p_next:null,p_complete:false,p_records:[],
+    }));
+  });
   it("resumes non-POS data in its original query scope before observing a new scope",async()=>{
     const {db,rpc}=database();
     const interrupted=vi.fn().mockResolvedValueOnce({records:[first],next:"opaque token"})

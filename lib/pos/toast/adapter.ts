@@ -1,8 +1,7 @@
-import {openSourceStream,noteAvailability} from "@/lib/externalData/archive.server";
-import {readProviderPages} from "@/lib/externalData/pages";
 import "server-only";
 import {z} from "zod";
 import type {SupabaseClient} from "@supabase/supabase-js";
+import {synchronizeSource} from "@/lib/externalData/archive.server";
 import type {PosAdapter,PosOrder,PosCatalogItem,PosEmployee,PosTimecard} from "../types";
 import {PosNotConnectedError} from "../types";
 import {createToastClient,GUID,ToastApiError,toToastTimestamp} from "./client";
@@ -259,25 +258,26 @@ export type ToastAdapter=PosAdapter&{
  * Automatic canonical import stays disabled until CSV overlap/reconciliation is solved. */
 export function createToastAdapter(params?:{db:SupabaseClient;businessId:string;restaurantGuid:string;deadlineAt?:number;captureSources?:boolean}):ToastAdapter {
   if(!params)throw new PosNotConnectedError("toast");
-  const {db,businessId,restaurantGuid}=params;
+  const {db,businessId,restaurantGuid,captureSources,deadlineAt}=params;
   if(!GUID.safeParse(restaurantGuid).success)throw new ToastApiError("unauthorized_location");
   const client=createToastClient(db,businessId);
   const request=<T>(path:string,schema:z.ZodType<T>)=>client.request(path,restaurantGuid,schema,{deadlineAt:params.deadlineAt});
   async function laborCollection<T>(path:string,schema:z.ZodType<T[]>,streamKey="current"):Promise<T[]> {
-    if(!params?.captureSources)return request(path,schema);
-    const resource=path.split("?")[0].slice(1);
+    if(!captureSources)return request(path,schema);
+    const [endpoint,query=""]=path.split("?",2);
+    const resource=endpoint.slice(1);
     const source={businessId,provider:"toast",account:restaurantGuid};
-    const attempt=new Date().toISOString();
-    const stream=await openSourceStream(db,source,resource,streamKey);
-    try {
-      return await readProviderPages(async cursor=>{
+    const records=await synchronizeSource(db,source,{
+      capability:{resource,permission:"labor"},stream:streamKey,scope:{query},readCompleted:true,
+      authorize:()=>client.assertLocationAccess(restaurantGuid),
+      observe:async (cursor,scope)=>{
+        const requested=new URLSearchParams(scope.query);
+        if(cursor)requested.set("pageToken",cursor);
         let next:string|null=null;
-        const remotePath=cursor ? path+(path.includes("?")?"&":"?")+"pageToken="+encodeURIComponent(cursor) : path;
-        const raw=await client.request(remotePath,restaurantGuid,z.array(z.record(z.string(),z.unknown())),{
-          deadlineAt:params.deadlineAt,onResponse:meta=>{next=meta.nextPageToken ?? null;}
+        const raw=await client.request(endpoint+(requested.size?"?"+requested:""),restaurantGuid,z.array(z.record(z.string(),z.unknown())),{
+          deadlineAt,onResponse:meta=>{next=meta.nextPageToken ?? null;}
         });
-        const typed=schema.safeParse(raw);
-        if(!typed.success)throw new ToastApiError("invalid_response");
+        if(!schema.safeParse(raw).success)throw new ToastApiError("invalid_response");
         const records=raw.map(row=>{
           const key=GUID.safeParse(row.guid);
           if(!key.success)throw new ToastApiError("invalid_response");
@@ -285,14 +285,16 @@ export function createToastAdapter(params?:{db:SupabaseClient;businessId:string;
             throw new ToastApiError("unauthorized_location");
           return {key:key.data,payload:row,updatedAt:typeof row.modifiedDate==="string"?timestamp(row.modifiedDate):null};
         });
-        return {items:typed.data,next,commit:()=>stream.commit(records,next,next===null)};
-      });
-    }catch(error){
-      const failure=error instanceof ToastApiError?error:null;
-      await noteAvailability(db,source,resource,failure?.status===403?"permission_required":
-        failure?.category==="invalid_response"?"incomplete":"unavailable",attempt,failure?.retryAt);
-      throw error;
-    }
+        return {records,next};
+      },
+      failure:error=>{
+        const failure=error instanceof ToastApiError?error:null;
+        return {status:failure?.status===401||failure?.status===403||failure?.category==="unauthorized_location"?"permission_required":
+          failure?.category==="invalid_response"||failure?.status===400?"incomplete":"unavailable",
+        retryAt:failure?.retryAt,resetCursor:failure?.status===400};
+      },
+    });
+    return validatedLaborSource(schema,records);
   }
   /** A partial published menu has no authority to remove prior provider items.
    * Toast can return a success response with missing referenced options; never
