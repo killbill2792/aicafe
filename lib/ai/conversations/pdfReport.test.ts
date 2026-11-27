@@ -1,5 +1,5 @@
 import {describe,it,expect,vi} from "vitest";
-import {executablePdfSpec,pdfRenderProps,renderSavedAnswerPdf,savedAnswerPdfSpec} from "./pdfReport.server";
+import {executablePdfSpec,pdfRenderProps,renderPdfDocument,renderSavedAnswerPdf,savedAnswerPdfSpec} from "./pdfReport.server";
 import type {RichPresentation} from "./presentation";
 vi.mock("server-only",()=>({}));
 const pdfSpec={root:"doc",elements:{doc:{type:"Document",props:{title:"Income statement"},children:["page"]},page:{type:"Page",props:{size:"LETTER"},children:["table"]},table:{type:"Table",props:{columns:[{header:"Account"},{header:"Amount"}],rows:[["Sales",1234],["Refund",-25],["Unknown",null]]},children:[]}}};
@@ -14,7 +14,8 @@ describe("official PDF renderer",()=>{
   expect(()=>pdfRenderProps("Link",{text:"Unsafe",href:"javascript:alert(1)"})).toThrow();
  });
  it("renders an actual native PDF and falls back to a PDF for an invalid graph",async()=>{
-  expect(executablePdfSpec(pdfSpec)).toBeDefined();
+  const native=executablePdfSpec(pdfSpec)!;expect(native).toBeDefined();
+  const direct=await renderPdfDocument(native);expect(Buffer.from(direct).subarray(0,5).toString()).toBe("%PDF-");
   for(const value of [block,{...block,pdfSpec:{...pdfSpec,root:"missing"}}]){
    const bytes=await renderSavedAnswerPdf(message,value);
    expect(Buffer.from(bytes).subarray(0,5).toString()).toBe("%PDF-");expect(bytes.length).toBeGreaterThan(1000);
@@ -23,7 +24,7 @@ describe("official PDF renderer",()=>{
  it("keeps state-bound financial values and repeated PDF layout available to the official renderer",async()=>{
   const spec={...pdfSpec,state:{rows:[["State-bound sales",321]]},elements:{...pdfSpec.elements,table:{...pdfSpec.elements.table,props:{columns:[{header:"Account"},{header:"Amount"}],rows:{$state:"/rows"}}}}};
   expect(executablePdfSpec(spec)?.state).toEqual(spec.state);
-  expect(Buffer.from(await renderSavedAnswerPdf(message,{...block,pdfSpec:spec})).subarray(0,5).toString()).toBe("%PDF-");
+  expect(Buffer.from(await renderPdfDocument(executablePdfSpec(spec)!)).subarray(0,5).toString()).toBe("%PDF-");
  });
  it("includes authored data and prose in the fallback without calling a model",()=>{
   const spec=savedAnswerPdfSpec(message,[block]);

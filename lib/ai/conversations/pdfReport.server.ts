@@ -50,7 +50,11 @@ export function pdfRenderProps(name:string,raw:Record<string,unknown>):Record<st
   const columns=Array.isArray(props.columns)?props.columns:[];
   const labels=columns.map(col=>obj(col)?col.header:col);
   const table=normalizeTableData(labels,props.rows);
-  props.columns=table.columns.map((header,index)=>{const original=columns[index];return {...(obj(original)?original:{}),header};});
+  props.columns=table.columns.map((header,index)=>{
+   const original=columns[index];
+   const width=obj(original)?original.width:undefined,align=obj(original)?original.align:undefined;
+   return {header,width:typeof width==="string"||typeof width==="number"?String(width):null,align:align==="left"||align==="center"||align==="right"?align:null};
+  });
   props.rows=table.rows.map(row=>row.map(display));
  }
  if(name==="List"&&Array.isArray(props.items))props.items=props.items.map(display);
@@ -77,10 +81,13 @@ export function pdfRenderProps(name:string,raw:Record<string,unknown>):Record<st
  return parsed.data as Record<string,unknown>;
 }
 
-function registry():RenderComponentRegistry{
+function registry(onFailure:()=>void):RenderComponentRegistry{
  const result:RenderComponentRegistry={};
  for(const [name,Component] of Object.entries(standardComponents)){
-  result[name]=(input:{element:UIElement;children?:ReactNode;emit:()=>void})=>createElement(Component as ComponentType<typeof input>,{...input,element:{...input.element,props:pdfRenderProps(name,input.element.props)}});
+  result[name]=(input:{element:UIElement;children?:ReactNode;emit:()=>void})=>{
+   try{return createElement(Component as ComponentType<typeof input>,{...input,element:{...input.element,props:pdfRenderProps(name,input.element.props)}});}
+   catch(error){onFailure();throw error;}
+  };
  }
  return result;
 }
@@ -115,11 +122,19 @@ export function reportBlocks(message:SavedMessage):RichPresentation[]{
  return (message.blocks??[]).flatMap(raw=>{const block=recoverRichPresentation(raw);return block?[block]:[];});
 }
 
+/** React PDF can report a component exception and still return bytes. Do not
+ * hand out such an incomplete document as a successful native render. */
+export async function renderPdfDocument(spec:Spec):Promise<Uint8Array>{
+ let failed=false;
+ const bytes=await renderToBuffer(spec,{registry:registry(()=>{failed=true;}),includeStandard:false});
+ if(failed||Buffer.from(bytes.subarray(0,5)).toString()!=="%PDF-")throw Error("pdf_render_incomplete");
+ return bytes;
+}
 export async function renderSavedAnswerPdf(message:SavedMessage,selected?:RichPresentation):Promise<Uint8Array>{
  const blocks=selected?[selected]:reportBlocks(message);
  if(selected?.pdfSpec){
   const spec=executablePdfSpec(selected.pdfSpec);
-  if(spec)try{return await renderToBuffer(spec,{registry:registry(),includeStandard:false});}catch{/* Preserve the saved content using the same official renderer. */}
+  if(spec)try{return await renderPdfDocument(spec);}catch{/* Preserve the saved content using the same official renderer. */}
  }
- return renderToBuffer(savedAnswerPdfSpec(message,blocks),{registry:registry(),includeStandard:false});
+ return renderPdfDocument(savedAnswerPdfSpec(message,blocks));
 }
