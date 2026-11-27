@@ -117,6 +117,14 @@ BEGIN
   'after the import, the typed details view shows both orders');
  perform pg_temp.assert_true((select count(*)=1 and bool_and(status='actual')
   from public.toast_records_for(b,d,d) where record_type='item_discount'),'after the import the AI reads it as actual');
+ perform pg_temp.assert_true((select status='incomplete' and last_complete_scope is null
+   from public.external_resources where business_id=b and provider='toast' and resource='order'
+    and source_account=r::text),'an imported day without coverage proof stays incomplete');
+ update public.toast_day_status set coverage_complete=true
+  where business_id=b and restaurant_guid=r and business_date=d;
+ perform pg_temp.assert_true((select status='current' and last_complete_scope->>'business_date'=d::text
+   from public.external_resources where business_id=b and provider='toast' and resource='order'
+    and source_account=r::text),'the verified day publishes its exact archive coverage');
 
  -- Capture endpoint evidence can supply a fee missing from the order payload.
  perform set_config('request.jwt.claim.role','service_role',true);

@@ -16,6 +16,7 @@ import {hasSalesCoverage} from "@/lib/calc/dayWindows";
 import {timeReader} from "@/lib/perf/timeReader.server";
 import {readCompletePaged} from "./completePages";
 import {readRunningCostLines} from "./runningCostLines.server";
+import type {MenuCatalogRow} from "./menuCatalog.server";
 
 /** Same authorized PostgREST read as the Home/Money screens, but through all
  * pages, not the default 1,000-row partial slice. Callers supply stable ordering
@@ -210,11 +211,13 @@ async function getMenuItemSnapshots(
   todayDateStr: string,
   asOfDate?:string,
 ): Promise<MenuItemSnapshot[]> {
-  const {data:items}=await snapshotPaged("menu_items",
-    (start,end)=>supabase.rpc("menu_catalog_for",{p_business_id:businessId},{count:"exact"})
+  const {data:items}=await snapshotPaged("menu_items",async(start,end)=>{
+    const page=await supabase.rpc("menu_catalog_for",{p_business_id:businessId},{count:"exact"})
      .select("id,name,price_cents,prep_seconds,category,is_active")
-     .order("id",{ascending:true}).range(start,end),
-     row=>row.id);
+     .order("id",{ascending:true}).range(start,end);
+    return {...page,data:page.data as Pick<MenuCatalogRow,
+      "id"|"name"|"price_cents"|"prep_seconds"|"category"|"is_active">[]|null};
+  },row=>row.id);
   if (!items || items.length === 0) return [];
 
   const itemIds = items.map((i) => i.id);

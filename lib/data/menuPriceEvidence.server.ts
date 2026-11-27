@@ -3,6 +3,7 @@ import type {SupabaseClient} from "@supabase/supabase-js";
 import {createServerSupabaseClient} from "@/lib/supabase/server";
 import {dateOffset} from "@/lib/calc/periods";
 import {priceCheck,priceSource,realizedUnitAverage,type PriceCheck,type PriceEvidenceStatus} from "@/lib/calc/menuPriceCheck";
+import type {MenuCatalogRow} from "./menuCatalog.server";
 export type MenuPriceEvidence={
  priceSource:"owner_manual"|"connected_pos"|"imported_avg"|"initial";
  realizedAvgCents:number|null;priceCheck:PriceCheck;
@@ -24,7 +25,8 @@ export async function readMenuPriceEvidence(businessId:string,
  if(history.error||catalog.error||coverage.error)throw new Error("Menu price evidence unavailable");
  const latest=new Map<string,string>();
  for(const row of history.data??[])if(!latest.has(row.menu_item_id))latest.set(row.menu_item_id,row.source_type);
- const sources=new Map((catalog.data??[]).map(row=>[row.id,row.catalog_source]));
+ const catalogRows=(catalog.data??[]) as Pick<MenuCatalogRow,"id"|"catalog_source">[];
+ const sources=new Map(catalogRows.map(row=>[row.id,row.catalog_source]));
  const to=coverage.data?.business_date??null;
  const period=to?{from:dateOffset(to,-29),to}:null;
  const rows:Array<{menu_item_id:string|null;net_sales_cents:number;quantity:number}>=[];
