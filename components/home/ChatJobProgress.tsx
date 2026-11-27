@@ -20,11 +20,12 @@ export default function ChatJobProgress({ locale, acknowledged, steps, note }: {
   locale: ChatLocale; acknowledged: boolean; steps: AgentJobStep[]; note?: string | null;
 }) {
   const copy = chatExperienceCopy(locale);
-  const line = note || progressLines(steps, copy).at(-1) || (acknowledged ? copy.ack : null);
+  const activity=progressLines(steps,copy).at(-1);
+  const line = note || activity || (acknowledged ? copy.ack : null);
   if (!line) return null;
   return <div className="flex w-full items-start gap-2 text-[0.9375rem] leading-snug text-ink-muted"
     role="status" aria-live="polite" aria-atomic="true" data-testid="supervisor-live-progress"
     dir={locale === "ar" ? "rtl" : "ltr"}>
-    <CafeActivity/><div className="min-w-0 flex-1 whitespace-pre-wrap wrap-break-word wrap-anywhere"><ChatMarkdown text={line} locale={locale} showLegend={false} compact streaming/></div>
+    <CafeActivity/><div className="min-w-0 flex-1 whitespace-pre-wrap wrap-break-word wrap-anywhere"><ChatMarkdown text={line} locale={locale} showLegend={false} compact streaming/>{note&&activity&&note!==activity&&<p className="mt-1">{activity}</p>}</div>
   </div>;
 }
