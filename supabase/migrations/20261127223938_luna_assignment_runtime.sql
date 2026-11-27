@@ -10,6 +10,8 @@ create table public.luna_rollouts (
   business_id uuid primary key references public.businesses(id) on delete cascade,
   enabled boolean not null default false
 );
+-- Reason: this newly created rollout table has no clients and must start private.
+-- squawk-ignore ban-alter-row-level-security
 alter table public.luna_rollouts enable row level security;
 revoke all on public.luna_rollouts from public, anon, authenticated, service_role;
 grant select, insert, update, delete on public.luna_rollouts to service_role;
@@ -37,6 +39,9 @@ create trigger luna_pin_run_engine before insert or update of
 
 -- Keep the mature lease, retry and reconciliation implementation behind both
 -- public entries. Its old signature and response shapes remain the legacy API.
+-- Reason: the same transaction restores the original RPC with its exact signature
+-- and puts the shared lease implementation behind the two engine-specific entries.
+-- squawk-ignore ban-set-schema
 alter function public.supervisor_run_claim(uuid, uuid, uuid, uuid, uuid, integer)
   set schema luna_internal;
 revoke all on function luna_internal.supervisor_run_claim(uuid, uuid, uuid, uuid, uuid, integer)
