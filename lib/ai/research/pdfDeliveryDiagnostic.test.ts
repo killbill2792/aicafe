@@ -39,7 +39,7 @@ async function replay(label:string,raw:string,terminalOnly=false,streamOverride?
  console.log("PDF_REPLAY "+JSON.stringify({label,diagnostics:result.presentationDiagnostics,documents:documents.length,pdfTitle,pdfContainsData,textLength:result.text.length,hasIntro:result.text.includes("I prepared"),hasDocumentDataInText:result.text.includes("123.45")}));
  return {documents,pdfTitle,pdfContainsData,result};
 }
-describe("deployed PDF delivery diagnostic (no provider, no production data)",()=>{
+describe("PDF delivery compatibility regression (no provider, no production data)",()=>{
  it("runs the canonical split-delta document all the way through saved answer and actual PDF bytes",async()=>{
   const r=await replay("canonical",intro+fence("spec",patches)+"\n");
   expect(r.documents).toHaveLength(1);expect(r.pdfTitle).toBe("Diagnostic accounting statement");expect(r.pdfContainsData).toBe(true);
