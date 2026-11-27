@@ -4,18 +4,18 @@ set statement_timeout = '60s';
 -- Bind accepted app order/selection identities to the committed archive.
 -- Native identity mappings, exclusions and unresolved historical lines stay
 -- on their existing application records.
+-- Keep this a single, fully qualified SELECT so PostgreSQL can inline the
+-- lookup and use the archive's café, restaurant, day and order index.
 create function public.toast_committed_order_body(p_business uuid,p_pos_order text,p_day date)
-returns jsonb language sql stable strict security invoker set search_path=pg_catalog,public as $$
+returns table(payload jsonb) language sql stable security invoker as $$
  select r.payload
  from public.external_records r
  join public.toast_day_status d on (d.business_id,d.restaurant_guid,d.business_date,d.last_import_run_id)=
   (r.business_id,r.restaurant_guid,r.business_date,r.run_id)
  where p_pos_order like 'toast:%' and r.business_id=p_business and r.provider='toast' and r.entity='order'
   and r.business_date=p_day and r.superseded_by is null and d.import_state='imported'
-  and r.restaurant_guid=case when pg_input_is_valid(split_part(p_pos_order,':',2),'uuid')
-    then split_part(p_pos_order,':',2)::uuid end
-  and r.entity_guid=case when pg_input_is_valid(split_part(p_pos_order,':',3),'uuid')
-    then split_part(p_pos_order,':',3)::uuid end
+  and r.restaurant_guid=public.toast_uuid_or_null(pg_catalog.split_part(p_pos_order,':',2))
+  and r.entity_guid=public.toast_uuid_or_null(pg_catalog.split_part(p_pos_order,':',3))
   and r.source_account=r.restaurant_guid::text and r.source_key=r.entity_guid::text
   and r.payload->>'guid'=r.entity_guid::text
   and r.payload_origin in ('provider','historical_provider')
@@ -101,21 +101,21 @@ with (security_invoker=true) as
  case when o.toast_excluded is true or o.superseded_by is not null then null::bigint else read.net_sales_cents end,
  o.location_id,o.employee_id,o.closed_at,o.pos_order_id,o.processing_fee_provider
  from public.orders o
- cross join lateral (select public.toast_committed_order_body(o.business_id,o.pos_order_id,o.business_date) as body offset 0) p
- cross join lateral (select public.toast_committed_order_net_cents(p.body) as net_sales_cents offset 0) value
+ left join lateral public.toast_committed_order_body(o.business_id,o.pos_order_id,o.business_date) p on true
+ cross join lateral (select public.toast_committed_order_net_cents(p.payload) as net_sales_cents offset 0) value
  cross join lateral (select coalesce(value.net_sales_cents,o.net_sales_cents) as net_sales_cents,
-  case when p.body is not null then nullif(btrim(p.body#>>'{diningOption,name}'),'') else o.dining_option end as dining_option,
-  case when p.body is not null then nullif(btrim(p.body->>'source'),'') else o.source_channel end as source_channel,
-  case when p.body is null then o.guest_count::integer
-    when pg_input_is_valid(p.body->>'numberOfGuests','integer') then (p.body->>'numberOfGuests')::integer end as guest_count) read;
+  case when p.payload is not null then nullif(btrim(p.payload#>>'{diningOption,name}'),'') else o.dining_option end as dining_option,
+  case when p.payload is not null then nullif(btrim(p.payload->>'source'),'') else o.source_channel end as source_channel,
+  case when p.payload is null then o.guest_count::integer
+    when pg_input_is_valid(p.payload->>'numberOfGuests','integer') then (p.payload->>'numberOfGuests')::integer end as guest_count) read;
 
 create or replace view public.cv_item_sales_daily with (security_invoker=true) as
  select o.business_id,'item-day:'||o.business_date::text||':'||l.menu_item_id::text as source_ref,
  'actual'::text as status,o.business_date,l.menu_item_id,
  sum(coalesce(p.quantity,l.quantity)) as quantity,sum(coalesce(p.net_sales_cents,l.net_sales_cents)) as net_sales_cents
  from public.order_lines l join public.orders o on o.id=l.order_id
- left join lateral public.toast_committed_line_values(
-  public.toast_committed_order_body(o.business_id,o.pos_order_id,o.business_date),l.pos_line_id) p on true
+ left join lateral public.toast_committed_order_body(o.business_id,o.pos_order_id,o.business_date) body on true
+ left join lateral public.toast_committed_line_values(body.payload,l.pos_line_id) p on true
  where o.toast_excluded is not true and o.superseded_by is null and l.voided=false and l.menu_item_id is not null
  group by o.business_id,o.business_date,l.menu_item_id;
 
@@ -137,7 +137,7 @@ create or replace view public.cv_item_sales (business_id,source,source_ref,statu
   when body.payload->>'closedDate' ~ '(Z|[+-][0-9]{2}:?[0-9]{2})$'
    then public.toast_time_or_null(body.payload->>'closedDate') end as closed_at
  from public.order_lines l join public.orders o on o.id=l.order_id
- cross join lateral (select public.toast_committed_order_body(o.business_id,o.pos_order_id,o.business_date) as payload offset 0) body
+ left join lateral public.toast_committed_order_body(o.business_id,o.pos_order_id,o.business_date) body on true
  left join lateral public.toast_committed_line_values(body.payload,l.pos_line_id) p on true
  left join public.toast_current_typed_order_facts_v t
   on t.business_id=o.business_id and t.business_date=o.business_date
