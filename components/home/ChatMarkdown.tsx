@@ -250,9 +250,8 @@ function ResponseTable({children,node}:React.ComponentProps<"table">&ExtraProps)
  const columns=row?.children.filter((child):child is Element=>child.type==="element"&&child.tagName==="th")??[];
  const wide=columns.length>4;
  return <div role="region" aria-label="Response table" tabIndex={0} className="min-w-0 max-w-full overflow-x-auto rounded-lg border border-line focus-visible:outline-solid focus-visible:outline-2 focus-visible:outline-ink">
-  <table role="table" className={"w-full table-fixed border-collapse text-[0.9375rem] sm:text-[1.0625rem] "+(wide?wideResponseTableClass:"")}>
+  <table role="table" className={"w-full table-auto border-collapse text-[0.9375rem] sm:text-[1.0625rem] "+(wide?wideResponseTableClass:"")}>
    <caption className="sr-only">Response table</caption>
-   <colgroup>{columns.map((c,i)=><col key={i} style={columns.length<=3&&c.properties.align==="right"?{width:"35%"}:undefined}/>)}</colgroup>
    {children}
   </table>
  </div>;
