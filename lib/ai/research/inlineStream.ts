@@ -62,6 +62,7 @@ function completedText(response:unknown):string|null{
 export async function* researchInlineEvents(events:AsyncIterable<ProviderEvent>):AsyncGenerator<ProviderEvent>{
  async function* input():AsyncGenerator<StreamChunk>{
   const adapter=new FenceAdapter();let received="";const completedMessages:string[]=[];
+  const completedParts=new Map<string,string>();
   function* chunks(delta:string):Generator<StreamChunk>{
    if(!delta)return;
    yield {type:"aicafe-raw",delta};
@@ -73,11 +74,14 @@ export async function* researchInlineEvents(events:AsyncIterable<ProviderEvent>)
     received+=event.delta;
     for(const part of adapter.push(event.delta))yield* chunks(part);
    }else{
+    if(event.type==="response.output_text.done"&&typeof event.text==="string"){
+     const key=String(event.output_index??event.item_id??0)+":"+String(event.content_index??0);completedParts.set(key,event.text);
+    }
     if(event.type==="response.output_item.done"){
      const message=messageText(event.item);if(message!==null)completedMessages.push(message);
     }
     if(event.type==="response.completed"){
-     const final=completedText(event.response)??(completedMessages.length?completedMessages.join(""):null);
+     const final=completedText(event.response)??(completedMessages.length?completedMessages.join(""):completedParts.size?[...completedParts.values()].join(""):null);
      if(final!==null&&final.startsWith(received)){
       for(const part of adapter.push(final.slice(received.length),true))yield* chunks(part);
      }else{
