@@ -723,7 +723,7 @@ export default function SupervisorChatComposer({
         method: "POST", headers: { "content-type": "application/json" },
         body: JSON.stringify(buildAgentSendBody(clientMessageId,text,locale,attachments)),
       });
-      if(response.status===401){clearDeniedSession();return;}
+      if(response.status===401){if(viewEpoch.current===epoch)clearDeniedSession();return;}
       if (!response.ok || !response.body) throw new Error(await agentErrorCode(response));
       const reader = response.body.getReader();
       const decoder = new TextDecoder();
@@ -731,12 +731,13 @@ export default function SupervisorChatComposer({
       try {
         while (true) {
           const { done, value } = await reader.read();
+          if(viewEpoch.current!==epoch){await reader.cancel().catch(()=>undefined);break;}
           if (done) break;
           const read = readSseFrames(buffer + decoder.decode(value, { stream: true }));
           buffer = read.rest;
           for (const frame of read.frames) {
             if (frame.type === "error") throw new Error(typeof frame.data.code === "string" ? frame.data.code : "agent_turn_failed");
-            if (frame.type === "ack" && viewEpoch.current===epoch) {setLiveViewDetached(false);setLiveNote(frame.data.mode === "attached" || frame.data.mode === "absorbed" ? liveCopy.followUpQueued : liveCopy.ack);}
+            if (frame.type === "ack" && viewEpoch.current===epoch) {setLiveViewDetached(false);if(typeof frame.data.ownerMessageId==="string"){const ownerId=frame.data.ownerMessageId;setAcceptedDurableIds(ids=>[...new Set([...ids,ownerId])]);}setLiveNote(frame.data.mode === "attached" || frame.data.mode === "absorbed" ? liveCopy.followUpQueued : liveCopy.ack);}
           }
         }
       } finally { reader.releaseLock(); }
