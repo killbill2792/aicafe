@@ -224,6 +224,7 @@ export async function runResearchTurn(args:{
     let terminalResponse:unknown,terminalType:string|undefined,accepted=false;
     let patches:unknown[]=[],pendingProse="";
     let presentationLoss=false;
+    const diagnosticsAtStart={...presentationDiagnostics};
     const decodedAtStart=presentationDiagnostics.decodedSections;
     const flushProse=async(force=false)=>{
       const boundary=force?pendingProse.length:pendingProse.lastIndexOf("\n\n")+2;
@@ -248,6 +249,20 @@ export async function runResearchTurn(args:{
         args.onPresentation?.(text.length,presentation);
       }
     };
+    const acceptInline=async(event:Event):Promise<boolean>=>{
+          if(event.type==="raw-delta"&&typeof event.delta==="string"){answer+=event.delta;return true;}
+          if(event.type==="inline-patch"){
+            await flushProse(true);
+            const patch=event.patch as {op?:unknown;path?:unknown}|undefined;
+            if(patch?.op==="add"&&patch.path==="/root"&&patches.some(p=>p!==null&&typeof p==="object"&&(p as {path?:unknown}).path==="/root"))await flushViews();
+            patches.push(event.patch);return true;
+          }
+          if(event.type==="inline-text"&&typeof event.delta==="string"){
+            await flushViews();pendingProse+=event.delta;await flushProse();return true;
+          }
+
+      return false;
+    };
     const output:unknown[]=[],calls:FunctionCall[]=[];
     try{
       const reservation=await reserveDurableProviderRequest(params);
@@ -256,16 +271,18 @@ export async function runResearchTurn(args:{
       try{
         for await(const event of researchInlineEvents(provider(params,controller.signal) as AsyncIterable<Event>)){
           if(controller.signal.aborted||timeToYield())throw Error("research_execution_window");
-          if(event.type==="raw-delta"&&typeof event.delta==="string")answer+=event.delta;
-          if(event.type==="inline-patch"){
-            await flushProse(true);
-            const patch=event.patch as {op?:unknown;path?:unknown}|undefined;
-            if(patch?.op==="add"&&patch.path==="/root"&&patches.some(p=>p!==null&&typeof p==="object"&&(p as {path?:unknown}).path==="/root"))await flushViews();
-            patches.push(event.patch);continue;
+          if(event.type==="inline-reconcile"&&typeof event.text==="string"){
+            const discardChars=text.length-callTextStart,discardPresentations=presentations.length-callPresentationStart;
+            text=text.slice(0,callTextStart);presentations.length=callPresentationStart;
+            if(discardChars||discardPresentations)args.onReset?.(discardChars,discardPresentations);
+            Object.assign(presentationDiagnostics,diagnosticsAtStart);
+            answer="";patches=[];pendingProse="";startedText=false;presentationLoss=false;
+            const authoritative=event.text;
+            async function* replay(){yield {type:"response.output_text.delta",delta:authoritative};yield {type:"response.completed"};}
+            for await(const item of researchInlineEvents(replay()))await acceptInline(item);
+            continue;
           }
-          if(event.type==="inline-text"&&typeof event.delta==="string"){
-            await flushViews();pendingProse+=event.delta;await flushProse();
-          }
+          if(await acceptInline(event))continue;
           if(event.type==="response.reasoning_summary_part.added"){thinking="";}
           if(event.type==="response.reasoning_summary_text.delta"&&typeof event.delta==="string"){
             thinking+=event.delta;
