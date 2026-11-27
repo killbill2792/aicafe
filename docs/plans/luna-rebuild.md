@@ -140,18 +140,30 @@ Use `Legacy exception` for a protected legacy file, or `Safeguard change` for ma
 
 ### Runtime package approvals
 
-These grants cover existing dependencies for date and timezone calculations, React rendering, server-only imports and schema validation. The bootstrap review used the production declarations and lockfile at `28622880e664cba2b9396546e551806eb66f7c80`. The seven downloaded registry archives (including scheduler through React DOM) matched their SHA-512 values. Their package manifests matched the locked versions and dependency declarations and declared no install hooks. The fingerprint binds the package’s install location, artifact version, HTTPS source, SHA-512 integrity and resolved regular, peer and optional dependencies, including nested versions. A package without complete artifact provenance remains outside the approved list. For example, the current parser's lock entry lacks integrity and the current Next.js closure includes an installed optional peer without it.
+These grants cover existing dependencies for date and timezone calculations, React rendering, server-only imports and schema validation. The bootstrap review used the production declarations and lockfile at `28622880e664cba2b9396546e551806eb66f7c80`. The seven downloaded registry archives (including scheduler through React DOM) matched their SHA-512 values. Their package manifests matched the locked versions and dependency declarations and declared no install hooks. The fingerprint binds the package’s install location, artifact version, HTTPS source, SHA-512 integrity and resolved regular, peer and optional dependencies, including nested versions. It also binds each lookup from the reviewed archive to the available installations in Node lookup order, including an absent optional plugin and ancestor fallbacks. A package without complete artifact provenance remains outside the approved list. For example, the current parser's lock entry lacks integrity and the current Next.js closure includes an installed optional peer without it.
+
+The following inventories record package lookups in the integrity-checked archives. They cover exported runtime entry points and their internal files, including conditional and source exports. React’s development task scheduler also looks up the Node built-in timers module. An empty object records an archive with no external registry lookups.
+
+| Record | Reviewed archive | SHA-512 integrity | Bare package names by issuer directory |
+| --- | --- | --- | --- |
+| Artifact imports | date-fns@4.4.0 | sha512-+1UMbeh68lH1SegH83CGWwpb6OHHbpSgr3+s5Eww5M4CAgswBpoWS0AjTOfEJ33HiYKz1hdj/KTFprzXHmq/6w== | {} |
+| Artifact imports | date-fns-tz@3.2.0 | sha512-sg8HqoTEulcbbbVXeg84u5UnlsQa8GS5QXMqjjYIhS4abEVVKIUwe0/l/UhrZdKaL/W5eWZNlbTeEIiOXTcsBQ== | {"dist/cjs/_lib/tzIntlTimeZoneName":["date-fns"],"dist/cjs/format":["date-fns"],"dist/esm/_lib/tzIntlTimeZoneName":["date-fns"],"dist/esm/format":["date-fns"]} |
+| Artifact imports | react@19.2.8 | sha512-PWaYA1L/q9u2u7xYQi+Y3L3Yfnie7XyLeaJICV1MGD6LprsBxcAqGjYyr0eY3p+QdsA+x/Irkt4Qif8D63+Sbw== | {"cjs":["react"]} |
+| Artifact imports | react-dom@19.2.8 | sha512-rVprimfGBG3DR+Tq0IQG2DT5PxKth1WIGDmj5yPmlzr4YBe7uyE+Du4oVqTDXZSHGGGXRtTJEGSSePyQCMBglQ== | {"cjs":["react","react-dom","scheduler"]} |
+| Artifact imports | scheduler@0.27.0 | sha512-eNv+WrVbKu1f3vbYJT/xtiF5syA5HPIMtf9IgY/nKg0sWqzAUEvqY/xm7OcZc/qafLx/iO9FgOmeSAp4v5ti/Q== | {} |
+| Artifact imports | server-only@0.0.1 | sha512-qepMx2JxAa5jjfzxG79yPPq+8BuFToHd1hm7kI+Z4zAq1ftQiP7HcxMhDDItrbtwVeLg/cY2JnKnrcFkmiswNA== | {} |
+| Artifact imports | zod@4.6.7 | sha512-g8W2D2kU6a8untc053fX1uVBKzM7yqAxW/3zwk83+6RyF2+SKOuV+c0wBDhUwzV1PaGapmZH+rmcUzPf+3CGwg== | {} |
 
 | Grant | Package | Reviewed SHA-256 graph fingerprint |
 | --- | --- | --- |
-| Runtime package | date-fns | e9ac4f0b55478123312daf54643e22fe97aeec866c2827595ec2c88cac1a41ed |
-| Runtime package | date-fns-tz | 9e89939e2407aeaa2605dec45d0398d29fce02a2f18dfd80e63a05d73ad86dc7 |
-| Runtime package | react | 4da68f62042e472280fa3d3581a5718706ef4b41e60f9240caa903a58885e0c6 |
-| Runtime package | react-dom | b9865eea2e2a28d259ccdb35165fe3b0ba2af74dee6635a088d8773c7c379910 |
-| Runtime package | server-only | f65339c003ab201bc4f62bce79363df58ec33eeb9862fe3d0aa344cb69406eb0 |
-| Runtime package | zod | c612c14818cf6522c907aa354e9e4b532a91532895d304ff0de14614733d8c46 |
+| Runtime package | date-fns | 85ca76a37d8388bb20438e2815ecc73c5fbcbcb2fa8c1c2d445eda66190c56d1 |
+| Runtime package | date-fns-tz | a72be8a4ee7490eb3e376be2ae10af9f7ee201e0a6e07158bc8ea3e8a5670f28 |
+| Runtime package | react | a7c2ae6d621358ade5cd0ddb34e6ca293154db4df7ec296ef38eb42feaaaf7c8 |
+| Runtime package | react-dom | aa38c1ca39d097ba171b9779bb7776ee6bbf30cd78e359130f24506502748ecf |
+| Runtime package | server-only | b55e3f5cc1815f9e66f4559527389eaae760782ee3abd980a4d6662b53b601c6 |
+| Runtime package | zod | 41f01ed4d102a475a0c225441ca3193670d21c4fece5d8576b4600b8d00b55b7 |
 
-To propose an addition or upgrade, commit the proposed lockfile on the working branch and run `node scripts/guards/luna-boundary.mjs --package-fingerprints PACKAGE`. An independent reviewer checks the intended capability, installed artifacts, executable entry points, install hooks and changes in transitive dependencies. Record that evidence on the PR. Land the reviewed grant on main through a documentation-only change before integrating the package into a Luna path. Both reviewed releases may coexist during an upgrade. Migrate consumers before removing the old grant. Unrelated lockfile entries do not change the grant. A fingerprint records which artifacts were selected. Runtime isolation and authorization continue to govern how they execute.
+To propose an addition or upgrade, verify each archive against its SHA-512 integrity. Inspect its executable entry points, conditional exports and transitive sources. Record every external package lookup with the directory of the issuing module, including optional plugins and fallbacks absent from the manifest. Withhold the grant when the possible package names or lookup origins cannot be bounded. Include an inventory for every reachable archive. Commit the proposed inventory and lockfile on the working branch and run `node scripts/guards/luna-boundary.mjs --package-fingerprints PACKAGE`. An independent reviewer checks the intended capability, installed artifacts, executable entry points, install hooks and changes in transitive dependencies. Record that evidence on the PR. Land the reviewed grant on main through a documentation-only change before integrating the package into a Luna path. Both reviewed releases may coexist during an upgrade. Migrate consumers before removing the old grant. Unrelated lockfile entries do not change the grant. A fingerprint records which artifacts were selected. Runtime isolation and authorization continue to govern how they execute.
 
 ## Continuation and cutover
 

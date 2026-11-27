@@ -1,6 +1,7 @@
 import {createHash} from 'node:crypto';
 import {execFileSync, spawnSync} from 'node:child_process';
 import {mkdtempSync, mkdirSync, rmSync, symlinkSync, writeFileSync} from 'node:fs';
+import {createRequire} from 'node:module';
 import {tmpdir} from 'node:os';
 import {dirname, join, resolve} from 'node:path';
 import {afterEach, beforeEach, describe, expect, it} from 'vitest';
@@ -26,9 +27,14 @@ function registryItem(name:string,version='1.0.0') {
   return {version,resolved:'https://registry.example.invalid/'+name+'-'+version+'.tgz',
     integrity:'sha512-'+createHash('sha512').update(name+version).digest('base64')};
 }
-function grantFor(name:string) {
+function inventory(name:string, imports:Record<string,string[]> = {},version='1.0.0') {
+  return '| Artifact imports | '+name+' | '+registryItem(name,version).integrity+' | '+JSON.stringify(imports)+' |';
+}
+function grantFor(name:string, inventories=[inventory(name)]) {
+  const rows = inventories.join('\n')+'\n';
+  put(ledger,rows);
   const head=commit();
-  return execFileSync(process.execPath,[guard,'--package-fingerprints',name],{cwd:dir,encoding:'utf8',
+  return rows+execFileSync(process.execPath,[guard,'--package-fingerprints',name],{cwd:dir,encoding:'utf8',stdio:['ignore','pipe','pipe'],
     env:{...process.env,HEAD_SHA:head}});
 }
 function run(branch='luna/operator-rebuild',trustedBase=base) {
@@ -85,7 +91,7 @@ describe('Luna repository boundary',()=>{
       'node_modules/@example/metrics':registryItem('metrics'),
       'node_modules/linked':{resolved:'lib/local',link:true},
     }}));
-    put(ledger,grantFor('@example/metrics')); base=commit();
+    put(ledger,grantFor('@example/metrics',[inventory('metrics')])); base=commit();
     const path='lib/luna/runtime/index.ts';
     put(path,"export * from '@example/metrics/reports'; export {createHash} from 'node:crypto';");
     expect(run()).toEqual({status:0,errors:''});
@@ -129,12 +135,53 @@ describe('Luna repository boundary',()=>{
     }
     beforeEach(()=>{
       put('package.json',JSON.stringify({dependencies:{a:'*'}})); lock({});
-      put(ledger,grantFor('a')); base=commit();
+      put(ledger,grantFor('a',[inventory('a'),inventory('b',{dist:['@example/plugin']}),inventory('plugin')])); base=commit();
       put('lib/luna/runtime/app.ts',"export * from 'a';");
     });
     it('accepts unrelated lockfile changes alongside a reviewed dependency cycle',()=>{
       lock({'node_modules/other':registryItem('other')});
       expect(run().status).toBe(0);
+    });
+    it.each(['node_modules','node_modules/b/node_modules','node_modules/b/dist/node_modules'])(
+      'rejects a previously absent plugin resolvable at %s',directory=>{
+        const name='@example/plugin';
+        const issuer=createRequire(join(dir,'node_modules/b/dist/entry.cjs'));
+        expect(()=>issuer.resolve(name)).toThrow();
+        const location=directory+'/'+name;
+        put(location+'/index.js','module.exports = {};');
+        expect(issuer.resolve(name)).toBe(join(dir,location,'index.js'));
+        // Only the lockfile is visible in the Git tree audited by the guard.
+        put('.gitignore','node_modules/\n');
+        lock({[location]:registryItem('plugin')});
+        expect(run().errors).toContain('unapproved runtime package graph a');
+      });
+    it('preserves the grant for a plugin installed only beneath a sibling',()=>{
+      lock({'node_modules/other/node_modules/@example/plugin':registryItem('plugin')});
+      expect(run().status).toBe(0);
+    });
+    it('pins a reviewed ambient archive and its own lookups through an upgrade',()=>{
+      const plugin='node_modules/@example/plugin';
+      lock({[plugin]:registryItem('plugin')});
+      put(ledger,grantFor('a',[inventory('a'),inventory('b',{dist:['@example/plugin']}),inventory('plugin',{'.':['extra']})]));
+      base=commit();
+      expect(run().status).toBe(0);
+      lock({[plugin]:registryItem('plugin'),'node_modules/extra':registryItem('extra')});
+      expect(run().errors).toContain('unapproved runtime package graph a');
+    });
+    it('pins the ancestor fallback when a nearer platform-specific plugin stays installed',()=>{
+      const nested='node_modules/b/node_modules/@example/plugin';
+      const root='node_modules/@example/plugin';
+      const nearer={...registryItem('plugin'),os:['linux'],optional:true};
+      lock({[nested]:nearer});
+      put(ledger,grantFor('a',[inventory('a'),inventory('b',{dist:['@example/plugin']}),
+        inventory('plugin'),inventory('plugin',{},'2.0.0')]));
+      base=commit();
+      expect(run().status).toBe(0);
+      lock({[nested]:nearer,[root]:registryItem('plugin','2.0.0')});
+      expect(run().errors).toContain('unapproved runtime package graph a');
+    });
+    it('cannot grant an archive without a reviewed lookup inventory',()=>{
+      expect(()=>grantFor('a',[inventory('a')])).toThrow();
     });
     it('checks the preferred shrinkwrap when both npm lockfiles exist',()=>{
       lock({'node_modules/b':registryItem('b','2.0.0')},'npm-shrinkwrap.json');

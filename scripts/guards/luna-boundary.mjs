@@ -215,53 +215,92 @@ function declaredPackages(tree) {
   }));
 }
 
-// Registry modules are opaque to the Git source walk. Bind approval to the
-// installed graph, including a nearer nested installation or a newly present
-// optional peer. Unrelated lockfile entries do not contribute to this digest.
+const packageName = /^(?:@[\w.-]+\/)?[a-zA-Z0-9_][\w.-]*$/;
+
+// The independent archive review records bare package lookups by issuer
+// directory. Even an absent optional plugin has a lookup to pin.
+function artifactImports(tree) {
+  const inventories = new Map();
+  for (const row of exceptionRows(tree,'Artifact imports')) {
+    const [, , , integrity, json] = row.split('|').map(field => field.trim());
+    if (inventories.has(integrity)) throw Error('Duplicate artifact inventory for '+integrity);
+    const directories = JSON.parse(json);
+    if (!directories || typeof directories !== 'object' || Array.isArray(directories))
+      throw Error('Invalid artifact inventory for '+integrity);
+    const lookups = [];
+    for (const directory of Object.keys(directories).sort()) {
+      const names = directories[directory];
+      if (!directory || posix.isAbsolute(directory) || directory !== posix.normalize(directory) ||
+          directory === '..' || directory.startsWith('../') || !Array.isArray(names) ||
+          !names.every(name => typeof name === 'string' && packageName.test(name)))
+        throw Error('Invalid artifact lookup in '+integrity);
+      for (const name of [...new Set(names)].sort()) lookups.push([directory,name]);
+    }
+    inventories.set(integrity,lookups);
+  }
+  return inventories;
+}
+
 function runtimePackages(tree) {
   const manifest = packageMetadata(tree);
   const direct = {...manifest.dependencies, ...manifest.optionalDependencies};
   const lock = installedPackages(tree);
+  const inventories = artifactImports(tree);
   const fingerprints = new Map();
-  function installedAt(directory,name) {
+
+  // Keep ancestor fallbacks as well as the nearest install. An optional or
+  // platform-specific nearer version may be absent on another supported host.
+  function installations(directory,name) {
+    const targets = [];
     for (;;) {
-      const path = posix.join(directory,'node_modules',name);
-      if (Object.hasOwn(lock,path)) return path;
-      if (directory === '.') return null;
+      if (posix.basename(directory) !== 'node_modules') {
+        const target = posix.join(directory,'node_modules',name);
+        if (Object.hasOwn(lock,target)) targets.push(target);
+      }
+      if (directory === '.') return targets;
       directory = posix.dirname(directory);
     }
   }
+
   return function fingerprint(name, fromDirectory = '.') {
     if (!Object.hasOwn(direct,name)) return null;
-    const entry = installedAt(fromDirectory,name);
-    if (!entry) return null;
-    if (fingerprints.has(entry)) return fingerprints.get(entry);
+    const entries = installations(fromDirectory,name);
+    if (!entries.length) return null;
+    const key = JSON.stringify(entries);
+    if (fingerprints.has(key)) return fingerprints.get(key);
     const nodes = new Map();
     function visit(path) {
       if (nodes.has(path)) return true;
       const item = lock[path];
       if (!item || item.link || !item.version || !/^https:\/\//.test(item.resolved) ||
           !/^sha512-[a-zA-Z0-9+/]{86}==$/.test(item.integrity)) return false;
+      const imports = inventories.get(item.integrity);
+      if (!imports) return false;
       const edges = [];
       nodes.set(path,[item.name ?? null,item.version,item.resolved,item.integrity,
         item.os ?? null,item.cpu ?? null,item.libc ?? null,item.hasInstallScript ?? false,edges]);
       const dependencies = {...item.peerDependencies,...item.dependencies,...item.optionalDependencies};
       for (const dep of Object.keys(dependencies).sort()) {
-        if (!/^(?:@[\w.-]+\/)?[a-zA-Z0-9_][\w.-]*$/.test(dep)) return false;
-        const target = installedAt(path,dep);
+        if (!packageName.test(dep)) return false;
+        const targets = installations(path,dep);
         const optional = Object.hasOwn(item.optionalDependencies ?? {},dep) ||
           (!Object.hasOwn(item.dependencies ?? {},dep) && item.peerDependenciesMeta?.[dep]?.optional === true);
-        edges.push([dep,dependencies[dep],optional,target, Object.hasOwn(item.peerDependencies ?? {},dep)]);
-        if (target ? !visit(target) : !optional) return false;
+        edges.push([dep,dependencies[dep],optional,targets,Object.hasOwn(item.peerDependencies ?? {},dep)]);
+        if ((!targets.length && !optional) || !targets.every(visit)) return false;
+      }
+      for (const [directory,dep] of imports) {
+        const targets = installations(posix.join(path,directory),dep);
+        edges.push([directory,dep,targets]);
+        if (!targets.every(visit)) return false;
       }
       return true;
     }
     let digest = null;
-    if (visit(entry)) {
+    if (entries.every(visit)) {
       const records = [...nodes.keys()].sort().map(path=>[path,...nodes.get(path)]);
-      digest = createHash('sha256').update(JSON.stringify(records)).digest('hex');
+      digest = createHash('sha256').update(JSON.stringify([entries,records])).digest('hex');
     }
-    fingerprints.set(entry,digest);
+    fingerprints.set(key,digest);
     return digest;
   };
 }
@@ -445,7 +484,9 @@ export function audit(base, head, branch = '', trustedBase = base, regressions =
   const dbRunner = 'scripts/db/run-all.sh';
   const browserMappingChanged = JSON.stringify(packageMetadata(trusted).browser) !== JSON.stringify(packageMetadata(after).browser);
   const controlChanges = trustedChanges.filter(p => controls(p) || (p === 'package.json' && browserMappingChanged));
-  const approvalChanged = retainedPackages.size !== approvedPackages.size || retainedPackages.size !== proposedPackages.size;
+  const inventoryChanged = JSON.stringify(exceptionRows(trusted,'Artifact imports').sort()) !==
+    JSON.stringify(exceptionRows(after,'Artifact imports').sort());
+  const approvalChanged = inventoryChanged || retainedPackages.size !== approvedPackages.size || retainedPackages.size !== proposedPackages.size;
   if (trusted.files.has(policy) && approvalChanged && trustedChanges.some(p=>p !== ledger && !p.endsWith('.md')))
     errors.push(ledger+':1: review external package grants separately from executable or dependency changes');
   const policyEdits = controlChanges.filter(p => p !== dbRunner);
