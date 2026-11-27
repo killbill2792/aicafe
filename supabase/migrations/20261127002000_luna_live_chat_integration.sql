@@ -65,7 +65,7 @@ begin
  update public.ai_agent_jobs set progress=
    coalesce((select jsonb_agg(e order by ord) from
      (select e,ord from jsonb_array_elements(progress) with ordinality t(e,ord)
-       where e->>'kind' is distinct from 'live_view' order by ord desc limit 11) recent),'[]'::jsonb)
+       where e->>'kind' is distinct from 'live_view' order by (e->>'kind'='thinking') desc nulls last,ord desc limit 11) recent),'[]'::jsonb)
    ||jsonb_build_array(jsonb_build_object('kind','live_view','text',coalesce(p_state->>'text',''),
      'presentations',coalesce((select jsonb_agg(jsonb_build_object('offset',e->'presentationOffset','block',e->'presentation'))
        from jsonb_array_elements(case when jsonb_typeof(p_state->'presentations')='array' then p_state->'presentations' else '[]'::jsonb end) e
@@ -100,7 +100,7 @@ begin
    update public.ai_agent_jobs set progress=
      coalesce((select jsonb_agg(e order by ord) from
        (select e,ord from jsonb_array_elements(progress) with ordinality t(e,ord)
-        order by ord desc limit 11) recent),'[]'::jsonb)
+        order by (e ? 'kind') desc,ord desc limit 11) recent),'[]'::jsonb)
        ||jsonb_build_array(p_step) where id=j.id;
  elsif p_action='thinking' then
    if jsonb_typeof(p_step->'summary') is distinct from 'string' then
@@ -108,7 +108,7 @@ begin
    update public.ai_agent_jobs set progress=
      coalesce((select jsonb_agg(e order by ord) from
        (select e,ord from jsonb_array_elements(progress) with ordinality t(e,ord)
-        where e->>'kind' is distinct from 'thinking' order by ord desc limit 11) recent),'[]'::jsonb)
+        where e->>'kind' is distinct from 'thinking' order by (e->>'kind'='live_view') desc nulls last,ord desc limit 11) recent),'[]'::jsonb)
      ||jsonb_build_array(jsonb_build_object('kind','thinking','summary',p_step->'summary')) where id=j.id;
  elsif p_action='done' then
    if not exists(select 1 from public.ai_messages m where m.id=p_reply_id and m.business_id=r.business_id
