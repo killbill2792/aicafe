@@ -419,3 +419,10 @@ it("preserves explicit point-level monetary units and never collapses unlike uni
  expect(mixed?.panels).toEqual([]);
  expect(mixed?.tables?.[0]).toMatchObject({currency:"GBP",rows:[["Sales",12345,"cents"],["Orders",3,"count"],["Missing",null,"hours"],["Margin",0,"%"]]});
 });
+
+it("keeps the visual-first owner instruction alongside the upstream web and PDF catalogs",()=>{
+ expect(INLINE_PRESENTATION_HINT).toContain("Compose visual-first answers");
+ expect(INLINE_PRESENTATION_HINT).toContain("Prefer metric cards for headline figures");
+ expect(INLINE_PRESENTATION_HINT).not.toContain("A text-only answer is always appropriate");
+ expect(INLINE_PRESENTATION_HINT).toContain("PDF documents:");
+});
