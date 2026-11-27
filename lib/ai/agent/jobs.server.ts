@@ -85,10 +85,17 @@ export async function startDurableAgentJob(id:DurableJobIdentity):Promise<AgentJ
   return data?toAgentJob(data):null;
 }
 export async function updateDurableAgentJob(id:DurableJobIdentity,jobId:string,
-  action:"progress"|"failed"|"heartbeat",value?:AgentJobStep|string):Promise<void>{
+  action:"progress"|"failed"|"heartbeat"|"thinking",value?:AgentJobStep|string):Promise<void>{
   const {data,error}=await createAdminSupabaseClient().rpc("supervisor_update_owner_job_v2",{
     ...durableJobParams(id),p_job_id:jobId,p_action:action,
-    p_step:action==="progress"?value:null,p_reply_id:null,p_error_code:action==="failed"?value:null,
+    p_step:action==="progress"?value:action==="thinking"?{summary:value}:null,p_reply_id:null,p_error_code:action==="failed"?value:null,
   });
   if(error||data!==true)throw new Error("durable_job_lease_lost");
+}
+
+/** Same-thread messages already admitted to the durable queue; no new executor. */
+export async function collectDurableFollowUps(id:DurableJobIdentity,jobId:string):Promise<OwnerFollowUp[]>{
+  const {data,error}=await createAdminSupabaseClient().rpc("supervisor_collect_owner_followups_v2",{...durableJobParams(id),p_job_id:jobId});
+  if(error)throw Error("durable_followup_read_failed",{cause:error});
+  return (Array.isArray(data)?data:[]).flatMap((m:{id?:unknown;text?:unknown})=>typeof m.id==="string"&&typeof m.text==="string"?[{id:m.id,text:m.text}]:[]);
 }
