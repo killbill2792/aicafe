@@ -1,14 +1,15 @@
 import "server-only";
 import type {SupabaseClient} from "@supabase/supabase-js";
 import {z} from "zod";
-import {openSourceStream,type SourceRecord} from "@/lib/externalData/archive.server";
-import {readWithSourceAccess} from "@/lib/externalData/pages";
+import {noteAvailability,openSourceStream,type SourceRecord} from "@/lib/externalData/archive.server";
+import {readWithSourceAccess,SourceAccessChanged} from "@/lib/externalData/pages";
 import {createToastClient,GUID,ToastApiError} from "./client";
 
 type Location={businessId:string;restaurantGuid:string};
 type DateField="paidBusinessDate"|"refundBusinessDate"|"voidBusinessDate";
 const path="/orders/v2/payments";
-const detailResource=path.slice(1)+"/{guid}";
+const listResource=path.slice(1);
+const detailResource=listResource+"/{guid}";
 const paymentSchema=z.looseObject({
   guid:GUID,orderGuid:GUID.nullish(),paidBusinessDate:z.number().int().nullish(),
   type:z.string().nullish(),paymentStatus:z.string().nullish(),amount:z.number().finite().nullish(),
@@ -30,10 +31,24 @@ export function toastPaymentArchive(db:SupabaseClient,location:Location,
   const {businessId,restaurantGuid}=location;
   const source={businessId,provider:"toast",account:restaurantGuid};
   const authorize=()=>client.assertSourceAccess(restaurantGuid,"orders");
+  async function underOrdersGrant<T>(read:()=>Promise<T>) {
+    const startedAt=new Date().toISOString();
+    try{return await read();}
+    catch(error){
+      const lostGrant=error instanceof SourceAccessChanged||error instanceof ToastApiError&&
+        (error.status===401||error.status===403||error.category==="unauthorized_location");
+      if(lostGrant){
+        // The location and order grant cover both payment endpoints.
+        await Promise.all([listResource,detailResource].map(resource=>
+          noteAvailability(db,source,resource,"permission_required",startedAt)));
+      }
+      throw error;
+    }
+  }
   async function readReceipt<T>(stream:Awaited<ReturnType<typeof openSourceStream>>,
     scope:Record<string,string>,mode:"window"|"point",schema:z.ZodType<T>,revision:number) {
     try{
-      const records=await readWithSourceAccess(authorize,()=>stream.completedRecords(scope,mode,revision));
+      const records=await underOrdersGrant(()=>readWithSourceAccess(authorize,()=>stream.completedRecords(scope,mode,revision)));
       if(records.length!==1)throw new ToastApiError("unavailable");
       return schema.parse(records[0]);
     }catch(error){
@@ -52,7 +67,7 @@ export function toastPaymentArchive(db:SupabaseClient,location:Location,
       if(value!==null)return {value,externalRevision:revision};
       // Keep reconciliation on the same provider scope when its receipt was replaced.
     }
-    const value=await readWithSourceAccess(authorize,request);
+    const value=await underOrdersGrant(()=>readWithSourceAccess(authorize,request));
     const externalRevision=await stream.commit([{key,...record(value)}],{cursor:null,scope,mode},true);
     return {value,externalRevision};
   }
@@ -60,7 +75,7 @@ export function toastPaymentArchive(db:SupabaseClient,location:Location,
     list(day:string,field:DateField,limit=20000,deadlineAt?:number,revision?:number) {
       const scope={businessDate:day,dateField:field};
       const schema=idsSchema.max(limit);
-      return capture(path.slice(1),field+":"+day,scope,"window",schema,async()=>{
+      return capture(listResource,field+":"+day,scope,"window",schema,async()=>{
         let continuation:string|null=null;
         const ids=await client.request(path+"?"+field+"="+z.iso.date().parse(day).replaceAll("-",""),
           restaurantGuid,idsSchema,{deadlineAt,onResponse:({nextPageToken})=>{continuation=nextPageToken;}});
@@ -81,7 +96,7 @@ export function toastPaymentArchive(db:SupabaseClient,location:Location,
       },revision,payload=>({payload,payloadKind:"payment"}));
     },
     async applyFeeReceipt(guid:string,revision:number) {
-      await authorize();
+      await underOrdersGrant(authorize);
       const {data,error}=await db.rpc("toast_apply_archived_payment_fee",{
         p_business_id:businessId,p_restaurant_guid:restaurantGuid,p_payment_guid:guid,p_revision:revision,
       });

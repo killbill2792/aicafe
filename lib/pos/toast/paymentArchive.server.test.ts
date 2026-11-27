@@ -58,7 +58,13 @@ it("commits neither an unrelated payment nor data received under a replaced gran
   const {payments,rpc,request,authorize}=fixture();
   request.mockResolvedValueOnce({guid:another}).mockResolvedValueOnce({guid});
   await expect(payments.detail(guid)).rejects.toMatchObject({category:"invalid_response"});
+  expect(rpc).not.toHaveBeenCalled();
   authorize.mockResolvedValueOnce("grant-before").mockResolvedValueOnce("grant-after");
   await expect(payments.detail(guid)).rejects.toThrow("External source access changed");
-  expect(rpc).not.toHaveBeenCalled();
+  expect(rpc).not.toHaveBeenCalledWith("external_commit_page",expect.anything());
+  for(const resource of ["orders/v2/payments","orders/v2/payments/{guid}"]){
+    expect(rpc).toHaveBeenCalledWith("external_note_availability",expect.objectContaining({
+      p_resource:resource,p_account:location.restaurantGuid,p_status:"permission_required",
+    }));
+  }
 });
