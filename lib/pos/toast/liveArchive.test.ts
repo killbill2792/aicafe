@@ -4,7 +4,6 @@ vi.mock("server-only",()=>({}));
 import {isFinishedToastOrder,liveArchivePage} from "./liveArchive";
 import {archiveLiveToastOrders} from "./liveArchive.server";
 import {redactToastRaw} from "./redact";
-import {stableToastOrderPage} from "./stableOrder";
 import {readToastTodaySoFar,clearTodaySoFarCache} from "./todaySoFar.server";
 
 const g=(n:number)=>`cccccccc-cccc-4ccc-8ccc-${String(n).padStart(12,"0")}`;
@@ -37,7 +36,7 @@ describe("which of today's orders are kept during the day",()=>{
  it("prepares a page exactly as the 5 AM import does, so an unchanged order is recognised then",()=>{
   const page=[order(1),order(2,"OPEN"),order(3)];
   const kept=liveArchivePage(page);
-  const asImport=stableToastOrderPage(redactToastRaw(page,0,"",undefined,"orders") as unknown[]);
+  const asImport=redactToastRaw(page,0,"",undefined,"orders") as unknown[];
   expect(kept).toEqual([asImport[0],asImport[2]]);
   // POS0e owner-approved retention: permitted customer names and contacts
   // survive the same live/day-import normalization; payment credentials do not.

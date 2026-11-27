@@ -35,16 +35,16 @@ export function sameOrOlderOrder(previous:unknown,incoming:unknown):boolean{
  if(!old.success||!next.success||old.data.guid.toLowerCase()!==next.data.guid.toLowerCase())return false;
  const a=epoch(old.data.modifiedDate),b=epoch(next.data.modifiedDate);
  if(Number.isFinite(a)&&Number.isFinite(b)&&a>b)return true;
- return JSON.stringify(stableKeys(stableToastOrder(previous)))===JSON.stringify(stableKeys(stableToastOrder(incoming)));
+ return JSON.stringify(stableKeys(previous))===JSON.stringify(stableKeys(incoming));
 }
 
 /** Preserve source evidence even when a normalized parser cannot understand
  * a check. The shared live reader reports parse gaps, never false zero totals. */
 export function prepareToastOrderRevision(scope:OrderScope,raw:unknown){
  const day=sourceOrderDay(raw,scope);
- const payload=stableToastOrder(redactToastRaw(raw,0,"",undefined,"orders"));
+ const payload=redactToastRaw(raw,0,"",undefined,"orders");
  if(!rawSchema.safeParse(payload).success)throw new ToastApiError("invalid_response");
- const parsed=parseToastDayPage([payload],scope.restaurantGuid,day,scope.timezone,scope.closeoutHour);
+ const parsed=parseToastDayPage([stableToastOrder(payload)],scope.restaurantGuid,day,scope.timezone,scope.closeoutHour);
  // Use the existing parser for every financial definition. Keep compact,
  // per-order contributions on the same archive row (no second order store).
  const order=parsed.orders[0],o=order?.normalized;

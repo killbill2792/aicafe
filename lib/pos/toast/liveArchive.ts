@@ -1,5 +1,4 @@
 import {redactToastRaw} from "./redact";
-import {stableToastOrderPage} from "./stableOrder";
 
 /** An order is finished when it is voided or deleted, or every check on it is
  * closed (or voided). Open and paid-but-not-closed checks still change (tips,
@@ -19,11 +18,11 @@ export function isFinishedToastOrder(order:unknown):boolean{
 }
 
 /** One downloaded page of today's orders, prepared exactly as the day import
- * prepares it (lib/pos/toast/dayImport.ts: personal details removed, GUID lists
- * sorted), so an order that does not change before closeout has the same hash
+ * prepares it (lib/pos/toast/dayImport.ts: credentials removed, original list order
+ * retained), so an order that does not change before closeout has the same hash
  * at 5 AM and is not saved again. Only finished orders are kept. */
 export function liveArchivePage(rows:readonly unknown[]):unknown[]{
  const redacted=redactToastRaw(rows,0,"",undefined,"orders");
  if(!Array.isArray(redacted))return [];
- return stableToastOrderPage(redacted).filter(isFinishedToastOrder);
+ return redacted.filter(isFinishedToastOrder);
 }

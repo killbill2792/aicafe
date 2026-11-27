@@ -398,11 +398,11 @@ describe("real Toast messiness: same data in, same import out",()=>{
   expect(s.refund_facts.map(r=>r.amount_cents)).toEqual([200,200,200]);
   expect(s.tip_cents).toBe(300);
  });
- it("shuffled lists inside every order give the same import and the same stored pages",async()=>{
+ it("preserves provider list order while computing the same financial import",async()=>{
   const clean=await importPages([orders]);
   const messyRun=await importPages([orders.map(shuffled)]);
   expect(messyRun.sent).toEqual(clean.sent);
-  expect(messyRun.staged).toEqual(clean.staged);
+  expect(messyRun.staged).toEqual(orders.map(shuffled).map(o=>JSON.stringify(o)).sort());
  });
  it("orders in a different order on the page give the same import",async()=>{
   const clean=await importPages([orders]);
