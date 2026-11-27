@@ -205,12 +205,54 @@ jobs:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
       - uses: actions/setup-node@v4
         with:
           node-version: 22
           cache: npm
+      # Run reviewed code against Git objects before installing any candidate dependencies.
+      - name: Verify Luna architecture using the approved main policy
+        if: github.event_name == 'pull_request'
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          set -euo pipefail
+          policy=scripts/guards/luna-boundary.mjs
+          approved=$(git rev-parse refs/remotes/origin/main^{commit})
+          listing=$(git ls-tree "$approved" -- "$policy")
+          if [[ -z "$listing" ]]; then
+            echo "Base predates the Luna guard. The candidate guard and independent bootstrap review apply."
+            exit 0
+          fi
+          trusted=$(mktemp -d "$RUNNER_TEMP/luna-policy.XXXXXX")
+          git archive "$approved" -- package.json package-lock.json "$policy" | tar -x -C "$trusted"
+          (cd "$trusted" && npm ci --ignore-scripts --no-audit --no-fund)
+          LUNA_POLICY_BASE="$approved" node "$trusted/$policy" --list-regressions > "$RUNNER_TEMP/luna-regressions"
+          # A standalone maintenance PR must still satisfy the reviewed behavior.
+          if ! git diff --quiet "$approved" "$HEAD_SHA" -- "$policy" scripts/guards/luna-boundary.test.ts scripts/db/luna-engine-race.mjs; then
+            git show "$approved:scripts/guards/luna-boundary.test.ts" > "$RUNNER_TEMP/luna-reviewed-tests"
+          fi
       - name: Install locked dependencies
         run: npm ci
+      - name: Run reviewed guard cases and pinned legacy regressions
+        if: github.event_name == 'pull_request'
+        run: |
+          set -euo pipefail
+          if [[ -f "$RUNNER_TEMP/luna-reviewed-tests" ]]; then
+            suite=$(mktemp scripts/guards/luna-reviewed-XXXXXX.test.ts)
+            trap 'rm -f "$suite"' EXIT
+            cp "$RUNNER_TEMP/luna-reviewed-tests" "$suite"
+            node_modules/.bin/vitest run "$suite"
+          fi
+          if [[ -s "$RUNNER_TEMP/luna-regressions" ]]; then
+            while IFS= read -r -d '' proof; do
+              result=$(mktemp)
+              node_modules/.bin/vitest run --reporter=json --outputFile="$result" "./$proof"
+              jq -e --arg path "$PWD/$proof" 'any(.testResults[]; .name == $path and any(.assertionResults[]; .status == "passed"))' "$result"
+            done < "$RUNNER_TEMP/luna-regressions"
+          fi
       - name: Run every repository guard
         env:
           BASE_SHA: ${{ github.event.pull_request.base.sha || github.sha }}
@@ -246,7 +288,13 @@ jobs:
           wait "$npm_ci" || npm_ci_status=$?
           cat "$RUNNER_TEMP/npm-ci.log"
           exit "$npm_ci_status"
+      - name: Verify Luna database oracle independently of the suite launcher
+        env:
+          SUPERVISOR_RUN_DB_URL: postgresql://postgres:postgres@127.0.0.1:54322/postgres
+        run: node scripts/db/luna-engine-race.mjs
       - name: Run every SQL and database test
+        env:
+          LUNA_DB_ORACLE_VERIFIED: "true"
         run: bash scripts/db/run-all.sh
       - name: Stop local Supabase
         if: always()

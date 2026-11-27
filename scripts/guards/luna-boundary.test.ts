@@ -17,12 +17,12 @@ function git(...args:string[]) {
   return execFileSync('git',args,{cwd:dir,encoding:'utf8'}).trim();
 }
 function commit() {
-  git('add','.'); git('commit','-qm','fixture');
+  git('add','.'); git('commit','--allow-empty','-qm','fixture');
   return git('rev-parse','HEAD');
 }
-function run(branch='luna/operator-rebuild') {
+function run(branch='luna/operator-rebuild',trustedBase=base) {
   const result=spawnSync(process.execPath,[guard],{cwd:dir,encoding:'utf8',
-    env:{...process.env,BASE_SHA:base,HEAD_SHA:commit(),GITHUB_HEAD_REF:branch}});
+    env:{...process.env,LUNA_POLICY_BASE:trustedBase,BASE_SHA:base,HEAD_SHA:commit(),GITHUB_HEAD_REF:branch}});
   return {status:result.status, errors:result.stderr};
 }
 describe('Luna repository boundary',()=>{
@@ -30,6 +30,7 @@ describe('Luna repository boundary',()=>{
     dir=mkdtempSync(join(tmpdir(),'luna-boundary-'));
     git('init','-q'); git('config','user.email','boundary@example.invalid'); git('config','user.name','Fixture');
     put('tsconfig.json',JSON.stringify({compilerOptions:{moduleResolution:'bundler',paths:{'@/*':['./*']}}}));
+    put('scripts/guards/luna-boundary.mjs','// installed fixture policy');
     put(ledger,'# Ledger\n'); put(legacy,'export const run = 1;');
     put('lib/metrics/core.ts','export const sales = 1;');
     put('scripts/db/luna-engine-driver.mjs','// Test driver presence fixture only.');
@@ -57,14 +58,47 @@ describe('Luna repository boundary',()=>{
     put('lib/utility.ts',"export * from '@/lib/ai/conversations/agentRunner.server';");
     expect(run('feat/unrelated').errors).toContain(legacy);
   });
-  it('checks protected changes even when the canonical branch only edits legacy code',()=>{
+  it('requires independently reviewed revisions on canonical, worker and stacked branches',()=>{
+    const proof='tests/adapter.test.ts';
+    put(proof,"import {it,expect} from 'vitest'; import {run} from '../lib/ai/conversations/agentRunner.server'; it('preserves the adapter result',()=>expect(run).toBe(2));");
     put(legacy,'export const run = 2;');
-    expect(run().errors).toContain('revision-bound legacy exception');
-    put('tests/gate.test.ts','// test path fixture');
     const record='| Legacy exception | '+legacy+' | '+git('rev-parse',base+':'+legacy)+' | '+
-      git('hash-object',legacy)+' | adapt cutover | tests/gate.test.ts | remove after drain |\n';
-    put(ledger,record); expect(run().status).toBe(0);
+      git('hash-object',legacy)+' | adapt cutover | '+proof+' | '+git('hash-object',proof)+' | remove after drain |\n';
+    put(ledger,record);
+    for(const branch of ['luna/operator-rebuild','feat/worker'])
+      expect(run(branch).errors).toContain('revision-bound legacy exception');
+    const main=base;
+    put(legacy,'export const run = 1;'); base=commit();
+    put(legacy,'export const run = 2;');
+    expect(run('stacked/worker',main).status).toBe(1);
+    expect(run('feat/worker')).toEqual({status:0,errors:''});
+    put(proof,'// assertions removed'); expect(run().status).toBe(1);
     put(legacy,'export const run = 3;'); expect(run().status).toBe(1);
+  });
+  it('recognizes private agent helpers through a new alias, barrel and dynamic import',()=>{
+    put('tsconfig.json',JSON.stringify({compilerOptions:{moduleResolution:'bundler',paths:{'old/*':['./lib/ai/agent/*']}}}));
+    put('lib/ai/agent/jobState.ts','export const state=1;');
+    put('lib/luna/runtime/new.ts',"export * from '../../intermediate';");
+    put('lib/intermediate.ts',"export const load=()=>import('old/jobState');");
+    expect(run('feat/delegated').errors).toContain('lib/ai/agent/jobState.ts');
+    put('lib/intermediate.ts',"export * from 'old/missing';");
+    expect(run().errors).toContain('unresolved local dependency');
+  });
+  it('protects the launcher and CI even on a control-only worker branch',()=>{
+    put('scripts/guards/run-all.mjs','// changed launcher');
+    put('.github/workflows/ai-cafe-pr-baseline.yml','jobs: {}');
+    const r=run('maintenance/worker');
+    expect(r.status).toBe(1);
+    expect(r.errors).toContain('scripts/guards/run-all.mjs');
+    expect(r.errors).toContain('.github/workflows/ai-cafe-pr-baseline.yml');
+    expect(r.errors).toContain('revision-bound safeguard change');
+  });
+  it('permits unrelated DB registrations while retaining the independent oracle',()=>{
+    put('scripts/db/run-all.sh','node scripts/db/luna-engine-race.mjs\n'); base=commit();
+    put('scripts/db/run-all.sh','node scripts/db/luna-engine-race.mjs\nsql_step unrelated.sql "Other service"\n');
+    expect(run('feature/database')).toEqual({status:0,errors:''});
+    put('scripts/db/run-all.sh','sql_step unrelated.sql "Other service"\n');
+    expect(run('feature/database').errors).toContain('retain the registered');
   });
   it('blocks a mixed enforcement change and a missing database driver',()=>{
     put('scripts/guards/run-all.mjs',''); put('lib/luna/runtime/index.ts','export {};');
@@ -75,7 +109,9 @@ describe('Luna repository boundary',()=>{
   it('keeps PR 594 architecture-only and preserves unrelated PR scope',()=>{
     put(legacy,'export const value = 3;');
     expect(run('luna/complete-rebuild').status).toBe(1);
-    put('README.md','another change'); expect(run('feat/unrelated').status).toBe(0);
+    put(legacy,'export const run = 1;');
+    put('lib/metrics/core.ts','export const sales = 2;');
+    expect(run('feat/unrelated').status).toBe(0);
   });
 });
 it('fails when two engines run, a destination receives a duplicate, or the database lacks a verified receipt',()=>{
