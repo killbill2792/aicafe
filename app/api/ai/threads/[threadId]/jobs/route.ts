@@ -19,16 +19,16 @@ export async function GET(_request: Request, context: RouteContext) {
     await service.getThread(id);
     const client = await createServerSupabaseClient();
     const query = () => { const q=client.from("ai_agent_jobs")
-      .select("id, thread_id, owner_message_id, status, attempt, error_code, reply_message_id, progress, inbox, consumed, heartbeat_at, created_at")
+      .select("id, thread_id, owner_message_id, status, attempt, error_code, reply_message_id, progress, inbox, consumed, heartbeat_at, created_at, durable_run_id")
       .eq("business_id", scope.businessId).eq("thread_id", id);
-      return q.is("durable_run_id",null);
+      return q;
     };
     // Retries reuse their original row/created_at: a newer completed job must
     // never hide an older row that is running again.
     const running = await query().eq("status", "running")
       .order("created_at", { ascending: false }).limit(1).maybeSingle();
     if (running.error) throw running.error;
-    const latest = running.data ? running : await query().in("status", ["done", "failed"])
+    const latest = running.data ? running : await query().is("durable_run_id",null).in("status", ["done", "failed"])
       .order("created_at", { ascending: false }).limit(1).maybeSingle();
     if (latest.error) throw latest.error;
     return conversationJson({ job: latest.data ? effectiveAgentJob(toAgentJob(latest.data)) : null });
