@@ -19,10 +19,13 @@ function db(payments:Array<Record<string,unknown>>,coverage:{mappings:unknown[];
  return {db:{from(table:string){
   let patch:Record<string,unknown>|null=null;
   const read=table==="toast_location_mappings"?coverage.mappings:table==="toast_day_status"?coverage.days:null;
-  const q={select(){return q;},eq(column:string,value:unknown){if(patch)updateFilters.push([column,value]);return q;},
+  const q={select(){return q;},eq(column:string,value:unknown){if(patch)updateFilters.push([column,value]);return q;},in(){return q;},
    is(column:string,value:null){if(patch)updateFilters.push([column,value]);return q;},not(){return q;},order(){return q;},
    update(value:Record<string,unknown>){patch=value;return q;},
-   range:async(start:number,end:number)=>({data:payments.slice(start,end+1),error:null}),
+   range:(start:number,end:number)=>({overrideTypes:async()=>({data:table==="cv_payments"?payments.slice(start,end+1).map(row=>({
+    source_ref:"payment:"+String(row.restaurant_guid??"r1")+":"+String(row.payment_ref),
+    status:"actual",fee_write_allowed:"true",...row,
+   })):null,error:null})}),
    maybeSingle:async()=>({data:{rules:[]},error:null}),
    then(ok:(v:unknown)=>unknown){if(patch)writes.push(patch);
     return Promise.resolve({data:patch?updateRows:read,error:null}).then(ok);}
@@ -117,4 +120,18 @@ it("refuses to publish an estimate when the same restaurant's payment gains veri
  ]));
  expect(m.upsert).not.toHaveBeenCalled();
  expect(m.disable).not.toHaveBeenCalled();
+});
+
+it("publishes original evidence from the canonical reader without writing a stale cache row",async()=>{
+ const f=db([{...visa,fee_write_allowed:"false",original_processing_fee_cents:0,processing_fee_cents:null}]);
+ const result=await refreshToastPaymentFeeForDay(f.db,b,"2026-10-12");
+ expect(result).toMatchObject({status:"actual",amountCents:0,count:1});
+ expect(f.writes).toEqual([]);
+});
+
+it("withholds the daily total if an archived payment identity is ambiguous",async()=>{
+ const f=db([{...visa,status:"needs_match"}]);
+ expect(await refreshToastPaymentFeeForDay(f.db,b,"2026-10-12")).toMatchObject({status:"missing",count:1});
+ expect(m.upsert).not.toHaveBeenCalled();
+ expect(f.writes).toEqual([]);
 });

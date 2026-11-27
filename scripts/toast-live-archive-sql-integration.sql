@@ -146,11 +146,20 @@ BEGIN
   'a zero provider fee is independently verified');
  perform pg_temp.assert_true((select original_processing_fee_cents=0 and fee_status='actual' from public.toast_payment_facts
   where business_id=b and restaurant_guid=r and business_date=d and payment_ref=payment::text),'zero stays an actual fee');
+ perform pg_temp.assert_true((select original_processing_fee_cents=0 and data->>'feeEvidence'='point_observation'
+   from public.cv_payments where business_id=b and source_ref='payment:'||r::text||':'||payment::text),
+  'one certified payment links the exact order and independent fee');
+ perform pg_temp.assert_true((select l.evidence->'targetSelector'->'path'='["checks",0,"payments",0]'::jsonb
+  from public.external_record_links l where l.business_id=b and l.relation='order_payment' and l.target_id=row_id),
+  'the relationship points to the exact nested payment in the archived order');
  payment_body:=jsonb_set(payment_body,'{originalProcessingFee}','null');
  payment_revision:=public.external_commit_page(b,'toast',r::text,'orders/v2/payments/{guid}',payment::text,payment_revision,
   payment_scope,true,jsonb_build_array(jsonb_build_object('key',payment,'payload',payment_body)));
  perform pg_temp.assert_true(public.toast_apply_archived_payment_fee(b,r,payment,payment_revision)='refresh_evidence',
   'an explicit null cannot supply a fee');
+ perform pg_temp.assert_true((select original_processing_fee_cents=0 and data->>'feeEvidence'='historical_projection'
+   from public.cv_payments where business_id=b and source_ref='payment:'||r::text||':'||payment::text),
+  'a superseded point does not certify the previously verified fee as current');
  payment_body:=jsonb_set(payment_body,'{originalProcessingFee}','0.23');
  payment_revision:=public.external_commit_page(b,'toast',r::text,'orders/v2/payments/{guid}',payment::text,payment_revision,
   payment_scope,true,jsonb_build_array(jsonb_build_object('key',payment,'payload',payment_body)));
@@ -175,6 +184,12 @@ BEGIN
  perform pg_temp.assert_true((select original_processing_fee_cents=23 and fee_status='actual' and fee_basis='toast'
   from public.toast_payment_facts where business_id=b and restaurant_guid=r and business_date=d
    and payment_ref='eeeeeeee-1111-4eee-8eee-eeeeeeee0014'),'same captured payment retains provider fee when order copy omits it');
+ update public.toast_payment_facts set amount_cents=999999,tip_cents=999999,original_processing_fee_cents=999999
+ where business_id=b and restaurant_guid=r and business_date=d and payment_ref=payment::text;
+ perform pg_temp.assert_true((select amount_cents=765 and tip_cents=200 and original_processing_fee_cents=23
+    and data->>'evidence'='committed_order' and data->>'feeCacheMatches'='false'
+   from public.cv_payments where business_id=b and source_ref='payment:'||r::text||':'||payment::text),
+  'the canonical payment reader uses original values even when the operational copy differs');
   -- 9. An imported day is final: the live job does not write to it.
  n:=public.toast_archive_live_orders(b,r,d,jsonb_build_array(
   jsonb_set(o1_tip,'{modifiedDate}','"2026-11-05T00:00:00.000+0000"'::jsonb)));
