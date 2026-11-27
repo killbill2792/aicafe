@@ -635,13 +635,15 @@ export const eventReadinessCapability=registerLoopCapability({
        facts:{observedDays:actual.length,expectedDays:expected,
          doneActions:checklist.done,totalActions:checklist.total,nonCausal:true}}],
      numberProvenance:provenance,numericEvidence:eventReportNumericEvidence(result),
-     threadText:reportText,
+     threadText:reportText,modelAuthored:Boolean(narrative),
+     ...(narrative?.presentations?.length?{threadPresentations:narrative.presentations}:{}),
    }:undefined;
    return {status,midRunText,midRunKey:liveWatch?.businessDate,
      delivery:finalDelivery??delivery,
      recommendation:"adjust",source:"hourly_sales_rollup+daily_rollups",
      result:{...result,...(reportText?{reportText,reportFactsHash:factsHash,
        reportTextOrigin:narrative?"model":"facts",reportProvenance:provenance,
+       ...(narrative?.presentations?.length?{reportPresentations:narrative.presentations}:{}),
        reportNumericEvidence:eventReportNumericEvidence(result)}:{})}};
 
  },

@@ -18,7 +18,7 @@ vi.mock("@/lib/data/cafeEvents.server",()=>({
   readSavedEventTimeline:mocks.canonical,readCanonicalCafeEvents:mocks.canonicalEvents,
   readCafeEvents:vi.fn(),
 }));
-vi.mock("@/lib/ai/agent/loop.server",()=>({runAgentTurn:mocks.agent}));
+vi.mock("./eventResearch.server",()=>({runEventResearch:mocks.agent}));
 vi.mock("@/lib/ai/agent/persist.server",()=>({agentReplyPayload:mocks.reply}));
 vi.mock("@/lib/access/access.server",()=>({assertCafeAiAccess:vi.fn(async()=>{})}));
 vi.mock("@/lib/connectors/access.server",()=>({assertExternalAccess:mocks.webPermission,WEB_RESOURCE:"public"}));

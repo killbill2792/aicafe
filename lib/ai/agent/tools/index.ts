@@ -152,7 +152,7 @@ export type AgentToolContext = {
   /** Authenticated, saved-only timeline; never a web search. */
   savedEvents?:(from:string,to:string,options?:{cityEventId?:string;cafeEventId?:string})=>Promise<import("@/lib/data/cafeEvents.server").SavedEventTimeline>;
   /** General outside-world lookup; server checks current café AI access before each paid call. */
-  webSearch?:(query:string,budget?:import("../webSearch.server").WebSearchBudget)=>Promise<import("../webSearch.server").WebSearchResult>;
+  webSearch?:(query:string,budget?:import("../webSearch.server").WebSearchBudget,signal?:AbortSignal)=>Promise<import("../webSearch.server").WebSearchResult>;
   /** Same canonical café readers used by Staff and saved owner questions. */
   readWeekSchedule?:(weekStart:string)=>ReturnType<typeof import("@/lib/actions/schedule").getWeekSchedule>;
   oliviaPreview?:{

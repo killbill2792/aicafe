@@ -7,8 +7,8 @@ import type {SupabaseClient} from "@supabase/supabase-js";
 import type {CafeEvent,SavedEventTimeline} from "@/lib/data/cafeEvents.server";
 import {verifyUpcomingEventChanges} from "./eventVerification.server";
 
-vi.mock("@/lib/ai/agent/loop.server",()=>({
-  runAgentTurn:vi.fn(async()=>({text:"The organizer cancelled the parade. Review the saved plan and any orders; no change has been made."})),
+vi.mock("./eventResearch.server",()=>({
+  runEventResearch:vi.fn(async()=>({text:"The organizer cancelled the parade. Review the saved plan and any orders; no change has been made."})),
 }));
 vi.mock("@/lib/ai/agent/persist.server",()=>({
   agentReplyPayload:()=>({reply:{blocks:[{type:"text",text:"Organizer cancelled the parade."}]},metadata:{}}),

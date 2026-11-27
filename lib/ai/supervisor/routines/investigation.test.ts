@@ -23,19 +23,20 @@ describe("one SQL investigation gate",()=>{
  it("accepts the exact server-scoped claim and a real completed SQL invocation",()=>{
   expect(verify(turn())).toMatchObject({ok:true,tools:["run_sql"]});
   expect(verify(turn(),{...claim,sourceId:"other"})).toMatchObject({ok:false,reason:"evidence_incomplete"});
-  expect(verify(turn(),{...claim,missing:["unverified"]})).toMatchObject({ok:false,reason:"evidence_incomplete"});
+  expect(verify(turn(),{...claim,missing:["unverified"]})).toMatchObject({ok:true});
   expect(verifyResearchInvestigationTurn(turn(),expected,[])).toMatchObject({ok:false,reason:"evidence_incomplete"});
  });
- it("does not accept tool names, metadata-only or failed reads, or an unadmitted action",()=>{
-  expect(verify(turn([]))).toEqual({ok:false,reason:"evidence_incomplete"});
-  expect(verify(turn([{name:"describe_database",result:{...sql.result,tool:"describe_database"}}]))).toEqual({ok:false,reason:"evidence_incomplete"});
-  expect(verify(turn([{...sql,result:{...sql.result,error:"research_tool_error"}}]))).toEqual({ok:false,reason:"evidence_incomplete"});
+ it("allows no reads, catalog reads and failed reads without granting unadmitted actions",()=>{
+  expect(verify(turn([]))).toMatchObject({ok:true});
+  expect(verify(turn([{name:"describe_database",result:{...sql.result,tool:"describe_database"}}]))).toMatchObject({ok:true});
+  expect(verify(turn([{...sql,result:{...sql.result,error:"research_tool_error"}}]))).toMatchObject({ok:true});
   expect(verify(turn([sql,{name:"propose_price_change",result:{}}]))).toEqual({ok:false,reason:"model_incomplete"});
  });
- it("refuses incomplete, unsupported numeric or effect claims",()=>{
-  for(const patch of [{endReason:"timeout"},{endReason:"budget"},{text:""},{text:"x".repeat(1801)},{unverified:[{text:"999"}]},{text:"I paid the supplier."}]){
+ it("refuses technical interruptions and unsupported action claims, not numeric analysis",()=>{
+  for(const patch of [{endReason:"timeout"},{endReason:"budget"},{text:""},{text:"I paid the supplier."}]){
    expect(verify(turn([sql],patch))).toEqual({ok:false,reason:"model_incomplete"});
   }
+  expect(verify(turn([],{text:"Estimated $999. "+"x".repeat(2000),unverified:[{text:"999"}]}))).toMatchObject({ok:true});
   expect(unsupportedExternalEffectClaim("I sent the vendor an email.")).toBe(true);
  });
  it("keeps the staff report distinct from the confirmed roster",()=>{
@@ -52,7 +53,7 @@ it("only the immediately preceding verified, same-thread proactive report is eli
     grounding:{intent:"priority_investigation",status:"verified",evidence:[{source:"alert",identifier:"alert",revisionHash:"rev"}]}};
   expect(precedingInvestigationReport([report],owner)).toEqual({report,sourceId:"alert",sourceRevision:"rev"});
   expect(precedingInvestigationReport([{...report,threadId:"other"}],owner)).toBeNull();
-  expect(precedingInvestigationReport([{...report,grounding:{...report.grounding,status:"partial"}}],owner)).toBeNull();
+  expect(precedingInvestigationReport([{...report,grounding:{...report.grounding,status:"partial"}}],owner)).not.toBeNull();
   expect(precedingInvestigationReport([report,{...report,id:"owner2",role:"owner",createdAt:"2026-01-01T10:01:00Z"}],owner)).toBeNull();
   expect(precedingInvestigationReport([{...report,createdAt:"2026-01-01T10:03:00Z"}],owner)).toBeNull();
 });

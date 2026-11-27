@@ -93,6 +93,7 @@ type DurableProviderScope = {
   db: SupabaseClient; businessId:string; ownerUserId:string; threadId:string;
   runId:string; ownerMessageId:string; jobId:string; claimToken:string;
   budget:WorkerBudget; ownerDailyCap:number|null; authorize:()=>Promise<void>;
+  unrestrictedResearch?:boolean;
 };
 type DurableProviderContext = { scope:DurableProviderScope; launched:string[]; denied:boolean };
 const durableProviderTurns = new AsyncLocalStorage<DurableProviderContext>();
@@ -149,10 +150,13 @@ export async function reserveDurableProviderRequest(
   const {scope}=ctx;
   if(ctx.denied)throw new Error("durable_provider_reservation_unavailable");
   try{
-    const model=params.model,output=params.max_output_tokens;
+    const model=params.model,rawOutput=params.max_output_tokens;
+    const unrestricted=scope.unrestrictedResearch===true;
     const composition=requestComposition(params);
-    if(typeof model!=="string"||typeof output!=="number"||!Number.isSafeInteger(output)||
-       output<1||output>(currentDurableProviderOutputCap()??1200))throw new Error("durable_provider_request_invalid");
+    if(typeof model!=="string"||(!unrestricted&&rawOutput===undefined)||
+      (rawOutput!==undefined&&(typeof rawOutput!=="number"||!Number.isSafeInteger(rawOutput)||rawOutput<1||
+      (!unrestricted&&rawOutput>(currentDurableProviderOutputCap()??1200)))))throw new Error("durable_provider_request_invalid");
+    const output=typeof rawOutput==="number"?rawOutput:null;
     // Measure text/framing separately from trusted attachment binary
     // transport. The provider tokenizes the decoded media, not the base64
     // representation. Strip only the binary data URL in a real user content
@@ -188,8 +192,8 @@ export async function reserveDurableProviderRequest(
     const outRate=Math.max(Number(rates?.output),Number(configuredOutput??0));
     const hostedRate=process.env.SUPERVISOR_WORKER_HOSTED_WEB_RESERVE_MICROS;
     const hostedFee=kind==="hosted_web"?(hostedRate===undefined?null:configuredReserve(hostedRate,0)):0;
-    if(inputUpper>272000) throw new Error("durable_provider_request_invalid");
-    const estimate=hostedFee===null?null:Math.ceil(inputUpper*inRate+output*outRate)+hostedFee;
+    if(!unrestricted&&inputUpper>272000) throw new Error("durable_provider_request_invalid");
+    const estimate=hostedFee===null||output===null?null:Math.ceil(inputUpper*inRate+output*outRate)+hostedFee;
     // An unknown rate remains NULL telemetry, never a commercial refusal for Max.
     const costUpper=estimate!==null&&Number.isSafeInteger(estimate)&&estimate>=0?estimate:null;
     await scope.authorize();
@@ -198,9 +202,9 @@ export async function reserveDurableProviderRequest(
       p_attempt_id:id,p_business_id:scope.businessId,p_owner_user_id:scope.ownerUserId,
       p_thread_id:scope.threadId,p_run_id:scope.runId,p_owner_message_id:scope.ownerMessageId,
       p_job_id:scope.jobId,p_claim_token:scope.claimToken,p_model:model,p_input_upper:inputUpper,
-      p_output_cap:output,p_cost_upper:costUpper,p_max_calls:scope.budget.maxModelCalls,
-      p_max_input_upper:configuredReserve(process.env.SUPERVISOR_WORKER_MAX_RESERVED_INPUT_UNITS,600000),
-      p_max_output_cap:scope.budget.maxOutputTokens,
+      p_output_cap:output,p_cost_upper:costUpper,p_max_calls:unrestricted?null:scope.budget.maxModelCalls,
+      p_max_input_upper:unrestricted?null:configuredReserve(process.env.SUPERVISOR_WORKER_MAX_RESERVED_INPUT_UNITS,600000),
+      p_max_output_cap:unrestricted?null:scope.budget.maxOutputTokens,
       p_max_cost:null,
       p_owner_daily_cap:scope.ownerDailyCap,
     });
@@ -216,7 +220,7 @@ export async function reserveDurableProviderRequest(
         const actualRates=measured&&typeof actual==="string"?
           standardModelTokenRates(actual,response.service_tier,measured.inputTokens):null;
         if(!measured||typeof actual!=="string"||actual!==model||
-          measured.inputTokens>inputUpper||measured.outputTokens>output){
+          (!unrestricted&&measured.inputTokens>inputUpper)||(output!==null&&measured.outputTokens>output)){
           ctx.denied=true;throw new Error("durable_provider_usage_unverified");
         }
         const tokenCost=actualRates?estimateModelCallCostMicros(measured,actualRates):null;

@@ -454,7 +454,8 @@ export async function dispatchRoutinesForBusiness(db:SupabaseClient,businessId:s
         result.runs++;
         result.notices+=done.posted;
         result.evidenceChecks+=done.checked;
-      }catch{
+      }catch(error){
+        if(error instanceof Error&&error.message==="research_execution_yield")continue;
         result.failed++;
         if(lease){
           try{
@@ -476,7 +477,7 @@ export async function dispatchRoutinesForBusiness(db:SupabaseClient,businessId:s
  * Independent leased cafés execute concurrently; no cross-café await chain.
  * The server-only flag NEVER activates unsolicited Watch by itself. */
 export async function dispatchDueObjectivesAcrossCafes(
-  db:SupabaseClient,now:Date,provider?:AgentProvider,
+  db:SupabaseClient,now:Date,provider?:AgentProvider,executionDeadline?:number,
 ):Promise<{admitted:number;claimed:number;completed:number;failed:number;deferred:number}>{
   const result={admitted:0,claimed:0,completed:0,failed:0,deferred:0};
   const batchStartedAt=Date.now();
@@ -498,6 +499,7 @@ export async function dispatchDueObjectivesAcrossCafes(
   result.admitted=rows.length;
   const outcomes=await Promise.allSettled(rows.map(async row=>{
     const routine=parseRoutine(row.routine);
+    if(executionDeadline!==undefined&&Date.now()>=executionDeadline)return "deferred" as const;
     if(routine.status!=="active"||!["objective","watch"].includes(routine.executionMode??"")||
       routine.executionMode==="watch"&&!watchEnabled)
       return "deferred" as const;
@@ -514,10 +516,11 @@ export async function dispatchDueObjectivesAcrossCafes(
       });
       if(!lease)return "deferred" as const;
       await executeClaimedObjective(db,{
-        routine,lease,localDate:row.localDate,...(provider?{provider}:{}),
+        routine,lease,localDate:row.localDate,executionDeadline,...(provider?{provider}:{}),
       });
       return "completed" as const;
-    }catch{
+    }catch(error){
+      if(error instanceof Error&&error.message==="research_execution_yield")return "deferred" as const;
       if(lease){
         try{
           await finishRoutineOccurrence(db,{

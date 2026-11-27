@@ -30,14 +30,14 @@ export function meteredInvestigationProvider(
     let bytes:number;
     try{bytes=Buffer.byteLength(JSON.stringify(params),"utf8");}
     catch{problem="storage_failed";throw new Error(problem);}
-    const outputCap=params.max_output_tokens;
+    const outputCap=params.max_output_tokens===undefined?null:params.max_output_tokens;
     const composition=requestComposition(params);
     const requestedModel=params.model;
     if(typeof requestedModel!=="string"||!requestedModel.trim()||
-      typeof outputCap!=="number"||!Number.isSafeInteger(outputCap)||
-      !Number.isSafeInteger(bytes)||bytes<1||bytes>2_000_000||
+      !Number.isSafeInteger(bytes)||bytes<1||
+      (outputCap!==null&&(typeof outputCap!=="number"||!Number.isSafeInteger(outputCap)||bytes>2_000_000||
       outputCap<1||outputCap>providerOutputCap||![1200,8192].includes(providerOutputCap)||
-      (outputCap>1200&&requestedModel!=="gpt-6-luna")){
+      (outputCap>1200&&requestedModel!=="gpt-6-luna")))){
       problem="storage_failed";throw new Error(problem);
     }
     const {error}=await db.rpc("supervisor_reserve_investigation_model_call",{

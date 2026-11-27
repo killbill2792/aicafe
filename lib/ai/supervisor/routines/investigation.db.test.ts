@@ -97,6 +97,7 @@ describe("Task 15A migrated, agentic investigation SQL integration",()=>{
       const source={kind:"meal_break",status:"new",severity:"high",quality:"verified",
         relatedAlerts:["meal_break"],relatedTasks:[]};
       const checkpoint={source,collectedAt:anchor};
+      const visual={type:"rich_presentation",version:1,layout:"stack",suggestions:[],panels:[{kind:"bar",title:"Estimated sales $125",unit:"cents",currency:"USD",source:"response_evidence",from:"2026-11-25",to:"2026-11-25",asOf:"2026-11-25",coverage:"estimate",points:[{label:"Forecast",value:12500}]}]};
       expect(await rpc(a,"supervisor_finish_investigation",
         finish(claim,"collected",checkpoint,null))).toBe(true);
       expect(await rpc(b,"supervisor_finish_investigation",
@@ -106,21 +107,21 @@ describe("Task 15A migrated, agentic investigation SQL integration",()=>{
       expect(investigate.phase).toBe("investigate");
       expect(investigate.step_version).toBe(1);
       expect(await rpc(a,"supervisor_finish_investigation",
-        finish(investigate,"investigated",{...checkpoint,missing:["laborDaysIncomplete"]},
+        finish(investigate,"investigated",{...checkpoint,missing:["laborDaysIncomplete"],reportBlocks:[{type:"text",text:"Sales and staffing were checked. Both have coverage gaps; ask the owner before any change."},visual]},
           "Sales and staffing were checked. Both have coverage gaps; ask the owner before any change.",
           stamp(now,4)))).toBe(true);
       // A successful investigation records one REAL Supervisor thread message,
       // never a forged owner request, and enters bounded follow-up monitoring.
       const messages=await admin.query("select role,grounding->>'intent' intent,grounding->>'status' status from public.ai_messages where business_id=$1 and thread_id=$2 and grounding->>'intent'='priority_investigation'",
         [cafes[0],threads[0]]);
-      expect(messages.rows).toEqual([{role:"supervisor",intent:"priority_investigation",status:"partial"}]);
+      expect(messages.rows).toEqual([{role:"supervisor",intent:"priority_investigation",status:"answered"}]);
       // Bound SQL may attach structured metadata, but NEVER modify, prefix
       // or append prose to the numerically verified model answer.
       const body=await admin.query("select structured_content from public.ai_messages where business_id=$1 and thread_id=$2 and grounding->>'intent'='priority_investigation'",
         [cafes[0],threads[0]]);
       expect(body.rows).toHaveLength(1);
       expect(body.rows[0].structured_content).toEqual([
-        {type:"text",text:"Sales and staffing were checked. Both have coverage gaps; ask the owner before any change."},
+        {type:"text",text:"Sales and staffing were checked. Both have coverage gaps; ask the owner before any change."},visual,
       ]);
       // Operating Board's SAME owner-private inbox must receive a durable,
       // per-episode/per-step receipt atomically with the chat message.

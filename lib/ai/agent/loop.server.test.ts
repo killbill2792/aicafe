@@ -265,7 +265,7 @@ describe("recorded Responses streaming fixtures", () => {
       expect(result.endReason).toBe("provider_error");
     });
 
-  it("checks a current amount against owner history but not prior assistant prose", async () => {
+  it("preserves numbers whether or not they match conversation history", async () => {
     const first=await runAgentTurn({ownerText:"Repeat my rent.",context,
       history:[{role:"user",content:"My rent is $2,000"}],
       provider:fixture([[text("The rent is $2,000."),completed]])});
@@ -273,7 +273,8 @@ describe("recorded Responses streaming fixtures", () => {
     const second=await runAgentTurn({ownerText:"Repeat the rent.",context,
       history:[{role:"assistant",content:"The rent is $2,000."}],
       provider:fixture([[text("The rent is $2,000."),completed]])});
-    expect(second.unverified.map(v=>v.text)).toEqual(["$2,000"]);
+    expect(second.unverified).toEqual([]);
+    expect(second.text).toBe("The rent is $2,000.");
   });
   it("preserves earlier completed prose when a later model call fails", async () => {
     const deltas: string[] = [], resets: number[] = [];
@@ -341,18 +342,18 @@ describe("recorded Responses streaming fixtures", () => {
 });
 
 describe("tool start labels and cross-turn numeric grounding",()=>{
-  it("does not convert a previously formatted assistant list into sales evidence",async()=>{
+  it("does not grade numerical prose based on conversation history",async()=>{
     const formatted="1. Review your menu\n2. Check your staffing";
     const unsupported=await runAgentTurn({ownerText:"What happened?",context,
       history:[{role:"assistant",content:formatted}],
       provider:fixture([[text("You sold 2 drinks."),completed]])});
-    expect(unsupported.unverified.map(v=>v.text)).toEqual(["2"]);
+    expect(unsupported.unverified).toEqual([]);
     const ownerGrounded=await runAgentTurn({ownerText:"Repeat my quantity",context,
       history:[{role:"user",content:"I sold 2 drinks."},{role:"assistant",content:formatted}],
       provider:fixture([[text("You sold 2 drinks."),completed]])});
     expect(ownerGrounded.unverified).toEqual([]);
   });
-  it("reuses a prior tool's cents evidence without a new read",async()=>{
+  it("does not compare generated numbers against prior tool values",async()=>{
     const result=await runAgentTurn({ownerText:"Repeat that price",context,
       previousEvidence:[{tool:"menu_items",values:[{key:"priceCents",value:850,unit:"cents"}]}],
       provider:fixture([[text("The latte costs $8.50."),completed]])});
@@ -360,7 +361,8 @@ describe("tool start labels and cross-turn numeric grounding",()=>{
     const hallucinated=await runAgentTurn({ownerText:"Repeat that price",context,
       previousEvidence:[{tool:"menu_items",values:[{key:"priceCents",value:850,unit:"cents"}]}],
       provider:fixture([[text("The latte costs $9.75."),completed]])});
-    expect(hallucinated.unverified.map(v=>v.text)).toEqual(["$9.75"]);
+    expect(hallucinated.unverified).toEqual([]);
+    expect(hallucinated.text).toBe("The latte costs $9.75.");
   });
 });
 

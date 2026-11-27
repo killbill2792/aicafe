@@ -1,5 +1,5 @@
 import {describe,it,expect} from "vitest";
-import {descriptiveGroupTitle,richPresentationSchema,presentationReport,interactiveCalcSchema,evaluatePresentationCalc,agendaSchema,calendarPage} from "./presentation";
+import {descriptiveGroupTitle,richPresentationSchema,recoverRichPresentation,presentationReport,interactiveCalcSchema,evaluatePresentationCalc,agendaSchema,calendarPage} from "./presentation";
 describe("Task16E presentation snapshot and safe report",()=>{
  it("preserves the source-marked answer and exact minor unit values, not executable content",()=>{
   const p=richPresentationSchema.parse({type:"rich_presentation",version:1,layout:"stack",report:true,suggestions:[],panels:[
@@ -28,11 +28,13 @@ describe("bounded local calculation using canonical arithmetic",()=>{
   expect(evaluatePresentationCalc(calc,{quantity:"12"})).toEqual({unit:"cents",valueCents:3000});
   expect(evaluatePresentationCalc(calc,{quantity:"0",cost:"999"})).toEqual({unit:"cents",valueCents:0});
   expect(evaluatePresentationCalc(calc,{quantity:"12",cost:"999"})).toEqual({unit:"cents",valueCents:3000});
-  for(const value of ["","NaN","Infinity","1e9","1000000000","2.123","alert(1)"])expect(evaluatePresentationCalc(calc,{quantity:value})).toBeNull();
+   expect(evaluatePresentationCalc(calc,{quantity:"1000000000"})).toEqual({unit:"cents",valueCents:250000000000});
+   expect(evaluatePresentationCalc(calc,{quantity:"2.123"})).toEqual({unit:"cents",valueCents:531});
+  for(const value of ["","NaN","Infinity","1e9","alert(1)"])expect(evaluatePresentationCalc(calc,{quantity:value})).toBeNull();
  });
  it("rejects malformed or effect-bearing schemas",()=>{
   expect(interactiveCalcSchema.safeParse({...calc,steps:[{id:"send",op:"approve",args:["quantity"]}]}).success).toBe(false);
-  expect(interactiveCalcSchema.safeParse({...calc,currency:null}).success).toBe(false);
+  expect(interactiveCalcSchema.safeParse({...calc,currency:null}).success).toBe(true);
  });
 });
 
@@ -87,7 +89,14 @@ it("permits a titled nested disclosure and rejects an unlabeled interactive grou
  expect(richPresentationSchema.safeParse({...b,groups:[groups[0],{...groups[1],title:undefined}]}).success).toBe(false);
 });
 
-it("does not render old ungrounded numerical group labels as trusted headings",()=>{
- for(const title of ["Profit $9,999","Margin 50٪","Revenue ９９９","Staff ②"])expect(descriptiveGroupTitle(title)).toBeUndefined();
+it("preserves model-authored numerical group labels",()=>{
+ for(const title of ["Profit $9,999","Margin 50٪","Revenue ９９９","Staff ②"])expect(descriptiveGroupTitle(title)).toBe(title);
  expect(descriptiveGroupTitle("Cost breakdown")).toBe("Cost breakdown");
+});
+
+it("keeps all safe leaves when a group layout is invalid, rather than rejecting the full answer",()=>{
+ const p={kind:"donut",title:"Profit change",unit:"cents",currency:null,from:"2026-01-01",to:"2027-01-01",asOf:"2026-01-02",source:"response_evidence",coverage:"partial",points:[{label:"Known",value:-0.125},{label:"Zero",value:0}]};
+ const b={type:"rich_presentation",version:1,layout:"stack",panels:[p,{kind:"unsafe",code:"not executable"}],suggestions:[],groups:[{id:"g0",layout:"compare",items:["panel0","panel9"]}]};
+ expect(recoverRichPresentation(b)).toMatchObject({panels:[p]});
+ expect(recoverRichPresentation(b)?.groups).toBeUndefined();
 });

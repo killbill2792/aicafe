@@ -4,12 +4,12 @@ vi.mock("server-only",()=>({}));
 const mocks=vi.hoisted(()=>({
   refresh:vi.fn(async(..._args:unknown[])=>({businessDate:"2026-10-28",alertsCreated:0})),
   calls:0,
-  ownerRun:vi.fn(async()=>({processed:1,state:"completed"})),
+  ownerRun:vi.fn(async(_deadline?:number)=>({processed:1,state:"completed"})),
   due:vi.fn(async()=>({scopes:1,delivered:1,failed:0})),
   enqueue:vi.fn(async()=>2),
-  investigate:vi.fn(async(_db:unknown,_now:Date,_maxSteps:number)=>({processed:1,collected:1,investigated:0,followUps:0,rechecked:0,failed:0})),
+  investigate:vi.fn(async(_db:unknown,_now:Date,_maxSteps:number,_provider?:unknown,_proof?:unknown,_deadline?:number)=>({processed:1,collected:1,investigated:0,followUps:0,rechecked:0,failed:0})),
   routines:vi.fn(async(_db:unknown,_businessId:string,_timezone:string,_now:Date,_enqueue?:unknown)=>({routinesChecked:1,runs:1,notices:1,failed:0,evidenceChecks:1,investigationsQueued:2})),
-  objectives:vi.fn(async()=>({admitted:0,claimed:0,completed:0,failed:0,deferred:0})),
+  objectives:vi.fn(async(_db?:unknown,_now?:Date,_provider?:unknown,_deadline?:number)=>({admitted:0,claimed:0,completed:0,failed:0,deferred:0})),
   push:vi.fn(async()=>({sent:0,retried:0,failed:0})),
 }));
 vi.mock("@/lib/security/bearer",()=>({verifyBearer:(req:Request,secret:string)=>
@@ -209,4 +209,18 @@ describe("U4 development/release boundary",()=>{
     // The same route accepts any authenticated invocation minute, but the
     // Vercel schedule cutover is a release action, not an implicit merge side effect.
   });
+});
+
+it("passes absolute cron lane deadlines to resumable research, even after slow earlier lanes",async()=>{
+ const start=Date.now();
+ mocks.objectives.mockImplementationOnce(async(_db,_now,_provider,deadline)=>{
+  expect(deadline).toBe(start+35_000);
+  vi.setSystemTime(deadline!);
+  return {admitted:1,claimed:1,completed:0,failed:0,deferred:1};
+ });
+ const result=await GET(new Request("https://example.test/api/cron/refresh-derived",{headers:{authorization:"Bearer test-secret"}}));
+ expect(result.status).toBe(200);
+ expect(mocks.refresh).toHaveBeenCalledTimes(2);
+ expect(mocks.investigate.mock.calls.map(args=>args[5])).toEqual([start+250_000,start+275_000]);
+ expect(mocks.due).toHaveBeenCalledOnce();
 });

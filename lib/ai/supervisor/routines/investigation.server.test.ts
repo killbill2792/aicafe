@@ -1,4 +1,5 @@
 import {beforeEach,afterEach,describe,expect,it,vi} from "vitest";
+vi.mock("@/lib/ai/research/backgroundContinuation.server",()=>({backgroundResearchContinuation:async()=>({executionDeadline:Date.now()+110000,load:async()=>null,save:async()=>undefined,yield:async()=>undefined})}));
 vi.mock("server-only",()=>({}));
 const mocks=vi.hoisted(()=>({
   model:vi.fn(),access:vi.fn(),tools:vi.fn(),identity:vi.fn(),
@@ -205,14 +206,8 @@ describe("Task 15A operational end-to-end orchestration (recorded source/model)"
     const status=await processNextInvestigation(d.client,now);
     expect(status).toMatchObject({processed:1,investigated:1,failed:0});
     expect(mocks.access).toHaveBeenCalledWith("cafe-a");
-    // Real provider run #43672525338 reached a real incident plus three
-    // separate evidence domains, yet hit the old worker meter before a final
-    // verified owner report. Reserve six model calls (including the final
-    // no-tool response); retain read-only tools and the 55-second timeout.
-    expect(mocks.budget).toHaveBeenCalledWith({
-      maxElapsedMs:55_000,maxModelCalls:6,maxToolCalls:7,
-      maxInputTokens:72_000,maxOutputTokens:4800,
-    },expect.any(Function),1200);
+    // The physical worker deadline is passed to the continuation, not a model/tool budget.
+    expect(mocks.budget).not.toHaveBeenCalled();
 
     expect(mocks.tools).toHaveBeenCalledWith(
       {businessId:"cafe-a",ownerUserId:"owner-a"},d.client);
@@ -393,27 +388,16 @@ describe("Task 15A operational end-to-end orchestration (recorded source/model)"
       .toMatchObject({investigated:0,failed:1});
     expect(mocks.notify).not.toHaveBeenCalled();
   });
-  it("retries rather than reporting when the model never read café data with SQL",async()=>{
-    mocks.model.mockResolvedValue(agentResult({toolInvocations:[]}));
+  it.each([
+    {text:"An estimate based on the available information is $9,999.",toolInvocations:[]},
+    {text:"SQL failed; here is a conditional plan.",toolInvocations:[{name:"run_sql",result:{source:"sql_research",period:null,missing:[],tool:"run_sql",error:"research_tool_error"}}]},
+    {text:"My estimated result is $9,999.",unverified:["$9,999"]},
+  ])("publishes Luna's finished report regardless of source coverage: $text",async patch=>{
+    mocks.model.mockResolvedValue(agentResult(patch));
     const d=db([{...investigating}]);
-    expect(await processNextInvestigation(d.client,now)).toMatchObject({processed:1,failed:1,investigated:0});
-    expect(mocks.notify).not.toHaveBeenCalled();
-    expect(d.calls.find(x=>x.name==="supervisor_fail_investigation")?.args).toMatchObject({p_error:"evidence_incomplete"});
-    expect(d.calls.some(x=>x.name==="supervisor_finish_investigation")).toBe(false);
-  });
-  it("retries rather than reporting when every SQL read failed",async()=>{
-    mocks.model.mockResolvedValue(agentResult({toolInvocations:[
-      {name:"run_sql",result:{source:"sql_research",period:null,missing:[],tool:"run_sql",error:"research_tool_error"}},
-    ]}));
-    const d=db([{...investigating}]);
-    expect(await processNextInvestigation(d.client,now)).toMatchObject({failed:1,investigated:0});
-    expect(d.calls.find(x=>x.name==="supervisor_fail_investigation")?.args.p_error).toBe("evidence_incomplete");
-  });
-  it("does not publish an answer with figures that no retrieved data supports",async()=>{
-    mocks.model.mockResolvedValue(agentResult({unverified:["$9,999"]}));
-    const d=db([{...investigating}]);
-    expect(await processNextInvestigation(d.client,now)).toMatchObject({failed:1,investigated:0});
-    expect(mocks.notify).not.toHaveBeenCalled();
+    expect(await processNextInvestigation(d.client,now)).toMatchObject({processed:1,failed:0,investigated:1});
+    expect(mocks.notify).toHaveBeenCalled();
+    expect(d.calls.find(x=>x.name==="supervisor_finish_investigation")?.args.p_narrative).toBe(patch.text);
   });
   it.each([
     {name:"new draft",draft:{state:"draft",proposalId:"draft-a"},status:"A supplier order draft is available",expected:{stockPurchaseProposalId:"draft-a"}},

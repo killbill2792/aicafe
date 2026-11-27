@@ -23,7 +23,7 @@ export async function GET(request:Request){
   const now=new Date();
   // One existing cron authority: cheap due objectives run first, independent
   // of the slower 15-minute derived refresh fleet window.
-  const dueObjectives=await dispatchDueObjectivesAcrossCafes(db,now).catch(()=>
+  const dueObjectives=await dispatchDueObjectivesAcrossCafes(db,now,undefined,now.getTime()+35_000).catch(()=>
     ({admitted:0,claimed:0,completed:0,failed:1,deferred:0}));
   // Source refresh/triage receives an explicit early 90-second window, after
   // the time-sensitive objective claim but before slower queued push/chat/model
@@ -80,7 +80,7 @@ export async function GET(request:Request){
   const ownerWorker=ownerRunsEnabled
     ? await import("@/lib/ai/supervisor/runs/worker.server").catch(()=>null) : null;
   const ownerRuns=ownerWorker ? (async()=>{
-    try{return {...await ownerWorker.processOldestDurableRun(),failed:0};}
+    try{return {...await ownerWorker.processOldestDurableRun(now.getTime()+180_000),failed:0};}
     catch{return {processed:0,state:null,failed:1};}
   })() : Promise.resolve({processed:0,state:null,failed:ownerRunsEnabled?1:0});
   // Do not run a large refresh concurrently with an admitted owner run.
@@ -88,15 +88,15 @@ export async function GET(request:Request){
   // After source-change triage, preserve one bounded investigation slot and
   // the existing owner/push/commitment delivery lanes on this cron authority.
   const investigations={processed:0,collected:0,investigated:0,followUps:0,rechecked:0,failed:0};
-  async function investigateOne(){
+  async function investigateOne(deadline:number){
     if(Date.now()>=investigationAdmissionUntil)return;
     try{
-      const step=await processDueInvestigations(db,new Date(),1);
+      const step=await processDueInvestigations(db,new Date(),1,undefined,undefined,deadline);
       for(const key of ["processed","collected","investigated","followUps","rechecked","failed"] as const)
         investigations[key]+=step[key]??0;
     }catch{investigations.failed++;}
   }
-  await investigateOne();
+  await investigateOne(now.getTime()+250_000);
   // Separate task capability, same authorized cron. Failures remain visible and
   // the database keeps unfinished commitments pending for the next invocation.
   let commitments:{scopes:number;delivered:number;failed:number};
@@ -106,7 +106,7 @@ export async function GET(request:Request){
   // cannot lose its source-change detection or owner priority notices.
   // A global fair, bounded slice across all cafés, not paid model calls per
   // business. The existing cron remains the only schedule for this capability.
-  await investigateOne();
+  await investigateOne(now.getTime()+275_000);
   return respond(failed||commitments.failed||routines.failed||investigations.failed||
     dueObjectives.failed||pushDelivery.failed||ownerResult.failed||admissionDeferred?207:200,
     {checked,refreshed,failed,deferred,dueObjectives,pushDelivery,heavyRefresh:true,commitments,routines,investigations,

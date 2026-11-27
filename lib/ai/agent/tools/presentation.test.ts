@@ -23,7 +23,7 @@ describe("bound optional presentation",()=>{
    expect(presentResponse(request,ctx(r)).accepted).toBe(false);
   expect(presentResponse(request,{...ctx(),turnResults:()=>[]}).accepted).toBe(false);
  });
- it("does not invent a currency",()=>expect(presentResponse(request,{...ctx(),currency:null}).accepted).toBe(false));
+ it("does not invent a currency",()=>expect(presentResponse(request,{...ctx(),currency:null})).toMatchObject({accepted:true,presentation:{panels:[{currency:null}]}}));
 });
 
 describe("Task16E canonical query and period binding",()=>{
@@ -315,12 +315,12 @@ describe("typed operational summary presentation",()=>{
  });
 });
 
-it("keeps model headings descriptive without discarding verified values or nested layout",()=>{
+it("preserves model-authored numeric headings and nested layout",()=>{
  for(const title of ["Profit: $9,999","Margin 27%","Profit ٩٩٩","Cost ９９９","Sales 12.00","Return ②"]){
   const q={...request,groups:[{id:"g0",layout:"stack",items:["g1"]},{id:"g1",layout:"details",title,items:["p0"]}]};
   const res=presentResponse(q,ctx());
-  expect(res).toMatchObject({accepted:true,presentation:{groups:[{id:"g0",layout:"stack",items:["g1"]},{id:"g1",layout:"stack",items:["panel0"]}],panels:[{points:[{value:1200},{value:0}]}]}});
-  expect(JSON.stringify(res)).not.toContain(title);
+  expect(res).toMatchObject({accepted:true,presentation:{groups:[{id:"g0",layout:"stack",items:["g1"]},{id:"g1",layout:"details",title,items:["panel0"]}],panels:[{points:[{value:1200},{value:0}]}]}});
+  expect(JSON.stringify(res)).toContain(title);
  }
  expect(presentResponse({...request,groups:[{id:"g0",layout:"details",title:"Recorded sales",items:["p0"]}]},ctx())).toMatchObject({accepted:true,presentation:{groups:[{layout:"details",title:"Recorded sales"}]}});
 });

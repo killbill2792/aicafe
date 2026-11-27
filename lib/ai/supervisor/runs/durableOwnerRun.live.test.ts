@@ -74,7 +74,7 @@ function local(value:string|undefined,port:string,protocol:string){
   expect(await processDurableRun(run.id)).toBe("completed");
   const reply=await getExistingSupervisorReply(scope,message);
   const meta=reply?.grounding?.agentMetadata as {sources?:{source:string}[];usage?:{model?:string;modelCalls:number}}|undefined;
-  expect(reply?.grounding?.status).toBe("verified");
+  expect(reply?.grounding?.status).toBe("answered");
   expect(JSON.stringify(reply?.blocks)).toMatch(/\b40\b/);
   expect(meta?.usage?.model).toBe("gpt-6-luna");
   const sources=(meta?.sources??[]).map(s=>s.source);

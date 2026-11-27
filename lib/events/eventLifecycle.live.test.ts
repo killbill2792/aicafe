@@ -18,7 +18,7 @@ vi.mock("@/lib/ai/agent/loop.server",async importOriginal=>{
    if(params.model!=="gpt-6-luna")throw Error("real_luna_required");
    calls.started++;
    for await(const event of actual.openAIProvider({...params,
-     max_output_tokens:Math.min(Number(params.max_output_tokens),1200)},signal)){
+     max_output_tokens:Math.min(Number(params.max_output_tokens??1200),1200)},signal)){
      if(event.type==="response.completed"){
        expect((event.response as {model?:unknown}).model).toBe("gpt-6-luna");
        calls.completed++;
@@ -26,7 +26,7 @@ vi.mock("@/lib/ai/agent/loop.server",async importOriginal=>{
      yield event;
    }
  };
- return {...actual,runAgentTurn:(args:Parameters<typeof actual.runAgentTurn>[0])=>
+ return {...actual,openAIProvider:provider,runAgentTurn:(args:Parameters<typeof actual.runAgentTurn>[0])=>
    actual.runAgentTurn({...args,provider})};
 });
 const run=process.env.AICAFE_SHARED_LUNA==="1"&&

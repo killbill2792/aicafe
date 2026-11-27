@@ -603,7 +603,7 @@ describe("U2 no-provider end-to-end execution receipts",()=>{
    expect(result.text.length).toBeGreaterThan(1200);
    const payload=agentReplyPayload(result);
    expect(payload.reply.blocks.flatMap(b=>b.type==="text"?[b.text]:[]).join("")).toBe(answer);
-   expect(payload.reply.status).toBe("partial");
+   expect(payload.reply.status).toBe("interrupted");
    expect(reset).toHaveBeenCalledWith("Discard this unfinished claim.".length);
    expect(requests.map(p=>p.tool_choice)).toEqual(["auto","auto","none"]);
    expect(requests[2].max_output_tokens).toBe(8192);

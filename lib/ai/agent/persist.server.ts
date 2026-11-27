@@ -1,4 +1,4 @@
-import { richPresentationSchema,type RichPresentation } from "@/lib/ai/conversations/presentation";
+import { recoverRichPresentation,type RichPresentation } from "@/lib/ai/conversations/presentation";
 import "server-only";
 import { ZodError } from "zod";
 import { persistGroundedSupervisorReply, type DurableReplyFence } from "@/lib/ai/conversations/replyWriter.server";
@@ -8,67 +8,20 @@ import type { AgentTurn } from "./loop.server";
 import {explainLineSchema} from "./explain";
 import {routineCardSchema,routineDraftSchema} from "@/lib/ai/conversations/contracts";
 
-export class AgentReplyTooLongError extends Error { constructor() { super("agent_reply_too_long"); } }
+import {AgentReplyTooLongError,splitAgentText} from "./splitText";
+export {AgentReplyTooLongError,splitAgentText} from "./splitText";
 export class AgentReplyStorageError extends Error { constructor() { super("agent_reply_storage_failed"); } }
 export class AgentEmptyReplyError extends Error { constructor() { super("agent_turn_failed"); } }
 type GroundingStatus = GroundedSupervisorReply["status"];
 export function persistedAgentStatus(turn: AgentTurn): GroundingStatus {
   if(turn.results.some(r=>r.source==="ask_owner"&&r.missing.length===0))
     return "requires_owner_input";
-  // A completed greeting/clarification does not require a business read.
-  if (turn.endReason === "complete" && (turn.usage.toolCalls === 0 ||
-    (turn.results.length===turn.usage.toolCalls&&turn.results.every(r=>r.source==="response_presentation")))) return "verified";
-  const hasSuccessfulRead = turn.results.some(result =>
-    result.source!=="ask_owner"&&result.source!=="response_presentation"&&result.missing.length===0&&typeof result.error!=="string");
-  if (!hasSuccessfulRead) return "unavailable";
-  if (turn.endReason !== "complete") return "partial";
-  return turn.status.status === "complete" ? "verified" : "partial";
-}
-type Span = { start: number; end: number };
-// Protect recorded claims and even *verified* currency tokens from block boundaries.
-const moneyToken = /(?:(?:[$€£]|USD|EUR|GBP|ر\.س|د\.إ|دولار)\s*)?[-+−]?[٠-٩۰-۹\d]+(?:[.,٬٫\u00a0\u202f][٠-٩۰-۹\d]+)*(?:[ \u00a0\u202f]*(?:[$€£]|USD|EUR|GBP|ر\.س|د\.إ|دولار|[%٪]))?/gu;
-
-/** Preserve every character, preferring paragraphs, lines then whitespace. */
-export function splitAgentText(text: string, unverified: readonly Span[] = [],maxBlocks=30) {
-  const value = text || " ";
-  const protectedSpans: Span[] = [...unverified];
-  for (const match of value.matchAll(moneyToken))
-    protectedSpans.push({ start: match.index, end: match.index + match[0].length });
-  const safe = (at: number) => !protectedSpans.some(span => span.start < at && at < span.end);
-  const blocks: Array<{ type: "text"; text: string }> = [];
-  let start = 0;
-  while (start < value.length) {
-    if (blocks.length >= maxBlocks) throw new AgentReplyTooLongError();
-    const limit = Math.min(start + 1200, value.length);
-    let end = limit;
-    if (limit < value.length) {
-      const choices: number[][] = [[], [], []];
-      for (let i = start + 1; i < limit; i++) {
-        if (!safe(i + 1)) continue;
-        if (value[i] === "\n" && value[i - 1] === "\n") choices[0].push(i + 1);
-        else if (value[i] === "\n") choices[1].push(i + 1);
-        else if (/\s/u.test(value[i])) choices[2].push(i + 1);
-      }
-      // Prefer a natural boundary only if the remainder can fit in the real reply contract.
-      const minEnd=Math.max(start+1,value.length-(maxBlocks-blocks.length-1)*1200);
-      const fitting=choices.map(items=>items.filter(at=>at>=minEnd));
-      const preferred = fitting.find(items => items.length);
-      if (preferred) end = preferred[preferred.length - 1];
-      else if (!safe(end)) {
-        // A >1200-character token may be hard-split, but never through a
-        // currency/number claim, even when the adjacent word is oversized.
-        while (end > start && !safe(end)) end--;
-        if (end === start) throw new AgentReplyTooLongError();
-      }
-    }
-    blocks.push({ type: "text", text: value.slice(start, end) });
-    start = end;
-  }
-  return blocks;
+  // Execution state only. Luna owns the assessment of its answer.
+  return turn.endReason === "complete" ? "answered" : "interrupted";
 }
 const UUID=/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 export function agentReplyPayload(turn: AgentTurn) {
-  if (!turn.text.trim()) throw new AgentEmptyReplyError();
+  if (!turn.text.trim()&&!turn.results.some(r=>r.source==="response_presentation"&&r.accepted===true&&recoverRichPresentation(r.presentation)!==undefined)) throw new AgentEmptyReplyError();
   const clarify=turn.results.find(r=>r.source==="ask_owner"&&r.missing.length===0);
   const isOnlyQuestion=clarify&&typeof clarify.question==="string"&&
     turn.text.trim()===clarify.question.trim();
@@ -118,12 +71,9 @@ export function agentReplyPayload(turn: AgentTurn) {
   const explanation=(turn.explain??[]).flatMap(item=>{
     const parsed=explainLineSchema.safeParse(item);
     return parsed.success?[parsed.data]:[];
-  }).slice(0,20);
-  const reserved=Number(Boolean(clarify))+Number(explanation.length>0);
-  const cardCount=proposalIds.length+experimentIds.length+memoryRuleIds.length+Number(Boolean(clarify))+Number(Boolean(savedRoutine))+Number(Boolean(routineDraft));
-  if(cardCount>30)throw new AgentReplyTooLongError();
-  blocks=isOnlyQuestion?[]:splitAgentText(turn.text,turn.provenance??turn.unverified,30-cardCount);
-  const safeExplain=blocks.length+proposalIds.length+experimentIds.length+memoryRuleIds.length+Number(Boolean(savedRoutine))+Number(Boolean(routineDraft))+reserved<=30?explanation:[];
+  });
+  blocks=isOnlyQuestion||!turn.text.trim()?[]:splitAgentText(turn.text,turn.provenance??turn.unverified);
+  const safeExplain=explanation;
   const status = persistedAgentStatus(turn);
   const reply: GroundedSupervisorReply = { intent: "unknown", status, evidence: [], blocks:[...blocks,
     ...proposalIds.map(proposalId=>({type:"proposal_card" as const,proposalId})),
@@ -147,18 +97,9 @@ export function agentReplyPayload(turn: AgentTurn) {
     ...(safeExplain.length?[{type:"how" as const,lines:safeExplain}]:[])] };
   const validatePresentation=(result:AgentTurn["results"][number]):RichPresentation|undefined=>{
     if(result.source!=="response_presentation"||result.accepted!==true)return;
-    const presentation=richPresentationSchema.safeParse(result.presentation);
-    if(!presentation.success)return;
-    // Inline receipts have already bound each value to independently admitted
-    // evidence. An unrelated failed read must not erase owner-supplied or other
-    // valid evidence; the source and coverage labels remain authoritative.
-    if(typeof result.presentationOffset==="number")return presentation.data;
-    const {agenda,scenario,tables,calculator,groups,...rest}=presentation.data;
-    const partialTables=tables?.filter(t=>t.coverage==="partial");
-    const safe=status==="unavailable"?{...rest,panels:rest.panels.filter(p=>p.coverage==="partial"),...(agenda?.coverage==="partial"?{agenda}:{}),...(partialTables?.length?{tables:partialTables}:{})}:
-      {...rest,...(agenda?{agenda}:{}),...(scenario?{scenario}:{}),...(tables?{tables}:{}),...(calculator?{calculator}:{}),...(groups?{groups}:{})};
-    const validated=richPresentationSchema.safeParse(safe);
-    return validated.success?validated.data:undefined;
+    // The answer's evidence status describes confidence, never which parts of
+    // the model-authored UI the owner is allowed to see.
+    return recoverRichPresentation(result.presentation);
   };
   // SQL inline views carry their exact position in the concatenated prose.
   // The existing persisted text blocks remain the source for numeric annotations.
@@ -182,17 +123,16 @@ export function agentReplyPayload(turn: AgentTurn) {
       for(const item of inline){addText(item.at);ordered.push(item.block);}
       addText(turn.text.length);
       const tail=reply.blocks.slice(blocks.length);
-      if(ordered.length+tail.length<=30){blocks=prose;reply.blocks=[...ordered,...tail];}
-      // The existing storage contract is unchanged. If the ordered form cannot
-      // fit, keep all of the plain answer rather than fail the owner turn.
+      blocks=prose;reply.blocks=[...ordered,...tail];
     }catch(error){if(!(error instanceof AgentReplyTooLongError))throw error;}
   }
-  if(!inline.length&&turn.endReason==="complete"&&!clarify&&reply.blocks.length<30){
+  {
     // Historical/legacy present_response receipts have no inline position.
     // Preserve every accepted receipt that fits the existing reply contract.
     for(const result of turn.results){
+      if(!isOnlyQuestion&&inline.some(item=>item.block===result.presentation||item.at===result.presentationOffset&&JSON.stringify(item.block)===JSON.stringify(result.presentation)))continue;
       const block=validatePresentation(result);
-      if(block&&reply.blocks.length<30)reply.blocks.push(block);
+      if(block)reply.blocks.push(block);
     }
   }
   const annotations=turn.provenance??turn.unverified.map(item=>({...item,source:"unchecked" as const}));
@@ -250,7 +190,7 @@ export function agentUsageIncrements(turn: AgentTurn) {
   }));
 }
 export async function recordAgentTurnUsage(scope: ConversationScope, owner: ConversationMessage, turn: AgentTurn) {
-  if (turn.usage.modelCalls < 1) return;
+  if (turn.usage.modelCalls < 1 && turn.usage.toolCalls < 1) return;
   for (const usage of agentUsageIncrements(turn)) {
     await recordSupervisorUsage({ scope, threadId: owner.threadId, ownerMessageId: owner.id, usage });
   }

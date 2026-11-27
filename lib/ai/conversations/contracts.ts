@@ -57,7 +57,7 @@ export type SupervisorIntent =
   | "cafe_overview" | "profitability" | "menu_pricing" | "staff"
   | "operating_tasks" | "expenses" | "sales_quantity" | "menu_catalog" | "owner_rules" | "unknown";
 
-export type GroundingStatus = "verified" | "estimated" | "partial" | "unavailable" | "insufficient_evidence" | "requires_owner_input";
+export type GroundingStatus = "answered" | "interrupted" | "verified" | "estimated" | "partial" | "unavailable" | "insufficient_evidence" | "requires_owner_input";
 
 export type EvidenceReference = {
   source: "cafe_state" | "historical_rollups" | "staff_timecards" | "pricing_engine" | "operating_tasks" | "owner_rules" | "verified_external" | "unverified_external";
@@ -199,9 +199,9 @@ export const groundedReplySchema = z.strictObject({
   ownerInput:pendingOwnerInputSchema.optional(),
   intent: z.enum(["cafe_overview", "profitability", "menu_pricing", "staff",
     "operating_tasks", "expenses", "sales_quantity", "menu_catalog", "owner_rules", "unknown"]),
-  status: z.enum(["verified", "estimated", "partial", "unavailable", "insufficient_evidence","requires_owner_input"]),
+  status: z.enum(["answered","interrupted","verified", "estimated", "partial", "unavailable", "insufficient_evidence","requires_owner_input"]),
   evidence: z.array(evidenceReferenceSchema).max(30),
   blocks: z.array(z.union(
     [textBlockSchema, warningBlockSchema, metricBlockSchema, countBlockSchema, percentBlockSchema,
-      taskBlockSchema, taskCardBlockSchema,ownerQuestionSchema,proposalCardSchema,experimentCardSchema,memoryCardSchema,routineCardSchema,routineDraftSchema,clarifyBlockSchema,howBlockSchema,richPresentationSchema])).min(1).max(30),
+      taskBlockSchema, taskCardBlockSchema,ownerQuestionSchema,proposalCardSchema,experimentCardSchema,memoryCardSchema,routineCardSchema,routineDraftSchema,clarifyBlockSchema,howBlockSchema,richPresentationSchema])).min(1),
 });

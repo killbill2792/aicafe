@@ -15,9 +15,9 @@ describe("SQL autonomous research",()=>{
   expect(prompt).toContain("describe_database and run_sql");
   expect(verifyResearchInvestigationTurn(turn([sql]),expected,investigationReadTools,claim)).toMatchObject({ok:true,tools:["run_sql"]});
  });
- it("fails closed for claim mismatch, missing SQL or effects",()=>{
+ it("fails closed for claim mismatch or effects, not missing SQL",()=>{
   expect(verifyResearchInvestigationTurn(turn(),expected,[],{...claim,incidentKind:"other"})).toEqual({ok:false,reason:"evidence_incomplete"});
-  expect(verifyResearchInvestigationTurn(turn([]),expected,[],claim)).toEqual({ok:false,reason:"evidence_incomplete"});
+  expect(verifyResearchInvestigationTurn(turn([]),expected,[],claim)).toMatchObject({ok:true});
   expect(verifyResearchInvestigationTurn(turn([sql],{text:"I purchased replacement stock."}),expected,[],claim)).toEqual({ok:false,reason:"model_incomplete"});
  });
 });

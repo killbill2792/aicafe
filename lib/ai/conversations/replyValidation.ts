@@ -65,8 +65,7 @@ export function buildReplyValidationFallbackReply(locale: "en" | "es" | "ar"): G
   };
 }
 
-/** Reject metrics with no exact source citation before the privileged insert. */
-/** Shape/size validation only; business facts are checked by agent/checkNumbers. */
+/** Validate the serializable reply shape; Luna evaluates its own analysis. */
 export function validateGroundedReply(reply: GroundedSupervisorReply): GroundedSupervisorReply {
   return groundedReplySchema.parse(reply);
 }

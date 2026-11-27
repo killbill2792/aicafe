@@ -2,11 +2,11 @@ import {beforeEach,describe,expect,it,vi} from "vitest";
 import {eventFinalNarrative,eventReportFactsHash,eventReportNumericEvidence} from "./eventFinalReport.server";
 import {effectHash} from "@/lib/ai/supervisor/loop/engine";
 import {checkNumbers} from "@/lib/ai/agent/checkNumbers";
-import {runAgentTurn} from "@/lib/ai/agent/loop.server";
+import {runEventResearch} from "./eventResearch.server";
 import {assertCafeAiAccess} from "@/lib/access/access.server";
 
 vi.mock("server-only",()=>({}));
-vi.mock("@/lib/ai/agent/loop.server",()=>({runAgentTurn:vi.fn()}));
+vi.mock("./eventResearch.server",()=>({runEventResearch:vi.fn()}));
 vi.mock("@/lib/access/access.server",()=>({assertCafeAiAccess:vi.fn()}));
 
 let saved:Record<string,unknown>|null=null;
@@ -39,7 +39,7 @@ beforeEach(()=>{
   saved=null;reads.memberships={role:"owner"};
   reads.businesses={timezone:"America/Los_Angeles",currency:"USD",is_demo:false};
   vi.resetAllMocks();
-  vi.mocked(runAgentTurn).mockResolvedValue({text:"AI-written, evidence-backed report."} as Awaited<ReturnType<typeof runAgentTurn>>);
+  vi.mocked(runEventResearch).mockResolvedValue({text:"AI-written, evidence-backed report.",endReason:"complete"} as Awaited<ReturnType<typeof runEventResearch>>);
 });
 describe("event morning-after narrative",()=>{
   it("uses the one agent and reuses the exact saved text for the same evidence",async()=>{
@@ -47,39 +47,36 @@ describe("event morning-after narrative",()=>{
       ["Halloween"],"Ready for the holiday",result,"complete");
     expect(first?.text).toBe("AI-written, evidence-backed report.");
     expect(assertCafeAiAccess).toHaveBeenCalledWith(scope.businessId);
-    expect(runAgentTurn).toHaveBeenCalledTimes(1);
-    expect(vi.mocked(runAgentTurn).mock.calls[0][0].toolNames).toEqual([]);
+    expect(runEventResearch).toHaveBeenCalledTimes(1);
+    expect(vi.mocked(runEventResearch).mock.calls[0][0].toolNames).toEqual([]);
     saved={reportFactsHash:first!.hash,reportText:first!.text};
     expect(await eventFinalNarrative(scope,"44444444-4444-4444-8444-444444444444",
       ["Halloween"],"Ready for the holiday",result,"complete")).toEqual(first);
-    expect(runAgentTurn).toHaveBeenCalledTimes(1);
+    expect(runEventResearch).toHaveBeenCalledTimes(1);
   });
   it("refuses a paid model call when the current owner is no longer eligible",async()=>{
     reads.memberships={role:"staff"};
     await expect(eventFinalNarrative(scope,"44444444-4444-4444-8444-444444444444",
       ["Halloween"],"Ready for the holiday",result,"complete")).rejects.toThrow("owner_required");
-    expect(runAgentTurn).not.toHaveBeenCalled();
+    expect(runEventResearch).not.toHaveBeenCalled();
   });
   it("preserves numeric results without spending when AI access expires",async()=>{
     vi.mocked(assertCafeAiAccess).mockRejectedValueOnce(new Error("AI access unavailable"));
     expect(await eventFinalNarrative(scope,"44444444-4444-4444-8444-444444444444",
       ["Halloween"],"Ready for the holiday",result,"insufficient_evidence")).toBeNull();
-    expect(runAgentTurn).not.toHaveBeenCalled();
+    expect(runEventResearch).not.toHaveBeenCalled();
   });
-  it("supplies typed hourly amounts to the numeric checker and retains warning offsets",async()=>{
+  it("supplies typed hourly amounts without requiring a matching answer",async()=>{
     const text="Sales reached 999999, unsupported by the saved day.";
-    vi.mocked(runAgentTurn).mockResolvedValueOnce({
-      text,provenance:[{text:"999999",start:14,end:20,kind:"number",source:"unchecked"}],
-      unverified:[{text:"999999",start:14,end:20,kind:"number"}],
-    } as Awaited<ReturnType<typeof runAgentTurn>>);
+    vi.mocked(runEventResearch).mockResolvedValueOnce({
+      text,endReason:"complete",unverified:[],
+    } as unknown as Awaited<ReturnType<typeof runEventResearch>>);
     const narrative=await eventFinalNarrative(scope,
       "44444444-4444-4444-8444-444444444444",["Halloween"],
       "Ready for the holiday",result,"complete");
     expect(narrative?.text).toBe(text);
-    expect(narrative?.provenance).toEqual([{
-      text:"999999",start:14,end:20,kind:"number",source:"unchecked",
-    }]);
-    const args=vi.mocked(runAgentTurn).mock.calls[0][0];
+    expect(narrative?.provenance).toEqual([]);
+    const args=vi.mocked(runEventResearch).mock.calls[0][0];
     expect(args.previousEvidence).toEqual([{
       tool:"event_readiness",values:expect.arrayContaining([
         {key:"2026-10-31/actualCents",value:5000,unit:"cents"},
@@ -90,7 +87,7 @@ describe("event morning-after narrative",()=>{
     }]);
   });
   it("never invents a narrative when the provider returns empty text",async()=>{
-    vi.mocked(runAgentTurn).mockResolvedValue({text:""} as Awaited<ReturnType<typeof runAgentTurn>>);
+    vi.mocked(runEventResearch).mockResolvedValue({text:""} as Awaited<ReturnType<typeof runEventResearch>>);
     expect(await eventFinalNarrative(scope,"44444444-4444-4444-8444-444444444444",
       ["Halloween"],"Ready for the holiday",result,"insufficient_evidence")).toBeNull();
   });
@@ -103,7 +100,7 @@ describe("event morning-after narrative",()=>{
       reads.businesses={timezone:"America/Los_Angeles",currency,is_demo:false};
       await eventFinalNarrative(scope,"44444444-4444-4444-8444-444444444444",
         ["Halloween"],"Ready for the holiday",result,"complete");
-      const args=vi.mocked(runAgentTurn).mock.calls[0][0];
+      const args=vi.mocked(runEventResearch).mock.calls[0][0];
       const serialized=String(args.memoryFacts);
       const facts=JSON.parse(serialized.slice(serialized.indexOf("{")));
       expect(facts.currency).toBe(currency);
@@ -124,13 +121,13 @@ describe("event morning-after narrative",()=>{
       hours:[{hourLocal:7,actualCents:10550,usualCents:6135,changePercent:72}]};
     await eventFinalNarrative(scope,"44444444-4444-4444-8444-444444444444",
       ["Festival"],"Prepare normally",{...result,days:[day]},"complete");
-    const serialized=String(vi.mocked(runAgentTurn).mock.calls[0][0].memoryFacts);
+    const serialized=String(vi.mocked(runEventResearch).mock.calls[0][0].memoryFacts);
     expect(serialized).toContain("$1,358.44");
     expect(serialized).toContain("$1,206.05");
     expect(serialized).toContain("$105.50");
     expect(serialized).toContain("$61.35");
     expect(serialized).not.toContain('"actualCents":135844');
-    expect(vi.mocked(runAgentTurn).mock.calls[0][0].previousEvidence?.[0].values)
+    expect(vi.mocked(runEventResearch).mock.calls[0][0].previousEvidence?.[0].values)
       .toContainEqual({key:"2026-10-31/7/actualCents",value:10550,unit:"cents"});
   });
 
@@ -143,13 +140,13 @@ describe("event morning-after narrative",()=>{
     const updated=await eventFinalNarrative(scope,"44444444-4444-4444-8444-444444444444",
       ["Halloween"],"Ready for the holiday",result,"complete");
     expect(updated?.hash).toBe(modern);
-    expect(runAgentTurn).toHaveBeenCalledTimes(1);
+    expect(runEventResearch).toHaveBeenCalledTimes(1);
     saved={reportFactsHash:updated!.hash,reportText:updated!.text,reportTextOrigin:"model",
       reportProvenance:updated!.provenance};
     const reused=await eventFinalNarrative(scope,"44444444-4444-4444-8444-444444444444",
       ["Halloween"],"Ready for the holiday",result,"complete");
     expect(reused).toEqual(updated);
-    expect(runAgentTurn).toHaveBeenCalledTimes(1);
+    expect(runEventResearch).toHaveBeenCalledTimes(1);
   });
 
   it("regenerates the exact saved Nov 2 cents narrative when the café has USD",async()=>{
@@ -165,17 +162,17 @@ describe("event morning-after narrative",()=>{
         "**Sales:** Actual 135,844 vs usual 120,605 (+13%); currency not provided.\\n"+
         "**Hourly actual vs usual:** 7: 10,550/6,135;",
       reportTextOrigin:"model"};
-    vi.mocked(runAgentTurn).mockResolvedValueOnce({
+    vi.mocked(runEventResearch).mockResolvedValueOnce({
       text:"Sales: Actual $1,358.44 vs usual $1,206.05; 7: $105.50/$61.35.",
-      provenance:[],unverified:[],
-    } as unknown as Awaited<ReturnType<typeof runAgentTurn>>);
+      endReason:"complete",provenance:[],unverified:[],
+    } as unknown as Awaited<ReturnType<typeof runEventResearch>>);
     const refreshed=await eventFinalNarrative(scope,"44444444-4444-4444-8444-444444444444",
       names,summary,nov2,"complete");
-    expect(runAgentTurn).toHaveBeenCalledTimes(1);
+    expect(runEventResearch).toHaveBeenCalledTimes(1);
     expect(refreshed?.text).toBe("Sales: Actual $1,358.44 vs usual $1,206.05; 7: $105.50/$61.35.");
     expect(refreshed?.hash).toBe(eventReportFactsHash(nov2,"complete",summary,names,"USD"));
     expect(refreshed?.hash).not.toBe(saved.reportFactsHash);
-    const prompt=String(vi.mocked(runAgentTurn).mock.calls[0][0].memoryFacts);
+    const prompt=String(vi.mocked(runEventResearch).mock.calls[0][0].memoryFacts);
     expect(prompt).toContain('"currency":"USD"');
     expect(prompt).toContain("$1,358.44");
     expect(prompt).toContain("$1,206.05");
@@ -186,7 +183,7 @@ describe("event morning-after narrative",()=>{
     const reused=await eventFinalNarrative(scope,"44444444-4444-4444-8444-444444444444",
       names,summary,nov2,"complete");
     expect(reused?.text).toBe(refreshed?.text);
-    expect(runAgentTurn).toHaveBeenCalledTimes(1);
+    expect(runEventResearch).toHaveBeenCalledTimes(1);
   });
 
   it("invalidates a matching saved report when currency changes without changing cents",async()=>{
@@ -196,9 +193,9 @@ describe("event morning-after narrative",()=>{
     reads.businesses={timezone:"America/Los_Angeles",currency:"EUR",is_demo:false};
     const updated=await eventFinalNarrative(scope,"44444444-4444-4444-8444-444444444444",
       ["Halloween"],"Ready for the holiday",result,"complete");
-    expect(runAgentTurn).toHaveBeenCalledTimes(2);
+    expect(runEventResearch).toHaveBeenCalledTimes(2);
     expect(updated?.hash).not.toBe(original?.hash);
-    expect(String(vi.mocked(runAgentTurn).mock.calls[1][0].memoryFacts)).toContain("€50.00");
+    expect(String(vi.mocked(runEventResearch).mock.calls[1][0].memoryFacts)).toContain("€50.00");
   });
 
   it("keeps correct formatted money verified and rejects unsupported formatted amounts",()=>{
@@ -212,3 +209,14 @@ describe("event morning-after narrative",()=>{
   });
 
 });
+
+ it("preserves a visual-only estimate and reloads the same saved view",async()=>{
+  const visual={type:"rich_presentation",version:1,layout:"stack",suggestions:[],panels:[{kind:"bar",title:"Estimated sales $125",unit:"cents",currency:"USD",source:"response_evidence",from:"2026-11-25",to:"2026-11-25",asOf:"2026-11-25",coverage:"estimate",points:[{label:"Forecast",value:12500}]}]};
+  vi.mocked(runEventResearch).mockResolvedValueOnce({text:"",endReason:"complete",results:[{source:"response_presentation",accepted:true,presentation:visual}]} as unknown as Awaited<ReturnType<typeof runEventResearch>>);
+  const first=await eventFinalNarrative(scope,"44444444-4444-4444-8444-444444444444",["Halloween"],"Ready for the holiday",result,"insufficient_evidence");
+  expect(first?.presentations).toEqual([visual]);
+  expect(first?.text).toContain("Estimated sales $125");
+  saved={reportFactsHash:first!.hash,reportText:first!.text,reportTextOrigin:"model",reportPresentations:first!.presentations};
+  expect(await eventFinalNarrative(scope,"44444444-4444-4444-8444-444444444444",["Halloween"],"Ready for the holiday",result,"insufficient_evidence")).toEqual(first);
+  expect(runEventResearch).toHaveBeenCalledTimes(1);
+ });

@@ -11634,6 +11634,54 @@
      true
     ],
     [
+     "owner_user_id",
+     "uuid",
+     true
+    ],
+    [
+     "source_type",
+     "text",
+     true
+    ],
+    [
+     "source_id",
+     "text",
+     true
+    ],
+    [
+     "revision",
+     "text",
+     true
+    ],
+    [
+     "state",
+     "jsonb",
+     true
+    ],
+    [
+     "updated_at",
+     "timestamp with time zone",
+     true
+    ]
+   ],
+   "relation": "supervisor_background_research_continuations",
+   "foreign_keys": [
+    {
+     "target": "businesses",
+     "constraint": "supervisor_background_research_continuations_business_id_fkey"
+    }
+   ]
+  },
+  {
+   "rls": true,
+   "kind": "table",
+   "columns": [
+    [
+     "business_id",
+     "uuid",
+     true
+    ],
+    [
      "requested_version",
      "bigint",
      true
@@ -12816,6 +12864,34 @@
    "kind": "table",
    "columns": [
     [
+     "run_id",
+     "uuid",
+     true
+    ],
+    [
+     "state",
+     "jsonb",
+     true
+    ],
+    [
+     "updated_at",
+     "timestamp with time zone",
+     true
+    ]
+   ],
+   "relation": "supervisor_research_continuations",
+   "foreign_keys": [
+    {
+     "target": "supervisor_runs",
+     "constraint": "supervisor_research_continuations_run_id_fkey"
+    }
+   ]
+  },
+  {
+   "rls": true,
+   "kind": "table",
+   "columns": [
+    [
      "business_id",
      "uuid",
      true
@@ -13341,7 +13417,7 @@
     [
      "reserved_output_cap",
      "bigint",
-     true
+     false
     ],
     [
      "input_tokens",

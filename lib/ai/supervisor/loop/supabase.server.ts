@@ -2,6 +2,8 @@ import {createHash} from "node:crypto";
 import "server-only";
 import {cafeToday} from "@/lib/metrics/core/clock";
 import {createAdminSupabaseClient} from "@/lib/supabase/admin";
+import {splitAgentText} from "@/lib/ai/agent/splitText";
+import {recoverRichPresentation} from "@/lib/ai/conversations/presentation";
 import {notifyOwner} from "@/lib/operating/notifyOwner.server";
 import {z} from "zod";
 import {ACTIVE_PROPOSAL_STATUSES,ProposalRequestConflictError,effectHash} from "./engine";
@@ -80,8 +82,8 @@ export function sameEventReportFacts(previous:unknown,next:unknown):boolean{
   const withoutPresentation=(raw:Record<string,unknown>)=>{
     const {reportText:ignoredText,reportFactsHash:ignoredHash,
       reportTextOrigin:ignoredOrigin,reportProvenance:ignoredProvenance,
-      reportNumericEvidence:ignoredNumeric,...facts}=raw;
-    void ignoredText;void ignoredHash;void ignoredOrigin;void ignoredProvenance;void ignoredNumeric;
+      reportNumericEvidence:ignoredNumeric,reportPresentations:ignoredPresentations,...facts}=raw;
+    void ignoredText;void ignoredHash;void ignoredOrigin;void ignoredProvenance;void ignoredNumeric;void ignoredPresentations;
     return facts;
   };
   return effectHash(withoutPresentation(old))===
@@ -300,8 +302,9 @@ export class SupabaseLoopRepository implements LoopRepository{
     }).eq("business_id",scope.businessId).eq("id",taskId);
     if(refreshed.error)failed(refreshed.error,"Operations report update failed");
     if(alreadyMessaged)return;
-    if(!delivery.threadText.trim()||delivery.threadText.length>1200)
-      throw new Error("Invalid canonical Supervisor report text");
+    const prose=delivery.threadText.trim()?splitAgentText(delivery.threadText,delivery.numberProvenance??[]):[];
+    const presentations=(delivery.threadPresentations??[]).flatMap(raw=>{const block=recoverRichPresentation(raw);return block?[block]:[];});
+    if(!prose.length&&!presentations.length)throw new Error("Empty canonical Supervisor report");
     // Unique proposal UUID makes repeated cron runs idempotent; a late
     // duplicate cannot send repeated unsolicited owner messages.
     const {data:business,error:timezoneError}=await db.from("businesses")
@@ -320,16 +323,21 @@ export class SupabaseLoopRepository implements LoopRepository{
     })).digest("hex");
     const messageId=digest.slice(0,8)+"-"+digest.slice(8,12)+"-4"+
       digest.slice(13,16)+"-a"+digest.slice(17,20)+"-"+digest.slice(20,32);
-    const verification=delivery.numberProvenance?{
-      unverified:delivery.numberProvenance.map(span=>({...span,blockIndex:0})),
-      evidence:delivery.numericEvidence??[],
-    }:null;
+    let offset=0;
+    const historicalAnnotations=prose.flatMap((block,blockIndex)=>{
+      const start=offset;offset+=block.text.length;
+      return (delivery.numberProvenance??[]).flatMap(span=>{
+        const from=Math.max(span.start,start),to=Math.min(span.end,offset);
+        return from<to?[{...span,start:from-start,end:to-start,blockIndex,text:delivery.threadText.slice(from,to)}]:[];
+      });
+    });
+    const verification=delivery.numberProvenance?{unverified:historicalAnnotations,evidence:delivery.numericEvidence??[]}:null;
     const inserted=await db.from("ai_messages").insert({
       id:messageId,business_id:scope.businessId,thread_id:scope.threadId,
       owner_user_id:scope.ownerUserId,author_user_id:null,
       role:"supervisor",content_type:"blocks",text_content:null,
-      structured_content:[{type:"text",text:delivery.threadText}],
-      grounding:{status:report.status==="insufficient_evidence"?
+      structured_content:[...prose,...presentations],
+      grounding:{status:delivery.modelAuthored?"answered":report.status==="insufficient_evidence"?
         "insufficient_evidence":"estimated",intent:"menu_pricing",evidence:[ref],
         ...(verification?{agentMetadata:verification}:{})},
     });

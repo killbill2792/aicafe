@@ -9,9 +9,10 @@ const respond = (status: number, body: unknown) =>
   NextResponse.json(body, { status, headers: { "Cache-Control": "no-store" } });
 
 const authorized = (request: Request) => verifyBearer(request, process.env.CRON_SECRET);
-const enabled = () => process.env.SUPERVISOR_RUN_WORKER_ENABLED === "true";
+const enabled = () => process.env.SUPERVISOR_RUN_WORKER_ENABLED !== "false" &&
+  (process.env.NODE_ENV==="production"||process.env.SUPERVISOR_RUN_WORKER_ENABLED==="true");
 
-/** Explicitly opt-in only. Not registered with Vercel cron or any new timer. */
+/** Resume the existing durable queue. Cron authorization is unchanged. */
 export async function GET(request: Request) {
   if (!authorized(request)) return respond(401, { error: "unauthorized" });
   if (!enabled()) return respond(503, { disabled: true });

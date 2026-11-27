@@ -19,10 +19,11 @@ describe("SQL research presentation",()=>{
   expect(result).toMatchObject([{type:"rich_presentation",panels:[{source:"sql_research",currency:"USD",points:[{label:"Wages",value:1200},{label:"Supplies",value:0}]}]}]);
  });
  it("keeps valid siblings when a visual is malformed and rejects unsafe patches",()=>{
-  expect(resolveResearchSpec(spec({panels:[chart]}),new Map(),ctx)).toEqual([]);
+  expect(resolveResearchSpec(spec({panels:[chart]}),new Map(),ctx)[0].tables?.[0].rows).toEqual([[null]]);
   const result=resolveResearchView({calculator:{ref:7},panels:[{...chart,ref:"wrong"},chart,{ref:"q1",kind:"table",columns:["category","amount_cents"]}]},queries,ctx);
   expect(result?.panels).toHaveLength(1);
-  expect(result?.tables?.[0].rows).toEqual([["Wages",1200],["Supplies",0]]);
+  expect(result?.tables?.[0].rows).toEqual([[null]]);
+  expect(result?.tables?.[1].rows).toEqual([["Wages",1200],["Supplies",0]]);
   const blocks=resolveResearchSpec([...spec({panels:[chart]}),{op:"add",path:"/elements/__proto__/polluted",value:true}],queries,ctx);
   expect(blocks).toHaveLength(1);
   expect(({} as {polluted?:boolean}).polluted).toBeUndefined();
@@ -67,6 +68,8 @@ describe("SQL research presentation",()=>{
   expect(payload.reply.blocks.map(b=>b.type)).toEqual(["text","rich_presentation","text","rich_presentation","text"]);
   expect(groundedReplySchema.safeParse(payload.reply).success).toBe(true);
   expect(result.usage.toolCalls).toBe(2);
+  expect(result.usage.requests).toHaveLength(3);
+  expect(result.usage.toolMetrics).toMatchObject([{name:"run_sql",outcome:"failed"},{name:"run_sql",outcome:"complete",returnedRows:2}]);
   expect(result.toolInvocations).toHaveLength(2);
  });
 });
@@ -94,7 +97,7 @@ describe("failed SQL research provider streams",()=>{
    }
    expect(calls).toBe(3);
    expect(client).toBe(earlier+"\n\n");
-   expect(params.tool_choice).toBe("none");
+   expect(params.tool_choice).toBe("auto");
    expect(JSON.stringify(params.input)).not.toContain(wrong);
    yield say(corrected+"\n\n"+fence({panels:[chart]}));yield done;
   };
@@ -170,15 +173,15 @@ describe("source-independent inline presentation",()=>{
  it("binds owner and historical text without treating it as fresh actuals",()=>{
   const evidence=new Map([["owner",{data:{},text:"Rent $1,250.25 and utilities $450.",source:"Owner supplied"}],["history1",{data:{},text:"Earlier amount $800.",source:"Historical message",coverage:"partial" as const}]]);
   const view=resolveResearchView({panels:[{kind:"bar",points:[{label:"Rent",value:{ref:"owner",quote:"$1,250.25"}},{label:"Earlier amount",value:{ref:"history1",quote:"$800"}}]}]},evidence,ctx);
-  expect(view?.panels[0]).toMatchObject({coverage:"partial",points:[{label:"Rent",value:125025},{label:"Earlier amount",value:80000}]});
-  expect(resolveResearchView({panels:[{kind:"metric",points:[{label:"Rent",value:{ref:"owner",quote:"$250.25"}}]}]},evidence,ctx)).toBeUndefined();
+  expect(view?.panels[0]).toMatchObject({points:[{label:"Rent",value:125025},{label:"Earlier amount",value:80000}]});
+  expect(resolveResearchView({panels:[{kind:"metric",points:[{label:"Rent",value:{ref:"owner",quote:"$250.25"}}]}]},evidence,ctx)?.tables?.[0].rows).toEqual([["Rent",null,null]]);
  });
  it("does not coerce unknown values to zero, combine incompatible units, or expose hidden paths",()=>{
   const evidence=new Map([["q1",source({secret:42,amount_cents:1200,orders:3,missing:null},"Tool output")]]);
   for(const path of [["secret"],["__proto__","x"],["missing"],["absent"]]){
-   expect(resolveResearchView({panels:[{kind:"metric",points:[{label:"Value",value:{ref:"q1",path}}]}]},evidence,ctx)).toBeUndefined();
+   expect(resolveResearchView({panels:[{kind:"metric",points:[{label:"Value",value:{ref:"q1",path}}]}]},evidence,ctx)?.tables?.[0].rows).toEqual([["Value",null,null]]);
   }
-  expect(resolveResearchView({panels:[{kind:"bar",points:[{label:"Money",value:{ref:"q1",path:["amount_cents"]}},{label:"Orders",value:{ref:"q1",path:["orders"]}}]}]},evidence,ctx)).toBeUndefined();
+  expect(resolveResearchView({panels:[{kind:"bar",points:[{label:"Money",value:{ref:"q1",path:["amount_cents"]}},{label:"Orders",value:{ref:"q1",path:["orders"]}}]}]},evidence,ctx)?.tables?.[0].rows).toEqual([["Money",1200,"cents"],["Orders",3,"count"]]);
  });
  it("can compose a visual without any data retrieval or extra model request",async()=>{
   const provider:AgentProvider=async function*(params){
@@ -205,8 +208,8 @@ it("distinguishes absent output, rejected view selection, and persisted visual r
   yield {type:"response.completed",response:{usage:{input_tokens:1,output_tokens:1}}};
  };
  const result=await runResearchTurn({ownerText:"Compare",cafeContext:"Cafe",provider,scope:{db:{} as never,businessId:"business",ownerUserId:"owner"},presentationContext:ctx});
- expect(result.presentationDiagnostics).toMatchObject({requestedSections:1,decodedSections:1,rejectedSections:1,acceptedViews:0});
- expect(agentReplyPayload(result).metadata.presentationDiagnostics?.persistedViews).toBe(0);
+ expect(result.presentationDiagnostics).toMatchObject({requestedSections:1,decodedSections:1,rejectedSections:0,acceptedViews:1});
+ expect(agentReplyPayload(result).metadata.presentationDiagnostics?.persistedViews).toBe(1);
  expect(result.text).toContain("No value was supplied.");
 });
 
@@ -221,7 +224,7 @@ it("preserves a valid owner-sourced visual when an unrelated tool fails",async()
  const rpc=vi.fn().mockResolvedValue({data:{ok:false,error:"unavailable"},error:null});
  const result=await runResearchTurn({ownerText:"Rent $1250",cafeContext:"Cafe",provider,scope:{db:{rpc} as never,businessId:"business",ownerUserId:"owner"},presentationContext:ctx});
  const payload=agentReplyPayload(result);
- expect(payload.reply.status).toBe("unavailable");
+ expect(payload.reply.status).toBe("answered");
  expect(payload.reply.blocks.map(b=>b.type)).toEqual(["text","rich_presentation","text"]);
  expect(payload.metadata.presentationDiagnostics?.persistedViews).toBe(1);
 });
@@ -235,21 +238,174 @@ it("supplies verified matched answers to the resumed research turn",async()=>{
  const result=await runResearchTurn({ownerText:"Review rent",matchedOwnerAnswers:[{questionId:"question",answerId:"answer",question:"What is the rent?",answer:"Rent is 1250."}],cafeContext:"Cafe",provider,scope:{db:{} as never,businessId:"business",ownerUserId:"owner"}});
  expect(result.unverified).toEqual([]);
 });
-it("reserves a bounded synthesis request when ordinary research reaches the work deadline",async()=>{
+it("lets the model finish after more than forty tool calls and five minutes",async()=>{
  let elapsed=0,calls=0;
  const rpc=vi.fn().mockResolvedValue({data:{ok:true,rows},error:null});
  const provider:AgentProvider=async function*(params){
-  calls++;
-  expect(params.max_output_tokens).toBeGreaterThan(0);
-  if(calls===1){
-   yield {type:"response.output_item.done",item:{type:"function_call",name:"run_sql",call_id:"q",arguments:JSON.stringify({sql:"select 1"})}};
-   yield {type:"response.completed",response:{usage:{input_tokens:1,output_tokens:1}}};
-   elapsed=49000;return;
-  }
-  expect(params.tool_choice).toBe("none");
-  yield {type:"response.output_text.delta",delta:"The research window ended."};
-  yield {type:"response.completed",response:{usage:{input_tokens:1,output_tokens:1}}};
+  calls++;expect(params.max_output_tokens).toBeUndefined();expect(params.tool_choice).toBe("auto");
+  if(calls<=42){
+   yield {type:"response.output_item.done",item:{type:"function_call",name:"run_sql",call_id:"q"+calls,arguments:JSON.stringify({sql:"select 1"})}};
+  }else yield {type:"response.output_text.delta",delta:"Research complete."};
+  yield {type:"response.completed",response:{usage:{input_tokens:10000,output_tokens:2000}}};
+  elapsed+=10000;
  };
  const result=await runResearchTurn({ownerText:"Research",cafeContext:"Cafe",provider,now:()=>elapsed,scope:{db:{rpc} as never,businessId:"business",ownerUserId:"owner"}});
- expect(calls).toBe(2);expect(rpc).not.toHaveBeenCalled();expect(result.endReason).toBe("timeout");expect(result.text).toBe("The research window ended.");
+ expect(calls).toBe(43);expect(rpc).toHaveBeenCalledTimes(42);expect(result.endReason).toBe("complete");expect(result.text).toBe("Research complete.");
+});
+it("resumes a physical worker slice without repeating completed SQL or losing presentation evidence",async()=>{
+ let elapsed=0,saved:unknown=null;
+ const rpc=vi.fn(async()=>{elapsed=110;return {data:{ok:true,rows},error:null};});
+ const continuation={load:async()=>saved,save:async(state:unknown)=>{saved=structuredClone(state);}};
+ const first:AgentProvider=async function*(){
+  yield {type:"response.output_item.done",item:{type:"function_call",name:"run_sql",call_id:"q",arguments:JSON.stringify({sql:"select category, amount_cents from expenses"})}};
+  yield {type:"response.completed",response:{usage:{input_tokens:1,output_tokens:1}}};
+ };
+ const scope={db:{rpc} as never,businessId:"business",ownerUserId:"owner"};
+ const base={ownerText:"Research",cafeContext:"Cafe",scope,continuation,presentationContext:ctx,now:()=>elapsed};
+ const interrupted=await runResearchTurn({...base,provider:first,executionDeadline:100});
+ expect(interrupted.endReason).toBe("timeout");expect(rpc).toHaveBeenCalledTimes(1);
+ const second:AgentProvider=async function*(params){
+  expect(JSON.stringify(params.input)).toContain("amount_cents");
+  yield {type:"response.output_text.delta",delta:"Completed.\n\n"+fence({panels:[chart]})};
+  yield {type:"response.completed",response:{usage:{input_tokens:1,output_tokens:1}}};
+ };
+ const resumed=await runResearchTurn({...base,provider:second,executionDeadline:1000});
+ expect(resumed.endReason).toBe("complete");expect(rpc).toHaveBeenCalledTimes(1);
+ expect(resumed.results.some(r=>r.source==="response_presentation")).toBe(true);
+});
+
+
+describe("model-authored analytical presentation",()=>{
+ it("renders derived break-even results even when not present verbatim in SQL evidence",()=>{
+  const result=resolveResearchView({panels:[{kind:"metric",title:"Monthly break-even",unit:"cents",basis:"calculated",explanation:"Fixed costs divided by contribution margin",points:[{label:"Break-even sales",value:375000}]}]},new Map(),ctx);
+  expect(result?.panels[0]).toMatchObject({source:"response_evidence",unit:"cents",currency:"USD",points:[{label:"Break-even sales",value:375000}]});
+  expect(result?.panels[0].sourceDetail).toContain("calculated");
+ });
+ it("preserves Luna-authored estimate descriptions without requiring source bindings",()=>{
+  const result=resolveResearchView({panels:[{kind:"line",title:"Sales forecast",unit:"cents",basis:"estimate",explanation:"Assumes steady growth",points:[{label:"December",value:120000},{label:"January",value:132000}]}]},new Map(),ctx);
+  expect(result?.panels[0]).toMatchObject({coverage:"estimate",points:[{label:"December",value:120000},{label:"January",value:132000}]});
+ });
+ it("keeps direct model values and preserves fractional amounts without grading confidence",()=>{
+  const panel={kind:"metric",title:"Break-even",unit:"cents",basis:"calculated",explanation:"Derived",points:[{label:"Value",value:1.5}]};
+  expect(resolveResearchView({panels:[panel]},new Map(),ctx)?.panels[0].points[0].value).toBe(1.5);
+  expect(resolveResearchView({panels:[{...panel,basis:"actual",points:[{label:"Value",value:100}]}]},new Map(),ctx)?.panels[0]).toMatchObject({points:[{value:100}]});
+ });
+});
+
+it("does not discard or truncate series just because there are more than thirty records",()=>{
+ const longRows=Array.from({length:40},(_,i)=>({category:"Day "+(i+1),amount_cents:i+1}));
+ const sources=new Map([["q1",{data:{ok:true,rows:longRows},source:"Returned SQL evidence",kind:"sql" as const}]]);
+ const view=resolveResearchView({panels:[chart,{ref:"q1",kind:"table",columns:["category","amount_cents"]}]},sources,ctx);
+ expect(view?.panels[0].points).toHaveLength(40);
+ expect(view?.tables?.[0].rows).toHaveLength(40);
+ expect(view?.tables?.[0].coverage).toBe("stored");
+});
+
+it("keeps direct values, unknown cells, custom units and long labels without any database evidence",()=>{
+ const result=resolveResearchView({panels:[
+  {kind:"metric",title:"Margin 2027",unit:"%",basis:"estimate",points:[{label:"Expected",value:13.375}]},
+  {kind:"bar",title:"Costs",unit:"cents",basis:"scenario",points:[{label:"Known",value:0},{label:"Unknown",value:null},{label:"Credit",value:-1200.25}]},
+  {kind:"metric",unit:"cents",points:[{label:"No currency set",value:9876.5}]},
+ ],tables:[{title:"Assumptions",basis:"scenario",columns:["Item","Amount"],rows:[["Rent",1200],["Other",null],["Note","x".repeat(1000)]]}]},new Map(),{asOf:ctx.asOf,currency:null});
+ expect(result?.panels[0]).toMatchObject({coverage:"estimate",unit:"units",measurement:"%",points:[{value:13.375}]});
+ expect(result?.panels[1]).toMatchObject({currency:null,points:[{value:9876.5}]});
+ expect(result?.tables?.[0].rows).toEqual([["Known",0],["Unknown",null],["Credit",-1200.25]]);
+ expect(result?.tables?.[1].rows[2][1]).toHaveLength(1000);
+});
+it("persists a visual-only model answer after an unavailable SQL read",async()=>{
+ const rpc=vi.fn().mockResolvedValue({data:{ok:false,error:"no records"},error:null});
+ let calls=0;
+ const provider:AgentProvider=async function*(){
+  if(++calls===1)yield {type:"response.output_item.done",item:{type:"function_call",name:"run_sql",call_id:"q",arguments:JSON.stringify({sql:"select 1"})}};
+  else yield {type:"response.output_text.delta",delta:fence({panels:[{kind:"metric",unit:"cents",basis:"estimate",points:[{label:"Projected cost",value:125000}]}],tables:[{columns:["Cost","Value"],rows:[["Unknown",null]]}]})};
+  yield {type:"response.completed",response:{usage:{input_tokens:1,output_tokens:1}}};
+ };
+ const result=await runResearchTurn({ownerText:"Give me an estimate",cafeContext:"Cafe",provider,scope:{db:{rpc} as never,businessId:"business",ownerUserId:"owner"},presentationContext:ctx});
+ const payload=agentReplyPayload(result);
+ expect(result.endReason).toBe("complete");
+ expect(payload.reply.blocks).toMatchObject([{type:"rich_presentation",panels:[{coverage:"estimate",points:[{value:125000}]}],tables:[{rows:[["Unknown",null]]}]}]);
+ expect(groundedReplySchema.safeParse(payload.reply).success).toBe(true);
+});
+
+it("keeps a numerical title and mixed model-authored and bound values after a failed reference",()=>{
+ const heading="Estimated profit $8,500 — "+"Long heading ".repeat(20);
+ const result=resolveResearchView({panels:[{kind:"bar",title:heading,points:[
+  {label:"Recorded",value:{ref:"q1",path:["rows",0,"amount_cents"]}},
+  {label:"Estimate",value:850000,unit:"cents",basis:"estimate"},
+  {label:"Unknown",value:{ref:"absent",path:["value"]}}
+ ]}]},queries,ctx);
+ expect(result?.tables?.[0]).toMatchObject({title:heading,rows:[["Recorded",1200,"cents"],["Estimate",850000,"cents"],["Unknown",null,null]]});
+});
+it("interrupts a non-durable provider at its physical request deadline, preserving earlier completed paragraphs",async()=>{
+ let elapsed=0,calls=0;
+ const rpc=vi.fn().mockResolvedValue({data:{ok:true,rows},error:null});
+ const provider:AgentProvider=async function*(){
+  if(++calls===1){
+   yield {type:"response.output_text.delta",delta:"These are the available records."};
+   yield {type:"response.output_item.done",item:{type:"function_call",name:"run_sql",call_id:"q",arguments:JSON.stringify({sql:"select 1"})}};
+   yield {type:"response.completed",response:{usage:{input_tokens:1,output_tokens:1}}};
+  }else{
+   elapsed=2000;
+   yield {type:"response.output_text.delta",delta:"Incomplete output"};
+  }
+ };
+ const result=await runResearchTurn({ownerText:"Check sales",cafeContext:"Cafe",provider,scope:{db:{rpc} as never,businessId:"business",ownerUserId:"owner"},presentationContext:ctx,now:()=>elapsed,executionDeadline:1000});
+ expect(result.endReason).toBe("timeout");
+ expect(result.text).toBe("These are the available records.");
+ expect(agentReplyPayload(result).reply.blocks).toContainEqual({type:"text",text:result.text});
+});
+
+
+it("retains original accounting data when visual rendering fails without another model call",async()=>{
+ let calls=0;
+ const rpc=vi.fn().mockResolvedValue({data:{ok:true,rows},error:null});
+ const provider:AgentProvider=async function*(){
+  if(++calls===1)yield {type:"response.output_item.done",item:{type:"function_call",name:"run_sql",call_id:"accounting",arguments:JSON.stringify({sql:"select category, amount_cents from expenses"})}};
+  else yield {type:"response.output_text.delta",delta:"The accounting breakdown is below.\n\n"+fence({panels:[{kind:"metric",points:[{label:"Wages",value:{bogus:true}}]}]})};
+  yield {type:"response.completed",response:{usage:{input_tokens:1,output_tokens:1}}};
+ };
+ const result=await runResearchTurn({ownerText:"Prepare the accounting",cafeContext:"Cafe",provider,scope:{db:{rpc} as never,businessId:"business",ownerUserId:"owner"},presentationContext:ctx});
+ expect(calls).toBe(2);expect(rpc).toHaveBeenCalledTimes(1);
+ expect(result.endReason).toBe("complete");expect(result.text).toContain("The accounting breakdown is below.");
+ expect(result.text).toContain('"label":"Wages"');expect(result.text).toContain('"bogus":true');
+ expect(groundedReplySchema.safeParse(agentReplyPayload(result).reply).success).toBe(true);
+});
+
+it("keeps malformed spec lines as inert text without a retry",async()=>{
+ let calls=0;
+ const provider:AgentProvider=async function*(){
+  calls++;yield {type:"response.output_text.delta",delta:String.fromCharCode(96).repeat(3)+"spec\nWages: $12.00\n"+String.fromCharCode(96).repeat(3)+"\n"};
+  yield {type:"response.completed",response:{usage:{input_tokens:1,output_tokens:1}}};
+ };
+ const result=await runResearchTurn({ownerText:"Accounting",cafeContext:"Cafe",provider,scope:{db:{} as never,businessId:"business",ownerUserId:"owner"},presentationContext:ctx});
+ expect(calls).toBe(1);expect(result.endReason).toBe("complete");expect(result.text).toContain("Wages: $12.00");
+});
+
+it("retains a chart and normalizes an authored accounting table locally",async()=>{
+ let calls=0;
+ const provider:AgentProvider=async function*(){
+  calls++;yield {type:"response.output_text.delta",delta:fence({panels:[{kind:"metric",title:"Sales",unit:"count",points:[{label:"Orders",value:7}]}],tables:[{title:"Ledger",columns:["Account","Amount"],rows:[["Wages",{amount:12}],["Supplies",0],["Unknown",null]]}]})};
+  yield {type:"response.completed",response:{usage:{input_tokens:1,output_tokens:1}}};
+ };
+ const result=await runResearchTurn({ownerText:"Accounting",cafeContext:"Cafe",provider,scope:{db:{} as never,businessId:"business",ownerUserId:"owner"},presentationContext:ctx});
+ expect(calls).toBe(1);expect(result.presentationDiagnostics).toMatchObject({rejectedSections:0,acceptedViews:1});
+ const views=agentReplyPayload(result).reply.blocks.filter(b=>b.type==="rich_presentation");
+ expect(views).toHaveLength(1);expect(views[0].panels[0].points[0].value).toBe(7);expect(views[0].tables?.[0].rows).toEqual([["Wages",'{"amount":12}'],["Supplies",0],["Unknown",null]]);
+});
+
+it("aligns named table rows by key and preserves extra values without guessing a column",()=>{
+ const block=resolveResearchView({tables:[{title:"Named ledger",columns:["Account","Amount"],rows:[{Amount:25,Account:"Sales",Memo:"Recorded"},{Account:"Supplies",Amount:0}]}]},queries,ctx);
+ expect(block?.tables?.[0].columns.map(c=>c.label)).toEqual(["Account","Amount","Memo"]);
+ expect(block?.tables?.[0].rows).toEqual([["Sales",25,"Recorded"],["Supplies",0,null]]);
+});
+
+it("preserves explicit point-level monetary units and never collapses unlike units",()=>{
+ const local={...ctx,currency:"GBP"};
+ const money=resolveResearchView({panels:[{kind:"metric",points:[{label:"Net sales",value:12345,unit:"cents"}]}]},new Map(),local);
+ expect(money?.panels[0]).toMatchObject({unit:"cents",currency:"GBP",points:[{label:"Net sales",value:12345}]});
+ const inherited=resolveResearchView({panels:[{kind:"bar",unit:"cents",points:[{label:"Sales",value:12345},{label:"Refund",value:-500,unit:"cents"},{label:"Zero",value:0}]}]},new Map(),local);
+ expect(inherited?.panels[0]).toMatchObject({unit:"cents",currency:"GBP",points:[{value:12345},{value:-500},{value:0}]});
+ const mixed=resolveResearchView({panels:[{kind:"bar",unit:"cents",points:[{label:"Sales",value:12345},{label:"Orders",value:3,unit:"count"},{label:"Missing",value:null,unit:"hours"},{label:"Margin",value:0,unit:"%"}]}]},new Map(),local);
+ expect(mixed?.panels).toEqual([]);
+ expect(mixed?.tables?.[0]).toMatchObject({currency:"GBP",rows:[["Sales",12345,"cents"],["Orders",3,"count"],["Missing",null,"hours"],["Margin",0,"%"]]});
 });
