@@ -4,6 +4,7 @@ import type {Spec,UIElement} from "@json-render/core";
 import {standardComponents,renderToBuffer,type RenderComponentRegistry} from "@json-render/react-pdf/render";
 import {standardComponentDefinitions} from "@json-render/react-pdf/server";
 import {normalizeTableData} from "./tableFormatting";
+import {adaptDisplayProperties} from "./displayPropCompatibility";
 import {presentationDataLines,presentationReport,recoverRichPresentation,type RichPresentation} from "./presentation";
 import {safeNativeJSON} from "./nativePresentation";
 import {z} from "zod";
@@ -67,16 +68,7 @@ export function pdfRenderProps(name:string,raw:Record<string,unknown>):Record<st
   const url=new URL(props.href);
   if(url.protocol!=="https:"||url.username||url.password)throw Error("pdf_link_unavailable");
  }
- for(const [key,field] of Object.entries(fields)){
-  if(!Object.hasOwn(props,key)){if(field.safeParse(null).success)props[key]=null;continue;}
-  const value=props[key];if(field.safeParse(value).success)continue;
-  const candidates=typeof value==="number"||typeof value==="boolean"?[String(value)]:typeof value==="string"&&value.trim()?[
-   ...(/^[+-]?(?:\d+\.?\d*|\.\d+)$/u.test(value)&&Number.isFinite(Number(value))?[Number(value)]:[]),
-   ...(value==="true"||value==="false"?[value==="true"]:[])
-  ]:[];
-  for(const candidate of candidates)if(field.safeParse(candidate).success){props[key]=candidate;break;}
- }
- const parsed=definition.props.safeParse(props);
+ const parsed=definition.props.safeParse(adaptDisplayProperties(definition.props,props));
  if(!parsed.success)throw Error("pdf_props_unavailable");
  return parsed.data as Record<string,unknown>;
 }
