@@ -1,3 +1,5 @@
+set lock_timeout = '5s';
+set statement_timeout = '60s';
 -- Mark the exact set committed together, even on empty snapshots or when the
 -- archive is called twice within a transaction. No copy of source JSON is needed.
 alter table public.external_records add column commit_id uuid;

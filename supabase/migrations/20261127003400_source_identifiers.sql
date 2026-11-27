@@ -1,3 +1,5 @@
+set lock_timeout = '5s';
+set statement_timeout = '60s';
 -- A verified source can identify entries inside an original document. A native
 -- recipe can join its existing menu identity to one of these references. Keep
 -- past associations when an identifier disappears or moves to another object.
@@ -6,12 +8,17 @@ create table public.external_identifiers (
  business_id uuid not null, provider text not null, record_id uuid not null,
  namespace text not null, value text not null, selector jsonb not null,
  valid_from timestamptz not null default clock_timestamp(),valid_until timestamptz,
+ relationship text not null default 'identity' check (relationship <> ''),
+ shared boolean not null default false,
  foreign key (business_id,provider,record_id) references public.external_records(business_id,provider,id) on delete cascade
 );
 create unique index external_identifiers_current on public.external_identifiers
- (business_id,provider,record_id,namespace,value) where valid_until is null;
+ (business_id,provider,record_id,namespace,value,relationship,md5(selector::text))
+ where valid_until is null;
 create index external_identifiers_match on public.external_identifiers
  (business_id,namespace,value,provider) where valid_until is null;
+-- Reason: The new identifier table receives no grants until the café-owner policy is set.
+-- squawk-ignore ban-alter-row-level-security
 alter table public.external_identifiers enable row level security;
 revoke all on public.external_identifiers from public,anon,authenticated;
 grant select on public.external_identifiers to authenticated;

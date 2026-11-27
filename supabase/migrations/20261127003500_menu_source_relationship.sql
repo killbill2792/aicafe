@@ -1,3 +1,5 @@
+set lock_timeout = '5s';
+set statement_timeout = '60s';
 -- Native recipes retain their existing item ID. The same POS identity links to the
 -- original publication or catalog object, even when its document path changes.
 create or replace view public.cv_menu

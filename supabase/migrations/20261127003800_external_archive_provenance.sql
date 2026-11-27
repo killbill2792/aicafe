@@ -1,3 +1,5 @@
+set lock_timeout = '5s';
+set statement_timeout = '60s';
 alter table public.external_records
   add column payload_origin text not null default 'provider'
     check (payload_origin in ('provider','historical_provider','historical_projection'));

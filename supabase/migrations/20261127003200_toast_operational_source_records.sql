@@ -1,3 +1,5 @@
+set lock_timeout = '5s';
+set statement_timeout = '60s';
 -- The Toast adapter supplies the identity from its authenticated endpoint. Its
 -- bookkeeping is kept apart from provider JSON (including names that collide).
 create or replace function public.toast_stage_operational_batch(

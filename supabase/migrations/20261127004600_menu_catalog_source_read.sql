@@ -1,3 +1,5 @@
+set lock_timeout = '5s';
+set statement_timeout = '60s';
 -- Preserve the native recipe key and prep settings. Connected prices and
 -- descriptions use the exact object in the certified provider publication.
 create function public.menu_catalog_for(p_business_id uuid)

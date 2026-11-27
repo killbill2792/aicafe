@@ -23,6 +23,8 @@ create table public.external_observation_members (
 );
 create index external_observation_record_idx
   on public.external_observation_members (business_id,provider,record_id);
+-- Reason: The new observation membership table is service-only and RLS is enabled before access grants.
+-- squawk-ignore ban-alter-row-level-security
 alter table public.external_observation_members enable row level security;
 revoke all on public.external_observation_members from public,anon,authenticated;
 grant select,insert,delete on public.external_observation_members to service_role;

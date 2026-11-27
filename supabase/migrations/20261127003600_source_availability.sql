@@ -1,3 +1,5 @@
+set lock_timeout = '5s';
+set statement_timeout = '60s';
 alter table public.external_resources add column retry_at timestamptz;
 comment on column public.external_resources.retry_at is 'Provider or connector retry deadline. Last complete evidence remains available during a failed attempt.';
 

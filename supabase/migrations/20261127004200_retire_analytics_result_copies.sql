@@ -1,7 +1,7 @@
+set statement_timeout = '60s';
 -- Historical ERA measurements may predate raw capture. Preserve their exact
 -- values and provenance before retiring the duplicate results relation.
-begin;
-set local lock_timeout = '5s';
+set lock_timeout = '5s';
 lock table public.toast_analytics_results in access exclusive mode;
 
 with saved as (
@@ -57,6 +57,9 @@ begin
    'restaurant_guid',p_restaurant,'business_date',p_date,'entity_guid',p_request)));
 end $$;
 
+-- Reason: The archive-backed reader replaces this projection in the same candidate and the database acceptance suite verifies dependent source reads.
+-- squawk-ignore ban-drop-view
 drop view public.cv_analytics;
+-- Reason: The migration compares the full copied projection to archived evidence before removing the retained copy.
+-- squawk-ignore ban-drop-table
 drop table public.toast_analytics_results;
-commit;

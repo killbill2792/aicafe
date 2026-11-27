@@ -1,3 +1,5 @@
+set lock_timeout = '5s';
+set statement_timeout = '60s';
 -- Consume the scoped, completed ERA report once. Capture the provider response
 -- and the request receipt together; the six financial figures need no writer.
 create function public.toast_commit_analytics_report(

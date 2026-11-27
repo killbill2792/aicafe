@@ -1,3 +1,5 @@
+set lock_timeout = '5s';
+set statement_timeout = '60s';
 alter table public.external_resources add column last_complete_scope jsonb;
 comment on column public.external_resources.last_complete_scope is
   'Scope confirmed by the latest complete observation. A verified business date does not claim complete coverage of other dates.';

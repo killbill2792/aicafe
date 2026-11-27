@@ -1,3 +1,5 @@
+set lock_timeout = '5s';
+set statement_timeout = '60s';
 -- Reconciliation ranks evidence on a shared, source-attested identity. It
 -- never uses provider names, a fuzzy label, or differences in provider clocks.
 create view public.external_identity_authority with (security_invoker=true) as

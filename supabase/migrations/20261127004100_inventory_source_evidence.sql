@@ -1,3 +1,5 @@
+set lock_timeout = '5s';
+set statement_timeout = '60s';
 -- Pantry presents the current source receipt and independent owner counts.
 -- The provider quantity is usable only when it was included in the latest
 -- complete snapshot for that account. A stale or empty receipt is not zero.

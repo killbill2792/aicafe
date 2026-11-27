@@ -1,14 +1,7 @@
+set lock_timeout = '5s';
+set statement_timeout = '60s';
 -- Identity claims and references use the same index. The connector determines
 -- whether a namespace is local to its account or independently shared.
-alter table public.external_identifiers
-  add column relationship text not null default 'identity' check (relationship <> ''),
-  add column shared boolean not null default false;
-
-drop index public.external_identifiers_current;
-create unique index external_identifiers_current on public.external_identifiers
-  (business_id,provider,record_id,namespace,value,relationship,md5(selector::text))
-  where valid_until is null;
-
 create or replace function public.external_observe_identifiers(p_business uuid,p_provider text,p_record uuid,p_aliases jsonb)
 returns void language plpgsql security invoker set search_path=pg_catalog,public as $$
 begin
@@ -60,21 +53,6 @@ comment on view public.external_relationship_candidates is
 
 -- Explicit assertions support native business data as well as provider objects.
 -- Native identities are relation and primary key, separate from source payload.
-alter table public.external_record_links
-  drop constraint external_record_links_pkey,
-  alter column target_provider drop not null,
-  alter column target_id drop not null,
-  add column id bigint generated always as identity primary key,
-  add column selector jsonb not null default '{}' check (jsonb_typeof(selector)='object'),
-  add column native_relation text,
-  add column native_key jsonb,
-  add column valid_until timestamptz,
-  add check (valid_until is null or valid_until>=observed_at),
-  add check (
-    (target_provider is not null and target_id is not null and native_relation is null and native_key is null) or
-    (target_provider is null and target_id is null and nullif(native_relation,'') is not null and
-     jsonb_typeof(native_key) is not distinct from 'object')
-  );
 create unique index external_explicit_source_link on public.external_record_links
   (business_id,provider,record_id,relation,target_provider,target_id,md5(selector::text))
   where target_id is not null and valid_until is null;

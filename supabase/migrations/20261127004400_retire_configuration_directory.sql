@@ -1,5 +1,5 @@
-begin;
-set local lock_timeout='5s';
+set statement_timeout = '60s';
+set lock_timeout='5s';
 lock table public.toast_void_reason_directory in access exclusive mode;
 
 -- These narrow historical rows predate direct configuration capture. Retain
@@ -36,6 +36,9 @@ revoke all on function public.external_change_provenance() from public,anon,auth
 create trigger external_change_provenance before insert on public.external_record_changes
   for each row execute function public.external_change_provenance();
 
+-- Reason: Known historical values are preserved in the source archive before the redundant directory is removed.
+-- squawk-ignore ban-drop-table
 drop table public.toast_void_reason_directory;
+-- Reason: Freshness and recovery are taken from the shared archive resource for this retired directory.
+-- squawk-ignore ban-drop-column
 alter table public.toast_optional_sync_state drop column void_reasons_local_day;
-commit;

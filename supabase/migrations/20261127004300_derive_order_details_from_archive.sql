@@ -1,7 +1,7 @@
+set statement_timeout = '60s';
 -- Keep financial detail semantics and derive the fields from the certified
 -- archive row at read time. No new projection is persisted.
-begin;
-set local lock_timeout='5s';
+set lock_timeout='5s';
 lock table public.toast_raw_records in share row exclusive mode;
 lock table public.toast_order_typed_facts in access exclusive mode;
 
@@ -251,8 +251,15 @@ begin
  return 'same';
 end $order$;
 
+-- Reason: The new order reader derives the detail from retained source JSON and does not need this duplicate materialization trigger.
+-- squawk-ignore ban-drop-trigger
 drop trigger toast_raw_order_typed_capture on public.toast_raw_records;
+-- Reason: The replacing archive reader no longer uses this removed trigger entry point.
+-- squawk-ignore ban-drop-function
 drop function public.toast_capture_typed_order_trigger();
+-- Reason: The replacement reader and writer no longer call the legacy order materializer.
+-- squawk-ignore ban-drop-function
 drop function public.toast_capture_typed_order(uuid);
+-- Reason: The migration validates derived detail parity against original archived orders before retiring this copy.
+-- squawk-ignore ban-drop-table
 drop table public.toast_order_typed_facts;
-commit;

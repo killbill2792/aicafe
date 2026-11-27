@@ -1,8 +1,11 @@
+set statement_timeout = '60s';
 -- Attach the existing heaps in place. Existing Toast foreign keys, triggers, IDs
 -- and indexes keep pointing at the same rows. Other providers share one default
 -- partition and do not need their own schema or tables.
 set lock_timeout = '5s';
 alter table public.toast_raw_records
+  -- Reason: The shared archive accepts authenticated resource identifiers from connector contracts. Toast scope and record identity checks remain in its writers.
+  -- squawk-ignore ban-drop-constraint
   drop constraint toast_raw_records_entity_check,
   add column provider text not null default 'toast' check (provider = 'toast'),
   add column source_account text,
@@ -14,6 +17,8 @@ alter table public.toast_raw_changes
   add column source_account text,
   add column source_key text,
   add column record_id uuid,
+  -- Reason: Non-UUID provider identities use source_key. Original Toast GUIDs and UUID-based joins retain their existing values.
+  -- squawk-ignore ban-drop-not-null
   alter column entity_guid drop not null;
 
 create table public.external_records (like public.toast_raw_records including defaults)
@@ -33,6 +38,8 @@ create table public.external_record_changes
   (like public.toast_raw_changes including defaults including identity) partition by list (provider);
 select setval(pg_get_serial_sequence('public.external_record_changes','id'),
   greatest(1,coalesce((select max(id) from public.toast_raw_changes),0)+1),false);
+-- Reason: The same transaction attaches this heap to the PG17 parent identity. The sequence is seeded above all preserved IDs before any writer can use it.
+-- squawk-ignore ban-alter-identity
 alter table public.toast_raw_changes alter column id drop identity;
 alter table public.external_record_changes attach partition public.toast_raw_changes for values in ('toast');
 create table public.external_changes_other partition of public.external_record_changes default;
@@ -61,19 +68,43 @@ create table public.external_sync_checkpoints (
 -- never overwrites either provider's record or silently adds their amounts.
 create table public.external_record_links (
   business_id uuid not null, provider text not null, record_id uuid not null,
-  relation text not null, target_provider text not null, target_id uuid not null,
+  relation text not null, target_provider text, target_id uuid,
   evidence jsonb not null, observed_at timestamptz not null default now(),
-  primary key(business_id,provider,record_id,relation,target_provider,target_id),
+  id bigint generated always as identity primary key,
+  selector jsonb not null default '{}' check (jsonb_typeof(selector)='object'),
+  native_relation text,
+  native_key jsonb,
+  valid_until timestamptz,
+  check (valid_until is null or valid_until>=observed_at),
+  check (
+    (target_provider is not null and target_id is not null and native_relation is null and native_key is null) or
+    (target_provider is null and target_id is null and nullif(native_relation,'') is not null and
+     jsonb_typeof(native_key) is not distinct from 'object')
+  ),
   foreign key(business_id,provider,record_id) references public.external_records(business_id,provider,id) on delete cascade,
   foreign key(business_id,target_provider,target_id) references public.external_records(business_id,provider,id) on delete cascade
 );
 
+-- Reason: Protect the new archive relation before applying its role grants and owner policies.
+-- squawk-ignore ban-alter-row-level-security
 alter table public.external_records enable row level security;
+-- Reason: Protect the new archive relation before applying its role grants and owner policies.
+-- squawk-ignore ban-alter-row-level-security
 alter table public.external_record_changes enable row level security;
+-- Reason: Protect the new archive relation before applying its role grants and owner policies.
+-- squawk-ignore ban-alter-row-level-security
 alter table public.external_records_other enable row level security;
+-- Reason: Protect the new archive relation before applying its role grants and owner policies.
+-- squawk-ignore ban-alter-row-level-security
 alter table public.external_changes_other enable row level security;
+-- Reason: Protect the new archive relation before applying its role grants and owner policies.
+-- squawk-ignore ban-alter-row-level-security
 alter table public.external_resources enable row level security;
+-- Reason: Protect the new archive relation before applying its role grants and owner policies.
+-- squawk-ignore ban-alter-row-level-security
 alter table public.external_sync_checkpoints enable row level security;
+-- Reason: Protect the new archive relation before applying its role grants and owner policies.
+-- squawk-ignore ban-alter-row-level-security
 alter table public.external_record_links enable row level security;
 revoke all on public.external_records,public.external_record_changes,public.external_records_other,
   public.external_changes_other,public.external_resources,public.external_sync_checkpoints,

@@ -1,3 +1,5 @@
+set lock_timeout = '5s';
+set statement_timeout = '60s';
 -- Keep the existing import-versus-live authority rules and financial facts.
 create or replace function public.toast_archive_order(
  p_business_id uuid,p_restaurant_guid uuid,p_entity_guid uuid,p_business_date date,

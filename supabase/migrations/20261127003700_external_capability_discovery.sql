@@ -1,3 +1,5 @@
+set lock_timeout = '5s';
+set statement_timeout = '60s';
 -- Connector declarations are discovery evidence. An authorized route may
 -- still be pending, empty, incomplete or temporarily unavailable.
 alter table public.external_resources
