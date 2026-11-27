@@ -62,7 +62,9 @@ describe("Installed native Luna catalog",()=>{
   expect(parsed?.success).toBe(true);
   if(!parsed?.success)throw Error("table must render");
   expect(parsed.data).toMatchObject({columns:["Account","Amount","Recorded"],rows:[["Sales","120.25","true"],["Refund","-12.5","false"],["Zero","0","Not recorded"],["Missing","Not recorded","Not recorded"]]});
-  expect(parseUpstreamProps("Table",{columns:["Account"],rows:[[{unrenderable:true}]]})?.success).toBe(false);
+  expect(parseUpstreamProps("Table",{columns:["Account"],rows:[[{unrenderable:true}]]})).toMatchObject({success:true,data:{rows:[['{"unrenderable":true}']]}});
+  expect(parseUpstreamProps("Text",{text:125})).toMatchObject({success:true,data:{text:"125"}});
+  expect(parseUpstreamProps("Slider",{label:"Growth",value:"1.2",min:0,max:2,step:0.1})).toMatchObject({success:true,data:{value:1.2}});
  });
  it("recalculates exact arbitrary formulas from bound local inputs without SQL evidence",()=>{
   const expression={text:{$computed:"calculate",args:{inputs:[{name:"sales",unit:"cents",value:{$state:"/sales"}},{name:"factor",unit:"ratio",value:{$state:"/factor"}}],steps:[{id:"forecast",op:"multiply",args:["sales","factor"]}]}}};

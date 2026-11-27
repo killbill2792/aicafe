@@ -224,11 +224,23 @@ function ControlView({kind}:{kind:unknown}){
 const nativeCatalog=defineCatalog(schema,{components:{...upstreamComponents,LunaChart:nativeChartDefinition,LunaSnapshot:{props:z.object({snapshotJSON:z.string()}),slots:[],description:"Resolved authenticated data view"}},actions:{}});
 /** The installed registry is used wholesale. Wrap resolved props for the one
  * browser trust boundary, not a second manually curated widget library. */
+/** A display failure is never an instruction to suppress authored values.
+ * Render inert text, not active HTML, network URLs or widget actions. */
+function AuthoredValues({value}:{value:unknown}){
+ const display=(v:unknown):string=>typeof v==="string"?v:v==null?"Not recorded":JSON.stringify(v,null,2)??String(v);
+ if(value&&typeof value==="object"&&!Array.isArray(value)){
+  return <dl className="min-w-0 space-y-2">{Object.entries(value).map(([key,v])=><div key={key} className="min-w-0"><dt className="text-sm font-medium text-ink-muted">{key}</dt><dd className="whitespace-pre-wrap wrap-break-word">{display(v)}</dd></div>)}</dl>;
+ }
+ return <p className="whitespace-pre-wrap wrap-break-word">{display(value)}</p>;
+}
+function NativeSpecValues({spec}:{spec:Spec}){
+ return <div className="min-w-0 space-y-3">{Object.entries(spec.elements).map(([key,e])=><section key={key}><h3 className="font-medium">{e.type}</h3><AuthoredValues value={e.props}/></section>)}{spec.state&&<AuthoredValues value={spec.state}/>}</div>;
+}
 function NativeSnapshot({value,locale}:{value:unknown;locale:string}){
  const context=useContext(PresentationControls);
  if(!context)return null;
  const snapshot=recoverRichPresentation(readNativeSnapshot(value));
- if(!snapshot)return <p role="status">This part of the answer could not be displayed.</p>;
+ if(!snapshot)return <AuthoredValues value={readNativeSnapshot(value)??value}/>;
  return <SupervisorRichPresentation block={snapshot} locale={locale} onSuggest={context.onSuggest} disabled={context.disabled} message={context.message} attachments={context.attachments}/>;
 }
 function NamedNativeControl({label,role,children}:{label:string;role:string;children:React.ReactNode}){
@@ -246,13 +258,13 @@ function NativeWidget({spec,locale}:{spec:Spec;locale:string}){
  const registry=useMemo(()=>{
   const {registry}=defineRegistry(nativeCatalog,{components:{...shadcnComponents,
    LunaChart:({props})=>{
-    const p=nativeChartProps.safeParse(props);if(!p.success)return <p role="status">Chart values are not available.</p>;
+    const p=nativeChartProps.safeParse(props);if(!p.success)return <AuthoredValues value={props}/>;
     const {description,measurement,asOf,...values}=p.data;
-    if(!asOf)return <p role="status">Chart date is not available.</p>;
+    if(!asOf)return <AuthoredValues value={props}/>;
     const panel=presentationPanelSchema.safeParse({...values,source:"response_evidence",from:asOf,to:asOf,asOf,...(description?{sourceDetail:description}:{}),...(measurement?{measurement}:{})});
     if(panel.success)return <Panel panel={panel.data} locale={locale}/>;
     const table=recordTableSchema.safeParse({title:values.title,view:"tool_response_evidence",from:asOf,to:asOf,asOf,currency:values.currency,coverage:"authored",scope:description??"",columns:[{label:"Category",unit:"label"},{label:measurement??values.unit,unit:values.unit}],rows:values.points.map(p=>[p.label,p.value])});
-    return table.success?<RecordTableView table={table.data} locale={locale}/>:<p role="status">Chart values are not available.</p>;
+    return table.success?<RecordTableView table={table.data} locale={locale}/>:<AuthoredValues value={props}/>;
    },
    LunaSnapshot:({props})=><NativeSnapshot value={props.snapshotJSON} locale={locale}/>,
   }});
@@ -261,8 +273,8 @@ function NativeWidget({spec,locale}:{spec:Spec;locale:string}){
    const Component=registry[name];
    registry[name]=input=>{
     const parsed=parseUpstreamProps(name,input.element.props);
-    if(!parsed?.success)return <div className="min-w-0"><p role="status">This part of the answer could not be displayed.</p>{input.children}</div>;
-    const component=<Component {...input} element={{...input.element,props:parsed.data}}/>;
+    if(!parsed?.success)return <div className="min-w-0"><AuthoredValues value={input.element.props}/>{input.children}</div>;
+    const component=<PresentationBoundary fallback={<div className="min-w-0"><AuthoredValues value={input.element.props}/>{input.children}</div>}><Component {...input} element={{...input.element,props:parsed.data}}/></PresentationBoundary>;
     const role=name==="Slider"?"slider":name==="Select"?"combobox":name==="Radio"?"radiogroup":null;
     const label="label" in parsed.data&&typeof parsed.data.label==="string"?parsed.data.label:name;
     return role?<NamedNativeControl role={role} label={label}>{component}</NamedNativeControl>:component;
@@ -291,10 +303,10 @@ export default function SupervisorRichPresentation({block,locale,onSuggest=()=>{
   Control:({element})=><ControlView kind={element.props.kind}/>,
   Calculator:({element})=>{const c=interactiveCalcSchema.safeParse(element.props.calculator);return c.success?<CalculatorView calculator={c.data} locale={locale}/>:null;},
  }),[locale]);
- if(!data)return <p role="status" className="text-ink-muted">This visual could not be displayed.</p>;
+ if(!data)return <AuthoredValues value={block}/>;
  const composed=Boolean(data.groups?.some(g=>g.id));
  return <PresentationControls.Provider value={{data,message,attachments,onSuggest,disabled}}><section className="min-w-0 space-y-3" data-testid="supervisor-rich-presentation">
-  {data.nativeSpec&&<PresentationBoundary fallback={<p role="status">This interactive view could not be displayed.</p>}><NativeWidget key={JSON.stringify(data.nativeSpec)} spec={data.nativeSpec} locale={locale}/></PresentationBoundary>}
+  {data.nativeSpec&&<PresentationBoundary fallback={<NativeSpecValues spec={data.nativeSpec}/>}><NativeWidget key={JSON.stringify(data.nativeSpec)} spec={data.nativeSpec} locale={locale}/></PresentationBoundary>}
   {(presentationLeaves(data).length>0||composed)&&<PresentationBoundary fallback={<div className="space-y-3">{data.panels.map((p,i)=><Panel key={i} panel={{...p,kind:"table"}} locale={locale}/>)}{data.tables?.map((t,i)=><RecordTableView key={i} table={t} locale={locale}/>)}{data.calculator&&<CalculatorView calculator={data.calculator} locale={locale}/>}<p role="status">Visual layout unavailable; available values are shown above.</p></div>}><JSONUIProvider registry={registry}><Renderer spec={presentationSpec(data)} registry={registry}/></JSONUIProvider></PresentationBoundary>}
   {!composed&&<><ControlView kind="files"/><ControlView kind="report"/><ControlView kind="suggestions"/></>}
  </section></PresentationControls.Provider>;

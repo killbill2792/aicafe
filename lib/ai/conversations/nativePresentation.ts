@@ -149,9 +149,9 @@ export function parseUpstreamProps(name:string,props:Record<string,unknown>){
  // including state-bound numbers, zero, negatives, booleans and unknowns.
  // This is data formatting for the official component, not a widget copy.
  if(name==="Table"&&Array.isArray(values.columns)&&Array.isArray(values.rows)){
-  const display=(value:unknown)=>value===null?"Not recorded":typeof value==="string"||typeof value==="boolean"||typeof value==="number"&&Number.isFinite(value)?String(value):undefined;
+  const display=(value:unknown)=>value==null?"Not recorded":typeof value==="string"?value:typeof value==="object"?JSON.stringify(value):String(value);
   const columns=values.columns.map(display);
-  const rows=values.rows.map(row=>Array.isArray(row)?row.map(display):undefined);
+  const rows=values.rows.map(row=>Array.isArray(row)?row.map(display):[display(row)]);
   if(columns.every(c=>c!==undefined)&&rows.every(row=>row!==undefined&&row.every(cell=>cell!==undefined))){
    const width=rows.reduce((n,row)=>Math.max(n,row?.length??0),columns.length);
    values.columns=Array.from({length:width},(_,i)=>columns[i]??"Value "+(i+1));
@@ -159,7 +159,17 @@ export function parseUpstreamProps(name:string,props:Record<string,unknown>){
   }
  }
  const shape=definition.props.shape as Record<string,z.ZodType>;
- for(const [key,field] of Object.entries(shape))if(!Object.hasOwn(values,key)&&field.safeParse(null).success)values[key]=null;
+ for(const [key,field] of Object.entries(shape)){
+  if(!Object.hasOwn(values,key)){if(field.safeParse(null).success)values[key]=null;continue;}
+  const raw=values[key];if(field.safeParse(raw).success)continue;
+  // Adapt harmless display types using the installed schema, not a copied
+  // per-widget vocabulary. Do not fabricate values or execute new actions.
+  const candidates=typeof raw==="number"||typeof raw==="boolean"?[String(raw)]:typeof raw==="string"&&raw.trim()?[
+   ...(/^[+-]?(?:\d+\.?\d*|\.\d+)$/u.test(raw)&&Number.isFinite(Number(raw))?[Number(raw)]:[]),
+   ...(raw==="true"||raw==="false"?[raw==="true"]:[])
+  ]:[];
+  for(const candidate of candidates)if(field.safeParse(candidate).success){values[key]=candidate;break;}
+ }
  return definition.props.safeParse(values);
 }
 const calcInput=z.object({name:z.string(),unit:z.enum(["cents","count","percent","ratio"]),value:z.union([z.string(),z.number().finite()])});
