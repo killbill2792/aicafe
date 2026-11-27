@@ -47,14 +47,14 @@ export function presentationSpec(p:RichPresentation):Spec{
 }
 type DisplayPanel=Omit<PresentationPanel,"from"|"to"|"asOf">&Partial<Pick<PresentationPanel,"from"|"to"|"asOf">>;
 function Panel({panel,locale}:{panel:DisplayPanel;locale:string}){
- const evidenceId=useId(),coverageId=useId();
+ const evidenceId=useId(),coverageId=useId(),tableRef=useAdaptiveTable();
  const money=["cents","cents/hour"].includes(panel.unit);
  const currency=money&&panel.currency&&/^[A-Za-z]{3}$/.test(panel.currency)?panel.currency:null;
  const formatter=new Intl.NumberFormat(locale,currency?
   {style:"currency",currency,minimumFractionDigits:2,maximumFractionDigits:20}:{maximumFractionDigits:20});
  const format=(v:number)=>formatter.format(money?v/100:v)+(money&&!currency?" "+(panel.currency??"(currency not set)"):"")+(panel.unit==="cents/hour"?" / h":["seconds","minutes","hours","days","units","items","ratio","ratio squared","indicator"].includes(panel.unit)?" "+(panel.measurement??panel.unit):"");
  const detailsLabel=({en,es,ar}[locale as "en"|"es"|"ar"]??en).Home.chatStartDetails;
- const table=<div role="region" aria-label={panel.title} tabIndex={0} className="overflow-x-auto overscroll-x-contain focus-visible:outline-solid focus-visible:outline-2 focus-visible:outline-ink"><table aria-describedby={panel.coverage&&panel.source!=="response_evidence"?coverageId+" "+evidenceId:evidenceId} className="w-full text-[1.0625rem] tabular-nums"><caption className="sr-only">{panel.title}</caption>
+ const table=<div ref={tableRef} role="region" aria-label={panel.title} tabIndex={0} className="luna-table-region overflow-x-auto overscroll-x-contain focus-visible:outline-solid focus-visible:outline-2 focus-visible:outline-ink"><table aria-describedby={panel.coverage&&panel.source!=="response_evidence"?coverageId+" "+evidenceId:evidenceId} className="w-full text-[1.0625rem] tabular-nums"><caption className="sr-only">{panel.title}</caption>
     <thead><tr><th scope="col" className="py-2 text-start">{copy.categoryLabel}</th><th scope="col" className="py-2 text-end">{copy.valueLabel}{panel.currency?" ("+panel.currency+")":panel.measurement?" ("+panel.measurement+")":""}</th></tr></thead>
     <tbody>{panel.points.map((p,i)=><tr key={i} className="border-b border-line"><th scope="row" className="wrap-break-word py-2 pe-3 text-start font-normal">{p.label}</th><td className="py-2 text-end">{format(p.value)}</td></tr>)}</tbody>
    </table></div>;
@@ -68,7 +68,7 @@ function Panel({panel,locale}:{panel:DisplayPanel;locale:string}){
  </figure>;
 }
 function ComparisonView({panels,locale}:{panels:PresentationPanel[];locale:string}){
- const evidenceId=useId();
+ const evidenceId=useId(),tableRef=useAdaptiveTable();
  const first=panels[0],scalar=panels.every(p=>p.points.length===1);
  const series:ComparisonSeries[]=panels.map((p,i)=>({id:"s"+i,label:(i+1)+". "+p.title+" · "+p.from+" – "+p.to,points:p.points.map(v=>({label:scalar?"—":v.label,value:v.value}))}));
  const labels=[...new Set(series.flatMap(s=>s.points.map(v=>v.label)))];
@@ -79,7 +79,7 @@ function ComparisonView({panels,locale}:{panels:PresentationPanel[];locale:strin
  return <figure data-testid="supervisor-comparison" className="min-w-0 space-y-2 py-2">
   <PresentationBoundary><ComparisonChart series={series} labels={labels} line={line} format={format}/></PresentationBoundary>
   <div className="flex flex-wrap gap-3 text-[0.8125rem] text-ink-muted">{series.map(s=><span key={s.id}>{s.label}</span>)}</div>
-  <div role="region" className="overflow-x-auto focus-visible:outline-solid focus-visible:outline-2 focus-visible:outline-ink" tabIndex={0} aria-label={copy.comparisonValues}>
+  <div ref={tableRef} role="region" className="luna-table-region overflow-x-auto focus-visible:outline-solid focus-visible:outline-2 focus-visible:outline-ink" tabIndex={0} aria-label={copy.comparisonValues}>
    <table aria-describedby={evidenceId} className="w-full text-[0.9375rem] tabular-nums"><caption className="sr-only">{copy.comparisonValues}</caption><thead><tr><th scope="col" className="py-2 text-start">{first.currency??first.measurement??first.unit}</th>{series.map(s=><th key={s.id} scope="col" className="px-2 text-end">{s.label}</th>)}</tr></thead>
     <tbody>{labels.map(label=><tr key={label}><th scope="row" className="py-2 text-start">{label}</th>{series.map(s=>{const v=s.points.find(p=>p.label===label);return <td key={s.id} className="px-2 text-end">{v?format(v.value):copy.notRecorded}</td>})}</tr>)}</tbody></table>
   </div>
@@ -244,7 +244,7 @@ function AuthoredValues({value}:{value:unknown}){
    const {columns,rows}=normalizeTableData(data.columns,rawRows);
    const width=columns.length;
    const rest=Object.fromEntries(Object.entries(data).filter(([k])=>!["rows","points","columns"].includes(k)));
-   return <div className="min-w-0 space-y-2"><AuthoredValues value={rest}/><div className="overflow-x-auto"><table className="w-full text-sm"><thead><tr>{Array.from({length:width},(_,i)=><th key={i} className="border-b border-line p-2 text-start">{humanize(columns[i]??"Value "+(i+1))}</th>)}</tr></thead><tbody>{rows.map((row,i)=><tr key={i}>{Array.from({length:width},(_,j)=><td key={j} className="border-b border-line p-2 whitespace-pre-wrap">{display(row[j])}</td>)}</tr>)}</tbody></table></div></div>;
+   return <div className="min-w-0 space-y-2"><AuthoredValues value={rest}/><NativeAdaptiveTable><table className="w-full text-sm"><thead><tr>{Array.from({length:width},(_,i)=><th key={i} className="border-b border-line p-2 text-start">{columns[i]??"Value "+(i+1)}</th>)}</tr></thead><tbody>{rows.map((row,i)=><tr key={i}>{Array.from({length:width},(_,j)=><td key={j} className="border-b border-line p-2 whitespace-pre-wrap">{display(row[j])}</td>)}</tr>)}</tbody></table></NativeAdaptiveTable></div>;
   }
   return <dl className="min-w-0 space-y-2">{Object.entries(value).map(([key,v])=><div key={key} className="min-w-0"><dt className="text-sm font-medium text-ink-muted">{humanize(key)}</dt><dd className="whitespace-pre-wrap wrap-break-word">{v!==null&&typeof v==="object"?<AuthoredValues value={v}/>:display(v)}</dd></div>)}</dl>;
  }
@@ -332,7 +332,7 @@ function NativeWidget({spec,locale}:{spec:Spec;locale:string}){
   }
   return registry;
  },[locale]);
- return <div className="min-w-0 max-w-full" data-testid="luna-native-widget"><JSONUIProvider registry={registry} store={store} functions={nativeFunctions}><Renderer spec={spec} registry={registry} fallback={({children})=><div className="min-w-0"><p role="status">This part of the answer could not be displayed.</p>{children}</div>}/></JSONUIProvider></div>;
+ return <div className="luna-native-widget min-w-0 max-w-full" data-testid="luna-native-widget"><JSONUIProvider registry={registry} store={store} functions={nativeFunctions}><Renderer spec={spec} registry={registry} fallback={({children})=><div className="min-w-0"><p role="status">This part of the answer could not be displayed.</p>{children}</div>}/></JSONUIProvider></div>;
 }
 export default function SupervisorRichPresentation({block,locale,onSuggest=()=>{},disabled,message,attachments}:{block:unknown;locale:string;onSuggest?:(text:string)=>void;disabled:boolean;message?:Parameters<typeof presentationReport>[1]&{threadId:string;id:string};attachments?:{threadId:string;items:StoredAttachment[]}|null}){
  const data=useMemo(()=>recoverRichPresentation(block),[block]);
