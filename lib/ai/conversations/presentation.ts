@@ -1,6 +1,6 @@
 import {scenarioEditorSchema,evaluateScenarioEditor} from "./scenarioPresentation";
 import { z } from "zod";
-import {nativeSpecSchema,nativeFunctions,readNativeSnapshot,recoverNativeDisplaySpec} from "./nativePresentation";
+import {nativeSpecSchema,nativeFunctions,readNativeSnapshot,recoverNativeDisplaySpec,safeNativeJSON} from "./nativePresentation";
 import {resolveElementProps,splitRepeatVisibility,evaluateVisibility,getByPath,resolveRepeatStatePath,resolveRepeatItemStatePath,type PropResolutionContext} from "@json-render/core";
 import {exactDecimal,exactNumber,runCalculation,CALC_OPS,type CalcOp,type CalcShown} from "@/lib/metrics/core/calculator";
 
@@ -119,6 +119,8 @@ const richPresentationBaseSchema=z.strictObject({
   layout:z.enum(["stack","grid"]),
   panels:z.array(presentationPanelSchema),
   nativeSpec:nativeSpecSchema.optional(),
+  // Persist authored document data, not an executable or remotely hosted file.
+  pdfSpec:z.record(z.string(),z.unknown()).refine(safeNativeJSON).optional(),
   groups:z.array(presentationGroupSchema).min(1).optional(),
   report:z.literal(true).optional(),
   files:z.array(z.uuid()).min(1).max(3).refine(ids=>new Set(ids).size===ids.length).optional(),
@@ -131,7 +133,7 @@ const richPresentationBaseSchema=z.strictObject({
 // Infer the snapshot type from the structural fields before applying graph
 // refinements, which themselves consume that type. Avoid circular inference.
 export type RichPresentation=z.infer<typeof richPresentationBaseSchema>;
-export const richPresentationSchema=richPresentationBaseSchema.refine(p=>Number(Boolean(p.nativeSpec))+p.panels.length+p.suggestions.length+Number(Boolean(p.agenda))+Number(Boolean(p.scenario))+Number(Boolean(p.report))+Number(Boolean(p.calculator))+(p.tables?.length??0)+(p.files?.length??0)>0).refine(p=>{
+export const richPresentationSchema=richPresentationBaseSchema.refine(p=>Number(Boolean(p.nativeSpec))+Number(Boolean(p.pdfSpec))+p.panels.length+p.suggestions.length+Number(Boolean(p.agenda))+Number(Boolean(p.scenario))+Number(Boolean(p.report))+Number(Boolean(p.calculator))+(p.tables?.length??0)+(p.files?.length??0)>0).refine(p=>{
  if(!p.groups)return true;
  return validPresentationGroups(p.groups,p.groups.some(g=>g.id)?allPresentationLeaves(p):presentationLeaves(p),p.panels);
 });
@@ -211,6 +213,7 @@ export function recoverRichPresentation(raw:unknown):RichPresentation|undefined{
   suggestions:list(z.string().trim().min(1),r.suggestions),
   ...(r.report===true?{report:true}:{}),
   ...(native?{nativeSpec:native}:{}),
+  ...(valid(richPresentationBaseSchema.shape.pdfSpec,r.pdfSpec)?{pdfSpec:r.pdfSpec}:{}),
   ...(valid(richPresentationBaseSchema.shape.files,r.files)?{files:r.files}:{}),
   ...(valid(agendaSchema,r.agenda)?{agenda:r.agenda}:{}),
   ...(valid(scenarioComparisonSchema,r.scenario)?{scenario:r.scenario}:{}),
@@ -218,9 +221,33 @@ export function recoverRichPresentation(raw:unknown):RichPresentation|undefined{
  return repaired.success?repaired.data:undefined;
 }
 
+/** Text-only surfaces retain authored PDF information, including unresolved
+ * state or unfamiliar components. Do not execute document bindings here. */
+export function pdfDocumentDataLines(spec:Record<string,unknown>):string[]{
+ const lines:string[]=[];
+ const elements=spec.elements;
+ if(elements&&typeof elements==="object"&&!Array.isArray(elements)){
+  for(const node of Object.values(elements)){
+   if(!node||typeof node!=="object"||Array.isArray(node))continue;
+   const props=(node as Record<string,unknown>).props;
+   if(!props||typeof props!=="object"||Array.isArray(props))continue;
+   const values=props as Record<string,unknown>;
+   for(const [key,value] of Object.entries(values)){
+    if(value==null||["src","href","color","backgroundColor","borderColor","fontSize","fontWeight","fontStyle","align","level","width","height","margin","padding","orientation","size"].includes(key))continue;
+    if(typeof value==="string")lines.push(value);
+    else if(Array.isArray(value)&&key==="rows")for(const row of value)lines.push(Array.isArray(row)?row.map(cell=>cell==null?"Not recorded":typeof cell==="object"?JSON.stringify(cell):String(cell)).join(" | "):JSON.stringify(row));
+    else lines.push(key+": "+JSON.stringify(value));
+   }
+  }
+ }
+ if(spec.state)lines.push("Document data: "+JSON.stringify(spec.state));
+ return lines.length?lines:[JSON.stringify(spec)];
+}
+
 /** Preserve authored visual data on the existing text-only background report surfaces. */
 export function presentationDataLines(block:RichPresentation):string[]{
  const lines:string[]=[];
+ if(block.pdfSpec)lines.push(...pdfDocumentDataLines(block.pdfSpec));
  if(block.nativeSpec){
   const spec=block.nativeSpec,stateModel=spec.state??{};
   const pending:{key:string;ctx:PropResolutionContext}[]=[{key:spec.root,ctx:{stateModel,functions:nativeFunctions}}];

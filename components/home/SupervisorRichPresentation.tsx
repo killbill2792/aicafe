@@ -198,12 +198,14 @@ function ScenarioView({scenario,locale}:{scenario:ScenarioComparison;locale:stri
   {!selected.editor&&<p className="text-[0.8125rem] text-ink-muted">{copy.scenarioNotice}</p>}
  </section>;
 }
-type ControlContext={data:RichPresentation;message?:Parameters<typeof presentationReport>[1]&{threadId:string};attachments?:{threadId:string;items:StoredAttachment[]}|null;onSuggest:(text:string)=>void;disabled:boolean};
+type ControlContext={data:RichPresentation;message?:Parameters<typeof presentationReport>[1]&{threadId:string;id:string};attachments?:{threadId:string;items:StoredAttachment[]}|null;onSuggest:(text:string)=>void;disabled:boolean};
 const PresentationControls=createContext<ControlContext|null>(null);
 function ControlView({kind}:{kind:unknown}){
  const context=useContext(PresentationControls);
  if(!context)return null;
  const {data,message,attachments,onSuggest,disabled}=context;
+ const documentIndex=data.pdfSpec?message?.blocks?.findIndex(block=>block&&typeof block==="object"&&"pdfSpec" in block&&JSON.stringify(block.pdfSpec)===JSON.stringify(data.pdfSpec))??-1:-1;
+ const pdfHref=message?"/api/ai/threads/"+encodeURIComponent(message.threadId)+"/messages/"+encodeURIComponent(message.id)+"/report"+(documentIndex>=0?"?document="+documentIndex:""):null;
  const download=()=>{
   if(!message||!data.report)return;
   const url=URL.createObjectURL(new Blob([presentationReport(data,message)],{type:"text/plain;charset=utf-8"}));
@@ -218,7 +220,8 @@ function ControlView({kind}:{kind:unknown}){
      return <a key={id} href={"/api/ai/threads/"+encodeURIComponent(message.threadId)+"/attachments/"+encodeURIComponent(id)} target="_blank" rel="noopener noreferrer" className="flex min-h-12 min-w-0 items-center gap-2 rounded-lg border border-line px-3 text-[0.9375rem] text-ink underline"><Paperclip size={17} className="shrink-0" aria-hidden="true"/><span className="min-w-0 break-all">{file?.originalName??copy.sourceFile+" "+(i+1)}</span></a>;
     })}
   </section>}
-  {kind==="report"&&data.report&&message&&<button type="button" onClick={download} className="min-h-12 rounded-xl border border-line px-4 text-start text-[0.9375rem] font-medium text-ink hover:bg-surface2">{copy.downloadReport}</button>}
+  {kind==="report"&&data.report&&message&&<div className="flex flex-wrap gap-2">{pdfHref&&<a href={pdfHref} download className="inline-flex min-h-12 items-center rounded-xl border border-line px-4 text-[0.9375rem] font-medium text-ink hover:bg-surface2">{copy.downloadPdf}</a>}<button type="button" onClick={download} className="min-h-12 rounded-xl border border-line px-4 text-start text-[0.9375rem] font-medium text-ink hover:bg-surface2">{copy.downloadReport}</button></div>}
+  {kind==="report"&&data.report&&!message&&<p role="status" className="text-sm text-ink-muted">{copy.reportPreparing}</p>}
   {kind==="suggestions"&&data.suggestions.length>0&&<div className="flex flex-wrap gap-2">{data.suggestions.map(prompt=><button key={prompt} type="button" disabled={disabled} onClick={()=>onSuggest(prompt)} className="min-h-12 max-w-full rounded-full border border-line px-4 py-2 text-start text-[0.9375rem] leading-snug text-ink hover:bg-surface2 focus-visible:outline-solid focus-visible:outline-2 focus-visible:outline-ink disabled:opacity-50">{prompt}</button>)}</div>}
  </>;
 }
@@ -294,7 +297,7 @@ function NativeWidget({spec,locale}:{spec:Spec;locale:string}){
  },[locale]);
  return <div className="min-w-0 max-w-full" data-testid="luna-native-widget"><JSONUIProvider registry={registry} store={store} functions={nativeFunctions}><Renderer spec={spec} registry={registry} fallback={({children})=><div className="min-w-0"><p role="status">This part of the answer could not be displayed.</p>{children}</div>}/></JSONUIProvider></div>;
 }
-export default function SupervisorRichPresentation({block,locale,onSuggest=()=>{},disabled,message,attachments}:{block:unknown;locale:string;onSuggest?:(text:string)=>void;disabled:boolean;message?:Parameters<typeof presentationReport>[1]&{threadId:string};attachments?:{threadId:string;items:StoredAttachment[]}|null}){
+export default function SupervisorRichPresentation({block,locale,onSuggest=()=>{},disabled,message,attachments}:{block:unknown;locale:string;onSuggest?:(text:string)=>void;disabled:boolean;message?:Parameters<typeof presentationReport>[1]&{threadId:string;id:string};attachments?:{threadId:string;items:StoredAttachment[]}|null}){
  const data=useMemo(()=>recoverRichPresentation(block),[block]);
  const registry=useMemo<ComponentRegistry>(()=>({
   Layout:({element,children})=>{
