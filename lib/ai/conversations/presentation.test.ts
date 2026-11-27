@@ -100,3 +100,13 @@ it("keeps all safe leaves when a group layout is invalid, rather than rejecting 
  expect(recoverRichPresentation(b)).toMatchObject({panels:[p]});
  expect(recoverRichPresentation(b)?.groups).toBeUndefined();
 });
+
+it("keeps incompatible authored leaves alongside valid siblings rather than losing their information",()=>{
+ const raw={type:"rich_presentation",version:1,layout:"grid",panels:[{kind:"metric",title:"Unbound date",unit:"count",points:[{label:"Recorded orders",value:17}]}],tables:[{title:"Custom table",columns:["Name","Quantity"],rows:[["Coffee",7]]}],suggestions:["Continue"]};
+ const result=recoverRichPresentation(raw);
+ expect(result?.suggestions).toEqual(["Continue"]);
+ expect(result?.nativeSpec).toBeDefined();
+ expect(JSON.stringify(result?.nativeSpec)).toContain("Recorded orders");
+ expect(JSON.stringify(result?.nativeSpec)).toContain("Coffee");
+ expect(richPresentationSchema.safeParse(result).success).toBe(true);
+});
