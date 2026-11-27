@@ -236,41 +236,35 @@ jobs:
             exit 0
           fi
           trusted=$(mktemp -d "$RUNNER_TEMP/luna-policy.XXXXXX")
-          git archive "$approved" -- package.json package-lock.json "$policy" | tar -x -C "$trusted"
+          git archive "$approved" -- package.json package-lock.json "$policy" \
+            scripts/guards/lib/luna-boundary-proof.mjs scripts/acceptance/owner-gate.mjs \
+            scripts/e2e/targeted.mjs | tar -x -C "$trusted"
           (cd "$trusted" && npm ci --ignore-scripts --no-audit --no-fund)
+          echo "LUNA_TRUSTED_POLICY_DIR=$trusted" >> "$GITHUB_ENV"
           LUNA_POLICY_BASE="$approved" node "$trusted/$policy" --list-regressions > "$RUNNER_TEMP/luna-regressions"
           # A standalone maintenance PR must still satisfy the reviewed behavior.
-          if ! git diff --quiet "$approved" "$HEAD_SHA" -- "$policy" scripts/guards/luna-boundary.test.ts scripts/db/luna-engine-race.mjs; then
+          if ! git diff --quiet "$approved" "$HEAD_SHA" -- "$policy" scripts/guards/luna-boundary.test.ts scripts/guards/lib/luna-boundary-proof.mjs scripts/db/luna-engine-race.mjs; then
             git show "$approved:scripts/guards/luna-boundary.test.ts" > "$RUNNER_TEMP/luna-reviewed-tests"
           fi
       - name: Install locked dependencies
-        run: npm ci
+        run: npm ci --ignore-scripts
       - name: Run reviewed guard cases and pinned legacy regressions
+        env:
+          HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
         run: |
           set -euo pipefail
-          run_proof() {
-            local result
-            result=$(mktemp)
-            node_modules/.bin/vitest run --reporter=json --outputFile="$result" "./$1"
-            node --input-type=module - "$result" "$1" <<'NODE'
-          import fs from 'node:fs';
-          import {resolve} from 'node:path';
-          import {validateReport} from './scripts/acceptance/owner-gate.mjs';
-          const [result, path] = process.argv.slice(2);
-          const report = JSON.parse(fs.readFileSync(result));
-          report.testResults = report.testResults.filter(row => resolve(row.name) === resolve(path));
-          validateReport(report,[path]);
-          NODE
-          }
+          if [[ -z "${LUNA_TRUSTED_POLICY_DIR:-}" ]]; then exit 0; fi
+          verifier="$LUNA_TRUSTED_POLICY_DIR/scripts/guards/lib/luna-boundary-proof.mjs"
           if [[ -f "$RUNNER_TEMP/luna-reviewed-tests" ]]; then
             suite=$(mktemp scripts/guards/luna-reviewed-XXXXXX.test.ts)
             trap 'rm -f "$suite"' EXIT
             cp "$RUNNER_TEMP/luna-reviewed-tests" "$suite"
-            run_proof "$suite"
+            node "$verifier" "$suite"
           fi
           if [[ -s "$RUNNER_TEMP/luna-regressions" ]]; then
             while IFS= read -r -d '' proof; do
-              run_proof "$proof"
+              git diff --quiet "$HEAD_SHA" -- "$proof"
+              node "$verifier" "$proof"
             done < "$RUNNER_TEMP/luna-regressions"
           fi
       - name: Run every repository guard
@@ -290,6 +284,9 @@ jobs:
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
       - uses: actions/setup-node@v4
         with:
           node-version: 22
@@ -311,7 +308,19 @@ jobs:
       - name: Verify Luna database oracle independently of the suite launcher
         env:
           SUPERVISOR_RUN_DB_URL: postgresql://postgres:postgres@127.0.0.1:54322/postgres
-        run: node scripts/db/luna-engine-race.mjs
+        run: |
+          set -euo pipefail
+          approved=$(git rev-parse refs/remotes/origin/main^{commit})
+          oracle=scripts/db/luna-engine-race.mjs
+          if git cat-file -e "$approved:$oracle" 2>/dev/null; then
+            trusted=$(mktemp -d "$RUNNER_TEMP/luna-db.XXXXXX")
+            git archive "$approved" -- package.json package-lock.json "$oracle" \
+              scripts/guards/luna-boundary.mjs | tar -x -C "$trusted"
+            (cd "$trusted" && npm ci --ignore-scripts --no-audit --no-fund)
+            node "$trusted/$oracle"
+            if git diff --quiet "$approved" HEAD -- "$oracle"; then exit 0; fi
+          fi
+          node "$oracle"
       - name: Run every SQL and database test
         env:
           LUNA_DB_ORACLE_VERIFIED: "true"

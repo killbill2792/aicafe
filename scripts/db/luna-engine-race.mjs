@@ -6,6 +6,7 @@ import { replacement } from '../guards/luna-boundary.mjs';
 import { randomUUID } from 'node:crypto';
 import { createServer } from 'node:http';
 import { once } from 'node:events';
+import { resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { Client } from 'pg';
 
@@ -48,7 +49,8 @@ async function run(connectionString) {
       console.log('Migrated run and effect uniqueness verified. Two-engine execution awaits the replacement.');
       return;
     }
-    const { prepareRace } = await import('./luna-engine-driver.mjs');
+    const driver = pathToFileURL(resolve('scripts/db/luna-engine-driver.mjs')).href;
+    const { prepareRace } = await import(driver);
     for (const pin of ['legacy','replacement']) {
       const requestKey=randomUUID(), token=randomUUID(), executions=[], deliveries=[];
       const server=createServer((req,res) => {

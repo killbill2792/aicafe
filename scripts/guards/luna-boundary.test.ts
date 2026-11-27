@@ -1,9 +1,10 @@
 import {execFileSync, spawnSync} from 'node:child_process';
-import {mkdtempSync, mkdirSync, rmSync, writeFileSync} from 'node:fs';
+import {mkdtempSync, mkdirSync, rmSync, symlinkSync, writeFileSync} from 'node:fs';
 import {tmpdir} from 'node:os';
 import {dirname, join, resolve} from 'node:path';
 import {afterEach, beforeEach, describe, expect, it} from 'vitest';
 import {verifyRace} from '../db/luna-engine-race.mjs';
+import {verifyExactRegression} from './lib/luna-boundary-proof.mjs';
 
 const guard = resolve('scripts/guards/luna-boundary.mjs');
 const legacy = 'lib/ai/conversations/agentRunner.server.ts';
@@ -62,31 +63,88 @@ describe('Luna repository boundary',()=>{
       export const available = metrics['createRequire'];
       export const enabled = process.env.ENABLED;
       export const uuid = globalThis.crypto.randomUUID;
+      export function format(process: { format: string }, require: () => string, Function: string) {
+        return [process.format, require(), Function];
+      }
     `);
     expect(run()).toEqual({status:0,errors:''});
+  });
+  it('allows only declared and locked external packages and reviewed Node data APIs',()=>{
+    put('package.json', JSON.stringify({dependencies:{'@example/metrics':'1.0.0','linked':'file:lib/local'}}));
+    put('package-lock.json',JSON.stringify({packages:{
+      'node_modules/@example/metrics':{version:'1.0.0',resolved:'https://example.invalid/metrics.tgz',integrity:'sha512-test'},
+      'node_modules/linked':{resolved:'lib/local',link:true},
+    }}));
+    const path='lib/luna/runtime/index.ts';
+    put(path,"export * from '@example/metrics/reports'; export {createHash} from 'node:crypto';");
+    expect(run()).toEqual({status:0,errors:''});
+    put(path,"export * from 'linked'; export * from '@example/metrics/../local'; export * from 'node:unknown-future-api';");
+    const errors=run().errors;
+    expect(errors).toContain('undeclared package linked');
+    expect(errors).toContain('undeclared package @example/metrics/../local');
+    expect(errors).toContain('unapproved Node builtin node:unknown-future-api');
+  });
+  it('checks local aliases even when the spelling also names a builtin',()=>{
+    put('tsconfig.json',JSON.stringify({compilerOptions:{moduleResolution:'bundler',paths:{crypto:['./'+legacy]}}}));
+    put('lib/luna/runtime/index.ts',"export {run} from 'crypto';");
+    expect(run().errors).toContain('forbidden dependency '+legacy);
+  });
+  it('checks import and require package conditions behind declarations',()=>{
+    put('package.json',JSON.stringify({name:'fixtures',type:'module',imports:{
+      '#shared':{types:'./lib/contract.d.ts',import:'./lib/metrics/core.ts',require:'./'+legacy},
+    }}));
+    put('lib/contract.d.ts','export declare const sales:number;');
+    const path='lib/luna/runtime/index.ts';
+    put(path,"export {sales} from '#shared';");
+    expect(run()).toEqual({status:0,errors:''});
+    put(path,"export const report = require('#shared');");
+    expect(run().errors).toContain('forbidden dependency '+legacy);
+  });
+  it('checks Next runtime conditions and treats browser rewrites as reviewed configuration',()=>{
+    put('package.json',JSON.stringify({name:'fixtures',type:'module',imports:{
+      '#shared':{browser:'./'+legacy,default:'./lib/metrics/core.ts'},
+    }}));
+    put('lib/luna/runtime/index.ts',"export {sales} from '#shared';");
+    expect(run().errors).toContain('forbidden dependency '+legacy);
+    put('package.json',JSON.stringify({browser:{'./lib/metrics/core.ts':'./'+legacy}}));
+    expect(run().errors).toContain('package.json:1: missing independently reviewed');
+  });
+  it('checks the automatic JSX runtime through the same local graph',()=>{
+    put('lib/luna/runtime/index.tsx','/** @jsxImportSource ../../component-runtime */\nexport const View = <div />;');
+    put('lib/component-runtime/jsx-runtime.ts',"export * from '@/lib/ai/conversations/agentRunner.server';");
+    expect(run().errors).toContain('forbidden dependency '+legacy);
+  });
+  it('rejects missing local assets, symlinks and runtime imports of test sources',()=>{
+    put('lib/luna/runtime/index.ts',"import './missing.css'; import './link.svg'; import './fake.test';");
+    put('lib/luna/runtime/fake.test.ts','export {};');
+    symlinkSync('missing.css',join(dir,'lib/luna/runtime/link.svg'));
+    const errors=run().errors;
+    expect(errors).toContain('unresolved local dependency or undeclared package ./missing.css');
+    expect(errors).toContain('symlink crosses an unchecked module boundary');
+    expect(errors).toContain('forbidden dependency lib/luna/runtime/fake.test.ts');
   });
   it.each([
     ["const loader = require; export { loader };", 'computed module loading'],
     ["const loader = module.require; export { loader };", 'computed module loading'],
     ["const { require: loader } = module; export { loader };", 'computed module loading'],
     ["const loader = globalThis['require']; export { loader };", 'computed module loading'],
-    ["export { createRequire as loader } from 'node:module';", 'Node runtime loader'],
-    ["export const loader = import('module');", 'Node runtime loader'],
+    ["export { createRequire as loader } from 'node:module';", 'unapproved Node builtin'],
+    ["export const loader = import('module');", 'unapproved Node builtin'],
     ["export const lookup = process.getBuiltinModule;", 'computed module loading'],
     ["const { getBuiltinModule } = process; export { getBuiltinModule };", 'computed module loading'],
     ["const { 'getBuiltinModule': lookup } = process; export { lookup };", 'computed module loading'],
     ["const runtime = process; export const lookup = runtime['getBuiltinModule'];", 'computed module loading'],
     ["export const lookup = globalThis.process.getBuiltinModule;", 'computed module loading'],
-    ["export { getBuiltinModule as lookup } from 'node:process';", 'Node runtime loader'],
+    ["export { getBuiltinModule as lookup } from 'node:process';", 'unapproved Node builtin'],
     ["export const evaluate = eval;", 'computed module loading'],
     ["export const evaluate = new Function('return 1');", 'computed module loading'],
     ["export const evaluate = globalThis['eval'];", 'computed module loading'],
-    ["export { compileFunction } from 'node:vm';", 'Node runtime loader'],
-    ["export { Worker } from 'node:worker_threads';", 'Node runtime loader'],
-    ["export { spawn } from 'child_process';", 'Node runtime loader'],
-    ["export { fork } from 'node:cluster';", 'Node runtime loader'],
-    ["export { start } from 'node:repl';", 'Node runtime loader'],
-    ["export { Session } from 'node:inspector/promises';", 'Node runtime loader'],
+    ["export { compileFunction } from 'node:vm';", 'unapproved Node builtin'],
+    ["export { Worker } from 'node:worker_threads';", 'unapproved Node builtin'],
+    ["export { spawn } from 'child_process';", 'unapproved Node builtin'],
+    ["export { fork } from 'node:cluster';", 'unapproved Node builtin'],
+    ["export { start } from 'node:repl';", 'unapproved Node builtin'],
+    ["export { Session } from 'node:inspector/promises';", 'unapproved Node builtin'],
   ])('rejects unverifiable module loader references (%s)', (source, diagnostic)=>{
     put('lib/luna/runtime/index.ts',"export * from '../../adapter';");
     put('lib/adapter.ts',source);
@@ -150,6 +208,14 @@ describe('Luna repository boundary',()=>{
     put('lib/ai/agent/jobState.ts','export const value=1;');
     expect(run('feat/worker').errors).toContain('forbidden dependency lib/ai/agent/jobState.ts');
   });
+  it('allows a module whose declaration references legacy types without a runtime edge',()=>{
+    put('lib/ai/agent/jobState.ts','export type Owner=number;');
+    base=commit();
+    put('lib/luna/runtime/index.ts',"export * from '../../port.js';");
+    put('lib/port.d.ts',"import {Owner} from './ai/agent/jobState'; export declare const value: Owner;");
+    put('lib/port.js','export const value=1;');
+    expect(run()).toEqual({status:0,errors:''});
+  });
   it('protects the launcher and CI even on a control-only worker branch',()=>{
     put('scripts/guards/run-all.mjs','// changed launcher');
     put('.github/workflows/ai-cafe-pr-baseline.yml','jobs: {}');
@@ -192,6 +258,8 @@ describe('Luna repository boundary',()=>{
     expect(run('feature/database')).toEqual({status:0,errors:''});
     put('scripts/db/run-all.sh','sql_step unrelated.sql "Other service"\n');
     expect(run('feature/database').errors).toContain('retain the registered');
+    put('scripts/db/run-all.sh','# node scripts/db/luna-engine-race.mjs\n');
+    expect(run('feature/database').errors).toContain('retain the registered');
   });
   it('blocks a mixed enforcement change and a missing database driver',()=>{
     put('scripts/guards/run-all.mjs',''); put('lib/luna/runtime/index.ts','export {};');
@@ -206,6 +274,17 @@ describe('Luna repository boundary',()=>{
     put('lib/metrics/core.ts','export const sales = 2;');
     expect(run('feat/unrelated').status).toBe(0);
   });
+});
+it('requires the approved file and every test to actually execute',()=>{
+  const file='tests/repair.test.ts';
+  const row={name:'/repo/'+file,status:'passed',assertionResults:[{status:'passed'}]};
+  const results={testResults:[row],numTotalTests:1,numPassedTests:1,
+    numFailedTests:0,numPendingTests:0,numTodoTests:0};
+  expect(verifyExactRegression(results,'/repo',file).passed).toBe(1);
+  expect(()=>verifyExactRegression({...results,testResults:[{...row,name:'/repo/other/'+file}]},'/repo',file)).toThrow('exact approved');
+  expect(()=>verifyExactRegression({...results,testResults:[row,row]},'/repo',file)).toThrow('exact approved');
+  expect(()=>verifyExactRegression({...results,testResults:[{...row,assertionResults:[]}]},'/repo',file)).toThrow();
+  expect(()=>verifyExactRegression({...results,numPendingTests:1},'/repo',file)).toThrow();
 });
 it('fails when two engines run, a destination receives a duplicate, or the database lacks a verified receipt',()=>{
   const one={pin:'legacy', executions:['legacy'], deliveries:['key'], token:'key',

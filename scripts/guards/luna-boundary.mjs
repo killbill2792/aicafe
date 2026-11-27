@@ -1,4 +1,5 @@
 import { execFileSync } from 'node:child_process';
+import { isBuiltin } from 'node:module';
 import { posix } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import ts from 'typescript';
@@ -10,7 +11,7 @@ const code = /\.[cm]?[jt]sx?$/;
 const test = /(?:\.(?:test|spec)\.|(?:^|\/)(?:__tests__|__fixtures__)\/)/;
 const lunaSource = p => roots.some(root => p.startsWith(root)) && code.test(p) && !test.test(p);
 export const replacement = p => lunaSource(p) && !p.startsWith('lib/luna/shared/');
-const shared = p => /^lib\/(?:luna\/shared|auth|access|metrics|calc|connectors|data|supabase|inventory|staffCommunication|staffCoordination|purchasing|operating|pos)\//.test(p);
+const shared = p => /^lib\/(?:luna\/shared|ai\/agent\/tools|auth|access|metrics|calc|connectors|data|supabase|inventory|staffCommunication|staffCoordination|purchasing|operating|pos)\//.test(p);
 const protectedPath = p => [
   /^lib\/whatsapp\/supervisor\.server\./,
   /^lib\/ai\/agent\/(?:loop|jobs|persist)\.server\./,
@@ -23,11 +24,25 @@ const protectedPath = p => [
 // Orchestration helpers in the old agent package are private by default. Its
 // business tool adapters remain available subject to the same transitive walk.
 const legacyDependency = p => protectedPath(p) || /^lib\/ai\/agent\/(?!tools\/)/.test(p);
-const controls = p => /^scripts\/(?:guards\/(?:luna-boundary[^/]*|run-all\.mjs)|db\/(?:luna-engine-race\.mjs|run-all\.sh)|acceptance\/owner-gate\.mjs)$/.test(p) ||
-  p === '.github/workflows/ai-cafe-pr-baseline.yml';
-const opaqueNodeModules = new Set([
-  'module', 'process', 'vm', 'repl', 'inspector', 'inspector/promises',
-  'worker_threads', 'child_process', 'cluster',
+const controls = p => p === 'AGENTS.md' ||
+  /^scripts\/(?:guards\/(?:luna-boundary[^/]*|lib\/luna-boundary-proof\.mjs|run-all\.mjs)|db\/(?:luna-engine-race\.mjs|run-all\.sh)|acceptance\/owner-gate\.mjs|e2e\/targeted\.mjs)$/.test(p) ||
+  /^(?:next\.config\.[^/]+|vitest\.config\.[^/]+|\.github\/workflows\/ai-cafe-pr-baseline\.yml)$/.test(p);
+// Package modules can supply dependencies through the lockfile. For Node's
+// built-in modules, admit data and I/O APIs the application can inspect.
+const nodeDataModules = new Set([
+  'assert', 'assert/strict', 'async_hooks', 'buffer', 'crypto', 'events',
+  'fs', 'fs/promises', 'http', 'https', 'os', 'path', 'path/posix', 'path/win32',
+  'perf_hooks', 'querystring', 'stream', 'stream/consumers', 'stream/promises',
+  'stream/web', 'string_decoder', 'timers', 'timers/promises', 'url', 'util',
+  'util/types', 'zlib',
+]);
+const processMembers = new Set(['arch', 'cwd', 'env', 'hrtime', 'platform', 'uptime', 'version', 'versions']);
+const globalMembers = new Set([
+  'AbortController', 'AbortSignal', 'Buffer', 'Headers', 'Request', 'Response',
+  'TextDecoder', 'TextEncoder', 'URL', 'URLSearchParams', 'WebSocket', 'atob',
+  'btoa', 'clearInterval', 'clearTimeout', 'console', 'crypto', 'document',
+  'fetch', 'location', 'navigator', 'performance', 'process', 'queueMicrotask',
+  'setInterval', 'setTimeout', 'structuredClone', 'window',
 ]);
 const git = (...args) => execFileSync('git', args, {encoding:'utf8', maxBuffer:64*1024*1024});
 
@@ -47,16 +62,35 @@ function snapshot(ref) {
   return { files, read };
 }
 
-function imports(file, source) {
+function imports(file, source, compilerOptions) {
   const out = [];
+  let hasJsx = false;
+  const filename = '/repo/' + file;
+  const parsed = ts.createSourceFile(filename, source, ts.ScriptTarget.Latest, true);
+  // Bind local names without executing or resolving anything. Type-only
+  // references and ordinary local variables can share names with host globals.
+  let checker;
   const opaqueGlobals = new Set(['require', 'eval', 'Function']);
-  const nodeProcessLoaders = new Set(['getBuiltinModule', 'mainModule']);
+  function hostIdentifier(node, name) {
+    if (!ts.isIdentifier(node) || node.text !== name) return false;
+    if (!checker) {
+      const options = {noLib:true, noResolve:true, noEmit:true, types:[]};
+      const host = ts.createCompilerHost(options);
+      host.getSourceFile = path => path === filename ? parsed : undefined;
+      checker = ts.createProgram([filename], options, host).getTypeChecker();
+    }
+    return !(ts.isShorthandPropertyAssignment(node.parent)
+      ? checker.getShorthandAssignmentValueSymbol(node.parent)
+      : checker.getSymbolAtLocation(node))?.declarations?.length;
+  }
   function directLoader(call) {
-    return ts.isCallExpression(call) &&
-      ['require', 'module.require', 'import'].includes(call.expression.getText());
+    if (!ts.isCallExpression(call)) return false;
+    const fn = call.expression;
+    return fn.kind === ts.SyntaxKind.ImportKeyword || hostIdentifier(fn, 'require') ||
+      (ts.isPropertyAccessExpression(fn) && fn.name.text === 'require' && hostIdentifier(fn.expression, 'module'));
   }
   const isMemberAccess = node => ts.isPropertyAccessExpression(node) || ts.isElementAccessExpression(node);
-  const isGlobalObject = node => ts.isIdentifier(node) && (node.text === 'globalThis' || node.text === 'global');
+  const isGlobalObject = node => hostIdentifier(node, 'globalThis') || hostIdentifier(node, 'global');
   function memberName(node) {
     if (ts.isPropertyAccessExpression(node)) return node.name.text;
     if (ts.isElementAccessExpression(node) && ts.isStringLiteralLike(node.argumentExpression))
@@ -69,51 +103,71 @@ function imports(file, source) {
     if (ts.isPropertyAccessExpression(parent) && parent.name === node) return false;
     return parent.name !== node || ts.isShorthandPropertyAssignment(parent);
   }
-  function opaqueRuntimeObjectAccess(object, forbidden) {
+  function opaqueRuntimeObjectAccess(object, permitted) {
     const access = object.parent;
     // A reference to the whole object can be rebound or destructured. A named
     // member access can be checked here without rejecting unrelated names.
     if (ts.isTypeOfExpression(access)) return false;
     if (!isMemberAccess(access) || access.expression !== object) return true;
     const name = memberName(access);
-    return name === null || forbidden.has(name);
+    return !permitted.has(name);
   }
   function requiresInspection(node) {
     if (isMemberAccess(node) && isGlobalObject(node.expression) && memberName(node) === 'process')
-      return opaqueRuntimeObjectAccess(node, nodeProcessLoaders);
+      return opaqueRuntimeObjectAccess(node, processMembers);
     if (!isIdentifierReference(node)) return false;
     const parent = node.parent;
-    if (isGlobalObject(node)) return opaqueRuntimeObjectAccess(node, opaqueGlobals);
-    if (node.text === 'process') return opaqueRuntimeObjectAccess(node, nodeProcessLoaders);
-    if (node.text === 'module' && ts.isPropertyAccessExpression(parent) && parent.expression === node) {
+    if (isGlobalObject(node)) return opaqueRuntimeObjectAccess(node, globalMembers);
+    if (hostIdentifier(node, 'process')) return opaqueRuntimeObjectAccess(node, processMembers);
+    if (hostIdentifier(node, 'module') && ts.isPropertyAccessExpression(parent) && parent.expression === node) {
       if (parent.name.text === 'exports') return false;
       if (parent.parent.expression === parent && directLoader(parent.parent)) return false;
     }
-    if (node.text !== 'module' && !opaqueGlobals.has(node.text)) return false;
+    if (!(node.text === 'module' || opaqueGlobals.has(node.text)) || !hostIdentifier(node, node.text)) return false;
     return parent.expression !== node || !directLoader(parent);
   }
   function visit(n) {
     if (ts.isTypeReferenceNode(n) || ts.isTypeQueryNode(n)) return;
+    if (ts.isJsxElement(n) || ts.isJsxSelfClosingElement(n) || ts.isJsxFragment(n)) hasJsx = true;
     if (ts.isImportDeclaration(n) || ts.isExportDeclaration(n)) {
       const clause = n.importClause || n.exportClause;
       const members = clause?.namedBindings?.elements || clause?.elements;
       const erased = n.isTypeOnly || clause?.isTypeOnly ||
         (!clause?.name && members?.length && members.every(member=>member.isTypeOnly));
       if (erased) return;
-      if (n.moduleSpecifier) out.push(n.moduleSpecifier.text);
+      if (n.moduleSpecifier) out.push({spec:n.moduleSpecifier.text, mode:ts.ModuleKind.ESNext});
     } else if (ts.isExternalModuleReference(n) && !n.parent.isTypeOnly) {
-      out.push(ts.isStringLiteralLike(n.expression) ? n.expression.text : null);
+      out.push(ts.isStringLiteralLike(n.expression) ? {spec:n.expression.text, mode:ts.ModuleKind.CommonJS} : null);
     } else if (directLoader(n)) {
       const arg = n.arguments[0];
-      out.push(arg && ts.isStringLiteralLike(arg) ? arg.text : null);
+      const mode = n.expression.kind === ts.SyntaxKind.ImportKeyword ? ts.ModuleKind.ESNext : ts.ModuleKind.CommonJS;
+      out.push(arg && ts.isStringLiteralLike(arg) ? {spec:arg.text, mode} : null);
     } else if (requiresInspection(n)) {
       out.push(null);
     }
     if ((ts.isImportSpecifier(n) || ts.isExportSpecifier(n)) && n.isTypeOnly) return;
     ts.forEachChild(n,visit);
   }
-  visit(ts.createSourceFile(file,source,ts.ScriptTarget.Latest,true));
+  visit(parsed);
+  if (hasJsx) {
+    const base = ts.getJSXImplicitImportBase(compilerOptions, parsed);
+    const spec = ts.getJSXRuntimeImport(base, compilerOptions);
+    if (spec) out.push({spec, mode:ts.ModuleKind.ESNext});
+  }
   return out;
+}
+
+const packageMetadata = (tree, path = 'package.json') => tree.files.has(path) ? JSON.parse(tree.read(path)) : {};
+
+function declaredPackages(tree) {
+  const manifest = packageMetadata(tree);
+  const lock = packageMetadata(tree, 'package-lock.json').packages ?? {};
+  const deps = {...manifest.dependencies, ...manifest.optionalDependencies, ...manifest.devDependencies};
+  return new Set(Object.keys(deps).filter(name => {
+    const item = lock['node_modules/' + name];
+    return typeof item?.version === 'string' && !item.link && /^https:\/\//.test(item.resolved ?? '') &&
+      typeof item.integrity === 'string';
+  }));
 }
 
 export function graphErrors(tree, seeds) {
@@ -131,34 +185,60 @@ export function graphErrors(tree, seeds) {
   if (!config || config.errors.some(e=>e.code!==18003)) throw Error('Invalid TypeScript configuration in Git tree');
   const {options} = config;
   options.baseUrl ??= root;
-  const aliases = Object.keys(options.paths ?? {});
-  function localSpecifier(spec) {
-    return /^(?:\.|@\/|\/|#)/.test(spec) || aliases.some(pattern => {
-      const star = pattern.indexOf('*');
-      return star < 0 ? pattern === spec :
-        spec.startsWith(pattern.slice(0,star)) && spec.endsWith(pattern.slice(star+1));
-    });
-  }
+  const packages = declaredPackages(tree);
+  const dataAsset = /\.(?:json|css|svg|png|jpe?g|webp)$/;
+  const cache = ts.createModuleResolutionCache(root, p => p, options);
+  const runtimeHost = {
+    ...host,
+    fileExists: p => !/\.d\.[cm]?ts$/.test(p) && host.fileExists(p),
+  };
+  const selfName = packageMetadata(tree).name;
+  const runtimeConditions = ['browser', 'react-server'].map(condition => ({
+    ...options, customConditions: [...(options.customConditions ?? []), condition],
+  }));
   const edges = new Map(), errorsFound = new Set();
   function dependencies(file) {
     if (edges.has(file)) return edges.get(file);
     const result = [];
-    for (const spec of imports(file,tree.read(file))) {
-      if (spec === null) { result.push({error:'computed module loading prevents dependency verification'}); continue; }
-      if (opaqueNodeModules.has(spec.replace(/^node:/, ''))) {
-        result.push({error:'Node runtime loader or evaluator prevents dependency verification'});
-        continue;
-      }
-      const found = ts.resolveModuleName(spec,root+'/'+file,options,host).resolvedModule;
+    function addRuntimeTarget(target) {
+      if (tree.files.get(target)?.mode === '120000' || code.test(target)) result.push({target});
+      else if (!dataAsset.test(target)) result.push({error:'unverified runtime file '+target});
+    }
+    for (const edge of imports(file,tree.read(file),options)) {
+      if (edge === null) { result.push({error:'computed module loading prevents dependency verification'}); continue; }
+      const {spec,mode} = edge;
+      const found = ts.resolveModuleName(spec,root+'/'+file,options,host,cache,undefined,mode).resolvedModule;
       if (found) {
         const target = posix.relative(root,found.resolvedFileName);
-        if (code.test(target)) result.push({target});
-        // TypeScript can resolve a declaration in front of its runtime sibling.
-        const runtime = target.replace(/\.d\.(ts|mts|cts)$/,(_,ext)=>({ts:'.js',mts:'.mjs',cts:'.cjs'})[ext]);
-        if (runtime !== target && tree.files.has(runtime)) result.push({target:runtime});
-      } else if (localSpecifier(spec) && !/\.(?:css|svg|png|jpe?g|webp)$/.test(spec)) {
-        result.push({error:'unresolved local dependency '+spec});
+        if (/\.d\.[cm]?ts$/.test(target)) {
+          // Run the same resolver with declarations hidden to follow runtime
+          // siblings and package conditions instead of guessing by extension.
+          const runtime = ts.resolveModuleName(spec,root+'/'+file,options,runtimeHost,undefined,undefined,mode).resolvedModule;
+          if (runtime) addRuntimeTarget(posix.relative(root,runtime.resolvedFileName));
+          else result.push({error:'no runtime source for '+spec});
+        } else addRuntimeTarget(target);
+        if (spec.startsWith('#') || (selfName && (spec === selfName || spec.startsWith(selfName + '/')))) {
+          // Next can choose a different branch for a browser or server build.
+          for (const condition of runtimeConditions) {
+            const runtime = ts.resolveModuleName(spec,root+'/'+file,condition,runtimeHost,undefined,undefined,mode).resolvedModule;
+            if (runtime) addRuntimeTarget(posix.relative(root,runtime.resolvedFileName));
+          }
+        }
+        continue;
       }
+      if (spec.startsWith('node:') || isBuiltin(spec)) {
+        if (!nodeDataModules.has(spec.replace(/^node:/, '')))
+          result.push({error:'unapproved Node builtin '+spec});
+        continue;
+      }
+      const asset = spec.startsWith('.') && posix.join(posix.dirname(file),spec);
+      if (asset && dataAsset.test(asset) && tree.files.has(asset)) {
+        if (tree.files.get(asset).mode === '120000') result.push({target:asset});
+        continue;
+      }
+      const packageName = spec.match(/^((?:@[\w.-]+\/)?[a-zA-Z0-9_][\w.-]*)(?:\/[\w.-]+)*$/)?.[1];
+      if (packageName && packages.has(packageName) && !spec.split('/').some(part => part === '.' || part === '..')) continue;
+      result.push({error:'unresolved local dependency or undeclared package '+spec});
     }
     edges.set(file,result);
     return result;
@@ -170,13 +250,14 @@ export function graphErrors(tree, seeds) {
       if (visited.has(key)) return;
       visited.add(key);
       const report = message => errorsFound.add(seed+':1: '+file+' '+message);
-      if (tree.files.get(file).mode === '120000') {
+      const entry = tree.files.get(file);
+      if (!entry || entry.mode === '120000') {
         report('symlink crosses an unchecked module boundary');
         return;
       }
       for (const {target,error} of dependencies(file)) {
         if (error) report(error);
-        else if (legacyDependency(target) || (sharedOnly && replacement(target) && !shared(target))) {
+        else if (test.test(target) || legacyDependency(target) || (sharedOnly && replacement(target) && !shared(target))) {
           report('forbidden dependency '+target);
         } else walk(target,sharedOnly || shared(target));
       }
@@ -205,7 +286,7 @@ export function audit(base, head, branch = '', trustedBase = base, regressions =
   const active = [...after.files.keys()].filter(replacement);
   const foundation = new Set(['AGENTS.md',ledger,'docs/plans/luna-rebuild-handoff.md',
     'scripts/db/luna-engine-race.mjs','scripts/db/run-all.sh','scripts/guards/run-all.mjs',
-    'scripts/guards/luna-boundary.mjs','scripts/guards/luna-boundary.test.ts',
+    'scripts/guards/luna-boundary.mjs','scripts/guards/luna-boundary.test.ts','scripts/guards/lib/luna-boundary-proof.mjs',
     '.github/workflows/ai-cafe-pr-baseline.yml']);
   if (branch === 'luna/complete-rebuild' && changed.some(p => !foundation.has(p)))
     return [ledger+':1: PR 594 is limited to development architecture and safeguards'];
@@ -222,10 +303,12 @@ export function audit(base, head, branch = '', trustedBase = base, regressions =
   // The shared DB runner regularly gains independent tests. Preserve its Luna
   // registration; the baseline DB job also runs the oracle directly.
   const dbRunner = 'scripts/db/run-all.sh';
-  const controlChanges = trustedChanges.filter(controls);
+  const browserMappingChanged = JSON.stringify(packageMetadata(trusted).browser) !== JSON.stringify(packageMetadata(after).browser);
+  const controlChanges = trustedChanges.filter(p => controls(p) || (p === 'package.json' && browserMappingChanged));
   const policyEdits = controlChanges.filter(p => p !== dbRunner);
+  const oracleRegistration = /^\s*(?:SUPERVISOR_RUN_DB_URL=\S+\s+)?node scripts\/db\/luna-engine-race\.mjs\s*$/m;
   if (trusted.files.has(policy) && controlChanges.includes(dbRunner) &&
-      (!after.files.has(dbRunner) || !after.read(dbRunner).includes('node scripts/db/luna-engine-race.mjs')))
+      (!after.files.has(dbRunner) || !oracleRegistration.test(after.read(dbRunner))))
     errors.push(dbRunner+':1: retain the registered Luna database oracle');
   if ((rebuild || legacyEdits.length) && policyEdits.length)
     errors.push(ledger+':1: change enforcement separately from replacement or protected legacy code');
