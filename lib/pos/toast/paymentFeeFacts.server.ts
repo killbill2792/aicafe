@@ -5,7 +5,7 @@ import {getOwnerConfirmedProcessingFeePlans,ownerConfirmedPlanForDate} from "../
 import {upsertProcessingFeeDailyFact,setProcessingFeeCandidateEligibility} from "../processingFees";
 import {readAllPages} from "./readAllPages";
 
-type Row={payment_ref:string;payment_type:string|null;payment_status:string|null;card_type:string|null;
+type Row={payment_ref:string;restaurant_guid:string;payment_type:string|null;payment_status:string|null;card_type:string|null;
  card_entry_mode:string|null;amount_cents:number|null;
  original_processing_fee_cents:number|null;
  processing_fee_cents?:number|null;fee_status?:string|null;fee_basis?:string|null};
@@ -52,9 +52,9 @@ export async function refreshToastPaymentFeeForDay(db:SupabaseClient,
   return {status:"not_installed" as const};
  if(raw.error)throw raw.error;
  const rows=await readAllPages((start,end)=>db.from("toast_payment_facts").select(
-  "payment_ref,payment_type,payment_status,card_type,card_entry_mode,amount_cents,original_processing_fee_cents,processing_fee_cents,fee_status,fee_basis")
+  "payment_ref,restaurant_guid,payment_type,payment_status,card_type,card_entry_mode,amount_cents,original_processing_fee_cents,processing_fee_cents,fee_status,fee_basis")
   .eq("business_id",businessId).eq("business_date",businessDate)
-  .order("payment_ref").range(start,end)) as Row[];
+  .order("payment_ref").order("restaurant_guid").range(start,end)) as Row[];
  const plans=await getOwnerConfirmedProcessingFeePlans(db,businessId);
  const plan=ownerConfirmedPlanForDate(plans,businessDate);
  let rules:ToastCardRule[]=[];
@@ -83,10 +83,19 @@ export async function refreshToastPaymentFeeForDay(db:SupabaseClient,
   // day refresh flooded the database disk and made the whole app time out.
   if(row.processing_fee_cents===next.processing_fee_cents&&row.fee_status===next.fee_status
    &&row.fee_basis===next.fee_basis)continue;
-  const {error}=await db.from("toast_payment_facts").update(next)
+  let write=db.from("toast_payment_facts").update(next)
    .eq("business_id",businessId).eq("business_date",businessDate)
-   .eq("payment_ref",row.payment_ref);
+   .eq("restaurant_guid",row.restaurant_guid).eq("payment_ref",row.payment_ref);
+  // A new capture receipt can verify the fee during this refresh. Apply the
+  // decision only while its provider inputs are still the values we read.
+  for(const column of ["payment_type","payment_status","card_type","card_entry_mode",
+    "amount_cents","original_processing_fee_cents"] as const){
+   const value=row[column];
+   write=value==null?write.is(column,null):write.eq(column,value);
+  }
+  const {data,error}=await write.select("payment_ref");
   if(error)throw error;
+  if(data?.length!==1)throw new Error("Toast payment evidence changed during fee refresh");
  }
  const covered=decisions.length>0&&await paymentCoverageComplete(db,businessId,businessDate);
  const missing=!covered||decisions.some(x=>x.decision.amountCents===null);
