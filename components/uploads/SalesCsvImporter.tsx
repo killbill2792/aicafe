@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState, useTransition } from "react";
+import { useMemo, useState, useSyncExternalStore, useTransition } from "react";
 import { Link } from "@/i18n/navigation";
 import { useTranslations } from "next-intl";
 import { detectCsvColumns } from "@/lib/pos/csv/csvUtils";
@@ -20,6 +20,8 @@ const FIELDS: { key: keyof SalesColumnMapping; required: boolean }[] = [
 ];
 
 type Stage = "idle" | "working" | "done" | "error";
+
+const subscribeToHydration = () => () => {};
 
 function interpolate(template: string, params?: Record<string, string | number>): string {
   if (!params) return template;
@@ -60,6 +62,8 @@ export default function SalesCsvImporter({
   };
 }) {
   const menuT = useTranslations("Menu");
+  // A file picked before hydration can lose its change event.
+  const canChooseFile = useSyncExternalStore(subscribeToHydration, () => true, () => false);
   const [headers, setHeaders] = useState<string[] | null>(null);
   const [rows, setRows] = useState<Record<string, string>[]>([]);
   const [source, setSource] = useState("");
@@ -161,6 +165,7 @@ export default function SalesCsvImporter({
           type="file"
           accept={UPLOAD_FILE_ACCEPT}
           className="sr-only"
+          disabled={!canChooseFile}
           onChange={(e) => {
             const file = e.target.files?.[0];
             if (file) void handleFile(file);

@@ -996,8 +996,22 @@ test("@money owner imports sales and retains unrecognized original CSV cells", a
   await db.connect();
   try {
     await login(page,own);
-    await openOwnedPage(page,own,"more/uploads/sales");
-    await page.locator('input[type="file"]').setInputFiles({name:"sales.csv",mimeType:"text/csv",buffer:Buffer.from(csv)});
+    const picker=page.locator('input[type="file"]');
+    const chunks="**/_next/static/chunks/**";
+    let releaseScripts;
+    const scripts=new Promise(resolve=>{releaseScripts=resolve;});
+    const pauseScripts=async route=>{await scripts;await route.continue();};
+    await page.route(chunks,pauseScripts);
+    try {
+      await page.goto("/en/more/uploads/sales",{waitUntil:"commit"});
+      await expect(picker).toBeDisabled();
+    }finally{
+      releaseScripts();
+    }
+    await expect(picker).toBeEnabled();
+    await page.unroute(chunks,pauseScripts);
+    await expect(page.getByText(own.name,{exact:true}).first()).toHaveCount(1);
+    await picker.setInputFiles({name:"sales.csv",mimeType:"text/csv",buffer:Buffer.from(csv)});
     for(const [label,column] of [["Date","Date"],["Item name","Item"],["Quantity sold","Quantity"],["Net sales","Total"]]){
       await page.getByRole("combobox",{name:label,exact:true}).selectOption(column);
     }
