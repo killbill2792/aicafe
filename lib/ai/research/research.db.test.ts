@@ -5,6 +5,7 @@ import {afterAll,beforeAll,describe,expect,it} from "vitest";
 import {executeResearchTool,type ResearchScope} from "./tools.server";
 import {runResearchTurn} from "./turn.server";
 import type {AgentProvider} from "@/lib/ai/agent/loop.server";
+import {readExternalArchiveCase,seedExternalArchiveCase} from "@/evals/acceptance/live/external-archive-research.mjs";
 
 // Migrated disposable local database only; never a real café database.
 const url=process.env.SUPERVISOR_RESEARCH_DB_URL??"";
@@ -114,6 +115,25 @@ describe.skipIf(!enabled)("direct SQL research on the migrated database",()=>{
       from external_record_changes c cross join lateral jsonb_array_elements(c.changes) change
       where c.provider='new-provider' and change->'segments'='["opaque property","a.b","0"]'`);
     expect(changes).toMatchObject({ok:true,rows:[{before:2,after:3}]});
+  });
+
+  it("keeps archive availability, null, omission and revision evidence scoped to the selected café",async()=>{
+    const account="research-fixture-"+randomUUID();
+    await seedExternalArchiveCase(admin,cafeA,cafeB,account);
+    const {owner:truth,other}=await readExternalArchiveCase(admin,cafeA,cafeB,account);
+    const result=await sql(scope(cafeA),`select e.status,
+      (r.payload #>> '{inventory,unit count}')::int as quantity,
+      r.payload #> '{inventory,restockHint}'='null'::jsonb as explicit_null,
+      (r.payload->'inventory') ? 'lotNote' as has_lot_note,
+      (change->>'before')::int as previous
+      from external_records r join external_resources e on
+        (r.business_id,r.provider,r.source_account,r.entity)=(e.business_id,e.provider,e.source_account,e.resource)
+      join external_record_changes c on (c.business_id,c.provider,c.record_id)=(r.business_id,r.provider,r.id)
+      cross join lateral jsonb_array_elements(c.changes) change
+      where r.provider='clover' and r.source_account='${account}'`);
+    expect(truth.quantity).not.toBe(other.quantity);
+    expect(result).toMatchObject({ok:true,rows:[{status:"unavailable",quantity:truth.quantity,
+      explicit_null:true,has_lot_note:false,previous:truth.previous}]});
   });
 
 
