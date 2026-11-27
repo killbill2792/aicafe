@@ -308,3 +308,19 @@ html[data-theme="glass"] body {
     animation: none !important;
   }
 }
+
+/* Adapt the upstream Grid to the actual message width (not the viewport).
+   Keep its requested columns and gap whenever room permits. */
+.luna-responsive-grid { container-type: inline-size; }
+.luna-responsive-grid > .grid > * { min-width: 0; overflow-wrap: anywhere; }
+@container (max-width: 42rem) {
+  .luna-responsive-grid:is([data-columns="5"],[data-columns="6"]) > .grid { grid-template-columns: repeat(4,minmax(0,1fr)); }
+}
+@container (max-width: 32rem) {
+  .luna-responsive-grid:is([data-columns="3"],[data-columns="4"],[data-columns="5"],[data-columns="6"]) > .grid { grid-template-columns: repeat(2,minmax(0,1fr)); }
+}
+@container (max-width: 14rem) {
+  .luna-responsive-grid > .grid { grid-template-columns: minmax(0,1fr); }
+}
+.luna-responsive-table table { table-layout: auto; }
+.luna-responsive-table th, .luna-responsive-table td { white-space: normal; overflow-wrap: anywhere; }
