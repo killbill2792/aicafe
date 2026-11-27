@@ -158,6 +158,17 @@ BEGIN
   'matching independently captured fee is applied');
  perform pg_temp.assert_true(public.toast_apply_archived_payment_fee(b,r,payment,payment_revision)='applied',
   'replayed capture evidence is idempotent');
+ perform public.external_note_availability(b,'toast',r::text,'orders/v2/payments/{guid}',
+   'permission_required',clock_timestamp(),null);
+ perform public.external_commit_page(b,'toast',r::text,'orders/v2/payments/{guid}',ord2::text,0,
+   jsonb_build_object('mode','point','scope',jsonb_build_object('paymentGuid',ord2)),true,
+   jsonb_build_array(jsonb_build_object('key',ord2,'payload',jsonb_set(payment_body,'{guid}',to_jsonb(ord2)))));
+ perform pg_temp.assert_true(public.toast_apply_archived_payment_fee(b,r,payment,payment_revision)='refresh_evidence',
+  'regaining resource access on another payment leaves the revoked receipt stale');
+ payment_revision:=public.external_commit_page(b,'toast',r::text,'orders/v2/payments/{guid}',payment::text,payment_revision,
+  payment_scope,true,jsonb_build_array(jsonb_build_object('key',payment,'payload',payment_body)));
+ perform pg_temp.assert_true(public.toast_apply_archived_payment_fee(b,r,payment,payment_revision)='applied',
+  'another observation of the same payment restores its evidence');
  perform pg_temp.assert_true(not has_function_privilege('authenticated','public.toast_apply_archived_payment_fee(uuid,uuid,uuid,bigint)','EXECUTE'),
   'authenticated users cannot apply an archive fee receipt');
  update public.toast_day_status set imported_at=now()+interval '1 second' where business_id=b and restaurant_guid=r and business_date=d;
