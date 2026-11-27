@@ -124,8 +124,10 @@ describe("PR F shared attention and chat entry",()=>{
   const mainGuard = composer.indexOf("if(sendOnce.current)return;", composer.indexOf("async function sendText"));
   expect(followUp).toBeGreaterThan(0);
   expect(mainGuard).toBeGreaterThan(followUp);
-  expect(composer).toContain("pendingFollowUps.current.add(text)");
-  expect(composer).toContain("pendingFollowUps.current.delete(text)");
+  expect(composer).toContain('const followUpKey=id+":"+text;');
+  expect(composer).toContain('pendingFollowUps.current.has(id+":"+text)');
+  expect(composer).toContain("pendingFollowUps.current.add(followUpKey)");
+  expect(composer).toContain("pendingFollowUps.current.delete(followUpKey)");
   expect(composer).toContain("setStartExpanded(false)");
  });
  it("keeps the overview out of the ordinary transcript and the mobile composer on one row",()=>{

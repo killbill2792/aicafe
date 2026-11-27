@@ -4649,6 +4649,13 @@
     "latestReplyReady": "New Supervisor reply. Read the latest message to review it.",
     "readLatestMessage": "Read latest message",
     "stopLiveView": "Stop live view",
-    "streamDetached": "Live view stopped. Saved work may continue; check Work for its status."
+    "streamDetached": "Live view stopped. Your research continues in the background.",
+    "resumeLiveView": "Resume live view",
+    "researchProgress": {
+      "describe_database": "Exploring your café data",
+      "run_sql": "Researching your café records",
+      "calculate": "Calculating the figures",
+      "search_web": "Researching public information"
+    }
   }
 }

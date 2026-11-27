@@ -85,3 +85,8 @@ it("renders the current reasoning section as Markdown without a previous section
  const html=renderToStaticMarkup(createElement(ChatJobProgress,{locale:"en",acknowledged:true,steps:[],note:"**Gathering accounting details**\n\nChecking supplier invoices."}));
  expect(html).toContain("<strong");expect(html).toContain("Gathering accounting details");expect(html).toContain("Checking supplier invoices.");expect(html).not.toContain("**");expect(html).not.toContain("Inspecting data requirements");
 });
+
+it("shows SQL research activities instead of obsolete specialist labels",()=>{
+  const copy=chatExperienceCopy("en");
+  expect(progressLines([{tool:"describe_database",agent:"alex"},{tool:"run_sql",agent:"alex"},{tool:"calculate",agent:"alex"}],copy)).toEqual(["Exploring your café data","Researching your café records","Calculating the figures"]);
+});

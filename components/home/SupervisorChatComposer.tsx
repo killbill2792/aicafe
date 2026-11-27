@@ -286,6 +286,9 @@ export default function SupervisorChatComposer({
   const [loadedThreadId,setLoadedThreadId]=useState<string|null>(null);
   const [startExpanded,setStartExpanded]=useState(false);
   const sendOnce=useRef(false);
+  // Async viewers are scoped to a selection, even if the owner reopens the same thread.
+  const viewEpoch=useRef(0);
+  const [liveViewDetached,setLiveViewDetached]=useState(false);
   const pendingFollowUps=useRef(new Set<string>());
   const [optimisticOwner, setOptimisticOwner] = useState<{ id: string; text: string; clientMessageId: string } | null>(null);
   const [nextOffset, setNextOffset] = useState<number | null>(null);
@@ -395,15 +398,19 @@ export default function SupervisorChatComposer({
   // Only client display state; no pending clarification stored or sent to the API.
   const [chosenClarify, setChosenClarify] = useState<Record<string,string>>({});
   const [reloadVersion, setReloadVersion] = useState(0);
+  const supervisorWork = useSupervisorWork(threadId, Boolean(threadId)&&!sessionDenied);
+  const durableWork=supervisorWork.items.filter(item=>item.executionVersion===2||item.kind==="investigation");
+  const activeDurable=durableWork.find(item=>["queued","running","retrying"].includes(item.status));
+  const activeDurableQuestions=new Set(durableWork.flatMap(item=>item.questionId?[item.questionId]:[]));
+  const durableSignature=JSON.stringify(durableWork.map(item=>[item.id,item.status,item.questionId,item.proof?.ref,item.relatedOwnerMessageIds]));
   const watcher = useAgentJobWatcher(threadId, enabled && !sessionDenied && !sending, (job) => {
     setReloadVersion((v) => v + 1);
     if (job.status === "failed") { setFailureCode(job.errorCode ?? "agent_turn_failed"); setError(true); }
-  });
-  const supervisorWork = useSupervisorWork(threadId, Boolean(threadId)&&!sessionDenied);
-  const durableWork=supervisorWork.items.filter(item=>item.executionVersion===2||item.kind==="investigation");
-  const activeDurableQuestions=new Set(durableWork.flatMap(item=>item.questionId?[item.questionId]:[]));
-  const durableSignature=JSON.stringify(durableWork.map(item=>[item.id,item.status,item.questionId,item.proof?.ref,item.relatedOwnerMessageIds]));
-  const resumedRunning = !sending && shouldShowRunningJob(watcher.job,messages);
+  }, Boolean(activeDurable));
+  const resumedRunning = !sending && (Boolean(activeDurable) || ((!watcher.job?.durableRunId||supervisorWork.loading) && shouldShowRunningJob(watcher.job,messages)));
+  const resumedView=resumedRunning&&watcher.job?.status==='running'?watcher.job.liveView:undefined;
+  const visibleText=sending?streamedText:resumedView?.text??'';
+  const visiblePresentations=sending?streamedPresentations:(resumedView?.presentations??[]).flatMap(item=>{const block=recoverRichPresentation(item.block);return block?[{offset:item.offset,block}]:[];});
 
   const applyLatestPage=useCallback((fresh:ConversationPage<ConversationMessage>)=>{
     const previous=messagePage.current;
@@ -416,6 +423,8 @@ export default function SupervisorChatComposer({
   },[]);
   const clearDeniedSession=useCallback(()=>{
     // A failed owner authorization must not leave previously read chat/files visible.
+    viewEpoch.current++;void currentStreamReader.current?.cancel().catch(()=>undefined);currentStreamReader.current=null;
+    sendOnce.current=false;setSending(false);setCanDetach(false);setLiveViewDetached(false);setStreamedText('');setStreamedPresentations([]);setLiveSteps([]);setLiveNote(null);setLiveJobId(null);setAcceptedDurableIds([]);
     dismissedEventThreads.current.clear();originalRetryText.current.clear();
     threadDrafts.current.clear();readingPositions.current.clear();pendingFileSelection.current=null;setRestoringFiles(false);retryId.current=null;retryResponse.current=null;
     messagePage.current={items:[],nextOffset:null};paginationRequest.current++;historyLoading.current=false;selectedThreadId.current=null;
@@ -701,8 +710,10 @@ export default function SupervisorChatComposer({
    * that same job; the server folds it into the answer or answers it right after. */
   async function sendFollowUp(text: string) {
     const id = threadId;
-    if (!navigator.onLine||!id || !enabled || !canUseAi || !text.trim() || text.length > 4000 || pendingFollowUps.current.has(text)) return;
-    pendingFollowUps.current.add(text);
+    const epoch=viewEpoch.current;
+    if (!navigator.onLine||!id || !enabled || !canUseAi || !text.trim() || text.length > 4000 || pendingFollowUps.current.has(id+":"+text)) return;
+    const followUpKey=id+":"+text;
+    pendingFollowUps.current.add(followUpKey);
     const clientMessageId = crypto.randomUUID();
     setDraft(""); setFailureCode(null);
     setQueuedOwner((queue) => [...queue, { id: "queued-" + clientMessageId, text, clientMessageId }]);
@@ -712,7 +723,7 @@ export default function SupervisorChatComposer({
         method: "POST", headers: { "content-type": "application/json" },
         body: JSON.stringify(buildAgentSendBody(clientMessageId,text,locale,attachments)),
       });
-      if(response.status===401){clearDeniedSession();return;}
+      if(response.status===401){if(viewEpoch.current===epoch)clearDeniedSession();return;}
       if (!response.ok || !response.body) throw new Error(await agentErrorCode(response));
       const reader = response.body.getReader();
       const decoder = new TextDecoder();
@@ -720,24 +731,24 @@ export default function SupervisorChatComposer({
       try {
         while (true) {
           const { done, value } = await reader.read();
+          if(viewEpoch.current!==epoch){await reader.cancel().catch(()=>undefined);break;}
           if (done) break;
           const read = readSseFrames(buffer + decoder.decode(value, { stream: true }));
           buffer = read.rest;
           for (const frame of read.frames) {
             if (frame.type === "error") throw new Error(typeof frame.data.code === "string" ? frame.data.code : "agent_turn_failed");
-            if (frame.type === "ack") setLiveNote(frame.data.mode === "started" ? liveCopy.answering : liveCopy.followUpQueued);
+            if (frame.type === "ack" && viewEpoch.current===epoch) {setLiveViewDetached(false);if(typeof frame.data.ownerMessageId==="string"){const ownerId=frame.data.ownerMessageId;setAcceptedDurableIds(ids=>[...new Set([...ids,ownerId])]);}setLiveNote(frame.data.mode === "attached" || frame.data.mode === "absorbed" ? liveCopy.followUpQueued : liveCopy.ack);}
           }
         }
       } finally { reader.releaseLock(); }
       const page = await loadMessages(id);
-      if (selectedThreadId.current === id) { applyLatestPage(page); }
-      if (!sending) watcher.recheck();
+      if (viewEpoch.current===epoch && selectedThreadId.current === id) { applyLatestPage(page); watcher.recheck(); }
     } catch (failure) {
-      setDraft((current) => current || text);
-      setFailureCode(failure instanceof Error ? failure.message : "agent_turn_failed");
+      if(viewEpoch.current===epoch){setDraft((current) => current || text);
+        setFailureCode(failure instanceof Error ? failure.message : "agent_turn_failed");}
     } finally {
-      pendingFollowUps.current.delete(text);
-      setQueuedOwner((queue) => queue.filter((item) => item.clientMessageId !== clientMessageId));
+      pendingFollowUps.current.delete(followUpKey);
+      if(viewEpoch.current===epoch)setQueuedOwner((queue) => queue.filter((item) => item.clientMessageId !== clientMessageId));
     }
   }
   async function detachLiveStream(){
@@ -745,12 +756,13 @@ export default function SupervisorChatComposer({
     // hook detaches a viewer; the existing durable worker/receipt stays authoritative.
     const reader=currentStreamReader.current;
     if(!reader||!canDetach)return;
-    setCanDetach(false);
+    const epoch=viewEpoch.current;
+    setLiveViewDetached(true);setCanDetach(false);
     try{
       await reader.cancel();
-      setStreamNotice(en.SupervisorExperience.streamDetached);
+      if(epoch===viewEpoch.current)setStreamNotice(en.SupervisorExperience.streamDetached);
     }catch{
-      if(currentStreamReader.current===reader)setCanDetach(true);
+      if(currentStreamReader.current===reader){setCanDetach(true);setLiveViewDetached(false);}
     }
   }
   async function sendText(value: string, existingKey?: string, targetThreadId?: string,
@@ -762,12 +774,14 @@ export default function SupervisorChatComposer({
     const text=eventMessageForSend(inputText,ownerInputResponse?null:context,previousText);
     // A confirmed background job accepts follow-ups while the first response streams.
     // The main-turn double-tap guard must not intercept this separate path.
-    if (!ownerInputResponse && !targetThreadId && !existingKey && enabled && canUseAi && text && (sending ? Boolean(liveJobId) : resumedRunning) &&
+    if (!ownerInputResponse && !targetThreadId && !existingKey && enabled && canUseAi && text && (sending ? Boolean(liveJobId)||canDetach : resumedRunning) &&
       !uploading && !recorder.current && dictation !== "recognizing" && text.length <= 4000)
       return sendFollowUp(text);
     if(sendOnce.current)return;
     if (!enabled || !canUseAi || !text || sending || uploading || recorder.current || dictation === "recognizing" || text.length > 4000) return;
     sendOnce.current=true;
+    const epoch=viewEpoch.current;
+    setLiveViewDetached(false);
     const clientMessageId = sendKey(existingKey, retryId.current, () => crypto.randomUUID());
     retryId.current = clientMessageId;
     originalRetryText.current.set(clientMessageId,text);
@@ -804,7 +818,7 @@ export default function SupervisorChatComposer({
       try {
         while (true) {
           const { done, value } = await reader.read();
-          if (done) break;
+          if (done || viewEpoch.current!==epoch) break;
           const read = readSseFrames(buffer + decoder.decode(value, { stream: true }));
           buffer = read.rest;
           for (const { type, data } of read.frames) {
@@ -813,7 +827,8 @@ export default function SupervisorChatComposer({
             if(type==="ack"&&(typeof event.runId==="string"||typeof event.investigationId==="string")){
               durableConfirmed=true;jobConfirmed=true;finished=true;setCanDetach(true);
               if(event.ownerMessageId)setAcceptedDurableIds(ids=>[...new Set([...ids,event.ownerMessageId!])]);
-              setLiveNote(liveCopy.followUpQueued);
+              if(event.jobId)setLiveJobId(event.jobId);
+              setLiveNote(event.mode==="attached"||event.mode==="absorbed"?liveCopy.followUpQueued:liveCopy.ack);
             } else if(type==="queued"&&durableConfirmed){
               finished=true;
             } else if (type === "ack" && typeof event.jobId === "string") {
@@ -828,7 +843,7 @@ export default function SupervisorChatComposer({
               }
             } else if (type === "tool" && (event.agentId === "alex" || event.agentId === "olivia" ||
               event.agentId === "maya" || event.agentId === "leo")) {
-              setProgressStatus({agent:event.agentId,stage:"reading"});
+              setProgressStatus({agent:event.agentId,stage:"reading"});setLiveNote(null);
               const stepTool = event.name, stepAgent = event.agentId;
               if (typeof stepTool === "string" && isJobStepAgent(stepAgent)) {
                 const step: AgentJobStep = { tool: stepTool, agent: stepAgent };
@@ -859,6 +874,7 @@ export default function SupervisorChatComposer({
               if (jobConfirmed) {
                 // A continuation may follow on this same stream; show this answer now.
                 const page = await loadMessages(id);
+                if(viewEpoch.current!==epoch)return;
                 applyLatestPage(page);
                 setOptimisticOwner(null); setStreamedText(""); setStreamedPresentations([]); setLiveNote(null);
                 setLiveJobId(null);
@@ -866,21 +882,26 @@ export default function SupervisorChatComposer({
             }
           }
         }
-      } finally { if(currentStreamReader.current===reader)currentStreamReader.current=null;setCanDetach(false);reader.releaseLock(); }
+      } finally { if(currentStreamReader.current===reader){currentStreamReader.current=null;setCanDetach(false);}reader.releaseLock(); }
+      if(viewEpoch.current!==epoch)return;
       if (!finished) throw new Error("agent_stream_incomplete");
       const page = await loadMessages(id);
+      if(viewEpoch.current!==epoch)return;
       applyLatestPage(page);
       setOptimisticOwner(null);
       await refreshThreads();
+      if(viewEpoch.current!==epoch)return;
       originalRetryText.current.delete(clientMessageId);
       retryId.current = null; retryResponse.current=null;setStreamedText(""); setStreamedPresentations([]);
       dispatchDictation({ type: "reset" }); setMediaNotice(""); setAttachments([]);
     } catch (failure) {
+      if(viewEpoch.current!==epoch)return;
       if (existingKey&&!matchedResponse) retryId.current = null;
       // Server may have persisted the owner turn before the response failed.
       if (attemptedThreadId) {
         try {
           const page = await loadMessages(attemptedThreadId);
+          if(viewEpoch.current!==epoch)return;
           applyLatestPage(page);
         } catch { /* do not fabricate a durable turn */ }
       }
@@ -897,9 +918,11 @@ export default function SupervisorChatComposer({
         setError(true);
       }
     } finally {
-      sendOnce.current=false;
-      setCanDetach(false);setSending(false); setProgressStatus(null); setStreamedText(""); setStreamedPresentations([]);
-      setLiveJobId(null); setLiveSteps([]); setLiveNote(null);
+      if(viewEpoch.current===epoch){
+        sendOnce.current=false;
+        setCanDetach(false);setSending(false); setProgressStatus(null); setStreamedText(""); setStreamedPresentations([]);
+        setLiveJobId(null); setLiveSteps([]); setLiveNote(null);
+      }
     }
   }
   async function loadOlder() {
@@ -945,9 +968,15 @@ export default function SupervisorChatComposer({
     }
   }
   function selectThread(id: string | null, historyTitle?:string|null) {
-    if (sending||uploading||dictation==="recognizing"||dictation==="listening") return;
+    if ((sending&&!canDetach)||uploading||dictation==="recognizing"||dictation==="listening") return;
     setWorkTarget(null);setWorkNotice("");setStreamNotice("");setControlsTab(null);
     if(id&&id===threadId)return;
+    viewEpoch.current++;
+    const reader=currentStreamReader.current;
+    currentStreamReader.current=null;
+    if(reader)void reader.cancel().catch(()=>undefined);
+    sendOnce.current=false;setSending(false);setCanDetach(false);setLiveViewDetached(false);
+    setProgressStatus(null);setStreamedText("");setStreamedPresentations([]);setLiveJobId(null);setLiveSteps([]);setLiveNote(null);
     if(threadId){
       readingPositions.current.delete(threadId);
       const node=transcript.current;
@@ -997,7 +1026,7 @@ export default function SupervisorChatComposer({
     composer.current?.focus();
   }
   function openWork(item:OwnerWorkItem){
-    if(sending||uploading||dictation==="recognizing"||dictation==="listening"||!item.threadId)return;
+    if((sending&&!canDetach)||uploading||dictation==="recognizing"||dictation==="listening"||!item.threadId)return;
     if(item.threadId!==threadId)selectThread(item.threadId);
     setControlsTab(null);setWorkNotice("");setWorkTarget({threadId:item.threadId,proposalId:item.proposalId,messageId:item.proof?.kind==="verified_reply"?item.proof.ref:item.ownerMessageId});
   }
@@ -1174,14 +1203,14 @@ export default function SupervisorChatComposer({
   const startReady=!threadId||loadedThreadId===threadId||hasChatMessages;
   const answeredOwnerIds = useMemo(()=>answeredOwnerMessageIds(messages),[messages]);
   const inFlightOwnerIds = inFlightOwnerMessageIds(watcher.job);
-  for(const item of durableWork){if(item.ownerMessageId)inFlightOwnerIds.add(item.ownerMessageId);for(const id of item.relatedOwnerMessageIds??[])inFlightOwnerIds.add(id);}
-  for(const id of acceptedDurableIds)inFlightOwnerIds.add(id);
+  for(const item of durableWork.filter(item=>["queued","running","retrying","approval_required"].includes(item.status))){if(item.ownerMessageId)inFlightOwnerIds.add(item.ownerMessageId);for(const id of item.relatedOwnerMessageIds??[])inFlightOwnerIds.add(id);}
+  for(const id of acceptedDurableIds)if(!durableWork.some(item=>item.ownerMessageId===id||(item.relatedOwnerMessageIds??[]).includes(id)))inFlightOwnerIds.add(id);
   const pendingOwnerIds = new Set(!sending && !supervisorWork.loading ? messages
     .filter((message) => message.role === "owner" && Boolean(message.clientMessageId) &&
       !answeredOwnerIds.has(message.id) && !inFlightOwnerIds.has(message.id))
     .map((message) => message.id) : []);
   const threadUnavailable=threadId!==null&&deniedThread===threadId;
-  const inputLocked = threadUnavailable||sending && !liveJobId;
+  const inputLocked = threadUnavailable||sending && !liveJobId&&!canDetach;
   const shownFailure = failureCode ?? (watcher.job?.status === "failed" ? watcher.job.errorCode ?? null : null);
   const durationLabel = String(Math.floor(elapsed / 60)) + ":" + String(elapsed % 60).padStart(2, "0");
   // A tap on a saved event opens that day in the same Supervisor conversation.
@@ -1256,7 +1285,7 @@ export default function SupervisorChatComposer({
       <h2 className="min-w-0 flex-1 truncate text-center font-headline text-[1.0625rem] font-medium tracking-tight text-ink">
         {threadTitle || copy.supervisor}
       </h2>
-      <button type="button" onClick={() => selectThread(null)} disabled={!enabled || !canUseAi || sending || uploading || dictation==="recognizing" || dictation==="listening"}
+      <button type="button" onClick={() => selectThread(null)} disabled={!enabled || !canUseAi || (sending&&!canDetach) || uploading || dictation==="recognizing" || dictation==="listening"}
         aria-label={copy.startNewChat} title={copy.startNewChat}
         className="inline-flex min-h-[max(48px,3rem)] min-w-[max(48px,3rem)] items-center justify-center rounded-full text-ink hover:bg-surface2 focus-visible:outline-solid focus-visible:outline-2 focus-visible:outline-ink disabled:opacity-50">
         <SquarePen size={21} aria-hidden="true" />
@@ -1373,16 +1402,17 @@ export default function SupervisorChatComposer({
       {queuedOwner.map((item) => <article key={item.id} className="ms-auto w-fit max-w-[80%] rounded-2xl bg-surface2 px-4 py-3 text-[1.0625rem] leading-relaxed text-ink opacity-80">
         <p className="whitespace-pre-wrap wrap-break-word">{item.text}</p>
       </article>)}
-      {(sending || resumedRunning) && <ChatJobProgress locale={locale} acknowledged
+      {!liveViewDetached&&(sending || resumedRunning) && <ChatJobProgress locale={locale} acknowledged
         steps={sending ? liveSteps : watcher.job?.progress ?? []}
-        note={sending ? progressStatus?.stage==="answering"?progressStatusText(copy,progressStatus):liveNote??(!liveJobId?progressStatusText(copy,progressStatus)??copy.sending:null) : watcher.job?.progress.length?null:liveCopy.resumed} />}
-      {sending && (streamedText||streamedPresentations.length>0) && <article aria-hidden="true" aria-live="off" aria-busy="true" inert className="w-full space-y-3"><div className="flex items-center gap-2 text-[0.9375rem] font-bold text-ink-muted"><span className="flex h-8 w-8 items-center justify-center rounded-full bg-pos-soft text-good"><Sparkles size={17} aria-hidden="true"/></span>{copy.supervisor}</div>{streamedPresentations.map((item,i)=>{
-        const start=i===0?0:streamedPresentations[i-1].offset;
-        return <div key={i} className="min-w-0 space-y-3">{item.offset>start&&<ReplyBlock block={{type:"text",text:streamedText.slice(start,item.offset)}} copy={copy} locale={locale} streaming/>}<PresentationBoundary fallback={<PresentationTextFallback block={item.block}/>}><SupervisorRichPresentation block={item.block} locale={locale} onSuggest={()=>undefined} disabled/></PresentationBoundary></div>;
-      })}{streamedText.length>(streamedPresentations.at(-1)?.offset??0)&&<ReplyBlock block={{type:"text",text:streamedText.slice(streamedPresentations.at(-1)?.offset??0)}} copy={copy} locale={locale} streaming/>}</article>}
+        note={sending ? progressStatus?.stage==="answering"?progressStatusText(copy,progressStatus):liveNote??(!liveJobId?progressStatusText(copy,progressStatus)??copy.sending:null) : watcher.job?.thinkingSummary??(watcher.job?.progress.length?null:activeDurable?.detail??liveCopy.resumed)} /> }
+      {!liveViewDetached&&(sending||resumedRunning) && (visibleText||visiblePresentations.length>0) && <article aria-hidden="true" aria-live="off" aria-busy="true" inert className="w-full space-y-3"><div className="flex items-center gap-2 text-[0.9375rem] font-bold text-ink-muted"><span className="flex h-8 w-8 items-center justify-center rounded-full bg-pos-soft text-good"><Sparkles size={17} aria-hidden="true"/></span>{copy.supervisor}</div>{visiblePresentations.map((item,i)=>{
+        const start=i===0?0:visiblePresentations[i-1].offset;
+        return <div key={i} className="min-w-0 space-y-3">{item.offset>start&&<ReplyBlock block={{type:"text",text:visibleText.slice(start,item.offset)}} copy={copy} locale={locale} streaming/>}<PresentationBoundary fallback={<PresentationTextFallback block={item.block}/>}><SupervisorRichPresentation block={item.block} locale={locale} onSuggest={()=>undefined} disabled/></PresentationBoundary></div>;
+      })}{visibleText.length>(visiblePresentations.at(-1)?.offset??0)&&<ReplyBlock block={{type:"text",text:visibleText.slice(visiblePresentations.at(-1)?.offset??0)}} copy={copy} locale={locale} streaming/>}</article>}
       </div>
     </div>
-    {sending&&canDetach&&<button type="button" onClick={()=>void detachLiveStream()} className="mx-auto flex min-h-12 shrink-0 items-center gap-2 rounded-full border border-line px-4 text-[0.9375rem] text-ink hover:bg-surface2 focus-visible:outline-solid focus-visible:outline-2 focus-visible:outline-ink"><Square size={16} aria-hidden="true"/>{en.SupervisorExperience.stopLiveView}</button>}
+    {!liveViewDetached&&(sending&&canDetach||resumedRunning)&&<button type="button" onClick={()=>{if(sending)void detachLiveStream();else{setLiveViewDetached(true);setStreamNotice(en.SupervisorExperience.streamDetached);}}} className="mx-auto flex min-h-12 shrink-0 items-center gap-2 rounded-full border border-line px-4 text-[0.9375rem] text-ink hover:bg-surface2 focus-visible:outline-solid focus-visible:outline-2 focus-visible:outline-ink"><Square size={16} aria-hidden="true"/>{en.SupervisorExperience.stopLiveView}</button>}
+    {liveViewDetached&&resumedRunning&&<button type="button" onClick={()=>{setLiveViewDetached(false);setStreamNotice("");watcher.recheck();}} className="mx-auto min-h-12 px-4 text-ink underline">{en.SupervisorExperience.resumeLiveView}</button>}
     {streamNotice&&<p role="status" className="shrink-0 px-4 py-2 text-[0.9375rem] text-ink-muted">{streamNotice}</p>}
     <div ref={replyAnnouncement} role="status" aria-live="polite" aria-atomic="true" data-testid="supervisor-reply-announcement" className="sr-only"/>
     {hasChatMessages&&!showNewMessage&&<button type="button" onClick={readLatestMessage} className="sr-only focus:not-sr-only focus:mx-auto focus:min-h-12 focus:rounded-lg focus:px-3 focus:outline-solid focus:outline-2">{en.SupervisorExperience.readLatestMessage}</button>}
@@ -1491,7 +1521,7 @@ export default function SupervisorChatComposer({
     {controlsOpen && <SupervisorMandatePanel threadId={threadId} threads={threads}
       approvals={supervisorWork.items.filter(item=>item.status==="approval_required")
         .map(item=>({id:item.id,title:item.title,detail:item.detail}))}
-      initialTab={controlsTab??"permissions"} onOpenWork={openWork} disabled={sending||uploading||dictation==="recognizing"||dictation==="listening"}
+      initialTab={controlsTab??"permissions"} onOpenWork={openWork} disabled={(sending&&!canDetach)||uploading||dictation==="recognizing"||dictation==="listening"}
       languageSwitch={<div className="shrink-0 border-t border-line px-3 pt-2 pb-[max(0.5rem,env(safe-area-inset-bottom))]">
         <nav aria-label={{en,es,ar}[locale].Nav.ariaLabel} className="grid grid-cols-3 gap-1 md:hidden">
           {NAV_TABS.map(({href,key,Icon})=><Link key={href} href={href} onClick={()=>setControlsTab(null)}

@@ -2548,7 +2548,7 @@ test("@home Task16E stops an acknowledged live view without invoking a cancel or
     await stop.focus();await page.keyboard.press("Enter");
     await expect.poll(()=>page.evaluate(()=>window.__task16eStream.detached)).toBe(1);
     await expect(stop).toHaveCount(0);
-    await expect(page.getByText("Live view stopped. Saved work may continue; check Work for its status.",{exact:true})).toBeVisible();
+    await expect(page.getByText("Live view stopped. Your research continues in the background.",{exact:true})).toBeVisible();
     await expect(input).toBeEnabled();
     await expect(page.getByTestId("supervisor-live-progress")).toHaveCount(0);
     await expect(eventChip).toHaveCount(0);

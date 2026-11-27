@@ -49,7 +49,8 @@ export function progressLines(steps: AgentJobStep[], copy: ChatExperienceCopy): 
   const agents = copy.agents as Record<string, string>;
   const lines: string[] = [];
   for (const step of steps) {
-    const line = tools[step.tool] ?? agents[step.agent] ?? copy.agents.supervisor;
+    const research = en.SupervisorExperience.researchProgress as Record<string,string>;
+    const line = tools[step.tool] ?? research[step.tool] ?? agents[step.agent] ?? copy.agents.supervisor;
     const previous=lines.indexOf(line);
     if(previous>=0)lines.splice(previous,1);
     lines.push(line);

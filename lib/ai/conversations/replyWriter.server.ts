@@ -98,3 +98,14 @@ export async function persistGroundedSupervisorReply(
   }
   return convertRow(data);
 }
+
+/** Replay a combined answer only after the caller has read the completed scoped run. */
+export async function getCompletedDurableReply(scope:ConversationScope,owner:ConversationMessage,ref:string):Promise<ConversationMessage|null>{
+  const {data,error}=await createAdminSupabaseClient().from("ai_messages").select(COLUMNS)
+    .eq("id",ref).eq("business_id",scope.businessId).eq("owner_user_id",scope.ownerUserId).eq("thread_id",owner.threadId).maybeSingle();
+  if(error)throw error;
+  const g=data?.grounding;
+  if(!data||data.role!=="supervisor"||g?.agentMetadata?.endReason!=="complete"||
+    (g.ownerMessageId!==owner.id&&!(Array.isArray(g.agentMetadata.absorbedOwnerMessageIds)&&g.agentMetadata.absorbedOwnerMessageIds.includes(owner.id))))return null;
+  return convertRow(data);
+}

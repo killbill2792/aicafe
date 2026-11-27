@@ -82,4 +82,10 @@ describe("GET /jobs priority", () => {
 
 });
 
-it("never exposes a paused durable job as a stale legacy chat failure",async()=>{stub.rows=[{...job("55555555-5555-4555-8555-555555555555","failed","2026-10-20T00:00:00.000Z"),durable_run_id:"durable-run"}];expect((await request()).job).toBeNull();});
+it("never exposes a paused durable job as a stale legacy chat failure",async()=>{stub.rows=[{...job("55555555-5555-4555-8555-555555555555","failed","2026-10-20T00:00:00.000Z"),durable_run_id:"77777777-7777-4777-8777-777777777777"}];expect((await request()).job).toBeNull();});
+
+it("returns the existing durable job progress even after its physical slice heartbeat expires",async()=>{
+  const run="77777777-7777-4777-8777-777777777777";
+  stub.rows=[{...job("55555555-5555-4555-8555-555555555555","running","2026-10-20T00:00:00.000Z"),durable_run_id:run,heartbeat_at:"2026-10-20T00:00:00.000Z",progress:[{tool:"run_sql",agent:"alex"}]}];
+  expect((await request()).job).toMatchObject({status:"running",durableRunId:run,progress:[{tool:"run_sql",agent:"alex"}]});
+});

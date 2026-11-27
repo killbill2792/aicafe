@@ -27,3 +27,13 @@ describe("agent job state", () => {
     expect(() => toAgentJob({ ...row, status: "weird" })).toThrow();
   });
 });
+
+it("rehydrates only the public answer and provider summary for a durable job, without marking its physical slice stale",()=>{
+  const job=toAgentJob({...row,durable_run_id:"77777777-7777-4777-8777-777777777777",progress:[
+    {kind:"live_view",text:"Research result",presentations:[{offset:15,block:{type:"rich_presentation"}}],transcript:["private"]},
+    {kind:"thinking",summary:"Checking figures"}, {tool:"run_sql",agent:"alex"}]});
+  expect(job.liveView).toEqual({text:"Research result",presentations:[{offset:15,block:{type:"rich_presentation"}}]});
+  expect(job.thinkingSummary).toBe("Checking figures");
+  expect(job.progress).toEqual([{tool:"run_sql",agent:"alex"}]);
+  expect(effectiveAgentJob(job,Date.parse(row.heartbeat_at)+AGENT_JOB_STALE_MS*10).status).toBe("running");
+});

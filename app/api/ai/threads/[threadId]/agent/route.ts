@@ -110,6 +110,11 @@ export async function POST(request: Request, context: RouteContext) {
         throw new ConversationApiError(code==="23505"?409:503,code==="23505"?"idempotency_conflict":"conversation_storage_unavailable");
       }
       if(prior)return sseStream((emit,close)=>{emit("done",{reply:prior,replayed:true});close();});
+      if(run.status==="completed"&&run.finalReportRef){
+        const {getCompletedDurableReply}=await import("@/lib/ai/conversations/replyWriter.server");
+        const reply=await getCompletedDurableReply(scope,owner,run.finalReportRef);
+        if(reply)return sseStream((emit,close)=>{emit("done",{reply,replayed:true});close();});
+      }
       const jobs=await import("@/lib/ai/agent/jobs.server");
       const sink=createTurnSink();
       return sseStream((emit,close,onCancel)=>{

@@ -100,6 +100,8 @@ type TurnParams = {
   executionDeadline?:number;
   matchedAnswers?:import("@/lib/ai/supervisor/runs/contracts").MatchedOwnerAnswer[];
   durableFence?:DurableReplyFence;
+  readFollowUps?:()=>Promise<{id:string;text:string}[]>;
+  recordDurableThinking?:(summary:string)=>Promise<void>;
   recordDurableStep?:(step:import("@/lib/ai/agent/jobState").AgentJobStep)=>Promise<void>;
   /** Only a caller that reverified a signed, consented Meta owner binding can supply this. */
   externalClient?:SupabaseClient;
@@ -792,6 +794,7 @@ export async function runOneTurn(p: TurnParams): Promise<{ replyId: string; repl
     // The owner/café scope above is already verified; the database function
     // re-verifies ownership and applies RLS for this one café.
     const notesClient=await getDb();
+    let lastThinkingWrite=0;
     const result = await runResearchTurn({ ownerText: p.ownerText,matchedOwnerAnswers:p.matchedAnswers,
       presentationContext:{asOf:identity.asOf,currency:identity.currency,presentationAttachments:[...selectedIds]},
       ownerImages:selected.images, ownerPdfs:selected.pdfs, ownerEvidence:selected.evidence, history,
@@ -822,7 +825,11 @@ export async function runOneTurn(p: TurnParams): Promise<{ replyId: string; repl
           "with source_page_offset=0 first; use next_offset to continue to older pages. "+
           "NEXT_OLDER_GOAL_SOURCES_OFFSET="+JSON.stringify(page.nextOffset),
       },...(gmailAvailable?gmailToolDefinitions:[]),...(memory?[memory.tool]:[])]},
-      onThinking:text=>emit("thinking",{text}),
+      readFollowUps:p.readFollowUps,onFollowUp:()=>emit("followup",{}),
+      onThinking:text=>{
+        emit("thinking",{text});
+        if(p.recordDurableThinking&&Date.now()-lastThinkingWrite>=750){lastThinkingWrite=Date.now();steps=steps.then(()=>p.recordDurableThinking!(text));}
+      },
       onAuditStep: step => { if (auditSteps.length < 64) auditSteps.push(step); },
       beforeProviderRequest:assertTurnSources, beforeAcceptResult:assertTurnSources,
        captureSourceVersions:()=>Object.fromEntries(sourceVersions),restoreSourceVersions,executionDeadline:p.executionDeadline??p.checkpoint?.executionDeadline??(p.durableFence?undefined:startedAt+110_000),
