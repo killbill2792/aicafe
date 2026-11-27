@@ -1,12 +1,12 @@
-import {useLayoutEffect,useRef} from "react";
+import {useLayoutEffect,useState} from "react";
 
 /** Measure the table's real preferred width, with its own typography, cells
  * and spacing. Reflow only when its actual content needs more room than the
  * container offers. No column-count threshold or device breakpoint. */
 export function useAdaptiveTable(){
- const ref=useRef<HTMLDivElement>(null);
+ const [region,setRegion]=useState<HTMLDivElement|null>(null);
  useLayoutEffect(()=>{
-  const region=ref.current;if(!region)return;
+  if(!region)return;
   let disposed=false;
   const sync=()=>{
    if(disposed)return;
@@ -39,8 +39,8 @@ export function useAdaptiveTable(){
   contentObserver.observe(region,{childList:true,subtree:true,characterData:true});
   void document.fonts.ready.then(sync);
   return()=>{disposed=true;observer.disconnect();contentObserver.disconnect();};
- },[]);
- return ref;
+ },[region]);
+ return setRegion;
 }
 export const wideResponseTableClass="luna-adaptive-table";
 export const wideResponseCellClass="luna-table-cell";
