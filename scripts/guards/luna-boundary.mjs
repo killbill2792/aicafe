@@ -293,8 +293,9 @@ export function audit(base, head, branch = '', trustedBase = base, regressions =
   const rebuild = branch === 'luna/operator-rebuild' || trustedChanges.some(replacement);
   const policy = 'scripts/guards/luna-boundary.mjs';
   const errors = graphErrors(after,[...after.files.keys()].filter(lunaSource));
-  // A change in an intermediate helper can break an untouched shared service.
-  if (trustedChanges.some(p => code.test(p) || p === 'tsconfig.json')) {
+  // Resolve both trees for every change. Imports can be redirected without
+  // touching a source file or the top-level TypeScript configuration.
+  if (trustedChanges.length) {
     const services = tree => [...tree.files.keys()].filter(p => shared(p) && code.test(p) && !test.test(p));
     const previous = new Set(graphErrors(trusted,services(trusted)));
     errors.push(...graphErrors(after,services(after)).filter(e => !previous.has(e)));

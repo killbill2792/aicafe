@@ -169,6 +169,29 @@ describe('Luna repository boundary',()=>{
     put('lib/utility.ts',"export * from '@/lib/ai/conversations/agentRunner.server';");
     expect(run('feat/unrelated').errors).toContain(legacy);
   });
+  it.each([
+    ['package.json', (target:string)=>({type:'module',imports:{'#shared':'./'+target}})],
+    ['tsconfig.aliases.json', (target:string)=>({compilerOptions:{
+      moduleResolution:'bundler',paths:{'#shared':['./'+target]},
+    }})],
+  ] as const)('checks all shared edges when only %s changes', (metadata, mapping)=>{
+    const reusable='lib/lib-common.ts';
+    const alternate='lib/lib-alternate.ts';
+    const replacement='lib/luna/runtime/index.ts';
+    put(reusable,'export const value=1;');
+    put(alternate,'export const value=3;');
+    put(replacement,'export const value=2;');
+    put('lib/metrics/core.ts',"export {value} from '#shared';");
+    if (metadata !== 'package.json') put('tsconfig.json',JSON.stringify({extends:'./'+metadata}));
+    put(metadata,JSON.stringify(mapping(reusable)));
+    base=commit();
+    put(metadata,JSON.stringify(mapping(replacement)));
+    const result=run('review/dependency');
+    expect(result.status).toBe(1);
+    expect(result.errors).toContain('lib/metrics/core.ts forbidden dependency '+replacement);
+    put(metadata,JSON.stringify(mapping(alternate)));
+    expect(run('review/dependency')).toEqual({status:0,errors:''});
+  });
   it('requires independently reviewed revisions on canonical, worker and stacked branches',()=>{
     const proof='tests/adapter.test.ts';
     put(proof,"import {it,expect} from 'vitest'; import {run} from '../lib/ai/conversations/agentRunner.server'; it('preserves the adapter result',()=>expect(run).toBe(2));");
