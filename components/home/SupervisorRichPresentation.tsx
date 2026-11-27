@@ -3,6 +3,7 @@ import {createContext,useContext,useId,useMemo,useState,useLayoutEffect,useRef,t
 import dynamic from "next/dynamic";
 import PresentationBoundary from "./PresentationBoundary";
 import {normalizeTableData} from "@/lib/ai/conversations/tableFormatting";
+import {adaptDisplayValue} from "@/lib/ai/conversations/displayPropCompatibility";
 import {useAdaptiveTable,wideResponseTableClass,wideResponseCellClass,wideResponseLabelClass} from "./responseTableLayout";
 import {JSONUIProvider,Renderer,defineRegistry,type ComponentRegistry} from "@json-render/react";
 import {defineCatalog} from "@json-render/core";
@@ -235,6 +236,7 @@ const nativeCatalog=defineCatalog(schema,{components:{...upstreamComponents,Luna
  * Render inert text, not active HTML, network URLs or widget actions. */
 function AuthoredValues({value}:{value:unknown}){
  const display=(v:unknown):string=>typeof v==="string"?v:v==null?"Not recorded":JSON.stringify(v,null,2)??String(v);
+ const humanize=(key:string)=>key.replace(/([a-z0-9])([A-Z])/g,"$1 $2").replace(/[_-]+/g," ").replace(/^./u,c=>c.toUpperCase());
  if(value&&typeof value==="object"&&!Array.isArray(value)){
   const data=value as Record<string,unknown>;
   const rawRows=Array.isArray(data.rows)?data.rows:Array.isArray(data.points)?data.points:undefined;
@@ -242,9 +244,9 @@ function AuthoredValues({value}:{value:unknown}){
    const {columns,rows}=normalizeTableData(data.columns,rawRows);
    const width=columns.length;
    const rest=Object.fromEntries(Object.entries(data).filter(([k])=>!["rows","points","columns"].includes(k)));
-   return <div className="min-w-0 space-y-2"><AuthoredValues value={rest}/><div className="overflow-x-auto"><table className="w-full text-sm"><thead><tr>{Array.from({length:width},(_,i)=><th key={i} className="border-b border-line p-2 text-start">{columns[i]??"Value "+(i+1)}</th>)}</tr></thead><tbody>{rows.map((row,i)=><tr key={i}>{Array.from({length:width},(_,j)=><td key={j} className="border-b border-line p-2 whitespace-pre-wrap">{display(row[j])}</td>)}</tr>)}</tbody></table></div></div>;
+   return <div className="min-w-0 space-y-2"><AuthoredValues value={rest}/><div className="overflow-x-auto"><table className="w-full text-sm"><thead><tr>{Array.from({length:width},(_,i)=><th key={i} className="border-b border-line p-2 text-start">{humanize(columns[i]??"Value "+(i+1))}</th>)}</tr></thead><tbody>{rows.map((row,i)=><tr key={i}>{Array.from({length:width},(_,j)=><td key={j} className="border-b border-line p-2 whitespace-pre-wrap">{display(row[j])}</td>)}</tr>)}</tbody></table></div></div>;
   }
-  return <dl className="min-w-0 space-y-2">{Object.entries(value).map(([key,v])=><div key={key} className="min-w-0"><dt className="text-sm font-medium text-ink-muted">{key}</dt><dd className="whitespace-pre-wrap wrap-break-word">{display(v)}</dd></div>)}</dl>;
+  return <dl className="min-w-0 space-y-2">{Object.entries(value).map(([key,v])=><div key={key} className="min-w-0"><dt className="text-sm font-medium text-ink-muted">{humanize(key)}</dt><dd className="whitespace-pre-wrap wrap-break-word">{v!==null&&typeof v==="object"?<AuthoredValues value={v}/>:display(v)}</dd></div>)}</dl>;
  }
  return <p className="whitespace-pre-wrap wrap-break-word">{display(value)}</p>;
 }
@@ -296,8 +298,8 @@ function NativeWidget({spec,locale}:{spec:Spec;locale:string}){
  const registry=useMemo(()=>{
   const {registry}=defineRegistry(nativeCatalog,{components:{...shadcnComponents,
    LunaChart:({props})=>{
-    const p=nativeChartProps.safeParse(props);
-    if(!p.success)return <AuthoredValues value={{title:props.title,description:props.description,points:props.points,unit:props.unit,currency:props.currency}}/>;
+    const p=nativeChartProps.safeParse(adaptDisplayValue(nativeChartProps,props));
+    if(!p.success)return <AuthoredValues value={props}/>;
     const {description,measurement,asOf,...values}=p.data;
     const points=values.points.flatMap(point=>point.value===null?[]:[{...point,value:point.value}]);
     // A date or a provenance contract is not required for an authored chart.
