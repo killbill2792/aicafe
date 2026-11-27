@@ -3,7 +3,9 @@
 begin;
 do $$
 declare cafe uuid; other uuid; owner_id uuid; rec uuid; before_rev bigint;
-  merchant uuid:=gen_random_uuid(); today date; status text; candidate record;
+  merchant uuid:=gen_random_uuid(); native_id uuid:=gen_random_uuid(); menu_id uuid:=gen_random_uuid();
+  today date; status text; candidate record;
+  publication text:=to_char(clock_timestamp() at time zone 'UTC','YYYY-MM-DD"T"HH24:MI:SS.US"Z"');
 begin
   select m.business_id,m.user_id into strict cafe,owner_id from public.memberships m
     where m.role='owner' and m.business_id <> '11111111-1111-1111-1111-111111111111' limit 1;
@@ -53,6 +55,35 @@ begin
     where business_id=cafe and relationship='annotates';
   if candidate.match_status<>'matched' or candidate.target_provider<>'another-provider' then
     raise exception 'Shared identifier relationship failed'; end if;
+  perform public.external_commit_page(cafe,'fixture-provider','merchant:4','source_objects','one',0,null,true,
+    '[{"key":"overlap","payload":{"available":null},"identifiers":[
+       {"namespace":"origin","value":"object-24","shared":true,"selector":{"path":[]}}]}]');
+  if (select count(*) from public.external_identity_authority a where a.business_id=cafe
+      and a.value='object-24' and a.authority='overlap')<>2 then
+    raise exception 'Overlapping identities selected without authority evidence'; end if;
+  insert into public.external_record_links(business_id,provider,record_id,relation,target_provider,target_id,
+    selector,evidence)
+  select a.business_id,a.provider,a.record_id,'authoritative_for',b.provider,b.record_id,
+    a.selector,jsonb_build_object('namespace',a.namespace,'value',a.value,'target_selector',b.selector)
+  from public.external_identity_authority a join public.external_identity_authority b using(business_id,namespace,value)
+  where a.business_id=cafe and a.provider='another-provider' and b.provider='fixture-provider';
+  if not exists(select from public.external_identity_authority a where a.business_id=cafe
+    and a.provider='another-provider' and a.authority='selected') then
+    raise exception 'Explicit evidence did not reconcile shared identities'; end if;
+
+  insert into public.ingredients(id,business_id,name,base_unit) values(native_id,cafe,'Native ingredient','g');
+  perform public.external_bind_native_identities(cafe,'another-provider','merchant:5','source_objects','origin',
+    'public.ingredients',jsonb_build_array(jsonb_build_object('native_id',native_id,'source_id','object-24')));
+  if not exists(select from public.external_record_links l where l.business_id=cafe
+    and l.native_relation='public.ingredients' and l.native_key=jsonb_build_object('id',native_id)) then
+    raise exception 'Native identity did not link to source'; end if;
+  begin
+    perform public.external_bind_native_identities(other,'another-provider','merchant:5','source_objects','origin',
+      'public.ingredients',jsonb_build_array(jsonb_build_object('native_id',native_id,'source_id','object-24')));
+    raise exception 'Cross-café native identity accepted';
+  exception when raise_exception then
+    if sqlerrm<>'Native identity outside café or duplicated' then raise; end if;
+  end;
 
   perform public.external_commit_page(cafe,'toast',merchant::text,'stock/v1/inventory','current',0,null,true,
     jsonb_build_array(jsonb_build_object('key','source-item','business_date',today,
@@ -64,15 +95,31 @@ begin
   if not exists (select from public.inventory_evidence_for(cafe,today,today)
     where menu_item_ref='source-item' and quantity is null and data->>'evidence_state'='not_observed') then
     raise exception 'A later empty receipt incorrectly certified earlier quantity'; end if;
+
+  insert into public.menu_items(id,business_id,pos_item_id,name,base_name,price_cents,prep_seconds,catalog_source,
+    toast_publication_state,toast_publication_version)
+  values(menu_id,cafe,'menu-example','Former catalog title','Former catalog title',600,41,'toast','active',publication);
+  perform public.external_commit_page(cafe,'toast',merchant::text,'menus/v2/menus','publication',0,null,true,
+    jsonb_build_array(jsonb_build_object('key',merchant,'updated_at',publication,
+      'payload','{"items":[{"guid":"menu-example","name":"Provider item","description":"Seasonal","pricingStrategy":"SIZE_PRICE"}],
+                 "options":{"regular":{"guid":"regular","name":"Regular","price":7.25,"pricingStrategy":"BASE_PRICE"}}}'::jsonb,
+      'identifiers','[{"namespace":"pos_item_id","value":"menu-example","selector":{
+         "path":["items","0"],"itemGuid":"menu-example","sizeOptionGuid":"regular","sizeOptionPath":["options","regular"]}}]'::jsonb)));
+  perform public.external_bind_native_identities(cafe,'toast',merchant::text,'menus/v2/menus','pos_item_id',
+    'public.menu_items',jsonb_build_array(jsonb_build_object('native_id',menu_id,'source_id','menu-example')));
   perform set_config('request.jwt.claim.sub',owner_id::text,true);
   perform set_config('app.supervisor_research_business_id',cafe::text,true);
   set local role authenticated;
-  if (select count(*) from public.external_records where provider='fixture-provider')<>2 or
+  if (select count(*) from public.external_records where provider='fixture-provider')<>3 or
      exists(select 1 from public.external_records where payload ? 'private') then
     raise exception 'Owner isolation failed'; end if;
   if not exists(select from public.external_records where
     (payload #>> array['unexpected field','a.b','1'])::int=3) then
     raise exception 'Owner cannot query opaque provider JSON directly'; end if;
+  if not exists(select from public.menu_catalog_for(cafe) c where c.id=menu_id and c.price_cents=725
+    and c.name='Provider item' and c.description='Seasonal' and c.size_label='Regular' and c.prep_seconds=41)
+    or exists(select from public.menu_catalog_for(other) c where c.id=menu_id) then
+    raise exception 'Scoped Menu did not combine certified source values and native recipe identity'; end if;
   if has_function_privilege('authenticated','public.external_commit_page(uuid,text,text,text,text,bigint,jsonb,boolean,jsonb)','execute') then
     raise exception 'Owner has archive write privilege'; end if;
 end $$;

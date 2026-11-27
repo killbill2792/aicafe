@@ -465,14 +465,18 @@ export function createToastAdapter(params?:{db:SupabaseClient;businessId:string;
           const sizeGuid=i.pricingStrategy==="SIZE_PRICE"?i.pricingRules?.sizeSpecificPricingGuid:null;
           const sizeGroup=sizeGuid?groups.find(group=>group.guid===sizeGuid):undefined;
           const sizes=(sizeGroup?.modifierOptionReferences??[])
-            .map(id=>options[String(id)]).filter((o):o is NonNullable<typeof options[string]>=>Boolean(o));
+            .flatMap(id=>{
+              const option=options[String(id)];
+              return option?[{option,sourceKey:String(id)}]:[];
+            });
           if(sizes.length){
-            for(const option of sizes){
+            for(const {option,sourceKey} of sizes){
               const id=posId(i.guid)+":size:"+option.guid;
               // Toast publishes size prices on the Size group's option items.
               const sizePrice=resolvedRulePrice(option.pricingStrategy??"NONE",option.price,option.pricingRules);
               addPublished({...common,posItemId:id,sizeLabel:option.name,priceCents:sizePrice,
-                posMetadata:{...common.posMetadata,sizeOptionGuid:option.guid}});
+                posMetadata:{...common.posMetadata,sizeOptionGuid:option.guid,
+                  sizeOptionPath:["modifierOptionReferences",sourceKey]}});
             }
           }else{
             const id=posId(i.guid);

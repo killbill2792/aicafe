@@ -11,13 +11,18 @@ const source=[readFileSync(resolve("supabase/migrations/20261028000112_canonical
  readFileSync(resolve("supabase/migrations/20261029000119_toast_latest_raw_capture.sql"),"utf8"),
  readFileSync(resolve("supabase/migrations/20261031000130_ai_reads_all_toast_fields.sql"),"utf8"),
  readFileSync(resolve("supabase/migrations/20261104000155_toast_money_cents_projection.sql"),"utf8"),
- readFileSync(resolve("supabase/migrations/20261119205950_pos0ef_canonical_customer_identity.sql"),"utf8")].join("\n");
+ readFileSync(resolve("supabase/migrations/20261119205950_pos0ef_canonical_customer_identity.sql"),"utf8"),
+ readFileSync(resolve("supabase/migrations/20261127004200_retire_analytics_result_copies.sql"),"utf8")].join("\n");
 const docs=readFileSync(resolve("docs/data-dictionary.md"),"utf8");
 describe("canonical view column dictionary contract",()=>{
  it("documents every SQL view column, without phantom columns",()=>{
-  const names=[...source.matchAll(/create or replace view public\.(cv_[a-z_]+)\s*\(([^)]+)\)\s*with\s*\(security_invoker=true\)/g)];
-  expect(new Set(names.map(m=>m[1]))).toEqual(new Set(canonicalViewNames));
-  for(const [,view,columns] of names.filter((m,i)=>names.findLastIndex(x=>x[1]===m[1])===i)){
+  const views=new Map<string,string>();
+  for(const [,view,columns,dropped] of source.matchAll(/create or replace view public\.(cv_[a-z_]+)\s*\(([^)]+)\)\s*with\s*\(security_invoker=true\)|drop view public\.(cv_[a-z_]+);/g)){
+   if(dropped)views.delete(dropped);
+   else views.set(view,columns);
+  }
+  expect(new Set(views.keys())).toEqual(new Set(canonicalViewNames));
+  for(const [view,columns] of views){
    const expected=Object.keys(canonicalDictionary[view as keyof typeof canonicalDictionary].columns).sort();
    expect(columns.split(",").map(v=>v.trim()).sort()).toEqual(expected);
   }

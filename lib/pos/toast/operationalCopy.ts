@@ -29,7 +29,8 @@ export async function copyToastPublishedMenu(db:SupabaseClient,p:ToastCopyScope)
  if(bundle.receipt.restaurantGuid.toLowerCase()!==p.restaurantGuid.toLowerCase())
   throw new ToastApiError("unauthorized_location");
  const identifiers=bundle.items.map(item=>({namespace:"pos_item_id",value:item.posItemId,selector:{
-   path:item.sourcePath,itemGuid:item.posMetadata?.itemGuid,sizeOptionGuid:item.posMetadata?.sizeOptionGuid
+   path:item.sourcePath,itemGuid:item.posMetadata?.itemGuid,sizeOptionGuid:item.posMetadata?.sizeOptionGuid,
+   sizeOptionPath:item.posMetadata?.sizeOptionPath
  }}));
  await stream.commit([{key:p.restaurantGuid,payload:bundle.source,updatedAt:bundle.receipt.publicationVersion,
    identifiers}],null,true);
@@ -95,17 +96,20 @@ export async function copyToastPublishedMenu(db:SupabaseClient,p:ToastCopyScope)
  // same-version observed_at. Price proof requires that *stored* instant,
  // not the timestamp from a later retry of the same Toast publication.
  const observations=new Map<string,string>();
+ const bindings:{native_id:string;source_id:string}[]=[];
  for(let offset=0;offset<bundle.items.length;offset+=100){
   const ids=bundle.items.slice(offset,offset+100).map(item=>item.posItemId);
   const {data:rows,error:observationError}=await db.from("menu_items")
-   .select("pos_item_id,toast_publication_observed_at")
+   .select("id,pos_item_id,toast_publication_observed_at")
    .eq("business_id",p.businessId)
    .eq("toast_publication_version",bundle.receipt.publicationVersion)
    .eq("toast_publication_state","active").in("pos_item_id",ids);
   if(observationError)throw new ToastApiError("unavailable");
   for(const row of rows??[]){
-   if(row.pos_item_id&&row.toast_publication_observed_at)
+   if(row.pos_item_id&&row.toast_publication_observed_at){
     observations.set(row.pos_item_id,row.toast_publication_observed_at);
+    bindings.push({native_id:row.id,source_id:row.pos_item_id});
+   }
   }
  }
  let verifiedPriceChanges=0;
@@ -122,6 +126,11 @@ export async function copyToastPublishedMenu(db:SupabaseClient,p:ToastCopyScope)
   if(error)throw new ToastApiError("unavailable");
   if(data===true)verifiedPriceChanges++;
  }
+ const {error:identityError}=await db.rpc("external_bind_native_identities",{
+  p_business:p.businessId,p_provider:"toast",p_account:p.restaurantGuid,p_resource:"menus/v2/menus",
+  p_namespace:"pos_item_id",p_native_table:"public.menu_items",p_bindings:bindings,
+ });
+ if(identityError)throw new ToastApiError("unavailable");
  // This is the completion marker: only now can a matching version use the
  // cheap metadata-only path. A crash before this write leaves NULL pending.
  const {error:completeError}=await db.from("toast_optional_sync_state").update({

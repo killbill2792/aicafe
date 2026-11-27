@@ -211,9 +211,9 @@ async function getMenuItemSnapshots(
   asOfDate?:string,
 ): Promise<MenuItemSnapshot[]> {
   const {data:items}=await snapshotPaged("menu_items",
-    (start,end)=>supabase.from("cv_menu")
-     .select("id,name,price_cents,prep_seconds,category,is_active",{count:"exact"})
-     .eq("business_id",businessId).like("source_ref","item:%").order("source_ref",{ascending:true}).range(start,end),
+    (start,end)=>supabase.rpc("menu_catalog_for",{p_business_id:businessId},{count:"exact"})
+     .select("id,name,price_cents,prep_seconds,category,is_active")
+     .order("id",{ascending:true}).range(start,end),
      row=>row.id);
   if (!items || items.length === 0) return [];
 

@@ -72,7 +72,8 @@ export async function getPricingInputs(supabase: SupabaseClient, businessId: str
     return readOrders();
   })();
   const [itemsResult, days, runningCosts, ordersResult, ownerFeePlans] = await Promise.all([
-    supabase.from("cv_menu").select("id,name,price_cents,category,prep_seconds").like("source_ref","item:%").eq("business_id", businessId).eq("data->>is_active", "true"),
+    supabase.rpc("menu_catalog_for",{p_business_id:businessId})
+      .select("id,name,price_cents,category,prep_seconds").eq("is_active",true),
     daysPromise,
     measure("runningCosts", () => readRunningCostLines(supabase,businessId,firstOfMonth,todayDateStr)),
     ordersPromise,

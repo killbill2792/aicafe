@@ -61,7 +61,7 @@ function mockDB(){
     const q={select(_s:string){return q;},eq(_k:string,_v:unknown){return q;}, async in(_key:string,ids:string[]){
       return {data:ids.flatMap(id=>{
        const stored=storedObservations.get(id);
-       return stored?[{pos_item_id:id,toast_publication_observed_at:stored.observedAt}]:[];
+       return stored?[{id:itemGuid,pos_item_id:id,toast_publication_observed_at:stored.observedAt}]:[];
       }),error:null};
      }};
     return q;
@@ -153,7 +153,8 @@ describe("POS0 verified single-bundle source handoff",()=>{
   expect(m.bundle).toHaveBeenCalledTimes(2);
   expect(m.apply).toHaveBeenLastCalledWith(f.db,business,expect.objectContaining({
    receipt:expect.objectContaining({observedAt:bundle.receipt.observedAt})}));
-  expect(f.rpc).toHaveBeenLastCalledWith("toast_verify_existing_price_history", expect.objectContaining({p_observed_at:bundle.receipt.observedAt}));
+  expect(f.rpc.mock.calls.findLast(([name])=>name==="toast_verify_existing_price_history"))
+   .toEqual(["toast_verify_existing_price_history", expect.objectContaining({p_observed_at:bundle.receipt.observedAt})]);
   expect(result.changed).toBe(0);
   expect(result.verifiedPriceChanges).toBe(1);
   expect(f.now.menu_checked_local_day).not.toBeNull();
@@ -177,7 +178,8 @@ describe("POS0 verified single-bundle source handoff",()=>{
   expect(f.now.menu_pending_observations).toEqual([ bundle.receipt.observedAt,retryObservedAt]);
   expect(f.rpc.mock.calls.filter(([name])=>name==="toast_verify_existing_price_history"))
    .toHaveLength(1);
-  expect(f.rpc).toHaveBeenLastCalledWith("toast_verify_existing_price_history", expect.objectContaining({p_observed_at:bundle.receipt.observedAt}));
+  expect(f.rpc.mock.calls.findLast(([name])=>name==="toast_verify_existing_price_history"))
+   .toEqual(["toast_verify_existing_price_history", expect.objectContaining({p_observed_at:bundle.receipt.observedAt})]);
   expect(result.verifiedPriceChanges).toBe(1);
   expect(f.now.menu_checked_local_day).not.toBeNull();
  });
@@ -199,7 +201,8 @@ describe("POS0 verified single-bundle source handoff",()=>{
   expect(m.canonical).toHaveBeenCalledTimes(2);
   expect(m.bundle).toHaveBeenCalledTimes(3);
   expect(f.now.menu_pending_observations).toEqual([ bundle.receipt.observedAt,secondAt,thirdAt]);expect(f.now.menu_last_updated).toBe(bundle.receipt.publicationVersion);
-  expect(f.rpc).toHaveBeenLastCalledWith("toast_verify_existing_price_history", expect.objectContaining({p_observed_at:bundle.receipt.observedAt}));
+  expect(f.rpc.mock.calls.findLast(([name])=>name==="toast_verify_existing_price_history"))
+   .toEqual(["toast_verify_existing_price_history", expect.objectContaining({p_observed_at:bundle.receipt.observedAt})]);
   expect(result.verifiedPriceChanges).toBe(1);
   expect(f.now.menu_checked_local_day).not.toBeNull();
  });
@@ -255,7 +258,8 @@ describe("POS0 verified single-bundle source handoff",()=>{
   expect(f.now.menu_checked_local_day).toBeNull();
   const result=await copyToastPublishedMenu(f.db,scope);
   expect(result.verifiedPriceChanges).toBe(1);
-  expect(f.rpc).toHaveBeenLastCalledWith("toast_verify_existing_price_history", expect.objectContaining({p_observed_at:firstObserved}));
+  expect(f.rpc.mock.calls.findLast(([name])=>name==="toast_verify_existing_price_history"))
+   .toEqual(["toast_verify_existing_price_history", expect.objectContaining({p_observed_at:firstObserved})]);
   expect(f.now.menu_checked_local_day).not.toBeNull();
  });
  it("does not count an unverified price-history RPC as a source-verified change",async()=>{

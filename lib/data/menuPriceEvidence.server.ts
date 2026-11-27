@@ -16,7 +16,7 @@ export async function readMenuPriceEvidence(businessId:string,
  const [history,catalog,coverage]=await Promise.all([
   db.from("menu_price_history").select("menu_item_id,source_type,changed_at")
     .eq("business_id",businessId).in("menu_item_id",ids).order("changed_at",{ascending:false}),
-  db.from("cv_menu").select("id,catalog_source").like("source_ref","item:%").eq("business_id",businessId).in("id",ids),
+  db.rpc("menu_catalog_for",{p_business_id:businessId}).select("id,catalog_source").in("id",ids),
   db.from("cv_sales_days").select("business_date").eq("business_id",businessId)
     .eq("data->>sales_data_status","actual").lte("business_date",asOf)
     .order("business_date",{ascending:false}).limit(1).maybeSingle(),

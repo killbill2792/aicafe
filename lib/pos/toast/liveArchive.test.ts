@@ -54,9 +54,10 @@ describe("which of today's orders are kept during the day",()=>{
   expect(sanitized).not.toContain("reusable-secret");
   expect(sanitized).not.toContain('"cardNumber"');
   expect(sanitized).not.toContain('"cvv"');
-  // The same order downloaded with its lists in another order is byte-identical.
+  // Keep the provider's original list order in both ingestion paths.
   const shuffled={...order(1),checks:[{...order(1).checks[0],selections:[...order(1).checks[0].selections].reverse()}]};
-  expect(JSON.stringify(liveArchivePage([shuffled]))).toBe(JSON.stringify(liveArchivePage([order(1)])));
+  expect(liveArchivePage([shuffled])).toEqual(redactToastRaw([shuffled]));
+  expect(liveArchivePage([shuffled])).not.toEqual(liveArchivePage([order(1)]));
  });
 });
 
