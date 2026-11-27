@@ -237,4 +237,64 @@ SELECT (NOT EXISTS(SELECT FROM public.cv_shifts WHERE business_id=:'a' AND sourc
 \else
 SELECT 1/0;
 \endif
+
+-- A complete day may replace stale saved hours only when every accepted order
+-- matches its committed original, including the close and reconciled totals.
+SELECT gen_random_uuid() AS hourly_run,gen_random_uuid() AS hourly_order,
+ gen_random_uuid() AS hourly_thread,current_date-9 AS hourly_day \gset
+INSERT INTO public.toast_sync_runs(id,business_id,restaurant_guid,kind,state,requested_from,requested_to)
+VALUES(:'hourly_run',:'a',:'toast_loc','daily','running',:'hourly_day',:'hourly_day');
+INSERT INTO public.toast_day_status(business_id,restaurant_guid,business_date,import_state,coverage_complete,
+ unparsed_count,order_count,last_import_run_id)
+VALUES(:'a',:'toast_loc',:'hourly_day','imported',true,0,1,:'hourly_run');
+UPDATE public.toast_sync_runs SET state='completed' WHERE id=:'hourly_run';
+INSERT INTO public.daily_rollups(business_id,business_date,net_sales_cents,orders_count,drinks_count,
+ ingredients_cents,card_fees_cents,voids_cents,sales_data_status)
+VALUES(:'a',:'hourly_day',1200,1,0,0,0,0,'actual');
+INSERT INTO public.hourly_sales_rollup(business_id,location_id,business_date,hour_local,net_sales_cents,orders_count)
+VALUES(:'a',:'loc_a',:'hourly_day',12,1200,1),(:'b',:'loc_b',:'hourly_day',12,9900,1);
+INSERT INTO public.orders(business_id,location_id,pos_order_id,closed_at,business_date,gross_sales_cents,net_sales_cents)
+VALUES(:'a',:'loc_a','toast:'||:'toast_loc'||':'||:'hourly_order',
+ (:'hourly_day'::date + time '11:05') AT TIME ZONE 'UTC',:'hourly_day',1200,1200);
+INSERT INTO public.external_records(business_id,restaurant_guid,entity,entity_guid,business_date,
+ run_id,seen_run_id,payload,payload_sha256,capture_key,source_account,source_key)
+VALUES(:'a',:'toast_loc','order',:'hourly_order',:'hourly_day',:'hourly_run',:'hourly_run',
+ jsonb_build_object('guid',:'hourly_order','closedDate',:'hourly_day'||'T11:05:00Z','checks','[{"amount":12}]'::jsonb),
+ repeat('a',64),'fixture-hourly-order',:'toast_loc',:'hourly_order');
+INSERT INTO public.ai_threads(id,business_id,owner_user_id,client_request_id)
+VALUES(:'hourly_thread',:'a',:'oa',gen_random_uuid());
+SELECT set_config('request.jwt.claim.role','service_role',true);
+SELECT public.u3_issue_research_scope(:'a',:'oa',:'hourly_thread','owner') AS hourly_ticket \gset
+GRANT aicafe_research TO postgres WITH INHERIT FALSE, SET TRUE;
+SET LOCAL ROLE aicafe_research;
+SELECT set_config('aicafe.u3_research_scope',:'hourly_ticket',true) IS NOT NULL AS scope_set \gset
+SELECT (count(*)=1 AND min(hour_local)=11 AND sum(net_sales_cents)=1200 AND sum(orders_count)=1)
+ AS hourly_research FROM u3_research.hourly_sales_rollup WHERE business_date=:'hourly_day' \gset
+\if :hourly_research
+\echo Governed SQL uses original hourly data within the signed café.
+\else
+SELECT 1/0;
+\endif
+RESET ROLE;
+SET LOCAL ROLE authenticated;
+SELECT set_config('request.jwt.claim.role','authenticated',true);
+SELECT (count(*)=1 AND min((data->>'hour_local')::int)=11 AND sum(net_sales_cents)=1200
+ AND bool_and(data->>'evidence'='committed_orders')) AS hourly_app
+FROM public.cv_sales_hours WHERE business_date=:'hourly_day' \gset
+\if :hourly_app
+\echo The app uses the complete committed order instead of stale saved hours.
+\else
+SELECT 1/0;
+\endif
+RESET ROLE;
+UPDATE public.external_records SET payload=payload-'closedDate' WHERE business_id=:'a' AND entity_guid=:'hourly_order';
+SET LOCAL ROLE authenticated;
+SELECT (count(*)=1 AND min((data->>'hour_local')::int)=12 AND sum(net_sales_cents)=1200
+ AND bool_and(data->>'evidence'='saved_hourly_rollup')) AS hourly_fallback
+FROM public.cv_sales_hours WHERE business_date=:'hourly_day' \gset
+\if :hourly_fallback
+\echo An original with no close preserves the entire saved day.
+\else
+SELECT 1/0;
+\endif
 ROLLBACK;
