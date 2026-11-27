@@ -311,6 +311,7 @@ html[data-theme="glass"] body {
 
 /* Intrinsic layout: the authored column preference and actual content determine
    the wrapping. The installed component retains its own spacing and styling. */
+.luna-adaptive-flow, .luna-adaptive-flow-content { --luna-track: max-content; }
 .luna-adaptive-flow > .grid, .luna-adaptive-flow-content {
   display: flex;
   flex-wrap: wrap;
