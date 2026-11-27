@@ -233,8 +233,8 @@ export function pdfDocumentDataLines(spec:Record<string,unknown>):string[]{
    if(!props||typeof props!=="object"||Array.isArray(props))continue;
    const values=props as Record<string,unknown>;
    for(const [key,value] of Object.entries(values)){
-    if(value==null||["src","href","color","backgroundColor","borderColor","fontSize","fontWeight","fontStyle","align","level","width","height","margin","padding","orientation","size"].includes(key))continue;
-    if(typeof value==="string")lines.push(value);
+    if(value==null||["color","backgroundColor","borderColor","fontSize","fontWeight","fontStyle","align","level","width","height","margin","padding","orientation","size"].includes(key))continue;
+    if(typeof value==="string")lines.push(key==="src"&&value.startsWith("data:image/")?"Embedded document image":value);
     else if(Array.isArray(value)&&key==="rows")for(const row of value)lines.push(Array.isArray(row)?row.map(cell=>cell==null?"Not recorded":typeof cell==="object"?JSON.stringify(cell):String(cell)).join(" | "):JSON.stringify(row));
     else lines.push(key+": "+JSON.stringify(value));
    }

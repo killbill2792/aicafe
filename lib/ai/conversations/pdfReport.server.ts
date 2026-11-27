@@ -30,7 +30,12 @@ export function executablePdfSpec(raw:unknown):Spec|undefined{
   pending.push(...children);
  }
  if(seen.size!==Object.keys(elements).length)return;
- return raw as unknown as Spec;
+ // No action/watch or slot directives reach the PDF server renderer.
+ const clean=Object.fromEntries(Object.entries(elements).map(([key,rawNode])=>{
+  const node=rawNode as Record<string,unknown>;
+  return [key,{type:node.type,props:node.props,children:node.children??[],...(node.repeat!==undefined?{repeat:node.repeat}:{}),...(node.visible!==undefined?{visible:node.visible}:{})}];
+ }));
+ return {root:raw.root,elements:clean,...(obj(raw.state)?{state:raw.state}:{})} as Spec;
 }
 
 /** Wrap the complete official registry. Normalize resolved values at the

@@ -20,6 +20,11 @@ describe("official PDF renderer",()=>{
    expect(Buffer.from(bytes).subarray(0,5).toString()).toBe("%PDF-");expect(bytes.length).toBeGreaterThan(1000);
   }
  },30000);
+ it("keeps state-bound financial values and repeated PDF layout available to the official renderer",async()=>{
+  const spec={...pdfSpec,state:{rows:[["State-bound sales",321]]},elements:{...pdfSpec.elements,table:{...pdfSpec.elements.table,props:{columns:[{header:"Account"},{header:"Amount"}],rows:{$state:"/rows"}}}}};
+  expect(executablePdfSpec(spec)?.state).toEqual(spec.state);
+  expect(Buffer.from(await renderSavedAnswerPdf(message,{...block,pdfSpec:spec})).subarray(0,5).toString()).toBe("%PDF-");
+ });
  it("includes authored data and prose in the fallback without calling a model",()=>{
   const spec=savedAnswerPdfSpec(message,[block]);
   const values=JSON.stringify(spec);

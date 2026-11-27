@@ -13,10 +13,20 @@ import type { ConversationMessage, ConversationPage, ConversationThread } from "
 import { activeOwnerQuestionMessageId, clarifyCardState, beginOptimisticOwner, sendKey, visibleConversationMessages,
   hasInsertedHistoryPage, isTranscriptNearBottom, transcriptScrollTarget, isDuplicateLinkedExperimentCard, mergeLatestConversationPage, prependConversationPage, loadedSavedReports, conversationLocation } from "./supervisorChatBehavior";
 import { ChatMarkdown, SourceLegend } from "./ChatMarkdown";
-import {recoverRichPresentation,type RichPresentation} from "@/lib/ai/conversations/presentation";
+import {recoverRichPresentation,presentationDataLines,type RichPresentation} from "@/lib/ai/conversations/presentation";
 import dynamic from "next/dynamic";
 import PresentationBoundary from "./PresentationBoundary";
 const SupervisorRichPresentation=dynamic(()=>import("./SupervisorRichPresentation"));
+function PresentationTextFallback({block}:{block:unknown}){
+ let text:string;
+ try{
+  const data=recoverRichPresentation(block);
+  text=data?presentationDataLines(data).filter(Boolean).join("\n"):JSON.stringify(block,null,2);
+  if(!text.trim())text=JSON.stringify(block,null,2);
+ }catch{text=JSON.stringify(block,null,2);}
+ return <div className="min-w-0 whitespace-pre-wrap wrap-break-word">{text}</div>;
+}
+
 import FactSummary from "./FactSummary";
 import SupervisorRoutineInlineCard from "./SupervisorRoutineInlineCard";
 import SupervisorProposalCard from "./SupervisorProposalCard";
@@ -196,7 +206,7 @@ function SupervisorMessage({ message, copy, locale, cafeCurrency, storedFiles, o
           return <ChatMarkdown key={i} text={group.text} locale={locale} unverified={joinedAgentTextSpans(group,rawSpans)} labels={provenanceLabels} showLegend={false}/>;
         if(isDuplicateLinkedExperimentCard(group.block,message.threadId,linkedThreadId,linkedProposalId))
           return null;
-        if(record(group.block)&&group.block.type==="rich_presentation")return <PresentationBoundary key={i}><SupervisorRichPresentation block={group.block} message={message} attachments={storedFiles} locale={locale} onSuggest={onSuggest} disabled={suggestionsDisabled}/></PresentationBoundary>;
+        if(record(group.block)&&group.block.type==="rich_presentation")return <PresentationBoundary key={i} fallback={<PresentationTextFallback block={group.block}/>}><SupervisorRichPresentation block={group.block} message={message} attachments={storedFiles} locale={locale} onSuggest={onSuggest} disabled={suggestionsDisabled}/></PresentationBoundary>;
         if(record(group.block)&&group.block.type==="how"&&Array.isArray(group.block.lines)){
           const lines=group.block.lines.slice(0,20).flatMap(line=>{
             const parsed=explainLineSchema.safeParse(line);
@@ -1368,7 +1378,7 @@ export default function SupervisorChatComposer({
         note={sending ? progressStatus?.stage==="answering"?progressStatusText(copy,progressStatus):liveNote??(!liveJobId?progressStatusText(copy,progressStatus)??copy.sending:null) : watcher.job?.progress.length?null:liveCopy.resumed} />}
       {sending && (streamedText||streamedPresentations.length>0) && <article aria-hidden="true" aria-live="off" aria-busy="true" inert className="w-full space-y-3"><div className="flex items-center gap-2 text-[0.9375rem] font-bold text-ink-muted"><span className="flex h-8 w-8 items-center justify-center rounded-full bg-pos-soft text-good"><Sparkles size={17} aria-hidden="true"/></span>{copy.supervisor}</div>{streamedPresentations.map((item,i)=>{
         const start=i===0?0:streamedPresentations[i-1].offset;
-        return <div key={i} className="min-w-0 space-y-3">{item.offset>start&&<ReplyBlock block={{type:"text",text:streamedText.slice(start,item.offset)}} copy={copy} locale={locale} streaming/>}<PresentationBoundary><SupervisorRichPresentation block={item.block} locale={locale} onSuggest={()=>undefined} disabled/></PresentationBoundary></div>;
+        return <div key={i} className="min-w-0 space-y-3">{item.offset>start&&<ReplyBlock block={{type:"text",text:streamedText.slice(start,item.offset)}} copy={copy} locale={locale} streaming/>}<PresentationBoundary fallback={<PresentationTextFallback block={item.block}/>}><SupervisorRichPresentation block={item.block} locale={locale} onSuggest={()=>undefined} disabled/></PresentationBoundary></div>;
       })}{streamedText.length>(streamedPresentations.at(-1)?.offset??0)&&<ReplyBlock block={{type:"text",text:streamedText.slice(streamedPresentations.at(-1)?.offset??0)}} copy={copy} locale={locale} streaming/>}</article>}
       </div>
     </div>
