@@ -14,3 +14,21 @@ it("filters credentials in new provider fields without dropping sibling business
   expect(retainProviderPayload(source)).toEqual({"payment method": {"Card Details": {brand: "VISA"}},
     extra: ["[redacted]", {note: "unrelated"}]});
 });
+
+it("keeps business metadata and transaction references whose names overlap with credential fields", () => {
+  const source = {
+    inventory: {expiry: "2026-12-01", track: true, signature: "received by owner", fingerprint: "lot-A"},
+    supplier: {accountNumber: "invoice-ledger", networkId: "distributor-A"},
+    payments: [{networkTransactionIdentifier: "payment-reference", expirationYear: 2030,
+      amount: 100, card: {number: "4111111111111111", tokenId: "reusable", brand: "VISA"}}],
+    bankAccount: {accountNumber: "123456789", institution: "Bank"},
+    memo: "Use oat milk. Card 4111 1111 1111 1111 belongs to the customer.",
+    sourceReference: "12345678901234567890123",
+  };
+  expect(retainProviderPayload(source)).toEqual({
+    ...source,
+    payments: [{networkTransactionIdentifier: "payment-reference", amount: 100, card: {brand: "VISA"}}],
+    bankAccount: {institution: "Bank"},
+    memo: "Use oat milk. Card [redacted] belongs to the customer.",
+  });
+});
