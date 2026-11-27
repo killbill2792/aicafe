@@ -82,6 +82,8 @@ describe('Luna repository boundary',()=>{
     ["export const evaluate = new Function('return 1');", 'computed module loading'],
     ["export const evaluate = globalThis['eval'];", 'computed module loading'],
     ["export { compileFunction } from 'node:vm';", 'Node runtime loader'],
+    ["export { Worker } from 'node:worker_threads';", 'Node runtime loader'],
+    ["export { spawn } from 'child_process';", 'Node runtime loader'],
   ])('rejects unverifiable module loader references (%s)', (source, diagnostic)=>{
     put('lib/luna/runtime/index.ts',"export * from '../../adapter';");
     put('lib/adapter.ts',source);
@@ -153,6 +155,33 @@ describe('Luna repository boundary',()=>{
     expect(r.errors).toContain('scripts/guards/run-all.mjs');
     expect(r.errors).toContain('.github/workflows/ai-cafe-pr-baseline.yml');
     expect(r.errors).toContain('revision-bound safeguard change');
+  });
+  it('checks inherited control changes against the exact approved main blobs',()=>{
+    const control='scripts/guards/run-all.mjs';
+    const proof='tests/safeguard.test.ts';
+    put(control,'// reviewed launcher');
+    put(proof,"import {it,expect} from 'vitest'; import {sales} from '../lib/metrics/core'; it('reads sales',()=>expect(sales).toBe(1));");
+    const prior=commit();
+    put(control,'// independently reviewed candidate');
+    const approved=[control,git('rev-parse',prior+':'+control),git('hash-object',control),
+      'approved change',proof,git('hash-object',proof),'retire after migration'].join(' | ');
+    put(control,'// reviewed launcher');
+    put(ledger,'| Safeguard change | '+approved+' |\n');
+    const main=commit();
+
+    put(control,'// unapproved inherited launcher');
+    put(legacy,'export const run = 2;');
+    put('lib/metrics/core.ts',"export * from '@/lib/ai/conversations/agentRunner.server';");
+    base=commit();
+    const rejected=run('stacked/worker',main);
+    expect(rejected.errors).toContain(control+':1: missing independently reviewed');
+    expect(rejected.errors).toContain(legacy+':1: missing independently reviewed');
+    expect(rejected.errors).toContain('lib/metrics/core.ts forbidden dependency');
+    put(control,'// independently reviewed candidate');
+    put(legacy,'export const run = 1;');
+    put('lib/metrics/core.ts','export const sales = 1;');
+    base=commit();
+    expect(run('stacked/worker',main)).toEqual({status:0,errors:''});
   });
   it('permits unrelated DB registrations while retaining the independent oracle',()=>{
     put('scripts/db/run-all.sh','node scripts/db/luna-engine-race.mjs\n'); base=commit();

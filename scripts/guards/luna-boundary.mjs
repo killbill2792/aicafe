@@ -25,6 +25,7 @@ const protectedPath = p => [
 const legacyDependency = p => protectedPath(p) || /^lib\/ai\/agent\/(?!tools\/)/.test(p);
 const controls = p => /^scripts\/(?:guards\/(?:luna-boundary[^/]*|run-all\.mjs)|db\/(?:luna-engine-race\.mjs|run-all\.sh)|acceptance\/owner-gate\.mjs)$/.test(p) ||
   p === '.github/workflows/ai-cafe-pr-baseline.yml';
+const opaqueNodeModules = new Set(['module', 'vm', 'process', 'worker_threads', 'child_process']);
 const git = (...args) => execFileSync('git', args, {encoding:'utf8', maxBuffer:64*1024*1024});
 
 function snapshot(ref) {
@@ -141,7 +142,7 @@ export function graphErrors(tree, seeds) {
     const result = [];
     for (const spec of imports(file,tree.read(file))) {
       if (spec === null) { result.push({error:'computed module loading prevents dependency verification'}); continue; }
-      if (['node:module', 'module', 'node:vm', 'vm', 'node:process', 'process'].includes(spec)) {
+      if (opaqueNodeModules.has(spec.replace(/^node:/, ''))) {
         result.push({error:'Node runtime loader or evaluator prevents dependency verification'});
         continue;
       }
@@ -187,10 +188,17 @@ function exceptionRows(tree, kind) {
   return tree.read(ledger).split('\n').filter(line => line.startsWith('| '+kind+' |'));
 }
 
+function changedPaths(before, after) {
+  return [...new Set([...before.files.keys(), ...after.files.keys()])]
+    .filter(p => before.files.get(p)?.hash !== after.files.get(p)?.hash ||
+      before.files.get(p)?.mode !== after.files.get(p)?.mode);
+}
+
 export function audit(base, head, branch = '', trustedBase = base, regressions = new Set()) {
   const before = snapshot(base), after = snapshot(head);
-  const changed = [...new Set([...before.files.keys(),...after.files.keys()])]
-    .filter(p => before.files.get(p)?.hash !== after.files.get(p)?.hash || before.files.get(p)?.mode !== after.files.get(p)?.mode);
+  const changed = changedPaths(before, after);
+  const trusted = trustedBase === base ? before : snapshot(trustedBase);
+  const trustedChanges = trusted === before ? changed : changedPaths(trusted, after);
   const active = [...after.files.keys()].filter(replacement);
   const foundation = new Set(['AGENTS.md',ledger,'docs/plans/luna-rebuild-handoff.md',
     'scripts/db/luna-engine-race.mjs','scripts/db/run-all.sh','scripts/guards/run-all.mjs',
@@ -198,37 +206,40 @@ export function audit(base, head, branch = '', trustedBase = base, regressions =
     '.github/workflows/ai-cafe-pr-baseline.yml']);
   if (branch === 'luna/complete-rebuild' && changed.some(p => !foundation.has(p)))
     return [ledger+':1: PR 594 is limited to development architecture and safeguards'];
-  const legacyEdits = changed.filter(p => legacyDependency(p) && !test.test(p));
-  const rebuild = branch === 'luna/operator-rebuild' || changed.some(replacement);
+  const rebuild = branch === 'luna/operator-rebuild' || trustedChanges.some(replacement);
   const policy = 'scripts/guards/luna-boundary.mjs';
   const errors = graphErrors(after,[...after.files.keys()].filter(lunaSource));
   // A change in an intermediate helper can break an untouched shared service.
-  if (changed.some(p => code.test(p) || p === 'tsconfig.json')) {
+  if (trustedChanges.some(p => code.test(p) || p === 'tsconfig.json')) {
     const services = tree => [...tree.files.keys()].filter(p => shared(p) && code.test(p) && !test.test(p));
-    const previous = new Set(graphErrors(before,services(before)));
+    const previous = new Set(graphErrors(trusted,services(trusted)));
     errors.push(...graphErrors(after,services(after)).filter(e => !previous.has(e)));
   }
-  const trusted = trustedBase === base ? before : snapshot(trustedBase);
+  const legacyEdits = trustedChanges.filter(p => legacyDependency(p) && !test.test(p));
   // The shared DB runner regularly gains independent tests. Preserve its Luna
   // registration; the baseline DB job also runs the oracle directly.
   const dbRunner = 'scripts/db/run-all.sh';
-  const policyEdits = changed.filter(p => controls(p) && p !== dbRunner);
-  if (trusted.files.has(policy) && changed.includes(dbRunner) &&
+  const controlChanges = trustedChanges.filter(controls);
+  const policyEdits = controlChanges.filter(p => p !== dbRunner);
+  if (trusted.files.has(policy) && controlChanges.includes(dbRunner) &&
       (!after.files.has(dbRunner) || !after.read(dbRunner).includes('node scripts/db/luna-engine-race.mjs')))
     errors.push(dbRunner+':1: retain the registered Luna database oracle');
   if ((rebuild || legacyEdits.length) && policyEdits.length)
     errors.push(ledger+':1: change enforcement separately from replacement or protected legacy code');
-  if (before.files.has(policy) && !after.files.has(policy))
+  if (trusted.files.has(policy) && !after.files.has(policy))
     errors.push(policy+':1: approved boundary guard was removed');
 
   // A row in the candidate cannot authorize itself. The independently reviewed
   // policy baseline pins both the proposed change and the regression to run.
-  for (const [kind, paths] of [['Legacy exception',legacyEdits], ['Safeguard change',trusted.files.has(policy) ? policyEdits : []]]) {
+  for (const [kind, paths] of [
+    ['Legacy exception', legacyEdits],
+    ['Safeguard change', trusted.files.has(policy) ? policyEdits : []],
+  ]) {
     if (!paths.length) continue;
     const approved = new Set(exceptionRows(trusted,kind));
     const rows = exceptionRows(after,kind).filter(row => approved.has(row));
     for (const path of paths) {
-      const from = before.files.get(path)?.hash ?? 'absent';
+      const from = trusted.files.get(path)?.hash ?? 'absent';
       const to = after.files.get(path)?.hash ?? 'absent';
       const valid = rows.some(row => {
         const [file, old, next, reason, proof, proofBlob, exit] = row.split('|').slice(2,-1).map(c => c.trim());
