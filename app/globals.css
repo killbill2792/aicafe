@@ -309,18 +309,20 @@ html[data-theme="glass"] body {
   }
 }
 
-/* Adapt the upstream Grid to the actual message width (not the viewport).
-   Keep its requested columns and gap whenever room permits. */
-.luna-responsive-grid { container-type: inline-size; }
-.luna-responsive-grid > .grid > * { min-width: 0; overflow-wrap: anywhere; }
-@container (max-width: 42rem) {
-  .luna-responsive-grid:is([data-columns="5"],[data-columns="6"]) > .grid { grid-template-columns: repeat(4,minmax(0,1fr)); }
+/* Intrinsic layout: the authored column preference and actual content determine
+   the wrapping. The installed component retains its own spacing and styling. */
+.luna-adaptive-flow > .grid, .luna-adaptive-flow-content {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: stretch;
+  min-inline-size: 0;
 }
-@container (max-width: 32rem) {
-  .luna-responsive-grid:is([data-columns="3"],[data-columns="4"],[data-columns="5"],[data-columns="6"]) > .grid { grid-template-columns: repeat(2,minmax(0,1fr)); }
+.luna-adaptive-flow > .grid > *, .luna-adaptive-flow-content > * {
+  flex: 1 1 var(--luna-track, max-content);
+  min-inline-size: auto;
+  max-inline-size: 100%;
+  overflow-wrap: break-word;
 }
-@container (max-width: 14rem) {
-  .luna-responsive-grid > .grid { grid-template-columns: minmax(0,1fr); }
-}
+.luna-native-widget :where(.flex, .grid) > * { max-inline-size: 100%; }
 .luna-responsive-table table { table-layout: auto; }
 .luna-responsive-table th, .luna-responsive-table td { white-space: normal; overflow-wrap: anywhere; }
