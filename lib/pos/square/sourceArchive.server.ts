@@ -42,13 +42,14 @@ export function squareArchive(db: SupabaseClient, businessId: string, merchant: 
       }
       if (resource === "catalog" && "item_data" in row && row.item_data && typeof row.item_data === "object") {
         const data=row.item_data;
+        const selector={path:["item_data"],display:{name:["item_data","name"],description:["item_data","description"]}};
         let variants: SourceIdentifier[]=[];
         if ("variations" in data && Array.isArray(data.variations)) {
           variants=data.variations.flatMap(v => typeof v?.id === "string"
-            ? [{namespace:"pos_item_id",value:v.id,selector:{path:["item_data"],variation:v.id}}] : []);
+            ? [{namespace:"pos_item_id",value:v.id,selector:{...selector,variation:v.id}}] : []);
         }
         identifiers.push(...(variants.length ? variants :
-          [{namespace:"pos_item_id",value:row.id,selector:{path:["item_data"]}}]));
+          [{namespace:"pos_item_id",value:row.id,selector}]));
       }
       return {key: row.id, payload: row, identifiers,
         updatedAt: "updated_at" in row && typeof row.updated_at === "string" ? row.updated_at : null};
