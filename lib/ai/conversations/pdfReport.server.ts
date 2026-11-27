@@ -1,5 +1,5 @@
 import "server-only";
-import {createElement} from "react";
+import {createElement,type ReactNode,type ComponentType} from "react";
 import type {Spec,UIElement} from "@json-render/core";
 import {standardComponents,renderToBuffer,type RenderComponentRegistry} from "@json-render/react-pdf/render";
 import {standardComponentDefinitions} from "@json-render/react-pdf/server";
@@ -18,7 +18,7 @@ export function executablePdfSpec(raw:unknown):Spec|undefined{
  if(!obj(raw)||!safeNativeJSON(raw)||typeof raw.root!=="string"||!obj(raw.elements)||raw.state!==undefined&&!obj(raw.state))return;
  const elements=raw.elements,root=elements[raw.root];
  if(!obj(root)||root.type!=="Document"||!Array.isArray(root.children)||!root.children.length)return;
- if(root.children.some(key=>typeof key!=="string"||!obj(elements[key])||elements[key].type!=="Page"))return;
+ if(root.children.some(key=>{const child=typeof key==="string"?elements[key]:undefined;return !obj(child)||child.type!=="Page";}))return;
  const seen=new Set<string>(),pending=[raw.root];
  while(pending.length){
   const key=pending.pop()!,e=elements[key];
@@ -45,7 +45,7 @@ export function pdfRenderProps(name:string,raw:Record<string,unknown>):Record<st
   const columns=Array.isArray(props.columns)?props.columns:[];
   const labels=columns.map(col=>obj(col)?col.header:col);
   const table=normalizeTableData(labels,props.rows);
-  props.columns=table.columns.map((header,index)=>({...obj(columns[index])?columns[index]:{},header}));
+  props.columns=table.columns.map((header,index)=>{const original=columns[index];return {...(obj(original)?original:{}),header};});
   props.rows=table.rows.map(row=>row.map(display));
  }
  if(name==="List"&&Array.isArray(props.items))props.items=props.items.map(display);
@@ -69,13 +69,13 @@ export function pdfRenderProps(name:string,raw:Record<string,unknown>):Record<st
  }
  const parsed=definition.props.safeParse(props);
  if(!parsed.success)throw Error("pdf_props_unavailable");
- return parsed.data;
+ return parsed.data as Record<string,unknown>;
 }
 
 function registry():RenderComponentRegistry{
  const result:RenderComponentRegistry={};
  for(const [name,Component] of Object.entries(standardComponents)){
-  result[name]=(input:{element:UIElement;children?:React.ReactNode;emit:()=>void})=>createElement(Component as React.ComponentType<typeof input>,{...input,element:{...input.element,props:pdfRenderProps(name,input.element.props)}});
+  result[name]=(input:{element:UIElement;children?:ReactNode;emit:()=>void})=>createElement(Component as ComponentType<typeof input>,{...input,element:{...input.element,props:pdfRenderProps(name,input.element.props)}});
  }
  return result;
 }
