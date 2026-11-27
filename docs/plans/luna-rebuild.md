@@ -1,5 +1,7 @@
 # Luna rebuild
 
+The [implementation handoff](luna-rebuild-handoff.md) records the agent workflows, architectural decisions, test evidence and implementation order. It supersedes the early approach of wiring the conversation surface before proving the replacement harness.
+
 Luna is the operator an owner can delegate a shift to. An owner or employee should be able to return to the same conversation after closing a browser, see what actually happened, correct the assignment, and retrieve its output. A reminder is complete when its delivery has a receipt. A research request can complete in the current conversation without creating a routine.
 
 ## Execution and ownership
