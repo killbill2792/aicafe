@@ -71,6 +71,16 @@ describe("Installed native Luna catalog",()=>{
   expect(resolveElementProps(expression,{stateModel:{sales:4328006,factor:1.2},functions:nativeFunctions}).text).toBe(5193607);
   expect(resolveElementProps(expression,{stateModel:{sales:4328006,factor:0},functions:nativeFunctions}).text).toBe(0);
  });
+ it("retains a valid native sibling and adapts an unknown widget without an additional model call",()=>{
+  const s=make({root:node("Stack",{},["statement","text"]),statement:node("IncomeStatement",{title:"Profit and loss",columns:["Account","Amount"],rows:[["Sales",1000],["Costs",-500]]}),text:node("Text",{text:"Keep this explanation"})});
+  const blocks=resolveResearchSpec(patches(s),new Map(),ctx);
+  expect(blocks).toHaveLength(1);
+  const native=blocks[0].nativeSpec!;
+  expect(native.elements.statement).toMatchObject({type:"LunaFallback",props:{values:{title:"Profit and loss",rows:[["Sales",1000],["Costs",-500]]}}});
+  expect(native.elements.text.props.text).toBe("Keep this explanation");
+  expect(presentationDataLines(blocks[0]).join("\n")).toContain("1000");
+  expect(presentationDataLines(blocks[0])).toContain("Keep this explanation");
+ });
  it("retains native text without requiring a data reference or a successful SQL read",()=>{
   const s=make({root:node("Text",{text:"My estimate is $47,608.07"})});
   const blocks=resolveResearchSpec(patches(s),new Map(),ctx);expect(blocks[0].nativeSpec).toBeDefined();

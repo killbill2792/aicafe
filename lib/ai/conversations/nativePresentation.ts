@@ -80,7 +80,7 @@ export function validNativeSpec(raw:unknown):raw is Spec{
  while(pending.length){
   const key=pending.pop()!;if(seen.has(key)||!Object.hasOwn(elements,key))return false;seen.add(key);
   const e=elements[key];if(!obj(e)||typeof e.type!=="string"||!safeKey(e.type)||!obj(e.props))return false;
-  if(!Object.hasOwn(upstreamComponents,e.type)&&e.type!=="LunaChart"&&e.type!=="LunaSnapshot")return false;
+  if(!Object.hasOwn(upstreamComponents,e.type)&&e.type!=="LunaChart"&&e.type!=="LunaSnapshot"&&e.type!=="LunaFallback")return false;
   if(e.type==="LunaSnapshot"){
    if(typeof e.props.snapshotJSON!=="string")return false;
    try{const snapshot:unknown=JSON.parse(e.props.snapshotJSON);if(!obj(snapshot)||snapshot.type!=="rich_presentation"||snapshot.version!==1||Object.hasOwn(snapshot,"nativeSpec")||!safeNativeJSON(snapshot))return false;}catch{return false;}
@@ -109,6 +109,24 @@ export function validNativeSpec(raw:unknown):raw is Spec{
  return checked===watches.length;
 }
 export const nativeSpecSchema=z.custom<Spec>(validNativeSpec);
+/** An unknown component is not a reason to suppress its data or its siblings.
+ * Prefer the installed widget; otherwise use an inert data-only component.
+ * No action from an unknown component receives execution authority. */
+export function recoverNativeDisplaySpec(raw:unknown):Spec|undefined{
+ if(!obj(raw)||!obj(raw.elements)||!safeNativeJSON(raw))return;
+ const elements:Record<string,unknown>={};
+ for(const [key,element] of Object.entries(raw.elements)){
+  if(!obj(element))return;
+  const type=element.type;
+  if(typeof type==="string"&&(Object.hasOwn(upstreamComponents,type)||["LunaChart","LunaSnapshot","LunaFallback"].includes(type))&&obj(element.props)){
+   elements[key]=element;continue;
+  }
+  // Keep layout children but do not execute unfamiliar controls.
+  elements[key]={type:"LunaFallback",props:{widget:String(type??"Visual"),values:element.props??{}},children:element.children??[],...(element.slots!==undefined?{slots:element.slots}:{})};
+ }
+ const candidate={...raw,elements};
+ return validNativeSpec(candidate)?candidate:undefined;
+}
 /** Opaque snapshots cannot be interpreted as state expressions. */
 export function readNativeSnapshot(value:unknown):unknown{try{return typeof value==="string"?JSON.parse(value):undefined;}catch{return undefined;}}
 /** Wrap the library store, not the components. Dynamic bindings and actions

@@ -1,7 +1,7 @@
 import {z} from "zod";
 import {defineCatalog,defineSchema,createSpecStreamCompiler,type SpecStreamLine} from "@json-render/core";
 import {schema} from "@json-render/react/schema";
-import {upstreamComponents,nativeChartDefinition,validNativeSpec,safeNativeJSON,safeStatePath,safeKey,localActionNames} from "@/lib/ai/conversations/nativePresentation";
+import {upstreamComponents,nativeChartDefinition,validNativeSpec,recoverNativeDisplaySpec,safeNativeJSON,safeStatePath,safeKey,localActionNames} from "@/lib/ai/conversations/nativePresentation";
 import {exactDecimal,CALC_OPS,type CalcOp} from "@/lib/metrics/core/calculator";
 import {calculate} from "./tools.server";
 import {presentationPanelSchema,recordTableSchema,recoverRichPresentation,descriptiveGroupTitle,interactiveCalcSchema,evaluatePresentationCalc,type InteractiveCalc,type PresentationPanel,type RecordTable,type RichPresentation} from "@/lib/ai/conversations/presentation";
@@ -31,8 +31,10 @@ const displayCell=(value:unknown):string|number|boolean|null=>value==null?null:t
 function normalizeAuthoredTable(value:unknown):unknown{
  if(!obj(value)||!Array.isArray(value.rows))return value;
  const keys=[...new Set(value.rows.flatMap(row=>obj(row)?Object.keys(row):[]))];
- const columns=Array.isArray(value.columns)&&value.columns.length?value.columns.map((c,i)=>String(displayCell(c)??"Value "+(i+1))||"Value "+(i+1)):keys.length?keys:["Value"];
- const rows=value.rows.map(row=>Array.isArray(row)?row.map(displayCell):obj(row)?keys.map(k=>displayCell(row[k])):[displayCell(row)]);
+ const supplied=Array.isArray(value.columns)?value.columns.map((c,i)=>String(displayCell(c)??"Value "+(i+1))||"Value "+(i+1)):[];
+ // Named records must be aligned by their keys, not by insertion order.
+ const columns=keys.length?[...new Set([...supplied,...keys])]:supplied.length?supplied:["Value"];
+ const rows=value.rows.map(row=>Array.isArray(row)?row.map(displayCell):obj(row)?columns.map(k=>Object.hasOwn(row,k)?displayCell(row[k]):null):[displayCell(row)]);
  return {...value,columns,rows};
 }
 const envelope=z.object({layout:z.enum(["stack","grid"]).optional(),panels:z.array(z.union([selection,pointPanel,analysisPanel])).optional(),
@@ -350,8 +352,9 @@ export function resolveResearchSpec(patches:readonly unknown[],queries:Presentat
    return [key,{type:"LunaSnapshot",props:{snapshotJSON:JSON.stringify(snapshot??{type:"rich_presentation",version:1,layout:"stack",panels:[],suggestions:[]})},children:[],...(e.visible!==undefined?{visible:e.visible}:{}),...(e.repeat!==undefined?{repeat:e.repeat}:{})}];
   }));
   const candidate:unknown=JSON.parse(JSON.stringify({root:spec.root,elements,...(spec.state?{state:spec.state}:{})}));
-  if(validNativeSpec(candidate)){
-   const view=recoverRichPresentation({type:"rich_presentation",version:1,layout:"stack",panels:[],suggestions:[],nativeSpec:candidate});if(view)return [view];
+  const display=validNativeSpec(candidate)?candidate:recoverNativeDisplaySpec(candidate);
+  if(display){
+   const view=recoverRichPresentation({type:"rich_presentation",version:1,layout:"stack",panels:[],suggestions:[],nativeSpec:display});if(view)return [view];
   }
  }
  if(native)onDeliveryLoss?.();

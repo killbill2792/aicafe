@@ -2213,8 +2213,10 @@ test("@home Task16E adaptive answer survives reload, preserves prose and opens a
     const nativeNode=(type,props,children=[])=>({type,props,children});
     const forecastExpr={$computed:"calculate",args:{inputs:[{name:"sales",unit:"cents",value:1000000},{name:"factor",unit:"ratio",value:{$state:"/factor"}}],steps:[{id:"forecast",op:"multiply",args:["sales","factor"]}],format:"currency",currency:owner.currency}};
     const nativeSpec={root:"card",state:{factor:1.1,show:false,dialog:false},elements:{
-      card:nativeNode("Card",{title:"Interactive growth forecast"},["slider","value","button","details","grid","code","openDialog","dialog","ledger"]),
+      card:nativeNode("Card",{title:"Interactive growth forecast"},["slider","value","button","details","grid","code","openDialog","dialog","ledger","unformatted","fallback"]),
       ledger:nativeNode("Table",{columns:["Native account","Amount"],rows:[["Sales",120.25],["Refund",-12.5],["Zero",0],["Missing",null]],caption:"Native accounting ledger"}),
+      unformatted:nativeNode("Text",{text:125}),
+      fallback:nativeNode("LunaFallback",{widget:"IncomeStatement",values:{title:"Fallback income statement",columns:["Account","Amount"],rows:[["Fallback revenue",7654],["Fallback expense",-321]]}}),
       grid:nativeNode("Grid",{columns:4,gap:"sm"},["a","b","c","d"]),
       a:nativeNode("Text",{text:"A"}),b:nativeNode("Text",{text:"B"}),c:nativeNode("Text",{text:"C"}),d:nativeNode("Text",{text:"D"}),
       code:nativeNode("Text",{text:"Native muted surface",variant:"code"}),
@@ -2252,7 +2254,12 @@ test("@home Task16E adaptive answer survives reload, preserves prose and opens a
       const rich=answer.getByTestId("supervisor-rich-presentation");
       const widget=rich.getByTestId("luna-native-widget");
       await expect(widget.getByText("Interactive growth forecast")).toBeVisible();
-      const ledger=widget.getByRole("table").filter({hasText:"Native accounting ledger"});
+      const ledger=widget.getByRole("table").filter({hasText:"Native account"});
+      await expect(widget.getByText("Native accounting ledger",{exact:true})).toBeVisible();
+      await expect(widget.getByText("125",{exact:true})).toBeVisible();
+      const fallback=widget.getByRole("table").filter({hasText:"Fallback revenue"});
+      await expect(fallback.getByRole("cell",{name:"7654",exact:true})).toBeVisible();
+      await expect(fallback.getByRole("cell",{name:"-321",exact:true})).toBeVisible();
       await expect(ledger).toBeVisible();
       for(const value of ["120.25","-12.5","0","Not recorded"])await expect(ledger.getByRole("cell",{name:value,exact:true})).toBeVisible();
       const grid=widget.locator(".grid-cols-4");

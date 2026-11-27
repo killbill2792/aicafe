@@ -221,7 +221,7 @@ function ControlView({kind}:{kind:unknown}){
   {kind==="suggestions"&&data.suggestions.length>0&&<div className="flex flex-wrap gap-2">{data.suggestions.map(prompt=><button key={prompt} type="button" disabled={disabled} onClick={()=>onSuggest(prompt)} className="min-h-12 max-w-full rounded-full border border-line px-4 py-2 text-start text-[0.9375rem] leading-snug text-ink hover:bg-surface2 focus-visible:outline-solid focus-visible:outline-2 focus-visible:outline-ink disabled:opacity-50">{prompt}</button>)}</div>}
  </>;
 }
-const nativeCatalog=defineCatalog(schema,{components:{...upstreamComponents,LunaChart:nativeChartDefinition,LunaSnapshot:{props:z.object({snapshotJSON:z.string()}),slots:[],description:"Resolved authenticated data view"}},actions:{}});
+const nativeCatalog=defineCatalog(schema,{components:{...upstreamComponents,LunaChart:nativeChartDefinition,LunaSnapshot:{props:z.object({snapshotJSON:z.string()}),slots:[],description:"Resolved authenticated data view"},LunaFallback:{props:z.object({widget:z.string(),values:z.unknown()}),slots:["default"],description:"Inert authored values"}},actions:{}});
 /** The installed registry is used wholesale. Wrap resolved props for the one
  * browser trust boundary, not a second manually curated widget library. */
 /** A display failure is never an instruction to suppress authored values.
@@ -229,6 +229,17 @@ const nativeCatalog=defineCatalog(schema,{components:{...upstreamComponents,Luna
 function AuthoredValues({value}:{value:unknown}){
  const display=(v:unknown):string=>typeof v==="string"?v:v==null?"Not recorded":JSON.stringify(v,null,2)??String(v);
  if(value&&typeof value==="object"&&!Array.isArray(value)){
+  const data=value as Record<string,unknown>;
+  const rawRows=Array.isArray(data.rows)?data.rows:Array.isArray(data.points)?data.points:undefined;
+  if(rawRows?.length){
+   const keys=[...new Set(rawRows.flatMap(row=>row&&typeof row==="object"&&!Array.isArray(row)?Object.keys(row):[]))];
+   const supplied=Array.isArray(data.columns)?data.columns.map(display):[];
+   const columns=keys.length?[...new Set([...supplied,...keys])]:supplied;
+   const rows=rawRows.map(row=>Array.isArray(row)?row:row&&typeof row==="object"?columns.map(k=>Object.hasOwn(row,k)?(row as Record<string,unknown>)[k]:null):[row]);
+   const width=rows.reduce((n,row)=>Math.max(n,row.length),columns.length);
+   const rest=Object.fromEntries(Object.entries(data).filter(([k])=>!["rows","points","columns"].includes(k)));
+   return <div className="min-w-0 space-y-2"><AuthoredValues value={rest}/><div className="overflow-x-auto"><table className="w-full text-sm"><thead><tr>{Array.from({length:width},(_,i)=><th key={i} className="border-b border-line p-2 text-start">{columns[i]??"Value "+(i+1)}</th>)}</tr></thead><tbody>{rows.map((row,i)=><tr key={i}>{Array.from({length:width},(_,j)=><td key={j} className="border-b border-line p-2 whitespace-pre-wrap">{display(row[j])}</td>)}</tr>)}</tbody></table></div></div>;
+  }
   return <dl className="min-w-0 space-y-2">{Object.entries(value).map(([key,v])=><div key={key} className="min-w-0"><dt className="text-sm font-medium text-ink-muted">{key}</dt><dd className="whitespace-pre-wrap wrap-break-word">{display(v)}</dd></div>)}</dl>;
  }
  return <p className="whitespace-pre-wrap wrap-break-word">{display(value)}</p>;
@@ -267,6 +278,7 @@ function NativeWidget({spec,locale}:{spec:Spec;locale:string}){
     return table.success?<RecordTableView table={table.data} locale={locale}/>:<AuthoredValues value={props}/>;
    },
    LunaSnapshot:({props})=><NativeSnapshot value={props.snapshotJSON} locale={locale}/>,
+   LunaFallback:({props,children})=><div className="min-w-0 space-y-2"><AuthoredValues value={props.values}/>{children}</div>,
   }});
   for(const name of Object.keys(registry)){
    if(!Object.hasOwn(upstreamComponents,name))continue;

@@ -230,6 +230,7 @@ export function presentationDataLines(block:RichPresentation):string[]{
    if(e.type==="LunaSnapshot"){const snapshot=recoverRichPresentation(readNativeSnapshot(e.props.snapshotJSON));if(snapshot&&!snapshot.nativeSpec)lines.push(...presentationDataLines(snapshot));}
    else{
     const props=resolveElementProps(e.props,ctx);
+    if(e.type==="LunaFallback")lines.push(JSON.stringify(props.values)??String(props.values));
     for(const name of ["title","text","label","description","message","caption"]){if(typeof props[name]==="string"&&props[name])lines.push(props[name]);}
     if(Array.isArray(props.rows))for(const row of props.rows)if(Array.isArray(row))lines.push(row.map(v=>v==null?"Not recorded":String(v)).join(" | "));
     if(Array.isArray(props.points))for(const point of props.points)if(point&&typeof point==="object"&&"label" in point&&"value" in point)lines.push(String(point.label)+": "+String(point.value));
