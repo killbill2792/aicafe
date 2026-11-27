@@ -5613,6 +5613,11 @@
      "delta_origin",
      "text",
      true
+    ],
+    [
+     "reader_owner_user_id",
+     "uuid",
+     false
     ]
    ],
    "relation": "external_changes_other",
@@ -5620,6 +5625,10 @@
     {
      "target": "businesses",
      "constraint": "external_changes_other_business_id_fkey"
+    },
+    {
+     "target": "users",
+     "constraint": "external_record_changes_reader_owner_user_id_fkey"
     }
    ]
   },
@@ -5891,10 +5900,20 @@
      "delta_origin",
      "text",
      true
+    ],
+    [
+     "reader_owner_user_id",
+     "uuid",
+     false
     ]
    ],
    "relation": "external_record_changes",
-   "foreign_keys": []
+   "foreign_keys": [
+    {
+     "target": "users",
+     "constraint": "external_record_changes_reader_owner_user_id_fkey"
+    }
+   ]
   },
   {
    "rls": true,
@@ -6117,10 +6136,20 @@
      "commit_id",
      "uuid",
      false
+    ],
+    [
+     "reader_owner_user_id",
+     "uuid",
+     false
     ]
    ],
    "relation": "external_records",
-   "foreign_keys": []
+   "foreign_keys": [
+    {
+     "target": "users",
+     "constraint": "external_records_reader_owner_user_id_fkey"
+    }
+   ]
   },
   {
    "rls": true,
@@ -6245,6 +6274,11 @@
      "commit_id",
      "uuid",
      false
+    ],
+    [
+     "reader_owner_user_id",
+     "uuid",
+     false
     ]
    ],
    "relation": "external_records_other",
@@ -6252,6 +6286,10 @@
     {
      "target": "businesses",
      "constraint": "external_records_other_business_id_fkey"
+    },
+    {
+     "target": "users",
+     "constraint": "external_records_reader_owner_user_id_fkey"
     }
    ]
   },
@@ -6386,6 +6424,11 @@
      "last_complete_scope",
      "jsonb",
      false
+    ],
+    [
+     "reader_owner_user_id",
+     "uuid",
+     false
     ]
    ],
    "relation": "external_resources",
@@ -6393,6 +6436,10 @@
     {
      "target": "businesses",
      "constraint": "external_resources_business_id_fkey"
+    },
+    {
+     "target": "users",
+     "constraint": "external_resources_reader_owner_user_id_fkey"
     }
    ]
   },
@@ -17712,10 +17759,19 @@
      "delta_origin",
      "text",
      true
+    ],
+    [
+     "reader_owner_user_id",
+     "uuid",
+     false
     ]
    ],
    "relation": "toast_raw_changes",
    "foreign_keys": [
+    {
+     "target": "users",
+     "constraint": "external_record_changes_reader_owner_user_id_fkey"
+    },
     {
      "target": "businesses",
      "constraint": "toast_raw_changes_business_id_fkey"
@@ -17845,10 +17901,19 @@
      "commit_id",
      "uuid",
      false
+    ],
+    [
+     "reader_owner_user_id",
+     "uuid",
+     false
     ]
    ],
    "relation": "toast_raw_records",
    "foreign_keys": [
+    {
+     "target": "users",
+     "constraint": "external_records_reader_owner_user_id_fkey"
+    },
     {
      "target": "businesses",
      "constraint": "toast_raw_records_business_id_fkey"
@@ -19154,11 +19219,6 @@
     [
      "financial_closing_cents",
      "bigint",
-     false
-    ],
-    [
-     "financial_transactions",
-     "jsonb",
      false
     ],
     [

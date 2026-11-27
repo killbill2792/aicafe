@@ -23,6 +23,9 @@ try{
   await db.query("insert into public.businesses(id,name,is_demo,timezone,currency) values($1,'Disposable finance',false,'UTC','CAD')",[x.business]);
   await db.query("insert into public.memberships(business_id,user_id,role) values($1,$2,'owner')",[x.business,x.owner]);
  }
+ const coOwner=randomUUID();
+ await db.query("insert into auth.users(id,aud,role,email) values($1,'authenticated','authenticated',$2)",[coOwner,coOwner+"@example.invalid"]);
+ await db.query("insert into public.memberships(business_id,user_id,role) values($1,$2,'owner')",[a.business,coOwner]);
  await role("service_role");
  const saved=await one(capture,args);assert.ok(saved.id);
  assert.equal((await one(capture,args)).id,saved.id,"idempotent source replay");
@@ -35,14 +38,31 @@ try{
  assert.equal(Number((await one(sync,[b.business,b.owner])).n),0);
  await role("authenticated",a.owner);
  const read="select financial_closing_cents,financial_to from public.uploads where id=$1";
+ const archive="select payload from public.external_records where source_key=$1 and entity='financial_statement'";
  assert.equal(Number((await one(read,[saved.id])).financial_closing_cents),11000);
+ assert.deepEqual((await one(archive,[saved.id])).payload,rows,"archive keeps exact statement facts and source order");
  await denied(()=>one(capture,args));
  assert.equal((await db.query("update public.uploads set financial_closing_cents=123 where id=$1",[saved.id])).rowCount,0);
  assert.equal((await db.query("delete from public.uploads where id=$1",[saved.id])).rowCount,0);
  assert.equal((await db.query("update public.operating_tasks set status='handled' where business_id=$1 and id=$2",[a.business,"financial-review:"+a.owner])).rowCount,0);
+ await role("authenticated",coOwner);
+ assert.equal(await one(archive,[saved.id]),null,"another owner of the same café cannot read the statement");
+ assert.equal(await one("select resource from public.external_resources where business_id=$1 and resource='financial_statement'",[a.business]),null);
+ assert.equal(await one("select record_id from public.external_record_links where native_key->>'id'=$1",[saved.id]),null);
  await role("authenticated",b.owner);
  assert.equal(await one(read,[saved.id]),null);
+ assert.equal(await one(archive,[saved.id]),null);
  assert.equal(await one("select id from public.operating_tasks where business_id=$1 and id=$2",[a.business,"financial-review:"+a.owner]),null);
+ await role("service_role");
+ const nativeQuery=`select count(*)::int as rows, sum((entry->>'amountCents')::bigint)::int as movement
+  from public.external_records r cross join lateral jsonb_array_elements(r.payload) entry
+  where r.provider='owner_upload' and r.source_key='${saved.id}'`;
+ const research="select public.supervisor_research_sql($1,$2,$3) as result";
+ await db.query("SAVEPOINT financial_research_read");
+ assert.deepEqual((await one(research,[a.business,a.owner,nativeQuery])).result.rows,[{rows:2,movement:1000}]);
+ assert.deepEqual((await one(research,[a.business,coOwner,nativeQuery])).result.rows,[{rows:0,movement:null}]);
+ await db.query("ROLLBACK TO SAVEPOINT financial_research_read");
+ await db.query("RELEASE SAVEPOINT financial_research_read");
  await db.query("RESET ROLE");
  const supplier=randomUUID(),thread=randomUUID(),message=randomUUID();
  await db.query("insert into public.cafe_suppliers(id,business_id,display_name) values($1,$2,'Local rent supplier')",[supplier,a.business]);

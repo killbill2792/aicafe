@@ -1,6 +1,6 @@
 import "server-only";
 import type {SupabaseClient} from "@supabase/supabase-js";
-import {readProviderPages} from "./pages";
+import {readProviderPages,readWithSourceAccess} from "./pages";
 import {retainProviderPayload} from "./retainPayload";
 
 export type Source = {businessId: string; provider: string; account: string};
@@ -84,10 +84,8 @@ export async function synchronizeSource(db: SupabaseClient, source: Source, plan
   let cursor = pending?.cursor ?? null;
   const observe = async (scope: ObservationScope) => {
     await readProviderPages(async current => {
-      await plan.authorize();
-      const page = await plan.observe(current, scope);
+      const page = await readWithSourceAccess(plan.authorize,()=>plan.observe(current,scope));
       return {items: [], next: page.next, commit: async () => {
-        await plan.authorize();
         await stream.commit(page.records, {cursor: page.next, scope}, page.next === null);
         cursor = page.next;
       }};

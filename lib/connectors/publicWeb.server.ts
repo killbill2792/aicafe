@@ -1,6 +1,7 @@
 import "server-only";
 import {AsyncLocalStorage} from "node:async_hooks";
 import {assertCafeAiAccess} from "@/lib/access/access.server";
+import {readWithSourceAccess,SourceAccessChanged} from "@/lib/externalData/pages";
 import {assertExternalAccess,WEB_RESOURCE} from "./access.server";
 import type {ConnectorOwner} from "./registry.server";
 import type {WebSearchResult} from "@/lib/ai/agent/webSearch.server";
@@ -32,11 +33,9 @@ export function withOwnerPublicWebScope<T>(scope:ConnectorOwner,work:()=>T):T{
 export async function ownerPublicWebSearch(scope:ConnectorOwner,
   search:()=>Promise<WebSearchResult>):Promise<WebSearchResult>{
   try{
-    const revision=await assertOwnerPublicWeb(scope);
-    const answer=await withOwnerPublicWebScope(scope,search);
-    if(await assertOwnerPublicWeb(scope)!==revision)throw new PublicWebPermissionError("permissionDenied");
-    return answer;
+    return await readWithSourceAccess(()=>assertOwnerPublicWeb(scope),()=>withOwnerPublicWebScope(scope,search));
   }catch(error){
+    if(error instanceof SourceAccessChanged)return {available:false,reason:"permissionDenied"};
     if(error instanceof PublicWebPermissionError)return {available:false,reason:error.reason};
     throw error;
   }
@@ -48,10 +47,12 @@ export async function ownerPublicWebSearch(scope:ConnectorOwner,
 export const ownerPublicWebFetch:typeof fetch=async(input,init)=>{
   const scope=scopeContext.getStore();
   if(!scope)throw new PublicWebPermissionError("permissionsUnavailable");
-  const revision=await assertOwnerPublicWeb(scope);
-  const response=await fetch(input,init);
   try{
-    if(await assertOwnerPublicWeb(scope)!==revision)throw new PublicWebPermissionError("permissionDenied");
-    return response;
-  }catch(error){await response.body?.cancel().catch(()=>undefined);throw error;}
+    return await readWithSourceAccess(()=>assertOwnerPublicWeb(scope),()=>fetch(input,init),async response=>{
+      await response.body?.cancel().catch(()=>undefined);
+    });
+  }catch(error){
+    if(error instanceof SourceAccessChanged)throw new PublicWebPermissionError("permissionDenied");
+    throw error;
+  }
 };
