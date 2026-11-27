@@ -79,4 +79,35 @@ describe("shared external observation",()=>{
     await expect(synchronizeSource(db,source,{...defaults,scope:{},observe})).rejects.toBeInstanceOf(SourceRetryDeferred);
     expect(observe).not.toHaveBeenCalled();
   });
+
+  it("recovers a Clover offset page and preserves expanded merchant objects without schema mappings",async()=>{
+    const {db,rpc}=database();
+    const merchant={businessId:source.businessId,provider:"clover",account:"test-merchant"};
+    const window={modifiedFrom:"1795752000000",modifiedThrough:"1795755600000"};
+    const order={
+      id:"4JXF1VGWBQCK2",modifiedTime:1795752300000,total:0,
+      lineItems:{elements:[{id:"5C4EPMGXZY19J",item:{id:"VNGW94K2WF2FJ"},price:0}]},
+      discounts:{elements:[{id:"9AAB5JF8ME8JE",amount:null}]},
+    };
+    const nextOrder={id:"WRCVPKN251J93",modifiedTime:1795752600000,total:500};
+    // Clover v3 returns an elements envelope. The connector owns conversion
+    // from its offset to an opaque token and keeps the expanded source object.
+    const observe=vi.fn().mockImplementationOnce(async (cursor,scope)=>{
+      expect(cursor).toBeNull();
+      expect(scope).toEqual(window);
+      return {records:[{key:order.id,payload:order,updatedAt:new Date(order.modifiedTime).toISOString()}],next:"1"};
+    }).mockRejectedValueOnce(new Error("Clover temporarily unavailable"))
+      .mockImplementationOnce(async (cursor,scope)=>{
+        expect(cursor).toBe("1");
+        expect(scope).toEqual(window);
+        return {records:[{key:nextOrder.id,payload:nextOrder,updatedAt:new Date(nextOrder.modifiedTime).toISOString()}],next:null};
+      });
+    const plan={...defaults,capability:{resource:"orders",permission:"Read orders",granted:true},
+      stream:"orders-modified",mode:"incremental" as const,scope:window,observe};
+    await expect(synchronizeSource(db,merchant,plan)).rejects.toThrow("Clover temporarily unavailable");
+    await expect(synchronizeSource(db,merchant,plan)).resolves.toEqual([order,nextOrder]);
+    expect(rpc).toHaveBeenCalledWith("external_read_observation",expect.objectContaining({
+      p_provider:"clover",p_account:merchant.account,p_scope:window,p_mode:"incremental",
+    }));
+  });
 });

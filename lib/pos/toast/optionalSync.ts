@@ -245,11 +245,11 @@ export async function syncToastOptionalSources(db:SupabaseClient,p:Location,
    if(error)throw new ToastApiError("unavailable");
   }catch(e){recordFailure(e);}
  }
- if(scopes.config!==false&&Date.now()<deadlineAt){
+ if(Date.now()<deadlineAt){
   try{
    await refreshToastConfiguration(db,{
     businessId:p.business_id,provider:"toast",account:p.restaurant_guid,
-   },now,deadlineAt);
+   },now,deadlineAt,scopes);
   }catch(e){recordFailure(e);}
  }
  if(phaseFailures.length)throw new ToastApiError(phaseFailures[0]);

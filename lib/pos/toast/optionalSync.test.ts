@@ -78,6 +78,7 @@ beforeEach(()=>{
  m.request.mockImplementation(async (path:string)=>{
   if(path.includes("/menus/v2/metadata"))
    return {restaurantGuid:restaurant,lastUpdated:"2026-10-23T00:00:00Z"};
+  if(path==="/packaging/v1/published/packagingConfig")return {enabled:false,items:[]};
   return [];
  });
 });
@@ -188,6 +189,17 @@ describe("independent optional Toast source phases",()=>{
   expect(m.roster).toHaveBeenCalledTimes(1);
   expect(m.attendance).toHaveBeenCalledTimes(2);
  });
+ it("records the published packaging snapshot even when configuration access is denied",async()=>{
+  const f=mockDB({menus:false,labor:false,config:false,packaging:true});
+  const rpc=vi.spyOn(f.db,"rpc");
+  await syncToastOptionalSources(f.db,scope,now,Date.now()+20000);
+  expect(m.request.mock.calls.map(([path])=>path)).toContain("/packaging/v1/published/packagingConfig");
+  expect(m.request.mock.calls.map(([path])=>String(path)).some(path=>path.startsWith("/config/"))).toBe(false);
+  expect(rpc).toHaveBeenCalledWith("external_commit_page",expect.objectContaining({
+   p_resource:"packaging/v1/published/packagingConfig",p_complete:true,
+   p_records:[expect.objectContaining({key:"singleton",payload:{enabled:false,items:[]}})],
+  }));
+ });
  it("replays staged attendance before fetching, even when Toast changed nothing",async()=>{
   const f=mockDB({menus:false,labor:true,config:false},false,true);
   m.attendance.mockRejectedValueOnce(new ToastApiError("unavailable"));
@@ -205,7 +217,7 @@ describe("independent optional Toast source phases",()=>{
   expect(f.writes.some(w=>w.attendance_copied_at)).toBe(false);
  });
  it("missing optional scopes safely skip all provider calls",async()=>{
-  const f=mockDB({menus:false,labor:false,config:false});
+  const f=mockDB({menus:false,labor:false,config:false,packaging:false});
   await expect(syncToastOptionalSources(f.db,scope,now,Date.now()+20000))
    .resolves.toMatchObject({menu:"scope_missing",labor:"scope_missing"});
   expect(m.request).not.toHaveBeenCalled();

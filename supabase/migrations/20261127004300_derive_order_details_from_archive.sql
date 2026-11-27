@@ -159,13 +159,35 @@ begin
         (derived.order_duration_seconds,derived.check_discounts,derived.item_discounts,
          derived.item_taxes,derived.modifier_prices,derived.void_details,derived.refund_details)
  ) then raise exception 'Stored order details differ from original archive'; end if;
+
+ -- The archive scope columns are new in this upgrade. Establish scope for
+ -- existing certified detail rows from their exact archived order, committed
+ -- import and verified restaurant. Equality with the existing credential
+ -- filter keeps this an attribution only: nothing is rewritten or exposed
+ -- if it needs separate historical retention review.
+ update public.external_records r set
+   source_account=r.restaurant_guid::text,source_key=r.entity_guid::text,
+   payload_origin='historical_provider'
+ from public.toast_order_typed_facts stored
+ join public.toast_day_status d on (d.business_id,d.restaurant_guid,d.business_date,d.last_import_run_id)=
+   (stored.business_id,stored.restaurant_guid,stored.business_date,stored.run_id) and d.import_state='imported'
+ join public.toast_location_mappings mapping on (mapping.business_id,mapping.restaurant_guid)=
+   (stored.business_id,stored.restaurant_guid) and mapping.verified_at is not null
+ where (r.business_id,r.id,r.restaurant_guid,r.business_date,r.entity_guid,r.run_id)=
+   (stored.business_id,stored.raw_record_id,stored.restaurant_guid,stored.business_date,stored.order_guid,stored.run_id)
+   and r.provider='toast' and r.entity='order' and r.source_account is null and r.superseded_by is null
+   and r.payload->>'guid'=r.entity_guid::text and jsonb_typeof(r.payload->'checks')='array'
+   and public.ai_safe_retained_json(r.payload)=r.payload;
+
  if exists (
   select from public.toast_order_typed_facts stored
   join public.toast_day_status d on (d.business_id,d.restaurant_guid,d.business_date,d.last_import_run_id)=
    (stored.business_id,stored.restaurant_guid,stored.business_date,stored.run_id) and d.import_state='imported'
   join public.external_records r on r.id=stored.raw_record_id and r.provider='toast'
     and r.business_id=stored.business_id
-  where r.source_account is null or r.run_id is distinct from stored.run_id
+  where r.source_account is distinct from stored.restaurant_guid::text
+    or r.source_key is distinct from stored.order_guid::text
+    or r.run_id is distinct from stored.run_id
  ) then raise exception 'Certified archive history needs provenance review before cutover'; end if;
 end $$;
 
