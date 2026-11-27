@@ -8,6 +8,7 @@ import {newResolveState,observeToolResult} from "@/lib/ai/agent/resolve";
 import {withoutSavedFactFields} from "@/lib/ownerFacts/askGuard";
 import type {OwnerRunCheckpoint,MatchedOwnerAnswer,ResearchContinuationPort} from "@/lib/ai/supervisor/runs/contracts";
 import {providerUsageReceipt,requestComposition} from "@/lib/ai/agent/executionPolicy";
+import {createHash} from "node:crypto";
 import {resolveResearchSpec,INLINE_PRESENTATION_HINT,type PresentationEvidence,type PresentationContext} from "./presentation";
 import {researchInlineEvents} from "./inlineStream";
 import type {RichPresentation} from "@/lib/ai/conversations/presentation";
@@ -232,7 +233,8 @@ export async function runResearchTurn(args:{
       presentationDiagnostics.decodedSections++;
       presentationDiagnostics.decodedPatches+=patches.length;
       let deliveryLoss=false;
-      const views=resolveResearchSpec(patches,queries,presentationContext,()=>{deliveryLoss=true;});
+      let views:RichPresentation[]=[];
+      try{views=resolveResearchSpec(patches,queries,presentationContext,()=>{deliveryLoss=true;});}catch{deliveryLoss=true;}
       if(!views.length||deliveryLoss){presentationDiagnostics.rejectedSections++;presentationLoss=true;}
       patches=[];
       presentationDiagnostics.acceptedViews+=views.length;
@@ -281,7 +283,8 @@ export async function runResearchTurn(args:{
             if(undecoded){presentationDiagnostics.rejectedSections+=undecoded;presentationLoss=true;}
             if(presentationLoss||malformed){
               const original=fences.length?fences.join("\n\n"):answer;
-              const delimiter=String.fromCharCode(96).repeat(Math.max(3,...Array.from(original.matchAll(/`+/gu),m=>m[0].length+1)));
+              let longest=2;for(const run of original.matchAll(/`+/gu))longest=Math.max(longest,run[0].length);
+              const delimiter=String.fromCharCode(96).repeat(longest+1);
               appendText("Original presentation data (retained where the visual could not be fully displayed):\n\n"+delimiter+"json\n"+original+"\n"+delimiter);
             }
             const response=(event.response??{}) as {model?:unknown;usage?:{input_tokens?:unknown;output_tokens?:unknown;input_tokens_details?:{cached_tokens?:unknown}}};

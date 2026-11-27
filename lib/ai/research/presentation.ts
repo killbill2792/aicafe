@@ -30,8 +30,10 @@ const displayCell=(value:unknown):string|number|boolean|null=>value==null?null:t
 function normalizeAuthoredTable(value:unknown):unknown{
  if(!obj(value)||!Array.isArray(value.rows))return value;
  const keys=[...new Set(value.rows.flatMap(row=>obj(row)?Object.keys(row):[]))];
- const columns=Array.isArray(value.columns)&&value.columns.length?value.columns.map((c,i)=>String(displayCell(c)??"Value "+(i+1))||"Value "+(i+1)):keys.length?keys:["Value"];
- const rows=value.rows.map(row=>Array.isArray(row)?row.map(displayCell):obj(row)?keys.map(k=>displayCell(row[k])):[displayCell(row)]);
+ const supplied=Array.isArray(value.columns)?value.columns.map((c,i)=>String(displayCell(c)??"Value "+(i+1))||"Value "+(i+1)):[];
+ // Named records must be aligned by their keys, not by insertion order.
+ const columns=keys.length?[...new Set([...supplied,...keys])]:supplied.length?supplied:["Value"];
+ const rows=value.rows.map(row=>Array.isArray(row)?row.map(displayCell):obj(row)?columns.map(k=>Object.hasOwn(row,k)?displayCell(row[k]):null):[displayCell(row)]);
  return {...value,columns,rows};
 }
 const envelope=z.object({layout:z.enum(["stack","grid"]).optional(),panels:z.array(z.union([selection,pointPanel,analysisPanel])).optional(),
@@ -326,9 +328,9 @@ export function resolveResearchSpec(patches:readonly unknown[],queries:Presentat
  const safeKey=(s:string)=>/^[a-zA-Z0-9_-]+$/u.test(s)&&!["__proto__","constructor","prototype"].includes(s);
  const safeValue=(v:unknown):boolean=>Array.isArray(v)?v.every(safeValue):!obj(v)||Object.entries(v).every(([k,x])=>!["__proto__","constructor","prototype"].includes(k)&&safeValue(x));
  for(const value of patches){
-  if(!obj(value)||typeof value.path!=="string"||!["add","replace","remove"].includes(String(value.op))||!safeValue(value.value))continue;
+  if(!obj(value)||typeof value.path!=="string"||!["add","replace","remove"].includes(String(value.op))||!safeValue(value.value)){onDeliveryLoss?.();continue;}
   const parts=value.path.split("/").slice(1);
-  if(value.path!=="/root"&&(parts[0]!=="elements"||parts.slice(1).some(k=>!safeKey(k))))continue;
+  if(value.path!=="/root"&&(parts[0]!=="elements"||parts.slice(1).some(k=>!safeKey(k)))){onDeliveryLoss?.();continue;}
   try{compiler.push(JSON.stringify(value as unknown as SpecStreamLine)+"\n");}catch{onDeliveryLoss?.();}
  }
  let spec:ReturnType<typeof compiler.getResult>;
