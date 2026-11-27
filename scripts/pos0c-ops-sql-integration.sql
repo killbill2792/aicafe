@@ -4,6 +4,14 @@ BEGIN;
 CREATE FUNCTION pg_temp.assert_true(ok boolean,msg text) RETURNS void LANGUAGE plpgsql AS $$
 BEGIN IF ok IS DISTINCT FROM true THEN RAISE EXCEPTION 'POS0c FAILURE: %',msg;END IF;END $$;
 
+-- Fixtures specify source values and observation metadata separately at the writer boundary.
+CREATE FUNCTION pg_temp.operational_record(input jsonb) RETURNS jsonb LANGUAGE sql AS $$
+ SELECT jsonb_build_object('payload',input-fields) ||
+   coalesce((select jsonb_object_agg(key,value) from jsonb_each(input) where key=any(fields)),'{}')
+ FROM (values (array['business_id','restaurant_guid','endpoint','provider_key','source_key_kind',
+   'operational_object_uuid','business_date','source_business_date_kind','fetched_at','lastSuccessAt'])) f(fields)
+$$;
+
 DO $pos0c$
 DECLARE
  b uuid:='f0c00000-0000-4000-8000-000000000001';
@@ -44,22 +52,22 @@ BEGIN
   'business_date','2026-11-08','type','CASH_IN','fetched_at','2026-11-08T16:00:00Z',
   'lastSuccessAt','2026-11-08T16:00:00Z');
  PERFORM pg_temp.assert_true(public.toast_stage_operational_batch(b,r,'cashmgmt/v1/entries',
-  '2026-11-08',jsonb_build_array(cash))=1,'first operation saved');
+  '2026-11-08',jsonb_build_array(pg_temp.operational_record(cash)))=1,'first operation saved');
  PERFORM pg_temp.assert_true(public.toast_stage_operational_batch(b,r,'cashmgmt/v1/entries',
-  '2026-11-08',jsonb_build_array(cash||'{"fetched_at":"2026-11-08T16:15:00Z",
-   "lastSuccessAt":"2026-11-08T16:15:00Z"}'::jsonb))=1,'re-fetch saved');
+  '2026-11-08',jsonb_build_array(pg_temp.operational_record(cash||'{"fetched_at":"2026-11-08T16:15:00Z",
+   "lastSuccessAt":"2026-11-08T16:15:00Z"}'::jsonb)))=1,'re-fetch saved');
  SELECT count(*) INTO n FROM public.toast_raw_records
  WHERE business_id=b and restaurant_guid=r and entity='cashmgmt/v1/entries';
  PERFORM pg_temp.assert_true(n=1,'same cash GUID must never double count');
  PERFORM pg_temp.assert_true(not exists(SELECT 1 FROM public.toast_raw_changes
   WHERE business_id=b),'new fetch time is not a business delta');
  PERFORM public.toast_stage_operational_batch(b,r,'cashmgmt/v1/entries',
-  '2026-11-08',jsonb_build_array(cash||'{"amount":15.25}'::jsonb));
+  '2026-11-08',jsonb_build_array(pg_temp.operational_record(cash||'{"amount":15.25}'::jsonb)));
  PERFORM pg_temp.assert_true((SELECT count(*)=1 FROM public.toast_raw_records
   WHERE business_id=b and entity='cashmgmt/v1/entries'),'cash updates in place');
  PERFORM pg_temp.assert_true((SELECT count(*)=1 FROM public.toast_raw_changes
   WHERE business_id=b and entity_guid=e),'exactly one native cash amount delta');
- PERFORM pg_temp.assert_true((SELECT changes->0->>'path'='.amount'
+ PERFORM pg_temp.assert_true((SELECT changes->0->'segments'='["amount"]'::jsonb
   AND changes->0->'before'='12.50'::jsonb AND changes->0->'after'='15.25'::jsonb
   FROM public.toast_raw_changes WHERE business_id=b and entity_guid=e),
   'exact cents field diff with source amount (dollars)');
@@ -73,16 +81,16 @@ BEGIN
   'lastSuccessAt','2026-11-08T16:00:00Z');
  PERFORM public.toast_stage_operational_batch(b,r,'stock/v1/inventory',
   '2026-11-08',
-  jsonb_build_array(inv));
+  jsonb_build_array(pg_temp.operational_record(inv)));
  PERFORM public.toast_stage_operational_batch(b,r,'stock/v1/inventory',null,
-  jsonb_build_array(inv||'{"quantity":2.5}'::jsonb));
+  jsonb_build_array(pg_temp.operational_record(inv||'{"quantity":2.5}'::jsonb)));
  PERFORM pg_temp.assert_true((SELECT count(*)=1 FROM public.toast_raw_records
   WHERE business_id=b AND entity='stock/v1/inventory'),'one stock item current');
  PERFORM pg_temp.assert_true((SELECT count(*)=1 FROM public.toast_raw_changes
   WHERE business_id=b AND entity_guid=stock),'stock delta saved, no duplicate');
  PERFORM public.toast_stage_operational_batch(b,r,'stock/v1/inventory',
-  '2026-11-09',jsonb_build_array(inv||'{"quantity":2.5,
-   "business_date":"2026-11-09","lastSuccessAt":"2026-11-09T16:00:00Z"}'::jsonb));
+  '2026-11-09',jsonb_build_array(pg_temp.operational_record(inv||'{"quantity":2.5,
+   "business_date":"2026-11-09","lastSuccessAt":"2026-11-09T16:00:00Z"}'::jsonb)));
  PERFORM pg_temp.assert_true((SELECT count(*)=1 FROM public.toast_raw_changes
   WHERE business_id=b AND entity_guid=stock),
   're-observing unchanged stock next café day must not log phantom source delta');
@@ -100,9 +108,9 @@ BEGIN
   'itemFulfillmentLevel',0,'ticketFiredAt','2026-11-08T17:00:00Z',
   'business_date','2026-11-08');
  PERFORM public.toast_stage_operational_batch(b,r,'kitchen/v1/export/itemFulfillments',
-  '2026-11-08',jsonb_build_array(kitchen));
+  '2026-11-08',jsonb_build_array(pg_temp.operational_record(kitchen)));
  PERFORM public.toast_stage_operational_batch(b,r,'kitchen/v1/export/itemFulfillments',
-  '2026-11-08',jsonb_build_array(kitchen||'{"itemFulfilledAt":"2026-11-08T17:05:00Z"}'::jsonb));
+  '2026-11-08',jsonb_build_array(pg_temp.operational_record(kitchen||'{"itemFulfilledAt":"2026-11-08T17:05:00Z"}'::jsonb)));
  PERFORM pg_temp.assert_true((SELECT count(*)=1 FROM public.toast_raw_changes
   WHERE business_id=b AND entity_guid=synthetic),'KDS composite change journal');
  PERFORM pg_temp.assert_true((SELECT ready_at='2026-11-08T17:05:00Z' FROM public.cv_kitchen
@@ -112,7 +120,7 @@ BEGIN
   'provider_key','restaurant-singleton','operational_object_uuid',synthetic,
   'source_key_kind','restaurant_singleton','status','ONLINE','restaurantGuid',r);
  PERFORM public.toast_stage_operational_batch(b,r,'restaurant-availability/v1/availability',
-  null,jsonb_build_array(availability));
+  null,jsonb_build_array(pg_temp.operational_record(availability)));
  PERFORM pg_temp.assert_true((SELECT count(*)=1 FROM public.toast_raw_records
   WHERE business_id=b AND entity='restaurant-availability/v1/availability'),
   'single current availability; never a new snapshot per check');
@@ -126,7 +134,7 @@ BEGIN
 
  BEGIN
   PERFORM public.toast_stage_operational_batch(b,r,'stock/v1/inventory',null,
-   jsonb_build_array(inv||jsonb_build_object('restaurant_guid',r2)));
+   jsonb_build_array(pg_temp.operational_record(inv||jsonb_build_object('restaurant_guid',r2))));
  EXCEPTION WHEN sqlstate '22023' THEN bad:=true;END;
  PERFORM pg_temp.assert_true(bad,'cross-restaurant row rejected before any durable write');
  PERFORM pg_temp.assert_true(not exists(SELECT 1 FROM public.toast_raw_records
@@ -141,23 +149,23 @@ BEGIN
   "itemStartedAt":"2026-11-08T17:01:00Z",
   "lastSuccessAt":"2026-11-08T17:06:00Z"}'::jsonb;
  PERFORM public.toast_stage_operational_batch(b,r,
-  'kitchen/v1/export/itemFulfillments','2026-11-08',jsonb_build_array(kitchen));
+  'kitchen/v1/export/itemFulfillments','2026-11-08',jsonb_build_array(pg_temp.operational_record(kitchen)));
  bad:=false;
  BEGIN
   PERFORM public.toast_stage_operational_batch(b,r,
    'kitchen/v1/export/itemFulfillments','2026-11-08',
-   jsonb_build_array((kitchen-'itemStartedAt')||
-    '{"lastSuccessAt":"2026-11-08T17:10:00Z"}'::jsonb));
+   jsonb_build_array(pg_temp.operational_record((kitchen-'itemStartedAt')||
+    '{"lastSuccessAt":"2026-11-08T17:10:00Z"}'::jsonb)));
  EXCEPTION WHEN sqlstate '22023' THEN bad:=true; END;
  PERFORM pg_temp.assert_true(bad,'omitted KDS timestamp rejected as incomplete');
  PERFORM pg_temp.assert_true((SELECT payload->>'itemStartedAt'='2026-11-08T17:01:00Z'
-  AND payload->>'lastSuccessAt'='2026-11-08T17:06:00Z'
+  AND source_context->>'lastSuccessAt'='2026-11-08T17:06:00Z'
   FROM public.toast_raw_records WHERE business_id=b
    AND entity='kitchen/v1/export/itemFulfillments' LIMIT 1),
   'partial KDS response preserves original timing and source freshness');
  PERFORM public.toast_stage_operational_batch(b,r,
   'kitchen/v1/export/itemFulfillments','2026-11-08',
-  jsonb_build_array(kitchen||'{"itemStartedAt":null}'::jsonb));
+  jsonb_build_array(pg_temp.operational_record(kitchen||'{"itemStartedAt":null}'::jsonb)));
  PERFORM pg_temp.assert_true((SELECT payload ? 'itemStartedAt'
   AND payload->'itemStartedAt'='null'::jsonb
   FROM public.toast_raw_records WHERE business_id=b
@@ -172,26 +180,26 @@ BEGIN
   'sourceWindow',jsonb_build_object('start','09:00','end','17:00'),
   'lastSuccessAt','2026-11-08T16:00:00Z');
  PERFORM public.toast_stage_operational_batch(b,r,
-  'ordermgmt-config/v1/published/orderingSchedule',null,jsonb_build_array(schedule));
+  'ordermgmt-config/v1/published/orderingSchedule',null,jsonb_build_array(pg_temp.operational_record(schedule)));
  bad:=false;
  BEGIN
   PERFORM public.toast_stage_operational_batch(b,r,
    'ordermgmt-config/v1/published/orderingSchedule',null,
-   jsonb_build_array((schedule-'servicePeriods')||
-    '{"lastSuccessAt":"2026-11-08T16:20:00Z"}'::jsonb));
+   jsonb_build_array(pg_temp.operational_record((schedule-'servicePeriods')||
+    '{"lastSuccessAt":"2026-11-08T16:20:00Z"}'::jsonb)));
  EXCEPTION WHEN sqlstate '22023' THEN bad:=true; END;
  PERFORM pg_temp.assert_true(bad,'omitted ordering service periods rejected');
  bad:=false;
  BEGIN
   PERFORM public.toast_stage_operational_batch(b,r,
    'ordermgmt-config/v1/published/orderingSchedule',null,
-   jsonb_build_array(schedule||'{"sourceWindow":{"start":"09:00"},
-     "lastSuccessAt":"2026-11-08T16:30:00Z"}'::jsonb));
+   jsonb_build_array(pg_temp.operational_record(schedule||'{"sourceWindow":{"start":"09:00"},
+     "lastSuccessAt":"2026-11-08T16:30:00Z"}'::jsonb)));
  EXCEPTION WHEN sqlstate '22023' THEN bad:=true; END;
  PERFORM pg_temp.assert_true(bad,'omitted nested schedule field rejected');
  PERFORM pg_temp.assert_true((SELECT payload->'servicePeriods' IS NOT NULL
   AND payload->'sourceWindow'->>'end'='17:00'
-  AND payload->>'lastSuccessAt'='2026-11-08T16:00:00Z'
+  AND source_context->>'lastSuccessAt'='2026-11-08T16:00:00Z'
   FROM public.toast_raw_records WHERE business_id=b
    AND entity='ordermgmt-config/v1/published/orderingSchedule' LIMIT 1),
   'rejected schedule responses leave prior source fields and as-of intact');

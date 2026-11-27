@@ -238,7 +238,11 @@ describe("Task 8a observation worker provisional publication recovery",()=>{
     table==="supervisor_toast_price_context_changes"?{data:[],count:0,error:null}:
     table==="supervisor_experiment_notice_receipts"?{data:null,error:null}: {data:null,error:{message:"not needed"}};
    return query(response);
-  }}),rpc:async(name:string,args:Record<string,unknown>)=>{
+  }}),rpc:(name:string,args:Record<string,unknown>)=>{
+   if(name==="menu_catalog_for"){
+    expect(args.p_business_id).toBe(businessId);
+    return query({data:[{id:itemId,name:"Latte",price_cents:500,category:"drink",prep_seconds:null}],error:null});
+   }
    if(name==="supervisor_8a_due_toast_observations")return {data:[{history_id:historyId,business_id:businessId,enabled_at:"2026-10-31T00:00:00Z"}],error:null};
    if(name==="supervisor_8a_claim_observation_work")return {data:"worker-token",error:null};
    if(name==="supervisor_8a_observation_thread")return {data:"owner-thread",error:null};

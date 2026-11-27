@@ -26,7 +26,7 @@ const stock=(quantity,asOf)=>({
  business_id:ids.cafe,restaurant_guid:ids.restaurant,
  endpoint:"stock/v1/inventory",provider_key:ids.stock,
  source_key_kind:"provider_guid",source_business_date_kind:"observed_cafe_day",
- guid:ids.stock,status:"QUANTITY",quantity,business_date:date,lastSuccessAt:asOf
+ business_date:date,lastSuccessAt:asOf,payload:{guid:ids.stock,status:"QUANTITY",quantity}
 });
 const receipt=async(time,successful,status,count)=>{
  await db.query(`insert into public.toast_optional_sync_state

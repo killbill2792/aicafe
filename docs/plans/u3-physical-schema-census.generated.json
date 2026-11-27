@@ -3013,49 +3013,6 @@
      false
     ],
     [
-     "value_numeric",
-     "numeric",
-     false
-    ],
-    [
-     "data",
-     "jsonb",
-     false
-    ]
-   ],
-   "relation": "cv_analytics",
-   "foreign_keys": []
-  },
-  {
-   "rls": false,
-   "kind": "view",
-   "columns": [
-    [
-     "business_id",
-     "uuid",
-     false
-    ],
-    [
-     "source",
-     "text",
-     false
-    ],
-    [
-     "source_ref",
-     "text",
-     false
-    ],
-    [
-     "status",
-     "text",
-     false
-    ],
-    [
-     "business_date",
-     "date",
-     false
-    ],
-    [
      "data",
      "jsonb",
      false
@@ -5580,6 +5537,869 @@
     {
      "target": "recurring_costs",
      "constraint": "expenses_recurring_cost_id_fkey"
+    }
+   ]
+  },
+  {
+   "rls": true,
+   "kind": "table",
+   "columns": [
+    [
+     "id",
+     "bigint",
+     true
+    ],
+    [
+     "business_id",
+     "uuid",
+     true
+    ],
+    [
+     "restaurant_guid",
+     "uuid",
+     false
+    ],
+    [
+     "entity",
+     "text",
+     true
+    ],
+    [
+     "entity_guid",
+     "uuid",
+     false
+    ],
+    [
+     "business_date",
+     "date",
+     false
+    ],
+    [
+     "run_id",
+     "uuid",
+     false
+    ],
+    [
+     "changed_at",
+     "timestamp with time zone",
+     true
+    ],
+    [
+     "changes",
+     "jsonb",
+     true
+    ],
+    [
+     "provider",
+     "text",
+     true
+    ],
+    [
+     "source_account",
+     "text",
+     false
+    ],
+    [
+     "source_key",
+     "text",
+     false
+    ],
+    [
+     "record_id",
+     "uuid",
+     false
+    ],
+    [
+     "delta_origin",
+     "text",
+     true
+    ]
+   ],
+   "relation": "external_changes_other",
+   "foreign_keys": [
+    {
+     "target": "businesses",
+     "constraint": "external_changes_other_business_id_fkey"
+    }
+   ]
+  },
+  {
+   "rls": true,
+   "kind": "table",
+   "columns": [
+    [
+     "id",
+     "bigint",
+     true
+    ],
+    [
+     "business_id",
+     "uuid",
+     true
+    ],
+    [
+     "provider",
+     "text",
+     true
+    ],
+    [
+     "record_id",
+     "uuid",
+     true
+    ],
+    [
+     "namespace",
+     "text",
+     true
+    ],
+    [
+     "value",
+     "text",
+     true
+    ],
+    [
+     "selector",
+     "jsonb",
+     true
+    ],
+    [
+     "valid_from",
+     "timestamp with time zone",
+     true
+    ],
+    [
+     "valid_until",
+     "timestamp with time zone",
+     false
+    ],
+    [
+     "relationship",
+     "text",
+     true
+    ],
+    [
+     "shared",
+     "boolean",
+     true
+    ]
+   ],
+   "relation": "external_identifiers",
+   "foreign_keys": [
+    {
+     "target": "external_records",
+     "constraint": "external_identifiers_business_id_provider_record_id_fkey"
+    },
+    {
+     "target": "toast_raw_records",
+     "constraint": "external_identifiers_business_id_provider_record_id_fkey1"
+    },
+    {
+     "target": "external_records_other",
+     "constraint": "external_identifiers_business_id_provider_record_id_fkey2"
+    }
+   ]
+  },
+  {
+   "rls": false,
+   "kind": "view",
+   "columns": [
+    [
+     "business_id",
+     "uuid",
+     false
+    ],
+    [
+     "namespace",
+     "text",
+     false
+    ],
+    [
+     "value",
+     "text",
+     false
+    ],
+    [
+     "provider",
+     "text",
+     false
+    ],
+    [
+     "record_id",
+     "uuid",
+     false
+    ],
+    [
+     "selector",
+     "jsonb",
+     false
+    ],
+    [
+     "entity",
+     "text",
+     false
+    ],
+    [
+     "source_account",
+     "text",
+     false
+    ],
+    [
+     "source_updated_at",
+     "timestamp with time zone",
+     false
+    ],
+    [
+     "last_seen",
+     "timestamp with time zone",
+     false
+    ],
+    [
+     "status",
+     "text",
+     false
+    ],
+    [
+     "is_current",
+     "boolean",
+     false
+    ],
+    [
+     "preferred",
+     "boolean",
+     false
+    ],
+    [
+     "authority",
+     "text",
+     false
+    ]
+   ],
+   "relation": "external_identity_authority",
+   "foreign_keys": []
+  },
+  {
+   "rls": true,
+   "kind": "table",
+   "columns": [
+    [
+     "id",
+     "bigint",
+     true
+    ],
+    [
+     "business_id",
+     "uuid",
+     true
+    ],
+    [
+     "restaurant_guid",
+     "uuid",
+     false
+    ],
+    [
+     "entity",
+     "text",
+     true
+    ],
+    [
+     "entity_guid",
+     "uuid",
+     false
+    ],
+    [
+     "business_date",
+     "date",
+     false
+    ],
+    [
+     "run_id",
+     "uuid",
+     false
+    ],
+    [
+     "changed_at",
+     "timestamp with time zone",
+     true
+    ],
+    [
+     "changes",
+     "jsonb",
+     true
+    ],
+    [
+     "provider",
+     "text",
+     true
+    ],
+    [
+     "source_account",
+     "text",
+     false
+    ],
+    [
+     "source_key",
+     "text",
+     false
+    ],
+    [
+     "record_id",
+     "uuid",
+     false
+    ],
+    [
+     "delta_origin",
+     "text",
+     true
+    ]
+   ],
+   "relation": "external_record_changes",
+   "foreign_keys": []
+  },
+  {
+   "rls": true,
+   "kind": "table",
+   "columns": [
+    [
+     "business_id",
+     "uuid",
+     true
+    ],
+    [
+     "provider",
+     "text",
+     true
+    ],
+    [
+     "record_id",
+     "uuid",
+     true
+    ],
+    [
+     "relation",
+     "text",
+     true
+    ],
+    [
+     "target_provider",
+     "text",
+     false
+    ],
+    [
+     "target_id",
+     "uuid",
+     false
+    ],
+    [
+     "evidence",
+     "jsonb",
+     true
+    ],
+    [
+     "observed_at",
+     "timestamp with time zone",
+     true
+    ],
+    [
+     "id",
+     "bigint",
+     true
+    ],
+    [
+     "selector",
+     "jsonb",
+     true
+    ],
+    [
+     "native_relation",
+     "text",
+     false
+    ],
+    [
+     "native_key",
+     "jsonb",
+     false
+    ],
+    [
+     "valid_until",
+     "timestamp with time zone",
+     false
+    ]
+   ],
+   "relation": "external_record_links",
+   "foreign_keys": [
+    {
+     "target": "external_records",
+     "constraint": "external_record_links_business_id_provider_record_id_fkey"
+    },
+    {
+     "target": "toast_raw_records",
+     "constraint": "external_record_links_business_id_provider_record_id_fkey1"
+    },
+    {
+     "target": "external_records_other",
+     "constraint": "external_record_links_business_id_provider_record_id_fkey2"
+    },
+    {
+     "target": "toast_raw_records",
+     "constraint": "external_record_links_business_id_target_provider_target__fkey1"
+    },
+    {
+     "target": "external_records_other",
+     "constraint": "external_record_links_business_id_target_provider_target__fkey2"
+    },
+    {
+     "target": "external_records",
+     "constraint": "external_record_links_business_id_target_provider_target_i_fkey"
+    }
+   ]
+  },
+  {
+   "rls": true,
+   "kind": "table",
+   "columns": [
+    [
+     "id",
+     "uuid",
+     true
+    ],
+    [
+     "business_id",
+     "uuid",
+     true
+    ],
+    [
+     "restaurant_guid",
+     "uuid",
+     false
+    ],
+    [
+     "entity",
+     "text",
+     true
+    ],
+    [
+     "entity_guid",
+     "uuid",
+     false
+    ],
+    [
+     "business_date",
+     "date",
+     false
+    ],
+    [
+     "payload",
+     "jsonb",
+     true
+    ],
+    [
+     "payload_sha256",
+     "text",
+     true
+    ],
+    [
+     "first_seen",
+     "timestamp with time zone",
+     true
+    ],
+    [
+     "last_seen",
+     "timestamp with time zone",
+     true
+    ],
+    [
+     "superseded_by",
+     "uuid",
+     false
+    ],
+    [
+     "run_id",
+     "uuid",
+     false
+    ],
+    [
+     "source_page",
+     "integer",
+     false
+    ],
+    [
+     "source_index",
+     "integer",
+     false
+    ],
+    [
+     "capture_key",
+     "text",
+     true
+    ],
+    [
+     "seen_run_id",
+     "uuid",
+     false
+    ],
+    [
+     "live_projection",
+     "jsonb",
+     false
+    ],
+    [
+     "provider",
+     "text",
+     true
+    ],
+    [
+     "source_account",
+     "text",
+     false
+    ],
+    [
+     "source_key",
+     "text",
+     false
+    ],
+    [
+     "source_updated_at",
+     "timestamp with time zone",
+     false
+    ],
+    [
+     "source_context",
+     "jsonb",
+     false
+    ],
+    [
+     "payload_origin",
+     "text",
+     true
+    ],
+    [
+     "commit_id",
+     "uuid",
+     false
+    ]
+   ],
+   "relation": "external_records",
+   "foreign_keys": []
+  },
+  {
+   "rls": true,
+   "kind": "table",
+   "columns": [
+    [
+     "id",
+     "uuid",
+     true
+    ],
+    [
+     "business_id",
+     "uuid",
+     true
+    ],
+    [
+     "restaurant_guid",
+     "uuid",
+     false
+    ],
+    [
+     "entity",
+     "text",
+     true
+    ],
+    [
+     "entity_guid",
+     "uuid",
+     false
+    ],
+    [
+     "business_date",
+     "date",
+     false
+    ],
+    [
+     "payload",
+     "jsonb",
+     true
+    ],
+    [
+     "payload_sha256",
+     "text",
+     true
+    ],
+    [
+     "first_seen",
+     "timestamp with time zone",
+     true
+    ],
+    [
+     "last_seen",
+     "timestamp with time zone",
+     true
+    ],
+    [
+     "superseded_by",
+     "uuid",
+     false
+    ],
+    [
+     "run_id",
+     "uuid",
+     false
+    ],
+    [
+     "source_page",
+     "integer",
+     false
+    ],
+    [
+     "source_index",
+     "integer",
+     false
+    ],
+    [
+     "capture_key",
+     "text",
+     true
+    ],
+    [
+     "seen_run_id",
+     "uuid",
+     false
+    ],
+    [
+     "live_projection",
+     "jsonb",
+     false
+    ],
+    [
+     "provider",
+     "text",
+     true
+    ],
+    [
+     "source_account",
+     "text",
+     false
+    ],
+    [
+     "source_key",
+     "text",
+     false
+    ],
+    [
+     "source_updated_at",
+     "timestamp with time zone",
+     false
+    ],
+    [
+     "source_context",
+     "jsonb",
+     false
+    ],
+    [
+     "payload_origin",
+     "text",
+     true
+    ],
+    [
+     "commit_id",
+     "uuid",
+     false
+    ]
+   ],
+   "relation": "external_records_other",
+   "foreign_keys": [
+    {
+     "target": "businesses",
+     "constraint": "external_records_other_business_id_fkey"
+    }
+   ]
+  },
+  {
+   "rls": false,
+   "kind": "view",
+   "columns": [
+    [
+     "business_id",
+     "uuid",
+     false
+    ],
+    [
+     "provider",
+     "text",
+     false
+    ],
+    [
+     "record_id",
+     "uuid",
+     false
+    ],
+    [
+     "selector",
+     "jsonb",
+     false
+    ],
+    [
+     "relationship",
+     "text",
+     false
+    ],
+    [
+     "namespace",
+     "text",
+     false
+    ],
+    [
+     "value",
+     "text",
+     false
+    ],
+    [
+     "target_provider",
+     "text",
+     false
+    ],
+    [
+     "target_id",
+     "uuid",
+     false
+    ],
+    [
+     "target_selector",
+     "jsonb",
+     false
+    ],
+    [
+     "match_status",
+     "text",
+     false
+    ]
+   ],
+   "relation": "external_relationship_candidates",
+   "foreign_keys": []
+  },
+  {
+   "rls": true,
+   "kind": "table",
+   "columns": [
+    [
+     "business_id",
+     "uuid",
+     true
+    ],
+    [
+     "provider",
+     "text",
+     true
+    ],
+    [
+     "source_account",
+     "text",
+     true
+    ],
+    [
+     "resource",
+     "text",
+     true
+    ],
+    [
+     "status",
+     "text",
+     true
+    ],
+    [
+     "last_attempt_at",
+     "timestamp with time zone",
+     false
+    ],
+    [
+     "last_complete_at",
+     "timestamp with time zone",
+     false
+    ],
+    [
+     "retry_at",
+     "timestamp with time zone",
+     false
+    ],
+    [
+     "required_permission",
+     "text",
+     false
+    ],
+    [
+     "permission_granted",
+     "boolean",
+     false
+    ],
+    [
+     "last_discovered_at",
+     "timestamp with time zone",
+     false
+    ],
+    [
+     "last_complete_commit",
+     "uuid",
+     false
+    ],
+    [
+     "last_complete_scope",
+     "jsonb",
+     false
+    ]
+   ],
+   "relation": "external_resources",
+   "foreign_keys": [
+    {
+     "target": "businesses",
+     "constraint": "external_resources_business_id_fkey"
+    }
+   ]
+  },
+  {
+   "rls": true,
+   "kind": "table",
+   "columns": [
+    [
+     "business_id",
+     "uuid",
+     true
+    ],
+    [
+     "provider",
+     "text",
+     true
+    ],
+    [
+     "source_account",
+     "text",
+     true
+    ],
+    [
+     "resource",
+     "text",
+     true
+    ],
+    [
+     "stream",
+     "text",
+     true
+    ],
+    [
+     "revision",
+     "bigint",
+     true
+    ],
+    [
+     "cursor_state",
+     "jsonb",
+     false
+    ]
+   ],
+   "relation": "external_sync_checkpoints",
+   "foreign_keys": [
+    {
+     "target": "external_resources",
+     "constraint": "external_sync_checkpoints_business_id_provider_source_acco_fkey"
     }
    ]
   },
@@ -14398,59 +15218,6 @@
    ]
   },
   {
-   "rls": true,
-   "kind": "table",
-   "columns": [
-    [
-     "business_id",
-     "uuid",
-     true
-    ],
-    [
-     "restaurant_guid",
-     "uuid",
-     true
-    ],
-    [
-     "business_date",
-     "date",
-     true
-    ],
-    [
-     "report",
-     "text",
-     true
-    ],
-    [
-     "metric",
-     "text",
-     true
-    ],
-    [
-     "value_numeric",
-     "numeric",
-     false
-    ],
-    [
-     "value_json",
-     "jsonb",
-     false
-    ],
-    [
-     "fetched_at",
-     "timestamp with time zone",
-     true
-    ]
-   ],
-   "relation": "toast_analytics_results",
-   "foreign_keys": [
-    {
-     "target": "businesses",
-     "constraint": "toast_analytics_results_business_id_fkey"
-    }
-   ]
-  },
-  {
    "rls": false,
    "kind": "view",
    "columns": [
@@ -15941,11 +16708,6 @@
      false
     ],
     [
-     "void_reasons_local_day",
-     "date",
-     false
-    ],
-    [
      "menu_copied_at",
      "timestamp with time zone",
      false
@@ -16193,98 +16955,6 @@
     {
      "target": "toast_sync_runs",
      "constraint": "toast_order_revisions_run_id_fkey"
-    }
-   ]
-  },
-  {
-   "rls": true,
-   "kind": "table",
-   "columns": [
-    [
-     "raw_record_id",
-     "uuid",
-     true
-    ],
-    [
-     "business_id",
-     "uuid",
-     true
-    ],
-    [
-     "restaurant_guid",
-     "uuid",
-     false
-    ],
-    [
-     "business_date",
-     "date",
-     false
-    ],
-    [
-     "order_guid",
-     "uuid",
-     false
-    ],
-    [
-     "run_id",
-     "uuid",
-     false
-    ],
-    [
-     "order_duration_seconds",
-     "bigint",
-     false
-    ],
-    [
-     "source_seen_at",
-     "timestamp with time zone",
-     false
-    ],
-    [
-     "check_discounts",
-     "jsonb",
-     true
-    ],
-    [
-     "item_discounts",
-     "jsonb",
-     true
-    ],
-    [
-     "item_taxes",
-     "jsonb",
-     true
-    ],
-    [
-     "modifier_prices",
-     "jsonb",
-     true
-    ],
-    [
-     "void_details",
-     "jsonb",
-     true
-    ],
-    [
-     "refund_details",
-     "jsonb",
-     true
-    ],
-    [
-     "captured_at",
-     "timestamp with time zone",
-     true
-    ]
-   ],
-   "relation": "toast_order_typed_facts",
-   "foreign_keys": [
-    {
-     "target": "businesses",
-     "constraint": "toast_order_typed_facts_business_id_fkey"
-    },
-    {
-     "target": "toast_raw_records",
-     "constraint": "toast_order_typed_facts_raw_record_id_fkey"
     }
    ]
   },
@@ -16945,7 +17615,7 @@
     [
      "entity_guid",
      "uuid",
-     true
+     false
     ],
     [
      "business_date",
@@ -16965,6 +17635,31 @@
     [
      "changes",
      "jsonb",
+     true
+    ],
+    [
+     "provider",
+     "text",
+     true
+    ],
+    [
+     "source_account",
+     "text",
+     false
+    ],
+    [
+     "source_key",
+     "text",
+     false
+    ],
+    [
+     "record_id",
+     "uuid",
+     false
+    ],
+    [
+     "delta_origin",
+     "text",
      true
     ]
    ],
@@ -17063,6 +17758,41 @@
     [
      "live_projection",
      "jsonb",
+     false
+    ],
+    [
+     "provider",
+     "text",
+     true
+    ],
+    [
+     "source_account",
+     "text",
+     false
+    ],
+    [
+     "source_key",
+     "text",
+     false
+    ],
+    [
+     "source_updated_at",
+     "timestamp with time zone",
+     false
+    ],
+    [
+     "source_context",
+     "jsonb",
+     false
+    ],
+    [
+     "payload_origin",
+     "text",
+     true
+    ],
+    [
+     "commit_id",
+     "uuid",
      false
     ]
    ],
@@ -18082,49 +18812,6 @@
     {
      "target": "locations",
      "constraint": "toast_void_facts_business_id_location_id_fkey"
-    }
-   ]
-  },
-  {
-   "rls": true,
-   "kind": "table",
-   "columns": [
-    [
-     "business_id",
-     "uuid",
-     true
-    ],
-    [
-     "restaurant_guid",
-     "uuid",
-     true
-    ],
-    [
-     "reason_guid",
-     "uuid",
-     true
-    ],
-    [
-     "name",
-     "text",
-     false
-    ],
-    [
-     "entity_type",
-     "text",
-     false
-    ],
-    [
-     "fetched_at",
-     "timestamp with time zone",
-     true
-    ]
-   ],
-   "relation": "toast_void_reason_directory",
-   "foreign_keys": [
-    {
-     "target": "toast_location_mappings",
-     "constraint": "toast_void_reason_directory_business_id_restaurant_guid_fkey"
     }
    ]
   },
