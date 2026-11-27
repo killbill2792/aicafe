@@ -414,7 +414,7 @@ export async function refreshToastOperationalEvent(db:SupabaseClient,p:ToastCopy
  const payload={payload:redactToastRaw(rows[0]),
   business_id:p.businessId,restaurant_guid:p.restaurantGuid,endpoint:"stock/v1/inventory",
   provider_key:rows[0].guid.toLowerCase(),source_key_kind:"provider_guid",business_date:day,
-  source_business_date_kind:"observed_cafe_day",fetched_at:checked,lastSuccessAt:checked};
+  observation_kind:"point",source_business_date_kind:"observed_cafe_day",fetched_at:checked,lastSuccessAt:checked};
  const {data,error}=await db.rpc("toast_stage_operational_batch",{p_business_id:p.businessId,
   p_restaurant_guid:p.restaurantGuid,p_endpoint:"stock/v1/inventory",p_business_date:day,p_objects:[payload]});
  if(error||data!==1)throw new ToastApiError("unavailable");

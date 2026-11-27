@@ -1,5 +1,8 @@
-set statement_timeout = '60s';
-set lock_timeout='5s';
+-- Reason: Supabase applies individual statements. Store the historical configuration and retire its old writer under the same lock.
+-- squawk-ignore transaction-nesting
+begin;
+set local statement_timeout = '60s';
+set local lock_timeout='5s';
 lock table public.toast_void_reason_directory in access exclusive mode;
 
 -- These narrow historical rows predate direct configuration capture. Retain
@@ -42,3 +45,6 @@ drop table public.toast_void_reason_directory;
 -- Reason: Freshness and recovery are taken from the shared archive resource for this retired directory.
 -- squawk-ignore ban-drop-column
 alter table public.toast_optional_sync_state drop column void_reasons_local_day;
+-- Reason: Commit the verified cutover as one transaction.
+-- squawk-ignore transaction-nesting
+commit;

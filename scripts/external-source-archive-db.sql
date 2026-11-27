@@ -105,10 +105,20 @@ begin
 
   perform public.external_commit_page(cafe,'toast',merchant::text,'stock/v1/inventory','current',0,null,true,
     jsonb_build_array(jsonb_build_object('key','source-item','business_date',today,
-      'restaurant_guid',merchant,'payload','{"quantity":3,"status":"QUANTITY"}'::jsonb)));
+      'restaurant_guid',merchant,'payload','{"quantity":3,"status":"QUANTITY"}'::jsonb),
+      jsonb_build_object('key','unaffected-item','business_date',today,
+      'restaurant_guid',merchant,'payload','{"quantity":5,"status":"QUANTITY"}'::jsonb)));
   if not exists (select from public.inventory_evidence_for(cafe,today,today)
     where menu_item_ref='source-item' and quantity=3 and data->>'evidence_state'='observed_current') then
     raise exception 'Complete original stock observation not shown'; end if;
+  perform public.external_commit_page(cafe,'toast',merchant::text,'stock/v1/inventory','point:source-item',0,
+    '{"mode":"point"}',true,jsonb_build_array(jsonb_build_object('key','source-item','business_date',today,
+      'restaurant_guid',merchant,'payload','{"quantity":4,"status":"QUANTITY"}'::jsonb)));
+  if not exists(select from public.inventory_evidence_for(cafe,today,today)
+     where menu_item_ref='source-item' and quantity=4 and data->>'evidence_state'='observed_current')
+     or not exists(select from public.inventory_evidence_for(cafe,today,today)
+     where menu_item_ref='unaffected-item' and quantity=5 and data->>'evidence_state'='observed_current') then
+    raise exception 'Point observation displaced complete collection evidence'; end if;
   perform public.external_commit_page(cafe,'toast',merchant::text,'stock/v1/inventory','current',1,null,true,'[]');
   if not exists (select from public.inventory_evidence_for(cafe,today,today)
     where menu_item_ref='source-item' and quantity is null and data->>'evidence_state'='not_observed') then

@@ -1,8 +1,11 @@
+-- Reason: Supabase applies individual statements. Privacy, copied statement parity and the removal of the legacy column are one cutover.
+-- squawk-ignore transaction-nesting
+begin;
 -- Preserve the existing owner's statement privacy and exact transaction facts
 -- while moving the retained rows to the common source archive. File descriptions,
 -- bank credentials and bytes have never been authorized for this SQL source.
-set lock_timeout = '5s';
-set statement_timeout = '60s';
+set local lock_timeout = '5s';
+set local statement_timeout = '60s';
 
 alter table public.external_resources
   -- Reason: The new owner key is NULL on all prior rows. The bounded migration enforces the original upload retention rule by cascading owner deletion.
@@ -432,3 +435,6 @@ alter table public.uploads add constraint uploads_financial_evidence_shape check
 -- Reason: The same transaction verifies source-row equality and switches the capture, settlement and readback paths to the owner-scoped archive.
 -- squawk-ignore ban-drop-column
 alter table public.uploads drop column financial_transactions;
+-- Reason: Commit the verified cutover as one transaction.
+-- squawk-ignore transaction-nesting
+commit;

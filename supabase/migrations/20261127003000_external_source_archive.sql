@@ -1,8 +1,11 @@
-set statement_timeout = '60s';
+-- Reason: The legacy archive heaps, sequence and scoped grants change together while existing writers keep their original relation identities.
+-- squawk-ignore transaction-nesting
+begin;
+set local statement_timeout = '60s';
 -- Attach the existing heaps in place. Existing Toast foreign keys, triggers, IDs
 -- and indexes keep pointing at the same rows. Other providers share one default
 -- partition and do not need their own schema or tables.
-set lock_timeout = '5s';
+set local lock_timeout = '5s';
 alter table public.toast_raw_records
   -- Reason: The shared archive accepts authenticated resource identifiers from connector contracts. Toast scope and record identity checks remain in its writers.
   -- squawk-ignore ban-drop-constraint
@@ -210,3 +213,6 @@ end $$;
 revoke all on function public.external_commit_page(uuid,text,text,text,text,bigint,jsonb,boolean,jsonb)
  from public,anon,authenticated;
 grant execute on function public.external_commit_page(uuid,text,text,text,text,bigint,jsonb,boolean,jsonb) to service_role;
+-- Reason: Commit the verified cutover as one transaction.
+-- squawk-ignore transaction-nesting
+commit;

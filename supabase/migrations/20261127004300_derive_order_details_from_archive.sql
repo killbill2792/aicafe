@@ -1,7 +1,10 @@
-set statement_timeout = '60s';
+-- Reason: Supabase applies individual statements. Keep the historical parity check, replacement reader and retirement under the same lock.
+-- squawk-ignore transaction-nesting
+begin;
+set local statement_timeout = '60s';
 -- Keep financial detail semantics and derive the fields from the certified
 -- archive row at read time. No new projection is persisted.
-set lock_timeout='5s';
+set local lock_timeout='5s';
 lock table public.toast_raw_records in share row exclusive mode;
 lock table public.toast_order_typed_facts in access exclusive mode;
 
@@ -263,3 +266,6 @@ drop function public.toast_capture_typed_order(uuid);
 -- Reason: The migration validates derived detail parity against original archived orders before retiring this copy.
 -- squawk-ignore ban-drop-table
 drop table public.toast_order_typed_facts;
+-- Reason: Commit the verified cutover as one transaction.
+-- squawk-ignore transaction-nesting
+commit;

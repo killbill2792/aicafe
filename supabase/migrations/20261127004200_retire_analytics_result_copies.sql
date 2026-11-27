@@ -1,7 +1,10 @@
-set statement_timeout = '60s';
+-- Reason: Supabase applies individual statements. The exclusive lock, historical parity check, replacement writer and retirement must be atomic.
+-- squawk-ignore transaction-nesting
+begin;
+set local statement_timeout = '60s';
 -- Historical ERA measurements may predate raw capture. Preserve their exact
 -- values and provenance before retiring the duplicate results relation.
-set lock_timeout = '5s';
+set local lock_timeout = '5s';
 lock table public.toast_analytics_results in access exclusive mode;
 
 with saved as (
@@ -63,3 +66,6 @@ drop view public.cv_analytics;
 -- Reason: The migration compares the full copied projection to archived evidence before removing the retained copy.
 -- squawk-ignore ban-drop-table
 drop table public.toast_analytics_results;
+-- Reason: Commit the verified cutover as one transaction.
+-- squawk-ignore transaction-nesting
+commit;

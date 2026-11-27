@@ -946,6 +946,45 @@ test("@money seeded owner switches from recovery to real profit & costs", async 
   await expect(page.getByText(own.name, {exact: true}).first()).toBeVisible();
 });
 
+test("@money owner confirms a bank export and stores exact archived movements", async ({page})=>{
+  test.setTimeout(90_000);
+  const own=seededCafe(1);
+  const csv="Date,Description,Amount,Balance\n"+
+    `2026-01-02,Seeded deposit ${randomUUID()},12.34,112.34\n`+
+    "2026-01-03,Second seeded deposit,5.66,118.00\n";
+  const hash=createHash("sha256").update(csv).digest("hex");
+  const db=new pg.Client({host:"127.0.0.1",port:54322,database:"postgres",
+    user:"postgres",password:"postgres",connectionTimeoutMillis:5000});
+  await db.connect();
+  try {
+    await login(page,own);
+    await openOwnedPage(page,own,"add-cost/statement");
+    await page.locator('input[type="file"]').setInputFiles({name:"statement.csv",mimeType:"text/csv",buffer:Buffer.from(csv)});
+    await expect(page.getByText("Balance checks out",{exact:true})).toBeVisible();
+    await page.getByRole("checkbox",{name:/use this original statement as historical cash evidence/i}).check();
+    await page.getByRole("textbox",{name:/account nickname/i}).fill("Fixture operating account");
+    await page.getByRole("button",{name:"Save all",exact:true}).click();
+    await expect.poll(async()=>{
+      const result=await db.query(`select r.payload from public.uploads u join public.external_records r
+        on (r.business_id,r.reader_owner_user_id,r.source_key)=(u.business_id,u.financial_owner_user_id,u.id::text)
+        where u.business_id=$1 and u.financial_source_sha256=$2 and r.provider='owner_upload'
+          and r.entity='financial_statement'`,[own.businessId,hash]);
+      return result.rows[0]?.payload;
+    }).toEqual([{i:0,date:"2026-01-02",amountCents:1234,balanceCents:11234},
+      {i:1,date:"2026-01-03",amountCents:566,balanceCents:11800}]);
+  }finally{
+    const args=[own.businessId,hash];
+    await db.query(`delete from public.external_sync_checkpoints c using public.uploads u
+      where (c.business_id,c.stream)=(u.business_id,u.id::text) and c.provider='owner_upload'
+        and u.business_id=$1 and u.financial_source_sha256=$2`,args);
+    await db.query(`delete from public.external_records r using public.uploads u
+      where (r.business_id,r.source_key)=(u.business_id,u.id::text) and r.provider='owner_upload'
+        and u.business_id=$1 and u.financial_source_sha256=$2`,args);
+    await db.query("delete from public.uploads where business_id=$1 and financial_source_sha256=$2",args);
+    await db.end();
+  }
+});
+
 test("@gmail seeded owner sees Gmail entry, connection status and revocation UX without external Google calls",async({page})=>{
   const own=seededCafe(0);
   let connected=false,disconnects=0;
@@ -998,7 +1037,6 @@ test("@menu Pantry retains confirmed zero and rejects historical Toast stock as 
   }).formatToParts(new Date()).map(p=>[p.type,p.value]));
   const businessDate=dateParts.year+"-"+dateParts.month+"-"+dateParts.day;
   const sourceTime=new Date(Date.now()-5*60_000).toISOString();
-  const latestTime=new Date().toISOString();
   let connected=false;
   try {
     await db.connect();connected=true;
@@ -1022,19 +1060,11 @@ test("@menu Pantry retains confirmed zero and rejects historical Toast stock as 
     const object={business_id:own.businessId,restaurant_guid:restaurantId,
       endpoint:"stock/v1/inventory",provider_key:stockGuid,source_key_kind:"provider_guid",
       source_business_date_kind:"observed_cafe_day",business_date:businessDate,
-      guid:stockGuid,status:"QUANTITY",quantity:7,lastSuccessAt:sourceTime};
-    await db.query(`select public.toast_stage_operational_batch(
+      payload:{guid:stockGuid,status:"QUANTITY",quantity:7},lastSuccessAt:sourceTime};
+    const observe=rows=>db.query(`select public.toast_stage_operational_batch(
       $1,$2,'stock/v1/inventory',$3,$4::jsonb)`,[
-      own.businessId,restaurantId,businessDate,JSON.stringify([object])]);
-    const updateReceipt=async(success,status,count)=>{
-      await db.query(`insert into public.toast_optional_sync_state
-        (business_id,restaurant_guid,operational_sources) values($1,$2,$3::jsonb)
-        on conflict (business_id,restaurant_guid) do update
-        set operational_sources=excluded.operational_sources`,[
-        own.businessId,restaurantId,JSON.stringify({stock_inventory:{
-          last_checked_at:success,last_success_at:success,status,count}})]);
-    };
-    await updateReceipt(sourceTime,"current",1);
+      own.businessId,restaurantId,businessDate,JSON.stringify(rows)]);
+    await observe([object]);
     const first=await browser.newContext({baseURL:"http://127.0.0.1:3000",serviceWorkers:"block"});
     try {
       const page=await first.newPage();
@@ -1046,7 +1076,11 @@ test("@menu Pantry retains confirmed zero and rejects historical Toast stock as 
       await expect(evidence.getByText("Quantity: 0 ml",{exact:true})).toBeVisible();
       await expect(evidence.getByText(stockGuid,{exact:true})).toBeVisible();
       await expect(evidence.getByText("Quantity: 7",{exact:true})).toBeVisible();
-      await updateReceipt(latestTime,"empty",0);
+      await observe([{...object,observation_kind:"point",lastSuccessAt:new Date().toISOString(),
+        payload:{...object.payload,quantity:8}}]);
+      await page.reload();
+      await expect(evidence.getByText("Quantity: 8",{exact:true})).toBeVisible();
+      await observe([]);
       await page.reload();
       await expect(evidence.getByText(stockGuid,{exact:true})).toBeVisible();
       await expect(evidence.locator('[data-evidence-state="not_observed"]')).toContainText("Historical only");
@@ -1073,6 +1107,8 @@ test("@menu Pantry retains confirmed zero and rejects historical Toast stock as 
       await db.query("delete from public.toast_raw_changes where business_id=$1 and restaurant_guid=$2",
         [own.businessId,restaurantId]).catch(()=>{});
       await db.query("delete from public.toast_raw_records where business_id=$1 and restaurant_guid=$2",
+        [own.businessId,restaurantId]).catch(()=>{});
+      await db.query("delete from public.external_resources where business_id=$1 and provider='toast' and source_account=$2",
         [own.businessId,restaurantId]).catch(()=>{});
       await db.query("delete from public.toast_optional_sync_state where business_id=$1 and restaurant_guid=$2",
         [own.businessId,restaurantId]).catch(()=>{});
