@@ -47,19 +47,23 @@ describe("deployed PDF delivery diagnostic (no provider, no production data)",()
  it("reproduces a missing document when the provider emits only the introduction",async()=>{
   const r=await replay("prose-only",intro);expect(r.documents).toHaveLength(0);
  });
- it("characterizes a document available in the completed message but missing from text deltas",async()=>{
-  await replay("terminal-message-document",intro+fence("spec",patches)+"\n",true);
+ it("recovers a document available in the completed message but missing from text deltas",async()=>{
+  const r=await replay("terminal-message-document",intro+fence("spec",patches)+"\n",true);
+  expect(r.documents).toHaveLength(1);expect(r.pdfTitle).toBe("Diagnostic accounting statement");expect(r.pdfContainsData).toBe(true);
  });
- it("characterizes alternative serialization with identical document content",async()=>{
-  await replay("json-fence-full-spec",intro+fence("json",JSON.stringify(doc))+"\n");
-  await replay("spec-fence-full-spec",intro+fence("spec",JSON.stringify(doc))+"\n");
-  await replay("spec-fence-patch-array",intro+fence("spec",JSON.stringify(JSON.parse("["+patches.split("\n").join(",")+"]")))+"\n");
-  await replay("canonical-no-trailing-newline",intro+fence("spec",patches));
+ it("delivers alternative serializations with identical document content",async()=>{
+  for(const [label,raw] of [
+    ["json-fence-full-spec",intro+fence("json",JSON.stringify(doc))+"\n"],
+    ["spec-fence-full-spec",intro+fence("spec",JSON.stringify(doc))+"\n"],
+    ["spec-fence-patch-array",intro+fence("spec",JSON.stringify(JSON.parse("["+patches.split("\n").join(",")+"]")))+"\n"],
+    ["canonical-no-trailing-newline",intro+fence("spec",patches)]
+  ]){const r=await replay(label,raw);expect(r.documents).toHaveLength(1);expect(r.pdfTitle).toBe("Diagnostic accounting statement");expect(r.pdfContainsData).toBe(true);}
+
  },30000);
- it("reproduces the count metric compatibility failure without calling the model",()=>{
+ it("accepts omitted currency in a count metric without calling the model",()=>{
   const count={kind:"metric",title:"Orders",unit:"count",asOf:ctx.asOf,points:[{label:"Orders",value:1}]};
   const without=nativeChartProps.safeParse(count),withNull=nativeChartProps.safeParse({...count,currency:null});
   console.log("METRIC_REPLAY "+JSON.stringify({withoutCurrency:without.success,withNullCurrency:withNull.success}));
-  expect(without.success).toBe(false);expect(withNull.success).toBe(true);
+  expect(without.success).toBe(true);expect(withNull.success).toBe(true);if(without.success)expect(without.data.currency).toBeNull();
  });
 });
