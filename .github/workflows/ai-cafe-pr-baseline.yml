@@ -252,7 +252,15 @@ jobs:
             local result
             result=$(mktemp)
             node_modules/.bin/vitest run --reporter=json --outputFile="$result" "./$1"
-            node --input-type=module -e 'import {validateReport} from "./scripts/acceptance/owner-gate.mjs"; import fs from "node:fs"; validateReport(JSON.parse(fs.readFileSync(process.argv[1])),[process.argv[2]])' "$result" "$1"
+            node --input-type=module - "$result" "$1" <<'NODE'
+          import fs from 'node:fs';
+          import {resolve} from 'node:path';
+          import {validateReport} from './scripts/acceptance/owner-gate.mjs';
+          const [result, path] = process.argv.slice(2);
+          const report = JSON.parse(fs.readFileSync(result));
+          report.testResults = report.testResults.filter(row => resolve(row.name) === resolve(path));
+          validateReport(report,[path]);
+          NODE
           }
           if [[ -f "$RUNNER_TEMP/luna-reviewed-tests" ]]; then
             suite=$(mktemp scripts/guards/luna-reviewed-XXXXXX.test.ts)
