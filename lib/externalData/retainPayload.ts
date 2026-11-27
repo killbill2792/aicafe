@@ -57,6 +57,6 @@ function retain(value: unknown, context: "business"|"payment"|"card"|"bank"): un
   return value;
 }
 
-export function retainProviderPayload(value: unknown): unknown {
-  return retain(value, "business");
+export function retainProviderPayload(value: unknown, kind: "business" | "payment" = "business"): unknown {
+  return retain(value, kind);
 }

@@ -8,7 +8,8 @@ export type SourceIdentifier = {
   namespace: string; value: string; selector: object;
   relationship?: string; shared?: boolean;
 };
-export type SourceRecord = {key: string; payload: unknown; updatedAt?: string | null; identifiers?: SourceIdentifier[]};
+export type SourceRecord = {key: string; payload: unknown; updatedAt?: string | null;
+  identifiers?: SourceIdentifier[]; payloadKind?: "payment"};
 
 /** A stream identifies one connector's independent query window or location.
  * A concurrent worker cannot move a checkpoint read by another worker. */
@@ -25,18 +26,20 @@ export async function openSourceStream(db: SupabaseClient, source: Source, resou
     async commit(records: readonly SourceRecord[], next: unknown, complete: boolean) {
       const {data: saved, error: failure} = await db.rpc("external_commit_page", {
         ...scope, p_revision: revision, p_next: next, p_complete: complete,
-        p_records: records.map(r => ({key: r.key, payload: retainProviderPayload(r.payload), updated_at: r.updatedAt, identifiers: r.identifiers})),
+        p_records: records.map(r => ({key: r.key, payload: retainProviderPayload(r.payload, r.payloadKind),
+          updated_at: r.updatedAt, identifiers: r.identifiers})),
       });
       if (failure) throw failure;
       if (typeof saved !== "number" || saved !== revision + 1) throw new Error("External checkpoint was not confirmed");
       revision = saved;
+      return revision;
     },
-    async completedRecords(expectedScope: ObservationScope, mode: ObservationMode): Promise<unknown[]> {
+    async completedRecords(expectedScope: ObservationScope, mode: ObservationMode, completedRevision=revision): Promise<unknown[]> {
       const records: unknown[] = [];
       let after: string | null = null;
       for (;;) {
         const {data, error: failure}: {data: unknown; error: unknown} = await db.rpc("external_read_observation", {
-          ...scope, p_revision: revision, p_after: after, p_scope: expectedScope, p_mode: mode,
+          ...scope, p_revision: completedRevision, p_after: after, p_scope: expectedScope, p_mode: mode,
         });
         if (failure || !Array.isArray(data)) throw failure ?? new Error("Missing external observation");
         records.push(...data.map(row => row.payload));
@@ -56,7 +59,7 @@ export class SourceRetryDeferred extends Error {
 }
 
 type ObservationScope = Readonly<Record<string, string>>;
-type ObservationMode = "snapshot" | "window" | "incremental";
+type ObservationMode = "snapshot" | "window" | "incremental" | "point";
 type CursorState = {cursor: string; scope: ObservationScope; mode: ObservationMode};
 type SourceSync = {
   capability: ResourceCapability;

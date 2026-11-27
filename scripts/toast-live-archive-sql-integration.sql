@@ -11,7 +11,9 @@ DECLARE
  b uuid:='eeeeeeee-1111-4eee-8eee-eeeeeeeeee00'; r uuid:='eeeeeeee-1111-4eee-8eee-eeeeeeeeee01';
  loc uuid:='eeeeeeee-1111-4eee-8eee-eeeeeeeeee02'; d date:=current_date;
  ord uuid:='eeeeeeee-1111-4eee-8eee-eeeeeeee0001'; ord2 uuid:='eeeeeeee-1111-4eee-8eee-eeeeeeee0002';
+ payment uuid:='eeeeeeee-1111-4eee-8eee-eeeeeeee0014';
  o1 jsonb; o1_tip jsonb; o1_old jsonb; o2 jsonb; o2_import jsonb;
+ payment_body jsonb; payment_scope jsonb; payment_revision bigint;
  n integer; row_id uuid; run_i uuid; refused boolean;
 BEGIN
  insert into public.businesses(id,name,is_demo) values(b,'Live archive test café',false);
@@ -128,9 +130,36 @@ BEGIN
 
  -- Capture endpoint evidence can supply a fee missing from the order payload.
  perform set_config('request.jwt.claim.role','service_role',true);
- perform pg_temp.assert_true(not public.toast_apply_verified_payment_fee(b,r,ord2,'eeeeeeee-1111-4eee-8eee-eeeeeeee0014',765,23),'wrong order cannot authorize the fee');
- perform pg_temp.assert_true(public.toast_apply_verified_payment_fee(b,r,ord,'eeeeeeee-1111-4eee-8eee-eeeeeeee0014',765,23),'matching independently captured fee is applied');
- perform pg_temp.assert_true(public.toast_apply_verified_payment_fee(b,r,ord,'eeeeeeee-1111-4eee-8eee-eeeeeeee0014',765,23),'replayed capture evidence is idempotent');
+ payment_scope:=jsonb_build_object('mode','point','scope',jsonb_build_object('paymentGuid',payment));
+ payment_body:=jsonb_build_object('guid',payment,'restaurantGuid',r,'orderGuid',ord2,'amount',7.65,
+  'type','CREDIT','paymentStatus','CAPTURED','originalProcessingFee',0);
+ payment_revision:=public.external_commit_page(b,'toast',r::text,'orders/v2/payments/{guid}',payment::text,0,
+  payment_scope,true,jsonb_build_array(jsonb_build_object('key',payment,'payload',payment_body)));
+ perform pg_temp.assert_true(public.toast_apply_archived_payment_fee(b,r,payment,payment_revision)='order_pending',
+  'wrong order cannot authorize the fee');
+ payment_body:=jsonb_set(payment_body,'{orderGuid}',to_jsonb(ord));
+ payment_revision:=public.external_commit_page(b,'toast',r::text,'orders/v2/payments/{guid}',payment::text,payment_revision,
+  payment_scope,true,jsonb_build_array(jsonb_build_object('key',payment,'payload',payment_body)));
+ perform pg_temp.assert_true(public.toast_apply_archived_payment_fee(b,r,payment,payment_revision-1)='refresh_evidence',
+  'a superseded payment receipt cannot update the fee');
+ perform pg_temp.assert_true(public.toast_apply_archived_payment_fee(b,r,payment,payment_revision)='applied',
+  'a zero provider fee is independently verified');
+ perform pg_temp.assert_true((select original_processing_fee_cents=0 and fee_status='actual' from public.toast_payment_facts
+  where business_id=b and restaurant_guid=r and business_date=d and payment_ref=payment::text),'zero stays an actual fee');
+ payment_body:=jsonb_set(payment_body,'{originalProcessingFee}','null');
+ payment_revision:=public.external_commit_page(b,'toast',r::text,'orders/v2/payments/{guid}',payment::text,payment_revision,
+  payment_scope,true,jsonb_build_array(jsonb_build_object('key',payment,'payload',payment_body)));
+ perform pg_temp.assert_true(public.toast_apply_archived_payment_fee(b,r,payment,payment_revision)='refresh_evidence',
+  'an explicit null cannot supply a fee');
+ payment_body:=jsonb_set(payment_body,'{originalProcessingFee}','0.23');
+ payment_revision:=public.external_commit_page(b,'toast',r::text,'orders/v2/payments/{guid}',payment::text,payment_revision,
+  payment_scope,true,jsonb_build_array(jsonb_build_object('key',payment,'payload',payment_body)));
+ perform pg_temp.assert_true(public.toast_apply_archived_payment_fee(b,r,payment,payment_revision)='applied',
+  'matching independently captured fee is applied');
+ perform pg_temp.assert_true(public.toast_apply_archived_payment_fee(b,r,payment,payment_revision)='applied',
+  'replayed capture evidence is idempotent');
+ perform pg_temp.assert_true(not has_function_privilege('authenticated','public.toast_apply_archived_payment_fee(uuid,uuid,uuid,bigint)','EXECUTE'),
+  'authenticated users cannot apply an archive fee receipt');
  update public.toast_day_status set imported_at=now()+interval '1 second' where business_id=b and restaurant_guid=r and business_date=d;
  perform pg_temp.assert_true((select original_processing_fee_cents=23 and fee_status='actual' and fee_basis='toast'
   from public.toast_payment_facts where business_id=b and restaurant_guid=r and business_date=d

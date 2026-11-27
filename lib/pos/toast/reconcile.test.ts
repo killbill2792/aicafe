@@ -6,7 +6,7 @@ vi.mock("server-only",()=>({}));
 vi.mock("./client",async()=>{
  const {z}=await import("zod");
  class ToastApiError extends Error{constructor(public category:string){super(category);}}
- return {GUID:z.uuid(),ToastApiError,createToastClient:()=>({request:mocked.request})};
+ return {GUID:z.uuid(),ToastApiError,createToastClient:()=>({request:mocked.request,assertSourceAccess:async()=>"grant-v1"})};
 });
 vi.mock("./checkMode",()=>({detectToastCheckMode:async()=>mocked.mode,setToastCheckMode:vi.fn(async(_db:unknown,_b:string,mode:string)=>{mocked.mode=mode;return true;})}));
 vi.mock("./analyticsClient",()=>({createToastAnalyticsClient:()=>({
@@ -98,7 +98,8 @@ function fakeDb(analytics:boolean){
     }
    };return q;
   },
-  async rpc(name:string){calls.push(name);
+  async rpc(name:string,args?:{p_revision:number}){calls.push(name);
+   if(name==="external_commit_page")return {data:(args?.p_revision??0)+1,error:null};
    if(name==="toast_certify_day_voids"){
     certifiedVoids=["matched","checked_internal"].includes(item.recon_state);
     return {data:certifiedVoids,error:null};
@@ -796,6 +797,7 @@ describe("The day check uses the day saved at import",()=>{
   const paths=mocked.request.mock.calls.map(c=>String(c[0]));
   expect(paths.some(x=>x.includes("ordersBulk"))).toBe(false);
   expect(paths.some(x=>x.includes("paidBusinessDate"))).toBe(true);
+  expect(f.cacheRows).toContainEqual(expect.objectContaining({cache_key:"paid",payload:{externalRevision:1}}));
  });
  it("still finds a payment Toast lists that the saved day does not have",async()=>{
   const f=fakeDb(false);
