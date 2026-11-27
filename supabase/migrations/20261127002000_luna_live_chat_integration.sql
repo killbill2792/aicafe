@@ -6,7 +6,7 @@ set statement_timeout='30s';
 create function public.supervisor_collect_owner_followups_v2(
  p_business_id uuid,p_owner_user_id uuid,p_thread_id uuid,p_run_id uuid,p_claim_token uuid,p_job_id uuid
 ) returns jsonb language plpgsql security invoker set search_path=public as $$
-declare r public.supervisor_runs; j public.ai_agent_jobs; f record; v_ids uuid[]:='{}'; v_messages jsonb:='[]';
+declare r public.supervisor_runs; j public.ai_agent_jobs; f record; v_messages jsonb:='[]';
 begin
  perform pg_advisory_xact_lock(hashtextextended('ai_agent_job:'||p_thread_id::text,0));
  select * into r from public.supervisor_runs where id=p_run_id and business_id=p_business_id
@@ -31,10 +31,8 @@ begin
      or f.awaiting_question_id is not null or f.owner_input_response is not null or f.owner_input_prompt_message_id is not null
      or f.role<>'owner' or f.content_type<>'text' or coalesce(f.grounding->>'sourceChannel','web')<>'web'
      or exists(select 1 from public.ai_agent_jobs where durable_run_id=f.id);
-   v_ids:=array_append(v_ids,f.request_key);
    v_messages:=v_messages||jsonb_build_array(jsonb_build_object('id',f.request_key,'text',f.text_content));
  end loop;
- update public.ai_agent_jobs set inbox=array(select distinct unnest(j.inbox||v_ids)),updated_at=clock_timestamp() where id=j.id;
  return v_messages;
 end $$;
 revoke all on function public.supervisor_collect_owner_followups_v2(uuid,uuid,uuid,uuid,uuid,uuid) from public,anon,authenticated;
@@ -65,7 +63,9 @@ begin
  on conflict(run_id) do update set state=excluded.state,updated_at=clock_timestamp();
  -- Publish only the owner-facing answer, never the private continuation transcript.
  update public.ai_agent_jobs set progress=
-   coalesce((select jsonb_agg(e) from jsonb_array_elements(progress) e where e->>'kind' is distinct from 'live_view'),'[]'::jsonb)
+   coalesce((select jsonb_agg(e order by ord) from
+     (select e,ord from jsonb_array_elements(progress) with ordinality t(e,ord)
+       where e->>'kind' is distinct from 'live_view' order by ord desc limit 11) recent),'[]'::jsonb)
    ||jsonb_build_array(jsonb_build_object('kind','live_view','text',coalesce(p_state->>'text',''),
      'presentations',coalesce((select jsonb_agg(jsonb_build_object('offset',e->'presentationOffset','block',e->'presentation'))
        from jsonb_array_elements(case when jsonb_typeof(p_state->'presentations')='array' then p_state->'presentations' else '[]'::jsonb end) e
@@ -100,13 +100,15 @@ begin
    update public.ai_agent_jobs set progress=
      coalesce((select jsonb_agg(e order by ord) from
        (select e,ord from jsonb_array_elements(progress) with ordinality t(e,ord)
-        where e ? 'kind' or ord > jsonb_array_length(progress)-12) recent),'[]'::jsonb)
+        order by ord desc limit 11) recent),'[]'::jsonb)
        ||jsonb_build_array(p_step) where id=j.id;
  elsif p_action='thinking' then
    if jsonb_typeof(p_step->'summary') is distinct from 'string' then
      raise exception 'invalid_job_summary'; end if;
    update public.ai_agent_jobs set progress=
-     coalesce((select jsonb_agg(e) from jsonb_array_elements(progress) e where e->>'kind' is distinct from 'thinking'),'[]'::jsonb)
+     coalesce((select jsonb_agg(e order by ord) from
+       (select e,ord from jsonb_array_elements(progress) with ordinality t(e,ord)
+        where e->>'kind' is distinct from 'thinking' order by ord desc limit 11) recent),'[]'::jsonb)
      ||jsonb_build_array(jsonb_build_object('kind','thinking','summary',p_step->'summary')) where id=j.id;
  elsif p_action='done' then
    if not exists(select 1 from public.ai_messages m where m.id=p_reply_id and m.business_id=r.business_id
@@ -161,7 +163,8 @@ begin
    for v_id in select value::uuid from jsonb_array_elements_text(coalesce(p_grounding#>'{agentMetadata,absorbedOwnerMessageIds}','[]'::jsonb))
    loop
      if v_id=any(r.owner_answer_ids) then v_ids:=array_append(v_ids,v_id); continue; end if;
-     if not (v_id=any(j.inbox)) then continue; end if;
+     if not exists(select 1 from public.supervisor_research_continuations c where c.run_id=r.id
+       and coalesce(c.state->'followUpIds','[]'::jsonb) ? v_id::text) then continue; end if;
      select * into f from public.supervisor_runs where request_key=v_id and business_id=r.business_id
        and owner_user_id=r.owner_user_id and thread_id=r.thread_id and execution_version=2
        and status in ('pending','running') and cardinality(input_attachment_ids)=0
@@ -193,7 +196,6 @@ begin
  update public.supervisor_runs set status='completed',final_report_ref=m.id::text,finished_at=clock_timestamp(),
    dispatch_after=null,updated_at=clock_timestamp() where id=any(v_runs);
  update public.ai_agent_jobs set status='done',reply_message_id=m.id,error_code=null,
-   consumed=case when j.status='done' then j.consumed else array(select unnest(v_ids) intersect select unnest(j.inbox)) end,
    finished_at=coalesce(finished_at,clock_timestamp()),updated_at=clock_timestamp(),heartbeat_at=clock_timestamp()
    where id=j.id;
  -- The final persisted answer may honestly describe incomplete data.
