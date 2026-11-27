@@ -338,7 +338,8 @@ export function resolveResearchSpec(patches:readonly unknown[],queries:Presentat
  let spec:ReturnType<typeof compiler.getResult>;
  try{spec=compiler.getResult();}catch{onDeliveryLoss?.();return [];}
  if(!obj(spec.elements))return [];
- if(typeof spec.root==="string"&&obj(spec.elements[spec.root])&&spec.elements[spec.root].type==="Document"){
+ const rootElement=typeof spec.root==="string"?spec.elements[spec.root]:undefined;
+ if(obj(rootElement)&&rootElement.type==="Document"){
   // Keep the authored PDF document in the existing saved-answer envelope.
   const pdfSpec:unknown=JSON.parse(JSON.stringify({root:spec.root,elements:spec.elements,...(spec.state?{state:spec.state}:{})}));
   const report=recoverRichPresentation({type:"rich_presentation",version:1,layout:"stack",panels:[],suggestions:[],report:true,pdfSpec});
