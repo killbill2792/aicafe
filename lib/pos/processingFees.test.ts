@@ -1,7 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import {
-  connectedActualFactFromOrders,
   processingFeeForRollup,
   selectProcessingFeeDailyFact,
   setProcessingFeeCandidateEligibility,
@@ -69,19 +68,6 @@ describe("canonical processing-fee candidate selection", () => {
       candidate({ sourceType: "owner_confirmed_estimate", status: "estimated", provider: "owner", amountCents: 7_900 }),
       candidate({ amountCents: 8_200 }),
     ])?.amountCents).toBe(8_200);
-  });
-
-  it("builds a connected daily total only when every applicable order is actual", () => {
-    expect(connectedActualFactFromOrders([
-      { processingFeeCents: 44, processingFeeStatus: "actual" },
-      { processingFeeCents: 31, processingFeeStatus: "actual" },
-    ], { businessId: "cafe", businessDate: "2026-10-02", provider: "square" })).toMatchObject({
-      amountCents: 75, status: "actual", sourceType: "connected_pos_actual",
-    });
-    expect(connectedActualFactFromOrders([
-      { processingFeeCents: 44, processingFeeStatus: "actual" },
-      { processingFeeCents: 0, processingFeeStatus: "missing" },
-    ], { businessId: "cafe", businessDate: "2026-10-02", provider: "square" })).toBeNull();
   });
 
   it("writes candidates through the canonical candidate RPC", async () => {

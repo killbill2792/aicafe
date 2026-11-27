@@ -6,7 +6,8 @@ SELECT gen_random_uuid() AS a,gen_random_uuid() AS b,
  gen_random_uuid() AS bill,gen_random_uuid() AS item,
  gen_random_uuid() AS loc_a,gen_random_uuid() AS loc_b,
  gen_random_uuid() AS toast_loc,gen_random_uuid() AS shift_id,gen_random_uuid() AS employee_key,
- gen_random_uuid() AS order_a,gen_random_uuid() AS order_b \gset
+ gen_random_uuid() AS order_a,gen_random_uuid() AS order_b,
+ gen_random_uuid() AS app_employee,gen_random_uuid() AS app_shift \gset
 INSERT INTO auth.users(id,instance_id,aud,role,email,encrypted_password,created_at,updated_at)
 VALUES(:'oa','00000000-0000-0000-0000-000000000000','authenticated','authenticated',
  'screen-a-'||:'oa'||'@example.invalid','',now(),now()),
@@ -19,6 +20,10 @@ VALUES(:'a',:'oa','owner'),(:'b',:'ob','owner');
 INSERT INTO public.locations(id,business_id,name)
 VALUES(:'loc_a',:'a','Fixture A'),(:'loc_b',:'b','Fixture B');
 UPDATE public.locations SET pos_location_id='fixture-square-location' WHERE id=:'loc_a';
+INSERT INTO public.employees(id,business_id,display_name)
+VALUES(:'app_employee',:'a','Scheduled employee');
+INSERT INTO public.scheduled_shifts(id,business_id,employee_id,local_date,start_local,end_local,source,status)
+VALUES(:'app_shift',:'a',:'app_employee',current_date-1,time '07:30',time '09:30','owner','sent');
 INSERT INTO public.pos_scheduled_shifts(business_id,location_id,provider,external_shift_id,
  external_employee_id,scheduled_start,scheduled_end,deleted)
 VALUES (:'a',:'loc_a','toast',:'shift_id','toast-employee',current_date-1+time '08:00',current_date-1+time '10:00',false),
@@ -133,7 +138,9 @@ SELECT (
  AND (SELECT count(*) FROM public.cv_staff_clock_entries WHERE business_id=:'b')=0
  AND (SELECT array_agg(source_ref order by source_ref)=array['square-shift:'||:'shift_id','toast-shift:'||:'shift_id']
    AND bool_and(data->>'provider'=source AND data->'paid'='false'::jsonb AND data->>'evidence'='completed_observation')
- FROM public.cv_shifts WHERE business_id=:'a' AND business_date=current_date-1)
+ FROM public.cv_shifts WHERE business_id=:'a' AND business_date=current_date-1 AND source IN ('toast','square'))
+ AND EXISTS(SELECT FROM public.cv_shifts WHERE business_id=:'a' AND source='app'
+  AND source_ref='shift:'||:'app_shift' AND (data->>'start_local')::time=time '07:30')
  AND (SELECT (data->>'scheduled_start')::timestamptz=(current_date-1+time '09:00')::timestamptz
   FROM public.cv_shifts WHERE business_id=:'a' AND source_ref='toast-shift:'||:'shift_id')
  AND (SELECT (data->>'scheduled_start')::timestamptz=(current_date-1+time '12:00')::timestamptz
@@ -231,7 +238,8 @@ UPDATE public.toast_location_mappings SET verified_at=now() WHERE business_id=:'
 SELECT public.toast_apply_schedule_window(:'a',:'toast_loc',:'loc_a',(current_date-2)::timestamptz,current_date::timestamptz,'[]');
 SELECT (NOT EXISTS(SELECT FROM public.cv_shifts WHERE business_id=:'a' AND source_ref='toast-shift:'||:'shift_id')
  AND EXISTS(SELECT FROM public.cv_shifts WHERE business_id=:'a' AND source_ref='toast-shift:older')
- AND EXISTS(SELECT FROM public.cv_shifts WHERE business_id=:'a' AND source_ref='square-shift:'||:'shift_id')) AS planned_empty \gset
+ AND EXISTS(SELECT FROM public.cv_shifts WHERE business_id=:'a' AND source_ref='square-shift:'||:'shift_id')
+ AND EXISTS(SELECT FROM public.cv_shifts WHERE business_id=:'a' AND source_ref='shift:'||:'app_shift')) AS planned_empty \gset
 \if :planned_empty
 \echo Completed empty schedule evidence removed only the covered Toast shift.
 \else

@@ -7,7 +7,7 @@ import { rebuildSalesFactRollups } from "./salesFactRollups";
 import { squareCoveredSalesDates } from "./squareCoveredDates";
 import { syncCanonicalCatalog } from "./syncCatalog";
 import {syncCanonicalEmployees} from "./syncEmployees";
-import { connectedActualFactFromOrders, setProcessingFeeCandidateEligibility, upsertProcessingFeeDailyFact } from "./processingFees";
+import { readAllPosRows } from "./pagedReads";
 
 /**
  * Backfill or incremental sync (docs/06-integrations.md "Sync"): pulls orders/catalog/
@@ -34,64 +34,59 @@ export async function syncPosData(
   const actualDates=new Set(squareCoveredSalesDates({provider:adapter.provider,
     since,until,timezone}));
   for(const date of actualDates)affectedDates.add(date);
-  const { data: menuRows,error: menuReadError } = await supabase.from("menu_items").select("id, pos_item_id").eq("business_id", businessId);
-  if(menuReadError)throw menuReadError;
-  const menuItemIdByPos = new Map((menuRows ?? []).filter((item) => item.pos_item_id).map((item) => [item.pos_item_id, item.id]));
+  const menuRows = await readAllPosRows((first, last) => supabase.from("menu_items")
+    .select("id, pos_item_id").eq("business_id", businessId).not("pos_item_id", "is", null)
+    .order("id").range(first, last), "POS menu identities");
+  const menuItemIdByPos = new Map(menuRows.map(item => [item.pos_item_id, item.id]));
 
   // Employees first (timecards reference them by pos_team_member_id).
   await syncCanonicalEmployees(supabase,businessId,adapter,employees);
-  const { data: employeeRows,error:staffReadError } = await supabase.from("employees").select("id, pos_team_member_id, display_name").eq("business_id", businessId);
+  const { data: employeeRows,error:staffReadError } = await supabase.from("employees").select("id, pos_team_member_id").eq("business_id", businessId);
   if(staffReadError)throw staffReadError;
   const employeeIdByPos = new Map((employeeRows ?? []).map((e) => [e.pos_team_member_id, e.id]));
-  const employeeNameById = new Map((employeeRows ?? []).map((e) => [e.id, e.display_name]));
 
   for (const order of orders) {
     const businessDate = formatInTimeZone(new Date(order.closedAt), timezone, "yyyy-MM-dd");
     affectedDates.add(businessDate);
 
-    const { data: existing, error: orderError } = await supabase
-      .from("orders")
-      .upsert(
-        {
-          business_id: businessId,
-          location_id: locationId,
-          pos_order_id: order.posOrderId,
-          closed_at: order.closedAt,
-          business_date: businessDate,
-          gross_sales_cents: order.grossSalesCents,
-          discounts_cents: order.discountsCents,
-          refunds_cents: order.refundsCents,
-          tax_cents: order.taxCents,
-          tip_cents: order.tipCents,
-          processing_fee_cents: order.processingFeeCents,
-          processing_fee_status: order.processingFeeStatus,
-          processing_fee_provider: adapter.provider,
-          net_sales_cents: order.netSalesCents,
-          employee_id:order.posEmployeeId?employeeIdByPos.get(order.posEmployeeId)??employeeIdByPos.get(`toast:${order.posLocationId}:${order.posEmployeeId}`)??null:null,
-          dining_option:order.diningOption??null,
-          source_channel:order.sourceChannel??null,
-          guest_count:order.guestCount??null,
-        },
-        { onConflict: "business_id,pos_order_id" },
-      )
-      .select("id")
-      .single();
-
-    if (orderError || !existing) throw orderError ?? new Error("POS order persistence failed");
-
-    // SQL RPC replaces the whole set atomically. If one new line is bad, the
-    // previous line set survives; an interrupted sync never drops its contents.
-    const {error:linesError}=await supabase.rpc("pos_replace_order_lines",{
-      p_business_id:businessId,p_order_id:existing.id,
-      p_lines:order.lines.map(line=>({
-        pos_item_id:line.posItemId,
-        menu_item_id:line.posItemId?menuItemIdByPos.get(line.posItemId)??null:null,
-        name:line.name,quantity:line.quantity,net_sales_cents:line.netSalesCents,
-        modifiers:line.modifiers,voided:line.voided,voided_by:line.voidedBy,
-        category:line.category??null,
-      }))
+    const {error: orderError} = await supabase.rpc("pos_commit_order", {
+      p_business_id: businessId,
+      p_order: {
+        location_id: locationId,
+        pos_order_id: order.posOrderId,
+        closed_at: order.closedAt,
+        business_date: businessDate,
+        gross_sales_cents: order.grossSalesCents,
+        discounts_cents: order.discountsCents,
+        refunds_cents: order.refundsCents,
+        tax_cents: order.taxCents,
+        tip_cents: order.tipCents,
+        processing_fee_cents: order.processingFeeCents,
+        processing_fee_status: order.processingFeeStatus,
+        processing_fee_provider: adapter.provider,
+        net_sales_cents: order.netSalesCents,
+        employee_id: order.posEmployeeId
+          ? employeeIdByPos.get(order.posEmployeeId)
+            ?? employeeIdByPos.get(`toast:${order.posLocationId}:${order.posEmployeeId}`)
+            ?? null
+          : null,
+        dining_option: order.diningOption ?? null,
+        source_channel: order.sourceChannel ?? null,
+        guest_count: order.guestCount ?? null,
+      },
+      p_lines: order.lines.map(line => ({
+        pos_item_id: line.posItemId,
+        menu_item_id: line.posItemId ? menuItemIdByPos.get(line.posItemId) ?? null : null,
+        name: line.name,
+        quantity: line.quantity,
+        net_sales_cents: line.netSalesCents,
+        modifiers: line.modifiers,
+        voided: line.voided,
+        voided_by: line.voidedBy,
+        category: line.category ?? null,
+      })),
     });
-    if(linesError)throw linesError;
+    if (orderError) throw orderError;
   }
 
   // Reconcile connected actual attendance into an existing owner/AI-Cafe row for the same
@@ -171,29 +166,12 @@ export async function syncPosData(
   }
 
   for (const date of affectedDates) {
-    const { data: feeOrders, error: feeOrdersError } = await supabase
-      .from("orders")
-      .select("processing_fee_cents, processing_fee_status")
-      .eq("business_id", businessId)
-      .eq("business_date", date)
-      .eq("toast_excluded", false).is("superseded_by", null)
-      .eq("processing_fee_provider", adapter.provider);
-    if (feeOrdersError) throw feeOrdersError;
-    const connectedFact = connectedActualFactFromOrders((feeOrders ?? []).map((order) => ({
-      processingFeeCents: Number(order.processing_fee_cents),
-      processingFeeStatus: order.processing_fee_status,
-    })), { businessId, businessDate: date, provider: adapter.provider });
-    if (connectedFact) {
-      await upsertProcessingFeeDailyFact(supabase, connectedFact);
-    } else {
-      await setProcessingFeeCandidateEligibility(supabase, {
-        businessId,
-        businessDate: date,
-        sourceType: "connected_pos_actual",
-        provider: adapter.provider,
-        eligible: false,
-      });
-    }
+    const {error: feeError} = await supabase.rpc("pos_refresh_daily_fees", {
+      p_business_id: businessId,
+      p_business_date: date,
+      p_provider: adapter.provider,
+    });
+    if (feeError) throw feeError;
     await recomputeDailyRollup(supabase,businessId,date,
       actualDates.has(date)?{salesDataStatus:"actual"}:{});
   }

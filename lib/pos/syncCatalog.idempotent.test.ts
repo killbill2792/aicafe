@@ -83,6 +83,30 @@ describe("shared POS catalog idempotency",()=>{
  });
 });
 
+it("retains the existing recipe item when its provider alias is beyond the first catalog page",async()=>{
+ const f=fixture();
+ for(let i=0;i<1000;i++){
+  f.tables.menu_items.push({id:`existing-${i}`,business_id:business,
+   name:`Item ${i}`,pos_item_id:`prior-${i}`,catalog_source:"square",is_active:true});
+  f.tables.pos_item_aliases.push({business_id:business,provider:"square",
+   pos_item_id:`alias-${i}`,menu_item_id:`existing-${i}`});
+ }
+ f.tables.menu_items.push({id:"recipe-item",business_id:business,name:"Owner's matcha",
+  pos_item_id:"csv-item-owner-matcha",catalog_source:"csv",pos_name:null,is_active:true,
+  price_cents:null});
+ f.tables.pos_item_aliases.push({business_id:business,provider:"square",
+  pos_item_id:product,menu_item_id:"recipe-item"});
+ const adapter={provider:"square",fetchCatalogItems:async()=>[{
+  posItemId:product,name:"Square matcha",priceCents:null,category:"drink"
+ } satisfies PosCatalogItem]} as unknown as PosAdapter;
+
+ const result=await syncCanonicalCatalog(f.db,business,adapter,{archiveMissing:false});
+ expect(result).toMatchObject({matched:1,created:0,needsReview:0});
+ expect(f.tables.menu_items.find(row=>row.id==="recipe-item")).toMatchObject({
+  name:"Owner's matcha",pos_item_id:product,
+ });
+});
+
 describe("multi-location catalog archive safety",()=>{
  it("keeps an item published by another Square location, but archives it after a complete single-location snapshot",async()=>{
   const f=fixture();let available=true;

@@ -53,6 +53,17 @@ try {
     count(*) filter(where payload ? 'inDate' and not (payload ? 'clock_in'))::int as original_clock_fields,
     count(*) filter(where payload ? 'clock_in')::int as projected_clock_fields
     from public.toast_raw_records where business_id=$1 and entity='time_entry' and superseded_by is null`,scope)).rows[0];
+  report.schedule_history=(await db.query(`select count(*)::int as saved_toast_shifts,
+    count(*) filter(where p.deleted)::int as deleted_shifts,
+    count(*) filter(where exists(
+      select from public.toast_raw_records r
+      join public.toast_location_mappings m on (m.business_id,m.restaurant_guid)=(r.business_id,r.restaurant_guid)
+      where m.verified_at is not null and (m.business_id,m.location_id)=(p.business_id,p.location_id)
+        and r.entity in ('shift','scheduled_shift','labor/v1/shifts') and r.superseded_by is null
+        and r.entity_guid::text=p.external_shift_id and r.payload->>'guid'=p.external_shift_id
+        and jsonb_typeof(r.payload->'inDate')='string' and jsonb_typeof(r.payload->'outDate')='string'
+    ))::int as shifts_with_retained_original
+    from public.pos_scheduled_shifts p where p.business_id=$1 and p.provider='toast'`,scope)).rows[0];
   if (schema.shared_archive) {
   report.analytics=(await db.query(`select count(*)::int as metrics,
     count(*) filter(where not exists(select from public.toast_raw_records r where r.business_id=a.business_id

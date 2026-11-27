@@ -54,20 +54,6 @@ export function processingFeeForRollup(
   return fact ? { amountCents: fact.amountCents, status: fact.status } : { amountCents: 0, status: "missing" };
 }
 
-export function connectedActualFactFromOrders(
-  orders: { processingFeeCents: number; processingFeeStatus: ProcessingFeeStatus }[],
-  identity: Pick<ProcessingFeeDailyFact, "businessId" | "businessDate" | "provider">,
-): ProcessingFeeDailyFact | null {
-  if (orders.length === 0 || orders.some((order) => order.processingFeeStatus !== "actual")) return null;
-  return {
-    ...identity,
-    amountCents: orders.reduce((sum, order) => sum + order.processingFeeCents, 0),
-    status: "actual",
-    sourceType: "connected_pos_actual",
-    sourceReference: `pos-sync:${identity.provider}:${identity.businessDate}`,
-  };
-}
-
 /** Pure mirror of the database selector, including fallback when a higher-priority source is ineligible. */
 export function selectProcessingFeeDailyFact(candidates: ProcessingFeeDailyCandidate[]): ProcessingFeeDailyFact | null {
   const eligible = candidates.filter((candidate) => candidate.eligible);
