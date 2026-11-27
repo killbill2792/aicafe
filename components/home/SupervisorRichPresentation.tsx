@@ -1,5 +1,5 @@
 "use client";
-import {createContext,useContext,useId,useMemo,useState} from "react";
+import {createContext,useContext,useId,useMemo,useState,useLayoutEffect,useRef,type CSSProperties,type ReactNode} from "react";
 import dynamic from "next/dynamic";
 import PresentationBoundary from "./PresentationBoundary";
 import {normalizeTableData} from "@/lib/ai/conversations/tableFormatting";
@@ -51,7 +51,7 @@ function Panel({panel,locale}:{panel:DisplayPanel;locale:string}){
  const currency=money&&panel.currency&&/^[A-Za-z]{3}$/.test(panel.currency)?panel.currency:null;
  const formatter=new Intl.NumberFormat(locale,currency?
   {style:"currency",currency,minimumFractionDigits:2,maximumFractionDigits:20}:{maximumFractionDigits:20});
- const format=(v:number)=>formatter.format(money?v/100:v)+(money&&!currency?(panel.currency?" "+panel.currency:" (currency not set)"):"")+(panel.unit==="cents/hour"?" / h":["seconds","minutes","hours","days","units","items","ratio","ratio squared","indicator"].includes(panel.unit)?" "+(panel.measurement??panel.unit):"");
+ const format=(v:number)=>formatter.format(money?v/100:v)+(money&&!currency?" "+(panel.currency??"(currency not set)"):"")+(panel.unit==="cents/hour"?" / h":["seconds","minutes","hours","days","units","items","ratio","ratio squared","indicator"].includes(panel.unit)?" "+(panel.measurement??panel.unit):"");
  const detailsLabel=({en,es,ar}[locale as "en"|"es"|"ar"]??en).Home.chatStartDetails;
  const table=<div role="region" aria-label={panel.title} tabIndex={0} className="overflow-x-auto overscroll-x-contain focus-visible:outline-solid focus-visible:outline-2 focus-visible:outline-ink"><table aria-describedby={panel.coverage&&panel.source!=="response_evidence"?coverageId+" "+evidenceId:evidenceId} className="w-full text-[1.0625rem] tabular-nums"><caption className="sr-only">{panel.title}</caption>
     <thead><tr><th scope="col" className="py-2 text-start">{copy.categoryLabel}</th><th scope="col" className="py-2 text-end">{copy.valueLabel}{panel.currency?" ("+panel.currency+")":panel.measurement?" ("+panel.measurement+")":""}</th></tr></thead>
@@ -266,6 +266,25 @@ function NamedNativeControl({label,role,children}:{label:string;role:string;chil
   if(control&&!control.hasAttribute("aria-labelledby"))control.setAttribute("aria-label",label);
  }}>{children}</div>;
 }
+/** Use the upstream Grid for its authored styles and gap, but let the
+ * browser's intrinsic flex layout determine how many tracks fit. No device
+ * breakpoints, maximum column count, or prescribed minimum card width. */
+function AdaptiveGrid({columns,children}:{columns:unknown;children:ReactNode}){
+ const ref=useRef<HTMLDivElement>(null);
+ const preferred=typeof columns==="number"&&Number.isFinite(columns)&&columns>=1?Math.floor(columns):undefined;
+ useLayoutEffect(()=>{
+  const container=ref.current,grid=container?.firstElementChild;
+  if(!container||!grid)return;
+  const sync=()=>{
+   const gap=getComputedStyle(grid).columnGap;
+   const value=gap==="normal"?"0px":gap;
+   if(container.style.getPropertyValue("--luna-gap")!==value)container.style.setProperty("--luna-gap",value);
+  };
+  sync();const observer=new ResizeObserver(sync);observer.observe(grid);return()=>observer.disconnect();
+ });
+ const style=preferred?{"--luna-track":"max(0px, calc((100% - ("+preferred+" - 1) * var(--luna-gap, 0px)) / "+preferred+"))"} as CSSProperties:undefined;
+ return <div ref={ref} data-testid="luna-adaptive-grid" className="luna-adaptive-flow min-w-0" style={style}>{children}</div>;
+}
 function NativeWidget({spec,locale}:{spec:Spec;locale:string}){
  // A polling parent may reconstruct an equal message object. The keyed
  // widget survives that refresh without resetting edits or keyboard focus.
@@ -284,7 +303,7 @@ function NativeWidget({spec,locale}:{spec:Spec;locale:string}){
      if(value===null)return copy.notRecorded;
      const monetary=values.unit==="cents"||values.unit==="cents/hour";
      try{return new Intl.NumberFormat(locale,monetary&&values.currency?{style:"currency",currency:values.currency}:{maximumFractionDigits:20}).format(monetary?value/100:value)+(values.unit==="cents/hour"?" / h":"");}
-     catch{return String(monetary?value/100:value)+(values.currency?" "+values.currency:"");}
+     catch{return [String(monetary?value/100:value),values.currency].filter(Boolean).join(" ");}
     };
     return <figure className="min-w-0 space-y-2"><figcaption className="font-medium">{values.title}</figcaption>{description&&<p className="text-sm text-ink-muted">{description}</p>}<div className="overflow-x-auto"><table className="w-full table-auto text-sm"><thead><tr><th scope="col" className="text-start">{copy.categoryLabel}</th><th scope="col" className="text-end">{measurement??values.unit}</th></tr></thead><tbody>{values.points.map((point,i)=><tr key={i}><th scope="row" className="text-start font-normal">{point.label}</th><td className="text-end">{format(point.value)}</td></tr>)}</tbody></table></div></figure>;
    },
@@ -300,7 +319,7 @@ function NativeWidget({spec,locale}:{spec:Spec;locale:string}){
     const component=<PresentationBoundary fallback={<div className="min-w-0"><AuthoredValues value={input.element.props}/>{input.children}</div>}><Component {...input} element={{...input.element,props:parsed.data}}/></PresentationBoundary>;
     const role=name==="Slider"?"slider":name==="Select"?"combobox":name==="Radio"?"radiogroup":null;
     const label="label" in parsed.data&&typeof parsed.data.label==="string"?parsed.data.label:name;
-    if(name==="Grid")return <div className="luna-responsive-grid min-w-0" data-columns={String("columns" in parsed.data?parsed.data.columns??1:1)}>{component}</div>;
+    if(name==="Grid")return <AdaptiveGrid columns={"columns" in parsed.data?parsed.data.columns:undefined}>{component}</AdaptiveGrid>;
     if(name==="Table")return <div className="luna-responsive-table min-w-0 max-w-full overflow-x-auto">{component}</div>;
     return role?<NamedNativeControl role={role} label={label}>{component}</NamedNativeControl>:component;
    };
@@ -317,7 +336,7 @@ export default function SupervisorRichPresentation({block,locale,onSuggest=()=>{
    if(element.props.layout==="details"&&title)return <details data-supervisor-layout="details" className="min-w-0 space-y-2"><summary className="min-h-12 cursor-pointer wrap-break-word py-3 text-[1.0625rem] font-medium text-ink focus-visible:outline-solid focus-visible:outline-2 focus-visible:outline-ink">{title}</summary>{children}</details>;
    return <div data-supervisor-layout={element.props.layout==="grid"?"grid":"stack"} className="min-w-0 space-y-2">
     {title&&<h3 className="wrap-break-word text-[1.0625rem] font-medium text-ink">{title}</h3>}
-    <div className={element.props.layout==="grid"?"grid min-w-0 gap-3 grid-cols-[repeat(auto-fit,minmax(min(100%,9rem),1fr))]":"min-w-0 space-y-3"}>{children}</div>
+    <div className={element.props.layout==="grid"?"luna-adaptive-flow-content min-w-0 gap-3":"min-w-0 space-y-3"}>{children}</div>
    </div>;
   },
   Panel:({element})=>{const p=presentationPanelSchema.safeParse(element.props.panel);return p.success?<Panel panel={p.data} locale={locale}/>:null;},
