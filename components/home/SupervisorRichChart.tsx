@@ -5,7 +5,7 @@ import type {PresentationPanel} from "@/lib/ai/conversations/presentation";
 const ink="rgb(var(--c-muted))";
 const accent="rgb(var(--c-accent))";
 const palette=[accent,"rgb(var(--c-chart-staff))","rgb(var(--c-chart-ingredients))","rgb(var(--c-chart-running))","rgb(var(--c-chart-fees))"];
-export default function SupervisorRichChart({panel,format}:{panel:PresentationPanel;format:(value:number)=>string}){
+export default function SupervisorRichChart({panel,format}:{panel:Pick<PresentationPanel,"points"|"kind">;format:(value:number)=>string}){
  const data=panel.points.map(p=>({name:p.label,value:p.value}));
  const common=<><CartesianGrid vertical={false} stroke="rgb(var(--c-line))"/>
    <XAxis dataKey="name" tick={{fontSize:13,fill:ink}} tickLine={false} axisLine={false} minTickGap={16}/>
