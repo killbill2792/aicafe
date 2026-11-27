@@ -1,4 +1,5 @@
 import { execFileSync } from 'node:child_process';
+import { createHash } from 'node:crypto';
 import { isBuiltin } from 'node:module';
 import { posix } from 'node:path';
 import { pathToFileURL } from 'node:url';
@@ -198,9 +199,14 @@ function conditionalTargets(entry, mode) {
   return { paths:[...paths.values()], external };
 }
 
+function installedPackages(tree) {
+  const path = tree.files.has('npm-shrinkwrap.json') ? 'npm-shrinkwrap.json' : 'package-lock.json';
+  return packageMetadata(tree,path).packages ?? {};
+}
+
 function declaredPackages(tree) {
   const manifest = packageMetadata(tree);
-  const lock = packageMetadata(tree, 'package-lock.json').packages ?? {};
+  const lock = installedPackages(tree);
   const deps = {...manifest.dependencies, ...manifest.optionalDependencies, ...manifest.devDependencies};
   return new Set(Object.keys(deps).filter(name => {
     const item = lock['node_modules/' + name];
@@ -209,7 +215,65 @@ function declaredPackages(tree) {
   }));
 }
 
-export function graphErrors(tree, seeds) {
+// Registry modules are opaque to the Git source walk. Bind approval to the
+// installed graph, including a nearer nested installation or a newly present
+// optional peer. Unrelated lockfile entries do not contribute to this digest.
+function runtimePackages(tree) {
+  const manifest = packageMetadata(tree);
+  const direct = {...manifest.dependencies, ...manifest.optionalDependencies};
+  const lock = installedPackages(tree);
+  const fingerprints = new Map();
+  function installedAt(directory,name) {
+    for (;;) {
+      const path = posix.join(directory,'node_modules',name);
+      if (Object.hasOwn(lock,path)) return path;
+      if (directory === '.') return null;
+      directory = posix.dirname(directory);
+    }
+  }
+  return function fingerprint(name, fromDirectory = '.') {
+    if (!Object.hasOwn(direct,name)) return null;
+    const entry = installedAt(fromDirectory,name);
+    if (!entry) return null;
+    if (fingerprints.has(entry)) return fingerprints.get(entry);
+    const nodes = new Map();
+    function visit(path) {
+      if (nodes.has(path)) return true;
+      const item = lock[path];
+      if (!item || item.link || !item.version || !/^https:\/\//.test(item.resolved) ||
+          !/^sha512-[a-zA-Z0-9+/]{86}==$/.test(item.integrity)) return false;
+      const edges = [];
+      nodes.set(path,[item.name ?? null,item.version,item.resolved,item.integrity,
+        item.os ?? null,item.cpu ?? null,item.libc ?? null,item.hasInstallScript ?? false,edges]);
+      const dependencies = {...item.peerDependencies,...item.dependencies,...item.optionalDependencies};
+      for (const dep of Object.keys(dependencies).sort()) {
+        if (!/^(?:@[\w.-]+\/)?[a-zA-Z0-9_][\w.-]*$/.test(dep)) return false;
+        const target = installedAt(path,dep);
+        const optional = Object.hasOwn(item.optionalDependencies ?? {},dep) ||
+          (!Object.hasOwn(item.dependencies ?? {},dep) && item.peerDependenciesMeta?.[dep]?.optional === true);
+        edges.push([dep,dependencies[dep],optional,target, Object.hasOwn(item.peerDependencies ?? {},dep)]);
+        if (target ? !visit(target) : !optional) return false;
+      }
+      return true;
+    }
+    let digest = null;
+    if (visit(entry)) {
+      const records = [...nodes.keys()].sort().map(path=>[path,...nodes.get(path)]);
+      digest = createHash('sha256').update(JSON.stringify(records)).digest('hex');
+    }
+    fingerprints.set(entry,digest);
+    return digest;
+  };
+}
+
+function packageApprovals(tree) {
+  return new Set(exceptionRows(tree,'Runtime package').map(row=>{
+    const [, , name, digest] = row.split('|').map(s=>s.trim());
+    return name+' '+digest;
+  }));
+}
+
+export function graphErrors(tree, seeds, approvals) {
   if (!seeds.length) return [];
   const root = '/repo';
   const host = {
@@ -225,6 +289,7 @@ export function graphErrors(tree, seeds) {
   const {options} = config;
   options.baseUrl ??= root;
   const packages = declaredPackages(tree);
+  const fingerprint = approvals && runtimePackages(tree);
   const dataAsset = /\.(?:json|css|svg|png|jpe?g|webp)$/;
   const cache = ts.createModuleResolutionCache(root, p => p, options);
   const runtimeHost = {
@@ -245,11 +310,15 @@ export function graphErrors(tree, seeds) {
     return scope;
   }
   const edges = new Map(), errorsFound = new Set();
-  function externalError(spec) {
+  function externalError(spec,file) {
     if (spec.startsWith('node:') || isBuiltin(spec))
       return nodeDataModules.has(spec.replace(/^node:/, '')) ? null : 'unapproved Node builtin '+spec;
     const name = spec.match(/^((?:@[\w.-]+\/)?[a-zA-Z0-9_][\w.-]*)(?:\/[\w.-]+)*$/)?.[1];
-    if (name && packages.has(name) && !spec.split('/').some(part => part === '.' || part === '..')) return null;
+    if (name && packages.has(name) && !spec.split('/').some(part => part === '.' || part === '..' || part === 'node_modules')) {
+      if (!approvals) return null; // Existing business services outside Luna retain their normal package workflow.
+      const digest = fingerprint(name,posix.dirname(file));
+      return digest && approvals.has(name+' '+digest) ? null : 'unapproved runtime package graph '+name;
+    }
     return 'unresolved local dependency or undeclared package '+spec;
   }
   function dependencies(file) {
@@ -293,7 +362,7 @@ export function graphErrors(tree, seeds) {
         }
       }
       for (const target of conditions.external) {
-        const error = externalError(target);
+        const error = externalError(target,file);
         if (error) result.push({error});
       }
       if (found || hasConditionalTarget || conditions.external.size) {
@@ -304,7 +373,7 @@ export function graphErrors(tree, seeds) {
         if (tree.files.get(asset).mode === '120000') result.push({target:asset});
         continue;
       }
-      const error = externalError(spec);
+      const error = externalError(spec,file);
       if (error) result.push({error});
     }
     edges.set(file,result);
@@ -359,7 +428,10 @@ export function audit(base, head, branch = '', trustedBase = base, regressions =
     return [ledger+':1: PR 594 is limited to development architecture and safeguards'];
   const rebuild = branch === 'luna/operator-rebuild' || trustedChanges.some(replacement);
   const policy = 'scripts/guards/luna-boundary.mjs';
-  const errors = graphErrors(after,[...after.files.keys()].filter(lunaSource));
+  const approvedPackages = packageApprovals(trusted);
+  const proposedPackages = packageApprovals(after);
+  const retainedPackages = new Set([...approvedPackages].filter(grant => proposedPackages.has(grant)));
+  const errors = graphErrors(after,[...after.files.keys()].filter(lunaSource),retainedPackages);
   // Resolve both trees for every change. Imports can be redirected without
   // touching a source file or the top-level TypeScript configuration.
   if (trustedChanges.length) {
@@ -373,6 +445,9 @@ export function audit(base, head, branch = '', trustedBase = base, regressions =
   const dbRunner = 'scripts/db/run-all.sh';
   const browserMappingChanged = JSON.stringify(packageMetadata(trusted).browser) !== JSON.stringify(packageMetadata(after).browser);
   const controlChanges = trustedChanges.filter(p => controls(p) || (p === 'package.json' && browserMappingChanged));
+  const approvalChanged = retainedPackages.size !== approvedPackages.size || retainedPackages.size !== proposedPackages.size;
+  if (trusted.files.has(policy) && approvalChanged && trustedChanges.some(p=>p !== ledger && !p.endsWith('.md')))
+    errors.push(ledger+':1: review external package grants separately from executable or dependency changes');
   const policyEdits = controlChanges.filter(p => p !== dbRunner);
   const oracleRegistration = /^\s*(?:SUPERVISOR_RUN_DB_URL=\S+\s+)?node scripts\/db\/luna-engine-race\.mjs\s*$/m;
   if (trusted.files.has(policy) && controlChanges.includes(dbRunner) &&
@@ -412,6 +487,15 @@ export function audit(base, head, branch = '', trustedBase = base, regressions =
 
 if (process.argv[1] === '-' || (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href)) {
   const head = process.env.HEAD_SHA || 'HEAD';
+  if (process.argv[2] === '--package-fingerprints') {
+    const fingerprint = runtimePackages(snapshot(head));
+    for (const name of process.argv.slice(3)) {
+      const digest = fingerprint(name);
+      if (!digest) throw Error('No fully pinned runtime package graph for '+name);
+      console.log('| Runtime package | '+name+' | '+digest+' |');
+    }
+    process.exit(0);
+  }
   const base = git('merge-base',process.env.BASE_SHA || 'origin/main',head).trim();
   const trustedBase = process.env.LUNA_POLICY_BASE || base;
   const regressions = new Set();

@@ -1,3 +1,4 @@
+import {createHash} from 'node:crypto';
 import {execFileSync, spawnSync} from 'node:child_process';
 import {mkdtempSync, mkdirSync, rmSync, symlinkSync, writeFileSync} from 'node:fs';
 import {tmpdir} from 'node:os';
@@ -20,6 +21,15 @@ function git(...args:string[]) {
 function commit() {
   git('add','.'); git('commit','--allow-empty','-qm','fixture');
   return git('rev-parse','HEAD');
+}
+function registryItem(name:string,version='1.0.0') {
+  return {version,resolved:'https://registry.example.invalid/'+name+'-'+version+'.tgz',
+    integrity:'sha512-'+createHash('sha512').update(name+version).digest('base64')};
+}
+function grantFor(name:string) {
+  const head=commit();
+  return execFileSync(process.execPath,[guard,'--package-fingerprints',name],{cwd:dir,encoding:'utf8',
+    env:{...process.env,HEAD_SHA:head}});
 }
 function run(branch='luna/operator-rebuild',trustedBase=base) {
   const result=spawnSync(process.execPath,[guard],{cwd:dir,encoding:'utf8',
@@ -72,9 +82,10 @@ describe('Luna repository boundary',()=>{
   it('allows only declared and locked external packages and reviewed Node data APIs',()=>{
     put('package.json', JSON.stringify({dependencies:{'@example/metrics':'1.0.0','linked':'file:lib/local'}}));
     put('package-lock.json',JSON.stringify({packages:{
-      'node_modules/@example/metrics':{version:'1.0.0',resolved:'https://example.invalid/metrics.tgz',integrity:'sha512-test'},
+      'node_modules/@example/metrics':registryItem('metrics'),
       'node_modules/linked':{resolved:'lib/local',link:true},
     }}));
+    put(ledger,grantFor('@example/metrics')); base=commit();
     const path='lib/luna/runtime/index.ts';
     put(path,"export * from '@example/metrics/reports'; export {createHash} from 'node:crypto';");
     expect(run()).toEqual({status:0,errors:''});
@@ -83,6 +94,46 @@ describe('Luna repository boundary',()=>{
     expect(errors).toContain('undeclared package linked');
     expect(errors).toContain('undeclared package @example/metrics/../local');
     expect(errors).toContain('unapproved Node builtin node:unknown-future-api');
+  });
+  it('requires an independent grant for direct and indirect registry edges, including stacked work',()=>{
+    put('package.json',JSON.stringify({dependencies:{metrics:'1.0.0'},imports:{'#report':'metrics/report'}}));
+    put('package-lock.json',JSON.stringify({packages:{'node_modules/metrics':registryItem('metrics')}}));
+    const grant = grantFor('metrics');
+    put(ledger,grant); const unapproved=base; base=commit();
+    put('lib/luna/runtime/app.ts',"export * from '../../shared-helper';");
+    put('lib/shared-helper.ts',"export * from '#report';");
+    expect(run('feature',unapproved).errors).toContain('unapproved runtime package graph metrics');
+    expect(run().status).toBe(0);
+    base=commit(); put(ledger,'');
+    expect(run('docs/retire-metrics').errors).toContain('unapproved runtime package graph metrics');
+    put(ledger,grant); put('lib/shared-helper.ts','export {};');
+    expect(run('feature/migrate').status).toBe(0);
+    base=commit(); put(ledger,'');
+    expect(run('docs/retire-metrics').status).toBe(0);
+  });
+  it('binds the reviewed closure across nested, optional and peer installs without freezing unrelated packages',()=>{
+    const tree={
+      'node_modules/a':{...registryItem('a'),dependencies:{b:'*'},peerDependencies:{p:'*'},peerDependenciesMeta:{p:{optional:true}}},
+      'node_modules/b':{...registryItem('b'),dependencies:{a:'*'}},
+    };
+    const lock=(changes:Record<string,unknown>)=>put('package-lock.json',JSON.stringify({packages:{...tree,...changes}}));
+    put('package.json',JSON.stringify({dependencies:{a:'*'}})); lock({});
+    put(ledger,grantFor('a')); base=commit(); put('lib/luna/runtime/app.ts',"export * from 'a';");
+    lock({'node_modules/other':registryItem('other')}); expect(run().status).toBe(0);
+    put('npm-shrinkwrap.json',JSON.stringify({packages:{...tree,'node_modules/b':registryItem('b','2.0.0')}}));
+    expect(run().errors).toContain('unapproved runtime package graph a');
+    rmSync(join(dir,'npm-shrinkwrap.json'));
+    for (const changes of [
+      {'node_modules/a/node_modules/b':registryItem('b','2.0.0')},
+      {'lib/luna/node_modules/a':registryItem('a','2.0.0')},
+      {'node_modules/p':registryItem('p')},
+      {'node_modules/b':{...tree['node_modules/b'],integrity:registryItem('other').integrity}},
+      {'node_modules/b':{...tree['node_modules/b'],resolved:'https://elsewhere.invalid/b.tgz'}},
+      {'node_modules/b':{link:true,resolved:'lib/local'}},
+      {'node_modules/b':{...tree['node_modules/b'],integrity:null}},
+    ]) {
+      lock(changes); expect(run().errors).toContain('unapproved runtime package graph a');
+    }
   });
   it('checks local aliases even when the spelling also names a builtin',()=>{
     put('tsconfig.json',JSON.stringify({compilerOptions:{moduleResolution:'bundler',paths:{crypto:['./'+legacy]}}}));

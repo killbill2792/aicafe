@@ -236,7 +236,9 @@ jobs:
             exit 0
           fi
           trusted=$(mktemp -d "$RUNNER_TEMP/luna-policy.XXXXXX")
-          git archive "$approved" -- package.json package-lock.json "$policy" \
+          lockfile=package-lock.json
+          if git cat-file -e "$approved:npm-shrinkwrap.json" 2>/dev/null; then lockfile=npm-shrinkwrap.json; fi
+          git archive "$approved" -- package.json "$lockfile" "$policy" \
             scripts/guards/lib/luna-boundary-proof.mjs scripts/acceptance/owner-gate.mjs \
             scripts/e2e/targeted.mjs | tar -x -C "$trusted"
           (cd "$trusted" && npm ci --ignore-scripts --no-audit --no-fund)
@@ -314,7 +316,9 @@ jobs:
           oracle=scripts/db/luna-engine-race.mjs
           if git cat-file -e "$approved:$oracle" 2>/dev/null; then
             trusted=$(mktemp -d "$RUNNER_TEMP/luna-db.XXXXXX")
-            git archive "$approved" -- package.json package-lock.json "$oracle" \
+            lockfile=package-lock.json
+            if git cat-file -e "$approved:npm-shrinkwrap.json" 2>/dev/null; then lockfile=npm-shrinkwrap.json; fi
+            git archive "$approved" -- package.json "$lockfile" "$oracle" \
               scripts/guards/luna-boundary.mjs | tar -x -C "$trusted"
             (cd "$trusted" && npm ci --ignore-scripts --no-audit --no-fund)
             node "$trusted/$oracle"

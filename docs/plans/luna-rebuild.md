@@ -138,6 +138,21 @@ Use `Legacy exception` for a protected legacy file, or `Safeguard change` for ma
 | Legacy exception | path | base blob | proposed blob | reason and scope | regression.test.ts | regression blob | exit condition |
 ```
 
+### Runtime package approvals
+
+These grants cover existing dependencies for date and timezone calculations, React rendering, server-only imports and schema validation. The bootstrap review used the production declarations and lockfile at `28622880e664cba2b9396546e551806eb66f7c80`. The seven downloaded registry archives (including scheduler through React DOM) matched their SHA-512 values. Their package manifests matched the locked versions and dependency declarations and declared no install hooks. The fingerprint binds the package’s install location, artifact version, HTTPS source, SHA-512 integrity and resolved regular, peer and optional dependencies, including nested versions. A package without complete artifact provenance remains outside the approved list. For example, the current parser's lock entry lacks integrity and the current Next.js closure includes an installed optional peer without it.
+
+| Grant | Package | Reviewed SHA-256 graph fingerprint |
+| --- | --- | --- |
+| Runtime package | date-fns | e9ac4f0b55478123312daf54643e22fe97aeec866c2827595ec2c88cac1a41ed |
+| Runtime package | date-fns-tz | 9e89939e2407aeaa2605dec45d0398d29fce02a2f18dfd80e63a05d73ad86dc7 |
+| Runtime package | react | 4da68f62042e472280fa3d3581a5718706ef4b41e60f9240caa903a58885e0c6 |
+| Runtime package | react-dom | b9865eea2e2a28d259ccdb35165fe3b0ba2af74dee6635a088d8773c7c379910 |
+| Runtime package | server-only | f65339c003ab201bc4f62bce79363df58ec33eeb9862fe3d0aa344cb69406eb0 |
+| Runtime package | zod | c612c14818cf6522c907aa354e9e4b532a91532895d304ff0de14614733d8c46 |
+
+To propose an addition or upgrade, commit the proposed lockfile on the working branch and run `node scripts/guards/luna-boundary.mjs --package-fingerprints PACKAGE`. An independent reviewer checks the intended capability, installed artifacts, executable entry points, install hooks and changes in transitive dependencies. Record that evidence on the PR. Land the reviewed grant on main through a documentation-only change before integrating the package into a Luna path. Both reviewed releases may coexist during an upgrade. Migrate consumers before removing the old grant. Unrelated lockfile entries do not change the grant. A fingerprint records which artifacts were selected. Runtime isolation and authorization continue to govern how they execute.
+
 ## Continuation and cutover
 
 Follow the [fresh-session handoff](luna-rebuild-handoff.md#fresh-session-handoff) into one separate implementation PR based on main after #594 merges. Fetch main and #593, compare migration IDs and shared research files before integrating. Add executable evidence and exact commands here as each row changes. Enable the new experience only for a locally opted-in business until both engines' claims, historical reads and rollback work under concurrency. Inspect actual persisted rows, UI and delivery receipts for each acceptance scenario. An externally visible send, paid live acceptance, production migration/deploy and destructive retirement each require the applicable owner authorization.
